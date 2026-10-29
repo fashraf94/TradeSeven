@@ -36,6 +36,14 @@ export const META = Object.freeze({
   divers:   Object.freeze({ name: 'Diversifier', desc: 'Spreads bets so no single one can sink you.', motion: 'Pods orbit in balanced formation, each spinning on its own axis; signals run the tethers back to the core.', still: 2.7 }),
   fund:     Object.freeze({ name: 'Fundamental Investor', desc: 'Buys quality and lets fundamentals work.', motion: 'Facets lock in sequence and then barely move; a slow turn lets the seams catch the core’s light.', still: 8.4 }),
 });
+/**
+ * Each form's framing scale: bare Shadow draws larger than any set (af3-standalone.js.txt:345, :359, and each
+ * builder's `frame`). One table, so a swap between forms can tween from one scale to the next (build S1, ruling R5).
+ */
+export const FRAME_SCALE = Object.freeze({ none: 1.25, trend: .74, contra: .95, spec: .9, preserve: .95, divers: .95, fund: .95 });
+/** The framing scale of a form kind; anything unknown is bare Shadow's. */
+export const frameScale = (kind) => (Object.hasOwn(FRAME_SCALE, kind) ? FRAME_SCALE[kind] : FRAME_SCALE.none);
+
 /** The four palettes the engine knows; their colours come from tokens. */
 export const PALETTES = Object.freeze(['teal', 'copper', 'mono', 'unlit']);
 
@@ -92,4 +100,22 @@ export function startTween(on, nowMs, currentFit) {
 export function tweenFit(tween, nowMs) {
   const keys = tween.on ? EQUIP_KEYS : UNEQUIP_KEYS, ms = nowMs - tween.start;
   return { fit: fitAtMs(keys, ms), done: ms >= keys[keys.length - 1][0] };
+}
+
+// ── the swap's size step (build S1, ruling R5) ──
+// Bare Shadow draws at 1.25 and the sets at .74–.95 (FRAME_SCALE), so a change of form would jump size at its first
+// frame. During a swap the form's scale runs from the scale it was drawn at (`from`) to the new form's (`to`), as a
+// pure function of the tween's fit: the share of the travel the plates have made since the tween began (`fit0`).
+// Fit at the end of the tween gives exactly `to`, so a settled form draws at its own frame, as before.
+
+/** How far a swap's tween has travelled, 0 → 1, at fit `fit` (`on` the tween's direction, `fit0` its starting fit). */
+export function swapProgress(on, fit0, fit) {
+  const span = on ? 1 - fit0 : fit0;
+  if (!(span > 0)) return 1;
+  return clamp(on ? (fit - fit0) / span : (fit0 - fit) / span, 0, 1);
+}
+
+/** The scale a swapping form draws at: `from` → `to` with the tween's progress. */
+export function swapScale(step, fit) {
+  return step.from + (step.to - step.from) * swapProgress(step.on, step.fit0, fit);
 }

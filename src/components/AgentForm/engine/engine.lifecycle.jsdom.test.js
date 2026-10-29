@@ -265,6 +265,172 @@ describe('a mutable view: mood, stage, allegiance and size change without a remo
   });
 });
 
+// ── Build S1: a swap plays the change, the size tweened across it (ruling R5); a paused view; the settled still ──
+describe('build S1: swap() plays an archetype change, and the size tweens across it (ruling R5)', () => {
+  /** Record the form group's scale at every render call: the still's draw and the live frame's, in order. */
+  function scalesOf(r) {
+    const seen = [], render = r.render.bind(r);
+    r.render = (scene, camera) => { seen.push(scene.children.find((o) => o.isGroup)?.scale.x); return render(scene, camera); };
+    return seen;
+  }
+  const frames = (n, ms = 16) => { for (let i = 0; i < n; i += 1) kit.tick(ms); };
+
+  it('bare Shadow → a set: the set suits up from nothing on the 900 ms equip, and the scale runs 1.25 → .74 with no step', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'none', size: 200 }, { dpr: 1 }, {}, THEME);
+    frames(3);
+    expect(v.scale).toBe(1.25);
+    const scales = [];
+    v.swap({ kind: 'trend' });
+    expect(v.kind).toBe('trend'); expect(v.fit).toBe(0);
+    for (let ms = 0; ms < 900; ms += 16) { kit.tick(16); scales.push(v.scale); }
+    kit.tick(16); scales.push(v.scale);
+    expect(v.fit).toBe(1);
+    // The first frame starts where bare Shadow was drawn; no frame moves the scale by more than a sliver; it ends on the set's own.
+    expect(Math.abs(scales[0] - 1.25)).toBeLessThan(.02);
+    for (let i = 1; i < scales.length; i += 1) expect(Math.abs(scales[i] - scales[i - 1])).toBeLessThan(.02);
+    expect(scales.at(-1)).toBe(.74);
+    for (let i = 1; i < scales.length; i += 1) expect(scales[i]).toBeLessThanOrEqual(scales[i - 1]);
+    v.unmount();
+  });
+
+  it('a set → another set: the new one suits up from nothing, and the scale runs from the old set\'s (.74) to the new one\'s (.95)', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'trend', size: 200 }, { dpr: 1 }, {}, THEME);
+    frames(2);
+    v.swap({ kind: 'contra' });
+    kit.tick(16);
+    expect(v.kind).toBe('contra');
+    expect(Math.abs(v.scale - .74)).toBeLessThan(.02);
+    frames(60);
+    expect(v.fit).toBe(1); expect(v.scale).toBe(.95);
+    v.unmount();
+  });
+
+  it('a set → bare Shadow: the set comes off on the 700 ms unequip, then bare Shadow shows at 1.25, with no step at the switch', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'fund', size: 200 }, { dpr: 1 }, {}, THEME);
+    frames(2);
+    v.swap({ kind: 'none' });
+    kit.tick(350);
+    expect(v.kind).toBe('fund'); expect(v.fit).toBeCloseTo(.45, 9);
+    expect(v.scale).toBeGreaterThan(.95); expect(v.scale).toBeLessThan(1.25);
+    kit.tick(330);
+    const before = v.scale; // the last frame of the unequip, a sliver before it ends
+    kit.tick(40);
+    expect(v.kind).toBe('none'); expect(v.fit).toBe(1); expect(v.scale).toBe(1.25);
+    expect(Math.abs(v.scale - before)).toBeLessThan(.02);
+    v.unmount();
+  });
+
+  it('a change reversed mid-way continues from where the plates are: no jump in fit or in scale', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'none', size: 200 }, { dpr: 1 }, {}, THEME);
+    frames(2);
+    v.swap({ kind: 'spec' });
+    kit.tick(450);
+    const fit = v.fit, scale = v.scale;
+    expect(fit).toBeCloseTo(.55, 9);
+    v.swap({ kind: 'none' });
+    kit.tick(16);
+    expect(Math.abs(v.fit - fit)).toBeLessThan(.03); expect(Math.abs(v.scale - scale)).toBeLessThan(.02);
+    frames(50);
+    expect(v.kind).toBe('none'); expect(v.scale).toBe(1.25);
+    v.unmount();
+  });
+
+  it('a mood change mid-swap keeps the swap: update() with the kind it is headed for is no change of form', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'divers', size: 200 }, { dpr: 1 }, {}, THEME);
+    frames(2);
+    v.swap({ kind: 'none' });
+    kit.tick(200);
+    v.update({ kind: 'none', state: 'researching' });
+    expect(v.kind).toBe('divers'); expect(v.fit).toBeGreaterThan(0);
+    frames(40);
+    expect(v.kind).toBe('none');
+    v.unmount();
+  });
+
+  it('under reduced motion, at the still rate, or before the context lives, a swap is update(): the new form at once, still and live frame redrawn', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'none', size: 200 }, { dpr: 1, reducedMotion: true }, {}, THEME), r = gl.made.renderers[0];
+    let n = r.renders;
+    v.swap({ kind: 'preserve' });
+    expect(v.kind).toBe('preserve'); expect(v.fit).toBe(1);
+    expect(r.renders).toBe(n + 2);
+    expect(kit.tick()).toBe(0);
+    v.setOptions({ reducedMotion: false, rate: 'still' });
+    n = r.renders; v.swap({ kind: 'none' });
+    expect(v.kind).toBe('none'); expect(r.renders).toBe(n + 2);
+    v.unmount();
+  });
+
+  it('a view that stops animating mid-swap settles it: the set is worn (or gone) and drawn at its own scale', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'trend', size: 200 }, { dpr: 1 }, {}, THEME);
+    frames(2);
+    v.swap({ kind: 'none' });
+    kit.tick(200);
+    v.setOptions({ reducedMotion: true });
+    expect(v.kind).toBe('none'); expect(v.scale).toBe(1.25);
+    v.unmount();
+  });
+
+  it('the cached still is drawn where the view is headed: the new set fully on, at its own scale, while the live frame tweens', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'none', size: 200 }, { dpr: 1 }, {}, THEME), r = gl.made.renderers[0];
+    frames(2);
+    const seen = scalesOf(r);
+    v.swap({ kind: 'trend' });
+    kit.tick(16);
+    // The first frame after the swap: the still (dirty) at the set's own .74, then the live frame near bare Shadow's 1.25.
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBe(.74);
+    expect(Math.abs(seen[1] - 1.25)).toBeLessThan(.02);
+    v.unmount();
+  });
+
+  it('a set coming off redraws the still once bare Shadow shows', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'contra', size: 200 }, { dpr: 1 }, {}, THEME), r = gl.made.renderers[0];
+    frames(2);
+    v.swap({ kind: 'none' });
+    const perFrame = [], seen = scalesOf(r);
+    for (let i = 0; i < 50; i += 1) { const n = r.renders; kit.tick(16); perFrame.push(r.renders - n); }
+    // The swap's first frame redraws the still (the set off), then live frames only, until the frame that settles on
+    // bare Shadow (700 ms in), which redraws the still again — bare Shadow, at its own 1.25.
+    const settle = perFrame.indexOf(2, 1);
+    expect(perFrame[0]).toBe(2);
+    expect(settle).toBe(43);
+    expect(perFrame.filter((n) => n === 2)).toHaveLength(2);
+    const at = perFrame.slice(0, settle).reduce((a, b) => a + b, 0);
+    expect(seen.slice(at, at + 2)).toEqual([1.25, 1.25]);
+    v.unmount();
+  });
+});
+
+describe('build S1: a paused view holds its frame (the hub\'s lifetime ruling R-S7-5)', () => {
+  const frames = (n, ms = 16) => { for (let i = 0; i < n; i += 1) kit.tick(ms); };
+
+  it('pausing the only live view stops the loop; un-pausing resumes it, and the next sample is marked resumed', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'spec', size: 200 }, { dpr: 1 }, {}, THEME), r = gl.made.renderers[0];
+    const samples = []; E.onFrame((s) => samples.push(s));
+    frames(2);
+    v.setOptions({ paused: true });
+    const n = r.renders;
+    expect(kit.tick()).toBe(1); // the frame already requested runs once, draws nothing and asks for no other
+    expect(kit.tick()).toBe(0);
+    expect(r.renders).toBe(n);
+    expect(E.info()).toMatchObject({ looping: false, paused: 1 });
+    v.setOptions({ paused: false });
+    expect(E.info().looping).toBe(true);
+    kit.tick();
+    expect(r.renders).toBeGreaterThan(n);
+    expect(samples.at(-1).resumed).toBe(true);
+    v.unmount();
+  });
+
+  it('a paused view is skipped while another view keeps drawing', () => {
+    const E = engine(), a = E.mount(els(), { kind: 'spec', size: 200 }, { dpr: 1, paused: true }, {}, THEME), b = E.mount(els(), { kind: 'fund', size: 200 }, { dpr: 1 }, {}, THEME);
+    const samples = []; E.onFrame((s) => samples.push(s));
+    frames(3);
+    expect(samples.map((s) => s.views)).toEqual([1, 1, 1]);
+    a.unmount(); b.unmount();
+  });
+});
+
 describe('WebGL context loss and restore', () => {
   it('loss: every view of the context shows its still and nothing renders; restore: the environment is rebuilt, the target cleared with alpha, drawing resumes', () => {
     const E = engine(), seen = [];

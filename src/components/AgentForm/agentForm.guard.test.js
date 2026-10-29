@@ -111,10 +111,13 @@ describe('the import graph: three.js only through the lazy engine module', () =>
     expect(edges).toEqual(['src/components/AgentForm/loadEngine.js -> src/components/AgentForm/engine/index.js (lazy)']);
   });
 
-  it('App.jsx\'s static graph reaches no agent form module, no lab and no three', () => {
+  it('App.jsx\'s static graph reaches one agent form module, the SVG still — no wrapper, no engine, no lab and no three', () => {
     const { files, packages } = staticClosure(path.join(SRC, 'App.jsx'));
     expect(files.size).toBeGreaterThan(200);
-    expect([...files].map(rel).filter((f) => f.includes('/AgentForm') || f.includes('agentFormLab'))).toEqual([]);
+    // Build S1: the battle view (in App's static graph) shows the form's still while its lazy battle form loads
+    // (battleView/battleAgentFormSlot.jsx); the still is SVG and imports no three. The form, its wrapper and the
+    // engine stay behind import()s. Flag-off, the still folds away with the rest (the build report's dist diff).
+    expect([...files].map(rel).filter((f) => f.includes('/AgentForm') || f.includes('agentFormLab'))).toEqual(['src/components/AgentForm/AgentFormStill.jsx']);
     expect([...packages].filter(isThree)).toEqual([]);
   });
 

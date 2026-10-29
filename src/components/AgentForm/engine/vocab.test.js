@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   STATES, MOODS, CORE, ARMOR, KINDS, FORM_ORDER, META, rng, hash, fitK, stillT, viewT0,
   EQUIP_KEYS, UNEQUIP_KEYS, EQUIP_MS, UNEQUIP_MS, fitAtMs, msAtFit, startTween, tweenFit,
+  FRAME_SCALE, frameScale, swapProgress, swapScale,
 } from './vocab.js';
 
 describe('the design vocabulary, as shipped', () => {
@@ -85,5 +86,39 @@ describe('the equip tween — board 2\'s keys, piecewise-linear', () => {
     expect(tweenFit(on, 900)).toEqual({ fit: 1, done: true });
     const off = startTween(false, 0, 1);
     expect(tweenFit(off, 700)).toEqual({ fit: 0, done: true });
+  });
+});
+
+// Build S1 (ruling R5): the swap's size step.
+describe('the framing scales and the swap\'s size step (build S1, ruling R5)', () => {
+  it('each form\'s framing scale is the design\'s (af3-standalone.js.txt:192, :213, :238, :258, :287, :314, :361); unknown is bare Shadow\'s', () => {
+    expect(FRAME_SCALE).toEqual({ none: 1.25, trend: .74, contra: .95, spec: .9, preserve: .95, divers: .95, fund: .95 });
+    expect(frameScale('spec')).toBe(.9);
+    expect(frameScale('unknown')).toBe(1.25);
+    expect(frameScale(undefined)).toBe(1.25);
+    expect(frameScale('toString')).toBe(1.25);
+  });
+
+  it('progress is the share of the travel since the tween began: 0 at its start, 1 at its end, either way', () => {
+    expect(swapProgress(true, 0, 0)).toBe(0);
+    expect(swapProgress(true, 0, .55)).toBeCloseTo(.55, 12);
+    expect(swapProgress(true, 0, 1)).toBe(1);
+    expect(swapProgress(true, .5, .5)).toBe(0);
+    expect(swapProgress(true, .5, .75)).toBeCloseTo(.5, 12);
+    expect(swapProgress(false, 1, 1)).toBe(0);
+    expect(swapProgress(false, 1, .45)).toBeCloseTo(.55, 12);
+    expect(swapProgress(false, .6, 0)).toBe(1);
+    expect(swapProgress(true, 1, 1)).toBe(1);
+    expect(swapProgress(false, 0, 0)).toBe(1);
+  });
+
+  it('the scale starts at the one last drawn and ends exactly on the new form\'s', () => {
+    const on = { on: true, fit0: 0, from: 1.25, to: .74 };
+    expect(swapScale(on, 0)).toBe(1.25);
+    expect(swapScale(on, 1)).toBe(.74);
+    expect(swapScale(on, .5)).toBeCloseTo(.995, 12);
+    const off = { on: false, fit0: .8, from: .95, to: 1.25 };
+    expect(swapScale(off, .8)).toBe(.95);
+    expect(swapScale(off, 0)).toBe(1.25);
   });
 });

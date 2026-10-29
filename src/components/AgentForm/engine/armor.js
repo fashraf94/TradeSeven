@@ -8,7 +8,7 @@
 // (core.js makeBuildKit) so the render context owns and disposes them.
 
 import * as THREE from 'three';
-import { TAU, rng, hash, lo, clamp, fitK } from './vocab.js';
+import { TAU, rng, hash, lo, clamp, fitK, FRAME_SCALE } from './vocab.js';
 import { V3, Q, sphShell, sphSurface, polyPrism, polyFlat, ringBand, ringSurface, basis, inset, makePlate, setAway, applyFit } from './core.js';
 
 // Scratch colours: each update sets them before use, so no state carries from one render to the next.
@@ -41,7 +41,7 @@ function buildTrend(E) {
       L.flag();
     }
   }
-  return { group: g, plates, frame: .74, update };
+  return { group: g, plates, frame: FRAME_SCALE.trend, update };
 }
 
 // 2 Contrarian — gimbals. Two (then three) rings tumble on their own diameters in opposite directions; light spirals inward against the outer spin.
@@ -62,7 +62,7 @@ function buildContra(E) {
     hot.set(pal.core); const cnt = Math.round(K * clamp(S.signals, 0, 1.4) / 1.4);
     parts.forEach((s, k) => { if (k >= cnt || fit < .6) { s.material.opacity = 0; return; } const p = ((t * .16 * S.speed + k / K) % 1 + 1) % 1, rad = .98 - .82 * p, ang = -(t * .55 * S.speed) - p * 6.5 + k * 2.1; s.position.set(rad * Math.cos(ang), .06 * Math.sin(ang * 2 + t), rad * Math.sin(ang)); s.material.color.copy(hot); s.material.opacity = Math.sin(Math.PI * p) * .95 * S.bright; });
   }
-  return { group: g, plates, frame: .95, update };
+  return { group: g, plates, frame: FRAME_SCALE.contra, update };
 }
 
 // 3 Speculator — broken shards around a bare core. Shards twitch; arcs re-strike between jagged edges.
@@ -87,7 +87,7 @@ function buildSpec(E) {
       arc.L.flag(); arc.tA.position.copy(P1).multiplyScalar(1.04); arc.tB.position.copy(P2).multiplyScalar(1.04); arc.tA.material.color.copy(hot); arc.tB.material.color.copy(hot); arc.tA.material.opacity = arc.tB.material.opacity = al * .9;
     });
   }
-  return { group: g, plates, frame: .9, update };
+  return { group: g, plates, frame: FRAME_SCALE.spec, update };
 }
 
 // 4 Capital Preserver — overlapping shield rows and two caps. Slow pulse; stress closes the rows and dims the seams.
@@ -107,7 +107,7 @@ function buildPreserve(E) {
     const stress = Math.max(0, -S.open), op = Math.max(0, S.open), pulse = 1 + .022 * (1 - .4 * stress) * Math.sin(t * .9 * S.speed * (1 + .6 * stress)), Rk = pulse * (1 - .07 * stress) * (1 + .05 * op) * (1 + .06 * S.lift * Math.max(0, Math.sin(t * 2.6)));
     for (const p of plates) { const u = p.userData; applyFit(p, fitK(fit, u.order, .5), off); p.position.multiplyScalar(Rk); p.scale.multiplyScalar(1 + .07 * stress - .04 * op); u.edgeK *= 1 - .35 * stress; }
   }
-  return { group: g, plates, frame: .95, update };
+  return { group: g, plates, frame: FRAME_SCALE.preserve, update };
 }
 
 // 5 Diversifier — pods in formation. Two saddle plates hold the brain; hex pods orbit on a tilted ring, tethered to the core.
@@ -136,7 +136,7 @@ function buildDivers(E) {
       const s = sigs[k]; if (k >= cnt || !p.visible) { s.material.opacity = 0; return; } const v = ((t * .3 * S.speed + k / K) % 1 + 1) % 1; s.position.set(ax + (p.position.x - ax) * v, ay + (p.position.y - ay) * v - .06 * Math.sin(Math.PI * v), az + (p.position.z - az) * v); s.material.color.copy(hot); s.material.opacity = .9 * vis;
     });
   }
-  return { group: g, plates, frame: .95, update };
+  return { group: g, plates, frame: FRAME_SCALE.divers, update };
 }
 
 // 6 Fundamental Investor — crystal. Icosahedral facets, inset for seams, locking top-back to bottom-front.
@@ -167,7 +167,7 @@ function buildFund(E) {
     const stress = Math.max(0, -S.open), op = Math.max(0, S.open);
     for (const p of plates) { const u = p.userData; applyFit(p, fitK(fit, u.order, .9), off); p.position.addScaledVector(u.dir, .09 * op - .05 * stress + .1 * S.lift * Math.max(0, Math.sin(t * 2.6 - u.fi * .5))); if (S.lift) u.edgeK *= .55 + .45 * Math.max(0, Math.sin(t * 3 - u.fi * .55)); }
   }
-  return { group: g, plates, frame: .95, update };
+  return { group: g, plates, frame: FRAME_SCALE.fund, update };
 }
 
 export const BUILDERS = Object.freeze({ trend: buildTrend, contra: buildContra, spec: buildSpec, preserve: buildPreserve, divers: buildDivers, fund: buildFund });

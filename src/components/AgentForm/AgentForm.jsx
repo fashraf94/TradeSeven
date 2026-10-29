@@ -1,14 +1,26 @@
 // src/components/AgentForm/AgentForm.jsx
 //
 // One agent form: Shadow, bare or in an archetype's armor, drawn live by the WebGL engine
-// (src/components/AgentForm/engine/, loaded on first mount through loadEngine.js). Build S0 mounts it only
-// in the lab (src/screens/AgentFormLab.jsx); nothing in the hub, the battle view or the picker renders it.
+// (src/components/AgentForm/engine/, loaded on first mount through loadEngine.js). Mounted by the lab
+// (src/screens/AgentFormLab.jsx, build S0) and, behind their flags (src/config/agentFormFlags.js, build S1), by
+// the Command Center hero (CommandCenter/HubAgentForm.jsx) and the battle view (battleView/BattleAgentForm.jsx).
 //
 // Props (Phase 0 report §4): archetype (an app code id), mood, coreStage and armorStage (1–3), allegiance
 // ('player' teal, 'opponent' copper and mirrored), size (CSS px). Then the options the lab compares:
 // reducedMotion (the caller's one source; this component reads no media query), bloom
 // ('filter' | 'css' | 'webgl' | 'off'), drawPath ('shared' | 'direct'), batched, rate ('live' | 'half' |
 // 'still'). `equipped` false → true plays the 900 ms suit-up, true → false the 700 ms unequip.
+//
+// Build S1 (the hub hero and the battle forms):
+//   - `equipOnChange`: a change of archetype after mount plays the change (the engine's swap: the new set suits up,
+//     or the old one comes off before bare Shadow shows, the size tweened across it — ruling R5). Without it, or at
+//     mount, the new form simply shows. The caller decides which changes are real ones (the hub: a ready read of
+//     the same agent).
+//   - `paused`: the view holds its frame and the loop stops for it (the hub's lifetime ruling R-S7-5).
+//   - `clip`: `contain: paint`, so the CSS glow stops at the box's edge as the design's in-canvas glow does
+//     (ruling R3: where the spill would reach the hub's connector).
+//   - a form drawn under 40 px is a still, whatever the rate (ruling R12; agentFormSpec.js rateForSize).
+//   - the pixel ratio is re-read on a window resize (the S0 review's carry-over §5), not only at render.
 //
 // What shows: the engine's canvas while the form is live. The form's own still (its designed stillT frame,
 // cached at mount) when the WebGL context is lost, or when a frame of this view threw (the engine drops the view
@@ -18,27 +30,43 @@
 
 import { useEffect, useRef, useState } from 'react';
 import AgentFormStill from './AgentFormStill';
-import { agentFormSpec, agentFormLabel, hasWebGL } from './agentFormSpec';
+import { agentFormSpec, agentFormLabel, hasWebGL, rateForSize } from './agentFormSpec';
 import { readAgentFormTheme } from './agentFormTokens';
 import { loadAgentFormEngine } from './loadEngine';
 
 const fill = { position: 'absolute', inset: 0, display: 'block' };
 
+const readDpr = () => (typeof devicePixelRatio === 'number' && devicePixelRatio > 0 ? devicePixelRatio : 1);
+
+/** The pixel ratio, re-read when the window resizes (a zoom or a move to another screen changes it). */
+function usePixelRatio() {
+  const [dpr, setDpr] = useState(readDpr);
+  useEffect(() => {
+    const onResize = () => setDpr(readDpr());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return dpr;
+}
+
 export default function AgentForm({
   archetype, mood = 'idle', coreStage = 1, armorStage = 1, allegiance = 'player', size = 200,
   reducedMotion = false, bloom = 'filter', drawPath = 'shared', batched = false, rate = 'live',
-  equipped = true, label, onStatus, seed = 1,
+  equipped = true, label, onStatus, seed = 1, equipOnChange = false, paused = false, clip = false,
 }) {
   const webgl = hasWebGL();
   const spec = agentFormSpec({ archetype, mood, coreStage, armorStage, allegiance, size, seed });
-  const dpr = typeof devicePixelRatio === 'number' && devicePixelRatio > 0 ? devicePixelRatio : 1;
-  const options = { path: drawPath === 'direct' ? 'direct' : 'shared', bloom, batched, rate, reducedMotion, dpr };
+  const dpr = usePixelRatio();
+  const drawRate = rateForSize(rate, spec.size);
+  const options = { path: drawPath === 'direct' ? 'direct' : 'shared', bloom, batched, rate: drawRate, reducedMotion, dpr, paused };
   const [status, setStatus] = useState(webgl ? 'loading' : 'unavailable');
   const [stillReady, setStillReady] = useState(false);
   const boxRef = useRef(null), canvasRef = useRef(null), slotRef = useRef(null), stillRef = useRef(null), overlayRef = useRef(null);
   const viewRef = useRef(null);
+  // The kind the mounted view draws (or is headed for), so a change can be told from the mount.
+  const kindRef = useRef(null);
   const latest = useRef(null);
-  latest.current = { spec, options, equipped, onStatus };
+  latest.current = { spec, options, equipped, onStatus, equipOnChange };
 
   // Mount the engine view (once per draw path); unmount releases it, and the last view releases the engine.
   useEffect(() => {
@@ -48,6 +76,7 @@ export default function AgentForm({
     loadAgentFormEngine().then((mod) => {
       if (!live) return;
       const { spec: s, options: o, equipped: on } = latest.current;
+      kindRef.current = s.kind;
       viewRef.current = mod.getAgentFormEngine().mount(
         { box: boxRef.current, canvas: canvasRef.current, slot: slotRef.current, stillCanvas: stillRef.current, overlay: overlayRef.current },
         { ...s, fit: on ? 1 : 0, unfit: !on }, o, { onStatus: report }, readAgentFormTheme(),
@@ -57,8 +86,14 @@ export default function AgentForm({
   }, [webgl, options.path]);
 
   const { kind, state, core, armor, pal, face } = spec;
-  useEffect(() => { if (viewRef.current) viewRef.current.update({ kind, state, core, armor, pal, face, size: spec.size, seed: spec.seed }); }, [kind, state, core, armor, pal, face, spec.size, spec.seed]);
-  useEffect(() => { if (viewRef.current) viewRef.current.setOptions({ bloom, batched, rate, reducedMotion, dpr }); }, [bloom, batched, rate, reducedMotion, dpr]);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const patch = { kind, state, core, armor, pal, face, size: spec.size, seed: spec.seed };
+    if (latest.current.equipOnChange && kindRef.current !== kind) view.swap(patch); else view.update(patch);
+    kindRef.current = kind;
+  }, [kind, state, core, armor, pal, face, spec.size, spec.seed]);
+  useEffect(() => { if (viewRef.current) viewRef.current.setOptions({ bloom, batched, rate: drawRate, reducedMotion, dpr, paused }); }, [bloom, batched, drawRate, reducedMotion, dpr, paused]);
   const firstEquip = useRef(true);
   useEffect(() => { if (firstEquip.current) { firstEquip.current = false; return; } if (viewRef.current) viewRef.current.equip(equipped); }, [equipped]);
 
@@ -67,8 +102,10 @@ export default function AgentForm({
   // `isolation: isolate` makes the box its own stacking context, so the overlay's plus-lighter blend adds light to
   // the form's canvas alone (the design's in-canvas 'lighter' composite) and not to whatever the page paints behind
   // the box; without it the glow depends on the backdrop and saturates over a light one (review SR-1).
+  // `label={null}` makes the form decorative (build S1: the battle's forms sit beside the name they would repeat).
+  const decorative = label === null;
   return (
-    <div ref={boxRef} role="img" aria-label={label || agentFormLabel(spec)} data-agent-form="" data-agent-form-status={status} data-agent-form-path={options.path} style={{ position: 'relative', isolation: 'isolate', width: px, height: px, flexShrink: 0 }}>
+    <div ref={boxRef} role={decorative ? undefined : 'img'} aria-label={decorative ? undefined : label || agentFormLabel(spec)} aria-hidden={decorative ? 'true' : undefined} data-agent-form="" data-agent-form-status={status} data-agent-form-path={options.path} style={{ position: 'relative', isolation: 'isolate', ...(clip ? { contain: 'paint' } : null), width: px, height: px, flexShrink: 0 }}>
       {webgl && <canvas ref={canvasRef} aria-hidden="true" data-agent-form-canvas="" style={{ ...fill, width: px, height: px, visibility: live && !direct ? 'visible' : 'hidden' }} />}
       {webgl && <div ref={slotRef} aria-hidden="true" data-agent-form-direct="" style={{ ...fill, visibility: live && direct ? 'visible' : 'hidden' }} />}
       {webgl && <canvas ref={overlayRef} aria-hidden="true" data-agent-form-overlay="" style={{ ...fill, width: px, height: px, display: 'none', mixBlendMode: 'plus-lighter', pointerEvents: 'none', visibility: live ? 'visible' : 'hidden' }} />}

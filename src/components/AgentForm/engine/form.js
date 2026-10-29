@@ -11,7 +11,7 @@
 // sortTransparent / sortOpaque), so a frame does not depend on which forms were built before it.
 
 import * as THREE from 'three';
-import { STATES, CORE, ARMOR, clamp } from './vocab.js';
+import { STATES, CORE, ARMOR, FRAME_SCALE, clamp } from './vocab.js';
 import { plateMaterial, makeBuildKit, buildBrain } from './core.js';
 import { BUILDERS } from './armor.js';
 import { attachBatch } from './batch.js';
@@ -55,7 +55,8 @@ const camDir = new THREE.Vector3(), invQ = new THREE.Quaternion();
 export function poseForm(F, spec, t, C, pal) {
   const S = STATES[spec.state] || STATES.idle, size = spec.size, small = size < 90, fit = spec.fit == null ? 1 : spec.fit, A = ARMOR[spec.armor | 0] || ARMOR[0];
   F.group.rotation.set(0, .16 * Math.sin(t * .27 + (spec.seed | 0)) + S.scan * .3 * Math.sin(t * .9) + (spec.turn || 0), -.14 * S.lean);
-  F.group.position.set(0, S.lift * .07 * Math.max(0, Math.sin(t * 2.6)), 0); F.group.scale.setScalar(F.armor ? F.armor.frame : 1.25);
+  // The form's own framing scale, or — mid-swap (build S1, ruling R5) — the scale the swap's tween has reached.
+  F.group.position.set(0, S.lift * .07 * Math.max(0, Math.sin(t * 2.6)), 0); F.group.scale.setScalar(Number.isFinite(spec.scale) ? spec.scale : (F.armor ? F.armor.frame : FRAME_SCALE.none));
   const camera = C.camera, D = 4.7 * (spec.zoom || 1), yaw = .55, pitch = .25; camera.position.set(D * Math.sin(yaw) * Math.cos(pitch), D * Math.sin(pitch), D * Math.cos(yaw) * Math.cos(pitch)); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
   C.scene.fog.near = D - .7; C.scene.fog.far = D + 3.1;
   camDir.copy(camera.position).normalize().applyQuaternion(invQ.copy(F.group.quaternion).invert());
