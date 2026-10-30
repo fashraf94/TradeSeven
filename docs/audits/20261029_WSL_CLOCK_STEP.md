@@ -202,5 +202,5 @@ PR #1010's §5 rows 2–7, 9 and 10, left as they are: `candlePass.test.js:162` 
 
 ## 7. For the founder
 
-- **FQ-1 (row 1's lever):** the prompt asked for #1010's fixture or vitest fake timers. The backfill row already fakes `Date`, and its only exposure is vitest's own timeout reading of the real wall clock, which neither can reach (§4.2), so it got a per-row 20 s budget instead. Confirm that lever, or name another (e.g. a cheaper fixture range, which would change what the row proves).
+- **FQ-1 (row 1's lever):** the prompt asked for #1010's fixture or vitest fake timers. The backfill row already fakes `Date`, and its only exposure is vitest's own timeout reading of the real wall clock, which neither can reach (§4.2), so it got a per-row 20 s budget instead. **Ruled (founder, Oct 30): keep the 20 s budget.**
 - Nothing else to decide for the fix. If a later WSL update stops running its own chronyd (check: `wsl --system -- chronyc tracking` shows `PHC0`), re-enable timesyncd with the undo above.
