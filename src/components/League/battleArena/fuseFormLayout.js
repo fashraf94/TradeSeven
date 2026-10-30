@@ -33,7 +33,9 @@ export function fuseFormPx(you, compact) {
 const FIGURE_AIR = 2;
 /**
  * The bottom of the head row, in the hero's own px. Measured in headless Edge with the app's stylesheet, which forces every
- * button to 16 px: 3 px below fuseGeometry.js's padT note, which was measured without it.
+ * button to 16 px: 3 px below fuseGeometry.js's padT note, which was measured without it. The font was Segoe UI, the
+ * stack's tallest (Inter is not installed on the machine that measured it): the crown clears the toggle by 2 px on Windows
+ * and by 3-4 px in phone fonts.
  */
 const HEAD_ROW_BOTTOM = { compact: 46, desktop: 52 };
 /** How far the crown stands above its form's box (FuseHero.jsx FhTip). */

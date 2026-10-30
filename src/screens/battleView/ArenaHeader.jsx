@@ -128,7 +128,11 @@ export function SwitchCounter(props) {
   return <AnimatedScore {...props} instant={!mounted.current} />;
 }
 
-/** What a phone's row keeps beside a gated score: padding 16, the mark's footprint 40, gap 8, half the centre 29, gap 4. */
+/**
+ * What a phone's row keeps beside a gated score: padding 16, the mark's footprint 40, gap 8, half the centre 29, and 4 more.
+ * The phone grid's gap is really 10, so the row's real inset is 103, and the 6 px between that and this is the whole
+ * measured clearance. It is not spare.
+ */
 const PHONE_SCORE_INSET_PX = 97;
 /** One character of a tabular score, in em (measured in the app's font stack, index.css:54). */
 const SCORE_CHAR_EM = 0.456;

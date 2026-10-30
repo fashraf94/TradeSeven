@@ -1,9 +1,9 @@
 // src/components/League/battleArena/leagueAgentFormSlot.jsx
 //
 // Agent form build S2 — what the League's sites import for the agent forms, kept apart from the form itself, as
-// battleView/battleAgentFormSlot.jsx is: LeagueAgentForm.jsx (the form, its moods, and through them the hub's outcome
-// derivation) loads lazily, and only while AGENT_FORM_LEAGUE_ENABLED is on. The declaration below is the literal ternary
-// Rollup folds to `null` with the flag off, so the import() and everything behind it leave the bundle.
+// battleView/battleAgentFormSlot.jsx is: LeagueAgentForm.jsx (the form and its moods) loads lazily, and only while
+// AGENT_FORM_LEAGUE_ENABLED is on. The declaration below is the literal ternary Rollup folds to `null` with the flag off,
+// so the import() and everything behind it leave the bundle.
 //
 //   LeagueAgentFormScope   a screen's scope: the live arena's (LeagueBattleArenaLive.jsx), or the lobby preview's.
 //   LeagueStandingContext  the fuse hero's board for its tips: its ranked seats, from deriveCut, the crown's own source.

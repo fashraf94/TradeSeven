@@ -5,6 +5,9 @@
 // fresh has no archetype for them. This reads it once for the whole group, through the same endpoint, and never again: a
 // finished game's archetypes do not change. Loaded only from LeagueAgentForm.jsx's lazy chunk.
 //
+// The response is each seat's completed battle in full, minus the frozen idea, and only agentContext.archetype is kept:
+// nominally 4 × 5 = 20 documents, with no limit or mask, at roughly 120-320 KB a read.
+//
 // Unknown stays a bare copper core. A failed read answers an empty map and stays answered until the page reloads, so a
 // form that reads this while it renders can never turn a failure into a retry loop.
 
