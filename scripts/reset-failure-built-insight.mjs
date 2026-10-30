@@ -26,10 +26,12 @@
 // `apply` works from the plan as a contract. The SHA-256 `plan` prints is passed
 // back by hand, so the reference sits outside the file it vouches for. Before
 // any write, apply refuses on: a plan hash mismatch; a weekday in
-// America/New_York without --allow-weekday; a live battle (or a deploy in its
-// lock window) on an agent in the plan, its ranked parent or a clone of it.
-// Then it writes backup.local.json, reads it back, and writes each agent in its
-// own compare-and-set transaction. Re-running apply on a reset agent is a no-op.
+// America/New_York without --allow-weekday; a live battle (or a deploy inside
+// its two-minute window) on an agent in the plan, its ranked parent or a clone
+// of it. Then it writes backup.local.json, reads it back, and writes each agent
+// in its own compare-and-set transaction. Re-running apply on a reset agent is a
+// no-op. Restore has no battle or weekend guard, on purpose: it is the emergency
+// undo, and a live battle reads only its frozen copy.
 //
 // THE WRITE, per agent, and nothing else:
 //   consolidatedInsight: ''                   the creation-time value
@@ -67,8 +69,11 @@ const BACKUP_SCHEMA = 'insight-reset-backup-v1';
 const AGENT_ID = /^[^/]+$/; // one document directly under agents, whatever the id's alphabet
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 // api/agent/decide.js: a deployingAt younger than this is a deploy in progress;
-// an older one is a stale lock that the next deploy walks through.
-const DEPLOY_LOCK_MS = 120_000;
+// an older one is a stale lock that the next deploy walks through. The same
+// request then clears deployingAt, stamps lastDeployedAt and only later commits
+// the battle, from an agent it read at its start, so a lastDeployedAt younger
+// than this can be a battle about to freeze the old paragraph.
+const DEPLOY_WINDOW_MS = 120_000;
 
 // Every field the reset changes, so every field the backup holds.
 const BACKED_UP_FIELDS = Object.freeze([
@@ -78,7 +83,8 @@ const BACKED_UP_FIELDS = Object.freeze([
 const RESTORED_FIELDS = Object.freeze(['consolidatedInsight', 'disciplines', 'pendingConsolidation']);
 const FLEET_FIELDS = Object.freeze([
   ...BACKED_UP_FIELDS,
-  'isTrainingClone', 'isCasualClone', 'rankedAgentId', 'activeBattleId', 'deployingAt', 'stats.gamesPlayed',
+  'isTrainingClone', 'isCasualClone', 'rankedAgentId', 'activeBattleId',
+  'deployingAt', 'lastDeployedAt', 'stats.gamesPlayed',
 ]);
 
 /** A refusal is the script's own sentence: it never carries an id or agent text. */
@@ -107,12 +113,14 @@ export function isAlreadyReset(a) {
     && a.consolidatedInsightResetReason === RESET_REASON;
 }
 
-function deployInFlight(a, nowMs) {
-  const at = Date.parse(a.deployingAt);
-  return Number.isFinite(at) && nowMs - at < DEPLOY_LOCK_MS;
+function withinDeployWindow(stamp, nowMs) {
+  const at = Date.parse(stamp);
+  return Number.isFinite(at) && nowMs - at < DEPLOY_WINDOW_MS;
 }
 
-const docHoldsBattle = (a, nowMs) => Boolean(a.activeBattleId) || deployInFlight(a, nowMs);
+const docHoldsBattle = (a, nowMs) => Boolean(a.activeBattleId)
+  || withinDeployWindow(a.deployingAt, nowMs)
+  || withinDeployWindow(a.lastDeployedAt, nowMs);
 
 function backedUpFieldsOf(a) {
   const fields = {};
@@ -171,6 +179,9 @@ export function computeCensus(fleet, activeIds, nowMs) {
     outsideSet: holders.length - inSet.length,
     nonStringParagraph: fleet.filter((a) => a.consolidatedInsight != null && typeof a.consolidatedInsight !== 'string').length,
     alreadyReset: fleet.filter(isAlreadyReset).length,
+    // A rewrite already running when the reset landed writes with no compare, so
+    // a stamp over a paragraph is an agent to look at, not a reset that held.
+    stampOverParagraph: holders.filter((a) => typeof a.consolidatedInsightResetAt === 'string').length,
     clones: 0,
     nonClones: 0,
     pendingConsolidation: 0,
@@ -211,6 +222,7 @@ export function renderCensus(c, { readAt }) {
     '',
     `Agents: ${c.agents}   holding a paragraph: ${c.holders}   a paragraph that is not a string: ${c.nonStringParagraph}   already reset: ${c.alreadyReset}`,
     `In the set: ${c.inSet}   by (a): ${c.byRule.a}   by (b): ${c.byRule.b}   outside the set: ${c.outsideSet}`,
+    `Reset, then given a paragraph again: ${c.stampOverParagraph}`,
     '',
     'Of the set:',
     `  clones: ${c.clones}   non-clones: ${c.nonClones}`,
@@ -319,9 +331,13 @@ async function resetOneAgent(db, entry, captured, runStamp, nowMs) {
     const snap = await tx.get(ref);
     if (!snap.exists) return 'changed';
     const live = snap.data();
+    // This run's own stamp: the commit landed and its acknowledgement was lost,
+    // so the transaction ran again. A run stamp belongs to one run alone.
+    if (live.consolidatedInsightResetAt === runStamp) return 'written';
     if (isAlreadyReset(live)) return 'noop';
     // Compare-and-set: the paragraph is the plan's, it is still in the set, and
-    // every field is what the backup holds, so restore gives back this state.
+    // every field is what the backup holds, so what restore writes back is what
+    // was really here.
     if (typeof live.consolidatedInsight !== 'string' || sha256(live.consolidatedInsight) !== entry.insightSha256) return 'changed';
     if (selectionRule(live.consolidatedInsight) === null) return 'changed';
     if (!isDeepStrictEqual(backedUpFieldsOf(live), captured)) return 'changed';
@@ -385,6 +401,7 @@ export async function runApply({
   const runStamp = now.toISOString();
   const { backupPath, backupSha256, agents } = writeBackup(newRunDir(runsRoot, now), plan, fleet, runStamp, planSha256);
   const capturedById = new Map(agents.map((row) => [row.id, row]));
+  log([`Run stamp: ${runStamp}`, `Backup: ${backupPath}`, `Backup SHA-256: ${backupSha256}`].join('\n'));
 
   const counts = { written: 0, changed: 0, battle: 0, noop: 0, errors: 0, notAttempted: 0 };
   const errorClasses = {};
@@ -406,9 +423,6 @@ export async function runApply({
   const skipped = counts.changed + counts.battle;
   const clean = skipped === 0 && counts.errors === 0 && counts.notAttempted === 0;
   log([
-    `Run stamp: ${runStamp}`,
-    `Backup: ${backupPath}`,
-    `Backup SHA-256: ${backupSha256}`,
     `written=${counts.written} skipped=${skipped} (changed since plan ${counts.changed}, battle started ${counts.battle}) no-op=${counts.noop} errors=${counts.errors} not attempted=${counts.notAttempted}`,
     ...Object.keys(errorClasses).sort().map((cls) => `  error class ${cls}: ${errorClasses[cls]}`),
     clean ? 'Clean run. Run census again to confirm the set is empty.' : 'Not a clean run. Bring these counts back before doing anything else.',
@@ -425,6 +439,9 @@ async function restoreOneAgent(db, row, runStamp) {
     if (!snap.exists) return 'skipped';
     const live = snap.data();
     if (live.consolidatedInsight !== '' || live.consolidatedInsightResetAt !== runStamp) return 'skipped';
+    // A rewrite can return an empty paragraph with a new dossier and an advanced
+    // cycle: the reset's stamp would survive it, and the old dossier must not.
+    if (live.disciplines !== undefined) return 'skipped';
     const patch = {
       consolidatedInsightResetAt: FieldValue.delete(),
       consolidatedInsightResetReason: FieldValue.delete(),
@@ -514,7 +531,8 @@ export function failureLine(err) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  await import('./loadLocalEnv.js');
+  const { requireFirebaseCreds } = await import('./loadLocalEnv.js');
+  requireFirebaseCreds(); // an actionable line, names only, instead of FAILED: Error
   const { getFirebaseAdmin } = await import('../api/_utils/firebaseAdmin.js');
   const { assertWriteEpochOpen } = await import('../api/_utils/compositionWriteEpoch.js');
   const db = getFirebaseAdmin();

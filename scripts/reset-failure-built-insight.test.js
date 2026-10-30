@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { parse } from 'acorn';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import {
   Refusal, RESET_REASON, RUNS_ROOT, computeCensus, countBattleHolds, failureLine, isAlreadyReset,
   isWeekendInNewYork, parseArgs, renderCensus, runApply, runCensus, runPlan, runRestore, selectionRule,
@@ -73,23 +73,24 @@ const fleet = () => ({
 });
 const SET_IDS = [`${SECRET_ID}-ranked`, `${SECRET_ID}-training`, `${SECRET_ID}-casual`, `${SECRET_ID}-serialised`];
 
-function makeDb({ agents = fleet(), battles = [] } = {}) {
+function makeDb({ agents = fleet(), battles = [], raw = false } = {}) {
+  const copy = raw ? (value) => value : structuredClone; // raw keeps a Firestore class alive; a clone flattens it
   const state = {
-    agents: structuredClone(agents),
+    agents: copy(agents),
     agentBattles: Object.fromEntries(battles.map((b, i) => [`battle-${i}`, structuredClone(b)])),
   };
   const writes = [];
-  const hooks = { beforeTransaction: null, onUpdate: null };
+  const hooks = { beforeTransaction: null, onUpdate: null, retryEveryTransaction: false };
   let transactions = 0;
   const pick = (doc, fields) => {
-    if (!fields) return structuredClone(doc);
+    if (!fields) return copy(doc);
     const out = {};
     for (const f of fields) {
       const [head, tail] = f.split('.');
       if (tail === undefined) { if (doc[head] !== undefined) out[head] = doc[head]; }
       else if (doc[head]?.[tail] !== undefined) out[head] = { ...out[head], [tail]: doc[head][tail] };
     }
-    return structuredClone(out);
+    return copy(out);
   };
   const query = (coll, filters = [], fields = null) => ({
     where: (field, op, value) => { expect(op).toBe('=='); return query(coll, [...filters, [field, value]], fields); },
@@ -108,7 +109,7 @@ function makeDb({ agents = fleet(), battles = [] } = {}) {
         coll, id,
         get: async () => {
           const d = state[coll]?.[id];
-          return { id, exists: d !== undefined, data: () => structuredClone(d) };
+          return { id, exists: d !== undefined, data: () => copy(d) };
         },
       }),
     }),
@@ -116,11 +117,16 @@ function makeDb({ agents = fleet(), battles = [] } = {}) {
       const n = transactions;
       transactions += 1;
       await hooks.beforeTransaction?.(n, state);
-      const buffered = [];
-      const result = await fn({
-        get: (target) => target.get(),
-        update: (ref, patch) => { hooks.onUpdate?.(ref); buffered.push([ref, patch]); },
-      });
+      const attempt = async () => {
+        const patches = [];
+        const value = await fn({
+          get: (target) => target.get(),
+          update: (ref, patch) => { hooks.onUpdate?.(ref); patches.push([ref, patch]); },
+        });
+        return { patches, value };
+      };
+      if (hooks.retryEveryTransaction) await attempt(); // an aborted try: its writes never land
+      const { patches: buffered, value: result } = await attempt();
       for (const [ref, patch] of buffered) {
         writes.push({ id: ref.id, coll: ref.coll, patch });
         for (const [k, v] of Object.entries(patch)) {
@@ -236,6 +242,16 @@ describe('census (read-only, counts only)', () => {
     expect(c).toMatchObject({ inSet: 0, alreadyReset: 4, holders: 1, outsideSet: 1, holdingDisciplines: 0 });
   });
 
+  it('flags a stamp under a paragraph: a rewrite that landed just after the reset', async () => {
+    const { db, state } = makeDb();
+    await planAndApply(db);
+    state.agents[SET_IDS[0]].consolidatedInsight = 'A rewrite that was already running.';
+    const log = vi.fn();
+    const c = await runCensus({ db, now: SUNDAY, log });
+    expect(c).toMatchObject({ inSet: 0, alreadyReset: 3, stampOverParagraph: 1 });
+    expect(log.mock.calls[0][0]).toContain('Reset, then given a paragraph again: 1');
+  });
+
   it('the render carries every number the brief names', () => {
     const c = computeCensus([{ id: 'a', consolidatedInsight: '""', stats: { gamesPlayed: 7 } }], new Set(), SATURDAY.getTime());
     const text = renderCensus(c, { readAt: 'now' });
@@ -337,7 +353,7 @@ describe('apply: the write', () => {
     expect(result).toMatchObject({ written: 3, skipped: 1, changed: 1, clean: false });
     expect(writes.map((w) => w.id)).not.toContain(`${SECRET_ID}-ranked`);
     expect(state.agents[`${SECRET_ID}-ranked`].disciplines).toEqual(DOSSIER);
-    expect(log.mock.calls[0][0]).toContain('written=3 skipped=1 (changed since plan 1, battle started 0) no-op=0 errors=0 not attempted=0');
+    expect(log.mock.calls.at(-1)[0]).toContain('written=3 skipped=1 (changed since plan 1, battle started 0) no-op=0 errors=0 not attempted=0');
   });
 
   it('skips an agent that changed between the backup and its transaction', async () => {
@@ -402,7 +418,46 @@ describe('apply: the write', () => {
     expect(writes).toHaveLength(4);
     expect(second.backupPath).not.toBe(first.backupPath);
     expect(readFileSync(first.backupPath, 'utf8')).toBe(firstBackup);
-    expect(log.mock.calls[0][0]).toContain('written=0 skipped=0 (changed since plan 0, battle started 0) no-op=4');
+    expect(log.mock.calls.at(-1)[0]).toContain('written=0 skipped=0 (changed since plan 0, battle started 0) no-op=4');
+  });
+
+  it('counts its own commit as written when a transaction runs again after a lost acknowledgement', async () => {
+    const { db, hooks, writes } = makeDb();
+    const planned = await planOn(db);
+    hooks.beforeTransaction = (n, s) => {
+      if (n !== 0) return;
+      Object.assign(s.agents[SET_IDS[0]], {
+        consolidatedInsight: '', pendingConsolidation: false,
+        consolidatedInsightResetAt: SATURDAY.toISOString(), consolidatedInsightResetReason: 'failure_built',
+      });
+      delete s.agents[SET_IDS[0]].disciplines;
+    };
+    expect(await applyWith(db, planned)).toMatchObject({ written: 4, noop: 0, skipped: 0, clean: true });
+    expect(writes).toHaveLength(3);
+  });
+
+  it('counts its own commit as written even if the paragraph moved before the re-read', async () => {
+    const { db, hooks } = makeDb();
+    const planned = await planOn(db);
+    hooks.beforeTransaction = (n, s) => {
+      if (n === 0) Object.assign(s.agents[SET_IDS[0]], { consolidatedInsight: 'moved', consolidatedInsightResetAt: SATURDAY.toISOString() });
+    };
+    expect(await applyWith(db, planned)).toMatchObject({ written: 4, changed: 0 });
+  });
+
+  it('a transaction that runs again counts once and lands one patch', async () => {
+    const { db, hooks, writes } = makeDb();
+    const planned = await planOn(db);
+    hooks.retryEveryTransaction = true;
+    expect(await applyWith(db, planned)).toMatchObject({ written: 4, noop: 0, clean: true });
+    expect(writes).toHaveLength(4);
+  });
+
+  it('a value JSON cannot carry fails closed: the agent is skipped, never written', async () => {
+    const agents = { a: { consolidatedInsight: 'a reflection failed', disciplines: { at: Timestamp.fromMillis(0) } } };
+    const { db, writes } = makeDb({ agents, raw: true });
+    expect(await planAndApply(db)).toMatchObject({ written: 0, changed: 1, clean: false });
+    expect(writes).toEqual([]);
   });
 
   it('a blanked paragraph without the reset stamp is not a no-op', async () => {
@@ -562,6 +617,18 @@ describe('apply: the refusals (each before any write and before any backup)', ()
     s.agents[`${SECRET_ID}-serialised`].deployingAt = new Date(SATURDAY.getTime() - 30_000).toISOString();
   }));
 
+  it('a deploy past its lock, with its battle not yet committed, holds the run for the same two minutes', () => {
+    const nowMs = SATURDAY.getTime();
+    const agent = (lastDeployedAt) => [{ id: 'a', lastDeployedAt }];
+    expect(countBattleHolds(['a'], agent(new Date(nowMs - 119_000).toISOString()), new Set(), nowMs).own).toBe(1);
+    expect(countBattleHolds(['a'], agent(new Date(nowMs - 120_000).toISOString()), new Set(), nowMs).own).toBe(0);
+    expect(countBattleHolds(['a'], agent(null), new Set(), nowMs).own).toBe(0);
+  });
+
+  it('refuses on a fresh lastDeployedAt, read through the fleet the run really reads', () => refusesFor((s) => {
+    s.agents[`${SECRET_ID}-serialised`].lastDeployedAt = new Date(SATURDAY.getTime() - 30_000).toISOString();
+  }));
+
   it('countBattleHolds counts each agent once in `blocked`, and each relation on its own', () => {
     const rows = [
       { id: 'parent', activeBattleId: 'p' },
@@ -598,6 +665,14 @@ describe('apply: a battle that starts after the guard', () => {
     hooks.beforeTransaction = (n, s) => { if (n === 0) s.agentBattles.b = { agentId: SET_IDS[0], status: 'active' }; };
     const result = await applyWith(db, planned);
     expect(result).toMatchObject({ written: 3, battle: 1, clean: false });
+    expect(writes.map((w) => w.id)).not.toContain(SET_IDS[0]);
+  });
+
+  it('skips the agent whose deploy stamp appeared', async () => {
+    const { db, hooks, writes } = makeDb();
+    const planned = await planOn(db);
+    hooks.beforeTransaction = (n, s) => { if (n === 0) s.agents[SET_IDS[0]].lastDeployedAt = SATURDAY.toISOString(); };
+    expect(await applyWith(db, planned)).toMatchObject({ written: 3, battle: 1 });
     expect(writes.map((w) => w.id)).not.toContain(SET_IDS[0]);
   });
 
@@ -652,6 +727,18 @@ describe('apply: the backup', () => {
     writeFileSync(blocked, 'x');
     await expect(applyWith(db, planned, { runsRoot: blocked })).rejects.toThrow();
     expect(writes).toEqual([]);
+  });
+
+  it('prints the backup path and hash before the first write, so a crash cannot hide them', async () => {
+    const { db, hooks } = makeDb();
+    const planned = await planOn(db);
+    const log = vi.fn();
+    let printed = null;
+    hooks.onUpdate = () => { printed ??= log.mock.calls.flat().join('\n'); };
+    const result = await applyWith(db, planned, { log });
+    expect(printed).toContain(`Backup: ${result.backupPath}`);
+    expect(printed).toContain(`Backup SHA-256: ${result.backupSha256}`);
+    expect(printed).toContain(`Run stamp: ${SATURDAY.toISOString()}`);
   });
 
   it('a backup that reads back differently stops the run before any write', async () => {
@@ -759,6 +846,16 @@ describe('restore', () => {
     const second = await applyWith(db, planned, { now: SUNDAY });
     expect(await restoreFrom(db, second)).toMatchObject({ restored: 0, skipped: 4 });
     expect(state.agents[SET_IDS[0]].consolidatedInsight).toBe('');
+  });
+
+  it('skips an agent that holds a dossier again: a rewrite landed an empty paragraph over the stamp', async () => {
+    const { db, state } = makeDb();
+    const result = await planAndApply(db);
+    const dossier = { selection: [], execution: [] };
+    Object.assign(state.agents[SET_IDS[0]], { disciplines: dossier, evolutionCycle: 4 });
+    expect(await restoreFrom(db, result)).toMatchObject({ restored: 3, skipped: 1 });
+    expect(state.agents[SET_IDS[0]].disciplines).toEqual(dossier);
+    expect(state.agents[SET_IDS[0]].evolutionCycle).toBe(4);
   });
 
   it('skips an agent deleted since the reset', async () => {
@@ -945,6 +1042,12 @@ describe('writes only where they are meant to be (the growth replay §7 discipli
       ['main', '../api/_utils/firebaseAdmin.js'],
       ['main', '../api/_utils/compositionWriteEpoch.js'],
     ]);
+  });
+
+  it('main checks the credentials, by name only, before it touches Firestore', () => {
+    const check = SOURCE.indexOf('requireFirebaseCreds();');
+    expect(check).toBeGreaterThan(-1);
+    expect(check).toBeLessThan(SOURCE.indexOf('const db = getFirebaseAdmin();'));
   });
 
   it('the real fence is what main passes in', () => {
