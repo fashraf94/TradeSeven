@@ -75,7 +75,7 @@ A second `census`, 50 minutes later on the final code, gave the same numbers.
 
 From the main checkout, on `main`, after this PR is merged. Each command prints counts only, never an id or an agent's words, so everything below is safe to paste back.
 
-**The best time is Sunday, before 8 AM Eastern.** Any weekend time works, but the reflection cron is off then and Friday's queue has drained, so no rewrite can cross the reset (§11, IR-1). Run step 1 on Saturday morning to see what is holding.
+**The best time is Sunday, before 8 AM Eastern.** Any weekend time works, but the reflection cron is off then (it runs 13:00–00:45 UTC, `vercel.json:205-206`) and Friday's queue has drained, so no rewrite should cross the reset (§11, IR-1). Run step 1 on Saturday morning to see what is holding.
 
 **1. Look first.**
 
@@ -297,6 +297,9 @@ All on `ca470fa0` (the final code), in WSL Ubuntu, a private worktree of `~/pd-c
 | `census` | 30 Oct, 15:26 | The table in §1 |
 | A counts-only script in the session scratchpad | 30 Oct | Active battles (age, end, mode), stale `activeBattleId` pointers, the three outside the set, distinct paragraphs |
 | A one-query probe | 30 Oct | The script's in-transaction battle query shape, `agentId ==` + `status ==` + `select`, works with no index error. `firestore.indexes.json` holds no composite for this pair; Firestore merges the two single-field indexes, and `decide.js:757-760` already relies on it. |
+
+| A second `census`, through the real command line | 30 Oct, 16:16 | The final code's path through `main()`, including the credentials check. The same numbers. |
+| A counts-only script in the session scratchpad | 30 Oct | **13 of 13** agents in the set have backed-up fields that survive the JSON round trip unchanged. So the compare inside `apply` will not skip anyone on the real data. |
 
 Each ran with `.env.local` copied into the worktree as a git-ignored file and deleted in the same command. Each ad-hoc script passed the §7 grep first, in the same command. `plan` and `apply` were not run.
 
