@@ -20,6 +20,7 @@
 | 8 | Smoke | `claude/agent-form-s1-smoke` = `c6210846`: both flags on, plus the hub hero's corner readout in S7's format. Preview: https://trade-seven-nkueav6ig-fais-projects-bc179554.vercel.app. (Rebuilt by the size follow-up, with a size dial: §11.9.) |
 | 9 | Review threshold | The code diff is **46 files, +2,009 / −87 lines** (the report and pictures add more), over both BUILD_RULES §2 thresholds, so **a review session runs before merge.** No review is claimed here. |
 | 10 | Battle size follow-up (§11) | The founder's iPhone run found the battle figures a bit small. **Now 60 px on the phone header (was 48) and 88 on the desktop (was 72; the founder's ruling of October 29, 2026, so the engine keeps its small-form plate-edge brightening — §11.2); 50 in the pane (was 40); 50 / 55 for the floating mark (was 40 / 44).** A tighter framing, used only by the battle views, adds 12 % for bare Shadow (the CPU's core) and 5 % for two sets. Every box grows ×1.22–1.25, so the figures read 22–40 % larger. The header grows 5 px on the phone and 14 on the desktop, within the 12 / 16 allowed. Both flags stay `false`; the flag-off build is unchanged. |
+| 11 | Review fixes (§12) | The S1 review's verdict was MERGE AFTER FIXES. **Its three guard rows are landed:** the device ban (SR-1), the flag module's import pin (SR-2), and a Node row that bundles each flag-off-reached module (SR-3). The stale clearance comment is corrected (SR-6), and so is the citation (SR-12). **8 of 8 mutants killed**, the review's own among them. `main` is merged in, and flag-off identity holds: only the face-fix line differs. The founder's size check is recorded (§11.10). |
 
 ---
 
@@ -54,7 +55,7 @@
 - The table's module-level calls carry `/* @__PURE__ */` so an unread `Object.freeze(Object.keys(…))` cannot survive into the flag-off bundle (§3).
 
 **Hub hero** (`src/components/CommandCenter/HubAgentForm.jsx`):
-- It reads the hub's own agent read through `HubAgentFormContext`, which `CommandCenterHub.jsx` provides around the shells with `readers.agent`. That is the same read the Loadout shows (`useHubRuntime.js:104-107` reads `agent?.archetype` from it).
+- It reads the hub's own agent read through `HubAgentFormContext`, which `CommandCenterHub.jsx` provides around the shells with `readers.agent`. That is the same read the Loadout shows (`src/components/CommandCenter/hub/useHubRuntime.js:103-107` reads `agent?.archetype` from it; corrected by the review fixes, §12).
 - The form is keyed by the read: `pending` until ready, then `agent:<id>`. So the first answer, an agent or account switch, and any remount (a width change, a return to the hub) draw the form at once. Only a change between two ready reads of the same agent plays the suit-up.
 - Mood: `researching` while the hub's `processing` status is set (a hub-started deploy submitting), else `idle`.
 - Look: teal (R11), stage 1 through `getAgentGrowth` (R7), batched (R2), the CSS-blurred glow, clipped (R3).
@@ -96,7 +97,7 @@
 Every Phase 0 anchor was re-read; the line numbers hold.
 - `ShadowStage.jsx:157` and `:190`: the two `ShadowCanvas` mounts.
 - `CommandCenterHub.jsx:154-159`: `shadowSizeFor` (340 / 260 / 200 / 196). `:202-204`: the `processing` status.
-- `useHubRuntime.js:104-107`: the agent read.
+- `src/components/CommandCenter/hub/useHubRuntime.js:103-107`: the agent read (the same lines on `fc0cb6f0`; corrected by the review fixes, §12).
 - `ArenaHeader.jsx`:
   - `:232-244`: the face;
   - `:221`: the `1fr auto 1fr` grid;
@@ -620,4 +621,121 @@ The dial exists only on the smoke branch and never reaches #1011. Preview: https
 
 Paste the `60 s:` line, the value you liked, and anything that looked crowded back to Claude.
 
-**Result (recorded at the S1 review, October 29, 2026).** No size-check result and no `60 s:` line reached the review: the brief's paste slot for them was empty, so the line was not kept, and the `?formScale=` value the founder liked is not on record. The desktop size was settled instead by the founder's 88 px ruling (§11.2), applied by the review session in its own commit; the phone sizes stand as §11.2 gives them. A later reading of the hero's `60 s:` line on the smoke preview is still open (the S0 review's §5 item 3 and this section's step 2).
+**Result (the founder, October 29, 2026; recorded by the review fixes, §12).** The founder ran the size check on the smoke build at 60 / 90 px (`d4ca30cb`) and found the figures "great and perfectly sized" at the default size, so no `?formScale=` value is needed. The desktop box later became 88 px by the founder's ruling (§11.2), applied by the review session in its own commit; the phone sizes stand as §11.2 gives them. The `60 s:` line was not kept; S0's iPhone lab is the frame-rate record.
+
+(The S1 review, which ran before this result reached the record, wrote here that no size-check result had reached it.)
+
+---
+
+## 12. Review fixes
+
+**Run date:** October 29, 2026 · **Model:** Opus · **Branch:** `claude/agent-form-s1` (PR #1011, draft), from head `014f55e2`, pushed from the worktree branch `claude/agent-form-s1-review-fixes-1b5ef1` by refspec · **Spec:** the S1 review, `docs/audits/20261029_REVIEW_AGENT_FORM_S1.md`: its verdict (MERGE AFTER FIXES), SR-1, SR-2, SR-3, SR-6, SR-12, §3.1, §3.4 and §4.
+
+**Preamble.**
+- `git fetch origin` ran first. `origin/claude/agent-form-s1` = `014f55e2`, the brief's head, so no STOP. `origin/main` = `982f6661`. The tree was clean.
+- Fenced files read, called or edited: none. Nothing under `api/` changed.
+- **No product behaviour changes. Both flags stay `false`.**
+- The finding ids here are the S1 review's (SR-…), not the S0 review's.
+
+| # | Item | Result |
+|---|---|---|
+| 1 | SR-1: the R6d row | **The row now also bans the device-reading tokens** `\b(?:navigator\|hardwareConcurrency\|deviceMemory\|matchMedia\|Date)\b`.<br>- **Where:** over the stripped hub view and the six wrapper modules (`commandCenterHub.mount.guard.test.js:700` `DEVICE_READ`, the R6d loop at `:856-862`).<br>- **Precedent:** `ShadowCanvas.contract.jsdom.test.jsx:202`, less its frame tokens, which the row's `FRAME_READ` already holds.<br>- The pristine files hold none of these tokens, raw or stripped.<br>- **The plants**, in "the R6 rows bite" (`:866`): RV-B, and its variant, which leaves `const rate = hubFormRate(phone);` as it is and takes `phone` from the device a line above. A pin of the call line passes the variant; the ban sees both. |
+| 2 | SR-2: the flag module's imports | **`expect(importsOf('src/config/agentFormFlags.js')).toEqual([])`**, plus no load-time import, in a row of its own beside the `hubGateCopy.js` precedent (`:926-931`).<br>The `PERMITTED_TERMINALS` comment points to it (`:622-624`).<br>No walk over every terminal: most terminals legitimately import (the review). |
+| 3 | SR-3: the pure marks | **A new Node file**, `src/components/AgentForm/agentForm.flagOffBundle.test.js`, 5 rows (§12.1).<br>- **What it does:** bundles each flag-off-reached module as the flag-off graph reaches it, and reports any top-level statement that is not a used export or something one reaches.<br>- **Fidelity:** it reproduces the review's RV-P hunk exactly.<br>- **What it catches:** RV-P, RV-P2 and the three evasion shapes, wherever and in whatever order the marks sit.<br>- **Packages:** none new, and no `package.json` change. It uses Vite 7.1.12's own `build()` with `write: false`, its `parseAst`, and its esbuild JSX transform.<br>- **Time:** 0.25 s for the five rows on Windows. |
+| 4 | SR-6: the stale comment | **Comments only.** `AgentBattleScreen.jsx:614-622` and `AgentBattleScreen.pane.jsdom.test.jsx:290-296` now give the mark as:<br>- **Battle flag on:** 50 + 14 on the phone, 55 + 16 on the desktop.<br>- **Battle flag off:** the 48 px tap floor.<br><br>`AVATAR_CLEARANCE_PX` stays 96. The pane row's executable floor, `48 + 14` (`:301`), is unchanged. It is right for the flag-off phone render the row mounts, and the comment now says so. |
+| 5 | SR-12: the citation | §1 and §2 now cite `src/components/CommandCenter/hub/useHubRuntime.js:103-107`. §2 had the same short path and the same off-by-one, also on `fc0cb6f0` (the file has not changed since). |
+| 6 | Mutation | **8 of 8 killed** on Linux, each by its own row (§12.2). |
+| 7 | `main` merged | `origin/main` `982f6661` (PR #1013, the Film Room cards allowlist flip) was merged with the app's sync tool as `0cb704c0`, cleanly.<br>One file changed on both sides, `src/config/flagPinGuard.test.js`, in disjoint hunks: this build's two `DARK_BY_DESIGN` entries and #1013's runway comment. |
+| 8 | Flag-off identity | On the merged tree, against `982f6661` (Linux, unminified, hashes masked): **1 of 44 JS chunks differs, the entry, by one line: the face fix.**<br>The stylesheet, `index.html` and every other chunk are identical. That includes `AgentBattleScreen`'s, so the SR-6 comment changed no output byte. |
+| 9 | Checks | `lint:gate` exit 0 on the merged tree. Full Linux suite on the merged tree: **27,393 rows, 27,304 pass, 0 fail, 89 skipped**. Minified `vite build` of the pushed head: exit 0. |
+| 10 | The founder's size check | Recorded in §11.10:<br>- The figures on the 60 / 90 smoke build were "great and perfectly sized" at the default size.<br>- The 88 px ruling followed.<br>- The `60 s:` line was not kept; S0's iPhone lab is the frame-rate record. |
+
+### 12.1 SR-3: the bundle row
+
+**How it bundles** (`agentForm.flagOffBundle.test.js:58` `bundle`):
+- **The build:** Vite's `build()`, in memory.
+  - `write: false`, `configFile: false`, `minify: false`, and Rollup's default tree-shaking.
+  - `preserveEntrySignatures: 'strict'`. An app build drops an entry's exports, which would leave the "used" rows checking an empty bundle.
+  - `moduleSideEffects: 'no-external'`, so an unused external import leaves no bare `import`.
+- **The JSX transform:** the production one that `@vitejs/plugin-react` sets: `jsx: 'automatic'`, `jsxDev: false`, and `process.env.NODE_ENV` defined as `"production"`. Without them, the test environment's `NODE_ENV=test` makes Vite emit `jsxDEV` (measured).
+- **The entry:** a virtual module that imports the target the way the flag-off graph does:
+  - `import '<module>'` for the two modules imported and unused;
+  - `export { … } from '<module>'` with the used names, for the other two.
+- **What stays internal:** only the agent form flag module. Everything else the module imports is external.
+  - The flag module is bundled with every flag `false` (today's values), so `battleAgentFormSlot.jsx`'s `AGENT_FORM_BATTLE_ENABLED ? lazy(…) : null` folds as it does in the shipped build.
+  - With the flag module external the ternary cannot fold, and the pristine slot keeps a `lazy(…)` call (measured).
+  - The slot row asserts the flag module was loaded.
+
+**What it checks** (`:114` `leftovers`): the output's top-level statements, parsed with Vite's `parseAst`.
+- **Allowed:** an import with bindings; the export list; and function, class or plain-identifier declarations that the export list reaches, through the identifiers they name.
+- **Reported, as the code reads:** anything else — a bare call, an assignment, a destructured binding, a declaration nothing reaches.
+- **The non-empty guard:** each "used" row also asserts the export list itself (`formForArchetype, hasWebGL`; `HUB_COPY`), so the check never runs over an empty bundle. Each "unused" row asserts the bundle is empty.
+- **Fidelity:**
+  - On RV-P the row's bundle holds `Object.freeze(Object.keys(FORM_BY_CODE_ID));`, the review's SR-3 hunk, line for line.
+  - On RV-P2 it holds `createContext(null);`.
+
+**The plants** (the fifth row, through the same path; each find string must occur exactly once). Each one below leaves a statement the check reports:
+1. RV-P;
+2. `let X; X = Object.freeze(Object.keys(…))`;
+3. a destructured `const [a] = /* @__PURE__ */ Object.keys(…)`;
+4. a mark on the inner call only;
+5. RV-P2;
+6. the mark off `battleAgentFormSlot.jsx:23`;
+7. the lazy form declared without its flag;
+8. a frozen key list over `AGENT_FORM_COPY` that nothing reads.
+
+A pristine copy of each of the four modules, through the same path, leaves none.
+
+**Two shapes measured and not planted, because Rollup drops them in this module:**
+- the `let` assignment with both marks kept;
+- a computed key Rollup can see through (`[String('wearing')]`) in `AGENT_FORM_COPY`. So the copy plant uses the RV-P shape instead.
+
+**Cost:**
+- **Windows:** the five rows take 0.25 s (the first bundle about 130 ms, then 15–30 ms each). Importing Vite is paid once per file, at collection, not by a row.
+- **Linux, inside the full 8-worker suite:** 69, 20, 16, 28 and 155 ms, so 0.29 s for the five.
+- Each row carries the repo's 30 s timeout for heavy rows, so load cannot red it.
+
+### 12.2 Mutation
+
+**Method.**
+- **Where:** Linux, in a WSL worktree `~/pd-ci-af3` of `~/pd-ci` at `b1fd560b`. Its `node_modules` is linked to `~/pd-ci-af1`'s, from the same lockfile. Node 20.20.2, `TZ=UTC`.
+- **Each mutant:** one exact replacement, made once. Its files run, then the file is restored from `git show HEAD:` and checked equal to the blob (`git hash-object --no-filters`).
+- **Baseline first:** all 10 files, 151 / 151 pass.
+
+| Mutant | What | Files run (rows) | Result | Killed by |
+|---|---|---|---|---|
+| RV-B | `const rate = typeof navigator !== 'undefined' && navigator.hardwareConcurrency < 4 ? 'half' : hubFormRate(phone);` | the review's 5 (104) | **killed**, 2 red | SR-1: the R6d row |
+| RV-B variant | `phone = phone \|\| (typeof navigator !== 'undefined' && navigator.hardwareConcurrency < 4);` above an untouched `const rate = hubFormRate(phone);` | 5 (104) | **killed**, 2 red | SR-1: the R6d row |
+| RV-A | `agentFormFlags.js` imports `isAgentPresenceOn` from `./featureFlags` and exports a use of it | the review's 4 (96) | **killed**, 1 red | SR-2: "the agent form flag module imports nothing" |
+| RV-P | both marks off `agentFormSpec.js:24` | 4 (102) | **killed**, 2 red | SR-3: the `agentFormSpec.js` row |
+| RV-P2 | the mark off `HubAgentForm.jsx:34` | 4 (87) | **killed**, 2 red | SR-3: the `HubAgentForm.jsx` row |
+| Evasion: `let`, assigned later | line 24 as `export let ARCHETYPE_CODE_IDS;` then `ARCHETYPE_CODE_IDS = Object.freeze(Object.keys(FORM_BY_CODE_ID));` | 3 (35) | **killed**, 2 red | SR-3: the `agentFormSpec.js` row |
+| Evasion: destructured | `export const [FIRST_CODE_ID] = /* @__PURE__ */ Object.keys(FORM_BY_CODE_ID);` added after line 24 | 3 (35) | **killed**, 2 red | SR-3: the `agentFormSpec.js` row |
+| Evasion: inner-only mark | line 24 with the mark on `Object.keys` only | 3 (35) | **killed**, 2 red | SR-3: the `agentFormSpec.js` row |
+
+**The second red row in each run is the file's bite row.**
+- On every SR-1 and SR-3 mutant, the bite row reds too: its plants need the pristine line, and its pristine control reads the file as it now is.
+- On RV-B, the four behavioural rows that pin the rate's value stay green. WSL reports more than 4 cores, as the review found on its run, so the token ban is the row that catches it.
+
+### 12.3 Checks
+
+- **`lint:gate`:** exit 0 on the merged tree `0cb704c0` (Linux).
+- **Full suite** (Linux: WSL, `TZ=UTC`, 8 workers, Node 20.20.2, under `flock /tmp/pd-suite.lock`) on `0cb704c0`: **6,639 files, 27,393 rows, 27,304 pass, 0 fail, 89 skipped**, in 220 s. That is six rows more than the review's 27,387: the five bundle rows and the SR-2 row. The SR-1 plants sit inside existing rows.
+- **Flag-off identity:** §12 item 8. The method is §3's: `vite build --minify false`, every `-[8 chars].js/.css` masked in names and contents, `diff -r`, source maps excluded.
+- **Minified build:** `vite build` of the exact pushed head, on its LF Linux checkout: exit 0.
+- **Windows:** the three changed test files, 169 / 169.
+
+### 12.4 Commits and artifacts
+
+On `claude/agent-form-s1`:
+- `b1fd560b`: the fixes. Four files: the new bundle file, the mount guard, and the two SR-6 comments; +230 / −8.
+- `0cb704c0`: `origin/main` `982f6661` merged.
+- Then this section, §11.10, the SR-12 citations and the verdict row (docs only).
+
+**Not committed** (this session's scratchpad):
+- the WSL step, identity and mutation scripts (`wsl-step.sh`, `wsl-identity.sh`, `mut.mjs`, `mutants.json`);
+- the builds and runs under `~/af3-runs`.
+
+**To remove the WSL worktree:** `~/pd-ci-af3` has `node_modules` linked to `~/pd-ci-af1`'s. Run `unlink ~/pd-ci-af3/node_modules` first, then `git -C ~/pd-ci worktree remove --force ~/pd-ci-af3`.
+
+A copy of this report is at `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261029_BUILD_AGENT_FORM_S1.md` (BUILD_RULES §3).
