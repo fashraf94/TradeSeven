@@ -83,6 +83,10 @@ const GUARDED_FILES = [
   'src/screens/battleView/useContentStable.js',
   // Battle View character pane, Phase A3 — token-only from birth (D-96).
   'src/screens/battleView/ArenaHeader.jsx',
+  // Agent form build S1: the battle forms, on the vocabulary from birth.
+  'src/screens/battleView/BattleAgentForm.jsx',
+  'src/screens/battleView/agentMood.js',
+  'src/screens/battleView/battleAgentFormSlot.jsx',
   'src/screens/battleView/computeTugOfWarWidth.js',
   'src/screens/battleView/CharacterAvatar.jsx',
   'src/screens/battleView/deriveBubble.js',
@@ -152,6 +156,8 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/HubSheet.jsx',
   'src/components/CommandCenter/PhoneTabs.jsx',
   'src/components/CommandCenter/ShadowStage.jsx',
+  // Agent form build S1: the armored hero, on the vocabulary from birth.
+  'src/components/CommandCenter/HubAgentForm.jsx',
   'src/components/CommandCenter/ShadowStill.jsx',
   'src/components/CommandCenter/__fixtures__/hubLayoutFixtures.js',
   'src/components/CommandCenter/__fixtures__/hubTestKit.js',

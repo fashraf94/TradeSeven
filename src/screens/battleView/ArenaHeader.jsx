@@ -37,6 +37,17 @@
 //   of its own — and it does NOT mount a second starfield. The mock's per-frame
 //   CSS starfield is prototype chrome.
 //
+// • AGENT FORM BUILD S1 (AGENT_FORM_BATTLE_ENABLED, off on main): the agent form
+//   takes the mark's place — 88 px on the desktop, 60 on the phone (the S1 size
+//   follow-up; 88 by the founder's ruling, so the engine keeps its small-form
+//   plate-edge brightening), each box overhanging the room the row gives it by its negative
+//   margins (battleAgentFormSlot.jsx BATTLE_FORM_PX), so the names and scores keep
+//   their place and, on the phone, today's 40 px wide footprint, so long scores
+//   keep their room; the row grows 5 px on the phone and 14 on the desktop — and the
+//   CPU side gains a cell for the opponent's bare copper core, mirrored (R9).
+//   Ruling R8 lets that form idle and change mood on real signals; the rule
+//   below still binds the robot head. Flag-off, both sites fold to today's JSX.
+//
 // • THE MARK IS STILL (D-91, hazard 41). AgentPresenceMount at reactivityLevel
 //   'static': one painted frame, no rAF, no idle, no breath, and its events
 //   withheld. It keeps the agent's DNA accent, which is a per-agent document
@@ -80,11 +91,13 @@ import { Activity } from 'lucide-react';
 import AnimatedScore from '../../components/shared/AnimatedScore';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { isAgentPresenceOn } from '../../config/featureFlags';
+import { AGENT_FORM_BATTLE_ENABLED } from '../../config/agentFormFlags';
 import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
 import TurnLine from './TurnLine';
 import { computeTugOfWarWidth } from './computeTugOfWarWidth';
 import { BATTLE_VIEW_COPY } from './battleViewCopy';
+import { BattleAgentFormSlot, duelScores, arenaFormBox } from './battleAgentFormSlot';
 
 /**
  * The two-tint wash behind the header. One gradient, hinged on the seam, so the
@@ -229,7 +242,12 @@ export default function ArenaHeader({
             {...(bookName ? { id: 'why-book-agent' } : {})}
             style={{ display: 'flex', alignItems: 'center', gap: isDesktop ? 12 : 8, minWidth: 0 }}
           >
-            {isAgentPresenceOn() && agentBattle && (
+            {AGENT_FORM_BATTLE_ENABLED ? isAgentPresenceOn() && agentBattle && (
+              // Agent form build S1: the form, its box overhanging the room the row gives it.
+              <div data-arena-form="player" style={arenaFormBox(isDesktop)}>
+                <BattleAgentFormSlot agentBattle={agentBattle} size={arenaFormBox(isDesktop).width} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
+              </div>
+            ) : isAgentPresenceOn() && agentBattle && (
               <div data-arena-face="1" style={{ width: faceSize, height: faceSize, flexShrink: 0 }}>
                 <AgentPresenceMount
                   surface="duel"
@@ -312,28 +330,59 @@ export default function ArenaHeader({
             )}
           </div>
 
-          {/* CPU — the copper side. */}
-          <div
-            {...(bookName ? { id: 'why-book-cpu' } : {})}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}
-          >
-            <span
-              style={{
-                fontSize: isDesktop ? 11 : 10,
-                fontWeight: 700,
-                color: cssVar('copper'),
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                marginBottom: 2,
-              }}
+          {/* CPU — the copper side. Agent form build S1: a row, the copper core on its outer edge (R9). */}
+          {AGENT_FORM_BATTLE_ENABLED ? (
+            <div
+              {...(bookName ? { id: 'why-book-cpu' } : {})}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: isDesktop ? 12 : 8, minWidth: 0 }}
             >
-              CPU
-            </span>
-            {!gated && <AnimatedScore value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} />}
-            {gated && available && (
-              <SwitchCounter key={comparison.switchKey} value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} fractionDigits={comparison.fractionDigits} />
-            )}
-          </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                <span
+                  style={{
+                    fontSize: isDesktop ? 11 : 10,
+                    fontWeight: 700,
+                    color: cssVar('copper'),
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.1em',
+                    marginBottom: 2,
+                  }}
+                >
+                  CPU
+                </span>
+                {!gated && <AnimatedScore value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} />}
+                {gated && available && (
+                  <SwitchCounter key={comparison.switchKey} value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} fractionDigits={comparison.fractionDigits} />
+                )}
+              </div>
+              {isAgentPresenceOn() && agentBattle && (
+                <div data-arena-form="opponent" style={arenaFormBox(isDesktop, 'opponent')}>
+                  <BattleAgentFormSlot agentBattle={agentBattle} side="opponent" size={arenaFormBox(isDesktop).width} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div
+              {...(bookName ? { id: 'why-book-cpu' } : {})}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}
+            >
+              <span
+                style={{
+                  fontSize: isDesktop ? 11 : 10,
+                  fontWeight: 700,
+                  color: cssVar('copper'),
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  marginBottom: 2,
+                }}
+              >
+                CPU
+              </span>
+              {!gated && <AnimatedScore value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} />}
+              {gated && available && (
+                <SwitchCounter key={comparison.switchKey} value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} fractionDigits={comparison.fractionDigits} />
+              )}
+            </div>
+          )}
         </div>
 
         {/* The selected comparison's source label and prose (gated only), from

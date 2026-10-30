@@ -86,6 +86,10 @@ const GUARDED_FILES = [
   // Battle View character pane, Phase A3 — every transition is an identifier
   // from motionToken (D-96, D-97): the arena's mount-in and its bar.
   'src/screens/battleView/ArenaHeader.jsx',
+  // Agent form build S1: the battle forms, on the vocabulary from birth.
+  'src/screens/battleView/BattleAgentForm.jsx',
+  'src/screens/battleView/agentMood.js',
+  'src/screens/battleView/battleAgentFormSlot.jsx',
   'src/screens/battleView/computeTugOfWarWidth.js',
   'src/screens/battleView/CharacterAvatar.jsx',
   'src/screens/battleView/deriveBubble.js',
@@ -155,6 +159,8 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/HubSheet.jsx',
   'src/components/CommandCenter/PhoneTabs.jsx',
   'src/components/CommandCenter/ShadowStage.jsx',
+  // Agent form build S1: the armored hero, on the vocabulary from birth.
+  'src/components/CommandCenter/HubAgentForm.jsx',
   'src/components/CommandCenter/ShadowStill.jsx',
   'src/components/CommandCenter/__fixtures__/hubLayoutFixtures.js',
   'src/components/CommandCenter/__fixtures__/hubTestKit.js',

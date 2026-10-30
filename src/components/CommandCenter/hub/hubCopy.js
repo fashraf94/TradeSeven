@@ -506,3 +506,15 @@ export const HUB_COPY = Object.freeze({
     close: 'Close',
   }),
 });
+
+/**
+ * Agent form build S1 (ruling R10): the armored hero's accessible name, while AGENT_FORM_HUB_ENABLED is on
+ * (HubAgentForm.jsx). "Shadow wearing <archetype>", the name from hub/archetypeLines.js only, then the state and
+ * selected area every Shadow label carries (spec V1.2 §10: labels distinguish ambient, still and processing). Bare
+ * Shadow keeps HUB_COPY.shadow.imageLabel. A table of its own rather than keys on HUB_COPY.shadow: an export
+ * nothing reads folds away, so the flag-off hub chunk stays byte-identical to main's.
+ */
+export const AGENT_FORM_COPY = Object.freeze({
+  wearing: (name) => `Shadow wearing ${name}`,
+  imageLabel: (name, state, areaName) => `Shadow wearing ${name} — ${state}${areaName ? `; ${areaName} selected` : ''}`,
+});

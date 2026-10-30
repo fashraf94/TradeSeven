@@ -139,6 +139,10 @@ const DARK_BY_DESIGN = {
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
   AGENT_FORM_LAB_ENABLED:
     'Agent form build S0 — the lab page where the armored forms\' frame budget is decided on the founder\'s iPhone. Stays false on main: it is flipped only on a never-merge smoke branch ("SMOKE ONLY, NEVER MERGE") for the Vercel preview; flag-off App folds the lab away (agentFormLabFlags.test.js)',
+  AGENT_FORM_HUB_ENABLED:
+    'Agent form build S1 — the armored agent as the Command Center hero. Stays false on main until the founder\'s iPhone reading on the smoke branch; flag-off the hub draws ShadowCanvas and every hub chunk is byte-identical (agentFormFlags.test.js)',
+  AGENT_FORM_BATTLE_ENABLED:
+    'Agent form build S1 — the agent forms in a BaggerBomb 1v1 battle (yours teal and armored, the CPU a bare copper core). Stays false on main until the founder\'s live-battle smoke; flag-off the battle view draws today\'s faces (agentFormFlags.test.js)',
   COMMAND_CENTER_SYNC_ENABLED:
     'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
   // COMMAND_CENTER_HUB_ENABLED intentionally ABSENT: the Command Center hub

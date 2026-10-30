@@ -97,6 +97,18 @@
       "count": 0,
       "authority": "Phase A3 (D-96) \u2014 the character pane's arena header, written on the vocabulary from birth: its two transitions are ONE motionToken('smooth', { reducedMotion }) identifier, shared by the mount-in and the bar, so reduced motion resolves both to `instant`. Zero raw transition literals."
     },
+    "src/screens/battleView/BattleAgentForm.jsx": {
+      "count": 0,
+      "authority": "Agent form build S1 (founder rulings R1–R12) — the armored agent on the hub and in a 1v1 battle: colours only through the agent form's tokens, motion only as the engine's own equip timeline (a stated BUILD_RULES §11 exception, recorded in commandCenterHub.mount.guard.test.js), no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/screens/battleView/agentMood.js": {
+      "count": 0,
+      "authority": "Agent form build S1 (founder rulings R1–R12) — the armored agent on the hub and in a 1v1 battle: colours only through the agent form's tokens, motion only as the engine's own equip timeline (a stated BUILD_RULES §11 exception, recorded in commandCenterHub.mount.guard.test.js), no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/screens/battleView/battleAgentFormSlot.jsx": {
+      "count": 0,
+      "authority": "Agent form build S1 (founder rulings R1–R12) — the armored agent on the hub and in a 1v1 battle: colours only through the agent form's tokens, motion only as the engine's own equip timeline (a stated BUILD_RULES §11 exception, recorded in commandCenterHub.mount.guard.test.js), no transition literal, from birth. Registered in the commit that introduces them."
+    },
     "src/screens/battleView/computeTugOfWarWidth.js": {
       "count": 0,
       "authority": "Phase A3 (D-96) \u2014 the character pane's arena header, written on the vocabulary from birth: its two transitions are ONE motionToken('smooth', { reducedMotion }) identifier, shared by the mount-in and the bar, so reduced motion resolves both to `instant`. Zero raw transition literals."
@@ -280,6 +292,10 @@
     "src/components/CommandCenter/ShadowStage.jsx": {
       "count": 0,
       "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/HubAgentForm.jsx": {
+      "count": 0,
+      "authority": "Agent form build S1 (founder rulings R1–R12) — the armored agent on the hub and in a 1v1 battle: colours only through the agent form's tokens, motion only as the engine's own equip timeline (a stated BUILD_RULES §11 exception, recorded in commandCenterHub.mount.guard.test.js), no transition literal, from birth. Registered in the commit that introduces them."
     },
     "src/components/CommandCenter/ShadowStill.jsx": {
       "count": 0,

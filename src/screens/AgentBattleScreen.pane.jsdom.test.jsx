@@ -288,9 +288,12 @@ describe('A3.1 — the character on the board (D-91, D-98)', () => {
     // mark never rests over a row's tap targets — was unenforced.
     //
     // The row is stated as that promise rather than as the literal: the
-    // reservation must clear the mark's own 48px target plus its 14px inset,
-    // and must not be the sheet's (SHEET_PEEK_PX + 32 = 108 today), which is
-    // what the pane retires.
+    // reservation must clear the mark's own target plus its inset, and must
+    // not be the sheet's (SHEET_PEEK_PX + 32 = 108 today), which is what the
+    // pane retires. This phone render has the battle flag off, so the mark is
+    // the 48px tap floor at its 14px inset (the floor below). With
+    // AGENT_FORM_BATTLE_ENABLED on it is 50 + 14 on the phone and 55 + 16 on
+    // the desktop (agent form S1), which the 96 clears too.
     setShell(false);
     mount();
     const board = container.querySelector('[data-board]');
@@ -1406,7 +1409,10 @@ describe('Smoke F3 — the phone\'s mark is fixed to the viewport, not parked in
     // A plain path, not `import.meta.url`: under the jsdom environment that is
     // not a file URL and readFileSync refuses it. vitest runs from the repo root.
     const src = readFileSync('src/screens/AgentBattleScreen.jsx', 'utf8');
-    expect(src).toContain('{!pane.open && !gameTapeOpen && characterMark}');
+    // Agent form build S1: the site is a ternary on AGENT_FORM_BATTLE_ENABLED, and both arms carry the same gate —
+    // the flag-on arm around the forms' scope, the flag-off arm exactly as before.
+    expect(src).toContain(': !pane.open && !gameTapeOpen && characterMark}');
+    expect(src).toContain('? !pane.open && !gameTapeOpen && <BattleAgentFormScope');
     // …and the mark does render when the tape is down, which is every state
     // this suite can reach.
     setShell(false);

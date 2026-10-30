@@ -71,7 +71,9 @@ const NEVER_COPY_ATTRIBUTES = new Set([
   'offset', 'gradientUnits', 'transform', 'points', 'preserveAspectRatio', 'fillRule', 'clipRule', 'vectorEffect',
 ]);
 /** The hub's own token-valued props: never copy, but each value must still be a token (`bolt`, `secondary`, `ink-2`, `chevR`). */
-const TOKEN_ATTRIBUTES = new Set(['accent', 'icon', 'kind', 'name', 'tone', 'aria-live', 'aria-orientation', 'role', 'type', 'as']);
+// Agent form build S1: the armored hero's own three (HubAgentForm.jsx), the engine's vocabulary — `mood` ('idle',
+// 'researching'), `bloom` ('css') and `allegiance` ('player') — never shown to the player.
+const TOKEN_ATTRIBUTES = new Set(['accent', 'icon', 'kind', 'name', 'tone', 'aria-live', 'aria-orientation', 'role', 'type', 'as', 'mood', 'bloom', 'allegiance']);
 const TOKEN = /^[a-z][a-zA-Z0-9-]*$/;
 /** Object properties whose string value is shown to the player, in any hub file. */
 const COPY_PROPERTIES = new Set([

@@ -64,6 +64,7 @@ const FEED_READERS = {
   'src/screens/battleView/CharacterAvatar.jsx': 'passes `statusFeed: null` — not a reader',
   'src/screens/battleView/CharacterPane.jsx': 'passes `statusFeed: null` — not a reader',
   'src/screens/battleView/PaneTape.jsx': 'FIXED: bookmarks skip a marked beat; mounts the log',
+  'src/screens/battleView/agentMood.js': 'Agent form build S1 (founder ruling R8): the presence of the platform `battle_complete` entry only, for the hub\'s outcome derivation (the projection held equal to hub/gamesDisplay.js) — no beat\'s message, action or marker is rendered, and a marked beat changes nothing',
   'src/screens/battleView/buildTape.js': 'joins trades / deferred checks by id and pair — renders no beat message or action',
   'src/screens/battleView/shadowCpuQuoteIntegrity.js': 'returns `statusFeed: null` — not a reader',
 };

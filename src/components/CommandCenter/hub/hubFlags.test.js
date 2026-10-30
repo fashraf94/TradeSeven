@@ -95,3 +95,21 @@ describe('PHONE_SHADOW — the phone fallback is one constant', () => {
     expect(hub).toContain("stillOnly={PHONE_SHADOW === 'still'}");
   });
 });
+
+// ── Agent form build S1 (ruling R1): the phone's armored agent rate is one constant ─────────────────────────────────
+describe('AGENT_FORM_PHONE — the phone rate of the armored agent is one constant', () => {
+  it('ships as "live": the founder\'s iPhone 16 lab reading (every preset passed)', async () => {
+    const { AGENT_FORM_PHONE } = await vi.importActual('./hubFlags');
+    expect(AGENT_FORM_PHONE).toBe('live');
+  });
+
+  it('is one of the engine\'s three rates, and only the hub form reads it', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { AGENT_FORM_PHONE } = await vi.importActual('./hubFlags');
+    expect(['live', 'half', 'still']).toContain(AGENT_FORM_PHONE);
+    const view = readFileSync(new URL('../HubAgentForm.jsx', import.meta.url), 'utf8');
+    expect(view).toMatch(/\bAGENT_FORM_PHONE\b/);
+    const hub = readFileSync(new URL('../CommandCenterHub.jsx', import.meta.url), 'utf8');
+    expect(hub).not.toMatch(/\bAGENT_FORM_PHONE\b/);
+  });
+});

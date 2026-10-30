@@ -18,6 +18,18 @@
 //      arrival fade, keyed on the entry's id so it plays once per genuinely new
 //      entry and then sits still through any number of re-renders (D-97).
 //
+//      FOUNDER RULING R8 (Oct 28–29, 2026; agent form build S1) SUPERSEDES THIS
+//      RULE FOR THE AGENT FORM ONLY — the armored form that replaces the robot
+//      head while AGENT_FORM_BATTLE_ENABLED is on (BattleAgentForm.jsx). That
+//      form may idle gently, and its mood follows real signals only, first
+//      match: celebrating (the battle completed and the player won, from the
+//      existing outcome derivation) > waiting (an open cockpit call needs the
+//      player) > researching (an evaluation in flight) > confident / worried
+//      (the live standing) > idle; a completed battle lost or tied is idle
+//      (battleView/agentMood.js). The ruling also restores, for that form, the
+//      win state presenceBinding.js dropped. The robot head, the bubble and
+//      everything else here keep this rule unchanged.
+//
 //   2. THE BUBBLE MIRRORS THE TAPE. Every string in it comes whole out of
 //      deriveBubble, which takes them from the helpers the stream itself
 //      renders. This component chooses no words. NO TIMER CAN CREATE A BUBBLE:
@@ -71,9 +83,11 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { isAgentPresenceOn } from '../../config/featureFlags';
+import { AGENT_FORM_BATTLE_ENABLED } from '../../config/agentFormFlags';
 import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
+import { BattleAgentFormSlot, duelScores, BATTLE_FORM_PX } from './battleAgentFormSlot';
 
 /**
  * THE ONE RADIUS. D-98 asks for "the smallest radius the tokens allow"; no
@@ -260,7 +274,11 @@ export default function CharacterAvatar({
           flexShrink: 0,
         }}
       >
-        {isAgentPresenceOn() && agentBattle ? (
+        {AGENT_FORM_BATTLE_ENABLED && isAgentPresenceOn() && agentBattle ? (
+          // Agent form build S1: the form at 50 px on the phone and 55 on the desktop (the S1 size follow-up;
+          // battleAgentFormSlot.jsx BATTLE_FORM_PX), the mark's tap target growing with it.
+          <BattleAgentFormSlot agentBattle={agentBattle} size={BATTLE_FORM_PX.mark[isDesktop ? 'desktop' : 'phone']} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
+        ) : isAgentPresenceOn() && agentBattle ? (
           <AgentPresenceMount
             surface="duel"
             agent={agentBattle}

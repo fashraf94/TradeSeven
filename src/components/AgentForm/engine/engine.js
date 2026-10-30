@@ -19,10 +19,14 @@
 //   - each view's spec is mutable (mood, stage, allegiance change without a remount), with an equip tween;
 //   - a direct path: one view drawing straight into its own WebGL canvas, with no copy;
 //   - a per-view error guard (the design's draw() try/catch, af3-standalone.js.txt:381): a pose or render that
-//     throws drops that view to 'unavailable' and the loop goes on for every other view (review SR-2).
+//     throws drops that view to 'unavailable' and the loop goes on for every other view (review SR-2);
+//   - build S1: a swap between forms, played (the new set's 900 ms equip; a set coming off before bare Shadow
+//     shows), with the size tweened across it (ruling R5); a paused view, which holds its frame and keeps the loop
+//     off for it (the hub's lifetime ruling R-S7-5: it pauses while the deploy ceremony covers the page); and the
+//     cached still drawn at where the view is headed (the settled fit), not at a tween's first frame.
 
 import * as THREE from 'three';
-import { STATES, PALETTES, clamp, stillT, viewT0, startTween, tweenFit } from './vocab.js';
+import { STATES, PALETTES, FRAME_SCALE, clamp, frameScale, stillT, viewT0, startTween, tweenFit, swapScale } from './vocab.js';
 import { fadeMaterial, glowTexture } from './core.js';
 import { resetIcosaCache } from './armor.js';
 import { buildForm, poseForm, formKey, disposeForm, formResources } from './form.js';
@@ -57,7 +61,7 @@ const canvasDpr = (dpr, size) => Math.min(dpr || 1, size < 100 ? 3 : 2);
 const renderRes = (dpr, size) => clamp(Math.round(size * Math.min(dpr || 1, size < 90 ? 3 : 2)), 48, GL);
 
 const DEFAULT_SPEC = Object.freeze({ kind: 'none', core: 0, armor: 0, state: 'idle', pal: 'teal', size: 200, seed: 1, face: 1, zoom: 1, brain: true, turn: 0 });
-const DEFAULT_OPTIONS = Object.freeze({ path: 'shared', bloom: 'filter', batched: false, rate: 'live', reducedMotion: false, dpr: 1 });
+const DEFAULT_OPTIONS = Object.freeze({ path: 'shared', bloom: 'filter', batched: false, rate: 'live', reducedMotion: false, dpr: 1, paused: false });
 
 function normSpec(spec) {
   const s = { ...DEFAULT_SPEC, ...spec };
@@ -70,7 +74,7 @@ function normOptions(o) {
   if (!['shared', 'direct'].includes(x.path)) x.path = 'shared';
   if (!['filter', 'css', 'webgl', 'off'].includes(x.bloom)) x.bloom = 'filter';
   if (!RATES.includes(x.rate)) x.rate = 'live';
-  x.batched = !!x.batched; x.reducedMotion = !!x.reducedMotion;
+  x.batched = !!x.batched; x.reducedMotion = !!x.reducedMotion; x.paused = !!x.paused;
   return x;
 }
 
@@ -194,14 +198,32 @@ export function createAgentFormEngine(platform = {}) {
     }
   }
 
-  /** The spec a frame draws: the view's spec with the tween's fit at clock reading `ms`. */
+  /** The spec a frame draws: the view's spec with the tween's fit at clock reading `ms` (and, mid-swap, its scale). */
   function frameSpec(v, ms) {
     if (v.tween) {
       const { fit, done } = tweenFit(v.tween, ms);
       v.fit = fit;
-      if (done) v.tween = null;
+      if (done) { v.tween = null; settleSwap(v); }
     }
-    return { ...v.spec, fit: v.fit, unfit: v.unfit, batched: v.opts.batched };
+    const spec = { ...v.spec, fit: v.fit, unfit: v.unfit, batched: v.opts.batched };
+    if (v.swap) spec.scale = swapScale(v.swap, v.fit);
+    return spec;
+  }
+
+  /** The spec the cached still draws: the form where the view is headed — a tween's end fit, the form's own scale. */
+  function settledSpec(v) {
+    const fit = v.tween ? (v.tween.on ? 1 : 0) : v.fit, unfit = v.tween ? !v.tween.on : v.unfit;
+    return { ...v.spec, fit, unfit, batched: v.opts.batched };
+  }
+
+  /**
+   * A swap is over (its tween ended, or the view stopped animating): a set that came off leaves bare Shadow, worn
+   * as bare Shadow is at rest, and the form draws at its own scale again. The still is redrawn for the new form.
+   */
+  function settleSwap(v) {
+    if (!v.swap) return;
+    if (v.swap.kind) { v.spec = normSpec({ ...v.spec, kind: v.swap.kind }); v.fit = 1; v.unfit = false; v.stillDirty = true; }
+    v.swap = null;
   }
 
   /** Render view v at time t into its live canvas ('live') or its still canvas ('still'). Returns draw calls. */
@@ -212,6 +234,7 @@ export function createAgentFormEngine(platform = {}) {
     const F = C.forms.get(key), size = spec.size, small = size < 90, palette = pal(v), S = STATES[spec.state] || STATES.idle;
     const res = C.direct ? C.size : renderRes(v.opts.dpr, size);
     poseForm(F, spec, t, C, palette);
+    if (into === 'live') v.drawnScale = F.group.scale.x;
     if (C.cur !== F.group) { if (C.cur) C.scene.remove(C.cur); C.scene.add(F.group); C.cur = F.group; C.curForm = F; }
     const r = C.renderer;
     if (C.direct) { r.setScissorTest(false); r.setViewport(0, 0, res, res); }
@@ -253,7 +276,7 @@ export function createAgentFormEngine(platform = {}) {
     const ms = P.now(), spec = frameSpec(v, ms);
     let calls = 0;
     try {
-      if (v.stillDirty) { calls += drawView(v, spec, stillT(spec), 'still'); v.stillDirty = false; }
+      if (v.stillDirty) { const st = settledSpec(v); calls += drawView(v, st, stillT(st), 'still'); v.stillDirty = false; }
       calls += drawView(v, spec, animates(v) ? v.t0 + (ms - T0) / 1000 : stillT(spec), 'live');
     } catch (error) { failView(v, error); }
     return calls;
@@ -279,11 +302,11 @@ export function createAgentFormEngine(platform = {}) {
     let drew = 0, calls = 0;
     const c0 = P.now();
     for (const v of views) {
-      if (!animates(v) || !v.vis || v.ctx.lost) continue;
+      if (!animates(v) || !v.vis || v.opts.paused || v.ctx.lost) continue;
       if (v.opts.rate === 'half' && (frameNo & 1)) continue;
       const spec = frameSpec(v, ts);
       try {
-        if (v.stillDirty) { calls += drawView(v, spec, stillT(spec), 'still'); v.stillDirty = false; }
+        if (v.stillDirty) { const st = settledSpec(v); calls += drawView(v, st, stillT(st), 'still'); v.stillDirty = false; }
         calls += drawView(v, spec, v.t0 + (ts - T0) / 1000, 'live');
         drew += 1;
       } catch (error) { failView(v, error); }
@@ -298,7 +321,7 @@ export function createAgentFormEngine(platform = {}) {
   }
   function kick() {
     if (raf || P.doc.hidden) return;
-    for (const v of views) if (animates(v)) { raf = P.requestFrame(frame); return; }
+    for (const v of views) if (animates(v) && !v.opts.paused) { raf = P.requestFrame(frame); return; }
     resumed = true;
   }
   function stopLoop() { if (raf) { P.cancelFrame(raf); raf = 0; } resumed = true; }
@@ -334,7 +357,7 @@ export function createAgentFormEngine(platform = {}) {
   function mount(els, spec, options, cb = {}, th) {
     if (!views.size) setup(th);
     const opts = normOptions(options), s = normSpec(spec);
-    const v = { id: nextId++, els, spec: s, opts, cb, vis: true, t0: viewT0(s), tween: null, fit: s.fit == null ? 1 : s.fit, unfit: !!s.unfit, status: 'pending', stillReady: false, stillDirty: true, formKey: null, ctx: null, ctx2d: null, stillCtx: null, octx: null };
+    const v = { id: nextId++, els, spec: s, opts, cb, vis: true, t0: viewT0(s), tween: null, swap: null, drawnScale: null, fit: s.fit == null ? 1 : s.fit, unfit: !!s.unfit, status: 'pending', stillReady: false, stillDirty: true, formKey: null, ctx: null, ctx2d: null, stillCtx: null, octx: null };
     views.add(v);
     const target = els.box || els.canvas;
     byElement.set(target, v); if (io) io.observe(target);
@@ -369,9 +392,16 @@ export function createAgentFormEngine(platform = {}) {
       id: v.id,
       get status() { return v.status; },
       get fit() { return v.fit; },
+      /** The form drawn now (mid-swap to bare Shadow, the set still coming off), and the scale its last live frame drew at. */
+      get kind() { return v.spec.kind; },
+      get scale() { return v.drawnScale; },
       /** Change mood, stage, allegiance, size … without a remount. */
       update(patch) {
         if (!views.has(v)) return;
+        if (v.swap && patch && patch.kind !== undefined) {
+          // A swap in flight: the kind it is headed for is no change; any other kind ends it, at once.
+          if (patch.kind === (v.swap.kind || v.spec.kind)) { patch = { ...patch }; delete patch.kind; } else { v.tween = null; v.swap = null; v.fit = 1; v.unfit = false; }
+        }
         const prev = v.spec; v.spec = normSpec({ ...prev, ...patch });
         if (!v.ctx) return;
         if (v.spec.size !== prev.size || v.spec.face !== prev.face) sizeCanvases(v);
@@ -385,14 +415,45 @@ export function createAgentFormEngine(platform = {}) {
         const prev = v.opts; v.opts = normOptions({ ...prev, ...patch, path: prev.path });
         if (!v.ctx) return;
         if (v.opts.dpr !== prev.dpr) sizeCanvases(v);
-        if (!animates(v)) { if (v.tween) { v.fit = v.tween.on ? 1 : 0; v.tween = null; } drawNow(v); }
+        if (!animates(v)) { if (v.tween) { v.fit = v.tween.on ? 1 : 0; v.tween = null; } settleSwap(v); drawNow(v); }
         if (v.opts.bloom !== prev.bloom || v.opts.batched !== prev.batched) v.stillDirty = true;
         resumed = true; kick();
+      },
+      /**
+       * Change the form and play the change (build S1). A new set suits up from nothing on the board's 900 ms equip;
+       * a change to bare Shadow takes the set off on the 700 ms unequip, then shows Shadow; the same set again (a
+       * change reversed mid-way) suits up from where its plates are. The scale runs from the one last drawn to the
+       * new form's across the tween (ruling R5), so there is no size step at the first frame. Under reduced motion,
+       * at the still rate, or with no live context, it is update(): the new form at once, its still redrawn.
+       */
+      swap(patch) {
+        if (!views.has(v)) return;
+        const target = normSpec({ ...v.spec, ...patch }).kind, headed = v.swap && v.swap.kind ? v.swap.kind : v.spec.kind;
+        if (!v.ctx || !animates(v) || target === headed) {
+          if (target !== headed) { v.tween = null; v.swap = null; v.fit = 1; v.unfit = false; }
+          this.update(patch);
+          return;
+        }
+        const prev = v.spec, from = Number.isFinite(v.drawnScale) ? v.drawnScale : frameScale(prev.kind), now = P.now();
+        const rest = { ...patch }; delete rest.kind;
+        if (target === 'none') {
+          v.spec = normSpec({ ...prev, ...rest }); v.unfit = true; v.tween = startTween(false, now, v.fit);
+          v.swap = { on: false, fit0: v.fit, from, to: FRAME_SCALE.none, kind: 'none' };
+        } else if (target === prev.kind) {
+          v.spec = normSpec({ ...prev, ...rest }); v.unfit = false; v.tween = startTween(true, now, v.fit);
+          v.swap = { on: true, fit0: v.fit, from, to: frameScale(target), kind: null };
+        } else {
+          v.spec = normSpec({ ...prev, ...patch }); v.fit = 0; v.unfit = false; v.tween = startTween(true, now, 0);
+          v.swap = { on: true, fit0: 0, from, to: frameScale(target), kind: null };
+        }
+        if (v.spec.size !== prev.size || v.spec.face !== prev.face) sizeCanvases(v);
+        v.stillDirty = true;
+        kick();
       },
       /** Play the equip (true) or unequip (false) tween: 900 ms / 700 ms on the board's keys; a still under reduced motion. */
       equip(on) {
         if (!views.has(v)) return;
-        v.unfit = !on;
+        v.unfit = !on; v.swap = null;
         if (!v.ctx || !animates(v)) { v.tween = null; v.fit = on ? 1 : 0; if (v.ctx) drawNow(v); return; }
         v.tween = startTween(on, P.now(), v.fit);
         kick();
@@ -428,7 +489,7 @@ export function createAgentFormEngine(platform = {}) {
       const r = shared ? shared.renderer : null;
       return {
         views: views.size, contexts: (shared ? 1 : 0) + [...views].filter((v) => v.ctx && v.ctx.direct).length, forms: shared ? shared.forms.size : 0,
-        multiDraw: r ? P.hasMultiDraw(r) : null, gpu: r ? P.gpuName(r) : '', looping: raf !== 0, listening, observing: io !== null,
+        multiDraw: r ? P.hasMultiDraw(r) : null, gpu: r ? P.gpuName(r) : '', looping: raf !== 0, paused: [...views].filter((v) => v.opts.paused).length, listening, observing: io !== null,
         lost: counters.lost, restored: counters.restored, contextsCreated: counters.contexts, formsBuilt: counters.builds, failed: counters.failed, unavailable: sharedFailed,
       };
     },

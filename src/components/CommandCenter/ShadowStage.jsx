@@ -23,13 +23,20 @@
 // percentage shows beside the line, aria-hidden and outside the live region,
 // read from the deploy provider's owner-tagged progress store — the one
 // reader of each frame besides the control itself.
+//
+// Agent form build S1: with AGENT_FORM_HUB_ENABLED on, both stages draw
+// HubAgentForm (the armored agent) where ShadowCanvas was, in the same box.
+// Each site is one literal ternary on the flag, so flag-off folds to today's
+// ShadowCanvas element and the hub chunk is byte-identical to main's.
 
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { cssVar, readToken } from '../../theme/cssTokens';
 import { useHoldProgress } from '../../contexts/DeployAttemptContext';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { AREA_TOKEN, C, HAIR, MONO, tint } from './hub/hubStyle';
+import { AGENT_FORM_HUB_ENABLED } from '../../config/agentFormFlags';
 import AreaControls from './AreaControls';
+import HubAgentForm from './HubAgentForm';
 import ShadowCanvas from './ShadowCanvas';
 
 /** The charge in flight, as a percentage: visible, aria-hidden, never in the live region (spec §5.5). */
@@ -154,7 +161,11 @@ export function ShadowStage({ composition, size, tier, status, processing, words
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 26 : 44, position: 'relative' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <ShadowCanvas size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} areaEvent={areaEvent} createdAttemptId={createdAttemptId} paused={paused} boxRef={boxRef} />
+          {AGENT_FORM_HUB_ENABLED ? (
+            <HubAgentForm size={size} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} paused={paused} boxRef={boxRef} />
+          ) : (
+            <ShadowCanvas size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} areaEvent={areaEvent} createdAttemptId={createdAttemptId} paused={paused} boxRef={boxRef} />
+          )}
           <StatusLine processing={processing} words={words} maxWidth={size + 20} holdPhase={holdPhase} progress={progress} />
         </div>
         <AreaControls
@@ -187,7 +198,11 @@ export function PhoneStage({ size, tier, status, processing, words, selectedArea
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <ShadowCanvas size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} createdAttemptId={createdAttemptId} paused={paused} stillOnly={stillOnly} />
+        {AGENT_FORM_HUB_ENABLED ? (
+          <HubAgentForm size={size} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} paused={paused} phone />
+        ) : (
+          <ShadowCanvas size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} createdAttemptId={createdAttemptId} paused={paused} stillOnly={stillOnly} />
+        )}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <NameLine stacked />
           <StatusLine processing={processing} words={words} small wrap holdPhase={holdPhase} progress={progress} />

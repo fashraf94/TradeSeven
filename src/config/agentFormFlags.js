@@ -30,3 +30,36 @@
  */
 // Pinned by: agentFormLabFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const AGENT_FORM_LAB_ENABLED = false;
+
+/**
+ * AGENT_FORM_HUB_ENABLED — the armored agent as the Command Center hero
+ * (build S1, Scope A; build report docs/audits/20261029_BUILD_AGENT_FORM_S1.md).
+ *
+ * When TRUE, the hub's stage draws the agent form (src/components/AgentForm/,
+ * through src/components/CommandCenter/HubAgentForm.jsx) in Shadow's box at
+ * both mount sites (ShadowStage.jsx, the wide stage and PhoneStage): Shadow
+ * wearing the equipped archetype's armor, suiting up once when the archetype
+ * changes while the hub is mounted.
+ *
+ * DARK — default FALSE on main. When FALSE (the shipped state) the stage draws
+ * today's ShadowCanvas, and every hub chunk is byte-identical to main's: each
+ * read of this flag is a literal ternary that Rollup folds to today's element.
+ */
+// Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const AGENT_FORM_HUB_ENABLED = false;
+
+/**
+ * AGENT_FORM_BATTLE_ENABLED — the agent forms in a BaggerBomb 1v1 battle
+ * (build S1, Scope B).
+ *
+ * When TRUE, inside the existing character-pane gates, the arena header, the
+ * character pane's header and the floating mark draw the agent form in place
+ * of the robot head, with moods from real signals (battleView/agentMood.js),
+ * and the header's CPU side draws the opponent as a bare copper core, mirrored.
+ *
+ * DARK — default FALSE on main. When FALSE the battle view draws today's faces
+ * and its chunks are byte-identical to main's but for build S1's one flag-off
+ * fix (useAgentPresence.js reads agentContext.archetype).
+ */
+// Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const AGENT_FORM_BATTLE_ENABLED = false;

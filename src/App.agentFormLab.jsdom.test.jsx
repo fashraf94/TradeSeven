@@ -69,7 +69,8 @@ vi.mock('./hooks/useAgent', () => ({
 vi.mock('./hooks/useIsMobile', () => ({ useIsMobile: () => ({ isMobile: false, isTablet: false }) }));
 
 const lab = vi.hoisted(() => ({ on: false, loaded: 0, rendered: 0 }));
-vi.mock('./config/agentFormFlags', () => ({ get AGENT_FORM_LAB_ENABLED() { return lab.on; } }));
+// Build S1's two flags keep their shipped values (the battle view reads one at load).
+vi.mock('./config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_LAB_ENABLED() { return lab.on; } }));
 vi.mock('./screens/AgentFormLab', () => {
   lab.loaded += 1;
   return { default: function AgentFormLabProbe() { lab.rendered += 1; return null; } };
