@@ -10,8 +10,8 @@
 | What stepped the clock? | **Ubuntu's `systemd-timesyncd`**, fighting **WSL's own `chronyd`** (which runs in the WSL VM, outside the distro). chronyd follows the **Windows host clock**; timesyncd follows **internet NTP**. When the two references disagree by ≥ 0.4 s, timesyncd steps the clock to internet time at every 32 s poll and chronyd slews it back. Reproduced on demand (§1.4). |
 | Not the cause | Hyper-V TimeSync (`hv_utils`): it steps only when the guest is ≥ 5 s behind (kernel source). A slow guest oscillator: chronyd corrects a −4 % frequency fault in ~2 s (§1.5). PR #1010's "guest clock runs 3–5 % slow" was chronyd's slew-back between steps — reproduced (−2.7 to −6.8 %). |
 | Why it stopped on its own tonight | The Windows clock was re-synced (Windows Time event 35, Oct 29 19:11 CDT); the steps were last seen 18:53 CDT and are absent from 21:32 CDT on. Windows' offset on Oct 29 itself was not measured (**ASSUMED**, §1.3). |
-| Before / after | **Before**, live: 0 steps in 5 min (host ≈ internet time today). **Before**, reproduced: **7 steps of +1.7 to +2.3 s every 32.2 s**. **After**, same fault + nine −4 % frequency knocks: **0 steps in 10 min**. **After**, plain 10 min on a fresh distro start: **0 steps in 10 min**. Pass bar (no step over 50 ms): **met**. |
-| Machine changes | One persistent change (above), logged with its undo (§2). Every experiment's temporary change was reverted and checked. `.wslconfig` and Windows untouched, no WSL restart. Nothing pending. |
+| Before / after | **Before**, live: 0 steps in 5 min (host ≈ internet time today). **Before**, reproduced: **7 steps of +1.7 to +2.3 s every 32.2 s**. **After**, same fault + nine −4 % frequency knocks: **0 steps in 10 min**. **After**, plain 10 min on a fresh distro start: **0 steps in 10 min**; from a cold WSL start: **0 in 3 min**. The journal, which logs every step, shows **0 clock changes** from the fix to the end of the session. Pass bar (no step over 50 ms): **met**. |
+| Machine changes | One persistent change (above), logged with its undo (§2). Every experiment's temporary change was reverted and checked. One `wsl --shutdown`, only to re-check the fix from a cold start, after the three checks passed. `.wslconfig` and Windows untouched. Nothing pending. |
 | The two rows | `chat.test.js` waitUntil row: now on #1010's `deadlineClock`, asserts **0 virtual ms**. `film-tape-backfill.e2e.test.js` candle row: its own **20 s** budget (the row already fakes Date; vitest's own timeout reads the real wall clock). Test files only. |
 | Row checks | 20 runs under #1010's step harness: **0 red** for both rows, with #1010's byte-identical module and with a corrected copy. Under the same harness plus CPU load, `main` was red 10 of 10, the fix 0 of 10. Mutation: **6 of 6** production mutants killed by the rows they name. A +1.3 s wall-clock step forced inside the turn reddens `main`'s chat row, not the new one. `main`'s chat row also missed a 500 ms wait the new one catches. |
 | Full suite (Linux, `TZ=UTC`, 8 workers, lock) | **27,452 rows, 27,363 pass, 0 fail, 89 skipped** (1,251 files, 227 s), on the fix commit `93d91219`; a clock monitor beside it saw 0 steps in 8 min |
@@ -36,7 +36,7 @@ All WSL distros share one kernel clock. Four things can set it:
 
 | Setter | Where | Reference | How it corrects | Evidence |
 |---|---|---|---|---|
-| **`chronyd`** | the WSL VM itself, outside every distro (not in Ubuntu's or the WSLg system distro's process list) | **PHC0** = `/dev/ptp_hyperv`, the Windows host clock; updates every 8 s | frequency + slew; never stepped in any run here | kernel syscall trace (`clock_adjtime` from `chronyd`, global pid 246, every 8 s); `chronyc tracking` via the system distro: `Reference ID 50484330 (PHC0)`, `Stratum 1`, `Update interval 8.0 seconds` |
+| **`chronyd`** | the WSL VM itself, outside every distro (not in Ubuntu's or the WSLg system distro's process list) | **PHC0** = `/dev/ptp_hyperv`, the Windows host clock; updates every 8 s | frequency + slew in steady state; may **step** in its first updates after a VM start when more than ~1 s off (§1.4) | kernel syscall trace (`clock_adjtime` from `chronyd`, global pid 246, every 8 s); `chronyc tracking` via the system distro: `Reference ID 50484330 (PHC0)`, `Stratum 1`, `Update interval 8.0 seconds` |
 | **`systemd-timesyncd`** | Ubuntu, enabled for WSL by Ubuntu's own drop-in `/usr/lib/systemd/system/systemd-timesyncd.service.d/wsl.conf` | `ntp.ubuntu.com` | **steps** (`ADJ_SETOFFSET`) whenever an offset is ≥ 0.4 s; poll stays at its 32 s minimum while offsets exceed 0.2 s | `systemctl status`, `timedatectl show-timesync` (`PollIntervalMinUSec=32s`) |
 | `hv_utils` (Hyper-V TimeSync) | kernel | host time samples | `do_settimeofday64` on a host SYNC (VM start / resume); with `timesync_implicit=1` (set here) also when the guest is **≥ 5 s behind** | WSL kernel `drivers/hv/hv_util.c` @ `linux-msft-wsl-5.15.167.4`: `adj_guesttime` → `hv_implicit_sync` (`threshold_ts.tv_sec += 5`) |
 | Windows Time (`w32time`) | the host | `time.windows.com` | sets the **host** clock, which chronyd then follows | Manual, trigger-start; `SpecialPollInterval` 32768 |
@@ -80,6 +80,7 @@ To test the two-references explanation, B3 made timesyncd's reference disagree w
 
 - Each step equals the offset timesyncd had just measured, to the 0.1 ms: **timesyncd made every step.**
 - Between steps the guest clock ran **2.7 to 6.8 % slow** against the host (−26,889 to −67,740 ppm per segment) while REALTIME − host fell from +1,300 ms to between −420 and −1,042 ms: **chronyd slewing the clock back** to the host, overshooting a little, so the next offset is a little over 1.3 s. chronyd's own reading, sampled every 4 s, showed the same: "1.339 s fast of NTP time" just after the first step, "0.961 s fast" 4 s later.
+- Before those seven, right after the VM start (it booted at 04:05:58), the journal shows three **pairs** of clock changes, 1.36 s apart in journal time, at 04:06:28, :36 and :44 — 8 s apart, chronyd's update interval — each at a timesyncd exchange with a +1.32 to +1.38 s offset, and none visible to the monitor. Read together: a backward step to the host clock, then timesyncd (which re-polls when anyone else changes the clock) stepping forward again within milliseconds, so the pair cancels inside one 100 ms sample. The backward steps fit chronyd's start-up `makestep` (its first updates only); who made them was not traced (**ASSUMED**). After the third, chronyd only slewed.
 - The journal logged "Clock change detected" at 34.0–34.6 s intervals (the poll plus the step itself) — **the Oct 29 signature**. PR #1010's monitor saw +0.8 to +1.75 s every ~33.5 s, which by the same overshoot suggests a host offset of roughly 0.5–1.3 s (**ASSUMED**).
 
 Reverted on exit and checked: drop-in removed, timesyncd restarted on `ntp.ubuntu.com`, server stopped.
@@ -100,10 +101,10 @@ Reverted on exit and checked: drop-in removed, timesyncd restarted on `ntp.ubunt
 |---|---|---|---|
 | Oct 30 04:12:04 (Oct 29 23:12 CDT) | `wsl -d Ubuntu -u root -- timedatectl set-ntp false` | stopped `systemd-timesyncd`; removed two symlinks, both → `/usr/lib/systemd/system/systemd-timesyncd.service`: `/etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service` and `/etc/systemd/system/dbus-org.freedesktop.timesync1.service` | `wsl -d Ubuntu -u root -- timedatectl set-ntp true` (re-creates both and starts it) |
 
-- Why this one: timesyncd is the redundant discipline. WSL's chronyd already keeps the clock on the Windows clock, by slewing; the drop-in that enables timesyncd under WSL says it exists "so WSL clock is synced on resume from suspend of the host", which the VM's chronyd and `hv_utils` now do.
+- Why this one: timesyncd is the redundant discipline. WSL's chronyd already keeps the clock on the Windows clock, by slewing; the drop-in that enables timesyncd under WSL says it exists "so WSL clock is synced on resume from suspend of the host", which the VM's chronyd and `hv_utils` should now cover (**ASSUMED**: no host sleep happened during this session; to check after the next one, compare WSL's `date` with the Windows clock).
 - What it costs: the Linux clock now follows the Windows clock instead of internet time. Windows re-syncs rarely (trigger-start, `SpecialPollInterval` 32768 s), so after a hibernate the clock can be ~1 s off internet time — exactly the case that used to produce steps, now harmless. No test depends on absolute accuracy.
-- Survives a distro restart: after the change Ubuntu stopped and started again (its systemd started 04:22:49 UTC); timesyncd stayed `disabled` / `inactive` and nothing started it. The WSL VM's chronyd kept tracking PHC0 throughout.
-- Not done: no package installed or removed, no `.wslconfig` edit, no WSL restart, nothing on Windows.
+- Survives restarts: after the change Ubuntu stopped and started again (its systemd started 04:22:49 UTC), and later the whole WSL VM was restarted (B6, §2.2); timesyncd stayed `disabled` / `inactive` both times and nothing started it. The VM's chronyd was back on PHC0 within a minute of the cold start (offset ~1 µs).
+- Not done: no package installed or removed, no `.wslconfig` edit, nothing on Windows.
 
 ### 2.2 Temporary, reverted (each checked)
 
@@ -113,6 +114,7 @@ Reverted on exit and checked: drop-in removed, timesyncd restarted on `ntp.ubunt
 | B2 | `systemctl stop systemd-timesyncd` | `systemctl start` on exit (`active`) |
 | B3 | `/run/systemd/timesyncd.conf.d/zz-wsl-clock-step-sim.conf` (`NTP=127.0.0.1`) + a local NTP server on 127.0.0.1:123 | file removed, timesyncd restarted (`ServerName=ntp.ubuntu.com`), server stopped |
 | B4 | the same local server, kept running to show nothing consults it | stopped on exit (0 requests seen) |
+| B6 | `wsl --shutdown` at 04:55:34 UTC (returned 04:55:35), after the three checks passed (`flock -n /tmp/pd-suite.lock true` succeeded, 0 `node`/`vitest` processes, `wsl -l -v`: Ubuntu running, docker-desktop stopped) | nothing to undo: a restart changes no setting; WSL came back on the next `wsl.exe` call (kernel boot `51571fc7`) |
 | trace | four syscall trace events (`/sys/kernel/tracing/events/syscalls/sys_enter_{adjtimex,clock_adjtime,clock_settime,settimeofday}`) | disabled on exit |
 
 ### 2.3 Pending
@@ -121,16 +123,18 @@ None. No Windows-side step is needed for the steps. The `C:\Users\fashr\.claude\
 
 ## 3. Measurements, before and after
 
-All 100 ms samples, threshold 5 ms; pass bar: no step over 50 ms.
+All 100 ms samples, threshold 5 ms; pass bar: no step over 50 ms. The monitor cannot see a step that is undone inside one sample (§1.4), so the last column counts systemd-resolved's "Clock change detected" lines in the same window: one per step, however short.
 
-| Run | Setup | Fault | Length | Steps > 5 ms | Max step | Guest vs host |
-|---|---|---|---|---|---|---|
-| A | before (timesyncd + chronyd) | none (live) | 5 min | 0 | 0.0 ms | +2 ppm |
-| B1 | before | `tick` −4 % | 5 min | 0 | 0.0 ms | +0 ppm |
-| B2 | timesyncd stopped | `tick` −4 % | 200 s | 0 | 0.0 ms | +10 ppm |
-| **B3** | **before** | **internet ≠ host by 1.3 s** | 5 min | **7** | **+2,341.9 ms** | −4.9 % (slewing back) |
-| **B4** | **after** | the same 1.3 s server + `tick` −4 % every 60 s (9 knocks) | **10 min** | **0** | **0.0 ms** | −47 ppm; REALTIME − host +27.9 → 0.0 ms |
-| **B5** | **after**, fresh distro start | none (live) | **10 min** | **0** | **0.0 ms** | −0 ppm; REALTIME − host 0.0 ms |
+| Run | Setup | Fault | Length | Steps > 5 ms | Max step | Guest vs host | Journal clock changes |
+|---|---|---|---|---|---|---|---|
+| A | before (timesyncd + chronyd) | none (live) | 5 min | 0 | 0.0 ms | +2 ppm | 0 |
+| B1 | before | `tick` −4 % | 5 min | 0 | 0.0 ms | +0 ppm | 0 |
+| B2 | timesyncd stopped | `tick` −4 % | 200 s | 0 | 0.0 ms | +10 ppm | 0 |
+| **B3** | **before** | **internet ≠ host by 1.3 s** | 5 min | **7** | **+2,341.9 ms** | −4.9 % (slewing back) | 14 (the 7 steps, the 3 cancelling pairs, the start-up sync) |
+| **B4** | **after** | the same 1.3 s server + `tick` −4 % every 60 s (9 knocks) | **10 min** | **0** | **0.0 ms** | −47 ppm; REALTIME − host +27.9 → 0.0 ms | **0** |
+| **B5** | **after**, fresh distro start | none (live; Part C test batches ran during it) | **10 min** | **0** | **0.0 ms** | −0 ppm; REALTIME − host 0.0 ms | **0** |
+| **B6** | **after**, cold WSL start (monitor from 2.4 s of kernel uptime) | none (live) | 3 min | **0** | **0.0 ms** | −0 ppm; REALTIME − host 0.0 ms | **0** since boot |
+| suite | **after**, the full suite running | none | 8 min | **0** | **0.0 ms** | — | **0** |
 
 ## 4. The two rows (Part C)
 
@@ -185,7 +189,7 @@ Unloaded, `main` stays green too: the chat turn lasts under 1 ms (a 1-in-1,000 c
 
 ## 5. Checks
 
-- **Full suite**, Linux (WSL, Node 20.20.2), `TZ=UTC npm run test:run -- --maxWorkers=8` under `flock /tmp/pd-suite.lock`, nothing beside it, on `93d91219` (`main` + the two rows; `origin/main` re-fetched before it, still `b1823fdd`): **27,452 rows, 27,363 pass, 0 fail, 89 skipped**, 1,251 files, 227 s. Both Part C rows passed (the candle row at 2,559 ms). A clock monitor ran alongside for 480 s: **0 steps**, no sampling gap over 250 ms.
+- **Full suite**, Linux (WSL, Node 20.20.2), `TZ=UTC npm run test:run -- --maxWorkers=8` under `flock /tmp/pd-suite.lock`, nothing beside it, on `93d91219` (`main` + the two rows; `origin/main` re-fetched before it, still `b1823fdd`): **27,452 rows, 27,363 pass, 0 fail, 89 skipped**, 1,251 files, 227 s. Both Part C rows passed (the candle row at 2,559 ms). A clock monitor ran alongside for 480 s: **0 steps**, no sampling gap over 250 ms; the journal shows no clock change in that window either.
 - The pushed head adds only this report. The only test that reads `docs/audits/` reads one fixed fixture JSON (`api/_utils/intraday/seed.test.js:14`).
 - **`lint:gate`**: exit 0 on `93d91219`; its run on the pushed head is in the PR description.
 - **`vite build`**: exit 0 on `93d91219` (built in 14 s; two CSS syntax warnings, not from this change); its run on the pushed head is in the PR description.
@@ -198,4 +202,5 @@ PR #1010's §5 rows 2–7, 9 and 10, left as they are: `candlePass.test.js:162` 
 
 ## 7. For the founder
 
-- Nothing to decide for the fix. If a later WSL update stops running its own chronyd (check: `wsl --system -- chronyc tracking` shows `PHC0`), re-enable timesyncd with the undo above.
+- **FQ-1 (row 1's lever):** the prompt asked for #1010's fixture or vitest fake timers. The backfill row already fakes `Date`, and its only exposure is vitest's own timeout reading of the real wall clock, which neither can reach (§4.2), so it got a per-row 20 s budget instead. Confirm that lever, or name another (e.g. a cheaper fixture range, which would change what the row proves).
+- Nothing else to decide for the fix. If a later WSL update stops running its own chronyd (check: `wsl --system -- chronyc tracking` shows `PHC0`), re-enable timesyncd with the undo above.
