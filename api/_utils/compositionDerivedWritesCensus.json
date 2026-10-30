@@ -124,6 +124,10 @@
       "reason": "admin CLI over MASTERY state (not composition-derived); epoch-guarded per batch (assertWriteEpochOpen, A46 adminCliScripts row); paused out-of-band during the §8 window"
     },
     {
+      "file": "scripts/reset-failure-built-insight.mjs",
+      "reason": "P-RESET one-off admin CLI clearing learned agent text (primary state, no composition-derived output); epoch-guarded at entry and per agent (assertWriteEpochOpen, A46 adminCliScripts row); paused out-of-band during the §8 window"
+    },
+    {
       "file": "scripts/rule-compat-cleanup.js",
       "reason": "admin CLI mutating rule docs (primary state) under the LEGACY map's cleanup semantics; epoch-guarded per batch; paused out-of-band during the window and superseded by the migration at the flip"
     },
