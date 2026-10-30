@@ -105,15 +105,20 @@ describe('the fuse hero (the live arena, ranked and training)', () => {
     expect(slot('me').board.ranked).toEqual(['a', 'me', 'b', 'c']);
   });
 
-  it('shows no standing before the bell, on a voided board, or with every seat level', () => {
+  it('shows no standing and no crown before the bell, on a voided board, or with every seat level (the founder\'s ruling on S2R-3)', () => {
+    const crowns = () => host.querySelectorAll('[data-fh-crown]').length;
     render(fuse());
     expect(slot('me').board.shown).toBe(true);
+    expect(crowns()).toBe(1);
     render(fuse({ state: 'awaiting' }));
     expect(slot('me').board.shown).toBe(false);
+    expect(crowns()).toBe(0);
     render(fuse({ voided: true }));
     expect(slot('me').board.shown).toBe(false);
+    expect(crowns()).toBe(0);
     render(fuse({ trail: trail({ a: 5, me: 5, b: 5, c: 5 }) }));
     expect(slot('me').board.shown).toBe(false);
+    expect(crowns()).toBe(0);
   });
 
   it('a finished game is complete on the board; a live one is not', () => {
@@ -231,11 +236,13 @@ describe('the final verdict on the fuse (founder ruling 1 of Oct 30, 2026)', () 
     expect(slot('me').board.shown).toBe(true);
   });
 
-  it('a finished board that was voided or never played shows no standing, so it carries no verdict', () => {
+  it('a finished board that was voided or never played shows no standing and no crown, so it carries no verdict', () => {
     render(fuse({ state: 'complete', voided: true }));
     expect(slot('me').board).toMatchObject({ complete: true, shown: false });
+    expect(host.querySelector('[data-fh-crown]')).toBeNull();
     render(fuse({ state: 'complete', trail: trail({ a: 0, me: 0, b: 0, c: 0 }) }));
     expect(slot('me').board).toMatchObject({ complete: true, shown: false });
+    expect(host.querySelector('[data-fh-crown]')).toBeNull();
   });
 });
 
@@ -259,12 +266,14 @@ describe('the climb (the Training tab\'s preview, and the fuse-off fallback)', (
     expect(slot('me').standing.cut).toBe(false);
   });
 
-  it('shows none at rest or on a voided board', () => {
+  it('shows none at rest, on a voided board, or level at any altitude', () => {
     render(climb({ state: 'awaiting' }));
     expect(slot('me').standing.shown).toBe(false);
     render(climb({ voided: true }));
     expect(slot('me').standing.shown).toBe(false);
     render(climb({ climb: { a: [0], me: [0], b: [0], c: [0] } }));
+    expect(slot('me').standing.shown).toBe(false);
+    render(climb({ climb: { a: [5], me: [5], b: [5], c: [5] } }));
     expect(slot('me').standing.shown).toBe(false);
   });
 

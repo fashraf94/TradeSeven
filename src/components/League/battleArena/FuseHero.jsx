@@ -50,6 +50,7 @@ import { LeagueAgentFormSlot, LeagueStandingContext } from './leagueAgentFormSlo
 import { anchorFigures, fuseFormFrame, fuseFormPx, fuseFormScale } from './fuseFormLayout';
 import { prefersReducedMotion } from './arenaEngineCore';
 import { ArenaAtmosphere } from './arenaAtmosphere';
+import { isLevelBoard } from './arenaStateMap';
 import {
   fuseFrame, makeScale, catmullPath, spreadLabels, thinYLabels, headerYieldsToNow,
   fitYLabel, yGutterWidth, nowPillX, toAxisValue, cutAxisLevel,
@@ -200,6 +201,9 @@ export function FuseHero({
   // ── B2: the ONE snapshot everything derives from ──
   const snap = latestTrailSnapshot(trail, ids, banked);
   const { leaderId, cutTotal, needToday } = deriveCut(snap, ids, youId);
+  // The one gate on a leader: the crown, the total it earned and the forms' mood all
+  // read it (§9). Level by the totals the crown ranks, never by today's printed change.
+  const hasLeader = !calm && !voided && !isLevelBoard(ids.map((id) => snap.values[id]));
   const seed = {};
   for (const id of ids) {
     seed[id] = Number.isFinite(trail?.seeds?.[id]) ? trail.seeds[id] : banked[id];
@@ -417,8 +421,7 @@ export function FuseHero({
         <LeagueStandingContext.Provider value={{
           ranked: deriveCut(snap, ids, youId).ranked,
           cut: ranked && ids.length >= 3,
-          // A board with every seat level shows no standing yet, as the climb's "at rest" does.
-          shown: !calm && !voided && new Set(ids.map((id) => snap.values[id])).size > 1,
+          shown: hasLeader,
           complete: done,
         }}>
           {seatData.map((d) => (
@@ -428,10 +431,10 @@ export function FuseHero({
               headY={headY[d.seat.id] ?? tipYOf(d)}
               color={d.neg ? LX.neg : d.seat.color}
               seat={d.seat}
-              lead={d.seat.id === leaderId && !calm && !voided}
+              lead={d.seat.id === leaderId && hasLeader}
               you={!!d.seat.you}
               value={calm ? '—' : fmt(d.dispVal, DAY)}
-              subValue={!calm && DAY && d.seat.id === leaderId && !voided ? `${fmt(snap.values[d.seat.id])} total` : null}
+              subValue={DAY && d.seat.id === leaderId && hasLeader ? `${fmt(snap.values[d.seat.id])} total` : null}
               dead={calm || done}
               compact={compact}
               reduce={reduce}
@@ -447,10 +450,10 @@ export function FuseHero({
           headY={headY[d.seat.id] ?? tipYOf(d)}
           color={d.neg ? LX.neg : d.seat.color}
           seat={d.seat}
-          lead={d.seat.id === leaderId && !calm && !voided}
+          lead={d.seat.id === leaderId && hasLeader}
           you={!!d.seat.you}
           value={calm ? '—' : fmt(d.dispVal, DAY)}
-          subValue={!calm && DAY && d.seat.id === leaderId && !voided ? `${fmt(snap.values[d.seat.id])} total` : null}
+          subValue={DAY && d.seat.id === leaderId && hasLeader ? `${fmt(snap.values[d.seat.id])} total` : null}
           dead={calm || done}
           compact={compact}
           reduce={reduce}

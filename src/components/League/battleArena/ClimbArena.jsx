@@ -17,7 +17,7 @@ import { LTOKENS, LX, alpha, MONO } from '../leagueTokens';
 import { fmtPoints } from '../../../utils/leagueFormat';
 import { ArenaCount } from './ArenaPrimitives';
 import { ST_GOOD } from './arenaTheme';
-import { frameDayIdx } from './arenaStateMap';
+import { frameDayIdx, isLevelBoard } from './arenaStateMap';
 import { prefersReducedMotion } from './arenaEngineCore';
 import AgentPresence, { archetypeToDisposition, standingFromRank } from '../../AgentPresence';
 import { isAgentPresenceOn } from '../../../config/featureFlags';
@@ -85,6 +85,10 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
   // the signifier suppressions above (crown/rank/score) and the caption below, so
   // the board asserts no result. Gated on `voided` → non-voided is byte-identical.
   const atRest = calm || voided || (dMax === 0 && dMin === 0);
+  // The one gate on a leader: the crown, the halo, the enlarged head and the figures'
+  // mood all read it (§9). "At rest" above is where the seats SIT, and stays all-zero;
+  // this is whether anyone LEADS, and a level board at any altitude has no leader.
+  const hasLeader = !calm && !voided && !isLevelBoard(vals);
   const DOM = atRest ? [-3, 11] : [dMin - 1.5, dMax + 0.8];
   const Y = (a) => plotB - ((a - DOM[0]) / (DOM[1] - DOM[0])) * (plotB - plotT);
 
@@ -158,12 +162,13 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
       {/* the presences */}
       {rows.map((s, i) => {
         // L-A follow-up (B): a VOIDED board asserts NO standing, so the LEADER
-        // emphasis collapses at its single source — gating `lead` on !voided drops
+        // emphasis collapses at its single source — gating `lead` on hasLeader drops
         // the crown, the leader halo ring, and the enlarged leader orb/head all at
         // once (leaderId is sorted by the contaminated banked altitude, so any
         // leader tell would re-assert 'who is winning'). The `you` marker stays: it
-        // is identity ("which orb is me"), not a placement. Non-voided → byte-identical.
-        const you = s.id === youId; const lead = s.id === leaderId && !voided;
+        // is identity ("which orb is me"), not a placement. A level board collapses
+        // the same way: its leaderId is only the first seat of a tie.
+        const you = s.id === youId; const lead = s.id === leaderId && hasLeader;
         const x = laneX(i); const y = atRest ? plotB - 16 : Y(at(s));
         const sz = compact ? (you ? 44 : lead ? 40 : 36) : (you ? 52 : lead ? 46 : 40);
         // Heads render LARGER than the orb for a legible mood read. `sz` stays the orb
@@ -230,7 +235,7 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                           you={you}
                           size={headSz}
                           reducedMotion={reduce}
-                          standing={{ rank: rk, seats: rows.length, cut: hasCut, shown: !atRest && !voided, complete: state === 'complete' }}
+                          standing={{ rank: rk, seats: rows.length, cut: hasCut, shown: hasLeader, complete: state === 'complete' }}
                           facing={you || !youRow ? undefined : i < rows.indexOf(youRow) ? 'right' : 'left'}
                         />
                       ) : (
@@ -240,7 +245,7 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                         <AgentPresence
                           disposition={archetypeToDisposition(s.arch)}
                           accent={s.color}
-                          standing={you && !atRest && !voided ? standingFromRank(rk, rows.length) : 0}
+                          standing={you && hasLeader ? standingFromRank(rk, rows.length) : 0}
                           size={headSz}
                           enableEnvironment={false}
                           radial={false}
@@ -256,7 +261,7 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                       <Mono style={{ fontSize: compact ? (you ? 15 : 13) : (you ? 17 : 14), fontWeight: 700, color: '#0A0B0E' }}>{calm || voided ? '·' : rk}</Mono>
                     </div>
                   )}
-                  {lead && !calm && !voided && (
+                  {lead && (
                     <div style={{ position: 'absolute', top: -17, left: '50%', transform: 'translateX(-50%)' }}>
                       <LIcon name="crown" size={crownSize} color={LTOKENS.gold} stroke={2} />
                     </div>
