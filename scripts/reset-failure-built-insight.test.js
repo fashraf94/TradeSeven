@@ -139,7 +139,7 @@ const quiet = () => {};
 const noFence = async () => null;
 
 beforeEach(() => { runsRoot = mkdtempSync(join(tmpdir(), 'insight-reset-test-')); });
-afterEach(() => { rmSync(runsRoot, { recursive: true, force: true }); vi.restoreAllMocks(); });
+afterEach(() => { rmSync(runsRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }); vi.restoreAllMocks(); });
 
 let planTick = 0; // each plan is its own instant, so it gets its own run folder
 const planOn = (db, over = {}) => runPlan({ db, now: new Date(PLAN_TIME.getTime() + (planTick += 1)), runsRoot, log: quiet, ...over });
@@ -783,6 +783,7 @@ describe('restore', () => {
       writeFileSync(backupPath, JSON.stringify(value));
       return { backupPath };
     };
+    await expect(restoreFrom(db, writeBackupFile({ ...good, schema: 'insight-reset-plan-v1' }))).rejects.toThrow(/not a backup/);
     await expect(restoreFrom(db, writeBackupFile({ ...good, runStamp: 'yesterday' }))).rejects.toThrow(/not a backup/);
     await expect(restoreFrom(db, writeBackupFile({ ...good, runStamp: 7 }))).rejects.toThrow(/not a backup/);
     await expect(restoreFrom(db, writeBackupFile({ ...good, agents: 'none' }))).rejects.toThrow(/not a backup/);
@@ -866,6 +867,8 @@ describe('the command line', () => {
       ['census', '--go'],
       ['apply', '--plan', 'p', '--plan-sha256', 'a', '--go', '--allow-weekdays'],
       ['apply', '--plan', '--go'],
+      ['apply', '--plan', '--go', '--plan-sha256', 'a'],
+      ['restore', '--backup', '--go'],
       ['apply', '--plan', 'p', '--go'],
       ['apply', '--plan-sha256', 'a', '--go'],
       ['restore', '--go'],
