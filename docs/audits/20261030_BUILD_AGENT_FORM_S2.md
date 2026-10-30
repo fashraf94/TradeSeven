@@ -429,6 +429,8 @@ The first round killed 55 of 57. The two survivors were both useful:
 2. A finished group: tap **Game over**, then **You first**, then **You last**. Your figure celebrates only when you advanced or won.
 3. On the League page, leave the phone still for one minute and copy the corner's `60 s:` line. Four live figures is the one frame rate not yet measured on a phone.
 
+**The re-check and the `60 s:` line (recorded by the S2 review, Oct 30, 2026).** The review brief carried a slot for your re-check on the new preview and for the League page's `60 s:` line, and nothing was pasted under it. So neither is on record: the three re-check items above (the figures on their points, the Game over verdicts, the four-figure frame rate) and the `60 s:` line stay unmeasured on a device, and the first run's result above is the only phone reading this build has. The review (`20261030_REVIEW_AGENT_FORM_S2.md`) carries them into the flags-on step.
+
 The full checklist, which stands:
 
 Open **https://trade-seven-5lb7gkjqw-fais-projects-bc179554.vercel.app** in Safari on the iPhone. Steps 1–6 need no sign-in and no live game.
