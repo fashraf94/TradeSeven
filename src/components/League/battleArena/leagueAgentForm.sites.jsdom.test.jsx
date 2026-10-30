@@ -40,8 +40,8 @@ vi.mock('./ArenaDesktop', async () => {
 const { FuseHero } = await import('./FuseHero');
 const { ClimbArena } = await import('./ClimbArena');
 const { default: LeagueBattleArenaLive } = await import('./LeagueBattleArenaLive');
-const { fuseFormGap, fuseFormPx, FUSE_FORM_PX } = await import('./leagueAgentFormSlot');
-const { deriveCut, latestTrailSnapshot } = await import('./fuseGeometry');
+const { fuseFormGap, fuseFormPx, fuseFormTop, FUSE_FORM_PX } = await import('./leagueAgentFormSlot');
+const { deriveCut, fuseFrame, latestTrailSnapshot } = await import('./fuseGeometry');
 const { headSizeFor } = await import('./climbHeadLayout');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -136,6 +136,22 @@ describe('bunched tips: the gap makes room for the forms, inside the hero', () =
       expect(gap).toBeLessThan(46);
       expect(48 + 3 * gap + FUSE_FORM_PX.compact.rival / 2).toBeLessThanOrEqual(h);
     }
+  });
+
+  it('with the room, the stack starts below the phone\'s scope toggle, so the leader\'s value does not pass under it', () => {
+    // The toggle's row ends at 43 px (measured, fuseGeometry.js's padT note). The leader's value column is 37 px, around the head.
+    const frame = (h, compact = true) => fuseFrame({ w: 362, h, compact });
+    expect(fuseFormTop(frame(292), true, 292) - 37 / 2).toBeGreaterThanOrEqual(43);
+    render(fuse({ trail: trail({ a: 40, me: 30, b: 20, c: 10 }) }));
+    const first = host.querySelector('[data-fh-tip="a"] .bv2-tap, [data-fh-tip="a"] > div');
+    expect(parseFloat(first.style.top) + slot('a').size / 2).toBe(fuseFormTop(frame(292), true, 292));
+  });
+
+  it('a short hero keeps today\'s start: four forms below the toggle would not fit', () => {
+    const frame = (h, compact = true) => fuseFrame({ w: 362, h, compact });
+    expect(fuseFormTop(frame(221), true, 221)).toBe(frame(221).plotT + 14);
+    expect(fuseFormTop(frame(222), true, 222) + 3 * fuseFormGap(true, 222) + FUSE_FORM_PX.compact.rival / 2).toBeLessThanOrEqual(222);
+    expect(fuseFormTop(frame(420, false), false, 420)).toBe(frame(420, false).plotT + 20);
   });
 
   it('the tips are spread by that gap', () => {

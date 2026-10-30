@@ -45,7 +45,7 @@ import AgentPresence, { archetypeToDisposition } from '../../AgentPresence';
 import { isAgentPresenceOn } from '../../../config/featureFlags';
 import { AGENT_FORM_LEAGUE_ENABLED } from '../../../config/agentFormFlags';
 import { HEAD_FACE_LIFT } from './climbHeadLayout';
-import { LeagueAgentFormSlot, LeagueStandingContext, fuseFormGap, fuseFormPx } from './leagueAgentFormSlot';
+import { LeagueAgentFormSlot, LeagueStandingContext, fuseFormGap, fuseFormPx, fuseFormTop } from './leagueAgentFormSlot';
 import { prefersReducedMotion } from './arenaEngineCore';
 import { ArenaAtmosphere } from './arenaAtmosphere';
 import {
@@ -270,7 +270,7 @@ export function FuseHero({
   const tipYOf = (d) => Y(d.pts[d.pts.length - 1]?.v ?? 0);
   const headY = spreadLabels(
     seatData.map((d) => ({ id: d.seat.id, y: tipYOf(d) })),
-    AGENT_FORM_LEAGUE_ENABLED && showHead ? fuseFormGap(compact, h) : F.headGap, F.plotT + (compact ? 14 : 20), F.floorY - 4,
+    AGENT_FORM_LEAGUE_ENABLED && showHead ? fuseFormGap(compact, h) : F.headGap, AGENT_FORM_LEAGUE_ENABLED && showHead ? fuseFormTop(F, compact, h) : F.plotT + (compact ? 14 : 20), F.floorY - 4,
   );
 
   // ── the header microcopy + its E4 yield (both need burnX) ──

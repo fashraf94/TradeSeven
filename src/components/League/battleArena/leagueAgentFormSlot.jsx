@@ -50,6 +50,15 @@ export function fuseFormGap(compact, h) {
   return Math.min(rival + 2, Math.floor((h - 48 - rival / 2) / 3));
 }
 
+/**
+ * Where the top tip may sit. A form pushes the value beside it toward the scope toggle, which sits inside the phone's plot
+ * (fuseGeometry.js's padT note), and the leader's value and its total would pass under it hours sooner than today's head's.
+ * So on a phone hero with the room, the stack starts below the toggle. A short hero keeps today's start, and its room.
+ */
+export function fuseFormTop(frame, compact, h) {
+  return frame.plotT + (compact ? (h >= 222 ? 28 : 14) : 20);
+}
+
 /** A form whose chunk failed to load shows its still; the arena goes on. */
 class SlotBoundary extends Component {
   constructor(props) { super(props); this.state = { failed: false }; }
