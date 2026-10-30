@@ -49,7 +49,8 @@ describe('League battleview routing — the wall that keeps League out of the co
     let start = 0;
     for (let i = at - 1; i >= 0; i--) { if (/^export const /.test(lines[i])) { start = i + 1; break; } }
     const docstring = lines.slice(start, at).join('\n');
-    for (const needle of ['Amendment E', 'ONE WALL', 'SLOT LABEL', 'DO NOT TURN THIS FLAG OFF', 'leagueBattleviewRoutingWall.test.js']) {
+    // Whole phrases, not words: "Amendment E" also appears in the Pinned-by line, so a bare word would survive losing the wall paragraph.
+    for (const needle of ['THE ONE WALL (contract Amendment E,', 'ONLY thing keeping League battles out of', 'DO NOT TURN THIS FLAG OFF until the cockpit', 'SLOT LABEL', 'leagueBattleviewRoutingWall.test.js']) {
       expect(docstring, `the flag's docstring lost "${needle}" — it is what tells the next reader why the flag must stay on (Amendment E)`).toContain(needle);
     }
     expect(docstring).not.toMatch(/Default OFF/);
