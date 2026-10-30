@@ -152,6 +152,12 @@ describe('the backfill entry, end to end, resumable by the queue flag', () => {
     expect(t.writeLog.length).toBe(writes);
   });
 
+  // Its own budget (20 s), not the 5 s default. Vitest fails a row whose REAL
+  // wall clock — Date.now, captured before this file fakes Date — reads past
+  // its timeout when the row resolves, and this CPU-bound candle pass is the
+  // file's longest row. A wall-clock step lands in that reading (the WSL test
+  // clone's clock was stepped 1–2 s forward every ~34 s —
+  // docs/audits/20261029_WSL_CLOCK_STEP.md); faking Date here cannot move it.
   it('the next candle morning enriches every backfilled day inside the retry window', async () => {
     vi.setSystemTime(CANDLES_AT);
     const r = res();
@@ -166,7 +172,7 @@ describe('the backfill entry, end to end, resumable by the queue flag', () => {
       expect(series.length, `${id} ${d}`).toBe(tape.passes.candles.symbolsRequested.length);
     }
     expect(t.store.get(tapePath('b-flat6', '2026-09-24')).passes.candles.status).toBe('skipped');
-  });
+  }, 20_000);
 
   it('the founder read-out reads the whole range back with the writer flag OFF', async () => {
     flags.writer = false;

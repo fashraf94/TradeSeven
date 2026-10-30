@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { TOURNAMENT_GAME_MODE, GROUP_STATUS } from '../../src/constants/leagueTournament.js';
+import { deadlineClock } from '../_utils/__fixtures__/deadlineClock.js';
 
 // ==================== HOISTED MOCK STATE ====================
 const {
@@ -1831,13 +1832,17 @@ describe('agent/chat — the shadow record finishes before the function can be f
   it('with the runtime hook installed the write is handed to waitUntil — no wait at all, even for a hung logger', async () => {
     const waited = installRequestContext();
     shadowLog.impl = () => new Promise(() => {});
+    // "No wait" is measured on one fake clock (setTimeout, clearTimeout and Date
+    // together), in virtual ms: on real time a wall-clock step inside the turn
+    // read as a wait (the WSL test clone's clock was stepped 1–2 s forward every
+    // ~34 s — docs/audits/20261029_WSL_CLOCK_STEP.md).
+    const clock = deadlineClock(vi);
+    clock.use();
     const { req, res } = okTurn();
-    const startedAt = Date.now();
-    await handler(req, res);
-    const elapsedMs = Date.now() - startedAt;
+    const { atMs } = await clock.settle(SHADOW_LOG_CAP_MS / 2, handler(req, res));
     expect(res.statusCode).toBe(200);
     expect(waited).toHaveLength(1);                 // the platform owns the write
-    expect(elapsedMs).toBeLessThan(SHADOW_LOG_CAP_MS / 2); // and the turn never paid the cap
+    expect(atMs).toBe(0);                           // and the turn never paid the cap: not one virtual ms
   });
 
   it('the cap is CLAMPED to the absolute deadline — a turn already at the ceiling waits zero', async () => {
