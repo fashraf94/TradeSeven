@@ -425,7 +425,7 @@ The first round killed 55 of 57. The two survivors were both useful:
 **Your result, Oct 30, 2026.** You ran the smoke preview on your iPhone 16 (`?leagueForms=1`, ranked, Day 5 of 5, Today). The rendering was "fantastic", and everything else looked great. The one issue was in the League arena: the figures were not near their line points, each one about 60–100 px below the end of its own line, with the YOU figure and its "+80.0" well below its point. You saw the cause as an arena too small for the larger figures, and ruled that it should grow so they fit at their points, with the figures unchanged. **Fixed in §13.** Your four answers to the Founder questions are there too.
 
 **The re-check, on the new preview:**
-1. The figures sit at the end of their own lines, spread and bunched (the **scores** chips).
+1. The figures sit at the end of their own lines, spread and bunched (the **scores** chips), and nothing tucks under Today / The week.
 2. A finished group: tap **Game over**, then **You first**, then **You last**. Your figure celebrates only when you advanced or won.
 3. On the League page, leave the phone still for one minute and copy the corner's `60 s:` line. Four live figures is the one frame rate not yet measured on a phone.
 
@@ -560,6 +560,8 @@ Heights are rendered, with the hero's 2 px border; the CSS heights are 448, 356 
 ### Found, not fixed: the "pinned" block does not pin on a phone
 
 `ArenaMobile.jsx` marks the top block sticky, and its comments call it pinned. On a phone it scrolls away with the page. Both phone hosts scroll the document, and `index.css:69-83` gives `#root` `overflow-x: hidden`, which makes it the block's scroll box, and `#root` never scrolls. Measured in Edge, not on a device: on the earlier head's deployed preview, the block's top is at −150 after a 150 px scroll, and this head's harness does the same. `main` has the same block and the same stylesheet.
+
+Those two pages mount the arena directly, so I traced the real route as well. Ranked: `#root` → `App.jsx:10195`'s margin wrapper → `LeagueScreen` → `LeagueParticipantView.jsx:289` (`minHeight: 100vh`) → `LeagueBattleArenaLive.jsx:90` (`minHeight: 100%`). Training on a phone: `App.jsx:9552` → `LeagueTrainingBattleView` (`minHeight: 100vh`). Nothing between `#root` and the block has a bounded height, so a real game behaves as the fixture page does. This is from the code; I have not scrolled a real game.
 
 This helps here: below the floor the page already scrolls, as you ruled, and at 390 × 420 the tabs come on screen after scrolling. I had written a sticky offset for short screens, and removed it (`140c3761`), because no phone can run it. **If someone later makes the block really pin, the taller hero will leave the 33–57 px gaps above in place while you scroll.** That fix needs its own decision, so it is reported here for separate tasking and not touched.
 
@@ -726,6 +728,7 @@ The other 29 cover the frame, the scale's headroom at each edge, the passes, the
 - **Flag-off identity** at `140c3761`: `vite build --minify false` on Linux, hash-masked, against `f7be7f1b`. 47 files (44 JS), 2 differ: `AgentBattleScreen` 2 lines out and 10 in (R20), the entry 1 and 1 (R22). The same lines as §8.
 - **`lint:gate`:** exit 0. **Production `vite build`:** exit 0.
 - **Full suite:** Linux, WSL, `TZ=UTC`, 8 workers, under `flock /tmp/pd-suite.lock`, at `140c3761`: 1,259 files, 27,662 rows, 27,573 pass, 0 fail, 89 skipped.
-- **Not run:** the Firestore rules suite (no rules changed), and anything on a real device. Measurements used this machine's Inter, not the iPhone's SF Pro, which matters only for how wide a value is.
+- **Not run:** the Firestore rules suite (no rules changed), and anything on a real device.
+- **What the iPhone's fonts could move:** measurements used this machine's fonts, not the iPhone's. That changes how wide a value is, and it can change how tall the toggle's row is, as the button rule already moved it from 43 to 46 px. The leader's value has about 16 px to spare under the toggle. **Your crown has only 1 px** when you lead (a rival's has 4), so on the iPhone it could tuck under by a pixel or two late in the day. Check item 1 asks you to look. The fix would be one number.
 
 A copy of this report is at `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261030_BUILD_AGENT_FORM_S2.md` (BUILD_RULES §3).
