@@ -30,6 +30,8 @@ import { HEAD_FACE_LIFT, LABEL_BELOW_GAP, COMPACT_AXIS_W, headSizeFor } from './
 // (B3 lockstep). `liveComposites` arrives already flag-gated (null off-gate).
 import { seatAltitude } from './seatAltitude';
 import { ArenaAtmosphere } from './arenaAtmosphere';
+import { AGENT_FORM_LEAGUE_ENABLED } from '../../../config/agentFormFlags';
+import { LeagueAgentFormSlot } from './leagueAgentFormSlot';
 
 // the living atmosphere — deep sky, drifting aurora, a deterministic star field.
 export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPlayer, dayIdx: dayIdxProp = null, compact = false, youLiveScore = null, liveComposites = null, voided = false }) {
@@ -219,6 +221,19 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                        the click. The rank digit is intentionally dropped — altitude + crown
                        + the score label carry rank; the head carries mood-at-a-glance. */
                     <div style={{ width: headSz, height: headSz, position: 'relative', pointerEvents: 'none' }}>
+                      {/* Agent form build S2: the seat's form, in the head's footprint and centred on its anchor (the
+                          head's lift is the robot's own). The lanes have a direction, so an opponent looks toward the
+                          player (ruling R14). Inside this branch, so the surge key never remounts the view. */}
+                      {AGENT_FORM_LEAGUE_ENABLED ? (
+                        <LeagueAgentFormSlot
+                          seat={s}
+                          you={you}
+                          size={headSz}
+                          reducedMotion={reduce}
+                          standing={{ rank: rk, seats: rows.length, cut: hasCut, shown: !atRest && !voided, complete: state === 'complete' }}
+                          facing={you || !youRow ? undefined : i < rows.indexOf(youRow) ? 'right' : 'left'}
+                        />
+                      ) : (
                       <div style={{ position: 'absolute', left: '50%', top: '50%',
                         transform: `translate(-50%, calc(-50% - ${(HEAD_FACE_LIFT * headSz).toFixed(1)}px))`,
                         width: headSz * 140 / 156, height: headSz }}>
@@ -232,6 +247,7 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                           reactivityLevel={you ? 'reactive' : 'static'}
                         />
                       </div>
+                      )}
                     </div>
                   ) : (
                     <div style={{ width: sz, height: sz, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',

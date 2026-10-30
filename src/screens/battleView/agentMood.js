@@ -55,6 +55,15 @@ export function evaluationInFlight(battle, nowMs) {
 
 const moodOfStanding = (s) => (s > 0 ? 'confident' : s < 0 ? 'worried' : 'idle');
 
+/** The moods a live signal sets, when one does: an open cockpit call, then an evaluation in flight. Shared with the League (leagueAgentMood.js). */
+export function signalMood(battle, cockpitFeed, nowMs) {
+  const b = battle && typeof battle === 'object' ? battle : {};
+  const needsYou = cockpitFeed && typeof cockpitFeed === 'object' ? cockpitFeed.needsYouCount : 0;
+  if (Number.isFinite(needsYou) && needsYou > 0) return 'waiting';
+  if (evaluationInFlight(b, nowMs)) return 'researching';
+  return null;
+}
+
 /**
  * @param {object}  args
  * @param {object}  args.battle       the live battle document
@@ -73,8 +82,5 @@ export function deriveAgentMood({ battle, cockpitFeed = null, side = 'player', s
     const won = Boolean(outcomes) && outcomes.deriveGameOutcome(outcomeInputOf(b)).kind === outcomes.OUTCOME_KINDS.WON;
     return won ? 'celebrating' : 'idle';
   }
-  const needsYou = cockpitFeed && typeof cockpitFeed === 'object' ? cockpitFeed.needsYouCount : 0;
-  if (Number.isFinite(needsYou) && needsYou > 0) return 'waiting';
-  if (evaluationInFlight(b, nowMs)) return 'researching';
-  return moodOfStanding(s ? standingFromDuel(s.player, s.opponent) : 0);
+  return signalMood(b, cockpitFeed, nowMs) ?? moodOfStanding(s ? standingFromDuel(s.player, s.opponent) : 0);
 }

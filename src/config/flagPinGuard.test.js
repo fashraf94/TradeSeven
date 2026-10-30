@@ -141,6 +141,8 @@ const DARK_BY_DESIGN = {
     'Agent form build S0 — the lab page where the armored forms\' frame budget is decided on the founder\'s iPhone. Stays false on main: it is flipped only on a never-merge smoke branch ("SMOKE ONLY, NEVER MERGE") for the Vercel preview; flag-off App folds the lab away (agentFormLabFlags.test.js)',
   AGENT_FORM_HUB_ENABLED:
     'Agent form build S1 — the armored agent as the Command Center hero. Stays false on main until the founder\'s iPhone reading on the smoke branch; flag-off the hub draws ShadowCanvas and every hub chunk is byte-identical (agentFormFlags.test.js)',
+  AGENT_FORM_LEAGUE_ENABLED:
+    'Agent form build S2 — the agent forms in a League game, ranked and training (yours teal, every opponent copper in their own armor). Stays false on main until the founder\'s iPhone reading on the smoke branch; flag-off the League draws today\'s heads and its chunks are byte-identical to main\'s',
   AGENT_FORM_BATTLE_ENABLED:
     'Agent form build S1 — the agent forms in a BaggerBomb 1v1 battle (yours teal and armored, the CPU a bare copper core). Stays false on main until the founder\'s live-battle smoke; flag-off the battle view draws today\'s faces (agentFormFlags.test.js)',
   COMMAND_CENTER_SYNC_ENABLED:

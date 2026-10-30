@@ -208,7 +208,7 @@ describe('the tight framing: the battle views\' option, and theirs alone (the S1
     for (const p of patches) expect(p.zoom).toBe(1);
   });
 
-  it('of the files that draw the wrapper, only the battle form asks for a framing: the hub, the lab and S0\'s stills keep the design\'s', () => {
+  it('of the files that draw the wrapper, only the battle and League forms ask for a framing: the hub, the lab and S0\'s stills keep the design\'s', () => {
     const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
     const files = [];
     (function walk(dir) {
@@ -221,9 +221,9 @@ describe('the tight framing: the battle views\' option, and theirs alone (the S1
     const ASKS = /\bframing\s*[=:]/g;
     const draws = files.filter((f) => /from '([^']*\/AgentForm\/|\.\/)AgentForm'/.test(readFileSync(f, 'utf8')) && !f.endsWith(`${path.sep}AgentForm.jsx`));
     const rel = (f) => path.relative(SRC, f).split(path.sep).join('/');
-    expect(draws.map(rel).sort()).toEqual(['components/CommandCenter/HubAgentForm.jsx', 'screens/AgentFormLab.jsx', 'screens/battleView/BattleAgentForm.jsx']);
+    expect(draws.map(rel).sort()).toEqual(['components/CommandCenter/HubAgentForm.jsx', 'components/League/battleArena/LeagueAgentForm.jsx', 'screens/AgentFormLab.jsx', 'screens/battleView/BattleAgentForm.jsx']);
     const asks = Object.fromEntries(draws.map((f) => [rel(f), (strip(readFileSync(f, 'utf8').replace(/\r\n/g, '\n')).match(ASKS) || []).length]));
-    expect(asks).toEqual({ 'components/CommandCenter/HubAgentForm.jsx': 0, 'screens/AgentFormLab.jsx': 0, 'screens/battleView/BattleAgentForm.jsx': 1 });
+    expect(asks).toEqual({ 'components/CommandCenter/HubAgentForm.jsx': 0, 'components/League/battleArena/LeagueAgentForm.jsx': 1, 'screens/AgentFormLab.jsx': 0, 'screens/battleView/BattleAgentForm.jsx': 1 });
     expect(readFileSync(path.join(SRC, 'screens/battleView/BattleAgentForm.jsx'), 'utf8')).toContain('framing="tight"');
     // The scan sees a planted ask, as a prop and as a key.
     expect(strip('<AgentForm framing="tight" />\nconst p = { framing: \'tight\' };').match(ASKS)).toHaveLength(2);

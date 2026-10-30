@@ -97,6 +97,18 @@
       "count": 0,
       "authority": "Phase A3 (D-96) \u2014 the character pane's arena header, written on the vocabulary from birth: its two transitions are ONE motionToken('smooth', { reducedMotion }) identifier, shared by the mount-in and the bar, so reduced motion resolves both to `instant`. Zero raw transition literals."
     },
+    "src/screens/battleView/leagueAgentMood.js": {
+      "count": 0,
+      "authority": "Agent form build S2 (founder rulings R13–R23) — the armored agent in League games: colours only through the agent form's tokens, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/League/battleArena/LeagueAgentForm.jsx": {
+      "count": 0,
+      "authority": "Agent form build S2 (founder rulings R13–R23) — the armored agent in League games: colours only through the agent form's tokens, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/League/battleArena/leagueAgentFormSlot.jsx": {
+      "count": 0,
+      "authority": "Agent form build S2 (founder rulings R13–R23) — the armored agent in League games: colours only through the agent form's tokens, no transition literal, from birth. Registered in the commit that introduces them."
+    },
     "src/screens/battleView/BattleAgentForm.jsx": {
       "count": 0,
       "authority": "Agent form build S1 (founder rulings R1–R12) — the armored agent on the hub and in a 1v1 battle: colours only through the agent form's tokens, motion only as the engine's own equip timeline (a stated BUILD_RULES §11 exception, recorded in commandCenterHub.mount.guard.test.js), no transition literal, from birth. Registered in the commit that introduces them."

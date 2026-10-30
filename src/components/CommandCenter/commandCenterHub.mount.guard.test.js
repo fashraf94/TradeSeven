@@ -953,8 +953,12 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     // chunk (which loads only while AGENT_FORM_BATTLE_ENABLED is on), into the pure selector. Flag-off, neither end
     // ships with the battle view (the build report's dist diff: every chunk byte-identical).
     const BATTLE_FORM = 'src/screens/battleView/BattleAgentForm.jsx';
+    // Agent form build S2 (founder ruling R15): the League's form reaches the same derivation the same way, from its own
+    // lazy chunk, which loads only while AGENT_FORM_LEAGUE_ENABLED is on.
+    const LEAGUE_FORM = 'src/components/League/battleArena/LeagueAgentForm.jsx';
     expect(edges.sort()).toEqual([
       `${BATTLE_FORM} -> lazy ${HUB_FILE('hub/selectors/gameOutcome.js')}`,
+      `${LEAGUE_FORM} -> lazy ${HUB_FILE('hub/selectors/gameOutcome.js')}`,
       `${PROVIDER} -> ${HUB_FILE('hub/hubDate.js')}`,
       `${PROVIDER} -> ${HUB_FILE('hub/overlayStack.js')}`,
       `${PROVIDER} -> ${HUB_FILE('hub/selectors/attemptReducer.js')}`,
@@ -968,6 +972,7 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     const literals = outside.flatMap((rel) => hubDirLiterals(codeOf.get(rel)).map((lit) => `${rel}: ${lit}`));
     expect(literals.sort()).toEqual([
       `${BATTLE_FORM}: ../../components/CommandCenter/hub/selectors/gameOutcome`,
+      `${LEAGUE_FORM}: ../../CommandCenter/hub/selectors/gameOutcome`,
       `${PROVIDER}: ../components/CommandCenter/hub/hubDate`,
       `${PROVIDER}: ../components/CommandCenter/hub/overlayStack`,
       `${PROVIDER}: ../components/CommandCenter/hub/selectors/attemptReducer`,

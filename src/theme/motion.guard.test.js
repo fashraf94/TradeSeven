@@ -86,6 +86,10 @@ const GUARDED_FILES = [
   // Battle View character pane, Phase A3 — every transition is an identifier
   // from motionToken (D-96, D-97): the arena's mount-in and its bar.
   'src/screens/battleView/ArenaHeader.jsx',
+  // Agent form build S2: the League's forms, on the vocabulary from birth.
+  'src/screens/battleView/leagueAgentMood.js',
+  'src/components/League/battleArena/LeagueAgentForm.jsx',
+  'src/components/League/battleArena/leagueAgentFormSlot.jsx',
   // Agent form build S1: the battle forms, on the vocabulary from birth.
   'src/screens/battleView/BattleAgentForm.jsx',
   'src/screens/battleView/agentMood.js',
