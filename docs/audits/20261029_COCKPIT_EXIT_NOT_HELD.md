@@ -1,6 +1,6 @@
 # Cockpit — exit calls on stocks not in the book (Amendment E): the count, and a STOP
 
-> **Update, 2026-10-29 (after the rulings):** Option 1 was ruled (Amendment E rev 2), then rev 3 (the check's own committed trade). The fix is built to rev 3 and the BUILD_RULES §2 review has been run — §9–§16 here and `docs/audits/20261029_COCKPIT_EXIT_NOT_HELD_REVIEW.md` — and the founder has ruled on the review's open items (§9, §15). §1–§8 and the appendix are the count and the STOP as they were written.
+> **Update, 2026-10-29 (after the rulings):** Option 1 was ruled (Amendment E rev 2), then rev 3 (the check's own committed trade). The fix is built to rev 3 and the BUILD_RULES §2 review has been run — §9–§16 here and `docs/audits/20261029_COCKPIT_EXIT_NOT_HELD_REVIEW.md` — and the founder has ruled on the review's open items (§9, §15). **Blessed 2026-10-29 (framework chat), with four conditions folded into rev 4; conditions 1–3 are built after the review and recorded in §17.** §1–§8 and the appendix are the count and the STOP as they were written.
 
 **Date:** 2026-10-29 · **Branch:** `claude/cockpit-exit-not-held-3ef5fc` (the app's suffix; cut at `origin/main` `a5c35ba6`; push target by refspec `claude/cockpit-exit-not-held`) · **Status:** STOPPED before building, on the prompt's own gate. Nothing built, nothing pushed, no PR.
 
@@ -99,8 +99,9 @@ Two rulings of 2026-10-29. First: **Option 1**, written into Amendment E revisio
 | Run the BUILD_RULES §2 review on the final diff: multi-lens, a refuter for every finding, snapshot trees, written to `docs/audits/`, cited from the PR | `docs/audits/20261029_COCKPIT_EXIT_NOT_HELD_REVIEW.md` |
 | Push, update the report, stop | Done at `712956af` |
 | **Rulings on the review's open items.** Q1: keep the letter. Q2: accept the single tag. Keep the card's silence-line change. Record them in the report (Q1 and Q2 move to "found, not fixed"), push, stop; keep the hold line | Recorded here and nothing built: no rev 4, no change to the tile's tag, and `cockpit2bModel.js:336` stays. Q1 and Q2 are §15 items 8a and 8b. The review record carries the same note (its §4). The hold line stays |
+| **The blessing (framework chat, 2026-10-29), four conditions, folded into rev 4** (no rule changes). Build 1–3; no second §2 review; replace the PR's first line; push; stop | Rev 4 committed byte for byte as `b8628ba8` (sha256 `f8d5c7cd…18a4`). Condition 1 (the outgoing case), 2 (guard the wall) and 3 (D-9's table) are built and recorded in **§17**; condition 4 (position identity before multi-day battles) is the multi-day format arc's. The PR's first line is now "Blessed 2026-10-29 (framework chat) — merge after 6 PM ET." |
 
-Branch commits (local branch `claude/cockpit-exit-not-held-3ef5fc`, pushed as `claude/cockpit-exit-not-held`): `de33ae8f` Amendment E rev 1 · `ca740fa6`, `c87fc4b2` the count report · `3ab2813f` rev 2 · `f7c0c1db` the build · `6d967995` one more display row · `cf5ce476` the One Door census oracle · `8b8b097a` the first build report · `46523136` rev 3 · `04be9e27` the rev 3 build (**the reviewed head**) · `ccb2ec46` the review's fixes · the report and review record (this commit).
+Branch commits (local branch `claude/cockpit-exit-not-held-3ef5fc`, pushed as `claude/cockpit-exit-not-held`): `de33ae8f` Amendment E rev 1 · `ca740fa6`, `c87fc4b2` the count report · `3ab2813f` rev 2 · `f7c0c1db` the build · `6d967995` one more display row · `cf5ce476` the One Door census oracle · `8b8b097a` the first build report · `46523136` rev 3 · `04be9e27` the rev 3 build (**the reviewed head**) · `ccb2ec46` the review's fixes · `9a13c810` the review record and the report brought up to rev 3 · `720e8401` the production-line count · `712956af` the review record's CONFIRMED / REFUTED split · `73c0ad36` the founder's rulings on the review's open items · `b8628ba8` rev 4 · `ce646f69` conditions 1–3 · `14b4ca5c` the wall pin's whole-phrase needles · the report update (this commit).
 
 ## 10. League routing — confirmed (ruling item 3)
 
@@ -164,14 +165,26 @@ Tested tree **`ccb2ec46`** — the last code commit; the pushed head adds only t
 
 The Linux worktree (`~/pd-ci-exit`, a private `git worktree` of the shared clone) had its own `node_modules` from `npm ci` (main's lockfile carries `three@0.184.0`, which the shared clone lacks); the shared clone's HEAD and `node_modules` were not touched. The suite logs are in `~/runs-exit/` (`rev3`, `final2`).
 
+**Verification of the post-review changes (§17: rev 4, the outgoing-case rows, the flag's docstring, the wall pin, D-9's table).** Tested tree **`14b4ca5c`** — the last code commit; the pushed head adds only this report and the review record's last section. `origin/main` was fetched again and is still `982f6661`, so the suite ran on a **throwaway merge of the two, `4a1c8977`** (made inside the Linux worktree, never pushed).
+
+| Check | Result |
+|---|---|
+| **Full suite, Linux** on the merge (same method as above: Node 20.20.2, `TZ=UTC`, `CI=true`, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock`) | **Exit code 0**: 1,234 files passed, 8 skipped; **27,178 tests passed, 89 skipped, 0 failed**; 232 s. Six more rows than the 27,172 above: the four outgoing-case rows and the wall pin's two. Log: `~/runs-exit/rev4b` |
+| `lint:gate` | Exit 0 on the merge |
+| `vite build` | Exit 0 on the merge (the chunk-size notice is not new). The same build on the exact pushed head is in the PR body |
+| `flagPinGuard.test.js` | Passes (Windows, and inside the Linux suite on the merge with main's changes to it). It scans the new pin's bare `expect(…).toBe(true)` line and requires the flag's "Pinned by:" pointer, which now exists |
+| Affected suites, Windows | `src/config`, `api/_utils/callRecords` and the routing tests green, except one known row: `shadowCpuQuoteIntegrityFlags.test.js` "the guard registers it as dark by design" fails on the Windows CRLF working copy and passes on Linux/LF (the Windows-only failure the house already lists; not caused by this branch) |
+| Mutation check | M33 (the `minting_check` skip removed), M34 (the tier match removed), M35 (the flag turned off) and M36 (the docstring's wall paragraph lost) are all **killed**; M36 first survived a pin that tested single words and was killed after the pin was changed to whole phrases (`14b4ca5c`). M1–M32 were killed on the last production-logic head; no production logic changed since (the one production file touched is a comment) |
+| Off-golden, rules | `callRecordsOffGolden.json` is not in the diff; the off-golden test passes in the suite. Rules suite not run: no rules, indexes or Firestore shapes changed |
+
 ## 15. Found, not fixed
 
 1. **The League slot label.** The tournament prompt shows no tiers (`agentEvalPromptAssembly.js:1469-1476`) while the declaration schema requires `slot` (`agentEvalToolSchema.js:265-269`): 47% of League exit calls name the wrong tier (§2). Showing the tier touches a fenced assembler; deriving `slot` from the book at mint was Option 2. Ruled: a follow-up.
 2. **The false "has already left your book" line.** `battleViewCopy.js:1337` answers any `symbol_not_held` with that sentence. D-4's slot-tier check refuses a directive on a stock held in another tier with that code, so the sentence would be false there. Not reachable from the app while League routing holds (§10). Ruled: a follow-up.
-3. **The routing flag is the only wall.** §10: `LEAGUE_BATTLEVIEW_ROUTING_ENABLED` stays `true`, or the League slot label becomes a live cockpit problem. Its docstring still says "Default OFF (dark)" while the value is `true`, and the line after the declaration (`featureFlags.js:258-259`) is a stray `typeof window … 'leagueRouting' === '1'` expression statement that does nothing. Ruled: found, not fixed.
+3. **The routing flag is the only wall.** §10: `LEAGUE_BATTLEVIEW_ROUTING_ENABLED` stays `true`, or the League slot label becomes a live cockpit problem. Its docstring said "Default OFF (dark)" while the value is `true`, and the line after the declaration is a stray `typeof window … 'leagueRouting' === '1'` expression statement that does nothing. Ruled: found, not fixed. **Since superseded:** the blessing made the docstring a condition — it is rewritten and pinned (§17, condition 2); the stray statement is left as it was.
 4. **The scoped bench sheet's Pick buttons wait when the step is null** (`cockpit2bModel.js:625-627`) — they do not crash and do not file. Ruled: found, not fixed.
 5. **An unreadable parent.** A battle document with no `portfolio` at all is not refused an acknowledgment (it proves nothing, the stance `counterpartUsable` takes). Ruled: keep the fail-open; a row pins it.
-6. **`symbolOut`.** An exit on the stock the check itself sold mints open (it is in the seam's book) and is unanswerable from birth (E-2 reads the fresh parent). Ruled: `symbolOut` unchanged.
+6. **`symbolOut`.** An exit on the stock the check itself sold mints open (it is in the seam's book) and is unanswerable from birth (E-2 reads the fresh parent). Ruled: `symbolOut` unchanged. **Since verified (§17, condition 1):** that check's flip pass skips the call (`minting_check`), so it is never acted at its own check; the count is 5 of 284 (none acted).
 7. **Existing tests encoded the bug** (§13): three screen fixtures offered answers on an exit for a stock their book did not hold.
 8. **From the review** (`docs/audits/20261029_COCKPIT_EXIT_NOT_HELD_REVIEW.md` §3–§4), three items, two of them put to the founder and ruled:
    - **8a. NH-L1-2 (Q1) — ruled: keep the letter.** An UNKNOWN executor outcome (the executor threw after the commit and the landed-trade re-read also failed) leaves `executorResult` null, so an exit on the maybe-bought stock mints `exit_not_held`, immutably. This matches rev 3 ("a missing value matches nothing"). Not built: no rev 4, no flag on the calls context. The sketch (a flag at the cron's `swapOutcomeUnknown` branch, through `publish.js`, skipped in `composeCall`) stays in the review record §4 for anyone who reopens it. It needs a double fault and an agent that exits the stock it is buying; 0 of 284 counted records did.
@@ -180,7 +193,59 @@ The Linux worktree (`~/pd-ci-exit`, a private `git worktree` of the shared clone
 
 ## 16. Review and the PR
 
-This branch changes **29 files** against `origin/main` — 26 code and test files (933 insertions, 33 deletions; the nine production files account for 133 and 18, comments included) plus the amendment, this report and the review record — past BUILD_RULES §2's mandatory-review line (≥10 files). **The review has been run**: five lenses on snapshot trees of `04be9e27`, a refuter for every finding, written to `docs/audits/20261029_COCKPIT_EXIT_NOT_HELD_REVIEW.md`. **16 distinct findings: 9 CONFIRMED, 5 PARTIAL (each with a refuted half), 2 REFUTED as defects; no blocker.** Fixed in `ccb2ec46`: a repeat row that could not fail (rewritten), three new rows and a fixture correction for the mutants that survived, the card's false "it exits" line, four stale comments, and this report. The review's two open questions were then ruled — Q1 keep the letter, Q2 accept the single tag (both now §15 items 8a and 8b) — and the card's silence-line change was ruled keep (§11). The PR's first line is "Hold — merge after Amendment E is blessed, after 6 PM ET." Nothing is merged, subscribed to or watched (BUILD_RULES §2).
+This branch changes **32 files** against `origin/main` — 28 code and test files (1,062 insertions, 48 deletions; the ten production files account for 156 and 33, comments included: the nine that were reviewed plus the routing flag's docstring, a comment) plus the amendment, the Build 2b spec, this report and the review record — past BUILD_RULES §2's mandatory-review line (≥10 files). **The review has been run**: five lenses on snapshot trees of `04be9e27`, a refuter for every finding, written to `docs/audits/20261029_COCKPIT_EXIT_NOT_HELD_REVIEW.md`. **16 distinct findings: 9 CONFIRMED, 5 PARTIAL (each with a refuted half), 2 REFUTED as defects; no blocker.** Fixed in `ccb2ec46`: a repeat row that could not fail (rewritten), three new rows and a fixture correction for the mutants that survived, the card's false "it exits" line, four stale comments, and this report. The review's two open questions were then ruled — Q1 keep the letter, Q2 accept the single tag (both now §15 items 8a and 8b) — and the card's silence-line change was ruled keep (§11). The blessing then added conditions 1–3, built after the review and listed as post-review changes in §17; by ruling there is no second §2 review. The PR's first line is now "Blessed 2026-10-29 (framework chat) — merge after 6 PM ET." (it was "Hold — merge after Amendment E is blessed, after 6 PM ET."). Nothing is merged, subscribed to or watched (BUILD_RULES §2).
+
+## 17. Framework conditions (the blessing of 2026-10-29)
+
+The framework chat blessed Amendment E with four conditions and folded them into **revision 4** (committed byte for byte as `b8628ba8`, sha256 `f8d5c7cd…18a4`, over rev 3; no rule changes). Conditions 1–3 are built here; condition 4 is recorded for the multi-day format arc. The PR's first line is now "Blessed 2026-10-29 (framework chat) — merge after 6 PM ET."
+
+### Condition 1 — the outgoing case (verified; the code does not read `acted`)
+
+An exit call on the stock its **own check sold**. The condition expected it to read `acted` through `flip.js`'s exit match. It does not, and rev 4 says what happens instead. Verified against the code:
+
+| Claim | Where |
+|---|---|
+| The stock is in the seam's book (the book **before** the check's own trade), so E-1 mints the call **open** | `candidate.js:325,328` (`isExitNotHeld` against `seam.book`); a mint row |
+| That check's flip pass **skips** the call: `planFlip` returns `{ skip: 'minting_check' }` when `call.evalId === evalId` | `flip.js:184`; the page scan and the in-transaction recheck both call `planFlip` (`flip.js:235,356`) |
+| So it is never `acted` by its own check, even when the executor result is exactly its whole trade | `matchesWholeTrade` is true for it (`flip.js:170` symbolOut, `:160` tier); `planFlip` never reaches it |
+| The **heard** pass cannot act it either | `heard.js` `planHeard` returns `{ skip: 'not_this_thread' }` unless the call carries a directive answer on the thread in the prompt; a call minted at this check has none (`heard.js:80-81`), and the pass reads calls by `directiveThreadId` (`heard.js:185`) |
+| It stays **open on a sold stock** until its line or its deadline resolves it; meanwhile E-2 refuses every answer and the card reads "Not in your book", which is true | `call-response.js:327`; `cockpitModel.js:620-629` |
+| **League:** the exit match also needs the trade's tier to equal the call's `slot` (`flip.js:160`; `heard.js` `legMatches`, same test), so a guessed slot also leaves a **later** sale of the stock un-acted, the call still open on a sold stock. E-2 makes it unanswerable and League routing keeps it out of the cockpit. League slot label follow-up | `flip.js:160`; amendment rev 4, "What stays as it is" |
+
+**The row** (`api/_utils/callRecords/flip.test.js`, four rows under "Amendment E — an exit call on the check's own committed symbolOut"): it mints the exit on TSLA, runs the real flip pass at that check with the executor result `TSLA → AMD` (the call's whole trade, and the price line met), and asserts the call is **open, not acted, with nothing written** (`diag.skipped = { minting_check: 1 }`); `planHeard` skips it; `isExitNotHeld` is false on the book before the sale and true after; and a trade in another tier fails the exit match. Mutants M33 (no minting-check skip) and M34 (no tier match) are killed by them. **The code agrees with rev 4; nothing to stop for.**
+
+**The count** (read-only; the same rules as the pre-build count — uids held in memory only, recovered from the archived dump, never printed or written; Firestore `.get()` only): of the **284 exit calls** counted before the build, **5 named their own check's committed `symbolOut`** (a model-path trade — `source: 'haiku'`, `evaluationId` equal to the call's `evalId`, written within ten minutes after the check's prompt), all five founder calls, all five in League battles, **all five with a call `slot` different from the tier the trade actually used** (core vs star, star vs support, support vs core, …). **None was acted** (0 of 5): two ended `hit`, one `expired_unresolved`, two `ended_with_battle`. **0 of 284 named their own check's committed `symbolIn`** — the figure rev 3 states. (The read now sees 287 exit calls, three minted since; the three add nothing to either count.) Fifteen exit calls came from a check that committed a trade.
+
+### Condition 2 — guard the wall (`LEAGUE_BATTLEVIEW_ROUTING_ENABLED`)
+
+`src/config/featureFlags.js`: the flag's docstring is rewritten. It says the flag is **ON** (the old text said "Default OFF"), that it is **the only wall** keeping League battles — whose exit-call slots are guessed — out of the cockpit (Amendment E), and that it **must not be turned off until the cockpit arc's League slot label follow-up lands**. It names its pin. **The value stays `true`; this is not a flip.** The stray expression statement under the declaration is left as it was.
+
+The pin (`src/config/leagueBattleviewRoutingWall.test.js`, the house way — `flagPinGuard.test.js`'s rules):
+- a **loud line** `expect(FLAG, MESSAGE).toBe(true)` whose message names Amendment E and the follow-up, and the **bare line** `expect(FLAG).toBe(true)` that the guard scans (the guard's regex does not see a pin that carries a message argument, so the two are two lines) — `flagPinGuard.test.js` therefore checks the pin against the live value and requires the flag's "Pinned by:" pointer, which now exists;
+- a second row that fails if the docstring stops naming the wall, Amendment E and the follow-up (whole phrases), or says "Default OFF" again.
+
+Mutants M35 (flag turned off: both the pin and the guard go red) and M36 (the docstring loses its Amendment E phrase) are killed. M36 first **survived** a version of the row that tested single words ("Amendment E" also appears in the Pinned-by line); the row now tests whole phrases.
+
+### Condition 3 — D-9's display table
+
+`docs/COCKPIT_BUILD2B_SPEC_V1_0.md`: **§7.2** gains `exit_not_held` → "not in your book" *(Amendment E)*; **§7.1** gains the row *an open exit whose stock is in no tier of the book (nothing answered, nothing acted, otherwise Live) — no buttons, no "Who comes in?" step* → "Not in your book", muted *(Amendment E)*. No test reads that spec.
+
+### Condition 4 — recorded, not built
+
+For the multi-day format arc: E-2's "held" is a **symbol** test, safe while the 24-hour bench cooldown keeps a sold stock from returning within a one-day battle. Before multi-day battles reach the allowlist, "held" becomes "the same holding" (position identity, as P6 and ID-1 use it).
+
+### Changes made after the §2 review (listed as such; no second review, by ruling)
+
+| Change | Kind | Where |
+|---|---|---|
+| Amendment E rev 4, byte for byte | document | `docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_E.md` (`b8628ba8`) |
+| The outgoing-case rows | **test only** | `api/_utils/callRecords/flip.test.js` (+4 rows, two imports) |
+| The routing flag's docstring | **comment only — the one production file touched**; the value is unchanged | `src/config/featureFlags.js` |
+| The tripwire pin | **test only** (new file, two rows) | `src/config/leagueBattleviewRoutingWall.test.js` |
+| D-9's two rows | document | `docs/COCKPIT_BUILD2B_SPEC_V1_0.md` §7.1, §7.2 |
+| This section and the updated §9, §14–§16 | document | this report; the review record's last line |
+
+No production logic changed after the review. Verification of these changes is §14: `flagPinGuard.test.js` and the affected suites on Windows, the full Linux suite on the merge with main under the lock, `lint:gate` and `vite build`, and mutants M33–M36.
 
 ## Appendix — every (a) and (b) call
 

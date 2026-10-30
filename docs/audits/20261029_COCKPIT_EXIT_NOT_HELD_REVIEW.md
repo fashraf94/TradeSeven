@@ -78,3 +78,13 @@ Review fixes `ccb2ec46` on top of the reviewed head `04be9e27`, verified as in t
 - the **full Linux suite on the throwaway merge with main** (`10a80a1b`): exit 0, 27,172 passed, 89 skipped, 0 failed; `lint:gate` exit 0; `vite build` exit 0.
 
 The reviewed head and the fixes differ by one production line (the card's silence clause, `cockpit2bModel.js:336`), four comments, and tests. Nothing else in production changed after the review.
+
+## 6. After the blessing (2026-10-29): changes made after this review, and not reviewed by it
+
+The framework chat blessed Amendment E with four conditions (rev 4, `b8628ba8`). Conditions 1–3 were built after the review; by ruling there is **no second §2 review**. What changed since the reviewed head `04be9e27` (and the fixes `ccb2ec46`):
+
+- **Documents:** Amendment E rev 4; the Build 2b spec's §7.1 / §7.2 rows for `exit_not_held` (condition 3).
+- **Tests only:** four rows in `api/_utils/callRecords/flip.test.js` for an exit call on the check's own committed `symbolOut` (condition 1); a new `src/config/leagueBattleviewRoutingWall.test.js`, two rows (condition 2).
+- **A comment only:** the docstring of `LEAGUE_BATTLEVIEW_ROUTING_ENABLED` in `src/config/featureFlags.js`. Its value is unchanged.
+
+**No production logic changed after the review.** The details, the count (5 of 284 exit calls named their own check's committed `symbolOut`, none acted; 0 named `symbolIn`) and the verification are in the build report's §17 and §14.
