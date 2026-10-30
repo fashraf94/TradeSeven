@@ -99,6 +99,12 @@ describe('the fuse hero (the live arena, ranked and training)', () => {
     expect(slot('me').board.cut).toBe(false);
   });
 
+  it('any lead is a standing: no points margin decides it (S1\'s ruling 3)', () => {
+    render(fuse({ trail: trail({ a: 10.03, me: 10.02, b: 10.01, c: 10 }) }));
+    expect(slot('me').board.shown).toBe(true);
+    expect(slot('me').board.ranked).toEqual(['a', 'me', 'b', 'c']);
+  });
+
   it('shows no standing before the bell, on a voided board, or with every seat level', () => {
     render(fuse());
     expect(slot('me').board.shown).toBe(true);

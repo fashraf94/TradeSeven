@@ -445,6 +445,8 @@ export function createAgentFormEngine(platform = {}) {
         if (v.opts.dpr !== prev.dpr) sizeCanvases(v);
         if (v.opts.paused && !prev.paused) holdTween(v, P.now());
         if (!v.opts.paused && prev.paused) releaseTween(v, P.now());
+        // A running response ends with the motion that carried it: no later frame would finish it, and it would stay lit.
+        if (v.response && !v.response.flash && !animates(v)) v.response = null;
         if (!animates(v)) { if (v.tween) { v.fit = v.tween.on ? 1 : 0; v.tween = null; } settleSwap(v); drawNow(v); }
         // A flash is the still's: a view that animates again drops one still owed (S7's review T-13), and a release pays it.
         if (v.response && v.response.flash && animates(v)) v.response = null;

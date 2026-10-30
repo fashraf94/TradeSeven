@@ -26,7 +26,7 @@
 //
 // Build S2:
 //   - `responseKey` and `responsePart` (the hub hero, ruling R19): each new key brightens the part it names, S7's
-//     response on the engine's clock. A form mounted after a key does not answer it (the past is not an event).
+//     response on the engine's clock. No view exists yet at mount, so a key the form mounts with is the past.
 //   - `facing` ('left' | 'right', the League's lanes, ruling R14): which way a form looks where its layout has a
 //     direction. Without it the player looks right and the opponent left, as the header's two sides do.
 //
@@ -107,12 +107,7 @@ export default function AgentForm({
   useEffect(() => { if (viewRef.current) viewRef.current.setOptions({ bloom, batched, rate: drawRate, reducedMotion, dpr, paused }); }, [bloom, batched, drawRate, reducedMotion, dpr, paused]);
   const firstEquip = useRef(true);
   useEffect(() => { if (firstEquip.current) { firstEquip.current = false; return; } if (viewRef.current) viewRef.current.equip(equipped); }, [equipped]);
-  const answered = useRef(responseKey);
-  useEffect(() => {
-    if (answered.current === responseKey) return;
-    answered.current = responseKey;
-    if (viewRef.current) viewRef.current.respond(latest.current.responsePart);
-  }, [responseKey]);
+  useEffect(() => { if (viewRef.current) viewRef.current.respond(latest.current.responsePart); }, [responseKey]);
 
   const live = status === 'live', showStill = (status === 'lost' || status === 'unavailable') && stillReady, placeholder = !live && !showStill;
   const direct = options.path === 'direct', px = `${spec.size}px`;

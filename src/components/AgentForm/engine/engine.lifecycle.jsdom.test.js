@@ -651,6 +651,18 @@ describe('build S2: respond() brightens the part it names, on S7\'s timing', () 
     });
   });
 
+  it('reduced motion arriving mid-response ends it: the form does not stay lit with no frame left to finish it', () => {
+    const { v, r } = mount();
+    frames(3);
+    const base = lights(r);
+    v.respond('core');
+    frames(30);
+    expect(lights(r).core).toBeGreaterThan(base.core * 1.3);
+    v.setOptions({ reducedMotion: true });
+    expect(lights(r).core).toBeCloseTo(base.core, 8);
+    v.unmount();
+  });
+
   it('a view that is not live does nothing', () => {
     const E = engine({ createRenderer: () => { throw new Error('no context'); } });
     const v = E.mount(els(), { kind: 'spec', size: 200 }, { dpr: 1 }, {}, THEME);
