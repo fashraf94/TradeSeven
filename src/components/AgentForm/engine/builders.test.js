@@ -139,7 +139,7 @@ describe('a pose is a pure function of (spec, t)', () => {
 describe('a response in the pose', () => {
   const spec = { kind: 'spec', core: 0, armor: 0, seed: 1, size: 200, state: 'idle', fit: 1, batched: false };
   const edgeOf = (F) => { let hex = null; F.group.traverse((o) => { if (hex === null && o.isLineSegments) hex = o.material.color.getHex(); }); return hex; };
-  const glowOf = (F) => { let size = 0; F.group.traverse((o) => { if (o.isSprite) size = Math.max(size, o.scale.x); }); return size; };
+  const glowOf = (F) => { let size = 0; F.group.traverse((o) => { if (o.isSprite) size += o.scale.x; }); return size; };
 
   it('the armor: its edges run toward the core\'s white, part of the way, and the core stays', () => {
     const C = context(), F = buildForm(spec, C);
