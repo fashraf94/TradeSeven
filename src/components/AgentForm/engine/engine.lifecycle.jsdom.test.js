@@ -275,7 +275,7 @@ describe('build S1: swap() plays an archetype change, and the size tweens across
   }
   const frames = (n, ms = 16) => { for (let i = 0; i < n; i += 1) kit.tick(ms); };
 
-  it('bare Shadow → a set: the set suits up from nothing on the 900 ms equip, and the scale runs 1.25 → .74 with no step', () => {
+  it('bare Shadow → a set: the set suits up from nothing on the 900 ms equip, and the scale runs 1.25 → .65 with no step', () => {
     const E = engine(), v = E.mount(els(), { kind: 'none', size: 200 }, { dpr: 1 }, {}, THEME);
     frames(3);
     expect(v.scale).toBe(1.25);
@@ -288,18 +288,18 @@ describe('build S1: swap() plays an archetype change, and the size tweens across
     // The first frame starts where bare Shadow was drawn; no frame moves the scale by more than a sliver; it ends on the set's own.
     expect(Math.abs(scales[0] - 1.25)).toBeLessThan(.02);
     for (let i = 1; i < scales.length; i += 1) expect(Math.abs(scales[i] - scales[i - 1])).toBeLessThan(.02);
-    expect(scales.at(-1)).toBe(.74);
+    expect(scales.at(-1)).toBe(.65);
     for (let i = 1; i < scales.length; i += 1) expect(scales[i]).toBeLessThanOrEqual(scales[i - 1]);
     v.unmount();
   });
 
-  it('a set → another set: the new one suits up from nothing, and the scale runs from the old set\'s (.74) to the new one\'s (.95)', () => {
+  it('a set → another set: the new one suits up from nothing, and the scale runs from the old set\'s (.65) to the new one\'s (.95)', () => {
     const E = engine(), v = E.mount(els(), { kind: 'trend', size: 200 }, { dpr: 1 }, {}, THEME);
     frames(2);
     v.swap({ kind: 'contra' });
     kit.tick(16);
     expect(v.kind).toBe('contra');
-    expect(Math.abs(v.scale - .74)).toBeLessThan(.02);
+    expect(Math.abs(v.scale - .65)).toBeLessThan(.02);
     frames(60);
     expect(v.fit).toBe(1); expect(v.scale).toBe(.95);
     v.unmount();
@@ -376,9 +376,9 @@ describe('build S1: swap() plays an archetype change, and the size tweens across
     const seen = scalesOf(r);
     v.swap({ kind: 'trend' });
     kit.tick(16);
-    // The first frame after the swap: the still (dirty) at the set's own .74, then the live frame near bare Shadow's 1.25.
+    // The first frame after the swap: the still (dirty) at the set's own .65, then the live frame near bare Shadow's 1.25.
     expect(seen).toHaveLength(2);
-    expect(seen[0]).toBe(.74);
+    expect(seen[0]).toBe(.65);
     expect(Math.abs(seen[1] - 1.25)).toBeLessThan(.02);
     v.unmount();
   });
@@ -428,6 +428,234 @@ describe('build S1: a paused view holds its frame (the hub\'s lifetime ruling R-
     frames(3);
     expect(samples.map((s) => s.views)).toEqual([1, 1, 1]);
     a.unmount(); b.unmount();
+  });
+});
+
+// Build S2 (ruling R23, the S1 review's SR-9): a swap asked for while a view is paused.
+describe('build S2: a swap while paused starts when the view resumes, with R5\'s smoothing', () => {
+  const frames = (n, ms = 16) => { for (let i = 0; i < n; i += 1) kit.tick(ms); };
+
+  it('a set → another set: nothing draws while paused; on resume the 900 ms tween plays whole, from the scale last drawn', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'trend', size: 200 }, { dpr: 1 }, {}, THEME), r = gl.made.renderers[0];
+    frames(3);
+    v.setOptions({ paused: true });
+    kit.tick();
+    v.swap({ kind: 'contra' });
+    const n = r.renders;
+    frames(3, 1000); // the ceremony stays up far longer than the tween
+    expect(r.renders).toBe(n);
+    expect(v.fit).toBe(0);
+    v.setOptions({ paused: false });
+    const scales = [];
+    for (let ms = 0; ms < 900; ms += 16) { kit.tick(16); scales.push(v.scale); }
+    kit.tick(16); scales.push(v.scale);
+    // The first frame is at the tween's start, not already elapsed; no frame steps; it ends on the new form's own.
+    expect(Math.abs(scales[0] - .65)).toBeLessThan(.02);
+    for (let i = 1; i < scales.length; i += 1) expect(Math.abs(scales[i] - scales[i - 1])).toBeLessThan(.02);
+    expect(scales.at(-1)).toBe(.95);
+    expect(v.fit).toBe(1);
+    v.unmount();
+  });
+
+  it('a set → bare Shadow: the set still comes off on the 700 ms unequip after the resume', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'spec', size: 200 }, { dpr: 1 }, {}, THEME);
+    frames(3);
+    v.setOptions({ paused: true });
+    v.swap({ kind: 'none' });
+    frames(4, 1000);
+    expect(v.kind).toBe('spec');
+    v.setOptions({ paused: false });
+    frames(20);
+    expect(v.kind).toBe('spec');
+    expect(v.fit).toBeLessThan(1);
+    frames(40);
+    expect(v.kind).toBe('none');
+    expect(v.scale).toBe(1.25);
+    v.unmount();
+  });
+
+  it('a tween running when the pause comes waits too, and goes on from the fit it had', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'trend', size: 200 }, { dpr: 1 }, {}, THEME);
+    frames(3);
+    v.swap({ kind: 'contra' });
+    frames(20);
+    const at = v.fit;
+    expect(at).toBeGreaterThan(.2);
+    expect(at).toBeLessThan(.8);
+    v.setOptions({ paused: true });
+    frames(5, 1000);
+    expect(v.fit).toBe(at);
+    v.setOptions({ paused: false });
+    kit.tick(16);
+    expect(v.fit).toBeLessThan(at + .03);
+    v.unmount();
+  });
+
+  it('the first frame of the Trend Follower\'s frame change does not jump sideways, either way', () => {
+    const E = engine(), v = E.mount(els(), { kind: 'none', size: 200 }, { dpr: 1 }, {}, THEME), r = gl.made.renderers[0];
+    frames(2);
+    const xs = [], render = r.render.bind(r);
+    r.render = (scene, camera) => { xs.push(scene.children.find((o) => o.isGroup)?.position.x); return render(scene, camera); };
+    v.swap({ kind: 'trend' });
+    frames(60);
+    const live = xs.slice(1); // the first render is the settled still
+    expect(Math.abs(live[0])).toBeLessThan(.01);
+    for (let i = 1; i < live.length; i += 1) expect(Math.abs(live[i] - live[i - 1])).toBeLessThan(.01);
+    expect(live.at(-1)).toBeCloseTo(.27 * Math.cos(.55), 10);
+    v.unmount();
+  });
+});
+
+// Build S2 (ruling R19): S7's response, on a form. The hub's rows hold the triggers and the numbers equal to S7's.
+describe('build S2: respond() brightens the part it names, on S7\'s timing', () => {
+  const frames = (n, ms = 16) => { for (let i = 0; i < n; i += 1) kit.tick(ms); };
+  /** What a frame lights: the core's light and the plates' rim. */
+  function lights(r) {
+    const g = r.lastScene.children.find((o) => o.isGroup);
+    let core = null, rim = null;
+    g.traverse((o) => { if (o.isPointLight) core = o.intensity; if (o.isMesh && o.material?.userData?.rimK) rim = o.material.userData.rimK.value; });
+    return { core, rim };
+  }
+  const mount = (opts = {}, spec = {}) => {
+    const E = engine(), e = els(), v = E.mount(e, { kind: 'spec', size: 200, state: 'idle', ...spec }, { dpr: 1, ...opts }, {}, THEME);
+    return { E, e, v, r: gl.made.renderers[0] };
+  };
+
+  it('the core: the core brightens on a 1.2 s curve, the armor stays, and the form ends exactly as it began', () => {
+    const { v, r } = mount();
+    frames(3);
+    const base = lights(r);
+    v.respond('core');
+    frames(37); // 16 + 36 × 16 ms: about half way
+    expect(lights(r).core).toBeGreaterThan(base.core * 1.6);
+    expect(lights(r).rim).toBe(base.rim);
+    frames(40);
+    expect(lights(r)).toEqual(base);
+    v.unmount();
+  });
+
+  it('the armor: the plates brighten, the core stays', () => {
+    const { v, r } = mount();
+    frames(3);
+    const base = lights(r);
+    v.respond('armor');
+    frames(37);
+    expect(lights(r).rim).toBeGreaterThan(base.rim * 1.6);
+    expect(lights(r).core).toBe(base.core);
+    v.unmount();
+  });
+
+  it('the whole form: both, and any other word for a part is the whole form', () => {
+    for (const part of ['all', undefined, 'toString']) {
+      const { v, r } = mount();
+      frames(3);
+      const base = lights(r);
+      v.respond(part);
+      frames(37);
+      expect(lights(r).rim).toBeGreaterThan(base.rim * 1.6);
+      expect(lights(r).core).toBeGreaterThan(base.core * 1.6);
+      v.unmount();
+      gl.made.renderers.length = 0;
+    }
+  });
+
+  it('a paused view keeps the response on its own clock: nothing plays until the page is back, then all of it', () => {
+    const { v, r } = mount();
+    frames(3);
+    const base = lights(r);
+    v.setOptions({ paused: true });
+    kit.tick();
+    v.respond('core');
+    frames(5, 1000);
+    expect(lights(r)).toEqual(base);
+    v.setOptions({ paused: false });
+    frames(37);
+    expect(lights(r).core).toBeGreaterThan(base.core * 1.6);
+    v.unmount();
+  });
+
+  it('a long gap between frames counts as 50 ms at most, as Shadow\'s clock does, so the peak is never skipped', () => {
+    const { v, r } = mount();
+    frames(3);
+    const base = lights(r);
+    v.respond('core');
+    kit.tick(16);
+    kit.tick(5000);
+    expect(lights(r).core).toBeLessThan(base.core * 1.3);
+    expect(lights(r).core).toBeGreaterThan(base.core);
+    v.unmount();
+  });
+
+  it('an offscreen view keeps it too: its clock stands still with its frames', () => {
+    const { e, v, r } = mount();
+    frames(3);
+    const base = lights(r);
+    v.respond('core');
+    kit.observers[0].callback([{ target: e.box, isIntersecting: false }]);
+    frames(4, 1000);
+    expect(lights(r)).toEqual(base);
+    kit.observers[0].callback([{ target: e.box, isIntersecting: true }]);
+    frames(37);
+    expect(lights(r).core).toBeGreaterThan(base.core * 1.6);
+    v.unmount();
+  });
+
+  describe('a view that does not animate takes the flash', () => {
+    it('reduced motion: ×1.25 at once for 420 ms, then the form again, and the loop stops', () => {
+      const { E, v, r } = mount({ reducedMotion: true });
+      const base = lights(r), n = r.renders;
+      v.respond('all');
+      expect(r.renders).toBeGreaterThan(n);
+      expect(lights(r).core).toBeCloseTo(base.core * 1.25, 8);
+      expect(lights(r).rim).toBeCloseTo(base.rim * 1.25, 8);
+      expect(E.info().looping).toBe(true);
+      frames(25); // 400 ms
+      expect(lights(r).core).toBeCloseTo(base.core * 1.25, 8);
+      frames(2); // past 420 ms
+      expect(lights(r)).toEqual(base);
+      expect(E.info().looping).toBe(false);
+      v.unmount();
+    });
+
+    it('the still rate takes it too', () => {
+      const { v, r } = mount({ rate: 'still' });
+      const base = lights(r);
+      v.respond('armor');
+      expect(lights(r).rim).toBeCloseTo(base.rim * 1.25, 8);
+      expect(lights(r).core).toBe(base.core);
+      v.unmount();
+    });
+
+    it('while paused it is owed, and paid when the page is back', () => {
+      const { E, v, r } = mount({ reducedMotion: true, paused: true });
+      const base = lights(r), n = r.renders;
+      v.respond('core');
+      expect(r.renders).toBe(n);
+      expect(E.info().looping).toBe(false);
+      v.setOptions({ paused: false });
+      expect(lights(r).core).toBeCloseTo(base.core * 1.25, 8);
+      frames(30);
+      expect(lights(r)).toEqual(base);
+      v.unmount();
+    });
+
+    it('a flash still owed is dropped when the view animates again', () => {
+      const { v, r } = mount({ reducedMotion: true, paused: true });
+      const base = lights(r);
+      v.respond('core');
+      v.setOptions({ reducedMotion: false });
+      v.setOptions({ paused: false });
+      frames(3);
+      expect(lights(r).core).toBe(base.core);
+      v.unmount();
+    });
+  });
+
+  it('a view that is not live does nothing', () => {
+    const E = engine({ createRenderer: () => { throw new Error('no context'); } });
+    const v = E.mount(els(), { kind: 'spec', size: 200 }, { dpr: 1 }, {}, THEME);
+    expect(() => v.respond('core')).not.toThrow();
+    v.unmount();
   });
 });
 

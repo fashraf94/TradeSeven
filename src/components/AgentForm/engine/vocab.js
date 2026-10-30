@@ -39,10 +39,21 @@ export const META = Object.freeze({
 /**
  * Each form's framing scale: bare Shadow draws larger than any set (af3-standalone.js.txt:345, :359, and each
  * builder's `frame`). One table, so a swap between forms can tween from one scale to the next (build S1, ruling R5).
+ * Two frames are this app's own, not the design's (build S2, ruling R18), because the design's cut those sets off at
+ * the box's edge at every size: the Diversifier's pods when it celebrates (.95 → .9), and the Trend Follower's rear
+ * streams in five moods of six (.74 → .65, with FRAME_SHIFT). Measured over every mood and the whole motion range.
  */
-export const FRAME_SCALE = Object.freeze({ none: 1.25, trend: .74, contra: .95, spec: .9, preserve: .95, divers: .95, fund: .95 });
+export const FRAME_SCALE = Object.freeze({ none: 1.25, trend: .65, contra: .95, spec: .9, preserve: .95, divers: .9, fund: .95 });
 /** The framing scale of a form kind; anything unknown is bare Shadow's. */
 export const frameScale = (kind) => (Object.hasOwn(FRAME_SCALE, kind) ? FRAME_SCALE[kind] : FRAME_SCALE.none);
+/**
+ * How far a form's frame moves it right of the box's centre, in world units along the camera's right (ruling R18). The
+ * Trend Follower alone is lopsided, its streams reaching about 1.7 times as far as its nose, so it is framed around its
+ * own extent: scale alone would have cost it 28 % of its size, and this costs 12 %.
+ */
+export const FRAME_SHIFT = Object.freeze({ trend: .27 });
+/** The frame's shift of a form kind; 0 for every form but the Trend Follower. */
+export const frameShift = (kind) => (Object.hasOwn(FRAME_SHIFT, kind) ? FRAME_SHIFT[kind] : 0);
 
 /** The four palettes the engine knows; their colours come from tokens. */
 export const PALETTES = Object.freeze(['teal', 'copper', 'mono', 'unlit']);
@@ -93,7 +104,7 @@ export function msAtFit(keys, fit) {
  */
 export function startTween(on, nowMs, currentFit) {
   const keys = on ? EQUIP_KEYS : UNEQUIP_KEYS;
-  return { on: !!on, start: nowMs - msAtFit(keys, currentFit) };
+  return { on: !!on, start: nowMs - msAtFit(keys, currentFit), heldAt: null };
 }
 
 /** The tween's fit and whether it has finished, at clock reading `nowMs`. */
@@ -106,7 +117,8 @@ export function tweenFit(tween, nowMs) {
 // Bare Shadow draws at 1.25 and the sets at .74–.95 (FRAME_SCALE), so a change of form would jump size at its first
 // frame. During a swap the form's scale runs from the scale it was drawn at (`from`) to the new form's (`to`), as a
 // pure function of the tween's fit: the share of the travel the plates have made since the tween began (`fit0`).
-// Fit at the end of the tween gives exactly `to`, so a settled form draws at its own frame, as before.
+// Fit at the end of the tween gives exactly `to`, so a settled form draws at its own frame, as before. A frame's shift
+// (ruling R18) travels the same way, so a change to or from the Trend Follower does not jump sideways either.
 
 /** How far a swap's tween has travelled, 0 → 1, at fit `fit` (`on` the tween's direction, `fit0` its starting fit). */
 export function swapProgress(on, fit0, fit) {
@@ -118,4 +130,28 @@ export function swapProgress(on, fit0, fit) {
 /** The scale a swapping form draws at: `from` → `to` with the tween's progress. */
 export function swapScale(step, fit) {
   return step.from + (step.to - step.from) * swapProgress(step.on, step.fit0, fit);
+}
+
+/** The shift a swapping form draws at: `shiftFrom` → `shiftTo` with the tween's progress. */
+export function swapShift(step, fit) {
+  return step.shiftFrom + (step.shiftTo - step.shiftFrom) * swapProgress(step.on, step.fit0, fit);
+}
+
+// ── the response (build S2, ruling R19): the hub's two triggers brighten the form as they bloom today's Shadow ──
+// The timing is S7's, held equal to the hub's by a row (the engine imports nothing from the hub): the bloom's 1.2 s and
+// its sin(π p) curve on the form's own clock, and the reduced-motion flash's 420 ms at a steady ×1.25.
+
+/** The response's length (hub/shadowCanvas.js BLOOM_SECONDS), in ms. */
+export const RESPONSE_MS = 1200;
+/** How much brighter the response's peak draws the part it lights. */
+export const RESPONSE_PEAK = .7;
+/** The reduced-motion flash's length (ShadowCanvas.jsx FLASH_MS) and its lift (ShadowStill.jsx). */
+export const RESPONSE_FLASH_MS = 420;
+export const RESPONSE_FLASH_LIFT = 1.25;
+/** Which part of a form a response lights. */
+export const RESPONSE_PARTS = Object.freeze(['armor', 'core', 'all']);
+
+/** The light a response adds `ms` into it: 1 at both ends, 1 + RESPONSE_PEAK half way. */
+export function responseLift(ms) {
+  return 1 + RESPONSE_PEAK * Math.sin(Math.PI * clamp(ms / RESPONSE_MS, 0, 1));
 }

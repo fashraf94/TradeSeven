@@ -11,7 +11,7 @@
 // sortTransparent / sortOpaque), so a frame does not depend on which forms were built before it.
 
 import * as THREE from 'three';
-import { STATES, CORE, ARMOR, FRAME_SCALE, clamp } from './vocab.js';
+import { STATES, CORE, ARMOR, FRAME_SCALE, clamp, frameShift } from './vocab.js';
 import { plateMaterial, makeBuildKit, buildBrain } from './core.js';
 import { BUILDERS } from './armor.js';
 import { attachBatch } from './batch.js';
@@ -47,6 +47,7 @@ function numberForm(F) {
 }
 
 const camDir = new THREE.Vector3(), invQ = new THREE.Quaternion();
+const YAW = .55, PITCH = .25;
 
 /**
  * Pose form `F` for `spec` at time `t` (seconds) in context `C` ({ camera, scene }). `pal` is the resolved
@@ -54,20 +55,23 @@ const camDir = new THREE.Vector3(), invQ = new THREE.Quaternion();
  */
 export function poseForm(F, spec, t, C, pal) {
   const S = STATES[spec.state] || STATES.idle, size = spec.size, small = size < 90, fit = spec.fit == null ? 1 : spec.fit, A = ARMOR[spec.armor | 0] || ARMOR[0];
+  // The response (build S2, ruling R19): the part it lights draws brighter this frame, the rest as the mood draws it.
+  const R = spec.response, coreLift = R && R.part !== 'armor' ? R.lift : 1, armorLift = R && R.part !== 'core' ? R.lift : 1;
   F.group.rotation.set(0, .16 * Math.sin(t * .27 + (spec.seed | 0)) + S.scan * .3 * Math.sin(t * .9) + (spec.turn || 0), -.14 * S.lean);
-  // The form's own framing scale, or — mid-swap (build S1, ruling R5) — the scale the swap's tween has reached.
-  F.group.position.set(0, S.lift * .07 * Math.max(0, Math.sin(t * 2.6)), 0); F.group.scale.setScalar(Number.isFinite(spec.scale) ? spec.scale : (F.armor ? F.armor.frame : FRAME_SCALE.none));
-  const camera = C.camera, D = 4.7 * (spec.zoom || 1), yaw = .55, pitch = .25; camera.position.set(D * Math.sin(yaw) * Math.cos(pitch), D * Math.sin(pitch), D * Math.cos(yaw) * Math.cos(pitch)); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
+  // The form's own frame, or — mid-swap (build S1, ruling R5) — the scale and shift the swap's tween has reached.
+  const shift = Number.isFinite(spec.shift) ? spec.shift : frameShift(F.kind);
+  F.group.position.set(shift * Math.cos(YAW), S.lift * .07 * Math.max(0, Math.sin(t * 2.6)), -shift * Math.sin(YAW)); F.group.scale.setScalar(Number.isFinite(spec.scale) ? spec.scale : (F.armor ? F.armor.frame : FRAME_SCALE.none));
+  const camera = C.camera, D = 4.7 * (spec.zoom || 1); camera.position.set(D * Math.sin(YAW) * Math.cos(PITCH), D * Math.sin(PITCH), D * Math.cos(YAW) * Math.cos(PITCH)); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
   C.scene.fog.near = D - .7; C.scene.fog.far = D + 3.1;
   camDir.copy(camera.position).normalize().applyQuaternion(invQ.copy(F.group.quaternion).invert());
-  if (F.brain) F.brain.update(t, S, pal, camDir);
+  if (F.brain) F.brain.update(t, coreLift === 1 ? S : { ...S, bright: S.bright * coreLift, lifted: coreLift }, pal, camDir);
   let eb = 0;
   if (F.armor) {
     F.armor.update(t, S, pal, fit, !!spec.unfit);
-    eb = .95 * A.edge * S.bright * (small ? 1.4 : 1) * (spec.brain === false ? .8 : 1);
+    eb = .95 * A.edge * S.bright * armorLift * (small ? 1.4 : 1) * (spec.brain === false ? .8 : 1);
     for (const p of F.armor.plates) { const u = p.userData; u.em.color.set(pal.near); u.em.opacity = clamp(eb * u.edgeK, 0, 1); u.em2.color.set(pal.near); u.em2.opacity = clamp(.42 * eb * u.edgeK, 0, 1); }
   }
-  F.mat.userData.rim.value.set(pal.near); F.mat.userData.rimK.value = .6 * A.rim * S.bright * (small ? 1.5 : 1) * (spec.brain === false ? .6 : 1) * (.6 + .4 * fit);
+  F.mat.userData.rim.value.set(pal.near); F.mat.userData.rimK.value = .6 * A.rim * S.bright * armorLift * (small ? 1.5 : 1) * (spec.brain === false ? .6 : 1) * (.6 + .4 * fit);
   if (F.batch) F.batch.sync(eb, pal, camera);
   return eb;
 }

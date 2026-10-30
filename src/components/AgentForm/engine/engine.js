@@ -23,10 +23,14 @@
 //   - build S1: a swap between forms, played (the new set's 900 ms equip; a set coming off before bare Shadow
 //     shows), with the size tweened across it (ruling R5); a paused view, which holds its frame and keeps the loop
 //     off for it (the hub's lifetime ruling R-S7-5: it pauses while the deploy ceremony covers the page); and the
-//     cached still drawn at where the view is headed (the settled fit), not at a tween's first frame.
+//     cached still drawn at where the view is headed (the settled fit), not at a tween's first frame;
+//   - build S2: the response (ruling R19): `respond(part)` brightens the armor, the core or the whole form on S7's
+//     timing, on the view's own clock, which stands still with the loop, so a response behind the deploy ceremony
+//     plays when the page is back; a view that does not animate takes S7's 420 ms flash instead, owed while paused.
+//     And a swap asked for while a view is paused starts its tween when the view resumes (ruling R23).
 
 import * as THREE from 'three';
-import { STATES, PALETTES, FRAME_SCALE, clamp, frameScale, stillT, viewT0, startTween, tweenFit, swapScale } from './vocab.js';
+import { STATES, PALETTES, FRAME_SCALE, RESPONSE_FLASH_LIFT, RESPONSE_FLASH_MS, RESPONSE_MS, RESPONSE_PARTS, clamp, frameScale, frameShift, responseLift, stillT, viewT0, startTween, tweenFit, swapScale, swapShift } from './vocab.js';
 import { fadeMaterial, glowTexture } from './core.js';
 import { resetIcosaCache } from './armor.js';
 import { buildForm, poseForm, formKey, disposeForm, formResources } from './form.js';
@@ -176,6 +180,8 @@ export function createAgentFormEngine(platform = {}) {
     if (v.cb.onStatus) v.cb.onStatus(status, { still: v.stillReady });
   }
   const animates = (v) => v.status === 'live' && !v.opts.reducedMotion && v.opts.rate !== 'still';
+  /** A still's flash is running: the loop stays on until it has shown for its 420 ms. */
+  const flashing = (v) => !!(v.response && v.response.flash && v.response.start !== null);
   const pal = (v) => theme.palettes[v.spec.pal] || theme.palettes.teal;
 
   function sizeCanvases(v) {
@@ -200,15 +206,35 @@ export function createAgentFormEngine(platform = {}) {
 
   /** The spec a frame draws: the view's spec with the tween's fit at clock reading `ms` (and, mid-swap, its scale). */
   function frameSpec(v, ms) {
-    if (v.tween) {
+    if (v.tween && v.tween.heldAt === null) {
       const { fit, done } = tweenFit(v.tween, ms);
       v.fit = fit;
       if (done) { v.tween = null; settleSwap(v); }
     }
     const spec = { ...v.spec, fit: v.fit, unfit: v.unfit, batched: v.opts.batched };
-    if (v.swap) spec.scale = swapScale(v.swap, v.fit);
+    if (v.swap) { spec.scale = swapScale(v.swap, v.fit); spec.shift = swapShift(v.swap, v.fit); }
+    if (v.response) spec.response = { part: v.response.part, lift: v.response.flash ? RESPONSE_FLASH_LIFT : responseLift(v.response.age) };
     return spec;
   }
+
+  /** A paused view's tween waits: its clock is rebased when the view resumes, so it plays whole, with its smoothing. */
+  function holdTween(v, ms) { if (v.tween && v.tween.heldAt === null) v.tween.heldAt = ms; }
+  function releaseTween(v, ms) {
+    if (!v.tween || v.tween.heldAt === null) return;
+    v.tween.start += ms - v.tween.heldAt; v.tween.heldAt = null;
+  }
+
+  /** A drawn frame of a response: its clock moves only with the frames drawn, as Shadow's does (ShadowCanvas.jsx). */
+  function stepResponse(v, ts) {
+    const r = v.response;
+    if (!r || r.flash) return;
+    r.age += r.last === null ? 16 : Math.min(50, ts - r.last);
+    r.last = ts;
+    if (r.age >= RESPONSE_MS) v.response = null;
+  }
+  /** The still's flash shows now; it ends in the loop, once its 420 ms have gone. */
+  function startFlash(v) { v.response.start = P.now(); drawNow(v); kick(); }
+  function endFlash(v) { if (flashing(v) && P.now() - v.response.start >= RESPONSE_FLASH_MS) { v.response = null; drawNow(v); } }
 
   /** The spec the cached still draws: the form where the view is headed — a tween's end fit, the form's own scale. */
   function settledSpec(v) {
@@ -234,7 +260,7 @@ export function createAgentFormEngine(platform = {}) {
     const F = C.forms.get(key), size = spec.size, small = size < 90, palette = pal(v), S = STATES[spec.state] || STATES.idle;
     const res = C.direct ? C.size : renderRes(v.opts.dpr, size);
     poseForm(F, spec, t, C, palette);
-    if (into === 'live') v.drawnScale = F.group.scale.x;
+    if (into === 'live') { v.drawnScale = F.group.scale.x; v.drawnShift = Number.isFinite(spec.shift) ? spec.shift : frameShift(spec.kind); }
     if (C.cur !== F.group) { if (C.cur) C.scene.remove(C.cur); C.scene.add(F.group); C.cur = F.group; C.curForm = F; }
     const r = C.renderer;
     if (C.direct) { r.setScissorTest(false); r.setViewport(0, 0, res, res); }
@@ -302,8 +328,10 @@ export function createAgentFormEngine(platform = {}) {
     let drew = 0, calls = 0;
     const c0 = P.now();
     for (const v of views) {
+      endFlash(v);
       if (!animates(v) || !v.vis || v.opts.paused || v.ctx.lost) continue;
       if (v.opts.rate === 'half' && (frameNo & 1)) continue;
+      stepResponse(v, ts);
       const spec = frameSpec(v, ts);
       try {
         if (v.stillDirty) { const st = settledSpec(v); calls += drawView(v, st, stillT(st), 'still'); v.stillDirty = false; }
@@ -321,7 +349,7 @@ export function createAgentFormEngine(platform = {}) {
   }
   function kick() {
     if (raf || P.doc.hidden) return;
-    for (const v of views) if (animates(v) && !v.opts.paused) { raf = P.requestFrame(frame); return; }
+    for (const v of views) if ((animates(v) && !v.opts.paused) || flashing(v)) { raf = P.requestFrame(frame); return; }
     resumed = true;
   }
   function stopLoop() { if (raf) { P.cancelFrame(raf); raf = 0; } resumed = true; }
@@ -357,7 +385,7 @@ export function createAgentFormEngine(platform = {}) {
   function mount(els, spec, options, cb = {}, th) {
     if (!views.size) setup(th);
     const opts = normOptions(options), s = normSpec(spec);
-    const v = { id: nextId++, els, spec: s, opts, cb, vis: true, t0: viewT0(s), tween: null, swap: null, drawnScale: null, fit: s.fit == null ? 1 : s.fit, unfit: !!s.unfit, status: 'pending', stillReady: false, stillDirty: true, formKey: null, ctx: null, ctx2d: null, stillCtx: null, octx: null };
+    const v = { id: nextId++, els, spec: s, opts, cb, vis: true, t0: viewT0(s), tween: null, swap: null, response: null, drawnScale: null, drawnShift: null, fit: s.fit == null ? 1 : s.fit, unfit: !!s.unfit, status: 'pending', stillReady: false, stillDirty: true, formKey: null, ctx: null, ctx2d: null, stillCtx: null, octx: null };
     views.add(v);
     const target = els.box || els.canvas;
     byElement.set(target, v); if (io) io.observe(target);
@@ -415,7 +443,12 @@ export function createAgentFormEngine(platform = {}) {
         const prev = v.opts; v.opts = normOptions({ ...prev, ...patch, path: prev.path });
         if (!v.ctx) return;
         if (v.opts.dpr !== prev.dpr) sizeCanvases(v);
+        if (v.opts.paused && !prev.paused) holdTween(v, P.now());
+        if (!v.opts.paused && prev.paused) releaseTween(v, P.now());
         if (!animates(v)) { if (v.tween) { v.fit = v.tween.on ? 1 : 0; v.tween = null; } settleSwap(v); drawNow(v); }
+        // A flash is the still's: a view that animates again drops one still owed (S7's review T-13), and a release pays it.
+        if (v.response && v.response.flash && animates(v)) v.response = null;
+        else if (v.response && v.response.flash && v.response.start === null && !v.opts.paused) startFlash(v);
         if (v.opts.bloom !== prev.bloom || v.opts.batched !== prev.batched) v.stillDirty = true;
         resumed = true; kick();
       },
@@ -424,7 +457,8 @@ export function createAgentFormEngine(platform = {}) {
        * a change to bare Shadow takes the set off on the 700 ms unequip, then shows Shadow; the same set again (a
        * change reversed mid-way) suits up from where its plates are. The scale runs from the one last drawn to the
        * new form's across the tween (ruling R5), so there is no size step at the first frame. Under reduced motion,
-       * at the still rate, or with no live context, it is update(): the new form at once, its still redrawn.
+       * at the still rate, or with no live context, it is update(): the new form at once, its still redrawn. On a
+       * paused view the tween is set up and waits; it starts when the view resumes (ruling R23).
        */
       swap(patch) {
         if (!views.has(v)) return;
@@ -435,20 +469,33 @@ export function createAgentFormEngine(platform = {}) {
           return;
         }
         const prev = v.spec, from = Number.isFinite(v.drawnScale) ? v.drawnScale : frameScale(prev.kind), now = P.now();
+        const shiftFrom = Number.isFinite(v.drawnShift) ? v.drawnShift : frameShift(prev.kind), shiftTo = frameShift(target);
         const rest = { ...patch }; delete rest.kind;
         if (target === 'none') {
           v.spec = normSpec({ ...prev, ...rest }); v.unfit = true; v.tween = startTween(false, now, v.fit);
-          v.swap = { on: false, fit0: v.fit, from, to: FRAME_SCALE.none, kind: 'none' };
+          v.swap = { on: false, fit0: v.fit, from, to: FRAME_SCALE.none, shiftFrom, shiftTo, kind: 'none' };
         } else if (target === prev.kind) {
           v.spec = normSpec({ ...prev, ...rest }); v.unfit = false; v.tween = startTween(true, now, v.fit);
-          v.swap = { on: true, fit0: v.fit, from, to: frameScale(target), kind: null };
+          v.swap = { on: true, fit0: v.fit, from, to: frameScale(target), shiftFrom, shiftTo, kind: null };
         } else {
           v.spec = normSpec({ ...prev, ...patch }); v.fit = 0; v.unfit = false; v.tween = startTween(true, now, 0);
-          v.swap = { on: true, fit0: 0, from, to: frameScale(target), kind: null };
+          v.swap = { on: true, fit0: 0, from, to: frameScale(target), shiftFrom, shiftTo, kind: null };
         }
+        if (v.opts.paused) holdTween(v, now);
         if (v.spec.size !== prev.size || v.spec.face !== prev.face) sizeCanvases(v);
         v.stillDirty = true;
         kick();
+      },
+      /**
+       * Brighten a part of the form, S7's response: `part` is 'armor', 'core' or anything else for the whole form. A view
+       * that animates plays it on its own clock, held while the view does not draw. One that does not takes the flash,
+       * owed while paused and paid on release. A new response replaces one running, as a new bloom restarts today's.
+       */
+      respond(part) {
+        if (!views.has(v) || !v.ctx || v.status !== 'live') return;
+        v.response = { part: RESPONSE_PARTS.includes(part) ? part : 'all', flash: !animates(v), age: 0, last: null, start: null };
+        if (!v.response.flash) { kick(); return; }
+        if (!v.opts.paused) startFlash(v);
       },
       /** Play the equip (true) or unequip (false) tween: 900 ms / 700 ms on the board's keys; a still under reduced motion. */
       equip(on) {

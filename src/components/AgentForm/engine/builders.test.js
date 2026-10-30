@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { buildForm, poseForm, formKey } from './form.js';
-import { FORM_ORDER } from './vocab.js';
+import { FORM_ORDER, MOODS } from './vocab.js';
 
 function context() {
   const C = { theme: { plate: '#151b28' }, env: new THREE.Texture(), glow: new THREE.Texture(), fadeMat: new THREE.LineBasicMaterial(), camera: new THREE.PerspectiveCamera(30, 1, .1, 40), scene: new THREE.Scene() };
@@ -133,4 +133,69 @@ describe('a pose is a pure function of (spec, t)', () => {
     expect(instances).toBe(9);
     for (let i = 0; i < instances; i += 1) { expect(F.batch.front.getVisibleAt(i), `instance ${i} front`).toBe(true); expect(F.batch.back.getVisibleAt(i), `instance ${i} back`).toBe(false); }
   });
+});
+
+// Build S2 (ruling R18): the frames of the two sets the design cut off. A pose is geometry, so the bounds are computed
+// here without a GPU: every vertex a frame lights, projected through the camera the frame uses. Headless Edge measures the
+// pixels (the S2 report, §5); this row keeps them in CI. Sprites are left out: the halo's tail is 2 % light at the edge.
+describe('ruling R18: every mood and the full motion range stay inside the box', () => {
+  const LIT = .03;
+  const TIMES = Array.from({ length: 121 }, (_, i) => i * .25).concat(Array.from({ length: 40 }, (_, i) => 31 + i * 22.7));
+  const v = new THREE.Vector3();
+  /** The widest a form's lit vertices reach from the box's centre, as a share of the half box. */
+  function reach({ kind, size, state, armor = 0, zoom = 1 }) {
+    const C = context(), spec = { kind, core: 0, armor, seed: 1, size, state, fit: 1, unfit: false, batched: false, zoom };
+    const F = buildForm(spec, C);
+    C.scene.add(F.group);
+    const out = { left: 0, right: 0, up: 0, down: 0 };
+    for (const t of TIMES) {
+      poseForm(F, spec, t, C, PAL);
+      C.camera.updateProjectionMatrix();
+      F.group.updateMatrixWorld(true);
+      F.group.traverse((o) => {
+        if (!o.visible || o.isSprite || !o.geometry?.attributes?.position) return;
+        const pos = o.geometry.attributes.position, col = o.geometry.attributes.color;
+        for (let i = 0; i < pos.count; i += 1) {
+          if (col && Math.max(col.getX(i), col.getY(i), col.getZ(i)) < LIT) continue;
+          v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).project(C.camera);
+          out.left = Math.max(out.left, -v.x); out.right = Math.max(out.right, v.x); out.up = Math.max(out.up, v.y); out.down = Math.max(out.down, -v.y);
+        }
+      });
+    }
+    return out;
+  }
+
+  it.each(['trend', 'divers'])('%s: inside the box in all six moods, at every size the forms draw', (kind) => {
+    for (const size of [48, 60, 88, 340]) for (const state of MOODS) {
+      const r = reach({ kind, size, state });
+      for (const [side, value] of Object.entries(r)) expect(value, `${kind} ${state} at ${size} px, ${side}`).toBeLessThan(1);
+    }
+  }, 60_000);
+
+  it('the row can fail: at the design\'s frames both sets leave the box', () => {
+    const trend = { ...reach({ kind: 'trend', size: 48, state: 'confident' }) };
+    const shifted = (scale, shift) => {
+      const C = context(), spec = { kind: 'trend', core: 0, armor: 0, seed: 1, size: 48, state: 'confident', fit: 1, batched: false, scale, shift };
+      const F = buildForm(spec, C);
+      C.scene.add(F.group);
+      let left = 0;
+      for (const t of TIMES) {
+        poseForm(F, spec, t, C, PAL);
+        C.camera.updateProjectionMatrix();
+        F.group.updateMatrixWorld(true);
+        F.group.traverse((o) => {
+          if (!o.visible || o.isSprite || !o.geometry?.attributes?.position) return;
+          const pos = o.geometry.attributes.position, col = o.geometry.attributes.color;
+          for (let i = 0; i < pos.count; i += 1) {
+            if (col && Math.max(col.getX(i), col.getY(i), col.getZ(i)) < LIT) continue;
+            v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).project(C.camera);
+            left = Math.max(left, -v.x);
+          }
+        });
+      }
+      return left;
+    };
+    expect(trend.left).toBeLessThan(1);
+    expect(shifted(.74, 0)).toBeGreaterThan(1);
+  }, 30_000);
 });
