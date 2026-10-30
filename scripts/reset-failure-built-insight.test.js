@@ -657,7 +657,7 @@ describe('apply: the backup', () => {
   });
 
   it('forces the bytes to disk before it reads them back', () => {
-    expect(SOURCE).toMatch(/writeFileSync(fd, body);s+fsyncSync(fd);/);
+    expect(SOURCE).toMatch(/writeFileSync\(fd, body\);\s+fsyncSync\(fd\);/);
   });
 
   it('two runs in the same instant never share a folder', async () => {
