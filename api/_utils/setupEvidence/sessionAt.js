@@ -25,7 +25,8 @@ const missing = (detail) => ({ ok: false, reason: 'calendar_missing', detail: { 
  *         | { ok: false, reason: 'calendar_missing', detail: object }}
  */
 export function lastCompletedSessionAt(instantMs) {
-  if (typeof instantMs !== 'number' || !Number.isFinite(new Date(instantMs).getTime())) return missing({ etDate: null, why: 'malformed_instant' });
+  // Before 1970 is no activation, and the ET formatter names no era: a BC instant would read as a maintained year.
+  if (typeof instantMs !== 'number' || instantMs < 0 || !Number.isFinite(new Date(instantMs).getTime())) return missing({ etDate: null, why: 'malformed_instant' });
   const etDate = toEtParts(new Date(instantMs)).dateStr;
   const day = getSessionForDate(etDate);
   if (!day) return missing({ etDate });

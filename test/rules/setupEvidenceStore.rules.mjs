@@ -15,7 +15,7 @@
 
 import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { DocumentReference, getFirestore } from 'firebase-admin/firestore';
 import { getOrAcquireSnapshot, parseSnapshotId, readSnapshot, SetupEvidenceProgrammingError, snapshotIdOf } from '../../api/_utils/setupEvidence/index.js';
 import { claimSnapshot, createFinal, releaseClaimLease, settleConfirmation, CONFIRM_AFTER_MS, LEASE_MS } from '../../api/_utils/setupEvidence/store.js';
 import { describeRuleSet } from '../../api/_utils/setupEvaluator/thresholds.js';
@@ -90,6 +90,22 @@ function provider(...answers) {
     return typeof answer === 'function' ? answer() : answer;
   });
 }
+
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+/** The instants of a settled fetch, for a direct settleConfirmation call. */
+const acquiredAt = (now) => ({ requestStartedAtMs: now.ms(), fetchedAt: now().toISOString() });
+/** A db whose first transaction runs `during` after its reads and before its commit. */
+const pausing = (during) => {
+  let first = true;
+  return {
+    collection: (name) => db.collection(name),
+    runTransaction: (fn) => db.runTransaction(async (tx) => {
+      const out = await fn(tx);
+      if (first) { first = false; await during(); }
+      return out;
+    }),
+  };
+};
 
 const call = (key, now, fetchPayload, extra = {}) => getOrAcquireSnapshot({ db, session: SESSION, symbol: key.symbol, now, fetchPayload, host: 'test-host', ...extra });
 const finalDoc = async (key) => { const s = await db.doc(`setupEvidence/${key.id}`).get(); return s.exists ? s : null; };
@@ -183,7 +199,11 @@ describe('two concurrent callers on one key', () => {
     const held = new Promise((resolve) => { answer = resolve; });
     const fetchPayload = vi.fn(() => held);
     const calls = Array.from({ length: 5 }, () => call(key, now, fetchPayload));
-    await Promise.race(calls);
+    // Hold the fetch until all four have answered: no final exists yet, so each must say pending. Answer sooner and a
+    // loser still retrying its transaction reads the final, which is correct and would blur the row.
+    const returned = [];
+    for (const c of calls) c.then((r) => returned.push(r));
+    await vi.waitFor(() => expect(returned).toHaveLength(4), { timeout: 20_000, interval: 25 });
     answer(rawRows());
     const results = await Promise.all(calls);
     expect(results.map((r) => r.status).sort()).toEqual(['final', 'pending', 'pending', 'pending', 'pending']);
@@ -303,9 +323,10 @@ describe('lease expiry', () => {
     expect(late).toEqual({ status: 'final', snapshot: winner.snapshot });
     expect((await finalDoc(key)).data()).toMatchObject({ status: 'ok', writer: { host: 'successor' } });
   });
-  it('a `create` that loses after a stale read reads the winner too (ALREADY_EXISTS from the real backend)', async () => {
+  it('a `create` that loses after a stale read reads the winner too (ALREADY_EXISTS from the real backend), and releases our lease, which the failed commit could not', async () => {
     const key = freshKey();
     const winner = (await call(key, handClock(), provider(rawRows()))).snapshot;
+    const held = (token) => seedClaim(key, { lease: { token, claimedAt: new Date(AFTER_CLOSE_MS).toISOString(), host: 'x' }, observation: { reason: 'missing_bar', detailHash: 'h', observedAt: new Date(AFTER_CLOSE_MS - CONFIRM_AFTER_MS).toISOString() }, attempts: 1, lastAttemptAt: 'x' });
     const stale = {
       collection: (name) => db.collection(name),
       runTransaction: (fn) => db.runTransaction((tx) => fn(new Proxy(tx, {
@@ -315,11 +336,125 @@ describe('lease expiry', () => {
         },
       }))),
     };
-    expect(await createFinal({ db: stale, id: key.id, token: 'none', doc: { other: true } })).toEqual(winner);
+    await held('mine');
+    expect(await createFinal({ db: stale, id: key.id, token: 'mine', doc: { other: true } })).toEqual(winner);
+    expect((await claimDoc(key)).lease).toBeNull();
     const acquired = { requestStartedAtMs: AFTER_CLOSE_MS, fetchedAt: new Date(AFTER_CLOSE_MS).toISOString() };
-    await seedClaim(key, { lease: null, observation: { reason: 'missing_bar', detailHash: 'h', observedAt: new Date(AFTER_CLOSE_MS - CONFIRM_AFTER_MS).toISOString() }, attempts: 1, lastAttemptAt: 'x' });
-    expect(await settleConfirmation({ db: stale, id: key.id, token: 'none', reason: 'missing_bar', detailHash: 'h', acquired, doc: { other: true } })).toEqual({ status: 'final', snapshot: winner });
+    await held('mine');
+    expect(await settleConfirmation({ db: stale, id: key.id, token: 'mine', reason: 'missing_bar', detailHash: 'h', acquired, doc: { other: true } })).toEqual({ status: 'final', snapshot: winner });
+    expect((await claimDoc(key)).lease).toBeNull();
+    await held('a successor');
+    expect(await createFinal({ db: stale, id: key.id, token: 'mine', doc: { other: true } })).toEqual(winner);
+    expect((await claimDoc(key)).lease.token).toBe('a successor');
     expect((await finalDoc(key)).data()).toEqual(winner);
+  });
+  it('a commit whose acknowledgement was lost: the re-run finds its own lease, claims, and counts one attempt', async () => {
+    const key = freshKey();
+    const now = handClock();
+    const rerun = { collection: (name) => db.collection(name), runTransaction: async (fn) => { await db.runTransaction(fn); return db.runTransaction(fn); } };
+    const claim = await claimSnapshot({ db: rerun, id: key.id, now, host: 'x' });
+    expect(claim.status).toBe('claimed');
+    expect(await claimDoc(key)).toMatchObject({ lease: { token: claim.token }, attempts: 1 });
+  });
+});
+
+describe('every claim mutation is a token-checked transaction', () => {
+  it('no read or write of either document outside a transaction', async () => {
+    const key = freshKey();
+    const now = handClock();
+    const get = vi.spyOn(DocumentReference.prototype, 'get');
+    const set = vi.spyOn(DocumentReference.prototype, 'set');
+    try {
+      const first = await claimSnapshot({ db, id: key.id, now, host: 'x' });
+      await releaseClaimLease({ db, id: key.id, token: first.token });
+      const second = await claimSnapshot({ db, id: key.id, now, host: 'x' });
+      await settleConfirmation({ db, id: key.id, token: second.token, reason: 'missing_bar', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'x' } });
+      const third = await claimSnapshot({ db, id: key.id, now, host: 'x' });
+      await createFinal({ db, id: key.id, token: third.token, doc: { who: 'x' } });
+      expect(get.mock.calls.length + set.mock.calls.length).toBe(0);
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+  it('a successor arriving between the old worker\'s read and commit keeps its lease: settling', async () => {
+    const key = freshKey();
+    const now = handClock();
+    const old = await claimSnapshot({ db, id: key.id, now, host: 'old' });
+    now.set(now.ms() + LEASE_MS);
+    let successor;
+    const during = async () => { successor = claimSnapshot({ db, id: key.id, now, host: 'successor' }); await sleep(600); };
+    await settleConfirmation({ db: pausing(during), id: key.id, token: old.token, reason: 'missing_bar', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'old' } });
+    const s = await successor;
+    expect(s.status).toBe('claimed');
+    expect(await claimDoc(key)).toMatchObject({ lease: { token: s.token }, attempts: 2 });
+  }, 60_000);
+  it('a successor arriving between the old worker\'s read and commit keeps its lease: creating', async () => {
+    const key = freshKey();
+    const now = handClock();
+    const old = await claimSnapshot({ db, id: key.id, now, host: 'old' });
+    now.set(now.ms() + LEASE_MS);
+    let successor;
+    const during = async () => { successor = claimSnapshot({ db, id: key.id, now, host: 'successor' }); await sleep(600); };
+    await createFinal({ db: pausing(during), id: key.id, token: old.token, doc: { who: 'old' } });
+    const s = await successor;
+    const claim = await claimDoc(key);
+    if (s.status === 'claimed') expect(claim).toMatchObject({ lease: { token: s.token }, attempts: 2 });
+    else { expect(s.status).toBe('final'); expect(claim.lease).toBeNull(); }
+  }, 60_000);
+  it('a successor arriving between the release\'s read and its write keeps its lease', async () => {
+    const key = freshKey();
+    const now = handClock();
+    const old = await claimSnapshot({ db, id: key.id, now, host: 'old' });
+    now.set(now.ms() + LEASE_MS);
+    // A release that stopped being a transaction reaches the plain set; the successor claims just ahead of it there.
+    const plainSet = DocumentReference.prototype.set;
+    let viaPlainSet;
+    let successor;
+    const spy = vi.spyOn(DocumentReference.prototype, 'set').mockImplementation(async function hooked(...args) {
+      viaPlainSet = await claimSnapshot({ db, id: key.id, now, host: 'successor' });
+      return plainSet.apply(this, args);
+    });
+    const during = async () => { successor = claimSnapshot({ db, id: key.id, now, host: 'successor' }); await sleep(600); };
+    try {
+      await releaseClaimLease({ db: pausing(during), id: key.id, token: old.token });
+    } finally {
+      spy.mockRestore();
+    }
+    const s = viaPlainSet ?? await successor;
+    expect(s.status).toBe('claimed');
+    expect(await claimDoc(key)).toMatchObject({ lease: { token: s.token }, attempts: 2 });
+  }, 60_000);
+  it('settling after a final, a successor holding the lease: the lease stands', async () => {
+    const key = freshKey();
+    const now = handClock();
+    const old = await claimSnapshot({ db, id: key.id, now, host: 'old' });
+    now.set(now.ms() + LEASE_MS);
+    const successor = await claimSnapshot({ db, id: key.id, now, host: 'successor' });
+    await db.doc(`setupEvidence/${key.id}`).create({ who: 'third' });
+    const out = await settleConfirmation({ db, id: key.id, token: old.token, reason: 'missing_bar', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'old' } });
+    expect(out).toEqual({ status: 'final', snapshot: { who: 'third' } });
+    expect((await claimDoc(key)).lease.token).toBe(successor.token);
+  });
+  it('settling after a final, our own lease: released', async () => {
+    const key = freshKey();
+    const now = handClock();
+    const own = await claimSnapshot({ db, id: key.id, now, host: 'own' });
+    await db.doc(`setupEvidence/${key.id}`).create({ who: 'third' });
+    await settleConfirmation({ db, id: key.id, token: own.token, reason: 'missing_bar', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'own' } });
+    expect((await claimDoc(key)).lease).toBeNull();
+  });
+  it('an error other than ALREADY_EXISTS surfaces, even with a winner there; ALREADY_EXISTS with no winner surfaces too', async () => {
+    const key = freshKey();
+    const now = handClock();
+    const failingWith = (code, message) => ({ collection: (name) => db.collection(name), runTransaction: () => Promise.reject(Object.assign(new Error(message), { code })) });
+    const orphan = failingWith(6, 'exists but gone');
+    await expect(createFinal({ db: orphan, id: key.id, token: 't', doc: { who: 'x' } })).rejects.toThrow('exists but gone');
+    await expect(settleConfirmation({ db: orphan, id: key.id, token: 't', reason: 'r', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'x' } })).rejects.toThrow('exists but gone');
+    await db.doc(`setupEvidence/${key.id}`).create({ who: 'winner' });
+    const internal = failingWith(13, 'commit failed');
+    await expect(createFinal({ db: internal, id: key.id, token: 't', doc: { who: 'x' } })).rejects.toThrow('commit failed');
+    await expect(settleConfirmation({ db: internal, id: key.id, token: 't', reason: 'r', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'x' } })).rejects.toThrow('commit failed');
   });
 });
 
@@ -370,6 +505,18 @@ describe('the confirmation record', () => {
     const friday = weekend.findIndex((r) => r.date === '2026-10-23');
     weekend.splice(friday, 0, { ...weekend[friday], date: '2026-10-24' });
     expect(await call(key, now, provider(weekend))).toEqual({ status: 'retryable', reason: 'unordered_bars' });
+    expect(await observationOf(key)).toMatchObject({ reason: 'unordered_bars', observedAt: now().toISOString() });
+  });
+  it('the same detail under a different reason replaces it: the reason is part of the match', async () => {
+    const key = freshKey();
+    const now = handClock();
+    const first = await claimSnapshot({ db, id: key.id, now, host: 'x' });
+    await settleConfirmation({ db, id: key.id, token: first.token, reason: 'missing_bar', detailHash: 'same', acquired: acquiredAt(now), doc: { who: 'x' } });
+    now.set(now.ms() + CONFIRM_AFTER_MS + MINUTE);
+    const second = await claimSnapshot({ db, id: key.id, now, host: 'x' });
+    const out = await settleConfirmation({ db, id: key.id, token: second.token, reason: 'unordered_bars', detailHash: 'same', acquired: acquiredAt(now), doc: { who: 'x' } });
+    expect(out).toEqual({ status: 'retryable', reason: 'unordered_bars' });
+    expect(await finalDoc(key)).toBeNull();
     expect(await observationOf(key)).toMatchObject({ reason: 'unordered_bars', observedAt: now().toISOString() });
   });
   it('a matching separate fetch 30 minutes on finalises, from THAT fetch\'s evidence', async () => {
@@ -425,6 +572,17 @@ describe('the confirmation record', () => {
     now.set(Date.parse(first.observedAt) + CONFIRM_AFTER_MS);
     expect((await call(key, now, provider(gapAt()))).status).toBe('final');
   });
+  it('a retryable refusal between the two samples touches nothing either: "different" is read within the confirm class, and the two matching samples are still 30 minutes apart', async () => {
+    const key = freshKey();
+    const now = handClock();
+    await call(key, now, provider(gapAt()));
+    const first = await observationOf(key);
+    now.set(now.ms() + 10 * MINUTE);
+    expect(await call(key, now, provider(rawRows().slice(1)))).toEqual({ status: 'retryable', reason: 'missing_bar' });
+    expect(await observationOf(key)).toEqual(first);
+    now.set(Date.parse(first.observedAt) + CONFIRM_AFTER_MS);
+    expect((await call(key, now, provider(gapAt()))).snapshot).toMatchObject({ status: 'refused', refusal: { reason: 'missing_bar', detail: { after: expect.any(String) } } });
+  });
   it('an observation with an unreadable date matches nothing and is replaced, never finalising on it', async () => {
     const key = freshKey();
     const now = handClock();
@@ -449,14 +607,13 @@ describe('the confirmation record', () => {
     expect((await call(key, now, fetchPayload)).status).toBe('final');
     expect((await claimDoc(key)).lease).toMatchObject({ token: successor.token });
   });
-  it('no call ever waits: each call returns at once, the clock never reads later than the test moved it', async () => {
+  it('no call ever waits: two calls return in seconds, both retryable, with the 30 minutes still to run', async () => {
     const key = freshKey();
     const now = handClock();
     const started = Date.now();
-    await call(key, now, provider(gapAt()));
-    await call(key, now, provider(gapAt()));
+    expect(await call(key, now, provider(gapAt()))).toEqual({ status: 'retryable', reason: 'missing_bar' });
+    expect(await call(key, now, provider(gapAt()))).toEqual({ status: 'retryable', reason: 'missing_bar' });
     expect(Date.now() - started).toBeLessThan(5_000);
-    expect(now.ms()).toBe(AFTER_CLOSE_MS);
   });
 });
 
@@ -486,13 +643,15 @@ describe('attempts, and what a retryable outcome leaves', () => {
     await call(key, now, provider(new Error('down')));
     expect((await claimDoc(key)).attempts).toBe(2);
   });
-  it('the observation is carried through a takeover', async () => {
+  it('the observation is carried through a takeover of an expired, non-null lease', async () => {
     const key = freshKey();
     const now = handClock();
     await call(key, now, provider(gapAt()));
     const first = (await claimDoc(key)).observation;
-    now.set(now.ms() + MINUTE);
-    await claimSnapshot({ db, id: key.id, now, host: 'x' });
+    await claimSnapshot({ db, id: key.id, now, host: 'dead' });
+    expect((await claimDoc(key)).lease).not.toBeNull();
+    now.set(now.ms() + LEASE_MS);
+    expect((await claimSnapshot({ db, id: key.id, now, host: 'successor' })).status).toBe('claimed');
     expect((await claimDoc(key)).observation).toEqual(first);
   });
 });
@@ -517,10 +676,17 @@ describe('a final document is never updated', () => {
 describe('what the store refuses', () => {
   it('crypto makes no fetch and no write, before any other check', async () => {
     const fetchPayload = provider(rawRows());
-    const before = (await db.collection('setupEvidenceClaims').get()).size;
+    const id = snapshotIdOf({ session: SESSION, symbol: 'BTC', ruleSet: RULE_SET });
     expect(await getOrAcquireSnapshot({ db, session: SESSION, symbol: 'BTC', now: handClock(), fetchPayload })).toEqual({ status: 'excluded', reason: 'unsupported_symbol_class' });
     expect(fetchPayload).not.toHaveBeenCalled();
-    expect((await db.collection('setupEvidenceClaims').get()).size).toBe(before);
+    expect((await db.doc(`setupEvidence/${id}`).get()).exists).toBe(false);
+    expect((await db.doc(`setupEvidenceClaims/${id}`).get()).exists).toBe(false);
+  });
+  it('a dotted spelling of a class share is refused before any read: one instrument, one key', async () => {
+    const fetchPayload = provider(rawRows());
+    await expect(getOrAcquireSnapshot({ db, session: SESSION, symbol: 'BRK.B', now: handClock(), fetchPayload })).rejects.toThrow(TypeError);
+    await expect(readSnapshot({ db, session: SESSION, symbol: 'BRK.B', ruleSet: RULE_SET })).rejects.toThrow(TypeError);
+    expect(fetchPayload).not.toHaveBeenCalled();
   });
   it('the ok-result assertion throws on a forced mismatch and writes nothing: a clock that steps back across the close', async () => {
     const key = freshKey();
@@ -566,6 +732,21 @@ describe('what the store refuses', () => {
   });
   it('a plain Date is refused as a clock: it could only stamp a time before the request', async () => {
     await expect(getOrAcquireSnapshot({ db, session: SESSION, symbol: 'NVDA', now: new Date(AFTER_CLOSE_MS), fetchPayload: provider([]) })).rejects.toThrow(TypeError);
+  });
+  it('a failed release never replaces the outcome: the first error surfaces, a retryable stays retryable, and the release failure goes to the log', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const failAfterClaim = () => {
+      const failing = {
+        collection: (name) => db.collection(name),
+        runTransaction: vi.fn((fn) => (failing.runTransaction.mock.calls.length >= 2 ? Promise.reject(new Error(`boom ${failing.runTransaction.mock.calls.length}`)) : db.runTransaction(fn))),
+      };
+      return failing;
+    };
+    const err = await call(freshKey(), handClock(), provider(rawRows()), { db: failAfterClaim() }).catch((e) => e);
+    expect(err.message).toBe('boom 2');
+    expect(warn.mock.calls.flat().join(' ')).toContain('lease release failed: boom 3');
+    expect(await call(freshKey(), handClock(), provider(new Error('down')), { db: failAfterClaim() })).toEqual({ status: 'retryable', reason: 'fetch_failed' });
+    warn.mockRestore();
   });
   it('a write failure after the lease was taken releases the lease and surfaces', async () => {
     const key = freshKey();

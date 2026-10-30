@@ -18,15 +18,17 @@ describe('the key round trip', () => {
     expect(snapshotIdOf(KEY)).toBe(ID);
     expect(parseSnapshotId(ID)).toEqual(KEY);
   });
-  it.each([['BRK-B'], ['BF.B'], ['A'], ['X2'], ['SPY']])('a symbol with its punctuation round-trips: %s', (symbol) => {
+  it.each([['BRK-B'], ['BF-B'], ['A'], ['X2'], ['SPY'], ['ABCDEFGHIJKL']])('a symbol as positions hold it round-trips: %s', (symbol) => {
     expect(parseSnapshotId(snapshotIdOf({ ...KEY, symbol }))).toEqual({ ...KEY, symbol });
   });
   it('a later version, hash and semantics round-trip', () => {
     const ruleSet = { setupVersion: 'tf-setup-v12', thresholdsHash: 'abcdef012345', semanticsId: 'tf-setup-v12/sem-30' };
     expect(parseSnapshotId(snapshotIdOf({ ...KEY, ruleSet }))).toEqual({ ...KEY, ruleSet });
   });
-  it('an id holds no character a Firestore document id forbids', () => {
-    expect(snapshotIdOf(KEY)).not.toContain('/');
+  it('the longest id holds no slash, the one character a Firestore document id forbids, and stays inside its 1,500 bytes', () => {
+    const id = snapshotIdOf({ ...KEY, symbol: 'ABCDEFGHIJKL' });
+    expect(id).not.toContain('/');
+    expect(Buffer.byteLength(id)).toBeLessThan(1_500);
   });
 });
 
@@ -56,6 +58,7 @@ describe('a malformed member is rejected', () => {
     ['setupVersion holding a dot', { ...RULE_SET, setupVersion: 'tf.setup-v1' }],
     ['setupVersion holding the separator', { ...RULE_SET, setupVersion: 'tf__setup-v1' }],
     ['setupVersion holding a tilde', { ...RULE_SET, setupVersion: 'tf~setup-v1' }],
+    ['setupVersion holding a slash', { ...RULE_SET, setupVersion: 'tf/setup-v1' }],
     ['setupVersion with no version', { ...RULE_SET, setupVersion: 'tf-setup' }],
     ['setupVersion in capitals', { ...RULE_SET, setupVersion: 'TF-SETUP-V1' }],
     ['a short hash', { ...RULE_SET, thresholdsHash: '26f3f411b56' }],
@@ -64,6 +67,7 @@ describe('a malformed member is rejected', () => {
     ['a hash in capitals', { ...RULE_SET, thresholdsHash: '26F3F411B566' }],
     ['semanticsId with no prefix', { ...RULE_SET, semanticsId: 'sem-1' }],
     ['semanticsId with two slashes', { ...RULE_SET, semanticsId: 'tf-setup-v1/sem/1' }],
+    ['semanticsId with a slash in its prefix', { ...RULE_SET, semanticsId: 'tf/setup-v1/sem-1' }],
     ['semanticsId already tilded', { ...RULE_SET, semanticsId: 'tf-setup-v1~sem-1' }],
     ['semanticsId holding the separator', { ...RULE_SET, semanticsId: 'tf__setup-v1/sem-1' }],
     ['semanticsId holding a dot', { ...RULE_SET, semanticsId: 'tf-setup-v1/sem.1' }],
@@ -73,7 +77,7 @@ describe('a malformed member is rejected', () => {
     expect(() => ruleKeyOf(ruleSet)).toThrow(TypeError);
     expect(() => snapshotIdOf({ ...KEY, ruleSet })).toThrow(TypeError);
   });
-  it.each([['lower case', 'nvda'], ['a slash', 'BRK/B'], ['the separator', 'BRK__B'], ['an underscore', 'BRK_B'], ['a space', 'BRK B'], ['empty', ''], ['the provider suffix', 'NVDA.US'], ['a leading dot', '.NVDA'], ['a trailing hyphen', 'NVDA-'], ['a double hyphen', 'BRK--B'], ['not a string', 7], ['undefined', undefined]])('symbol: %s', (_label, symbol) => {
+  it.each([['lower case', 'nvda'], ['a slash', 'BRK/B'], ['the separator', 'BRK__B'], ['an underscore', 'BRK_B'], ['a space', 'BRK B'], ['empty', ''], ['the provider suffix', 'NVDA.US'], ['a dotted class share: the same instrument as BRK-B, so never a second key', 'BRK.B'], ['BF.B', 'BF.B'], ['thirteen characters', 'ABCDEFGHIJKLM'], ['a leading dot', '.NVDA'], ['a trailing hyphen', 'NVDA-'], ['a double hyphen', 'BRK--B'], ['not a string', 7], ['undefined', undefined]])('symbol: %s', (_label, symbol) => {
     expect(() => snapshotIdOf({ ...KEY, symbol })).toThrow(TypeError);
   });
   it.each([['no dashes', '20261029'], ['an impossible date', '2026-02-30'], ['month 13', '2026-13-01'], ['a timestamp', '2026-10-29T00:00:00Z'], ['empty', ''], ['undefined', undefined]])('session: %s', (_label, session) => {
@@ -98,6 +102,7 @@ describe('parseSnapshotId rejects what snapshotIdOf would not have produced', ()
     ['two tildes', '2026-10-29__NVDA__tf-setup-v1.26f3f411b566.tf~setup-v1~sem-1'],
     ['a bad session', '2026-02-30__NVDA__tf-setup-v1.26f3f411b566.tf-setup-v1~sem-1'],
     ['a bad symbol', '2026-10-29__nvda__tf-setup-v1.26f3f411b566.tf-setup-v1~sem-1'],
+    ['a dotted symbol', '2026-10-29__BRK.B__tf-setup-v1.26f3f411b566.tf-setup-v1~sem-1'],
   ])('%s', (_label, id) => {
     expect(() => parseSnapshotId(id)).toThrow(TypeError);
   });

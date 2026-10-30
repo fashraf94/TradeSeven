@@ -52,7 +52,7 @@ describe('the contract\'s table', () => {
   ])('unordered_bars, %s → retryable', (_label, detail) => {
     expect(kind(refused('unordered_bars', detail))).toBe('retryable');
   });
-  it.each([[ACQUISITION_FAILURES.FETCH_FAILED], [ACQUISITION_FAILURES.NON_ARRAY_PAYLOAD]])('an acquisition failure (%s: timeout, non-200, budget, non-array body) → retryable', (reason) => {
+  it.each([[ACQUISITION_FAILURES.FETCH_FAILED], [ACQUISITION_FAILURES.NON_ARRAY_PAYLOAD], [ACQUISITION_FAILURES.MALFORMED_PAYLOAD]])('an acquisition failure (%s: timeout, non-200, budget, a body that cannot be read) → retryable', (reason) => {
     expect(classifyAcquisitionFailure(reason)).toEqual({ disposition: 'retryable', reason, detail: null });
   });
   it('calendar_missing with why malformed_date → programming error', () => {

@@ -19,6 +19,7 @@
 // | calendar_missing (unmaintained); asOf_in_future                      | retryable          |
 // | malformed or out-of-order payload (unordered_bars)                   | retryable          |
 // | fetch failure, timeout, non-200, budget, non-array payload           | retryable          |
+// | a payload whose defect the mapper would hide, or cannot read         | retryable          |
 // | calendar_missing why malformed_date; asOf_not_a_session              | programming_error  |
 // | ok evidence whose asOf or requestedAsOf differs from the session     | programming_error  |
 //
@@ -35,7 +36,7 @@ import { createHash } from 'node:crypto';
 
 export const DISPOSITIONS = Object.freeze({ FINAL: 'final', CONFIRM: 'confirm', RETRYABLE: 'retryable', PROGRAMMING_ERROR: 'programming_error' });
 /** The acquisition failures that never reach the adapter. */
-export const ACQUISITION_FAILURES = Object.freeze({ FETCH_FAILED: 'fetch_failed', NON_ARRAY_PAYLOAD: 'non_array_payload' });
+export const ACQUISITION_FAILURES = Object.freeze({ FETCH_FAILED: 'fetch_failed', NON_ARRAY_PAYLOAD: 'non_array_payload', MALFORMED_PAYLOAD: 'malformed_payload' });
 
 const FINAL_REFUSALS = new Set(['basis_discontinuity', 'missing_fact', 'insufficient_history']);
 

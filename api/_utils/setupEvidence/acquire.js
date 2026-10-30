@@ -21,7 +21,11 @@
 //
 // The adjusted close comes from the raw payload (attachAdjustedClose), so the split
 // check runs. mapDailyRows' drop count has no place in the record; it goes to the
-// log, as fetchDailyOHLCV's does, and a dropped row reads `missing_bar` here anyway.
+// log, as fetchDailyOHLCV's does, and a lone dropped row reads as the gap it leaves.
+// A dropped row can hide more than that: the mapper runs first, so a duplicate or
+// malformed date on an unreadable row would never reach the adapter's own checks,
+// and attachAdjustedClose would read a dropped twin's adjusted close. Such a payload
+// is a malformed payload, retryable, and stops here.
 
 import { mapDailyRows } from '../marketDataCache.js';
 import { fetchDailyPayload } from '../eodhdDailyWindow.js';
@@ -37,6 +41,7 @@ export const ACQUIRE_TIMEOUT_MS = 5_000;
 export const REQUEST_LOOKBACK_CALENDAR_DAYS = 130;
 const DAY_MS = 86_400_000;
 const SOURCE_META_KEYS = Object.freeze(['fetchedAt', 'from', 'to']);
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The injected clock, read now: a valid Date, or a TypeError. */
 export function readClock(now) {
@@ -67,9 +72,20 @@ export function sourceMetaOf(input) {
   return meta;
 }
 
+/** A row with no well-formed date, or two rows on one date: nothing the adapter could see, once the mapper has dropped one. Pure. */
+function hasDateDefect(payload) {
+  const dates = new Set();
+  for (const row of payload) {
+    const date = row?.date;
+    if (typeof date !== 'string' || !DATE_RE.test(date) || dates.has(date)) return true;
+    dates.add(date);
+  }
+  return false;
+}
+
 /**
  * One provider read and its evaluation. Never throws for the provider: a failed
- * fetch or a non-array body comes back as `failure`.
+ * fetch, a non-array body or a payload that cannot be read comes back as `failure`.
  *
  * @returns {Promise<{ failure: string, requestStartedAtMs: number }
  *   | { evidence: object, entry: object, fetchedAt: string, receivedAtMs: number, requestStartedAtMs: number }>}
@@ -80,17 +96,27 @@ export async function acquireOnce({ session, symbol, now, fetchPayload = fetchDa
   let payload;
   try {
     payload = await fetchPayload(symbol, { from, to, order: 'd', timeoutMs: ACQUIRE_TIMEOUT_MS });
-  } catch {
+  } catch (err) {
+    console.warn(`[setupEvidence] ${symbol} ${session}: fetch failed: ${err?.message}`); // the shared request's messages carry no key
     return { failure: ACQUISITION_FAILURES.FETCH_FAILED, requestStartedAtMs };
   }
   const received = readClock(now);
   if (!Array.isArray(payload)) return { failure: ACQUISITION_FAILURES.NON_ARRAY_PAYLOAD, requestStartedAtMs };
 
-  const { rows, dropped } = mapDailyRows(payload);
-  if (dropped > 0) console.warn(`[setupEvidence] ${symbol} ${session}: mapDailyRows dropped ${dropped} row(s) of ${payload.length}`);
+  let rows;
+  try {
+    const mapped = mapDailyRows(payload);
+    if (mapped.dropped > 0) {
+      console.warn(`[setupEvidence] ${symbol} ${session}: mapDailyRows dropped ${mapped.dropped} row(s) of ${payload.length}`);
+      if (hasDateDefect(payload)) return { failure: ACQUISITION_FAILURES.MALFORMED_PAYLOAD, requestStartedAtMs };
+    }
+    rows = attachAdjustedClose(mapped.rows, payload);
+  } catch { // a field no number can be read from: parseFloat throws on an object with no primitive form
+    return { failure: ACQUISITION_FAILURES.MALFORMED_PAYLOAD, requestStartedAtMs };
+  }
   const fetchedAt = received.toISOString();
   const evidence = buildDailyEvidence({
-    rows: attachAdjustedClose(rows, payload),
+    rows,
     asOf: session,
     now: received,
     minBars: MIN_COMPLETED_BARS,

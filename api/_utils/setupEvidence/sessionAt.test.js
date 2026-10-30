@@ -33,6 +33,11 @@ describe('lastCompletedSessionAt — the Phase 0 §D matrix', () => {
     ['a BR-2 late-day creation, 2026-10-29 15:30 ET → the session before', et('2026-10-29', 15, 30), { session: '2026-10-28', etDate: '2026-10-29', relation: 'before_close' }],
     ['2026-01-02 at the close → that day: the first maintained session reaches no earlier year', et('2026-01-02', 16), { session: '2026-01-02', etDate: '2026-01-02', relation: 'after_close' }],
     ['the last maintained session after its close', et('2027-12-31', 16), { session: '2027-12-31', etDate: '2027-12-31', relation: 'after_close' }],
+    ['23:30 ET on a winter evening is still that ET date, past its close (04:30Z the next day)', Date.UTC(2026, 11, 2, 4, 30), { session: '2026-12-01', etDate: '2026-12-01', relation: 'after_close' }],
+    ['00:30 ET on a winter morning is the new ET date, before its close (05:30Z)', Date.UTC(2026, 11, 2, 5, 30), { session: '2026-12-01', etDate: '2026-12-02', relation: 'before_close' }],
+    ['23:30 ET on a summer evening is still that ET date (03:30Z the next day)', Date.UTC(2026, 6, 15, 3, 30), { session: '2026-07-14', etDate: '2026-07-14', relation: 'after_close' }],
+    ['00:30 ET on a summer morning is the new ET date (04:30Z)', Date.UTC(2026, 6, 15, 4, 30), { session: '2026-07-14', etDate: '2026-07-15', relation: 'before_close' }],
+    ['2027-12-31 at 23:59 ET is still the last maintained year, though it is 2028 in UTC', Date.UTC(2028, 0, 1, 4, 59), { session: '2027-12-31', etDate: '2027-12-31', relation: 'after_close' }],
   ];
   it.each(OK_ROWS)('%s', (_label, instant, expected) => {
     expect(lastCompletedSessionAt(instant)).toEqual({ ok: true, ...expected });
@@ -54,7 +59,7 @@ describe('lastCompletedSessionAt — the Phase 0 §D matrix', () => {
       ok: false, reason: 'calendar_missing', detail: { etDate: '2028-01-03', maintainedYears: [2026, 2027] },
     });
   });
-  it.each([[Number.NaN], [Number.POSITIVE_INFINITY], [8.64e15 + 1], ['2026-10-27'], [null], [undefined]])('a malformed instant (%s) is calendar_missing, never a throw', (instant) => {
+  it.each([[Number.NaN], [Number.POSITIVE_INFINITY], [8.64e15 + 1], [-1], [Date.UTC(-2025, 9, 28, 20)], ['2026-10-27'], [null], [undefined]])('a malformed instant (%s) is calendar_missing, never a throw', (instant) => {
     expect(lastCompletedSessionAt(instant)).toEqual({ ok: false, reason: 'calendar_missing', detail: { etDate: null, why: 'malformed_instant', maintainedYears: [2026, 2027] } });
   });
 });

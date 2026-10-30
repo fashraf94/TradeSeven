@@ -52,21 +52,23 @@ export async function readFinal({ db, id }) {
 /**
  * ONE transaction: a final snapshot → it; a live lease → pending, no fetch; else
  * the lease is taken (over an expired one, if any), the observation kept and the
- * attempt counted.
+ * attempt counted. The token is one per call, so a re-run after a commit whose
+ * acknowledgement was lost finds its own lease and is not told to wait for itself.
  *
  * @returns {Promise<{ status: 'final', snapshot: object } | { status: 'pending' } | { status: 'claimed', token: string }>}
  */
 export async function claimSnapshot({ db, id, now, host }) {
   const finalRef = db.collection('setupEvidence').doc(id);
   const claimRef = db.collection('setupEvidenceClaims').doc(id);
+  const token = randomUUID();
   return db.runTransaction(async (tx) => {
     const finalSnap = await tx.get(finalRef);
     if (finalSnap.exists) return { status: 'final', snapshot: finalSnap.data() };
     const claimSnap = await tx.get(claimRef);
     const claim = claimSnap.exists ? claimSnap.data() : null;
+    if (claim?.lease?.token === token) return { status: 'claimed', token };
     const at = readClock(now);
     if (leaseIsLive(claim?.lease, at.getTime())) return { status: 'pending' };
-    const token = randomUUID();
     const stamp = at.toISOString();
     tx.set(claimRef, {
       lease: { token, claimedAt: stamp, host: host ?? null },
@@ -88,11 +90,12 @@ export async function releaseClaimLease({ db, id, token }) {
   });
 }
 
-/** After a `create` lost a race the transaction's own read did not see: the winner is the snapshot. */
-async function winnerAfter(err, { db, id }) {
+/** After a `create` lost a race the transaction's own read did not see: the winner is the snapshot, and the failed commit took our lease's release with it. */
+async function winnerAfter(err, { db, id, token }) {
   if (err?.code !== ALREADY_EXISTS) throw err;
   const winner = await readFinal({ db, id });
   if (!winner) throw err;
+  await releaseClaimLease({ db, id, token });
   return winner;
 }
 
@@ -113,7 +116,7 @@ export async function createFinal({ db, id, token, doc }) {
       return doc;
     });
   } catch (err) {
-    return winnerAfter(err, { db, id });
+    return winnerAfter(err, { db, id, token });
   }
 }
 
@@ -150,6 +153,6 @@ export async function settleConfirmation({ db, id, token, reason, detailHash, ac
       return { status: 'retryable', reason };
     });
   } catch (err) {
-    return { status: 'final', snapshot: await winnerAfter(err, { db, id }) };
+    return { status: 'final', snapshot: await winnerAfter(err, { db, id, token }) };
   }
 }

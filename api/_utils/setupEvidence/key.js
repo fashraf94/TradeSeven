@@ -17,8 +17,13 @@ const SETUP_VERSION_RE = new RegExp(`^${NAME}$`);
 const THRESHOLDS_HASH_RE = /^[0-9a-f]{12}$/;
 const SEMANTICS_ID_RE = new RegExp(`^${NAME}/sem-[0-9]+$`);
 const SESSION_RE = /^\d{4}-\d{2}-\d{2}$/;
-/** Upper-case letters and digits, joined by single dots or hyphens (BRK-B, BF.B); the provider's `.US` suffix is not a symbol. */
-const SYMBOL_RE = /^[A-Z0-9]+(?:[.-][A-Z0-9]+)*$/;
+/**
+ * Upper-case letters and digits joined by single hyphens, as positions hold them (BRK-B). One instrument has one
+ * key, so another spelling is refused, never repaired: `BRK.B` asks the provider for BRK-B.US, and accepting both
+ * would give one instrument two immutable snapshots; `.US` is the provider's suffix, not a symbol.
+ */
+const SYMBOL_RE = /^[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
+const SYMBOL_MAX_LENGTH = 12;
 const RULE_SET_KEYS = Object.freeze(['semanticsId', 'setupVersion', 'thresholdsHash']);
 const SEPARATOR = '__';
 
@@ -31,7 +36,7 @@ function assertSession(session) {
 }
 
 function assertSymbol(symbol) {
-  if (typeof symbol !== 'string' || !SYMBOL_RE.test(symbol) || symbol.endsWith('.US')) throw refuse('symbol', symbol);
+  if (typeof symbol !== 'string' || !SYMBOL_RE.test(symbol) || symbol.length > SYMBOL_MAX_LENGTH) throw refuse('symbol', symbol);
 }
 
 function assertRuleSet(ruleSet) {
