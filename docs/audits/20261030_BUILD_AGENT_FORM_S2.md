@@ -1,8 +1,10 @@
 # Build S2: The armored agent in League games, plus the S1 carry list
 
-**Run date:** October 30, 2026 · **Model:** Opus · **Branch:** `claude/agent-form-s2`, cut from `main` @ `f7be7f1b` (which holds PR #1011 and PR #1014), pushed from the worktree branch `claude/agent-form-s2-armored-16abc8` by refspec · **Smoke branch:** `claude/agent-form-s2-smoke` · **Preview:** https://trade-seven-5lb7gkjqw-fais-projects-bc179554.vercel.app
+**Run date:** October 30, 2026 · **Model:** Opus · **Branch:** `claude/agent-form-s2`, cut from `main` @ `f7be7f1b` (which holds PR #1011 and PR #1014), pushed from the worktree branch `claude/agent-form-s2-armored-16abc8` by refspec · **Smoke branch:** `claude/agent-form-s2-smoke` · **Preview:** https://trade-seven-lz95ui5x5-fais-projects-bc179554.vercel.app
 
 **Updated after your iPhone run:** §13 holds the arena fit and your four rulings, and replaces what §7 says about where the figures sit.
+
+**Updated after the review:** §14 holds the review's fixes and your ruling on a level board. The review itself is `docs/audits/20261030_REVIEW_AGENT_FORM_S2.md`.
 
 **Preamble.** `git fetch origin` ran first. `origin/main` = `f7be7f1b`, the merge of PR #1014, with PR #1011's merge `b1823fdd` beneath it, so the prompt's STOP does not apply. The tree was clean. Fenced files read: `api/agent/decide.js` (`:1382-1594`, the prescribed deploy, for R13). Fenced functions called: none. Fenced files edited: none. Nothing under `api/` changed. `tournamentAgentBoards.js`, `tournamentAgentDraft.js`, `tournamentCpu.js` and `agent-evaluate.js` were read for R13; none is edited.
 
@@ -12,18 +14,18 @@
 
 | # | Item | Result |
 |---|---|---|
-| 1 | Flag-off identity | **All three flags off, the build differs from `main` in 2 of 47 files, on R20's and R22's lines only.** 44 JS chunks, the stylesheet and `index.html` were compared unminified with hashes masked. The list is in §8. |
+| 1 | Flag-off identity | **All three flags off, the build differs from `main` in 2 of 47 files, on R20's lines, R22's line and the level-crown gate's lines only.** 44 JS chunks, the stylesheet and `index.html` were compared unminified with hashes masked. §8 lists R20's and R22's; §14 repeats the check on the merged tree and lists all of them. |
 | 2 | Step 1 map | **Two League sites, no STOP.** The fuse hero's tips (the live arena, ranked and training) and the climb's seats (the Training tab's preview). No site needs a server or fenced change, every opponent's archetype is already on the client, and two sites is under the eight allowed (§1). |
 | 3 | R13: is the CPU's archetype real? | **Yes.** It ranks the board the CPU's six are drafted from, and the battle is deployed with it. One limit: a CPU's battle is passive, so the archetype picks the stocks and never trades during the day (§2). |
 | 4 | League figures (R13–R16) | **Built behind `AGENT_FORM_LEAGUE_ENABLED = false`.** Yours teal; each CPU and human rival in copper, in their own armor; an unknown seat a bare copper core. Every phone seat was a 25–30 px head and is now a 44–50 px live figure. **Each figure now sits on its own line's end point, in a taller arena (§13).** |
 | 5 | League moods (R15) | **Confident and worried follow the standing the screen shows,** taken from each screen's own order, never from a score. **Researching** works from your live battle. **Waiting** is unused, because League has no cockpit. **Celebrating fires on the group's final verdict (your ruling 1, §13).** |
 | 6 | Clipped sets (R18) | **Fixed.** The Trend Follower is 12.2 % smaller and the Diversifier 5.3 %. Over 1,000 frames in all six moods, neither reaches the box's edge at any size, up to the hub's 340 px. The other five forms are pixel-identical to `main` (§5). |
 | 7 | Hub brighten (R19) | **Built, on S7's triggers and timing.** Board 5 covers all three areas: Equipped Archetype lights the armor's edges, Partnership and Shared Research the core. A deploy lights the whole form, as does the archetype area on bare Shadow, because board 5 is silent on those (§6). |
-| 8 | Narrow-phone scores (R20) | **Fixed for everyone, flags off too.** Long gated scores clear "DAY 3 OF 5" by 4.7 px or more at 312, 320, 339, 360 and 390 px, flags off or on, with the app's stylesheet loaded. **Measured in Inter; SF Pro on the iPhone is unmeasured, so checklist step 11 is the real test** (§4). |
+| 8 | Narrow-phone scores (R20) | **Fixed for everyone, flags off too.** Long gated scores clear "DAY 3 OF 5" by 4.7 px or more at 312, 320, 339, 360 and 390 px, flags off or on, with the app's stylesheet loaded. **Measured in Segoe UI, the stack's tallest, not Inter; SF Pro on the iPhone is unmeasured, so checklist step 11 is the real test** (§4). |
 | 9 | R21, R22, R23 | **All built.** The battle forms have their own clock, the hook reads the battle's snapshot first, and a swap asked for while paused starts when the view resumes (§3). |
 | 10 | Tests and mutation | **60 of 60 mutants killed** (§9), and **43 of 43** on this pass (§13). `lint:gate` exit 0. Full suite on Linux, code head `140c3761`: **27,662 rows, 27,573 pass, 0 fail, 89 skipped.** |
 | 11 | Smoke | `claude/agent-form-s2-smoke`: all three flags on, the hub readout, `?formScale=` over the battle and League forms, and `?leagueForms=1`, the real League arena on the repo's fixture data, now with bunched scores and a finished group (§10). |
-| 12 | Review threshold | The code diff is **54 files, +2,526 / −102 lines**, over both BUILD_RULES §2 thresholds, so **a review session runs before merge.** No review is claimed here. |
+| 12 | Review threshold | The code diff is **54 files, +2,526 / −102 lines**, over both BUILD_RULES §2 thresholds, so **a review session ran before merge: MERGE AFTER FIXES**, and §14 lands those fixes. |
 | 13 | Your iPhone run | **Fixed (§13).** The figures were 28 px off because one stack moved all of them. Spread boards now sit at 0 px; bunched ones at most 72 px, symmetric. The hero at 393 × 660 goes 294 → 358 px. |
 
 ---
@@ -93,7 +95,7 @@ Every surface in the League ranked and training flows that draws the robot head,
 
 ## 4. R20: the header on a narrow phone
 
-**Measured** in headless Edge at real viewport widths, with `index.css` loaded through the app's own PostCSS, on the real `ArenaHeader`. The S1 harness was narrow frames inside a wide window, which `vw` cannot see. Long gated scores are −123.45 / −98.76; "longer" is −1,234.56 / −987.65. This machine resolves the font stack to Inter; **SF Pro on the iPhone is unmeasured**, so checklist step 11 asks for your eye.
+**Measured** in headless Edge at real viewport widths, with `index.css` loaded through the app's own PostCSS, on the real `ArenaHeader`. The S1 harness was narrow frames inside a wide window, which `vw` cannot see. Long gated scores are −123.45 / −98.76; "longer" is −1,234.56 / −987.65. The font was Segoe UI, the stack's tallest, not Inter: Inter is not installed on this machine, and `document.fonts.check` cannot tell (the review's S2R-1). **SF Pro on the iPhone is unmeasured**, so checklist step 11 asks for your eye. The harness also ran with scrollbars hidden; §14's known limit gives the numbers with a desktop browser's bar.
 
 | Width | `main`: player's score vs the centre column | Now, flags off | Now, flags on | Score size now |
 |---|---|---|---|---|
@@ -105,7 +107,7 @@ Every surface in the League ranked and training flows that draws the robot head,
 
 - The "longer" scores overlapped on `main` at every width to 390. They clear by 4.7 px or more now, flags off and on.
 - Whole-number scores and the desktop header are unchanged. No horizontal overflow, and no header height changes, at any width.
-- **How much room that leaves.** The tightest case is 4.7 px on a 98 px score, so a font up to about 5 % wider than Inter still clears; at the widths the ruling names, long scores keep 6–8 %. If SF Pro is wider than that, the score meets the column by a pixel or two, against 6–30 px on `main`, and `SCORE_CHAR_EM` is the one number to raise.
+- **How much room that leaves.** The tightest case is 4.7 px on a 98 px score, so a font up to about 5 % wider than Segoe UI still clears; at the widths the ruling names, long scores keep 6–8 %. If SF Pro is wider than that, the score meets the column by a pixel or two, against 6–30 px on `main`, and `SCORE_CHAR_EM` is the one number to raise.
 - **Picked: the shrink, two decimals.** One decimal at 320 px gains 3 px of type (23 vs 19.7) and still has to shrink, and it can print a tie while the bar and the emphasis show a lead (BUILD_RULES §9).
 - **`minWidth: 0` on the CPU columns was tried and left out.** The measurements are the same without it, and it changed the legacy header's OFF-6 golden bytes.
 
@@ -256,9 +258,9 @@ On a short hero the gap gives way first (`leagueAgentFormSlot.jsx:47`), and the 
 | Second | Confident (advancing) | Idle |
 | Third | Worried (out of it) | Idle |
 | Last | Worried | Worried |
-| Before the bell, voided, or every seat level | Idle | Idle |
+| Before the bell, voided, or a fully level board (nobody is crowned either, §14) | Idle | Idle |
 
-The order comes from each screen's own derivation: `deriveCut(…).ranked` on the fuse, the crown's own source (`FuseHero.jsx:410`), and `rankOf` on the climb. A row hands the fuse seats whose scores say the opposite and shows they are not read. A level board shows no standing, as the climb's "at rest" already does. Any lead counts, as you ruled in S1. The "2" is the cut the screen already draws ("TOP 2 ADVANCE", `deriveCut`), not a new threshold.
+The order comes from each screen's own derivation: `deriveCut(…).ranked` on the fuse, the crown's own source (`FuseHero.jsx:410`), and `rankOf` on the climb. A row hands the fuse seats whose scores say the opposite and shows they are not read. A fully level board has no leader: nobody is crowned and every figure is calm, on both surfaces, flags on or off (your ruling of Oct 30, an amendment to R15, §14). Any lead counts, as you ruled in S1, and a partial tie keeps its crown. The "2" is the cut the screen already draws ("TOP 2 ADVANCE", `deriveCut`), not a new threshold.
 
 **Before, the phone arena (390 px):**
 
@@ -373,7 +375,7 @@ The first round killed 55 of 57. The two survivors were both useful:
 |---|---|---|
 | R13 | A League CPU drawn bare (R13-1); the display label read (R13-2); the seat loses the CPU map (R13-3); the board stops reading the archetype (R13-4) | The CPU, human and player rows; the CPU file's nine rows; the tripwire |
 | R14 | Opponents in teal; the lanes' opponents look away; `facing` ignored | The allegiance rows; the lanes row; the facing rows |
-| R15 | **An invented threshold** (third place advances; a points margin); **a standing from raw scores** (fuse, climb); a level board shows one; an opponent reads your lock; a banked day counts as a win; a finished game shows the live standing; last not worried in training; the arena drops its battle | The standing rows; the close-board row; the contrary-scores rows; the level row; the opponent rows; the banked pin; the finished rows; the training row; the arena row |
+| R15 | **An invented threshold** (third place advances; a points margin); **a standing from raw scores** (fuse, climb); a fully level board shows a standing, or keeps a crown (the crown's half and its mutants are §14's); an opponent reads your lock; a banked day counts as a win; a finished game shows the live standing; last not worried in training; the arena drops its battle | The standing rows; the close-board row; the contrary-scores rows; the level row; the opponent rows; the banked pin; the finished rows; the training row; the arena row |
 | R16 | A rival under 40 px; the gap ignores a short hero; the fuse keeps the old gap; the old size; the stack starts at today's top; a short hero loses its room | The floor row; the short-hero row; the spread row; the size row; the toggle row; the short-hero start row |
 | R17 | The flag on | The pin, the literal, `flagPinGuard` |
 | R18 | **A set's frame reverted** (both sets); the shift dropped; the shift jumps at a swap | The bounds row and the table pin; the bounds row; the no-jump row |
@@ -394,7 +396,7 @@ The first round killed 55 of 57. The two survivors were both useful:
 - **Flag-off identity:** §8's method and lines, repeated on `140c3761` (§13).
 - **Not run:** the Firestore rules suite (no rules changed), and anything on a real device.
 
-**`claude/agent-form-s2-smoke`** = `30a6b34f`: one "SMOKE ONLY, NEVER MERGE" commit on the code head `140c3761`, 9 files, composed by git plumbing. It carries:
+**`claude/agent-form-s2-smoke`** = `30a6b34f`: one "SMOKE ONLY, NEVER MERGE" commit on the code head `140c3761`, 9 files, composed by git plumbing (rebuilt on this round's code head with the same 9 files, §14). It carries:
 - all three flags `true`;
 - the hub hero's corner readout, as S1's;
 - **the dial:** `?formScale=` (0.8 to 1.6) over the battle and League forms, with a small label at the top left;
@@ -429,17 +431,17 @@ The first round killed 55 of 57. The two survivors were both useful:
 2. A finished group: tap **Game over**, then **You first**, then **You last**. Your figure celebrates only when you advanced or won.
 3. On the League page, leave the phone still for one minute and copy the corner's `60 s:` line. Four live figures is the one frame rate not yet measured on a phone.
 
-**The re-check and the `60 s:` line (recorded by the S2 review, Oct 30, 2026).** The review brief carried a slot for your re-check on the new preview and for the League page's `60 s:` line, and nothing was pasted under it. So neither is on record: the three re-check items above (the figures on their points, the Game over verdicts, the four-figure frame rate) and the `60 s:` line stay unmeasured on a device, and the first run's result above is the only phone reading this build has. The review (`20261030_REVIEW_AGENT_FORM_S2.md`) carries them into the flags-on step.
+**Your re-check, Oct 30, 2026.** You ran the re-check on the arena-fit smoke build and reported that it "went great": the figures on their points, the Game over verdicts, nothing under the toggle. **The `60 s:` line was not recorded**, so the frame rate with four live figures is still unmeasured on a phone. (The S2 review, written first, recorded the re-check as missing because nothing had been pasted under its brief; this entry replaces that one.)
 
 The full checklist, which stands:
 
-Open **https://trade-seven-5lb7gkjqw-fais-projects-bc179554.vercel.app** in Safari on the iPhone. Steps 1–6 need no sign-in and no live game.
+Open **https://trade-seven-lz95ui5x5-fais-projects-bc179554.vercel.app** in Safari on the iPhone. Steps 1–6 need no sign-in and no live game.
 
-**League figures** (add `?leagueForms=1` to the end of the address, or open https://trade-seven-5lb7gkjqw-fais-projects-bc179554.vercel.app/?leagueForms=1). The chips at the bottom change a made-up game; the figures and the arena are the real ones.
+**League figures** (add `?leagueForms=1` to the end of the address, or open https://trade-seven-lz95ui5x5-fais-projects-bc179554.vercel.app/?leagueForms=1). The chips at the bottom change a made-up game; the figures and the arena are the real ones.
 
 1. Your figure is **teal**, marked YOU. The others are **copper**, each in different armor.
 2. Tap **One unknown** (the "rival" row): that rival becomes a plain copper glowing core with no armor.
-3. **Moods follow the standing.** Tap **You first**: your figure looks confident (brighter, leaning in). Tap **You last**: it looks worried (dimmer, fraying). **You second** is confident and **You third** worried, because the top two advance. Tap **Training**: now only first and last change the mood, and the middle stays calm. Tap **All level**, then **Before the bell**: everyone is calm. The opponents move with their own places, not yours.
+3. **Moods follow the standing.** Tap **You first**: your figure looks confident (brighter, leaning in). Tap **You last**: it looks worried (dimmer, fraying). **You second** is confident and **You third** worried, because the top two advance. Tap **Training**: now only first and last change the mood, and the middle stays calm. Tap **All level**, then **Before the bell**: everyone is calm and nobody wears the crown. The opponents move with their own places, not yours.
 4. Tap **Lobby climb**: the Training tab's picture. Opponents look toward your figure from either side.
 5. **The sizes.** Are four figures readable without feeling crowded? To try others, add `&formScale=1.2`. Note a value if you like one better.
 
@@ -481,10 +483,15 @@ On `claude/agent-form-s2`:
 - `7bff264d`: the report at that head (docs only).
 - `071db904`: figures on their line points, and your rulings (§13).
 - `efcf125a`: the fixes from that pass's mutation run.
-- `140c3761`: the sticky offset removed (the code head).
-- then this report and its pictures (docs only).
+- `140c3761`: the sticky offset removed (the code head of the build).
+- then this report and its pictures (docs only), and the review (`29be4a84`).
+- `223c8fe3`: `origin/main` `0de404e1` merged in.
+- `594b2f1b`: the level-crown gate, alone (S2R-3).
+- `1abdcb3d`: `fuseFormLayout.js` in the flag-off bundle guard (S2R-2).
+- `d35fb94f`: the comments the review corrected (the code head of this round).
+- then this report (docs only).
 
-R20 and R22 are the only commits that touch flag-off bytes.
+R20, R22 and the level-crown gate are the only commits that touch flag-off bytes.
 
 **Not committed** (session scratchpad): the harness (`league.jsx`, `run-league.mjs`, the extended `arena.jsx`, `fill.jsx`, `run-sites.mjs`), the mutant runner (`mutants.mjs`, `mut1.keep.log`), the WSL scripts, and the builds under `~/s2-runs`.
 
@@ -690,11 +697,11 @@ A finished win, and a finished loss:
 
 **Ruling 3: the loadout chooser's archetype cards. No change.** See "Not built".
 
-**Ruling 4: human rivals keep their armor after the bell. Built.** When a finished game opens and a human rival's seat has no archetype, the form reads the group's public agent context once (`finishedRivalRead.js`), through the same endpoint the live poll uses. There is no timer. Unknown stays a bare copper core. A failed read also stays a bare core until the page reloads, so a failure cannot turn into a retry loop.
+**Ruling 4: human rivals keep their armor after the bell. Built.** When a finished game opens and a human rival's seat has no archetype, the form reads the group's battle view once (`finishedRivalRead.js`), through the same endpoint the live poll uses. The response is each seat's completed battle in full, minus the frozen idea, and only `agentContext.archetype` is kept. There is no timer. Unknown stays a bare copper core. A failed read also stays a bare core until the page reloads, so a failure cannot turn into a retry loop.
 
 | Opening | Endpoint calls added | Firestore documents |
 |---|---|---|
-| A finished game, a human rival's armor unknown | **1** | One query: the group's battles, **up to 20 documents** (4 seats × 5 days) |
+| A finished game, a human rival's armor unknown | **1** | One query with no limit or mask: the group's battles, **nominally 4 × 5 = 20 documents**, not an enforced cap. The response is one battle per seat, at roughly 120–320 KB a read |
 | The same game again, same page load | **0** | 0 |
 | A finished CPU-only pod (training) | **0** | 0 |
 | A game you watched to the bell | **0** | 0: the poll's last answer stays on the seat |
@@ -705,6 +712,7 @@ The read sits in the form's own lazy chunk, because a new hook in `useArenaModel
 ### Not built
 
 - **The loadout chooser's archetype cards** (`LoadoutChooserSheet.jsx:144`, the 72 and 46 px robot heads). Ruled Oct 30, 2026: no change here. They move to the armory (board 6).
+- **A field-masked read for ruling 4.** No endpoint serves the one field, so the after-bell read parses whole documents for four short strings. A field-masked variant of `battle-view` would be the smaller read. It is a later `api/` task (the review's S2R-4), out of this build's scope.
 
 ### Rows and mutation
 
@@ -731,6 +739,155 @@ The other 29 cover the frame, the scale's headroom at each edge, the passes, the
 - **`lint:gate`:** exit 0. **Production `vite build`:** exit 0.
 - **Full suite:** Linux, WSL, `TZ=UTC`, 8 workers, under `flock /tmp/pd-suite.lock`, at `140c3761`: 1,259 files, 27,662 rows, 27,573 pass, 0 fail, 89 skipped.
 - **Not run:** the Firestore rules suite (no rules changed), and anything on a real device.
-- **What the iPhone's fonts could move:** measurements used this machine's fonts, not the iPhone's. That changes how wide a value is, and it can change how tall the toggle's row is, as the button rule already moved it from 43 to 46 px. The leader's value has about 16 px to spare under the toggle. **Your crown has only 1 px** when you lead (a rival's has 4), so on the iPhone it could tuck under by a pixel or two late in the day. Check item 1 asks you to look. The fix would be one number.
+- **What the iPhone's fonts could move:** measurements used this machine's fonts, not the iPhone's, and those were Segoe UI, the stack's tallest, not Inter (the review's S2R-1). A font changes how wide a value is and how tall the toggle's row is, as the button rule already moved it from 43 to 46 px. The leader's value has about 16 px to spare under the toggle. **Your crown clears the toggle by 2 px on Windows and by 3–4 px in phone fonts** when you lead, so a phone's shorter fonts only widen it, and the review found no mainstream font that tucks it. Check item 1 asks you to look.
+
+---
+
+## 14. Review fixes (Oct 30, 2026)
+
+**Run.** Follow-up on the same branch, from the review's verdict, MERGE AFTER FIXES (`docs/audits/20261030_REVIEW_AGENT_FORM_S2.md`). `git fetch origin` ran first; the branch head was `29be4a84`, so the prompt's STOP did not apply. Pushed from the worktree branch `claude/agent-form-s2-review-fixes-478d84` by refspec. Fenced files read or edited: none. Fenced functions called: none. This round edits nothing under `api/`.
+
+| # | Item | Result |
+|---|---|---|
+| 1 | **S2R-3, your ruling** | **Built, in its own commit (`594b2f1b`).** A fully level board draws no crown and calm figures, on the fuse and the climb, flag on and flag off. A partial tie keeps its crown. Each surface reads one gate, so the crown and the mood cannot disagree. |
+| 2 | **S2R-2** | `fuseFormLayout.js` is in the flag-off bundle guard, with its row and the review's plant. |
+| 3 | **S2R-1, 4, 5, 7** | The comments and this report are corrected. No behaviour change. |
+| 4 | **S2R-6** | Recorded below as a known limit. No code change. |
+| 5 | **`main`** | `0de404e1` (PR #1016) merged as `223c8fe3`. No conflict: the two sides share no file. |
+| 6 | **Flag-off identity** | Against `0de404e1`: **47 files, 2 differ, on R20's lines, R22's line and the level-crown gate's lines only.** Every line is listed below. |
+| 7 | **Mutation** | **21 of 21 killed**, every one you asked for on the rows you named. |
+| 8 | **Checks** | `lint:gate` exit 0. Full Linux suite: **1,261 files, 27,822 rows, 27,733 pass, 0 fail, 89 skipped.** A minified build of the exact pushed head: exit 0. |
+| 9 | **Flags** | All four agent-form flags are still `false`. |
+| 10 | **Smoke** | Rebuilt as `5b718e1e`. **New preview: https://trade-seven-lz95ui5x5-fais-projects-bc179554.vercel.app.** Driven and looked at below. |
+| 11 | **Not proven** | The `60 s:` line with four live figures, ruling 4 on a real finished game, and the real pre-bell board on a device. Nothing in this round has run on a phone. |
+
+### Your ruling on S2R-3
+
+**A fully level board has no leader. With every seat's total equal, nobody is crowned and every figure is calm.** It ratifies the build's level clause as an amendment to R15, and it fits S1's "any lead counts": a level board has no lead.
+
+**The change for everyone.** Today's hero crowns the first seat of every pod's all-zero board before the bell, because a tie breaks by seat order. That claim is gone, flags off too.
+
+**One gate.** `isLevelBoard` (`arenaStateMap.js:77`) is the one predicate: every seat's total exactly equal. Each surface reads it once, into one value, `hasLeader` (`FuseHero.jsx:206`, `ClimbArena.jsx:91`), and everything that claims a leader reads that value:
+
+| What reads `hasLeader` | Fuse | Climb |
+|---|---|---|
+| The crown | `FuseHero.jsx:434,453` | `ClimbArena.jsx:171` |
+| The crown's "N total" line | `:437,456` | none |
+| The leader's halo and enlarged head | none | `:171` |
+| The forms' mood (`shown`) | `:424` | `:238` |
+| The old head's mood, flag off | a literal 0 | `:248` |
+
+The totals are the numbers each surface ranks by: `snap.values` on the fuse, `deriveCut`'s own, and `vals` on the climb, what `ranking` sorts. The predicate sits in `arenaStateMap.js` because the climb already imports that file, so it moves no module in the bundle.
+
+**What the ruling left to the build, decided here:**
+- **The "N total" line goes with the crown.** The code calls it the crown's annotation, and a voided board already drops the two together. "+5.0 total" under one seat of a level board would still say who leads.
+- **The climb's "at rest" is unchanged.** It says where the seats sit, and its comment rejects a bare tie on purpose. Four seats level at +5 still plot at +5. They lose the crown, the halo and the enlarged head.
+- **Level is exact, on the totals, not the printed tenths.** 5.03 / 5.02 / 5.01 / 5.00 prints 5.0 four times and still crowns the first seat. That is S1's "any lead counts", and a row pins it.
+- **A lone seat has no leader either.** The mood already called it idle, so this keeps the two in step. A pod in battle has four seats, so only sparse data reaches this.
+
+**"Flip the two sites rows."** Under the ratified clause `shown` stays false on a level board, so those rows' `shown` assertions did not invert; inverting them was the review's other option, which your ruling set aside. What pinned the split was their silence on the crown. Both now assert the crown as well, and the climb's row gained a board level at altitude.
+
+**The rows.** `leagueLevelBoard.jsdom.test.jsx` (71 rows) runs every board on both surfaces with the flag on and off: all zero, a cold mount, a trail with no head, all equal mid-day, the player in the first seat, six partial ties, and a spread control. It reads each crown by its seat and each figure through the real `deriveLeagueMood`, or the old head's `standing` with the flag off. `arenaStateMap.test.js` adds 4 rows for the predicate.
+
+**The crown and the mood can't disagree.** One block hands both the same board and compares them, on boards where a second source would answer differently: on the fuse, level totals whose days differ (it prints +4 / +3 / +2 / +1 and nobody leads) and days alike with totals apart (it prints +5 four times and one seat leads); on the climb, banked level with a seat live above, and banked apart with every seat live level.
+
+### The other fixes
+
+- **S2R-2.** `[FUSE_LAYOUT, []]` is in `REACHED` (`agentForm.flagOffBundle.test.js`), with a row asserting the unused bundle is empty and that only the entry and the module were loaded, and the review's plant in "the check bites".
+- **S2R-1.** The `HEAD_ROW_BOTTOM` comment and §4 and §13 here now say the measurements were Segoe UI, the stack's tallest, not Inter. The crown clears by 2 px on Windows and 3–4 px in phone fonts.
+- **S2R-4.** The ruling-4 table and text now say what the read returns: each seat's completed battle in full, minus the frozen idea, with only `agentContext.archetype` kept; nominally 4 × 5 = 20 documents, no limit or mask, roughly 120–320 KB a read. `finishedRivalRead.js` says the same. A field-masked endpoint is listed under "Not built" as a later `api/` task.
+- **S2R-5.** The slot's header no longer describes the outcome edge, and the §11 exception in `commandCenterHub.mount.guard.test.js` names R19's response (the 1.2 s curve and the 420 ms flash) beside the equip tween.
+- **S2R-7.** The inset comment (`ArenaHeader.jsx:131`) now says the phone grid's gap is 10, so the row's real inset is 103, and the 6 px between that and 97 is the whole measured clearance. The value stays 97.
+
+**Known limit (S2R-6), no code change.** `50vw` counts a classic scrollbar and the row does not. Phones draw overlay bars, so the iPhone keeps §4's full clearance. Desktop Chromium under 768 px always draws the app's 8 px bar and keeps 1.8–4.7 px. A browser drawing a 15–17 px classic bar meets the column by 1–3 px. Container units (`cqw`) would be the fix if it is ever wanted.
+
+### Left as they are, for you to know
+
+- **The cut line on a level board.** Not ruled, so unchanged. On the climb in ranked, which runs only with the fuse flag off, the "CUT · TOP 2 ADVANCE" label sits across four level seats; the smoke page's Lobby climb shows it. The real lobby climb is training, which has no cut.
+- **Paint order.** The fuse draws the first seat's line last on a level board. Some line has to be on top, and all four lie together, so it claims nothing.
+- **The old orb's rank digit.** It would print 1–4 on a level board, but `AGENT_PRESENCE_ENABLED` is true, so no player reaches the orb.
+- **A third crown, reported for separate tasking.** `DeskLeaderboard` (`LeagueDeskParts.jsx:173`) crowns row 0 of the whole field by list position, so a level field crowns its first row too. It is a season list, not a game board, and outside this ruling. `LeagueClimbStanding.jsx` and `LeagueClimbChart.jsx` also crown, from fixture data only.
+
+### Mutation
+
+On an LF snapshot of `d35fb94f`, from a green baseline (120 rows in the four files), one exact replacement each, each file restored byte for byte and checked. **21 of 21 killed.** No row total dropped, so no mutant passed by breaking a file.
+
+| You asked for | Mutants | Result | Killed by |
+|---|---|---|---|
+| **The crown ignores the level gate (fuse)** | Flag-on tip; flag-off tip | **2 of 2 killed** | The all-zero, all-equal, first-seat and cold-mount rows, and the flag-on sites rows |
+| **The crown ignores the level gate (climb)** | `lead` back to `!calm && !voided` | **1 of 1 killed** | The same level rows on the climb, and the halo-and-size row |
+| **The mood ignores the level gate** | Fuse `shown`; climb `shown`; the flag-off climb head's `standing` | **3 of 3 killed** | The level rows, the sites rows, the one-board block |
+| **A partial tie treated as level** | Three distinct totals count as level; two do; the top two tied do | **3 of 3 killed** | The partial-tie rows and the predicate's rows |
+| **The crown and the mood reading different sources** | Fuse: mood on today's change; crown on today's change; mood on seats' own `score`. Climb: mood on the banked series; crown on the banked series | **5 of 5 killed** | The no-disagreement block. The four that split on a real source die there and nowhere else |
+| **The review's `fuseFormLayout.js` plant** | `FUSE_FORM_KEYS` appended | **1 of 1 killed** | S2R-2's row, and the pristine loop in "the check bites" |
+| Beyond the table | The gate itself on today's change; on the banked series; the "total" line on the old gate, flag on and off; a level board reading as at rest; a lone seat keeping a lead | **6 of 6 killed** | The one-board block, the "total" rows, the altitude row, the predicate's row |
+
+### Flag-off identity
+
+`vite build --minify false` on Linux (WSL, Node 22.22.2 on both trees, where CI runs 20), LF trees, every `-[8 chars].js/.css` masked in names and contents, `diff -r`, source maps excluded. `origin/main` `0de404e1` against the code head `d35fb94f`, on `~/pd-ci-s2f-main` and `~/pd-ci-s2f`. **91 files built each, 47 after the maps, 2 differ.** The stylesheet, `index.html` and the other 42 chunks are identical, and no module moved.
+
+| Chunk | Why | Lines out | Lines in |
+|---|---|---|---|
+| `AgentBattleScreen` | R20 | 2 | 10 |
+| Entry | R22 | 1 | 1 |
+| Entry | The level-crown gate | 5 | 10 |
+
+**R20 and R22** are the lines in §8, unchanged. **The level-crown gate, exactly:**
+
+```diff
++ function isLevelBoard(totals) {
++   return new Set(totals).size < 2;
++ }
+
+  ClimbArena:
++   const hasLeader = !calm && !voided && !isLevelBoard(vals);
+-       const lead = s.id === leaderId && !voided;
++       const lead = s.id === leaderId && hasLeader;
+-                       standing: you && !atRest && !voided ? standingFromRank(rk, rows.length) : 0,
++                       standing: you && hasLeader ? standingFromRank(rk, rows.length) : 0,
+-                 lead && !calm && !voided && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { … crown … }),
++                 lead && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { … crown … }),
+
+  FuseHero:
++   const hasLeader = !calm && !voided && !isLevelBoard(ids.map((id2) => snap.values[id2]));
+-         lead: d2.seat.id === leaderId && !calm && !voided,
++         lead: d2.seat.id === leaderId && hasLeader,
+-         subValue: !calm && DAY && d2.seat.id === leaderId && !voided ? `${fmt(snap.values[d2.seat.id])} total` : null,
++         subValue: DAY && d2.seat.id === leaderId && hasLeader ? `${fmt(snap.values[d2.seat.id])} total` : null,
+```
+
+One side effect of `lead` carrying the whole gate: a board before the bell no longer enlarges its first seat, whatever the scores. Its crown and halo never showed there.
+
+### Checks
+
+- **`lint:gate`:** exit 0 on `d35fb94f` (Linux).
+- **Full suite:** Linux, WSL, `TZ=UTC`, 8 workers, under `flock /tmp/pd-suite.lock`, on the merged tree at `d35fb94f`: **1,261 files (1,253 passed, 8 skipped), 27,822 rows, 27,733 pass, 0 fail, 89 skipped, 228 s.** The commits above it are this report only.
+- **Minified `vite build`** of the exact pushed head, on Linux: exit 0.
+- **The League suites on Windows** show two reds outside this build, `LeagueSpectate.honesty` and `backingDark`, both source scans. Neither is red on Linux, which is the record.
+- **Not run:** the Firestore rules suite (no rules changed), and anything on a real device.
+
+### Smoke
+
+`claude/agent-form-s2-smoke` = `5b718e1e`: the same one "SMOKE ONLY, NEVER MERGE" commit, on the code head `d35fb94f`, composed by git plumbing from the old commit's own diff. Same 9 files, same flags, readout, dial and `?leagueForms=1` page, its delta identical line for line. The commits above the code head are docs only.
+
+**New preview: https://trade-seven-lz95ui5x5-fais-projects-bc179554.vercel.app** (add `?leagueForms=1` for the League page).
+
+Driven on the deployed preview in headless Edge at 393 × 660 with touch, reading the crown and the mood each form was handed. Both addresses answered 200, with zero page errors.
+
+| Chips | Crown | "Total" line | Moods, first place to last |
+|---|---|---|---|
+| You first, Live (control) | **on you** | 44.2 total | confident, confident, worried, worried |
+| You second, Bunched (control) | **on Vela** | 44.2 total | confident, confident, worried, worried |
+| **All level, Live** | **none** | none | all idle |
+| **All level, Game over** | **none** | none | all idle |
+| **All level, Before the bell** | **none** | none | all idle |
+| **All level, Training** | **none** | none | all idle |
+| **You first, Before the bell** | **none** | none | all idle |
+| Lobby climb, All level | **none** | n/a | not read |
+| Lobby climb, You first | one | n/a | not read |
+
+**One limit of the page:** its "Before the bell" chip is the `awaiting` state, which never had a crown. The picture your ruling changes is a live board at zero before the first sample. The rows cover that one directly, and "All level" shows the rule on a live board. **To see it:** tap **All level** with **Live**: nobody is crowned, there is no "total" line, and all four figures are calm around one point. Tap **You first**: the crown comes back.
+
+**To remove the WSL worktrees:** `~/pd-ci-s2f` and `~/pd-ci-s2f-main` have `node_modules` linked to `~/pd-ci-af1`'s. Run `unlink <tree>/node_modules` first, then `git -C ~/pd-ci worktree remove --force <tree>`.
 
 A copy of this report is at `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261030_BUILD_AGENT_FORM_S2.md` (BUILD_RULES §3).
