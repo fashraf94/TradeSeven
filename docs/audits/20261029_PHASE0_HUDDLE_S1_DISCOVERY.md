@@ -162,7 +162,7 @@
 
 **Who may write it.**
 - The owner, by rule (`firestore.rules:474-478`, VERIFIED).
-- The client writer is `updateStrategyPreset` (`src/services/agentService.js:622`). Its UI is `StrategyPresetBadge`, imported at `AgentBattleScreen.jsx:114`, and `StrategyPresetToggle` (VERIFIED). The DRB report found neither mounted.
+- The client writer is `updateStrategyPreset` (`src/services/agentService.js:622`). **Neither of its two controls is mounted:** `StrategyPresetBadge` is imported at `AgentBattleScreen.jsx:114` and rendered nowhere, and `StrategyPresetToggle` renders only in `AgentStrategyTab.ARCHIVED.jsx:176` (`git grep`, VERIFIED).
 - **No server route sets it.** The only server writes are the creation default and the migration default (`agent-evaluate.js:1083`) (VERIFIED).
 - **PROD:** 70 of 70 non-CPU battles in 30 sessions ran `balanced`.
 - `docs/ARCHETYPE_PHASE1_MASTER_SPEC_V1_1.md:116` says user configuration "(incl. reclassified `strategyPreset`) frozen at lock", and `:261` lists a "mid-battle preset writer" for retirement. HEAD does not implement that. Whether it is still the plan is a founder call (Question 2).
@@ -236,7 +236,9 @@
 - It reads `status == 'active'` battles (`findActiveAgentBattles`, `agent-evaluate.js:348`), completes those past expiry (`:354-392`), and stops (`:398-405`).
 - **It enumerates expiries only.** Stocks-only games have already completed at the first evaluator tick after the close (`:347` runs on every tick), so the evening run mostly sees Night Game rosters (INFERRED).
 
-**What lists completed battles per session (VERIFIED).** The close pass: `completedBetween(db, fromIso, toIso)`, a single-field range on `completedAt` that needs no composite index (`api/_utils/filmTape/closePass.js:95-100`, selection `:7-10`), with the session rule `isBattleDay` in `src/utils/tapeSchedule.js`.
+**What lists completed battles per session (VERIFIED).**
+- **The query:** `completedBetween(db, fromIso, toIso)`, a single-field range on `completedAt` that needs no composite index (`api/_utils/filmTape/closePass.js:95-100`, selection `:7-10`), with the session rule `isBattleDay` (`src/utils/tapeSchedule.js:106-113`).
+- **The record:** the close pass writes `agentBattles/{id}/tape/{etDate}` for every battle of a session, written or `skipped_mode`, so that document exists per battle-day (`closePass.js:7-13`). PROD: all 23 non-CPU battles of the nine closed sessions have one (Q10).
 
 **An ET guard to copy (VERIFIED).**
 - `api/cron/process-draft-claims.js`: dual hours in one entry, `25 13,14 * * 1-5` (`vercel.json:72-75`); `getClaimProcessingWindow` (`:97-112`, Intl, no offset math); `isAlreadyProcessedForDay` (`:126-128`). BUILD_RULES names it as the template (`:79`).
@@ -310,7 +312,7 @@
 **Holdings for one owner (VERIFIED).**
 - A battle's `ownerId` is the agent's (`agentBattleService.js:141`). The casual clone's owner is the player (`casualClone.js:64`), and so is a training clone's (`trainingClone.js:127`). The one-owner query in Q6 therefore returns all of them.
 - Positions: `battle.portfolio.{star,core,support,bench}`; `flattenPortfolioServer` is a fenced export, callable, not editable.
-- At 8:30, a player's BaggerBomb is usually not deployed yet, so today's list is the League seat plus yesterday's completed games (INFERRED from Q5).
+- **What exists at 8:30:** a League seat once its tick has run; a BaggerBomb deployed the evening before, active but dormant (`stockAdmissionWindow.js:66-74`, `agent-evaluate.js:902-914`). A BaggerBomb the player will deploy this morning does not exist yet, and yesterday's games are completed, not active.
 
 ### Q8 — Audio and delivery
 
@@ -319,7 +321,7 @@
 - **Endpoint:** `https://api.elevenlabs.io/v1/text-to-speech/{voiceId}?output_format=…` (`:184`).
 - **Settings:** model `eleven_multilingual_v2`, `mp3_44100_128`, stability 0.5, similarity 0.75, style 0.3 (`:43-47`). SSML `<break>` tags between scenes (`:96-99`).
 - **Output:** raw MP3 when `download` is set (`:229-234`), else base64 JSON (`:240-254`).
-- **Auth:** admin secret only (`:138-151`). No in-app caller (DRB report; not re-swept).
+- **Auth:** admin secret only (`:138-151`). No caller in `src/`, `api/` or `scripts/` (`git grep`).
 
 **ElevenLabs SDK: none in `package.json`.** Timestamps or dialogue endpoints: none anywhere (`git grep`, VERIFIED). `ELEVENLABS_API_KEY` is present by name on Vercel production (PROD).
 
@@ -454,8 +456,8 @@ See §4.
 | "EODHD news and daily sentiment per ticker" (§2, §6) | `/news` is used. `/sentiments` has never been called (Q7) |
 | "stored: audio in storage" (§6) | No server media storage exists. Firebase Storage has no server setup and no rules; the GCS bucket holds logs (Q8) |
 | "**Worked** (outcome): from the Film Tape price series" (§5) | BaggerBomb only; no ranked or crypto series; none for a name not held, traded or planned (Q10) |
-| "At the close the plan is graded" (§0); "grading in an evening job" (§9) | The series lands at 6:00 or 7:00 AM ET the next morning, so an evening job has no prices. It still lands before 8:30 (Q10) |
-| "holdings across the player's active battles" (§2) | At 8:30 a BaggerBomb is usually not deployed, and yesterday's games are completed, not active (Q7) |
+| "At the close the plan is graded" (§0); "grading in an evening job" (§9) | The series lands at 6:00 or 7:00 AM ET the next morning, so an evening job has no prices. A first attempt lands before 8:30; a retry lands on a later morning (Q10) |
+| "holdings across the player's active battles" (§2) | At 8:30 the active set is a League seat that has deployed and any BaggerBomb deployed the evening before. A morning BaggerBomb does not exist yet, and yesterday's games are completed, so "active" misses them (Q7) |
 
 **Checked and correct:** the fence status of the sweep's home; one-session plans; same-origin audio; pre-market exclusion in Film Tape; the 50-entry cap; the brief cron's DST drift (`vercel.json:180-183`); no ElevenLabs timestamps or dialogue code.
 
