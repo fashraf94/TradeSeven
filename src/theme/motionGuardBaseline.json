@@ -109,6 +109,14 @@
       "count": 0,
       "authority": "Agent form build S2 (founder rulings R13–R23) — the armored agent in League games: colours only through the agent form's tokens, no transition literal, from birth. Registered in the commit that introduces them."
     },
+    "src/components/League/battleArena/fuseFormLayout.js": {
+      "count": 0,
+      "authority": "Agent form build S2, arena fit (the founder's rulings of Oct 30, 2026) — pure geometry for the League's forms: no colour and no transition literal, from birth. Registered in the commit that introduces it."
+    },
+    "src/components/League/battleArena/finishedRivalRead.js": {
+      "count": 0,
+      "authority": "Agent form build S2, arena fit (the founder's rulings of Oct 30, 2026) — one read of a finished group's public agent context: no colour and no transition literal, from birth. Registered in the commit that introduces it."
+    },
     "src/screens/battleView/BattleAgentForm.jsx": {
       "count": 0,
       "authority": "Agent form build S1 (founder rulings R1–R12) — the armored agent on the hub and in a 1v1 battle: colours only through the agent form's tokens, motion only as the engine's own equip timeline (a stated BUILD_RULES §11 exception, recorded in commandCenterHub.mount.guard.test.js), no transition literal, from birth. Registered in the commit that introduces them."

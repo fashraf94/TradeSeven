@@ -27,7 +27,7 @@ vi.mock('./leagueAgentFormSlot', async (importOriginal) => {
     },
   };
 });
-vi.mock('./useArenaModel', () => ({ useArenaModel: () => ({ model: { seats: [] }, handlers: {}, ready: true }) }));
+vi.mock('./useArenaModel', () => ({ useArenaModel: () => ({ model: { seats: [], youRank: 3 }, handlers: {}, ready: true }) }));
 vi.mock('./ArenaMobile', async () => {
   const { LeagueAgentFormContext } = await vi.importActual('./leagueAgentFormSlot');
   return { ArenaMobile: function ArenaProbe() { seen.arena.push(useContext(LeagueAgentFormContext)); return null; } };
@@ -40,8 +40,8 @@ vi.mock('./ArenaDesktop', async () => {
 const { FuseHero } = await import('./FuseHero');
 const { ClimbArena } = await import('./ClimbArena');
 const { default: LeagueBattleArenaLive } = await import('./LeagueBattleArenaLive');
-const { fuseFormGap, fuseFormPx, fuseFormTop, FUSE_FORM_PX } = await import('./leagueAgentFormSlot');
-const { deriveCut, fuseFrame, latestTrailSnapshot } = await import('./fuseGeometry');
+const { fuseFormFrame, fuseFormPx, FUSE_FORM_PX } = await import('./fuseFormLayout');
+const { deriveCut, latestTrailSnapshot } = await import('./fuseGeometry');
 const { headSizeFor } = await import('./climbHeadLayout');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -124,40 +124,118 @@ describe('the fuse hero (the live arena, ranked and training)', () => {
   });
 });
 
-describe('bunched tips: the gap makes room for the forms, inside the hero', () => {
-  it('a rival\'s form and 2 px, where the hero has the room', () => {
-    expect(fuseFormGap(true, 292)).toBe(46);
-    expect(fuseFormGap(false, 420)).toBe(58);
+// The rows below read the drawn numbers: a figure's centre from its box, a point from the line the fuse actually ends on.
+const centreOf = (id) => parseFloat(host.querySelector(`[data-fh-tip="${id}"] .bv2-tap, [data-fh-tip="${id}"] > div`).style.top) + slot(id).size / 2;
+const pointOf = (id) => {
+  const path = [...host.querySelectorAll(`[data-fh-fuse="${id}"] path`)].at(-1).getAttribute('d');
+  return Number(path.trim().split(/[ ,]/).at(-1));
+};
+const IDS = SEATS.map((s) => s.id);
+
+describe('the anchor rule: each figure sits at its own line\'s end point', () => {
+  // The path prints to a tenth of a px, so "to the pixel" is that rounding and no more.
+  const ROUNDING = 0.06;
+
+  it('a spread board: every figure\'s centre is its point, to the pixel, at the plot\'s full height', () => {
+    render(fuse({ h: 356 }));
+    for (const id of IDS) expect(Math.abs(centreOf(id) - pointOf(id))).toBeLessThan(ROUNDING);
+    expect(new Set(IDS.map(pointOf)).size).toBe(4);
   });
 
-  it('a short phone hero: the gap gives way so the last seat stays in the box', () => {
-    for (const h of [180, 185, 200, 205]) {
-      const gap = fuseFormGap(true, h);
-      expect(gap).toBeLessThan(46);
-      expect(48 + 3 * gap + FUSE_FORM_PX.compact.rival / 2).toBeLessThanOrEqual(h);
+  it('just right of the point, as the heads were', () => {
+    render(fuse({ h: 356 }));
+    expect(parseFloat(host.querySelector('[data-fh-tip="a"] .bv2-tap, [data-fh-tip="a"] > div').style.left)).toBe(12);
+  });
+
+  it('holds on the desktop\'s fixed hero, with the decomposition strip\'s shorter height too', () => {
+    for (const h of [420, 374]) {
+      render(fuse({ compact: false, w: 1316, h, trail: trail({ a: 40, me: 25, b: 10, c: -5 }) }));
+      for (const id of IDS) expect(Math.abs(centreOf(id) - pointOf(id))).toBeLessThan(ROUNDING);
     }
   });
 
-  it('with the room, the stack starts below the phone\'s scope toggle, so the leader\'s value does not pass under it', () => {
-    // The toggle's row ends at 43 px (measured, fuseGeometry.js's padT note). The leader's value column is 37 px, around the head.
-    const frame = (h, compact = true) => fuseFrame({ w: 362, h, compact });
-    expect(fuseFormTop(frame(292), true, 292) - 37 / 2).toBeGreaterThanOrEqual(43);
-    render(fuse({ trail: trail({ a: 40, me: 30, b: 20, c: 10 }) }));
-    const first = host.querySelector('[data-fh-tip="a"] .bv2-tap, [data-fh-tip="a"] > div');
-    expect(parseFloat(first.style.top) + slot('a').size / 2).toBe(fuseFormTop(frame(292), true, 292));
+  it('draws no elbow when a figure is at its point, and one when a bunch moved it', () => {
+    const elbows = () => host.querySelectorAll('[data-fh-tip] > span[style*="border-left"]').length;
+    render(fuse({ h: 356 }));
+    expect(elbows()).toBe(0);
+    render(fuse({ h: 356, trail: trail({ a: 10.3, me: 10.2, b: 10.1, c: 10 }) }));
+    expect(elbows()).toBe(4);
+  });
+});
+
+describe('the bunched rule on the arena', () => {
+  const BUNCHED = { a: 10.3, me: 10.2, b: 10.1, c: 10 };
+
+  it('figures part around their points, in the lines\' own order', () => {
+    render(fuse({ h: 356, trail: trail(BUNCHED) }));
+    const byPoint = [...IDS].sort((x, y) => pointOf(x) - pointOf(y));
+    expect(byPoint).toEqual(['a', 'me', 'b', 'c']);
+    const centres = byPoint.map(centreOf);
+    expect(centres).toEqual([...centres].sort((x, y) => x - y));
+    const offsets = byPoint.map((id) => centreOf(id) - pointOf(id));
+    expect(offsets.reduce((sum, v) => sum + v, 0)).toBeCloseTo(0, 0);
+    expect(offsets[0]).toBeLessThan(0);
+    expect(offsets[3]).toBeGreaterThan(0);
+    expect(Math.max(...offsets.map(Math.abs))).toBeLessThan(75);
   });
 
-  it('a short hero keeps today\'s start: four forms below the toggle would not fit', () => {
-    const frame = (h, compact = true) => fuseFrame({ w: 362, h, compact });
-    expect(fuseFormTop(frame(221), true, 221)).toBe(frame(221).plotT + 14);
-    expect(fuseFormTop(frame(222), true, 222) + 3 * fuseFormGap(true, 222) + FUSE_FORM_PX.compact.rival / 2).toBeLessThanOrEqual(222);
-    expect(fuseFormTop(frame(420, false), false, 420)).toBe(frame(420, false).plotT + 20);
+  it('the order follows the lines, not the seats and not the standing', () => {
+    render(fuse({ h: 356, trail: { ...trail({ a: 10, me: 10.1, b: 10.2, c: 10.3 }), seeds: { a: 0, me: 0, b: 0, c: 0 } } }));
+    expect([...IDS].sort((x, y) => centreOf(x) - centreOf(y))).toEqual(['c', 'b', 'me', 'a']);
   });
 
-  it('the tips are spread by that gap', () => {
-    render(fuse({ trail: trail({ a: 10.3, me: 10.2, b: 10.1, c: 10 }) }));
-    const tops = SEATS.map((s) => parseFloat(host.querySelector(`[data-fh-tip="${s.id}"] .bv2-tap, [data-fh-tip="${s.id}"] > div`).style.top) + slot(s.id).size / 2).sort((x, y) => x - y);
-    for (let i = 1; i < tops.length; i += 1) expect(tops[i] - tops[i - 1]).toBeCloseTo(46, 5);
+  it('the figures clear each other: their boxes never overlap', () => {
+    render(fuse({ h: 356, trail: trail(BUNCHED) }));
+    const boxes = [...IDS].sort((x, y) => centreOf(x) - centreOf(y)).map((id) => ({ top: centreOf(id) - slot(id).size / 2, bottom: centreOf(id) + slot(id).size / 2 }));
+    for (let i = 1; i < 4; i += 1) expect(boxes[i].top).toBeGreaterThanOrEqual(boxes[i - 1].bottom);
+  });
+
+  it('a bunch stays inside the plot at the hero\'s floor', () => {
+    const h = 273;
+    const frame = fuseFormFrame({ w: 362, h, compact: true });
+    render(fuse({ h, trail: trail(BUNCHED) }));
+    expect(Math.min(...IDS.map(centreOf))).toBeGreaterThanOrEqual(frame.plotT - 0.5);
+    expect(Math.max(...IDS.map(centreOf))).toBeLessThanOrEqual(frame.floorY + 0.5);
+  });
+});
+
+describe('the toggle clearance', () => {
+  // The head row ends at 46 px on the phone, measured with the app's stylesheet (fuseFormLayout.js). The form's top, the
+  // crown above it and the leader's 37 px value column around its centre must all stay below that.
+  it('the highest value, its figure and its crown stay below the toggle, whoever leads', () => {
+    for (const values of [VALUES, { a: 10, me: 40, b: 20, c: 30 }]) {
+      render(fuse({ h: 356, trail: trail(values) }));
+      const leader = values.a > values.me ? 'a' : 'me';
+      const top = centreOf(leader);
+      expect(top - slot(leader).size / 2 - 9).toBeGreaterThanOrEqual(46);
+      expect(top - 37 / 2).toBeGreaterThanOrEqual(46);
+      expect(host.querySelector(`[data-fh-tip="${leader}"] [data-fh-crown]`)).not.toBeNull();
+    }
+  });
+
+  it('the highest point is the plot\'s top, and the plot\'s top is below the row, on the phone and the desktop', () => {
+    render(fuse({ h: 356 }));
+    expect(pointOf('a')).toBe(fuseFormFrame({ w: 362, h: 356, compact: true }).plotT);
+    render(fuse({ compact: false, w: 1316, h: 420 }));
+    expect(pointOf('a')).toBe(fuseFormFrame({ w: 1316, h: 420 }).plotT);
+    expect(pointOf('a') - FUSE_FORM_PX.desktop.you / 2 - 12).toBeGreaterThanOrEqual(52);
+  });
+});
+
+describe('the final verdict on the fuse (founder ruling 1 of Oct 30, 2026)', () => {
+  it('the board says complete only when the screen\'s own state does: a day\'s close leaves a group still playing live', () => {
+    render(fuse({ state: 'live' }));
+    expect(slot('me').board.complete).toBe(false);
+    render(fuse({ state: 'complete' }));
+    expect(slot('me').board.complete).toBe(true);
+    expect(slot('me').board.shown).toBe(true);
+  });
+
+  it('a finished board that was voided or never played shows no standing, so it carries no verdict', () => {
+    render(fuse({ state: 'complete', voided: true }));
+    expect(slot('me').board).toMatchObject({ complete: true, shown: false });
+    render(fuse({ state: 'complete', trail: trail({ a: 0, me: 0, b: 0, c: 0 }) }));
+    expect(slot('me').board).toMatchObject({ complete: true, shown: false });
   });
 });
 
@@ -212,10 +290,10 @@ describe('the climb (the Training tab\'s preview, and the fuse-off fallback)', (
   });
 });
 
-describe('the live arena hands the forms its battle', () => {
+describe('the live arena hands the forms its battle, its group and the rank it prints', () => {
   const BATTLE = { id: 'b1', cronState: {} };
   it.each(['mobile', 'desktop'])('%s', (viewport) => {
-    render(<LeagueBattleArenaLive group={{ status: 'battle' }} battle={BATTLE} mode="ranked" uid="me" viewport={viewport} />);
-    expect(seen.arena.at(-1)).toEqual({ battle: BATTLE });
+    render(<LeagueBattleArenaLive group={{ id: 'g1', status: 'battle' }} battle={BATTLE} mode="ranked" uid="me" viewport={viewport} />);
+    expect(seen.arena.at(-1)).toEqual({ battle: BATTLE, groupId: 'g1', youRank: 3, youArchetype: null });
   });
 });

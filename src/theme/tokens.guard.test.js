@@ -87,6 +87,8 @@ const GUARDED_FILES = [
   'src/screens/battleView/leagueAgentMood.js',
   'src/components/League/battleArena/LeagueAgentForm.jsx',
   'src/components/League/battleArena/leagueAgentFormSlot.jsx',
+  'src/components/League/battleArena/fuseFormLayout.js',
+  'src/components/League/battleArena/finishedRivalRead.js',
   // Agent form build S1: the battle forms, on the vocabulary from birth.
   'src/screens/battleView/BattleAgentForm.jsx',
   'src/screens/battleView/agentMood.js',

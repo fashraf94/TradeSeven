@@ -3,8 +3,8 @@
 // src/components/League/battleArena/LeagueAgentForm.failure.jsdom.test.jsx
 //
 // Agent form build S2 — the two load failures, each in its own module graph, as S1's battle form: the form's chunk fails
-// (the slot keeps the still and the arena stays), and the outcome module fails (the form still draws, and a finished
-// game is idle, never a claimed win).
+// (the slot keeps the still and the arena stays), and the after-bell read's module fails (the form still draws, and an
+// unknown rival is a bare core).
 
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -25,7 +25,7 @@ afterEach(() => {
   errors.mockRestore();
   vi.doUnmock('./LeagueAgentForm');
   vi.doUnmock('../../AgentForm/AgentForm');
-  vi.doUnmock('../../CommandCenter/hub/selectors/gameOutcome');
+  vi.doUnmock('./finishedRivalRead');
 });
 
 const turns = (n, ready) => (async () => { for (let i = 0; i < n && !ready(); i += 1) await act(async () => { await new Promise((r) => setTimeout(r, 5)); }); })();
@@ -41,14 +41,15 @@ describe('a failed load leaves the arena standing', () => {
     expect(host.querySelector('[data-beside]')).not.toBeNull();
   });
 
-  it('the outcome module fails: the form draws, and a finished game shows idle', async () => {
+  it('the after-bell read\'s module fails: the form draws, and a rival with no armor is a bare core', async () => {
     const seen = [];
     vi.doMock('../../AgentForm/AgentForm', () => ({ default: (props) => { seen.push(props); return <i data-test-form="" />; } }));
-    vi.doMock('../../CommandCenter/hub/selectors/gameOutcome', () => { throw new Error('chunk failed'); });
+    vi.doMock('./finishedRivalRead', () => { throw new Error('chunk failed'); });
     const { LeagueAgentFormScope, LeagueAgentFormSlot } = await import('./leagueAgentFormSlot');
-    const standing = { rank: 1, seats: 4, cut: true, shown: true, complete: true };
-    await act(async () => { root.render(<LeagueAgentFormScope battle={{ status: 'completed' }}><LeagueAgentFormSlot seat={SEAT} you size={50} standing={standing} /></LeagueAgentFormScope>); });
+    const standing = { rank: 3, seats: 4, cut: true, shown: true, complete: true };
+    await act(async () => { root.render(<LeagueAgentFormScope groupId="g1"><LeagueAgentFormSlot seat={{ id: 'rae', kind: 'human', archId: null }} size={44} standing={standing} /></LeagueAgentFormScope>); });
     await turns(600, () => host.querySelector('[data-test-form]') !== null);
-    expect(seen.at(-1).mood).toBe('idle');
+    expect(seen.at(-1)).toMatchObject({ allegiance: 'opponent', mood: 'worried' });
+    expect(seen.at(-1).archetype).toBeUndefined();
   });
 });

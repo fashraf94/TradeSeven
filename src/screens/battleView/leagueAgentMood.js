@@ -5,18 +5,18 @@
 // seat, reads a score or sets a threshold (BUILD_RULES §9: the mood and the crown are one derivation).
 //
 // The player's form, first match:
-//   celebrating  the game is over and the existing outcome derivation says WON (deriveGameOutcome). That derivation
-//                reads one battle document, and a League battle is a banked day, so it answers `banked` or `noResult`,
-//                never `won`: a League result belongs to the group. So this does not fire in League today, by the
-//                ruling's letter (the S2 report's founder question 1 has the one-line alternative, and a row pins it).
+//   celebrating  the group's final verdict, as the screen prints it (founder ruling 1 of Oct 30, 2026): "You advanced" in
+//                ranked, the winner in training. `complete` is the arena's terminal state, from the group's own status
+//                (arenaStateMap.js), so a day's close, a banked battle inside a group still playing, never reaches it. A
+//                voided game or a level board shows no standing, so it has no verdict either.
 //   researching  a live evaluation lock on the player's own battle, as in the battle view (agentMood.js signalMood).
 //                `waiting` shares that step and stays unused: League has no cockpit, so no open call reaches it.
 //   confident /  the standing the screen shows: first place or an advancing spot is confident, out of it or last is
 //   worried      worried, anything else idle.
-//   idle         otherwise, and for a finished game that was not won (a finished game never shows the live standing).
+//   idle         otherwise, and for a finished game without that verdict (a finished game never shows the live standing).
 // An opponent's form: its own standing only, and it keeps its final standing when the game ends (S1's ruling 4).
 
-import { outcomeInputOf, signalMood } from './agentMood';
+import { signalMood } from './agentMood';
 
 /** How many seats a ranked pod advances: the top two, the cut the arena draws ("TOP 2 ADVANCE", fuseGeometry.js deriveCut). */
 export const LEAGUE_ADVANCING_SPOTS = 2;
@@ -47,14 +47,13 @@ export function standingMood(standing) {
  * @param {object}  [args.standing] standingOf's answer
  * @param {object}  [args.battle]   the player's own live battle document, when the screen holds one
  * @param {number}  [args.nowMs]    the form's clock, for the evaluation lock's age
- * @param {{ deriveGameOutcome: Function, OUTCOME_KINDS: object }} [args.outcomes] hub/selectors/gameOutcome.js
+ * @param {number}  [args.finalRank] the player's rank as the screen prints it in its verdict, where the screen hands it down
  * @returns {'celebrating'|'researching'|'confident'|'worried'|'idle'}
  */
-export function deriveLeagueMood({ you = false, standing = null, battle = null, nowMs, outcomes = null } = {}) {
+export function deriveLeagueMood({ you = false, standing = null, battle = null, nowMs, finalRank = null } = {}) {
   if (!you) return standingMood(standing);
   if (standing && standing.complete === true) {
-    const won = Boolean(battle) && Boolean(outcomes) && outcomes.deriveGameOutcome(outcomeInputOf(battle)).kind === outcomes.OUTCOME_KINDS.WON;
-    return won ? 'celebrating' : 'idle';
+    return standingMood(finalRank == null ? standing : { ...standing, rank: finalRank }) === 'confident' ? 'celebrating' : 'idle';
   }
   return signalMood(battle, null, nowMs) ?? standingMood(standing);
 }

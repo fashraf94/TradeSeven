@@ -36,6 +36,9 @@ export const FH = Object.freeze({
  * so a change to padT cannot silently claim to have fixed it — or silently make
  * it worse. E4's yield rule does not apply (chrome-vs-chrome, not data-vs-
  * control); see that test's header for why.
+ *
+ * Fixed for the agent forms' arena only (founder's ruling, Oct 30, 2026), behind
+ * AGENT_FORM_LEAGUE_ENABLED: fuseFormLayout.js fuseFormFrame. This frame stands.
  */
 export function fuseFrame({ w, h, compact = false }) {
   const g = compact ? FH.compact : FH.desktop;

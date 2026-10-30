@@ -91,7 +91,7 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
         backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(primary, 0.06)}, transparent 55%)` }}>
         {ready && model ? (
           AGENT_FORM_LEAGUE_ENABLED ? (
-            <LeagueAgentFormScope battle={battle}>
+            <LeagueAgentFormScope battle={battle} groupId={group?.id} youRank={model.youRank}>
               <ArenaMobile key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />
             </LeagueAgentFormScope>
           ) : <ArenaMobile key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />
@@ -111,7 +111,7 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
         <div style={{ height: Math.ceil(fit.scale * AD_H), overflow: 'hidden' }}>
           <div style={{ width: AD_W, height: AD_H, transform: `scale(${fit.scale})`, transformOrigin: 'top left', marginLeft: fit.offset }}>
             {AGENT_FORM_LEAGUE_ENABLED ? (
-              <LeagueAgentFormScope battle={battle}>
+              <LeagueAgentFormScope battle={battle} groupId={group?.id} youRank={model.youRank}>
                 <ArenaDesktop key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />
               </LeagueAgentFormScope>
             ) : <ArenaDesktop key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />}

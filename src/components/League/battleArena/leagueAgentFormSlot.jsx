@@ -5,58 +5,32 @@
 // derivation) loads lazily, and only while AGENT_FORM_LEAGUE_ENABLED is on. The declaration below is the literal ternary
 // Rollup folds to `null` with the flag off, so the import() and everything behind it leave the bundle.
 //
-//   LeagueAgentFormScope   the live arena's scope (LeagueBattleArenaLive.jsx): the player's own battle document.
+//   LeagueAgentFormScope   a screen's scope: the live arena's (LeagueBattleArenaLive.jsx), or the lobby preview's.
 //   LeagueStandingContext  the fuse hero's board for its tips: its ranked seats, from deriveCut, the crown's own source.
 //   LeagueAgentFormSlot    one seat's form: the lazy form, the still while its chunk loads, and the still for good if
 //                          the chunk fails (a boundary of its own, so a failed load never takes the arena down).
-//   FUSE_FORM_PX           the fuse hero's tips: a new kind of slot, four stacked seats, so sized for the armor to read.
+// The tips' sizes and where they sit are fuseFormLayout.js.
 
 import React, { Component, Suspense, createContext, lazy } from 'react';
 import { AGENT_FORM_LEAGUE_ENABLED } from '../../../config/agentFormFlags';
 import AgentFormStill from '../../AgentForm/AgentFormStill';
 
-/** What the live arena holds for the forms' moods: { battle }. */
+/** What a screen holds for its forms (LeagueAgentFormScope). */
 export const LeagueAgentFormContext = /* @__PURE__ */ createContext(null);
 /** The fuse hero's board (leagueAgentMood.js standingOf): { ranked, cut, shown, complete }. */
 export const LeagueStandingContext = /* @__PURE__ */ createContext(null);
 
 const LazyLeagueAgentForm = AGENT_FORM_LEAGUE_ENABLED ? lazy(() => import('./LeagueAgentForm')) : null;
 
-/** The live arena's scope: the player's own battle, the one place League holds a live evaluation lock. */
-export function LeagueAgentFormScope({ battle = null, children }) {
-  return <LeagueAgentFormContext.Provider value={{ battle }}>{children}</LeagueAgentFormContext.Provider>;
-}
-
 /**
- * The fuse hero's tips (CSS px): the player a size up, as the heads have always been. Four seats stack here, so S1's
- * header sizes do not fit; these are the largest that keep the value beside the head inside the reserved gutter
- * (fuseGeometry.js TIPROOM) and every seat live (ruling R12's 40 px floor). Measured at 320, 360, 390 and 1280 px.
+ * What a screen hands its forms.
+ * @param {object} [props.battle]        the player's own battle, the one place League holds a live evaluation lock
+ * @param {string} [props.groupId]       the group, for the after-bell read of human rivals' armor (finishedRivalRead.js)
+ * @param {number} [props.youRank]       the player's rank as the screen prints it ("You advanced"), for the final verdict
+ * @param {string} [props.youArchetype]  the player's archetype, where the seat has none (the lobby preview reads no battle)
  */
-export const FUSE_FORM_PX = { compact: { you: 50, rival: 44 }, desktop: { you: 64, rival: 56 } };
-/** A tip's form, `you` or a rival's. */
-export function fuseFormPx(you, compact) {
-  const px = FUSE_FORM_PX[compact ? 'compact' : 'desktop'];
-  return you ? px.you : px.rival;
-}
-
-/**
- * How far apart bunched tips sit: a rival's form and 2 px. A short phone hero has less room than four forms want, so
- * there the gap gives way first, keeping the last seat inside the box (its figure fills under 90 % of its own, so forms
- * a few px closer than their boxes still clear each other).
- */
-export function fuseFormGap(compact, h) {
-  const { rival } = FUSE_FORM_PX[compact ? 'compact' : 'desktop'];
-  if (!compact) return rival + 2;
-  return Math.min(rival + 2, Math.floor((h - 48 - rival / 2) / 3));
-}
-
-/**
- * Where the top tip may sit. A form pushes the value beside it toward the scope toggle, which sits inside the phone's plot
- * (fuseGeometry.js's padT note), and the leader's value and its total would pass under it hours sooner than today's head's.
- * So on a phone hero with the room, the stack starts below the toggle. A short hero keeps today's start, and its room.
- */
-export function fuseFormTop(frame, compact, h) {
-  return frame.plotT + (compact ? (h >= 222 ? 28 : 14) : 20);
+export function LeagueAgentFormScope({ battle = null, groupId = null, youRank = null, youArchetype = null, children }) {
+  return <LeagueAgentFormContext.Provider value={{ battle, groupId, youRank, youArchetype }}>{children}</LeagueAgentFormContext.Provider>;
 }
 
 /** A form whose chunk failed to load shows its still; the arena goes on. */

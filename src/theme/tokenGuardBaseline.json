@@ -74,6 +74,8 @@
     "src/screens/battleView/leagueAgentMood.js": {},
     "src/components/League/battleArena/LeagueAgentForm.jsx": {},
     "src/components/League/battleArena/leagueAgentFormSlot.jsx": {},
+    "src/components/League/battleArena/fuseFormLayout.js": {},
+    "src/components/League/battleArena/finishedRivalRead.js": {},
     "src/screens/battleView/BattleAgentForm.jsx": {},
     "src/screens/battleView/agentMood.js": {},
     "src/screens/battleView/battleAgentFormSlot.jsx": {},

@@ -31,7 +31,8 @@
 // empty-plot reload state no longer leads with its own wallpaper).
 //
 // Agent form build S2: with AGENT_FORM_LEAGUE_ENABLED on, each tip draws the seat's
-// agent form (leagueAgentFormSlot.jsx) where the head was, sized so the armor reads.
+// agent form (leagueAgentFormSlot.jsx) where the head was, sized so the armor reads,
+// its centre on its own line's end point (fuseFormLayout.js, the founder's iPhone run).
 // Its standing is deriveCut's order, the crown's own source, handed down through a
 // scope around the tips. Every read is a literal ternary that folds to today's bytes.
 // The tips stack at one x, so there is no left or right between seats, and an
@@ -45,7 +46,8 @@ import AgentPresence, { archetypeToDisposition } from '../../AgentPresence';
 import { isAgentPresenceOn } from '../../../config/featureFlags';
 import { AGENT_FORM_LEAGUE_ENABLED } from '../../../config/agentFormFlags';
 import { HEAD_FACE_LIFT } from './climbHeadLayout';
-import { LeagueAgentFormSlot, LeagueStandingContext, fuseFormGap, fuseFormPx, fuseFormTop } from './leagueAgentFormSlot';
+import { LeagueAgentFormSlot, LeagueStandingContext } from './leagueAgentFormSlot';
+import { anchorFigures, fuseFormFrame, fuseFormPx, fuseFormScale } from './fuseFormLayout';
 import { prefersReducedMotion } from './arenaEngineCore';
 import { ArenaAtmosphere } from './arenaAtmosphere';
 import {
@@ -206,7 +208,7 @@ export function FuseHero({
   // ── the frame + clock ──
   // `tipF` is hoisted ABOVE the series so the last PATH point and the tip's x
   // are the same number by construction, not two roundings of one idea.
-  const F = fuseFrame({ w, h, compact });
+  const F = AGENT_FORM_LEAGUE_ENABLED && showHead ? fuseFormFrame({ w, h, compact }) : fuseFrame({ w, h, compact });
   const X = (f) => F.padL + Math.max(0, Math.min(1, f)) * (F.plotR - F.padL);
   const dayFrac = snap.t != null ? sessionFraction(snap.t) : (live ? sessionFraction(nowFn()) : done ? 1 : 0);
   const bankedCount = Math.max(...ids.map((id) => (climb[id] || []).length), 0);
@@ -250,7 +252,10 @@ export function FuseHero({
 
   // ── the scale, over EVERY drawn value (tips and path points) ──
   const allVals = seatData.flatMap((d) => d.pts.map((p) => p.v)).concat(seatData.map((d) => d.dispVal));
-  const { HI, LO, basement, zeroY, Y } = makeScale({ values: allVals, day: DAY, plotT: F.plotT, floorY: F.floorY });
+  const { HI, LO, basement, zeroY, Y } = AGENT_FORM_LEAGUE_ENABLED && showHead ? fuseFormScale({
+    values: allVals, day: DAY, frame: F,
+    tips: seatData.map((d) => ({ id: d.seat.id, v: d.pts[d.pts.length - 1]?.v ?? 0, size: fuseFormPx(d.seat.you, compact) })),
+  }) : makeScale({ values: allVals, day: DAY, plotT: F.plotT, floorY: F.floorY });
 
   // ── the cut (ranked only; never in training, never when voided/calm) ──
   // H3 — the cut goes through the SAME transform as the seats, so it cannot
@@ -268,9 +273,12 @@ export function FuseHero({
   // ── tips: x at the burn (tipF, hoisted above); head anchors spread apart ──
   const burnX = X(done && !DAY ? (seatData[0]?.pts?.[seatData[0].pts.length - 1]?.f ?? 1) : tipF);
   const tipYOf = (d) => Y(d.pts[d.pts.length - 1]?.v ?? 0);
-  const headY = spreadLabels(
+  const headY = AGENT_FORM_LEAGUE_ENABLED && showHead ? anchorFigures(
+    seatData.map((d) => ({ id: d.seat.id, y: tipYOf(d), size: fuseFormPx(d.seat.you, compact) })),
+    F.plotT, F.floorY,
+  ) : spreadLabels(
     seatData.map((d) => ({ id: d.seat.id, y: tipYOf(d) })),
-    AGENT_FORM_LEAGUE_ENABLED && showHead ? fuseFormGap(compact, h) : F.headGap, AGENT_FORM_LEAGUE_ENABLED && showHead ? fuseFormTop(F, compact, h) : F.plotT + (compact ? 14 : 20), F.floorY - 4,
+    F.headGap, F.plotT + (compact ? 14 : 20), F.floorY - 4,
   );
 
   // ── the header microcopy + its E4 yield (both need burnX) ──

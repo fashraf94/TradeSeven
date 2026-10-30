@@ -66,14 +66,22 @@ describe('every read is a literal ternary on the flag, so flag-off folds to toda
     ]);
   });
 
-  it('the League: the two head sites and the live arena\'s scope, each a ternary', () => {
+  it('the League: the two head sites, the phone hero, the two lobby sites and the live arena\'s scope, each a ternary', () => {
     const lg = '../components/League/battleArena/';
     const IMPORT = "import { AGENT_FORM_LEAGUE_ENABLED } from '../../../config/agentFormFlags';";
-    // FuseHero: the tip's size, its filter, its form, the tips' gap and the scope around them.
+    // FuseHero: the tip's size, its filter, its form, the frame, the scale, the anchors and the scope around the tips.
     const fuse = readsOf(`${lg}FuseHero.jsx`, 'AGENT_FORM_LEAGUE_ENABLED');
     expect(fuse[0]).toBe(IMPORT);
-    expect(fuse.slice(1)).toHaveLength(5);
+    expect(fuse.slice(1)).toHaveLength(7);
     for (const line of fuse.slice(1)) expect(line).toMatch(/(?:^|[=:] |, )\{?AGENT_FORM_LEAGUE_ENABLED (?:\? |&& showHead \? )/);
+    // ArenaMobile: the sticky block's pin and the hero's height, each a style that folds to today's object.
+    const mobile = readsOf(`${lg}ArenaMobile.jsx`, 'AGENT_FORM_LEAGUE_ENABLED');
+    expect(mobile[0]).toBe(IMPORT);
+    expect(mobile.slice(1)).toHaveLength(2);
+    for (const line of mobile.slice(1)) expect(line).toMatch(/style=\{AGENT_FORM_LEAGUE_ENABLED && FUSE_HERO_ON \? /);
+    for (const file of ['../components/League/LeagueDeskParts.jsx', '../components/League/LeagueLobbyRedesign.jsx']) {
+      expect(readsOf(file, 'AGENT_FORM_LEAGUE_ENABLED'), file).toEqual(["import { AGENT_FORM_LEAGUE_ENABLED } from '../../config/agentFormFlags';", 'AGENT_FORM_LEAGUE_ENABLED ? (']);
+    }
     const climb = readsOf(`${lg}ClimbArena.jsx`, 'AGENT_FORM_LEAGUE_ENABLED');
     expect(climb).toEqual([IMPORT, '{AGENT_FORM_LEAGUE_ENABLED ? (']);
     const live = readsOf(`${lg}LeagueBattleArenaLive.jsx`, 'AGENT_FORM_LEAGUE_ENABLED');
