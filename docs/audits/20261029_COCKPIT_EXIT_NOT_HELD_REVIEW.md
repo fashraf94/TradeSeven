@@ -10,7 +10,7 @@ The branch is past the §2 line (≥10 files); the founder asked for the review 
 |---|---|
 | **Result** | **No blocker was reported or confirmed.** 16 distinct findings: **9 CONFIRMED, 5 PARTIAL, 2 REFUTED** (as defects: equivalent, unreachable mutants). The refuters also refuted **9 sub-claims** inside the 5 PARTIAL findings (§3 says which half held). The one reported "major" (a build report that predated rev 3) is fixed. |
 | **Fixed in `ccb2ec46`** | A repeat row that could not fail (rewritten), three new rows and a fixture correction for the mutants that survived, one display line that contradicted the tag, four stale comments — and the build report (13 stale statements). |
-| **Left, with a reason** | NH-L1-1 (a nit), NH-L1-2 and NH-L3-2 (minor; the amendment's letter permits both — they are questions for the founder, Q1 and Q2 below), and the two equivalent mutants. |
+| **Left, with a reason** | NH-L1-1 (a nit), NH-L1-2 and NH-L3-2 (minor; the amendment's letter permits both — they were the founder's questions Q1 and Q2 below, **both since ruled**), and the two equivalent mutants. |
 | **Production logic changed by the review** | **One line:** the 2b card no longer prints "If you say nothing, it exits." on a "Not in your book" card (`cockpit2bModel.js`). Everything else the review changed is a test or a comment. |
 | **Not covered** | The review ran on snapshot trees with the unit and jsdom suites. No browser run, no production observation: the mint rule's first real observation is the next check on an allowlisted account (crons do not run on preview). |
 
@@ -49,6 +49,8 @@ Ids `NH-L<lens>-<n>`. "Reported" is the lens's own severity; "Verdict" is the re
 **Informational (L5, not findings):** the memo dependency `agentBattle?.portfolio` is pinned only by a source-text row (no mounted row changes the portfolio after mount); `expect(answerBodies()).toEqual([])` in the mounted row is trivially true (it clicks nothing); the screen jsdom file is load-sensitive (it timed out when eight files ran in parallel and passes alone, about 16 s).
 
 ## 4. Questions for the founder
+
+> **Ruled 2026-10-29** (recorded in the build report, §9 and §15): **Q1 — keep the letter** (no rev 4; the unknown executor outcome stays as it is). **Q2 — accept the single tag.** And the 2b card's silence-line change (NH-L3-1, `cockpit2bModel.js:336`) — **keep.** Q1 and Q2 are "found, not fixed". The text below is the questions as put.
 
 - **Q1 (NH-L1-2).** Should E-1 fail open when the executor's outcome is UNKNOWN (it threw after the commit and the landed-trade re-read failed)? Today a missing `symbolIn` matches nothing, so the exit on the maybe-bought stock mints `exit_not_held` for good. The fix R2 sketched: set a flag on the calls context at the cron's `swapOutcomeUnknown` branch, pass it through `publish.js`, and skip `isExitNotHeld` in `composeCall` when set — three files and one amendment sentence ("an unknown executor outcome proves nothing at E-1"). Not built: it is a looser reading than the letter.
 - **Q2 (NH-L3-2).** For a tile whose tag a recorded filing owns, should "Not in your book" still appear (an additive second line), or is the single-tag choice — with D-6 retiring the command at the next check — enough? R4 prototyped the additive line; it touches no pinned test.
