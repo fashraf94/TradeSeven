@@ -420,6 +420,7 @@ All Battle View copy lives in `battleViewCopy.js` (the honesty test requires it)
 | `superseded`, replacing exchange `source: 'cockpit'` | Replaced by your later command · {t} | muted |
 | `superseded`, any other source | Replaced by a chat instruction · {t} | muted |
 | `invalidated` with `invalidatedReason` | Dropped · {reason line} (§7.2) | dropped |
+| an **open exit** whose stock is in no tier of the book (nothing answered, nothing acted, otherwise Live) — no buttons, no "Who comes in?" step *(Amendment E)* | Not in your book | muted |
 | directive filed, no check left in the session | Filed · no check left today | yours |
 | restatement under your command (D-10), **and** its minting check's `declared` event carries `promptDirectiveThreadId` equal to the command's thread (D-10 rev 2) | Following your call | yoursOutline |
 
@@ -429,6 +430,7 @@ All Battle View copy lives in `battleViewCopy.js` (the honesty test requires it)
 - `level_implausible` → "price line out of range"
 - `level_non_finite` → "no usable price line"
 - `no_observation` → "no price at that check"
+- `exit_not_held` → "not in your book" *(Amendment E)* — an exit call whose stock was in no tier of the book frozen at the model seam (and was not the check's own committed incoming stock); it reads "Dropped · not in your book"
 
 Cite the reason set at HEAD. Any reason not in the table → bare "Dropped".
 

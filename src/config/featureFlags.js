@@ -238,21 +238,29 @@ export const CASUAL_CLONE_CONCURRENCY_ENABLED = true;
 
 /**
  * League Battleview Routing (Spec V1.2, Phase A) — the Command Center live-game
- * card path. When a tapped game is a flat-6 LEAGUE battle
- * (gameMode === 'baggerbomb_tournament'), route it to the League Arena instead of
- * the BaggerBomb AgentBattleScreen.
+ * card path. A tapped game that is a flat-6 LEAGUE battle
+ * (gameMode === 'baggerbomb_tournament') routes to the League Arena instead of
+ * the BaggerBomb AgentBattleScreen (src/screens/BattleViewScreen.jsx).
  *
- * Default OFF (dark): no URL param → false → BattleViewScreen ignores gameMode and
- * league battles fall through to the existing agentDeployed→AgentBattleScreen
- * branch, byte-identical to today (the mis-route stays, but dark). gameMode is
- * still propagated through the card mappers when off (an inert extra field), so
- * enabling this is the only behavior change.
+ * ON. Shipped true; it is NOT a dark flag any more. With it on, no League battle reaches
+ * AgentBattleScreen, so none reaches the cockpit or POST /api/agent/call-response.
  *
- * PREVIEW SMOKE OVERRIDE (Spec V1.2, Correction 2): `?leagueRouting=1` force-
- * enables it in a Vercel preview WITHOUT flipping the shipped default — the
- * arenaLiveGate.js `?battleArenaLive=1` idiom. The production flip stays a
- * separate one-line PR after smoke (the LEAGUE_BATTLE_VIEW_V2_ENABLED / PR #510
- * precedent): change the base to `true || (…)`, never in the build PR.
+ * THE ONE WALL (contract Amendment E, docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_E.md,
+ * "What stays as it is"): this flag is the ONLY thing keeping League battles out of
+ * the cockpit. In a League battle the agent's exit-call `slot` is a GUESS — the League
+ * prompt shows no tiers, yet the declaration requires one — so the cockpit's slot-tier
+ * answer check (D-4) and the any-tier checks of E-1 / E-2 disagree on 47% of those
+ * calls (60 of 127 exit calls at the count). DO NOT TURN THIS FLAG OFF until the cockpit
+ * arc's League SLOT LABEL follow-up has landed. Off, League battles fall through to
+ * the agentDeployed → AgentBattleScreen branch again ("the mis-route",
+ * BattleViewScreen.routing.dark.test.jsx) and into the cockpit.
+ *
+ * The `?leagueRouting=1` preview override of the dark build is gone; the expression
+ * statement under the declaration is its inert leftover and does nothing.
+ *
+ * Pinned by: leagueBattleviewRoutingWall.test.js — a tripwire whose failure message
+ * names Amendment E and the slot-label follow-up, and which also fails if this
+ * docstring stops naming them.
  */
 export const LEAGUE_BATTLEVIEW_ROUTING_ENABLED = true;
   typeof window !== 'undefined' &&

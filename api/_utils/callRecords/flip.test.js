@@ -11,6 +11,8 @@ import {
   FLIP_PAGE_SIZE, FLIP_QUERY, INDEX_RECHECK_MS, NON_MODEL_FLIP_EXITS,
 } from './flip.js';
 import { buildReceipt, receiptPathOf } from './receipt.js';
+import { planHeard } from './heard.js';
+import { isExitNotHeld } from './answers.js';
 import { buildMintCandidate, MUTABLE_CALL_FIELDS } from './candidate.js';
 import { createCallsContext } from './mode.js';
 import { TAIL_RESERVE_MS, NON_MODEL_PHASE_MS } from './publish.js';
@@ -843,5 +845,51 @@ describe('the receipt shape', () => {
     expect(buildReceipt({ call: amd, evalId: null, observation: makeObservation({ omit: ['AMD'] }) }).px).toBeNull();
     expect(buildReceipt({ call: amd, evalId: 'e', observation: makeObservation() }).px).toBe(162);
     expect(receiptPathOf('b', 'c')).toBe('agentBattles/b/callObservations/c');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Amendment E rev 4 (framework condition 1) — THE OUTGOING CASE. An exit call on the stock the check ITSELF SOLD is in
+// the seam's book (the book before that trade), so E-1 mints it OPEN. That check's flip pass skips it (flip.js planFlip,
+// 'minting_check'), so it is never `acted` there; the heard pass has no directive answer to read on it; and once the
+// stock is gone E-2 makes it unanswerable ("Not in your book"). In League battles a guessed slot also fails the
+// exit match's tier === slot (flip.js matchesWholeTrade) at a LATER check that sells the stock.
+describe('Amendment E — an exit call on the check\'s own committed symbolOut', () => {
+  const SOLD = (over = {}) => makeExecutorResult({ symbolOut: 'TSLA', symbolIn: 'AMD', tier: 'star', slotIndex: 0, ...over });
+  /** The exit on TSLA (star, this_session) minted at THIS check (eval_001), 10 s ago. */
+  const mintedHere = () => earlierCalls(liveDeclarations(), { evalId: 'eval_001', mintedAtMs: NOW - 10_000 })[1];
+  const bookAfterTheSale = () => { const b = makeTickBattle(); b.portfolio.star = b.portfolio.star.filter((r) => r.symbol !== 'TSLA'); return b; };
+
+  it('minted OPEN (the stock is in the seam\'s book); the flip pass at that same check skips it — still open, not acted, nothing written', async () => {
+    const tsla = mintedHere();
+    expect([tsla.symbol, tsla.direction, tsla.slot, tsla.state, tsla.invalidatedReason]).toEqual(['TSLA', 'exit', 'star', 'open', null]);
+    // The price line is met (200 < 240) and the executor result IS this call's whole trade: without the skip this check
+    // would hit it and set actedEvalId. matchesWholeTrade says so — and the pass still leaves it alone.
+    expect(matchesWholeTrade(tsla, SOLD())).toBe(true);
+    const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf([tsla]) });
+    const res = await flipsOf(db, ctxFor({ evalId: 'eval_001', executorResult: SOLD(), observation: obsWith({ TSLA: { px: 200, fetchedAtMs: NOW - 1 } }) }));
+    expect(res.diag.skipped).toEqual({ minting_check: 1 });
+    expect(callWrites(db)).toEqual([]);
+    const after = storedDoc(db, 'calls', tsla.callId);
+    expect(after.state).toBe('open');
+    expect(after.outcome ?? {}).not.toHaveProperty('actedEvalId');
+    expect(planFlip(tsla, { observation: obsWith({ TSLA: { px: 200, fetchedAtMs: NOW - 1 } }), evalId: 'eval_001', executorResult: SOLD() })).toEqual({ skip: 'minting_check' });
+  });
+
+  it('the heard pass cannot act it either: a call minted at this check has no directive answer, so planHeard skips it', () => {
+    expect(planHeard(mintedHere(), makeTickBattle(), { thread: 'th-1', evalId: 'eval_001', promptBuiltAt: FROZEN_NOW, executorResult: SOLD(), flippedIds: new Set() })).toEqual({ skip: 'not_this_thread' });
+  });
+
+  it('it stays open on a sold stock, and E-2 makes it unanswerable: the fresh parent holds TSLA in no tier', () => {
+    const tsla = mintedHere();
+    expect(isExitNotHeld(tsla, makeTickBattle())).toBe(false);     // the book before the sale: held
+    expect(isExitNotHeld(tsla, bookAfterTheSale())).toBe(true);    // the book after it: "Not in your book"
+  });
+
+  it('League: a guessed slot fails the exit match\'s tier === slot at a LATER check that sells the stock — the call stays open on a sold stock', () => {
+    const tsla = mintedHere();                                      // the call says `star`
+    expect(matchesWholeTrade(tsla, SOLD({ tier: 'star' }))).toBe(true);
+    expect(matchesWholeTrade(tsla, SOLD({ tier: 'core' }))).toBe(false); // the stock actually sat in `core`
+    expect(planFlip({ ...tsla, evalId: 'eval_000' }, { observation: makeObservation({ symbols: { TSLA: { px: 250, fetchedAtMs: NOW - 1 } } }), evalId: 'eval_002', executorResult: SOLD({ tier: 'core' }) })).toEqual({ skip: 'no_change' });
   });
 });
