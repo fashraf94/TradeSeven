@@ -135,6 +135,41 @@ describe('a pose is a pure function of (spec, t)', () => {
   });
 });
 
+// Build S2 (ruling R19): a response is part of the pose, so a frame is still (spec, t) alone.
+describe('a response in the pose', () => {
+  const spec = { kind: 'spec', core: 0, armor: 0, seed: 1, size: 200, state: 'idle', fit: 1, batched: false };
+  const edgeOf = (F) => { let hex = null; F.group.traverse((o) => { if (hex === null && o.isLineSegments) hex = o.material.color.getHex(); }); return hex; };
+  const glowOf = (F) => { let size = 0; F.group.traverse((o) => { if (o.isSprite) size = Math.max(size, o.scale.x); }); return size; };
+
+  it('the armor: its edges run toward the core\'s white, part of the way, and the core stays', () => {
+    const C = context(), F = buildForm(spec, C);
+    poseForm(F, spec, 2, C, PAL);
+    const base = { edge: edgeOf(F), glow: glowOf(F) };
+    poseForm(F, { ...spec, response: { part: 'armor', lift: 1.7 } }, 2, C, PAL);
+    expect(edgeOf(F)).not.toBe(base.edge);
+    expect(edgeOf(F)).not.toBe(new THREE.Color(PAL.core).getHex());
+    expect(glowOf(F)).toBe(base.glow);
+  });
+
+  it('the core: its glow grows, and the edges stay', () => {
+    const C = context(), F = buildForm(spec, C);
+    poseForm(F, spec, 2, C, PAL);
+    const base = { edge: edgeOf(F), glow: glowOf(F) };
+    poseForm(F, { ...spec, response: { part: 'core', lift: 1.7 } }, 2, C, PAL);
+    expect(glowOf(F)).toBeGreaterThan(base.glow);
+    expect(edgeOf(F)).toBe(base.edge);
+  });
+
+  it('leaves nothing behind: the next frame without one is the frame that never had one', () => {
+    const C = context(), F = buildForm(spec, C);
+    poseForm(F, spec, 2, C, PAL);
+    const first = posePrint(F);
+    poseForm(F, { ...spec, response: { part: 'all', lift: 1.7 } }, 2, C, PAL);
+    poseForm(F, spec, 2, C, PAL);
+    expect(posePrint(F)).toBe(first);
+  });
+});
+
 // Build S2 (ruling R18): the frames of the two sets the design cut off. A pose is geometry, so the bounds are computed
 // here without a GPU: every vertex a frame lights, projected through the camera the frame uses. Headless Edge measures the
 // pixels (the S2 report, §5); this row keeps them in CI. Sprites are left out: the halo's tail is 2 % light at the edge.
