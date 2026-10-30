@@ -1,6 +1,6 @@
 # Build S2: The armored agent in League games, plus the S1 carry list
 
-**Run date:** October 30, 2026 · **Model:** Opus · **Branch:** `claude/agent-form-s2`, cut from `main` @ `f7be7f1b` (which holds PR #1011 and PR #1014), pushed from the worktree branch `claude/agent-form-s2-armored-16abc8` by refspec · **Smoke branch:** `claude/agent-form-s2-smoke` · **Preview:** PREVIEW_URL
+**Run date:** October 30, 2026 · **Model:** Opus · **Branch:** `claude/agent-form-s2`, cut from `main` @ `f7be7f1b` (which holds PR #1011 and PR #1014), pushed from the worktree branch `claude/agent-form-s2-armored-16abc8` by refspec · **Smoke branch:** `claude/agent-form-s2-smoke` · **Preview:** https://trade-seven-exm6yeof6-fais-projects-bc179554.vercel.app
 
 **Preamble.** `git fetch origin` ran first. `origin/main` = `f7be7f1b`, the merge of PR #1014, with PR #1011's merge `b1823fdd` beneath it, so the prompt's STOP does not apply. The tree was clean. Fenced files read: `api/agent/decide.js` (`:1382-1594`, the prescribed deploy, for R13). Fenced functions called: none. Fenced files edited: none. Nothing under `api/` changed. `tournamentAgentBoards.js`, `tournamentAgentDraft.js`, `tournamentCpu.js` and `agent-evaluate.js` were read for R13; none is edited.
 
@@ -13,15 +13,15 @@
 | 1 | Flag-off identity | **All three flags off, the build differs from `main` in 2 of 47 files, on R20's and R22's lines only.** 44 JS chunks, the stylesheet and `index.html` were compared unminified with hashes masked. The list is in §8. |
 | 2 | Step 1 map | **Two League sites, no STOP.** The fuse hero's tips (the live arena, ranked and training) and the climb's seats (the Training tab's preview). No site needs a server or fenced change, every opponent's archetype is already on the client, and two sites is under the eight allowed (§1). |
 | 3 | R13: is the CPU's archetype real? | **Yes.** It ranks the board the CPU's six are drafted from, and the battle is deployed with it. One limit: a CPU's battle is passive, so the archetype picks the stocks and never trades during the day (§2). |
-| 4 | League figures (R13–R16) | **Built behind `AGENT_FORM_LEAGUE_ENABLED = false`.** Yours teal; each CPU and human rival in copper, in their own armor; an unknown seat a bare copper core. Every phone seat was a 25–30 px head and is now a 44–50 px live figure. No figures overlap, and all stay inside the hero at 320, 360, 390 and 1280 px, and on the shortest phone hero (§7). |
+| 4 | League figures (R13–R16) | **Built behind `AGENT_FORM_LEAGUE_ENABLED = false`.** Yours teal; each CPU and human rival in copper, in their own armor; an unknown seat a bare copper core. Every phone seat was a 25–30 px head and is now a 44–50 px live figure. In headless Edge no figures overlap, and all stay inside the hero at 320, 360, 390 and 1280 px, and on the shortest phone hero (§7). |
 | 5 | League moods (R15) | **Confident and worried follow the standing the screen shows,** taken from each screen's own order, never from a score. **Researching** works from your live battle. **Waiting** is unused, because League has no cockpit. **Celebrating does not fire in League today: see Founder question 1.** |
 | 6 | Clipped sets (R18) | **Fixed.** The Trend Follower is 12.2 % smaller and the Diversifier 5.3 %. Over 1,000 frames in all six moods, neither reaches the box's edge at any size, up to the hub's 340 px. The other five forms are pixel-identical to `main` (§5). |
 | 7 | Hub brighten (R19) | **Built, on S7's triggers and timing.** Board 5 covers all three areas: Equipped Archetype lights the armor's edges, Partnership and Shared Research the core. A deploy lights the whole form, as does the archetype area on bare Shadow, because board 5 is silent on those (§6). |
-| 8 | Narrow-phone scores (R20) | **Fixed for everyone, flags off too.** Long gated scores no longer touch "DAY 3 OF 5" at 312, 320, 339, 360 or 390 px, flags off or on, with the app's stylesheet loaded (§4). |
+| 8 | Narrow-phone scores (R20) | **Fixed for everyone, flags off too.** Long gated scores clear "DAY 3 OF 5" by 4.7 px or more at 312, 320, 339, 360 and 390 px, flags off or on, with the app's stylesheet loaded. **Measured in Inter; SF Pro on the iPhone is unmeasured, so checklist step 11 is the real test** (§4). |
 | 9 | R21, R22, R23 | **All built.** The battle forms have their own clock, the hook reads the battle's snapshot first, and a swap asked for while paused starts when the view resumes (§3). |
-| 10 | Tests and mutation | **58 of 58 mutants killed** (§9). `lint:gate` exit 0. Full suite on Linux, code head `80d406e0`: **27,595 rows, 27,506 pass, 0 fail, 89 skipped.** |
-| 11 | Smoke | `claude/agent-form-s2-smoke`: all three flags on, the hub readout, `?formScale=` over the battle and League forms, and `?leagueForms=1`, the real League arena on recorded fixtures (§10). |
-| 12 | Review threshold | The code diff is **46 files, +1,699 / −96 lines**, over both BUILD_RULES §2 thresholds, so **a review session runs before merge.** No review is claimed here. |
+| 10 | Tests and mutation | **60 of 60 mutants killed** (§9). `lint:gate` exit 0. Full suite on Linux, code head `64783260`: **27,597 rows, 27,508 pass, 0 fail, 89 skipped.** |
+| 11 | Smoke | `claude/agent-form-s2-smoke`: all three flags on, the hub readout, `?formScale=` over the battle and League forms, and `?leagueForms=1`, the real League arena on the repo's fixture data (§10). |
+| 12 | Review threshold | The code diff is **46 files, +1,724 / −96 lines**, over both BUILD_RULES §2 thresholds, so **a review session runs before merge.** No review is claimed here. |
 
 ---
 
@@ -100,6 +100,7 @@ Every surface in the League ranked and training flows that draws the robot head,
 
 - The "longer" scores overlapped on `main` at every width to 390. They clear by 4.7 px or more now, flags off and on.
 - Whole-number scores and the desktop header are unchanged. No horizontal overflow, and no header height changes, at any width.
+- **How much room that leaves.** The tightest case is 4.7 px on a 98 px score, so a font up to about 5 % wider than Inter still clears; at the widths the ruling names, long scores keep 6–8 %. If SF Pro is wider than that, the score meets the column by a pixel or two, against 6–30 px on `main`, and `SCORE_CHAR_EM` is the one number to raise.
 - **Picked: the shrink, two decimals.** One decimal at 320 px gains 3 px of type (23 vs 19.7) and still has to shrink, and it can print a tie while the bar and the emphasis show a lead (BUILD_RULES §9).
 - **`minWidth: 0` on the CPU columns was tried and left out.** The measurements are the same without it, and it changed the legacy header's OFF-6 golden bytes.
 
@@ -199,9 +200,9 @@ Top row: at rest, then the armor, core and whole-form peaks. Bottom row: the red
 | Fuse tip, desktop | 44 / 36 | **64 / 56** (the stage scales to fit: 59 / 51 at 1280 px) |
 | Climb seat | 54 / 48 / 44; 64 / 58 / 50 | The same: the head's own footprint, all over 40 px |
 
-Every seat is now over the 40 px floor, so every seat is live. Up to four forms draw at once in the arena. **Their frame rate on the iPhone is unmeasured**, so the fixture page carries the corner readout (checklist step 10).
+Every seat is now over the 40 px floor, so every seat is live. The phone's top seat starts 14 px lower than today's, for the reason under "The scope toggle" below. Up to four forms draw at once in the arena. **Their frame rate on the iPhone is unmeasured**, so the fixture page carries the corner readout (checklist step 10).
 
-**Measured** on the real arena, headless Edge, 2×, on recorded fixtures with every seat bunched:
+**Measured** on the real arena, headless Edge, 2×, on the repo's `arenaFixtures` with every seat bunched:
 
 | Viewport | Hero | Forms | Boxes that touch | Figures that touch | Past the hero | Value past the edge |
 |---|---|---|---|---|---|---|
@@ -213,6 +214,23 @@ Every seat is now over the 40 px floor, so every seat is live. Up to four forms 
 | Climb, 320 / 360 / 800 px | as shown | 44–64 | none | **none** | none | none |
 
 On a short hero the gap gives way first (`leagueAgentFormSlot.jsx:47`), and the figures still clear each other because each fills under 90 % of its box.
+
+**The scope toggle: a regression of mine, found by looking, and fixed.** On the real preview the leader's value was hidden behind the Today / The week toggle. `main` has this overlap too (the padT ticket in `fuseGeometry.js`), but the larger tips made it start an hour sooner, so none of the numbers above saw it. Measured through a day, the leader at the top of the board:
+
+| Hours after the open | `main` | First build | Now |
+|---|---|---|---|
+| 1, 2 | clear | clear | clear |
+| 3 | clear | **under by 11.6 px** | clear |
+| 4.5, 5.8 | **under by 9.5 px** | **under by 11.6 px** | clear |
+
+- **The fix:** on a phone hero tall enough for it (222 px or more), the stack starts below the toggle (`fuseFormTop`, `leagueAgentFormSlot.jsx:58`). Clear at 320, 360 and 390 px, and at 1280, where the toggle never reached it. So the forms fix this overlap for most phones, flag on.
+- **The limit:** on the shortest hero (187 px, a 553 px usable screen) four forms below the toggle do not fit, so it keeps today's start, and the value goes under by 11.6 px against `main`'s 9.5.
+
+4.5 hours into a day, `main`, then now:
+
+![Before, a live day](assets/agent-form-s2-league-before-390-day.png)
+
+![After, a live day](assets/agent-form-s2-league-after-390-day.png)
 
 **Facing (R14).** The climb's lanes have a direction, so an opponent looks toward you from either side (`ClimbArena.jsx:234`). The fuse's tips stack at one x, so there is no left or right between seats, and an opponent keeps the form's own mirror.
 
@@ -285,7 +303,7 @@ The order comes from each screen's own derivation: `deriveCut(…).ranked` on th
 
 ## 8. Flag-off identity
 
-**Method:** `vite build --minify false` on Linux (WSL, Node 20.20.2), LF trees, every `-[8 chars].js/.css` masked in names and contents, `diff -r`, source maps excluded. `main` `f7be7f1b` against the code head `80d406e0`.
+**Method:** `vite build --minify false` on Linux (WSL, Node 20.20.2), LF trees, every `-[8 chars].js/.css` masked in names and contents, `diff -r`, source maps excluded. `main` `f7be7f1b` against the code head `64783260`.
 
 **Result: 47 files compared (44 JS), 2 differ.** The stylesheet, `index.html` and 42 chunks are identical, the hub's and the League's included.
 
@@ -331,14 +349,14 @@ The check ran after R19 and R21 went in, after the League sites went in (togethe
 | `screens/battleView/leagueAgentMood.test.js` | 16 | The standing, ranked and training; every precedence pair; opponents standing-only; the banked-day pin for question 1 |
 | `League/battleArena/LeagueAgentForm.jsdom.test.jsx` | 11 | The still; player, CPU and human through the real `buildArenaModel`; bare when unknown; the code id, never the label; moods from the board, the standing and the arena's battle |
 | `League/battleArena/LeagueAgentForm.failure.jsdom.test.jsx` | 2 | A failed chunk keeps the still and the arena; a failed outcome module still draws, idle |
-| `League/battleArena/leagueAgentForm.sites.jsdom.test.jsx` | 19 | Both sites with the flag on: sizes, the face's lift gone, the order from `deriveCut` against contrary scores, no margin, the gap, facing, no remount on a surge, the arena's battle |
+| `League/battleArena/leagueAgentForm.sites.jsdom.test.jsx` | 21 | Both sites with the flag on: sizes, the face's lift gone, the order from `deriveCut` against contrary scores, no margin, the gap, facing, no remount on a surge, the arena's battle |
 | `League/battleArena/leagueCpuArchetype.test.js` | 10 | R13: the seat equals the agent document for nine CPUs; the board tripwire |
 
 **Added to existing files:** R18's bounds and the response in the pose (`builders.test.js`), R19 and R23 (`engine.lifecycle.jsdom.test.js`, 18 rows), the frames and curve (`vocab.test.js`), R19's triggers, parts and numbers against S7's (`HubAgentForm.jsdom.test.jsx`, 8), the stages (`ShadowStage.agentForm`), the wrapper (`AgentForm.s1`), R20 (`ArenaHeader.render`, 4), R21 (`BattleAgentForm.jsdom`, 2; `agentMood.test.js`), R22 (`AgentPresenceMount.reactivity`).
 
 **Guards:** `leagueAgentMood.js`, `LeagueAgentForm.jsx` and `leagueAgentFormSlot.jsx` are registered in the token and motion guards and their baselines at zero; the flag in `flagPinGuard` and `agentFormFlags.test.js`, whose literal-ternary row now covers every League read; the League form's one lazy edge in the hub mount guard's main-graph row; the League slot in `agentForm.flagOffBundle.test.js`, with its marks and its flag planted; the wrapper's sixth effect in the activity guard. No guard's rule was loosened. S1's one "researching" statement moved into a shared `signalMood`, unchanged, so the `deskHonesty` exemption still names one line.
 
-**Mutation** (Linux; each mutant one exact replacement, its rows run, the file restored from the commit's blob and checked equal). **58 of 58 killed**, from a green baseline. A first start was stopped before it produced anything: one of my own rows was red at that commit, and a red baseline fakes kills.
+**Mutation** (Linux; each mutant one exact replacement, its rows run, the file restored from the commit's blob and checked equal). **60 of 60 killed**, from a green baseline. A first start was stopped before it produced anything: one of my own rows was red at that commit, and a red baseline fakes kills.
 
 The first round killed 55 of 57. The two survivors were both useful:
 - **R15-2, a points margin on the board.** My fixture's spread was too wide to feel a margin. A close-board row now kills it.
@@ -349,7 +367,7 @@ The first round killed 55 of 57. The two survivors were both useful:
 | R13 | A League CPU drawn bare (R13-1); the display label read (R13-2); the seat loses the CPU map (R13-3); the board stops reading the archetype (R13-4) | The CPU, human and player rows; the CPU file's nine rows; the tripwire |
 | R14 | Opponents in teal; the lanes' opponents look away; `facing` ignored | The allegiance rows; the lanes row; the facing rows |
 | R15 | **An invented threshold** (third place advances; a points margin); **a standing from raw scores** (fuse, climb); a level board shows one; an opponent reads your lock; a banked day counts as a win; a finished game shows the live standing; last not worried in training; the arena drops its battle | The standing rows; the close-board row; the contrary-scores rows; the level row; the opponent rows; the banked pin; the finished rows; the training row; the arena row |
-| R16 | A rival under 40 px; the gap ignores a short hero; the fuse keeps the old gap; the old size | The floor row; the short-hero row; the spread row; the size row |
+| R16 | A rival under 40 px; the gap ignores a short hero; the fuse keeps the old gap; the old size; the stack starts at today's top; a short hero loses its room | The floor row; the short-hero row; the spread row; the size row; the toggle row; the short-hero start row |
 | R17 | The flag on | The pin, the literal, `flagPinGuard` |
 | R18 | **A set's frame reverted** (both sets); the shift dropped; the shift jumps at a swap | The bounds row and the table pin; the bounds row; the no-jump row |
 | R19 | **A trigger dropped** (area, created); **brightening under Reduce Motion**; the phone blooms on an area; board 5's parts swapped; a paused response on the wall clock; both lengths drifting from S7's; the flash not owed; the wrapper answering every render; a response left lit | The stage and created rows; the flash rows; the stage row; the parts rows; the 50 ms row; the parity row; the owed row; the wrapper row; the mid-response row |
@@ -363,33 +381,41 @@ The first round killed 55 of 57. The two survivors were both useful:
 
 ## 10. Checks and smoke
 
-- **`lint:gate`:** exit 0 on the code head `80d406e0`.
-- **Full suite** (Linux: WSL, `TZ=UTC`, 8 workers, Node 20.20.2, under `flock /tmp/pd-suite.lock`) on the code head `80d406e0`: **1,256 files, 27,595 rows, 27,506 pass, 0 fail, 89 skipped.**
+- **`lint:gate`:** exit 0 on the code head `64783260`.
+- **Full suite** (Linux: WSL, `TZ=UTC`, 8 workers, Node 20.20.2, under `flock /tmp/pd-suite.lock`) on the code head `64783260`: **1,256 files, 27,597 rows, 27,508 pass, 0 fail, 89 skipped.**
 - **`main`** had not moved at the last fetch (`f7be7f1b`), so the code head is `main` plus this build.
-- **Flag-off identity:** §8, on `80d406e0`.
+- **Flag-off identity:** §8, on `64783260`.
 - **Not run:** the Firestore rules suite (no rules changed), and anything on a real device. The first real render on an iPhone is yours.
 
-**`claude/agent-form-s2-smoke`** = `6b02b34a`: one "SMOKE ONLY, NEVER MERGE" commit on `80d406e0`, 8 files, composed in a scratch worktree. It carries:
+**`claude/agent-form-s2-smoke`** = `5a411055`: one "SMOKE ONLY, NEVER MERGE" commit on `64783260`, 8 files, composed in a scratch worktree. It carries:
 - all three flags `true`;
 - the hub hero's corner readout, as S1's;
 - **the dial:** `?formScale=` (0.8 to 1.6) over the battle and League forms, with a small label at the top left;
-- **`?leagueForms=1`:** the real `ArenaMobile`, `ArenaDesktop` and `ClimbArena` on recorded fixtures, opened ahead of sign-in as the S0 lab is, with chips for the standing, the game's state, your armor, ranked or training, the lobby climb and an unknown rival, and the readout.
+- **`?leagueForms=1`:** the real `ArenaMobile`, `ArenaDesktop` and `ClimbArena` on fixture data, opened ahead of sign-in as the S0 lab is, with chips for the standing, the game's state, your armor, ranked or training, the lobby climb and an unknown rival, and the readout. The data is the repo's `arenaFixtures` with hand-set standings, not a recorded game: the components are real, the numbers are not.
 
-**What goes red on the smoke commit, by design.** In the screens, Command Center, agent form, config and League suites: 111 rows in 14 files.
+**What goes red on the smoke commit, by design.** In the screens, Command Center, agent form, config and League suites: 112 rows in 14 files.
 - The flag pins and `flagPinGuard` (6).
 - The rows that assert what the flags replace, the same files and counts as S1's: `CommandCenterHub.s7` (52), `CommandCenterHub.jsdom` (3), `ArenaHeader.render` (13), `CharacterAvatar.render` (3), `CharacterPane.comparison` (2), `AgentBattleScreen.paneHeader` (4), `AgentBattleScreen.quoteAvailability` (15).
-- The readout and dial: `CommandCenterHub.realSheets` (5), the hub mount guard (4), the activity guard (1), `HubAgentForm.jsdom` (1), the bundle row (2).
+- The readout and dial: `CommandCenterHub.realSheets` (5), the hub mount guard (5), the activity guard (1), `HubAgentForm.jsdom` (1), the bundle row (2).
 - **No League row goes red.**
 
-**Checked on the preview:** PREVIEW_CHECK
+**Checked on the deployed preview,** driven in headless Edge at 393 × 660 with touch, about an iPhone 16 with Safari's bars showing:
+- The root and `?leagueForms=1` answer 200.
+- Four forms reach live and move. Every one of the 22 chips works, and the forms stay live through them.
+- `?formScale=1.2` gives 53 / 60 / 53 / 53 px, and its label says so.
+- The chip bar is 152 px, and the whole arena sits above it. Its first version was about 400 px, because the app forces every `button` to 16 px, so the chips are now spans.
+- Zero page errors.
+- The readout runs: 61 fps, 3.4 ms a frame with four live forms. That is this laptop's Intel GPU, and it says nothing about an iPhone (checklist step 10).
+
+**The hub and the battle need a signed-in account,** so on those I can claim HTTP 200 and nothing more. Your run is the first render of them, and of all of this, on a device.
 
 ---
 
 ## 11. The iPhone checklist (founder)
 
-Open **PREVIEW_URL** in Safari on the iPhone. Steps 1–5 need no sign-in and no live game.
+Open **https://trade-seven-exm6yeof6-fais-projects-bc179554.vercel.app** in Safari on the iPhone. Steps 1–6 need no sign-in and no live game.
 
-**League figures** (add `?leagueForms=1` to the end of the address, or open PREVIEW_URL/?leagueForms=1). The chips at the bottom change the game; the figures are the real ones.
+**League figures** (add `?leagueForms=1` to the end of the address, or open https://trade-seven-exm6yeof6-fais-projects-bc179554.vercel.app/?leagueForms=1). The chips at the bottom change a made-up game; the figures and the arena are the real ones.
 
 1. Your figure is **teal**, marked YOU. The others are **copper**, each in different armor.
 2. Tap **One unknown** (the "rival" row): that rival becomes a plain copper glowing core with no armor.
@@ -430,13 +456,14 @@ On `claude/agent-form-s2`:
 - `1670a738`: R13–R17, the League.
 - `05df7eaf`: the armor's edges at the peak.
 - `e512104f`: a row of mine that measured the wrong sprite.
-- `80d406e0`: the fixes from the mutation pass (the code head).
+- `80d406e0`: the fixes from the mutation pass.
+- `64783260`: the phone's tip stack below the scope toggle (the code head).
 - then this report and its pictures (docs only).
 
 R20 and R22 are the only commits that touch flag-off bytes.
 
 **Not committed** (session scratchpad): the harness (`league.jsx`, `run-league.mjs`, the extended `arena.jsx`, `fill.jsx`, `run-sites.mjs`), the mutant runner (`mutants.mjs`, `mut1.keep.log`), the WSL scripts, and the builds under `~/s2-runs`.
 
-**To remove the WSL worktrees:** `~/pd-ci-s2`, `~/pd-ci-s2-main` and `~/pd-ci-s2-smoke` have `node_modules` linked to `~/pd-ci-af1`'s. Run `unlink <tree>/node_modules` first, then `git -C ~/pd-ci worktree remove --force <tree>`.
+**To remove the WSL worktrees:** `~/pd-ci-s2`, `~/pd-ci-s2-main` and `~/pd-ci-s2-smoke` have `node_modules` linked to `~/pd-ci-af1`'s. Run `unlink <tree>/node_modules` first, then `git -C ~/pd-ci worktree remove --force <tree>`. The Windows scratch worktree that composed the smoke commit is already removed.
 
 A copy of this report is at `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261030_BUILD_AGENT_FORM_S2.md` (BUILD_RULES §3).
