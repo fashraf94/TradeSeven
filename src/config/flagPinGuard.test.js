@@ -245,14 +245,16 @@ const DARK_BY_DESIGN = {
   // so buildFlagMap never sees it and the integrity test below would fail the
   // key outright. Noted HERE so a flip is loud in the place a reader looks for
   // the dark runway; filmRoomCardsFlags.test.js asserts both halves.
-  //   Runway: 'off' is CURRENT (B2, 2026-10-21): the v2 screen byte-identical
-  //   to the build's base, both card endpoints 404 disabled. 'allowlist' admits
-  //   only owners the cockpit's server-side allowlist admits (the same
-  //   cockpit-status verdict). 'on' is every owner. Each step is its own
-  //   founder PR after the `plays` rules and the `tape (ownerId, etDate)` index
-  //   are deployed (RG-7), never a build PR; each step moves the pin row in
-  //   filmRoomCardsFlags.test.js in the same commit (BUILD_RULES §2). Rollback:
-  //   one line back a step, with its pin row.
+  //   Runway: 'allowlist' is CURRENT (2026-10-29, the founder's flip PR #1013;
+  //   'off' from B2, 2026-10-21, until then): cards only for owners the
+  //   cockpit's server-side allowlist admits (the same cockpit-status
+  //   verdict); everyone else is the v2 screen byte-identical to the build's
+  //   base, and both card endpoints 404 disabled for them. 'on' is every
+  //   owner. Each step is its own founder PR after the `plays` rules and the
+  //   `tape (ownerId, etDate)` index are deployed (RG-7), never a build PR;
+  //   each step moves the pin row in filmRoomCardsFlags.test.js in the same
+  //   commit (BUILD_RULES §2). Rollback: one line back a step — 'allowlist'
+  //   → 'off' — with its pin row.
   SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:
     'Shadow vs CPU quote integrity (SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md; build record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md) — built dark; the producer metadata (quoteOrigin, the stock isFallback marker) ships live while this stays false. Flips only in the founder\'s own PR, never a build PR, and no earlier than the first regular US market open after the founder confirms the complete additive metadata path is live in production (R-11). The flip moves the pin in shadowCpuQuoteIntegrityFlags.test.js to true and drops this entry in the same commit; no URL, localStorage or environment override exists',
   // HYPOTHESIS_RECORDS_ENABLED intentionally ABSENT: the record slice (Pilot

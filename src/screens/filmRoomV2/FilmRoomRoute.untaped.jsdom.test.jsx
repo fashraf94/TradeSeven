@@ -31,6 +31,11 @@ const flags = vi.hoisted(() => ({ mode: 'off' }));
 vi.mock('../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_ROOM_V2_MODE() { return flags.mode; },
+  // This suite is about WHICH SCREEN the route opens (v2's mode), not the cards: under FILM_ROOM_CARDS_MODE 'allowlist' the
+  // cards gate shares v2's verdict ask and, at v2 'on', sends one that 'on' alone never sends — a request this suite's
+  // "no verdict asked" rows exist to forbid. The cards' own gate is pinned where it is tested (filmRoomGate.test.js,
+  // FilmRoomScreenV2.cardsOff.golden.jsdom.test.jsx). Pinned in the cards flip's commit (BUILD_RULES §2).
+  get FILM_ROOM_CARDS_MODE() { return 'off'; },
 }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 const auth = vi.hoisted(() => ({ user: null }));
