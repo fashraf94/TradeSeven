@@ -38,8 +38,9 @@ export function useAgentPresence({ agent, surface, model, duel, command } = {}) 
   // A battle surface passes the BATTLE document as `agent`, and a battle carries its
   // archetype at agentContext.archetype (agentBattleService.js createAgentBattle), not at
   // the top level — so every battle face read undefined and drew 'neutral' (agent identity
-  // Phase 0 §2, the side finding; fixed in build S1).
-  const disposition = archetypeToDisposition(agent?.archetype ?? agent?.agentContext?.archetype ?? (surface === 'league' ? youSeatArch(model) : undefined));
+  // Phase 0 §2, the side finding; fixed in build S1). The snapshot reads first (build S2, R22): it is what the battle
+  // was fought as, and what the Film Room header shows.
+  const disposition = archetypeToDisposition(agent?.agentContext?.archetype ?? agent?.archetype ?? (surface === 'league' ? youSeatArch(model) : undefined));
   const accent = resolveAccent(agent);
   let standing = 0; // command / identity — honest neutral (no live battle standing here)
   if (surface === 'league') standing = standingFromRank(model?.youRank, seatCountOf(model));

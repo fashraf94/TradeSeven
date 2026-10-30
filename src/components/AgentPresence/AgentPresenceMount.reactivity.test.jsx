@@ -111,6 +111,11 @@ describe('disposition — a battle document\'s archetype is read where the battl
     expect(seen[0].disposition).toBe('capital-preserver');
   });
 
+  it('a document carrying both reads the battle\'s snapshot first (build S2, R22)', () => {
+    mount({ agent: { archetype: 'guardian', agentContext: { archetype: 'degen' } } });
+    expect(seen[0].disposition).toBe('speculator');
+  });
+
   it('the battle doc\'s unknown sentinel and a missing archetype stay neutral', () => {
     mount({ agent: { agentContext: { archetype: 'unknown' } } });
     mount({ agent: { agentContext: {} } });
