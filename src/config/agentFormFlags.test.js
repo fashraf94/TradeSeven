@@ -74,11 +74,11 @@ describe('every read is a literal ternary on the flag, so flag-off folds to toda
     expect(fuse[0]).toBe(IMPORT);
     expect(fuse.slice(1)).toHaveLength(7);
     for (const line of fuse.slice(1)) expect(line).toMatch(/(?:^|[=:] |, )\{?AGENT_FORM_LEAGUE_ENABLED (?:\? |&& showHead \? )/);
-    // ArenaMobile: the sticky block's pin and the hero's height, each a style that folds to today's object.
+    // ArenaMobile: the hero's height, a style that folds to today's object.
     const mobile = readsOf(`${lg}ArenaMobile.jsx`, 'AGENT_FORM_LEAGUE_ENABLED');
     expect(mobile[0]).toBe(IMPORT);
-    expect(mobile.slice(1)).toHaveLength(2);
-    for (const line of mobile.slice(1)) expect(line).toMatch(/style=\{AGENT_FORM_LEAGUE_ENABLED && FUSE_HERO_ON \? /);
+    expect(mobile.slice(1)).toHaveLength(1);
+    expect(mobile[1]).toMatch(/style=\{AGENT_FORM_LEAGUE_ENABLED && FUSE_HERO_ON \? /);
     for (const file of ['../components/League/LeagueDeskParts.jsx', '../components/League/LeagueLobbyRedesign.jsx']) {
       expect(readsOf(file, 'AGENT_FORM_LEAGUE_ENABLED'), file).toEqual(["import { AGENT_FORM_LEAGUE_ENABLED } from '../../config/agentFormFlags';", 'AGENT_FORM_LEAGUE_ENABLED ? (']);
     }

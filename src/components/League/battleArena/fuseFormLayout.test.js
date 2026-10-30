@@ -9,8 +9,8 @@ import { describe, expect, it } from 'vitest';
 import { fuseFrame, makeScale } from './fuseGeometry';
 import { MOBILE_DOCK_ROW, MOBILE_HERO_MAX, mobileHeroHeight } from './mobileHeroHeight';
 import {
-  FUSE_FORM_HERO_MAX, FUSE_FORM_HERO_RESERVE, FUSE_FORM_PIN_ROOM, FUSE_FORM_PX, anchorFigures, fuseFormFrame, fuseFormHeroBox,
-  fuseFormHeroMin, fuseFormPinTop, fuseFormPx, fuseFormScale, fuseFormStackPx,
+  FUSE_FORM_HERO_MAX, FUSE_FORM_HERO_RESERVE, FUSE_FORM_PX, anchorFigures, fuseFormFrame, fuseFormHeroBox, fuseFormHeroMin,
+  fuseFormPx, fuseFormScale, fuseFormStackPx,
 } from './fuseFormLayout';
 
 const YOU = FUSE_FORM_PX.compact.you;
@@ -266,11 +266,6 @@ describe('the phone hero', () => {
       expect(after, `usable ${vh}`).toBeGreaterThanOrEqual(before + 17);
     }
     expect(FUSE_FORM_HERO_MAX).toBeGreaterThan(MOBILE_HERO_MAX);
-  });
-
-  it('the sticky block pins above the screen\'s top by what it lacks, so a dock row always shows', () => {
-    expect(fuseFormPinTop()).toBe(`min(0px, calc(100svh - clamp(${fuseFormHeroMin()}px, calc(100svh - ${FUSE_FORM_HERO_RESERVE}px), ${FUSE_FORM_HERO_MAX}px) - ${FUSE_FORM_PIN_ROOM}px))`);
-    expect(FUSE_FORM_PIN_ROOM).toBeGreaterThanOrEqual(245 + MOBILE_DOCK_ROW);
   });
 
   it('every seat keeps its size: the arena grew, the figures did not shrink (the founder\'s ruling)', () => {

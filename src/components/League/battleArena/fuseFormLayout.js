@@ -16,7 +16,6 @@
 //   fuseFormHeroBox the phone hero's height, inline because a rule in battleArena.css would ship with the flag off.
 
 import { fuseFrame, makeScale } from './fuseGeometry';
-import { MOBILE_DOCK_ROW } from './mobileHeroHeight';
 
 /**
  * The fuse hero's tips (CSS px): the player a size up, as the heads have always been. Four seats stack here, so S1's
@@ -130,26 +129,10 @@ export const FUSE_FORM_HERO_RESERVE = 304;
 /** The ceiling: today's 384, plus the 47 px the plot's top moved down, plus 17 px of plot. */
 export const FUSE_FORM_HERO_MAX = 448;
 /**
- * What the pinned block holds beside the hero at its tallest, measured on the real arena: the top strip, the decomposition
- * strip, the history button and the tabs. Plus the one dock row (mobileHeroHeight.js) a pinned block always leaves showing.
- */
-export const FUSE_FORM_PIN_ROOM = 245 + MOBILE_DOCK_ROW;
-
-const heroHeight = () => `clamp(${fuseFormHeroMin()}px, calc(100svh - ${FUSE_FORM_HERO_RESERVE}px), ${FUSE_FORM_HERO_MAX}px)`;
-
-/**
  * The phone hero's height, as an inline style. `minHeight` holds in an engine with no svh too, where `height` is dropped.
- * Below the floor the hero keeps its height and the page scrolls (fuseFormPinTop).
+ * Below the floor the hero keeps its height and the page scrolls.
  */
 export function fuseFormHeroBox() {
-  return { minHeight: fuseFormHeroMin(), height: heroHeight() };
-}
-
-/**
- * Where the phone's sticky block pins. A pin at 0 with a block this tall would leave the dock a slit, or strand the tabs
- * below the fold on a very short screen. So it pins as far above the screen's top as that needs: at rest nothing moves,
- * and the page scrolls the hero up until a dock row shows, then the block holds.
- */
-export function fuseFormPinTop() {
-  return `min(0px, calc(100svh - ${heroHeight()} - ${FUSE_FORM_PIN_ROOM}px))`;
+  const min = fuseFormHeroMin();
+  return { minHeight: min, height: `clamp(${min}px, calc(100svh - ${FUSE_FORM_HERO_RESERVE}px), ${FUSE_FORM_HERO_MAX}px)` };
 }

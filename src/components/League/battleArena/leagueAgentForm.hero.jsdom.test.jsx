@@ -3,9 +3,9 @@
 // src/components/League/battleArena/leagueAgentForm.hero.jsdom.test.jsx
 //
 // Agent form build S2, arena fit — the phone hero and the lobby preview with AGENT_FORM_LEAGUE_ENABLED on. The hero's
-// height and the pin are inline, because a rule in battleArena.css would ship with the flag off; the two lobby sites hand
-// the preview the archetype they already hold (founder ruling 2 of Oct 30, 2026). The stylesheet's own rule, flag off,
-// stays pinned by mobileHeroHeight.test.js.
+// height is inline, because a rule in battleArena.css would ship with the flag off; the two lobby sites hand the preview
+// the archetype they already hold (founder ruling 2 of Oct 30, 2026). The stylesheet's own rule, flag off, stays pinned by
+// mobileHeroHeight.test.js.
 
 import React, { useContext } from 'react';
 import { renderToString } from 'react-dom/server';
@@ -26,7 +26,7 @@ vi.mock('../TrainingClimbPreview', async () => {
 
 const { ArenaMobile } = await import('./ArenaMobile');
 const { FUSE_HERO_ON } = await import('./fuseHeroGate');
-const { fuseFormHeroMin, fuseFormPinTop, FUSE_FORM_HERO_MAX, FUSE_FORM_HERO_RESERVE } = await import('./fuseFormLayout');
+const { fuseFormHeroMin, FUSE_FORM_HERO_MAX, FUSE_FORM_HERO_RESERVE } = await import('./fuseFormLayout');
 const { DeskTrainingPanel } = await import('../LeagueDeskParts');
 const { LobbyTabbed } = await import('../LeagueLobbyRedesign');
 const { leagueState } = await import('../leagueFixtures');
@@ -48,10 +48,6 @@ describe('the phone hero with the forms on', () => {
 
   it('the floor is a plain min-height too, so an engine with no svh still fits four figures', () => {
     expect(heroStyle()).toContain(`min-height:${fuseFormHeroMin()}px`);
-  });
-
-  it('the block pins by fuseFormPinTop, so below the floor the page scrolls and the tabs stay reachable', () => {
-    expect(html()).toContain(`position:sticky;top:${fuseFormPinTop()}`);
   });
 });
 

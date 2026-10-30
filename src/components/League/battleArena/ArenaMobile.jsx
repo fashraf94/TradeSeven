@@ -24,7 +24,7 @@ import { FuseHero } from './FuseHero';
 import { FUSE_HERO_ON } from './fuseHeroGate';
 import { MOBILE_HERO_MIN } from './mobileHeroHeight';
 import { AGENT_FORM_LEAGUE_ENABLED } from '../../../config/agentFormFlags';
-import { fuseFormHeroBox, fuseFormPinTop } from './fuseFormLayout';
+import { fuseFormHeroBox } from './fuseFormLayout';
 import { DecompositionStrip } from './DecompositionStrip';
 import { StarCell } from './StarCell';
 import { FlipControl, AgentDock, AgentMoveChip, DepartedChip } from './CommandDock';
@@ -146,7 +146,7 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
   return (
     <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', background: LTOKENS.bg, position: 'relative' }}>
       {/* PINNED TOP — sticky so the hero + tab bar stay put while the body scrolls */}
-      <div style={AGENT_FORM_LEAGUE_ENABLED && FUSE_HERO_ON ? { position: 'sticky', top: fuseFormPinTop(), zIndex: 20, background: LTOKENS.bg, padding: '14px 14px 0' } : { position: 'sticky', top: 0, zIndex: 20, background: LTOKENS.bg, padding: '14px 14px 0' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: LTOKENS.bg, padding: '14px 14px 0' }}>
         <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} compact voided={voided} />
         {/* Phase 6 / G2: the fuse hero is sized in svh via .bv2-fuse-hero-m so it
             can never clip when Safari's chrome is showing. The class is applied
