@@ -64,7 +64,7 @@ export const RUNS_ROOT = path.join(os.homedir(), 'growth-replay-runs');
 export const RESET_REASON = 'failure_built';
 const PLAN_SCHEMA = 'insight-reset-plan-v1';
 const BACKUP_SCHEMA = 'insight-reset-backup-v1';
-const AGENT_ID = /^[A-Za-z0-9_-]+$/;
+const AGENT_ID = /^[^/]+$/; // one document directly under agents, whatever the id's alphabet
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 // api/agent/decide.js: a deployingAt younger than this is a deploy in progress;
 // an older one is a stale lock that the next deploy walks through.

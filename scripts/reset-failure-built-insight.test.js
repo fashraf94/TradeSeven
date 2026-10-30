@@ -538,6 +538,12 @@ describe('apply: the refusals (each before any write and before any backup)', ()
     expect(byPointer.writes).toEqual([]);
   });
 
+  it('takes any id that names one document, so plan and apply agree on who can be written', async () => {
+    const { db, writes } = makeDb({ agents: { 'clone:pod.1~x': { consolidatedInsight: 'a reflection failed' } } });
+    expect(await planAndApply(db)).toMatchObject({ written: 1 });
+    expect(writes.map((w) => w.id)).toEqual(['clone:pod.1~x']);
+  });
+
   it('a finished battle does not hold the run', async () => {
     const { db } = makeDb({ battles: [{ agentId: SET_IDS[0], status: 'completed' }] });
     expect(await planAndApply(db)).toMatchObject({ written: 4 });
@@ -551,6 +557,10 @@ describe('apply: the refusals (each before any write and before any backup)', ()
     expect(countBattleHolds(['a'], agent(null), new Set(), nowMs).own).toBe(0);
     expect(countBattleHolds(['a'], agent(undefined), new Set(), nowMs).own).toBe(0);
   });
+
+  it('refuses on a deploy inside its lock, read through the fleet the run really reads', () => refusesFor((s) => {
+    s.agents[`${SECRET_ID}-serialised`].deployingAt = new Date(SATURDAY.getTime() - 30_000).toISOString();
+  }));
 
   it('countBattleHolds counts each agent once in `blocked`, and each relation on its own', () => {
     const rows = [
