@@ -48,6 +48,11 @@
    "note": "dry-run touches nothing live"
   },
   {
+   "file": "scripts/reset-failure-built-insight.mjs",
+   "guard": "entry + per-agent (apply and restore paths)",
+   "note": "P-RESET one-off founder run; census and plan write nothing to Firestore"
+  },
+  {
    "file": "scripts/ws1-observe-walk.js",
    "guard": "entry",
    "note": "synthetic test-marked docs only"
