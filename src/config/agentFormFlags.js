@@ -46,7 +46,7 @@ export const AGENT_FORM_LAB_ENABLED = false;
  * read of this flag is a literal ternary that Rollup folds to today's element.
  */
 // Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const AGENT_FORM_HUB_ENABLED = false;
+export const AGENT_FORM_HUB_ENABLED = true;
 
 /**
  * AGENT_FORM_BATTLE_ENABLED — the agent forms in a BaggerBomb 1v1 battle
@@ -62,7 +62,7 @@ export const AGENT_FORM_HUB_ENABLED = false;
  * fix (useAgentPresence.js reads agentContext.archetype).
  */
 // Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const AGENT_FORM_BATTLE_ENABLED = false;
+export const AGENT_FORM_BATTLE_ENABLED = true;
 
 /**
  * AGENT_FORM_LEAGUE_ENABLED — the agent forms in a League game, ranked and
@@ -78,4 +78,4 @@ export const AGENT_FORM_BATTLE_ENABLED = false;
  * Rollup folds to today's element.
  */
 // Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const AGENT_FORM_LEAGUE_ENABLED = false;
+export const AGENT_FORM_LEAGUE_ENABLED = true;

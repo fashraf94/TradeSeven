@@ -15,7 +15,8 @@
 //   BATTLE_FORM_PX        each site's form box, and how far it overhangs the room the layout gives it (the S1 size
 //                         follow-up); arenaFormBox, the arena header's box as a style.
 
-import React, { Component, Suspense, createContext, lazy } from 'react';
+import React, { Component, Suspense, createContext, lazy, useEffect } from 'react';
+import { dial, showScaleLabel } from '../smokeFormScale';
 import { AGENT_FORM_BATTLE_ENABLED } from '../../config/agentFormFlags';
 import AgentFormStill from '../../components/AgentForm/AgentFormStill';
 
@@ -56,9 +57,9 @@ export function duelScores({ comparison, playerScore, opponentScore, agentBattle
  *   mark     the floating mark's form; the tap target grows with it past 48.
  */
 export const BATTLE_FORM_PX = {
-  arena: { phone: { box: 60, outer: 14, inner: 6, top: 8, bottom: 4 }, desktop: { box: 88, outer: 8, inner: 8, top: 12, bottom: 6 } },
-  pane: { box: 50 },
-  mark: { phone: 50, desktop: 55 },
+  arena: { phone: { box: dial(60), outer: 14, inner: 6, top: 8, bottom: 4 }, desktop: { box: dial(88), outer: 8, inner: 8, top: 12, bottom: 6 } },
+  pane: { box: dial(50) },
+  mark: { phone: dial(50), desktop: dial(55) },
 };
 
 /** The arena header's form box for one side, as a style: its size, and its overhang as negative margins. */
@@ -77,6 +78,7 @@ class SlotBoundary extends Component {
 
 /** One form at a site, `size` px square: the form once its chunk is in, its still until then — or for good, if it fails. */
 export function BattleAgentFormSlot({ size, side = 'player', ...props }) {
+  useEffect(() => showScaleLabel(), []);
   const still = (
     <div aria-hidden="true" style={{ position: 'relative', width: size, height: size }}>
       <AgentFormStill size={size} opponent={side === 'opponent'} />

@@ -11,7 +11,8 @@
 //                          the chunk fails (a boundary of its own, so a failed load never takes the arena down).
 // The tips' sizes and where they sit are fuseFormLayout.js.
 
-import React, { Component, Suspense, createContext, lazy } from 'react';
+import React, { Component, Suspense, createContext, lazy, useEffect } from 'react';
+import { showScaleLabel } from '../../../screens/smokeFormScale';
 import { AGENT_FORM_LEAGUE_ENABLED } from '../../../config/agentFormFlags';
 import AgentFormStill from '../../AgentForm/AgentFormStill';
 
@@ -42,6 +43,7 @@ class SlotBoundary extends Component {
 
 /** One seat's form, `size` px square: the form once its chunk is in, its still until then, or for good if it fails. */
 export function LeagueAgentFormSlot({ size, you = false, ...props }) {
+  useEffect(() => showScaleLabel(), []);
   const still = (
     <div aria-hidden="true" style={{ position: 'relative', width: size, height: size }}>
       <AgentFormStill size={size} opponent={!you} />

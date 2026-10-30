@@ -16,6 +16,7 @@
 //   fuseFormHeroBox the phone hero's height, inline because a rule in battleArena.css would ship with the flag off.
 
 import { fuseFrame, makeScale } from './fuseGeometry';
+import { dial } from '../../../screens/smokeFormScale'; // SMOKE ONLY, NEVER MERGE: the size dial
 
 /**
  * The fuse hero's tips (CSS px): the player a size up, as the heads have always been. Four seats stack here, so S1's
@@ -26,7 +27,7 @@ export const FUSE_FORM_PX = { compact: { you: 50, rival: 44 }, desktop: { you: 6
 /** A tip's form, `you` or a rival's. */
 export function fuseFormPx(you, compact) {
   const px = FUSE_FORM_PX[compact ? 'compact' : 'desktop'];
-  return you ? px.you : px.rival;
+  return dial(you ? px.you : px.rival);
 }
 
 /** Air between two neighbouring figures' boxes, so forms never quite touch. */

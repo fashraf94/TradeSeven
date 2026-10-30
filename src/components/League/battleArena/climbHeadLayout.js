@@ -15,8 +15,9 @@
 export const HEAD_FACE_LIFT = 16 / 156; // ≈ 0.1026 — up-shift so the face centre = the anchor
 export const LABEL_BELOW_GAP = 4;       // score-label gap below the head footprint (compact)
 export const COMPACT_AXIS_W = 40;       // compact axis gutter (desktop is 52) — the lane origin
+import { dial } from '../../../screens/smokeFormScale'; // SMOKE ONLY, NEVER MERGE: the size dial
 
 // Head render sizes (larger than the orb: orb was you 52/46/40 desktop, 44/40/36 compact).
 export function headSizeFor(you, lead, compact) {
-  return compact ? (you ? 54 : lead ? 48 : 44) : (you ? 64 : lead ? 58 : 50);
+  return dial(compact ? (you ? 54 : lead ? 48 : 44) : (you ? 64 : lead ? 58 : 50));
 }
