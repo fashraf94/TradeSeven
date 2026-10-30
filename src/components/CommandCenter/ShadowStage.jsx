@@ -162,7 +162,7 @@ export function ShadowStage({ composition, size, tier, status, processing, words
       <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 26 : 44, position: 'relative' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {AGENT_FORM_HUB_ENABLED ? (
-            <HubAgentForm size={size} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} paused={paused} boxRef={boxRef} />
+            <HubAgentForm size={size} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} paused={paused} boxRef={boxRef} areaEvent={areaEvent} createdAttemptId={createdAttemptId} />
           ) : (
             <ShadowCanvas size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} areaEvent={areaEvent} createdAttemptId={createdAttemptId} paused={paused} boxRef={boxRef} />
           )}
@@ -199,7 +199,7 @@ export function PhoneStage({ size, tier, status, processing, words, selectedArea
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {AGENT_FORM_HUB_ENABLED ? (
-          <HubAgentForm size={size} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} paused={paused} phone />
+          <HubAgentForm size={size} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} paused={paused} phone createdAttemptId={createdAttemptId} />
         ) : (
           <ShadowCanvas size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} createdAttemptId={createdAttemptId} paused={paused} stillOnly={stillOnly} />
         )}

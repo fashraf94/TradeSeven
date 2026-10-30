@@ -34,6 +34,7 @@ function fakeEngineModule() {
           swap: (p) => view.calls.push(['swap', p]),
           setOptions: (o) => view.calls.push(['setOptions', o]),
           equip: (on) => view.calls.push(['equip', on]),
+          respond: (part) => view.calls.push(['respond', part]),
           unmount: () => view.calls.push(['unmount']),
         };
       },
@@ -227,4 +228,35 @@ describe('the tight framing: the battle views\' option, and theirs alone (the S1
     // The scan sees a planted ask, as a prop and as a key.
     expect(strip('<AgentForm framing="tight" />\nconst p = { framing: \'tight\' };').match(ASKS)).toHaveLength(2);
   }, 30000); // every file under src/ is read: the repo's idiom for a whole-tree scan, so a loaded suite cannot time it out
+});
+
+// Build S2: the response (ruling R19) and a layout's facing (ruling R14).
+describe('build S2: the wrapper', () => {
+  it('a new response key asks the view for that part; the key it mounted with does not, nor a re-render', async () => {
+    const asked = (view) => view.calls.filter(([verb]) => verb === 'respond').map(([, part]) => part);
+    render(<AgentForm archetype="degen" size={200} responseKey={3} responsePart="core" />);
+    await flush();
+    const [v] = engine.mounts;
+    expect(asked(v)).toEqual([]);
+    render(<AgentForm archetype="degen" size={200} responseKey={3} responsePart="core" mood="worried" />);
+    expect(asked(v)).toEqual([]);
+    render(<AgentForm archetype="degen" size={200} responseKey={4} responsePart="armor" />);
+    expect(asked(v)).toEqual(['armor']);
+  });
+
+  it('a key that moves before the engine has loaded is the past: nothing plays when the view appears', async () => {
+    render(<AgentForm archetype="degen" size={200} responseKey={1} />);
+    render(<AgentForm archetype="degen" size={200} responseKey={2} responsePart="core" />);
+    await flush();
+    expect(engine.mounts[0].calls.filter(([verb]) => verb === 'respond')).toEqual([]);
+  });
+
+  it('facing overrides the mirror, for either allegiance; without it the player looks right and the opponent left', () => {
+    expect(agentFormSpec({ allegiance: 'player' }).face).toBe(1);
+    expect(agentFormSpec({ allegiance: 'opponent' }).face).toBe(-1);
+    expect(agentFormSpec({ allegiance: 'opponent', facing: 'right' }).face).toBe(1);
+    expect(agentFormSpec({ allegiance: 'player', facing: 'left' }).face).toBe(-1);
+    expect(agentFormSpec({ allegiance: 'opponent', facing: 'sideways' }).face).toBe(-1);
+    expect(agentFormSpec({ allegiance: 'opponent', facing: 'right' }).pal).toBe('copper');
+  });
 });

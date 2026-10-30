@@ -22,11 +22,19 @@ vi.mock('../AgentForm/AgentForm', () => ({
   },
 }));
 
-import HubAgentForm, { HubAgentFormContext, hubFormRate, hubFormRead } from './HubAgentForm';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import HubAgentForm, { HubAgentFormContext, hubFormRate, hubFormRead, hubResponsePart } from './HubAgentForm';
+import { FLASH_MS } from './ShadowCanvas';
+import { HUB_AREAS } from './hub/composition';
+import { BLOOM_SECONDS } from './hub/shadowCanvas';
+import { RESPONSE_FLASH_LIFT, RESPONSE_FLASH_MS, RESPONSE_MS } from '../AgentForm/engine/vocab';
 import { AGENT_FORM_PHONE } from './hub/hubFlags';
 import { HUB_COPY } from './hub/hubCopy';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const here = (name) => path.join(path.dirname(fileURLToPath(import.meta.url)), name);
 
 let root, host;
 beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); seen.renders = []; seen.mounts = 0; seen.unmounts = 0; });
@@ -144,5 +152,80 @@ describe('the box the stage measures', () => {
     expect(boxRef.current.style.width).toBe('260px');
     expect(boxRef.current.style.height).toBe('260px');
     expect(boxRef.current.getAttribute('data-shadow-box')).toBe('');
+  });
+});
+
+// Build S2 (ruling R19): S7's response on the armored hero. ShadowCanvas's own rows (CommandCenterHub.s7.jsdom.test.jsx)
+// pin the triggers on today's Shadow; these hold the hero to the same ones, and the engine's rows to the same numbers.
+describe('the response: S7\'s triggers and timing, and board 5\'s parts', () => {
+  const D = ready('a1', 'degen');
+  const answers = () => seen.renders.at(-1).responseKey;
+
+  it('holds the numbers equal to S7\'s: the bloom\'s 1.2 s, the still\'s 420 ms and ×1.25', () => {
+    expect(RESPONSE_MS).toBe(BLOOM_SECONDS * 1000);
+    expect(RESPONSE_FLASH_MS).toBe(FLASH_MS);
+    expect(RESPONSE_FLASH_LIFT).toBe(1.25);
+    expect(readFileSync(here('ShadowStill.jsx'), 'utf8')).toContain('flash ? 1.25 : 1');
+  });
+
+  it('a trigger already there at mount is the past', () => {
+    show(D, { areaEvent: 4, createdAttemptId: 'attempt-1', selectedArea: 0 });
+    expect(answers()).toBe(0);
+  });
+
+  it('a new area selection answers once; the same selection re-rendered does not', () => {
+    show(D, { areaEvent: 0, selectedArea: 0 });
+    show(D, { areaEvent: 1, selectedArea: 1 });
+    expect(answers()).toBe(1);
+    show(D, { areaEvent: 1, selectedArea: 1 });
+    expect(answers()).toBe(1);
+    show(D, { areaEvent: 2, selectedArea: 2 });
+    expect(answers()).toBe(2);
+  });
+
+  it('a created terminal answers once per attempt id; its absence is nothing', () => {
+    show(D, { createdAttemptId: null });
+    show(D, { createdAttemptId: 'attempt-1' });
+    expect(answers()).toBe(1);
+    show(D, { createdAttemptId: 'attempt-1' });
+    expect(answers()).toBe(1);
+    show(D, { createdAttemptId: null });
+    expect(answers()).toBe(1);
+    show(D, { createdAttemptId: 'attempt-2' });
+    expect(answers()).toBe(2);
+  });
+
+  it('a remount of the form does not read its triggers as new: the memo is above the key', () => {
+    show(D, { areaEvent: 0, selectedArea: 0 });
+    show(D, { areaEvent: 1, selectedArea: 1 });
+    const mounts = seen.mounts;
+    show(ready('a2', 'degen'), { areaEvent: 1, selectedArea: 1 });
+    expect(seen.mounts).toBe(mounts + 1);
+    expect(answers()).toBe(1);
+  });
+
+  it('board 5 says what lights: Equipped Archetype the armor, Partnership and Shared Research the core', () => {
+    show(D, { areaEvent: 0, selectedArea: 0 });
+    show(D, { areaEvent: 1, selectedArea: HUB_AREAS.ARCHETYPE });
+    expect(seen.renders.at(-1).responsePart).toBe('armor');
+    show(D, { areaEvent: 2, selectedArea: HUB_AREAS.PARTNERSHIP });
+    expect(seen.renders.at(-1).responsePart).toBe('core');
+    show(D, { areaEvent: 3, selectedArea: HUB_AREAS.RESEARCH });
+    expect(seen.renders.at(-1).responsePart).toBe('core');
+  });
+
+  it('board 5 is silent on a deploy and on bare Shadow\'s armor: those light the whole form', () => {
+    expect(hubResponsePart({ created: true, area: HUB_AREAS.ARCHETYPE, armored: true })).toBe('all');
+    expect(hubResponsePart({ created: true, area: HUB_AREAS.PARTNERSHIP, armored: true })).toBe('all');
+    expect(hubResponsePart({ created: false, area: HUB_AREAS.ARCHETYPE, armored: false })).toBe('all');
+    expect(hubResponsePart({ created: false, area: HUB_AREAS.PARTNERSHIP, armored: false })).toBe('core');
+    expect(hubResponsePart({ created: false, area: null, armored: true })).toBe('all');
+    show(D, { selectedArea: 2 });
+    show(D, { selectedArea: 2, createdAttemptId: 'attempt-1' });
+    expect(seen.renders.at(-1).responsePart).toBe('all');
+  });
+
+  it('the hero holds no effect or timer for it: the timing, the pause and reduced motion are the engine\'s', () => {
+    expect(readFileSync(here('HubAgentForm.jsx'), 'utf8').replace(/\/\/.*$/gm, '')).not.toMatch(/useEffect|setTimeout|matchMedia/);
   });
 });
