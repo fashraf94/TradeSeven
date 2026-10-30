@@ -168,12 +168,13 @@ describe('human rivals keep their armor after the bell (founder ruling 4 of Oct 
     expect(reads).toBe(1);
   });
 
-  it('never polls: the clock moves on and nothing asks again', async () => {
-    await show(open(<LeagueAgentFormSlot seat={humans()} size={44} standing={FINISHED} />));
+  it('never polls: every timer that started fires, and nothing asks again', async () => {
     const timers = vi.spyOn(globalThis, 'setInterval');
-    await act(async () => { await new Promise((r) => setTimeout(r, 40)); });
+    await show(open(<LeagueAgentFormSlot seat={humans()} size={44} standing={FINISHED} />));
+    expect(timers.mock.calls.length).toBeGreaterThan(0);
+    await act(async () => { for (const [tick] of timers.mock.calls) tick(); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(reads).toBe(1);
-    expect(timers.mock.calls.filter(([, ms]) => ms === 60000)).toEqual([]);
     timers.mockRestore();
   });
 

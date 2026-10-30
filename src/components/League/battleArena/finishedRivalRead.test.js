@@ -44,7 +44,7 @@ describe('the after-bell read', () => {
   });
 
   it('a failed read answers no armor and stays answered: a form rendering from it can never loop', async () => {
-    http.fetchWithAuth.mockResolvedValue({ ok: false, status: 500 });
+    http.fetchWithAuth.mockResolvedValue({ ok: false, status: 500, json: async () => ({ error: 'server_error' }) });
     await expect(finishedRivalArchetypes('g1')).resolves.toEqual({});
     http.fetchWithAuth.mockRejectedValue(new Error('offline'));
     await expect(finishedRivalArchetypes('g2')).resolves.toEqual({});

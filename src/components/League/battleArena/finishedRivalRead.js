@@ -15,7 +15,6 @@ const reads = new Map();
 async function read(groupId) {
   try {
     const res = await fetchWithAuth(`/api/tournament/battle-view?groupId=${encodeURIComponent(groupId)}`);
-    if (!res.ok) return {};
     const { battles } = await res.json();
     return Object.fromEntries(Object.entries(battles || {}).map(([id, battle]) => [id, battle?.agentContext?.archetype ?? null]));
   } catch {
