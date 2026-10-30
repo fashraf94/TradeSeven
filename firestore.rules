@@ -1245,6 +1245,17 @@ service cloud.firestore {
       allow read, write: if false;  // Admin SDK only
     }
 
+    // ID-1 Build 1 (shape note V1.4 §3): setupEvidence/{id}, the immutable dated
+    // setup-evidence snapshots, and setupEvidenceClaims/{id}, their lease,
+    // observation and attempt count. SERVER-ONLY: no client reads in V1 and no
+    // client verb for anyone. test/rules/setupEvidenceDenials.rules.mjs asserts both.
+    match /setupEvidence/{id} {
+      allow read, write: if false;  // Admin SDK only
+    }
+    match /setupEvidenceClaims/{id} {
+      allow read, write: if false;  // Admin SDK only
+    }
+
     // Pilot P2 (docs/specs/20260923_BAGGERBOMB_PARTNERSHIP_PILOT_SPEC_V1_4.md
     // §3): researchWork/{researchWorkId}, one research record per research run,
     // written only by the research hosts through the Admin SDK (the screener
