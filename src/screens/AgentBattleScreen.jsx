@@ -612,9 +612,13 @@ const PHONE_COCKPIT_MIN_HEIGHT_PX = 480;
 const staggerSpring = { type: 'spring', stiffness: 200, damping: 20 };
 
 /**
- * A3.1 — the board's bottom reservation under the pane flag: the avatar's own
- * hit target (48) plus its inset from the bottom (14) plus a row's breathing
- * room. Pane-off the board still reserves SHEET_PEEK_PX + 32 for the sheet.
+ * A3.1 — the board's bottom reservation under the pane flag: the floating
+ * mark's own hit target plus its inset from the bottom plus a row's breathing
+ * room. With AGENT_FORM_BATTLE_ENABLED on the mark grows with its form
+ * (battleAgentFormSlot.jsx BATTLE_FORM_PX.mark): 50 + 14 on the phone (64),
+ * 55 + 16 on the desktop (71). Off, it is the 48 px tap floor (48 + 14 and
+ * 48 + 16). 96 clears each by 25 px or more. Pane-off the board still
+ * reserves SHEET_PEEK_PX + 32 for the sheet.
  */
 const AVATAR_CLEARANCE_PX = 96;
 

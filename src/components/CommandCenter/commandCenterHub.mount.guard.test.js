@@ -620,7 +620,8 @@ const PERMITTED_TERMINALS = Object.freeze({
   // and "Deploying with" are said only for a list the agent is handed. Pure and import-free; not fenced (BUILD_RULES §1).
   'api/_utils/watchlistEquip.js': 'extractTickerSymbols — the server\'s filter of a list\'s names (review H-3)',
   // Agent form build S1: the agent identity program's flag module (its own, not featureFlags.js, for the entry chunk's
-  // sake), read as the literal AGENT_FORM_HUB_ENABLED at the two stage sites and the read scope. It imports nothing.
+  // sake), read as the literal AGENT_FORM_HUB_ENABLED at the two stage sites and the read scope. It imports nothing:
+  // graph() stops here without reading it, so the "flag module imports nothing" row pins that (S1 review SR-2).
   'src/config/agentFormFlags.js': 'AGENT_FORM_HUB_ENABLED — the armored hero, read as a literal ternary so flag-off folds away (build S1)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
@@ -692,6 +693,11 @@ const AGENT_FORM_WRAPPER = Object.freeze([
 ]);
 /** R6a: the one load-time edge the hub graph may hold — the wrapper's loader into the engine's lazy entry. */
 const ENGINE_EDGE = `${AGENT_FORM_DIR}/loadEngine.js -> lazy ${AGENT_FORM_DIR}/engine/index.js`;
+/**
+ * R6d (S1 review SR-1): what a device reports, which the hub view and the wrapper never name, so no rate is chosen
+ * from it — ShadowCanvas.contract.jsdom.test.jsx's ban for the canvas, less the frame tokens FRAME_READ holds.
+ */
+const DEVICE_READ = /\b(?:navigator|hardwareConcurrency|deviceMemory|matchMedia|Date)\b/;
 
 /** Every load-time edge (`import()`, `require()`, `import.meta.glob()`) out of the modules `seen`, resolved, as `a -> lazy b`. */
 function lazyEdgesOf(seen, codeOf = (rel) => stripComments(read(rel))) {
@@ -847,7 +853,13 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     const wrapper = stripComments(read(`${AGENT_FORM_DIR}/AgentForm.jsx`));
     expect(wrapper).toMatch(/const drawRate = rateForSize\(rate, spec\.size\);/);
     const FRAME_READ = /\b(?:onFrame|performance|requestAnimationFrame|fps|cost|calls)\b/;
-    for (const rel of [HUB_FILE('HubAgentForm.jsx'), ...AGENT_FORM_WRAPPER]) expect(FRAME_READ.test(stripComments(read(rel))), rel).toBe(false);
+    for (const rel of [HUB_FILE('HubAgentForm.jsx'), ...AGENT_FORM_WRAPPER]) {
+      const code = stripComments(read(rel));
+      expect(FRAME_READ.test(code), rel).toBe(false);
+      // ...nor what the device is (S1 review SR-1): the pins above hold the helper and its one prop, and a rate taken
+      // from the device a line above the helper's call would pass them both.
+      expect(DEVICE_READ.exec(code)?.[0] ?? null, rel).toBeNull();
+    }
     expect(FRAME_READ.test("const r = cost > 8 ? 'half' : 'live';")).toBe(true);
   });
 
@@ -862,6 +874,17 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     expect(activityInCode(wrapper, 'requestAnimationFrame(f);')).not.toEqual([]);
     expect(activityInCode(wrapper, 'new IntersectionObserver(cb);')).not.toEqual([]);
     expect(activityInCode(HUB_FILE('HubAgentForm.jsx'), 'useEffect(() => {}, []);')).not.toEqual([]);
+    // R6d (S1 review SR-1): the review's RV-B, a device read on the rate's own line; and its variant, which leaves
+    // `const rate = hubFormRate(phone);` as it is and takes `phone` from the device a line above. A pin of the call
+    // line passes the variant; the device ban sees both.
+    const view = stripComments(read(HUB_FILE('HubAgentForm.jsx')));
+    const CALL = 'const rate = hubFormRate(phone);';
+    expect(view.split(CALL)).toHaveLength(2);
+    const rvB = view.replace(CALL, "const rate = typeof navigator !== 'undefined' && navigator.hardwareConcurrency < 4 ? 'half' : hubFormRate(phone);");
+    const viaPhone = view.replace(CALL, `phone = phone || navigator.hardwareConcurrency < 4;\n  ${CALL}`);
+    expect(viaPhone).toContain(CALL);
+    for (const planted of [view, rvB, viaPhone]) expect(DEVICE_READ.test(planted)).toBe(planted !== view);
+    for (const plant of ['navigator.deviceMemory < 4', 'window.matchMedia(q).matches', 'Date.now()']) expect(DEVICE_READ.test(plant), plant).toBe(true);
   });
 
   it('no URL, history or cookie reaches the hub side (ruling R-S1-4)', () => {
@@ -898,6 +921,13 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
 
   it('the gate\'s copy table imports nothing: the hub\'s copy table stays in the lazy chunk (S1 review L2-1)', () => {
     expect(importsOf('src/components/CommandCenter/hubGateCopy.js')).toEqual([]);
+  });
+
+  it('the agent form flag module imports nothing: the walk stops at it as a terminal, so this row reads inside it (agent form S1 review SR-2)', () => {
+    // An import here (featureFlags.js, say, with its storage, environment and window reads) would reach the hub's
+    // static graph past the terminal, and no row of the walk would see it.
+    expect(importsOf('src/config/agentFormFlags.js')).toEqual([]);
+    expect(lazyImportsOfCode(stripComments(read('src/config/agentFormFlags.js')))).toEqual([]);
   });
 
   it('the main graph reaches the hub directory only through App → the gate, the picker and the chrome predicates (S1 review L2-1, L5-8; S5 R-S5-7)', () => {

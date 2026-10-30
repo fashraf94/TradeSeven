@@ -288,9 +288,12 @@ describe('A3.1 — the character on the board (D-91, D-98)', () => {
     // mark never rests over a row's tap targets — was unenforced.
     //
     // The row is stated as that promise rather than as the literal: the
-    // reservation must clear the mark's own 48px target plus its 14px inset,
-    // and must not be the sheet's (SHEET_PEEK_PX + 32 = 108 today), which is
-    // what the pane retires.
+    // reservation must clear the mark's own target plus its inset, and must
+    // not be the sheet's (SHEET_PEEK_PX + 32 = 108 today), which is what the
+    // pane retires. This phone render has the battle flag off, so the mark is
+    // the 48px tap floor at its 14px inset (the floor below). With
+    // AGENT_FORM_BATTLE_ENABLED on it is 50 + 14 on the phone and 55 + 16 on
+    // the desktop (agent form S1), which the 96 clears too.
     setShell(false);
     mount();
     const board = container.querySelector('[data-board]');
