@@ -44,11 +44,10 @@ export function outcomeInputOf(battle) {
   };
 }
 
-/** Whether an evaluation is in flight at `nowMs`: a lock stamp the server would still honour. */
+/** Whether an evaluation is in flight at `nowMs`: a lock stamp the server would still honour. No clock, no claim (R21). */
 export function evaluationInFlight(battle, nowMs) {
   const stamp = battle?.cronState?.evaluatingAt;
-  if (!stamp) return false;
-  if (!Number.isFinite(nowMs)) return true;
+  if (!stamp || !Number.isFinite(nowMs)) return false;
   const at = typeof stamp === 'string' ? Date.parse(stamp) : (typeof stamp?.toMillis === 'function' ? stamp.toMillis() : NaN);
   // An unreadable stamp is stale to the server (its age is NaN, never under the timeout), so it is here.
   return Number.isFinite(at) && nowMs - at < EVALUATION_LOCK_MS;

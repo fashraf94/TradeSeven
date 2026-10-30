@@ -84,8 +84,11 @@ describe('researching: an evaluation lock the server would still honour', () => 
     expect(evaluationInFlight({}, NOW)).toBe(false);
     expect(evaluationInFlight({ cronState: { evaluatingAt: 'not a time' } }, NOW)).toBe(false);
     expect(evaluationInFlight({ cronState: { evaluatingAt: { toMillis: () => NOW - 5_000 } } }, NOW)).toBe(true);
-    // with no clock, a set lock counts as in flight
-    expect(evaluationInFlight(at(EVALUATION_LOCK_MS * 10), undefined)).toBe(true);
+    // Build S2 (R21): with no clock there is no age to honour, so a stale stamp never reads as in flight.
+    for (const noClock of [undefined, null, NaN, Infinity, 'soon']) {
+      expect(evaluationInFlight(at(0), noClock)).toBe(false);
+      expect(deriveAgentMood({ battle: { status: 'active', ...at(0) }, side: 'player', nowMs: noClock, outcomes })).toBe('idle');
+    }
   });
 
   it('the lifetime is the server\'s own: a tripwire on agent-evaluate.js EVALUATING_LOCK_TIMEOUT_MS', () => {

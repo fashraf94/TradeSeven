@@ -34,7 +34,7 @@ describe('a failed load keeps the screen', () => {
     await act(async () => {
       root.render(
         <div data-test-screen="1">
-          <BattleAgentFormScope cockpitFeed={null} now={new Date()}>
+          <BattleAgentFormScope cockpitFeed={null}>
             <BattleAgentFormSlot agentBattle={WON} size={72} scores={{ player: 12, opponent: 3 }} />
           </BattleAgentFormScope>
           <p data-test-rest="1">scores</p>
@@ -55,7 +55,7 @@ describe('a failed load keeps the screen', () => {
     const { BattleAgentFormScope, BattleAgentFormSlot } = await import('./battleAgentFormSlot');
     await act(async () => {
       root.render(
-        <BattleAgentFormScope cockpitFeed={null} now={new Date()}>
+        <BattleAgentFormScope cockpitFeed={null}>
           <BattleAgentFormSlot agentBattle={WON} size={72} scores={{ player: 12, opponent: 3 }} />
         </BattleAgentFormScope>,
       );
