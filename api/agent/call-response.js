@@ -25,7 +25,9 @@
 // budget, the pending check and the answers; its from-merge changes are D-7's
 // `counterpart_unavailable` and, since the BaggerBomb cleanup (C3, Oct 2026), a
 // pick judged by canComeIn instead of the universe, both at the eligibility step
-// (callActions.js). With the flag ON:
+// (callActions.js), and Amendment E's E-2 (step 6): a go / hold acknowledgment of
+// an exit the parent holds in no tier is refused symbol_not_held, flag off or on.
+// With the flag ON:
 //   wire     `replace` is an answer and requires `pickSymbol`; `go_now` may
 //            carry one; `confirmReplace` is an optional boolean; `pickSymbol`
 //            on any other answer is 400 invalid_request. After the parent
@@ -66,6 +68,11 @@
 //      outcome shows the agent's own choice — allowed whether the parent is
 //      active or completed; write playerResponse{kind:'ack'} + the answered
 //      event; no directive, no budget, no pending check          → 409 expired
+//      Amendment E (E-2; flag off or on): an EXIT call whose stock the fresh parent holds in
+//      no tier at all is answerable by nobody — a go / hold acknowledgment is
+//      refused like a directive is, after the expired checks and before any
+//      write                                                      → 400 ineligible_action
+//                                                                    symbol_not_held
 //   7. DIRECTIVE rows: the call open and inside its deadline, the parent
 //      active, the belief current, the stored action eligible NOW (D-7: the
 //      agent's own exit counterpart, and with the flag the chosen name), the
@@ -101,7 +108,7 @@ import { randomUUID } from 'node:crypto';
 import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
 // Cockpit Build 2a (spec S-4): the legality table's ONE home, shared with the
 // cockpit's tiles — re-exported here under the names this route always had.
-import { classifyAnswer, isUpsideCall, ANSWERS_1A, DEFERRED_ANSWERS, wireAnswers, answerTakesPick, isGoAcknowledgment, ANSWER_REPLACE } from '../_utils/callRecords/answers.js';
+import { classifyAnswer, isUpsideCall, isExitNotHeld, ANSWERS_1A, DEFERRED_ANSWERS, wireAnswers, answerTakesPick, isGoAcknowledgment, ANSWER_REPLACE } from '../_utils/callRecords/answers.js';
 import { directiveKindFor, isCallActionEligible, buildCallDirectivePlan } from '../_utils/callRecords/callActions.js';
 import { answerIdOf, eventIdOf, callEventRef, buildCallEvent, createCallEvent } from '../_utils/callRecords/events.js';
 import { renderAnsweredEvent } from '../_utils/callRecords/copy.js';
@@ -315,6 +322,9 @@ export default async function handler(req, res) {
         } else {
           if (call.state !== 'open') return refused('expired');
           if (!finite(deadline) || deadline <= nowMs) return refused('expired');
+          // Amendment E (E-2): no acknowledgment of an exit the book no longer (or never) holds. Any tier — the same
+          // test (answers.js isExitNotHeld) the cockpit's tiles ask; the directive rows' own slot-tier test is step 7's.
+          if (isExitNotHeld(call, parent)) return { kind: 'ineligible_action', reason: 'symbol_not_held' };
         }
         const playerResponse = { answer, kind: 'ack', callId, filedAt };
         const event = buildCallEvent({ kind: 'answered', at: nowMs, callIds: [callId], text: renderAnsweredEvent({ answer }) });

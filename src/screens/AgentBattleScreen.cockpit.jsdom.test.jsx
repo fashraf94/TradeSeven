@@ -96,7 +96,8 @@ const LIVE_DOC = {
   scoreState: { currentScore: 12, opponentScore: 3, tradeCount: 1, evaluationCount: 5, lastScoredAt: '2026-09-01T16:47:00.000Z' },
   timing: { tradingDays: ['d1', 'd2', 'd3'], currentTradingDay: 2 },
   portfolio: {
-    star: [{ symbol: 'AAPL' }], core: [{ symbol: 'NVDA' }], support: [],
+    // MU is held (support): GONE below is an EXIT on it, and since Amendment E (E-2) an exit on a stock the book does not hold offers no answer.
+    star: [{ symbol: 'AAPL' }], core: [{ symbol: 'NVDA' }], support: [{ symbol: 'MU' }],
     startingPrices: { AAPL: 150, NVDA: 900 },
     bench: { stocks: [{ symbol: 'NOW' }], crypto: null },
   },

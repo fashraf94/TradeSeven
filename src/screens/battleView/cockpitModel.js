@@ -38,7 +38,7 @@
 import {
   renderCallLine, isUpsideCall, checkLabel, deadlineText, fmtPrice, SAID_UNVERIFIED_LABEL,
 } from '../../../api/_utils/callRecords/copy.js';
-import { tileAnswersFor, replacementStepFor, isGoAcknowledgment } from '../../../api/_utils/callRecords/answers.js';
+import { tileAnswersFor, replacementStepFor, isGoAcknowledgment, isExitNotHeld } from '../../../api/_utils/callRecords/answers.js';
 import { etDateOf, sessionCloseAfter, nextEligibleSlot } from '../../../api/_utils/callRecords/horizon.js';
 import { deriveKilledDirectiveIds } from '../../../api/_utils/controlPromptRenderer.js';
 import { etTime, etSlotTime } from '../../components/Dashboard/desk/deskCopy';
@@ -571,14 +571,23 @@ export function chosenNameOf(member, { directive = null, exchanges = [] } = {}) 
  *   step       with { v2 }, the "Who comes in?" state of the call the buttons
  *              answer (answers.js replacementStepFor), and its stored options
  *
+ * Cockpit exit-not-held (Amendment E rev 2, E-2): while the call the buttons would
+ * answer is an EXIT whose stock the battle document holds in NO tier (answers.js
+ * isExitNotHeld — the endpoint's own test, so a tile never offers what it would
+ * refuse), the tile offers no button and no "Who comes in?" step, and an
+ * unanswered, un-acted, Live call reads "Not in your book". A recorded answer, an
+ * act and every other tag stand as recorded. `book` is the battle document the
+ * screen already reads; without one (or without its portfolio) nothing is claimed.
+ *
  * @param {object[]} thread  calls, newest first
  * @param {object} ctx       { eventsMap, evaluations, nowMs, block, pending: { callId, answer } | null,
  *                             slotThreadId: the slot's live thread (liveCallSlotOf) | null,
- *                             command: commandOf(...) | null, exchanges, nextDecisionAt, directive, v2 }
+ *                             command: commandOf(...) | null, exchanges, nextDecisionAt, directive, v2,
+ *                             book: the battle document (its `portfolio`) | null }
  */
 export function tileOf(thread, {
   eventsMap = new Map(), evaluations = [], nowMs, block = null, pending = null, slotThreadId = null,
-  command = null, exchanges = [], nextDecisionAt = null, battleExpiresAtMs = null, directive = null, v2 = false,
+  command = null, exchanges = [], nextDecisionAt = null, battleExpiresAtMs = null, directive = null, v2 = false, book = null,
 } = {}) {
   const newest = thread[0];
   const oldest = thread[thread.length - 1];
@@ -596,7 +605,7 @@ export function tileOf(thread, {
   const actedMember = thread.find((c) => nonEmpty(c.outcome?.actedEvalId)) ?? null;
   const tagCtx = { evaluations, nowMs, slotThreadId, exchanges, nextDecisionAt, battleExpiresAtMs };
   const tagSource = actedMember ?? filed ?? newest;
-  const tag = callTag(tagSource, { events: eventsMap.get(tagSource.callId) ?? [], ...tagCtx });
+  const liveTag = callTag(tagSource, { events: eventsMap.get(tagSource.callId) ?? [], ...tagCtx });
   // D-10: the restatements under the live command — whether or not its answered call is still open on this card
   // (the command is live while its slot is; review CB3-1). isFollowing never names the answered call itself.
   const following = new Set(command ? thread.filter((c) => isFollowing(command, c, { eventsMap })).map((c) => c.callId) : []);
@@ -607,13 +616,17 @@ export function tileOf(thread, {
   const leadAsk = newAsks[0] ?? null;
   // The call the buttons answer: the lead new ask beside a live command; otherwise the newest call, as 2a.
   const target = live && leadAsk ? leadAsk : newest;
+  // E-2: the stock the call would exit is in no tier of the book — no answer is legal on it.
+  const notHeld = isExitNotHeld(target, book);
   // The endpoint's own guard (call-response.js: `!finite(deadline) || deadline <= nowMs` → 409 expired).
   const deadline = target.horizon?.expiresAt;
   const answerable = finite(deadline) && finite(nowMs) && deadline > nowMs;
   const heldBack = live && target !== leadAsk;
-  const legal = target.state === 'open' && !heldBack && !answeredCall(target) && !following.has(target.callId) && !actedMember && answerable
+  const legal = target.state === 'open' && !heldBack && !answeredCall(target) && !following.has(target.callId) && !actedMember && answerable && !notHeld
     ? tileAnswersFor(target, { v2 })
     : [];
+  // Only the bare "Live" gives way: a recorded answer, an act, a retirement or a replacement keeps its own tag.
+  const tag = notHeld && target.state === 'open' && !answeredCall(target) && !actedMember && liveTag?.fact === 'state:open' ? factTag('call:not_held') : liveTag;
   // The endpoint exempts the slot's own call (`thisCallId`); every other call's override waits.
   const blocked = Boolean(block) && block.callId !== target.callId;
   const sendingThis = Boolean(pending) && thread.some((c) => c.callId === pending.callId);
@@ -676,7 +689,7 @@ export function tileOf(thread, {
     blockedLine: blocked && buttons.some((b) => b.row === 'directive') ? block.line : null,
     // The step offers answers too, so it keeps the buttons' own gates: inside the deadline, and not once the
     // agent acted (the endpoint refuses both — review CB4-5).
-    step: v2 && answerable && !actedMember ? replacementStepFor(target, { v2 }) : null,
+    step: v2 && answerable && !actedMember && !notHeld ? replacementStepFor(target, { v2 }) : null,
     options: v2 && Array.isArray(target.replacementOptions) ? target.replacementOptions : null,
   };
 }
@@ -689,12 +702,14 @@ export function tileOf(thread, {
  * command's restatements joined to it (D-10); the tags read the battle's RAW
  * `exchanges` (who replaced a command) and `nextDecisionAt` (no check left
  * today). `v2` adds each card's "Who comes in?" state (the V5 screen reads it).
+ * `book` (Amendment E rev 2) is the battle document the screen reads, for the one
+ * any-tier held test every tile asks (tileOf); absent, no tile claims a stock left.
  *
  * @returns {{ needsYou: object[], waiting: object[], earlier: object[], earlierTotal: number, needsYouCount: number, empty: boolean, command: object|null }}
  */
 export function buildCockpitFeed({
   calls, events, evaluations, directive, nowMs, pending = null, outcomes = {}, showAllEarlier = false, controlEpochLog = null, suppressed = false,
-  exchanges = [], nextDecisionAt = null, battleExpiresAtMs = null, v2 = false, league = false,
+  exchanges = [], nextDecisionAt = null, battleExpiresAtMs = null, v2 = false, league = false, book = null,
 } = {}) {
   const shown = cockpitCalls(calls).filter((c) => c.kind !== 'pick');
   const eventsMap = eventsByCall(events);
@@ -703,7 +718,7 @@ export function buildCockpitFeed({
   // The slot's live thread, by the block's own predicate: a filed directive is "not yet heard" only while it is this one.
   const slotThreadId = liveCallSlotOf({ directive, nowMs, controlEpochLog, suppressed })?.directiveThreadId ?? null;
   const command = commandOf({ directive, calls: shown, nowMs, controlEpochLog, suppressed });
-  const ctx = { eventsMap, evaluations, nowMs, block, pending, slotThreadId, command, exchanges, nextDecisionAt, battleExpiresAtMs, directive, v2 };
+  const ctx = { eventsMap, evaluations, nowMs, block, pending, slotThreadId, command, exchanges, nextDecisionAt, battleExpiresAtMs, directive, v2, book };
   const withRefusal = (tile) => ({ ...tile, refusalLine: refusalLineOf(tile, outcomes?.[tile.target?.callId ?? tile.id] ?? outcomes?.[tile.id] ?? null, { calls: shown, directive, block, nowMs, v2, league }) });
   const openTiles = foldThreads(shown, { command, eventsMap }).map((t) => withRefusal(tileOf(t.calls, ctx)));
   const resolved = shown

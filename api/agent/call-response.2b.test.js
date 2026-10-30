@@ -385,3 +385,37 @@ describe('the sanctioned rewrite is the only one (D-4 rev 2) — source-pinned',
     expect(src).toContain('const secondAnswer = v2 && answer === ANSWER_REPLACE && isGoAcknowledgment(call.playerResponse);');
   });
 });
+
+// Amendment E rev 2 (E-2), flag on: the acknowledgment refusal is the wire's too — the `go` that opens the
+// "Who comes in?" step, and the `replace` after it, are both refused once TSLA is in no tier.
+describe('Amendment E (E-2) — flag on: an exit whose stock left the book takes no acknowledgment', () => {
+  const withoutTsla = () => {
+    const b = makeTickBattle({ directive: null });
+    b.portfolio = { ...b.portfolio, star: b.portfolio.star.filter((r) => r.symbol !== 'TSLA'), core: b.portfolio.core.filter((r) => r.symbol !== 'TSLA'), support: b.portfolio.support.filter((r) => r.symbol !== 'TSLA') };
+    return b;
+  };
+  it('go on the act-default exit (Confirm exit) → 400 ineligible_action / symbol_not_held, nothing written; with the stock held it lands', async () => {
+    activeDb = makeDb({ battle: withoutTsla() });
+    const res = await post(body({ answer: 'go', pickSymbol: undefined }));
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'ineligible_action', reason: 'symbol_not_held' });
+    expect(callWrites(activeDb)).toEqual([]);
+    activeDb = makeDb();
+    const held = await post(body({ answer: 'go', pickSymbol: undefined }));
+    expect(held.statusCode).toBe(200);
+    expect(held.body.playerResponse).toMatchObject({ answer: 'go', kind: 'ack' });
+  });
+  it('hold on the hold-default exit (the card\'s agreeing answer) → the same 400; and a stock held in ANOTHER tier than the call names is still in the book', async () => {
+    activeDb = makeDb({ battle: withoutTsla() });
+    const res = await post(body({ callId: EXIT_HOLD, answer: 'hold', pickSymbol: undefined }));
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'ineligible_action', reason: 'symbol_not_held' });
+    expect(callWrites(activeDb)).toEqual([]);
+    // TSLA moved star → support: the call names `star`, the book holds it — the acknowledgment lands (any tier).
+    const moved = makeTickBattle({ directive: null });
+    moved.portfolio = { ...moved.portfolio, star: moved.portfolio.star.filter((r) => r.symbol !== 'TSLA'), support: [...moved.portfolio.support, { symbol: 'TSLA', isCrypto: false }] };
+    activeDb = makeDb({ battle: moved });
+    const held = await post(body({ callId: EXIT_HOLD, answer: 'hold', pickSymbol: undefined }));
+    expect(held.statusCode).toBe(200);
+  });
+});

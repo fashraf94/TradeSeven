@@ -84,8 +84,14 @@ const EXCLUSIVE_REACH = Object.freeze({
   'api/agent/decide.js': 'api/_utils/cpuOpponentGenerator.js',
   'api/agent/chat.js': 'api/_utils/agentCapabilitiesManifest.js',
   // answers.js, not callActions.js: since #986 (51d7c926, retire on exit) the evaluator reaches callActions.js through
-  // callRecords/retire.js, so it is no longer this root's alone (the merge with main, build report §12)
-  'api/agent/call-response.js': 'api/_utils/callRecords/answers.js',
+  // callRecords/retire.js, so it is no longer this root's alone (the merge with main, build report §12).
+  // commands.js, not answers.js: Amendment E rev 2 puts the one any-tier held test beside the legality table in
+  // answers.js and the MINT (candidate.js, which the evaluator reaches) asks it too, so the evaluator now reaches
+  // answers.js (docs/audits/20261029_COCKPIT_EXIT_NOT_HELD.md). commands.js — the cockpit's seven-command count,
+  // imported by the answer endpoint and by the cockpit's client model (cockpit2bModel.js, which no census root
+  // reaches) — is this root's alone. This is the non-vacuity oracle only; the ledger and plays assertions above
+  // are untouched.
+  'api/agent/call-response.js': 'api/_utils/callRecords/commands.js',
   'src/screens/battleView/ChatSheet.jsx': 'src/screens/battleView/useChatSheet.js',
   'src/components/Agent/AgentChat.jsx': 'src/components/Agent/TradeTickerCard.jsx',
   'api/_utils/voiceLayerPrompt.js': { coveredBy: ['api/agent/chat.js'] },

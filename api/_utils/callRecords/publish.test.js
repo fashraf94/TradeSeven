@@ -12,6 +12,7 @@ import {
 } from './publish.js';
 import { buildMintCandidate } from './candidate.js';
 import { createCallsContext } from './mode.js';
+import { carryExecutorResult } from './observe.js';
 import { captureDeclarations } from './validate.js';
 import { bindHorizon, battleExpiryMs } from './horizon.js';
 import { shouldStartHaikuCall, PROMPT_BUILD_CEILING_MS, HAIKU_CALL_CEILING_MS, HAIKU_POST_CALL_ALLOWANCE_MS } from '../agentEvalTransport.js';
@@ -47,7 +48,7 @@ const candidateOf = (raw = makeDeclarations(), over = {}) => buildMintCandidate(
   battleId: BATTLE_ID, evalId: EVAL_ID, evalSeq: 1, mintedAtMs: MINT, raw, universe: UNIVERSE,
   observation: makeObservation(), promptBuiltAt: FROZEN_NOW, tickId: `${BATTLE_ID}:1`, battle: committedBattle(), held: [...HELD], mintedMode: 'shadow',
   // Build 2b (Amendment D-7 / D-3): the seam's frozen book, and the options' two lists (none here).
-  book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null, ...over,
+  book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null, committedSymbolIn: null, ...over,
 });
 const far = () => Date.now() + 5_000;
 const publish = (db, candidate, over = {}) => publishDeclarations({
@@ -616,5 +617,48 @@ describe('diagnostics, status, capture references', () => {
     expect(captureRefsFor(c, [c.calls[1].callId])).toEqual([{ callId: c.calls[1].callId, n: 1, kind: 'confirmation' }]);
     expect(captureRefsFor(c, [])).toEqual([]);
     expect(captureRefsFor({ record: null }, ['x'])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Amendment E rev 3 (E-1): publish.js hands the mint the check's OWN committed incoming stock — the executor's
+// result as observe.js carries it (never rebuilt from the proposal) — because the seam's book predates the
+// check's trade. AMD is on the bench in that book, so an exit on AMD is "not held" unless this check bought it.
+
+describe('runModelCallsPhase — the committed symbolIn reaches the mint (Amendment E rev 3)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(MINT);
+  });
+
+  const exitOnAmd = {
+    calledShots: [{ symbol: 'AMD', direction: 'exit', slot: 'star', condition: { side: 'below', level: 160 }, horizonPhrase: 'this_session', defaultAction: 'act', said: 'Cutting AMD below $160 today.' }],
+    watching: [], playerAsk: null, fork: null,
+  };
+  /** Run the model-path phase after the executor returned `swapResult` (undefined = the swap was never called). */
+  const run = async (swapResult) => {
+    const db = makeCallsDb({ battle: committedBattle() });
+    const ctx = modelCtx({ mode: 'on', raw: exitOnAmd });
+    ctx.held = Object.freeze([...HELD]);
+    ctx.book = freezeSwapBook(committedBattle());
+    if (swapResult !== undefined) carryExecutorResult(ctx, swapResult);
+    await runModelCallsPhase(ctx, phaseArgs(db));
+    return Object.values(storedCollection(db, 'calls')).map((c) => [c.symbol, c.state, c.invalidatedReason]);
+  };
+  const closed = (over = {}) => ({ success: true, closedTrade: { symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0, ...over } });
+
+  it('a swap that committed AMD: the exit on AMD mints open', async () => {
+    expect(await run(closed())).toEqual([['AMD', 'open', null]]);
+  });
+
+  it('no swap at all, or one that returned no closed trade (blocked, failed): the exit on AMD is dropped — the CVX shape', async () => {
+    expect(await run(undefined)).toEqual([['AMD', 'invalidated', 'exit_not_held']]);
+    expect(await run({ success: false })).toEqual([['AMD', 'invalidated', 'exit_not_held']]);
+    expect(await run({ success: true })).toEqual([['AMD', 'invalidated', 'exit_not_held']]);
+  });
+
+  it('symbolIn only, and only that stock: a swap that bought JPM, or one that SOLD AMD, exempts nothing', async () => {
+    expect(await run(closed({ symbolIn: 'JPM' }))).toEqual([['AMD', 'invalidated', 'exit_not_held']]);
+    expect(await run(closed({ symbolOut: 'AMD', symbolIn: 'JPM' }))).toEqual([['AMD', 'invalidated', 'exit_not_held']]);
   });
 });

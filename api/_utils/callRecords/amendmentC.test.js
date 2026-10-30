@@ -55,7 +55,7 @@ const mint = (raw, over = {}) => buildMintCandidate({
   observation: makeObservation(), promptBuiltAt: FROZEN_NOW, tickId: null, battle: committedBattle(),
   held: [...HELD], mintedMode: 'shadow',
   // Build 2b (Amendment D-7 / D-3): the seam's frozen book, and the options' two lists (none here).
-  book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null, ...over,
+  book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null, committedSymbolIn: null, ...over,
 });
 
 // ---------------------------------------------------------------------------

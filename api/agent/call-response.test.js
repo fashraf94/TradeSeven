@@ -573,3 +573,129 @@ describe('Build 2a: an upside call accepts NO answer, and the legality table has
     expect(src).toContain("from '../_utils/callRecords/answers.js'");
   });
 });
+
+// Cockpit exit-not-held — contract Amendment E rev 2, E-2 (docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_E.md).
+// An exit call whose stock the transaction's FRESH PARENT holds in no tier is answerable by nobody: the
+// acknowledgments (go on act-default, hold on hold-default) are refused with the directive path's own
+// response, `400 ineligible_action` / `symbol_not_held`, before any write. The directive rows keep their
+// own slot-tier filing check (D-4, callActions.js) — unchanged; the call's `slot` is the agent's label.
+describe('Amendment E (E-2): no answer on an exit whose stock is in no tier of the fresh parent', () => {
+  const EXIT_ACT = `${BATTLE_ID}:eval_001:call:3`; // KO exit, act-default, slot support
+  // An act-default exit is minted as a CONFIRMATION (the hold-default HOLD_CALL above is the called shot).
+  const exitAct = (over = {}) => shot(EXIT_ACT, { kind: 'confirmation', symbol: 'KO', direction: 'exit', slot: 'support', counterpart: null, condition: { side: 'below', level: 62.5 }, defaultAction: 'act', ...over });
+  const withoutKo = () => { const b = makeTickBattle({ directive: null }); b.portfolio.support = b.portfolio.support.filter((r) => r.symbol !== 'KO'); return b; };
+  /** KO moved from `support` to `star` — still in the book, in a different tier than the calls name. */
+  const koInStar = () => { const b = makeTickBattle({ directive: null }); b.portfolio.support = b.portfolio.support.filter((r) => r.symbol !== 'KO'); b.portfolio.star.push({ symbol: 'KO', name: 'KO' }); return b; };
+  const SYMBOL_NOT_HELD = { error: 'ineligible_action', reason: 'symbol_not_held' };
+  const nothingChanged = () => {
+    expect(activeDb.__access.writes).toEqual([]);
+    expect(stored(activeDb, P('calls', EXIT_ACT)).playerResponse).toBeNull();
+    expect(stored(activeDb, P('calls', HOLD_CALL)).playerResponse).toBeNull();
+    expect(storedUnder(activeDb, `agentBattles/${BATTLE_ID}/callEvents`)).toEqual({});
+  };
+
+  it('an ACKNOWLEDGMENT is refused: go on an act-default exit and hold on a hold-default exit, once the stock is in no tier — nothing written', async () => {
+    activeDb = makeDb({ battle: withoutKo(), calls: { [EXIT_ACT]: exitAct() } });
+    for (const body of [answerBody({ callId: EXIT_ACT, answer: 'go' }), answerBody({ callId: HOLD_CALL, answer: 'hold' })]) {
+      const res = await post(body);
+      expect(res.statusCode, JSON.stringify(body)).toBe(400);
+      expect(res.body, JSON.stringify(body)).toEqual(SYMBOL_NOT_HELD);
+    }
+    nothingChanged();
+  });
+
+  it('a DIRECTIVE is refused the same way (the filing check, unchanged): hold on the act-default exit, go_now on the hold-default exit', async () => {
+    activeDb = makeDb({ battle: withoutKo(), calls: { [EXIT_ACT]: exitAct() } });
+    for (const body of [answerBody({ callId: EXIT_ACT, answer: 'hold' }), answerBody({ callId: HOLD_CALL, answer: 'go_now' })]) {
+      const res = await post(body);
+      expect(res.statusCode, JSON.stringify(body)).toBe(400);
+      expect(res.body, JSON.stringify(body)).toEqual(SYMBOL_NOT_HELD);
+    }
+    nothingChanged();
+    expect(stored(activeDb, `agentBattles/${BATTLE_ID}`).chatBudgetUsed).toBe(0);
+  });
+
+  it('the control: the stock still held → both acknowledgments land, as before', async () => {
+    activeDb = makeDb({ calls: { [EXIT_ACT]: exitAct() } });
+    const go = await post(answerBody({ callId: EXIT_ACT, answer: 'go' }));
+    expect(go.statusCode).toBe(200);
+    expect(go.body.playerResponse).toMatchObject({ answer: 'go', kind: 'ack' });
+    const hold = await post(answerBody({ callId: HOLD_CALL, answer: 'hold' }));
+    expect(hold.statusCode).toBe(200);
+    expect(hold.body.playerResponse).toMatchObject({ answer: 'hold', kind: 'ack' });
+  });
+
+  it('ANY tier: the stock held in a DIFFERENT tier than the call names is still in the book — the acknowledgment lands; the directive keeps its own slot-tier check (D-4 unchanged)', async () => {
+    activeDb = makeDb({ battle: koInStar(), calls: { [EXIT_ACT]: exitAct() } });
+    const go = await post(answerBody({ callId: EXIT_ACT, answer: 'go' }));
+    expect(go.statusCode).toBe(200);
+    expect(go.body.playerResponse).toMatchObject({ answer: 'go', kind: 'ack' });
+    const directive = await post(answerBody({ callId: HOLD_CALL, answer: 'go_now' }));
+    expect(directive.statusCode).toBe(400);
+    expect(directive.body).toEqual(SYMBOL_NOT_HELD);
+  });
+
+  it("the endpoint's other ordering stands: past the deadline or no longer open → 409 expired first; a different answer already standing → 409 already_answered first", async () => {
+    const late = exitAct({ horizon: { phrase: 'this_session', expiresAt: NOW - 1, basis: 'this_session' } });
+    const closed = exitAct({ state: 'hit' });
+    for (const [label, call] of [['past its deadline', late], ['no longer open', closed]]) {
+      activeDb = makeDb({ battle: withoutKo(), calls: { [EXIT_ACT]: call } });
+      const res = await post(answerBody({ callId: EXIT_ACT, answer: 'go' }));
+      expect(res.statusCode, label).toBe(409);
+      expect(res.body, label).toMatchObject({ error: 'refused', reason: 'expired' });
+    }
+    const answered = exitAct({ playerResponse: { answer: 'hold', kind: 'directive', directiveThreadId: 't1', callId: EXIT_ACT, filedAt: new Date(NOW - 5_000).toISOString(), heardEvalId: null } });
+    activeDb = makeDb({ battle: withoutKo(), calls: { [EXIT_ACT]: answered } });
+    const res = await post(answerBody({ callId: EXIT_ACT, answer: 'go' }));
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ error: 'refused', reason: 'already_answered' });
+  });
+
+  it('an answer already recorded stays as recorded: an IDENTICAL repeat after the stock left returns the stored response (200, repeat)', async () => {
+    activeDb = makeDb({ calls: { [EXIT_ACT]: exitAct() } });
+    const first = await post(answerBody({ callId: EXIT_ACT, answer: 'go' }));
+    expect(first.statusCode).toBe(200);
+    // The stock leaves the book — written through the store's own API: stored() hands back a COPY, so editing its
+    // result would change nothing the endpoint reads (review NH-L2-1).
+    const parentPath = `agentBattles/${BATTLE_ID}`;
+    await activeDb.doc(parentPath).update({ 'portfolio.support': stored(activeDb, parentPath).portfolio.support.filter((r) => r.symbol !== 'KO') });
+    // The premise, in the store: KO is in no tier of the parent the endpoint will read.
+    const book = stored(activeDb, parentPath).portfolio;
+    expect([...book.star, ...book.core, ...book.support].some((r) => r.symbol === 'KO')).toBe(false);
+    // The control: a FIRST answer on another exit of the same stock is refused now — the endpoint sees the empty book.
+    const fresh = await post(answerBody({ callId: HOLD_CALL, answer: 'hold' }));
+    expect(fresh.statusCode).toBe(400);
+    expect(fresh.body).toEqual(SYMBOL_NOT_HELD);
+    // The same tap again on the answered call: the stored response comes back, and nothing is written.
+    const writesBefore = activeDb.__access.writes.length;
+    const again = await post(answerBody({ callId: EXIT_ACT, answer: 'go' }));
+    expect(again.statusCode).toBe(200);
+    expect(again.body.repeat).toBe(true);
+    expect(again.body.playerResponse).toEqual(first.body.playerResponse);
+    expect(activeDb.__access.writes.length).toBe(writesBefore);
+  });
+
+  it("only EXITS are asked: an entry call's acknowledgment never looks at the book (the stock is in no tier and the entry still lands)", async () => {
+    activeDb = makeDb({ battle: withoutKo() });
+    const res = await post(answerBody({ callId: CALL, answer: 'go' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.playerResponse).toMatchObject({ answer: 'go', kind: 'ack' });
+  });
+
+  it('a parent whose book cannot be read (no portfolio at all) proves nothing: the acknowledgment is judged as before', async () => {
+    const unreadable = makeTickBattle({ directive: null });
+    delete unreadable.portfolio;
+    activeDb = makeDb({ battle: unreadable, calls: { [EXIT_ACT]: exitAct() } });
+    const res = await post(answerBody({ callId: EXIT_ACT, answer: 'go' }));
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("the test is the shared module's (answers.js isExitNotHeld), imported — never a copy in the endpoint", async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'call-response.js'), 'utf8');
+    expect(src).toMatch(/import \{[^}]*\bisExitNotHeld\b[^}]*\} from '\.\.\/_utils\/callRecords\/answers\.js'/);
+    expect(src).not.toMatch(/function isExitNotHeld|function heldInAnyTier/);
+  });
+});

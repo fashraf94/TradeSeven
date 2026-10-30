@@ -2628,7 +2628,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     battleExpiresAtMs: cockpitBattleEndMs,
     v2: isCockpit2bOn(),
     league: agentBattle?.gameMode === TOURNAMENT_GAME_MODE,
-  }) : null), [agentBattle?.gameMode, cockpitOn, cockpitCallsRead.value, cockpitEventsRead.value, agentBattle?.evaluations, agentBattle?.directive, agentBattle?.controlEpochLog, agentBattle?.chatExchanges, cockpitBattleEndMs, cockpitNowMs, cockpitAnswer.pending, cockpitAnswer.outcomes, cockpitShowAllEarlier, turnLine?.nextDecisionAt]);
+    // Amendment E (E-2): the battle document's book — the tiles' any-tier held test reads the screen's own portfolio, never a second source.
+    book: { portfolio: agentBattle?.portfolio ?? null },
+  }) : null), [agentBattle?.gameMode, agentBattle?.portfolio, cockpitOn, cockpitCallsRead.value, cockpitEventsRead.value, agentBattle?.evaluations, agentBattle?.directive, agentBattle?.controlEpochLog, agentBattle?.chatExchanges, cockpitBattleEndMs, cockpitNowMs, cockpitAnswer.pending, cockpitAnswer.outcomes, cockpitShowAllEarlier, turnLine?.nextDecisionAt]);
   // A refusal line clears for good once the record behind its tile changes —
   // the call resolved or was answered — or the call leaves the feed (founder
   // ruling Oct 5): its outcome is dropped as soon as no tile shows it, so it

@@ -93,7 +93,8 @@ const LIVE_DOC = {
   scoreState: { currentScore: 12, opponentScore: 3, tradeCount: 1, evaluationCount: 5, lastScoredAt: '2026-09-01T16:47:00.000Z' },
   timing: { tradingDays: ['d1', 'd2', 'd3'], currentTradingDay: 2 },
   portfolio: {
-    star: [{ symbol: 'AAPL' }], core: [{ symbol: 'NVDA' }], support: [],
+    // MU is held (support): GONE below is an EXIT on it, and since Amendment E (E-2) an exit on a stock the book does not hold offers no answer.
+    star: [{ symbol: 'AAPL' }], core: [{ symbol: 'NVDA' }], support: [{ symbol: 'MU' }],
     startingPrices: { AAPL: 150, NVDA: 900 },
     bench: { stocks: [{ symbol: 'NOW' }], crypto: null },
   },
@@ -271,6 +272,22 @@ describe('Cockpit Build 2b — the flag ON, desktop', () => {
     expect(q('[data-cockpit-now] [data-cockpit-plan]').textContent).toContain('Aurora plans to exit NVDA if it goes below $880.00');
     expect(q('[data-cockpit-step="on_card"]')).toBeTruthy();
     expect(q('[data-cockpit-option="NOW"]')).toBeTruthy();
+  });
+
+  it('Amendment E (E-2): the exit on NVDA once NVDA is in no tier of the battle document — no Now card, no step, no answer; the chip and the opened card say so', async () => {
+    DOC = { ...LIVE_DOC, portfolio: { ...LIVE_DOC.portfolio, core: [] } };
+    await mount();
+    expect(q('[data-cockpit-feed]').getAttribute('data-cockpit-feed')).toBe('2b');
+    // The other open call still leads (it is an entry; its buttons are its own) — the NVDA exit does not.
+    expect(q('[data-cockpit-now]').getAttribute('data-cockpit-now')).not.toBe(NVDA_EXIT.callId);
+    expect(q('[data-cockpit-step]')).toBeNull();
+    expect(qa('[data-cockpit-option]')).toHaveLength(0);
+    expect(qa('[data-cockpit-chip]').map((c) => c.textContent)).toContain('NVDA↓880 · not in your book');
+    await click(qa('[data-cockpit-chip-toggle]').find((t) => t.closest('[data-cockpit-chip]')?.textContent.includes('NVDA')) ?? qa('[data-cockpit-chip-toggle]')[0]);
+    const tag = q('[data-cockpit-tag="call:not_held"]');
+    expect(tag.textContent).toBe('Not in your book');
+    expect(tag.closest('[data-cockpit-tile]')?.querySelectorAll('[data-cockpit-answer]').length ?? 0).toBe(0);
+    expect(answerBodies()).toEqual([]);
   });
 
   it('board dots: "an open call" beside NVDA on the player\'s row', async () => {

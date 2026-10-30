@@ -278,7 +278,7 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
   const candidateOf = () => buildMintCandidate({
     battleId: BATTLE_ID, evalId: EVAL, evalSeq: 1, mintedAtMs: NOW + 20_000, raw: makeDeclarations(), universe: UNIVERSE,
     observation: makeObservation(), promptBuiltAt: PROMPT_AT, tickId: `${BATTLE_ID}:1`, battle: committedBattle(), held: [...HELD], mintedMode: 'on',
-    book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null,
+    book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null, committedSymbolIn: null,
   });
   const far = () => Date.now() + 5_000;
 
@@ -301,7 +301,7 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
 
   it('a declarations-only check (watching, no call) publishes its record but DECLARES nothing: no declared event (review L2-6)', async () => {
     const db = makeCallsFirestore({ docs: { [`agentBattles/${BATTLE_ID}`]: committedBattle() } });
-    const candidate = buildMintCandidate({ battleId: BATTLE_ID, evalId: EVAL, evalSeq: 1, mintedAtMs: NOW + 20_000, raw: { calledShots: [], watching: ['AMD'], playerAsk: null, fork: null }, universe: UNIVERSE, observation: makeObservation(), promptBuiltAt: PROMPT_AT, tickId: null, battle: committedBattle(), held: [...HELD], mintedMode: 'on', book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null });
+    const candidate = buildMintCandidate({ battleId: BATTLE_ID, evalId: EVAL, evalSeq: 1, mintedAtMs: NOW + 20_000, raw: { calledShots: [], watching: ['AMD'], playerAsk: null, fork: null }, universe: UNIVERSE, observation: makeObservation(), promptBuiltAt: PROMPT_AT, tickId: null, battle: committedBattle(), held: [...HELD], mintedMode: 'on', book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null, committedSymbolIn: null });
     expect(candidate.calls).toEqual([]);
     await publishDeclarations({ db, battleId: BATTLE_ID, candidate, evalSeq: 1, txDeadlineMs: far(), rereadDeadlineMs: far() + 500, events: { enabled: true, nowMs: NOW + 20_000, promptBuiltAt: PROMPT_AT, promptDirectiveThreadId: THREAD, promptDirectiveText: 'x' } });
     expect(events(db)).toEqual({});

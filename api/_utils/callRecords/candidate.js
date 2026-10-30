@@ -71,16 +71,38 @@
 // Both new fields are immutable: they are outside MUTABLE_CALL_FIELDS, so the
 // canonical form publication compares carries them.
 //
+// Cockpit exit-not-held (contract Amendment E rev 2, E-1): an EXIT call (a called
+// shot or a Confirmation) whose symbol is not held in ANY tier of the frozen seam
+// book is born `invalidated`, `invalidatedReason: 'exit_not_held'` (answers.js
+// isExitNotHeld — the one any-tier test the endpoint and the cockpit also ask).
+// A reason that already invalidates at mint (the price line) wins: exit_not_held
+// applies only to a call that would otherwise mint valid. An unknown seam (book
+// null) proves nothing, so it invalidates nothing. A FROZEN book (freezeSwapBook)
+// is always readable — it holds three tier arrays, possibly empty — and the seam
+// freezes the very document the prompt was built from, so an empty one means the
+// model was shown nothing held; production never freezes one.
+// Rev 3: the seam's book is the book BEFORE the check's own trade (the swap commits
+// after the prompt seam and before this mint), so an exit on the check's own
+// COMMITTED incoming stock is not dropped: `committedSymbolIn` is the executor's
+// result (observe.js carryExecutorResult — never rebuilt from the proposal), null
+// when no trade committed, and a null matches nothing. symbolIn only: the outgoing
+// stock is still in the seam's book and is judged as it always was, and E-2 reads
+// the fresh parent, which already holds the committed trade.
+//
 // Pure: no I/O, no clock (the mint instant is handed in).
 
 import { validateDeclarations, invalidationReason, sortRemovedInSourceOrder, removedRecordFields, DECLARATION_CAPS, jsonBytes } from './validate.js';
 import { bindHorizon, battleExpiryMs } from './horizon.js';
 import { saidPassesLint } from './copy.js';
+import { isExitNotHeld } from './answers.js';
 import { canComeIn, swappableNames, forkUsableFor } from './swappable.js';
 import { composeCandidatesStamp } from '../tickStamps.js';
 
 /** The modes a record can be minted under (Amendment C-5). */
 export const MINTED_MODES = Object.freeze(['shadow', 'on']);
+
+/** Amendment E (E-1): the mint's reason for an exit call on a stock held in no tier of the seam's book. */
+export const EXIT_NOT_HELD_REASON = 'exit_not_held';
 
 /** counterpartRaw's cap, in Unicode code points (Amendment C-3). */
 export const COUNTERPART_RAW_MAX = 40;
@@ -295,10 +317,15 @@ export function saidOkOf(said, basis) {
   return saidPassesLint(said, basis);
 }
 
-function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, mintedMode, observation, evidence, provenance, held, seam }) {
+function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, mintedMode, observation, evidence, provenance, held, seam, committedSymbolIn }) {
   const { n, kind, row, horizon } = spec;
   const isPick = kind === 'pick';
-  const reason = isPick ? null : invalidationReason(row, observation);
+  // The price line is judged first (D-9's three reasons); Amendment E's exit_not_held only for a call that would otherwise mint valid,
+  // and (rev 3) not for the stock this very check bought: the seam's book predates the check's own committed trade.
+  const boughtHere = nonEmptyString(committedSymbolIn) && row?.symbol === committedSymbolIn;
+  const reason = isPick
+    ? null
+    : (invalidationReason(row, observation) ?? (!boughtHere && isExitNotHeld({ kind, direction: row.direction, symbol: row.symbol }, seam.book) ? EXIT_NOT_HELD_REASON : null));
   const hasCounterpart = !isPick && typeof row.counterpart === 'string' && row.counterpart.length > 0;
   // D-7: the filing's own test, at the seam.
   const usable = hasCounterpart && counterpartUsable(row, { book: seam.book, atMs: seam.atMs });
@@ -371,8 +398,11 @@ function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, mintedMode, 
  *   list its `candidates` stamp is composed from) — REQUIRED; `null` = none
  * @param {Record<string, number|null>|null} p.rankMap D-3: `{ symbol: technicalRank }` from the
  *   rankings the check's prompt rendered — REQUIRED; `null` = every name unranked
+ * @param {string|null} p.committedSymbolIn Amendment E rev 3: the incoming stock of THIS check's own committed
+ *   trade (the executor's result, observe.js carryExecutorResult) — REQUIRED; `null` = no trade committed
+ *   (a blocked or absent swap), which matches nothing
  */
-export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw, universe, observation, promptBuiltAt, tickId, battle, topLevelWatching, held, mintedMode, book, anticipationCandidates, rankMap }) {
+export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw, universe, observation, promptBuiltAt, tickId, battle, topLevelWatching, held, mintedMode, book, anticipationCandidates, rankMap, committedSymbolIn }) {
   // No silent default for a load-bearing seam fact: omission is a defect, and
   // opting out (null) is an explicit act.
   if (held === undefined) throw new Error('buildMintCandidate: `held` is required (null when the seam knows no held set)');
@@ -380,6 +410,7 @@ export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw,
   if (book === undefined) throw new Error('buildMintCandidate: `book` is required (null when the seam froze no book)');
   if (anticipationCandidates === undefined) throw new Error('buildMintCandidate: `anticipationCandidates` is required (null when the check has none)');
   if (rankMap === undefined) throw new Error('buildMintCandidate: `rankMap` is required (null when the check rendered no rankings)');
+  if (committedSymbolIn === undefined) throw new Error('buildMintCandidate: `committedSymbolIn` is required (null when this check committed no trade)');
   const resolveHorizon = bindHorizon({
     promptBuiltAtMs: typeof promptBuiltAt === 'string' ? Date.parse(promptBuiltAt) : Number.NaN,
     mintedAtMs,
@@ -420,7 +451,7 @@ export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw,
     const calls = specs.map((spec) => {
       const { call, reason } = composeCall(spec, {
         battleId, evalId, evalSeq, mintedAtMs, mintedMode, observation, evidence, provenance,
-        held: heldSet, seam,
+        held: heldSet, seam, committedSymbolIn,
       });
       minted.push({ callId: call.callId, n: spec.n, kind: spec.kind, state: call.state, reason });
       return call;

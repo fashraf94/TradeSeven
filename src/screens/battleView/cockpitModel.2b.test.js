@@ -220,7 +220,9 @@ describe('the new tags (spec §7.1)', () => {
     for (const [reason, line] of Object.entries(COCKPIT_DROPPED_REASON_TEXT)) {
       expect(tag(call({ state: 'invalidated', invalidatedReason: reason }))).toEqual({ fact: 'state:invalidated', tone: 'dropped', text: `Dropped · ${line}` });
     }
-    expect(COCKPIT_DROPPED_REASON_TEXT).toEqual({ level_implausible: 'price line out of range', level_non_finite: 'no usable price line', no_observation: 'no price at that check' });
+    // Amendment E rev 2 adds the fourth row: exit_not_held (candidate.js EXIT_NOT_HELD_REASON).
+    expect(COCKPIT_DROPPED_REASON_TEXT).toEqual({ level_implausible: 'price line out of range', level_non_finite: 'no usable price line', no_observation: 'no price at that check', exit_not_held: 'not in your book' });
+    expect(tag(call({ state: 'invalidated', invalidatedReason: 'exit_not_held' })).text).toBe('Dropped · not in your book');
     expect(tag(call({ state: 'invalidated', invalidatedReason: 'something_new' })).text).toBe('Dropped');
     expect(tag(call({ state: 'invalidated', invalidatedReason: null })).text).toBe('Dropped');
   });

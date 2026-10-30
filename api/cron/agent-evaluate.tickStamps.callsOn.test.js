@@ -495,7 +495,7 @@ function earlierCalls(calledShots) {
     universe: ['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC', 'AMD', 'JPM'],
     observation: makeObservation({ observedAtMs: EARLIER_MINT_MS - 5_000 }), promptBuiltAt: new Date(EARLIER_MINT_MS - 5_000).toISOString(),
     tickId: null, battle: makeTickBattle(), held: [...HELD], mintedMode: 'shadow',
-    book: freezeSwapBook(makeTickBattle()), anticipationCandidates: null, rankMap: null,
+    book: freezeSwapBook(makeTickBattle()), anticipationCandidates: null, rankMap: null, committedSymbolIn: null,
   }).calls.map((c) => JSON.parse(JSON.stringify(c)));
 }
 const seedOf = (calls) => ({ calls: Object.fromEntries(calls.map((c) => [c.callId, c])) });
