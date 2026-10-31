@@ -40,6 +40,8 @@ const h = vi.hoisted(() => ({
   mounts: 0,
 }));
 
+// These rows are the armored hero's whichever way the flag ships, so a one-line rollback reddens its pins and nothing else.
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_HUB_ENABLED: true }));
 vi.mock('firebase/auth', () => ({ onAuthStateChanged: (_auth, cb) => { h.authListeners.push(cb); return () => {}; } }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 // The Daily Regime Brief's read (hooks/useDailyRegimeBrief.js) is not under test here. Left real it reaches Firestore (`db` is `{}`),

@@ -3943,13 +3943,18 @@ describe('the kill switch — AGENT_FORM_BATTLE_ENABLED false: the production la
     priceBox.table = genuineTable();
     await mount(openingProp());
     await deliverDoc('ab-1', ACTIVE_DOC);
-    const priced = record();
+    expect(record()).toEqual(OFF.paneDesktopActive.priced);
     await poll();
-    const polled = { priceCalls: [...priceBox.calls], html: digest(html()) };
+    expect(priceBox.calls).toEqual(OFF.paneDesktopActive.polled.priceCalls);
     await click(symbolEl('AAPL', 'player'));
     await click(symbolEl('GOOGL', 'cpu'));
     await click(pointsEl('NVDA', 'player'));
-    expect({ priced, polled, after: record() }).toEqual(OFF.paneDesktopActive);
+    // Everything but the markup: after a poll the header's counter is still ramping on the real clock, so a digest taken
+    // there depends on how fast the row ran. The OFF row holds it only as the file's first row, on a cold start.
+    const withoutMarkup = (r) => Object.fromEntries(Object.entries(r).filter(([key]) => key !== 'html'));
+    expect(withoutMarkup(record())).toEqual(withoutMarkup(OFF.paneDesktopActive.after));
+    expect(container.querySelector('[data-arena-header]')).not.toBeNull();
+    expect(container.querySelector('[data-arena-form]')).toBeNull();
   });
 
   it('the phone', async () => {

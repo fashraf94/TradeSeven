@@ -39,9 +39,10 @@ describe('AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and AGENT_FORM_LEAGU
   });
 
   it('each is the module\'s literal, and featureFlags.js carries none (its namespace is in the entry chunk)', () => {
-    expect(FLAGS).toMatch(/^export const AGENT_FORM_HUB_ENABLED = true;$/m);
-    expect(FLAGS).toMatch(/^export const AGENT_FORM_BATTLE_ENABLED = true;$/m);
-    expect(FLAGS).toMatch(/^export const AGENT_FORM_LEAGUE_ENABLED = true;$/m);
+    // Value-neutral: the three rows above pin the values, so a rollback moves the flag and its one pin.
+    expect(FLAGS).toMatch(/^export const AGENT_FORM_HUB_ENABLED = (?:true|false);$/m);
+    expect(FLAGS).toMatch(/^export const AGENT_FORM_BATTLE_ENABLED = (?:true|false);$/m);
+    expect(FLAGS).toMatch(/^export const AGENT_FORM_LEAGUE_ENABLED = (?:true|false);$/m);
     expect(read('featureFlags.js')).not.toMatch(/AGENT_FORM/);
   });
 

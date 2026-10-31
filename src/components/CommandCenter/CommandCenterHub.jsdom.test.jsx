@@ -20,6 +20,8 @@ const { userState, motionState, formState } = vi.hoisted(() => ({
   // The armored hero's form (flags on): jsdom has no WebGL, so it is a stand-in that reports live when a row asks, and records its props.
   formState: { live: false, props: null },
 }));
+// These rows are the armored hero's whichever way the flag ships, so a one-line rollback reddens its pins and nothing else.
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_HUB_ENABLED: true }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 // Slices S3 and S5: the hub module imports its readers and reaches the shipped sheets and services,
 // all of which import the Firebase config (it validates at import); nothing here reads.
