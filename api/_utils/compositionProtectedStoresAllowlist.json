@@ -378,7 +378,13 @@
     "api/agent/decide.js::refuseUnsettledStockTournamentBattle::update::agents": 1,
     "scripts/stock-threshold-pilot-control.mjs::run::set::unresolved": 1,
     "api/_utils/filmRoom/cardStore.js::createCard::create::unresolved": 1,
-    "api/_utils/filmRoom/cardStore.js::retireCard::update::unresolved": 1
+    "api/_utils/filmRoom/cardStore.js::retireCard::update::unresolved": 1,
+    "api/_utils/setupEvidence/store.js::claimSnapshot::set::unresolved": 1,
+    "api/_utils/setupEvidence/store.js::createFinal::create::unresolved": 1,
+    "api/_utils/setupEvidence/store.js::createFinal::set::unresolved": 1,
+    "api/_utils/setupEvidence/store.js::releaseClaimLease::set::unresolved": 1,
+    "api/_utils/setupEvidence/store.js::settleConfirmation::create::unresolved": 1,
+    "api/_utils/setupEvidence/store.js::settleConfirmation::set::unresolved": 3
   },
   "_notes_spec1_phase3": {
     "api/_utils/mandateClosePass.js::closeBook (set/update)": "SPEC1 Phase 3 (this PR). The §3.6 daily-close transaction — TWO tx.set sites (the deferred-write loop: decisions/{id} expiry receipts + corporateActions/{actionId} logs + CORPORATE_CLOSE receipts; and the dailyRows/{date} row write, whose mandateRef-parameter-rooted chain the scanner cannot resolve even though the collection literal is visible) and one tx.update on the mandate doc (marks/peaks/scoring/health/execState under revision discipline). The atomic reads-before-writes structure must not be restructured to chase a literal. Same class as the Phase 2 executeDecision/writeTerminal entries. Verified targets: mandates/{id}, mandates/{id}/decisions, mandates/{id}/corporateActions, mandates/{id}/dailyRows — none protected. The pendingScoringAppends write (appendScoringWithRetry) resolves via its callee-base literal and needs no entry.",
@@ -489,5 +495,8 @@
   },
   "_notes_insight_reset": {
     "scripts/reset-failure-built-insight.mjs::{resetOneAgent,restoreOneAgent}::update::unresolved": "Package P-RESET, the one-off reset of the failure-built paragraphs (founder rulings R1-R3 of 14 Oct 2026; build report docs/audits/20261030_BUILD_INSIGHT_RESET.md). FOUNDER SIGN-OFF REQUESTED. HUMAN REVIEW: an operator-only CLI, never imported by api/ or src/. TWO sites, each ONE tx.update on agents/{id} inside that agent's own transaction, and `agents` IS a composition-protected store, written deliberately. resetOneAgent writes exactly five fields (consolidatedInsight '', disciplines removed, pendingConsolidation false, consolidatedInsightResetAt, consolidatedInsightResetReason) and only when the live paragraph's SHA-256 equals the plan's, the paragraph still meets the selection rule, the live fields equal the backup, and no battle is live on the agent. restoreOneAgent writes back the backed-up paragraph, disciplines and pendingConsolidation and removes the two stamps, and only when the paragraph is still '' and the stamp is the backup's run. Both run behind --go and the composition write-epoch fence (assertWriteEpochOpen at entry and per agent; A46 adminCliScripts row). Unresolved for the standard handle-form reason: the ref is the ARGUMENT of tx.update, which the scanner does not follow once the handle is shaped. census and plan write nothing to Firestore; the §7 grep row in scripts/reset-failure-built-insight.test.js pins the exact lines."
+  },
+  "_notes_setup_evidence_store": {
+    "api/_utils/setupEvidence/store.js::{claimSnapshot,createFinal,releaseClaimLease,settleConfirmation} (set/create)": "ID-1 Build 1, the shared setup-evidence store (shape note V1.4 section 3; build report docs/audits/20261030_BUILD_SETUP_EVIDENCE_STORE.md). HUMAN REVIEW: every write is inside one runTransaction on one of two server-only collections, setupEvidence/{id} and setupEvidenceClaims/{id}, NEITHER a composition-protected store. The final document is written only by the two tx.create sites, never updated. claimSnapshot takes the lease; createFinal, releaseClaimLease and the three settleConfirmation sets clear it or record the observation, each only when the claim still carries the caller's token. Neither tx.create is token-gated, by design: the contract gives the create to a worker that lost its lease too, and the create decides. Nothing calls the library in this build (setupEvidenceImportGuard.test.js). Unresolved for the standard handle-form reason: the ref is the ARGUMENT of tx.set/tx.create, which the scanner does not follow once the handle is shaped."
   }
 }
