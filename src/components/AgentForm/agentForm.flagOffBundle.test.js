@@ -56,7 +56,7 @@ const REACHED = [
 
 const ENTRY = '\0agent-form-flag-off-entry';
 
-/** The flag module as the flag-off graph reads it: every flag false, whatever the file ships (three of them ship true). */
+/** The flag module as the flag-off graph reads it: every flag false, whatever the file ships. */
 const flagOff = (code) => code.replace(/^(export const \w+_ENABLED = )true;$/gm, '$1false;');
 
 /**
@@ -142,11 +142,12 @@ function leftovers(code) {
 }
 
 describe('the flag-off pure marks (agent form S1 review SR-3): each module the flag-off graph reaches bundles to what it uses, and nothing else', () => {
-  it('the flag module read here is the rollback\'s: the file ships flags true, and this row\'s rewrite turns every one false', () => {
-    const shipped = read(FLAGS);
-    expect(shipped.match(/^export const \w+_ENABLED = true;$/gm)).toHaveLength(3);
-    expect(flagOff(shipped).match(/^export const \w+_ENABLED = true;$/gm)).toBeNull();
-    expect(flagOff(shipped).match(/^export const \w+_ENABLED = false;$/gm)).toHaveLength(4);
+  it('the flag module read here is the rollback\'s: whatever the file ships, the rewrite turns every flag false', () => {
+    const planted = read(FLAGS).replace('export const AGENT_FORM_LAB_ENABLED = false;', 'export const AGENT_FORM_LAB_ENABLED = true;');
+    for (const code of [read(FLAGS), planted]) {
+      expect(flagOff(code).match(/^export const \w+_ENABLED = true;$/gm)).toBeNull();
+      expect(flagOff(code).match(/^export const \w+_ENABLED = false;$/gm)).toHaveLength(4);
+    }
   });
 
   it('HubAgentForm.jsx, imported and unused: nothing (its context is marked pure)', async () => {
