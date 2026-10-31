@@ -85,6 +85,9 @@ describe('beyond the table: failing closed', () => {
   it.each([[refused('a_new_refusal')], [{ ok: false }], [null], [undefined]])('a result the table does not know → programming error: %j', (evidence) => {
     expect(kind(evidence)).toBe('programming_error');
   });
+  it('a refusal that names no reason is called what it is', () => {
+    expect(classify({ ok: false }).reason).toBe('unknown_outcome');
+  });
   it('every adapter refusal is either in the table or deliberately fails closed: none falls to the unknown branch by accident', () => {
     const expected = {
       unsupported_symbol_class: 'programming_error', calendar_missing: 'retryable', asOf_not_a_session: 'programming_error', asOf_in_future: 'retryable',

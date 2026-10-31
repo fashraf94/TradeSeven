@@ -37,6 +37,15 @@ describe('fetchDailyPayload — the request', () => {
       `https://eodhd.com/api/eod/NVDA.US?api_token=${KEY}&fmt=json&period=d&order=a&from=2026-09-01&to=2026-10-28`,
     ]);
   });
+  it.each([
+    ['a lower-case or suffixed symbol is cleaned', 'nvda.us', '/eod/NVDA.US?'],
+    ['a crypto symbol keeps the crypto form', 'BTC', '/eod/BTC-USD.CC?'],
+    ['a symbol that needs encoding is encoded', 'A&B', '/eod/A%26B.US?'],
+  ])('as the card always sent it: %s', async (_label, symbol, path) => {
+    const f = stub(async () => okBody([]));
+    await fetchDailyPayload(symbol, { ...WINDOW, order: 'a' });
+    expect(f.mock.calls[0][0]).toContain(path);
+  });
   it('a dotted class share uses the provider\'s hyphen', async () => {
     const f = stub(async () => okBody([]));
     await fetchDailyPayload('BRK.B', { ...WINDOW, order: 'd' });
@@ -103,6 +112,7 @@ describe('fetchDailyPayload — failures, and the key', () => {
     const e = await failure(fetchDailyPayload('NVDA', { ...WINDOW, order: 'd' }));
     expect(e.message).toBe('EODHD daily request failed');
     expect(`${e.message} ${e.stack}`).not.toContain(KEY);
+    expect(e.cause).toBeUndefined();
   });
 });
 
@@ -118,6 +128,10 @@ describe('the review card through the shared request (its behaviour unchanged)',
   });
   it.each([[{ errors: 'none' }], ['text'], [null], [3]])('a non-array success (%j) is still [] (no_data)', async (body) => {
     stub(async () => okBody(body));
+    expect(await fetchWindowDaily('NVDA', WINDOW)).toEqual([]);
+  });
+  it('an object that only looks like an array is still [] (no_data)', async () => {
+    stub(async () => okBody({ length: 1, 0: { date: '2026-10-28', high: 1, low: 1, close: 1 } }));
     expect(await fetchWindowDaily('NVDA', WINDOW)).toEqual([]);
   });
   it('a network error and a non-OK status still throw today\'s messages', async () => {

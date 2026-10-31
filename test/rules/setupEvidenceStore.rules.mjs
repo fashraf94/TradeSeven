@@ -238,11 +238,36 @@ describe('lease expiry', () => {
       expect((await call(other, handClock(), provider(rawRows()))).status).toBe('final');
     }
   });
-  it('a slightly future lease, a neighbour\'s clock skew, is still live', async () => {
+  it('a future lease, a neighbour\'s clock skew, is live to just under a full lease ahead', async () => {
+    for (const aheadMs of [1_000, LEASE_MS - 1]) {
+      const key = freshKey();
+      const now = handClock();
+      await seedClaim(key, { lease: { token: 'skewed', claimedAt: new Date(now.ms() + aheadMs).toISOString(), host: 'x' }, observation: null, attempts: 1, lastAttemptAt: 'x' });
+      expect(await call(key, now, provider(rawRows()))).toEqual({ status: 'pending' });
+    }
+  });
+  it('a takeover stamps a fresh lease: the next caller is pending, with no second fetch', async () => {
     const key = freshKey();
     const now = handClock();
-    await seedClaim(key, { lease: { token: 'skewed', claimedAt: new Date(now.ms() + 1_000).toISOString(), host: 'x' }, observation: null, attempts: 1, lastAttemptAt: 'x' });
-    expect(await call(key, now, provider(rawRows()))).toEqual({ status: 'pending' });
+    await claimSnapshot({ db, id: key.id, now, host: 'dead' });
+    now.set(now.ms() + LEASE_MS);
+    await claimSnapshot({ db, id: key.id, now, host: 'successor' });
+    expect((await claimDoc(key)).lease.claimedAt).toBe(now().toISOString());
+    const fetchPayload = provider(rawRows());
+    expect(await call(key, now, fetchPayload)).toEqual({ status: 'pending' });
+    expect(fetchPayload).not.toHaveBeenCalled();
+  });
+  it('the lease names the host while the fetch runs', async () => {
+    const key = freshKey();
+    let during;
+    await call(key, handClock(), vi.fn(async () => { during = await claimDoc(key); return rawRows(); }));
+    expect(during.lease.host).toBe('test-host');
+  });
+  it('a caller that names no host: the lease and the writer read null, and the write goes through', async () => {
+    const key = freshKey();
+    const { status, snapshot } = await getOrAcquireSnapshot({ db, session: SESSION, symbol: key.symbol, now: handClock(), fetchPayload: provider(rawRows()) });
+    expect(status).toBe('final');
+    expect(snapshot.writer.host).toBeNull();
   });
   it('the original worker\'s late release cannot touch its successor\'s lease or observation', async () => {
     const key = freshKey();
@@ -447,14 +472,67 @@ describe('every claim mutation is a token-checked transaction', () => {
   it('an error other than ALREADY_EXISTS surfaces, even with a winner there; ALREADY_EXISTS with no winner surfaces too', async () => {
     const key = freshKey();
     const now = handClock();
-    const failingWith = (code, message) => ({ collection: (name) => db.collection(name), runTransaction: () => Promise.reject(Object.assign(new Error(message), { code })) });
-    const orphan = failingWith(6, 'exists but gone');
-    await expect(createFinal({ db: orphan, id: key.id, token: 't', doc: { who: 'x' } })).rejects.toThrow('exists but gone');
-    await expect(settleConfirmation({ db: orphan, id: key.id, token: 't', reason: 'r', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'x' } })).rejects.toThrow('exists but gone');
+    // Only the FIRST transaction fails, so the release a mistaken winner path would run cannot pass for the error.
+    const failOnce = (code, message) => {
+      let first = true;
+      return {
+        collection: (name) => db.collection(name),
+        runTransaction: (fn) => {
+          if (!first) return db.runTransaction(fn);
+          first = false;
+          return Promise.reject(Object.assign(new Error(message), { code }));
+        },
+      };
+    };
+    await expect(createFinal({ db: failOnce(6, 'exists but gone'), id: key.id, token: 't', doc: { who: 'x' } })).rejects.toThrow('exists but gone');
+    await expect(settleConfirmation({ db: failOnce(6, 'exists but gone'), id: key.id, token: 't', reason: 'r', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'x' } })).rejects.toThrow('exists but gone');
     await db.doc(`setupEvidence/${key.id}`).create({ who: 'winner' });
-    const internal = failingWith(13, 'commit failed');
-    await expect(createFinal({ db: internal, id: key.id, token: 't', doc: { who: 'x' } })).rejects.toThrow('commit failed');
-    await expect(settleConfirmation({ db: internal, id: key.id, token: 't', reason: 'r', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'x' } })).rejects.toThrow('commit failed');
+    await expect(createFinal({ db: failOnce(13, 'commit failed'), id: key.id, token: 't', doc: { who: 'x' } })).rejects.toThrow('commit failed');
+    await expect(settleConfirmation({ db: failOnce(13, 'commit failed'), id: key.id, token: 't', reason: 'r', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'x' } })).rejects.toThrow('commit failed');
+  });
+  it('the final document is created inside the transaction, never by a plain create', async () => {
+    const key = freshKey();
+    const other = freshKey();
+    const now = handClock();
+    const create = vi.spyOn(DocumentReference.prototype, 'create');
+    try {
+      const one = await claimSnapshot({ db, id: key.id, now, host: 'x' });
+      await createFinal({ db, id: key.id, token: one.token, doc: { who: 'x' } });
+      const two = await claimSnapshot({ db, id: other.id, now, host: 'x' });
+      await settleConfirmation({ db, id: other.id, token: two.token, reason: 'r', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'x' } });
+      now.set(now.ms() + CONFIRM_AFTER_MS);
+      const three = await claimSnapshot({ db, id: other.id, now, host: 'x' });
+      await settleConfirmation({ db, id: other.id, token: three.token, reason: 'r', detailHash: 'h', acquired: acquiredAt(now), doc: { who: 'x' } });
+      expect((await finalDoc(key)) && (await finalDoc(other))).toBeTruthy();
+      expect(create).not.toHaveBeenCalled();
+    } finally {
+      create.mockRestore();
+    }
+  });
+  it('a release of a claim that does not exist does nothing and does not throw', async () => {
+    const key = freshKey();
+    await expect(releaseClaimLease({ db, id: key.id, token: 't' })).resolves.toBeUndefined();
+    expect((await db.doc(`setupEvidenceClaims/${key.id}`).get()).exists).toBe(false);
+  });
+  it('createFinal with no claim document still creates', async () => {
+    const key = freshKey();
+    expect(await createFinal({ db, id: key.id, token: 't', doc: { who: 'x' } })).toEqual({ who: 'x' });
+    expect(await finalDoc(key)).not.toBeNull();
+    expect((await db.doc(`setupEvidenceClaims/${key.id}`).get()).exists).toBe(false);
+  });
+  it('a transaction that is retried reads the clock again: the stamp is the attempt that committed', async () => {
+    const key = freshKey();
+    const now = handClock();
+    const retried = {
+      collection: (name) => db.collection(name),
+      runTransaction: async (fn) => {
+        await db.runTransaction(async (tx) => { await fn(tx); throw new Error('aborted'); }, { maxAttempts: 1 }).catch(() => {});
+        now.set(now.ms() + 5_000);
+        return db.runTransaction(fn);
+      },
+    };
+    await claimSnapshot({ db: retried, id: key.id, now, host: 'x' });
+    expect((await claimDoc(key)).lease.claimedAt).toBe(now().toISOString());
   });
 });
 
@@ -543,6 +621,33 @@ describe('the confirmation record', () => {
     expect(await call(key, now, answeredLate)).toEqual({ status: 'retryable', reason: 'missing_bar' });
     expect(await observationOf(key)).toEqual(first);
     expect(await finalDoc(key)).toBeNull();
+  });
+  it('a request begun long before the observation is no confirmation: the gap has a direction', async () => {
+    const key = freshKey();
+    const now = handClock();
+    await call(key, now, provider(gapAt()));
+    const { observedAt, detailHash, reason } = await observationOf(key);
+    const claim = await claimSnapshot({ db, id: key.id, now, host: 'x' });
+    const acquired = { requestStartedAtMs: Date.parse(observedAt) - CONFIRM_AFTER_MS, fetchedAt: now().toISOString() };
+    expect(await settleConfirmation({ db, id: key.id, token: claim.token, reason, detailHash, acquired, doc: { who: 'x' } })).toEqual({ status: 'retryable', reason });
+    expect(await finalDoc(key)).toBeNull();
+  });
+  it('a final keeps the observation on the claim, by either path: finalising clears the lease and nothing else', async () => {
+    const key = freshKey();
+    const now = handClock();
+    await call(key, now, provider(gapAt()));
+    const first = await observationOf(key);
+    now.set(now.ms() + MINUTE);
+    await call(key, now, provider(rawRows()));
+    expect(await observationOf(key)).toEqual(first);
+
+    const other = freshKey();
+    const clock = handClock();
+    await call(other, clock, provider(gapAt()));
+    const seen = await observationOf(other);
+    clock.set(Date.parse(seen.observedAt) + CONFIRM_AFTER_MS);
+    expect((await call(other, clock, provider(gapAt()))).status).toBe('final');
+    expect(await observationOf(other)).toEqual(seen);
   });
   it('the unordered_bars non-session line confirms the same way', async () => {
     const key = freshKey();
@@ -634,6 +739,12 @@ describe('attempts, and what a retryable outcome leaves', () => {
     expect((await call(key, now, fetchPayload)).status).toBe('final');
     expect(await claimDoc(key)).toMatchObject({ lease: null, attempts: 4, lastAttemptAt: now().toISOString() });
     expect(fetchPayload).toHaveBeenCalledTimes(4);
+  });
+  it('attempts that are not an integer restart at one', async () => {
+    const key = freshKey();
+    await seedClaim(key, { lease: null, observation: null, attempts: 'x', lastAttemptAt: 'x' });
+    await claimSnapshot({ db, id: key.id, now: handClock(), host: 'x' });
+    expect((await claimDoc(key)).attempts).toBe(1);
   });
   it('a takeover counts as an attempt', async () => {
     const key = freshKey();

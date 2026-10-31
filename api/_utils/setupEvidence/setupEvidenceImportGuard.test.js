@@ -65,6 +65,8 @@ function libraryModules(repo) {
 
 const SPECIFIER_RE = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)['"`]([^'"`]+)['"`]/g;
 const specifiersOf = (text) => [...text.matchAll(SPECIFIER_RE)].map((m) => m[1]);
+/** What the library must never reach. */
+const FORBIDDEN_RE = /^api\/(cron|agent)\/|featureFlags/;
 const resolvedOf = (file, specifier) => (specifier.startsWith('.') ? posix.normalize(posix.join(posix.dirname(file), specifier)) : specifier);
 
 const callers = findCallers(REPO);
@@ -88,7 +90,7 @@ describe('nothing calls the store', () => {
     for (const name of modules) {
       const file = `${LIBRARY}/${name}`;
       for (const specifier of specifiersOf(readFileSync(join(REPO, file), 'utf8'))) {
-        expect([file, resolvedOf(file, specifier)]).not.toEqual([file, expect.stringMatching(/^api\/(cron|agent)\/|featureFlags/)]);
+        expect([file, resolvedOf(file, specifier)]).not.toEqual([file, expect.stringMatching(FORBIDDEN_RE)]);
       }
     }
   });
@@ -124,6 +126,15 @@ describe('the guard bites: a planted caller of each form is found, and is not on
     ['a .mts file', 'scripts/x.mts', "import { readSnapshot } from '../api/_utils/setupEvidence/index.js';"],
     ['a test at the repo root', 'x.test.js', "import { readSnapshot } from './api/_utils/setupEvidence/index.js';"],
     ['a file in __mocks__', '__mocks__/x.js', "export * from '../api/_utils/setupEvidence/index.js';"],
+    ['a file in tester', 'tester/x.js', "import '../api/_utils/setupEvidence/index.js';"],
+    ['a file in tracer', 'tracer/x.js', "import '../api/_utils/setupEvidence/index.js';"],
+    ['a file in discovery', 'discovery/x.mjs', "import '../api/_utils/setupEvidence/index.js';"],
+    ['a file in research', 'research/x.js', "import '../api/_utils/setupEvidence/index.js';"],
+    ['a file in fixtures', 'fixtures/x.js', "import '../api/_utils/setupEvidence/index.js';"],
+    ['a .jsx file', 'src/x.jsx', "import '../api/_utils/setupEvidence/index.js';"],
+    ['a .ts file', 'src/x.ts', "import '../api/_utils/setupEvidence/index.js';"],
+    ['a .tsx file', 'src/x.tsx', "import '../api/_utils/setupEvidence/index.js';"],
+    ['a .cts file', 'scripts/x.cts', "import '../api/_utils/setupEvidence/index.js';"],
     ['a direct write to the snapshots', 'api/cron/x.js', "await db.collection('setupEvidence').doc(id).set(x);"],
     ['a direct read of the claims', 'scripts/x.mjs', 'await db.collection("setupEvidenceClaims").get();'],
     ['a collection name held in a constant', 'api/cron/x.js', "const C = 'setupEvidence'; await db.collection(C).get();"],
@@ -133,6 +144,13 @@ describe('the guard bites: a planted caller of each form is found, and is not on
     expect(findCallers(plant(file, text)).filter((f) => !isListed(f))).toEqual([file]);
   });
 
+  it('a library file that imports a cron, a handler or the flag module is seen', () => {
+    const file = `${LIBRARY}/x.js`;
+    const text = "import a from '../../cron/x.js';\nimport b from '../../agent/y.js';\nimport c from '../../../src/config/featureFlags.js';\n";
+    const resolved = specifiersOf(text).map((s) => resolvedOf(file, s));
+    expect(resolved).toEqual(['api/cron/x.js', 'api/agent/y.js', 'src/config/featureFlags.js']);
+    for (const r of resolved) expect(r).toMatch(FORBIDDEN_RE);
+  });
   it('a module added anywhere under the library shows in its list, at any depth', () => {
     expect(libraryModules(plant(`${LIBRARY}/sub/cron.js`, "import '../../cron/x.js';"))).toEqual(['sub/cron.js']);
   });

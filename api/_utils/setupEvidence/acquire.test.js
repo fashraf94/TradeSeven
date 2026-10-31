@@ -297,6 +297,9 @@ describe('a payload whose defect the mapper would hide: malformed, retryable, ne
   it.each([
     ['a malformed date', { date: 'garbage', high: null }],
     ['a date that is not a string', { date: 20261020, high: null }],
+    ['a date in an array', { date: ['2026-10-20'], high: null }],
+    ['a date with a time on it', { date: '2026-10-20T00:00:00', high: null }],
+    ['a date with a prefix', { date: 'x2026-10-20', high: null }],
     ['no date', { high: null }],
     ['a null row', null],
     ['a number', 5],
@@ -378,6 +381,14 @@ describe('stamps: the instant the response was received', () => {
   it('the adapter\'s clock is the response\'s: a request started before the close and answered after it is complete', async () => {
     const a = await acquireOnce({ session: SESSION, symbol: 'NVDA', ...timed(CLOSE_MS - 1_000, CLOSE_MS + 1_000) });
     expect(a.evidence).toMatchObject({ ok: true, asOf: SESSION, checks: { completedSession: 'complete' } });
+  });
+  it('one instant: the clock is read twice, at the start and at the response, however many stamps are made', async () => {
+    let t = NEXT_CLOSE_MS - 2;
+    const now = vi.fn(() => new Date(t++));
+    const a = await acquireOnce({ session: SESSION, symbol: 'NVDA', now, fetchPayload: async () => rawRows() });
+    expect(now).toHaveBeenCalledTimes(2);
+    expect(a.evidence.evidenceClass.bars).toBe('contemporaneous');
+    expect(a.fetchedAt).toBe(new Date(NEXT_CLOSE_MS - 1).toISOString());
   });
   it('a refused result carries the same stamps', async () => {
     const a = await acquireOnce({ session: SESSION, symbol: 'NVDA', ...timed(NEXT_CLOSE_MS + 1, NEXT_CLOSE_MS + 2, rawRows({ n: 10 })) });
