@@ -13,8 +13,11 @@
 // OFF-6 — without the `comparison` prop the pane renders byte-identically to
 // the pre-build SHA and its face gets the pre-build duel input (captured there
 // with SHADOW_OFF_CAPTURE_DIR).
+//
+// AGENT_FORM_BATTLE_ENABLED is live since the flags-on build, so the pane's form takes the face's place and these rows
+// read what it is handed. The rows named the kill switch's run with the flag false, on the robot head (F2).
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { createHash } from 'node:crypto';
@@ -26,8 +29,24 @@ vi.mock('../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   isAgentPresenceOn: () => false,
 }));
+const flags = vi.hoisted(() => ({ battle: true }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_BATTLE_ENABLED() { return flags.battle; } }));
 
 const CharacterPane = (await import('./CharacterPane.jsx')).default;
+
+afterEach(() => { flags.battle = true; });
+
+/** CharacterPane with presence on and the form's slot a recorder; `seen` collects each form's props. */
+async function withFormRecorder(seen, run) {
+  vi.resetModules();
+  vi.doMock('../../config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), isAgentPresenceOn: () => true }));
+  vi.doMock('./battleAgentFormSlot', async (importOriginal) => ({ ...(await importOriginal()), BattleAgentFormSlot: (props) => { seen.push(props); return null; } }));
+  const out = run((await import('./CharacterPane.jsx')).default);
+  vi.doUnmock('./battleAgentFormSlot');
+  vi.doUnmock('../../config/featureFlags');
+  vi.resetModules();
+  return out;
+}
 
 const OFF_REFERENCE_SHA = '44d0c63eba4e3099552d3ec3dbde6a89660a7e06';
 const CAPTURE_DIR = process.env.SHADOW_OFF_CAPTURE_DIR || '';
@@ -172,7 +191,18 @@ describe('OFF-6 — CharacterPane default markup is byte-identical to the pre-bu
     });
   }
 
-  it('OFF presenceDuel: the face receives exactly the pre-build duel input', async () => {
+  it('forms presenceDuel: the form receives the pair the face received, read from the pre-build reference', async () => {
+    const seen = [];
+    await withFormRecorder(seen, (Fresh) => {
+      for (const [, props] of Object.entries(OFF_VARIANTS)) render(Fresh, props);
+      render(Fresh, { agentBattle: { ...BATTLE, scoreState: {} } });
+    });
+    expect(seen.map((p) => p.scores)).toEqual(OFF6.presenceDuel.map(({ duel }) => ({ player: duel.playerScore, opponent: duel.opponentScore })));
+    expect(new Set(seen.map((p) => p.size))).toEqual(new Set([50]));
+  });
+
+  it('the kill switch: OFF presenceDuel: flag off, the face receives exactly the pre-build duel input', async () => {
+    flags.battle = false;
     vi.resetModules();
     const seen = [];
     vi.doMock('../../config/featureFlags', async (importOriginal) => ({
@@ -199,7 +229,31 @@ describe('OFF-6 — CharacterPane default markup is byte-identical to the pre-bu
 describe('ON — CharacterPane comparison transitions', () => {
   const NOW_MS = Date.parse('2026-10-01T17:00:00.000Z');
 
-  it('browser → stored → unavailable → stored: the duel follows the selected pair, keys omitted when unavailable', async () => {
+  it('browser → stored → unavailable → stored: the form follows the selected pair, no pair when unavailable', async () => {
+    const { selectComparison } = await import('./shadowCpuQuoteIntegrity.js');
+    const pick = (over) => selectComparison({ status: 'active', complete: false, browserPair: null, scoreState: null, contextKey: 'c', nowMs: NOW_MS, ...over });
+    const sequence = [
+      pick({ complete: true, browserPair: [12, 3] }),
+      pick({ scoreState: { currentScore: -0.01, opponentScore: 0, lastScoredAt: '2026-10-01T16:47:00.000Z' } }),
+      pick({}),
+      pick({ scoreState: { currentScore: 10.4, opponentScore: 10.4, lastScoredAt: '2026-10-01T16:47:00.000Z' } }),
+    ];
+    const seen = [];
+    const htmls = await withFormRecorder(seen, (Fresh) => sequence.map((comparison) => render(Fresh, { comparison, playerScore: 99, opponentScore: 99 })));
+    expect(seen.map((p) => p.scores)).toEqual([{ player: 12, opponent: 3 }, { player: -0.01, opponent: 0 }, null, { player: 10.4, opponent: 10.4 }]);
+    // Name, sections, close and the three section contents are untouched.
+    for (const html of htmls) {
+      expect(html).toContain('data-pane-agent-name="1"');
+      expect(html).toContain('data-pane-tablist="1"');
+      expect(html).toContain('data-pane-close="1"');
+      expect(html).toContain('data-test-chat="1"');
+      expect(html).toContain('data-test-bench="1"');
+      expect(html).toContain('data-test-tape="1"');
+    }
+  });
+
+  it('the kill switch: flag off, the face\'s duel follows the selected pair, keys omitted when unavailable', async () => {
+    flags.battle = false;
     const { selectComparison } = await import('./shadowCpuQuoteIntegrity.js');
     vi.resetModules();
     const seen = [];

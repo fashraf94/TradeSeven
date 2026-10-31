@@ -19,6 +19,11 @@
 // the payloads handed to research, breakdown and faces match the pre-build
 // SHA. References were captured there by running this file's OFF rows with
 // SHADOW_OFF_CAPTURE_DIR set; markup is compared by SHA-256 digest.
+//
+// The agent forms (AGENT_FORM_BATTLE_ENABLED) went live in the flags-on build, and they change the arena layout's markup.
+// So a row whose capture they touched compares against its OFF reference with those values replaced (withForms, FORMS),
+// and everything else in its record stays the pre-build capture. The robot head is the kill switch's now (F2): the last
+// block here runs with the flag false against the OFF references as they stand.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act, Profiler } from 'react';
@@ -39,7 +44,8 @@ function offReference(name, actual, expected) {
 }
 
 // ── Flags (accessors only — never the constants) ─────────────────────────────
-const flags = vi.hoisted(() => ({ gate: false, controller: true, pane: true, presence: false }));
+const flags = vi.hoisted(() => ({ gate: false, controller: true, pane: true, presence: false, forms: true }));
+vi.mock('./../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_BATTLE_ENABLED() { return flags.forms; } }));
 vi.mock('./../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   isAgentPresenceOn: () => flags.presence,
@@ -209,6 +215,24 @@ vi.mock('../components/AgentPresence/AgentPresenceMount', async () => {
     },
   };
 });
+// The forms take the faces' place on the arena layout, and the slot is a recorder like the face's: a stand-in on screen,
+// and what each form is fed kept in the faces' own shape, so one row reads every figure there is. `reactivityLevel: 'form'`
+// tells them apart: a form is not static (ruling R8).
+vi.mock('./battleView/battleAgentFormSlot', async (importOriginal) => {
+  const ReactMod = await import('react');
+  return {
+    ...(await importOriginal()),
+    BattleAgentFormSlot: function FormRecorder({ scores }) {
+      const id = ReactMod.useRef(0);
+      if (id.current === 0) { faceBox.seq += 1; id.current = faceBox.seq; }
+      const duel = scores ? { playerScore: scores.player, opponentScore: scores.opponent, statusFeed: null } : { statusFeed: null };
+      seen.presence.push({ duel, reactivityLevel: 'form' });
+      faceBox.live.set(id.current, duel);
+      ReactMod.useEffect(() => () => { faceBox.live.delete(id.current); }, []);
+      return <span data-test-form="1" />;
+    },
+  };
+});
 vi.mock('../components/Agent/LiveActivityPanel', () => ({ default: () => null, BreakthroughAlerts: () => null }));
 
 import AgentBattleScreen from './AgentBattleScreen';
@@ -234,7 +258,7 @@ let root;
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
   vi.setSystemTime(new Date('2026-10-01T17:00:00.000Z')); // Thu 1:00 PM ET
-  Object.assign(flags, { gate: false, controller: true, pane: true, presence: false });
+  Object.assign(flags, { gate: false, controller: true, pane: true, presence: false, forms: true });
   fsBox.listeners.length = 0;
   fsBox.log.length = 0;
   authBox.currentUser = { uid: 'u1' };
@@ -2334,6 +2358,160 @@ const OFF = {
 };
 // END GENERATED OFF REFERENCES
 
+// The flags-on build's one sanctioned recapture (founder brief, Oct 30, 2026): with the forms on, only these values of the
+// records above moved, each named by its path, and the build report's raw diff shows they are the forms' slots.
+// BEGIN GENERATED FORM REFERENCES
+const FORMS = {
+ "battleSwitch": {
+  "afterB.html": {
+   "sha256": "f9b84faea0b4dd130713d7e1b9ac726875402e6d87d70647ab395c5ecf9deb44",
+   "length": 77922
+  },
+  "beforeB.html": {
+   "sha256": "f9b84faea0b4dd130713d7e1b9ac726875402e6d87d70647ab395c5ecf9deb44",
+   "length": 77922
+  }
+ },
+ "completed": {
+  "html": {
+   "sha256": "6e6abacc810b57bda37202a42087fe9f7a4dd5d3765e302972038e21b3e0553a",
+   "length": 77378
+  }
+ },
+ "dayTwo": {
+  "html": {
+   "sha256": "a400dec9d22a7b653a9065aeb174fe4d1c1d859e129efdfcd1c55ab73c3893d7",
+   "length": 77922
+  }
+ },
+ "failureAndRecovery": {
+  "failed.html": {
+   "sha256": "a86541e686faefa224f3cde3ea23423a2f46d275a94ef52ce666d476458c47f7",
+   "length": 80654
+  },
+  "recovered.html": {
+   "sha256": "520b9903e88163674cb91aec8682c491438ffb6734149a74e8aba0642c64aa9d",
+   "length": 78182
+  }
+ },
+ "initialZerosLoading": {
+  "html": {
+   "sha256": "74f3757407fbcad26431f4a71be5461b63906fda035ecc95f44390867d5e9a20",
+   "length": 76788
+  }
+ },
+ "paneDesktopActive": {
+  "after.html": {
+   "sha256": "5622da3bbd262e3bfa5070eb8e61d9331304b509406562028b7b19e5c7a910e6",
+   "length": 77969
+  },
+  "polled.html": {
+   "sha256": "2724021ac164acf7380ea487ec6b39c72f1e561bd8323716cba4e80812e54472",
+   "length": 77887
+  },
+  "priced.html": {
+   "sha256": "f9b84faea0b4dd130713d7e1b9ac726875402e6d87d70647ab395c5ecf9deb44",
+   "length": 77922
+  }
+ },
+ "paneMobileActive": {
+  "html": {
+   "sha256": "cf0b8bc781baa5a90bfb9e359fd934f3503fbaaf7d9793996f1127170ad48212",
+   "length": 78175
+  }
+ },
+ "presenceFaces": {
+  "pane": [
+   {
+    "duel": {
+     "playerScore": 183,
+     "opponentScore": 88,
+     "statusFeed": null
+    },
+    "reactivityLevel": "form"
+   },
+   {
+    "duel": {
+     "playerScore": 183,
+     "opponentScore": 88,
+     "statusFeed": null
+    },
+    "reactivityLevel": "form"
+   },
+   {
+    "duel": {
+     "playerScore": 183,
+     "opponentScore": 88,
+     "statusFeed": null
+    },
+    "reactivityLevel": "form"
+   },
+   {
+    "duel": {
+     "playerScore": 183,
+     "opponentScore": 88,
+     "statusFeed": null
+    },
+    "reactivityLevel": "form"
+   },
+   {
+    "duel": {
+     "playerScore": 183,
+     "opponentScore": 88,
+     "statusFeed": null
+    },
+    "reactivityLevel": "form"
+   },
+   {
+    "duel": {
+     "playerScore": 183,
+     "opponentScore": 88,
+     "statusFeed": null
+    },
+    "reactivityLevel": "form"
+   }
+  ]
+ },
+ "queryPath": {
+  "resolved.html": {
+   "sha256": "f9b84faea0b4dd130713d7e1b9ac726875402e6d87d70647ab395c5ecf9deb44",
+   "length": 77922
+  }
+ },
+ "subscriptionError": {
+  "html": {
+   "sha256": "f9b84faea0b4dd130713d7e1b9ac726875402e6d87d70647ab395c5ecf9deb44",
+   "length": 77922
+  }
+ },
+ "swapTransition": {
+  "before.html": {
+   "sha256": "6f12b107a1563c8f54604550c70e143745f43cf1fc57ea4a3c1f345ad3bc43fa",
+   "length": 78003
+  },
+  "afterSwap.html": {
+   "sha256": "79235019e054e4488a716858a9ed3336f5b13a687e29671c38be674b6c3d35eb",
+   "length": 78021
+  },
+  "polled.html": {
+   "sha256": "94399cf3aae2e70d8c86dca98277ceb78a48a0cf534575be9293e58bf6dd8bf1",
+   "length": 77983
+  }
+ }
+};
+// END GENERATED FORM REFERENCES
+
+/** An OFF record with the forms on: the pre-build capture, with the values the recapture moved replaced, and nothing else. */
+function withForms(name) {
+  const out = structuredClone(OFF[name]);
+  for (const [at, value] of Object.entries(FORMS[name] ?? {})) {
+    const keys = at.split('.');
+    const last = keys.pop();
+    keys.reduce((node, key) => node[key], out)[last] = value;
+  }
+  return out;
+}
+
 describe('OFF-5/OFF-6 — flag off: the whole legacy lifecycle is unchanged', () => {
   it('OFF paneDesktopActive: production layout, both sides priced, poll, research and breakdown', async () => {
     priceBox.table = genuineTable();
@@ -2345,7 +2523,7 @@ describe('OFF-5/OFF-6 — flag off: the whole legacy lifecycle is unchanged', ()
     await click(symbolEl('AAPL', 'player'));
     await click(symbolEl('GOOGL', 'cpu'));
     await click(pointsEl('NVDA', 'player'));
-    offReference('paneDesktopActive', { priced, polled, after: record() }, OFF.paneDesktopActive);
+    offReference('paneDesktopActive', { priced, polled, after: record() }, withForms('paneDesktopActive'));
   });
 
   it('OFF paneMobileActive: production layout on the phone', async () => {
@@ -2353,7 +2531,7 @@ describe('OFF-5/OFF-6 — flag off: the whole legacy lifecycle is unchanged', ()
     priceBox.table = genuineTable();
     await mount(openingProp());
     await deliverDoc('ab-1', ACTIVE_DOC);
-    offReference('paneMobileActive', record(), OFF.paneMobileActive);
+    offReference('paneMobileActive', record(), withForms('paneMobileActive'));
   });
 
   it('OFF paneOffActive: controller on, pane off (the A2 layout)', async () => {
@@ -2391,7 +2569,7 @@ describe('OFF-5/OFF-6 — flag off: the whole legacy lifecycle is unchanged', ()
     priceBox.mode = 'defer';
     await mount(openingProp());
     await deliverDoc('ab-1', { ...ACTIVE_DOC, scoreState: { currentScore: 0, lastScoredAt: null, tradeCount: 0 }, trades: [] });
-    offReference('initialZerosLoading', record(), OFF.initialZerosLoading);
+    offReference('initialZerosLoading', record(), withForms('initialZerosLoading'));
   });
 
   it('OFF failureAndRecovery: configured fallbacks shown as prices, then a genuine poll', async () => {
@@ -2405,7 +2583,7 @@ describe('OFF-5/OFF-6 — flag off: the whole legacy lifecycle is unchanged', ()
     const failed = record();
     priceBox.table = genuineTable();
     await poll();
-    offReference('failureAndRecovery', { failed, recovered: record() }, OFF.failureAndRecovery);
+    offReference('failureAndRecovery', { failed, recovered: record() }, withForms('failureAndRecovery'));
   });
 
   it('OFF dayTwo: previousClose baselines, one missing', async () => {
@@ -2413,14 +2591,14 @@ describe('OFF-5/OFF-6 — flag off: the whole legacy lifecycle is unchanged', ()
     priceBox.table.AAPL = quote('AAPL', { previousClose: 0 });
     await mount(openingProp());
     await deliverDoc('ab-1', { ...ACTIVE_DOC, activatedAt: '2026-09-30T13:30:00.000Z', timing: { ...ACTIVE_DOC.timing, currentTradingDay: 2 } });
-    offReference('dayTwo', record(), OFF.dayTwo);
+    offReference('dayTwo', record(), withForms('dayTwo'));
   });
 
   it('OFF completed: the stored final freezes the header', async () => {
     priceBox.table = genuineTable();
     await mount(openingProp());
     await deliverDoc('ab-1', { ...ACTIVE_DOC, status: 'completed', scoreState: { ...ACTIVE_DOC.scoreState, currentScore: 40.25, opponentScore: 38.5 } });
-    offReference('completed', record(), OFF.completed);
+    offReference('completed', record(), withForms('completed'));
   });
 
   it('OFF presenceFaces: the faces\' duel inputs on the production layout and pane-off', async () => {
@@ -2435,7 +2613,7 @@ describe('OFF-5/OFF-6 — flag off: the whole legacy lifecycle is unchanged', ()
     flags.pane = false;
     await mount(openingProp());
     await deliverDoc('ab-1', ACTIVE_DOC);
-    offReference('presenceFaces', { pane, paneOff: [...seen.presence] }, OFF.presenceFaces);
+    offReference('presenceFaces', { pane, paneOff: [...seen.presence] }, withForms('presenceFaces'));
   });
 
   it('OFF queryPath: no direct id — the lookup resolves, then the document', async () => {
@@ -2444,7 +2622,7 @@ describe('OFF-5/OFF-6 — flag off: the whole legacy lifecycle is unchanged', ()
     const pending = record();
     await deliverQuery('agent-1', ['ab-1']);
     await deliverDoc('ab-1', ACTIVE_DOC);
-    offReference('queryPath', { pending, resolved: record() }, OFF.queryPath);
+    offReference('queryPath', { pending, resolved: record() }, withForms('queryPath'));
   });
 
   it('OFF chatResearch: a non-held chat symbol and a held one open the legacy builder payload', async () => {
@@ -2465,7 +2643,7 @@ describe('OFF-5/OFF-6 — flag off: the whole legacy lifecycle is unchanged', ()
     await mount({ ...openingProp(), agentBattleId: 'ab-2' });
     const beforeB = record();
     await deliverDoc('ab-2', { ...ACTIVE_DOC, scoreState: { ...ACTIVE_DOC.scoreState, currentScore: 1, opponentScore: 2 } });
-    offReference('battleSwitch', { beforeB, afterB: record() }, OFF.battleSwitch);
+    offReference('battleSwitch', { beforeB, afterB: record() }, withForms('battleSwitch'));
   });
 
   it('OFF subscriptionError: an error after a good snapshot keeps the old battle on screen', async () => {
@@ -2473,7 +2651,7 @@ describe('OFF-5/OFF-6 — flag off: the whole legacy lifecycle is unchanged', ()
     await mount(openingProp());
     await deliverDoc('ab-1', ACTIVE_DOC);
     await failDoc('ab-1');
-    offReference('subscriptionError', record(), OFF.subscriptionError);
+    offReference('subscriptionError', record(), withForms('subscriptionError'));
   });
 });
 
@@ -2618,7 +2796,7 @@ describe('ON — §5.4 the mandatory new-battle sequence (every layout)', () => 
       const faces = seen.presence.slice(-4);
       for (const f of faces) {
         expect(f.duel).toEqual({ statusFeed: null });
-        expect(f.reactivityLevel).toBe('static');
+        expect(f.reactivityLevel).toBe(layout.pane ? 'form' : 'static');
       }
 
       // 2. All holdings genuine, lastScoredAt still null: the browser comparison at once.
@@ -2743,7 +2921,7 @@ describe('ON-F5a — one selected pair per commit, through all four consumers (p
       expect(storedFaces.length).toBeGreaterThan(0);
       for (const f of [...storedFaces, ...seen.presence.slice(toStored.faceCount)]) {
         expect(f.duel).toEqual({ playerScore: 3.1, opponentScore: 12.4, statusFeed: null });
-        expect(f.reactivityLevel).toBe('static');
+        expect(f.reactivityLevel).toBe(layout.pane ? 'form' : 'static');
       }
       // The bar's teal half remounted on the switch with `initial={false}` (framer stub).
       const storedBar = framerSeen.bars.filter((b) => b.barPct === toStored.barPct).at(-1);
@@ -3756,6 +3934,48 @@ describe('ON-F5a — every live presence face (headers, the mark, the pane) show
   }
 });
 
+// ── The kill switch (founder ruling F2) ─────────────────────────────────────
+// Flag off, the screen goes back to the robot head, and the pre-build references hold as they stand, faces and all.
+describe('the kill switch — AGENT_FORM_BATTLE_ENABLED false: the production layout is the pre-build capture', () => {
+  beforeEach(() => { flags.forms = false; });
+
+  it('desktop: the arena header, both sides priced, poll, research and breakdown', async () => {
+    priceBox.table = genuineTable();
+    await mount(openingProp());
+    await deliverDoc('ab-1', ACTIVE_DOC);
+    expect(record()).toEqual(OFF.paneDesktopActive.priced);
+    await poll();
+    expect(priceBox.calls).toEqual(OFF.paneDesktopActive.polled.priceCalls);
+    await click(symbolEl('AAPL', 'player'));
+    await click(symbolEl('GOOGL', 'cpu'));
+    await click(pointsEl('NVDA', 'player'));
+    // Everything but the markup: after a poll the header's counter is still ramping on the real clock, so a digest taken
+    // there depends on how fast the row ran. The OFF row holds it only as the file's first row, on a cold start.
+    const withoutMarkup = (r) => Object.fromEntries(Object.entries(r).filter(([key]) => key !== 'html'));
+    expect(withoutMarkup(record())).toEqual(withoutMarkup(OFF.paneDesktopActive.after));
+    expect(container.querySelector('[data-arena-header]')).not.toBeNull();
+    expect(container.querySelector('[data-arena-form]')).toBeNull();
+  });
+
+  it('the phone', async () => {
+    setShell(false);
+    priceBox.table = genuineTable();
+    await mount(openingProp());
+    await deliverDoc('ab-1', ACTIVE_DOC);
+    expect(record()).toEqual(OFF.paneMobileActive);
+  });
+
+  it('the faces\' duel inputs: every figure on the arena layout is the robot head again', async () => {
+    flags.presence = true;
+    priceBox.table = genuineTable();
+    await mount(openingProp());
+    await deliverDoc('ab-1', ACTIVE_DOC);
+    expect(seen.presence).toEqual(OFF.presenceFaces.pane);
+    expect(container.querySelector('[data-test-form]')).toBeNull();
+    expect(container.querySelector('[data-arena-face]')).not.toBeNull();
+  });
+});
+
 // ── ON-ID at the screen (query path) ─────────────────────────────────────────
 describe('ON-ID — lookup identity evidence through the real screen', () => {
   const queryProp = (agentId = 'agent-1') => ({ ...openingProp({ direct: false }), agentId });
@@ -4356,7 +4576,7 @@ describe('OFF-5 (F15) — a mid-session swap, flag off', () => {
     await deliverDoc('ab-1', swapped);
     const afterSwap = record();
     await poll();
-    offReference('swapTransition', { before, afterSwap, polled: record() }, OFF.swapTransition);
+    offReference('swapTransition', { before, afterSwap, polled: record() }, withForms('swapTransition'));
     } finally {
       window.requestAnimationFrame = realRaf;
       window.cancelAnimationFrame = realCaf;

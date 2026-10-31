@@ -37,7 +37,7 @@
 //   of its own — and it does NOT mount a second starfield. The mock's per-frame
 //   CSS starfield is prototype chrome.
 //
-// • AGENT FORM BUILD S1 (AGENT_FORM_BATTLE_ENABLED, off on main): the agent form
+// • AGENT FORM BUILD S1 (AGENT_FORM_BATTLE_ENABLED, on): the agent form
 //   takes the mark's place — 88 px on the desktop, 60 on the phone (the S1 size
 //   follow-up; 88 by the founder's ruling, so the engine keeps its small-form
 //   plate-edge brightening), each box overhanging the room the row gives it by its negative

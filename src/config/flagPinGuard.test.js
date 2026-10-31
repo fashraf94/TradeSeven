@@ -139,12 +139,12 @@ const DARK_BY_DESIGN = {
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
   AGENT_FORM_LAB_ENABLED:
     'Agent form build S0 — the lab page where the armored forms\' frame budget is decided on the founder\'s iPhone. Stays false on main: it is flipped only on a never-merge smoke branch ("SMOKE ONLY, NEVER MERGE") for the Vercel preview; flag-off App folds the lab away (agentFormLabFlags.test.js)',
-  AGENT_FORM_HUB_ENABLED:
-    'Agent form build S1 — the armored agent as the Command Center hero. Stays false on main until the founder\'s iPhone reading on the smoke branch; flag-off the hub draws ShadowCanvas and every hub chunk is byte-identical (agentFormFlags.test.js)',
-  AGENT_FORM_LEAGUE_ENABLED:
-    'Agent form build S2 — the agent forms in a League game, ranked and training (yours teal, every opponent copper in their own armor). Stays false on main until the founder\'s iPhone reading on the smoke branch; flag-off the League draws today\'s heads and its chunks are byte-identical to main\'s',
-  AGENT_FORM_BATTLE_ENABLED:
-    'Agent form build S1 — the agent forms in a BaggerBomb 1v1 battle (yours teal and armored, the CPU a bare copper core). Stays false on main until the founder\'s live-battle smoke; flag-off the battle view draws today\'s faces (agentFormFlags.test.js)',
+  // AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and AGENT_FORM_LEAGUE_ENABLED intentionally ABSENT: the three flipped
+  // true together in the flags-on PR (founder ruling F1, Oct 30, 2026) — the deliberate flip drops them here in the same
+  // commit, per the guard's own "if DELIBERATE" instruction. Their pins in agentFormFlags.test.js assert the live true
+  // values AND, turned around, that these entries are gone. They stay as kill switches (F2), so a rollback moves the
+  // flag, its pin and its entry here together. AGENT_FORM_LAB_ENABLED stays listed above. Re-adding one while it ships
+  // true fails the DARK_BY_DESIGN integrity test below.
   COMMAND_CENTER_SYNC_ENABLED:
     'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
   // COMMAND_CENTER_HUB_ENABLED intentionally ABSENT: the Command Center hub
