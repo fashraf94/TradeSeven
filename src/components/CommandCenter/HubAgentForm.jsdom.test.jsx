@@ -155,8 +155,8 @@ describe('the box the stage measures', () => {
   });
 });
 
-// Build S2 (ruling R19): S7's response on the armored hero. ShadowCanvas's own rows (CommandCenterHub.s7.jsdom.test.jsx)
-// pin the triggers on today's Shadow; these hold the hero to the same ones, and the engine's rows to the same numbers.
+// Build S2 (ruling R19): S7's response on the armored hero. ShadowCanvas's own rows (ShadowCanvas.jsdom.test.jsx) pin the
+// triggers on the rollback's Shadow; these hold the hero to the same ones, and the engine's rows to the same numbers.
 describe('the response: S7\'s triggers and timing, and board 5\'s parts', () => {
   const D = ready('a1', 'degen');
   const answers = () => seen.renders.at(-1).responseKey;

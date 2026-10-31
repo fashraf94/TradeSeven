@@ -1,7 +1,8 @@
 // src/components/AgentForm/agentForm.flagOffBundle.test.js
 //
-// Agent form build S1, review fix SR-3 (docs/audits/20261029_REVIEW_AGENT_FORM_S1.md). With both flags off the build
-// is byte-identical to main's but for one line, and part of what holds it there is tree-shaking: `/* @__PURE__ */`
+// Agent form build S1, review fix SR-3 (docs/audits/20261029_REVIEW_AGENT_FORM_S1.md). The flags are on since the flags-on
+// build, and they stay as kill switches (founder ruling F2), so this guard's question is now the rollback's: set a flag
+// false and the build is what it was before the forms shipped. Part of what holds that is tree-shaking: `/* @__PURE__ */`
 // marks on module-level calls (agentFormSpec.js, HubAgentForm.jsx, battleAgentFormSlot.jsx), and Rollup's own
 // knowledge of `Object.freeze` (hub/hubCopy.js's AGENT_FORM_COPY). Take one mark off and the call survives into a
 // flag-off chunk, and no jsdom row can see it. So this file bundles each module the flag-off graph reaches, the way that
@@ -19,7 +20,7 @@
 //   hub/hubCopy.js           HUB_COPY used (every hub view) → HUB_COPY alone.
 // The bundle is Vite's own build, in memory (`write: false`), with the production JSX transform @vitejs/plugin-react
 // sets. Everything a module imports is external, but for the agent form flag module, bundled with every flag false so
-// the literal ternaries fold as they do in the shipped build. The check reads the output's top level, never where the
+// the literal ternaries fold as they would after a rollback. The check reads the output's top level, never where the
 // marks sit: a mark moved, split or dropped is judged by what it leaves. The last row plants the review's mutants
 // (RV-P, RV-P2) and the shapes a mark scan would pass (a `let` assigned later, a destructured binding, a mark on the
 // inner call only), with a pristine control through the same path.
@@ -55,7 +56,7 @@ const REACHED = [
 
 const ENTRY = '\0agent-form-flag-off-entry';
 
-/** The flag module as the flag-off graph reads it: every flag false (today's values, so today it is the file as it stands). */
+/** The flag module as the flag-off graph reads it: every flag false, whatever the file ships (three of them ship true). */
 const flagOff = (code) => code.replace(/^(export const \w+_ENABLED = )true;$/gm, '$1false;');
 
 /**
@@ -141,6 +142,13 @@ function leftovers(code) {
 }
 
 describe('the flag-off pure marks (agent form S1 review SR-3): each module the flag-off graph reaches bundles to what it uses, and nothing else', () => {
+  it('the flag module read here is the rollback\'s: the file ships flags true, and this row\'s rewrite turns every one false', () => {
+    const shipped = read(FLAGS);
+    expect(shipped.match(/^export const \w+_ENABLED = true;$/gm)).toHaveLength(3);
+    expect(flagOff(shipped).match(/^export const \w+_ENABLED = true;$/gm)).toBeNull();
+    expect(flagOff(shipped).match(/^export const \w+_ENABLED = false;$/gm)).toHaveLength(4);
+  });
+
   it('HubAgentForm.jsx, imported and unused: nothing (its context is marked pure)', async () => {
     const { code } = await bundle(HUB_VIEW, []);
     expect(leftovers(code)).toEqual([]);

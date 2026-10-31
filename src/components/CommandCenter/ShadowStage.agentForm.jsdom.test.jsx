@@ -67,10 +67,13 @@ describe('flag on: the armored hero at both sites', () => {
 describe('flag off: today\'s ShadowCanvas at both sites', () => {
   beforeEach(() => { flags.hub = false; });
 
-  it('no hero, no form', () => {
+  it('no hero, no form: the box is ShadowCanvas\'s, at the size the stage gives it', () => {
     wide();
+    expect(host.querySelector('[data-hub-agent-form]')).toBeNull();
+    expect(host.querySelector('[data-shadow-box]').style.width).toBe('340px');
     phone();
     expect(host.querySelector('[data-hub-agent-form]')).toBeNull();
+    expect(host.querySelector('[data-shadow-box]').style.width).toBe('200px');
     expect(seen.forms).toHaveLength(0);
   });
 });
