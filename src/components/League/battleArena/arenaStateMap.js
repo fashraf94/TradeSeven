@@ -64,6 +64,20 @@ export function deriveArenaTerminalKind(group) {
   }
 }
 
+/**
+ * A fully level board has no leader: with every seat's total equal, nobody is
+ * crowned and every figure is calm (founder ruling of Oct 30, 2026, amending
+ * agent form R15). Any lead counts, so the test is exact equality over the totals
+ * a surface ranks by, not the tenths it prints: a partial tie still has a leader.
+ * A lone seat leads nobody. ONE tested place, so that on both heroes the crown and
+ * the mood read one gate and cannot disagree (BUILD_RULES §9).
+ * @param {number[]} totals - every seat's total
+ * @returns {boolean}
+ */
+export function isLevelBoard(totals) {
+  return new Set(totals).size < 2;
+}
+
 /** Normalize a caller/host/param-supplied mode to a known value (default ranked). */
 export function normalizeArenaMode(mode) {
   return ARENA_MODES.includes(mode) ? mode : 'ranked';

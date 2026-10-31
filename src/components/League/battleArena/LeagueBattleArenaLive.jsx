@@ -23,6 +23,8 @@ import { deriveArenaState, deriveArenaTerminalKind, normalizeArenaMode } from '.
 import { useArenaModel } from './useArenaModel';
 import { buildScoreHistory } from './buildScoreHistory';
 import { LEAGUE_SCORE_HISTORY_ON } from '../../../config/featureFlags';
+import { AGENT_FORM_LEAGUE_ENABLED } from '../../../config/agentFormFlags';
+import { LeagueAgentFormScope } from './leagueAgentFormSlot';
 
 // Agent Presence now lives on the battle axis itself (the per-seat heads inside
 // ClimbArena), not as a corner overlay. The provisional overlay this file used to mount
@@ -88,7 +90,11 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
       <div style={{ width: '100%', minHeight: '100%', background: '#050609',
         backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(primary, 0.06)}, transparent 55%)` }}>
         {ready && model ? (
-          <ArenaMobile key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />
+          AGENT_FORM_LEAGUE_ENABLED ? (
+            <LeagueAgentFormScope battle={battle} groupId={group?.id} youRank={model.youRank}>
+              <ArenaMobile key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />
+            </LeagueAgentFormScope>
+          ) : <ArenaMobile key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />
         ) : (
           <div style={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: LTOKENS.ink3, fontFamily: 'monospace', fontSize: 12 }}>
             Loading the arena…
@@ -104,7 +110,11 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
       {ready && model ? (
         <div style={{ height: Math.ceil(fit.scale * AD_H), overflow: 'hidden' }}>
           <div style={{ width: AD_W, height: AD_H, transform: `scale(${fit.scale})`, transformOrigin: 'top left', marginLeft: fit.offset }}>
-            <ArenaDesktop key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />
+            {AGENT_FORM_LEAGUE_ENABLED ? (
+              <LeagueAgentFormScope battle={battle} groupId={group?.id} youRank={model.youRank}>
+                <ArenaDesktop key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />
+              </LeagueAgentFormScope>
+            ) : <ArenaDesktop key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} voided={voided} history={history} />}
           </div>
         </div>
       ) : (

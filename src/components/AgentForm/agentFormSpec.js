@@ -48,17 +48,19 @@ const TIGHT_ZOOM = /* @__PURE__ */ Object.freeze({ none: .9, trend: 1, contra: .
 
 /**
  * The engine spec for AgentForm's props. Allegiance is fixed light, never the player's colour: the player
- * is teal, the opponent copper and mirrored (the key light swaps sides with it).
+ * is teal, the opponent copper and mirrored (the key light swaps sides with it). `facing` overrides the mirror where a
+ * layout has a direction of its own (build S2, ruling R14: the League's lanes).
  */
-export function agentFormSpec({ archetype, mood = 'idle', coreStage = 1, armorStage = 1, allegiance = 'player', size = 200, seed = 1, framing } = {}) {
+export function agentFormSpec({ archetype, mood = 'idle', coreStage = 1, armorStage = 1, allegiance = 'player', size = 200, seed = 1, framing, facing } = {}) {
   const opponent = allegiance === 'opponent', kind = formForArchetype(archetype);
+  const looksLeft = facing === 'left' || (facing !== 'right' && opponent);
   return {
     kind,
     state: AGENT_MOODS.includes(mood) ? mood : 'idle',
     core: stageIndex(coreStage),
     armor: stageIndex(armorStage),
     pal: opponent ? 'copper' : 'teal',
-    face: opponent ? -1 : 1,
+    face: looksLeft ? -1 : 1,
     size: Number.isFinite(size) && size > 0 ? size : 200,
     seed: Number.isInteger(seed) ? seed : 1,
     ...(framing === 'tight' ? { zoom: TIGHT_ZOOM[kind] } : null),

@@ -83,6 +83,12 @@ const GUARDED_FILES = [
   'src/screens/battleView/useContentStable.js',
   // Battle View character pane, Phase A3 — token-only from birth (D-96).
   'src/screens/battleView/ArenaHeader.jsx',
+  // Agent form build S2: the League's forms, on the vocabulary from birth.
+  'src/screens/battleView/leagueAgentMood.js',
+  'src/components/League/battleArena/LeagueAgentForm.jsx',
+  'src/components/League/battleArena/leagueAgentFormSlot.jsx',
+  'src/components/League/battleArena/fuseFormLayout.js',
+  'src/components/League/battleArena/finishedRivalRead.js',
   // Agent form build S1: the battle forms, on the vocabulary from birth.
   'src/screens/battleView/BattleAgentForm.jsx',
   'src/screens/battleView/agentMood.js',

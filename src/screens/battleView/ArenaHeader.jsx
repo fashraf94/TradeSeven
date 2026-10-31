@@ -88,7 +88,7 @@
 import React, { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Activity } from 'lucide-react';
-import AnimatedScore from '../../components/shared/AnimatedScore';
+import AnimatedScore, { formatScoreDisplay } from '../../components/shared/AnimatedScore';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { isAgentPresenceOn } from '../../config/featureFlags';
 import { AGENT_FORM_BATTLE_ENABLED } from '../../config/agentFormFlags';
@@ -126,6 +126,28 @@ export function SwitchCounter(props) {
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; }, []);
   return <AnimatedScore {...props} instant={!mounted.current} />;
+}
+
+/**
+ * What a phone's row keeps beside a gated score: padding 16, the mark's footprint 40, gap 8, half the centre 29, and 4 more.
+ * The phone grid's gap is really 10, so the row's real inset is 103, and the 6 px between that and this is the whole
+ * measured clearance. It is not spare.
+ */
+const PHONE_SCORE_INSET_PX = 97;
+/** One character of a tabular score, in em (measured in the app's font stack, index.css:54). */
+const SCORE_CHAR_EM = 0.456;
+
+/**
+ * A gated score's size on a phone (build S2, R20). The row was laid out for whole numbers, and a stored score to two
+ * decimals is far wider: under about 380 px the player's ran into the centre column, for everyone, flags on or off.
+ * So the digits give way first: each side takes what half the screen leaves past the row's inset, in the wider of the
+ * pair's digits (the two sides stay one size), and never more than the row's own size. One decimal was measured too:
+ * it still has to shrink, and it can print a tie the bar and the emphasis do not show (BUILD_RULES §9).
+ */
+export function gatedScoreSize(comparison, size, isDesktop) {
+  if (isDesktop) return size;
+  const chars = Math.max(...comparison.pair.map((value) => formatScoreDisplay(value, { fractionDigits: comparison.fractionDigits }).length));
+  return `min(${size}px, calc((50vw - ${PHONE_SCORE_INSET_PX}px) / ${(chars * SCORE_CHAR_EM).toFixed(3)}))`;
 }
 
 export default function ArenaHeader({
@@ -178,6 +200,7 @@ export default function ArenaHeader({
   // (IdentityPanel.jsx:80, EquipStation.jsx:218); A3's two new call sites did
   // not. This is that box.
   const faceSize = isDesktop ? 56 : 40;
+  const gatedSize = gated && available ? gatedScoreSize(comparison, scoreSize, isDesktop) : scoreSize;
 
   return (
     <motion.div
@@ -285,7 +308,7 @@ export default function ArenaHeader({
               </span>
               {!gated && <AnimatedScore value={myScore} defaultColor={cssVar('teal')} size={scoreSize} />}
               {gated && available && (
-                <SwitchCounter key={comparison.switchKey} value={myScore} defaultColor={cssVar('teal')} size={scoreSize} fractionDigits={comparison.fractionDigits} />
+                <SwitchCounter key={comparison.switchKey} value={myScore} defaultColor={cssVar('teal')} size={gatedSize} fractionDigits={comparison.fractionDigits} />
               )}
             </div>
           </div>
@@ -351,7 +374,7 @@ export default function ArenaHeader({
                 </span>
                 {!gated && <AnimatedScore value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} />}
                 {gated && available && (
-                  <SwitchCounter key={comparison.switchKey} value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} fractionDigits={comparison.fractionDigits} />
+                  <SwitchCounter key={comparison.switchKey} value={oppScore} defaultColor={cssVar('copper')} size={gatedSize} fractionDigits={comparison.fractionDigits} />
                 )}
               </div>
               {isAgentPresenceOn() && agentBattle && (
@@ -379,7 +402,7 @@ export default function ArenaHeader({
               </span>
               {!gated && <AnimatedScore value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} />}
               {gated && available && (
-                <SwitchCounter key={comparison.switchKey} value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} fractionDigits={comparison.fractionDigits} />
+                <SwitchCounter key={comparison.switchKey} value={oppScore} defaultColor={cssVar('copper')} size={gatedSize} fractionDigits={comparison.fractionDigits} />
               )}
             </div>
           )}

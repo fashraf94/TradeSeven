@@ -145,7 +145,7 @@ export function buildBrain(stage, seed, kit) {
     }
     const beacon = S.beacon ? 1 + .35 * Math.max(0, Math.sin(t * Math.PI)) : S.scan ? 1 + .12 * Math.sin(t * 5) : 1, hot = S.bloom > 1 ? 1 + .12 * S.bloom : 1;
     coreMesh.scale.setScalar(C.core * beacon); coreMesh.material.color.set(pal.core);
-    glow.material.color.set(pal.near); glow.material.opacity = clamp(.95 * S.bright * hot, 0, 1); glow.scale.setScalar(.7 * C.glow * beacon * (1 + .08 * Math.sin(t * 1.3)) * hot);
+    glow.material.color.set(pal.near); glow.material.opacity = clamp(.95 * S.bright * hot, 0, 1); glow.scale.setScalar(.7 * C.glow * beacon * (1 + .08 * Math.sin(t * 1.3)) * hot * (S.lifted || 1));
     halo.material.color.set(pal.near); halo.material.opacity = clamp(.18 * S.bright * hot, 0, 1);
     light.color.set(pal.near); light.intensity = 9 * C.light * S.bright * beacon * hot;
     const cnt = Math.min(4, Math.round(2 * S.signals));

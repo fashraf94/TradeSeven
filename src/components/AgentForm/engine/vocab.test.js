@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   STATES, MOODS, CORE, ARMOR, KINDS, FORM_ORDER, META, rng, hash, fitK, stillT, viewT0,
   EQUIP_KEYS, UNEQUIP_KEYS, EQUIP_MS, UNEQUIP_MS, fitAtMs, msAtFit, startTween, tweenFit,
-  FRAME_SCALE, frameScale, swapProgress, swapScale,
+  FRAME_SCALE, FRAME_SHIFT, frameScale, frameShift, swapProgress, swapScale, swapShift, responseLift, RESPONSE_MS, RESPONSE_PEAK,
 } from './vocab.js';
 
 describe('the design vocabulary, as shipped', () => {
@@ -91,12 +91,32 @@ describe('the equip tween — board 2\'s keys, piecewise-linear', () => {
 
 // Build S1 (ruling R5): the swap's size step.
 describe('the framing scales and the swap\'s size step (build S1, ruling R5)', () => {
-  it('each form\'s framing scale is the design\'s (af3-standalone.js.txt:192, :213, :238, :258, :287, :314, :361); unknown is bare Shadow\'s', () => {
-    expect(FRAME_SCALE).toEqual({ none: 1.25, trend: .74, contra: .95, spec: .9, preserve: .95, divers: .95, fund: .95 });
+  // Five frames are the design's (af3-standalone.js.txt:192, :213, :238, :258, :287, :314, :361). Ruling R18 (build S2)
+  // gives two sets their own, on purpose, because the design's cut them off at the box's edge at every size: the design's
+  // Trend Follower was .74 and its Diversifier .95. So this row, and every still compared against the design for those
+  // two sets, differ from the design by that ruling. builders.test.js holds the new frames inside the box.
+  it('each form\'s framing scale: the design\'s, but for the two sets of ruling R18; unknown is bare Shadow\'s', () => {
+    expect(FRAME_SCALE).toEqual({ none: 1.25, trend: .65, contra: .95, spec: .9, preserve: .95, divers: .9, fund: .95 });
     expect(frameScale('spec')).toBe(.9);
     expect(frameScale('unknown')).toBe(1.25);
     expect(frameScale(undefined)).toBe(1.25);
     expect(frameScale('toString')).toBe(1.25);
+  });
+
+  it('only the Trend Follower\'s frame is shifted; anything else, unknown forms and names on Object.prototype included, is 0', () => {
+    expect(FRAME_SHIFT).toEqual({ trend: .27 });
+    expect(frameShift('trend')).toBe(.27);
+    for (const kind of ['none', 'contra', 'spec', 'preserve', 'divers', 'fund', 'unknown', undefined, 'toString']) expect(frameShift(kind)).toBe(0);
+  });
+
+  it('a swap\'s shift travels with its scale: from the one last drawn, ending exactly on the new form\'s', () => {
+    const on = { on: true, fit0: 0, shiftFrom: 0, shiftTo: .27 };
+    expect(swapShift(on, 0)).toBe(0);
+    expect(swapShift(on, .5)).toBeCloseTo(.135, 12);
+    expect(swapShift(on, 1)).toBe(.27);
+    const off = { on: false, fit0: .8, shiftFrom: .27, shiftTo: 0 };
+    expect(swapShift(off, .8)).toBe(.27);
+    expect(swapShift(off, 0)).toBe(0);
   });
 
   it('progress is the share of the travel since the tween began: 0 at its start, 1 at its end, either way', () => {
@@ -120,5 +140,19 @@ describe('the framing scales and the swap\'s size step (build S1, ruling R5)', (
     const off = { on: false, fit0: .8, from: .95, to: 1.25 };
     expect(swapScale(off, .8)).toBe(.95);
     expect(swapScale(off, 0)).toBe(1.25);
+  });
+});
+
+// Build S2 (ruling R19): the response's curve, S7's sin(π p) over its 1.2 s. The hub's rows hold the numbers equal to S7's.
+describe('the response\'s curve (build S2, ruling R19)', () => {
+  it('starts and ends on the form as the mood draws it, and peaks half way', () => {
+    expect(responseLift(0)).toBe(1);
+    expect(responseLift(RESPONSE_MS / 2)).toBeCloseTo(1 + RESPONSE_PEAK, 12);
+    expect(responseLift(RESPONSE_MS)).toBeCloseTo(1, 12);
+    expect(responseLift(RESPONSE_MS * 2)).toBeCloseTo(1, 12);
+  });
+
+  it('rises and falls smoothly', () => {
+    for (let ms = 0; ms < RESPONSE_MS; ms += 16) expect(Math.abs(responseLift(ms + 16) - responseLift(ms))).toBeLessThan(.05);
   });
 });

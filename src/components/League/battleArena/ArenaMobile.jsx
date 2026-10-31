@@ -23,6 +23,8 @@ import { ClimbArena } from './ClimbArena';
 import { FuseHero } from './FuseHero';
 import { FUSE_HERO_ON } from './fuseHeroGate';
 import { MOBILE_HERO_MIN } from './mobileHeroHeight';
+import { AGENT_FORM_LEAGUE_ENABLED } from '../../../config/agentFormFlags';
+import { fuseFormHeroBox } from './fuseFormLayout';
 import { DecompositionStrip } from './DecompositionStrip';
 import { StarCell } from './StarCell';
 import { FlipControl, AgentDock, AgentMoveChip, DepartedChip } from './CommandDock';
@@ -148,9 +150,11 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
         <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} compact voided={voided} />
         {/* Phase 6 / G2: the fuse hero is sized in svh via .bv2-fuse-hero-m so it
             can never clip when Safari's chrome is showing. The class is applied
-            ONLY on the fuse arm — ClimbArena keeps its fixed height, unchanged. */}
+            ONLY on the fuse arm — ClimbArena keeps its fixed height, unchanged.
+            Agent form build S2: with the forms on, the height is inline (fuseFormLayout.js):
+            taller, with a floor that fits four figures. */}
         <div ref={heroRef} className={FUSE_HERO_ON ? 'bv2-fuse-hero-m' : undefined}
-          style={{ position: 'relative', marginTop: 10 }}>
+          style={AGENT_FORM_LEAGUE_ENABLED && FUSE_HERO_ON ? { position: 'relative', marginTop: 10, ...fuseFormHeroBox() } : { position: 'relative', marginTop: 10 }}>
           {/* Branch A: the top half — and ONLY the top half — swaps on the fuse
               flag. Dark today, so this renders ClimbArena exactly as before. */}
           {FUSE_HERO_ON ? (

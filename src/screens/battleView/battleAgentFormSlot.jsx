@@ -8,7 +8,7 @@
 // only React and the form's own SVG still.
 //
 //   BattleAgentFormScope  AgentBattleScreen.jsx's scope around the three sites: the cockpit feed (null unless the
-//                         cockpit runs) and the coarse clock, read as the cockpit reads it.
+//                         cockpit runs).
 //   BattleAgentFormSlot   one form at a site: the lazy form, the still while its chunk loads — and the still for good
 //                         if the chunk fails (a boundary of its own, so a failed load never takes the battle screen down).
 //   duelScores            the pair the robot head is fed at these sites, as the mood's scores (BUILD_RULES §9).
@@ -19,15 +19,14 @@ import React, { Component, Suspense, createContext, lazy } from 'react';
 import { AGENT_FORM_BATTLE_ENABLED } from '../../config/agentFormFlags';
 import AgentFormStill from '../../components/AgentForm/AgentFormStill';
 
-/** What the battle screen holds for the forms' moods: { cockpitFeed, nowMs }. */
+/** What the battle screen holds for the forms' moods: { cockpitFeed }. */
 export const BattleAgentFormContext = /* @__PURE__ */ createContext(null);
 
 const LazyBattleAgentForm = AGENT_FORM_BATTLE_ENABLED ? lazy(() => import('./BattleAgentForm')) : null;
 
-/** The screen's scope: its cockpit feed and its clock (AgentBattleScreen.jsx: `now instanceof Date ? now.getTime() : Date.now()`). */
-export function BattleAgentFormScope({ cockpitFeed = null, now, children }) {
-  const value = { cockpitFeed, nowMs: now instanceof Date ? now.getTime() : Date.now() };
-  return <BattleAgentFormContext.Provider value={value}>{children}</BattleAgentFormContext.Provider>;
+/** The screen's scope: its cockpit feed. The forms keep their own clock (BattleAgentForm.jsx, ruling R21). */
+export function BattleAgentFormScope({ cockpitFeed = null, children }) {
+  return <BattleAgentFormContext.Provider value={{ cockpitFeed }}>{children}</BattleAgentFormContext.Provider>;
 }
 
 /**

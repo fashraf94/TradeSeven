@@ -31,6 +31,8 @@ import { GROUP_STATUS } from '../../constants/leagueTournament';
 import usePreOpenPhase from '../../hooks/usePreOpenPhase';
 import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
 import TrainingClimbPreview from './TrainingClimbPreview';
+import { AGENT_FORM_LEAGUE_ENABLED } from '../../config/agentFormFlags';
+import { LeagueAgentFormScope } from './battleArena/leagueAgentFormSlot';
 
 // Training accent — purple, per the build spec ("training is purple across
 // TradeSeven … visually distinct from the teal tournament surface"). Kept local
@@ -551,7 +553,11 @@ export function DeskTrainingPanel({ onOpenTrainingPod, activeTrainingPod = null,
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {shouldPreviewClimb(activeTrainingPod, CLIMB_PREVIEW_ON, { preOpen: trainingPreOpen }) ? (
-          <TrainingClimbPreview pod={activeTrainingPod} uid={uid} onOpen={() => onOpenTrainingPod?.(activeTrainingPod)} viewport="desktop" accent={TRAIN.base} />
+          AGENT_FORM_LEAGUE_ENABLED ? (
+            <LeagueAgentFormScope youArchetype={agentLoadout?.archetype}>
+              <TrainingClimbPreview pod={activeTrainingPod} uid={uid} onOpen={() => onOpenTrainingPod?.(activeTrainingPod)} viewport="desktop" accent={TRAIN.base} />
+            </LeagueAgentFormScope>
+          ) : <TrainingClimbPreview pod={activeTrainingPod} uid={uid} onOpen={() => onOpenTrainingPod?.(activeTrainingPod)} viewport="desktop" accent={TRAIN.base} />
         ) : (
           <ActiveTrainingGameCard pod={activeTrainingPod} onResume={() => onOpenTrainingPod?.(activeTrainingPod)} />
         )}

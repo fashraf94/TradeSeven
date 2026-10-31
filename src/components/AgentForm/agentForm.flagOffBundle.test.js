@@ -10,7 +10,11 @@
 //                            AGENT_FORM_HUB_ENABLED ternaries) → nothing;
 //   battleAgentFormSlot.jsx  imported and unused (the battle sites read it only inside AGENT_FORM_BATTLE_ENABLED's)
 //                            → nothing;
-//   agentFormSpec.js         formForArchetype and hasWebGL used (HubAgentForm.jsx's import) → those two and the table
+//   leagueAgentFormSlot.jsx  imported and unused (the League's sites read it only inside AGENT_FORM_LEAGUE_ENABLED's;
+//                            build S2) → nothing;
+//   fuseFormLayout.js        imported and unused (FuseHero.jsx and ArenaMobile.jsx read it only inside those same
+//                            ternaries; build S2's review, S2R-2) → nothing;
+//   agentFormSpec.js        formForArchetype and hasWebGL used (HubAgentForm.jsx's import) → those two and the table
 //                            they read;
 //   hub/hubCopy.js           HUB_COPY used (every hub view) → HUB_COPY alone.
 // The bundle is Vite's own build, in memory (`write: false`), with the production JSX transform @vitejs/plugin-react
@@ -33,7 +37,9 @@ const read = (rel) => readFileSync(path.join(REPO, rel), 'utf8').replace(/\r\n/g
 
 const HUB_VIEW = 'src/components/CommandCenter/HubAgentForm.jsx';
 const SLOT = 'src/screens/battleView/battleAgentFormSlot.jsx';
-const SPEC = 'src/components/AgentForm/agentFormSpec.js';
+const LEAGUE_SLOT = 'src/components/League/battleArena/leagueAgentFormSlot.jsx';
+const FUSE_LAYOUT = 'src/components/League/battleArena/fuseFormLayout.js';
+const SPEC ='src/components/AgentForm/agentFormSpec.js';
 const HUB_COPY_FILE = 'src/components/CommandCenter/hub/hubCopy.js';
 const FLAGS = 'src/config/agentFormFlags.js';
 
@@ -41,6 +47,8 @@ const FLAGS = 'src/config/agentFormFlags.js';
 const REACHED = [
   [HUB_VIEW, []],
   [SLOT, []],
+  [LEAGUE_SLOT, []],
+  [FUSE_LAYOUT, []],
   [SPEC, ['formForArchetype', 'hasWebGL']],
   [HUB_COPY_FILE, ['HUB_COPY']],
 ];
@@ -147,6 +155,21 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
     expect([...loaded].sort()).toEqual([ENTRY, idOf(SLOT), idOf(FLAGS)].sort());
   }, 30000);
 
+  it('leagueAgentFormSlot.jsx, imported and unused: nothing (its contexts are marked pure; the lazy form folds away with the flag)', async () => {
+    const { code, loaded } = await bundle(LEAGUE_SLOT, []);
+    expect(leftovers(code)).toEqual([]);
+    expect(code.trim()).toBe('');
+    expect([...loaded].sort()).toEqual([ENTRY, idOf(LEAGUE_SLOT), idOf(FLAGS)].sort());
+  }, 30000);
+
+  it('fuseFormLayout.js, imported and unused: nothing (no module-level call survives, so none of it ships with the flag off)', async () => {
+    const { code, loaded } = await bundle(FUSE_LAYOUT, []);
+    expect(leftovers(code)).toEqual([]);
+    expect(code.trim()).toBe('');
+    // It never reads the flag, and ./fuseGeometry is external: the entry and the module are all that loaded.
+    expect([...loaded].sort()).toEqual([ENTRY, idOf(FUSE_LAYOUT)].sort());
+  }, 30000);
+
   it('agentFormSpec.js, with formForArchetype and hasWebGL used: those two and the code-id table they read', async () => {
     const { code } = await bundle(SPEC, ['formForArchetype', 'hasWebGL']);
     expect(exportsOf(code)).toEqual(['formForArchetype', 'hasWebGL']);
@@ -177,7 +200,11 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
       ['RV-P2: the mark off HubAgentForm.jsx:34', HUB_VIEW, [], plant(HUB_VIEW, '/* @__PURE__ */ createContext(null)', 'createContext(null)')],
       ['the mark off battleAgentFormSlot.jsx:23', SLOT, [], plant(SLOT, '/* @__PURE__ */ createContext(null)', 'createContext(null)')],
       ['the lazy form declared without its flag', SLOT, [], plant(SLOT, "AGENT_FORM_BATTLE_ENABLED ? lazy(() => import('./BattleAgentForm')) : null", "lazy(() => import('./BattleAgentForm'))")],
+      ['a mark off the League slot\'s first context', LEAGUE_SLOT, [], plant(LEAGUE_SLOT, 'LeagueAgentFormContext = /* @__PURE__ */ createContext(null)', 'LeagueAgentFormContext = createContext(null)')],
+      ['a mark off the League slot\'s second context', LEAGUE_SLOT, [], plant(LEAGUE_SLOT, 'LeagueStandingContext = /* @__PURE__ */ createContext(null)', 'LeagueStandingContext = createContext(null)')],
+      ['the League\'s lazy form declared without its flag', LEAGUE_SLOT, [], plant(LEAGUE_SLOT, "AGENT_FORM_LEAGUE_ENABLED ? lazy(() => import('./LeagueAgentForm')) : null", "lazy(() => import('./LeagueAgentForm'))")],
       ['a frozen copy key list nothing reads', HUB_COPY_FILE, ['HUB_COPY'], `${read(HUB_COPY_FILE)}\nexport const AGENT_FORM_COPY_KEYS = Object.freeze(Object.keys(AGENT_FORM_COPY));\n`],
+      ['S2R-2: a frozen key list nothing reads, in fuseFormLayout.js', FUSE_LAYOUT, [], `${read(FUSE_LAYOUT)}\nexport const FUSE_FORM_KEYS = Object.freeze(Object.keys(FUSE_FORM_PX));\n`],
     ];
     for (const [what, rel, used, source] of plants) expect(leftovers((await bundle(rel, used, source)).code), what).not.toEqual([]);
     for (const [rel, used] of REACHED) expect(leftovers((await bundle(rel, used, read(rel))).code), rel).toEqual([]);
