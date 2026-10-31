@@ -184,16 +184,28 @@ describe('every refusal class', () => {
     expect(await evidenceOf(rows)).toMatchObject({ ok: false, reason: 'missing_fact', detail: { fact: 'low', date: rows[12].date, value: 0 } });
     expect((await dispositionOf(rows)).disposition).toBe('final');
   });
+  it('a non-positive price on the session\'s own row → missing_fact, confirm: a newest row of zeros can pass', async () => {
+    const rows = rawRows();
+    rows[0] = { ...rows[0], open: 0, high: 0, low: 0, close: 0, adjusted_close: 0 };
+    expect(await evidenceOf(rows)).toMatchObject({ ok: false, reason: 'missing_fact', detail: { fact: 'close', date: SESSION, value: 0 } });
+    expect((await dispositionOf(rows)).disposition).toBe('confirm');
+  });
+  it('a raw close that is null on the session\'s own row → missing_fact, confirm', async () => {
+    const rows = rawRows();
+    rows[0] = { ...rows[0], close: null };
+    expect(await evidenceOf(rows)).toMatchObject({ ok: false, reason: 'missing_fact', detail: { fact: 'close', date: SESSION, value: null } });
+    expect((await dispositionOf(rows)).disposition).toBe('confirm');
+  });
   it('a raw close that is null beside an adjusted one → missing_fact, final', async () => {
     const rows = rawRows();
     rows[12] = { ...rows[12], close: null };
     expect(await evidenceOf(rows)).toMatchObject({ ok: false, reason: 'missing_fact', detail: { fact: 'close', value: null } });
     expect((await dispositionOf(rows)).disposition).toBe('final');
   });
-  it('a short history → insufficient_history, final: 54 sessions from a request that reached 130 days', async () => {
+  it('a short history → insufficient_history, confirm: 54 sessions from a request that reached 130 days, which a truncated array can also show', async () => {
     const rows = rawRows({ n: 54 });
     expect(await evidenceOf(rows)).toMatchObject({ ok: false, reason: 'insufficient_history', detail: { required: 55, available: 54 } });
-    expect((await dispositionOf(rows)).disposition).toBe('final');
+    expect(await dispositionOf(rows)).toMatchObject({ disposition: 'confirm', reason: 'insufficient_history', detail: { required: 55, available: 54 } });
   });
   it('exactly 55 sessions is enough', async () => {
     expect((await evidenceOf(rawRows({ n: 55 }))).ok).toBe(true);
@@ -205,12 +217,24 @@ describe('every refusal class', () => {
     expect(ev.detail).toMatchObject({ date: rows[6].date, after: { date: rows[6].date, close: rows[6].close, adjustedClose: rows[6].adjusted_close }, before: { date: rows[7].date, close: rows[7].close, adjustedClose: rows[7].adjusted_close } });
     expect((await dispositionOf(rows)).disposition).toBe('final');
   });
-  it('a missing adjusted close → ok evidence, the split check not available and the date named', async () => {
+  it('a missing adjusted close → ok evidence, the split check not available and the date named: confirm, on the adapter\'s reason and its adjustment block', async () => {
     const rows = rawRows();
     delete rows[8].adjusted_close;
     const ev = await evidenceOf(rows);
     expect(ev).toMatchObject({ ok: true, checks: { splitCheck: 'not_available', splitCheckReason: 'adjusted_close_missing' }, adjustment: { metadata: 'absent', missingDates: [rows[8].date] } });
-    expect((await dispositionOf(rows)).disposition).toBe('final');
+    expect(await dispositionOf(rows)).toEqual({ disposition: 'confirm', reason: 'adjusted_close_missing', detail: { metadata: 'absent', missingDates: [rows[8].date] } });
+  });
+  it('the newest bar with no adjusted close hides a split behind it: confirm, where the same bars with it are a final basis_discontinuity', async () => {
+    const rows = splitRows();
+    expect((await dispositionOf(rows)).reason).toBe('basis_discontinuity');
+    rows[0] = { ...rows[0], adjusted_close: null };
+    expect(await evidenceOf(rows)).toMatchObject({ ok: true, checks: { splitCheck: 'not_available' } });
+    expect(await dispositionOf(rows)).toMatchObject({ disposition: 'confirm', reason: 'adjusted_close_missing' });
+  });
+  it('a zero adjusted close is no metadata either → confirm', async () => {
+    const rows = rawRows();
+    rows[4] = { ...rows[4], adjusted_close: 0 };
+    expect(await dispositionOf(rows)).toMatchObject({ disposition: 'confirm', reason: 'adjusted_close_nonpositive', detail: { missingDates: [rows[4].date] } });
   });
   it('a request for a date past the clock → asOf_in_future, retryable', async () => {
     const ev = await evidenceOf(rawRows(), { now: clockAt(new Date(CLOSE_MS - 3 * 86_400_000)) });
@@ -446,11 +470,15 @@ describe('the snapshot document (contract §3, "Content")', () => {
   const ruleSet = describeRuleSet();
   const docOf = async (payload, options) => snapshotDocOf({ session: SESSION, symbol: 'NVDA', ruleSet, acquired: await acquire(payload, options), host: 'test-host' });
 
+  it('schemaVersion 1 is on every snapshot, ok and refused, from the first write', async () => {
+    expect((await docOf(rawRows())).schemaVersion).toBe(1);
+    expect((await docOf(rawRows({ n: 54 }))).schemaVersion).toBe(1);
+  });
   it('ok: every named field and no other', async () => {
     process.env.VERCEL_GIT_COMMIT_SHA = 'abc123';
     const acquired = await acquire(rawRows());
     const doc = snapshotDocOf({ session: SESSION, symbol: 'NVDA', ruleSet, acquired, host: 'test-host' });
-    expect(Object.keys(doc).sort()).toEqual(['asOf', 'capturedAt', 'entry', 'evidence', 'evidenceClass', 'key', 'refusal', 'requestedAsOf', 'source', 'sourceMeta', 'status', 'writer']);
+    expect(Object.keys(doc).sort()).toEqual(['asOf', 'capturedAt', 'entry', 'evidence', 'evidenceClass', 'key', 'refusal', 'requestedAsOf', 'schemaVersion', 'source', 'sourceMeta', 'status', 'writer']);
     expect(doc).toMatchObject({
       key: { session: SESSION, symbol: 'NVDA', ruleSet: { setupVersion: 'tf-setup-v1', thresholdsHash: '26f3f411b566', semanticsId: 'tf-setup-v1/sem-1' } },
       status: 'ok', asOf: SESSION, requestedAsOf: SESSION, refusal: null, source: 'eodhd_eod',
@@ -485,7 +513,7 @@ describe('the snapshot document (contract §3, "Content")', () => {
     expect(json.length).toBeLessThan(16_000);
   });
 
-  const FIELDS = ['asOf', 'capturedAt', 'entry', 'evidence', 'evidenceClass', 'key', 'refusal', 'requestedAsOf', 'source', 'sourceMeta', 'status', 'writer'];
+  const FIELDS = ['asOf', 'capturedAt', 'entry', 'evidence', 'evidenceClass', 'key', 'refusal', 'requestedAsOf', 'schemaVersion', 'source', 'sourceMeta', 'status', 'writer'];
   const gapRows = () => { const rows = rawRows(); rows.splice(10, 1); return rows; };
   const zeroVolumeRows = () => { const rows = rawRows(); rows[3] = { ...rows[3], volume: 0 }; return rows; };
   const noLowRows = () => { const rows = rawRows(); rows[12] = { ...rows[12], low: 0 }; return rows; };
@@ -518,6 +546,7 @@ describe('the snapshot document (contract §3, "Content")', () => {
       const doc = snapshotDocOf({ session: SESSION, symbol: 'NVDA', ruleSet, acquired, host: 'test-host' });
       const at = new Date(received).toISOString();
       expect(Object.keys(doc).sort()).toEqual(FIELDS);
+      expect(doc.schemaVersion).toBe(1);
       expect(doc.status).toBe(status);
       expect(evidence.ok).toBe(status === 'ok');
       expect([doc.asOf, doc.requestedAsOf]).toEqual([entry.asOf, entry.requestedAsOf]);

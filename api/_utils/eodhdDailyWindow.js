@@ -1,6 +1,6 @@
 // api/_utils/eodhdDailyWindow.js
 //
-// THE ONE RAW DATE-RANGE DAILY REQUEST (ID-1 shape note V1.4 §3, "one shared raw
+// THE ONE RAW DATE-RANGE DAILY REQUEST (ID-1 shape note V1.5 §3, "one shared raw
 // request"). EODHD's `/eod/` endpoint for a symbol over [from, to], moved here
 // from the idea review card (hypothesisRecords/review.js fetchWindowDaily) so the
 // card and the setup-evidence store ask the provider the same way.

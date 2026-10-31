@@ -1,6 +1,6 @@
 // api/_utils/setupEvidence/acquire.js
 //
-// ID-1 Build 1 — ONE ACQUISITION (shape note V1.4 §3): the provider's daily bars
+// ID-1 Build 1 — ONE ACQUISITION (shape note V1.5 §3): the provider's daily bars
 // for a completed session, through the adapter and the evaluator, and the
 // snapshot they make. Nothing here touches the store.
 //
@@ -36,6 +36,8 @@ import { ACQUISITION_FAILURES } from './classify.js';
 import { lastCompletedSessionAt } from './sessionAt.js';
 
 export const EVIDENCE_SOURCE = 'eodhd_eod';
+/** On every snapshot from the first write: a final document can never gain a field later. */
+export const SNAPSHOT_SCHEMA_VERSION = 1;
 /** The bound on one provider read, the body included. */
 export const ACQUIRE_TIMEOUT_MS = 5_000;
 export const REQUEST_LOOKBACK_CALENDAR_DAYS = 130;
@@ -132,6 +134,7 @@ export async function acquireOnce({ session, symbol, now, fetchPayload = fetchDa
 export function snapshotDocOf({ session, symbol, ruleSet, acquired, host }) {
   const { evidence, entry, fetchedAt } = acquired;
   return {
+    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     key: { session, symbol, ruleSet: { ...ruleSet } },
     status: evidence.ok ? 'ok' : 'refused',
     evidence,

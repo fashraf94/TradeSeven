@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { CONFIRM_AFTER_MS, LEASE_MS } from './store.js';
 
-describe('the store\'s numbers (shape note V1.4 §3)', () => {
+describe('the store\'s numbers (shape note V1.5 §3)', () => {
   it('the lease is 120 seconds', () => {
     expect(LEASE_MS).toBe(120_000);
   });

@@ -1,7 +1,7 @@
 // api/_utils/setupEvidence/classify.test.js
 //
 // ID-1 Build 1 — the final-or-retryable table, one row per line of the contract's
-// table (shape note V1.4 §3), then the three fail-closed additions.
+// table (shape note V1.5 §3), then the three fail-closed additions.
 
 import { describe, it, expect } from 'vitest';
 import { classifyAcquisitionFailure, classifyEvidence, classifySessionRequest, detailHashOf, ACQUISITION_FAILURES, DISPOSITIONS, SetupEvidenceProgrammingError } from './classify.js';
@@ -13,15 +13,37 @@ const classify = (evidence) => classifyEvidence(evidence, { session: SESSION });
 const kind = (evidence) => classify(evidence).disposition;
 
 describe('the contract\'s table', () => {
-  it('ok evidence → final', () => {
-    expect(classify({ ok: true, asOf: SESSION, requestedAsOf: SESSION })).toEqual({ disposition: 'final', reason: null, detail: null });
+  const okWith = (adjustment, checks) => ({ ok: true, asOf: SESSION, requestedAsOf: SESSION, adjustment, checks });
+  it('ok evidence with adjustment metadata present → final', () => {
+    expect(classify(okWith({ metadata: 'present', missingDates: [] }, { splitCheck: 'heuristic_ok', splitCheckReason: null }))).toEqual({ disposition: 'final', reason: null, detail: null });
   });
   it.each([
     ['basis_discontinuity', { date: SESSION }],
-    ['missing_fact', { fact: 'close', date: SESSION, value: null }],
-    ['insufficient_history', { required: 55, available: 54 }],
-  ])('%s → final', (reason, detail) => {
+    ['missing_fact on a row older than the session', { fact: 'close', date: '2026-10-28', value: null }],
+  ])('%s → final', (label, detail) => {
+    const reason = label.split(' ')[0];
     expect(classify(refused(reason, detail))).toEqual({ disposition: 'final', reason, detail });
+  });
+  it.each([
+    ['adjusted_close_missing', { metadata: 'absent', missingDates: [SESSION] }],
+    ['adjusted_close_nonpositive', { metadata: 'absent', missingDates: ['2026-10-20'] }],
+    ['adjustment_metadata_absent', { metadata: 'absent', missingDates: [] }],
+  ])('ok evidence with adjustment metadata absent → confirm (%s), its reason the adapter\'s and its detail the adjustment block', (reason, adjustment) => {
+    expect(classify(okWith(adjustment, { splitCheck: 'not_available', splitCheckReason: reason }))).toEqual({ disposition: 'confirm', reason, detail: adjustment });
+  });
+  it('ok evidence with no adjustment block at all is not `present`: it confirms, named by the fallback', () => {
+    expect(classify(okWith(undefined, undefined))).toEqual({ disposition: 'confirm', reason: 'adjustment_metadata_absent', detail: null });
+  });
+  it('insufficient_history → confirm: a truncated array can pass', () => {
+    const detail = { required: 55, available: 54 };
+    expect(classify(refused('insufficient_history', detail))).toEqual({ disposition: 'confirm', reason: 'insufficient_history', detail });
+  });
+  it('missing_fact on the session\'s own row → confirm: a newest row of zeros can pass', () => {
+    const detail = { fact: 'close', date: SESSION, value: 0 };
+    expect(classify(refused('missing_fact', detail))).toEqual({ disposition: 'confirm', reason: 'missing_fact', detail });
+  });
+  it('missing_fact naming no date → confirm: only a row shown to be older goes final', () => {
+    expect(kind(refused('missing_fact', { fact: 'close' }))).toBe('confirm');
   });
   it('an interior missing_bar (a gap inside the window) → confirm', () => {
     const detail = { expected: '2026-10-20', latest: '2026-10-19', after: '2026-10-21' };
@@ -71,7 +93,7 @@ describe('the contract\'s table', () => {
 
 describe('beyond the table: failing closed', () => {
   it('a refusal for a session that had not completed, whose `expected` is not the session → programming error, even a reason that is otherwise final', () => {
-    expect(classify(refused('insufficient_history', { required: 55, available: 3 }, '2026-10-28'))).toEqual({
+    expect(classify(refused('basis_discontinuity', { date: '2026-10-27' }, '2026-10-28'))).toEqual({
       disposition: 'programming_error', reason: 'session_incomplete', detail: { session: SESSION, expected: '2026-10-28' },
     });
   });
@@ -91,7 +113,7 @@ describe('beyond the table: failing closed', () => {
   it('every adapter refusal is either in the table or deliberately fails closed: none falls to the unknown branch by accident', () => {
     const expected = {
       unsupported_symbol_class: 'programming_error', calendar_missing: 'retryable', asOf_not_a_session: 'programming_error', asOf_in_future: 'retryable',
-      missing_bar: 'retryable', unordered_bars: 'retryable', insufficient_history: 'final', missing_fact: 'final', basis_discontinuity: 'final',
+      missing_bar: 'retryable', unordered_bars: 'retryable', insufficient_history: 'confirm', missing_fact: 'confirm', basis_discontinuity: 'final',
     };
     expect(Object.keys(expected).sort()).toEqual([...ADAPTER_REFUSALS].sort());
     for (const reason of ADAPTER_REFUSALS) expect([reason, kind(refused(reason, {}, null))]).toEqual([reason, expected[reason]]);

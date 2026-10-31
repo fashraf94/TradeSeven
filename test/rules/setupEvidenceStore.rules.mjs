@@ -1,6 +1,6 @@
 // test/rules/setupEvidenceStore.rules.mjs
 //
-// ID-1 Build 1 (shape note V1.4 §3) — THE STORE PROTOCOL AGAINST THE REAL FIRESTORE
+// ID-1 Build 1 (shape note V1.5 §3) — THE STORE PROTOCOL AGAINST THE REAL FIRESTORE
 // EMULATOR. Not a security-rules test: the claim, create and confirmation
 // transactions, run through the Admin SDK as in production, so it rides the
 // emulator runner, `npm run test:rules` (firebase emulators:exec sets
@@ -68,8 +68,16 @@ function rawRows(n = 80) {
 }
 /** A gap at bar `at`: an interior missing_bar. */
 const gapAt = (at = 10) => { const rows = rawRows(); rows.splice(at, 1); return rows; };
-/** A refused-as-final payload: too few bars. */
+/** Too few bars: insufficient_history, a confirm outcome. */
 const shortRows = () => rawRows(54);
+/** The raw close doubles behind bar 6 while the adjusted close carries through: a final basis_discontinuity. */
+const splitRows = () => rawRows().map((r, i) => {
+  const adjusted = 100 - 0.25 * i;
+  const raw = i <= 6 ? adjusted : adjusted * 2;
+  return { ...r, open: raw, high: raw + 1.5, low: raw - 1.5, close: raw, adjusted_close: adjusted };
+});
+/** One row changed, by index. */
+const rowsWith = (at, patch) => { const rows = rawRows(); rows[at] = { ...rows[at], ...patch }; return rows; };
 
 /** A clock the test moves by hand. */
 function handClock(startMs = AFTER_CLOSE_MS) {
@@ -140,12 +148,20 @@ describe('a first acquisition', () => {
     const { snapshot } = await call(key, handClock(), provider(rawRows()));
     expect(parseSnapshotId(key.id)).toEqual(snapshot.key);
   });
-  it('a final refusal: stored as refused, with the evaluator\'s refusal', async () => {
+  it.each([
+    ['a split step', splitRows, 'basis_discontinuity'],
+    ['a bad price on a row older than the session', () => rowsWith(12, { low: 0 }), 'missing_fact'],
+  ])('a final refusal on the first read, %s: stored as refused, with the evaluator\'s refusal and its schemaVersion', async (_label, payload, reason) => {
     const key = freshKey();
-    const { status, snapshot } = await call(key, handClock(), provider(shortRows()));
+    const { status, snapshot } = await call(key, handClock(), provider(payload()));
     expect(status).toBe('final');
-    expect(snapshot).toMatchObject({ status: 'refused', refusal: { reason: 'insufficient_history', detail: { required: 55, available: 54 }, expected: SESSION } });
+    expect(snapshot).toMatchObject({ schemaVersion: 1, status: 'refused', refusal: { reason, expected: SESSION } });
     expect((await finalDoc(key)).data()).toEqual(snapshot);
+  });
+  it('schemaVersion 1 is stored on an ok snapshot too', async () => {
+    const key = freshKey();
+    await call(key, handClock(), provider(rawRows()));
+    expect((await finalDoc(key)).data().schemaVersion).toBe(1);
   });
   it('the lease is released and the attempt counted: the claim stays, for the census', async () => {
     const key = freshKey();
@@ -719,6 +735,85 @@ describe('the confirmation record', () => {
     expect(await call(key, now, provider(gapAt()))).toEqual({ status: 'retryable', reason: 'missing_bar' });
     expect(await call(key, now, provider(gapAt()))).toEqual({ status: 'retryable', reason: 'missing_bar' });
     expect(Date.now() - started).toBeLessThan(5_000);
+  });
+});
+
+describe('the V1.5 confirm lines: passing provider states never go final on the first read', () => {
+  const observationOf = async (key) => (await claimDoc(key)).observation;
+  const NEWEST_ZEROS = { open: 0, high: 0, low: 0, close: 0, adjusted_close: 0 };
+
+  describe.each([
+    ['ok evidence with an adjusted close missing', () => rowsWith(8, { adjusted_close: null }), 'adjusted_close_missing', { status: 'ok', refusal: null, evidence: { ok: true, checks: { splitCheck: 'not_available' } } }],
+    ['ok evidence with a zero adjusted close', () => rowsWith(8, { adjusted_close: 0 }), 'adjusted_close_nonpositive', { status: 'ok', evidence: { ok: true } }],
+    ['the newest bar with no adjusted close', () => rowsWith(0, { adjusted_close: null }), 'adjusted_close_missing', { status: 'ok', evidence: { ok: true } }],
+    ['insufficient_history', shortRows, 'insufficient_history', { status: 'refused', refusal: { reason: 'insufficient_history' } }],
+    ['a newest row of zeros', () => rowsWith(0, NEWEST_ZEROS), 'missing_fact', { status: 'refused', refusal: { reason: 'missing_fact', detail: { date: SESSION } } }],
+  ])('%s', (_label, payload, reason, stored) => {
+    it('the first read writes no final; a match before 30 minutes keeps its date; a separate fetch 30 minutes on finalises', async () => {
+      const key = freshKey();
+      const now = handClock();
+      const fetchPayload = provider(payload());
+      expect(await call(key, now, fetchPayload)).toEqual({ status: 'retryable', reason });
+      expect(await finalDoc(key)).toBeNull();
+      const first = await observationOf(key);
+      expect(first).toMatchObject({ reason, observedAt: now().toISOString() });
+      now.set(now.ms() + CONFIRM_AFTER_MS - 1);
+      expect(await call(key, now, fetchPayload)).toEqual({ status: 'retryable', reason });
+      expect(await observationOf(key)).toEqual(first);
+      expect(await finalDoc(key)).toBeNull();
+      now.set(Date.parse(first.observedAt) + CONFIRM_AFTER_MS);
+      const { status, snapshot } = await call(key, now, fetchPayload);
+      expect(status).toBe('final');
+      expect(snapshot).toMatchObject({ schemaVersion: 1, capturedAt: now().toISOString(), ...stored });
+      expect((await finalDoc(key)).data()).toEqual(snapshot);
+      expect(await claimDoc(key)).toMatchObject({ lease: null, attempts: 3 });
+    });
+    it('the provider catching up is simply final, with no wait and no trace of the refusal', async () => {
+      const key = freshKey();
+      const now = handClock();
+      await call(key, now, provider(payload()));
+      now.set(now.ms() + MINUTE);
+      expect((await call(key, now, provider(rawRows()))).snapshot).toMatchObject({ status: 'ok', refusal: null, evidence: { adjustment: { metadata: 'present' } } });
+    });
+  });
+
+  it('different dates missing their adjusted close are a different detail: it replaces the observation, and the 30 minutes start again', async () => {
+    const key = freshKey();
+    const now = handClock();
+    await call(key, now, provider(rowsWith(8, { adjusted_close: null })));
+    const first = await observationOf(key);
+    now.set(now.ms() + CONFIRM_AFTER_MS + MINUTE);
+    expect(await call(key, now, provider(rowsWith(9, { adjusted_close: null })))).toEqual({ status: 'retryable', reason: 'adjusted_close_missing' });
+    const replaced = await observationOf(key);
+    expect(replaced.detailHash).not.toBe(first.detailHash);
+    expect(replaced.observedAt).toBe(now().toISOString());
+    expect(await finalDoc(key)).toBeNull();
+  });
+  it('a different bar count is a different detail: a truncated array that moves is not reproduced', async () => {
+    const key = freshKey();
+    const now = handClock();
+    await call(key, now, provider(rawRows(40)));
+    now.set(now.ms() + CONFIRM_AFTER_MS + MINUTE);
+    expect(await call(key, now, provider(rawRows(41)))).toEqual({ status: 'retryable', reason: 'insufficient_history' });
+    expect(await finalDoc(key)).toBeNull();
+  });
+  it('a different confirm reason replaces it: a short history after an adjusted-close gap starts again', async () => {
+    const key = freshKey();
+    const now = handClock();
+    await call(key, now, provider(rowsWith(8, { adjusted_close: null })));
+    now.set(now.ms() + CONFIRM_AFTER_MS + MINUTE);
+    expect(await call(key, now, provider(shortRows()))).toEqual({ status: 'retryable', reason: 'insufficient_history' });
+    expect(await observationOf(key)).toMatchObject({ reason: 'insufficient_history', observedAt: now().toISOString() });
+    expect(await finalDoc(key)).toBeNull();
+  });
+  it('a split step behind a newest bar with no adjusted close confirms, and goes final as the real refusal once the bar fills in', async () => {
+    const key = freshKey();
+    const now = handClock();
+    const lagging = splitRows();
+    lagging[0] = { ...lagging[0], adjusted_close: null };
+    expect(await call(key, now, provider(lagging))).toEqual({ status: 'retryable', reason: 'adjusted_close_missing' });
+    now.set(now.ms() + MINUTE);
+    expect((await call(key, now, provider(splitRows()))).snapshot).toMatchObject({ status: 'refused', refusal: { reason: 'basis_discontinuity' } });
   });
 });
 

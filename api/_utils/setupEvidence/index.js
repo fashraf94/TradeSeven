@@ -1,6 +1,6 @@
 // api/_utils/setupEvidence/index.js
 //
-// ID-1 Build 1 — THE SHARED SETUP-EVIDENCE STORE (shape note V1.4 §3): one
+// ID-1 Build 1 — THE SHARED SETUP-EVIDENCE STORE (shape note V1.5 §3): one
 // immutable, dated snapshot per (completed session, symbol, rule set), of what the
 // Trend Follower's setup rule said about a stock and the price evidence it said it
 // from. A framework library: NOTHING CALLS IT in this build. Slice 2, the ID-1

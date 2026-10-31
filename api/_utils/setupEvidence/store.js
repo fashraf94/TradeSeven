@@ -1,6 +1,6 @@
 // api/_utils/setupEvidence/store.js
 //
-// ID-1 Build 1 — THE PROTOCOL (shape note V1.4 §3, "Create-once, the lease and
+// ID-1 Build 1 — THE PROTOCOL (shape note V1.5 §3, "Create-once, the lease and
 // the confirmation record"). Two server-only collections:
 //
 //   setupEvidence/{id}        the final snapshot. Written only by `tx.create`,
@@ -19,8 +19,9 @@
 // still create the final document if no one has: the `create` decides.
 //
 // THE OBSERVATION. Releasing a lease preserves it. A matching result keeps the
-// original `observedAt`; a different reason or detail replaces it; a matching
-// result from a fetch that STARTED at least 30 minutes after `observedAt` makes the
+// original `observedAt`; a different reason or detail of the confirm class replaces
+// it, and a retryable result between the two samples leaves it; a matching result
+// from a fetch that STARTED at least 30 minutes after `observedAt` makes the
 // outcome final, so the two provider samples really are that far apart. No call
 // ever waits: a later caller makes the confirming fetch.
 //

@@ -1,6 +1,6 @@
 // api/_utils/setupEvidence/classify.js
 //
-// ID-1 Build 1 — FINAL OR RETRYABLE (shape note V1.4 §3, rulings Q-ID1-4 and
+// ID-1 Build 1 — FINAL OR RETRYABLE (shape note V1.5 §3, rulings Q-ID1-4 and
 // Q-ID1-5). One acquisition's outcome → one disposition:
 //
 //   final              write the snapshot;
@@ -12,9 +12,11 @@
 //
 // | Outcome                                                              | Disposition        |
 // |----------------------------------------------------------------------|--------------------|
-// | ok evidence                                                          | final              |
-// | basis_discontinuity; missing_fact; insufficient_history              | final              |
+// | ok evidence with adjustment metadata present                         | final              |
+// | basis_discontinuity; missing_fact on a row older than the session    | final              |
 // | interior missing_bar (detail.after); unordered_bars non_session_date | confirm            |
+// | ok evidence with adjustment metadata absent (V1.5)                   | confirm            |
+// | insufficient_history; missing_fact on the session's own row (V1.5)   | confirm            |
 // | newest-session missing_bar                                           | retryable          |
 // | calendar_missing (unmaintained); asOf_in_future                      | retryable          |
 // | malformed or out-of-order payload (unordered_bars)                   | retryable          |
@@ -30,6 +32,12 @@
 // reaching this table means that guard failed); and a reason this table does not
 // know (a new adapter refusal must be classified here before it can be stored).
 //
+// The V1.5 confirm lines are provider states that can be passing (adjusted prices lag,
+// a truncated array, a newest row of zeros), and a snapshot is permanent. The ok line's
+// reason is the adapter's own splitCheckReason and its detail the adjustment block, so
+// the same bars missing the same adjusted closes reproduce it, and anything but
+// `present` confirms: a missing block is not evidence that the check ran.
+//
 // Pure: node:crypto only.
 
 import { createHash } from 'node:crypto';
@@ -37,8 +45,6 @@ import { createHash } from 'node:crypto';
 export const DISPOSITIONS = Object.freeze({ FINAL: 'final', CONFIRM: 'confirm', RETRYABLE: 'retryable', PROGRAMMING_ERROR: 'programming_error' });
 /** The acquisition failures that never reach the adapter. */
 export const ACQUISITION_FAILURES = Object.freeze({ FETCH_FAILED: 'fetch_failed', NON_ARRAY_PAYLOAD: 'non_array_payload', MALFORMED_PAYLOAD: 'malformed_payload' });
-
-const FINAL_REFUSALS = new Set(['basis_discontinuity', 'missing_fact', 'insufficient_history']);
 
 const disposition = (kind, reason, detail = null) => ({ disposition: kind, reason, detail });
 const programmingError = (reason, detail = null) => disposition(DISPOSITIONS.PROGRAMMING_ERROR, reason, detail);
@@ -64,13 +70,19 @@ export function classifyEvidence(evidence, { session }) {
     if (evidence.asOf !== session || evidence.requestedAsOf !== session) {
       return programmingError('asof_mismatch', { session, asOf: evidence.asOf ?? null, requestedAsOf: evidence.requestedAsOf ?? null });
     }
-    return disposition(DISPOSITIONS.FINAL, null);
+    if (evidence.adjustment?.metadata === 'present') return disposition(DISPOSITIONS.FINAL, null);
+    return disposition(DISPOSITIONS.CONFIRM, evidence.checks?.splitCheckReason ?? 'adjustment_metadata_absent', evidence.adjustment ?? null);
   }
   const reason = evidence?.reason ?? null;
   const detail = evidence?.detail ?? null;
   if (evidence?.expected != null && evidence.expected !== session) return programmingError('session_incomplete', { session, expected: evidence.expected });
-  if (FINAL_REFUSALS.has(reason)) return disposition(DISPOSITIONS.FINAL, reason, detail);
   switch (reason) {
+    case 'basis_discontinuity':
+      return disposition(DISPOSITIONS.FINAL, reason, detail);
+    case 'insufficient_history':
+      return disposition(DISPOSITIONS.CONFIRM, reason, detail);
+    case 'missing_fact':
+      return disposition(detail?.date < session ? DISPOSITIONS.FINAL : DISPOSITIONS.CONFIRM, reason, detail);
     case 'missing_bar':
       return disposition(detail?.after ? DISPOSITIONS.CONFIRM : DISPOSITIONS.RETRYABLE, reason, detail);
     case 'unordered_bars':

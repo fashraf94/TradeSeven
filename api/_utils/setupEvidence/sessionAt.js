@@ -1,6 +1,6 @@
 // api/_utils/setupEvidence/sessionAt.js
 //
-// ID-1 Build 1 — THE ACTIVATION-TO-SESSION WRAPPER (shape note V1.4 §3,
+// ID-1 Build 1 — THE ACTIVATION-TO-SESSION WRAPPER (shape note V1.5 §3,
 // "Session"). Every snapshot request names a completed session, and this is
 // where that session comes from: a weekend or holiday, or an instant before the
 // close, maps to the previous session; at or after the close, to that day.

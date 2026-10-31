@@ -1,6 +1,6 @@
 // test/rules/setupEvidenceDenials.rules.mjs
 //
-// ID-1 Build 1 (shape note V1.4 §3) — Firestore security-rules acceptance for
+// ID-1 Build 1 (shape note V1.5 §3) — Firestore security-rules acceptance for
 // setupEvidence/{id}, the immutable dated snapshots, and setupEvidenceClaims/{id},
 // their lease, observation and attempt count. The Admin SDK writes both.
 //

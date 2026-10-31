@@ -1,6 +1,6 @@
 // api/_utils/setupEvidence/key.js
 //
-// ID-1 Build 1 — THE SNAPSHOT KEY (shape note V1.4 §3). One snapshot per
+// ID-1 Build 1 — THE SNAPSHOT KEY (shape note V1.5 §3). One snapshot per
 // (completed session, symbol, rule set). The document id is
 // `${session}__${symbol}__${ruleKey}`, and the rule key encodes the WHOLE
 // rule-set triple losslessly: `${setupVersion}.${thresholdsHash}.${semanticsId
