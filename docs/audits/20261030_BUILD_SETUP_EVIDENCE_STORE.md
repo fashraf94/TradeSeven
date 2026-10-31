@@ -1,6 +1,6 @@
 # Build report: the shared setup-evidence store (ID-1 Build 1)
 
-**Date:** 30 October 2026. **Executor:** Claude Code (Opus 5.5, advisor Fable 5.1), own worktree. **Branch:** `claude/setup-evidence-store`, cut from `origin/main` at `0de404e1`, with `origin/main` at `337a5801` merged in for the final checks. **Contract:** `docs/design/20261030_ID1_ACTIVATION_EVIDENCE_SHAPE_NOTE_V1_4.md` §3. **Discovery:** `docs/audits/20261030_PHASE0_ID1_SHARED_EVIDENCE.md`.
+**Date:** 30 October 2026. **Executor:** Claude Code (Opus 5.5, advisor Fable 5.1), own worktree. **Branch:** `claude/setup-evidence-store`, cut from `origin/main` at `0de404e1`, with `origin/main` at `337a5801` merged in for the final checks. **Contract:** `docs/design/20261030_ID1_ACTIVATION_EVIDENCE_SHAPE_NOTE_V1_4.md` §3; from §12, V1.5. **Discovery:** `docs/audits/20261030_PHASE0_ID1_SHARED_EVIDENCE.md`.
 
 ## 1. In plain terms
 
@@ -17,9 +17,9 @@ The one existing feature it touches is the idea review card. The card's request 
 | Provider calls or production reads? | None. Every test injects its data. |
 | Independent review | 4 lenses and 4 refuting verifiers: 33 findings, 22 confirmed, 8 partly, 3 refuted. No blocker. No wrong record on any payload shape in the fixtures; the one path found that could have stored one is closed (L2-1). |
 | Mutation check | 456 planted defects; 49 survivors were real test gaps, and 48 of them now have a row. On the committed rows those 48 all fail as they should. The last is an accepted limit (§7). |
-| Final runs | Linux suite on the merged tree: 28,072 passed, 0 failed, 89 skipped. Emulator suites: 526 passed. Lint gate, build and golden guard all clean (§11). |
+| Final runs | All clean. The latest numbers are in §12. |
 | What you need to do | One thing after merging: **publish the Firestore rules** (§10). Nothing reads or writes the store before Build 2, so it can wait until then. |
-| Open questions | Four, none blocking (§9). |
+| Open questions | None. The founder answered all four (§12). |
 
 ## 2. Preamble
 
@@ -146,6 +146,8 @@ Each reviewer worked on its own LF `git archive` tree and was read-only on git. 
 
 ## 9. Founder questions, none blocking
 
+All four were answered on 30 October (§12). They stand here as they were asked.
+
 - **Q1 (contract).** These finalise on the first read, by the table's letter, though each could be a passing provider state: a newest bar with no adjusted close (ok, split check not available), a truncated array (`insufficient_history`), a newest row of zeros (`missing_fact`). The newest bar missing outright is retryable, but the same bar present and incomplete is final, and permanent. Phase 0 reports that adjusted prices can lag. Should these newest-session cases move to `confirm`? Recommendation: yes, before Build 2 writes the first snapshot. The rows in the fixtures show none of these shapes, so the risk is unmeasured, not shown.
 - **Q2 (contract wording).** A confirm observation survives a retryable result between its two samples, a refusal included, since the contract ties the observation to the confirmation rule. Two matching samples 30 minutes apart then finalise. Both verifiers agree this is the plain reading, and the other reading only delays the final by about 30 minutes. Keep it? Recommendation: keep, and add "of the confirm class" to the shape note's next version.
 - **Q3 (contract).** Add `schemaVersion`, or a field for the mapper's drop count? Recommendation: `schemaVersion` yes before the first write, if at all: it cannot be added to immutable documents later. The drop count can stay in the log.
@@ -164,7 +166,7 @@ Check:
 
 Pushed is not deployed. No cron or preview exercises this code.
 
-## 11. Runs
+## 11. Runs, before the rulings
 
 | Check | Where | Result |
 |---|---|---|
@@ -177,3 +179,36 @@ Pushed is not deployed. No cron or preview exercises this code.
 The docs commit on top holds documents only. Its own suite, lint gate and build are in the PR description.
 
 The documents are committed byte-identical (SHA-256 of the committed blob): the contract `4c035c45ce8c14237d10c324df883803b853a7a210edb0253b271b3111c3565a`, the growth map V1.2 `ba0005ca5295847361bedccbefbea1cf1305c97e4204e4386551d07531e99322`, the Phase 0 report `86c39cce98090acc0e966d471955411275344c163aaeb48cb4946ad811528455`. C4 is appended after C3 with the contract §7 wording, and `git diff` shows added lines only.
+
+## 12. The founder's rulings on §9 (contract V1.5)
+
+On 30 October the founder answered the four questions and issued the shape note V1.5, committed byte-identical at `docs/design/20261030_ID1_ACTIVATION_EVIDENCE_SHAPE_NOTE_V1_5.md` (SHA-256 `47f6e232950a937214cdd1cfbabb3cd79e430e53ce6499bd2d6b980e6e694f1d`). V1.4 stays beside it.
+
+| Question | Ruling | What changed |
+|---|---|---|
+| Q1, first-read finals | Yes. Three provider states that can be passing now confirm before they finalise: ok evidence whose adjustment metadata is absent, `insufficient_history`, and a `missing_fact` on the newest session's row. A `missing_fact` on an older row stays final. | `classify.js`: the table and its header. |
+| Q2, the observation | Keep as built. V1.5 adds "of the confirm class" to the wording. | The wording in `store.js`. No behaviour. |
+| Q3, `schemaVersion` and the drop count | Add `schemaVersion: 1` to every snapshot. The drop count stays in the log. | `acquire.js`: `SNAPSHOT_SCHEMA_VERSION` and `snapshotDocOf`. |
+| Q4, `writer.commit` | Leave as is. Build 2's census will report it. | Nothing. |
+
+**Three readings the ruling left to the build, stated as decisions:**
+1. **Only `present` is final on the first read.** The contract's line is "ok evidence with adjustment metadata present", so an ok result with no adjustment block at all confirms, rather than passing as not-absent. The adapter always writes the block today.
+2. **The ok line's reason is the adapter's own `splitCheckReason`, and its detail is the adjustment block.** So "the same reason and detail" means the same kind of gap on the same dates. A different set of dates replaces the observation, and the 30 minutes start again.
+3. **A `missing_fact` goes final only when its row is shown to be older than the session.** One naming no date confirms.
+
+**What this costs.** A stock that really has a short history, or really has no adjusted close, now needs two fetches at least 30 minutes apart before its record is written, where it needed one. The provider catching up needs no wait: a clean later read is simply final, with no trace of the earlier refusal. Build 2 must call a retryable symbol again on a later tick, which its design already does.
+
+Decision 7 in §6 (no `schemaVersion`) is superseded. The §7 review and its mutation lens ran before these rulings and were not repeated, as the round's instruction asked for spot mutants on the new lines.
+
+**Spot mutants.** 20 planted on the new lines (the ok line, `insufficient_history`, `missing_fact`, `basis_discontinuity`, the session check before them, `schemaVersion`), each run through both the pure and the store suite on its own snapshot of `300ea5a5`: 20 killed, 0 survived, and the tree restored byte-exactly. Each was killed by the row that names its defect. The store suite alone killed 15. The other five need an adapter result real payloads cannot produce, such as an ok result with no adjustment block, so only the pure rows can reach them. All four old-table mutants are among those killed on both suites: an ok result with metadata absent, `insufficient_history` and each `missing_fact` going straight to final.
+
+**Runs.**
+
+| Check | Where | Result |
+|---|---|---|
+| Pure rows, targeted | Windows, `TZ=UTC`: the library, the shared request, the review card, the protected-store scan | 403 passed |
+| Full vitest suite | Linux (WSL), Node 20.20.2, `TZ=UTC`, `--maxWorkers=8`, on `300ea5a5` | 1,262 files passed, 8 skipped; 28,083 rows passed, 0 failed, 89 skipped |
+| `test:rules` | Windows, emulator, LF snapshot of `300ea5a5` (WSL has no Java) | 30 files, 542 rows passed |
+| Golden guard | compare mode against `main` `337a5801`, at `300ea5a5` | PASS: golden 767d22633672, `tf-setup-v1/sem-1`, one baseline entry, no new entry |
+
+The `main` this branch is merged with has not moved. The docs commit on top holds documents only. Its own suite, `lint:gate` and `vite build` are in the PR description.
