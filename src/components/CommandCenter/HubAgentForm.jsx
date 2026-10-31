@@ -21,14 +21,22 @@
 // still, and a change under it redraws the still. Paused while the deploy ceremony covers the page (R-S7-5). Its
 // accessible name is "Shadow wearing <archetype>" (R10), the name from hub/archetypeLines.js, with the state and
 // selected area the stage's labels have always carried (spec V1.2 §10); bare Shadow keeps Shadow's own label.
+//
+// Build S2 (ruling R19): S7's response, with S7's triggers (hub/shadowBloom.js: a new area selection, an attempt's created
+// terminal once per attempt id; the phone's tabs never bloom). The memo lives here, above the keyed form, so a remount
+// does not read its triggers as new. Board 5 says what brightens: Equipped Archetype the armor's edges, Partnership and
+// Shared Research the core. It says nothing of a deploy, and bare Shadow has no armor, so those light the whole form.
+// The engine holds the timing, the pause and the reduced-motion flash, so this file adds no effect or timer.
 
 import React, { createContext, useContext, useState } from 'react';
 import AgentForm from '../AgentForm/AgentForm';
 import { formForArchetype, hasWebGL } from '../AgentForm/agentFormSpec';
 import { getAgentGrowth } from '../AgentForm/agentGrowth';
 import { archetypeLines } from './hub/archetypeLines';
+import { HUB_AREAS } from './hub/composition';
 import { AGENT_FORM_COPY, HUB_COPY as COPY } from './hub/hubCopy';
 import { AGENT_FORM_PHONE } from './hub/hubFlags';
+import { seedBloom, stepBloom } from './hub/shadowBloom';
 
 /** The hub's agent read ({ status, agent }), from CommandCenterHub.jsx; absent, the form is bare Shadow. */
 export const HubAgentFormContext = /* @__PURE__ */ createContext(null);
@@ -45,7 +53,17 @@ export function hubFormRead(read) {
   return { archetype: agent ? agent.archetype : undefined, key: `agent:${agent && agent.id != null ? agent.id : 'none'}` };
 }
 
-export default function HubAgentForm({ size, status = 'ambient', selectedArea = null, reducedMotion = false, paused = false, phone = false, boxRef }) {
+/**
+ * What a response lights, by board 5: 'armor' for the Equipped Archetype on an armored form, 'core' for the other two
+ * areas, and 'all' for a created deployment and for bare Shadow's archetype area, which board 5 does not cover.
+ */
+export function hubResponsePart({ created, area, armored }) {
+  if (created) return 'all';
+  if (area === HUB_AREAS.PARTNERSHIP || area === HUB_AREAS.RESEARCH) return 'core';
+  return area === HUB_AREAS.ARCHETYPE && armored ? 'armor' : 'all';
+}
+
+export default function HubAgentForm({ size, status = 'ambient', selectedArea = null, reducedMotion = false, paused = false, phone = false, boxRef, areaEvent = 0, createdAttemptId = null }) {
   const { archetype, key } = hubFormRead(useContext(HubAgentFormContext));
   // The form's status, kept with the key it was reported under: a re-keyed (remounted) form starts again from its
   // placeholder, so the label says "still" until the new form reports itself live (BUILD_RULES §9).
@@ -59,6 +77,10 @@ export default function HubAgentForm({ size, status = 'ambient', selectedArea = 
   const sel = selectedArea === 0 || selectedArea === 1 || selectedArea === 2 ? selectedArea : null;
   const areaName = sel == null ? null : COPY.areas.names[sel];
   const armored = formForArchetype(archetype) !== 'none';
+  // The response's memo, stepped while rendering, as ShadowCanvas steps it: a trigger already there at mount is the past.
+  const [bloom, setBloom] = useState(() => ({ memo: seedBloom({ areaEvent, createdAttemptId }), part: 'all' }));
+  const stepped = stepBloom(bloom.memo, { areaEvent, createdAttemptId });
+  if (stepped !== bloom.memo) setBloom({ memo: stepped, part: hubResponsePart({ created: stepped.seen !== bloom.memo.seen, area: sel, armored }) });
   const label = armored ? AGENT_FORM_COPY.imageLabel(archetypeLines(archetype).name, state, areaName) : COPY.shadow.imageLabel(state, areaName);
   return (
     <div ref={boxRef} data-shadow-box="" data-hub-agent-form="" data-shadow-status={state} style={{ width: size, height: size, flexShrink: 0 }}>
@@ -77,6 +99,8 @@ export default function HubAgentForm({ size, status = 'ambient', selectedArea = 
         paused={paused}
         clip
         equipOnChange
+        responseKey={bloom.memo.key}
+        responsePart={bloom.part}
         label={label}
         onStatus={(status) => setReported({ key, status })}
       />

@@ -33,7 +33,7 @@ vi.mock('../../config/featureFlags', async (importOriginal) => ({
   isAgentPresenceOn: () => false,
 }));
 
-const ArenaHeader = (await import('./ArenaHeader.jsx')).default;
+const { default: ArenaHeader, gatedScoreSize } = await import('./ArenaHeader.jsx');
 
 const TURN = {
   phase: 'LIVE',
@@ -659,5 +659,35 @@ describe('ON-F5a — real framer-motion: the switch commits the selected width; 
       root.render(<><div style={{ display: 'flex' }}><motion.div key="k2" data-bar-pct="1" animate={{ width: '80%' }} /></div><Probe selector="[data-bar-pct]" /></>);
     });
     expect(atCommit[atCommit.length - 1]).toBe('');
+  });
+});
+
+// Build S2, R20: under about 380 px a gated score shrinks before anything else gives way, for everyone, flags off too.
+// jsdom lays nothing out: these rows pin the expression, and the widths are measured in headless Edge with the app's
+// stylesheet (the S2 report, §4).
+describe('R20 — a gated score on a narrow phone', () => {
+  const gated = (pair, extra = {}) => ({ available: true, kind: 'stored', pair, barWidth: 44, lead: 'cpu', switchKey: 'k', fractionDigits: 2, label: 'Stored scores', prose: 'As of the last check', ...extra });
+  const SHRUNK = 'min(30px, calc((50vw - 97px) / 3.192))';
+
+  it('takes the room half the screen leaves, in the wider of the pair\'s digits, and never more than the row\'s size', () => {
+    expect(gatedScoreSize(gated([-123.45, -98.76]), 30, false)).toBe(SHRUNK);
+    expect(gatedScoreSize(gated([-98.76, -123.45]), 30, false)).toBe(SHRUNK);
+    expect(gatedScoreSize(gated([-1234.56, -987.65]), 30, false)).toBe('min(30px, calc((50vw - 97px) / 3.648))');
+  });
+
+  it('both sides of a phone header take it; the size stays one for the pair', () => {
+    const html = render({ comparison: gated([-123.45, -98.76]) });
+    expect(html.split(`font-size:${SHRUNK}`).length - 1).toBe(2);
+  });
+
+  it('a whole-number header and a desktop header keep the row\'s own size', () => {
+    expect(render({})).not.toContain('50vw');
+    const desk = render({ comparison: gated([-123.45, -98.76]), isDesktop: true });
+    expect(desk).not.toContain('50vw');
+    expect(desk).toContain('font-size:40px');
+  });
+
+  it('an unavailable comparison draws no score and asks for no size', () => {
+    expect(render({ comparison: { available: false, kind: 'unavailable', label: 'Final comparison unavailable', prose: '' } })).not.toContain('50vw');
   });
 });

@@ -10,6 +10,9 @@
 
 import React, { Component, act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { agentFormSpec } from '../../components/AgentForm/agentFormSpec';
 
@@ -24,8 +27,8 @@ vi.mock('../../components/AgentForm/AgentForm', () => ({
 const { BattleAgentFormScope, BattleAgentFormSlot } = await import('./battleAgentFormSlot');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const here = (name) => path.join(path.dirname(fileURLToPath(import.meta.url)), name);
 
-const NOW = new Date('2026-10-29T15:00:00.000Z');
 const LIVE = { status: 'active', agentContext: { agentName: 'Aurora', archetype: 'degen' }, cronState: { evaluatingAt: null }, statusFeed: [], scoreState: { currentScore: 12, opponentScore: 3 } };
 
 let root, host;
@@ -41,7 +44,7 @@ async function show(el) {
   await act(async () => { root.render(el); });
   await until('[data-test-form]');
 }
-const scope = (children, cockpitFeed = null) => <BattleAgentFormScope cockpitFeed={cockpitFeed} now={NOW}>{children}</BattleAgentFormScope>;
+const scope = (children, cockpitFeed = null) => <BattleAgentFormScope cockpitFeed={cockpitFeed}>{children}</BattleAgentFormScope>;
 const last = (allegiance) => seen.forms.filter((f) => f.allegiance === allegiance).at(-1);
 
 describe('the slot: the form\'s still while the chunk loads, then the form', () => {
@@ -78,8 +81,8 @@ describe('the mood, from the scope and the battle (R8)', () => {
     expect(last('opponent').mood).toBe('confident');
   });
 
-  it('researching while an evaluation the server would honour is in flight, by the scope\'s clock', async () => {
-    const evaluating = { ...LIVE, cronState: { evaluatingAt: new Date(NOW.getTime() - 20_000).toISOString() } };
+  it('researching while an evaluation the server would honour is in flight, by the form\'s own clock', async () => {
+    const evaluating = { ...LIVE, cronState: { evaluatingAt: new Date(Date.now() - 20_000).toISOString() } };
     await show(scope(<BattleAgentFormSlot agentBattle={evaluating} size={72} scores={{ player: 12, opponent: 3 }} />));
     expect(last('player').mood).toBe('researching');
   });
@@ -88,5 +91,33 @@ describe('the mood, from the scope and the battle (R8)', () => {
     const won = { ...LIVE, status: 'completed', statusFeed: [{ action: 'battle_complete' }], scoreState: { currentScore: 12, opponentScore: 3, evaluationCount: 9 } };
     await show(scope(<BattleAgentFormSlot agentBattle={won} size={72} scores={{ player: 12, opponent: 3 }} />));
     expect(last('player').mood).toBe('celebrating');
+  });
+});
+
+// Build S2 (ruling R21, the S1 review's SR-7): the form's clock is its own, so it ticks with the cockpit controller on or
+// off: a crashed tick's stale stamp ages out of "researching" on any screen that draws a form.
+describe('the form\'s own clock (R21)', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('ticks by itself: a stamp near the lock\'s age reads researching, then ages out without the screen doing anything', async () => {
+    const stale = { ...LIVE, cronState: { evaluatingAt: new Date(Date.now() - 100_000).toISOString() } };
+    await show(scope(<BattleAgentFormSlot agentBattle={stale} size={72} scores={{ player: 1, opponent: 3 }} />));
+    expect(last('player').mood).toBe('researching');
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'], now: Date.now() });
+    act(() => { root.render(scope(<BattleAgentFormSlot agentBattle={stale} size={72} scores={{ player: 1, opponent: 3 }} key="fresh" />)); });
+    await act(async () => { await Promise.resolve(); });
+    expect(last('player').mood).toBe('researching');
+    act(() => { vi.advanceTimersByTime(30_000); });
+    expect(last('player').mood).toBe('researching');
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(last('player').mood).toBe('worried');
+  });
+
+  it('the scope hands the forms no clock: a screen cannot tie them back to the controller', async () => {
+    const source = readFileSync(here('battleAgentFormSlot.jsx'), 'utf8');
+    expect(source).not.toMatch(/\bnowMs\b/);
+    expect(source).not.toMatch(/\bnow\b[,}=]/);
+    const form = readFileSync(here('BattleAgentForm.jsx'), 'utf8');
+    expect(form).toMatch(/useCoarseNow\(true\)/);
   });
 });

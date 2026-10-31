@@ -34,6 +34,7 @@ function fakeEngineModule() {
           swap: (p) => view.calls.push(['swap', p]),
           setOptions: (o) => view.calls.push(['setOptions', o]),
           equip: (on) => view.calls.push(['equip', on]),
+          respond: (part) => view.calls.push(['respond', part]),
           unmount: () => view.calls.push(['unmount']),
         };
       },
@@ -207,7 +208,7 @@ describe('the tight framing: the battle views\' option, and theirs alone (the S1
     for (const p of patches) expect(p.zoom).toBe(1);
   });
 
-  it('of the files that draw the wrapper, only the battle form asks for a framing: the hub, the lab and S0\'s stills keep the design\'s', () => {
+  it('of the files that draw the wrapper, only the battle and League forms ask for a framing: the hub, the lab and S0\'s stills keep the design\'s', () => {
     const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
     const files = [];
     (function walk(dir) {
@@ -220,11 +221,42 @@ describe('the tight framing: the battle views\' option, and theirs alone (the S1
     const ASKS = /\bframing\s*[=:]/g;
     const draws = files.filter((f) => /from '([^']*\/AgentForm\/|\.\/)AgentForm'/.test(readFileSync(f, 'utf8')) && !f.endsWith(`${path.sep}AgentForm.jsx`));
     const rel = (f) => path.relative(SRC, f).split(path.sep).join('/');
-    expect(draws.map(rel).sort()).toEqual(['components/CommandCenter/HubAgentForm.jsx', 'screens/AgentFormLab.jsx', 'screens/battleView/BattleAgentForm.jsx']);
+    expect(draws.map(rel).sort()).toEqual(['components/CommandCenter/HubAgentForm.jsx', 'components/League/battleArena/LeagueAgentForm.jsx', 'screens/AgentFormLab.jsx', 'screens/battleView/BattleAgentForm.jsx']);
     const asks = Object.fromEntries(draws.map((f) => [rel(f), (strip(readFileSync(f, 'utf8').replace(/\r\n/g, '\n')).match(ASKS) || []).length]));
-    expect(asks).toEqual({ 'components/CommandCenter/HubAgentForm.jsx': 0, 'screens/AgentFormLab.jsx': 0, 'screens/battleView/BattleAgentForm.jsx': 1 });
+    expect(asks).toEqual({ 'components/CommandCenter/HubAgentForm.jsx': 0, 'components/League/battleArena/LeagueAgentForm.jsx': 1, 'screens/AgentFormLab.jsx': 0, 'screens/battleView/BattleAgentForm.jsx': 1 });
     expect(readFileSync(path.join(SRC, 'screens/battleView/BattleAgentForm.jsx'), 'utf8')).toContain('framing="tight"');
     // The scan sees a planted ask, as a prop and as a key.
     expect(strip('<AgentForm framing="tight" />\nconst p = { framing: \'tight\' };').match(ASKS)).toHaveLength(2);
   }, 30000); // every file under src/ is read: the repo's idiom for a whole-tree scan, so a loaded suite cannot time it out
+});
+
+// Build S2: the response (ruling R19) and a layout's facing (ruling R14).
+describe('build S2: the wrapper', () => {
+  it('a new response key asks the view for that part; the key it mounted with does not, nor a re-render', async () => {
+    const asked = (view) => view.calls.filter(([verb]) => verb === 'respond').map(([, part]) => part);
+    render(<AgentForm archetype="degen" size={200} responseKey={3} responsePart="core" />);
+    await flush();
+    const [v] = engine.mounts;
+    expect(asked(v)).toEqual([]);
+    render(<AgentForm archetype="degen" size={200} responseKey={3} responsePart="core" mood="worried" />);
+    expect(asked(v)).toEqual([]);
+    render(<AgentForm archetype="degen" size={200} responseKey={4} responsePart="armor" />);
+    expect(asked(v)).toEqual(['armor']);
+  });
+
+  it('a key that moves before the engine has loaded is the past: nothing plays when the view appears', async () => {
+    render(<AgentForm archetype="degen" size={200} responseKey={1} />);
+    render(<AgentForm archetype="degen" size={200} responseKey={2} responsePart="core" />);
+    await flush();
+    expect(engine.mounts[0].calls.filter(([verb]) => verb === 'respond')).toEqual([]);
+  });
+
+  it('facing overrides the mirror, for either allegiance; without it the player looks right and the opponent left', () => {
+    expect(agentFormSpec({ allegiance: 'player' }).face).toBe(1);
+    expect(agentFormSpec({ allegiance: 'opponent' }).face).toBe(-1);
+    expect(agentFormSpec({ allegiance: 'opponent', facing: 'right' }).face).toBe(1);
+    expect(agentFormSpec({ allegiance: 'player', facing: 'left' }).face).toBe(-1);
+    expect(agentFormSpec({ allegiance: 'opponent', facing: 'sideways' }).face).toBe(-1);
+    expect(agentFormSpec({ allegiance: 'opponent', facing: 'right' }).pal).toBe('copper');
+  });
 });

@@ -1,8 +1,8 @@
 // src/config/agentFormFlags.test.js
 //
-// Build S1 — THE FLAG PINS (BUILD_RULES §2) for AGENT_FORM_HUB_ENABLED and AGENT_FORM_BATTLE_ENABLED
-// (src/config/agentFormFlags.js). Both are dark by design and stay false on main: each is flipped only on the
-// never-merge smoke branch, where these pins go red on purpose (flagPinGuard names this file).
+// Build S1 and S2 — THE FLAG PINS (BUILD_RULES §2) for AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and
+// AGENT_FORM_LEAGUE_ENABLED (src/config/agentFormFlags.js). All are dark by design and stay false on main: each is flipped
+// only on the never-merge smoke branch, where these pins go red on purpose (flagPinGuard names this file).
 //
 // The source rows are the flag-off guarantee's shape: every reader takes the module's literal straight into a
 // ternary that Rollup folds to today's element, so with both flags off the hub and the battle view build
@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AGENT_FORM_BATTLE_ENABLED, AGENT_FORM_HUB_ENABLED } from './agentFormFlags.js';
+import { AGENT_FORM_BATTLE_ENABLED, AGENT_FORM_HUB_ENABLED, AGENT_FORM_LEAGUE_ENABLED } from './agentFormFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(path.join(HERE, p), 'utf8').replace(/\r\n/g, '\n');
@@ -33,9 +33,14 @@ describe('AGENT_FORM_HUB_ENABLED and AGENT_FORM_BATTLE_ENABLED — the pins (BUI
     expect(AGENT_FORM_BATTLE_ENABLED).toBe(false);
   });
 
+  it('DARK: the League\'s forms are false on main; true only on the never-merge smoke branch', () => {
+    expect(AGENT_FORM_LEAGUE_ENABLED).toBe(false);
+  });
+
   it('each is the module\'s literal, and featureFlags.js carries neither (its namespace is in the entry chunk)', () => {
     expect(FLAGS).toMatch(/^export const AGENT_FORM_HUB_ENABLED = false;$/m);
     expect(FLAGS).toMatch(/^export const AGENT_FORM_BATTLE_ENABLED = false;$/m);
+    expect(FLAGS).toMatch(/^export const AGENT_FORM_LEAGUE_ENABLED = false;$/m);
     expect(read('featureFlags.js')).not.toMatch(/AGENT_FORM/);
   });
 
@@ -43,6 +48,7 @@ describe('AGENT_FORM_HUB_ENABLED and AGENT_FORM_BATTLE_ENABLED — the pins (BUI
     const guard = read('flagPinGuard.test.js');
     expect(guard).toMatch(/\n {2}AGENT_FORM_HUB_ENABLED:\n/);
     expect(guard).toMatch(/\n {2}AGENT_FORM_BATTLE_ENABLED:\n/);
+    expect(guard).toMatch(/\n {2}AGENT_FORM_LEAGUE_ENABLED:\n/);
   });
 });
 
@@ -58,6 +64,30 @@ describe('every read is a literal ternary on the flag, so flag-off folds to toda
       "import { AGENT_FORM_HUB_ENABLED } from '../../config/agentFormFlags';",
       'return AGENT_FORM_HUB_ENABLED ? (',
     ]);
+  });
+
+  it('the League: the two head sites, the phone hero, the two lobby sites and the live arena\'s scope, each a ternary', () => {
+    const lg = '../components/League/battleArena/';
+    const IMPORT = "import { AGENT_FORM_LEAGUE_ENABLED } from '../../../config/agentFormFlags';";
+    // FuseHero: the tip's size, its filter, its form, the frame, the scale, the anchors and the scope around the tips.
+    const fuse = readsOf(`${lg}FuseHero.jsx`, 'AGENT_FORM_LEAGUE_ENABLED');
+    expect(fuse[0]).toBe(IMPORT);
+    expect(fuse.slice(1)).toHaveLength(7);
+    for (const line of fuse.slice(1)) expect(line).toMatch(/(?:^|[=:] |, )\{?AGENT_FORM_LEAGUE_ENABLED (?:\? |&& showHead \? )/);
+    // ArenaMobile: the hero's height, a style that folds to today's object.
+    const mobile = readsOf(`${lg}ArenaMobile.jsx`, 'AGENT_FORM_LEAGUE_ENABLED');
+    expect(mobile[0]).toBe(IMPORT);
+    expect(mobile.slice(1)).toHaveLength(1);
+    expect(mobile[1]).toMatch(/style=\{AGENT_FORM_LEAGUE_ENABLED && FUSE_HERO_ON \? /);
+    for (const file of ['../components/League/LeagueDeskParts.jsx', '../components/League/LeagueLobbyRedesign.jsx']) {
+      expect(readsOf(file, 'AGENT_FORM_LEAGUE_ENABLED'), file).toEqual(["import { AGENT_FORM_LEAGUE_ENABLED } from '../../config/agentFormFlags';", 'AGENT_FORM_LEAGUE_ENABLED ? (']);
+    }
+    const climb = readsOf(`${lg}ClimbArena.jsx`, 'AGENT_FORM_LEAGUE_ENABLED');
+    expect(climb).toEqual([IMPORT, '{AGENT_FORM_LEAGUE_ENABLED ? (']);
+    const live = readsOf(`${lg}LeagueBattleArenaLive.jsx`, 'AGENT_FORM_LEAGUE_ENABLED');
+    expect(live).toEqual([IMPORT, 'AGENT_FORM_LEAGUE_ENABLED ? (', '{AGENT_FORM_LEAGUE_ENABLED ? (']);
+    const slot = readsOf(`${lg}leagueAgentFormSlot.jsx`, 'AGENT_FORM_LEAGUE_ENABLED');
+    expect(slot).toEqual([IMPORT, "const LazyLeagueAgentForm = AGENT_FORM_LEAGUE_ENABLED ? lazy(() => import('./LeagueAgentForm')) : null;"]);
   });
 
   it('the battle view: the screen\'s scopes and the three face sites, each a ternary', () => {

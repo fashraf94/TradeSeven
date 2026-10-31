@@ -14,11 +14,14 @@
 // A form drawn under 40 px is a still (R12, in the wrapper). Reduced motion is the screen's one source. The labels do
 // not change in this build (R10): the agent's name and "CPU" stay beside the forms, so the form itself is decorative.
 // The S1 size follow-up: the tight framing (agentFormSpec.js TIGHT_ZOOM), so each form fills more of its small box.
+// Build S2 (R21): the form's clock is its own, ticking whether or not the cockpit controller is on, so a stale evaluation
+// stamp ages out of "researching" on any screen that draws a form.
 
 import React, { use, useContext } from 'react';
 import AgentForm from '../../components/AgentForm/AgentForm';
 import { getAgentGrowth } from '../../components/AgentForm/agentGrowth';
 import { deriveAgentMood } from './agentMood';
+import useCoarseNow from './useCoarseNow';
 import { BattleAgentFormContext } from './battleAgentFormSlot';
 
 // The hub's outcome derivation (ruling R8: celebrating comes from it), loaded beside this chunk rather than imported.
@@ -32,8 +35,9 @@ const outcomesLoaded = import('../../components/CommandCenter/hub/selectors/game
 export default function BattleAgentForm({ agentBattle, side = 'player', size, scores = null, reducedMotion = false }) {
   const held = useContext(BattleAgentFormContext);
   const outcomes = use(outcomesLoaded);
+  const nowMs = useCoarseNow(true).getTime();
   const opponent = side === 'opponent';
-  const mood = deriveAgentMood({ battle: agentBattle, cockpitFeed: held?.cockpitFeed ?? null, side, scores, nowMs: held?.nowMs, outcomes });
+  const mood = deriveAgentMood({ battle: agentBattle, cockpitFeed: held?.cockpitFeed ?? null, side, scores, nowMs, outcomes });
   const { coreStage, armorStage } = getAgentGrowth(null);
   return (
     <AgentForm

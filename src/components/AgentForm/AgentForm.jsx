@@ -24,6 +24,12 @@
 //   - `framing="tight"` (the battle views only): each form drawn closer, to fill its small box (agentFormSpec.js
 //     TIGHT_ZOOM). Without it the spec carries no zoom, and the engine draws at the design's distance.
 //
+// Build S2:
+//   - `responseKey` and `responsePart` (the hub hero, ruling R19): each new key brightens the part it names, S7's
+//     response on the engine's clock. No view exists yet at mount, so a key the form mounts with is the past.
+//   - `facing` ('left' | 'right', the League's lanes, ruling R14): which way a form looks where its layout has a
+//     direction. Without it the player looks right and the opponent left, as the header's two sides do.
+//
 // What shows: the engine's canvas while the form is live. The form's own still (its designed stillT frame,
 // cached at mount) when the WebGL context is lost, or when a frame of this view threw (the engine drops the view
 // to 'unavailable' and keeps every other view running). AgentFormStill when there is no WebGL at all, while the
@@ -55,9 +61,10 @@ export default function AgentForm({
   archetype, mood = 'idle', coreStage = 1, armorStage = 1, allegiance = 'player', size = 200,
   reducedMotion = false, bloom = 'filter', drawPath = 'shared', batched = false, rate = 'live',
   equipped = true, label, onStatus, seed = 1, equipOnChange = false, paused = false, clip = false, framing,
+  responseKey = 0, responsePart = 'all', facing,
 }) {
   const webgl = hasWebGL();
-  const spec = agentFormSpec({ archetype, mood, coreStage, armorStage, allegiance, size, seed, framing });
+  const spec = agentFormSpec({ archetype, mood, coreStage, armorStage, allegiance, size, seed, framing, facing });
   const dpr = usePixelRatio();
   const drawRate = rateForSize(rate, spec.size);
   const options = { path: drawPath === 'direct' ? 'direct' : 'shared', bloom, batched, rate: drawRate, reducedMotion, dpr, paused };
@@ -68,7 +75,7 @@ export default function AgentForm({
   // The kind the mounted view draws (or is headed for), so a change can be told from the mount.
   const kindRef = useRef(null);
   const latest = useRef(null);
-  latest.current = { spec, options, equipped, onStatus, equipOnChange };
+  latest.current = { spec, options, equipped, onStatus, equipOnChange, responsePart };
 
   // Mount the engine view (once per draw path); unmount releases it, and the last view releases the engine.
   useEffect(() => {
@@ -100,6 +107,7 @@ export default function AgentForm({
   useEffect(() => { if (viewRef.current) viewRef.current.setOptions({ bloom, batched, rate: drawRate, reducedMotion, dpr, paused }); }, [bloom, batched, drawRate, reducedMotion, dpr, paused]);
   const firstEquip = useRef(true);
   useEffect(() => { if (firstEquip.current) { firstEquip.current = false; return; } if (viewRef.current) viewRef.current.equip(equipped); }, [equipped]);
+  useEffect(() => { if (viewRef.current) viewRef.current.respond(latest.current.responsePart); }, [responseKey]);
 
   const live = status === 'live', showStill = (status === 'lost' || status === 'unavailable') && stillReady, placeholder = !live && !showStill;
   const direct = options.path === 'direct', px = `${spec.size}px`;

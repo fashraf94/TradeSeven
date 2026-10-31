@@ -29,15 +29,28 @@
 // E1: the scrolling env tape is CUT. The backdrop is ArenaAtmosphere — texture
 // without glyphs, so nothing competes with the fuses for attention (and the
 // empty-plot reload state no longer leads with its own wallpaper).
+//
+// Agent form build S2: with AGENT_FORM_LEAGUE_ENABLED on, each tip draws the seat's
+// agent form (leagueAgentFormSlot.jsx) where the head was, sized so the armor reads,
+// its centre on its own line's end point (fuseFormLayout.js, the founder's iPhone run).
+// Its standing is deriveCut's order, the crown's own source, handed down through a
+// scope around the tips. Every read is a literal ternary that folds to today's bytes.
+// The tips stack at one x, so there is no left or right between seats, and an
+// opponent keeps the form's own mirror (ruling R14 asks for facing only where a
+// layout has a direction).
 
 import React from 'react';
 import { Mono, LIcon } from '../LeagueParts';
 import { LTOKENS, LX, alpha } from '../leagueTokens';
 import AgentPresence, { archetypeToDisposition } from '../../AgentPresence';
 import { isAgentPresenceOn } from '../../../config/featureFlags';
+import { AGENT_FORM_LEAGUE_ENABLED } from '../../../config/agentFormFlags';
 import { HEAD_FACE_LIFT } from './climbHeadLayout';
+import { LeagueAgentFormSlot, LeagueStandingContext } from './leagueAgentFormSlot';
+import { anchorFigures, fuseFormFrame, fuseFormPx, fuseFormScale } from './fuseFormLayout';
 import { prefersReducedMotion } from './arenaEngineCore';
 import { ArenaAtmosphere } from './arenaAtmosphere';
+import { isLevelBoard } from './arenaStateMap';
 import {
   fuseFrame, makeScale, catmullPath, spreadLabels, thinYLabels, headerYieldsToNow,
   fitYLabel, yGutterWidth, nowPillX, toAxisValue, cutAxisLevel,
@@ -59,7 +72,7 @@ const SPARKS = [
 // returns 'neutral' → the generic mech renders. A tip never crashes on an
 // unknown archetype.
 function FhTip({ x, tipY, headY, color, seat, lead, you, value, subValue, dead, compact, reduce, onTap, showHead }) {
-  const hs = compact ? (you ? 30 : 25) : (you ? 44 : 36);
+  const hs = AGENT_FORM_LEAGUE_ENABLED && showHead ? fuseFormPx(you, compact) : compact ? (you ? 30 : 25) : (you ? 44 : 36);
   const displaced = Math.abs(headY - tipY) > 4;
   const neg = typeof value === 'string' && value.startsWith('-');
   const valueColor = neg ? LX.neg : color; // crown only — never leader-gold text
@@ -86,8 +99,10 @@ function FhTip({ x, tipY, headY, color, seat, lead, you, value, subValue, dead, 
       <div className={onTap ? 'bv2-tap' : ''} onClick={onTap || undefined}
         style={{ position: 'absolute', left: 12, top: headY - hs / 2, display: 'flex', alignItems: 'center', gap: compact ? 5 : 7,
           whiteSpace: 'nowrap', cursor: onTap ? 'pointer' : 'default' }}>
-        <div style={{ position: 'relative', width: hs, height: hs, filter: `drop-shadow(0 0 8px ${alpha(color, 0.6)})` }}>
-          {showHead ? (
+        <div style={{ position: 'relative', width: hs, height: hs, filter: AGENT_FORM_LEAGUE_ENABLED && showHead ? 'none' : `drop-shadow(0 0 8px ${alpha(color, 0.6)})` }}>
+          {AGENT_FORM_LEAGUE_ENABLED && showHead ? (
+            <LeagueAgentFormSlot seat={seat} you={you} size={hs} reducedMotion={reduce} />
+          ) : showHead ? (
             <div style={{ position: 'absolute', left: '50%', top: '50%',
               transform: `translate(-50%, calc(-50% - ${(HEAD_FACE_LIFT * hs).toFixed(1)}px))`,
               width: hs * 140 / 156, height: hs }}>
@@ -186,6 +201,9 @@ export function FuseHero({
   // ── B2: the ONE snapshot everything derives from ──
   const snap = latestTrailSnapshot(trail, ids, banked);
   const { leaderId, cutTotal, needToday } = deriveCut(snap, ids, youId);
+  // The one gate on a leader: the crown, the total it earned and the forms' mood all
+  // read it (§9). Level by the totals the crown ranks, never by today's printed change.
+  const hasLeader = !calm && !voided && !isLevelBoard(ids.map((id) => snap.values[id]));
   const seed = {};
   for (const id of ids) {
     seed[id] = Number.isFinite(trail?.seeds?.[id]) ? trail.seeds[id] : banked[id];
@@ -194,7 +212,7 @@ export function FuseHero({
   // ── the frame + clock ──
   // `tipF` is hoisted ABOVE the series so the last PATH point and the tip's x
   // are the same number by construction, not two roundings of one idea.
-  const F = fuseFrame({ w, h, compact });
+  const F = AGENT_FORM_LEAGUE_ENABLED && showHead ? fuseFormFrame({ w, h, compact }) : fuseFrame({ w, h, compact });
   const X = (f) => F.padL + Math.max(0, Math.min(1, f)) * (F.plotR - F.padL);
   const dayFrac = snap.t != null ? sessionFraction(snap.t) : (live ? sessionFraction(nowFn()) : done ? 1 : 0);
   const bankedCount = Math.max(...ids.map((id) => (climb[id] || []).length), 0);
@@ -238,7 +256,10 @@ export function FuseHero({
 
   // ── the scale, over EVERY drawn value (tips and path points) ──
   const allVals = seatData.flatMap((d) => d.pts.map((p) => p.v)).concat(seatData.map((d) => d.dispVal));
-  const { HI, LO, basement, zeroY, Y } = makeScale({ values: allVals, day: DAY, plotT: F.plotT, floorY: F.floorY });
+  const { HI, LO, basement, zeroY, Y } = AGENT_FORM_LEAGUE_ENABLED && showHead ? fuseFormScale({
+    values: allVals, day: DAY, frame: F,
+    tips: seatData.map((d) => ({ id: d.seat.id, v: d.pts[d.pts.length - 1]?.v ?? 0, size: fuseFormPx(d.seat.you, compact) })),
+  }) : makeScale({ values: allVals, day: DAY, plotT: F.plotT, floorY: F.floorY });
 
   // ── the cut (ranked only; never in training, never when voided/calm) ──
   // H3 — the cut goes through the SAME transform as the seats, so it cannot
@@ -256,7 +277,10 @@ export function FuseHero({
   // ── tips: x at the burn (tipF, hoisted above); head anchors spread apart ──
   const burnX = X(done && !DAY ? (seatData[0]?.pts?.[seatData[0].pts.length - 1]?.f ?? 1) : tipF);
   const tipYOf = (d) => Y(d.pts[d.pts.length - 1]?.v ?? 0);
-  const headY = spreadLabels(
+  const headY = AGENT_FORM_LEAGUE_ENABLED && showHead ? anchorFigures(
+    seatData.map((d) => ({ id: d.seat.id, y: tipYOf(d), size: fuseFormPx(d.seat.you, compact) })),
+    F.plotT, F.floorY,
+  ) : spreadLabels(
     seatData.map((d) => ({ id: d.seat.id, y: tipYOf(d) })),
     F.headGap, F.plotT + (compact ? 14 : 20), F.floorY - 4,
   );
@@ -393,17 +417,43 @@ export function FuseHero({
       )}
 
       {/* the tips */}
-      {seatData.map((d) => (
+      {AGENT_FORM_LEAGUE_ENABLED ? (
+        <LeagueStandingContext.Provider value={{
+          ranked: deriveCut(snap, ids, youId).ranked,
+          cut: ranked && ids.length >= 3,
+          shown: hasLeader,
+          complete: done,
+        }}>
+          {seatData.map((d) => (
+            <FhTip key={d.seat.id}
+              x={burnX}
+              tipY={tipYOf(d)}
+              headY={headY[d.seat.id] ?? tipYOf(d)}
+              color={d.neg ? LX.neg : d.seat.color}
+              seat={d.seat}
+              lead={d.seat.id === leaderId && hasLeader}
+              you={!!d.seat.you}
+              value={calm ? '—' : fmt(d.dispVal, DAY)}
+              subValue={DAY && d.seat.id === leaderId && hasLeader ? `${fmt(snap.values[d.seat.id])} total` : null}
+              dead={calm || done}
+              compact={compact}
+              reduce={reduce}
+              showHead={showHead}
+              onTap={onPlayer && !d.seat.you && !calm ? () => onPlayer(d.seat.id) : null}
+            />
+          ))}
+        </LeagueStandingContext.Provider>
+      ) : seatData.map((d) => (
         <FhTip key={d.seat.id}
           x={burnX}
           tipY={tipYOf(d)}
           headY={headY[d.seat.id] ?? tipYOf(d)}
           color={d.neg ? LX.neg : d.seat.color}
           seat={d.seat}
-          lead={d.seat.id === leaderId && !calm && !voided}
+          lead={d.seat.id === leaderId && hasLeader}
           you={!!d.seat.you}
           value={calm ? '—' : fmt(d.dispVal, DAY)}
-          subValue={!calm && DAY && d.seat.id === leaderId && !voided ? `${fmt(snap.values[d.seat.id])} total` : null}
+          subValue={DAY && d.seat.id === leaderId && hasLeader ? `${fmt(snap.values[d.seat.id])} total` : null}
           dead={calm || done}
           compact={compact}
           reduce={reduce}

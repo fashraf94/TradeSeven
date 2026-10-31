@@ -1083,12 +1083,13 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
 
 // BUILD_RULES §11, A STATED EXCEPTION (agent form build S1; the S0 review's SR-15). With AGENT_FORM_HUB_ENABLED on, the
 // armored hero suits up when the archetype changes: 900 ms on board 2's five keys, 700 ms coming off
-// (src/components/AgentForm/engine/vocab.js EQUIP_KEYS / UNEQUIP_KEYS), its size tweened across it (ruling R5). That
-// tween is the engine's own requestAnimationFrame timeline, posed frame by frame in WebGL — the same class as the
-// face's rAF easing engine (faceEngineCore.js), which §11 names out of its scope — not a Framer Motion transition, so it
-// takes no motion token and is not an unmigrated literal. No hub file writes any of it: HubAgentForm.jsx passes only
-// `equipOnChange`; under reduced motion the engine snaps to the new form's still. The rows below hold every hub file,
-// HubAgentForm.jsx included, to the token-only rule.
+// (src/components/AgentForm/engine/vocab.js EQUIP_KEYS / UNEQUIP_KEYS), its size tweened across it (ruling R5). It also
+// answers a deploy or an area with S7's response (ruling R19): the 1.2 s curve and the 420 ms flash (vocab.js RESPONSE_MS,
+// RESPONSE_FLASH_MS). The tween and the response are the engine's own requestAnimationFrame timelines, posed frame by
+// frame in WebGL — the same class as the face's rAF easing engine (faceEngineCore.js), which §11 names out of its scope
+// — not Framer Motion transitions, so they take no motion token and are not unmigrated literals. No hub file writes any
+// of it: HubAgentForm.jsx passes only `equipOnChange` and the response's key and part; under reduced motion the engine
+// snaps to the new form's still. The rows below hold every hub file, HubAgentForm.jsx included, to the token-only rule.
 describe('S1 hub side — colour and motion only through the tokens (ruling R-S1-2; BUILD_RULES §10, §11)', () => {
   // No id-stripping before the hex scan: it once deleted every quoted lowercase
   // hex starting a–f along with the ids it meant (S1 review L5-1). Ids such as

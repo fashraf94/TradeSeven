@@ -3542,7 +3542,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             AgentBattleScreen.paneOff.golden.test.jsx holds it to that. */}
         {paneOn ? (AGENT_FORM_BATTLE_ENABLED ? (
           // Agent form build S1: the forms' moods read the cockpit feed and the clock through this scope.
-          <BattleAgentFormScope cockpitFeed={cockpitFeed} now={now}>
+          <BattleAgentFormScope cockpitFeed={cockpitFeed}>
             <ArenaHeader
               agentBattle={agentBattle}
               isDesktop={isDesktop}
@@ -3790,7 +3790,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 board's CONTENT, off screen until you scrolled to the end. The
                 phone's mark is rendered at the root instead, fixed to the
                 viewport; see the note there. */}
-            {AGENT_FORM_BATTLE_ENABLED ? paneOn && isDesktop && !pane.open && <BattleAgentFormScope cockpitFeed={cockpitFeed} now={now}>{characterMark}</BattleAgentFormScope> : paneOn && isDesktop && !pane.open && characterMark}
+            {AGENT_FORM_BATTLE_ENABLED ? paneOn && isDesktop && !pane.open && <BattleAgentFormScope cockpitFeed={cockpitFeed}>{characterMark}</BattleAgentFormScope> : paneOn && isDesktop && !pane.open && characterMark}
           </div>
           {/* ONE CHILD SLOT, not two (A3.2). The pane and the A2 column are
               branches of a single expression, deliberately: React derives
@@ -3821,7 +3821,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 // gives the board the full width.
                 : { display: 'none' }}
             >
-              {AGENT_FORM_BATTLE_ENABLED ? <BattleAgentFormScope cockpitFeed={cockpitFeed} now={now}>{characterPane}</BattleAgentFormScope> : characterPane}
+              {AGENT_FORM_BATTLE_ENABLED ? <BattleAgentFormScope cockpitFeed={cockpitFeed}>{characterPane}</BattleAgentFormScope> : characterPane}
             </div>
           ) : (
             /* THE CHAT'S ONE HOME ON THE DESKTOP (A2.4, review L2-F1 / L5-F7).
@@ -4045,7 +4045,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             the mark hides while the Game Tape is up (the layout container did
             that with `visibility: hidden`), and it is absent while the pane is
             open (the character stands in the pane's header instead). */}
-        {AGENT_FORM_BATTLE_ENABLED ? !pane.open && !gameTapeOpen && <BattleAgentFormScope cockpitFeed={cockpitFeed} now={now}>{characterMark}</BattleAgentFormScope> : !pane.open && !gameTapeOpen && characterMark}
+        {AGENT_FORM_BATTLE_ENABLED ? !pane.open && !gameTapeOpen && <BattleAgentFormScope cockpitFeed={cockpitFeed}>{characterMark}</BattleAgentFormScope> : !pane.open && !gameTapeOpen && characterMark}
         {/* Cockpit Build 2a (§7.5): the phone's modal bottom sheet, at the root
             for the same stacking reason the mark is here. */}
         {phoneCockpit ? cockpitSheetElement : null}
@@ -4066,7 +4066,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             background: `rgba(${cssVar('shadow-rgb')}, 0.55)`,
           }}
         >
-          {AGENT_FORM_BATTLE_ENABLED ? <BattleAgentFormScope cockpitFeed={cockpitFeed} now={now}>{characterPane}</BattleAgentFormScope> : characterPane}
+          {AGENT_FORM_BATTLE_ENABLED ? <BattleAgentFormScope cockpitFeed={cockpitFeed}>{characterPane}</BattleAgentFormScope> : characterPane}
         </div>
         </>
       ) : controllerOn && (

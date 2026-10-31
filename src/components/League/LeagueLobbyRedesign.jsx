@@ -19,6 +19,8 @@ import usePreOpenPhase from '../../hooks/usePreOpenPhase';
 import WhileYouWait from './WhileYouWait';
 import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
 import TrainingClimbPreview from './TrainingClimbPreview';
+import { AGENT_FORM_LEAGUE_ENABLED } from '../../config/agentFormFlags';
+import { LeagueAgentFormScope } from './battleArena/leagueAgentFormSlot';
 import LoadoutChooserSheet from './LoadoutChooserSheet';
 
 // Training-tab CLIMB PREVIEW gate — dark by default (flag OR ?trainingClimbPreview=1),
@@ -419,7 +421,11 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
     return (
       <div>
         {shouldPreviewClimb(activeTrainingPod, CLIMB_PREVIEW_ON, { preOpen: trainingPreOpen }) ? (
-          <TrainingClimbPreview pod={activeTrainingPod} uid={uid} onOpen={() => onOpenTrainingPod?.(activeTrainingPod)} viewport="mobile" accent={accent} />
+          AGENT_FORM_LEAGUE_ENABLED ? (
+            <LeagueAgentFormScope youArchetype={agentLoadout?.archetype}>
+              <TrainingClimbPreview pod={activeTrainingPod} uid={uid} onOpen={() => onOpenTrainingPod?.(activeTrainingPod)} viewport="mobile" accent={accent} />
+            </LeagueAgentFormScope>
+          ) : <TrainingClimbPreview pod={activeTrainingPod} uid={uid} onOpen={() => onOpenTrainingPod?.(activeTrainingPod)} viewport="mobile" accent={accent} />
         ) : (
           <TrainingReentryBar pod={activeTrainingPod} accent={accent} onResume={() => onOpenTrainingPod?.(activeTrainingPod)} />
         )}

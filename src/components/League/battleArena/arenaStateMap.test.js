@@ -7,8 +7,30 @@
 import { describe, it, expect } from 'vitest';
 import { GROUP_STATUS } from '../../../constants/leagueTournament';
 import {
-  ARENA_STATES, ARENA_MODES, deriveArenaState, deriveArenaTerminalKind, normalizeArenaMode, deriveArenaFrame, frameDayIdx,
+  ARENA_STATES, ARENA_MODES, deriveArenaState, deriveArenaTerminalKind, normalizeArenaMode, deriveArenaFrame, frameDayIdx, isLevelBoard,
 } from './arenaStateMap';
+
+describe('isLevelBoard (the founder\'s ruling of Oct 30, 2026: a fully level board has no leader)', () => {
+  it('every seat equal is level, at zero or anywhere else', () => {
+    expect(isLevelBoard([0, 0, 0, 0])).toBe(true);
+    expect(isLevelBoard([5, 5, 5, 5])).toBe(true);
+    expect(isLevelBoard([-2.5, -2.5, -2.5, -2.5])).toBe(true);
+  });
+  it('a partial tie is not: only an all-equal board counts', () => {
+    expect(isLevelBoard([5, 5, 4, 3])).toBe(false);
+    expect(isLevelBoard([5, 4, 4, 3])).toBe(false);
+    expect(isLevelBoard([5, 5, 3, 3])).toBe(false);
+    expect(isLevelBoard([5, 5, 5, 3])).toBe(false);
+  });
+  it('any lead counts: totals that print alike are not level (S1\'s ruling 3)', () => {
+    expect(isLevelBoard([5.03, 5.02, 5.01, 5])).toBe(false);
+    expect(isLevelBoard([5.01, 5, 5, 5])).toBe(false);
+  });
+  it('a lone seat leads nobody, and an empty board has nobody to lead', () => {
+    expect(isLevelBoard([5])).toBe(true);
+    expect(isLevelBoard([])).toBe(true);
+  });
+});
 
 describe('deriveArenaState', () => {
   it('maps battle → live, complete → complete, expired → complete (terminal)', () => {

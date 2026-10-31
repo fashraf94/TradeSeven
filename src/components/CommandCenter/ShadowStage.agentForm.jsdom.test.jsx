@@ -9,6 +9,8 @@
 
 import React, { Component, act } from 'react';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { injectTokens } from './__fixtures__/hubTestKit';
@@ -78,5 +80,18 @@ describe('the hero\'s read is the readers\' agent read — the one the Loadout s
     const hub = readFileSync('src/components/CommandCenter/CommandCenterHub.jsx', 'utf8').replace(/\r\n/g, '\n');
     expect(hub).toContain('<HubAgentFormContext.Provider value={readers.agent}>');
     expect(hub.match(/agentRead=\{readers\.agent\}/g)).toHaveLength(4);
+  });
+});
+
+// Build S2 (ruling R19): the stages hand the hero S7's triggers, the wide one both and the phone the deployment only (the
+// phone's tabs are tab switches, and never bloom).
+describe('the stages hand the hero the response\'s triggers', () => {
+  const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'ShadowStage.jsx'), 'utf8');
+  it('the wide stage both, the phone the created terminal alone', () => {
+    const [wide, phone] = source.split('\n').filter((line) => line.includes('<HubAgentForm '));
+    expect(wide).toContain('areaEvent={areaEvent}');
+    expect(wide).toContain('createdAttemptId={createdAttemptId}');
+    expect(phone).toContain('createdAttemptId={createdAttemptId}');
+    expect(phone).not.toContain('areaEvent');
   });
 });

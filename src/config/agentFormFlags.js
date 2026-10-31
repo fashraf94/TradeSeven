@@ -63,3 +63,19 @@ export const AGENT_FORM_HUB_ENABLED = false;
  */
 // Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const AGENT_FORM_BATTLE_ENABLED = false;
+
+/**
+ * AGENT_FORM_LEAGUE_ENABLED — the agent forms in a League game, ranked and
+ * training (build S2; build report docs/audits/20261030_BUILD_AGENT_FORM_S2.md).
+ *
+ * When TRUE, the League's two head sites (the fuse hero's tips and the climb's
+ * seats) draw the agent form in place of the robot head: the player teal, every
+ * opponent copper in their own archetype's armor (a bare core when it is not
+ * known), with moods from the standing the screen already shows.
+ *
+ * DARK — default FALSE on main. When FALSE the League draws today's heads and
+ * its chunks are byte-identical to main's: each read is a literal ternary that
+ * Rollup folds to today's element.
+ */
+// Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const AGENT_FORM_LEAGUE_ENABLED = false;
