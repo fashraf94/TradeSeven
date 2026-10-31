@@ -1,14 +1,15 @@
 // src/config/agentFormFlags.test.js
 //
 // Build S1 and S2 — THE FLAG PINS (BUILD_RULES §2) for AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and
-// AGENT_FORM_LEAGUE_ENABLED (src/config/agentFormFlags.js). All are dark by design and stay false on main: each is flipped
-// only on the never-merge smoke branch, where these pins go red on purpose (flagPinGuard names this file).
+// AGENT_FORM_LEAGUE_ENABLED (src/config/agentFormFlags.js). All three are live, flipped together in the flags-on PR
+// (founder ruling F1, Oct 30, 2026), and all three stay as kill switches (F2): a rollback moves the flag, its pin here
+// and its DARK_BY_DESIGN entry together.
 //
-// The source rows are the flag-off guarantee's shape: every reader takes the module's literal straight into a
-// ternary that Rollup folds to today's element, so with both flags off the hub and the battle view build
-// byte-identical to main's (the build report's masked dist diff). An accessor, a featureFlags.js export (App.jsx
-// dynamically imports that module, so all of its exports stay in the entry chunk) or a read outside a literal
-// ternary would each break it.
+// The source rows are the kill switch's shape, and they mean more now the flags are on: every reader takes the module's
+// literal straight into a ternary that Rollup folds, so setting a flag false gives that surface's old element back and
+// nothing of the form stays in its chunks (agentForm.flagOffBundle.test.js reads what is left). An accessor, a
+// featureFlags.js export (App.jsx dynamically imports that module, so all of its exports stay in the entry chunk) or a
+// read outside a literal ternary would each break it.
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -24,35 +25,36 @@ const FLAGS = read('agentFormFlags.js');
 /** Every non-comment line of a source that names `flag`. */
 const readsOf = (rel, flag) => strip(read(rel)).split('\n').filter((line) => line.includes(flag)).map((line) => line.trim());
 
-describe('AGENT_FORM_HUB_ENABLED and AGENT_FORM_BATTLE_ENABLED — the pins (BUILD_RULES §2)', () => {
-  it('DARK: the hub hero is false on main; it is true only on the never-merge smoke branch', () => {
-    expect(AGENT_FORM_HUB_ENABLED).toBe(false);
+describe('AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and AGENT_FORM_LEAGUE_ENABLED — the pins (BUILD_RULES §2)', () => {
+  it('the hub hero is live', () => {
+    expect(AGENT_FORM_HUB_ENABLED).toBe(true);
   });
 
-  it('DARK: the battle forms are false on main; true only on the never-merge smoke branch', () => {
-    expect(AGENT_FORM_BATTLE_ENABLED).toBe(false);
+  it('the battle forms are live', () => {
+    expect(AGENT_FORM_BATTLE_ENABLED).toBe(true);
   });
 
-  it('DARK: the League\'s forms are false on main; true only on the never-merge smoke branch', () => {
-    expect(AGENT_FORM_LEAGUE_ENABLED).toBe(false);
+  it('the League\'s forms are live', () => {
+    expect(AGENT_FORM_LEAGUE_ENABLED).toBe(true);
   });
 
-  it('each is the module\'s literal, and featureFlags.js carries neither (its namespace is in the entry chunk)', () => {
-    expect(FLAGS).toMatch(/^export const AGENT_FORM_HUB_ENABLED = false;$/m);
-    expect(FLAGS).toMatch(/^export const AGENT_FORM_BATTLE_ENABLED = false;$/m);
-    expect(FLAGS).toMatch(/^export const AGENT_FORM_LEAGUE_ENABLED = false;$/m);
+  it('each is the module\'s literal, and featureFlags.js carries none (its namespace is in the entry chunk)', () => {
+    expect(FLAGS).toMatch(/^export const AGENT_FORM_HUB_ENABLED = true;$/m);
+    expect(FLAGS).toMatch(/^export const AGENT_FORM_BATTLE_ENABLED = true;$/m);
+    expect(FLAGS).toMatch(/^export const AGENT_FORM_LEAGUE_ENABLED = true;$/m);
     expect(read('featureFlags.js')).not.toMatch(/AGENT_FORM/);
   });
 
-  it('flagPinGuard lists both as dark by design', () => {
+  it('flagPinGuard no longer lists them as dark by design, and still registers their module (a rollback moves these lines too)', () => {
     const guard = read('flagPinGuard.test.js');
-    expect(guard).toMatch(/\n {2}AGENT_FORM_HUB_ENABLED:\n/);
-    expect(guard).toMatch(/\n {2}AGENT_FORM_BATTLE_ENABLED:\n/);
-    expect(guard).toMatch(/\n {2}AGENT_FORM_LEAGUE_ENABLED:\n/);
+    expect(guard).not.toMatch(/\n {2}AGENT_FORM_HUB_ENABLED:\n/);
+    expect(guard).not.toMatch(/\n {2}AGENT_FORM_BATTLE_ENABLED:\n/);
+    expect(guard).not.toMatch(/\n {2}AGENT_FORM_LEAGUE_ENABLED:\n/);
+    expect(guard).toMatch(/'src\/config\/agentFormFlags\.js',/);
   });
 });
 
-describe('every read is a literal ternary on the flag, so flag-off folds to today\'s element', () => {
+describe('every read is a literal ternary on the flag, so a kill switch folds back to the old element', () => {
   it('the hub: the two stage sites and the one scope around the shells, nothing else', () => {
     const hub = '../components/CommandCenter/';
     expect(readsOf(`${hub}ShadowStage.jsx`, 'AGENT_FORM_HUB_ENABLED')).toEqual([
