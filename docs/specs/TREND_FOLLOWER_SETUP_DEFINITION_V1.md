@@ -130,3 +130,9 @@ Appended by the Measured Trend Evidence slice 1 fix round after Astra's independ
 - **Equality follows the approved operator.** A close exactly at the guard passes the inclusive extension check. A volume exactly at the floor passes the inclusive volume check. A split step of exactly 10% does not exceed 0.10, so it never trips.
 - **The record explains itself.** A check records each threshold as the double nearest its exact value, and every recorded result is the plain comparison of the recorded `lhs` and `rhs`. A tripped split step records both days' raw and adjusted closes in the refusal's detail.
 - **Nothing else is rounded.** No raw price, volume or `V_avg` is rounded to a fixed number of decimals. SMA and ATR keep their 4-decimal values.
+
+## Clarification C4 — 30 Oct 2026 (the anchor swing low; ID-1)
+
+Appended by the ID-1 Build 1 docs commit, in the wording of the activation evidence shape note V1.4 §7 (`docs/design/20261030_ID1_ACTIVATION_EVIDENCE_SHAPE_NOTE_V1_4.md`). Nothing above this heading changes, C1, C2 and C3 included.
+
+For holding checks, the anchor swing low is frozen per actual holding activation (ID-1), independently of any hypothesis or idea version, and is never re-derived or replaced during that activation.

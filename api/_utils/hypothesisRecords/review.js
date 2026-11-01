@@ -66,7 +66,8 @@
 // the daily feed; until then the route answers without evidence
 // (`evidence: null, pending: 'awaiting_close'`).
 
-import { mapDailyRows, getCleanSymbol, formatEODHDSymbol, isCryptoSymbol } from '../marketDataCache.js';
+import { mapDailyRows } from '../marketDataCache.js';
+import { fetchDailyPayload } from '../eodhdDailyWindow.js';
 import { anchorSessionOf, previousSessionOf, sessionAtOrBefore, etDateOfInstant, HorizonClockError } from './horizon.js';
 import { battleIsOver } from './reviewPass.js';
 import { carryingBattleIdsOf } from './model.js';
@@ -87,7 +88,6 @@ export const REVIEW_NAMES_MAX = REVIEW_CALL_BUDGET - 1;
 export const REVIEW_CLAIM_LEASE_MS = 120_000;
 /** The wait after the window's end close before its closes are read (the daily feed settles). */
 export const REVIEW_SETTLE_MS = 3 * 60 * 60_000;
-const EODHD_API_BASE = 'https://eodhd.com/api';
 
 const nonEmpty = (v) => typeof v === 'string' && v.length > 0;
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -205,24 +205,14 @@ function priced(symbol, fetched, window) {
 
 /**
  * ONE market-data call: a symbol's daily rows over [from, to] — EODHD's
- * `/eod/` endpoint and the row mapping the daily window uses
+ * `/eod/` endpoint (the shared request, eodhdDailyWindow.js, oldest first and
+ * with no timeout) and the row mapping the daily window uses
  * (marketDataCache.js fetchDailyOHLCV / mapDailyRows), bounded by the
  * window's own dates. Writes no cache. Throws on a failed fetch (the
- * symbol's `fetch_failed`); the key never leaves this function.
+ * symbol's `fetch_failed`); a body that is not an array is no rows (`no_data`).
  */
 export async function fetchWindowDaily(symbol, { from, to }) {
-  const apiKey = process.env.EODHD_API_KEY;
-  if (!apiKey) throw new Error('EODHD_API_KEY not configured');
-  const eodSymbol = formatEODHDSymbol(getCleanSymbol(symbol), isCryptoSymbol(symbol));
-  const url = `${EODHD_API_BASE}/eod/${encodeURIComponent(eodSymbol)}?api_token=${apiKey}&fmt=json&period=d&order=a&from=${from}&to=${to}`;
-  let response;
-  try {
-    response = await fetch(url);
-  } catch {
-    throw new Error('EODHD daily request failed');
-  }
-  if (!response.ok) throw new Error(`EODHD daily responded with ${response.status}`);
-  const data = await response.json();
+  const data = await fetchDailyPayload(symbol, { from, to, order: 'a' });
   return Array.isArray(data) ? mapDailyRows(data).rows : [];
 }
 
