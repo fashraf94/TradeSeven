@@ -1,16 +1,20 @@
-# Call Record Field Contract V1.4 — Amendment F (revision 2)
+# Call Record Field Contract V1.4 — Amendment F (revision 3)
 
-**Date:** 2026-11-01 · **Revision 2:** 2026-11-02 · **Author:** Fable · **Status:** draft for blessing (framework chat). Blessing gates the fix's **merge**, not its build.
+**Date:** 2026-11-01 · **Revision 2:** 2026-11-02 · **Revision 3:** 2026-11-02 · **Author:** Fable · **Status:** **blessed** (framework chat, 2026-11-02). Revision 2 was blessed with two notes; both are folded in here. Built in PR #1020.
 **Builds on:** contract V1.4 + Amendments A, B rev 2, C rev 3, D rev 4, E rev 4.
 **Scope:** the entry-side mirror of Amendment E. Two clauses, one at mint and one at answer time, plus one row in D-9's display table and two refusal lines. No new field. One new refusal reason (`symbol_already_held`).
 
-**What revision 2 changes.** It folds in the build of PR #1020 and its §2 review (`docs/audits/20261102_COCKPIT_ENTRY_ALREADY_HELD.md` and `…_REVIEW.md`). No rule changes.
+**What revision 3 changes** (the blessing; no rule changes):
+- **"Held" for F-2 is a symbol test in multi-day battles too.** For an entry, any holding of the symbol makes the entry impossible, so Amendment E's condition 4 (position identity) does not apply to F-2. See "What stays as it is".
+- **The forward note on one end-of-check book** for E-1 and F-1 is recorded (Blessing record, note 2).
+- **The blessing record** is added at the end.
+
+**What revision 2 changed.** It folded in the build of PR #1020 and its §2 review (`docs/audits/20261102_COCKPIT_ENTRY_ALREADY_HELD.md` and `…_REVIEW.md`). No rule changes.
 - **The model-visible record is corrected.** Revision 1 said F-1 changes what the chat model reads. It does not. The upside line and the call line are byte-identical for these records (`callsBlock.js` pins the equality). The real model-visible effect is F-2's: answers that used to file on a held entry no longer can. Both are stated under Standing conditions.
 - **The build's counts are added to Evidence.** Fourteen entries had their stock arrive after mint, through the stagnation-risk swap. F-2 is the only rule that covers those, so it is not theoretical.
 - **Two of the founder's rulings are recorded:**
   - the card's chip word and silence line follow the tag, as in Amendment E;
   - F-1 does not read gameplan legs that run after the seam, because F-2 covers them.
-
 ---
 
 ## Evidence
@@ -90,7 +94,7 @@ Before this amendment, both showed the generic line.
 ## What stays as it is
 
 - **D-4's filing check** (`counterpart_not_held`, in the call's slot tier) and **D-6's retirement** are unchanged. `symbol_already_held` is not a D-6 book reason.
-- **"Held" is a symbol test**, as in Amendment E. The same multi-day caveat applies (E's condition 4): before multi-day battles reach the allowlist, "held" becomes "the same holding".
+- **(rev 3) "Held" is a symbol test, and it stays one in multi-day battles.** For an entry, any holding of the symbol makes the entry impossible, whichever position it is. So Amendment E's condition 4, which moves an exit's "held" to position identity before multi-day battles reach the allowlist, does **not** apply to F-2. The multi-day format arc leaves F-2 as written.
 - **League battles:** both rules apply there too, since the mint does not depend on the mode. The cockpit never shows League battles (Amendment E's routing wall).
 - **Not changed here.** The build's counts settle each case:
   - an entry whose named counterpart has left while its stock is out of the book: 0 found, so no follow-up. Its directive is refused, now with its own line;
@@ -118,3 +122,13 @@ Unchanged:
 1. **F-1:** an entry on the incoming stock of its own check's committed trade mints with `heldAtMint: true`, so it is an upside call.
 2. **F-2:** no answer, acknowledgments included, on an entry call whose stock is held in any tier of the book at answer time. The refusal is `400 ineligible_action` / `symbol_already_held`, run before D-4's eligibility test.
 3. **D-9's display table** gains the row "Already in your book".
+
+---
+
+## Blessing record
+
+**Framework chat, 2026-11-02: revision 2 blessed** (F-1, F-2, the D-9 row "Already in your book", and the two refusal lines). PR #1020 may merge on green CI. There were two notes, neither blocking:
+1. **Multi-day.** E's condition 4 does not apply to F-2. For an entry, any holding of the symbol makes the entry impossible, so the symbol test is the right test in multi-day battles too. It is recorded that way in "What stays as it is", so the multi-day arc does not change F-2.
+2. **One end-of-check book.** When Amendment E's follow-up lands (the end-of-check book for exits, bundled with the League slot label), E-1 and F-1 will read one shared helper. That helper gives the book when the check ends: the seam's book, plus the committed incoming stock, minus the committed outgoing stock. Exits and entries then cannot drift apart.
+   - Under that helper, an entry on the stock its own check sold (0 found) reads as not held.
+   - Whether such an entry is answerable stays with the parked bench-cooldown case (1 found).
