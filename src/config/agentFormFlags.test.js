@@ -2,8 +2,8 @@
 //
 // Build S1 and S2 — THE FLAG PINS (BUILD_RULES §2) for AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and
 // AGENT_FORM_LEAGUE_ENABLED (src/config/agentFormFlags.js). All three are live, flipped together in the flags-on PR
-// (founder ruling F1, Oct 30, 2026), and all three stay as kill switches (F2): a rollback moves the flag, its pin here
-// and its DARK_BY_DESIGN entry together.
+// (founder ruling F1, Oct 30, 2026), and all three stay as kill switches (F2): a rollback moves the flag and its pin
+// here, and its DARK_BY_DESIGN entry stays out, because the flag is now a live kill switch, not dark by design.
 //
 // The source rows are the kill switch's shape, and they mean more now the flags are on: every reader takes the module's
 // literal straight into a ternary that Rollup folds, so setting a flag false gives that surface's old element back and
@@ -46,7 +46,7 @@ describe('AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and AGENT_FORM_LEAGU
     expect(read('featureFlags.js')).not.toMatch(/AGENT_FORM/);
   });
 
-  it('flagPinGuard no longer lists them as dark by design, and still registers their module (a rollback moves these lines too)', () => {
+  it('flagPinGuard no longer lists them as dark by design, and still registers their module (a rollback leaves the entries out)', () => {
     const guard = read('flagPinGuard.test.js');
     expect(guard).not.toMatch(/\n {2}AGENT_FORM_HUB_ENABLED:\n/);
     expect(guard).not.toMatch(/\n {2}AGENT_FORM_BATTLE_ENABLED:\n/);

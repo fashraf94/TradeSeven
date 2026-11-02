@@ -142,9 +142,10 @@ const DARK_BY_DESIGN = {
   // AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and AGENT_FORM_LEAGUE_ENABLED intentionally ABSENT: the three flipped
   // true together in the flags-on PR (founder ruling F1, Oct 30, 2026) — the deliberate flip drops them here in the same
   // commit, per the guard's own "if DELIBERATE" instruction. Their pins in agentFormFlags.test.js assert the live true
-  // values AND, turned around, that these entries are gone. They stay as kill switches (F2), so a rollback moves the
-  // flag, its pin and its entry here together. AGENT_FORM_LAB_ENABLED stays listed above. Re-adding one while it ships
-  // true fails the DARK_BY_DESIGN integrity test below.
+  // values AND, turned around, that these entries are gone. They stay as kill switches (F2): a rollback moves the flag
+  // and its pin, and the entry here stays out, because the flag is now a live kill switch, not dark by design.
+  // AGENT_FORM_LAB_ENABLED stays listed above. Re-adding one while it ships true fails the DARK_BY_DESIGN integrity test
+  // below.
   COMMAND_CENTER_SYNC_ENABLED:
     'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
   // COMMAND_CENTER_HUB_ENABLED intentionally ABSENT: the Command Center hub
