@@ -1,6 +1,6 @@
 # Build report: the casual clone carries the Character settings
 
-**Date:** November 1, 2026 · **Executor:** Claude Code (desktop, Windows + WSL Ubuntu; Opus 5.5) · **Prompt:** "FantasyTrades — the casual clone carries the Character settings", prepared October 29, 2026 · **Branch:** `claude/casual-clone-character-settings` (local worktree `claude/casual-clone-character-settings-a749e7`, the app's suffix) · **Base:** `5b32cea5` (`main`; `be52068c` and `65b8632f` are both its ancestors) · **Code head:** `3757f4a7` · `git fetch origin` ran first; the tree was clean. The prompt's setup says no advisor; none was used.
+**Date:** November 1, 2026 · **Executor:** Claude Code (desktop, Windows + WSL Ubuntu; Opus 5.5) · **Prompt:** "FantasyTrades — the casual clone carries the Character settings", prepared October 29, 2026 · **Branch:** `claude/casual-clone-character-settings` (local worktree `claude/casual-clone-character-settings-a749e7`, the app's suffix) · **Base:** `5b32cea5` (`main`; `be52068c` and `65b8632f` are both its ancestors) · **Code head:** `3757f4a7` as first delivered, `85ca004a` with the founder's rulings (§14) · `git fetch origin` ran first; the tree was clean. The prompt's setup says no advisor; none was used.
 
 ## 1. Verdict
 
@@ -9,11 +9,11 @@
 | **Built** | Standing leans, the tempo dial and the settings revision join the one list a clone copies. Casual clones take them at every deploy, training clones at creation. A new guard fails if a future manifest field is on neither list. |
 | **Starting check** | No STOP. A running game reads leans and tempo only from its frozen battle document (§2.2). No fenced file changed. |
 | **Takes effect** | At the first deploy after this reaches production, on a clone with no game running. No running game changes; no backfill (§6). |
-| **Decide before merge** | **FQ-1 (§12).** R-CC-5, built to its letter, takes Set's link away from a ranked battle with no recorded tempo. Amendment L says "every battle links". The two texts disagree. |
-| **Signature** | The fence-contact paragraph in §3 is for your signature. `createAgentBattle` and every other fenced file are byte-identical. |
-| **Checks** | Full Linux suite exit 0: `Test Files 1263 passed | 8 skipped (1271)`. `lint:gate` exit 0. `vite build` exit 0. |
-| **Review** | Focused, below the threshold (9 files). Findings and refuter verdicts in §10. Mutation: 20 of 20 killed (§11). |
-| **Not done** | Not merged. The merge date in §4 is pending. Nothing was pasted for R-CC-6, so the activation record is unchanged (§6). |
+| **Founder rulings** | Given on the draft PR: every battle links (FQ-1), and FQ-2 approved as a separate PR. Applied in §14. |
+| **Signature** | The founder signed §3 as written. `createAgentBattle` and every other fenced file are byte-identical. |
+| **Checks** | At the rulings' code head `85ca004a`: full Linux suite exit 0, `Test Files 1263 passed \| 8 skipped (1271)`. `lint:gate` exit 0. Film Room suite exit 0. `vite build` exit 0 at `3757f4a7`; the pushed head's is in the PR description. |
+| **Review** | Focused at 9 files (§10). The hub record took the diff to 10 files, so the multi-lens review ran at `85ca004a` (§10.1). No defect in the code; it corrected the records and the check in §13. Mutation: 20 of 20 at `3757f4a7`, 8 of 8 at `85ca004a` (§11). |
+| **Not done** | Not merged. FQ-2 waits for this PR to merge. **The founder's check after merge has changed: see §13.** |
 
 ## 2. The starting check
 
@@ -93,11 +93,13 @@ Fenced functions called, none edited: `createAgentBattle` (the guard's rows run 
 
 **Compared: Backing.** `resolveHashAtStake` takes the owner's latest completed game of any type (`api/_utils/backingStake.js:223–233`). Settlement takes the tournament game's (`api/_utils/backingSettlement.js:539`). The results card marks a difference as "Loadout changed during the week" (`api/_utils/backingResults.js:107–114`, `src/components/League/backing/backingCopy.js:588`). Backing beta is off and the field is telemetry, so no code changed. One comment at `resolveHashAtStake` points here (`backingStake.js:219–221`).
 
-**Known cause of a hash change:** this build. **Merge date: pending; fill it in at merge.** From that date, a casual or training game for a player with leans or a set tempo hashes differently from one before it, with no change by the player.
+**Known cause of a hash change:** this build. **Merge date:** the date PR #1019 merges (see git log). From that date, a casual or training game for a player with leans or a set tempo hashes differently from one before it, with no change by the player.
 
 **What the code shows beyond the ruling.** The false mark the ruling worries about already exists, and this build shrinks it. For a player with leans or a set dial, a casual game's hash today lacks them while the tournament game's hash has them, so a stake read from a casual game already differs at settlement. This build leaves the tournament hash alone. After it, a casual game played with the same Forge settings matches the tournament game. A stake placed before the merge keeps its old hash, so it can still show the mark; it would have shown it without this build too.
 
 ## 5. The Film Room's Set link (R-CC-5)
+
+*The founder's ruling FQ-1 replaced this: every battle links (§14). This section records the build as first delivered.*
 
 **RL-1's condition was on `main`** (`src/screens/filmRoomV2/FilmRoomCardRegions.jsx:109` at the base). Removed in the same commit that adds `dials` (`45d36523`). The link is now gated by the tape alone: `if (!recorded)` at `FilmRoomCardRegions.jsx:107`.
 
@@ -122,7 +124,7 @@ This moves more rows than "flip its test row", and it takes the link from ranked
 
 **R-CC-6.**
 - `src/App.activeBattlesPoll.hub.jsdom.test.jsx:13–15`: reworded to the live flag (`COMMAND_CENTER_HUB_ENABLED = true`, `src/config/featureFlags.js:3463`). Comment only.
-- `docs/audits/20261028_ACTIVATION_COMMAND_CENTER_HUB.md`: nothing was pasted into this session, so §3's iPhone 16 readout and §8's production checks stay as they were, pending. The file is unchanged.
+- `docs/audits/20261028_ACTIVATION_COMMAND_CENTER_HUB.md`: filled from the founder's rulings (§14).
 
 ## 7. Files
 
@@ -138,8 +140,9 @@ This moves more rows than "flip its test row", and it takes the link from ranked
 | `src/screens/filmRoomV2/FilmRoomCards.jsdom.test.jsx` | §5's rows |
 | `src/App.activeBattlesPoll.hub.jsdom.test.jsx:13–15` | R-CC-6's comment |
 | `docs/audits/20261101_BUILD_CASUAL_CLONE_CHARACTER_SETTINGS.md` | This report |
+| `docs/audits/20261028_ACTIVATION_COMMAND_CENTER_HUB.md` | R-CC-6, from the founder's rulings (§14) |
 
-Nine files, about 400 lines changed before this report: below the BUILD_RULES §2 threshold.
+Line numbers in this table are the first delivery's; §14 gives the Film Room's after the rulings. Nine files at first delivery. The hub record makes ten, which reaches the BUILD_RULES §2 threshold (§14).
 
 ## 8. Rows, red then green
 
@@ -162,7 +165,7 @@ All in a private WSL worktree of `~/pd-ci`, removed at the end, at `3757f4a7`, `
 
 | Check | Result |
 |---|---|
-| Full suite | Exit 0. `Test Files 1263 passed | 8 skipped (1271)`. `Tests 28103 passed | 89 skipped (28192)`. 240 s |
+| Full suite | Exit 0. `Test Files 1263 passed \| 8 skipped (1271)`. `Tests 28103 passed \| 89 skipped (28192)`. 240 s |
 | `lint:gate` | Exit 0 |
 | `vite build` | Exit 0 at the code head; re-run at the pushed head (§13) |
 | Fenced files | `git diff 5b32cea5 HEAD` on all 11: empty |
@@ -187,6 +190,23 @@ Focused review, below the threshold: one Sonnet lens on a `git archive` snapshot
 | RV-5 | Nothing changes a running game before its next deploy. | **CONFIRMED.** The other readers of an agent document during a game (chat, debate, call response, opener, batch review, reflection) read none of the fields | None |
 
 Findings: 2 older behaviours confirmed (RV-1, RV-2), 1 recorded limit (RV-3), 2 no-finding claims upheld (RV-4, RV-5). None was refuted outright; two were narrowed. None is a defect in this diff, and none changed it.
+
+### 10.1 The multi-lens review at 10 files
+
+The hub record took the branch to 10 files, the BUILD_RULES §2 threshold. Three Sonnet lenses each worked on their own `git archive` snapshot of `85ca004a`, given the code and not this report's conclusions: Film Room behaviour, end-to-end wiring, and test integrity with the written records. One Sonnet refuter then took every finding on its own snapshot. All were read-only.
+
+**Result: no defect in the code.** Lens A found nothing in any state of Set's words and link. Lens B traced the path from the Forge to the tape and found no step that drops the tempo. The findings below are about the records and about what the founder's check can show.
+
+| ID | Claim | Refuter | Disposition |
+|---|---|---|---|
+| RC-1 | The hub record's §9 bullet called the App test comment stale, which this branch fixed | **CONFIRMED** | Fixed: the bullet now says PR #1019 reworded it |
+| RC-2 | This report's §1 "Review" and "Not done" rows still described the pre-ruling state | **CONFIRMED** | Fixed |
+| RC-3 | The guard's blind spot: a read behind a branch no fixture takes, written as a destructure, a bracket read or in a helper in another file, escapes both the runtime proxy and the source scan | **CONFIRMED.** No read escapes it today | Recorded limit. The guard catches a plain dotted read anywhere in the two scanned sources, and any read that runs. Mutants M6 and M8 show each half |
+| RC-4 | The Film Room never names the tempo: nothing in `src/` reads `tempoDesired` | **NARROWED.** The one visible effect is the threshold on a tapped check (`FilmRoomCardRegions.jsx:162`) | §13's check corrected |
+| RC-5 | Set's link needs the day's stagnation rule on | **CONFIRMED.** Off only for `guardian` (`api/_utils/agentArchetypeConfig.js:199`); the dial doesn't change it | §13's check corrected |
+| RC-6 | With the compiler on, a clone carrying the ranked `settingsRev` recompiles and does not refuse | **NARROWED.** No refusal comes from the carried rev. `writeCompiledBuildsInTx` itself was not traced for a clone | Recorded. `COMPILER_ENABLED` is false |
+
+None was refuted outright; two were narrowed. One cosmetic note stays open on purpose: a long comment line in `FilmRoomCardRegions.jsx`, left so the suite's tested code is the code pushed.
 
 ## 11. Mutation record
 
@@ -215,9 +235,24 @@ Findings: 2 older behaviours confirmed (RV-1, RV-2), 1 recorded limit (RV-3), 2 
 | M19 | The link shown with no tempo recorded | 4/72 | R-CC-5 rows |
 | M20 | The guard's own check emptied | 3/20 | planted-field rows |
 
+M18 and M19 were run against the first delivery's R-CC-5 code.
+
+**The rulings round.** 8 more on `setStateOf` and what it feeds, on a snapshot of `85ca004a`, against `FilmRoomCards.jsdom.test.jsx`. All killed, and the file restored clean.
+
+| # | Mutant | Rows red |
+|---|---|---|
+| F1 | The recorded-tempo condition back in | 4/72 |
+| F2 | RL-1's clone condition back in | 1/72 |
+| F3 | The link with the rule off | 4/72 |
+| F4 | The link with the rule unknown | 3/72 |
+| F5 | The Character tab flag dropped | 3/72 |
+| F6 | The tempo dial flag dropped | 3/72 |
+| F7 | `cards.setNoTempo` read again | 11/72 |
+| F8 | RL-5's sentence dropped where Set links | 6/72 |
+
 ## 12. Founder questions
 
-**FQ-1: Set's link on a ranked battle with no recorded tempo. Please decide before merge.**
+**FQ-1: Set's link on a ranked battle with no recorded tempo. Ruled: every battle links (§14).**
 
 - R-CC-5 says the link is "gated by RK-2's tape condition alone (a recorded `tempoDesired`)". Amendment L RL-1's "Later" says this build "removes the clone condition in the same diff, so every battle links". Both are yours; they give different results.
 - RL-1's condition was "not a casual clone, **or** the tape records a tempo". Taking out the first half leaves the recorded tempo alone. So the ranked battles RL-1 gave the link to lose it: a player who never moved the dial sees "No tempo setting was recorded for this battle." and no link. Those are the players review KR2-1 named, the ones who have not found the dial.
@@ -225,7 +260,7 @@ Findings: 2 older behaviours confirmed (RV-1, RV-2), 1 recorded limit (RV-3), 2 
 - **Recommendation: "every battle links".** After this build the dial reaches every battle, which is RL-1's stated test. RL-5's sentence is true on every battle, old casual days included.
 - **The change:** delete `FilmRoomCardRegions.jsx:107`, flip rows `:997`, `:1042`, `:1055`, `:1106`. `cards.setNoTempo` then has no reader; removing that key is a wording change for you to rule on. Mutant M19 is this exact change, and it reddens those four rows and no others.
 
-**FQ-2: a player's first casual game runs without the agent's memory (RV-1). Separate from this PR.**
+**FQ-2: a player's first casual game runs without the agent's memory (RV-1). Ruled: approved as a separate small PR after this one merges: copy memory at creation, training clones unchanged.**
 
 - This predates the build and did not change with it. Every later casual deploy copies memory through the resync, so the gap is one game per player, and only for a player whose ranked agent has memory when their clone is first created.
 - The clone's empty start is deliberate in the code (`casualClone.js:67–69`, "fresh history") and pinned by a row, so changing it needs your ruling.
@@ -236,8 +271,32 @@ Findings: 2 older behaviours confirmed (RV-1, RV-2), 1 recorded limit (RV-3), 2 
 ## 13. Delivery
 
 - Draft PR from `claude/casual-clone-character-settings`, citing changes by `file:line`. Pushed, reported, stopped: no merge, no CI watching, no smoke branch.
-- The pushed head adds only this report to `3757f4a7`. `vite build` at that exact head is reported in the PR description.
+- The pushed head adds only this report to the last code commit. `vite build` at that exact head is reported in the PR description.
 - Copy of this report: `C:\Users\fashr\Documents\FantasyTrades\20261101_BUILD_CASUAL_CLONE_CHARACTER_SETTINGS.md`.
 - The private WSL worktree is removed.
 
-**The founder's check after merge:** deploy one BaggerBomb game with a non-default tempo set in the Forge's Character area. When its first day's tape exists, the Film Room shows the tempo the game ran with, and Set's dial link appears on a filed Set card's receipt. Film Room cards are on `allowlist`, so use an allowlisted account.
+**The founder's check after merge, corrected by the review (§10.1).** The prompt's wording can't be met as written: the Film Room never names the tempo, and since FQ-1 Set's link appears on every battle where the rule is on, so the link alone no longer proves the tempo reached the game. The proof is a number:
+
+1. Use an allowlisted account (Film Room cards are on `allowlist`) and an agent that is not `guardian`. For `guardian` the stagnation rule is off, so Set says "No setting changes this situation for this archetype." and shows no link, by design.
+2. Set the tempo to Measured in the Forge's Character area and deploy one BaggerBomb game.
+3. When its first day's tape exists, open a day with a stalled tag and tap a check. The tag line reads "count N against a threshold of M". On Measured, M is 7 instead of 5 for `momentum_chaser`, 9 instead of 6 for `analyst`, `diversifier` and `contrarian`, and 4 instead of 3 for `degen`.
+4. File a Set card on that day. Its receipt holds the dial link.
+
+If the game has no stalled tag, the screen shows no difference. The tape's `tags.inputs.tempoDesired` still records `measured`.
+
+## 14. The founder's rulings
+
+| Ruling | Applied |
+|---|---|
+| **FQ-1: every battle links** | `setStateOf` loses the `if (!recorded)` line, and the two variables only that line read (`FilmRoomCardRegions.jsx:100–105`). Set now links wherever the day's rule is on and both Forge flags are on. `setSayOf` no longer reads `cards.setNoTempo` (`:108`); the key stays in `filmRoomCopy.js:330`, unread, for the Film Room chat. RL-5's sentence stays |
+| **Rows** | The four flipped: `FilmRoomCards.jsdom.test.jsx:998`, `:1038`, `:1054`, `:1104`. RL-5's running-battle row (`:1082`) went back to its form on `main`, since its day no longer needs a recorded tempo. Red against the old code (5 rows), green after |
+| **Signature** | §3 signed as written |
+| **R-CC-4** | §4's merge date reads as ruled |
+| **R-CC-6** | Hub record §3 and §8 item 1's phone half written as ruled; §8's other items stay pending. Beyond the ruling's two lines, so the record doesn't contradict itself: the `PHONE_SHADOW` sentence stays in the §3 row as a separate fact, its §1 "Not yet done" line lost the readout clause, and its §9 bullet now says this PR fixed the App test comment |
+| **FQ-2** | Approved as a separate PR after this one merges. Not in this PR |
+
+**Checks at `85ca004a`,** on Linux under the local machine rules: Film Room suite exit 0, 28 files, 581 rows; `lint:gate` exit 0; full suite exit 0, `Test Files 1263 passed | 8 skipped (1271)`, `Tests 28103 passed | 89 skipped (28192)`, 274 s. The totals match §9's because rows were flipped, not added. Everything after `85ca004a` is docs only.
+
+**Review.** The diff reached 10 files, so the multi-lens review ran (§10.1). No defect in the code. It changed §13: **the founder's check after merge is a threshold number now, not the link.**
+
+**Mutation.** 8 of 8 on `setStateOf` killed (§11). The clone code and the guard did not change this round, so the first 20 stand.

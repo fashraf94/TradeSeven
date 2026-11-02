@@ -181,5 +181,5 @@ If anything is wrong on production: revert the flip PR (one commit) or promote t
 
 ## 9. Notes
 
-- `src/App.activeBattlesPoll.hub.jsdom.test.jsx:13–15` still says the flag "stays false and its dark pin … is not touched". That suite forces the hub on through the picker and passes with the flag true; the comment is now stale. It is outside the flip's five files, so it is left for a later tidy.
+- `src/App.activeBattlesPoll.hub.jsdom.test.jsx:13–15` said the flag "stays false and its dark pin … is not touched". That suite forces the hub on through the picker and passes with the flag true. The comment was outside the flip's five files; PR #1019 reworded it to the live state.
 - The flip touches no file the review or the prompt fenced, and adds no new import into `src/components/CommandCenter/` (the mount guard, 62 of 62).
