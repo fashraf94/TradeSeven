@@ -1,8 +1,15 @@
-# Call Record Field Contract V1.4 — Amendment F
+# Call Record Field Contract V1.4 — Amendment F (revision 2)
 
-**Date:** 2026-11-01 · **Author:** Fable · **Status:** draft for blessing (framework chat). Blessing gates the fix's **merge**, not its build.
+**Date:** 2026-11-01 · **Revision 2:** 2026-11-02 · **Author:** Fable · **Status:** draft for blessing (framework chat). Blessing gates the fix's **merge**, not its build.
 **Builds on:** contract V1.4 + Amendments A, B rev 2, C rev 3, D rev 4, E rev 4.
 **Scope:** the entry-side mirror of Amendment E. Two clauses, one at mint and one at answer time, plus one row in D-9's display table and two refusal lines. No new field. One new refusal reason (`symbol_already_held`).
+
+**What revision 2 changes.** It folds in the build of PR #1020 and its §2 review (`docs/audits/20261102_COCKPIT_ENTRY_ALREADY_HELD.md` and `…_REVIEW.md`). No rule changes.
+- **The model-visible record is corrected.** Revision 1 said F-1 changes what the chat model reads. It does not. The upside line and the call line are byte-identical for these records (`callsBlock.js` pins the equality). The real model-visible effect is F-2's: answers that used to file on a held entry no longer can. Both are stated under Standing conditions.
+- **The build's counts are added to Evidence.** Fourteen entries had their stock arrive after mint, through the stagnation-risk swap. F-2 is the only rule that covers those, so it is not theoretical.
+- **Two of the founder's rulings are recorded:**
+  - the card's chip word and silence line follow the tag, as in Amendment E;
+  - F-1 does not read gameplan legs that run after the seam, because F-2 covers them.
 
 ---
 
@@ -14,16 +21,19 @@
 - The card offered "Bring it in". The server refused it: `400 ineligible_action`, `counterpart_not_held`, because ZS had left with the trade. The player saw the generic line "That answer isn't available for this call — nothing was filed."
 - The card's free "Hold" would have filed. It agrees to a plan for a stock already in the book.
 
-**The read-only audit of 2026-11-01** covered both allowlisted accounts and every call minted at `'on'`. It used the matching rule of the 2026-10-29 count, which it reproduced exactly. Its rebuilt book agreed with the stored `heldAtMint` on 140 of 140 entry calls.
+**The counts.** These come from the read-only audit of 2026-11-01, re-taken by the build on 2026-11-02. They cover both allowlisted accounts and every call minted at `'on'`. The matching rule is the 2026-10-29 count's, and it reproduced that count exactly. The rebuilt book agreed with the stored `heldAtMint` on every entry call.
 
-| Measure | Count |
+| Measure | Count (build, Nov 2) |
 |---|---|
-| Entry calls at `'on'` | 140 |
-| On the stock their own check had just bought | **19 (13.6%)**: 16 in League battles, 3 in agent-mode battles |
+| Entry calls at `'on'` | 144 (140 at the Nov 1 audit) |
+| On the stock their own check had just bought (F-1) | **19**: 16 in League battles, 3 in agent-mode battles |
 | … with no named counterpart | 14. By the code, a directive answer would have been **accepted** and spent a command on a stock already held. |
 | … whose named counterpart is the trade's own outgoing stock | 5. The directive is refused (`counterpart_not_held`), but the acknowledgment would file. |
-| … answered | 0 |
-| `heldAtMint` on those 19 | false on all 19, by construction: the seam's book predates the check's own trade |
+| … acted or answered | 0. The build's stop gate did not fire. |
+| Entries whose stock came into the book **after** mint (F-2 only) | **14**, all through the stagnation-risk swap |
+| Entries open after their named counterpart left while their own stock was out of the book | 0 |
+| Entries on the stock their own check sold | 0 |
+| Entries on a stock under the bench cooldown at mint | 1 (not changed here) |
 
 ---
 
@@ -38,7 +48,7 @@ Nothing requires an entry call's stock to be *out* of the book.
   - So on a held stock with no named counterpart, "Bring it in" or "Hold off" spends a command on a trade that cannot happen.
 - **In the cockpit:** such a card offers "Go if it triggers" / "Hold off" or "Hold" / "Bring it in" for a stock already in your book. Its silence line promises "it brings it in".
 
-The same holds after mint for a stock that comes into the book by another route while the entry call is open.
+The same holds after mint for a stock that comes into the book by another route while the entry call is open. The stagnation-risk swap did this 14 times.
 
 ---
 
@@ -49,8 +59,8 @@ The same holds after mint for a stock that comes into the book by another route 
 - **or** its symbol is the incoming stock of the check's own committed trade. This is the executor's `symbolIn`, read exactly as Amendment E-1 rev 3 reads it. A trade that did not commit has no incoming stock, and a missing value matches nothing.
 
 Notes:
-- **The effect is C-2's existing treatment:** no answer is legal (`illegal_answer`, `upside_call`), the cockpit shows the upside chip, and the call never leads the Now card. The agent's plan stays on record as an upside line, and it can still resolve `hit` (7 of the 19 did).
-- **Model-visible, data-dependent:** no template, wording or registry entry changes. The chat calls block (`callsBlock.js`) renders such a call through the existing upside line (`renderUpsideLine`) instead of the call line. This is a change in what the chat model reads for these records, named here for the fenced-class record.
+- **The effect is C-2's existing treatment:** no answer is legal (`illegal_answer`, `upside_call`), the cockpit shows the upside chip, and the call never leads the Now card. The agent's plan stays on record and can still resolve `hit` (7 of the 19 did).
+- **(rev 2) Only the agent's own committed trade counts.** A stock that a later step of the same check brings in (an approved gameplan meeting's leg, for example) is not read at mint. F-2 withdraws the answers on such a call at answer time.
 - **An unknown executor outcome** (Amendment E's Q1 case) leaves no incoming stock, so F-1 does not mark the call. F-2 still withdraws its answers at answer time, because the live book holds the stock.
 - Records already minted stay as written. Mint mode `'off'` writes nothing, as before.
 
@@ -64,7 +74,8 @@ Notes:
   - no buttons;
   - no silence line;
   - the strip chip reads "already in your book";
-  - the tag reads **"Already in your book"**. This is a row in **D-9's display table** (the Build 2b spec, §7.1). As in E-2, the tag replaces only the bare live tag: a recorded answer, an act, a retirement, a replacement or a recorded event keeps its own tag.
+  - the tag reads **"Already in your book"**. This is a row in **D-9's display table** (the Build 2b spec, §7.1).
+- **(rev 2) Recorded facts keep their tags.** As in E-2, the "Already in your book" tag replaces only the bare live tag. A recorded answer, an act, a retirement, a replacement or a recorded event keeps its own tag, and the chip word and silence line follow whichever tag shows. "Already in your book" beside "Acted" would mislead, so it never appears there. Founder ruling, 2026-11-02.
 - Upside calls keep their own treatment.
 - An answer already recorded stays as recorded.
 
@@ -72,7 +83,7 @@ Notes:
 - `symbol_already_held` → "{SYM} is already in your book — nothing was filed."
 - `counterpart_not_held` → "{CP} has already left your book — nothing was filed."
 
-Today both of these show the generic line.
+Before this amendment, both showed the generic line.
 
 ---
 
@@ -81,11 +92,10 @@ Today both of these show the generic line.
 - **D-4's filing check** (`counterpart_not_held`, in the call's slot tier) and **D-6's retirement** are unchanged. `symbol_already_held` is not a D-6 book reason.
 - **"Held" is a symbol test**, as in Amendment E. The same multi-day caveat applies (E's condition 4): before multi-day battles reach the allowlist, "held" becomes "the same holding".
 - **League battles:** both rules apply there too, since the mint does not depend on the mode. The cockpit never shows League battles (Amendment E's routing wall).
-- **Not changed here, and counted by the build:**
-  - an entry whose named counterpart has left while its stock is not in the book. The directive is refused, now with its own line, and the acknowledgment still files;
-  - an entry on the stock its own check sold, or on a stock under the bench cooldown at mint.
-
-  Each becomes a follow-up only if the counts say it matters.
+- **Not changed here.** The build's counts settle each case:
+  - an entry whose named counterpart has left while its stock is out of the book: 0 found, so no follow-up. Its directive is refused, now with its own line;
+  - an entry on the stock its own check sold: 0 found;
+  - an entry on a stock under the bench cooldown at mint: 1 found. It is left as found, not fixed.
 
 ---
 
@@ -94,7 +104,14 @@ Today both of these show the generic line.
 Unchanged:
 - Records are frozen in place.
 - No template, wording or registry entry changes.
-- The one model-visible effect is the data-dependent upside rendering named in F-1.
+
+**(rev 2) What the model can read, stated exactly:**
+- **F-1 changes no byte.** The chat calls block renders an upside call through `renderUpsideLine` and an ordinary call through `renderCallLine`. For a shot or Confirmation, both produce the same condition line: symbol, side, level and deadline, with no action clause. `callsBlock.test.js` pins the equality.
+- **F-2 removes two paths; it adds no text.** Before F-2, an answer on a held entry could file in two ways:
+  - a directive with no named counterpart, which put its canonical directive text into the agent's next prompt;
+  - an acknowledgment, which became an `answered:` row in the chat calls block.
+
+  Neither can file now. So what the model can read shrinks, and nothing new is written. This is named here for the fenced-class record.
 
 ## What the framework chat is asked to bless
 
