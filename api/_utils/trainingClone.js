@@ -50,7 +50,9 @@ const LOG_PREFIX = '[TrainingClone]';
 const AGENTS_COLLECTION = 'agents';
 
 // Loadout fields a clone inherits from the ranked agent (the "Trading Brain"
-// that shapes decisions: archetype + config + equip + the consolidated insight).
+// that shapes decisions: archetype + config + equip + the consolidated insight
+// + the Character settings). Copied at creation and, for a casual clone, at every
+// deploy's resync, so a change reaches the next battle and never a running one.
 // History/identity/pointer fields are NOT in this list — they are reset fresh
 // (a per-pod clone carries no ranked history and its own pointers).
 // EXPORTED so the casual-clone builder (casualClone.js) reuses the SAME inherited
@@ -75,12 +77,29 @@ export const INHERITED_LOADOUT_FIELDS = Object.freeze([
   'evolutionCycle',
   'starterKitCompleted',
   'name',
+  // The Character settings (the Forge writes them to the ranked agent) and the
+  // settings revision the manifest pairs with them. standingLeansInvalidated is
+  // stored by nothing today: createAgentBattle derives it from standingLeans and
+  // the archetype, which both ride here, so the pair cannot disagree.
+  'standingLeans',
+  'standingLeansInvalidated',
+  'dials',
+  'settingsRev',
   // Sol confirmation pass BL2 — BIRTH PROVENANCE MEANS BIRTH: the birth
   // fields are NOT inherited (a new clone object stamps its OWN creation
   // descriptor). The SOURCE's birth stamp travels as LINEAGE instead —
   // loadoutSourceIdentityVersion / loadoutSourceActivationGeneration,
   // assigned by the builders below (absent on the source ⇒ absent on the
   // clone; byte-identical for the pre-stamp fleet).
+]);
+
+// Agent fields the battle manifest reads that a clone must NOT inherit, each with
+// its reason. A field the manifest reads belongs either on INHERITED_LOADOUT_FIELDS
+// or here; cloneManifestParity.guard.test.js fails on one that is on neither.
+export const RANKED_ONLY_FIELDS = Object.freeze([
+  'id', // The agent's own document id: it names the manifest (manifestId) and the
+  //       [LeanRevalidation] log line. A clone's battle carries the clone's own id
+  //       (the load-bearing fence rule, casualClone.js), never the parent's.
 ]);
 
 // BL2: lineage from the source's birth stamp — separate fields, never the
