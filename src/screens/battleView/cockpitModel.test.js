@@ -540,6 +540,8 @@ describe('§7.4 — THE COVERAGE: the one table maps every fact the writers can 
       // Amendment E rev 2 (E-2): an open exit call whose stock is in no tier of the battle document — derived at
       // render from the record and the screen's battle, never written.
       'call:not_held',
+      // Amendment F (F-2): the entry-side mirror — an open entry call whose stock IS in some tier of that document.
+      'call:already_held',
     ]);
     expect(Object.keys(COCKPIT_FACT_TAGS).filter((k) => !known.has(k))).toEqual([]);
   });

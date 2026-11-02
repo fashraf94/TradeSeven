@@ -326,6 +326,8 @@ export function cardViewOf(tile, ctx) {
   // already answers.
   // Amendment E (E-2): and where the tile reads "Not in your book" it drops the silence clause too — "If you say nothing,
   // it exits." would promise an exit of a stock the book does not hold (the strip chip already stops saying "exit").
+  // Amendment F (F-2): and where it reads "Already in your book" — "it brings it in" would promise an entry of a stock
+  // the book already holds.
   const head = tile.targetLine ? tile.call : target;
   const lines = planLinesOf(head, { agent, nowMs, evaluations });
   return {
@@ -333,7 +335,7 @@ export function cardViewOf(tile, ctx) {
     mode: 'call',
     eyebrow: kindOf(head),
     plan: lines.plan,
-    silence: tile.targetLine || tile.tag?.fact === 'call:not_held' ? null : lines.silence,
+    silence: tile.targetLine || tile.tag?.fact === 'call:not_held' || tile.tag?.fact === 'call:already_held' ? null : lines.silence,
     facts: lines.facts,
     targetLine: tile.targetLine ?? null,
     buttons: buttonsOf(tile, { meter, pending, league }),
@@ -365,6 +367,8 @@ export function chipWordOf(tile, { commandKey = null } = {}) {
   }
   // Amendment E (E-2): an exit whose stock is in no tier of the book — the chip says so, not the agent's default word.
   if (tile.tag?.fact === 'call:not_held') return { word: COPY.cockpit2bWordNotHeld, yours: false };
+  // Amendment F (F-2): an entry whose stock is in the book — the chip says so, not "enter" / "wait".
+  if (tile.tag?.fact === 'call:already_held') return { word: COPY.cockpit2bWordAlreadyHeld, yours: false };
   if (target.direction === 'exit') return { word: target.defaultAction === 'hold' ? COPY.cockpit2bWordHold : COPY.cockpit2bWordExit, yours: false };
   return { word: target.defaultAction === 'hold' ? COPY.cockpit2bWordWait : COPY.cockpit2bWordEnter, yours: false };
 }
