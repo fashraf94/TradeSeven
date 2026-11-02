@@ -11,13 +11,17 @@
 // geometry — the first viewport, the strip's 63–69 px, the sticky tab row —
 // is measured in headless Edge for the S1 build report, not here.
 
-import React from 'react';
+import React, { Component } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { userState, motionState } = vi.hoisted(() => ({
+const { userState, motionState, formState } = vi.hoisted(() => ({
   userState: { user: { displayName: 'Flash', username: 'flash' } },
   motionState: { reduced: false },
+  // The armored hero's form (flags on): jsdom has no WebGL, so it is a stand-in that reports live when a row asks, and records its props.
+  formState: { live: false, props: null },
 }));
+// These rows are the armored hero's whichever way the flag ships, so a one-line rollback reddens its pins and nothing else.
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_HUB_ENABLED: true }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 // Slices S3 and S5: the hub module imports its readers and reaches the shipped sheets and services,
 // all of which import the Firebase config (it validates at import); nothing here reads.
@@ -26,13 +30,18 @@ vi.mock('framer-motion', async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, useReducedMotion: () => motionState.reduced };
 });
+vi.mock('../AgentForm/AgentForm', () => ({
+  default: class AgentFormProbe extends Component {
+    componentDidMount() { if (formState.live) this.props.onStatus('live'); }
+    render() { formState.props = this.props; return null; }
+  },
+}));
 
 import CommandCenterHub from './CommandCenterHub';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { HUB_LAYERS } from './hub/hubStyle';
 import { HUB_LAYOUT_FIXTURES, HUB_LAYOUT_FIXTURE_NAMES, HUB_TEST_SHELLS, SIDEBAR } from './__fixtures__/hubLayoutFixtures';
 import { byRole, byText, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav, press } from './__fixtures__/hubTestKit';
-import { installFakeCanvas } from './__fixtures__/shadowCanvasKit';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -55,6 +64,7 @@ afterEach(() => {
   vi.useRealTimers();
   userState.user = { displayName: 'Flash', username: 'flash' };
   motionState.reduced = false;
+  formState.live = false;
 });
 
 const hubRoot = () => document.querySelector('[data-hub="shell"]');
@@ -447,36 +457,33 @@ describe('S1 header and status', () => {
     expect(live[0].textContent).toBe(COPY.shadow.statusIdle);
   });
 
-  // Slice S7 (R-S7-4, founder-approved edit): Shadow reads "processing" only while it is DRAWING processing, so the row gives
-  // jsdom the canvas it lacks; without one Shadow is the still and reads "still" (pinned in CommandCenterHub.s7.jsdom.test.jsx).
-  it('a submitting deployment (fixture) turns the status line and Shadow\'s label to processing', () => {
-    const canvas = installFakeCanvas();
-    try {
-      const m = renderHub({ site: 'desktop', hubWidth: 1216, sections: { ...fixture('returning'), deploy: { displayState: 'submitting', canStart: false } } });
-      expect(m.host.querySelector('[data-hub-status]').textContent).toBe(COPY.shadow.statusSubmitting);
-      expect(m.host.querySelector('[data-shadow-box]').getAttribute('data-shadow-status')).toBe('processing');
-      m.unmount();
-      mounted = mounted.filter((x) => x !== m);
-    } finally {
-      canvas.restore();
-    }
+  // Slice S7 (R-S7-4, founder-approved edit): the hero reads "processing" only while it is DRAWING processing, so the row has
+  // the form report live; without that it is the still and reads "still" (pinned in CommandCenterHub.s7.jsdom.test.jsx).
+  it('a submitting deployment (fixture) turns the status line and the hero\'s label to processing', () => {
+    formState.live = true;
+    const m = renderHub({ site: 'desktop', hubWidth: 1216, sections: { ...fixture('returning'), deploy: { displayState: 'submitting', canStart: false } } });
+    expect(m.host.querySelector('[data-hub-status]').textContent).toBe(COPY.shadow.statusSubmitting);
+    expect(m.host.querySelector('[data-shadow-box]').getAttribute('data-shadow-status')).toBe('processing');
+    expect(formState.props.mood).toBe('researching');
+    m.unmount();
+    mounted = mounted.filter((x) => x !== m);
   });
 
-  it('Shadow draws low on the phone (200 px, 196 under 375) and mid elsewhere (340 desktop, 260 tablet and stacked)', () => {
-    const cases = [['mobile', 390, 200, 15], ['mobile', 360, 196, 15], ['desktop', 1216, 340, 21], ['desktop', 770, 260, 21], ['desktop', 614, 260, 21]];
-    for (const [site, hubWidth, size, strands] of cases) {
+  it('the hero draws at the phone\'s size (200 px, 196 under 375) and the wide sites\' (340 desktop, 260 tablet and stacked)', () => {
+    const cases = [['mobile', 390, 200], ['mobile', 360, 196], ['desktop', 1216, 340], ['desktop', 770, 260], ['desktop', 614, 260]];
+    for (const [site, hubWidth, size] of cases) {
       const m = renderHub({ site, hubWidth });
       const box = m.host.querySelector('[data-shadow-box]');
       expect(box.style.width, `${site} ${hubWidth}`).toBe(`${size}px`);
-      expect(box.querySelectorAll('[data-shadow-strand]'), `${site} ${hubWidth}`).toHaveLength(strands);
+      expect(formState.props.size, `${site} ${hubWidth}`).toBe(size);
       m.unmount();
       mounted = mounted.filter((x) => x !== m);
     }
   });
 
-  it('OS reduced motion reaches Shadow (the same still, flagged)', () => {
+  it('OS reduced motion reaches the hero (the one source, handed to the form)', () => {
     motionState.reduced = true;
-    const { host } = renderHub({ site: 'desktop', hubWidth: 1216 });
-    expect(host.querySelector('[data-shadow-box]').getAttribute('data-shadow-reduced-motion')).toBe('true');
+    renderHub({ site: 'desktop', hubWidth: 1216 });
+    expect(formState.props.reducedMotion).toBe(true);
   });
 });

@@ -41,12 +41,13 @@ export const AGENT_FORM_LAB_ENABLED = false;
  * wearing the equipped archetype's armor, suiting up once when the archetype
  * changes while the hub is mounted.
  *
- * DARK — default FALSE on main. When FALSE (the shipped state) the stage draws
- * today's ShadowCanvas, and every hub chunk is byte-identical to main's: each
- * read of this flag is a literal ternary that Rollup folds to today's element.
+ * LIVE — TRUE since the flags-on build (founder ruling F1, Oct 30, 2026), and it
+ * stays as the hub's kill switch (F2): set it FALSE and the stage draws
+ * ShadowCanvas again, because each read of this flag is a literal ternary that
+ * Rollup folds to that element.
  */
 // Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const AGENT_FORM_HUB_ENABLED = false;
+export const AGENT_FORM_HUB_ENABLED = true;
 
 /**
  * AGENT_FORM_BATTLE_ENABLED — the agent forms in a BaggerBomb 1v1 battle
@@ -57,12 +58,12 @@ export const AGENT_FORM_HUB_ENABLED = false;
  * of the robot head, with moods from real signals (battleView/agentMood.js),
  * and the header's CPU side draws the opponent as a bare copper core, mirrored.
  *
- * DARK — default FALSE on main. When FALSE the battle view draws today's faces
- * and its chunks are byte-identical to main's but for build S1's one flag-off
- * fix (useAgentPresence.js reads agentContext.archetype).
+ * LIVE — TRUE since the flags-on build (founder ruling F1, Oct 30, 2026), and it
+ * stays as the battle view's kill switch (F2): set it FALSE and the header, the
+ * pane and the mark draw the robot head again, each read folding to that element.
  */
 // Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const AGENT_FORM_BATTLE_ENABLED = false;
+export const AGENT_FORM_BATTLE_ENABLED = true;
 
 /**
  * AGENT_FORM_LEAGUE_ENABLED — the agent forms in a League game, ranked and
@@ -73,9 +74,9 @@ export const AGENT_FORM_BATTLE_ENABLED = false;
  * opponent copper in their own archetype's armor (a bare core when it is not
  * known), with moods from the standing the screen already shows.
  *
- * DARK — default FALSE on main. When FALSE the League draws today's heads and
- * its chunks are byte-identical to main's: each read is a literal ternary that
- * Rollup folds to today's element.
+ * LIVE — TRUE since the flags-on build (founder ruling F1, Oct 30, 2026), and it
+ * stays as the League's kill switch (F2): set it FALSE and both sites draw the
+ * robot head again, each read a literal ternary that Rollup folds to that element.
  */
 // Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const AGENT_FORM_LEAGUE_ENABLED = false;
+export const AGENT_FORM_LEAGUE_ENABLED = true;

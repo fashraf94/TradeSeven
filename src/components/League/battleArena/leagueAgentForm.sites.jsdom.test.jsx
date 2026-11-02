@@ -5,8 +5,8 @@
 // Agent form build S2 — the League's sites with AGENT_FORM_LEAGUE_ENABLED on, the slot replaced by a recording stand-in
 // that also reads the screen's board. What each site hands the form: the fuse hero's standing from deriveCut, the crown's
 // own source (BUILD_RULES §9), never a seat's score; the climb's from its own ranking; the sizes (R16), the face's lift
-// left behind, facing where the layout has a direction (R14), and the live arena's battle. Flag off, the League's own
-// suites and the masked build diff hold today's bytes.
+// left behind, facing where the layout has a direction (R14), and the live arena's battle. Flag off is the kill switch's:
+// leagueAgentForm.killSwitch.jsdom.test.jsx.
 
 import React, { act, useContext, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';

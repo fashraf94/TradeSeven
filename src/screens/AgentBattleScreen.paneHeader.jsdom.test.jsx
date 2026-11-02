@@ -25,11 +25,17 @@
 // the flex, the absence of an ellipsis — not the pixels. The pixels want the
 // founder's smoke. The two widths are asserted because the contract differs by
 // shell (the archetype line, the face's size), not because jsdom measures them.
+//
+// Since the flags-on build the agent form is what sits in these boxes (AGENT_FORM_BATTLE_ENABLED), and the same contract
+// binds it: a box of its own, adjacent to the name, that never gives its footprint back. The robot head's boxes are the
+// kill switch's, the last block here (F2): with the flag false they are back, at their own sizes.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
+const flags = vi.hoisted(() => ({ battle: true }));
+vi.mock('../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_BATTLE_ENABLED() { return flags.battle; } }));
 vi.mock('../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 vi.mock('firebase/auth', () => ({ getAuth: vi.fn(() => ({ currentUser: null })) }));
 vi.mock('../services/agentService', () => ({ submitDailyGrades: vi.fn(), addFeedBookmark: vi.fn(), removeFeedBookmark: vi.fn() }));
@@ -48,12 +54,13 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
   isBattleViewControllerOn: () => true,
   isCharacterPaneOn: () => true,
 }));
-// The face is a canvas stage and is not what this file is about; the BOX around
-// it is. Mocking the mount to nothing leaves the box as real DOM.
+// The form is a canvas stage and is not what this file is about; the BOX around
+// it is. Mocking the mount and the slot to nothing leaves the box as real DOM.
 vi.mock('../components/AgentPresence', () => ({
   AgentPresenceMount: () => null,
 }));
 vi.mock('../components/AgentPresence/AgentPresenceMount', () => ({ default: () => null }));
+vi.mock('./battleView/battleAgentFormSlot', async (importOriginal) => ({ ...(await importOriginal()), BattleAgentFormSlot: () => null }));
 vi.mock('../services/eodhdAPI', () => ({
   stockAPI: { getMultipleStockPrices: vi.fn(async () => ({})), getMultipleCryptoPrices: vi.fn(async () => ({})) },
   POPULAR_CRYPTO: [],
@@ -118,6 +125,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.useRealTimers();
+  flags.battle = true;
 });
 
 /** Both halves of the breakpoint: useIsDesktop seeds from innerWidth at mount, then listens. */
@@ -161,17 +169,17 @@ const expectNeverTruncates = (el) => {
   expect(el.style.overflowWrap).toBe('anywhere');
 };
 
-describe('Smoke F2 — 1280 px: the face is boxed, the name is whole', () => {
+describe('Smoke F2 — 1280 px: the form is boxed, the name is whole', () => {
   beforeEach(() => setWidth(1280));
 
-  it('boxes the ARENA face to its own footprint, adjacent to the name', () => {
+  it('boxes the ARENA form to its own footprint, adjacent to the name', () => {
     mount();
-    const box = container.querySelector('[data-arena-face]');
+    const box = container.querySelector('[data-arena-form="player"]');
     expect(box).toBeTruthy();
     // The box the defect was missing. Unboxed, EnvStage's `width: 100%` root
     // claimed the row.
-    expect(box.style.width).toBe('56px');
-    expect(box.style.height).toBe('56px');
+    expect(box.style.width).toBe('88px');
+    expect(box.style.height).toBe('88px');
     // …and never gives that footprint back, or the face shrinks away from a
     // name that is now allowed to wrap.
     expect(box.style.flexShrink).toBe('0');
@@ -185,10 +193,10 @@ describe('Smoke F2 — 1280 px: the face is boxed, the name is whole', () => {
     expectNeverTruncates(container.querySelector('[data-arena-agent-name]'));
   });
 
-  it('boxes the PANE face, gives the name the slack, and freezes the controls', () => {
+  it('boxes the PANE form, gives the name the slack, and freezes the controls', () => {
     mount();
     openPane();
-    const box = container.querySelector('[data-pane-face]');
+    const box = container.querySelector('[data-pane-form]');
     expect(box.style.width).toBe('36px');
     expect(box.style.height).toBe('36px');
     expect(box.style.flexShrink).toBe('0');
@@ -285,11 +293,11 @@ describe('F2\'s ruled ORDERING — the archetype goes first, the name keeps its 
 describe('Smoke F2 — 390 px: the same contract, and the archetype goes first', () => {
   beforeEach(() => setWidth(390));
 
-  it('boxes the ARENA face at the phone size, adjacent to the name', () => {
+  it('boxes the ARENA form at the phone size, adjacent to the name', () => {
     mount();
-    const box = container.querySelector('[data-arena-face]');
-    expect(box.style.width).toBe('40px');
-    expect(box.style.height).toBe('40px');
+    const box = container.querySelector('[data-arena-form="player"]');
+    expect(box.style.width).toBe('60px');
+    expect(box.style.height).toBe('60px');
     expect(box.style.flexShrink).toBe('0');
     expect(box.nextElementSibling?.contains(container.querySelector('[data-arena-agent-name]'))).toBe(true);
   });
@@ -299,10 +307,10 @@ describe('Smoke F2 — 390 px: the same contract, and the archetype goes first',
     expectNeverTruncates(container.querySelector('[data-arena-agent-name]'));
   });
 
-  it('boxes the PANE face and keeps the same three flex rules', () => {
+  it('boxes the PANE form and keeps the same three flex rules', () => {
     mount();
     openPane();
-    const box = container.querySelector('[data-pane-face]');
+    const box = container.querySelector('[data-pane-form]');
     expect(box.style.width).toBe('36px');
     expect(box.style.height).toBe('36px');
     expect(box.style.flexShrink).toBe('0');
@@ -324,5 +332,43 @@ describe('Smoke F2 — 390 px: the same contract, and the archetype goes first',
     openPane();
     expect(container.querySelector('[data-pane-archetype]')).toBeNull();
     expect(container.querySelector('[data-pane-agent-name]')).toBeTruthy();
+  });
+});
+
+describe('the kill switch — AGENT_FORM_BATTLE_ENABLED false: the robot head\'s boxes are back', () => {
+  beforeEach(() => { flags.battle = false; });
+
+  it.each([[1280, 56], [390, 40]])('at %i px the arena face is boxed at %i px, adjacent to the name, and no form draws', (width, px) => {
+    setWidth(width);
+    mount();
+    const box = container.querySelector('[data-arena-face]');
+    expect(box.style.width).toBe(`${px}px`);
+    expect(box.style.height).toBe(`${px}px`);
+    expect(box.style.flexShrink).toBe('0');
+    expect(box.nextElementSibling?.contains(container.querySelector('[data-arena-agent-name]'))).toBe(true);
+    expect(container.querySelector('[data-arena-form]')).toBeNull();
+  });
+
+  it.each([[1280], [390]])('at %i px the pane face is boxed at 36 px, and the name and the flex rules still work', (width) => {
+    setWidth(width);
+    mount();
+    openPane();
+    const box = container.querySelector('[data-pane-face]');
+    expect(box.style.width).toBe('36px');
+    expect(box.style.height).toBe('36px');
+    expect(box.style.flexShrink).toBe('0');
+    expect(box.nextElementSibling?.getAttribute('data-pane-identity')).toBe('1');
+    expect(container.querySelector('[data-pane-identity]').style.flex).toBe('1 1 auto');
+    expect(container.querySelector('[data-pane-controls]').style.flexShrink).toBe('0');
+    expect(container.querySelector('[data-pane-form]')).toBeNull();
+    expectNeverTruncates(container.querySelector('[data-pane-agent-name]'));
+  });
+
+  it('the phone\'s mark is the door to that pane, as it was', () => {
+    setWidth(390);
+    mount();
+    expect(container.querySelector('[data-character-mark]')).toBeTruthy();
+    openPane();
+    expect(container.querySelector('[data-character-pane]').getAttribute('data-pane-open')).toBe('true');
   });
 });

@@ -21,6 +21,9 @@ vi.mock('../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   isAgentPresenceOn: () => false,
 }));
+// AGENT_FORM_BATTLE_ENABLED is live since the flags-on build; the rows named the kill switch's set it false (F2).
+const flags = vi.hoisted(() => ({ battle: true }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_BATTLE_ENABLED() { return flags.battle; } }));
 
 const BUBBLE = {
   id: 'check-1',
@@ -40,7 +43,19 @@ const render = (props = {}) => strip(renderToString(
   <CharacterAvatar agentBattle={BATTLE} bubble={BUBBLE} unread={3} onOpen={() => {}} {...props} />,
 ));
 
-afterEach(() => { vi.useRealTimers(); });
+afterEach(() => { vi.useRealTimers(); flags.battle = true; });
+
+/** CharacterAvatar with presence on and the form's slot a recorder; `seen` collects each form's props. */
+async function withFormRecorder(seen, run) {
+  vi.resetModules();
+  vi.doMock('../../config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), isAgentPresenceOn: () => true }));
+  vi.doMock('./battleAgentFormSlot', async (importOriginal) => ({ ...(await importOriginal()), BattleAgentFormSlot: (props) => { seen.push(props); return null; } }));
+  const out = run((await import('./CharacterAvatar.jsx')).default);
+  vi.doUnmock('./battleAgentFormSlot');
+  vi.doUnmock('../../config/featureFlags');
+  vi.resetModules();
+  return out;
+}
 
 describe('CharacterAvatar — the mark', () => {
   it('always renders the mark, with a 48px hit target on both shells', () => {
@@ -175,13 +190,22 @@ describe('CharacterAvatar — nothing idle (D-91)', () => {
   });
 });
 
-describe('Review lens 1 F6 — the face reads the pair the BOARD shows (§9, Gate 1)', () => {
-  it('passes the displayed scores through, not the persisted ones', async () => {
+describe('Review lens 1 F6 — the mark reads the pair the BOARD shows (§9, Gate 1)', () => {
+  it('passes the displayed scores through to the form, not the persisted ones', async () => {
     // The defect: both new mounts read scoreState.currentScore / opponentScore
-    // while the arena header two inches away renders the live pair. The
-    // presence face derives its standing from these, and presenceBinding's
-    // Gate 1 forbids a parallel recompute — so on desktop, with the pane open,
-    // two marks on one page could read different numbers, in SIGN.
+    // while the arena header two inches away renders the live pair. The form's
+    // mood derives from these, as the presence face's standing did — so on desktop,
+    // with the pane open, two marks on one page could read different numbers, in SIGN.
+    const seen = [];
+    await withFormRecorder(seen, (Fresh) => {
+      renderToString(<Fresh agentBattle={{ scoreState: { currentScore: -5, opponentScore: 3 } }} playerScore={12} opponentScore={3} unread={0} onOpen={() => {}} />);
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].scores).toEqual({ player: 12, opponent: 3 }); // the board's numbers, not the persisted one
+  });
+
+  it('the kill switch: flag off, the face takes the displayed scores, not the persisted ones', async () => {
+    flags.battle = false;
     vi.resetModules();
     const seen = [];
     vi.doMock('../../config/featureFlags', async (importOriginal) => ({
@@ -384,7 +408,19 @@ describe('OFF-6 — CharacterAvatar default markup is byte-identical to the pre-
     });
   }
 
-  it('OFF presenceDuel: the face receives exactly the pre-build duel input', async () => {
+  it('forms presenceDuel: the form receives the pair the face received, read from the pre-build reference', async () => {
+    const seen = [];
+    await withFormRecorder(seen, (Fresh) => {
+      for (const [, props] of Object.entries(OFF_VARIANTS)) {
+        renderToString(<Fresh agentBattle={BATTLE} bubble={BUBBLE} unread={3} onOpen={() => {}} {...props} />);
+      }
+      renderToString(<Fresh agentBattle={{ ...BATTLE, scoreState: {} }} onOpen={() => {}} />);
+    });
+    expect(seen.map((p) => p.scores)).toEqual(OFF6.presenceDuel.map(({ duel }) => ({ player: duel.playerScore, opponent: duel.opponentScore })));
+  });
+
+  it('the kill switch: OFF presenceDuel: flag off, the face receives exactly the pre-build duel input', async () => {
+    flags.battle = false;
     vi.resetModules();
     const seen = [];
     vi.doMock('../../config/featureFlags', async (importOriginal) => ({
@@ -413,7 +449,26 @@ describe('OFF-6 — CharacterAvatar default markup is byte-identical to the pre-
 describe('ON — CharacterAvatar reads the ONE selected comparison', () => {
   const NOW_MS = Date.parse('2026-10-01T17:00:00.000Z');
 
-  it('available: the duel is exactly the selected pair; unavailable: score keys omitted; controls kept', async () => {
+  it('available: the form takes exactly the selected pair; unavailable: no pair; controls kept', async () => {
+    const { selectComparison } = await import('./shadowCpuQuoteIntegrity.js');
+    const seen = [];
+    const avail = selectComparison({ status: 'active', complete: true, browserPair: [4, 9], scoreState: null, contextKey: 'c', nowMs: NOW_MS });
+    const unav = selectComparison({ status: 'active', complete: false, browserPair: null, scoreState: null, contextKey: 'c', nowMs: NOW_MS });
+    const htmls = await withFormRecorder(seen, (Fresh) => [avail, unav].map((comparison) => strip(renderToString(
+      <Fresh agentBattle={BATTLE} playerScore={50} opponentScore={1} comparison={comparison} bubble={BUBBLE} unread={3} onOpen={() => {}} />,
+    ))));
+    expect(seen.map((p) => p.scores)).toEqual([{ player: 4, opponent: 9 }, null]);
+    // The open button, its accessible name, the unread badge and the bubble stay.
+    for (const html of htmls) {
+      expect(html).toContain('data-character-mark="1"');
+      expect(html).toContain(`aria-label="${esc(COPY.paneOpenName(3))}"`);
+      expect(html).toContain('data-unread-badge="1"');
+      expect(html).toContain('data-character-bubble="1"');
+    }
+  });
+
+  it('the kill switch: flag off, the duel is exactly the selected pair; unavailable: score keys omitted; controls kept', async () => {
+    flags.battle = false;
     const { selectComparison } = await import('./shadowCpuQuoteIntegrity.js');
     vi.resetModules();
     const seen = [];

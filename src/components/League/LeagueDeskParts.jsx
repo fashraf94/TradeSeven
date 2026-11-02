@@ -33,6 +33,7 @@ import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewG
 import TrainingClimbPreview from './TrainingClimbPreview';
 import { AGENT_FORM_LEAGUE_ENABLED } from '../../config/agentFormFlags';
 import { LeagueAgentFormScope } from './battleArena/leagueAgentFormSlot';
+import { isLevelBoard } from './battleArena/arenaStateMap';
 
 // Training accent — purple, per the build spec ("training is purple across
 // TradeSeven … visually distinct from the teal tournament surface"). Kept local
@@ -150,6 +151,9 @@ export function DeskFollowRail({ items, accent, onSpectate }) {
 // ── SEASON LEADERBOARD — top of the whole field, right rail default ────────
 export function DeskLeaderboard({ st, accent }) {
   const players = Object.values(st.field).sort((a, b) => b.score - a.score);
+  // A level field has no leader (the founder's tie rule, ruling F3 of Oct 30, 2026): the crown is the shared predicate's,
+  // over the totals these rows print. A partial tie keeps it.
+  const hasLeader = !isLevelBoard(players.map((p) => p.score));
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -170,7 +174,7 @@ export function DeskLeaderboard({ st, accent }) {
               background: you ? alpha(accent, 0.1) : i < 3 ? LTOKENS.surface : 'transparent',
               border: `1px solid ${you ? alpha(accent, 0.34) : i < 3 ? LTOKENS.hair : 'transparent'}` }}>
               <div style={{ width: 18, display: 'flex', justifyContent: 'center' }}>
-                {i === 0 ? <LIcon name="crown" size={15} color={LTOKENS.gold} stroke={2} />
+                {i === 0 && hasLeader ? <LIcon name="crown" size={15} color={LTOKENS.gold} stroke={2} />
                   : <Mono style={{ fontSize: 12, fontWeight: 700, color: you ? accent : LTOKENS.ink3 }}>{i + 1}</Mono>}
               </div>
               <AgentAvatar agent={p} size={30} />

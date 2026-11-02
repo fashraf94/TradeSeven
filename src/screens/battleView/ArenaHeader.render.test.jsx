@@ -13,6 +13,9 @@
 // The rows that matter here are the ones the seed and §9 name: the accessible
 // ORDER of the three numbers, ONE seam derivation, the book contract carried
 // over intact, tokens instead of hex, and the starfield left alone.
+//
+// AGENT_FORM_BATTLE_ENABLED is live since the flags-on build, so the header's rows run with the forms. The robot head is
+// the kill switch's (F2): the OFF-6 block and the rows named so run with the flag false, against the pre-build references.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
@@ -32,8 +35,23 @@ vi.mock('../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   isAgentPresenceOn: () => false,
 }));
+const flags = vi.hoisted(() => ({ battle: true }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_BATTLE_ENABLED() { return flags.battle; } }));
 
 const { default: ArenaHeader, gatedScoreSize } = await import('./ArenaHeader.jsx');
+
+afterEach(() => { flags.battle = true; });
+
+/** ArenaHeader with presence on and the slot a recorder; `seen` collects each form's props. */
+async function withFormRecorder(seen, run) {
+  vi.resetModules();
+  vi.doMock('../../config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), isAgentPresenceOn: () => true }));
+  vi.doMock('./battleAgentFormSlot', async (importOriginal) => ({ ...(await importOriginal()), BattleAgentFormSlot: (props) => { seen.push(props); return null; } }));
+  run((await import('./ArenaHeader.jsx')).default);
+  vi.doUnmock('./battleAgentFormSlot');
+  vi.doUnmock('../../config/featureFlags');
+  vi.resetModules();
+}
 
 const TURN = {
   phase: 'LIVE',
@@ -204,12 +222,28 @@ describe('ArenaHeader — the score header as an arena (D-96)', () => {
   });
 });
 
-describe('ArenaHeader — the mark is still and deaf (D-91, hazard 41)', () => {
-  it('mounts the presence face static, with its events withheld', async () => {
+describe('ArenaHeader — the mark\'s place (D-91, hazard 41)', () => {
+  it('the forms take it, each handed the header\'s pair and no feed of its own', async () => {
+    // D-91's stillness binds the robot head; ruling R8 lets the form idle and read real signals. What stands is that
+    // no raw event reaches it through this surface: the scores it is handed are the pair the digits show.
+    const seen = [];
+    await withFormRecorder(seen, (Fresh) => {
+      renderToString(<Fresh agentBattle={BATTLE} playerScore={-2} opponentScore={-21} turnLine={TURN} />);
+    });
+    expect(seen.map((p) => p.side ?? 'player')).toEqual(['player', 'opponent']);
+    for (const p of seen) {
+      expect(p.scores).toEqual({ player: -2, opponent: -21 });
+      expect(p).not.toHaveProperty('statusFeed');
+      expect(p).not.toHaveProperty('duel');
+    }
+  });
+
+  it('the kill switch: flag off, the presence face mounts static, with its events withheld', async () => {
     // The one row that turns presence ON. It asserts the PROPS the mount
     // receives rather than the pixels it paints: static means it never joins the
     // rAF loop, and withholding events is what stops the raw statusFeed moving
     // a face between checks.
+    flags.battle = false;
     vi.resetModules();
     const seen = [];
     vi.doMock('../../config/featureFlags', async (importOriginal) => ({
@@ -433,7 +467,9 @@ const OFF6 = {
 };
 // END GENERATED OFF REFERENCES
 
-describe('OFF-6 — ArenaHeader default markup is byte-identical to the pre-build SHA', () => {
+describe('OFF-6, the kill switch — flag off, ArenaHeader default markup is byte-identical to the pre-build SHA', () => {
+  beforeEach(() => { flags.battle = false; });
+
   for (const [name, props] of Object.entries(OFF_VARIANTS)) {
     it(`OFF ${name}`, () => {
       offReference(name, digest(render(props)), OFF6[name]);
@@ -482,6 +518,129 @@ describe('OFF-6 — ArenaHeader default markup is byte-identical to the pre-buil
     vi.doUnmock('../../config/featureFlags');
     vi.resetModules();
     offReference('presenceOnMarkup', out, OFF6.presenceOnMarkup);
+  });
+});
+
+// The flags-on build's one sanctioned recapture (founder brief, Oct 30, 2026): the same variants with the forms on. The
+// raw markup against OFF6's is in the build report; the only change is the form's slots and the CPU side's cell (R9).
+// BEGIN GENERATED FORM REFERENCES
+const FORMS6 = {
+ "desktop": {
+  "sha256": "8ef790ec6d844f5c50892ced15b46c7dc5b376faa9010e916137605146cb7540",
+  "length": 4707
+ },
+ "docFallback": {
+  "sha256": "6b96629c956c9ecf9b499d4ba3d508cc967458cc480054ef540ac1d34719fa02",
+  "length": 4579
+ },
+ "leading": {
+  "sha256": "04c3cd5e214dc951213b655cc9c5b49661a89a78b25596e06c8b03a94304777c",
+  "length": 4625
+ },
+ "negatives": {
+  "sha256": "6b96629c956c9ecf9b499d4ba3d508cc967458cc480054ef540ac1d34719fa02",
+  "length": 4579
+ },
+ "notBookable": {
+  "sha256": "c816a65b7a75a82edf168eee57d8efa41a0df236bffd9f8b02d510216cabac2f",
+  "length": 4339
+ },
+ "presenceOnMarkup": {
+  "negatives": {
+   "sha256": "de3529e3e1ba686ff3b088d5b57900f253cb3d17aefba2832ff013f3d3318f4c",
+   "length": 6197
+  },
+  "leading": {
+   "sha256": "320650312e0c87e2870be3108bad8e9464907b11c57c624d9b3b879f66b9a814",
+   "length": 6243
+  },
+  "trailing": {
+   "sha256": "1d011ac3260eba1089bcf1eee3b6d0dabb1973eb23d48172c232ce657c5cbe63",
+   "length": 6245
+  },
+  "tie": {
+   "sha256": "e3725f8219d6a72523abc965d1fede3a24e6cf805d5105276c950b0cb8f86282",
+   "length": 6198
+  },
+  "zeroZero": {
+   "sha256": "e3725f8219d6a72523abc965d1fede3a24e6cf805d5105276c950b0cb8f86282",
+   "length": 6198
+  },
+  "desktop": {
+   "sha256": "f7ccc6a7a73f062a4b7b85ab89fa40bc32bd63ccecb033da92cb82ad5612dd59",
+   "length": 6325
+  },
+  "reduced": {
+   "sha256": "ef6f6e295c714e5f77c4d9d91892f7bc9927936854566fd4920e4d8e61d59e3f",
+   "length": 6185
+  },
+  "notBookable": {
+   "sha256": "1d48172e86d5224393d446f49736c127a7e5030784b2d28062948ad9a0bb5b43",
+   "length": 5957
+  },
+  "docFallback": {
+   "sha256": "de3529e3e1ba686ff3b088d5b57900f253cb3d17aefba2832ff013f3d3318f4c",
+   "length": 6197
+  }
+ },
+ "reduced": {
+  "sha256": "d75937758c50466c5bf41abfdcdafb7f60277f754645e333f06f077203e88e09",
+  "length": 4567
+ },
+ "tie": {
+  "sha256": "76e6ea1cef600418d2942a332d7e9641bd740aabc921df732b14be252a3682a4",
+  "length": 4580
+ },
+ "trailing": {
+  "sha256": "b088da9daf2931ffca543d49de2a3bd75b94194249d4812d60d0871be9062dc1",
+  "length": 4627
+ },
+ "zeroZero": {
+  "sha256": "76e6ea1cef600418d2942a332d7e9641bd740aabc921df732b14be252a3682a4",
+  "length": 4580
+ }
+};
+// END GENERATED FORM REFERENCES
+
+describe('OFF-6 with the forms on — `comparison === undefined` is the legacy header, with the form in the face\'s place', () => {
+  for (const [name, props] of Object.entries(OFF_VARIANTS)) {
+    it(`forms ${name}`, () => {
+      offReference(`forms.${name}`, digest(render(props)), FORMS6[name]);
+    });
+  }
+
+  it('forms presenceDuel: the form receives the pair the face received, read from the pre-build reference', async () => {
+    const seen = [];
+    await withFormRecorder(seen, (Fresh) => {
+      for (const [, props] of Object.entries(OFF_VARIANTS)) {
+        renderToString(<Fresh agentBattle={BATTLE} playerScore={-2} opponentScore={-21} turnLine={TURN} {...props} />);
+      }
+    });
+    const players = seen.filter((p) => (p.side ?? 'player') === 'player');
+    expect(players.map((p) => p.scores)).toEqual(OFF6.presenceDuel.map(({ duel }) => ({ player: duel.playerScore, opponent: duel.opponentScore })));
+    expect(players.map((p) => p.size)).toEqual(OFF6.presenceDuel.map(({ size }) => (size === 56 ? 88 : 60)));
+  });
+
+  it('forms presenceOnMarkup: with the REAL slot the markup, its SSR useIds included, is the recaptured one', async () => {
+    // The lazy form suspends on the server, so its slot shows the still. React's dev build writes the suspended stack
+    // into the markup, with this machine's paths; the app never renders this on a server, so that note is dropped.
+    const noDevStack = (h) => h.replace(/<template data-msg[\s\S]*?<\/template>/g, '');
+    vi.resetModules();
+    vi.doMock('../../config/featureFlags', async (importOriginal) => ({
+      ...(await importOriginal()),
+      isAgentPresenceOn: () => true,
+    }));
+    const Fresh = (await import('./ArenaHeader.jsx')).default;
+    const out = {};
+    for (const [name, props] of Object.entries(OFF_VARIANTS)) {
+      out[name] = digest(noDevStack(strip(renderToString(
+        <Fresh agentBattle={BATTLE} playerScore={-2} opponentScore={-21} dayLabel="Day 3 of 5" turnLine={TURN}
+          onOpenBook={() => {}} bookName="Why? · the whole book" {...props} />,
+      ))));
+    }
+    vi.doUnmock('../../config/featureFlags');
+    vi.resetModules();
+    offReference('forms.presenceOnMarkup', out, FORMS6.presenceOnMarkup);
   });
 });
 
@@ -576,8 +735,20 @@ describe('ON — unavailable: no digits, no bar, no lead tint; names, day, trade
   });
 });
 
-describe('ON — the face input (R-7, V-4) with presence on', () => {
-  it('available: exactly the selected pair; unavailable: both score keys omitted, static', async () => {
+describe('ON — the form\'s input (R-7, V-4) with presence on', () => {
+  it('available: exactly the selected pair, on both forms; unavailable: no pair at all', async () => {
+    const seen = [];
+    const c = stored(-0.01, 0);
+    await withFormRecorder(seen, (Fresh) => {
+      renderToString(<Fresh agentBattle={BATTLE} playerScore={50} opponentScore={1} comparison={c} />);
+      renderToString(<Fresh agentBattle={BATTLE} playerScore={50} opponentScore={1} comparison={unavailable()} />);
+    });
+    expect(seen.map((p) => p.side ?? 'player')).toEqual(['player', 'opponent', 'player', 'opponent']);
+    expect(seen.map((p) => p.scores)).toEqual([{ player: -0.01, opponent: 0 }, { player: -0.01, opponent: 0 }, null, null]);
+  });
+
+  it('the kill switch: flag off, the face takes exactly the selected pair, and both score keys are omitted when unavailable, static', async () => {
+    flags.battle = false;
     vi.resetModules();
     const seen = [];
     vi.doMock('../../config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), isAgentPresenceOn: () => true }));
