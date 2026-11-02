@@ -366,3 +366,69 @@ On `claude/agent-form-flags-on`:
 **To remove the WSL worktrees:** `~/pd-ci-fo` and `~/pd-ci-fom` have `node_modules` linked to `~/pd-ci-af1`'s. Run `unlink <tree>/node_modules` first, then `git -C ~/pd-ci worktree remove --force <tree>`.
 
 A copy of this report is at `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261030_BUILD_AGENT_FORM_FLAGS_ON.md` (BUILD_RULES §3).
+
+---
+
+## 13. Review fixes
+
+The review, `docs/audits/20261101_REVIEW_AGENT_FORM_FLAGS_ON.md`: **MERGE AFTER FIXES**, 0 blocking, 1 should-fix, 5 notes. This pass made the fixes on `b8c06a5b`, the head the brief named. **Tests, comments and docs only: no app file has moved since the code head `cba985c1`, so the preview in §10 still shows this code.** `AGENT_FORM_HUB_ENABLED`, `AGENT_FORM_BATTLE_ENABLED` and `AGENT_FORM_LEAGUE_ENABLED` are still `true` (`src/config/agentFormFlags.js:50,66,82`), pinned at `src/config/agentFormFlags.test.js:30,34,38`.
+
+| # | Item | Result |
+|---|---|---|
+| 1 | **FO-1, the row-order dependency** | **Fixed.** The two exposed rows no longer depend on where they run. No digest moved, nothing was recaptured |
+| 2 | **FO-2 … FO-6, the records** | **Done.** FO-5 is listed, not built |
+| 3 | **`main`** | **Merged:** `5b32cea5`, PR #1018, as merge commit `b3947737`. No conflicts |
+| 4 | **Kill switch, on the merge** | **47 files, 1 differs, F3's 3 lines.** Nothing else |
+| 5 | **Checks, on the merge** | `lint:gate` exit 0. Full suite: **1,273 files, 28,230 rows, 28,141 pass, 0 fail, 89 skipped** |
+| 6 | **Minified build of the pushed head** | Exit 0 |
+
+**FO-1, the fix.** In `src/screens/AgentBattleScreen.quoteAvailability.jsdom.test.jsx`:
+- `:262`: `requestAnimationFrame` and `cancelAnimationFrame` join the `toFake` list, so the fake clock owns the frame queue and `useRealTimers()` drops whatever a row leaves in it.
+- No frame is advanced after any poll: a poll's 60 s jump already completes the mount ramp.
+- `:3955`: the kill-switch desktop row compares the whole record again, `html` included.
+- `:4549-4555`, one change the brief did not list: the F15 comment said the file does not fake frames, which this fix made false, so it is reworded. That row's own frame stub stays, because its reference was captured with frames held.
+
+The cause in §11 was wrong, as the review found: no real-clock race exists, and a second row, `OFF failureAndRecovery`, was exposed too.
+
+**FO-1, the proof.** The review's experiment, on Linux (`TZ=UTC`): a row inserted as the first of the OFF block that requests a frame and never cancels it.
+
+| Run | Before, `b8c06a5b` | After, `0017a968` |
+|---|---|---|
+| The file whole, no probe | 277 of 277 | 277 of 277 |
+| `-t "OFF-5"`, no probe | 15 of 15 | 15 of 15 |
+| `-t "OFF-5"`, with the probe | **2 red of 16**, `OFF paneDesktopActive` and `OFF failureAndRecovery` | **16 of 16** |
+| The file whole, with the probe | **2 red of 278**, the same two | **278 of 278** |
+
+Every run on the left and right read the same `OFF` and `FORMS` blocks, which this pass did not touch. The probe row was never committed: a script put it in each Linux tree for the run and took it out, and each tree was checked clean afterwards.
+
+**One check of my own.** The old `toFake` list put back under the restored `html` comparison, on `0017a968`, the whole file: **exactly 1 red of 277, the kill-switch desktop row.** So the restored comparison bites, and that row, which runs after the first row that leaks a frame, is green because of this fix.
+
+**The records.**
+
+| Finding | Where | What changed |
+|---|---|---|
+| FO-2 | The executive table, §9, the PR body | One sentence: what a single rollback restores, and that only all three off rebuilds `main` |
+| FO-3 | `src/config/flagPinGuard.test.js:142-148`, `src/config/agentFormFlags.test.js:5-6,49` | One story: a rollback moves the flag and its pin, and the `DARK_BY_DESIGN` entry stays out. Two comments and a test title |
+| FO-4 | §2 | The reduced-motion citation now points to `src/components/AgentForm/AgentForm.jsdom.test.jsx:79,94,97` |
+| FO-5 | §11, "Not built" | The two boards listed for separate tasking. Neither changed |
+| FO-6 | §10 | Step 14, the first open on cellular |
+| §11 | §11 | A pointer here. Its first paragraph stands as written at the build |
+
+**The merge.** `main` `5b32cea5` brought 28 files, none under `src/`, and no lockfile change, so nothing in this PR's logic was touched. Against that `main`, this branch changes 19 files outside its two reports, all under `src/`, and nothing under `api/`.
+
+**The kill switch on the merged tree.** `vite build --minify false` on Linux, LF trees, hashes masked, source maps out: `main` `5b32cea5` against `b3947737` with the three flags set `false`. **47 files compared, 1 differs, the entry, on 3 lines: `hasLeader` and the two sides of the crown condition.** The tree was then restored and checked clean.
+
+**The checks.**
+- **`lint:gate`** on `b3947737`: exit 0.
+- **Full suite** on `b3947737`: Linux, WSL, Node 22.22.2, `TZ=UTC`, 8 workers, under `flock /tmp/pd-suite.lock`: **1,273 files, 28,230 rows, 28,141 pass, 0 fail, 89 skipped.** The rows above §8's 27,880 are PR #1018's.
+- **Minified `vite build`** of the pushed head, which is this section's commit: exit 0.
+- **Not run:** the Firestore rules suite (this PR changes no rules), and anything on a real device.
+
+**Commits:**
+- `0017a968`: FO-1.
+- `5b9ee605`: FO-3.
+- `7a9a626e`: the report's records.
+- `b3947737`: the merge of `main`.
+- then this section.
+
+**Still yours:** the phone checks in §10, now 14 steps, and the merge.
