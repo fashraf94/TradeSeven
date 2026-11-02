@@ -14,7 +14,7 @@
 | 2 | **Source diff against `main`** | **Limited to the three flag literals, F3, and tests and docs**, plus comment lines (§1). The app is what you tested on the S1 and S2 smoke builds, minus the smoke-only readout, dial and fixture page: the source delta from the S2 smoke is that commit's own smoke files, F3 and one comment. |
 | 3 | **The rows that pinned the old faces** | **98 went red on the flip alone, in 9 files, the list S2's §10 predicted, and no League row. All 98 are reconciled, and no row was deleted** (§2). |
 | 4 | **The recapture** | **It touches only the face → form slots.** With the face off, the one change is the CPU side's cell. With it on, the robot head goes and the form's still comes. Of 82 distinct changed lines, none is anything else. Every other field of every record is still the pre-build capture (§3). |
-| 5 | **Kill switches (F2)** | **Proven per surface, and a rollback is two lines.** Each flag set back alone, on the whole suite, turns exactly its pin and the pin guard red; move the pin with it and they are green. With all three off, the build is `main` plus F3: 47 files, 1 differs, on F3's 3 lines (§4, §9). |
+| 5 | **Kill switches (F2)** | **Proven per surface, and a rollback is two lines.** Each flag set back alone, on the whole suite, turns exactly its pin and the pin guard red; move the pin with it and they are green. With all three off, the build is `main` plus F3: 47 files, 1 differs, on F3's 3 lines (§4, §9). Rolling back a single flag restores that surface and sheds every form identifier from its chunk, and only all three off rebuilds `main` byte for byte, plus F3's three lines. |
 | 6 | **Guards** | **None retired, none loosened.** With the flags on they mean more, not less: each now guards the rollback (§5). |
 | 7 | **The crown (F3)** | **Built, in its own commit, for everyone.** A level field shows no crown; a partial tie and a real leader keep theirs (§6). |
 | 8 | **Mutation** | **39 of 39 killed**, from a green baseline, plus the three flags flipped back (§7). |
@@ -71,7 +71,7 @@ The flip alone, full Linux suite: **98 rows red in 9 files**. S2's §10 predicte
 | Strokes per frame and the tier, 6 rows | The form has no strokes or tier | The hub's kill-switch rows, and `ShadowCanvas.jsdom` |
 | A canvas context never asked for; the frame loop's count | The hub no longer owns a loop | The same, and the engine's lifecycle suite |
 | `data-shadow-strand` counts | ShadowStill's SVG | `ShadowStill.jsdom` |
-| `data-shadow-reduced-motion` | The hero has no such attribute; the prop is what reaches the form | Rewritten row; `AgentForm.s1` |
+| `data-shadow-reduced-motion` | The hero has no such attribute; the prop is what reaches the form | Rewritten row; `src/components/AgentForm/AgentForm.jsdom.test.jsx:79,94,97` |
 | The 420 ms still flash | It is the engine's now | Rewritten rows assert the key and the prop; `engine.lifecycle` holds the flash, `HubAgentForm.jsdom` its numbers |
 | "The core pulses" | An arc's radius on the old canvas | The form's mood, `researching` |
 | A response "waits" for the page | The engine holds it | Rewritten rows assert the pause; `engine.lifecycle` holds the wait |
@@ -268,6 +268,8 @@ One surface, two lines, one small PR. Each line goes `true` → `false`:
 
 Change the flag and forget the pin, and CI goes red on exactly those two rows, and the guard's message says which line to move. Nothing else needs touching, and nothing in Firestore or on the server changes. The surface goes back on the next deploy.
 
+Rolling back a single flag restores that surface and sheds every form identifier from its chunk, and only all three off rebuilds `main` byte for byte, plus F3's three lines.
+
 ---
 
 ## 10. Smoke, and your last phone checks
@@ -301,6 +303,9 @@ No dial, and no flag change: the flags are the PR's.
 **4. The desk leaderboard**
 12. On the `?leagueForms=1` page, tap the **desk** row's chips, which open the real leaderboard. **Level field:** no crown, and the top row shows "1". **Tied at the top:** the crown on the first row. **Normal field:** the crown on the leader.
 13. *If one is available:* the real desk before the week's first bell, when every total is level.
+
+**5. First load**
+14. First open on cellular with the site's data cleared: you see the still figure for a moment, then the live one.
 
 Paste the two `60 s:` lines and anything that looked wrong back to Claude.
 
@@ -336,7 +341,13 @@ The readout runs on the League page and there is no dial. **The hub and the batt
 
 ## 11. Found, not fixed
 
-- **`OFF paneDesktopActive` depends on row order.** Its digests after the poll read the header's counter while it ramps on the real clock. The row holds only because it runs first in its file, on a slow cold start. Run later, the same scenario prints "+0" where the reference has "+183". Flag position has nothing to do with it, and the recaptured value carries the same exposure. My kill-switch row found it and avoids it. For separate tasking: settle the counter before that digest.
+- **`OFF paneDesktopActive` depends on row order.** Its digests after the poll read the header's counter while it ramps on the real clock. The row holds only because it runs first in its file, on a slow cold start. Run later, the same scenario prints "+0" where the reference has "+183". Flag position has nothing to do with it, and the recaptured value carries the same exposure. My kill-switch row found it and avoids it. For separate tasking: settle the counter before that digest. *(Fixed in this PR. The review's FO-1 showed the cause above is wrong and a second row was exposed: see §13.)*
+
+### Not built
+
+**For separate tasking: two other boards still crown a level field (FO-5).** Neither was changed here.
+- **The desk funnel's Final Four champion.** `src/components/League/LeagueDeskParts.jsx:289,308`: a resolved final whose four totals are equal crowns row 0 by list position. A real board, an unlikely state.
+- **The param-only climb preview.** `src/components/League/LeagueClimbStanding.jsx:98,116,196` and `src/components/League/LeagueClimbChart.jsx:74,243`: `ranked[0]` is crowned whatever the totals. Behind the preview param on fixture data, so no player reaches it without the param.
 
 ---
 
