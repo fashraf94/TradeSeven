@@ -290,6 +290,20 @@ describe('Cockpit Build 2b — the flag ON, desktop', () => {
     expect(answerBodies()).toEqual([]);
   });
 
+  it('Amendment F (F-2): the AMD entry once AMD is in a tier of the battle document — no answer, no silence line; the Now card is the NVDA exit; the chip and the opened card say so', async () => {
+    DOC = { ...LIVE_DOC, portfolio: { ...LIVE_DOC.portfolio, support: [{ symbol: 'MU' }, { symbol: 'AMD' }] } };
+    await mount();
+    expect(q('[data-cockpit-feed]').getAttribute('data-cockpit-feed')).toBe('2b');
+    expect(q('[data-cockpit-now]').getAttribute('data-cockpit-now')).toBe(NVDA_EXIT.callId);
+    expect(qa('[data-cockpit-chip]').map((c) => c.textContent)).toContain('AMD↑161 · already in your book');
+    await click(qa('[data-cockpit-chip-toggle]').find((t) => t.closest('[data-cockpit-chip]')?.textContent.includes('AMD')));
+    const tag = q('[data-cockpit-tag="call:already_held"]');
+    expect(tag.textContent).toBe('Already in your book');
+    expect(tag.closest('[data-cockpit-tile]')?.querySelectorAll('[data-cockpit-answer]').length ?? 0).toBe(0);
+    expect(tag.closest('[data-cockpit-tile]')?.textContent ?? '').not.toContain('If you say nothing');
+    expect(answerBodies()).toEqual([]);
+  });
+
   it('board dots: "an open call" beside NVDA on the player\'s row', async () => {
     await mount();
     const marks = qa('[data-row-call-mark]');

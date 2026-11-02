@@ -28,7 +28,9 @@
 // what the cockpit needs to say nothing false, each from the check's own seam
 // and never inferred from prompt text:
 //   heldAtMint      shots / confirmations: direction 'entry' on a symbol HELD
-//                   at the model seam (C-2) — an upside call, answerable by no one
+//                   at the model seam (C-2), or (Amendment F, F-1) on the incoming
+//                   stock of this check's own committed trade — an upside call,
+//                   answerable by no one
 //   counterpart     kept only when USABLE at the seam (C-3); otherwise null and
 //   counterpartRaw  the agent's string, cut to 40 code points (null when the
 //                   counterpart was usable or absent) — audits only, never copy
@@ -88,6 +90,15 @@
 // when no trade committed, and a null matches nothing. symbolIn only: the outgoing
 // stock is still in the seam's book and is judged as it always was, and E-2 reads
 // the fresh parent, which already holds the committed trade.
+//
+// Cockpit entry-already-held (contract Amendment F, F-1): the same fact read for an
+// ENTRY. The seam's book predates the check's own trade, so an entry call on the
+// stock that trade bought was minted as an ordinary entry — answerable, while the
+// stock was already in the book. `heldAtMint` is now also true for an entry whose
+// symbol is `committedSymbolIn` (the rev 3 parameter, already passed; null matches
+// nothing). C-2's treatment follows unchanged: no answer is legal, the cockpit
+// shows the upside chip, and the call can still resolve `hit`. Mint mode 'off'
+// writes nothing, so the off golden does not move.
 //
 // Pure: no I/O, no clock (the mint instant is handed in).
 
@@ -322,6 +333,7 @@ function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, mintedMode, 
   const isPick = kind === 'pick';
   // The price line is judged first (D-9's three reasons); Amendment E's exit_not_held only for a call that would otherwise mint valid,
   // and (rev 3) not for the stock this very check bought: the seam's book predates the check's own committed trade.
+  // Amendment F (F-1) reads the same fact for an entry: an entry on that stock is an upside call (`heldAtMint`, below).
   const boughtHere = nonEmptyString(committedSymbolIn) && row?.symbol === committedSymbolIn;
   const reason = isPick
     ? null
@@ -341,8 +353,9 @@ function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, mintedMode, 
     mintedMode,
     symbol: isPick ? null : row.symbol,
     direction: isPick ? null : row.direction,
-    // C-2: shots and confirmations only — an 'entry' on a name held at the seam.
-    ...(isPick ? {} : { heldAtMint: row.direction === 'entry' && Array.isArray(held) && held.includes(row.symbol) }),
+    // C-2: shots and confirmations only — an 'entry' on a name held at the seam; Amendment F (F-1): or on the
+    // stock this very check bought (`boughtHere`, above), which the seam's book predates.
+    ...(isPick ? {} : { heldAtMint: row.direction === 'entry' && ((Array.isArray(held) && held.includes(row.symbol)) || boughtHere) }),
     slot: row.slot,
     counterpart: usable ? row.counterpart : null,
     counterpartRaw: hasCounterpart && !usable ? counterpartRawOf(row.counterpart) : null,
@@ -398,7 +411,7 @@ function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, mintedMode, 
  *   list its `candidates` stamp is composed from) — REQUIRED; `null` = none
  * @param {Record<string, number|null>|null} p.rankMap D-3: `{ symbol: technicalRank }` from the
  *   rankings the check's prompt rendered — REQUIRED; `null` = every name unranked
- * @param {string|null} p.committedSymbolIn Amendment E rev 3: the incoming stock of THIS check's own committed
+ * @param {string|null} p.committedSymbolIn Amendment E rev 3 (and F-1, for an entry): the incoming stock of THIS check's own committed
  *   trade (the executor's result, observe.js carryExecutorResult) — REQUIRED; `null` = no trade committed
  *   (a blocked or absent swap), which matches nothing
  */

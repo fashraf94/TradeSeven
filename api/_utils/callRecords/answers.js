@@ -34,6 +34,10 @@
 // ask this one function, so no copy of the test exists. It says nothing about
 // WHICH answers are legal; while it is true, none is.
 //
+// Amendment F (F-2) — THE ENTRY-SIDE MIRROR: `isEntryAlreadyHeld` is the same fact for an
+// ENTRY call whose stock IS in the book (any tier). The endpoint and the displays ask it
+// the same way; while it is true, no answer is legal on that entry either.
+//
 // Node-clean AND browser-clean (its one import is copy.js, which is both).
 
 import { isUpsideCall } from './copy.js';
@@ -140,6 +144,23 @@ export function heldInAnyTier(book, symbol) {
 export function isExitNotHeld(call, book) {
   if (!call || typeof call !== 'object' || call.kind === 'pick' || call.direction !== 'exit') return false;
   return heldInAnyTier(book, call.symbol) === false;
+}
+
+/**
+ * Amendment F (F-2, answer time): an ENTRY call (a called shot or a Confirmation)
+ * whose stock IS held in some tier of the book — the mirror of isExitNotHeld. False
+ * for an exit, a pick, and whenever the book cannot say (heldInAnyTier is null):
+ * nothing is claimed that is not seen. The endpoint (the fresh parent) and the
+ * displays (the screen's battle document) both ask this one function.
+ *
+ * It says nothing about upside calls: an upside call (`heldAtMint`) is an entry on a
+ * held name by construction, and no answer is legal on it anyway (C-2). Its own
+ * treatment comes first — the endpoint's legality table answers `upside_call` before
+ * this is asked, and the displays test isUpsideCall before they use it.
+ */
+export function isEntryAlreadyHeld(call, book) {
+  if (!call || typeof call !== 'object' || call.kind === 'pick' || call.direction !== 'entry') return false;
+  return heldInAnyTier(book, call.symbol) === true;
 }
 
 /** The answers a shot or confirmation tile can carry, before legality filters them. */

@@ -137,7 +137,9 @@ describe('the tile model — no button, no step, the line "Not in your book"', (
   });
 
   it('only exits: an entry call on a stock that is not held (the normal case), an upside call and a pick are untouched', () => {
-    const entry = tileOf([entryShot()], { book: LEFT });
+    // XOM sits on the bench (held in no tier): the ordinary entry. (AMD is in the book's support tier — Amendment F withdraws
+    // an entry on it; entryAlreadyHeld.display.jsdom.test.jsx owns that case.)
+    const entry = tileOf([entryShot({ symbol: 'XOM' })], { book: LEFT });
     expect(answers(entry)).toEqual(['go', 'hold']);
     expect(entry.tag.fact).toBe('state:open');
     const upside = tileOf([entryShot({ heldAtMint: true, symbol: 'VLO' })], { book: LEFT });

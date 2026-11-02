@@ -1163,6 +1163,8 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpit2bWordAnswered: 'you answered',
   // Amendment E rev 2 (E-2): an exit whose stock is in no tier of the book (the tag reads "Not in your book").
   cockpit2bWordNotHeld: 'not in your book',
+  // Amendment F (F-2): an entry whose stock IS in the book (the tag reads "Already in your book").
+  cockpit2bWordAlreadyHeld: 'already in your book',
   cockpit2bLineMovedShort: 'line moved',
   cockpit2bMore: (n) => `+${n} more`,
   cockpit2bFewer: 'fewer',
@@ -1270,6 +1272,10 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   // document the screen reads, with no answer and no act on it. No answer is legal then (the endpoint refuses
   // them all), so the tile offers none and says why, in the same words as D-9's "Dropped · not in your book".
   'call:not_held': Object.freeze({ tone: 'muted', text: () => 'Not in your book' }),
+  // Cockpit entry-already-held (Amendment F, F-2): the entry-side mirror — an OPEN entry call whose stock IS in some
+  // tier of the battle document the screen reads, with no answer and no act on it, and not an upside call (which
+  // keeps its own treatment). No answer is legal then (the endpoint refuses them all), so the tile offers none.
+  'call:already_held': Object.freeze({ tone: 'muted', text: () => 'Already in your book' }),
   // The call events (events.js CALL_EVENT_KINDS).
   'event:declared': null, // the mint — the eyebrow's "from the {t} check" already says it
   'event:answered': null, // the answer's own receipt — the tag reads the call's playerResponse
@@ -1335,6 +1341,9 @@ export function cockpitRefusalLine(status, body = null, { pendingLine = null, v2
       if (typeof reason === 'string' && reason.startsWith('pick_') && names.pickSymbol) return `${names.pickSymbol} can't come in right now — nothing was filed.`;
       if (reason === 'counterpart_unavailable' && names.counterpart) return `${names.counterpart} can't come in right now — nothing was filed.`;
       if (reason === 'symbol_not_held' && names.symbol) return `${names.symbol} has already left your book — nothing was filed.`;
+      // Amendment F (F-2): an entry whose stock is already in the book; and the entry's named counterpart that has left it.
+      if (reason === 'symbol_already_held' && names.symbol) return `${names.symbol} is already in your book — nothing was filed.`;
+      if (reason === 'counterpart_not_held' && names.counterpart) return `${names.counterpart} has already left your book — nothing was filed.`;
     }
   }
   if (status === 409) {
