@@ -11,8 +11,8 @@
 // the stale-list rule alone had behavioural rows (the owner test).
 //
 //   - The hub is ON through the PICKER (pickDashboardShell is handed hubOn:
-//     true), never through the flag: COMMAND_CENTER_HUB_ENABLED stays false
-//     and its dark pin (commandCenterHubFlags.test.js) is not touched.
+//     true), so no row depends on the flag: COMMAND_CENTER_HUB_ENABLED is live
+//     (true), and its pin is commandCenterHubFlags.test.js.
 //   - The gate is replaced by a probe that records what App hands it; the Film
 //     Room route and the battle view are probes too, so a row sees which battle
 //     an open handler hands them.

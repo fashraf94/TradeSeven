@@ -215,6 +215,10 @@ export function stakeMetaRefFor(db, stakeId) {
  *
  * NEVER THROWS. A stake is not failed over a telemetry field: any error is logged
  * and answered `null`, which the results card reads as "no hash recorded".
+ *
+ * A known cause of a hash change the player never made: the casual clone build,
+ * after which casual and training games hash leans and the tempo dial too. See
+ * docs/audits/20261101_BUILD_CASUAL_CLONE_CHARACTER_SETTINGS.md §4.
  */
 export async function resolveHashAtStake(db, teamOdUserId, { isCpu = false } = {}) {
   if (isCpu === true) return null;
