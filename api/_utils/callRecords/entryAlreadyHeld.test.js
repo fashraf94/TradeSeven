@@ -104,6 +104,13 @@ describe('the entry-side helper (answers.js) — held in ANY tier of the book', 
     expect(isEntryAlreadyHeld('MSFT', doc)).toBe(false);
   });
 
+  it('a call whose direction is neither entry nor exit is not asked; and the helper says nothing about upside calls (it stays true for one) (review EA-L6-3)', () => {
+    const doc = battle();
+    for (const direction of [undefined, null, '', 'sideways']) expect(isEntryAlreadyHeld({ kind: 'called_shot', direction, symbol: 'MSFT', slot: 'support' }, doc), String(direction)).toBe(false);
+    expect(isEntryAlreadyHeld(entry('MSFT', { heldAtMint: true }), doc)).toBe(true);
+    expect(isEntryAlreadyHeld(entry('AMD', { heldAtMint: true }), doc)).toBe(false);
+  });
+
   it('a book that cannot say proves nothing: null, no portfolio, no tier arrays, an empty symbol — false, never a claim', () => {
     for (const book of [null, undefined, {}, { portfolio: null }, { portfolio: {} }, { portfolio: { bench: { stocks: [] } } }, 'x']) {
       expect(isEntryAlreadyHeld(entry('MSFT'), book), JSON.stringify(book)).toBe(false);
@@ -178,6 +185,11 @@ describe('F-1 — an entry on the check\'s own committed incoming stock is an up
       const call = firstCall({ shots: [entryShot({ symbol: 'AMD' })], committedSymbolIn });
       expect(call.heldAtMint, JSON.stringify(committedSymbolIn)).toBe(false);
     }
+  });
+
+  it('only the call\'s own symbol matches: an entry whose NAMED COUNTERPART is the committed symbolIn is an ordinary entry (review EA-L6-4)', () => {
+    const call = firstCall({ shots: [entryShot({ symbol: 'AMD', counterpart: 'KO' })], committedSymbolIn: 'KO' });
+    expect([call.heldAtMint, call.counterpart]).toEqual([false, 'KO']);
   });
 
   it('F-1 does not depend on a known held set (the amendment\'s "or"): held:null + the committed symbolIn is still an upside call, and held:null alone is not (review EA-L3-1)', () => {

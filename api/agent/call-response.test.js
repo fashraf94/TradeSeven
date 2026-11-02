@@ -808,6 +808,21 @@ describe('Amendment F (F-2): no answer on an entry whose stock the fresh parent 
     expect(stale.body).toEqual({ error: 'refused', reason: 'belief_mismatch', currentDirectiveThreadId: 'thread-cur' });
   });
 
+  it('the directive rows keep the other guards ahead of the check: a closed or late call -> 409 expired, a parent that is not active -> 409 parent_not_active (review EA-L6-1)', async () => {
+    for (const [answer, defaultAction] of [['hold', 'act'], ['go_now', 'hold']]) {
+      const late = entryOn(ENTRY_ACT, { defaultAction, horizon: { phrase: 'this_session', expiresAt: NOW - 1, basis: 'this_session' } });
+      const closed = entryOn(ENTRY_ACT, { defaultAction, state: 'hit' });
+      for (const [label, c] of [['late', late], ['closed', closed]]) {
+        activeDb = makeDb({ calls: { [ENTRY_ACT]: c } });
+        const res = await post(answerBody({ callId: ENTRY_ACT, answer }));
+        expect([res.statusCode, res.body.reason], `${answer} ${label}`).toEqual([409, 'expired']);
+      }
+      activeDb = makeDb({ battle: makeTickBattle({ directive: null, status: 'completed' }), calls: { [ENTRY_ACT]: entryOn(ENTRY_ACT, { defaultAction }) } });
+      const inactive = await post(answerBody({ callId: ENTRY_ACT, answer }));
+      expect([inactive.statusCode, inactive.body.reason], `${answer} inactive parent`).toEqual([409, 'parent_not_active']);
+    }
+  });
+
   it('an answer already recorded stays as recorded: an IDENTICAL repeat after the stock came in returns the stored response (200, repeat), and a FIRST answer on another entry is refused', async () => {
     activeDb = makeDb({ calls: { [ENTRY_ACT]: entryOn(ENTRY_ACT, { symbol: 'AMD', defaultAction: 'act' }), [ENTRY_HOLD]: entryOn(ENTRY_HOLD, { symbol: 'AMD', defaultAction: 'hold' }) } });
     const first = await post(answerBody({ callId: ENTRY_ACT, answer: 'go' }));

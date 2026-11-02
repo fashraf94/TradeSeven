@@ -33,7 +33,7 @@ import CockpitFeed from './CockpitFeed';
 import CockpitSheet from './CockpitSheet';
 import Cockpit2b from './Cockpit2b';
 import { buildCockpitFeed, sheetOf, eventsByCall, refusalLineOf } from './cockpitModel';
-import { liveCommandOf, chipWordOf } from './cockpit2bModel';
+import { liveCommandOf, chipWordOf, cardViewOf } from './cockpit2bModel';
 import { useCockpit2bAnswer } from './useCockpit2bAnswer';
 import { BATTLE_VIEW_COPY as COPY, COCKPIT_FACT_TAGS, cockpitRefusalLine } from './battleViewCopy';
 
@@ -188,6 +188,18 @@ describe('the tile model — no button, the line "Already in your book"', () => 
     expect(chipWordOf(tileOf([waitEntry()], { book: HELD_SUPPORT })).word).toBe('already in your book');
     expect(chipWordOf(tileOf([waitEntry()], { book: NOT_HELD })).word).toBe(COPY.cockpit2bWordWait);
     expect(chipWordOf(tileOf([entry({ heldAtMint: true })], { book: HELD_SUPPORT })).word).toBe(COPY.cockpit2bWordUpside);
+  });
+
+  it('the 2b card keeps its silence line wherever the stock is NOT in the book: with buttons, past the deadline, acted on, or under another muted tag (review EA-L6-2)', () => {
+    const SILENCE = 'If you say nothing, it brings it in.';
+    const silenceOf = (calls, over = {}) => cardViewOf(tileOf(calls, { book: NOT_HELD, ...over }), { agent: 'Shadow', nowMs: NOW, evaluations: EVALS, eventsMap: eventsByCall(over.events ?? []) }).silence;
+    expect(silenceOf([entry()])).toBe(SILENCE);
+    expect(silenceOf([entry({ horizon: { phrase: 'this_session', expiresAt: NOW - 1_000, basis: 'this_session' } })])).toBe(SILENCE);
+    expect(silenceOf([entry({ outcome: { actedEvalId: 'eval_021' } })])).toBe(SILENCE);
+    const c = entry();
+    const noMatch = { kind: 'no_matching_trade', at: at('13:05'), callIds: [c.callId], evidence: { promptBuiltAt: iso(at('13:00')) } };
+    expect(silenceOf([c], { events: [noMatch] })).toBe(SILENCE);
+    expect(cardViewOf(tileOf([entry()], { book: HELD_SUPPORT }), { agent: 'Shadow', nowMs: NOW, evaluations: EVALS, eventsMap: eventsByCall([]) }).silence).toBeNull();
   });
 
   it('the details sheet is the tile\'s: sheetOf carries the same (empty) buttons and the same tag', () => {
