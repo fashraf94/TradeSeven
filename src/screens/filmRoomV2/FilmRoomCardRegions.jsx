@@ -31,8 +31,8 @@
 //                   the route and stage, what happens next — RG-5's sentence
 //                   for an open card, "nothing" for a retired or shelved one
 //                   (review L3-3) — and Retire. An open Set card's receipt
-//                   holds Set's link to the tempo dial where Amendment K RK-2
-//                   (a recorded tempo) allows it; the form never does (RK-3: a
+//                   holds Set's link to the tempo dial where the day's rule and
+//                   the Forge's flags allow it; the form never does (RK-3: a
 //                   trip to the Forge cannot discard an unfiled note). Where it links, Set's
 //                   sentence ends "A change applies from your next battle."
 //                   (Amendment L RL-5).
@@ -90,26 +90,22 @@ export function setRuleOf(tape) {
 }
 
 /**
- * Build B Amendment K RK-2 (SPR-L-1, SPR-C-5), with Amendment L RL-1's casual-clone condition removed by the clone
- * build's ruling R-CC-5 — what Set says for a day, and whether its link to the tempo dial may show: `{ say, link }`.
- * `say` is the words after RG-5's sentence: 'ruleOff' (RJ-8's no-link sentence), 'noTempo' (the rule is on and the tape
- * records no tempo — `tags.inputs.tempoDesired` null), or null (RG-5's sentence alone). `link` holds only when ALL of:
- * the rule is on; the tape records the tempo the battle ran with, which is per battle and true by construction; and the
- * Forge's Character tab and the tempo dial are both switched on (RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED).
- * Where the link shows is RK-3's: on a filed card's receipt, never the form.
+ * Build B Amendment K RK-2 (SPR-L-1, SPR-C-5) with no tempo or agent condition: every battle links, the founder's
+ * ruling FQ-1 on PR #1019 and Amendment L RL-1's "Later", since the clone build the dial reaches every battle. What
+ * Set says for a day, and whether its link to the tempo dial may show: `{ say, link }`. `say` is the words after RG-5's
+ * sentence: 'ruleOff' (RJ-8's no-link sentence) or null (RG-5's sentence alone). `link` holds only when ALL of: the rule
+ * is on; and the Forge's Character tab and the tempo dial are both switched on (RELEASE3_CHARACTER_TAB_ENABLED,
+ * TEMPO_DIAL_ENABLED). Where the link shows is RK-3's: on a filed card's receipt, never the form.
  */
 export function setStateOf(tape) {
   const rule = setRuleOf(tape);
-  const tempo = tape?.tags?.inputs?.tempoDesired;
-  const recorded = typeof tempo === 'string' && tempo.length > 0;
   if (rule === 'off') return { say: 'ruleOff', link: false };
   if (rule !== 'on') return { say: null, link: false };
-  if (!recorded) return { say: 'noTempo', link: false };
   return { say: null, link: RELEASE3_CHARACTER_TAB_ENABLED === true && TEMPO_DIAL_ENABLED === true };
 }
 
 /** Set's words after RG-5's sentence, by setStateOf's `say`. */
-const setSayOf = (say) => (say === 'ruleOff' ? T.setRuleOff : say === 'noTempo' ? T.setNoTempo : null);
+const setSayOf = (say) => (say === 'ruleOff' ? T.setRuleOff : null);
 
 /** A moment's facts: the symbol, its from–to as instants, its number of checks (derived). */
 function MomentFacts({ moment, size = 11.5 }) {
@@ -183,7 +179,7 @@ export function CheckTags({ tape, index, onTakeHome }) {
 export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel }) {
   const id = useId().replace(/[^A-Za-z0-9_-]/g, '');
   // RH-1 / RJ-8 / Amendment K RK-2: what Set says for the day, read from the tape (what the tagger used) — the rule
-  // off, or on with no tempo recorded, each said after RG-5's sentence. The form never holds the link (RK-3)
+  // off is said after RG-5's sentence. The form never holds the link (RK-3)
   const setSay = setSayOf(setStateOf(tape).say);
   const questions = questionsFor(moment.situationId);
   const [questionId, setQuestionId] = useState(questions[0]?.id ?? null);
@@ -327,7 +323,7 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = 
       <Quotation doc={ledger} path={['cards', live.entryId, 'note']} by="you" at={['cards', live.entryId, 'createdAt']} docLabel="ledger" />
       <span style={mono(11, C.ink2)}>{T.route} · {wordOf(T.routes, live.route)} · {T.stage} · {wordOf(T.stageWords, live.stage)}{live.shelved ? ` · ${T.groups.shelved}` : ''}</span>
       {next ? <span data-card-next="" style={foot}>{next}{setSay ? <> {setSay}</> : null}{linked ? <> {T.setNextBattle}</> : null}</span> : null}
-      {/* RH-1 / RJ-8 / RK-2: the one setting that reaches `stalled` is the tempo dial — linked only where the tape records the tempo the battle ran with */}
+      {/* RH-1 / RJ-8 / RK-2: the one setting that reaches `stalled` is the tempo dial — linked on every battle where the day's rule is on */}
       {linked ? (
         <span data-set-link="">
           <TextButton onClick={() => onOpenForge({ area: FORGE_CHARACTER_AREA })}>{T.setTempoLink}</TextButton>

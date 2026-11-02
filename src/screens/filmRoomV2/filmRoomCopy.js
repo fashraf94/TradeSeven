@@ -325,7 +325,8 @@ export const FILM_ROOM_COPY = Object.freeze({
     // reaches this situation — the tempo dial, in the Forge workshop; with it off, it says no setting changes it
     setTempoLink: 'Tempo dial · Forge workshop',
     setRuleOff: 'No setting changes this situation for this archetype.',
-    // Build B Amendment K RK-2: the rule on and the tape records no tempo — said after RG-5's sentence, with no link
+    // Build B Amendment K RK-2's no-tempo sentence. Unread since the founder's ruling FQ-1 on PR #1019 (every battle
+    // links); the Film Room chat decides whether to retire the key
     setNoTempo: 'No tempo setting was recorded for this battle.',
     // Build B Amendment L RL-5: wherever Set links the dial, its sentence ends with when a change takes effect — a
     // battle snapshots its setting when it is created, so a change applies to the next one, never the one reviewed

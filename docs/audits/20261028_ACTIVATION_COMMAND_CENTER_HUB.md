@@ -12,7 +12,7 @@ Claude Code (Opus 5.5), October 28, 2026, for Flash. The prompt: "FantasyTrades 
 | **Checks** | Full Linux suite with the flag true: **0 red rows** (`Test Files 1210 passed \| 8 skipped (1218)`). lint:gate exit 0. `vite build` exit 0; the entry chunk differs from `main`'s only by the flag's literal and the one ternary Rollup folds from it (§5.3). The gate's fallback works on a production build at a phone and a desktop width (§6). |
 | **Base** | `main` at `9bbe2b1b` (PR #1005), which contains the S8 fix build's merge `65b8632f` (PR #1000). `git fetch origin` ran first. |
 | **Branch** | `claude/command-center-hub-flip` (pushed by refspec; the app's local worktree branch is `claude/command-center-hub-flip-a1e8a6`). |
-| **Not yet done** | The production deployment and the founder's post-flip checks (§8), and the named device's 60 s readout line (§3, pending the founder's paste). |
+| **Not yet done** | The production deployment record and the founder's remaining post-flip checks (§8). |
 
 ## 2. The arc
 
@@ -41,7 +41,7 @@ Spec §12, "Public activation core": *reviewed implementation, cumulative review
 | Item | Record |
 |---|---|
 | Reviewed implementation and cumulative review/build (§12 core; review §5 item 9) | The S8 review's verdict was ACTIVATE AFTER FIXES. Every item it graded "before activation" (S8-11, S8-12, S8-13, S8-14, S8-1, S8-2, S8-3, S8-8, S8-4, S8-9, K-1, K-7 and the focus-return item) is built in the S8 fix build, PR #1000, merged as `65b8632f` before this flip. |
-| **The named device** (S7 §12; review §5 item 1; §12 device evidence) | iPhone 16. The founder's check on the S7 smoke preview, October 28, 2026: **pass**. The corner readout's 60 s line, verbatim: **pending — the founder pastes it into this session and it is recorded here in a follow-up commit.** `PHONE_SHADOW` stays `'canvas'` (`src/components/CommandCenter/hub/hubFlags.js:49`). |
+| **The named device** (S7 §12; review §5 item 1; §12 device evidence) | Pass on the founder's iPhone 16 (Oct 28, 2026); the readout's 60-second figures were not captured. `PHONE_SHADOW` stays `'canvas'` (`src/components/CommandCenter/hub/hubFlags.js:49`). |
 | **The entry-point click-through** (S5 §5; review §5 item 5) | The founder, on the S8 fix build's smoke preview, October 28, 2026: **pass**. |
 | **The S6 and S8 smoke checklists** (review §5 item 3, in part) | The founder, October 25–28, 2026: **pass**, except the live look at "Deploying with", which needs the founder's Deploy card in a ready state. It is checked on production after the flip (§8, item 3). |
 | **The Research cohort** (spec §12 "useful Research"; review §5 item 2) | Idea records stay gated by `HYPOTHESIS_RECORDS_ENABLED` and the server's cockpit allowlist, which the pilot arc owns. At activation the admitted cohort is the founder and the FT_QA tester. Every other account sees the panel's honest "Research records aren't available on this account" state, with no idea rows and the neutral loadout label. The founder accepted this state for the public hub on October 28, 2026. Widening the cohort is the pilot arc's decision and needs no hub change. The tester's view is checked on production (§8, item 2). |
@@ -171,7 +171,7 @@ Left for the founder.
 |---|---|
 | Production deployment's sha | |
 | Deployed at | |
-| 1. The hub on the phone and on the desktop, on the founder's account and on the tester's | |
+| 1. The hub on the phone and on the desktop, on the founder's account and on the tester's | Phone half: confirmed by the founder on production, October 28, 2026. Desktop half: pending. |
 | 2. The tester's account shows "Research records aren't available on this account" and the neutral loadout label | |
 | 3. "Deploying with: {statement} · N names" on the founder's Deploy card once it reads "Ready to deploy"; N matches the Loadout card | |
 | 4. One real deploy from the hub, when a game is affordable: the ceremony, the game appearing with his games, Shadow's processing look while it submits | |
