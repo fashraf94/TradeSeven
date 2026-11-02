@@ -402,7 +402,8 @@ function composeCall(spec, { battleId, evalId, evalSeq, mintedAtMs, mintedMode, 
  * @param {unknown} [p.topLevelWatching] Amendment C-1: the same tool input's top-level `watching`,
  *   detached at the tool-result seam (absent → nothing read from the top level)
  * @param {string[]|null} p.held   Amendment C-2: the held set frozen at the model seam —
- *   REQUIRED; `null` is the explicit "unknown" (heldAtMint false)
+ *   REQUIRED; `null` is the explicit "unknown" (this source then says nothing: heldAtMint is false unless
+ *   Amendment F's F-1 applies — an entry on `committedSymbolIn`)
  * @param {'shadow'|'on'} p.mintedMode Amendment C-5: the check's resolved mode — REQUIRED
  * @param {object|null} p.book     Amendment D-7 / D-3: the book and the swap's lists frozen at the
  *   model seam (swappable.js freezeSwapBook, observe.js) — REQUIRED; `null` is the explicit

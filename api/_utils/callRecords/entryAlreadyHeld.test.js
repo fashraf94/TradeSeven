@@ -71,11 +71,13 @@ const ALL_ANSWERS = ['go', 'hold', 'go_now', 'pick', 'agree', 'disagree', 'repla
 describe('the entry-side helper (answers.js) — held in ANY tier of the book', () => {
   const entry = (symbol, over = {}) => ({ kind: 'called_shot', direction: 'entry', symbol, slot: 'support', ...over });
 
-  it('true for an ENTRY shot or Confirmation on a stock held in any tier (the crypto row included), false for a bench name or a stranger', () => {
+  it('true for an ENTRY on a stock held in any tier (the crypto row included), false for a bench name or a stranger', () => {
     const doc = battle();
     for (const symbol of ['NVDA', 'MSFT', 'KO', 'BTC']) {
       expect(isEntryAlreadyHeld(entry(symbol), doc), `shot ${symbol}`).toBe(true);
-      expect(isEntryAlreadyHeld(entry(symbol, { kind: 'confirmation' }), doc), `confirmation ${symbol}`).toBe(true);
+      // The mint labels every entry a called shot (validate.js kindOfShot), so a "Confirmation entry" cannot be minted today;
+      // the helper tests direction, not kind, and this row only pins that indifference (review EA-L3-3).
+      expect(isEntryAlreadyHeld(entry(symbol, { kind: 'confirmation' }), doc), `kind-indifferent ${symbol}`).toBe(true);
     }
     for (const symbol of ['AMD', 'JPM', 'CVX']) expect(isEntryAlreadyHeld(entry(symbol), doc), symbol).toBe(false);
   });
@@ -176,6 +178,11 @@ describe('F-1 — an entry on the check\'s own committed incoming stock is an up
       const call = firstCall({ shots: [entryShot({ symbol: 'AMD' })], committedSymbolIn });
       expect(call.heldAtMint, JSON.stringify(committedSymbolIn)).toBe(false);
     }
+  });
+
+  it('F-1 does not depend on a known held set (the amendment\'s "or"): held:null + the committed symbolIn is still an upside call, and held:null alone is not (review EA-L3-1)', () => {
+    expect(firstCall({ shots: [entryShot({ symbol: 'AMD' })], committedSymbolIn: 'AMD', held: null }).heldAtMint).toBe(true);
+    expect(firstCall({ shots: [entryShot({ symbol: 'AMD' })], committedSymbolIn: null, held: null }).heldAtMint).toBe(false);
   });
 
   it('an EXIT on the committed symbolIn still mints open (Amendment E rev 3) and is never an upside call', () => {

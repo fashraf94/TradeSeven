@@ -662,3 +662,47 @@ describe('runModelCallsPhase — the committed symbolIn reaches the mint (Amendm
     expect(await run(closed({ symbolOut: 'AMD', symbolIn: 'JPM' }))).toEqual([['AMD', 'invalidated', 'exit_not_held']]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Amendment F (F-1): the same committed symbolIn, read for an ENTRY. The seam's book predates the check's own trade, so
+// an entry call on the stock that trade bought was minted as an ordinary entry (heldAtMint false) — answerable, while the
+// stock was already in the book. With the executor's result piped to the mint it is an upside call (heldAtMint true,
+// C-2). AMD is on the bench in that book, so the held set alone never makes it held.
+
+describe('runModelCallsPhase — the committed symbolIn makes an entry on that stock an upside call (Amendment F, F-1)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(MINT);
+  });
+
+  const entryOnAmd = {
+    calledShots: [{ symbol: 'AMD', direction: 'entry', slot: 'support', counterpart: 'KO', condition: { side: 'above', level: 165 }, horizonPhrase: 'this_session', defaultAction: 'act', said: 'AMD into Support above $165, KO makes room.' }],
+    watching: [], playerAsk: null, fork: null,
+  };
+  /** Run the model-path phase after the executor returned `swapResult` (undefined = the swap was never called). */
+  const run = async (swapResult) => {
+    const db = makeCallsDb({ battle: committedBattle() });
+    const ctx = modelCtx({ mode: 'on', raw: entryOnAmd });
+    ctx.held = Object.freeze([...HELD]);
+    ctx.book = freezeSwapBook(committedBattle());
+    if (swapResult !== undefined) carryExecutorResult(ctx, swapResult);
+    await runModelCallsPhase(ctx, phaseArgs(db));
+    return Object.values(storedCollection(db, 'calls')).map((c) => [c.symbol, c.direction, c.heldAtMint, c.state]);
+  };
+  const closed = (over = {}) => ({ success: true, closedTrade: { symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0, ...over } });
+
+  it('a swap that committed AMD: the entry on AMD mints heldAtMint true — an upside call, still open (it can resolve `hit`)', async () => {
+    expect(await run(closed())).toEqual([['AMD', 'entry', true, 'open']]);
+  });
+
+  it('no swap at all, or one that returned no closed trade (blocked, failed): the entry on AMD is an ordinary entry — heldAtMint false', async () => {
+    expect(await run(undefined)).toEqual([['AMD', 'entry', false, 'open']]);
+    expect(await run({ success: false })).toEqual([['AMD', 'entry', false, 'open']]);
+    expect(await run({ success: true })).toEqual([['AMD', 'entry', false, 'open']]);
+  });
+
+  it('symbolIn only, and only that stock: a swap that bought JPM, or one that SOLD AMD, makes nothing held', async () => {
+    expect(await run(closed({ symbolIn: 'JPM' }))).toEqual([['AMD', 'entry', false, 'open']]);
+    expect(await run(closed({ symbolOut: 'AMD', symbolIn: 'JPM' }))).toEqual([['AMD', 'entry', false, 'open']]);
+  });
+});

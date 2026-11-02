@@ -147,7 +147,7 @@ export function isExitNotHeld(call, book) {
 }
 
 /**
- * Amendment F (F-2, answer time): an ENTRY call (a called shot or a Confirmation)
+ * Amendment F (F-2, answer time): an ENTRY call (the mint labels every entry a called shot; this tests direction, not kind)
  * whose stock IS held in some tier of the book — the mirror of isExitNotHeld. False
  * for an exit, a pick, and whenever the book cannot say (heldInAnyTier is null):
  * nothing is claimed that is not seen. The endpoint (the fresh parent) and the

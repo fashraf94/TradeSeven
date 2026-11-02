@@ -108,7 +108,7 @@ describe('the tile model — no button, the line "Already in your book"', () => 
     }
   });
 
-  it('a hold-default entry the same; the same without the 2b flag; a Confirmation the same', () => {
+  it('a hold-default entry the same; the same without the 2b flag; the tile is kind-indifferent (no entry is minted a Confirmation today)', () => {
     for (const v2 of [true, false]) {
       const t = tileOf([waitEntry()], { book: HELD_SUPPORT, v2 });
       expect([t.buttons, t.tag.text], `v2 ${v2}`).toEqual([[], ALREADY_HELD]);
@@ -292,7 +292,9 @@ describe('the 2b card, the strip chip and the Now card, mounted', () => {
 
   it('the Now card: the entry never leads it — the next call that can be answered does', () => {
     const held = entry();
-    const exit = exitCall();
+    // A hold-default CALLED SHOT exit is the priority-3 card (nowPriorityOf): an answerable act-default entry (priority 2) would
+    // outrank it, so the Now card is the exit ONLY because the held entry offers no button — a real control (review EA-L3-2).
+    const exit = exitCall({ kind: 'called_shot', defaultAction: 'hold' });
     render({ calls: [held, exit], battle: HELD_SUPPORT });
     expect(q('[data-cockpit-now]').getAttribute('data-cockpit-now')).toBe(exit.callId);
     expect(qa('[data-cockpit-chip]').map((c) => c.textContent)).toContain('AMD↑163.50 · already in your book');

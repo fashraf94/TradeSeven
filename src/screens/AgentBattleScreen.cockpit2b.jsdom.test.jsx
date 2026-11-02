@@ -299,9 +299,11 @@ describe('Cockpit Build 2b — the flag ON, desktop', () => {
     await click(qa('[data-cockpit-chip-toggle]').find((t) => t.closest('[data-cockpit-chip]')?.textContent.includes('AMD')));
     const tag = q('[data-cockpit-tag="call:already_held"]');
     expect(tag.textContent).toBe('Already in your book');
-    expect(tag.closest('[data-cockpit-tile]')?.querySelectorAll('[data-cockpit-answer]').length ?? 0).toBe(0);
-    expect(tag.closest('[data-cockpit-tile]')?.textContent ?? '').not.toContain('If you say nothing');
-    expect(answerBodies()).toEqual([]);
+    // Bind the tile first: a null anchor must fail here, not turn the two assertions below into `null?.… ?? 0` (review EA-L3-4/5).
+    const tile = tag.closest('[data-cockpit-tile]');
+    expect(tile).toBeTruthy();
+    expect(tile.querySelectorAll('[data-cockpit-answer]')).toHaveLength(0);
+    expect(tile.textContent).not.toContain('If you say nothing');
   });
 
   it('board dots: "an open call" beside NVDA on the player\'s row', async () => {

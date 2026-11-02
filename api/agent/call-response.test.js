@@ -855,6 +855,5 @@ describe('Amendment F (F-2): no answer on an entry whose stock the fresh parent 
     expect(src).not.toMatch(/function isEntryAlreadyHeld/);
     const check = src.indexOf("if (isEntryAlreadyHeld(call, parent)) return { kind: 'ineligible_action', reason: 'symbol_already_held' };\n      const eligible");
     expect(check, 'the directive check sits immediately before `const eligible`').toBeGreaterThan(-1);
-    expect(src.indexOf('isEntryAlreadyHeld(call, parent)')).toBeLessThan(src.indexOf('const eligible ='));
   });
 });
