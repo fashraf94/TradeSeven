@@ -46,12 +46,22 @@ const LOG_PREFIX = '[CasualClone]';
 const AGENTS_COLLECTION = 'agents';
 
 /**
+ * The memory a casual clone takes from its ranked agent: the ONE rule behind
+ * creation and every re-sync (R-FQ2-1), so a first game carries what a later
+ * deploy would. Pure.
+ */
+function inheritedMemory(rankedAgent) {
+  return Array.isArray(rankedAgent.memory) ? rankedAgent.memory : [];
+}
+
+/**
  * The casual-clone doc shape: the ranked agent's inherited loadout (PURE inherit —
  * no loadout override in Phase 1; the per-battle loadout SELECTION surface is
- * Phase 2), the player's ownerId, the casual-clone markers, and fresh
- * history/pointers. Pure. Mirrors buildTrainingCloneDoc, with two deltas:
- * isCasualClone (not isTrainingClone) and NO groupId (the casual clone is
- * persistent per user, not pod-scoped).
+ * Phase 2) and memory, the player's ownerId, the casual-clone markers, and fresh
+ * history/pointers. Pure. Mirrors buildTrainingCloneDoc, with three deltas:
+ * isCasualClone (not isTrainingClone), NO groupId (the casual clone is persistent
+ * per user, not pod-scoped) and inherited memory (a training clone isolates, so it
+ * starts empty).
  */
 export function buildCasualCloneDoc(rankedAgent, { odUserId, nowIso }) {
   const loadout = {};
@@ -64,9 +74,10 @@ export function buildCasualCloneDoc(rankedAgent, { odUserId, nowIso }) {
     ownerId: odUserId,            // the PLAYER — mastery (owner-keyed) reaches them
     isCasualClone: true,          // ranked owner-lookups exclude on this (+ id prefix)
     rankedAgentId: rankedAgent.id, // the attribution target for every redirect
-    // Fresh history + clean pointers — the clone starts clean and its
+    // Memory is inherited (a first game carries what a later deploy would). Fresh
+    // history + clean pointers — the clone's stats start clean and its
     // activeBattleId is its OWN (the per-clone one-active-battle lock).
-    memory: [],
+    memory: inheritedMemory(rankedAgent),
     stats: { ...FRESH_STATS },
     pendingConsolidation: false,
     activeBattleId: null,
@@ -94,7 +105,7 @@ export function buildCasualCloneResync(rankedAgent) {
     if (rankedAgent[field] !== undefined) out[field] = rankedAgent[field];
   }
   assignLoadoutLineage(out, rankedAgent); // BL2: lineage refreshes on re-sync; the clone's OWN birth stamp is untouched (not in the copy set)
-  out.memory = Array.isArray(rankedAgent.memory) ? rankedAgent.memory : [];
+  out.memory = inheritedMemory(rankedAgent);
   return out;
 }
 
