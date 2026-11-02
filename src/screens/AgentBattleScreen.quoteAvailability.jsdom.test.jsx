@@ -256,7 +256,10 @@ function setShell(isDesktop) {
 let container;
 let root;
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+  // The fake owns the frame queue, so useRealTimers() drops whatever a row leaves in it. Under jsdom's own
+  // requestAnimationFrame, one callback left outstanding stops frames for every later row in the file. A poll's 60 s jump
+  // completes the 900 ms mount ramp, so no row advances a frame after one: that would start the change ramp.
+  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame'] });
   vi.setSystemTime(new Date('2026-10-01T17:00:00.000Z')); // Thu 1:00 PM ET
   Object.assign(flags, { gate: false, controller: true, pane: true, presence: false, forms: true });
   fsBox.listeners.length = 0;
@@ -3949,10 +3952,7 @@ describe('the kill switch — AGENT_FORM_BATTLE_ENABLED false: the production la
     await click(symbolEl('AAPL', 'player'));
     await click(symbolEl('GOOGL', 'cpu'));
     await click(pointsEl('NVDA', 'player'));
-    // Everything but the markup: after a poll the header's counter is still ramping on the real clock, so a digest taken
-    // there depends on how fast the row ran. The OFF row holds it only as the file's first row, on a cold start.
-    const withoutMarkup = (r) => Object.fromEntries(Object.entries(r).filter(([key]) => key !== 'html'));
-    expect(withoutMarkup(record())).toEqual(withoutMarkup(OFF.paneDesktopActive.after));
+    expect(record()).toEqual(OFF.paneDesktopActive.after);
     expect(container.querySelector('[data-arena-header]')).not.toBeNull();
     expect(container.querySelector('[data-arena-form]')).toBeNull();
   });
@@ -4546,12 +4546,13 @@ describe('ON-F4a (F16, parity) — the legacy-header (pane-off) layout agrees', 
 //        reference (`swapTransition`) is in the generated block above, captured
 //        at the pre-build SHA like the others.
 describe('OFF-5 (F15) — a mid-session swap, flag off', () => {
-  // The legacy header's counters ramp on animation frames, which this harness
-  // does not fake (Date and setInterval only): whether a frame has fired by
-  // record() time differs between a filtered and a full-file run (observed: 3
-  // bytes of markup, REFUTATION.md F15). The counter is pinned frame by frame
-  // by OFF-AS; this row pins the SWAP path, so frames are held for its duration
-  // and the digits rest at their mount text in every run and on both trees.
+  // The legacy header's counters ramp on animation frames, and a poll's clock
+  // jump runs them. Before this file faked its frame queue, a frame callback
+  // leaked by an earlier row stopped them in a full-file run but not a filtered
+  // one (observed: 3 bytes of markup, REFUTATION.md F15). The counter is pinned
+  // frame by frame by OFF-AS; this row pins the SWAP path, so frames are held
+  // for its duration and the digits rest at their mount text, as its reference
+  // was captured, in every run and on both trees.
   it('OFF swapTransition: breakdown and research open across a swap; the poll restarts for the incoming symbol; a later poll', async () => {
     const realRaf = window.requestAnimationFrame;
     const realCaf = window.cancelAnimationFrame;
