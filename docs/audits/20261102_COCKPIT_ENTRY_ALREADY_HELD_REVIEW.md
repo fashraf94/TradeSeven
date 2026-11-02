@@ -16,7 +16,7 @@
 
 ## 2. Ledger (26 findings; duplicates of one claim are listed once and cross-referenced)
 
-`FIXED` = changed in this branch (test or comment only — no review finding required a change to shipped logic). `FNF` = found, not fixed, stated in the build report §8. `Q` = a question for the founder, build report §9.
+`FIXED` = changed in this branch (test or comment only — no review finding required a change to shipped logic). `FNF` = found, not fixed, stated in the build report §8. `Q` = a question for the founder, build report §9 — **all four were ruled on 2026-11-02** (1 reword the amendment: yes, revision 2; 2 keep tag-keyed; 3 leave F-1 as built; 4 name F-2's effect: yes, revision 2) and no ruling changed the code.
 
 | Id | Lens · severity | Finding | Refuter verdict | Disposition |
 |---|---|---|---|---|
