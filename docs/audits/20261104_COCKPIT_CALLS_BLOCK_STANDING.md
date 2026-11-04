@@ -1,8 +1,8 @@
 # Cockpit calls block — "a command that no longer stands" (Amendment G)
 
 **Date:** 2026-11-04 · **Task:** the chat calls block says when a command no longer stands (G-1) and a named answer's row always carries its name (G-2) — the Build 2b report's CB2-1 and CB2-2 (`docs/audits/20261021_BUILD2B_COCKPIT.md`, §11 Q4/Q5).
-**Contract:** `docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_G.md` — a **draft for blessing**. Revision 1 was committed byte for byte (blob `1344ac6c`, equal to the founder's file); **revision 2** (the founder's, 2026-11-04, folding in this build and the rulings in §5) was committed over it as a new commit, byte for byte (blob `55411a99`, equal to the founder's file). Blessing gates the **merge**, not this build.
-**Status:** built, tested, mutation-checked, run on Linux; the founder ruled on the seven readings (§5) on 2026-11-04 and no code changed. **PR held — "Hold — merge after Amendment G is blessed, after 6 PM ET."** Not merged.
+**Contract:** `docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_G.md` — **blessed 2026-11-04** (framework chat, revision 2), with one condition, met as built (§9). Revision 1 was committed byte for byte (blob `1344ac6c`, equal to the founder's file); **revision 2** (the founder's, 2026-11-04, folding in this build and the rulings in §5) was committed over it as a new commit, byte for byte (blob `55411a99`, equal to the founder's file). The blessing commit then edited only the amendment's status line and appended its Blessing record.
+**Status:** built, tested, mutation-checked, run on Linux; the founder ruled on the seven readings (§5) on 2026-11-04, the amendment is blessed, and no code changed. **Merge after 6 PM ET** (the PR's first line, replacing the earlier hold, "Blessed 2026-11-04 (framework chat) — merge after 6 PM ET."). Not merged.
 
 ---
 
@@ -137,3 +137,11 @@ The shared-checkout rule held: `pd-ci`'s own HEAD was never moved, and `~/pd-af0
 - The emulator rules suite (`npm run test:rules`) was **not** run: no rules, indexes or fixtures changed, the four query shapes `readCallsForBlock` issues are unchanged (the rules-index row that drives it passes in the main suite), and the events are document gets, not queries — no new index.
 - Other ways a command ends (a kill; a call that has already resolved) stay out of scope, as the amendment says.
 - Cost, once live: one extra batched Firestore get per chat turn in a battle with a directive-answered call (the 1,500 ms block deadline is unchanged), plus one battle-document read only in the race.
+
+## 9. Blessing (framework chat, 2026-11-04)
+
+Amendment G **revision 2** was blessed on 2026-11-04 with one condition: the `retired` segments take their reason phrase from `RETIRED_REASON_TEXT` (`copy.js`), not from separate literals, with the frozen-literal test pinning the rendered result.
+
+**Condition met as built; no code change.** `endedSegmentOf` builds the retired segment with `${RETIRED_REASON_TEXT[retired.reason]}` (`callsBlock.js:125`), importing the map and `RETIRED_REASONS` from `./copy.js` (`callsBlock.js:57`) and guarding on `RETIRED_REASONS.includes(...)` (`callsBlock.js:124`). The map is `copy.js:286-291`. `callsBlock.js` holds neither phrase as a string literal in code (only in comments, `:45` and `:112-113`). The rendered result is pinned by the frozen literals in `amendmentG.test.js` (`:111-118` for the three "left the book" reasons and `pick_already_held`; `:125` end to end), and the mutation check killed the mutant that swaps the lookup for a literal (G1-10, §4).
+
+The condition and the blessing are recorded in the amendment's status line and a Blessing record at its end. The PR's first line now reads "Blessed 2026-11-04 (framework chat) — merge after 6 PM ET."; its description records the amendment as blessed and the seven readings as ruled.
