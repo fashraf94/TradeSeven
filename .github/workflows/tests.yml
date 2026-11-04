@@ -7,9 +7,13 @@
 # extensionless-import guard are all local-only and can (and did) sit red on
 # main unnoticed.
 #
-# Scope note: `npm run test:rules` (firestore emulator) and the eval configs
-# are deliberately NOT run here — they need an emulator / long-running
-# fixtures. This workflow is the fast unit gate only.
+# Scope note: the eval configs are deliberately NOT run here — they need
+# long-running fixtures. `npm run test:rules` (the Firestore emulator suites:
+# every rules denials suite and the setup-evidence store's protocol rows) runs
+# in the separate `rules` job at the bottom of this file. It is a separate job
+# because it needs a JDK and the emulator download, and so that the `unit`
+# job's steps and wall-clock stay exactly as they were: the two jobs have no
+# `needs` and run in parallel. The `unit` job is still the fast unit gate.
 #
 # It also runs the tf-setup golden-baseline guard (the step after Node setup):
 # a cross-revision check that blocks a golden regenerated under an unchanged
@@ -117,3 +121,84 @@ jobs:
           # EODHD_API_KEY (api/_utils/marketDataCache.test.js:15-25,
           # api/_utils/fetchEarningsCalendarEODHD.test.js:14-54) set the var
           # themselves and stub global.fetch — no real network, no secret.
+
+  # ── Firestore rules + emulator suites ────────────────────────────────
+  # Runs `npm run test:rules`: `firebase emulators:exec --only firestore
+  # --project demo-tradeseven-rules "vitest run --config
+  # vitest.rules.config.mjs"`. The store's protocol rows and every rules
+  # denials suite run against a live Firestore emulator, so a rules change or
+  # a record store that the unit suite cannot see is checked on every PR.
+  #
+  # Independent of `unit` (no `needs`): it runs in parallel and the unit job's
+  # wall-clock is unchanged.
+  #
+  # Why it cannot pass without running the suite:
+  #   - no Java 21 -> firebase-tools refuses to start the emulator (it requires
+  #     Java 21 or newer) and `emulators:exec` exits non-zero before vitest runs;
+  #   - an empty or wrong config match -> vitest exits 1 on "No test files
+  #     found" (`passWithNoTests` is not set in vitest.rules.config.mjs);
+  #   - `emulators:exec` exits with the wrapped command's exit code.
+  # There is no `continue-on-error`, no retry and no test filter anywhere in
+  # this job.
+  #
+  # No secret and no real Firebase project: the suite uses the
+  # `demo-tradeseven-rules` demo project, which the emulator serves locally.
+  # The only network use beyond `npm ci` is the one-time emulator jar download.
+  rules:
+    name: firestore rules + emulator suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # Same as the unit job.
+          node-version: '20'
+          cache: 'npm'
+
+      # firebase-tools 15.x requires Java 21 or newer
+      # (node_modules/firebase-tools/lib/emulator/commandUtils.js,
+      # MIN_SUPPORTED_JAVA_MAJOR_VERSION). Temurin 21 is set up explicitly
+      # rather than relying on what the runner image ships.
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The Firestore emulator jar is downloaded on first use into
+      # ~/.cache/firebase/emulators. The key follows the installed
+      # firebase-tools version, so a bump of the pin starts a new cache with
+      # no hand-edited key. A cache miss (or a cache that cannot be restored)
+      # only costs the download time; the CLI fetches whatever jar is absent.
+      - name: Cache the Firestore emulator download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('node_modules/firebase-tools/package.json') }}
+
+      - name: Run the rules and emulator suites
+        run: npm run test:rules
+        env:
+          CI: 'true'
+
+      # On failure only. The emulator writes its debug log to the working
+      # directory; a failure before the emulator starts leaves none, so a
+      # missing file is a warning and never hides the real failure above.
+      - name: Upload the emulator debug logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-emulator-debug-logs
+          path: |
+            firestore-debug.log
+            firebase-debug.log
+          if-no-files-found: warn
+          retention-days: 5
