@@ -28,14 +28,14 @@ const { userState, listWatchlists, equipWatchlist, unequipWatchlist, changeArche
   slots: { current: [{ id: 'archetype', filled: true }, { id: 'watchlist', filled: true }] },
   armory: { on: true },
   motion: { reduced: false },
-  forms: { next: 0, live: new Map(), mounts: 0, unmounts: 0 },
+  forms: { next: 0, live: new Map(), mounts: 0, unmounts: 0, silent: false },
 }));
 vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_ARMORY_ENABLED() { return armory.on; } }));
 vi.mock('framer-motion', async (importOriginal) => ({ ...(await importOriginal()), useReducedMotion: () => motion.reduced }));
 vi.mock('../AgentForm/AgentForm', () => ({
   default: class AgentFormProbe extends Component {
     constructor(props) { super(props); this.id = ++forms.next; this.history = []; }
-    componentDidMount() { forms.live.set(this.id, this); forms.mounts += 1; this.props.onStatus?.('live'); }
+    componentDidMount() { forms.live.set(this.id, this); forms.mounts += 1; if (!forms.silent) this.props.onStatus?.('live'); }
     componentWillUnmount() { forms.live.delete(this.id); forms.unmounts += 1; }
     render() { this.history.push(this.props); return null; }
   },
@@ -76,7 +76,7 @@ beforeEach(() => {
   changeArchetype.mockResolvedValue({ ok: true });
   armory.on = true;
   motion.reduced = false;
-  forms.next = 0; forms.live = new Map(); forms.mounts = 0; forms.unmounts = 0;
+  forms.next = 0; forms.live = new Map(); forms.mounts = 0; forms.unmounts = 0; forms.silent = false;
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 afterEach(() => {
@@ -188,6 +188,23 @@ describe('the six sets on their hooks (board 6; FD-9)', () => {
     expect(liveViews()).toHaveLength(2);
     pointer(option('degen'), 'pointerout');
     expect(sets().every((f) => propsOf(f).rate === 'still')).toBe(true);
+  });
+
+  it('no flash on open: each figure stays hidden until its view has reported, so the wrapper\'s placeholder never shows', async () => {
+    // jsdom has WebGL here, as a phone does: without it the wrapper's still is the figure, shown at once.
+    globalThis.WebGL2RenderingContext = function WebGL2RenderingContext() {};
+    try {
+      forms.silent = true;
+      await renderHub();
+      click(btn(COPY.loadout.changeArchetype));
+      const figures = [...document.querySelectorAll('[data-armory-figure]')];
+      expect(figures).toHaveLength(7); // the centre and the six sets
+      expect(figures.every((f) => f.style.visibility === 'hidden')).toBe(true);
+      act(() => { for (const f of all()) propsOf(f).onStatus?.('live'); });
+      expect(figures.every((f) => f.style.visibility === 'visible')).toBe(true);
+    } finally {
+      delete globalThis.WebGL2RenderingContext;
+    }
   });
 
   it('a touch makes the set live while it is held, and a still when lifted (the phone ring)', async () => {
