@@ -28,16 +28,22 @@
 // HubAgentForm (the armored agent) where ShadowCanvas was, in the same box.
 // Each site is one literal ternary on the flag, so flag-off folds to today's
 // ShadowCanvas element and the hub chunk is byte-identical to main's.
+//
+// Agent form build A1: with AGENT_FORM_ARMORY_ENABLED on, PhoneStage is
+// PhoneArmoryStage (below), where the phone armory opens in the hero's box
+// (founder ruling FD-8). One literal ternary at PhoneStage's return.
 
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useContext, useLayoutEffect, useRef, useState } from 'react';
 import { cssVar, readToken } from '../../theme/cssTokens';
 import { useHoldProgress } from '../../contexts/DeployAttemptContext';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { AREA_TOKEN, C, HAIR, MONO, tint } from './hub/hubStyle';
 import { AGENT_FORM_HUB_ENABLED } from '../../config/agentFormFlags';
 import AreaControls from './AreaControls';
-import HubAgentForm from './HubAgentForm';
+import HubAgentForm, { HubAgentFormContext } from './HubAgentForm';
 import ShadowCanvas from './ShadowCanvas';
+import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
+import { ArmoryStageContext, PHONE_ARMORY, PhoneArmoryDetails, PhoneArmoryRing, armoryHeroRead } from './Armory';
 
 /** The charge in flight, as a percentage: visible, aria-hidden, never in the live region (spec §5.5). */
 function HoldPercent({ progress, small }) {
@@ -187,7 +193,9 @@ export function ShadowStage({ composition, size, tier, status, processing, words
  * navigation is the tab row below the stage.
  */
 export function PhoneStage({ size, tier, status, processing, words, selectedArea, summaries, reducedMotion, createdAttemptId = null, paused = false, stillOnly = false, holdPhase = null, progress = null }) {
-  return (
+  return AGENT_FORM_ARMORY_ENABLED ? (
+    <PhoneArmoryStage size={size} status={status} processing={processing} words={words} selectedArea={selectedArea} summaries={summaries} reducedMotion={reducedMotion} createdAttemptId={createdAttemptId} paused={paused} holdPhase={holdPhase} progress={progress} />
+  ) : (
     <section
       aria-label={COPY.shadow.stageLabel}
       data-hub-stage="phone"
@@ -222,6 +230,75 @@ export function PhoneStage({ size, tier, status, processing, words, selectedArea
           );
         })}
       </div>
+    </section>
+  );
+}
+
+/** The phone's three area lines, as PhoneStage draws them (the armory stage's closed layout is PhoneStage's own). */
+function PhoneSummaries({ selectedArea, summaries }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingLeft: 8 }}>
+      {COPY.areas.shortNames.map((name, area) => {
+        const on = selectedArea === area;
+        return (
+          <div key={name} data-hub-summary={area} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13.5, lineHeight: 1.35, color: on ? C.ink : C.ink2, minWidth: 0 }}>
+            <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, marginTop: 6, background: on ? cssVar(AREA_TOKEN[area]) : C.ink3 }} />
+            <span style={{ minWidth: 0, textWrap: 'pretty' }}>
+              <span style={{ fontWeight: 600 }}>{name}</span>
+              {COPY.areas.summaryTail(summaries[area])}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Agent form build A1 (founder ruling FD-8): PhoneStage with the armory on. Closed, it is PhoneStage's layout. Open
+ * (Armory.jsx PhoneArmoryScope), the armory takes the hero's box: the name and status column and the area lines fold
+ * away, the hero shrinks to PHONE_ARMORY.centre in the middle of the ring and wears the previewed set, the six sets sit
+ * around it, and the set's words and Equip sit under the ring. The hero is the SAME element in both layouts — one path
+ * through the tree, a wrapper that is `display: contents` while closed — so it never remounts: no flash or black square
+ * on open or close, and closing takes the preview off at once (`instant`), never a second suit-up. Escape closes.
+ */
+function PhoneArmoryStage({ size, status, processing, words, selectedArea, summaries, reducedMotion, createdAttemptId, paused, holdPhase, progress }) {
+  const scope = useContext(ArmoryStageContext);
+  const read = useContext(HubAgentFormContext);
+  const open = Boolean(scope && scope.open);
+  const heroRead = scope ? armoryHeroRead(read, scope.shown, scope.instant) : read;
+  const { centre, extent, padding } = PHONE_ARMORY;
+  const onKeyDown = (event) => {
+    if (!open || event.key !== 'Escape') return;
+    event.stopPropagation();
+    scope.close();
+  };
+  return (
+    <section
+      aria-label={COPY.shadow.stageLabel}
+      data-hub-stage="phone"
+      data-hub-armory={open ? 'open' : undefined}
+      onKeyDown={onKeyDown}
+      style={{
+        position: 'relative', borderRadius: 20, overflow: 'hidden',
+        background: `radial-gradient(ellipse at 30% 42%, ${tint('teal', 0.09)}, transparent 55%), ${C.surface}`,
+        border: `1px solid ${HAIR}`, padding: open ? padding : '10px 14px 14px 6px',
+      }}
+    >
+      <div data-armory-box={open ? '' : undefined} style={open ? { position: 'relative', width: extent, height: extent, margin: '0 auto' } : { display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div aria-hidden={open ? 'true' : undefined} data-armory-hero={open ? '' : undefined} style={open ? { position: 'absolute', left: (extent - centre) / 2, top: (extent - centre) / 2 } : { display: 'contents' }}>
+          <HubAgentFormContext.Provider value={heroRead}>
+            <HubAgentForm size={open ? centre : size} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} paused={paused} phone createdAttemptId={createdAttemptId} />
+          </HubAgentFormContext.Provider>
+        </div>
+        {open ? <PhoneArmoryRing scope={scope} /> : (
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <NameLine stacked />
+            <StatusLine processing={processing} words={words} small wrap holdPhase={holdPhase} progress={progress} />
+          </div>
+        )}
+      </div>
+      {open ? <PhoneArmoryDetails scope={scope} /> : <PhoneSummaries selectedArea={selectedArea} summaries={summaries} />}
     </section>
   );
 }

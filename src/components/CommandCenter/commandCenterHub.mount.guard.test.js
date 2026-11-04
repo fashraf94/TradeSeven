@@ -853,7 +853,8 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     const wrapper = stripComments(read(`${AGENT_FORM_DIR}/AgentForm.jsx`));
     expect(wrapper).toMatch(/const drawRate = rateForSize\(rate, spec\.size\);/);
     const FRAME_READ = /\b(?:onFrame|performance|requestAnimationFrame|fps|cost|calls)\b/;
-    for (const rel of [HUB_FILE('HubAgentForm.jsx'), ...AGENT_FORM_WRAPPER]) {
+    // Agent form build A1: the armory chooses its sets' rates (a still, live while hovered or touched), so it is held to the same rule.
+    for (const rel of [HUB_FILE('HubAgentForm.jsx'), HUB_FILE('Armory.jsx'), ...AGENT_FORM_WRAPPER]) {
       const code = stripComments(read(rel));
       expect(FRAME_READ.test(code), rel).toBe(false);
       // ...nor what the device is (S1 review SR-1): the pins above hold the helper and its one prop, and a rate taken
@@ -1198,7 +1199,9 @@ function importedNames(code, tail) {
 
 describe('S5 — the exports the hub takes from the shipped services, hooks and flags (review E1-2)', () => {
   const NAMED = Object.freeze({
-    '/services/agentService': ['equipWatchlist', 'unequipWatchlist'],
+    // Agent form build A1 (Phase 0 armory report §9 A1): the armory's Equip is the picker's own write, changeArchetype,
+    // called from Armory.jsx (the picker it replaces already made it from inside the hub, through the shipped sheet).
+    '/services/agentService': ['changeArchetype', 'equipWatchlist', 'unequipWatchlist'],
     '/services/forgeWatchlistService': ['listWatchlists'],
     // S3's readers, merged in: the identity source, the completed read and the owner-tagged agent read (reads only).
     '/services/authIdentity': ['useAuthIdentity'],
@@ -1246,12 +1249,15 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     expect(`${readers}\nconst again = useAgent(signedInUid);`.match(/\buseAgent\(/g)).toHaveLength(2);
   });
 
-  it('the only writes the hub can make are the two equips: nothing else of agentService, and no other service of the shipped set', () => {
+  it('the only writes the hub can make are the equips: nothing else of agentService, and no other service of the shipped set', () => {
     const files = hubDirFiles();
     const writers = files.filter((rel) => importedNames(stripComments(read(rel)), '/services/agentService').length > 0);
-    expect(writers).toEqual([HUB_FILE('LoadoutSheets.jsx')]);
+    // Agent form build A1: the armory's Equip (changeArchetype, the picker's write) is the second writer file.
+    expect(writers).toEqual([HUB_FILE('Armory.jsx'), HUB_FILE('LoadoutSheets.jsx')]);
+    expect(importedNames(stripComments(read(HUB_FILE('Armory.jsx'))), '/services/agentService')).toEqual(['changeArchetype']);
     const services = files.flatMap((rel) => importsOf(rel).filter((spec) => /\/services\//.test(spec)).map((spec) => `${rel}: ${spec}`));
     expect(services.sort()).toEqual([
+      `${HUB_FILE('Armory.jsx')}: ../../services/agentService`,
       `${HUB_FILE('LoadoutSheets.jsx')}: ../../services/agentService`,
       `${HUB_FILE('hub/useHubLoadout.js')}: ../../../services/forgeWatchlistService`,
       // S3's readers (merged in): two reads, no write — their names are pinned in NAMED above.

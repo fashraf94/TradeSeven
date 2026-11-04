@@ -518,3 +518,30 @@ export const AGENT_FORM_COPY = Object.freeze({
   wearing: (name) => `Shadow wearing ${name}`,
   imageLabel: (name, state, areaName) => `Shadow wearing ${name} — ${state}${areaName ? `; ${areaName} selected` : ''}`,
 });
+
+/**
+ * Build A1 (the armory, board 6; Armory.jsx), while AGENT_FORM_ARMORY_ENABLED is on. A table of its own, as
+ * AGENT_FORM_COPY is, so the flag-off hub chunk stays byte-identical. The set's name, one-liner and paragraph are not
+ * here: they come from the identity tables through hub/archetypeLines.js (armoryLines). What the rulings shape:
+ *   - FD-1: in A1 an equip is today's immediate change, so the board's "a change applies on your next deploy" goes, and
+ *     the footnote is the founder's sentence;
+ *   - D4 and FD-6: no count, stage, level or growth anywhere; the status line is "Equipped" or "Previewing" only.
+ */
+export const ARMORY_COPY = Object.freeze({
+  title: 'Armory',
+  intro: 'Choose the armor Shadow wears into battle. Select a set to see it fitted.',
+  centre: 'Your Shadow · fitted preview',
+  sets: 'Armor sets',
+  previewing: 'Previewing',
+  equipped: 'Equipped',
+  previewingOver: (name) => `Previewing · Equipped set is ${name}`,
+  equip: (name) => `Equip ${name}`,
+  equipping: 'Equipping…',
+  footnote: 'Shadow wears it now; a game already running keeps the armor it deployed with.',
+  /** Board 6's second sentence, a true statement of D5. */
+  stays: 'Partnership and shared research stay with Shadow.',
+  /** The picker's own words when a change fails for a reason the server does not name. */
+  equipFailed: 'Could not change archetype. Please try again.',
+  /** The picker's notice when the server resets an aggressive tempo dial (its mastery-dark wording). */
+  dialReset: (name) => `Tempo dial reset to Standard — the Aggressive position isn't available for ${name} yet.`,
+});

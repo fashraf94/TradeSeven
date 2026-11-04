@@ -152,6 +152,8 @@ import GamesSection from './sections/GamesSection';
 import NextActionCard from './sections/NextActionCard';
 import { HubAgentFormContext } from './HubAgentForm';
 import { PhoneStage, ShadowStage } from './ShadowStage';
+import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
+import { PhoneArmoryScope } from './Armory';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
 export function shadowSizeFor(composition, width) {
@@ -348,21 +350,42 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
       >
         <HubHeader phone dateText={shared.dateText} name={shared.name} onOpenProfile={actions.openProfile} onReportBug={actions.reportBug} onOpenMenu={actions.openMenu} unreadCount={runtime.unreadCount} />
         <div style={{ padding: '10px 14px 12px' }}>
-          <PhoneStage
-            size={shadowSizeFor(composition, width)}
-            tier={shadowTierFor(composition)}
-            status={shared.status}
-            processing={shared.display.processing}
-            words={statusWordsOf(deploy, shared)}
-            selectedArea={AREA_FOR_PHONE_TAB[tab]}
-            summaries={shared.summaries}
-            reducedMotion={shared.reducedMotion}
-            createdAttemptId={shared.createdAttemptId}
-            paused={coverOpen}
-            stillOnly={PHONE_SHADOW === 'still'}
-            holdPhase={deploy?.holdPhase ?? null}
-            progress={deploy?.progress ?? null}
-          />
+          {AGENT_FORM_ARMORY_ENABLED ? (
+            // Agent form build A1 (FD-8): the phone armory opens in the hero's box, so its state wraps the stage.
+            <PhoneArmoryScope open={sheet.sheet === HUB_SHEETS.ARCHETYPE} agent={runtime.agent} onClose={runtime.closeSheet} opener={sheet.opener} reducedMotion={shared.reducedMotion}>
+              <PhoneStage
+                size={shadowSizeFor(composition, width)}
+                tier={shadowTierFor(composition)}
+                status={shared.status}
+                processing={shared.display.processing}
+                words={statusWordsOf(deploy, shared)}
+                selectedArea={AREA_FOR_PHONE_TAB[tab]}
+                summaries={shared.summaries}
+                reducedMotion={shared.reducedMotion}
+                createdAttemptId={shared.createdAttemptId}
+                paused={coverOpen}
+                stillOnly={PHONE_SHADOW === 'still'}
+                holdPhase={deploy?.holdPhase ?? null}
+                progress={deploy?.progress ?? null}
+              />
+            </PhoneArmoryScope>
+          ) : (
+            <PhoneStage
+              size={shadowSizeFor(composition, width)}
+              tier={shadowTierFor(composition)}
+              status={shared.status}
+              processing={shared.display.processing}
+              words={statusWordsOf(deploy, shared)}
+              selectedArea={AREA_FOR_PHONE_TAB[tab]}
+              summaries={shared.summaries}
+              reducedMotion={shared.reducedMotion}
+              createdAttemptId={shared.createdAttemptId}
+              paused={coverOpen}
+              stillOnly={PHONE_SHADOW === 'still'}
+              holdPhase={deploy?.holdPhase ?? null}
+              progress={deploy?.progress ?? null}
+            />
+          )}
         </div>
         <PhoneTabRow idBase={shared.idBase} tab={tab} onSelect={selectTab} />
         <div style={{ padding: '14px 14px 24px' }}>
@@ -455,7 +478,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
       reducedMotion={shared.reducedMotion}
       areaEvent={areaEvent}
       createdAttemptId={shared.createdAttemptId}
-      paused={coverOpen}
+      paused={AGENT_FORM_ARMORY_ENABLED ? coverOpen || sheet.sheet === HUB_SHEETS.ARCHETYPE : coverOpen}
       holdPhase={deploy?.holdPhase ?? null}
       progress={deploy?.progress ?? null}
     />

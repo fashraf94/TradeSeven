@@ -27,8 +27,12 @@
 // does not read its triggers as new. Board 5 says what brightens: Equipped Archetype the armor's edges, Partnership and
 // Shared Research the core. It says nothing of a deploy, and bare Shadow has no armor, so those light the whole form.
 // The engine holds the timing, the pause and the reduced-motion flash, so this file adds no effect or timer.
+//
+// Agent form build A1: with AGENT_FORM_ARMORY_ENABLED on, the phone armory (ShadowStage.jsx PhoneArmoryStage) hands the
+// hero a read that wears the previewed set, and marks the change it makes on close, a preview taken off, as `instant`:
+// that one change is drawn at once instead of suited up. One literal ternary, so flag-off the prop folds to today's.
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, use, useContext, useState } from 'react';
 import AgentForm from '../AgentForm/AgentForm';
 import { formForArchetype, hasWebGL } from '../AgentForm/agentFormSpec';
 import { getAgentGrowth } from '../AgentForm/agentGrowth';
@@ -37,6 +41,7 @@ import { HUB_AREAS } from './hub/composition';
 import { AGENT_FORM_COPY, HUB_COPY as COPY } from './hub/hubCopy';
 import { AGENT_FORM_PHONE } from './hub/hubFlags';
 import { seedBloom, stepBloom } from './hub/shadowBloom';
+import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
 
 /** The hub's agent read ({ status, agent }), from CommandCenterHub.jsx; absent, the form is bare Shadow. */
 export const HubAgentFormContext = /* @__PURE__ */ createContext(null);
@@ -98,7 +103,7 @@ export default function HubAgentForm({ size, status = 'ambient', selectedArea = 
         rate={rate}
         paused={paused}
         clip
-        equipOnChange
+        equipOnChange={AGENT_FORM_ARMORY_ENABLED ? use(HubAgentFormContext)?.instant !== true : true}
         responseKey={bloom.memo.key}
         responsePart={bloom.part}
         label={label}

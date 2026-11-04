@@ -30,6 +30,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useHubOverlays } from './HubOverlays';
+import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';
 
 export const HUB_SHEETS = Object.freeze({
   HISTORY: 'history',
@@ -69,7 +70,9 @@ export function useHubSheets(rootRef) {
       const opener = event?.currentTarget ?? null;
       openerRef.current = opener;
       release(false);
-      if (LEGACY.has(kind)) {
+      // Agent form build A1: with the armory on, the archetype sheet is not a shipped sheet. The wide dialog is a HubSheet,
+      // which registers itself; the phone's armory is the hero's own box, inside the hub, so it is no overlay at all.
+      if (AGENT_FORM_ARMORY_ENABLED ? kind !== HUB_SHEETS.ARCHETYPE && LEGACY.has(kind) : LEGACY.has(kind)) {
         heldRef.current = `legacy:${kind}`;
         stack.open(heldRef.current, { opener, within: rootRef.current });
       }

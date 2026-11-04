@@ -80,3 +80,19 @@ export const AGENT_FORM_BATTLE_ENABLED = true;
  */
 // Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const AGENT_FORM_LEAGUE_ENABLED = true;
+
+/**
+ * AGENT_FORM_ARMORY_ENABLED — the armory in place of the archetype picker (build A1; Phase 0 report
+ * docs/audits/20261102_PHASE0_ARMORY.md §7, §9 A1; build report docs/audits/20261104_BUILD_ARMORY_A1.md).
+ *
+ * When TRUE, the hub's Change archetype opens the armory (src/components/CommandCenter/Armory.jsx): Shadow in the
+ * centre wearing the previewed set, the six sets around it, and Equip, which is today's changeArchetype write. On the
+ * wide compositions it is board 6's dialog over the paused hero; on the phone it opens in the hero's own box
+ * (founder ruling FD-8). The old ArchetypePicker stays for the League chooser and the fallback shells.
+ *
+ * DARK — default FALSE, and it STAYS false on main until the founder's phone test. It is flipped only on a
+ * never-merge smoke branch. Every read is a literal ternary (or `FLAG && …`) that Rollup folds, so with it FALSE the
+ * hub chunk, the agent form wrapper and every other chunk are byte-identical to main's.
+ */
+// Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const AGENT_FORM_ARMORY_ENABLED = false;

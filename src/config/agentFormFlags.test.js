@@ -12,10 +12,10 @@
 // read outside a literal ternary would each break it.
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AGENT_FORM_BATTLE_ENABLED, AGENT_FORM_HUB_ENABLED, AGENT_FORM_LEAGUE_ENABLED } from './agentFormFlags.js';
+import { AGENT_FORM_ARMORY_ENABLED, AGENT_FORM_BATTLE_ENABLED, AGENT_FORM_HUB_ENABLED, AGENT_FORM_LEAGUE_ENABLED } from './agentFormFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(path.join(HERE, p), 'utf8').replace(/\r\n/g, '\n');
@@ -52,6 +52,75 @@ describe('AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and AGENT_FORM_LEAGU
     expect(guard).not.toMatch(/\n {2}AGENT_FORM_BATTLE_ENABLED:\n/);
     expect(guard).not.toMatch(/\n {2}AGENT_FORM_LEAGUE_ENABLED:\n/);
     expect(guard).toMatch(/'src\/config\/agentFormFlags\.js',/);
+  });
+});
+
+// Build A1 — THE ARMORY'S PIN (BUILD_RULES §2). Dark by design until the founder's phone test: flipped only on the
+// never-merge smoke branch. Every read is a literal ternary that Rollup folds, so flag-off the build is main's, byte for
+// byte (the build report's masked comparison), and agentForm.flagOffBundle.test.js reads what each module leaves.
+describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by design', () => {
+  it('the armory is dark on main', () => {
+    expect(AGENT_FORM_ARMORY_ENABLED).toBe(false);
+  });
+
+  it('it is the module\'s literal, not in featureFlags.js, and flagPinGuard lists it as dark by design', () => {
+    expect(FLAGS).toMatch(/^export const AGENT_FORM_ARMORY_ENABLED = (?:true|false);$/m);
+    expect(read('featureFlags.js')).not.toMatch(/AGENT_FORM_ARMORY/);
+    expect(read('flagPinGuard.test.js')).toMatch(/\n {2}AGENT_FORM_ARMORY_ENABLED:\n/);
+  });
+
+  it('the armory is on only while the hub\'s agent form is (it draws it): a hub rollback with the armory on reds here', () => {
+    // The hub flag is the forms' kill switch (F2). The armory renders the hub's agent form, so a rollback of the hub
+    // flag must take the armory with it, in the same commit.
+    expect(!AGENT_FORM_ARMORY_ENABLED || AGENT_FORM_HUB_ENABLED).toBe(true);
+  });
+
+  it('every read is a literal ternary on the flag, at exactly these sites', () => {
+    const at = (rel) => readsOf(rel, 'AGENT_FORM_ARMORY_ENABLED');
+    const hub = '../components/CommandCenter/';
+    const IMPORT = "import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';";
+    expect(at('../components/AgentForm/agentFormSpec.js')).toEqual([
+      IMPORT,
+      "pal: opponent ? 'copper' : AGENT_FORM_ARMORY_ENABLED && allegiance === UNLIT ? 'unlit' : 'teal',",
+      "...(AGENT_FORM_ARMORY_ENABLED && coreStage === SET_ALONE ? setAloneKeys(framing, kind) : framing === 'tight' ? { zoom: TIGHT_ZOOM[kind] } : null),",
+    ]);
+    expect(at(`${hub}CommandCenterHub.jsx`)).toEqual([
+      IMPORT,
+      '{AGENT_FORM_ARMORY_ENABLED ? (',
+      'paused={AGENT_FORM_ARMORY_ENABLED ? coverOpen || sheet.sheet === HUB_SHEETS.ARCHETYPE : coverOpen}',
+    ]);
+    expect(at(`${hub}LoadoutSheets.jsx`)).toEqual([IMPORT, '{AGENT_FORM_ARMORY_ENABLED ? (']);
+    expect(at(`${hub}ShadowStage.jsx`)).toEqual([IMPORT, 'return AGENT_FORM_ARMORY_ENABLED ? (']);
+    expect(at(`${hub}HubAgentForm.jsx`)).toEqual([IMPORT, 'equipOnChange={AGENT_FORM_ARMORY_ENABLED ? use(HubAgentFormContext)?.instant !== true : true}']);
+    expect(at(`${hub}hub/useHubSheets.js`)).toEqual([
+      "import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';",
+      'if (AGENT_FORM_ARMORY_ENABLED ? kind !== HUB_SHEETS.ARCHETYPE && LEGACY.has(kind) : LEGACY.has(kind)) {',
+    ]);
+    // The armory itself never reads the flag: it is reached only through those ternaries.
+    expect(at(`${hub}Armory.jsx`)).toEqual([]);
+  });
+
+  it('no other source file reads it', () => {
+    const SRC = path.resolve(HERE, '..');
+    const readers = [];
+    const walk = (abs) => {
+      for (const ent of readdirSync(abs, { withFileTypes: true })) {
+        const child = path.join(abs, ent.name);
+        if (ent.isDirectory()) { if (ent.name !== 'node_modules') walk(child); continue; }
+        if (!/\.[mc]?jsx?$/.test(ent.name) || /\.test\.[mc]?jsx?$/.test(ent.name)) continue;
+        if (/\bAGENT_FORM_ARMORY_ENABLED\b/.test(strip(readFileSync(child, 'utf8')))) readers.push(path.relative(SRC, child).split(path.sep).join('/'));
+      }
+    };
+    walk(SRC);
+    expect(readers.sort()).toEqual([
+      'components/AgentForm/agentFormSpec.js',
+      'components/CommandCenter/CommandCenterHub.jsx',
+      'components/CommandCenter/HubAgentForm.jsx',
+      'components/CommandCenter/LoadoutSheets.jsx',
+      'components/CommandCenter/ShadowStage.jsx',
+      'components/CommandCenter/hub/useHubSheets.js',
+      'config/agentFormFlags.js',
+    ]);
   });
 });
 

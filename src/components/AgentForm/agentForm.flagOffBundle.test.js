@@ -16,8 +16,14 @@
 //   fuseFormLayout.js        imported and unused (FuseHero.jsx and ArenaMobile.jsx read it only inside those same
 //                            ternaries; build S2's review, S2R-2) → nothing;
 //   agentFormSpec.js        formForArchetype and hasWebGL used (HubAgentForm.jsx's import) → those two and the table
-//                            they read;
-//   hub/hubCopy.js           HUB_COPY used (every hub view) → HUB_COPY alone.
+//                            they read (build A1: the armory's two looks are read inside AGENT_FORM_ARMORY_ENABLED's
+//                            ternaries, so they fold away with it);
+//   hub/hubCopy.js           HUB_COPY used (every hub view) → HUB_COPY alone (ARMORY_COPY, build A1, is dropped too).
+// Build A1, the armory (AGENT_FORM_ARMORY_ENABLED, dark):
+//   Armory.jsx               imported and unused (LoadoutSheets.jsx, ShadowStage.jsx and CommandCenterHub.jsx read it
+//                            only inside that flag's ternaries) → nothing (its context is marked pure);
+//   hub/archetypeLines.js    archetypeLines used (the Loadout) → archetypeLines alone (armoryLines is dropped);
+//   ShadowStage.jsx          its four exports used (the shells) → those, and not the phone armory's stage.
 // The bundle is Vite's own build, in memory (`write: false`), with the production JSX transform @vitejs/plugin-react
 // sets. Everything a module imports is external, but for the agent form flag module, bundled with every flag false so
 // the literal ternaries fold as they would after a rollback. The check reads the output's top level, never where the
@@ -43,6 +49,10 @@ const FUSE_LAYOUT = 'src/components/League/battleArena/fuseFormLayout.js';
 const SPEC ='src/components/AgentForm/agentFormSpec.js';
 const HUB_COPY_FILE = 'src/components/CommandCenter/hub/hubCopy.js';
 const FLAGS = 'src/config/agentFormFlags.js';
+const ARMORY = 'src/components/CommandCenter/Armory.jsx';
+const LINES = 'src/components/CommandCenter/hub/archetypeLines.js';
+const STAGE = 'src/components/CommandCenter/ShadowStage.jsx';
+const STAGE_USED = ['PhoneStage', 'ShadowStage', 'StatusLine', 'connectorPath'];
 
 /** Each module the flag-off graph reaches, with the exports that graph reads from it. */
 const REACHED = [
@@ -52,6 +62,9 @@ const REACHED = [
   [FUSE_LAYOUT, []],
   [SPEC, ['formForArchetype', 'hasWebGL']],
   [HUB_COPY_FILE, ['HUB_COPY']],
+  [ARMORY, []],
+  [LINES, ['archetypeLines']],
+  [STAGE, STAGE_USED],
 ];
 
 const ENTRY = '\0agent-form-flag-off-entry';
@@ -146,7 +159,7 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
     const planted = read(FLAGS).replace('export const AGENT_FORM_LAB_ENABLED = false;', 'export const AGENT_FORM_LAB_ENABLED = true;');
     for (const code of [read(FLAGS), planted]) {
       expect(flagOff(code).match(/^export const \w+_ENABLED = true;$/gm)).toBeNull();
-      expect(flagOff(code).match(/^export const \w+_ENABLED = false;$/gm)).toHaveLength(4);
+      expect(flagOff(code).match(/^export const \w+_ENABLED = false;$/gm)).toHaveLength(5);
     }
   });
 
@@ -193,6 +206,32 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
     expect(code).not.toMatch(/\bAGENT_FORM_COPY\b/);
   }, 30000);
 
+  it('Armory.jsx (build A1), imported and unused: nothing (its context is marked pure; every read of it is inside the flag\'s ternaries)', async () => {
+    const { code } = await bundle(ARMORY, []);
+    expect(leftovers(code)).toEqual([]);
+    expect(code.trim()).toBe('');
+  }, 30000);
+
+  it('hub/archetypeLines.js, with archetypeLines used: archetypeLines alone (armoryLines, build A1, is dropped)', async () => {
+    const { code } = await bundle(LINES, ['archetypeLines']);
+    expect(exportsOf(code)).toEqual(['archetypeLines']);
+    expect(leftovers(code)).toEqual([]);
+    expect(code).not.toMatch(/\barmoryLines\b/);
+  }, 30000);
+
+  it('ShadowStage.jsx, with its four exports used: those, and nothing of the phone armory\'s stage (build A1)', async () => {
+    const { code } = await bundle(STAGE, STAGE_USED);
+    expect(exportsOf(code).sort()).toEqual([...STAGE_USED].sort());
+    expect(leftovers(code)).toEqual([]);
+    expect(code).not.toMatch(/\bPhoneArmoryStage\b|\bPhoneSummaries\b|\bArmoryStageContext\b/);
+  }, 30000);
+
+  it('agentFormSpec.js (build A1): with the flag off its spec reads neither armory look, so the module bundles as before', async () => {
+    const { code } = await bundle(SPEC, ['formForArchetype', 'hasWebGL', 'agentFormSpec']);
+    expect(code).not.toMatch(/\bunlit\b|\bSET_ALONE\b|\bsetAloneKeys\b|\bbrain\b/);
+    expect(code).toMatch(/pal: opponent \? "copper" : "teal"|pal: opponent \? 'copper' : 'teal'/);
+  }, 30000);
+
   it('the check bites: each mark off, and each shape a mark scan would pass, leaves a statement it reports; a pristine copy leaves none', async () => {
     const plant = (rel, from, to) => {
       const code = read(rel);
@@ -214,6 +253,7 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
       ['the League\'s lazy form declared without its flag', LEAGUE_SLOT, [], plant(LEAGUE_SLOT, "AGENT_FORM_LEAGUE_ENABLED ? lazy(() => import('./LeagueAgentForm')) : null", "lazy(() => import('./LeagueAgentForm'))")],
       ['a frozen copy key list nothing reads', HUB_COPY_FILE, ['HUB_COPY'], `${read(HUB_COPY_FILE)}\nexport const AGENT_FORM_COPY_KEYS = Object.freeze(Object.keys(AGENT_FORM_COPY));\n`],
       ['S2R-2: a frozen key list nothing reads, in fuseFormLayout.js', FUSE_LAYOUT, [], `${read(FUSE_LAYOUT)}\nexport const FUSE_FORM_KEYS = Object.freeze(Object.keys(FUSE_FORM_PX));\n`],
+      ['A1: the mark off the armory\'s context', ARMORY, [], plant(ARMORY, 'ArmoryStageContext = /* @__PURE__ */ createContext(null)', 'ArmoryStageContext = createContext(null)')],
     ];
     for (const [what, rel, used, source] of plants) expect(leftovers((await bundle(rel, used, source)).code), what).not.toEqual([]);
     for (const [rel, used] of REACHED) expect(leftovers((await bundle(rel, used, read(rel))).code), rel).toEqual([]);
