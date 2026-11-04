@@ -143,7 +143,10 @@ jobs:
   #
   # No secret and no real Firebase project: the suite uses the
   # `demo-tradeseven-rules` demo project, which the emulator serves locally.
-  # The only network use beyond `npm ci` is the one-time emulator jar download.
+  # Beyond `npm ci` the job fetches the JDK (setup-java) and the emulator jar
+  # (cached below), and uses the Actions cache and artifact services; none of
+  # that involves a credential. Keep it that way: do not add a secret to this
+  # job, because the Firebase CLI's own debug log dumps the environment.
   rules:
     name: firestore rules + emulator suites
     runs-on: ubuntu-latest
@@ -190,15 +193,18 @@ jobs:
           CI: 'true'
 
       # On failure only. The emulator writes its debug log to the working
-      # directory; a failure before the emulator starts leaves none, so a
-      # missing file is a warning and never hides the real failure above.
-      - name: Upload the emulator debug logs
+      # directory on every run; a failure before the emulator starts (no Java,
+      # a failed download) leaves none, so a missing file is a warning and
+      # never hides the real failure above. Only the emulator's log is
+      # uploaded: the Firebase CLI deletes its own firebase-debug.log on an
+      # ordinary failure (exit code below 2) and that log dumps the
+      # environment. The run attempt in the name keeps a re-run of the same
+      # workflow run from colliding with the first attempt's artifact.
+      - name: Upload the emulator debug log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: firestore-emulator-debug-logs
-          path: |
-            firestore-debug.log
-            firebase-debug.log
+          name: firestore-emulator-debug-log-${{ github.run_attempt }}
+          path: firestore-debug.log
           if-no-files-found: warn
           retention-days: 5
