@@ -26,7 +26,9 @@
 // `counterpart_unavailable` and, since the BaggerBomb cleanup (C3, Oct 2026), a
 // pick judged by canComeIn instead of the universe, both at the eligibility step
 // (callActions.js), and Amendment E's E-2 (step 6): a go / hold acknowledgment of
-// an exit the parent holds in no tier is refused symbol_not_held, flag off or on.
+// an exit the parent holds in no tier is refused symbol_not_held, flag off or on; and its
+// entry-side mirror, Amendment F's F-2 (steps 6 and 7): an answer of ANY kind to an entry the
+// parent already holds in some tier is refused symbol_already_held, flag off or on.
 // With the flag ON:
 //   wire     `replace` is an answer and requires `pickSymbol`; `go_now` may
 //            carry one; `confirmReplace` is an optional boolean; `pickSymbol`
@@ -73,8 +75,14 @@
 //      refused like a directive is, after the expired checks and before any
 //      write                                                      → 400 ineligible_action
 //                                                                    symbol_not_held
+//      Amendment F (F-2; flag off or on), beside it: an ENTRY call whose stock the
+//      fresh parent holds in ANY tier is answerable by nobody — a go / hold
+//      acknowledgment is refused the same way                       → 400 ineligible_action
+//                                                                    symbol_already_held
 //   7. DIRECTIVE rows: the call open and inside its deadline, the parent
-//      active, the belief current, the stored action eligible NOW (D-7: the
+//      active, the belief current, (Amendment F: an ENTRY whose stock the parent
+//      already holds → 400 symbol_already_held, asked immediately before the
+//      eligibility test), the stored action eligible NOW (D-7: the
 //      agent's own exit counterpart, and with the flag the chosen name), the
 //      agent bound (as the chip), then
 //        flag off: no OTHER call-family directive pending → 409 directive_pending
@@ -108,7 +116,7 @@ import { randomUUID } from 'node:crypto';
 import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
 // Cockpit Build 2a (spec S-4): the legality table's ONE home, shared with the
 // cockpit's tiles — re-exported here under the names this route always had.
-import { classifyAnswer, isUpsideCall, isExitNotHeld, ANSWERS_1A, DEFERRED_ANSWERS, wireAnswers, answerTakesPick, isGoAcknowledgment, ANSWER_REPLACE } from '../_utils/callRecords/answers.js';
+import { classifyAnswer, isUpsideCall, isExitNotHeld, isEntryAlreadyHeld, ANSWERS_1A, DEFERRED_ANSWERS, wireAnswers, answerTakesPick, isGoAcknowledgment, ANSWER_REPLACE } from '../_utils/callRecords/answers.js';
 import { directiveKindFor, isCallActionEligible, buildCallDirectivePlan } from '../_utils/callRecords/callActions.js';
 import { answerIdOf, eventIdOf, callEventRef, buildCallEvent, createCallEvent } from '../_utils/callRecords/events.js';
 import { renderAnsweredEvent } from '../_utils/callRecords/copy.js';
@@ -325,6 +333,8 @@ export default async function handler(req, res) {
           // Amendment E (E-2): no acknowledgment of an exit the book no longer (or never) holds. Any tier — the same
           // test (answers.js isExitNotHeld) the cockpit's tiles ask; the directive rows' own slot-tier test is step 7's.
           if (isExitNotHeld(call, parent)) return { kind: 'ineligible_action', reason: 'symbol_not_held' };
+          // Amendment F (F-2): and none of an ENTRY whose stock the parent already holds, in any tier.
+          if (isEntryAlreadyHeld(call, parent)) return { kind: 'ineligible_action', reason: 'symbol_already_held' };
         }
         const playerResponse = { answer, kind: 'ack', callId, filedAt };
         const event = buildCallEvent({ kind: 'answered', at: nowMs, callIds: [callId], text: renderAnsweredEvent({ answer }) });
@@ -342,6 +352,10 @@ export default async function handler(req, res) {
       const kind = directiveKindFor(call, answer, { v2 });
       // D-7: a chosen name outside the battle's universe can never come in.
       if (chosenOutsideUniverse) return { kind: 'ineligible_action', reason: 'pick_not_on_bench' };
+      // Amendment F (F-2): an ENTRY whose stock the fresh parent already holds is answerable by nobody. Asked BEFORE the
+      // eligibility test below, so a stock that came in while its named counterpart left in the same trade (the GILD
+      // case) reads symbol_already_held — the stock that came in — and not counterpart_not_held.
+      if (isEntryAlreadyHeld(call, parent)) return { kind: 'ineligible_action', reason: 'symbol_already_held' };
       const eligible = isCallActionEligible(kind, call, parent, { pickSymbol: pickSymbol ?? chosen, atMs: nowMs });
       if (!eligible.ok) return { kind: 'ineligible_action', reason: eligible.reason };
       // The battle's own agent (its agentId) and an effective archetype. The request carries no agentId

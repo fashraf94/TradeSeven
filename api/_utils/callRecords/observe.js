@@ -124,8 +124,9 @@ export function benchCooldownLocked(battle, atMs) {
  * already receives — the held rows the prompt was built from — and so is the
  * COOLDOWN-LOCKED set, from the same `battle` bench the prompt rendered at
  * `promptBuiltAt` (review L1-3: the seam does know lock status). They are the
- * only sources of `heldAtMint` and of counterpart usability; nothing is
- * inferred from prompt text.
+ * sources of `heldAtMint` (an entry on a held name here; and, Amendment F's F-1, on the
+ * committed symbolIn that carryExecutorResult carries below) and of counterpart usability
+ * (with the book, below); nothing is inferred from prompt text.
  *
  * Cockpit Build 2b (Amendment D-7 / D-3; spec S-3): the BOOK is frozen here
  * too — the tiers, the persisted bench and the hot bench the prompt was built

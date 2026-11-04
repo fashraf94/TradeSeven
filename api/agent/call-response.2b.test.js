@@ -419,3 +419,38 @@ describe('Amendment E (E-2) — flag on: an exit whose stock left the book takes
     expect(held.statusCode).toBe(200);
   });
 });
+
+// Amendment F (F-2), flag on: the refusal is the wire's too, ahead of D-7's eligibility reasons.
+describe('Amendment F (F-2) — flag on: an entry whose stock the book already holds takes no answer', () => {
+  const ENTRY_HELD = `${BATTLE_ID}:eval_001:call:5`; // a TSLA entry, act-default — TSLA is held in star
+  const ENTRY_GILD = `${BATTLE_ID}:eval_001:call:6`; // the same, hold-default, counterpart ZS (ZS left the book in the same trade)
+  const entryOnTsla = (callId, over = {}) => call(callId, { kind: 'called_shot', symbol: 'TSLA', direction: 'entry', slot: 'support', counterpart: null, condition: { side: 'above', level: 250 }, ...over });
+  const SYMBOL_ALREADY_HELD = { error: 'ineligible_action', reason: 'symbol_already_held' };
+  it('go and hold (act-default) and go_now (hold-default) are each refused with symbol_already_held, nothing written', async () => {
+    activeDb = makeDb({ calls: { [ENTRY_HELD]: entryOnTsla(ENTRY_HELD), [ENTRY_GILD]: entryOnTsla(ENTRY_GILD, { defaultAction: 'hold' }) } });
+    for (const b of [body({ callId: ENTRY_HELD, answer: 'go', pickSymbol: undefined }), body({ callId: ENTRY_HELD, answer: 'hold', pickSymbol: undefined }), body({ callId: ENTRY_GILD, answer: 'go_now', pickSymbol: undefined })]) {
+      const res = await post(b);
+      expect(res.statusCode, b.answer).toBe(400);
+      expect(res.body, b.answer).toEqual(SYMBOL_ALREADY_HELD);
+    }
+    expect(callWrites(activeDb)).toEqual([]);
+    expect(writesOn(activeDb, (p) => p.includes('/callEvents/'))).toEqual([]);
+  });
+  it('the GILD shape: the named counterpart left in the same trade → the stock that came in is named, not counterpart_not_held; the control on a stock not held keeps counterpart_not_held', async () => {
+    activeDb = makeDb({ calls: { [ENTRY_GILD]: entryOnTsla(ENTRY_GILD, { defaultAction: 'hold', counterpart: 'ZS' }) } });
+    expect((await post(body({ callId: ENTRY_GILD, answer: 'go_now', pickSymbol: undefined }))).body).toEqual(SYMBOL_ALREADY_HELD);
+    activeDb = makeDb({ calls: { [ENTRY_GILD]: entryOnTsla(ENTRY_GILD, { symbol: 'JPM', defaultAction: 'hold', counterpart: 'ZS' }) } });
+    expect((await post(body({ callId: ENTRY_GILD, answer: 'go_now', pickSymbol: undefined }))).body).toEqual({ error: 'ineligible_action', reason: 'counterpart_not_held' });
+  });
+  it('the control: the entry on a stock that is not held still answers (flag on)', async () => {
+    activeDb = makeDb({ calls: { [ENTRY_HELD]: entryOnTsla(ENTRY_HELD, { symbol: 'JPM' }) } });
+    const res = await post(body({ callId: ENTRY_HELD, answer: 'go', pickSymbol: undefined }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.playerResponse).toMatchObject({ answer: 'go', kind: 'ack' });
+  });
+  it('an upside call keeps its own refusal even on a held stock (flag on)', async () => {
+    activeDb = makeDb({ calls: { [ENTRY_HELD]: entryOnTsla(ENTRY_HELD, { heldAtMint: true }) } });
+    const res = await post(body({ callId: ENTRY_HELD, answer: 'hold', pickSymbol: undefined }));
+    expect(res.body).toEqual({ error: 'illegal_answer', reason: 'upside_call' });
+  });
+});

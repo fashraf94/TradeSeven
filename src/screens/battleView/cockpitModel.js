@@ -38,7 +38,7 @@
 import {
   renderCallLine, isUpsideCall, checkLabel, deadlineText, fmtPrice, SAID_UNVERIFIED_LABEL,
 } from '../../../api/_utils/callRecords/copy.js';
-import { tileAnswersFor, replacementStepFor, isGoAcknowledgment, isExitNotHeld } from '../../../api/_utils/callRecords/answers.js';
+import { tileAnswersFor, replacementStepFor, isGoAcknowledgment, isExitNotHeld, isEntryAlreadyHeld } from '../../../api/_utils/callRecords/answers.js';
 import { etDateOf, sessionCloseAfter, nextEligibleSlot } from '../../../api/_utils/callRecords/horizon.js';
 import { deriveKilledDirectiveIds } from '../../../api/_utils/controlPromptRenderer.js';
 import { etTime, etSlotTime } from '../../components/Dashboard/desk/deskCopy';
@@ -579,6 +579,11 @@ export function chosenNameOf(member, { directive = null, exchanges = [] } = {}) 
  * act and every other tag stand as recorded. `book` is the battle document the
  * screen already reads; without one (or without its portfolio) nothing is claimed.
  *
+ * Cockpit entry-already-held (Amendment F, F-2): the entry-side mirror, through the same `book`. While the call
+ * the buttons would answer is an ENTRY whose stock the battle document holds in ANY tier (answers.js
+ * isEntryAlreadyHeld — the endpoint's own test), and it is not an upside call (which keeps its own treatment),
+ * the tile offers no button and the same unanswered, un-acted, Live call reads "Already in your book".
+ *
  * @param {object[]} thread  calls, newest first
  * @param {object} ctx       { eventsMap, evaluations, nowMs, block, pending: { callId, answer } | null,
  *                             slotThreadId: the slot's live thread (liveCallSlotOf) | null,
@@ -618,15 +623,19 @@ export function tileOf(thread, {
   const target = live && leadAsk ? leadAsk : newest;
   // E-2: the stock the call would exit is in no tier of the book — no answer is legal on it.
   const notHeld = isExitNotHeld(target, book);
+  // Amendment F (F-2): the entry-side mirror — an ENTRY whose stock the book holds in some tier. An upside call keeps its
+  // own treatment (no button, its own chip), so it is never "already in your book".
+  const alreadyHeld = !isUpsideCall(target) && isEntryAlreadyHeld(target, book);
   // The endpoint's own guard (call-response.js: `!finite(deadline) || deadline <= nowMs` → 409 expired).
   const deadline = target.horizon?.expiresAt;
   const answerable = finite(deadline) && finite(nowMs) && deadline > nowMs;
   const heldBack = live && target !== leadAsk;
-  const legal = target.state === 'open' && !heldBack && !answeredCall(target) && !following.has(target.callId) && !actedMember && answerable && !notHeld
+  const legal = target.state === 'open' && !heldBack && !answeredCall(target) && !following.has(target.callId) && !actedMember && answerable && !notHeld && !alreadyHeld
     ? tileAnswersFor(target, { v2 })
     : [];
   // Only the bare "Live" gives way: a recorded answer, an act, a retirement or a replacement keeps its own tag.
-  const tag = notHeld && target.state === 'open' && !answeredCall(target) && !actedMember && liveTag?.fact === 'state:open' ? factTag('call:not_held') : liveTag;
+  const bookFactTag = notHeld ? 'call:not_held' : (alreadyHeld ? 'call:already_held' : null);
+  const tag = bookFactTag && target.state === 'open' && !answeredCall(target) && !actedMember && liveTag?.fact === 'state:open' ? factTag(bookFactTag) : liveTag;
   // The endpoint exempts the slot's own call (`thisCallId`); every other call's override waits.
   const blocked = Boolean(block) && block.callId !== target.callId;
   const sendingThis = Boolean(pending) && thread.some((c) => c.callId === pending.callId);

@@ -699,3 +699,176 @@ describe('Amendment E (E-2): no answer on an exit whose stock is in no tier of t
     expect(src).not.toMatch(/function isExitNotHeld|function heldInAnyTier/);
   });
 });
+
+// Cockpit entry-already-held — contract Amendment F, F-2 (docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_F.md).
+// An ENTRY call whose stock the transaction's FRESH PARENT holds in any tier is answerable by nobody: the
+// acknowledgments AND the directives are refused with `400 ineligible_action` / `symbol_already_held`, before any
+// write. The directive check runs immediately BEFORE the eligibility test, so the stock that came in is the reason
+// named even when the call's counterpart left in the same trade (the GILD case: counterpart_not_held otherwise).
+describe('Amendment F (F-2): no answer on an entry whose stock the fresh parent already holds', () => {
+  const ENTRY_ACT = `${BATTLE_ID}:eval_001:call:4`;  // MSFT entry, act-default, slot support, NO named counterpart (14 of the 19)
+  const ENTRY_HOLD = `${BATTLE_ID}:eval_001:call:5`; // MSFT entry, hold-default, slot support, no counterpart
+  const GILD = `${BATTLE_ID}:eval_001:call:6`;       // MSFT entry, hold-default, counterpart ZS — ZS left the book in the same trade (the R2-01 shape)
+  const UPSIDE = `${BATTLE_ID}:eval_001:call:7`;     // an upside call on a held stock (heldAtMint)
+  // MSFT sits in `core` in the tick battle's book; the calls name `support`, the agent's own label — any tier counts.
+  const entryOn = (callId, over = {}) => shot(callId, { symbol: 'MSFT', direction: 'entry', slot: 'support', counterpart: null, condition: { side: 'above', level: 412 }, ...over });
+  const heldCalls = () => ({
+    [ENTRY_ACT]: entryOn(ENTRY_ACT, { defaultAction: 'act' }),
+    [ENTRY_HOLD]: entryOn(ENTRY_HOLD, { defaultAction: 'hold' }),
+    [GILD]: entryOn(GILD, { defaultAction: 'hold', counterpart: 'ZS' }),
+    [UPSIDE]: entryOn(UPSIDE, { defaultAction: 'act', heldAtMint: true }),
+  });
+  const SYMBOL_ALREADY_HELD = { error: 'ineligible_action', reason: 'symbol_already_held' };
+  const nothingChanged = () => {
+    expect(activeDb.__access.writes).toEqual([]);
+    for (const id of [ENTRY_ACT, ENTRY_HOLD, GILD]) expect(stored(activeDb, P('calls', id)).playerResponse, id).toBeNull();
+    expect(storedUnder(activeDb, `agentBattles/${BATTLE_ID}/callEvents`)).toEqual({});
+  };
+
+  it('an ACKNOWLEDGMENT is refused: go on an act-default entry and hold on a hold-default entry, with the stock held — nothing written', async () => {
+    activeDb = makeDb({ calls: heldCalls() });
+    for (const body of [answerBody({ callId: ENTRY_ACT, answer: 'go' }), answerBody({ callId: ENTRY_HOLD, answer: 'hold' })]) {
+      const res = await post(body);
+      expect(res.statusCode, JSON.stringify(body)).toBe(400);
+      expect(res.body, JSON.stringify(body)).toEqual(SYMBOL_ALREADY_HELD);
+    }
+    nothingChanged();
+  });
+
+  it('a DIRECTIVE is refused: hold on the act-default entry and go_now on the hold-default entry (no named counterpart: it would have been ACCEPTED and spent a command) — nothing written, no budget', async () => {
+    activeDb = makeDb({ calls: heldCalls() });
+    for (const body of [answerBody({ callId: ENTRY_ACT, answer: 'hold' }), answerBody({ callId: ENTRY_HOLD, answer: 'go_now' })]) {
+      const res = await post(body);
+      expect(res.statusCode, JSON.stringify(body)).toBe(400);
+      expect(res.body, JSON.stringify(body)).toEqual(SYMBOL_ALREADY_HELD);
+    }
+    nothingChanged();
+    expect(stored(activeDb, `agentBattles/${BATTLE_ID}`).chatBudgetUsed).toBe(0);
+    expect(stored(activeDb, `agentBattles/${BATTLE_ID}`).chatExchanges).toEqual([]);
+  });
+
+  it('THE GILD SHAPE: the stock came in and the named counterpart left in the same trade — the directive reads symbol_already_held (the stock that came in), not counterpart_not_held', async () => {
+    activeDb = makeDb({ calls: heldCalls() });
+    const res = await post(answerBody({ callId: GILD, answer: 'go_now' }));
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual(SYMBOL_ALREADY_HELD);
+    // The acknowledgment of the same call is refused the same way (it would have filed).
+    expect((await post(answerBody({ callId: GILD, answer: 'hold' }))).body).toEqual(SYMBOL_ALREADY_HELD);
+    nothingChanged();
+    // The control: the same call on a stock that is NOT held keeps the filing's own refusal — the eligibility test still runs.
+    activeDb = makeDb({ calls: { [GILD]: entryOn(GILD, { symbol: 'AMD', defaultAction: 'hold', counterpart: 'ZS' }) } });
+    const control = await post(answerBody({ callId: GILD, answer: 'go_now' }));
+    expect(control.statusCode).toBe(400);
+    expect(control.body).toEqual({ error: 'ineligible_action', reason: 'counterpart_not_held' });
+  });
+
+  it('ANY tier: held in the tier the call names, or in another one, the entry is refused alike', async () => {
+    for (const slot of ['core', 'star', 'support']) {
+      activeDb = makeDb({ calls: { [ENTRY_ACT]: entryOn(ENTRY_ACT, { defaultAction: 'act', slot }) } }); // MSFT is held in core
+      expect((await post(answerBody({ callId: ENTRY_ACT, answer: 'go' }))).body, `go · ${slot}`).toEqual(SYMBOL_ALREADY_HELD);
+      expect((await post(answerBody({ callId: ENTRY_ACT, answer: 'hold' }))).body, `hold · ${slot}`).toEqual(SYMBOL_ALREADY_HELD);
+    }
+  });
+
+  it('the control: an entry on a stock that is NOT held answers as before — both acknowledgments and the directive land', async () => {
+    activeDb = makeDb({ calls: { [ENTRY_ACT]: entryOn(ENTRY_ACT, { symbol: 'AMD', defaultAction: 'act' }), [ENTRY_HOLD]: entryOn(ENTRY_HOLD, { symbol: 'JPM', defaultAction: 'hold' }) } });
+    const go = await post(answerBody({ callId: ENTRY_ACT, answer: 'go' }));
+    expect(go.statusCode).toBe(200);
+    expect(go.body.playerResponse).toMatchObject({ answer: 'go', kind: 'ack' });
+    const goNow = await post(answerBody({ callId: ENTRY_HOLD, answer: 'go_now' }));
+    expect(goNow.statusCode).toBe(200);
+    expect(goNow.body.directive.kind).toBe('call_go');
+  });
+
+  it('an UPSIDE call (heldAtMint) keeps its own refusal: illegal_answer / upside_call for every answer — the legality table answers first', async () => {
+    activeDb = makeDb({ calls: heldCalls() });
+    for (const answer of ['go', 'hold', 'go_now']) {
+      const res = await post(answerBody({ callId: UPSIDE, answer }));
+      expect(res.statusCode, answer).toBe(400);
+      expect(res.body, answer).toEqual({ error: 'illegal_answer', reason: 'upside_call' });
+    }
+  });
+
+  it("the endpoint's other ordering stands: past the deadline or no longer open → 409 expired first; a different answer standing → 409 already_answered first; a stale belief → 409 belief_mismatch before a directive's check", async () => {
+    const late = entryOn(ENTRY_ACT, { defaultAction: 'act', horizon: { phrase: 'this_session', expiresAt: NOW - 1, basis: 'this_session' } });
+    const closed = entryOn(ENTRY_ACT, { defaultAction: 'act', state: 'hit' });
+    for (const [label, c] of [['past its deadline', late], ['no longer open', closed]]) {
+      activeDb = makeDb({ calls: { [ENTRY_ACT]: c } });
+      const res = await post(answerBody({ callId: ENTRY_ACT, answer: 'go' }));
+      expect(res.statusCode, label).toBe(409);
+      expect(res.body, label).toMatchObject({ error: 'refused', reason: 'expired' });
+    }
+    const answered = entryOn(ENTRY_ACT, { defaultAction: 'act', playerResponse: { answer: 'hold', kind: 'directive', directiveThreadId: 't1', callId: ENTRY_ACT, filedAt: new Date(NOW - 5_000).toISOString(), heardEvalId: null } });
+    activeDb = makeDb({ calls: { [ENTRY_ACT]: answered } });
+    const second = await post(answerBody({ callId: ENTRY_ACT, answer: 'go' }));
+    expect(second.statusCode).toBe(409);
+    expect(second.body).toMatchObject({ error: 'refused', reason: 'already_answered' });
+    activeDb = makeDb({ calls: heldCalls(), battle: makeTickBattle({ directive: { text: 'x', expiry: 'end_of_battle', directiveThreadId: 'thread-cur', createdAt: 'c' } }) });
+    const stale = await post(answerBody({ callId: ENTRY_ACT, answer: 'hold', expectedDirectiveThreadId: null }));
+    expect(stale.body).toEqual({ error: 'refused', reason: 'belief_mismatch', currentDirectiveThreadId: 'thread-cur' });
+  });
+
+  it('the directive rows keep the other guards ahead of the check: a closed or late call -> 409 expired, a parent that is not active -> 409 parent_not_active (review EA-L6-1)', async () => {
+    for (const [answer, defaultAction] of [['hold', 'act'], ['go_now', 'hold']]) {
+      const late = entryOn(ENTRY_ACT, { defaultAction, horizon: { phrase: 'this_session', expiresAt: NOW - 1, basis: 'this_session' } });
+      const closed = entryOn(ENTRY_ACT, { defaultAction, state: 'hit' });
+      for (const [label, c] of [['late', late], ['closed', closed]]) {
+        activeDb = makeDb({ calls: { [ENTRY_ACT]: c } });
+        const res = await post(answerBody({ callId: ENTRY_ACT, answer }));
+        expect([res.statusCode, res.body.reason], `${answer} ${label}`).toEqual([409, 'expired']);
+      }
+      activeDb = makeDb({ battle: makeTickBattle({ directive: null, status: 'completed' }), calls: { [ENTRY_ACT]: entryOn(ENTRY_ACT, { defaultAction }) } });
+      const inactive = await post(answerBody({ callId: ENTRY_ACT, answer }));
+      expect([inactive.statusCode, inactive.body.reason], `${answer} inactive parent`).toEqual([409, 'parent_not_active']);
+    }
+  });
+
+  it('an answer already recorded stays as recorded: an IDENTICAL repeat after the stock came in returns the stored response (200, repeat), and a FIRST answer on another entry is refused', async () => {
+    activeDb = makeDb({ calls: { [ENTRY_ACT]: entryOn(ENTRY_ACT, { symbol: 'AMD', defaultAction: 'act' }), [ENTRY_HOLD]: entryOn(ENTRY_HOLD, { symbol: 'AMD', defaultAction: 'hold' }) } });
+    const first = await post(answerBody({ callId: ENTRY_ACT, answer: 'go' }));
+    expect(first.statusCode).toBe(200);
+    // AMD comes into the book — written through the store's own API (stored() hands back a copy).
+    const parentPath = `agentBattles/${BATTLE_ID}`;
+    await activeDb.doc(parentPath).update({ 'portfolio.support': [...stored(activeDb, parentPath).portfolio.support, { symbol: 'AMD', name: 'AMD' }] });
+    const book = stored(activeDb, parentPath).portfolio;
+    expect([...book.star, ...book.core, ...book.support].some((r) => r.symbol === 'AMD')).toBe(true);
+    const fresh = await post(answerBody({ callId: ENTRY_HOLD, answer: 'hold' }));
+    expect(fresh.statusCode).toBe(400);
+    expect(fresh.body).toEqual(SYMBOL_ALREADY_HELD);
+    const writesBefore = activeDb.__access.writes.length;
+    const again = await post(answerBody({ callId: ENTRY_ACT, answer: 'go' }));
+    expect(again.statusCode).toBe(200);
+    expect(again.body.repeat).toBe(true);
+    expect(again.body.playerResponse).toEqual(first.body.playerResponse);
+    expect(activeDb.__access.writes.length).toBe(writesBefore);
+  });
+
+  it('only ENTRIES are asked: an exit on a held stock answers as before, and a pick is untouched', async () => {
+    activeDb = makeDb();
+    const exit = await post(answerBody({ callId: HOLD_CALL, answer: 'hold' })); // KO exit, hold-default, KO is held
+    expect(exit.statusCode).toBe(200);
+    expect(exit.body.playerResponse).toMatchObject({ answer: 'hold', kind: 'ack' });
+    activeDb = makeDb();
+    const pick = await post(answerBody({ callId: PICK, answer: 'pick', pickSymbol: 'JPM' }));
+    expect(pick.statusCode).toBe(200);
+  });
+
+  it('a parent whose book cannot be read (no portfolio at all) proves nothing: the entry is judged as before', async () => {
+    const unreadable = makeTickBattle({ directive: null });
+    delete unreadable.portfolio;
+    activeDb = makeDb({ battle: unreadable, calls: { [ENTRY_ACT]: entryOn(ENTRY_ACT, { defaultAction: 'act', counterpart: null }) } });
+    const res = await post(answerBody({ callId: ENTRY_ACT, answer: 'go' }));
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("the test is the shared module's (answers.js isEntryAlreadyHeld), imported — never a copy in the endpoint — and the directive's check sits BEFORE the eligibility test", async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'call-response.js'), 'utf8').replace(/\r\n/g, '\n');
+    expect(src).toMatch(/import \{[^}]*\bisEntryAlreadyHeld\b[^}]*\} from '\.\.\/_utils\/callRecords\/answers\.js'/);
+    expect(src).not.toMatch(/function isEntryAlreadyHeld/);
+    const check = src.indexOf("if (isEntryAlreadyHeld(call, parent)) return { kind: 'ineligible_action', reason: 'symbol_already_held' };\n      const eligible");
+    expect(check, 'the directive check sits immediately before `const eligible`').toBeGreaterThan(-1);
+  });
+});

@@ -421,6 +421,7 @@ All Battle View copy lives in `battleViewCopy.js` (the honesty test requires it)
 | `superseded`, any other source | Replaced by a chat instruction · {t} | muted |
 | `invalidated` with `invalidatedReason` | Dropped · {reason line} (§7.2) | dropped |
 | an **open exit** whose stock is in no tier of the book (nothing answered, nothing acted, otherwise Live) — no buttons, no "Who comes in?" step *(Amendment E)* | Not in your book | muted |
+| an **open entry** whose stock is in some tier of the book (nothing answered, nothing acted, otherwise Live; not an upside call, which keeps its own treatment) — no buttons, and the 2b card drops its silence line *(Amendment F)* | Already in your book | muted |
 | directive filed, no check left in the session | Filed · no check left today | yours |
 | restatement under your command (D-10), **and** its minting check's `declared` event carries `promptDirectiveThreadId` equal to the command's thread (D-10 rev 2) | Following your call | yoursOutline |
 
@@ -443,6 +444,8 @@ Cite the reason set at HEAD. Any reason not in the table → bare "Dropped".
 | 400 `ineligible_action`, reason `pick_*` | {IN} can't come in right now — nothing was filed. |
 | 400 `ineligible_action`, reason `counterpart_unavailable` | {CP} can't come in right now — nothing was filed. |
 | 400 `ineligible_action`, reason `symbol_not_held` | {SYM} has already left your book — nothing was filed. |
+| 400 `ineligible_action`, reason `symbol_already_held` *(Amendment F)* | {SYM} is already in your book — nothing was filed. |
+| 400 `ineligible_action`, reason `counterpart_not_held` *(Amendment F)* | {CP} has already left your book — nothing was filed. |
 
 Every other row stays as 2a. `directive_pending` keeps its 2a line for the flag-off path.
 
