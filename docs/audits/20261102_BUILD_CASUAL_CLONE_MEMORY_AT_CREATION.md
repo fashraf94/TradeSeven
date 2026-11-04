@@ -12,7 +12,7 @@ November 2, 2026. Base `main` `31574600`, code head `e43c73e7`. Founder ruling F
 | **Starting check** | STOPPED once, on row `casualClone.test.js:282`. Ruled by FQ2-A and FQ2-B, then built (§2, §3). |
 | **Checks** | Full Linux suite exit 0, `Test Files 1268 passed \| 8 skipped (1276)`. `lint:gate` exit 0. `vite build` exit 0. |
 | **Review** | One lens and one refuter. No defect. Mutation: 10 of 10 killed. |
-| **Fence** | Every fenced file is byte-identical to `main`. The paragraph in §9 needs your signature. |
+| **Fence** | Every fenced file is byte-identical to `main`. The founder signed §9 as written on November 4, 2026. |
 | **Founder questions** | None open. |
 
 ## 2. The starting check (VERIFIED at `40641486`; the clone files are unchanged at `31574600`)
@@ -119,7 +119,7 @@ Run in its own snapshot, byte-restored after each. Baseline exit 0 over 82 rows.
 | M9 | A heal keeps the squat's memory | `:329` |
 | M10 | Same, with the `toEqual` line removed | `:330` alone: the planted-entry assertion fails on its own |
 
-## 9. Fence contact, for the founder's signature
+## 9. Fence contact: signed by the founder as written, November 4, 2026
 
 From the first deploy after this reaches production, a player whose casual clone is created then gets the ranked agent's memory in that first casual game's strategy prompt (`agentPromptAssembly.js`, fenced and unchanged). Existing clones are unaffected, because they already re-sync. Training clones are unchanged.
 
