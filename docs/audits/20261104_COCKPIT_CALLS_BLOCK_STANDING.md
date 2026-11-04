@@ -1,8 +1,8 @@
 # Cockpit calls block — "a command that no longer stands" (Amendment G)
 
 **Date:** 2026-11-04 · **Task:** the chat calls block says when a command no longer stands (G-1) and a named answer's row always carries its name (G-2) — the Build 2b report's CB2-1 and CB2-2 (`docs/audits/20261021_BUILD2B_COCKPIT.md`, §11 Q4/Q5).
-**Contract:** `docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_G.md` — a **draft for blessing**, committed byte for byte (blob `1344ac6c`, equal to the founder's file). Blessing gates the **merge**, not this build.
-**Status:** built, tested, mutation-checked, run on Linux. **PR held — "Hold — merge after Amendment G is blessed, after 6 PM ET."** Not merged.
+**Contract:** `docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_G.md` — a **draft for blessing**. Revision 1 was committed byte for byte (blob `1344ac6c`, equal to the founder's file); **revision 2** (the founder's, 2026-11-04, folding in this build and the rulings in §5) was committed over it as a new commit, byte for byte (blob `55411a99`, equal to the founder's file). Blessing gates the **merge**, not this build.
+**Status:** built, tested, mutation-checked, run on Linux; the founder ruled on the seven readings (§5) on 2026-11-04 and no code changed. **PR held — "Hold — merge after Amendment G is blessed, after 6 PM ET."** Not merged.
 
 ---
 
@@ -13,7 +13,7 @@
 | Fetch | `git fetch origin` first; `origin/main` = `9d97b396` at the start and on every re-fetch since, including just before the push (no movement, so the branch **is** the merged tree) |
 | Local branch | `claude/cockpit-calls-block-standing-4640cc` (the app suffixes a worktree's branch; cut at `origin/main`) |
 | Remote branch | pushed by refspec `HEAD:refs/heads/claude/cockpit-calls-block-standing` |
-| Code head under test | `daad84e7` (the report is a docs-only commit on top; lint and build were re-run on the pushed head, §6) |
+| Code head under test | `daad84e7` (only docs-only commits sit on top: this report, then amendment rev 2 and the rulings; lint and build were re-run on the pushed head, §6) |
 | Production reads | none; no `firebase deploy` |
 | Files changed | 4: the amendment, `callsBlock.js`, the new `amendmentG.test.js`, this report. **Under** the BUILD_RULES §2 review threshold (10 files or 1,500 lines), so no multi-lens review was run — see §7 |
 
@@ -29,7 +29,7 @@
 | Failure behaviour | A failed or timed-out event read, a failed re-read, or a vanished battle document → the whole block is null (the chat turn continues), as every calls-block read failure is today. |
 | Tests | 41 new rows; mutation check **34 / 34 killed** (23 on G-1, 11 on G-2). |
 | Linux full suite / lint:gate / vite build | **Green.** Suite exit 0: 28,276 rows passed, 0 failed (1,269 files; 89 skipped rows in 8 skip-gated files, none mine). `lint:gate` exit 0. `vite build` exit 0. |
-| Open for the founder | seven small readings in §5 (none blocks) |
+| Founder rulings | **All seven readings ruled 2026-11-04** (§5): keep as built; reading 1 is a field-path correction to the amendment (now in rev 2). Nothing open. |
 
 ## 2. What was built — `api/_utils/callRecords/callsBlock.js` (all VERIFIED at the code head)
 
@@ -81,7 +81,21 @@ Runner: each mutant is applied to the **committed LF blob**, tested over the fou
 
 One equivalent mutant was identified and not counted: dropping `{ deadlineMs }` from the `readCallsForBlock` call in the builder gives the same deadline (the default is computed from the same clock reading in the same tick).
 
-## 5. Readings for the founder (none blocks the merge; each is built the conservative way)
+## 5. Readings for the founder — RULED 2026-11-04
+
+**Founder ruling, 2026-11-04: keep all seven readings as built.** Reading 1 is a field-path correction to the amendment; readings 2–7 are recorded as built. The amendment was re-issued as **revision 2** and committed byte for byte over `docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_G.md` (blob `55411a99`). Revision 2 changes no rule and adds no string, and I checked each point it states against the built code (11 calls / 22 refs; the tie; the no-segment cases; the two null cases and the bare-word case in G-2), so **no code or test changed** after the rulings. The only commits since the Linux record are docs (the amendment and this report), and no test reads either file (a grep of test sources finds only comment citations), so the §6 suite result stands.
+
+| # | Reading | Ruling | Where it now stands in rev 2 |
+|---|---|---|---|
+| 1 | `{SYM}` is the stored retired event's top-level `symbol`, not `extra.symbol` | **Field-path correction to the amendment** | G-1 placeholders: "`{SYM}` … sits at the event's top level, because `buildCallEvent` spreads its `extra` argument there" |
+| 2 | An event that cannot fill its template gives no segment | Recorded as built | G-1 notes: "gives **no segment** … No fourth string is ever invented" |
+| 3 | Which calls are read: every directive-answered call the block read | Recorded as built | G-1 notes: "at most 11 calls and 22 event references in one batch … including calls whose rows the cut later drops" |
+| 4 | The re-read trigger is a missing directive record; a plain `go_now` whose record is also missing costs one bounded read | Recorded as built | Rev 2 keeps G-2's existing wording ("only when a named answer's record is not found") and does not restate the plain-`go_now` cost; it is recorded here only |
+| 5 | A re-read that finds no battle document → null | Recorded as built | G-2: "If the re-read fails, **or finds no battle document**, the block degrades to null" |
+| 6 | A re-read that succeeds and still has no record renders the bare word | Recorded as built | G-2, new bullet: renders the answer word without a name, "incomplete but not false" |
+| 7 | A tie between the two events goes to `superseded` | Recorded as built | G-1 notes: "A tie goes to `superseded`" |
+
+The readings as raised, for the record:
 
 1. **Stored field names.** The brief says `{SYM}` is the retired event's `extra.symbol`. `extra` is `buildCallEvent`'s *argument*; it spreads to the **top level** of the stored document (`events.js:86`, and `retire.test.js:75` asserts `symbol`/`reason` there). The block reads `symbol` and `reason` from the top level and `{check}` from `evidence.checkLabel`. The amendment text is right about the fields' meaning; only the path differs.
 2. **An event that cannot fill its template** (no usable `at`; an unknown reason; no symbol or check label) yields **no segment** — the row stays as today. The amendment is silent; inventing a fourth string would break "the three templates are the only new text". The writers fill them on their normal path (`directiveWriter.js:96-103` from the filing's own timestamp; `retire.js:181-191` from the retiring check), so an event missing one is a malformed document and this is a belt-and-braces case.
@@ -110,7 +124,7 @@ The shared-checkout rule held: `pd-ci`'s own HEAD was never moved, and `~/pd-af0
 
 **Windows, targeted:** `callsBlock`, `entryAlreadyHeld`, `build2b.answers` and `copy` tests unchanged and green (80 rows) before the new file existed; the 92-row mutation baseline (§4) is those four plus `amendmentG`.
 
-**The pushed head** is a docs-only commit (this report) on `daad84e7`. No test reads `docs/` (the directory walkers all scan `api/` or `src/`), so it cannot move a suite result; `lint:gate` and `vite build` were nevertheless re-run on the exact pushed commit before the PR was opened — their result is in the PR description (a report cannot hold the result of building itself).
+**The pushed head** sits on `daad84e7` through docs-only commits (this report; later, amendment rev 2 and the §5 rulings). No test reads `docs/` (the directory walkers all scan `api/` or `src/`, and a grep of test sources finds only comment citations of the contract files), so they cannot move a suite result. `lint:gate` and `vite build` were nevertheless re-run on the exact commit that was pushed when the PR was opened, `89e91f56` — exit 0 and exit 0, recorded in the PR description (a report cannot hold the result of building itself).
 
 **Not run:** the emulator rules suite (§8).
 
