@@ -1,6 +1,6 @@
 # Build A1: the armory replaces the archetype picker
 
-**Run date:** November 4, 2026 · **Model:** Claude Opus 5.5 · **Branch:** `claude/armory-a1`, cut from `origin/claude/phase0-armory` @ `bbad5e71` (the Phase 0 report alone, one commit over `main` @ `40641486`), with `origin/main` @ `31574600` merged in (`5dee1679`, no conflict) and, before the final checks, `origin/main` @ `9d97b396` (PRs #1021 and #1022) merged in again (`e89aaba3`, no conflict); pushed by refspec from the worktree branch `claude/armory-a1-9010a6` · **Smoke branch:** `claude/armory-a1-smoke` · **PR:** ⟨PR⟩, draft · **Preview:** ⟨URL⟩
+**Run date:** November 4, 2026 · **Model:** Claude Opus 5.5 · **Branch:** `claude/armory-a1`, cut from `origin/claude/phase0-armory` @ `bbad5e71` (the Phase 0 report alone, one commit over `main` @ `40641486`), with `origin/main` @ `31574600` merged in (`5dee1679`, no conflict) and, before the final checks, `origin/main` @ `9d97b396` (PRs #1021 and #1022) merged in again (`e89aaba3`, no conflict); pushed by refspec from the worktree branch `claude/armory-a1-9010a6` · **Smoke branch:** `claude/armory-a1-smoke` · **PR:** [#1024](https://github.com/fashraf94/TradeSeven/pull/1024), draft · **Preview:** https://trade-seven-9l683tqhp-fais-projects-bc179554.vercel.app (the smoke head `079f0abd`; confirmed by the armory's, the readout's and the lab presets' strings in the served chunks)
 
 **Preamble.** `git fetch origin` ran first. `origin/claude/phase0-armory` was `bbad5e71`, one commit over `main`, as the prompt required, and the merge of `origin/main` was clean, so neither STOP applied. The tree was clean at the start. Fenced files read: none. Fenced files edited: none. Fenced functions called: none (the armory calls `agentService.changeArchetype`, the client of the non-fenced `api/agent/change-archetype.js`, exactly as the picker does). Nothing under `api/` changed, no server, record or rules change. Line numbers below are this branch's.
 
@@ -26,16 +26,16 @@
 | # | Item | Result |
 |---|---|---|
 | 1 | **The flag** | `AGENT_FORM_ARMORY_ENABLED = false` (`src/config/agentFormFlags.js:98`), pinned, in `DARK_BY_DESIGN`. Nothing changes for players until it is flipped. |
-| 2 | **Flag-off identity** | **Byte-identical to `main`.** Unminified Linux build, hashes masked: 53 files against 53, **0 lines differ**, at every code commit of the branch (§6). |
+| 2 | **Flag-off identity** | **Byte-identical to `main`.** Unminified Linux build, hashes masked: 53 files against 53, **0 lines differ**, at the fix commit `54bae5a4` and at the merged head `e4af2f9b`; the minified build emits the same files under the same content hashes (§6). |
 | 3 | **Desktop (board 6)** | Built: the 1040 px dialog, Shadow at 300 live in the centre wearing the previewed set, six sets on the ring (each alone, pewter unless equipped, a still until hovered), the aside with the set's name, one-liner, paragraph, the status line and Equip with the FD-1 footnote. The hero behind it is paused. Not built, as ruled: growth tiles, counts, seam flash, ring burst, hook return (§1). |
 | 4 | **Phone (FD-8)** | **In the hero's box, at all three widths; no bottom-sheet fallback was needed at 320.** The hero itself shrinks to 152 px, centres and wears the preview; six sets drawn at 46 px in 48 px tap circles on a ring of 116; measured in a real browser: no overlap, no overflow, every target ≥ 44 px (§2). |
 | 5 | **No flash, no black square, no second suit-up** | Measured frame by frame in headless Edge on the real GPU: **0 placeholder frames on open or close**, the hero's canvas never hidden, at desktop and at 320 / 360 / 390. The hero never remounts. A preview taken off on close is drawn at once, never suited up; after an equip the hero keeps the new set until the agent record catches up (§3). |
 | 6 | **Equip** | `changeArchetype` once, with the chosen set; a battle lock (409 `battle_active`) shows the hub's own "Locked in battle" line; other refusals keep the server's words; a tempo-dial reset shows its notice (§1.4). |
 | 7 | **Lab** | Four presets for FD-9: one live at 160 + six stills at 48, one live at 300 + six stills at 112, and both with all seven live (§4). The lab flag stays `false`. |
-| 8 | **Guards** | None loosened. Four registered the new file, as their own instructions say; one gained the new write's name (`changeArchetype`); three gained rows (§5). |
+| 8 | **Guards** | **None loosened.** The token, motion and framing scans and the mount guard's no-frame-read row now cover `Armory.jsx`; the mount guard's agentService names gained the armory's write (`changeArchetype`, the picker's own); the flag pins, the flag-off bundle and the copy guard gained rows (§5). |
 | 9 | **Mutation** | **26 of 26 killed**, the eight the prompt names among them; one control survives, as it must (§7). |
-| 10 | **Checks** | ⟨CHECKS⟩ (§8). |
-| 11 | **Review threshold** | **Over it: stop at the draft PR.** ⟨DIFF⟩. BUILD_RULES §2 asks for a review at 10 files or 1,500 lines, so a review session runs before merge. |
+| 10 | **Checks** | `lint:gate` exit 0. Full suite on Linux at the merged head: 1,281 files, 28,396 rows, 28,307 pass, **0 fail**, 89 skipped. Minified build of the pushed head: exit 0, every chunk byte-identical to `main`'s (§8). |
+| 11 | **Review threshold** | **Over it: stop at the draft PR.** The cumulative branch diff against `main` is 34 files, +2,365 / −49 lines, the two reports and six screenshots included; without `docs/`, 26 files, +1,719 / −49 (the app's source 11 files, +734 / −37; tests, guards and baselines 15 files, +985 / −12). BUILD_RULES §2 asks for a review at 10 files or 1,500 lines, so a review session runs before merge. |
 | 12 | **Not proven** | Nothing here has run on an iPhone. The checklist (§10) is how the phone decides FD-9 and the sizes. |
 
 ---
@@ -124,16 +124,16 @@ Previewing the Contrarian on the hero itself, 390: ![390 preview](assets/armory-
 - **Cancel:** the preview the hero wore is taken off **at once**, not suited up: the hero's read marks that one change `instant` and the wrapper draws it as an update (`HubAgentForm.jsx:106`). A later change of the record is a suit-up again.
 - **Equip:** on the phone the hero already wears the new set, and keeps it while the agent record still holds the old one, so it never steps back and suits up again. On the wide compositions the hero suits up once, through its own change path.
 
-**Measured** (headless Edge, the real GPU), every animation frame for the 45 frames after the click:
+**Measured** (headless Edge, the real GPU, the harness built from the code head `c515d020`), every animation frame for the 45 frames after the click (an earlier run on `7560e7cb` read the same, the sets first visible at frames 3–5):
 
 | Surface | Open: placeholder frames | Open: hero canvas hidden | Close: placeholder frames | Close: hero canvas hidden | Sets first visible |
 |---|---|---|---|---|---|
-| Desktop, 1440 × 900 | 0 | 0 | 0 | 0 | frame 3 |
-| Phone 320 | 0 | 0 | 0 | 0 | frame 4 |
-| Phone 360 | 0 | 0 | 0 | 0 | frame 5 |
+| Desktop, 1440 × 900 | 0 | 0 | 0 | 0 | frame 5 |
+| Phone 320 | 0 | 0 | 0 | 0 | frame 5 |
+| Phone 360 | 0 | 0 | 0 | 0 | frame 4 |
 | Phone 390 | 0 | 0 | 0 | 0 | frame 4 |
 
-After closing, the hero's label reads "Shadow wearing Trend Follower", the equipped set. Reduced Motion: every view is a still, and a preview switches at once (the wrapper's swap is an update under reduced motion).
+After closing, the hero's label reads "Shadow wearing Trend Follower", the equipped set. Reduced Motion (the jsdom rows; the browser run had it off): every view is told, every set stays a still even when hovered or touched, and a preview is the same archetype change, which the engine draws at once under reduced motion (its swap is an update there).
 
 ---
 
@@ -176,9 +176,10 @@ The Copy reading line names the preset and "armory sets stills" or "live". Phase
 
 | Compared | Files | Lines that differ |
 |---|---|---|
-| `main` `31574600` vs the first code commit `7560e7cb` | 53 / 53 | **0** |
-| `main` vs the fix commit `54bae5a4` | 53 / 53 | **0** |
-| `main` vs the pushed head ⟨HEAD⟩ | ⟨…⟩ | ⟨…⟩ |
+| `main` `31574600` vs the fix commit `54bae5a4` | 53 / 53 | **0** |
+| `main` `9d97b396` (after PRs #1021, #1022) vs the merged head `e4af2f9b` | 53 / 53 | **0** |
+
+A first local probe of the app code alone (before the tests and the lab presets; not in the branch's history) read the same, 0 lines, on the first build. The **minified** build (as Vercel builds it) agrees: `main` `9d97b396` and `e4af2f9b` emit the same files under the same content hashes (`index-BYnPCOYp.js`, `CommandCenterHub-B9LroiTM.js`, `agentGrowth-CNRf8kTV.js`, `index-C9h9-yhu.js`, `index-Bt3Ms9P_.css`), so every chunk is byte-identical. Only the source maps differ: they carry the new source text.
 
 ---
 
@@ -220,7 +221,21 @@ On Linux, in a WSL worktree of its own at `c515d020`, from a green baseline of t
 
 ## 8. Checks and sizes
 
-⟨CHECKS DETAIL⟩
+- **`lint:gate`:** exit 0, on Linux, at `c515d020` and at the merged head `e4af2f9b`.
+- **Full suite:** Linux (WSL), `TZ=UTC`, 8 workers, under `flock /tmp/pd-suite.lock`, at the merged head `e4af2f9b` (the tree CI tests: this branch with `main` `9d97b396` in it): **1,281 files, 28,396 rows, 28,307 pass, 0 fail, 89 skipped.** The first run, at `7560e7cb`, had four reds, all mine (a named import the hub suites' picker mock lacks, a second pin of the flag, the framing scan's file list, a fourth `PHONE_SHADOW` read); `54bae5a4` fixed them and its run was green (28,387 rows, 0 fail). The commits after `e4af2f9b` change only this report.
+- **Minified `vite build` of the pushed head:** exit 0 (§6: the same bytes as `main`).
+- **Windows:** the targeted files only; the three engine suites cannot run there (no `three` in the Windows checkout), which is the known split.
+- **Not run:** the Firestore rules suite (no rules changed), and anything on a real device.
+
+| Chunk (minified, as Vercel builds it) | `main` `9d97b396` | This head |
+|---|---|---|
+| Entry | 4,843.05 kB, 1,307.59 kB gzip | the same file |
+| Command Center | 141.72 kB, 42.74 kB gzip | the same file |
+| The forms' shared chunk (`agentGrowth`) | 5.49 kB, 2.33 kB gzip | the same file |
+| Engine | 614.83 kB, 162.83 kB gzip | the same file |
+| Stylesheet | 36.83 kB, 8.44 kB gzip | the same file |
+
+With the flags on (the smoke build `079f0abd`: the armory, the lab and the corner readout), the Command Center chunk is 155.40 kB, 47.23 kB gzip (+13.68 kB, +4.49 kB gzip, the readout included), the lab's chunk 10.05 kB, and the entry +0.36 kB (the lab's own lazy edge in App). The armory loads no chunk of its own and adds no `import()`: the mount guard's one lazy edge holds.
 
 ---
 
@@ -232,7 +247,7 @@ A WSL worktree of the code head with the flag set `true`, an untracked Vite page
 
 ## 10. Your iPhone checklist
 
-Open the preview link (⟨URL⟩) on the iPhone and sign in.
+Open the preview link (https://trade-seven-9l683tqhp-fais-projects-bc179554.vercel.app) on the iPhone and sign in.
 
 1. **Command Center → Loadout → Change archetype.** The armory opens in place: the figure shrinks to the middle and the six sets appear around it. Nothing should flash or go black.
 2. **Tap each set.** It lights up while your finger is on it, and the centre figure suits up in about a second. The line under the ring says "Previewing · Equipped set is …".
@@ -266,4 +281,19 @@ Open the preview link (⟨URL⟩) on the iPhone and sign in.
 
 ## 13. Commits and artifacts
 
-⟨COMMITS⟩
+On `claude/armory-a1` (PR [#1024](https://github.com/fashraf94/TradeSeven/pull/1024), draft), over `main`:
+
+| Commit | What |
+|---|---|
+| `bbad5e71` | The Phase 0 report (this PR carries it) |
+| `5dee1679` | Merge of `main` `31574600` |
+| `7560e7cb` | The build: the flag, the armory, the phone stage, the wrapper's looks, the copy, the lab presets, the rows and guards |
+| `54bae5a4` | The first full suite's four reds, fixed (§8) |
+| `c515d020` | The no-flash gate's row |
+| `e89aaba3` | Merge of `main` `9d97b396` (PRs #1021, #1022) |
+| `e4af2f9b` | This report's draft and its six screenshots (`docs/audits/assets/armory-a1-*.png`) |
+| the head | This report, final |
+
+On `claude/armory-a1-smoke`: `079f0abd`, one commit on `e4af2f9b`, "SMOKE ONLY, NEVER MERGE": `AGENT_FORM_ARMORY_ENABLED` and `AGENT_FORM_LAB_ENABLED` set `true` and the hub hero's corner readout (S7's format, as the S1 and S2 smokes had it, plus the engine's view count). Two files, +35 / −3. Its pins and guards red by design.
+
+A copy of this report is in `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261104_BUILD_ARMORY_A1.md` (BUILD_RULES §3). The harness (§9) and the mutation runner live in the session's scratchpad and are not committed.
