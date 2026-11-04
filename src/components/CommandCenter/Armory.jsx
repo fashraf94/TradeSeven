@@ -33,7 +33,6 @@
 import React, { createContext, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { changeArchetype } from '../../services/agentService';
-import { ARCHETYPE_ORDER } from '../Dashboard/ArchetypePicker';
 import AgentForm from '../AgentForm/AgentForm';
 import { SET_ALONE, UNLIT, hasWebGL } from '../AgentForm/agentFormSpec';
 import { getAgentGrowth } from '../AgentForm/agentGrowth';
@@ -44,8 +43,12 @@ import { C, HAIR, HAIR_2, MONO, PHONE_TARGET, tint } from './hub/hubStyle';
 import HubSheet from './HubSheet';
 import { Eyebrow, HubButton, Icon, useHubComposition } from './HubParts';
 
-/** The six sets, in the locked Identity Contract order the picker uses (clockwise from the top). */
-export const ARMORY_SETS = ARCHETYPE_ORDER;
+/**
+ * The six sets, clockwise from the top, in the locked Identity Contract order (ArchetypePicker.jsx ARCHETYPE_ORDER, which
+ * Armory.test.js pins this to). A literal of its own: the picker's module is mocked whole by the hub's suites, and the
+ * armory reaches nothing of it.
+ */
+export const ARMORY_SETS = /* @__PURE__ */ Object.freeze(['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian']);
 
 const LIVE = 'live';
 const STILL = 'still';

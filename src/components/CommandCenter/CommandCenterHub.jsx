@@ -351,11 +351,12 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
         <HubHeader phone dateText={shared.dateText} name={shared.name} onOpenProfile={actions.openProfile} onReportBug={actions.reportBug} onOpenMenu={actions.openMenu} unreadCount={runtime.unreadCount} />
         <div style={{ padding: '10px 14px 12px' }}>
           {AGENT_FORM_ARMORY_ENABLED ? (
-            // Agent form build A1 (FD-8): the phone armory opens in the hero's box, so its state wraps the stage.
+            // Agent form build A1 (FD-8): the phone armory opens in the hero's box, so its state wraps the stage. With the
+            // armory on, PhoneStage is the armory's stage, which draws the agent form and never ShadowCanvas (the armory is
+            // on only while the hub's form is: agentFormFlags.test.js), so ShadowCanvas's tier and still switch go unread.
             <PhoneArmoryScope open={sheet.sheet === HUB_SHEETS.ARCHETYPE} agent={runtime.agent} onClose={runtime.closeSheet} opener={sheet.opener} reducedMotion={shared.reducedMotion}>
               <PhoneStage
                 size={shadowSizeFor(composition, width)}
-                tier={shadowTierFor(composition)}
                 status={shared.status}
                 processing={shared.display.processing}
                 words={statusWordsOf(deploy, shared)}
@@ -364,7 +365,6 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
                 reducedMotion={shared.reducedMotion}
                 createdAttemptId={shared.createdAttemptId}
                 paused={coverOpen}
-                stillOnly={PHONE_SHADOW === 'still'}
                 holdPhase={deploy?.holdPhase ?? null}
                 progress={deploy?.progress ?? null}
               />

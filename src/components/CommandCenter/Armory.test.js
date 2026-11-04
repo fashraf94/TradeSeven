@@ -28,8 +28,9 @@ const overlaps = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bot
 
 describe('the sets', () => {
   it('are the six archetypes in the locked Identity Contract order, the picker\'s', () => {
-    expect(ARMORY_SETS).toBe(ARCHETYPE_ORDER);
+    expect([...ARMORY_SETS]).toEqual([...ARCHETYPE_ORDER]);
     expect([...ARMORY_SETS]).toEqual(['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian']);
+    expect(Object.isFrozen(ARMORY_SETS)).toBe(true);
   });
 
   it('a fresh armory previews the equipped set, or the first set for an archetype that is none of the six', () => {
