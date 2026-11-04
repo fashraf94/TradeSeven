@@ -235,11 +235,13 @@ describe('G-1 — the read: directive rows only, one batched get, deduped, open 
   it('reads both ids per distinct thread in ONE getAll; renders open and history rows; reads nothing for ack / unanswered rows', async () => {
     const open = answered(1, { thread: 'ta' });
     const hist = answered(2, { thread: 'tb', over: { state: 'hit', mintedAt: NOW - 900_000 } });
-    const twin = answered(3, { thread: 'ta' }); // the same thread again: one pair of refs, not two
-    const ack = call(4, { playerResponse: { answer: 'go', kind: 'ack', callId: 'c', filedAt: 'f' } });
+    // the same thread again: one pair of refs, not two — and keyed by `playerResponse.directiveThreadId`, not the call's own top-level copy
+    const twin = answered(3, { thread: 'ta', over: { directiveThreadId: null } });
+    // an ack files no directive: even one that carries a thread id (it should not) is neither read nor rendered
+    const ack = call(4, { playerResponse: { answer: 'go', kind: 'ack', directiveThreadId: 'tack', callId: 'c', filedAt: 'f' } });
     const db = world({
       calls: [open, hist, twin, ack, call(5)],
-      superseded: { ta: supersededEvent('ta', '2026-10-30T17:46:00.000Z') },
+      superseded: { ta: supersededEvent('ta', '2026-10-30T17:46:00.000Z'), tack: supersededEvent('tack', '2026-10-30T17:46:00.000Z') },
       retired: { tb: retiredEvent(hist.callId, { symbol: 'KO', reason: 'swap_out_not_held' }) },
     });
     const getAll = vi.spyOn(db, 'getAll');
