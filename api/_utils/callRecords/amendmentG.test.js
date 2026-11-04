@@ -307,6 +307,18 @@ describe('G-1 — a failed or timed-out event read degrades the whole block to n
       expect(out).toBeNull();
     });
 
+    it('the builder\'s own timeoutMs sets that deadline (the chat route passes none, so the 1,500 ms stands)', async () => {
+      const db = world({ calls: calls() });
+      vi.spyOn(db, 'getAll').mockImplementation(() => new Promise(() => {}));
+      let out; let done = false;
+      run(db, { evaluations: EVALS }, { timeoutMs: 100 }).then((v) => { out = v; done = true; });
+      await vi.advanceTimersByTimeAsync(99);
+      expect(done).toBe(false);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(done).toBe(true);
+      expect(out).toBeNull();
+    });
+
     it('the calls read\'s time is spent from the same budget: 1,000 ms in the queries leaves 500 ms for the events, not a fresh 1,500', async () => {
       const db = world({ calls: calls() });
       db.__hooks.afterQuery = () => new Promise((r) => setTimeout(r, 1_000));
@@ -397,6 +409,14 @@ describe('G-2 — a named answer\'s row always carries its name (CB2-2)', () => 
     };
     expect(await run(db, STALE)).toBeNull();
     expect(console.warn).toHaveBeenCalledWith('[calls] chat calls block degraded to null:', 'battle unreadable');
+  });
+
+  it('a re-read that SUCCEEDS and still has no record renders the bare word, once — only a failed re-read degrades (the letter of G-2; founder reading 6)', async () => {
+    const c = answered(1, { answer: 'replace', thread: 'thread-race' });
+    const db = world({ calls: [c], battle: { evaluations: EVALS, chatExchanges: [] } });
+    const block = await run(db, STALE);
+    expect(rowsOf(block)[0]).toBe("- battle-1:eval_001:call:1 · CCI below $89.00 by today's close · open · answered: Bring in · heard at the 13:00 check");
+    expect(battleReads(db)).toBe(1); // asked once, not again
   });
 
   it('a re-read that finds no battle document → null (never a bare "answered: Bring in")', async () => {
