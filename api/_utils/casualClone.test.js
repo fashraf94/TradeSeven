@@ -2,7 +2,7 @@
 //
 // Per-Battle Loadout + Per-Type Concurrency Phase 1 — the CASUAL clone identity.
 // Covers the id codec + prefix predicates, the pure clone-doc builder (pure
-// inherit + casual markers + fresh history, NO groupId), the idempotent
+// inherit + memory + casual markers + fresh history, NO groupId), the idempotent
 // NEVER-OVERWRITE get-or-create (create when absent, return existing untouched,
 // race → ALREADY_EXISTS, no-ranked-agent throw), and resolveAttributionAgentId
 // (casual → parent, non-casual → self, preresolved, degrade-to-clone).
@@ -14,9 +14,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   buildCasualCloneDoc,
+  buildCasualCloneResync,
   ensureCasualClone,
   resolveAttributionAgentId,
 } from './casualClone.js';
+import { buildTrainingCloneDoc } from './trainingClone.js';
+import { buildStrategyUserPrompt } from './agentPromptAssembly.js';
 import {
   casualCloneDocId,
   isCasualCloneId,
@@ -111,8 +114,8 @@ const RANKED = Object.freeze({
   consolidatedInsight: 'buy the dip',
   disciplines: ['patience'],
   evolutionCycle: 3,
-  // history/pointer fields that MUST NOT carry onto the clone:
   memory: [{ gameId: 'old' }],
+  // history/pointer fields that MUST NOT carry onto the clone:
   stats: { wins: 9, losses: 1, gamesPlayed: 10, totalScore: 100, avgScore: 10, currentStreak: 3, bestStreak: 5 },
   activeBattleId: 'ranked-battle-live',
   lastDeployedAt: '2026-08-01T00:00:00.000Z',
@@ -171,13 +174,42 @@ describe('buildCasualCloneDoc', () => {
     expect('groupId' in doc).toBe(false);          // persistent, not pod-scoped
   });
 
-  it('resets history + pointers fresh (never inherits ranked battle state)', () => {
-    expect(doc.memory).toEqual([]);
+  it('resets stats + pointers fresh (never inherits ranked battle state)', () => {
     expect(doc.stats).toEqual({ wins: 0, losses: 0, gamesPlayed: 0, totalScore: 0, avgScore: 0, currentStreak: 0, bestStreak: 0 });
     expect(doc.activeBattleId).toBeNull();
     expect(doc.pendingConsolidation).toBe(false);
     expect(doc.lastDeployedAt).toBeNull();
     expect(doc.deployingAt).toBeNull();
+  });
+
+  // R-FQ2-1: one rule for the clone's memory, at creation and at every re-sync.
+  it('inherits the ranked agent memory at creation (R-FQ2-1)', () => {
+    expect(doc.memory).toEqual([{ gameId: 'old' }]);
+  });
+
+  it.each([
+    ['no memory', { id: 'ranked-1' }],
+    ['null memory', { id: 'ranked-1', memory: null }],
+    ['a string memory', { id: 'ranked-1', memory: 'old' }],
+    ['an object memory', { id: 'ranked-1', memory: { gameId: 'old' } }],
+  ])('a ranked agent with %s gives [] at creation and at re-sync (R-FQ2-1)', (_label, ranked) => {
+    expect(buildCasualCloneDoc(ranked, { odUserId: 'user-42', nowIso: '2026-08-05T12:00:00.000Z' }).memory).toEqual([]);
+    expect(buildCasualCloneResync(ranked).memory).toEqual([]);
+  });
+
+  it('creation and re-sync give the same memory for the same ranked agent (R-FQ2-1)', () => {
+    const memories = [[{ gameId: 'a' }, { gameId: 'b' }], [], undefined, 'old'];
+    for (const memory of memories) {
+      const ranked = { ...RANKED, memory };
+      const created = buildCasualCloneDoc(ranked, { odUserId: 'user-42', nowIso: '2026-08-05T12:00:00.000Z' });
+      expect(created.memory).toEqual(buildCasualCloneResync(ranked).memory);
+    }
+  });
+
+  it('a training clone of the same ranked agent still starts with memory: [] (R-FQ2-1)', () => {
+    const training = buildTrainingCloneDoc(RANKED, { groupId: 'pod-1', odUserId: 'user-42', nowIso: '2026-08-05T12:00:00.000Z' });
+    expect(RANKED.memory.length).toBeGreaterThan(0);
+    expect(training.memory).toEqual([]);
   });
 
   it('is pure — does not mutate the ranked agent', () => {
@@ -199,6 +231,21 @@ describe('ensureCasualClone', () => {
     expect(clone.rankedAgentId).toBe('ranked-1');
     expect(clone.archetype).toBe('contrarian');
     expect(clone.stats.gamesPlayed).toBe(0);
+  });
+
+  // R-FQ2-1, the acceptance check: the fenced strategy prompt is the reader, so
+  // compare what it renders for a first game and for the deploy after it.
+  it('a first game reads the same strategy prompt a later deploy would (R-FQ2-1)', async () => {
+    const memory = [{ gameId: 'g1', result: 'win', score: 12, lesson: 'Trim winners into strength.' }];
+    const { db, store } = makeDb({ 'agents/ranked-1': { ...RANKED, memory } });
+    await ensureCasualClone(db, { odUserId: 'user-42' });
+    const firstGame = buildStrategyUserPrompt(store.get('agents/casual-agent-user-42'));
+    const r = await ensureCasualClone(db, { odUserId: 'user-42' }); // the re-sync a later deploy runs
+    expect(r.created).toBe(false);
+    const laterGame = buildStrategyUserPrompt(store.get('agents/casual-agent-user-42'));
+    expect(firstGame).toContain('RECENT GAME MEMORY');
+    expect(firstGame).toContain('Trim winners into strength.');
+    expect(firstGame).toBe(laterGame);
   });
 
   it('copies the ranked agent rules + bundles subcollections onto the clone', async () => {
@@ -279,7 +326,8 @@ describe('ensureCasualClone', () => {
     expect(healed.ownerId).toBe('user-42');        // now owned by the victim
     expect(healed.rankedAgentId).toBe('ranked-1');  // correct parent, not the poisoned one
     expect(healed.isCasualClone).toBe(true);
-    expect(healed.memory).toEqual([]);              // attacker's payload gone
+    expect(healed.memory).toEqual(RANKED.memory);   // the owner's own memory, as any new clone (FQ2-A)
+    expect(healed.memory).not.toContainEqual({ gameId: 'evil' }); // attacker's payload gone
   });
 
   it('HEALS a bare doc missing isCasualClone (even if same owner) rather than adopting it', async () => {
