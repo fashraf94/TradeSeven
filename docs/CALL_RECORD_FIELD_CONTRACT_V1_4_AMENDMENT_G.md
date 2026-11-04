@@ -1,6 +1,6 @@
 # Call Record Field Contract V1.4 — Amendment G (revision 2)
 
-**Date:** 2026-11-02 · **Revision 2:** 2026-11-04 · **Author:** Fable · **Status:** draft for blessing (framework chat). Blessing gates the fix's **merge**, not its build.
+**Date:** 2026-11-02 · **Revision 2:** 2026-11-04 · **Author:** Fable · **Status:** **blessed 2026-11-04 (framework chat, revision 2), with one condition, met as built** — see the Blessing record at the end. Blessing gated the fix's **merge**, not its build.
 **Builds on:** contract V1.4 + Amendments A, B rev 2, C rev 3, D rev 4, E rev 4, F rev 3.
 **Scope:** the chat calls block (`callsBlock.js`), which is model-visible to the chat model. Two clauses:
 - G-1 adds one segment to a row whose command no longer stands. That is three new model-visible strings: the "fifth" string the Build 2b review left for a ruling.
@@ -89,3 +89,15 @@ Unchanged:
 
 1. **G-1:** the three segment templates, and the rule that reads a directive-answered call's `superseded` and `retired` events by id within the block's budget. If both exist, the earlier one shows. A failed read degrades the block to null.
 2. **G-2:** the conditional single re-read of the battle document, inside the block's builder, so a named answer's row never renders without its name.
+
+---
+
+## Blessing record
+
+- **Blessed:** 2026-11-04, framework chat, **revision 2**: G-1 (the three segment templates and the by-id read of the two closing events) and G-2 (the conditional single battle re-read). The build is PR #1023 (`docs/audits/20261104_COCKPIT_CALLS_BLOCK_STANDING.md`); the founder's rulings on its seven readings, also 2026-11-04, are folded into this revision.
+- **Condition:** the `retired` segments take their reason phrase from `RETIRED_REASON_TEXT` (`copy.js`), not from separate literals, and the frozen-literal test pins the rendered result.
+- **Condition met, as built. No code change.**
+  - `callsBlock.js` `endedSegmentOf` builds the retired segment as `` `retired at ${retired.evidence.checkLabel}: ${retired.symbol} ${RETIRED_REASON_TEXT[retired.reason]}` `` (`callsBlock.js:125`), importing `RETIRED_REASON_TEXT` and `RETIRED_REASONS` from `./copy.js` (`callsBlock.js:57`) and guarding on `RETIRED_REASONS.includes(...)` (`callsBlock.js:124`). The map is `copy.js:286-291` (`left the book` for `symbol_not_held`, `counterpart_not_held` and `swap_out_not_held`; `came into the book another way` for `pick_already_held`).
+  - `callsBlock.js` holds no string literal of either phrase in code; they appear only in comments (`:45`, `:112-113`).
+  - The rendered result is pinned by frozen literals in `amendmentG.test.js`: the three "left the book" reasons and `pick_already_held` at `:111-118`, and an end-to-end row at `:125`. The mutation check killed the mutant that replaces the map lookup with a literal (G1-10).
+- **Merge:** after 6 PM ET.
