@@ -48,6 +48,8 @@ const FLAG_SOURCE_MODULES = [
   'api/_utils/tournamentOrchestrator.js',
   // Agent form build S0: the agent identity program's flags, a module of their own (its header says why).
   'src/config/agentFormFlags.js',
+  // ID-1 Build 2: the activation observer's flag, a module of its own (its header says why).
+  'src/config/activationEvidenceFlags.js',
 ];
 
 // ── Deliberately-dark flags (founder ruling 2026-08-10: keep the loud tripwire) ─
@@ -258,6 +260,8 @@ const DARK_BY_DESIGN = {
   //   each step moves the pin row in filmRoomCardsFlags.test.js in the same
   //   commit (BUILD_RULES §2). Rollback: one line back a step — 'allowlist'
   //   → 'off' — with its pin row.
+  ACTIVATION_EVIDENCE_ENABLED:
+    'ID-1 Build 2 — the activation observer, the sixth tenant of the reflections cron (shape note V1.7; build report docs/audits/20261104_BUILD_ACTIVATION_OBSERVER.md). Built dark: with it false the observer returns before any read and the cron response is byte-identical. Flips only in the founder\'s own PR, never a build PR, after the Firestore rules for agentBattles/{id}/activations and activationObserverState are published and the agentBattles (ownerId, createdAt) index is deployed. The flip moves the pin in activationEvidenceFlags.test.js to true and drops this entry in the same commit',
   SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:
     'Shadow vs CPU quote integrity (SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md; build record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md) — built dark; the producer metadata (quoteOrigin, the stock isFallback marker) ships live while this stays false. Flips only in the founder\'s own PR, never a build PR, and no earlier than the first regular US market open after the founder confirms the complete additive metadata path is live in production (R-11). The flip moves the pin in shadowCpuQuoteIntegrityFlags.test.js to true and drops this entry in the same commit; no URL, localStorage or environment override exists',
   // HYPOTHESIS_RECORDS_ENABLED intentionally ABSENT: the record slice (Pilot
