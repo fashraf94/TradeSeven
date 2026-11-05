@@ -441,6 +441,25 @@ describe('progress in every run', () => {
     expect(r.deferred.battles_unread).toBeGreaterThan(0);
     expect(r.acquisitionsStarted).toBeGreaterThan(0);
   });
+  it('a casual clone\'s two attribution reads are each admitted by the budget: a parent read that would start after it defers the battle, never unresolved', async () => {
+    const CLONE = 'casual-agent-ao-owner-1';
+    await db.doc(`agents/${CLONE}`).set({ ownerId: OWNER, rankedAgentId: 'agent-p' });
+    await db.doc('agents/agent-p').set({ ownerId: OWNER });
+    await seedBattle('b-clone', ownerBattle({ agentId: CLONE }));
+    const starts = [];
+    let start = null;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const r = await run(clockAt(INTRADAY), { before: (kind, c) => {
+      if (start === null) start = c.ms();
+      if (kind === 'state') c.advance(5_700);
+      if (kind === 'attribution') { starts.push(c.ms() - start); c.advance(400); }
+    } });
+    warn.mockRestore();
+    expect(starts).toHaveLength(1); // the clone read at 5.7 s; the parent read, at 6.1 s, was refused
+    expect(Math.max(...starts)).toBeLessThan(C.PREP_BUDGET_MS);
+    expect(r.deferred.prep_cut).toBe(6);
+    expect(await pointersOf('b-clone')).toEqual([]);
+  });
   it('a run whose preparation is cut short still acquires the state\'s carried keys', async () => {
     const carried = ['NVDA', 'AMD'].map((s) => ({ snapshotId: snapshotIdOf({ session: SESSION, symbol: s, ruleSet: RS }), session: SESSION, symbol: s, dueAt: null }));
     await db.doc('activationObserverState/main').set({ schemaVersion: 1, cursors: {}, battles: {}, outstandingKeys: carried, updatedAt: null });

@@ -16,8 +16,11 @@
 //   - `stream.gameMode` is the battle's field, or null when it has none (never
 //     normalised); `clone` is 'casual' for a casual-clone battle, else 'ranked'.
 //
-// Pure. `frozenNamesOf` is imported from the review module that defines it
-// (hypothesisRecords/review.js), so the idea universe is read one way.
+// Pure: its own code does no I/O. `frozenNamesOf` is imported from the review
+// module that defines it (hypothesisRecords/review.js), so the idea universe is
+// read one way; that module loads I/O-capable modules (its review pass, the
+// hypothesis store, the provider request) which nothing here calls (review L4-4).
+// The census never imports this module.
 
 import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 import { frozenNamesOf } from '../hypothesisRecords/review.js';

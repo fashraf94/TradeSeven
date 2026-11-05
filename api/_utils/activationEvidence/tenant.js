@@ -263,12 +263,10 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
         continue;
       }
       // Attribution, once per battle with unwritten work; a ranked battle needs no read.
-      let attribution = null;
-      if (isCasualCloneId(battle.agentId)) {
-        if (!canRead()) { bump(counts.deferred, 'prep_cut', unwritten.length); continue; }
-        await before('attribution');
-      }
-      attribution = await attributionOf(db, battle);
+      // A casual clone's two reads are each a preparation read under the budget (review V4 on nit-2).
+      if (isCasualCloneId(battle.agentId) && !canRead()) { bump(counts.deferred, 'prep_cut', unwritten.length); continue; }
+      const attribution = await attributionOf(db, battle, { mayRead: canRead, beforeRead: () => before('attribution') });
+      if (attribution.deferred) { bump(counts.deferred, 'prep_cut', unwritten.length); continue; }
       work.push({ battleId, battle, d, due, attribution, unwritten, outstanding: unwritten.length });
     }
   }
@@ -358,6 +356,8 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
   }
   for (const c of state.outstandingKeys) {
     if (acquisitions.has(c.snapshotId) || keys.has(c.snapshotId)) continue;
+    // Past its battles' horizon a carried key is never offered again (review V4 on L4-1); step 13 drops it.
+    if (c.dueAt !== null && nowMs >= c.dueAt + CATCH_UP_HORIZON_DAYS * DAY_MS) { bump(counts.deferred, 'carried_past_horizon'); continue; }
     let same = false;
     try { same = snapshotIdOf({ session: c.session, symbol: c.symbol, ruleSet }) === c.snapshotId; } catch { same = false; }
     if (!same) { bump(counts.deferred, 'carried_stale'); continue; } // another rule set's key, or malformed
