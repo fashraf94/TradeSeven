@@ -136,6 +136,11 @@ describe('snapshotServes — a final is used only for its own key', () => {
     expect(snapshotServes(ev.snapshot, { ...key, symbol: 'NVDA' })).toBe(false);
     expect(snapshotServes(ev.snapshot, { ...key, ruleSet: { ...RS, thresholdsHash: '000000000000' } })).toBe(false);
     expect(snapshotServes({ ...ev.snapshot, entry: null }, key)).toBe(false);
+    // An entry with no readable capture instant would give evidenceTiming a representation §4 does not have.
+    const { capturedAt, ...noCapture } = ev.snapshot;
+    expect(typeof capturedAt).toBe('string');
+    expect(snapshotServes(noCapture, key)).toBe(false);
+    expect(snapshotServes({ ...ev.snapshot, capturedAt: 'yesterday' }, key)).toBe(false);
     expect(snapshotServes(null, key)).toBe(false);
   });
 });

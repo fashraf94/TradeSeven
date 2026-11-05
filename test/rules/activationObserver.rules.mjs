@@ -213,9 +213,17 @@ describe('owner scoping', () => {
     expect(await pointersOf('b-mine')).toHaveLength(6);
     expect(await pointersOf('b-theirs')).toEqual([]);
   });
+  it('a battle with no agent id is counted malformed and never gets a pointer keyed by null', async () => {
+    const b = ownerBattle();
+    delete b.agentId;
+    await seedBattle('b-noagent', b);
+    const r = await run(clockAt(INTRADAY));
+    expect(r.battles.malformed).toBe(1);
+    expect(await pointersOf('b-noagent')).toEqual([]);
+  });
   it('a full candidate page is counted as truncated', async () => {
     const batch = db.batch();
-    for (let i = 0; i < C.MAX_CANDIDATE_IDS_PER_OWNER; i++) batch.set(db.doc(`agentBattles/p-${String(i).padStart(3, '0')}`), { ownerId: OWNER, createdAt: `2026-11-05T14:${String(i % 60).padStart(2, '0')}:00.000Z`, agentContext: { archetype: 'contrarian' } });
+    for (let i = 0; i < C.MAX_CANDIDATE_IDS_PER_OWNER; i++) batch.set(db.doc(`agentBattles/p-${String(i).padStart(3, '0')}`), { ownerId: OWNER, agentId: `agent-${i}`, createdAt: `2026-11-05T14:${String(i % 60).padStart(2, '0')}:00.000Z`, agentContext: { archetype: 'contrarian' } });
     await batch.commit();
     const r = await run(clockAt(INTRADAY));
     expect(r.truncations.candidates).toBe(1);
@@ -484,6 +492,61 @@ describe('fairness — every cursor advances past what it takes', () => {
     const s2 = (await db.doc('activationObserverState/main').get()).data();
     expect(s2.cursors.dueBattles).toBe('d-29'); // d-15 … d-29: the due battles the first run did not reach
     expect(Object.values(s2.battles).filter((b) => b.finished)).toEqual([]); // none could finish, none starved the others
+  });
+});
+
+describe('review fixes (L2-1, L2-2, L2-6, L4-2)', () => {
+  it('L2-1: evidence already in hand is written even when every store call is slow enough to end in the last 2 s', async () => {
+    await seedBattle('b-1', ownerBattle());
+    await seedFinal('NVDA'); // read in step 9
+    const missing = Object.fromEntries(STOCKS.map((s) => [s, 'missing_newest']));
+    const p = provider(missing);
+    const clock = clockAt(CUTOFF);
+    const r = await runActivationObserver({
+      db, handlerStartMs: clock.ms(), now: clock.now,
+      fetchPayload: async (...a) => { clock.advance(6_100); return p.fetchPayload(...a); }, // three at once: 18.3 s gone, 1.7 s left
+      instrument: {},
+    });
+    expect(r.acquisitionsStarted).toBe(3);
+    expect(r.pointers.withEvidence).toBe(1);
+    expect((await pointersOf('b-1')).map((x) => x.data.symbol)).toEqual(['NVDA']);
+    expect(r.deferred.write_reserve).toBe(3); // the three retryable ones came back with too little left
+  });
+  it('L2-2: a key whose activations were all written is not carried, so the next run fetches nothing for it', async () => {
+    await seedBattle('b-1', ownerBattle());
+    const missing = Object.fromEntries(STOCKS.map((s) => [s, 'missing_newest']));
+    const r1 = await run(clockAt(CUTOFF), { fetchPayload: provider(missing).fetchPayload });
+    expect(r1.pointers.null).toBe(6);
+    expect((await db.doc('activationObserverState/main').get()).data().outstandingKeys).toEqual([]);
+    const p2 = provider(missing);
+    const r2 = await run(clockAt(AT_0145), { fetchPayload: p2.fetchPayload });
+    expect([r2.acquisitionsStarted, p2.calls.length, r2.battles.read]).toEqual([0, 0, 0]);
+  });
+  it('L2-6: a state the run could not read is never overwritten', async () => {
+    const carried = [{ snapshotId: snapshotIdOf({ session: SESSION, symbol: 'NVDA', ruleSet: RS }), session: SESSION, symbol: 'NVDA', dueAt: null }];
+    const stored = { schemaVersion: 1, cursors: { dueBattles: 'x', ordinaryBattles: null, dueKeys: null, ordinaryKeys: null }, battles: { 'b-old': { cutoffAt: 1, expiresAt: 1, finished: true, excludedBy: 'archetype' } }, outstandingKeys: carried, updatedAt: 'before' };
+    await db.doc('activationObserverState/main').set(stored);
+    await seedBattle('b-1', ownerBattle());
+    const dbx = new Proxy(db, { get(t, k) {
+      if (k === 'collection') return (name) => { const c = t.collection(name); if (name !== 'activationObserverState') return c; return { doc: (id) => { const d = c.doc(id); return { get: async () => { throw Object.assign(new Error('14 UNAVAILABLE'), { code: 14 }); }, set: (...a) => d.set(...a) }; } }; };
+      const v = t[k]; return typeof v === 'function' ? v.bind(t) : v;
+    } });
+    const r = await run(clockAt(INTRADAY), { dbx });
+    expect(r.state).toBe('unreadable');
+    expect(r.deferred.state_write_skipped_unread).toBe(1);
+    expect(r.pointers.withEvidence).toBe(6); // pointers depend only on §4.2
+    expect((await db.doc('activationObserverState/main').get()).data()).toEqual(stored);
+  });
+  it('L4-2: the owners are queried in an order that turns each run, so a budget that fits one query starves no owner', async () => {
+    process.env[ENV] = `${OWNER},${OTHER}`;
+    await seedBattle('a-1', ownerBattle());
+    await seedBattle('o-1', legacyBattle({ ownerId: OTHER }));
+    await seedBattle('o-2', legacyBattle({ ownerId: OTHER }));
+    const tight = (kind, c) => { if (kind === 'state') c.advance(5_000); if (kind === 'candidates') c.advance(1_200); };
+    const r1 = await run(clockAt(INTRADAY), { before: tight });
+    const r2 = await run(clockAt('2026-11-05T15:45:00.000Z'), { before: tight });
+    expect([r1.deferred.candidates_unread, r2.deferred.candidates_unread]).toEqual([1, 1]);
+    expect([r1.candidates, r2.candidates].sort()).toEqual([1, 2]);
   });
 });
 

@@ -91,9 +91,10 @@ function inTurn(queues, limit) {
 function emptyCounts() {
   return {
     candidates: 0,
-    battles: { read: 0, due: 0, unseen: 0, ordinary: 0, missing: 0, notOwned: 0, finished: 0 },
+    battles: { read: 0, due: 0, unseen: 0, ordinary: 0, missing: 0, notOwned: 0, malformed: 0, finished: 0 },
     excluded: {},
     gapBattles: 0,
+    gapStarts: 0, // starting lifetimes of gap battles, written or not (the census tells which were)
     finalizationUndetermined: 0,
     activations: { discovered: 0, alreadyWritten: 0, cryptoSkipped: 0 },
     unresolved: {},
@@ -101,7 +102,7 @@ function emptyCounts() {
     abandoned: {},
     pointers: { withEvidence: 0, null: 0, exists: 0, snapshotInvalid: 0, writeFailed: {} },
     store: { finalRead: 0, final: 0, pending: 0, retryable: 0, excluded: 0, threw: {} },
-    ticks: { tickAction: 0, unavailable: 0, ambiguous: 0, incompleteReads: 0 },
+    ticks: { tickAction: 0, unavailable: 0, ambiguous: 0, malformed: 0, incompleteReads: 0 },
     truncations: { candidates: 0, ticks: 0 },
     failures: {},
     state: 'not_read',
@@ -153,7 +154,8 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
   const candidates = [];
   const candidateSet = new Set();
   let allOwnersQueried = true;
-  for (const ownerId of owners) {
+  const turn = Math.floor(nowMs / 900_000) % owners.length;
+  for (const ownerId of [...owners.slice(turn), ...owners.slice(0, turn)]) {
     if (!canRead()) { allOwnersQueried = false; bump(counts.deferred, 'candidates_unread'); continue; }
     try {
       await before('candidates');
@@ -210,6 +212,8 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
       if (!snap?.exists) { counts.battles.missing += 1; delete index[battleId]; continue; }
       const battle = snap.data();
       if (!owners.includes(battle.ownerId)) { counts.battles.notOwned += 1; continue; } // never another owner's battle
+      // A battle with no agent id has no attribution to record (createAgentBattle always writes one): never a pointer keyed by null.
+      if (typeof battle.agentId !== 'string' || battle.agentId.length === 0) { counts.battles.malformed += 1; continue; }
       const scope = scopeOf(battle);
       const d = scope.inScope ? discoverActivations(battle) : null;
       const sched = d ? d.schedule : null;
@@ -223,7 +227,7 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
       if (sched.cutoffAtMs === null) counts.finalizationUndetermined += 1;
       counts.activations.discovered += d.activations.length;
       counts.activations.cryptoSkipped += d.cryptoSkipped;
-      for (const u of d.unresolved) bump(counts.unresolved, u.reason);
+      for (const u of d.unresolved) { if (u.reason === 'gap') counts.gapStarts += 1; else bump(counts.unresolved, u.reason); }
 
       // Every pointer id, in one getAll.
       let written = new Set();
@@ -269,8 +273,8 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
     }
   }
 
-  // 7. TICKS — only for battles with an unwritten swap-in.
-  for (const w of work) {
+  // 7. TICKS — only for battles with an unwritten swap-in; finalisation-due battles first (review L2-3).
+  for (const w of [...work].sort((x, y) => Number(y.due) - Number(x.due))) {
     const swapIns = w.unwritten.filter((a) => a.kind === 'swap_in');
     if (!swapIns.length) continue;
     const ticks = [];
@@ -300,7 +304,7 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
       if (j.outcome === 'defer') { bump(counts.deferred, j.reason); return false; }
       a.activatingTick = j.activatingTick;
       if (j.outcome === 'tick_action') counts.ticks.tickAction += 1;
-      else { counts.ticks.unavailable += 1; if (j.ambiguous) counts.ticks.ambiguous += 1; }
+      else { counts.ticks.unavailable += 1; if (j.ambiguous) counts.ticks.ambiguous += 1; if (j.malformed) counts.ticks.malformed += 1; }
       return true;
     });
   }
@@ -340,9 +344,18 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
     }
   }
 
-  // 10. ACQUISITION.
-  const acquisitions = new Map(); // snapshotId → { session, symbol, due, dueAt, run: key|null }
-  for (const key of keys.values()) if (!key.final && !key.invalid) acquisitions.set(key.snapshotId, { snapshotId: key.snapshotId, session: key.session, symbol: key.symbol, due: key.due, dueAt: key.dueAt, run: key });
+  // 10–12. ACQUISITION, AND THE WRITES BESIDE IT.
+  // Acquisition admits store calls (≥ ADMISSION_RESERVE_MS left, ≤ 12 a run, ≤ 3 at once). The writes run
+  // BESIDE it (review L2-1), one transaction at a time, as soon as a key's final or this run's own
+  // `retryable` is in hand: so a slow store call admitted late in the window can never cost the run the
+  // pointers whose evidence it already holds. The order is kept: finalisation-due work first, and ordinary
+  // work only once no due key still waits on its store call. One cap for both kinds; each transaction starts
+  // only with POINTER_WRITE_RESERVE_MS left; every started call is awaited to its end.
+  const acquisitions = new Map(); // snapshotId → { snapshotId, session, symbol, due, dueAt, run: key|null }
+  for (const key of keys.values()) {
+    if (key.final || key.invalid) key.settled = true; // decided by step 9
+    else acquisitions.set(key.snapshotId, { snapshotId: key.snapshotId, session: key.session, symbol: key.symbol, due: key.due, dueAt: key.dueAt, run: key });
+  }
   for (const c of state.outstandingKeys) {
     if (acquisitions.has(c.snapshotId) || keys.has(c.snapshotId)) continue;
     let same = false;
@@ -355,30 +368,18 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
     { name: 'due', items: rotate(all.filter((k) => k.due).map((k) => k.snapshotId), cursors.dueKeys) },
     { name: 'ordinary', items: rotate(all.filter((k) => !k.due).map((k) => k.snapshotId), cursors.ordinaryKeys) },
   ], all.length);
+
+  // One waiter at a time: the writer checks, then waits; JavaScript cannot interleave the two, so no wake-up is lost.
+  let wake = null;
+  const notify = () => { const w = wake; wake = null; if (w) w(); };
+  const nextEvent = () => new Promise((resolve) => { wake = resolve; });
+
   const results = new Map(); // snapshotId → store result | { status: 'threw', code }
   const inflight = new Set();
   let started = 0;
-  for (const { queue: q, item: id } of queue) {
-    while (inflight.size >= ACQUISITION_CONCURRENCY) await Promise.race(inflight);
-    if (started >= MAX_ACQUISITIONS_PER_RUN || deadline - clock() < ADMISSION_RESERVE_MS) break;
-    started += 1;
-    if (q === 'due') cursors.dueKeys = id; else cursors.ordinaryKeys = id; // past every key started, whatever its outcome
-    const k = acquisitions.get(id);
-    await before('acquire');
-    const call = (async () => {
-      try {
-        results.set(id, await getOrAcquireSnapshot({ db, session: k.session, symbol: k.symbol, now, fetchPayload, host: HOST }));
-      } catch (err) {
-        results.set(id, { status: 'threw', code: errorCodeOf(err) });
-      }
-    })();
-    inflight.add(call);
-    call.then(() => inflight.delete(call));
-  }
-  await Promise.all([...inflight]); // every started call is awaited to its end
-
-  for (const [id, r] of results) {
-    const k = acquisitions.get(id);
+  let acquiring = true;
+  const applyResult = (k, r) => {
+    results.set(k.snapshotId, r);
     if (r.status === 'final') {
       counts.store.final += 1;
       if (snapshotServes(r.snapshot, { session: k.session, symbol: k.symbol, ruleSet })) { if (k.run) k.run.final = r.snapshot; }
@@ -393,54 +394,111 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
       }
     } else bump(counts.store.threw, r.code);
     k.done = r.status === 'final' || r.status === 'excluded';
-  }
+    if (k.run) k.run.settled = true;
+  };
 
-  // 11–12. WRITES — one cap, finalisation-due first.
-  const tasks = [];
-  for (const key of keys.values()) {
-    for (const m of key.members) {
-      if (key.final) tasks.push({ mode: 'evidence', key, ...m });
-      else if (key.invalid || key.excluded) continue;
-      else if (m.w.due && typeof key.retryable === 'string') tasks.push({ mode: 'finalize', key, ...m });
-      else if (!results.has(key.snapshotId)) bump(counts.deferred, 'not_reached');
-      else if (results.get(key.snapshotId).status === 'pending') bump(counts.deferred, 'pending');
-      else if (results.get(key.snapshotId).status === 'threw') bump(counts.deferred, 'store_threw');
-      else bump(counts.deferred, 'retryable_not_due');
-    }
-  }
-  tasks.sort((x, y) => Number(y.w.due) - Number(x.w.due));
   let writes = 0;
-  for (let t = 0; t < tasks.length; t++) {
-    const task = tasks[t];
-    if (writes >= MAX_POINTER_WRITES_PER_RUN) { bump(counts.deferred, 'write_cap', tasks.length - t); break; }
-    if (deadline - clock() < POINTER_WRITE_RESERVE_MS) { bump(counts.deferred, 'write_reserve', tasks.length - t); break; }
-    writes += 1;
-    const { w, a, session, key } = task;
+  let writeStop = null;
+  const doneMembers = new Set();
+  /** The tasks ready now: due ones first; ordinary ones only once no due key still waits on its store call. */
+  const readyTasks = () => {
+    const ready = [];
+    let dueWaiting = false;
+    for (const key of keys.values()) {
+      if (key.due && !key.settled) dueWaiting = true;
+      for (const m of key.members) {
+        if (doneMembers.has(m)) continue;
+        if (key.final) ready.push({ mode: 'evidence', key, m });
+        else if (!key.invalid && !key.excluded && m.w.due && typeof key.retryable === 'string') ready.push({ mode: 'finalize', key, m });
+      }
+    }
+    const due = ready.filter((t) => t.m.w.due);
+    return due.length || dueWaiting ? due : ready;
+  };
+  const writeOne = async ({ mode, key, m }) => {
+    const { w, a, session } = m;
     const make = (evidence) => buildPointer({
       battle: w.battle, battleId: w.battleId, activation: a, session, attribution: w.attribution, ruleSet,
       evidence, missingDetail: evidence ? null : key.retryable, observedAt: isoOf(clock()),
     });
     try {
-      await before(task.mode === 'evidence' ? 'write_evidence' : 'write_finalize');
-      const r = task.mode === 'evidence'
+      await before(mode === 'evidence' ? 'write_evidence' : 'write_finalize');
+      const r = mode === 'evidence'
         ? await createWithEvidence({ db, battleId: w.battleId, pointer: make({ snapshotId: key.snapshotId, snapshot: key.final }) })
         : await createAtFinalization({ db, battleId: w.battleId, activationId: a.activationId, session, symbol: a.symbol, makePointer: make });
-      if (r === 'created' || r === 'created_with_evidence') { counts.pointers.withEvidence += 1; w.outstanding -= 1; }
-      else if (r === 'created_null') { counts.pointers.null += 1; w.outstanding -= 1; }
-      else if (r === 'exists') { counts.pointers.exists += 1; w.outstanding -= 1; }
+      if (r === 'created' || r === 'created_with_evidence') { counts.pointers.withEvidence += 1; w.outstanding -= 1; m.written = true; }
+      else if (r === 'created_null') { counts.pointers.null += 1; w.outstanding -= 1; m.written = true; }
+      else if (r === 'exists') { counts.pointers.exists += 1; w.outstanding -= 1; m.written = true; }
       else if (r === 'snapshot_invalid') counts.pointers.snapshotInvalid += 1;
     } catch (err) {
       bump(counts.pointers.writeFailed, errorCodeOf(err));
     }
+  };
+  const writer = (async () => {
+    for (;;) {
+      const ready = readyTasks();
+      if (!ready.length) {
+        if (!acquiring && inflight.size === 0) return;
+        await nextEvent();
+        continue;
+      }
+      if (writes >= MAX_POINTER_WRITES_PER_RUN) { writeStop = 'write_cap'; return; }
+      if (deadline - clock() < POINTER_WRITE_RESERVE_MS) { writeStop = 'write_reserve'; return; }
+      doneMembers.add(ready[0].m);
+      writes += 1;
+      await writeOne(ready[0]);
+    }
+  })();
+
+  for (const { queue: q, item: id } of queue) {
+    while (inflight.size >= ACQUISITION_CONCURRENCY) await Promise.race(inflight);
+    if (started >= MAX_ACQUISITIONS_PER_RUN || deadline - clock() < ADMISSION_RESERVE_MS) break;
+    started += 1;
+    if (q === 'due') cursors.dueKeys = id; else cursors.ordinaryKeys = id; // past every key started, whatever its outcome
+    const k = acquisitions.get(id);
+    await before('acquire');
+    const call = (async () => {
+      let r;
+      try {
+        r = await getOrAcquireSnapshot({ db, session: k.session, symbol: k.symbol, now, fetchPayload, host: HOST });
+      } catch (err) {
+        r = { status: 'threw', code: errorCodeOf(err) };
+      }
+      inflight.delete(call); // before the wake-up, so the writer never waits on a call that has ended
+      applyResult(k, r);
+      notify();
+    })();
+    inflight.add(call);
+  }
+  for (const k of acquisitions.values()) if (k.run && !results.has(k.snapshotId)) k.run.settled = true; // not reached this run
+  acquiring = false;
+  notify();
+  await Promise.all([...inflight]); // every started call is awaited to its end
+  await writer;
+
+  for (const key of keys.values()) {
+    for (const m of key.members) {
+      if (doneMembers.has(m) || key.invalid || key.excluded) continue;
+      const r = results.get(key.snapshotId);
+      if (key.final || (m.w.due && typeof key.retryable === 'string')) bump(counts.deferred, writeStop ?? 'write_unreached');
+      else if (!r) bump(counts.deferred, 'not_reached');
+      else if (r.status === 'pending') bump(counts.deferred, 'pending');
+      else if (r.status === 'threw') bump(counts.deferred, 'store_threw');
+      else bump(counts.deferred, 'retryable_not_due');
+    }
   }
   for (const w of work) if (w.due && w.outstanding <= 0) { index[w.battleId].finished = true; counts.battles.finished += 1; }
 
-  // 13. STATE.
-  if (deadline - clock() >= STATE_WRITE_RESERVE_MS) {
+  // 13. STATE — never over a state this run could not read (review L2-6): that would wipe it.
+  if (counts.state !== 'read' && counts.state !== 'absent') {
+    bump(counts.deferred, 'state_write_skipped_unread');
+  } else if (deadline - clock() >= STATE_WRITE_RESERVE_MS) {
     const carried = [];
     const horizonMs = CATCH_UP_HORIZON_DAYS * DAY_MS;
     for (const k of acquisitions.values()) {
       if (k.done) continue;
+      // A key this run discovered is carried only while one of its activations is still unwritten (review L2-2, L4-1).
+      if (k.run && k.run.members.every((m) => m.written)) continue;
       if (k.dueAt !== null && nowMs >= k.dueAt + horizonMs) continue; // its battles are past the horizon
       if (k.dueAt === null && Date.parse(`${k.session}T00:00:00Z`) < nowMs - CANDIDATE_LOOKBACK_DAYS * DAY_MS) continue;
       carried.push({ snapshotId: k.snapshotId, session: k.session, symbol: k.symbol, dueAt: k.dueAt });

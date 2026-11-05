@@ -57,6 +57,7 @@ export const BATTLE_FIELDS = Object.freeze([
   'agentContext.equippedHypothesis.watchlistId', 'agentContext.equippedHypothesis.hypothesisVersion', 'agentContext.equippedHypothesis.contentHash',
   'agentContext.equippedWatchlist.tickers',
   'trades', 'scoreState.tradeCount',
+  'scoring.stockThresholdModel', // the route stamp each lifetime's own position-id field must agree with (review L1-1)
 ]);
 /** The tick fields the join reads. */
 export const TICK_FIELDS = Object.freeze(['tickSeq', 'evalId', 'actions']);

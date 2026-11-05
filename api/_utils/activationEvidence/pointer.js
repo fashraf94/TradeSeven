@@ -22,7 +22,7 @@
 import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 import { frozenNamesOf } from '../hypothesisRecords/review.js';
 import { POINTER_SCHEMA_VERSION, SNAPSHOT_SCHEMA_VERSION } from './constants.js';
-import { instantMsOf } from './lifetimes.js';
+import { instantMsOf, isoOf } from './lifetimes.js';
 
 const isPrice = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -51,7 +51,9 @@ const sameRuleSet = (a, b) => isPlainObject(a) && isPlainObject(b)
 export function snapshotServes(snapshot, { session, symbol, ruleSet }) {
   return isPlainObject(snapshot) && snapshot.schemaVersion === SNAPSHOT_SCHEMA_VERSION
     && isPlainObject(snapshot.key) && snapshot.key.session === session && snapshot.key.symbol === symbol
-    && sameRuleSet(snapshot.key.ruleSet, ruleSet) && isPlainObject(snapshot.entry);
+    && sameRuleSet(snapshot.key.ruleSet, ruleSet) && isPlainObject(snapshot.entry)
+    // evidenceTiming needs a readable instant: an entry with no capture instant would be a representation §4 does not have.
+    && instantMsOf(snapshot.capturedAt) !== null;
 }
 
 /** The idea fields (contract §4): both null without an equippedHypothesis. */
@@ -109,7 +111,7 @@ export function buildPointer({ battle, battleId, activation, session, attributio
     missing: evidence ? null : { reason: 'snapshot_unavailable', detail: typeof missingDetail === 'string' ? missingDetail : null },
     evidenceTiming: evidence
       ? {
-        snapshotCapturedAt: typeof evidence.snapshot.capturedAt === 'string' ? evidence.snapshot.capturedAt : null,
+        snapshotCapturedAt: capturedMs === null ? null : isoOf(capturedMs),
         predatesActivation: capturedMs === null ? null : capturedMs < activation.activatedAtMs,
       }
       : { snapshotCapturedAt: null, predatesActivation: null },

@@ -64,6 +64,11 @@ describe('the cutoff: 01:30 UTC on the UTC day after the LAST trading day', () =
     const instants = ['2026-07-16T00:30:00Z', '2026-07-16T01:30:00Z', '2026-11-05T20:00:00Z', '2026-11-06T00:45:00Z', '2026-11-06T01:15:00Z', '2026-11-06T01:30:00Z', '2026-11-06T01:45:00Z', '2026-11-08T13:00:00Z'];
     for (const b of cases) for (const t of instants) expect([b.status, t, storedDue(b, t)]).toEqual([b.status, t, due(b, t)]);
   });
+  it('the stated exception: a terminal battle whose expiry is later than its cutoff, or has none, is due from its document but not from the stored values — the stored check only queues it as ordinary (review L2-4)', () => {
+    for (const b of [battleOn(['2026-11-05'], '2026-11-09T01:00:00.000Z', 'completed'), battleOn(['2026-11-05'], undefined, 'completed')]) {
+      expect([due(b, '2026-11-06T01:30:00Z'), storedDue(b, '2026-11-06T01:30:00Z')]).toEqual([true, false]);
+    }
+  });
   it('a battle with no readable trading days never gets a null pointer: never due, never beyond the horizon', () => {
     for (const timing of [undefined, {}, { tradingDays: [] }, { tradingDays: ['tomorrow'] }, { tradingDays: ['2026-02-30'] }]) {
       const b = { status: 'completed', expiresAt: WINTER.expiresAt, timing };

@@ -1,10 +1,14 @@
 // api/_utils/activationEvidence/activationEvidenceBoundary.test.js
 //
 // ID-1 Build 2 — THE I/O BOUNDARY (build prompt V3 §2; contract V1.7 §11, the
-// module-purity finding). Seven modules are PURE (no I/O, no clock reads beyond
-// an injected instant); five do I/O. Each pure module's imports are pinned
-// exactly, so an I/O dependency cannot slip into one, and the census can import
-// them (scripts/census-activation-evidence.test.js pins its side).
+// module-purity finding). Seven modules are PURE: their own code does no I/O and
+// reads no clock beyond an injected instant; five do I/O. Each pure module's
+// DIRECT imports are pinned exactly, so a new I/O import cannot slip into one
+// unseen. What is pinned is direct, not transitive (review L4-4): pointer.js's
+// frozenNamesOf comes from hypothesisRecords/review.js, and discover.js's session
+// wrapper reaches marketDataCache.js, both of which load modules with I/O-capable
+// exports; nothing here calls them. The census pins its side
+// (scripts/census-activation-evidence.test.js).
 
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';

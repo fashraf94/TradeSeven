@@ -70,8 +70,11 @@ export function scheduleOf(battle) {
 
 /**
  * Finalisation-due at `nowMs`. Callable from stored values: a stored battle has no
- * status, so it passes `terminal: false`; the cutoff always falls after an
- * ordinary expiry, so the answer is the same as from the document.
+ * status, so it passes `terminal: false`. Whenever the expiry falls at or before the
+ * cutoff — every expiry createAgentBattle writes (00:00 or 01:00 UTC, or the close)
+ * — the stored answer equals the document's. Otherwise (a terminal battle whose
+ * expiry is later than its cutoff, or none) the stored check only places the battle
+ * in the ordinary queue, and its document decides once it is read (review L2-4).
  */
 export function isFinalizationDue({ terminal = false, expiresAtMs = null, cutoffAtMs = null } = {}, nowMs) {
   if (!Number.isFinite(cutoffAtMs) || !Number.isFinite(nowMs)) return false;

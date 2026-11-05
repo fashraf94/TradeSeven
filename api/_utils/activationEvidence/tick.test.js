@@ -25,7 +25,7 @@ describe('the join', () => {
     const j = joinTick(a, complete(tickOf(11, '2026-11-05T15:01:00.000Z'), tickOf(12, '2026-11-05T15:02:40.000Z', [row])), { nowMs: soon });
     expect(j).toEqual({ outcome: 'tick_action', ambiguous: false, activatingTick: { tickSeq: 12, evalId: 'eval_012', evaluationId: 'risk_stop_NVDA_1', source: 'tick_action' } });
   });
-  it('a proposal execution with a matching tick reads tick_action; its row\'s eval_NNN (the proposing check) is never read for the tick', () => {
+  it('a proposal execution with a matching tick reads tick_action; tickSeq and evalId are the TICK\'s — the row\'s eval_NNN (the proposing check) never names the tick, and is carried only as the row\'s evaluationId', () => {
     const a = swapInWith('eval_007'); // the approved proposal's row names an earlier check
     const t = tickOf(12, '2026-11-05T15:02:40.000Z', [row]);
     t.actions[0].source = 'haiku';
@@ -38,6 +38,18 @@ describe('the join', () => {
     expect(joinTick(a, complete(), { nowMs: late - 1 })).toEqual({ outcome: 'defer', reason: 'tick_grace' });
     expect(joinTick(a, complete(), { nowMs: late })).toEqual({ outcome: 'unavailable', ambiguous: false, activatingTick: { ...UNAVAILABLE_TICK } });
     expect(joinTick(a, complete(), { nowMs: soon, finalizing: true }).outcome).toBe('unavailable');
+  });
+  it('a matched tick with no sequence → unavailable, flagged malformed; a tick that never identified an evaluation keeps tick_action with evalId null', () => {
+    const a = swapInWith();
+    for (const patch of [{ tickSeq: null }, { tickSeq: 'x' }]) {
+      const t = { ...tickOf(12, '2026-11-05T15:02:40.000Z', [row]), ...patch };
+      expect(joinTick(a, complete(t), { nowMs: soon })).toEqual({ outcome: 'unavailable', ambiguous: false, malformed: true, activatingTick: { ...UNAVAILABLE_TICK } });
+    }
+    // A risk-manager action in a tick that exited before `identify` (agent-evaluate.js:2273, :2714): the tick is known, its evaluation is not.
+    for (const evalId of [null, '']) {
+      const t = { ...tickOf(4, '2026-11-05T15:02:40.000Z', [row]), evalId };
+      expect(joinTick(a, complete(t), { nowMs: soon }).activatingTick).toEqual({ tickSeq: 4, evalId: null, evaluationId: 'risk_stop_NVDA_1', source: 'tick_action' });
+    }
   });
   it('two matches → unavailable, counted ambiguous', () => {
     const a = swapInWith();

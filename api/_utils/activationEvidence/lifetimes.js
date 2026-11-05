@@ -48,6 +48,8 @@
 
 import { OWNER_TIERS } from './constants.js';
 
+/** A position id as the corrected route mints it (randomUUID): usable as a document id. */
+const POSITION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 const RETAINED_ROWS = 50;
 
@@ -76,6 +78,9 @@ export const fallbackIdOf = (tier, slot, ms) => `${tier}:${slot}:${isoOf(ms)}`;
 
 const idOf = (v) => (typeof v === 'string' && v.length > 0 ? v : null);
 const samePositionId = (a, b) => (idOf(a) ?? null) === (idOf(b) ?? null);
+
+/** The battle's route stamp (stockThresholdModel.js stockModelRoute's first test): corrected when scoring.stockThresholdModel is present. */
+export const isCorrectedBattle = (battle) => Object.hasOwn(battle?.scoring || {}, 'stockThresholdModel');
 
 /** Did older rows leave the record? Without a readable count, a full array is assumed to have evicted. */
 export function hasGap(battle) {
@@ -136,7 +141,7 @@ function identityOf(battle, lt, isCurrent, live) {
  * One owner slot. Returns its lifetime records, or the reason the whole slot is unresolved.
  * @returns {{ lifetimes: object[], slotReason: null | 'inconsistent' | 'instant_malformed', gapStart: boolean }}
  */
-function slotOf({ battle, tier, slot, rows, gap }) {
+function slotOf({ battle, tier, slot, rows, gap, corrected }) {
   const roster = battle.agentContext?.initialPortfolio?.[tier]?.[slot] ?? null;
   const live = battle.portfolio?.[tier]?.[slot] ?? null;
   const ordered = rows.map((row, i) => ({ row, ms: instantMsOf(row.swappedOutAt), i }));
@@ -184,6 +189,17 @@ function slotOf({ battle, tier, slot, rows, gap }) {
     const entered = instantMsOf(row.incomingReceipt?.enteredAt);
     if (entered === null || entered !== instantMsOf(row.swappedOutAt)) return fail();
   }
+  // The route, two sources naming one thing (review L1-1): the battle's own stamp
+  // (scoring.stockThresholdModel, stockThresholdModel.js stockModelRoute) and each
+  // lifetime's own position-id field must agree. The corrected route stamps an id on
+  // every position and every swap-in, crypto included (stockThresholdAdmission.js:94-96,
+  // :241, :271); the legacy route stamps none. So a missing field can never flip a
+  // lifetime's id to the fallback between runs, and a present id is a usable document id.
+  for (const lt of lifetimes) {
+    const own = lt.kind === 'swap_in' ? lt.openingRow.incomingPositionId : (lt === last ? live.positionId : lt.closingRow?.outgoingPositionId);
+    const present = own !== undefined && own !== null;
+    if (present !== corrected || (present && !POSITION_ID_RE.test(String(own)))) return fail();
+  }
   return { lifetimes, slotReason: null, live, last };
 }
 
@@ -198,6 +214,7 @@ function slotOf({ battle, tier, slot, rows, gap }) {
  */
 export function lifetimesOf(battle) {
   const gap = hasGap(battle);
+  const corrected = isCorrectedBattle(battle);
   const rows = (Array.isArray(battle?.trades) ? battle.trades : []).filter((r) => r && typeof r === 'object');
   const records = [];
   const placed = new Set();
@@ -218,7 +235,7 @@ export function lifetimesOf(battle) {
         else if (roster) records.push(unresolved({ ...base, kind: 'creation', index: 0 }, 'gap'));
       }
 
-      const s = slotOf({ battle, tier, slot, rows: slotRows, gap });
+      const s = slotOf({ battle, tier, slot, rows: slotRows, gap, corrected });
       if (s.slotReason) {
         // Every lifetime of the slot is unresolved: the starting one (unless the gap already named it) and each row's incoming one.
         if (!gap) records.push(unresolved({ ...base, kind: 'creation', index: 0 }, s.slotReason));

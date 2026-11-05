@@ -9,7 +9,10 @@
 // the trade row on the tape's own swap key (swappedOutAt, symbolOut, symbolIn;
 // tapeAssemble.js swapKey): the raw strings, compared exactly, as the tape
 // compares them. This holds for model executions and proposal executions alike.
-// The row's `eval_NNN` is never read: no committed field says which path wrote it.
+// The row's `eval_NNN` never names the tick (no committed field says which path wrote
+// it): tickSeq and evalId come from the tick record only. The row's evaluationId is
+// carried, unparsed, as `activatingTick.evaluationId` (the §4.5 example's placeholder,
+// the same as tradeRef's) and is null when the join is unavailable.
 //
 //   exactly one committed swap action matches          → tick_action
 //   two or more match                                   → unavailable, counted ambiguous
@@ -77,11 +80,15 @@ export function joinTick(activation, tickRead, { nowMs, finalizing = false }) {
   if (tickRead?.complete !== true) return { outcome: 'defer', reason: 'tick_read_incomplete' };
   if (matches.length === 1) {
     const t = matches[0];
+    // A matched tick with no sequence cannot name itself (captureContext.js refuses one, so this is defence only).
+    // A null evalId is honest and kept: a risk-manager action in a tick that exited before it identified an
+    // evaluation (review V3 on L3-5).
+    if (!Number.isFinite(t.tickSeq)) return { outcome: 'unavailable', ambiguous: false, malformed: true, activatingTick: { ...UNAVAILABLE_TICK } };
     return {
       outcome: 'tick_action',
       ambiguous: false,
       activatingTick: {
-        tickSeq: Number.isFinite(t.tickSeq) ? t.tickSeq : null,
+        tickSeq: t.tickSeq,
         evalId: typeof t.evalId === 'string' && t.evalId ? t.evalId : null,
         evaluationId: row.evaluationId ?? null,
         source: 'tick_action',

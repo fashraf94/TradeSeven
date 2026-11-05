@@ -2,8 +2,10 @@
 //
 // ID-1 Build 2 — discovery of each owner slot's lifetimes (contract §4.1), on
 // fixtures in the writers' own shapes (__fixtures__/activationBattles.js) and,
-// for the corrected route, on documents the REAL writer produced
-// (executeSwapServer through the stockThresholdHarness).
+// for the corrected route, on documents the REAL writer produced: the corrected
+// writer itself (stockThresholdAdmission.js executeCorrectedStockSwap, the non-fenced
+// function the fenced executeSwapServer dispatches to) through the stockThresholdHarness.
+// No fenced function is called (build prompt V3 §0).
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): this file imports lifetimes.js and
 // discover.js unmocked; their src/ and store imports load here as in production.
@@ -13,7 +15,7 @@ import { lifetimesOf, instantMsOf, fallbackIdOf, hasGap, isoOf } from './lifetim
 import { discoverActivations } from './discover.js';
 import { legacyBattle, legacySwap, correctedBattle, correctedSwap, CREATED_AT, ADMITTED_AT, stock, crypto } from './__fixtures__/activationBattles.js';
 import { correctedStockBattle, stockObservation, stockWriterDb, STOCK_TEST_NOW } from '../__fixtures__/stockThresholdHarness.js';
-import { executeSwapServer } from '../agentSwapExecution.js';
+import { executeCorrectedStockSwap } from '../stockThresholdAdmission.js';
 
 const stocks = (b) => lifetimesOf(b).records.filter((r) => r.status === 'stock');
 const at = (b, tier, slot) => lifetimesOf(b).records.filter((r) => r.tier === tier && r.slot === slot);
@@ -96,7 +98,7 @@ describe('corrected route', () => {
     correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'NVDA', at: T2, positionId: 'pos-in-2' });
     expect(at(b, 'star', 0).map((r) => [r.symbol, r.activationId, r.activatedAt])).toEqual([['NVDA', 'pos-star-0', ADMITTED_AT], ['JPM', 'pos-in-1', T1], ['NVDA', 'pos-in-2', T2]]);
   });
-  it('THE REAL WRITER: A → B → A through executeSwapServer on the corrected route names three lifetimes with the writer\'s own ids', async () => {
+  it('THE REAL WRITER: A → B → A through the corrected writer names three lifetimes with the writer\'s own ids', async () => {
     // The harness's collector refuses without a provider key (stockThresholdAdmission.test.js sets the same one); nothing is fetched.
     const savedKey = process.env.EODHD_API_KEY;
     process.env.EODHD_API_KEY = 'isolated-key';
@@ -109,7 +111,7 @@ describe('corrected route', () => {
     const h = stockWriterDb({ [`agentBattles/${battle.id}`]: battle, ...inputs, 'indexIntelligence/stockRankings': { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }, { symbol: 'TSLA' }] } });
     const swap = async (incoming, iso, prices) => {
       const expected = { ...h.store.get(`agentBattles/${battle.id}`), id: battle.id };
-      return executeSwapServer(h.db, battle.id, expected, 'star', 0, incoming, 1, prices, {}, null, { now: () => new Date(iso), collector: (s) => stockObservation(s, { clock: () => new Date(iso) }) });
+      return executeCorrectedStockSwap(h.db, battle.id, expected, 'star', 0, incoming, prices, 1, {}, null, { now: () => new Date(iso), collector: (s) => stockObservation(s, { clock: () => new Date(iso) }) });
     };
     const t1 = '2026-10-14T14:03:00.000Z';
     const t2 = '2026-10-14T14:40:00.000Z';
@@ -164,6 +166,21 @@ describe('consistency — any disagreement makes the slot unresolved (inconsiste
       expect(at(b, 'star', 0).every((r) => r.status === 'unresolved' && r.reason === 'inconsistent')).toBe(true);
     });
   }
+  it('the route: the battle\'s stamp and every lifetime\'s own position-id field agree, or the slot is inconsistent — an id never flips to the fallback (review L1-1)', () => {
+    const sold = () => { const b = correctedBattle(); correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1, positionId: 'p1' }); return b; };
+    const cases = {
+      'a corrected starting position sold, its closing row missing outgoingPositionId': (() => { const b = sold(); delete b.trades[0].outgoingPositionId; return b; })(),
+      'a corrected starting position held, its live positionId missing': (() => { const b = correctedBattle(); delete b.portfolio.star[0].positionId; return b; })(),
+      'a corrected swap-in whose row lost both position ids': (() => { const b = sold(); delete b.trades[0].incomingPositionId; delete b.trades[0].outgoingPositionId; delete b.portfolio.star[0].positionId; return b; })(),
+      'a legacy battle with a position id on a live position': (() => { const b = legacyBattle(); b.portfolio.star[0].positionId = 'stray'; return b; })(),
+      'a corrected id that is no usable document id': (() => { const b = correctedBattle(); b.portfolio.star[0].positionId = 'a/b'; return b; })(),
+    };
+    for (const [label, b] of Object.entries(cases)) {
+      expect([label, at(b, 'star', 0).every((r) => r.status === 'unresolved' && r.reason === 'inconsistent')]).toEqual([label, true]);
+    }
+    // Crypto on the corrected route carries its ids too, so it stays consistent (and skipped).
+    expect(at(correctedBattle(), 'support', 2)).toEqual([expect.objectContaining({ status: 'crypto' })]);
+  });
   it('a row naming a slot the roster does not have is unresolved, and the slots are untouched', () => {
     const b = legacyBattle();
     b.trades.push({ ...legacySwap(legacyBattle(), { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1 }), slotIndex: 7 });

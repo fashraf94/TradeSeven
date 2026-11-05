@@ -152,9 +152,10 @@ function fixture() {
   put(`setupEvidenceClaims/${kMsft}`, { lease: null, observation: null, attempts: 2, lastAttemptAt: '2026-11-05T22:00:00.000Z' });
 
   // 4. In flight, excluded, and a battle with no readable trading days.
-  put('agentBattles/SENTB_LIVE', legacyBattle({ ...completed, status: 'active' }));
+  put('agentBattles/SENTB_LIVE', legacyBattle({ ...completed, status: 'active', expiresAt: '2026-11-07T01:00:00.000Z' })); // not yet expired: in flight
   put('agentBattles/SENTB_OUT', legacyBattle({ ...completed, agentContext: { archetype: 'contrarian' } }));
   put('agentBattles/SENTB_NODAYS', legacyBattle({ ...completed, timing: {} }));
+  put('agentBattles/SENTB_NODAYS_OUT', legacyBattle({ ...completed, timing: {}, gameMode: 'baggerbomb_tournament' })); // out of scope: not counted undetermined
   return docs;
 }
 
@@ -177,9 +178,9 @@ describe('each measure, on one fixture', () => {
   it('cohort, pointers, battles, activations, outstanding keys, the newest-session cutoff and writer.commit', async () => {
     const R = await runCensus(fakeReader(fixture()), { owners: [OWNER], session: SESSION, sessions: 1, nowMs: NOW });
     expect(R.window).toEqual({ firstSession: SESSION, lastSession: SESSION, sessions: 1 });
-    expect(R.cohort).toEqual({ battles: 5, inFlight: 1, candidatesRead: 6, candidatesTruncated: 0 });
+    expect(R.cohort).toEqual({ battles: 5, inFlight: 1, candidatesRead: 7, candidatesTruncated: 0 });
     // 2. Battles: four ended cohort battles read, one excluded; the gap battle; the no-days battle counted over the candidates.
-    expect(R.battles).toEqual({ inCohort: 4, excluded: { archetype: 1 }, gapBattles: 1, finalizationUndetermined: 1 });
+    expect(R.battles).toEqual({ inCohort: 4, excluded: { archetype: 1 }, gapBattles: 1, finalizationUndetermined: 1, malformed: 0 });
     // 1. Pointers: the main battle's five, plus the gap battle's two.
     expect(R.pointers.total).toBe(7);
     expect(R.pointers.byKindRoute).toEqual({ 'creation/legacy': 4, 'swap_in/legacy': 1, 'creation/corrected': 1, 'swap_in/corrected': 1 });
@@ -216,7 +217,7 @@ describe('each measure, on one fixture', () => {
     const docs = fixture();
     docs['agentBattles/other'] = legacyBattle({ status: 'completed', ownerId: 'someone-else' });
     const R = await runCensus(fakeReader(docs), { owners: [OWNER], session: SESSION, sessions: 1, nowMs: NOW });
-    expect(R.cohort.candidatesRead).toBe(6);
+    expect(R.cohort.candidatesRead).toBe(7);
   });
 });
 

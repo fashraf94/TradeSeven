@@ -38,7 +38,7 @@ import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { scopeOf } from '../api/_utils/activationEvidence/scope.js';
 import { discoverActivations, activationKeyOf, currentRuleSet } from '../api/_utils/activationEvidence/discover.js';
-import { isBeyondHorizon, isTerminal, lastTradingDayOf, sessionCloseMsOf } from '../api/_utils/activationEvidence/schedule.js';
+import { expiresAtMsOf, isBeyondHorizon, isTerminal, lastTradingDayOf, sessionCloseMsOf } from '../api/_utils/activationEvidence/schedule.js';
 import { joinTick, tickWindowsOf } from '../api/_utils/activationEvidence/tick.js';
 import { instantMsOf } from '../api/_utils/activationEvidence/lifetimes.js';
 import {
@@ -125,8 +125,8 @@ function emptyResult(window, nowMs) {
     window: { firstSession: window[0], lastSession: window[window.length - 1], sessions: window.length },
     at: new Date(nowMs).toISOString(),
     cohort: { battles: 0, inFlight: 0, candidatesRead: 0, candidatesTruncated: 0 },
-    battles: { inCohort: 0, excluded: {}, gapBattles: 0, finalizationUndetermined: 0 },
-    pointers: { total: 0, byKindRoute: {}, withEvidence: 0, null: 0, nullByDetail: {}, attribution: {}, activatingTick: {}, activatedAtSource: {}, writtenBeyondRetainedHistory: 0 },
+    battles: { inCohort: 0, excluded: {}, gapBattles: 0, finalizationUndetermined: 0, malformed: 0 },
+    pointers: { total: 0, byKindRoute: {}, withEvidence: 0, null: 0, nullByDetail: {}, attribution: {}, activatingTick: {}, activatedAtSource: {}, writtenBeyondRetainedHistory: 0, writtenNowUnresolved: 0 },
     activations: { discoverable: 0, lowerBound: false, written: 0, writtenWithEvidence: 0, resolvable: 0, unresolved: {}, cryptoSkipped: 0, abandoned: {}, outstanding: 0, gapStartsWritten: 0, unreconstructableAtMost: 0, tickJoin: {} },
     headline: { pointersWithEvidence: 0, discoverableResolvable: 0, rate: null },
     outstandingKeys: { keys: 0, noKeyCalendarMissing: 0, finalExists: 0, liveLease: 0, observationAwaiting: { n: 0, ageMinutes: dist([]) }, attemptsNoObservation: { n: 0, attempts: dist([]), lastAttemptAgeMinutes: dist([]) }, neverAttempted: 0 },
@@ -166,15 +166,21 @@ export async function runCensus(reader, { owners, session = null, sessions = 1, 
   let battles = [];
   try {
     const snaps = await reader.getAll(ids.map((id) => `agentBattles/${id}`), BATTLE_FIELDS);
-    const read = snaps.map((s, i) => ({ id: ids[i], battle: s.data })).filter((b) => b.battle && owners.includes(b.battle.ownerId));
+    const owned = snaps.map((s, i) => ({ id: ids[i], battle: s.data })).filter((b) => b.battle && owners.includes(b.battle.ownerId));
+    // A battle with no agent id is no record the observer would write (tenant.js skips it): counted, never measured.
+    const read = owned.filter((b) => typeof b.battle.agentId === 'string' && b.battle.agentId.length > 0);
+    R.battles.malformed = owned.length - read.length;
     // No readable last trading day: no cutoff, never a null pointer — and never in a cohort, so counted over the candidates.
-    R.battles.finalizationUndetermined = read.filter((b) => lastTradingDayOf(b.battle) === null).length;
+    R.battles.finalizationUndetermined = read.filter((b) => scopeOf(b.battle).inScope && lastTradingDayOf(b.battle) === null).length; // in scope only, as the observer counts (review L4-3)
     battles = read.filter((b) => inWindow.has(lastTradingDayOf(b.battle)));
   } catch (err) { fail(err); }
   R.cohort.battles = battles.length;
 
   for (const { id, battle } of battles) {
-    if (!isTerminal(battle)) { R.cohort.inFlight += 1; continue; } // in flight: counted once, in no other measure
+    // In flight: not terminal and not yet expired — counted once, in no other measure. An expired battle awaiting its
+    // 02:00 UTC settlement has ended for the observer, so it is measured (review L2-5).
+    const expiresAtMs = expiresAtMsOf(battle);
+    if (!isTerminal(battle) && (expiresAtMs === null || nowMs < expiresAtMs)) { R.cohort.inFlight += 1; continue; }
     R.battles.inCohort += 1;
     const scope = scopeOf(battle);
     if (!scope.inScope) { bump(R.battles.excluded, scope.excludedBy); continue; }
@@ -194,7 +200,8 @@ export async function runCensus(reader, { owners, session = null, sessions = 1, 
       bump(R.pointers.attribution, p.attributionStatus === 'unresolved' ? 'unresolved' : 'resolved');
       bump(R.pointers.activatedAtSource, typeof p.activatedAtSource === 'string' ? p.activatedAtSource : 'none');
       if (p.kind === 'swap_in') bump(R.pointers.activatingTick, p.activatingTick?.source === 'tick_action' ? 'tick_action' : 'unavailable');
-      if (!discoverable.has(p.id)) R.pointers.writtenBeyondRetainedHistory += 1; // legitimate: its source rows are gone
+      // Not discoverable now: under a gap, its source rows are gone (legitimate); without one, its slot no longer resolves (review L1-3).
+      if (!discoverable.has(p.id)) { if (d.gap) R.pointers.writtenBeyondRetainedHistory += 1; else R.pointers.writtenNowUnresolved += 1; }
     }
 
     // 3. The discoverable activations.
@@ -248,7 +255,7 @@ export async function runCensus(reader, { owners, session = null, sessions = 1, 
       }
       for (const { a } of swapIns) {
         const j = joinTick(a, { complete, ticks }, { nowMs, finalizing: true });
-        bump(R.activations.tickJoin, j.outcome === 'defer' ? j.reason : j.ambiguous ? 'ambiguous' : j.outcome);
+        bump(R.activations.tickJoin, j.outcome === 'defer' ? j.reason : j.ambiguous ? 'ambiguous' : j.malformed ? 'malformed' : j.outcome);
       }
     }
   }
@@ -327,13 +334,13 @@ export function renderMarkdown(R) {
     '',
     '## Cohort',
     `- Battles whose last trading day is in the window: ${R.cohort.battles} (of ${R.cohort.candidatesRead} candidates read; ${R.cohort.candidatesTruncated} candidate page(s) truncated).`,
-    `- In flight (still active; counted here and in no other measure): ${R.cohort.inFlight}.`,
+    `- In flight (not terminal and not yet expired; counted here and in no other measure): ${R.cohort.inFlight}.`,
     '',
     '## 1. Pointers (persisted pointers of the cohort\'s ended battles, independent of reconstruction)',
     `- Total: ${R.pointers.total}. With evidence: ${R.pointers.withEvidence}. Null: ${R.pointers.null}, by missing.detail ${j(R.pointers.nullByDetail)}.`,
     `- By kind and route (corrected = a position id, legacy = a fallback id): ${j(R.pointers.byKindRoute)}.`,
     `- attributionStatus: ${j(R.pointers.attribution)}. activatedAtSource: ${j(R.pointers.activatedAtSource)}. Swap-in activatingTick.source: ${j(R.pointers.activatingTick)}.`,
-    `- Written beyond retained history (source rows evicted; legitimate): ${R.pointers.writtenBeyondRetainedHistory} of ${R.pointers.total}.`,
+    `- Written beyond retained history (a gap battle; source rows evicted; legitimate): ${R.pointers.writtenBeyondRetainedHistory} of ${R.pointers.total}. Written, but the slot no longer resolves (no gap): ${R.pointers.writtenNowUnresolved}.`,
     '',
     '## 2. Battles (ended cohort battles)',
     `- Read: ${R.battles.inCohort}. Excluded, by the first reason in the order game mode, CPU, training clone, archetype: ${j(R.battles.excluded)}.`,
