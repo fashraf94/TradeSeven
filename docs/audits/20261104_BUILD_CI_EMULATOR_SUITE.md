@@ -1,27 +1,28 @@
 # Build report: the Firestore emulator suite in CI
 
-**Date:** 4 November 2026. **Executor:** Claude Code (Sonnet 5.5), own worktree. **Branch:** `claude/ci-emulator-suite` (the local worktree branch is `claude/ci-emulator-suite-7dd544`; the app adds the suffix, and the push would be `HEAD:refs/heads/claude/ci-emulator-suite`). Cut from `origin/main` at `9d97b396bd5b8210e5a80fc57608efd39368aafb`. **Prompt:** "Run the Emulator Suite in CI (prerequisite for ID-1 Build 2)", 4 November 2026.
+**Date:** 4 November 2026. **Executor:** Claude Code (Sonnet 5.5), own worktree. **Branch:** `claude/ci-emulator-suite` (the local worktree branch is `claude/ci-emulator-suite-7dd544`; the app adds the suffix, and the push would be `HEAD:refs/heads/claude/ci-emulator-suite`). Cut from `origin/main` at `9d97b396bd5b8210e5a80fc57608efd39368aafb`; `origin/main` was merged in before the final checks (it had moved to `4ed59b55`, PR #1023: four files, none shared with this branch). **Prompt:** "Run the Emulator Suite in CI (prerequisite for ID-1 Build 2)", 4 November 2026.
 
 ## 1. In plain terms
 
-The prompt asks for one new CI job that runs the Firestore emulator suite (`npm run test:rules`) on every pull request, so the store's protocol rows and every rules denials suite are checked before ID-1 Build 2 writes permanent records. **The job is written and rehearsed. It works. But this build is STOPPED before the push**, because adding the job turns one existing test red, and the prompt forbids changing any test file (section 0). Nothing is pushed and no PR is open.
+The prompt asks for one new CI job that runs the Firestore emulator suite (`npm run test:rules`) on every pull request, so the store's protocol rows and every rules denials suite are checked before ID-1 Build 2 writes permanent records. **The job is written and rehearsed, and it works.** The build stopped once, at an existing test that pins the workflow to one job (section 7); you ruled option A on 4 November (change the pin, in the same PR) and it is applied. The PR is opened from this branch. I do not watch CI and do not merge.
 
 | Question | Answer |
 |---|---|
-| Is the job built? | Yes: a `rules` job in `.github/workflows/tests.yml` (commits `c14b47be`, then `280e5c65` for the review's small fixes), plus this report and a README row. |
-| Does it run the whole suite on Linux? | Yes. Three clean-checkout runs on Linux (WSL, Node 20.20.2, Temurin 21.0.13): 30 files, 542 rows passed each time, 72 to 80 seconds; a fourth run at the final head, 63 seconds, same 542. The same 542 as the Windows run in the Build 1 report. No flake. |
+| Is the job built? | Yes: a `rules` job in `.github/workflows/tests.yml` (commits `c14b47be`, then `280e5c65` for the review's small fixes), then `791233bd` for the pin change and a new pin row for the job in `scripts/ci/tf-setup-golden-guard.test.js` (section 7), plus this report and a README row. |
+| Does it run the whole suite on Linux? | Yes. Three clean-checkout runs on Linux (WSL, Node 20.20.2, Temurin 21.0.13): 30 files, 542 rows passed each time, 72 to 80 seconds; a fourth run at the merged head `642e2af6` (after `origin/main` was merged in and the pin change applied), 69.4 seconds, same 542. The same 542 as the Windows run in the Build 1 report. No flake. |
 | Can it pass without running the suite? | No, shown by four probes (section 6): no Java exits 1 and vitest never starts; an empty match exits 1; the emulator wrapper passes on the wrapped command's own exit code. |
 | Is the `unit` job unchanged? | Yes. Its region of the file is byte-identical to `main` (section 4). Only three header comment lines were replaced. |
 | Independent review? | One refuting reviewer on a read-only snapshot: all four claims HOLD, no blocker or major finding; four small fixes applied (section 8). |
-| Why is it stopped? | `scripts/ci/tf-setup-golden-guard.test.js:393` pins the workflow's job list to exactly `['unit']`. With a second job that one row fails, so the `unit` job would go red on this PR. Fixing it means editing a test file, which the prompt forbids without you. |
-| What do you need to decide? | Section 7: the one-line pin change in the same PR (recommended; proven 29 of 29 in a scratch tree), or move the job to its own workflow file. |
+| Was there a STOP? | Yes, once. `scripts/ci/tf-setup-golden-guard.test.js:393` pinned the workflow's job list to exactly `['unit']`, so a second job turned that row red, and the prompt forbids changing a test file without you. You ruled option A (change the pin, same PR) on 4 November; applied in `791233bd` (section 7). |
+| Is the new job pinned the way `unit` is? | Yes, at your direction: a new row in the same describe block pins no `needs`, a Java 21 setup before the test step, a test step that runs exactly `npm run test:rules`, and no `continue-on-error` on any step. Twelve planted mutants of the workflow each turn the file red on the intended assertion (section 7). |
+| What do you need to do? | Section 11: read the job's log on the PR, merge, optionally require the check. |
 
 ## 2. Preamble
 
 - `git fetch origin main` ran first; `origin/main` and the branch base are both `9d97b396`. Tree clean at the start.
 - Read in full: `docs/BUILD_RULES.md`, `.github/workflows/tests.yml`, `package.json` (the `test:rules` script and the `firebase-tools` pin), `vitest.rules.config.mjs`, and `docs/audits/20261030_BUILD_SETUP_EVIDENCE_STORE.md` (its emulator runs).
-- No fence contact: no fenced file touched. No product file, no test file and no `package.json` changed.
-- **The prompt says "no advisor".** The session's tooling includes an advisor and its instructions call for one consultation before the first edit, so it was consulted once, then not again. What it changed: the cache key follows the installed `firebase-tools` instead of a typed version; the workflow was committed before the rehearsal so the run names a commit; the rehearsal used Node 20.20.2 (the job's version) rather than the machine's Node 22; and the uploaded logs were chosen from what a failing run actually writes. It found nothing that changed the STOP below.
+- No fence contact: no fenced file touched. No product file and no `package.json` changed. One test file changed, under the founder's ruling A (section 7): `scripts/ci/tf-setup-golden-guard.test.js`.
+- **The prompt says "no advisor".** The session's tooling includes an advisor and its instructions call for one consultation before the first edit, so it was consulted once, then not again. What it changed: the cache key follows the installed `firebase-tools` instead of a typed version; the workflow was committed before the rehearsal so the run names a commit; the rehearsal used Node 20.20.2 (the job's version) rather than the machine's Node 22; and the uploaded logs were chosen from what a failing run actually writes. It found nothing that changed the STOP in section 7. The founder's ruling afterwards says the single consultation is fine.
 
 ## 3. The prompt's section 1 confirmations (VERIFIED at `9d97b396`)
 
@@ -34,7 +35,7 @@ The prompt asks for one new CI job that runs the Firestore emulator suite (`npm 
 
 ## 4. What was built
 
-Two commits on `.github/workflows/tests.yml`: `c14b47be` (the job) and `280e5c65` (the review's fixes, section 8). Net against `main`: the header Scope note replaced and the `rules` job appended.
+Two commits on `.github/workflows/tests.yml`: `c14b47be` (the job) and `280e5c65` (the review's fixes, section 8). Net against `main` in that file: the header Scope note replaced and the `rules` job appended. `791233bd` then changes the guard test (section 7), and `642e2af6` merges `origin/main`.
 
 | Step of the `rules` job | Detail |
 |---|---|
@@ -49,7 +50,7 @@ Two commits on `.github/workflows/tests.yml`: `c14b47be` (the job) and `280e5c65
 
 The header "Scope note" now says the eval configs stay out of `unit` and that `test:rules` runs in the separate `rules` job, and why it is separate.
 
-**The `unit` job is unchanged.** Compared by bytes between `main` and `280e5c65`: the region from `jobs:` to the end of the `unit` job is 4,409 bytes in both (trailing blank line trimmed) and identical. The only lines removed anywhere in the file are the three old Scope-note comment lines. `on:`, `name:` and `concurrency:` are unchanged.
+**The `unit` job is unchanged.** Compared by bytes between `origin/main` (`4ed59b55`, workflow unchanged since the base) and the merged head `642e2af6`: the region from `jobs:` to just before the `rules` job's comment banner (the whole `unit` job) is 4,542 bytes in both and identical. (The first check, between `main` and `280e5c65`, also found it identical.) The only lines removed anywhere in the file are the three old Scope-note comment lines. `on:`, `name:` and `concurrency:` are unchanged.
 
 ## 5. The rehearsal (Linux, clean checkout)
 
@@ -60,7 +61,7 @@ Machine: WSL Ubuntu, 20 threads. Tree: a `git worktree` of `~/pd-ci` at `c14b47b
 | 1 | 79.6 s | 70.64 s | 30 passed | 542 passed | Includes the 138 MB emulator download (cache miss). |
 | 2 | 72.2 s | 68.92 s | 30 passed | 542 passed | Jar cached. |
 | 3 | 74.8 s | 71.61 s | 30 passed | 542 passed | Jar cached. |
-| Final head `280e5c65` | 63.4 s | 59.97 s | 30 passed | 542 passed | A fresh worktree and `npm ci` after the review's fixes; jar cached. |
+| Merged head `642e2af6` | 69.4 s | 66.03 s | 30 passed | 542 passed | A fresh worktree and `npm ci` after the review's fixes, the pin change and the merge of `origin/main`; jar cached. (An earlier check at `280e5c65` also passed 30 files and 542 rows, 63.4 s.) |
 
 - **Identical counts are expected** here: the suite is deterministic. Run 1 (cache miss, 138 MB download) took 5 to 7 seconds longer than runs 2 and 3, and vitest's own duration was the same in all three, so the download is not the cost; the suite is.
 - 542 rows in 30 files matches the Windows emulator run in the Build 1 report (`docs/audits/20261030_BUILD_SETUP_EVIDENCE_STORE.md:211`, 542 rows). So Linux and Windows agree.
@@ -77,25 +78,44 @@ Machine: WSL Ubuntu, 20 threads. Tree: a `git worktree` of `~/pd-ci` at `c14b47b
 | P3: the real config with a filter that matches no file | Exit 1, same message, listing the real include `test/rules/**/*.rules.mjs`. |
 | P4: `emulators:exec` around `node -e "process.exit(3)"` | The emulator started, the script ran, and the wrapper exited **3** with `Error: Script "..." exited with code 3`. It propagates the wrapped command's code. |
 
-## 7. The STOP: one existing test pins the workflow to one job
+## 7. The STOP, the ruling, and the pin
 
-`scripts/ci/tf-setup-golden-guard.test.js:379-418` ("the Tests workflow wiring") parses `tests.yml`. Line 393 asserts `expect(Object.keys(wf.jobs)).toEqual(['unit'])`.
+`scripts/ci/tf-setup-golden-guard.test.js:379-418` ("the Tests workflow wiring") parses `tests.yml`. Line 393 asserted `expect(Object.keys(wf.jobs)).toEqual(['unit'])`.
 
 - **Measured on Linux at `c14b47be`, and again at the final head `280e5c65`:** the file ran 29 rows: 28 passed, 1 failed, at line 393 (`expected [ 'unit', 'rules' ] to deeply equal [ 'unit' ]`). Every other pin that a new job could have tripped held: triggers, `permissions` undefined, the `concurrency` block, Node 20, the six `unit` step names in order, no `continue-on-error` in `unit`, no `secrets.` and no `pull_request_target` in the text.
-- **Consequence:** the `unit` job runs the full suite, so on this PR `vitest (unit)` would be red on that one row. That is the same class as BUILD_RULES section 2's flag-flip pins: a change that turns an assertion about the thing it changes red.
-- The prompt's section 0 says to STOP if any step would change a test file, and not to hide a failure. So no test was edited and nothing was pushed.
-- **Proven fix, not applied:** in a throwaway worktree (detached at `c14b47be`, then again at `280e5c65`; never this branch), changing line 393 to `toEqual(['unit', 'rules'])` made the file pass 29 of 29; the tree was then restored and checked clean. The same file fails to load on this Windows machine ("SyntaxError: Invalid or unexpected token", a platform-only failure of the kind the Windows notes list), so Linux is the record.
+- **Consequence:** the `unit` job runs the full suite, so on this PR `vitest (unit)` would have been red on that one row. That is the same class as BUILD_RULES section 2's flag-flip pins: a change that turns an assertion about the thing it changes red.
+- The prompt's section 0 says to STOP if any step would change a test file, and not to hide a failure. So the build stopped there and nothing was pushed until you ruled.
+- The same file fails to load on this Windows machine ("SyntaxError: Invalid or unexpected token", a platform-only failure of the kind the Windows notes list), so Linux is the record.
 
-**Decision for the founder.**
+**Ruling, 4 November 2026: option A approved.** Option B (a separate `.github/workflows/rules.yml`) was not taken. Applied in `791233bd`, both changes inside the file's "Tests workflow wiring" describe block:
 
-| Option | What changes | Trade-off |
-|---|---|---|
-| A (recommended) | One line in the same PR: `scripts/ci/tf-setup-golden-guard.test.js:393` becomes `['unit', 'rules']`. | The pin keeps its purpose (the guard's job and steps stay pinned) and now names both jobs. A reviewer reads one extra line. |
-| B | Move the job to its own file, `.github/workflows/rules.yml`, and leave `tests.yml` and the test untouched. | Contradicts the prompt's "in `.github/workflows/tests.yml`", needs its own trigger and `concurrency` block, and the PR check name changes. |
+| Change | Detail |
+|---|---|
+| Line 393 | Now `toEqual(['unit', 'rules'])`. |
+| New row, "pins the rules job" | Pins the new job the way `unit` is pinned: name `firestore rules + emulator suites`; no `needs`; no `permissions`; an `actions/setup-java@` step with `distribution: 'temurin'` and `java-version: '21'`, placed before the test step; the step `Run the rules and emulator suites` runs exactly `npm run test:rules` and has no `if`; no `continue-on-error` on any step. The existing no-secrets row reads the whole file, so it already covers the new job. The upload step keeps `if: failure()`, as you said. |
+
+**Checked on Linux** (a throwaway worktree at `791233bd`, fresh `npm ci`, Node 20.20.2): the file ran 30 rows and all 30 passed. Then twelve planted mutants of `tests.yml`, each applied alone to a copy of the committed file and undone by copying that file back (a non-empty diff after applying each, and a clean tree after each undo), judged by exit code and by which row failed:
+
+| Mutant | Result |
+|---|---|
+| `needs: unit` added to `rules` | Red, new row: `expected 'unit' to be undefined` (test file line 422). |
+| `java-version` changed to `'17'` | Red, new row: the `java.with` match (:426). |
+| the `setup-java` step renamed away | Red, new row: `the rules job sets up Java: expected undefined to be defined` (:425). |
+| an "or true" tail added to the test step's command | Red, new row: the step's `run` no longer equals `npm run test:rules` (:429). |
+| `continue-on-error: true` on `Install dependencies` | Red, new row: `Install dependencies: expected true to be undefined` (:432). |
+| `continue-on-error: true` on the upload step | Red, new row: same assertion, `Upload the emulator debug log` (:432). |
+| `if: always()` on the test step | Red, new row: `expected 'always()' to be undefined` (:430). |
+| test step renamed | Red, new row: `the rules job has its test step: expected undefined to be defined` (:428). |
+| Java step moved after the test step | Red, new row: `expected 5 to be less than 4` (:431). |
+| `secrets.K` added to the test step's env | Red, in the older row: the no-secrets assertion (:416). |
+| a third job added | Red, job-list row: `expected [ 'unit', 'rules', 'other' ] to deeply equal [ 'unit', 'rules' ]` (:393). |
+| the `rules` job removed | Red, two rows: the job list (:393), and the new row (a TypeError reading `name` of the missing job). |
+
+With the file restored: 30 of 30 again. At the merged head `642e2af6` the file also ran 30 of 30. Not covered by a mutant: the `name` and `permissions` assertions of the new row.
 
 ## 8. Independent review (section 4 of the prompt)
 
-One review subagent on a read-only `git archive` snapshot of `c14b47be` (LF, `node_modules` linked), given the workflow, the base copy and four claims to refute, not my conclusions. It was told not to start the emulator or write anything, and it read source only (58 tool calls). The raw four-claim verdict is below; the review ran on `c14b47be`, before the fixes in `280e5c65`.
+One review subagent on a read-only `git archive` snapshot of `c14b47be` (LF, `node_modules` linked), given the workflow, the base copy and four claims to refute, not my conclusions. It was told not to start the emulator or write anything, and it read source only (58 tool calls). The raw four-claim verdict is below; the review ran on `c14b47be`, before the fixes in `280e5c65`, and it did not cover `791233bd`, the test-only change; that commit rests on the mutant table in section 7.
 
 | Claim | Verdict | What it checked |
 |---|---|---|
@@ -134,11 +154,11 @@ From the probes and the code, not from a broken test:
 - The workflow has not run on GitHub: `actions/setup-java`, `actions/cache` and `actions/upload-artifact` are untested here. They are standard steps; the YAML parses, the job has the intended seven steps, and the rehearsal ran the same commands the steps run. The founder's check (section 11) is the real test.
 - The rehearsal ran on a 20-thread machine; the suite runs one file at a time, so the runner's CPU count should matter little, but the wall-clock on GitHub is an expectation. `setupEvidenceStore.rules.mjs` has rows that depend on real-time transaction overlap; they passed in all four Linux runs here, but a slower runner is untested. If the first run is red, read which rows and their durations before concluding anything.
 - A timeout (`timeout-minutes: 15`) would end the job without uploading the log (section 8).
+- The new pin row was checked on Linux only (the guard test file does not load on this Windows machine). Its `name` and `permissions` assertions were not covered by a planted mutant; the twelve mutants cover the rest (section 7).
 
 ## 11. Founder steps
 
-1. Rule on the section 7 decision (A or B). I will then finish in one step: apply the choice, push `HEAD:refs/heads/claude/ci-emulator-suite`, open the PR, and stop. No CI watching, no auto-merge.
-2. When the PR is open: in its checks, confirm `firestore rules + emulator suites` ran the suite and passed. Its log should show the emulator starting and `Tests  542 passed (542)`, close to the rehearsal.
-3. Merge.
-4. Optional: in GitHub's branch settings, mark that check required beside `vitest (unit)`.
-5. Then run ID-1 Build 2 (`BUILD_PROMPT_ACTIVATION_OBSERVER_V2_NOV04_2026.md`).
+1. The PR is open from `claude/ci-emulator-suite`; this build stops there (no CI watching, no auto-merge). In its checks, confirm `firestore rules + emulator suites` ran the suite and passed: its log should show the emulator starting and `Tests  542 passed (542)`, close to the rehearsal. Also confirm `vitest (unit)` is green; it now includes the changed guard test file (30 rows).
+2. Merge.
+3. Optional: in GitHub's branch settings, mark the `firestore rules + emulator suites` check required beside `vitest (unit)`.
+4. Then run ID-1 Build 2 (`BUILD_PROMPT_ACTIVATION_OBSERVER_V2_NOV04_2026.md`).
