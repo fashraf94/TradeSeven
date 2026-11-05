@@ -207,6 +207,15 @@ describe('instants', () => {
     for (const bad of [null, undefined, '', 'yesterday', '2026-02-30T00:00:00Z', '2026-11-05', 1730000000000, '2026-11-05T25:00:00Z']) expect(instantMsOf(bad)).toBe(null);
     expect(instantMsOf({ toMillis: () => Date.parse(T1) })).toBe(Date.parse(T1));
   });
+  it('mutation lens LT15: a legacy starting position is dated by battle.activatedAt, even if the live position carries a swappedInAt', () => {
+    const b = legacyBattle();
+    b.portfolio.star[0].swappedInAt = '2026-11-05T16:00:00.000Z';
+    expect(at(b, 'star', 0)[0]).toMatchObject({ status: 'stock', activatedAt: CREATED_AT, activatedAtSource: 'battle_activatedAt', activationId: `star:0:${CREATED_AT}` });
+  });
+  it('mutation lens LT16: the legacy fallback id is built from the NORMALISED activatedAt (an offset string, a Timestamp)', () => {
+    expect(at(legacyBattle({ activatedAt: '2026-11-05T09:30:02.118-05:00' }), 'star', 0)[0].activationId).toBe(`star:0:${CREATED_AT}`);
+    expect(at(legacyBattle({ activatedAt: { toMillis: () => Date.parse(CREATED_AT) } }), 'star', 0)[0].activationId).toBe(`star:0:${CREATED_AT}`);
+  });
   it('a malformed battle.activatedAt leaves only the legacy creations unresolved (instant_malformed)', () => {
     const b = legacyBattle({ activatedAt: 'not a date' });
     legacySwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1 });

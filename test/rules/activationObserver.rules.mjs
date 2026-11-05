@@ -77,10 +77,11 @@ function clockAt(iso) {
   return { now: () => new Date(t), advance: (ms) => { t += ms; }, ms: () => t };
 }
 /** The provider: every symbol answers an ok window for the requested session, unless `bySymbol` says otherwise. */
-function provider(bySymbol = {}) {
+function provider(bySymbol = {}, onCall = null) {
   const calls = [];
   const fetchPayload = async (symbol, { to }) => {
     calls.push(symbol);
+    if (onCall) await onCall(symbol);
     const v = bySymbol[symbol];
     if (typeof v === 'function') return v(to, calls.filter((s) => s === symbol).length);
     if (v === 'missing_newest') return rowsWithoutNewest(to);
@@ -651,6 +652,88 @@ describe('the state', () => {
     expect(r.abandoned.unwritten).toBe(6);
     expect(r.pointerTransactions).toBe(0);
     expect(await pointersOf('b-1')).toEqual([]);
+  });
+});
+
+// Rows the mutation lens proved necessary (each fails under its named surviving mutant, passes as built).
+describe('mutation-lens rows', () => {
+  it('mutation lens TN02: a store THROW at finalisation is no `retryable`: no null pointer, the key deferred store_threw', async () => {
+    await seedBattle('b-1', ownerBattle());
+    const p = provider();
+    const real = db.runTransaction.bind(db);
+    const dbx = new Proxy(db, { get(t, k) {
+      if (k === 'runTransaction') return async (fn, ...rest) => real(async (tx) => {
+        const proxyTx = new Proxy(tx, { get(tt, kk) {
+          if (kk === 'get') return async (ref) => { if (String(ref.path).includes('__AMD__')) throw Object.assign(new Error('10 ABORTED'), { code: 10 }); return tt.get(ref); };
+          const v = tt[kk]; return typeof v === 'function' ? v.bind(tt) : v;
+        } });
+        return fn(proxyTx);
+      }, ...rest);
+      const v = t[k]; return typeof v === 'function' ? v.bind(t) : v;
+    } });
+    const r = await run(clockAt(CUTOFF), { fetchPayload: p.fetchPayload, dbx });
+    expect(r.store.threw).toEqual({ 10: 1 });
+    expect([r.pointers.null, r.pointers.withEvidence, r.deferred.store_threw]).toEqual([0, 5, 1]);
+    expect((await pointersOf('b-1')).map((x) => x.data.symbol)).not.toContain('AMD');
+  });
+
+  it('mutation lens TN11: a battle chunk whose read FAILS still moves the due cursor past it', async () => {
+    const index = {};
+    for (let i = 0; i < 7; i++) {
+      const id = `d-${String(i).padStart(2, '0')}`;
+      await seedBattle(id, ownerBattle({ activatedAt: '2028-01-04T15:00:00.000Z' })); // calendar_missing: never finishes
+      index[id] = { cutoffAt: Date.parse(CUTOFF), expiresAt: Date.parse('2026-11-06T01:00:00.000Z'), finished: false, excludedBy: null };
+    }
+    await db.doc('activationObserverState/main').set({ schemaVersion: 1, cursors: {}, battles: index, outstandingKeys: [], updatedAt: null });
+    const dbx = new Proxy(db, { get(t, k) {
+      if (k === 'getAll') return (...a) => { if (a.some((x) => x?.path === 'agentBattles/d-05')) return Promise.reject(Object.assign(new Error('14 UNAVAILABLE'), { code: 14 })); return t.getAll(...a); };
+      const v = t[k]; return typeof v === 'function' ? v.bind(t) : v;
+    } });
+    const r = await run(clockAt(AT_0145), { dbx });
+    expect(r.failures['battles:14']).toBe(1);
+    expect((await db.doc('activationObserverState/main').get()).data().cursors.dueBattles).toBe('d-06');
+  });
+
+  it('mutation lens TN17: no ordinary pointer transaction starts while a finalisation-due key still waits on its store call', async () => {
+    await seedBattle('b-due', ownerBattle()); // due at the cutoff; its six keys are acquired
+    const o = ownerBattle({ createdAt: '2026-11-05T14:40:00.000Z', timing: { tradingDays: ['2026-11-09'] }, expiresAt: '2026-11-10T01:00:00.000Z' });
+    const OSYM = ['OA', 'OB', 'OC', 'OD', 'OE', 'OF'];
+    let n = 0;
+    ['star', 'core', 'support'].forEach((tier) => o.portfolio[tier].forEach((a, slot) => { if (!a.isCrypto) { a.symbol = OSYM[n++]; o.agentContext.initialPortfolio[tier][slot].symbol = a.symbol; } }));
+    await seedBattle('b-ord', o);
+    for (const s of OSYM) await seedFinal(s); // ordinary evidence in hand from step 9
+    let returned = 0;
+    let writesBeforeFirstReturn = 0;
+    const p = provider({}, async () => { await new Promise((res) => setTimeout(res, 400)); returned += 1; });
+    const r = await run(clockAt(CUTOFF), { fetchPayload: p.fetchPayload, before: (kind) => { if (kind.startsWith('write') && returned === 0) writesBeforeFirstReturn += 1; } });
+    expect(writesBeforeFirstReturn).toBe(0);
+    expect(r.pointers.withEvidence).toBe(12);
+  });
+
+  it('mutation lens TN19: tick reads go to the finalisation-due battle first when the budget fits one', async () => {
+    const at = '2026-11-05T15:00:00.000Z';
+    const ord = ownerBattle({ createdAt: '2026-11-05T14:40:00.000Z', timing: { tradingDays: ['2026-11-09'] }, expiresAt: '2026-11-10T01:00:00.000Z' });
+    legacySwap(ord, { tier: 'star', slot: 0, symbolIn: 'JPM', at });
+    const due = ownerBattle();
+    legacySwap(due, { tier: 'star', slot: 0, symbolIn: 'JPM', at });
+    await seedBattle('b-ord', ord);
+    await seedBattle('b-due', due);
+    await db.doc('agentBattles/b-ord/ticks/t1').set(tickOf(1, '2026-11-05T15:00:01.000Z', [ord.trades[0]]));
+    await db.doc('agentBattles/b-due/ticks/t1').set(tickOf(1, '2026-11-05T15:00:01.000Z', [due.trades[0]]));
+    const r = await run(clockAt(CUTOFF), { before: (kind, c) => { if (kind === 'ticks') c.advance(C.PREP_BUDGET_MS); } });
+    expect(r.deferred.tick_read_incomplete).toBe(1);
+    expect((await pointersOf('b-due')).filter((x) => x.data.kind === 'swap_in')).toHaveLength(1);
+    expect((await pointersOf('b-ord')).filter((x) => x.data.kind === 'swap_in')).toHaveLength(0);
+  });
+
+  it('mutation lens TN23: a carried key past its horizon is never acquired again', async () => {
+    const dueAt = Date.parse(CUTOFF);
+    const carried = [{ snapshotId: snapshotIdOf({ session: SESSION, symbol: 'NVDA', ruleSet: RS }), session: SESSION, symbol: 'NVDA', dueAt }];
+    await db.doc('activationObserverState/main').set({ schemaVersion: 1, cursors: {}, battles: {}, outstandingKeys: carried, updatedAt: null });
+    const p = provider();
+    const r = await run(clockAt(new Date(dueAt + C.CATCH_UP_HORIZON_DAYS * C.DAY_MS + 60_000).toISOString()), { fetchPayload: p.fetchPayload });
+    expect([r.acquisitionsStarted, p.calls.length, r.deferred.carried_past_horizon]).toEqual([0, 0, 1]);
+    expect((await db.doc('activationObserverState/main').get()).data().outstandingKeys).toEqual([]);
   });
 });
 
