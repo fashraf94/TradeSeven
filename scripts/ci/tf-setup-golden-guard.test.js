@@ -390,7 +390,7 @@ describe('the Tests workflow wiring (.github/workflows/tests.yml)', () => {
     expect(text).not.toMatch(/pull_request_target/);
     expect(wf.permissions).toBeUndefined();
     expect(job.permissions).toBeUndefined();
-    expect(Object.keys(wf.jobs)).toEqual(['unit']);
+    expect(Object.keys(wf.jobs)).toEqual(['unit', 'rules']);
     expect(job.name).toBe('vitest (unit)');
     expect(wf.concurrency).toEqual({ group: 'tests-${{ github.ref }}', 'cancel-in-progress': true });
     expect(job.steps.find((s) => s.name === 'Set up Node').with['node-version']).toBe('20');
@@ -414,5 +414,21 @@ describe('the Tests workflow wiring (.github/workflows/tests.yml)', () => {
     });
     for (const step of job.steps) expect(step['continue-on-error'], step.name).toBeUndefined();
     expect(text).not.toMatch(/secrets\./);
+  });
+
+  it('pins the rules job: no needs, Java 21 before the test step, the plain npm run test:rules step, and no continue-on-error', () => {
+    const rules = wf.jobs.rules;
+    expect(rules.name).toBe('firestore rules + emulator suites');
+    expect(rules.needs).toBeUndefined(); // independent of unit: it runs in parallel and cannot be skipped by a unit failure
+    expect(rules.permissions).toBeUndefined();
+    const java = rules.steps.find((s) => typeof s.uses === 'string' && s.uses.startsWith('actions/setup-java@'));
+    expect(java, 'the rules job sets up Java').toBeDefined();
+    expect(java.with).toMatchObject({ distribution: 'temurin', 'java-version': '21' }); // firebase-tools 15.x refuses to start the emulator below Java 21
+    const test = rules.steps.find((s) => s.name === 'Run the rules and emulator suites');
+    expect(test, 'the rules job has its test step').toBeDefined();
+    expect(test.run).toBe('npm run test:rules');
+    expect(test.if).toBeUndefined();
+    expect(rules.steps.indexOf(java)).toBeLessThan(rules.steps.indexOf(test));
+    for (const step of rules.steps) expect(step['continue-on-error'], step.name).toBeUndefined();
   });
 });
