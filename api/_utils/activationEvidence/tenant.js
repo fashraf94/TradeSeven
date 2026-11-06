@@ -266,7 +266,8 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
       // A casual clone's two reads are each a preparation read under the budget (review V4 on nit-2).
       if (isCasualCloneId(battle.agentId) && !canRead()) { bump(counts.deferred, 'prep_cut', unwritten.length); continue; }
       const attribution = await attributionOf(db, battle, { mayRead: canRead, beforeRead: () => before('attribution') });
-      if (attribution.deferred) { bump(counts.deferred, 'prep_cut', unwritten.length); continue; }
+      // A budget refusal (prep_cut) or a read that failed (attribution_read_error, V1.8): never a verdict, so never `unresolved`.
+      if (attribution.deferred) { bump(counts.deferred, attribution.reason, unwritten.length); continue; }
       work.push({ battleId, battle, d, due, attribution, unwritten, outstanding: unwritten.length });
     }
   }

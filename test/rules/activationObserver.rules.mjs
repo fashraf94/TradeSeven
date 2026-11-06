@@ -462,6 +462,37 @@ describe('progress in every run', () => {
     expect(r.deferred.prep_cut).toBe(6);
     expect(await pointersOf('b-clone')).toEqual([]);
   });
+  it('V1.8 (ruling Q3): a casual clone whose resolver read THROWS gets no pointer and the deferral is counted; the next run, healthy, writes them resolved to the parent', async () => {
+    const CLONE = 'casual-agent-ao-owner-1';
+    await db.doc(`agents/${CLONE}`).set({ ownerId: OWNER, rankedAgentId: 'agent-p' });
+    await db.doc('agents/agent-p').set({ ownerId: OWNER });
+    await seedBattle('b-clone', ownerBattle({ agentId: CLONE }));
+    // The real database, except that every read of `agents` fails (an error, not a verdict).
+    const failing = new Proxy(db, { get(t, k) {
+      if (k === 'collection') {
+        return (name) => (name === 'agents'
+          ? { doc: () => ({ get: async () => { throw Object.assign(new Error('unavailable'), { code: 14 }); } }) }
+          : t.collection(name));
+      }
+      const v = t[k];
+      return typeof v === 'function' ? v.bind(t) : v;
+    } });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const p1 = provider();
+    const r1 = await run(clockAt(INTRADAY), { dbx: failing, fetchPayload: p1.fetchPayload });
+    expect(r1.deferred.attribution_read_error).toBe(6);
+    expect(r1.deferred.prep_cut).toBeUndefined();
+    expect([r1.pointers.withEvidence, r1.pointers.null, r1.acquisitionsStarted, p1.calls.length]).toEqual([0, 0, 0, 0]);
+    expect(await pointersOf('b-clone')).toEqual([]);
+    const r2 = await run(clockAt('2026-11-05T15:45:00.000Z'));
+    warn.mockRestore();
+    expect(r2.deferred.attribution_read_error).toBeUndefined();
+    const ps = await pointersOf('b-clone');
+    expect(ps).toHaveLength(6);
+    for (const { data } of ps) {
+      expect(data).toMatchObject({ battleAgentId: CLONE, attributionAgentId: 'agent-p', attributionStatus: 'resolved', stream: { attributionAgentId: 'agent-p', clone: 'casual' } });
+    }
+  });
   it('a run whose preparation is cut short still acquires the state\'s carried keys', async () => {
     const carried = ['NVDA', 'AMD'].map((s) => ({ snapshotId: snapshotIdOf({ session: SESSION, symbol: s, ruleSet: RS }), session: SESSION, symbol: s, dueAt: null }));
     await db.doc('activationObserverState/main').set({ schemaVersion: 1, cursors: {}, battles: {}, outstandingKeys: carried, updatedAt: null });
