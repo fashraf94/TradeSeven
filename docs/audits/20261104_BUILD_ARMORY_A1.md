@@ -1,6 +1,6 @@
 # Build A1: the armory replaces the archetype picker
 
-**Run date:** November 4, 2026 · **Model:** Claude Opus 5.5 · **Branch:** `claude/armory-a1`, cut from `origin/claude/phase0-armory` @ `bbad5e71` (the Phase 0 report alone, one commit over `main` @ `40641486`), with `origin/main` @ `31574600` merged in (`5dee1679`, no conflict) and, before the final checks, `origin/main` @ `9d97b396` (PRs #1021 and #1022) merged in again (`e89aaba3`, no conflict); pushed by refspec from the worktree branch `claude/armory-a1-9010a6` · **Smoke branch:** `claude/armory-a1-smoke` · **PR:** [#1024](https://github.com/fashraf94/TradeSeven/pull/1024), draft · **Preview:** https://trade-seven-9l683tqhp-fais-projects-bc179554.vercel.app (the smoke head `079f0abd`; confirmed by the armory's, the readout's and the lab presets' strings in the served chunks)
+**Run date:** November 4, 2026 · **Model:** Claude Opus 5.5 · **Branch:** `claude/armory-a1`, cut from `origin/claude/phase0-armory` @ `bbad5e71` (the Phase 0 report alone, one commit over `main` @ `40641486`), with `origin/main` @ `31574600` merged in (`5dee1679`, no conflict) and, before the final checks, `origin/main` @ `9d97b396` (PRs #1021 and #1022) merged in again (`e89aaba3`, no conflict); pushed by refspec from the worktree branch `claude/armory-a1-9010a6` · **Smoke branch:** `claude/armory-a1-smoke` · **PR:** [#1024](https://github.com/fashraf94/TradeSeven/pull/1024), draft · **Preview (follow-up):** https://trade-seven-nj8izdnrc-fais-projects-bc179554.vercel.app (the smoke head `7af066e6`; confirmed by the armory's new lock line and the readout's strings in the served Command Center chunk, and the dropped footnote sentence absent). A1's preview, https://trade-seven-9l683tqhp-fais-projects-bc179554.vercel.app (`079f0abd`), is superseded
 
 **Follow-up run (§13, §14):** November 6, 2026 · Claude Opus 5.5 · the same branch, from its head `da4950f6` (checked before any write: PR #1024 open, draft, head `da4950f6`), worked in the app worktree branch `claude/armory-a1-followup-c5229e` and pushed by refspec to `claude/armory-a1`; `main` not merged in (the fix pass after the review does that). `git fetch origin` ran first. Fenced files read: `api/agent/decide.js` (§14's no-book check, read only). Edited: none. Nothing under `api/` changed. The old §13 "Commits and artifacts" is now §15.
 
@@ -192,6 +192,10 @@ The Copy reading line names the preset and "armory sets stills" or "live". Phase
 |---|---|---|
 | `main` `31574600` vs the fix commit `54bae5a4` | 53 / 53 | **0** |
 | `main` `9d97b396` (after PRs #1021, #1022) vs the merged head `e4af2f9b` | 53 / 53 | **0** |
+| *Follow-up:* `main` `9d97b396` vs the N1 commit `f44804c0` | 55 / 55 | **0** |
+| *Follow-up:* `main` `9d97b396` vs the N2 commit `470fb2b5` | 55 / 55 | **0** |
+
+*(The follow-up compares all 55 files of `dist/` (52 scripts, the stylesheet, `index.html`, `vite.svg`). Its first script let the two `index-<hash>.js` chunks collide on their masked name and compared 54; it now keys each file by its own masked first bytes, and all 55 compare equal. A1's script, which counted 53, was not kept, so whether it had the same collision is not known; the minified byte comparisons, A1's and this one's, cover every file regardless.)*
 
 A first local probe of the app code alone (before the tests and the lab presets; not in the branch's history) read the same, 0 lines, on the first build. The **minified** build (as Vercel builds it) agrees: `main` `9d97b396` and `e4af2f9b` emit the same files under the same content hashes (`index-BYnPCOYp.js`, `CommandCenterHub-B9LroiTM.js`, `agentGrowth-CNRf8kTV.js`, `index-C9h9-yhu.js`, `index-Bt3Ms9P_.css`), so every chunk is byte-identical. Only the source maps differ: they carry the new source text.
 
@@ -261,7 +265,7 @@ A WSL worktree of the code head with the flag set `true`, an untracked Vite page
 
 ## 10. Your iPhone checklist
 
-Open the preview link (https://trade-seven-9l683tqhp-fais-projects-bc179554.vercel.app) on the iPhone and sign in.
+Open the preview link (A1's: https://trade-seven-9l683tqhp-fais-projects-bc179554.vercel.app; the follow-up's is in §15) on the iPhone and sign in.
 
 1. **Command Center → Loadout → Change archetype.** The armory opens in place: the figure shrinks to the middle and the six sets appear around it. Nothing should flash or go black.
 2. **Tap each set.** It lights up while your finger is on it, and the centre figure suits up in about a second. The line under the ring says "Previewing · Equipped set is …".
@@ -275,6 +279,9 @@ Open the preview link (https://trade-seven-9l683tqhp-fais-projects-bc179554.verc
 **The smoke test passed:** "the armory looks great and switching between the archetypes was smooth and very satisfying." The `60 s:` lines from the armory and from the four lab presets were not recorded. **FD-9 therefore stays as built:** unworn sets are stills, live on touch. The all-live lab presets stay in the lab for a later reading.
 
 ### The follow-up's phone check (the new smoke preview, §15)
+
+Open https://trade-seven-nj8izdnrc-fais-projects-bc179554.vercel.app on the iPhone and sign in.
+
 
 1. **The hero is bare Shadow** on the Command Center, on every tab, whatever archetype is equipped.
 2. **Loadout → Change archetype:** the centre suits up in the equipped set; tapping a set suits it up in that one. **Closing takes the armor off once** (Close, Equip, or anything below), as the box shrinks back; nothing suits up again afterwards.
@@ -317,7 +324,7 @@ Open the preview link (https://trade-seven-9l683tqhp-fais-projects-bc179554.verc
 | 4 | **N2(b) the footnote** | FD-1's sentence alone. |
 | 5 | **N2(c) the desktop scroll at 900 px** | **65 px, unchanged** from A1 (A1 reported "about 60"): the dialog's height is set by the ring, not the aside, so the shorter footnote moved Equip down 17 px and the footnote's line still sits 21 px below the fold. No scroll from about 975 px tall (§13.5). |
 | 6 | **N2(d) the phone armory steps aside** | A tab switch, a deploy starting (a hold; the strip's Retry), another sheet opening, or the hub being left closes it, the preview discarded, nothing equipped, with N1's one unequip. Rows for each. |
-| 7 | **Flag-off identity** | Linux, unminified, hashes masked, against `main` `9d97b396`: **54 / 54 files, 0 lines differ** at the N1 commit and at the N2 commit. Minified: the same 107 file names under the same content hashes; all 54 non-map files byte-identical (only source maps differ). |
+| 7 | **Flag-off identity** | Linux, unminified, hashes masked, against `main` `9d97b396`: **55 / 55 files, 0 lines differ** at the N1 commit and at the N2 commit. Minified: the same 107 file names under the same content hashes; all 55 non-map files byte-identical (only source maps differ). |
 | 8 | **Mutation** | **17 of 17 killed** (the 8 the prompt names, two of them in two forms, and 7 more); the control survives (§13.3). |
 | 9 | **Checks** | `lint:gate` exit 0; full suite on Linux green; minified build of the pushed head exit 0 (§13.6). |
 | 10 | **Review threshold** | Still over it: the follow-up's own diff is 12 source files, +515 / −95 (with the report, the boards and two screenshots, more). The Fable review runs next, on this head. |
@@ -410,11 +417,12 @@ The dialog's scroll box (`HubSheet`, `max-height: 90%`, `overflow-y: auto`), mea
 
 ### 13.6 Checks
 
-- **Flag-off identity:** Linux, `vite build --minify false --sourcemap false`, LF trees from git, hashes masked, against `main` `9d97b396`: **54 / 54 files, 0 lines differ** at `f44804c0` (N1) and at `470fb2b5` (N2). Minified, as Vercel builds it: both commits emit the same 107 file names as `main`, under the same content hashes; all 54 non-map files are byte-identical; 49 of the 53 source maps differ (they carry the new source text and the build's path).
-- **`lint:gate`:** exit 0, on Linux, at `0d59f3ef` (the code and the boards) and at the pushed head.
-- **Full suite:** Linux (WSL), `TZ=UTC`, 8 workers, under `flock /tmp/pd-suite.lock`, at `0d59f3ef` (every code change and the boards): **1,282 files, 28,423 rows, 28,334 pass, 0 fail, 89 skipped**, 271 s (A1's merged head: 1,281 files, 28,396 rows). SUITE_FINAL
-- **Minified build of the pushed head:** BUILD_FINAL
+- **Flag-off identity:** Linux, `vite build --minify false --sourcemap false`, LF trees from git, hashes masked, against `main` `9d97b396`: **55 / 55 files, 0 lines differ** at `f44804c0` (N1) and at `470fb2b5` (N2). Minified, as Vercel builds it: both commits emit the same 107 file names as `main`, under the same content hashes; all 55 non-map files are byte-identical; 49 of the 52 source maps differ (they carry the new source text and the build's path).
+- **`lint:gate`:** exit 0, on Linux, at `0d59f3ef` (the code and the boards), at `de45aef9` and at the pushed head.
+- **Full suite:** Linux (WSL), `TZ=UTC`, 8 workers, under `flock /tmp/pd-suite.lock`, at `0d59f3ef` (every code change and the boards): **1,282 files, 28,423 rows, 28,334 pass, 0 fail, 89 skipped**, 271 s (A1's merged head: 1,281 files, 28,396 rows). **On a throwaway merge with today's `main` `f3da14a3`** (the tree CI tests; `main` is not merged into the branch): 1,283 files, 28,465 rows, 28,376 pass, **0 fail**, 89 skipped, 328 s. Again at the report-draft head `de45aef9` (the code, the boards, the report draft and its two screenshots): **1,282 files, 28,423 rows, 0 fail**, 89 skipped, 295 s. The pushed head changes only this report's text; at it the full suite, `lint:gate` and the minified build ran once more before the push, green (their numbers are in the PR description).
+- **Minified build:** exit 0 at `de45aef9` (the Command Center chunk `main`'s own file, `CommandCenterHub-B9LroiTM.js`) and at the pushed head; the smoke head `7af066e6` builds too.
 - **Windows:** the touched suites and the hub's guards, green (the engine suites stay Linux-only, as in A1).
+- **Sizes:** flag off, every chunk is `main`'s file (the Command Center chunk is `CommandCenterHub-B9LroiTM.js`, 141.72 kB, 42.74 kB gzip, at the report-draft head `de45aef9` as at `main`). Flag on (the smoke build): the Command Center chunk 155.34 kB, 47.15 kB gzip (A1's smoke: 155.40 kB, 47.23 kB), the entry +0.36 kB.
 
 ### 13.7 Readings, and two questions
 
@@ -474,11 +482,11 @@ So A2's "No book" needs words and a state, not a new path.
 | `f44804c0` | N1: the hub hero bare with the flag on; the phone close one unequip; `HubAgentForm.jsx` back to `main`; the rows and the seats suite |
 | `470fb2b5` | N2: the lock line, the footnote alone, the phone armory stepping aside; the rows (with the provider's) |
 | `0d59f3ef` | The loadout boards and their three sources (docs) |
-| REPORT_DRAFT | This report's follow-up (§0, §10, §11, §13, §14) and two screenshots (`docs/audits/assets/armory-a1-followup-*.png`) |
+| `de45aef9` | This report's follow-up (§0, §10, §11, §13, §14) and two screenshots (`docs/audits/assets/armory-a1-followup-*.png`) |
 | the head | This report, final (the smoke's SHA and preview) |
 
 On `claude/armory-a1-smoke` (A1): `079f0abd`, one commit on `e4af2f9b`, "SMOKE ONLY, NEVER MERGE": `AGENT_FORM_ARMORY_ENABLED` and `AGENT_FORM_LAB_ENABLED` set `true` and the hub hero's corner readout (S7's format, as the S1 and S2 smokes had it, plus the engine's view count). Two files, +35 / −3. Its pins and guards red by design.
 
-SMOKE_LINE
+On `claude/armory-a1-smoke` (follow-up, force-pushed): **`7af066e6`**, one commit on `de45aef9`, "SMOKE ONLY, NEVER MERGE": `AGENT_FORM_ARMORY_ENABLED` and `AGENT_FORM_LAB_ENABLED` set `true` and the hub hero's corner readout, re-anchored on `HubAgentForm.jsx` (now `main`'s text). Two files, +35 / −3, made by git plumbing. Its pins and guards red by design. Its minified build on Linux: exit 0. **Preview: https://trade-seven-nj8izdnrc-fais-projects-bc179554.vercel.app**: the served Command Center chunk (155,341 bytes) carries the armory's new lock line and the readout, and not the dropped footnote sentence.
 
 A copy of this report is in `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261104_BUILD_ARMORY_A1.md` (BUILD_RULES §3). The harness (§9, rebuilt in the follow-up) and the mutation runners live in the sessions' scratchpads and are not committed.
