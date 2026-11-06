@@ -7,6 +7,8 @@ import { joinTick, tickWindowsOf, UNAVAILABLE_TICK } from './tick.js';
 import { TICK_GRACE_MS } from './constants.js';
 import { legacyBattle, legacySwap, tickOf } from './__fixtures__/activationBattles.js';
 import { discoverActivations } from './discover.js';
+import { buildPointer } from './pointer.js';
+import { describeRuleSet } from '../setupEvaluator/thresholds.js';
 
 const AT = '2026-11-05T15:02:11.412Z';
 const swapInWith = (evaluationId = 'risk_stop_NVDA_1') => {
@@ -20,17 +22,28 @@ const soon = Date.parse(AT) + 60_000;
 const late = Date.parse(AT) + TICK_GRACE_MS;
 
 describe('the join', () => {
-  it('exactly one committed swap action on (swappedOutAt, symbolOut, symbolIn) → tick_action; the ids are the tick\'s, the evaluationId the row\'s', () => {
+  it('exactly one committed swap action on (swappedOutAt, symbolOut, symbolIn) → tick_action; the ids are the tick\'s, and evaluationId is null (V1.8, ruling Q2)', () => {
     const a = swapInWith();
     const j = joinTick(a, complete(tickOf(11, '2026-11-05T15:01:00.000Z'), tickOf(12, '2026-11-05T15:02:40.000Z', [row])), { nowMs: soon });
-    expect(j).toEqual({ outcome: 'tick_action', ambiguous: false, activatingTick: { tickSeq: 12, evalId: 'eval_012', evaluationId: 'risk_stop_NVDA_1', source: 'tick_action' } });
+    expect(j).toEqual({ outcome: 'tick_action', ambiguous: false, activatingTick: { tickSeq: 12, evalId: 'eval_012', evaluationId: null, source: 'tick_action' } });
   });
-  it('a proposal execution with a matching tick reads tick_action; tickSeq and evalId are the TICK\'s — the row\'s eval_NNN (the proposing check) never names the tick, and is carried only as the row\'s evaluationId', () => {
+  it('a proposal execution with a matching tick reads tick_action; tickSeq and evalId are the TICK\'s — the row\'s eval_NNN (the proposing check) never names the tick, and never reaches activatingTick (V1.8)', () => {
     const a = swapInWith('eval_007'); // the approved proposal's row names an earlier check
     const t = tickOf(12, '2026-11-05T15:02:40.000Z', [row]);
     t.actions[0].source = 'haiku';
     const j = joinTick(a, complete(t), { nowMs: soon });
-    expect(j.activatingTick).toEqual({ tickSeq: 12, evalId: 'eval_012', evaluationId: 'eval_007', source: 'tick_action' });
+    expect(j.activatingTick).toEqual({ tickSeq: 12, evalId: 'eval_012', evaluationId: null, source: 'tick_action' });
+  });
+  it('V1.8 (ruling Q2), through the pointer: a tick_action pointer has evaluationId null and tradeRef keeps the row\'s id; an unavailable pointer has all three null', () => {
+    const a = swapInWith('eval_007');
+    const t = tickOf(12, '2026-11-05T15:02:40.000Z', [row]);
+    const pointerWith = (j) => buildPointer({ battle: legacyBattle(), battleId: 'b', activation: { ...a, activatingTick: j.activatingTick }, session: '2026-11-04', attribution: { attributionAgentId: 'agent-1', attributionStatus: 'resolved' }, ruleSet: describeRuleSet(), evidence: null, missingDetail: 'x', observedAt: '2026-11-05T15:30:00.000Z' });
+    const joined = pointerWith(joinTick(a, complete(t), { nowMs: soon }));
+    expect(joined.activatingTick).toEqual({ tickSeq: 12, evalId: 'eval_012', evaluationId: null, source: 'tick_action' });
+    expect(joined.tradeRef.evaluationId).toBe('eval_007');
+    const none = pointerWith(joinTick(a, complete(), { nowMs: late }));
+    expect(none.activatingTick).toEqual({ tickSeq: null, evalId: null, evaluationId: null, source: 'unavailable' });
+    expect(none.tradeRef.evaluationId).toBe('eval_007');
   });
   it('none within the grace defers; after it, unavailable with all three ids null; at finalisation the grace no longer applies', () => {
     const a = swapInWith();
@@ -48,7 +61,7 @@ describe('the join', () => {
     // A risk-manager action in a tick that exited before `identify` (agent-evaluate.js:2273, :2714): the tick is known, its evaluation is not.
     for (const evalId of [null, '']) {
       const t = { ...tickOf(4, '2026-11-05T15:02:40.000Z', [row]), evalId };
-      expect(joinTick(a, complete(t), { nowMs: soon }).activatingTick).toEqual({ tickSeq: 4, evalId: null, evaluationId: 'risk_stop_NVDA_1', source: 'tick_action' });
+      expect(joinTick(a, complete(t), { nowMs: soon }).activatingTick).toEqual({ tickSeq: 4, evalId: null, evaluationId: null, source: 'tick_action' });
     }
   });
   it('two matches → unavailable, counted ambiguous', () => {

@@ -10,9 +10,10 @@
 // tapeAssemble.js swapKey): the raw strings, compared exactly, as the tape
 // compares them. This holds for model executions and proposal executions alike.
 // The row's `eval_NNN` never names the tick (no committed field says which path wrote
-// it): tickSeq and evalId come from the tick record only. The row's evaluationId is
-// carried, unparsed, as `activatingTick.evaluationId` (the §4.5 example's placeholder,
-// the same as tradeRef's) and is null when the join is unavailable.
+// it): tickSeq and evalId come from the tick record only. `activatingTick.evaluationId`
+// is null on every path (contract V1.8 §4, ruling Q2): no committed tick field carries
+// the executing check's evaluation id, and the row's own id (on a proposal execution,
+// the proposing check's) lives in `tradeRef.evaluationId` only (pointer.js).
 //
 //   exactly one committed swap action matches          → tick_action
 //   two or more match                                   → unavailable, counted ambiguous
@@ -62,7 +63,7 @@ export function tickWindowsOf(swapIns, graceMs = TICK_GRACE_MS) {
 /**
  * The join for one swap-in.
  *
- * @param {{ row: { swappedOutAt, symbolOut, symbolIn, evaluationId } }} activation
+ * @param {{ row: { swappedOutAt, symbolOut, symbolIn } }} activation
  * @param {{ complete: boolean, ticks: Array<{ tickSeq, evalId, actions }> }} tickRead the battle's tick read this run
  * @param {{ nowMs: number, finalizing: boolean }} when
  * @returns {{ outcome: 'tick_action' | 'unavailable', ambiguous: boolean, activatingTick: object }
@@ -90,7 +91,7 @@ export function joinTick(activation, tickRead, { nowMs, finalizing = false }) {
       activatingTick: {
         tickSeq: t.tickSeq,
         evalId: typeof t.evalId === 'string' && t.evalId ? t.evalId : null,
-        evaluationId: row.evaluationId ?? null,
+        evaluationId: null, // V1.8: never the row's id; that is tradeRef.evaluationId's
         source: 'tick_action',
       },
     };

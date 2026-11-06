@@ -14,7 +14,7 @@ const RS = describeRuleSet();
 const SWAP_AT = '2026-11-05T15:02:11.412Z';
 const SESSION = '2026-11-04';
 const OBSERVED = '2026-11-05T15:17:04.010Z';
-const TICK = { tickSeq: 12, evalId: 'eval_012', evaluationId: 'eval_012', source: 'tick_action' };
+const TICK = { tickSeq: 12, evalId: 'eval_012', evaluationId: null, source: 'tick_action' }; // §4.5 (V1.8): evaluationId always null
 const RESOLVED = { attributionAgentId: 'agent-2', attributionStatus: 'resolved' };
 
 function correctedSwapIn() {

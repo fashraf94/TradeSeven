@@ -282,7 +282,8 @@ describe('with evidence', () => {
     await db.doc('agentBattles/b-1/ticks/b-1:12').set(tickOf(12, '2026-11-05T15:03:00.000Z', [b.trades[0]]));
     const r = await run(clockAt(INTRADAY));
     const ps = Object.fromEntries((await pointersOf('b-1')).map((p) => [p.data.symbol, p.data]));
-    expect(ps.JPM.activatingTick).toEqual({ tickSeq: 12, evalId: 'eval_012', evaluationId: 'eval_012', source: 'tick_action' });
+    expect(ps.JPM.activatingTick).toEqual({ tickSeq: 12, evalId: 'eval_012', evaluationId: null, source: 'tick_action' }); // V1.8 (ruling Q2)
+    expect(ps.JPM.tradeRef.evaluationId).toBe('eval_012'); // the row's id stays in tradeRef
     expect(ps.CVX).toBeUndefined(); // 10 minutes after its swap, no tick yet: the grace defers it
     expect(r.deferred.tick_grace).toBe(1);
     // After the grace it is written, `unavailable`.
