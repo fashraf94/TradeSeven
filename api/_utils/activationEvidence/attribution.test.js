@@ -12,14 +12,17 @@ import { discoverActivations } from './discover.js';
 import { legacyBattle } from './__fixtures__/activationBattles.js';
 
 const CLONE = 'casual-agent-owner-1';
-/** `failOn`: the 1-based read numbers that throw (1 = the clone read, 2 = the parent read); `fail` throws on every read. */
-function dbOf(agents, { fail = false, failOn = [] } = {}) {
+/**
+ * `failOn`: the 1-based read numbers that throw (1 = the clone read, 2 = the parent read); `fail` throws on every read.
+ * A failed read throws a coded error (gRPC UNAVAILABLE), or a plain Error with no code when `plain` is set.
+ */
+function dbOf(agents, { fail = false, failOn = [], plain = false } = {}) {
   const reads = [];
   return {
     reads,
     collection: (name) => ({ doc: (id) => ({ get: async () => {
       reads.push(`${name}/${id}`);
-      if (fail || failOn.includes(reads.length)) throw Object.assign(new Error('unavailable'), { code: 14 });
+      if (fail || failOn.includes(reads.length)) throw plain ? new TypeError('no code') : Object.assign(new Error('unavailable'), { code: 14 });
       const data = agents[id];
       return { exists: data !== undefined, data: () => structuredClone(data) };
     } }) }),
@@ -38,8 +41,12 @@ describe('attribution', () => {
     const db = dbOf({ [CLONE]: { ownerId: 'owner-1', rankedAgentId: 'agent-1' }, 'agent-1': { ownerId: 'owner-1' } });
     expect(await attributionOf(db, { agentId: CLONE })).toEqual({ attributionAgentId: 'agent-1', attributionStatus: 'resolved', deferred: false });
   });
+  it('a null database (unreachable from the tenant, which always has one) leaves the clone\'s own id, unresolved, as before; the contract\'s verdicts are the five below', async () => {
+    const spy = quiet();
+    expect(await attributionOf(null, { agentId: CLONE })).toEqual({ attributionAgentId: CLONE, attributionStatus: 'unresolved', deferred: false });
+    spy.mockRestore();
+  });
   it.each([
-    ['a null database', null],
     ['the clone agent missing', dbOf({})],
     ['the parent id missing', dbOf({ [CLONE]: { ownerId: 'owner-1' } })],
     ['the parent id empty', dbOf({ [CLONE]: { ownerId: 'owner-1', rankedAgentId: '' } })],
@@ -77,6 +84,11 @@ describe('attribution', () => {
       const db = dbOf(agents, { failOn: [2] });
       expect(await attributionOf(db, { agentId: CLONE })).toEqual(DEFERRED);
       expect(db.reads).toEqual([`agents/${CLONE}`, 'agents/agent-1']);
+      spy.mockRestore();
+    });
+    it('any error counts, coded or not: a database read throwing a plain TypeError (no code) → deferred, on either read (review)', async () => {
+      const spy = quiet();
+      for (const failOn of [[1], [2]]) expect(await attributionOf(dbOf(agents, { failOn, plain: true }), { agentId: CLONE })).toEqual(DEFERRED);
       spy.mockRestore();
     });
     it('every read failing → deferred; the same agents healthy → resolved to the parent', async () => {

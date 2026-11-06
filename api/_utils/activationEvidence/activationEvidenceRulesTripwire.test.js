@@ -54,7 +54,7 @@ describe('firestore.indexes.json — the state\'s maps are exempt from single-fi
     ]);
     expect(INDEXES.fieldOverrides.some((o) => o.collectionGroup === 'activations')).toBe(false);
   });
-  it('the exempt fields are the state document\'s own keys, and nothing queries the collection (read and written by document id only)', () => {
+  it('the exempt fields are the state document\'s own keys; state.js addresses the collection by document id, and neither state.js nor tenant.js chains a query on it', () => {
     const STATE = readFileSync(resolve(HERE, 'state.js'), 'utf8');
     for (const f of ['battles', 'outstandingKeys']) expect(STATE).toMatch(new RegExp(`\\b${f}\\b`));
     expect(STATE.replace(/\s+/g, ' ')).toContain('db.collection(OBSERVER_STATE_COLLECTION).doc(OBSERVER_STATE_DOC)');
