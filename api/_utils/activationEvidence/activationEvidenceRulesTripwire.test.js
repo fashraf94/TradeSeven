@@ -44,3 +44,20 @@ describe('firestore.indexes.json — the candidate query\'s composite', () => {
     expect(INDEXES.indexes.some((i) => /^(activations|activationObserverState)$/.test(i.collectionGroup))).toBe(false);
   });
 });
+
+describe('firestore.indexes.json — the state\'s maps are exempt from single-field indexing (contract V1.8 §4.4, review L4-2)', () => {
+  it('exactly two overrides on activationObserverState, `battles` and `outstandingKeys`, each with no index; none on the pointers', () => {
+    const state = INDEXES.fieldOverrides.filter((o) => o.collectionGroup === 'activationObserverState');
+    expect(state).toEqual([
+      { collectionGroup: 'activationObserverState', fieldPath: 'battles', indexes: [] },
+      { collectionGroup: 'activationObserverState', fieldPath: 'outstandingKeys', indexes: [] },
+    ]);
+    expect(INDEXES.fieldOverrides.some((o) => o.collectionGroup === 'activations')).toBe(false);
+  });
+  it('the exempt fields are the state document\'s own keys, and nothing queries the collection (read and written by document id only)', () => {
+    const STATE = readFileSync(resolve(HERE, 'state.js'), 'utf8');
+    for (const f of ['battles', 'outstandingKeys']) expect(STATE).toMatch(new RegExp(`\\b${f}\\b`));
+    expect(STATE.replace(/\s+/g, ' ')).toContain('db.collection(OBSERVER_STATE_COLLECTION).doc(OBSERVER_STATE_DOC)');
+    for (const src of [STATE, TENANT]) expect(src).not.toMatch(/OBSERVER_STATE_COLLECTION\)\s*\.(where|orderBy|limit|select|get)\b/);
+  });
+});

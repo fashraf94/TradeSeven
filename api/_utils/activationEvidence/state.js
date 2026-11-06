@@ -15,6 +15,12 @@
 // A LOST, STALE OR UNWRITABLE STATE NEVER CHANGES WHAT A POINTER SAYS: pointers
 // depend only on contract §4.2. A state that cannot be read reads as empty; it
 // costs fairness and reads, never correctness. The last write wins.
+//
+// INDEXING (contract V1.8 §4.4): nothing queries this collection, so `battles`
+// and `outstandingKeys` are exempt from single-field indexing in
+// firestore.indexes.json (`fieldOverrides`, `indexes: []`; a map's subfields
+// inherit its exemption), keeping the document far from the per-document
+// index-entry limit as the allowlist widens.
 
 import { MAX_CARRIED_KEYS, OBSERVER_STATE_COLLECTION, OBSERVER_STATE_DOC, STATE_SCHEMA_VERSION } from './constants.js';
 

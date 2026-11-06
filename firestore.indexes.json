@@ -850,6 +850,16 @@
           "queryScope": "COLLECTION_GROUP"
         }
       ]
+    },
+    {
+      "collectionGroup": "activationObserverState",
+      "fieldPath": "battles",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "activationObserverState",
+      "fieldPath": "outstandingKeys",
+      "indexes": []
     }
   ]
 }
