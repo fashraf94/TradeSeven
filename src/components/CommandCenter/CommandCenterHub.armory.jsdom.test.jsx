@@ -11,9 +11,12 @@
 //   - a preview plays the swap on the centre; Equip calls changeArchetype once with the chosen set; a battle lock shows
 //     the hub's lock line; reduced motion is stills throughout;
 //   - the hero behind the wide dialog is paused while it is open, and never remounts;
-//   - the phone: the armory opens in the hero's box, the hero itself shrinks and wears the preview, a cancel takes the
-//     preview off at once (never a second suit-up), an equip keeps the new set on the hero until the read catches up;
+//   - the phone: the armory opens in the hero's box, the hero itself shrinks and wears the preview;
 //   - the listbox's roles and keys, Escape, and focus.
+// The follow-up (founder ruling N1, Nov 4, 2026): outside a game Shadow is neutral. With the flag on the hero, wide and
+// phone, is bare Shadow whatever the agent's archetype, under Shadow's own label; an equip never changes it; the Loadout
+// card names the archetype; R19's Equipped Archetype response lights the whole bare form; the phone's close, by any path,
+// is one unequip.
 
 import React, { Component, act } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -300,17 +303,85 @@ describe('the hero behind the wide dialog', () => {
     expect(propsOf(h).paused).toBe(false);
   });
 
-  it('after an equip it suits up through its own change path: the read\'s new archetype, played', async () => {
+  it('N1: it stays bare through the open, the preview and the equip, and never suits up; the Loadout card names the new set', async () => {
     const { reread } = await renderHub();
     const h = hero();
     click(btn(COPY.loadout.changeArchetype));
     click(option('contrarian'));
+    expect(propsOf(centre()).archetype).toBe('contrarian'); // the dialog's own centre wears the preview
     await equipAndSettle();
     await reread(AGENT({ archetype: 'contrarian' }));
     expect(hero()).toBe(h);
-    expect(propsOf(h).archetype).toBe('contrarian');
-    expect(propsOf(h).equipOnChange).toBe(true);
     expect(propsOf(h).paused).toBe(false);
+    // not one render of the hero, from its mount to here, wore a set: no change, so no suit-up
+    expect(h.history.map((p) => p.archetype)).toEqual(h.history.map(() => undefined));
+    expect(loadoutArchetypeName()).toBe(nameOf('contrarian'));
+  });
+});
+
+// ── Founder ruling N1 (Nov 4, 2026): outside a game Shadow is always neutral ─────────────────────────────────────────
+const heroBox = () => document.querySelector('[data-hub-agent-form]');
+const bareLabel = (areaName) => COPY.shadow.imageLabel(heroBox().getAttribute('data-shadow-status'), areaName);
+const areaTabs = () => [...document.querySelectorAll('[role="tablist"][aria-label] [role="tab"]')].filter((t) => t.closest('[data-hub-stage]'));
+/** The Loadout panel's Archetype card: which of the six names it shows. */
+const loadoutArchetypeName = () => {
+  const text = document.querySelector('[data-hub-card="archetype"]')?.textContent ?? '';
+  const named = ARMORY_SETS.map(nameOf).filter((n) => text.includes(n));
+  return named.length === 1 ? named[0] : named;
+};
+
+describe('N1: the hub hero is bare Shadow with the flag on, whatever the archetype', () => {
+  for (const site of ['desktop', 'mobile']) {
+    it(`${site}: bare for every archetype the agent may wear, under Shadow's own label; nothing on the hub reads "Shadow wearing"`, async () => {
+      const width = site === 'mobile' ? 390 : 1280;
+      for (const archetype of ['momentum_chaser', 'analyst', 'degen', 'unknown']) {
+        await renderHub({ site, hubWidth: width, agent: AGENT({ archetype }) });
+        const p = propsOf(hero());
+        expect(p.archetype, archetype).toBeUndefined();
+        expect(p.label, archetype).toBe(bareLabel(COPY.areas.names[2]));
+        expect(document.body.innerHTML).not.toMatch(/wearing/i);
+        expect(all().map((f) => propsOf(f).label).filter((l) => typeof l === 'string' && /wearing/i.test(l))).toEqual([]);
+        for (const m of mounted) m.unmount();
+        mounted = [];
+        forms.live = new Map();
+      }
+    });
+  }
+
+  it('the control: with the flag off the hero wears the archetype under "Shadow wearing", exactly as main', async () => {
+    armory.on = false;
+    await renderHub({ agent: AGENT({ archetype: 'analyst' }) });
+    expect(propsOf(hero()).archetype).toBe('analyst');
+    expect(propsOf(hero()).label).toMatch(new RegExp(`^Shadow wearing ${nameOf('analyst')} — `));
+  });
+
+  it('the hero keeps its view: the same agent id, so no remount when the read is made bare or changes archetype', async () => {
+    const { reread } = await renderHub({ agent: AGENT({ archetype: 'analyst' }) });
+    const h = hero();
+    await reread(AGENT({ archetype: 'guardian' }));
+    expect(hero()).toBe(h);
+    expect(forms.unmounts).toBe(0);
+    expect(propsOf(h).archetype).toBeUndefined();
+  });
+
+  it('the Loadout panel\'s Archetype card still names the archetype (it reads the agent, not the hero)', async () => {
+    await renderHub({ agent: AGENT({ archetype: 'analyst' }) });
+    expect(loadoutArchetypeName()).toBe(nameOf('analyst'));
+  });
+
+  it('R19: a response on the Equipped Archetype area lights the whole bare form, not its armor (board 5 does not cover bare Shadow)', async () => {
+    for (const on of [true, false]) {
+      armory.on = on;
+      await renderHub({ agent: AGENT({ archetype: 'analyst' }) });
+      const [partnership, , archetypeArea] = areaTabs();
+      click(partnership);
+      click(archetypeArea);
+      // flag on: the bare hero's archetype area brightens everything; the flag-off control keeps main's armor response
+      expect(propsOf(hero()).responsePart, `flag ${on ? 'on' : 'off'}`).toBe(on ? 'all' : 'armor');
+      for (const m of mounted) m.unmount();
+      mounted = [];
+      forms.live = new Map();
+    }
   });
 });
 
@@ -368,40 +439,93 @@ describe('the phone: the armory in the hero\'s box (FD-8)', () => {
     expect(sets().map((f) => propsOf(f).size)).toEqual(Array(6).fill(PHONE_ARMORY.slot - 2));
   });
 
-  it('a tap previews the set on the hero itself, played; a cancel takes it off at once, never a second suit-up, and remounts nothing', async () => {
-    const { reread } = await renderHub({ site: 'mobile', hubWidth: 390 });
+  it('N1: opening suits the bare hero up in the equipped set; a tap previews another on the hero itself, played', async () => {
+    await renderHub({ site: 'mobile', hubWidth: 390 });
     const h = hero();
+    expect(propsOf(h).archetype).toBeUndefined();
     click(btn(COPY.loadout.changeArchetype));
+    expect(propsOf(h).archetype).toBe('momentum_chaser');
+    expect(propsOf(h).equipOnChange).toBe(true);
     click(option('contrarian'));
     expect(propsOf(h).archetype).toBe('contrarian');
     expect(propsOf(h).equipOnChange).toBe(true);
-    click(document.querySelector('[data-armory-close]'));
-    expect(hero()).toBe(h);
-    expect(forms.unmounts).toBe(6); // the six sets went; the hero stayed
-    expect(propsOf(h).archetype).toBe('momentum_chaser');
-    expect(propsOf(h).equipOnChange).toBe(false);
-    expect(propsOf(h).size).toBe(200);
-    // a later real change of the read is a suit-up again
-    await reread(AGENT({ archetype: 'guardian' }));
-    expect(propsOf(h).archetype).toBe('guardian');
-    expect(propsOf(h).equipOnChange).toBe(true);
   });
 
-  it('an equip keeps the new set on the hero while the read still has the old one, so it never steps back and suits up twice', async () => {
+  /**
+   * The phone's close, in N1's words: the armor comes off with the 700 ms unequip as the box collapses — ONE change of
+   * the hero, to bare Shadow, played (equipOnChange), in the same render as its return to the stage's size — and nothing
+   * after it: no step back to a set, no second suit-up. The engine plays a change to bare as the unequip, and draws it
+   * at once under reduced motion (engine.js swap(); AgentForm.armory.jsdom.test.jsx).
+   */
+  const closesOnce = (h, from, previewed) => {
+    const after = h.history.slice(from);
+    const at = after.findIndex((p) => p.archetype === undefined);
+    expect(at, 'the hero never took the armor off').toBeGreaterThan(-1);
+    // until the close it wears the previewed set, at the armory's centre; from the close on, bare Shadow at the stage's size
+    expect(after.slice(0, at).every((p) => p.archetype === previewed && p.size === PHONE_ARMORY.centre)).toBe(true);
+    const worn = after.slice(at).filter((p) => p.archetype !== undefined);
+    expect(worn.map((p) => p.archetype), 'a set worn again after the close').toEqual([]);
+    expect(after[at].size).toBe(200);
+    expect(after[at].equipOnChange).toBe(true);
+  };
+
+  for (const reduced of [false, true]) {
+    it(`N1: Close takes the armor off once, as the box collapses, and remounts nothing${reduced ? ' (under Reduce Motion too)' : ''}`, async () => {
+      motion.reduced = reduced;
+      const { reread } = await renderHub({ site: 'mobile', hubWidth: 390 });
+      const h = hero();
+      click(btn(COPY.loadout.changeArchetype));
+      click(option('contrarian'));
+      const from = h.history.length;
+      click(document.querySelector('[data-armory-close]'));
+      expect(hero()).toBe(h);
+      expect(forms.unmounts).toBe(6); // the six sets went; the hero stayed
+      closesOnce(h, from, 'contrarian');
+      expect(propsOf(h).reducedMotion).toBe(reduced);
+      // a later change of the record changes nothing: the hero is bare
+      await reread(AGENT({ archetype: 'guardian' }));
+      closesOnce(h, from, 'contrarian');
+    });
+  }
+
+  it('N1: an equip closes the armory and the hero takes the armor off once; the record catching up changes nothing, the card names the set', async () => {
     const { reread } = await renderHub({ site: 'mobile', hubWidth: 390 });
     const h = hero();
     click(btn(COPY.loadout.changeArchetype));
     click(option('analyst'));
-    const before = h.history.filter((p) => p.archetype === 'momentum_chaser').length;
+    const from = h.history.length;
     await equipAndSettle();
     expect(changeArchetype).toHaveBeenCalledWith('ag-1', 'analyst');
     expect(document.querySelector('[data-hub-stage="phone"]').getAttribute('data-hub-armory')).toBeNull();
-    expect(propsOf(h).archetype).toBe('analyst');
+    closesOnce(h, from, 'analyst');
     await reread(AGENT({ archetype: 'analyst' }));
-    expect(propsOf(h).archetype).toBe('analyst');
-    // not once back on the old set since the preview
-    expect(h.history.filter((p) => p.archetype === 'momentum_chaser').length).toBe(before);
+    closesOnce(h, from, 'analyst');
     expect(hero()).toBe(h);
+    expect(loadoutArchetypeName()).toBe(nameOf('analyst'));
+  });
+
+  it('a result that lands after the phone armory closed some other way is dropped: it closes nothing and moves no focus', async () => {
+    let resolve;
+    changeArchetype.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    await renderHub({ site: 'mobile', hubWidth: 390 });
+    click(btn(COPY.loadout.changeArchetype));
+    click(option('degen'));
+    click(equipButton());
+    // another sheet opens over the hub's one slot: the armory closes without its own Close
+    click(btn(COPY.loadout.changeWatchlist));
+    expect(document.querySelector('[data-hub-stage="phone"]').getAttribute('data-hub-armory')).toBeNull();
+    const sheetClose = () => document.querySelector('button[aria-label="Close"]');
+    expect(sheetClose()).not.toBeNull();
+    const focused = document.activeElement;
+    await act(async () => { resolve({ ok: true }); await Promise.resolve(); });
+    // the watchlist sheet is still open and focus has not moved to Change archetype
+    expect(sheetClose()).not.toBeNull();
+    expect(document.activeElement).toBe(focused);
+    // and the next open starts clean: no "Equipping…" left over
+    click(sheetClose());
+    click(btn(COPY.loadout.changeArchetype));
+    click(option('degen'));
+    expect(equipButton().textContent).toBe(ARMORY_COPY.equip(nameOf('degen')));
   });
 
   it('a battle lock shows the hub\'s lock line in the stage, and the armory stays open', async () => {

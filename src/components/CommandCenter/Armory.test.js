@@ -131,18 +131,25 @@ describe('the equip\'s error words', () => {
   });
 });
 
-describe('the hero\'s read on the phone', () => {
-  it('a ready read wears the shown set and carries `instant`; the read itself is not changed', () => {
+describe('the hero\'s read (founder ruling N1: Shadow is neutral outside a game)', () => {
+  it('a ready read wears the shown set, the same agent otherwise; the read itself is not changed', () => {
     const read0 = { status: 'ready', agent: { id: 'a1', archetype: 'analyst', name: 'Nova' }, retry: () => {} };
-    const r = armoryHeroRead(read0, 'degen', true);
+    const r = armoryHeroRead(read0, 'degen');
     expect(r.agent).toEqual({ id: 'a1', archetype: 'degen', name: 'Nova' });
-    expect(r.instant).toBe(true);
     expect(r.retry).toBe(read0.retry);
+    expect('instant' in r).toBe(false);
     expect(read0.agent.archetype).toBe('analyst');
-    expect(armoryHeroRead(read0, 'degen', undefined).instant).toBe(false);
+  });
+
+  it('with nothing shown it is bare Shadow: no archetype, whatever the agent wears, and the same agent id (so the hero keeps its view)', () => {
+    for (const archetype of ['analyst', 'degen', 'unknown', undefined]) {
+      const r = armoryHeroRead({ status: 'ready', agent: { id: 'a1', archetype } });
+      expect(r.agent.archetype).toBeUndefined();
+      expect(r.agent.id).toBe('a1');
+    }
   });
 
   it('a read that is not ready, or has no agent, passes through unchanged', () => {
-    for (const r of [null, { status: 'loading', agent: null }, { status: 'error', agent: null }, { status: 'ready', agent: null }]) expect(armoryHeroRead(r, 'degen', true)).toBe(r);
+    for (const r of [null, { status: 'loading', agent: null }, { status: 'error', agent: null }, { status: 'ready', agent: null }]) expect(armoryHeroRead(r, 'degen')).toBe(r);
   });
 });

@@ -153,7 +153,7 @@ import NextActionCard from './sections/NextActionCard';
 import { HubAgentFormContext } from './HubAgentForm';
 import { PhoneStage, ShadowStage } from './ShadowStage';
 import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
-import { PhoneArmoryScope } from './Armory';
+import { PhoneArmoryScope, armoryHeroRead } from './Armory';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
 export function shadowSizeFor(composition, width) {
@@ -633,8 +633,11 @@ function ConnectedHub({ site, hub, sections }) {
   const coverOpen = deployAttempt?.snapshot?.overlayOpen === true;
   // Agent form build S1: the armored hero reads the same agent read the Loadout shows, through this scope (a prop
   // through the shells would change today's elements; flag-off this ternary folds to the return below it).
+  // Agent form build A1 follow-up (founder ruling N1): with the armory on, outside a game Shadow is neutral, so the hero
+  // (wide and phone) reads the same agent wearing nothing: bare Shadow whatever its archetype, and Shadow's own label. The
+  // Loadout reads `agentRead` itself, so its Archetype card still names the archetype; only the armory's preview dresses.
   return AGENT_FORM_HUB_ENABLED ? (
-    <HubAgentFormContext.Provider value={readers.agent}>
+    <HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>
       {site === HUB_SITES.MOBILE
         ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
         : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />}

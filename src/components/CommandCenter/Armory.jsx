@@ -12,7 +12,14 @@
 //   - The phone (founder ruling FD-8): the armory opens in the hero's own box. PhoneArmoryScope (around PhoneStage in
 //     CommandCenterHub.jsx) holds the state; ShadowStage.jsx's PhoneArmoryStage lays it out around the hero itself,
 //     which stays mounted, shrinks to PHONE_ARMORY.centre and wears the previewed set. So nothing remounts on open or
-//     close (no flash, no black square), and taking a preview off on close is drawn at once, never a second suit-up.
+//     close (no flash, no black square).
+//
+// Follow-up, founder ruling N1 (Nov 4, 2026): outside a game Shadow is always neutral. With the flag on the hub's hero is
+// bare Shadow whatever the agent's archetype is (armoryHeroRead, at the hub's one read in CommandCenterHub.jsx), so an
+// equip never changes it and never suits it up; the Loadout panel's Archetype card names what is equipped. Only the
+// armory's preview dresses a figure: the wide dialog's own centre, and on the phone the hero itself while the armory is
+// open. Closing the phone armory, by any path, takes the armor off once, on the engine's 700 ms unequip as the box
+// collapses (at once under reduced motion).
 //
 // A set on its hook is the set alone (no brain), pewter unless it is the equipped one (agentFormSpec.js SET_ALONE,
 // UNLIT). It is a still until hovered or touched, then live, then a still again (FD-9): only the centre figure and at
@@ -24,7 +31,7 @@
 // Equip is today's write, exactly the picker's: agentService.changeArchetype (immediate; 409 while the ranked agent is
 // in a battle), so the footnote says so (FD-1). A battle lock shows the hub's own "Locked in battle" line; any other
 // failure the server's words, else the picker's. The server's tempo-dial reset is never silent: its notice shows and
-// the armory stays open. On success the armory closes; the hero suits up through its own change path.
+// the armory stays open. On success the armory closes; the hero stays bare (N1).
 //
 // The words: hub/hubCopy.js ARMORY_COPY; the names, one-liners and paragraphs through hub/archetypeLines.js alone (the
 // §2.3 ratchet's one hub line). No effect, timer or listener lives here (commandCenterHub.mount.guard.test.js): focus
@@ -110,7 +117,8 @@ const IDLE_EQUIP = Object.freeze({ working: false, error: null, notice: null });
  * the chosen set, nothing while one is in flight. A result that lands after `cancel()` (the armory closed) is dropped.
  * `onEquipped(codeId, { stay })` hears a success; `stay` is true when the server reset the tempo dial, so the notice shows.
  * `detach` is a ref callback for the armory's root, the same function on every render, so React calls it at the attach
- * and at the unmount only: the unmount drops a result in flight, with no effect.
+ * and at the unmount only: the unmount drops a result in flight, with no effect. `reset` clears the words and the
+ * in-flight mark (the phone scope outlives its armory, so each open starts clean).
  */
 export function useArmoryEquip({ agent, onEquipped }) {
   const [state, setState] = useState(IDLE_EQUIP);
@@ -139,7 +147,8 @@ export function useArmoryEquip({ agent, onEquipped }) {
     session.current += 1;
     setState(IDLE_EQUIP);
   };
-  return { ...state, equip, cancel, detach };
+  const reset = () => setState(IDLE_EQUIP);
+  return { ...state, equip, cancel, reset, detach };
 }
 
 /**
@@ -345,21 +354,25 @@ export default function Armory({ open, onClose, agent, dock }) {
 export const ArmoryStageContext = /* @__PURE__ */ createContext(null);
 
 /**
- * The hero's read while the phone armory runs (HubAgentForm.jsx reads HubAgentFormContext): the hub's own read with the
- * archetype the hero shows, and `instant` when the last change of it was a preview taken off (the armory closing
- * without an equip), which the hero draws at once instead of suiting up. A read that is not ready passes unchanged.
+ * The hero's read with the flag on (HubAgentForm.jsx reads HubAgentFormContext): the hub's own read, the same agent (its
+ * id, so the hero's key and its view stay), wearing `shown`. Founder ruling N1: outside a game Shadow is neutral, so the
+ * hub hands its hero this read with nothing shown, bare Shadow whatever the agent's archetype (CommandCenterHub.jsx), and
+ * the phone armory hands it the previewed set while it is open (ShadowStage.jsx PhoneArmoryStage). A read that is not
+ * ready passes unchanged: the hero shows nothing of it yet.
  */
-export function armoryHeroRead(read, shown, instant) {
+export function armoryHeroRead(read, shown = undefined) {
   if (!read || read.status !== 'ready' || !read.agent || typeof read.agent !== 'object') return read;
-  return { ...read, agent: { ...read.agent, archetype: shown }, instant: instant === true };
+  return { ...read, agent: { ...read.agent, archetype: shown } };
 }
 
 /**
  * The phone armory's state, around PhoneStage (CommandCenterHub.jsx). It stays mounted with the hub, so:
- *   - each open starts on the equipped set, with no set hot;
- *   - `shown` is what the hero wears: the previewed set while open; after an equip, the equipped set until the agent's
- *     read catches up with it (so the hero never steps back to the old set and suits up again); else the read's;
- *   - `instant` marks a change of `shown` made by closing (a preview taken off), so the hero draws it at once.
+ *   - each open starts on the equipped set, with no set hot and no words left from the last one;
+ *   - `shown` is what the hero wears: the previewed set while open, nothing (bare Shadow, N1) while closed. So opening
+ *     suits the hero up in the equipped set, each preview is a swap, and closing, by Close, Escape, an equip or anything
+ *     that closes the hub's sheet, takes the armor off once: the engine's 700 ms unequip as the box collapses;
+ *   - a result in flight when the armory closes by any path is dropped: the details' root carries the equip's `detach`,
+ *     so its unmount drops it (no effect; an external close never reaches `close` below).
  * Closing returns focus to the control that opened it (useHubSheets keeps it at the click).
  */
 export function PhoneArmoryScope({ open, agent, onClose, opener = null, reducedMotion = false, children }) {
@@ -367,29 +380,16 @@ export function PhoneArmoryScope({ open, agent, onClose, opener = null, reducedM
   const real = agent ? agent.archetype : undefined;
   const [previewed, setPreviewed] = useState(() => firstPreview(real));
   const [hot, setHot] = useState(null);
+  const result = useArmoryEquip({ agent, onEquipped: (codeId, { stay }) => { if (!stay) close(); } });
   const [wasOpen, setWasOpen] = useState(isOpen);
   if (wasOpen !== isOpen) {
     setWasOpen(isOpen);
-    if (isOpen) { setPreviewed(firstPreview(real)); setHot(null); }
+    if (isOpen) { setPreviewed(firstPreview(real)); setHot(null); result.reset(); }
   }
-  const [committed, setCommitted] = useState(null);
-  if (committed && real !== committed.base) setCommitted(null);
-  const result = useArmoryEquip({
-    agent,
-    onEquipped: (codeId, { stay }) => {
-      setCommitted({ archetype: codeId, base: real });
-      if (!stay) close();
-    },
-  });
   function close() {
     result.cancel();
     onClose?.();
     if (opener && typeof opener.focus === 'function') opener.focus();
-  }
-  const shown = isOpen ? previewed : committed && real === committed.base ? committed.archetype : real;
-  const [trail, setTrail] = useState({ shown, previewing: isOpen, instant: false });
-  if (trail.shown !== shown || trail.previewing !== isOpen) {
-    setTrail({ shown, previewing: isOpen, instant: trail.shown !== shown && trail.previewing && !isOpen });
   }
   const value = {
     open: isOpen,
@@ -398,12 +398,12 @@ export function PhoneArmoryScope({ open, agent, onClose, opener = null, reducedM
     preview: setPreviewed,
     hot,
     setHot,
-    shown,
-    instant: trail.instant,
+    shown: isOpen ? previewed : undefined,
     working: result.working,
     error: result.error,
     notice: result.notice,
     equip: () => result.equip(previewed),
+    detach: result.detach,
     close,
     reducedMotion,
   };
@@ -473,10 +473,13 @@ export function PhoneArmoryRing({ scope }) {
   );
 }
 
-/** Under the phone ring: the set's words, the status line, Equip and the footnote (board 6's aside, one column). */
+/**
+ * Under the phone ring: the set's words, the status line, Equip and the footnote (board 6's aside, one column). Its root
+ * carries the equip's `detach`: it unmounts whenever the armory closes, so a result still in flight is dropped.
+ */
 export function PhoneArmoryDetails({ scope }) {
   return (
-    <div data-armory="phone" style={{ display: 'flex', flexDirection: 'column', padding: '8px 9px 0' }}>
+    <div ref={scope.detach} data-armory="phone" style={{ display: 'flex', flexDirection: 'column', padding: '8px 9px 0' }}>
       <ArmoryDetails previewed={scope.previewed} equipped={scope.equipped} working={scope.working} error={scope.error} notice={scope.notice} onEquip={scope.equip} compact />
     </div>
   );

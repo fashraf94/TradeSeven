@@ -88,10 +88,13 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
       IMPORT,
       '{AGENT_FORM_ARMORY_ENABLED ? (',
       'paused={AGENT_FORM_ARMORY_ENABLED ? coverOpen || sheet.sheet === HUB_SHEETS.ARCHETYPE : coverOpen}',
+      // The follow-up's N1: the hero's read is bare Shadow with the armory on.
+      '<HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>',
     ]);
     expect(at(`${hub}LoadoutSheets.jsx`)).toEqual([IMPORT, '{AGENT_FORM_ARMORY_ENABLED ? (']);
     expect(at(`${hub}ShadowStage.jsx`)).toEqual([IMPORT, 'return AGENT_FORM_ARMORY_ENABLED ? (']);
-    expect(at(`${hub}HubAgentForm.jsx`)).toEqual([IMPORT, 'equipOnChange={AGENT_FORM_ARMORY_ENABLED ? use(HubAgentFormContext)?.instant !== true : true}']);
+    // The follow-up's N1 retired A1's `instant` read: the hero's view is main's file again, and reads no armory flag.
+    expect(at(`${hub}HubAgentForm.jsx`)).toEqual([]);
     expect(at(`${hub}hub/useHubSheets.js`)).toEqual([
       "import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';",
       'if (AGENT_FORM_ARMORY_ENABLED ? kind !== HUB_SHEETS.ARCHETYPE && LEGACY.has(kind) : LEGACY.has(kind)) {',
@@ -115,7 +118,6 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
     expect(readers.sort()).toEqual([
       'components/AgentForm/agentFormSpec.js',
       'components/CommandCenter/CommandCenterHub.jsx',
-      'components/CommandCenter/HubAgentForm.jsx',
       'components/CommandCenter/LoadoutSheets.jsx',
       'components/CommandCenter/ShadowStage.jsx',
       'components/CommandCenter/hub/useHubSheets.js',

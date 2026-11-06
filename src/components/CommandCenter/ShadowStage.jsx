@@ -260,13 +260,14 @@ function PhoneSummaries({ selectedArea, summaries }) {
  * away, the hero shrinks to PHONE_ARMORY.centre in the middle of the ring and wears the previewed set, the six sets sit
  * around it, and the set's words and Equip sit under the ring. The hero is the SAME element in both layouts — one path
  * through the tree, a wrapper that is `display: contents` while closed — so it never remounts: no flash or black square
- * on open or close, and closing takes the preview off at once (`instant`), never a second suit-up. Escape closes.
+ * on open or close. Founder ruling N1: closed, the hero is bare Shadow (the hub's read already is); open, it wears the
+ * previewed set, so closing takes the armor off once, on the engine's unequip, as the box collapses. Escape closes.
  */
 function PhoneArmoryStage({ size, status, processing, words, selectedArea, summaries, reducedMotion, createdAttemptId, paused, holdPhase, progress }) {
   const scope = useContext(ArmoryStageContext);
   const read = useContext(HubAgentFormContext);
   const open = Boolean(scope && scope.open);
-  const heroRead = scope ? armoryHeroRead(read, scope.shown, scope.instant) : read;
+  const heroRead = scope ? armoryHeroRead(read, scope.shown) : read;
   const { centre, extent, padding } = PHONE_ARMORY;
   const onKeyDown = (event) => {
     if (!open || event.key !== 'Escape') return;
