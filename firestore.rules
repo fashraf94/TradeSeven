@@ -544,6 +544,16 @@ service cloud.firestore {
           allow write: if false;
         }
       }
+
+      // ID-1 Build 2 (shape note V1.7 §4, ruling Q-ID1-7): the activation
+      // pointers, one immutable record per holding lifetime, created by the
+      // observer through the Admin SDK only. SERVER-ONLY in V1: no client read
+      // for anyone, the owner included (the parent battle's owner read above
+      // does not reach a subcollection), and no client write.
+      // test/rules/activationEvidenceDenials.rules.mjs asserts it.
+      match /activations/{activationId} {
+        allow read, write: if false;  // Admin SDK only
+      }
     }
 
     // Draft user stats — document ID is the userId
@@ -1253,6 +1263,13 @@ service cloud.firestore {
       allow read, write: if false;  // Admin SDK only
     }
     match /setupEvidenceClaims/{id} {
+      allow read, write: if false;  // Admin SDK only
+    }
+
+    // ID-1 Build 2 (shape note V1.7 §4.4): activationObserverState/{name}, the
+    // observer's cursors, battle index and carried keys. SERVER-ONLY, never
+    // read by any reader of evidence. test/rules/activationEvidenceDenials.rules.mjs asserts it.
+    match /activationObserverState/{name} {
       allow read, write: if false;  // Admin SDK only
     }
 

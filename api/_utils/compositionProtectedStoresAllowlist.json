@@ -384,7 +384,9 @@
     "api/_utils/setupEvidence/store.js::createFinal::set::unresolved": 1,
     "api/_utils/setupEvidence/store.js::releaseClaimLease::set::unresolved": 1,
     "api/_utils/setupEvidence/store.js::settleConfirmation::create::unresolved": 1,
-    "api/_utils/setupEvidence/store.js::settleConfirmation::set::unresolved": 3
+    "api/_utils/setupEvidence/store.js::settleConfirmation::set::unresolved": 3,
+    "api/_utils/activationEvidence/writer.js::createAtFinalization::create::unresolved": 2,
+    "api/_utils/activationEvidence/writer.js::createWithEvidence::create::unresolved": 1
   },
   "_notes_spec1_phase3": {
     "api/_utils/mandateClosePass.js::closeBook (set/update)": "SPEC1 Phase 3 (this PR). The §3.6 daily-close transaction — TWO tx.set sites (the deferred-write loop: decisions/{id} expiry receipts + corporateActions/{actionId} logs + CORPORATE_CLOSE receipts; and the dailyRows/{date} row write, whose mandateRef-parameter-rooted chain the scanner cannot resolve even though the collection literal is visible) and one tx.update on the mandate doc (marks/peaks/scoring/health/execState under revision discipline). The atomic reads-before-writes structure must not be restructured to chase a literal. Same class as the Phase 2 executeDecision/writeTerminal entries. Verified targets: mandates/{id}, mandates/{id}/decisions, mandates/{id}/corporateActions, mandates/{id}/dailyRows — none protected. The pendingScoringAppends write (appendScoringWithRetry) resolves via its callee-base literal and needs no entry.",
@@ -498,5 +500,8 @@
   },
   "_notes_setup_evidence_store": {
     "api/_utils/setupEvidence/store.js::{claimSnapshot,createFinal,releaseClaimLease,settleConfirmation} (set/create)": "ID-1 Build 1, the shared setup-evidence store (shape note V1.4 section 3; build report docs/audits/20261030_BUILD_SETUP_EVIDENCE_STORE.md). HUMAN REVIEW: every write is inside one runTransaction on one of two server-only collections, setupEvidence/{id} and setupEvidenceClaims/{id}, NEITHER a composition-protected store. The final document is written only by the two tx.create sites, never updated. claimSnapshot takes the lease; createFinal, releaseClaimLease and the three settleConfirmation sets clear it or record the observation, each only when the claim still carries the caller's token. Neither tx.create is token-gated, by design: the contract gives the create to a worker that lost its lease too, and the create decides. Nothing calls the library in this build (setupEvidenceImportGuard.test.js). Unresolved for the standard handle-form reason: the ref is the ARGUMENT of tx.set/tx.create, which the scanner does not follow once the handle is shaped."
+  },
+  "_notes_activation_observer": {
+    "api/_utils/activationEvidence/writer.js::{createWithEvidence,createAtFinalization} (create)": "ID-1 Build 2, the activation observer (shape note V1.7 section 4.2; build report docs/audits/20261104_BUILD_ACTIVATION_OBSERVER.md). HUMAN REVIEW: three tx.create sites, each inside one runTransaction that first reads the pointer document, all on agentBattles/{battleId}/activations/{activationId} (server-only; NOT a composition-protected store). createWithEvidence creates the pointer from a final snapshot; createAtFinalization reads the pointer AND setupEvidence/{id} in the same transaction and creates either the evidence pointer or the null pointer. A pointer is never set, updated or merged (activationEvidenceBoundary.test.js pins it). Unresolved for the standard handle-form reason: the ref is the ARGUMENT of tx.create, built by a helper, which the scanner does not follow. The observer state write (state.js writeObserverState, activationObserverState/main, also not protected) is a callee-base set the scanner does not shape as Firestore (its documented no-ref-evidence limit), so it needs no key."
   }
 }

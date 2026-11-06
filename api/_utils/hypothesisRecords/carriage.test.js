@@ -613,6 +613,11 @@ describe('the census — who names agentContext.equippedHypothesis', () => {
     const naming = files.filter((f) => readFileSync(f, 'utf8').includes('equippedHypothesis'))
       .map((f) => relative(REPO, f).split(sep).join('/')).sort();
     expect(naming).toEqual([
+      // ID-1 Build 2 (shape note V1.7 §4 hypothesisRef): the activation observer reads the battle's FROZEN
+      // { watchlistId, hypothesisVersion, contentHash } into a server-only pointer — a record reader, not a
+      // prompt module, the evaluation cron or a capture writer; the statement and every other key stay unread.
+      'api/_utils/activationEvidence/constants.js', // the field mask: the three id fields only
+      'api/_utils/activationEvidence/pointer.js', // hypothesisRef from those three fields; inIdeaUniverse from frozenNamesOf
       'api/_utils/agentBattleService.js', // the fenced writer (the 11 keys)
       'api/_utils/callRecords/candidate.js', // P1a's resolveProvenance — {watchlistId, hypothesisVersion} only
       'api/_utils/compositionGenerationFence.js', // a comment; the creation transaction calls carriage.js
