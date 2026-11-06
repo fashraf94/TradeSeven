@@ -1,0 +1,196 @@
+// loadout-parts.jsx — shared pieces for the loadout boards. Reuses Agent / Board / Panel / Motion from the identity boards (agent-boards-v2.jsx).
+const { FF, FF_MONO, ffA, FfEyebrow, FfTag, FfIco, FfBtn, FfMono, Agent, Board, Panel, Motion, Name, Desc, Label, SANS, NAMES, KINDS, StatusLine, RingGlyph } = window;
+const WEEK_END = 'Fri Nov 7, 4:00 PM';
+const BOOK = { energy: { name: 'Energy Movers', n: 12 }, ind: { name: 'Industrials', n: 18 } };
+const SHORT = { trend: 'Trend', contra: 'Contrarian', spec: 'Speculator', preserve: 'Preserver', divers: 'Diversifier', fund: 'Fundamental' };
+const ONE_LINE = { trend: 'Goes where the momentum is — and leaves the moment it fades.', contra: 'Buys what everyone else is giving up on.', spec: 'Chases the biggest swings and wears the risk.', preserve: 'Protects the downside first.', divers: 'Spreads the bets so no single one can sink you.', fund: 'Buys quality and lets the fundamentals work.' };
+const TAGS = { next: ['Next deploy', FF.teal], running: ['Game running', FF.teal], locked: ['Locked', FF.ink3], open: ['Open', FF.teal], nobook: ['No book', FF.gold] };
+const GAME = { bb: 'BaggerBomb', lg: 'League' };
+const phonePad = w => (w < 360 ? 10 : 12);
+const phoneInner = w => w - phonePad(w) * 2 - 2;
+
+// A set at card size. Below 60 px the engine never animates, so every one of these is a still.
+function Still({ k, s = 48, pal = 'teal', empty, face = 1, style, label }) {
+  return <span aria-hidden={label ? undefined : 'true'} style={{ width: s, height: s, borderRadius: Math.round(s / 4), background: FF.bg, border: `1px solid ${FF.hair}`, overflow: 'hidden', flexShrink: 0, display: 'block', ...style }}><Agent kind={k} core={1} armor={0} size={s} pal={pal} brain={!empty} face={face} label={label} /></span>;
+}
+function BookGlyph({ s = 48, dim }) { const c = dim ? FF.ink3 : FF.teal; return <span aria-hidden="true" style={{ width: s, height: s, borderRadius: Math.round(s / 4), background: FF.bg, border: `1px ${dim ? 'dashed' : 'solid'} ${dim ? FF.hair2 : FF.hair}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width={Math.round(s * .5)} height={Math.round(s * .5)} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.9" strokeLinecap="round"><path d="M5 6h1.5M10 6h9M5 12h1.5M10 12h9M5 18h1.5M10 18h9" /></svg></span>; }
+function StateTag({ t }) { const [l, c] = TAGS[t]; return <FfTag color={c} dim={t === 'locked'}>{l}</FfTag>; }
+function RecordSlot({ style }) { return <span style={{ fontFamily: FF_MONO, fontSize: 9, letterSpacing: '.08em', textTransform: 'uppercase', color: FF.ink3, border: `1px dashed ${FF.hair2}`, borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap', lineHeight: 1.5, ...style }}>record facts · later</span>; }
+function Door({ locked, none }) { if (none) return null; return <span aria-hidden="true" style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: locked ? FF.ink3 : FF.ink2 }}><FfIco name={locked ? 'lock' : 'chevR'} size={locked ? 15 : 16} /></span>; }
+function LRow({ icon, name, sub, locked, dashed, tap, nameColor }) {
+  return <div role="button" tabIndex={0} aria-label={tap} className="ff-tap ff-row" style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 60, padding: '6px 4px 6px 6px', margin: '0 -4px 0 -6px', borderRadius: 14, cursor: 'pointer', border: dashed ? `1px dashed ${ffA(FF.gold, .45)}` : '1px solid transparent' }}>
+    {icon}
+    <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.2, color: nameColor || FF.ink, letterSpacing: '-0.005em' }}>{name}</div><div style={{ fontSize: 12, color: FF.ink3, marginTop: 3, lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>{sub}</div></div>
+    <Door locked={locked} />
+  </div>;
+}
+function RunningStrip({ kind }) { return <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, padding: '7px 10px', borderRadius: 12, background: FF.bg, border: `1px solid ${FF.hair}` }}><Still k={kind} s={40} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 3, background: FF.teal, boxShadow: `0 0 8px ${FF.teal}` }} /><FfMono style={{ fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: FF.teal }}>Running now</FfMono></div><div style={{ fontSize: 13, fontWeight: 600, marginTop: 2, lineHeight: 1.25 }}>{NAMES[kind]} <span style={{ color: FF.ink3, fontWeight: 400 }}>· ends at the close</span></div></div></div>; }
+function StateLine({ state, nobook, running }) {
+  const lock = state === 'locked';
+  const txt = nobook ? 'Deploy waits for a book.' : running ? <>The running game keeps the {NAMES[running]}. The next deploy wears what you set here.</> : lock ? <>Locked until the week ends · <span style={{ color: FF.ink, fontWeight: 600 }}>{WEEK_END}</span>. Set when you registered.</> : state === 'open' ? 'Open until you register for next week. It locks then.' : 'The next deploy wears this.';
+  return <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start', marginTop: 8, paddingTop: 10, borderTop: `1px solid ${FF.hair}`, fontSize: 12.5, lineHeight: 1.4, color: FF.ink2, textWrap: 'pretty' }}><span style={{ flexShrink: 0, marginTop: 2, color: lock ? FF.ink3 : nobook ? FF.gold : FF.teal }}><FfIco name={lock ? 'lock' : nobook ? 'info' : 'dot'} size={14} /></span><span>{txt}</span></div>;
+}
+// The loadout card: one game, its set, its book, its state, a door on each half.
+function LoadoutCard({ game = 'BaggerBomb', kind = 'spec', book = BOOK.energy, state = 'next', running, w = 358, style, hot }) {
+  const locked = state === 'locked', nobook = !book, tag = nobook ? 'nobook' : running ? 'running' : state;
+  return <section aria-label={`${game} loadout`} data-screen-label={`${game} loadout card`} style={{ width: w, background: FF.surface, border: `1px solid ${hot ? ffA(FF.teal, .6) : locked ? FF.hair : ffA(FF.teal, .22)}`, boxShadow: hot ? `0 0 0 3px ${ffA(FF.teal, .12)}` : 'none', borderRadius: 18, padding: '12px 14px 12px', flexShrink: 0, ...style }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 24 }}><FfEyebrow color={locked ? FF.ink3 : FF.teal}>{game}</FfEyebrow><StateTag t={tag} /></div>
+    <div style={{ display: 'flex', flexDirection: 'column', marginTop: 4 }}>
+      <LRow icon={<Still k={kind} s={48} />} name={NAMES[kind]} sub={<><span>Set</span><span aria-hidden="true">·</span><RecordSlot /></>} locked={locked} tap={locked ? `${game} armor, locked. Open the armory to look.` : `Change ${game} armor`} />
+      {book ? <LRow icon={<BookGlyph s={48} />} name={book.name} sub={<span>Book · {book.n} names</span>} locked={locked} tap={locked ? `${game} book, locked` : `Change ${game} book`} /> : <LRow icon={<BookGlyph s={48} dim />} name="No book" nameColor={FF.ink2} sub={<span style={{ color: FF.gold, fontWeight: 600 }}>Choose a list</span>} dashed tap="Choose a book" />}
+    </div>
+    {running && <RunningStrip kind={running} />}
+    <StateLine state={state} nobook={nobook} running={running} />
+  </section>;
+}
+// The one-line form: set small, book, state, and a door when there is one.
+function LoadoutLine({ kind = 'contra', book = BOOK.ind, state = 'locked', eyebrow, door, dim, w, style }) {
+  const sub = state === 'locked' ? ['lock', `Locked until the week ends · ${WEEK_END}`] : state === 'open' ? ['dot', 'Open · locks when you register'] : state === 'runningNow' ? ['dot', 'Ends at the close · keeps its armor'] : state === 'nobook' ? ['info', 'Deploy waits for a book'] : null;
+  const hasDoor = door != null ? door : state === 'open' || state === 'next' || state === 'nobook';
+  return <div role={hasDoor ? 'button' : undefined} tabIndex={hasDoor ? 0 : undefined} className={hasDoor ? 'ff-tap ff-row' : undefined} style={{ width: w, display: 'flex', alignItems: 'center', gap: 12, minHeight: 52, padding: '6px 4px 6px 4px', margin: '0 -4px', borderRadius: 12, cursor: hasDoor ? 'pointer' : 'default', opacity: dim ? .75 : 1, ...style }}>
+    <Still k={kind} s={40} />
+    <div style={{ flex: 1, minWidth: 0 }}>
+      {eyebrow && <FfMono style={{ display: 'block', fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase', color: FF.ink3, marginBottom: 3 }}>{eyebrow}</FfMono>}
+      <div style={{ fontSize: 14, lineHeight: 1.3, color: FF.ink, textWrap: 'pretty' }}><span style={{ fontWeight: 700 }}>{NAMES[kind]}</span>{book ? <span style={{ color: FF.ink2 }}> · {book.name} · {book.n} names</span> : state === 'runningNow' ? null : <span style={{ color: FF.gold, fontWeight: 600 }}> · No book</span>}</div>
+      {sub && <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3, color: state === 'locked' ? FF.ink3 : state === 'nobook' ? FF.gold : FF.teal }}><FfIco name={sub[0]} size={12} /><FfMono style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: state === 'locked' ? FF.ink3 : state === 'nobook' ? FF.gold : FF.ink2 }}>{sub[1]}</FfMono></div>}
+    </div>
+    {hasDoor && <Door />}
+  </div>;
+}
+
+// ── frames ───────────────────────────────────────────────────────────────────
+function Phone({ w = 390, title = 'Command Center', date = 'Wed, Nov 4 · Tester', label, children, style }) {
+  return <div data-screen-label={label} style={{ width: w, background: FF.bg, border: `1px solid ${FF.hair2}`, borderRadius: 30, padding: `10px ${phonePad(w)}px 22px`, boxShadow: '0 30px 90px rgba(0,0,0,.55)', position: 'relative', overflow: 'hidden', flexShrink: 0, fontFamily: SANS, color: FF.ink, ...style }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px 10px' }}><FfMono style={{ fontSize: 12, fontWeight: 600 }}>9:41</FfMono><span aria-hidden="true" style={{ width: 90, height: 26, borderRadius: 13, background: '#000' }} /><FfMono style={{ fontSize: 11, color: FF.ink2 }}>●●●</FfMono></div>
+    {title && <div style={{ margin: '4px 2px 12px' }}><FfMono style={{ fontSize: 10, letterSpacing: '.2em', color: FF.ink3, textTransform: 'uppercase' }}>{date}</FfMono><div style={{ fontSize: w < 360 ? 22 : 24, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 4 }}>{title}</div></div>}
+    {children}
+  </div>;
+}
+function Desk({ w = 860, label, title = 'Command Center', date = 'Wednesday, November 4 · Tester', children, style }) {
+  return <div data-screen-label={label} style={{ width: w, background: FF.bg, border: `1px solid ${FF.hair2}`, borderRadius: 18, padding: '20px 22px 22px', boxShadow: '0 30px 90px rgba(0,0,0,.55)', position: 'relative', overflow: 'hidden', flexShrink: 0, fontFamily: SANS, color: FF.ink, ...style }}>
+    {title && <div style={{ marginBottom: 16 }}><FfMono style={{ fontSize: 11, letterSpacing: '.2em', color: FF.ink3, textTransform: 'uppercase' }}>{date}</FfMono><div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 6 }}>{title}</div></div>}
+    {children}
+  </div>;
+}
+function WornLine({ kind, game, locked, small }) { return <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, minWidth: 0 }}><FfMono style={{ fontSize: small ? 10 : 10.5, letterSpacing: '.12em', color: FF.gold, textTransform: 'uppercase', lineHeight: 1.4, minWidth: 0 }}><span style={{ display: 'block' }}>{NAMES[kind]}</span><span style={{ display: 'block' }}>for {game}</span></FfMono>{locked && <span style={{ color: FF.ink3, display: 'flex', marginTop: 1 }}><FfIco name="lock" size={12} /></span>}</div>; }
+function HeroBox({ kind = 'spec', game = 'BaggerBomb', size = 150, locked, children, style }) {
+  return <section data-screen-label="Shadow stage (phone)" style={{ position: 'relative', borderRadius: 20, background: `radial-gradient(ellipse at 30% 42%, ${ffA(FF.teal, .09)}, transparent 55%), ${FF.surface}`, border: `1px solid ${FF.hair}`, padding: '8px 12px 12px 2px', overflow: 'hidden', ...style }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <Agent kind={kind} core={1} armor={0} size={size} />
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}><div><div style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.015em', lineHeight: 1.05 }}>Shadow</div><div style={{ fontSize: 13.5, color: FF.ink2, marginTop: 4, lineHeight: 1.3 }}>your research partner</div></div><StatusLine small /><WornLine kind={kind} game={game} locked={locked} small /></div>
+    </div>
+    {children}
+  </section>;
+}
+function TabStrip({ sel = 2, tabs = ['Partnership', 'Research', 'Loadout'] }) { return <div role="tablist" aria-label="Command Center areas" style={{ display: 'grid', gridTemplateColumns: `repeat(${tabs.length},minmax(0,1fr))`, gap: 4, padding: 4, borderRadius: 14, background: FF.surface, border: `1px solid ${FF.hair}`, margin: '10px 0' }}>{tabs.map((n, i) => <div key={n} role="tab" aria-selected={i === sel} style={{ minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 10, fontSize: 13.5, fontWeight: 600, color: i === sel ? FF.ink : FF.ink3, background: i === sel ? FF.raised : 'transparent', border: `1px solid ${i === sel ? FF.hair2 : 'transparent'}`, whiteSpace: 'nowrap' }}>{n}</div>)}</div>; }
+
+// ── the armory inside the hero's box (phone) ─────────────────────────────────
+function RingSlot({ k, cur, sel, s = 56, style }) {
+  return <div role="option" aria-selected={sel} aria-label={`${NAMES[k]} armor${cur ? ', worn now' : ''}`} style={{ position: 'absolute', width: s + 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '4px 4px 3px', borderRadius: 12, background: sel ? ffA(FF.teal, .1) : 'transparent', border: `1px solid ${sel ? ffA(FF.teal, .5) : 'transparent'}`, ...style }}>
+    <Agent kind={k} core={1} armor={0} brain={false} pal={cur ? 'teal' : 'unlit'} size={s} />
+    <FfMono style={{ fontSize: 8.5, letterSpacing: '.05em', textTransform: 'uppercase', color: cur ? FF.teal : sel ? FF.ink2 : FF.ink3, whiteSpace: 'nowrap' }}>{SHORT[k]}</FfMono>
+  </div>;
+}
+function EquipBlock({ ctx = 'bb', locked, sel = 'trend', running, pressed, center = true }) {
+  const game = GAME[ctx];
+  const label = locked ? 'Locked until the week ends' : `Equip ${NAMES[sel]} for ${game}`;
+  const sub = locked ? `${WEEK_END}. Try sets on; nothing changes until then.` : ctx === 'bb' ? (running ? `The running game keeps the ${NAMES[running]}. The next deploy wears this.` : 'Applies to the next deploy.') : 'Set for the week when you register. Locked until it ends.';
+  return <div style={{ marginTop: 10 }}><FfBtn kind={locked ? 'secondary' : 'primary'} color={FF.teal} full icon={locked ? 'lock' : 'check'} ariaLabel={locked ? `Equip is locked. ${label}` : undefined} style={{ color: locked ? FF.ink2 : FF.bg, whiteSpace: 'normal', lineHeight: 1.2, minHeight: 48, padding: '8px 16px', cursor: locked ? 'default' : 'pointer', ...(pressed ? { transform: 'scale(.985)', boxShadow: `0 0 0 4px ${ffA(FF.teal, .35)}` } : null) }}>{label}</FfBtn><div style={{ fontSize: 12, color: FF.ink3, marginTop: 7, textAlign: center ? 'center' : 'left', lineHeight: 1.45, textWrap: 'pretty' }}>{sub}</div></div>;
+}
+function ContextLine({ ctx = 'bb', locked, size = 'phone' }) {
+  const game = GAME[ctx];
+  const sub = ctx === 'bb' ? 'applies to the next deploy' : locked ? `locked until ${WEEK_END}` : 'open · locks when you register';
+  return <div style={{ minWidth: 0 }}><FfEyebrow color={locked ? FF.ink3 : FF.teal} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{locked && <FfIco name="lock" size={12} />}<span>Choosing armor for {game}</span></FfEyebrow><div style={{ fontSize: size === 'phone' ? 12.5 : 13.5, color: FF.ink2, marginTop: 3, lineHeight: 1.35 }}>{sub}</div></div>;
+}
+function ArmoryHero({ w = 390, ctx = 'bb', locked, cur = 'spec', sel = 'trend', fit = 1, running, pressed }) {
+  const inner = phoneInner(w) - 20, big = w >= 360, S = big ? 56 : 48, F = big ? 140 : 120, R = big ? 118 : 96, cx = inner / 2, cy = R + (big ? 42 : 38), H = cy * 2;
+  return <section data-screen-label={`Armory in the hero · ${GAME[ctx]}`} aria-label={`Armory, choosing armor for ${GAME[ctx]}`} style={{ borderRadius: 20, background: `radial-gradient(circle at 50% 42%, ${ffA(FF.teal, .1)}, transparent 48%), ${FF.surface}`, border: `1px solid ${ffA(FF.teal, .3)}`, padding: 10, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}><div style={{ flex: 1, minWidth: 0, paddingTop: 4 }}><ContextLine ctx={ctx} locked={locked} /></div><span aria-label="Close the armory" role="button" style={{ width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: FF.ink2, background: FF.bg, border: `1px solid ${FF.hair}`, flexShrink: 0 }}><FfIco name="x" size={16} /></span></div>
+    <div role="listbox" aria-label="Armor sets" style={{ position: 'relative', height: H, marginTop: 2 }}>
+      <svg aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}><circle cx={cx} cy={cy} r={R} fill="none" stroke={FF.hair2} strokeDasharray="2 6" /></svg>
+      <div style={{ position: 'absolute', left: cx - F / 2, top: cy - F / 2 }}><Agent kind={sel} core={1} armor={0} size={F} fit={fit} label={`Your Shadow wearing ${NAMES[sel]}`} /></div>
+      {KINDS.map((k, i) => { const a = -Math.PI / 2 + i * Math.PI / 3, x = cx + R * Math.cos(a), y = cy + R * Math.sin(a); return <RingSlot key={k} k={k} cur={k === cur} sel={k === sel} s={S} style={{ left: x - (S + 10) / 2, top: y - (S + 22) / 2 }} />; })}
+    </div>
+    <div style={{ marginTop: 4 }}><FfMono style={{ fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: sel === cur ? FF.teal : FF.ink3 }}>{sel === cur ? 'Worn now' : 'Previewing'}</FfMono><div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em', marginTop: 2, lineHeight: 1.15 }}>{NAMES[sel]}</div><div style={{ fontSize: 12.5, color: FF.ink2, marginTop: 3, lineHeight: 1.35, textWrap: 'pretty' }}>{ONE_LINE[sel]}</div><RecordSlot style={{ display: 'inline-block', marginTop: 6 }} /></div>
+    <EquipBlock ctx={ctx} locked={locked} sel={sel} running={running} pressed={pressed} />
+  </section>;
+}
+
+// ── whole phone screens ──────────────────────────────────────────────────────
+const BB0 = { kind: 'spec', book: BOOK.energy, state: 'next' }, LG0 = { kind: 'contra', book: BOOK.ind, state: 'locked' };
+function PhoneLoadoutTab({ w = 390, heroKind, bb = BB0, lg = LG0, armory, label, date, hotCard }) {
+  const cw = phoneInner(w);
+  return <Phone w={w} label={label || `Loadout tab · ${w}`} date={date}>
+    {armory ? <ArmoryHero w={w} {...armory} /> : <HeroBox kind={heroKind || bb.kind} game="BaggerBomb" size={w < 360 ? 130 : 150} />}
+    <TabStrip />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, opacity: armory ? .4 : 1 }}>
+      <LoadoutCard game="BaggerBomb" kind={bb.kind} book={bb.book} state={bb.state} running={bb.running} w={cw} hot={hotCard === 'bb'} />
+      <LoadoutCard game="League" kind={lg.kind} book={lg.book} state={lg.state} w={cw} hot={hotCard === 'lg'} />
+    </div>
+  </Phone>;
+}
+const POD = [['You', 'contra', 'teal', '+184', true], ['Mara K.', 'trend', 'copper', '+171'], ['Dev P.', 'fund', 'copper', '+96'], ['Lina O.', 'spec', 'copper', '−12']];
+function PodCard({ w }) {
+  return <section aria-label="Your pod" style={{ width: w, background: FF.surface, border: `1px solid ${FF.hair}`, borderRadius: 18, padding: '12px 14px 6px' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><FfEyebrow>Your pod · 4 seats</FfEyebrow><FfMono style={{ fontSize: 10, color: FF.ink3, letterSpacing: '.08em' }}>WEEK POINTS</FfMono></div>
+    <div style={{ display: 'flex', flexDirection: 'column', marginTop: 4 }}>{POD.map(([n, k, pal, pts, me]) => <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 52, padding: '6px 0', borderTop: me ? 'none' : `1px solid ${FF.hair}` }}><Still k={k} s={40} pal={pal} face={me ? 1 : -1} /><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 600, color: me ? FF.ink : FF.ink2 }}>{n}</div><div style={{ fontSize: 11.5, color: FF.ink3, marginTop: 2 }}>{NAMES[k]}</div></div><FfMono style={{ fontSize: 14, fontWeight: 700, color: pts[0] === '−' ? FF.neg : FF.pos }}>{pts}</FfMono></div>)}</div>
+  </section>;
+}
+function WeekStrip({ state }) { const open = state === 'open'; return <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '0 2px 10px', flexWrap: 'wrap' }}><FfMono style={{ fontSize: 10.5, letterSpacing: '.14em', textTransform: 'uppercase', color: open ? FF.teal : FF.ink2 }}>{open ? 'Week of Nov 10 · not registered' : 'Week of Nov 3 · day 3 of 5'}</FfMono><FfMono style={{ fontSize: 10.5, color: FF.ink3 }}>{open ? 'Register before 9:30 AM' : 'Battle 3 · 9:30 AM to the close'}</FfMono></div>; }
+function LeagueHero({ size = 130, locked = true }) {
+  return <section data-screen-label="League lobby figure" style={{ borderRadius: 20, background: `radial-gradient(ellipse at 30% 42%, ${ffA(FF.teal, .09)}, transparent 55%), ${FF.surface}`, border: `1px solid ${FF.hair}`, padding: '6px 12px 10px 2px', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 4 }}>
+    <Agent kind="contra" core={1} armor={0} size={size} />
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 7 }}><div><div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.015em', lineHeight: 1.05 }}>Shadow</div><div style={{ fontSize: 13, color: FF.ink2, marginTop: 3 }}>seat 1 of 4</div></div><StatusLine small label={locked ? 'Idle · next battle 9:30 AM' : 'Idle · not registered'} /><WornLine kind="contra" game="League" locked={locked} small /></div>
+  </section>;
+}
+function LeaguePhone({ w = 390, state = 'locked', label, date }) {
+  const cw = phoneInner(w), open = state === 'open';
+  return <Phone w={w} title="League" label={label || `League tab · ${w}`} date={date || (open ? 'Mon, Nov 10 · Tester' : 'Wed, Nov 4 · Tester')}>
+    <WeekStrip state={state} />
+    <LeagueHero size={w < 360 ? 116 : 130} locked={!open} />
+    <section aria-label="League loadout" style={{ width: cw, background: FF.surface, border: `1px solid ${open ? ffA(FF.teal, .3) : FF.hair}`, borderRadius: 16, padding: '6px 14px', margin: '10px 0' }}><LoadoutLine kind="contra" book={BOOK.ind} state={state} eyebrow="Your League loadout" /></section>
+    {open ? <FfBtn kind="primary" color={FF.teal} full icon="trophy" style={{ color: FF.bg, minHeight: 48 }}>Register for the week</FfBtn> : <PodCard w={cw} />}
+  </Phone>;
+}
+function TrainingPhone({ w = 390, label }) {
+  const cw = phoneInner(w);
+  return <Phone w={w} title="Training" label={label || 'Training tab'} >
+    <TabStrip sel={1} tabs={['League', 'Training']} />
+    <section aria-label="Training loadout" style={{ width: cw, background: FF.surface, border: `1px solid ${FF.hair}`, borderRadius: 16, padding: '12px 14px 10px' }}>
+      <div style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.3 }}>Training uses your League loadout</div>
+      <LoadoutLine kind="contra" book={BOOK.ind} state="locked" door={false} style={{ marginTop: 4 }} />
+      <div style={{ fontSize: 12.5, color: FF.ink3, lineHeight: 1.4, paddingBottom: 4 }}>Change it on the League tab, between weeks.</div>
+    </section>
+    <section aria-label="Training pod" style={{ width: cw, background: FF.surface, border: `1px solid ${FF.hair}`, borderRadius: 16, padding: '12px 14px 14px', marginTop: 10 }}>
+      <FfEyebrow>Training pod · unranked</FfEyebrow><div style={{ fontSize: 13.5, color: FF.ink2, marginTop: 6, lineHeight: 1.45 }}>One day against three house agents. Nothing counts toward the week.</div>
+      <FfBtn kind="secondary" full icon="play" style={{ marginTop: 12, minHeight: 48 }}>Start a training pod</FfBtn>
+    </section>
+  </Phone>;
+}
+function DeployCard({ w = 358, kind = 'spec', book = BOOK.energy, running, style }) {
+  return <section data-screen-label="Deploy card" aria-label="Deploy" style={{ width: w, background: FF.surface, border: `1px solid ${FF.hair}`, borderRadius: 18, padding: '12px 14px 14px', flexShrink: 0, ...style }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}><div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>Deploy</div><FfMono style={{ fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase', color: FF.ink3 }}>BaggerBomb · one day</FfMono></div>
+    {running && <LoadoutLine kind={running} book={null} state="runningNow" eyebrow="Running now" door={false} dim style={{ marginTop: 6 }} />}
+    <LoadoutLine kind={kind} book={book} state={book ? 'next' : 'nobook'} eyebrow={running ? 'Next deploy carries' : 'Next deploy carries'} style={{ marginTop: running ? 0 : 6, borderTop: running ? `1px solid ${FF.hair}` : 'none', paddingTop: running ? 8 : 6 }} />
+    <FfBtn kind="primary" color={FF.teal} full icon="bolt" disabled={!book} style={{ color: FF.bg, marginTop: 8, minHeight: 48 }}>{book ? 'Deploy' : 'Deploy · needs a book'}</FfBtn>
+  </section>;
+}
+
+// ── desktop pieces ───────────────────────────────────────────────────────────
+function DeskControl({ name, status, on, color = FF.teal }) { return <div role="tab" aria-selected={on} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 60, padding: '10px 14px', borderRadius: 14, background: on ? ffA(color, .08) : FF.bg, border: `1px solid ${on ? ffA(color, .4) : FF.hair}` }}><RingGlyph on={on} color={color} /><span style={{ minWidth: 0 }}><span style={{ display: 'block', fontSize: 14, fontWeight: 600 }}>{name}</span><span style={{ display: 'block', fontSize: 12, color: on ? FF.ink2 : FF.ink3, marginTop: 2, lineHeight: 1.35, textWrap: 'pretty' }}>{status}</span></span></div>; }
+function DeskStage({ kind = 'spec', game = 'BaggerBomb', locked, size = 200, controls = true, sub = 'your research partner', status, label = 'Shadow stage' }) {
+  return <section data-screen-label={label} style={{ position: 'relative', borderRadius: 20, background: `radial-gradient(ellipse at 20% 55%, ${ffA(FF.teal, .08)}, transparent 50%), ${FF.surface}`, border: `1px solid ${FF.hair}`, padding: '14px 20px 16px 10px', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 20 }}>
+    <Agent kind={kind} core={1} armor={0} size={size} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: 200, flexShrink: 0 }}><div><div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.015em', lineHeight: 1.05 }}>Shadow</div><div style={{ fontSize: 13.5, color: FF.ink2, marginTop: 4 }}>{sub}</div></div><StatusLine small label={status} /><WornLine kind={kind} game={game} locked={locked} small /></div>
+    {controls && <div role="tablist" aria-label="Command Center areas" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}><DeskControl name="Partnership" status="1 confirmed · 1 proposed" /><DeskControl name="Shared Research" status="3 ideas · 1 unresolved" /><DeskControl name="Loadout" status="BaggerBomb · Speculator · League · Contrarian" on color={FF.gold} /></div>}
+  </section>;
+}
+function DeskLoadoutTab({ w = 860, bb = BB0, lg = LG0, label = 'Loadout tab · desktop' }) {
+  const cw = (w - 44 - 14) / 2;
+  return <Desk w={w} label={label}>
+    <DeskStage kind={bb.kind} />
+    <div style={{ display: 'flex', gap: 14, marginTop: 14 }}><LoadoutCard game="BaggerBomb" kind={bb.kind} book={bb.book} state={bb.state} running={bb.running} w={cw} /><LoadoutCard game="League" kind={lg.kind} book={lg.book} state={lg.state} w={cw} /></div>
+  </Desk>;
+}
+
+Object.assign(window, { WEEK_END, BOOK, SHORT, ONE_LINE, TAGS, GAME, BB0, LG0, phoneInner, Still, BookGlyph, StateTag, RecordSlot, Door, LRow, RunningStrip, StateLine, LoadoutCard, LoadoutLine, Phone, Desk, WornLine, HeroBox, TabStrip, RingSlot, EquipBlock, ContextLine, ArmoryHero, PhoneLoadoutTab, PodCard, WeekStrip, LeagueHero, LeaguePhone, TrainingPhone, DeployCard, DeskControl, DeskStage, DeskLoadoutTab });

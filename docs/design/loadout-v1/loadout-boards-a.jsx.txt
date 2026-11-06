@@ -1,0 +1,114 @@
+// loadout-boards-a.jsx — system intro, Board 1 (the loadout overview), Board 2 (the Deploy line), Board 3 (the League lobby line).
+const { FF, FF_MONO, ffA, FfEyebrow, FfTag, FfIco, FfBtn, FfMono, Agent, Board, Panel, Motion, Name, Desc, Label, SANS, NAMES, KINDS, useMotion, StatusLine } = window;
+const { WEEK_END, BOOK, TAGS, BB0, LG0, Still, BookGlyph, StateTag, RecordSlot, LoadoutCard, LoadoutLine, Phone, Desk, HeroBox, PhoneLoadoutTab, LeaguePhone, TrainingPhone, DeployCard, DeskLoadoutTab } = window;
+
+function Cap({ children, color }) { return <div style={{ fontSize: 12, color: color || FF.ink3, lineHeight: 1.45, marginTop: 10, textWrap: 'pretty' }}>{children}</div>; }
+function FrameCol({ label, children, w }) { return <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: w, flexShrink: 0 }}><Label color={FF.teal}>{label}</Label>{children}</div>; }
+
+// ── System ───────────────────────────────────────────────────────────────────
+function LIntro() {
+  const m = useMotion();
+  const rules = [
+    ['Loadout', 'Archetype plus book, for one kind of game. The book is a named list with a count of names; the names themselves never appear on a loadout.'],
+    ['Per game', 'BaggerBomb (one day, deployed from the Command Center) and League (a week, four seats, one battle a day). Both can run at once in different sets. Training pods wear the League loadout.'],
+    ['Locked', 'League is set when you register and frozen until the week ends; it changes only between weeks. BaggerBomb changes any time and applies to the next deploy; a running game keeps the armor it deployed with.'],
+    ['The figure', 'The Command Center hero wears the BaggerBomb loadout; the League lobby’s figure wears the League loadout. Cards carry 40–56 px stills in teal. Only the armory’s centre figure is live.'],
+  ];
+  const tagKeys = Object.keys(TAGS);
+  return <section data-screen-label="System" aria-label="Loadout system" style={{ width: 1720, background: FF.bg, border: `1px solid ${FF.hair2}`, borderRadius: 24, padding: '30px 32px 30px', color: FF.ink, fontFamily: SANS }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24 }}>
+      <div><FfEyebrow color={FF.teal}>FantasyTrades · the loadout · round 1</FfEyebrow><h1 style={{ margin: '10px 0 0', fontSize: 40, fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.05 }}>A loadout is the archetype and the book, per game</h1><p style={{ margin: '12px 0 0', fontSize: 16, color: FF.ink2, maxWidth: 760, lineHeight: 1.5, textWrap: 'pretty' }}>Two games, two loadouts. The overview shows both as cards with a door on each half; every other surface carries the one line that matters there. The armory is board 6 as built, with one context line that names the loadout it is setting.</p></div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}><FfBtn kind="accent" small icon={m ? 'pause' : 'play'} onClick={() => window.AF3 && window.AF3.setMotion(!m)} ariaPressed={m}>{m ? 'Live motion · switch to stills' : 'Still frames · switch to motion'}</FfBtn><FfMono style={{ fontSize: 10.5, color: FF.ink3, letterSpacing: '.08em' }}>FIGURES ≥ 60 PX ARE LIVE · SMALLER ONES ARE ALWAYS STILLS</FfMono></div>
+    </div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 14, marginTop: 26 }}>{rules.map(([h, b]) => <Panel key={h}><FfEyebrow>{h}</FfEyebrow><div style={{ fontSize: 13.5, color: FF.ink2, lineHeight: 1.5, marginTop: 8, textWrap: 'pretty' }}>{b}</div></Panel>)}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: '1.35fr 1fr 1fr', gap: 14, marginTop: 14 }}>
+      <Panel><FfEyebrow>Set stills on cards</FfEyebrow><div style={{ display: 'flex', alignItems: 'flex-end', gap: 22, marginTop: 14, flexWrap: 'wrap' }}>
+        {[[40, 'spec', 'teal', false, 1, '40 · lines'], [48, 'spec', 'teal', false, 1, '48 · cards'], [56, 'spec', 'teal', false, 1, '56 · armory ring']].map(([s, k, pal, e, f, l]) => <div key={l} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}><Still k={k} s={s} pal={pal} /><FfMono style={{ fontSize: 10, color: FF.ink3, letterSpacing: '.06em', whiteSpace: 'nowrap' }}>{l}</FfMono></div>)}
+        <div style={{ width: 1, height: 56, background: FF.hair2, alignSelf: 'center' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}><Still k="fund" s={48} pal="unlit" empty /><FfMono style={{ fontSize: 10, color: FF.ink3, letterSpacing: '.06em' }}>pewter · unworn</FfMono></div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}><Still k="trend" s={40} pal="copper" face={-1} /><FfMono style={{ fontSize: 10, color: FF.ink3, letterSpacing: '.06em' }}>copper · opponent</FfMono></div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}><BookGlyph s={48} /><FfMono style={{ fontSize: 10, color: FF.ink3, letterSpacing: '.06em' }}>book</FfMono></div>
+      </div><Cap>Teal is yours, copper the opponent’s, pewter unworn. Same dark plates for everyone, as in the identity boards.</Cap></Panel>
+      <Panel><FfEyebrow>State tags</FfEyebrow><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>{tagKeys.map(t => <StateTag key={t} t={t} />)}</div><Cap>One tag per card, top right. Locked is pewter because nothing on the card is a door while it holds. No book is gold: it is the only state that blocks a deploy.</Cap></Panel>
+      <Panel><FfEyebrow>Lock line and the record slot</FfEyebrow><div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 14, color: FF.ink3 }}><FfIco name="lock" size={14} /><span style={{ fontSize: 13, color: FF.ink2 }}>Locked until the week ends · <span style={{ color: FF.ink, fontWeight: 600 }}>{WEEK_END}</span></span></div><div style={{ marginTop: 12 }}><RecordSlot /></div><Cap>A lock always says why and until when. The dashed slot marks where a set’s record facts go later; nothing is claimed there now.</Cap></Panel>
+    </div>
+  </section>;
+}
+
+// ── Board 1 · the loadout overview ───────────────────────────────────────────
+const STATES_320 = [
+  ['BaggerBomb · editable', { game: 'BaggerBomb', kind: 'spec', book: BOOK.energy, state: 'next' }, 'Both halves have a door. The line under them says when a change lands.'],
+  ['BaggerBomb · a game is running', { game: 'BaggerBomb', kind: 'trend', book: BOOK.energy, state: 'next', running: 'spec' }, 'The set shown is what the next deploy wears. The running game sits in its own strip, in the armor it deployed with.'],
+  ['League · locked for the week', { game: 'League', kind: 'contra', book: BOOK.ind, state: 'locked' }, 'No doors; the lock glyph takes their place. Tapping the armor row still opens the armory to look.'],
+  ['League · open between weeks', { game: 'League', kind: 'contra', book: BOOK.ind, state: 'open' }, 'Doors are back. The line says the loadout locks again when you register.'],
+  ['BaggerBomb · no book', { game: 'BaggerBomb', kind: 'spec', book: null, state: 'next' }, 'The book row becomes the door to choose one. Deploy waits until it exists.'],
+];
+function LBoard1() {
+  return <Board n={1} title="The loadout overview" note="The Command Center’s Loadout tab: two cards, BaggerBomb and League, each with its set, its book, its state and a door on each half. Phone first at 390 and 320, then the desktop tab.">
+    <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+      <FrameCol label="390 · Wednesday, mid-week"><PhoneLoadoutTab w={390} /></FrameCol>
+      <FrameCol label="320 · Monday, between weeks"><PhoneLoadoutTab w={320} date="Mon, Nov 10 · Tester" bb={{ kind: 'trend', book: BOOK.energy, state: 'next', running: 'spec' }} lg={{ kind: 'contra', book: BOOK.ind, state: 'open' }} /></FrameCol>
+      <FrameCol label="Desktop · the tab under the stage"><DeskLoadoutTab w={860} /></FrameCol>
+    </div>
+    <div style={{ marginTop: 26 }}><Label color={FF.teal}>Every state, at 320</Label>
+      <div style={{ display: 'flex', gap: 14, marginTop: 10, alignItems: 'flex-start' }}>{STATES_320.map(([t, p, c]) => <div key={t} style={{ width: 288, flexShrink: 0 }}><LoadoutCard {...p} w={288} /><div style={{ fontSize: 13, fontWeight: 600, marginTop: 10 }}>{t}</div><Cap>{c}</Cap></div>)}</div>
+    </div>
+    <Motion>When a card updates after Equip, the old still fades out over 150 ms while the new one scales in from 90 % (200 ms, ease-out) and the tag swaps; the hero plays the equip sequence from the identity boards (900 ms) at the same time, so the card is already right if the hero is off-screen. When a lock lifts, the lock glyphs fade to chevrons that slide in 8 px from the right (300 ms) and the tag changes to Open; no flash, no sound. A running strip appears by growing from 0 height (200 ms) and leaves the same way at the close.</Motion>
+  </Board>;
+}
+
+// ── Board 2 · the Deploy card’s loadout line ─────────────────────────────────
+function DeskDeploy({ running, book = BOOK.energy, kind = 'spec' }) {
+  return <Desk w={1000} title={null} label="Deploy card · desktop" style={{ padding: '14px 18px 14px 22px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
+      <div style={{ width: 150, flexShrink: 0 }}><div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.01em' }}>Deploy</div><FfMono style={{ fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase', color: FF.ink3, display: 'block', marginTop: 3 }}>BaggerBomb · one day</FfMono></div>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 18, padding: '0 18px', borderLeft: `1px solid ${FF.hair}`, borderRight: `1px solid ${FF.hair}` }}>
+        {running && <LoadoutLine kind={running} book={null} state="runningNow" eyebrow="Running now" door={false} dim w={260} />}
+        <LoadoutLine kind={kind} book={book} state={book ? 'next' : 'nobook'} eyebrow="Next deploy carries" style={{ flex: 1 }} />
+      </div>
+      <FfBtn kind="primary" color={FF.teal} icon="bolt" disabled={!book} style={{ color: FF.bg, minHeight: 48, minWidth: 190 }}>{book ? 'Deploy' : 'Deploy · needs a book'}</FfBtn>
+    </div>
+  </Desk>;
+}
+function LBoard2() {
+  return <Board n={2} title="The Deploy card’s loadout line" note="What the next BaggerBomb deploy carries, in one line next to Deploy: the set small, the book, the count. The line is a door to the BaggerBomb card on the Loadout tab.">
+    <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+      <div style={{ width: 358 }}><Label color={FF.teal}>Ready · 390</Label><DeployCard style={{ marginTop: 10 }} /><Cap>Speculator with Energy Movers. Deploy is live.</Cap></div>
+      <div style={{ width: 358 }}><Label color={FF.teal}>A game is running</Label><DeployCard style={{ marginTop: 10 }} kind="trend" running="spec" /><Cap>The line splits: the running game in the armor it deployed with, then what the next deploy carries. Deploy itself is unchanged; its rules are not this round’s.</Cap></div>
+      <div style={{ width: 358 }}><Label color={FF.gold}>No book</Label><DeployCard style={{ marginTop: 10 }} book={null} /><Cap>The line names the gap in gold and Deploy waits. The door leads to the card, where the book row is the way in.</Cap></div>
+      <div style={{ width: 288 }}><Label color={FF.teal}>Ready · 320</Label><DeployCard style={{ marginTop: 10 }} w={288} /><Cap>The line wraps to two rows; the still and the door hold their place.</Cap></div>
+    </div>
+    <div style={{ marginTop: 24 }}><Label color={FF.teal}>Desktop · the line sits between the title and the button</Label><div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10 }}><DeskDeploy /><DeskDeploy running="spec" kind="trend" /></div></div>
+    <Motion>The still swaps the same way the card does (150 ms out, 200 ms in). When a game starts, the running line grows in from 0 height over 200 ms and the next-deploy line slides right to make room; at the close it collapses the same way. Deploy’s press state is the existing one.</Motion>
+  </Board>;
+}
+
+// ── Board 3 · the League lobby’s loadout line ────────────────────────────────
+function DeskLeagueLine({ state }) {
+  const open = state === 'open';
+  return <div data-screen-label={`League header · desktop · ${state}`} style={{ display: 'flex', alignItems: 'center', gap: 22, padding: '12px 18px 12px 22px', borderRadius: 16, background: FF.surface, border: `1px solid ${open ? ffA(FF.teal, .3) : FF.hair}` }}>
+    <div style={{ width: 250, flexShrink: 0 }}><FfMono style={{ fontSize: 10.5, letterSpacing: '.14em', textTransform: 'uppercase', color: open ? FF.teal : FF.ink2, display: 'block' }}>{open ? 'Week of Nov 10 · not registered' : 'Week of Nov 3 · day 3 of 5'}</FfMono><div style={{ fontSize: 13, color: FF.ink3, marginTop: 4 }}>{open ? 'Register before 9:30 AM Monday' : 'Battle 3 · 9:30 AM to the close'}</div></div>
+    <div style={{ flex: 1, minWidth: 0, padding: '0 18px', borderLeft: `1px solid ${FF.hair}` }}><LoadoutLine kind="contra" book={BOOK.ind} state={state} eyebrow="Your League loadout" door={false} /></div>
+    {open ? <div style={{ display: 'flex', gap: 10 }}><FfBtn kind="secondary" icon="chevR" style={{ minHeight: 44 }}>Change armor</FfBtn><FfBtn kind="secondary" icon="chevR" style={{ minHeight: 44 }}>Change book</FfBtn></div> : <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: FF.ink3, padding: '0 8px' }}><FfIco name="lock" size={16} /><span style={{ fontSize: 13 }}>Opens Friday after the close</span></div>}
+  </div>;
+}
+function LBoard3() {
+  return <Board n={3} title="The League lobby’s loadout line" note="One line on the League tab: set small, book, lock state, and a door into the armory when the week is open. The Training tab’s Customize loadout button and sheet go away; one line says what Training wears.">
+    <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+      <FrameCol label="League · locked, mid-week · 390"><LeaguePhone w={390} state="locked" /></FrameCol>
+      <FrameCol label="League · open, Monday · 320"><LeaguePhone w={320} state="open" /></FrameCol>
+      <FrameCol label="Training · the replacement line"><TrainingPhone w={390} /></FrameCol>
+      <FrameCol label="What goes away" w={370}>
+        <Panel>
+          <div style={{ position: 'relative', display: 'inline-flex' }}><FfBtn kind="secondary" icon="pencil" style={{ textDecoration: 'line-through', color: FF.ink3 }}>Customize loadout</FfBtn><span aria-hidden="true" style={{ position: 'absolute', top: -8, right: -10, padding: '2px 6px', borderRadius: 5, background: ffA(FF.copper, .15), border: `1px solid ${ffA(FF.copper, .4)}`, fontFamily: FF_MONO, fontSize: 9, letterSpacing: '.1em', color: FF.copper }}>REMOVED</span></div>
+          <div style={{ fontSize: 13.5, color: FF.ink2, lineHeight: 1.5, marginTop: 14, textWrap: 'pretty' }}>The Training tab’s button and its sheet. A Training pod wears the League loadout, so the tab shows that loadout as a plain line with no door and says where to change it.</div>
+          <div style={{ fontSize: 13.5, color: FF.ink2, lineHeight: 1.5, marginTop: 10, textWrap: 'pretty' }}>On the League tab the line gets a door only while the week is open. Locked, it shows the lock and the date and nothing else is tappable.</div>
+        </Panel>
+      </FrameCol>
+    </div>
+    <div style={{ marginTop: 24 }}><Label color={FF.teal}>Desktop · League header, locked and open</Label><div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10, width: 1180 }}><DeskLeagueLine state="locked" /><DeskLeagueLine state="open" /></div></div>
+    <Motion>At the Friday close the lock line changes to Open in place (300 ms cross-fade) and the door slides in from the right; the figure in the lobby does not change, since the loadout has not. Registering runs it backwards: the door leaves, the lock line returns, and the figure plays the equip sequence only if the set changed.</Motion>
+  </Board>;
+}
+
+Object.assign(window, { Cap, FrameCol, LIntro, LBoard1, LBoard2, LBoard3 });
