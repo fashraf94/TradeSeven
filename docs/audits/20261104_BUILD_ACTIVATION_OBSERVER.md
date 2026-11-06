@@ -18,7 +18,7 @@ Build 1 made the shelf: one permanent record per stock, per completed trading da
 | Independent review | 4 lenses, 4 refuting verifiers: 25 findings (4 MEDIUM as reported, none after verification): 14 confirmed, 10 partly, 1 refuted. 20 fixed or reworded; 5 left as recorded; Q2 and Q3 carry two contract readings to you. One point was against the prompt's letter (a casual clone's second read could start after the 6 s budget) and is fixed. Then a mutation lens on the fixed head (§10). |
 | Final runs | All green; the numbers are in §11. |
 | What you need to do | After merging: publish the Firestore rules, deploy the new index, confirm the cron hour in Vercel. Then, when you choose, the flag flip as its own PR (§13). |
-| Questions | Five, none blocking (§14), all answerable before the flag flip. |
+| Questions | Five, none blocking (§14), all answerable before the flag flip. **Ruled 6 Nov (contract V1.8):** Q1, Q4, Q5 kept; Q2, Q3 and review L4-2 changed, built in the rulings round (§16). |
 
 ## 2. Preamble
 
@@ -217,11 +217,12 @@ The docs commit on top holds documents only. Its own suite, lint gate, emulator 
 
 1. Review this PR's CI run (`vitest (unit)` and `firestore rules + emulator suites`), then merge.
 2. **Publish the Firestore rules** (this build adds two server-only collections).
-3. **Deploy the indexes** (`agentBattles (ownerId ASC, createdAt DESC)`), and wait for it to build.
+3. **Deploy the indexes**: the composite `agentBattles (ownerId ASC, createdAt DESC)`, and (since the rulings round, §16) the two single-field exemptions on `activationObserverState` (`battles` and `outstandingKeys`, contract V1.8 §4.4). Wait for the composite to build.
 4. After the deploy, confirm the reflections cron in Vercel's cron list shows the hour 1 (`*/15 13,…,23,0,1 * * *`).
 5. When you choose: the flag flip as its own PR — the flag line to `true`, the pin row in `src/config/activationEvidenceFlags.test.js` to `true` with its registration row turned around, and the `DARK_BY_DESIGN` entry dropped, in one commit. The allowlist is the existing `COCKPIT_ALLOWLIST_UIDS`.
 6. Then the census after the first full session and again after a week (§12).
-7. **Before widening the allowlist** beyond a handful of owners (the census week is the review point): exempt `activationObserverState`'s `battles` map from indexing (a `fieldOverrides` entry in `firestore.indexes.json`), since a map's subfields are indexed by default and the document would reach Firestore's 40,000 index entries at about 5,000 indexed battles (review L4-2). Not needed for two owners.
+
+(The former step 7, exempting the state's `battles` map from indexing before widening the allowlist, is done: the founder ruled it in now, and step 3's deploy carries it; §16.)
 
 Pushed is not deployed. Crons do not run on Vercel preview.
 
@@ -229,11 +230,29 @@ Pushed is not deployed. Crons do not run on Vercel preview.
 
 All of these can be answered before the flag flip; no pointer exists until then.
 
+**Ruled 6 November 2026** (founder; contract V1.8 §12; built in the rulings round, §16). Each ruling sits beside its question below.
+
+| Question | Ruling | Code change |
+|---|---|---|
+| Q1 | Keep as built | none |
+| Q2 | `activatingTick.evaluationId` is `null` on every path | `tick.js` |
+| Q3 | A failed resolver read defers; `unresolved` only on a verdict | `attribution.js`, one line of `tenant.js` |
+| Q4 | Keep as built (V1.8 §4.2 now states it) | none |
+| Q5 | Keep | none |
+| Review L4-2 | Exempt the state's maps from indexing now | `firestore.indexes.json` |
+
 - **Q1 (the gap, legacy route).** Under a gap the contract makes every unwritten starting lifetime `gap`. On a legacy battle the starting position's id does not depend on any row (`${tier}:${slot}:${battle.activatedAt}`), so whether it was written is checkable even under a gap, and it could even be written then if its class were known. Built to the letter (never written under a gap). Keep it, or let the next contract version name and write legacy starting positions under a gap? Recommendation: keep — the observer runs every 15 minutes, so a starting position is written long before 50 trades exist.
+  - **Ruling (6 Nov): keep as built.** No change; V1.8 §4.1 is unchanged.
 - **Q2 (`activatingTick.evaluationId`, review L3-1).** Built as the row's `evaluationId` on `tick_action` and `null` on `unavailable`: §4.5 shows one placeholder for it and `tradeRef.evaluationId`, and §4 nulls "the other three fields" only for `unavailable`. On a proposal execution that value is the proposing check's `eval_NNN`, not the executing tick's, and it duplicates `tradeRef`. Keep it, or make it `null` on every path (no committed tick field carries one)? Recommendation: `null` on every path in V1.8, since `tradeRef` already holds the row's id and a reader may take the field for the tick's.
+  - **Ruling (6 Nov): change — `null` on every path, `tick_action` included.** `tickSeq` and `evalId` still come from the tick record; `tradeRef.evaluationId` still carries the row's id (V1.8 §4, §4.5). Built in §16.
 - **Q3 (attribution on a read error, review L3-2).** The resolver turns a read error into the clone's own id, so a Firestore blip on a casual-clone battle writes a create-once pointer as `unresolved` (built to §4's letter). Other runs' pointers of the same battle then resolve to the parent. Keep it, or defer the battle's writes on a read error and write `unresolved` only on the resolver's real verdicts (missing clone, missing or empty parent id, missing parent, owner mismatch, self-reference)? Recommendation: defer, in V1.8. `casualClone.js` need not change: a recording database handle in `attribution.js` can tell the two apart.
+  - **Ruling (6 Nov): change — a resolver read that fails defers the battle's writes for this run; `unresolved` is recorded only on the resolver's verdicts** (V1.8 §4, §4.2). `casualClone.js` is unchanged. Built in §16, counted as `deferred.attribution_read_error`.
 - **Q4 (the write order, decision 17).** Keep the writes beside acquisition, or return to the strict step order and raise `ADMISSION_RESERVE_MS` to about 9–10 s? Recommendation: keep. It changes no stated rule, and the strict order loses evidence it already holds.
+  - **Ruling (6 Nov): keep as built.** V1.8 §4.2 ("Order of work") now states it. No change.
 - **Q5 (a test that reaches a fenced function, §8).** The observer calls no fenced function. One lifetimes row drives the non-fenced corrected writer (`stockThresholdAdmission.js` `executeCorrectedStockSwap`) to produce real documents, and that writer itself calls the fenced scorer `calculateAssetScoreServer`. The first draft of the row called the fenced `executeSwapServer`; the Linux suite's executor census caught it, and it was changed. If the prompt's "call a fenced function" covers tests too, the row can go; the hand-built fixtures cover the same cases. Recommendation: keep.
+  - **Ruling (6 Nov): keep.** The fence governs edits and product calls; a test exercising a real writer path is allowed (V1.8 §12). No change.
+- **Review L4-2 (the state document's index entries; §13's former step 7).**
+  - **Ruling (6 Nov): change — exempt the state's maps from indexing now, not before widening.** Built in §16 (`battles` and `outstandingKeys`, V1.8 §4.4).
 
 ## 15. Before declaring done
 
@@ -244,3 +263,78 @@ The second advisor consultation came after every commit existed and the final ru
 - The PR description keeps the Q5 sentence beside "fenced functions called by the observer: none", so the one test row that reaches the fenced scorer is in view before CI.
 
 No code changed because of it.
+
+## 16. The rulings round (6 November 2026)
+
+**Prompt:** the founder's rulings on Q1–Q5 (Fable, 6 Nov). **Contract:** `docs/design/20261106_ID1_ACTIVATION_EVIDENCE_SHAPE_NOTE_V1_8.md`, committed byte-identical by this round's docs commit (SHA-256 `8728966195730c18b7b85f4af3b2de6f16ebd6cf5b9c3bef4f1a371ef07502e6`, blob `8661ed58`); V1.7 stays beside it. **Executor:** Claude Code (Opus 5.5, advisor), a fresh session in its own worktree (local branch `claude/id1-build-2-rulings-5acaaa`, fast-forwarded to the PR head `96923f8c` and pushed by refspec to `claude/activation-observer`, no force). `git fetch origin` ran first: `origin/main` was still `f3da14a3`, and PR #1026 was open and unmerged at `96923f8c`.
+
+| | |
+|---|---|
+| What changed | Three things, each its own commit: `activatingTick.evaluationId` is `null` on every path (Q2, `cbc3036b`); a failed attribution read defers the battle instead of recording `unresolved` (Q3, `5710f253`); the observer state's `battles` map and `outstandingKeys` array are exempt from single-field indexing (L4-2, `7dd7b1b0`). Then the review's three test points (`f8d0937d`, tests only) and this docs commit. |
+| What did not | Q1, Q4, Q5: no change. No change to `casualClone.js`, the store, the evaluator, any fenced file, the flag, any other pointer field, cap, reserve, cursor or the null rule. The census reads no counter that was renamed (`deferred.prep_cut` keeps its name; the new reason is a new key), so it is untouched. |
+| Mutants | 2 planted, 2 killed, each by its own rows; the unmutated tree green. |
+| Review | One refuting reviewer on its own tree of `7dd7b1b0`: all four claims HELD; 3 LOW and 2 NIT, no production bug. Two LOW and one NIT fixed in tests (`f8d0937d`); the rest recorded (§16.4). |
+| Runs | All green on the code head `7dd7b1b0` (§16.5); the pushed head's numbers are in the PR description. |
+
+### 16.1 The three changes
+
+1. **Q2** (`api/_utils/activationEvidence/tick.js:94`): `joinTick` returns `evaluationId: null` on the `tick_action` path; the header (`:12-16`) says why. `tickSeq` and `evalId` still come from the tick record; `pointer.js` is unchanged, so `tradeRef.evaluationId` still carries the row's id. The `unavailable` and ambiguous paths already gave all three ids `null` (`UNAVAILABLE_TICK`, `:36`).
+2. **Q3** (`api/_utils/activationEvidence/attribution.js:45-60`, `:72-78`): the budgeted handle the resolver reads through now also reports any throw from a read it admitted (`onThrew`, `:55`). The budget refusal is checked before the read, outside the `try` (`:50`), so a refusal is never counted as a read error; the read is `return await`ed inside the `try`, so a rejected read is caught. `attributionOf` returns `{ deferred: true, reason: 'prep_cut' }` for a refusal (as before, now with its reason) and `{ deferred: true, reason: 'attribution_read_error' }` for a throw; a non-deferred result is unchanged and carries no `reason`, so nothing new reaches `buildPointer`. The tenant counts the reason it is given (`tenant.js:270`) and, as before, writes nothing for the battle in this run: the battle never reaches the run's work list, so no store call is made for it, and its battle-index entry stays unfinished for the next run. `casualClone.js` is unchanged: it still swallows the error and returns the clone's own id; the handle is how the observer tells an error from a verdict. A missing clone, a missing or empty parent id, a missing parent, an owner mismatch and a self-reference stay `unresolved`. A null database also stays `unresolved` (nothing throws on that path; the production tenant always has a database). A read that keeps failing leaves the battle's work outstanding until the horizon, whose branch runs before the attribution call, so the work is then abandoned and counted without another read.
+3. **Indexes** (`firestore.indexes.json:854-863`): two `fieldOverrides` entries, `{ collectionGroup: 'activationObserverState', fieldPath: 'battles' | 'outstandingKeys', indexes: [] }`, the same shape as the file's existing `tickBodies` and `ticks` exemptions. Nothing queries the collection: `state.js:25` reads and writes `activationObserverState/main` by id, and no other module names it. **Firebase's documented format (VERIFIED, read this session):** the `firestore.indexes.json` reference (firebase.google.com/docs/reference/firestore/indexes) documents `fieldOverrides[].indexes` as "Use an empty array to disable indexes on this collectionGroup + fieldPath", and its own example exempts a map field (`myBigMapField`) that way. The index overview (firebase.google.com/docs/firestore/query-data/index-overview, "Automatic index exemptions") says: "If you create an index exemption for a map field, the map's subfields inherit those settings." So exempting `battles` exempts every `battles.<battleId>.*` subfield. For an array, the same page lists three automatic entries, all for the whole array value (ascending, descending, array-contains), and says nothing about maps inside an array; exempting `outstandingKeys` removes those three. The page's limits table gives 40,000 index entries per document. `state.js`'s header records the exemption (`:19-24`).
+
+### 16.2 Tests
+
+- **Q2:** the three `joinTick` pins move to `null` (`tick.test.js:28`, `:35`, `:64`); a new row drives `joinTick` into `buildPointer` (`tick.test.js:37`): a `tick_action` pointer has `evaluationId: null` and `tradeRef.evaluationId` keeps the row's id (`eval_007`, a proposal execution's), and an `unavailable` pointer has all three `null`. The §4.5 canonical fixture moves to `null` (`pointer.test.js:17`). The emulator row pins `null` and `tradeRef.evaluationId: 'eval_012'` on a written pointer (`test/rules/activationObserver.rules.mjs:285-286`).
+- **Q3 (pure, `attribution.test.js:72-112`):** a clone read that throws → deferred `attribution_read_error`, and the parent is never read; a parent read that throws → deferred; a read that throws a plain `TypeError` with no code → deferred, on either read (added after the review, `:89`); every read failing → deferred, and the same agents healthy → resolved to the parent; a throw from the read seam counts as a failed read, while a refusal is `prep_cut`; a ranked battle needs no read, so a failing database cannot defer it. The "read error" row left the `unresolved` table, which now holds only the five verdicts; the null database has its own row (`:44`, unchanged behaviour, not one of the contract's verdicts). The budget row's pin gains `reason: 'prep_cut'`.
+- **Q3 (emulator, `activationObserver.rules.mjs:465`):** the real database behind a proxy whose every `agents` read throws: the casual clone's battle gets no pointer, `deferred.attribution_read_error` is 6, `prep_cut` is absent, and no store call starts; the next run on the plain database writes the six pointers `resolved` to the parent (`attributionAgentId` and `stream.attributionAgentId` `agent-p`, `clone: 'casual'`).
+- **Indexes (`activationEvidenceRulesTripwire.test.js:48`):** exactly the two overrides on `activationObserverState`, none on `activations`; the exempt fields are the state's own keys, the state is addressed by `collection(...).doc(...)` only, and no query is built on its collection in `state.js` or `tenant.js`.
+
+### 16.3 The two mutants
+
+On a separate LF `git archive` of `7dd7b1b0` in the session scratchpad (`node_modules` junctioned), one at a time, each judged by exit code and the JSON reporter's failed rows (the JSON deleted before each run), then restored from `git show 7dd7b1b0:<path>` and compared:
+
+| Mutant | Planted | Pure suite (`api/_utils/activationEvidence/`, 130 rows) | Emulator file (49 rows) |
+|---|---|---|---|
+| Q2-M1 | `tick.js:94` back to `evaluationId: row.evaluationId ?? null` | **killed**, exit 1: 4 rows, all in `tick.test.js` (the new pointer row, the two `tick_action` pins, the null-`evalId` row) | **killed**, exit 1: 1 row, the tick-action row (`:277`) |
+| Q3-M1 | `attribution.js:78` deleted, so a thrown read falls through to `unresolved` | **killed**, exit 1: 4 rows, all in the new Q3 block (clone throws, parent throws, every read failing, the seam) | **killed**, exit 1: 1 row, the new Q3 row (`:465`) |
+| control | none | exit 0, 0 failed | the same file passed 49 of 49 on the fix tree on Windows before the commits, and in the runs below |
+
+Each mutant is caught by its own rows and by no row in another file.
+
+### 16.4 Independent review
+
+One review subagent, instructed to refute, on its own read-only LF `git archive` of `7dd7b1b0` in the session scratchpad (`node_modules` junctioned; no git writes, nothing written in the repository, no emulator, since the Linux emulator run was in flight; it read the emulator file instead). It ran its own differentials and mutants, restored each file from the commit, and ended on a green control (130 of 130).
+
+| Claim | Verdict | What the reviewer tried |
+|---|---|---|
+| 1. Q2 changed only `activatingTick.evaluationId` | **HELD** | A differential of `joinTick` at `96923f8c` against the head over 234 cases (six swap-ins, thirteen tick reads, three clocks; row ids of several shapes, ticks carrying their own `evaluationId`, malformed `tickSeq`, two matches, incomplete reads): with that one field removed, every result and every built pointer was identical, key order included; the head's value was `null` in all 234; `unavailable` and ambiguous joins give all three ids `null`; starting positions still give `activatingTick: null`, `tradeRef: null`. |
+| 2. Q3 cannot record `unresolved` on a thrown read, nor defer a verdict | **HELD** | Traced `casualClone.js:297-326`: every verdict is a plain return, so `onThrew` (only in the catch around an admitted read) cannot fire on one; a differential of `attributionOf` at `96923f8c` against the head over the five verdicts, a non-string parent id, the healthy case and a ranked battle: identical, `deferred: false`. Its mutant removing `await` from the guarded read was killed by three Q3 rows. The tenant counts the reason under its own name and `continue`s before the battle joins the work list. |
+| 3. The exemption touches only the state collection | **HELD** | The diff appends two entries after `tape/etDate` and changes no other override or composite; the shape (`collectionGroup`, `fieldPath`, `indexes`) is that of 19 of the file's 21 existing overrides (the other two add `ttl`); Firebase's two sentences confirmed on the fetched pages; nothing in `api/`, `scripts/` or `src/` queries the collection (the one collection-level access is inside an `assertFails` in `test/rules/activationEvidenceDenials.rules.mjs`). |
+| 4. Nothing else moved | **HELD** | Exactly the ten listed files; `casualClone.js`, `constants.js`, `writer.js`, `pointer.js`, the store, the evaluator, the fenced files and the flag untouched; nothing outside the module lists the deferral reasons, and the census reads none of the tenant's counts. |
+
+**Findings and dispositions**
+
+| Id | Severity | Finding | Disposition |
+|---|---|---|---|
+| RV-1 | LOW | The tenant's use of `attribution.reason` (`tenant.js:270`) is guarded only by the emulator suite: its mutants "count every deferral as `prep_cut`" and "count one per battle" survive the default suite and die only on the emulator row (`activationObserver.rules.mjs:483-484`). | **Recorded.** The tenant has no default-suite harness (it is the I/O module; every tenant behaviour is proven on the emulator), and the emulator suite runs on every PR in CI's `rules` job (`tests.yml:191`). |
+| RV-2 | LOW | "Any throw counts as a failed read" rested on the read seam: this round's `dbOf` throws coded errors, so a filter on `err.code` died only on the seam row. | **Fixed** (`f8d0937d`): a database read throwing a plain `TypeError` with no code defers, on either read (`attribution.test.js:89`). Planted again on the snapshot with the seam row removed: killed by the new row alone; control green. |
+| RV-3 | LOW | The null database sat in the "unresolved (a verdict)" table, beyond the contract's five verdicts. | **Fixed** (`f8d0937d`): its own row, named as unchanged behaviour the tenant never reaches (the host always passes a database, and with none the state and candidate reads fail before any battle is read). |
+| RV-4 | NIT | The second index tripwire row's title said "nothing queries the collection", more than it checks (only chained calls in `state.js` and `tenant.js`). | **Fixed** (`f8d0937d`): the title says what it checks. |
+| RV-5 | NIT | Throws that do not pass through the handle still give `unresolved`: `.data()` or an `exists` getter throwing, a `get()` resolving to `null`, `mayRead()` throwing. | **Recorded.** None is a read failing: the Admin SDK's `data()` decodes a document already fetched, `get()` never resolves to `null`, and `mayRead` is a clock comparison. V1.8 says "either of the resolver's reads fails". |
+| RV-6 | note | Outside this round: `casualClone.js:317` accepts a parent when both `ownerId`s are `undefined`. | **Reported for separate tasking** (BUILD_RULES §3), not fixed: the file is outside this round's scope and `buildCasualCloneDoc` always writes `ownerId`. |
+
+Two of the reviewer's mutants survive by design: taking `evaluationId` from the tick record is unreachable (the tick read's field mask, `TICK_FIELDS`, `constants.js:63`, carries no such field), and a two-statement query on the state collection would slip past the tripwire's regex (RV-4's scope, now stated in its title).
+
+### 16.5 Runs
+
+On the code head `7dd7b1b0` (`origin/main` still `f3da14a3`, so the PR tree is the branch tree). Linux is WSL Ubuntu, Node 20.20.2 (CI's), in a private worktree of `~/pd-ci` at the exact commit, `node_modules` linked to a real install of the same lockfile (`40382e64edb6`, hashed inside WSL).
+
+| Check | Where | Result |
+|---|---|---|
+| Full vitest suite | Linux, `TZ=UTC`, `--maxWorkers=8`, under `flock` | 1,284 files passed, 8 skipped; 28,440 rows passed, 0 failed, 89 skipped; 233 s. Seven rows more than §11's 28,433: one Q2 row, four Q3 rows net (five added, the "read error" row removed from the `unresolved` table), two index rows |
+| `npm run test:rules` | Linux, Temurin 21, the Firestore emulator | 32 files, 608 rows passed (607 + the Q3 row) |
+| `npm run lint:gate` | Linux | exit 0 |
+| `vite build` | Linux | exit 0, built in 14 s (esbuild CSS-syntax warnings on an inline stylesheet's comment and keyframes; the PR changes no CSS) |
+| Golden guard | `scripts/ci/tf-setup-golden-guard.mjs`, compare mode against `f3da14a3` | PASS: golden `767d22633672`, `tf-setup-v1/sem-1`, one baseline entry, unchanged |
+
+After these runs, the review's test commit `f8d0937d` added one row (the plain-error row; the null-database row moved out of a table, so the count is the same) and the pure module ran 131 of 131 on Windows. The docs commit on top holds documents only. The suite, emulator suites, lint gate, `vite build` and golden guard on the exact pushed head, which includes both, are in the PR description.
