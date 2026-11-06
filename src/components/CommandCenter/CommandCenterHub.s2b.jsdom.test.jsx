@@ -18,6 +18,7 @@ import { act } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
+  armory: false,
   authListeners: [],
   deploy: null,
   posts: [],
@@ -88,6 +89,8 @@ vi.mock('./sections/GamesSection', async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, default: (props) => { h.gamesRenders += 1; return <actual.default {...props} />; } };
 });
+// Agent form build A1 follow-up: the armory flag, held off for every row but the N2(d) block at the end (dark on main).
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_ARMORY_ENABLED() { return h.armory; } }));
 vi.mock('../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   isDeploySkyCouplingOn: () => true,
@@ -127,6 +130,7 @@ const deferred = () => { let resolve; const promise = new Promise((r) => { resol
 beforeAll(() => { removeTokens = injectTokens(); });
 afterAll(() => { removeTokens(); });
 beforeEach(() => {
+  h.armory = false;
   resetAuthIdentityForTests();
   __resetHoldClaim();
   h.authListeners = [];
@@ -358,5 +362,78 @@ describe('Q-S2b-4 — a refusal no ceremony shows has Dismiss on the strip and t
     expect(card().getAttribute('data-hub-deploy')).toBe('uncertain');
     expect(byRole(card(), 'button', COPY.deploy.checkDeployment)).toHaveLength(1);
     expect(byRole(card(), 'button', COPY.deploy.dismiss)).toHaveLength(0);
+  });
+});
+
+// ── Agent form build A1 follow-up, founder ruling N2(d) (Nov 4, 2026): a deploy starting closes the phone armory ──────
+// The phone armory is part of the page, so the strip stays usable while it is open; but a deploy starting steps it aside,
+// its preview discarded and nothing equipped. Here through the real provider: the strip's hold, and its Retry.
+describe('N2(d): the phone armory steps aside when a deploy starts (the real provider)', () => {
+  const IN_PROGRESS = { outcome: 'refused', success: false, postIssued: true, httpStatus: 429, status: 429, error: 'Deploy already in progress', reason: 'in_progress' };
+  const armoryOpen = () => document.querySelector('[data-hub-stage="phone"]')?.getAttribute('data-hub-armory') === 'open';
+  const option = (codeId) => document.querySelector(`[role="option"][data-armory-set="${codeId}"]`);
+  async function openArmory() {
+    click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+    await flush();
+    const change = byRole(document, 'button', COPY.loadout.changeArchetype)[0];
+    expect(change, 'the Loadout tab\'s Change archetype').toBeTruthy();
+    click(change);
+    expect(armoryOpen()).toBe(true);
+    click(option('contrarian'));
+    expect(option('contrarian').getAttribute('aria-selected')).toBe('true');
+  }
+  async function refused() {
+    act(() => { pointer(holdIn(strip()), 'pointerdown'); });
+    frameAt(1300);
+    await advance(450);
+    await flush();
+    h.posts.at(-1).answer(IN_PROGRESS);
+    await flush();
+    expect(strip().getAttribute('data-hub-strip')).toBe('failed');
+  }
+
+  it('pressing the strip\'s hold closes it: the stage shows the hold\'s own words, the deploy goes ahead, the preview is gone', async () => {
+    h.armory = true;
+    render('mobile');
+    await flush();
+    await openArmory();
+    // The close is made while the hub renders (its own sheet state): React says nothing of another component's update.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    act(() => { pointer(holdIn(strip()), 'pointerdown'); });
+    expect(armoryOpen()).toBe(false);
+    expect(errors.mock.calls.map((c) => String(c[0])).filter((m) => /Cannot update a component|while rendering/i.test(m))).toEqual([]);
+    errors.mockRestore();
+    expect(status().textContent).toContain(COPY.shadow.statusHolding);
+    frameAt(1300);
+    await advance(450);
+    await flush();
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+    // reopened, the armory starts again on the equipped set: the preview was discarded
+    click(byRole(document, 'button', COPY.loadout.changeArchetype)[0]);
+    expect(option('momentum_chaser').getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('after a refusal, the strip\'s Retry closes it (a deploy starts again)', async () => {
+    h.armory = true;
+    render('mobile');
+    await flush();
+    await refused();
+    await openArmory();
+    click(byRole(strip(), 'button', COPY.deploy.retry)[0]);
+    await flush();
+    expect(armoryOpen()).toBe(false);
+    expect(h.deploy).toHaveBeenCalledTimes(2);
+  });
+
+  it('the control: Dismiss on the same refusal starts nothing, and the armory stays open', async () => {
+    h.armory = true;
+    render('mobile');
+    await flush();
+    await refused();
+    await openArmory();
+    click(byRole(strip(), 'button', COPY.deploy.dismiss)[0]);
+    await flush();
+    expect(armoryOpen()).toBe(true);
+    expect(h.deploy).toHaveBeenCalledTimes(1);
   });
 });

@@ -29,8 +29,8 @@
 // stage, level or growth; the status line is "Equipped" or "Previewing" only.
 //
 // Equip is today's write, exactly the picker's: agentService.changeArchetype (immediate; 409 while the ranked agent is
-// in a battle), so the footnote says so (FD-1). A battle lock shows the hub's own "Locked in battle" line; any other
-// failure the server's words, else the picker's. The server's tempo-dial reset is never silent: its notice shows and
+// in a battle), so the footnote says so (FD-1, alone: ruling N2(b)). A battle lock shows the armory's own lock line
+// (ruling N2(a): nothing changed, try again when the game ends); any other failure the server's words, else the picker's. The server's tempo-dial reset is never silent: its notice shows and
 // the armory stays open. On success the armory closes; the hero stays bare (N1).
 //
 // The words: hub/hubCopy.js ARMORY_COPY; the names, one-liners and paragraphs through hub/archetypeLines.js alone (the
@@ -96,9 +96,12 @@ export function isBattleLock(error) {
   return error?.status === 409 && error?.code === 'battle_active';
 }
 
-/** The words a failed equip shows: the hub's lock line for a battle lock, else the server's message, else the picker's. */
+/**
+ * The words a failed equip shows: the armory's own lock line for a battle lock (ruling N2(a): nothing changed; the hub's
+ * `nextDeployLocked` stays the Loadout card's), else the server's message, else the picker's.
+ */
 export function equipErrorOf(error) {
-  if (isBattleLock(error)) return COPY.loadout.nextDeployLocked;
+  if (isBattleLock(error)) return ARMORY_COPY.locked;
   return typeof error?.message === 'string' && error.message ? error.message : ARMORY_COPY.equipFailed;
 }
 
@@ -288,8 +291,8 @@ export function ArmoryDetails({ previewed, equipped, working, error, notice, onE
       >
         {isEquipped ? ARMORY_COPY.equipped : working ? ARMORY_COPY.equipping : ARMORY_COPY.equip(lines.name)}
       </HubButton>
-      <div style={{ fontSize: 12, color: C.ink3, marginTop: 8, textAlign: 'center', lineHeight: 1.45, textWrap: 'pretty' }}>
-        {ARMORY_COPY.footnote} {ARMORY_COPY.stays}
+      <div data-armory-footnote="" style={{ fontSize: 12, color: C.ink3, marginTop: 8, textAlign: 'center', lineHeight: 1.45, textWrap: 'pretty' }}>
+        {ARMORY_COPY.footnote}
       </div>
     </>
   );

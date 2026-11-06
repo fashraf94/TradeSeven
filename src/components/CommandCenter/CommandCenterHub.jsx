@@ -329,7 +329,18 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
     openAllActivity: sheet.open(HUB_SHEETS.ACTIVITY),
   };
   // Changing area before commitment cancels the charge (spec §5.5); the panels stay mounted while it charges.
-  const selectTab = (next) => { deploy?.cancelCharging(); setTab(next); };
+  // Agent form build A1 follow-up (founder ruling N2(d)): the phone armory is part of the page, so the page stays usable,
+  // but it steps aside, its preview discarded and nothing equipped (Armory.jsx PhoneArmoryScope), when the player goes
+  // elsewhere: a switch to another tab (the Loadout tab, where it opens, is no switch), a deploy starting (a hold charging
+  // or committed, whose phases the stage's status line shows, which the open armory folds away; or the strip's Retry),
+  // another sheet opening (the hub's one sheet slot takes it) or the hub going away (its state goes with it).
+  const selectTab = AGENT_FORM_ARMORY_ENABLED
+    ? (next) => { deploy?.cancelCharging(); if (next !== tab && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet(); setTab(next); }
+    : (next) => { deploy?.cancelCharging(); setTab(next); };
+  // While this renders, so a hold's first phase closes it: a sheet of this component's own state, set in its own render.
+  // The archetype sheet is not registered with the overlay stack while the armory is on (hub/useHubSheets.js), so the
+  // close releases nothing outside this component.
+  if (AGENT_FORM_ARMORY_ENABLED && deploy?.holdPhase && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet();
   return (
     <HubLayoutContext.Provider value={composition}>
       <style data-hub-css="">{HUB_SCOPED_CSS}</style>
@@ -401,7 +412,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
         placement={placement}
         onOpenLoadout={() => selectTab(PHONE_TABS.LOADOUT)}
         onOpenGame={actions.openGame}
-        onAction={actions.deployAction}
+        onAction={AGENT_FORM_ARMORY_ENABLED && actions.deployAction ? (kind) => { if (kind === DISPLAY_ACTIONS.RETRY && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet(); actions.deployAction(kind); } : actions.deployAction}
         holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.STRIP) ?? null}
         holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.STRIP ? deploy.holdPhase : null}
       />

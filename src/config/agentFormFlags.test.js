@@ -86,7 +86,11 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
     ]);
     expect(at(`${hub}CommandCenterHub.jsx`)).toEqual([
       IMPORT,
+      // The follow-up's N2(d): the phone armory steps aside for a tab switch, a hold and the strip's Retry.
+      'const selectTab = AGENT_FORM_ARMORY_ENABLED',
+      'if (AGENT_FORM_ARMORY_ENABLED && deploy?.holdPhase && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet();',
       '{AGENT_FORM_ARMORY_ENABLED ? (',
+      'onAction={AGENT_FORM_ARMORY_ENABLED && actions.deployAction ? (kind) => { if (kind === DISPLAY_ACTIONS.RETRY && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet(); actions.deployAction(kind); } : actions.deployAction}',
       'paused={AGENT_FORM_ARMORY_ENABLED ? coverOpen || sheet.sheet === HUB_SHEETS.ARCHETYPE : coverOpen}',
       // The follow-up's N1: the hero's read is bare Shadow with the armory on.
       '<HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>',

@@ -123,8 +123,10 @@ describe('the equip\'s error words', () => {
     for (const e of [{ status: 409, code: 'epoch_closed' }, { status: 409, code: 'composition_blocked' }, { status: 500, code: 'battle_active' }, null, undefined]) expect(isBattleLock(e)).toBe(false);
   });
 
-  it('the lock shows the hub\'s lock line; another failure its own message; none, the picker\'s words', () => {
-    expect(equipErrorOf({ status: 409, code: 'battle_active', message: 'Cannot change archetype while the agent has an active battle.' })).toBe(HUB_COPY.loadout.nextDeployLocked);
+  it('the lock shows the armory\'s own lock line (N2(a)), never the Loadout card\'s; another failure its own message; none, the picker\'s words', () => {
+    const lock = equipErrorOf({ status: 409, code: 'battle_active', message: 'Cannot change archetype while the agent has an active battle.' });
+    expect(lock).toBe(ARMORY_COPY.locked);
+    expect(lock).not.toBe(HUB_COPY.loadout.nextDeployLocked);
     expect(equipErrorOf({ status: 409, code: 'epoch_closed', message: 'Try again in a few minutes.' })).toBe('Try again in a few minutes.');
     expect(equipErrorOf(new Error(''))).toBe(ARMORY_COPY.equipFailed);
     expect(equipErrorOf(undefined)).toBe(ARMORY_COPY.equipFailed);

@@ -533,6 +533,18 @@ describe('A1: the armory\'s copy carries no count, stage or growth (D4, FD-6), a
     expect([...sourceStrings(armorySource(read(COPY_TABLES[0]))), ...sampled()].filter((s) => /next deploy/i.test(s))).toEqual([]);
   });
 
+  it('N2(b), Nov 4, 2026: the footnote is FD-1\'s sentence alone; board 6\'s "Partnership and shared research stay with Shadow." waits for A3', () => {
+    const literals = sourceStrings(armorySource(read(COPY_TABLES[0])));
+    expect([...literals, ...sampled()].filter((s) => /partnership|shared research/i.test(s))).toEqual([]);
+    expect(Object.keys(ARMORY_COPY)).not.toContain('stays');
+  });
+
+  it('N2(a), Nov 4, 2026: a refused equip has the armory\'s own lock line, which says nothing changed; the Loadout card keeps its own', () => {
+    expect(ARMORY_COPY.locked).toBe('Locked while a game is running · nothing changed. Try again when it ends.');
+    expect(ARMORY_COPY.locked).not.toBe(HUB_COPY.loadout.nextDeployLocked);
+    expect(ARMORY_COPY.locked).not.toMatch(/next deploy|apply/i);
+  });
+
   it('the rows bite: a count or a stage planted in the status copy is caught, as a literal and as an argument the function writes', () => {
     const code = read(COPY_TABLES[0]);
     const from = "  previewingOver: (name) => `Previewing · Equipped set is ${name}`,";

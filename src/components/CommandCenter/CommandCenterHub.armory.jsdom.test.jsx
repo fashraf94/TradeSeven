@@ -96,12 +96,13 @@ const flush = async () => { await act(async () => { await Promise.resolve(); awa
 
 async function renderHub({ site = 'desktop', hubWidth = 1280, agent = AGENT() } = {}) {
   layout.state.hubWidth = hubWidth;
-  const element = (a) => <CommandCenterHub site={site} hub={HUB(a)} sections={HUB_LAYOUT_FIXTURES.returning.sections} />;
+  const hubs = [];
+  const element = (a) => { hubs.push(HUB(a)); return <CommandCenterHub site={site} hub={hubs.at(-1)} sections={HUB_LAYOUT_FIXTURES.returning.sections} />; };
   const m = mount(element(agent));
   mounted.push(m);
   await flush();
   if (site === 'mobile') click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
-  return { m, reread: async (next) => { m.rerender(element(next)); await flush(); } };
+  return { m, hub: () => hubs.at(-1), element: () => element(agent), reread: async (next) => { m.rerender(element(next)); await flush(); } };
 }
 
 // The forms on the page, by what they are: the hero (HubAgentForm hands the response props), the wide dialog's centre
@@ -250,14 +251,15 @@ describe('preview and equip (the wide dialog)', () => {
     expect(dialog()).toBeNull();
   });
 
-  it('a battle lock (409 battle_active) shows the hub\'s "Locked in battle" line, and the armory stays open', async () => {
+  it('N2(a): a battle lock (409 battle_active) shows the armory\'s own line, never the Loadout card\'s, and the armory stays open', async () => {
     changeArchetype.mockRejectedValueOnce(Object.assign(new Error('Cannot change archetype while the agent has an active battle.'), { status: 409, code: 'battle_active' }));
     await renderHub();
     click(btn(COPY.loadout.changeArchetype));
     click(option('analyst'));
     await equipAndSettle();
     expect(dialog()).not.toBeNull();
-    expect(document.querySelector('[data-armory-error]').textContent).toBe(COPY.loadout.nextDeployLocked);
+    expect(document.querySelector('[data-armory-error]').textContent).toBe(ARMORY_COPY.locked);
+    expect(dialog().textContent).not.toContain(COPY.loadout.nextDeployLocked);
     // another refusal keeps its own words (the route's other 409s are not battle locks)
     changeArchetype.mockRejectedValueOnce(Object.assign(new Error('Configuration writes are briefly paused.'), { status: 409, code: 'epoch_closed' }));
     await equipAndSettle();
@@ -320,6 +322,24 @@ describe('the hero behind the wide dialog', () => {
 });
 
 // ── Founder ruling N1 (Nov 4, 2026): outside a game Shadow is always neutral ─────────────────────────────────────────
+/**
+ * The phone's close, in N1's words: the armor comes off with the 700 ms unequip as the box collapses — ONE change of
+ * the hero, to bare Shadow, played (equipOnChange), in the same render as its return to the stage's size — and nothing
+ * after it: no step back to a set, no second suit-up. The engine plays a change to bare as the unequip, and draws it
+ * at once under reduced motion (engine.js swap()).
+ */
+const closesOnce = (h, from, previewed) => {
+  const after = h.history.slice(from);
+  const at = after.findIndex((p) => p.archetype === undefined);
+  expect(at, 'the hero never took the armor off').toBeGreaterThan(-1);
+  // until the close it wears the previewed set, at the armory's centre; from the close on, bare Shadow at the stage's size
+  expect(after.slice(0, at).every((p) => p.archetype === previewed && p.size === PHONE_ARMORY.centre)).toBe(true);
+  const worn = after.slice(at).filter((p) => p.archetype !== undefined);
+  expect(worn.map((p) => p.archetype), 'a set worn again after the close').toEqual([]);
+  expect(after[at].size).toBe(200);
+  expect(after[at].equipOnChange).toBe(true);
+};
+
 const heroBox = () => document.querySelector('[data-hub-agent-form]');
 const bareLabel = (areaName) => COPY.shadow.imageLabel(heroBox().getAttribute('data-shadow-status'), areaName);
 const areaTabs = () => [...document.querySelectorAll('[role="tablist"][aria-label] [role="tab"]')].filter((t) => t.closest('[data-hub-stage]'));
@@ -451,24 +471,6 @@ describe('the phone: the armory in the hero\'s box (FD-8)', () => {
     expect(propsOf(h).equipOnChange).toBe(true);
   });
 
-  /**
-   * The phone's close, in N1's words: the armor comes off with the 700 ms unequip as the box collapses — ONE change of
-   * the hero, to bare Shadow, played (equipOnChange), in the same render as its return to the stage's size — and nothing
-   * after it: no step back to a set, no second suit-up. The engine plays a change to bare as the unequip, and draws it
-   * at once under reduced motion (engine.js swap(); AgentForm.armory.jsdom.test.jsx).
-   */
-  const closesOnce = (h, from, previewed) => {
-    const after = h.history.slice(from);
-    const at = after.findIndex((p) => p.archetype === undefined);
-    expect(at, 'the hero never took the armor off').toBeGreaterThan(-1);
-    // until the close it wears the previewed set, at the armory's centre; from the close on, bare Shadow at the stage's size
-    expect(after.slice(0, at).every((p) => p.archetype === previewed && p.size === PHONE_ARMORY.centre)).toBe(true);
-    const worn = after.slice(at).filter((p) => p.archetype !== undefined);
-    expect(worn.map((p) => p.archetype), 'a set worn again after the close').toEqual([]);
-    expect(after[at].size).toBe(200);
-    expect(after[at].equipOnChange).toBe(true);
-  };
-
   for (const reduced of [false, true]) {
     it(`N1: Close takes the armor off once, as the box collapses, and remounts nothing${reduced ? ' (under Reduce Motion too)' : ''}`, async () => {
       motion.reduced = reduced;
@@ -528,7 +530,7 @@ describe('the phone: the armory in the hero\'s box (FD-8)', () => {
     expect(equipButton().textContent).toBe(ARMORY_COPY.equip(nameOf('degen')));
   });
 
-  it('a battle lock shows the hub\'s lock line in the stage, and the armory stays open', async () => {
+  it('N2(a): a battle lock shows the armory\'s own lock line in the stage, and the armory stays open', async () => {
     changeArchetype.mockRejectedValueOnce(Object.assign(new Error('x'), { status: 409, code: 'battle_active' }));
     await renderHub({ site: 'mobile', hubWidth: 390 });
     click(btn(COPY.loadout.changeArchetype));
@@ -536,7 +538,21 @@ describe('the phone: the armory in the hero\'s box (FD-8)', () => {
     await equipAndSettle();
     const stage = document.querySelector('[data-hub-stage="phone"]');
     expect(stage.getAttribute('data-hub-armory')).toBe('open');
-    expect(stage.querySelector('[data-armory-error]').textContent).toBe(COPY.loadout.nextDeployLocked);
+    expect(stage.querySelector('[data-armory-error]').textContent).toBe(ARMORY_COPY.locked);
+    expect(stage.textContent).not.toContain(COPY.loadout.nextDeployLocked);
+  });
+
+  it('N2(b): the footnote is FD-1\'s sentence alone, on the phone and in the dialog', async () => {
+    await renderHub({ site: 'mobile', hubWidth: 390 });
+    click(btn(COPY.loadout.changeArchetype));
+    expect(document.querySelector('[data-armory-footnote]').textContent).toBe(ARMORY_COPY.footnote);
+    expect(document.body.textContent).not.toMatch(/partnership and shared research/i);
+    for (const m of mounted) m.unmount();
+    mounted = [];
+    await renderHub();
+    click(btn(COPY.loadout.changeArchetype));
+    expect(dialog().querySelector('[data-armory-footnote]').textContent).toBe(ARMORY_COPY.footnote);
+    expect(dialog().textContent).not.toMatch(/partnership and shared research/i);
   });
 
   it('opening focuses the equipped set; Escape closes, and focus goes back to Change archetype', async () => {
@@ -566,5 +582,91 @@ describe('the phone: the armory in the hero\'s box (FD-8)', () => {
     click(btn(COPY.loadout.changeArchetype));
     expect(m.host.closest('[inert]')).toBeNull();
     expect(m.host.hasAttribute('inert')).toBe(false);
+  });
+});
+
+// ── Founder ruling N2(d) (Nov 4, 2026): the phone page stays usable while the armory is open, but the armory steps aside ──
+// A tab switch, another sheet opening or the hub being left closes it, its preview discarded and nothing equipped, with
+// the unequip of N1 (one change of the hero, to bare Shadow). A deploy starting is the real provider's: the hold and the
+// strip's Retry rows are in CommandCenterHub.s2b.jsdom.test.jsx, the provider's suite.
+describe('N2(d): the phone armory steps aside', () => {
+  const stage = () => document.querySelector('[data-hub-stage="phone"]');
+  const armoryOpen = () => stage()?.getAttribute('data-hub-armory') === 'open';
+  async function openAndPreview() {
+    click(btn(COPY.loadout.changeArchetype));
+    expect(armoryOpen()).toBe(true);
+    click(option('contrarian'));
+    expect(propsOf(hero()).archetype).toBe('contrarian');
+  }
+  /** Closed, the preview discarded (the next open starts on the equipped set), and nothing equipped. */
+  function steppedAside(h, from) {
+    expect(armoryOpen()).toBe(false);
+    closesOnce(h, from, 'contrarian');
+    expect(changeArchetype).not.toHaveBeenCalled();
+  }
+  const reopensOnTheEquippedSet = () => {
+    click(btn(COPY.loadout.changeArchetype));
+    expect(option('momentum_chaser').getAttribute('aria-selected')).toBe('true');
+    expect(propsOf(hero()).archetype).toBe('momentum_chaser');
+  };
+
+  for (const name of ['overview', 'research', 'partnership']) {
+    it(`switching to the ${name} tab closes it`, async () => {
+      await renderHub({ site: 'mobile', hubWidth: 390 });
+      const h = hero();
+      await openAndPreview();
+      const from = h.history.length;
+      click(byRole(document, 'tab', COPY.phoneTabs[name])[0]);
+      steppedAside(h, from);
+      click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+      reopensOnTheEquippedSet();
+    });
+  }
+
+  it('the Loadout tab itself, where the armory opens, is no switch: it stays open on its preview', async () => {
+    await renderHub({ site: 'mobile', hubWidth: 390 });
+    await openAndPreview();
+    click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+    expect(armoryOpen()).toBe(true);
+    expect(propsOf(hero()).archetype).toBe('contrarian');
+  });
+
+  for (const [name, opener] of [['the watchlist sheet', () => btn(COPY.loadout.changeWatchlist)], ['the agent record', () => btn(COPY.loadout.recordLabel('Nova'))]]) {
+    it(`opening ${name} closes it (the hub's one sheet slot)`, async () => {
+      await renderHub({ site: 'mobile', hubWidth: 390 });
+      const h = hero();
+      await openAndPreview();
+      const from = h.history.length;
+      click(opener());
+      steppedAside(h, from);
+      expect(document.querySelector('button[aria-label="Close"]')).not.toBeNull(); // the sheet that took its place
+    });
+  }
+
+  it('leaving for the Forge closes it before the hub goes', async () => {
+    const { hub } = await renderHub({ site: 'mobile', hubWidth: 390 });
+    const h = hero();
+    await openAndPreview();
+    const from = h.history.length;
+    const door = [...document.querySelectorAll('button, a, [role="link"]')].find((el) => el.textContent.trim() === COPY.loadout.changeInForge);
+    expect(door, 'the Loadout\'s Forge door').toBeTruthy();
+    click(door);
+    expect(hub().onOpenForge).toHaveBeenCalledTimes(1);
+    steppedAside(h, from);
+  });
+
+  it('leaving the hub (it unmounts) discards the armory: back on the hub it is closed, the hero bare, nothing equipped', async () => {
+    const { m, element } = await renderHub({ site: 'mobile', hubWidth: 390 });
+    await openAndPreview();
+    m.unmount();
+    mounted = mounted.filter((x) => x !== m);
+    const back = mount(element());
+    mounted.push(back);
+    await flush();
+    click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+    expect(armoryOpen()).toBe(false);
+    expect(propsOf(hero()).archetype).toBeUndefined();
+    expect(changeArchetype).not.toHaveBeenCalled();
+    reopensOnTheEquippedSet();
   });
 });
