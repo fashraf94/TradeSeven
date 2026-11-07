@@ -62,7 +62,17 @@ export async function synthesizeWithTimestamps({ text, signal, voiceId = process
   } catch (err) {
     return { ok: false, reason: err?.name === 'AbortError' ? 'aborted' : 'request_failed' };
   }
-  if (!res.ok) return { ok: false, reason: `http_${res.status}` };
+  if (!res.ok) {
+    // the error body's short machine code (ElevenLabs `detail.status`, e.g. `voice_not_found`), never its message
+    let code = null;
+    try {
+      const err = await res.json();
+      const status = err?.detail?.status;
+      code = typeof status === 'string' && /^[a-z0-9_]{1,48}$/.test(status) ? status : null;
+    } catch { /* not JSON */ }
+    log.warn?.('[huddle/speech] refused', JSON.stringify({ status: res.status, code }));
+    return { ok: false, reason: code ? `http_${res.status}:${code}` : `http_${res.status}` };
+  }
   let body;
   try { body = await res.json(); } catch { return { ok: false, reason: 'unparseable' }; }
   const keys = Object.keys(body || {}).sort();
