@@ -157,6 +157,12 @@ describe('B §B3 / §B5 — retirement at the close, early close included', () =
     const apps = (await record(uid, EARLY)).plan.applications;
     expect(apps.find((r) => r.battleId === b1)).toMatchObject({ retiredSlot: true });
     expect(apps.find((r) => r.battleId === b2)).toMatchObject({ retiredSlot: false });
+    // review L2-13: only the receipt whose slot held the plan is retired; the other is closed, and reads "no longer current"
+    expect(apps.find((r) => r.battleId === b1).retiredAt).toEqual(expect.any(String));
+    expect(apps.find((r) => r.battleId === b2).retiredAt).toBeUndefined();
+    expect(apps.find((r) => r.battleId === b2).closedAt).toEqual(expect.any(String));
+    // a later pass touches neither again
+    expect((await reconcileHuddle(db, { uid, etDate: EARLY, nowMs: EARLY_SESSION.closeMs + 3 * MIN })).retired).toBe(0);
     expect(EARLY_SESSION.isEarlyClose).toBe(true);
   });
 });

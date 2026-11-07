@@ -191,7 +191,10 @@ export function observeWrittenReceipt(receipt, battle, { nowMs }) {
 /**
  * Retire the plan at the close (A §A9 timing as replaced by B §B3): compare-and-clear the
  * slot ONLY while it still holds the plan's thread, and stamp `retiredAt`, in one
- * transaction over the battle and the record. A newer directive is never touched.
+ * transaction over the battle and the record. A newer directive is never touched. A receipt
+ * whose slot no longer holds the plan is NOT retired (A §A9 / B §B3 give `retiredAt` only
+ * where the slot held the thread; its status stays "no longer current"): it is closed with
+ * `closedAt`, the separate terminator the reconcile pass stops on (review L2-13).
  */
 export async function retireAtClose(db, { uid, etDate, battleId, directiveThreadId, revision, nowMs }) {
   const dayRef = huddleDayRef(db, uid, etDate);
@@ -201,11 +204,12 @@ export async function retireAtClose(db, { uid, etDate, battleId, directiveThread
     const battleSnap = await tx.get(battleRef);
     const plan = recordSnap.exists ? recordSnap.data()?.plan : null;
     const receipt = receiptOf(plan?.applications, battleId, revision);
-    if (!receipt || receipt.disposition !== DISPOSITIONS.WRITTEN || receipt.retiredAt) return { outcome: 'nothing_to_retire' };
+    if (!receipt || receipt.disposition !== DISPOSITIONS.WRITTEN || receipt.retiredAt || receipt.closedAt) return { outcome: 'nothing_to_retire' };
     const slot = battleSnap.exists ? battleSnap.data()?.directive : null;
     const cleared = !!slot && slot.directiveThreadId === directiveThreadId;
     if (cleared) tx.update(battleRef, { directive: null });
-    const next = plan.applications.map((r) => (r === receipt ? { ...r, retiredAt: iso(nowMs), retiredSlot: cleared } : r));
+    const stamp = cleared ? { retiredAt: iso(nowMs), retiredSlot: true } : { closedAt: iso(nowMs), retiredSlot: false };
+    const next = plan.applications.map((r) => (r === receipt ? { ...r, ...stamp } : r));
     tx.update(dayRef, { 'plan.applications': next, updatedAt: iso(nowMs) });
     return { outcome: cleared ? 'retired' : 'retired_slot_not_held' };
   });
@@ -274,7 +278,7 @@ export async function reconcileHuddle(db, { uid, etDate, nowMs = Date.now(), int
     const snap = await huddleDayRef(db, uid, etDate).get();
     if (snap.exists) fresh = snap.data();
   } catch { tally.errors += 1; }
-  const written = (fresh.plan?.applications || []).filter((r) => r && r.disposition === DISPOSITIONS.WRITTEN && !r.retiredAt);
+  const written = (fresh.plan?.applications || []).filter((r) => r && r.disposition === DISPOSITIONS.WRITTEN && !r.retiredAt && !r.closedAt);
   const confirmation = (rev) => (fresh.plan?.confirmations || []).find((c) => c && c.revision === rev) || null;
   for (const receipt of written) {
     try {
