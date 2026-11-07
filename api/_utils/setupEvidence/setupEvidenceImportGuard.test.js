@@ -33,6 +33,18 @@ const NAMES_LIBRARY_RE = /['"`/]setupEvidence(?:Claims)?['"`/]/;
 const ALLOWED_OUTSIDE = new Set([
   'test/rules/setupEvidenceDenials.rules.mjs',
   'test/rules/setupEvidenceStore.rules.mjs',
+  // ID-1 Build 2 (shape note V1.7 §8; docs/audits/20261104_BUILD_ACTIVATION_OBSERVER.md): the activation observer,
+  // behind ACTIVATION_EVIDENCE_ENABLED and the cockpit allowlist, its census and their tests — each by exact filename.
+  'api/_utils/activationEvidence/tenant.js', // the one caller: getOrAcquireSnapshot and readSnapshot
+  'api/_utils/activationEvidence/writer.js', // reads setupEvidence/{id} inside the finalisation transaction (never the claims)
+  'api/_utils/activationEvidence/discover.js', // the store's pure key and session modules (snapshotIdOf, lastCompletedSessionAt)
+  'api/_utils/activationEvidence/__fixtures__/activationSnapshots.js', // test fixture: real snapshot documents through acquire.js
+  'api/_utils/activationEvidence/constants.test.js', // pins the restated store constants to acquire.js and store.js
+  'api/_utils/activationEvidence/discover.test.js', // the key rows (key.js)
+  'api/_utils/activationEvidence/activationEvidenceBoundary.test.js', // pins discover.js's store imports by name
+  'scripts/census-activation-evidence.mjs', // the read-only census: key.js, sessionAt.js, field-masked reads of both collections
+  'scripts/census-activation-evidence.test.js', // the census's import pin names the store's modules
+  'test/rules/activationObserver.rules.mjs', // the observer against the emulator, with the real store underneath
 ]);
 const isListed = (file) => ALLOWED_OUTSIDE.has(file);
 

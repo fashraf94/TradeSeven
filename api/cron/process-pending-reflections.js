@@ -37,6 +37,15 @@
 // outcome write hands the claimed attempt back, and the battle stays pending;
 // a battle that finishes without a lesson has left its no-lesson row in the
 // learning window. See docs/audits/20261014_BUILD_REFLECTION_OUTAGE_FIX_2.md.
+//
+// ID-1 Build 2 (shape note V1.7 §4.3, docs/audits/20261104_BUILD_ACTIVATION_OBSERVER.md):
+// the SIXTH tenant, the activation observer, after the review pass. Its slice,
+// min(tenantStart + 20 s, handlerStart + 80 s), is an ADMISSION deadline: no
+// store call or pointer transaction starts unless its reserve fits before it,
+// and every started call is awaited, so a run can end a few seconds after it.
+// TIME_BUDGET_MS (the five tenants' 50 s) is unchanged; maxDuration (120 s) is
+// the hard stop. The schedule gained the 01:00 UTC hour (vercel.json) so the
+// winter expiry (01:00 UTC) is followed by runs at 01:00–01:45 UTC.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { generateReflection } from '../agent/reflect.js';
@@ -53,6 +62,10 @@ import { runCallSweep } from '../_utils/callRecords/sweep.js';
 // tenant, after the call sweep; with HYPOTHESIS_RECORDS_ENABLED false it
 // returns before any read and the response carries no new key.
 import { runHypothesisReviewPass } from '../_utils/hypothesisRecords/reviewPass.js';
+// ID-1 Build 2: the activation observer — the SIXTH tenant, after the review
+// pass; with ACTIVATION_EVIDENCE_ENABLED false (or an empty allowlist) it
+// returns before any read and the response carries no new key.
+import { runActivationObserver } from '../_utils/activationEvidence/tenant.js';
 
 // P-OUT-1: 60 → 120 s. The tenants' budget (TIME_BUDGET_MS) is unchanged; the
 // ceiling is raised so the rare consolidation path — a reflection at its full
@@ -72,7 +85,7 @@ const BATCH_LIMIT = 5;          // up to 5 battles read per tick; the start rule
 // handlerStart + 45 s / + 50 s) are not starved. The first reflection of a
 // tick always starts, so the queue always moves. With a 35 s deadline a
 // second one starts only if the first ended within 2 s (a skip, a fast
-// error): in practice one model call per tick, 48 ticks a day (vercel.json).
+// error): in practice one model call per tick, 52 ticks a day (vercel.json).
 const REFLECTION_PHASE_MS = 40_000;
 const REFLECTION_WRITE_RESERVE_MS = 3_000;
 // The claim lease: longer than maxDuration, so a live run always holds it; a
@@ -209,7 +222,7 @@ export default async function handler(req, res) {
     // ---- 4. FantasyTimes Wire reconciliation sweep (rider) ----
     // Hosted here per Wire Spec V1.5 §4.7/P6: this is the only cron whose
     // window covers every hour a story can publish, incl. weekends — worst
-    // gap 12h15m. Isolating try/catch: a Wire failure can NEVER break this
+    // gap 11h15m. Isolating try/catch: a Wire failure can NEVER break this
     // cron's primary job (the runRepairSweep/agent-evaluate precedent).
     // Gated on WIRE_WRITES_ENABLED (the sweep is part of the writes
     // machinery; pre-flip its composite index may not exist yet).
@@ -287,6 +300,21 @@ export default async function handler(req, res) {
       hypothesisReview = { action: 'error', error: String(reviewErr?.message || reviewErr) };
     }
 
+    // ---- 8. ID-1 Build 2 — the activation observer (rider, LAST) ----
+    // Sixth tenant, after the review pass: its own slice, min(tenantStart +
+    // 20 s, handlerStart + 80 s), an ADMISSION deadline (TIME_BUDGET_MS is
+    // unchanged; maxDuration is the hard stop). Gate off → it returns
+    // { skipped: true } before any read and the response carries no new key
+    // (byte-identical). A failure can never break the reflections (isolating
+    // try/catch).
+    let activationEvidence = null;
+    try {
+      activationEvidence = await runActivationObserver({ db, handlerStartMs: startTime });
+    } catch (observerErr) {
+      console.error(`${LOG_PREFIX} Activation observer failed (isolated):`, observerErr?.message || observerErr);
+      activationEvidence = { action: 'error', error: String(observerErr?.message || observerErr) };
+    }
+
     const duration = Date.now() - startTime;
     console.log(`${LOG_PREFIX} Complete in ${duration}ms:`, summary);
     return res.status(200).json({
@@ -296,6 +324,7 @@ export default async function handler(req, res) {
       ...(editorial ? { editorial } : {}),
       ...(callSweep && !callSweep.skipped ? { callSweep } : {}),
       ...(hypothesisReview && !hypothesisReview.skipped ? { hypothesisReview } : {}),
+      ...(activationEvidence && !activationEvidence.skipped ? { activationEvidence } : {}),
       duration,
     });
   } catch (err) {
