@@ -365,6 +365,8 @@
     "api/_utils/researchRecords/store.js::mintWithHost::create::unresolved": 1,
     "api/_utils/researchRecords/store.js::mintWithHost::set::unresolved": 1,
     "api/_utils/researchRecords/store.js::recordTurnOutcome::update::unresolved": 1,
+    "api/_utils/researchRecords/store.js::appendFinding::update::unresolved": 1,
+    "api/_utils/researchRecords/store.js::reviseSummary::update::unresolved": 1,
     "api/forge/watchlists.js::handleCreateFromTickers::set::unresolved": 1,
     "api/forge/watchlists.js::handleCreateFromTickers::update::unresolved": 1,
     "api/_utils/agentBattleService.js::createAgentBattle::call:stockCreationDb#0::unresolved": 1,
@@ -503,5 +505,8 @@
   },
   "_notes_activation_observer": {
     "api/_utils/activationEvidence/writer.js::{createWithEvidence,createAtFinalization} (create)": "ID-1 Build 2, the activation observer (shape note V1.7 section 4.2; build report docs/audits/20261104_BUILD_ACTIVATION_OBSERVER.md). HUMAN REVIEW: three tx.create sites, each inside one runTransaction that first reads the pointer document, all on agentBattles/{battleId}/activations/{activationId} (server-only; NOT a composition-protected store). createWithEvidence creates the pointer from a final snapshot; createAtFinalization reads the pointer AND setupEvidence/{id} in the same transaction and creates either the evidence pointer or the null pointer. A pointer is never set, updated or merged (activationEvidenceBoundary.test.js pins it). Unresolved for the standard handle-form reason: the ref is the ARGUMENT of tx.create, built by a helper, which the scanner does not follow. The observer state write (state.js writeObserverState, activationObserverState/main, also not protected) is a callee-base set the scanner does not shape as Firestore (its documented no-ref-evidence limit), so it needs no key."
+  },
+  "_notes_research_record_extension": {
+    "api/_utils/researchRecords/store.js::{appendFinding,reviseSummary} (update)": "The Research Record Extension (7 Nov 2026; contract docs/design/20261107_RESEARCH_RECORD_EXTENSION_V1.md; build report docs/audits/20261107_BUILD_RESEARCH_RECORD_EXTENSION.md). HUMAN REVIEW: each is ONE runTransaction — a fresh tx.get of researchWork/{researchWorkId}, the owner check (isOwnedRecord), then at most ONE tx.update of that same record. appendFinding writes `findings` (the stored list plus one finding whose id the store minted, built and shape-checked before the read; refused past 100, on a closed record, or with a supersedes naming no finding or an already-superseded one), `symbolKeys` (derived) and `updatedAt`. reviseSummary writes `summary` and `summaryRevisions` (the stored revisions plus one, rev = previous + 1; refused past 20, on a closed record, or on an expectedRev conflict), `symbolKeys` and `updatedAt`. Nothing earlier is edited or removed. NOT a composition-protected store: researchWork is Pilot P2's top-level collection, owner-read and `allow write: if false` (firestore.rules), the player's own research. Unresolved for the standard handle-form reason (the ref is built by researchWorkRefOf). Nothing calls either function yet: their first caller is the Shared Research route (the Command Center arc's next build)."
   }
 }
