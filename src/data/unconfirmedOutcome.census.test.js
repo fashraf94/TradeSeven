@@ -77,6 +77,7 @@ const FEED_READERS = {
  */
 const EVALUATION_READERS = {
   'src/components/Agent/AgentActivityFeed.jsx': 'the word only — the group pill’s aria-label (`N grouped evaluations`)',
+  'src/components/Research/BombMode/selectBombRecord.js': 'Research Modal Build A (spec §3.4): the Fuse’s check dots — each entry’s `timestamp` and `evidence[SYM].px` since entry, where present; no decision field, no marker, no label (a marked entry’s px is still the price that check read)',
   'src/components/Season/SeasonLeaderboard.jsx': 'the word only — Season copy (another product)',
   'src/components/Tournament/Flat6BattleView.jsx': '`recentWhy`: the motive and hypothesis through renderMotive / renderHypothesis — no decision label',
   'src/data/decisionRecord.js': 'heardStamps: reads each entry’s `heard` stamp only',
