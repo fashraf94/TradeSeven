@@ -29,6 +29,11 @@
 //      whose store call IN THIS RUN returned `retryable`, createAtFinalization.
 //   13 State, if ≥ 1 s left: cursors, battle index, ≤ 50 carried keys, one write.
 //   14 Counts only, no ids.
+//   15 One health line, `[activationEvidence] {counts}`, after every run that did not skip (review-fix prompt §3).
+//
+// V1.9 (Astra's review of the merged build, 6 Nov): a due key whose store call is still in flight keeps
+// ordinary writes waiting (§4.2), and a battle cursor passes only the battles whose own preparation the run
+// attempted (§4.3).
 //
 // Overlapping runs (Vercel can deliver a cron twice) may both call the store on
 // one key: one gets `pending` and defers. Both may reach one pointer: one
@@ -110,7 +115,63 @@ function emptyCounts() {
   };
 }
 
+// ---------------------------------------------------------------- the health line (review-fix prompt §3)
+//
+// After every run that did not skip, ONE line: `[activationEvidence] {json}`, the run's counts only. Every
+// key in it is a literal of the observer's modules or a stage name, and every error code passes codeLabelOf;
+// nothing in it is read from a document, so no owner, battle, agent, activation, position or snapshot id, and
+// no symbol, can reach it. A skipped run (the gate: flag off, or an empty allowlist) logs nothing, so the flag-off logs
+// and response are unchanged.
+
+export const HEALTH_LINE_PREFIX = '[activationEvidence]';
+/** Node's network errnos, by name: the only upper-case codes a line may carry. */
+const NODE_ERRNOS = new Set(['ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH']);
+/** An error code as a line may print it: a gRPC number, a lower-case status name, an error class name, a Node errno; anything else is 'other'. */
+export function codeLabelOf(code) {
+  const c = String(code);
+  return /^\d{1,3}$/.test(c) || /^[a-z][a-z_-]{0,39}$/.test(c) || /^(?:[A-Z][A-Za-z]{0,30})?Error$/.test(c) || NODE_ERRNOS.has(c) ? c : 'other';
+}
+const labelled = (obj, prefix = '') => {
+  const out = {};
+  for (const [k, n] of Object.entries(obj || {})) {
+    const at = k.indexOf(':');
+    const key = at === -1 ? `${prefix}${codeLabelOf(k)}` : `${prefix}${k.slice(0, at)}:${codeLabelOf(k.slice(at + 1))}`;
+    out[key] = (out[key] || 0) + n;
+  }
+  return out;
+};
+/** The deferral reasons a reader of the first week looks for, shown even at zero. */
+const NAMED_DEFERRALS = Object.freeze(['write_cap', 'prep_cut', 'not_reached', 'attribution_read_error']);
+
+/** The run's health line, from its counts (or a `{ deferred: 'no_budget' }` run). Pure. */
+export function healthLineOf(r) {
+  const c = r && typeof r === 'object' && r.deferred && typeof r.deferred === 'object' ? r : null;
+  const deferred = Object.fromEntries(NAMED_DEFERRALS.map((k) => [k, 0]));
+  // Every reason is a literal of the observer's modules; the shape check is a backstop, never a source of labels.
+  if (c) {
+    for (const [k, n] of Object.entries(c.deferred)) {
+      if (/^[a-z][a-z_]{0,40}$/.test(k)) deferred[k] = n; else deferred.other = (deferred.other || 0) + n;
+    }
+  }
+  else if (r?.deferred === 'no_budget') deferred.no_budget = 1;
+  const health = {
+    battles: { read: c?.battles?.read ?? 0, due: c?.battles?.due ?? 0, unseen: c?.battles?.unseen ?? 0, ordinary: c?.battles?.ordinary ?? 0 },
+    acquisitions: {
+      started: c?.acquisitionsStarted ?? 0, final: c?.store?.final ?? 0, pending: c?.store?.pending ?? 0,
+      retryable: c?.store?.retryable ?? 0, excluded: c?.store?.excluded ?? 0, threw: labelled(c?.store?.threw),
+    },
+    pointers: { withEvidence: c?.pointers?.withEvidence ?? 0, null: c?.pointers?.null ?? 0 },
+    deferred,
+    truncations: { candidates: c?.truncations?.candidates ?? 0, ticks: c?.truncations?.ticks ?? 0 },
+    failures: { ...labelled(c?.failures), ...labelled(c?.pointers?.writeFailed, 'pointer_write:') },
+    stateWritten: c?.stateWritten === true,
+  };
+  return `${HEALTH_LINE_PREFIX} ${JSON.stringify(health)}`;
+}
+
 /**
+ * One observer run, then its health line (none when the gate skipped it).
+ *
  * @param {object} p
  * @param {object} p.db Admin Firestore
  * @param {number} p.handlerStartMs the host handler's start (its `startTime`)
@@ -118,7 +179,13 @@ function emptyCounts() {
  * @param {Function} [p.fetchPayload] the store's provider read (omitted in production)
  * @param {{ before?: (kind: string) => any }} [p.instrument] test seam
  */
-export async function runActivationObserver({ db, handlerStartMs, now = () => new Date(), fetchPayload, instrument = {} } = {}) {
+export async function runActivationObserver(p = {}) {
+  const r = await observe(p);
+  if (!r?.skipped) console.log(healthLineOf(r));
+  return r;
+}
+
+async function observe({ db, handlerStartMs, now = () => new Date(), fetchPayload, instrument = {} } = {}) {
   // 1. THE GATE — before any read.
   const owners = activationEvidenceOwners();
   if (owners.length === 0) return { skipped: true };
@@ -186,7 +253,20 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
   ], MAX_BATTLES_PER_RUN);
 
   // 6–7. PER BATTLE.
+  // THE BATTLE CURSORS (contract V1.9 §4.3; Astra's review 2). A cursor passes a battle only when this run attempts
+  // that battle's own preparation: its pointer read, or a decision made from its document alone (missing, not owned,
+  // malformed, out of scope, nothing to read). A battle fetched in a batch read but not reached (the budget refused its
+  // own first read) is not passed, and neither is any later battle of its queue, so the next run starts there; it can
+  // never be skipped for a whole rotation. A batch read that fails as a whole still passes its members, so one failing
+  // read cannot pin a cursor.
   const work = []; // { battleId, battle, d, due, attribution, unwritten: activation[] }
+  const held = { due: false, ordinary: false }; // a queue's cursor stops before its first battle not reached
+  const pass = (queue, item, reached) => {
+    if (!Object.hasOwn(held, queue)) return; // the unseen queue has no cursor
+    if (!reached) { held[queue] = true; return; }
+    if (held[queue]) return;
+    if (queue === 'due') cursors.dueBattles = item; else cursors.ordinaryBattles = item;
+  };
   for (let c = 0; c < plan.length; c += BATTLE_READ_CHUNK) {
     if (!canRead()) { bump(counts.deferred, 'battles_unread', plan.length - c); break; }
     const chunk = plan.slice(c, c + BATTLE_READ_CHUNK);
@@ -198,77 +278,78 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
       bump(counts.failures, `battles:${errorCodeOf(err)}`);
       snaps = null;
     }
-    // Each cursor advances past every battle taken, whatever happens to it.
-    for (const { queue, item } of chunk) {
-      if (queue === 'due') cursors.dueBattles = item;
-      if (queue === 'ordinary') cursors.ordinaryBattles = item;
-    }
-    if (!snaps) continue;
+    if (!snaps) { for (const { queue, item } of chunk) pass(queue, item, true); continue; } // a failed batch read passes its members
     for (let k = 0; k < chunk.length; k++) {
       const battleId = chunk[k].item;
-      const snap = snaps[k];
-      counts.battles.read += 1;
-      bump(counts.battles, chunk[k].queue);
-      if (!snap?.exists) { counts.battles.missing += 1; delete index[battleId]; continue; }
-      const battle = snap.data();
-      if (!owners.includes(battle.ownerId)) { counts.battles.notOwned += 1; continue; } // never another owner's battle
-      // A battle with no agent id has no attribution to record (createAgentBattle always writes one): never a pointer keyed by null.
-      if (typeof battle.agentId !== 'string' || battle.agentId.length === 0) { counts.battles.malformed += 1; continue; }
-      const scope = scopeOf(battle);
-      const d = scope.inScope ? discoverActivations(battle) : null;
-      const sched = d ? d.schedule : null;
-      index[battleId] = { cutoffAt: sched?.cutoffAtMs ?? null, expiresAt: sched?.expiresAtMs ?? null, finished: false, excludedBy: null };
-      if (!scope.inScope) {
-        index[battleId] = { ...index[battleId], finished: true, excludedBy: scope.excludedBy };
-        bump(counts.excluded, scope.excludedBy);
-        continue;
-      }
-      if (d.gap) counts.gapBattles += 1;
-      if (sched.cutoffAtMs === null) counts.finalizationUndetermined += 1;
-      counts.activations.discovered += d.activations.length;
-      counts.activations.cryptoSkipped += d.cryptoSkipped;
-      for (const u of d.unresolved) { if (u.reason === 'gap') counts.gapStarts += 1; else bump(counts.unresolved, u.reason); }
-
-      // Every pointer id, in one getAll.
-      let written = new Set();
-      if (d.activations.length) {
-        if (!canRead()) { bump(counts.deferred, 'prep_cut', d.activations.length); continue; }
-        try {
-          await before('pointers');
-          const refs = d.activations.map((a) => db.collection('agentBattles').doc(battleId).collection(ACTIVATIONS_SUBCOLLECTION).doc(a.activationId));
-          const ps = await db.getAll(...refs, { fieldMask: ['activationId'] });
-          written = new Set(ps.filter((s) => s.exists).map((s) => s.id));
-        } catch (err) {
-          bump(counts.failures, `pointers:${errorCodeOf(err)}`);
-          bump(counts.deferred, 'prep_cut', d.activations.length);
+      let reached = true;
+      try {
+        const snap = snaps[k];
+        counts.battles.read += 1;
+        bump(counts.battles, chunk[k].queue);
+        if (!snap?.exists) { counts.battles.missing += 1; delete index[battleId]; continue; }
+        const battle = snap.data();
+        if (!owners.includes(battle.ownerId)) { counts.battles.notOwned += 1; continue; } // never another owner's battle
+        // A battle with no agent id has no attribution to record (createAgentBattle always writes one): never a pointer keyed by null.
+        if (typeof battle.agentId !== 'string' || battle.agentId.length === 0) { counts.battles.malformed += 1; continue; }
+        const scope = scopeOf(battle);
+        const d = scope.inScope ? discoverActivations(battle) : null;
+        const sched = d ? d.schedule : null;
+        index[battleId] = { cutoffAt: sched?.cutoffAtMs ?? null, expiresAt: sched?.expiresAtMs ?? null, finished: false, excludedBy: null };
+        if (!scope.inScope) {
+          index[battleId] = { ...index[battleId], finished: true, excludedBy: scope.excludedBy };
+          bump(counts.excluded, scope.excludedBy);
           continue;
         }
-      }
-      counts.activations.alreadyWritten += written.size;
-      const unwritten = d.activations.filter((a) => !written.has(a.activationId));
-      const due = isFinalizationDue(sched, nowMs);
+        if (d.gap) counts.gapBattles += 1;
+        if (sched.cutoffAtMs === null) counts.finalizationUndetermined += 1;
+        counts.activations.discovered += d.activations.length;
+        counts.activations.cryptoSkipped += d.cryptoSkipped;
+        for (const u of d.unresolved) { if (u.reason === 'gap') counts.gapStarts += 1; else bump(counts.unresolved, u.reason); }
 
-      if (isBeyondHorizon(sched, nowMs)) {
-        index[battleId].finished = true;
-        counts.battles.finished += 1;
-        for (const a of unwritten) {
-          const key = activationKeyOf(a, ruleSet);
-          if (!key.ok && key.reason === 'symbol_form') bump(counts.unresolved, 'symbol_form');
-          else bump(counts.abandoned, key.ok ? 'unwritten' : key.reason);
+        // Every pointer id, in one getAll.
+        let written = new Set();
+        if (d.activations.length) {
+          // Not reached: the budget refused this battle's own first read, so the cursor stays before it (V1.9 §4.3).
+          if (!canRead()) { reached = false; bump(counts.deferred, 'prep_cut', d.activations.length); continue; }
+          try {
+            await before('pointers');
+            const refs = d.activations.map((a) => db.collection('agentBattles').doc(battleId).collection(ACTIVATIONS_SUBCOLLECTION).doc(a.activationId));
+            const ps = await db.getAll(...refs, { fieldMask: ['activationId'] });
+            written = new Set(ps.filter((s) => s.exists).map((s) => s.id));
+          } catch (err) {
+            bump(counts.failures, `pointers:${errorCodeOf(err)}`);
+            bump(counts.deferred, 'prep_cut', d.activations.length);
+            continue;
+          }
         }
-        continue;
+        counts.activations.alreadyWritten += written.size;
+        const unwritten = d.activations.filter((a) => !written.has(a.activationId));
+        const due = isFinalizationDue(sched, nowMs);
+
+        if (isBeyondHorizon(sched, nowMs)) {
+          index[battleId].finished = true;
+          counts.battles.finished += 1;
+          for (const a of unwritten) {
+            const key = activationKeyOf(a, ruleSet);
+            if (!key.ok && key.reason === 'symbol_form') bump(counts.unresolved, 'symbol_form');
+            else bump(counts.abandoned, key.ok ? 'unwritten' : key.reason);
+          }
+          continue;
+        }
+        if (unwritten.length === 0) {
+          if (due) { index[battleId].finished = true; counts.battles.finished += 1; }
+          continue;
+        }
+        // Attribution, once per battle with unwritten work; a ranked battle needs no read.
+        // A casual clone's two reads are each a preparation read under the budget (review V4 on nit-2).
+        if (isCasualCloneId(battle.agentId) && !canRead()) { bump(counts.deferred, 'prep_cut', unwritten.length); continue; }
+        const attribution = await attributionOf(db, battle, { mayRead: canRead, beforeRead: () => before('attribution') });
+        // A budget refusal (prep_cut) or a read that failed (attribution_read_error, V1.8): never a verdict, so never `unresolved`.
+        if (attribution.deferred) { bump(counts.deferred, attribution.reason, unwritten.length); continue; }
+        work.push({ battleId, battle, d, due, attribution, unwritten, outstanding: unwritten.length });
+      } finally {
+        pass(chunk[k].queue, battleId, reached);
       }
-      if (unwritten.length === 0) {
-        if (due) { index[battleId].finished = true; counts.battles.finished += 1; }
-        continue;
-      }
-      // Attribution, once per battle with unwritten work; a ranked battle needs no read.
-      // A casual clone's two reads are each a preparation read under the budget (review V4 on nit-2).
-      if (isCasualCloneId(battle.agentId) && !canRead()) { bump(counts.deferred, 'prep_cut', unwritten.length); continue; }
-      const attribution = await attributionOf(db, battle, { mayRead: canRead, beforeRead: () => before('attribution') });
-      // A budget refusal (prep_cut) or a read that failed (attribution_read_error, V1.8): never a verdict, so never `unresolved`.
-      if (attribution.deferred) { bump(counts.deferred, attribution.reason, unwritten.length); continue; }
-      work.push({ battleId, battle, d, due, attribution, unwritten, outstanding: unwritten.length });
     }
   }
 
@@ -350,6 +431,10 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
   // pointers whose evidence it already holds. The order is kept: finalisation-due work first, and ordinary
   // work only once no due key still waits on its store call. One cap for both kinds; each transaction starts
   // only with POINTER_WRITE_RESERVE_MS left; every started call is awaited to its end.
+  // A DUE KEY IN FLIGHT HOLDS ORDINARY WRITES (contract V1.9 §4.2; Astra's review 1): a key settles when its
+  // own call ends (applyResult), or, once admission is over, when it was never started this run (nothing will
+  // arrive for it). A key whose call is still running is never settled early, so ordinary work cannot take the
+  // shared cap while a finalisation-due store call has yet to return.
   const acquisitions = new Map(); // snapshotId → { snapshotId, session, symbol, due, dueAt, run: key|null }
   for (const key of keys.values()) {
     if (key.final || key.invalid) key.settled = true; // decided by step 9
@@ -377,6 +462,7 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
 
   const results = new Map(); // snapshotId → store result | { status: 'threw', code }
   const inflight = new Set();
+  const startedIds = new Set(); // keys whose store call this run started
   let started = 0;
   let acquiring = true;
   const applyResult = (k, r) => {
@@ -455,7 +541,9 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
     while (inflight.size >= ACQUISITION_CONCURRENCY) await Promise.race(inflight);
     if (started >= MAX_ACQUISITIONS_PER_RUN || deadline - clock() < ADMISSION_RESERVE_MS) break;
     started += 1;
-    if (q === 'due') cursors.dueKeys = id; else cursors.ordinaryKeys = id; // past every key started, whatever its outcome
+    startedIds.add(id);
+    // Past every key whose own store call starts, whatever its outcome; a key never started keeps the cursor (V1.9 §4.3).
+    if (q === 'due') cursors.dueKeys = id; else cursors.ordinaryKeys = id;
     const k = acquisitions.get(id);
     await before('acquire');
     const call = (async () => {
@@ -471,7 +559,8 @@ export async function runActivationObserver({ db, handlerStartMs, now = () => ne
     })();
     inflight.add(call);
   }
-  for (const k of acquisitions.values()) if (k.run && !results.has(k.snapshotId)) k.run.settled = true; // not reached this run
+  // Never started this run: settled now, nothing will arrive. Started and still in flight: settled by applyResult when its call ends (V1.9 §4.2).
+  for (const k of acquisitions.values()) if (k.run && !startedIds.has(k.snapshotId)) k.run.settled = true;
   acquiring = false;
   notify();
   await Promise.all([...inflight]); // every started call is awaited to its end
