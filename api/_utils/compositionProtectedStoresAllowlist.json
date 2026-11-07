@@ -386,7 +386,20 @@
     "api/_utils/setupEvidence/store.js::settleConfirmation::create::unresolved": 1,
     "api/_utils/setupEvidence/store.js::settleConfirmation::set::unresolved": 3,
     "api/_utils/activationEvidence/writer.js::createAtFinalization::create::unresolved": 2,
-    "api/_utils/activationEvidence/writer.js::createWithEvidence::create::unresolved": 1
+    "api/_utils/activationEvidence/writer.js::createWithEvidence::create::unresolved": 1,
+    "api/_utils/huddle/applyPlan.js::applyPlanToBattle::call:fileDirectiveTransactional#1::unresolved": 1,
+    "api/_utils/huddle/applyPlan.js::applyPlanToBattle::update::unresolved": 2,
+    "api/_utils/huddle/applyPlan.js::expireProposed::update::unresolved": 1,
+    "api/_utils/huddle/applyPlan.js::expireWaiting::update::unresolved": 1,
+    "api/_utils/huddle/applyPlan.js::recordRetryError::update::unresolved": 1,
+    "api/_utils/huddle/applyPlan.js::retireAtClose::update::unresolved": 2,
+    "api/_utils/huddle/applyPlan.js::stampReceipt::update::unresolved": 1,
+    "api/_utils/huddle/confirmPlan.js::confirmPlan::set::unresolved": 1,
+    "api/_utils/huddle/confirmPlan.js::confirmPlan::update::unresolved": 3,
+    "api/_utils/huddle/confirmPlan.js::skipPlan::update::unresolved": 2,
+    "api/_utils/huddle/playback.js::issuePlaybackToken::set::unresolved": 1,
+    "api/_utils/huddle/playback.js::issuePlaybackToken::update::unresolved": 1,
+    "api/huddle/event.js::handler::update::unresolved": 1
   },
   "_notes_spec1_phase3": {
     "api/_utils/mandateClosePass.js::closeBook (set/update)": "SPEC1 Phase 3 (this PR). The §3.6 daily-close transaction — TWO tx.set sites (the deferred-write loop: decisions/{id} expiry receipts + corporateActions/{actionId} logs + CORPORATE_CLOSE receipts; and the dailyRows/{date} row write, whose mandateRef-parameter-rooted chain the scanner cannot resolve even though the collection literal is visible) and one tx.update on the mandate doc (marks/peaks/scoring/health/execState under revision discipline). The atomic reads-before-writes structure must not be restructured to chase a literal. Same class as the Phase 2 executeDecision/writeTerminal entries. Verified targets: mandates/{id}, mandates/{id}/decisions, mandates/{id}/corporateActions, mandates/{id}/dailyRows — none protected. The pendingScoringAppends write (appendScoringWithRetry) resolves via its callee-base literal and needs no entry.",
@@ -503,5 +516,8 @@
   },
   "_notes_activation_observer": {
     "api/_utils/activationEvidence/writer.js::{createWithEvidence,createAtFinalization} (create)": "ID-1 Build 2, the activation observer (shape note V1.7 section 4.2; build report docs/audits/20261104_BUILD_ACTIVATION_OBSERVER.md). HUMAN REVIEW: three tx.create sites, each inside one runTransaction that first reads the pointer document, all on agentBattles/{battleId}/activations/{activationId} (server-only; NOT a composition-protected store). createWithEvidence creates the pointer from a final snapshot; createAtFinalization reads the pointer AND setupEvidence/{id} in the same transaction and creates either the evidence pointer or the null pointer. A pointer is never set, updated or merged (activationEvidenceBoundary.test.js pins it). Unresolved for the standard handle-form reason: the ref is the ARGUMENT of tx.create, built by a helper, which the scanner does not follow. The observer state write (state.js writeObserverState, activationObserverState/main, also not protected) is a callee-base set the scanner does not shape as Firestore (its documented no-ref-evidence limit), so it needs no key."
+  },
+  "_notes_huddle_s1": {
+    "api/_utils/huddle/** + api/huddle/** + api/cron/huddle-worker.js": "Huddle S1 (spec docs/specs/20261030_HUDDLE_S1_BUILD_SPEC_V1_1.md with Amendments A, B, C V1.2; build report docs/audits/20261107_BUILD_HUDDLE_S1.md). HUMAN REVIEW: every write is inside a runTransaction (or is the event route's awaited single-field update inside one) on the four new server-written collections huddles/{uid}/days/{etDate}, huddleQueue/{uid}_{etDate}, symbolDayEvidence/{etDate}_{SYMBOL} and huddleRuns/{etDate} (listed in PROTECTED_COLLECTIONS so their sites are counted here), or on agentBattles/{id} through the apply module alone: the slot filing through the shared writer fileDirectiveTransactional (call:fileDirectiveTransactional#1, the B1 transaction that also appends the receipt) and the compare-and-clear retire at the close (retireAtClose, directive: null only while the slot holds the plan thread). Existing battle keys only (directive, chatExchanges). Unresolved for the standard handle-form reason: each ref is built by a records.js helper and handed to tx.set/tx.update, which the scanner does not follow."
   }
 }
