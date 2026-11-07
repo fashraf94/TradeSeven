@@ -4,6 +4,8 @@
 
 **Follow-up run (§13, §14):** November 6, 2026 · Claude Opus 5.5 · the same branch, from its head `da4950f6` (checked before any write: PR #1024 open, draft, head `da4950f6`), worked in the app worktree branch `claude/armory-a1-followup-c5229e` and pushed by refspec to `claude/armory-a1`; `main` not merged in (the fix pass after the review does that). `git fetch origin` ran first. Fenced files read: `api/agent/decide.js` (§14's no-book check, read only). Edited: none. Nothing under `api/` changed. The old §13 "Commits and artifacts" is now §15.
 
+**Fix-pass run (§15):** November 6, 2026 · Claude Opus 5.5 · from the head `011eef79` (the review's commit; checked against `origin/claude/armory-a1` after `git fetch origin`, before any write), worked in the app worktree branch `claude/armory-a1-review-fixes-95ec7e` and pushed by refspec to `claude/armory-a1`. `origin/main` @ `18d84ada` (PR #1026 and the 27 commits before it) merged in first (`baff6c99`, no conflict; the one file both sides touched, `flagPinGuard.test.js`, merged clean). Fenced files read: none. Edited: none. Fenced functions called: none. Nothing under `api/` changed. Spec: the review, `docs/audits/20261106_REVIEW_ARMORY_A1.md`. The follow-up's §15 "Commits and artifacts" is now §16.
+
 **Preamble.** `git fetch origin` ran first. `origin/claude/phase0-armory` was `bbad5e71`, one commit over `main`, as the prompt required, and the merge of `origin/main` was clean, so neither STOP applied. The tree was clean at the start. Fenced files read: none. Fenced files edited: none. Fenced functions called: none (the armory calls `agentService.changeArchetype`, the client of the non-fenced `api/agent/change-archetype.js`, exactly as the picker does). Nothing under `api/` changed, no server, record or rules change. Line numbers below are this branch's.
 
 ---
@@ -32,6 +34,18 @@
 | **N2(d)** | The phone page stays usable while the armory is open, but the armory steps aside: switching hub tabs, starting a deploy, opening a sheet or leaving the hub closes the armory and discards the preview (no equip, N1's unequip). Rows for each. |
 | A2 notes | For the loadout boards (§14), recorded for A2, no A1 code: N1 overrides board 6's premise and board 7's decisions #8, #16 and #17; **decision #6 ("No book blocks Deploy") is reversed**: a loadout with no book reads "No book · open market", and Deploy keeps working. |
 
+### Founder rulings of Nov 6, 2026 (built in the fix pass, §15)
+
+| # | Ruling |
+|---|---|
+| **N3** | The footnote is reworded: **"Equipped now · a game already running keeps the armor it deployed with."** FD-1's exact pin moves to it. |
+| **N4** | The app menu and "Report a bug" leave the phone armory open underneath; only N2(d)'s triggers close it. One row. |
+| **D-A** | **A bigger bare Shadow on the phone hub.** With N1 the phone hero is always bare Shadow; the figure reads about 25 % bigger than today's 200 px box (196 under 375 px); default about 240 px at 375 px and up, about 220 below, unless the measurement says otherwise; the box, the framing or both may grow (bare Shadow's `FRAME_SCALE` 1.25 for the hub's bare hero only). The text never overlaps the figure or truncates; if side by side cannot fit at 320, it stacks under the figure; the layout that keeps the figure biggest. The armory's open and close go between the new size and the ring's 152 px centre under the same no-flash, single-unequip rules. The wide stages are unchanged (340 / 260). Measured at 320, 360 and 390, with screenshots. |
+| **D-B** | **A softer core.** About 25 % less luminous at rest, glow included; still clearly the brightest point of the figure; R19's brighten still reads above it at its peak. Wherever the core draws (the hub, the armory, battle seats, League seats); the armory flag decides it everywhere. Opponents' copper cores follow the same ratio. |
+| **D-C** | **A breathing core.** A slow glow that swells and settles: a cycle of about 4.5 s, dipping to about 85 % of the toned level on an eased curve, the CSS bloom swelling and settling with it; never dim, never a flash. A function of the view's own clock (`draw(spec, t)` stays deterministic and the breath pauses with the view); no CSS keyframes, timers or effects outside the engine. The moods modulate the breathing level, not replace it; R19 rides on top. Under Reduce Motion and in stills, held at the breath's midpoint. Recorded in BUILD_RULES §11's stated engine-motion exception (the mount guard), with a row. No new draw calls; the frame cost reported before and after on the lab's hero preset. |
+| **Smoke dials** | On the smoke branch only, never in the PR: `?heroPx=` (180–280), `?core=` (0.5–1.0), `?breathDepth=` (0–0.3), `?breathS=` (2–8), with a corner label showing the values in use. The PR ships the defaults; numbers the founder picks become one-line changes. |
+| Out of scope | Carried to A2 (the review's §5): AR-5 (Safari focus), AR-6 (the ring under 315 CSS px), AR-7 (F3), and the lab presets starting bare. |
+
 ---
 
 ## Executive verdict
@@ -51,6 +65,7 @@
 | 11 | **Review threshold** | **Over it: stop at the draft PR.** The cumulative branch diff against `main` is 34 files, +2,365 / −49 lines, the two reports and six screenshots included; without `docs/`, 26 files, +1,719 / −49 (the app's source 11 files, +734 / −37; tests, guards and baselines 15 files, +985 / −12). BUILD_RULES §2 asks for a review at 10 files or 1,500 lines, so a review session runs before merge. |
 | 12 | **Not proven** | Nothing here has run on an iPhone. The checklist (§10) is how the phone decides FD-9 and the sizes. *Follow-up:* the founder's iPhone smoke passed on Nov 6 (§10); the `60 s:` lines were not recorded, so FD-9 stays as built. |
 | 13 | **Follow-up (Nov 6): N1, N2, the boards** | Built and checked (§13): the hub hero bare with the flag on; the armory's own lock line; the footnote alone; the phone armory stepping aside for a tab switch, a deploy, a sheet or leaving. Flag-off build still byte-identical to `main` `9d97b396` at both code commits. 17 of 17 mutants killed, the control survives. The desktop scroll at 900 px is **65 px, unchanged** (the ring, not the footnote, sets the dialog's height). The loadout boards are committed with their sources, and §14 says what A2 inherits; a no-book deploy works today. |
+| 14 | **Fix pass (Nov 6): the review's fixes, N3, N4, D-A, D-B, D-C** | Built and checked (§15). The phone close keeps the hero in view (AR-1, measured in the browser: the hub does not scroll, 36–37 frames per 600 ms through the unequip); the review's three test gaps closed (AR-2, AR-3, AR-4); N3's footnote; N4's row. The bare phone hero is **250 px from 375 px and 245 below** (a quarter bigger: the figure grows exactly with its box), its words stacked under it below 426 px. The core draws at **60 % of today's source light** (on screen 26–27 % darker at the breath's top, glow included; today's centre is blown out past white, so 75 % at the source showed only 15 %) and **breathes over 4.5 s down to 85 %** on the view's own clock. Flag off: byte-identical to `main` `18d84ada`. Frame cost unchanged, no new draw call. |
 
 ---
 
@@ -289,7 +304,16 @@ Open https://trade-seven-nj8izdnrc-fais-projects-bc179554.vercel.app on the iPho
 
 ### The founder's result for the follow-up's check (Nov 6, 2026)
 
-**Not received by the review session.** The review brief (`docs/audits/20261106_REVIEW_ARMORY_A1.md`) said the founder's phone check would be pasted under it; nothing arrived, so this fill records that, and the fix pass after the review fills in the result. The review's own measurement bears on item 2: as built, closing the armory returns focus to Change archetype and the hub scrolls to that button, so the hero leaves the screen and the unequip plays out of sight (review finding AR-1; a one-option fix, `focus({ preventScroll: true })`, carried by the fix pass). Items 1 and 3 are observable as built.
+*(The review session did not receive it; the fix pass's brief carries it.)* **The smoke test "went great; everything passed."** The review notes that the close's unequip played off-screen on that build (finding AR-1: closing returned focus to Change archetype and the hub scrolled to that button, so the hero left the screen), so item 2's "closing takes the armor off once" could not be seen as built. The fix pass carries AR-1's one-option fix (§15.1), and its own check below asks for it again.
+
+### The fix pass's phone check (the rebuilt smoke preview, §15.8)
+
+Open the fix pass's preview (§15.8) on the iPhone and sign in.
+
+1. **The bare Shadow is bigger,** and the text sits cleanly beside or under it at your phone's width.
+2. **The core is softer and breathes slowly,** never dark.
+3. **Open the armory, preview a set, close:** the armor comes off in view.
+4. **Try the dials** (add `?heroPx=260&core=0.7&breathDepth=0.2&breathS=5` to the address) and send back any numbers you prefer. The small label in the top-right corner shows the values in use.
 
 ---
 
@@ -468,9 +492,184 @@ So A2's "No book" needs words and a state, not a new path.
 
 ---
 
-## 15. Commits and artifacts
+## 15. Review fixes and design changes (fix pass, Nov 6, 2026)
 
-*(§13 before the follow-up.)* On `claude/armory-a1` (PR [#1024](https://github.com/fashraf94/TradeSeven/pull/1024), draft), over `main`:
+### 15.0 Verdict
+
+| # | Item | Result |
+|---|---|---|
+| 1 | **AR-1, the phone close in view** | `opener.focus({ preventScroll: true })` (`Armory.jsx:418`). In the browser, on the final layout, at 390 × 844 and 320 × 568, by Close, Escape and Equip: **the hub does not scroll** (8 → 8 px, 39 → 39 px), the hero stays at the top of the screen and **draws 36–37 frames per 600 ms through the unequip** (the review measured 0 before the fix). Three jsdom rows spy the opener's `focus` |
+| 2 | **AR-2, AR-3, AR-4, AR-9** | The flag-on tab switch's charge cancel has its row; every "equipped" row equips `analyst`, not the ring's first set; the mount guard pins `LoadoutSheets.jsx`'s own names; the hold's close compares its phase by name. The review's three surviving mutants (AR-M2, AR-M3, AR-M5) are **killed** (§15.6) |
+| 3 | **N3, N4** | The footnote reads "Equipped now · a game already running keeps the armor it deployed with." (`hubCopy.js:543`), FD-1's exact pin moved to it; one row: the app menu and Report a bug leave the phone armory open on its preview |
+| 4 | **D-A, a bigger bare Shadow** | **250 px from 375 px of hub width, 245 below** (the brief's 240 / 220 would have drawn the figure 20 % and 12 % bigger: bare Shadow's framing is fixed, so the figure grows exactly with its box, and a quarter bigger is 1.25 × each old box). **Stacked** under the figure below 426 px (every common phone), beside it from 426. Measured: no word cut, none over the figure (40–48 px clear of its lit edge), no page overflow, at 320, 360, 390 and 430 |
+| 5 | **D-B, a softer core** | **60 % of today's source light** (`vocab.js:175` `CORE_LEVEL`), the sphere, its glow and its halo, wherever the core draws, copper too. On screen the core and its glow are **26–27 % darker at the breath's top** and the blown-out white shrinks from 438 px² to about 40–110. **75 % at the source would have shown only 15 %**: today's centre is blown out past white (§15.3) |
+| 6 | **D-C, a breathing core** | **4.5 s, down to 85 % of the toned level**, a raised cosine, on the view's own clock (`breath(t)`, `vocab.js:182`); held at the midpoint under Reduce Motion and in stills; a paused or hidden view holds it; the moods multiply over it; R19's peak reads above it. Recorded in the mount guard's §11 exception, with a row |
+| 7 | **Flag off** | **Byte-identical to `main` `18d84ada`:** unminified, hashes masked, 55 / 55 files, 0 lines; minified, the same 107 file names, all 58 non-map files byte-identical. The engine reads the flag at five sites, each a literal ternary whose else arm is `main`'s expression |
+| 8 | **Frame cost** | The lab's hero preset, 4 × 15 s each: **3.37 ms flag off, 3.16 ms flag on** (medians 3.1 / 3.0, p95 5.5 / 5.5), **58 draw calls a frame both ways**: no new draw call, no measurable cost |
+| 9 | **Mutation** | **16 of 16 killed**, the control survives (§15.6) |
+| 10 | **Checks** | `main` `18d84ada` merged first, no conflict. `lint:gate` exit 0; full Linux suite green; minified build of the pushed head exit 0 (§15.7) |
+| 11 | **Review threshold** | This pass's own diff without docs: **18 files, +777 / −54 (831 lines)**, under 1,500, so the PR leaves draft |
+
+### 15.1 Part 1: the review's fixes
+
+| # | Fix | Where | Rows |
+|---|---|---|---|
+| **AR-1** | The phone close gives focus back without scrolling to it | `Armory.jsx:418` | `CommandCenterHub.armory.jsdom.test.jsx` "AR-1: Close / Escape / Equip gives focus back to Change archetype without scrolling to it": a spy on the opener's `focus`, called once with `{ preventScroll: true }`, focus on the opener |
+| **AR-2** | — (a row) | `CommandCenterHub.jsx:338-339` (the flag-on `selectTab` arm) | `CommandCenterHub.s2b.jsdom.test.jsx` "a hold charging, then a tab switch: the charge is cancelled, the armory closed, and nothing deploys", the real deploy provider. The hold's first phase already closes the armory, so what the row adds is the charge: held before the tab, gone after it, no deploy |
+| **AR-3** | — (fixtures) | the armory suite's `EQUIPPED = 'analyst'`; the s2b suite's settable `h.archetype` | the lit set, the first preview, the focus on open (and ArrowDown to the next set), the N1 open, the N2(d) reopen and the s2b hold row's reopen now equip `analyst` (the ring's fifth) |
+| **AR-4** | — (a guard pin) | `commandCenterHub.mount.guard.test.js:1282` | `LoadoutSheets.jsx`'s own `agentService` names pinned to `['equipWatchlist', 'unequipWatchlist']`, beside `Armory.jsx`'s |
+| **AR-9** | The hold's render-time close compares `holdPhase` against `HOLD_PHASES.CHARGING` or `LOCKED` | `CommandCenterHub.jsx:344`, `:157` | the exact-sites row in `agentFormFlags.test.js`; the s2b hold row. (Equivalent today: the reducer stores only those two phases.) |
+| **N3** | The footnote reworded | `hubCopy.js:543` | the copy guard's FD-1 row now pins N3's line exactly and that "wears it now" is gone; the jsdom footnote rows read it by reference |
+| **N4** | — (a row) | — | "N4: opening the app menu or 'Report a bug' leaves it open, on its preview, with nothing equipped": the menu calls the hub's `setSidebarOpen(true)`, the bug report dispatches the ClashBot event, the armory stays open, the hero keeps wearing the preview, no equip |
+
+**AR-1 in the browser.** The review's harness (the real hub, flag on, headless Edge 156 on the real GPU), rebuilt at this pass's head with D-A's taller stage; the stubbed equip answers in 300 ms. Before: the review's §2.2 (scrollTop 8 → 365, the hero at −301, 0 frames).
+
+| Viewport · close by | Hub scrollTop, open → after | Hero after the close | Frames drawn: 600 ms after; the 600 ms after that | Focus |
+|---|---|---|---|---|
+| 390 × 844 · Close | 8 → 8 | top 67, in view | 36; 37 | Change archetype |
+| 390 × 844 · Escape | 8 → 8 | top 67, in view | 37; 37 | Change archetype |
+| 390 × 844 · Equip (closes at +300 ms) | 8 → 8 | top 67, in view | 37; 36 | Change archetype |
+| 390 × 844 · a tab switch (the control) | 8 → 8 | top 67, in view | 36; 36 | Overview |
+| 320 × 568 · Close | 39 → 39 | top 67, in view | 36; 37 | Change archetype |
+| 320 × 568 · Escape | 39 → 39 | top 67, in view | 36; 37 | Change archetype |
+| 320 × 568 · Equip | 39 → 39 | top 67, in view | 37; 37 | Change archetype |
+
+The trade-off the review recorded still holds: the focused button is below the fold (at 832 px of an 844 px screen; 845 px of 568 at 320), one swipe down for a keyboard user.
+
+### 15.2 D-A: a bigger bare Shadow on the phone hub
+
+**What changed.** With the flag on, the phone hero's box comes from the hub's measured width (`Armory.jsx:92` `PHONE_HERO`, `:95` `phoneHero`, handed through `PhoneArmoryScope`'s new `width`, `CommandCenterHub.jsx:369`), and the stage lays its words out by it (`ShadowStage.jsx:276-316`, `data-hub-hero-layout`). The open armory's sizes are unchanged (152 / 48 / 116 / 280); the wide stages are unchanged (340 / 260); with the flag off the phone hero is `PhoneStage`'s 200 / 196, as `main`.
+
+**Why 250 and 245, not 240 and 220.** Bare Shadow's framing is fixed (`FRAME_SCALE.none` 1.25, unchanged), so the figure grows exactly with its box: its lit extent (the form canvas's own pixels at alpha ≥ 8, over 3 s) is 47–51 % of the box wide and 54–55 % high at every size. "About 25 % bigger" is 1.25 × each old box: 200 → 250, 196 → 245. The brief's 240 / 220 would have drawn it 20 % and 12 % bigger. Growing the framing instead would have needed a new spec key (bytes in every chunk the wrapper is in) and would push the figure toward the box's edge, where the CSS glow clips (R3); growing the box costs only height.
+
+**The layout: stacked, the figure biggest.** Beside the figure, the words' column would get the hub width − 56 − the box (56 = the 2 × 14 gutter, the 2 × 1 border, the 6 + 14 padding, the 6 px gap). They need 120 px to sit without a cut word ("Shadow" at 23 px is 84 px; the status line's longest word, mono, about 90 with its dot). At 250 that is a hub of 426 px, wider than every common phone, so below 426 px the words stack under the figure, centred, and from 426 they go beside it. Stacked, the words rise a tenth of the box (`PHONE_HERO.tuck`) into its empty lower margin, never as far as the figure. Unmeasured (the first render), it is 250 and stacked, which overlaps nothing at any width.
+
+Measured (the real hub, flag on, headless Edge, phone contexts at 3×):
+
+| Width | Hub | Hero box | Layout | Figure lit (w × h) | Words: cut? over the figure? clear of it by | Stage | Page overflow |
+|---|---|---|---|---|---|---|---|
+| 320 × 568 | 320 | 245 | stacked | 114.5 × 132.5 | no; no; 40.5 px | 292 × 385 | 0 |
+| 360 × 780 | 360 | 245 | stacked | 116 × 132 | no; no; 41 px | 332 × 367 | 0 |
+| 390 × 844 | 390 | 250 | stacked | 118 × 134.5 | no; no; 42.5 px | 362 × 372 | 0 |
+| 430 × 932 | 430 | 250 | beside | 118 × 134.5 | no; no; 71.5 px | 402 × 347 | 0 |
+| *flag off, 390* | 390 | 200 | beside | the archetype's armor | no; no; 33 px | 362 × 297 | 0 |
+
+The stage grows from 297 to 372 px tall at 390 (from 311 to 385 at 320); the tabs move down by that much. The armory opens from the new box to its 152 px centre and closes back to it, the same view throughout, one unequip on close (the jsdom rows; and §15.1's frame counts on the final layout).
+
+| 320 | 360 | 390 | 430 (beside) |
+|---|---|---|---|
+| ![320](assets/armory-a1-fix-phone-320.png) | ![360](assets/armory-a1-fix-phone-360.png) | ![390](assets/armory-a1-fix-phone-390.png) | ![430](assets/armory-a1-fix-phone-430.png) |
+
+### 15.3 D-B: a softer core
+
+**What changed.** With the flag on, the core's three emitters draw at the frame's level (`core.js:151-153`): the sphere's colour × level (× R19's lift), and the glow's and the halo's opacity × level inside their clamps. The level is `CORE_LEVEL` × the breath (§15.4), handed to the brain by the pose (`form.js:73`). It is the same code for every form the engine draws, so it reaches the hub, the armory, battle seats and League seats, and the copper core. Not touched: the threads, the armor's edges and rims, the signal sparks, and the core's inner light on the plates (it lights the armor; dimming it would darken the sets).
+
+**Why 60 % at the source.** Today's centre is blown out past white: the sphere, the additive glow sprite over it and the CSS bloom (plus-lighter) sum above 1, so the screen shows a clipped white disc whatever the source does above that line. Measured on screen (bare Shadow at 240 px, the CSS bloom, on black, at 2×; linear luminance; "glow included" = the disc of radius 30 px round the core), held at the breath's midpoint with a harness-only dial:
+
+| Source level | Core + glow (r 30 px) vs today | Core (r 10 px) vs today | Clipped white area |
+|---|---|---|---|
+| today | 1 | 1 (clipped) | 439 px² |
+| 1.0 | 0.95 | 1.00 | 430 px² |
+| 0.9 | 0.89 | 1.00 | 429 px² |
+| **0.75** | **0.81** | 1.00 | **428 px² (97 %)** |
+| 0.6 | 0.71 | 0.96 | 42 px² (10 %) |
+| 0.5 | 0.63 | 0.91 | 25 px² |
+| 0.4 | 0.52 | 0.73 | 14 px² |
+
+The white disc stays until the source drops under about 0.65, then goes. At 0.75 (the brief's default read at the source) the screen shows the core and its glow only 15 % darker at the breath's top and the white disc unchanged, and the breath swings that disc between 192 and 434 px², which reads as a pulse. **At 0.6, live** (50 shots over 8 s each, flag on vs off): the core and its glow at **0.734 of today at the breath's top, 0.652 at its floor** (0.706 held), the centre still 0.95–0.97 white, the clipped white 35–108 px². Copper: 0.778 at the top, 0.666 at the floor.
+
+| Today (flag off) | Flag on, held at the breath's midpoint |
+|---|---|
+| ![today](assets/armory-a1-fix-core-today.png) | ![toned](assets/armory-a1-fix-core-toned.png) |
+
+**Still the brightest point.** Bare Shadow: the 10 px disc at the core against the brightest 10 px disc anywhere 24 px or more from it, over 20 shots of the breath: **at least 5.0 × brighter** (today 3.2 ×: the glow dims more than the centre). On armored forms the plates hide the core at times today as before (the Fundamental Investor's facets cover it whole; the Contrarian's gimbal at moments), and the level does not change which is brighter there. The unit row holds it at the source: at the breath's floor, on the most lit armor (stage 3), the core's centre is above 1.25 × any edge's or thread's light.
+
+**R19 above it.** At the response's peak the sphere draws at level × 1.7 and the glow and halo at their lifted opacity: above the breath's top in every channel (the row); an armor response leaves the core breathing.
+
+### 15.4 D-C: a breathing core
+
+**What changed.** `breath(t) = 1 − BREATH_DEPTH × (1 − cos 2πt / BREATH_S) / 2` (`vocab.js:182`): 1 at the top, 1 − 0.15 half a cycle on, eased both ways (it barely moves at the top and the floor, fastest between). `coreLevel(t, held)` is `CORE_LEVEL × breath(t)`, or the midpoint (`CORE_LEVEL × 0.925`) when the frame is held. `t` is the frame's own: the engine poses each live frame at the view's clock (`t0 + (ts − T0) / 1000`), so the breath is a pure function of `(spec, t)`; a view that is not drawn (hidden, offscreen, paused) holds its last frame and with it the breath. The engine marks a frame `held` when it is the cached still or the view does not move (reduced motion, the still rate) (`engine.js:265`). No CSS, no timer, no effect: nothing outside the engine names the breath (the mount guard's row).
+
+**The glow swells and settles with it.** The CSS bloom is a blurred copy of each live frame, so its core part follows the core: on screen the core and its glow dip from 0.734 to 0.652 of today (11 % of the toned level), the sphere's centre from 0.97 to 0.95. The bloom's own strength is not modulated, so the threads' and the armor's glow do not breathe.
+
+**Under the moods, R19 on top.** Each mood's light multiplies the breathing level (the glow and halo keep their mood's `bright` and bloom heat, times the level); R19's lift multiplies after it.
+
+**§11.** The mount guard's stated engine-motion exception (beside the equip tween and R19's response) now names the breath, with a row: it lives in `vocab.js` (`BREATH_S`, `BREATH_DEPTH`, `breath`), it is posed from the frame's `t` (`form.js`), `vocab.js` reads no clock, and no hub file or the wrapper names it or animates in CSS.
+
+**Cost** (§15.0 row 8): the lab's hero preset (1 hero at 200, the lab's defaults), 4 alternating runs of 15 s per flag, the engine's own `onFrame` cost: 3,598 frames flag off, mean 3.37 ms (runs 3.29 / 3.64 / 3.56 / 2.98), median 3.1, p95 5.5; 3,604 frames flag on, mean 3.16 ms (3.07 / 3.62 / 2.57 / 3.36), median 3.0, p95 5.5; 58 calls a frame both. The breath is three multiplications a frame.
+
+### 15.5 The rows
+
+| Suite | New or changed |
+|---|---|
+| `engine/coreLevel.test.js` (new; Node, three.js) | D-B: the flag-off control (today's core exactly, any t); the top at `CORE_LEVEL`; the same ratio for bare Shadow, a set's core at every stage, small and large, teal and copper; the brightest point at the breath's floor on stage-3 armor. D-C: a pure function of `t` (the wall clock moved, the same core); `CORE_LEVEL × breath(t)` at seven `t`s; the range over a cycle (never above the top, never under the floor, reaching both); a held pose at the midpoint; every mood layered under it; R19's peak above the top, an armor response leaving the core breathing |
+| `engine/engine.breath.jsdom.test.js` (new; the real engine, the kit's renderer and clock) | a live view breathes at each frame's own `t` through a whole cycle; the cached still at the midpoint while the live frame drawn with it breathes; reduced motion at the midpoint at every clock reading, no loop; the still rate at the midpoint; a paused view draws nothing and holds, then breathes on from the frame's `t`; the flag-off control at today's light; the same renders flag on and off (no new draw call); a breath of `BREATH_S` seconds of frames |
+| `engine/vocab.test.js` | the defaults (0.6, 4.5 s, 0.15); `breath(t)`'s top, floor, period and bounds; eased, and no frame-to-frame step above the curve's steepest slope; `coreLevel` moving and held |
+| `agentForm.flagOffBundle.test.js` | flag off, `core.js`, `form.js`, `engine.js` and `vocab.js` bundle with `main`'s expressions and nothing of the level or the breath |
+| `agentFormFlags.test.js` | the engine's five read sites, exact; the readers list gains `core.js`, `engine.js`, `form.js`; AR-9's line |
+| `commandCenterHub.mount.guard.test.js` | §11's exception holds the breath (above); `LoadoutSheets.jsx`'s names (AR-4) |
+| `Armory.test.js` | D-A: the defaults and their quarter; the chrome from the source's own numbers; 320 / 360 / 390 stacked and why; at every width from 300 to 768, beside only where the column keeps 120 px; unmeasured; the tuck inside the box's empty margin. The ring-fit row's anchor moved to the stage's new padding line |
+| `CommandCenterHub.armory.jsdom.test.jsx` | AR-1 × 3; AR-3's `analyst` throughout; N4; D-A: 320 / 360 / 390 stacked with the words after the figure in a column, 430 beside, open to 152 and back at 390 and 320, the flag-off control (196 / 200, no layout attribute); `closesOnce` reads the bigger box |
+| `CommandCenterHub.s2b.jsdom.test.jsx` | AR-2's row; AR-3's `analyst` in the hold row |
+| `hubCopy.guard.test.js` | N3's exact pin |
+
+### 15.6 Mutation
+
+On Linux, in the code worktree at `6c4d0f80`, from a green baseline of the 432 rows the mutants target (the whole `AgentForm/` directory, the hub's armory, s2b, Armory, copy, flag, stage, seats, hero and mount-guard suites, the lab's armory rows, `flagPinGuard`). One exact replacement each (its anchor found once), the files run with 8 workers, the file restored from git and the tree checked clean; **killed = a non-zero exit**, never the JSON alone.
+
+| Id | Mutant | Result | Killed by |
+|---|---|---|---|
+| F-AR1 | **AR-1:** the close gives focus back with a scroll (`opener.focus()`) | KILLED | the three AR-1 rows |
+| F-AR2 | **AR-2:** the flag-on `selectTab` arm drops `cancelCharging` (the review's AR-M2) | KILLED | the s2b "hold charging, then a tab switch" row |
+| F-AR3 | **AR-3:** focus on open goes to the first set (the review's AR-M3) | KILLED | "opening focuses the equipped set" |
+| F-AR3b | **AR-3:** a fresh armory always previews the first set (the review's AR-M4) | KILLED | `firstPreview`'s unit row and now eight hub rows (the preview, the N1 open, the focus, three tab rows, the unmount, the s2b hold) |
+| F-AR4 | **AR-4:** `LoadoutSheets.jsx` also imports (and exports) `changeArchetype` (the review's AR-M5) | KILLED | the mount guard's writers row |
+| F-WALLa | **The breath on a wall clock:** `breath()` reads `performance.now()` | KILLED | 12 rows or more (the runner lists twelve): `coreLevel.test.js` (the pure-function row among them), `vocab.test.js`, the §11 row |
+| F-WALLb | **The breath on a wall clock:** the pose feeds `coreLevel` `performance.now() / 1000` | KILLED | 12 rows or more: the engine's live and still rows, `coreLevel.test.js`, the §11 row, the exact-sites row |
+| F-RMa | **The breath under Reduce Motion and in stills** (`held` ignored) | KILLED | the held-pose row; the engine's still, reduced-motion and still-rate rows; `coreLevel`'s unit row |
+| F-RMb | **Reduce Motion not held** (only the cached still) | KILLED | the engine's reduced-motion and still-rate rows; the exact-sites row |
+| F-FLOOR | **The breath dips below its floor** (to 1 − 2 × depth) | KILLED | the range row, `breath(t)`'s bounds, the eased row, the per-`t` row, the brightest-point and R19 rows |
+| F-FULLa | **The core at full brightness with the flag on** (the tone dropped from the level) | KILLED | 12 rows or more across `coreLevel.test.js` and the engine rows |
+| F-FULLb | **The core at full brightness with the flag on** (`CORE_LEVEL = 1`) | KILLED | the top row and the defaults row |
+| F-OLD | **The hero at its old size with the flag on** (196 / 200) | KILLED | 12 rows or more: `Armory.test.js`'s D-A rows and the hub's D-A, open-close and fold rows |
+| F-OVERa | **The words beside the hero at 320** (their column's minimum 10 px: over the figure) | KILLED | 7 rows: the 320 / 360 / 390 rows in both suites, the open-close row |
+| F-OVERb | **Never stacked** | KILLED | 9 rows |
+| F-MOOD | **The moods replace the breath** (the glow's level dropped) | KILLED | the moods row and seven more; the exact-sites row |
+| C1 | *Control:* a comment beside `breath()` | **survives**, as it must | — |
+
+### 15.7 Merge, identity and checks
+
+- **`main` merged first:** `origin/main` @ `18d84ada` into the branch at `baff6c99`, no conflict. `main` brought 28 commits (PR #1026, the activation observer, and the CI and rules changes before it); the one file both sides touched, `src/config/flagPinGuard.test.js`, merged clean (`main` added a flag-source module; A1 added the armory's `DARK_BY_DESIGN` entry).
+- **Flag-off identity** (Linux, LF trees from git, the same install, `package-lock.json` `40382e64edb6`): `vite build --minify false --sourcemap false`, hashes masked (`-[A-Za-z0-9_-]{8}.js|css`), each file keyed by its masked name and first bytes: **`main` `18d84ada` vs the code commit `bfeffa3d`, and vs the pushed head: 55 / 55 files, 0 lines differ.** Minified, as Vercel builds it: the same 107 file names under the same content hashes; all 58 non-map files byte-identical; the 49 source maps differ (they carry the new source). An early probe (the engine's flag import and one ternary alone) read the same before the rest was written.
+- **`lint:gate`:** exit 0 on Linux at `bfeffa3d` and at the pushed head.
+- **Full suite:** SUITE_LINE
+- **Minified `vite build` of the pushed head:** exit 0.
+- **Windows:** the touched hub and guard suites, green (the engine suites stay Linux-only: no `three` in the Windows checkout).
+- **Not run:** the Firestore rules suite (no rules changed), anything on a device.
+
+### 15.8 The smoke branch, its dials, and the phone check
+
+SMOKE_PARAGRAPH
+
+### 15.9 Readings, and what this pass leaves
+
+Readings (built this way; say if any is wrong):
+1. **"About 25 % bigger" is the figure, so the box is 1.25 ×** (250 / 245), not the brief's 240 / 220, which measure 20 % and 12 % (§15.2). `?heroPx=` covers both.
+2. **"About 25 % less luminous, glow included" is what the screen shows,** the core and its glow at the breath's top: 0.6 at the source, not 0.75, which the blown-out centre hides (§15.3). `?core=` scales the source, so on the dial 0.75 is "15 % darker on screen" and 0.6 is "26 %".
+3. **The breath's 85 % is the source's;** on screen the core and its glow dip 11 %, because the centre stays nearly white (§15.4). `?breathDepth=` scales the source too.
+4. **Stacked below 426 px of hub width**, beside from there; the words tucked a tenth of the box into its empty margin (§15.2).
+5. **The core's inner light on the armor is not toned** (it lights the plates, and D-B names the core and its glow). On armored seats the plates hide the core at times, as today.
+6. **AR-9 is equivalent today:** the reducer stores only `charging` and `locked`, so the explicit compare changes no behaviour; it would stop a future `'idle'` from closing the armory.
+
+Carried to A2 unchanged (the review's §5): AR-5 (Safari focus: thread `sheet.opener`), AR-6 (the ring under 315 CSS px), AR-7 (F3, a jsdom-only heap death on a hero remount inside the open scope), the lab's presets starting bare. The review's §5 item 1 (re-measure the close with A2's taller Loadout panel) stands: this pass measured it on D-A's taller stage.
+
+**WSL trees.** Removed after the checks (BUILD_RULES §3, the review's list): CLEANUP_LINE
+
+---
+
+## 16. Commits and artifacts
+
+*(§13 before the follow-up; §15 before the fix pass.)* On `claude/armory-a1` (PR [#1024](https://github.com/fashraf94/TradeSeven/pull/1024)), over `main`:
 
 | Commit | What |
 |---|---|
@@ -487,10 +686,20 @@ So A2's "No book" needs words and a state, not a new path.
 | `470fb2b5` | N2: the lock line, the footnote alone, the phone armory stepping aside; the rows (with the provider's) |
 | `0d59f3ef` | The loadout boards and their three sources (docs) |
 | `de45aef9` | This report's follow-up (§0, §10, §11, §13, §14) and two screenshots (`docs/audits/assets/armory-a1-followup-*.png`) |
-| the head | This report, final (the smoke's SHA and preview) |
+| `13395641` | This report, final (the follow-up's smoke SHA and preview) |
+| `011eef79` | The A1 review (`docs/audits/20261106_REVIEW_ARMORY_A1.md`) and §10's fill |
+| *Fix pass, Nov 6* | |
+| `baff6c99` | Merge of `main` `18d84ada` (PR #1026 and the commits before it) |
+| `bfeffa3d` | Part 1 (AR-1, AR-2, AR-3, AR-4, AR-9, N3, N4) and Part 2 (D-A, D-B, D-C), with the rows and guards |
+| `fcc3188c` | D-A sized from the measurement: 250 / 245, the words tucked under |
+| `6c4d0f80` | D-B sized from the measurement: the core's source level 0.6 |
+| REPORT_DRAFT_SHA | This report's fix pass (§0, §10, §15, §16) and six screenshots (`docs/audits/assets/armory-a1-fix-*.png`) |
+| the head | This report, final (the checks, the smoke's SHA and preview) |
 
 On `claude/armory-a1-smoke` (A1): `079f0abd`, one commit on `e4af2f9b`, "SMOKE ONLY, NEVER MERGE": `AGENT_FORM_ARMORY_ENABLED` and `AGENT_FORM_LAB_ENABLED` set `true` and the hub hero's corner readout (S7's format, as the S1 and S2 smokes had it, plus the engine's view count). Two files, +35 / −3. Its pins and guards red by design.
 
 On `claude/armory-a1-smoke` (follow-up, force-pushed): **`7af066e6`**, one commit on `de45aef9`, "SMOKE ONLY, NEVER MERGE": `AGENT_FORM_ARMORY_ENABLED` and `AGENT_FORM_LAB_ENABLED` set `true` and the hub hero's corner readout, re-anchored on `HubAgentForm.jsx` (now `main`'s text). Two files, +35 / −3, made by git plumbing. Its pins and guards red by design. Its minified build on Linux: exit 0. **Preview: https://trade-seven-nj8izdnrc-fais-projects-bc179554.vercel.app**: the served Command Center chunk (155,341 bytes) carries the armory's new lock line and the readout, and not the dropped footnote sentence.
 
-A copy of this report is in `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261104_BUILD_ARMORY_A1.md` (BUILD_RULES §3). The harness (§9, rebuilt in the follow-up) and the mutation runners live in the sessions' scratchpads and are not committed.
+On `claude/armory-a1-smoke` (fix pass, force-pushed): SMOKE_SUMMARY
+
+A copy of this report is in `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261104_BUILD_ARMORY_A1.md` (BUILD_RULES §3). The harness (§9, rebuilt in the follow-up and extended in the fix pass: a lab page, a one-form page and a harness-only core dial) and the mutation runners live in the sessions' scratchpads and are not committed.
