@@ -19,7 +19,10 @@ import { dirname, resolve } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { makeCallsFirestore } from '../_utils/__fixtures__/callsFirestore.js';
 
-const state = vi.hoisted(() => ({ reviewOn: false, observerImpl: null, observerCalls: [], order: [] }));
+const state = vi.hoisted(() => ({ reviewOn: false, activationFlagOn: false, observerImpl: null, observerCalls: [], order: [] }));
+// ACTIVATION_EVIDENCE_ENABLED ships TRUE (the 2026-11-06 flip), so these rows set it explicitly
+// — off in the byte-identity block, on in the sixth-tenant block — instead of riding on its default.
+vi.mock('../../src/config/activationEvidenceFlags.js', () => ({ get ACTIVATION_EVIDENCE_ENABLED() { return state.activationFlagOn; } }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const real = await importOriginal();
   return { ...real, CALL_RECORDS_MODE: 'off', get HYPOTHESIS_RECORDS_ENABLED() { return state.reviewOn; } };
@@ -72,7 +75,7 @@ let savedEnv;
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
-  Object.assign(state, { reviewOn: false, observerImpl: null, observerCalls: [], order: [] });
+  Object.assign(state, { reviewOn: false, activationFlagOn: false, observerImpl: null, observerCalls: [], order: [] });
   savedEnv = process.env.COCKPIT_ALLOWLIST_UIDS;
   process.env.COCKPIT_ALLOWLIST_UIDS = 'owner-1';
 });
@@ -102,6 +105,7 @@ describe('flag OFF — the response is the pre-change response, byte for byte', 
 });
 
 describe('flag ON — the sixth tenant', () => {
+  beforeEach(() => { state.activationFlagOn = true; });
   it('runs AFTER the review pass, with the handler\'s start, and its counts are reported', async () => {
     db = seedPending();
     state.observerImpl = async () => ({ candidates: 2, pointers: { withEvidence: 3 } });
