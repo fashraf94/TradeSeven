@@ -24,7 +24,7 @@ import { AGENT_FORM_LEAGUE_ENABLED } from '../../config/agentFormFlags';
 // button and its sheet. Literal ternaries at today's elements; the flags on their own lines.
 import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
 import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
-import { LeagueLoadoutLine, TrainingLoadoutLine } from './LeagueLoadoutLine';
+import { LeagueLoadoutSlot, TrainingLoadoutSlot } from './leagueLoadoutSlot';
 import { LeagueAgentFormScope } from './battleArena/leagueAgentFormSlot';
 import LoadoutChooserSheet from './LoadoutChooserSheet';
 
@@ -463,7 +463,7 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
         {/* Slice 5b-ii — the additive "Customize" path (Option 2). The fast-start
             CTA above is unchanged; this opens the loadout chooser, which forms with
             a spec. */}
-        {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? <TrainingLoadoutLine agentLoadout={agentLoadout} /> : (
+        {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? <TrainingLoadoutSlot agentLoadout={agentLoadout} /> : (
         <div style={{ marginTop: 12 }}>
           <button
             type="button"
@@ -518,7 +518,7 @@ export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectat
           <>
             {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
               <>
-                <LeagueLoadoutLine agentLoadout={agentLoadout} group={activeGroup} accent={accent} />
+                <LeagueLoadoutSlot agentLoadout={agentLoadout} group={activeGroup} accent={accent} />
                 <PulseSlot />
               </>
             ) : <PulseSlot />}

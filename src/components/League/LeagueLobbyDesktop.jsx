@@ -34,7 +34,7 @@ import { Eyebrow, Mono } from './LeagueParts';
 // Build A2 (board 3): the League loadout line on the ranked tab's left rail. A literal ternary at today's element.
 import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
 import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
-import { LeagueLoadoutLine } from './LeagueLoadoutLine';
+import { LeagueLoadoutSlot } from './leagueLoadoutSlot';
 import Spectate from './LeagueSpectate';
 import {
   DeskStat, DeskYourGroup, DeskFollowRail, DeskPodPanel,
@@ -198,7 +198,7 @@ export function DeskLobby({
             {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
             {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
               <>
-                <LeagueLoadoutLine agentLoadout={agentLoadout} group={activeGroup} accent={ACCENT} />
+                <LeagueLoadoutSlot agentLoadout={agentLoadout} group={activeGroup} accent={ACCENT} />
                 <DeskYourGroup st={st} accent={ACCENT} onOpen={onPickPod} />
               </>
             ) : <DeskYourGroup st={st} accent={ACCENT} onOpen={onPickPod} />}
