@@ -11,8 +11,13 @@
 // what makes weekend/holiday/early-close reachable without mocking the module
 // (there is no vi.mock-of-marketSchedule precedent anywhere in src/).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { battleTypeLabel } from '../utils/commandCenterLiveBattles';
+
+// Build A2 (Phase 0's R3): PER_GAME_LOADOUT_ENABLED through a getter, false except in its own row below.
+const a2 = vi.hoisted(() => ({ perGame: false }));
+vi.mock('../config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return a2.perGame; } }));
+afterEach(() => { a2.perGame = false; });
 import { DESK_COPY } from '../components/Dashboard/desk/deskCopy';
 import {
   buildBaggerbombAdapter,
@@ -754,6 +759,13 @@ describe('buildBaggerbombAdapter', () => {
       const b = makeBattle({ agentContext: { archetype: 'frozen_one' } });
       expect(build(b, makeCache(), AGENT, NOW, MS.open).loadout.archetype).toBe('momentum_chaser');
       expect(build(b, makeCache(), null, NOW, MS.open).loadout.archetype).toBe('frozen_one');
+    });
+
+    it('A2 (R3), PER_GAME_LOADOUT_ENABLED on: the battle\'s own snapshot wins; the live agent is only the fallback', () => {
+      a2.perGame = true;
+      const b = makeBattle({ agentContext: { archetype: 'frozen_one' } });
+      expect(build(b, makeCache(), AGENT, NOW, MS.open).loadout.archetype).toBe('frozen_one');
+      expect(build(makeBattle({ agentContext: {} }), makeCache(), AGENT, NOW, MS.open).loadout.archetype).toBe('momentum_chaser');
     });
 
     it('reads the watchlist label off the frozen snapshot', () => {
