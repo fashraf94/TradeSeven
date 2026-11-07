@@ -20,6 +20,11 @@ import WhileYouWait from './WhileYouWait';
 import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
 import TrainingClimbPreview from './TrainingClimbPreview';
 import { AGENT_FORM_LEAGUE_ENABLED } from '../../config/agentFormFlags';
+// Build A2 (board 3; FD-4): the League tab's loadout line and the Training tab's, in place of the Customize loadout
+// button and its sheet. Literal ternaries at today's elements; the flags on their own lines.
+import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
+import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
+import { LeagueLoadoutLine, TrainingLoadoutLine } from './LeagueLoadoutLine';
 import { LeagueAgentFormScope } from './battleArena/leagueAgentFormSlot';
 import LoadoutChooserSheet from './LoadoutChooserSheet';
 
@@ -458,6 +463,7 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
         {/* Slice 5b-ii — the additive "Customize" path (Option 2). The fast-start
             CTA above is unchanged; this opens the loadout chooser, which forms with
             a spec. */}
+        {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? <TrainingLoadoutLine agentLoadout={agentLoadout} /> : (
         <div style={{ marginTop: 12 }}>
           <button
             type="button"
@@ -469,12 +475,14 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
             <LIcon name="layers" size={13} color={alpha(accent, 0.95)} /> Customize loadout
           </button>
         </div>
+        )}
         {error && (
           <div role="alert" style={{ marginTop: 12, fontSize: 12, color: LX.neg, lineHeight: 1.4 }}>{error}</div>
         )}
       </div>
       <TrainingCpuNote />
 
+      {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? null : (
       <LoadoutChooserSheet
         open={chooserOpen}
         onClose={() => setChooserOpen(false)}
@@ -486,6 +494,7 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
         busy={busy}
         error={chooserOpen ? error : null}
       />
+      )}
     </div>
   );
 }
@@ -507,7 +516,12 @@ export function LobbyTabbed({ st, accent, tab, onSwitchTab, onPickPod, onSpectat
           <TrainingShell accent={accent} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} uid={uid} />
         ) : (
           <>
-            <PulseSlot />
+            {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+              <>
+                <LeagueLoadoutLine agentLoadout={agentLoadout} group={activeGroup} accent={accent} />
+                <PulseSlot />
+              </>
+            ) : <PulseSlot />}
             <BracketFunnelSection st={st} activeGroup={activeGroup} currentUserId={uid} displayName={displayName} onEnterGame={onOpenMyGame}
               activeTrainingPod={activeTrainingPod} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} onSpectate={onSpectate} backingSlot={backingSlot} />
             <YourGroup st={st} accent={accent} onPick={onPickPod} />

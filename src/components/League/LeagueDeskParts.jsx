@@ -32,6 +32,11 @@ import usePreOpenPhase from '../../hooks/usePreOpenPhase';
 import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
 import TrainingClimbPreview from './TrainingClimbPreview';
 import { AGENT_FORM_LEAGUE_ENABLED } from '../../config/agentFormFlags';
+// Build A2 (board 3; FD-4): the Training panel's loadout line in place of the Customize loadout button and its sheet.
+// Literal ternaries at today's elements; the flags on their own lines.
+import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
+import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
+import { TrainingLoadoutLine } from './LeagueLoadoutLine';
 import { LeagueAgentFormScope } from './battleArena/leagueAgentFormSlot';
 import { isLevelBoard } from './battleArena/arenaStateMap';
 
@@ -586,16 +591,19 @@ export function DeskTrainingPanel({ onOpenTrainingPod, activeTrainingPod = null,
           style={{ all: 'unset', boxSizing: 'border-box', cursor: busy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 20, padding: '14px 26px', borderRadius: 13, background: TRAIN.base, color: LTOKENS.bg, fontWeight: 700, fontSize: 15, opacity: busy ? 0.7 : 1, boxShadow: `0 8px 24px ${alpha(TRAIN.base, 0.32)}` }}>
           <LIcon name="play" size={16} color={LTOKENS.bg} /> {busy ? 'Starting your pod…' : 'Start a training pod'}
         </button>
+        {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? <TrainingLoadoutLine agentLoadout={agentLoadout} /> : (
         <div style={{ marginTop: 14 }}>
           <button type="button" className="lg-tap" onClick={openChooser} disabled={busy}
             style={{ all: 'unset', boxSizing: 'border-box', cursor: busy ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 6px', color: alpha(TRAIN.lt, 0.95), fontWeight: 600, fontSize: 12.5, opacity: busy ? 0.5 : 1 }}>
             <LIcon name="layers" size={13} color={alpha(TRAIN.lt, 0.95)} /> Customize loadout
           </button>
         </div>
+        )}
         {error && <div role="alert" style={{ marginTop: 12, fontSize: 12, color: LX.neg, lineHeight: 1.4 }}>{error}</div>}
       </div>
       <TrainingCpuNote />
 
+      {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? null : (
       <LoadoutChooserSheet
         open={chooserOpen}
         onClose={() => setChooserOpen(false)}
@@ -607,6 +615,7 @@ export function DeskTrainingPanel({ onOpenTrainingPod, activeTrainingPod = null,
         busy={busy}
         error={chooserOpen ? error : null}
       />
+      )}
     </div>
   );
 }

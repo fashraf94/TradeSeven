@@ -30,8 +30,8 @@ import { GROUP_STATUS, WEEK_DAYS_REQUIRED, selectMyGroup } from './leagueTournam
 import { getSessionForDate, MARKET_HOURS } from '../utils/marketCalendar.js';
 
 /** The two kinds of game a loadout belongs to (D1). The writers' `loadout` field takes these words. */
-export const LOADOUT_KINDS = Object.freeze({ BAGGERBOMB: 'baggerbomb', LEAGUE: 'league' });
-export const LOADOUT_KIND_LIST = Object.freeze([LOADOUT_KINDS.BAGGERBOMB, LOADOUT_KINDS.LEAGUE]);
+export const LOADOUT_KINDS = /* @__PURE__ */ Object.freeze({ BAGGERBOMB: 'baggerbomb', LEAGUE: 'league' });
+export const LOADOUT_KIND_LIST = /* @__PURE__ */ Object.freeze([LOADOUT_KINDS.BAGGERBOMB, LOADOUT_KINDS.LEAGUE]);
 
 /**
  * The writers' `loadout` field, read: absent (undefined or null) is LEAGUE, today's behaviour; one of the two words is
@@ -105,7 +105,7 @@ function addEtDays(etDate, n) {
   return t.toISOString().slice(0, 10);
 }
 
-const ET_PARTS = new Intl.DateTimeFormat('en-CA', {
+const ET_PARTS = /* @__PURE__ */ new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
 });
 
@@ -192,7 +192,7 @@ export function leagueWeekEndMsOf(group) {
 }
 
 /** The statuses that hold the lock: selectMyGroup's allowlist, named for the rows. */
-export const LEAGUE_LOCK_STATUSES = Object.freeze([GROUP_STATUS.FORMING, GROUP_STATUS.DRAFTING, GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.BATTLE]);
+export const LEAGUE_LOCK_STATUSES = /* @__PURE__ */ Object.freeze([GROUP_STATUS.FORMING, GROUP_STATUS.DRAFTING, GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.BATTLE]);
 
 /** The lock for the player's active ranked group as selectMyGroup picked it (the client's subscribeMyGroup answer). */
 export function leagueLockOfGroup(group) {

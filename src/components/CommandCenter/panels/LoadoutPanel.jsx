@@ -37,6 +37,12 @@ import { LOADOUT_SYMBOL_LIMIT } from '../hub/hubModel';
 import { FORGE_DOOR, IDEA_LABEL, LOADOUT_STATUS, WATCHLIST_STATE } from '../hub/selectors/loadout';
 import { C, HAIR, LOADOUT_CARD_MIN, MONO, tint } from '../hub/hubStyle';
 import { Card, EmptyNote, Eyebrow, HubButton, HubLink, LoadingLine, Mono, Tag } from '../HubParts';
+// Build A2 (board 1): with per-game loadouts and the armory on, the two loadout cards (BaggerBomb, then League) take the
+// archetype and watchlist cards' place, and the Forge line says the strategy rides into both games (FD-10). Two literal
+// ternaries at today's elements, so flag-off folds to them.
+import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';
+import { PER_GAME_LOADOUT_ENABLED } from '../../../config/perGameLoadoutFlags';
+import LoadoutCards, { AdjustmentsCard } from '../LoadoutCards';
 
 function SlotCard({ accent, kind, children }) {
   return (
@@ -150,6 +156,21 @@ export default function LoadoutPanel({
           <HubButton small onPress={onOpenRecord} ariaLabel={COPY.loadout.recordLabel(agentName)}>{COPY.loadout.openRecord}</HubButton>
         </div>
       )}
+      {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+        <LoadoutCards
+          onOpenArchetype={ready ? onChangeArchetype : undefined}
+          onOpenBook={ready ? onChangeWatchlist : undefined}
+          onOpenForge={onOpenForge}
+          adjustmentsCard={adjustments ? (
+            <AdjustmentsCard
+              adjustments={adjustments}
+              onChange={onChangeAdjustments}
+              onOpenForgeCharacter={onOpenForgeCharacter}
+              doorLabel={adjustments.door === FORGE_DOOR.CHARACTER ? COPY.loadout.forgeCharacter : COPY.loadout.forgeTraits}
+            />
+          ) : null}
+        />
+      ) : (
       <div data-hub-loadout-cards="" style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${LOADOUT_CARD_MIN}px, 1fr))`, gap: 10 }}>
         <SlotCard accent={C.gold} kind="archetype">
           <div style={cardHead}>
@@ -197,12 +218,15 @@ export default function LoadoutPanel({
           </SlotCard>
         )}
       </div>
+      )}
+      {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? null : (
       <div style={{ fontSize: 12.5, color: C.ink3, lineHeight: 1.55 }}>
         <span>{locked ? COPY.loadout.nextDeployLocked : COPY.loadout.nextDeploy}</span>
         <span>{' '}</span>
         <HubLink onPress={onOpenForge}>{COPY.loadout.changeInForge}</HubLink>
         <span>{COPY.loadout.neverRewrites}</span>
       </div>
+      )}
     </div>
   );
 }
