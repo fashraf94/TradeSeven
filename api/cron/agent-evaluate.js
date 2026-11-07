@@ -198,6 +198,10 @@ import { resolveAttributionAgentId, resolveRecordTargetId } from '../_utils/casu
 import { classifyHaikuFailure, classifyTimeoutKind, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, HAIKU_SDK_TIMEOUT_MS, PROMPT_BUILD_CEILING_MS, PROMPT_BUILD_TIMEOUT_ERROR_NAME, EVAL_MODEL_ID, EVAL_MAX_OUTPUT_TOKENS } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { runCanonicalOpenSweep } from '../_utils/canonicalOpenSweep.js';
+// Huddle S1 (spec V1.1 §6.3; Amendments A §A5, B §B1–B3): the check-start sweep and the
+// settle backstop, one helper call each; both return before any read while
+// DRB_HUDDLE_ENABLED is off (src/config/huddleFlags.js).
+import { applyPendingPlanForCheck, runSettleReconcile } from '../_utils/huddle/sweep.js';
 // Tick capture: the ONE canonical content-hash helper (BUILD_RULES §4 — never
 // a local copy). Used ONLY to hash control text into the permanent record so a
 // control can be identified there without its words being stored there.
@@ -401,6 +405,8 @@ export default async function handler(req, res) {
       await withTimeout(Promise.allSettled(patternLogs), SETTLE_PATTERN_LOG_TIMEOUT_MS, 'settle_pattern_logs')
         .catch(err => console.error(`${LOG_PREFIX} [settle] pattern logs not confirmed: ${err.message}`));
       console.log(`${LOG_PREFIX} [settle] expiry sweep only: ${summary.expired} completed, ${activeBattles.length} still active`);
+      // Huddle S1 (B §B3): the plan reconcile's evening backstop. Off, it returns at once; it never throws.
+      await runSettleReconcile(db);
       return respond(200, { mode: 'settle', expired: summary.expired, completionSkipped: summary.completionSkipped, masteryDeferredCompletions: summary.masteryDeferredCompletions, errors: summary.errors, duration: Date.now() - startTime });
     }
 
@@ -1093,6 +1099,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       await battleRef.update(migrationFields);
       Object.assign(battle, migrationFields);
     }
+
+    // ---- Huddle S1: the check-start sweep (spec V1.1 §6.3; A §A5; B §B1–B2) ----
+    // ONE helper call, after the migration mirror and before the governing preset: it files
+    // the player's confirmed game plan into this battle's slot when it lacks it (one
+    // transaction with the receipt) and mirrors only what committed. Off, it returns at once.
+    await applyPendingPlanForCheck(battle, { db, cronStartTime, timeBudgetMs: TIME_BUDGET_MS });
 
     // ---- Mastery slot stamp (Spec V2 §3) — FIRST evaluation tick, write-once.
     // The stamp is authoritative once written (authority inversion); the

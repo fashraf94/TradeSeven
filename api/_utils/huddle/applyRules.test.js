@@ -84,7 +84,7 @@ describe('decideApplication — §6.1 in order', () => {
 
   it('at most once: a written receipt for (battle, revision) is a no-op', () => {
     const done = record([conf('analyst', 'r1', OPEN - 3_600_000)], [{ battleId: 'b1', revision: 'r1', disposition: 'written', at: new Date(OPEN).toISOString() }]);
-    expect(decide(battle(), done)).toEqual({ disposition: null, outcome: 'already_written' });
+    expect(decide(battle(), done)).toMatchObject({ disposition: null, outcome: 'already_written' });
   });
 });
 

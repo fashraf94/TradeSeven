@@ -146,7 +146,7 @@ export function decideApplication({ battle, uid, record, nowMs, integrityMode })
   if (!confirmation) return { disposition: DISPOSITIONS.STALE_APPROACH, outcome: 'decided', confirmation: newest, archetype };
 
   const prior = receiptOf(plan.applications, battle.id, confirmation.revision);
-  if (prior && isTerminal(prior.disposition)) return { disposition: null, outcome: prior.disposition === DISPOSITIONS.WRITTEN ? 'already_written' : 'already_terminal' };
+  if (prior && isTerminal(prior.disposition)) return { disposition: null, outcome: prior.disposition === DISPOSITIONS.WRITTEN ? 'already_written' : 'already_terminal', confirmation };
 
   if (slotHoldsLiveCall(battle, { nowMs, integrityMode })) return { disposition: DISPOSITIONS.RETRY_LIVE_CALL, outcome: 'decided', confirmation, archetype };
   const slot = battle.directive;

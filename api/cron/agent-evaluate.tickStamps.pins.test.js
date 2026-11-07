@@ -348,3 +348,47 @@ describe('pin 4 — the fenced decider is inert to the new keys (spec §1.6)', (
     expect(evaluateTriggers(makeBattle({ evaluations: [] }), ...args).triggers.map((t) => t.type)).toEqual(['forced_open']);
   });
 });
+
+// ── Huddle S1 (spec V1.1 §6.3 "the call site is a single helper invocation, not an inline assignment,
+// and a new pin row covers the helper's placement"; Amendment B §B1–B2) ──────────────────────────────────
+describe('Huddle S1 — the check-start sweep is ONE bare helper call, between the migration mirror and the governing preset', () => {
+  const CALL = 'await applyPendingPlanForCheck(battle, { db, cronStartTime, timeBudgetMs: TIME_BUDGET_MS });';
+  it('called exactly once, inside processAgentBattle, after `Object.assign(battle, migrationFields)` and before `governingPreset`', () => {
+    const fnStart = CRON.indexOf('export async function processAgentBattle(');
+    const mirror = CRON.indexOf('Object.assign(battle, migrationFields);', fnStart);
+    const call = CRON.indexOf(CALL, fnStart);
+    const preset = CRON.indexOf('const governingPreset = presetKeyOf(battle.strategyPreset);', fnStart);
+    expect(fnStart).toBeGreaterThan(-1);
+    expect(mirror).toBeGreaterThan(fnStart);
+    expect(call).toBeGreaterThan(mirror);
+    expect(preset).toBeGreaterThan(call);
+    expect(CRON.match(/\bapplyPendingPlanForCheck\(/g)).toHaveLength(1);
+    // a bare awaited statement: no assignment, no branch on its result, no inline mirror in the cron
+    expect(CRON).not.toMatch(/=\s*await\s+applyPendingPlanForCheck/);
+    expect(CRON).not.toMatch(/applyPendingPlanForCheck\([^)]*\)\s*\./);
+    const between = CRON.slice(mirror + 'Object.assign(battle, migrationFields);'.length, call)
+      .replace(/\/\/.*$/gm, '').replace(/\s+/g, '');
+    expect(between).toBe('}');
+    // the write-backs onto `battle` in the cron are still the three pin 3 counts: the sweep mirrors inside its own module
+    expect(CRON.match(/Object\.assign\(battle\b/g)).toHaveLength(3);
+  });
+
+  it('the settle run\'s backstop is ONE bare call, just before the settle response, which keeps its keys', () => {
+    expect(CRON.match(/\brunSettleReconcile\(/g)).toHaveLength(1);
+    const call = CRON.indexOf('await runSettleReconcile(db);');
+    const respond = CRON.indexOf("return respond(200, { mode: 'settle', expired: summary.expired, completionSkipped: summary.completionSkipped, masteryDeferredCompletions: summary.masteryDeferredCompletions, errors: summary.errors, duration: Date.now() - startTime });");
+    expect(call).toBeGreaterThan(-1);
+    expect(respond).toBeGreaterThan(call);
+    // nothing between the call and the response
+    expect(CRON.slice(call, respond).trim()).toBe('await runSettleReconcile(db);');
+  });
+
+  it('behavioural twin: with DRB_HUDDLE_ENABLED off both return before touching the database', async () => {
+    const { applyPendingPlanForCheck, runSettleReconcile } = await import('../_utils/huddle/sweep.js');
+    const db = new Proxy({}, { get() { throw new Error('the database was read while dark'); } });
+    const battle = { id: 'b1', ownerId: 'u1', timing: { tradingDays: ['2026-11-09'] }, directive: null };
+    expect(await applyPendingPlanForCheck(battle, { db, cronStartTime: Date.now(), timeBudgetMs: 290_000 })).toEqual({ outcome: 'off' });
+    expect(battle.directive).toBeNull();
+    expect(await runSettleReconcile(db)).toEqual({ outcome: 'off' });
+  });
+});

@@ -37,6 +37,7 @@ import { ARCHETYPE_INTEGRITY_MODE } from '../../../src/config/featureFlags.js';
 import { TICKS_SUBCOLLECTION } from '../tickCapture/captureConfig.js';
 import { huddleDayRef, battleRefOf, PLAN_STATUS } from './records.js';
 import { planThreadIdOf } from './planTemplates.js';
+// (planThreadIdOf is also re-exported at the end of this module for its callers)
 import {
   DISPOSITIONS, decideApplication, buildPlanSlot, buildPlanExchange, upsertReceipt, receiptOf,
   latestReceiptOf, isTerminal, battleKindOf,
@@ -64,7 +65,13 @@ export async function applyPlanToBattle(db, { uid, etDate, battleId, writtenBy, 
     const record = recordSnap.exists ? recordSnap.data() : null;
     const battle = battleSnap.exists ? { id: battleSnap.id, ...battleSnap.data() } : null;
     const decision = decideApplication({ battle, uid, record, nowMs, integrityMode });
-    if (!decision.disposition) return { outcome: decision.outcome, disposition: null };
+    if (!decision.disposition) {
+      // Found already filed: the fresh slot, when it still holds this plan's thread, is the committed state a
+      // caller may mirror (the sweep, V1.1 §6.3: "mirrors … what the transaction committed or found already written").
+      const thread = decision.outcome === 'already_written' ? planThreadIdOf({ uid, etDate, revision: decision.confirmation.revision }) : null;
+      const slot = thread && battle?.directive?.directiveThreadId === thread ? battle.directive : null;
+      return { outcome: decision.outcome, disposition: null, ...(slot ? { slot } : {}) };
+    }
 
     const at = iso(nowMs);
     const revision = decision.confirmation?.revision ?? null;
