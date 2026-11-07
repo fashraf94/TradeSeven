@@ -72,6 +72,11 @@ describe('the Huddle block of hubCopy.js', () => {
     expect([H.readyTitle, H.open, H.deployReconfirm, H.deployReconfirmDoor]).toEqual(['Huddle ready', 'Open huddle', 'Your game plan was confirmed under a different approach.', 'Reconfirm']);
   });
 
+  it("a card's source line names each source once, in order", () => {
+    expect(H.sourcesOf(['your game', 'EODHD daily bars', 'your game', 'EODHD news'])).toBe('Source: your game; EODHD daily bars; EODHD news');
+    expect(H.sourcesOf([])).toBe('');
+  });
+
   it('the forbidden patterns bite on planted hub strings', () => {
     for (const planted of ['Your agent will buy at 9:30.', 'Guaranteed to work.', 'Your agent has seen your plan.']) {
       expect(Object.values(FORBIDDEN_SCRIPT_PATTERNS).some((re) => re.test(planted)), planted).toBe(true);

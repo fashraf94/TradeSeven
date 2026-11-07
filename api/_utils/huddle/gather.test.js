@@ -53,3 +53,15 @@ describe('the gather step\'s pack: one item, one id, per fact', () => {
     expect(new Set(g.evidence.map((e) => e.id)).size).toBe(g.evidence.length);
   });
 });
+
+describe('the gather step\'s source lines', () => {
+  it('a source the morning did not check is named in words on its source_status item (never its key), and the label is not in the id', async () => {
+    const g = await gatherForPlayer(memoryDb({ agents: [], agentBattles: [battle] }), {
+      uid: 'u1', etDate: ET, session: sessionOf(ET), shared: { sources: { earnings: 'skipped', marketContext: 'error', macro: 'ok' } }, owner: 'u1#1', deps,
+    });
+    const status = g.evidence.filter((e) => e.kind === 'source_status');
+    expect(status.map((e) => [e.source.recordId, e.source.label])).toEqual([
+      ['eodhd', 'EODHD news'], ['newsfilter', 'newsfilter'], ['fantasytimes', 'FantasyTimes'], ['earnings', 'earnings calendar'], ['marketContext', 'market context'],
+    ]);
+  });
+});

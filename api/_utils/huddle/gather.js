@@ -33,6 +33,8 @@ export const EVIDENCE_SYMBOL_CAP = 8;
 export const HEADLINES_PER_SYMBOL = 3;
 export const STRIP_LISTED = 8;
 const KIND_LABEL = Object.freeze({ ranked: 'ranked', casual: 'BaggerBomb', training: 'training' });
+// The readable name of each source on a source_status item (the transcript's and the cards' source lines); never in the id.
+const SOURCE_LABEL = Object.freeze({ eodhd: 'EODHD news', newsfilter: 'newsfilter', fantasytimes: 'FantasyTimes', marketContext: 'market context', macro: 'macro calendar', earnings: 'earnings calendar' });
 
 const isTicker = (s) => typeof s === 'string' && TICKER_RE.test(s);
 
@@ -171,13 +173,13 @@ export async function gatherForPlayer(db, { uid, etDate, session, shared, owner,
     const worst = statuses.has('error') ? 'error' : statuses.has('skipped') ? 'skipped' : statuses.has('ok') ? 'ok' : null;
     if (worst && worst !== 'ok') {
       sourceFailures.push(`${source}:${worst}`);
-      add(packItem({ kind: 'source_status', fact: `${source === 'eodhd' ? 'EODHD news' : source === 'newsfilter' ? 'newsfilter' : 'FantasyTimes'} was ${worst === 'error' ? 'unavailable (an error)' : 'not checked'} this morning.`, recordKind: 'source', recordId: source, label: source, at: etDate, status: 'unavailable', reason: worst }));
+      add(packItem({ kind: 'source_status', fact: `${source === 'eodhd' ? 'EODHD news' : source === 'newsfilter' ? 'newsfilter' : 'FantasyTimes'} was ${worst === 'error' ? 'unavailable (an error)' : 'not checked'} this morning.`, recordKind: 'source', recordId: source, label: SOURCE_LABEL[source] ?? source, at: etDate, status: 'unavailable', reason: worst }));
     }
   }
   for (const [k, v] of Object.entries(shared?.sources || {})) {
     if (v !== 'ok') {
       sourceFailures.push(`${k}:${v}`);
-      add(packItem({ kind: 'source_status', fact: `The ${k === 'earnings' ? 'earnings calendar' : k === 'macro' ? 'macro calendar' : 'market context'} was ${v === 'error' ? 'unavailable (an error)' : 'not checked'} this morning.`, recordKind: 'source', recordId: k, label: k, at: etDate, status: 'unavailable', reason: v }));
+      add(packItem({ kind: 'source_status', fact: `The ${k === 'earnings' ? 'earnings calendar' : k === 'macro' ? 'macro calendar' : 'market context'} was ${v === 'error' ? 'unavailable (an error)' : 'not checked'} this morning.`, recordKind: 'source', recordId: k, label: SOURCE_LABEL[k] ?? k, at: etDate, status: 'unavailable', reason: v }));
     }
   }
 

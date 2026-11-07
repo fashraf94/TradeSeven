@@ -157,7 +157,7 @@ export const HUB_COPY = Object.freeze({
     transcript: 'Transcript',
     beats: Object.freeze({ yesterday: "Yesterday's plan", tape: 'The tape', names: 'Your names', armor: "The armor's take", plan: 'The game plan' }),
     sourcesOf: (labels) => {
-      const list = (Array.isArray(labels) ? labels : [labels]).filter((l) => typeof l === 'string' && l);
+      const list = [...new Set((Array.isArray(labels) ? labels : [labels]).filter((l) => typeof l === 'string' && l))];
       return list.length ? `Source: ${list.join('; ')}` : '';
     },
     planTitle: 'The game plan',
