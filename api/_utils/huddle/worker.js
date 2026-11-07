@@ -33,9 +33,13 @@ export const RECONCILE_BUDGET_MS = 10_000;
 
 const iso = (ms) => new Date(ms).toISOString();
 
-/** Write the run marker's fields (merge). */
+/**
+ * Write the run marker's fields (merge). The one write that runs while the flag is off (the brief handler's marker). The
+ * collection is named literally so the protected-stores scanner counts this site (review L1-5: a ref helper's result went uncounted).
+ */
 export async function markRun(db, etDate, fields) {
-  await huddleRunRef(db, etDate).set({ ...fields, updatedAt: iso(Date.now()) }, { merge: true });
+  huddleRunRef(db, etDate); // validates the date key (it throws on a malformed one)
+  await db.collection('huddleRuns').doc(etDate).set({ ...fields, updatedAt: iso(Date.now()) }, { merge: true });
 }
 
 /** The enqueue stage (idempotent row keys). */
