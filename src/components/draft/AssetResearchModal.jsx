@@ -87,6 +87,10 @@ const getMockFundamentals = (symbol) => {
   return { ...defaults, ...(stockData[symbol] || {}) };
 };
 
+// Bomb mode: an in-battle mount always shows the 💣 pill (BA-5), even before a
+// ladder can be drawn (the plot then says why) — this stands in for bombData.
+const BOMB_MODE_PILL = Object.freeze({ bombMode: true });
+
 const AssetResearchModal = ({
   asset,
   sector,
@@ -274,7 +278,8 @@ const AssetResearchModal = ({
   const researchData = useResearchData(version >= 2 && !failClosed ? currentAsset?.symbol : null, {
     currentPrice: sheetPrice,
     isCrypto: isCrypto,
-    initialTimeframe: defaultTimeframe,
+    // A mount that loses the 💣 view (BA-5) opens on 1D, never fetching the bomb series it cannot show.
+    initialTimeframe: bombHidden && (defaultTimeframe === 'bomb' || defaultTimeframe === 'spectate') ? '1D' : defaultTimeframe,
     technicalActive: activeTab === 'technical',
     srRequested: srOn,
     ...(controlledMode ? { controlled: { extremes: controlledValid ? (controlledQuote.extremes || null) : null } } : {}),
@@ -910,7 +915,7 @@ const AssetResearchModal = ({
                   smaData={researchData.smaData}
                   activeHighlight={chartHighlight}
                   height={chartHeight}
-                  bombData={bombHidden ? null : bombData}
+                  bombData={bombHidden ? null : bombOn ? (bombData || BOMB_MODE_PILL) : bombData}
                   symbol={currentAsset?.symbol}
                   todayDailyCandle={researchData.todayDailyCandle}
                   realtimeExtremes={isOriginalAsset && !controlledMode ? realtimeExtremes : null}

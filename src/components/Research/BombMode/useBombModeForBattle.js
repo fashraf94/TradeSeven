@@ -14,7 +14,10 @@ export default function useBombModeForBattle(battleId, ownerId = null) {
   const mode = resolveBombMode();
   const id = typeof battleId === 'string' && battleId ? battleId : null;
   const owner = typeof ownerId === 'string' && ownerId ? ownerId : null;
-  const ask = mode === 'allowlist' && id !== null;
+  // Asked only once the battle names its owner: the verdict is cached per owner
+  // (one request per owner per page life — a request before the document loads
+  // would be cached under the battle id and asked again).
+  const ask = mode === 'allowlist' && id !== null && owner !== null;
   const [answer, setAnswer] = useState(null); // { key, verdict } — the last definite answer and what it answered
 
   useEffect(() => {
@@ -27,7 +30,7 @@ export default function useBombModeForBattle(battleId, ownerId = null) {
     return () => { live = false; };
   }, [ask, id, owner]);
 
-  if (!ask) return bombModeOn(mode, { agentBattle: id !== null });
+  if (!ask) return mode === 'allowlist' ? false : bombModeOn(mode, { agentBattle: id !== null });
   const key = `${id}|${owner ?? ''}`;
   const verdict = answer?.key === key ? answer.verdict : cachedFilmRoomVerdict(id, { ownerId: owner });
   return bombModeOn(mode, { agentBattle: true, verdict });

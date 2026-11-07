@@ -28,16 +28,30 @@ const ET_WHEN = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
 /** 'Tue 9:45 AM' for the entry line. */
 export const entryWhen = (ms) => (finite(ms) ? ET_WHEN.format(new Date(ms)).replace(/ /g, ' ') : null);
 
-/** The to-go pill's text: brick wording when bricks are on, the live number inside the band (R-11′(d)). */
-export function toGoText(ladder, go, { closed = false } = {}) {
-  if (!go) return ladder?.next ? null : BOMB_COPY.allBanked;
+/**
+ * The to-go label in two parts: the distance (brick wording when bricks are on)
+ * and — inside the band (R-11′(d)) — the live number it carries. A preview at
+ * or over a rung says only that: no check scores a stock nobody holds.
+ */
+export function toGoParts(ladder, go, { closed = false } = {}) {
+  if (!go) return ladder?.next ? null : { base: BOMB_COPY.allBanked, suffix: null };
   const base = go.distance <= 0
-    ? BOMB_COPY.toGoAt(go.rung.points)
+    ? (ladder.kind === 'preview' ? BOMB_COPY.toGoAtPreview : BOMB_COPY.toGoAt)(go.rung.points)
     : go.bricks != null ? BOMB_COPY.toGoBricks(go.pctShown, go.bricks, go.rung.points) : BOMB_COPY.toGoPlain(go.pctShown, go.rung.points);
-  if (go.pctShown > RED_ZONE_ENTER_PCT) return base;
+  if (go.pctShown > RED_ZONE_ENTER_PCT) return { base, suffix: null };
   // After the close the quote is the last trade, not a live one.
-  return (closed ? BOMB_COPY.toGoWithLast : BOMB_COPY.toGoWithLive)(base, money(go.liveShown, go.decimals));
+  const full = (closed ? BOMB_COPY.toGoWithLast : BOMB_COPY.toGoWithLive)(base, money(go.liveShown, go.decimals));
+  return { base, suffix: full.slice(base.length + 3) };
 }
+
+/** The to-go label as one line. */
+export function toGoText(ladder, go, opts = {}) {
+  const p = toGoParts(ladder, go, opts);
+  return p ? (p.suffix ? `${p.base} · ${p.suffix}` : p.base) : null;
+}
+
+/** The drawn width of a mono label (≈0.6 em per glyph plus its letter spacing). */
+export const monoWidth = (text, fontSize, letterSpacing = 0) => text.length * (fontSize * 0.6 + letterSpacing);
 
 /** The label of the line the rail starts from — never "entry" on a preview. */
 export function baselineText(ladder, d) {
@@ -51,7 +65,7 @@ export function baselineText(ladder, d) {
 export default function FuseChart({ ladder, live, decimals, go, ghost = [], checkDots = [], bankedTimes = {}, closed = false, width = 360, height = 300 }) {
   const reduced = useReducedMotion() === true;
   const W = Math.max(280, width);
-  const H = Math.max(220, height);
+  const H = Math.max(200, height);
   const d = decimals;
   const railX = W - 96;
   const labelX = railX + 14;
@@ -95,17 +109,24 @@ export default function FuseChart({ ladder, live, decimals, go, ghost = [], chec
   const liveLabel = (() => {
     if (liveY === null || inBand) return null;
     const blocks = [...rungs.map((r) => [r.y - 11, r.y + 19]), [yEntry - 10, yEntry + 12], ...ladder.down.map((r) => [Y(r.k) - 9, Y(r.k) + 6])];
-    const clear = (y) => blocks.every(([a, b]) => y + 14 < a || y - 12 > b) && y - 12 > plotTop - 8 && y + 14 < H;
+    // The date axis (H − 16 … H) is off limits on both sides.
+    const inPlot = (y) => y - 12 > plotTop - 8 && y + 14 < H - 16;
+    const clear = (y) => blocks.every(([a, b]) => y + 14 < a || y - 12 > b) && inPlot(y);
     for (const y of [liveY + 4, liveY + 30, liveY - 20]) if (clear(y)) return { x: labelX, y, anchor: 'start' };
-    return { x: railX - 12, y: liveY + 4, anchor: 'end' };
+    for (const y of [liveY + 4, liveY - 20, liveY + 30]) if (inPlot(y)) return { x: railX - 12, y, anchor: 'end' };
+    return { x: railX - 12, y: Math.max(plotTop + 4, Math.min(liveY + 4, H - 32)), anchor: 'end' };
   })();
   const liveLabelY = liveLabel ? liveLabel.y : null;
   // The halo brightens as the distance to the next rung shrinks (0 % → full, 3 % or more → faint).
   const halo = go ? 0.2 + 0.65 * Math.max(0, 1 - Math.max(0, go.pct) / 3) : 0.2;
-  const pill = toGoText(ladder, go, { closed });
+  const parts = toGoParts(ladder, go, { closed });
   const plan = brickPlan(ladder);
   const pillY = ladder.next ? Y(ladder.next.k) : (top ? top.y : plotTop);
-  const pillW = pill ? Math.min(x1 - x0, pill.length * 5.7 + 18) : 0;
+  // One line when it fits the ghost area; else the live number on a second line.
+  const oneLine = parts ? (parts.suffix ? `${parts.base} · ${parts.suffix}` : parts.base).toUpperCase() : null;
+  const pillLines = !parts ? [] : monoWidth(oneLine, 9, 0.4) + 18 <= x1 - x0 ? [oneLine] : [parts.base.toUpperCase(), ...(parts.suffix ? [parts.suffix.toUpperCase()] : [])];
+  const pillW = pillLines.length ? Math.min(x1 - x0, Math.max(...pillLines.map((l) => monoWidth(l, 9, 0.4))) + 18) : 0;
+  const pillH = 4 + 12 * pillLines.length;
   const lastPt = n ? { x: X(n - 1), y: Y(kOf(ladder, pts[n - 1].c)) } : null;
   const beadMotion = motionToken('smooth', { reducedMotion: reduced });
 
@@ -128,7 +149,9 @@ export default function FuseChart({ ladder, live, decimals, go, ghost = [], chec
           <g key={r.key} data-fuse-rung={r.key} data-rung-state={r.state}>
             <line x1={x0} y1={r.y} x2={x1} y2={r.y} strokeDasharray="4 4" style={{ stroke: r.state === 'banked' ? tint(BT.green, 45) : tint(BT.gold, r.state === 'next' ? 60 : 30) }} />
             <text x={x0} y={r.y - 5} fontSize="8.5" fontWeight="700" letterSpacing="1" style={{ fill: r.state === 'banked' ? BT.green : r.state === 'next' ? BT.gold : tint(BT.gold, 60) }}>
-              {BOMB_COPY.rungTitle(r.label, pctOf(r.price))}
+              {r.banked && finite(bankedTimes[r.key]) ? r.label.toUpperCase() : BOMB_COPY.rungTitle(r.label, pctOf(r.price))}
+              {r.banked && finite(bankedTimes[r.key]) ? ' · ' : null}
+              {r.banked && finite(bankedTimes[r.key]) && <tspan data-fuse-banked-at={r.key}>{BOMB_COPY.bankedAt(etClock(bankedTimes[r.key])).toUpperCase()}</tspan>}
             </text>
           </g>
         ))}
@@ -142,11 +165,13 @@ export default function FuseChart({ ladder, live, decimals, go, ghost = [], chec
         {entryIdx >= 0 && <circle cx={X(entryIdx)} cy={yEntry} r="3.5" strokeWidth="1.5" style={{ fill: BT.bg, stroke: BT.ink2 }} />}
         {lastPt && liveY !== null && <line x1={lastPt.x} y1={lastPt.y} x2={railX - 7} y2={liveY} strokeDasharray="2 3" style={{ stroke: BT.teal, strokeOpacity: 0.85 }} />}
 
-        {pill && (
+        {pillLines.length > 0 && (
           <g data-fuse-togo="1">
             {/* above the rung's title row, so the two never share a line at 320 px */}
-            <rect x={x1 - pillW} y={pillY - 36} width={pillW} height={16} rx={8} style={{ fill: tint(BT.bg, 92), stroke: tint(BT.gold, 45) }} />
-            <text x={x1 - 9} y={pillY - 24.5} textAnchor="end" fontSize="9" fontWeight="700" letterSpacing="0.4" style={{ fill: BT.gold }}>{pill.toUpperCase()}</text>
+            <rect x={x1 - pillW} y={pillY - 20 - pillH} width={pillW} height={pillH} rx={8} style={{ fill: tint(BT.bg, 92), stroke: tint(BT.gold, 45) }} />
+            {pillLines.map((line, i) => (
+              <text key={i} x={x1 - 9} y={pillY - 20 - pillH + 12.5 + 12 * i} textAnchor="end" fontSize="9" fontWeight="700" letterSpacing="0.4" style={{ fill: BT.gold }}>{line}</text>
+            ))}
           </g>
         )}
 
@@ -175,7 +200,6 @@ export default function FuseChart({ ladder, live, decimals, go, ghost = [], chec
           <g key={`l${r.key}`} data-fuse-rung-label={r.key}>
             <text x={labelX} y={r.y + 4.5} fontSize="13" fontWeight="800" style={{ fill: r.state === 'banked' ? BT.green : r.state === 'next' ? BT.gold : tint(BT.gold, 60) }}>{BOMB_COPY.rungPoints(r.points, r.banked)}</text>
             <text x={labelX} y={r.y + 15.5} fontSize="8.5" style={{ fill: BT.ink3 }}>{money(r.price, d)}</text>
-            {r.banked && finite(bankedTimes[r.key]) && <text data-fuse-banked-at={r.key} x={labelX} y={r.y + 25} fontSize="7.5" fontWeight="700" letterSpacing="0.4" style={{ fill: BT.green }}>{BOMB_COPY.bankedAt(etClock(bankedTimes[r.key])).toUpperCase()}</text>}
           </g>
         ))}
 

@@ -68,8 +68,9 @@ export default function useBombView({
     setObservations((list) => (list.length && list[list.length - 1].price === live ? list : [...list, { atMs: Date.now(), price: live }].slice(-OBSERVATIONS_CAP)));
   }, [enabled, live, isCrypto]);
 
-  // The clock ticks every second in the red zone, every 15 s on a held Fuse, never on a preview.
-  const period = !enabled || !held ? null : isRedZoneMode(rz.mode) ? 1000 : 15000;
+  // The clock ticks every second in a red zone on screen, every 15 s otherwise for a held name, never on a preview.
+  const onBombView = timeframe === 'bomb' || timeframe === 'spectate';
+  const period = !enabled || !held ? null : isRedZoneMode(rz.mode) && onBombView ? 1000 : 15000;
   useEffect(() => {
     if (period === null) return undefined;
     const id = setInterval(() => setNowMs(Date.now()), period);
@@ -87,9 +88,9 @@ export default function useBombView({
       held, crypto: isCrypto === true, marketOpen, positionId, bankedUp, next: go ? { key: go.rung.key, pct: go.pctShown } : null, momentDone: done,
     });
     if (next.moment && next.moment !== rz.moment) {
-      // BA-4: the modal SAW this rung bank — the check is the one the record's latest score belongs to.
+      // BA-4: the modal SAW these rungs bank — the check is the one the record's latest score belongs to.
       const atMs = checkSlotOf(record?.lastScoredAtMs, record?.battleExpiresAtMs) ?? record?.scored?.atMs ?? null;
-      setBankedTimes((t) => ({ ...t, [next.moment.key]: atMs }));
+      setBankedTimes((t) => ({ ...t, ...Object.fromEntries(next.moment.keys.map((k) => [k, atMs])) }));
     }
     const same = next.mode === rz.mode && next.rungKey === rz.rungKey && next.moment === rz.moment
       && JSON.stringify(next.seenBanked) === JSON.stringify(rz.seenBanked) && next.played.length === rz.played.length;
@@ -97,12 +98,24 @@ export default function useBombView({
   }, [inputKey]); // eslint-disable-line react-hooks/exhaustive-deps -- every input is in inputKey; rz is the committed state this render read
 
   // The banked moment's one beat, then the zone re-bases or leaves.
-  const momentKey = rz.mode === 'banked' && rz.moment ? `${positionId}:${rz.moment.key}` : null;
+  const momentKey = rz.mode === 'banked' && rz.moment ? `${positionId}:${rz.moment.key}` : null; // the moment's highest tier names it
   useEffect(() => {
     if (!momentKey) return undefined;
     const id = setTimeout(() => setMomentDone(momentKey), BANKED_MOMENT_MS);
     return () => clearTimeout(id);
   }, [momentKey]);
+
+  // The hook decides its 15-second poll when the spectate view OPENS (useResearchData
+  // :475-479: never while the market is closed). A session that opens or closes
+  // under an open red zone re-opens the view, so the poll starts — or stops — with
+  // it (one more read of each series, the same requests a tap would make).
+  const openRef = useRef(marketOpen);
+  useEffect(() => {
+    const was = openRef.current;
+    openRef.current = marketOpen;
+    if (!enabled || was === marketOpen || timeframe !== 'spectate' || typeof setTimeframe !== 'function') return;
+    setTimeframe('bomb');
+  }, [enabled, marketOpen, timeframe, setTimeframe]);
 
   // The red zone is the hook's spectate view; the Fuse is its bomb view.
   useEffect(() => {
@@ -115,13 +128,17 @@ export default function useBombView({
 
   // The ghost is the 30-minute series; the trace is the 1-minute series — each
   // only from its own view (a stale view's bars are never relabelled).
-  if (timeframe === 'bomb' && Array.isArray(bars)) ghostRef.current = { symbol, bars };
+  // Right after spectate → bomb the hook still holds the minute bars until the
+  // 30-minute series arrives: the ghost keeps only bars spaced 30 minutes or more.
+  const spacing = timeframe === 'bomb' && Array.isArray(bars) ? traceParts(bars, []).intervalMin : null;
+  if (timeframe === 'bomb' && Array.isArray(bars) && (spacing === null || spacing >= 30)) ghostRef.current = { symbol, bars };
   const ghost = ghostRef.current.symbol === symbol ? ghostRef.current.bars : [];
   const trace = traceParts(timeframe === 'spectate' ? bars : [], observations);
   const clock = held ? checkClock(nowMs, { battleExpiresAtMs: record?.battleExpiresAtMs, lastScoredAtMs: record?.lastScoredAtMs }) : null;
   const scored = held ? record?.scored ?? null : null;
   const frozen = rz.mode === 'closed';
-  const moment = rz.moment && held ? { key: rz.moment.key, atMs: bankedTimes[rz.moment.key] ?? null, price: scored?.price ?? null } : null;
+  const momentPoints = rz.moment && held ? ladder.up.filter((r) => rz.moment.keys.includes(r.key)).reduce((n, r) => n + r.points, 0) : 0;
+  const moment = rz.moment && held ? { key: rz.moment.key, keys: rz.moment.keys, points: momentPoints, atMs: bankedTimes[rz.moment.key] ?? null, price: scored?.price ?? null } : null;
   return {
     ladder,
     go,

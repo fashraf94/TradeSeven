@@ -78,7 +78,10 @@ describe('the baseline label — never "entry" on a preview (BA-1)', () => {
     const l = previewLadder({ previousClose: 100, threshold: 6 }); // bagger $106, brick $1
     expect(toGoText(l, toGo(l, 104))).toBe('1.9% · 2 bricks to +15');
     expect(toGoText(l, toGo(l, 105.6))).toBe('0.38% · 1 brick to +15 · live $105.60');
-    expect(toGoText(l, toGo(l, 106.2))).toBe('At +15 · a check decides · live $106.20');
+    expect(toGoText(l, toGo(l, 106.2))).toBe('At +15 · live $106.20'); // a preview: no check scores a stock nobody holds
+    const held = measuredLadder({ measured: { measured: true, baselinePrice: 100, targets: [['bagger', 106], ['doubleBagger', 109], ['tenBagger', 112], ['bust', 94], ['crash', 91], ['meltdown', 88]].map(([key, price]) => ({ key, price })), crossedTiers: [] } });
+    expect(toGoText(held, toGo(held, 106.2))).toBe('At +15 · a check decides · live $106.20');
+    expect(toGoText(held, toGo(held, 106.2), { closed: true })).toBe('At +15 · a check decides · last $106.20');
   });
 });
 

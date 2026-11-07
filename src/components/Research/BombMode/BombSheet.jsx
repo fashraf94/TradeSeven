@@ -11,7 +11,7 @@ import React from 'react';
 import { BT, tint, MONO } from './bombTheme.js';
 import { BOMB_COPY, money } from './bombCopy.js';
 import { brickPlan, kOf } from './ladder.js';
-import { baselineText, toGoText } from './FuseChart.jsx';
+import { baselineText, toGoText, monoWidth } from './FuseChart.jsx';
 import { ladderStateCopy } from './BombPlot.jsx';
 import useMeasuredWidth from './useMeasuredWidth.js';
 
@@ -60,8 +60,13 @@ export default function BombSheet({ view }) {
                 ? <g><circle cx={x} cy={36} r={9} style={{ fill: BT.green }} /><path d={`M${x - 4.5} 36l3 3 6-6.5`} fill="none" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ stroke: BT.bg }} /></g>
                 : <circle cx={x} cy={36} r={isNext ? 8 : 6} strokeWidth={isNext ? 2 : 1.5} style={{ fill: BT.bg, stroke: BT.gold, opacity: isNext ? 1 : 0.55 }} />}
               <text x={tx} y={60} textAnchor={anchor} fontSize="10" fontWeight="800" style={{ fill: r.banked ? BT.green : isNext ? BT.gold : tint(BT.gold, 55) }}>{BOMB_COPY.rungPoints(r.points, r.banked)}</text>
-              <text x={tx} y={72} textAnchor={anchor} fontSize="8.5" style={{ fill: BT.ink3 }}>{money(r.price, d)}</text>
-              {isNext && label && <text data-sheet-togo="1" x={Math.max(x0 + 60, Math.min(x, x1 - 60))} y={14} textAnchor="middle" fontSize="8.5" fontWeight="700" letterSpacing="0.5" style={{ fill: BT.gold }}>{label.toUpperCase()}</text>}
+              <text x={tx} y={72} textAnchor={anchor} fontSize={money(r.price, d).length > 9 ? '7' : '8.5'} style={{ fill: BT.ink3 }}>{money(r.price, d)}</text>
+              {isNext && label && (() => {
+                // Centred over the rung, but kept whole inside the sheet by its own drawn width.
+                const w = monoWidth(label, 8.5, 0.5);
+                const cx = Math.max(x0 + w / 2, Math.min(x, W - 4 - w / 2));
+                return <text data-sheet-togo="1" x={cx} y={14} textAnchor="middle" fontSize="8.5" fontWeight="700" letterSpacing="0.5" style={{ fill: BT.gold }}>{label.toUpperCase()}</text>;
+              })()}
             </g>
           );
         })}

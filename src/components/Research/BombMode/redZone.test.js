@@ -50,7 +50,15 @@ describe('the banked moment', () => {
   it('a rung the modal SEES bank plays the moment', () => {
     const s = run([approaching, bankedFar]);
     expect(s.mode).toBe('banked');
-    expect(s.moment).toEqual({ key: 'bagger' });
+    expect(s.moment).toEqual({ key: 'bagger', keys: ['bagger'] });
+  });
+  it('two tiers banking at ONE check play one moment for both (named by the higher), each marked played', () => {
+    const both = held({ bankedUp: ['bagger', 'doubleBagger'], next: { key: 'tenBagger', pct: 3 } });
+    const s = run([approaching, both]);
+    expect(s.mode).toBe('banked');
+    expect(s.moment).toEqual({ key: 'doubleBagger', keys: ['bagger', 'doubleBagger'] });
+    expect(s.played).toEqual(['p1:bagger', 'p1:doubleBagger']);
+    expect(run([approaching, both, { ...both, momentDone: true }, both]).mode).toBe('fuse');
   });
   it('holds until its beat is done, then exits when no rung is within the band', () => {
     const s = run([approaching, bankedFar, bankedFar, { ...bankedFar, momentDone: true }]);

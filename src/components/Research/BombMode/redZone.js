@@ -57,10 +57,11 @@ export function stepRedZone(state, input) {
   const seenBanked = [...new Set([...seenBefore, ...banked])];
   const base = { ...prev, seenBanked };
 
-  // A rung the modal saw bank: the moment, once per position and tier.
-  const fresh = banked.find((k) => !seenBefore.includes(k) && !prev.played.includes(`${positionId}:${k}`));
-  if (fresh) {
-    return { ...base, mode: 'banked', rungKey: null, moment: { key: fresh }, played: [...prev.played, `${positionId}:${fresh}`] };
+  // The rungs the modal saw bank: ONE moment for every tier that banked at that
+  // check (named by the highest), each tier once per position per modal session.
+  const fresh = banked.filter((k) => !seenBefore.includes(k) && !prev.played.includes(`${positionId}:${k}`));
+  if (fresh.length) {
+    return { ...base, mode: 'banked', rungKey: null, moment: { key: fresh[fresh.length - 1], keys: fresh }, played: [...prev.played, ...fresh.map((k) => `${positionId}:${k}`)] };
   }
   if (prev.mode === 'banked' && !momentDone) return { ...base, mode: 'banked' };
 

@@ -40,7 +40,7 @@ export default function BombPlot({ view, height }) {
   } else {
     body = <FuseChart ladder={ladder} live={view.live} decimals={view.decimals} go={view.go} ghost={view.ghost} checkDots={view.checkDots} bankedTimes={view.bankedTimes} closed={view.marketOpen === false} width={width} height={height} />;
   }
-  return <div ref={ref} data-bomb-plot="1" style={{ width: '100%', height }}>{body}</div>;
+  return <div ref={ref} data-bomb-plot="1" style={{ width: '100%', height, overflow: 'hidden' }}>{body}</div>;
 }
 
 /** The control bar's RED ZONE chip — a state indicator, not a tab (R-11′(e)). */

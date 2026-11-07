@@ -35,6 +35,7 @@ export const BOMB_COPY = Object.freeze({
   toGoBricks: (pct, bricks, points) => `${goPct(pct)}% · ${bricks} brick${bricks === 1 ? '' : 's'} to +${points}`,
   toGoPlain: (pct, points) => `${goPct(pct)}% to +${points}`,
   toGoAt: (points) => `At +${points} · a check decides`,
+  toGoAtPreview: (points) => `At +${points}`,
   toGoWithLive: (base, live) => `${base} · live ${live}`,
   toGoWithLast: (base, last) => `${base} · last ${last}`,
   allBanked: 'Every rung banked',

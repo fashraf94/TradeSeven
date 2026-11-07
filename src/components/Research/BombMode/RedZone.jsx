@@ -35,12 +35,12 @@ export function distanceText(go) {
 export default function RedZone({ ladder, go, live, decimals, mode, trace, clock, scoredText, moment = null, nowMs, width = 360, height = 300 }) {
   const reduced = useReducedMotion() === true;
   const W = Math.max(280, width);
-  const H = Math.max(240, height);
+  const H = Math.max(200, height);
   const d = decimals;
   const frozen = mode === 'closed';
   const showMoment = mode === 'banked' && !!moment;
   const top = 46;
-  const bot = H - 58;
+  const bot = H - 70;
   const x0 = 16;
   const x1 = W - 34;
 
@@ -86,11 +86,11 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
         {linePath && <path data-rz-trace-line="1" d={linePath} fill="none" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" style={{ stroke: BT.teal }} />}
         {trace.dots.map((o, i) => <circle key={i} data-rz-observation="1" cx={X(o.atMs)} cy={Y(o.price)} r="2.4" style={{ fill: frozen ? BT.ink3 : HEAT }} />)}
         {lastLine && (
-          <text data-rz-trace-end="1" x={Math.max(x0 + 120, Math.min(X(lastLine.t), x1))} y={bot + 12} textAnchor="end" fontSize="8" letterSpacing="0.5" style={{ fill: BT.ink3 }}>
+          <text data-rz-trace-end="1" x={W - 12} y={bot + 12} textAnchor="end" fontSize="8" letterSpacing="0.5" style={{ fill: BT.ink3 }}>
             {BOMB_COPY.traceEnd(BOMB_COPY.traceInterval(trace.intervalMin ?? 1), etClock(lastLine.t)).toUpperCase()}
           </text>
         )}
-        {!lastLine && <text x={x0} y={(top + bot) / 2} fontSize="9" style={{ fill: BT.ink3 }}>{BOMB_COPY.noBars.toUpperCase()}</text>}
+        {!lastLine && <text x={W - 12} y={bot + 12} textAnchor="end" fontSize="8" letterSpacing="0.5" style={{ fill: BT.ink3 }}>{BOMB_COPY.noBars.toUpperCase()}</text>}
         {!frozen && finite(live) && (
           <g data-rz-bead="1">
             <circle cx={x1 + 12} cy={Y(live)} r="14" style={{ fill: HEAT, opacity: 0.25 }} />
@@ -123,16 +123,16 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
       {showMoment && momentRung && (
         <motion.div data-rz-banked-moment="1" initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={pop}
           style={{ position: 'absolute', left: 0, right: 0, top: (top + bot) / 2 - 56, textAlign: 'center', pointerEvents: 'none' }}>
-          <div style={{ fontSize: 76, fontWeight: 800, lineHeight: 1, color: BT.green }}>{BOMB_COPY.bankedBig(momentRung.points)}</div>
+          <div style={{ fontSize: 76, fontWeight: 800, lineHeight: 1, color: BT.green }}>{BOMB_COPY.bankedBig(Number.isFinite(moment.points) && moment.points > 0 ? moment.points : momentRung.points)}</div>
           <div style={{ marginTop: 8, fontSize: 10.5, letterSpacing: '0.2em', fontWeight: 700, color: BT.green }}>
             {BOMB_COPY.bankedLine(finite(moment.atMs) ? etClock(moment.atMs) : null, moment.price, d).toUpperCase()}
           </div>
         </motion.div>
       )}
 
-      <div style={{ position: 'absolute', left: 12, right: 12, bottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <div style={{ position: 'absolute', left: 12, right: 12, bottom: 10, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
         {scoredText
-          ? <span data-rz-scored="1" style={{ fontSize: 10, fontWeight: 700, padding: '5px 8px', borderRadius: 7, background: tint(BT.bg, 92), border: `1px solid ${tint(BT.ink, 12)}`, color: BT.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{scoredText}</span>
+          ? <span data-rz-scored="1" style={{ fontSize: 10, fontWeight: 700, padding: '5px 8px', borderRadius: 7, background: tint(BT.bg, 92), border: `1px solid ${tint(BT.ink, 12)}`, color: BT.ink2, whiteSpace: 'normal', lineHeight: 1.25, minWidth: 0 }}>{scoredText}</span>
           : <span />}
         {clock && clock.state !== 'none' && (
           <span data-rz-clock={clock.state} style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1, flexShrink: 0, textAlign: 'right' }}>

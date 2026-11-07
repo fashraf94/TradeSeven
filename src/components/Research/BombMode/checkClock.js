@@ -64,7 +64,8 @@ export function mmss(ms) {
  */
 export function checkClock(nowMs, { battleExpiresAtMs = null, lastScoredAtMs = null } = {}) {
   if (!finite(nowMs)) return { state: 'none', reason: 'calendar_unavailable', label: '' };
-  const expiry = finite(battleExpiresAtMs) ? battleExpiresAtMs : undefined;
+  // No readable end on the record: no bound (the cockpit's own choice, cockpitModel.js) — never a blank clock.
+  const expiry = finite(battleExpiresAtMs) ? battleExpiresAtMs : Number.MAX_SAFE_INTEGER;
   // A slot that fired in the last five minutes and is not yet scored.
   const recent = nextEligibleSlot(nowMs - CHECK_QUEUE_MS, { battleExpiresAtMs: expiry });
   if ('slotMs' in recent && recent.slotMs <= nowMs && !(finite(lastScoredAtMs) && lastScoredAtMs >= recent.slotMs)) {
