@@ -9,6 +9,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import useBombView from './useBombView.js';
+import { selectBombRecord } from './selectBombRecord.js';
+import { legacyBattle } from './__fixtures__/bombBattles.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 let out;
@@ -46,5 +48,38 @@ describe('useBombView lifecycle', () => {
     expect(out.ghost).toHaveLength(3);
     await render({ symbol: 'AAPL', live: 101, timeframe: 'bomb', bars: minute }); // the hook's stale minute series for one commit
     expect(out.ghost).toHaveLength(3);
+  });
+});
+
+// A held legacy EOG (previous close $155.60, threshold 3.6 %: +30 at $164.00).
+const eog = (over = {}) => legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z', ...over });
+const heldProps = (battle, live, timeframe) => ({
+  symbol: 'EOG', live, timeframe, previousClose: 155.6, assetThreshold: 3.6,
+  context: { kind: 'agent', battleId: battle.id, held: true, record: selectBombRecord(battle, 'EOG', Date.now()) },
+});
+
+describe('useBombView — the held clock and the banked times', () => {
+  it('the 1-second clock runs only while the red zone is on screen (review B8): on the 1D chart it ticks every 15 s', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-14T17:00:00.000Z'));
+    root = createRoot(document.createElement('div'));
+    await render(heldProps(eog(), 163.6, '1D'));
+    expect(out.mode).toBe('approaching');
+    const t0 = out.nowMs;
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(out.nowMs).toBe(t0);
+    expect(Date.now()).toBe(t0 + 1000);
+    await render(heldProps(eog(), 163.6, 'spectate'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(out.nowMs).toBe(Date.now()); // on screen: the clock caught up within one second
+  });
+  it('a new symbol drops the banked times the modal saw for the old one (BA-4 never crosses symbols)', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-14T17:16:00.000Z'));
+    root = createRoot(document.createElement('div'));
+    await render(heldProps(eog(), 163.95, 'spectate'));
+    const after = eog({ thresholdHistory: { EOG: { maxMultiplier: 1.55, minMultiplier: -0.31 } }, scoreState: { lastScoredAt: '2026-10-14T17:15:40.000Z' }, cronState: { lastTickPrice: { EOG: 164.05 }, lastTickTimestamp: { EOG: Date.parse('2026-10-14T17:15:31.000Z') } } });
+    await render(heldProps(after, 164.05, 'spectate'));
+    expect(Object.keys(out.bankedTimes)).toEqual(['doubleBagger']);
+    await render({ symbol: 'XOM', live: 101, timeframe: 'bomb', previousClose: 100, assetThreshold: 2, context: { kind: 'bench' } });
+    expect(out.bankedTimes).toEqual({});
   });
 });

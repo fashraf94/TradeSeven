@@ -338,6 +338,24 @@ describe('lens C: the check clock in the sheet and the banked time', () => {
     expect(q('[data-bomb-view="fuse"]')).not.toBeNull();
     expect(q('[data-bomb-what]').textContent).toBe('What has to happenNeeds $161.20 at a check · checking…');
   });
+  it('A3: the zone enters on the DISPLAYED % — $0.82 below +30 is 0.5025 %, shown 0.50 %, and is in the red zone', async () => {
+    seedEog('2026-10-14T17:00:00.000Z');
+    await open(163.18, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z' }));
+    expect(q('[data-bomb-view="redzone"]')).not.toBeNull();
+    expect(q('[data-rz-distance]').textContent).toBe('$0.82to +30 · 0.50%');
+  });
+  it('D6: two tiers banked at one check — one moment for +45, and both rungs carry the check time the modal saw', async () => {
+    seedEog('2026-10-14T17:16:00.000Z');
+    await open(161.1, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z', thresholdHistory: {} })); // 0.06 % below +15 at $161.20
+    expect(q('[data-bomb-view="redzone"]')).not.toBeNull();
+    const after = legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z', thresholdHistory: { EOG: { maxMultiplier: 1.55, minMultiplier: -0.31 } }, scoreState: { lastScoredAt: '2026-10-14T17:15:40.000Z' }, cronState: { lastTickPrice: { EOG: 164.05 }, lastTickTimestamp: { EOG: Date.parse('2026-10-14T17:15:31.000Z') } } });
+    await open(164.05, after);
+    expect(q('[data-rz-banked-moment]').textContent).toBe('+45BANKED · 1:15 CHECK · $164.05');
+    await act(async () => { await vi.advanceTimersByTimeAsync(BANKED_MOMENT_MS); }); await flush();
+    await open(158, after);
+    expect(q('[data-fuse-banked-at="bagger"]').textContent).toBe('BANKED · 1:15');
+    expect(q('[data-fuse-banked-at="doubleBagger"]').textContent).toBe('BANKED · 1:15');
+  });
   it('C4: a late queue (the 1:15 slot scored at 1:19:20) — the banked moment names the 1:15 check, never 1:19', async () => {
     seedEog('2026-10-14T17:20:00.000Z');
     await open(163.95, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z' }));

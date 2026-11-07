@@ -24,6 +24,12 @@ describe('R-11′(d): inside the band the live label yields to the rung label; t
     expect(d.querySelector('[data-fuse-live-label]')).toBeNull();
     expect(d.querySelector('[data-fuse-togo]').textContent).toContain('LIVE $105.60');
   });
+  it('the band reads the DISPLAYED % (review A3): 0.5025 % shows as 0.50 % and is in band', () => {
+    const go = toGo(held(), 105.47);
+    expect(go.pct).toBeGreaterThan(0.5);
+    expect(go.pctShown).toBe(0.5);
+    expect(fuse(held(), 105.47).querySelector('[data-fuse-live-label]')).toBeNull();
+  });
   it('out of band (1.9 %): the live label draws; the pill does not repeat the price', () => {
     const d = fuse(held(), 104);
     expect(d.querySelector('[data-fuse-live-label]').textContent).toContain('$104.00');
