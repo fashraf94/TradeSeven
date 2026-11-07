@@ -189,7 +189,8 @@ export async function runHuddleJob(db, { uid, etDate, generation, session, share
         return 'immutable';
       }
       tx.set(dayRef, { ...record, createdAt: current?.createdAt ?? now });
-      tx.update(rowRef, { status: 'done', claimGeneration: generation + 1, leaseUntil: null, updatedAt: now });
+      // reconcile: the worker's reconcile pass expires the plan at the close if nobody answers it (review L2-6)
+      tx.update(rowRef, { status: 'done', claimGeneration: generation + 1, leaseUntil: null, reconcile: true, updatedAt: now });
       return 'published';
     });
     if (published.outcome === 'stale_generation') return { outcome: 'stale_generation', timings };

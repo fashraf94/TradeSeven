@@ -24,7 +24,7 @@
 // can never pass the equality check afterwards. A refused finalizer writes nothing and
 // logs `stale_generation`.
 
-import { queueRowRef, huddleDayRef, QUEUE_STATUS, RECORD_STATUS, HUDDLE_QUEUE } from './records.js';
+import { queueRowRef, queueRowId, huddleDayRef, QUEUE_STATUS, RECORD_STATUS, HUDDLE_QUEUE } from './records.js';
 
 export const QUEUE_LEASE_MS = 150_000;
 export const MAX_ATTEMPTS = 3;
@@ -144,8 +144,24 @@ export function markAttemptFailed(db, { uid, etDate, generation, reason, nowMs =
   });
 }
 
-/** Today's rows the reconcile pass visits: confirmed plans (the confirm transaction marks them). Q-W3. */
+/**
+ * Today's rows the reconcile pass visits (Q-W3): every published huddle (the publish marks it) and every confirmed plan
+ * (the confirm transaction marks it), LEAST RECENTLY RECONCILED FIRST — a row never visited sorts first — so a pass that
+ * runs out of budget starts the next tick where it stopped instead of on the same leading uids (review L1-3). Sorted in
+ * memory: no index.
+ */
 export async function rowsToReconcile(db, { etDate }) {
   const snap = await db.collection(HUDDLE_QUEUE).where('etDate', '==', etDate).where('reconcile', '==', true).get();
-  return snap.docs.map((d) => d.data()).filter((r) => typeof r.uid === 'string');
+  return snap.docs.map((d) => d.data()).filter((r) => typeof r.uid === 'string')
+    .sort((a, b) => String(a.reconciledAt ?? '').localeCompare(String(b.reconciledAt ?? '')) || (a.uid < b.uid ? -1 : 1));
+}
+
+/**
+ * Stamp a row's reconcile visit; a SETTLED day (its plan skipped or expired, or the session closed with nothing left to
+ * retire or expire) leaves the reconcile set (review L1-3: the flag was never cleared). The collection is named literally
+ * so the protected-stores scanner counts this write.
+ */
+export async function markReconciled(db, { uid, etDate, settled, nowMs = Date.now() }) {
+  const at = iso(nowMs);
+  await db.collection('huddleQueue').doc(queueRowId(uid, etDate)).update(settled ? { reconcile: false, reconciledAt: at, updatedAt: at } : { reconciledAt: at });
 }

@@ -13,7 +13,7 @@ import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { enqueuePlayers, selectClaimable, claimRow, markDone, markAttemptFailed, withOwnedClaim, QUEUE_LEASE_MS, MAX_ATTEMPTS } from '../../api/_utils/huddle/queue.js';
 import { runHuddleJob } from '../../api/_utils/huddle/job.js';
-import { drainQueue, runWorkerInvocation, IN_FLIGHT, DRAIN_RESERVE_MS } from '../../api/_utils/huddle/worker.js';
+import { drainQueue, runWorkerInvocation, runReconcilePass, IN_FLIGHT, DRAIN_RESERVE_MS } from '../../api/_utils/huddle/worker.js';
 import { buildSessionEvents } from '../../api/_utils/huddle/events.js';
 import { packItem } from '../../api/_utils/evidence/packItem.js';
 import { getSessionForDate } from '../../api/_utils/marketSchedule.js';
@@ -171,6 +171,25 @@ describe('one job (V1.1 §5.3; A §A7; R-11)', () => {
     expect(await row('job1', etDate)).toMatchObject({ status: 'done' });
   });
 
+  it("review L2-6 / L1-3: a published huddle joins the reconcile set; after the close the worker's pass expires its unanswered plan and the row leaves the set", async () => {
+    const etDate = nextDate();
+    const session = sessionOf(etDate);
+    await enqueuePlayers(db, { etDate, uids: ['rec1'] });
+    const now = session.openMs - 60 * MIN;
+    const c = await claimRow(db, { uid: 'rec1', etDate, nowMs: now });
+    const { deps } = jobDeps(etDate);
+    expect((await runHuddleJob(db, { uid: 'rec1', etDate, generation: c.generation, session, shared: null, deps, clock: () => now + MIN })).outcome).toBe('published');
+    expect(await row('rec1', etDate)).toMatchObject({ status: 'done', reconcile: true });
+    // before the close: visited and stamped, still proposed, still in the set
+    await runReconcilePass(db, { etDate, nowMs: session.openMs + 60 * MIN });
+    expect((await rec('rec1', etDate)).plan.status).toBe('proposed');
+    expect(await row('rec1', etDate)).toMatchObject({ reconcile: true, reconciledAt: new Date(session.openMs + 60 * MIN).toISOString() });
+    // after the close: expired, and the row leaves the set
+    await runReconcilePass(db, { etDate, nowMs: session.closeMs + MIN });
+    expect((await rec('rec1', etDate)).plan.status).toBe('expired');
+    expect(await row('rec1', etDate)).toMatchObject({ reconcile: false });
+  });
+
   it('a names beat without evidence is regenerated once; still failing, the beat is dropped and the drop recorded', async () => {
     const etDate = nextDate();
     const session = sessionOf(etDate);
@@ -225,9 +244,14 @@ describe('the worker (A §A3, §A6)', () => {
     let inFlight = 0;
     let peak = 0;
     let fakeNow = getSessionForDate(etDate).openMs - 90 * MIN;
+    // A barrier, not a sleep: the first jobs wait until IN_FLIGHT are running (capped at 3 s), so the peak does not depend on
+    // how fast the emulator answers the claims (a 20 ms sleep let the first job finish before the fourth lane started).
+    let release;
+    const allIn = new Promise((r) => { release = r; });
     const runJob = async (_db, { uid }) => {
       inFlight += 1; peak = Math.max(peak, inFlight);
-      await new Promise((r) => setTimeout(r, 20));
+      if (inFlight === IN_FLIGHT) release();
+      await Promise.race([allIn, new Promise((r) => setTimeout(r, 3000))]);
       inFlight -= 1;
       return { outcome: 'published', uid };
     };

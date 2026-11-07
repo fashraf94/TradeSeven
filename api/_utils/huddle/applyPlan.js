@@ -241,7 +241,7 @@ export async function reconcileHuddle(db, { uid, etDate, nowMs = Date.now(), int
   } catch {
     return { ...tally, outcome: 'read_failed', errors: 1 };
   }
-  if (!record) return { ...tally, outcome: 'no_record' };
+  if (!record) return { ...tally, outcome: 'no_record', settled: true };
   const plan = record.plan;
   const closeMs = record.session?.closeMs;
   const closed = typeof closeMs === 'number' && Number.isFinite(closeMs) && nowMs >= closeMs;
@@ -252,9 +252,12 @@ export async function reconcileHuddle(db, { uid, etDate, nowMs = Date.now(), int
       await expireProposed(db, { uid, etDate, nowMs });
       tally.expired += 1;
     } catch { tally.errors += 1; }
-    return { ...tally, outcome: 'expired_proposed' };
+    return { ...tally, outcome: 'expired_proposed', settled: tally.errors === 0 };
   }
-  if (plan?.status !== PLAN_STATUS.CONFIRMED) return { ...tally, outcome: 'not_confirmed' };
+  // A skipped or expired plan has nothing left to do; a proposed one waits for the close (review L1-3 / L2-6).
+  if (plan?.status !== PLAN_STATUS.CONFIRMED) {
+    return { ...tally, outcome: 'not_confirmed', settled: plan?.status === PLAN_STATUS.SKIPPED || plan?.status === PLAN_STATUS.EXPIRED || !plan };
+  }
 
   // 1. retries and battles still lacking a receipt — only while the session is open.
   if (!closed) {
@@ -300,7 +303,8 @@ export async function reconcileHuddle(db, { uid, etDate, nowMs = Date.now(), int
       tally.expired += await expireWaiting(db, { uid, etDate, nowMs });
     } catch { tally.errors += 1; }
   }
-  return tally;
+  // Settled: the session closed and this pass retired and expired everything without an error.
+  return { ...tally, settled: closed && tally.errors === 0 };
 }
 
 async function expireProposed(db, { uid, etDate, nowMs }) {

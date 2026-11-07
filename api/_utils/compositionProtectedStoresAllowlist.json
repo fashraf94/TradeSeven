@@ -409,6 +409,7 @@
     "api/_utils/huddle/queue.js::markAttemptFailed::set::unresolved": 1,
     "api/_utils/huddle/queue.js::markAttemptFailed::update::unresolved": 1,
     "api/_utils/huddle/queue.js::markDone::update::unresolved": 1,
+    "api/_utils/huddle/queue.js::markReconciled::update::huddleQueue": 1,
     "api/_utils/huddle/worker.js::markRun::set::huddleRuns": 1,
     "api/huddle/event.js::handler::update::unresolved": 1
   },

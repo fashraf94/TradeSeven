@@ -20,7 +20,7 @@
 // An invocation with nothing to do exits in well under a second.
 
 import { huddleRunRef, sessionOf, etDateOfMs } from './records.js';
-import { enqueuePlayers, selectClaimable, claimRow, rowsToReconcile } from './queue.js';
+import { enqueuePlayers, selectClaimable, claimRow, rowsToReconcile, markReconciled } from './queue.js';
 import { enumerateActivePlayers } from './players.js';
 import { buildSharedLayer } from './sharedLayer.js';
 import { reconcileHuddle } from './applyPlan.js';
@@ -54,14 +54,24 @@ export async function runEnqueueStage(db, { etDate, nowMs = Date.now(), deps = {
   return { enqueued: players.uids.length, created };
 }
 
-/** The reconcile pass over today's confirmed plans, inside its budget. */
-export async function runReconcilePass(db, { etDate, nowMs, budgetMs = RECONCILE_BUDGET_MS, clock = () => Date.now() }) {
+/**
+ * The reconcile pass over today's published and confirmed huddles, inside its budget, least recently reconciled first;
+ * each visit is stamped, and a settled day leaves the set (review L1-3). I/O injectable for tests.
+ */
+export async function runReconcilePass(db, { etDate, nowMs, budgetMs = RECONCILE_BUDGET_MS, clock = () => Date.now(), deps = {} }) {
   const start = clock();
-  const rows = await rowsToReconcile(db, { etDate });
+  const rows = await (deps.rowsToReconcile || rowsToReconcile)(db, { etDate });
+  const visit = deps.reconcileHuddle || reconcileHuddle;
+  const mark = deps.markReconciled || markReconciled;
   const tallies = [];
   for (const row of rows) {
     if (clock() - start > budgetMs) break;
-    tallies.push(await reconcileHuddle(db, { uid: row.uid, etDate, nowMs: nowMs ?? clock() }));
+    const at = nowMs ?? clock();
+    const tally = await visit(db, { uid: row.uid, etDate, nowMs: at });
+    tallies.push(tally);
+    try {
+      await mark(db, { uid: row.uid, etDate, settled: tally?.settled === true, nowMs: at });
+    } catch { /* the next tick visits it again */ }
   }
   return { visited: tallies.length, of: rows.length, retired: tallies.reduce((n, t) => n + (t.retired || 0), 0) };
 }
