@@ -64,6 +64,10 @@ import {
 } from '../../../src/constants/researchRecords.js';
 // The system's hyphen form for a symbol key (BRK.B → BRK-B), the one convention (symbolNormalize.js).
 import { normalizeSymbolForEODHD as hyphenForm } from '../symbolNormalize.js';
+// Key-order-free comparison of a stored summary with its last revision (Firestore returns map keys alphabetized).
+import { stableStringify } from '../canonicalHash.js';
+// The finding source list — data only, in its own module (it names collections; review B1).
+import { FINDING_RECORD_KINDS } from './findingRecordKinds.js';
 
 export {
   RESEARCH_ORIGINS, RESEARCH_STATES, RESEARCH_TERMINAL_STATES, RESEARCH_STAGES, STAGES_BY_ORIGIN, SYMBOL_OUTCOMES,
@@ -467,7 +471,7 @@ export function buildRecord({
   if (!(hypothesisVersion === null || (Number.isSafeInteger(hypothesisVersion) && hypothesisVersion > 0))) {
     throw new Error('researchRecords: hypothesisVersion must be a version number or null');
   }
-  if (question !== null && watchlistId === null) throw new ResearchRecordError('question_without_subject');
+  if (question !== null && !nonEmptyString(watchlistId)) throw new ResearchRecordError('question_without_subject');
   const record = {
     schemaVersion: RECORD_SCHEMA_VERSION,
     researchWorkId, userId, origin, host: host ? { collection: host.collection, id: host.id } : null, createdAt,
@@ -480,7 +484,8 @@ export function buildRecord({
     state, terminalReason, endedAt,
     updatedAt: createdAt,
   };
-  if (origin === 'shared_research') record.symbolKeys = symbolKeysOf(record);
+  // An extension write carries symbolKeys: a Shared Research mint, or any mint that sets a question (review A8 — one shape).
+  if (origin === 'shared_research' || question !== null) record.symbolKeys = symbolKeysOf(record);
   return record;
 }
 
@@ -488,13 +493,20 @@ export function buildRecord({
  * The subject, set at most once: only while the record names no list yet.
  * The extension: a `question` rides ONLY with the subject — in this same
  * patch, never after (a different question is a different investigation) —
- * and its write is an extension write, so it carries `symbolKeys`.
+ * and its write is an extension write, so it carries `symbolKeys`. A question
+ * offered anywhere else is REFUSED, never silently dropped (review A3): with
+ * no list, on a record whose subject is already set, or a second time.
+ * Without a question the patch is exactly what it always was.
  */
 export function subjectPatch(record, { watchlistId, hypothesisVersion = null, question = null }) {
+  if (question !== null && isPlainObject(record)) {
+    if (record.question !== undefined) throw new ResearchRecordError('question_already_set');
+    if (record.watchlistId != null) throw new ResearchRecordError('question_after_subject');
+    if (!nonEmptyString(watchlistId)) throw new ResearchRecordError('question_without_subject');
+  }
   if (!isPlainObject(record) || record.watchlistId != null || !nonEmptyString(watchlistId)) return {};
   const patch = { watchlistId, hypothesisVersion: Number.isSafeInteger(hypothesisVersion) && hypothesisVersion > 0 ? hypothesisVersion : null };
   if (question !== null) {
-    if (record.question !== undefined) throw new ResearchRecordError('question_already_set');
     patch.question = normalizeQuestion(question);
     patch.symbolKeys = symbolKeysOf(record);
   }
@@ -571,12 +583,10 @@ export const FINDING_KINDS = Object.freeze([
 /**
  * The record a finding's fact came from (`source.recordKind`) — also the
  * record an idea version's `evidenceItem` ref names. Closed: grows only with a
- * new schema version. A `retrieval` source carries its `url`.
+ * new schema version. A `retrieval` source carries its `url`. Defined in a
+ * data-only module (it names collections; review B1) and re-exported here.
  */
-export const FINDING_RECORD_KINDS = Object.freeze([
-  'symbolDayEvidence', 'fantasyTimesWire', 'fantasyTimesStories', 'ingestedClaims', 'stockBriefs', 'estimatesCache',
-  'setupEvidence', 'activationPointer', 'call', 'hypothesisVersion', 'exchange', 'kb', 'retrieval',
-]);
+export { FINDING_RECORD_KINDS };
 export const RETRIEVAL_RECORD_KIND = 'retrieval';
 /** Whether the fact stands checked. Not `verified` → a typed `statusReason`. Closed. */
 export const FINDING_STATUSES = Object.freeze(['verified', 'unverified', 'unavailable']);
@@ -593,9 +603,14 @@ export class ResearchRecordError extends Error {
 }
 const refuse = (code, message) => new ResearchRecordError(code, message);
 
-const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
-/** An ISO-8601 UTC instant as the hosts write them (`toISOString()`; whole seconds allowed). */
-export const isInstant = (v) => typeof v === 'string' && INSTANT_RE.test(v) && Number.isFinite(Date.parse(v));
+const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+/**
+ * An ISO-8601 UTC instant exactly as `toISOString()` writes it — one spelling
+ * (milliseconds always), so stored instants sort as text in time order, and a
+ * real calendar instant: it must round-trip (review A2 — 2026-02-30 or 24:00
+ * would otherwise be stored as sent and read as another day).
+ */
+export const isInstant = (v) => typeof v === 'string' && INSTANT_RE.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
 // eslint-disable-next-line no-control-regex -- the point is to refuse control characters
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
 const boundedText = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max && !CONTROL_RE.test(v);
@@ -707,12 +722,12 @@ function buildPin(raw) {
  */
 export function buildFinding(raw, { findingId, nowIso }) {
   if (!isFindingId(findingId) || !isInstant(nowIso)) throw new Error('researchRecords: a finding needs a server-minted id and the write time');
-  if (!isPlainObject(raw) || !keysWithin(raw, FINDING_INPUT_KEYS)) throw refuse('invalid_finding', 'a finding carries only its own fields (the id is the server\'s).');
+  if (!isPlainObject(raw) || !keysWithin(raw, FINDING_INPUT_KEYS)) throw refuse('invalid_finding', 'a finding carries only its own fields; the server mints its id.');
   if (!FINDING_KINDS.includes(raw.kind)) throw refuse('invalid_finding_kind');
   const fact = typeof raw.fact === 'string' ? raw.fact.trim() : '';
   if (!fact || fact.length > FINDING_FACT_MAX_LEN) throw refuse('invalid_fact', `fact must be 1–${FINDING_FACT_MAX_LEN} characters.`);
   const source = buildSource(raw.source);
-  if (!isInstant(raw.at)) throw refuse('invalid_at', 'at is the fact\'s own ISO-8601 UTC instant.');
+  if (!isInstant(raw.at)) throw refuse('invalid_at', 'at is the instant of the fact itself (ISO-8601 UTC).');
   const asOf = raw.asOf ?? null;
   if (asOf !== null) {
     if (!isInstant(asOf)) throw refuse('invalid_as_of');
@@ -729,7 +744,17 @@ export function buildFinding(raw, { findingId, nowIso }) {
 }
 
 const findingsOf = (record) => (Array.isArray(record?.findings) ? record.findings : []);
-const revisionsOf = (record) => (Array.isArray(record?.summaryRevisions) ? record.summaryRevisions : []);
+/**
+ * A stored list field, for a WRITE: absent → empty; a list → itself; anything
+ * else is a corrupt record — refused, never overwritten (review A6: nothing is
+ * edited or removed, not even a malformed value).
+ */
+function storedListOf(record, key) {
+  const v = record[key];
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v)) throw refuse('record_unreadable', `the stored ${key} is not a list.`);
+  return v;
+}
 
 function assertWritable(record) {
   if (!isPlainObject(record) || !RESEARCH_STATES.includes(record.state)) throw refuse('record_unreadable');
@@ -744,7 +769,7 @@ function assertWritable(record) {
  */
 export function findingAppendPatch(record, finding, { nowIso }) {
   assertWritable(record);
-  const prior = findingsOf(record);
+  const prior = storedListOf(record, 'findings');
   if (prior.length >= FINDINGS_MAX) throw refuse('findings_full', `a record holds at most ${FINDINGS_MAX} findings.`);
   if (prior.some((f) => f?.findingId === finding.findingId)) throw refuse('finding_id_taken');
   if (finding.supersedes !== null) {
@@ -772,15 +797,16 @@ export function currentFindingsOf(record) {
 export function summaryRevisionPatch(record, { text, basedOn = [], expectedRev = null }, { nowIso }) {
   assertWritable(record);
   if (!isInstant(nowIso)) throw new Error('researchRecords: a summary revision needs the write time');
-  const prior = revisionsOf(record);
+  const prior = storedListOf(record, 'summaryRevisions');
   const currentRev = prior.length;
-  if (record.summary != null && record.summary?.rev !== currentRev) throw refuse('summary_unreadable');
+  // The stored summary IS the last revision (or absent when there is none) — any disagreement is a corrupt record (review A6).
+  if (stableStringify(record.summary ?? null) !== stableStringify(currentRev ? prior[currentRev - 1] : null)) throw refuse('summary_unreadable');
   if (expectedRev !== null && expectedRev !== currentRev) throw refuse('summary_conflict', 'the summary changed since it was read.');
   if (currentRev >= SUMMARY_REVISIONS_MAX) throw refuse('summary_revisions_full', `a record holds at most ${SUMMARY_REVISIONS_MAX} summary revisions.`);
   const t = typeof text === 'string' ? text.trim() : '';
   if (!t || t.length > SUMMARY_TEXT_MAX_LEN) throw refuse('invalid_summary_text', `summary text must be 1–${SUMMARY_TEXT_MAX_LEN} characters.`);
   if (!Array.isArray(basedOn) || !basedOn.every(isFindingId) || new Set(basedOn).size !== basedOn.length) throw refuse('invalid_based_on');
-  const held = new Set(findingsOf(record).map((f) => f?.findingId));
+  const held = new Set(storedListOf(record, 'findings').map((f) => f?.findingId));
   if (!basedOn.every((id) => held.has(id))) throw refuse('based_on_unknown', 'basedOn names a finding this record does not hold.');
   const summary = { rev: currentRev + 1, text: t, at: nowIso, basedOn: [...basedOn] };
   return { summary, summaryRevisions: [...prior, summary], symbolKeys: symbolKeysOf(record), updatedAt: nowIso };

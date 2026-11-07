@@ -152,25 +152,35 @@ for (const [gate, enter] of GATES) {
       it('a retried turn transaction re-sends the SAME exchanges: each new id stored once, nothing duplicated', async () => {
         enter();
         activeDb = makeHostDb(h.seeded());
-        let competed = false;
-        activeDb.__hooks.afterTxBody = async ({ readPaths }) => {
-          if (competed || !readPaths.includes(h.path)) return;
-          competed = true;
+        let firstAttemptIds = null;
+        activeDb.__hooks.afterTxBody = async ({ readPaths, writes }) => {
+          if (firstAttemptIds || !readPaths.includes(h.path)) return;
+          // The abandoned attempt's BUFFERED session write — what it would have committed (review B3: the double logs only commits).
+          const w = writes.find((x) => x.path === h.path && x.data?.exchanges);
+          firstAttemptIds = w ? w.data.exchanges.items.map((e) => e.exchangeId) : [];
           await activeDb.doc(h.path).update({ touchedElsewhereAt: NOW }); // moves the session under the turn: the body runs again
         };
         const before = activeDb.__txAttempts;
         const res = await h.next();
         expect(res.statusCode).toBe(200);
-        expect(competed).toBe(true);
         expect(activeDb.__txAttempts - before).toBeGreaterThanOrEqual(2);
         const ex = stored(activeDb, h.path).exchanges;
         expect(ex).toHaveLength(h.legacy().length + h.perTurn);
         const ids = ex.map((e) => e.exchangeId).filter(Boolean);
         expect(ids).toHaveLength(h.perTurn);
         expect(new Set(ids).size).toBe(h.perTurn);
-        const sent = activeDb.__access.writes.filter((w) => w.path === h.path && w.data?.exchanges).map((w) => w.data.exchanges.items.map((e) => e.exchangeId));
-        expect(sent.length).toBeGreaterThanOrEqual(1);
-        for (const s of sent) expect(s).toEqual(ids); // every attempt that wrote sent the same objects
+        // The id is minted ONCE per exchange, before the transaction: the re-run body sent the very objects the first attempt did.
+        expect(firstAttemptIds).toHaveLength(h.perTurn);
+        expect(ids).toEqual(firstAttemptIds);
+      });
+      it('every exchange of one session has its own id, across turns (review B2 — an id names exactly one exchange)', async () => {
+        enter();
+        activeDb = makeHostDb(h.seeded());
+        expect((await h.next()).statusCode).toBe(200);
+        expect((await h.next()).statusCode).toBe(200);
+        const ids = stored(activeDb, h.path).exchanges.map((e) => e.exchangeId).filter(Boolean);
+        expect(ids).toHaveLength(2 * h.perTurn);
+        expect(new Set(ids).size).toBe(2 * h.perTurn);
       });
     });
   }

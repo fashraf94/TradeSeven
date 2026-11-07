@@ -27,7 +27,7 @@ import {
   buildFinding, findingAppendPatch, currentFindingsOf, summaryRevisionPatch, symbolKeysOf, symbolKeyOf, isFindingId,
   normalizeQuestion, isRecordRef, ResearchRecordError,
 } from './model.js';
-import { appendFinding, reviseSummary } from './store.js';
+import { appendFinding, reviseSummary, researchSummariesOf } from './store.js';
 import { EVIDENCE_REF_KINDS } from '../hypothesisRecords/model.js';
 
 const EARLIER = '2026-11-07T14:00:00.000Z';
@@ -73,6 +73,12 @@ describe('closed lists — defined once in the model, grown only with a new sche
     expect(RECORD_SCHEMA_VERSION).toBe(1);
     expect(lists).toEqual(LISTS_BY_SCHEMA[RECORD_SCHEMA_VERSION]);
     for (const l of Object.values(lists)) expect(Object.isFrozen(l)).toBe(true);
+  });
+  it('the source-kind list lives in a DATA-ONLY module: one frozen list, no import, no require, no read (review B1 — its guard listing covers no code)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('./findingRecordKinds.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+    const body = src.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n').trim();
+    expect(body).toMatch(/^export const FINDING_RECORD_KINDS = Object\.freeze\(\[[\s'A-Za-z,]*\]\);$/);
   });
   it('the caps, as the contract states them', () => {
     expect({ QUESTION_MAX_LEN, FINDINGS_MAX, FINDING_FACT_MAX_LEN, SOURCE_LABEL_MAX_LEN, SUMMARY_TEXT_MAX_LEN, SUMMARY_REVISIONS_MAX, SYMBOLS_MAX })
@@ -125,14 +131,26 @@ describe('the question — set once, together with the subject', () => {
       'symbolsTruncated', 'budget', 'telemetry', 'state', 'terminalReason', 'endedAt', 'updatedAt',
     ]);
   });
-  it('subjectPatch: the question rides only WITH the subject; once a subject is set, never after', () => {
+  it('subjectPatch: the question rides only WITH the subject; offered anywhere else it is REFUSED, never silently dropped (review A3)', () => {
     const open = srRecord({ watchlistId: null, hypothesisVersion: null, question: null });
     expect(subjectPatch(open, { watchlistId: 'wl-9', hypothesisVersion: 3, question: 'Why now?' }))
       .toEqual({ watchlistId: 'wl-9', hypothesisVersion: 3, question: 'Why now?', symbolKeys: [] });
-    expect(subjectPatch(srRecord(), { watchlistId: 'wl-9', hypothesisVersion: 3, question: 'A different question' })).toEqual({});
-    // Without a question the patch is exactly what it always was.
+    expect(code(() => subjectPatch(srRecord(), { watchlistId: 'wl-9', hypothesisVersion: 3, question: 'A different question' }))).toBe('question_already_set');
+    const subjectNoQuestion = { ...srRecord({ question: null }) };
+    expect(code(() => subjectPatch(subjectNoQuestion, { watchlistId: 'wl-9', question: 'Late question' }))).toBe('question_after_subject');
+    expect(code(() => subjectPatch(open, { watchlistId: null, question: 'No list' }))).toBe('question_without_subject');
+    expect(code(() => closePatch(subjectNoQuestion, { state: 'completed', terminalReason: 'saved_to_list', atIso: NOW, funnel: manualFunnel(), subject: { watchlistId: 'wl-9', question: 'Late question' } }))).toBe('question_after_subject');
+    // Without a question the patch is exactly what it always was — a set subject still answers {}.
     expect(subjectPatch(open, { watchlistId: 'wl-9', hypothesisVersion: 3 })).toEqual({ watchlistId: 'wl-9', hypothesisVersion: 3 });
+    expect(subjectPatch(srRecord(), { watchlistId: 'wl-9', hypothesisVersion: 3 })).toEqual({});
     expect(code(() => subjectPatch(open, { watchlistId: 'wl-9', question: '' }))).toBe('invalid_question');
+  });
+  it('any mint that sets a question is an extension write: it carries symbolKeys whatever its origin (review A8 — one shape)', () => {
+    const host = buildRecord({
+      researchWorkId: 'ws_s', userId: UID, origin: 'signaldrop', host: { collection: 'watchlistSessions', id: 's' }, createdAt: EARLIER,
+      watchlistId: 'wl-1', question: 'Why NVDA?', funnel: dialogueFunnel({ candidates: [{ symbol: 'NVDA', status: 'kept' }] }), telemetry: emptyTelemetry(),
+    });
+    expect(host).toMatchObject({ question: 'Why NVDA?', symbolKeys: ['NVDA'] });
   });
 });
 
@@ -201,6 +219,14 @@ describe('findings — shape, caps and closed lists', () => {
   it('at is the fact\'s own instant (it may be ahead of the write: a scheduled release)', () => {
     expect(built(1, { kind: 'release', at: '2026-11-19T21:00:00.000Z' }).at).toBe('2026-11-19T21:00:00.000Z');
     for (const at of [undefined, null, '2026-11-06', 'yesterday', '2026-11-06T21:05:00+01:00']) expect(code(() => built(1, { at }))).toBe('invalid_at');
+  });
+  it('an instant is a REAL one in the one toISOString spelling: no 30 Feb, no 24:00, no whole-seconds variant (review A2)', () => {
+    for (const bad of ['2026-02-30T00:00:00.000Z', '2026-04-31T00:00:00.000Z', '2026-11-07T24:00:00.000Z', '2026-11-06T21:05:60.000Z', '2026-11-06T21:05:00Z', '2026-11-06T21:05:00.5Z']) {
+      expect(code(() => built(1, { at: bad })), bad).toBe('invalid_at');
+      expect(code(() => built(1, { asOf: bad })), bad).toBe('invalid_as_of');
+      expect(code(() => built(1, { pin: { type: 'time', value: bad } })), bad).toBe('invalid_pin');
+    }
+    expect(built(1, { at: '2024-02-29T23:59:59.999Z' }).at).toBe('2024-02-29T23:59:59.999Z');
   });
   it('statusReason: a typed word when not verified; none when verified', () => {
     expect(code(() => built(1, { status: 'unverified' }))).toBe('invalid_status_reason');
@@ -343,6 +369,50 @@ describe('summary — one revision at a time, appended and made the summary toge
   it('a closed record never moves; a summary that disagrees with its revisions is unreadable', () => {
     expect(code(() => summaryRevisionPatch({ ...r2(), state: 'completed' }, { text: 't' }, { nowIso: NOW }))).toBe('record_closed');
     expect(code(() => summaryRevisionPatch({ ...r2(), summary: { rev: 3 }, summaryRevisions: [] }, { text: 't' }, { nowIso: NOW }))).toBe('summary_unreadable');
+  });
+  it('a corrupt stored record is REFUSED, never overwritten (review A6): a list field that is not a list, a summary that is not the last revision', () => {
+    const r = { ...r2(), ...summaryRevisionPatch(r2(), { text: 'v1' }, { nowIso: NOW }) };
+    for (const bad of ['corrupt', { a: 1 }, 7]) {
+      expect(code(() => findingAppendPatch({ ...r, findings: bad }, built(9), { nowIso: NOW })), JSON.stringify(bad)).toBe('record_unreadable');
+      expect(code(() => summaryRevisionPatch({ ...r, summaryRevisions: bad, summary: null }, { text: 't' }, { nowIso: NOW })), JSON.stringify(bad)).toBe('record_unreadable');
+      expect(code(() => summaryRevisionPatch({ ...r, findings: bad }, { text: 't' }, { nowIso: NOW })), JSON.stringify(bad)).toBe('record_unreadable');
+    }
+    expect(code(() => summaryRevisionPatch({ ...r, summary: null }, { text: 't' }, { nowIso: NOW }))).toBe('summary_unreadable'); // revisions but no summary
+    expect(code(() => summaryRevisionPatch({ ...r, summary: { ...r.summary, text: 'edited' } }, { text: 't' }, { nowIso: NOW }))).toBe('summary_unreadable');
+    // Firestore returns map keys alphabetized: the same summary in another key order still reads as the last revision.
+    const alphabetized = Object.fromEntries(Object.keys(r.summary).sort().map((k) => [k, r.summary[k]]));
+    expect(summaryRevisionPatch({ ...r, summary: alphabetized }, { text: 'v2' }, { nowIso: NOW }).summary.rev).toBe(2);
+    // An absent or null list is simply empty.
+    expect(findingAppendPatch({ ...srRecord(), findings: null }, built(1), { nowIso: NOW }).findings).toHaveLength(1);
+  });
+});
+
+describe('the Forge summaries — a Shared Research record never displaces the list\'s own research (review A4)', () => {
+  const sum = (id, origin, createdAt, completions = 1) => ({
+    researchWorkId: id, userId: UID, origin, state: 'completed', watchlistId: 'wl-1', createdAt, telemetry: { completions },
+    stages: Object.fromEntries(RESEARCH_STAGES.map((k) => [k, null])),
+  });
+  it('the list\'s own research first, then its worked analysis — however many Shared Research records are attached', () => {
+    const own = sum('ws_own', 'signaldrop', '2026-11-01T00:00:00.000Z');
+    const worked = sum('as_a1', 'analysis', '2026-11-02T00:00:00.000Z');
+    const shared = Array.from({ length: 25 }, (_, i) => sum(`sr_x${i}`, 'shared_research', `2026-11-03T00:00:${String(i).padStart(2, '0')}.000Z`));
+    const out = researchSummariesOf([own, worked, ...shared]);
+    expect(out).toHaveLength(20);
+    expect(out.slice(0, 2).map((s) => s.researchWorkId)).toEqual(['ws_own', 'as_a1']);
+    expect(out.slice(2).every((s) => s.origin === 'shared_research')).toBe(true);
+  });
+  it('with no Shared Research record the order is exactly what it was', () => {
+    const records = [sum('ws_own', 'signaldrop', '2026-11-01T00:00:00.000Z'), sum('as_a0', 'analysis', '2026-11-02T00:00:00.000Z', 0), sum('as_a1', 'analysis', '2026-11-03T00:00:00.000Z')];
+    expect(researchSummariesOf(records).map((s) => s.researchWorkId)).toEqual(['ws_own', 'as_a1', 'as_a0']);
+  });
+});
+
+describe('table E stays whole (review A5)', () => {
+  it('the scanned files carry no escaped quote inside a quoted literal (the extractor would stop at it and miss the rest)', async () => {
+    const { readFileSync } = await import('node:fs');
+    for (const f of ['./model.js', './store.js', '../../../src/constants/researchRecords.js']) {
+      expect(readFileSync(new URL(f, import.meta.url), 'utf8'), f).not.toMatch(/\\'/);
+    }
   });
 });
 

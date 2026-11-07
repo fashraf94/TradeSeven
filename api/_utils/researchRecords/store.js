@@ -216,13 +216,21 @@ export const researchRefsOf = (records) => records.map((r) => researchRefOf(r.re
  * the ones opened and left — so neither analysis opens nor the cap can push
  * the research behind the idea, or the newest worked analysis, out of view
  * (reviews R4-1 / R1-4; mutation lens R5). At most RESEARCH_SUMMARIES_MAX.
+ *
+ * The Research Record Extension (review A4): a Shared Research record attached
+ * to the list comes LAST — it is not the research the list came from, and
+ * however many there are they never push the list's own research or its
+ * worked analysis past the cap. (How the Forge shows one is the Shared
+ * Research slice's decision; today its line shows no stage.) With no such
+ * record — every list today — the order is exactly what it was.
  */
 export function researchSummariesOf(records) {
   const newestFirst = [...records].reverse().map(recordSummaryOf);
   const analysis = newestFirst.filter((s) => s.origin === 'analysis');
   return [
-    ...newestFirst.filter((s) => s.origin !== 'analysis'),
+    ...newestFirst.filter((s) => s.origin !== 'analysis' && s.origin !== 'shared_research'),
     ...analysis.filter((s) => s.completions > 0),
     ...analysis.filter((s) => !(s.completions > 0)),
+    ...newestFirst.filter((s) => s.origin === 'shared_research'),
   ].slice(0, RESEARCH_SUMMARIES_MAX);
 }
