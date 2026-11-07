@@ -6,13 +6,16 @@
 // draws, which line a pill uses, where a label is clamped); the measured boxes
 // at 320/390/430 px are the browser record in the build report.
 
-import { describe, it, expect } from 'vitest';
-import React from 'react';
+import { describe, it, expect, vi } from 'vitest';
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import FuseChart, { toGoParts, monoWidth, textBox } from './FuseChart.jsx';
 import BombSheet from './BombSheet.jsx';
 import { previewLadder, measuredLadder, toGo } from './ladder.js';
 import { sheetLine } from './bombView.js';
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const doc = (html) => new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
 const held = (crossed = []) => measuredLadder({ measured: { measured: true, baselinePrice: 100, targets: [['bagger', 106], ['doubleBagger', 109], ['tenBagger', 112], ['bust', 94], ['crash', 91], ['meltdown', 88]].map(([key, price]) => ({ key, price })), crossedTiers: crossed } });
@@ -115,14 +118,24 @@ describe('the sheet keeps its to-go label whole inside the sheet (D1)', () => {
     expect(Number(el.getAttribute('x')) + w / 2).toBeLessThanOrEqual(W - 4 + 1e-9);
     expect(Number(el.getAttribute('x')) - w / 2).toBeGreaterThanOrEqual(14 - 1e-9);
   });
-  it('…at the left end too: a long label over the first rung stays inside the sheet\'s left edge (refuter C, X-S1)', () => {
-    const big = measuredLadder({ measured: { measured: true, baselinePrice: 100000, targets: [['bagger', 106000], ['doubleBagger', 109000], ['tenBagger', 112000], ['bust', 94000], ['crash', 91000], ['meltdown', 88000]].map(([key, price]) => ({ key, price })), crossedTiers: [] } });
-    const go = toGo(big, 106100);
-    const view = { ladder: big, go, live: 106100, decimals: 2, sheetLine: sheetLine({ ladder: big, decimals: 2 }), sheetScored: null };
-    const d = doc(renderToStaticMarkup(<BombSheet view={view} />));
-    const el = d.querySelector('[data-sheet-togo]');
-    const w = monoWidth(el.textContent, 8.5, 0.5);
-    expect(el.textContent.length).toBeGreaterThanOrEqual(40);
-    expect(Number(el.getAttribute('x')) - w / 2).toBeGreaterThanOrEqual(14 - 1e-9);
+  it('…at the left end too: on a narrow sheet (270 px measured) a long label over the first rung stays inside the left edge (refuter C, X-S1)', async () => {
+    const big = measuredLadder({ measured: { measured: true, baselinePrice: 1000000, targets: [['bagger', 1060000], ['doubleBagger', 1090000], ['tenBagger', 1120000], ['bust', 940000], ['crash', 910000], ['meltdown', 880000]].map(([key, price]) => ({ key, price })), crossedTiers: [] } });
+    const go = toGo(big, 1061000);
+    const view = { ladder: big, go, live: 1061000, decimals: 2, sheetLine: sheetLine({ ladder: big, decimals: 2 }), sheetScored: null };
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ width: 270, height: 0, top: 0, left: 0, right: 270, bottom: 0, x: 0, y: 0 });
+    const host = document.createElement('div');
+    const root = createRoot(host);
+    try {
+      await act(async () => { root.render(<BombSheet view={view} />); });
+      expect(host.querySelector('svg').getAttribute('width')).toBe('270');
+      const el = host.querySelector('[data-sheet-togo]');
+      const w = monoWidth(el.textContent, 8.5, 0.5);
+      const rungX = Number(host.querySelector('[data-sheet-rung="bagger"] circle').getAttribute('cx'));
+      expect(rungX - w / 2).toBeLessThan(14); // centred on the rung it would start left of the sheet: the clamp binds
+      expect(Number(el.getAttribute('x')) - w / 2).toBeGreaterThanOrEqual(14 - 1e-9);
+    } finally {
+      act(() => root.unmount());
+      spy.mockRestore();
+    }
   });
 });
