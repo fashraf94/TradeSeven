@@ -80,11 +80,11 @@ export default function useBombView({
   const bankedUp = held ? ladder.up.filter((r) => r.banked).map((r) => r.key) : [];
   const positionId = record?.positionId ?? null;
   const done = !!rz.moment && momentDone === `${positionId}:${rz.moment.key}`;
-  const inputKey = JSON.stringify([enabled, held, isCrypto, marketOpen, positionId, bankedUp, go ? [go.rung.key, go.pct] : null, done]);
+  const inputKey = JSON.stringify([enabled, held, isCrypto, marketOpen, positionId, bankedUp, go ? [go.rung.key, go.pctShown] : null, done]);
   useEffect(() => {
     if (!enabled) return;
     const next = stepRedZone(rz, {
-      held, crypto: isCrypto === true, marketOpen, positionId, bankedUp, next: go ? { key: go.rung.key, pct: go.pct } : null, momentDone: done,
+      held, crypto: isCrypto === true, marketOpen, positionId, bankedUp, next: go ? { key: go.rung.key, pct: go.pctShown } : null, momentDone: done,
     });
     if (next.moment && next.moment !== rz.moment) {
       // BA-4: the modal SAW this rung bank — the check is the one the record's latest score belongs to.

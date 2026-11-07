@@ -11,14 +11,14 @@ const PREV_CLOSE = 155.6;
 const rungPrice = (l, key) => l.rungs.find((r) => r.key === key).price;
 
 // The server's inline rule, restated (agent-evaluate.js :1301–1302) — the pin.
+// :1266-1274 first: entryPrice = swapPrice || startingPrices[sym] || 0, and ≤ 0 returns before any rung test.
 const serverBaseline = ({ swapPrice, startingPrice, isActivationDay }, previousClose) =>
-  swapPrice || (isActivationDay ? (startingPrice || previousClose) : previousClose);
+  (!((swapPrice || startingPrice || 0) > 0) ? null : swapPrice || (isActivationDay ? (startingPrice || previousClose) : previousClose));
 
 describe('legacy held ladder — the precedence, branch by branch, against the server rule', () => {
   const cases = [
     ['swapPrice wins on any day', (b) => { b.portfolio.star[0].swapPrice = 155.1; }, WED_1PM, 155.1, 'swap_price'],
     ['activation day, starting price', () => {}, TUE_11AM, 154.76, 'starting_price'],
-    ['activation day, no starting price → previous close', (b) => { delete b.portfolio.startingPrices.EOG; }, TUE_11AM, PREV_CLOSE, 'previous_close'],
     ['day 2+: previous close, the starting price is NOT used', () => {}, WED_1PM, PREV_CLOSE, 'previous_close'],
   ];
   it.each(cases)('%s', (_, tweak, now, want, source) => {
@@ -28,6 +28,17 @@ describe('legacy held ladder — the precedence, branch by branch, against the s
     expect(l.status).toBe('ok');
     expect(l.baseline).toMatchObject({ price: want, source });
     expect(l.baseline.price).toBe(serverBaseline(record.baselineInputs, PREV_CLOSE));
+  });
+  it.each([
+    ['activation day, no starting price, no swap (the server returns before the rung test)', (b) => { delete b.portfolio.startingPrices.EOG; }, TUE_11AM],
+    ['a swapped-in name after the night: swapPrice cleared, not in startingPrices (Phase 0 §5 #7)', (b) => { delete b.portfolio.startingPrices.EOG; b.portfolio.star[0].previousSwapPrice = 155.1; }, WED_1PM],
+  ])('the ENTRY GATE: %s → entry unavailable, even with yesterday\'s close loaded', (_, tweak, now) => {
+    const b = legacyBattle(); tweak(b);
+    const record = selectBombRecord(b, 'EOG', now);
+    expect(serverBaseline(record.baselineInputs, PREV_CLOSE)).toBeNull();
+    const l = legacyLadder({ record, previousClose: PREV_CLOSE, nowMs: now });
+    expect(l.status).toBe('entry_unavailable');
+    expect(l.rungs).toEqual([]);
   });
   it('entry unavailable when the precedence yields nothing — never drawn from 0', () => {
     const record = selectBombRecord(legacyBattle(), 'EOG', WED_1PM);

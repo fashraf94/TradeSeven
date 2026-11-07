@@ -19,6 +19,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { motionToken } from '../../../theme/motion.js';
 import { BT, HEAT, tint, MONO } from './bombTheme.js';
 import { BOMB_COPY, money } from './bombCopy.js';
+import { priceText } from '../priceFormat.js';
 import { etClock, etClockAmPm } from './checkClock.js';
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -28,7 +29,7 @@ const HOUR_MS = 60 * 60 * 1000;
 export function distanceText(go) {
   if (!go) return null;
   if (go.distance <= 0) return { big: money(Math.abs(go.distance), go.decimals), sub: BOMB_COPY.aboveSub(go.rung.points) };
-  return { big: money(go.distance, go.decimals), sub: BOMB_COPY.distanceSub(go.rung.points, go.pct) };
+  return { big: money(go.distance, go.decimals), sub: BOMB_COPY.distanceSub(go.rung.points, go.pctShown) };
 }
 
 export default function RedZone({ ladder, go, live, decimals, mode, trace, clock, scoredText, moment = null, nowMs, width = 360, height = 300 }) {
@@ -62,6 +63,8 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
   const lastLine = trace.line.length ? trace.line[trace.line.length - 1] : null;
   const lastTickMs = Math.max(trace.lastBarMs ?? 0, lastDotMs ?? 0) || null;
   const dist = distanceText(go);
+  // The floor's distance from the DISPLAYED live price (it is live × 0.99 only when no trace value is lower).
+  const floorPct = finite(live) ? ((Number(priceText(lo, d)) - Number(priceText(live, d))) / Number(priceText(live, d))) * 100 : null;
   const goalY = goal !== null ? Y(goal) : top;
   const momentRung = showMoment ? ladder.up.find((r) => r.key === moment.key) : null;
   const pop = motionToken('bouncy', { reducedMotion: reduced });
@@ -114,7 +117,7 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
         </div>
       )}
       <div data-rz-floor="1" style={{ position: 'absolute', left: 12, top: bot + 4, fontSize: 8, letterSpacing: '0.1em', fontWeight: 700, color: lastBanked && Math.abs(lo - lastBanked.price) < 1e-9 ? BT.green : BT.ink3 }}>
-        {lastBanked && Math.abs(lo - lastBanked.price) < 1e-9 ? BOMB_COPY.floorBanked(lastBanked.label, lastBanked.points) : BOMB_COPY.floorLabel(lo, d)}
+        {lastBanked && Math.abs(lo - lastBanked.price) < 1e-9 ? BOMB_COPY.floorBanked(lastBanked.label, lastBanked.points) : BOMB_COPY.floorLabel(lo, d, floorPct)}
       </div>
 
       {showMoment && momentRung && (

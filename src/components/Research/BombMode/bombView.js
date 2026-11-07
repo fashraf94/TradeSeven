@@ -26,7 +26,7 @@ export function buildLadder({ context, record, bombData, previousClose, threshol
     // modal's bombData.measured); bombData only when the record has none.
     if (record.model === 'measured') return measuredLadder({ measured: record.measured, entryAtMs: record.entry?.atMs ?? null });
     if (record.model === 'legacy') return legacyLadder({ record, previousClose, nowMs });
-    return { status: 'short_unsupported', kind: 'held', model: 'unsupported', rungs: [], up: [], down: [], next: null, bankedPoints: 0 };
+    return { status: record.reason === 'short_position' ? 'short_unsupported' : 'model_unavailable', kind: 'held', model: 'unsupported', rungs: [], up: [], down: [], next: null, bankedPoints: 0 };
   }
   if (context?.kind === 'v4') {
     const levels = v4LevelsFor(context.dailyLevels, symbol, nowMs);

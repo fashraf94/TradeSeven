@@ -129,7 +129,7 @@ import { calculateAssetScoreV3 } from '../utils/baggerBombUtils';
 import { DEFAULT_THRESHOLD, buildResearchAsset } from '../utils/researchAssetBuilder';
 import AssetResearchModal from '../components/draft/AssetResearchModal';
 import useBombModeForBattle from '../components/Research/BombMode/useBombModeForBattle';
-import { selectBombRecord } from '../components/Research/BombMode/selectBombRecord';
+import { agentBombContext } from '../components/Research/BombMode/selectBombRecord';
 import TermResearchModal from '../components/shared/TermResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import FilmRoomBanner from '../components/FilmRoom/FilmRoomBanner';
@@ -2971,13 +2971,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // built ONLY when the mode resolves on — off, the record selector is never
   // called and no mount receives a new prop. A position the player's agent
   // holds gets its record; anything else (a bench name, the CPU's position —
-  // its posKey or positionId is not the agent's) gets a labelled preview.
-  const bombContextFor = (symbol, { posKey = null, positionId = null } = {}) => {
-    let record = selectBombRecord(agentBattle, symbol, Date.now());
-    if (record && typeof posKey === 'string' && posKey !== `player:${record.tier}:${record.slot}`) record = null;
-    if (record && typeof positionId === 'string' && positionId && positionId !== record.positionId) record = null;
-    return { kind: 'agent', battleId: agentBattleId, held: record !== null, record };
-  };
+  // its posKey or positionId is not the agent's, or a shared ticker the mount
+  // cannot tell apart) gets a labelled preview (agentBombContext).
+  const bombContextFor = (symbol, ids = {}) => agentBombContext(agentBattle, symbol, Date.now(), { battleId: agentBattleId, ...ids });
   if (gatedPath) {
     if (researchView) {
       let valid = admitted && researchView.ctx === gatedContextKey;

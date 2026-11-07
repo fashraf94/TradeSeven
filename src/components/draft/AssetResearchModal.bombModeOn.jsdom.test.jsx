@@ -200,7 +200,7 @@ describe('honest after the close and across days', () => {
     seed('2026-10-15T21:00:00.000Z'); // Thu 5:00 PM ET, closed
     const record = selectBombRecord(battle, 'AAPL', Date.now());
     await render(<AssetResearchModal asset={research(left)} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={101.2} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
-    expect(q('[data-bomb-sheet-scored]').textContent).toBe('last tick $101.20 · scored $101.00 at Wed 10:02');
+    expect(q('[data-bomb-sheet-scored]').textContent).toBe('last $101.20 · scored $101.00 at Wed 10:02');
     expect(q('[data-fuse-live-label]').textContent).toContain('· LAST');
   });
 });

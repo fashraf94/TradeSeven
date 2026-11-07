@@ -14,8 +14,8 @@ import { priceText } from '../priceFormat.js';
 
 export const money = (price, decimals) => `$${priceText(price, decimals)}`;
 const signedPct = (pct, digits = 1) => `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(digits)}%`;
-/** A to-go %: one decimal, two under 0.1 % (so 0.04 % never reads "0.0%"). */
-const goPct = (pct) => (Math.abs(pct) < 0.1 ? Math.abs(pct).toFixed(2) : Math.abs(pct).toFixed(1));
+/** A to-go %: two decimals under 1 % — the red zone's own precision, so the pill and the zone agree at the band — one decimal from 1 % up. */
+const goPct = (pct) => (Math.abs(pct) < 1 ? Math.abs(pct).toFixed(2) : Math.abs(pct).toFixed(1));
 
 export const BOMB_COPY = Object.freeze({
   // The Fuse
@@ -47,6 +47,8 @@ export const BOMB_COPY = Object.freeze({
   previewUnavailable: 'No ladder yet',
   previewUnavailableWhy: "Yesterday's close or this stock's threshold hasn't loaded.",
   shortUnsupported: 'No upside ladder for a short position',
+  modelUnavailable: 'Scoring model unavailable',
+  modelUnavailableWhy: "This battle's scoring model can't be read here, so no rung is drawn.",
   // The red zone
   redZoneChip: 'Red zone',
   yourPosition: 'Your position',
@@ -55,21 +57,21 @@ export const BOMB_COPY = Object.freeze({
   rungTag: (emoji, label, points, price, d) => `${emoji} ${label} · +${points} pts · ${money(price, d)}`,
   distanceSub: (points, pct) => `to +${points} · ${Math.abs(pct).toFixed(2)}%`,
   aboveSub: (points) => `over +${points} · scores only at a check`,
-  floorLabel: (price, d) => `Floor ${money(price, d)} · −1%`,
+  floorLabel: (price, d, pct) => `Floor ${money(price, d)}${Number.isFinite(pct) ? ` · ${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%` : ''}`,
   floorBanked: (label, points) => `${label.toUpperCase()} · +${points} · banked ✓`,
   traceEnd: (interval, time) => `${interval} bars to ${time}`,
   traceInterval: (minutes) => (minutes === 1 ? '1-min' : `${minutes}-min`),
   traceObservations: 'Live quotes since you opened',
   noBars: 'No minute bars yet',
   bankedBig: (points) => `+${points}`,
-  bankedLine: (time, price, d) => (time ? `Banked · ${time} check · ${money(price, d)}` : 'Banked'),
+  bankedLine: (time, price, d) => `Banked${time ? ` · ${time} check` : ''}${Number.isFinite(price) ? ` · ${money(price, d)}` : ''}`,
   // The clock and the chip
   nextCheck: 'Next check',
   nextCheckInline: (label) => `next check ${label}`,
   checking: 'checking…',
   noCheckLeft: 'No check left in this battle',
   scoredChip: (live, scored, at, d) => `live ${money(live, d)} · scored ${money(scored, d)} at ${at}`,
-  lastTickChip: (live, scored, at, d) => `last tick ${money(live, d)} · scored ${money(scored, d)} at ${at}`,
+  lastTickChip: (live, scored, at, d) => `last ${money(live, d)} · scored ${money(scored, d)} at ${at}`,
   // The sheet: what has to happen (templates only — spec §4.3)
   sheetTitle: 'The ladder',
   whatHasToHappen: 'What has to happen',

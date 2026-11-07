@@ -38,7 +38,7 @@ describe('the LIVE · SCORED chip (spec §3.2)', () => {
     expect(scoredChipText({ live: 160.194, scored, decimals: 2 })).toBeNull();
     expect(scoredChipText({ live: 160.2, scored, decimals: 2 })).toBe('live $160.20 · scored $160.19 at 1:00');
   });
-  it('the closed view says last tick', () => { expect(scoredChipText({ live: 162.86, scored, decimals: 2, always: true, frozen: true })).toBe('last tick $162.86 · scored $160.19 at 1:00'); });
+  it('the closed view says last tick', () => { expect(scoredChipText({ live: 162.86, scored, decimals: 2, always: true, frozen: true })).toBe('last $162.86 · scored $160.19 at 1:00'); });
   it('no scored price (a preview) → no chip', () => { expect(scoredChipText({ live: 160, scored: null, always: true })).toBeNull(); });
   it('a sub-dollar asset prints with its own decimals', () => { expect(scoredChipText({ live: 0.2049, scored: { price: 0.2051, atMs: scored.atMs }, decimals: 4 })).toBe('live $0.2049 · scored $0.2051 at 1:00'); });
 });
@@ -77,7 +77,7 @@ describe('the baseline label — never "entry" on a preview (BA-1)', () => {
   it('the to-go pill: brick wording, and inside the band the live number (R-11′(d))', () => {
     const l = previewLadder({ previousClose: 100, threshold: 6 }); // bagger $106, brick $1
     expect(toGoText(l, toGo(l, 104))).toBe('1.9% · 2 bricks to +15');
-    expect(toGoText(l, toGo(l, 105.6))).toBe('0.4% · 1 brick to +15 · live $105.60');
+    expect(toGoText(l, toGo(l, 105.6))).toBe('0.38% · 1 brick to +15 · live $105.60');
     expect(toGoText(l, toGo(l, 106.2))).toBe('At +15 · a check decides · live $106.20');
   });
 });

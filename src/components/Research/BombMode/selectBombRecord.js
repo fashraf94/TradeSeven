@@ -57,6 +57,28 @@ const TIERS = ['star', 'core', 'support'];
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const positive = (v) => finite(v) && v > 0;
 
+/**
+ * The Battle View's bombContext for one opened row (spec §4.2): the agent's
+ * record when the row IS the agent's position, else a preview (record null).
+ * The row is identified by what the mount knows: the gated held view's
+ * `posKey` ('player|cpu:tier:slot'), else the opened asset's `positionId`.
+ * When it knows neither (the shipped path on an unstamped battle) and the CPU
+ * also holds the ticker, the row cannot be told apart from the CPU's, so it is
+ * a preview — never the agent's ladder on the CPU's row.
+ */
+export function agentBombContext(battle, symbol, nowMs, { battleId = null, posKey = null, positionId = null } = {}) {
+  let record = selectBombRecord(battle, symbol, nowMs);
+  if (record && typeof posKey === 'string') {
+    if (posKey !== `player:${record.tier}:${record.slot}`) record = null;
+  } else if (record && typeof positionId === 'string' && positionId) {
+    if (positionId !== record.positionId) record = null;
+  } else if (record) {
+    const cpu = battle?.opponent?.portfolio;
+    if (TIERS.some((t) => (Array.isArray(cpu?.[t]) ? cpu[t] : []).some((a) => a?.symbol === symbol))) record = null;
+  }
+  return { kind: 'agent', battleId, held: record !== null, record };
+}
+
 /** An instant the record may hold as an ISO string, epoch ms or a Timestamp-like; null otherwise. */
 export function recordMs(v) {
   if (finite(v)) return v;
@@ -133,7 +155,11 @@ export function selectBombRecord(battle, symbol, nowMs) {
   // The agent is long-only (BUILD_RULES §7); a short has no upside ladder here.
   if (asset.direction === 'short') return { ...common, model: 'unsupported', reason: 'short_position', checkDots: [] };
 
-  if (stockModelRoute(battle).status !== 'legacy' && isStock(asset)) {
+  const route = stockModelRoute(battle).status;
+  // A stamp the reader cannot accept: the scorer skips the battle (agent-evaluate.js
+  // :914-915), so no check will come — no ladder, no clock, no promise.
+  if (route === 'unavailable' && isStock(asset)) return { ...common, model: 'unsupported', reason: 'unsupported_stock_model', checkDots: [] };
+  if (route === 'corrected' && isStock(asset)) {
     const receipt = asset.stockThresholdReceipt || null;
     const entryAtMs = instantMs(receipt?.enteredAt);
     const context = common.positionId ? battle.scoring?.stockRewardContexts?.agent?.[common.positionId] : null;

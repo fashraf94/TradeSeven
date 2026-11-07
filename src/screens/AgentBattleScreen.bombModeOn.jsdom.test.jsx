@@ -20,7 +20,7 @@ const flag = vi.hoisted(() => ({ mode: 'off', allowlisted: false }));
 const SEL = vi.hoisted(() => ({ calls: 0 }));
 vi.mock('../components/Research/BombMode/selectBombRecord', async (importOriginal) => {
   const real = await importOriginal();
-  return { ...real, selectBombRecord: (...args) => { SEL.calls += 1; return real.selectBombRecord(...args); } };
+  return { ...real, agentBombContext: (...args) => { SEL.calls += 1; return real.agentBombContext(...args); } };
 });
 vi.mock('../config/researchModalFlags', () => ({ get RESEARCH_MODAL_BOMB_MODE() { return flag.mode; }, RESEARCH_MODAL_BOMB_MODES: Object.freeze(['off', 'allowlist', 'on']) }));
 vi.mock('../config/researchModalFlags.js', () => ({ get RESEARCH_MODAL_BOMB_MODE() { return flag.mode; }, RESEARCH_MODAL_BOMB_MODES: Object.freeze(['off', 'allowlist', 'on']) }));
@@ -174,9 +174,18 @@ describe("mode 'on' — the in-battle contract", () => {
     watch(['MSFT']); HOOK.doc = await committedBattle({ cpuSymbol: 'MSFT' }); await mount('MSFT'); await click(chip('MSFT'));
     expect(lastProps().bombContext).toMatchObject({ kind: 'agent', held: false, record: null });
   });
-  it('an unstamped (legacy) battle: the legacy record', async () => {
-    HOOK.doc = await committedBattle({ stamped: false }); await mount(); await click(chip('AAPL'));
+  it('an unstamped (legacy) battle: the legacy record (the CPU holds another ticker)', async () => {
+    HOOK.doc = await committedBattle({ stamped: false, cpuSymbol: 'MSFT' }); await mount('MSFT'); await click(chip('AAPL'));
     expect(lastProps().bombContext).toMatchObject({ held: true, record: { model: 'legacy', threshold: 2.5 } });
+  });
+});
+
+describe('a shared ticker the shipped mount cannot tell apart (no positionId on an unstamped battle)', () => {
+  beforeEach(() => { flag.mode = 'on'; });
+  it("the agent's own chip on a ticker the CPU also holds: a preview, never a ladder that might be the CPU's", async () => {
+    HOOK.doc = await committedBattle({ stamped: false }); await mount(); await click(chip('AAPL'));
+    expect(lastProps().asset.positionId).toBeUndefined();
+    expect(lastProps().bombContext).toEqual({ kind: 'agent', battleId: 'stock-battle', held: false, record: null });
   });
 });
 

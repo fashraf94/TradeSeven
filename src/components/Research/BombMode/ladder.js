@@ -96,6 +96,13 @@ export function legacyLadder({ record, previousClose, nowMs } = {}) {
   if (!record || record.model !== 'legacy') return unavailable('legacy_unavailable', { kind: 'held', model: 'legacy' });
   const { swapPrice, startingPrice, isActivationDay } = record.baselineInputs || {};
   const threshold = record.threshold;
+  // THE ENTRY GATE first (agent-evaluate.js :1266-1274; agent-daily-scores.js
+  // :112-114): with `swapPrice || startingPrices[sym]` ≤ 0 the scorer returns
+  // before any rung test, so no rung can bank — "entry unavailable" (spec
+  // §3.1, Phase 0 §5 #7: a swapped-in name after the night clears swapPrice).
+  if (!positive(swapPrice) && !positive(startingPrice)) {
+    return unavailable('entry_unavailable', { kind: 'held', model: 'legacy', baseline: { price: null, source: 'no_entry_price', atMs: null } });
+  }
   const etToday = finite(nowMs) ? etDateOf(nowMs) : null;
   const utcToday = finite(nowMs) ? new Date(nowMs).toISOString().slice(0, 10) : null;
   // THE PRECEDENCE, applied once, by the server's own shared resolver.
@@ -181,9 +188,12 @@ export function toGo(ladder, live, { decimals = null, tiers = BAGGER_TIERS } = {
   const liveShown = Number(priceText(live, d));
   const distance = Number((rungShown - liveShown).toFixed(d));
   const pct = (distance / liveShown) * 100;
+  // The % as the red zone prints it (two decimals) — the band is decided on
+  // THIS number, so a displayed 0.50% enters (BUILD_RULES §9, rounds before zoning).
+  const pctShown = Number(pct.toFixed(2));
   const plan = brickPlan(ladder, tiers);
   const bricks = plan ? (distance > 0 ? Math.ceil(distance / plan.unit - 1e-9) : 0) : null;
-  return { rung: ladder.next, rungShown, liveShown, distance, pct, bricks, decimals: d };
+  return { rung: ladder.next, rungShown, liveShown, distance, pct, pctShown, bricks, decimals: d };
 }
 
 /** Where the live price sits, in multiples of the threshold from the baseline (the Fuse's vertical unit). */

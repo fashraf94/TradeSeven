@@ -33,8 +33,8 @@ export function toGoText(ladder, go, { closed = false } = {}) {
   if (!go) return ladder?.next ? null : BOMB_COPY.allBanked;
   const base = go.distance <= 0
     ? BOMB_COPY.toGoAt(go.rung.points)
-    : go.bricks != null ? BOMB_COPY.toGoBricks(go.pct, go.bricks, go.rung.points) : BOMB_COPY.toGoPlain(go.pct, go.rung.points);
-  if (go.pct > RED_ZONE_ENTER_PCT) return base;
+    : go.bricks != null ? BOMB_COPY.toGoBricks(go.pctShown, go.bricks, go.rung.points) : BOMB_COPY.toGoPlain(go.pctShown, go.rung.points);
+  if (go.pctShown > RED_ZONE_ENTER_PCT) return base;
   // After the close the quote is the last trade, not a live one.
   return (closed ? BOMB_COPY.toGoWithLast : BOMB_COPY.toGoWithLive)(base, money(go.liveShown, go.decimals));
 }
@@ -87,7 +87,7 @@ export default function FuseChart({ ladder, live, decimals, go, ghost = [], chec
   const rungs = ladder.up.map((r) => ({ ...r, y: Y(r.k), state: r.banked ? 'banked' : r.key === nextKey ? 'next' : 'later' }));
   const top = rungs[rungs.length - 1];
   const liveY = finite(kLive) ? Y(Math.max(-botK + 0.04, Math.min(kLive, topK - 0.04))) : null;
-  const inBand = !!go && go.pct <= RED_ZONE_ENTER_PCT;
+  const inBand = !!go && go.pctShown <= RED_ZONE_ENTER_PCT;
   // R-11′(d): inside the band the live label yields to the rung label.
   // Outside it, the label sits right of the rail where it clears every rung's
   // label block (points + price, measured: y−11 … y+19) and the baseline's;
