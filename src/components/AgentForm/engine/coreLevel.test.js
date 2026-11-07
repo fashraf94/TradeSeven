@@ -59,11 +59,12 @@ describe('D-B: the core at CORE_LEVEL of today\'s light, the flag on; today\'s w
     for (const t of [0, 1.1, BREATH_S / 2, 7.3]) expectCore(pose(BARE, t).core, expected(TEAL, 1), `off, t=${t}`);
   });
 
-  it('flag on, at the breath\'s top: the sphere, the glow and the halo each at CORE_LEVEL (about 25 % less light)', () => {
-    expect(CORE_LEVEL).toBe(.75);
+  it('flag on, at the breath\'s top: the sphere, the glow and the halo each at CORE_LEVEL of today\'s source light', () => {
+    // .6 at the source is 26 % less on screen, glow included (today's centre is blown out past white; vocab.js)
+    expect(CORE_LEVEL).toBe(.6);
     const { core } = pose(BARE, 0);
     expectCore(core, expected(TEAL, CORE_LEVEL), 'on, t=0');
-    expect(lum(core.colour) / lum(today(TEAL))).toBeCloseTo(.75, 12);
+    expect(lum(core.colour) / lum(today(TEAL))).toBeCloseTo(CORE_LEVEL, 12);
   });
 
   it('wherever the core draws: bare Shadow, a set\'s core at every stage, and the copper opponent, the same ratio', () => {
@@ -96,7 +97,7 @@ describe('D-B: the core at CORE_LEVEL of today\'s light, the flag on; today\'s w
       }
     });
     expect(other).toBeGreaterThan(.3); // non-vacuous: the armor's edges are lit
-    expect(centre).toBeGreaterThan(1.5 * other);
+    expect(centre).toBeGreaterThan(1.25 * other);
   });
 });
 

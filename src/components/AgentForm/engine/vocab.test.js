@@ -160,8 +160,8 @@ describe('the response\'s curve (build S2, ruling R19)', () => {
 
 // ── The A1 fix pass (founder rulings D-B, D-C, Nov 6, 2026): the core's level and its breath ──
 describe('D-B, D-C: the core\'s level and its breath (pure)', () => {
-  it('the shipped defaults: the core at 75 % of today\'s light, a 4.5 s breath dipping to 85 % of that', () => {
-    expect([CORE_LEVEL, BREATH_S, BREATH_DEPTH]).toEqual([.75, 4.5, .15]);
+  it('the shipped defaults: the core at 60 % of today\'s source light (26 % less on screen, glow included), a 4.5 s breath dipping to 85 % of that', () => {
+    expect([CORE_LEVEL, BREATH_S, BREATH_DEPTH]).toEqual([.6, 4.5, .15]);
   });
 
   it('breath(t): 1 at the top (t = 0), 1 − BREATH_DEPTH half a cycle on, periodic, and never outside the two', () => {

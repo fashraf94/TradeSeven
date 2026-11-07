@@ -165,8 +165,14 @@ export function responseLift(ms) {
 // A view that does not move (reduced motion, the still rate, the cached still) holds it at its midpoint. The moods and
 // R19's response multiply on top of it. Each default is one line, so a founder tune is a one-line change.
 
-/** D-B: the core at rest, as a share of today's light. */
-export const CORE_LEVEL = .75;
+/**
+ * D-B: the core at rest (the breath's top), as a share of today's light at its source. On screen today's centre is blown
+ * out past white (its sphere, its additive glow and the CSS bloom sum above 1), so the source must drop further than the
+ * picture does: measured in headless Edge (the A1 report §15), .6 here draws the core and its glow 26 % darker at the
+ * breath's top and shrinks the clipped white from 438 px² to about 100; .75 here would draw it only 15 % darker, the
+ * white disc unchanged.
+ */
+export const CORE_LEVEL = .6;
 /** D-C: the breath's cycle, in seconds. */
 export const BREATH_S = 4.5;
 /** D-C: how far the breath dips, as a share of the toned level (to 85 % of it). */
