@@ -272,9 +272,11 @@ describe('board 2: the Deploy card\'s line, and the stage\'s words', () => {
     const hold = () => [...document.querySelectorAll('[data-hub-deploy] button')].find((b) => !b.closest('[data-loadout-deploy-line]'));
     for (const agent of [AGENT(), AGENT({ loadouts: { baggerbomb: SLOT({ book: { ref: null, name: null, pin: null } }) } })]) {
       const m = mount(<PerGameLoadoutContext.Provider value={scope(agent)}><DeploySection deploy={ready} holdWiring={wiring} onOpenLoadout={vi.fn()} onAction={vi.fn()} /></PerGameLoadoutContext.Provider>);
+      mounted.push(m); // a failed expect below still unmounts it (afterEach), so no card leaks into a later row
       expect(document.querySelector('[data-hub-deploy]').getAttribute('data-hub-deploy')).toBe('ready');
       expect(hold().disabled).toBe(false);
       m.unmount();
+      mounted = mounted.filter((x) => x !== m);
     }
     expect(document.querySelector('[data-hub-deploy]')).toBeNull();
   });
