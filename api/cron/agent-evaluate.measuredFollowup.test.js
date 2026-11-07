@@ -185,7 +185,8 @@ describe('F1 — the schedule: after agent-daily-scores, the same ET evening, bo
   it('exactly one settle entry, at 0 2 * * 2-6 UTC, beside the unchanged evaluator entry', () => {
     expect(cronEntry(SETTLE_PATH)).toBe('0 2 * * 2-6');
     expect(cronEntry('/api/cron/agent-evaluate')).toBe('*/15 13,14,15,16,17,18,19,20,21 * * 1-5');
-    expect(VERCEL.crons).toHaveLength(44);
+    // 44 → 45: the Huddle S1 worker (spec V1.1 §5.3 / Amendment A §A10; BUILD_RULES §6, founder-cited).
+    expect(VERCEL.crons).toHaveLength(45);
   });
 
   it.each([...EDT_WEEK, ...EST_WEEK])('a battle created %s 10:00 ET settles that ET evening, after daily-scores and before the tape close', (day) => {

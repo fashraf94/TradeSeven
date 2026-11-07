@@ -6,3 +6,17 @@
 
 | # | Where (file) | Collection | Filters / order | Composite needed? | Index added |
 |---|---|---|---|---|---|
+| Q-A1 | `api/_utils/huddle/applyPlan.js` `activeBattleIdsOf`; `gather.js` | `agentBattles` | `ownerId ==`, `status ==` | No (equality only; merged single-field indexes). The `ownerId + status + completedAt` composite already in the manifest also serves it | none |
+| Q-G1 | `confirmPlan.js` (inside the confirm transaction), `gather.js` | `agents` | `ownerId ==` | No (single field) | none |
+| Q-R2 | `applyPlan.js` `findHeardTick` | `agentBattles/{id}/ticks` | `capturedAt >=` + `orderBy capturedAt asc`, limit 40 | No (range and order on the same single field; `capturedAt` is not exempted — the exemptions are `controls`, `manifest`, `checks`, `actions`, `callEnvelope`, `decision`, `capture`, `scores`) | none |
+| Q-W1 | `queue.js` `selectClaimable` | `huddleQueue` | `etDate ==`, `status == 'pending'`; oldest first in memory | No (equality only) | none |
+| Q-W2 | `queue.js` `selectClaimable` (reclaim) | `huddleQueue` | `etDate ==`, `status == 'claimed'`; `leaseUntil < now` tested in memory | No (equality only) | none |
+| Q-W3 | `queue.js` `rowsToReconcile` | `huddleQueue` | `etDate ==`, `reconcile == true` | No (equality only) | none |
+| Q-P1 | `players.js` | `agentBattles` | `status ==` | No (single field) | none |
+| Q-P2 | `players.js` | `agentBattles` | `completedAt >=` | No (single field; the closePass `completedBetween` shape, `api/_utils/filmTape/closePass.js:95-100`) | none |
+| Q-P3 | `players.js` | `agents` | `lastDeployedAt >=` (ISO string) | No (single field) | none |
+| Q-E2 | `api/_utils/evidence/fantasyTimesStories.js` | `fantasyTimesStories` | `publishedAt >=` + `orderBy publishedAt desc`, limit 300; tickers filtered in memory | No (range and order on one field). Deliberately NOT `fetchRecentNews`'s `tickers array-contains` + `publishedAt` range (`agentTriggerGate.js:235-240`), which needs a composite the manifest lacks (build report RF-1) | none |
+
+**Reads by path (no query):** `huddles/{uid}/days/{etDate}`, `huddleQueue/{uid}_{etDate}`, `huddleRuns/{etDate}`, `symbolDayEvidence/{etDate}_{SYMBOL}`, `agentBattles/{id}`, `watchlists/{id}`, `indexIntelligence/marketContext`. The playback token resolves through the day's index on `huddleRuns/{etDate}` (no collection-group query on `days`).
+
+**Result: S1 adds no composite index.** `firestore.indexes.json` is unchanged. Every query above is equality-only, single-field, or a range and order on the same field, so none can fail for a missing composite on the live database; the founder's smoke still records any console link an error provides (A §A8).

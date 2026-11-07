@@ -399,8 +399,16 @@
     "api/_utils/huddle/confirmPlan.js::confirmPlan::set::unresolved": 1,
     "api/_utils/huddle/confirmPlan.js::confirmPlan::update::unresolved": 3,
     "api/_utils/huddle/confirmPlan.js::skipPlan::update::unresolved": 2,
+    "api/_utils/huddle/job.js::runHuddleJob::set::unresolved": 2,
+    "api/_utils/huddle/job.js::runHuddleJob::update::unresolved": 2,
     "api/_utils/huddle/playback.js::issuePlaybackToken::set::unresolved": 1,
     "api/_utils/huddle/playback.js::issuePlaybackToken::update::unresolved": 1,
+    "api/_utils/huddle/queue.js::claimRow::set::unresolved": 1,
+    "api/_utils/huddle/queue.js::claimRow::update::unresolved": 3,
+    "api/_utils/huddle/queue.js::enqueuePlayers::set::unresolved": 1,
+    "api/_utils/huddle/queue.js::markAttemptFailed::set::unresolved": 1,
+    "api/_utils/huddle/queue.js::markAttemptFailed::update::unresolved": 1,
+    "api/_utils/huddle/queue.js::markDone::update::unresolved": 1,
     "api/huddle/event.js::handler::update::unresolved": 1
   },
   "_notes_spec1_phase3": {

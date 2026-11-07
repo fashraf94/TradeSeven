@@ -52,7 +52,7 @@ const isUid = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(v);
 export function sessionOf(etDate) {
   const s = getSessionForDate(etDate);
   if (!s) return null;
-  return { etDate: s.etDate, isTradingDay: s.isTradingDay, isEarlyClose: s.isEarlyClose, openMs: s.openMs, closeMs: s.closeMs };
+  return { etDate: s.etDate, isTradingDay: s.isTradingDay, isEarlyClose: s.isEarlyClose, openMs: s.openMs, closeMs: s.closeMs, previousEtDate: s.previousEtDate ?? null };
 }
 
 export function huddleDayRef(db, uid, etDate) {
