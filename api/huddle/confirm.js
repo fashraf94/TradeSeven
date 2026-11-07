@@ -36,7 +36,13 @@ export default async function handler(req, res) {
     const outcome = await confirmPlan(db, { uid: admitted.uid, etDate, baseRevision: body.baseRevision, replacement: body.replacement });
     if (outcome.kind === 'refused') return res.status(outcome.status).json({ error: outcome.code, ...(outcome.body || {}) });
     if (outcome.kind === 'confirmed') {
-      await applyConfirmedPlan(db, { uid: admitted.uid, etDate, writtenBy: 'confirm' });
+      // The confirm has committed: an apply that throws here is retried by the check-start sweep and the reconcile pass,
+      // so it never turns the answer into a failed confirm (review L2-12).
+      try {
+        await applyConfirmedPlan(db, { uid: admitted.uid, etDate, writtenBy: 'confirm' });
+      } catch (err) {
+        console.warn('[huddle/confirm] immediate apply failed; the sweep and reconcile apply it', JSON.stringify({ message: err?.message }));
+      }
     }
     const snap = await huddleDayRef(db, admitted.uid, etDate).get();
     return res.status(200).json({ result: outcome.kind, huddle: clientViewOf(snap.exists ? snap.data() : null) });

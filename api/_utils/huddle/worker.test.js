@@ -6,7 +6,8 @@
 // at the close. Now: least recently reconciled first, every visit stamped, a settled day leaves the set.
 
 import { describe, it, expect } from 'vitest';
-import { runReconcilePass } from './worker.js';
+import { runReconcilePass, runEnqueueStage, drainQueue, runWorkerInvocation } from './worker.js';
+import { sessionOf } from './records.js';
 import { rowsToReconcile } from './queue.js';
 
 const ET = '2026-11-09';
@@ -65,5 +66,48 @@ describe('runReconcilePass (review L1-3)', () => {
     h.deps.markReconciled = async () => { throw new Error('contention'); };
     const r = await runReconcilePass(null, { etDate: ET, clock: h.clock, deps: h.deps });
     expect(r.visited).toBe(3);
+  });
+});
+
+describe('the enqueue stage and the drain (review L2-7, L2-8)', () => {
+  it('no enqueue on a weekday holiday: nothing is built, counted or written', async () => {
+    const calls = [];
+    const deps = { buildSharedLayer: async () => { calls.push('shared'); return {}; }, enumerateActivePlayers: async () => { calls.push('players'); return { uids: [] }; } };
+    expect(await runEnqueueStage(null, { etDate: '2026-11-26', deps })).toEqual({ enqueued: 0, created: 0, skipped: 'not_a_trading_day' });
+    expect(calls).toEqual([]);
+  });
+
+  it('no job starts once the session has closed', async () => {
+    const session = sessionOf('2026-11-09');
+    const io = { selectClaimable: async () => { throw new Error('should not be asked'); } };
+    const out = await drainQueue(null, { etDate: '2026-11-09', session, shared: null, invocationStartMs: session.closeMs + 60_000, clock: () => session.closeMs + 60_000, io });
+    expect(out.started).toBe(0);
+  });
+
+  it('a claim that throws is that row\'s outcome: the drain neither rejects nor abandons the other lanes', async () => {
+    const session = sessionOf('2026-11-09');
+    const at = session.openMs - 3_600_000;
+    const io = {
+      selectClaimable: async () => ['u1', 'u2', 'u3'].map((uid) => ({ uid })),
+      claimRow: async (db, { uid }) => { if (uid === 'u2') throw new Error('UNAVAILABLE'); return { kind: 'claimed', generation: 1, attempt: 1 }; },
+    };
+    const ran = [];
+    const runJob = async (db, { uid }) => { ran.push(uid); return { outcome: 'published' }; };
+    const out = await drainQueue(null, { etDate: '2026-11-09', session, shared: null, invocationStartMs: at, clock: () => at, runJob, io });
+    expect(ran.sort()).toEqual(['u1', 'u3']);
+    expect(out.results.find((r) => r.uid === 'u2')).toEqual({ uid: 'u2', outcome: 'claim_error' });
+  });
+
+  it('a reconcile query that throws does not stop the invocation', async () => {
+    const at = sessionOf('2026-11-09').openMs - 3_600_000;
+    // the reconcile query throws; the claimable queries answer empty; the run marker says the enqueue is done
+    const query = { where: (field) => { if (field === 'reconcile') throw new Error('reconcile query failed'); return query; }, get: async () => ({ docs: [] }) };
+    const db = { collection: () => ({
+      where: () => query,
+      doc: () => ({ get: async () => ({ exists: true, data: () => ({ briefStage: 'done', enqueueStage: 'done', shared: null }) }) }),
+    }) };
+    const out = await runWorkerInvocation(db, { clock: () => at, deps: { runJob: async () => ({ outcome: 'published' }) } });
+    expect(out.reconcile).toHaveProperty('error');
+    expect(out.outcome).not.toBe(undefined);
   });
 });

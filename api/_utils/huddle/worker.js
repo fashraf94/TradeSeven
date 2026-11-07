@@ -42,8 +42,9 @@ export async function markRun(db, etDate, fields) {
   await db.collection('huddleRuns').doc(etDate).set({ ...fields, updatedAt: iso(Date.now()) }, { merge: true });
 }
 
-/** The enqueue stage (idempotent row keys). */
+/** The enqueue stage (idempotent row keys). Nothing on a non-trading day: the brief cron also runs on weekday holidays (review L2-8). */
 export async function runEnqueueStage(db, { etDate, nowMs = Date.now(), deps = {} }) {
+  if (!sessionOf(etDate)?.isTradingDay) return { enqueued: 0, created: 0, skipped: 'not_a_trading_day' };
   const shared = await (deps.buildSharedLayer || buildSharedLayer)(db, { etDate, nowMs });
   const players = await (deps.enumerateActivePlayers || enumerateActivePlayers)(db, { etDate });
   const { created } = await enqueuePlayers(db, { etDate, uids: players.uids, nowMs });
@@ -80,19 +81,31 @@ export async function runReconcilePass(db, { etDate, nowMs, budgetMs = RECONCILE
  * The drain: up to IN_FLIGHT jobs at once, replenished as each finishes, while at least
  * DRAIN_RESERVE_MS of the invocation remain. `runJob` is injectable for tests.
  */
-export async function drainQueue(db, { etDate, session, shared, invocationStartMs, clock = () => Date.now(), maxDurationMs = WORKER_MAX_DURATION_MS, runJob = runHuddleJob, deps = {} }) {
+export async function drainQueue(db, { etDate, session, shared, invocationStartMs, clock = () => Date.now(), maxDurationMs = WORKER_MAX_DURATION_MS, runJob = runHuddleJob, deps = {}, io = {} }) {
   const deadlineMs = invocationStartMs + maxDurationMs;
-  const canStart = () => deadlineMs - clock() >= DRAIN_RESERVE_MS;
+  // No job starts once the session has closed: its plan would expire at once (review L2-8). Without a session (the brief
+  // handler's in-handler drain, which claims nothing anyway) only the reserve applies.
+  const closeMs = typeof session?.closeMs === 'number' ? session.closeMs : Infinity;
+  const canStart = () => deadlineMs - clock() >= DRAIN_RESERVE_MS && clock() < closeMs;
   const results = [];
   if (!canStart()) return { started: 0, results };
-  const candidates = await selectClaimable(db, { etDate, nowMs: clock() });
+  const candidates = await (io.selectClaimable || selectClaimable)(db, { etDate, nowMs: clock() });
+  const claimOne = io.claimRow || claimRow;
   let next = 0;
   let started = 0;
   const startOne = async () => {
     while (next < candidates.length && canStart()) {
       const row = candidates[next];
       next += 1;
-      const claim = await claimRow(db, { uid: row.uid, etDate, nowMs: clock() });
+      // A claim that throws (contention past the SDK's retries, Firestore unavailable) is that row's outcome, never the
+      // drain's: the other lanes keep running and are awaited (review L2-7).
+      let claim;
+      try {
+        claim = await claimOne(db, { uid: row.uid, etDate, nowMs: clock() });
+      } catch {
+        results.push({ uid: row.uid, outcome: 'claim_error' });
+        continue;
+      }
       if (claim.kind !== 'claimed') { results.push({ uid: row.uid, outcome: claim.kind }); continue; }
       started += 1;
       const t0 = clock();
@@ -115,7 +128,13 @@ export async function runWorkerInvocation(db, { clock = () => Date.now(), deps =
   if (!session) return { etDate, outcome: 'calendar_missing' };
   if (!session.isTradingDay) return { etDate, outcome: 'not_a_trading_day' };
 
-  const reconcile = await runReconcilePass(db, { etDate, clock });
+  // The reconcile pass never stops the drain (review L2-7).
+  let reconcile;
+  try {
+    reconcile = await runReconcilePass(db, { etDate, clock });
+  } catch (err) {
+    reconcile = { error: String(err?.message || err).slice(0, 120) };
+  }
 
   const runSnap = await huddleRunRef(db, etDate).get();
   let run = runSnap.exists ? runSnap.data() : null;
