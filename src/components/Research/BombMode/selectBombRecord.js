@@ -156,9 +156,11 @@ export function selectBombRecord(battle, symbol, nowMs) {
   if (asset.direction === 'short') return { ...common, model: 'unsupported', reason: 'short_position', checkDots: [] };
 
   const route = stockModelRoute(battle).status;
-  // A stamp the reader cannot accept: the scorer skips the battle (agent-evaluate.js
-  // :914-915), so no check will come — no ladder, no clock, no promise.
-  if (route === 'unavailable' && isStock(asset)) return { ...common, model: 'unsupported', reason: 'unsupported_stock_model', checkDots: [] };
+  // A stamp the reader cannot accept: the scorer skips the WHOLE battle
+  // (agent-evaluate.js :914-915; the nightly run errors at agent-daily-scores.js
+  // :71), so no check will come for any name on it, crypto included — no ladder,
+  // no clock, no promise (as enrichHeldPosition treats every asset on that route).
+  if (route === 'unavailable') return { ...common, model: 'unsupported', reason: 'unsupported_stock_model', checkDots: [] };
   if (route === 'corrected' && isStock(asset)) {
     const receipt = asset.stockThresholdReceipt || null;
     const entryAtMs = instantMs(receipt?.enteredAt);

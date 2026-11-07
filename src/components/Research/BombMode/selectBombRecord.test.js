@@ -145,6 +145,12 @@ describe('an unreadable model stamp: the scorer skips the battle, so no ladder a
     b.scoring.stockThresholdModel = { modelId: 'x' };
     expect(selectBombRecord(b, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z'))).toMatchObject({ model: 'unsupported', reason: 'unsupported_stock_model' });
   });
+  it('…and a crypto name on that battle too: the scorer skips the whole battle, so no check comes for it either (refuter A, A7)', async () => {
+    const b = await committedMeasured();
+    b.scoring.stockThresholdModel = { modelId: 'x' };
+    b.portfolio.star[0].isCrypto = true;
+    expect(selectBombRecord(b, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z'))).toMatchObject({ model: 'unsupported', reason: 'unsupported_stock_model' });
+  });
 });
 
 describe('agentBombContext — which row is the agent\'s (review A4, C1)', () => {

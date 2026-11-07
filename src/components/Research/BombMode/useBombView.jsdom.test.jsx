@@ -49,6 +49,15 @@ describe('useBombView lifecycle', () => {
     await render({ symbol: 'AAPL', live: 101, timeframe: 'bomb', bars: minute }); // the hook's stale minute series for one commit
     expect(out.ghost).toHaveLength(3);
   });
+  it('…nor the 1D chart\'s daily bars, still held while the 30-minute series loads after 1D → 💣 (refuter B, B3)', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-14T17:00:00.000Z'));
+    root = createRoot(document.createElement('div'));
+    const daily = [bar('2026-10-12T20:00:00.000Z', 99), bar('2026-10-13T20:00:00.000Z', 99.5), bar('2026-10-14T17:00:00.000Z', 101)];
+    await render({ symbol: 'AAPL', live: 101, timeframe: 'bomb', bars: daily });
+    expect(out.ghost).toEqual([]);
+    await render({ symbol: 'AAPL', live: 101, timeframe: 'bomb', bars: thirty });
+    expect(out.ghost).toHaveLength(3);
+  });
 });
 
 // A held legacy EOG (previous close $155.60, threshold 3.6 %: +30 at $164.00).

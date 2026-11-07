@@ -61,7 +61,10 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
   const X = (t) => x0 + ((t - startMs) / Math.max(1, endMs - startMs)) * (x1 - x0);
   const linePath = trace.line.map((p, i) => `${i ? 'L' : 'M'}${X(p.t).toFixed(1)},${Y(p.c).toFixed(1)}`).join(' ');
   const lastLine = trace.line.length ? trace.line[trace.line.length - 1] : null;
-  const lastTickMs = Math.max(trace.lastBarMs ?? 0, lastDotMs ?? 0) || null;
+  // "Last tick" names a tick: a minute bar or a quote seen while open — never a
+  // 30-minute bar's open (review A8: "last tick 3:30 PM" for a bar that closed at 4:00).
+  const lastTickBarMs = trace.intervalMin === 1 ? trace.lastBarMs : null;
+  const lastTickMs = Math.max(lastTickBarMs ?? 0, lastDotMs ?? 0) || null;
   const dist = distanceText(go);
   // The floor's distance from the DISPLAYED live price (it is live × 0.99 only when no trace value is lower).
   const floorPct = finite(live) ? ((Number(priceText(lo, d)) - Number(priceText(live, d))) / Number(priceText(live, d))) * 100 : null;

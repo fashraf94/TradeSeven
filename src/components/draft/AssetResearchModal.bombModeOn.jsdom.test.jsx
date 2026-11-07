@@ -310,6 +310,14 @@ describe('lens C: the requests and the tabs a mount makes', () => {
     expect(buttons()).toContain('💣');
     expect(drawerTabs().map((b) => b.textContent.trim())).toContain('💣 Bomb');
   });
+  it('N2: the 💣 view opened without an asset threshold asks for one once and draws the Fuse — not "no ladder yet" until the tab opens (refuter B)', async () => {
+    seed('2026-10-14T17:00:00.000Z'); net.thresholds = { AAPL: { threshold: 2 } };
+    await render(<AssetResearchModal asset={{ symbol: 'AAPL', name: 'Apple', price: 101.2 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="technical" defaultTimeframe="bomb" wsPrice={101.2} bombContext={{ kind: 'bench' }} />);
+    expect(net.calls.filter((c) => c[0] === 'thresholds')).toEqual([['thresholds', ['AAPL'], 'stock']]);
+    expect(q('[data-bomb-view="fuse"]')).not.toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); }); await flush();
+    expect(net.calls.filter((c) => c[0] === 'thresholds')).toHaveLength(1);
+  });
   it('C7: the BA-5 fallback of a mount that opens on the Bomb tab and the 💣 view — Analysis is the open tab; the 1D daily request, never the 30-minute one', async () => {
     seed('2026-10-14T17:00:00.000Z');
     await render(<AssetResearchModal asset={{ symbol: 'AAPL', name: 'Apple', price: 101.2, threshold: 2.5 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" />);
@@ -356,6 +364,15 @@ describe('lens C: the check clock in the sheet and the banked time', () => {
     expect(q('[data-fuse-banked-at="bagger"]').textContent).toBe('BANKED · 1:15');
     expect(q('[data-fuse-banked-at="doubleBagger"]').textContent).toBe('BANKED · 1:15');
   });
+  it('A8: closed with no minute bars (the 30-minute fallback) — "Market closed", never a 30-minute bar\'s open as the last tick', async () => {
+    seedEog('2026-10-14T20:30:00.000Z'); // 4:30 PM ET
+    net.minute.EOG = [];
+    net.intraday.EOG = [bar('2026-10-14T19:30:00.000Z', 163.4, 163.75, 163.3, 163.7), bar('2026-10-14T19:00:00.000Z', 163, 163.5, 162.9, 163.4)];
+    await open(163.7, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z' }));
+    expect(q('[data-redzone-state="closed"]')).not.toBeNull();
+    expect(text()).toContain('Market closed');
+    expect(text()).not.toMatch(/last tick 3:30/i);
+  });
   it('C4: a late queue (the 1:15 slot scored at 1:19:20) — the banked moment names the 1:15 check, never 1:19', async () => {
     seedEog('2026-10-14T17:20:00.000Z');
     await open(163.95, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z' }));
@@ -380,10 +397,12 @@ describe('lens B: the poll follows the session under an open red zone (B1, B4)',
     await render(<AssetResearchModal asset={{ ...eogAsset, price: 163.6 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={163.6} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
   };
   it('B1: opened at 9:29 in a closed red zone — at 9:30 the zone opens and the 15-second poll starts', async () => {
-    await openAt('2026-10-14T13:29:00.000Z', [bar('2026-10-14T13:31:00.000Z', 163.5, 163.6, 163.4, 163.6), bar('2026-10-14T13:30:00.000Z', 163.4, 163.5, 163.3, 163.5)]);
+    // At 9:29 the minute series ends at yesterday's close; today's first bar is served from the first poll on.
+    await openAt('2026-10-14T13:29:00.000Z', [bar('2026-10-13T19:59:00.000Z', 155.5, 155.6, 155.4, 155.6), bar('2026-10-13T19:58:00.000Z', 155.4, 155.5, 155.3, 155.5)]);
     expect(q('[data-redzone-state="closed"]')).not.toBeNull();
     await tick(30_000);
     expect(minuteCalls()).toBe(1); // closed: no poll
+    net.minute.EOG = [bar('2026-10-14T13:30:00.000Z', 163.4, 163.6, 163.3, 163.55)];
     await tick(31_000); // 9:30:01
     expect(q('[data-bomb-redzone-chip="approaching"]')).not.toBeNull();
     const at930 = minuteCalls();
@@ -391,6 +410,8 @@ describe('lens B: the poll follows the session under an open red zone (B1, B4)',
     expect(minuteCalls()).toBe(at930 + 1);
     await tick(15_000);
     expect(minuteCalls()).toBe(at930 + 2);
+    // Inherited, not changed (reported): useResearchData stops its poll after three stale answers, so a
+    // series still ending yesterday at 9:30:45 leaves the trace on yesterday's bars (refuter B).
   });
   it('B4: a red zone open across 4:00 PM — the zone closes and the poll stops', async () => {
     await openAt('2026-10-14T19:59:00.000Z', [bar('2026-10-14T19:58:00.000Z', 163.5, 163.6, 163.4, 163.6), bar('2026-10-14T19:57:00.000Z', 163.4, 163.5, 163.3, 163.5)]);

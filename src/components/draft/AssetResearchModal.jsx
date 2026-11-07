@@ -383,10 +383,15 @@ const AssetResearchModal = ({
     bars: researchData.ohlcvData,
   });
   // The sheet asks for a threshold exactly when BaggerBombTab does today (the
-  // tab is showing, the asset carries none, it is not a measured position):
-  // the same request, never a new one.
+  // tab is showing, the asset carries none, it is not a measured position) —
+  // and once when the 💣 view opens without one, which the Fuse needs as much
+  // as the sheet does (review B, N2: otherwise the 💣 view says "no ladder yet"
+  // until the tab is opened). The same request.
+  const bombViewOpen = researchData.timeframe === 'bomb' || researchData.timeframe === 'spectate';
+  const haveBombThreshold = !!bombThreshold && bombThreshold.symbol === currentAsset?.symbol;
+  const askBombThreshold = bombOn && (activeTab === 'baggerbomb' || (bombViewOpen && !haveBombThreshold));
   useEffect(() => {
-    if (!bombOn || activeTab !== 'baggerbomb') return undefined;
+    if (!askBombThreshold) return undefined;
     if (currentAsset?.stockRewardRoute || currentAsset?.threshold) return undefined;
     const symbol = currentAsset?.symbol;
     if (!symbol) return undefined;
@@ -395,7 +400,7 @@ const AssetResearchModal = ({
       .then(result => { if (!cancelled && result?.[symbol]) setBombThreshold({ symbol, threshold: result[symbol].threshold }); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [bombOn, activeTab, currentAsset?.symbol, currentAsset?.threshold, currentAsset?.isCrypto, currentAsset?.stockRewardRoute]);
+  }, [askBombThreshold, currentAsset?.symbol, currentAsset?.threshold, currentAsset?.isCrypto, currentAsset?.stockRewardRoute]);
 
   // v2: Measure container height for drawer snap points
   useEffect(() => {

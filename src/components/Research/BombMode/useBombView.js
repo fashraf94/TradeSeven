@@ -131,7 +131,9 @@ export default function useBombView({
   // Right after spectate → bomb the hook still holds the minute bars until the
   // 30-minute series arrives: the ghost keeps only bars spaced 30 minutes or more.
   const spacing = timeframe === 'bomb' && Array.isArray(bars) ? traceParts(bars, []).intervalMin : null;
-  if (timeframe === 'bomb' && Array.isArray(bars) && (spacing === null || spacing >= 30)) ghostRef.current = { symbol, bars };
+  // (and at most an hour apart: the 1D chart's daily bars, still held while the
+  // 30-minute series loads after 1D → 💣, are not 30-minute closes either — review B3).
+  if (timeframe === 'bomb' && Array.isArray(bars) && (spacing === null || (spacing >= 30 && spacing <= 60))) ghostRef.current = { symbol, bars };
   const ghost = ghostRef.current.symbol === symbol ? ghostRef.current.bars : [];
   const trace = traceParts(timeframe === 'spectate' ? bars : [], observations);
   const clock = held ? checkClock(nowMs, { battleExpiresAtMs: record?.battleExpiresAtMs, lastScoredAtMs: record?.lastScoredAtMs }) : null;
