@@ -80,13 +80,16 @@ export const PHONE_ARMORY = Object.freeze({ centre: 152, slot: 48, radius: 116, 
 
 /**
  * The phone hub's bare hero while the armory is closed (founder ruling D-A, Nov 6, 2026; with the flag on only): bare
- * Shadow drawn bigger than the stage's 200 px box (196 under 375 px wide), `wide` px at `at` px of hub width and up,
- * `narrow` below. The name and status sit beside the figure only while their column keeps `text` px; otherwise they
- * stack under it, so they never overlap the figure nor truncate. `chrome` is the width beside the two that is not
- * theirs: the hub's 2 × 14 gutter, the stage's 2 × 1 border, its 6 + 14 side padding and the 6 px gap. Measured in
- * headless Edge at 320, 360 and 390 (the A1 report §15). One line each, so a founder tune is a one-line change.
+ * Shadow a quarter bigger than in the stage's 200 px box (196 under 375 px wide), `wide` px at `at` px of hub width and up,
+ * `narrow` below. Bare Shadow's framing is fixed, so the figure grows exactly with its box (measured: its lit extent is
+ * 51 % of the box's width at every size), and a quarter bigger is 1.25 × the box. The name and status sit beside the
+ * figure only while their column keeps `text` px; otherwise they stack under it, so they never overlap the figure nor
+ * truncate. `chrome` is the width beside the two that is not theirs: the hub's 2 × 14 gutter, the stage's 2 × 1 border,
+ * its 6 + 14 side padding and the 6 px gap. Stacked, the words rise `tuck` of the box into its empty lower margin (the
+ * figure fills its middle half). Measured in headless Edge at 320, 360 and 390 (the A1 report §15). One line each, so a
+ * founder tune is a one-line change.
  */
-export const PHONE_HERO = Object.freeze({ wide: 240, narrow: 220, at: 375, text: 120, chrome: 56 });
+export const PHONE_HERO = Object.freeze({ wide: 250, narrow: 245, at: 375, text: 120, chrome: 56, tuck: .1 });
 
 /** The phone hero's box and layout at the hub's measured width (unmeasured: the wide size, stacked, which overlaps nothing). */
 export function phoneHero(width) {

@@ -112,10 +112,13 @@ describe('D-A: the phone hub\'s bare hero, at 320, 360 and 390 px (and wider)', 
   /** The stage's content width beside the hero and the gap, from the source's own numbers. */
   const besideRoom = (width, size) => width - 2 * 14 - 2 * 1 - (6 + 14) - 6 - size;
 
-  it('the defaults: about a quarter bigger than PhoneStage\'s 200 px box (196 under 375 px), 240 from 375 px and 220 below', () => {
-    expect([wide, narrow, at]).toEqual([240, 220, 375]);
-    expect(phoneHero(375).size).toBe(240);
-    expect(phoneHero(374).size).toBe(220);
+  it('the defaults: a quarter bigger than PhoneStage\'s 200 px box (196 under 375 px), 250 from 375 px and 245 below', () => {
+    expect([wide, narrow, at]).toEqual([250, 245, 375]);
+    // bare Shadow's framing is fixed, so the figure grows with its box: a quarter bigger is 1.25 × each old box
+    expect(wide / 200).toBeCloseTo(1.25, 2);
+    expect(narrow / 196).toBeCloseTo(1.25, 2);
+    expect(phoneHero(375).size).toBe(250);
+    expect(phoneHero(374).size).toBe(245);
     // and never the old box, at any phone width
     for (let w = 300; w <= 768; w += 1) expect([196, 200], String(w)).not.toContain(phoneHero(w).size);
   });
@@ -126,9 +129,11 @@ describe('D-A: the phone hub\'s bare hero, at 320, 360 and 390 px (and wider)', 
     expect(chrome).toBe(2 * 14 + 2 * 1 + 6 + 14 + 6);
   });
 
-  it.each([[320, 220], [360, 220], [390, 240]])('at %i px the hero is %i px and its words stack under it (beside it, their column would be narrower than PHONE_HERO.text)', (width, size) => {
+  it.each([[320, 245], [360, 245], [390, 250]])('at %i px the hero is %i px and its words stack under it (beside it, their column would be narrower than PHONE_HERO.text)', (width, size) => {
     expect(phoneHero(width)).toEqual({ size, stacked: true });
     expect(besideRoom(width, size)).toBeLessThan(text);
+    // stacked, the hero fits the stage's content width (the stage's 14 + 14 padding)
+    expect(size).toBeLessThanOrEqual(width - 2 * 14 - 2 * 1 - 2 * 14);
   });
 
   it('the words go beside the hero only where their column keeps its width, never narrower, at every width', () => {
@@ -137,11 +142,18 @@ describe('D-A: the phone hub\'s bare hero, at 320, 360 and 390 px (and wider)', 
       if (!stacked) expect(besideRoom(w, size), String(w)).toBeGreaterThanOrEqual(text);
       else expect(besideRoom(w, size), String(w)).toBeLessThan(text);
     }
-    expect(phoneHero(430)).toEqual({ size: 240, stacked: false });
+    expect(phoneHero(430)).toEqual({ size: 250, stacked: false });
   });
 
   it('unmeasured (the first render): the wide size, stacked, which overlaps nothing at any width', () => {
-    for (const w of [null, undefined, 0, Number.NaN]) expect(phoneHero(w)).toEqual({ size: 240, stacked: true });
+    for (const w of [null, undefined, 0, Number.NaN]) expect(phoneHero(w)).toEqual({ size: 250, stacked: true });
+  });
+
+  it('stacked, the words rise a tenth of the box into its empty lower margin, never as far as the figure (which fills its middle half)', () => {
+    expect(PHONE_HERO.tuck).toBe(.1);
+    // measured: the bare figure's lit extent is 51 % of its box wide and 55 % high, so its lower margin is 22 % of the box
+    expect(PHONE_HERO.tuck).toBeLessThan((1 - .55) / 2 - .1);
+    expect(read('ShadowStage.jsx')).toContain('marginTop: -Math.round(hero.size * PHONE_HERO.tuck)');
   });
 });
 

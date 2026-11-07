@@ -43,7 +43,7 @@ import AreaControls from './AreaControls';
 import HubAgentForm, { HubAgentFormContext } from './HubAgentForm';
 import ShadowCanvas from './ShadowCanvas';
 import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
-import { ArmoryStageContext, PHONE_ARMORY, PhoneArmoryDetails, PhoneArmoryRing, armoryHeroRead } from './Armory';
+import { ArmoryStageContext, PHONE_ARMORY, PHONE_HERO, PhoneArmoryDetails, PhoneArmoryRing, armoryHeroRead } from './Armory';
 
 /** The charge in flight, as a percentage: visible, aria-hidden, never in the live region (spec §5.5). */
 function HoldPercent({ progress, small }) {
@@ -304,7 +304,7 @@ function PhoneArmoryStage({ size, status, processing, words, selectedArea, summa
           </HubAgentFormContext.Provider>
         </div>
         {open ? <PhoneArmoryRing scope={scope} /> : stacked ? (
-          <div data-hub-hero-text="" style={{ width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' }}>
+          <div data-hub-hero-text="" style={{ width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center', marginTop: -Math.round(hero.size * PHONE_HERO.tuck) }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', flexWrap: 'wrap', columnGap: 10, rowGap: 2 }}>
               <span style={{ fontSize: 23, fontWeight: 700, letterSpacing: '-0.015em', color: C.ink, lineHeight: 1.05 }}>{COPY.shadow.name}</span>
               <span style={{ fontSize: 14.5, color: C.ink2, lineHeight: 1.3 }}>{COPY.shadow.role}</span>

@@ -342,7 +342,7 @@ const closesOnce = (h, from, previewed) => {
   expect(after.slice(0, at).every((p) => p.archetype === previewed && p.size === PHONE_ARMORY.centre)).toBe(true);
   const worn = after.slice(at).filter((p) => p.archetype !== undefined);
   expect(worn.map((p) => p.archetype), 'a set worn again after the close').toEqual([]);
-  // back to the bare hero's own size (ruling D-A: 240 at the rows' 390 px), in the same render as the unequip
+  // back to the bare hero's own size (ruling D-A: 250 at the rows' 390 px), in the same render as the unequip
   expect(after[at].size).toBe(phoneHero(390).size);
   expect(after[at].equipOnChange).toBe(true);
 };
@@ -452,7 +452,7 @@ describe('the phone: the armory in the hero\'s box (FD-8)', () => {
   it('the text column and the area lines fold away; the hero is the same view, shrunk to the armory\'s centre and live', async () => {
     await renderHub({ site: 'mobile', hubWidth: 390 });
     const h = hero();
-    expect(propsOf(h).size).toBe(240);
+    expect(propsOf(h).size).toBe(250);
     const stage = document.querySelector('[data-hub-stage="phone"]');
     expect(stage.textContent).toContain(COPY.shadow.name);
     click(btn(COPY.loadout.changeArchetype));
@@ -733,13 +733,13 @@ describe('N2(d): the phone armory steps aside', () => {
 // ── Founder ruling D-A (Nov 6, 2026): a bigger bare Shadow on the phone hub ───────────────────────────────────────────
 // With the flag on the phone hero is bare Shadow (N1), drawn bigger than PhoneStage's 200 px box (196 under 375 px):
 // Armory.jsx phoneHero, from the hub's measured width. Its name and status stack under it where beside it they would not
-// keep their column (every phone width up to about 420 px); the armory still opens to its 152 px centre and closes back.
+// keep their column (every phone width under 426 px); the armory still opens to its 152 px centre and closes back.
 // jsdom has no layout, so these rows pin the sizes, the layout and the order; the browser harness measures the boxes.
 describe('D-A: the phone hub\'s bigger bare hero', () => {
   const stage = () => document.querySelector('[data-hub-stage="phone"]');
   const layoutOf = () => stage().querySelector('[data-hub-hero-layout]')?.getAttribute('data-hub-hero-layout') ?? null;
 
-  it.each([[320, 220], [360, 220], [390, 240]])('at %i px the hero is %i px, and its name and status stack under it', async (width, size) => {
+  it.each([[320, 245], [360, 245], [390, 250]])('at %i px the hero is %i px, and its name and status stack under it', async (width, size) => {
     await renderHub({ site: 'mobile', hubWidth: width });
     expect(propsOf(hero()).size).toBe(size);
     expect(layoutOf()).toBe('stacked');
@@ -758,13 +758,13 @@ describe('D-A: the phone hub\'s bigger bare hero', () => {
 
   it('wide enough for their column (430 px), the words go beside the hero, which keeps its size', async () => {
     await renderHub({ site: 'mobile', hubWidth: 430 });
-    expect(propsOf(hero()).size).toBe(240);
+    expect(propsOf(hero()).size).toBe(250);
     expect(layoutOf()).toBe('beside');
     expect(stage().querySelector('[data-hub-hero-text]').style.flex).toMatch(/^1/);
   });
 
   it('the armory opens from the bigger hero to its 152 px centre and closes back to it, one view throughout (at 320 px too)', async () => {
-    for (const [width, size] of [[390, 240], [320, 220]]) {
+    for (const [width, size] of [[390, 250], [320, 245]]) {
       await renderHub({ site: 'mobile', hubWidth: width });
       const h = hero();
       expect(propsOf(h).size).toBe(size);
