@@ -79,6 +79,22 @@ describe('the scored price (spec §3.2) and lastScoredAt', () => {
     expect(r.scored).toEqual({ price: 101, atMs: Date.parse(ctx.quoteEvidence.providerAsOf), source: 'stockRewardContexts' });
     expect(r.scored.price).toBe(ctx.currentPrice);
   });
+  it('measured: the price the LATEST check read — not the position\'s high (two checks: 103, then 101)', async () => {
+    const prior = process.env.EODHD_API_KEY; process.env.EODHD_API_KEY = 'isolated-key';
+    try {
+      const { battle } = await correctedStockBattle({ fill: 100.75 });
+      for (const [quote, at] of [[103, STOCK_TEST_NOW], [101, '2026-10-14T14:17:00.000Z']]) {
+        const prices = { AAPL: { current: quote, timestamp: Date.parse(at) / 1000 } };
+        const scores = ['agent', 'cpu'].map((side) => scoreCorrectedPosition(battle, { ...(side === 'agent' ? battle.portfolio : battle.opponent.portfolio).star[0], tier: 'star' }, side, prices, at));
+        const h = stockWriterDb({ battle }); await h.db.doc('battle').update(correctedScorePatch(battle, [scores[0]], [scores[1]], at)); Object.assign(battle, h.store.get('battle'));
+      }
+      const ctx = battle.scoring.stockRewardContexts.agent['position-agent'];
+      expect(ctx.history.high).toBe(103); // the bagger ($102.765) stays banked
+      const r = selectBombRecord(battle, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z'));
+      expect(r.scored).toEqual({ price: 101, atMs: Date.parse('2026-10-14T14:17:00.000Z'), source: 'stockRewardContexts' });
+      expect(r.measured.crossedTiers).toEqual(['bagger']);
+    } finally { if (prior === undefined) delete process.env.EODHD_API_KEY; else process.env.EODHD_API_KEY = prior; }
+  });
   it('measured: an unavailable committed context → no scored price', async () => {
     const b = await committedMeasured(101);
     b.scoring.stockRewardContexts.agent['position-agent'] = { status: 'unavailable', reason: 'x' };
