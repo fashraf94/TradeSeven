@@ -14,23 +14,18 @@
 //
 // Every module-level call is marked pure: flag-off nothing imports this module, and nothing of it may survive.
 
-import { baggerbombLoadoutOf, bookIdOf, leagueLoadoutOf, LOADOUT_KINDS } from '../../../constants/perGameLoadout';
+import { baggerbombLoadoutOf, bookIdOf, formatLockEnd, leagueLoadoutOf, LOADOUT_KINDS } from '../../../constants/perGameLoadout';
+import { LOADOUT_COPY } from '../../../constants/loadoutCopy';
 import { findLiveBaggerBomb } from '../../../utils/commandCenterLiveBattles';
 import { archetypeLines } from './archetypeLines';
-import { formatHubDay, formatHubTime } from './hubDate';
-import { HUB_COPY, LOADOUT_COPY } from './hubCopy';
+import { HUB_COPY } from './hubCopy';
 import { symbolsOf } from './selectors/loadout';
 
 /** A card's one state (board 7 #3); CHECKING until the League read answers. */
 export const CARD_STATE = /* @__PURE__ */ Object.freeze({ NEXT: 'next', RUNNING: 'running', LOCKED: 'locked', OPEN: 'open', NOBOOK: 'nobook', CHECKING: 'checking' });
 
-const ET_WEEKDAY = /* @__PURE__ */ new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' });
-
-/** "Fri Nov 6, 4:00 PM" — the lock's end, read in ET as every hub time is; null when it has none. */
-export function lockWhenOf(endsAtMs) {
-  if (typeof endsAtMs !== 'number' || !Number.isFinite(endsAtMs)) return null;
-  return `${ET_WEEKDAY.format(new Date(endsAtMs))} ${formatHubDay(endsAtMs)}, ${formatHubTime(endsAtMs)}`;
-}
+/** "Fri Nov 6, 4:00 PM" — the lock's end, read in ET (the shared model's one formatter); null when it has none. */
+export const lockWhenOf = formatLockEnd;
 
 /** A book as a card shows it: its id, its name, its count of names (null while the lists have not answered). */
 export function bookViewOf(book, committed) {

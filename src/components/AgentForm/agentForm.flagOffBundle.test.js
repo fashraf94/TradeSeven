@@ -53,6 +53,24 @@ const ARMORY = 'src/components/CommandCenter/Armory.jsx';
 const LINES = 'src/components/CommandCenter/hub/archetypeLines.js';
 const STAGE = 'src/components/CommandCenter/ShadowStage.jsx';
 const STAGE_USED = ['PhoneStage', 'ShadowStage', 'StatusLine', 'connectorPath'];
+// Build A2 (per-game loadouts, PER_GAME_LOADOUT_ENABLED, dark): the flag's own module, rewritten false as the agent form
+// flags are, and the A2 modules the flag-off graph reaches — each imported and unused (every read of it sits inside a
+// `PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED` ternary), so each bundles to nothing.
+const PER_GAME_FLAGS = 'src/config/perGameLoadoutFlags.js';
+const A2_UNUSED = Object.freeze([
+  'src/components/CommandCenter/LoadoutCards.jsx',
+  'src/components/CommandCenter/LoadoutBookSheet.jsx',
+  'src/components/CommandCenter/PerGameLoadoutScope.jsx',
+  'src/components/CommandCenter/hub/perGameLoadoutContext.js',
+  'src/components/CommandCenter/hub/perGameLoadoutModel.js',
+  'src/components/CommandCenter/hub/useLeagueLoadoutLock.js',
+  'src/components/AgentForm/LoadoutStill.jsx',
+  'src/components/League/leagueLoadoutSlot.jsx',
+  'src/constants/perGameLoadout.js',
+  'src/constants/loadoutCopy.js',
+]);
+const A2_CONTEXT = 'src/components/CommandCenter/hub/perGameLoadoutContext.js';
+const A2_SLOT = 'src/components/League/leagueLoadoutSlot.jsx';
 
 /** Each module the flag-off graph reaches, with the exports that graph reads from it. */
 const REACHED = [
@@ -65,6 +83,7 @@ const REACHED = [
   [ARMORY, []],
   [LINES, ['archetypeLines']],
   [STAGE, STAGE_USED],
+  ...A2_UNUSED.map((rel) => [rel, []]),
 ];
 
 const ENTRY = '\0agent-form-flag-off-entry';
@@ -78,7 +97,7 @@ const flagOff = (code) => code.replace(/^(export const \w+_ENABLED = )true;$/gm,
  * does not list it).
  */
 async function bundle(rel, used, source) {
-  const target = idOf(rel), flags = idOf(FLAGS);
+  const target = idOf(rel), flags = idOf(FLAGS), perGame = idOf(PER_GAME_FLAGS);
   const entry = used.length ? `export { ${used.join(', ')} } from ${JSON.stringify(target)};` : `import ${JSON.stringify(target)};`;
   const loaded = [];
   const result = await build({
@@ -94,12 +113,14 @@ async function bundle(rel, used, source) {
         if (spec === ENTRY) return ENTRY;
         if (importer === ENTRY) return target;
         if (importer !== target) return null;
+        if (/(^|\/)perGameLoadoutFlags(\.js)?$/.test(spec)) return perGame; // build A2: the second flag module, internal too
         return /(^|\/)agentFormFlags(\.js)?$/.test(spec) ? flags : { id: spec, external: true };
       },
       load(id) {
         loaded.push(id);
         if (id === ENTRY) return entry;
         if (id === flags) return flagOff(read(FLAGS));
+        if (id === perGame) return flagOff(read(PER_GAME_FLAGS));
         if (id === target && source != null) return source;
         return null;
       },
@@ -212,6 +233,26 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
     expect(code.trim()).toBe('');
   }, 30000);
 
+  it.each(A2_UNUSED)('build A2: %s, imported and unused: nothing (its module-level calls are literals or marked pure)', async (rel) => {
+    const { code } = await bundle(rel, []);
+    expect(leftovers(code)).toEqual([]);
+    expect(code.trim()).toBe('');
+  }, 30000);
+
+  it('build A2: the shipped hub modules that read the per-game flag bundle with nothing of A2 when it is off', async () => {
+    for (const [rel, used, gone] of [
+      ['src/components/CommandCenter/panels/LoadoutPanel.jsx', ['default'], /\bLoadoutCards\b|\bAdjustmentsCard\b/],
+      ['src/components/CommandCenter/sections/DeploySection.jsx', ['default', 'PhoneDeployCard'], /\bDeployLoadoutLine\b/],
+      ['src/components/CommandCenter/LoadoutSheets.jsx', ['default'], /\bLoadoutBookSheet\b/],
+      ['src/components/CommandCenter/hub/useHubRuntime.js', ['useHubRuntime'], /\bscopeSummary\b|\bPerGameLoadoutContext\b/],
+      ['src/adapters/baggerbombAdapter.js', ['buildBaggerbombAdapter'], /\bPER_GAME_LOADOUT_ENABLED\b/],
+    ]) {
+      const { code } = await bundle(rel, used);
+      expect(code, rel).not.toMatch(gone);
+      expect(code, rel).not.toMatch(/\bperGameLoadout|\bloadoutService\b|\bleagueLockService\b/);
+    }
+  }, 60000);
+
   it('hub/archetypeLines.js, with archetypeLines used: archetypeLines alone (armoryLines, build A1, is dropped)', async () => {
     const { code } = await bundle(LINES, ['archetypeLines']);
     expect(exportsOf(code)).toEqual(['archetypeLines']);
@@ -274,6 +315,9 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
       ['a frozen copy key list nothing reads', HUB_COPY_FILE, ['HUB_COPY'], `${read(HUB_COPY_FILE)}\nexport const AGENT_FORM_COPY_KEYS = Object.freeze(Object.keys(AGENT_FORM_COPY));\n`],
       ['S2R-2: a frozen key list nothing reads, in fuseFormLayout.js', FUSE_LAYOUT, [], `${read(FUSE_LAYOUT)}\nexport const FUSE_FORM_KEYS = Object.freeze(Object.keys(FUSE_FORM_PX));\n`],
       ['A1: the mark off the armory\'s context', ARMORY, [], plant(ARMORY, 'ArmoryStageContext = /* @__PURE__ */ createContext(null)', 'ArmoryStageContext = createContext(null)')],
+      ['A2: the mark off the loadout context', A2_CONTEXT, [], plant(A2_CONTEXT, 'PerGameLoadoutContext = /* @__PURE__ */ createContext(null)', 'PerGameLoadoutContext = createContext(null)')],
+      ['A2: the League line declared without its flags', A2_SLOT, [], plant(A2_SLOT, 'const LazyLeagueLine = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED\n  ? lazy', 'const LazyLeagueLine = true\n  ? lazy')],
+      ['A2: a model constant that reads another binding\'s property', 'src/constants/perGameLoadout.js', [], plant('src/constants/perGameLoadout.js', "Object.freeze(['baggerbomb', 'league'])", 'Object.freeze([LOADOUT_KINDS.BAGGERBOMB, LOADOUT_KINDS.LEAGUE])')],
     ];
     for (const [what, rel, used, source] of plants) expect(leftovers((await bundle(rel, used, source)).code), what).not.toEqual([]);
     for (const [rel, used] of REACHED) expect(leftovers((await bundle(rel, used, read(rel))).code), rel).toEqual([]);

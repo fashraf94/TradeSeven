@@ -48,13 +48,15 @@ import { changeArchetype } from '../../services/agentService';
 import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
 import { changeLoadoutArchetype, isLeagueLock } from '../../services/loadoutService';
 import { PerGameLoadoutContext, cardsOf } from './hub/perGameLoadoutContext';
-import { armoryContextOf, armoryFootnoteOf, lockWhenOf } from './hub/perGameLoadoutModel';
+import { armoryContextOf, armoryFootnoteOf } from './hub/perGameLoadoutModel';
+import { formatLockEndIso } from '../../constants/perGameLoadout';
+import { LOADOUT_COPY } from '../../constants/loadoutCopy';
 import AgentForm from '../AgentForm/AgentForm';
 import { SET_ALONE, UNLIT, hasWebGL } from '../AgentForm/agentFormSpec';
 import { getAgentGrowth } from '../AgentForm/agentGrowth';
 import { armoryLines } from './hub/archetypeLines';
 import { HUB_COMPOSITIONS } from './hub/composition';
-import { ARMORY_COPY, HUB_COPY as COPY, LOADOUT_COPY } from './hub/hubCopy';
+import { ARMORY_COPY, HUB_COPY as COPY } from './hub/hubCopy';
 import { C, HAIR, HAIR_2, MONO, PHONE_TARGET, tint } from './hub/hubStyle';
 import HubSheet from './HubSheet';
 import { Eyebrow, HubButton, Icon, useHubComposition } from './HubParts';
@@ -182,8 +184,7 @@ export function armoryCardOf(scope) {
  */
 export function loadoutEquipErrorOf(error) {
   if (isLeagueLock(error)) {
-    const ends = Date.parse(error?.payload?.lock?.endsAt ?? '');
-    const when = lockWhenOf(Number.isFinite(ends) ? ends : null);
+    const when = formatLockEndIso(error?.payload?.lock?.endsAt ?? null);
     return when ? LOADOUT_COPY.lines.locked(when) : LOADOUT_COPY.lines.lockedUndated;
   }
   return equipErrorOf(error);

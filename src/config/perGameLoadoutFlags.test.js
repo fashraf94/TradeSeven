@@ -109,8 +109,54 @@ const SERVER_READS = {
 
 /** The client's reads: each a literal ternary (or `FLAG && …` inside one) that Rollup folds to today's expression. */
 const CLIENT_READS = {
-  'src/adapters/baggerbombAdapter.js': [
-    'archetype: PER_GAME_LOADOUT_ENABLED ? battle?.agentContext?.archetype ?? agent?.archetype ?? null : agent?.archetype ?? battle?.agentContext?.archetype ?? null,',
+  "src/adapters/baggerbombAdapter.js": [
+    "archetype: PER_GAME_LOADOUT_ENABLED ? battle?.agentContext?.archetype ?? agent?.archetype ?? null : agent?.archetype ?? battle?.agentContext?.archetype ?? null,",
+  ],
+  "src/App.jsx": [
+    "agentLoadout={primaryAgent ? (PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName, openLoadout: () => setScreen('dashboard') } : { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName }) : null}",
+  ],
+  "src/components/CommandCenter/Armory.jsx": [
+    "const card = PER_GAME_LOADOUT_ENABLED ? armoryCardOf(use(PerGameLoadoutContext)) : null;",
+    "const card = PER_GAME_LOADOUT_ENABLED ? armoryCardOf(use(PerGameLoadoutContext)) : null;",
+  ],
+  "src/components/CommandCenter/CommandCenterHub.jsx": [
+    "loadoutLine: PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? scopeDeployLine(use(PerGameLoadoutContext)) ?? loadoutLineOf(sections.loadout) : loadoutLineOf(sections.loadout),",
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+    "const panel = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+    "deploy: PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+    "PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+  ],
+  "src/components/CommandCenter/hub/useHubRuntime.js": [
+    "loadout: loadout.status === LOADOUT_STATUS.READY ? { ...loadout, summary: PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? scopeSummary(use(PerGameLoadoutContext)) ?? loadoutLineOf(loadout) : loadoutLineOf(loadout) } : loadout,",
+    "changeArchetype: (PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? ready : unlocked) ? sheets.open(HUB_SHEETS.ARCHETYPE) : undefined,",
+    "changeWatchlist: (PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? ready : unlocked) ? sheets.open(HUB_SHEETS.WATCHLIST) : undefined,",
+  ],
+  "src/components/CommandCenter/LoadoutSheets.jsx": [
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+  ],
+  "src/components/CommandCenter/panels/LoadoutPanel.jsx": [
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? null : (",
+  ],
+  "src/components/CommandCenter/sections/DeploySection.jsx": [
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? <DeployLoadoutLine onOpen={onOpenLoadout} /> : (",
+  ],
+  "src/components/League/LeagueDeskParts.jsx": [
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? <TrainingLoadoutSlot agentLoadout={agentLoadout} /> : (",
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? null : (",
+  ],
+  "src/components/League/leagueLoadoutSlot.jsx": [
+    "const LazyLeagueLine = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED",
+    "const LazyTrainingLine = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED",
+  ],
+  "src/components/League/LeagueLobbyDesktop.jsx": [
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+  ],
+  "src/components/League/LeagueLobbyRedesign.jsx": [
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? <TrainingLoadoutSlot agentLoadout={agentLoadout} /> : (",
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? null : (",
+    "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
   ],
 };
 
@@ -124,7 +170,8 @@ describe('PER_GAME_LOADOUT_ENABLED — every read, exact', () => {
   for (const [file, lines] of Object.entries(CLIENT_READS)) {
     it(`${file}: the client's reads, each a literal ternary`, () => {
       expect(readsOf(file)).toEqual(lines);
-      for (const line of lines) expect(line).toMatch(/PER_GAME_LOADOUT_ENABLED(?: && AGENT_FORM_ARMORY_ENABLED)?(?: && [^?]+)? \?/);
+      // the ternary's `?` on the line, or opening the next (a multi-line declaration)
+      for (const line of lines) expect(line).toMatch(/PER_GAME_LOADOUT_ENABLED(?: && AGENT_FORM_ARMORY_ENABLED)?(?: && [^?]+)?(?: \?|$)/);
     });
   }
 

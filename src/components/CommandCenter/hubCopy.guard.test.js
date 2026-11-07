@@ -35,6 +35,7 @@ import acornJsx from 'acorn-jsx';
 import { describe, expect, it } from 'vitest';
 import { ARMORY_COPY, HUB_COPY } from './hub/hubCopy';
 import { HUB_GATE_COPY } from './hubGateCopy';
+import { LOADOUT_COPY } from '../../constants/loadoutCopy';
 
 const JsxParser = Parser.extend(acornJsx());
 /** Parse a module, JSX included. A file that does not parse fails its row; none is skipped. */
@@ -45,7 +46,9 @@ const REPO_ROOT = path.resolve(HERE, '..', '..', '..');
 const read = (rel) => readFileSync(path.join(REPO_ROOT, rel), 'utf8').replace(/\r\n/g, '\n');
 
 const DIR = 'src/components/CommandCenter';
-const COPY_TABLES = [`${DIR}/hub/hubCopy.js`, `${DIR}/hubGateCopy.js`];
+// Build A2: the per-game loadout surfaces' table, outside the directory so the League's lazy line can share it
+// (src/constants/loadoutCopy.js); every row below that reads COPY_TABLES reads it too.
+const COPY_TABLES = [`${DIR}/hub/hubCopy.js`, `${DIR}/hubGateCopy.js`, 'src/constants/loadoutCopy.js'];
 
 function hubSourceFiles() {
   const out = [];
@@ -562,5 +565,83 @@ describe('A1: the armory\'s copy carries no count, stage or growth (D4, FD-6), a
     for (const board of ['Equipped · 31 battles', 'Never worn', '3 battles · stage 1', 'Shadow’s core · 24 battles', '12 battles as the Contrarian']) {
       expect(growthIn([board]), board).not.toEqual([]);
     }
+  });
+});
+
+// ── Build A2: the per-game loadout surfaces' words (FD-1, FD-3, D4; the boards' #6 reversed) ─────────────────────────────
+// LOADOUT_COPY is a COPY_TABLES table, so the rows above read every literal of it (no digit, no banned claim). These rows
+// add what the A2 rulings shape. The A1 rows' ban on "next deploy" stays on ARMORY_COPY (it is still A1's words while
+// per-game loadouts are off); with A2 the phrase is TRUE for BaggerBomb (FD-1: a BaggerBomb change applies to the next
+// deploy), so it moves here, allowed in exactly the BaggerBomb strings and in no League one. FD-1's exact pin moves to
+// the BaggerBomb footnote.
+describe('A2: the loadout copy — "next deploy" for BaggerBomb only, the lock says why and until when, no book is the open market', () => {
+  const sampled = () => strings(LOADOUT_COPY).map((s) => s.replace(/ARG\d+/g, ''));
+  const literals = () => sourceStrings(read('src/constants/loadoutCopy.js'));
+  // No count of battles, stage, level or record fact (D4; A4 fills the record slot): the A1 list less "games", since
+  // "both games" counts nothing, and with the boards' "record facts · later" slot named.
+  const GROWTH = [/\d/, /\bstages?\b/i, /\bbattles\b/i, /\blevels?\b/i, /\bxp\b/i, /\bthresholds?\b/i, /\bwins?\b/i, /\blosses\b/i, /\bmastery\b/i, /\bprogress/i, /record facts/i];
+  const growthIn = (strs) => strs.flatMap((s) => GROWTH.filter((re) => re.test(s)).map((re) => `${re.source}: ${s}`));
+  const pick = (path) => path.split('.').reduce((o, k) => o[k], LOADOUT_COPY);
+  const sample = (v) => (typeof v === 'function' ? v(...Array.from({ length: v.length }, (_, i) => `ARG${i}`)) : v);
+
+  it('the table is a copy table of this guard, imports nothing, and holds no count, stage, level or record fact', () => {
+    expect(COPY_TABLES).toContain('src/constants/loadoutCopy.js');
+    expect(read('src/constants/loadoutCopy.js')).not.toMatch(/^\s*import\b/m);
+    expect(literals().length).toBeGreaterThan(30);
+    expect(growthIn([...literals(), ...sampled()])).toEqual([]);
+  });
+
+  it('"next deploy" is said in exactly the BaggerBomb strings (FD-1), never in a League one', () => {
+    const BAGGERBOMB = ['tags.next', 'lines.next', 'lines.running', 'nextCarries', 'contextNext', 'footnoteBaggerbomb'];
+    const saying = [];
+    const walk = (v, at) => {
+      if (typeof v === 'string' || typeof v === 'function') { if (/next deploy/i.test(String(sample(v)))) saying.push(at); return; }
+      for (const [k, x] of Object.entries(v)) walk(x, at ? `${at}.${k}` : k);
+    };
+    walk(LOADOUT_COPY, '');
+    expect(saying.sort()).toEqual([...BAGGERBOMB].sort());
+    for (const key of ['leagueLocked', 'leagueOpen', 'leagueEyebrow', 'trainingTitle', 'trainingWhere', 'contextOpen', 'contextLocked', 'lines.locked', 'lines.open', 'lockedEquip', 'lockedEquipNote']) {
+      expect(String(sample(pick(key))), key).not.toMatch(/next deploy/i);
+    }
+  });
+
+  it('FD-1\'s pin, moved: the BaggerBomb footnote is the founder\'s line, N3 made per game', () => {
+    expect(LOADOUT_COPY.footnoteBaggerbomb).toBe('Applies to the next deploy · a game already running keeps the armor it deployed with.');
+    expect(LOADOUT_COPY.contextNext).toBe('applies to the next deploy');
+    expect(LOADOUT_COPY.context('BaggerBomb')).toBe('Choosing armor for BaggerBomb');
+    expect(LOADOUT_COPY.equipFor('Trend Follower', 'BaggerBomb')).toBe('Equip Trend Follower for BaggerBomb');
+  });
+
+  it('FD-3: a lock always says why and until when, with the real date passed in; the open line says when it locks', () => {
+    expect(LOADOUT_COPY.lines.locked('Fri Nov 7, 4:00 PM')).toBe('Locked until the week ends · Fri Nov 7, 4:00 PM. Set when you registered.');
+    expect(LOADOUT_COPY.lines.open).toBe('Open until you register for next week. It locks then.');
+    expect(LOADOUT_COPY.leagueLocked('Fri Nov 7, 4:00 PM')).toBe('Locked until the week ends · Fri Nov 7, 4:00 PM');
+    expect(LOADOUT_COPY.contextLocked('Fri Nov 7, 4:00 PM')).toBe('locked until Fri Nov 7, 4:00 PM');
+    expect(LOADOUT_COPY.lockedEquip).toBe('Locked until the week ends');
+  });
+
+  it('the boards\' #6 reversed: no book is "No book · open market", and nothing says Deploy waits for one', () => {
+    expect(LOADOUT_COPY.noBook).toBe('No book · open market');
+    expect([...literals(), ...sampled()].filter((s) => /waits for a book|needs a book/i.test(s))).toEqual([]);
+  });
+
+  it('every function takes names or a date the caller formats: the book\'s count arrives as words (HUB_COPY.loadout.names)', () => {
+    const fns = [];
+    const walk = (v, at) => {
+      if (typeof v === 'function') { fns.push([at, v.length]); return; }
+      if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, at ? `${at}.${k}` : k);
+    };
+    walk(LOADOUT_COPY, '');
+    for (const [at, n] of fns) expect(n, at).toBeLessThanOrEqual(2);
+    expect(LOADOUT_COPY.book(HUB_COPY.loadout.names(12))).toBe('Book · 12 names');
+  });
+
+  it('the rows bite: a battle count, a waiting Deploy and a League "next deploy" planted in the table are each caught', () => {
+    const code = read('src/constants/loadoutCopy.js');
+    const from = "  set: 'Set',";
+    expect(code.split(from), 'the plant\'s anchor moved').toHaveLength(2);
+    expect(growthIn(sourceStrings(code.replace(from, "  set: 'Set · 24 battles',")))).not.toEqual([]);
+    expect(sourceStrings(code.replace(from, "  set: 'Deploy waits for a book',")).filter((s) => /waits for a book/i.test(s))).not.toEqual([]);
+    expect(/next deploy/i.test('Open · the next deploy wears it')).toBe(true);
   });
 });

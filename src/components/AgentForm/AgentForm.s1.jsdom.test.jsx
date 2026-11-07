@@ -222,9 +222,10 @@ describe('the tight framing: the battle views\' option, and theirs alone (the S1
     const draws = files.filter((f) => /from '([^']*\/AgentForm\/|\.\/)AgentForm'/.test(readFileSync(f, 'utf8')) && !f.endsWith(`${path.sep}AgentForm.jsx`));
     const rel = (f) => path.relative(SRC, f).split(path.sep).join('/');
     // Build A1: the armory draws the wrapper too (its centre and its sets), at the design's framing.
-    expect(draws.map(rel).sort()).toEqual(['components/CommandCenter/Armory.jsx', 'components/CommandCenter/HubAgentForm.jsx', 'components/League/battleArena/LeagueAgentForm.jsx', 'screens/AgentFormLab.jsx', 'screens/battleView/BattleAgentForm.jsx']);
+    // Build A2: the loadout cards' and lines' still draws it too, at the design's framing.
+    expect(draws.map(rel).sort()).toEqual(['components/AgentForm/LoadoutStill.jsx', 'components/CommandCenter/Armory.jsx', 'components/CommandCenter/HubAgentForm.jsx', 'components/League/battleArena/LeagueAgentForm.jsx', 'screens/AgentFormLab.jsx', 'screens/battleView/BattleAgentForm.jsx']);
     const asks = Object.fromEntries(draws.map((f) => [rel(f), (strip(readFileSync(f, 'utf8').replace(/\r\n/g, '\n')).match(ASKS) || []).length]));
-    expect(asks).toEqual({ 'components/CommandCenter/Armory.jsx': 0, 'components/CommandCenter/HubAgentForm.jsx': 0, 'components/League/battleArena/LeagueAgentForm.jsx': 1, 'screens/AgentFormLab.jsx': 0, 'screens/battleView/BattleAgentForm.jsx': 1 });
+    expect(asks).toEqual({ 'components/AgentForm/LoadoutStill.jsx': 0, 'components/CommandCenter/Armory.jsx': 0, 'components/CommandCenter/HubAgentForm.jsx': 0, 'components/League/battleArena/LeagueAgentForm.jsx': 1, 'screens/AgentFormLab.jsx': 0, 'screens/battleView/BattleAgentForm.jsx': 1 });
     expect(readFileSync(path.join(SRC, 'screens/battleView/BattleAgentForm.jsx'), 'utf8')).toContain('framing="tight"');
     // The scan sees a planted ask, as a prop and as a key.
     expect(strip('<AgentForm framing="tight" />\nconst p = { framing: \'tight\' };').match(ASKS)).toHaveLength(2);

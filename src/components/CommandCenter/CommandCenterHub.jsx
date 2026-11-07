@@ -717,7 +717,8 @@ function ConnectedHub({ site, hub, sections }) {
   // Build A2: with per-game loadouts on (and the armory, which draws them), the shells sit in the loadout scope: the
   // owner's record, the League lock and the live games, for the cards, the lines and the armory's context. The hero
   // stays bare (N1).
-  return AGENT_FORM_HUB_ENABLED ? (PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+  return AGENT_FORM_HUB_ENABLED ? (
+    PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
     <PerGameLoadoutScope agentRead={readers.agent} activeBattles={hub?.activeBattles ?? null}>
       <HubAgentFormContext.Provider value={armoryHeroRead(readers.agent)}>
         {site === HUB_SITES.MOBILE
@@ -731,7 +732,8 @@ function ConnectedHub({ site, hub, sections }) {
         ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
         : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />}
     </HubAgentFormContext.Provider>
-  )) : site === HUB_SITES.MOBILE
+    )
+  ) : site === HUB_SITES.MOBILE
     ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
     : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />;
 }

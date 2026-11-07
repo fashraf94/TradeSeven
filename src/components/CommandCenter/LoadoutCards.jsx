@@ -14,39 +14,14 @@
 // wears a loadout outside a game). Everything comes from PerGameLoadoutScope.jsx's context; the words are LOADOUT_COPY's,
 // the names hub/archetypeLines.js's (through the model). No effect, timer or listener lives here.
 
-import React, { use, useState } from 'react';
-import AgentForm from '../AgentForm/AgentForm';
-import { hasWebGL } from '../AgentForm/agentFormSpec';
-import { getAgentGrowth } from '../AgentForm/agentGrowth';
+import React, { use } from 'react';
+import LoadoutStill, { STILL_PX } from '../AgentForm/LoadoutStill';
 import { CARD_STATE, bookSubOf, lineOf, tagOf } from './hub/perGameLoadoutModel';
-import { HUB_COPY as COPY, LOADOUT_COPY } from './hub/hubCopy';
+import { HUB_COPY as COPY } from './hub/hubCopy';
+import { LOADOUT_COPY } from '../../constants/loadoutCopy';
 import { C, HAIR, LOADOUT_CARD_MIN, MONO, tint } from './hub/hubStyle';
 import { Card, Eyebrow, HubLink, Icon, LoadingLine, Tag } from './HubParts';
 import { PerGameLoadoutContext, cardsOf } from './hub/perGameLoadoutContext';
-
-/** Board 7 #2: still sizes — 48 on cards, 40 in lines. */
-export const STILL_PX = /* @__PURE__ */ Object.freeze({ card: 48, line: 40 });
-
-/**
- * Shadow wearing a set, as a still (R12 and the rate both say still). Hidden until its view reports, so the wrapper's
- * placeholder never shows for the frame before the engine draws (the armory's Figure rule); without WebGL the wrapper's
- * own still shows at once.
- */
-export function LoadoutStill({ archetype, size }) {
-  const [shown, setShown] = useState(() => !hasWebGL());
-  const { coreStage, armorStage } = getAgentGrowth(null);
-  return (
-    <span
-      aria-hidden="true"
-      data-loadout-still={archetype || ''}
-      style={{ width: size, height: size, borderRadius: Math.round(size / 4), background: C.bg, border: `1px solid ${HAIR}`, overflow: 'hidden', flexShrink: 0, display: 'block' }}
-    >
-      <span style={{ display: 'block', visibility: shown ? 'visible' : 'hidden' }}>
-        <AgentForm archetype={archetype} coreStage={coreStage} armorStage={armorStage} allegiance="player" size={size} rate="still" label={null} bloom="css" batched clip onStatus={() => setShown(true)} />
-      </span>
-    </span>
-  );
-}
 
 /** The book's glyph: a list, dashed and dim when there is no book. */
 function BookGlyph({ size, none }) {
@@ -67,6 +42,9 @@ function Door({ locked }) {
     </span>
   );
 }
+
+/** The two halves of a card, as their data attribute names them. */
+const ROW = Object.freeze({ ARMOR: 'armor', BOOK: 'book' });
 
 const rowStyle = (dashed) => ({
   appearance: 'none', font: 'inherit', color: C.ink, textAlign: 'left', width: '100%', display: 'flex', alignItems: 'center', gap: 12, minHeight: 60,
@@ -144,7 +122,7 @@ export function LoadoutCard({ card, onArmor, onBook }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', marginTop: 4 }}>
         <LoadoutRow
-          data="armor"
+          data={ROW.ARMOR}
           icon={<LoadoutStill archetype={card.archetype} size={STILL_PX.card} />}
           name={card.name}
           sub={LOADOUT_COPY.set}
@@ -154,7 +132,7 @@ export function LoadoutCard({ card, onArmor, onBook }) {
         />
         {book.id ? (
           <LoadoutRow
-            data="book"
+            data={ROW.BOOK}
             icon={<BookGlyph size={STILL_PX.card} />}
             name={book.name}
             sub={bookSubOf(book)}
@@ -164,7 +142,7 @@ export function LoadoutCard({ card, onArmor, onBook }) {
           />
         ) : (
           <LoadoutRow
-            data="book"
+            data={ROW.BOOK}
             icon={<BookGlyph size={STILL_PX.card} none />}
             name={LOADOUT_COPY.noBook}
             sub={LOADOUT_COPY.chooseBook}
