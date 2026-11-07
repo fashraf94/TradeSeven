@@ -32,6 +32,7 @@ const { legacyBattle, legacySwap, correctedBattle, correctedSwap, tickOf, CREATE
 const { upRows, rowsWithoutNewest, snapshotFor } = await import('../../api/_utils/activationEvidence/__fixtures__/activationSnapshots.js');
 const { describeRuleSet } = await import('../../api/_utils/setupEvaluator/thresholds.js');
 const { snapshotIdOf } = await import('../../api/_utils/setupEvidence/key.js');
+const censusModule = await import('../../scripts/census-activation-evidence.mjs');
 
 const PROJECT = 'demo-tradeseven-rules';
 const ENV = 'COCKPIT_ALLOWLIST_UIDS';
@@ -777,6 +778,299 @@ describe('the return carries counts only', () => {
     expect(r.pointers.withEvidence).toBe(6);
     const text = JSON.stringify(r);
     for (const s of ['SENTINEL', 'NVDA', 'AMD', 'MSFT', 'AAPL', 'star:', SESSION, '__']) expect(text).not.toContain(s);
+  });
+});
+
+// ---------------------------------------------------------------- V1.9: Astra's review of the merged build (6 Nov, main 18d84ada)
+
+/** A db whose pointer transactions are recorded (the battle each one writes, and what was in flight when it started). */
+function recordingDb(base, onPointerTx) {
+  const real = base.runTransaction.bind(base);
+  return new Proxy(base, { get(t, k) {
+    if (k === 'runTransaction') {
+      return (fn, ...rest) => real((tx) => {
+        let seen = false;
+        const note = (ref) => {
+          const m = /^agentBattles\/([^/]+)\/activations\//.exec(String(ref?.path || ''));
+          if (m && !seen) { seen = true; onPointerTx(m[1]); }
+        };
+        const ptx = new Proxy(tx, { get(tt, kk) {
+          if (kk === 'get') return (ref, ...r) => { note(ref); return tt.get(ref, ...r); };
+          if (kk === 'getAll') return (...refs) => { note(refs[0]); return tt.getAll(...refs); };
+          const v = tt[kk]; return typeof v === 'function' ? v.bind(tt) : v;
+        } });
+        return fn(ptx);
+      }, ...rest);
+    }
+    const v = t[k]; return typeof v === 'function' ? v.bind(t) : v;
+  } });
+}
+const ordinaryOf = (i, symbols, over = {}) => {
+  const o = ownerBattle({ createdAt: `2026-11-05T14:4${i}:00.000Z`, timing: { tradingDays: ['2026-11-09'] }, expiresAt: '2026-11-10T01:00:00.000Z', ...over });
+  let n = 0;
+  ['star', 'core', 'support'].forEach((tier) => o.portfolio[tier].forEach((a, slot) => { if (!a.isCrypto) { a.symbol = symbols[n++]; o.agentContext.initialPortfolio[tier][slot].symbol = a.symbol; } }));
+  return o;
+};
+const dueIndexOf = (ids) => Object.fromEntries(ids.map((id) => [id, { cutoffAt: Date.parse(CUTOFF), expiresAt: Date.parse('2026-11-06T01:00:00.000Z'), finished: false, excludedBy: null }]));
+const unavailable = () => Object.assign(new Error('14 UNAVAILABLE'), { code: 14 });
+
+describe('V1.9 review 1 — a due key whose store call is still in flight holds ordinary writes (§4.2)', () => {
+  it('two due keys acquired, the second returning after the first provider return: no ordinary pointer transaction starts while either is in flight; the due pointers are written when their calls end; the cap of 30 holds', async () => {
+    await seedBattle('b-due', ownerBattle()); // finalisation-due at the cutoff
+    for (const s of ['NVDA', 'AMD', 'MSFT', 'AAPL']) await seedFinal(s); // four due keys settled by step 9; KO and XOM are acquired
+    const OSYM = ['OA', 'OB', 'OC', 'OD', 'OE', 'OF'];
+    for (let i = 0; i < 6; i++) await seedBattle(`b-ord-${i}`, ordinaryOf(i, OSYM));
+    for (const s of OSYM) await seedFinal(s); // 36 ordinary pointers' evidence in hand from step 9: more than the cap
+    const inFlight = new Set();
+    const writes = []; // [battleId, due keys in flight when the transaction started]
+    let ordinaryWrites = 0;
+    const dbx = recordingDb(db, (battleId) => { writes.push([battleId, [...inFlight]]); if (battleId.startsWith('b-ord')) ordinaryWrites += 1; });
+    const fetchPayload = async (symbol, { to }) => {
+      inFlight.add(symbol);
+      try {
+        // KO returns at once (the first provider return). XOM returns only once 25 ordinary transactions have started
+        // (as many as the cap leaves after the five due ones), or after 1.5 s: before the fix, ordinary work took the
+        // cap while XOM was in flight and XOM's pointer was never written; after it, no ordinary write starts first.
+        if (symbol === 'XOM') { const t0 = Date.now(); while (ordinaryWrites < 25 && Date.now() - t0 < 1_500) await new Promise((res) => setTimeout(res, 20)); }
+        return upRows(to);
+      } finally { inFlight.delete(symbol); }
+    };
+    const r = await run(clockAt(CUTOFF), { dbx, fetchPayload });
+    expect(r.acquisitionsStarted).toBe(2);
+    expect(writes.filter(([id, due]) => id.startsWith('b-ord') && due.length > 0)).toEqual([]);
+    expect((await pointersOf('b-due')).map((p) => p.data.symbol).sort()).toEqual(['AAPL', 'AMD', 'KO', 'MSFT', 'NVDA', 'XOM']);
+    expect([r.pointerTransactions, r.pointers.withEvidence, r.deferred.write_cap]).toEqual([C.MAX_POINTER_WRITES_PER_RUN, 30, 12]);
+    expect(writes.filter(([id]) => id.startsWith('b-ord'))).toHaveLength(24);
+  });
+});
+
+describe('V1.9 review 2 — a battle cursor passes only the battles a run attempted (§4.3)', () => {
+  it('five due battles, the first with a pointer read that fails slowly past PREP_BUDGET_MS: over three runs the other four get acquisitions and writes, and the failing one is retried each run without pinning the cursor', async () => {
+    const ids = ['d-0', 'd-1', 'd-2', 'd-3', 'd-4'];
+    for (const id of ids) await seedBattle(id, ownerBattle());
+    await db.doc('activationObserverState/main').set({ schemaVersion: 1, cursors: {}, battles: dueIndexOf(ids), outstandingKeys: [], updatedAt: null });
+    let clock = null;
+    const attempts = [];
+    const dbx = new Proxy(db, { get(t, k) {
+      if (k === 'getAll') {
+        return async (...a) => {
+          if (a.some((x) => String(x?.path || '').startsWith('agentBattles/d-0/activations/'))) { attempts.push(clock.ms()); clock.advance(C.PREP_BUDGET_MS); throw unavailable(); }
+          return t.getAll(...a);
+        };
+      }
+      const v = t[k]; return typeof v === 'function' ? v.bind(t) : v;
+    } });
+    const runAt = (iso) => { clock = clockAt(iso); return run(clock, { dbx }); };
+    const cursor = async () => (await db.doc('activationObserverState/main').get()).data().cursors.dueBattles;
+    const r1 = await runAt(CUTOFF);
+    expect(r1.deferred.prep_cut).toBe(6 + 4 * 6); // d-0's failed read, and d-1 … d-4 never reached
+    expect(await cursor()).toBe('d-0'); // past what it attempted, not past the four it never reached
+    const r2 = await runAt(AT_0145);
+    expect(r2.acquisitionsStarted).toBeGreaterThan(0);
+    expect(r2.pointers.withEvidence).toBe(24);
+    expect(await cursor()).toBe('d-0'); // d-1 … d-4, then d-0 retried last
+    const r3 = await runAt(NEXT_1300);
+    for (const id of ids.slice(1)) expect([id, (await pointersOf(id)).length]).toEqual([id, 6]);
+    expect(await pointersOf('d-0')).toEqual([]);
+    expect(attempts).toHaveLength(3); // retried in every run
+    expect(r3.battles.read).toBe(1); // the four healthy ones finished in run 2
+  });
+  it('a batch read that fails as a whole moves the cursor past its members, and only them: the next run starts at the first battle never fetched', async () => {
+    const ids = Array.from({ length: 8 }, (_, i) => `d-${String(i).padStart(2, '0')}`);
+    for (const id of ids) await seedBattle(id, ownerBattle({ activatedAt: '2028-01-04T15:00:00.000Z' })); // calendar_missing: never finishes
+    await db.doc('activationObserverState/main').set({ schemaVersion: 1, cursors: {}, battles: dueIndexOf(ids), outstandingKeys: [], updatedAt: null });
+    let clock = null;
+    let failNext = true;
+    const chunks = [];
+    const dbx = new Proxy(db, { get(t, k) {
+      if (k === 'getAll') {
+        return async (...a) => {
+          const battles = a.filter((x) => /^agentBattles\/[^/]+$/.test(String(x?.path || ''))).map((x) => x.path.split('/')[1]);
+          if (battles.length) chunks.push(battles);
+          if (battles.length && failNext) { failNext = false; clock.advance(C.PREP_BUDGET_MS); throw unavailable(); }
+          return t.getAll(...a);
+        };
+      }
+      const v = t[k]; return typeof v === 'function' ? v.bind(t) : v;
+    } });
+    clock = clockAt(AT_0145);
+    const r1 = await run(clock, { dbx });
+    expect(chunks).toEqual([['d-00', 'd-01', 'd-02', 'd-03', 'd-04']]); // the second chunk was never fetched: the budget was spent
+    expect([r1.failures['battles:14'], r1.deferred.battles_unread]).toEqual([1, 3]);
+    expect((await db.doc('activationObserverState/main').get()).data().cursors.dueBattles).toBe('d-04');
+    chunks.length = 0;
+    clock = clockAt(NEXT_1300);
+    await run(clock, { dbx });
+    expect(chunks[0][0]).toBe('d-05');
+  });
+  it('the key cursors already follow the rule: a key whose store call never started keeps the cursor, so the next run starts there', async () => {
+    const syms = ['D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08'];
+    const idOf = (s) => snapshotIdOf({ session: SESSION, symbol: s, ruleSet: RS });
+    await db.doc('activationObserverState/main').set({ schemaVersion: 1, cursors: {}, battles: {}, outstandingKeys: syms.map((s) => ({ snapshotId: idOf(s), session: SESSION, symbol: s, dueAt: Date.parse(CUTOFF) })), updatedAt: null });
+    const calls = [];
+    const fetchPayload = async (symbol, { to }) => { calls.push(symbol); return rowsWithoutNewest(to); };
+    // Each started call costs 4 s of the slice: four start (20 → 16 → 12 → 8 → 4 s left), the fifth would leave less than the 7 s reserve.
+    const r1 = await run(clockAt(AT_0145), { fetchPayload, before: (kind, c) => { if (kind === 'acquire') c.advance(4_000); } });
+    expect([r1.acquisitionsStarted, [...calls].sort()]).toEqual([4, ['D01', 'D02', 'D03', 'D04']]);
+    expect((await db.doc('activationObserverState/main').get()).data().cursors.dueKeys).toBe(idOf('D04'));
+    calls.length = 0;
+    // One start only (14 s of the slice for the first call), so the call the provider sees is the one the cursor names next.
+    const r2 = await run(clockAt(NEXT_1300), { fetchPayload, before: (kind, c) => { if (kind === 'acquire') c.advance(14_000); } });
+    expect([r2.acquisitionsStarted, calls]).toEqual([1, ['D05']]);
+  });
+});
+
+describe('V1.9 review 4 — a position id must be a string (§4, §4.1)', () => {
+  it('numeric and boolean ids on a starting position, a swap-in row and a live position → inconsistent, no pointer in that slot; the other slots are written', async () => {
+    const at = '2026-11-05T15:02:11.412Z';
+    const shapes = [
+      (b) => { b.portfolio.star[0].positionId = 123; }, // a starting position still held (its live position)
+      (b) => { correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at, positionId: 'p1' }); b.trades[0].incomingPositionId = true; b.portfolio.star[0].positionId = true; }, // a swap-in row
+      (b) => { correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at, positionId: 'p1' }); b.portfolio.star[0].positionId = 7; }, // a live position after a swap
+      (b) => { correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at, positionId: 'p1' }); b.trades[0].outgoingPositionId = false; }, // a starting position sold
+    ];
+    for (const [i, put] of shapes.entries()) {
+      const b = correctedBattle({ ownerId: OWNER });
+      put(b);
+      await seedBattle(`b-${i}`, b);
+    }
+    const r = await run(clockAt(INTRADAY));
+    for (let i = 0; i < shapes.length; i++) {
+      const ps = await pointersOf(`b-${i}`);
+      expect([i, ps.filter((p) => p.data.tier === 'star' && p.data.slot === 0).length, ps.some((p) => p.id.startsWith('star:0:'))]).toEqual([i, 0, false]);
+      expect([i, ps.length]).toEqual([i, 5]); // the five other stock slots
+    }
+    expect(r.unresolved.inconsistent).toBe(1 + 2 + 2 + 2); // the held start; then each sold start with its swap-in
+  });
+});
+
+describe('V1.9 §2 — the observer\'s own owner check, through the real resolver on the emulator', () => {
+  const CLONE = 'casual-agent-ao-owner-1';
+  it.each([
+    ['the clone without ownerId', { rankedAgentId: 'agent-p' }, { ownerId: OWNER }, false],
+    ['the parent without ownerId', { ownerId: OWNER, rankedAgentId: 'agent-p' }, { name: 'p' }, false],
+    ['both without ownerId (the resolver alone accepts it)', { rankedAgentId: 'agent-p' }, { name: 'p' }, false],
+    ['a clone owner different from the battle\'s (the resolver alone accepts it)', { ownerId: OTHER, rankedAgentId: 'agent-p' }, { ownerId: OTHER }, false],
+    ['a healthy clone', { ownerId: OWNER, rankedAgentId: 'agent-p' }, { ownerId: OWNER }, true],
+  ])('%s', async (_label, clone, parent, resolved) => {
+    await db.doc(`agents/${CLONE}`).set(clone);
+    await db.doc('agents/agent-p').set(parent);
+    await seedBattle('b-clone', ownerBattle({ agentId: CLONE }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const r = await run(clockAt(INTRADAY));
+    warn.mockRestore();
+    expect(r.deferred.attribution_read_error).toBeUndefined();
+    const ps = await pointersOf('b-clone');
+    expect(ps).toHaveLength(6);
+    const want = resolved
+      ? { battleAgentId: CLONE, attributionAgentId: 'agent-p', attributionStatus: 'resolved', stream: { attributionAgentId: 'agent-p', clone: 'casual' } }
+      : { battleAgentId: CLONE, attributionAgentId: CLONE, attributionStatus: 'unresolved', stream: { attributionAgentId: CLONE, clone: 'casual' } };
+    for (const { data } of ps) expect(data).toMatchObject(want);
+  });
+  it('V1.9 §2: a battle stored with gameMode null is in scope, and its pointers record stream.gameMode null', async () => {
+    await seedBattle('b-null', ownerBattle({ gameMode: null }));
+    const r = await run(clockAt(INTRADAY));
+    expect(r.excluded).toEqual({});
+    const ps = await pointersOf('b-null');
+    expect(ps).toHaveLength(6);
+    for (const { data } of ps) expect(data.stream.gameMode).toBeNull();
+  });
+});
+
+describe('the health line (review-fix prompt §3)', () => {
+  const PREFIX = '[activationEvidence]';
+  const capture = () => { const lines = []; const spy = vi.spyOn(console, 'log').mockImplementation((...a) => { lines.push(a.map(String).join(' ')); }); return { lines, spy, mine: () => lines.filter((l) => l.startsWith(PREFIX)) }; };
+  it('one line per run that did not skip: counts only — no owner, battle, agent, activation, position or snapshot id, no symbol, and an error code that could carry one reads `other`', async () => {
+    process.env[ENV] = 'SENTINEL_OWNER_7f3a';
+    const b = correctedBattle({ ownerId: 'SENTINEL_OWNER_7f3a', agentId: 'SENTINEL_AGENT_55' });
+    correctedSwap(b, { tier: 'core', slot: 1, symbolIn: 'SENTSYMB', at: '2026-11-05T15:02:11.412Z', positionId: 'SENTINEL_POS_3', evaluationId: 'SENTINEL_EVAL_4' });
+    b.agentContext.equippedHypothesis = { watchlistId: 'SENTINEL_WL', hypothesisVersion: 1, contentHash: 'SENTINEL_HASH' };
+    await seedBattle('SENTINEL_BATTLE_91c2', b);
+    await seedBattle('SENTINEL_BATTLE_b2', legacyBattle({ ownerId: 'SENTINEL_OWNER_7f3a', agentId: 'SENTINEL_AGENT_66' }));
+    const dbx = new Proxy(db, { get(t, k) {
+      if (k === 'getAll') {
+        return (...a) => (a.some((x) => String(x?.path || '').startsWith('agentBattles/SENTINEL_BATTLE_b2/activations/'))
+          ? Promise.reject(Object.assign(new Error('SENTINEL_BATTLE_b2 unreadable'), { code: 'SENTINEL_CODE_b2' }))
+          : t.getAll(...a));
+      }
+      const v = t[k]; return typeof v === 'function' ? v.bind(t) : v;
+    } });
+    const cap = capture();
+    const r = await run(clockAt(CUTOFF), { dbx });
+    cap.spy.mockRestore();
+    expect(r.pointers.withEvidence).toBe(7);
+    expect(cap.mine()).toHaveLength(1);
+    const line = cap.mine()[0];
+    for (const s of ['SENTINEL', 'SENTSYM', 'NVDA', 'AMD', 'MSFT', 'AAPL', 'KO', 'XOM', 'BTC', 'pos-', 'star:', 'p1', SESSION, '__', 'agentBattles', 'b2']) expect([s, line.includes(s)]).toEqual([s, false]);
+    const h = JSON.parse(line.slice(PREFIX.length + 1));
+    expect(h).toEqual({
+      battles: { read: 2, due: 0, unseen: 2, ordinary: 0 },
+      acquisitions: { started: r.acquisitionsStarted, final: r.store.final, pending: 0, retryable: 0, excluded: 0, threw: {} },
+      pointers: { withEvidence: 7, null: 0 },
+      deferred: { write_cap: 0, prep_cut: 6, not_reached: 0, attribution_read_error: 0 },
+      truncations: { candidates: 0, ticks: 0 },
+      failures: { 'pointers:other': 1 },
+      stateWritten: true,
+    });
+  });
+  it('the flag off → no line; a budget deferral → one line', async () => {
+    const cap = capture();
+    flag.on = false;
+    expect(await run(clockAt(INTRADAY))).toEqual({ skipped: true });
+    expect(cap.mine()).toEqual([]);
+    flag.on = true;
+    const clock = clockAt(INTRADAY);
+    expect(await runActivationObserver({ db, handlerStartMs: clock.ms() - 70_000, now: clock.now })).toEqual({ deferred: 'no_budget' });
+    cap.spy.mockRestore();
+    expect(cap.mine()).toHaveLength(1);
+    expect(JSON.parse(cap.mine()[0].slice(PREFIX.length + 1)).deferred.no_budget).toBe(1);
+  });
+});
+
+describe('the census on the emulator — the restricted reader over the real Admin SDK (reviews 3 and 5, pointer integrity)', () => {
+  const opts = { owners: [OWNER], session: '2026-11-05', sessions: 1, nowMs: Date.parse(NEXT_1300) };
+  it('over the pointers the observer itself wrote (with evidence, a null one at finalisation, a swap-in with its tick): zero integrity mismatches', async () => {
+    const b = correctedBattle({ ownerId: OWNER, status: 'completed' });
+    correctedSwap(b, { tier: 'core', slot: 1, symbolIn: 'JPM', at: '2026-11-05T15:02:11.412Z', positionId: 'p-jpm' });
+    await seedBattle('b-1', b);
+    await db.doc('agentBattles/b-1/ticks/t1').set(tickOf(12, '2026-11-05T15:02:30.000Z', [b.trades[0]]));
+    const r = await run(clockAt(CUTOFF), { fetchPayload: provider({ KO: 'missing_newest' }).fetchPayload });
+    expect([r.pointers.withEvidence, r.pointers.null]).toEqual([6, 1]);
+    const R = await censusModule.runCensus(censusModule.restrictedReader(db), opts);
+    expect([R.pointers.total, R.pointers.null, R.pointers.nullByDetail]).toEqual([7, 1, { missing_bar: 1 }]);
+    expect(R.integrity).toMatchObject({
+      pointers: 7, mismatches: 0,
+      identity: { checked: 7, notCheckable: 0, byField: {} },
+      evidence: { checked: 6, readFailed: 0, byField: {} },
+      nullPointers: { checked: 1, snapshotNowExists: 0, readFailed: 0 },
+      shape: { byField: {} },
+      timeliness: { nullBeforeCutoff: 0, nullNoCutoff: 0, unreadableInstants: 0 },
+    });
+    expect(R.integrity.timeliness.withEvidenceMinutesAfterActivation.n).toBe(6);
+    // Review 5: sentinels in stored labels read `other`, and a changed field is counted where it belongs.
+    const nullPtr = (await pointersOf('b-1')).find((p) => p.data.entry === null);
+    const evPtr = (await pointersOf('b-1')).find((p) => p.data.entry !== null && p.data.kind === 'creation');
+    await db.doc(`agentBattles/b-1/activations/${nullPtr.id}`).update({ 'missing.detail': 'SENTINEL_DETAIL_9' });
+    await db.doc(`agentBattles/b-1/activations/${evPtr.id}`).update({ activatedAtSource: 'SENTINEL_SRC_4' });
+    const R2 = await censusModule.runCensus(censusModule.restrictedReader(db), opts);
+    expect([R2.pointers.nullByDetail, R2.pointers.activatedAtSource.other, R2.integrity.identity.byField]).toEqual([{ other: 1 }, 1, { activatedAtSource: 1 }]);
+    const text = `${censusModule.renderMarkdown(R2)}\n${JSON.stringify(R2)}`;
+    for (const s of ['SENTINEL', 'DETAIL_9', 'SRC_4', 'NVDA', 'JPM', 'pos-', 'p-jpm', 'b-1', '__']) expect([s, text.includes(s)]).toEqual([s, false]);
+  });
+  it('review 3: a claims read that fails → read_failed, never neverAttempted; a pointer query that fails → that battle\'s coverage is unknown', async () => {
+    await seedBattle('b-1', ownerBattle({ status: 'completed' })); // nothing written, nothing attempted: six outstanding keys
+    const healthy = await censusModule.runCensus(censusModule.restrictedReader(db), opts);
+    expect([healthy.outstandingKeys.keys, healthy.outstandingKeys.neverAttempted, healthy.outstandingKeys.readFailed]).toEqual([6, 6, 0]);
+    const failing = (pred) => new Proxy(db, { get(t, k) {
+      if (k === 'getAll') return (...a) => (a.some((x) => pred(String(x?.path || ''))) ? Promise.reject(unavailable()) : t.getAll(...a));
+      if (k === 'collection') return (name) => (pred(name) ? { limit: () => ({ get: async () => { throw unavailable(); } }) } : t.collection(name));
+      const v = t[k]; return typeof v === 'function' ? v.bind(t) : v;
+    } });
+    const claimsFail = await censusModule.runCensus(censusModule.restrictedReader(failing((p) => p.startsWith('setupEvidenceClaims/'))), opts);
+    expect([claimsFail.outstandingKeys.readFailed, claimsFail.outstandingKeys.neverAttempted, claimsFail.errors]).toEqual([6, 0, { 'Error:14': 1 }]);
+    const pointersFail = await censusModule.runCensus(censusModule.restrictedReader(failing((p) => p === 'agentBattles/b-1/activations')), opts);
+    expect(pointersFail.activations.coverageUnknown).toEqual({ battles: 1, activations: 6, gapStarts: 0 });
+    expect([pointersFail.activations.outstanding, pointersFail.outstandingKeys.keys, pointersFail.headline.discoverableResolvable]).toEqual([0, 0, 0]);
   });
 });
 
