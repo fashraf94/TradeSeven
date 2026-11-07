@@ -19,6 +19,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const h = vi.hoisted(() => ({
   armory: false,
+  archetype: 'momentum_chaser',
   authListeners: [],
   deploy: null,
   posts: [],
@@ -39,7 +40,7 @@ vi.mock('../../contexts/UserContext', () => ({ useUser: () => ({ user: { display
 vi.mock('../../hooks/useAgent', () => ({
   default: (uid, options) => ({
     status: uid ? 'ready' : 'loading',
-    agent: uid ? { id: `agent-${uid}`, ownerId: uid, name: 'Nova', archetype: 'momentum_chaser', stats: { gamesPlayed: 3, wins: 1, losses: 0 } } : null,
+    agent: uid ? { id: `agent-${uid}`, ownerId: uid, name: 'Nova', archetype: h.archetype, stats: { gamesPlayed: 3, wins: 1, losses: 0 } } : null,
     ownerUid: uid ?? null,
     ownerEpoch: options?.ownerEpoch ?? null,
     readError: null,
@@ -131,6 +132,7 @@ beforeAll(() => { removeTokens = injectTokens(); });
 afterAll(() => { removeTokens(); });
 beforeEach(() => {
   h.armory = false;
+  h.archetype = 'momentum_chaser';
   resetAuthIdentityForTests();
   __resetHoldClaim();
   h.authListeners = [];
@@ -394,6 +396,7 @@ describe('N2(d): the phone armory steps aside when a deploy starts (the real pro
 
   it('pressing the strip\'s hold closes it: the stage shows the hold\'s own words, the deploy goes ahead, the preview is gone', async () => {
     h.armory = true;
+    h.archetype = 'analyst'; // the equipped set is not the ring's first (review AR-3)
     render('mobile');
     await flush();
     await openArmory();
@@ -410,7 +413,30 @@ describe('N2(d): the phone armory steps aside when a deploy starts (the real pro
     expect(h.deploy).toHaveBeenCalledTimes(1);
     // reopened, the armory starts again on the equipped set: the preview was discarded
     click(byRole(document, 'button', COPY.loadout.changeArchetype)[0]);
-    expect(option('momentum_chaser').getAttribute('aria-selected')).toBe('true');
+    expect(option('analyst').getAttribute('aria-selected')).toBe('true');
+    expect(option('momentum_chaser').getAttribute('aria-selected')).toBe('false');
+  });
+
+  // Review AR-2: the flag-on selectTab arm cancels a charge, as the flag-off arm does (spec §5.5). The hold's first phase
+  // has already closed the armory, so what this row adds is the charge: cancelled by the tab switch, and no deploy.
+  it('a hold charging, then a tab switch: the charge is cancelled, the armory closed, and nothing deploys', async () => {
+    h.armory = true;
+    render('mobile');
+    await flush();
+    await openArmory();
+    act(() => { pointer(holdIn(strip()), 'pointerdown'); });
+    expect(armoryOpen()).toBe(false);
+    frameAt(600);
+    expect(currentHold()).not.toBeNull();
+    const tab = document.querySelector('[role="tab"]:not([aria-selected="true"])');
+    click(tab);
+    expect(currentHold()).toBeNull();
+    expect(armoryOpen()).toBe(false);
+    frameAt(1300);
+    await advance(1000);
+    await flush();
+    expect(h.deploy).not.toHaveBeenCalled();
+    expect(armoryOpen()).toBe(false);
   });
 
   it('after a refusal, the strip\'s Retry closes it (a deploy starts again)', async () => {

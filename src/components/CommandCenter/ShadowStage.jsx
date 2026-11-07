@@ -234,10 +234,13 @@ export function PhoneStage({ size, tier, status, processing, words, selectedArea
   );
 }
 
-/** The phone's three area lines, as PhoneStage draws them (the armory stage's closed layout is PhoneStage's own). */
-function PhoneSummaries({ selectedArea, summaries }) {
+/**
+ * The phone's three area lines, as PhoneStage draws them (the armory stage's closed layout is PhoneStage's own). Under a
+ * stacked hero (ruling D-A) the stage's left padding is the 14 px of its right, so the lines keep their left edge.
+ */
+function PhoneSummaries({ selectedArea, summaries, stacked = false }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingLeft: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingLeft: stacked ? 0 : 8 }}>
       {COPY.areas.shortNames.map((name, area) => {
         const on = selectedArea === area;
         return (
@@ -262,12 +265,16 @@ function PhoneSummaries({ selectedArea, summaries }) {
  * through the tree, a wrapper that is `display: contents` while closed — so it never remounts: no flash or black square
  * on open or close. Founder ruling N1: closed, the hero is bare Shadow (the hub's read already is); open, it wears the
  * previewed set, so closing takes the armor off once, on the engine's unequip, as the box collapses. Escape closes.
+ * Founder ruling D-A (Nov 6, 2026): closed, the bare hero is bigger than PhoneStage's (Armory.jsx phoneHero, from the
+ * hub's width), and its name and status sit beside it while their column fits, else centred under it.
  */
 function PhoneArmoryStage({ size, status, processing, words, selectedArea, summaries, reducedMotion, createdAttemptId, paused, holdPhase, progress }) {
   const scope = useContext(ArmoryStageContext);
   const read = useContext(HubAgentFormContext);
   const open = Boolean(scope && scope.open);
   const heroRead = scope ? armoryHeroRead(read, scope.shown) : read;
+  const hero = scope ? scope.hero : { size, stacked: false };
+  const stacked = !open && hero.stacked;
   const { centre, extent, padding } = PHONE_ARMORY;
   const onKeyDown = (event) => {
     if (!open || event.key !== 'Escape') return;
@@ -283,23 +290,37 @@ function PhoneArmoryStage({ size, status, processing, words, selectedArea, summa
       style={{
         position: 'relative', borderRadius: 20, overflow: 'hidden',
         background: `radial-gradient(ellipse at 30% 42%, ${tint('teal', 0.09)}, transparent 55%), ${C.surface}`,
-        border: `1px solid ${HAIR}`, padding: open ? padding : '10px 14px 14px 6px',
+        border: `1px solid ${HAIR}`, padding: open ? padding : stacked ? '10px 14px 14px' : '10px 14px 14px 6px',
       }}
     >
-      <div data-armory-box={open ? '' : undefined} style={open ? { position: 'relative', width: extent, height: extent, margin: '0 auto' } : { display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div
+        data-armory-box={open ? '' : undefined}
+        data-hub-hero-layout={open ? undefined : stacked ? 'stacked' : 'beside'}
+        style={open ? { position: 'relative', width: extent, height: extent, margin: '0 auto' } : stacked ? { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 } : { display: 'flex', alignItems: 'center', gap: 6 }}
+      >
         <div aria-hidden={open ? 'true' : undefined} data-armory-hero={open ? '' : undefined} style={open ? { position: 'absolute', left: (extent - centre) / 2, top: (extent - centre) / 2 } : { display: 'contents' }}>
           <HubAgentFormContext.Provider value={heroRead}>
-            <HubAgentForm size={open ? centre : size} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} paused={paused} phone createdAttemptId={createdAttemptId} />
+            <HubAgentForm size={open ? centre : hero.size} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} paused={paused} phone createdAttemptId={createdAttemptId} />
           </HubAgentFormContext.Provider>
         </div>
-        {open ? <PhoneArmoryRing scope={scope} /> : (
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {open ? <PhoneArmoryRing scope={scope} /> : stacked ? (
+          <div data-hub-hero-text="" style={{ width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', flexWrap: 'wrap', columnGap: 10, rowGap: 2 }}>
+              <span style={{ fontSize: 23, fontWeight: 700, letterSpacing: '-0.015em', color: C.ink, lineHeight: 1.05 }}>{COPY.shadow.name}</span>
+              <span style={{ fontSize: 14.5, color: C.ink2, lineHeight: 1.3 }}>{COPY.shadow.role}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', maxWidth: '100%' }}>
+              <StatusLine processing={processing} words={words} small wrap holdPhase={holdPhase} progress={progress} />
+            </div>
+          </div>
+        ) : (
+          <div data-hub-hero-text="" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <NameLine stacked />
             <StatusLine processing={processing} words={words} small wrap holdPhase={holdPhase} progress={progress} />
           </div>
         )}
       </div>
-      {open ? <PhoneArmoryDetails scope={scope} /> : <PhoneSummaries selectedArea={selectedArea} summaries={summaries} />}
+      {open ? <PhoneArmoryDetails scope={scope} /> : <PhoneSummaries selectedArea={selectedArea} summaries={summaries} stacked={stacked} />}
     </section>
   );
 }

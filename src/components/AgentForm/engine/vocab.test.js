@@ -9,6 +9,7 @@ import {
   STATES, MOODS, CORE, ARMOR, KINDS, FORM_ORDER, META, rng, hash, fitK, stillT, viewT0,
   EQUIP_KEYS, UNEQUIP_KEYS, EQUIP_MS, UNEQUIP_MS, fitAtMs, msAtFit, startTween, tweenFit,
   FRAME_SCALE, FRAME_SHIFT, frameScale, frameShift, swapProgress, swapScale, swapShift, responseLift, RESPONSE_MS, RESPONSE_PEAK,
+  CORE_LEVEL, BREATH_S, BREATH_DEPTH, breath, coreLevel,
 } from './vocab.js';
 
 describe('the design vocabulary, as shipped', () => {
@@ -154,5 +155,41 @@ describe('the response\'s curve (build S2, ruling R19)', () => {
 
   it('rises and falls smoothly', () => {
     for (let ms = 0; ms < RESPONSE_MS; ms += 16) expect(Math.abs(responseLift(ms + 16) - responseLift(ms))).toBeLessThan(.05);
+  });
+});
+
+// ── The A1 fix pass (founder rulings D-B, D-C, Nov 6, 2026): the core's level and its breath ──
+describe('D-B, D-C: the core\'s level and its breath (pure)', () => {
+  it('the shipped defaults: the core at 75 % of today\'s light, a 4.5 s breath dipping to 85 % of that', () => {
+    expect([CORE_LEVEL, BREATH_S, BREATH_DEPTH]).toEqual([.75, 4.5, .15]);
+  });
+
+  it('breath(t): 1 at the top (t = 0), 1 − BREATH_DEPTH half a cycle on, periodic, and never outside the two', () => {
+    expect(breath(0)).toBe(1);
+    expect(breath(BREATH_S / 2)).toBeCloseTo(1 - BREATH_DEPTH, 12);
+    expect(breath(BREATH_S)).toBeCloseTo(1, 12);
+    for (let i = 0; i <= 2000; i += 1) {
+      const t = (i * 3 * BREATH_S) / 2000, b = breath(t);
+      expect(b).toBeLessThanOrEqual(1);
+      expect(b).toBeGreaterThanOrEqual(1 - BREATH_DEPTH - 1e-12);
+      expect(breath(t + BREATH_S)).toBeCloseTo(b, 10);
+    }
+  });
+
+  it('eased both ways and never a step: at 60 frames a second no frame moves it more than the curve\'s steepest slope allows', () => {
+    const steepest = (BREATH_DEPTH / 2) * ((2 * Math.PI) / BREATH_S) / 60;
+    for (let f = 0; f < 60 * BREATH_S * 2; f += 1) expect(Math.abs(breath((f + 1) / 60) - breath(f / 60))).toBeLessThanOrEqual(steepest + 1e-12);
+    // eased: it barely moves at the top and at the floor, fastest half way between
+    const step = (t) => Math.abs(breath(t + 1 / 60) - breath(t));
+    expect(step(0)).toBeLessThan(step(BREATH_S / 4) / 10);
+    expect(step(BREATH_S / 2 - 1 / 120)).toBeLessThan(step(BREATH_S / 4) / 10);
+  });
+
+  it('coreLevel: CORE_LEVEL × breath(t) while the view moves; held still, the midpoint, whatever t', () => {
+    for (const t of [0, 1, 2.25, 3.9, 17]) {
+      expect(coreLevel(t, false)).toBeCloseTo(CORE_LEVEL * breath(t), 12);
+      expect(coreLevel(t, true)).toBeCloseTo(CORE_LEVEL * (1 - BREATH_DEPTH / 2), 12);
+    }
+    expect(coreLevel(0, false)).toBe(CORE_LEVEL);
   });
 });

@@ -11,10 +11,11 @@
 // sortTransparent / sortOpaque), so a frame does not depend on which forms were built before it.
 
 import * as THREE from 'three';
-import { STATES, CORE, ARMOR, FRAME_SCALE, RESPONSE_PEAK, clamp, frameShift } from './vocab.js';
+import { STATES, CORE, ARMOR, FRAME_SCALE, RESPONSE_PEAK, clamp, coreLevel, frameShift } from './vocab.js';
 import { plateMaterial, makeBuildKit, buildBrain } from './core.js';
 import { BUILDERS } from './armor.js';
 import { attachBatch } from './batch.js';
+import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';
 
 /** The cache key of the geometry a spec needs (mood, fit and palette are per frame, not per build). */
 export function formKey(spec) {
@@ -66,7 +67,10 @@ export function poseForm(F, spec, t, C, pal) {
   const camera = C.camera, D = 4.7 * (spec.zoom || 1); camera.position.set(D * Math.sin(YAW) * Math.cos(PITCH), D * Math.sin(PITCH), D * Math.cos(YAW) * Math.cos(PITCH)); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
   C.scene.fog.near = D - .7; C.scene.fog.far = D + 3.1;
   camDir.copy(camera.position).normalize().applyQuaternion(invQ.copy(F.group.quaternion).invert());
-  if (F.brain) F.brain.update(t, coreLift === 1 ? S : { ...S, bright: S.bright * coreLift, lifted: coreLift }, pal, camDir);
+  // A1 fix pass (D-B, D-C): with the armory flag on the brain also takes the core's level at t (vocab.js coreLevel): the
+  // breath on the view's clock, or its midpoint when the frame is held still (spec.held, set by the engine for a view that
+  // does not move and for the cached still). Without `held` a pose breathes on t, so a pose is still (spec, t) alone.
+  if (F.brain) F.brain.update(t, AGENT_FORM_ARMORY_ENABLED ? { ...S, bright: S.bright * coreLift, lifted: coreLift, level: coreLevel(t, spec.held === true) } : coreLift === 1 ? S : { ...S, bright: S.bright * coreLift, lifted: coreLift }, pal, camDir);
   let eb = 0;
   if (F.armor) {
     F.armor.update(t, S, pal, fit, !!spec.unfit);

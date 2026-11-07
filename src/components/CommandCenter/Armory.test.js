@@ -16,7 +16,7 @@ import { ARMORY_COPY, HUB_COPY } from './hub/hubCopy';
 import { PHONE_TARGET } from './hub/hubStyle';
 import { armoryLines } from './hub/archetypeLines';
 import {
-  ARMORY_SETS, COMPACT_RING, DESKTOP_RING, PHONE_ARMORY, armoryHeroRead, armoryStatus, equipErrorOf, firstPreview, isBattleLock, ringPoints,
+  ARMORY_SETS, COMPACT_RING, DESKTOP_RING, PHONE_ARMORY, PHONE_HERO, armoryHeroRead, armoryStatus, equipErrorOf, firstPreview, isBattleLock, phoneHero, ringPoints,
 } from './Armory';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -99,10 +99,49 @@ describe('the phone ring (FD-8), at 320, 360 and 390 px', () => {
   it.each([320, 360, 390])('at %i px the ring fits the stage: the hub\'s gutter, the stage\'s border and the armory\'s padding leave room for it', (width) => {
     // The hub's phone gutter (CommandCenterHub.jsx) and the stage's 1 px border (ShadowStage.jsx), read from the source.
     expect(read('CommandCenterHub.jsx')).toContain("<div style={{ padding: '10px 14px 12px' }}>");
-    expect(read('ShadowStage.jsx')).toContain('border: `1px solid ${HAIR}`, padding: open ? padding : \'10px 14px 14px 6px\',');
+    expect(read('ShadowStage.jsx')).toContain('border: `1px solid ${HAIR}`, padding: open ? padding : stacked ? \'10px 14px 14px\' : \'10px 14px 14px 6px\',');
     const [, side] = padding.split(' ').map((v) => Number.parseFloat(v));
     const inner = width - 2 * 14 - 2 * 1 - 2 * side;
     expect(inner).toBeGreaterThanOrEqual(extent);
+  });
+});
+
+// ── Founder ruling D-A (Nov 6, 2026): a bigger bare Shadow on the phone hub, its words never over it ────────────────────
+describe('D-A: the phone hub\'s bare hero, at 320, 360 and 390 px (and wider)', () => {
+  const { wide, narrow, at, text, chrome } = PHONE_HERO;
+  /** The stage's content width beside the hero and the gap, from the source's own numbers. */
+  const besideRoom = (width, size) => width - 2 * 14 - 2 * 1 - (6 + 14) - 6 - size;
+
+  it('the defaults: about a quarter bigger than PhoneStage\'s 200 px box (196 under 375 px), 240 from 375 px and 220 below', () => {
+    expect([wide, narrow, at]).toEqual([240, 220, 375]);
+    expect(phoneHero(375).size).toBe(240);
+    expect(phoneHero(374).size).toBe(220);
+    // and never the old box, at any phone width
+    for (let w = 300; w <= 768; w += 1) expect([196, 200], String(w)).not.toContain(phoneHero(w).size);
+  });
+
+  it('the chrome beside the hero is the source\'s: the hub\'s 2 × 14 gutter, the stage\'s 2 × 1 border, its 6 + 14 side padding and the 6 px gap', () => {
+    expect(read('CommandCenterHub.jsx')).toContain("<div style={{ padding: '10px 14px 12px' }}>");
+    expect(read('ShadowStage.jsx')).toContain("stacked ? { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 } : { display: 'flex', alignItems: 'center', gap: 6 }");
+    expect(chrome).toBe(2 * 14 + 2 * 1 + 6 + 14 + 6);
+  });
+
+  it.each([[320, 220], [360, 220], [390, 240]])('at %i px the hero is %i px and its words stack under it (beside it, their column would be narrower than PHONE_HERO.text)', (width, size) => {
+    expect(phoneHero(width)).toEqual({ size, stacked: true });
+    expect(besideRoom(width, size)).toBeLessThan(text);
+  });
+
+  it('the words go beside the hero only where their column keeps its width, never narrower, at every width', () => {
+    for (let w = 300; w <= 768; w += 1) {
+      const { size, stacked } = phoneHero(w);
+      if (!stacked) expect(besideRoom(w, size), String(w)).toBeGreaterThanOrEqual(text);
+      else expect(besideRoom(w, size), String(w)).toBeLessThan(text);
+    }
+    expect(phoneHero(430)).toEqual({ size: 240, stacked: false });
+  });
+
+  it('unmeasured (the first render): the wide size, stacked, which overlaps nothing at any width', () => {
+    for (const w of [null, undefined, 0, Number.NaN]) expect(phoneHero(w)).toEqual({ size: 240, stacked: true });
   });
 });
 

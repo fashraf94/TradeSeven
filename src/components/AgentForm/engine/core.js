@@ -13,6 +13,7 @@
 
 import * as THREE from 'three';
 import { TAU, CORE, rng, lo, clamp } from './vocab.js';
+import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';
 
 export const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 export const Q = (axis, ang) => new THREE.Quaternion().setFromAxisAngle(axis, ang);
@@ -144,9 +145,12 @@ export function buildBrain(stage, seed, kit) {
       L.flag();
     }
     const beacon = S.beacon ? 1 + .35 * Math.max(0, Math.sin(t * Math.PI)) : S.scan ? 1 + .12 * Math.sin(t * 5) : 1, hot = S.bloom > 1 ? 1 + .12 * S.bloom : 1;
-    coreMesh.scale.setScalar(C.core * beacon); coreMesh.material.color.set(pal.core);
-    glow.material.color.set(pal.near); glow.material.opacity = clamp(.95 * S.bright * hot, 0, 1); glow.scale.setScalar(.7 * C.glow * beacon * (1 + .08 * Math.sin(t * 1.3)) * hot * (S.lifted || 1));
-    halo.material.color.set(pal.near); halo.material.opacity = clamp(.18 * S.bright * hot, 0, 1);
+    // A1 fix pass (D-B, D-C): with the armory flag on, the core's sphere, glow and halo draw at the frame's level (vocab.js
+    // coreLevel, handed in as S.level by poseForm): toned and breathing, under the mood's light and R19's lift (S.bright
+    // carries both; S.lifted is the lift alone, which also lifts the sphere, so the response's peak reads above the breath).
+    coreMesh.scale.setScalar(C.core * beacon); AGENT_FORM_ARMORY_ENABLED ? coreMesh.material.color.set(pal.core).multiplyScalar(S.level * (S.lifted || 1)) : coreMesh.material.color.set(pal.core);
+    glow.material.color.set(pal.near); glow.material.opacity = AGENT_FORM_ARMORY_ENABLED ? clamp(.95 * S.bright * hot * S.level, 0, 1) : clamp(.95 * S.bright * hot, 0, 1); glow.scale.setScalar(.7 * C.glow * beacon * (1 + .08 * Math.sin(t * 1.3)) * hot * (S.lifted || 1));
+    halo.material.color.set(pal.near); halo.material.opacity = AGENT_FORM_ARMORY_ENABLED ? clamp(.18 * S.bright * hot * S.level, 0, 1) : clamp(.18 * S.bright * hot, 0, 1);
     light.color.set(pal.near); light.intensity = 9 * C.light * S.bright * beacon * hot;
     const cnt = Math.min(4, Math.round(2 * S.signals));
     sigs.forEach((sp, q) => { if (q >= cnt) { sp.material.opacity = 0; return; } const lp = loops[(q * 5) % loops.length].L, pos = lp.pos, u = ((t * (.25 + .07 * q) * S.speed + q * .37) % 1 + 1) % 1, f = u * (N - 1), j = Math.floor(f), fr = f - j, j2 = Math.min(N - 1, j + 1); sp.position.set(pos[j * 3] + (pos[j2 * 3] - pos[j * 3]) * fr, pos[j * 3 + 1] + (pos[j2 * 3 + 1] - pos[j * 3 + 1]) * fr, pos[j * 3 + 2] + (pos[j2 * 3 + 2] - pos[j * 3 + 2]) * fr); sp.material.color.set(pal.core); sp.material.opacity = .9 * S.bright; });

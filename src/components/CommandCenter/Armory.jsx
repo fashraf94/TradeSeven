@@ -78,6 +78,23 @@ export const COMPACT_RING = Object.freeze({ width: 520, height: 530, radius: 192
  */
 export const PHONE_ARMORY = Object.freeze({ centre: 152, slot: 48, radius: 116, extent: 280, padding: '10px 5px 16px' });
 
+/**
+ * The phone hub's bare hero while the armory is closed (founder ruling D-A, Nov 6, 2026; with the flag on only): bare
+ * Shadow drawn bigger than the stage's 200 px box (196 under 375 px wide), `wide` px at `at` px of hub width and up,
+ * `narrow` below. The name and status sit beside the figure only while their column keeps `text` px; otherwise they
+ * stack under it, so they never overlap the figure nor truncate. `chrome` is the width beside the two that is not
+ * theirs: the hub's 2 × 14 gutter, the stage's 2 × 1 border, its 6 + 14 side padding and the 6 px gap. Measured in
+ * headless Edge at 320, 360 and 390 (the A1 report §15). One line each, so a founder tune is a one-line change.
+ */
+export const PHONE_HERO = Object.freeze({ wide: 240, narrow: 220, at: 375, text: 120, chrome: 56 });
+
+/** The phone hero's box and layout at the hub's measured width (unmeasured: the wide size, stacked, which overlaps nothing). */
+export function phoneHero(width) {
+  const measured = typeof width === 'number' && width > 0;
+  const size = measured && width < PHONE_HERO.at ? PHONE_HERO.narrow : PHONE_HERO.wide;
+  return { size, stacked: !(measured && width - PHONE_HERO.chrome - size >= PHONE_HERO.text) };
+}
+
 /** The six points of a ring of `radius` around (cx, cy), clockwise from the top (board 6: −90° + i·60°). */
 export function ringPoints(radius, cx = 0, cy = 0, count = ARMORY_SETS.length) {
   return Array.from({ length: count }, (_, i) => {
@@ -376,9 +393,10 @@ export function armoryHeroRead(read, shown = undefined) {
  *     that closes the hub's sheet, takes the armor off once: the engine's 700 ms unequip as the box collapses;
  *   - a result in flight when the armory closes by any path is dropped: the details' root carries the equip's `detach`,
  *     so its unmount drops it (no effect; an external close never reaches `close` below).
- * Closing returns focus to the control that opened it (useHubSheets keeps it at the click).
+ * Closing returns focus to the control that opened it (useHubSheets keeps it at the click). `width` is the hub's measured
+ * width, from which the closed hero's box and layout follow (phoneHero, ruling D-A); the open armory's sizes are fixed.
  */
-export function PhoneArmoryScope({ open, agent, onClose, opener = null, reducedMotion = false, children }) {
+export function PhoneArmoryScope({ open, agent, onClose, opener = null, reducedMotion = false, width = null, children }) {
   const isOpen = Boolean(open && agent);
   const real = agent ? agent.archetype : undefined;
   const [previewed, setPreviewed] = useState(() => firstPreview(real));
@@ -389,10 +407,12 @@ export function PhoneArmoryScope({ open, agent, onClose, opener = null, reducedM
     setWasOpen(isOpen);
     if (isOpen) { setPreviewed(firstPreview(real)); setHot(null); result.reset(); }
   }
+  // The opener takes focus back without scrolling to it (review AR-1): it sits below the stage, and a scroll to it would
+  // carry the hero out of view while it collapses and takes the armor off (the hub's section is its own scroll box).
   function close() {
     result.cancel();
     onClose?.();
-    if (opener && typeof opener.focus === 'function') opener.focus();
+    if (opener && typeof opener.focus === 'function') opener.focus({ preventScroll: true });
   }
   const value = {
     open: isOpen,
@@ -409,6 +429,7 @@ export function PhoneArmoryScope({ open, agent, onClose, opener = null, reducedM
     detach: result.detach,
     close,
     reducedMotion,
+    hero: phoneHero(width),
   };
   return <ArmoryStageContext.Provider value={value}>{children}</ArmoryStageContext.Provider>;
 }

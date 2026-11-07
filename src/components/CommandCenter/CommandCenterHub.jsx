@@ -154,6 +154,7 @@ import { HubAgentFormContext } from './HubAgentForm';
 import { PhoneStage, ShadowStage } from './ShadowStage';
 import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
 import { PhoneArmoryScope, armoryHeroRead } from './Armory';
+import { HOLD_PHASES } from './hub/selectors/attemptVocabulary';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
 export function shadowSizeFor(composition, width) {
@@ -340,7 +341,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
   // While this renders, so a hold's first phase closes it: a sheet of this component's own state, set in its own render.
   // The archetype sheet is not registered with the overlay stack while the armory is on (hub/useHubSheets.js), so the
   // close releases nothing outside this component.
-  if (AGENT_FORM_ARMORY_ENABLED && deploy?.holdPhase && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet();
+  if (AGENT_FORM_ARMORY_ENABLED && (deploy?.holdPhase === HOLD_PHASES.CHARGING || deploy?.holdPhase === HOLD_PHASES.LOCKED) && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet();
   return (
     <HubLayoutContext.Provider value={composition}>
       <style data-hub-css="">{HUB_SCOPED_CSS}</style>
@@ -365,7 +366,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
             // Agent form build A1 (FD-8): the phone armory opens in the hero's box, so its state wraps the stage. With the
             // armory on, PhoneStage is the armory's stage, which draws the agent form and never ShadowCanvas (the armory is
             // on only while the hub's form is: agentFormFlags.test.js), so ShadowCanvas's tier and still switch go unread.
-            <PhoneArmoryScope open={sheet.sheet === HUB_SHEETS.ARCHETYPE} agent={runtime.agent} onClose={runtime.closeSheet} opener={sheet.opener} reducedMotion={shared.reducedMotion}>
+            <PhoneArmoryScope open={sheet.sheet === HUB_SHEETS.ARCHETYPE} agent={runtime.agent} onClose={runtime.closeSheet} opener={sheet.opener} reducedMotion={shared.reducedMotion} width={width}>
               <PhoneStage
                 size={shadowSizeFor(composition, width)}
                 status={shared.status}

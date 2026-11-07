@@ -36,6 +36,7 @@ import { resetIcosaCache } from './armor.js';
 import { buildForm, poseForm, formKey, disposeForm, formResources } from './form.js';
 import { createBloomKit, bloomBufferSize } from './bloom.js';
 import * as glPlatform from './glPlatform.js';
+import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';
 
 /** The shared renderer's drawing buffer side (af3-standalone.js.txt:321). */
 export const GL = 1024;
@@ -259,7 +260,9 @@ export function createAgentFormEngine(platform = {}) {
     if (v.formKey !== key) { if (v.formKey) releaseForm(C, v.formKey); acquireForm(C, spec); v.formKey = key; }
     const F = C.forms.get(key), size = spec.size, small = size < 90, palette = pal(v), S = STATES[spec.state] || STATES.idle;
     const res = C.direct ? C.size : renderRes(v.opts.dpr, size);
-    poseForm(F, spec, t, C, palette);
+    // A1 fix pass (D-C): with the armory flag on, a frame that does not move — the cached still, or a view under reduced
+    // motion or at the still rate — holds the core's breath at its midpoint (form.js, vocab.js coreLevel).
+    poseForm(F, AGENT_FORM_ARMORY_ENABLED ? { ...spec, held: into === 'still' || !animates(v) } : spec, t, C, palette);
     if (into === 'live') { v.drawnScale = F.group.scale.x; v.drawnShift = Number.isFinite(spec.shift) ? spec.shift : frameShift(spec.kind); }
     if (C.cur !== F.group) { if (C.cur) C.scene.remove(C.cur); C.scene.add(F.group); C.cur = F.group; C.curForm = F; }
     const r = C.renderer;

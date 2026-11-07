@@ -88,7 +88,8 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
       IMPORT,
       // The follow-up's N2(d): the phone armory steps aside for a tab switch, a hold and the strip's Retry.
       'const selectTab = AGENT_FORM_ARMORY_ENABLED',
-      'if (AGENT_FORM_ARMORY_ENABLED && deploy?.holdPhase && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet();',
+      // The fix pass (review AR-9): the hold's phase compared by name, so a stored 'idle' could never close it.
+      'if (AGENT_FORM_ARMORY_ENABLED && (deploy?.holdPhase === HOLD_PHASES.CHARGING || deploy?.holdPhase === HOLD_PHASES.LOCKED) && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet();',
       '{AGENT_FORM_ARMORY_ENABLED ? (',
       'onAction={AGENT_FORM_ARMORY_ENABLED && actions.deployAction ? (kind) => { if (kind === DISPLAY_ACTIONS.RETRY && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet(); actions.deployAction(kind); } : actions.deployAction}',
       'paused={AGENT_FORM_ARMORY_ENABLED ? coverOpen || sheet.sheet === HUB_SHEETS.ARCHETYPE : coverOpen}',
@@ -105,6 +106,26 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
     ]);
     // The armory itself never reads the flag: it is reached only through those ternaries.
     expect(at(`${hub}Armory.jsx`)).toEqual([]);
+    // The fix pass (founder rulings D-B, D-C, Nov 6, 2026): the core's level and its breath, everywhere the core draws, so
+    // the engine reads the flag too, each read a literal ternary whose else arm is main's expression, textually.
+    const ENGINE_IMPORT = "import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';";
+    const engine = '../components/AgentForm/engine/';
+    expect(at(`${engine}core.js`)).toEqual([
+      ENGINE_IMPORT,
+      'coreMesh.scale.setScalar(C.core * beacon); AGENT_FORM_ARMORY_ENABLED ? coreMesh.material.color.set(pal.core).multiplyScalar(S.level * (S.lifted || 1)) : coreMesh.material.color.set(pal.core);',
+      'glow.material.color.set(pal.near); glow.material.opacity = AGENT_FORM_ARMORY_ENABLED ? clamp(.95 * S.bright * hot * S.level, 0, 1) : clamp(.95 * S.bright * hot, 0, 1); glow.scale.setScalar(.7 * C.glow * beacon * (1 + .08 * Math.sin(t * 1.3)) * hot * (S.lifted || 1));',
+      'halo.material.color.set(pal.near); halo.material.opacity = AGENT_FORM_ARMORY_ENABLED ? clamp(.18 * S.bright * hot * S.level, 0, 1) : clamp(.18 * S.bright * hot, 0, 1);',
+    ]);
+    expect(at(`${engine}form.js`)).toEqual([
+      ENGINE_IMPORT,
+      'if (F.brain) F.brain.update(t, AGENT_FORM_ARMORY_ENABLED ? { ...S, bright: S.bright * coreLift, lifted: coreLift, level: coreLevel(t, spec.held === true) } : coreLift === 1 ? S : { ...S, bright: S.bright * coreLift, lifted: coreLift }, pal, camDir);',
+    ]);
+    expect(at(`${engine}engine.js`)).toEqual([
+      ENGINE_IMPORT,
+      "poseForm(F, AGENT_FORM_ARMORY_ENABLED ? { ...spec, held: into === 'still' || !animates(v) } : spec, t, C, palette);",
+    ]);
+    // the breath's numbers and curve are the vocabulary's, which reads no flag
+    expect(at(`${engine}vocab.js`)).toEqual([]);
   });
 
   it('no other source file reads it', () => {
@@ -121,6 +142,9 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
     walk(SRC);
     expect(readers.sort()).toEqual([
       'components/AgentForm/agentFormSpec.js',
+      'components/AgentForm/engine/core.js',
+      'components/AgentForm/engine/engine.js',
+      'components/AgentForm/engine/form.js',
       'components/CommandCenter/CommandCenterHub.jsx',
       'components/CommandCenter/LoadoutSheets.jsx',
       'components/CommandCenter/ShadowStage.jsx',

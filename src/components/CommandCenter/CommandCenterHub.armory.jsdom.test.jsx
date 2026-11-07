@@ -57,9 +57,10 @@ import CommandCenterHub from './CommandCenterHub';
 import { ARMORY_COPY, HUB_COPY as COPY } from './hub/hubCopy';
 import { HUB_LAYOUT_FIXTURES } from './__fixtures__/hubLayoutFixtures';
 import { byRole, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav, press } from './__fixtures__/hubTestKit';
-import { ARMORY_SETS, PHONE_ARMORY } from './Armory';
+import { ARMORY_SETS, PHONE_ARMORY, phoneHero } from './Armory';
 import { SET_ALONE, UNLIT } from '../AgentForm/agentFormSpec';
 import { armoryLines } from './hub/archetypeLines';
+import { CLASHBOT_OPEN_EVENT } from '../ClashBot/ClashBotWidget';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -91,13 +92,17 @@ afterEach(() => {
 });
 
 const AGENT = (over = {}) => ({ id: 'ag-1', ownerId: 'u-1', name: 'Nova', archetype: 'momentum_chaser', equippedWatchlistId: 'wl-1', stats: { gamesPlayed: 12 }, ...over });
+// The fix pass (review AR-3): every row that says "the equipped set" gives the agent a set that is not the ring's first,
+// so the equipped set and the first set can never be confused (focus on open, the lit set, the reopened preview).
+const EQUIPPED = 'analyst';
+const ON_EQUIPPED = () => AGENT({ archetype: EQUIPPED });
 const HUB = (agent = AGENT()) => ({ activeBattles: [], setScreen: vi.fn(), onOpenForge: vi.fn(), [READ]: { status: 'ready', agent, retry: vi.fn() } });
 const flush = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); };
 
-async function renderHub({ site = 'desktop', hubWidth = 1280, agent = AGENT() } = {}) {
+async function renderHub({ site = 'desktop', hubWidth = 1280, agent = AGENT(), hubExtra = null } = {}) {
   layout.state.hubWidth = hubWidth;
   const hubs = [];
-  const element = (a) => { hubs.push(HUB(a)); return <CommandCenterHub site={site} hub={hubs.at(-1)} sections={HUB_LAYOUT_FIXTURES.returning.sections} />; };
+  const element = (a) => { hubs.push({ ...HUB(a), ...hubExtra }); return <CommandCenterHub site={site} hub={hubs.at(-1)} sections={HUB_LAYOUT_FIXTURES.returning.sections} />; };
   const m = mount(element(agent));
   mounted.push(m);
   await flush();
@@ -164,18 +169,18 @@ describe('the sheet: the armory with the flag on, the picker with it off', () =>
 
 describe('the six sets on their hooks (board 6; FD-9)', () => {
   it('each is the set alone (no brain), pewter unless it is the equipped one, decorative, and a still', async () => {
-    await renderHub();
+    await renderHub({ agent: ON_EQUIPPED() });
     click(btn(COPY.loadout.changeArchetype));
     expect(sets()).toHaveLength(6);
     for (const codeId of ARMORY_SETS) {
       const p = propsOf(setOf(codeId));
       expect(p.coreStage).toBe(SET_ALONE);
-      expect(p.allegiance).toBe(codeId === 'momentum_chaser' ? 'player' : UNLIT);
+      expect(p.allegiance).toBe(codeId === EQUIPPED ? 'player' : UNLIT);
       expect(p.label).toBeNull();
       expect(p.rate).toBe('still');
       expect(p.equipOnChange).toBeUndefined();
     }
-    expect(option('momentum_chaser').hasAttribute('data-armory-equipped')).toBe(true);
+    expect(ARMORY_SETS.filter((codeId) => option(codeId).hasAttribute('data-armory-equipped'))).toEqual([EQUIPPED]);
   });
 
   it('hovering a set makes it live; leaving makes it a still again; one set at a time, so never more than two live views in the dialog', async () => {
@@ -224,10 +229,11 @@ describe('the six sets on their hooks (board 6; FD-9)', () => {
 
 describe('preview and equip (the wide dialog)', () => {
   it('selecting a set previews it: the centre plays the swap to it, the status and the button say so', async () => {
-    await renderHub();
+    await renderHub({ agent: ON_EQUIPPED() });
     click(btn(COPY.loadout.changeArchetype));
     const c = centre();
-    expect(propsOf(c).archetype).toBe('momentum_chaser');
+    expect(propsOf(c).archetype).toBe(EQUIPPED);
+    expect(option(EQUIPPED).getAttribute('aria-selected')).toBe('true');
     expect(propsOf(c).equipOnChange).toBe(true);
     expect(propsOf(c).size).toBe(300);
     expect(statusLine().textContent).toBe(ARMORY_COPY.equipped);
@@ -236,7 +242,7 @@ describe('preview and equip (the wide dialog)', () => {
     expect(centre()).toBe(c); // the same view: a change it plays, never a remount
     expect(propsOf(c).archetype).toBe('contrarian');
     expect(option('contrarian').getAttribute('aria-selected')).toBe('true');
-    expect(statusLine().textContent).toBe(ARMORY_COPY.previewingOver(nameOf('momentum_chaser')));
+    expect(statusLine().textContent).toBe(ARMORY_COPY.previewingOver(nameOf(EQUIPPED)));
     expect(equipButton().textContent).toBe(ARMORY_COPY.equip(nameOf('contrarian')));
     expect(changeArchetype).not.toHaveBeenCalled();
   });
@@ -336,7 +342,8 @@ const closesOnce = (h, from, previewed) => {
   expect(after.slice(0, at).every((p) => p.archetype === previewed && p.size === PHONE_ARMORY.centre)).toBe(true);
   const worn = after.slice(at).filter((p) => p.archetype !== undefined);
   expect(worn.map((p) => p.archetype), 'a set worn again after the close').toEqual([]);
-  expect(after[at].size).toBe(200);
+  // back to the bare hero's own size (ruling D-A: 240 at the rows' 390 px), in the same render as the unequip
+  expect(after[at].size).toBe(phoneHero(390).size);
   expect(after[at].equipOnChange).toBe(true);
 };
 
@@ -445,7 +452,7 @@ describe('the phone: the armory in the hero\'s box (FD-8)', () => {
   it('the text column and the area lines fold away; the hero is the same view, shrunk to the armory\'s centre and live', async () => {
     await renderHub({ site: 'mobile', hubWidth: 390 });
     const h = hero();
-    expect(propsOf(h).size).toBe(200);
+    expect(propsOf(h).size).toBe(240);
     const stage = document.querySelector('[data-hub-stage="phone"]');
     expect(stage.textContent).toContain(COPY.shadow.name);
     click(btn(COPY.loadout.changeArchetype));
@@ -460,11 +467,11 @@ describe('the phone: the armory in the hero\'s box (FD-8)', () => {
   });
 
   it('N1: opening suits the bare hero up in the equipped set; a tap previews another on the hero itself, played', async () => {
-    await renderHub({ site: 'mobile', hubWidth: 390 });
+    await renderHub({ site: 'mobile', hubWidth: 390, agent: ON_EQUIPPED() });
     const h = hero();
     expect(propsOf(h).archetype).toBeUndefined();
     click(btn(COPY.loadout.changeArchetype));
-    expect(propsOf(h).archetype).toBe('momentum_chaser');
+    expect(propsOf(h).archetype).toBe(EQUIPPED);
     expect(propsOf(h).equipOnChange).toBe(true);
     click(option('contrarian'));
     expect(propsOf(h).archetype).toBe('contrarian');
@@ -556,17 +563,41 @@ describe('the phone: the armory in the hero\'s box (FD-8)', () => {
   });
 
   it('opening focuses the equipped set; Escape closes, and focus goes back to Change archetype', async () => {
-    await renderHub({ site: 'mobile', hubWidth: 390 });
+    await renderHub({ site: 'mobile', hubWidth: 390, agent: ON_EQUIPPED() });
     const opener = btn(COPY.loadout.changeArchetype);
     opener.focus();
     click(opener);
-    expect(document.activeElement).toBe(option('momentum_chaser'));
+    // the equipped set, which is not the ring's first (review AR-3)
+    expect(document.activeElement).toBe(option(EQUIPPED));
+    expect(document.activeElement).not.toBe(option(ARMORY_SETS[0]));
     press(document.activeElement, 'ArrowDown');
-    expect(document.activeElement).toBe(option('contrarian'));
+    expect(document.activeElement).toBe(option(ARMORY_SETS[ARMORY_SETS.indexOf(EQUIPPED) + 1]));
     press(document.activeElement, 'Escape');
     expect(document.querySelector('[data-hub-stage="phone"]').getAttribute('data-hub-armory')).toBeNull();
     expect(document.activeElement).toBe(btn(COPY.loadout.changeArchetype));
   });
+
+  // Review AR-1: the opener sits below the stage, and a focus that scrolled to it carried the hero out of view while it
+  // collapsed and took the armor off (measured in a real browser: the hub's section scrolled 8 → 365 px). jsdom cannot
+  // scroll, so the row is the option itself; the browser harness is the proof (the A1 report §15).
+  for (const [path, closeIt] of [
+    ['Close', () => click(document.querySelector('[data-armory-close]'))],
+    ['Escape', () => press(document.activeElement, 'Escape')],
+    ['Equip', async () => { click(option('degen')); await equipAndSettle(); }],
+  ]) {
+    it(`AR-1: ${path} gives focus back to Change archetype without scrolling to it`, async () => {
+      await renderHub({ site: 'mobile', hubWidth: 390, agent: ON_EQUIPPED() });
+      const opener = btn(COPY.loadout.changeArchetype);
+      opener.focus();
+      click(opener);
+      const focus = vi.spyOn(opener, 'focus');
+      await closeIt();
+      expect(document.querySelector('[data-hub-stage="phone"]').getAttribute('data-hub-armory')).toBeNull();
+      expect(focus).toHaveBeenCalledTimes(1);
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+      expect(document.activeElement).toBe(opener);
+    });
+  }
 
   it('reduced motion: the sets stay stills when touched', async () => {
     motion.reduced = true;
@@ -606,13 +637,15 @@ describe('N2(d): the phone armory steps aside', () => {
   }
   const reopensOnTheEquippedSet = () => {
     click(btn(COPY.loadout.changeArchetype));
-    expect(option('momentum_chaser').getAttribute('aria-selected')).toBe('true');
-    expect(propsOf(hero()).archetype).toBe('momentum_chaser');
+    expect(option(EQUIPPED).getAttribute('aria-selected')).toBe('true');
+    expect(propsOf(hero()).archetype).toBe(EQUIPPED);
   };
+  /** The phone hub, its agent on a set that is not the ring's first (review AR-3). */
+  const renderPhone = () => renderHub({ site: 'mobile', hubWidth: 390, agent: ON_EQUIPPED() });
 
   for (const name of ['overview', 'research', 'partnership']) {
     it(`switching to the ${name} tab closes it`, async () => {
-      await renderHub({ site: 'mobile', hubWidth: 390 });
+      await renderPhone();
       const h = hero();
       await openAndPreview();
       const from = h.history.length;
@@ -624,7 +657,7 @@ describe('N2(d): the phone armory steps aside', () => {
   }
 
   it('the Loadout tab itself, where the armory opens, is no switch: it stays open on its preview', async () => {
-    await renderHub({ site: 'mobile', hubWidth: 390 });
+    await renderPhone();
     await openAndPreview();
     click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
     expect(armoryOpen()).toBe(true);
@@ -633,7 +666,7 @@ describe('N2(d): the phone armory steps aside', () => {
 
   for (const [name, opener] of [['the watchlist sheet', () => btn(COPY.loadout.changeWatchlist)], ['the agent record', () => btn(COPY.loadout.recordLabel('Nova'))]]) {
     it(`opening ${name} closes it (the hub's one sheet slot)`, async () => {
-      await renderHub({ site: 'mobile', hubWidth: 390 });
+      await renderPhone();
       const h = hero();
       await openAndPreview();
       const from = h.history.length;
@@ -644,7 +677,7 @@ describe('N2(d): the phone armory steps aside', () => {
   }
 
   it('leaving for the Forge closes it before the hub goes', async () => {
-    const { hub } = await renderHub({ site: 'mobile', hubWidth: 390 });
+    const { hub } = await renderPhone();
     const h = hero();
     await openAndPreview();
     const from = h.history.length;
@@ -656,7 +689,7 @@ describe('N2(d): the phone armory steps aside', () => {
   });
 
   it('leaving the hub (it unmounts) discards the armory: back on the hub it is closed, the hero bare, nothing equipped', async () => {
-    const { m, element } = await renderHub({ site: 'mobile', hubWidth: 390 });
+    const { m, element } = await renderPhone();
     await openAndPreview();
     m.unmount();
     mounted = mounted.filter((x) => x !== m);
@@ -668,5 +701,95 @@ describe('N2(d): the phone armory steps aside', () => {
     expect(propsOf(hero()).archetype).toBeUndefined();
     expect(changeArchetype).not.toHaveBeenCalled();
     reopensOnTheEquippedSet();
+  });
+
+  // Founder ruling N4 (Nov 6, 2026): the app menu and "Report a bug" open over the hub without leaving it, so only N2(d)'s
+  // triggers close the armory; it stays open, on its preview, under both.
+  it('N4: opening the app menu or "Report a bug" leaves it open, on its preview, with nothing equipped', async () => {
+    const setSidebarOpen = vi.fn();
+    const bugReports = vi.fn();
+    window.addEventListener(CLASHBOT_OPEN_EVENT, bugReports);
+    try {
+      await renderHub({ site: 'mobile', hubWidth: 390, agent: ON_EQUIPPED(), hubExtra: { setSidebarOpen } });
+      const h = hero();
+      await openAndPreview();
+      const from = h.history.length;
+      click(btn(COPY.header.menu));
+      expect(setSidebarOpen).toHaveBeenCalledWith(true);
+      expect(armoryOpen()).toBe(true);
+      click(btn(COPY.header.reportBug));
+      expect(bugReports).toHaveBeenCalledTimes(1);
+      expect(armoryOpen()).toBe(true);
+      // the hero still wears the preview: nothing took the armor off, nothing was equipped
+      expect(h.history.slice(from).every((p) => p.archetype === 'contrarian')).toBe(true);
+      expect(propsOf(hero()).archetype).toBe('contrarian');
+      expect(changeArchetype).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(CLASHBOT_OPEN_EVENT, bugReports);
+    }
+  });
+});
+
+// ── Founder ruling D-A (Nov 6, 2026): a bigger bare Shadow on the phone hub ───────────────────────────────────────────
+// With the flag on the phone hero is bare Shadow (N1), drawn bigger than PhoneStage's 200 px box (196 under 375 px):
+// Armory.jsx phoneHero, from the hub's measured width. Its name and status stack under it where beside it they would not
+// keep their column (every phone width up to about 420 px); the armory still opens to its 152 px centre and closes back.
+// jsdom has no layout, so these rows pin the sizes, the layout and the order; the browser harness measures the boxes.
+describe('D-A: the phone hub\'s bigger bare hero', () => {
+  const stage = () => document.querySelector('[data-hub-stage="phone"]');
+  const layoutOf = () => stage().querySelector('[data-hub-hero-layout]')?.getAttribute('data-hub-hero-layout') ?? null;
+
+  it.each([[320, 220], [360, 220], [390, 240]])('at %i px the hero is %i px, and its name and status stack under it', async (width, size) => {
+    await renderHub({ site: 'mobile', hubWidth: width });
+    expect(propsOf(hero()).size).toBe(size);
+    expect(layoutOf()).toBe('stacked');
+    const box = stage().querySelector('[data-hub-hero-layout]');
+    expect(box.style.flexDirection).toBe('column');
+    const heroBox = box.querySelector('[data-hub-agent-form]');
+    const words = box.querySelector('[data-hub-hero-text]');
+    // the words come after the figure in a column, so under it; they are all there, nothing cut
+    expect(heroBox.compareDocumentPosition(words) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heroBox.contains(words)).toBe(false);
+    expect(words.textContent).toContain(COPY.shadow.name);
+    expect(words.textContent).toContain(COPY.shadow.role);
+    expect(words.querySelector('[role="status"]')).not.toBeNull();
+    expect(words.style.width).toBe('100%');
+  });
+
+  it('wide enough for their column (430 px), the words go beside the hero, which keeps its size', async () => {
+    await renderHub({ site: 'mobile', hubWidth: 430 });
+    expect(propsOf(hero()).size).toBe(240);
+    expect(layoutOf()).toBe('beside');
+    expect(stage().querySelector('[data-hub-hero-text]').style.flex).toMatch(/^1/);
+  });
+
+  it('the armory opens from the bigger hero to its 152 px centre and closes back to it, one view throughout (at 320 px too)', async () => {
+    for (const [width, size] of [[390, 240], [320, 220]]) {
+      await renderHub({ site: 'mobile', hubWidth: width });
+      const h = hero();
+      expect(propsOf(h).size).toBe(size);
+      click(btn(COPY.loadout.changeArchetype));
+      expect(propsOf(h).size).toBe(PHONE_ARMORY.centre);
+      expect(layoutOf()).toBeNull();
+      click(document.querySelector('[data-armory-close]'));
+      expect(hero()).toBe(h);
+      expect(propsOf(h).size).toBe(size);
+      expect(layoutOf()).toBe('stacked');
+      for (const m of mounted) m.unmount();
+      mounted = [];
+      forms.live = new Map();
+    }
+  });
+
+  it('the control: with the flag off the phone hero is PhoneStage\'s, 196 under 375 px and 200 from it, its words beside it', async () => {
+    armory.on = false;
+    for (const [width, size] of [[320, 196], [390, 200]]) {
+      await renderHub({ site: 'mobile', hubWidth: width });
+      expect(propsOf(hero()).size).toBe(size);
+      expect(layoutOf()).toBeNull();
+      for (const m of mounted) m.unmount();
+      mounted = [];
+      forms.live = new Map();
+    }
   });
 });

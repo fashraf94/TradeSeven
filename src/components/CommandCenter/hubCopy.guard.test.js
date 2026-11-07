@@ -528,8 +528,10 @@ describe('A1: the armory\'s copy carries no count, stage or growth (D4, FD-6), a
     expect(ARMORY_COPY.previewingOver('Trend Follower')).toBe('Previewing · Equipped set is Trend Follower');
   });
 
-  it('FD-1: the footnote is the founder\'s sentence; nothing in the armory promises "next deploy"', () => {
-    expect(ARMORY_COPY.footnote).toBe('Shadow wears it now; a game already running keeps the armor it deployed with.');
+  it('FD-1, as N3 rewords it (Nov 6, 2026): the footnote is the founder\'s line; nothing in the armory promises "next deploy"', () => {
+    expect(ARMORY_COPY.footnote).toBe('Equipped now · a game already running keeps the armor it deployed with.');
+    // N3 replaces FD-1's first clause: with N1 the hub's Shadow stays bare after an equip, so the line no longer says it wears it
+    expect(ARMORY_COPY.footnote).not.toMatch(/wears it now/i);
     expect([...sourceStrings(armorySource(read(COPY_TABLES[0]))), ...sampled()].filter((s) => /next deploy/i.test(s))).toEqual([]);
   });
 

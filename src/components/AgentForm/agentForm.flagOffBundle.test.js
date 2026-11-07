@@ -232,6 +232,26 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
     expect(code).toMatch(/pal: opponent \? "copper" : "teal"|pal: opponent \? 'copper' : 'teal'/);
   }, 30000);
 
+  // The A1 fix pass (founder rulings D-B, D-C): the engine reads the flag for the core's level and its breath. Flag off,
+  // each read folds to main's expression, so the engine modules bundle as they did, with nothing of the breath in them.
+  it('the engine (fix pass, D-B and D-C): with the flag off nothing of the core\'s level or breath bundles; each site is main\'s expression', async () => {
+    const ENGINE = 'src/components/AgentForm/engine/';
+    const core = (await bundle(`${ENGINE}core.js`, ['buildBrain'])).code;
+    expect(core).not.toMatch(/\bS\.level\b|multiplyScalar\(S\./);
+    // (Rollup writes `.95` as `0.95` and may rename a local, as the app's build does: `hot2`.)
+    expect(core).toMatch(/\bcoreMesh\.material\.color\.set\(pal\.core\);/);
+    expect(core).toMatch(/\bglow\.material\.opacity = clamp\(0?\.95 \* S\.bright \* hot\d*, 0, 1\);/);
+    expect(core).toMatch(/\bhalo\.material\.opacity = clamp\(0?\.18 \* S\.bright \* hot\d*, 0, 1\);/);
+    const form = (await bundle(`${ENGINE}form.js`, ['poseForm'])).code;
+    expect(form).not.toMatch(/\bcoreLevel\b|\.held\b/);
+    expect(form).toMatch(/F\.brain\.update\(t, coreLift === 1 \? S : \{ \.\.\.S, bright: S\.bright \* coreLift, lifted: coreLift \}, pal, camDir\d*\);/);
+    const engine = (await bundle(`${ENGINE}engine.js`, ['createAgentFormEngine'])).code;
+    expect(engine).not.toMatch(/\bheld:|\.held\b/); // (a JSDoc in it says "held while the view does not draw", as main's does)
+    expect(engine).toMatch(/poseForm\(F, spec, t, C\d*, palette\);/);
+    const vocab = (await bundle(`${ENGINE}vocab.js`, ['STATES', 'responseLift'])).code;
+    expect(vocab).not.toMatch(/\bbreath\b|\bCORE_LEVEL\b|\bBREATH_S\b|\bBREATH_DEPTH\b|\bcoreLevel\b/);
+  }, 30000);
+
   it('the check bites: each mark off, and each shape a mark scan would pass, leaves a statement it reports; a pristine copy leaves none', async () => {
     const plant = (rel, from, to) => {
       const code = read(rel);
