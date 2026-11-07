@@ -181,6 +181,57 @@ describe('consistency — any disagreement makes the slot unresolved (inconsiste
     // Crypto on the corrected route carries its ids too, so it stays consistent (and skipped).
     expect(at(correctedBattle(), 'support', 2)).toEqual([expect.objectContaining({ status: 'crypto' })]);
   });
+  // V1.9 §4 (Astra's review 4): before the fix, a non-string id read as absent (idOf) where an id was taken and passed
+  // the id pattern through String(): a numeric id on a corrected battle turned the lifetime into a FALLBACK id.
+  describe('V1.9: a position id must be a string — a number or a boolean makes the slot inconsistent, never a fallback id', () => {
+    const shapes = {
+      'a starting position still held (its live positionId)': (b, v) => { b.portfolio.star[0].positionId = v; },
+      'a starting position already sold (its closing row\'s outgoingPositionId)': (b, v) => { correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1, positionId: 'p1' }); b.trades[0].outgoingPositionId = v; },
+      'a swap-in row (its incomingPositionId, the live position carrying the same value)': (b, v) => { correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1, positionId: 'p1' }); b.trades[0].incomingPositionId = v; b.portfolio.star[0].positionId = v; },
+      'a live position after a swap (its positionId only)': (b, v) => { correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1, positionId: 'p1' }); b.portfolio.star[0].positionId = v; },
+      'a later row\'s outgoingPositionId (two swaps in the slot)': (b, v) => { correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1, positionId: 'p1' }); correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'CVX', at: T2, positionId: 'p2' }); b.trades[0].incomingPositionId = v; b.trades[1].outgoingPositionId = v; },
+    };
+    for (const [label, put] of Object.entries(shapes)) {
+      for (const v of [123, true, false, 0]) {
+        it(`${label} = ${JSON.stringify(v)} → inconsistent, no activation in the slot`, () => {
+          const b = correctedBattle();
+          put(b, v);
+          const rs = at(b, 'star', 0);
+          expect(rs.length).toBeGreaterThan(0);
+          expect(rs.every((r) => r.status === 'unresolved' && r.reason === 'inconsistent')).toBe(true);
+          const d = discoverActivations(b);
+          expect(d.activations.filter((a) => a.tier === 'star' && a.slot === 0)).toEqual([]);
+          expect(d.activations.some((a) => a.activationId === String(v) || a.activationId.startsWith('star:0:'))).toBe(false);
+          expect(at(b, 'star', 1)[0].status).toBe('stock'); // only that slot
+        });
+      }
+    }
+    // Review PFB-2: two shapes where the non-string sits in no lifetime's OWN id field, so only the up-front check sees it.
+    for (const v of [123, true]) {
+      it(`a legacy battle whose live position, after a legacy swap-in, carries positionId ${JSON.stringify(v)} → inconsistent`, () => {
+        const b = legacyBattle();
+        legacySwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1 });
+        b.portfolio.star[0].positionId = v;
+        expect(at(b, 'star', 0).every((r) => r.status === 'unresolved' && r.reason === 'inconsistent')).toBe(true);
+        expect(discoverActivations(b).activations.filter((a) => a.tier === 'star' && a.slot === 0)).toEqual([]);
+      });
+      it(`a gap battle whose first retained row's outgoingPositionId is ${JSON.stringify(v)} → inconsistent, the retained swap-in unnamed`, () => {
+        const b = correctedBattle();
+        correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1, positionId: 'p1' });
+        correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'CVX', at: T2, positionId: 'p2' });
+        b.trades.shift();
+        b.scoreState.tradeCount = 9;
+        b.trades[0].outgoingPositionId = v; // closes the evicted lifetime: no named lifetime owns this field
+        expect(at(b, 'star', 0).filter((r) => r.kind === 'swap_in').every((r) => r.status === 'unresolved' && r.reason === 'inconsistent')).toBe(true);
+        expect(discoverActivations(b).activations.filter((a) => a.tier === 'star' && a.slot === 0)).toEqual([]);
+      });
+    }
+    it('the same shapes with string ids stay named (the check reads the type, nothing else)', () => {
+      const b = correctedBattle();
+      correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1, positionId: 'p1' });
+      expect(at(b, 'star', 0).map((r) => [r.status, r.activationId])).toEqual([['stock', 'pos-star-0'], ['stock', 'p1']]);
+    });
+  });
   it('a row naming a slot the roster does not have is unresolved, and the slots are untouched', () => {
     const b = legacyBattle();
     b.trades.push({ ...legacySwap(legacyBattle(), { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1 }), slotIndex: 7 });

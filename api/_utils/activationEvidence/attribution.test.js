@@ -12,6 +12,8 @@ import { discoverActivations } from './discover.js';
 import { legacyBattle } from './__fixtures__/activationBattles.js';
 
 const CLONE = 'casual-agent-owner-1';
+/** The battle as the tenant reads it: its agent and its owner (BATTLE_FIELDS). */
+const BATTLE = Object.freeze({ agentId: CLONE, ownerId: 'owner-1' });
 /**
  * `failOn`: the 1-based read numbers that throw (1 = the clone read, 2 = the parent read); `fail` throws on every read.
  * A failed read throws a coded error (gRPC UNAVAILABLE), or a plain Error with no code when `plain` is set.
@@ -39,11 +41,11 @@ describe('attribution', () => {
   });
   it('a casual clone whose parent the same owner holds resolves to the parent', async () => {
     const db = dbOf({ [CLONE]: { ownerId: 'owner-1', rankedAgentId: 'agent-1' }, 'agent-1': { ownerId: 'owner-1' } });
-    expect(await attributionOf(db, { agentId: CLONE })).toEqual({ attributionAgentId: 'agent-1', attributionStatus: 'resolved', deferred: false });
+    expect(await attributionOf(db, BATTLE)).toEqual({ attributionAgentId: 'agent-1', attributionStatus: 'resolved', deferred: false });
   });
   it('a null database (unreachable from the tenant, which always has one) leaves the clone\'s own id, unresolved, as before; the contract\'s verdicts are the five below', async () => {
     const spy = quiet();
-    expect(await attributionOf(null, { agentId: CLONE })).toEqual({ attributionAgentId: CLONE, attributionStatus: 'unresolved', deferred: false });
+    expect(await attributionOf(null, BATTLE)).toEqual({ attributionAgentId: CLONE, attributionStatus: 'unresolved', deferred: false });
     spy.mockRestore();
   });
   it.each([
@@ -55,7 +57,7 @@ describe('attribution', () => {
     ['a self-reference', dbOf({ [CLONE]: { ownerId: 'owner-1', rankedAgentId: CLONE } })],
   ])('unresolved (a verdict): %s — the clone\'s own id, never a guessed parent', async (_l, db) => {
     const spy = quiet();
-    expect(await attributionOf(db, { agentId: CLONE })).toEqual({ attributionAgentId: CLONE, attributionStatus: 'unresolved', deferred: false });
+    expect(await attributionOf(db, BATTLE)).toEqual({ attributionAgentId: CLONE, attributionStatus: 'unresolved', deferred: false });
     spy.mockRestore();
   });
   it('the preparation budget admits each of the resolver\'s two reads: a parent read the budget refuses defers the battle, never unresolved (review V4 on nit-2)', async () => {
@@ -63,7 +65,7 @@ describe('attribution', () => {
     const db = dbOf({ [CLONE]: { ownerId: 'owner-1', rankedAgentId: 'agent-1' }, 'agent-1': { ownerId: 'owner-1' } });
     let budget = 1;
     const seen = [];
-    const r = await attributionOf(db, { agentId: CLONE }, { mayRead: () => budget-- > 0, beforeRead: () => seen.push('read') });
+    const r = await attributionOf(db, BATTLE, { mayRead: () => budget-- > 0, beforeRead: () => seen.push('read') });
     expect(r).toEqual({ attributionAgentId: null, attributionStatus: null, deferred: true, reason: 'prep_cut' });
     expect(db.reads).toEqual([`agents/${CLONE}`]); // the parent read never started
     expect(seen).toEqual(['read']);
@@ -75,32 +77,32 @@ describe('attribution', () => {
     it('the clone read throws → deferred (attribution_read_error); the parent is never read', async () => {
       const spy = quiet();
       const db = dbOf(agents, { failOn: [1] });
-      expect(await attributionOf(db, { agentId: CLONE })).toEqual(DEFERRED);
+      expect(await attributionOf(db, BATTLE)).toEqual(DEFERRED);
       expect(db.reads).toEqual([`agents/${CLONE}`]);
       spy.mockRestore();
     });
     it('the parent read throws → deferred (attribution_read_error)', async () => {
       const spy = quiet();
       const db = dbOf(agents, { failOn: [2] });
-      expect(await attributionOf(db, { agentId: CLONE })).toEqual(DEFERRED);
+      expect(await attributionOf(db, BATTLE)).toEqual(DEFERRED);
       expect(db.reads).toEqual([`agents/${CLONE}`, 'agents/agent-1']);
       spy.mockRestore();
     });
     it('any error counts, coded or not: a database read throwing a plain TypeError (no code) → deferred, on either read (review)', async () => {
       const spy = quiet();
-      for (const failOn of [[1], [2]]) expect(await attributionOf(dbOf(agents, { failOn, plain: true }), { agentId: CLONE })).toEqual(DEFERRED);
+      for (const failOn of [[1], [2]]) expect(await attributionOf(dbOf(agents, { failOn, plain: true }), BATTLE)).toEqual(DEFERRED);
       spy.mockRestore();
     });
     it('every read failing → deferred; the same agents healthy → resolved to the parent', async () => {
       const spy = quiet();
-      expect(await attributionOf(dbOf(agents, { fail: true }), { agentId: CLONE })).toEqual(DEFERRED);
-      expect(await attributionOf(dbOf(agents), { agentId: CLONE })).toEqual({ attributionAgentId: 'agent-1', attributionStatus: 'resolved', deferred: false });
+      expect(await attributionOf(dbOf(agents, { fail: true }), BATTLE)).toEqual(DEFERRED);
+      expect(await attributionOf(dbOf(agents), BATTLE)).toEqual({ attributionAgentId: 'agent-1', attributionStatus: 'resolved', deferred: false });
       spy.mockRestore();
     });
     it('a throw from the read seam counts as a failed read; a budget refusal is prep_cut, never attribution_read_error', async () => {
       const spy = quiet();
-      expect(await attributionOf(dbOf(agents), { agentId: CLONE }, { beforeRead: async () => { throw new Error('seam'); } })).toEqual(DEFERRED);
-      expect(await attributionOf(dbOf(agents), { agentId: CLONE }, { mayRead: () => false }))
+      expect(await attributionOf(dbOf(agents), BATTLE, { beforeRead: async () => { throw new Error('seam'); } })).toEqual(DEFERRED);
+      expect(await attributionOf(dbOf(agents), BATTLE, { mayRead: () => false }))
         .toEqual({ attributionAgentId: null, attributionStatus: null, deferred: true, reason: 'prep_cut' });
       spy.mockRestore();
     });
@@ -114,14 +116,39 @@ describe('attribution', () => {
     const spy = quiet();
     const parent = { ownerId: 'owner-2', name: 'SENTINEL_PARENT_NAME', archetype: 'SENTINEL_PARENT_ARCH', rankedAgentId: 'SENTINEL_X' };
     const db = dbOf({ [CLONE]: { ownerId: 'owner-1', rankedAgentId: 'agent-of-owner-2' }, 'agent-of-owner-2': parent });
-    const r = await attributionOf(db, { agentId: CLONE });
+    const r = await attributionOf(db, BATTLE);
     expect(r).toEqual({ attributionAgentId: CLONE, attributionStatus: 'unresolved', deferred: false });
     expect(db.reads).toEqual([`agents/${CLONE}`, 'agents/agent-of-owner-2']); // the ownership check read it, and only that
-    const b = legacyBattle({ agentId: CLONE });
+    const b = legacyBattle(BATTLE);
     const a = discoverActivations(b).activations[0];
     const p = buildPointer({ battle: b, battleId: 'b', activation: a, session: '2026-11-04', attribution: r, ruleSet: describeRuleSet(), evidence: null, missingDetail: 'x', observedAt: '2026-11-05T15:00:00.000Z' });
     const text = JSON.stringify([r, p]);
     for (const s of ['agent-of-owner-2', 'owner-2', 'SENTINEL_PARENT_NAME', 'SENTINEL_PARENT_ARCH', 'SENTINEL_X']) expect(text).not.toContain(s);
     spy.mockRestore();
+  });
+
+  // V1.9 §2 (Astra's review note on casualClone.js:317): the resolver compares the two agents' ownerId fields, so two
+  // absent ids compare equal and it returns the parent. The observer accepts a parent only on its own owner check.
+  describe('V1.9: the observer\'s own owner check — a parent is accepted only when battle, clone and parent name one owner', () => {
+    const UNRESOLVED = { attributionAgentId: CLONE, attributionStatus: 'unresolved', deferred: false };
+    it.each([
+      ['the clone without ownerId', { ownerId: 'owner-1' }, { rankedAgentId: 'agent-1' }, { ownerId: 'owner-1' }],
+      ['the parent without ownerId', { ownerId: 'owner-1' }, { ownerId: 'owner-1', rankedAgentId: 'agent-1' }, {}],
+      ['both without ownerId (the resolver accepts this one)', { ownerId: 'owner-1' }, { rankedAgentId: 'agent-1' }, {}],
+      ['both with an empty ownerId (the resolver accepts this one)', { ownerId: 'owner-1' }, { ownerId: '', rankedAgentId: 'agent-1' }, { ownerId: '' }],
+      ['a clone owner different from the battle\'s (the resolver accepts this one)', { ownerId: 'owner-1' }, { ownerId: 'owner-2', rankedAgentId: 'agent-1' }, { ownerId: 'owner-2' }],
+      ['a battle without ownerId', {}, { ownerId: 'owner-1', rankedAgentId: 'agent-1' }, { ownerId: 'owner-1' }],
+      ['a non-string ownerId on all three', { ownerId: 7 }, { ownerId: 7, rankedAgentId: 'agent-1' }, { ownerId: 7 }],
+    ])('%s → unresolved, the clone\'s own id', async (_l, battleOver, clone, parent) => {
+      const spy = quiet();
+      const db = dbOf({ [CLONE]: clone, 'agent-1': parent });
+      expect(await attributionOf(db, { agentId: CLONE, ...battleOver })).toEqual(UNRESOLVED);
+      spy.mockRestore();
+    });
+    it('a healthy clone (battle, clone and parent all owner-1) → resolved to the parent, from the two reads the resolver made and no other', async () => {
+      const db = dbOf({ [CLONE]: { ownerId: 'owner-1', rankedAgentId: 'agent-1' }, 'agent-1': { ownerId: 'owner-1' } });
+      expect(await attributionOf(db, BATTLE)).toEqual({ attributionAgentId: 'agent-1', attributionStatus: 'resolved', deferred: false });
+      expect(db.reads).toEqual([`agents/${CLONE}`, 'agents/agent-1']);
+    });
   });
 });

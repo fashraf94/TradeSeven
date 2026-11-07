@@ -83,15 +83,20 @@ afterEach(() => {
 
 describe('flag OFF — the response is the pre-change response, byte for byte', () => {
   for (const [name, seed, reviewOn] of [['pending', seedPending, false], ['empty', () => makeCallsFirestore({ docs: {} }), false], ['pendingReviewOn', seedPending, true]]) {
-    it(`${name}: the exact pre-change string, and the observer did no I/O`, async () => {
+    it(`${name}: the exact pre-change string, the observer did no I/O, and no health line was logged`, async () => {
       state.reviewOn = reviewOn;
       db = seed();
+      const logged = [];
+      const log = vi.spyOn(console, 'log').mockImplementation((...a) => { logged.push(a.map(String).join(' ')); });
       const res = makeRes();
       await handler(cronReq(), res);
+      log.mockRestore();
       expect(res.statusCode).toBe(200);
       expect(JSON.stringify(res.body)).toBe(GOLDEN[name]);
       expect(state.observerCalls).toHaveLength(1); // it was called, and returned before any read
       expect(observerIo(db)).toBe(0);
+      expect(logged.length).toBeGreaterThan(0); // the host's own lines were captured …
+      expect(logged.filter((l) => l.includes('[activationEvidence]'))).toEqual([]); // … and the observer's line is absent with the flag off
     });
   }
 });
