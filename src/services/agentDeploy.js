@@ -34,6 +34,10 @@ import { HYPOTHESIS_NOTICES } from '../constants/hypothesisRecords';
 import { DEPLOY_OUTCOMES } from '../constants/deployOutcomes';
 import { stockPublicationOpensAt, STOCK_PUBLICATION_DELAY_MINUTES } from '../utils/stockAdmissionWindow';
 import { signedInUid } from './deployIdentity';
+// Build A2 fix pass (A2R-3 (b), founder ruling Nov 7 2026): with per-game loadouts on, a BaggerBomb deploy whose clone
+// could not be ensured is refused, never run on the ranked agent. A literal `if` on the flag: flag-off it folds away.
+import { PER_GAME_LOADOUT_ENABLED } from '../config/perGameLoadoutFlags';
+import { LOADOUT_COPY } from '../constants/loadoutCopy';
 
 // BaggerBomb measured thresholds (v2 Ruling 6, BR-4): a selected creation
 // can be refused this way, and — past the market calendar's maintained years
@@ -215,6 +219,13 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
     // R1 — after the clone ensure, and before its target is reported or POSTed:
     // an old request never deploys anything once the account has changed.
     if (!stillOwned()) return orphaned(false);
+    // A2R-3 (b), founder ruling Nov 7 2026 — with PER_GAME_LOADOUT_ENABLED on, the fallback above never deploys: the
+    // BaggerBomb loadout is applied only on the clone (api/_utils/casualClone.js), so the ranked agent would play this
+    // game in the LEAGUE loadout (ruling D1 broken) and hold the ranked record's activeBattleId (blocking that player's
+    // League deploy the next morning). The deploy is refused before any POST, with an honest retry line the strip
+    // shows beside its existing Retry; the fallback telemetry (markCloneFallback, above) is kept. Flag off, the
+    // fallback is exactly today's.
+    if (PER_GAME_LOADOUT_ENABLED && cloneId === null) return { outcome: DEPLOY_OUTCOMES.REFUSED, success: false, postIssued: false, error: 'casual_clone_unavailable', details: LOADOUT_COPY.deployCloneFailed };
     if (cloneId !== null) setDeployTarget(cloneId);
   }
 

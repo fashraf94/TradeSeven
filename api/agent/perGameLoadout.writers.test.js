@@ -53,6 +53,8 @@ const LISTS = {
   'wl-tech': { userId: 'u1', status: 'committed', name: 'Tech Leaders' },
   'wl-draft': { userId: 'u1', status: 'draft', name: 'Draft' },
 };
+// A2R-2: the lock's query, read THROUGH the writer's transaction (tx.get), never around it
+const LOCK_READ_IN_TX = Object.freeze({ query: { collection: 'tournamentGroups', field: 'groupMembers', op: 'array-contains', value: 'u1' } });
 const LOCKING = { id: 'g-week', status: GROUP_STATUS.BATTLE, groupMembers: ['u1', 'cpu-1'], updatedAt: '2026-11-04', startAnchor: { anchorEtDate: '2026-11-02' } };
 
 function setup({ agent = RANKED, groups = [] } = {}) {
@@ -134,6 +136,8 @@ describe('change-archetype, loadout: league (FD-2, FD-3)', () => {
     // BaggerBomb keeps what it wore: the League change never reaches it.
     expect(agent.loadouts.baggerbomb).toEqual({ archetype: 'contrarian', book: { ref: { watchlistId: 'wl-ind' }, name: 'Industrials', pin: null } });
     expect(res.body.loadout).toBeUndefined();
+    // A2R-2: the lock was read through the transaction, before the write
+    expect(fx.state.txReads).toContainEqual(LOCK_READ_IN_TX);
   });
 
   it('once the slot exists a League change leaves it alone', async () => {
@@ -154,6 +158,7 @@ describe('change-archetype, loadout: league (FD-2, FD-3)', () => {
     expect(fx.state.writes).toEqual([]);
     expect(fx.state.agentDocs['agent-1'].archetype).toBe('contrarian');
     expect(fx.state.queries).toEqual([{ collection: 'tournamentGroups', field: 'groupMembers', op: 'array-contains', value: 'u1' }]);
+    expect(fx.state.txReads).toContainEqual(LOCK_READ_IN_TX);
   });
 
   it.each([
@@ -209,12 +214,14 @@ describe('equip-watchlist by loadout', () => {
     expect(locked.statusCode).toBe(409);
     expect(locked.body.lock.endsAt).toBe('2026-11-06T21:00:00.000Z');
     expect(fx.state.writes).toEqual([]);
+    expect(fx.state.txReads).toContainEqual(LOCK_READ_IN_TX); // A2R-2
     fx = setup();
     const ok = await call(equipWatchlist, { watchlistId: 'wl-tech', loadout: 'league' });
     expect(ok.statusCode).toBe(200);
     const agent = fx.state.agentDocs['agent-1'];
     expect(agent.equippedWatchlistId).toBe('wl-tech');
     expect(agent.loadouts.baggerbomb.book.ref).toEqual({ watchlistId: 'wl-ind' });
+    expect(fx.state.txReads).toContainEqual(LOCK_READ_IN_TX); // A2R-2: an admitted write read it in the transaction too
   });
 });
 
@@ -233,10 +240,12 @@ describe('unequip-watchlist by loadout', () => {
     let fx = setup({ groups: [LOCKING] });
     expect((await call(unequipWatchlist, {})).statusCode).toBe(409);
     expect(fx.state.writes).toEqual([]);
+    expect(fx.state.txReads).toContainEqual(LOCK_READ_IN_TX); // A2R-2
     fx = setup();
     expect((await call(unequipWatchlist, { loadout: 'league' })).statusCode).toBe(200);
     const agent = fx.state.agentDocs['agent-1'];
     expect(agent.equippedWatchlistId).toBeNull();
     expect(agent.loadouts.baggerbomb.book.ref).toEqual({ watchlistId: 'wl-ind' });
+    expect(fx.state.txReads).toContainEqual(LOCK_READ_IN_TX); // A2R-2
   });
 });

@@ -42,8 +42,12 @@ export const LOADOUT_COPY = /* @__PURE__ */ Object.freeze({
     next: 'The next deploy wears this.',
     running: (name) => `The running game keeps the ${name}. The next deploy wears what you set here.`,
     nobook: 'No book · open market. Deploy works without one.',
-    locked: (when) => `Locked until the week ends · ${when}. Set when you registered.`,
-    lockedUndated: 'Locked until the week ends. Set when you registered.',
+    // Founder ruling Q3 (Nov 7 2026): the lock names the day the week is scored after, date only (formatLockDay)
+    locked: (day) => `Locked until the week is scored, after the close on ${day}.`,
+    lockedUndated: 'Locked until the week is scored.',
+    // A2R-3 (a): the ranked record has a game running (a League game, or a BaggerBomb game that fell back to it):
+    // A1's words, no date (the game's end is not the week's)
+    lockedBattle: 'Locked while a game is running.',
     open: 'Open until you register for next week. It locks then.',
     checking: 'Checking your League week',
   }),
@@ -58,21 +62,30 @@ export const LOADOUT_COPY = /* @__PURE__ */ Object.freeze({
   /** Board 4, the armory with a loadout context. */
   context: (game) => `Choosing armor for ${game}`,
   contextNext: 'applies to the next deploy',
-  contextLocked: (when) => `locked until ${when}`,
-  contextLockedUndated: 'locked until the week ends',
+  contextLocked: (day) => `locked until the week is scored, after the close on ${day}`,
+  contextLockedUndated: 'locked until the week is scored',
+  contextLockedBattle: 'locked while a game is running',
   contextOpen: 'open · locks when you register',
   equipFor: (name, game) => `Equip ${name} for ${game}`,
-  lockedEquip: 'Locked until the week ends',
-  lockedEquipNote: (when) => `${when}. Try sets on; nothing changes until then.`,
-  lockedEquipNoteUndated: 'Try sets on; nothing changes until the week ends.',
+  lockedEquip: 'Locked until the week is scored',
+  lockedEquipBattle: 'Locked while a game is running',
+  lockedEquipNote: (day) => `After the close on ${day}. Try sets on; nothing changes until then.`,
+  lockedEquipNoteUndated: 'Try sets on; nothing changes until the week is scored.',
+  lockedEquipNoteBattle: 'Try sets on; nothing changes until the game ends.',
+  /**
+   * A2R-3 (b), founder ruling Nov 7 2026: with per-game loadouts on, a BaggerBomb deploy whose casual clone could not be
+   * ensured is refused, never run on the ranked record (it would wear the League loadout and hold the ranked record's
+   * battle). The deploy strip shows this line with its Retry (src/services/agentDeploy.js).
+   */
+  deployCloneFailed: 'Couldn’t start the BaggerBomb game · try again',
   /** Ruling N3's footnote, made context-specific (FD-1 for BaggerBomb; the lock or open line for League). */
   footnoteBaggerbomb: 'Applies to the next deploy · a game already running keeps the armor it deployed with.',
   /** The forge line under the cards (FD-10): the strategy stays on the agent. */
   forgeLine: 'Your Forge strategy rides into both games.',
   /** Board 3, the League tab's line and the Training tab's. */
   leagueEyebrow: 'Your League loadout',
-  leagueLocked: (when) => `Locked until the week ends · ${when}`,
-  leagueLockedUndated: 'Locked until the week ends',
+  leagueLocked: (day) => `Locked until the week is scored, after the close on ${day}`,
+  leagueLockedUndated: 'Locked until the week is scored',
   leagueOpen: 'Open · locks when you register',
   leagueDoor: 'Change your League loadout in the Command Center',
   /** The League line's separator and an unnamed list's name (the hub's own, HUB_COPY.sep and loadout.watchlistFallback). */

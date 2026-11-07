@@ -48,8 +48,8 @@ import { changeArchetype } from '../../services/agentService';
 import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
 import { changeLoadoutArchetype, isLeagueLock } from '../../services/loadoutService';
 import { PerGameLoadoutContext, cardsOf } from './hub/perGameLoadoutContext';
-import { armoryContextOf, armoryFootnoteOf } from './hub/perGameLoadoutModel';
-import { formatLockEndIso } from '../../constants/perGameLoadout';
+import { LOCK_KIND, armoryContextOf, armoryFootnoteOf } from './hub/perGameLoadoutModel';
+import { formatLockDayIso } from '../../constants/perGameLoadout';
 import { LOADOUT_COPY } from '../../constants/loadoutCopy';
 import AgentForm from '../AgentForm/AgentForm';
 import { SET_ALONE, UNLIT, hasWebGL } from '../AgentForm/agentFormSpec';
@@ -184,7 +184,7 @@ export function armoryCardOf(scope) {
  */
 export function loadoutEquipErrorOf(error) {
   if (isLeagueLock(error)) {
-    const when = formatLockEndIso(error?.payload?.lock?.endsAt ?? null);
+    const when = formatLockDayIso(error?.payload?.lock?.endsAt ?? null);
     return when ? LOADOUT_COPY.lines.locked(when) : LOADOUT_COPY.lines.lockedUndated;
   }
   return equipErrorOf(error);
@@ -353,11 +353,12 @@ export function ArmoryDetails({ previewed, equipped, working, error, notice, onE
   // Build A2: Equip names the game; a locked League's Equip is the lock line and does nothing (previewing still works).
   const locked = Boolean(card && card.locked);
   const equipLabel = isEquipped ? ARMORY_COPY.equipped
-    : locked ? (card.state === 'checking' ? LOADOUT_COPY.lines.checking : LOADOUT_COPY.lockedEquip)
+    : locked ? (card.state === 'checking' ? LOADOUT_COPY.lines.checking : card.lockKind === LOCK_KIND.BATTLE ? LOADOUT_COPY.lockedEquipBattle : LOADOUT_COPY.lockedEquip)
       : working ? ARMORY_COPY.equipping
         : card ? LOADOUT_COPY.equipFor(lines.name, card.game) : ARMORY_COPY.equip(lines.name);
   const footnote = !card ? ARMORY_COPY.footnote
-    : locked && card.state === 'locked' ? (card.when ? LOADOUT_COPY.lockedEquipNote(card.when) : LOADOUT_COPY.lockedEquipNoteUndated)
+    : locked && card.state === 'locked' ? (card.lockKind === LOCK_KIND.BATTLE ? LOADOUT_COPY.lockedEquipNoteBattle
+      : card.when ? LOADOUT_COPY.lockedEquipNote(card.when) : LOADOUT_COPY.lockedEquipNoteUndated)
       : armoryFootnoteOf(card);
   return (
     <>
@@ -376,7 +377,7 @@ export function ArmoryDetails({ previewed, equipped, working, error, notice, onE
         full
         icon={isEquipped ? undefined : locked ? 'lock' : 'check'}
         onPress={isEquipped || working || locked ? undefined : onEquip}
-        ariaLabel={locked && !isEquipped ? `${LOADOUT_COPY.lockedEquip}. ${footnote}` : undefined}
+        ariaLabel={locked && !isEquipped ? `${equipLabel}. ${footnote}` : undefined}
         data-armory-equip=""
         data-armory-equip-locked={locked ? '' : undefined}
       >

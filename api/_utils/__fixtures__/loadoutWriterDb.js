@@ -5,13 +5,15 @@
 // store for in-tx and post-tx reads, the composition store's pre-genesis posture), plus the two collections the A2
 // paths read — `watchlists` (the equip checks) and `tournamentGroups`, whose member-scoped `array-contains` query the
 // League lock reads inside the transaction (tx.get(query)). Every query asked is recorded, so a row can prove the BaggerBomb
-// paths never read the lock and the flag-off paths never query it at all.
+// paths never read the lock and the flag-off paths never query it at all; and every read made THROUGH the transaction
+// (`tx.get`, `tx.getAll`) is recorded apart, as `state.txReads` (the fix pass, review A2R-2), so a League row can prove the
+// lock's query went through the live transaction and not around it.
 
 import { makeCompositionStoreDouble } from './compositionStoreDouble.js';
 
 export function makeLoadoutWriterDb({ agentDocs = {}, watchlists = {}, groups = [] } = {}) {
   const __composition = makeCompositionStoreDouble();
-  const state = { agentDocs, watchlists, groups, subcollections: {}, queries: [], writes: [] };
+  const state = { agentDocs, watchlists, groups, subcollections: {}, queries: [], writes: [], txReads: [] };
   let autoSeq = 0;
 
   const store = (agentId, sub) => {
@@ -63,8 +65,10 @@ export function makeLoadoutWriterDb({ agentDocs = {}, watchlists = {}, groups = 
 
   const groupsCollection = {
     where: (field, op, value) => {
-      state.queries.push({ collection: 'tournamentGroups', field, op, value });
+      const asked = { collection: 'tournamentGroups', field, op, value };
+      state.queries.push(asked);
       return {
+        __query: asked,
         get: async () => ({
           docs: state.groups
             .filter((g) => op === 'array-contains' && Array.isArray(g[field]) && g[field].includes(value))
@@ -83,9 +87,10 @@ export function makeLoadoutWriterDb({ agentDocs = {}, watchlists = {}, groups = 
     throw new Error(`Unmocked collection: ${name}`);
   };
 
+  const txRead = (refOrQuery) => state.txReads.push(refOrQuery?.__query ? { query: refOrQuery.__query } : { doc: refOrQuery?.id ?? null });
   const runTransaction = async (fn) => fn({
-    get: async (refOrQuery) => refOrQuery.get(),
-    getAll: async (...refs) => Promise.all(refs.map((r) => r.get())),
+    get: async (refOrQuery) => { txRead(refOrQuery); return refOrQuery.get(); },
+    getAll: async (...refs) => { refs.forEach(txRead); return Promise.all(refs.map((r) => r.get())); },
     set: async (ref, data) => ref.set(data),
     update: async (ref, updates) => ref.update(updates),
   });

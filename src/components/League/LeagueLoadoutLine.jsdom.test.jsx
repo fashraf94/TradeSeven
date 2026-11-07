@@ -37,6 +37,7 @@ const { DeskTrainingPanel } = await import('./LeagueDeskParts');
 const { leagueState } = await import('./leagueFixtures');
 const { getArchetypeDisplayName } = await import('../../data/archetypeDisplay');
 const { LOADOUT_COPY } = await import('../../constants/loadoutCopy');
+const { LeagueGroupKnownContext } = await import('./leagueLoadoutSlot');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -67,7 +68,7 @@ const button = (name) => [...host.querySelectorAll('button')].find((b) => (b.get
 describe('the League tab\'s line', () => {
   it('open: the set\'s still, the book, "Open · locks when you register", and a door to the Command Center', async () => {
     const openLoadout = vi.fn();
-    await render(<LeagueLoadoutLine agentLoadout={LOADOUT({ openLoadout })} group={null} accent="#5EEAD4" />);
+    await render(<LeagueLoadoutLine agentLoadout={LOADOUT({ openLoadout })} group={null} groupKnown accent="#5EEAD4" />);
     const line = host.querySelector('[data-league-loadout]');
     expect(line.textContent).toContain(LOADOUT_COPY.leagueEyebrow);
     expect(line.textContent).toContain(`${getArchetypeDisplayName('contrarian')} · Industrials`);
@@ -81,16 +82,16 @@ describe('the League tab\'s line', () => {
   });
 
   it('locked by the player\'s ranked group: the lock and the week\'s end; no door', async () => {
-    await render(<LeagueLoadoutLine agentLoadout={LOADOUT({ openLoadout: vi.fn() })} group={LOCKED_GROUP} accent="#5EEAD4" />);
+    await render(<LeagueLoadoutLine agentLoadout={LOADOUT({ openLoadout: vi.fn() })} group={LOCKED_GROUP} groupKnown accent="#5EEAD4" />);
     const line = host.querySelector('[data-league-loadout]');
     expect(line.tagName).toBe('SECTION');
     expect(line.querySelector('[data-league-loadout-state]').getAttribute('data-league-loadout-state')).toBe('locked');
-    expect(line.textContent).toContain('Locked until the week ends · Fri Nov 6, 4:00 PM');
+    expect(line.textContent).toContain('Locked until the week is scored, after the close on Fri Nov 6');
     expect(host.querySelector('button')).toBeNull();
   });
 
   it('a training pod in flight never locks it; no book reads the open market', async () => {
-    await render(<LeagueLoadoutLine agentLoadout={LOADOUT({ equippedWatchlistId: null, equippedWatchlistName: null })} group={{ ...LOCKED_GROUP, isTraining: true }} accent="#5EEAD4" />);
+    await render(<LeagueLoadoutLine agentLoadout={LOADOUT({ equippedWatchlistId: null, equippedWatchlistName: null })} group={{ ...LOCKED_GROUP, isTraining: true }} groupKnown accent="#5EEAD4" />);
     // (the lobby passes subscribeMyGroup's answer, which never holds a training pod; the rule refuses one regardless)
     expect(host.querySelector('[data-league-loadout-state]').getAttribute('data-league-loadout-state')).toBe('open');
     expect(host.textContent).toContain('No book · open market');
@@ -127,7 +128,8 @@ describe('the lobbies (FD-4): the Customize loadout button and its sheet are gon
   });
 
   it('the phone League tab carries the League line, locked by the active group', async () => {
-    await render(phone('ranked', { activeGroup: LOCKED_GROUP }));
+    // the lobby (LeagueHome) provides whether its group read answered (A2R-1); here it has
+    await render(<LeagueGroupKnownContext.Provider value>{phone('ranked', { activeGroup: LOCKED_GROUP })}</LeagueGroupKnownContext.Provider>);
     expect(host.querySelector('[data-league-loadout]')).not.toBeNull();
     expect(host.querySelector('[data-league-loadout-state]').getAttribute('data-league-loadout-state')).toBe('locked');
   });

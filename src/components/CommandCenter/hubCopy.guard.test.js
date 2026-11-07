@@ -613,11 +613,24 @@ describe('A2: the loadout copy — "next deploy" for BaggerBomb only, the lock s
   });
 
   it('FD-3: a lock always says why and until when, with the real date passed in; the open line says when it locks', () => {
-    expect(LOADOUT_COPY.lines.locked('Fri Nov 7, 4:00 PM')).toBe('Locked until the week ends · Fri Nov 7, 4:00 PM. Set when you registered.');
+    // founder ruling Q3 (Nov 7 2026): "Locked until the week is scored, after the close on {day date}", the date only
+    expect(LOADOUT_COPY.lines.locked('Fri Nov 6')).toBe('Locked until the week is scored, after the close on Fri Nov 6.');
+    expect(LOADOUT_COPY.lines.lockedUndated).toBe('Locked until the week is scored.');
     expect(LOADOUT_COPY.lines.open).toBe('Open until you register for next week. It locks then.');
-    expect(LOADOUT_COPY.leagueLocked('Fri Nov 7, 4:00 PM')).toBe('Locked until the week ends · Fri Nov 7, 4:00 PM');
-    expect(LOADOUT_COPY.contextLocked('Fri Nov 7, 4:00 PM')).toBe('locked until Fri Nov 7, 4:00 PM');
-    expect(LOADOUT_COPY.lockedEquip).toBe('Locked until the week ends');
+    expect(LOADOUT_COPY.leagueLocked('Fri Nov 6')).toBe('Locked until the week is scored, after the close on Fri Nov 6');
+    expect(LOADOUT_COPY.contextLocked('Fri Nov 6')).toBe('locked until the week is scored, after the close on Fri Nov 6');
+    expect(LOADOUT_COPY.lockedEquip).toBe('Locked until the week is scored');
+    expect(LOADOUT_COPY.lockedEquipNote('Fri Nov 6')).toBe('After the close on Fri Nov 6. Try sets on; nothing changes until then.');
+    // A2R-3 (a): a game on the ranked record locks League in A1's words, with no date
+    expect([LOADOUT_COPY.lines.lockedBattle, LOADOUT_COPY.contextLockedBattle, LOADOUT_COPY.lockedEquipBattle])
+      .toEqual(['Locked while a game is running.', 'locked while a game is running', 'Locked while a game is running']);
+    for (const key of ['lines.locked', 'lines.lockedUndated', 'lines.lockedBattle', 'leagueLocked', 'contextLocked', 'contextLockedBattle', 'lockedEquip', 'lockedEquipBattle', 'lockedEquipNoteBattle']) {
+      expect(String(sample(pick(key))), key).not.toMatch(/next deploy/i);
+    }
+  });
+
+  it('A2R-3 (b): the refused BaggerBomb deploy says what failed and to try again, nothing more', () => {
+    expect(LOADOUT_COPY.deployCloneFailed).toBe('Couldn’t start the BaggerBomb game · try again');
   });
 
   it('the boards\' #6 reversed: no book is "No book · open market", and nothing says Deploy waits for one', () => {

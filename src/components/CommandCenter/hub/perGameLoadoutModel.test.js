@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  CARD_STATE, armoryContextOf, armoryFootnoteOf, bookSubOf, bookViewOf, deployLineOf, deriveLoadoutCards, lineOf,
+  CARD_STATE, LOCK_KIND, armoryContextOf, armoryFootnoteOf, bookSubOf, bookViewOf, deployLineOf, deriveLoadoutCards, lineOf,
   loadoutSummaryOf, lockWhenOf, runningBaggerbombOf, tagOf,
 } from './perGameLoadoutModel';
 import { LOADOUT_COPY } from '../../../constants/loadoutCopy';
@@ -55,8 +55,8 @@ describe('the two cards', () => {
 
   it('League locked: the lock and its end, in ET; checking until the read answers, and when it failed', () => {
     const locked = deriveLoadoutCards({ agent: RANKED, lock: LOCKED, committed: LISTS }).league;
-    expect(locked).toMatchObject({ state: CARD_STATE.LOCKED, locked: true, when: 'Fri Nov 6, 4:00 PM' });
-    expect(lineOf(locked)).toBe('Locked until the week ends · Fri Nov 6, 4:00 PM. Set when you registered.');
+    expect(locked).toMatchObject({ state: CARD_STATE.LOCKED, locked: true, when: 'Fri Nov 6', lockKind: LOCK_KIND.WEEK });
+    expect(lineOf(locked)).toBe('Locked until the week is scored, after the close on Fri Nov 6.');
     const checking = deriveLoadoutCards({ agent: RANKED, lock: null, committed: LISTS }).league;
     expect(checking).toMatchObject({ state: CARD_STATE.CHECKING, locked: true, when: null });
     expect(deriveLoadoutCards({ agent: RANKED, lock: OPEN, lockFailed: true }).league.state).toBe(CARD_STATE.CHECKING);
@@ -67,6 +67,28 @@ describe('the two cards', () => {
     const league = deriveLoadoutCards({ agent: RANKED, lock: { ...LOCKED, endsAtMs: null } }).league;
     expect(league.when).toBeNull();
     expect(lineOf(league)).toBe(LOADOUT_COPY.lines.lockedUndated);
+  });
+
+  it('A2R-3 (a): a game on the ranked record locks League, undated, in its own words — whatever the week read says', () => {
+    const agent = { ...RANKED, activeBattleId: 'b-ranked' };
+    // the week open, still checking, or failed: the game on the ranked record holds it (the writers' `battle_active`)
+    for (const [lock, lockFailed] of [[OPEN, false], [null, false], [OPEN, true]]) {
+      const league = deriveLoadoutCards({ agent, lock, lockFailed, committed: LISTS }).league;
+      expect(league).toMatchObject({ state: CARD_STATE.LOCKED, locked: true, when: null, lockKind: LOCK_KIND.BATTLE });
+      expect(lineOf(league)).toBe('Locked while a game is running.');
+      expect(tagOf(league).label).toBe(LOADOUT_COPY.tags.locked);
+      expect(armoryContextOf(league)).toEqual({ title: 'Choosing armor for League', sub: 'locked while a game is running', locked: true });
+    }
+    // BaggerBomb never reads the ranked record's game: it runs on the clone
+    expect(deriveLoadoutCards({ agent, lock: OPEN }).baggerbomb).toMatchObject({ locked: false, state: CARD_STATE.NEXT });
+    // no game, no battle lock
+    expect(deriveLoadoutCards({ agent: { ...RANKED, activeBattleId: null }, lock: OPEN, committed: LISTS }).league.state).toBe(CARD_STATE.OPEN);
+  });
+
+  it('A2R-3 (a): during a League game the week lock wins, so the card keeps its dated line (the writers read the week first)', () => {
+    const league = deriveLoadoutCards({ agent: { ...RANKED, activeBattleId: 'b-league' }, lock: LOCKED, committed: LISTS }).league;
+    expect(league).toMatchObject({ state: CARD_STATE.LOCKED, when: 'Fri Nov 6', lockKind: LOCK_KIND.WEEK });
+    expect(lineOf(league)).toBe('Locked until the week is scored, after the close on Fri Nov 6.');
   });
 
   it('a book the lists have not answered for is named from the slot and counted later', () => {
@@ -114,7 +136,7 @@ describe('the armory\'s context (board 4)', () => {
 
   it('League open, locked, and checking', () => {
     expect(armoryContextOf(deriveLoadoutCards({ agent: RANKED, lock: OPEN }).league)).toEqual({ title: 'Choosing armor for League', sub: 'open · locks when you register', locked: false });
-    expect(armoryContextOf(deriveLoadoutCards({ agent: RANKED, lock: LOCKED }).league)).toEqual({ title: 'Choosing armor for League', sub: 'locked until Fri Nov 6, 4:00 PM', locked: true });
+    expect(armoryContextOf(deriveLoadoutCards({ agent: RANKED, lock: LOCKED }).league)).toEqual({ title: 'Choosing armor for League', sub: 'locked until the week is scored, after the close on Fri Nov 6', locked: true });
     expect(armoryContextOf(deriveLoadoutCards({ agent: RANKED, lock: null }).league).locked).toBe(true);
   });
 
@@ -126,9 +148,11 @@ describe('the armory\'s context (board 4)', () => {
 });
 
 describe('the lock\'s end, in the hub\'s ET words', () => {
-  it('weekday, month, day and the close', () => {
-    expect(lockWhenOf(Date.parse('2026-11-06T21:00:00.000Z'))).toBe('Fri Nov 6, 4:00 PM');
-    expect(lockWhenOf(Date.parse('2026-11-27T18:00:00.000Z'))).toBe('Fri Nov 27, 1:00 PM');
+  it('weekday, month and day, the date only (ruling Q3): the lock outlasts the close it names', () => {
+    expect(lockWhenOf(Date.parse('2026-11-06T21:00:00.000Z'))).toBe('Fri Nov 6');
+    expect(lockWhenOf(Date.parse('2026-11-27T18:00:00.000Z'))).toBe('Fri Nov 27');
+    // read in ET: 01:00 UTC on Sat Nov 7 is still Fri Nov 6 in New York
+    expect(lockWhenOf(Date.parse('2026-11-07T01:00:00.000Z'))).toBe('Fri Nov 6');
     expect(lockWhenOf(null)).toBeNull();
     expect(lockWhenOf(Number.NaN)).toBeNull();
   });

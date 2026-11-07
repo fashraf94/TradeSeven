@@ -107,7 +107,12 @@ const SERVER_READS = {
   ],
 };
 
-/** The client's reads: each a literal ternary (or `FLAG && …` inside one) that Rollup folds to today's expression. */
+/**
+ * The client's reads: each a literal ternary (or `FLAG && …` inside one) that Rollup folds to today's expression — and,
+ * since the A2 fix pass, one literal `if` (agentDeploy.js, A2R-3 (b)) whose test folds to false, so the statement leaves
+ * the bundle. The lobbies' A2R-1 reads swap the group read for one that tells a failure apart, count a failure as a
+ * known seat, and provide the line's group-known context; each flag-off arm is today's text.
+ */
 const CLIENT_READS = {
   "src/adapters/baggerbombAdapter.js": [
     "archetype: PER_GAME_LOADOUT_ENABLED ? battle?.agentContext?.archetype ?? agent?.archetype ?? null : agent?.archetype ?? battle?.agentContext?.archetype ?? null,",
@@ -149,14 +154,26 @@ const CLIENT_READS = {
   "src/components/League/leagueLoadoutSlot.jsx": [
     "const LazyLeagueLine = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED",
     "const LazyTrainingLine = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED",
+    "export const LeagueGroupKnownContext = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED",
+  ],
+  "src/components/League/LeagueHome.jsx": [
+    "return PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED",
+    "const seatKnown = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? !uid || seatFor === uid || seatFor?.failedFor === uid : !uid || seatFor === uid;",
+    ": PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? <LeagueGroupKnownContext.Provider value={!uid || seatFor === uid}>{lobby}</LeagueGroupKnownContext.Provider> : lobby;",
   ],
   "src/components/League/LeagueLobbyDesktop.jsx": [
     "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+    "return PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED",
+    "const seatKnown = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? !uid || seatFor === uid || seatFor?.failedFor === uid : !uid || seatFor === uid;",
+    "return PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
   ],
   "src/components/League/LeagueLobbyRedesign.jsx": [
     "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? <TrainingLoadoutSlot agentLoadout={agentLoadout} /> : (",
     "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? null : (",
     "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+  ],
+  "src/services/agentDeploy.js": [
+    "if (PER_GAME_LOADOUT_ENABLED && cloneId === null) return { outcome: DEPLOY_OUTCOMES.REFUSED, success: false, postIssued: false, error: 'casual_clone_unavailable', details: LOADOUT_COPY.deployCloneFailed };",
   ],
 };
 

@@ -12,6 +12,8 @@ import {
   battleAnchorEtDateOf,
   bookFrom,
   bookIdOf,
+  formatLockDay,
+  formatLockDayIso,
   leagueLoadoutOf,
   leagueLockOf,
   leagueLockOfGroup,
@@ -158,5 +160,20 @@ describe('when the League week ends: the close of the fifth trading day from the
     const lock = leagueLockOf([group(GROUP_STATUS.FORMING)]);
     expect(lock.locked).toBe(true);
     expect(lock.endsAtMs).toBeNull();
+  });
+});
+
+describe("the lock's day in words (ruling Q3): the date only, read in ET", () => {
+  it("the week's last close, its day: 'Fri Nov 6', the server's ISO end the same", () => {
+    expect(formatLockDay(Date.parse('2026-11-06T21:00:00.000Z'))).toBe('Fri Nov 6');
+    expect(formatLockDayIso('2026-11-06T21:00:00.000Z')).toBe('Fri Nov 6');
+    // the early close (1:00 PM ET) names its day too; nothing here says a time
+    expect(formatLockDay(Date.parse('2026-11-27T18:00:00.000Z'))).toBe('Fri Nov 27');
+    expect(formatLockDay(leagueWeekEndMsOf(group(GROUP_STATUS.BATTLE, { startAnchor: { anchorEtDate: '2026-11-02' } })))).not.toMatch(/:|PM|AM/);
+  });
+
+  it('no end, no day', () => {
+    for (const v of [null, undefined, Number.NaN, '2026-11-06']) expect(formatLockDay(v)).toBeNull();
+    for (const v of [null, 'not a date', 0]) expect(formatLockDayIso(v)).toBeNull();
   });
 });

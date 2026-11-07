@@ -11,10 +11,13 @@
 //     the game wears, never the slot).
 //   - The League lock is the client read's answer (src/services/leagueLockService.js), the same rule the writers
 //     refuse by; until it answers (or when it failed) League is CHECKING and nothing on it is a door to change.
+//   - A game on the ranked record (`agent.activeBattleId`: a League game, or a BaggerBomb deploy that fell back to the
+//     ranked agent) also locks League, undated (review A2R-3 (a)): the writers answer 409 `battle_active` then. The week
+//     lock, which the writers read first, wins when both hold, so a League game's card keeps its dated line.
 //
 // Every module-level call is marked pure: flag-off nothing imports this module, and nothing of it may survive.
 
-import { baggerbombLoadoutOf, bookIdOf, formatLockEnd, leagueLoadoutOf, LOADOUT_KINDS } from '../../../constants/perGameLoadout';
+import { baggerbombLoadoutOf, bookIdOf, formatLockDay, leagueLoadoutOf, LOADOUT_KINDS } from '../../../constants/perGameLoadout';
 import { LOADOUT_COPY } from '../../../constants/loadoutCopy';
 import { findLiveBaggerBomb } from '../../../utils/commandCenterLiveBattles';
 import { archetypeLines } from './archetypeLines';
@@ -24,8 +27,11 @@ import { symbolsOf } from './selectors/loadout';
 /** A card's one state (board 7 #3); CHECKING until the League read answers. */
 export const CARD_STATE = /* @__PURE__ */ Object.freeze({ NEXT: 'next', RUNNING: 'running', LOCKED: 'locked', OPEN: 'open', NOBOOK: 'nobook', CHECKING: 'checking' });
 
-/** "Fri Nov 6, 4:00 PM" — the lock's end, read in ET (the shared model's one formatter); null when it has none. */
-export const lockWhenOf = formatLockEnd;
+/** "Fri Nov 6" — the day the week is scored after, read in ET (the shared model's one formatter, ruling Q3); null when it has none. */
+export const lockWhenOf = formatLockDay;
+
+/** Why a League card is locked: the week (dated when the calendar can say) or a game on the ranked record (never dated). */
+export const LOCK_KIND = /* @__PURE__ */ Object.freeze({ WEEK: 'week', BATTLE: 'battle' });
 
 /** A book as a card shows it: its id, its name, its count of names (null while the lists have not answered). */
 export function bookViewOf(book, committed) {
@@ -55,7 +61,11 @@ export function deriveLoadoutCards({ agent, lock = null, lockFailed = false, act
   const bbBook = bookViewOf(bb.book, committed);
   const lgBook = bookViewOf(lg.book, committed);
   const known = Boolean(lock) && !lockFailed;
-  const lgState = !known ? CARD_STATE.CHECKING : lock.locked === true ? CARD_STATE.LOCKED : !lgBook.id ? CARD_STATE.NOBOOK : CARD_STATE.OPEN;
+  const weekLocked = known && lock.locked === true;
+  // A2R-3 (a): a game on the ranked record locks League whatever the week read says (the writers' `battle_active`)
+  const battleLocked = !weekLocked && typeof agent.activeBattleId === 'string' && agent.activeBattleId !== '';
+  const lockKind = weekLocked ? LOCK_KIND.WEEK : battleLocked ? LOCK_KIND.BATTLE : null;
+  const lgState = lockKind ? CARD_STATE.LOCKED : !known ? CARD_STATE.CHECKING : !lgBook.id ? CARD_STATE.NOBOOK : CARD_STATE.OPEN;
   return {
     baggerbomb: {
       kind: LOADOUT_KINDS.BAGGERBOMB,
@@ -68,6 +78,7 @@ export function deriveLoadoutCards({ agent, lock = null, lockFailed = false, act
       running,
       locked: false,
       when: null,
+      lockKind: null,
     },
     league: {
       kind: LOADOUT_KINDS.LEAGUE,
@@ -79,7 +90,8 @@ export function deriveLoadoutCards({ agent, lock = null, lockFailed = false, act
       running: null,
       // CHECKING holds like a lock: the armor row opens the armory to look; nothing changes the loadout
       locked: lgState === CARD_STATE.LOCKED || lgState === CARD_STATE.CHECKING,
-      when: known && lock.locked === true ? lockWhenOf(lock.endsAtMs) : null,
+      when: weekLocked ? lockWhenOf(lock.endsAtMs) : null,
+      lockKind,
     },
   };
 }
@@ -96,7 +108,7 @@ export function lineOf(card) {
   const L = LOADOUT_COPY.lines;
   if (card.kind === LOADOUT_KINDS.LEAGUE) {
     if (card.state === CARD_STATE.CHECKING) return L.checking;
-    if (card.state === CARD_STATE.LOCKED) return card.when ? L.locked(card.when) : L.lockedUndated;
+    if (card.state === CARD_STATE.LOCKED) return card.lockKind === LOCK_KIND.BATTLE ? L.lockedBattle : card.when ? L.locked(card.when) : L.lockedUndated;
     return L.open;
   }
   if (card.state === CARD_STATE.NOBOOK) return L.nobook;
@@ -124,7 +136,11 @@ export function loadoutSummaryOf(cards) {
 export function armoryContextOf(card) {
   if (card.kind === LOADOUT_KINDS.BAGGERBOMB) return { title: LOADOUT_COPY.context(card.game), sub: LOADOUT_COPY.contextNext, locked: false };
   if (card.state === CARD_STATE.CHECKING) return { title: LOADOUT_COPY.context(card.game), sub: LOADOUT_COPY.lines.checking, locked: true };
-  if (card.locked) return { title: LOADOUT_COPY.context(card.game), sub: card.when ? LOADOUT_COPY.contextLocked(card.when) : LOADOUT_COPY.contextLockedUndated, locked: true };
+  if (card.locked) {
+    const sub = card.lockKind === LOCK_KIND.BATTLE ? LOADOUT_COPY.contextLockedBattle
+      : card.when ? LOADOUT_COPY.contextLocked(card.when) : LOADOUT_COPY.contextLockedUndated;
+    return { title: LOADOUT_COPY.context(card.game), sub, locked: true };
+  }
   return { title: LOADOUT_COPY.context(card.game), sub: LOADOUT_COPY.contextOpen, locked: false };
 }
 

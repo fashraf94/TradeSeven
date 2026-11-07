@@ -153,4 +153,22 @@ describe('A2 end to end: two loadouts, two games, one week', () => {
     // League still wears the Contrarian and the first book: nothing BaggerBomb did reached it.
     expect(stored(db, `agents/${H.AGENT_ID}`)).toMatchObject({ archetype: 'contrarian', equippedWatchlistId: H.WATCHLIST_ID });
   }, 30_000); // three deploys through decide.js: ~3 s here, given room under a loaded suite
+
+  // Build A2 fix pass — review A2R-2: the League lock is read IN the writer's transaction, so a group already written is
+  // seen consistently with the agent read. The double records the paths each transaction body read (`afterTxBody`), and
+  // a query read through `tx.get` records the documents it returned, so a finished week in the player's history (which
+  // does not lock) shows up only if the query went through the transaction. The hook fires once the body resolves, so
+  // the row drives an ADMITTED League write.
+  it('A2R-2: an admitted League write reads the player\'s groups through its transaction', async () => {
+    const db = H.makeDeployDb(H.seedDeploy({ agent: H.agentDoc() }));
+    state.db = db;
+    db.__docs.set('tournamentGroups/grp-old', { status: 'complete', groupMembers: [H.OWNER, 'cpu-1', 'cpu-2', 'cpu-3'], updatedAt: '2026-10-30T21:00:00.000Z' });
+    const readPaths = [];
+    db.__hooks.afterTxBody = async ({ readPaths: paths }) => { readPaths.push(...paths); };
+    const res = await post(changeArchetype, body({ agentId: H.AGENT_ID, archetype: 'contrarian', loadout: 'league' }));
+    expect(res.statusCode).toBe(200);
+    expect(stored(db, `agents/${H.AGENT_ID}`).archetype).toBe('contrarian');
+    expect(readPaths).toContain(`agents/${H.AGENT_ID}`);
+    expect(readPaths).toContain('tournamentGroups/grp-old');
+  });
 });

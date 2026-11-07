@@ -1,7 +1,7 @@
 // api/_utils/perGameLoadout.js
 //
 // Build A2 — the server's half of the per-game loadout (rulings D1, FD-1, FD-2, FD-3, FD-11; build report
-// docs/audits/20261106_BUILD_ARMORY_A2.md §2–§3). The model itself is src/constants/perGameLoadout.js, which the client
+// docs/audits/20261107_BUILD_ARMORY_A2.md §2–§3). The model itself is src/constants/perGameLoadout.js, which the client
 // reads too; this module adds what only the server does: the League lock read inside a writer's transaction, the
 // typed refusal, the slot writes, and the BaggerBomb loadout applied over a casual clone's inherited fields. Nothing
 // here reads PER_GAME_LOADOUT_ENABLED: every caller does, so flag-off no caller reaches it.
@@ -19,6 +19,7 @@ import {
   baggerbombLoadoutOf,
   baggerbombSlotOf,
   bookIdOf,
+  formatLockDay,
   leagueLockOf,
   materializeBaggerbombSlot,
 } from '../../src/constants/perGameLoadout.js';
@@ -49,9 +50,13 @@ export function leagueLockedError(sentinelPrefix, lock) {
  */
 export function leagueLockedBody(lock) {
   const endsAt = typeof lock?.endsAtMs === 'number' && Number.isFinite(lock.endsAtMs) ? new Date(lock.endsAtMs).toISOString() : null;
+  // Founder ruling Q3 (Nov 7 2026): the words every lock line says, the day only (formatLockDay, the client's formatter)
+  const day = endsAt ? formatLockDay(lock.endsAtMs) : null;
   return {
     error: LEAGUE_LOCKED,
-    message: 'The League loadout is locked until your League week ends. It changes between weeks.',
+    message: day
+      ? `The League loadout is locked until the week is scored, after the close on ${day}. It changes between weeks.`
+      : 'The League loadout is locked until the week is scored. It changes between weeks.',
     lock: { kind: 'league_week', groupId: lock?.groupId ?? null, status: lock?.status ?? null, endsAt },
   };
 }

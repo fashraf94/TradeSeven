@@ -207,24 +207,25 @@ export function leagueLockOf(groupDocs) {
   return leagueLockOfGroup(selectMyGroup(groupDocs));
 }
 
-// ── The lock's end, in words (one formatter for the hub's cards and armory and the League's line) ─────────────────
+// ── The lock's end, in words (one formatter for the hub's cards and armory, the League's line and the server's refusal) ──
 
 const ET_WEEKDAY = /* @__PURE__ */ new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' });
 const ET_MONTH_DAY = /* @__PURE__ */ new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' });
-const ET_TIME = /* @__PURE__ */ new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
 
 /**
- * "Fri Nov 6, 4:00 PM" — the lock's end, read in ET as every hub time is (the hub's hubDate.js formats with the same
- * Intl options), so the card, the armory, the server's refusal and the League line say one thing. Null for no end.
+ * "Fri Nov 6" — the day of the lock's last close, date only, read in ET as every hub date is (founder ruling Q3, Nov 7
+ * 2026: "Locked until the week is scored, after the close on {day date}"). The lock opens when the group turns complete,
+ * after that close, so the words name the day and never a time the lock outlasts (A2 showed "Fri Nov 6, 4:00 PM"; the
+ * review's A2R-7). The card, the armory, the League line and the server's refusal say one thing. Null for no end.
  */
-export function formatLockEnd(endsAtMs) {
+export function formatLockDay(endsAtMs) {
   if (typeof endsAtMs !== 'number' || !Number.isFinite(endsAtMs)) return null;
   const at = new Date(endsAtMs);
-  return `${ET_WEEKDAY.format(at)} ${ET_MONTH_DAY.format(at)}, ${ET_TIME.format(at)}`;
+  return `${ET_WEEKDAY.format(at)} ${ET_MONTH_DAY.format(at)}`;
 }
 
-/** The same words for the server's refusal, whose lock carries its end as an ISO time (`lock.endsAt`). */
-export function formatLockEndIso(endsAtIso) {
+/** The same day for the server's refusal, whose lock carries its end as an ISO time (`lock.endsAt`). */
+export function formatLockDayIso(endsAtIso) {
   const ms = typeof endsAtIso === 'string' ? Date.parse(endsAtIso) : Number.NaN;
-  return formatLockEnd(Number.isFinite(ms) ? ms : null);
+  return formatLockDay(Number.isFinite(ms) ? ms : null);
 }

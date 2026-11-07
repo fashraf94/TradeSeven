@@ -187,7 +187,7 @@ describe('board 1: the two cards', () => {
     expect(lineText('league')).toBe('Open until you register for next week. It locks then.');
     answerLock(LOCKED);
     expect(tagText('league')).toBe('Locked');
-    expect(lineText('league')).toBe('Locked until the week ends · Fri Nov 6, 4:00 PM. Set when you registered.');
+    expect(lineText('league')).toBe('Locked until the week is scored, after the close on Fri Nov 6.');
     // the armor row still opens the armory to look; the book row is no door
     expect(row('league', 'armor').tagName).toBe('BUTTON');
     expect(row('league', 'armor').getAttribute('aria-label')).toBe('League armor, locked. Open the armory to look.');
@@ -198,6 +198,26 @@ describe('board 1: the two cards', () => {
     // BaggerBomb is never locked by the League week
     expect(tagText('baggerbomb')).toBe('Next deploy');
     expect(row('baggerbomb', 'book').tagName).toBe('BUTTON');
+  });
+
+  it('A2R-3 (a): a game on the ranked record locks League, undated, in A1\'s words; the armory\'s Equip refuses it', async () => {
+    // no ranked group (the week read answers open), but the ranked record holds a game: a BaggerBomb deploy that fell
+    // back to the ranked agent, or a League game; every League write answers 409 battle_active then
+    await renderHub({ agent: AGENT({ activeBattleId: 'b-ranked' }), lock: OPEN });
+    expect(tagText('league')).toBe('Locked');
+    expect(lineText('league')).toBe('Locked while a game is running.');
+    expect(row('league', 'book').tagName).toBe('DIV');
+    expect(row('league', 'armor').getAttribute('aria-label')).toBe('League armor, locked. Open the armory to look.');
+    // BaggerBomb runs on the clone: the ranked record's game never locks it
+    expect(tagText('baggerbomb')).toBe('Next deploy');
+    click(row('league', 'armor'));
+    expect(context().textContent).toContain('locked while a game is running');
+    click(option('guardian'));
+    expect(equipButton().textContent).toBe('Locked while a game is running');
+    expect(document.querySelector('[data-armory-footnote]').textContent).toBe('Try sets on; nothing changes until the game ends.');
+    click(equipButton());
+    await flush();
+    expect(h.writers.changeLoadoutArchetype).not.toHaveBeenCalled();
   });
 
   it('the lock read is the owner\'s: one subscription, for the agent\'s owner', async () => {
@@ -324,12 +344,12 @@ describe('board 4: the armory with a loadout context', () => {
     await renderHub({ lock: LOCKED });
     click(row('league', 'armor'));
     expect(context().hasAttribute('data-armory-context-locked')).toBe(true);
-    expect(context().textContent).toContain('locked until Fri Nov 6, 4:00 PM');
+    expect(context().textContent).toContain('locked until the week is scored, after the close on Fri Nov 6');
     click(option('guardian'));
     expect(document.querySelector('[data-armory-status]').textContent).toContain('Previewing');
-    expect(equipButton().textContent).toBe('Locked until the week ends');
+    expect(equipButton().textContent).toBe('Locked until the week is scored');
     expect(equipButton().hasAttribute('data-armory-equip-locked')).toBe(true);
-    expect(document.querySelector('[data-armory-footnote]').textContent).toBe('Fri Nov 6, 4:00 PM. Try sets on; nothing changes until then.');
+    expect(document.querySelector('[data-armory-footnote]').textContent).toBe('After the close on Fri Nov 6. Try sets on; nothing changes until then.');
     click(equipButton());
     await flush();
     expect(h.writers.changeLoadoutArchetype).not.toHaveBeenCalled();
@@ -344,7 +364,7 @@ describe('board 4: the armory with a loadout context', () => {
     click(option('guardian'));
     click(equipButton());
     await flush();
-    expect(document.querySelector('[data-armory-error]').textContent).toBe('Locked until the week ends · Fri Nov 6, 4:00 PM. Set when you registered.');
+    expect(document.querySelector('[data-armory-error]').textContent).toBe('Locked until the week is scored, after the close on Fri Nov 6.');
     expect(dialog()).not.toBeNull();
   });
 

@@ -34,7 +34,13 @@ function groupsDb(groups) {
     collection: (name) => ({
       where: (field, op, value) => {
         asked.push({ name, field, op, value });
-        return { __query: true, docs: groups.filter((g) => (g.groupMembers || []).includes(value)) };
+        // A real Admin query has its own .get(); reading through it would leave the transaction (review A2R-2, mutant R1),
+        // so this one refuses: the lock must be read with tx.get(query)
+        return {
+          __query: true,
+          docs: groups.filter((g) => (g.groupMembers || []).includes(value)),
+          get: async () => { throw new Error('the lock was read outside the transaction'); },
+        };
       },
     }),
   };
@@ -66,10 +72,13 @@ describe('the lock read inside a writer\'s transaction (FD-3)', () => {
     expect(err.lock).toBe(lock);
     expect(leagueLockedBody(lock)).toEqual({
       error: 'league_locked',
-      message: expect.stringMatching(/League/),
+      // founder ruling Q3: the lock line's words, the day only (Fri Nov 6, the week's last close)
+      message: 'The League loadout is locked until the week is scored, after the close on Fri Nov 6. It changes between weeks.',
       lock: { kind: 'league_week', groupId: 'now', status: 'battle', endsAt: '2026-11-06T21:00:00.000Z' },
     });
-    expect(leagueLockedBody({ ...lock, endsAtMs: null }).lock.endsAt).toBeNull();
+    const undated = leagueLockedBody({ ...lock, endsAtMs: null });
+    expect(undated.lock.endsAt).toBeNull();
+    expect(undated.message).toBe('The League loadout is locked until the week is scored. It changes between weeks.');
   });
 });
 
