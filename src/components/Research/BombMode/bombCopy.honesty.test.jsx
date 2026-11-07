@@ -1,0 +1,128 @@
+// @vitest-environment jsdom
+//
+// Research Modal Build A — THE FORBIDDEN-TERMS GUARD for every new string
+// (spec §5 honesty). Three nets:
+//   1. every BOMB_COPY template, rendered with representative arguments;
+//   2. every view rendered in every state, its visible text and aria-labels;
+//   3. every BombMode source file, comments stripped — so a string typed
+//      inline in a component is caught even if no test renders it.
+// The banned list: the Desk guard's agent verbs (deskHonesty.test.js FORBIDDEN —
+// copied, it is not exported), the build's own three ("the agent held", "will
+// bank", and "entry" on a preview), and forecast words a scoreboard never uses.
+// A fourth rule keeps the nets honest: no component types copy inline — every
+// JSX text node is an expression (from BOMB_COPY), never a literal word.
+
+import { describe, it, expect } from 'vitest';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { BOMB_COPY } from './bombCopy.js';
+import FuseChart from './FuseChart.jsx';
+import RedZone from './RedZone.jsx';
+import BombSheet from './BombSheet.jsx';
+import BombPlot, { RedZoneChip } from './BombPlot.jsx';
+import { previewLadder, measuredLadder, v4Ladder, toGo } from './ladder.js';
+import { sheetLine, scoredChipText, traceParts } from './bombView.js';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const DESK_FORBIDDEN = ['watching', 'thinking', 'researching', 'analyzing', 'about to', 'close to trading', 'wants to', 'looking at', 'eyeing', 'considering'];
+const BUILD_FORBIDDEN = ['the agent held', 'will bank', 'guaranteed', 'will score', 'is going to'];
+const ALL = [...DESK_FORBIDDEN, ...BUILD_FORBIDDEN];
+const hit = (s, term) => new RegExp(`\\b${term.replace(/ /g, '\\s+')}\\b`, 'i').test(s);
+
+const measured = measuredLadder({ measured: { measured: true, baselinePrice: 100.75, targets: [['bagger', 102.765], ['doubleBagger', 103.7725], ['tenBagger', 104.78], ['bust', 98.735], ['crash', 97.7275], ['meltdown', 96.72]].map(([key, price]) => ({ key, price })), crossedTiers: ['bagger'] }, entryAtMs: Date.parse('2026-10-13T13:45:00.000Z') });
+const preview = previewLadder({ previousClose: 99, threshold: 2 });
+const v4 = v4Ladder({ levels: { baseline: 150, baggerBomb: 154.5, doubleBagger: 156.75, tenBagger: 159, bust: 145.5, crash: 143.25, meltdown: 141, threshold: 3 } });
+
+// Every template is called with a value for each of its own parameters, by name;
+// a template with a parameter missing here fails the coverage row below.
+const ARG = { price: 160.33, d: 2, when: 'Tue 9:45 AM', label: 'BaggerBomb', pct: 2.4, points: 15, banked: true, time: '1:15', bricks: 3, base: '2.4% · 3 bricks to +30', live: 160.27, emoji: '💣', interval: '1-min', minutes: 1, scored: 160.19, at: '1:00', clockLabel: '3:45' };
+const paramsOf = (fn) => fn.toString().slice(fn.toString().indexOf('(') + 1, fn.toString().indexOf(')')).split(',').map((p) => p.trim()).filter(Boolean);
+function templates() {
+  const out = [];
+  for (const [k, v] of Object.entries(BOMB_COPY)) {
+    if (typeof v === 'string') { out.push([k, v]); continue; }
+    const names = paramsOf(v);
+    out.push([k, v(...names.map((n) => ARG[n]))]);
+    if (names.includes('banked')) out.push([k, v(...names.map((n) => (n === 'banked' ? false : ARG[n])))]);
+    if (names.includes('at')) out.push([k, v(...names.map((n) => (n === 'at' ? null : ARG[n])))]);
+    if (names.includes('time')) out.push([k, v(...names.map((n) => (n === 'time' ? null : ARG[n])))]);
+  }
+  return out;
+}
+
+function renderedStates() {
+  const ghost = [{ timestamp: Date.parse('2026-10-13T19:30:00.000Z') / 1000, close: 100.5 }, { timestamp: Date.parse('2026-10-14T14:00:00.000Z') / 1000, close: 101 }];
+  const trace = traceParts([{ timestamp: Date.parse('2026-10-14T16:56:00.000Z') / 1000, close: 102.6 }, { timestamp: Date.parse('2026-10-14T16:57:00.000Z') / 1000, close: 102.7 }], [{ atMs: Date.parse('2026-10-14T16:59:00.000Z'), price: 102.71 }]);
+  const clock = { state: 'countdown', label: '1:15 · 09:00' };
+  const states = [];
+  for (const ladder of [measured, preview, v4]) {
+    const go = toGo(ladder, 102.7);
+    const view = { ladder, go, live: 102.7, decimals: 2, mode: 'fuse', nowMs: Date.parse('2026-10-14T17:06:00.000Z'), clock, ghost, trace, checkDots: [], bankedTimes: { bagger: Date.parse('2026-10-14T17:15:00.000Z') }, moment: null, redZoneScored: scoredChipText({ live: 102.7, scored: { price: 102.69, atMs: Date.parse('2026-10-14T17:00:30.000Z') }, always: true }), sheetScored: null, sheetLine: sheetLine({ ladder, clockLabel: '1:15', decimals: 2 }) };
+    states.push(renderToStaticMarkup(<FuseChart ladder={ladder} live={102.7} decimals={2} go={go} ghost={ghost} bankedTimes={view.bankedTimes} />));
+    states.push(renderToStaticMarkup(<BombSheet view={view} />));
+    for (const mode of ['approaching', 'banked', 'closed']) {
+      states.push(renderToStaticMarkup(<RedZone ladder={ladder} go={go} live={102.7} decimals={2} mode={mode} trace={trace} clock={mode === 'closed' ? { state: 'later', label: 'Thu 9:30 AM' } : clock} scoredText={view.redZoneScored} moment={mode === 'banked' ? { key: 'bagger', atMs: Date.parse('2026-10-14T17:15:00.000Z'), price: 102.77 } : null} nowMs={view.nowMs} />));
+      states.push(renderToStaticMarkup(<RedZoneChip mode={mode} />));
+    }
+  }
+  for (const status of ['entry_unavailable', 'measured_unavailable', 'preview_unavailable', 'short_unsupported']) {
+    states.push(renderToStaticMarkup(<BombPlot view={{ ladder: { status } }} height={300} />));
+    states.push(renderToStaticMarkup(<BombSheet view={{ ladder: { status } }} />));
+  }
+  return states.map((html) => {
+    const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+    const labels = [...doc.querySelectorAll('[aria-label]')].map((e) => e.getAttribute('aria-label'));
+    return { html, text: [doc.body.textContent, ...labels].join(' \n ') };
+  });
+}
+
+const SOURCES = readdirSync(HERE).filter((n) => /\.(js|jsx)$/.test(n) && !/\.test\./.test(n));
+const codeOf = (f) => readFileSync(path.join(HERE, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+describe('Bomb mode copy: no forbidden term anywhere it can reach a player', () => {
+  it('every template is exercised: each of its parameters has a probe value, and each renders a string', () => {
+    for (const [k, v] of Object.entries(BOMB_COPY)) {
+      if (typeof v !== 'function') continue;
+      for (const n of paramsOf(v)) expect(ARG, `${k}(${n})`).toHaveProperty(n);
+    }
+    for (const [k, s] of templates()) expect(typeof s, k).toBe('string');
+  });
+  it.each(ALL)('no template says "%s"', (term) => {
+    for (const [k, s] of templates()) expect(hit(s, term), `${k}: ${s}`).toBe(false);
+  });
+  it.each(ALL)('no rendered view says "%s" (text and aria-labels, every state)', (term) => {
+    for (const { text } of renderedStates()) expect(hit(text, term), text.slice(0, 200)).toBe(false);
+  });
+  it.each(ALL)('no BombMode source string says "%s" (comments stripped)', (term) => {
+    for (const f of SOURCES) expect(hit(codeOf(f), term), f).toBe(false);
+  });
+});
+
+describe('a preview never says "entry" (BA-1)', () => {
+  it('the preview and V4 sheet lines and baseline labels', () => {
+    for (const ladder of [preview, v4]) {
+      const view = { ladder, go: toGo(ladder, 100), live: 100, decimals: 2, sheetLine: sheetLine({ ladder, decimals: 2 }), sheetScored: null };
+      const fuse = renderToStaticMarkup(<FuseChart ladder={ladder} live={100} decimals={2} go={view.go} />);
+      const sheet = renderToStaticMarkup(<BombSheet view={view} />);
+      const text = new DOMParser().parseFromString(`<body>${fuse}${sheet}</body>`, 'text/html').body.textContent;
+      expect(text).not.toMatch(/entr(y|ies|ed)\b(?! at yesterday)/i);
+      expect(text).not.toMatch(/entry price/i);
+      expect(text).toMatch(/preview/i);
+    }
+  });
+  it('the only "entered" a preview carries is the conditional of its own label', () => {
+    expect(BOMB_COPY.previewNeeds(99, 2)).toBe("Preview · rungs if it entered at yesterday's close ($99.00)");
+  });
+});
+
+describe('every visible word comes from BOMB_COPY', () => {
+  it.each(SOURCES.filter((f) => f.endsWith('.jsx')))('%s types no copy inline in JSX text', (f) => {
+    const code = codeOf(f);
+    // a JSX text node is text between `>` and `<` with no braces; a word there would be inline copy
+    const inline = [...code.matchAll(/(?<=[^\s=\->])>([^<>{}\n]*[A-Za-z]{2,}[^<>{}\n]*)</g)].map((m) => m[1].trim()).filter(Boolean);
+    expect(inline).toEqual([]);
+  });
+});

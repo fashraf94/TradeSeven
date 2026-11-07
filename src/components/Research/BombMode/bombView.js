@@ -67,7 +67,7 @@ export function checkSlotOf(ms, battleExpiresAtMs = null) {
  * The sheet's one line (spec §4.3 templates). `bankedTimes`: tier → the check
  * instant the modal SAW it bank at (BA-4); absent → no time is written.
  */
-export function sheetLine({ ladder, clockLabel = null, bankedTimes = {}, decimals }) {
+export function sheetLine({ ladder, clockLabel = null, checking = false, bankedTimes = {}, decimals }) {
   if (!ladder || ladder.status !== 'ok') return null;
   const d = decimals;
   if (ladder.kind === 'preview') {
@@ -79,7 +79,7 @@ export function sheetLine({ ladder, clockLabel = null, bankedTimes = {}, decimal
     const at = finite(bankedTimes[lastBanked.key]) ? etClock(bankedTimes[lastBanked.key]) : null;
     return BOMB_COPY.afterBank(lastBanked.points, at, ladder.next.price, d);
   }
-  return BOMB_COPY.needs(ladder.next.price, d, clockLabel);
+  return checking ? BOMB_COPY.needsChecking(ladder.next.price, d) : BOMB_COPY.needs(ladder.next.price, d, clockLabel);
 }
 
 /**

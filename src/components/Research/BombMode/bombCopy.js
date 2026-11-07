@@ -70,6 +70,7 @@ export const BOMB_COPY = Object.freeze({
   sheetTitle: 'The ladder',
   whatHasToHappen: 'What has to happen',
   needs: (price, d, clockLabel) => `Needs ${money(price, d)} at a check${clockLabel ? ` · next check ${clockLabel}` : ''}`,
+  needsChecking: (price, d) => `Needs ${money(price, d)} at a check · checking…`,
   afterBank: (points, at, price, d) => `+${points} banked${at ? ` at the ${at} check` : ''}. Next: ${money(price, d)} at a check`,
   allRungsBanked: (points) => `+${points} banked · every rung is banked`,
   previewNeeds: (price, d) => `Preview · rungs if it entered at yesterday's close (${money(price, d)})`,

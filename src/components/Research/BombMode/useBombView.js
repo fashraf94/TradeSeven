@@ -135,6 +135,6 @@ export default function useBombView({
     moment,
     redZoneScored: scoredChipText({ live, scored, decimals, always: true, frozen }),
     sheetScored: scoredChipText({ live, scored, decimals, always: false }),
-    sheetLine: sheetLine({ ladder, clockLabel: clock && clock.state !== 'none' ? clock.label : null, bankedTimes, decimals }),
+    sheetLine: sheetLine({ ladder, clockLabel: clock && (clock.state === 'countdown' || clock.state === 'later') ? clock.label : null, checking: clock?.state === 'checking', bankedTimes, decimals }),
   };
 }
