@@ -1424,6 +1424,13 @@ export const POD_EXPIRY_SWEEP_ENABLED = false;
  * validation.pass=false (truthful pre-authoring state) and the deploy path
  * (P2.4b) refuses them. Flip only via a deliberate founder flag-flip PR with
  * a green activation gate — NEVER in a build PR (Phase 2 exit criteria).
+ *
+ * Carry into this flip (Armory A2 review A2R-9, docs/audits/20261107_REVIEW_ARMORY_A2.md; recorded by the A2 fix
+ * pass, Nov 7 2026): with per-game loadouts on, a BaggerBomb game runs on the casual clone in the BaggerBomb loadout.
+ * The compiled build's source vector has no archetype component (deployBuildValidation.js), and the clone carries no
+ * compiled build (copyAgentSubcollections copies rules and bundles only), so a compile at deploy derives from the
+ * clone's own fields. Check before this flip that a clone deploy compiles (or validates) against the clone's archetype,
+ * never the ranked record's.
  */
 // Pinned by: compileOnSettingsChange.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMPILER_ENABLED = false;
