@@ -1,6 +1,6 @@
 # Build report — Huddle S1 (the huddle, dark)
 
-**Smoke preview (never merge, flag ON):** branch `claude/huddle-s1-smoke` — its Vercel preview URL is at the top of the PR description and of the handover (Vercel assigns it after the push).
+**Smoke preview (never merge, flag ON):** https://trade-seven-draa7u56u-fais-projects-bc179554.vercel.app — branch `claude/huddle-s1-smoke` @ `3f13111f` (this branch's `28d2baf5` plus one commit flipping the flag). Set `HUDDLE_PLAYER_UIDS` to your own uid there first (§14).
 
 | | |
 |---|---|
@@ -245,7 +245,7 @@ Each hub rule of C4, C6, C7, C8, C14 and C15's Deploy card line, **held** or **m
 
 | Rule | Status | Where it holds | Evidence |
 |---|---|---|---|
-| C4 chip: a state label and a door — no badge, pulse, toast, count or live region | Held | `src/components/CommandCenter/HuddleChip.jsx`; labels from `hub/huddleView.js` `huddleChipOf` | `Huddle.jsdom.test.jsx` (no `aria-live` / `role=status|alert`); seen: "Huddle", "Huddle unavailable", "Huddle · plan confirmed" (L3-7 replaced "heard") |
+| C4 chip: a state label and a door — no badge, pulse, toast, count or live region | Held | `src/components/CommandCenter/HuddleChip.jsx`; labels from `hub/huddleView.js` `huddleChipOf` | `Huddle.jsdom.test.jsx` (no `aria-live`, no `role=status`, no `role=alert`); seen: "Huddle", "Huddle unavailable", "Huddle · plan confirmed" (L3-7 replaced "heard") |
 | C4 outside Shadow's fixed box, 44 px target, fits at 360 px | Held | rendered after the stage (`CommandCenterHub.jsx`, phone and wide shells) | seen: 87 × 44 px at 360 px, 0 px horizontal overflow at 360 and 1440 |
 | C6 one rule, Later key `huddle:{etDate}`, order game in session → Huddle ready → (the S4 rules: pre-open game, review, deployment) | Held | `hub/nextAction.js` (`deriveNextAction` takes `huddle`), `hub/huddleView.js` `huddleCandidateOf` | `hub/huddleView.test.js` (order, Later both ways, loading while the live poll is unresolved, no candidate after confirm / skip / close) |
 | C6 rows the new order moves re-pinned | Held — none moved | with no Huddle candidate `deriveNextAction` is the S4 function unchanged | no `nextAction.test.js` or `CommandCenterHub.s4` row changed; `huddleView.test.js` asserts `huddle: null` equals the call without it |
