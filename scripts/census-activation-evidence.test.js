@@ -57,8 +57,11 @@ describe('read-only by construction', () => {
     expect(calls.filter((c) => !ALLOWED.includes(c))).toEqual([]);
     expect(calls.length).toBeGreaterThan(20);
     expect(CODE).not.toMatch(/runTransaction|bulkWriter|recursiveDelete|writeBatch|FieldValue|\.batch\(|\.update\(|\.create\(|\.delete\(|\.add\(/);
-    // `.set(` appears only on a WeakMap (each pointer's stored field names) and a Map (the outstanding keys), never on a reference.
+    // `.set(` appears only on a WeakMap (each pointer's stored field names) and a Map (the outstanding keys), never on a
+    // reference: with those two calls removed, no `.set(` is left anywhere, whatever its receiver (review PFB-3: a chained
+    // `db.doc(p).set(` has no identifier receiver).
     expect([...CODE.matchAll(/(\w+)\.set\(/g)].map((m) => m[1])).toEqual(['storedFields', 'outstanding']);
+    expect(CODE.replace(/\b(?:storedFields|outstanding)\.set\(/g, '')).not.toMatch(/\.set\s*\(/);
   });
   it('the one unmasked read is the pointer query (whole pointers, for the integrity section\'s exact field set); every other read names its fields', () => {
     expect([...CODE.matchAll(/fields: WHOLE_DOCUMENT/g)]).toHaveLength(1);
@@ -385,7 +388,7 @@ describe('pointer integrity — identity, evidence, shape, timeliness', () => {
       nullBeforeCutoff: 0, nullNoCutoff: 0, unreadableInstants: 0,
     });
     const md = renderMarkdown(R);
-    expect(md).toContain('**Mismatches: 0** over 7 pointer(s).');
+    expect(md).toContain('**Mismatches: 0** field mismatch(es), in 0 of 7 pointer(s).');
     for (const s of ['SENTINEL', 'NVDA', 'JPM', 'XOM', 'star:', '__', 'setupEvidence/']) expect([s, md.includes(s), JSON.stringify(R).includes(s)]).toEqual([s, false, false]);
   });
 
@@ -411,14 +414,22 @@ describe('pointer integrity — identity, evidence, shape, timeliness', () => {
     ['evidence: a wrong evidenceTiming', P('NVDA', (p) => { p.evidenceTiming = { ...p.evidenceTiming, predatesActivation: !p.evidenceTiming.predatesActivation }; }), { evidence: { evidenceTiming: 1 } }],
     // shape
     ['shape: an extra field', P('NVDA', (p) => { p.extra = 1; }), { shape: { fieldSet: 1 } }],
-    ['shape: a missing field', P('NVDA', (p) => { delete p.archetype; }), { shape: { fieldSet: 1 } }],
+    ['shape: a missing field (archetype, so its identity check counts too)', P('NVDA', (p) => { delete p.archetype; }), { shape: { fieldSet: 1 }, identity: { archetype: 1 } }],
     ['shape: schemaVersion 2', P('NVDA', (p) => { p.schemaVersion = 2; }), { shape: { schemaVersion: 1 } }],
     ['shape: activatingTick.evaluationId not null', P('JPM', (p) => { p.activatingTick.evaluationId = 'SENTINEL_EVAL_I'; }), { shape: { 'activatingTick.evaluationId': 1 } }],
     ['shape: missing set beside an entry', P('NVDA', (p) => { p.missing = { reason: 'snapshot_unavailable', detail: 'missing_bar' }; }), { shape: { missingExactlyWhenNoEntry: 1 } }],
     ['shape: no snapshotRef beside an entry', P('NVDA', (p) => { p.snapshotRef = null; }), { shape: { snapshotRef: 1 } }],
     ['shape: unresolved on a ranked battle agent', P('NVDA', (p) => { p.attributionStatus = 'unresolved'; }), { shape: { 'attribution.unresolvedNotCasualClone': 1 } }],
-    ['shape: unresolved with an attribution agent other than the battle\'s', P('NVDA', (p) => { p.battleAgentId = 'casual-agent-owner-x'; p.attributionStatus = 'unresolved'; }), { shape: { 'attribution.unresolvedAgentNotBattleAgent': 1 } }],
+    ['shape: unresolved with an attribution agent other than the battle\'s', P('NVDA', (p) => { p.battleAgentId = 'casual-agent-owner-x'; p.attributionStatus = 'unresolved'; }), { shape: { 'attribution.unresolvedAgentNotBattleAgent': 1 }, identity: { battleAgentId: 1 } }],
     ['shape: stream.attributionAgentId differs', P('NVDA', (p) => { p.stream.attributionAgentId = 'someone-else'; }), { shape: { 'stream.attributionAgentId': 1 } }],
+    // review PFB-7: the attribution rules the other way, and the fields fixed on the battle document
+    ['shape: resolved on a casual clone\'s own id', P('NVDA', (p) => { p.battleAgentId = 'casual-agent-z'; p.attributionAgentId = 'casual-agent-z'; p.stream.attributionAgentId = 'casual-agent-z'; }), { shape: { 'attribution.resolvedOnCloneOwnId': 1 }, identity: { battleAgentId: 1 } }],
+    ['shape: resolved on a ranked battle, to another agent', P('NVDA', (p) => { p.attributionAgentId = 'agent-elsewhere'; p.stream.attributionAgentId = 'agent-elsewhere'; }), { shape: { 'attribution.rankedOnOtherAgent': 1 } }],
+    ['shape: an attributionStatus off its list', P('NVDA', (p) => { p.attributionStatus = 'SENTINEL_STATUS'; }), { shape: { 'attribution.status': 1 } }],
+    ['identity: battleId', P('NVDA', (p) => { p.battleId = 'another-battle'; }), { identity: { battleId: 1 } }],
+    ['identity: archetype', P('NVDA', (p) => { p.archetype = 'contrarian'; }), { identity: { archetype: 1 } }],
+    ['identity: stream.clone', P('NVDA', (p) => { p.stream.clone = 'casual'; }), { identity: { 'stream.clone': 1 } }],
+    ['identity: stream.gameMode', P('NVDA', (p) => { p.stream.gameMode = null; }), { identity: { 'stream.gameMode': 1 } }],
   ];
   it.each(cases)('%s → counted under that field', async (_label, mutate, expected) => {
     const fx = await integrityFixture();
@@ -428,6 +439,41 @@ describe('pointer integrity — identity, evidence, shape, timeliness', () => {
     expect({ identity: R.integrity.identity.byField, evidence: R.integrity.evidence.byField, shape: R.integrity.shape.byField }).toEqual(want);
     const total = Object.values(want).reduce((n, m) => n + Object.values(m).reduce((x, y) => x + y, 0), 0);
     expect(R.integrity.mismatches).toBe(total);
+    expect(R.integrity.pointersWithMismatch).toBe(1); // each case breaks one pointer, however many fields it shows in
+  });
+  // Review PFB-1: activatedAtSource depends on the slot's state for one row of contract §4.1.
+  async function correctedFixture() {
+    const docs = {};
+    const b = correctedBattle({ status: 'completed', ownerId: OWNER, agentId: I_AGENT });
+    const paths = {};
+    for (const a of discoverActivations(b).activations) { // the observer writes every pointer while the starting positions are held
+      const k = activationKeyOf(a, RS);
+      const evidence = await snapshotFor({ session: k.session, symbol: a.symbol, fetchedAt: '2026-11-05T16:00:00.000Z' });
+      docs[`setupEvidence/${evidence.snapshotId}`] = structuredClone(evidence.snapshot);
+      paths[a.symbol] = `agentBattles/${I_BATTLE}/activations/${a.activationId}`;
+      docs[paths[a.symbol]] = structuredClone(buildPointer({ battle: b, battleId: I_BATTLE, activation: a, session: k.session, attribution: { attributionAgentId: I_AGENT, attributionStatus: 'resolved' }, ruleSet: RS, evidence, observedAt: '2026-11-05T16:00:01.000Z' }));
+    }
+    docs[`agentBattles/${I_BATTLE}`] = b;
+    return { docs, paths, b };
+  }
+  it('PFB-1: a corrected starting position written while held (position_swappedInAt) and sold since (now outgoing_receipt) → zero mismatches', async () => {
+    const fx = await correctedFixture();
+    expect(fx.docs[fx.paths.NVDA].activatedAtSource).toBe('position_swappedInAt');
+    correctedSwap(fx.b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: '2026-11-05T17:02:00.000Z', positionId: 'p-jpm' }); // sold after the pointer was written
+    expect(discoverActivations(fx.b).activations.find((a) => a.symbol === 'NVDA').activatedAtSource).toBe('outgoing_receipt');
+    const R = await runCensus(fakeReader(fx.docs), opts);
+    expect(R.integrity).toMatchObject({ pointers: 6, mismatches: 0, pointersWithMismatch: 0, identity: { checked: 6, byField: {} } });
+  });
+  it('PFB-1: the other way round is wrong — a still-held position whose pointer says outgoing_receipt is counted', async () => {
+    const fx = await correctedFixture();
+    fx.docs[fx.paths.NVDA].activatedAtSource = 'outgoing_receipt';
+    const R = await runCensus(fakeReader(fx.docs), opts);
+    expect([R.integrity.identity.byField, R.integrity.mismatches]).toEqual([{ activatedAtSource: 1 }, 1]);
+  });
+  it('an owner listed twice is one owner: no measure counts a battle twice (review PFB-8)', async () => {
+    const once = await runCensus(fakeReader(fixture()), opts);
+    const twice = await runCensus(fakeReader(fixture()), { ...opts, owners: [OWNER, OWNER] });
+    expect({ ...twice, at: null }).toEqual({ ...once, at: null });
   });
   it('a null pointer whose snapshot exists now is reported (allowed), never a mismatch; one observed before its cutoff shows in timeliness', async () => {
     const fx = await integrityFixture();

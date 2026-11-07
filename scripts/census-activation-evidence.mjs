@@ -174,7 +174,8 @@ export function restrictedReader(db) {
 function emptyIntegrity() {
   return {
     pointers: 0,
-    mismatches: 0,
+    mismatches: 0, // field mismatches: one wrong pointer can count under several fields
+    pointersWithMismatch: 0,
     identity: { checked: 0, notCheckable: 0, byField: {} },
     evidence: { checked: 0, readFailed: 0, byField: {} },
     nullPointers: { checked: 0, snapshotNowExists: 0, readFailed: 0, unkeyable: 0 },
@@ -207,7 +208,8 @@ function emptyResult(window, nowMs) {
  * @param {ReturnType<typeof restrictedReader>} reader
  * @param {{ owners: string[], session?: string|null, sessions?: number, nowMs?: number }} opts
  */
-export async function runCensus(reader, { owners, session = null, sessions = 1, nowMs = Date.now() } = {}) {
+export async function runCensus(reader, { owners: listed, session = null, sessions = 1, nowMs = Date.now() } = {}) {
+  const owners = [...new Set(listed)]; // an owner listed twice is one owner (review PFB-8): never two copies of each battle
   const last = session ?? (() => { const s = lastCompletedSessionAt(nowMs); if (!s.ok) throw new TypeError('census: the calendar cannot name the last session'); return s.session; })();
   const window = windowSessionsOf(last, sessions);
   const inWindow = new Set(window);
@@ -264,7 +266,7 @@ export async function runCensus(reader, { owners, session = null, sessions = 1, 
       pointers = rows.map((r) => { const p = { ...r.data, id: r.id }; storedFields.set(p, Object.keys(r.data || {})); return p; });
     } catch (err) { fail(err); pointersRead = false; }
     // A failed pointer read is no evidence that nothing was written: this battle's coverage is unknown (review 3).
-    if (pointersRead) audited.push({ battle, d, pointers }); else R.activations.coverageUnknown.battles += 1;
+    if (pointersRead) audited.push({ id, battle, d, pointers }); else R.activations.coverageUnknown.battles += 1;
     const discoverable = new Set(d.activations.map((a) => a.activationId));
     const written = new Map(pointers.map((p) => [p.id, p]));
     for (const p of pointers) {
@@ -418,15 +420,18 @@ export async function runCensus(reader, { owners, session = null, sessions = 1, 
  */
 async function integrityOf(reader, audited, { fail, storedFields }) {
   const I = emptyIntegrity();
-  const mismatch = (section, field) => { bump(section.byField, field); I.mismatches += 1; };
+  const flagged = []; // the pointer being checked, once per mismatch (deduplicated at the end)
+  let current = null; // the pointer being checked
+  const mismatch = (section, field) => { bump(section.byField, field); I.mismatches += 1; flagged.push(current); };
   const evidenceChecks = []; // { p, ref }
   const nullChecks = []; // { p, keyId }
   const evidenceMinutes = [];
   const nullMinutes = [];
-  for (const { battle, d, pointers } of audited) {
+  for (const { id: battleId, battle, d, pointers } of audited) {
     const byId = new Map(d.activations.map((a) => [a.activationId, a]));
     for (const p of pointers) {
       I.pointers += 1;
+      current = p;
       // SHAPE.
       const fields = storedFields.get(p) || [];
       if (fields.length !== POINTER_FIELD_SET.length || !POINTER_FIELD_SET.every((f) => fields.includes(f))) mismatch(I.shape, 'fieldSet');
@@ -435,13 +440,25 @@ async function integrityOf(reader, audited, { fail, storedFields }) {
       const hasEntry = isPlainObject(p.entry);
       if (hasEntry ? p.missing !== null : !(p.entry === null && isPlainObject(p.missing))) mismatch(I.shape, 'missingExactlyWhenNoEntry');
       if (hasEntry ? typeof p.snapshotRef !== 'string' : p.snapshotRef !== null) mismatch(I.shape, 'snapshotRef');
+      // The attribution rules (contract §4: `unresolved` EXACTLY when a casual clone's resolution left the clone's own id).
+      if (!ATTRIBUTION_STATUSES.includes(p.attributionStatus)) mismatch(I.shape, 'attribution.status');
       if (p.attributionStatus === 'unresolved') {
         if (!isCasualCloneId(p.battleAgentId)) mismatch(I.shape, 'attribution.unresolvedNotCasualClone');
         if (p.attributionAgentId !== p.battleAgentId) mismatch(I.shape, 'attribution.unresolvedAgentNotBattleAgent');
       }
+      if (p.attributionStatus === 'resolved') {
+        if (isCasualCloneId(p.battleAgentId) && p.attributionAgentId === p.battleAgentId) mismatch(I.shape, 'attribution.resolvedOnCloneOwnId');
+        if (!isCasualCloneId(p.battleAgentId) && p.attributionAgentId !== p.battleAgentId) mismatch(I.shape, 'attribution.rankedOnOtherAgent');
+      }
       if (p.stream?.attributionAgentId !== p.attributionAgentId) mismatch(I.shape, 'stream.attributionAgentId');
 
-      // IDENTITY, where the source rows are still retained (the pointer's id is discoverable now).
+      // IDENTITY. From the battle document (fields fixed at creation), always; from the retained rows, where they still
+      // hold the pointer's lifetime (its id is discoverable now).
+      const fromBattle = [
+        ['battleId', p.battleId, battleId], ['battleAgentId', p.battleAgentId, battle.agentId ?? null], ['archetype', p.archetype, battle.agentContext?.archetype ?? null],
+        ['stream.clone', p.stream?.clone, isCasualCloneId(battle.agentId) ? 'casual' : 'ranked'], ['stream.gameMode', p.stream?.gameMode, battle.gameMode ?? null],
+      ];
+      for (const [field, stored, value] of fromBattle) if (stored !== value) mismatch(I.identity, field);
       const a = byId.get(p.id);
       if (!a) I.identity.notCheckable += 1;
       else {
@@ -449,9 +466,15 @@ async function integrityOf(reader, audited, { fail, storedFields }) {
         const at = lastCompletedSessionAt(a.activatedAtMs);
         const want = {
           activationId: a.activationId, kind: a.kind, symbol: a.symbol, tier: a.tier, slot: a.slot, activatedAt: a.activatedAt,
-          activatedAtSource: a.activatedAtSource, asOf: at.ok ? at.session : null, firstTradingDay: firstTradingDayOf(battle),
+          asOf: at.ok ? at.session : null, firstTradingDay: firstTradingDayOf(battle),
         };
         for (const [field, value] of Object.entries(want)) if (p[field] !== value) mismatch(I.identity, field);
+        // activatedAtSource depends on the slot's state for one row of contract §4.1 (review PFB-1): a corrected starting
+        // position's pointer written while it was held says `position_swappedInAt`, and once it is sold the same lifetime
+        // (the same id and instant) reads `outgoing_receipt`. Either is correct after the sale; only the first while held.
+        const sourceOk = p.activatedAtSource === a.activatedAtSource
+          || (a.kind === 'creation' && a.activatedAtSource === 'outgoing_receipt' && p.activatedAtSource === 'position_swappedInAt');
+        if (!sourceOk) mismatch(I.identity, 'activatedAtSource');
       }
 
       // EVIDENCE (read below, in one batch) and TIMELINESS.
@@ -480,6 +503,7 @@ async function integrityOf(reader, audited, { fail, storedFields }) {
   let snaps = null;
   try { snaps = new Map((await reader.getAll(refs.map((r) => `setupEvidence/${r}`), EVIDENCE_FIELDS)).map((s, i) => [refs[i], s])); } catch (err) { fail(err); }
   for (const { p, ref } of evidenceChecks) {
+    current = p;
     if (snaps === null) { I.evidence.readFailed += 1; continue; }
     I.evidence.checked += 1;
     const s = snaps.get(ref);
@@ -506,6 +530,7 @@ async function integrityOf(reader, audited, { fail, storedFields }) {
     I.nullPointers.checked += 1;
     if (nullSnaps.get(keyId)?.exists) I.nullPointers.snapshotNowExists += 1;
   }
+  I.pointersWithMismatch = new Set(flagged).size;
   return I;
 }
 
@@ -557,11 +582,11 @@ export function renderMarkdown(R) {
     `- ${R.writerCommit.seen ? (R.writerCommit.value ?? 'null (Vercel exposed no commit)') : 'no snapshot read'}.`,
     '',
     '## 7. Pointer integrity (the cohort\'s written pointers whose battle\'s pointer read succeeded; counts only)',
-    `- **Mismatches: ${I.mismatches}** over ${I.pointers} pointer(s).`,
-    `- Identity, recomputed from the retained rows: ${I.identity.checked} checked (${I.identity.notCheckable} not checkable: source rows no longer retained, or the slot no longer resolves); mismatches by field ${j(I.identity.byField)}.`,
+    `- **Mismatches: ${I.mismatches}** field mismatch(es), in ${I.pointersWithMismatch} of ${I.pointers} pointer(s).`,
+    `- Identity, recomputed from the battle document (every pointer) and from the retained rows: ${I.identity.checked} checked against their rows (${I.identity.notCheckable} not checkable there: source rows no longer retained, or the slot no longer resolves); mismatches by field ${j(I.identity.byField)}. A corrected starting position written while held and sold since may say position_swappedInAt (contract §4.1).`,
     `- Evidence, against the snapshot each pointer names: ${I.evidence.checked} checked (${I.evidence.readFailed} whose snapshot read failed); mismatches by field ${j(I.evidence.byField)}.`,
     `- Null pointers whose snapshot exists now (allowed by the contract; shown so it is seen): ${I.nullPointers.snapshotNowExists} of ${I.nullPointers.checked} checked (${I.nullPointers.readFailed} whose read failed; ${I.nullPointers.unkeyable} whose fields name no key).`,
-    `- Shape (exact field set, schemaVersion 1, activatingTick.evaluationId null, missing null exactly when entry is not, the attribution rules): mismatches by field ${j(I.shape.byField)}.`,
+    `- Shape (exact field set, schemaVersion 1, activatingTick.evaluationId null, missing null exactly when entry is not, snapshotRef, the attribution rules both ways): mismatches by field ${j(I.shape.byField)}.`,
     `- Timeliness: observedAt minus activatedAt, minutes, pointers with evidence ${j(I.timeliness.withEvidenceMinutesAfterActivation)}; observedAt minus the battle's cutoff, minutes, null pointers ${j(I.timeliness.nullMinutesAfterCutoff)}; null pointers observed before the cutoff ${I.timeliness.nullBeforeCutoff}, with no cutoff ${I.timeliness.nullNoCutoff}; unreadable instants ${I.timeliness.unreadableInstants}.`,
     '',
     `Read errors, by class and code: ${j(R.errors)}.`,

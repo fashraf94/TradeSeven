@@ -1057,6 +1057,17 @@ describe('the census on the emulator — the restricted reader over the real Adm
     const text = `${censusModule.renderMarkdown(R2)}\n${JSON.stringify(R2)}`;
     for (const s of ['SENTINEL', 'DETAIL_9', 'SRC_4', 'NVDA', 'JPM', 'pos-', 'p-jpm', 'b-1', '__']) expect([s, text.includes(s)]).toEqual([s, false]);
   });
+  it('review PFB-1: pointers the observer wrote while the starting positions were held, one of them sold since → still zero integrity mismatches', async () => {
+    const b = correctedBattle({ ownerId: OWNER });
+    await seedBattle('b-1', b);
+    const r = await run(clockAt(INTRADAY));
+    expect(r.pointers.withEvidence).toBe(6);
+    expect((await pointersOf('b-1')).find((p) => p.data.symbol === 'NVDA').data.activatedAtSource).toBe('position_swappedInAt');
+    correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: '2026-11-05T17:02:00.000Z', positionId: 'p-jpm' });
+    await seedBattle('b-1', { ...b, status: 'completed' });
+    const R = await censusModule.runCensus(censusModule.restrictedReader(db), opts);
+    expect(R.integrity).toMatchObject({ pointers: 6, mismatches: 0, pointersWithMismatch: 0, identity: { checked: 6, byField: {} } });
+  });
   it('review 3: a claims read that fails → read_failed, never neverAttempted; a pointer query that fails → that battle\'s coverage is unknown', async () => {
     await seedBattle('b-1', ownerBattle({ status: 'completed' })); // nothing written, nothing attempted: six outstanding keys
     const healthy = await censusModule.runCensus(censusModule.restrictedReader(db), opts);

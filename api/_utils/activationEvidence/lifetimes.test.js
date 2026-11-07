@@ -206,6 +206,26 @@ describe('consistency — any disagreement makes the slot unresolved (inconsiste
         });
       }
     }
+    // Review PFB-2: two shapes where the non-string sits in no lifetime's OWN id field, so only the up-front check sees it.
+    for (const v of [123, true]) {
+      it(`a legacy battle whose live position, after a legacy swap-in, carries positionId ${JSON.stringify(v)} → inconsistent`, () => {
+        const b = legacyBattle();
+        legacySwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1 });
+        b.portfolio.star[0].positionId = v;
+        expect(at(b, 'star', 0).every((r) => r.status === 'unresolved' && r.reason === 'inconsistent')).toBe(true);
+        expect(discoverActivations(b).activations.filter((a) => a.tier === 'star' && a.slot === 0)).toEqual([]);
+      });
+      it(`a gap battle whose first retained row's outgoingPositionId is ${JSON.stringify(v)} → inconsistent, the retained swap-in unnamed`, () => {
+        const b = correctedBattle();
+        correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1, positionId: 'p1' });
+        correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'CVX', at: T2, positionId: 'p2' });
+        b.trades.shift();
+        b.scoreState.tradeCount = 9;
+        b.trades[0].outgoingPositionId = v; // closes the evicted lifetime: no named lifetime owns this field
+        expect(at(b, 'star', 0).filter((r) => r.kind === 'swap_in').every((r) => r.status === 'unresolved' && r.reason === 'inconsistent')).toBe(true);
+        expect(discoverActivations(b).activations.filter((a) => a.tier === 'star' && a.slot === 0)).toEqual([]);
+      });
+    }
     it('the same shapes with string ids stay named (the check reads the type, nothing else)', () => {
       const b = correctedBattle();
       correctedSwap(b, { tier: 'star', slot: 0, symbolIn: 'JPM', at: T1, positionId: 'p1' });

@@ -4,6 +4,9 @@
 // constants restated here (so the census can stay off the store's write-capable
 // modules) pinned to the store's own.
 
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import * as C from './constants.js';
 import { ACQUIRE_TIMEOUT_MS } from '../setupEvidence/acquire.js';
@@ -14,9 +17,25 @@ import { discoverActivations } from './discover.js';
 import { describeRuleSet } from '../setupEvaluator/thresholds.js';
 import { legacyBattle } from './__fixtures__/activationBattles.js';
 
+const HERE = dirname(fileURLToPath(import.meta.url));
+const sourceOf = (rel) => readFileSync(resolve(HERE, rel), 'utf8');
+
 describe('the census\'s label lists (review 5) and the pointer field set', () => {
   it('the acquisition failures the store can return are all on the missing.detail list', () => {
     for (const f of Object.values(ACQUISITION_FAILURES)) expect(C.MISSING_DETAILS).toContain(f);
+  });
+  // Review PFB-6: a new retryable reason must be added to the list, or the census would read it as `other` unnoticed.
+  it('every other reason the store can return as retryable is on the list: the classification\'s cases and the adapter\'s split-check reasons', () => {
+    const classify = sourceOf('../setupEvidence/classify.js');
+    // Every case of classifyEvidence can return a retryable or a confirm (retryable until confirmed), except basis_discontinuity (final only).
+    const cases = [...classify.matchAll(/^\s*case '([A-Za-z_]+)':/gm)].map((m) => m[1]).filter((c) => c !== 'basis_discontinuity');
+    expect(cases).toContain('missing_bar');
+    const split = sourceOf('../setupEvaluator/dailyBarsAdapter.js').split('\n').filter((l) => /splitCheckReason = /.test(l))
+      .flatMap((l) => [...l.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]));
+    expect(split).toEqual(expect.arrayContaining(['adjustment_metadata_absent', 'adjusted_close_missing', 'adjusted_close_nonpositive']));
+    const okLine = [...classify.matchAll(/splitCheckReason \?\? '([a-z_]+)'/g)].map((m) => m[1]);
+    expect(okLine).toEqual(['adjustment_metadata_absent']);
+    for (const r of [...cases, ...split, ...okLine]) expect([r, C.MISSING_DETAILS.includes(r)]).toEqual([r, true]);
   });
   it('the pointer field set is exactly what buildPointer writes, and the ACTIVATED_AT_SOURCES and kinds are the discoverable ones', () => {
     const b = legacyBattle();

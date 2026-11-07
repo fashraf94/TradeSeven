@@ -39,9 +39,9 @@
 // parent it returns is accepted here only when the clone's ownerId is a
 // non-empty string equal to the battle's ownerId, and the parent's ownerId is a
 // non-empty string equal to the clone's. Both documents are the ones the
-// resolver itself read through the handle below (it keeps each read's data in
-// run memory, for this check only). Anything else is the verdict `unresolved`,
-// whatever the resolver returned. casualClone.js is unchanged.
+// resolver itself read through the handle below (it keeps only each read's
+// owner id, in run memory, for this check). Anything else is the verdict
+// `unresolved`, whatever the resolver returned. casualClone.js is unchanged.
 
 import { resolveAttributionAgentId } from '../casualClone.js';
 import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
@@ -53,7 +53,7 @@ const ownerIdOf = (data) => (data && typeof data.ownerId === 'string' && data.ow
 /**
  * A read-only handle for the resolver: `collection(name).doc(id).get()`, each read admitted by `mayRead`.
  * A refusal is reported by `onRefused`; any throw from an admitted read (an error, not a verdict) by `onThrew`;
- * each document an admitted read returned, by `onRead(id, data | null)`.
+ * each document an admitted read returned, by `onRead(id, data | null)` (the caller keeps its owner id only).
  */
 function budgetedHandle(db, { mayRead, beforeRead, onRefused, onThrew, onRead }) {
   return {
@@ -88,9 +88,9 @@ export async function attributionOf(db, battle, { mayRead = () => true, beforeRe
   const own = battle?.agentId ?? null;
   let refused = false;
   let threw = false;
-  const docs = new Map(); // agent id → the document the resolver read (null when absent); run memory, this check only
+  const owners = new Map(); // agent id → the owner id of the document the resolver read (null: absent, or no usable id); nothing else is kept
   const handle = db ? budgetedHandle(db, {
-    mayRead, beforeRead, onRefused: () => { refused = true; }, onThrew: () => { threw = true; }, onRead: (id, data) => { docs.set(id, data); },
+    mayRead, beforeRead, onRefused: () => { refused = true; }, onThrew: () => { threw = true; }, onRead: (id, data) => { owners.set(id, ownerIdOf(data)); },
   }) : null;
   const resolved = await resolveAttributionAgentId(handle, { agentId: own });
   if (refused) return { attributionAgentId: null, attributionStatus: null, deferred: true, reason: 'prep_cut' };
@@ -99,8 +99,8 @@ export async function attributionOf(db, battle, { mayRead = () => true, beforeRe
   // V1.9 §2: a parent is accepted only on the observer's own owner check, from the two documents the resolver read.
   if (isCasualCloneId(own) && attributionAgentId !== own) {
     const battleOwner = ownerIdOf(battle);
-    const cloneOwner = ownerIdOf(docs.get(own));
-    const parentOwner = ownerIdOf(docs.get(attributionAgentId));
+    const cloneOwner = owners.get(own) ?? null;
+    const parentOwner = owners.get(attributionAgentId) ?? null;
     if (battleOwner === null || cloneOwner !== battleOwner || parentOwner !== cloneOwner) attributionAgentId = own;
   }
   return {
