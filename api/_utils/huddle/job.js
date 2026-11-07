@@ -21,7 +21,7 @@ import { eventLabelsOf } from './confirmPlan.js';
 import {
   SYSTEM_PROMPT, buildUserPrompt, callScriptModel, validateScript, scriptClean, regenerationNoteOf, proposalOf, HUDDLE_SCRIPT_MODEL, MODEL_BEATS,
 } from './scriptPrompt.js';
-import { joinBeats, beatTimings, synthesizeWithTimestamps } from './speech.js';
+import { joinBeats, beatTimings, synthesizeWithTimestamps, alignmentDurationMs } from './speech.js';
 import { storeHuddleAudio } from './audioStore.js';
 import { getArchetypeDefinition } from '../archetypeRegistry.js';
 
@@ -123,7 +123,10 @@ export async function runHuddleJob(db, { uid, etDate, generation, session, share
       if (validated.tickerFailures.length > 0) return await fail(`ticker_outside_universe:${validated.tickerFailures.join(',')}`.slice(0, 200));
     }
     const dropped = new Set(Object.entries(validated.beatFailures).filter(([, f]) => f.length > 0).map(([id]) => id));
-    const drops = [...dropped].map((id) => ({ stage: 'script', beat: id, reasons: validated.beatFailures[id] }));
+    const drops = [
+      ...[...dropped].map((id) => ({ stage: 'script', beat: id, reasons: validated.beatFailures[id] })),
+      ...Object.entries(validated.nameFailures || {}).map(([ticker, reasons]) => ({ stage: 'script', name: ticker, reasons })),
+    ];
     timings.scriptMs = clock() - t;
 
     // ---- the plan: templates only; its beat narrated by code ----
@@ -141,11 +144,13 @@ export async function runHuddleJob(db, { uid, etDate, generation, session, share
     if (speech.ok) {
       const timed = beatTimings(spans, speech.alignment, spoken);
       if (timed) for (const tm of timed) Object.assign(beats.find((b) => b.id === tm.id), { startMs: tm.startMs, endMs: tm.endMs });
+      // The duration is the alignment's last end time when it is a positive number, else unknown (null, never 0), and it is
+      // read before storage, so a malformed alignment cannot throw after the upload (review L1-2).
+      const durationMs = alignmentDurationMs(speech.alignment);
       t = clock();
       try {
         const stored = await (deps.storeHuddleAudio || storeHuddleAudio)({ uid, etDate, claimGeneration: generation, mp3: speech.mp3, alignment: speech.alignment });
-        const ends = speech.alignment.character_end_times_seconds;
-        audio = { ...stored, durationMs: Math.round((ends[ends.length - 1] || 0) * 1000), voiceId: speech.voiceId, model: 'eleven_multilingual_v2', timed: !!timed };
+        audio = { ...stored, durationMs, voiceId: speech.voiceId, model: 'eleven_multilingual_v2', timed: !!timed };
       } catch (err) {
         sourceFailures.push(`storage:${err?.message === 'storage_unavailable' ? 'unavailable' : 'error'}`);
       }

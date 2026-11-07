@@ -5,10 +5,21 @@
 // message and never the key; the alignment is read from `alignment.characters`; beat boundaries come from it.
 
 import { describe, it, expect, vi } from 'vitest';
-import { synthesizeWithTimestamps, joinBeats, beatTimings } from './speech.js';
+import { synthesizeWithTimestamps, joinBeats, beatTimings, alignmentDurationMs } from './speech.js';
 
 const quiet = { log: vi.fn(), warn: vi.fn() };
 const respond = (status, body) => async () => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+
+describe('alignmentDurationMs (review L1-2)', () => {
+  it('the last end time in ms; unknown (missing, empty, not a positive number) is null, never 0, and never throws', () => {
+    expect(alignmentDurationMs({ character_end_times_seconds: [0.1, 0.2, 61.25] })).toBe(61250);
+    expect(alignmentDurationMs({ character_end_times_seconds: [] })).toBeNull();
+    expect(alignmentDurationMs({ characters: ['a'] })).toBeNull();
+    expect(alignmentDurationMs({ character_end_times_seconds: [0] })).toBeNull();
+    expect(alignmentDurationMs({ character_end_times_seconds: ['1'] })).toBeNull();
+    expect(alignmentDurationMs(null)).toBeNull();
+  });
+});
 
 describe('synthesizeWithTimestamps', () => {
   it('a refusal carries the error\'s status code, and nothing of its message', async () => {

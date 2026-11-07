@@ -93,6 +93,20 @@ describe('validateScript (A §A7, AR-12, C §C5)', () => {
     expect(validateScript(withNames(sentence('Unverified: your agent said it picked AAA for momentum.', [OPENER])), CTX).beatFailures.names).toEqual([]);
   });
 
+  it('review L2-3: a name\'s read passes the beat checks or the name is dropped (with its reasons), never published', () => {
+    const named = (read, evidenceIds = [HEADLINE]) => validateScript(ok({ names: [{ ticker: 'AAA', read, evidenceIds }] }), CTX);
+    expect(named('Strength into the print.').names.map((n) => n.ticker)).toEqual(['AAA']);
+    for (const [read, reason, ids] of [
+      ['Your agent will buy AAA at the open.', 'forbidden:will_do'],
+      ['TSLA is moving with AAA.', 'said:TSLA'],
+      ['Strength into the print.', 'missing_evidence', []],
+    ]) {
+      const v = named(read, ids);
+      expect(v.names, read).toEqual([]);
+      expect(v.nameFailures.AAA, read).toContain(reason);
+    }
+  });
+
   it('a ticker outside the universe — declared or merely said — is a ticker failure', () => {
     expect(validateScript(ok({ mentionedTickers: ['AAA', 'TSLA'] }), CTX).tickerFailures).toEqual(['mentioned:TSLA']);
     expect(validateScript(withNames(sentence('NVDA is moving AAA higher.', [HEADLINE])), CTX).tickerFailures).toEqual(['said:NVDA']);

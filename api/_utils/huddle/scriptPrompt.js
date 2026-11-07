@@ -224,11 +224,26 @@ export function validateScript(output, { universe, evidence }) {
     if (chars > BEAT_CHAR_CAP[id]) fails.push('too_long');
     beatFailures[id] = [...new Set(fails)];
   }
-  const names = (Array.isArray(output?.names) ? output.names : [])
-    .filter((n) => n && allowedTickers.has(n.ticker) && (universe || new Set()).has(n.ticker))
-    .slice(0, 3)
-    .map((n) => ({ ticker: n.ticker, read: typeof n.read === 'string' ? n.read.slice(0, 300) : '', evidenceIds: (n.evidenceIds || []).filter((e) => evidenceById.has(e)) }));
-  return { beats, beatFailures, tickerFailures: [...new Set(tickerFailures)], names };
+  // A name's read is model text the hub publishes on its card (review L2-3): it passes the checks a beat sentence passes
+  // (forbidden patterns, the learning claim, no ticker outside the universe, an evidence id, "unverified" said aloud) or
+  // the name is DROPPED, with its reasons in nameFailures. Never a regeneration on its own.
+  const names = [];
+  const nameFailures = {};
+  for (const n of Array.isArray(output?.names) ? output.names : []) {
+    if (names.length >= 3) break;
+    if (!n || !allowedTickers.has(n.ticker) || !(universe || new Set()).has(n.ticker)) continue;
+    const read = typeof n.read === 'string' ? n.read.slice(0, 300) : '';
+    const ids = (Array.isArray(n.evidenceIds) ? n.evidenceIds : []).filter((e) => evidenceById.has(e));
+    const fails = [];
+    if (read && ids.length === 0) fails.push('missing_evidence');
+    for (const eid of ids) if (evidenceById.get(eid).status === 'unverified' && !/\bunverified\b/i.test(read)) fails.push(`unverified_unsaid:${eid}`);
+    for (const [name, re] of Object.entries(FORBIDDEN_SCRIPT_PATTERNS)) if (re.test(read)) fails.push(`forbidden:${name}`);
+    if (LEARNING.test(read) && ABOUT_US.test(read)) fails.push('forbidden:learning_claim');
+    for (const word of read.match(TICKERISH) || []) if (!acronyms.has(word) && !allowedTickers.has(word)) fails.push(`said:${word}`);
+    if (fails.length) { nameFailures[n.ticker] = [...new Set(fails)]; continue; }
+    names.push({ ticker: n.ticker, read, evidenceIds: ids });
+  }
+  return { beats, beatFailures, tickerFailures: [...new Set(tickerFailures)], names, nameFailures };
 }
 
 /** Does a validation pass with nothing to regenerate? */

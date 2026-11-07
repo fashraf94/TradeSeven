@@ -44,6 +44,16 @@ export function beatTimings(spans, alignment, text) {
 }
 
 /**
+ * The audio's duration from the alignment (pure): the last character's end time when it is a positive number, else
+ * null — an unknown duration is never 0 (review L1-2).
+ */
+export function alignmentDurationMs(alignment) {
+  const ends = alignment?.character_end_times_seconds;
+  const last = Array.isArray(ends) && ends.length ? ends[ends.length - 1] : null;
+  return typeof last === 'number' && Number.isFinite(last) && last > 0 ? Math.round(last * 1000) : null;
+}
+
+/**
  * The one speech call. Never throws; never logs the key.
  * @returns {Promise<{ ok: true, mp3: Buffer, alignment: object, voiceId: string, keys: string[] } | { ok: false, reason: string, keys?: string[] }>}
  */
