@@ -50,6 +50,7 @@ describe('stages — a stage the host does not have is null, NEVER 0', () => {
       screener: ['universeSize', 'matchedPreLimit', 'shortlisted', 'eligible'],
       analysis: ['selectedForInvestigation', 'investigationsCompleted'],
       manual: [],
+      shared_research: [], // the Research Record Extension: no funnel in V1 — every stage null
     });
     expect(Object.keys(STAGES_BY_ORIGIN).sort()).toEqual([...RESEARCH_ORIGINS].sort());
   });

@@ -45,6 +45,10 @@ const ALLOWED_OUTSIDE = new Set([
   'scripts/census-activation-evidence.mjs', // the read-only census: key.js, sessionAt.js, field-masked reads of both collections
   'scripts/census-activation-evidence.test.js', // the census's import pin names the store's modules
   'test/rules/activationObserver.rules.mjs', // the observer against the emulator, with the real store underneath
+  // The Research Record Extension (7 Nov 2026; docs/design/20261107_RESEARCH_RECORD_EXTENSION_V1.md): the collection's
+  // NAME as one value of a closed vocabulary — a finding's source record kind — never an import, a read or a write.
+  'api/_utils/researchRecords/model.js', // FINDING_RECORD_KINDS lists it (a finding's source.recordKind / an evidenceItem ref's recordKind)
+  'api/_utils/researchRecords/extension.test.js', // pins that closed list by value against the schema version
 ]);
 const isListed = (file) => ALLOWED_OUTSIDE.has(file);
 

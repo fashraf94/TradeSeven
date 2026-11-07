@@ -34,11 +34,36 @@
 // Tokens come only from what the provider returned (gemmaClient's opt-in
 // `usage`); a turn whose usage is not known makes the total 'unknown' for
 // good — never estimated, never a partial sum presented as a total.
+//
+// THE EXTENSION (7 Nov 2026 — the Research Record Extension build; contract
+// docs/design/20261107_RESEARCH_RECORD_EXTENSION_V1.md), for Shared Research's
+// first slice. Every field below is SERVER-WRITTEN, and nothing writes one yet
+// except tests: the Shared Research route that will is the Command Center
+// arc's next build.
+//
+//   QUESTION (set once)    question — at most QUESTION_MAX_LEN, written in the
+//                          same write as the subject, never after; absent on
+//                          every record written without one
+//   FINDINGS (append-only) findings[] ≤ FINDINGS_MAX — each { findingId, kind,
+//                          fact, source, at, asOf, status, statusReason, pin,
+//                          supersedes }; a correction is a NEW finding that
+//                          supersedes an earlier one; nothing is edited or removed
+//   SUMMARY (append-only)  summaryRevisions[] ≤ SUMMARY_REVISIONS_MAX, and
+//                          summary = the last of them, written in one transaction
+//   SYMBOL KEYS (derived)  symbolKeys[] — from symbols[] and the findings'
+//                          records, recomputed on every write to a record that
+//                          carries them (the researchWork (userId, symbolKeys
+//                          CONTAINS, createdAt DESC) index)
+//
+// Each closed list here is defined ONCE and grows only with a new schema
+// version (extension.test.js pins every list against RECORD_SCHEMA_VERSION).
 
 import {
   RESEARCH_ORIGINS, RESEARCH_STATES, RESEARCH_TERMINAL_STATES, RESEARCH_STAGES, STAGES_BY_ORIGIN, SYMBOL_OUTCOMES,
   RESEARCH_EVIDENCE_KIND,
 } from '../../../src/constants/researchRecords.js';
+// The system's hyphen form for a symbol key (BRK.B → BRK-B), the one convention (symbolNormalize.js).
+import { normalizeSymbolForEODHD as hyphenForm } from '../symbolNormalize.js';
 
 export {
   RESEARCH_ORIGINS, RESEARCH_STATES, RESEARCH_TERMINAL_STATES, RESEARCH_STAGES, STAGES_BY_ORIGIN, SYMBOL_OUTCOMES,
@@ -55,16 +80,27 @@ export const SCREEN_SYMBOLS_MAX = 40;
 export const BUDGET_CURRENCY = 'persisted_messages';
 export const TOKENS_UNKNOWN = 'unknown';
 
-/** The host collections, by origin family. */
+/**
+ * The host collections, by origin family. `shared_research` (the extension):
+ * a Shared Research session — its collection's rules come with its first
+ * writer, the Shared Research route, not with this table.
+ */
 export const HOST_COLLECTIONS = Object.freeze({
   dialogue: 'watchlistSessions',
   screener: 'researchSessions',
   analysis: 'analysisSessions',
+  shared_research: 'sharedResearchSessions',
 });
 
-const ID_PREFIX = Object.freeze({ watchlistSessions: 'ws', researchSessions: 'rs', analysisSessions: 'as', watchlists: 'wl' });
+const ID_PREFIX = Object.freeze({ watchlistSessions: 'ws', researchSessions: 'rs', analysisSessions: 'as', watchlists: 'wl', sharedResearchSessions: 'sr' });
 const HOST_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
-const RESEARCH_WORK_ID_RE = /^(ws|rs|as|wl)_[A-Za-z0-9_-]{1,128}$/;
+const RESEARCH_WORK_ID_RE = /^(ws|rs|as|wl|sr)_[A-Za-z0-9_-]{1,128}$/;
+
+/** A host document id as the record id scheme accepts it. */
+export const isHostId = (v) => typeof v === 'string' && HOST_ID_RE.test(v);
+/** A `crypto.randomUUID()` value (RFC 4122 version 4, lower case): an exchange id, and a finding id's body. */
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+export const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v);
 
 /** Why a record ended. An abandoned record carries the host's OWN abandonReason ('user_close'). */
 export const TERMINAL_REASONS = Object.freeze({ savedToList: 'saved_to_list', playerAuthored: 'player_authored' });
@@ -409,10 +445,15 @@ export function applyTurn(telemetry, { kind, elapsedMs, usage = null, atIso, scr
 /**
  * A complete new record. Validates identity and state; the funnel is shaped
  * by stagesFor (absent stages null) and capSymbols.
+ *
+ * The extension: a `question` is accepted only together with the subject (a
+ * `watchlistId` in the same write) and is stored only when given — a record
+ * written without one has no `question` key at all. A Shared Research record
+ * carries `symbolKeys` from its first write; no other origin's mint does.
  */
 export function buildRecord({
   researchWorkId, userId, origin, host, createdAt, watchlistId = null, hypothesisVersion = null,
-  funnel, budget = null, telemetry, state = 'open', terminalReason = null, endedAt = null,
+  funnel, budget = null, telemetry, state = 'open', terminalReason = null, endedAt = null, question = null,
 }) {
   if (!isResearchWorkId(researchWorkId) || !nonEmptyString(userId) || !nonEmptyString(createdAt)) {
     throw new Error('researchRecords: identity fields are required');
@@ -426,10 +467,12 @@ export function buildRecord({
   if (!(hypothesisVersion === null || (Number.isSafeInteger(hypothesisVersion) && hypothesisVersion > 0))) {
     throw new Error('researchRecords: hypothesisVersion must be a version number or null');
   }
-  return {
+  if (question !== null && watchlistId === null) throw new ResearchRecordError('question_without_subject');
+  const record = {
     schemaVersion: RECORD_SCHEMA_VERSION,
     researchWorkId, userId, origin, host: host ? { collection: host.collection, id: host.id } : null, createdAt,
     watchlistId, hypothesisVersion,
+    ...(question !== null ? { question: normalizeQuestion(question) } : {}),
     stages: stagesFor(origin, funnel.stages),
     ...capSymbols(funnel.symbols),
     budget,
@@ -437,13 +480,36 @@ export function buildRecord({
     state, terminalReason, endedAt,
     updatedAt: createdAt,
   };
+  if (origin === 'shared_research') record.symbolKeys = symbolKeysOf(record);
+  return record;
 }
 
-/** The subject, set at most once: only while the record names no list yet. */
-export function subjectPatch(record, { watchlistId, hypothesisVersion = null }) {
+/**
+ * The subject, set at most once: only while the record names no list yet.
+ * The extension: a `question` rides ONLY with the subject — in this same
+ * patch, never after (a different question is a different investigation) —
+ * and its write is an extension write, so it carries `symbolKeys`.
+ */
+export function subjectPatch(record, { watchlistId, hypothesisVersion = null, question = null }) {
   if (!isPlainObject(record) || record.watchlistId != null || !nonEmptyString(watchlistId)) return {};
-  return { watchlistId, hypothesisVersion: Number.isSafeInteger(hypothesisVersion) && hypothesisVersion > 0 ? hypothesisVersion : null };
+  const patch = { watchlistId, hypothesisVersion: Number.isSafeInteger(hypothesisVersion) && hypothesisVersion > 0 ? hypothesisVersion : null };
+  if (question !== null) {
+    if (record.question !== undefined) throw new ResearchRecordError('question_already_set');
+    patch.question = normalizeQuestion(question);
+    patch.symbolKeys = symbolKeysOf(record);
+  }
+  return patch;
 }
+
+/**
+ * symbolKeys on a HOST write: recomputed (from the record as the patch leaves
+ * it) only when the record already carries them, or the patch itself is an
+ * extension write (a subject set with its question) — a host never adds the
+ * field to a record that has none, and never lets one it has go stale.
+ */
+const withFreshSymbolKeys = (record, patch) => (Array.isArray(record?.symbolKeys) || Object.hasOwn(patch, 'symbolKeys')
+  ? { ...patch, symbolKeys: symbolKeysOf({ ...record, ...patch }) }
+  : patch);
 
 /**
  * A successful (or failed, or cancelled) turn's patch: telemetry, the host's
@@ -463,7 +529,7 @@ export function turnPatch(record, { kind, elapsedMs, usage = null, atIso, budget
     patch.stages = stagesFor(record.origin, f.stages);
     Object.assign(patch, capSymbols(f.symbols));
   }
-  return patch;
+  return withFreshSymbolKeys(record, patch);
 }
 
 /**
@@ -476,12 +542,248 @@ export function closePatch(record, { state, terminalReason, atIso, funnel, subje
   if (!RESEARCH_TERMINAL_STATES.includes(state) || !nonEmptyString(terminalReason) || !nonEmptyString(atIso)) {
     throw new Error('researchRecords: a close needs a terminal state, a reason and a time');
   }
-  return {
+  return withFreshSymbolKeys(record, {
     state, terminalReason, endedAt: atIso, updatedAt: atIso,
     stages: stagesFor(record.origin, funnel.stages),
     ...capSymbols(funnel.symbols),
     ...(subject ? subjectPatch(record, subject) : {}),
-  };
+  });
+}
+
+// ── the extension: question, findings, summary, symbol keys ──────────────────
+
+export const QUESTION_MAX_LEN = 500;
+export const FINDINGS_MAX = 100;
+export const FINDING_FACT_MAX_LEN = 500;
+export const SOURCE_LABEL_MAX_LEN = 120;
+export const SUMMARY_TEXT_MAX_LEN = 600;
+export const SUMMARY_REVISIONS_MAX = 20;
+/** A source record's id (any record kind) and an evidence item's id: bounded, printable. */
+export const RECORD_ID_MAX_LEN = 256;
+export const SOURCE_URL_MAX_LEN = 2048;
+export const FINDING_ID_PREFIX = 'f_';
+
+/** What a finding says it is. Closed: grows only with a new schema version. */
+export const FINDING_KINDS = Object.freeze([
+  'earnings_fact', 'release', 'coverage', 'check_receipt', 'setup', 'idea', 'observation', 'product', 'relationship',
+  'inference', 'next_action',
+]);
+/**
+ * The record a finding's fact came from (`source.recordKind`) — also the
+ * record an idea version's `evidenceItem` ref names. Closed: grows only with a
+ * new schema version. A `retrieval` source carries its `url`.
+ */
+export const FINDING_RECORD_KINDS = Object.freeze([
+  'symbolDayEvidence', 'fantasyTimesWire', 'fantasyTimesStories', 'ingestedClaims', 'stockBriefs', 'estimatesCache',
+  'setupEvidence', 'activationPointer', 'call', 'hypothesisVersion', 'exchange', 'kb', 'retrieval',
+]);
+export const RETRIEVAL_RECORD_KIND = 'retrieval';
+/** Whether the fact stands checked. Not `verified` → a typed `statusReason`. Closed. */
+export const FINDING_STATUSES = Object.freeze(['verified', 'unverified', 'unavailable']);
+/** What a finding pins on a chart: a price level or an instant. Closed. */
+export const PIN_TYPES = Object.freeze(['price', 'time']);
+
+/** A typed refusal of an extension write: `code` is the reason a caller reads. */
+export class ResearchRecordError extends Error {
+  constructor(code, message) {
+    super(message || code);
+    this.code = code;
+    this.researchRecord = true;
+  }
+}
+const refuse = (code, message) => new ResearchRecordError(code, message);
+
+const INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
+/** An ISO-8601 UTC instant as the hosts write them (`toISOString()`; whole seconds allowed). */
+export const isInstant = (v) => typeof v === 'string' && INSTANT_RE.test(v) && Number.isFinite(Date.parse(v));
+// eslint-disable-next-line no-control-regex -- the point is to refuse control characters
+const CONTROL_RE = /[\u0000-\u001f\u007f]/;
+const boundedText = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max && !CONTROL_RE.test(v);
+/** A statusReason: a snake_case word, e.g. `provider_unavailable`. */
+const STATUS_REASON_RE = /^[a-z][a-z0-9_]{0,63}$/;
+const FINDING_ID_RE = new RegExp(`^${FINDING_ID_PREFIX}${UUID_RE.source.slice(1, -1)}$`);
+export const isFindingId = (v) => typeof v === 'string' && FINDING_ID_RE.test(v);
+
+/**
+ * A `symbolDayEvidence` record's id: `{etDate}_{SYMBOL}` (the Command Center
+ * cut's `symbolDayEvidence/{etDate}_{SYMBOL}`). Its news item's `itemId` is the
+ * item's `newsId`.
+ */
+export const SYMBOL_DAY_EVIDENCE_ID_RE = /^(\d{4}-\d{2}-\d{2})_([A-Z0-9][A-Z0-9.-]{0,11})$/;
+
+/** A source record's id, for its kind: bounded printable text; a symbolDayEvidence id has its own shape. */
+export function isRecordRef(recordKind, recordId) {
+  if (!FINDING_RECORD_KINDS.includes(recordKind) || !boundedText(recordId, RECORD_ID_MAX_LEN)) return false;
+  if (recordKind !== 'symbolDayEvidence') return true;
+  const m = SYMBOL_DAY_EVIDENCE_ID_RE.exec(recordId);
+  const day = m ? Date.parse(`${m[1]}T00:00:00.000Z`) : NaN;
+  return Number.isFinite(day) && new Date(day).toISOString().slice(0, 10) === m[1];
+}
+
+/** An http(s) URL, bounded. */
+export function isSourceUrl(v) {
+  if (!boundedText(v, SOURCE_URL_MAX_LEN)) return false;
+  try {
+    const u = new URL(v);
+    return u.protocol === 'https:' || u.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+/** The question: a non-empty string (outer whitespace dropped), at most QUESTION_MAX_LEN. Throws invalid_question. */
+export function normalizeQuestion(raw) {
+  const s = typeof raw === 'string' ? raw.trim() : '';
+  if (!s || s.length > QUESTION_MAX_LEN) throw refuse('invalid_question', `question must be 1–${QUESTION_MAX_LEN} characters.`);
+  return s;
+}
+
+/** A symbol as an index key: upper case, hyphen form (BRK.B → BRK-B); null when it is not a symbol. */
+export function symbolKeyOf(raw) {
+  const s = normalizeSymbol(raw);
+  if (!s) return null;
+  const key = hyphenForm(s);
+  return /^[A-Z0-9][A-Z0-9-]{0,11}$/.test(key) ? key : null;
+}
+
+/** The symbol a finding's source record names by its id, or null (only a symbolDayEvidence id carries one). */
+function sourceSymbolOf(finding) {
+  const src = finding?.source;
+  if (src?.recordKind !== 'symbolDayEvidence' || typeof src.recordId !== 'string') return null;
+  const m = SYMBOL_DAY_EVIDENCE_ID_RE.exec(src.recordId);
+  return m ? m[2] : null;
+}
+
+/**
+ * symbolKeys — derived, never supplied: the record's cohort symbols, then the
+ * symbols its findings' records name, as keys (upper case, hyphen form),
+ * first-seen order, each once, at most SYMBOLS_MAX.
+ */
+export function symbolKeysOf(record) {
+  const r = isPlainObject(record) ? record : {};
+  const raw = [
+    ...(Array.isArray(r.symbols) ? r.symbols.map((e) => (isPlainObject(e) ? e.symbol : e)) : []),
+    ...(Array.isArray(r.findings) ? r.findings.map(sourceSymbolOf) : []),
+  ];
+  const out = [];
+  const seen = new Set();
+  for (const s of raw) {
+    const key = symbolKeyOf(s);
+    if (key && !seen.has(key)) { seen.add(key); out.push(key); }
+  }
+  return out.slice(0, SYMBOLS_MAX);
+}
+
+const FINDING_INPUT_KEYS = Object.freeze(['kind', 'fact', 'source', 'at', 'asOf', 'status', 'statusReason', 'pin', 'supersedes']);
+const SOURCE_KEYS = Object.freeze(['recordKind', 'recordId', 'label', 'url']);
+const keysWithin = (o, allowed) => Object.keys(o).every((k) => allowed.includes(k));
+
+function buildSource(raw) {
+  if (!isPlainObject(raw) || !keysWithin(raw, SOURCE_KEYS)) throw refuse('invalid_source');
+  if (!isRecordRef(raw.recordKind, raw.recordId)) throw refuse('invalid_source', 'source names no known record.');
+  const label = typeof raw.label === 'string' ? raw.label.trim() : '';
+  if (!boundedText(label, SOURCE_LABEL_MAX_LEN)) throw refuse('invalid_source', `source label must be 1–${SOURCE_LABEL_MAX_LEN} characters.`);
+  const hasUrl = raw.url !== undefined && raw.url !== null;
+  if (hasUrl && !isSourceUrl(raw.url)) throw refuse('invalid_source', 'source url must be an http(s) URL.');
+  if (raw.recordKind === RETRIEVAL_RECORD_KIND && !hasUrl) throw refuse('retrieval_needs_url', 'a retrieval source carries its url.');
+  return { recordKind: raw.recordKind, recordId: raw.recordId, label, ...(hasUrl ? { url: raw.url } : {}) };
+}
+
+function buildPin(raw) {
+  if (raw === null || raw === undefined) return null;
+  if (!isPlainObject(raw) || Object.keys(raw).length !== 2 || !PIN_TYPES.includes(raw.type)) throw refuse('invalid_pin');
+  if (raw.type === 'price' && !(typeof raw.value === 'number' && Number.isFinite(raw.value) && raw.value > 0)) throw refuse('invalid_pin', 'a price pin is a positive number.');
+  if (raw.type === 'time' && !isInstant(raw.value)) throw refuse('invalid_pin', 'a time pin is an ISO-8601 UTC instant.');
+  return { type: raw.type, value: raw.value };
+}
+
+/**
+ * One finding, validated in full, with its server-minted id. `asOf` is when
+ * the SOURCE knew the fact — absent means null, never the write time: one
+ * equal to (or later than) the write time `nowIso` is refused.
+ *
+ * @param {object} raw  { kind, fact, source, at, asOf?, status, statusReason?, pin?, supersedes? }
+ * @param {{ findingId: string, nowIso: string }} server
+ */
+export function buildFinding(raw, { findingId, nowIso }) {
+  if (!isFindingId(findingId) || !isInstant(nowIso)) throw new Error('researchRecords: a finding needs a server-minted id and the write time');
+  if (!isPlainObject(raw) || !keysWithin(raw, FINDING_INPUT_KEYS)) throw refuse('invalid_finding', 'a finding carries only its own fields (the id is the server\'s).');
+  if (!FINDING_KINDS.includes(raw.kind)) throw refuse('invalid_finding_kind');
+  const fact = typeof raw.fact === 'string' ? raw.fact.trim() : '';
+  if (!fact || fact.length > FINDING_FACT_MAX_LEN) throw refuse('invalid_fact', `fact must be 1–${FINDING_FACT_MAX_LEN} characters.`);
+  const source = buildSource(raw.source);
+  if (!isInstant(raw.at)) throw refuse('invalid_at', 'at is the fact\'s own ISO-8601 UTC instant.');
+  const asOf = raw.asOf ?? null;
+  if (asOf !== null) {
+    if (!isInstant(asOf)) throw refuse('invalid_as_of');
+    if (Date.parse(asOf) >= Date.parse(nowIso)) throw refuse('as_of_not_before_write', 'asOf is when the source knew it, never the write time.');
+  }
+  if (!FINDING_STATUSES.includes(raw.status)) throw refuse('invalid_status');
+  const statusReason = raw.statusReason ?? null;
+  if (raw.status === 'verified' ? statusReason !== null : !(typeof statusReason === 'string' && STATUS_REASON_RE.test(statusReason))) {
+    throw refuse('invalid_status_reason', 'a finding that is not verified carries a typed statusReason; a verified one carries none.');
+  }
+  const supersedes = raw.supersedes ?? null;
+  if (!(supersedes === null || isFindingId(supersedes))) throw refuse('invalid_supersedes');
+  return { findingId, kind: raw.kind, fact, source, at: raw.at, asOf, status: raw.status, statusReason, pin: buildPin(raw.pin), supersedes };
+}
+
+const findingsOf = (record) => (Array.isArray(record?.findings) ? record.findings : []);
+const revisionsOf = (record) => (Array.isArray(record?.summaryRevisions) ? record.summaryRevisions : []);
+
+function assertWritable(record) {
+  if (!isPlainObject(record) || !RESEARCH_STATES.includes(record.state)) throw refuse('record_unreadable');
+  if (record.state !== 'open') throw refuse('record_closed', 'a closed record never moves.');
+}
+
+/**
+ * Append one built finding (buildFinding) to the record — the patch, or a
+ * typed refusal: the record closed, the cap reached (the 101st), a duplicate
+ * id, or a `supersedes` naming no finding on the record or one already
+ * superseded (a correction chain never forks). Nothing earlier is touched.
+ */
+export function findingAppendPatch(record, finding, { nowIso }) {
+  assertWritable(record);
+  const prior = findingsOf(record);
+  if (prior.length >= FINDINGS_MAX) throw refuse('findings_full', `a record holds at most ${FINDINGS_MAX} findings.`);
+  if (prior.some((f) => f?.findingId === finding.findingId)) throw refuse('finding_id_taken');
+  if (finding.supersedes !== null) {
+    if (!prior.some((f) => f?.findingId === finding.supersedes)) throw refuse('supersedes_unknown', 'supersedes names no finding on this record.');
+    if (prior.some((f) => f?.supersedes === finding.supersedes)) throw refuse('finding_already_superseded', 'that finding was already corrected; correct the correction.');
+  }
+  const findings = [...prior, finding];
+  return { findings, symbolKeys: symbolKeysOf({ ...record, findings }), updatedAt: nowIso };
+}
+
+/** The findings no later finding supersedes, in record order. */
+export function currentFindingsOf(record) {
+  const all = findingsOf(record);
+  const superseded = new Set(all.map((f) => f?.supersedes).filter(Boolean));
+  return all.filter((f) => !superseded.has(f?.findingId));
+}
+
+/**
+ * A summary revision: appended to summaryRevisions[] AND made the summary, in
+ * one patch; `rev` = the previous + 1. Refused, typed: the record closed, the
+ * 21st revision, a `basedOn` naming a finding the record does not hold, or —
+ * when the caller says which revision it saw (`expectedRev`, 0 for none) — a
+ * revision written since (summary_conflict). Nothing is overwritten.
+ */
+export function summaryRevisionPatch(record, { text, basedOn = [], expectedRev = null }, { nowIso }) {
+  assertWritable(record);
+  if (!isInstant(nowIso)) throw new Error('researchRecords: a summary revision needs the write time');
+  const prior = revisionsOf(record);
+  const currentRev = prior.length;
+  if (record.summary != null && record.summary?.rev !== currentRev) throw refuse('summary_unreadable');
+  if (expectedRev !== null && expectedRev !== currentRev) throw refuse('summary_conflict', 'the summary changed since it was read.');
+  if (currentRev >= SUMMARY_REVISIONS_MAX) throw refuse('summary_revisions_full', `a record holds at most ${SUMMARY_REVISIONS_MAX} summary revisions.`);
+  const t = typeof text === 'string' ? text.trim() : '';
+  if (!t || t.length > SUMMARY_TEXT_MAX_LEN) throw refuse('invalid_summary_text', `summary text must be 1–${SUMMARY_TEXT_MAX_LEN} characters.`);
+  if (!Array.isArray(basedOn) || !basedOn.every(isFindingId) || new Set(basedOn).size !== basedOn.length) throw refuse('invalid_based_on');
+  const held = new Set(findingsOf(record).map((f) => f?.findingId));
+  if (!basedOn.every((id) => held.has(id))) throw refuse('based_on_unknown', 'basedOn names a finding this record does not hold.');
+  const summary = { rev: currentRev + 1, text: t, at: nowIso, basedOn: [...basedOn] };
+  return { summary, summaryRevisions: [...prior, summary], symbolKeys: symbolKeysOf(record), updatedAt: nowIso };
 }
 
 /**
