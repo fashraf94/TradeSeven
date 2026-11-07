@@ -8,6 +8,25 @@ import { describe, it, expect } from 'vitest';
 import * as C from './constants.js';
 import { ACQUIRE_TIMEOUT_MS } from '../setupEvidence/acquire.js';
 import { LEASE_MS } from '../setupEvidence/store.js';
+import { ACQUISITION_FAILURES } from '../setupEvidence/classify.js';
+import { buildPointer } from './pointer.js';
+import { discoverActivations } from './discover.js';
+import { describeRuleSet } from '../setupEvaluator/thresholds.js';
+import { legacyBattle } from './__fixtures__/activationBattles.js';
+
+describe('the census\'s label lists (review 5) and the pointer field set', () => {
+  it('the acquisition failures the store can return are all on the missing.detail list', () => {
+    for (const f of Object.values(ACQUISITION_FAILURES)) expect(C.MISSING_DETAILS).toContain(f);
+  });
+  it('the pointer field set is exactly what buildPointer writes, and the ACTIVATED_AT_SOURCES and kinds are the discoverable ones', () => {
+    const b = legacyBattle();
+    const a = discoverActivations(b).activations[0];
+    const p = buildPointer({ battle: b, battleId: 'b', activation: a, session: '2026-11-04', attribution: { attributionAgentId: 'agent-1', attributionStatus: 'resolved' }, ruleSet: describeRuleSet(), evidence: null, missingDetail: 'missing_bar', observedAt: '2026-11-05T15:00:00.000Z' });
+    expect(Object.keys(p)).toEqual([...C.POINTER_FIELD_SET]);
+    expect(C.POINTER_KINDS).toContain(a.kind);
+    expect(C.ACTIVATED_AT_SOURCES).toContain(a.activatedAtSource);
+  });
+});
 
 describe('the named limits', () => {
   it('are the prompt\'s values', () => {

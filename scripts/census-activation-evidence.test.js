@@ -10,6 +10,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { censusMain, fatalLine, parseArgs, restrictedReader, runCensus, renderMarkdown, windowSessionsOf, dist } from './census-activation-evidence.mjs';
 import { legacyBattle, legacySwap, correctedBattle, correctedSwap, tickOf } from '../api/_utils/activationEvidence/__fixtures__/activationBattles.js';
 import { discoverActivations, activationKeyOf, currentRuleSet } from '../api/_utils/activationEvidence/discover.js';
+// The integrity fixture only (the census itself never imports these): pointers as the observer writes them, over real snapshots.
+import { buildPointer } from '../api/_utils/activationEvidence/pointer.js';
+import { snapshotFor } from '../api/_utils/activationEvidence/__fixtures__/activationSnapshots.js';
+import { snapshotIdOf } from '../api/_utils/setupEvidence/key.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SOURCE = readFileSync(resolve(HERE, 'census-activation-evidence.mjs'), 'utf8').replace(/\r\n/g, '\n');
@@ -19,13 +23,14 @@ const RS = currentRuleSet();
 // ---------------------------------------------------------------- read-only by construction
 
 describe('read-only by construction', () => {
-  it('its static imports are the observer\'s pure modules and the store\'s pure key and session modules, nothing else', () => {
+  it('its static imports are the observer\'s pure modules, the store\'s pure key and session modules and a constants module, nothing else', () => {
     const imports = [...CODE.matchAll(/^import [\s\S]*? from '([^']+)';$/gm)].map((m) => m[1]);
     expect(imports).toEqual([
       'node:fs', 'node:url',
       '../api/_utils/activationEvidence/scope.js', '../api/_utils/activationEvidence/discover.js', '../api/_utils/activationEvidence/schedule.js',
       '../api/_utils/activationEvidence/tick.js', '../api/_utils/activationEvidence/lifetimes.js', '../api/_utils/activationEvidence/constants.js',
       '../api/_utils/setupEvidence/sessionAt.js', '../api/_utils/setupEvidence/key.js',
+      '../src/constants/leagueTournament.js', // isCasualCloneId, for the integrity section's attribution rules (a module with no imports)
     ]);
   });
   it('the credentials and the allowlist load only inside main(), lazily; nothing write-capable is ever named', () => {
@@ -46,14 +51,22 @@ describe('read-only by construction', () => {
       // language
       'catch', 'exit', 'error', 'filter', 'floor', 'forEach', 'freeze', 'has', 'includes', 'indexOf', 'isInteger', 'isFinite',
       'isArray', 'now', 'join', 'keys', 'log', 'map', 'max', 'parse', 'push', 'replace', 'round', 'set', 'slice', 'some', 'sort', 'split', 'stringify', 'test', 'toISOString', 'unshift', 'values', 'abs',
+      // language, added with the integrity section (review-fix prompt §2): all read-only
+      'every', 'entries', 'hasOwn', 'isNaN', 'toMillis',
     ];
     expect(calls.filter((c) => !ALLOWED.includes(c))).toEqual([]);
     expect(calls.length).toBeGreaterThan(20);
     expect(CODE).not.toMatch(/runTransaction|bulkWriter|recursiveDelete|writeBatch|FieldValue|\.batch\(|\.update\(|\.create\(|\.delete\(|\.add\(/);
-    // `.set(` appears only on a Map (the outstanding keys), never on a reference.
-    expect([...CODE.matchAll(/(\w+)\.set\(/g)].map((m) => m[1])).toEqual(['outstanding']);
+    // `.set(` appears only on a WeakMap (each pointer's stored field names) and a Map (the outstanding keys), never on a reference.
+    expect([...CODE.matchAll(/(\w+)\.set\(/g)].map((m) => m[1])).toEqual(['storedFields', 'outstanding']);
   });
-  it('the restricted reader is three read methods over the handle, frozen, and every query is field-masked', async () => {
+  it('the one unmasked read is the pointer query (whole pointers, for the integrity section\'s exact field set); every other read names its fields', () => {
+    expect([...CODE.matchAll(/fields: WHOLE_DOCUMENT/g)]).toHaveLength(1);
+    expect(CODE).toMatch(/collection: `agentBattles\/\$\{id\}\/\$\{ACTIVATIONS_SUBCOLLECTION\}`, limit: 500, fields: WHOLE_DOCUMENT \}/);
+    expect(CODE).toMatch(/const WHOLE_DOCUMENT = null;/);
+    expect(CODE).not.toMatch(/fields: null/);
+  });
+  it('the restricted reader is three read methods over the handle, frozen, and every query is field-masked unless its fields are null', async () => {
     const seen = [];
     const query = { where: (...a) => { seen.push(['where', ...a]); return query; }, orderBy: (...a) => { seen.push(['orderBy', ...a]); return query; }, limit: (n) => { seen.push(['limit', n]); return query; }, select: (...f) => { seen.push(['select', ...f]); return query; }, get: async () => ({ docs: [{ id: 'x', data: () => ({}) }] }) };
     const db = { collection: () => query, doc: (p) => ({ path: p }), getAll: async (...a) => { seen.push(['getAll', a.length, a[a.length - 1]]); return [{ exists: false }]; }, set: () => { throw new Error('never'); }, runTransaction: () => { throw new Error('never'); } };
@@ -63,6 +76,9 @@ describe('read-only by construction', () => {
     await r.query({ collection: 'agentBattles', where: [['ownerId', '==', 'u']], limit: 3, fields: [] });
     await r.get('agentBattles/x', ['status']);
     expect(seen).toEqual([['where', 'ownerId', '==', 'u'], ['limit', 3], ['select'], ['getAll', 2, { fieldMask: ['status'] }]]);
+    seen.length = 0;
+    await r.query({ collection: 'agentBattles/b/activations', limit: 500, fields: null });
+    expect(seen).toEqual([['limit', 500]]); // whole documents: no select
   });
 });
 
@@ -93,7 +109,7 @@ function fakeReader(docs, { fail = null } = {}) {
       let rows = Object.entries(docs).filter(([p]) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/')).map(([p, d]) => ({ id: p.slice(prefix.length), d }));
       for (const [f, op, v] of where) rows = rows.filter((r) => { const x = valueAt(r.d, f); return op === '==' ? x === v : op === '>=' ? x >= v : op === '<=' ? x <= v : false; });
       if (orderBy) rows.sort((a, b) => (valueAt(a.d, orderBy[0]) < valueAt(b.d, orderBy[0]) ? -1 : 1) * (orderBy[1] === 'desc' ? -1 : 1));
-      return rows.slice(0, limit).map((r) => ({ id: r.id, data: pick(r.d, fields) }));
+      return rows.slice(0, limit).map((r) => ({ id: r.id, data: fields === null ? structuredClone(r.d) : pick(r.d, fields) }));
     },
   };
 }
@@ -178,7 +194,7 @@ describe('each measure, on one fixture', () => {
   it('cohort, pointers, battles, activations, outstanding keys, the newest-session cutoff and writer.commit', async () => {
     const R = await runCensus(fakeReader(fixture()), { owners: [OWNER], session: SESSION, sessions: 1, nowMs: NOW });
     expect(R.window).toEqual({ firstSession: SESSION, lastSession: SESSION, sessions: 1 });
-    expect(R.cohort).toEqual({ battles: 5, inFlight: 1, candidatesRead: 7, candidatesTruncated: 0 });
+    expect(R.cohort).toEqual({ battles: 5, inFlight: 1, candidatesRead: 7, candidatesTruncated: 0, readFailed: 0 });
     // 2. Battles: four ended cohort battles read, one excluded; the gap battle; the no-days battle counted over the candidates.
     expect(R.battles).toEqual({ inCohort: 4, excluded: { archetype: 1 }, gapBattles: 1, finalizationUndetermined: 1, malformed: 0 });
     // 1. Pointers: the main battle's five, plus the gap battle's two.
@@ -201,9 +217,10 @@ describe('each measure, on one fixture', () => {
     expect(R.outstandingKeys.observationAwaiting.n).toBe(0);
     expect(R.outstandingKeys.attemptsNoObservation).toMatchObject({ n: 1, attempts: { n: 1, min: 2, max: 2 } });
     expect(R.outstandingKeys.finalExists).toBe(1); // the after-close NVDA final, its pointer not yet written
-    expect(R.outstandingKeys.keys).toBe(R.outstandingKeys.finalExists + R.outstandingKeys.liveLease + R.outstandingKeys.observationAwaiting.n + R.outstandingKeys.attemptsNoObservation.n + R.outstandingKeys.neverAttempted);
+    expect(R.outstandingKeys.readFailed).toBe(0);
+    expect(R.outstandingKeys.keys).toBe(R.outstandingKeys.readFailed + R.outstandingKeys.finalExists + R.outstandingKeys.liveLease + R.outstandingKeys.observationAwaiting.n + R.outstandingKeys.attemptsNoObservation.n + R.outstandingKeys.neverAttempted);
     // 5. The newest-session cutoff.
-    expect(R.newestSessionCutoff.finals).toEqual({ n: 1, minutesAfterClose: { n: 1, min: 40, p50: 40, max: 40 }, barsClass: { contemporaneous: 1 } });
+    expect(R.newestSessionCutoff.finals).toEqual({ n: 1, readFailed: 0, minutesAfterClose: { n: 1, min: 40, p50: 40, max: 40 }, barsClass: { contemporaneous: 1 } });
     expect(R.newestSessionCutoff.outstanding).toMatchObject({ attempts: expect.objectContaining({ max: 2 }), lastAttemptAfterCloseMinutes: { n: 1, min: 60, p50: 60, max: 60 } });
     // 6. writer.commit.
     expect(R.writerCommit.seen).toBe(true);
@@ -244,8 +261,187 @@ describe('aggregates only — the sentinel sweep', () => {
   });
   it('the report renders every measure with its denominator', async () => {
     const md = renderMarkdown(await runCensus(fakeReader(fixture()), { owners: [OWNER], session: SESSION, sessions: 1, nowMs: NOW }));
-    for (const h of ['## Cohort', '## 1. Pointers', '## 2. Battles', '## 3. Activations', '## 4. Outstanding keys', '## 5. The newest-session cutoff', '## 6. writer.commit']) expect(md).toContain(h);
+    for (const h of ['## Cohort', '## 1. Pointers', '## 2. Battles', '## 3. Activations', '## 4. Outstanding keys', '## 5. The newest-session cutoff', '## 6. writer.commit', '## 7. Pointer integrity']) expect(md).toContain(h);
     expect(md).toMatch(/Written: \d+ of \d+ resolvable/);
     expect(md).toContain('LOWER BOUND');
+    expect(md).toMatch(/read_failed .*: 0 › final exists/);
+  });
+  // Review 5: every bucket label read from a stored document is on its list, or `other` — a stored string is never echoed.
+  it('review 5: sentinels in missing.detail, activatedAtSource, attributionStatus, activatingTick.source, kind and the bars class → `other`, never echoed', async () => {
+    const docs = fixture();
+    const pointerPaths = Object.keys(docs).filter((p) => p.startsWith(`agentBattles/${B_MAIN}/activations/`));
+    const nullOne = pointerPaths.find((p) => docs[p].snapshotRef === null);
+    const evidenced = pointerPaths.filter((p) => docs[p].snapshotRef !== null && docs[p].kind === 'creation');
+    const swapIn = pointerPaths.find((p) => docs[p].kind === 'swap_in');
+    docs[nullOne].missing.detail = 'SENTINEL_DETAIL_9';
+    docs[evidenced[0]].activatedAtSource = 'SENTINEL_SRC_4';
+    docs[evidenced[1]].attributionStatus = 'SENTINEL_ATTR_2';
+    docs[swapIn].activatingTick.source = 'SENTINEL_TICK_3';
+    docs['agentBattles/SENTB_GAP/activations/SENTINEL_POS_1'].kind = 'SENTINEL_KIND_5';
+    const nvdaFinal = Object.keys(docs).find((p) => p.startsWith('setupEvidence/'));
+    docs[nvdaFinal].evidenceClass.bars = 'SENTINEL_BARS_8';
+    const files = {};
+    const out = [];
+    const R = await censusMain({ argv: ['--session', SESSION, '--out', 'r.md', '--json', 'r.json'], reader: fakeReader(docs), owners: [OWNER], writeFile: (p, s) => { files[p] = s; }, log: (s) => out.push(s), nowMs: NOW });
+    expect(R.pointers.nullByDetail).toEqual({ missing_bar: 1, other: 1 });
+    expect(R.pointers.activatedAtSource.other).toBe(1);
+    expect(R.pointers.attribution.other).toBe(1);
+    expect(R.pointers.activatingTick).toEqual({ other: 1 }); // the gap battle's swap-in no longer reads as a swap-in (its kind is the sentinel)
+    expect(R.pointers.byKindRoute['other/corrected']).toBe(1);
+    expect(R.newestSessionCutoff.finals.barsClass).toEqual({ other: 1 });
+    for (const [name, text] of Object.entries({ md: files['r.md'], json: files['r.json'], stdout: out.join('\n') })) {
+      for (const s of ['SENTINEL', 'DETAIL_9', 'SRC_4', 'ATTR_2', 'TICK_3', 'KIND_5', 'BARS_8']) expect([name, s, text.includes(s)]).toEqual([name, s, false]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------- review 3: a failed read is never evidence of absence
+
+describe('review 3: a failed read is never evidence of absence', () => {
+  const opts = { owners: [OWNER], session: SESSION, sessions: 1, nowMs: NOW };
+  it('a claims read that fails → every outstanding key is read_failed, never neverAttempted; a finals read that fails → the same', async () => {
+    const healthy = await runCensus(fakeReader(fixture()), opts);
+    expect(healthy.outstandingKeys.neverAttempted).toBeGreaterThan(0); // the healthy fixture has keys no claim names
+    expect(healthy.outstandingKeys.readFailed).toBe(0);
+    for (const failing of ['setupEvidenceClaims/', 'setupEvidence/']) {
+      const R = await runCensus(fakeReader(fixture(), { fail: (p) => p.startsWith(failing) }), opts);
+      expect([failing, R.outstandingKeys.keys]).toEqual([failing, healthy.outstandingKeys.keys]);
+      expect([failing, R.outstandingKeys.readFailed]).toEqual([failing, R.outstandingKeys.keys]);
+      expect([failing, R.outstandingKeys.neverAttempted, R.outstandingKeys.finalExists, R.outstandingKeys.liveLease, R.outstandingKeys.observationAwaiting.n, R.outstandingKeys.attemptsNoObservation.n])
+        .toEqual([failing, 0, 0, 0, 0, 0]);
+      expect([failing, R.newestSessionCutoff.outstanding.n, R.newestSessionCutoff.outstanding.readFailed > 0]).toEqual([failing, 0, true]);
+    }
+  });
+  it('a pointer read that fails → that battle\'s coverage is unknown: never written, outstanding or abandoned, and out of both sides of the headline', async () => {
+    const failMain = (p) => p === `agentBattles/${B_MAIN}/activations`;
+    const healthy = await runCensus(fakeReader(fixture()), opts);
+    const R = await runCensus(fakeReader(fixture(), { fail: failMain }), opts);
+    // The main battle: six resolvable activations (a symbol_form one aside), five written, one outstanding.
+    expect(R.activations.coverageUnknown).toEqual({ battles: 1, activations: 6, gapStarts: 0 });
+    expect(R.activations.resolvable).toBe(healthy.activations.resolvable);
+    expect(R.activations.written).toBe(healthy.activations.written - 5);
+    expect(R.activations.outstanding).toBe(healthy.activations.outstanding - 1);
+    expect(R.headline.discoverableResolvable).toBe(healthy.headline.discoverableResolvable - 6);
+    expect(R.headline.coverageUnknown).toBe(6);
+    expect(R.headline.pointersWithEvidence).toBe(healthy.headline.pointersWithEvidence - 4);
+    // Past the horizon, the main battle's unwritten one is not abandoned either.
+    const LATER = Date.parse('2026-11-10T13:00:00.000Z');
+    const healthyLater = await runCensus(fakeReader(fixture()), { ...opts, nowMs: LATER });
+    const later = await runCensus(fakeReader(fixture(), { fail: failMain }), { ...opts, nowMs: LATER });
+    expect(later.activations.abandoned.unwritten).toBe(healthyLater.activations.abandoned.unwritten - 1);
+    expect(later.activations.outstanding).toBe(0);
+    // A gap battle: its starting lifetimes are neither written nor unresolved, but unknown.
+    const gapFail = await runCensus(fakeReader(fixture(), { fail: (p) => p === 'agentBattles/SENTB_GAP/activations' }), opts);
+    expect(healthy.activations.gapStartsWritten + healthy.activations.unresolved.gap).toBe(gapFail.activations.coverageUnknown.gapStarts);
+    expect([gapFail.activations.gapStartsWritten, gapFail.activations.unresolved.gap]).toEqual([0, undefined]);
+    expect(renderMarkdown(R)).toMatch(/Coverage unknown .*: 6 resolvable activation\(s\) and 0 gap starting lifetime\(s\), in 1 battle\(s\)/);
+  });
+});
+
+// ---------------------------------------------------------------- pointer integrity (review-fix prompt §2)
+
+const I_BATTLE = 'SENTINEL_BATTLE_INT';
+const I_AGENT = 'SENTINEL_AGENT_I';
+/** One ended battle whose pointers are what the observer writes: buildPointer over the store's own snapshot documents. */
+async function integrityFixture() {
+  const docs = {};
+  const b = legacyBattle({ status: 'completed', ownerId: OWNER, agentId: I_AGENT });
+  legacySwap(b, { tier: 'core', slot: 0, symbolIn: 'JPM', at: '2026-11-05T15:02:11.412Z', evaluationId: 'SENTINEL_EVAL_I' });
+  docs[`agentBattles/${I_BATTLE}`] = b;
+  const paths = {};
+  for (const a of discoverActivations(b).activations) {
+    const k = activationKeyOf(a, RS);
+    const isNull = a.symbol === 'XOM';
+    let evidence = null;
+    if (!isNull) {
+      evidence = await snapshotFor({ session: k.session, symbol: a.symbol, fetchedAt: '2026-11-05T16:00:00.000Z' });
+      docs[`setupEvidence/${evidence.snapshotId}`] = structuredClone(evidence.snapshot);
+    }
+    const activation = a.kind === 'swap_in' ? { ...a, activatingTick: { tickSeq: 12, evalId: 'eval_012', evaluationId: null, source: 'tick_action' } } : a;
+    const p = buildPointer({
+      battle: b, battleId: I_BATTLE, activation, session: k.session, attribution: { attributionAgentId: I_AGENT, attributionStatus: 'resolved' }, ruleSet: RS,
+      evidence, missingDetail: isNull ? 'missing_bar' : null, observedAt: isNull ? '2026-11-06T01:30:05.000Z' : '2026-11-05T16:00:01.000Z',
+    });
+    paths[a.symbol] = `agentBattles/${I_BATTLE}/activations/${a.activationId}`;
+    docs[paths[a.symbol]] = structuredClone(p);
+  }
+  return { docs, paths, snapshotOf: (symbol) => `setupEvidence/${docs[paths[symbol]].snapshotRef ?? snapshotIdOf({ session: docs[paths[symbol]].asOf, symbol, ruleSet: RS })}` };
+}
+
+describe('pointer integrity — identity, evidence, shape, timeliness', () => {
+  const opts = { owners: [OWNER], session: SESSION, sessions: 1, nowMs: NOW };
+  it('correct pointers (buildPointer over the store\'s own snapshots) → zero mismatches; every pointer checked', async () => {
+    const { docs } = await integrityFixture();
+    const R = await runCensus(fakeReader(docs), opts);
+    expect(R.integrity).toMatchObject({
+      pointers: 7, mismatches: 0,
+      identity: { checked: 7, notCheckable: 0, byField: {} },
+      evidence: { checked: 6, readFailed: 0, byField: {} },
+      nullPointers: { checked: 1, snapshotNowExists: 0, readFailed: 0, unkeyable: 0 },
+      shape: { byField: {} },
+    });
+    expect(R.integrity.timeliness).toEqual({
+      withEvidenceMinutesAfterActivation: expect.objectContaining({ n: 6 }), nullMinutesAfterCutoff: { n: 1, min: 0.1, p50: 0.1, max: 0.1 },
+      nullBeforeCutoff: 0, nullNoCutoff: 0, unreadableInstants: 0,
+    });
+    const md = renderMarkdown(R);
+    expect(md).toContain('**Mismatches: 0** over 7 pointer(s).');
+    for (const s of ['SENTINEL', 'NVDA', 'JPM', 'XOM', 'star:', '__', 'setupEvidence/']) expect([s, md.includes(s), JSON.stringify(R).includes(s)]).toEqual([s, false, false]);
+  });
+
+  // One wrong field of each kind → counted under that field (and only where the same wrong value must also show).
+  const P = (symbol, f) => ({ docs, paths }) => f(docs[paths[symbol]], docs);
+  const cases = [
+    // identity
+    ['identity: activationId', P('NVDA', (p) => { p.activationId = 'star:0:2026-11-05T14:30:02.119Z'; }), { identity: { activationId: 1 } }],
+    ['identity: kind', P('NVDA', (p) => { p.kind = 'swap_in'; }), { identity: { kind: 1 } }],
+    ['identity: symbol (the snapshot it names is then another key)', P('NVDA', (p) => { p.symbol = 'NVDX'; }), { identity: { symbol: 1 }, evidence: { key: 1 } }],
+    ['identity: tier', P('NVDA', (p) => { p.tier = 'core'; }), { identity: { tier: 1 } }],
+    ['identity: slot', P('NVDA', (p) => { p.slot = 5; }), { identity: { slot: 1 } }],
+    ['identity: activatedAt', P('NVDA', (p) => { p.activatedAt = '2026-11-05T14:30:02.119Z'; }), { identity: { activatedAt: 1 } }],
+    ['identity: activatedAtSource', P('NVDA', (p) => { p.activatedAtSource = 'trade_row'; }), { identity: { activatedAtSource: 1 } }],
+    ['identity: asOf (the snapshot it names is then another key)', P('NVDA', (p) => { p.asOf = '2026-11-03'; }), { identity: { asOf: 1 }, evidence: { key: 1 } }],
+    ['identity: firstTradingDay', P('NVDA', (p) => { p.firstTradingDay = '2026-11-04'; }), { identity: { firstTradingDay: 1 } }],
+    // evidence
+    ['evidence: the snapshot named is absent', ({ docs, snapshotOf }) => { delete docs[snapshotOf('NVDA')]; }, { evidence: { snapshotAbsent: 1 } }],
+    ['evidence: the snapshot\'s key names another session', ({ docs, snapshotOf }) => { docs[snapshotOf('NVDA')].key.session = '2026-11-03'; }, { evidence: { key: 1 } }],
+    ['evidence: the snapshot\'s rule set differs', ({ docs, snapshotOf }) => { docs[snapshotOf('NVDA')].key.ruleSet.thresholdsHash = '000000000000'; }, { evidence: { ruleSet: 1 } }],
+    ['evidence: entry not deep-equal to the snapshot\'s', P('NVDA', (p) => { p.entry = { ...p.entry, extra: 1 }; }), { evidence: { entry: 1 } }],
+    ['evidence: a wrong anchorSwingLow', P('NVDA', (p) => { p.anchorSwingLow = { value: 1.23, provenance: 'own_entry' }; }), { evidence: { anchorSwingLow: 1 } }],
+    ['evidence: a wrong evidenceTiming', P('NVDA', (p) => { p.evidenceTiming = { ...p.evidenceTiming, predatesActivation: !p.evidenceTiming.predatesActivation }; }), { evidence: { evidenceTiming: 1 } }],
+    // shape
+    ['shape: an extra field', P('NVDA', (p) => { p.extra = 1; }), { shape: { fieldSet: 1 } }],
+    ['shape: a missing field', P('NVDA', (p) => { delete p.archetype; }), { shape: { fieldSet: 1 } }],
+    ['shape: schemaVersion 2', P('NVDA', (p) => { p.schemaVersion = 2; }), { shape: { schemaVersion: 1 } }],
+    ['shape: activatingTick.evaluationId not null', P('JPM', (p) => { p.activatingTick.evaluationId = 'SENTINEL_EVAL_I'; }), { shape: { 'activatingTick.evaluationId': 1 } }],
+    ['shape: missing set beside an entry', P('NVDA', (p) => { p.missing = { reason: 'snapshot_unavailable', detail: 'missing_bar' }; }), { shape: { missingExactlyWhenNoEntry: 1 } }],
+    ['shape: no snapshotRef beside an entry', P('NVDA', (p) => { p.snapshotRef = null; }), { shape: { snapshotRef: 1 } }],
+    ['shape: unresolved on a ranked battle agent', P('NVDA', (p) => { p.attributionStatus = 'unresolved'; }), { shape: { 'attribution.unresolvedNotCasualClone': 1 } }],
+    ['shape: unresolved with an attribution agent other than the battle\'s', P('NVDA', (p) => { p.battleAgentId = 'casual-agent-owner-x'; p.attributionStatus = 'unresolved'; }), { shape: { 'attribution.unresolvedAgentNotBattleAgent': 1 } }],
+    ['shape: stream.attributionAgentId differs', P('NVDA', (p) => { p.stream.attributionAgentId = 'someone-else'; }), { shape: { 'stream.attributionAgentId': 1 } }],
+  ];
+  it.each(cases)('%s → counted under that field', async (_label, mutate, expected) => {
+    const fx = await integrityFixture();
+    mutate(fx);
+    const R = await runCensus(fakeReader(fx.docs), opts);
+    const want = { identity: {}, evidence: {}, shape: {}, ...expected };
+    expect({ identity: R.integrity.identity.byField, evidence: R.integrity.evidence.byField, shape: R.integrity.shape.byField }).toEqual(want);
+    const total = Object.values(want).reduce((n, m) => n + Object.values(m).reduce((x, y) => x + y, 0), 0);
+    expect(R.integrity.mismatches).toBe(total);
+  });
+  it('a null pointer whose snapshot exists now is reported (allowed), never a mismatch; one observed before its cutoff shows in timeliness', async () => {
+    const fx = await integrityFixture();
+    const k = fx.snapshotOf('XOM');
+    fx.docs[k] = (await snapshotFor({ session: fx.docs[fx.paths.XOM].asOf, symbol: 'XOM', fetchedAt: '2026-11-06T02:00:00.000Z' })).snapshot;
+    fx.docs[fx.paths.XOM].observedAt = '2026-11-06T01:00:00.000Z';
+    const R = await runCensus(fakeReader(fx.docs), opts);
+    expect(R.integrity.nullPointers).toEqual({ checked: 1, snapshotNowExists: 1, readFailed: 0, unkeyable: 0 });
+    expect(R.integrity.mismatches).toBe(0);
+    expect(R.integrity.timeliness).toMatchObject({ nullBeforeCutoff: 1, nullMinutesAfterCutoff: { n: 1, min: -30, max: -30 } });
+  });
+  it('a snapshot read that fails is counted as such: never a mismatch, never an absence', async () => {
+    const fx = await integrityFixture();
+    const R = await runCensus(fakeReader(fx.docs, { fail: (p) => p.startsWith('setupEvidence/') }), opts);
+    expect(R.integrity).toMatchObject({ mismatches: 0, evidence: { checked: 0, readFailed: 6, byField: {} }, nullPointers: { checked: 0, readFailed: 1 } });
   });
 });

@@ -92,3 +92,32 @@ export const UNRESOLVED_REASONS = Object.freeze(['inconsistent', 'class_unknown'
 
 /** activatedAtSource values (contract §4). */
 export const ACTIVATED_AT_SOURCES = Object.freeze(['trade_row', 'position_swappedInAt', 'outgoing_receipt', 'battle_activatedAt']);
+
+// ---- The census's label lists (review-fix prompt, review 5). A bucket label read from a stored document is
+// printed only when it is on its list; anything else is reported as `other`, so no stored string is ever echoed.
+
+/** `kind` values (contract §4). */
+export const POINTER_KINDS = Object.freeze(['creation', 'swap_in']);
+/** `attributionStatus` values (contract §4). */
+export const ATTRIBUTION_STATUSES = Object.freeze(['resolved', 'unresolved']);
+/** `activatingTick.source` values (contract §4). */
+export const ACTIVATING_TICK_SOURCES = Object.freeze(['tick_action', 'unavailable']);
+/**
+ * `missing.detail` values: every reason the store can return as `retryable` — the classification's retryable and
+ * confirm reasons (setupEvidence/classify.js), the adapter's split-check reasons (dailyBarsAdapter.js), and the
+ * acquisition failures (classify.js ACQUISITION_FAILURES). constants.test.js pins the failures to the store's own.
+ */
+export const MISSING_DETAILS = Object.freeze([
+  'missing_bar', 'unordered_bars', 'calendar_missing', 'asOf_in_future', 'insufficient_history', 'missing_fact',
+  'adjustment_metadata_absent', 'adjusted_close_missing', 'adjusted_close_nonpositive',
+  'fetch_failed', 'non_array_payload', 'malformed_payload',
+]);
+/** A snapshot's `evidenceClass.bars` values (setupEvidence/acquire.js barsClassOf). */
+export const BARS_CLASSES = Object.freeze(['contemporaneous', 'later_reconstruction']);
+/** A pointer's exact field set, in the contract's order (contract §4; §4.5's canonical pointer). */
+export const POINTER_FIELD_SET = Object.freeze([
+  'schemaVersion', 'activationId', 'kind', 'battleId', 'symbol', 'tier', 'slot', 'battleAgentId', 'attributionAgentId',
+  'attributionStatus', 'archetype', 'stream', 'activatedAt', 'activatedAtSource', 'asOf', 'firstTradingDay', 'ruleSet',
+  'snapshotRef', 'entry', 'missing', 'evidenceTiming', 'anchorSwingLow', 'activatingTick', 'tradeRef', 'hypothesisRef',
+  'inIdeaUniverse', 'observedAt',
+]);
