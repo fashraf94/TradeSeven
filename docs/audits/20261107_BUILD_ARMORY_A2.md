@@ -1,9 +1,9 @@
 # Build A2 — Per-game loadouts (build report)
 
-**Date:** 2026-11-07 (built Nov 6–7). **Branch:** `claude/armory-a2` (draft PR TBD-FINAL), cut from `main` @ `7969c350` (contains PR #1024's merge, Armory A1).
+**Date:** 2026-11-07 (built Nov 6–7). **Branch:** `claude/armory-a2` (a draft PR), cut from `main` @ `7969c350` (contains PR #1024's merge, Armory A1).
 **Flags on the PR:** `PER_GAME_LOADOUT_ENABLED = false` (new, `src/config/perGameLoadoutFlags.js`), `AGENT_FORM_ARMORY_ENABLED = false` (unchanged).
 **Smoke:** `claude/armory-a2-smoke` @ `06e5ff02`, one SMOKE ONLY commit, both flags on. Preview: https://trade-seven-dl38v18bk-fais-projects-bc179554.vercel.app/?loadoutStates=1
-**Diff:** TBD-FINAL lines against `main` (64 code and test files, 4,563 lines, before this report and its screenshots). That is past the 1,500-line threshold: **this PR goes to a review session before merge.**
+**Diff:** 4,625 code and test lines against `main` (65 files: +4,495 / −130), plus this report and 18 screenshots. That is about three times the 1,500-line threshold: **this PR goes to a review session before merge.**
 **Fence:** untouched. `decide.js`, `agentBattleService.js` and `createAgentBattle` have no diff; the end-to-end row runs them as they are.
 
 ---
@@ -50,7 +50,10 @@ Where each one lives:
 | `72eb4073` | the shared pieces out of the hub, every guard registered, the surface rows |
 | `66cbaeab` | two rows the mutation check asked for (M10c, M11 survived the first pass) |
 | `fb256283` | the League line and its slot under the token and motion guards |
-| (this commit) | this report and 18 screenshots |
+| `a0ffb53e` | this report's draft and its 18 screenshots |
+| `406b1a63` | the composition protected-store allowlist: A2's three BaggerBomb slot writes, **for human review** (§11) |
+| `ab79a9e6` | the no-book Deploy row cleans up its card when it fails |
+| (the last commit) | this report, final |
 
 `LoadoutChooserSheet.jsx` itself stays in the tree: with the flag off both lobbies still mount it (flag-off identity). With the flag on its two mounts render nothing. Delete the file in the flip PR's cleanup.
 
@@ -186,7 +189,7 @@ Tap a card's armor row → the hub's scroll box brings the hero into view (measu
 | 390 · Close | 8 → 8 | 67–317 | yes | "Change BaggerBomb armor" (the row) | 37 |
 | 390 · Escape | 8 → 8 | 67–317 | yes | the row | 37 |
 | 390 · Equip | 8 → 8 | 67–317 | yes | the row | 37 |
-| 390 · tab switch | 8 → 29 | 46–296 | yes | the tab | 35 |
+| 390 · tab switch | 8 → 29 | 46–296 | yes | a button (the tab that was clicked) | 35 |
 | 320 · Close | 16 → 16 | 67–312 | yes | the row | 37 |
 | 320 · Equip | 16 → 16 | 67–312 | yes | the row | 37 |
 | 390 · League (locked) Close | 8 → 8 | 67–317 | yes | "League armor, locked. Open the armory to look." | 37 |
@@ -228,17 +231,17 @@ Each mutant: one edit on a clean head worktree in WSL, the 13 A2 files run (8 wo
 | M10 | a League equip allowed while locked (archetype) | `if (false && lock.locked)` in `change-archetype` | killed, 4 | refused-while-locked; forming/drafting/battle |
 | M10b | (same, book) | same in `equip-watchlist` | killed, 2 | e2e step 4; "league: as today, refused while the week holds it" |
 | M10c | (same, the armory's Equip) | the equip hook's `card.locked` gate removed | **survived the first pass** (the locked button is disabled, so no click reaches the hook); **killed** after `66cbaeab`, 1 | "the equip itself refuses a locked League card, whatever calls it" |
-| M11 | the no-book state blocking Deploy | Deploy card `canStart` also requires a BaggerBomb book | **survived the first pass** (that suite's hub has no deploy provider, so its Hold was disabled either way); **killed** after `66cbaeab`, 3 | "no book never stops the Deploy card's Hold…" (+2 incidental) |
+| M11 | the no-book state blocking Deploy | Deploy card `canStart` also requires a BaggerBomb book | **survived the first pass** (that suite's hub has no deploy provider, so its Hold was disabled either way); **killed** after `66cbaeab` | "no book never stops the Deploy card's Hold…". At `66cbaeab` two later rows failed too, only because the failing row left its card mounted; `ab79a9e6` registers the mount for cleanup, and the re-run is in the last line of this table |
 | M12 | a figure wearing an archetype outside a game (N1) | the hero's read = `readers.agent` (dressed) | killed, 1 | "every live form is bare (the hero); every dressed form is a still" |
 | M13 | the context line naming the wrong game | BaggerBomb context says League | killed, 3 | the hub's BaggerBomb armory row; the model's two context rows |
 
-16 of 16 killed on the final head.
+16 of 16 killed. Re-run on the final code (`ab79a9e6`): control exit 0 (264 rows); M10c fails exactly "the equip itself refuses a locked League card…"; M11 fails exactly "no book never stops the Deploy card's Hold…" (no cascade).
 
 ---
 
 ## §10 Flag-off proofs
 
-- **Client, byte identity.** Unminified Linux builds (`vite build --minify false`), hashes masked, `main` @ `7969c350` against the head: **0 differing lines, 55 of 55 files**, measured at `2d1cfdb0`, `85ececdc` and `72eb4073`, and TBD-FINAL. Two causes found and fixed on the way (commits `6d08fbf8`, `85ececdc`): a static League → hub import moved modules between chunks (3,021 lines), and module-level initializers that read another binding's property survived tree-shaking (5 lines).
+- **Client, byte identity.** Unminified Linux builds (`vite build --minify false`), hashes masked, `main` @ `7969c350` against the head: **0 differing lines, 55 of 55 files**, measured at `2d1cfdb0`, `85ececdc`, `72eb4073` and `406b1a63`, and on the pushed head (§12). Two causes found and fixed on the way (commits `6d08fbf8`, `85ececdc`): a static League → hub import moved modules between chunks (3,021 lines), and module-level initializers that read another binding's property survived tree-shaking (5 lines).
 - **Client, bundle rows** (`agentForm.flagOffBundle.test.js`): the flag module is rewritten false like the agent form flags; each A2 module imported and unused bundles to nothing; the shipped hub files that read the flag bundle with nothing of A2; three plants (the loadout context without its `PURE` mark, the League line declared without its flags, a model constant reading another binding's property) each fail it.
 - **Server.** `perGameLoadout.writers.flagOff.test.js` runs `change-archetype`, `equip-watchlist`, `unequip-watchlist` with `loadout: 'baggerbomb'` and the flag off: today's ranked writes, today's battle lock, no slot, no lock read. The getter-mocked rows in `trainingClone`, `lobby-endpoints`, `baggerbombAdapter`, `casualClone` and `cardStore` run the flag-off arm against today's expectations, and the existing suites for every changed file run unchanged with the flag at its pinned `false`.
 - **The pin.** `perGameLoadoutFlags.test.js` pins `false`, keeps the module a literal outside `featureFlags`, requires the armory flag whenever this one is on, lists every server and client read by line, and fails on any other reader. `flagPinGuard` registers the module; `DARK_BY_DESIGN` names it.
@@ -255,23 +258,27 @@ Registered (none loosened):
 - **Copy guard:** `loadoutCopy.js` is a copy table; the "next deploy" move (§6, board 4).
 - **flagPinGuard**, **flag-off bundle row**: §10.
 
-**Allowances added, named:** `ALLOWED_ACTIVITY['hub/useLeagueLoadoutLock.js'] = [subscribe…(, useEffect]`; `NAMED['/services/loadoutService'] = [changeLoadoutArchetype, equipLoadoutBook, isLeagueLock, unequipLoadoutBook]`; `NAMED['/services/leagueLockService'] = [subscribeLeagueLock]`; the three importer lines (`Armory.jsx`, `LoadoutBookSheet.jsx` → `loadoutService`; `useLeagueLoadoutLock.js` → `leagueLockService`); `"next deploy"` allowed in BaggerBomb strings of `LOADOUT_COPY` only.
+- **Composition protected-store scan (B3, full suite only):** it found the three BaggerBomb slot writers as new write sites on `agents/{id}`. Each key is now in `compositionProtectedStoresAllowlist.json` at count 1 with a `_notes_per_game_loadouts_a2` entry. **The guard asks a human to review these writers in this PR; this is for the review session.** What they are: one `tx.update` each, inside the endpoint's one transaction, after the agent read, the write-epoch fence, the owner check and the ranked-record check (plus the composition legality check for an archetype, the committed-and-owned check for a book), writing only `loadouts.baggerbomb` and `updatedAt`. They skip `txUpdateAgentSettings` on purpose: they change no ranked setting and take no battle lock (FD-1).
+
+**Allowances added, named:** the three B3 keys above; `ALLOWED_ACTIVITY['hub/useLeagueLoadoutLock.js'] = [subscribe…(, useEffect]`; `NAMED['/services/loadoutService'] = [changeLoadoutArchetype, equipLoadoutBook, isLeagueLock, unequipLoadoutBook]`; `NAMED['/services/leagueLockService'] = [subscribeLeagueLock]`; the three importer lines (`Armory.jsx`, `LoadoutBookSheet.jsx` → `loadoutService`; `useLeagueLoadoutLock.js` → `leagueLockService`); `"next deploy"` allowed in BaggerBomb strings of `LOADOUT_COPY` only.
 
 ---
 
 ## §12 Checks
 
-- `lint:gate`: TBD-FINAL
-- Full Linux suite (WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, 8 workers) on `fb256283`: TBD-FINAL
-- The docs-walking test files on the pushed head (this report is docs-only on top of `fb256283`): TBD-FINAL
-- Minified build of the pushed head: TBD-FINAL
+The last code commit is `ab79a9e6`; the pushed head adds only this report's final text on top of it.
+
+- **Full Linux suite** (WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, 8 workers) on `ab79a9e6`: **exit 0, 1,313 files, 28,978 rows, 0 failed, 89 skipped, 253 s.** The rows that fail only on Windows on this machine pass here.
+  - The first full run, on `fb256283`, failed one row: the composition protected-store scan (B3) found the three BaggerBomb slot writers unlisted (§11). Fixed in `406b1a63` (suite then exit 0, 28,978 rows, 245 s), and `ab79a9e6` is a one-row test cleanup on top.
+- **`lint:gate`**: exit 0 on `fb256283` and `406b1a63`; on `ab79a9e6`: LINT-AB79.
+- **On the pushed head itself:** flag-off byte identity against `main` HEAD-CMP; minified build HEAD-MIN; the files that read `docs/` (the hub copy guard, the flag pin guard, the archetype registry, the situation registry and questions, the routing wall, the composition runbook gates and A7 lock, the tf-setup guard, the voice-grounding harness, the insight-reset script, the JEV judge) HEAD-DOCS.
 - Smoke (`06e5ff02`, the same tree as the local `49186a1a`, a message change only): minified build in WSL exit 0 (with placeholder Firebase values, for the local screenshots); Vercel built it with the real ones. Its preview serves the smoke bundle (`LoadoutStatesSmoke-*.js` in the main bundle) and, loaded in headless Edge at 390, renders 11 cards in every state, both League lines, the Training line and the three armory contexts, no page errors.
 
 ---
 
 ## §13 The smoke branch
 
-`claude/armory-a2-smoke` @ `06e5ff02`, parent `72eb4073` (the two later PR commits are tests and guards only; the app code is the same). One commit, "SMOKE ONLY, NEVER MERGE": both flags `true`, the hub hero's corner readout (A1's), and `src/screens/LoadoutStatesSmoke.jsx` at `?loadoutStates=1`: the real cards, Deploy lines, League and Training lines and armory context in every state on fixture data (the League week is Nov 2–6, so the lock reads "Fri Nov 6, 4:00 PM"), then a full-width phone frame of the hub's own pieces (the hero's stage, the cards) for board 5's flow. Nothing on the page writes. The pins and guards are red on that branch by design.
+`claude/armory-a2-smoke` @ `06e5ff02`, parent `72eb4073`. The PR commits after `72eb4073` (`66cbaeab`, `fb256283`, `a0ffb53e`, `406b1a63`, `ab79a9e6` and the final report) change tests, guard baselines, the B3 allowlist and docs only; the app code the preview runs is the PR's. One commit, "SMOKE ONLY, NEVER MERGE": both flags `true`, the hub hero's corner readout (A1's), and `src/screens/LoadoutStatesSmoke.jsx` at `?loadoutStates=1`: the real cards, Deploy lines, League and Training lines and armory context in every state on fixture data (the League week is Nov 2–6, so the lock reads "Fri Nov 6, 4:00 PM"), then a full-width phone frame of the hub's own pieces (the hero's stage, the cards) for board 5's flow. Nothing on the page writes. The pins and guards are red on that branch by design.
 
 **Preview:** https://trade-seven-dl38v18bk-fais-projects-bc179554.vercel.app/?loadoutStates=1 (the Command Center itself is at the same address without the query, signed in).
 
