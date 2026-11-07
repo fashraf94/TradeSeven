@@ -234,6 +234,7 @@ The Huddle arc (internal name DRB, the Daily Regime Brief redesign): Shadow's pe
 | `specs/COMMAND_CENTER_CORE_IMPLEMENTATION_SPEC_V1_2_AMENDMENT_D_20261101.md` | Amendment D to the Command Center core spec V1.2 (Huddle C §C6): the hub-side rulings of Huddle Amendment C — attention order, chip, Huddle sheet and audio, readers, Partnership panel, words, activity rows, the Deploy card's reconfirm line. The hub spec file itself is unchanged. Written by the S1 build. |
 | `specs/huddle-s1-queries.md` | The Huddle S1 query and index manifest (Huddle A §A8): every Firestore query the slice makes, its fields and operators, and whether it needs a composite index. Written by the S1 build. |
 | `audits/20261107_BUILD_HUDDLE_S1.md` | Build report, Huddle S1 (Claude Code, Nov 7, 2026; base `d503dd07`). |
+| `audits/20261107_HUDDLE_S1_BUILD_REVIEW.md` | The S1 build's BUILD_RULES §2 review record: three lenses, the refute pass, the mutation lens, every finding's disposition (Claude Code, Nov 7, 2026). |
 
 ## Maintenance rules
 
