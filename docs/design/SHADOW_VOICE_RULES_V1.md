@@ -34,7 +34,7 @@
 |---|---|
 | §1.2 plan beat by code | `narratePlan` writes it; the model's tool schema has no plan-beat field |
 | §1.8 evidence ids | `validateScript` checks every names-beat sentence's `evidenceIds[]` against the record's `evidence[].id` |
-| §1.9 universe | `validateScript` checks `mentionedTickers[]` ⊆ universe ∪ index names, and scans each beat for capital tickers |
+| §1.9 universe | `validateScript` checks `mentionedTickers[]` ⊆ universe ∪ index names (the `ACRONYMS` list — CPI, ISM, ET … — is not a ticker there either), and scans each beat for capital tickers |
 | §2.1–2.3, 2.4, 2.6 | the forbidden-terms test on the system prompt's own examples and on every generated beat (`FORBIDDEN_SCRIPT_PATTERNS`) |
 | §2.4 on the hub | `hubCopy.guard.test.js`'s no-learning list, numeral rule and pairing fence over the `huddle` block (C14), unloosened |
 | §1.6 unverified | the gather step marks every evidence item's status; a beat citing an `unverified` item without the word fails validation |

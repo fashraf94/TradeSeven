@@ -101,6 +101,12 @@ describe('validateScript (A §A7, AR-12, C §C5)', () => {
     expect(INDEX_NAMES).toContain('SPY');
   });
 
+  it('an acronym listed in mentionedTickers is not a ticker failure either (RF-14); an unknown capitalised word still is, and so is UTC', () => {
+    expect(validateScript(ok({ mentionedTickers: ['AAA', 'ISM', 'CPI'] }), CTX).tickerFailures).toEqual([]);
+    expect(validateScript(ok({ mentionedTickers: ['AAA', 'ISM', 'TSLA'] }), CTX).tickerFailures).toEqual(['mentioned:TSLA']);
+    expect(validateScript(withNames(sentence('As of 20:01 UTC, AAA closed higher.', [HEADLINE])), CTX).tickerFailures).toEqual(['said:UTC']);
+  });
+
   it.each([
     ['clock_930', 'Your agent will move at 9:30 sharp.'],
     ['agent_clock', 'Your agent acts at 10:15 AM on AAA.'],

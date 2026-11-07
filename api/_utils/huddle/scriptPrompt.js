@@ -185,6 +185,9 @@ export function validateScript(output, { universe, evidence }) {
   const acronyms = new Set(ACRONYMS);
   const tickerFailures = [];
   for (const t of Array.isArray(output?.mentionedTickers) ? output.mentionedTickers : []) {
+    // the acronyms the spoken text may use are not tickers wherever they appear (the verification run's first answer
+    // listed ISM here and was regenerated for it, build report RF-14)
+    if (acronyms.has(t)) continue;
     if (!allowedTickers.has(t)) tickerFailures.push(`mentioned:${t}`);
   }
   const beats = {
