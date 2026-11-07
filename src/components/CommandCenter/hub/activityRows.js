@@ -55,8 +55,22 @@ import { formatHubDayTime, formatHubDayYear } from './activityDates';
 import { hubMs } from './hubDate';
 import { LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
 
-export const ACTIVITY_KINDS = Object.freeze({ COMPLETED: 'completed', DEPLOYED: 'deployed', LOADOUT: 'loadout', IDEA: 'idea' });
-const KIND_ORDER = Object.freeze([ACTIVITY_KINDS.COMPLETED, ACTIVITY_KINDS.DEPLOYED, ACTIVITY_KINDS.LOADOUT, ACTIVITY_KINDS.IDEA]);
+export const ACTIVITY_KINDS = Object.freeze({ COMPLETED: 'completed', DEPLOYED: 'deployed', LOADOUT: 'loadout', IDEA: 'idea', HUDDLE: 'huddle' });
+const KIND_ORDER = Object.freeze([ACTIVITY_KINDS.COMPLETED, ACTIVITY_KINDS.DEPLOYED, ACTIVITY_KINDS.LOADOUT, ACTIVITY_KINDS.IDEA, ACTIVITY_KINDS.HUDDLE]);
+
+/**
+ * Huddle S1 (Huddle spec Amendment C V1.2 §C8; Command Center spec V1.2 Amendment D §D7): the plan rows, from
+ * hub/huddleView.js huddleActivityOf — kind-specific ids `huddle-plan:{uid}:{etDate}`, under the same cutoff as every row.
+ */
+function huddleEvents(huddle) {
+  return (Array.isArray(huddle) ? huddle : []).filter((e) => e && typeof e.id === 'string' && Number.isFinite(e.ms)).map((e) => ({
+    ms: e.ms,
+    kind: ACTIVITY_KINDS.HUDDLE,
+    id: e.id,
+    text: e.kind === 'skipped' ? COPY.activity.planSkipped : COPY.activity.planConfirmed,
+    sub: COPY.activity.planSub(formatHubDayYear(e.ms, null) || e.etDate),
+  }));
+}
 
 const nonEmpty = (value) => (typeof value === 'string' && value.trim() !== '' ? value : null);
 
@@ -157,7 +171,7 @@ function loadoutEvents(agent, { archetypeName, characterTab, watchlist, nowMs })
  * @param {number}   [p.nowMs]        the clock, for the year of a time from another year
  * @returns {{ status: 'ready', rows: object[] }}
  */
-export function deriveActivity({ battles, live, rowsById, agent = null, watchlist = null, archetypeName = null, characterTab = false, idea = null, nowMs }) {
+export function deriveActivity({ battles, live, rowsById, agent = null, watchlist = null, archetypeName = null, characterTab = false, idea = null, huddle = null, nowMs }) {
   const windowDocs = (Array.isArray(battles) ? battles : []).filter((doc) => doc && typeof doc.id === 'string');
   const liveDocs = (Array.isArray(live) ? live : []).filter((doc) => doc && typeof doc.id === 'string');
   const liveIds = new Set(liveDocs.map((doc) => doc.id));
@@ -201,6 +215,7 @@ export function deriveActivity({ battles, live, rowsById, agent = null, watchlis
 
   if (agent && typeof agent === 'object') events.push(...loadoutEvents(agent, { archetypeName, characterTab, watchlist, nowMs }));
   events.push(...ideaEvents(idea, { nowMs }));
+  events.push(...huddleEvents(huddle));
 
   const ordered = events
     .filter((event) => event.ms >= cutoff)
@@ -268,12 +283,12 @@ export function ideaKnowledgeOf(research) {
  * so a list built from a kept or a failed-to-refresh window says so as Games does.
  */
 export function activitySectionOf({
-  battles, failed = false, live, rowsById, agent, watchlist, archetypeName, characterTab, idea = null, nowMs, knowledge = LOADOUT_KNOWLEDGE.SETTLED, windowAge = null,
+  battles, failed = false, live, rowsById, agent, watchlist, archetypeName, characterTab, idea = null, huddle = null, nowMs, knowledge = LOADOUT_KNOWLEDGE.SETTLED, windowAge = null,
 }) {
   if (battles === null || battles === undefined) {
     return Object.freeze({ status: failed ? 'error' : 'loading', rows: Object.freeze([]) });
   }
-  const section = deriveActivity({ battles, live, rowsById, agent, watchlist, archetypeName, characterTab, idea, nowMs });
+  const section = deriveActivity({ battles, live, rowsById, agent, watchlist, archetypeName, characterTab, idea, huddle, nowMs });
   if (section.rows.length === 0 && knowledge !== LOADOUT_KNOWLEDGE.SETTLED) {
     return Object.freeze({ status: knowledge === LOADOUT_KNOWLEDGE.FAILED ? 'error' : 'loading', rows: section.rows });
   }

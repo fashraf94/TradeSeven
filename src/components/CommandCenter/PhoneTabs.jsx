@@ -149,7 +149,7 @@ export function PhonePanel({ idBase, tab, sections, actions, reducedMotion }) {
             <div style={{ marginBottom: 14 }}><AreaHeading area={area} label={label} size={18} gap={9} /></div>
             {/* Slice S3 (R-S3-1): the strip's clamped words, whole, where its status button leads. */}
             {tab === PHONE_TABS.LOADOUT && (
-              <div style={{ marginBottom: 16 }}><PhoneDeployCard deploy={sections.deploy} onAction={actions.deployAction} onOpenBoard={actions.openBoard} idea={sections.deployingWith ?? null} /></div>
+              <div style={{ marginBottom: 16 }}><PhoneDeployCard deploy={sections.deploy} onAction={actions.deployAction} onOpenBoard={actions.openBoard} idea={sections.deployingWith ?? null} reconfirm={actions.reconfirmHuddle ? { onReconfirm: actions.reconfirmHuddle } : null} /></div>
             )}
             <AreaBody area={area} sections={sections} actions={actions} />
           </>

@@ -208,6 +208,50 @@ describe('agent form build S1: the armored hero holds exactly the activity it wa
   });
 });
 
+// ── Huddle S1 (Huddle spec Amendment C V1.2 §C7, §C8; Command Center spec V1.2 Amendment D §D3, §D4): the Huddle's two
+// readers and the sheet's body, call by call. They live outside this directory (permitted terminals the mount guard's walk stops
+// at), so their activity is pinned HERE, as C7 and C8 require: every listener in the manifest, no poll anywhere.
+const readSrc = (rel) => readFileSync(path.join(HERE, '..', '..', rel), 'utf8').replace(/\r\n/g, '\n');
+// The record's reader: its read on mount / owner or epoch change, and the one visibility listener (removed again). No timer.
+const HUDDLE_TODAY = ["document.addEventListener 'visibilitychange'", "document.removeEventListener 'visibilitychange'", 'useEffect'];
+// The history's reader: one read per owner and epoch. No timer, no listener.
+const HUDDLE_HISTORY = ['useEffect'];
+// The sheet's body: the hidden-tab stop (one visibility listener, removed again) with the unmount stop and the reconfirm scroll in
+// one effect, and the ceremony stop in a second. The audio element's own listeners are React props (onPlay, onTimeUpdate, …), never
+// addEventListener; playback never starts on its own (no .play() outside the Play handler — the row below).
+const HUDDLE_BODY = ["document.addEventListener 'visibilitychange'", "document.removeEventListener 'visibilitychange'", 'useEffect', 'useEffect'];
+
+describe('Huddle S1: the readers and the sheet body hold exactly the activity they were allowed (Huddle C §C7, §C8)', () => {
+  it('useHuddleToday: one effect and one visibility listener (removed again) — no timer, no interval, no poll', () => {
+    expect(activityOf(readSrc('hooks/useHuddleToday.js'))).toEqual(HUDDLE_TODAY);
+  });
+
+  it('useHuddleHistory: one effect — no listener, no timer', () => {
+    expect(activityOf(readSrc('hooks/useHuddleHistory.js'))).toEqual(HUDDLE_HISTORY);
+  });
+
+  it('HuddleSheetBody: two effects and one visibility listener (removed again); audio plays only from the Play handler (no autoplay)', () => {
+    const code = readSrc('components/Huddle/HuddleSheetBody.jsx');
+    expect(activityOf(code, parseJsx)).toEqual(HUDDLE_BODY);
+    expect(code).not.toMatch(/\bautoPlay\b|\bautoplay\b/);
+    expect(code.match(/\.play\(\)/g)).toHaveLength(1);
+    expect(code).toMatch(/const play = async \(\) => \{[\s\S]*?await el\.play\(\);/);
+    // stops on unmount, on a hidden tab, and while the ceremony covers the page
+    expect(code).toMatch(/if \(document\.visibilityState !== 'visible'\) audioRef\.current\?\.pause\(\);/);
+    expect(code).toMatch(/if \(ceremonyActive\) audioRef\.current\?\.pause\(\);/);
+    expect(code).toMatch(/if \(el\) \{ el\.pause\(\); el\.removeAttribute\('src'\); \}/);
+  });
+
+  it('the scan bites: a poll, a second listener or an autoplay changes what the rows see', () => {
+    const plants = { 'a poll': 'setInterval(() => {}, 60000);', 'a timer': 'setTimeout(() => {}, 1000);', 'a focus listener': "window.addEventListener('focus', () => {});", 'an effect': 'useEffect(() => {}, []);' };
+    for (const [what, snippet] of Object.entries(plants)) {
+      expect(activityOf(`${readSrc('hooks/useHuddleToday.js')}\n${snippet}\n`), what).not.toEqual(HUDDLE_TODAY);
+      expect(activityOf(`${readSrc('hooks/useHuddleHistory.js')}\n${snippet}\n`), what).not.toEqual(HUDDLE_HISTORY);
+      expect(activityOf(`${readSrc('components/Huddle/HuddleSheetBody.jsx')}\n${snippet}\n`, parseJsx), what).not.toEqual(HUDDLE_BODY);
+    }
+  });
+});
+
 describe('S7: Shadow\'s canvas holds exactly the activity it was allowed (R-S7-1, R-S7-5)', () => {
   it('ShadowCanvas.jsx: four effects, one frame loop (two requests, one cancel), one observer, one visibility listener (removed again) and one timeout (cleared)', () => {
     expect(activityOf(readShell('ShadowCanvas.jsx'), parseJsx)).toEqual(SHADOW_CANVAS);
