@@ -86,6 +86,15 @@ describe('the other cases (contract §4.5)', () => {
     const p = buildPointer({ battle: b, battleId: 'b', activation: a, session: SESSION, attribution: { attributionAgentId: 'agent-1', attributionStatus: 'resolved' }, ruleSet: RS, evidence: null, missingDetail: 'missing_bar', observedAt: OBSERVED });
     expect(p).toMatchObject({ activationId: 'star:0:2026-11-05T14:30:02.118Z', kind: 'creation', activatedAtSource: 'battle_activatedAt', activatingTick: null, tradeRef: null, stream: { gameMode: null, clone: 'ranked' } });
   });
+  it('V1.9 §2: an explicit gameMode null reads as no recorded mode — in scope, like an absent field, and stream.gameMode records null either way', () => {
+    const b = legacyBattle({ gameMode: null });
+    const a = discoverActivations(b).activations.find((x) => x.tier === 'star' && x.slot === 0);
+    const p = buildPointer({ battle: b, battleId: 'b', activation: a, session: SESSION, attribution: { attributionAgentId: 'agent-1', attributionStatus: 'resolved' }, ruleSet: RS, evidence: null, missingDetail: 'missing_bar', observedAt: OBSERVED });
+    expect(p.stream).toEqual({ attributionAgentId: 'agent-1', clone: 'ranked', gameMode: null });
+    const absent = legacyBattle();
+    delete absent.gameMode;
+    expect(buildPointer({ battle: absent, battleId: 'b', activation: a, session: SESSION, attribution: { attributionAgentId: 'agent-1', attributionStatus: 'resolved' }, ruleSet: RS, evidence: null, missingDetail: 'missing_bar', observedAt: OBSERVED }).stream).toEqual(p.stream);
+  });
   it('no final snapshot at finalisation: the null pointer, asOf keeps its session', () => {
     const { b, a } = correctedSwapIn();
     const p = buildPointer({ battle: b, battleId: 'b', activation: a, session: SESSION, attribution: RESOLVED, ruleSet: RS, evidence: null, missingDetail: 'missing_bar', observedAt: OBSERVED });

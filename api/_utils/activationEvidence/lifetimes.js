@@ -26,7 +26,10 @@
 //
 // CONSISTENCY. Where two sources name the same thing they must agree; any
 // disagreement makes the SLOT unresolved (`inconsistent`), counted, with no
-// pointer for its lifetimes. Rows are ordered by their swappedOutAt instant: a
+// pointer for its lifetimes. A position id must be a string (V1.9 §4): a number, a
+// boolean or any other non-string on a row, a live position or a starting position
+// makes the slot `inconsistent`, checked before anything reads it, never coerced.
+// Rows are ordered by their swappedOutAt instant: a
 // row whose instant cannot be read leaves the order unknown (`instant_malformed`
 // for the slot), and two rows of one slot at the same instant leave it ambiguous
 // (`inconsistent`).
@@ -78,6 +81,13 @@ export const fallbackIdOf = (tier, slot, ms) => `${tier}:${slot}:${isoOf(ms)}`;
 
 const idOf = (v) => (typeof v === 'string' && v.length > 0 ? v : null);
 const samePositionId = (a, b) => (idOf(a) ?? null) === (idOf(b) ?? null);
+/**
+ * A position-id field (contract V1.9 §4, §4.1; Astra's review 4): absent (undefined or null, the legacy route's
+ * "no id"), or a string. A number, a boolean or anything else is no position id, so it must fail the slot
+ * BEFORE any other check reads it: idOf would read it as absent (a fallback id on a corrected battle), and
+ * String() would let it through the id pattern. It is never coerced.
+ */
+const positionIdFieldOk = (v) => v === undefined || v === null || typeof v === 'string';
 
 /** The battle's route stamp (stockThresholdModel.js stockModelRoute's first test): corrected when scoring.stockThresholdModel is present. */
 export const isCorrectedBattle = (battle) => Object.hasOwn(battle?.scoring || {}, 'stockThresholdModel');
@@ -165,6 +175,9 @@ function slotOf({ battle, tier, slot, rows, gap, corrected }) {
 
   // Consistency.
   const fail = () => ({ lifetimes: [], slotReason: 'inconsistent' });
+  // First, every position-id field the slot's sources carry is a string or absent (V1.9 §4): each row's two, and the live position's.
+  for (const row of sorted) if (!positionIdFieldOk(row.incomingPositionId) || !positionIdFieldOk(row.outgoingPositionId)) return fail();
+  if (live && !positionIdFieldOk(live.positionId)) return fail();
   if (!gap) {
     if (typeof lifetimes[0].symbol !== 'string' || !lifetimes[0].symbol) return fail();
     if (sorted.length && sorted[0].symbolOut !== lifetimes[0].symbol) return fail();
@@ -198,7 +211,7 @@ function slotOf({ battle, tier, slot, rows, gap, corrected }) {
   for (const lt of lifetimes) {
     const own = lt.kind === 'swap_in' ? lt.openingRow.incomingPositionId : (lt === last ? live.positionId : lt.closingRow?.outgoingPositionId);
     const present = own !== undefined && own !== null;
-    if (present !== corrected || (present && !POSITION_ID_RE.test(String(own)))) return fail();
+    if (present !== corrected || (present && (typeof own !== 'string' || !POSITION_ID_RE.test(own)))) return fail(); // never String(own) (V1.9 §4)
   }
   return { lifetimes, slotReason: null, live, last };
 }
