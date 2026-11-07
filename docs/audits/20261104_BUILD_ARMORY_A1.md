@@ -287,6 +287,10 @@ Open https://trade-seven-nj8izdnrc-fais-projects-bc179554.vercel.app on the iPho
 2. **Loadout → Change archetype:** the centre suits up in the equipped set; tapping a set suits it up in that one. **Closing takes the armor off once** (Close, Equip, or anything below), as the box shrinks back; nothing suits up again afterwards.
 3. **With the armory open, tap another tab:** the armory closes, the preview is gone, nothing was equipped.
 
+### The founder's result for the follow-up's check (Nov 6, 2026)
+
+**Not received by the review session.** The review brief (`docs/audits/20261106_REVIEW_ARMORY_A1.md`) said the founder's phone check would be pasted under it; nothing arrived, so this fill records that, and the fix pass after the review fills in the result. The review's own measurement bears on item 2: as built, closing the armory returns focus to Change archetype and the hub scrolls to that button, so the hero leaves the screen and the unequip plays out of sight (review finding AR-1; a one-option fix, `focus({ preventScroll: true })`, carried by the fix pass). Items 1 and 3 are observable as built.
+
 ---
 
 ## 11. Founder questions
