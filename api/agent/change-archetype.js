@@ -76,6 +76,17 @@ import { seedArchetypeTraitsInTx, hasBornWithSet, softDeleteReplacedTraitRuleDoc
 import { validateWriteEpochInTx } from '../_utils/compositionWriteEpoch.js';
 import { COMPOSITION_ENFORCEMENT_MODE } from '../_utils/compositionConfig.js';
 import { checkCandidateEquipLegality, isBlockingViolation } from '../_utils/compositionEnforcement.js';
+// Build A2 (per-game loadouts; rulings D1, FD-1, FD-2, FD-3): with PER_GAME_LOADOUT_ENABLED on, the body's `loadout`
+// picks which loadout this change sets. 'league' (or absent, today's behaviour) writes the ranked record as today,
+// refused while the League week holds the loadout (FD-3) and snapshotting the BaggerBomb slot first when it is absent;
+// 'baggerbomb' writes the slot's archetype only, with no battle lock (FD-1: the next deploy wears it). Flag off, the
+// field is ignored and every line below the parse runs as it always has.
+import { PER_GAME_LOADOUT_ENABLED } from '../../src/config/perGameLoadoutFlags.js';
+import { LOADOUT_KINDS, baggerbombLoadoutOf, loadoutKindOf } from '../../src/constants/perGameLoadout.js';
+import {
+  LEAGUE_LOCKED, baggerbombSlotWith, isRankedAgentDoc, leagueLockedBody, leagueLockedError, materializeOnLeagueWrite,
+  readLeagueLockInTx, slotUpdate,
+} from '../_utils/perGameLoadout.js';
 
 export const config = { maxDuration: 10 };
 
@@ -87,7 +98,98 @@ const SENTINEL_TO_HTTP = Object.freeze({
   forbidden:       [403, 'forbidden',       'Not authorized for this resource.'],
   battle_active:   [409, 'battle_active',   'Cannot change archetype while the agent has an active battle.'],
   seed_failed:     [500, 'seed_failed',     'Could not load the default traits for this archetype.'],
+  // Build A2: a loadout lives on the player's ranked record, never on a clone (reachable only with the flag on).
+  not_ranked_agent: [409, 'not_ranked_agent', 'A loadout is set on your agent, not on a game copy of it.'],
 });
+
+/**
+ * Composition offer/equip boundary (spec §2): switching INTO an archetype for which an equipped bundle carries a
+ * core_conflict/deferred rule is a banned pairing — enforce rejects with the stored config byte-unchanged; the read
+ * joins the read phase (reads precede the seed block's writes). 'off' = zero compute AND zero added I/O. Shared by the
+ * League change and (build A2) the BaggerBomb slot's, whose clone carries the same bundles.
+ */
+async function assertCompositionLegalInTx(tx, agentRef, agent, archetype) {
+  if (COMPOSITION_ENFORCEMENT_MODE === 'enforce') {
+    const equippedIds = agent.equippedBundleIds || [];
+    if (equippedIds.length > 0) {
+      const bundleSnaps = await tx.getAll(...equippedIds.map((id) => agentRef.collection('bundles').doc(id)));
+      const compositionViolations = [];
+      for (const bs of bundleSnaps) {
+        if (!bs.exists) continue;
+        compositionViolations.push(...checkCandidateEquipLegality({
+          ruleSnapshots: bs.data().ruleSnapshots || [],
+          archetype, // the TARGET archetype
+        }).filter(isBlockingViolation));
+      }
+      if (compositionViolations.length > 0) {
+        const err = new Error(SENTINEL_PREFIX + 'composition_blocked');
+        err.details = { compositionViolations };
+        throw err;
+      }
+    }
+  }
+}
+
+/** A sentinel thrown in a transaction, as its HTTP answer; null for anything else. */
+function sentinelResponse(txErr) {
+  if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
+    const code = txErr.message.slice(SENTINEL_PREFIX.length);
+    if (PER_GAME_LOADOUT_ENABLED && code === LEAGUE_LOCKED) return [409, leagueLockedBody(txErr.lock)];
+    const mapped = SENTINEL_TO_HTTP[code];
+    if (mapped) {
+      const [statusCode, errorKey, humanCopy] = mapped;
+      return [statusCode, { error: errorKey, message: humanCopy }];
+    }
+  }
+  return null;
+}
+
+/**
+ * Build A2, `loadout: 'baggerbomb'` (FD-1): the BaggerBomb slot's archetype, and nothing else. No battle lock — a
+ * running BaggerBomb game keeps what it deployed with, because its casual clone is never resynced mid-battle
+ * (casualClone.js GUARD 1), and the next deploy's resync applies the slot (and seeds this archetype's born-with traits
+ * on the clone, as the training override does). The ranked record's archetype, traits and settingsRev are untouched:
+ * this is not a write to the League loadout. While the slot is absent it is snapshotted from the ranked fields with
+ * this archetype in place. Idempotent: the BaggerBomb loadout already wears it → 200, no write, no log.
+ */
+async function changeBaggerbombArchetype({ res, user, db, agentRef, agentId, archetype, nowIso }) {
+  let txResult;
+  try {
+    txResult = await db.runTransaction(async (tx) => {
+      const agentSnap = await tx.get(agentRef);
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX, actor: user.uid }); // #4: probe-window admission
+      if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
+      const agent = agentSnap.data();
+      if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
+      if (!isRankedAgentDoc(agent)) throw new Error(SENTINEL_PREFIX + 'not_ranked_agent');
+      const previousArchetype = baggerbombLoadoutOf(agent).archetype;
+      if (previousArchetype === archetype) return { idempotent: true, previousArchetype };
+      await assertCompositionLegalInTx(tx, agentRef, agent, archetype);
+      tx.update(agentRef, { ...slotUpdate(agent, baggerbombSlotWith(agent, { archetype })), updatedAt: nowIso });
+      return { idempotent: false, previousArchetype };
+    });
+  } catch (txErr) {
+    const mapped = sentinelResponse(txErr);
+    if (mapped) return res.status(mapped[0]).json(mapped[1]);
+    console.error('[change-archetype] baggerbomb loadout error:', txErr);
+    return res.status(500).json({ error: 'server_error', message: 'Could not change archetype.' });
+  }
+  if (!txResult.idempotent) {
+    waitUntil(
+      logSignalDrops({
+        stage: 'archetype_change',
+        userId: user.uid,
+        agentId,
+        loadout: LOADOUT_KINDS.BAGGERBOMB,
+        fromArchetype: txResult.previousArchetype,
+        toArchetype: archetype,
+        loggedAt: nowIso,
+      }).catch(() => {}),
+    );
+  }
+  console.log(`[change-archetype] agent ${agentId} baggerbomb loadout → ${archetype} (idempotent=${txResult.idempotent})`);
+  return res.status(200).json({ agentId, archetype, idempotent: txResult.idempotent, loadout: LOADOUT_KINDS.BAGGERBOMB });
+}
 
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60_000 } })) {
@@ -114,9 +216,19 @@ export default async function handler(req, res) {
     });
   }
 
+  // Build A2: which loadout this change sets. Flag off, always the League loadout (the field is not read).
+  const loadout = PER_GAME_LOADOUT_ENABLED ? loadoutKindOf(req.body?.loadout) : LOADOUT_KINDS.LEAGUE;
+  if (loadout === null) {
+    return res.status(400).json({ error: 'invalid_loadout', message: 'loadout must be "baggerbomb" or "league".' });
+  }
+
   const db = getFirebaseAdmin();
   const agentRef = db.collection('agents').doc(agentId);
   const nowIso = new Date().toISOString();
+
+  if (loadout === LOADOUT_KINDS.BAGGERBOMB) {
+    return changeBaggerbombArchetype({ res, user, db, agentRef, agentId, archetype, nowIso });
+  }
 
   // Composition PR 4 (A24): pin the activation descriptor once per request —
   // dark: zero reads; the seed below derives from the version the record
@@ -135,6 +247,13 @@ export default async function handler(req, res) {
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
+      // Build A2, FD-3: the League loadout is frozen from registration until the player's ranked group completes (or
+      // expires, or is voided), so the board, the draft and all five battles wear one archetype. A read, so it joins
+      // the read phase; refused with the lock and its end. Flag off: no read at all.
+      if (PER_GAME_LOADOUT_ENABLED) {
+        const lock = await readLeagueLockInTx(tx, db, user.uid);
+        if (lock.locked) throw leagueLockedError(SENTINEL_PREFIX, lock);
+      }
       // ⚠️ LOAD-BEARING FOR ARCHETYPE INTEGRITY: this battle-lock is what
       // guarantees an agent's archetype cannot change mid-battle, which is why
       // the integrity gate does NOT clear/revalidate `battle.directive` on
@@ -149,30 +268,8 @@ export default async function handler(req, res) {
         return { idempotent: true, archetype, previousArchetype: archetype };
       }
 
-      // Composition offer/equip boundary (spec §2): switching INTO an
-      // archetype for which an equipped bundle carries a core_conflict/
-      // deferred rule is a banned pairing — enforce rejects with the stored
-      // config byte-unchanged; the read joins the read phase (reads precede
-      // the seed block's writes). 'off' = zero compute AND zero added I/O.
-      if (COMPOSITION_ENFORCEMENT_MODE === 'enforce') {
-        const equippedIds = agent.equippedBundleIds || [];
-        if (equippedIds.length > 0) {
-          const bundleSnaps = await tx.getAll(...equippedIds.map((id) => agentRef.collection('bundles').doc(id)));
-          const compositionViolations = [];
-          for (const bs of bundleSnaps) {
-            if (!bs.exists) continue;
-            compositionViolations.push(...checkCandidateEquipLegality({
-              ruleSnapshots: bs.data().ruleSnapshots || [],
-              archetype, // the TARGET archetype
-            }).filter(isBlockingViolation));
-          }
-          if (compositionViolations.length > 0) {
-            const err = new Error(SENTINEL_PREFIX + 'composition_blocked');
-            err.details = { compositionViolations };
-            throw err;
-          }
-        }
-      }
+      // Composition offer/equip boundary (spec §2): the shared read-phase check above (assertCompositionLegalInTx).
+      await assertCompositionLegalInTx(tx, agentRef, agent, archetype);
 
       const previousArchetype = agent.archetype ?? null;
 
@@ -259,6 +356,9 @@ export default async function handler(req, res) {
         ...(seeded ? birthProvenanceStamp(seedPin) : {}),
         // Dial invalidation rides the same atomic commit (V2.1 STOP-B).
         ...(dialInvalidated ? { 'dials.tempo': 'standard' } : {}),
+        // Build A2 (materialize on first write): while the BaggerBomb slot is absent it is snapshotted from the
+        // PRE-change ranked fields in this same update, so this League change never moves BaggerBomb.
+        ...(PER_GAME_LOADOUT_ENABLED ? materializeOnLeagueWrite(agent) : {}),
       });
 
       // P2.4a (dark no-op): compile rides the settingsRev increment above,
@@ -300,14 +400,8 @@ export default async function handler(req, res) {
       };
     });
   } catch (txErr) {
-    if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
-      const code = txErr.message.slice(SENTINEL_PREFIX.length);
-      const mapped = SENTINEL_TO_HTTP[code];
-      if (mapped) {
-        const [statusCode, errorKey, humanCopy] = mapped;
-        return res.status(statusCode).json({ error: errorKey, message: humanCopy });
-      }
-    }
+    const mapped = sentinelResponse(txErr);
+    if (mapped) return res.status(mapped[0]).json(mapped[1]);
     console.error('[change-archetype] error:', txErr);
     return res.status(500).json({ error: 'server_error', message: 'Could not change archetype.' });
   }

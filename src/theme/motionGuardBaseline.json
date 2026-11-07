@@ -117,6 +117,14 @@
       "count": 0,
       "authority": "Agent form build S2, arena fit (the founder's rulings of Oct 30, 2026) — one read of a finished group's public agent context: no colour and no transition literal, from birth. Registered in the commit that introduces it."
     },
+    "src/components/League/LeagueLoadoutLine.jsx": {
+      "count": 0,
+      "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the League lobby's loadout lines and their folded lazy slot: colours only through the League tokens, no transition literal, from birth. Registered in the commit that registers them."
+    },
+    "src/components/League/leagueLoadoutSlot.jsx": {
+      "count": 0,
+      "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the League lobby's loadout lines and their folded lazy slot: colours only through the League tokens, no transition literal, from birth. Registered in the commit that registers them."
+    },
     "src/screens/battleView/BattleAgentForm.jsx": {
       "count": 0,
       "authority": "Agent form build S1 (founder rulings R1–R12) — the armored agent on the hub and in a 1v1 battle: colours only through the agent form's tokens, motion only as the engine's own equip timeline (a stated BUILD_RULES §11 exception, recorded in commandCenterHub.mount.guard.test.js), no transition literal, from birth. Registered in the commit that introduces them."
@@ -316,6 +324,30 @@
     "src/components/CommandCenter/Armory.jsx": {
       "count": 0,
       "authority": "Agent form build A1 (Phase 0 armory report §9 A1) — the armory in place of the hub's archetype picker: colours only through the hub's tokens, motion only as the engine's own equip timeline and the HubSheet's motionToken entry, no transition literal, from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/LoadoutCards.jsx": {
+      "count": 0,
+      "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the loadout cards, the Deploy card's line, the book sheet and their scope and model: colours only through the hub's tokens, no motion of their own, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/LoadoutBookSheet.jsx": {
+      "count": 0,
+      "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the loadout cards, the Deploy card's line, the book sheet and their scope and model: colours only through the hub's tokens, no motion of their own, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/PerGameLoadoutScope.jsx": {
+      "count": 0,
+      "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the loadout cards, the Deploy card's line, the book sheet and their scope and model: colours only through the hub's tokens, no motion of their own, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/perGameLoadoutContext.js": {
+      "count": 0,
+      "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the loadout cards, the Deploy card's line, the book sheet and their scope and model: colours only through the hub's tokens, no motion of their own, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/perGameLoadoutModel.js": {
+      "count": 0,
+      "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the loadout cards, the Deploy card's line, the book sheet and their scope and model: colours only through the hub's tokens, no motion of their own, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/useLeagueLoadoutLock.js": {
+      "count": 0,
+      "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the loadout cards, the Deploy card's line, the book sheet and their scope and model: colours only through the hub's tokens, no motion of their own, no transition literal, from birth. Registered in the commit that introduces them."
     },
     "src/components/CommandCenter/HubAgentForm.jsx": {
       "count": 0,

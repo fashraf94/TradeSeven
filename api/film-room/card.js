@@ -190,7 +190,7 @@ export default async function handler(req, res) {
     try {
       const parsed = parseCreateBody(body);
       // RK-1: the card is filed, and replayed, under the battle's attribution agent — never the casual clone
-      const { attributionAgentId } = await resolveCreateBattle(db, user.uid, parsed);
+      const { battle, attributionAgentId } = await resolveCreateBattle(db, user.uid, parsed);
       let payload;
       try {
         payload = await resolveCreateSource(db, user.uid, parsed);
@@ -202,7 +202,8 @@ export default async function handler(req, res) {
         if (!replay) throw err;
         return res.status(200).json({ idempotent: replay.idempotent, card: replay.card, open: replay.open, cap: replay.cap });
       }
-      const out = await createCard(db, { uid: user.uid, agentId: attributionAgentId, opId: parsed.opId, payload, nowIso, request: requestOf(parsed), verifySource: verifySourceIn(db, user.uid, parsed, payload) });
+      // Build A2 (R4): the battle's own archetype, which the store compares the tape day's with while the flag is on
+      const out = await createCard(db, { uid: user.uid, agentId: attributionAgentId, opId: parsed.opId, payload, nowIso, request: requestOf(parsed), verifySource: verifySourceIn(db, user.uid, parsed, payload), battleArchetype: battle?.agentContext?.archetype ?? null });
       return res.status(200).json({ idempotent: out.idempotent, card: out.card, open: out.open, cap: out.cap });
     } catch (err) {
       return sendCardError(res, err, 'create');

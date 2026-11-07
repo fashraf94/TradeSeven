@@ -42,6 +42,10 @@ import { LISTS_STATUS, symbolsOf } from './hub/selectors/loadout';
 import { HubButton } from './HubParts';
 import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
 import Armory from './Armory';
+// Build A2 (the book door): with per-game loadouts on too, the watchlist sheet is opened from a loadout card's book row
+// and writes that loadout's book (LoadoutBookSheet.jsx). One literal ternary, so flag-off folds to today's sheet.
+import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
+import LoadoutBookSheet from './LoadoutBookSheet';
 
 /** The shipped sheets' two docks: the phone's bottom sheet, and the wide site's centred dialog. */
 export const SHEET_DOCK = Object.freeze({ PHONE: 'bottom', WIDE: 'center' });
@@ -144,14 +148,25 @@ export default function LoadoutSheets({ sheet, traitsEpoch, onClose, dock, agent
       ) : (
         <ArchetypePicker open={sheet === HUB_SHEETS.ARCHETYPE} onClose={onClose} agent={agent} accent={accent} dock={dock} />
       )}
-      <WatchlistSheet
-        open={sheet === HUB_SHEETS.WATCHLIST}
-        onClose={onClose}
-        dock={dock}
-        agent={agent}
-        lists={lists}
-        onOpenForgeLists={onOpenForgeLists}
-      />
+      {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+        <LoadoutBookSheet
+          open={sheet === HUB_SHEETS.WATCHLIST}
+          onClose={onClose}
+          dock={dock}
+          agent={agent}
+          lists={lists}
+          onOpenForgeLists={onOpenForgeLists}
+        />
+      ) : (
+        <WatchlistSheet
+          open={sheet === HUB_SHEETS.WATCHLIST}
+          onClose={onClose}
+          dock={dock}
+          agent={agent}
+          lists={lists}
+          onOpenForgeLists={onOpenForgeLists}
+        />
+      )}
       {traitsEpoch > 0 && (
         <TraitsSheet key={traitsEpoch} open={sheet === HUB_SHEETS.TRAITS} onClose={onClose} agent={agent} accent={accent} dock={dock} />
       )}

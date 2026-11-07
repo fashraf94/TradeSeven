@@ -31,6 +31,10 @@ import usePreOpenPhase from '../../hooks/usePreOpenPhase';
 import WhileYouWait from './WhileYouWait';
 import { LTOKENS, LX, alpha } from './leagueTokens';
 import { Eyebrow, Mono } from './LeagueParts';
+// Build A2 (board 3): the League loadout line on the ranked tab's left rail. A literal ternary at today's element.
+import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
+import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
+import { LeagueLoadoutSlot } from './leagueLoadoutSlot';
 import Spectate from './LeagueSpectate';
 import {
   DeskStat, DeskYourGroup, DeskFollowRail, DeskPodPanel,
@@ -192,7 +196,12 @@ export function DeskLobby({
           {/* LEFT — your group + live follows */}
           <div className="lg-scroll ld-rail-left">
             {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
-            <DeskYourGroup st={st} accent={ACCENT} onOpen={onPickPod} />
+            {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+              <>
+                <LeagueLoadoutSlot agentLoadout={agentLoadout} group={activeGroup} accent={ACCENT} />
+                <DeskYourGroup st={st} accent={ACCENT} onOpen={onPickPod} />
+              </>
+            ) : <DeskYourGroup st={st} accent={ACCENT} onOpen={onPickPod} />}
             <DeskFollowRail items={st.followLive} accent={ACCENT} onSpectate={onSpectate} />
             <div style={{ marginTop: 'auto', paddingTop: 8 }}>
               <Mono style={{ fontSize: 9, letterSpacing: '0.14em', color: LTOKENS.ink3, textTransform: 'uppercase', lineHeight: 1.6 }}>
