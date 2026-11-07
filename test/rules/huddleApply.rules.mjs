@@ -83,6 +83,38 @@ describe('B §B5 / V1.1 §9 — one filing and one receipt under contention', ()
     expect(b.directive).toMatchObject({ text: 'GAME PLAN one', directiveThreadId: planThreadIdOf({ uid, etDate: ET, revision: 'r1' }), textVersion: 'plan.v1', expiry: 'end_of_battle' });
   });
 
+  it('mutation lens 12a: the slot filing and its receipt are written by ONE transaction (B §B1) — counted, not raced', async () => {
+    const { uid, b1 } = fresh();
+    await seedRecord(uid, ET, SESSION, [conf('analyst', 'r1', SESSION.openMs - 60 * MIN, 'GAME PLAN atom')]);
+    await seedBattle(b1, uid, ET);
+    // every transaction the apply opens, and the documents each one writes
+    const transactions = [];
+    const counted = new Proxy(db, {
+      get(target, key) {
+        if (key === 'runTransaction') {
+          return (fn, opts) => target.runTransaction((tx) => {
+            const writes = [];
+            transactions.push(writes);
+            const recording = new Proxy(tx, {
+              get(t, k) {
+                const v = t[k];
+                if (typeof v !== 'function') return v;
+                return (...args) => { if (['set', 'update', 'create', 'delete'].includes(k)) writes.push(args[0].path); return v.apply(t, args); };
+              },
+            });
+            return fn(recording);
+          }, opts);
+        }
+        const v = target[key];
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const r = await applyPlanToBattle(counted, { uid, etDate: ET, battleId: b1, writtenBy: 'confirm', nowMs: SESSION.openMs + 5 * MIN });
+    expect(r.outcome).toBe('written');
+    expect(transactions).toHaveLength(1);
+    expect([...new Set(transactions[0])].sort()).toEqual([`agentBattles/${b1}`, `huddles/${uid}/days/${ET}`].sort());
+  });
+
   it('an unknown outcome is repaired by the receipt: the next caller finds it and files nothing (A §A11, B §B1)', async () => {
     const { uid, b1 } = fresh();
     await seedRecord(uid, ET, SESSION, [conf('analyst', 'r1', SESSION.openMs - 60 * MIN, 'GAME PLAN two')]);

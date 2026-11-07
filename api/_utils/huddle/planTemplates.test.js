@@ -34,6 +34,14 @@ const CTX = {
 };
 const reasonsOf = (v) => v.drops.map((d) => `${d.kind}#${d.index}:${d.reason}`);
 
+describe('the rendered-text cap is 500 characters (spec V1.1 §4.4; mutation lens survivor 5a)', () => {
+  it('pinned as a number, with literal strings either side of it', () => {
+    expect(RENDERED_MAX_CHARS).toBe(500);
+    expect(renderedTooLong('x'.repeat(500))).toBe(false);
+    expect(renderedTooLong('x'.repeat(501))).toBe(true);
+  });
+});
+
 describe('event ids are built by code from the structured objects (V1.1 §4.3; C §C11)', () => {
   it('macro: macro:{kind}:{etDate}:{HHmm} with a fixed label; an untimed one has no id', () => {
     expect(macroEventOf({ date: ET, time: '10:00 AM ET', category: 'ISM Manufacturing' })).toMatchObject({

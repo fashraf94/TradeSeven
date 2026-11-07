@@ -38,6 +38,12 @@ describe('EODHD /news against the committed capture (C §C13)', () => {
     for (const key of read) expect(OBSERVED_KEYS, key).toContain(key);
     // no `source` key is read off a vendor item (the payload has none)
     expect(NEWS_CODE).not.toMatch(/\b(?:raw|item)\??\.source\b/);
+    // mutation lens O1: the dotted scan above is the only way a key may be read — no bracket access, no destructuring,
+    // no spreading or enumerating a vendor item (each would reach a key the scan cannot see)
+    expect(NEWS_CODE).not.toMatch(/\b(?:raw|item)\s*(?:\?\.)?\s*\[/);
+    expect(NEWS_CODE).not.toMatch(/\}\s*=\s*(?:raw|item)\b/);
+    expect(NEWS_CODE).not.toMatch(/\.\.\.\s*(?:raw|item)\b/);
+    expect(NEWS_CODE).not.toMatch(/Object\.(?:keys|values|entries|assign)\(\s*(?:raw|item)\b/);
   });
 
   it('PFE: the one item about Pfizer is kept; the scoreboard and the Xeris item are not about it', () => {

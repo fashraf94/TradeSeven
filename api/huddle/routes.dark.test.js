@@ -4,7 +4,7 @@
 // (Amendment A §A10), BEFORE any read, auth call or middleware: the Admin SDK and the
 // auth verifier are stand-ins that fail the row if touched.
 
-import { describe, it, expect, vi } from 'vitest';
+import { beforeAll, describe, it, expect, vi } from 'vitest';
 
 const touched = [];
 vi.mock('../_utils/firebaseAdmin.js', () => ({
@@ -31,6 +31,11 @@ function fakeRes() {
 }
 
 describe('Huddle routes, flag off (A §A10): 404 at once', () => {
+  // The six route modules' cold imports (each pulls the security middleware and the Admin SDK wrapper) can take seconds under a
+  // parallel suite; load them once here, under a hook timeout, so each row's budget covers only the behaviour (mutation lens:
+  // the confirm row timed out at 5,020 ms in a batch).
+  beforeAll(async () => { await Promise.all(Object.values(ROUTES).map((load) => load())); }, 60_000);
+
   it.each(Object.keys(ROUTES))('/api/huddle/%s answers 404 and touches nothing', async (name) => {
     const { default: handler } = await ROUTES[name]();
     for (const method of ['GET', 'POST', 'OPTIONS']) {

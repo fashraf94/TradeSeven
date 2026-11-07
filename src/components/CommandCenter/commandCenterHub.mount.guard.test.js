@@ -959,7 +959,9 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
       const rel = queue.pop();
       if (seen.has(rel) || !existsSync(path.join(REPO_ROOT, rel))) continue;
       seen.add(rel);
-      for (const spec of importsOf(rel)) {
+      // static AND lazy edges: a lazy import() of the Huddle service from the provider is exactly the post-deploy hook C7
+      // says is not built (mutation lens O4: the walk followed static edges only)
+      for (const spec of [...importsOf(rel), ...lazyImportsOfCode(stripComments(read(rel)))]) {
         if (!spec.startsWith('.')) continue;
         const resolved = resolveRelative(rel, spec);
         if (resolved && resolved.startsWith('src/')) queue.push(resolved);

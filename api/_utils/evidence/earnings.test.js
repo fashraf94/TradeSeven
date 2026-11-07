@@ -57,5 +57,10 @@ describe('earnings parsing against the committed capture (C §C11)', () => {
     // ...and it reads only capture keys: every `row.<key>` it names is one of the nine
     const read = [...new Set([...CODE.matchAll(/\brow\.(\w+)/g)].map((m) => m[1]))].sort();
     expect(read).toEqual(['actual', 'before_after_market', 'code', 'currency', 'date', 'estimate', 'report_date']);
+    // mutation lens O1: no other way to reach a key — no bracket access, destructuring, spreading or enumerating a row
+    expect(CODE).not.toMatch(/\brow\s*(?:\?\.)?\s*\[/);
+    expect(CODE).not.toMatch(/\}\s*=\s*row\b/);
+    expect(CODE).not.toMatch(/\.\.\.\s*row\b/);
+    expect(CODE).not.toMatch(/Object\.(?:keys|values|entries|assign)\(\s*row\b/);
   });
 });

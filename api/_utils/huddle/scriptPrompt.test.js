@@ -100,6 +100,9 @@ describe('validateScript (A §A7, AR-12, C §C5)', () => {
       ['Your agent will buy AAA at the open.', 'forbidden:will_do'],
       ['TSLA is moving with AAA.', 'said:TSLA'],
       ['Strength into the print.', 'missing_evidence', []],
+      // mutation lens survivor 8d: the learning claim and the unspoken "unverified" on the read path too
+      ['Your agent has learned to trust AAA.', 'forbidden:learning_claim'],
+      ['Your agent picked AAA for momentum.', `unverified_unsaid:${OPENER}`, [OPENER]],
     ]) {
       const v = named(read, ids);
       expect(v.names, read).toEqual([]);

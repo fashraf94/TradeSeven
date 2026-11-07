@@ -143,3 +143,20 @@ describe('GET /api/huddle/audio/{token}', () => {
     expect(stream.destroyed).toBe(true);
   });
 });
+
+describe('the client view never carries the playback hash or a storage path (routeKit.js; mutation lens O3)', () => {
+  it('clientViewOf drops playback, gcsPath and alignmentPath, and keeps only whether audio exists', async () => {
+    const { clientViewOf } = await import('../_utils/huddle/routeKit.js');
+    const record = {
+      etDate: '2026-11-09', status: 'ready', session: { etDate: '2026-11-09' },
+      playback: { tokenHash: 'f'.repeat(64), issuedAt: '2026-11-09T13:00:00.000Z', expiresAt: '2026-11-09T13:20:00.000Z' },
+      audio: { gcsPath: 'huddle/u1/2026-11-09/1/audio.mp3', alignmentPath: 'huddle/u1/2026-11-09/1/alignment.json', durationMs: 61_000, voiceId: 'v' },
+      script: { beats: [] }, plan: { status: 'proposed', current: { stances: [], lines: [] }, applications: [] },
+    };
+    const view = clientViewOf(record);
+    expect(view).not.toHaveProperty('playback');
+    expect(view.audio).toEqual({ durationMs: 61_000, hasAudio: true });
+    const text = JSON.stringify(view);
+    for (const secret of ['tokenHash', 'gcsPath', 'alignmentPath', 'huddle/u1/', 'f'.repeat(64)]) expect(text, secret).not.toContain(secret);
+  });
+});

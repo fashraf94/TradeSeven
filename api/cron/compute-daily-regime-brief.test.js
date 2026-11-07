@@ -34,6 +34,15 @@ vi.mock('../_utils/fetchMacroEvents.js', () => ({
 }));
 vi.mock('../_utils/fetchEarningsCalendarEODHD.js', () => ({ fetchEarningsCalendarEODHD: async () => state.earnings }));
 vi.mock('../_utils/shadowLogger.js', () => ({ logDailyRegimeBrief: async () => {} }));
+// The worker's enqueue and drain stages, spied (mutation lens survivor 3: an enqueue that threw on this file's stub db looked
+// exactly like one that never ran). markRun and the rest of worker.js stay real, so the marker below is the real write.
+const stages = vi.hoisted(() => ({ runEnqueueStage: null, drainQueue: null }));
+vi.mock('../_utils/huddle/worker.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  stages.runEnqueueStage = vi.fn(async () => ({ enqueued: 0, created: 0 }));
+  stages.drainQueue = vi.fn(async () => ({ started: 0, results: [] }));
+  return { ...actual, runEnqueueStage: (...a) => stages.runEnqueueStage(...a), drainQueue: (...a) => stages.drainQueue(...a) };
+});
 
 import handler, { readBriefAnswer } from './compute-daily-regime-brief.js';
 
@@ -328,6 +337,9 @@ describe('Huddle S1 — the staged run marker around the brief stage (spec V1.1 
     const [[, marker]] = markerWrites();
     expect(marker).toMatchObject({ etDate: TODAY, briefStage: 'done' });
     expect(Object.keys(marker).sort()).toEqual(['briefAt', 'briefStage', 'etDate', 'updatedAt']);
+    // dark: the enqueue and drain stages never run (not merely fail)
+    expect(stages.runEnqueueStage).not.toHaveBeenCalled();
+    expect(stages.drainQueue).not.toHaveBeenCalled();
   });
 
   it('a failed brief: the marker says failed, and still nothing is written to the brief', async () => {
@@ -344,6 +356,8 @@ describe('Huddle S1 — the staged run marker around the brief stage (spec V1.1 
     await run();
     expect(state.set.mock.calls.map(([id]) => id)).toEqual([TODAY]);
     expect(markerWrites()[0][1].briefStage).toBe('done');
+    expect(stages.runEnqueueStage).not.toHaveBeenCalled();
+    expect(stages.drainQueue).not.toHaveBeenCalled();
   });
 
   it('a marker that cannot be written never changes the brief\'s response', async () => {
