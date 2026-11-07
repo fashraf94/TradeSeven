@@ -18,6 +18,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Parser } from 'acorn';
+import acornJsx from 'acorn-jsx';
 import { BOMB_COPY } from './bombCopy.js';
 import FuseChart from './FuseChart.jsx';
 import RedZone from './RedZone.jsx';
@@ -118,21 +120,53 @@ describe('a preview never says "entry" (BA-1)', () => {
   });
 });
 
-// A JSX text node is text after a tag's `>` up to the next `<` or `{` (review C8:
-// text before an expression, and text over several lines, count too).
-const JSX_TEXT = /(?<=[^\s=\->])>([^<>{}]*[A-Za-z]{2,}[^<>{}]*)(?=[<{])/g;
-// Code between two JSX elements of a ternary or a && chain is not text.
-const IS_CODE = /^[:?)&|]|===|!==|&&|\|\|/;
-const inlineCopy = (code) => [...code.matchAll(JSX_TEXT)].map((m) => m[1].trim()).filter((t) => t && !IS_CODE.test(t));
+// The scan PARSES the component (acorn + acorn-jsx, as the repo's hub guards do;
+// review C8 and its refuter: a regex missed text after an expression, a `>` alone
+// on its line and text led by a colon). Inline copy is any word a JSX child
+// carries itself: a JSXText, or a string / template literal as a child
+// expression (directly, or as either branch of `?:` / the right of `&&` `||`).
+const JsxParser = Parser.extend(acornJsx());
+const WORD = /[A-Za-z]{2,}/;
+function inlineCopy(code) {
+  const found = [];
+  const literalWords = (e) => {
+    if (!e) return [];
+    if (e.type === 'Literal' && typeof e.value === 'string') return WORD.test(e.value) ? [e.value.trim()] : [];
+    if (e.type === 'TemplateLiteral') return e.quasis.map((q) => q.value.cooked).filter((s) => WORD.test(s)).map((s) => s.trim());
+    if (e.type === 'ConditionalExpression') return [...literalWords(e.consequent), ...literalWords(e.alternate)];
+    if (e.type === 'LogicalExpression') return literalWords(e.right);
+    return [];
+  };
+  const walk = (n) => {
+    if (!n || typeof n !== 'object') return;
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    if (typeof n.type !== 'string') return;
+    if (n.type === 'JSXElement' || n.type === 'JSXFragment') {
+      for (const c of n.children) {
+        if (c.type === 'JSXText' && WORD.test(c.value)) found.push(c.value.trim());
+        if (c.type === 'JSXExpressionContainer') found.push(...literalWords(c.expression));
+      }
+    }
+    for (const [k, v] of Object.entries(n)) if (k !== 'loc' && k !== 'range' && v && typeof v === 'object') walk(v);
+  };
+  walk(JsxParser.parse(code, { ecmaVersion: 'latest', sourceType: 'module' }));
+  return found;
+}
 
 describe('every visible word comes from BOMB_COPY', () => {
-  it('the scan catches text before an expression and text over two lines (planted)', () => {
-    expect(inlineCopy('return <b>Entry {price}</b>;')).toEqual(['Entry']);
-    expect(inlineCopy('return (<text x={1}>\n  Next check\n</text>);')).toEqual(['Next check']);
-    expect(inlineCopy('return <b>{BOMB_COPY.entry(p)}</b>;')).toEqual([]);
-    expect(inlineCopy("a ? <g></g>\n  : r.state === 'next'\n  ? <b />")).toEqual([]);
+  it('the scan catches every planted form of inline copy, and passes copy taken from BOMB_COPY', () => {
+    expect(inlineCopy('const a = <b>Entry {price}</b>;')).toEqual(['Entry']);
+    expect(inlineCopy('const a = (<text x={1}>\n  Next check\n</text>);')).toEqual(['Next check']);
+    expect(inlineCopy('const a = <text>{money(p, d)} target</text>;')).toEqual(['target']); // after an expression
+    expect(inlineCopy('const a = (\n  <text\n    x={1}\n  >\n    30-min closes\n  </text>\n);')).toEqual(['30-min closes']); // `>` alone on its line
+    expect(inlineCopy('const a = <g><Tag />: held since entry</g>;')).toEqual([': held since entry']); // led by a colon
+    expect(inlineCopy("const a = <b>{'Your position'}</b>;")).toEqual(['Your position']);
+    expect(inlineCopy("const a = <b>{on ? 'Live' : null}</b>;")).toEqual(['Live']);
+    expect(inlineCopy('const a = <b>{BOMB_COPY.entry(p)}</b>;')).toEqual([]);
+    expect(inlineCopy("const a = x ? <g></g>\n  : r.state === 'next'\n  ? <b /> : null;")).toEqual([]);
+    expect(inlineCopy('const a = <text fontSize="8.5" textAnchor="end" style={{ fill: BT.gold }}>{label}</text>;')).toEqual([]);
   });
-  it.each(SOURCES.filter((f) => f.endsWith('.jsx')))('%s types no copy inline in JSX text', (f) => {
-    expect(inlineCopy(codeOf(f))).toEqual([]);
+  it.each(SOURCES.filter((f) => f.endsWith('.jsx')))('%s types no copy inline in JSX', (f) => {
+    expect(inlineCopy(readFileSync(path.join(HERE, f), 'utf8'))).toEqual([]);
   });
 });

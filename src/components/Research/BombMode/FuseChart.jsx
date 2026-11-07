@@ -52,6 +52,12 @@ export function toGoText(ladder, go, opts = {}) {
 
 /** The drawn width of a mono label (≈0.6 em per glyph plus its letter spacing). */
 export const monoWidth = (text, fontSize, letterSpacing = 0) => text.length * (fontSize * 0.6 + letterSpacing);
+/** A mono text's box: its drawn width, one font size above the baseline and a quarter below. */
+export function textBox(x, y, text, fontSize, letterSpacing = 0, anchor = 'start') {
+  const w = monoWidth(String(text), fontSize, letterSpacing);
+  const left = anchor === 'end' ? x - w : anchor === 'middle' ? x - w / 2 : x;
+  return { x0: left, x1: left + w, y0: y - fontSize, y1: y + fontSize * 0.25 };
+}
 
 /** The label of the line the rail starts from — never "entry" on a preview. */
 export function baselineText(ladder, d) {
@@ -102,10 +108,54 @@ export default function FuseChart({ ladder, live, decimals, go, ghost = [], chec
   const top = rungs[rungs.length - 1];
   const liveY = finite(kLive) ? Y(Math.max(-botK + 0.04, Math.min(kLive, topK - 0.04))) : null;
   const inBand = !!go && go.pctShown <= RED_ZONE_ENTER_PCT;
+  // The left-hand labels as boxes (mono: width = monoWidth; height ≈ one font
+  // size above the baseline, a quarter below), so the pill and the live label
+  // can be placed where they cover none of them (review D2/D7 and their refuter).
+  const titleOf = (r) => (r.banked && finite(bankedTimes[r.key])
+    ? `${r.label.toUpperCase()} · ${BOMB_COPY.bankedAt(etClock(bankedTimes[r.key])).toUpperCase()}`
+    : BOMB_COPY.rungTitle(r.label, pctOf(r.price)));
+  const leftBoxes = [
+    textBox(x0, 14, BOMB_COPY.ghostCaption.toUpperCase(), 8, 0.8),
+    ...(ladder.kind === 'preview' ? [{ x0, x1: x0 + 58, y0: 20, y1: 34 }] : []),
+    ...rungs.map((r) => textBox(x0, r.y - 5, titleOf(r), 8.5, 1)),
+    textBox(x0, yEntry - 5, baselineText(ladder, d).toUpperCase(), 8.5, 0.6),
+    textBox(x0, yEntry + 12, BOMB_COPY.belowCompressed.toUpperCase(), 7.5, 1),
+    { x0, x1, y0: H - 15, y1: H }, // the date axis
+  ];
+  const overlap = (box, boxes) => boxes.reduce((s, b) => s + Math.max(0, Math.min(box.x1, b.x1) - Math.max(box.x0, b.x0)) * Math.max(0, Math.min(box.y1, b.y1) - Math.max(box.y0, b.y0)), 0);
+
+  // The to-go pill: the first of these that fits the ghost area and covers no
+  // label — one line at 9 px, then two (the live number on its own line), then
+  // one line at 8 and 7.5 px; each above the next rung's title row, then just
+  // below its line. If none is clear, the one that covers least.
+  const parts = toGoParts(ladder, go, { closed });
+  const pillY = ladder.next ? Y(ladder.next.k) : (top ? top.y : plotTop);
+  const pill = (() => {
+    if (!parts) return null;
+    const one = (parts.suffix ? `${parts.base} · ${parts.suffix}` : parts.base).toUpperCase();
+    const two = [parts.base.toUpperCase(), ...(parts.suffix ? [parts.suffix.toUpperCase()] : [])];
+    const sets = [{ lines: [one], fs: 9, ls: 0.4 }, { lines: two, fs: 9, ls: 0.4 }, { lines: [one], fs: 8, ls: 0.2 }, { lines: [one], fs: 7.5, ls: 0 }]
+      .filter((s) => s.lines.every((l) => monoWidth(l, s.fs, s.ls) + 18 <= x1 - x0));
+    const options = [];
+    for (const s of sets) {
+      const w = Math.max(...s.lines.map((l) => monoWidth(l, s.fs, s.ls))) + 18;
+      const h = 4 + (s.fs + 3) * s.lines.length;
+      for (const yTop of [pillY - 20 - h, pillY + 5]) {
+        const box = { x0: x1 - w, x1, y0: yTop, y1: yTop + h };
+        if (box.y0 < 2 || box.y1 > plotBot) continue;
+        options.push({ ...s, w, h, yTop, cover: overlap(box, leftBoxes) });
+      }
+    }
+    if (!options.length) { const s = { lines: two, fs: 9, ls: 0.4 }; const h = 4 + 12 * two.length; return { ...s, w: x1 - x0, h, yTop: pillY - 20 - h }; }
+    return options.find((o) => o.cover === 0) ?? options.reduce((a, b) => (b.cover < a.cover ? b : a));
+  })();
+  const pillBox = pill ? { x0: x1 - pill.w, x1, y0: pill.yTop, y1: pill.yTop + pill.h } : null;
+
   // R-11′(d): inside the band the live label yields to the rung label.
   // Outside it, the label sits right of the rail where it clears every rung's
   // label block (points + price, measured: y−11 … y+19) and the baseline's;
-  // when no spot there is clear, it moves to the left of the rail.
+  // when no spot there is clear, it moves to the left of the rail, where it
+  // must clear the left-hand labels and the pill.
   const liveLabel = (() => {
     if (liveY === null || inBand) return null;
     const blocks = [...rungs.map((r) => [r.y - 11, r.y + 19]), [yEntry - 10, yEntry + 12], ...ladder.down.map((r) => [Y(r.k) - 9, Y(r.k) + 6])];
@@ -113,20 +163,21 @@ export default function FuseChart({ ladder, live, decimals, go, ghost = [], chec
     const inPlot = (y) => y - 12 > plotTop - 8 && y + 14 < H - 16;
     const clear = (y) => blocks.every(([a, b]) => y + 14 < a || y - 12 > b) && inPlot(y);
     for (const y of [liveY + 4, liveY + 30, liveY - 20]) if (clear(y)) return { x: labelX, y, anchor: 'start' };
-    for (const y of [liveY + 4, liveY - 20, liveY + 30]) if (inPlot(y)) return { x: railX - 12, y, anchor: 'end' };
+    const pctText = (closed ? BOMB_COPY.lastPct : BOMB_COPY.livePct)(pctOf(live)).toUpperCase();
+    const leftBox = (y) => {
+      const a = textBox(railX - 12, y, money(live, d), 11, 0, 'end');
+      const b = textBox(railX - 12, y + 11, pctText, 8.5, 0, 'end');
+      return { x0: Math.min(a.x0, b.x0), x1: railX - 12, y0: a.y0, y1: b.y1 };
+    };
+    const avoid = pillBox ? [...leftBoxes, pillBox] : leftBoxes;
+    const left = [liveY + 4, liveY - 20, liveY + 30, liveY + 44, liveY - 34].filter(inPlot).map((y) => ({ y, cover: overlap(leftBox(y), avoid) }));
+    if (left.length) { const best = left.find((c) => c.cover === 0) ?? left.reduce((a, b) => (b.cover < a.cover ? b : a)); return { x: railX - 12, y: best.y, anchor: 'end' }; }
     return { x: railX - 12, y: Math.max(plotTop + 4, Math.min(liveY + 4, H - 32)), anchor: 'end' };
   })();
   const liveLabelY = liveLabel ? liveLabel.y : null;
   // The halo brightens as the distance to the next rung shrinks (0 % → full, 3 % or more → faint).
   const halo = go ? 0.2 + 0.65 * Math.max(0, 1 - Math.max(0, go.pct) / 3) : 0.2;
-  const parts = toGoParts(ladder, go, { closed });
   const plan = brickPlan(ladder);
-  const pillY = ladder.next ? Y(ladder.next.k) : (top ? top.y : plotTop);
-  // One line when it fits the ghost area; else the live number on a second line.
-  const oneLine = parts ? (parts.suffix ? `${parts.base} · ${parts.suffix}` : parts.base).toUpperCase() : null;
-  const pillLines = !parts ? [] : monoWidth(oneLine, 9, 0.4) + 18 <= x1 - x0 ? [oneLine] : [parts.base.toUpperCase(), ...(parts.suffix ? [parts.suffix.toUpperCase()] : [])];
-  const pillW = pillLines.length ? Math.min(x1 - x0, Math.max(...pillLines.map((l) => monoWidth(l, 9, 0.4))) + 18) : 0;
-  const pillH = 4 + 12 * pillLines.length;
   const lastPt = n ? { x: X(n - 1), y: Y(kOf(ladder, pts[n - 1].c)) } : null;
   const beadMotion = motionToken('smooth', { reducedMotion: reduced });
 
@@ -165,12 +216,11 @@ export default function FuseChart({ ladder, live, decimals, go, ghost = [], chec
         {entryIdx >= 0 && <circle cx={X(entryIdx)} cy={yEntry} r="3.5" strokeWidth="1.5" style={{ fill: BT.bg, stroke: BT.ink2 }} />}
         {lastPt && liveY !== null && <line x1={lastPt.x} y1={lastPt.y} x2={railX - 7} y2={liveY} strokeDasharray="2 3" style={{ stroke: BT.teal, strokeOpacity: 0.85 }} />}
 
-        {pillLines.length > 0 && (
-          <g data-fuse-togo="1">
-            {/* above the rung's title row, so the two never share a line at 320 px */}
-            <rect x={x1 - pillW} y={pillY - 20 - pillH} width={pillW} height={pillH} rx={8} style={{ fill: tint(BT.bg, 92), stroke: tint(BT.gold, 45) }} />
-            {pillLines.map((line, i) => (
-              <text key={i} x={x1 - 9} y={pillY - 20 - pillH + 12.5 + 12 * i} textAnchor="end" fontSize="9" fontWeight="700" letterSpacing="0.4" style={{ fill: BT.gold }}>{line}</text>
+        {pill && (
+          <g data-fuse-togo="1" data-pill-font={pill.fs}>
+            <rect x={x1 - pill.w} y={pill.yTop} width={pill.w} height={pill.h} rx={8} style={{ fill: tint(BT.bg, 92), stroke: tint(BT.gold, 45) }} />
+            {pill.lines.map((line, i) => (
+              <text key={i} x={x1 - 9} y={pill.yTop + pill.fs + 3.5 + (pill.fs + 3) * i} textAnchor="end" fontSize={pill.fs} fontWeight="700" letterSpacing={pill.ls} style={{ fill: BT.gold }}>{line}</text>
             ))}
           </g>
         )}

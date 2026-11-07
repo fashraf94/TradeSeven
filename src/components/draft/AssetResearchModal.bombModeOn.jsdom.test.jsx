@@ -309,6 +309,16 @@ describe('lens C: the requests and the tabs a mount makes', () => {
     await render(<AssetResearchModal asset={{ symbol: 'AAPL', name: 'Apple', price: 101.2 }} onClose={() => {}} showActionButton={false} version={2} bombContext={{ kind: 'bench' }} />);
     expect(buttons()).toContain('💣');
     expect(drawerTabs().map((b) => b.textContent.trim())).toContain('💣 Bomb');
+    // on the Analysis tab and the 1D chart nothing needs the threshold yet: no request (refuter C, X-G10b)
+    expect(net.calls.filter((c) => c[0] === 'thresholds')).toHaveLength(0);
+  });
+  it('a measured position never asks the thresholds route — its rungs are the committed context (refuter C, X-G10c)', async () => {
+    const { battle, left } = await committedRow();
+    seed('2026-10-14T17:06:00.000Z');
+    const asset = { ...research(left), threshold: undefined };
+    await render(<AssetResearchModal asset={asset} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={101.2} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record: selectBombRecord(battle, 'AAPL', Date.now()) }} />);
+    expect(q('[data-bomb-view="fuse"]')).not.toBeNull();
+    expect(net.calls.filter((c) => c[0] === 'thresholds')).toHaveLength(0);
   });
   it('N2: the 💣 view opened without an asset threshold asks for one once and draws the Fuse — not "no ladder yet" until the tab opens (refuter B)', async () => {
     seed('2026-10-14T17:00:00.000Z'); net.thresholds = { AAPL: { threshold: 2 } };

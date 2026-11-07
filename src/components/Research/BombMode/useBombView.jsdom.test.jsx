@@ -91,4 +91,28 @@ describe('useBombView — the held clock and the banked times', () => {
     await render({ symbol: 'XOM', live: 101, timeframe: 'bomb', previousClose: 100, assetThreshold: 2, context: { kind: 'bench' } });
     expect(out.bankedTimes).toEqual({});
   });
+  it('a new symbol starts its own red-zone memory: rungs already banked on it are not a fresh bank (no false moment; refuter C, V-B5)', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-14T17:16:00.000Z'));
+    root = createRoot(document.createElement('div'));
+    const battle = eog({ thresholdHistory: { EOG: { maxMultiplier: 1.12, minMultiplier: -0.31 }, XOM: { maxMultiplier: 1.55, minMultiplier: 0 } } });
+    await render(heldProps(battle, 158, 'bomb')); // EOG: +15 seen banked
+    expect(out.moment).toBeNull();
+    await render({ symbol: 'XOM', live: 115, timeframe: 'bomb', previousClose: 112, assetThreshold: 2.2, context: { kind: 'agent', battleId: battle.id, held: true, record: selectBombRecord(battle, 'XOM', Date.now()) } });
+    expect(out.ladder.up.filter((r) => r.banked).map((r) => r.key)).toEqual(['bagger', 'doubleBagger']);
+    expect(out.moment).toBeNull();
+    expect(out.mode).not.toBe('banked');
+  });
+});
+
+describe('useBombView — the ghost through a red-zone round trip (refuter C, V-O3)', () => {
+  it('the minute bars the red zone shows never become the ghost: 30-min → spectate (1-min) → back on the Fuse with the stale 1-min bars', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-14T17:00:00.000Z'));
+    root = createRoot(document.createElement('div'));
+    await render({ symbol: 'AAPL', live: 101, timeframe: 'bomb', bars: thirty });
+    expect(out.ghost).toHaveLength(3);
+    await render({ symbol: 'AAPL', live: 101, timeframe: 'spectate', bars: minute });
+    await render({ symbol: 'AAPL', live: 101, timeframe: 'bomb', bars: minute });
+    expect(out.ghost).toHaveLength(3);
+    expect(out.ghost[0].close).toBe(100.5);
+  });
 });
