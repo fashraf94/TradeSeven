@@ -920,6 +920,103 @@ describe('V1.9 review 2 — a battle cursor passes only the battles a run attemp
   });
 });
 
+describe('review lens A on the V1.9 fixes (PFA-n): the cursors\' two guards, an unseen battle not reached, a carried due key', () => {
+  const FUTURE = { timing: { tradingDays: ['2026-11-09'] }, expiresAt: '2026-11-10T01:00:00.000Z' };
+  const NEVER = { activatedAt: '2028-01-04T15:00:00.000Z' }; // calendar_missing: never finishes, never acquired
+  const ordIdx = () => ({ cutoffAt: Date.parse('2026-11-10T01:30:00.000Z'), expiresAt: Date.parse('2026-11-10T01:00:00.000Z'), finished: false, excludedBy: null });
+  const stateDoc = async () => (await db.doc('activationObserverState/main').get()).data();
+  /** A db whose battle batch reads are recorded, and which may run a hook on the nth one. */
+  function batchRecorder(onBatch) {
+    const chunks = [];
+    const dbx = new Proxy(db, { get(t, k) {
+      if (k === 'getAll') {
+        return async (...a) => {
+          const ids = a.filter((x) => /^agentBattles\/[^/]+$/.test(String(x?.path || ''))).map((x) => x.path.split('/')[1]);
+          if (ids.length) { chunks.push(ids); if (onBatch) await onBatch(chunks.length); }
+          return t.getAll(...a);
+        };
+      }
+      const v = t[k]; return typeof v === 'function' ? v.bind(t) : v;
+    } });
+    return { dbx, chunks };
+  }
+  it('PFA-1: an unseen battle fetched but not reached stays unseen, so the next run reads it (not filed behind a cursor\'s rotation)', async () => {
+    const index = {};
+    for (let i = 0; i < 30; i++) { const id = `v-${String(i).padStart(2, '0')}`; await seedBattle(id, ownerBattle({ ...FUTURE, ...NEVER })); index[id] = ordIdx(); }
+    await seedBattle('u-00', ownerBattle({ ...FUTURE, ...NEVER })); // never seen: not in the index
+    await db.doc('activationObserverState/main').set({ schemaVersion: 1, cursors: { ordinaryBattles: 'u-50' }, battles: index, outstandingKeys: [], updatedAt: null });
+    let clock = clockAt(INTRADAY);
+    const rec1 = batchRecorder((n) => { if (n === 1) clock.advance(C.PREP_BUDGET_MS); }); // the budget is spent by the first batch read
+    await run(clock, { dbx: rec1.dbx });
+    expect(rec1.chunks[0][0]).toBe('u-00');
+    const s1 = await stateDoc();
+    expect([s1.cursors.ordinaryBattles, s1.battles['u-00']]).toEqual(['u-50', undefined]); // the cursor held, the battle still unseen
+    clock = clockAt('2026-11-05T15:45:00.000Z');
+    const rec2 = batchRecorder();
+    await run(clock, { dbx: rec2.dbx });
+    expect(rec2.chunks.flat()).toContain('u-00');
+  });
+  it('PFA-2: a battle decided from its document AFTER a not-reached one of its queue never moves that queue\'s cursor (the held guard)', async () => {
+    const index = {};
+    for (let i = 0; i < 30; i++) {
+      const id = `d-${String(i).padStart(2, '0')}`;
+      const b = ownerBattle({ ...NEVER });
+      if (i === 2) b.agentContext.archetype = 'value_hunter'; // out of scope: decided from the document alone
+      await seedBattle(id, b);
+      index[id] = dueIndexOf([id])[id];
+    }
+    await db.doc('activationObserverState/main').set({ schemaVersion: 1, cursors: {}, battles: index, outstandingKeys: [], updatedAt: null });
+    let clock = clockAt(AT_0145);
+    const rec1 = batchRecorder((n) => { if (n === 1) clock.advance(C.PREP_BUDGET_MS); });
+    await run(clock, { dbx: rec1.dbx });
+    expect((await stateDoc()).cursors.dueBattles).toBeNull(); // d-00 and d-01 were never reached: d-02 cannot pass them
+    clock = clockAt(NEXT_1300);
+    const rec2 = batchRecorder();
+    await run(clock, { dbx: rec2.dbx });
+    expect(rec2.chunks.flat().slice(0, 2)).toEqual(['d-00', 'd-01']);
+  });
+  it('PFA-2: unseen battles taken after the last ordinary one never move the ordinary cursor (the unseen queue has none)', async () => {
+    const index = {};
+    for (let i = 0; i < 3; i++) { const id = `o-${String(i).padStart(2, '0')}`; await seedBattle(id, ownerBattle({ ...FUTURE, ...NEVER })); index[id] = ordIdx(); }
+    for (let i = 0; i < 6; i++) await seedBattle(`u-${String(i).padStart(2, '0')}`, ownerBattle({ ...FUTURE, ...NEVER }));
+    await db.doc('activationObserverState/main').set({ schemaVersion: 1, cursors: {}, battles: index, outstandingKeys: [], updatedAt: null });
+    const r = await run(clockAt(INTRADAY));
+    expect([r.battles.unseen, r.battles.ordinary]).toEqual([6, 3]);
+    expect((await stateDoc()).cursors.ordinaryBattles).toBe('o-02');
+  });
+  it('PFA-5: a due key carried from the state holds ordinary writes while its store call is in flight ("any due key", §4.2)', async () => {
+    const sym = 'CARR';
+    await db.doc('activationObserverState/main').set({ schemaVersion: 1, cursors: {}, battles: {}, outstandingKeys: [{ snapshotId: snapshotIdOf({ session: SESSION, symbol: sym, ruleSet: RS }), session: SESSION, symbol: sym, dueAt: Date.parse('2026-11-05T01:30:00.000Z') }], updatedAt: null });
+    const OSYM = ['OA', 'OB', 'OC', 'OD', 'OE', 'OF'];
+    await seedBattle('b-ord', ordinaryOf(0, OSYM));
+    for (const s of OSYM) await seedFinal(s); // the ordinary evidence is in hand from step 9
+    let carriedInFlight = false;
+    let duringCarried = 0;
+    let ordinaryWrites = 0;
+    const dbx = recordingDb(db, (battleId) => { if (battleId === 'b-ord') { ordinaryWrites += 1; if (carriedInFlight) duringCarried += 1; } });
+    const fetchPayload = async (s, { to }) => {
+      carriedInFlight = true;
+      try { const t0 = Date.now(); while (ordinaryWrites < 6 && Date.now() - t0 < 1_500) await new Promise((res) => setTimeout(res, 20)); return upRows(to); } finally { carriedInFlight = false; }
+    };
+    const r = await run(clockAt(INTRADAY), { dbx, fetchPayload });
+    expect([r.acquisitionsStarted, duringCarried, r.pointers.withEvidence]).toEqual([1, 0, 6]);
+  });
+  it('PFA-6: the cost V1.9 chose — ordinary evidence in hand waits behind a slow due call and is deferred by the write reserve; the next run writes it, nothing is lost', async () => {
+    await seedBattle('b-due', ownerBattle());
+    for (const s of ['NVDA', 'AMD', 'MSFT', 'AAPL', 'KO']) await seedFinal(s); // XOM is acquired
+    const OSYM = ['OA', 'OB', 'OC', 'OD', 'OE', 'OF'];
+    await seedBattle('b-ord', ordinaryOf(0, OSYM));
+    for (const s of OSYM) await seedFinal(s);
+    const clock = clockAt(CUTOFF);
+    const fetchPayload = async (s, { to }) => { await new Promise((res) => setTimeout(res, 300)); clock.advance(18_500); return upRows(to); };
+    const r1 = await runActivationObserver({ db, handlerStartMs: clock.ms(), now: clock.now, fetchPayload });
+    expect([r1.pointers.withEvidence, r1.deferred.write_reserve]).toEqual([5, 7]); // XOM's due pointer and the six ordinary ones
+    const r2 = await run(clockAt(AT_0145));
+    expect(r2.pointers.withEvidence).toBe(7);
+    expect([(await pointersOf('b-due')).length, (await pointersOf('b-ord')).length]).toEqual([6, 6]);
+  });
+});
+
 describe('V1.9 review 4 — a position id must be a string (§4, §4.1)', () => {
   it('numeric and boolean ids on a starting position, a swap-in row and a live position → inconsistent, no pointer in that slot; the other slots are written', async () => {
     const at = '2026-11-05T15:02:11.412Z';

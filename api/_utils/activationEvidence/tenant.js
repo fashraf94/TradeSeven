@@ -118,10 +118,11 @@ function emptyCounts() {
 // ---------------------------------------------------------------- the health line (review-fix prompt §3)
 //
 // After every run that did not skip, ONE line: `[activationEvidence] {json}`, the run's counts only. Every
-// key in it is a literal of the observer's modules or a stage name, and every error code passes codeLabelOf;
-// nothing in it is read from a document, so no owner, battle, agent, activation, position or snapshot id, and
-// no symbol, can reach it. A skipped run (the gate: flag off, or an empty allowlist) logs nothing, so the flag-off logs
-// and response are unchanged.
+// key in it is a literal of the observer's modules, a stage name on the STAGES list, or an error code through
+// codeLabelOf; nothing in it is read from a document, so no owner, battle, agent, activation, position or
+// snapshot id, and no symbol, can reach it. A skipped run (the gate: flag off, or an empty allowlist) logs
+// nothing, so the flag-off logs and response are unchanged. A run that throws (a programming error) logs one
+// line with `failures: { 'run:<code>': 1 }` before the error goes on to the host (review PFA-7).
 
 export const HEALTH_LINE_PREFIX = '[activationEvidence]';
 /** Node's network errnos, by name: the only upper-case codes a line may carry. */
@@ -131,11 +132,15 @@ export function codeLabelOf(code) {
   const c = String(code);
   return /^\d{1,3}$/.test(c) || /^[a-z][a-z_-]{0,39}$/.test(c) || /^(?:[A-Z][A-Za-z]{0,30})?Error$/.test(c) || NODE_ERRNOS.has(c) ? c : 'other';
 }
-const labelled = (obj, prefix = '') => {
+/** The stages `counts.failures` keys carry (`${stage}:${code}`), and the one a thrown run reports. */
+const STAGES = new Set(['candidates', 'battles', 'pointers', 'ticks', 'final', 'state_write', 'run']);
+/** A map keyed `${stage}:${code}` (staged) or by a bare code: each stage on its list, each code through codeLabelOf (review PFA-3). */
+const labelled = (obj, { staged = false, prefix = '' } = {}) => {
   const out = {};
   for (const [k, n] of Object.entries(obj || {})) {
     const at = k.indexOf(':');
-    const key = at === -1 ? `${prefix}${codeLabelOf(k)}` : `${prefix}${k.slice(0, at)}:${codeLabelOf(k.slice(at + 1))}`;
+    const stage = staged && at !== -1 && STAGES.has(k.slice(0, at)) ? k.slice(0, at) : null;
+    const key = staged ? `${stage ?? 'other'}:${codeLabelOf(stage ? k.slice(at + 1) : k)}` : `${prefix}${codeLabelOf(k)}`;
     out[key] = (out[key] || 0) + n;
   }
   return out;
@@ -163,14 +168,14 @@ export function healthLineOf(r) {
     pointers: { withEvidence: c?.pointers?.withEvidence ?? 0, null: c?.pointers?.null ?? 0 },
     deferred,
     truncations: { candidates: c?.truncations?.candidates ?? 0, ticks: c?.truncations?.ticks ?? 0 },
-    failures: { ...labelled(c?.failures), ...labelled(c?.pointers?.writeFailed, 'pointer_write:') },
+    failures: { ...labelled(c?.failures, { staged: true }), ...labelled(c?.pointers?.writeFailed, { prefix: 'pointer_write:' }), ...labelled(r?.threw ? { [`run:${r.threw}`]: 1 } : null, { staged: true }) },
     stateWritten: c?.stateWritten === true,
   };
   return `${HEALTH_LINE_PREFIX} ${JSON.stringify(health)}`;
 }
 
 /**
- * One observer run, then its health line (none when the gate skipped it).
+ * One observer run, then its health line (none when the gate skipped it; one marking the throw when it threw).
  *
  * @param {object} p
  * @param {object} p.db Admin Firestore
@@ -180,7 +185,13 @@ export function healthLineOf(r) {
  * @param {{ before?: (kind: string) => any }} [p.instrument] test seam
  */
 export async function runActivationObserver(p = {}) {
-  const r = await observe(p);
+  let r;
+  try {
+    r = await observe(p);
+  } catch (err) {
+    console.log(healthLineOf({ threw: errorCodeOf(err) })); // the line, then the error goes on to the host's isolating catch
+    throw err;
+  }
   if (!r?.skipped) console.log(healthLineOf(r));
   return r;
 }
@@ -349,6 +360,9 @@ async function observe({ db, handlerStartMs, now = () => new Date(), fetchPayloa
         work.push({ battleId, battle, d, due, attribution, unwritten, outstanding: unwritten.length });
       } finally {
         pass(chunk[k].queue, battleId, reached);
+        // An unseen battle not reached stays unseen (review PFA-1): indexed now, it would join a cursor's rotation at its
+        // sorted place and could wait a whole rotation. A due or ordinary battle keeps its entry: that is where its cutoff lives.
+        if (!reached && chunk[k].queue === 'unseen') delete index[battleId];
       }
     }
   }
@@ -428,13 +442,16 @@ async function observe({ db, handlerStartMs, now = () => new Date(), fetchPayloa
   // Acquisition admits store calls (≥ ADMISSION_RESERVE_MS left, ≤ 12 a run, ≤ 3 at once). The writes run
   // BESIDE it (review L2-1), one transaction at a time, as soon as a key's final or this run's own
   // `retryable` is in hand: so a slow store call admitted late in the window can never cost the run the
-  // pointers whose evidence it already holds. The order is kept: finalisation-due work first, and ordinary
-  // work only once no due key still waits on its store call. One cap for both kinds; each transaction starts
-  // only with POINTER_WRITE_RESERVE_MS left; every started call is awaited to its end.
+  // finalisation-due pointers whose evidence it already holds. The order is kept: finalisation-due work first,
+  // and ordinary work only once no due key still waits on its store call. One cap for both kinds; each
+  // transaction starts only with POINTER_WRITE_RESERVE_MS left; every started call is awaited to its end.
   // A DUE KEY IN FLIGHT HOLDS ORDINARY WRITES (contract V1.9 §4.2; Astra's review 1): a key settles when its
   // own call ends (applyResult), or, once admission is over, when it was never started this run (nothing will
   // arrive for it). A key whose call is still running is never settled early, so ordinary work cannot take the
-  // shared cap while a finalisation-due store call has yet to return.
+  // shared cap while a finalisation-due store call has yet to return. "Any due key" includes a key carried
+  // from the state whose dueAt has passed (review PFA-5), though it has no pointer to write this run. The
+  // cost V1.9 chose (review PFA-6): ordinary pointers whose evidence is already in hand may wait behind a slow
+  // due call until the write reserve stops them; they are deferred to a later run, never lost.
   const acquisitions = new Map(); // snapshotId → { snapshotId, session, symbol, due, dueAt, run: key|null }
   for (const key of keys.values()) {
     if (key.final || key.invalid) key.settled = true; // decided by step 9
@@ -481,8 +498,11 @@ async function observe({ db, handlerStartMs, now = () => new Date(), fetchPayloa
       }
     } else bump(counts.store.threw, r.code);
     k.done = r.status === 'final' || r.status === 'excluded';
+    k.settled = true;
     if (k.run) k.run.settled = true;
   };
+  /** A due key carried from the state (no member this run) whose call has not ended, or that admission may still start (review PFA-5). */
+  const carriedDueWaiting = () => { for (const k of acquisitions.values()) if (!k.run && k.due && !k.settled) return true; return false; };
 
   let writes = 0;
   let writeStop = null;
@@ -500,7 +520,7 @@ async function observe({ db, handlerStartMs, now = () => new Date(), fetchPayloa
       }
     }
     const due = ready.filter((t) => t.m.w.due);
-    return due.length || dueWaiting ? due : ready;
+    return due.length || dueWaiting || carriedDueWaiting() ? due : ready;
   };
   const writeOne = async ({ mode, key, m }) => {
     const { w, a, session } = m;
@@ -560,7 +580,11 @@ async function observe({ db, handlerStartMs, now = () => new Date(), fetchPayloa
     inflight.add(call);
   }
   // Never started this run: settled now, nothing will arrive. Started and still in flight: settled by applyResult when its call ends (V1.9 §4.2).
-  for (const k of acquisitions.values()) if (k.run && !startedIds.has(k.snapshotId)) k.run.settled = true;
+  for (const k of acquisitions.values()) {
+    if (startedIds.has(k.snapshotId)) continue;
+    k.settled = true;
+    if (k.run) k.run.settled = true;
+  }
   acquiring = false;
   notify();
   await Promise.all([...inflight]); // every started call is awaited to its end

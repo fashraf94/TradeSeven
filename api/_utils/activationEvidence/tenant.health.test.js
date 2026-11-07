@@ -13,10 +13,16 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-vi.mock('../../../src/config/activationEvidenceFlags.js', () => ({ ACTIVATION_EVIDENCE_ENABLED: false }));
+// The flag is OFF unless a row turns it on; a row may also make the deployed rule set malformed (a programming error).
+const ctl = vi.hoisted(() => ({ flagOn: false, malformedRuleSet: false }));
+vi.mock('../../../src/config/activationEvidenceFlags.js', () => ({ get ACTIVATION_EVIDENCE_ENABLED() { return ctl.flagOn; } }));
+vi.mock('../setupEvaluator/thresholds.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, describeRuleSet: () => (ctl.malformedRuleSet ? { setupVersion: 'tf-setup-v1', thresholdsHash: 'NOT A HASH', semanticsId: 'x' } : real.describeRuleSet()) };
+});
 const { codeLabelOf, healthLineOf, HEALTH_LINE_PREFIX, runActivationObserver } = await import('./tenant.js');
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); ctl.flagOn = false; ctl.malformedRuleSet = false; });
 const parse = (line) => { expect(line.startsWith(`${HEALTH_LINE_PREFIX} `)).toBe(true); return JSON.parse(line.slice(HEALTH_LINE_PREFIX.length + 1)); };
 
 describe('the health line', () => {
@@ -69,6 +75,34 @@ describe('the health line', () => {
     const h = parse(line);
     expect(h.acquisitions.threw).toEqual({ other: SENTINELS.length });
     expect(h.deferred.other).toBe(1);
+  });
+  it('review PFA-3: a code with a colon is labelled whole where there is no stage, and a stage off its list reads `other`', () => {
+    const counts = {
+      battles: {}, store: { threw: { 'SENTINEL_OWNER_7f3a:x': 1 } }, pointers: { writeFailed: { 'NVDA__2026-11-04:y': 1 } }, deferred: {}, truncations: {},
+      failures: { 'pointers:14': 1, 'SENTINEL_STAGE:aborted': 1, 'battles:SENTINEL_B:z': 1 },
+    };
+    const line = healthLineOf(counts);
+    for (const s of ['SENTINEL', 'NVDA', '__', ':x', ':y', ':z']) expect([s, line.includes(s)]).toEqual([s, false]);
+    const h = parse(line);
+    expect(h.acquisitions.threw).toEqual({ other: 1 });
+    expect(h.failures).toEqual({ 'pointers:14': 1, 'other:other': 1, 'battles:other': 1, 'pointer_write:other': 1 }); // an unknown stage: its whole key is the code
+  });
+  it('review PFA-7: a run that throws (a malformed deployed rule set) logs one line, with no id, then the error goes on to the host', async () => {
+    const saved = process.env.COCKPIT_ALLOWLIST_UIDS;
+    process.env.COCKPIT_ALLOWLIST_UIDS = 'SENTINEL_OWNER_7f3a';
+    ctl.flagOn = true;
+    ctl.malformedRuleSet = true;
+    try {
+      const lines = [];
+      vi.spyOn(console, 'log').mockImplementation((...a) => { lines.push(a.map(String).join(' ')); });
+      const db = new Proxy({}, { get() { throw new Error('no read happens before the rule set is checked'); } });
+      await expect(runActivationObserver({ db, handlerStartMs: Date.now() })).rejects.toThrow(TypeError);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).not.toContain('SENTINEL');
+      expect(parse(lines[0])).toMatchObject({ failures: { 'run:TypeError': 1 }, battles: { read: 0 }, stateWritten: false });
+    } finally {
+      if (saved === undefined) delete process.env.COCKPIT_ALLOWLIST_UIDS; else process.env.COCKPIT_ALLOWLIST_UIDS = saved;
+    }
   });
   it('codeLabelOf: gRPC numbers, lower-case status names, error class names and Node errnos pass; anything else is other', () => {
     for (const c of ['10', 14, 'aborted', 'deadline-exceeded', 'unknown', 'TypeError', 'Error', 'SetupEvidenceProgrammingError', 'ETIMEDOUT', 'ECONNRESET']) expect([c, codeLabelOf(c)]).toEqual([c, String(c)]);
