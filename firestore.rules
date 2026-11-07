@@ -1266,6 +1266,27 @@ service cloud.firestore {
       allow read, write: if false;  // Admin SDK only
     }
 
+    // Huddle S1 (spec docs/specs/20261030_HUDDLE_S1_BUILD_SPEC_V1_1.md §3, with
+    // Amendment C V1.2 §C1): four server-written collections. The huddle record
+    // huddles/{uid}/days/{etDate} is read by its OWNER only (the hub's reader); no
+    // client writes it — confirm, skip and every receipt go through /api/huddle/*.
+    // The parent huddles/{uid} has no document and no rule of its own (default deny).
+    // huddleQueue, symbolDayEvidence and huddleRuns are SERVER-ONLY: no client verb
+    // for anyone. test/rules/huddleDenials.rules.mjs asserts all four.
+    match /huddles/{uid}/days/{etDate} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;  // Admin SDK only
+    }
+    match /huddleQueue/{rowId} {
+      allow read, write: if false;  // Admin SDK only
+    }
+    match /symbolDayEvidence/{docId} {
+      allow read, write: if false;  // Admin SDK only
+    }
+    match /huddleRuns/{etDate} {
+      allow read, write: if false;  // Admin SDK only
+    }
+
     // ID-1 Build 2 (shape note V1.7 §4.4): activationObserverState/{name}, the
     // observer's cursors, battle index and carried keys. SERVER-ONLY, never
     // read by any reader of evidence. test/rules/activationEvidenceDenials.rules.mjs asserts it.

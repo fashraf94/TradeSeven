@@ -73,6 +73,9 @@ export const PROTECTED_COLLECTIONS = new Set([
   'agents', 'rules', 'bundles', 'compiledBuilds',
   'composition', 'compositionCandidateState', 'compositionEpochOverrides',
   'compositionProvisionerLeases', // B2 (PR 4): the provisioner-lease registry — part of the fence surface
+  // Huddle S1 (spec V1.1 §3; build report docs/audits/20261107_BUILD_HUDDLE_S1.md): the four new
+  // server-written collections, listed so every write site to them is counted against the allowlist.
+  'huddles', 'huddleQueue', 'symbolDayEvidence', 'huddleRuns',
 ]);
 export const WRITE_METHODS = new Set(['set', 'update', 'create', 'delete', 'add']);
 const HANDLE_RE = /^(tx|txn|transaction|batch|writeBatch)$/;
