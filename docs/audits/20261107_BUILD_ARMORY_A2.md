@@ -5,6 +5,7 @@
 **Smoke:** `claude/armory-a2-smoke` @ `06e5ff02`, one SMOKE ONLY commit, both flags on. Preview: https://trade-seven-dl38v18bk-fais-projects-bc179554.vercel.app/?loadoutStates=1
 **Diff:** 4,625 code and test lines against `main` (65 files: +4,495 / −130), plus this report and 18 screenshots. That is about three times the 1,500-line threshold: **this PR goes to a review session before merge.**
 **Fence:** untouched. `decide.js`, `agentBattleService.js` and `createAgentBattle` have no diff; the end-to-end row runs them as they are.
+**Review and fix pass (Nov 7):** the review (`docs/audits/20261107_REVIEW_ARMORY_A2.md`) said MERGE AFTER FIXES. The fix pass applied its three should-fixes and the founder's Q1, Q3 and A2R-3 (b) rulings, and merged `main` @ `d503dd07`. Every check is green: flag-off identity 0 of 55, the full suite, the rules suite, 8 of 8 mutants (§17). The founder's phone check passed (§14). **Founder action after merge: deploy `firestore.rules` in the Console, before the flip.**
 
 ---
 
@@ -22,6 +23,15 @@
 | N1 | **Shadow outside a game is always bare** (built in A1). No surface wears a loadout's archetype on a figure, except game seats, the loadout cards' stills and the armory's preview. |
 | Boards | Build boards 1–5 as drawn, with these founder adjustments (A1 report §14): <br>• board 6's premise and decisions #8, #16 and #17 are dropped (N1; no League lobby figure);<br>• decision #6 is reversed: **a loadout with no book reads "No book · open market" and Deploy keeps working**;<br>• the "record facts · later" slot is **not rendered** (A4 fills that space later; leave no dashed pill on screen). |
 | A1 carry | AR-5: pass the opener through `LoadoutSheets` → `Armory` → `HubSheet` (the History sheet is the template). AR-6: below 315 CSS px of viewport, the phone ring becomes a 3 × 2 grid of the same stills under the hero, inside the hero's box. Re-measure the phone close (AR-1) with the real loadout cards below the hero. |
+
+**The founder's rulings of Nov 7, 2026** (after the review, `docs/audits/20261107_REVIEW_ARMORY_A2.md`; built in the fix pass, §17):
+
+| # | Ruling |
+|---|---|
+| Q1 | **Deny `loadouts` on agent create.** It joins the create rule's `hasAny` list (`firestore.rules:283-286`), with a row in the denied-birth table of `test/rules/masteryDenials.rules.mjs`. The founder deploys the rules in the Firebase Console after merge, before the flip. |
+| Q3 | **New lock wording:** "Locked until the week is scored, after the close on {day date}." The date is date only ("Fri Nov 6", a date-only `formatLockDay`). It carries through the cards, the League lines, the armory's context and Equip, and the server's `league_locked` message; the eight pinned strings move (review A2R-7). |
+| A2R-3 (b) | **With per-game loadouts on, a BaggerBomb deploy never falls back to the ranked agent.** When `ensure-casual-clone` fails, the deploy is refused with an honest retry line ("Couldn't start the BaggerBomb game · try again") and the strip's existing Retry; the fallback telemetry (`markCloneFallback`) is kept. The fallback game would wear the League loadout (breaking D1) and put a battle on the ranked record, which blocks that player's League deploy the next morning. **With the flag off, the fallback stays exactly as today.** |
+| Q2, R1–R4, R6–R11, Q8, Q9 | Accepted as built (the review's §0). R5 is carried to A3. |
 
 Where each one lives:
 
@@ -54,6 +64,7 @@ Where each one lives:
 | `406b1a63` | the composition protected-store allowlist: A2's three BaggerBomb slot writes, **for human review** (§11) |
 | `ab79a9e6` | the no-book Deploy row cleans up its card when it fails |
 | (the last commit) | this report, final |
+| fix pass | the review's fixes and the Nov 7 rulings: §17.1 |
 
 `LoadoutChooserSheet.jsx` itself stays in the tree: with the flag off both lobbies still mount it (flag-off identity). With the flag on its two mounts render nothing. Delete the file in the flip PR's cleanup.
 
@@ -93,10 +104,12 @@ The lock refusal (typed, names the lock and its end):
 ```json
 409 {
   "error": "league_locked",
-  "message": "The League loadout is locked until your League week ends. It changes between weeks.",
+  "message": "The League loadout is locked until the week is scored, after the close on Fri Nov 6. It changes between weeks.",
   "lock": { "kind": "league_week", "groupId": "grp-…", "status": "battle", "endsAt": "2026-11-06T21:00:00.000Z" }
 }
 ```
+
+(The message follows ruling Q3 since the fix pass, §17; with no readable end it reads "The League loadout is locked until the week is scored. It changes between weeks.")
 
 The client's thin writers are `src/services/loadoutService.js` (`changeLoadoutArchetype`, `equipLoadoutBook`, `unequipLoadoutBook`, `isLeagueLock`), a module of their own so nothing the flag-off build ships changes.
 
@@ -107,12 +120,12 @@ The client's thin writers are `src/services/loadoutService.js` (`changeLoadoutAr
 **Rule.** Locked while the player has a ranked group in `forming`, `drafting`, `awaiting_open` or `battle`: the existing `selectMyGroup` allowlist, which already excludes training pods (`isTraining`). `complete`, `expired` and `voided` do not lock. One function, `leagueLockOf(groupDocs)` in `src/constants/perGameLoadout.js`, is the rule for both sides.
 
 **Query.** `tournamentGroups where groupMembers array-contains <uid>`.
-- **Server:** `readLeagueLockInTx(tx, db, uid)` runs it with `tx.get(query)` in the read phase of each League write's transaction, so a registration racing the write is serialized with it.
+- **Server:** `readLeagueLockInTx(tx, db, uid)` runs it with `tx.get(query)` in the read phase of each League write's transaction: the lock is read in the transaction, so a group already written is seen consistently with the agent read. (Reworded in the fix pass, review A2R-2: this section first said a racing registration "is serialized with" the write, which overstated it. The race FD-3 closes, a League write after the board and the draft, is covered because the group then already exists in `forming` or `drafting`. Rows now pin that the query goes through the transaction, §17.)
 - **Client:** `src/services/leagueLockService.js` `subscribeLeagueLock` runs the same query with one `onSnapshot` and judges it with the same `leagueLockOf`. It is the same query `tournamentGroupService.subscribeMyGroup` already runs.
 - **Index:** none needed. A single-field `array-contains` uses Firestore's automatic index; no composite; `firestore.indexes.json` unchanged.
 - **Rules:** `tournamentGroups` already allows authenticated reads; no change.
 
-**The week's end** (what the line shows): the market close of the 5th trading day (`WEEK_DAYS_REQUIRED`) from the pod's first battle day, from `marketCalendar`. The first battle day comes from the pod's own fields, in order: `startAnchor.anchorEtDate`, `dailyScores.day1.recordedDate`, `battleStartWeek.anchorEtDate`, else the formation instant through a read-side twin of `deriveBattleStartWeek` (rows hold the twin and the writer in agreement across a calendar of instants). Shown in ET as "Fri Nov 6, 4:00 PM". If no anchor is readable the lock still holds and the line names no date ("Locked until the week ends. Set when you registered.").
+**The week's end** (what the line shows): the market close of the 5th trading day (`WEEK_DAYS_REQUIRED`) from the pod's first battle day, from `marketCalendar`. The first battle day comes from the pod's own fields, in order: `startAnchor.anchorEtDate`, `dailyScores.day1.recordedDate`, `battleStartWeek.anchorEtDate`, else the formation instant through a read-side twin of `deriveBattleStartWeek` (rows hold the twin and the writer in agreement across a calendar of instants). Shown in ET, date only, since ruling Q3: "Locked until the week is scored, after the close on Fri Nov 6." (A2 showed "Fri Nov 6, 4:00 PM"; the lock opens when the group turns complete, after that close.) If no anchor is readable the lock still holds and the line names no date ("Locked until the week is scored.").
 
 **Training pods** never lock it (their clone copies the loadout once at provisioning). Rows for every status, a training pod in each status, and the in-transaction read.
 
@@ -135,11 +148,13 @@ All behind `PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED`. Words: `src/
 
 ### Board 1 — the Loadout tab's two cards
 
-BaggerBomb first, League second; stacked on the phone, side by side on desktop. Each card: the set as a 48 px still, the book (name and count of names), one tag, a door on each half (the whole 60 px row, chevron). States: Next deploy · Game running (a strip in the armor it deployed with) · Locked (lock glyphs; the armor row still opens the armory to look; the book row is no door) · Open · No book · open market · Checking (until the lock read answers, or if it fails: never claims open). Lines: "Locked until the week ends · Fri Nov 6, 4:00 PM. Set when you registered." / "Open until you register for next week. It locks then." / "The next deploy wears this." The "record facts · later" slot is not rendered. Under the cards: "Your Forge strategy rides into both games. Change in the Forge".
+BaggerBomb first, League second; stacked on the phone, side by side on desktop. Each card: the set as a 48 px still, the book (name and count of names), one tag, a door on each half (the whole 60 px row, chevron). States: Next deploy · Game running (a strip in the armor it deployed with) · Locked (lock glyphs; the armor row still opens the armory to look; the book row is no door) · Open · No book · open market · Checking (until the lock read answers, or if it fails: never claims open). Lines: "Locked until the week is scored, after the close on Fri Nov 6." (ruling Q3; A2 read "Locked until the week ends · Fri Nov 6, 4:00 PM. Set when you registered.") / "Locked while a game is running." (the fix pass, A2R-3 (a): a game on the ranked record) / "Open until you register for next week. It locks then." / "The next deploy wears this." The "record facts · later" slot is not rendered. Under the cards: "Your Forge strategy rides into both games. Change in the Forge".
 
 | 390 open | 390 locked | 320 open | 320 locked |
 |---|---|---|---|
 | ![](assets/armory-a2-hub-phone-390-loadout-open.png) | ![](assets/armory-a2-hub-phone-390-loadout-locked.png) | ![](assets/armory-a2-hub-phone-320-loadout-open.png) | ![](assets/armory-a2-hub-phone-320-loadout-locked.png) |
+
+*The screenshots in this section were taken at the A2 build and show A2's lock words with the time ("… · Fri Nov 6, 4:00 PM"); the fix pass changed the words (ruling Q3, §17) and did not re-shoot them.*
 
 Desktop (1440): ![](assets/armory-a2-hub-desktop-loadout-open.png) ![](assets/armory-a2-hub-desktop-loadout-locked.png)
 
@@ -151,7 +166,7 @@ Every state on fixtures (running, no book, checking included): ![](assets/armory
 
 ### Board 3 — the League lobby's lines
 
-- **League tab:** "Your League loadout", the still, set · book, and the lock state. Open: a door (to the Command Center, Q8). Locked: "Locked until the week ends · Fri Nov 6, 4:00 PM", nothing tappable.
+- **League tab:** "Your League loadout", the still, set · book, and the lock state. Open: a door (to the Command Center, Q8). Locked: "Locked until the week is scored, after the close on Fri Nov 6" (ruling Q3), nothing tappable. Checking (since the fix pass, A2R-1): until the lobby's group read answers, and after a failed read, "Checking your League week" and no door.
 - **Training tab:** "Training uses your League loadout", set · book, "Change it on the League tab, between weeks." No door. The Customize loadout button and its sheet are gone (phone and desktop).
 - No lobby figure (N1); the S2 climb preview's seats are untouched.
 - Loaded through a folded `lazy()` slot (`leagueLoadoutSlot.jsx`) so the League's main-graph files import nothing from the hub chunk.
@@ -160,7 +175,7 @@ Shown on the states page (section 3 of each `armory-a2-states-*.png`).
 
 ### Board 4 — the armory with a loadout context
 
-Opened from a card's armor row with that loadout's context. Context line: "Choosing armor for BaggerBomb · applies to the next deploy"; "Choosing armor for League · open · locks when you register"; locked: "Choosing armor for League · locked until Fri Nov 6, 4:00 PM". Equip: "Equip Trend Follower for BaggerBomb" / "… for League", calling the writer with that `loadout`. Locked: previews work, Equip is "Locked until the week ends" and does nothing; a lock the server reports (the card raced it) shows the lock line with the server's end. Footnote: BaggerBomb "Applies to the next deploy · a game already running keeps the armor it deployed with."; League the lock or open line.
+Opened from a card's armor row with that loadout's context. Context line: "Choosing armor for BaggerBomb · applies to the next deploy"; "Choosing armor for League · open · locks when you register"; locked: "Choosing armor for League · locked until the week is scored, after the close on Fri Nov 6" (ruling Q3). Equip: "Equip Trend Follower for BaggerBomb" / "… for League", calling the writer with that `loadout`. Locked: previews work, Equip is "Locked until the week is scored" ("Locked while a game is running" for a game on the ranked record) and does nothing; a lock the server reports (the card raced it) shows the lock line with the server's end. Footnote: BaggerBomb "Applies to the next deploy · a game already running keeps the armor it deployed with."; League the lock or open line.
 
 **The copy guard move (recorded as the brief asks):** A1's `/next deploy/` ban stays on `ARMORY_COPY` (still A1's words while per-game loadouts are off). With A2 the phrase is true for BaggerBomb only, so `hubCopy.guard.test.js` now allows "next deploy" in exactly the BaggerBomb strings of `LOADOUT_COPY` and in no League string, and FD-1's exact pin moved to the BaggerBomb footnote; a row plants a League "next deploy" and the guard catches it.
 
@@ -295,7 +310,9 @@ The last code commit is `ab79a9e6`; the pushed head adds only this report's fina
 
 ### The founder's result (Nov 7, 2026)
 
-**Not received by the review session.** The review brief said the founder's phone check would be pasted under it; nothing followed the heading. The review (`docs/audits/20261107_REVIEW_ARMORY_A2.md` §9) records the check as pending; the fix pass fills the result here.
+**Passed.** In the founder's words: the smoke test "passed on all levels. The designs look great."
+
+(The review session had not received it; its §9 records the check as pending, and the fix pass's brief carried the result.)
 
 ---
 
@@ -327,4 +344,171 @@ Readings (built this way; say if any is wrong):
 
 Not in A2: per-archetype saves (A3), record facts (A4), a book picker redesign (today's watchlist sheet with a context), the Deploy button's own rules.
 
-The flip PR: both flags `true` with their pins; delete `LoadoutChooserSheet.jsx` and the flag-off arms; Q1's rules line if ruled; refresh the flag-off bundle rows that become flag-on rows.
+**The flip PR's checklist** (updated by the fix pass, §17):
+
+1. **The Console rules deploy comes first.** This PR carries Q1's line (`'loadouts'` in the agent create rule's `hasAny` list, `firestore.rules:286`). After this PR merges, the founder deploys `firestore.rules` in the Firebase Console, before the flip PR merges. Until then, a hand-made sign-up request can still start an agent with a slot (nothing reads it while the flag is off).
+2. **Both flags `true`, each with its pins, in one commit** (BUILD_RULES §2):
+   - `PER_GAME_LOADOUT_ENABLED` (`src/config/perGameLoadoutFlags.js`): move the pin in `perGameLoadoutFlags.test.js` to `true` and drop its `DARK_BY_DESIGN` entry in `flagPinGuard.test.js`.
+   - `AGENT_FORM_ARMORY_ENABLED` (`src/config/agentFormFlags.js`): move its pin rows in `agentFormFlags.test.js` the same way, with its `DARK_BY_DESIGN` entry.
+   - The flag-on rows that hold either flag on by mock stay as they are.
+3. **Delete `LoadoutChooserSheet.jsx` and the flag-off arms.** The arms are the literal ternaries listed in `perGameLoadoutFlags.test.js` `CLIENT_READS`. They include the fix pass's arms: both lobbies' `subscribeMyGroup` arm, their `seatKnown` arm, the phone lobby's bare `lobby` arm and the desktop lobby's duplicated `<DeskLobby>` arm. Then shrink the read list to what remains. `agentDeploy.js`'s refusal stays (with the flag gone it is unconditional); its two `console.warn` lines that say "deploying the real agent" should then say the deploy is refused.
+4. **Refresh the flag-off bundle rows** in `agentForm.flagOffBundle.test.js` that become flag-on rows.
+5. **Know what stays outside it:** the BaggerBomb refusal protects only while `CASUAL_CLONE_CONCURRENCY_ENABLED` is on (it is, `featureFlags.js:237`). With it off, every BaggerBomb deploy is a ranked-record deploy in the League loadout, so that flag must not be turned off while per-game loadouts are on. A2R-4 (an abandoned ranked pre-battle group holds the lock forever) is a separate League-lifecycle task (§17).
+
+---
+
+## §17 Review fixes (the fix pass, Nov 7, 2026)
+
+**Brief:** the founder's fix-pass brief of Nov 7, 2026. **Spec:** the review, `docs/audits/20261107_REVIEW_ARMORY_A2.md` (verdict MERGE AFTER FIXES; A2R-1 to A2R-10, §1.3, §6, §7). **Session:** Claude Opus 5.5, worktree branch `claude/armory-a2-review-fixes-a4be88`, pushed by refspec to `claude/armory-a2`. `git fetch origin` first. The PR head was `2f8b4978` as the brief required. **Both flags stay `false`.** The fence is untouched: `decide.js`, `agentBattleService.js` and `createAgentBattle` have no diff; the e2e rows run them as they are.
+
+### Verdict
+
+| Item | Result |
+|---|---|
+| A2R-1 (the League line claimed Open before it knew) | **Fixed.** Checking, with no door, until the lobby's group read answers, and after a failed read. 12 new lobby rows plus the line's own. |
+| A2R-2 (the in-transaction lock read was unpinned) | **Fixed.** The fixture records reads made through the transaction; five League writer rows (seven assertions), one unit row and one e2e row pin it. Mutant R1 is now **killed**. §4 reworded. |
+| A2R-3 (a) (the League card did not see a game on the ranked record) | **Fixed.** `activeBattleId` locks League, undated, in A1's words; the week lock wins when both hold. |
+| A2R-3 (b) (founder ruling: never fall back to the ranked agent) | **Built as ruled**, behind `PER_GAME_LOADOUT_ENABLED`. Flag off, the fallback is unchanged (its row passes, its telemetry is pinned). |
+| Q1 (deny `loadouts` on agent create) | **Built:** one rules line, two denied-birth rows. Rules suite green on Linux: 32 files, 631 rows; the mutant that drops the line fails both new rows. **Founder action: deploy the rules in the Console after merge, before the flip.** |
+| Q3 (the lock words) | **Built:** "Locked until the week is scored, after the close on Fri Nov 6." with a date-only formatter, everywhere a lock is shown, the server's message included. The eight pins moved. |
+| `main` merged | `d503dd07` (the activation observer flip), clean merge, no conflict. |
+| Flag-off identity | **0 of 55 non-map files differ** (raw `diff -rq` of unminified Linux builds, maps excluded) against `d503dd07`. Minified build exit 0. |
+| Full Linux suite | **exit 0** on `636b7181`: 1,314 files (1,306 passed, 8 skipped), 29,003 rows (28,914 passed, 89 skipped, 0 failed), 335 s. Rules suite 32 files, 631 rows, exit 0. |
+| `lint:gate` | exit 0 |
+| Mutation check | **8 of 8 killed** (the brief's seven, the failed-read mutant made in each lobby); controls green (161 rows; rules 631). |
+
+### 17.1 Commits
+
+| Commit | What |
+|---|---|
+| `a3ecb897` | Q1: `firestore.rules` and the denied-birth rows |
+| `dbd3b20f` | A2R-1, A2R-2, A2R-3 (a) and (b), Q3: the code and its rows |
+| `f2380897` | merge of `origin/main` @ `d503dd07` |
+| `322a1726` | A2R-9 carried into the `COMPILER_ENABLED` and mastery flip notes (comments only) |
+| `636b7181` | the armory flag's read census lists the lobbies' new reads (the first full suite caught it) |
+| (the last commit) | this report and the review's withdrawn sentences |
+
+### 17.2 The fixes
+
+**A2R-1, the League line never claims Open before it knows.**
+- The line takes `groupKnown`, a boolean (`LeagueLoadoutLine.jsx:50-69`). Anything but `true` is Checking. The line then shows "Checking your League week" (`LOADOUT_COPY.lines.checking`), a neutral dot, `aria-busy`, and no door, whatever group it is handed.
+  - The line has no tag, so `tags.checking` ("Checking") has nowhere to go. The sentence carries the state.
+- The lobbies' readiness reaches the slot through `LeagueGroupKnownContext` (`leagueLoadoutSlot.jsx:26-37`), read with `use()` in the slot. A new prop on `LobbyTabbed` or `DeskLobby` would have changed the flag-off bytes; a context provided in a folded ternary does not.
+  - The phone lobby wraps its existing `lobby` element (`LeagueHome.jsx:174`).
+  - The desktop lobby's return is duplicated inside the ternary (`LeagueLobbyDesktop.jsx:359-402`); the flip PR deletes the flag-off arm.
+  - **The context's default is `false`** (fail closed): a mount with no provider shows Checking. The one such mount is `BackingPreviewScreen.jsx:725` (a design-preview screen), which would show Checking there with both flags on. A forgotten provider can never bring back the bug.
+- **A failed read is told apart from "no group".** Under the flags, both lobbies read the group through `subscribeMyGroupOrFailure` (`tournamentGroupService.js:237`). That function is `subscribeMyGroup`'s query and selection with an `onError`; `subscribeMyGroup` itself is unchanged.
+  - On an error the lobby sets `activeGroup` to null (as today) and records the failure in its existing `seatFor` state as `{ failedFor: uid }` (`LeagueHome.jsx:106`, `LeagueLobbyDesktop.jsx:299`). No new state hook: a new hook would change the flag-off bytes.
+  - `groupKnown = !uid || seatFor === uid`, so a failure stays Checking for good.
+  - `seatKnown`, which gates the Backing strip, counts the failure as known (`LeagueHome.jsx:155`, `LeagueLobbyDesktop.jsx:356`). The rest of the lobby therefore behaves exactly as today on a failed read; a row pins the strip mounting.
+- **Rows** (`LeagueLoadoutLine.lobbies.jsdom.test.jsx`, new, 12 rows; `LeagueLoadoutLine.jsdom.test.jsx`, updated):
+  - kept: `group={null}` with `groupKnown` → Open, with the door;
+  - added: `groupKnown={false}` → Checking (with a null group and with a locking group);
+  - added: no `groupKnown` at all, and `LobbyTabbed` with no provider → Checking;
+  - in each real lobby, phone and desktop, the group read driven by hand:
+    - it reads through the failure-aware read, never `subscribeMyGroup`;
+    - before the first answer → Checking, no door; "no group" → Open with the door; a ranked group → Locked with the Q3 words;
+    - **a failed read → Checking for good**, and the strip mounts as today;
+    - a failure after an answer → back to Checking;
+  - `LobbyTabbed` under a provider that says known: the group decides.
+
+**A2R-2, the transactional lock read is pinned.**
+- `loadoutWriterDb.js` records every read made through the transaction (`tx.get`, `tx.getAll`) as `state.txReads` (`:90-93`); the groups query carries its own description (`__query`, `:71`).
+- Each League writer row asserts `LOCK_READ_IN_TX` in `txReads`: `change-archetype` admitted (absent and explicit `loadout`) and refused, `equip-watchlist` refused and admitted, `unequip-watchlist` refused and admitted (`perGameLoadout.writers.test.js:139`, `:157`, `:217`, `:224`, `:243`, `:249`). That pins that all three writers hand the live transaction to the helper.
+- The unit stub's query now has a `.get()` that throws "the lock was read outside the transaction" (`api/_utils/perGameLoadout.test.js:36-42`), as a real Admin query has a `.get()`.
+- **The refuter's e2e row** (`perGameLoadout.e2e.test.js:162`):
+  - a finished group, `tournamentGroups/grp-old` (`complete`), in the player's history;
+  - the double's `afterTxBody` collects `readPaths`;
+  - an admitted League `change-archetype`;
+  - expects `agents/agent-p1b-1` and `tournamentGroups/grp-old` among the paths.
+- **§4 reworded:** "read in the transaction, so a group already written is seen consistently with the agent read". The review's own unverified "phantom" sentences (§1.3 and A2R-2) are marked withdrawn in the review file; nothing here carries them.
+
+**A2R-3 (a), the League card sees a game on the ranked record.**
+- In `deriveLoadoutCards` (`perGameLoadoutModel.js:62-68`), a non-empty `agent.activeBattleId` makes League LOCKED with `when: null` and `lockKind: 'battle'`.
+- The battle lock has its own words, A1's (`LOADOUT_COPY`): "Locked while a game is running." on the card, "locked while a game is running" in the armory's context, "Locked while a game is running" on Equip, and "Try sets on; nothing changes until the game ends." under it.
+- **Precedence:** the week lock, then the battle lock, then Checking, then Open.
+  - The writers read the week lock before `battle_active`, so during a normal League game the card keeps its dated line (a row pins it).
+  - A game on the ranked record locks League even while the week read is checking or failed: the server refuses either way.
+- BaggerBomb is never locked by it.
+- Rows: the model's two rows (open, checking and failed week reads each with a game; both locks at once), and the hub row (`CommandCenterHub.loadouts.jsdom.test.jsx`: a game on the ranked record, no ranked group: League Locked with the battle line, BaggerBomb still Next deploy, the armory's context, its Equip label and footnote, and the equip refused).
+- **`changeAdjustments` stays on `unlocked` (`useHubRuntime.js:179`), on purpose.** Its two neighbours moved to `ready` because the per-game cards now carry their own lock states; the Adjustments (Character settings) are part of neither loadout. They ride both games, like the Forge strategy (FD-10), and no card carries their lock. Today's gate is `lockedInGame`, which with the casual clones on is exactly `Boolean(agent.activeBattleId)` (`commandCenterLiveBattles.js:166`, `selectors/loadout.js:136`). After (a) it agrees with the League card: both lock on the same fact. So the review's inconsistency (Adjustments locked while League said Open) is gone, and A2 does not change the Adjustments' gate.
+
+**A2R-3 (b), the founder's ruling: no fallback to the ranked agent.**
+- `agentDeploy.js:228`: `if (PER_GAME_LOADOUT_ENABLED && cloneId === null) return { outcome: REFUSED, success: false, postIssued: false, error: 'casual_clone_unavailable', details: LOADOUT_COPY.deployCloneFailed }`. It runs after the clone ensure and the ownership check, before any POST.
+  - The ensure's non-ok answer and its thrown fetch both still call `markCloneFallback` first (the telemetry is kept).
+  - The line is "Couldn’t start the BaggerBomb game · try again". The strip reads a REFUSED result as a refusal with its line and its existing **Retry** (`attemptVocabulary.js` `refused()` and `displayForAttempt`); with `postIssued: false` it imposes no cooldown.
+- A literal `if` on the flag: with the flag off its test folds to `false` and Rollup drops the statement (the identity build proves it). The flag-off fallback is today's: `ceremonyDeployTarget.test.jsx` "fallback: clone ensure fails → target stays the RANKED agent" passes and now also pins its telemetry.
+- Rows (`ceremonyDeployTarget.test.jsx`, the flag as a getter): with the flag on, a non-ok answer and a thrown fetch each refuse before any POST (`decide` never called, the target reported once), with the line, `markCloneFallback` called with `http_500` / `threw`, and the strip's and the ceremony's translations a refusal with that line; a clone that resolves deploys the clone as before.
+- **Not changed (flag-off bytes):** the two `console.warn` texts still say "deploying the real agent" on the refused path. The flip PR fixes the words (§16).
+- **Outside the ruling, recorded:** the refusal only matters while `CASUAL_CLONE_CONCURRENCY_ENABLED` is on (it is). With it off, every BaggerBomb deploy is a ranked-record deploy (§16).
+
+**Q1:** `'loadouts'` joins the create rule's `hasAny` list (`firestore.rules:286`). The denied-birth table gains two rows (`masteryDenials.rules.mjs`): a BaggerBomb slot naming another player's list, and an empty `loadouts` map. Updates were already closed (the review's §1.7).
+
+**Q3:**
+- `formatLockDay` / `formatLockDayIso` (`src/constants/perGameLoadout.js:221-231`) give "Fri Nov 6", in ET.
+- The time formatter `formatLockEnd` is removed (it had no other reader).
+- The server's `leagueLockedBody` formats the same day (`api/_utils/perGameLoadout.js:54-59`).
+- The eight pins moved, and rows were added for the formatter (including an instant after midnight UTC that is still Friday in New York) and for the server's dated and undated messages.
+
+### 17.3 Recorded, not fixed here
+
+- **A2R-4, for separate tasking (a League-lifecycle task for the founder):** an abandoned ranked pre-battle group holds the lock forever. The only writer of `expired` is the training sweep (`expireStaleTrainingPods`, training-only by construction), and `voided` is reachable from `battle` only. A ranked group that forms and never advances stays `forming`. That already blocks a second registration through `selectMyGroup`, and with A2 it also freezes the League loadout, with a line dated to a week that has passed (or undated).
+- **A2R-8, accepted:** the resync's soft-delete scans the clone's whole `rules` collection on every deploy.
+- **A2R-9, carried:** noted at the two flags' own flip instructions. `COMPILER_ENABLED`'s doc block (`src/config/featureFlags.js`): check a clone deploy compiles against the clone's archetype. `MASTERY_ENFORCEMENT_ENABLED`'s pre-flip list (`api/_utils/masteryConfig.js`): decide whether a BaggerBomb archetype change revalidates the tempo dial.
+- **A2R-10, applied:** flag-off identity is cited from now on as the raw `diff -rq` of the two unminified dists, maps excluded (§17.5).
+
+### 17.4 Mutation table
+
+Each mutant is one edit on the mutant tree `~/pd-ci-a2fxx` at `636b7181`. The named files run (`TZ=UTC`, 6 workers); killed means a nonzero exit. The edited file is then restored from `git show HEAD:path` and the tree confirmed clean after each run. **Control (unmutated):** the union of the files, 10 files, 161 rows, exit 0. **Rules control:** `npm run test:rules`, 32 files, 631 rows, exit 0.
+
+| # | Mutant (the brief's wording) | Edit | Files run | Result | Rows that caught it |
+|---|---|---|---|---|---|
+| R1 | the lock read leaves the transaction | `tx.get(query)` → `query.get()` when the query has one (`api/_utils/perGameLoadout.js:34`) | the six lock files, 85 rows | **killed**, 8 rows (it **survived** the review) | the unit row and the training-pod row (the stub's `.get()` refuses); the e2e A2R-2 row; the League writer rows: change-archetype absent and explicit, refused while locked; equip and unequip league |
+| F1 | the League line treating `groupKnown=false` as open | `const checking = false` (`LeagueLoadoutLine.jsx:54`) | the two line files, 20 rows | **killed**, 8 rows | `groupKnown={false}` → Checking; no `groupKnown` fails closed; in both lobbies: before the first answer, a failed read, a failure after an answer |
+| F2a | a failed group read reading as open (phone) | the error arm sets `seatFor(uid)` (`LeagueHome.jsx:106`) | the two line files, 20 rows | **killed**, 2 rows | the phone lobby's "a failed read: Checking for good" and "a failure after an answer" |
+| F2b | a failed group read reading as open (desktop) | the same (`LeagueLobbyDesktop.jsx:299`) | the two line files, 20 rows | **killed**, 2 rows | the desktop lobby's same two rows |
+| F3 | the League card ignoring `activeBattleId` | `const battleLocked = false` (`perGameLoadoutModel.js:66`) | the model and the hub file, 45 rows | **killed**, 2 rows | the model's A2R-3 (a) row; the hub's A2R-3 (a) row |
+| F4 | the fallback deploying the ranked agent with the flag on | the refusal's test `PER_GAME_LOADOUT_ENABLED && …` → `false && …` (`agentDeploy.js:228`) | `ceremonyDeployTarget`, 28 rows | **killed**, 2 rows | flag on: "a non-ok answer: refused…" and "a thrown fetch: refused…" |
+| F5 | the fallback refusing with the flag off | the refusal without the flag (`agentDeploy.js:228`) | `ceremonyDeployTarget`, 28 rows | **killed**, 1 row | "fallback: clone ensure fails → target stays the RANKED agent (§7.3)" (`ceremonyDeployTarget.test.jsx:118`'s row) |
+| F6 | `loadouts` allowed on create, in the rules suite | `'loadouts'` dropped from the `hasAny` list (`firestore.rules:286`) | `npm run test:rules`, 32 files, 631 rows | **killed**, 2 rows | `masteryDenials.rules.mjs`: "CREATE with a per-game loadouts map … is DENIED", "CREATE with an empty loadouts map is DENIED" |
+
+**8 of 8 killed.** F2 is reported per lobby (the brief's one mutant, made in each place it lives).
+
+### 17.5 Checks, on the merged tree
+
+- **`main` merged:** `d503dd07df76ddfb1931935111d158c944f720ae` (PR #1028's merge: the activation observer flip). A clean merge; the one file both sides touched, `src/config/flagPinGuard.test.js`, merged without a conflict. Nothing in it touches this PR's logic.
+- **Flag-off identity (A2R-10's method):**
+  - Unminified Linux builds (`vite build --minify false`, WSL, Node 20.20.2, lockfile `40382e64edb6` on both) of `main` @ `d503dd07` and the code head `636b7181`, 107 files each.
+  - The raw `diff -rq` of the two dists with source maps excluded: **0 of 55 non-map files differ**, content hashes in the names included. The same held at the first fix commit's merge (`f2380897`) on the first build.
+  - Of the 49 differing maps, 47 differ only by the tree's directory name. 2 (`CommandCenterHub-CIfDFKLB.js.map`, `index-ok8k4FzL.js.map`) also differ in `sourcesContent`, because the source text changed while the emitted code did not (`vite.config.js` sets `sourcemap: true`), as at the review.
+- **Minified build:** `vite build` of `636b7181`, exit 0, 107 files.
+- **Flag-off server behaviour, unchanged for every touched path:**
+  - `api/_utils/perGameLoadout.js`'s message is built only inside the writers' `if (PER_GAME_LOADOUT_ENABLED && code === LEAGUE_LOCKED)`; the server's read list in `perGameLoadoutFlags.test.js` is unchanged and passes.
+  - `perGameLoadout.writers.flagOff.test.js` passes: with the flag off the three writers do today's ranked writes, take today's battle lock, store no slot and read no lock.
+  - `masteryConfig.js` changed in comments only.
+  - `firestore.rules`'s Q1 line is not flag-gated, by the ruling: it denies a key nothing writes today.
+  - On the client: `agentDeploy.js`'s flag-off fallback is pinned by its row, with its telemetry; the lobbies' flag-off arms are today's text (the bundle proves it).
+- **`lint:gate`:** exit 0 on `322a1726` (`636b7181` adds a test-file change only, which the full suite's census row covers).
+- **Full Linux suite** (WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, 8 workers) on `636b7181`: **exit 0, 1,314 files (1,306 passed, 8 skipped), 29,003 rows (28,914 passed, 89 skipped, 0 failed), 335 s.**
+  - The first run, on `f2380897`, failed two rows in `src/config/agentFormFlags.test.js`: the armory flag's read census, which did not list the lobbies' new reads. Fixed in `636b7181`.
+  - (The same two rows were also red in a Windows targeted run, hidden among the known Windows-only path and CRLF failures. Linux is the record.)
+- **Firestore rules suite** (the emulator, WSL, JDK 21, `npm run test:rules`) on `636b7181`: **exit 0, 32 files, 631 rows, all passed**, the two new denied-birth rows included.
+
+### 17.6 Readings for the founder (built this way; say if any is wrong)
+
+- **Q3's other strings.** The ruling gives the dated line; these follow it:
+  - the undated line "Locked until the week is scored.";
+  - the League lobby's line "Locked until the week is scored, after the close on Fri Nov 6" (no period, a mono label);
+  - the armory's context "locked until the week is scored, after the close on Fri Nov 6";
+  - Equip "Locked until the week is scored", with "After the close on Fri Nov 6. Try sets on; nothing changes until then." under it;
+  - the server's message "The League loadout is locked until the week is scored, after the close on Fri Nov 6. It changes between weeks."
+  - A2's "Set when you registered." is dropped from the dated and undated lines.
+- **The battle lock's words** are A1's: "Locked while a game is running." (no date: the game's end is not the week's).
+- **The refusal's line** uses a typographic apostrophe ("Couldn’t"), as the hub's other copy does.
+- **The League lobby with no provider** reads Checking (the context's default is `false`).
+
+### 17.7 What ran, where
+
+- Windows worktree `C:\Users\fashr\portfolio-duel\.claude\worktrees\armory-a2-review-fixes-a4be88`, branch `claude/armory-a2-review-fixes-a4be88`, reset to `2f8b4978` at the start and pushed by refspec to `claude/armory-a2`.
+- WSL: `~/pd-ci-a2fx` (the suites), `~/pd-ci-a2fxm` (`main` @ `d503dd07`, the identity base) and `~/pd-ci-a2fxx` (builds, mutants, rules). All were detached worktrees of `~/pd-ci` with `node_modules` linked to `~/pd-af0` (lockfile `40382e64edb6`), and runs went under `~/pd-a2fx-runs`. They were removed after the final checks, with the review's leftovers (`~/pd-ci-a2r`, `~/pd-ci-a2rm`, `~/pd-ci-a2rx`, `~/pd-a2r-runs`), under the suite lock; the session's closing message gives the space freed.
+- Scripts in the session scratchpad (not committed): the setup, step, identity, maps, mutant and cleanup runners.
