@@ -31,3 +31,22 @@ export function archetypeLines(archetype) {
     approach: known ? getArchetypeIdentity(archetype).disposition : null,
   };
 }
+
+/**
+ * Build A1 (the armory, board 6): a set's words — the display name, the one-line disposition (board 6's one-liner, the
+ * picker's subhead) and the reveal paragraph (board 6's long paragraph, the picker's body). The same identity tables
+ * through this same file, so the hub stays one §2.3 baseline line. A separate export, not a key on archetypeLines: an
+ * export nothing reads folds away, so the flag-off hub chunk is byte-identical to main's. As above, a code-id the
+ * identity table does not hold has a name and no words.
+ *
+ * @returns {{ name: string, approach: string|null, paragraph: string|null }}
+ */
+export function armoryLines(archetype) {
+  const known = typeof archetype === 'string' && Object.hasOwn(ARCHETYPE_IDENTITY, archetype);
+  const identity = known ? getArchetypeIdentity(archetype) : null;
+  return {
+    name: getArchetypeDisplayName(archetype),
+    approach: identity ? identity.disposition : null,
+    paragraph: identity ? identity.reveal : null,
+  };
+}

@@ -21,6 +21,11 @@
 // Mounted like the shells mount them: the sheets stay mounted between opens
 // so their exit animation plays, except the traits sheet, which is keyed by
 // `traitsEpoch` so it remounts on every open (its orphan-cleanup invariant).
+//
+// Agent form build A1: with AGENT_FORM_ARMORY_ENABLED on, the archetype
+// sheet is the armory (Armory.jsx) instead of the picker: board 6's dialog on
+// the wide compositions, nothing here on the phone, where the armory opens in
+// the hero's box. One literal ternary, so flag-off folds to today's picker.
 
 import React, { useState } from 'react';
 import { equipWatchlist, unequipWatchlist } from '../../services/agentService';
@@ -35,6 +40,8 @@ import { HUB_COPY as COPY } from './hub/hubCopy';
 import { HUB_SHEETS } from './hub/useHubSheets';
 import { LISTS_STATUS, symbolsOf } from './hub/selectors/loadout';
 import { HubButton } from './HubParts';
+import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
+import Armory from './Armory';
 
 /** The shipped sheets' two docks: the phone's bottom sheet, and the wide site's centred dialog. */
 export const SHEET_DOCK = Object.freeze({ PHONE: 'bottom', WIDE: 'center' });
@@ -132,7 +139,11 @@ export default function LoadoutSheets({ sheet, traitsEpoch, onClose, dock, agent
   return (
     <>
       <RecordSheet open={sheet === HUB_SHEETS.RECORD} onClose={onClose} dock={dock} agent={agent} agentLoading={agentLoading} accent={accent} />
-      <ArchetypePicker open={sheet === HUB_SHEETS.ARCHETYPE} onClose={onClose} agent={agent} accent={accent} dock={dock} />
+      {AGENT_FORM_ARMORY_ENABLED ? (
+        <Armory open={sheet === HUB_SHEETS.ARCHETYPE} onClose={onClose} agent={agent} dock={dock} />
+      ) : (
+        <ArchetypePicker open={sheet === HUB_SHEETS.ARCHETYPE} onClose={onClose} agent={agent} accent={accent} dock={dock} />
+      )}
       <WatchlistSheet
         open={sheet === HUB_SHEETS.WATCHLIST}
         onClose={onClose}

@@ -152,6 +152,9 @@ import GamesSection from './sections/GamesSection';
 import NextActionCard from './sections/NextActionCard';
 import { HubAgentFormContext } from './HubAgentForm';
 import { PhoneStage, ShadowStage } from './ShadowStage';
+import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
+import { PhoneArmoryScope, armoryHeroRead } from './Armory';
+import { HOLD_PHASES } from './hub/selectors/attemptVocabulary';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
 export function shadowSizeFor(composition, width) {
@@ -327,7 +330,18 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
     openAllActivity: sheet.open(HUB_SHEETS.ACTIVITY),
   };
   // Changing area before commitment cancels the charge (spec §5.5); the panels stay mounted while it charges.
-  const selectTab = (next) => { deploy?.cancelCharging(); setTab(next); };
+  // Agent form build A1 follow-up (founder ruling N2(d)): the phone armory is part of the page, so the page stays usable,
+  // but it steps aside, its preview discarded and nothing equipped (Armory.jsx PhoneArmoryScope), when the player goes
+  // elsewhere: a switch to another tab (the Loadout tab, where it opens, is no switch), a deploy starting (a hold charging
+  // or committed, whose phases the stage's status line shows, which the open armory folds away; or the strip's Retry),
+  // another sheet opening (the hub's one sheet slot takes it) or the hub going away (its state goes with it).
+  const selectTab = AGENT_FORM_ARMORY_ENABLED
+    ? (next) => { deploy?.cancelCharging(); if (next !== tab && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet(); setTab(next); }
+    : (next) => { deploy?.cancelCharging(); setTab(next); };
+  // While this renders, so a hold's first phase closes it: a sheet of this component's own state, set in its own render.
+  // The archetype sheet is not registered with the overlay stack while the armory is on (hub/useHubSheets.js), so the
+  // close releases nothing outside this component.
+  if (AGENT_FORM_ARMORY_ENABLED && (deploy?.holdPhase === HOLD_PHASES.CHARGING || deploy?.holdPhase === HOLD_PHASES.LOCKED) && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet();
   return (
     <HubLayoutContext.Provider value={composition}>
       <style data-hub-css="">{HUB_SCOPED_CSS}</style>
@@ -348,21 +362,42 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
       >
         <HubHeader phone dateText={shared.dateText} name={shared.name} onOpenProfile={actions.openProfile} onReportBug={actions.reportBug} onOpenMenu={actions.openMenu} unreadCount={runtime.unreadCount} />
         <div style={{ padding: '10px 14px 12px' }}>
-          <PhoneStage
-            size={shadowSizeFor(composition, width)}
-            tier={shadowTierFor(composition)}
-            status={shared.status}
-            processing={shared.display.processing}
-            words={statusWordsOf(deploy, shared)}
-            selectedArea={AREA_FOR_PHONE_TAB[tab]}
-            summaries={shared.summaries}
-            reducedMotion={shared.reducedMotion}
-            createdAttemptId={shared.createdAttemptId}
-            paused={coverOpen}
-            stillOnly={PHONE_SHADOW === 'still'}
-            holdPhase={deploy?.holdPhase ?? null}
-            progress={deploy?.progress ?? null}
-          />
+          {AGENT_FORM_ARMORY_ENABLED ? (
+            // Agent form build A1 (FD-8): the phone armory opens in the hero's box, so its state wraps the stage. With the
+            // armory on, PhoneStage is the armory's stage, which draws the agent form and never ShadowCanvas (the armory is
+            // on only while the hub's form is: agentFormFlags.test.js), so ShadowCanvas's tier and still switch go unread.
+            <PhoneArmoryScope open={sheet.sheet === HUB_SHEETS.ARCHETYPE} agent={runtime.agent} onClose={runtime.closeSheet} opener={sheet.opener} reducedMotion={shared.reducedMotion} width={width}>
+              <PhoneStage
+                size={shadowSizeFor(composition, width)}
+                status={shared.status}
+                processing={shared.display.processing}
+                words={statusWordsOf(deploy, shared)}
+                selectedArea={AREA_FOR_PHONE_TAB[tab]}
+                summaries={shared.summaries}
+                reducedMotion={shared.reducedMotion}
+                createdAttemptId={shared.createdAttemptId}
+                paused={coverOpen}
+                holdPhase={deploy?.holdPhase ?? null}
+                progress={deploy?.progress ?? null}
+              />
+            </PhoneArmoryScope>
+          ) : (
+            <PhoneStage
+              size={shadowSizeFor(composition, width)}
+              tier={shadowTierFor(composition)}
+              status={shared.status}
+              processing={shared.display.processing}
+              words={statusWordsOf(deploy, shared)}
+              selectedArea={AREA_FOR_PHONE_TAB[tab]}
+              summaries={shared.summaries}
+              reducedMotion={shared.reducedMotion}
+              createdAttemptId={shared.createdAttemptId}
+              paused={coverOpen}
+              stillOnly={PHONE_SHADOW === 'still'}
+              holdPhase={deploy?.holdPhase ?? null}
+              progress={deploy?.progress ?? null}
+            />
+          )}
         </div>
         <PhoneTabRow idBase={shared.idBase} tab={tab} onSelect={selectTab} />
         <div style={{ padding: '14px 14px 24px' }}>
@@ -378,7 +413,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
         placement={placement}
         onOpenLoadout={() => selectTab(PHONE_TABS.LOADOUT)}
         onOpenGame={actions.openGame}
-        onAction={actions.deployAction}
+        onAction={AGENT_FORM_ARMORY_ENABLED && actions.deployAction ? (kind) => { if (kind === DISPLAY_ACTIONS.RETRY && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet(); actions.deployAction(kind); } : actions.deployAction}
         holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.STRIP) ?? null}
         holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.STRIP ? deploy.holdPhase : null}
       />
@@ -455,7 +490,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
       reducedMotion={shared.reducedMotion}
       areaEvent={areaEvent}
       createdAttemptId={shared.createdAttemptId}
-      paused={coverOpen}
+      paused={AGENT_FORM_ARMORY_ENABLED ? coverOpen || sheet.sheet === HUB_SHEETS.ARCHETYPE : coverOpen}
       holdPhase={deploy?.holdPhase ?? null}
       progress={deploy?.progress ?? null}
     />
@@ -610,8 +645,11 @@ function ConnectedHub({ site, hub, sections }) {
   const coverOpen = deployAttempt?.snapshot?.overlayOpen === true;
   // Agent form build S1: the armored hero reads the same agent read the Loadout shows, through this scope (a prop
   // through the shells would change today's elements; flag-off this ternary folds to the return below it).
+  // Agent form build A1 follow-up (founder ruling N1): with the armory on, outside a game Shadow is neutral, so the hero
+  // (wide and phone) reads the same agent wearing nothing: bare Shadow whatever its archetype, and Shadow's own label. The
+  // Loadout reads `agentRead` itself, so its Archetype card still names the archetype; only the armory's preview dresses.
   return AGENT_FORM_HUB_ENABLED ? (
-    <HubAgentFormContext.Provider value={readers.agent}>
+    <HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>
       {site === HUB_SITES.MOBILE
         ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
         : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />}

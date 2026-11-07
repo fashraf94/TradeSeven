@@ -12,10 +12,10 @@
 // read outside a literal ternary would each break it.
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AGENT_FORM_BATTLE_ENABLED, AGENT_FORM_HUB_ENABLED, AGENT_FORM_LEAGUE_ENABLED } from './agentFormFlags.js';
+import { AGENT_FORM_ARMORY_ENABLED, AGENT_FORM_BATTLE_ENABLED, AGENT_FORM_HUB_ENABLED, AGENT_FORM_LEAGUE_ENABLED } from './agentFormFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(path.join(HERE, p), 'utf8').replace(/\r\n/g, '\n');
@@ -52,6 +52,105 @@ describe('AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and AGENT_FORM_LEAGU
     expect(guard).not.toMatch(/\n {2}AGENT_FORM_BATTLE_ENABLED:\n/);
     expect(guard).not.toMatch(/\n {2}AGENT_FORM_LEAGUE_ENABLED:\n/);
     expect(guard).toMatch(/'src\/config\/agentFormFlags\.js',/);
+  });
+});
+
+// Build A1 — THE ARMORY'S PIN (BUILD_RULES §2). Dark by design until the founder's phone test: flipped only on the
+// never-merge smoke branch. Every read is a literal ternary that Rollup folds, so flag-off the build is main's, byte for
+// byte (the build report's masked comparison), and agentForm.flagOffBundle.test.js reads what each module leaves.
+describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by design', () => {
+  it('the armory is dark on main', () => {
+    expect(AGENT_FORM_ARMORY_ENABLED).toBe(false);
+  });
+
+  it('it is the module\'s literal, not in featureFlags.js, and flagPinGuard lists it as dark by design', () => {
+    expect(FLAGS).toMatch(/^export const AGENT_FORM_ARMORY_ENABLED = (?:true|false);$/m);
+    expect(read('featureFlags.js')).not.toMatch(/AGENT_FORM_ARMORY/);
+    expect(read('flagPinGuard.test.js')).toMatch(/\n {2}AGENT_FORM_ARMORY_ENABLED:\n/);
+  });
+
+  it('the armory is on only while the hub\'s agent form is (it draws it): a hub rollback with the armory on reds here', () => {
+    // The hub flag is the forms' kill switch (F2). The armory renders the hub's agent form, so a rollback of the hub
+    // flag must take the armory with it, in the same commit.
+    expect(!AGENT_FORM_ARMORY_ENABLED || AGENT_FORM_HUB_ENABLED).toBe(true);
+  });
+
+  it('every read is a literal ternary on the flag, at exactly these sites', () => {
+    const at = (rel) => readsOf(rel, 'AGENT_FORM_ARMORY_ENABLED');
+    const hub = '../components/CommandCenter/';
+    const IMPORT = "import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';";
+    expect(at('../components/AgentForm/agentFormSpec.js')).toEqual([
+      IMPORT,
+      "pal: opponent ? 'copper' : AGENT_FORM_ARMORY_ENABLED && allegiance === UNLIT ? 'unlit' : 'teal',",
+      "...(AGENT_FORM_ARMORY_ENABLED && coreStage === SET_ALONE ? setAloneKeys(framing, kind) : framing === 'tight' ? { zoom: TIGHT_ZOOM[kind] } : null),",
+    ]);
+    expect(at(`${hub}CommandCenterHub.jsx`)).toEqual([
+      IMPORT,
+      // The follow-up's N2(d): the phone armory steps aside for a tab switch, a hold and the strip's Retry.
+      'const selectTab = AGENT_FORM_ARMORY_ENABLED',
+      // The fix pass (review AR-9): the hold's phase compared by name, so a stored 'idle' could never close it.
+      'if (AGENT_FORM_ARMORY_ENABLED && (deploy?.holdPhase === HOLD_PHASES.CHARGING || deploy?.holdPhase === HOLD_PHASES.LOCKED) && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet();',
+      '{AGENT_FORM_ARMORY_ENABLED ? (',
+      'onAction={AGENT_FORM_ARMORY_ENABLED && actions.deployAction ? (kind) => { if (kind === DISPLAY_ACTIONS.RETRY && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet(); actions.deployAction(kind); } : actions.deployAction}',
+      'paused={AGENT_FORM_ARMORY_ENABLED ? coverOpen || sheet.sheet === HUB_SHEETS.ARCHETYPE : coverOpen}',
+      // The follow-up's N1: the hero's read is bare Shadow with the armory on.
+      '<HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>',
+    ]);
+    expect(at(`${hub}LoadoutSheets.jsx`)).toEqual([IMPORT, '{AGENT_FORM_ARMORY_ENABLED ? (']);
+    expect(at(`${hub}ShadowStage.jsx`)).toEqual([IMPORT, 'return AGENT_FORM_ARMORY_ENABLED ? (']);
+    // The follow-up's N1 retired A1's `instant` read: the hero's view is main's file again, and reads no armory flag.
+    expect(at(`${hub}HubAgentForm.jsx`)).toEqual([]);
+    expect(at(`${hub}hub/useHubSheets.js`)).toEqual([
+      "import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';",
+      'if (AGENT_FORM_ARMORY_ENABLED ? kind !== HUB_SHEETS.ARCHETYPE && LEGACY.has(kind) : LEGACY.has(kind)) {',
+    ]);
+    // The armory itself never reads the flag: it is reached only through those ternaries.
+    expect(at(`${hub}Armory.jsx`)).toEqual([]);
+    // The fix pass (founder rulings D-B, D-C, Nov 6, 2026): the core's level and its breath, everywhere the core draws, so
+    // the engine reads the flag too, each read a literal ternary whose else arm is main's expression, textually.
+    const ENGINE_IMPORT = "import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';";
+    const engine = '../components/AgentForm/engine/';
+    expect(at(`${engine}core.js`)).toEqual([
+      ENGINE_IMPORT,
+      'coreMesh.scale.setScalar(C.core * beacon); AGENT_FORM_ARMORY_ENABLED ? coreMesh.material.color.set(pal.core).multiplyScalar(S.level * (S.lifted || 1)) : coreMesh.material.color.set(pal.core);',
+      'glow.material.color.set(pal.near); glow.material.opacity = AGENT_FORM_ARMORY_ENABLED ? clamp(.95 * S.bright * hot * S.level, 0, 1) : clamp(.95 * S.bright * hot, 0, 1); glow.scale.setScalar(.7 * C.glow * beacon * (1 + .08 * Math.sin(t * 1.3)) * hot * (S.lifted || 1));',
+      'halo.material.color.set(pal.near); halo.material.opacity = AGENT_FORM_ARMORY_ENABLED ? clamp(.18 * S.bright * hot * S.level, 0, 1) : clamp(.18 * S.bright * hot, 0, 1);',
+    ]);
+    expect(at(`${engine}form.js`)).toEqual([
+      ENGINE_IMPORT,
+      'if (F.brain) F.brain.update(t, AGENT_FORM_ARMORY_ENABLED ? { ...S, bright: S.bright * coreLift, lifted: coreLift, level: coreLevel(t, spec.held === true) } : coreLift === 1 ? S : { ...S, bright: S.bright * coreLift, lifted: coreLift }, pal, camDir);',
+    ]);
+    expect(at(`${engine}engine.js`)).toEqual([
+      ENGINE_IMPORT,
+      "poseForm(F, AGENT_FORM_ARMORY_ENABLED ? { ...spec, held: into === 'still' || !animates(v) } : spec, t, C, palette);",
+    ]);
+    // the breath's numbers and curve are the vocabulary's, which reads no flag
+    expect(at(`${engine}vocab.js`)).toEqual([]);
+  });
+
+  it('no other source file reads it', () => {
+    const SRC = path.resolve(HERE, '..');
+    const readers = [];
+    const walk = (abs) => {
+      for (const ent of readdirSync(abs, { withFileTypes: true })) {
+        const child = path.join(abs, ent.name);
+        if (ent.isDirectory()) { if (ent.name !== 'node_modules') walk(child); continue; }
+        if (!/\.[mc]?jsx?$/.test(ent.name) || /\.test\.[mc]?jsx?$/.test(ent.name)) continue;
+        if (/\bAGENT_FORM_ARMORY_ENABLED\b/.test(strip(readFileSync(child, 'utf8')))) readers.push(path.relative(SRC, child).split(path.sep).join('/'));
+      }
+    };
+    walk(SRC);
+    expect(readers.sort()).toEqual([
+      'components/AgentForm/agentFormSpec.js',
+      'components/AgentForm/engine/core.js',
+      'components/AgentForm/engine/engine.js',
+      'components/AgentForm/engine/form.js',
+      'components/CommandCenter/CommandCenterHub.jsx',
+      'components/CommandCenter/LoadoutSheets.jsx',
+      'components/CommandCenter/ShadowStage.jsx',
+      'components/CommandCenter/hub/useHubSheets.js',
+      'config/agentFormFlags.js',
+    ]);
   });
 });
 

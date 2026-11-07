@@ -148,6 +148,8 @@ const DARK_BY_DESIGN = {
   // and its pin, and the entry here stays out, because the flag is now a live kill switch, not dark by design.
   // AGENT_FORM_LAB_ENABLED stays listed above. Re-adding one while it ships true fails the DARK_BY_DESIGN integrity test
   // below.
+  AGENT_FORM_ARMORY_ENABLED:
+    'Agent form build A1 — the armory in place of the hub\'s archetype picker (Phase 0 armory report §9 A1). Stays false on main until the founder\'s phone test: it is flipped only on a never-merge smoke branch; flag-off every read folds and the build is byte-identical to main (agentFormFlags.test.js)',
   COMMAND_CENTER_SYNC_ENABLED:
     'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
   // COMMAND_CENTER_HUB_ENABLED intentionally ABSENT: the Command Center hub

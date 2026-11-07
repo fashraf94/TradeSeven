@@ -164,6 +164,8 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/ShadowStage.jsx',
   // Agent form build S1: the armored hero, on the vocabulary from birth.
   'src/components/CommandCenter/HubAgentForm.jsx',
+  // Agent form build A1: the armory, on the vocabulary from birth.
+  'src/components/CommandCenter/Armory.jsx',
   'src/components/CommandCenter/ShadowStill.jsx',
   'src/components/CommandCenter/__fixtures__/hubLayoutFixtures.js',
   'src/components/CommandCenter/__fixtures__/hubTestKit.js',

@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { Parser } from 'acorn';
 import acornJsx from 'acorn-jsx';
 import { describe, expect, it } from 'vitest';
-import { HUB_COPY } from './hub/hubCopy';
+import { ARMORY_COPY, HUB_COPY } from './hub/hubCopy';
 import { HUB_GATE_COPY } from './hubGateCopy';
 
 const JsxParser = Parser.extend(acornJsx());
@@ -485,5 +485,82 @@ describe('S7: the status line\'s words, exactly (ruling R-S7-7)', () => {
     expect(HUB_COPY.shadow.states).toEqual({ ambient: 'ambient', still: 'still', processing: 'processing' });
     expect(HUB_COPY.shadow.imageLabel('processing', 'Partnership')).toBe('Shadow — processing; Partnership selected');
     for (const w of [HUB_COPY.shadow.statusLiveOne, HUB_COPY.shadow.statusLiveMany(2), HUB_COPY.shadow.statusIdleUnknown]) expect(w).not.toMatch(/%/);
+  });
+});
+
+// ── Agent form build A1: the armory's words (D4, FD-1, FD-6) ──────────────────────────────────────────────────────────
+// ARMORY_COPY is in hub/hubCopy.js, so the rows above already read every literal of it (no digit but the spec's, no
+// banned claim). These rows add what the rulings forbid the armory in particular: board 6 drew battle counts, stages and
+// growth tiles ("Equipped · 31 battles", "3 battles · stage 1", "Never worn"); D4 defers all growth display and FD-6
+// keeps the record facts for A4, so none of those words may be in its copy, and none of its functions takes a count.
+describe('A1: the armory\'s copy carries no count, stage or growth (D4, FD-6), and says what Equip does (FD-1)', () => {
+  const TABLE = 'export const ARMORY_COPY = Object.freeze({';
+  /** ARMORY_COPY's own source, from its declaration to its close. */
+  const armorySource = (code) => {
+    const start = code.indexOf(TABLE);
+    expect(start, 'ARMORY_COPY is no longer declared in hub/hubCopy.js').toBeGreaterThan(-1);
+    return code.slice(start, code.indexOf('\n});\n', start) + 4);
+  };
+  // A count reads as a digit or a plural: "into battle" and "a game already running" are not counts.
+  const GROWTH = [
+    /\d/, /\bstages?\b/i, /\bbattles\b/i, /\bgames\b/i, /\blevels?\b/i, /\bxp\b/i, /\bthresholds?\b/i, /\bworn\b/i,
+    /\bwins?\b/i, /\blosses\b/i, /\brecord\b/i, /\bmastery\b/i, /\bprogress/i, /\bcore\b/i,
+  ];
+  const growthIn = (strs) => strs.flatMap((s) => GROWTH.filter((re) => re.test(s)).map((re) => `${re.source}: ${s}`));
+  const sampled = () => strings(ARMORY_COPY).map((s) => s.replace(/ARG\d+/g, ''));
+
+  it('no literal in its source and no sampled output holds a digit or a growth word', () => {
+    const literals = sourceStrings(armorySource(read(COPY_TABLES[0])));
+    expect(literals.length).toBeGreaterThan(10);
+    expect(growthIn(literals)).toEqual([]);
+    expect(growthIn(sampled())).toEqual([]);
+  });
+
+  it('no function of it takes a count: each takes one argument, a set\'s name', () => {
+    const fns = Object.entries(ARMORY_COPY).filter(([, v]) => typeof v === 'function');
+    expect(fns.map(([k]) => k).sort()).toEqual(['dialReset', 'equip', 'previewingOver']);
+    for (const [k, fn] of fns) expect(fn.length, k).toBe(1);
+  });
+
+  it('the status line is "Equipped" or "Previewing" only (FD-6)', () => {
+    expect(ARMORY_COPY.equipped).toBe('Equipped');
+    expect(ARMORY_COPY.previewing).toBe('Previewing');
+    expect(ARMORY_COPY.previewingOver('Trend Follower')).toBe('Previewing · Equipped set is Trend Follower');
+  });
+
+  it('FD-1, as N3 rewords it (Nov 6, 2026): the footnote is the founder\'s line; nothing in the armory promises "next deploy"', () => {
+    expect(ARMORY_COPY.footnote).toBe('Equipped now · a game already running keeps the armor it deployed with.');
+    // N3 replaces FD-1's first clause: with N1 the hub's Shadow stays bare after an equip, so the line no longer says it wears it
+    expect(ARMORY_COPY.footnote).not.toMatch(/wears it now/i);
+    expect([...sourceStrings(armorySource(read(COPY_TABLES[0]))), ...sampled()].filter((s) => /next deploy/i.test(s))).toEqual([]);
+  });
+
+  it('N2(b), Nov 4, 2026: the footnote is FD-1\'s sentence alone; board 6\'s "Partnership and shared research stay with Shadow." waits for A3', () => {
+    const literals = sourceStrings(armorySource(read(COPY_TABLES[0])));
+    expect([...literals, ...sampled()].filter((s) => /partnership|shared research/i.test(s))).toEqual([]);
+    expect(Object.keys(ARMORY_COPY)).not.toContain('stays');
+  });
+
+  it('N2(a), Nov 4, 2026: a refused equip has the armory\'s own lock line, which says nothing changed; the Loadout card keeps its own', () => {
+    expect(ARMORY_COPY.locked).toBe('Locked while a game is running · nothing changed. Try again when it ends.');
+    expect(ARMORY_COPY.locked).not.toBe(HUB_COPY.loadout.nextDeployLocked);
+    expect(ARMORY_COPY.locked).not.toMatch(/next deploy|apply/i);
+  });
+
+  it('the rows bite: a count or a stage planted in the status copy is caught, as a literal and as an argument the function writes', () => {
+    const code = read(COPY_TABLES[0]);
+    const from = "  previewingOver: (name) => `Previewing · Equipped set is ${name}`,";
+    expect(code.split(from), 'the plant\'s anchor moved').toHaveLength(2);
+    for (const to of [
+      "  previewingOver: (name) => `Previewing · Equipped set is ${name} · 3 battles`,",
+      "  previewingOver: (name) => `Previewing · Equipped set is ${name} · stage 1`,",
+      "  previewingOver: (name, n) => `Previewing · ${n} battles as ${name}`,",
+    ]) {
+      expect(growthIn(sourceStrings(armorySource(code.replace(from, to)))), to).not.toEqual([]);
+    }
+    // board 6's own fixture words, and the Phase 0 report's example, each caught
+    for (const board of ['Equipped · 31 battles', 'Never worn', '3 battles · stage 1', 'Shadow’s core · 24 battles', '12 battles as the Contrarian']) {
+      expect(growthIn([board]), board).not.toEqual([]);
+    }
   });
 });

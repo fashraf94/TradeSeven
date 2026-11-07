@@ -155,3 +155,35 @@ export const RESPONSE_PARTS = Object.freeze(['armor', 'core', 'all']);
 export function responseLift(ms) {
   return 1 + RESPONSE_PEAK * Math.sin(Math.PI * clamp(ms / RESPONSE_MS, 0, 1));
 }
+
+// ── the core's level and its breath (A1 fix pass; founder rulings D-B and D-C, Nov 6, 2026) ──
+// Behind AGENT_FORM_ARMORY_ENABLED (read in core.js, form.js and engine.js, each a literal ternary that folds away), so
+// with the flag off nothing here is reached and the engine chunk is main's. With it on, the core (its sphere, its glow and
+// its halo, never the threads or the armor) draws at CORE_LEVEL of today's light, and breathes: down to 1 − BREATH_DEPTH
+// of that and back, once every BREATH_S seconds, on the view's own clock (the `t` a frame is posed at), so a frame is
+// still a pure function of (spec, t) and the breath stops whenever the view does not draw (hidden, offscreen, paused).
+// A view that does not move (reduced motion, the still rate, the cached still) holds it at its midpoint. The moods and
+// R19's response multiply on top of it. Each default is one line, so a founder tune is a one-line change.
+
+/**
+ * D-B: the core at rest (the breath's top), as a share of today's light at its source. On screen today's centre is blown
+ * out past white (its sphere, its additive glow and the CSS bloom sum above 1), so the source must drop further than the
+ * picture does: measured in headless Edge (the A1 report §15), .6 here draws the core and its glow 26 % darker at the
+ * breath's top and shrinks the clipped white from 438 px² to about 100; .75 here would draw it only 15 % darker, the
+ * white disc unchanged.
+ */
+export const CORE_LEVEL = .6;
+/** D-C: the breath's cycle, in seconds. */
+export const BREATH_S = 4.5;
+/** D-C: how far the breath dips, as a share of the toned level (to 85 % of it). */
+export const BREATH_DEPTH = .15;
+
+/** The breath at `t` seconds: 1 at the top, 1 − BREATH_DEPTH at the bottom, on a raised cosine (eased both ways). */
+export function breath(t) {
+  return 1 - BREATH_DEPTH * (1 - Math.cos(TAU * t / BREATH_S)) / 2;
+}
+
+/** The core's level for a frame: toned, and breathing on the view's clock while the view moves; at the breath's midpoint when it does not. */
+export function coreLevel(t, held) {
+  return CORE_LEVEL * (held ? 1 - BREATH_DEPTH / 2 : breath(t));
+}

@@ -126,6 +126,7 @@
     "src/components/CommandCenter/PhoneTabs.jsx": {},
     "src/components/CommandCenter/ShadowStage.jsx": {},
     "src/components/CommandCenter/HubAgentForm.jsx": {},
+    "src/components/CommandCenter/Armory.jsx": {},
     "src/components/CommandCenter/ShadowStill.jsx": {},
     "src/components/CommandCenter/__fixtures__/hubLayoutFixtures.js": {},
     "src/components/CommandCenter/__fixtures__/hubTestKit.js": {},

@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import AgentForm from '../components/AgentForm/AgentForm';
-import { AGENT_MOODS, ARCHETYPE_CODE_IDS, formForArchetype, hasWebGL } from '../components/AgentForm/agentFormSpec';
+import { AGENT_MOODS, ARCHETYPE_CODE_IDS, SET_ALONE, UNLIT, formForArchetype, hasWebGL } from '../components/AgentForm/agentFormSpec';
 import { loadAgentFormEngine } from '../components/AgentForm/loadEngine';
 import { cssVar } from '../theme/cssTokens';
 import { readoutLine, lastSecondLine } from './agentFormLabReadout';
@@ -30,6 +30,13 @@ const PRESETS = Object.freeze([
   { id: 'chat40', label: '12 at 40', views: Array(12).fill(40), allegiance: 'player', formMode: 'all' },
   // The four glows side by side (2 × 2 fits a 390 px phone; bloom draws from 160 px up), to pick one by eye.
   { id: 'blooms', label: '4 blooms side by side', views: [180, 180, 180, 180], allegiance: 'player', formMode: 'one', blooms: ['filter', 'css', 'webgl', 'off'] },
+  // Build A1 (FD-9, decided on the founder's phone): the armory's two layouts. The first view is Shadow wearing the Form
+  // control's set, at the Rate control's rate; the six after it are the sets on their hooks, alone and pewter but for
+  // the one Shadow wears. 'stills': the six are stills (the armory as built); 'live': all seven at the Rate control's.
+  { id: 'armoryPhone', label: 'Armory phone: 1 live at 160 + 6 stills at 48', views: [160, ...Array(6).fill(48)], allegiance: 'player', formMode: 'one', armory: 'stills' },
+  { id: 'armoryDesk', label: 'Armory desktop: 1 live at 300 + 6 stills at 112', views: [300, ...Array(6).fill(112)], allegiance: 'player', formMode: 'one', armory: 'stills' },
+  { id: 'armoryPhoneLive', label: 'Armory phone, all live: 160 + 6 at 48', views: [160, ...Array(6).fill(48)], allegiance: 'player', formMode: 'one', armory: 'live' },
+  { id: 'armoryDeskLive', label: 'Armory desktop, all live: 300 + 6 at 112', views: [300, ...Array(6).fill(112)], allegiance: 'player', formMode: 'one', armory: 'live' },
 ]);
 const BLOOM_NAMES = Object.freeze({ filter: 'canvas filter (design)', css: 'CSS-blurred overlay', webgl: 'WebGL', off: 'off' });
 const WINDOW_MS = 300000;
@@ -67,6 +74,7 @@ export default function AgentFormLab() {
   const [batched, setBatched] = useState(false);
   const [bloom, setBloom] = useState('filter');
   const [bloomSet, setBloomSet] = useState(null);
+  const [armory, setArmory] = useState(null);
   const [rate, setRate] = useState('live');
   const [motion, setMotion] = useState('phone');
   const [equipped, setEquipped] = useState(true);
@@ -75,8 +83,8 @@ export default function AgentFormLab() {
   const reducedMotion = motion === 'phone' ? phoneReduced : motion === 'on';
   const readoutRef = useRef(null), statusRef = useRef(new Map()), engineRef = useRef(null), samplesRef = useRef([]), lastRef = useRef({});
 
-  const applyPreset = (p) => { setPreset(p.id); setViews(p.views); setAllegiance(p.allegiance); setFormMode(p.formMode); setBloomSet(p.blooms || null); if (p.views.length > 1) setDrawPath('shared'); samplesRef.current = []; };
-  const setCustom = (count, size) => { setPreset('custom'); setBloomSet(null); setViews(Array(count).fill(size)); if (count > 1) setDrawPath('shared'); samplesRef.current = []; };
+  const applyPreset = (p) => { setPreset(p.id); setViews(p.views); setAllegiance(p.allegiance); setFormMode(p.formMode); setBloomSet(p.blooms || null); setArmory(p.armory || null); if (p.views.length > 1) setDrawPath('shared'); samplesRef.current = []; };
+  const setCustom = (count, size) => { setPreset('custom'); setBloomSet(null); setArmory(null); setViews(Array(count).fill(size)); if (count > 1) setDrawPath('shared'); samplesRef.current = []; };
   const single = views.length === 1;
 
   // The frame samples and the readout, written straight to the DOM every 500 ms (no React render per frame).
@@ -108,19 +116,25 @@ export default function AgentFormLab() {
   }, []);
 
   const startIndex = Math.max(0, FORMS.indexOf(form));
-  const layout = useMemo(() => views.map((size, i) => ({
-    key: `${i}`, size,
-    archetype: formMode === 'all' ? FORMS[(startIndex + i) % FORMS.length] : form,
-    allegiance: allegiance === 'both' ? (i % 2 ? 'opponent' : 'player') : allegiance,
-    bloom: bloomSet ? bloomSet[i % bloomSet.length] : bloom,
-  })), [views, formMode, form, startIndex, allegiance, bloomSet, bloom]);
+  const layout = useMemo(() => views.map((size, i) => {
+    // An armory preset's sets (build A1): every view after the first is one of the six, alone, pewter unless Shadow wears it.
+    const set = armory && i > 0 ? ARCHETYPE_CODE_IDS[(i - 1) % ARCHETYPE_CODE_IDS.length] : null;
+    return {
+      key: `${i}`, size,
+      archetype: set || (formMode === 'all' ? FORMS[(startIndex + i) % FORMS.length] : form),
+      allegiance: set ? (set === form ? 'player' : UNLIT) : allegiance === 'both' ? (i % 2 ? 'opponent' : 'player') : allegiance,
+      bloom: bloomSet ? bloomSet[i % bloomSet.length] : bloom,
+      coreStage: set ? SET_ALONE : coreStage,
+      rate: set && armory === 'stills' ? 'still' : rate,
+    };
+  }), [views, formMode, form, startIndex, allegiance, bloomSet, bloom, armory, coreStage, rate]);
   lastRef.current.rate = rate;
   lastRef.current.keys = layout.map((v) => `${v.key}-${drawPath}`);
 
   const formName = (id) => (names ? names[formForArchetype(id)] : null) || (id === 'none' ? 'Shadow (bare)' : id);
   const settingsLine = () => [
     `preset ${preset}`, `views ${views.length}× ${[...new Set(views)].join('/')} px`, `form ${formMode === 'all' ? 'all seven' : formForArchetype(form)}`, `mood ${mood}`, `core ${coreStage}`, `armor ${armorStage}`,
-    `allegiance ${allegiance}`, `path ${drawPath}`, `batched ${batched ? 'on' : 'off'}`, `bloom ${bloomSet ? `side by side (${bloomSet.join('/')})` : bloom}`, `rate ${rate}`, `reduced motion ${reducedMotion ? 'on' : 'off'} (${motion})`, `equipped ${equipped ? 'yes' : 'no'}`,
+    `allegiance ${allegiance}`, `armory sets ${armory || 'none'}`, `path ${drawPath}`, `batched ${batched ? 'on' : 'off'}`, `bloom ${bloomSet ? `side by side (${bloomSet.join('/')})` : bloom}`, `rate ${rate}`, `reduced motion ${reducedMotion ? 'on' : 'off'} (${motion})`, `equipped ${equipped ? 'yes' : 'no'}`,
   ].join(' · ');
   const copyReading = async () => {
     const L = lastRef.current.lines || {}, info = L.info || {};
@@ -147,8 +161,8 @@ export default function AgentFormLab() {
       <div data-agent-form-stage="" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', alignItems: 'center', padding: '14px 8px' }}>
         {layout.map((v) => (
           <figure key={`${v.key}-${drawPath}`} style={{ margin: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-            <AgentForm archetype={v.archetype} mood={mood} coreStage={coreStage} armorStage={armorStage} allegiance={v.allegiance} size={v.size}
-              reducedMotion={reducedMotion} bloom={v.bloom} drawPath={single ? drawPath : 'shared'} batched={batched} rate={rate} equipped={equipped}
+            <AgentForm archetype={v.archetype} mood={mood} coreStage={v.coreStage} armorStage={armorStage} allegiance={v.allegiance} size={v.size}
+              reducedMotion={reducedMotion} bloom={v.bloom} drawPath={single ? drawPath : 'shared'} batched={batched} rate={v.rate} equipped={equipped}
               onStatus={(s) => { statusRef.current.set(`${v.key}-${drawPath}`, s); }} />
             {bloomSet && <figcaption data-agent-form-caption="" style={{ fontSize: 12, color: cssVar('ink-2') }}>{BLOOM_NAMES[v.bloom]}</figcaption>}
           </figure>

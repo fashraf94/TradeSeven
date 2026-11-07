@@ -3,6 +3,8 @@
 // AgentForm's props → the engine's view spec. Pure, and free of three.js, so the wrapper decides its still
 // and its labels before (or without) loading the engine.
 
+import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
+
 /**
  * App archetype code ids (src/data/archetypeDisplay.js:18-25) → the engine's armor sets. A LOCAL literal on
  * purpose (Phase 0 report §4): importing a legacy archetype table would be a new importer for the §2.3
@@ -47,6 +49,23 @@ export function stageIndex(stage) {
 const TIGHT_ZOOM = /* @__PURE__ */ Object.freeze({ none: .9, trend: 1, contra: .95, spec: 1, preserve: 1, divers: 1, fund: .95 });
 
 /**
+ * The armory's two looks for a set on its hook (build A1, board 6; Phase 0 armory report §7.2), behind
+ * AGENT_FORM_ARMORY_ENABLED. Both are values of props the wrapper already takes, on purpose: a new prop or a new spec key
+ * would change the flag-off bytes of every chunk the wrapper is in, and a value is read inside a literal ternary that
+ * folds away.
+ *   - `coreStage: SET_ALONE` (0) draws the set alone: no brain, no core (the engine's `brain: false`).
+ *   - `allegiance: 'unlit'` draws it in the pewter, unworn palette (the engine's `pal: 'unlit'`). Only the equipped set
+ *     is lit; it keeps the player's teal.
+ */
+export const SET_ALONE = 0;
+export const UNLIT = 'unlit';
+
+/** The spec keys a set alone adds: no brain, and the tight framing's zoom when that is asked for too. */
+function setAloneKeys(framing, kind) {
+  return framing === 'tight' ? { brain: false, zoom: TIGHT_ZOOM[kind] } : { brain: false };
+}
+
+/**
  * The engine spec for AgentForm's props. Allegiance is fixed light, never the player's colour: the player
  * is teal, the opponent copper and mirrored (the key light swaps sides with it). `facing` overrides the mirror where a
  * layout has a direction of its own (build S2, ruling R14: the League's lanes).
@@ -59,11 +78,11 @@ export function agentFormSpec({ archetype, mood = 'idle', coreStage = 1, armorSt
     state: AGENT_MOODS.includes(mood) ? mood : 'idle',
     core: stageIndex(coreStage),
     armor: stageIndex(armorStage),
-    pal: opponent ? 'copper' : 'teal',
+    pal: opponent ? 'copper' : AGENT_FORM_ARMORY_ENABLED && allegiance === UNLIT ? 'unlit' : 'teal',
     face: looksLeft ? -1 : 1,
     size: Number.isFinite(size) && size > 0 ? size : 200,
     seed: Number.isInteger(seed) ? seed : 1,
-    ...(framing === 'tight' ? { zoom: TIGHT_ZOOM[kind] } : null),
+    ...(AGENT_FORM_ARMORY_ENABLED && coreStage === SET_ALONE ? setAloneKeys(framing, kind) : framing === 'tight' ? { zoom: TIGHT_ZOOM[kind] } : null),
   };
 }
 

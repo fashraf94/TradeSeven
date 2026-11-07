@@ -81,7 +81,9 @@ describe('flag off: today\'s ShadowCanvas at both sites', () => {
 describe('the hero\'s read is the readers\' agent read — the one the Loadout shows', () => {
   it('CommandCenterHub provides readers.agent, the same read handed to both shells as agentRead', () => {
     const hub = readFileSync('src/components/CommandCenter/CommandCenterHub.jsx', 'utf8').replace(/\r\n/g, '\n');
-    expect(hub).toContain('<HubAgentFormContext.Provider value={readers.agent}>');
+    // Agent form build A1 follow-up (founder ruling N1): with the armory on, the same read made bare (no archetype);
+    // with it off, a literal ternary that folds to readers.agent, as before.
+    expect(hub).toContain('<HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>');
     expect(hub.match(/agentRead=\{readers\.agent\}/g)).toHaveLength(4);
   });
 });

@@ -853,7 +853,8 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     const wrapper = stripComments(read(`${AGENT_FORM_DIR}/AgentForm.jsx`));
     expect(wrapper).toMatch(/const drawRate = rateForSize\(rate, spec\.size\);/);
     const FRAME_READ = /\b(?:onFrame|performance|requestAnimationFrame|fps|cost|calls)\b/;
-    for (const rel of [HUB_FILE('HubAgentForm.jsx'), ...AGENT_FORM_WRAPPER]) {
+    // Agent form build A1: the armory chooses its sets' rates (a still, live while hovered or touched), so it is held to the same rule.
+    for (const rel of [HUB_FILE('HubAgentForm.jsx'), HUB_FILE('Armory.jsx'), ...AGENT_FORM_WRAPPER]) {
       const code = stripComments(read(rel));
       expect(FRAME_READ.test(code), rel).toBe(false);
       // ...nor what the device is (S1 review SR-1): the pins above hold the helper and its one prop, and a rate taken
@@ -1090,6 +1091,11 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
 // — not Framer Motion transitions, so they take no motion token and are not unmigrated literals. No hub file writes any
 // of it: HubAgentForm.jsx passes only `equipOnChange` and the response's key and part; under reduced motion the engine
 // snaps to the new form's still. The rows below hold every hub file, HubAgentForm.jsx included, to the token-only rule.
+// The A1 fix pass (founder ruling D-C, Nov 6, 2026) adds the THIRD part of the same stated exception: the core's breath,
+// a 4.5 s swell and settle down to 85 % of the core's toned level (vocab.js BREATH_S, BREATH_DEPTH, breath(), behind
+// AGENT_FORM_ARMORY_ENABLED). It is posed frame by frame on the view's own clock, like the tween and the response, so it
+// stops with the view and holds its midpoint under reduced motion; no CSS keyframe, timer or effect carries it, and no hub
+// file names it.
 describe('S1 hub side — colour and motion only through the tokens (ruling R-S1-2; BUILD_RULES §10, §11)', () => {
   // No id-stripping before the hex scan: it once deleted every quoted lowercase
   // hex starting a–f along with the ids it meant (S1 review L5-1). Ids such as
@@ -1129,6 +1135,23 @@ describe('S1 hub side — colour and motion only through the tokens (ruling R-S1
     expect(view).toMatch(/\bequipOnChange\b/);
     expect(view).not.toMatch(/\b(?:EQUIP_KEYS|UNEQUIP_KEYS|EQUIP_MS|UNEQUIP_MS|transition|motionToken)\b/);
     expect(stripComments(read(`${AGENT_FORM_DIR}/engine/vocab.js`))).toMatch(/export const EQUIP_KEYS = /);
+  });
+
+  it('§11\'s stated exception holds the core\'s breath too (fix pass, D-C): it lives in the engine\'s vocabulary, posed on the view\'s clock, and no hub file, the wrapper or CSS carries it', () => {
+    const vocab = stripComments(read(`${AGENT_FORM_DIR}/engine/vocab.js`));
+    expect(vocab).toMatch(/export const BREATH_S = /);
+    expect(vocab).toMatch(/export const BREATH_DEPTH = /);
+    expect(vocab).toMatch(/export function breath\(t\) \{/);
+    // posed from the frame's own t (form.js), never from a clock read in the engine's vocabulary
+    expect(stripComments(read(`${AGENT_FORM_DIR}/engine/form.js`))).toContain('level: coreLevel(t, spec.held === true)');
+    expect(vocab).not.toMatch(/performance\.now|Date\.now|requestAnimationFrame/);
+    const NAMES = /\b(?:BREATH_S|BREATH_DEPTH|CORE_LEVEL|breath|coreLevel)\b/;
+    expect(hubDirFiles().filter((rel) => NAMES.test(stripComments(read(rel))))).toEqual([]);
+    const wrapper = stripComments(read(`${AGENT_FORM_DIR}/AgentForm.jsx`));
+    expect(NAMES.test(wrapper)).toBe(false);
+    expect(wrapper).not.toMatch(/@keyframes|\bsetInterval\(|\bsetTimeout\(|\banimation\s*:/);
+    // the scan bites
+    expect(NAMES.test('const s = BREATH_S * 2;')).toBe(true);
   });
 
   it('no CSS transition or animation, as a string or as a key: motion goes through motionToken (the motion guard counts only transition={{)', () => {
@@ -1198,7 +1221,9 @@ function importedNames(code, tail) {
 
 describe('S5 — the exports the hub takes from the shipped services, hooks and flags (review E1-2)', () => {
   const NAMED = Object.freeze({
-    '/services/agentService': ['equipWatchlist', 'unequipWatchlist'],
+    // Agent form build A1 (Phase 0 armory report §9 A1): the armory's Equip is the picker's own write, changeArchetype,
+    // called from Armory.jsx (the picker it replaces already made it from inside the hub, through the shipped sheet).
+    '/services/agentService': ['changeArchetype', 'equipWatchlist', 'unequipWatchlist'],
     '/services/forgeWatchlistService': ['listWatchlists'],
     // S3's readers, merged in: the identity source, the completed read and the owner-tagged agent read (reads only).
     '/services/authIdentity': ['useAuthIdentity'],
@@ -1246,12 +1271,18 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     expect(`${readers}\nconst again = useAgent(signedInUid);`.match(/\buseAgent\(/g)).toHaveLength(2);
   });
 
-  it('the only writes the hub can make are the two equips: nothing else of agentService, and no other service of the shipped set', () => {
+  it('the only writes the hub can make are the equips: nothing else of agentService, and no other service of the shipped set', () => {
     const files = hubDirFiles();
     const writers = files.filter((rel) => importedNames(stripComments(read(rel)), '/services/agentService').length > 0);
-    expect(writers).toEqual([HUB_FILE('LoadoutSheets.jsx')]);
+    // Agent form build A1: the armory's Equip (changeArchetype, the picker's write) is the second writer file.
+    expect(writers).toEqual([HUB_FILE('Armory.jsx'), HUB_FILE('LoadoutSheets.jsx')]);
+    expect(importedNames(stripComments(read(HUB_FILE('Armory.jsx'))), '/services/agentService')).toEqual(['changeArchetype']);
+    // Each writer file's own names, not only their union across the directory (A1 review AR-4): the Loadout sheets make
+    // the two watchlist equips and nothing else, so a second caller of changeArchetype there fails here.
+    expect(importedNames(stripComments(read(HUB_FILE('LoadoutSheets.jsx'))), '/services/agentService')).toEqual(['equipWatchlist', 'unequipWatchlist']);
     const services = files.flatMap((rel) => importsOf(rel).filter((spec) => /\/services\//.test(spec)).map((spec) => `${rel}: ${spec}`));
     expect(services.sort()).toEqual([
+      `${HUB_FILE('Armory.jsx')}: ../../services/agentService`,
       `${HUB_FILE('LoadoutSheets.jsx')}: ../../services/agentService`,
       `${HUB_FILE('hub/useHubLoadout.js')}: ../../../services/forgeWatchlistService`,
       // S3's readers (merged in): two reads, no write — their names are pinned in NAMED above.

@@ -518,3 +518,37 @@ export const AGENT_FORM_COPY = Object.freeze({
   wearing: (name) => `Shadow wearing ${name}`,
   imageLabel: (name, state, areaName) => `Shadow wearing ${name} — ${state}${areaName ? `; ${areaName} selected` : ''}`,
 });
+
+/**
+ * Build A1 (the armory, board 6; Armory.jsx), while AGENT_FORM_ARMORY_ENABLED is on. A table of its own, as
+ * AGENT_FORM_COPY is, so the flag-off hub chunk stays byte-identical. The set's name, one-liner and paragraph are not
+ * here: they come from the identity tables through hub/archetypeLines.js (armoryLines). What the rulings shape:
+ *   - FD-1: in A1 an equip is today's immediate change, so the board's "a change applies on your next deploy" goes, and
+ *     the footnote says what Equip does, alone (ruling N2(b), Nov 4, 2026: board 6's "Partnership and shared research
+ *     stay with Shadow." returns in A3, when each archetype keeps its own save). Ruling N3 (Nov 6, 2026) rewords FD-1's
+ *     sentence: with N1 the hub's Shadow stays bare after an equip, so the line says the set is equipped now, not worn;
+ *   - D4 and FD-6: no count, stage, level or growth anywhere; the status line is "Equipped" or "Previewing" only;
+ *   - N2(a): a battle lock refuses the equip with the armory's own line, which says nothing changed.
+ */
+export const ARMORY_COPY = Object.freeze({
+  title: 'Armory',
+  intro: 'Choose the armor Shadow wears into battle. Select a set to see it fitted.',
+  centre: 'Your Shadow · fitted preview',
+  sets: 'Armor sets',
+  previewing: 'Previewing',
+  equipped: 'Equipped',
+  previewingOver: (name) => `Previewing · Equipped set is ${name}`,
+  equip: (name) => `Equip ${name}`,
+  equipping: 'Equipping…',
+  footnote: 'Equipped now · a game already running keeps the armor it deployed with.',
+  /**
+   * A refused equip while the ranked agent is in a battle (change-archetype.js 409 `battle_active`). The armory's own
+   * (N2(a)): the hub's `nextDeployLocked` is the Loadout card's line, and its "changes apply to your next deploy" would
+   * read as if this change will happen later; it will not.
+   */
+  locked: 'Locked while a game is running · nothing changed. Try again when it ends.',
+  /** The picker's own words when a change fails for a reason the server does not name. */
+  equipFailed: 'Could not change archetype. Please try again.',
+  /** The picker's notice when the server resets an aggressive tempo dial (its mastery-dark wording). */
+  dialReset: (name) => `Tempo dial reset to Standard — the Aggressive position isn't available for ${name} yet.`,
+});
