@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  DISPOSITIONS, decideApplication, selectConfirmation, upsertReceipt, receiptOf, latestReceiptOf,
+  DISPOSITIONS, decideApplication, selectConfirmation, upsertReceipt, receiptOf, latestReceiptOf, statusReceiptOf,
   buildPlanSlot, buildPlanExchange, battleKindOf, isCpuBattle, isTerminal, GAME_PLAN_SOURCE,
 } from './applyRules.js';
 import { planThreadIdOf } from './planTemplates.js';
@@ -115,6 +115,17 @@ describe('receipts', () => {
     expect(receiptOf(list, 'b1', 'r1').disposition).toBe('written');
     list = upsertReceipt(list, { battleId: 'b1', revision: 'r2', disposition: 'stale_approach', at: '2026-11-09T16:00:00.000Z' });
     expect(latestReceiptOf(list, 'b1').revision).toBe('r2');
+  });
+
+  it('review L2-4: a newer receipt under ANOTHER archetype\'s confirmation never hides the plan a battle holds; one under its own does', () => {
+    const confirmations = [{ revision: 'rA', archetype: 'contrarian' }, { revision: 'rB', archetype: 'analyst' }, { revision: 'rA2', archetype: 'contrarian' }];
+    const written = { battleId: 'b1', revision: 'rA', disposition: 'written', at: '2026-11-09T14:00:00.000Z', heardAt: '2026-11-09T14:05:00.000Z' };
+    const stray = { battleId: 'b1', revision: 'rB', disposition: 'retry_error', at: '2026-11-09T15:00:00.000Z' };
+    expect(statusReceiptOf([written, stray], 'b1', confirmations)).toBe(written);
+    const ownNewer = { battleId: 'b1', revision: 'rA2', disposition: 'retry_live_call', at: '2026-11-09T16:00:00.000Z' };
+    expect(statusReceiptOf([written, stray, ownNewer], 'b1', confirmations)).toBe(ownNewer);
+    expect(statusReceiptOf([stray], 'b1', confirmations)).toBe(stray);
+    expect(statusReceiptOf([], 'b1', confirmations)).toBeNull();
   });
 
   it('the slot is the existing shape plus textVersion, the thread id carries the revision, the row is labelled a game plan', () => {

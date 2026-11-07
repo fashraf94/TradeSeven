@@ -40,7 +40,7 @@ import { planThreadIdOf } from './planTemplates.js';
 // (planThreadIdOf is also re-exported at the end of this module for its callers)
 import {
   DISPOSITIONS, decideApplication, buildPlanSlot, buildPlanExchange, upsertReceipt, receiptOf,
-  latestReceiptOf, isTerminal, battleKindOf,
+  statusReceiptOf, isTerminal, battleKindOf,
 } from './applyRules.js';
 
 /** How many of a battle's ticks reconcile reads, from the filing instant on, to find the first heard check. */
@@ -342,7 +342,7 @@ async function expireWaiting(db, { uid, etDate, nowMs }) {
 export function statusOfBattles(plan) {
   const ids = [...new Set((plan?.applications || []).map((r) => r?.battleId).filter(nonEmpty))].sort();
   return ids.map((battleId) => {
-    const r = latestReceiptOf(plan.applications, battleId);
+    const r = statusReceiptOf(plan.applications, battleId, plan.confirmations);
     return {
       battleId,
       battleKind: r.battleKind ?? null,

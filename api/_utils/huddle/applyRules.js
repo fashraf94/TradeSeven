@@ -96,6 +96,25 @@ export function latestReceiptOf(applications, battleId) {
   return best;
 }
 
+/**
+ * The receipt a battle's STATUS is read from (review L2-4): its newest receipt — unless the battle already holds a written
+ * plan and the newer receipt belongs to a confirmation made under ANOTHER archetype. That confirmation can never reach this
+ * battle (C15), so a retry or waiting receipt keyed by it must not hide the plan the battle holds.
+ */
+export function statusReceiptOf(applications, battleId, confirmations = []) {
+  const newest = latestReceiptOf(applications, battleId);
+  if (!newest || newest.disposition === DISPOSITIONS.WRITTEN) return newest;
+  let written = null;
+  for (const r of Array.isArray(applications) ? applications : []) {
+    if (r && r.battleId === battleId && r.disposition === DISPOSITIONS.WRITTEN && (!written || (ms(r.at) ?? 0) >= (ms(written.at) ?? 0))) written = r;
+  }
+  if (!written) return newest;
+  const archetypeOf = (rev) => (Array.isArray(confirmations) ? confirmations : []).find((c) => c && c.revision === rev)?.archetype ?? null;
+  const held = archetypeOf(written.revision);
+  const other = archetypeOf(newest.revision);
+  return held !== null && other !== null && held !== other ? written : newest;
+}
+
 /** Upsert by (battleId, revision): a written receipt is never replaced; anything else is the latest attempt. */
 export function upsertReceipt(applications, entry) {
   const list = Array.isArray(applications) ? [...applications] : [];
