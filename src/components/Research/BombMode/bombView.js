@@ -9,7 +9,7 @@ import { priceDecimals, priceText } from '../priceFormat.js';
 import { nextEligibleSlot } from '../../../../api/_utils/callRecords/horizon.js';
 import { measuredLadder, legacyLadder, previewLadder, v4Ladder, v4LevelsFor } from './ladder.js';
 import { BOMB_COPY } from './bombCopy.js';
-import { etClock } from './checkClock.js';
+import { etClock, etDate, etWeekday } from './checkClock.js';
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const positive = (v) => finite(v) && v > 0;
@@ -22,7 +22,9 @@ const FIFTEEN_MIN_MS = 15 * 60 * 1000;
  */
 export function buildLadder({ context, record, bombData, previousClose, threshold, symbol, nowMs }) {
   if (context?.kind === 'agent' && record && record.symbol === symbol) {
-    if (record.model === 'measured') return measuredLadder({ measured: bombData, entryAtMs: record.entry?.atMs ?? null });
+    // The live record's committed context (same shape and source as the
+    // modal's bombData.measured); bombData only when the record has none.
+    if (record.model === 'measured') return measuredLadder({ measured: record.measured, entryAtMs: record.entry?.atMs ?? null });
     if (record.model === 'legacy') return legacyLadder({ record, previousClose, nowMs });
     return { status: 'short_unsupported', kind: 'held', model: 'unsupported', rungs: [], up: [], down: [], next: null, bankedPoints: 0 };
   }
@@ -41,12 +43,14 @@ export const decimalsOf = (live) => priceDecimals(live);
  * when the two prices differ by at least one display unit. Null when the
  * record has no scored price (a preview has none).
  */
-export function scoredChipText({ live, scored, decimals, always = false, frozen = false }) {
+export function scoredChipText({ live, scored, decimals, always = false, frozen = false, nowMs = null }) {
   if (!scored || !positive(scored.price) || !finite(scored.atMs) || !positive(live)) return null;
   const d = finite(decimals) ? decimals : priceDecimals(live);
   const differs = priceText(live, d) !== priceText(scored.price, d);
   if (!always && !differs) return null;
-  const at = etClock(scored.atMs);
+  // A check from an earlier session names its day: "at 1:15" alone would read as today's.
+  const sameDay = finite(nowMs) && etDate(scored.atMs) === etDate(nowMs);
+  const at = sameDay || !finite(nowMs) ? etClock(scored.atMs) : `${etWeekday(scored.atMs)} ${etClock(scored.atMs)}`;
   return (frozen ? BOMB_COPY.lastTickChip : BOMB_COPY.scoredChip)(live, scored.price, at, d);
 }
 

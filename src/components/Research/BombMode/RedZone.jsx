@@ -39,7 +39,7 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
   const frozen = mode === 'closed';
   const showMoment = mode === 'banked' && !!moment;
   const top = 46;
-  const bot = H - 50;
+  const bot = H - 58;
   const x0 = 16;
   const x1 = W - 34;
 
@@ -83,7 +83,7 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
         {linePath && <path data-rz-trace-line="1" d={linePath} fill="none" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" style={{ stroke: BT.teal }} />}
         {trace.dots.map((o, i) => <circle key={i} data-rz-observation="1" cx={X(o.atMs)} cy={Y(o.price)} r="2.4" style={{ fill: frozen ? BT.ink3 : HEAT }} />)}
         {lastLine && (
-          <text data-rz-trace-end="1" x={Math.min(X(lastLine.t), x1) - 4} y={Math.max(top + 54, Y(lastLine.c) - 8)} textAnchor="end" fontSize="8" letterSpacing="0.5" style={{ fill: BT.ink3 }}>
+          <text data-rz-trace-end="1" x={Math.max(x0 + 120, Math.min(X(lastLine.t), x1))} y={bot + 12} textAnchor="end" fontSize="8" letterSpacing="0.5" style={{ fill: BT.ink3 }}>
             {BOMB_COPY.traceEnd(BOMB_COPY.traceInterval(trace.intervalMin ?? 1), etClock(lastLine.t)).toUpperCase()}
           </text>
         )}
@@ -113,7 +113,7 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
           <div style={{ marginTop: 5, fontSize: 12, color: BT.ink2 }}>{dist.sub}</div>
         </div>
       )}
-      <div style={{ position: 'absolute', left: 12, top: bot - 16, fontSize: 8, letterSpacing: '0.1em', fontWeight: 700, color: lastBanked && Math.abs(lo - lastBanked.price) < 1e-9 ? BT.green : BT.ink3 }}>
+      <div data-rz-floor="1" style={{ position: 'absolute', left: 12, top: bot + 4, fontSize: 8, letterSpacing: '0.1em', fontWeight: 700, color: lastBanked && Math.abs(lo - lastBanked.price) < 1e-9 ? BT.green : BT.ink3 }}>
         {lastBanked && Math.abs(lo - lastBanked.price) < 1e-9 ? BOMB_COPY.floorBanked(lastBanked.label, lastBanked.points) : BOMB_COPY.floorLabel(lo, d)}
       </div>
 

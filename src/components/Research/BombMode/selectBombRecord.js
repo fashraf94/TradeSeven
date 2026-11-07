@@ -49,7 +49,7 @@
 //             hot-bench names at :1665). The timestamp is the risk loop's wall
 //             clock (`nowMs`, :1874), not the provider's quote time.
 
-import { stockModelRoute, isStock, instantMs } from '../../../utils/stockThresholdModel.js';
+import { stockModelRoute, isStock, instantMs, committedStockContext } from '../../../utils/stockThresholdModel.js';
 import { firstTradingDayOf, etDateOf } from '../../../utils/tieredFirstTradingDay.js';
 import { battleExpiryMs } from '../../../../api/_utils/callRecords/horizon.js';
 
@@ -141,11 +141,23 @@ export function selectBombRecord(battle, symbol, nowMs) {
     const scored = context?.status === 'valid' && positive(context.currentPrice) && scoredAtMs !== null
       ? { price: context.currentPrice, atMs: scoredAtMs, source: 'stockRewardContexts' }
       : null;
+    // The ladder: the SAME committed context the modal's bombData.measured is
+    // built from (the screen's enrichHeldPosition → committedStockContext;
+    // AssetResearchModal.jsx measuredBombKey), in bombData.measured's own
+    // shape — read from this live document, because the modal freezes its
+    // asset at open for a same-symbol update on the shipped path, so its
+    // bombData would miss a check that lands while it is open. Nothing is
+    // re-derived: the targets and crossed tiers are the context's.
+    const committed = committedStockContext(battle, asset, 'agent', tier, slot);
+    const measured = committed.status === 'valid'
+      ? { measured: true, baselinePrice: committed.fill, targets: committed.targets.map((t) => ({ key: t.key, price: t.target })), crossedTiers: [...committed.crossedTiers] }
+      : null;
     return {
       ...common,
       model: 'measured',
       entry: { price: positive(receipt?.fill) ? receipt.fill : null, atMs: entryAtMs },
-      scored,
+      measured,
+      scored: measured ? scored : null,
       checkDots: checkDotsOf(battle, symbol, entryAtMs),
     };
   }

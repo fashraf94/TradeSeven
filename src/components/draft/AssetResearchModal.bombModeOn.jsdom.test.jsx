@@ -174,6 +174,35 @@ describe('a held measured position', () => {
     expect(q('[data-bomb-what]').textContent).toBe('What has to happenNeeds $102.77 at a check · next check 1:15 · 09:00');
     expect(rec.calls.some((c) => c[0] === 'createChart')).toBe(false);
   });
+  it('the record\'s ladder is the modal\'s bombData.measured — the same committed context, one source', async () => {
+    const { battle, left } = await committedRow();
+    const record = selectBombRecord(battle, 'AAPL', Date.parse('2026-10-14T17:06:00.000Z'));
+    const ctx = research(left).rewardContext;
+    expect(record.measured).toEqual({ measured: true, baselinePrice: ctx.fill, targets: ctx.targets.map((t) => ({ key: t.key, price: t.target })), crossedTiers: ctx.crossedTiers });
+  });
+  it('a check that lands while the modal is open reaches the ladder on the shipped (non-controlled) mount, whose asset stays the one it opened with', async () => {
+    const before = await committedRow(101);
+    const after = await committedRow(103); // the bagger target is $102.765
+    seed('2026-10-14T17:16:00.000Z');
+    const asset = research(before.left); // frozen at open, as the legacy mount's is
+    const show = async (battle, live) => render(<AssetResearchModal asset={asset} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={live} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record: selectBombRecord(battle, 'AAPL', Date.now()) }} />);
+    await show(before.battle, 101.2);
+    expect(q('[data-sheet-rung="bagger"]').getAttribute('data-rung-banked')).toBe('0');
+    await show(after.battle, 103.05);
+    expect(q('[data-sheet-rung="bagger"]').getAttribute('data-rung-banked')).toBe('1');
+    expect(q('[data-rz-banked-moment]')).not.toBeNull(); // the modal SAW it bank
+  });
+});
+
+describe('honest after the close and across days', () => {
+  it('a scored check from an earlier session names its day; after the close the wording is last, not live', async () => {
+    const { battle, left } = await committedRow(); // scored Wed Oct 14 at 10:02
+    seed('2026-10-15T21:00:00.000Z'); // Thu 5:00 PM ET, closed
+    const record = selectBombRecord(battle, 'AAPL', Date.now());
+    await render(<AssetResearchModal asset={research(left)} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={101.2} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
+    expect(q('[data-bomb-sheet-scored]').textContent).toBe('last tick $101.20 · scored $101.00 at Wed 10:02');
+    expect(q('[data-fuse-live-label]').textContent).toContain('· LAST');
+  });
 });
 
 describe('the red zone — automatic, on the 1-minute series the view already fetches', () => {
@@ -243,7 +272,8 @@ describe('the red zone — automatic, on the 1-minute series the view already fe
     net.minute.EOG = [bar('2026-10-14T19:59:00.000Z', 163.4, 163.5, 163.3, 163.7), bar('2026-10-14T19:58:00.000Z', 163.3, 163.4, 163.2, 163.6)];
     await open(163.7);
     expect(q('[data-redzone-state="closed"]')).not.toBeNull();
-    expect(text()).toContain('Market closed · last tick');
+    expect(text()).toContain('Market closed · last tick 3:59 PM'); // the last minute bar — a quote taken after the close is not a tick
+    expect(document.body.querySelectorAll('[data-rz-observation]')).toHaveLength(0);
     expect(q('[data-rz-clock="later"]').textContent).toBe('NEXT CHECKThu 9:30 AM');
     // no poll after hours (the hook's own rule)
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); }); await flush();

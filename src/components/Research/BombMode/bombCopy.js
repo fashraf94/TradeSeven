@@ -14,6 +14,8 @@ import { priceText } from '../priceFormat.js';
 
 export const money = (price, decimals) => `$${priceText(price, decimals)}`;
 const signedPct = (pct, digits = 1) => `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(digits)}%`;
+/** A to-go %: one decimal, two under 0.1 % (so 0.04 % never reads "0.0%"). */
+const goPct = (pct) => (Math.abs(pct) < 0.1 ? Math.abs(pct).toFixed(2) : Math.abs(pct).toFixed(1));
 
 export const BOMB_COPY = Object.freeze({
   // The Fuse
@@ -28,11 +30,13 @@ export const BOMB_COPY = Object.freeze({
   bankedAt: (time) => `Banked · ${time}`,
   liveTag: 'live',
   livePct: (pct) => `${signedPct(pct)} · live`,
+  lastPct: (pct) => `${signedPct(pct)} · last`,
   // The to-go pill and the rail's label (brick wording, spec §3.6)
-  toGoBricks: (pct, bricks, points) => `${Math.abs(pct).toFixed(1)}% · ${bricks} brick${bricks === 1 ? '' : 's'} to +${points}`,
-  toGoPlain: (pct, points) => `${Math.abs(pct).toFixed(1)}% to +${points}`,
+  toGoBricks: (pct, bricks, points) => `${goPct(pct)}% · ${bricks} brick${bricks === 1 ? '' : 's'} to +${points}`,
+  toGoPlain: (pct, points) => `${goPct(pct)}% to +${points}`,
   toGoAt: (points) => `At +${points} · a check decides`,
   toGoWithLive: (base, live) => `${base} · live ${live}`,
+  toGoWithLast: (base, last) => `${base} · last ${last}`,
   allBanked: 'Every rung banked',
   previewChip: 'Preview',
   // States without a ladder

@@ -37,7 +37,7 @@ export default function BombPlot({ view, height }) {
   } else if (isRedZoneMode(view.mode)) {
     body = <RedZone ladder={ladder} go={view.go} live={view.live} decimals={view.decimals} mode={view.mode} trace={view.trace} clock={view.clock} scoredText={view.redZoneScored} moment={view.moment} nowMs={view.nowMs} width={width} height={height} />;
   } else {
-    body = <FuseChart ladder={ladder} live={view.live} decimals={view.decimals} go={view.go} ghost={view.ghost} checkDots={view.checkDots} bankedTimes={view.bankedTimes} width={width} height={height} />;
+    body = <FuseChart ladder={ladder} live={view.live} decimals={view.decimals} go={view.go} ghost={view.ghost} checkDots={view.checkDots} bankedTimes={view.bankedTimes} closed={view.marketOpen === false} width={width} height={height} />;
   }
   return <div ref={ref} data-bomb-plot="1" style={{ width: '100%', height }}>{body}</div>;
 }

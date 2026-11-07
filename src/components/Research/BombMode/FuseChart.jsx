@@ -29,12 +29,14 @@ const ET_WHEN = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
 export const entryWhen = (ms) => (finite(ms) ? ET_WHEN.format(new Date(ms)).replace(/ /g, ' ') : null);
 
 /** The to-go pill's text: brick wording when bricks are on, the live number inside the band (R-11′(d)). */
-export function toGoText(ladder, go) {
+export function toGoText(ladder, go, { closed = false } = {}) {
   if (!go) return ladder?.next ? null : BOMB_COPY.allBanked;
   const base = go.distance <= 0
     ? BOMB_COPY.toGoAt(go.rung.points)
     : go.bricks != null ? BOMB_COPY.toGoBricks(go.pct, go.bricks, go.rung.points) : BOMB_COPY.toGoPlain(go.pct, go.rung.points);
-  return go.pct <= RED_ZONE_ENTER_PCT ? BOMB_COPY.toGoWithLive(base, money(go.liveShown, go.decimals)) : base;
+  if (go.pct > RED_ZONE_ENTER_PCT) return base;
+  // After the close the quote is the last trade, not a live one.
+  return (closed ? BOMB_COPY.toGoWithLast : BOMB_COPY.toGoWithLive)(base, money(go.liveShown, go.decimals));
 }
 
 /** The label of the line the rail starts from — never "entry" on a preview. */
@@ -46,7 +48,7 @@ export function baselineText(ladder, d) {
   return BOMB_COPY.baselineHeld(b.price, d, entryWhen(b.atMs));
 }
 
-export default function FuseChart({ ladder, live, decimals, go, ghost = [], checkDots = [], bankedTimes = {}, width = 360, height = 300 }) {
+export default function FuseChart({ ladder, live, decimals, go, ghost = [], checkDots = [], bankedTimes = {}, closed = false, width = 360, height = 300 }) {
   const reduced = useReducedMotion() === true;
   const W = Math.max(280, width);
   const H = Math.max(220, height);
@@ -87,16 +89,20 @@ export default function FuseChart({ ladder, live, decimals, go, ghost = [], chec
   const liveY = finite(kLive) ? Y(Math.max(-botK + 0.04, Math.min(kLive, topK - 0.04))) : null;
   const inBand = !!go && go.pct <= RED_ZONE_ENTER_PCT;
   // R-11′(d): inside the band the live label yields to the rung label.
-  const liveLabelY = (() => {
+  // Outside it, the label sits right of the rail where it clears every rung's
+  // label block (points + price, measured: y−11 … y+19) and the baseline's;
+  // when no spot there is clear, it moves to the left of the rail.
+  const liveLabel = (() => {
     if (liveY === null || inBand) return null;
-    const clash = (y) => rungs.some((r) => Math.abs(r.y + 6 - y) < 22) || Math.abs(yEntry + 4 - y) < 18;
-    if (!clash(liveY + 4)) return liveY + 4;
-    if (!clash(liveY + 30)) return liveY + 30;
-    return liveY - 18;
+    const blocks = [...rungs.map((r) => [r.y - 11, r.y + 19]), [yEntry - 10, yEntry + 12], ...ladder.down.map((r) => [Y(r.k) - 9, Y(r.k) + 6])];
+    const clear = (y) => blocks.every(([a, b]) => y + 14 < a || y - 12 > b) && y - 12 > plotTop - 8 && y + 14 < H;
+    for (const y of [liveY + 4, liveY + 30, liveY - 20]) if (clear(y)) return { x: labelX, y, anchor: 'start' };
+    return { x: railX - 12, y: liveY + 4, anchor: 'end' };
   })();
+  const liveLabelY = liveLabel ? liveLabel.y : null;
   // The halo brightens as the distance to the next rung shrinks (0 % → full, 3 % or more → faint).
   const halo = go ? 0.2 + 0.65 * Math.max(0, 1 - Math.max(0, go.pct) / 3) : 0.2;
-  const pill = toGoText(ladder, go);
+  const pill = toGoText(ladder, go, { closed });
   const plan = brickPlan(ladder);
   const pillY = ladder.next ? Y(ladder.next.k) : (top ? top.y : plotTop);
   const pillW = pill ? Math.min(x1 - x0, pill.length * 5.7 + 18) : 0;
@@ -138,8 +144,9 @@ export default function FuseChart({ ladder, live, decimals, go, ghost = [], chec
 
         {pill && (
           <g data-fuse-togo="1">
-            <rect x={x1 - pillW} y={pillY - 22} width={pillW} height={16} rx={8} style={{ fill: tint(BT.bg, 92), stroke: tint(BT.gold, 45) }} />
-            <text x={x1 - 9} y={pillY - 10.5} textAnchor="end" fontSize="9" fontWeight="700" letterSpacing="0.4" style={{ fill: BT.gold }}>{pill.toUpperCase()}</text>
+            {/* above the rung's title row, so the two never share a line at 320 px */}
+            <rect x={x1 - pillW} y={pillY - 36} width={pillW} height={16} rx={8} style={{ fill: tint(BT.bg, 92), stroke: tint(BT.gold, 45) }} />
+            <text x={x1 - 9} y={pillY - 24.5} textAnchor="end" fontSize="9" fontWeight="700" letterSpacing="0.4" style={{ fill: BT.gold }}>{pill.toUpperCase()}</text>
           </g>
         )}
 
@@ -181,8 +188,8 @@ export default function FuseChart({ ladder, live, decimals, go, ghost = [], chec
         )}
         {liveLabelY !== null && (
           <g data-fuse-live-label="1">
-            <text x={labelX} y={liveLabelY} fontSize="11" fontWeight="700" style={{ fill: BT.ink }}>{money(live, d)}</text>
-            <text x={labelX} y={liveLabelY + 11} fontSize="8.5" fontWeight="700" style={{ fill: BT.teal }}>{BOMB_COPY.livePct(pctOf(live)).toUpperCase()}</text>
+            <text x={liveLabel.x} y={liveLabelY} textAnchor={liveLabel.anchor} fontSize="11" fontWeight="700" style={{ fill: BT.ink }}>{money(live, d)}</text>
+            <text x={liveLabel.x} y={liveLabelY + 11} textAnchor={liveLabel.anchor} fontSize="8.5" fontWeight="700" style={{ fill: BT.teal }}>{(closed ? BOMB_COPY.lastPct : BOMB_COPY.livePct)(pctOf(live)).toUpperCase()}</text>
           </g>
         )}
         {n > 0 && <text x={x0} y={H - 6} fontSize="8.5" fontWeight="700" letterSpacing="0.6" style={{ fill: BT.ink3 }}>{dayLabel(pts[0].t)}</text>}

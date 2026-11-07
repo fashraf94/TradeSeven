@@ -63,8 +63,10 @@ export default function useBombView({
   // The quotes observed while the modal is open (BA-6): one per change of the live price.
   useEffect(() => {
     if (!enabled || !(finite(live) && live > 0)) return;
+    // A quote taken while the session is closed is the last trade restated, not a tick.
+    if (isCrypto !== true && !sessionOpenAt(Date.now())) return;
     setObservations((list) => (list.length && list[list.length - 1].price === live ? list : [...list, { atMs: Date.now(), price: live }].slice(-OBSERVATIONS_CAP)));
-  }, [enabled, live]);
+  }, [enabled, live, isCrypto]);
 
   // The clock ticks every second in the red zone, every 15 s on a held Fuse, never on a preview.
   const period = !enabled || !held ? null : isRedZoneMode(rz.mode) ? 1000 : 15000;
@@ -133,8 +135,9 @@ export default function useBombView({
     checkDots: held ? record?.checkDots ?? [] : [],
     bankedTimes,
     moment,
-    redZoneScored: scoredChipText({ live, scored, decimals, always: true, frozen }),
-    sheetScored: scoredChipText({ live, scored, decimals, always: false }),
+    redZoneScored: scoredChipText({ live, scored, decimals, always: true, frozen, nowMs }),
+    sheetScored: scoredChipText({ live, scored, decimals, always: false, frozen: isCrypto !== true && !marketOpen, nowMs }),
+    marketOpen: isCrypto === true || marketOpen,
     sheetLine: sheetLine({ ladder, clockLabel: clock && (clock.state === 'countdown' || clock.state === 'later') ? clock.label : null, checking: clock?.state === 'checking', bankedTimes, decimals }),
   };
 }

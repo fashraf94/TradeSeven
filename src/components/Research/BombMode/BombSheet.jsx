@@ -35,7 +35,7 @@ export default function BombSheet({ view }) {
   const kLive = kOf(ladder, view.live);
   const plan = brickPlan(ladder);
   const nextKey = ladder.next?.key ?? null;
-  const label = toGoText(ladder, go);
+  const label = toGoText(ladder, go, { closed: view.marketOpen === false });
   return (
     <section ref={ref} data-bomb-sheet={ladder.kind} aria-label="Bomb ladder" style={{ padding: '8px 2px 4px', fontFamily: MONO, color: BT.ink }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
