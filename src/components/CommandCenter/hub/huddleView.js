@@ -31,8 +31,8 @@ export function huddleChipOf(read) {
   const h = huddleOf(read);
   if (!h) return null;
   if (h.status === 'ready') {
-    const heard = h.plan && h.plan.status !== 'proposed';
-    const label = heard ? COPY.huddle.chipDone : COPY.huddle.chip(durationText(h.audio?.durationMs));
+    const answered = h.plan ? COPY.huddle.chipPlan[h.plan.status] ?? null : null;
+    const label = answered ?? COPY.huddle.chip(durationText(h.audio?.durationMs));
     return { state: 'ready', label };
   }
   if (h.status === 'queued' || h.status === 'generating') return { state: 'preparing', label: COPY.huddle.chipPreparing };

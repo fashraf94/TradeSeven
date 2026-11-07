@@ -19,16 +19,19 @@ export default function useHuddleHistory({ auth, enabled }) {
   const [read, setRead] = useState(IDLE);
   const keyRef = useRef(key);
   keyRef.current = key;
+  // Each load is numbered: an older read landing after a newer one is dropped (review L3-12), as useHuddleToday does.
+  const seqRef = useRef(0);
 
   const load = useCallback(async () => {
     if (!key) return;
+    const seq = ++seqRef.current;
     setRead((prev) => (prev.key === key ? prev : { ...IDLE, key, status: 'loading' }));
     try {
       const plans = await fetchHuddleHistory({ uid: key.slice(0, key.lastIndexOf(':')) });
-      if (keyRef.current !== key) return;
+      if (keyRef.current !== key || seq !== seqRef.current) return;
       setRead({ key, status: 'ready', plans, asOf: new Date().toISOString(), error: null });
     } catch (err) {
-      if (keyRef.current !== key) return;
+      if (keyRef.current !== key || seq !== seqRef.current) return;
       setRead((prev) => (prev.key === key && prev.status === 'ready'
         ? { ...prev, error: err?.message || 'read_failed', stale: true }
         : { ...IDLE, key, status: 'error', error: err?.message || 'read_failed' }));

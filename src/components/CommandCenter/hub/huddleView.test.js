@@ -72,7 +72,11 @@ describe('the chip (C4): a state label and a door', () => {
     expect(huddleChipOf(read(record({ audio: null })))).toEqual({ state: 'ready', label: 'Huddle' });
     expect(huddleChipOf(read(record({ status: 'generating' })))).toEqual({ state: 'preparing', label: COPY.huddle.chipPreparing });
     expect(huddleChipOf(read(record({ status: 'failed' })))).toEqual({ state: 'failed', label: COPY.huddle.chipUnavailable });
-    expect(huddleChipOf(read(record({}, { status: 'confirmed' }))).label).toBe(COPY.huddle.chipDone);
+    // review L3-7: the plan's status, never "heard"
+    expect(huddleChipOf(read(record({}, { status: 'confirmed' }))).label).toBe(COPY.huddle.chipPlan.confirmed);
+    expect(huddleChipOf(read(record({}, { status: 'skipped' }))).label).toBe(COPY.huddle.chipPlan.skipped);
+    expect(huddleChipOf(read(record({}, { status: 'expired' }))).label).toBe(COPY.huddle.chipPlan.expired);
+    expect(Object.values(COPY.huddle.chipPlan).some((l) => /heard/i.test(l))).toBe(false);
     expect(huddleChipOf({ status: 'idle', huddle: null })).toBeNull();
   });
 });

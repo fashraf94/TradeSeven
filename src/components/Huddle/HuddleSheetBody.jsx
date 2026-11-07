@@ -58,7 +58,7 @@ function replacementOf(items, removed, levels) {
 function BeatLine({ beat, active, copy }) {
   return (
     <div data-huddle-beat={beat.id} data-huddle-active={active ? '' : undefined} style={{ padding: '6px 0', borderLeft: `3px solid ${active ? teal : 'transparent'}`, paddingLeft: 10 }}>
-      <div style={{ fontSize: 12, color: ink2, fontWeight: 600 }}>{copy.beats[beat.id] ?? beat.id}</div>
+      <div style={{ fontSize: 12, color: ink2, fontWeight: 600 }}>{copy.beats[beat.id] ?? ''}</div>
       <div style={{ fontSize: 14, color: ink, lineHeight: 1.5 }}>{beat.text}</div>
     </div>
   );

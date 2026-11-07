@@ -142,7 +142,8 @@ export const HUB_COPY = Object.freeze({
     chip: (duration) => (duration ? `Huddle · ${duration}` : 'Huddle'),
     chipPreparing: 'Huddle · preparing',
     chipUnavailable: 'Huddle unavailable',
-    chipDone: 'Huddle · heard',
+    /** The chip once the plan is answered or expired: its status, never "heard" (review L3-7; C3 keeps "read" for the agent). */
+    chipPlan: Object.freeze({ confirmed: 'Huddle · plan confirmed', skipped: 'Huddle · plan skipped', expired: 'Huddle · plan expired' }),
     chipLabel: (state) => `Open your huddle · ${state}`,
     sheetTitle: 'Huddle',
     sheetEyebrow: 'Huddle with Shadow',

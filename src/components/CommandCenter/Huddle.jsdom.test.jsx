@@ -295,3 +295,24 @@ describe('the record\'s reader (C7): no poll; mount, visibility and explicit tri
     vi.useRealTimers();
   });
 });
+
+describe('the plan history\'s reader (review L3-12)', () => {
+  it('an older read that lands after a newer one is dropped', async () => {
+    const { default: useHuddleHistory } = await import('../../hooks/useHuddleHistory');
+    let first;
+    service.fetchHuddleHistory
+      .mockImplementationOnce(() => new Promise((resolve) => { first = resolve; }))
+      .mockImplementationOnce(async () => [{ etDate: ET, planStatus: 'confirmed' }]);
+    let last = null;
+    function Probe() {
+      const r = useHuddleHistory({ auth: { signedIn: true, uid: 'u1', authEpoch: 1 }, enabled: true });
+      last = r;
+      return null;
+    }
+    keep(mount(<Probe />));
+    await act(async () => { await last.refresh(); });
+    expect(last.read.plans).toEqual([{ etDate: ET, planStatus: 'confirmed' }]);
+    await act(async () => { first([{ etDate: ET, planStatus: 'proposed' }]); await Promise.resolve(); });
+    expect(last.read.plans).toEqual([{ etDate: ET, planStatus: 'confirmed' }]);
+  });
+});
