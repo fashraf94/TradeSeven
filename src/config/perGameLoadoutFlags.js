@@ -32,4 +32,4 @@
  * (BUILD_RULES §2).
  */
 // Pinned by: perGameLoadoutFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const PER_GAME_LOADOUT_ENABLED = false;
+export const PER_GAME_LOADOUT_ENABLED = true;
