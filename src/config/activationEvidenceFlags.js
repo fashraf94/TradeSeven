@@ -19,13 +19,18 @@
  * agentBattles/{battleId}/activations/{activationId}, and keeps its cursors in
  * activationObserverState/main.
  *
- * DARK — default FALSE. With it false (or an empty allowlist) the observer
- * returns before any read and the cron's response carries no new key
- * (byte-identical). It flips only in the founder's own PR, never a build PR,
- * after the Firestore rules for the two new collections are published and the
- * (ownerId, createdAt) index is deployed. The flip moves the pin in
- * activationEvidenceFlags.test.js to true and drops the DARK_BY_DESIGN entry in
- * flagPinGuard.test.js in the same commit (BUILD_RULES §2).
+ * ON — default TRUE since 2026-11-06 (the founder's own flip PR, after the
+ * Firestore rules for the two new collections were published and the
+ * (ownerId, createdAt) index and the two observer-state exemptions were
+ * Enabled; flip checklist: docs/audits/20261106_BUILD_ACTIVATION_OBSERVER_REVIEW_FIXES.md
+ * §11). Built DARK (default FALSE, 2026-11-04): with it false (or an empty
+ * allowlist) the observer returns before any read and the cron's response
+ * carries no new key (byte-identical). It is now live for the owners the cockpit
+ * allowlist (COCKPIT_ALLOWLIST_UIDS) names, from the reflections cron's next run;
+ * an empty allowlist is still off. The flip moved the pin in
+ * activationEvidenceFlags.test.js to true and dropped the DARK_BY_DESIGN entry in
+ * flagPinGuard.test.js in the same commit (BUILD_RULES §2). Rollback: one line
+ * back to false, with the pin row and the registration row, in its own PR.
  */
 // Pinned by: activationEvidenceFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const ACTIVATION_EVIDENCE_ENABLED = false;
+export const ACTIVATION_EVIDENCE_ENABLED = true;

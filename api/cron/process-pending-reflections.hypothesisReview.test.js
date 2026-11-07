@@ -27,6 +27,10 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   return { ...real, CALL_RECORDS_MODE: 'off', get HYPOTHESIS_RECORDS_ENABLED() { return state.flagOn; } };
 });
 vi.mock('../_utils/wireFlags.js', () => ({ getWireFlags: () => ({ metricsEnabled: false, writesEnabled: false, continuityEnabled: false, editorialEnabled: false }) }));
+// The sixth tenant (the activation observer) is mocked OFF here: this file's allowlist ('owner-1') would
+// admit it, and these rows are about the fifth tenant's response and I/O. ACTIVATION_EVIDENCE_ENABLED
+// ships TRUE (the 2026-11-06 flip), so the pre-flip default is stated, not inherited.
+vi.mock('../../src/config/activationEvidenceFlags.js', () => ({ ACTIVATION_EVIDENCE_ENABLED: false }));
 let db;
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => db }));
 // Reflection outage fix (P-OUT-1): generateReflection reports its outcome; 'ok' clears the flag.
