@@ -270,8 +270,8 @@ The last code commit is `ab79a9e6`; the pushed head adds only this report's fina
 
 - **Full Linux suite** (WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, 8 workers) on `ab79a9e6`: **exit 0, 1,313 files, 28,978 rows, 0 failed, 89 skipped, 253 s.** The rows that fail only on Windows on this machine pass here.
   - The first full run, on `fb256283`, failed one row: the composition protected-store scan (B3) found the three BaggerBomb slot writers unlisted (§11). Fixed in `406b1a63` (suite then exit 0, 28,978 rows, 245 s), and `ab79a9e6` is a one-row test cleanup on top.
-- **`lint:gate`**: exit 0 on `fb256283` and `406b1a63`; on `ab79a9e6`: LINT-AB79.
-- **On the pushed head itself:** flag-off byte identity against `main` HEAD-CMP; minified build HEAD-MIN; the files that read `docs/` (the hub copy guard, the flag pin guard, the archetype registry, the situation registry and questions, the routing wall, the composition runbook gates and A7 lock, the tf-setup guard, the voice-grounding harness, the insight-reset script, the JEV judge) HEAD-DOCS.
+- **`lint:gate`**: exit 0 on `fb256283` and `406b1a63`; on `ab79a9e6`: exit 0.
+- **On the pushed head itself:** flag-off byte identity against `main`: **0 differing lines, 55 of 55 files**; minified build: **exit 0**; the files that read `docs/` (the hub copy guard, the flag pin guard, the archetype registry, the situation registry and questions, the routing wall, the composition runbook gates and A7 lock, the tf-setup guard, the voice-grounding harness, the insight-reset script, the JEV judge): **12 files, 371 rows, exit 0**.
 - Smoke (`06e5ff02`, the same tree as the local `49186a1a`, a message change only): minified build in WSL exit 0 (with placeholder Firebase values, for the local screenshots); Vercel built it with the real ones. Its preview serves the smoke bundle (`LoadoutStatesSmoke-*.js` in the main bundle) and, loaded in headless Edge at 390, renders 11 cards in every state, both League lines, the Training line and the three armory contexts, no page errors.
 
 ---
