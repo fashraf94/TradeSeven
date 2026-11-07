@@ -26,12 +26,14 @@
 // WEEK_DAYS_REQUIRED trading days on the NYSE calendar of record, at that day's close (4:00 PM ET, 1:00 PM on an
 // early close).
 
-import { GROUP_STATUS, WEEK_DAYS_REQUIRED, selectMyGroup } from './leagueTournament.js';
+import { WEEK_DAYS_REQUIRED, selectMyGroup } from './leagueTournament.js';
 import { getSessionForDate, MARKET_HOURS } from '../utils/marketCalendar.js';
 
 /** The two kinds of game a loadout belongs to (D1). The writers' `loadout` field takes these words. */
 export const LOADOUT_KINDS = /* @__PURE__ */ Object.freeze({ BAGGERBOMB: 'baggerbomb', LEAGUE: 'league' });
-export const LOADOUT_KIND_LIST = /* @__PURE__ */ Object.freeze([LOADOUT_KINDS.BAGGERBOMB, LOADOUT_KINDS.LEAGUE]);
+// Literals, not reads of LOADOUT_KINDS: a module-level initializer that reads another binding's properties survives
+// tree-shaking even when marked pure (the flag-off bundle row), so every constant here is a plain literal.
+export const LOADOUT_KIND_LIST = /* @__PURE__ */ Object.freeze(['baggerbomb', 'league']);
 
 /**
  * The writers' `loadout` field, read: absent (undefined or null) is LEAGUE, today's behaviour; one of the two words is
@@ -192,7 +194,7 @@ export function leagueWeekEndMsOf(group) {
 }
 
 /** The statuses that hold the lock: selectMyGroup's allowlist, named for the rows. */
-export const LEAGUE_LOCK_STATUSES = /* @__PURE__ */ Object.freeze([GROUP_STATUS.FORMING, GROUP_STATUS.DRAFTING, GROUP_STATUS.AWAITING_OPEN, GROUP_STATUS.BATTLE]);
+export const LEAGUE_LOCK_STATUSES = /* @__PURE__ */ Object.freeze(['forming', 'drafting', 'awaiting_open', 'battle']);
 
 /** The lock for the player's active ranked group as selectMyGroup picked it (the client's subscribeMyGroup answer). */
 export function leagueLockOfGroup(group) {
