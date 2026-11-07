@@ -120,8 +120,12 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
     const lg = '../components/League/';
     expect(at(`${lg}LeagueLobbyRedesign.jsx`)).toEqual([IMPORT, `{${A2} ? <TrainingLoadoutSlot agentLoadout={agentLoadout} /> : (`, `{${A2} ? null : (`, `{${A2} ? (`]);
     expect(at(`${lg}LeagueDeskParts.jsx`)).toEqual([IMPORT, `{${A2} ? <TrainingLoadoutSlot agentLoadout={agentLoadout} /> : (`, `{${A2} ? null : (`]);
-    expect(at(`${lg}LeagueLobbyDesktop.jsx`)).toEqual([IMPORT, `{${A2} ? (`]);
-    expect(at(`${lg}leagueLoadoutSlot.jsx`)).toEqual([IMPORT, `const LazyLeagueLine = ${A2}`, `const LazyTrainingLine = ${A2}`]);
+    // The A2 fix pass (review A2R-1): both lobbies read the group through the failure-aware read, count a failed read
+    // as a known seat for the Backing strip, and provide the line's group-known context; each flag-off arm is today's.
+    const SEAT_KNOWN = `const seatKnown = ${A2} ? !uid || seatFor === uid || seatFor?.failedFor === uid : !uid || seatFor === uid;`;
+    expect(at(`${lg}LeagueLobbyDesktop.jsx`)).toEqual([IMPORT, `{${A2} ? (`, `return ${A2}`, SEAT_KNOWN, `return ${A2} ? (`]);
+    expect(at(`${lg}LeagueHome.jsx`)).toEqual([IMPORT, `return ${A2}`, SEAT_KNOWN, `: ${A2} ? <LeagueGroupKnownContext.Provider value={!uid || seatFor === uid}>{lobby}</LeagueGroupKnownContext.Provider> : lobby;`]);
+    expect(at(`${lg}leagueLoadoutSlot.jsx`)).toEqual([IMPORT, `const LazyLeagueLine = ${A2}`, `const LazyTrainingLine = ${A2}`, `export const LeagueGroupKnownContext = ${A2}`]);
     expect(at('../App.jsx')).toEqual([
       "import { AGENT_FORM_ARMORY_ENABLED } from './config/agentFormFlags';",
       `agentLoadout={primaryAgent ? (${A2} ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName, openLoadout: () => setScreen('dashboard') } : { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName }) : null}`,
@@ -184,6 +188,7 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
       'components/CommandCenter/panels/LoadoutPanel.jsx',
       'components/CommandCenter/sections/DeploySection.jsx',
       'components/League/LeagueDeskParts.jsx',
+      'components/League/LeagueHome.jsx', // the A2 fix pass (A2R-1)
       'components/League/LeagueLobbyDesktop.jsx',
       'components/League/LeagueLobbyRedesign.jsx',
       'components/League/leagueLoadoutSlot.jsx',
