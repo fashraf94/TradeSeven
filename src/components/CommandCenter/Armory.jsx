@@ -41,6 +41,7 @@ import React, { createContext, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { changeArchetype } from '../../services/agentService';
 import AgentForm from '../AgentForm/AgentForm';
+import { SMOKE_DIALS } from '../AgentForm/smokeDials';
 import { SET_ALONE, UNLIT, hasWebGL } from '../AgentForm/agentFormSpec';
 import { getAgentGrowth } from '../AgentForm/agentGrowth';
 import { armoryLines } from './hub/archetypeLines';
@@ -94,7 +95,7 @@ export const PHONE_HERO = Object.freeze({ wide: 250, narrow: 245, at: 375, text:
 /** The phone hero's box and layout at the hub's measured width (unmeasured: the wide size, stacked, which overlaps nothing). */
 export function phoneHero(width) {
   const measured = typeof width === 'number' && width > 0;
-  const size = measured && width < PHONE_HERO.at ? PHONE_HERO.narrow : PHONE_HERO.wide;
+  const size = SMOKE_DIALS.heroPx ?? (measured && width < PHONE_HERO.at ? PHONE_HERO.narrow : PHONE_HERO.wide);
   return { size, stacked: !(measured && width - PHONE_HERO.chrome - size >= PHONE_HERO.text) };
 }
 

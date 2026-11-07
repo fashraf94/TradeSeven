@@ -8,6 +8,8 @@
 // are not here: they come from tokens (src/theme/tokens.css) and arrive as an
 // argument (agentFormTokens.js).
 
+import { SMOKE_DIALS } from '../smokeDials.js';
+
 export const TAU = Math.PI * 2;
 
 // Mood vocabulary (round 1). speed · coh(erence) · bright · lean(+fwd/−back) · spread · signals · bloom · beacon · open(+part/−tighten) · lift · scan
@@ -172,11 +174,11 @@ export function responseLift(ms) {
  * breath's top and shrinks the clipped white from 438 px² to about 100; .75 here would draw it only 15 % darker, the
  * white disc unchanged.
  */
-export const CORE_LEVEL = .6;
+export const CORE_LEVEL = SMOKE_DIALS.core;
 /** D-C: the breath's cycle, in seconds. */
-export const BREATH_S = 4.5;
+export const BREATH_S = SMOKE_DIALS.breathS;
 /** D-C: how far the breath dips, as a share of the toned level (to 85 % of it). */
-export const BREATH_DEPTH = .15;
+export const BREATH_DEPTH = SMOKE_DIALS.breathDepth;
 
 /** The breath at `t` seconds: 1 at the top, 1 − BREATH_DEPTH at the bottom, on a raised cosine (eased both ways). */
 export function breath(t) {

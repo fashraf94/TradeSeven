@@ -29,7 +29,7 @@
  * Nothing in the hub, the battle view or the picker reads it.
  */
 // Pinned by: agentFormLabFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const AGENT_FORM_LAB_ENABLED = false;
+export const AGENT_FORM_LAB_ENABLED = true;
 
 /**
  * AGENT_FORM_HUB_ENABLED — the armored agent as the Command Center hero
@@ -95,4 +95,4 @@ export const AGENT_FORM_LEAGUE_ENABLED = true;
  * hub chunk, the agent form wrapper and every other chunk are byte-identical to main's.
  */
 // Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const AGENT_FORM_ARMORY_ENABLED = false;
+export const AGENT_FORM_ARMORY_ENABLED = true;
