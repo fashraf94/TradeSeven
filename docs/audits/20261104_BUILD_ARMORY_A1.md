@@ -1,6 +1,6 @@
 # Build A1: the armory replaces the archetype picker
 
-**Run date:** November 4, 2026 · **Model:** Claude Opus 5.5 · **Branch:** `claude/armory-a1`, cut from `origin/claude/phase0-armory` @ `bbad5e71` (the Phase 0 report alone, one commit over `main` @ `40641486`), with `origin/main` @ `31574600` merged in (`5dee1679`, no conflict) and, before the final checks, `origin/main` @ `9d97b396` (PRs #1021 and #1022) merged in again (`e89aaba3`, no conflict); pushed by refspec from the worktree branch `claude/armory-a1-9010a6` · **Smoke branch:** `claude/armory-a1-smoke` · **PR:** [#1024](https://github.com/fashraf94/TradeSeven/pull/1024), draft · **Preview (follow-up):** https://trade-seven-nj8izdnrc-fais-projects-bc179554.vercel.app (the smoke head `7af066e6`; confirmed by the armory's new lock line and the readout's strings in the served Command Center chunk, and the dropped footnote sentence absent). A1's preview, https://trade-seven-9l683tqhp-fais-projects-bc179554.vercel.app (`079f0abd`), is superseded
+**Run date:** November 4, 2026 · **Model:** Claude Opus 5.5 · **Branch:** `claude/armory-a1`, cut from `origin/claude/phase0-armory` @ `bbad5e71` (the Phase 0 report alone, one commit over `main` @ `40641486`), with `origin/main` @ `31574600` merged in (`5dee1679`, no conflict) and, before the final checks, `origin/main` @ `9d97b396` (PRs #1021 and #1022) merged in again (`e89aaba3`, no conflict); pushed by refspec from the worktree branch `claude/armory-a1-9010a6` · **Smoke branch:** `claude/armory-a1-smoke` · **PR:** [#1024](https://github.com/fashraf94/TradeSeven/pull/1024), ready for review after the fix pass · **Preview (fix pass):** https://trade-seven-hngpfgrlb-fais-projects-bc179554.vercel.app (the smoke head `07c11d49`, with the four dials; §15.8). The follow-up's preview, https://trade-seven-nj8izdnrc-fais-projects-bc179554.vercel.app (`7af066e6`), and A1's, https://trade-seven-9l683tqhp-fais-projects-bc179554.vercel.app (`079f0abd`), are superseded
 
 **Follow-up run (§13, §14):** November 6, 2026 · Claude Opus 5.5 · the same branch, from its head `da4950f6` (checked before any write: PR #1024 open, draft, head `da4950f6`), worked in the app worktree branch `claude/armory-a1-followup-c5229e` and pushed by refspec to `claude/armory-a1`; `main` not merged in (the fix pass after the review does that). `git fetch origin` ran first. Fenced files read: `api/agent/decide.js` (§14's no-book check, read only). Edited: none. Nothing under `api/` changed. The old §13 "Commits and artifacts" is now §15.
 
@@ -280,7 +280,7 @@ A WSL worktree of the code head with the flag set `true`, an untracked Vite page
 
 ## 10. Your iPhone checklist
 
-Open the preview link (A1's: https://trade-seven-9l683tqhp-fais-projects-bc179554.vercel.app; the follow-up's is in §15) on the iPhone and sign in.
+Open the preview link (A1's: https://trade-seven-9l683tqhp-fais-projects-bc179554.vercel.app; the follow-up's is in §16) on the iPhone and sign in.
 
 1. **Command Center → Loadout → Change archetype.** The armory opens in place: the figure shrinks to the middle and the six sets appear around it. Nothing should flash or go black.
 2. **Tap each set.** It lights up while your finger is on it, and the centre figure suits up in about a second. The line under the ring says "Previewing · Equipped set is …".
@@ -293,7 +293,7 @@ Open the preview link (A1's: https://trade-seven-9l683tqhp-fais-projects-bc17955
 
 **The smoke test passed:** "the armory looks great and switching between the archetypes was smooth and very satisfying." The `60 s:` lines from the armory and from the four lab presets were not recorded. **FD-9 therefore stays as built:** unworn sets are stills, live on touch. The all-live lab presets stay in the lab for a later reading.
 
-### The follow-up's phone check (the new smoke preview, §15)
+### The follow-up's phone check (the new smoke preview, §16)
 
 Open https://trade-seven-nj8izdnrc-fais-projects-bc179554.vercel.app on the iPhone and sign in.
 
@@ -308,7 +308,7 @@ Open https://trade-seven-nj8izdnrc-fais-projects-bc179554.vercel.app on the iPho
 
 ### The fix pass's phone check (the rebuilt smoke preview, §15.8)
 
-Open the fix pass's preview (§15.8) on the iPhone and sign in.
+Open the fix pass's preview, https://trade-seven-hngpfgrlb-fais-projects-bc179554.vercel.app (§15.8), on the iPhone and sign in.
 
 1. **The bare Shadow is bigger,** and the text sits cleanly beside or under it at your phone's width.
 2. **The core is softer and breathes slowly,** never dark.
@@ -542,7 +542,7 @@ The trade-off the review recorded still holds: the focused button is below the f
 
 **Why 250 and 245, not 240 and 220.** Bare Shadow's framing is fixed (`FRAME_SCALE.none` 1.25, unchanged), so the figure grows exactly with its box: its lit extent (the form canvas's own pixels at alpha ≥ 8, over 3 s) is 47–51 % of the box wide and 54–55 % high at every size. "About 25 % bigger" is 1.25 × each old box: 200 → 250, 196 → 245. The brief's 240 / 220 would have drawn it 20 % and 12 % bigger. Growing the framing instead would have needed a new spec key (bytes in every chunk the wrapper is in) and would push the figure toward the box's edge, where the CSS glow clips (R3); growing the box costs only height.
 
-**The layout: stacked, the figure biggest.** Beside the figure, the words' column would get the hub width − 56 − the box (56 = the 2 × 14 gutter, the 2 × 1 border, the 6 + 14 padding, the 6 px gap). They need 120 px to sit without a cut word ("Shadow" at 23 px is 84 px; the status line's longest word, mono, about 90 with its dot). At 250 that is a hub of 426 px, wider than every common phone, so below 426 px the words stack under the figure, centred, and from 426 they go beside it. Stacked, the words rise a tenth of the box (`PHONE_HERO.tuck`) into its empty lower margin, never as far as the figure. Unmeasured (the first render), it is 250 and stacked, which overlaps nothing at any width.
+**The layout: stacked, the figure biggest.** Beside the figure, the words' column would get the hub width − 56 − the box (56 = the 2 × 14 gutter, the 2 × 1 border, the 6 + 14 padding, the 6 px gap). They need 120 px to sit without a cut word ("Shadow" at 23 px is 84 px; the status line's longest word, mono, about 90 with its dot). At 250 that is a hub of 426 px, wider than most phones, so below 426 px the words stack under the figure, centred, and from 426 they go beside it (a 430 px phone, the largest iPhones, shows them beside it). Stacked, the words rise a tenth of the box (`PHONE_HERO.tuck`) into its empty lower margin, never as far as the figure. Unmeasured (the first render), it is 250 and stacked, which overlaps nothing at any width.
 
 Measured (the real hub, flag on, headless Edge, phone contexts at 3×):
 
@@ -642,14 +642,27 @@ On Linux, in the code worktree at `6c4d0f80`, from a green baseline of the 432 r
 - **`main` merged first:** `origin/main` @ `18d84ada` into the branch at `baff6c99`, no conflict. `main` brought 28 commits (PR #1026, the activation observer, and the CI and rules changes before it); the one file both sides touched, `src/config/flagPinGuard.test.js`, merged clean (`main` added a flag-source module; A1 added the armory's `DARK_BY_DESIGN` entry).
 - **Flag-off identity** (Linux, LF trees from git, the same install, `package-lock.json` `40382e64edb6`): `vite build --minify false --sourcemap false`, hashes masked (`-[A-Za-z0-9_-]{8}.js|css`), each file keyed by its masked name and first bytes: **`main` `18d84ada` vs the code commit `bfeffa3d`, and vs the pushed head: 55 / 55 files, 0 lines differ.** Minified, as Vercel builds it: the same 107 file names under the same content hashes; all 58 non-map files byte-identical; the 49 source maps differ (they carry the new source). An early probe (the engine's flag import and one ternary alone) read the same before the rest was written.
 - **`lint:gate`:** exit 0 on Linux at `bfeffa3d` and at the pushed head.
-- **Full suite:** SUITE_LINE
+- **Full suite:** Linux (WSL), `TZ=UTC`, 8 workers, under `flock /tmp/pd-suite.lock`, Node 20.20.2, at the report-draft head `0f114a90` (every code change, the merged `main`, the report draft and its screenshots): **1,300 files (1,292 passed, 8 skipped), 28,672 rows, 28,583 pass, 0 fail, 89 skipped**, 245 s, on the first run. The pushed head changes only this report's text; at it, before the push, the identity builds, the minified build and the 14 repository-walking test files ran again (their numbers cannot sit inside the commit they measure: they are in the PR description).
 - **Minified `vite build` of the pushed head:** exit 0.
 - **Windows:** the touched hub and guard suites, green (the engine suites stay Linux-only: no `three` in the Windows checkout).
 - **Not run:** the Firestore rules suite (no rules changed), anything on a device.
 
 ### 15.8 The smoke branch, its dials, and the phone check
 
-SMOKE_PARAGRAPH
+**`claude/armory-a1-smoke` @ `07c11d49`**, force-pushed, one commit on the report-draft head `0f114a90` ("SMOKE ONLY, NEVER MERGE"), made by git plumbing: `AGENT_FORM_ARMORY_ENABLED` and `AGENT_FORM_LAB_ENABLED` set `true`; the hub hero's corner readout (the follow-up's, S7's format) with a dials line; and the founder's four dials, read from the address by a smoke-only module, `src/components/AgentForm/smokeDials.js`. Five files, +78 / −7. Its pins and guards red by design. Its minified build on Linux: exit 0 (the dials in a chunk of their own, `breathDepth` in the engine chunk, `heroPx` and N3's footnote in the Command Center chunk).
+
+**Preview: https://trade-seven-hngpfgrlb-fais-projects-bc179554.vercel.app** (the served Command Center chunk, 156,750 bytes, carries N3's footnote, the dials line and `heroPx`).
+
+| Dial | Range | What it changes | The PR ships |
+|---|---|---|---|
+| `?heroPx=` | 180–280 | the phone hub's bare hero box, at every width | 250 from 375 px, 245 below |
+| `?core=` | 0.5–1.0 | the core's light at its source, a fraction of today's (on screen: 1.0 today's, 0.75 about 15 % darker, 0.6 about 26 %, 0.5 about a third) | 0.6 |
+| `?breathDepth=` | 0–0.3 | how far the breath dips below the core's level | 0.15 |
+| `?breathS=` | 2–8 | the breath's cycle, in seconds | 4.5 |
+
+The corner label (top right) shows the values in use, a `*` on each one the address set, and the hero's box as drawn now. A value outside its range is ignored. Two cautions from the measurements: **`core` between about 0.65 and 0.8 sits on the clipping cliff** (§15.3): the white disc comes and goes with each breath (at 0.7 it swings 43 ↔ 431 px²), which reads as a pulse; compare 0.6, 0.75 and 1.0 first. **`heroPx` above the stage's content width clips at the stage's edge** (262 px at 320, 302 at 360): smoke-only, no layout follows the dial past it.
+
+The founder's check is §10 ("The fix pass's phone check").
 
 ### 15.9 Readings, and what this pass leaves
 
@@ -657,13 +670,14 @@ Readings (built this way; say if any is wrong):
 1. **"About 25 % bigger" is the figure, so the box is 1.25 ×** (250 / 245), not the brief's 240 / 220, which measure 20 % and 12 % (§15.2). `?heroPx=` covers both.
 2. **"About 25 % less luminous, glow included" is what the screen shows,** the core and its glow at the breath's top: 0.6 at the source, not 0.75, which the blown-out centre hides (§15.3). `?core=` scales the source, so on the dial 0.75 is "15 % darker on screen" and 0.6 is "26 %".
 3. **The breath's 85 % is the source's;** on screen the core and its glow dip 11 %, because the centre stays nearly white (§15.4). `?breathDepth=` scales the source too.
-4. **Stacked below 426 px of hub width**, beside from there; the words tucked a tenth of the box into its empty margin (§15.2).
-5. **The core's inner light on the armor is not toned** (it lights the plates, and D-B names the core and its glow). On armored seats the plates hide the core at times, as today.
-6. **AR-9 is equivalent today:** the reducer stores only `charging` and `locked`, so the explicit compare changes no behaviour; it would stop a future `'idle'` from closing the armory.
+4. **The CSS bloom breathes because it copies each frame;** its own strength is not modulated, so the threads' and the armor's glow stay as they are (§15.4).
+5. **Stacked below 426 px of hub width**, beside from there; the words tucked a tenth of the box into its empty margin (§15.2).
+6. **The core's inner light on the armor is not toned** (it lights the plates, and D-B names the core and its glow). On armored seats the plates hide the core at times, as today.
+7. **AR-9 is equivalent today:** the reducer stores only `charging` and `locked`, so the explicit compare changes no behaviour; it would stop a future `'idle'` from closing the armory.
 
 Carried to A2 unchanged (the review's §5): AR-5 (Safari focus: thread `sheet.opener`), AR-6 (the ring under 315 CSS px), AR-7 (F3, a jsdom-only heap death on a hero remount inside the open scope), the lab's presets starting bare. The review's §5 item 1 (re-measure the close with A2's taller Loadout panel) stands: this pass measured it on D-A's taller stage.
 
-**WSL trees.** Removed after the checks (BUILD_RULES §3, the review's list): CLEANUP_LINE
+**WSL trees.** Removed after the checks (BUILD_RULES §3, the review's list), under the suite lock, each worktree's `node_modules` symlink unlinked first, then `git -C ~/pd-ci worktree remove --force` and `prune`: `~/pd-ci-a1r`, `~/pd-ci-a1rm`, `~/pd-ci-a1rx`, `~/pd-ci-a1rh`, `~/pd-a1f-runs` and `~/pd-a1r-runs`, **1,019 MB freed** (`df`: 22,911 → 21,892 MB used). This pass's own (`~/pd-ci-a1fx`, `~/pd-ci-a1fm`, `~/pd-ci-a1fh`, `~/pd-a1fx-runs`: 602 MB by `du`) go once the pushed head is checked; their figure is in the PR description. `~/pd-ci` and `~/pd-ci-af1` untouched.
 
 ---
 
@@ -693,13 +707,13 @@ Carried to A2 unchanged (the review's §5): AR-5 (Safari focus: thread `sheet.op
 | `bfeffa3d` | Part 1 (AR-1, AR-2, AR-3, AR-4, AR-9, N3, N4) and Part 2 (D-A, D-B, D-C), with the rows and guards |
 | `fcc3188c` | D-A sized from the measurement: 250 / 245, the words tucked under |
 | `6c4d0f80` | D-B sized from the measurement: the core's source level 0.6 |
-| REPORT_DRAFT_SHA | This report's fix pass (§0, §10, §15, §16) and six screenshots (`docs/audits/assets/armory-a1-fix-*.png`) |
+| `0f114a90` | This report's fix pass (§0, §10, §15, §16) and six screenshots (`docs/audits/assets/armory-a1-fix-*.png`) |
 | the head | This report, final (the checks, the smoke's SHA and preview) |
 
 On `claude/armory-a1-smoke` (A1): `079f0abd`, one commit on `e4af2f9b`, "SMOKE ONLY, NEVER MERGE": `AGENT_FORM_ARMORY_ENABLED` and `AGENT_FORM_LAB_ENABLED` set `true` and the hub hero's corner readout (S7's format, as the S1 and S2 smokes had it, plus the engine's view count). Two files, +35 / −3. Its pins and guards red by design.
 
 On `claude/armory-a1-smoke` (follow-up, force-pushed): **`7af066e6`**, one commit on `de45aef9`, "SMOKE ONLY, NEVER MERGE": `AGENT_FORM_ARMORY_ENABLED` and `AGENT_FORM_LAB_ENABLED` set `true` and the hub hero's corner readout, re-anchored on `HubAgentForm.jsx` (now `main`'s text). Two files, +35 / −3, made by git plumbing. Its pins and guards red by design. Its minified build on Linux: exit 0. **Preview: https://trade-seven-nj8izdnrc-fais-projects-bc179554.vercel.app**: the served Command Center chunk (155,341 bytes) carries the armory's new lock line and the readout, and not the dropped footnote sentence.
 
-On `claude/armory-a1-smoke` (fix pass, force-pushed): SMOKE_SUMMARY
+On `claude/armory-a1-smoke` (fix pass, force-pushed): **`07c11d49`**, one commit on `0f114a90`, "SMOKE ONLY, NEVER MERGE": the armory and the lab on, the corner readout with its dials line, and the four dials (`smokeDials.js`). Five files, +78 / −7, made by git plumbing. Its pins and guards red by design. Its minified build on Linux: exit 0. **Preview: https://trade-seven-hngpfgrlb-fais-projects-bc179554.vercel.app** (§15.8).
 
 A copy of this report is in `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261104_BUILD_ARMORY_A1.md` (BUILD_RULES §3). The harness (§9, rebuilt in the follow-up and extended in the fix pass: a lab page, a one-form page and a harness-only core dial) and the mutation runners live in the sessions' scratchpads and are not committed.
