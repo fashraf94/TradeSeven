@@ -2,7 +2,7 @@
 // "Ladder" and "Scored" rows). Pure; the measured fixture is the REAL
 // corrected-battle harness, scorer and committed patch.
 import { describe, it, expect } from 'vitest';
-import { selectBombRecord, isActivationDayAt, checkDotsOf, recordMs } from './selectBombRecord.js';
+import { selectBombRecord, agentBombContext, isActivationDayAt, checkDotsOf, recordMs } from './selectBombRecord.js';
 import { legacyBattle } from './__fixtures__/bombBattles.js';
 import { STOCK_TEST_NOW, correctedStockBattle, stockWriterDb } from '../../../../api/_utils/__fixtures__/stockThresholdHarness.js';
 import { correctedScorePatch, scoreCorrectedPosition } from '../../../../api/_utils/stockThresholdAdmission.js';
@@ -136,5 +136,33 @@ describe('the measured model is chosen exactly as the screen chooses it', () => 
     expect(selectBombRecord(b, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z')).model).toBe('measured');
     const u = structuredClone(b); delete u.scoring.stockThresholdModel;
     expect(selectBombRecord(u, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z')).model).toBe('legacy');
+  });
+});
+
+describe('an unreadable model stamp: the scorer skips the battle, so no ladder and no promised check', () => {
+  it('a stamp the reader refuses → model unsupported (unsupported_stock_model)', async () => {
+    const b = await committedMeasured();
+    b.scoring.stockThresholdModel = { modelId: 'x' };
+    expect(selectBombRecord(b, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z'))).toMatchObject({ model: 'unsupported', reason: 'unsupported_stock_model' });
+  });
+});
+
+describe('agentBombContext — which row is the agent\'s (review A4, C1)', () => {
+  const shared = () => { const b = legacyBattle(); b.opponent.portfolio.star = [{ symbol: 'EOG', baseATR: 2.4, positionId: 'cpu-eog' }]; return b; };
+  it('the gated held view by posKey: the player\'s slot → the record; the CPU\'s slot or another slot → a preview', () => {
+    expect(agentBombContext(legacyBattle(), 'EOG', WED_1PM, { battleId: 'b', posKey: 'player:star:0' })).toMatchObject({ kind: 'agent', battleId: 'b', held: true, record: { positionId: 'pos-eog' } });
+    expect(agentBombContext(shared(), 'EOG', WED_1PM, { posKey: 'cpu:star:0' })).toMatchObject({ held: false, record: null });
+    expect(agentBombContext(legacyBattle(), 'EOG', WED_1PM, { posKey: 'player:core:0' })).toMatchObject({ held: false, record: null });
+  });
+  it('the shipped mount by positionId: the agent\'s → the record; another → a preview', () => {
+    expect(agentBombContext(shared(), 'EOG', WED_1PM, { positionId: 'pos-eog' }).held).toBe(true);
+    expect(agentBombContext(shared(), 'EOG', WED_1PM, { positionId: 'cpu-eog' }).held).toBe(false);
+  });
+  it('neither id and the CPU also holds the ticker → a preview (never the agent\'s ladder on the CPU\'s row); not shared → the record', () => {
+    expect(agentBombContext(shared(), 'EOG', WED_1PM, {})).toMatchObject({ held: false, record: null });
+    expect(agentBombContext(legacyBattle(), 'EOG', WED_1PM, {}).held).toBe(true);
+  });
+  it('a name the agent does not hold → a preview', () => {
+    expect(agentBombContext(legacyBattle(), 'NVDA', WED_1PM, {})).toEqual({ kind: 'agent', battleId: null, held: false, record: null });
   });
 });

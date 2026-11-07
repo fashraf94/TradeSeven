@@ -74,3 +74,9 @@ describe('no third clock: nothing in Bomb mode computes a check as an offset fro
     }
   });
 });
+
+describe('no readable battle end (review B7)', () => {
+  it('no bound — a countdown, never a blank clock', () => {
+    expect(checkClock(at('2026-11-09T15:07:30.000Z'), { battleExpiresAtMs: null, lastScoredAtMs: at('2026-11-09T15:00:20.000Z') })).toMatchObject({ state: 'countdown', slotMs: at('2026-11-09T15:15:00.000Z') });
+  });
+});

@@ -37,6 +37,7 @@ describe('useBombModeForBattle', () => {
     expect(gate.calls).toEqual([['battle-1', { ownerId: 'owner-1' }]]);
   });
   it("'allowlist' and a no: stays off", async () => { flag.mode = 'allowlist'; gate.answer = false; await mount(); expect(seen.at(-1)).toBe(false); });
+  it("'allowlist' before the battle names its owner: off and nothing asked (one request per owner, review B5)", async () => { flag.mode = 'allowlist'; await mount('battle-1', null); expect(seen.at(-1)).toBe(false); expect(gate.calls).toEqual([]); });
   it("'allowlist' with no agent battle id: off and nothing asked", async () => { flag.mode = 'allowlist'; await mount(null); expect(seen.at(-1)).toBe(false); expect(gate.calls).toEqual([]); });
   it('an unknown mode: off, nothing asked', async () => { flag.mode = 'sometimes'; await mount(); expect(seen.at(-1)).toBe(false); expect(gate.calls).toEqual([]); });
 });

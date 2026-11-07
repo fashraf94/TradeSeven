@@ -292,3 +292,98 @@ describe('the red zone — automatic, on the 1-minute series the view already fe
     expect(q('[data-bomb-state="entry_unavailable"]')).not.toBeNull();
   });
 });
+
+// ── Review lens B / C rows (the review record in the build report) ──────────
+const drawerTabs = () => [...document.body.querySelectorAll('button')].filter((b) => b.style.padding === '6px 10px' && b.style.borderRadius === '6px');
+const activeDrawerTab = () => drawerTabs().filter((b) => b.style.background !== 'rgba(255, 255, 255, 0.05)').map((b) => b.textContent.trim());
+
+describe('lens C: the requests and the tabs a mount makes', () => {
+  it('C2: an asset that carries its threshold — the sheet asks the thresholds route nothing', async () => {
+    seed('2026-10-14T17:00:00.000Z');
+    await render(<AssetResearchModal asset={{ symbol: 'AAPL', name: 'Apple', price: 101.2, threshold: 2 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" bombContext={{ kind: 'bench' }} />);
+    expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$100.98');
+    expect(net.calls.some((c) => c[0] === 'thresholds')).toBe(false);
+  });
+  it('C10: a preview with no asset threshold still shows the 💣 pill and the Bomb tab', async () => {
+    seed('2026-10-14T17:00:00.000Z'); net.thresholds = { AAPL: { threshold: 2 } };
+    await render(<AssetResearchModal asset={{ symbol: 'AAPL', name: 'Apple', price: 101.2 }} onClose={() => {}} showActionButton={false} version={2} bombContext={{ kind: 'bench' }} />);
+    expect(buttons()).toContain('💣');
+    expect(drawerTabs().map((b) => b.textContent.trim())).toContain('💣 Bomb');
+  });
+  it('C7: the BA-5 fallback of a mount that opens on the Bomb tab and the 💣 view — Analysis is the open tab; the 1D daily request, never the 30-minute one', async () => {
+    seed('2026-10-14T17:00:00.000Z');
+    await render(<AssetResearchModal asset={{ symbol: 'AAPL', name: 'Apple', price: 101.2, threshold: 2.5 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" />);
+    expect(activeDrawerTab()).toEqual(['Analysis']);
+    const history = net.calls.filter((c) => c[0] === 'history').map((c) => [c[2], c[3]]);
+    expect(history.some(([tf]) => tf === '30m' || tf === '1m')).toBe(false);
+    expect(history).toContainEqual(['1d', { days: 400 }]);
+  });
+});
+
+describe('lens C: the check clock in the sheet and the banked time', () => {
+  const eogAsset = { symbol: 'EOG', name: 'EOG', threshold: 3.6 };
+  function seedEog(nowIso) {
+    vi.useFakeTimers(); vi.setSystemTime(new Date(nowIso));
+    net.daily.EOG = [{ date: '2026-10-14', open: 156, high: 164, low: 155, close: 163.6, volume: 1 }, { date: '2026-10-13', open: 154, high: 156, low: 153, close: 155.6, volume: 1 }];
+    net.intraday.EOG = [bar('2026-10-14T16:30:00.000Z', 163, 163.7, 162.9, 163.5), bar('2026-10-14T16:00:00.000Z', 162.5, 163.1, 162.4, 163)];
+    net.minute.EOG = [bar('2026-10-14T16:56:00.000Z', 163.4, 163.5, 163.3, 163.45), bar('2026-10-14T16:55:00.000Z', 163.3, 163.4, 163.2, 163.4)];
+  }
+  const open = async (live, battle) => {
+    const record = selectBombRecord(battle, 'EOG', Date.now());
+    await render(<AssetResearchModal asset={{ ...eogAsset, price: live }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={live} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
+  };
+  it('C3: at the slot, before the battle is scored past it, the sheet says checking…', async () => {
+    seedEog('2026-10-14T17:16:00.000Z'); // the 1:15 slot; the fixture was last scored at 1:00:40
+    await open(158, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z', thresholdHistory: {} }));
+    expect(q('[data-bomb-view="fuse"]')).not.toBeNull();
+    expect(q('[data-bomb-what]').textContent).toBe('What has to happenNeeds $161.20 at a check · checking…');
+  });
+  it('C4: a late queue (the 1:15 slot scored at 1:19:20) — the banked moment names the 1:15 check, never 1:19', async () => {
+    seedEog('2026-10-14T17:20:00.000Z');
+    await open(163.95, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z' }));
+    expect(q('[data-bomb-view="redzone"]')).not.toBeNull();
+    const after = legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z', thresholdHistory: { EOG: { maxMultiplier: 1.55, minMultiplier: -0.31 } }, scoreState: { lastScoredAt: '2026-10-14T17:19:20.000Z' }, cronState: { lastTickPrice: { EOG: 164.05 }, lastTickTimestamp: { EOG: Date.parse('2026-10-14T17:19:10.000Z') } } });
+    await open(164.05, after);
+    expect(q('[data-rz-banked-moment]').textContent).toBe('+30BANKED · 1:15 CHECK · $164.05');
+  });
+});
+
+describe('lens B: the poll follows the session under an open red zone (B1, B4)', () => {
+  const eogAsset = { symbol: 'EOG', name: 'EOG', threshold: 3.6 };
+  const minuteCalls = () => net.calls.filter((c) => c[0] === 'history' && c[2] === '1m').length;
+  const tick = async (ms) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); await flush(); };
+  const openAt = async (nowIso, minute) => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date(nowIso));
+    net.daily.EOG = [{ date: '2026-10-14', open: 156, high: 164, low: 155, close: 163.6, volume: 1 }, { date: '2026-10-13', open: 154, high: 156, low: 153, close: 155.6, volume: 1 }];
+    net.intraday.EOG = [bar('2026-10-13T19:30:00.000Z', 155, 155.7, 154.9, 155.6), bar('2026-10-13T19:00:00.000Z', 155.2, 155.4, 154.8, 155)];
+    net.minute.EOG = minute;
+    const battle = legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z' });
+    const record = selectBombRecord(battle, 'EOG', Date.now());
+    await render(<AssetResearchModal asset={{ ...eogAsset, price: 163.6 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={163.6} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
+  };
+  it('B1: opened at 9:29 in a closed red zone — at 9:30 the zone opens and the 15-second poll starts', async () => {
+    await openAt('2026-10-14T13:29:00.000Z', [bar('2026-10-14T13:31:00.000Z', 163.5, 163.6, 163.4, 163.6), bar('2026-10-14T13:30:00.000Z', 163.4, 163.5, 163.3, 163.5)]);
+    expect(q('[data-redzone-state="closed"]')).not.toBeNull();
+    await tick(30_000);
+    expect(minuteCalls()).toBe(1); // closed: no poll
+    await tick(31_000); // 9:30:01
+    expect(q('[data-bomb-redzone-chip="approaching"]')).not.toBeNull();
+    const at930 = minuteCalls();
+    await tick(15_000);
+    expect(minuteCalls()).toBe(at930 + 1);
+    await tick(15_000);
+    expect(minuteCalls()).toBe(at930 + 2);
+  });
+  it('B4: a red zone open across 4:00 PM — the zone closes and the poll stops', async () => {
+    await openAt('2026-10-14T19:59:00.000Z', [bar('2026-10-14T19:58:00.000Z', 163.5, 163.6, 163.4, 163.6), bar('2026-10-14T19:57:00.000Z', 163.4, 163.5, 163.3, 163.5)]);
+    expect(q('[data-bomb-redzone-chip="approaching"]')).not.toBeNull();
+    const before = minuteCalls();
+    await tick(15_000);
+    expect(minuteCalls()).toBe(before + 1); // polling while open
+    await tick(46_000); // 4:00:01 PM
+    expect(q('[data-redzone-state="closed"]')).not.toBeNull();
+    const atClose = minuteCalls();
+    await tick(60_000);
+    expect(minuteCalls()).toBe(atClose);
+  });
+});

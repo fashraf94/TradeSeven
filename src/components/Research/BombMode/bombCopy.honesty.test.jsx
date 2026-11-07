@@ -118,11 +118,21 @@ describe('a preview never says "entry" (BA-1)', () => {
   });
 });
 
+// A JSX text node is text after a tag's `>` up to the next `<` or `{` (review C8:
+// text before an expression, and text over several lines, count too).
+const JSX_TEXT = /(?<=[^\s=\->])>([^<>{}]*[A-Za-z]{2,}[^<>{}]*)(?=[<{])/g;
+// Code between two JSX elements of a ternary or a && chain is not text.
+const IS_CODE = /^[:?)&|]|===|!==|&&|\|\|/;
+const inlineCopy = (code) => [...code.matchAll(JSX_TEXT)].map((m) => m[1].trim()).filter((t) => t && !IS_CODE.test(t));
+
 describe('every visible word comes from BOMB_COPY', () => {
+  it('the scan catches text before an expression and text over two lines (planted)', () => {
+    expect(inlineCopy('return <b>Entry {price}</b>;')).toEqual(['Entry']);
+    expect(inlineCopy('return (<text x={1}>\n  Next check\n</text>);')).toEqual(['Next check']);
+    expect(inlineCopy('return <b>{BOMB_COPY.entry(p)}</b>;')).toEqual([]);
+    expect(inlineCopy("a ? <g></g>\n  : r.state === 'next'\n  ? <b />")).toEqual([]);
+  });
   it.each(SOURCES.filter((f) => f.endsWith('.jsx')))('%s types no copy inline in JSX text', (f) => {
-    const code = codeOf(f);
-    // a JSX text node is text between `>` and `<` with no braces; a word there would be inline copy
-    const inline = [...code.matchAll(/(?<=[^\s=\->])>([^<>{}\n]*[A-Za-z]{2,}[^<>{}\n]*)</g)].map((m) => m[1].trim()).filter(Boolean);
-    expect(inline).toEqual([]);
+    expect(inlineCopy(codeOf(f))).toEqual([]);
   });
 });
