@@ -293,6 +293,10 @@ The last code commit is `ab79a9e6`; the pushed head adds only this report's fina
 5. **`?loadoutStates=1`:** open the preview link above. Scroll: the League card locked (with the date) and open, the League tab's line locked and open, the Training tab's line, and a BaggerBomb card with no book that still says Deploy works.
 6. **The armory from each card:** from each card's armor row, the line above the figure names the game ("Choosing armor for BaggerBomb", "… for League"). On the states page's phone frame the League card is locked: its armory lets you try sets, and its Equip button says "Locked until the week ends" and does nothing.
 
+### The founder's result (Nov 7, 2026)
+
+**Not received by the review session.** The review brief said the founder's phone check would be pasted under it; nothing followed the heading. The review (`docs/audits/20261107_REVIEW_ARMORY_A2.md` §9) records the check as pending; the fix pass fills the result here.
+
 ---
 
 ## §15 Founder questions and readings
