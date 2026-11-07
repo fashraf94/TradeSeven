@@ -10,7 +10,7 @@ import {
   parseEodhdNews, parseEodhdNewsItem, normalizeUrl, newsIdOf, fetchEodhdNews, isAboutSymbol, sourceKindOfHost, NEWS_DROP_REASONS,
 } from './eodhdNews.js';
 import { storiesForSymbol } from './fantasyTimesStories.js';
-import { closeFromDailyRows } from './lastClose.js';
+import { closeFromDailyRows, fetchLastClose } from './lastClose.js';
 import { packItem, packItemIdOf, headlineItem, PACK_KINDS } from './packItem.js';
 import { newsfilterStatus } from './newsfilter.js';
 
@@ -56,6 +56,15 @@ describe('EODHD /news against the committed capture (C §C13)', () => {
     expect(drops).toHaveLength(3);
     // ...while the same items are kept for the company they are about
     expect(isAboutSymbol(itemsOf('AAPL')[0], 'MRVL')).toBe(true);
+    // review L2-9: a one- or two-letter ticker is named only in a ticker form, never as a word
+    const crowd = ['AI.US', 'NVDA.US', 'AMD.US'];
+    expect(isAboutSymbol({ title: 'Why AI chip stocks fell: NVDA, AMD slide', symbols: crowd }, 'AI')).toBe(false);
+    expect(isAboutSymbol({ title: 'A Look at the Market Today', symbols: ['A.US', 'MSFT.US', 'AAPL.US'] }, 'A')).toBe(false);
+    expect(isAboutSymbol({ title: 'C3.ai (AI) beats estimates', symbols: crowd }, 'AI')).toBe(true);
+    expect(isAboutSymbol({ title: 'Agilent (NYSE: A) raises guidance', symbols: ['A.US', 'MSFT.US', 'AAPL.US'] }, 'A')).toBe(true);
+    expect(isAboutSymbol({ title: 'Is $AI a buy?', symbols: crowd }, 'AI')).toBe(true);
+    // a longer ticker is still named as a word
+    expect(isAboutSymbol({ title: 'NVDA slides on export news', symbols: crowd }, 'NVDA')).toBe(true);
   });
 
   it('publishedAt is the vendor date, never the fetch instant: no date → no_publication_time; no link → no_url', () => {
@@ -106,6 +115,11 @@ describe('last close (V1.1 §7 rule 3)', () => {
   it('a newest bar older than the previous session is stale: no close (null, never zero)', () => {
     expect(closeFromDailyRows(rows, '2026-11-09')).toEqual({ lastClose: null, lastCloseAsOf: '2026-11-06', reason: 'stale_close' });
     expect(closeFromDailyRows([], '2026-11-09').lastClose).toBeNull();
+  });
+
+  it('review L2-5: the daily-bar read has its own deadline (the shared cache takes no signal): a hang is a timeout, never a stuck job', async () => {
+    const r = await fetchLastClose({ symbol: 'AAA', previousEtDate: '2026-11-06', getData: () => new Promise(() => {}), timeoutMs: 20 });
+    expect(r).toEqual({ lastClose: null, lastCloseAsOf: null, reason: 'timeout', status: 'error' });
   });
 });
 

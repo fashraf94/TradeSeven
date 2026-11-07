@@ -67,11 +67,18 @@ function usListingsOf(symbols) {
     .map((s) => s.slice(0, -3).replace(/-/g, '.')));
 }
 
-/** Is this item about `symbol`? Its title names the ticker, or it lists at most two US names (one of them this one). */
+/**
+ * Is this item about `symbol`? Its title names the ticker, or it lists at most two US names (one of them this one). A
+ * ticker of one or two letters is also an ordinary word ("A Look at…", "Why AI chip stocks fell"), so the title names it
+ * only in a ticker form — "(AI)", "NYSE: A", "NASDAQ:AI", "$AI" (review L2-9).
+ */
 export function isAboutSymbol(item, symbol) {
   const title = typeof item?.title === 'string' ? item.title : '';
   const escaped = symbol.replace('.', '\\.');
-  if (new RegExp(`(^|[^A-Z])${escaped}([^A-Z]|$)`).test(title)) return true;
+  const named = symbol.replace(/\..*$/, '').length <= 2
+    ? new RegExp(`\\(${escaped}\\)|\\b(?:NYSE|NASDAQ|NYSEARCA|NYSEAMERICAN|AMEX|CBOE)\\s*:\\s*${escaped}(?![A-Z])|\\$${escaped}(?![A-Z])`)
+    : new RegExp(`(^|[^A-Z])${escaped}([^A-Z]|$)`);
+  if (named.test(title)) return true;
   const us = usListingsOf(item?.symbols);
   return us.has(symbol) && us.size <= 2;
 }

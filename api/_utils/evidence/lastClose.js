@@ -29,14 +29,21 @@ export function closeFromDailyRows(rows, previousEtDate) {
   return { lastClose: Math.round(close * 100) / 100, lastCloseAsOf: bar.date, reason: null };
 }
 
-/** Fetch and read. Never throws: an error is the reason. */
-export async function fetchLastClose({ symbol, previousEtDate, getData = getStockAnalysisData }) {
+/** How long the daily-bar read may take: the shared cache takes no AbortSignal, so it gets its own deadline (review L2-5). */
+export const LAST_CLOSE_TIMEOUT_MS = 15_000;
+
+/** Fetch and read. Never throws, never hangs past its deadline: an error or a timeout is the reason. */
+export async function fetchLastClose({ symbol, previousEtDate, getData = getStockAnalysisData, timeoutMs = LAST_CLOSE_TIMEOUT_MS }) {
+  let timer;
   try {
-    const data = await getData(symbol, { fields: ['daily'], type: 'stock' });
+    const timedOut = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), timeoutMs); });
+    const data = await Promise.race([getData(symbol, { fields: ['daily'], type: 'stock' }), timedOut]);
     if (!Array.isArray(data?.daily)) return { lastClose: null, lastCloseAsOf: null, reason: data?.errors?.daily ? 'fetch_failed' : 'no_bars', status: 'error' };
     const r = closeFromDailyRows(data.daily, previousEtDate);
     return { ...r, status: r.lastClose === null ? 'unavailable' : 'ok' };
-  } catch {
-    return { lastClose: null, lastCloseAsOf: null, reason: 'fetch_failed', status: 'error' };
+  } catch (err) {
+    return { lastClose: null, lastCloseAsOf: null, reason: err?.message === 'timeout' ? 'timeout' : 'fetch_failed', status: 'error' };
+  } finally {
+    clearTimeout(timer);
   }
 }
