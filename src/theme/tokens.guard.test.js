@@ -89,6 +89,9 @@ const GUARDED_FILES = [
   'src/components/League/battleArena/leagueAgentFormSlot.jsx',
   'src/components/League/battleArena/fuseFormLayout.js',
   'src/components/League/battleArena/finishedRivalRead.js',
+  // Build A2: the League lobby's loadout lines and their folded lazy slot, on the vocabulary from birth.
+  'src/components/League/LeagueLoadoutLine.jsx',
+  'src/components/League/leagueLoadoutSlot.jsx',
   // Agent form build S1: the battle forms, on the vocabulary from birth.
   'src/screens/battleView/BattleAgentForm.jsx',
   'src/screens/battleView/agentMood.js',

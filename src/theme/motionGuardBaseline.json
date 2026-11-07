@@ -117,6 +117,14 @@
       "count": 0,
       "authority": "Agent form build S2, arena fit (the founder's rulings of Oct 30, 2026) — one read of a finished group's public agent context: no colour and no transition literal, from birth. Registered in the commit that introduces it."
     },
+    "src/components/League/LeagueLoadoutLine.jsx": {
+      "count": 0,
+      "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the League lobby's loadout lines and their folded lazy slot: colours only through the League tokens, no transition literal, from birth. Registered in the commit that registers them."
+    },
+    "src/components/League/leagueLoadoutSlot.jsx": {
+      "count": 0,
+      "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the League lobby's loadout lines and their folded lazy slot: colours only through the League tokens, no transition literal, from birth. Registered in the commit that registers them."
+    },
     "src/screens/battleView/BattleAgentForm.jsx": {
       "count": 0,
       "authority": "Agent form build S1 (founder rulings R1–R12) — the armored agent on the hub and in a 1v1 battle: colours only through the agent form's tokens, motion only as the engine's own equip timeline (a stated BUILD_RULES §11 exception, recorded in commandCenterHub.mount.guard.test.js), no transition literal, from birth. Registered in the commit that introduces them."
