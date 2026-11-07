@@ -69,9 +69,11 @@ import { HUB_COPY as COPY } from './hub/hubCopy';
 import { LOADOUT_COPY } from '../../constants/loadoutCopy';
 import { HUB_LAYOUT_FIXTURES } from './__fixtures__/hubLayoutFixtures';
 import { byRole, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav, press } from './__fixtures__/hubTestKit';
-import { PHONE_ARMORY } from './Armory';
+import { PHONE_ARMORY, useArmoryEquip } from './Armory';
 import { SET_ALONE } from '../AgentForm/agentFormSpec';
 import { armoryLines } from './hub/archetypeLines';
+import DeploySection from './sections/DeploySection';
+import { PerGameLoadoutContext } from './hub/perGameLoadoutContext';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -262,6 +264,21 @@ describe('board 2: the Deploy card\'s line, and the stage\'s words', () => {
     expect([...without.querySelectorAll('button')].filter((b) => !b.closest('[data-loadout-deploy-line]')).map((b) => b.disabled)).toEqual(holdWith);
   });
 
+  it('no book never stops the Deploy card\'s Hold: a ready deploy with a live wiring holds with a book and without one', async () => {
+    // (the hub above has no deploy provider here, so its Hold is disabled either way; this row gives the card one)
+    const ready = HUB_LAYOUT_FIXTURES.returning.sections.deploy;
+    const wiring = { controlId: 'card', onComplete: vi.fn() };
+    const scope = (agent) => ({ agent, lock: OPEN, lockFailed: false, activeBattles: [], lists: { committed: LISTS }, armoryKind: 'baggerbomb', setArmoryKind: vi.fn(), bookKind: 'baggerbomb', setBookKind: vi.fn() });
+    const hold = () => [...document.querySelectorAll('[data-hub-deploy] button')].find((b) => !b.closest('[data-loadout-deploy-line]'));
+    for (const agent of [AGENT(), AGENT({ loadouts: { baggerbomb: SLOT({ book: { ref: null, name: null, pin: null } }) } })]) {
+      const m = mount(<PerGameLoadoutContext.Provider value={scope(agent)}><DeploySection deploy={ready} holdWiring={wiring} onOpenLoadout={vi.fn()} onAction={vi.fn()} /></PerGameLoadoutContext.Provider>);
+      expect(document.querySelector('[data-hub-deploy]').getAttribute('data-hub-deploy')).toBe('ready');
+      expect(hold().disabled).toBe(false);
+      m.unmount();
+    }
+    expect(document.querySelector('[data-hub-deploy]')).toBeNull();
+  });
+
   it('the stage\'s loadout summary names both loadouts', async () => {
     await renderHub();
     expect(document.body.textContent).toContain(`BaggerBomb · ${name('degen')} · League · ${name('contrarian')}`);
@@ -327,6 +344,25 @@ describe('board 4: the armory with a loadout context', () => {
     await flush();
     expect(document.querySelector('[data-armory-error]').textContent).toBe('Locked until the week ends · Fri Nov 6, 4:00 PM. Set when you registered.');
     expect(dialog()).not.toBeNull();
+  });
+
+  it('the equip itself refuses a locked League card, whatever calls it (the button is not the only gate)', async () => {
+    const seen = {};
+    function EquipProbe({ card }) {
+      seen.equip = useArmoryEquip({ agent: AGENT(), card, onEquipped: vi.fn() }).equip;
+      return null;
+    }
+    const league = (locked) => ({ kind: 'league', game: 'League', archetype: 'contrarian', locked });
+    const m = mount(<EquipProbe card={league(true)} />);
+    mounted.push(m);
+    await act(async () => { await seen.equip('guardian'); });
+    expect(h.writers.changeLoadoutArchetype).not.toHaveBeenCalled();
+    m.unmount();
+    mounted = mounted.filter((x) => x !== m);
+    // the control: the same call on an open League card writes the League loadout
+    mounted.push(mount(<EquipProbe card={league(false)} />));
+    await act(async () => { await seen.equip('guardian'); });
+    expect(h.writers.changeLoadoutArchetype).toHaveBeenCalledWith('ag-1', 'guardian', 'league');
   });
 
   it('a BaggerBomb change while a BaggerBomb game runs is offered (no battle lock: the next deploy wears it)', async () => {
