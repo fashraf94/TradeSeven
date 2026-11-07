@@ -24,6 +24,11 @@ import { SECTORS } from '../../constants/sectors';
 import HoldingsTab from '../Research/HoldingsTab';
 import SectorETFRanksTab from '../Research/SectorETFRanksTab';
 import SmartMoneyTab from '../Research/SmartMoneyTab';
+import { getVolatilityThresholds } from '../../services/volatilityService';
+import { resolveBombMode } from '../Research/BombMode/bombModeGate';
+import useBombView from '../Research/BombMode/useBombView';
+import BombPlot, { RedZoneChip } from '../Research/BombMode/BombPlot';
+import BombSheet from '../Research/BombMode/BombSheet';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -50,6 +55,8 @@ import SmartMoneyTab from '../Research/SmartMoneyTab';
  * - showActionButton: boolean (default: true) - show/hide action section
  * - controlledQuote / onNavigateAdmission: optional battle-screen contracts
  *   (Shadow vs CPU quote integrity) — see the note at the component.
+ * - bombContext: optional Bomb mode contract (Research Modal Build A) — see the
+ *   note at the component.
  */
 
 // Mock fundamental data (in production, fetch from API)
@@ -123,6 +130,17 @@ const AssetResearchModal = ({
   //   put and makes no request for it.
   controlledQuote = null,
   onNavigateAdmission = null,
+  // Research Modal Build A — Bomb mode (spec
+  // docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md §4.2). Passed ONLY by
+  // the in-battle mounts, and only when RESEARCH_MODAL_BOMB_MODE resolves on
+  // for them: { kind: 'agent', battleId, held, record } (the agent Battle View;
+  // `record` from selectBombRecord) | { kind: 'v4', dailyLevels } (a V4
+  // BaggerBomb battle) | { kind: 'bench' } (a name in a battle the player does
+  // not hold). With it, the 💣 view is the Fuse / red zone and the Bomb tab is
+  // the one sheet. Without it and with the mode 'on', this mount shows no 💣
+  // pill and no Bomb tab (BA-5). With the mode off nobody passes it and nothing
+  // here changes.
+  bombContext = null,
 }) => {
   const controlledMode = controlledQuote != null;
   const controlledValid = controlledMode
@@ -170,6 +188,10 @@ const AssetResearchModal = ({
   const isGameContext = isGameContextProp !== undefined
     ? isGameContextProp
     : (onAcquire !== null || showActionButton);
+  // Bomb mode: on for a mount that passes bombContext; under 'on', a mount that
+  // does not is a browse / acquire mount and loses the 💣 pill and the Bomb tab.
+  const bombOn = version >= 2 && bombContext != null && typeof bombContext === 'object';
+  const bombHidden = !bombOn && resolveBombMode() === 'on';
   const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : isSectorETF ? 'holdings' : 'fundamental'));
   const [whyMovingOpen, setWhyMovingOpen] = useState(false);
   const [profile, setProfile] = useState(null);
@@ -193,6 +215,10 @@ const AssetResearchModal = ({
     setChartSymbol(currentAsset?.symbol);
     setHighlightedLevel(null);
     setSrOn(false);
+  }
+  // BA-5: a hidden Bomb tab is never the open one.
+  if (bombHidden && activeTab === 'baggerbomb') {
+    setActiveTab(isCrypto ? 'health' : isIndexAsset ? 'marketContext' : isSectorETF ? 'holdings' : 'fundamental');
   }
 
   const handleNavigateToStock = useCallback((ticker, name) => {
@@ -252,6 +278,7 @@ const AssetResearchModal = ({
     technicalActive: activeTab === 'technical',
     srRequested: srOn,
     ...(controlledMode ? { controlled: { extremes: controlledValid ? (controlledQuote.extremes || null) : null } } : {}),
+    ...(bombOn ? { bombMode: true } : {}),
   });
 
   // The chart is on screen exactly when it has bars; it starts with S/R off
@@ -328,6 +355,42 @@ const AssetResearchModal = ({
   }, [researchData.previousClose, currentAsset?.threshold, currentAsset?.lockedPrice, currentAsset?.baselinePrice,
       currentAsset?.startPrice, currentAsset?.startingPrice, currentAsset?.basePrice, currentAsset?.draftPrice,
       currentAsset?.price, currentAsset?.currentPrice, measuredBombKey]);
+
+  // Bomb mode's one view model (Fuse / red zone / sheet), or null when off. A
+  // measured position's ladder IS bombData.measured (spec §3.1); a held legacy
+  // ladder takes the server's baseline precedence from the record, not the
+  // fallback chain above (which stays the mode-off chart's, byte for byte); a
+  // preview takes yesterday's close for the chart and the sheet alike (BA-1).
+  const [bombThreshold, setBombThreshold] = useState(null); // { symbol, threshold } — the sheet's thresholds answer
+  const bombView = useBombView({
+    on: bombOn,
+    context: bombContext,
+    symbol: currentAsset?.symbol,
+    isOriginal: isOriginalAsset,
+    bombData,
+    assetThreshold: currentAsset?.threshold,
+    fetchedThreshold: bombThreshold && bombThreshold.symbol === currentAsset?.symbol ? bombThreshold.threshold : null,
+    isCrypto,
+    previousClose: researchData.previousClose,
+    live: shownAsset?.price,
+    timeframe: researchData.timeframe,
+    setTimeframe: researchData.setTimeframe,
+    bars: researchData.ohlcvData,
+  });
+  // The sheet asks for a threshold exactly when BaggerBombTab does today (the
+  // tab is showing, the asset carries none, it is not a measured position):
+  // the same request, never a new one.
+  useEffect(() => {
+    if (!bombOn || activeTab !== 'baggerbomb') return undefined;
+    if (currentAsset?.stockRewardRoute || currentAsset?.threshold) return undefined;
+    const symbol = currentAsset?.symbol;
+    if (!symbol) return undefined;
+    let cancelled = false;
+    getVolatilityThresholds([symbol], currentAsset?.isCrypto ? 'crypto' : 'stock')
+      .then(result => { if (!cancelled && result?.[symbol]) setBombThreshold({ symbol, threshold: result[symbol].threshold }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [bombOn, activeTab, currentAsset?.symbol, currentAsset?.threshold, currentAsset?.isCrypto, currentAsset?.stockRewardRoute]);
 
   // v2: Measure container height for drawer snap points
   useEffect(() => {
@@ -847,12 +910,13 @@ const AssetResearchModal = ({
                   smaData={researchData.smaData}
                   activeHighlight={chartHighlight}
                   height={chartHeight}
-                  bombData={bombData}
+                  bombData={bombHidden ? null : bombData}
                   symbol={currentAsset?.symbol}
                   todayDailyCandle={researchData.todayDailyCandle}
                   realtimeExtremes={isOriginalAsset && !controlledMode ? realtimeExtremes : null}
                   controlledSession={controlledMode ? { crypto: !!isCrypto } : undefined}
                   onToggleSR={setSrOn}
+                  {...(bombView ? { bombPlot: <BombPlot view={bombView} height={chartHeight} />, bombChip: <RedZoneChip mode={bombView.mode} /> } : {})}
                 />
               )}
             </div>
@@ -882,8 +946,8 @@ const AssetResearchModal = ({
               isCrypto={isCrypto}
               isIndex={isIndexAsset}
               isSectorETF={isSectorETF}
-              hasBombData={!!bombData}
-              isGameContext={isGameContext}
+              hasBombData={bombOn ? true : bombHidden ? false : !!bombData}
+              isGameContext={bombHidden ? false : isGameContext}
             >
               {activeTab === 'fundamental' && (
                 <div style={{ padding: '8px 0' }}>
@@ -955,7 +1019,7 @@ const AssetResearchModal = ({
               )}
 
               {activeTab === 'baggerbomb' && (
-                <BaggerBombTab asset={currentAsset} />
+                bombView ? <BombSheet view={bombView} /> : <BaggerBombTab asset={currentAsset} />
               )}
 
               {activeTab === 'holdings' && isSectorETF && (

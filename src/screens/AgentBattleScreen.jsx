@@ -128,6 +128,8 @@ import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import { calculateAssetScoreV3 } from '../utils/baggerBombUtils';
 import { DEFAULT_THRESHOLD, buildResearchAsset } from '../utils/researchAssetBuilder';
 import AssetResearchModal from '../components/draft/AssetResearchModal';
+import useBombModeForBattle from '../components/Research/BombMode/useBombModeForBattle';
+import { selectBombRecord } from '../components/Research/BombMode/selectBombRecord';
 import TermResearchModal from '../components/shared/TermResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import FilmRoomBanner from '../components/FilmRoom/FilmRoomBanner';
@@ -1213,6 +1215,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     feedBookmarks,
     loading: battleLoading,
   } = gatedPath ? gatedFields : battleHook;
+  // Research Modal Build A (spec docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md
+  // §4.1): does Bomb mode resolve on for THIS agent battle? 'off' is one
+  // call-time read and no request; 'allowlist' asks cockpit-status once per
+  // owner (the Film Room gate's cached verdict).
+  const bombModeOn = useBombModeForBattle(agentBattleId, agentBattle?.ownerId ?? null);
 
   // ── Cockpit Build 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md §4) ──────────
   //
@@ -2960,6 +2967,17 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // Each closes — and stays closed: recovery needs a new click.
   let heldResearch = null;
   let breakdownGated = null;
+  // Research Modal Build A (spec §4.2): the in-battle Bomb mode contract,
+  // built ONLY when the mode resolves on — off, the record selector is never
+  // called and no mount receives a new prop. A position the player's agent
+  // holds gets its record; anything else (a bench name, the CPU's position —
+  // its posKey or positionId is not the agent's) gets a labelled preview.
+  const bombContextFor = (symbol, { posKey = null, positionId = null } = {}) => {
+    let record = selectBombRecord(agentBattle, symbol, Date.now());
+    if (record && typeof posKey === 'string' && posKey !== `player:${record.tier}:${record.slot}`) record = null;
+    if (record && typeof positionId === 'string' && positionId && positionId !== record.positionId) record = null;
+    return { kind: 'agent', battleId: agentBattleId, held: record !== null, record };
+  };
   if (gatedPath) {
     if (researchView) {
       let valid = admitted && researchView.ctx === gatedContextKey;
@@ -4123,6 +4141,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             defaultTab="baggerbomb"
             defaultTimeframe="bomb"
             controlledQuote={heldResearch.controlledQuote}
+            {...(bombModeOn ? { bombContext: bombContextFor(heldResearch.asset.symbol, { posKey: heldResearch.controlledQuote.posKey }) } : {})}
           />
         ) : (researchView?.kind === 'nonheld' && stableResearchAsset ? (
           <AssetResearchModal
@@ -4135,6 +4154,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             defaultTimeframe="bomb"
             wsPrice={effectivePrices[stableResearchAsset?.symbol]}
             onNavigateAdmission={handleNavigateAdmission}
+            {...(bombModeOn ? { bombContext: bombContextFor(stableResearchAsset.symbol, { positionId: stableResearchAsset.positionId ?? null }) } : {})}
           />
         ) : null)
       ) : stableResearchAsset && (
@@ -4147,6 +4167,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           defaultTab="baggerbomb"
           defaultTimeframe="bomb"
           wsPrice={effectivePrices[stableResearchAsset?.symbol]}
+          {...(bombModeOn ? { bombContext: bombContextFor(stableResearchAsset.symbol, { positionId: stableResearchAsset.positionId ?? null }) } : {})}
         />
       )}
 
