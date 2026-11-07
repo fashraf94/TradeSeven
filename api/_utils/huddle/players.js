@@ -24,10 +24,22 @@ export function recentWindowStartIso(etDate, n = RECENT_SESSIONS) {
   return s?.openMs ? new Date(s.openMs).toISOString() : null;
 }
 
+/**
+ * An optional scope (the founder's smoke, or a staged rollout): `HUDDLE_PLAYER_UIDS`, a comma-separated uid list. Unset or
+ * blank, every active player (the spec's behaviour). The preview shares the production database, so without a scope one
+ * flag-on worker run on the smoke preview would make a huddle for every active player (spec V1.1 §9: "one real huddle for
+ * the founder's account").
+ */
+export function playerScopeOf(env = process.env) {
+  const raw = env?.HUDDLE_PLAYER_UIDS;
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  return new Set(raw.split(',').map((s) => s.trim()).filter(Boolean));
+}
+
 const isHumanOwner = (ownerId) => typeof ownerId === 'string' && ownerId.length > 0 && !isCpuUserId(ownerId);
 
 /** @returns {Promise<{ uids: string[], counts: { active: number, recent: number, deployed: number }, skippedCpu: number }>} */
-export async function enumerateActivePlayers(db, { etDate }) {
+export async function enumerateActivePlayers(db, { etDate, env = process.env }) {
   const from = recentWindowStartIso(etDate);
   const owners = new Set();
   let skippedCpu = 0;
@@ -45,5 +57,7 @@ export async function enumerateActivePlayers(db, { etDate }) {
     const deployed = await db.collection('agents').where('lastDeployedAt', '>=', from).get();
     deployed.docs.forEach((d) => { deployedCount += 1; take(d.data()?.ownerId, d.data()?.isCpu); });
   }
-  return { uids: [...owners].sort(), counts: { active: active.size, recent: recentCount, deployed: deployedCount }, skippedCpu };
+  const scope = playerScopeOf(env);
+  const uids = [...owners].filter((uid) => !scope || scope.has(uid)).sort();
+  return { uids, counts: { active: active.size, recent: recentCount, deployed: deployedCount }, skippedCpu, scoped: scope ? owners.size - uids.length : 0 };
 }
