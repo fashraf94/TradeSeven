@@ -66,7 +66,8 @@ describe('the sheet (C8): a HubSheet; no autoplay; Confirm sends the base revisi
 
   it('opens with focus on Close; the transcript is shown; nothing plays or asks for a token until Play', () => {
     const m = open();
-    expect(document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent).toBeTruthy();
+    expect(document.activeElement?.tagName).toBe('BUTTON');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe(COPY.sheet.close);
     expect(document.body.textContent).toContain('The tape was firm.');
     const audio = document.body.querySelector('audio');
     expect(audio.getAttribute('preload')).toBe('none');
@@ -118,6 +119,117 @@ describe('the sheet (C8): a HubSheet; no autoplay; Confirm sends the base revisi
     keep(mount(<HubOverlayProvider><HuddleSheet huddle={huddleProp()} onClose={onClose} reducedMotion /></HubOverlayProvider>));
     press(document.activeElement || document.body, 'Escape');
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('the sheet body\'s stops, resume and answers (review L3-2, L3-4, L3-5, L3-9, L3-10)', () => {
+  const AUDIO = { ...HUDDLE, audio: { durationMs: 70_000, hasAudio: true } };
+  let pause; let play;
+  beforeEach(() => {
+    pause = vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    play = vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockImplementation(async () => {});
+  });
+  afterEach(() => { pause.mockRestore(); play.mockRestore(); delete document.visibilityState; });
+  const sheet = (props = {}, extra = {}) => (
+    <HubOverlayProvider><HuddleSheet huddle={huddleProp({ read: { status: 'ready', huddle: AUDIO }, ...props })} onClose={vi.fn()} reducedMotion {...extra} /></HubOverlayProvider>
+  );
+  const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
+
+  it('closing the sheet stops the audio and drops its source (the element\'s ref cleanup)', () => {
+    const m = mount(sheet());
+    const audio = document.body.querySelector('audio');
+    audio.setAttribute('src', '/api/huddle/audio/x');
+    m.unmount();
+    expect(pause).toHaveBeenCalled();
+    expect(audio.hasAttribute('src')).toBe(false);
+  });
+
+  it('a Play still waiting for its URL starts nothing once the tab is hidden, or the ceremony covers the page', async () => {
+    for (const stop of ['hidden', 'ceremony']) {
+      const token = deferred();
+      service.issueHuddlePlayback.mockReturnValueOnce(token.promise);
+      const m = keep(mount(sheet()));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      await act(async () => { click(document.body.querySelector('[data-huddle-play]')); });
+      if (stop === 'hidden') {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+        await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+      } else {
+        m.rerender(sheet({}, { ceremonyActive: true }));
+      }
+      await act(async () => { token.resolve({ url: '/api/huddle/audio/late' }); await token.promise; });
+      expect(document.body.querySelector('audio').hasAttribute('src'), stop).toBe(false);
+      expect(play, stop).not.toHaveBeenCalled();
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+      play.mockClear();
+    }
+  });
+
+  it('Pause then Play resumes the same source: no second token', async () => {
+    service.issueHuddlePlayback.mockResolvedValue({ url: '/api/huddle/audio/a' });
+    keep(mount(sheet()));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    await act(async () => { click(document.body.querySelector('[data-huddle-play]')); });
+    expect(service.issueHuddlePlayback).toHaveBeenCalledTimes(1);
+    await act(async () => { click(document.body.querySelector('[data-huddle-play]')); });
+    expect(service.issueHuddlePlayback).toHaveBeenCalledTimes(1);
+    expect(play).toHaveBeenCalledTimes(2);
+  });
+
+  it('a Confirm that throws, or fails with a 500, never leaves the sheet working, and keeps the player\'s edits for the retry', async () => {
+    const confirm = vi.fn(async () => { throw new Error('network'); });
+    keep(mount(sheet({ confirm })));
+    click(document.body.querySelectorAll('[data-huddle-item] button')[0]); // HOLD AAA removed
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect(document.body.querySelector('[data-huddle-confirm]').textContent).toBe(COPY.huddle.confirm);
+    expect(document.body.querySelector('[data-huddle-confirm]').disabled).toBe(false);
+    expect(document.body.querySelector('[role="alert"]').textContent).toBe(COPY.huddle.notices.failed);
+    confirm.mockImplementation(async () => ({ ok: false, status: 500, body: { error: 'internal' } }));
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    const sent = confirm.mock.calls.map(([arg]) => arg.replacement.stances.map((x) => x.ticker));
+    expect(sent).toEqual([['BBB'], ['BBB'], ['BBB']]);
+  });
+
+  it('a Skip that throws never leaves the sheet working', async () => {
+    const skip = vi.fn(async () => { throw new Error('network'); });
+    keep(mount(sheet({ skip })));
+    await act(async () => { click(document.body.querySelector('[data-huddle-skip]')); });
+    expect(document.body.querySelector('[data-huddle-skip]').disabled).toBe(false);
+    expect(document.body.querySelector('[role="alert"]').textContent).toBe(COPY.huddle.notices.failed);
+  });
+
+  it('a record still being made, or one that could not be made, shows its state and no plan card', () => {
+    for (const [status, words] of [['generating', COPY.huddle.preparing], ['failed', COPY.huddle.unavailable]]) {
+      const m = mount(sheet({ read: { status: 'ready', huddle: { ...AUDIO, status, plan: null, script: null } } }));
+      expect(document.body.querySelector('[data-huddle-empty]').textContent, status).toBe(words);
+      expect(document.body.querySelector('[data-huddle-plan]'), status).toBeNull();
+      expect(document.body.querySelector('[data-huddle-confirm]'), status).toBeNull();
+      m.unmount();
+    }
+  });
+
+  it('opened from the Deploy card\'s Reconfirm door, the sheet lands on Reconfirm; from any other door, on Close', async () => {
+    const confirmedRecord = { ...AUDIO, plan: { ...AUDIO.plan, status: 'confirmed', confirmations: [{ archetype: 'analyst', revision: 'r1' }] } };
+    const line = document.createElement('div');
+    line.setAttribute('data-hub-huddle-reconfirm', '');
+    const door = document.createElement('button');
+    line.appendChild(door);
+    document.body.appendChild(line);
+    const props = { read: { status: 'ready', huddle: confirmedRecord }, needsReconfirm: true, focusPlan: true };
+    const m = mount(sheet(props, { opener: door }));
+    await act(async () => { await Promise.resolve(); });
+    expect(document.activeElement?.hasAttribute('data-huddle-reconfirm')).toBe(true);
+    m.unmount();
+    const chip = document.createElement('button');
+    document.body.appendChild(chip);
+    const m2 = mount(sheet(props, { opener: chip }));
+    await act(async () => { await Promise.resolve(); });
+    expect(document.activeElement?.getAttribute('aria-label')).toBe(COPY.sheet.close);
+    m2.unmount();
+    line.remove();
+    chip.remove();
   });
 });
 

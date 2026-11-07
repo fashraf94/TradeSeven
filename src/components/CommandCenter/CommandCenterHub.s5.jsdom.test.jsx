@@ -44,7 +44,7 @@ vi.mock('../Dashboard/ArchetypePicker', async () => ({ default: (await import('.
 vi.mock('../Dashboard/EquipSheet', async () => ({ default: (await import('./__fixtures__/legacySheetStubs')).EquipSheetStub }));
 vi.mock('../Dashboard/TraitsSheet', async () => ({ default: (await import('./__fixtures__/legacySheetStubs')).TraitsSheetStub }));
 
-import CommandCenterHub, { areaSummaries } from './CommandCenterHub';
+import CommandCenterHub, { areaSummaries, huddleActionsOf } from './CommandCenterHub';
 import LoadoutSheets from './LoadoutSheets';
 import { CLASHBOT_OPEN_EVENT } from '../ClashBot/ClashBotWidget';
 import { getLevelConfig, getNextLevelInfo } from '../../constants/agentProgression';
@@ -1130,6 +1130,26 @@ describe('the stage\'s area summaries (E5-11)', () => {
     expect(areaSummaries({ loadout: { status: 'loading' } })[2]).toBe(COPY.loadout.summaryLoading);
     expect(areaSummaries({ loadout: { status: 'ready', summary: 'Trend Follower · Tech Leaders' } })[2]).toBe('Trend Follower · Tech Leaders');
     expect(areaSummaries({})[2]).toBe(COPY.loadout.summaryLoading);
+  });
+
+  it('Huddle S1 (C6; review L3-1): the next action card\'s Open and Later act on the candidate the card SHOWS, not the readers\' own', () => {
+    const laterFor = vi.fn((key) => `later:${key}`);
+    const huddle = { refresh: vi.fn(), retry: vi.fn(), needsReconfirm: false, laterFor };
+    const sheet = { open: () => vi.fn() };
+    const base = { openGame: vi.fn(), openTape: vi.fn(), nextAction: vi.fn(), laterNextAction: 'readers-later' };
+    // the card shows the BaggerBomb game in session; the readers' own action was built for the ranked game waiting for the open
+    const shownGame = { status: 'ready', candidate: { key: 'openGame', id: 'bb1', laterKey: 'openGame:bb1' } };
+    const a = huddleActionsOf(huddle, sheet, shownGame, base);
+    a.nextAction();
+    expect(base.openGame).toHaveBeenCalledWith({ id: 'bb1' });
+    expect(base.nextAction).not.toHaveBeenCalled();
+    expect(a.laterNextAction).toBe('later:openGame:bb1');
+    const shownReview = { status: 'ready', candidate: { key: 'review', id: 'g9', laterKey: 'review:g9' } };
+    huddleActionsOf(huddle, sheet, shownReview, base).nextAction();
+    expect(base.openTape).toHaveBeenCalledWith({ id: 'g9' });
+    const shownHuddle = { status: 'ready', candidate: { key: 'huddle', id: '2026-11-09', laterKey: 'huddle:2026-11-09' } };
+    expect(huddleActionsOf(huddle, sheet, shownHuddle, base).laterNextAction).toBe('later:huddle:2026-11-09');
+    expect(huddleActionsOf(huddle, sheet, { status: 'loading', candidate: null }, base).nextAction).toBeUndefined();
   });
 
   it("Huddle S1 (C8; Amendment D §D5): Partnership's summary is the reserved line without a Huddle section (the flag off) and the section's state with one", () => {

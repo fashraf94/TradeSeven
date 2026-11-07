@@ -40,12 +40,15 @@ export function huddleChipOf(read) {
 }
 
 /**
- * The next action's Huddle candidate (C6): today's huddle is ready, its plan still proposed, the session not closed.
- * After a confirm or a skip it is none, and the card falls through.
+ * The next action's Huddle candidate (C6): today's huddle is ready, its plan still proposed and not empty, the session not
+ * closed. After a confirm or a skip it is none, and the card falls through. An empty plan has nothing to confirm or skip
+ * (the sheet shows neither), so it is no candidate either (review L3-8): the chip still opens the huddle to hear.
  */
 export function huddleCandidateOf(read, nowMs) {
   const h = huddleOf(read);
   if (!h || h.status !== 'ready' || h.plan?.status !== 'proposed') return null;
+  const current = h.plan.current || {};
+  if ((current.stances?.length ?? 0) + (current.lines?.length ?? 0) === 0) return null;
   const closeMs = h.session?.closeMs;
   if (typeof closeMs !== 'number' || !(nowMs < closeMs)) return null;
   return {
@@ -116,12 +119,13 @@ const historyStateOf = (p) => (p.planStatus === 'confirmed' ? 'confirmed'
 export function huddlePartnershipOf(todayRead, historyRead) {
   const today = huddleOf(todayRead);
   const history = Array.isArray(historyRead?.plans) ? historyRead.plans : null;
-  if (!today && !history) {
-    if (todayRead?.status === 'error' && historyRead?.status !== 'loading') return { status: 'error' };
-    if (historyRead?.status === 'error' && todayRead?.status !== 'loading') return { status: 'error' };
-    if (todayRead?.status === 'ready' && historyRead?.status === 'ready') return { status: 'none' };
-    return { status: 'loading' };
-  }
+  // The Research panel's states (C8; D5): a read that failed with nothing kept is an error (with Retry), whatever the other
+  // read holds; a read still out is loading. Only when both have answered is an empty answer "none" (review L3-3: an empty
+  // history must not stand in for today's answer).
+  const todayAnswered = today !== null || todayRead?.status === 'ready';
+  const historyAnswered = history !== null;
+  if ((!todayAnswered && todayRead?.status === 'error') || (!historyAnswered && historyRead?.status === 'error')) return { status: 'error' };
+  if (!todayAnswered || !historyAnswered) return { status: 'loading' };
   const rows = (history || []).map((p) => ({
     etDate: p.etDate,
     text: COPY.huddle.historyRow(formatHubDay(hubMs(`${p.etDate}T16:00:00Z`)) || p.etDate, COPY.huddle.historyState[historyStateOf(p)]),

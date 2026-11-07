@@ -150,6 +150,9 @@ export const HUB_COPY = Object.freeze({
     loading: 'Checking your huddle',
     none: 'No huddle yet today',
     loadError: "Couldn't load your huddle",
+    /** A record that is not ready yet, or could not be made (the chip opens the sheet for both: C4, C8). */
+    preparing: 'Your huddle is still being prepared.',
+    unavailable: "This morning's huddle couldn't be prepared. There is no game plan to confirm.",
     listenLabel: 'Listen',
     play: 'Play',
     pause: 'Pause',

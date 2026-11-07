@@ -25,7 +25,8 @@ export default function HuddleSheet({ huddle, phone = false, onClose, opener = n
         confirm={huddle?.confirm}
         skip={huddle?.skip}
         needsReconfirm={huddle?.needsReconfirm === true}
-        focusPlan={huddle?.focusPlan === true}
+        // C15: the sheet lands on the plan only when a Reconfirm door opened it (the Deploy card line), never from the chip
+        focusPlan={huddle?.focusPlan === true && Boolean(opener?.closest?.('[data-hub-huddle-reconfirm]'))}
         ceremonyActive={ceremonyActive}
       />
     </HubSheet>

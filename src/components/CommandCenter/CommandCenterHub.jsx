@@ -160,7 +160,7 @@ import { HOLD_PHASES } from './hub/selectors/attemptVocabulary';
 import { DRB_HUDDLE_ENABLED } from '../../config/huddleFlags';
 import useHuddleToday from '../../hooks/useHuddleToday';
 import useHuddleHistory from '../../hooks/useHuddleHistory';
-import { deriveNextAction } from './hub/nextAction';
+import { deriveNextAction, NEXT_ACTION_KINDS } from './hub/nextAction';
 import { HUDDLE_KIND, huddleActivityOf, huddleCandidateOf, huddleChipOf, huddlePartnershipOf, huddlePartnershipSummaryOf, needsReconfirmOf } from './hub/huddleView';
 import HuddleChip from './HuddleChip';
 import HuddleSheet from './HuddleSheet';
@@ -307,18 +307,31 @@ function deployActionsOf(deploy, sheet, runtime) {
 
 /**
  * Huddle S1: the shell actions the Huddle adds — open the sheet (its open refreshes the status: Huddle C §C7), Retry, the Deploy
- * card's Reconfirm door (C15), and the next action's open and Later when the card is "Huddle ready" (C6). None without a Huddle.
+ * card's Reconfirm door (C15), and the next action's Open and Later (C6). None without a Huddle.
+ *
+ * The card ConnectedHub shows is derived WITH the Huddle rule; the readers' own actions were built for the card derived
+ * without it, and the two can name different games (a game in session is picked among the opened rows only). So the
+ * card's Open and Later always act on the card's own candidate (review L3-1): the Huddle's sheet, a game, a review, or
+ * the readers' own handler for the first deployment (its hold is the deploy action, R-S4-8).
  */
-function huddleActionsOf(huddle, sheet, nextAction) {
+export function huddleActionsOf(huddle, sheet, nextAction, base = NO_ACTIONS) {
   if (!huddle) return null;
   const openSheet = sheet.open(HUB_SHEETS.HUDDLE);
   const open = (event) => { huddle.refresh(); openSheet(event); };
-  const candidate = nextAction?.status === 'ready' && nextAction.candidate?.key === HUDDLE_KIND ? nextAction.candidate : null;
+  const shown = nextAction?.status === 'ready' ? nextAction.candidate ?? null : null;
+  let card = {};
+  if (shown?.key === HUDDLE_KIND) card = { nextAction: open, laterNextAction: huddle.laterFor(shown.laterKey) };
+  else if (shown) {
+    const act = shown.key === NEXT_ACTION_KINDS.OPEN_GAME && base.openGame ? () => base.openGame({ id: shown.id })
+      : shown.key === NEXT_ACTION_KINDS.REVIEW && base.openTape ? () => base.openTape({ id: shown.id })
+        : base.nextAction;
+    card = { nextAction: act, laterNextAction: huddle.laterFor(shown.laterKey) ?? base.laterNextAction };
+  }
   return {
     openHuddle: open,
     retryHuddle: huddle.retry,
     reconfirmHuddle: huddle.needsReconfirm ? open : undefined,
-    ...(candidate ? { nextAction: open, laterNextAction: huddle.laterFor(candidate.laterKey) } : {}),
+    ...card,
   };
 }
 
@@ -359,7 +372,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
     ...deployActionsOf(deploy, sheet, runtime),
     openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
     openAllActivity: sheet.open(HUB_SHEETS.ACTIVITY),
-    ...(DRB_HUDDLE_ENABLED ? huddleActionsOf(huddle, sheet, sections.nextAction) : null),
+    ...(DRB_HUDDLE_ENABLED ? huddleActionsOf(huddle, sheet, sections.nextAction, wired) : null),
   };
   // Changing area before commitment cancels the charge (spec §5.5); the panels stay mounted while it charges.
   // Agent form build A1 follow-up (founder ruling N2(d)): the phone armory is part of the page, so the page stays usable,
@@ -504,7 +517,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
     ...deployActionsOf(deploy, sheet, runtime),
     openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
     openAllActivity: sheet.open(HUB_SHEETS.ACTIVITY),
-    ...(DRB_HUDDLE_ENABLED ? huddleActionsOf(huddle, sheet, sections.nextAction) : null),
+    ...(DRB_HUDDLE_ENABLED ? huddleActionsOf(huddle, sheet, sections.nextAction, wired) : null),
   };
   // Changing area before commitment cancels the charge (spec §5.5).
   const selectArea = (next) => { deploy?.cancelCharging(); if (next !== area) setAreaEvent((n) => n + 1); setArea(next); };

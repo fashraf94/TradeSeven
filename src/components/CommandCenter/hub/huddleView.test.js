@@ -59,6 +59,9 @@ describe('the next action (C6): a game in session → Huddle ready → a game wa
     expect(huddleCandidateOf(read(record()), CLOSE)).toBeNull();
     expect(huddleCandidateOf(read(record({ status: 'generating' })), OPEN)).toBeNull();
     expect(huddleCandidateOf({ status: 'idle', huddle: null }, OPEN)).toBeNull();
+    // review L3-8: an empty proposed plan has nothing to confirm or skip, so it is no candidate
+    expect(huddleCandidateOf(read(record({}, { current: { stances: [], lines: [] } })), OPEN)).toBeNull();
+    expect(huddleCandidateOf(read(record({}, { current: { stances: [], lines: [{ kind: 'NO_SWAPS_TODAY' }] } })), OPEN)).not.toBeNull();
   });
 });
 
@@ -118,6 +121,16 @@ describe('the Partnership panel (C8): loading, none, error, as-of', () => {
     expect(kept.today.items).toEqual(['Hold AAA']);
     expect(kept.history.map((h) => h.text)).toEqual(['Nov 6 · Confirmed']);
     expect(kept.asOf).toMatch(/couldn’t refresh$/);
+  });
+
+  it('review L3-3: an empty history never stands in for today: today loading is loading, today failed is an error with Retry', () => {
+    const emptyHistory = { status: 'ready', plans: [] };
+    expect(huddlePartnershipOf({ status: 'loading' }, emptyHistory)).toEqual({ status: 'loading' });
+    expect(huddlePartnershipOf({ status: 'error' }, emptyHistory)).toEqual({ status: 'error' });
+    expect(huddlePartnershipOf({ status: 'error' }, { status: 'ready', plans: [{ etDate: '2026-11-06', planStatus: 'confirmed' }] })).toEqual({ status: 'error' });
+    expect(huddlePartnershipOf(read(record()), { status: 'loading' })).toEqual({ status: 'loading' });
+    expect(huddlePartnershipOf(read(record()), { status: 'error' })).toEqual({ status: 'error' });
+    expect(huddlePartnershipOf({ status: 'ready', huddle: null }, emptyHistory)).toEqual({ status: 'none', today: null, history: [], asOf: null });
   });
 
   it("its one-line summary beside Shadow (D5 replaces the reserved summary too): loading, error, none, today's plan line; null without a section", () => {

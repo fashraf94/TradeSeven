@@ -219,7 +219,10 @@ const HUDDLE_HISTORY = ['useEffect'];
 // The sheet's body: the hidden-tab stop (one visibility listener, removed again) with the unmount stop and the reconfirm scroll in
 // one effect, and the ceremony stop in a second. The audio element's own listeners are React props (onPlay, onTimeUpdate, …), never
 // addEventListener; playback never starts on its own (no .play() outside the Play handler — the row below).
-const HUDDLE_BODY = ["document.addEventListener 'visibilitychange'", "document.removeEventListener 'visibilitychange'", 'useEffect', 'useEffect'];
+// Review L3-4 / L3-9: the unmount stop is the audio element's own ref cleanup (not an effect: a useEffect cleanup finds the
+// ref already cleared); three effects — the hidden-tab stop (one visibility listener, removed again), the ceremony stop, and
+// the Reconfirm door's landing on the plan, which runs in ONE microtask so it comes after the HubSheet's focus to Close.
+const HUDDLE_BODY = ["document.addEventListener 'visibilitychange'", "document.removeEventListener 'visibilitychange'", 'queueMicrotask', 'useEffect', 'useEffect', 'useEffect'];
 
 describe('Huddle S1: the readers and the sheet body hold exactly the activity they were allowed (Huddle C §C7, §C8)', () => {
   it('useHuddleToday: one effect and one visibility listener (removed again) — no timer, no interval, no poll', () => {
@@ -230,16 +233,17 @@ describe('Huddle S1: the readers and the sheet body hold exactly the activity th
     expect(activityOf(readSrc('hooks/useHuddleHistory.js'))).toEqual(HUDDLE_HISTORY);
   });
 
-  it('HuddleSheetBody: two effects and one visibility listener (removed again); audio plays only from the Play handler (no autoplay)', () => {
+  it('HuddleSheetBody: three effects, one microtask and one visibility listener (removed again); audio plays only from the Play handler (no autoplay)', () => {
     const code = readSrc('components/Huddle/HuddleSheetBody.jsx');
     expect(activityOf(code, parseJsx)).toEqual(HUDDLE_BODY);
     expect(code).not.toMatch(/\bautoPlay\b|\bautoplay\b/);
-    expect(code.match(/\.play\(\)/g)).toHaveLength(1);
-    expect(code).toMatch(/const play = async \(\) => \{[\s\S]*?await el\.play\(\);/);
-    // stops on unmount, on a hidden tab, and while the ceremony covers the page
-    expect(code).toMatch(/if \(document\.visibilityState !== 'visible'\) audioRef\.current\?\.pause\(\);/);
-    expect(code).toMatch(/if \(ceremonyActive\) audioRef\.current\?\.pause\(\);/);
-    expect(code).toMatch(/if \(el\) \{ el\.pause\(\); el\.removeAttribute\('src'\); \}/);
+    // every .play() sits inside the Play handler (resume, or a fresh URL): nothing else starts playback
+    const handler = code.slice(code.indexOf('const play = async () => {'), code.indexOf('const onConfirm = async () => {'));
+    expect(handler.length).toBeGreaterThan(0);
+    expect(code.match(/\.play\(\)/g)).toHaveLength(2);
+    expect(handler.match(/\.play\(\)/g)).toHaveLength(2);
+    // The stops themselves (unmount, hidden tab, ceremony, and a Play still waiting for its URL) are behaviour rows in
+    // Huddle.jsdom.test.jsx, not text matches here.
   });
 
   it('the scan bites: a poll, a second listener or an autoplay changes what the rows see', () => {

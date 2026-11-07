@@ -12,16 +12,18 @@
 // Every word on it is the hub's (`copy`, the hubCopy.js `huddle` block under the copy
 // guard); nothing here writes a user-visible string of its own.
 //
-// AUDIO: never autoplays. Play asks for a fresh playback URL (the token rotates each time),
-// and playback STOPS on unmount, when the page is hidden, and while the deploy ceremony
-// covers the page (`ceremonyActive`). The first play records `listened`, the end records
-// `completed` (awaited writes server-side; a failure here is ignored).
+// AUDIO: never autoplays. Play asks for a playback URL (the token rotates each time it is
+// issued); Pause then Play resumes where it stopped. Playback STOPS on unmount (the audio
+// element's own ref cleanup — a useEffect cleanup would find the ref already cleared), when
+// the page is hidden, and while the deploy ceremony covers the page (`ceremonyActive`); every
+// stop also abandons a Play still waiting for its URL (review L3-4). The first play records
+// `listened`, the end records `completed` (awaited writes server-side; a failure here is ignored).
 // TRANSCRIPT: always shown, the current beat highlighted from the beat timings.
 // PLAN: values edited or items removed — never typed text; Confirm sends the base revision
 // and the replacement; a 409 or a 422 shows the server's current version and asks again.
 // STATUS: per game, from receipts only, never spoken.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { cssVar } from '../../theme/cssTokens';
 import { issueHuddlePlayback, sendHuddleEvent } from '../../services/huddleService';
 
@@ -67,6 +69,10 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
   const audioRef = useRef(null);
   const planRef = useRef(null);
   const listenedRef = useRef(false);
+  // Each stop bumps the generation; a Play that was waiting for its URL starts nothing once it has moved on.
+  const playGenRef = useRef(0);
+  const ceremonyRef = useRef(ceremonyActive);
+  ceremonyRef.current = ceremonyActive;
   const [playing, setPlaying] = useState(false);
   const [audioError, setAudioError] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
@@ -75,25 +81,53 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // Stop on unmount; stop when the page is hidden; scroll to the plan when opened to reconfirm.
-  useEffect(() => {
-    const onVisibility = () => { if (document.visibilityState !== 'visible') audioRef.current?.pause(); };
-    document.addEventListener('visibilitychange', onVisibility);
-    if (focusPlan) planRef.current?.scrollIntoView?.({ block: 'nearest' });
+  // The audio element's ref: on detach (the sheet closing) it stops and drops its source (React 19 ref cleanup).
+  const audioElement = useCallback((el) => {
+    audioRef.current = el;
+    if (!el) return undefined;
     return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      const el = audioRef.current;
-      if (el) { el.pause(); el.removeAttribute('src'); }
+      playGenRef.current += 1;
+      el.pause();
+      el.removeAttribute('src');
+      if (audioRef.current === el) audioRef.current = null;
     };
-  }, [focusPlan]);
+  }, []);
+
+  // Stop when the page is hidden.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') return;
+      playGenRef.current += 1;
+      audioRef.current?.pause();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
 
   // The deploy ceremony covering the page stops playback.
   useEffect(() => {
-    if (ceremonyActive) audioRef.current?.pause();
+    if (!ceremonyActive) return;
+    playGenRef.current += 1;
+    audioRef.current?.pause();
   }, [ceremonyActive]);
+
+  // Opened from a Reconfirm door (C15): land on the plan card's Reconfirm. After the sheet's own focus to Close (its
+  // effect runs after this one), so a microtask; the reconfirm button takes focus, which scrolls it into view.
+  useEffect(() => {
+    if (!focusPlan) return;
+    queueMicrotask(() => {
+      const target = planRef.current?.querySelector('[data-huddle-reconfirm]');
+      if (target) target.focus();
+      else planRef.current?.scrollIntoView?.({ block: 'nearest' });
+    });
+  }, [focusPlan]);
 
   if (!huddle) {
     return <p data-huddle-empty="" style={{ margin: 0, color: ink2 }}>{read?.status === 'error' ? copy.loadError : read?.status === 'loading' ? copy.loading : copy.none}</p>;
+  }
+  // Not ready (still being made, or it could not be made): no transcript, no plan card, nothing to answer (review L3-2).
+  if (huddle.status !== 'ready') {
+    return <p data-huddle-empty={huddle.status ?? ''} style={{ margin: 0, color: ink2 }}>{huddle.status === 'failed' ? copy.unavailable : copy.preparing}</p>;
   }
 
   const plan = huddle.plan;
@@ -101,27 +135,49 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
   const beats = huddle.script?.beats || [];
   const activeBeat = beats.find((b) => typeof b.startMs === 'number' && typeof b.endMs === 'number' && positionMs >= b.startMs && positionMs <= b.endMs)?.id ?? null;
 
+  const markListened = () => {
+    if (listenedRef.current) return;
+    listenedRef.current = true;
+    sendHuddleEvent({ etDate: huddle.etDate, kind: 'listened' }).catch(() => {});
+  };
   const play = async () => {
     const el = audioRef.current;
     if (!el || ceremonyActive) return;
     if (playing) { el.pause(); return; }
+    const gen = playGenRef.current;
+    const stillWanted = () => gen === playGenRef.current && audioRef.current === el && !ceremonyRef.current && document.visibilityState === 'visible';
     try {
+      // Paused part-way: resume where it stopped (review L3-10). An expired URL fails here, and a fresh one is asked for.
+      if (el.getAttribute('src') && !el.ended) {
+        try { await el.play(); markListened(); return; } catch { /* fall through to a fresh URL */ }
+      }
+      const at = el.ended ? 0 : el.currentTime || 0;
       const { url } = await issueHuddlePlayback({ etDate: huddle.etDate });
+      if (!stillWanted()) return;
       el.src = url;
+      if (at > 0) el.currentTime = at;
       await el.play();
-      if (!listenedRef.current) { listenedRef.current = true; sendHuddleEvent({ etDate: huddle.etDate, kind: 'listened' }).catch(() => {}); }
+      markListened();
     } catch {
-      setAudioError(true);
+      if (stillWanted()) setAudioError(true);
     }
   };
 
+  // Confirm and Skip never leave the sheet working: a thrown request is a failure like any other (review L3-5). The
+  // player's removals and levels are cleared only when the plan they were made on is gone: confirmed, or a 409 / 422
+  // that put the server's current version on the card. Any other failure keeps them, so a retry sends the same edits.
   const onConfirm = async () => {
     setBusy(true);
     setNotice(null);
-    const r = await confirm({ baseRevision: plan.revision, replacement: replacementOf(items, removed, levels) });
+    let r;
+    try {
+      r = await confirm({ baseRevision: plan.revision, replacement: replacementOf(items, removed, levels) });
+    } catch {
+      r = { ok: false, status: 0, body: null };
+    }
     setBusy(false);
-    setRemoved(new Set());
-    setLevels({});
+    const replaced = r.ok || r.status === 409 || (r.status === 422 && r.body?.error === 'validation_changed');
+    if (replaced) { setRemoved(new Set()); setLevels({}); }
     if (r.ok) return;
     if (r.status === 409) setNotice(copy.notices.conflict);
     else if (r.status === 422 && r.body?.error === 'validation_changed') setNotice(copy.notices.previewed);
@@ -130,7 +186,13 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
   };
   const onSkip = async () => {
     setBusy(true);
-    const r = await skip();
+    setNotice(null);
+    let r;
+    try {
+      r = await skip();
+    } catch {
+      r = { ok: false, status: 0 };
+    }
     setBusy(false);
     if (!r.ok) setNotice(r.status === 410 ? copy.notices.closed : copy.notices.failed);
   };
@@ -147,7 +209,7 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
         )}
         {/* the audio element: never autoplays, no preload until Play */}
         <audio
-          ref={audioRef}
+          ref={audioElement}
           preload="none"
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
