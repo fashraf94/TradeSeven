@@ -387,6 +387,8 @@
     "api/_utils/setupEvidence/store.js::settleConfirmation::set::unresolved": 3,
     "api/_utils/activationEvidence/writer.js::createAtFinalization::create::unresolved": 2,
     "api/_utils/activationEvidence/writer.js::createWithEvidence::create::unresolved": 1,
+    "api/_utils/evidence/symbolDayEvidence.js::claimGroups::set::unresolved": 2,
+    "api/_utils/evidence/symbolDayEvidence.js::finalizeGroup::set::unresolved": 1,
     "api/_utils/huddle/applyPlan.js::applyPlanToBattle::call:fileDirectiveTransactional#1::unresolved": 1,
     "api/_utils/huddle/applyPlan.js::applyPlanToBattle::update::unresolved": 2,
     "api/_utils/huddle/applyPlan.js::expireProposed::update::unresolved": 1,
