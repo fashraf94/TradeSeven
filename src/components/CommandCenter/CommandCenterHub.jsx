@@ -161,7 +161,7 @@ import { DRB_HUDDLE_ENABLED } from '../../config/huddleFlags';
 import useHuddleToday from '../../hooks/useHuddleToday';
 import useHuddleHistory from '../../hooks/useHuddleHistory';
 import { deriveNextAction } from './hub/nextAction';
-import { HUDDLE_KIND, huddleActivityOf, huddleCandidateOf, huddleChipOf, huddlePartnershipOf, needsReconfirmOf } from './hub/huddleView';
+import { HUDDLE_KIND, huddleActivityOf, huddleCandidateOf, huddleChipOf, huddlePartnershipOf, huddlePartnershipSummaryOf, needsReconfirmOf } from './hub/huddleView';
 import HuddleChip from './HuddleChip';
 import HuddleSheet from './HuddleSheet';
 
@@ -172,7 +172,11 @@ export function shadowSizeFor(composition, width) {
   return 260;
 }
 
-/** The three area summaries, in area order. Partnership's is fixed; the others are loading until their reader resolves. */
+/**
+ * The three area summaries, in area order. Partnership's is the reserved line, or — Huddle S1, only while the hub holds a Huddle
+ * Partnership section (DRB_HUDDLE_ENABLED on) — that section's state in one line (Huddle C §C8; Amendment D §D5). The others
+ * are loading until their reader resolves.
+ */
 export function areaSummaries(sections) {
   const of = (section, loading) => (section?.status === 'ready' && section.summary ? section.summary : loading);
   // S5: a resolved absence of the agent is an answer, not a wait; since the S3 merge so is a failed read.
@@ -183,7 +187,8 @@ export function areaSummaries(sections) {
   // S6: every settled Research state has its own one-line summary (hub/researchView.js deriveResearch); a loading one has none.
   const research = sections.research;
   const researchLine = research && research.status !== 'loading' && typeof research.summary === 'string' && research.summary ? research.summary : COPY.research.summaryLoading;
-  return [COPY.partnership.summary, researchLine, loadout];
+  const partnership = (sections.huddlePartnership ? huddlePartnershipSummaryOf(sections.huddlePartnership) : null) ?? COPY.partnership.summary;
+  return [partnership, researchLine, loadout];
 }
 
 const rootStyle = { position: 'relative', zIndex: HUB_LAYERS.page, color: C.ink, outline: 'none' };

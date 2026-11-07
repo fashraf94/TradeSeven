@@ -1132,6 +1132,13 @@ describe('the stage\'s area summaries (E5-11)', () => {
     expect(areaSummaries({})[2]).toBe(COPY.loadout.summaryLoading);
   });
 
+  it("Huddle S1 (C8; Amendment D §D5): Partnership's summary is the reserved line without a Huddle section (the flag off) and the section's state with one", () => {
+    expect(areaSummaries({})[0]).toBe(COPY.partnership.summary);
+    expect(areaSummaries({ huddlePartnership: null })[0]).toBe(COPY.partnership.summary);
+    expect(areaSummaries({ huddlePartnership: { status: 'loading' } })[0]).toBe(COPY.huddle.partnershipLoading);
+    expect(areaSummaries({ huddlePartnership: { status: 'ready', today: { line: 'Proposed · not confirmed yet' }, history: [] } })[0]).toBe('Proposed · not confirmed yet');
+  });
+
   it('the stage says so too, on the screen: the phone stage\'s Loadout line and the wide site\'s Equipped Archetype control read "Create your agent first"', async () => {
     const noAgent = HUB({ agent: null, agentLoading: false });
     const { m } = await renderHub({ site: 'mobile', hubWidth: 390, hub: noAgent });

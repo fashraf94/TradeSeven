@@ -137,6 +137,19 @@ export function huddlePartnershipOf(todayRead, historyRead) {
 }
 
 /**
+ * The Partnership area's one-line summary beside Shadow (C8; Amendment D §D5: the Huddle replaces the reserved "Not in this
+ * release" text, the summary included): the panel's state in one line — loading, error, none, or today's plan line. Null
+ * without a Huddle section (the flag off): the caller keeps the reserved summary.
+ */
+export function huddlePartnershipSummaryOf(partnership) {
+  if (!partnership || typeof partnership !== 'object') return null;
+  if (partnership.status === 'loading') return COPY.huddle.partnershipLoading;
+  if (partnership.status === 'error') return COPY.huddle.partnershipError;
+  if (partnership.status === 'ready' && partnership.today?.line) return partnership.today.line;
+  return COPY.huddle.partnershipNone;
+}
+
+/**
  * Recent activity's two Huddle rows (C8; Amendment D §D7): "Plan confirmed" / "Plan skipped", from the plan history,
  * with kind-specific ids `huddle-plan:{uid}:{etDate}`. The list's own cutoff applies to them like every other row.
  */

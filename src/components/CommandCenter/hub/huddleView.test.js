@@ -9,7 +9,7 @@ import { deriveNextAction, laterKeyOf, NEXT_ACTION_KINDS } from './nextAction';
 import { HUB_COPY as COPY } from './hubCopy';
 import {
   HUDDLE_KIND, huddleLaterKeyOf, huddleChipOf, huddleCandidateOf, battleStatusText, huddleStatusOf, needsReconfirmOf,
-  huddlePartnershipOf, huddleActivityOf, durationText,
+  huddlePartnershipOf, huddlePartnershipSummaryOf, huddleActivityOf, durationText,
 } from './huddleView';
 import { deriveActivity, ACTIVITY_KINDS } from './activityRows';
 
@@ -118,6 +118,16 @@ describe('the Partnership panel (C8): loading, none, error, as-of', () => {
     expect(kept.today.items).toEqual(['Hold AAA']);
     expect(kept.history.map((h) => h.text)).toEqual(['Nov 6 · Confirmed']);
     expect(kept.asOf).toMatch(/couldn’t refresh$/);
+  });
+
+  it("its one-line summary beside Shadow (D5 replaces the reserved summary too): loading, error, none, today's plan line; null without a section", () => {
+    expect(huddlePartnershipSummaryOf(null)).toBeNull();
+    expect(huddlePartnershipSummaryOf({ status: 'loading' })).toBe(COPY.huddle.partnershipLoading);
+    expect(huddlePartnershipSummaryOf({ status: 'error' })).toBe(COPY.huddle.partnershipError);
+    expect(huddlePartnershipSummaryOf({ status: 'none' })).toBe(COPY.huddle.partnershipNone);
+    const ready = huddlePartnershipOf(read(record({}, { status: 'proposed' })), { status: 'ready', plans: [] });
+    expect(huddlePartnershipSummaryOf(ready)).toBe(COPY.huddle.planState.proposed);
+    expect(huddlePartnershipSummaryOf({ status: 'ready', today: null, history: [{ etDate: '2026-11-06', text: 'Nov 6 · Confirmed' }] })).toBe(COPY.huddle.partnershipNone);
   });
 });
 
