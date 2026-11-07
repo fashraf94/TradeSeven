@@ -106,7 +106,9 @@ export async function gatherForPlayer(db, { uid, etDate, session, shared, owner,
   }));
   for (const b of battles) {
     for (const h of b.holdings) {
-      add(packItem({ kind: 'holding', fact: `${h.symbol} is held in your ${KIND_LABEL[b.kind]} game (${h.tier}).`, recordKind: 'agentBattle', recordId: b.id, label: 'your game', at: b.createdAt ? String(b.createdAt) : etDate, asOf: etDate }));
+      // one item per holding: the record id names the battle AND the symbol (a battle id alone gave every holding of a
+      // game one pack id, and the dedup kept only the first; found by the verification run, build report RF-12)
+      add(packItem({ kind: 'holding', fact: `${h.symbol} is held in your ${KIND_LABEL[b.kind]} game (${h.tier}).`, recordKind: 'agentBattle', recordId: `${b.id}#${h.symbol}`, label: 'your game', at: b.createdAt ? String(b.createdAt) : etDate, asOf: etDate }));
     }
     for (const p of b.picks) add(packItem({ kind: 'agent_pick', fact: `${p} is one of your picks in today's ranked game.`, recordKind: 'agentBattle.tournament', recordId: `${b.id}#${p}`, label: 'your ranked picks', at: b.createdAt ? String(b.createdAt) : etDate, asOf: etDate }));
     b.opener.paragraphs.forEach((para, i) => {
