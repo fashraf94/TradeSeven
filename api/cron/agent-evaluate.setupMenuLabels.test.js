@@ -416,15 +416,14 @@ describe('Correction D.2 — membership is literal; the real lists are unchanged
 });
 
 describe('review SM2-1 / SM2-3 — the base record\'s budget, and the error exit', () => {
-  it('SM2-1 the settle\'s own CPU cannot move the capture-floor decision: a settle that costs 3 ms at 10,002 ms left still writes the record, with the flag-off budget', async () => {
-    const at = Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 10_002);
+  it('SM2-1 the settle\'s CPU is charged honestly: the capture\'s timing observation is read after it, so a settle that costs 3 ms shows on the record (Correction A: costs are real and reported)', async () => {
+    const at = Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 20_000);
     const off = await runTick({ labels: false, cronStartTime: at });
     composeHook.advanceMs = 3; // the mocked composer moves the (frozen) clock by 3 ms when it composes at the settle
     const on = await runTick({ cronStartTime: at });
     composeHook.advanceMs = 0;
-    expect(off.permanent.capture.remainingBudgetMs).toBe(10_002);
-    expect(on.permanent).not.toBeNull();
-    expect(on.permanent.capture.remainingBudgetMs).toBe(off.permanent.capture.remainingBudgetMs);
+    expect(off.permanent.capture.remainingBudgetMs).toBe(20_000);
+    expect(on.permanent.capture.remainingBudgetMs).toBe(19_997);
   });
   it('SM2-3 an error exit after the reads started is sealed at once and its record carries its own read start and counts', async () => {
     const { newTickCaptureScope, runInTickCaptureScope, claimTickCaptureContext } = await import('../_utils/tickCapture/captureContext.js');
@@ -461,13 +460,13 @@ describe('review SM2-1 / SM2-3 — the base record\'s budget, and the error exit
 });
 
 describe('the tick never waits on Slice 2 (Correction A), in source', () => {
-  it('the six Slice 2 calls in agent-evaluate.js are never awaited; the capture budget is read before the settle, which sits immediately before finalizeTickCapture; the error exit settles too', async () => {
+  it('the six Slice 2 calls in agent-evaluate.js are never awaited; the settle sits immediately before finalizeTickCapture, whose budget is read after it; the error exit settles too', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(new URL('./agent-evaluate.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
     const calls = [...src.matchAll(/^.*\b(freezeSetupMenuPool|startSetupMenuReads|settleSetupMenuReads|sealSetupMenuReads)\(.*$/gm)].map((m) => m[0]);
     expect(calls.filter((l) => !/^\s*import\b/.test(l))).toHaveLength(6);
     for (const line of calls) expect(line).not.toMatch(/\bawait\b/);
-    expect(src).toMatch(/const captureRemainingBudgetMs = TIME_BUDGET_MS - \(Date\.now\(\) - cronStartTime\);\n(?:\s*\/\/.*\n)*\s*settleSetupMenuReads\(setupMenuReads, tickCapture\);\n\s*const captureResult = await finalizeTickCapture\(db, tickCapture, \{\n\s*remainingBudgetMs: captureRemainingBudgetMs,/);
+    expect(src).toMatch(/settleSetupMenuReads\(setupMenuReads, tickCapture\);\n\s*const captureResult = await finalizeTickCapture\(db, tickCapture, \{\n\s*remainingBudgetMs: TIME_BUDGET_MS - \(Date\.now\(\) - cronStartTime\),/);
     expect(src).toMatch(/tickCapture\.exit\('tick_error'\);\n\s*\}\);\n(?:\s*\/\/.*\n)*\s*settleSetupMenuReads\(setupMenuReads, tickCapture\);/);
     // The admission test is computed before the read start that follows it.
     expect(src.indexOf('const budget = shouldStartHaikuCall(')).toBeLessThan(src.indexOf('setupMenuReads = startSetupMenuReads({ db, tickCapture, summary });', src.indexOf('const budget = shouldStartHaikuCall(')));

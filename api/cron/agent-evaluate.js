@@ -5077,13 +5077,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // Mark THIS scope done so the handler's error path can never finalize a
       // tick that already finalized itself (F3).
       markTickCaptureClaimed(tickCaptureScope);
-      // The base record's budget is read BEFORE Slice 2's settle (review SM2-1), so the settle's CPU can never
-      // move the capture-floor decision or the recorded remainingBudgetMs. Flag off, the settle returns at once.
-      const captureRemainingBudgetMs = TIME_BUDGET_MS - (Date.now() - cronStartTime);
       // Slice 2 SETTLE — synchronous: seal, take only the results already available, compose once. No wait.
+      // Its CPU (well under a millisecond) is real and is charged honestly: the capture budget below is read
+      // after it, as the capture's timing observation always has been (review SM2-1, refuted fix reversed).
       settleSetupMenuReads(setupMenuReads, tickCapture);
       const captureResult = await finalizeTickCapture(db, tickCapture, {
-        remainingBudgetMs: captureRemainingBudgetMs,
+        remainingBudgetMs: TIME_BUDGET_MS - (Date.now() - cronStartTime),
       });
       // F7 (Astra round 1): the TOTAL — body resolution + serialization +
       // commit — logged AFTER the commit, because the number written INSIDE

@@ -13,7 +13,9 @@
 //
 // THE TIMES. `readsStartedAt` and `observedAt` bound THIS tick's observation (its read start and its seal).
 // A read it shares from the run memo (`readsShared`) may have been issued by an earlier tick of the same handler
-// invocation, before this tick's freeze; its result is then as of that earlier instant (review SM1-4). V2's
+// invocation, before this tick's freeze: its VALUE is then as of that earlier lookup and can be stale by up to the
+// invocation's length (TIME_BUDGET_MS, ~290 s) — an `absent` may since have been written. The state read is shared
+// the same way (one per run), so a later battle's s2 fields describe the run's first state read (review SM1-4). V2's
 // `settleWaitMs` (always 0 under Correction A) and `readMs` (derivable from the two instants) are not recorded.
 //
 // THE MEANINGS (Correction D):
