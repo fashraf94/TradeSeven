@@ -30,19 +30,18 @@ export const SETUP_MENU_MAX_BYTES = 24 * 1024;
  * only closes the observation early; it never delays a tick.
  */
 export const LABEL_READ_DEADLINE_MS = 3_000;
-/** Snapshot reads in flight at once, across every tick of one handler invocation. */
+/**
+ * Snapshot reads UNRESOLVED at once, across every tick of one handler invocation. A read is charged
+ * from its issue until its own promise resolves or rejects; no deadline, seal or elapsed time releases
+ * the charge (correction round F1 — a timeout cancels no RPC). Hung reads exhaust this capacity for
+ * the rest of the invocation: later ticks' distinct names stay `read_unsettled`, never extra requests.
+ */
 export const LABEL_READ_CONCURRENCY = 5;
 /**
  * Distinct snapshot reads one handler invocation may issue, across all its ticks. A read is issued
  * once per snapshot id per invocation and shared by every tick that wants it (the run memo).
  */
 export const LABEL_READS_PER_RUN_MAX = 240;
-/**
- * A read's in-flight slot is released when it settles or when this much time has passed since it
- * was issued, whichever is first, so a hung read cannot starve later ticks of the same invocation.
- * Releasing a slot does NOT cancel the read-only RPC; it is only no longer counted as in flight.
- */
-export const LABEL_READ_SLOT_MS = 3_000;
 
 // ---- The tenant (spec V2 §6; Correction B) ------------------------------------------------------
 /** The tenant's own slice, from its start. */

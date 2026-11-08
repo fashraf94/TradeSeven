@@ -26,10 +26,14 @@
 // THE RUN MEMO (Correction A: bounded memoized work across ticks). One per handler invocation, keyed
 // on the invocation's own `summary` object (a WeakMap, so it lives exactly as long as the run): one
 // state read per run; one read per snapshot id per run, shared by every tick that wants it; at most
-// LABEL_READ_CONCURRENCY in flight across the run; at most LABEL_READS_PER_RUN_MAX issued. A read's
-// in-flight slot is released when it settles or LABEL_READ_SLOT_MS after it was issued, so a hung read
-// cannot starve a later tick; releasing a slot does NOT cancel the RPC (nothing here can). Already
-// issued read-only RPCs are never awaited: they settle into the memo or die with the invocation.
+// LABEL_READ_CONCURRENCY UNRESOLVED across the run; at most LABEL_READS_PER_RUN_MAX issued. A read is
+// charged against the concurrency limit from the moment it is issued until ITS OWN PROMISE resolves or
+// rejects — nothing else releases the charge: not the observation's deadline, not a seal, not elapsed
+// time (correction round F1: a timeout cancels nothing, so it must not free capacity for a read that is
+// still outstanding). A settlement releases its charge exactly once. Hung reads therefore exhaust the
+// run's capacity, and every later tick's distinct names stay queued until their own observation seals —
+// `read_unsettled` on the record, never an extra request. Already issued read-only RPCs are never
+// awaited: they settle into the memo or die with the invocation.
 //
 // COST, honestly: no wait, but not free — the reads are real Firestore reads, the composition is CPU on
 // the tick's path, and the block is bytes the capture serializes and commits (≤ 24 KiB). The record
@@ -40,7 +44,7 @@
 import { lastCompletedSessionAt, readSnapshot, ruleKeyOf, snapshotIdOf } from '../setupEvidence/index.js';
 import { describeRuleSet } from '../setupEvaluator/thresholds.js';
 import { isCryptoSymbol } from '../marketDataCache.js';
-import { LABEL_READ_CONCURRENCY, LABEL_READ_DEADLINE_MS, LABEL_READ_SLOT_MS, LABEL_READS_PER_RUN_MAX } from './constants.js';
+import { LABEL_READ_CONCURRENCY, LABEL_READ_DEADLINE_MS, LABEL_READS_PER_RUN_MAX } from './constants.js';
 import { setupMenuLabelsAdmits } from './gate.js';
 import { candidatesOf, poolScopeAdmits, selectorOf } from './pool.js';
 import { composeSetupMenuBlock, errorBlockOf } from './compose.js';
@@ -139,33 +143,28 @@ function subscribe(rec, fn) {
   if (rec.settled) safe(() => fn(rec)); else rec.subs.add(fn);
 }
 
+/** The read's promise settled: its charge is released (once — `settled` guards it), then its subscribers run. */
 function settleRec(memo, rec, ok, value, env) {
   if (rec.settled) return;
   rec.settled = true;
   rec.ok = ok;
   rec.value = ok ? value : null;
-  releaseSlot(memo, rec, env);
+  memo.inflight -= 1; // the ONLY release of a read's charge (F1): its own settlement
+  safe(() => pump(memo, env)); // nothing a pump does can escape into a settlement callback (review SM2-4)
   const subs = [...rec.subs];
   rec.subs.clear();
   for (const fn of subs) safe(() => fn(rec));
 }
 
-function releaseSlot(memo, rec, env) {
-  if (!rec.slotHeld) return;
-  rec.slotHeld = false;
-  if (rec.slotTimer !== null) safe(() => env.clearTimer(rec.slotTimer));
-  rec.slotTimer = null;
-  memo.inflight -= 1;
-  safe(() => pump(memo, env)); // nothing a pump does can escape into a settlement callback (review SM2-4)
-}
-
-/** Issue one snapshot read into the memo. Its handlers are attached in the same expression that creates it. */
+/**
+ * Issue one snapshot read into the memo, charged against the concurrency limit until its promise settles.
+ * No timer releases the charge (F1). Its handlers are attached in the same expression that creates it.
+ */
 function issue(memo, { db, id, session, symbol, ruleSet }, env) {
-  const rec = { settled: false, ok: null, value: null, subs: new Set(), slotHeld: true, slotTimer: null };
+  const rec = { settled: false, ok: null, value: null, subs: new Set() };
   memo.reads.set(id, rec);
   memo.issued += 1;
   memo.inflight += 1;
-  rec.slotTimer = env.setTimer(() => safe(() => releaseSlot(memo, rec, env)), LABEL_READ_SLOT_MS);
   let promise;
   try { promise = Promise.resolve(readSnapshot({ db, session, symbol, ruleSet })); } catch (err) { promise = Promise.reject(err); }
   promise.then((value) => settleRec(memo, rec, true, value ?? null, env), () => settleRec(memo, rec, false, null, env));

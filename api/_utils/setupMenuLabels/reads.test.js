@@ -18,7 +18,7 @@ const { makeMemoryDb } = await import('./__fixtures__/memoryDb.js');
 const { menuSnapshotSet } = await import('./__fixtures__/menuSnapshots.js');
 const { snapshotIdOf } = await import('../setupEvidence/index.js');
 const { describeRuleSet } = await import('../setupEvaluator/thresholds.js');
-const { LABEL_READ_CONCURRENCY, LABEL_READ_DEADLINE_MS, LABEL_READ_SLOT_MS, LABEL_READS_PER_RUN_MAX } = await import('./constants.js');
+const { LABEL_READ_CONCURRENCY, LABEL_READ_DEADLINE_MS, LABEL_READS_PER_RUN_MAX } = await import('./constants.js');
 
 const FROZEN = Date.parse('2026-09-09T15:00:00.000Z'); // Wed, 11:00 ET → last completed session Tue 2026-09-08
 const SESSION = '2026-09-08';
@@ -250,10 +250,11 @@ describe('SEAL — closed means closed (Correction A)', () => {
       freezeSetupMenuPool(ctx, BATTLE, inputs({ hotBenchSymbols: ['AAPL'] }), { env: m.env });
       const poolFact = ctx.state.setupMenu;
       const obs = startSetupMenuReads({ db, tickCapture: ctx, summary: {}, env: m.env });
-      expect(m.timers.size).toBe(2); // the observation's deadline and the read's slot
+      expect(m.timers.size).toBe(1); // the observation's deadline only: no timer releases a read's charge (F1)
       sealSetupMenuReads(obs, { env: m.env });
       sealSetupMenuReads(obs, { env: m.env }); // idempotent
-      expect([...m.timers.values()].map((t) => t.at)).toEqual([FROZEN + LABEL_READ_SLOT_MS]); // only the read's own slot timer remains
+      expect(m.timers.size).toBe(0); // the deadline timer is cleared
+      expect(obs.memo.inflight).toBe(1); // sealing is not settlement: the held read keeps its charge (F1)
       await h.release(`setupEvidence/${idOf('AAPL')}`);
       expect(obs.results.size).toBe(0);
       expect(ctx.state.setupMenu).toBe(poolFact);
@@ -277,10 +278,11 @@ describe('SEAL — closed means closed (Correction A)', () => {
       expect(ctx.state.setupMenu.observedAt).toBe(new Date(FROZEN + LABEL_READ_DEADLINE_MS).toISOString());
     });
   });
-  it('A-8 queue closure: past the run\'s in-flight limit, queued reads never start once the observation is sealed', async () => {
+  it('A-8 queue closure: past the run\'s concurrency limit, queued reads never start once the observation is sealed, even after the held reads settle and free their charges', async () => {
     const symbols = Array.from({ length: 10 }, (_, i) => `Q${i}`);
     const db = makeMemoryDb();
-    db.onGet('setupEvidence/*', () => new Promise(() => {})); // every snapshot read hangs
+    const pending = [];
+    db.onGet('setupEvidence/*', () => new Promise((resolve) => pending.push(resolve))); // every snapshot read is held
     const m = manual();
     await runWithTickCaptureScope(async () => {
       const ctx = liveCtx();
@@ -290,8 +292,12 @@ describe('SEAL — closed means closed (Correction A)', () => {
       const snapshotGets = () => db.__log.gets.filter((p) => p.startsWith('setupEvidence/')).length;
       expect(snapshotGets()).toBe(LABEL_READ_CONCURRENCY);
       settleSetupMenuReads(obs, ctx, { env: m.env });
-      await m.advance(LABEL_READ_SLOT_MS); // the slots free up — the queue is gone
-      expect(snapshotGets()).toBe(LABEL_READ_CONCURRENCY);
+      await m.advance(LABEL_READ_DEADLINE_MS + 1); // time alone frees nothing (F1)
+      expect(obs.memo.inflight).toBe(LABEL_READ_CONCURRENCY);
+      for (const resolve of pending.splice(0)) resolve(); // the held reads settle: their charges are released ...
+      await flush();
+      expect(obs.memo.inflight).toBe(0);
+      expect(snapshotGets()).toBe(LABEL_READ_CONCURRENCY); // ... and the sealed observation's queue never starts
       expect(ctx.state.setupMenu.counts.unsettled).toBe(10);
       expect(ctx.state.setupMenu.readsIssued).toBe(LABEL_READ_CONCURRENCY);
     });
@@ -299,7 +305,7 @@ describe('SEAL — closed means closed (Correction A)', () => {
 });
 
 describe('THE RUN MEMO — bounded work across ticks (Correction A)', () => {
-  it('A-10 two battles on one handler clock: a hung read of battle 1 is shared, never re-issued, and holds no slot past its own 3 s', async () => {
+  it('A-10 (corrected, F1) two battles on one handler clock: a hung read of battle 1 is shared, never re-issued, and KEEPS its charge past 3 s', async () => {
     const db = makeMemoryDb({ docs: docsFor(['MSFT']) });
     db.onGet(`setupEvidence/${idOf('AAPL')}`, () => new Promise(() => {})); // hangs forever
     const m = manual();
@@ -314,8 +320,8 @@ describe('THE RUN MEMO — bounded work across ticks (Correction A)', () => {
     });
     const first = await tick(['AAPL'], 1_000);
     expect(first.readsIssued).toBe(1);
-    await m.advance(LABEL_READ_SLOT_MS);
-    expect(runMemoOf(summary).inflight).toBe(0); // the slot is released; the RPC itself is not cancelled
+    await m.advance(LABEL_READ_DEADLINE_MS + 1);
+    expect(runMemoOf(summary).inflight).toBe(1); // still unresolved, still charged: a timeout cancels nothing, so it frees nothing (F1)
     const second = await tick(['AAPL', 'MSFT'], 50);
     expect(second).toMatchObject({ readsIssued: 1, readsShared: 1, stateRead: true });
     expect(second.candidates.map((c) => c.status)).toEqual(['read_unsettled', 'labelled']);
@@ -377,5 +383,134 @@ describe('THE RUN MEMO — bounded work across ticks (Correction A)', () => {
     expect(log).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
     log.mockRestore(); warn.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------- correction round F1 (Astra's review of 4e99b1f8)
+// A read is charged against LABEL_READ_CONCURRENCY until ITS OWN promise settles. The harness counts the database
+// promises themselves (issued, outstanding, peak), independently of the scheduler's own counter, and the rows check
+// that the two agree. Rows T1, T1-ext and the three "(Astra)" controls are Astra's supplied regression file
+// (evidence/reads.regression.test.js, SHA-256 1a38aba3…), adapted to this suite's imports; the rest are this round's.
+describe('F1 — an issued read keeps its charge until its own promise resolves or rejects', () => {
+  function harness() {
+    let now = FROZEN; let seq = 0; let issued = 0; let outstanding = 0; let peak = 0;
+    const timers = new Map(); const pending = []; const summary = {}; const db = makeMemoryDb();
+    const env = { now: () => now, setTimer: (fn, ms) => { const id = ++seq; timers.set(id, { at: now + ms, fn }); return id; }, clearTimer: (id) => timers.delete(id) };
+    db.onGet('setupEvidence/*', () => {
+      issued += 1; outstanding += 1; peak = Math.max(peak, outstanding);
+      return new Promise((resolve, reject) => pending.push({
+        resolve: () => { outstanding -= 1; resolve(); },
+        reject: () => { outstanding -= 1; reject(new Error('read failed (injected)')); },
+      }));
+    });
+    const stats = () => ({ declared: LABEL_READ_CONCURRENCY, reported: runMemoOf(summary).inflight, issued, outstanding, peak });
+    return {
+      db, env, summary, pending, timers, stats,
+      async advance(ms) { now += ms; for (const [id, t] of [...timers].sort((a, b) => a[1].at - b[1].at)) if (t.at <= now && timers.has(id)) { timers.delete(id); t.fn(); } await flush(); },
+      /** One tick: freeze `count` distinct names, start, let the microtasks run, then (by default) settle at once. */
+      tick(prefix, count = 5, { settle = true } = {}) {
+        return runWithTickCaptureScope(async () => {
+          const ctx = liveCtx();
+          freezeSetupMenuPool(ctx, BATTLE, () => ({ hotBenchSymbols: Array.from({ length: count }, (_, i) => `${prefix}${i}`), assetMapKeys: [], benchAtFreeze: [], heldAtFreeze: [], selector: 'carried', rebuilt: false, frozenAtMs: now }), { env });
+          const obs = startSetupMenuReads({ db, tickCapture: ctx, summary, env });
+          await flush();
+          if (settle) settleSetupMenuReads(obs, ctx, { env });
+          return { block: ctx.state.setupMenu, obs, ctx };
+        });
+      },
+    };
+  }
+  /** The scheduler's counter IS the number of database promises outstanding. */
+  const agree = (h) => expect(h.stats().reported).toBe(h.stats().outstanding);
+
+  it('T1 (Astra) five unresolved reads keep their charges across the 3 s deadline and a second tick: still five unresolved', async () => {
+    const h = harness();
+    await h.tick('A');
+    expect(h.stats().outstanding).toBe(5);
+    await h.advance(LABEL_READ_DEADLINE_MS + 1); // 3,001 ms
+    expect(h.stats().reported).toBe(5); // a timeout releases nothing
+    const second = await h.tick('B');
+    expect(h.stats()).toMatchObject({ issued: 5, outstanding: 5, peak: 5 });
+    expect(second.block.counts.unsettled).toBe(5); // B's distinct names: never read, read_unsettled
+    expect(second.block.readsIssued).toBe(0);
+    agree(h);
+  });
+  it('T1-ext (Astra) three ticks on one run memo, 3,001 ms apart: the peak of unresolved database promises stays at five', async () => {
+    const h = harness();
+    for (const prefix of ['A', 'B', 'C']) {
+      await h.tick(prefix);
+      await h.advance(LABEL_READ_DEADLINE_MS + 1);
+      expect(h.stats().outstanding).toBeLessThanOrEqual(LABEL_READ_CONCURRENCY);
+      agree(h);
+    }
+    expect(h.stats()).toMatchObject({ issued: 5, outstanding: 5, peak: 5 });
+  });
+  it('control (Astra): before any timeout, a later tick\'s distinct names are unsettled with no new reads', async () => {
+    const h = harness();
+    await h.tick('A');
+    await h.advance(LABEL_READ_DEADLINE_MS - 1);
+    const second = await h.tick('B');
+    expect(h.stats()).toMatchObject({ issued: 5, outstanding: 5, peak: 5 });
+    expect(second.block.counts.unsettled).toBe(5);
+  });
+  it('control (Astra): genuine resolution and rejection free capacity; the sealed queue never starts', async () => {
+    const h = harness();
+    await h.tick('A', 10);
+    expect(h.stats().issued).toBe(5);
+    h.pending.splice(0).forEach((p, i) => (i % 2 ? p.reject() : p.resolve()));
+    await flush();
+    expect(h.stats()).toMatchObject({ issued: 5, outstanding: 0, reported: 0 }); // A's five queued names were sealed: never started
+    await h.tick('B');
+    expect(h.stats()).toMatchObject({ issued: 10, outstanding: 5, peak: 5 });
+    agree(h);
+  });
+  it('control (Astra): identical keys share the earlier unresolved read across ticks, with no second request', async () => {
+    const h = harness();
+    await h.tick('A');
+    await h.advance(LABEL_READ_DEADLINE_MS + 1);
+    const second = await h.tick('A');
+    expect(h.stats()).toMatchObject({ issued: 5, outstanding: 5, peak: 5 });
+    expect(second.block.readsShared).toBe(5);
+  });
+  it('a settlement releases its charge exactly once: one settled read lets exactly one queued read start', async () => {
+    const h = harness();
+    const open = await h.tick('A', 7, { settle: false }); // five issued, two queued on A's still-open observation
+    expect(h.stats()).toMatchObject({ issued: 5, outstanding: 5 });
+    const first = h.pending.shift();
+    first.resolve();
+    await flush();
+    expect(h.stats()).toMatchObject({ issued: 6, outstanding: 5, reported: 5 }); // one release, one start
+    h.pending.shift().reject(); // a rejection releases too, once
+    await flush();
+    expect(h.stats()).toMatchObject({ issued: 7, outstanding: 5, reported: 5 });
+    expect(open.obs.memo.waiting).toEqual([]); // both queued names started
+    settleSetupMenuReads(open.obs, open.ctx, { env: h.env });
+    expect(open.block === open.ctx.state.setupMenu).toBe(false); // the settle composed a new block
+    expect(open.ctx.state.setupMenu.counts).toMatchObject({ absent: 1, failed: 1, unsettled: 5 });
+    agree(h);
+  });
+  it('the observation deadline seals the observation and drops its queue, but keeps every unresolved charge', async () => {
+    const h = harness();
+    const open = await h.tick('A', 8, { settle: false });
+    expect(h.stats()).toMatchObject({ issued: 5, outstanding: 5 });
+    await h.advance(LABEL_READ_DEADLINE_MS); // the deadline fires: sealed
+    expect(open.obs.closed).toBe(true);
+    expect(open.obs.memo.waiting).toEqual([]);
+    expect(h.stats().reported).toBe(5);
+    for (const p of h.pending.splice(0)) p.resolve();
+    await flush();
+    expect(h.stats()).toMatchObject({ issued: 5, outstanding: 0, reported: 0 }); // freed, and the dropped queue never starts
+  });
+  it('no wait is added: an immediate exit composes synchronously while five reads are unresolved', async () => {
+    const h = harness();
+    await runWithTickCaptureScope(async () => {
+      const ctx = liveCtx();
+      freezeSetupMenuPool(ctx, BATTLE, inputs({ hotBenchSymbols: ['N0', 'N1', 'N2', 'N3', 'N4', 'N5'] }), { env: h.env });
+      const obs = startSetupMenuReads({ db: h.db, tickCapture: ctx, summary: h.summary, env: h.env });
+      expect(settleSetupMenuReads(obs, ctx, { env: h.env })).toBeUndefined(); // synchronous: nothing to await
+      expect(ctx.state.setupMenu.counts.unsettled).toBe(6);
+    });
+    await flush();
+    expect(h.stats()).toMatchObject({ issued: 5, outstanding: 5, reported: 5 });
   });
 });
