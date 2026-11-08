@@ -17,19 +17,12 @@ export default function AskReply({ view }) {
   const r = view.reply;
   // The card sits below the items; on every new state it is brought into the drawer's
   // view (nearest edge, no animation), so the player sees what the Ask did (review D1).
-  // Once now and once after the next two frames: the action row's label changes in the
-  // same commit and the drawer re-measures its footer a render later, which moves the
-  // scroll area's edge.
+  // The slot's scroll margin keeps it clear of the scroll area's edge, which moves a
+  // pixel or two when the drawer re-measures its footer a render later.
   const slot = useRef(null);
   useEffect(() => {
-    if (r.status === 'idle') return undefined;
-    const bring = () => { try { slot.current?.scrollIntoView?.({ block: 'nearest' }); } catch { /* ok */ } };
-    bring();
-    let f2 = null;
-    const f1 = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => { f2 = requestAnimationFrame(bring); }) : null;
-    return () => {
-      if (typeof cancelAnimationFrame === 'function') { if (f1 !== null) cancelAnimationFrame(f1); if (f2 !== null) cancelAnimationFrame(f2); }
-    };
+    if (r.status === 'idle') return;
+    try { slot.current?.scrollIntoView?.({ block: 'nearest' }); } catch { /* ok */ }
   }, [r.status, r.questionId]);
   const card = replyCard(view, r);
   return card ? <div ref={slot} data-sheet-reply-slot style={{ scrollMarginTop: 8, scrollMarginBottom: 8 }}>{card}</div> : null;
