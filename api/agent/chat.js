@@ -67,6 +67,8 @@ import { fileDirectiveTransactional } from '../_utils/directiveWriter.js';
 // Cockpit Build 1a (spec §9): the chat calls block — three bounded reads at
 // resolved 'on' only; null everywhere else (the prompt is byte-identical).
 import { buildCallsBlockForChat } from '../_utils/callRecords/callsBlock.js';
+// Research Modal Build C (spec docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md §4.3): the sheet's Ask.
+import { parseResearchAsk, verifyResearchItems, researchAskForPrompt } from '../_utils/researchAsk.js';
 // Integrity follow-up 2 (Part B): the owner-writable `dailyGrades`, type-checked.
 import { dailyGradesOf } from '../_utils/playerFieldReaders.js';
 
@@ -433,6 +435,20 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'agentId, battleId, and message are required' });
   }
 
+  // Research Modal Build C (§4.3, BC-7): the OPTIONAL `researchAsk` — the in-battle
+  // sheet's Ask, validated against the sheet's closed vocabularies before
+  // anything is read or charged. Absent (every other caller) → null, and nothing
+  // below changes. It is one ordinary battle-mode chat turn: never the League
+  // per-day budget (refused here), never review mode (refused at step 8).
+  const researchAskParsed = parseResearchAsk(req.body.researchAsk);
+  if (!researchAskParsed.ok) {
+    return res.status(400).json({ error: 'invalid_research_ask', reason: researchAskParsed.reason });
+  }
+  const researchAsk = researchAskParsed.ask;
+  if (researchAsk && req.body.leagueAsk === true) {
+    return res.status(400).json({ error: 'research_ask_battle_only' });
+  }
+
   // 5. Sanitize message
   // The SAME transform, now from the one module that owns it — the directive
   // gate's forensics fields sanitize the model's free text through this exact
@@ -487,6 +503,11 @@ export default async function handler(req, res) {
       mode = 'review';
     } else {
       mode = detectMode(battle);
+    }
+    // Build C: a sheet Ask spends the per-battle chat 10 in battle mode only — refused
+    // here, before any read or charge, when the turn would be a review.
+    if (researchAsk && mode !== 'battle') {
+      return res.status(400).json({ error: 'research_ask_battle_only' });
     }
 
     // 8b. Voice-layer grounding — the per-caller mode, read at CALL time
@@ -716,6 +737,13 @@ export default async function handler(req, res) {
     }
     const conversationHistory = grounded ? conversationHistoryNew : conversationHistoryOld;
 
+    // 13c. Research Modal Build C (BC-7): the server re-reads the pack from the
+    //      battle it just read — its own items `verified`, the client's computed
+    //      facts `unverified` (researchAsk.js) — for the RESEARCH ASK block.
+    const researchAskPrompt = researchAsk
+      ? researchAskForPrompt({ ask: researchAsk, items: verifyResearchItems({ battle, battleId, ask: researchAsk, nowMs: Date.now() }) })
+      : null;
+
     // 14. Build the system prompt — the one this turn SENDS first, then (under
     //     any mode but 'off') its counterpart for the shadow record (§9, G6).
     const buildPrompt = (g) => buildVoiceLayerPrompt({
@@ -741,6 +769,8 @@ export default async function handler(req, res) {
       callsMode,
       // Cockpit Build 1a (spec §9): the calls block — null below resolved 'on'.
       callsBlock: callsBlockText,
+      // Build C: the named input only on a sheet Ask, so every other turn's inputs are main's.
+      ...(researchAskPrompt ? { researchAsk: researchAskPrompt } : {}),
     });
     const systemPrompt = buildPrompt(grounded);
     if (shadowAssembly) {
@@ -1099,7 +1129,14 @@ export default async function handler(req, res) {
       // has one rule. Absent when the shipped prompt was sent (off / shadow):
       // the persisted shape is unchanged there.
       ...(grounded ? { groundingVersion: GROUNDING_VERSION } : {}),
+      // Research Modal Build C (§4.3, contract §4): a sheet Ask's exchange carries an
+      // id minted HERE, when the object is built and before the one write, so the
+      // shared writer's retry sends the same object; its source and its question.
+      // Every other exchange is written exactly as before (no key at all).
+      ...(researchAsk ? { exchangeId: randomUUID(), source: 'research_modal', researchAsk: { symbol: researchAsk.symbol, questionId: researchAsk.questionId } } : {}),
     };
+    // The response carries the id for a sheet Ask only (the reply card's handle).
+    if (researchAsk) clientResponse.exchangeId = exchange.exchangeId;
 
     const recentTargets = [...(battle.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3);
 

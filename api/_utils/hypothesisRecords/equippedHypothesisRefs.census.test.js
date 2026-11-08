@@ -60,6 +60,8 @@ const NAMERS = {
   'api/_utils/tournamentBattleView.js': 'deletes the sibling from the league view',
   'api/agent/decide.js': 'FENCED: puts the carriage\'s resolved sibling into the agent context (P1b), whole',
   'api/tournament/battle-view.js': 'a comment: the league view route (tournamentBattleView deletes the sibling for it)',
+  'src/components/Research/Sheet/__fixtures__/sheetBattles.js': 'Research Modal Build C test fixture: writes a sibling with the eleven keys (no read)',
+  'src/components/Research/Sheet/packs.js': 'Research Modal Build C (BC-9): ideaOf — statement, activation, invalidation, watchlistId, hypothesisVersion only (never evidenceRefs or origin)',
   'src/config/featureFlags.js': 'flag documentation only',
 };
 /** The only allowed reads. */

@@ -77,6 +77,7 @@ const FEED_READERS = {
  */
 const EVALUATION_READERS = {
   'src/components/Agent/AgentActivityFeed.jsx': 'the word only — the group pill’s aria-label (`N grouped evaluations`)',
+  'src/components/Research/Sheet/latestLine.js': 'Research Modal Build C (spec BC-3, BC-15): the latest sentence — the newest entry carrying a `rationale` (quoted, never re-labelled), the newest `candidates` list (a bench name’s `signalSummary`), and the newest check whose `evidence` or `candidates` names the symbol (handed to packs.js for its check-read and risk items: `evidence[SYM]` regime / chg / atrX / nr7 / risk.action, each with the check’s own time); no decision field, no marker, no label',
   'src/components/Research/BombMode/selectBombRecord.js': 'Research Modal Build A (spec §3.4): the Fuse’s check dots — each entry’s `timestamp` and `evidence[SYM].px` since entry, where present; no decision field, no marker, no label (a marked entry’s px is still the price that check read)',
   'src/components/Season/SeasonLeaderboard.jsx': 'the word only — Season copy (another product)',
   'src/components/Tournament/Flat6BattleView.jsx': '`recentWhy`: the motive and hypothesis through renderMotive / renderHypothesis — no decision label',

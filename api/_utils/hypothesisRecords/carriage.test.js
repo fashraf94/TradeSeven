@@ -626,6 +626,7 @@ describe('the census — who names agentContext.equippedHypothesis', () => {
       'api/_utils/tournamentBattleView.js', // the privacy strip
       'api/agent/decide.js', // the fenced call site (passes the resolver's sibling through)
       'api/tournament/battle-view.js', // a comment
+      'src/components/Research/Sheet/packs.js', // Research Modal Build C (BC-9): the sheet's idea stance and Idea pill — statement, activation, invalidation, watchlistId, hypothesisVersion only; a client reader of the screen's subscribed document, no prompt module, no cron, no capture
       'src/config/featureFlags.js', // the flag's docstring
     ]);
   });

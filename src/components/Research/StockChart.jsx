@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { createChart, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts';
+import { createChart, createSeriesMarkers, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { prepareChartData, formatTime, calculateBombLevels, measuredBombLevels, detectBombCrossings, calculateNearestLevel } from './chartUtils';
 import { detectTrendlines } from './trendlineDetection';
@@ -60,6 +60,20 @@ const StockChart = ({
   // (every mode-off caller), nothing below changes.
   bombPlot = null,   // Optional React node: the bomb/spectate plot area
   bombChip = null,   // Optional React node: the control bar's state chip
+  // Research Modal Build C (spec docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md
+  // BC-8, BC-9; Phase 0 §H, §L, §N): the agent's record pinned to the chart.
+  // Absent (every caller but the sheet), none of the code below is reached and
+  // the chart makes no new library call.
+  //   markers     [{ id, day: 'YYYY-MM-DD', color, text?, position?, shape? }] —
+  //               drawn on 1D only, through the library's createSeriesMarkers
+  //               (v5 has no series.setMarkers), each at the time of ITS OWN
+  //               daily bar (a day with no bar draws nothing), re-applied on
+  //               every series rebuild. The caller sets `text` on the one open pin.
+  //   priceLines  [{ id, price, color, title, group: 'record'|'idea'|'pin', emphasis? }]
+  //               — drawn on 1D and 1W; the 'idea' group follows the Idea pill
+  //               (on by default, a clone of the S/R pill and effect).
+  markers = null,
+  priceLines = null,
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -78,6 +92,10 @@ const StockChart = ({
   const [ohlcData, setOhlcData] = useState(null);
   const [showSMA, setShowSMA] = useState(false);
   const [showSR, setShowSR] = useState(false);
+  // Build C: the Idea pill (Amendment B-2: on by default when the stock is in an idea).
+  const [showIdea, setShowIdea] = useState(true);
+  const sheetLinesRef = useRef({ series: null, lines: [] });
+  const markersPluginRef = useRef(null);
   const [isSpectateMode, setIsSpectateMode] = useState(false);
   const [spectateLevel, setSpectateLevel] = useState(null);
 
@@ -895,6 +913,70 @@ const StockChart = ({
     }
   }, [activeHighlight, chartData, isBombView]);
 
+  // Build C (BC-8, BC-9): the record's price lines — the measured entry, the
+  // idea's conditions behind the Idea pill, a tapped pack item's price. Absent
+  // or empty: nothing is drawn and no library call is made. The chart effect
+  // above rebuilds the series whenever its data changes, so lines left on a
+  // series that no longer exists are simply forgotten, never removed from it.
+  const hasIdeaLines = Array.isArray(priceLines) && priceLines.some((l) => l?.group === 'idea');
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    const held = sheetLinesRef.current;
+    if (held.series === series && series) {
+      held.lines.forEach((line) => { try { series.removePriceLine(line); } catch { /* ok */ } });
+    }
+    sheetLinesRef.current = { series, lines: [] };
+    if (!series || isBombView || !Array.isArray(priceLines) || priceLines.length === 0) return;
+    for (const l of priceLines) {
+      if (!l || typeof l.price !== 'number' || !Number.isFinite(l.price) || l.price <= 0) continue;
+      if (l.group === 'idea' && !showIdea) continue;
+      try {
+        sheetLinesRef.current.lines.push(series.createPriceLine({
+          price: l.price,
+          ...(l.color ? { color: l.color } : {}),
+          lineWidth: l.emphasis ? 2 : 1,
+          lineStyle: l.group === 'record' ? 0 : 2, // record solid, idea / pin dashed
+          axisLabelVisible: true,
+          title: l.title || '',
+        }));
+      } catch (e) {
+        console.warn('[StockChart] Sheet line error:', e);
+      }
+    }
+  }, [priceLines, showIdea, chartData, isBombView]);
+
+  // Build C (BC-8): the record as dots, 1D only (1W draws the price pins only),
+  // through createSeriesMarkers — re-applied whenever the series is rebuilt
+  // (a new series gets a new markers plugin). A marker's time IS its day's bar
+  // time (Phase 0 §N); a day with no bar on the chart draws nothing.
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    const plugin = markersPluginRef.current;
+    const want = !!series && !isBombView && timeframe === '1D' && Array.isArray(markers) && markers.length > 0;
+    if (!want) {
+      if (plugin && plugin.series === series && series) { try { plugin.api.setMarkers([]); } catch { /* ok */ } }
+      return;
+    }
+    const barOfDay = new Map((chartData || []).map((b) => [calendarDateOf(b.time), b.time]));
+    const list = markers
+      .filter((m) => m && barOfDay.has(m.day))
+      .map((m) => ({
+        time: barOfDay.get(m.day),
+        position: m.position || 'aboveBar',
+        shape: m.shape || 'circle',
+        ...(m.color ? { color: m.color } : {}),
+        ...(m.text ? { text: m.text } : {}),
+        ...(m.id ? { id: m.id } : {}),
+      }))
+      .sort((a, b) => a.time - b.time);
+    try {
+      if (plugin && plugin.series === series) plugin.api.setMarkers(list);
+      else markersPluginRef.current = { series, api: createSeriesMarkers(series, list) };
+    } catch (e) {
+      console.warn('[StockChart] Markers error:', e);
+    }
+  }, [markers, chartData, timeframe, isBombView]);
+
   const pillStyle = (active, variant) => {
     const isBomb = variant === 'bomb';
     return {
@@ -955,6 +1037,11 @@ const StockChart = ({
             <button onClick={() => { setShowSR(v => !v); onToggleSR?.(!showSR); }} style={pillStyle(showSR)}>
               S/R
             </button>
+            {hasIdeaLines && (
+              <button data-idea-pill={showIdea ? 'on' : 'off'} onClick={() => setShowIdea(v => !v)} style={pillStyle(showIdea)}>
+                Idea
+              </button>
+            )}
           </div>
         )}
         {plotOwned && bombChip}
