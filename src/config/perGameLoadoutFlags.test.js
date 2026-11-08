@@ -139,7 +139,7 @@ const CLIENT_READS = {
     "archetype: PER_GAME_LOADOUT_ENABLED ? battle?.agentContext?.archetype ?? agent?.archetype ?? null : agent?.archetype ?? battle?.agentContext?.archetype ?? null,",
   ],
   "src/App.jsx": [
-    "agentLoadout={primaryAgent ? (PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName, openLoadout: () => setScreen('dashboard') } : { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName }) : null}",
+    "agentLoadout={primaryAgent ? (PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName, openLoadout: () => openCommandCenterOnLoadout(setScreen) } : { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName }) : null}",
   ],
   "src/components/CommandCenter/Armory.jsx": [
     "const card = PER_GAME_LOADOUT_ENABLED ? armoryCardOf(use(PerGameLoadoutContext)) : null;",
@@ -147,7 +147,10 @@ const CLIENT_READS = {
   ],
   "src/components/CommandCenter/CommandCenterHub.jsx": [
     "loadoutLine: PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? scopeDeployLine(use(PerGameLoadoutContext)) ?? loadoutLineOf(sections.loadout) : loadoutLineOf(sections.loadout),",
+    // The armory flip's LD-1: the League door's one-shot intent, taken by each shell's first render.
+    "const [tab, setTab] = useState(PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? () => (takeLoadoutEntry() ? PHONE_TABS.LOADOUT : DEFAULT_PHONE_TAB) : DEFAULT_PHONE_TAB);",
     "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
+    "const [area, setArea] = useState(PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? () => (takeLoadoutEntry() ? HUB_AREAS.ARCHETYPE : DEFAULT_AREA) : DEFAULT_AREA);",
     "const panel = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
     "deploy: PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
     "PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",

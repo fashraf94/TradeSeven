@@ -146,6 +146,9 @@ import { DeployAttemptProvider } from '../../contexts/DeployAttemptContext';
 import { resetAuthIdentityForTests } from '../../services/authIdentity';
 import { __resetHoldClaim } from '../../hooks/holdClaim';
 import { installFakeCanvas } from './__fixtures__/shadowCanvasKit';
+import { LeagueLoadoutLine } from '../League/LeagueLoadoutLine';
+import { openCommandCenterOnLoadout, takeLoadoutEntry } from '../../utils/hubEntryIntent';
+import { HUB_AREAS, PHONE_TABS } from './hub/composition';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -663,5 +666,81 @@ describe('flag off (A1 alone): the hub is A1\'s', () => {
     expect(document.querySelector('[data-loadout-deploy-line]')).toBeNull();
     expect(document.querySelector('[data-hub-card="archetype"]')).not.toBeNull();
     expect(h.lockSubs).toEqual([]);
+  });
+});
+
+// The armory flip's LD-1 (founder ruling, Nov 8, 2026): from the League section, the loadout door opens the Command Center
+// on its Loadout tab, not the Overview; desktop on the Loadout area (where it already opens). One-shot: only the visit the
+// door starts. The door is the real League line's, wired as App's flag-on arm wires it (`openLoadout: () =>
+// openCommandCenterOnLoadout(setScreen)`; the two flag censuses pin App's line); App's screen change is the hub mounting.
+describe('LD-1: the League door opens the Command Center on its Loadout tab, once', () => {
+  beforeEach(() => { takeLoadoutEntry(); });
+  afterEach(() => { takeLoadoutEntry(); });
+
+  /** Tap the League tab's door (an open week); returns App's setScreen as the door called it. */
+  function tapLeagueDoor() {
+    const setScreen = vi.fn();
+    const agent = AGENT();
+    const line = mount(<LeagueLoadoutLine agentLoadout={{ name: agent.name, archetype: agent.archetype, equippedWatchlistId: agent.equippedWatchlistId, equippedWatchlistName: agent.equippedWatchlistName, openLoadout: () => openCommandCenterOnLoadout(setScreen) }} group={null} groupKnown accent="#5EEAD4" />);
+    click(line.host.querySelector('button[data-league-loadout]'));
+    line.unmount();
+    return setScreen;
+  }
+  /** The dashboard screen mounting the hub, with no tab tapped. */
+  async function enter(site) {
+    layout.state.hubWidth = site === 'mobile' ? 390 : 1280;
+    const m = mount(<CommandCenterHub site={site} hub={HUB(AGENT())} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
+    mounted.push(m);
+    await flush();
+    answerLock(OPEN);
+    await flush();
+    return m;
+  }
+  const phoneTab = () => document.querySelector('[data-hub-phone-tab][aria-selected="true"]').getAttribute('data-hub-phone-tab');
+  const desktopArea = () => document.querySelector('[data-hub-area][aria-selected="true"]').getAttribute('data-hub-area');
+  const leave = () => { for (const m of mounted) m.unmount(); mounted = []; };
+
+  it('phone: tapping the League door lands the hub on the Loadout tab, the League card on it', async () => {
+    const setScreen = tapLeagueDoor();
+    expect(setScreen.mock.calls).toEqual([['dashboard']]);
+    await enter('mobile');
+    expect(phoneTab()).toBe(PHONE_TABS.LOADOUT);
+    expect(card('league')).not.toBeNull();
+    expect(card('league').textContent).toContain(name('contrarian'));
+  });
+
+  it('desktop: the same door lands on the Loadout area (Equipped Archetype), and the visit takes the intent', async () => {
+    tapLeagueDoor();
+    await enter('desktop');
+    expect(desktopArea()).toBe(String(HUB_AREAS.ARCHETYPE));
+    expect(card('league')).not.toBeNull();
+    // taken: a phone-width entry after it is an ordinary one
+    leave();
+    await enter('mobile');
+    expect(phoneTab()).toBe(PHONE_TABS.OVERVIEW);
+  });
+
+  it('one-shot: the next ordinary entry into the Command Center opens on the Overview', async () => {
+    // an ordinary entry, no door: the Overview
+    await enter('mobile');
+    expect(phoneTab()).toBe(PHONE_TABS.OVERVIEW);
+    leave();
+    tapLeagueDoor();
+    await enter('mobile');
+    expect(phoneTab()).toBe(PHONE_TABS.LOADOUT);
+    // the player leaves and comes back by any other way: the Overview again
+    leave();
+    await enter('mobile');
+    expect(phoneTab()).toBe(PHONE_TABS.OVERVIEW);
+    expect(card('league')).toBeNull();
+  });
+
+  it('kill switch: with the flags held off the hub never reads the intent, and opens on the Overview', async () => {
+    h.perGame.on = false;
+    openCommandCenterOnLoadout(() => {});
+    await enter('mobile');
+    expect(phoneTab()).toBe(PHONE_TABS.OVERVIEW);
+    // untouched: the flag-off arm is main's `useState(DEFAULT_PHONE_TAB)`
+    expect(takeLoadoutEntry()).toBe(true);
   });
 });

@@ -161,6 +161,7 @@ import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
 import PerGameLoadoutScope from './PerGameLoadoutScope';
 import { PerGameLoadoutContext, scopeDeployLine } from './hub/perGameLoadoutContext';
 import { ArmorySheetContext } from './Armory';
+import { takeLoadoutEntry } from '../../utils/hubEntryIntent';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
 export function shadowSizeFor(composition, width) {
@@ -326,7 +327,8 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
   const stripRef = useRef(null);
   const width = useHubWidth(rootRef);
   const placement = useNavClearance(stripRef);
-  const [tab, setTab] = useState(DEFAULT_PHONE_TAB);
+  // The armory flip's LD-1: a visit the League door started opens on the Loadout tab, once (utils/hubEntryIntent.js).
+  const [tab, setTab] = useState(PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? () => (takeLoadoutEntry() ? PHONE_TABS.LOADOUT : DEFAULT_PHONE_TAB) : DEFAULT_PHONE_TAB);
   const composition = HUB_COMPOSITIONS.PHONE;
   const actions = {
     ...wired,
@@ -485,7 +487,8 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
   const shared = useShared(sections, attemptId);
   const width = useHubWidth(rootRef);
   const composition = composeHub({ site: HUB_SITES.DESKTOP, width });
-  const [area, setArea] = useState(DEFAULT_AREA);
+  // LD-1: desktop already opens on the Loadout area; it takes the door's intent so the intent cannot outlive the visit.
+  const [area, setArea] = useState(PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? () => (takeLoadoutEntry() ? HUB_AREAS.ARCHETYPE : DEFAULT_AREA) : DEFAULT_AREA);
   // Slice S7 (R-S7-3): each selection that CHANGED the area is one response for Shadow; re-selecting the current area is none.
   const [areaEvent, setAreaEvent] = useState(0);
   const actions = {

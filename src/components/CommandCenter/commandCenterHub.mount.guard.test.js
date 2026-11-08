@@ -632,6 +632,10 @@ const PERMITTED_TERMINALS = Object.freeze({
   'src/constants/loadoutCopy.js': 'LOADOUT_COPY — the loadout surfaces\' words, one table for the hub and the League, a hub copy guard table (build A2)',
   'src/services/loadoutService.js': 'changeLoadoutArchetype, equipLoadoutBook, unequipLoadoutBook — today\'s three writers with the `loadout` they set (build A2)',
   'src/services/leagueLockService.js': 'subscribeLeagueLock — the League lock\'s client read: the writers\' own query, judged by the shared rule (build A2)',
+  // The armory flip's LD-1 (founder ruling, Nov 8, 2026): the League door's one-shot intent. Outside this directory because
+  // App marks it (App reaches here only through the gate, the picker and the chrome predicates); it imports nothing and
+  // reads no flag, so the walk stopping here hides nothing.
+  'src/utils/hubEntryIntent.js': 'takeLoadoutEntry — the League door\'s one-shot intent, taken by each shell\'s first render on the flag-on arm (LD-1)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -1267,6 +1271,8 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     // refusal's test; the League lock's one client read.
     '/services/loadoutService': ['changeLoadoutArchetype', 'equipLoadoutBook', 'isLeagueLock', 'unequipLoadoutBook'],
     '/services/leagueLockService': ['subscribeLeagueLock'],
+    // The armory flip's LD-1: ONE name, the take (App alone marks the intent).
+    '/utils/hubEntryIntent': ['takeLoadoutEntry'],
   });
 
   it('across every file of the directory, exactly these names and no others', () => {

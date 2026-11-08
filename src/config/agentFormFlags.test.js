@@ -95,6 +95,8 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), a kill switch
     expect(at(`${hub}CommandCenterHub.jsx`)).toEqual([
       IMPORT,
       `loadoutLine: ${A2} ? scopeDeployLine(use(PerGameLoadoutContext)) ?? loadoutLineOf(sections.loadout) : loadoutLineOf(sections.loadout),`,
+      // The armory flip's LD-1: the League door's one-shot intent, taken by the phone's tab and desktop's area.
+      `const [tab, setTab] = useState(${A2} ? () => (takeLoadoutEntry() ? PHONE_TABS.LOADOUT : DEFAULT_PHONE_TAB) : DEFAULT_PHONE_TAB);`,
       // The follow-up's N2(d): the phone armory steps aside for a tab switch, a hold and the strip's Retry.
       'const selectTab = AGENT_FORM_ARMORY_ENABLED',
       // The fix pass (review AR-9): the hold's phase compared by name, so a stored 'idle' could never close it.
@@ -104,6 +106,7 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), a kill switch
       'onAction={AGENT_FORM_ARMORY_ENABLED && actions.deployAction ? (kind) => { if (kind === DISPLAY_ACTIONS.RETRY && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet(); actions.deployAction(kind); } : actions.deployAction}',
       // A1 carry AR-5: the armory's sheet context (the opener) around LoadoutSheets, at both shells.
       '{runtime.live && (AGENT_FORM_ARMORY_ENABLED ? (',
+      `const [area, setArea] = useState(${A2} ? () => (takeLoadoutEntry() ? HUB_AREAS.ARCHETYPE : DEFAULT_AREA) : DEFAULT_AREA);`,
       'paused={AGENT_FORM_ARMORY_ENABLED ? coverOpen || sheet.sheet === HUB_SHEETS.ARCHETYPE : coverOpen}',
       `const panel = ${A2} ? (`,
       `deploy: ${A2} ? (`,
@@ -133,7 +136,7 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), a kill switch
     expect(at(`${lg}leagueLoadoutSlot.jsx`)).toEqual([IMPORT, `const LazyLeagueLine = ${A2}`, `const LazyTrainingLine = ${A2}`, `export const LeagueGroupKnownContext = ${A2}`]);
     expect(at('../App.jsx')).toEqual([
       "import { AGENT_FORM_ARMORY_ENABLED } from './config/agentFormFlags';",
-      `agentLoadout={primaryAgent ? (${A2} ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName, openLoadout: () => setScreen('dashboard') } : { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName }) : null}`,
+      `agentLoadout={primaryAgent ? (${A2} ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName, openLoadout: () => openCommandCenterOnLoadout(setScreen) } : { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName }) : null}`,
     ]);
     expect(at(`${hub}ShadowStage.jsx`)).toEqual([IMPORT, 'return AGENT_FORM_ARMORY_ENABLED ? (']);
     // The follow-up's N1 retired A1's `instant` read: the hero's view is main's file again, and reads no armory flag.
