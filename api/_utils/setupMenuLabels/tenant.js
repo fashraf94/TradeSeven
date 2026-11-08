@@ -12,7 +12,9 @@
 //   PREPARATION (≤ 6 s from the tenant's start; no preparation read starts after it):
 //   3  State (plain read): unreadable → `deferred.state_unreadable`, NO request this run.
 //   4  Battles: per allowlisted owner, rotating from the owner cursor, `ownerId ==` and
-//      `status == 'active'`, field-masked, ≤ 10 per owner and ≤ 25 in all; scope in memory.
+//      `status == 'active'`, field-masked; scope in memory. ≤ 25 battle DOCUMENTS READ in all
+//      (correction round F2): each owner's query asks for min(10, what remains), every returned
+//      document counts before scope filtering, and no query runs once the allowance is spent.
 //   5  Keys: each kept battle's persisted `watchlist.hotBench`, taken in turn across battles; crypto
 //      and key-form refusals counted, never requested; no rankings, no menu recomputation, no
 //      monitoring, no catalysts.
@@ -227,21 +229,23 @@ async function acquire({ db, handlerStartMs, now = () => new Date(), fetchPayloa
   if (read.status === 'unreadable') { bump(counts.deferred, 'state_unreadable'); return counts; }
   const state = read.state;
 
-  // 4. BATTLES.
+  // 4. BATTLES. MAX_BATTLES_PER_RUN is a READ allowance (correction round F2): every document a query returns is
+  // counted before any filter, kept or excluded alike, and each owner's query asks only for what remains of it.
   const kept = [];
   let ownersCursor = state.cursors.owners;
   for (const ownerId of rotate(owners, state.cursors.owners)) {
-    if (kept.length >= MAX_BATTLES_PER_RUN) break;
+    const remaining = MAX_BATTLES_PER_RUN - counts.battles.read;
+    if (remaining <= 0) break; // the allowance is spent: no further query
     if (!canRead()) { counts.owners.unread += 1; bump(counts.deferred, 'prep_cut'); continue; }
     counts.owners.queried += 1;
     ownersCursor = ownerId; // past every owner whose query this run attempted
     try {
       await before('battles');
       const page = await db.collection('agentBattles').where('ownerId', '==', ownerId).where('status', '==', 'active')
-        .select(...BATTLE_FIELDS).limit(MAX_BATTLES_PER_OWNER_PER_RUN).get();
-      for (const doc of page?.docs || []) {
-        if (kept.length >= MAX_BATTLES_PER_RUN) break;
-        counts.battles.read += 1;
+        .select(...BATTLE_FIELDS).limit(Math.min(MAX_BATTLES_PER_OWNER_PER_RUN, remaining)).get();
+      const docs = Array.isArray(page?.docs) ? page.docs : [];
+      counts.battles.read += docs.length; // the whole returned page, before any filter: the reads it cost
+      for (const doc of docs) {
         const battle = doc.data() || {};
         if (battle.ownerId !== ownerId) { counts.battles.notOwned += 1; continue; } // never another owner's battle
         if (!poolScopeAdmits(battle, { isTournament: false })) { bump(counts.excluded, scopeOf(battle).excludedBy ?? 'scope'); continue; }

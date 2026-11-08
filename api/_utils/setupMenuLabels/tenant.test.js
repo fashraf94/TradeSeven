@@ -373,3 +373,84 @@ describe('isolation, the health line, the callers (rows 4.8, A1.1, A4.1)', () =>
     expect(/\bgetOrAcquireSnapshot\b/.test('const x = await getOrAcquireSnapshot({});')).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------- correction round F2 (Astra's review of 4e99b1f8)
+// MAX_BATTLES_PER_RUN is a READ allowance: every document a battle query returns counts, kept or excluded, and each
+// owner's query asks only for min(10, what remains). The rows count the documents the queries actually RETURNED
+// (a wrapper around the in-memory store), independently of the tenant's own `battles.read`, and check the two agree.
+// "F2-excluded", "F2-eligible" and the two-owner control are Astra's supplied regression file
+// (evidence/tenant.regression.test.js, SHA-256 ab7fbd40…), adapted; the rotation and short-page rows are this round's.
+describe('F2 — the battle read allowance counts every returned document', () => {
+  /** The memory store, with every agentBattles query's returned page counted. */
+  function countingDb(base) {
+    const pages = [];
+    const wrap = (q) => ({
+      where: (...a) => wrap(q.where(...a)),
+      select: (...a) => wrap(q.select(...a)),
+      limit: (n) => wrap(q.limit(n)),
+      get: async () => { const page = await q.get(); pages.push(page.docs.length); return page; },
+    });
+    const db = { ...base, collection: (name) => (name === 'agentBattles' ? wrap(base.collection(name)) : base.collection(name)) };
+    return { db, pages, returned: () => pages.reduce((a, b) => a + b, 0) };
+  }
+  function ownersWith(perOwner, archetype = 'momentum_chaser') {
+    const docs = {};
+    for (const [owner, n] of Object.entries(perOwner)) {
+      for (let i = 0; i < n; i++) docs[`agentBattles/${owner}-${i}`] = { ownerId: `owner-${owner}`, status: 'active', gameMode: 'baggerbomb_agent', agentId: `agent-${owner}-${i}`, agentContext: { archetype }, watchlist: { hotBench: [] } };
+    }
+    return makeMemoryDb({ docs });
+  }
+  const queriedOwners = (base) => base.__log.queries.filter((q) => q.col === 'agentBattles').map((q) => q.filters.find((f) => f[0] === 'ownerId')[2]);
+  const maxes = (base) => base.__log.queries.filter((q) => q.col === 'agentBattles').map((q) => q.max);
+
+  it('F2-excluded (Astra): four owners x ten EXCLUDED battles read 25 documents, not 40; the last query asks for 5', async () => {
+    process.env.COCKPIT_ALLOWLIST_UIDS = 'owner-a,owner-b,owner-c,owner-d';
+    const base = ownersWith({ a: 10, b: 10, c: 10, d: 10 }, 'analyst');
+    const c = countingDb(base);
+    const r = await run(c.db);
+    expect(c.returned()).toBe(C.MAX_BATTLES_PER_RUN);
+    expect(r.battles).toMatchObject({ read: C.MAX_BATTLES_PER_RUN, kept: 0 });
+    expect(r.battles.read).toBe(c.returned()); // the reported count IS the documents returned
+    expect(r.excluded).toEqual({ archetype: 25 });
+    expect(maxes(base)).toEqual([10, 10, 5]);
+    expect(r.owners).toEqual({ queried: 3, unread: 0 }); // owner-d: no query once the allowance is spent
+  });
+  it('F2-eligible (Astra): four owners x ten ELIGIBLE battles read 25 documents, not 30; the final query limit is 5', async () => {
+    process.env.COCKPIT_ALLOWLIST_UIDS = 'owner-a,owner-b,owner-c,owner-d';
+    const base = ownersWith({ a: 10, b: 10, c: 10, d: 10 });
+    const c = countingDb(base);
+    const r = await run(c.db);
+    expect(c.returned()).toBe(C.MAX_BATTLES_PER_RUN);
+    expect(r.battles).toMatchObject({ read: 25, kept: 25 });
+    expect(maxes(base)).toEqual([10, 10, 5]);
+    expect(c.pages).toEqual([10, 10, 5]);
+  });
+  it('control (Astra): two eligible owners fit the allowance: 20 read, 20 kept, both queries at 10', async () => {
+    process.env.COCKPIT_ALLOWLIST_UIDS = 'owner-a,owner-b';
+    const base = ownersWith({ a: 10, b: 10 });
+    const c = countingDb(base);
+    const r = await run(c.db);
+    expect(c.returned()).toBe(20);
+    expect(r.battles).toMatchObject({ read: 20, kept: 20 });
+    expect(maxes(base)).toEqual([10, 10]);
+  });
+  it('a short page leaves its remainder to later owners: 3 + 10 + 10 + 2 = 25 read', async () => {
+    process.env.COCKPIT_ALLOWLIST_UIDS = 'owner-a,owner-b,owner-c,owner-d';
+    const base = ownersWith({ a: 3, b: 10, c: 10, d: 10 });
+    const c = countingDb(base);
+    const r = await run(c.db);
+    expect(maxes(base)).toEqual([10, 10, 10, 2]);
+    expect(c.pages).toEqual([3, 10, 10, 2]);
+    expect(r.battles).toMatchObject({ read: 25, kept: 25 });
+  });
+  it('owner rotation is kept: the cursor stops at the last owner queried and the next run starts after it', async () => {
+    process.env.COCKPIT_ALLOWLIST_UIDS = 'owner-a,owner-b,owner-c,owner-d';
+    const base = ownersWith({ a: 10, b: 10, c: 10, d: 10 }, 'analyst');
+    await run(base);
+    expect(queriedOwners(base)).toEqual(['owner-a', 'owner-b', 'owner-c']);
+    expect(stateOf(base).cursors.owners).toBe('owner-c');
+    await run(base, { at: T0 + 15 * MIN });
+    expect(queriedOwners(base).slice(3)).toEqual(['owner-d', 'owner-a', 'owner-b']);
+    expect(maxes(base).slice(3)).toEqual([10, 10, 5]);
+  });
+});
