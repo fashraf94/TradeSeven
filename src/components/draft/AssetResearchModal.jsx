@@ -454,6 +454,10 @@ const AssetResearchModal = ({
   // fold is the 1D view's — review D2). The skeleton and the error box use it too, so
   // the drawer never opens low and jumps when the chart lands (review D7).
   const sheetChartH = sheetGeom && !bombViewOpen ? sheetChartHeight : chartHeight;
+  // In sheet mode the skeleton and the error box stand in for the WHOLE chart — its
+  // control row (StockChart's timeframe and overlay pills: 44 px, measured at
+  // 320/390/430/1440) and its plot — so the drawer sits where it will stay (review D7).
+  const sheetChartBoxH = sheetGeom ? sheetChartH + 44 : chartHeight;
   const sheetChartRef = useRef(null);
   const [sheetChartBox, setSheetChartBox] = useState(null);
   // The drawer sits on the chart section's measured bottom: re-measured after every
@@ -948,7 +952,7 @@ const AssetResearchModal = ({
               {researchData.loading && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  height: `${sheetChartH}px`, background: '#0a0e14',
+                  height: `${sheetChartBoxH}px`, background: '#0a0e14',
                 }}>
                   <div style={{
                     width: '90%', height: sheetGeom ? `${Math.max(60, sheetChartH - 24)}px` : '200px', borderRadius: '8px',
@@ -961,7 +965,7 @@ const AssetResearchModal = ({
               {researchData.error && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  height: `${sheetChartH}px`, background: '#0a0e14', gap: '12px',
+                  height: `${sheetChartBoxH}px`, background: '#0a0e14', gap: '12px',
                 }}>
                   <span style={{ color: HOLO_COLORS.textSecondary, fontSize: '14px' }}>
                     Chart data unavailable
@@ -1029,7 +1033,7 @@ const AssetResearchModal = ({
               isSectorETF={isSectorETF}
               hasBombData={bombOn ? true : bombHidden ? false : !!bombData}
               isGameContext={bombHidden ? false : isGameContext}
-              {...(sheetGeom ? { midY: sheetChartBox ?? (sheetChartH + 6), footer: <SheetActionRow view={sheetView} /> } : {})}
+              {...(sheetGeom ? { midY: sheetChartBox ?? (sheetChartBoxH + 6), footer: <SheetActionRow view={sheetView} /> } : {})}
               {...(sheetOn ? { analysisAlways: true } : {})}
             >
               {activeTab === 'fundamental' && sheetView && (

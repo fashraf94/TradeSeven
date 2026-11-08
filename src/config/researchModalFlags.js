@@ -69,20 +69,24 @@ export const RESEARCH_MODAL_SHEET_MODES = Object.freeze(['off', 'allowlist', 'on
  * Ask (one message from the per-battle chat 10).
  *
  * A STRING TRI-STATE ('off' | 'allowlist' | 'on'), resolved at CALL time by
- * resolveSheetMode() (src/components/Research/Sheet/sheetGate.js), which maps
- * any value outside RESEARCH_MODAL_SHEET_MODES to 'off'. Never read at module
- * scope.
+ * resolveSheetMode() (src/components/Research/Sheet/sheetMode.js — the client
+ * gate sheetGate.js and the server's Ask gate api/_utils/researchAsk.js both
+ * read it), which maps any value outside RESEARCH_MODAL_SHEET_MODES to 'off'.
+ * Never read at module scope.
  *
  *   'off'        the modal is today's modal byte for byte: the Analysis tab
  *                keeps the profile and the preset questions, the chart takes
- *                no pins, chat.js writes every exchange as before. The battle
- *                screen builds no sheet context and the pack builder is never
- *                called.
+ *                no pins, chat.js writes every exchange as before and refuses
+ *                a sheet Ask (403 research_ask_off, before any read or charge).
+ *                The battle screen builds no sheet context and the pack
+ *                builder is never called.
  *   'allowlist'  PER AGENT BATTLE: on only when the existing
  *                GET /api/agent/cockpit-status answers `allowlisted` for the
  *                caller's own battle, through the Film Room gate's cached
  *                verdict (the same cache Bomb mode reads). A mount with no
- *                agent battle resolves 'allowlist' to off.
+ *                agent battle resolves 'allowlist' to off. chat.js admits a
+ *                sheet Ask only from an owner the same allowlist names
+ *                (isCockpitOwnerAllowlisted, read at call time).
  *   'on'         the agent Battle View's three mounts (and the cockpit bench
  *                door through them) open the sheet; every other mount is
  *                unchanged.

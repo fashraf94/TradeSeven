@@ -356,7 +356,7 @@ describe('BC-11, BC-12 — the cockpit door', () => {
   });
 });
 
-describe('the drawer never opens low and jumps: the chart\'s skeleton and error box are the sheet\'s chart height (review D7)', () => {
+describe('the drawer never opens low and jumps: the chart\'s skeleton and error box are the whole sheet chart — its 44 px control row and its plot (review D7)', () => {
   const chartBoxHeight = () => [...document.body.querySelectorAll('div')].find((d) => d.style.position === 'relative' && /px$/.test(d.style.height) && d.parentElement?.style.background)?.style.height;
   it('while the series loads, and when it fails, the box is the height the chart will take', async () => {
     await open();
@@ -367,13 +367,14 @@ describe('the drawer never opens low and jumps: the chart\'s skeleton and error 
     net.history = () => new Promise(() => {});
     await open();
     const skeleton = [...document.body.querySelectorAll('div')].find((d) => /shimmer/.test(d.style.animation))?.parentElement;
-    expect(skeleton?.style.height).toBe(loaded);
+    const whole = `${parseInt(loaded, 10) + 44}px`;
+    expect(skeleton?.style.height).toBe(whole);
     act(() => root.unmount());
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     net.history = () => Promise.reject(new Error('down'));
     await open();
     const failed = [...document.body.querySelectorAll('span')].find((s) => s.textContent === 'Chart data unavailable')?.parentElement;
-    expect(failed?.style.height).toBe(loaded);
+    expect(failed?.style.height).toBe(whole);
   });
 });
 
@@ -427,6 +428,32 @@ describe('Layer 0 keeps the fold with a long sentence and a long name (review D3
     const tag = $('[data-sheet-agent-tag]');
     expect([tag.style.whiteSpace, tag.style.textOverflow, tag.style.minWidth]).toEqual(['nowrap', 'ellipsis', '0px']);
     expect(tag.parentElement.style.minWidth).toBe('0px');
+  });
+});
+
+describe('§3: no new price request — the sheet reads what the modal already loads', () => {
+  const tally = () => {
+    const by = (k) => net.calls.filter((c) => c[0] === k).length;
+    return { quote: by('quote'), history1d: net.calls.filter((c) => c[0] === 'history' && c[2] === '1d').length, historyOther: net.calls.filter((c) => c[0] === 'history' && c[2] !== '1d').length, profile: by('profile'), fetchWithAuth: by('fetchWithAuth'), getDoc: by('getDoc') };
+  };
+  it('sheet on vs off on the same 1D view: the same quote, series and profile requests; nothing more until the player opens a question or asks', async () => {
+    await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="fundamental" defaultTimeframe="1D" wsPrice={103.2} />); });
+    await flush();
+    const off = tally();
+    act(() => root.unmount());
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    net.calls.length = 0;
+    await open({ context: ctx({ rankings: undefined }) });
+    const on = tally();
+    expect(on).toEqual(off);
+    expect(on.fetchWithAuth).toBe(0);
+    expect(on.getDoc).toBe(0);
+    // Opening the stalled question: ONE document read (the rankings), no price request.
+    await click($('[data-sheet-question="better_than_stalled"]'));
+    expect(tally()).toEqual({ ...on, getDoc: 1 });
+    // The Ask: ONE POST, no price request.
+    await click($('[data-sheet-ask]'));
+    expect(tally()).toEqual({ ...on, getDoc: 1, fetchWithAuth: 1 });
   });
 });
 
