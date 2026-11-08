@@ -4,7 +4,7 @@
 
 **Preamble.** `git fetch origin` ran first; `origin/main` was `d09603b2`, which holds PR #1029's merge, so the brief's STOP does not apply. The tree was clean. Fenced files edited: none. Fenced functions called: none (`decide.js`, `agentBattleService.js` and `createAgentBattle` have no diff). Nothing under `api/` changed except tests and two test fixtures.
 
-**CI fixes (a second session, Nov 7, 2026).** The PR's `firestore rules + emulator suites` job was red: 5 rows in 2 emulator files that the first session's red-row sweep never ran. The fix brief's rulings FL4-b (fold FL4) and CI-1 (the emulator rows' dispositions) are built, the production check it asked for is settled from the code, and every check below was re-run on the new code head `54a2725c`. That session's own account is §12; the sections above it are updated where the fixes changed them.
+**CI fixes (a second session, Nov 7, 2026).** The PR's `firestore rules + emulator suites` job was red: 5 rows in 2 emulator files that the first session's red-row sweep never ran. The fix brief's rulings FL4-b (fold FL4) and CI-1 (the emulator rows' dispositions) are built, the production check it asked for is settled from the code. `main` moved during that session (to `7b1d8d26`: PRs #1030 and #1031) and was merged into the branch (`477b96fe`, no conflict), and every check below was re-run on that merged tree, against `main` @ `7b1d8d26`. That session's own account is §12; the sections above it are updated where the fixes changed them.
 
 **The founder merges. Nothing reaches players until he does, and the merge waits for #1029's `firestore.rules` in the Firebase Console.**
 
@@ -19,15 +19,15 @@
 | 3 | **Red rows** | **464 rows in 42 files went red** in the default suite with both flags on. **274 are kill-switch rows** (held off by mock), **186 rewritten** (they run with the flags on, assertions unchanged), **4 pins moved**, **0 deleted** (§2). The emulator suite's 5 are row 14. |
 | 4 | **FL3** | A pin row: per-game loadouts never run without casual clones. It fails with casual clones off (§5). |
 | 5 | **FL4** | **Folded (FL4-b).** First built as two literal ternaries, one of which sat inside a `try`, where Rollup does not fold. The flag now picks a whole `try` block outside it: `if (PER_GAME_LOADOUT_ENABLED) try {…} catch {…} else try {…main's block verbatim…} catch {…}` (`src/services/agentDeploy.js:194-243`, §4). |
-| 6 | **Kill-switch build** | **0 of 55 non-map files differ** from `main`: the raw `diff -rq` of the unminified Linux builds, source maps excluded, hashes in the names included (the entry is `index-ok8k4FzL.js` in both) (§3). |
-| 7 | **Flags-on build** | Against `main` with the two literals `true`: **56 of 57 non-map files are twins**; the entry chunk differs by **exactly FL4's two strings**, with no ternary and no flag declaration (§3). |
+| 6 | **Kill-switch build** | **0 of 55 non-map files differ** from `main` @ `7b1d8d26`: the raw `diff -rq` of the unminified Linux builds, source maps excluded, hashes in the names included (the entry is `index-D8o2oLzt.js` in both). The same held against `d09603b2` before the merge (§3). |
+| 7 | **Flags-on build** | Against `main` @ `7b1d8d26` with the two literals `true`: **56 of 57 non-map files are twins**; the entry chunk differs by **exactly FL4's two strings**, with no ternary and no flag declaration (§3). |
 | 8 | **One-flag rollback** | `PER_GAME_LOADOUT_ENABLED` and its pin back to `false`, the armory still `true`: **full suite exit 0**, 1,315 files, 29,016 rows, 0 failed (§3; run on `73e142da`, before the CI fixes). |
-| 9 | **Full Linux suite** | **Exit 0** on the code head `54a2725c`: 1,315 files (1,307 passed, 8 skipped), 29,016 rows (28,927 passed, 89 skipped, **0 failed**), 280 s. Before the CI fixes, exit 0 on `73e142da` and on the flip commit `8763e57a` (§3). |
-| 10 | **`lint:gate`** | Exit 0 on `54a2725c`. **Minified build:** exit 0, 111 files. |
+| 9 | **Full Linux suite** | **Exit 0** on the merged tree `477b96fe`: 1,342 files (1,334 passed, 8 skipped), 29,492 rows (29,403 passed, 89 skipped, **0 failed**), 296 s. Exit 0 also on `54a2725c` before the merge (1,315 files, 29,016 rows), and before the CI fixes on `73e142da` and the flip commit `8763e57a` (§3). |
+| 10 | **`lint:gate`** | Exit 0 on `477b96fe`. **Minified build:** exit 0, 111 files. |
 | 11 | **Mutation** | **4 of 4 killed:** FL3's row with casual clones off; the hub's League card, the League line and the Training line, one mutant each (§5). **The CI fixes: 2 of 2 killed** (§12). |
 | 12 | **Census (FL6)** | **0 ranked groups lock at the flip, 0 players, 0 stale.** Production holds 18 group documents, none in a locking status (§7). |
-| 13 | **Review threshold** | **Over it:** the cumulative diff against `main` is **53 files, 1,553 lines** (+1,487 / −66, this report included; without it, 52 files, +1,041 / −66 = 1,107 lines). The file count crosses the threshold (10), and with this report the line count does too (1,500), so **a review session runs before merge**. BUILD_RULES §2 asks for a review at 10 files or 1,500 lines. |
-| 14 | **The rules job (CI)** | **It was red on the PR: 5 rows in 2 emulator files** (`filmRoomCardAttribution.rules.mjs`, `filmRoomCardReplayOwner.rules.mjs`), which ran with the live flag. Fixed (CI-1, §12): 1 kill-switch row, 2 flag-on twins, 4 rows handed the battle's archetype and run flags-on, 0 deleted. `npm run test:rules` on Linux: **exit 0, 32 files, 633 rows** with both flags on, and the same with both literals `false`. |
+| 13 | **Review threshold** | **Over it:** the cumulative diff against `main` @ `7b1d8d26` is **53 files, about 1,560 lines** (+1,495 / −66, this report included; without it, 52 files, +1,041 / −66 = 1,107 lines). The file count crosses the threshold (10), and with this report the line count does too (1,500), so **a review session runs before merge**. BUILD_RULES §2 asks for a review at 10 files or 1,500 lines. |
+| 14 | **The rules job (CI)** | **It was red on the PR: 5 rows in 2 emulator files** (`filmRoomCardAttribution.rules.mjs`, `filmRoomCardReplayOwner.rules.mjs`), which ran with the live flag. Fixed (CI-1, §12): 1 kill-switch row, 2 flag-on twins, 4 rows handed the battle's archetype and run flags-on, 0 deleted. `npm run test:rules` on Linux, on the merged tree: **exit 0, 33 files, 641 rows** with both flags on, and the same with both literals `false` (`main` added one file, 8 rows; before the merge, 32 files and 633 rows in both states). |
 | 15 | **Production check** | **No battle can have its cards refused for good.** The tape day's archetype is written from the same battle field the route hands the store, and nothing changes that field after the battle is created; a battle without one has untagged days, which the route already refuses before the store, flags on or off. No fallback added; no production count needed (§12). |
 
 ---
@@ -64,7 +64,9 @@
 | `845f83d7` | This report, as first pushed. |
 | `2623d31e` | CI-1: the two Film Room emulator files hold the per-game flag; 1 kill-switch row, 2 flag-on twins, 4 rows handed the battle's archetype (§12). |
 | `54a2725c` | FL4-b: the fold (§4), and `CLIENT_READS` with its shape check. |
-| (the last commit) | This report's CI fixes. |
+| `a82d1830` | This report's CI fixes, first draft. |
+| `477b96fe` | Merge of `origin/main` @ `7b1d8d26` (PRs #1030, #1031): no conflict. The one file both sides touched, `src/config/flagPinGuard.test.js`, merged cleanly (this PR's two dropped `DARK_BY_DESIGN` entries and their note, beside `main`'s new comment on `RESEARCH_MODAL_BOMB_MODE`). `main`'s new lines read neither flag. |
+| (the last commit) | This report, with the merged tree's checks. |
 
 Every line of the source diff that is not a test or a fixture:
 
@@ -164,24 +166,25 @@ The flip alone (both literals `true` on `main` @ `d09603b2`), full Linux suite: 
 
 ### Kill switch and flags on (the builds)
 
-Unminified Linux builds (`vite build --minify false`, WSL, Node 20.20.2, lockfile `40382e64edb6` on every tree), on the code head `54a2725c` (after FL4-b, §4).
+Unminified Linux builds (`vite build --minify false`, WSL, Node 20.20.2, lockfile `40382e64edb6` on every tree), on the merged tree `477b96fe` (after FL4-b, §4, and the merge of `main` @ `7b1d8d26`), against `main` @ `7b1d8d26`.
 
-**Kill switch:** `54a2725c` with only the two literals set back to `false`, against `main` @ `d09603b2`.
+**Kill switch:** `477b96fe` with only the two literals set back to `false`, against `main` @ `7b1d8d26`.
 
 | | Result |
 |---|---|
 | Non-map files | 55 and 55 (107 files each) |
 | Raw `diff -rq`, source maps excluded | **0 entries: 0 of 55 non-map files differ**, content hashes in the names included |
-| The entry chunk | `index-ok8k4FzL.js` in both, so its content hash too |
+| The entry chunk | `index-D8o2oLzt.js` in both, so its content hash too |
 | Maps | 49 differ: 48 only by the tree's directory in `sources`; the entry's map also in `sourcesContent` and `mappings`, because `agentDeploy.js`'s source text changed (the doubled block) while its emitted code did not (`vite.config.js` sets `sourcemap: true`) |
+| Before the merge | the same on `54a2725c` against `d09603b2`: 0 of 55, the entry `index-ok8k4FzL.js` in both |
 
-**Flags on:** `54a2725c` against `main` with only the two literals set to `true`. The entry chunk changes, so its content hash changes and every chunk that imports it is renamed: the raw `diff -rq` (maps excluded) lists 103 entries, all "only in A / only in B" pairs of the same file under two names. So the non-map files were paired by their masked name **and** their masked content (hashes masked in names and in the text), which keeps the two `index-*.js` files from colliding.
+**Flags on:** `477b96fe` against `main` @ `7b1d8d26` with only the two literals set to `true`. The entry chunk changes, so its content hash changes and every chunk that imports it is renamed: the raw `diff -rq` (maps excluded) lists 103 entries, all "only in A / only in B" pairs of the same file under two names. So the non-map files were paired by their masked name **and** their masked content (hashes masked in names and in the text), which keeps the two `index-*.js` files from colliding.
 
 | | Result |
 |---|---|
 | Non-map files | 57 and 57 |
 | Twins (same masked name and masked content) | **56** |
-| Left over | **1, the entry chunk** (`index-CC_2ttPZ.js` → `index-mv_AsICR.js`), **by exactly FL4's two strings** |
+| Left over | **1, the entry chunk** (`index-CZaGfyRm.js` → `index-BGMusx9b.js`), **by exactly FL4's two strings** (the same before the merge: `54a2725c` against `d09603b2`, 56 twins, `index-CC_2ttPZ.js` → `index-mv_AsICR.js` by these lines) |
 
 ```diff
 -        console.warn("[Deploy] casual clone ensure did not return a clone — deploying the real agent:", cloneRes.status, cloneData?.error || "");
@@ -198,8 +201,9 @@ No ternary and no flag declaration ship.
 
 `npm run test:rules` (the Firestore emulator; WSL, Temurin JDK 21.0.13, Node 20.20.2), the `firestore rules + emulator suites` job's own command:
 
-- **Both flags on** (the code head `54a2725c`): **exit 0, `Test Files 32 passed (32)`, `Tests 633 passed (633)`**, 188 s. 633 is CI's 631 and the two flag-on twins (§12).
-- **The kill-switch state** (both literals `false`, on a scratch tree at `54a2725c`): **exit 0, 32 files, 633 rows**, 165 s.
+- **Both flags on** (the merged tree `477b96fe`): **exit 0, `Test Files 33 passed (33)`, `Tests 641 passed (641)`**, 192 s.
+- **The kill-switch state** (both literals `false`, on a scratch tree at `477b96fe`): **exit 0, 33 files, 641 rows**, 132 s.
+- Before the merge, on `54a2725c`: exit 0 in both states, 32 files and 633 rows each (CI's 631 and the two flag-on twins, §12). `main` brought one more file (`test/rules/researchRecordExtension.rules.mjs`, 8 rows).
 
 ### One-flag rollback
 
@@ -208,11 +212,12 @@ On a scratch tree at `73e142da`: `PER_GAME_LOADOUT_ENABLED = false` and its pin 
 ### Suite, lint, minified build
 
 - **Full Linux suite** (WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, 8 workers), the `vitest (unit)` job's command with this machine's worker count:
-  - on the code head `54a2725c`: **exit 0**, `Test Files 1307 passed | 8 skipped (1315)`, `Tests 28927 passed | 89 skipped (29016)`, vitest's Duration 280 s;
+  - on the merged tree `477b96fe`: **exit 0**, `Test Files 1334 passed | 8 skipped (1342)`, `Tests 29403 passed | 89 skipped (29492)`, vitest's Duration 296 s;
+  - on `54a2725c` before the merge: exit 0, `Test Files 1307 passed | 8 skipped (1315)`, `Tests 28927 passed | 89 skipped (29016)`, 280 s;
   - before the CI fixes, on `73e142da`: exit 0, the same counts, 293 s; on the flip commit `8763e57a`: exit 0, `Test Files 1306 passed | 8 skipped (1314)`, `Tests 28915 passed | 89 skipped (29004)`, 304 s. The 12 rows between the two are the census test's.
 - **Commit 1 alone** (`96f6b43f`, today's literals): the 42 red files and the bundle test, 43 files, 1,351 rows, exit 0. The dispositions are neutral with the flags off.
-- **`lint:gate`** on `54a2725c`: exit 0 (and on `73e142da` before it).
-- **Minified build** (`vite build`) of `54a2725c`: exit 0, 111 files. The pushed head adds only this report; the checks of the exact pushed head ran last, after this text was final, and their results are in the PR description.
+- **`lint:gate`** on `477b96fe`: exit 0 (and on `54a2725c` and `73e142da` before it).
+- **Minified build** (`vite build`) of `477b96fe`: exit 0, 111 files. The pushed head adds only this report on top; the checks of the exact pushed head ran last, after this text was final, and their results are in the PR description.
 
 ---
 
@@ -362,14 +367,14 @@ Nothing on the page writes: the fixture agent has no id, the book rows and Equip
 **The CI fixes (the second session):**
 
 - **Windows:** worktree `C:/Users/fashr/portfolio-duel/.claude/worktrees/armory-flip-fixes-0b868c`, branch `claude/armory-flip-fixes-0b868c`, reset to the PR head `845f83d7` and pushed by refspec to `claude/armory-flip`. The census pin file and the two deploy-ceremony files ran there as a first check (3 files, 68 rows, exit 0).
-- **WSL:** `~/pd-ci-flipfx` (the code head: the full suite, the rules suite, `lint:gate`, both builds), `~/pd-ci-flipfxm` (`main` @ `d09603b2`: its build, and its build with the two literals `true`) and `~/pd-ci-flipfxx` (the kill-switch state: its rules suite and build; then the mutants), detached worktrees of `~/pd-ci` with `node_modules` linked to `~/pd-af0` (lockfile `40382e64edb6`, checked inside WSL on every tree). Node 20.20.2, JDK 21.0.13, `TZ=UTC`, 8 workers, the full suite under `flock /tmp/pd-suite.lock` (it waited behind another session's suite). Runs under `~/pd-flipfx-runs`.
+- **WSL:** `~/pd-ci-flipfx` (the code head: the full suite, the rules suite, `lint:gate`, both builds), `~/pd-ci-flipfxm` (`main`: its build, and its build with the two literals `true`) and `~/pd-ci-flipfxx` (the kill-switch state: its rules suite and build; then the mutants), first at `54a2725c` and `d09603b2`, then moved to the merged tree `477b96fe` and `main` @ `7b1d8d26` for every check again, detached worktrees of `~/pd-ci` with `node_modules` linked to `~/pd-af0` (lockfile `40382e64edb6`, checked inside WSL on every tree). Node 20.20.2, JDK 21.0.13, `TZ=UTC`, 8 workers, the full suite under `flock /tmp/pd-suite.lock` (it waited behind another session's suite). Runs under `~/pd-flipfx-runs`.
 - **Cleanup:** the three trees and `~/pd-flipfx-runs` are removed after the last check, under the suite lock; the space freed is in the PR description.
 
 ---
 
 ## §12 CI fixes (Nov 7, 2026)
 
-**Brief:** the founder's fix brief of Nov 7, 2026 ("Flip fixes: the red emulator job, FL4's fold, and the report"), with rulings FL4-b and CI-1. **Session:** Claude Opus 5.5, a fresh session. `git fetch origin` first: the PR head was `845f83d7`, as the brief required, and `origin/main` was still `d09603b2`, so there was nothing to merge (fetched again before the push: unchanged). Fenced files: none edited, none called.
+**Brief:** the founder's fix brief of Nov 7, 2026 ("Flip fixes: the red emulator job, FL4's fold, and the report"), with rulings FL4-b and CI-1. **Session:** Claude Opus 5.5, a fresh session. `git fetch origin` first: the PR head was `845f83d7`, as the brief required, and `origin/main` was `d09603b2`. Fetched again before the push, `main` had moved to `7b1d8d26` (PRs #1030 and #1031, the research record extension and Bomb mode), so it was merged (`477b96fe`) before the final checks. No conflict; the one file both sides touched, `src/config/flagPinGuard.test.js`, merged cleanly, and `main`'s new lines read neither flag, so nothing in the merge touches this PR's logic. Fenced files: none edited, none called.
 
 ### What failed
 
@@ -419,7 +424,7 @@ So every day that reaches `createCard` was tagged from its battle's own archetyp
 
 ### Mutation
 
-On `~/pd-ci-flipfxx` at `54a2725c`: each mutant is one edit, checked to land exactly once; the file is restored from `git show HEAD:path` after each run and the tree confirmed clean. Each run is the two emulator files (`firebase emulators:exec --only firestore --project demo-tradeseven-rules "vitest run --config vitest.rules.config.mjs test/rules/filmRoomCard"`) and the default suite's three card-store files (`cardStore.test.js`, `cardStore.perGame.test.js`, `api/film-room/card.test.js`), `TZ=UTC`. Killed means a non-zero exit. **Control** (unmutated): emulator 2 files, 13 rows, exit 0; default 3 files, 74 rows, exit 0.
+On `~/pd-ci-flipfxx` at `54a2725c`, and again at the merged tree `477b96fe` with the same results: each mutant is one edit, checked to land exactly once; the file is restored from `git show HEAD:path` after each run and the tree confirmed clean. Each run is the two emulator files (`firebase emulators:exec --only firestore --project demo-tradeseven-rules "vitest run --config vitest.rules.config.mjs test/rules/filmRoomCard"`) and the default suite's three card-store files (`cardStore.test.js`, `cardStore.perGame.test.js`, `api/film-room/card.test.js`), `TZ=UTC`. Killed means a non-zero exit. **Control** (unmutated): emulator 2 files, 13 rows, exit 0; default 3 files, 74 rows, exit 0.
 
 | # | Mutant | Edit (`cardStore.js:280`) | Emulator | Default suite |
 |---|---|---|---|---|
@@ -429,17 +434,20 @@ On `~/pd-ci-flipfxx` at `54a2725c`: each mutant is one edit, checked to land exa
 
 **2 of 2 killed.**
 
-### The checks, on the code head `54a2725c`
+### The checks, on the merged tree `477b96fe` (against `main` @ `7b1d8d26`)
 
 | Check | Result |
 |---|---|
-| `lint:gate` (both CI jobs' first gate) | exit 0 |
-| Full Linux suite (the `vitest (unit)` job's command, 8 workers, `flock`, `TZ=UTC`) | **exit 0**, 1,315 files, 29,016 rows, 0 failed, 280 s |
-| `npm run test:rules` (the `firestore rules + emulator suites` job's command), both flags on | **exit 0**, 32 files, 633 rows |
-| `npm run test:rules`, both literals `false` | **exit 0**, 32 files, 633 rows |
+| `lint:gate` (the `vitest (unit)` job's gate) | exit 0 |
+| Full Linux suite (the `vitest (unit)` job's command, 8 workers, `flock`, `TZ=UTC`) | **exit 0**, 1,342 files, 29,492 rows, 0 failed, 296 s |
+| `npm run test:rules` (the `firestore rules + emulator suites` job's command), both flags on | **exit 0**, 33 files, 641 rows |
+| `npm run test:rules`, both literals `false` | **exit 0**, 33 files, 641 rows |
 | Kill-switch build vs `main` | **0 of 55** non-map files differ (raw `diff -rq`, maps excluded) |
 | Flags-on build vs `main` + literals | 56 of 57 twins; the entry chunk by exactly FL4's two strings |
 | Minified build | exit 0, 111 files |
+| Mutation | C1 and C2 killed, as before the merge |
+
+Before the merge, on `54a2725c` against `d09603b2`, every one of these was green too (§3 gives both).
 
 ### The report
 
