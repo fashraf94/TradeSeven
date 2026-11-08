@@ -482,8 +482,8 @@ function scoredGapOf(battle, sym, nowMs) {
   if (rec?.model !== 'measured' || !rec.measured || !rec.scored) return null;
   const ladder = measuredLadder({ measured: rec.measured, entryAtMs: rec.entry?.atMs ?? null });
   if (ladder.status !== 'ok') return null;
-  if (!ladder.next) return { sym, top: true, atMs: rec.scored.atMs };
-  return { sym, gap: Math.max(0, ladder.next.price - rec.scored.price), points: ladder.next.points, decimals: priceDecimals(rec.scored.price), atMs: rec.scored.atMs };
+  if (!ladder.next) return { sym, positionId: rec.positionId, top: true, atMs: rec.scored.atMs };
+  return { sym, positionId: rec.positionId, gap: Math.max(0, ladder.next.price - rec.scored.price), points: ladder.next.points, decimals: priceDecimals(rec.scored.price), atMs: rec.scored.atMs };
 }
 
 function rungCompareItem({ battle, lens, symbol, incumbent, nowMs }) {
@@ -498,7 +498,7 @@ function rungCompareItem({ battle, lens, symbol, incumbent, nowMs }) {
   return makeItem({
     kind: 'rung_compare', symbol,
     fact: SHEET_COPY.rungCompare(rows.map((r) => (r.top ? SHEET_COPY.rungCompareTop(r.sym) : SHEET_COPY.rungCompareRow(r.sym, r.gap, r.decimals, r.points)))),
-    recordKind: 'position', recordId: rows.map((r) => r.sym).join(','), label: SHEET_COPY.srcPosition, asOfMs: finite(atMs) ? atMs : null,
+    recordKind: 'position', recordId: rows.map((r) => r.positionId ?? r.sym).join(','), label: SHEET_COPY.srcPosition, asOfMs: finite(atMs) ? atMs : null,
   });
 }
 
@@ -596,6 +596,17 @@ export function packFor(questionId, built) {
 export function buildPacks(p) {
   const built = candidateItems(p);
   return { lens: built.lens, holding: built.holding, packs: Object.fromEntries(QUESTION_IDS.map((q) => [q, packFor(q, built)])) };
+}
+
+/**
+ * BC-11: the held name a cockpit call would replace — an exit call's own symbol
+ * ("Who comes in?": the agent takes it out, the bench names its replacement);
+ * an entry call's counterpart (its filing checks the counterpart is held in the
+ * call's slot tier). No call, another direction, or the opened name itself: none.
+ */
+export function incumbentOfCall(call, openedSymbol) {
+  const name = call?.direction === 'exit' ? call.symbol : call?.direction === 'entry' ? call.counterpart : null;
+  return typeof name === 'string' && name && name !== openedSymbol ? name : null;
 }
 
 // ── Layer 0: the stance and the question order ──────────────────────────────

@@ -131,6 +131,7 @@ import AssetResearchModal from '../components/draft/AssetResearchModal';
 import useBombModeForBattle from '../components/Research/BombMode/useBombModeForBattle';
 import { agentBombContext } from '../components/Research/BombMode/selectBombRecord';
 import { useSheetModeForBattle } from '../components/Research/Sheet/sheetGate';
+import { incumbentOfCall } from '../components/Research/Sheet/packs';
 import TermResearchModal from '../components/shared/TermResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import FilmRoomBanner from '../components/FilmRoom/FilmRoomBanner';
@@ -2836,9 +2837,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // counterpart), then opens research exactly as the shared door does. The two
   // Monitoring onSymbolClick doors keep handleCockpitSymbol and pass none.
   const handleCockpitBenchResearch = (symbol) => {
-    const call = cockpitBenchCall;
-    const incumbent = call?.direction === 'exit' ? (call.symbol ?? null) : call?.direction === 'entry' ? (call.counterpart ?? null) : null;
-    setSheetIncumbent(typeof incumbent === 'string' && incumbent && incumbent !== symbol ? { symbol, incumbent } : null);
+    const incumbent = incumbentOfCall(cockpitBenchCall, symbol);
+    setSheetIncumbent(incumbent ? { symbol, incumbent } : null);
     handleCockpitSymbol(symbol);
   };
   useEffect(() => {

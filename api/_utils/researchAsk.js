@@ -30,6 +30,7 @@
 // guard that they stay so (BUILD_RULES §4).
 
 import { QUESTION_IDS, ITEM_KINDS, RECORD_KINDS, SERVER_KINDS, CLIENT_REASON, FACT_MAX, candidateItems } from '../../src/components/Research/Sheet/packs.js';
+import { agentPositionOf } from '../../src/components/Research/BombMode/selectBombRecord.js';
 import { QUESTION_TEXT } from '../../src/components/Research/Sheet/sheetCopy.js';
 import { sanitizeChatText } from './chatTextSanitize.js';
 
@@ -106,7 +107,12 @@ export function verifyResearchItems({ battle, battleId = null, ask, nowMs }) {
   let reread = true;
   try {
     const incumbent = ask.items.find((it) => it.kind === 'incumbent')?.symbol ?? null;
-    server = candidateItems({ battle, symbol: ask.symbol, nowMs, row: {}, battleId, directive: battle?.directive ?? null, incumbent }).items;
+    // The row (Build A's identity rule): the agent's OWN position for the symbol, when the
+    // client's position items name it; otherwise none — a ticker the CPU also holds then
+    // re-reads no position item (the client cannot point the server at the CPU's row).
+    const own = agentPositionOf(battle, ask.symbol)?.asset?.positionId ?? null;
+    const claimed = own !== null && ask.items.some((it) => it.source.recordKind === 'position' && it.source.recordId.split(',').includes(own));
+    server = candidateItems({ battle, symbol: ask.symbol, nowMs, row: claimed ? { positionId: own } : {}, battleId, directive: battle?.directive ?? null, incumbent }).items;
   } catch {
     reread = false;
   }
