@@ -337,6 +337,18 @@ describe('isolation, the health line, the callers (rows 4.8, A1.1, A4.1)', () =>
     await run(db);
     expect([...db.__log.gets, ...db.__log.sets].some((p) => p.startsWith('activationObserverState'))).toBe(false);
   });
+  it('Correction B: the store call is never inside a transaction callback — every serialised transaction is a state.js transition, and state.js never names the store', () => {
+    const src = readFileSync(join(HERE, 'tenant.js'), 'utf8').replace(/\r\n/g, '\n');
+    const closures = [...src.matchAll(/serial\(\(\) => ([^\n]*)\)\);/g)].map((m) => m[1]);
+    expect(closures.length).toBeGreaterThanOrEqual(4);
+    for (const c of closures) {
+      expect(c).toMatch(/^\(?(?:admissionHolds\(\) \? )?(reserveKey|completeKey|cancelKey|finishRun)\(/);
+      expect(c).not.toMatch(/getOrAcquireSnapshot|fetchPayload|provider/);
+    }
+    expect(src).toMatch(/r = await getOrAcquireSnapshot\(\{ db, session, symbol, now, fetchPayload: countingFetch, host: TENANT_HOST \}\);/);
+    const state = readFileSync(join(HERE, 'state.js'), 'utf8');
+    expect(state).not.toMatch(/getOrAcquireSnapshot|setupEvidence\/|fetchPayload/);
+  });
   it('previousSessionOf: the calendar\'s own previous session', () => {
     expect(previousSessionOf('2026-09-08')).toBe('2026-09-04'); // Mon 09-07 is Labor Day
     expect(previousSessionOf('nonsense')).toBeNull();
