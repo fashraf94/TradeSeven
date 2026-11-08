@@ -83,7 +83,7 @@ export function makeMemoryDb({ docs = {}, queries = {} } = {}) {
     },
     /** Queue the next transactions' modes, in order. */
     planTransactions: (...modes) => { txPlan.push(...modes); },
-    /** Delay or fail a document read: `onGet('setupEvidence/*', async () => { … })`. */
+    /** Delay or fail a document read: `onGet('someCollection/*', async () => { … })` (a path, or a collection with `/*`). */
     onGet: (path, hook) => { getHooks.set(path, hook); },
     read: (path) => clone(store.get(path)),
     write: (path, data) => { store.set(path, clone(data)); },
