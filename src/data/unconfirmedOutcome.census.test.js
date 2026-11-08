@@ -105,6 +105,7 @@ const DECISION_FIELD_READERS = {
   'src/data/decisionRecord.js': 'the thrown-swap prefix and the D-70 gate (validationErrors, guardrailSourceNote, guardrailOverrides) — the predicates the selector uses',
   'src/screens/battleView/selectWhyState.js': 'THE label: absence, table G, then the decision states',
   'src/screens/battleView/buildTape.js': '`quiet` (no-change fold) excludes downgraded and outage entries — no label',
+  'src/components/Research/Sheet/latestLine.js': 'Research Modal Build C (review A2): an entry carrying `haikuError` — the cron\'s canned "defaulting to HOLD" rationale on a failed or budget-skipped call — is not "the latest check" the voice line quotes or names (selectWhyState\'s own reading: an engine outage is not a decision); it chooses no label',
   'src/screens/agentBattleScreenGoldenFixture.js': 'test data',
 };
 /** Every client file whose code names `proposalHistory`. */
