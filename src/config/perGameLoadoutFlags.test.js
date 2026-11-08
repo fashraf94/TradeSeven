@@ -1,11 +1,15 @@
 // src/config/perGameLoadoutFlags.test.js
 //
-// Build A2 — THE FLAG PIN (BUILD_RULES §2) for PER_GAME_LOADOUT_ENABLED (src/config/perGameLoadoutFlags.js). Dark by
-// design until the founder's phone test: flipped only on the never-merge smoke branch; the go-live is its own flip PR,
-// which moves the pin below and drops the DARK_BY_DESIGN entry in flagPinGuard.test.js in the same commit.
+// Build A2 — THE FLAG PIN (BUILD_RULES §2) for PER_GAME_LOADOUT_ENABLED (src/config/perGameLoadoutFlags.js).
+// LIVE — TRUE since the armory flip, with AGENT_FORM_ARMORY_ENABLED in the same commit (founder rulings FL1 and FL2,
+// Nov 7, 2026), and both stay as kill switches. The rollback is two steps: PER_GAME_LOADOUT_ENABLED alone back to
+// false returns A1's armory with one loadout; both back to false returns the app as it was before the flip. The armory
+// never goes off while per-game loadouts are on (the pin row). A rollback moves a flag and its pin; the DARK_BY_DESIGN
+// entry stays out.
 //
-// The source rows keep the flag-off build main's, byte for byte: the flag is a literal in a module of its own (not
-// featureFlags.js, whose namespace App.jsx keeps in the entry chunk), and every CLIENT read is a literal ternary that
+// The source rows are the kill switch's shape: they keep the flag-off build what it was before the flip, byte for byte.
+// The flag is a literal in a module of its own (not featureFlags.js, whose namespace App.jsx keeps in the entry chunk),
+// and every CLIENT read is a literal ternary that
 // Rollup folds — at the exact sites listed here, so a new reader has to be added on purpose. The server's reads are
 // listed too: each is an `if`, a ternary or an `&&` on the literal, and with it false every writer and reader runs
 // today's code (the flag-off rows in each suite).
@@ -16,6 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PER_GAME_LOADOUT_ENABLED } from './perGameLoadoutFlags.js';
 import { AGENT_FORM_ARMORY_ENABLED } from './agentFormFlags.js';
+import { CASUAL_CLONE_CONCURRENCY_ENABLED } from './featureFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -44,8 +49,8 @@ function sourcesUnder(dir) {
 }
 
 describe('PER_GAME_LOADOUT_ENABLED — the pin (BUILD_RULES §2)', () => {
-  it('is dark: false on main until the founder\'s phone test', () => {
-    expect(PER_GAME_LOADOUT_ENABLED).toBe(false);
+  it('is live: true since the flip, a kill switch (back to false alone returns A1\'s armory with one loadout)', () => {
+    expect(PER_GAME_LOADOUT_ENABLED).toBe(true);
   });
 
   it('is the module\'s literal, in a module of its own, and featureFlags.js carries none', () => {
@@ -54,14 +59,24 @@ describe('PER_GAME_LOADOUT_ENABLED — the pin (BUILD_RULES §2)', () => {
     expect(strip(read('src/config/perGameLoadoutFlags.js'))).not.toMatch(/^\s*import\b/m);
   });
 
-  it('flagPinGuard lists it as dark by design and registers its module', () => {
+  it('flagPinGuard no longer lists it as dark by design, and still registers its module (a rollback leaves the entry out)', () => {
     const guard = read('src/config/flagPinGuard.test.js');
-    expect(guard).toMatch(/\n {2}PER_GAME_LOADOUT_ENABLED:\n/);
+    expect(guard).not.toMatch(/\n {2}PER_GAME_LOADOUT_ENABLED:\n/);
     expect(guard).toMatch(/'src\/config\/perGameLoadoutFlags\.js',/);
   });
 
-  it('is on only while the armory is on (the hub\'s surfaces sit behind both; the smoke turns both on)', () => {
+  it('is on only while the armory is on (the hub\'s surfaces sit behind both): the armory never goes off while per-game loadouts are on', () => {
     expect(!PER_GAME_LOADOUT_ENABLED || AGENT_FORM_ARMORY_ENABLED).toBe(true);
+  });
+
+  it('is on only while casual clones are on (FL3)', () => {
+    // The BaggerBomb loadout is applied only on the casual clone (api/_utils/casualClone.js), and the deploy's refusal
+    // (src/services/agentDeploy.js, A2R-3 (b)) sits inside the clone path. With CASUAL_CLONE_CONCURRENCY_ENABLED off,
+    // every BaggerBomb deploy runs on the ranked record in the League loadout.
+    expect(
+      !PER_GAME_LOADOUT_ENABLED || CASUAL_CLONE_CONCURRENCY_ENABLED,
+      'FL3: per-game loadouts never run without casual clones. With CASUAL_CLONE_CONCURRENCY_ENABLED off, every BaggerBomb deploy runs on the ranked record in the League loadout (the BaggerBomb loadout lives only on the clone). Turn PER_GAME_LOADOUT_ENABLED off (with its pin) before casual clones.',
+    ).toBe(true);
   });
 });
 
@@ -173,6 +188,8 @@ const CLIENT_READS = {
     "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
   ],
   "src/services/agentDeploy.js": [
+    "console.warn(PER_GAME_LOADOUT_ENABLED ? '[Deploy] casual clone ensure did not return a clone — refusing the BaggerBomb deploy:' : '[Deploy] casual clone ensure did not return a clone — deploying the real agent:', cloneRes.status, cloneData?.error || '');",
+    "console.warn(PER_GAME_LOADOUT_ENABLED ? '[Deploy] casual clone ensure errored — refusing the BaggerBomb deploy:' : '[Deploy] casual clone ensure errored — deploying the real agent:', err?.message || err);",
     "if (PER_GAME_LOADOUT_ENABLED && cloneId === null) return { outcome: DEPLOY_OUTCOMES.REFUSED, success: false, postIssued: false, error: 'casual_clone_unavailable', details: LOADOUT_COPY.deployCloneFailed };",
   ],
 };

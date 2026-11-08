@@ -209,12 +209,14 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
         // setDeployTarget never fires a second time, so the clone outcome is
         // recorded here as a DISTINCT outcome rather than a missing value.
         ceremonyTiming.markCloneFallback(`http_${cloneRes.status}`);
-        console.warn('[Deploy] casual clone ensure did not return a clone — deploying the real agent:', cloneRes.status, cloneData?.error || '');
+        // FL4 (flip, Nov 7 2026): with per-game loadouts on, the deploy is refused below (A2R-3 (b)), so the line says so;
+        // off, it keeps today's words. A literal ternary: either way the shipped build carries one string.
+        console.warn(PER_GAME_LOADOUT_ENABLED ? '[Deploy] casual clone ensure did not return a clone — refusing the BaggerBomb deploy:' : '[Deploy] casual clone ensure did not return a clone — deploying the real agent:', cloneRes.status, cloneData?.error || '');
       }
     } catch (err) {
       // Fallback: the target stays the ranked agent, already reported above.
       ceremonyTiming.markCloneFallback('threw');
-      console.warn('[Deploy] casual clone ensure errored — deploying the real agent:', err?.message || err);
+      console.warn(PER_GAME_LOADOUT_ENABLED ? '[Deploy] casual clone ensure errored — refusing the BaggerBomb deploy:' : '[Deploy] casual clone ensure errored — deploying the real agent:', err?.message || err);
     }
     // R1 — after the clone ensure, and before its target is reported or POSTed:
     // an old request never deploys anything once the account has changed.
