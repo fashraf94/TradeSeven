@@ -232,3 +232,14 @@ The founder is non-technical, so lead the report with a verdict table: one row p
 - found on the way, reported and not fixed. Expected entries: the 1-minute cache age, `baggerbombAdapter`'s second clock, and the dead `setMarkers` call, which is now unreachable with the mode on and is deleted at the `'on'` cleanup.
 
 Open a draft PR titled `feat(research-modal): Build A — Bomb mode (Fuse, red zone, one sheet), dark`. The body is the verdict table. **STOP.** The flip to `'allowlist'` (the founder and FT_QA) is a separate one-line PR after merge.
+
+---
+
+## Rulings and corrections — 2026-11-07 (founder, on the Build A report)
+
+The prompt above stays as it was given. These rulings, made on the build report, override it where they differ.
+
+1. **§0.4(a) STOP — rule (i).** V1 draws the held ladder only when the record is measured (`record.model === 'measured'`). Every legacy-scored position (legacy stocks, and all crypto on any battle) gets the preview. When the player's agent holds that position in a live battle, the sheet does not use the preview's "rungs if it entered at yesterday's close" line. It uses plain held wording instead: `Held · rungs shown from yesterday's close ($X) · this position's live ladder isn't shown here` (`BOMB_COPY.heldPreviewNeeds`, under the honesty test). It never says "entry price" or "will bank", and nothing is lit as banked. The legacy ladder code stays in place but unreachable from the views; it is deleted at the `'on'` cleanup unless a legacy-aware ladder is ruled later. No legacy-aware variant now. This supersedes §3.1's held legacy ladder, and the `legacy_no_entry` state in §8 now shows the held wording.
+2. **`FilmRoomScreen.jsx:179` — accepted.** Under `'on'` it loses 💣 and the Bomb tab and opens on Analysis and 1D. A finished battle has no held ladder (BA-1), and the Film Room keeps its own chart.
+3. **Correction to §4.1 — the entry chunk.** "It keeps `App.jsx`'s entry chunk byte-identical" cannot hold for a flag read at call time. The guarantee is **identical rendering with the mode off**: the mode-off goldens (`AssetResearchModal.bombModeOff.golden.test.jsx`, `AgentBattleScreen.bombModeOff.golden.test.jsx`) pin the full HTML, every request and every chart-library call.
+4. **The first-hour trace — accepted as is.** BA-6 shows the gap: the minute line can stay on yesterday's bars in the first hour after the open, because of the inherited three-stale-answers poll stop and the server's one-hour cache of the 1-minute series. A flip-checklist item in the report covers it. During the allowlist, open a red zone on a weekday between 9:30 and 10:30 ET and record the age of the 1-minute series.
