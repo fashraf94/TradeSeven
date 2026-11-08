@@ -6,6 +6,8 @@
 
 **CI fixes (a second session, Nov 7, 2026).** The PR's `firestore rules + emulator suites` job was red: 5 rows in 2 emulator files that the first session's red-row sweep never ran. The fix brief's rulings FL4-b (fold FL4) and CI-1 (the emulator rows' dispositions) are built, the production check it asked for is settled from the code. `main` moved during that session (to `7b1d8d26`: PRs #1030 and #1031) and was merged into the branch (`477b96fe`, no conflict), and every check below was re-run on that merged tree, against `main` @ `7b1d8d26`. That session's own account is §12; the sections above it are updated where the fixes changed them.
 
+**Review fixes (a third session, Nov 7–8, 2026).** The review (`docs/audits/20261107_REVIEW_ARMORY_FLIP.md`, MERGE AFTER FIXES) asked for five should-fixes; the founder's rulings RF-1 to RF-4 added four notes and E-2 and asked how far the clone refusal reaches. All built in tests, comments and this report, no app code; §13 is that session's account, and §2's sentence on the suites' mocks (AF-4) and §0's "five places" (AF-13) are corrected in place.
+
 **The founder merges. Nothing reaches players until he does, and the merge waits for #1029's `firestore.rules` in the Firebase Console.**
 
 ---
@@ -452,3 +454,99 @@ Before the merge, on `54a2725c` against `d09603b2`, every one of these was green
 ### The report
 
 This section; `edc7b189` in §1's table; the rules suite in both flag states in §3; FL4-b in §0, §4 and §10; the PR's own preview link in §9's step 1; and the cleanup PR's checklist in §6, which the report did not have, so it starts there with the line the brief asks for (any flag change runs `npm run test:rules` as well as the default suite).
+
+---
+
+## §13 Review fixes (Nov 7–8, 2026)
+
+**Brief:** "Flip review fixes, then ready to merge", with founder rulings RF-1 to RF-4 (Nov 7, 2026). **Session:** Claude Opus 5.5, a fresh session, worktree branch `claude/armory-flip-review-fixes-4c7548`, pushed by refspec to `claude/armory-flip`. `git fetch origin` first: the PR head was `cb6e6233` (the review's commit), as the brief required; `origin/main` was `7b1d8d26`. **Scope held:** tests, comments, the census script's test, and docs. No app code changed; the one source file touched is a comment line in `src/config/featureFlags.js`, and the kill-switch build shows it changes nothing (below). Fenced files: none edited, none called.
+
+### The fixes (commit `f1e29bf7`)
+
+| # | What | Where |
+|---|---|---|
+| AF-1 | A flag-off row for FL4-b's `else` arm's `catch`: the ensure throws, the deploy falls back to the ranked agent (success, `[RANKED]` reported, `body.agentId === RANKED`, `cloneFallbacks` `['threw']`) | `src/components/Dashboard/deployCeremony/ceremonyDeployTarget.test.jsx:146` |
+| AF-2 | The census test's reader double answers as Firestore's `select()` does: each document keeps its id and only the masked field paths it has, nested. The twelve rows are now the mask's guard | `scripts/per-game-loadout-preflip-census.test.js:44-60` |
+| AF-3 | One row per League seat: with the browser asking for Reduce Motion (a `matchMedia` stub for that render only) every seat's form gets `reducedMotion: true`, and `false` without it | `src/components/League/battleArena/leagueAgentForm.sites.jsdom.test.jsx:144` (the fuse hero, `FuseHero.jsx:104`), `:314` (the climb, `ClimbArena.jsx:237`) |
+| AF-4 | §2's sentence: every suite with kill-switch rows holds the flags in its own mock; the 13 rewrite-only files run flag-neutral fixtures against the live literal, so a rollback leaves them green, and the mock-held suites pin their paths in both states. No mocks added | §2 of this report |
+| AF-5 | "Per-game loadouts go off before this flag: perGameLoadoutFlags.test.js, the FL3 row" in `CASUAL_CLONE_CONCURRENCY_ENABLED`'s docstring; the runbook's Aug 20 row gets a dated amendment (its record left as written) | `src/config/featureFlags.js:236`; `docs/composition/ACTIVATION_RUNBOOK.md:745` |
+| AF-6 | A static row: FL4-b's flag-on arm has exactly two `console.warn` lines, both "refusing the BaggerBomb deploy"; the `else` arm two, both "deploying the real agent" | `src/config/perGameLoadoutFlags.test.js:227` |
+| AF-8 | The existing book-sheet row counts `listWatchlists` (unchanged while the sheet is open, +1 on each return) and the idea reader's `invalidate()` (0, then 1, then 2) through a spy that wraps the real `useHubResearch` and calls through | `src/components/CommandCenter/CommandCenterHub.loadouts.jsdom.test.jsx` (the `useHubResearch` mock; the "BaggerBomb: titled for BaggerBomb …" row) |
+| AF-10 | The rollback-order row's message names the step: "Step 1 turns PER_GAME_LOADOUT_ENABLED off (with its pin); only then step 2 turns AGENT_FORM_ARMORY_ENABLED off (with its pin)." | `src/config/perGameLoadoutFlags.test.js:68-72` |
+| AF-13 | "four places" → "five places" | §0 of this report |
+| E-2 | A flags-on connected row: App's deploy provider, the real readers, the hold on the phone's strip, and the **real `deployAgent`** with `fetch` answering the clone ensure 500. The only deploy request is the ensure (no `/api/agent/decide`); the phone's Deploy card shows "Couldn’t start the BaggerBomb game · try again"; the strip reads `failed` and offers one Retry | `CommandCenterHub.loadouts.jsdom.test.jsx:589-656` |
+
+**How E-2 fits this file.** The file's other rows read the agent from the hub object through a stubbed `useHubReaders`; E-2's row sets `h.connected`, which makes that mock call the real readers and turns on the seams the S7 suite's connected hub mocks (auth, the agent read, the completed games, the brief, the market clock, the provider's verify/due-idea/ceremony seams), each written to be inert unless `h.connected`. The other 28 rows run as before (29 of 29 green; they were 28).
+
+**Not fixed here (RF-3).** For separate tasking: AF-11, AF-14, AF-18, AF-19, AF-20. Accepted as notes: AF-7, AF-9, AF-12, AF-15, AF-16, AF-17.
+
+### RF-4: how far the clone refusal reaches (read only)
+
+With `PER_GAME_LOADOUT_ENABLED` on, any answer from `POST /api/agent/ensure-casual-clone` that is not ok with a string `cloneId`, or any throw from the fetch, refuses the deploy before the POST (`src/services/agentDeploy.js:253`). The refusal carries no `retryAfter`, so it sets no cooldown, and the strip offers Retry at once (`src/contexts/DeployAttemptContext.jsx:383-390`, VERIFIED). The client sends no body: the server works from the token's uid (`api/agent/ensure-casual-clone.js:72`).
+
+A read-only trace (a subagent, then this session re-reading the load-bearing lines: `api/_utils/rateLimit.js:21-39`, `api/_utils/compositionProvisionerLease.js:87-125`, `api/_utils/casualClone.js:186-198`, `api/_utils/archetypeSeeding.js:51-56`, `api/_utils/compositionConfig.js:43`):
+
+| Condition | Answer | Normal play? | Retry gets through? |
+|---|---|---|---|
+| Rate limit: 10 per 60 s, fixed window, keyed on the first `x-forwarded-for` IP, in memory per warm instance (`ensure-casual-clone.js:51`, `rateLimit.js:21-39`) | 429 | Rare: retry-mashing, or many players behind one carrier/NAT IP | Yes, within 60 s (sooner on a cold instance) |
+| No token, or an expired or invalid one (`authMiddleware.js`) | 401 | Rare: the client already bails without a token (`agentDeploy.js:169-176`) | Yes, at once (the SDK refreshes the token; ASSUMED) |
+| Server flag off | 403 `feature_disabled` | No: the same literal `true` ships to client and server | n/a |
+| User has no ranked agent | 409 `no_ranked_agent` | No: the hub's agent comes from the same owner query; with no agent `deployAgent` refuses earlier (`no-agent`) | n/a |
+| The write epoch closed (an operator migration window); the fence is live (`compositionConfig.js:43`, so the handler's "unreachable while the fence flag is dark" at `:80` is stale) | 409 `epoch_closed` | Only during an operator window; affects every player alike | Not until the operator reopens the epoch |
+| A malformed activation descriptor, or an archetype the pinned identity version cannot resolve (`archetypeSeeding.js:56`, fail closed) | 500 | Not in normal play (an operator state; ASSUMED rare for the archetype case) | Not until fixed |
+| Provisioner lease expired (TTL 120 s) | 409 `provisioner_lease_expired` | Practically never: `maxDuration: 60` ends the function first | n/a |
+| **A re-sync past 60 s.** Every deploy whose clone holds no live game re-copies the ranked agent's rules and bundles, one write per document (`casualClone.js:193-198`) | 504 from Vercel (a non-JSON body; ASSUMED) | **Not today:** the heaviest agent measured is 202 documents, about 5–10 s (`ensure-casual-clone.js:33-40`). An agent several times heavier could reach it (ASSUMED) | **Never**, for that player: the copy restarts from zero each time |
+| A Firestore outage or contention | 500 | Rare | Yes, once it recovers |
+| A stuck provisioner lease (a platform kill) | none: each call mints a fresh lease and checks only the epoch document (`compositionProvisionerLease.js:87-125`); a stuck lease blocks only the operator's drain | — | — |
+| A double tap | 200: the second call returns the first's clone | Yes | n/a |
+| Client: offline, DNS, a reset connection, a cut body | the fetch throws (`threw`) | Yes | Yes, once online |
+| Client: a non-JSON error page | refused as `http_<status>` | Only with a server row above | As that row |
+| Client: a 200 without `cloneId` | cannot happen: the id is always a string | No | n/a |
+
+**Answer: no condition a player hits in normal play refuses on every retry.** The ones a player can hit (a rate-limit window, an expired token, a network drop, a passing Firestore error) clear on Retry, at once or within 60 s. Two caveats for the founder, neither a STOP: an agent heavy enough that its re-sync passes 60 s would refuse on every retry (none is near it today; filed for separate tasking, with the batched copy the handler's own comment already files); and the operator states (a closed epoch, a malformed descriptor) refuse every player until the operator acts, as they refuse every other identity write.
+
+**Where `markCloneFallback` lands.** In the browser only: it writes a module variable that `ceremonyTiming` prints with `console.log`, `console.table` and `window.__ceremonyTiming` (`src/components/Dashboard/deployCeremony/ceremonyTiming.js:36`, "console-only, no writes"; `:159-166`, `:199-203`). The two `console.warn` lines reach no server either. **To count failures after the flip:** Vercel's logs for `/api/agent/ensure-casual-clone`, grouped by status code (429, 401, 409, 500, 504). Only the 500s write an app log line (`[ensure-casual-clone] error:`, `ensure-casual-clone.js:104`); successes log `[CasualClone] re-synced …` or `provisioned …`. No Firestore field records a refusal.
+
+### Mutation
+
+On `~/pd-ci-flrfx` at `f1e29bf7`: one edit each, checked to land exactly once, the file restored and the tree confirmed clean after each run; `TZ=UTC`, 8 workers; killed means a non-zero exit **and** failed rows in the summary. **Control:** the 7 files the mutants run, 234 rows, exit 0.
+
+| # | Mutant | Run | Result | The row that caught it |
+|---|---|---|---|---|
+| M-R4b | the `else` arm's `catch` rethrows (`agentDeploy.js:242` → `throw err;`) | `ceremonyDeployTarget` + `ceremonyTiming` + `agentDeploy.outcomes`, 135 rows | **killed**, 1 row | AF-1's row |
+| E-3a | `ClimbArena.jsx:237` `reducedMotion={reduce}` → `{false}` | `src/components/League/battleArena/`, 629 rows | **killed**, 1 row | AF-3's climb row |
+| E-3b | `FuseHero.jsx:104` `reducedMotion={reduce}` → `{false}` | the same, 629 rows | **killed**, 1 row | AF-3's fuse row |
+| M-R3 | `main`'s words in the flag-on arm's first `console.warn` | `ceremonyDeployTarget` + `ceremonyTiming` + `perGameLoadoutFlags`, 70 rows | **killed**, 1 row | AF-6's row |
+| AF-2 | `'battleStartWeek.anchorEtDate'` removed from `GROUP_FIELDS` | the census test, 12 rows | **killed**, 3 rows | the totals, the per-group and the stdout rows |
+| E-2 | the clone refusal's line swapped for the generic refusal (`agentDeploy.js:253` without its `details`) | `CommandCenterHub.loadouts.jsdom`, 29 rows | **killed**, 1 row | E-2's row |
+| AF-8 | the watchlist sheet's return re-read cut off (`useHubRuntime.js:168`, the test → `false`) | `CommandCenterHub.loadouts.jsdom`, 29 rows | **killed**, 1 row | the book-sheet row |
+
+**7 of 7 killed**, the review's three survivors among them.
+
+### `main`
+
+`git fetch origin` before the merge and again before the push: `origin/main` was still `7b1d8d26`, already merged into this branch (`477b96fe`). So there was nothing to merge; every check below ran on a tree that contains `main` @ `7b1d8d26` and compares against it.
+
+### Checks (WSL, Node 20.20.2, JDK 21.0.13, lockfile `40382e64edb6` on every tree and the install)
+
+| Check | Result |
+|---|---|
+| Kill switch: `f1e29bf7` with both literals `false` against `main` @ `7b1d8d26`, unminified, raw `diff -rq -x '*.map'` | **0 entries: 0 of 55 non-map files differ**; the entry `index-D8o2oLzt.js` in both; 1 map differs (the entry's). AF-5's comment in `featureFlags.js` leaves the build identical |
+| Flags on: `f1e29bf7` against `main` + both literals `true` | 57 and 57 non-map files, **56 twins**; the entry chunk (`index-CZaGfyRm.js` → `index-BGMusx9b.js`, the review's names) differs in **exactly FL4's two strings** |
+| Minified build (`vite build`) | **exit 0**, 111 files |
+| Full Linux suite (`flock /tmp/pd-suite.lock`, `TZ=UTC`, 8 workers) | **exit 0**: `Test Files 1334 passed \| 8 skipped (1342)`, `Tests 29408 passed \| 89 skipped (29497)`, 272 s. The 5 rows over the review's 29,492 are this pass's: AF-1, AF-3 ×2, AF-6, E-2 |
+| `npm run test:rules`, both flags on | **exit 0**, 33 files, 641 rows |
+| `npm run test:rules`, both literals `false` | **exit 0**, 33 files, 641 rows |
+| `lint:gate` | **exit 0** |
+
+The commit that adds this section is docs only; its own minified build is in the PR description.
+
+### The founder's phone check
+
+Not received in this session. It stays pending in the review's §6 and in §9 here: the founder confirms it before he merges, with AF-9's addition (a glance at a battle figure and a League seat, which now draw the softer, breathing core).
+
+### What ran, where, and cleanup
+
+- **Windows:** the worktree `C:/Users/fashr/portfolio-duel/.claude/worktrees/armory-flip-review-fixes-4c7548` (branch `claude/armory-flip-review-fixes-4c7548`, reset to `cb6e6233`), the edited files' first runs (vitest from the parent checkout), and one quick E-2 mutant before the commit.
+- **WSL:** `~/pd-ci-flrf` (the head: suite, `lint:gate`, rules flags on, both builds), `~/pd-ci-flrfm` (`main`'s builds, plain and with the literals `true`), `~/pd-ci-flrfx` (the kill-switch build and rules suite, then the mutants), detached worktrees of `~/pd-ci` with `node_modules` linked to `~/pd-af0`; runs under `~/pd-flrf-runs`.
+- **Cleanup:** the three trees and `~/pd-flrf-runs` are removed after the push, under the suite lock (`unlink` each `node_modules` link, `git -C ~/pd-ci worktree remove --force`, `worktree prune`). `~/pd-ci`, `~/pd-ci-af1`, `~/pd-af0` and other sessions' trees are not touched. The space freed is in the PR description.
