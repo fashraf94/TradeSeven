@@ -21,10 +21,18 @@
 //     sixth is refused at 5 (the cap counts the caller's own, as readCards).
 // Each row works under its own agent id; afterAll deletes them.
 
-import { beforeAll, afterAll, describe, it, expect } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { createCard, readCards, CARD_ROUTE_COPY } from '../../api/_utils/filmRoom/cardStore.js';
+
+// The armory flip (Nov 7, 2026). The per-game flag is held here, not read live, so a rollback reddens only its pin (the
+// default suite's cardStore.test.js pattern; vi.mock is hoisted above the imports). These rows' subject is the replay
+// and the cap, not the archetype check, so every row runs with it ON, the shipped state, and each create hands the
+// store its battle's own archetype as the route does (A2's R4: api/film-room/card.js passes
+// battle?.agentContext?.archetype ?? null).
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
 
 const UID = 'replay-owner-1';
 const NOW = '2026-10-22T14:00:00.000Z';
@@ -62,7 +70,9 @@ async function agentFor(row) {
   await db.doc(`agents/${id}`).set({ ownerId: UID, name: 'Aurora', archetype: 'momentum_chaser' });
   return id;
 }
-const file = (agentId, opId, nowIso = NOW) => createCard(db, { uid: UID, agentId, opId, payload: payload(), nowIso, request: request(agentId) });
+/** The battle the cards come from, as the route reads it: its own archetype is the one its tape day records (the payload's). */
+const BATTLE = { id: 'b-replay', agentContext: { archetype: 'momentum_chaser' } };
+const file = (agentId, opId, nowIso = NOW) => createCard(db, { uid: UID, agentId, opId, payload: payload(), nowIso, request: request(agentId), battleArchetype: BATTLE.agentContext?.archetype ?? null });
 const entry = async (agentId, opId) => (await db.doc(`agents/${agentId}/plays/${opId}`).get()).data();
 
 describe('Amendment I RI-1 (Astra F1) — a create replay answers only the entry\'s own owner, on the real emulator', () => {
