@@ -154,6 +154,12 @@ import { createTickCaptureContext, claimTickCaptureContext, markTickCaptureClaim
 import { finalizeTickCapture } from '../_utils/tickCapture/captureWriter.js';
 import { resolveCaptureSchema } from '../_utils/tickCapture/captureConfig.js';
 import { beginBodyCapture, endBodyCapture, makeObservingFetch } from '../_utils/tickCapture/captureBodyObserver.js';
+// MEASURED TREND EVIDENCE SLICE 2 (docs/audits/20261107_BUILD_SETUP_MENU_LABELS.md): dated setup labels for
+// the candidate menu, observed on the tick's permanent record only — never in a prompt, never a decision
+// input. Freeze (pure) at the universe capture, reads started after the decision, settled synchronously at
+// the capture stage with NO wait. Behind SETUP_MENU_LABELS_ENABLED (dark) and the cockpit allowlist; with
+// either closed, or capture off, every call below returns before doing anything.
+import { freezeSetupMenuPool, startSetupMenuReads, settleSetupMenuReads, sealSetupMenuReads } from '../_utils/setupMenuLabels/reads.js';
 // THE THRESHOLD LINT (docs/audits/20260915_PHASE0_SIGNAL_LANGUAGE.md §7.2
 // shape 2): the pure, zero-import verdict on whether an anticipation
 // candidate's "I'll act if X" promise names a signal THIS tick actually
@@ -1059,6 +1065,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
   // calls generateTradeNarration in parallel via Promise.allSettled.
   const pendingNarrations = [];
 
+  // Slice 2: this tick's setup-label observation (null unless the gate, scope and capture admit it).
+  // Declared out here for the same reason: the finally seals it on every exit.
+  let setupMenuReads = null;
+
   // Phase 3 Voice Layer Rework — anticipation candidates Haiku flagged
   // this tick. Same lifetime as pendingNarrations (declared outside try
   // so the finally block can dispatch them). Each entry is
@@ -1547,6 +1557,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // Process stockRankings → bandwidth/NR7 + build hotBench asset map
     const hotBenchAssetMap = {};
     let stockRankingsArray = [];
+    // Slice 2: the menu's own provenance, recorded (never read) — rebuilt this tick, and by which selector.
+    let setupMenuRebuilt = false;
+    let setupMenuSelector = 'carried';
     if (rankingsResult.status === 'fulfilled' && rankingsResult.value.exists) {
       stockRankingsArray = rankingsResult.value.data()?.stocks || [];
 
@@ -1585,6 +1598,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         });
         let newHotBench;
         let newMonitoring;
+        setupMenuRebuilt = true;
+        setupMenuSelector = archetypeMenu ? 'archetype' : 'legacy';
         if (archetypeMenu) {
           ({ hotBench: newHotBench, monitoring: newMonitoring } = archetypeMenu);
         } else {
@@ -2904,8 +2919,28 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         candidateSymbols: [...hotBenchSymbols, ...Object.keys(hotBenchAssetMap)],
       });
     });
+    // Slice 2 FREEZE — the same candidate list, frozen with no I/O. The inputs are a thunk the freeze
+    // evaluates inside its own try, so nothing here can reach the capture's fault text; gate and scope are
+    // read first, and closed they leave the record without a `setupMenu` key. Never throws.
+    captureStep(tickCapture, () => {
+      freezeSetupMenuPool(tickCapture, battle, () => ({
+        hotBenchSymbols,
+        assetMapKeys: Object.keys(hotBenchAssetMap),
+        benchAtFreeze: flattenBenchServer(battle.portfolio?.bench).map((a) => a.symbol),
+        heldAtFreeze: portfolioSymbols,
+        rebuilt: setupMenuRebuilt,
+        selector: setupMenuSelector,
+        isTournament: Boolean(tournamentCtx),
+        frozenAtMs: Date.now(),
+      }));
+    });
 
     if (!shouldEvaluate) {
+      // Slice 2 START — the trigger gate has decided there is no model call; the reads overlap this
+      // branch's own awaited write and are never waited for. Never throws.
+      captureStep(tickCapture, () => {
+        setupMenuReads = startSetupMenuReads({ db, tickCapture, summary });
+      });
       // No triggers — update scores, VWAP ticks, and status feed, then move on
       // NOTE (naming): despite the name, this counter tracks ticks where the
       // trigger gate SKIPPED Haiku ("the gate passed on calling") — it is NOT
@@ -3010,6 +3045,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // phase's 4,000 ms admission reserve (68,000 ms); at off it is 0 and the
     // requirement is 64,000 ms.
     const budget = shouldStartHaikuCall({ elapsedMs: Date.now() - cronStartTime, timeBudgetMs: TIME_BUDGET_MS, callsReserveMs: callsReserveMsFor(callsCtx.mode) });
+    // Slice 2 START — strictly after the admission decision above, which no Slice 2 read existed to
+    // influence; the reads overlap the model call (or the skip/refresh-failure path) and are never waited for.
+    captureStep(tickCapture, () => {
+      setupMenuReads = startSetupMenuReads({ db, tickCapture, summary });
+    });
     if (refreshFailure) {
       // F1b — a swap committed and its re-read failed. No model call: the
       // prompt would describe a book that is not the book.
@@ -4922,6 +4962,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     captureStep(tickCapture, () => {
       tickCapture.exit('tick_error');
     });
+    // Slice 2 SETTLE on the error exit (review SM2-3): seal now and record what the reads produced by this
+    // instant, so the errored tick's record carries its own read start and counts. Synchronous; never throws.
+    settleSetupMenuReads(setupMenuReads, tickCapture);
     // Clear lock on any error
     await battleRef.update({ 'cronState.evaluatingAt': null }).catch(() => {});
     throw err;
@@ -5034,6 +5077,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // Mark THIS scope done so the handler's error path can never finalize a
       // tick that already finalized itself (F3).
       markTickCaptureClaimed(tickCaptureScope);
+      // Slice 2 SETTLE — synchronous: seal, take only the results already available, compose once. No wait.
+      // Its CPU (well under a millisecond) is real and is charged honestly: the capture budget below is read
+      // after it, as the capture's timing observation always has been (review SM2-1, refuted fix reversed).
+      settleSetupMenuReads(setupMenuReads, tickCapture);
       const captureResult = await finalizeTickCapture(db, tickCapture, {
         remainingBudgetMs: TIME_BUDGET_MS - (Date.now() - cronStartTime),
       });
@@ -5055,6 +5102,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         console.warn(`${LOG_PREFIX} tick capture ${captureResult.disposition} for ${captureResult.tickId || battle.id}${captureResult.error ? `: ${captureResult.error}` : ''}`);
       }
     }
+    // Slice 2 SEAL — every exit, the error exit included (its record keeps the pool fact): the
+    // observation's timer is cleared and its queued reads are dropped. Idempotent; never throws.
+    sealSetupMenuReads(setupMenuReads);
   }
 }
 

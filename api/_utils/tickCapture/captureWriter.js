@@ -193,6 +193,11 @@ export function buildCaptureDocuments(state, {
   // exist and BEFORE the final measurement — it could not previously include
   // the serialization it was supposed to describe.
   timingAtComposition = null,
+  // Slice 2 (review SM2-1; wording corrected in the correction round, D1): the optional setupMenu block is
+  // admitted only before this instant (epoch ms). That reduces the risk; it does not remove it — the admission's
+  // CPU and the block's bytes still consume the shared deadline, so a commit that would have landed in time without
+  // the block can still be reported `timed_out` with it. Infinity = no limit.
+  optionalBlockNotAfterMs = Infinity,
 } = {}) {
   const capturedAt = new Date(nowMs).toISOString();
   const expireAt = new Date(nowMs + TICK_CAPTURE_BODY_RETENTION_DAYS * 86_400_000);
@@ -511,7 +516,74 @@ export function buildCaptureDocuments(state, {
     }
   }
 
+  // ---- Slice 2: the OPTIONAL setupMenu block, admitted LAST ----------------
+  // Everything above composed, sanitized and shed the base record exactly as
+  // it would without the block, so the block's bytes can never trigger body
+  // shedding or a rejection in the body (kickoff Correction C).
+  admitOptionalSetupMenu(permanent, state.setupMenu, { universe, maxDocBytes, notAfterMs: optionalBlockNotAfterMs });
+
   return { permanent, body, universeSize: universe.size, rejected, freeTextPaths: findFreeText(permanent, { universe }) };
+}
+
+const SETUP_MENU_IDENTITY_KEYS = ['session', 'setupVersion', 'thresholdsHash', 'semanticsId', 'frozenAt'];
+
+/**
+ * Slice 2 (review SM2-1): the optional setupMenu block is admitted only while at least this much of the capture's
+ * single deadline (TICK_CAPTURE_DEADLINE_MS, unchanged) remains after the base record is composed. Not a capture
+ * budget constant: it governs only the optional block.
+ *
+ * WHAT IT DOES NOT PROMISE (correction round D1). The reserve REDUCES the risk; it does not remove it. The block's
+ * admission CPU (a sanitize pass, size measures) and its payload (bytes serialized and committed) still consume the
+ * same deadline, so with 1,010 ms left, 20 ms of optional work and a 1,000 ms commit, the base record alone is
+ * `written` and the record with the block is `timed_out` (captureSetupMenu.test.js, a simulated clock). Warm timing
+ * medians and the reported busy-host result are observations, not hard ceilings. And `timed_out` does not prove the
+ * commit never landed: a late commit can still land after the deadline (the export resolves it by presence).
+ */
+export const OPTIONAL_BLOCK_DEADLINE_MARGIN_MS = 1_000;
+
+/**
+ * Measured Trend Evidence Slice 2 — THE OPTIONAL-BLOCK ADMISSION (kickoff of
+ * 7 Nov 2026, Correction C). Called once the base permanent record is final —
+ * composed, sanitized, its body shed — and never before, so the block is
+ * absent from every measurement and every rejection the base record makes.
+ *
+ *   1. The block is sanitized in its OWN pass with the tick's universe. Any
+ *      rejection is contained here: the block becomes its minimal error form
+ *      (`block_rejected`). Nothing reaches the body's `rejectedFields`, and the
+ *      base record's `capture.rejectedFieldCount` is not touched.
+ *   2. The WHOLE permanent record with the block — its metadata included, all
+ *      of it final by now — must fit the existing document budget. If it does
+ *      not, the minimal error form (`record_budget`) is tried; if even that
+ *      does not fit, the block is omitted.
+ *
+ * Mutates `permanent` only by adding `setupMenu`. Never throws.
+ * @returns {'absent'|'admitted'|'error_form'|'dropped'}
+ */
+export function admitOptionalSetupMenu(permanent, block, { universe = new Set(), maxDocBytes = TICK_CAPTURE_BODY_DOC_MAX_BYTES, notAfterMs = Infinity, now = Date.now } = {}) {
+  if (block === null || block === undefined || typeof block !== 'object' || Array.isArray(block)) return 'absent';
+  try {
+    // Too close to the capture deadline: the block is omitted unexamined, so the base record keeps its time (SM2-1).
+    if (now() > notAfterMs) return 'dropped';
+    const clean = (candidate) => {
+      const { doc, rejected } = sanitizePermanentDocument({ setupMenu: candidate }, { universe });
+      return rejected.length === 0 && doc && typeof doc.setupMenu === 'object' ? doc.setupMenu : null;
+    };
+    const fits = (candidate) => approxBytes({ ...permanent, setupMenu: candidate }) <= maxDocBytes;
+    const errorForm = (errorCode) => {
+      const identity = {};
+      for (const key of SETUP_MENU_IDENTITY_KEYS) if (typeof block[key] === 'string') identity[key] = block[key];
+      return clean({ blockStatus: 'error', errorCode, ...identity }) ?? clean({ blockStatus: 'error', errorCode });
+    };
+    let chosen = clean(block);
+    let disposition = 'admitted';
+    if (chosen === null) { chosen = errorForm('block_rejected'); disposition = 'error_form'; }
+    if (chosen !== null && !fits(chosen)) { chosen = errorForm('record_budget'); disposition = 'error_form'; }
+    if (chosen === null || !fits(chosen)) return 'dropped';
+    permanent.setupMenu = chosen;
+    return disposition;
+  } catch {
+    return 'dropped';
+  }
 }
 
 /**
@@ -559,6 +631,8 @@ export async function finalizeTickCapture(db, ctx, {
     }
     docs = buildCaptureDocuments(state, {
       nowMs, bodyFacts, remainingBudgetMs,
+      // Slice 2: the optional block yields when less than this much of the shared deadline is left (SM2-1).
+      optionalBlockNotAfterMs: deadlineAt - OPTIONAL_BLOCK_DEADLINE_MARGIN_MS,
       // G4: stamped after composition, so the number on the record is the one
       // the caller also reports.
       timingAtComposition: () => {

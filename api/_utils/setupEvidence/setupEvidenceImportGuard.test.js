@@ -45,6 +45,17 @@ const ALLOWED_OUTSIDE = new Set([
   'scripts/census-activation-evidence.mjs', // the read-only census: key.js, sessionAt.js, field-masked reads of both collections
   'scripts/census-activation-evidence.test.js', // the census's import pin names the store's modules
   'test/rules/activationObserver.rules.mjs', // the observer against the emulator, with the real store underneath
+  // Measured Trend Evidence Slice 2 (docs/audits/20261107_BUILD_SETUP_MENU_LABELS.md): the setup-label reader and
+  // acquisition tenant, behind SETUP_MENU_LABELS_ENABLED and the cockpit allowlist, their fixture and tests — each by
+  // exact filename. The census (scripts/census-setup-menu-labels.mjs) names neither the library nor its collections.
+  'api/_utils/setupMenuLabels/reads.js', // the tick's reader: readSnapshot, snapshotIdOf, lastCompletedSessionAt (never getOrAcquireSnapshot)
+  'api/_utils/setupMenuLabels/tenant.js', // the acquisition tenant: the one Slice 2 caller of getOrAcquireSnapshot
+  'api/_utils/setupMenuLabels/__fixtures__/menuSnapshots.js', // test fixture: real snapshot documents through acquire.js
+  'api/_utils/setupMenuLabels/constants.test.js', // pins the restated store constants to acquire.js and store.js
+  'api/_utils/setupMenuLabels/reads.test.js', // the reader's rows, with an in-memory setupEvidence collection
+  'api/_utils/setupMenuLabels/tenant.test.js', // the tenant's rows, the store mocked; its static caller row (A1.1)
+  'api/cron/agent-evaluate.setupMenuLabels.test.js', // the tick end to end: an in-memory setupEvidence collection
+  'test/rules/setupMenuLabelsTenant.rules.mjs', // the tenant against the emulator, with the real store underneath
   // The Research Record Extension (7 Nov 2026; docs/design/20261107_RESEARCH_RECORD_EXTENSION_V1.md): the collection's
   // NAME as one value of a closed vocabulary — a finding's source record kind — never an import, a read or a write.
   // The list lives in a DATA-ONLY module so that this listing covers no code (review B1); extension.test.js pins that
