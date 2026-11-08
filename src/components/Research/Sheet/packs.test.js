@@ -321,6 +321,12 @@ describe('BC-8 — the record pinned', () => {
     const pins = recordPinsOf({ battle: BATTLES.momentum_chaser, symbol: 'NVDA', nowMs: SHEET_NOW, row: {}, calls: [] });
     expect(pins.markers.map((m) => [m.kind, m.label])).toEqual([['check', 'What it flagged · Wed 12:45']]);
   });
+  it('a HELD name the check also listed (an exit flag) keeps "What it decided": the check had its evidence', () => {
+    const b = JSON.parse(JSON.stringify(BATTLES.momentum_chaser));
+    b.evaluations[1].candidates.push({ symbol: 'AAPL', direction: 'potential_exit', signalSummary: 'Exit: lost VWAP.' });
+    const pins = recordPinsOf({ battle: b, symbol: 'AAPL', nowMs: SHEET_NOW, row: ROW, calls: [] });
+    expect(pins.markers.find((m) => m.kind === 'check').label).toBe('What it decided · Wed 12:45');
+  });
   it('a legacy-scored holding pins no entry (BC-15)', async () => {
     const legacy = await measuredSheetBattle();
     delete legacy.scoring.stockThresholdModel;
