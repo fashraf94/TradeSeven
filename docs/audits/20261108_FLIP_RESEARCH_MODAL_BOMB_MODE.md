@@ -1,6 +1,6 @@
 # Flip: Bomb mode → allowlist (PR A); → on held (BF-3 STOP)
 
-**Date:** 2026-11-08. **Model:** Claude Opus 5.5, one local Claude Code session in the desktop app's worktree `.claude/worktrees/bomb-mode-allowlist-flip-e30aa5` (local branch `claude/bomb-mode-allowlist-flip-e30aa5`), pushed by refspec as **`claude/bomb-mode-allowlist`**. **Brief:** "Flip: Bomb mode → allowlist now, → on after one live session" (the founder's rulings BF-1 to BF-5, Nov 7, 2026).
+**Date:** 2026-11-08. **PR:** #1035 (ready, not a draft). **Model:** Claude Opus 5.5, one local Claude Code session in the desktop app's worktree `.claude/worktrees/bomb-mode-allowlist-flip-e30aa5` (local branch `claude/bomb-mode-allowlist-flip-e30aa5`), pushed by refspec as **`claude/bomb-mode-allowlist`**. **Brief:** "Flip: Bomb mode → allowlist now, → on after one live session" (the founder's rulings BF-1 to BF-5, Nov 7, 2026).
 
 **Preamble.** `git fetch origin` ran first. `origin/main` was `8d1c9452` (the merge of PR #1033), which contains PR #1031's merge (`6cdf09a3`, Build A, Bomb mode), so the brief's first STOP does not apply. The worktree was clean on `8d1c9452`. Read first, as the brief asks: `docs/BUILD_RULES.md`; the Build A report `docs/audits/20261107_BUILD_RESEARCH_MODAL_A_BOMB_MODE.md` (§0, §6, §13, §14); the spec `docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md` (§4.1 and the rulings of 2026-11-07); the last flip's report `docs/audits/20261107_BUILD_ARMORY_FLIP.md` (its red-row pattern, its §12 CI fixes, its WSL trees). Fenced files (BUILD_RULES §1): none edited, none called. No production read or write.
 
@@ -180,7 +180,7 @@ PR B is not built in this session (BF-3). When it is, its description opens with
 
 ## §9 The founder's live-session checklist
 
-For the first weekday session after PR A merges and deploys, on an iPhone, signed in as the founder. Times are Central (the market runs 8:30 AM – 3:00 PM CT); the app prints Eastern. **PR A's Vercel preview:** PREVIEW_LINK.
+For the first weekday session after PR A merges and deploys, on an iPhone, signed in as the founder. Times are Central (the market runs 8:30 AM – 3:00 PM CT); the app prints Eastern. **PR A's Vercel preview:** https://trade-seven-git-claude-bomb-mode-96d0a0-fais-projects-bc179554.vercel.app (Vercel's comment on PR #1035; it follows the branch's latest push). The live session itself is on production, after the merge and deploy.
 
 1. **Before the open:** in a live battle, tap 💣 on a stock the agent holds. You get the Fuse. The clock reads "next check Mon 9:30 AM" (Eastern, as `horizon.js` prints it). The scored chip, if it shows, names Friday's check.
 2. **8:30–9:30 AM CT** (Build A §14.1): if a held stock sits within 0.5% of a rung, open its red zone. Write down the "1-MIN BARS TO" time and the clock's time. If no held stock is that close, write "no red zone this session".
