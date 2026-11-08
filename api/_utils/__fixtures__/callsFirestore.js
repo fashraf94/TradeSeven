@@ -164,6 +164,8 @@ export function makeCallsFirestore({ docs: initial = {} } = {}) {
               case '==': return v === f.value;
               case '!=': return v !== f.value;
               case 'in': return Array.isArray(f.value) && f.value.includes(v);
+              // Build A2: the League lock's member-scoped group query (perGameLoadout.js readLeagueLockInTx).
+              case 'array-contains': return Array.isArray(v) && v.includes(f.value);
               case '>': return v !== undefined && v !== null && compareValues(v, f.value) > 0;
               case '>=': return v !== undefined && v !== null && compareValues(v, f.value) >= 0;
               case '<': return v !== undefined && v !== null && compareValues(v, f.value) < 0;

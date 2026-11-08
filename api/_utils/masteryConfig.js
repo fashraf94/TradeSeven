@@ -98,6 +98,13 @@ export const MASTERY_XP_ENABLED = false; // P4 cutover flips this (§7). Keep fa
 //   8. after verification, delete the marker and flip the guard constant
 //      back false (hygiene — under ENFORCEMENT the marker is never
 //      consulted).
+//   Carry into this flip (Armory A2 review A2R-9, docs/audits/20261107_REVIEW_ARMORY_A2.md;
+//   recorded by the A2 fix pass, Nov 7 2026): with per-game loadouts on, the
+//   League archetype change revalidates an aggressive tempo dial at switch
+//   time (change-archetype.js), but the BaggerBomb archetype change does not,
+//   and the battle snapshot revalidates leans, not the dial. Decide before
+//   this flip whether the dial is revalidated for a BaggerBomb archetype (at
+//   the slot write or at the casual clone's resync).
 export const MASTERY_ENFORCEMENT_ENABLED = false;
 
 // B3 cutover-marker mechanism (hardening ruling): the guard constant makes

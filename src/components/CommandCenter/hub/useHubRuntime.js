@@ -49,6 +49,7 @@
 // game; the Forge doors stay: the Forge browses and builds, and the game keeps
 // the loadout it was deployed with.
 
+import { use } from 'react';
 import { CLASHBOT_OPEN_EVENT } from '../../ClashBot/ClashBotWidget';
 import { getEquipSlots } from '../../../utils/equipSlots';
 import { getTraitSlotSummary } from '../../../utils/traitSlotSummary';
@@ -62,6 +63,12 @@ import { deployingWithOf, deriveResearch, ideaActivityOf, ideaPointerOf, researc
 import { deriveCareer, deriveLoadout, ideaAccessOf, IDEA_ACCESS, LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
 import { useHubLoadout } from './useHubLoadout';
 import { HUB_SHEETS, useHubSheets } from './useHubSheets';
+// Build A2 (per-game loadouts): the flags on their own lines, and the scope's context. With both on, the stage's
+// loadout summary names both loadouts, and the armor and book doors open whatever the ranked record's battle (a
+// BaggerBomb change applies to the next deploy, FD-1; a locked League still opens the armory to look, FD-3).
+import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';
+import { PER_GAME_LOADOUT_ENABLED } from '../../../config/perGameLoadoutFlags';
+import { PerGameLoadoutContext, scopeSummary } from './perGameLoadoutContext';
 
 /** The menu badge's number: a positive safe integer as given, else none (an absent or malformed count draws no badge). */
 export function unreadCountOf(value) {
@@ -123,7 +130,7 @@ export function useHubRuntime({ hub, agentRead = null, sections, rootRef, resear
     const watchlistCard = loadout.status === LOADOUT_STATUS.READY ? loadout.watchlist : null;
     merged = {
       ...sections,
-      loadout: loadout.status === LOADOUT_STATUS.READY ? { ...loadout, summary: loadoutLineOf(loadout) } : loadout,
+      loadout: loadout.status === LOADOUT_STATUS.READY ? { ...loadout, summary: PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? scopeSummary(use(PerGameLoadoutContext)) ?? loadoutLineOf(loadout) : loadoutLineOf(loadout) } : loadout,
       career: deriveCareer({ agent, agentLoading }),
       // Slice S6: the Research panel's section and the Deploy card's idea line, both from the one held answer (hub/researchView.js).
       // With no reader (a frame, a suite that stands one in) the sections are what they were handed.
@@ -167,8 +174,8 @@ export function useHubRuntime({ hub, agentRead = null, sections, rootRef, resear
 
   const actions = {
     openRecord: ready ? sheets.open(HUB_SHEETS.RECORD) : undefined,
-    changeArchetype: unlocked ? sheets.open(HUB_SHEETS.ARCHETYPE) : undefined,
-    changeWatchlist: unlocked ? sheets.open(HUB_SHEETS.WATCHLIST) : undefined,
+    changeArchetype: (PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? ready : unlocked) ? sheets.open(HUB_SHEETS.ARCHETYPE) : undefined,
+    changeWatchlist: (PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? ready : unlocked) ? sheets.open(HUB_SHEETS.WATCHLIST) : undefined,
     changeAdjustments: unlocked && loadout.adjustments ? sheets.open(HUB_SHEETS.TRAITS) : undefined,
     // No target: the Forge as it opens today (App's bare `setShowForge(true)`).
     openLoadoutForge: ready ? forgeDoor({ returnTo: FORGE_RETURN.DASHBOARD }) : undefined,

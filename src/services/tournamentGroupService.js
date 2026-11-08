@@ -227,6 +227,27 @@ export function subscribeMyGroup(uid, callback) {
 }
 
 /**
+ * Build A2 fix pass (review A2R-1): subscribeMyGroup's query and selection, with a failed read TOLD APART from "no
+ * group" — `onGroup(group | null)` for an answer, `onError(error)` for a failure — as the League lock's own client read
+ * does (leagueLockService.js). The League lobbies call it instead of subscribeMyGroup only while
+ * PER_GAME_LOADOUT_ENABLED and AGENT_FORM_ARMORY_ENABLED are on (a literal ternary: flag-off nothing references it and
+ * the bundle keeps main's bytes), so their League loadout line never reads a failed read as an open week.
+ * subscribeMyGroup itself is unchanged. Returns the unsubscribe fn.
+ */
+export function subscribeMyGroupOrFailure(uid, onGroup, onError) {
+  const groupsQuery = query(
+    collection(db, TOURNAMENT_GROUPS_COLLECTION),
+    where('groupMembers', 'array-contains', uid)
+  );
+  return onSnapshot(groupsQuery, (snapshot) => {
+    onGroup(selectMyGroup(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
+  }, (error) => {
+    console.error('[TournamentGroupService] My-group subscription error:', error);
+    onError(error);
+  });
+}
+
+/**
  * Live "my most-recent VOIDED group" subscription (L-A follow-up B — the member
  * voided-card). The DEDICATED terminal read: the SAME member-scoped
  * `array-contains` query as subscribeMyGroup (no new index), but selected by the

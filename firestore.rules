@@ -283,7 +283,7 @@ service cloud.firestore {
                     && !request.resource.data.keys().hasAny(['standingLeans', 'dials', 'settingsRev',
                                  'equippedTraits', 'deployedStrategy', 'activeBattleId',
                                  'lessons', 'forgeSuggestions', 'isTrainingClone',
-                                 'isCasualClone', 'rankedAgentId'])
+                                 'isCasualClone', 'rankedAgentId', 'loadouts'])
                     && (!('stats' in request.resource.data)
                         || (request.resource.data.stats is map
                             && request.resource.data.stats.keys().hasOnly(['wins', 'losses', 'gamesPlayed',
