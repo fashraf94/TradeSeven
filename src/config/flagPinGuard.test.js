@@ -50,6 +50,8 @@ const FLAG_SOURCE_MODULES = [
   'src/config/agentFormFlags.js',
   // ID-1 Build 2: the activation observer's flag, a module of its own (its header says why).
   'src/config/activationEvidenceFlags.js',
+  // Build A2: the per-game loadout flag, a module of its own (its header says why; both sides read it).
+  'src/config/perGameLoadoutFlags.js',
 ];
 
 // ── Deliberately-dark flags (founder ruling 2026-08-10: keep the loud tripwire) ─
@@ -148,6 +150,8 @@ const DARK_BY_DESIGN = {
   // and its pin, and the entry here stays out, because the flag is now a live kill switch, not dark by design.
   // AGENT_FORM_LAB_ENABLED stays listed above. Re-adding one while it ships true fails the DARK_BY_DESIGN integrity test
   // below.
+  PER_GAME_LOADOUT_ENABLED:
+    'Build A2 — per-game loadouts (Phase 0 armory report §9 A2): the BaggerBomb slot, the League week lock, the clone resync, training on the League loadout and the hub\'s loadout cards. Stays false on main until the founder\'s phone test: flipped only on a never-merge smoke branch; flag-off the server answers as today and every client read folds, byte-identical to main (perGameLoadoutFlags.test.js)',
   AGENT_FORM_ARMORY_ENABLED:
     'Agent form build A1 — the armory in place of the hub\'s archetype picker (Phase 0 armory report §9 A1). Stays false on main until the founder\'s phone test: it is flipped only on a never-merge smoke branch; flag-off every read folds and the build is byte-identical to main (agentFormFlags.test.js)',
   COMMAND_CENTER_SYNC_ENABLED:

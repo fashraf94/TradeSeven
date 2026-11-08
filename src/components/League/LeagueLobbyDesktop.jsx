@@ -23,7 +23,7 @@ import React from 'react';
 import './league.css';
 import useLeagueState from '../../hooks/useLeagueState';
 import { useUser } from '../../contexts/UserContext';
-import { subscribeMyGroup, subscribeMyTrainingPod } from '../../services/tournamentGroupService';
+import { subscribeMyGroup, subscribeMyGroupOrFailure, subscribeMyTrainingPod } from '../../services/tournamentGroupService';
 import { logLeagueSignal } from '../../services/leagueSignals';
 import { LEAGUE_TRAINING_POD_ENABLED } from '../../config/featureFlags';
 import SlotCenter from './liveDraft/SlotCenter';
@@ -31,6 +31,10 @@ import usePreOpenPhase from '../../hooks/usePreOpenPhase';
 import WhileYouWait from './WhileYouWait';
 import { LTOKENS, LX, alpha } from './leagueTokens';
 import { Eyebrow, Mono } from './LeagueParts';
+// Build A2 (board 3): the League loadout line on the ranked tab's left rail. A literal ternary at today's element.
+import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
+import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
+import { LeagueGroupKnownContext, LeagueLoadoutSlot } from './leagueLoadoutSlot';
 import Spectate from './LeagueSpectate';
 import {
   DeskStat, DeskYourGroup, DeskFollowRail, DeskPodPanel,
@@ -192,7 +196,12 @@ export function DeskLobby({
           {/* LEFT — your group + live follows */}
           <div className="lg-scroll ld-rail-left">
             {onOpenMyGame && activeGroup && <MyGameBar onOpen={onOpenMyGame} />}
-            <DeskYourGroup st={st} accent={ACCENT} onOpen={onPickPod} />
+            {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+              <>
+                <LeagueLoadoutSlot agentLoadout={agentLoadout} group={activeGroup} accent={ACCENT} />
+                <DeskYourGroup st={st} accent={ACCENT} onOpen={onPickPod} />
+              </>
+            ) : <DeskYourGroup st={st} accent={ACCENT} onOpen={onPickPod} />}
             <DeskFollowRail items={st.followLive} accent={ACCENT} onSpectate={onSpectate} />
             <div style={{ marginTop: 'auto', paddingTop: 8 }}>
               <Mono style={{ fontSize: 9, letterSpacing: '0.14em', color: LTOKENS.ink3, textTransform: 'uppercase', lineHeight: 1.6 }}>
@@ -281,9 +290,14 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
   // Bound to the SAME activeGroup that supplies `status` at the WhileYouWait
   // mount below (BUILD_RULES §9). One hook for the surface, not one per pod.
   const preOpen = usePreOpenPhase(activeGroup);
+  // Build A2 fix pass (A2R-1), per-game loadouts on: a FAILED read is told apart from "no group" (the phone lobby's
+  // rule, LeagueHome.jsx). The lobby shows what it shows today; `seatFor` records the failure, so the League loadout
+  // line stays Checking rather than reading the failure as an open week.
   React.useEffect(() => {
     if (!uid) { setActiveGroup(null); return undefined; }
-    return subscribeMyGroup(uid, (group) => { setActiveGroup(group); setSeatFor(uid); });
+    return PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED
+      ? subscribeMyGroupOrFailure(uid, (group) => { setActiveGroup(group); setSeatFor(uid); }, () => { setActiveGroup(null); setSeatFor({ failedFor: uid }); })
+      : subscribeMyGroup(uid, (group) => { setActiveGroup(group); setSeatFor(uid); });
   }, [uid]);
 
   // Derived (never stale): the docked pod from the live state, or null.
@@ -339,10 +353,53 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
   // The strip's mount — the centre column's own slot, under the entry (see
   // DeskLobby), once the seat is known (WIRE-7 above). A component that
   // renders null while dark: no element, no gap.
-  const seatKnown = !uid || seatFor === uid;
+  const seatKnown = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? !uid || seatFor === uid || seatFor?.failedFor === uid : !uid || seatFor === uid;
   const backingSlot = seatKnown ? <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} wide /> : null;
 
-  return (
+  return PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+    <LeagueGroupKnownContext.Provider value={!uid || seatFor === uid}>
+      <DeskLobby
+        st={st}
+        uid={uid}
+        displayName={user?.displayName}
+        tab={tab}
+        onSwitchTab={switchTab}
+        activeGroup={activeGroup}
+        preOpen={preOpen}
+        activeTrainingPod={activeTrainingPod}
+        onOpenMyGame={onOpenMyGame}
+        onOpenTrainingPod={onOpenTrainingPod}
+        hasAgent={hasAgent}
+        agentLoadout={agentLoadout}
+        selectedPod={selectedPod}
+        onPickPod={pickPod}
+        onClosePod={closePod}
+        onOpenGroupById={openGroupById}
+        railTab={railTab}
+        onRailTab={setRailTab}
+        onSpectate={openSpectate}
+        backingSlot={backingSlot}
+      >
+        {/* overlays — Spectate's claim CTA re-points at the entry (P3): closing
+            the overlay lands on the center, which IS the slot picker for a
+            no-game viewer (the retired Pick-your-mode modal is gone). */}
+        {spec && (
+          <LDFocus width={760} onClose={() => setSpec(null)}>
+            <div style={{ height: '86vh', maxHeight: 880, borderRadius: 24, overflow: 'hidden', border: `1px solid ${LTOKENS.hair2}`, boxShadow: '0 30px 90px rgba(0,0,0,0.6)', position: 'relative' }}>
+              <Spectate pod={spec.pod} focusId={spec.focusId} accent={ACCENT} onBack={() => setSpec(null)} onEnter={() => setSpec(null)} />
+            </div>
+          </LDFocus>
+        )}
+        {/* the Backing screen — full-window, its own three columns (desktop
+            layout); opened only by the strip, so never while dark */}
+        {hostOpen && (
+          <div ref={hostRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={SCREEN.eyebrow} data-backing="desk-host" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: LTOKENS.bg, color: LTOKENS.ink, outline: 'none' }}>
+            <BackingScreen uid={uid} accent={ACCENT} viewport="desktop" initialSection={backing.section} onBack={closeBacking} onOpenTape={openTape} />
+          </div>
+        )}
+      </DeskLobby>
+    </LeagueGroupKnownContext.Provider>
+  ) : (
     <DeskLobby
       st={st}
       uid={uid}

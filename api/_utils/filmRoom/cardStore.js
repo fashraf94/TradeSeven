@@ -47,6 +47,13 @@ import { canonicalContentHash } from '../canonicalHash.js';
 import { resolveAttributionAgentId, resolveRecordTargetId } from '../casualClone.js';
 import { casualCloneDocId, isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 import { CARD_SLOTS, CARD_SLOTS_VERSION } from '../../../src/data/cardSlots.js';
+// Build A2 (R4; per-game loadouts, ruling D1): with PER_GAME_LOADOUT_ENABLED on there is no one "current" archetype —
+// BaggerBomb and League may wear different ones at once — so an entry is active when its archetype is EITHER loadout's
+// (the attribution agent is the ranked record, which holds both), and shelved otherwise; and a create is refused only
+// when the tape day's archetype differs from the battle's own (it never should). The predicate only, behind the flag;
+// the Film Room arc owns the rest of this file.
+import { PER_GAME_LOADOUT_ENABLED } from '../../../src/config/perGameLoadoutFlags.js';
+import { loadoutArchetypesOf } from '../../../src/constants/perGameLoadout.js';
 
 export const PLAYS_SUBCOLLECTION = 'plays';
 export const CARD_SCHEMA_VERSION = 1;
@@ -138,7 +145,8 @@ function ownedAgent(snap, uid) {
   if (!isObj(data) || data.ownerId !== uid) throw fail(403, 'forbidden');
   const archetype = str(data.archetype);
   if (!archetype) throw fail(409, 'agent_unresolved');
-  return { data, archetype };
+  // `shelf`: what shelving compares an entry with — the agent's archetype, or (A2, R4) both loadouts' archetypes
+  return { data, archetype, shelf: PER_GAME_LOADOUT_ENABLED ? loadoutArchetypesOf(data) : archetype };
 }
 
 const docsOf = (snap) => (snap?.docs || []).map((d) => (typeof d.data === 'function' ? d.data() : d.data)).filter(isObj);
@@ -146,7 +154,7 @@ const docsOf = (snap) => (snap?.docs || []).map((d) => (typeof d.data === 'funct
 // ── shelving and the cap — computed, never written ──────────────────────────
 
 /** Ruling 5: an entry made under another archetype than the agent's current one is shelved. Computed at read. */
-export const isShelved = (entry, currentArchetype) => entry?.archetypeCodeId !== currentArchetype;
+export const isShelved = (entry, currentArchetype) => (Array.isArray(currentArchetype) ? !currentArchetype.includes(entry?.archetypeCodeId) : entry?.archetypeCodeId !== currentArchetype);
 /** Open: at `card` or `nominated`, and not shelved — what S9 counts (RG-8). */
 export const isOpen = (entry, currentArchetype) => OPEN_STAGES.includes(entry?.stage) && !isShelved(entry, currentArchetype);
 /** The entries with their computed `shelved` beside them (a read-time field, never stored). */
@@ -213,7 +221,7 @@ async function createReads(tx, db, { uid, agentId, opId, opFingerprint }) {
   const existingSnap = await tx.get(ref);
   // the cap counts the caller's own entries only, as readCards does (Amendment I RI-1)
   const all = docsOf(await tx.get(playsColOf(db, agentId))).filter((e) => e.ownerId === uid);
-  const open = openCardCount(all, agent.archetype);
+  const open = openCardCount(all, agent.shelf);
   if (!existingSnap?.exists) return { agent, ref, open, replay: null };
   const existing = typeof existingSnap.data === 'function' ? existingSnap.data() : existingSnap.data;
   if (!isObj(existing) || existing.ownerId !== uid) throw fail(409, 'op_conflict', { entryId: opId });
@@ -259,7 +267,7 @@ export async function replayCreate(db, { uid, agentId, opId, request }) {
  *                      questionId: string, questionVersion: number, note: string, route: 'watch'|'drill'|'set' } }} p
  * @returns {Promise<{ idempotent: boolean, card: object, open: number, cap: number }>}
  */
-export async function createCard(db, { uid, agentId, opId, payload, nowIso, request = null, verifySource = null }) {
+export async function createCard(db, { uid, agentId, opId, payload, nowIso, request = null, verifySource = null, battleArchetype = null }) {
   const opFingerprint = createFingerprint(agentId, request, payload);
   return db.runTransaction(async (tx) => {
     const { agent, ref, open, replay } = await createReads(tx, db, { uid, agentId, opId, opFingerprint });
@@ -269,11 +277,12 @@ export async function createCard(db, { uid, agentId, opId, payload, nowIso, requ
     // verifySourceIn — so this store imports no tape module): a re-write between the route's read and this commit
     // refuses rather than filing a card for a moment the tape no longer holds. A read, so it precedes the write.
     if (verifySource) await verifySource(tx);
-    if (payload.archetypeCodeId !== agent.archetype) throw fail(409, 'archetype_changed', { archetypeCodeId: payload.archetypeCodeId, current: agent.archetype });
+    if (PER_GAME_LOADOUT_ENABLED ? payload.archetypeCodeId !== battleArchetype : payload.archetypeCodeId !== agent.archetype) throw fail(409, 'archetype_changed', { archetypeCodeId: payload.archetypeCodeId, current: PER_GAME_LOADOUT_ENABLED ? battleArchetype : agent.archetype });
     if (open >= OPEN_CARD_CAP) throw fail(409, 'cap_reached', { cap: OPEN_CARD_CAP, open });
     const card = buildCardDoc({ entryId: opId, uid, agentId, opId, opFingerprint, nowIso, payload });
     tx.create(ref, card);
-    return { idempotent: false, card, open: open + 1, cap: OPEN_CARD_CAP };
+    // the count the predicate gives (flag off a new card is always open, so +1; A2's R4 can file one shelved)
+    return { idempotent: false, card, open: open + (isOpen(card, agent.shelf) ? 1 : 0), cap: OPEN_CARD_CAP };
   });
 }
 
@@ -297,7 +306,7 @@ export async function retireCard(db, { uid, agentId, entryId, opId, expectedVers
       throw fail(409, 'op_conflict', { entryId });
     }
     if (expectedVersion !== entry.version) throw fail(409, 'version_conflict', { currentVersion: entry.version });
-    if (isShelved(entry, agent.archetype)) throw fail(409, 'shelved', { archetypeCodeId: entry.archetypeCodeId });
+    if (isShelved(entry, agent.shelf)) throw fail(409, 'shelved', { archetypeCodeId: entry.archetypeCodeId });
     if (entry.stage === 'retired' || !OPEN_STAGES.includes(entry.stage)) throw fail(409, 'illegal_transition', { stage: entry.stage });
     const patch = {
       stage: 'retired',
@@ -322,7 +331,7 @@ export async function readCards(db, { uid, agentId }) {
   return db.runTransaction(async (tx) => {
     const agent = ownedAgent(await tx.get(agentRefOf(db, agentId)), uid);
     const all = docsOf(await tx.get(playsColOf(db, agentId))).filter((e) => e.ownerId === uid);
-    const cards = withShelving(all, agent.archetype).sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
-    return { agentId, archetypeCodeId: agent.archetype, cards, open: openCardCount(all, agent.archetype), cap: OPEN_CARD_CAP };
+    const cards = withShelving(all, agent.shelf).sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+    return { agentId, archetypeCodeId: agent.archetype, cards, open: openCardCount(all, agent.shelf), cap: OPEN_CARD_CAP };
   }, { readOnly: true });
 }

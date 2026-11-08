@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../services/agentService', () => ({ changeArchetype: vi.fn() }));
+// Build A2: the armory's loadout writers (their thin clients load the Firebase configuration, which a Node row has not).
+vi.mock('../../services/loadoutService', () => ({ changeLoadoutArchetype: vi.fn(), isLeagueLock: () => false }));
 
 import { ARCHETYPE_ORDER } from '../Dashboard/ArchetypePicker';
 import { ARMORY_COPY, HUB_COPY } from './hub/hubCopy';

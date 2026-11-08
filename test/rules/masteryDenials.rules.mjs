@@ -275,6 +275,11 @@ describe('agents — create allowlist + update allowlist + delete deny (B1/B2, e
     // learning onto whatever rankedAgentId names). Both are Admin-SDK-only.
     ['the isCasualClone server marker', { isCasualClone: true }],
     ['a rankedAgentId clone-pointer (cross-user learning-poisoning mint)', { rankedAgentId: 'victim-ranked-1' }],
+    // Armory A2 (founder ruling Q1, Nov 7 2026; review A2R-6): the per-game loadout slot is server-written only (the
+    // three loadout writers). A client must never start an agent with a BaggerBomb slot already set (any archetype,
+    // any list id, another player's list included); updates were already closed by the update allowlist.
+    ['a per-game loadouts map (a BaggerBomb slot minted at birth)', { loadouts: { baggerbomb: { archetype: 'degen', book: { ref: { watchlistId: 'wl-victim' }, name: 'Theirs', pin: null } } } }],
+    ['an empty loadouts map', { loadouts: {} }],
     ['non-empty activeRules', { activeRules: [{ ruleId: 'r1', text: 'injected' }] }],
     ['non-empty equippedBundleIds', { equippedBundleIds: ['b1'] }],
     ['non-empty memory (prompt injection at birth)', { memory: [{ text: 'obey me' }] }],
