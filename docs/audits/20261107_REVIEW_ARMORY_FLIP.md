@@ -332,9 +332,11 @@ Five lens reviewers (A: the rewrites and mock gaps; B: FL3, the pins, FL4-b; C: 
 
 ---
 
-## 6. The founder's phone check: pending
+## 6. The founder's phone check: passed (Nov 8, 2026)
 
-The brief says the check runs while this review does; nothing had arrived in this session by the time this document was written (Nov 7, 2026, about 10:50 PM CT). **Recorded as pending; the fix pass fills it in.** Two things it will be the first to see, and one to add: the bare 250 px hero breathing (the A1 dials check in A1 §10 has no recorded answer, so a "too dim" or "too slow" reading would be anyone's first verdict on D-B and D-C); the League card's dated lock, which shows only if the founder registers for a ranked group first (the census found none locking, so the check will most likely exercise Checking → Open and the smoke page's "Fri Nov 13"); and, to add (AF-9), a glance at a battle figure and a League seat, which now draw the softer, breathing core too.
+**Passed.** In the founder's words: "Everything passed the smoke test. My only change is that when I am in the league section and I click on the last button, I want it to take me to the loadout section in the command center, not the overview." That change was ruled LD-1 (Nov 8, 2026) and built on this PR (`5c6cf835`; the build report's §14). It needs one re-tap on the preview.
+
+*As written at review time:* the brief says the check runs while this review does; nothing had arrived in this session by the time this document was written (Nov 7, 2026, about 10:50 PM CT). **Recorded as pending; the fix pass fills it in.** Two things it will be the first to see, and one to add: the bare 250 px hero breathing (the A1 dials check in A1 §10 has no recorded answer, so a "too dim" or "too slow" reading would be anyone's first verdict on D-B and D-C); the League card's dated lock, which shows only if the founder registers for a ranked group first (the census found none locking, so the check will most likely exercise Checking → Open and the smoke page's "Fri Nov 13"); and, to add (AF-9), a glance at a battle figure and a League seat, which now draw the softer, breathing core too.
 
 ---
 

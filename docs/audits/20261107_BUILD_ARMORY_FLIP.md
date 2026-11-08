@@ -8,6 +8,8 @@
 
 **Review fixes (a third session, Nov 7–8, 2026).** The review (`docs/audits/20261107_REVIEW_ARMORY_FLIP.md`, MERGE AFTER FIXES) asked for five should-fixes; the founder's rulings RF-1 to RF-4 added four notes and E-2 and asked how far the clone refusal reaches. All built in tests, comments and this report, no app code; §13 is that session's account, and §2's sentence on the suites' mocks (AF-4) and §0's "five places" (AF-13) are corrected in place.
 
+**The League door (a fourth session, Nov 8, 2026).** The founder's phone check passed with one change, ruled LD-1: from the League section, the loadout door opens the Command Center on its Loadout tab, not the Overview. Built flag-on only, one-shot, with no new motion; `main` (now `77f73ec5`, PR #1034) merged first. §14 is that session's account; §9 records the phone check.
+
 **The founder merges. Nothing reaches players until he does, and the merge waits for #1029's `firestore.rules` in the Firebase Console.**
 
 ---
@@ -31,6 +33,7 @@
 | 13 | **Review threshold** | **Over it:** the cumulative diff against `main` @ `7b1d8d26` is **53 files, about 1,560 lines** (+1,495 / −66, this report included; without it, 52 files, +1,041 / −66 = 1,107 lines). The file count crosses the threshold (10), and with this report the line count does too (1,500), so **a review session runs before merge**. BUILD_RULES §2 asks for a review at 10 files or 1,500 lines. |
 | 14 | **The rules job (CI)** | **It was red on the PR: 5 rows in 2 emulator files** (`filmRoomCardAttribution.rules.mjs`, `filmRoomCardReplayOwner.rules.mjs`), which ran with the live flag. Fixed (CI-1, §12): 1 kill-switch row, 2 flag-on twins, 4 rows handed the battle's archetype and run flags-on, 0 deleted. `npm run test:rules` on Linux, on the merged tree: **exit 0, 33 files, 641 rows** with both flags on, and the same with both literals `false` (`main` added one file, 8 rows; before the merge, 32 files and 633 rows in both states). |
 | 15 | **Production check** | **No battle can have its cards refused for good.** The tape day's archetype is written from the same battle field the route hands the store, and nothing changes that field after the battle is created; a battle without one has untagged days, which the route already refuses before the store, flags on or off. No fallback added; no production count needed (§12). |
+| 16 | **The League door (LD-1)** | **Built** (`5c6cf835`). On the phone, the League tab's door now opens the Command Center on its **Loadout tab**; on desktop it lands on the **Loadout area**, where desktop already opened. Only that visit: the next entry opens on the Overview. Flags off, the build is identical to `main` (0 of 55). The cards sit below the fold when the tab opens, at every phone size measured; nothing scrolls, as ruled (§14). |
 
 ---
 
@@ -69,6 +72,10 @@
 | `a82d1830` | This report's CI fixes, first draft. |
 | `477b96fe` | Merge of `origin/main` @ `7b1d8d26` (PRs #1030, #1031): no conflict. The one file both sides touched, `src/config/flagPinGuard.test.js`, merged cleanly (this PR's two dropped `DARK_BY_DESIGN` entries and their note, beside `main`'s new comment on `RESEARCH_MODAL_BOMB_MODE`). `main`'s new lines read neither flag. |
 | (the last commit) | This report, with the merged tree's checks. |
+| `cb6e6233` … `e27fa27c` | The review, its fixes and §13 (the third session). |
+| `72db221b` | Merge of `origin/main` @ `77f73ec5` (PR #1034, setup menu labels slice 2): no conflict; the one shared file, `src/config/flagPinGuard.test.js`, merged cleanly (§14). |
+| `5c6cf835` | LD-1: the League door opens the Command Center on its Loadout tab, once (§14). |
+| (the LD-1 report commit) | §14, the phone check in §9, this table, the verdict's row 16. |
 
 Every line of the source diff that is not a test or a fixture:
 
@@ -345,6 +352,8 @@ Nothing on the page writes: the fixture agent has no id, the book rows and Equip
 
 ## §9 iPhone checklist (on the flip preview, then the smoke page)
 
+**Result (Nov 8, 2026): passed.** The founder, in his words: "Everything passed the smoke test. My only change is that when I am in the league section and I click on the last button, I want it to take me to the loadout section in the command center, not the overview." That change is ruling LD-1, built in §14. What is left is one re-tap on the preview: League tab → the loadout door → the Command Center opens on the Loadout tab (the tab row's Loadout underlined, the stage's Loadout line marked); the two cards are below it, a scroll away (§14).
+
 1. **The flip preview, signed in** (https://trade-seven-git-claude-armory-flip-fais-projects-bc179554.vercel.app, the PR's own preview from Vercel's comment on the PR; it serves the branch's latest push): open the Command Center. The hero is the bare Shadow, breathing. Tap Loadout: two cards, BaggerBomb on top, League under it.
 2. **The League card:** if you have a ranked group for next week, it is locked and reads "Locked until the week is scored, after the close on Fri Nov 13."; otherwise it is open. (The census found no ranked group in any locking status tonight, so expect open unless you register first.)
 3. **Change BaggerBomb's armor and hold Deploy:** the game wears the new armor.
@@ -550,3 +559,98 @@ Not received in this session. It stays pending in the review's §6 and in §9 he
 - **Windows:** the worktree `C:/Users/fashr/portfolio-duel/.claude/worktrees/armory-flip-review-fixes-4c7548` (branch `claude/armory-flip-review-fixes-4c7548`, reset to `cb6e6233`), the edited files' first runs (vitest from the parent checkout), and one quick E-2 mutant before the commit.
 - **WSL:** `~/pd-ci-flrf` (the head: suite, `lint:gate`, rules flags on, both builds), `~/pd-ci-flrfm` (`main`'s builds, plain and with the literals `true`), `~/pd-ci-flrfx` (the kill-switch build and rules suite, then the mutants), detached worktrees of `~/pd-ci` with `node_modules` linked to `~/pd-af0`; runs under `~/pd-flrf-runs`.
 - **Cleanup:** the three trees and `~/pd-flrf-runs` are removed after the push, under the suite lock (`unlink` each `node_modules` link, `git -C ~/pd-ci worktree remove --force`, `worktree prune`). `~/pd-ci`, `~/pd-ci-af1`, `~/pd-af0` and other sessions' trees are not touched. The space freed is in the PR description.
+
+---
+
+## §14 The League door (LD-1)
+
+**Brief:** "Flip: the League door opens the Loadout tab (LD-1)", with the founder's phone check and ruling LD-1 (Nov 8, 2026). **Session:** Claude Opus 5.5, a fresh session, worktree branch `claude/league-loadout-door-dacd00`, reset to the PR head and pushed by refspec to `claude/armory-flip`. **Preamble:** `git fetch origin` first: `origin/claude/armory-flip` was `e27fa27c`, the head the brief requires; `origin/main` had moved to `77f73ec5` (PR #1034, the setup menu labels slice 2), so it was merged before any check (`72db221b`). No conflict: the one file both sides touched, `src/config/flagPinGuard.test.js`, took `main`'s new `FLAG_SOURCE_MODULES` line and `DARK_BY_DESIGN` entry for `SETUP_MENU_LABELS_ENABLED` beside this PR's two dropped entries. `main`'s new lines read neither flag, so nothing in the merge touches this PR's logic. Fenced files: none edited, none called.
+
+### The ruling, and where the door is
+
+| # | Ruling | Built |
+|---|---|---|
+| LD-1 | From the League section, the loadout door opens the Command Center on its Loadout tab, not the Overview. | `5c6cf835`. On the phone, the door's visit opens on `PHONE_TABS.LOADOUT`; on desktop, on the Loadout area (`HUB_AREAS.ARCHETYPE`), as `selectArea(HUB_AREAS.ARCHETYPE)` does. One-shot, flag-on only, no new motion. |
+
+- **The doors.** Every door that is `agentLoadout.openLoadout`: the League tab's line (`src/components/League/LeagueLoadoutLine.jsx:69`, `:79`, its button while the week is open). **The Training tab's line has no door:** `TrainingLoadoutLine` renders a `<section>` with no button (`LeagueLoadoutLine.jsx:87-100`; `LeagueLoadoutLine.jsdom.test.jsx:108` asserts no button). Nothing was built there. VERIFIED.
+- **Why it missed.** The A2 report's Q8 reading said the door went to the Loadout tab; it didn't. The door was `openLoadout: () => setScreen('dashboard')` alone, so the phone hub opened on `DEFAULT_PHONE_TAB`, the Overview (`hub/composition.js:86`). VERIFIED.
+- **Desktop was already there.** Desktop, tablet and stacked open on `DEFAULT_AREA = HUB_AREAS.ARCHETYPE` (`hub/composition.js:88`), the Loadout area, on every entry. So on desktop the door already landed where the ruling asks, and the founder's change is the phone's. Desktop now also *takes* the door's intent, only so a pending intent cannot outlive the visit (a later phone-width entry would otherwise honour it). VERIFIED.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `src/utils/hubEntryIntent.js` (new, 30 lines) | A one-shot boolean. `openCommandCenterOnLoadout(setScreen)` marks it and calls `setScreen('dashboard')`; `takeLoadoutEntry()` answers it and clears it. No import, no flag read. |
+| `src/App.jsx:144`, `:10209` | The import, and the door on the existing flag-on arm: `openLoadout: () => openCommandCenterOnLoadout(setScreen)`. The flag-off arm is unchanged (it has no `openLoadout`). |
+| `src/components/CommandCenter/CommandCenterHub.jsx:164`, `:331`, `:491` | The import; the phone's tab, `useState(PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? () => (takeLoadoutEntry() ? PHONE_TABS.LOADOUT : DEFAULT_PHONE_TAB) : DEFAULT_PHONE_TAB)`; desktop's area, the same shape with `HUB_AREAS.ARCHETYPE : DEFAULT_AREA`. |
+| Censuses (tests) | `perGameLoadoutFlags.test.js` `CLIENT_READS` and `agentFormFlags.test.js` (App's line; the hub's two new lines in position order); `commandCenterHub.mount.guard.test.js` (`PERMITTED_TERMINALS` and the export list: the hub takes one name, `takeLoadoutEntry`). |
+
+**Why the module sits outside the hub's directory.** App may reach `src/components/CommandCenter/` only through the gate, the picker and the chrome predicates, and its `hubChrome` import line is pinned verbatim (`commandCenterHub.mount.guard.test.js`, "the main graph reaches the hub directory only through App → …"). A new `hubProps` key is pinned too (`HUB_PROPS`), and storage or the URL is barred on the hub side (R-S1-4). The module holds a boolean, not the hub's tab constant; the hub maps it.
+
+**One-shot, and how.** The shell reads and clears the intent in its tab's (area's) lazy initializer, which React runs once, on the mount. So the visit the door starts opens on Loadout, and every later mount (any other way in, a return, a reload) finds nothing and opens where it always has. React 19.2.4 keeps the first initializer result and discards StrictMode's second call (`react-dom-client.development.js:8268-8273`), and nothing inside the shells suspends (no `lazy()` or `use(promise)` under them; the gate's `Suspense` sits above the hub). Three readings, none a STOP:
+- **(a)** A mount render that React throws away before it commits (a concurrent render interrupted) would take the intent without showing it; that visit opens on the Overview, today's behaviour. ASSUMED rare: nothing in the shells suspends.
+- **(b)** If the hub chunk fails to load, App shows the legacy shell and the intent stays pending; the next hub mount (the gate's Retry) opens on Loadout.
+- **(c)** The intent is memory only: a page reload drops it.
+
+**Why it folds (flags off).** Each hub read is a literal ternary on both flag literals, outside any `try` (Rollup folds it there; inside a `try` it would not, §4), whose flag-off arm is `main`'s own `useState(DEFAULT_PHONE_TAB)` / `useState(DEFAULT_AREA)`: the same shape as the A2 reads at `CommandCenterHub.jsx:412` and `:526`. App's change sits inside the flag-on object of the existing folded ternary at `:10209`. With both folded away nothing calls the module, which has no side effects (a `let` and two functions), so the build drops it and its two imports. No new hook, prop or context on a flag-off path. Measured: 0 of 55 (below).
+
+### No new motion: where the League card sits when the tab opens
+
+Measured on the real hub (the A2 headless-Edge harness on this head, both flags on, the network seams stubbed; `?door=1` is the door's real intent before the hub mounts), at `scrollTop` 0, with no scroll made. The visible area ends at the deploy strip's top; the app's BottomNav (absent in the harness) sits under the strip and shortens it further.
+
+| Viewport | Tab on open | Tab row | Visible to | BaggerBomb card | League card | League visible |
+|---|---|---|---|---|---|---|
+| 320 × 568 | Loadout | 473–519 | 505 | 804–1018 | 1028–1260 | **0 px (below the fold)** |
+| 375 × 667 | Loadout | 470–516 | 604 | 801–1015 | 1025–1240 | **0 px (below the fold)** |
+| 390 × 844 | Loadout | 470–516 | 781 | 789–1004 | 1014–1228 | **0 px (below the fold)** |
+
+Without the door (`?door=0`) each opens on the Overview, as before. **The League card is below the fold at every phone size measured, not only at 320 px.** At 390 × 844 the player sees the hero, its Loadout line marked, the tab row with Loadout underlined, the Loadout heading and the Deploy card's "Next deploy carries" line; the two cards are a scroll below. At 320 × 568 only the tab row's labels show above the strip, so the tab change shows only in the stage's marked Loadout line. **No scroll was added**, as ruled. See the founder question below.
+
+### Rows (`5c6cf835`)
+
+| Row | Where | What it proves |
+|---|---|---|
+| **Phone** | `CommandCenterHub.loadouts.jsdom.test.jsx:703` | The real League line's door, wired as App wires it, tapped: `setScreen('dashboard')` once; the phone hub then mounts, no tab tapped, on the Loadout tab with the League card. |
+| **Desktop** | `:712` | The same door; the desktop hub mounts on the Loadout area (`data-hub-area` 2) with the League card; a phone-width entry after it opens on the Overview (the visit took the intent). |
+| **One-shot** | `:723` | An ordinary entry: Overview. The door: Loadout. Leave and come back: Overview, no League card. |
+| **Kill switch (hub)** | `:738` | Per-game loadouts held off: the hub opens on the Overview with an intent pending, and leaves it unread. |
+| **Kill switch (League)** | `LeagueLoadoutLine.jsdom.test.jsx:148` | The phone League tab, an open week: the door is there with the flags on, and absent (no line, no button) with the flags held off. |
+| **The Training tab's door** | none built | It has no door (above); `LeagueLoadoutLine.jsdom.test.jsx:108` already pins that. |
+| **The module** | `src/utils/hubEntryIntent.test.js` | Nothing pending → false; the door marks and goes to the dashboard once; the take clears it. |
+
+App's own line is pinned as text by both flag censuses, so a door that skipped the module would redden them.
+
+### Mutation
+
+On `~/pd-ci-flldx` at `5c6cf835`: one edit each to `src/utils/hubEntryIntent.js`, checked to land exactly once, restored from `git show HEAD:path` and the tree confirmed clean (0 dirty files) after each; `TZ=UTC`. Run: the three files above (`CommandCenterHub.loadouts.jsdom`, `hubEntryIntent.test.js`, `LeagueLoadoutLine.jsdom`). Killed means a non-zero exit **and** failed rows in the JSON summary. **Control:** exit 0, 45 rows, 0 failed.
+
+| # | Mutant | Edit | Result | The rows that caught it |
+|---|---|---|---|---|
+| M-LD1a | the intent dropped | `loadoutPending = true;` removed from `openCommandCenterOnLoadout` | **killed**, 5 rows | **the phone row**, the one-shot row, the hub kill-switch row, two unit rows |
+| M-LD1b | the intent never cleared | `loadoutPending = false;` removed from `takeLoadoutEntry` | **killed**, 3 rows | **the one-shot row**, the desktop row, one unit row |
+
+**2 of 2 killed**, each by the row the brief names.
+
+### Checks, on the final tree `5c6cf835` (contains `main` @ `77f73ec5`)
+
+WSL, Node 20.20.2, JDK 21.0.13, lockfile `40382e64edb6` on the three trees and the install.
+
+| Check | Result |
+|---|---|
+| **Kill switch:** both literals `false` against `main` @ `77f73ec5`, unminified, raw `diff -rq -x '*.map'` | **0 entries: 0 of 55 non-map files differ**; the entry `index-D8o2oLzt.js` and `index-B2ZPrkoi.js` in both. 49 maps differ: 47 only by the tree's directory in `sources`; the entry's and the hub's also carry the changed source text in `sourcesContent` (`vite.config.js` sets `sourcemap: true`), with the same emitted code |
+| **Flags on:** against `main` @ `77f73ec5` with only the two literals `true` | 57 and 57 non-map files. A changed entry chunk renames every importer, so the comparison pairs files by name with the hashes masked: **9 files differ**. The entry chunk: **FL4's two strings**; **this change's lines**: the module (`let loadoutPending`, `openCommandCenterOnLoadout`, `takeLoadoutEntry`), App's door (`openLoadout: () => openCommandCenterOnLoadout(setScreen)`) and the export `takeLoadoutEntry as i6`, which shifts the export aliases after it by one letter (`i6` … `ii` → `i7` … `ij`). The hub chunk: its two `useState(() => takeLoadoutEntry() ? … : …)` lines and its import line (the new name and the shifted aliases). **Seven importers** differ only in those shifted alias letters: `AgentBattleScreen`, `BaggerBombTrainingBattleViewV4`, `BarChart`, `FantasyTimesFeed`, `FilmRoomScreenV2`, `StoryDetail`, `VeraDeepDive` (one alias each on their import or `import().then((n) => n.xx)` lines). Nothing else |
+| **Minified build** (`vite build`) | **exit 0**, 111 files |
+| **Full Linux suite** (`flock /tmp/pd-suite.lock`, `TZ=UTC`, 8 workers) | **exit 0**: `Test Files 1348 passed \| 8 skipped (1356)`, `Tests 29692 passed \| 89 skipped (29781)`, 314 s. over §13's 1,342 files and 29,497 rows, `main`'s merge brought 13 files and 276 rows, and this change 1 file and 8 rows (4 hub rows, 1 League row, 3 unit rows) |
+| `npm run test:rules`, both flags on | **exit 0**, 35 files, 666 rows (`main`'s merge brought `setupMenuLabelsDenials.rules.mjs` and `setupMenuLabelsTenant.rules.mjs`, 25 rows) |
+| `npm run test:rules`, both literals `false` | **exit 0**, 35 files, 666 rows; the tree restored after (0 dirty files) |
+| **`lint:gate`** | **exit 0** |
+
+### Founder question
+
+**LD-2 (optional): should the door's visit also bring the League card into view?** As ruled, nothing scrolls, and the measurement above shows the cards below the fold on every phone size, so on a small phone the change shows only in the tab row and the stage's marked line. If yes, the smallest version is the visit opening with the League card at the top of the scroll box (one instant scroll on that mount only, no animation). Not built; the ruling said no new motion.
+
+### What ran, where, and cleanup
+
+- **Windows:** the worktree `C:/Users/fashr/portfolio-duel/.claude/worktrees/armory-flip-review-fixes-4cdd25` (branch `claude/league-loadout-door-dacd00`, reset to `e27fa27c`), the touched files' first runs (vitest from the parent checkout: 6 files, 154 rows) and a quick pass of both mutants before the commit; the layout measurement's Edge (playwright-core from the parent checkout).
+- **WSL:** `~/pd-ci-flld` (the head: the full suite, the rules suite in both states), `~/pd-ci-flldm` (`main`'s builds, plain and with the literals `true`), `~/pd-ci-flldx` (the kill-switch build, the head's plain and minified builds, `lint:gate`, the layout harness, the mutants), detached worktrees of `~/pd-ci` with `node_modules` linked to `~/pd-af0`; runs under `~/pd-flld-runs`.
+- **Cleanup:** the three trees and `~/pd-flld-runs` are removed after the push, under the suite lock (`unlink` each `node_modules` link, `git -C ~/pd-ci worktree remove --force`, `worktree prune`). `~/pd-ci`, `~/pd-ci-af1`, `~/pd-af0` and other sessions' trees are not touched. The space freed is in the PR description.
