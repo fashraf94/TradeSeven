@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 // The emulator suites' shared parser (no emulator is touched on import).
 import { ruleBlocks } from '../../../test/rules/callRecordsRulesSuite.mjs';
-import { RESEARCH_WORK_COLLECTION } from './model.js';
+import { RESEARCH_WORK_COLLECTION, HOST_COLLECTIONS, buildRecord, manualFunnel, emptyTelemetry } from './model.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../../..');
@@ -39,7 +39,7 @@ describe('firestore.rules — researchWork (source tripwire; behavior proven in 
 });
 
 describe('firestore.indexes.json — the Command Center\'s research list', () => {
-  it('ONE researchWork composite: userId ASC, createdAt DESC (collection scope)', () => {
+  it('TWO researchWork composites: userId ASC, createdAt DESC; and (the Research Record Extension) userId ASC, symbolKeys CONTAINS, createdAt DESC — both collection scope', () => {
     expect(INDEXES.indexes.filter((i) => i.collectionGroup === 'researchWork')).toEqual([{
       collectionGroup: 'researchWork',
       queryScope: 'COLLECTION',
@@ -47,7 +47,23 @@ describe('firestore.indexes.json — the Command Center\'s research list', () =>
         { fieldPath: 'userId', order: 'ASCENDING' },
         { fieldPath: 'createdAt', order: 'DESCENDING' },
       ],
+    }, {
+      collectionGroup: 'researchWork',
+      queryScope: 'COLLECTION',
+      fields: [
+        { fieldPath: 'userId', order: 'ASCENDING' },
+        { fieldPath: 'symbolKeys', arrayConfig: 'CONTAINS' },
+        { fieldPath: 'createdAt', order: 'DESCENDING' },
+      ],
     }]);
+  });
+  it('the extension\'s index names the field the model derives (symbolKeys), and no fieldOverride touches researchWork', () => {
+    const rec = buildRecord({
+      researchWorkId: 'sr_s', userId: 'u', origin: 'shared_research', host: { collection: HOST_COLLECTIONS.shared_research, id: 's' },
+      createdAt: '2026-11-07T14:00:00.000Z', funnel: manualFunnel(), telemetry: emptyTelemetry(),
+    });
+    expect(Object.keys(rec)).toContain('symbolKeys');
+    expect((INDEXES.fieldOverrides || []).filter((o) => o.collectionGroup === 'researchWork')).toEqual([]);
   });
   it('the per-list read needs no composite (one equality, served by the automatic single-field index)', () => {
     const src = readFileSync(resolve(HERE, 'store.js'), 'utf8');

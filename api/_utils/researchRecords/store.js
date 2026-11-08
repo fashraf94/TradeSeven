@@ -15,9 +15,22 @@
 //                       response or error
 //   readListResearch    the records attached to a list (the Forge's line, and
 //                       the refs a new hypothesis version cites)
+//
+// The Research Record Extension (7 Nov 2026; contract
+// docs/design/20261107_RESEARCH_RECORD_EXTENSION_V1.md) — server-only writes
+// for the Shared Research route (the Command Center arc's next build); nothing
+// calls them yet:
+//   appendFinding       one finding, its id minted here, in ONE transaction
+//                       (fresh read, owner, cap, shape, supersedes, append)
+//   reviseSummary       one summary revision appended AND made the summary,
+//                       in ONE transaction; rev n+1 or a typed refusal
+// Both write `shared_research` records only (the follow-up's ruling Q2/Q8:
+// any other origin is refused `wrong_origin`, and nothing is written).
 
+import { randomUUID } from 'node:crypto';
 import {
   RESEARCH_WORK_COLLECTION, isOwnedRecord, isResearchWorkId, researchRefOf, turnPatch, recordSummaryOf,
+  FINDING_ID_PREFIX, ResearchRecordError, buildFinding, findingAppendPatch, summaryRevisionPatch,
 } from './model.js';
 
 /**
@@ -116,6 +129,55 @@ export async function recordTurnOutcome(db, { researchWorkId, uid, kind, elapsed
   }
 }
 
+/** The caller's own readable record, read through `tx` — or the typed refusal (a missing and a foreign record answer alike). */
+async function ownedRecordIn(tx, ref, uid) {
+  const snap = await tx.get(ref);
+  const record = snap.exists ? snap.data() : null;
+  if (!isOwnedRecord(record, uid)) throw new ResearchRecordError('record_not_found');
+  return record;
+}
+
+/**
+ * Append one finding to the caller's record. The id is minted HERE, once per
+ * call (`f_` + randomUUID()), and the finding's shape is checked before any
+ * read; the transaction re-reads the record and checks the owner, the state,
+ * the cap and `supersedes` against what is stored — two concurrent appends
+ * serialize, and both land within the cap. A refusal throws a
+ * ResearchRecordError (its `code`); nothing is written.
+ *
+ * @returns {Promise<{ finding: object, count: number }>}
+ */
+export async function appendFinding(db, { researchWorkId, uid, finding, nowIso }) {
+  if (!isResearchWorkId(researchWorkId)) throw new ResearchRecordError('record_not_found');
+  const built = buildFinding(finding, { findingId: `${FINDING_ID_PREFIX}${randomUUID()}`, nowIso });
+  const ref = researchWorkRefOf(db, researchWorkId);
+  return db.runTransaction(async (tx) => {
+    const record = await ownedRecordIn(tx, ref, uid);
+    const patch = findingAppendPatch(record, built, { nowIso });
+    tx.update(ref, patch);
+    return { finding: built, count: patch.findings.length };
+  });
+}
+
+/**
+ * Write one summary revision on the caller's record: appended to
+ * summaryRevisions[] and made the summary in ONE transaction, `rev` = the
+ * stored previous + 1. Two concurrent revisions produce n+1 and n+2 (or, with
+ * `expectedRev`, one of them a typed summary_conflict) — never a lost one.
+ *
+ * @returns {Promise<{ summary: object }>}
+ */
+export async function reviseSummary(db, { researchWorkId, uid, text, basedOn = [], expectedRev = null, nowIso }) {
+  if (!isResearchWorkId(researchWorkId)) throw new ResearchRecordError('record_not_found');
+  const ref = researchWorkRefOf(db, researchWorkId);
+  return db.runTransaction(async (tx) => {
+    const record = await ownedRecordIn(tx, ref, uid);
+    const patch = summaryRevisionPatch(record, { text, basedOn, expectedRev }, { nowIso });
+    tx.update(ref, patch);
+    return { summary: patch.summary };
+  });
+}
+
 const byCreated = (a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : (a.researchWorkId < b.researchWorkId ? -1 : 1));
 
 /**
@@ -156,13 +218,21 @@ export const researchRefsOf = (records) => records.map((r) => researchRefOf(r.re
  * the ones opened and left — so neither analysis opens nor the cap can push
  * the research behind the idea, or the newest worked analysis, out of view
  * (reviews R4-1 / R1-4; mutation lens R5). At most RESEARCH_SUMMARIES_MAX.
+ *
+ * The Research Record Extension (review A4): a Shared Research record attached
+ * to the list comes LAST — it is not the research the list came from, and
+ * however many there are they never push the list's own research or its
+ * worked analysis past the cap. (How the Forge shows one is the Shared
+ * Research slice's decision; today its line shows no stage.) With no such
+ * record — every list today — the order is exactly what it was.
  */
 export function researchSummariesOf(records) {
   const newestFirst = [...records].reverse().map(recordSummaryOf);
   const analysis = newestFirst.filter((s) => s.origin === 'analysis');
   return [
-    ...newestFirst.filter((s) => s.origin !== 'analysis'),
+    ...newestFirst.filter((s) => s.origin !== 'analysis' && s.origin !== 'shared_research'),
     ...analysis.filter((s) => s.completions > 0),
     ...analysis.filter((s) => !(s.completions > 0)),
+    ...newestFirst.filter((s) => s.origin === 'shared_research'),
   ].slice(0, RESEARCH_SUMMARIES_MAX);
 }

@@ -31,7 +31,7 @@
 import {
   WATCHLISTS_COLLECTION, VERSIONS_SUBCOLLECTION, CLOSING_ACTIONS, STATE_REASONS,
   versionDocId, legalTransition, contentOf, buildVersionDoc, reaffirmableGiven,
-  currentVersionOf, originOf, sessionHorizonOf, opFingerprintOf, isDialogueList, mergeEvidenceRefs,
+  currentVersionOf, originOf, sessionHorizonOf, opFingerprintOf, isDialogueList, mergeEvidenceRefs, serverEvidenceRefsOf,
 } from './model.js';
 // Pilot P2 — a version the player creates cites every research record already
 // attached to its list (the research → version join runs from the version's
@@ -143,13 +143,22 @@ async function attachedResearchOf(db, { uid, watchlistId }) {
  * `researched` is P2's job). Refused while the current version is
  * `review_due`: reaffirmation is that version's way forward.
  *
+ * The Research Record Extension: `serverEvidenceRefs` are refs the SERVER
+ * built (the Shared Research route's evidence items and exchanges — the
+ * route that will pass them is the Command Center arc's next build; no route
+ * passes any today). Each is validated before any read — one malformed ref
+ * refuses the request (invalid_evidence_refs) — and merged after the
+ * research refs. Never a caller's input: parseContentPayload (http.js) reads
+ * no refs.
+ *
  * @param {object} db
  * @param {{ uid: string, watchlistId: string, opId: string, expectedVersion: number,
  *           payload: { statement: string, horizonEnum?: string, activation?: object[], invalidation?: object[] },
- *           nowIso: string }} p
+ *           nowIso: string, serverEvidenceRefs?: object[] }} p
  * @returns {Promise<{ idempotent: boolean, version: object }>}
  */
-export async function createPlayerVersion(db, { uid, watchlistId, opId, expectedVersion, payload, nowIso }) {
+export async function createPlayerVersion(db, { uid, watchlistId, opId, expectedVersion, payload, nowIso, serverEvidenceRefs = [] }) {
+  const serverRefs = serverEvidenceRefsOf(serverEvidenceRefs);
   const research = await attachedResearchOf(db, { uid, watchlistId });
   const opFingerprint = opFingerprintOf({ kind: 'create', payload: { expectedVersion, ...payload } });
   return db.runTransaction(async (tx) => {
@@ -170,7 +179,7 @@ export async function createPlayerVersion(db, { uid, watchlistId, opId, expected
     if (base?.status === 'review_due') throw fail(409, 'illegal_transition', { status: base.status, use: 'reaffirm' });
 
     const inherited = applyOverrides(base ? contentOf(base) : firstVersionDefaults(parent, sessionSnap), payload);
-    const content = { ...inherited, evidenceRefs: mergeEvidenceRefs(inherited.evidenceRefs, researchRefsOf(research)) };
+    const content = { ...inherited, evidenceRefs: mergeEvidenceRefs(inherited.evidenceRefs, researchRefsOf(research), serverRefs) };
     const next = current + 1;
     const doc = buildVersionDoc({
       version: next, watchlistId, userId: uid, opId, opFingerprint, createdAt: nowIso, content,

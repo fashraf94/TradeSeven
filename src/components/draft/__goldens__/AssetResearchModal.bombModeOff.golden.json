@@ -1,0 +1,1575 @@
+{
+ "held_measured_controlled": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\"></span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$101.20</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 2.22%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(245, 158, 11, 0.1);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.2); color: rgb(245, 158, 11); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">💣</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 12px; font-size: 11px; font-family: monospace; pointer-events: none;\"><span><span style=\"color: rgba(255, 255, 255, 0.4);\">O</span> <span style=\"color: rgb(230, 237, 243);\">100.00</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">H</span> <span style=\"color: rgb(230, 237, 243);\">103.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">L</span> <span style=\"color: rgb(230, 237, 243);\">99.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">C</span> <span style=\"color: rgb(0, 255, 136);\">101.20</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">Vol</span> <span style=\"color: rgb(230, 237, 243);\">300</span></span></div><div style=\"position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.75); border: 1px solid rgb(0, 255, 136); color: rgb(0, 255, 136); font-size: 11px; font-weight: 700; font-family: monospace; display: flex; align-items: center; gap: 4px; z-index: 10; cursor: pointer; animation: none;\"><span>↑</span><span>1.55%</span><span style=\"opacity: 0.7;\">to +15</span><span style=\"font-size: 9px; color: rgb(110, 118, 129); margin-left: 2px;\">TAP</span></div></div><style>\n          @keyframes bombPulse {\n            0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }\n            50% { opacity: 0.7; box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }\n          }\n        </style></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 255, 136); background: rgba(0, 255, 136, 0.125); color: rgb(0, 255, 136); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">💣 Bomb</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><section aria-label=\"Measured stock reward targets\"><div style=\"display: flex; align-items: center; gap: 10px; margin-bottom: 20px;\"><span style=\"font-size: 24px;\">💣</span><div><h3 style=\"margin: 0px; font-size: 16px; font-weight: 700; color: rgb(0, 255, 136);\">BAGGERBOMB STATS</h3><p style=\"margin: 2px 0px 0px; font-size: 11px; color: rgba(255, 255, 255, 0.5);\">Measured scoring for AAPL</p></div></div><div style=\"color: rgb(160, 160, 160); font-size: 13px; margin-top: -12px; margin-bottom: 12px;\">Entry: <span style=\"color: rgb(224, 224, 224); font-weight: 600;\">$100.75</span><span style=\"color: rgb(110, 118, 129); margin-left: 8px;\">(your fill · targets move 2.00% per tier step)</span></div><div style=\"margin-bottom: 20px;\"><div style=\"font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;\">THRESHOLDS</div><div style=\"background: rgba(0, 255, 136, 0.05); border-radius: 10px; padding: 12px; margin-bottom: 8px;\"><div data-tier=\"bagger\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣 BaggerBomb</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+2.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$102.76</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(0, 255, 136); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">+15 pts</span></div></div><div data-tier=\"doubleBagger\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣💣 Double Bagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+3.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$103.77</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(0, 255, 136); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">+30 pts</span></div></div><div data-tier=\"tenBagger\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">🚀💣 TenBagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+4.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$104.78</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(0, 255, 136); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">+50 pts</span></div></div></div><div style=\"background: rgba(255, 51, 102, 0.05); border-radius: 10px; padding: 12px;\"><div data-tier=\"bust\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">📉 Bust</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-2.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$98.74</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(255, 51, 102); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">-10 pts</span></div></div><div data-tier=\"crash\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">💥 Crash</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-3.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$97.73</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(255, 51, 102); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">-20 pts</span></div></div><div data-tier=\"meltdown\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">🔥 Meltdown</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-4.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$96.72</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(255, 51, 102); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">-35 pts</span></div></div></div></div><div style=\"font-size: 12px; color: rgba(255, 255, 255, 0.7); margin-bottom: 12px;\">Now $101.00 · 0.12x · tier points 0</div><details style=\"font-size: 11px; color: rgba(255, 255, 255, 0.6);\"><summary>Details</summary><div>Frozen measured %: 2.000000% (exact)</div><ul style=\"margin: 4px 0px; padding-left: 16px;\"><li>BaggerBomb: exact $102.765</li><li>Double Bagger: exact $103.77250000000001</li><li>TenBagger: exact $104.78</li><li>Bust: exact $98.735</li><li>Crash: exact $97.72749999999999</li><li>Meltdown: exact $96.72</li></ul><div>Quote $101 as of 2026-10-14T14:02:00.000Z</div><div>Position position-agent</div><div>Receipt <hash></div><div>Input stockThresholdInputs/<uuid></div><div>Model stock_measured_atr14_fullday_v2</div><div>Cents are rounded half-even for display only; awards use the exact targets.</div></details></section></div></div></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "30m",
+    {
+     "days": 20
+    }
+   ],
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 5
+    }
+   ],
+   [
+    "profile",
+    "AAPL"
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 104.78
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 103.77250000000001
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 102.765
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100.75
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 98.735
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 97.72749999999999
+    }
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    4,
+    {
+     "time": 1791988200,
+     "open": 100.9,
+     "high": 101.2,
+     "low": 100.85,
+     "close": 101.2,
+     "volume": 100
+    }
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    104.78,
+    "🔥 +50 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    103.77250000000001,
+    "💣💣 +30 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    102.765,
+    "💣 +15 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    100.75,
+    "— Entry —"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    98.735,
+    "📉 Bust -10 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    97.72749999999999,
+    "⚠️ Crash -20 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    96.72,
+    "☠️ Meltdown -35 pts"
+   ]
+  ]
+ },
+ "held_measured_ws": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\"></span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$101.20</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 2.22%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(245, 158, 11, 0.1);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.2); color: rgb(245, 158, 11); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">💣</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 12px; font-size: 11px; font-family: monospace; pointer-events: none;\"><span><span style=\"color: rgba(255, 255, 255, 0.4);\">O</span> <span style=\"color: rgb(230, 237, 243);\">100.00</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">H</span> <span style=\"color: rgb(230, 237, 243);\">103.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">L</span> <span style=\"color: rgb(230, 237, 243);\">99.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">C</span> <span style=\"color: rgb(0, 255, 136);\">101.20</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">Vol</span> <span style=\"color: rgb(230, 237, 243);\">300</span></span></div><div style=\"position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.75); border: 1px solid rgb(0, 255, 136); color: rgb(0, 255, 136); font-size: 11px; font-weight: 700; font-family: monospace; display: flex; align-items: center; gap: 4px; z-index: 10; cursor: pointer; animation: none;\"><span>↑</span><span>1.55%</span><span style=\"opacity: 0.7;\">to +15</span><span style=\"font-size: 9px; color: rgb(110, 118, 129); margin-left: 2px;\">TAP</span></div></div><style>\n          @keyframes bombPulse {\n            0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }\n            50% { opacity: 0.7; box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }\n          }\n        </style></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 255, 136); background: rgba(0, 255, 136, 0.125); color: rgb(0, 255, 136); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">💣 Bomb</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><section aria-label=\"Measured stock reward targets\"><div style=\"display: flex; align-items: center; gap: 10px; margin-bottom: 20px;\"><span style=\"font-size: 24px;\">💣</span><div><h3 style=\"margin: 0px; font-size: 16px; font-weight: 700; color: rgb(0, 255, 136);\">BAGGERBOMB STATS</h3><p style=\"margin: 2px 0px 0px; font-size: 11px; color: rgba(255, 255, 255, 0.5);\">Measured scoring for AAPL</p></div></div><div style=\"color: rgb(160, 160, 160); font-size: 13px; margin-top: -12px; margin-bottom: 12px;\">Entry: <span style=\"color: rgb(224, 224, 224); font-weight: 600;\">$100.75</span><span style=\"color: rgb(110, 118, 129); margin-left: 8px;\">(your fill · targets move 2.00% per tier step)</span></div><div style=\"margin-bottom: 20px;\"><div style=\"font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;\">THRESHOLDS</div><div style=\"background: rgba(0, 255, 136, 0.05); border-radius: 10px; padding: 12px; margin-bottom: 8px;\"><div data-tier=\"bagger\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣 BaggerBomb</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+2.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$102.76</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(0, 255, 136); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">+15 pts</span></div></div><div data-tier=\"doubleBagger\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣💣 Double Bagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+3.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$103.77</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(0, 255, 136); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">+30 pts</span></div></div><div data-tier=\"tenBagger\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">🚀💣 TenBagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+4.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$104.78</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(0, 255, 136); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">+50 pts</span></div></div></div><div style=\"background: rgba(255, 51, 102, 0.05); border-radius: 10px; padding: 12px;\"><div data-tier=\"bust\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">📉 Bust</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-2.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$98.74</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(255, 51, 102); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">-10 pts</span></div></div><div data-tier=\"crash\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">💥 Crash</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-3.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$97.73</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(255, 51, 102); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">-20 pts</span></div></div><div data-tier=\"meltdown\" data-tier-status=\"unearned\" style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">🔥 Meltdown</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-4.00%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$96.72</span><span style=\"font-size: 11px; min-width: 72px; text-align: right; font-weight: 400; color: rgba(255, 255, 255, 0.45);\">unearned</span><span style=\"color: rgb(255, 51, 102); font-family: monospace; font-size: 12px; font-weight: 700; min-width: 48px; text-align: right;\">-35 pts</span></div></div></div></div><div style=\"font-size: 12px; color: rgba(255, 255, 255, 0.7); margin-bottom: 12px;\">Now $101.00 · 0.12x · tier points 0</div><details style=\"font-size: 11px; color: rgba(255, 255, 255, 0.6);\"><summary>Details</summary><div>Frozen measured %: 2.000000% (exact)</div><ul style=\"margin: 4px 0px; padding-left: 16px;\"><li>BaggerBomb: exact $102.765</li><li>Double Bagger: exact $103.77250000000001</li><li>TenBagger: exact $104.78</li><li>Bust: exact $98.735</li><li>Crash: exact $97.72749999999999</li><li>Meltdown: exact $96.72</li></ul><div>Quote $101 as of 2026-10-14T14:02:00.000Z</div><div>Position position-agent</div><div>Receipt <hash></div><div>Input stockThresholdInputs/<uuid></div><div>Model stock_measured_atr14_fullday_v2</div><div>Cents are rounded half-even for display only; awards use the exact targets.</div></details></section></div></div></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "30m",
+    {
+     "days": 20
+    }
+   ],
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 5
+    }
+   ],
+   [
+    "quote",
+    "AAPL"
+   ],
+   [
+    "profile",
+    "AAPL"
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 104.78
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 103.77250000000001
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 102.765
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100.75
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 98.735
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 97.72749999999999
+    }
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    4,
+    {
+     "time": 1791988200,
+     "open": 100.9,
+     "high": 101.2,
+     "low": 100.85,
+     "close": 101.2,
+     "volume": 100
+    }
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    104.78,
+    "🔥 +50 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    103.77250000000001,
+    "💣💣 +30 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    102.765,
+    "💣 +15 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    100.75,
+    "— Entry —"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    98.735,
+    "📉 Bust -10 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    97.72749999999999,
+    "⚠️ Crash -20 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    96.72,
+    "☠️ Meltdown -35 pts"
+   ]
+  ]
+ },
+ "bench_legacy_bomb": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\">Apple</span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$101.20</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 2.22%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(245, 158, 11, 0.1);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.2); color: rgb(245, 158, 11); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">💣</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 12px; font-size: 11px; font-family: monospace; pointer-events: none;\"><span><span style=\"color: rgba(255, 255, 255, 0.4);\">O</span> <span style=\"color: rgb(230, 237, 243);\">100.00</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">H</span> <span style=\"color: rgb(230, 237, 243);\">103.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">L</span> <span style=\"color: rgb(230, 237, 243);\">99.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">C</span> <span style=\"color: rgb(0, 255, 136);\">101.20</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">Vol</span> <span style=\"color: rgb(230, 237, 243);\">300</span></span></div><div style=\"position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.75); border: 1px solid rgb(255, 215, 0); color: rgb(255, 215, 0); font-size: 11px; font-weight: 700; font-family: monospace; display: flex; align-items: center; gap: 4px; z-index: 10; cursor: pointer; animation: none;\"><span>↑</span><span>2.72%</span><span style=\"opacity: 0.7;\">to +50</span><span style=\"font-size: 9px; color: rgb(110, 118, 129); margin-left: 2px;\">TAP</span></div></div><style>\n          @keyframes bombPulse {\n            0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }\n            50% { opacity: 0.7; box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }\n          }\n        </style></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 255, 136); background: rgba(0, 255, 136, 0.125); color: rgb(0, 255, 136); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">💣 Bomb</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><div><div style=\"display: flex; align-items: center; gap: 10px; margin-bottom: 20px;\"><span style=\"font-size: 24px;\">💣</span><div><h3 style=\"margin: 0px; font-size: 16px; font-weight: 700; color: rgb(0, 255, 136);\">BAGGERBOMB STATS</h3><p style=\"margin: 2px 0px 0px; font-size: 11px; color: rgba(255, 255, 255, 0.5);\">Volatility scoring for AAPL</p></div></div><div style=\"color: rgb(160, 160, 160); font-size: 13px; margin-top: -12px; margin-bottom: 12px;\">Entry Price: <span style=\"color: rgb(224, 224, 224); font-weight: 600;\">$101.20</span><span style=\"color: rgb(110, 118, 129); margin-left: 8px;\">(scoring baseline)</span></div><div style=\"margin-bottom: 20px;\"><div style=\"font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;\">THRESHOLDS</div><div style=\"background: rgba(0, 255, 136, 0.05); border-radius: 10px; padding: 12px; margin-bottom: 8px;\"><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣 BaggerBomb</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+2.5%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$103.73</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+15 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣💣 Double Bagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+3.8%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$105.00</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+30 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">🚀💣 TenBagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+5.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$106.26</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+50 pts</span></div></div></div><div style=\"background: rgba(255, 51, 102, 0.05); border-radius: 10px; padding: 12px;\"><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">📉 Bust</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-2.5%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$98.67</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-10 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">💥 Crash</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-3.8%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$97.41</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-20 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">🔥 Meltdown</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-5.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$96.14</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-35 pts</span></div></div></div></div><div style=\"margin-bottom: 20px;\"><div style=\"font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;\">THIS BATTLE</div><div style=\"display: grid; grid-template-columns: 1fr 1fr; gap: 10px;\"><div style=\"background: rgba(255, 255, 255, 0.03); border-radius: 10px; padding: 14px; text-align: center; border: medium;\"><div style=\"font-size: 24px; margin-bottom: 6px;\">💣</div><div style=\"font-size: 18px; font-weight: 700; color: rgba(255, 255, 255, 0.3);\">0x</div><div style=\"font-size: 10px; color: rgba(255, 255, 255, 0.5); margin-top: 4px;\">No hits yet</div></div><div style=\"background: rgba(255, 255, 255, 0.03); border-radius: 10px; padding: 14px; text-align: center; border: medium;\"><div style=\"font-size: 24px; margin-bottom: 6px;\">📉</div><div style=\"font-size: 18px; font-weight: 700; color: rgba(255, 255, 255, 0.3);\">0x</div><div style=\"font-size: 10px; color: rgba(255, 255, 255, 0.5); margin-top: 4px;\">No busts</div></div></div></div><div><div style=\"margin-top: 12px; padding: 10px; background: rgba(245, 158, 11, 0.08); border-left: 3px solid rgb(245, 158, 11); border-radius: 0 8px 8px 0; font-size: 11px; color: rgba(255, 255, 255, 0.7);\"><strong style=\"color: rgb(245, 158, 11);\">Note:</strong> Threshold tiers are 1.0x, 1.5x, and 2.0x of the base threshold (2.5%).<span> Baseline: $101.20.</span></div></div></div></div></div></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "30m",
+    {
+     "days": 20
+    }
+   ],
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 5
+    }
+   ],
+   [
+    "quote",
+    "AAPL"
+   ],
+   [
+    "profile",
+    "AAPL"
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 103.95
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 102.7125
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 101.475
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 99
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 96.52499999999999
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 95.28750000000001
+    }
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    4,
+    {
+     "time": 1791988200,
+     "open": 100.9,
+     "high": 101.2,
+     "low": 100.85,
+     "close": 101.2,
+     "volume": 100
+    }
+   ],
+   [
+    "setMarkers",
+    "Candlestick",
+    2
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    103.95,
+    "🔥 +50 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    102.7125,
+    "✅ 💣💣 +30 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    101.475,
+    "✅ 💣 +15 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    99,
+    "— Baseline —"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    96.52499999999999,
+    "📉 Bust -10 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    95.28750000000001,
+    "⚠️ Crash -20 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    94.05,
+    "☠️ Meltdown -35 pts"
+   ]
+  ]
+ },
+ "bench_legacy_spectate": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\">Apple</span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$101.20</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 2.22%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(245, 158, 11, 0.1);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">💣</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><button style=\"position: absolute; top: 8px; left: 8px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; padding: 4px 12px; color: rgb(224, 224, 224); font-size: 13px; cursor: pointer; z-index: 10;\">← Bomb Chart</button><div style=\"position: absolute; top: 8px; right: 8px; padding: 6px 14px; border-radius: 10px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); color: rgb(224, 224, 224); font-size: 13px; font-weight: 700; font-family: monospace; z-index: 10; animation: none; text-align: center;\"><div>↑ 0.76% to DoubleBagger (+30 pts)</div><div style=\"font-size: 10px; color: rgb(160, 160, 160); margin-top: 2px;\">$0.77 from $101.97 • SPECTATING</div></div></div><style>\n          @keyframes bombPulse {\n            0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }\n            50% { opacity: 0.7; box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }\n          }\n        </style></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 255, 136); background: rgba(0, 255, 136, 0.125); color: rgb(0, 255, 136); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">💣 Bomb</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><div><div style=\"display: flex; align-items: center; gap: 10px; margin-bottom: 20px;\"><span style=\"font-size: 24px;\">💣</span><div><h3 style=\"margin: 0px; font-size: 16px; font-weight: 700; color: rgb(0, 255, 136);\">BAGGERBOMB STATS</h3><p style=\"margin: 2px 0px 0px; font-size: 11px; color: rgba(255, 255, 255, 0.5);\">Volatility scoring for AAPL</p></div></div><div style=\"color: rgb(160, 160, 160); font-size: 13px; margin-top: -12px; margin-bottom: 12px;\">Entry Price: <span style=\"color: rgb(224, 224, 224); font-weight: 600;\">$100.75</span><span style=\"color: rgb(110, 118, 129); margin-left: 8px;\">(scoring baseline)</span></div><div style=\"margin-bottom: 20px;\"><div style=\"font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;\">THRESHOLDS</div><div style=\"background: rgba(0, 255, 136, 0.05); border-radius: 10px; padding: 12px; margin-bottom: 8px;\"><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣 BaggerBomb</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+2.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$102.77</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+15 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣💣 Double Bagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+3.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$103.77</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+30 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">🚀💣 TenBagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+4.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$104.78</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+50 pts</span></div></div></div><div style=\"background: rgba(255, 51, 102, 0.05); border-radius: 10px; padding: 12px;\"><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">📉 Bust</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-2.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$98.74</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-10 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">💥 Crash</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-3.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$97.73</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-20 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">🔥 Meltdown</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-4.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$96.72</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-35 pts</span></div></div></div></div><div style=\"margin-bottom: 20px;\"><div style=\"font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;\">THIS BATTLE</div><div style=\"display: grid; grid-template-columns: 1fr 1fr; gap: 10px;\"><div style=\"background: rgba(255, 255, 255, 0.03); border-radius: 10px; padding: 14px; text-align: center; border: medium;\"><div style=\"font-size: 24px; margin-bottom: 6px;\">💣</div><div style=\"font-size: 18px; font-weight: 700; color: rgba(255, 255, 255, 0.3);\">0x</div><div style=\"font-size: 10px; color: rgba(255, 255, 255, 0.5); margin-top: 4px;\">No hits yet</div></div><div style=\"background: rgba(255, 255, 255, 0.03); border-radius: 10px; padding: 14px; text-align: center; border: medium;\"><div style=\"font-size: 24px; margin-bottom: 6px;\">📉</div><div style=\"font-size: 18px; font-weight: 700; color: rgba(255, 255, 255, 0.3);\">0x</div><div style=\"font-size: 10px; color: rgba(255, 255, 255, 0.5); margin-top: 4px;\">No busts</div></div></div></div><div><div style=\"margin-top: 12px; padding: 10px; background: rgba(245, 158, 11, 0.08); border-left: 3px solid rgb(245, 158, 11); border-radius: 0 8px 8px 0; font-size: 11px; color: rgba(255, 255, 255, 0.7);\"><strong style=\"color: rgb(245, 158, 11);\">Note:</strong> Threshold tiers are 1.0x, 1.5x, and 2.0x of the base threshold (2.0%).<span> Baseline: $100.75.</span></div></div></div></div></div></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "30m",
+    {
+     "days": 20
+    }
+   ],
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 5
+    }
+   ],
+   [
+    "quote",
+    "AAPL"
+   ],
+   [
+    "profile",
+    "AAPL"
+   ],
+   [
+    "history",
+    "AAPL",
+    "1m",
+    {
+     "days": 1
+    }
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 102.96000000000001
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 101.97
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100.98
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 99
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 97.02
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 96.03
+    }
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    4,
+    {
+     "time": 1791988200,
+     "open": 100.9,
+     "high": 101.2,
+     "low": 100.85,
+     "close": 101.2,
+     "volume": 100
+    }
+   ],
+   [
+    "setMarkers",
+    "Candlestick",
+    4
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    102.96000000000001,
+    "✅ 🔥 +50 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    101.97,
+    "✅ 💣💣 +30 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    100.98,
+    "✅ 💣 +15 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    99,
+    "— Baseline —"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    97.02,
+    "📉 Bust -10 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    96.03,
+    "⚠️ Crash -20 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    95.03999999999999,
+    "☠️ Meltdown -35 pts"
+   ],
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 102.96000000000001
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 101.97
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100.98
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 99
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 97.02
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 96.03
+    }
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    4,
+    {
+     "time": 1791988200,
+     "open": 100.9,
+     "high": 101.2,
+     "low": 100.85,
+     "close": 101.2,
+     "volume": 100
+    }
+   ],
+   [
+    "setMarkers",
+    "Candlestick",
+    4
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    102.96000000000001,
+    "✅ 🔥 +50 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    101.97,
+    "✅ 💣💣 +30 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    100.98,
+    "✅ 💣 +15 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    99,
+    "— Baseline —"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    97.02,
+    "📉 Bust -10 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    96.03,
+    "⚠️ Crash -20 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    95.03999999999999,
+    "☠️ Meltdown -35 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    99,
+    "Start"
+   ],
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1791989940,
+     "value": 102.96000000000001
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1791989940,
+     "value": 101.97
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1791989940,
+     "value": 100.98
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1791989940,
+     "value": 99
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1791989940,
+     "value": 97.02
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1791989940,
+     "value": 96.03
+    }
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    3,
+    {
+     "time": 1791989940,
+     "open": 101.1,
+     "high": 101.2,
+     "low": 101,
+     "close": 101.2,
+     "volume": 100
+    }
+   ],
+   [
+    "setMarkers",
+    "Candlestick",
+    1
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    3,
+    {
+     "time": 1791989940,
+     "value": 100,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    102.96000000000001,
+    "🔥 +50 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    101.97,
+    "💣💣 +30 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    100.98,
+    "✅ 💣 +15 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    99,
+    "— Baseline —"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    97.02,
+    "📉 Bust -10 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    96.03,
+    "⚠️ Crash -20 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    95.03999999999999,
+    "☠️ Meltdown -35 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    99,
+    "Start"
+   ]
+  ]
+ },
+ "free_agent_bar": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\">Apple</span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$101.20</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 2.22%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(245, 158, 11, 0.1);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.2); color: rgb(245, 158, 11); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">💣</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 12px; font-size: 11px; font-family: monospace; pointer-events: none;\"><span><span style=\"color: rgba(255, 255, 255, 0.4);\">O</span> <span style=\"color: rgb(230, 237, 243);\">100.00</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">H</span> <span style=\"color: rgb(230, 237, 243);\">103.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">L</span> <span style=\"color: rgb(230, 237, 243);\">99.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">C</span> <span style=\"color: rgb(0, 255, 136);\">101.20</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">Vol</span> <span style=\"color: rgb(230, 237, 243);\">300</span></span></div><div style=\"position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.75); border: 1px solid rgb(255, 215, 0); color: rgb(255, 215, 0); font-size: 11px; font-weight: 700; font-family: monospace; display: flex; align-items: center; gap: 4px; z-index: 10; cursor: pointer; animation: none;\"><span>↑</span><span>2.72%</span><span style=\"opacity: 0.7;\">to +50</span><span style=\"font-size: 9px; color: rgb(110, 118, 129); margin-left: 2px;\">TAP</span></div></div><style>\n          @keyframes bombPulse {\n            0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }\n            50% { opacity: 0.7; box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }\n          }\n        </style></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 255, 136); background: rgba(0, 255, 136, 0.125); color: rgb(0, 255, 136); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">💣 Bomb</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><div><div style=\"display: flex; align-items: center; gap: 10px; margin-bottom: 20px;\"><span style=\"font-size: 24px;\">💣</span><div><h3 style=\"margin: 0px; font-size: 16px; font-weight: 700; color: rgb(0, 255, 136);\">BAGGERBOMB STATS</h3><p style=\"margin: 2px 0px 0px; font-size: 11px; color: rgba(255, 255, 255, 0.5);\">Volatility scoring for AAPL</p></div></div><div style=\"color: rgb(160, 160, 160); font-size: 13px; margin-top: -12px; margin-bottom: 12px;\">Entry Price: <span style=\"color: rgb(224, 224, 224); font-weight: 600;\">$101.20</span><span style=\"color: rgb(110, 118, 129); margin-left: 8px;\">(scoring baseline)</span></div><div style=\"margin-bottom: 20px;\"><div style=\"font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;\">THRESHOLDS</div><div style=\"background: rgba(0, 255, 136, 0.05); border-radius: 10px; padding: 12px; margin-bottom: 8px;\"><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣 BaggerBomb</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+2.5%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$103.73</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+15 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣💣 Double Bagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+3.8%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$105.00</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+30 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">🚀💣 TenBagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+5.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$106.26</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+50 pts</span></div></div></div><div style=\"background: rgba(255, 51, 102, 0.05); border-radius: 10px; padding: 12px;\"><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">📉 Bust</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-2.5%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$98.67</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-10 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">💥 Crash</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-3.8%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$97.41</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-20 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">🔥 Meltdown</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-5.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$96.14</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-35 pts</span></div></div></div></div><div style=\"margin-bottom: 20px;\"><div style=\"font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;\">THIS BATTLE</div><div style=\"display: grid; grid-template-columns: 1fr 1fr; gap: 10px;\"><div style=\"background: rgba(255, 255, 255, 0.03); border-radius: 10px; padding: 14px; text-align: center; border: medium;\"><div style=\"font-size: 24px; margin-bottom: 6px;\">💣</div><div style=\"font-size: 18px; font-weight: 700; color: rgba(255, 255, 255, 0.3);\">0x</div><div style=\"font-size: 10px; color: rgba(255, 255, 255, 0.5); margin-top: 4px;\">No hits yet</div></div><div style=\"background: rgba(255, 255, 255, 0.03); border-radius: 10px; padding: 14px; text-align: center; border: medium;\"><div style=\"font-size: 24px; margin-bottom: 6px;\">📉</div><div style=\"font-size: 18px; font-weight: 700; color: rgba(255, 255, 255, 0.3);\">0x</div><div style=\"font-size: 10px; color: rgba(255, 255, 255, 0.5); margin-top: 4px;\">No busts</div></div></div></div><div><div style=\"margin-top: 12px; padding: 10px; background: rgba(245, 158, 11, 0.08); border-left: 3px solid rgb(245, 158, 11); border-radius: 0 8px 8px 0; font-size: 11px; color: rgba(255, 255, 255, 0.7);\"><strong style=\"color: rgb(245, 158, 11);\">Note:</strong> Threshold tiers are 1.0x, 1.5x, and 2.0x of the base threshold (2.5%).<span> Baseline: $101.20.</span></div></div></div></div></div></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "30m",
+    {
+     "days": 20
+    }
+   ],
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 5
+    }
+   ],
+   [
+    "quote",
+    "AAPL"
+   ],
+   [
+    "profile",
+    "AAPL"
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 103.95
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 102.7125
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 101.475
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 99
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 96.52499999999999
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 95.28750000000001
+    }
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    4,
+    {
+     "time": 1791988200,
+     "open": 100.9,
+     "high": 101.2,
+     "low": 100.85,
+     "close": 101.2,
+     "volume": 100
+    }
+   ],
+   [
+    "setMarkers",
+    "Candlestick",
+    2
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    103.95,
+    "🔥 +50 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    102.7125,
+    "✅ 💣💣 +30 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    101.475,
+    "✅ 💣 +15 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    99,
+    "— Baseline —"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    96.52499999999999,
+    "📉 Bust -10 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    95.28750000000001,
+    "⚠️ Crash -20 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    94.05,
+    "☠️ Meltdown -35 pts"
+   ]
+  ]
+ },
+ "acquire_mount": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\">Apple</span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$101.20</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 2.22%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 255, 255, 0.05);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(0, 217, 255, 0.5); background: rgba(0, 217, 255, 0.2); color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button></div><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">SMA</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">S/R</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 12px; font-size: 11px; font-family: monospace; pointer-events: none;\"><span><span style=\"color: rgba(255, 255, 255, 0.4);\">O</span> <span style=\"color: rgb(230, 237, 243);\">100.00</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">H</span> <span style=\"color: rgb(230, 237, 243);\">103.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">L</span> <span style=\"color: rgb(230, 237, 243);\">99.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">C</span> <span style=\"color: rgb(0, 255, 136);\">101.20</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">Vol</span> <span style=\"color: rgb(230, 237, 243);\">1</span></span></div></div></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 217, 255); background: rgba(0, 217, 255, 0.125); color: rgb(0, 217, 255); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">💣 Bomb</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><div style=\"padding: 8px 0px;\"></div></div></div></div><div style=\"padding: 16px 20px; border-top: 1px solid rgba(255, 255, 255, 0.1); background: rgba(0, 0, 0, 0.3); flex-shrink: 0;\"><button style=\"width: 100%; padding: 14px; background: transparent; border: 1px solid rgb(55, 65, 81); border-radius: 10px; color: rgb(139, 148, 158); font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s ease;\">Close</button></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 400
+    }
+   ],
+   [
+    "quote",
+    "AAPL"
+   ],
+   [
+    "profile",
+    "AAPL"
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    3,
+    {
+     "time": 1791936000,
+     "open": 100,
+     "high": 103.5,
+     "low": 99.5,
+     "close": 101.2,
+     "volume": 1
+    }
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    3,
+    {
+     "time": 1791936000,
+     "value": 1,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ]
+  ]
+ },
+ "browse_mount": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\">Apple</span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$101.20</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 2.22%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 255, 255, 0.05);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(0, 217, 255, 0.5); background: rgba(0, 217, 255, 0.2); color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button></div><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">SMA</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">S/R</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 12px; font-size: 11px; font-family: monospace; pointer-events: none;\"><span><span style=\"color: rgba(255, 255, 255, 0.4);\">O</span> <span style=\"color: rgb(230, 237, 243);\">100.00</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">H</span> <span style=\"color: rgb(230, 237, 243);\">103.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">L</span> <span style=\"color: rgb(230, 237, 243);\">99.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">C</span> <span style=\"color: rgb(0, 255, 136);\">101.20</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">Vol</span> <span style=\"color: rgb(230, 237, 243);\">1</span></span></div></div></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 217, 255); background: rgba(0, 217, 255, 0.125); color: rgb(0, 217, 255); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><div style=\"padding: 8px 0px;\"></div></div></div></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 400
+    }
+   ],
+   [
+    "quote",
+    "AAPL"
+   ],
+   [
+    "profile",
+    "AAPL"
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    3,
+    {
+     "time": 1791936000,
+     "open": 100,
+     "high": 103.5,
+     "low": 99.5,
+     "close": 101.2,
+     "volume": 1
+    }
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    3,
+    {
+     "time": 1791936000,
+     "value": 1,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ]
+  ]
+ },
+ "weekend_bench_bomb": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\">Apple</span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$153.40</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 0.00%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(245, 158, 11, 0.1);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.2); color: rgb(245, 158, 11); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">💣</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 12px; font-size: 11px; font-family: monospace; pointer-events: none;\"><span><span style=\"color: rgba(255, 255, 255, 0.4);\">O</span> <span style=\"color: rgb(230, 237, 243);\">152.62</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">H</span> <span style=\"color: rgb(230, 237, 243);\">153.40</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">L</span> <span style=\"color: rgb(230, 237, 243);\">152.62</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">C</span> <span style=\"color: rgb(0, 255, 136);\">153.40</span></span></div><div style=\"position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.75); border: 1px solid rgb(0, 255, 136); color: rgb(0, 255, 136); font-size: 11px; font-weight: 700; font-family: monospace; display: flex; align-items: center; gap: 4px; z-index: 10; cursor: pointer; animation: none;\"><span>↑</span><span>2.00%</span><span style=\"opacity: 0.7;\">to +15</span><span style=\"font-size: 9px; color: rgb(110, 118, 129); margin-left: 2px;\">TAP</span></div></div><style>\n          @keyframes bombPulse {\n            0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }\n            50% { opacity: 0.7; box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }\n          }\n        </style></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 255, 136); background: rgba(0, 255, 136, 0.125); color: rgb(0, 255, 136); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">💣 Bomb</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><div><div style=\"display: flex; align-items: center; gap: 10px; margin-bottom: 20px;\"><span style=\"font-size: 24px;\">💣</span><div><h3 style=\"margin: 0px; font-size: 16px; font-weight: 700; color: rgb(0, 255, 136);\">BAGGERBOMB STATS</h3><p style=\"margin: 2px 0px 0px; font-size: 11px; color: rgba(255, 255, 255, 0.5);\">Volatility scoring for AAPL</p></div></div><div style=\"color: rgb(160, 160, 160); font-size: 13px; margin-top: -12px; margin-bottom: 12px;\">Entry Price: <span style=\"color: rgb(224, 224, 224); font-weight: 600;\">$153.40</span><span style=\"color: rgb(110, 118, 129); margin-left: 8px;\">(scoring baseline)</span></div><div style=\"margin-bottom: 20px;\"><div style=\"font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;\">THRESHOLDS</div><div style=\"background: rgba(0, 255, 136, 0.05); border-radius: 10px; padding: 12px; margin-bottom: 8px;\"><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣 BaggerBomb</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+2.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$156.47</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+15 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">💣💣 Double Bagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+3.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$158.00</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+30 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(0, 255, 136); font-size: 13px;\">🚀💣 TenBagger</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">+4.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$159.54</span><span style=\"color: rgb(0, 255, 136); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">+50 pts</span></div></div></div><div style=\"background: rgba(255, 51, 102, 0.05); border-radius: 10px; padding: 12px;\"><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">📉 Bust</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-2.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$150.33</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-10 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">💥 Crash</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-3.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$148.80</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-20 pts</span></div></div><div style=\"display: flex; justify-content: space-between; align-items: center; padding: 8px 0px; border-bottom: medium;\"><span style=\"color: rgb(255, 51, 102); font-size: 13px;\">🔥 Meltdown</span><div style=\"display: flex; gap: 8px; align-items: center;\"><span style=\"color: rgba(255, 255, 255, 0.6); font-family: monospace; font-size: 12px;\">-4.0%</span><span style=\"color: rgba(255, 255, 255, 0.3); font-size: 10px;\">→</span><span style=\"color: rgba(255, 255, 255, 0.8); font-family: monospace; font-size: 11px; min-width: 60px; text-align: right;\">$147.26</span><span style=\"color: rgb(255, 51, 102); font-weight: 700; font-family: monospace; font-size: 12px; min-width: 48px; text-align: right;\">-35 pts</span></div></div></div></div><div style=\"margin-bottom: 20px;\"><div style=\"font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;\">THIS BATTLE</div><div style=\"display: grid; grid-template-columns: 1fr 1fr; gap: 10px;\"><div style=\"background: rgba(255, 255, 255, 0.03); border-radius: 10px; padding: 14px; text-align: center; border: medium;\"><div style=\"font-size: 24px; margin-bottom: 6px;\">💣</div><div style=\"font-size: 18px; font-weight: 700; color: rgba(255, 255, 255, 0.3);\">0x</div><div style=\"font-size: 10px; color: rgba(255, 255, 255, 0.5); margin-top: 4px;\">No hits yet</div></div><div style=\"background: rgba(255, 255, 255, 0.03); border-radius: 10px; padding: 14px; text-align: center; border: medium;\"><div style=\"font-size: 24px; margin-bottom: 6px;\">📉</div><div style=\"font-size: 18px; font-weight: 700; color: rgba(255, 255, 255, 0.3);\">0x</div><div style=\"font-size: 10px; color: rgba(255, 255, 255, 0.5); margin-top: 4px;\">No busts</div></div></div></div><div><div style=\"margin-top: 12px; padding: 10px; background: rgba(245, 158, 11, 0.08); border-left: 3px solid rgb(245, 158, 11); border-radius: 0 8px 8px 0; font-size: 11px; color: rgba(255, 255, 255, 0.7);\"><strong style=\"color: rgb(245, 158, 11);\">Note:</strong> Threshold tiers are 1.0x, 1.5x, and 2.0x of the base threshold (2.0%).<span> Baseline: $153.40.</span></div></div></div></div></div></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "30m",
+    {
+     "days": 20
+    }
+   ],
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 5
+    }
+   ],
+   [
+    "quote",
+    "AAPL"
+   ],
+   [
+    "profile",
+    "AAPL"
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1792249200,
+     "value": 159.536
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1792249200,
+     "value": 158.002
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1792249200,
+     "value": 156.46800000000002
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1792249200,
+     "value": 153.4
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1792249200,
+     "value": 150.332
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    3,
+    {
+     "time": 1792249200,
+     "value": 148.798
+    }
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    3,
+    {
+     "time": 1792249200,
+     "open": 152.62,
+     "high": 153.4,
+     "low": 152.62,
+     "close": 153.4,
+     "volume": 0
+    }
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    3,
+    {
+     "time": 1792249200,
+     "value": 0,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    159.536,
+    "🔥 +50 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    158.002,
+    "💣💣 +30 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    156.46800000000002,
+    "💣 +15 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    153.4,
+    "— Baseline —"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    150.332,
+    "📉 Bust -10 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    148.798,
+    "⚠️ Crash -20 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    147.264,
+    "☠️ Meltdown -35 pts"
+   ]
+  ]
+ }
+}

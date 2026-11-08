@@ -56,6 +56,12 @@ const ALLOWED_OUTSIDE = new Set([
   'api/_utils/setupMenuLabels/tenant.test.js', // the tenant's rows, the store mocked; its static caller row (A1.1)
   'api/cron/agent-evaluate.setupMenuLabels.test.js', // the tick end to end: an in-memory setupEvidence collection
   'test/rules/setupMenuLabelsTenant.rules.mjs', // the tenant against the emulator, with the real store underneath
+  // The Research Record Extension (7 Nov 2026; docs/design/20261107_RESEARCH_RECORD_EXTENSION_V1.md): the collection's
+  // NAME as one value of a closed vocabulary — a finding's source record kind — never an import, a read or a write.
+  // The list lives in a DATA-ONLY module so that this listing covers no code (review B1); extension.test.js pins that
+  // the module holds the one frozen list and nothing else.
+  'api/_utils/researchRecords/findingRecordKinds.js', // FINDING_RECORD_KINDS (a finding's source.recordKind / an evidenceItem ref's recordKind)
+  'api/_utils/researchRecords/extension.test.js', // pins that closed list by value against the schema version, and the module's data-only shape
 ]);
 const isListed = (file) => ALLOWED_OUTSIDE.has(file);
 
