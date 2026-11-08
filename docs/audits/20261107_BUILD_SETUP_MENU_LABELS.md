@@ -11,7 +11,7 @@ Claude Code (Claude Opus 5.5), 7 November 2026, for Flash. §0–§1 were commit
 | `git fetch origin` | Run first. |
 | Build base | `origin/main` = `d503dd07df76ddfb1931935111d158c944f720ae` — **the revision the review inspected. No drift.** |
 | Merged base | `origin/main` moved during the build to `d09603b259fec1b2b41abd580fd80c99e2649f89` (PR #1029, Armory A2); merged in by the app's sync at `7671f271` (two additive conflicts, both sides kept: the flag-module list in `flagPinGuard.test.js` and the protected-store allowlist). A2 touched none of `agent-evaluate.js`, the capture modules or the reflections handler. Re-fetched before the push: unchanged. |
-| Final heads | code `339b1a13` (the final suite, rules and lint ran here; build, parity and golden at `0c6bda55`, which differs from it by one test row only); the docs commit on top of it holds this report, and `vite build` was re-run on that exact docs head before the push. |
+| Final heads | **[superseded: the correction round's heads are §B.9]** code `339b1a13` (the final suite, rules and lint ran here; build, parity and golden at `0c6bda55`, which differs from it by one test row only); the docs commit on top of it holds this report, and `vite build` was re-run on that exact docs head before the push. |
 | Branch | `claude/setup-menu-labels-slice2`, cut from `origin/main` in a fresh app worktree; no upstream set (push by refspec). |
 | Decisions | D-1 to D-5 and D-7 accepted as amended below. **D-6 unresolved: gates production activation only.** |
 | Delivery | Draft PR, then STOP. No merge, deploy, flag flip, production read, provider request, model job, census run or CI watching. |
@@ -51,8 +51,8 @@ Each clause of the instruction, the code that implements it and the acceptance r
 | Rejection handlers from creation | every read promise gets `.then(ok, fail)` in the expression that creates it | A-6 rejected state read and rejected snapshot reads: no unhandled rejection, `read_failed` |
 | Seal on capture, error exit or deadline; stop admitting queued reads; clear timers | `sealSetupMenuReads` (idempotent) in the `finally` on every exit; a per-observation deadline timer (`unref`, cleared on seal) | A-7 error exit seals; A-8 queue closed: queued reads never start; A-9 timer cleared |
 | Late callbacks never mutate a recorded object or start reads for a closed observation | the pump skips closed observations | A-8, A-5 |
-| Issued read-only RPCs not awaited; no claim that a timer cancels an RPC | no await on exit; the report says a released slot does not cancel its RPC | stated in §3 |
-| Bound memoized work across ticks, prior unresolved reads included | a run memo keyed on the invocation's `summary` object (WeakMap): one state read per run, one read per snapshot id per run, ≤ 5 in flight run-wide, ≤ 240 distinct snapshot reads per run; a read's slot is released at its own 3 s deadline (the RPC is not cancelled) so a hung read cannot starve later ticks | A-10 multiple battles on one handler clock: a hung read in battle 1 adds no wait to battle 2 and is not re-issued; the run cap holds |
+| Issued read-only RPCs not awaited; no claim that a timer cancels an RPC | no await on exit; the report says a released slot does not cancel its RPC **[superseded, §B.4 F1: no slot is released early any more; a read's charge ends only at its own settlement]** | stated in §3 |
+| Bound memoized work across ticks, prior unresolved reads included | a run memo keyed on the invocation's `summary` object (WeakMap): one state read per run, one read per snapshot id per run, ≤ 5 in flight run-wide, ≤ 240 distinct snapshot reads per run; a read's slot is released at its own 3 s deadline (the RPC is not cancelled) so a hung read cannot starve later ticks **[plan as committed; superseded by the correction round, §B.4 F1: each read stays charged until its own promise resolves or rejects, and hung reads leave later names `read_unsettled`]** | A-10 multiple battles on one handler clock: a hung read in battle 1 adds no wait to battle 2 and is not re-issued; the run cap holds |
 | Costs reported honestly | the record carries `readsIssued` / `readsShared`; §3 states CPU, read and serialization costs | — |
 
 ### Correction B — reservations survive failed outcome writes
@@ -138,7 +138,7 @@ V2's file scope plus the writer admission; no change under `api/_utils/setupEvid
 3. **Settle**, synchronous, **no wait at all** (Correction A): seal, copy what has arrived, compose once, deep-freeze. Unarrived reads are `read_unsettled`; nothing later patches the record. The error exit settles in the catch (review SM2-3), so its record carries its own read start and counts. The settle's CPU is charged honestly: the capture's budget is read after it, as the capture's timing observation always has been (review SM2-1; the lens's reorder was reversed on its verifier's refutation, §6).
 4. **Seal** on capture, error exit or the 3 s deadline: the timer cleared, this observation's queued reads dropped, late callbacks ignored.
 
-**The run memo** (Correction A, bounded work across ticks): keyed on the invocation's `summary`; one state read per run; one read per snapshot id per run, shared; ≤ 5 in flight run-wide; a slot released when its read settles or 3 s after issue (releasing a slot does **not** cancel the RPC; already-issued read-only RPCs are never awaited and die with the invocation); ≤ 240 reads per run. A read shared from an earlier tick may predate this tick's freeze: its value can be stale by up to the invocation's length (~290 s), and a later battle's s2 fields describe the run's first state read (review SM1-4; stated in `compose.js`).
+**The run memo** (Correction A, bounded work across ticks): keyed on the invocation's `summary`; one state read per run; one read per snapshot id per run, shared; ≤ 5 in flight run-wide; a slot released when its read settles or 3 s after issue (releasing a slot does **not** cancel the RPC; already-issued read-only RPCs are never awaited and die with the invocation) **[superseded, §B.4 F1: the timed release let more than five reads be unresolved at once (Astra: 10, then 15); a read is now charged until its own promise settles, and nothing else releases it]**; ≤ 240 reads per run. A read shared from an earlier tick may predate this tick's freeze: its value can be stale by up to the invocation's length (~290 s), and a later battle's s2 fields describe the run's first state read (review SM1-4; stated in `compose.js`).
 
 **What it costs — measured, not assumed** (Linux, Node 20.20.2, warm medians, 48 fully-labelled candidates; scratch bench, not committed):
 
@@ -152,13 +152,13 @@ V2's file scope plus the writer admission; no change under `api/_utils/setupEvid
 
 The verifier SMV2 measured the same steps by candidate count (vitest, quiet / busy host): the capture build's extra is 13.0 / 21.0 ms at 48 candidates, 10.7 ms at 25, 3.2 / 6.1 ms at 12; the block is 21.4 KB at 48 and 5.8 KB at 12, on a base permanent record of ≈ 3 KB.
 
-So an in-scope tick costs up to about **14 ms of handler CPU** at the 48-candidate cap (less on a typical hot bench) and up to ~21 KB more on its capture commit. **Where it shows:** `capture.preCommitMs` is stamped before the shed loop and the block's admission, so the timing ON the record excludes the block's writer cost; only the logged `totalMs` and `summary.captureTotalMs` include it. The block is admitted only while ≥ 1 s of the capture's 3 s deadline remains, so it cannot be what turns a commit into `timed_out`; inside that window it shortens the commit's allowance by its own cost. This is real: Slice 2 work on earlier battles runs before later battles' admission and before the loop's `TIME_BUDGET_MS` deferral check (Correction A's "affects a later battle" class). It is not a deliberate wait, and it is not zero. With B ≤ 4 in-scope battles (Phase 0 §E3) that is ≈ 55 ms an invocation; at 25 it would be ≈ 0.35 s. No row claims equal CPU time: the frozen-clock rows are titled as order and no-wait proofs (review SM2-2).
+So an in-scope tick costs about **14 ms of handler CPU** in the warm-median measurement (21 ms on the busy host; **[§B, D1: observations, not hard ceilings]**) at the 48-candidate cap (less on a typical hot bench) and up to ~21 KB more on its capture commit. **Where it shows:** `capture.preCommitMs` is stamped before the shed loop and the block's admission, so the timing ON the record excludes the block's writer cost; only the logged `totalMs` and `summary.captureTotalMs` include it. The block is admitted only while ≥ 1 s of the capture's 3 s deadline remains, so it cannot be what turns a commit into `timed_out`; inside that window it shortens the commit's allowance by its own cost. **[Superseded, §B.4 D1: the claim was wrong. The reserve reduces risk. Optional CPU and payload still consume the deadline. Warm timing medians and the reported busy-host result are observations, not hard ceilings. With 1,010 ms left, 20 ms of optional work and a 1,000 ms commit, the base record is `written` and the record with the block is `timed_out` (simulated clock), and a `timed_out` commit may still land.]** This is real: Slice 2 work on earlier battles runs before later battles' admission and before the loop's `TIME_BUDGET_MS` deferral check (Correction A's "affects a later battle" class). It is not a deliberate wait, and it is not zero. With B ≤ 4 in-scope battles (Phase 0 §E3) that is ≈ 55 ms an invocation; at 25 it would be ≈ 0.35 s. No row claims equal CPU time: the frozen-clock rows are titled as order and no-wait proofs (review SM2-2).
 
 **On no-trigger ticks** the reads usually have not arrived by the capture (the exit's own awaited write is short): such ticks will often carry `read_unsettled` labels. That is Correction A's chosen honesty, not a defect; later ticks of the same invocation reuse what arrived.
 
 ## 4. The tenant and its accounting
 
-Population, deadlines and caps as V2 §6.1–§6.2 (persisted `watchlist.hotBench`, `min(start + 20 s, handler + 100 s)`, < 15 s → `no_budget`, 6 s preparation, ≤ 12 store calls, ≤ 3 at once, 7 s admission reserve, ≤ 10 battles per owner and ≤ 25 in all, keys in turn across battles), with Correction B:
+Population, deadlines and caps as V2 §6.1–§6.2 (persisted `watchlist.hotBench`, `min(start + 20 s, handler + 100 s)`, < 15 s → `no_budget`, 6 s preparation, ≤ 12 store calls, ≤ 3 at once, 7 s admission reserve, ≤ 10 battles per owner and ≤ 25 in all **[§B.4 F2: 25 battle DOCUMENTS READ, counted before scope filtering, each owner's query asking for min(10, what remains); the 25 had counted kept battles only]**, keys in turn across battles), with Correction B:
 
 - One token per operation, minted outside every transaction callback; an SDK re-run of a committed reservation is recognised (`replay`) and counted once.
 - Outcome, refund and cancel apply only under the active token, once (`already_applied`, `stale`); a recovered or superseded token changes nothing.
@@ -252,6 +252,8 @@ The mutant spec and the runner are scratch files (never committed); each mutant 
 
 ## 7. Runs — executed, and not run
 
+**[History: the original build's runs, at `339b1a13` / `0c6bda55`. The correction round's runs, on its final code head and against `main` `7b1d8d26`, are §B.7.]**
+
 All CI-shaped runs: WSL Ubuntu, `TZ=UTC`, Node **20.20.2** (the workflow pins `node-version: '20'`; the runner's exact 20.x patch is not pinned — the one remaining runtime gap), a worktree of `~/pd-ci` with an install matching the lockfile (`40382e64edb6`), `--maxWorkers=8` under `flock /tmp/pd-suite.lock`.
 
 **Executed:**
@@ -302,7 +304,7 @@ All CI-shaped runs: WSL Ubuntu, `TZ=UTC`, Node **20.20.2** (the workflow pins `n
 ## 9. Merge and activation prerequisites
 
 **Before merge** (this build's delivery ends at the pushed draft PR):
-1. Astra's independent implementation review of the pushed head.
+1. Astra's independent implementation review of the pushed head. **[Done on `4e99b1f8`: changes required. Answered by the correction round (§B); next, Astra's focused recheck of the final head.]**
 2. GitHub CI on the PR: `vitest (unit)`, the rules job and the golden-guard step. Not watched by this session (BUILD_RULES §2).
 3. The founder's merge.
 
@@ -327,8 +329,187 @@ All CI-shaped runs: WSL Ubuntu, `TZ=UTC`, Node **20.20.2** (the workflow pins `n
 
 None blocking, and no product decision was taken by the builder. Two readings are recorded so the founder can overrule them:
 - **SM1-1's fail-closed reading.** An unrecognised state document, or a malformed entry, stops acquisition for that document or key until a person looks, rather than being repaired. The amendments' "durable conservative" language points this way.
-- **SM2-1's 1 s margin.** The optional block yields when less than 1 s of the capture's 3 s deadline remains after the base record is composed. It is not a capture budget constant: it governs only the optional block.
+- **SM2-1's 1 s margin.** The optional block yields when less than 1 s of the capture's 3 s deadline remains after the base record is composed. It is not a capture budget constant: it governs only the optional block. **[§B, D1: it reduces the risk to the base record; it does not remove it.]**
 
 ## A. The controlling amendments, verbatim
 
 See `docs/design/20261107_P3_SLICE2_DISABLED_BUILD_KICKOFF_V2_CORRECTIONS.md` (the whole instruction, byte-for-byte as received).
+
+## B. Correction round 1 — Astra's review of `4e99b1f8` (7 Nov 2026)
+
+The founder's instruction "FantasyTrades PR #1034: bounded Slice 2 correction round" (7 Nov 2026) authorised one correction round: fixes F1–F4 and D1–D2 from Astra's review ("ASTRA — CHANGES REQUIRED BEFORE MERGE") of `4e99b1f88c85616ce3f626e7d43a2bf867002516`, a merge of current `main`, tests, review, this section, a push to the same draft PR and its description. It is implementation authority for the named fixes, not activation authority: `SETUP_MENU_LABELS_ENABLED` stays `false` and pinned. Nothing was merged, deployed, published, flipped, read from production, requested from a provider, run as a model job or run as a production census; no review was requested and CI was not watched. **Where this section and §0–§10 disagree, this section controls; the earlier text stays as history, with each superseded claim marked in place (§B.8).**
+
+### B.1 State at the start, the main merge
+
+- Worktree clean; branch `claude/setup-menu-labels-slice2`; HEAD `4e99b1f88c85616ce3f626e7d43a2bf867002516`, equal to the remote branch.
+- `git fetch origin`: `origin/main` = `7b1d8d2607937c455eed947b2b557a8a1886cf8a` (PR #1030 Research Record Extension and PR #1031 Research Modal Build A merged since `d09603b2`).
+- Merged through the app's base-branch sync: **integration commit `1df0f246970c1b2e49084f84b0e6ea4c5236dbe4`** (parents `4e99b1f8`, `7b1d8d26`). Three conflicts, all additive, both sides kept: `api/_utils/compositionProtectedStoresAllowlist.json` (Slice 2's `_notes_setup_menu_labels` and main's `_notes_research_record_extension`, both objects; JSON parses), `api/_utils/setupEvidence/setupEvidenceImportGuard.test.js` (both `ALLOWED_OUTSIDE` groups), `docs/README.md` (both index rows). `firestore.indexes.json` and `src/config/flagPinGuard.test.js` merged cleanly (the `setupMenuLabelState.attempts` exemption and main's `symbolKeys` index both present). `package.json` and `package-lock.json` unchanged by the merge (lock `40382e64edb6`).
+- No material fence or contract conflict was found; nothing outside the authorised scope was edited.
+
+### B.2 Fixture provenance
+
+Astra's supplied regression files were available (WSL `/tmp/astra-slice2-01a1b923/evidence`), so **nothing was recreated**. Copied unchanged into the session scratchpad; SHA-256:
+
+| File | SHA-256 (prefix) | Used for |
+|---|---|---|
+| `reads.regression.test.js` | `1a38aba3` | F1: T1, T1-ext and three controls, adapted into `reads.test.js` |
+| `tenant.regression.test.js` | `ab7fbd40` | F2: two regressions and the two-owner control, adapted into `tenant.test.js` |
+| `census.regression.test.js` | `00bd2f1c` | F3 / D2: regressions, controls, the range control and the proposal-heuristic row, adapted into `census-setup-menu-labels.test.js`; its malformed-entry row asserted the defect and is rewritten to the corrected shape |
+| `block-cap.regression.test.js` | `82e1c2b7` | F4: the 48-candidate 24,577-byte case and its control, adapted into `compose.test.js` |
+| `deadline.counterexample.test.js` | `fc49b383` | D1: the counterexample and its two controls, adapted into `captureSetupMenu.test.js` (simulated clock) |
+| `parity-base.test.js` / `parity-checkout.test.js` | `ccf9606d` / `5e5a3841` | flag-off tick parity, run unchanged except import paths (§B.6) |
+| `reflection-base.test.js` / `reflection-checkout.test.js` | `35b2246b` / `58df5536` | flag-off reflections parity, run unchanged except import paths; a flag-on control derived from the checkout file (§B.6) |
+| `vitest.review.config.mjs` | `04e8e864` | not needed (the repo config collects `evidence/`) |
+
+"Adapted" means: import paths rewritten from `../checkout/…` to the suite's own, the harness folded into the suite's `describe` block, and each row titled "(Astra)". No bound was loosened and no assertion dropped; where this round's rows assert more (the scheduler's counter equals the promises outstanding; query limits exact; null figures), they are added beside Astra's.
+
+### B.3 Reproduction on the reviewed head
+
+Astra's five regression files, run on a clean Linux tree at `4e99b1f8` (Node 20.20.2, `TZ=UTC`): **7 rows failed, every control passed**:
+
+| Finding | Observed at `4e99b1f8` |
+|---|---|
+| F1 | T1: after 3,001 ms the scheduler reported 0 in flight while **10** database promises were unresolved; T1-ext: **15** after three ticks (limit 5) |
+| F2 | four owners × ten excluded battles: **40** documents read (reported `battles.read` 40, `kept` 0); all eligible: **30** returned, reported 25 |
+| F3 | `schemaVersion: 2` and `attempts: []`: the census said `read` where `readLabelState` says `unreadable`; `n: "3"` gave `reservations: 0` with its `retryable` outcome counted |
+| F4 | the 48-candidate case: **24,577** bytes, `ok`, admitted by the writer at 24,577 |
+| D1 | (a counterexample, passes by design) base `written`, with the optional block `timed_out` (20 ms optional work, 1,010 ms left, 1,000 ms commit) |
+| D2 | (passes by design) one selected tick, lifetime coverage 3 minted / 2 captured, a later session's state with 3 reservations: three populations, unlabelled |
+
+### B.4 The fixes, mapped
+
+| Item | Change (commit) | Tests |
+|---|---|---|
+| **F1** a read keeps its charge until its own promise settles | `reads.js`: the 3 s slot timer and `LABEL_READ_SLOT_MS` removed; `settleRec` is the only release (`memo.inflight -= 1`, then the pump), once per read; seal and the observation deadline release nothing; the 3 s deadline, zero wait, the 240 cap, memoization, queue removal on closure and the rejection handlers unchanged. `constants.js`: `LABEL_READ_CONCURRENCY` documented as unresolved reads (`6dfe7683`) | `reads.test.js` F1 block: T1, T1-ext, three controls (Astra); exactly-once release, deadline seal keeps charges, no added wait; every row checks the scheduler's counter equals the database promises outstanding. A-10 corrected (the charge is KEPT past 3 s); A-7/A-9 and A-8 rewritten without a slot timer |
+| **F2** a 25-document read allowance | `tenant.js`: each owner's query asks for `min(10, 25 − read)`; the whole returned page counts before scope filtering; no query once the allowance is spent; `battles.read` = documents returned (`a5c5d469`) | `tenant.test.js` F2 block, counting returned documents through a wrapper: excluded 4 × 10 → 25 read, limits [10, 10, 5]; eligible 4 × 10 → 25, final limit 5; two owners → 20 (Astra); a short page (10, 10, 10, 2); rotation and the cursor |
+| **F3** the census validates as the reader does | new pure `setupMenuLabels/stateShape.js` (`stateDocReadable`, `stateEntryWellFormed`, `stateEntryIds`; imports `constants.js` only), moved unchanged out of `state.js`, which imports and re-exports them; the census's `stateCensusOf` uses the same functions. Absent → `absent`, unsupported or failed read → `unreadable` (cause), every figure `null`; malformed entries counted apart, never aggregated; figures labelled `partial valid-entry subtotals` (`a4106d9c`) | census rows: unsupported schema, `attempts` array, no schema, non-object document (Astra + additions); read failure; absent; valid empty (a measured zero); `n: "3"` (Astra's row, corrected); a mix of valid and seven malformed forms; an agreement sweep against `readLabelState` over ten documents; JSON and printed report both checked |
+| **F4** the final block is measured | `compose.js`: counts, status and the truncation counter recomputed after every removal and the final block measured; a candidate-free block over the cap → the error form if it fits, else `null` (no block). `captureContext.js`: the setter treats `null` as that omission and removes the key (`5f8ac629`) | `compose.test.js` F4 block: Astra's case → ≤ 24,576 (47 candidates, `truncated`, counts sum 47) through the writer; exact-cap boundary 24,576 untruncated; a sweep over reason lengths 0–120; unsettled near the cap; error form / `null`. `captureSetupMenu.test.js`: the null omission; the setter row updated |
+| **D1** the reserve's wording | `captureWriter.js` comments: the 1 s reserve reduces the risk; optional CPU and payload still consume the deadline; medians and the busy-host result are observations, not ceilings; `timed_out` does not prove no commit. No deadline enlarged, no cost hidden (`5f8ac629`) | `captureSetupMenu.test.js` D1 block, **simulated clock**: Astra's counterexample (base `written`, with the block `timed_out`, and the late commit landed) and its two controls (below the reserve: dropped unexamined; a faster commit: written). They pass on the reviewed code too: they document, they do not regress |
+| **D2** three populations | census JSON `meta` (`range`, `populations` with label, scope and keys, `runMemo`) and the report's three numbered sections, each with its scope; the requested range printed; the run memo's staleness stated with the summed `readsIssued` / `readsShared`; no new reads (`a4106d9c`) | the range control (Astra) plus label, scope, order and range assertions on both channels; no-range; the inferred proposal join and the M1/M2 line (Astra) |
+
+The review's fixes (§B.6, commit `d76657bf`) add to this:
+- the census refuses a `--from`/`--to` that is not a real date before any read, through `requestedRangeOf`;
+- every error-form return in the composer, the catch path included, is bounded by the cap;
+- population 1's sub-sections are nested;
+- four rows are tightened.
+
+Guard and registration changes, named: the census's import pin (`census-setup-menu-labels.test.js`) gains `stateShape.js` (pure; a new row pins that it imports only `constants.js` and has no I/O call). No other guard, allowlist, rule, index or import registration changed. The `state.js` protected-store allowlist keys are unchanged (the transaction sites did not move).
+
+### B.5 Each regression fails without its fix
+
+The round's test files as of the fix commits (plus `stateShape.js`, which the census test imports) on a clean Linux tree at the integration commit `1df0f246`, without the fixes: **33 rows failed, 104 passed**.
+- The 33 failures are the regression rows: F1 6 (T1, T1-ext, the corrected A-10, A-7/A-9 and A-8 without a slot timer, the deadline seal); F2 4; F4 5 (Astra's case, the sweep, the error form and null, the two setter rows); F3/D2 18. The census's import pin and sentinel rows fail too, and so do its absent and valid-empty controls, because they now assert the validated shape and null figures.
+- The 104 passes include every control that does not assert the new shape: Astra's three read controls, exactly-once release, no added wait, the two-owner control, the exact-cap boundary, the short-reason control and all three D1 rows (D1 documents; it does not regress).
+
+With the fixes, the same files pass (§B.7). The review's rows (§B.6) were checked by planting each defect (SCX-15, SCX-18 to SCX-24).
+
+### B.6 The round's review (BUILD_RULES §2)
+
+**Method.**
+- Ids use the unused prefix SC: lenses SC1 and SC2, verifier SCV2, mutants SCX.
+- Each reviewer worked on its own LF `git archive` snapshot of `a4106d9c`, with the round's diff (`git diff 1df0f246 a4106d9c`) and Astra's review beside it. Reviewers were read-only on git and wrote nothing outside their trees.
+- **SC1** covered runtime correctness and lifecycle: F1, F2, F4 and the preserve list. **SC2** covered the census (F3, D2), the D1 wording, test integrity across every new row, and the merge resolution.
+- Every SC2 finding went to a refuting verifier, **SCV2**, on a fresh snapshot. SC1's two findings are the same claim as SC2-1, so SCV2's verdict on SC2-1 covers them.
+
+| Id | Severity | Finding | Verdict | Disposition |
+|---|---|---|---|---|
+| SC2-1 (= SC1-1, SC1-2) | major | The build report was untouched. It still claimed the block "cannot be what turns a commit into `timed_out`" (§3) and described the 3 s slot release (§1, §3); it gave the 25-battle cap the old meaning (§4); and it had no correction-round section. | CONFIRMED. PARTLY for §1 (a plan committed before the code: annotate it, do not rewrite it) and §4 (true, but the old meaning). SCV2 added a stale claim at §1 :54. | This section. Each claim is marked superseded in place (§B.8); D1's sentence is quoted verbatim |
+| SC2-2 | minor | A `--from`/`--to` that is not a real date still filtered the tick records, because the export compares strings. It printed as "(none)", and `main()` put the raw text in the title. SCV2 found more: such a bound also empties the cohort, `main()` still made two production-shaped reads, and a flag given without a value read as no range. | CONFIRMED | Fixed. `requestedRangeOf` refuses it (also an impossible date, an empty value, and from after to) with a fixed-text `RangeError`. It runs as `runCensus`'s first statement, and in `main()` before credentials or any read. Rows: 8 refusals with zero reader calls; 6 acceptances; the message never echoes the bound; `main()`'s order |
+| SC2-3 | minor | The precedence row never truncated (23,638 bytes, `reads_unsettled`), so swapping the precedence left every suite green. | CONFIRMED (re-measured) | Fixed. Four unsettled candidates are kept at the head, and the row asserts `truncated` unconditionally |
+| SC2-4 | nit | The printed run-memo line was not pinned. | CONFIRMED | Fixed. Pinned inside population 1 |
+| SC2-5 | nit | The `stateShape` purity row missed dynamic imports and file writes. | CONFIRMED | Fixed. It also refuses `import(`, `require(`, host access and writes (no static scan is complete) |
+| SC2-6 | nit | The catch path's bound was untested, and two error-form returns were unbounded. They are unreachable at the real cap: the largest error form is 641 bytes. | CONFIRMED | Fixed. All error-form returns go through `errorFormWithin`, and a catch-path row is added |
+| SC2-7 | nit | Population 1's sub-sections were `##`, siblings of the numbered populations. | CONFIRMED on structure, PARTLY on the population-3 reading | Fixed. `### 1a` / `1b` / `1c`, with Provider capture and joins in their own sub-section; the row pins three `##` headings |
+
+**Noted, not findings** (recorded so they are not lost):
+- SC1 X4: a store returning more documents than its `limit` would be counted honestly, but no longer capped in the loop. Firestore honours `limit`.
+- Firestore bills a minimum read for an empty query. Those are not counted, as instructed: the count is of documents returned.
+- Pre-existing, outside the round: an `s2` `lastAt` of 1e20 makes the whole block the error form (`toISOString` throws). It is reachable only through a corrupt state entry, and it fails closed.
+- SCV2-N1: with a range given, a record without `capturedAt` is dropped. The writer always stamps one.
+
+**What the lenses checked and found correct**, from their coverage lists:
+- F1: the charge rises only in `issue` and falls only in `settleRec`, once. SC1 fuzzed 17,500 random steps (ticks, shared names, seals, settles, rejections, timeouts) checking that the counter always equals the outstanding promises, the peak never exceeds 5, issued never exceeds 240, no id is read twice, no sealed queue entry remains, no capacity sits idle beside a queue, and a sealed observation never changes. The pre-fix code fails at step 14.
+- F2: every path (a query that throws, owners with no documents, `notOwned` documents, a prep cut, an allowance spent at a page boundary) gives read = returned.
+- F4: SC1 fuzzed 3,000 seeds through the writer. Every block is within its cap, the counts are consistent, truncation is minimal, and the output is byte-identical after the writer's sanitize pass. The setter's `null` is reachable only from the composer, and never with the flag off.
+- F3: `stateShape` is the old validators verbatim. A differential fuzz of the old `state.js` against the new one over 20,000 documents gave identical results. The census agrees with `readLabelState` on 20,000 random documents; the only divergence is an own `__proto__` key, which Firestore reserves.
+- D2: the labels are verbatim, the figures sit under the right populations, and no id, symbol or owner reaches either channel.
+- D1: the code comments are corrected; the reserve and its rechecks are intact; the deadline is unchanged.
+- The merge resolution holds both sides in all three files.
+- The preserve list is untouched.
+
+**Mutation lens SCX** (this round's own battery, not added to §6's 42/43):
+- Each mutant ran on its own snapshot tree. A mutant counted as KILLED only when vitest exited non-zero with a test summary showing failed rows; a run that crashed or loaded nothing would have been reported as CRASHED (none were). The file was restored by bytes and checked by SHA-256.
+- **24 mutants, 24 killed**:
+  - F1 (SCX-1 to SCX-4): a 3 s timed release; a seal that releases charges; no pump on settlement; a sixth read admitted.
+  - F2 (SCX-5 to SCX-7): the limit back to 10; counting kept battles only; the allowance measured on kept battles.
+  - F3 / D2 (SCX-8 to SCX-13): the document check skipped; malformed entries aggregated; absent as zeros; a non-integer `n` accepted; the range line dropped; the population headings swapped.
+  - F4 (SCX-14 to SCX-17): measured before the final counts; no recompute after the loop; an unbounded error form; the setter ignoring `null`.
+  - Review fixes (SCX-18 to SCX-24): the precedence swapped; the catch path unbounded; the range refusal removed; an impossible date accepted; the run-memo line dropped; a dynamic write planted in `stateShape.js`; the sub-headings flattened.
+- SCX-15 **survived the first battery**: truncating to zero candidates left stale counts, and no row had a candidate-free block that still fits. A row was added, and the mutant is killed.
+
+### B.7 Runs on the final code head
+
+All CI-shaped:
+- WSL Ubuntu, `TZ=UTC`, Node **20.20.2** (the workflow pins `node-version: '20'` only; the runner's exact 20.x patch is not pinned).
+- A worktree of `~/pd-ci` with an install matching the lockfile (`40382e64edb6`, unchanged by the merge).
+- `--maxWorkers=8` under `flock /tmp/pd-suite.lock`.
+- Base for every comparison: **`main` `7b1d8d26`**.
+
+**Executed:**
+
+| Check | Head | Result |
+|---|---|---|
+| Full unit suite | **`d76657bf`** (final code) | **1,354 files, 29,755 rows: 29,666 passed, 0 failed, 89 skipped** |
+| Full unit suite | `a4106d9c` (before the review fixes) | 1,354 files, 29,737 rows, 0 failed |
+| `npm run test:rules` (Firestore emulator, Java 21) | **`d76657bf`** | **35 files, 664 rows, all passed** (Slice 2's two suites: 8 + 17) |
+| `npm run test:rules` | `a4106d9c` | 35 files, 664 rows, all passed |
+| `npm run lint:gate` | `d76657bf`, `a4106d9c` | pass (0 warnings) |
+| `vite build` + whole-`dist/` comparison | `d76657bf` vs a `7b1d8d26` tree (also `a4106d9c`) | **0 files differ**; entry chunk `index-BHrJlEMa.js` on both sides |
+| `vite build` | the docs head pushed | exit 0, run on the exact pushed commit (§B.9) |
+| Golden-baseline guard `--base 7b1d8d26` | `d76657bf` (also `a4106d9c`) | **compare mode, PASS**: golden `767d2263…`, `tf-setup-v1/sem-1`, thresholds `26f3f411b566` unchanged |
+| Flag-off parity through the REAL `processAgentBattle`, capture on, eight exits; every capture batch, battle write and model request dumped. This session's harness and Astra's (`parity-*.test.js`) | `d76657bf` vs `7b1d8d26` (also `a4106d9c`) | **byte-identical**: this session's dump SHA-256 `34c9a202…` (the same value as the original build's at `d09603b2`), Astra's `13157c82…`. Flag-on control in the head tree: **differs** |
+| Flag-off parity through the REAL `process-pending-reflections` handler (Astra's `reflection-*.test.js`: a pending reflection and an empty run; status, body and every write), Slice 2 I/O asserted zero | `d76657bf` vs `7b1d8d26` (also `a4106d9c`) | **byte-identical** (`62f1ffd1…`). Flag-on control: **differs**, by the `setupMenuLabels` key the tenant adds |
+| Astra's regressions, reproduction | `4e99b1f8` | 7 failed as reported, every control passed (§B.3) |
+| The round's rows without the fixes | `1df0f246` + the round's test files | 33 failed, 104 passed (§B.5) |
+| Mutation lens SCX | snapshot trees of `a4106d9c` and `d76657bf` | 24 of 24 killed (§B.6) |
+
+**Not run, or not observed:**
+- GitHub CI on the pushed head. Not watched, per the instruction; the founder reads it. The draft's earlier head `4e99b1f8` passed CI, as Astra reported; this session did not observe that run.
+- Astra's focused recheck of the final head.
+- The CI runner's exact Node 20.x patch (local 20.20.2).
+- Anything in production: no deploy, rules or index publication, flag flip, production read, provider request, model job or census run.
+
+### B.8 Superseded claims (marked in place, kept as history)
+
+| Where | Earlier claim | Now |
+|---|---|---|
+| §0 Final heads | code `339b1a13` | §B.9 |
+| §1, Correction A table (two rows) | a read's slot is released at its own 3 s deadline; "a released slot does not cancel its RPC" | F1: a read's charge ends only at its own settlement |
+| §3, the run memo | "a slot released when its read settles or 3 s after issue" | F1 (as above) |
+| §3, cost | "up to about 14 ms of handler CPU" | a warm median (21 ms on the busy host); observations, not ceilings |
+| §3, cost | the block "cannot be what turns a commit into `timed_out`" | **Wrong.** The reserve reduces risk. Optional CPU and payload still consume the deadline. Warm timing medians and the reported busy-host result are observations, not hard ceilings. A `timed_out` commit may still land |
+| §4 | "≤ 10 battles per owner and ≤ 25 in all" | 25 battle documents **read**, counted before scope filtering; each owner's query asks for min(10, what remains) |
+| §7 | the original runs | §B.7 |
+| §9 item 1 | Astra's review pending | Done on `4e99b1f8`, answered here; the focused recheck is next |
+| §10, SM2-1 | the 1 s margin | It reduces the risk; it does not remove it |
+| PR description | the original body | Replaced by a correction-round body (the original change list stays in §2–§7) |
+
+### B.9 Heads, and what follows
+
+| | |
+|---|---|
+| Reviewed head (Astra) | `4e99b1f88c85616ce3f626e7d43a2bf867002516` |
+| Fetched `main` | `7b1d8d2607937c455eed947b2b557a8a1886cf8a` |
+| Integration (merge) commit | `1df0f246970c1b2e49084f84b0e6ea4c5236dbe4` |
+| Fix commits | `6dfe7683` (F1), `a5c5d469` (F2), `5f8ac629` (F4, D1), `a4106d9c` (F3, D2), `d76657bf` (review SC fixes) |
+| **Final code head** | **`d76657bf3e46ffbe8992fd4dbfdf198b3f6d1a81`** — every check in §B.7 ran here |
+| Docs head | the commit holding this section, on top of `d76657bf`; documentation only; `vite build` re-run on it before the push. The pushed SHA is given in the PR description and the session's hand-back |
+| Branch | `claude/setup-menu-labels-slice2`, pushed by refspec without force, to the same draft PR #1034 |
+
+The flag stays `SETUP_MENU_LABELS_ENABLED = false` and pinned. **Production activation still requires all of:**
+- ID-1's census completion recorded;
+- D-6 allocation approval;
+- the published `setupMenuLabelState` rules and the `attempts` index exemption (after merge);
+- the founder's separate flip instruction.
+
+The Practice Field is not a dependency.
