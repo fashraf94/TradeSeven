@@ -88,6 +88,13 @@ describe('BC-3 — each branch, in order', () => {
     const b = battle([ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'Nothing.', evidence: { EOG: { px: 160 } } })]);
     expect(latestLineOf({ battle: b, symbol: 'EOG', held: true })).toEqual({ source: 'template_checked', text: null, atMs: Date.parse('2026-10-14T16:45:00.000Z'), recordId: 'e2' });
   });
+  it('4a. a name an earlier check looked at but no longer held (swapped out): still "checked", with THAT check\'s time', () => {
+    const b = battle([
+      ev('e1', '2026-10-13T15:00:00.000Z', { rationale: 'Nothing.', evidence: { XOM: { px: 110 } } }),
+      ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'Nothing either.', evidence: { EOG: { px: 160 } } }),
+    ]);
+    expect(latestLineOf({ battle: b, symbol: 'XOM', held: false })).toEqual({ source: 'template_checked', text: null, atMs: Date.parse('2026-10-13T15:00:00.000Z'), recordId: 'e1' });
+  });
   it('4b. a name never on a check: "hasn\'t looked"', () => {
     expect(latestLineOf({ battle: battle([ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'Nothing.' })]), symbol: 'KO', held: false })).toEqual({ source: 'template_never', text: null, atMs: null, recordId: null });
     expect(latestLineOf({ battle: battle([]), symbol: 'KO', held: true }).source).toBe('template_never');

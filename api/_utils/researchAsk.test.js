@@ -82,6 +82,12 @@ describe('verifyResearchItems — the server re-reads the battle (BC-7)', () => 
     const [out] = verifyResearchItems({ battle, ask: sent([forged]), nowMs: SHEET_NOW });
     expect([out.status, out.statusReason, out.fact]).toEqual(['unverified', 'not_on_record', 'Risk check at Wed 12:45: swap it out']);
   });
+  it('a forged record id of a kind the server DOES rebuild is not verified: a preset the battle does not run', () => {
+    const real = packs.protect_lead.items.find((i) => i.kind === 'risk_lever');
+    const forged = { ...real, fact: 'Trend Follower on Defensive: swaps out 0.75 ATR below entry', source: { ...real.source, recordId: 'defensive' } };
+    const [out] = verifyResearchItems({ battle, ask: sent([forged]), nowMs: SHEET_NOW });
+    expect([out.status, out.statusReason, out.fact]).toEqual(['unverified', 'not_on_record', 'Trend Follower on Defensive: swaps out 0.75 ATR below entry']);
+  });
   it('the row is the agent\'s OWN position only: a position item naming the CPU\'s position (the same ticker) verifies nothing', () => {
     const banked = packs.protect_lead.items.find((i) => i.kind === 'banked');
     const cpu = { ...banked, source: { ...banked.source, recordId: 'position-cpu' } };

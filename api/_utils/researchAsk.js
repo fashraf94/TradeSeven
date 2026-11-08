@@ -107,12 +107,11 @@ export function verifyResearchItems({ battle, battleId = null, ask, nowMs }) {
   let reread = true;
   try {
     const incumbent = ask.items.find((it) => it.kind === 'incumbent')?.symbol ?? null;
-    // The row (Build A's identity rule): the agent's OWN position for the symbol, when the
-    // client's position items name it; otherwise none — a ticker the CPU also holds then
-    // re-reads no position item (the client cannot point the server at the CPU's row).
+    // The row: the agent's OWN position for the symbol (an Ask is the agent's lens; the
+    // client never names the row). A client item naming another position — the CPU's, on
+    // a ticker both hold — is still not verified: its record id is not the server item's.
     const own = agentPositionOf(battle, ask.symbol)?.asset?.positionId ?? null;
-    const claimed = own !== null && ask.items.some((it) => it.source.recordKind === 'position' && it.source.recordId.split(',').includes(own));
-    server = candidateItems({ battle, symbol: ask.symbol, nowMs, row: claimed ? { positionId: own } : {}, battleId, directive: battle?.directive ?? null, incumbent }).items;
+    server = candidateItems({ battle, symbol: ask.symbol, nowMs, row: own ? { positionId: own } : {}, battleId, directive: battle?.directive ?? null, incumbent }).items;
   } catch {
     reread = false;
   }
