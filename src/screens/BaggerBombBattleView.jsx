@@ -30,6 +30,7 @@ import SwapMarketModal from '../components/BaggerBomb/SwapMarketModal';
 
 // Import modals for research and score breakdown
 import AssetResearchModal from '../components/draft/AssetResearchModal';
+import { resolveBombMode, bombModeOn } from '../components/Research/BombMode/bombModeGate';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import { buildResearchAsset } from '../utils/researchAssetBuilder';
 import { isSwapLocked } from '../utils/baggerBombUtils';
@@ -653,6 +654,7 @@ export default function BaggerBombBattleView({
           defaultTimeframe="bomb"
           realtimeExtremes={dailyExtremes?.[stableResearchAsset?.symbol]}
           wsPrice={currentPrices?.[stableResearchAsset?.symbol]}
+          {...(bombModeOn(resolveBombMode()) ? { bombContext: isV4 && battle?.state?.dailyLevels ? { kind: 'v4', dailyLevels: battle.state.dailyLevels } : { kind: 'bench' } } : {})}
         />
       )}
 

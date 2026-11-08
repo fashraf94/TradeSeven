@@ -214,9 +214,15 @@ export function distanceFromShownPrice(levelPrice, price) {
  * @param {boolean} options.srRequested - The chart's S/R toggle is on (as the
  *   chart reports it). Off the 1D chart it asks for the same daily series the
  *   Technical tab does (one request, shared).
+ * @param {boolean} options.bombMode - Research Modal Build A, Bomb mode on
+ *   (spec docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md §3.4): the
+ *   bomb and spectate views return their CLOSED bars only — no live-candle
+ *   synthesis and no high/low patching, in either the legacy or the controlled
+ *   path. Every request is unchanged. Absent (every mode-off caller), nothing
+ *   here changes.
  * @returns {Object} { ohlcvData, timeframe, setTimeframe, indicators, levels, dailyData, smaData, loading, error }
  */
-export default function useResearchData(symbol, { currentPrice, isCrypto, initialTimeframe, controlled = null, technicalActive = false, srRequested = false } = {}) {
+export default function useResearchData(symbol, { currentPrice, isCrypto, initialTimeframe, controlled = null, technicalActive = false, srRequested = false, bombMode = false } = {}) {
   // Controlled held-quote mode: the parent's session-qualified extremes stand in
   // for the polled ones EVERYWHERE they are read (V-6 a), and nothing here
   // fetches a quote. `controlled.extremes` = { sessionDate, high?, low?, open? }
@@ -656,6 +662,9 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   // periods) and the live price shown in the header.
   const ohlcvData = useMemo(() => {
     if (!processedCandles || processedCandles.length === 0) return processedCandles;
+    // Bomb mode (spec §3.4): the Fuse and the red zone draw closed bars and a
+    // live bead; a synthesized candle never reaches them.
+    if (bombMode && (timeframe === 'bomb' || timeframe === 'spectate')) return processedCandles;
     if (!throttledPrice || throttledPrice <= 0) return processedCandles;
     if (controlledMode) {
       return controlledCandles(processedCandles, {
@@ -782,7 +791,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     }
 
     return result;
-  }, [processedCandles, throttledPrice, timeframe, isCrypto, realtimeExtremes, controlledMode, suppliedSession, suppliedHigh, suppliedLow, suppliedOpen]);
+  }, [processedCandles, throttledPrice, timeframe, isCrypto, realtimeExtremes, controlledMode, suppliedSession, suppliedHigh, suppliedLow, suppliedOpen, bombMode]);
 
   // The daily series for THIS symbol (null until loaded; never the chart's
   // weekly or intraday candles).
