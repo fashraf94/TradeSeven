@@ -1072,11 +1072,12 @@ const StockChart = ({
         {/* OHLC overlay — hidden in spectate view (back button uses same position) */}
         {!isSpectateView && <OHLCDisplay data={displayOhlc} showUnavailable={controlled} />}
 
-        {/* Build C: the open pin's label, bottom-left above the time axis (review D6) */}
+        {/* Build C: the open pin's label, bottom-left above the time axis, clear of the
+            library's attribution logo (x 10–45 px at every size; review D6) */}
         {openPin && (
           <div data-pin-caption={openPin.id || ''} style={{
-            position: 'absolute', left: 8, bottom: 30, zIndex: 2, pointerEvents: 'none',
-            maxWidth: 'calc(100% - 76px)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            position: 'absolute', left: 52, bottom: 30, zIndex: 2, pointerEvents: 'none',
+            maxWidth: 'calc(100% - 120px)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             fontSize: 10.5, fontWeight: 700, lineHeight: 1.3, padding: '1px 6px', borderRadius: 6,
             color: openPin.color || HOLO_COLORS.textSecondary, background: HOLO_COLORS.bgDeep,
             border: `1px solid ${HOLO_COLORS.borderSubtle}`,

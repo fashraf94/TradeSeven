@@ -124,7 +124,7 @@ describe.skipIf(!BASE)('BC-2 — Layer 0 above the action row, measured in a rea
     } finally { await ctx.close(); }
   }, ROW_TIMEOUT);
 
-  it('the open pin\'s label is never clipped by the chart pane (review D6)', async () => {
+  it('the open pin\'s label is never clipped by the chart pane, nor under its attribution logo (review D6)', async () => {
     for (const [w, h] of [[320, 568], [390, 844], [430, 932]]) {
       const { ctx, page } = await open(w, h, 'sheetFixture=held_tf');
       try {
@@ -134,12 +134,16 @@ describe.skipIf(!BASE)('BC-2 — Layer 0 above the action row, measured in a rea
           const pane = document.querySelector('.tv-lightweight-charts');
           if (!cap || !pane) return null;
           const a = cap.getBoundingClientRect(); const p = pane.getBoundingClientRect();
-          return { left: a.left, right: a.right, paneLeft: p.left, paneRight: p.right, clipped: cap.scrollWidth > cap.clientWidth + 1 };
+          // The chart library's attribution logo sits at the pane's bottom-left: the label never covers it, nor it the label.
+          const logo = document.querySelector('#tv-attr-logo')?.getBoundingClientRect() ?? null;
+          const overLogo = !!logo && a.left < logo.right && logo.left < a.right && a.top < logo.bottom && logo.top < a.bottom;
+          return { left: a.left, right: a.right, paneLeft: p.left, paneRight: p.right, clipped: cap.scrollWidth > cap.clientWidth + 1, overLogo };
         });
         expect(c, `${w}`).not.toBeNull();
         expect(c.left).toBeGreaterThanOrEqual(c.paneLeft);
         expect(c.right).toBeLessThanOrEqual(c.paneRight);
         expect(c.clipped).toBe(false);
+        expect(c.overLogo, `${w}: the label over the attribution logo`).toBe(false);
       } finally { await ctx.close(); }
     }
   }, ROW_TIMEOUT * 3);
