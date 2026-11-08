@@ -139,7 +139,11 @@ describe('aggregates only (every channel)', () => {
 });
 
 describe('the static imports (read-only by construction)', () => {
-  const specifiers = [...SRC.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*)['"`]([^'"`]+)['"`]/g)].map((m) => m[1]);
+  // Static `import … from '…'` statements (line-anchored) and dynamic `import('…')` calls.
+  const specifiers = [
+    ...[...SRC.matchAll(/^\s*import\b[^'"`;]*?['"`]([^'"`]+)['"`]/gm)].map((m) => m[1]),
+    ...[...SRC.matchAll(/\bimport\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g)].map((m) => m[1]),
+  ];
   it('only pure modules statically; credentials and the database only lazily, inside main()', () => {
     expect(specifiers.sort()).toEqual([
       '../api/_utils/callRecords/allowlist.js', '../api/_utils/firebaseAdmin.js', '../api/_utils/setupMenuLabels/constants.js',
