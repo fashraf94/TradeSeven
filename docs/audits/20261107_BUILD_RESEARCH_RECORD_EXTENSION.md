@@ -2,6 +2,8 @@
 
 **Date:** 7 November 2026 · **Built by:** Claude Code (Opus 5.5), fresh session in its own worktree, from Fable's build prompt of 7 Nov 2026 · **Base:** `origin/main` `d503dd07` (fetched first; unchanged when the final checks ran) · **Branch:** pushed as `claude/research-record-extension` (the app's local worktree branch carries a suffix, `claude/research-record-extension-ba93d4`) · **Code head:** `0b5c12dc` · **Contract note:** `docs/design/20261107_RESEARCH_RECORD_EXTENSION_V1.md`
 
+> **Follow-up V2 (same day, same PR):** the four clarifications and the eleven rulings were applied after this report's §1–§11, on `main` `d09603b2` (merged in), code head `ded8808d`. **§12 records it** — what changed, the size cuts, its own review and its runs. Where §1–§11 and §12 differ (the question's rule, `symbolKeys` on host records, the summary and url caps, the eleven questions), §12 and the amended contract note govern.
+
 ## 0. Verdict
 
 | What the prompt asked | What was built | State |
@@ -196,3 +198,106 @@ The docs commit that follows changes only `docs/`; the same five checks were run
 2. Merge when satisfied (CI: `vitest (unit)` and `firestore rules + emulator suites`).
 3. **After merge, deploy the new `researchWork` index** (`firebase deploy --only firestore:indexes`). No rules deploy is needed.
 4. After deploy, the exchange id starts appearing on new exchanges in `watchlistSessions`, `researchSessions` and `analysisSessions`; old exchanges keep none. Nothing a player sees changes.
+
+## 12. The follow-up V2 — the four clarifications and the eleven rulings (7 Nov 2026)
+
+Fable's follow-up V2 ("the four clarifications and the eleven questions", same day) was run in this same session on the same branch and PR, before merge. It superseded an earlier follow-up that was never run. §1–§11 above describe the build at `693ee59a`; this section is what changed after it. The contract note was amended in place (it is still version 1 and unmerged; its §9 lists every change and its §10 the items left for the Shared Research route).
+
+### 12.0 Verdict
+
+| What V2 asked | Done | Where (head `ded8808d`) |
+|---|---|---|
+| §1.1 `question` independent of the subject; `questionPatch`; `subjectPatch` exactly `main`'s; `question_missing` on a completed Shared Research close | Done | `api/_utils/researchRecords/model.js:470` (`buildRecord`), `:509`, `:530`, `:569` |
+| §1.2 `stockRankings`, `peerRankings`, `researchWork` sources; `researchWork` never the record itself; `exchange` ids are v4 UUIDs | Done | `findingRecordKinds.js:20`; `model.js:679`, `:843` |
+| §1.3 summary text 1,000 characters | Done | `model.js:592` |
+| §1.4 `concluded`, only a Shared Research record closing `completed` | Done (also at a closed mint, review V2A-2) | `model.js:117`, `:489`, `:574` |
+| Q1 `EVIDENCE_ITEM_RECORD_KINDS` without `exchange` and `retrieval` | Done | `model.js:633`; `hypothesisRecords/model.js:176` |
+| Q2/Q8 extension fields on `shared_research` only (`wrong_origin`); every Shared Research write writes `symbolKeys`; no host ever gets them | Done | `model.js:520`, `:825` |
+| Q3 a finding's explicit `symbol`; keys = current findings, then the cohort | Done | `model.js:749`, `:727` |
+| Q5 `basedOn` 1–25 current findings | Done | `model.js:601`, `:887` |
+| Q10 the `equippedHypothesis` census; 30 server refs at most | Done (census widened by review V2B-1) | `hypothesisRecords/equippedHypothesisRefs.census.test.js`; `hypothesisRecords/model.js:164`, `:220` |
+| Q11 document the fingerprint | Done | contract §3.1 |
+| Q4, Q6, Q7, Q9 kept | No change | — |
+| §3 size ≤ 1,000,000 bytes | **Both named cuts made**: revisions 20 → 10, urls 2,048 → 1,024; 706,217 bytes | `model.js:599`, `:610`; `size.test.js` |
+| §4 `STATE_REASONS.sharedResearchCompleted` and `buildSharedResearchVersion` | Done | `src/constants/hypothesisRecords.js:81`; `hypothesisRecords/model.js:395` |
+| Stays unchanged: existing content hashes, gate-off and dialogue goldens, every host write, `carriage.js`, `buildSaveVersion` | Held (§12.4) | — |
+| STOP conditions | None hit | — |
+
+### 12.1 Preamble
+
+- PR #1030 was open but **CONFLICTING**: `main` had moved to `d09603b2` (PR #1029, Armory A2). It was brought up to date with the app's base-branch sync (a merge, never a force). One conflict: both sides had appended a notes block to `api/_utils/compositionProtectedStoresAllowlist.json`; both were kept (merge commit `34b211d3`). That allowlist was the only file both sides changed. `main` also gained an `array-contains` filter in the Firestore double (`callsFirestore.js`), which this build's rows don't depend on.
+- `origin/main` was fetched again before the final runs and before the push: still `d09603b2`.
+- The follow-up's own diff (`34b211d3..ded8808d`): 13 files, +1,079 / −237 lines, over the BUILD_RULES §2 threshold, so it had its own review (§12.5).
+
+### 12.2 Readings
+
+1. **"subject" in the symbol-key list vs `subjectPatch` as on `main`.** V2 lists "subject" among the Shared Research writes that write `symbolKeys` fresh, and also says `subjectPatch` behaves exactly as on `main` for every origin. The build keeps `subjectPatch` exactly `main`'s. A subject set through `closePatch` writes the keys; a subject set alone writes none. It cannot leave them stale, because the keys depend only on findings and the cohort. Outside tests, `subjectPatch` is called only from `closePatch` (verifier V2A). Contract §10 Q1.
+2. **The size rule's map reading.** Firestore's page says a map's size is "calculated the same way as document size", and a document adds 32 bytes. The page has no worked example with a map. The test reads it literally: a map counts its own 32 bytes. This is the cautious reading, and it decided the second cut (§12.3).
+3. **Fields the model does not bound.** `terminalReason`, `userId` and `watchlistId` have no cap in the model; their writers bound them. The size test uses the longest each writer produces (contract §10 Q9).
+
+### 12.3 Size (V2 §3)
+
+| Measured (Firestore's documented rules) | Bytes | Action |
+|---|---|---|
+| First test: 20 revisions, 2,048-character urls (a narrower record; maps without their 32) | 1,010,671 | over → first named cut, **revisions 20 → 10** |
+| After review V2A-1 widened the test: every cap full (40 telemetry screens × 40 symbols, both cohort flags, 75 corrections, the most-bytes url, a 3-byte uid, the longest host reason), maps with their 32; 10 revisions | 1,013,417 | still over → second named cut, **urls 2,048 → 1,024** |
+| **Both cuts** | **706,217** | within the rule; pinned |
+| For the record: 20 revisions with 1,024-character urls | 746,827 | would also fit (contract §10 Q6, a founder call) |
+
+No other cut was made. Verifier V2A reproduced 1,013,417 exactly with its own sizer.
+
+### 12.4 What stayed unchanged (checked)
+
+- **Every existing content hash.** `contentHash.golden.test.js` (main-captured) passes. Lens V2B also re-ran the nine cases on `main` `d09603b2`: all identical. Across 230 refs, none that `main` accepted is now rejected.
+- **The gate-off and dialogue goldens.** Their files are untouched by the follow-up, and they pass.
+- **Every host write.** Lens V2B compared `buildRecord`, `turnPatch`, `closePatch`, `subjectPatch`, `recordSummaryOf`, `isOwnedRecord` and `researchSummariesOf` with `main`'s research model over 123,146 comparisons. The only differences are two refusals no host reaches: `concluded` and a mint with a question. The abandon route closes only for `user_close`, `watchlists.js` passes `TERMINAL_REASONS` constants, and no host passes a question.
+- **`carriage.js`, `buildSaveVersion` and every fenced file** are byte-identical to `main`.
+- **The Q10 ruling's facts** were re-verified at this head: `agentBattleService.js:217-229` copies verbatim, and the three named readers read only the three provenance fields. The review found one more reader: the carriage's value-blind re-hash (V2B-2), now recorded as an allowed read.
+
+### 12.5 The follow-up's review (ids V2A-n, V2B-n; fresh LF snapshots of `d0399c1d`; a refuting verifier per lens)
+
+| Id | Finding | Verifier | Disposition |
+|---|---|---|---|
+| V2A-1 | The size test missed caps (telemetry screens and more) and took the map rule's less cautious reading | CONFIRMED (1,013,417 reproduced) | **Fixed**: widened test; second named cut; pinned (H04–H06) |
+| V2A-2 | A record minted already closed skipped `question_missing` and `invalid_terminal_reason` | CONFIRMED | **Fixed** (H01, H02) |
+| V2A-3 | The builder never tied `watchlistId` to the list | CONFIRMED | **Fixed**: `list_not_from_session` (H03) |
+| V2A-4 | The fingerprint covers the raw request; content is normalized | CONFIRMED (note) | Contract §10 Q2 |
+| V2A-5 | The builder adopts a record in any state | CONFIRMED (note) | Contract §10 Q3 |
+| V2A-6 | `concluded` is accepted with a subject | CONFIRMED (note) | Contract §10 Q5 |
+| V2A-7 | A corrupt `findings` is answered `invalid_kept_findings` | CONFIRMED (note) | Contract §10 Q10 |
+| V2A-8 | Stale comments in the model | CONFIRMED (one more found) | **Fixed** |
+| V2A-letter | "subject" vs `subjectPatch` as on `main` | Behaviour confirmed; cannot go stale | §12.2 reading 1 |
+| V2B-1 | The census missed rename-destructures, multi-declarator aliases, nested patterns, the `carriedSiblingOf` accessor, whole-object exposure and fixtures | CONFIRMED (14 forms missed) | **Fixed**: widened detector, a planted row per form (H07–H12) |
+| V2B-2 | The carriage's re-hash reads the sibling's every field; the census inventory did not record it | CONFIRMED | **Fixed**: listed as an allowed, value-blind whole read |
+| V2B-3 | The 30-ref cap is per batch, not per version | CONFIRMED (note) | Comment fixed; contract §10 Q4 |
+| V2B-4 | Two refusals are new on host records, but unreachable | CONFIRMED (note) | Recorded (§12.4) |
+| V2B-5 | `noResearchRecorded` on a `shared_research_completed` version | CONFIRMED (note, future data) | Contract §10 Q7 |
+
+**Split:** 13 findings plus one reading question. None refuted. Six fixed (V2A-1, V2A-2, V2A-3, V2A-8, V2B-1, V2B-2), plus the V2B-3 comment. The rest are notes or questions for B1.
+
+**Mutation lens:**
+- **36 mutants (G01–G36)** over the follow-up's rules, on their own snapshot of `d0399c1d`: all killed. Re-run on the fixed head: all killed (G06 re-targeted at `closePatch`'s line, because the same rule now also lives in `buildRecord`).
+- **12 mutants (H01–H12)** for the review fixes, including each census form planted in the real files: all killed.
+- Every mutated file was restored and checked against the commit.
+
+### 12.6 Runs (Linux, WSL Ubuntu, Node 20.20.2, `TZ=UTC`, `npm ci`, a private worktree of `~/pd-ci`)
+
+`origin/main` stayed at `d09603b2`, which the branch had merged at `34b211d3`, so the code head is its own merge with `main`.
+
+| Run | Head | Result |
+|---|---|---|
+| **Full suite**, `npx vitest run --maxWorkers=8` (under the machine's suite lock, the host quiet) | **`ded8808d`** | **0 failed / 29,100 passed / 89 skipped** (1,314 files passed, 8 skipped; 351 s) |
+| **`npm run test:rules`** (Firestore emulator, Temurin Java 21) | **`ded8808d`** | **33 files, 639 rows passed** (`researchRecordExtension.rules.mjs` among them, its summary revisions now resting on a finding) |
+| **`npm run lint:gate`** | **`ded8808d`** | **exit 0** |
+| **`vite build`** | **`ded8808d`** | **exit 0** |
+| **The golden guard** (as the pull-request event: base `d09603b2`, head the commit) | **`ded8808d`** | **PASS**, mode compare: golden and semantics unchanged against the base |
+
+The docs commit that follows changes only `docs/`; the same five checks were run again on that exact pushed head (the PR description records them).
+
+An early full suite at `d0399c1d`, run while the reviewers and the mutants were loading the same host, had one red row: `src/components/League/leagueRawIds.guard.test.jsx`, a file this build does not touch, at 5.9 s against its 5 s timeout. That is the known host-load pattern; the quiet final run is the record.
+
+### 12.7 Founder's steps (replacing §11's first step)
+
+1. Read the contract note's §10 (ten items for B1), especially Q6 (20 revisions would fit now that urls are 1,024) and Q4 (the merged-total ref cap).
+2. Merge when satisfied.
+3. **After merge, deploy the new `researchWork` index** (`firebase deploy --only firestore:indexes`). No rules deploy is needed.
