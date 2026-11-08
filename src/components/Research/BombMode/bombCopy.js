@@ -81,6 +81,11 @@ export const BOMB_COPY = Object.freeze({
   afterBank: (points, at, price, d) => `+${points} banked${at ? ` at the ${at} check` : ''}. Next: ${money(price, d)} at a check`,
   allRungsBanked: (points) => `+${points} banked · every rung is banked`,
   previewNeeds: (price, d) => `Preview · rungs if it entered at yesterday's close (${money(price, d)})`,
+  // Ruling 2026-11-07 (§0.4(a), rule (i)): a position the agent holds whose
+  // score is the legacy model's (legacy stocks, every crypto) draws the
+  // preview's rungs, said plainly as held — never "entry price", never "will
+  // bank", nothing lit as banked.
+  heldPreviewNeeds: (price, d) => `Held · rungs shown from yesterday's close (${money(price, d)}) · this position's live ladder isn't shown here`,
   previewV4: (price, d) => `Preview · today's levels from today's baseline (${money(price, d)})`,
   sheetBankedSoFar: (points) => `+${points} banked`,
 });

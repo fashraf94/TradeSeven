@@ -25,6 +25,12 @@
 //     shared resolver (api/_utils/baselineValidation.js
 //     resolveThresholdBaseline, which "Mirrors agent-evaluate.js's inline
 //     precedence + Guard 2 exactly"), in ladder.js legacyLadder — never copied.
+//     RULING 2026-11-07 (§0.4(a), rule (i)): the views draw NO held ladder for
+//     a legacy record — bombView.buildLadder gives it the preview, said as
+//     held. The record is still built here: it is what tells the views the
+//     agent holds the name (and which position). legacyLadder is unreachable
+//     from the views until the 'on' cleanup deletes it, unless a legacy-aware
+//     ladder is ruled later.
 //
 // THE SERVER LINES this mirrors (api/cron/agent-evaluate.js, read at d503dd07):
 //   :1241–1244  activationDateET = firstTradingDayOf(battle) ?? ET date of

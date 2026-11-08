@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { buildLadder, scoredChipText, sheetLine, traceParts, checkSlotOf } from './bombView.js';
 import { previewLadder, legacyLadder, measuredLadder } from './ladder.js';
 import { selectBombRecord } from './selectBombRecord.js';
-import { legacyBattle } from './__fixtures__/bombBattles.js';
+import { legacyBattle, measuredEogRecord } from './__fixtures__/bombBattles.js';
 import { baselineText, toGoText } from './FuseChart.jsx';
 import { toGo } from './ladder.js';
 
@@ -12,8 +12,31 @@ const at = (iso) => Date.parse(iso);
 
 describe('buildLadder — which ladder a mount gets (BA-1)', () => {
   const record = selectBombRecord(legacyBattle(), 'EOG', WED_1PM);
-  it('an agent battle\'s record for THIS symbol → the held ladder', () => {
-    expect(buildLadder({ context: { kind: 'agent' }, record, previousClose: 155.6, threshold: 2.5, symbol: 'EOG', nowMs: WED_1PM })).toMatchObject({ kind: 'held', model: 'legacy' });
+  it('an agent battle\'s MEASURED record for THIS symbol → the held ladder (the committed context\'s)', () => {
+    const l = buildLadder({ context: { kind: 'agent' }, record: measuredEogRecord(), previousClose: 155.6, threshold: 3.6, symbol: 'EOG', nowMs: WED_1PM });
+    expect(l).toMatchObject({ status: 'ok', kind: 'held', model: 'measured', baseline: { price: 155.6, source: 'fill' }, bankedPoints: 15 });
+  });
+  it('ruling 2026-11-07 (§0.4(a) rule (i)): a LEGACY record → the preview from yesterday\'s close, marked held — nothing banked', () => {
+    expect(record.model).toBe('legacy');
+    expect(record.history.maxMultiplier).toBe(1.12); // +15 is held in the legacy history …
+    const l = buildLadder({ context: { kind: 'agent' }, record, previousClose: 155.6, threshold: 3.6, symbol: 'EOG', nowMs: WED_1PM });
+    expect(l).toMatchObject({ status: 'ok', kind: 'preview', model: 'preview', heldPreview: true, baseline: { price: 155.6, source: 'previous_close', atMs: null }, bankedPoints: 0 });
+    expect(l.rungs.some((r) => r.banked)).toBe(false); // … and is not lit
+    expect(l.next.key).toBe('bagger');
+    expect(sheetLine({ ladder: l, clockLabel: '1:15', decimals: 2 })).toBe("Held · rungs shown from yesterday's close ($155.60) · this position's live ladder isn't shown here");
+  });
+  it('…a held crypto too (the selector gives every crypto the legacy record; the stamped-battle crypto is the modal\'s row)', () => {
+    const crypto = selectBombRecord(legacyBattle({ portfolio: { ...legacyBattle().portfolio, star: [{ symbol: 'EOG', baseATR: 3.6, positionId: 'pos-eog', isCrypto: true }] } }), 'EOG', WED_1PM);
+    expect(crypto).toMatchObject({ model: 'legacy', isCrypto: true });
+    expect(buildLadder({ context: { kind: 'agent' }, record: crypto, previousClose: 155.6, threshold: 3.6, symbol: 'EOG', nowMs: WED_1PM })).toMatchObject({ kind: 'preview', heldPreview: true, bankedPoints: 0 });
+  });
+  it('a held preview with no close or threshold yet → "no ladder yet", never the legacy "entry unavailable"', () => {
+    const l = buildLadder({ context: { kind: 'agent' }, record, previousClose: null, threshold: 3.6, symbol: 'EOG', nowMs: WED_1PM });
+    expect(l.status).toBe('preview_unavailable');
+  });
+  it('a short or an unreadable stamp is not legacy-scored: unchanged (no ladder, its own state)', () => {
+    const short = selectBombRecord(legacyBattle({ portfolio: { ...legacyBattle().portfolio, star: [{ symbol: 'EOG', baseATR: 3.6, positionId: 'pos-eog', direction: 'short' }] } }), 'EOG', WED_1PM);
+    expect(buildLadder({ context: { kind: 'agent' }, record: short, previousClose: 155.6, threshold: 3.6, symbol: 'EOG', nowMs: WED_1PM }).status).toBe('short_unsupported');
   });
   it('a record for another symbol, or none → a preview from yesterday\'s close × the Bomb tab threshold', () => {
     const l = buildLadder({ context: { kind: 'agent' }, record, previousClose: 120, threshold: 2.5, symbol: 'XOM', nowMs: WED_1PM });

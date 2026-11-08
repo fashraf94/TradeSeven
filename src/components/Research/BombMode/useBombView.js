@@ -117,23 +117,31 @@ export default function useBombView({
     setTimeframe('bomb');
   }, [enabled, marketOpen, timeframe, setTimeframe]);
 
-  // The red zone is the hook's spectate view; the Fuse is its bomb view.
-  useEffect(() => {
-    if (!enabled || typeof setTimeframe !== 'function' || (timeframe !== 'bomb' && timeframe !== 'spectate')) return;
-    const want = isRedZoneMode(rz.mode) ? 'spectate' : 'bomb';
-    if (timeframe !== want) setTimeframe(want);
-  }, [enabled, rz.mode, timeframe, setTimeframe]);
-
-  if (!enabled) return null;
-
   // The ghost is the 30-minute series; the trace is the 1-minute series — each
   // only from its own view (a stale view's bars are never relabelled).
   // Right after spectate → bomb the hook still holds the minute bars until the
   // 30-minute series arrives: the ghost keeps only bars spaced 30 minutes or more.
-  const spacing = timeframe === 'bomb' && Array.isArray(bars) ? traceParts(bars, []).intervalMin : null;
+  const spacing = enabled && timeframe === 'bomb' && Array.isArray(bars) ? traceParts(bars, []).intervalMin : null;
   // (and at most an hour apart: the 1D chart's daily bars, still held while the
   // 30-minute series loads after 1D → 💣, are not 30-minute closes either — review B3).
-  if (timeframe === 'bomb' && Array.isArray(bars) && (spacing === null || (spacing >= 30 && spacing <= 60))) ghostRef.current = { symbol, bars };
+  if (enabled && timeframe === 'bomb' && Array.isArray(bars) && (spacing === null || (spacing >= 30 && spacing <= 60))) ghostRef.current = { symbol, bars };
+  const thirtySeen = enabled && ghostRef.current.symbol === symbol && ghostRef.current.bars.length > 0;
+
+  // The red zone is the hook's spectate view; the Fuse is its bomb view. The
+  // switch waits for this symbol's 30-minute series: the hook's fallback for an
+  // empty minute series is that series from its cache (useResearchData :335),
+  // and a switch before it lands aborts the 30-minute request — a measured
+  // position opened straight into a closed red zone with no minute bars would
+  // show "Chart data unavailable" (found on the way, 2026-11-07: review A8's row
+  // re-run on a measured record).
+  useEffect(() => {
+    if (!enabled || typeof setTimeframe !== 'function' || (timeframe !== 'bomb' && timeframe !== 'spectate')) return;
+    const want = isRedZoneMode(rz.mode) && (timeframe === 'spectate' || thirtySeen) ? 'spectate' : 'bomb';
+    if (timeframe !== want) setTimeframe(want);
+  }, [enabled, rz.mode, timeframe, setTimeframe, thirtySeen]);
+
+  if (!enabled) return null;
+
   const ghost = ghostRef.current.symbol === symbol ? ghostRef.current.bars : [];
   const trace = traceParts(timeframe === 'spectate' ? bars : [], observations);
   const clock = held ? checkClock(nowMs, { battleExpiresAtMs: record?.battleExpiresAtMs, lastScoredAtMs: record?.lastScoredAtMs }) : null;

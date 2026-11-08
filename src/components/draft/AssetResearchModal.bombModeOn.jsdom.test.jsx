@@ -53,7 +53,7 @@ import { correctedScorePatch, scoreCorrectedPosition } from '../../../api/_utils
 import { enrichHeldPosition } from '../../screens/AgentBattleScreen.jsx';
 import { buildResearchAsset } from '../../utils/researchAssetBuilder.js';
 import { selectBombRecord } from '../Research/BombMode/selectBombRecord.js';
-import { legacyBattle } from '../Research/BombMode/__fixtures__/bombBattles.js';
+import { legacyBattle, measuredEogRecord } from '../Research/BombMode/__fixtures__/bombBattles.js';
 import { BANKED_MOMENT_MS } from '../Research/BombMode/useBombView.js';
 import AssetResearchModal from './AssetResearchModal';
 
@@ -206,8 +206,12 @@ describe('honest after the close and across days', () => {
 });
 
 describe('the red zone — automatic, on the 1-minute series the view already fetches', () => {
-  // A legacy held EOG: previous close $155.60, threshold 3.6 % → +30 at $164.00.
-  const legacyEog = (over = {}) => legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z', ...over });
+  // A held MEASURED EOG at the legacy fixture's rung prices (fill $155.60, 3.6 %:
+  // +30 at $164.00) — since the 2026-11-07 ruling on §0.4(a) only a measured
+  // position has a held ladder, and so a red zone. `after` is the record once
+  // the 1:15 check has crossed +30.
+  const measuredEog = (over = {}) => measuredEogRecord(over);
+  const after115 = (scoredAt = '2026-10-14T17:15:31.000Z', lastScoredAt = '2026-10-14T17:15:40.000Z') => measuredEog({ crossedTiers: ['bagger', 'doubleBagger'], lastScoredAt, scored: { price: 164.05, atMs: Date.parse(scoredAt) } });
   const eogAsset = { symbol: 'EOG', name: 'EOG', price: 163.6, threshold: 3.6 };
   function seedEog(nowIso) {
     vi.useFakeTimers(); vi.setSystemTime(new Date(nowIso));
@@ -215,9 +219,8 @@ describe('the red zone — automatic, on the 1-minute series the view already fe
     net.intraday.EOG = [bar('2026-10-14T16:30:00.000Z', 163, 163.7, 162.9, 163.5), bar('2026-10-14T16:00:00.000Z', 162.5, 163.1, 162.4, 163)];
     net.minute.EOG = [bar('2026-10-14T16:56:00.000Z', 163.4, 163.5, 163.3, 163.45), bar('2026-10-14T16:55:00.000Z', 163.3, 163.4, 163.2, 163.4)];
   }
-  const open = async (live, battle = legacyEog()) => {
-    const record = selectBombRecord(battle, 'EOG', Date.now());
-    await render(<AssetResearchModal asset={{ ...eogAsset, price: live }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={live} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
+  const open = async (live, record = measuredEog()) => {
+    await render(<AssetResearchModal asset={{ ...eogAsset, price: live }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={live} bombContext={{ kind: 'agent', battleId: 'battle-measured', held: true, record }} />);
     return record;
   };
   it('enters within 0.5 % of the next rung: the goal-line view, the RED ZONE chip, the 1-minute request and its 15-second poll', async () => {
@@ -244,19 +247,19 @@ describe('the red zone — automatic, on the 1-minute series the view already fe
   });
   it('leaves past 0.75 % and goes back to the Fuse on the 30-minute series', async () => {
     seedEog('2026-10-14T17:00:00.000Z');
-    const battle = legacyEog();
-    await open(163.6, battle);
+    const record = measuredEog();
+    await open(163.6, record);
     expect(q('[data-bomb-view="redzone"]')).not.toBeNull();
-    await open(162.5, battle); // 0.92 %
+    await open(162.5, record); // 0.92 %
     expect(q('[data-bomb-view="fuse"]')).not.toBeNull();
     expect(q('[data-bomb-redzone-chip]')).toBeNull();
   });
   it('the banked moment plays once when the modal SEES a rung bank, and the time it names is that check\'s', async () => {
     seedEog('2026-10-14T17:16:00.000Z');
-    const before = legacyEog();
+    const before = measuredEog();
     await open(163.95, before);
     expect(q('[data-bomb-view="redzone"]')).not.toBeNull();
-    const after = legacyEog({ thresholdHistory: { EOG: { maxMultiplier: 1.55, minMultiplier: -0.31 } }, scoreState: { lastScoredAt: '2026-10-14T17:15:40.000Z' }, cronState: { lastTickPrice: { EOG: 164.05 }, lastTickTimestamp: { EOG: Date.parse('2026-10-14T17:15:31.000Z') } } });
+    const after = after115();
     await open(164.05, after);
     expect(q('[data-rz-banked-moment]').textContent).toBe('+30BANKED · 1:15 CHECK · $164.05');
     await act(async () => { await vi.advanceTimersByTimeAsync(BANKED_MOMENT_MS); }); await flush();
@@ -279,17 +282,88 @@ describe('the red zone — automatic, on the 1-minute series the view already fe
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); }); await flush();
     expect(net.calls.filter((c) => c[2] === '1m')).toHaveLength(1);
   });
-  it('crypto never enters', async () => {
+  it('crypto never enters: the zone\'s own crypto rule (stepRedZone), pinned with a measured-shaped record (a measured crypto does not exist)', async () => {
     seedEog('2026-10-14T17:00:00.000Z');
-    const battle = legacyEog(); battle.portfolio.star[0].isCrypto = true;
-    const record = selectBombRecord(battle, 'EOG', Date.now());
-    await render(<AssetResearchModal asset={{ ...eogAsset, isCrypto: true }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={163.6} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
+    await render(<AssetResearchModal asset={{ ...eogAsset, isCrypto: true }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={163.6} bombContext={{ kind: 'agent', battleId: 'battle-measured', held: true, record: measuredEog() }} />);
+    expect(q('[data-bomb-view="fuse"]')).not.toBeNull();
     expect(q('[data-bomb-view="redzone"]')).toBeNull();
   });
-  it('entry unavailable: a held legacy name whose precedence yields nothing draws no rung', async () => {
+});
+
+describe('ruling 2026-11-07 (§0.4(a), rule (i)): a held LEGACY-SCORED position draws the preview, said as held', () => {
+  // The legacy EOG fixture: previous close $155.60, the Bomb tab's 3.6 %. Its
+  // legacy history holds +15 and +30 (maxMultiplier 1.55); live $166.40 is
+  // 0.24 % under the would-be +50 — a held ladder would be in the red zone.
+  const HELD_LINE = "What has to happenHeld · rungs shown from yesterday's close ($155.60) · this position's live ladder isn't shown here";
+  const legacyHeld = (over = {}) => legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z', thresholdHistory: { EOG: { maxMultiplier: 1.55, minMultiplier: -0.31 } }, ...over });
+  function seedEog(nowIso) {
+    vi.useFakeTimers(); vi.setSystemTime(new Date(nowIso));
+    net.daily.EOG = [{ date: '2026-10-14', open: 156, high: 166.6, low: 155, close: 166.4, volume: 1 }, { date: '2026-10-13', open: 154, high: 156, low: 153, close: 155.6, volume: 1 }];
+    net.intraday.EOG = [bar('2026-10-14T16:30:00.000Z', 166, 166.5, 165.9, 166.3), bar('2026-10-14T16:00:00.000Z', 165.5, 166.1, 165.4, 166)];
+    net.minute.EOG = [bar('2026-10-14T16:56:00.000Z', 166.3, 166.45, 166.25, 166.4)];
+  }
+  const openHeld = async (battle, symbol, asset, live) => {
+    const record = selectBombRecord(battle, symbol, Date.now());
+    await render(<AssetResearchModal asset={{ ...asset, price: live }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={live} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
+    return record;
+  };
+  const bombText = () => [q('[data-bomb-view]'), q('[data-bomb-sheet]')].map((e) => e?.textContent ?? '').join(' ');
+  const expectHeldPreview = async () => {
+    expect(q('[data-bomb-view="fuse"]')).not.toBeNull();
+    expect(q('[data-bomb-view="redzone"]')).toBeNull();
+    expect(q('[data-bomb-sheet="preview"]')).not.toBeNull();
+    expect(q('[data-bomb-what]').textContent).toBe(HELD_LINE);
+    // nothing lit as banked
+    expect(document.body.querySelectorAll('[data-rung-banked="1"]')).toHaveLength(0);
+    expect(document.body.querySelectorAll('[data-fuse-banked-at]')).toHaveLength(0);
+    expect(bombText()).not.toMatch(/banked|✓/i);
+    // no clock and no scored price
+    expect(document.body.querySelectorAll('[data-rz-clock]')).toHaveLength(0);
+    expect(bombText()).not.toMatch(/next check|checking/i);
+    expect(q('[data-bomb-sheet-scored]')).toBeNull();
+    // never "entry", never "will bank"
+    expect(bombText()).not.toMatch(/entr(y|ies|ed)\b|will bank/i);
+    // never the 1-minute series: no red zone, no poll
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); }); await flush();
+    expect(net.calls.filter((c) => c[0] === 'history' && c[2] === '1m')).toHaveLength(0);
+  };
+  it('a held legacy stock', async () => {
+    seedEog('2026-10-14T17:00:00.000Z');
+    const record = await openHeld(legacyHeld(), 'EOG', { symbol: 'EOG', name: 'EOG', threshold: 3.6 }, 166.4);
+    expect(record.model).toBe('legacy');
+    await expectHeldPreview();
+    expect(q('[data-fuse-baseline]').textContent).toBe("YESTERDAY'S CLOSE $155.60");
+  });
+  it('a held crypto on a legacy battle', async () => {
+    seedEog('2026-10-14T17:00:00.000Z');
+    const battle = legacyHeld();
+    battle.portfolio = { ...battle.portfolio, star: [{ ...battle.portfolio.star[0], isCrypto: true }] };
+    const record = await openHeld(battle, 'EOG', { symbol: 'EOG', name: 'EOG', threshold: 3.6, isCrypto: true }, 166.4);
+    expect(record).toMatchObject({ model: 'legacy', isCrypto: true });
+    await expectHeldPreview();
+  });
+  it('a held crypto on a STAMPED battle (the case the STOP named: its legacy day ladder re-bases nightly)', async () => {
+    const { battle } = await committedRow();
+    battle.portfolio = { ...battle.portfolio, core: [{ symbol: 'EOG', name: 'EOG', isCrypto: true, baseATR: 3.6, positionId: 'pos-crypto' }] };
+    battle.thresholdHistory = { EOG: { maxMultiplier: 1.55, minMultiplier: -0.31 } };
+    seedEog('2026-10-14T17:00:00.000Z');
+    const record = await openHeld(battle, 'EOG', { symbol: 'EOG', name: 'EOG', threshold: 3.6, isCrypto: true }, 166.4);
+    expect(record).toMatchObject({ model: 'legacy', isCrypto: true, tier: 'core' });
+    expect(selectBombRecord(battle, 'AAPL', Date.now()).model).toBe('measured'); // the same battle's stock keeps its held ladder
+    await expectHeldPreview();
+  });
+  it('a held legacy stock with no entry price on the record (no swapPrice, no starting price) — the held line, not "Entry unavailable"', async () => {
+    seedEog('2026-10-14T17:00:00.000Z');
+    const battle = legacyHeld({ portfolio: { ...legacyBattle().portfolio, startingPrices: {} } });
+    await openHeld(battle, 'EOG', { symbol: 'EOG', name: 'EOG', threshold: 3.6 }, 166.4);
+    expect(q('[data-bomb-state="entry_unavailable"]')).toBeNull();
+    await expectHeldPreview();
+  });
+  it('a held legacy stock before yesterday\'s close has loaded: "No ladder yet", nothing drawn', async () => {
     seedEog('2026-10-14T17:00:00.000Z'); net.daily.EOG = [];
-    await open(163.6);
-    expect(q('[data-bomb-state="entry_unavailable"]')).not.toBeNull();
+    await openHeld(legacyHeld(), 'EOG', { symbol: 'EOG', name: 'EOG', threshold: 3.6 }, 166.4);
+    expect(q('[data-bomb-state="preview_unavailable"]')).not.toBeNull();
+    expect(q('[data-bomb-view="redzone"]')).toBeNull();
   });
 });
 
@@ -346,27 +420,28 @@ describe('lens C: the check clock in the sheet and the banked time', () => {
     net.intraday.EOG = [bar('2026-10-14T16:30:00.000Z', 163, 163.7, 162.9, 163.5), bar('2026-10-14T16:00:00.000Z', 162.5, 163.1, 162.4, 163)];
     net.minute.EOG = [bar('2026-10-14T16:56:00.000Z', 163.4, 163.5, 163.3, 163.45), bar('2026-10-14T16:55:00.000Z', 163.3, 163.4, 163.2, 163.4)];
   }
-  const open = async (live, battle) => {
-    const record = selectBombRecord(battle, 'EOG', Date.now());
-    await render(<AssetResearchModal asset={{ ...eogAsset, price: live }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={live} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
+  // A held MEASURED EOG at the legacy fixture's rung prices (see the red-zone block).
+  const open = async (live, record) => {
+    await render(<AssetResearchModal asset={{ ...eogAsset, price: live }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={live} bombContext={{ kind: 'agent', battleId: 'battle-measured', held: true, record }} />);
   };
+  const after115 = (scoredAt, lastScoredAt) => measuredEogRecord({ crossedTiers: ['bagger', 'doubleBagger'], lastScoredAt, scored: { price: 164.05, atMs: Date.parse(scoredAt) } });
   it('C3: at the slot, before the battle is scored past it, the sheet says checking…', async () => {
     seedEog('2026-10-14T17:16:00.000Z'); // the 1:15 slot; the fixture was last scored at 1:00:40
-    await open(158, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z', thresholdHistory: {} }));
+    await open(158, measuredEogRecord({ crossedTiers: [] }));
     expect(q('[data-bomb-view="fuse"]')).not.toBeNull();
     expect(q('[data-bomb-what]').textContent).toBe('What has to happenNeeds $161.20 at a check · checking…');
   });
   it('A3: the zone enters on the DISPLAYED % — $0.82 below +30 is 0.5025 %, shown 0.50 %, and is in the red zone', async () => {
     seedEog('2026-10-14T17:00:00.000Z');
-    await open(163.18, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z' }));
+    await open(163.18, measuredEogRecord());
     expect(q('[data-bomb-view="redzone"]')).not.toBeNull();
     expect(q('[data-rz-distance]').textContent).toBe('$0.82to +30 · 0.50%');
   });
   it('D6: two tiers banked at one check — one moment for +45, and both rungs carry the check time the modal saw', async () => {
     seedEog('2026-10-14T17:16:00.000Z');
-    await open(161.1, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z', thresholdHistory: {} })); // 0.06 % below +15 at $161.20
+    await open(161.1, measuredEogRecord({ crossedTiers: [] })); // 0.06 % below +15 at $161.20
     expect(q('[data-bomb-view="redzone"]')).not.toBeNull();
-    const after = legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z', thresholdHistory: { EOG: { maxMultiplier: 1.55, minMultiplier: -0.31 } }, scoreState: { lastScoredAt: '2026-10-14T17:15:40.000Z' }, cronState: { lastTickPrice: { EOG: 164.05 }, lastTickTimestamp: { EOG: Date.parse('2026-10-14T17:15:31.000Z') } } });
+    const after = after115('2026-10-14T17:15:31.000Z', '2026-10-14T17:15:40.000Z');
     await open(164.05, after);
     expect(q('[data-rz-banked-moment]').textContent).toBe('+45BANKED · 1:15 CHECK · $164.05');
     await act(async () => { await vi.advanceTimersByTimeAsync(BANKED_MOMENT_MS); }); await flush();
@@ -378,16 +453,16 @@ describe('lens C: the check clock in the sheet and the banked time', () => {
     seedEog('2026-10-14T20:30:00.000Z'); // 4:30 PM ET
     net.minute.EOG = [];
     net.intraday.EOG = [bar('2026-10-14T19:30:00.000Z', 163.4, 163.75, 163.3, 163.7), bar('2026-10-14T19:00:00.000Z', 163, 163.5, 162.9, 163.4)];
-    await open(163.7, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z' }));
+    await open(163.7, measuredEogRecord());
     expect(q('[data-redzone-state="closed"]')).not.toBeNull();
     expect(text()).toContain('Market closed');
     expect(text()).not.toMatch(/last tick 3:30/i);
   });
   it('C4: a late queue (the 1:15 slot scored at 1:19:20) — the banked moment names the 1:15 check, never 1:19', async () => {
     seedEog('2026-10-14T17:20:00.000Z');
-    await open(163.95, legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z' }));
+    await open(163.95, measuredEogRecord());
     expect(q('[data-bomb-view="redzone"]')).not.toBeNull();
-    const after = legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z', thresholdHistory: { EOG: { maxMultiplier: 1.55, minMultiplier: -0.31 } }, scoreState: { lastScoredAt: '2026-10-14T17:19:20.000Z' }, cronState: { lastTickPrice: { EOG: 164.05 }, lastTickTimestamp: { EOG: Date.parse('2026-10-14T17:19:10.000Z') } } });
+    const after = after115('2026-10-14T17:19:10.000Z', '2026-10-14T17:19:20.000Z');
     await open(164.05, after);
     expect(q('[data-rz-banked-moment]').textContent).toBe('+30BANKED · 1:15 CHECK · $164.05');
   });
@@ -402,9 +477,8 @@ describe('lens B: the poll follows the session under an open red zone (B1, B4)',
     net.daily.EOG = [{ date: '2026-10-14', open: 156, high: 164, low: 155, close: 163.6, volume: 1 }, { date: '2026-10-13', open: 154, high: 156, low: 153, close: 155.6, volume: 1 }];
     net.intraday.EOG = [bar('2026-10-13T19:30:00.000Z', 155, 155.7, 154.9, 155.6), bar('2026-10-13T19:00:00.000Z', 155.2, 155.4, 154.8, 155)];
     net.minute.EOG = minute;
-    const battle = legacyBattle({ expiresAt: '2026-10-20T20:00:00.000Z' });
-    const record = selectBombRecord(battle, 'EOG', Date.now());
-    await render(<AssetResearchModal asset={{ ...eogAsset, price: 163.6 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={163.6} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
+    const record = measuredEogRecord(); // a held MEASURED EOG at the legacy fixture's rung prices (see the red-zone block)
+    await render(<AssetResearchModal asset={{ ...eogAsset, price: 163.6 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={163.6} bombContext={{ kind: 'agent', battleId: 'battle-measured', held: true, record }} />);
   };
   it('B1: opened at 9:29 in a closed red zone — at 9:30 the zone opens and the 15-second poll starts', async () => {
     // At 9:29 the minute series ends at yesterday's close; today's first bar is served from the first poll on.

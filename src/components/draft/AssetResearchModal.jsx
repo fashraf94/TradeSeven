@@ -362,10 +362,11 @@ const AssetResearchModal = ({
       currentAsset?.price, currentAsset?.currentPrice, measuredBombKey]);
 
   // Bomb mode's one view model (Fuse / red zone / sheet), or null when off. A
-  // measured position's ladder IS bombData.measured (spec §3.1); a held legacy
-  // ladder takes the server's baseline precedence from the record, not the
-  // fallback chain above (which stays the mode-off chart's, byte for byte); a
-  // preview takes yesterday's close for the chart and the sheet alike (BA-1).
+  // measured position's ladder IS bombData.measured (spec §3.1); a preview —
+  // and, by the 2026-11-07 ruling on §0.4(a), a held legacy-scored position
+  // (bombView.buildLadder) — takes yesterday's close for the chart and the
+  // sheet alike (BA-1), never the fallback chain above (which stays the
+  // mode-off chart's, byte for byte).
   const [bombThreshold, setBombThreshold] = useState(null); // { symbol, threshold } — the sheet's thresholds answer
   const bombView = useBombView({
     on: bombOn,

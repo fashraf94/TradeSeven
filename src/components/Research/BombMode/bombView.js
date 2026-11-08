@@ -7,7 +7,7 @@
 
 import { priceDecimals, priceText } from '../priceFormat.js';
 import { nextEligibleSlot } from '../../../../api/_utils/callRecords/horizon.js';
-import { measuredLadder, legacyLadder, previewLadder, v4Ladder, v4LevelsFor } from './ladder.js';
+import { measuredLadder, previewLadder, v4Ladder, v4LevelsFor } from './ladder.js';
 import { BOMB_COPY } from './bombCopy.js';
 import { etClock, etDate, etWeekday } from './checkClock.js';
 
@@ -17,15 +17,24 @@ const FIFTEEN_MIN_MS = 15 * 60 * 1000;
 
 /**
  * The one ladder this mount draws (BA-1): held when the agent battle's record
- * names a position in THIS symbol, else a preview (V4 levels when the battle
- * has today's, else yesterday's close × the Bomb tab's threshold).
+ * names a MEASURED position in THIS symbol, else a preview (V4 levels when the
+ * battle has today's, else yesterday's close × the Bomb tab's threshold).
+ *
+ * Ruling 2026-11-07 (spec §0.4(a), rule (i)): the held ladder is drawn only
+ * for `record.model === 'measured'`. A legacy-scored position (a legacy stock,
+ * and every crypto, stamped battle or not) is not decided only at a 15-minute
+ * check — the 8:45 PM ET nightly run re-scores it and its day ladder re-bases
+ * each night — so it draws the preview, marked `heldPreview` so the sheet says
+ * it is held without promising a ladder. A preview has no clock, no scored
+ * chip, no check dots, no red zone and nothing banked. ladder.js legacyLadder
+ * stays in the tree, unreachable from here, until the 'on' cleanup.
  */
 export function buildLadder({ context, record, bombData, previousClose, threshold, symbol, nowMs }) {
   if (context?.kind === 'agent' && record && record.symbol === symbol) {
     // The live record's committed context (same shape and source as the
     // modal's bombData.measured); bombData only when the record has none.
     if (record.model === 'measured') return measuredLadder({ measured: record.measured, entryAtMs: record.entry?.atMs ?? null });
-    if (record.model === 'legacy') return legacyLadder({ record, previousClose, nowMs });
+    if (record.model === 'legacy') return { ...previewLadder({ previousClose, threshold }), heldPreview: true };
     return { status: record.reason === 'short_position' ? 'short_unsupported' : 'model_unavailable', kind: 'held', model: 'unsupported', rungs: [], up: [], down: [], next: null, bankedPoints: 0 };
   }
   if (context?.kind === 'v4') {
@@ -75,7 +84,8 @@ export function sheetLine({ ladder, clockLabel = null, checking = false, bankedT
   if (!ladder || ladder.status !== 'ok') return null;
   const d = decimals;
   if (ladder.kind === 'preview') {
-    return ladder.model === 'v4' ? BOMB_COPY.previewV4(ladder.baseline.price, d) : BOMB_COPY.previewNeeds(ladder.baseline.price, d);
+    if (ladder.model === 'v4') return BOMB_COPY.previewV4(ladder.baseline.price, d);
+    return (ladder.heldPreview === true ? BOMB_COPY.heldPreviewNeeds : BOMB_COPY.previewNeeds)(ladder.baseline.price, d);
   }
   if (!ladder.next) return BOMB_COPY.allRungsBanked(ladder.bankedPoints);
   const lastBanked = [...ladder.up].reverse().find((r) => r.banked) || null;

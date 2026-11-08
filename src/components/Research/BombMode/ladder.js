@@ -86,6 +86,11 @@ export function measuredLadder({ measured, entryAtMs = null } = {}) {
 }
 
 /**
+ * UNREACHABLE FROM THE VIEWS since the 2026-11-07 ruling on spec §0.4(a)
+ * (rule (i): a held ladder only for a measured position — bombView.buildLadder
+ * gives a legacy record the preview). Kept, with its rows, until the 'on'
+ * cleanup deletes it, unless a legacy-aware ladder is ruled later.
+ *
  * Held, legacy model (spec §3.1). `record` is selectBombRecord's legacy
  * answer; `previousClose` is the modal's own (the prior session's daily close,
  * useResearchData getPreviousClose — Guard 2's own reference bar, so Guard 2

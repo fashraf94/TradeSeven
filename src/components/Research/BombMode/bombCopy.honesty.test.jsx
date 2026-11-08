@@ -36,7 +36,9 @@ const hit = (s, term) => new RegExp(`\\b${term.replace(/ /g, '\\s+')}\\b`, 'i').
 
 const measured = measuredLadder({ measured: { measured: true, baselinePrice: 100.75, targets: [['bagger', 102.765], ['doubleBagger', 103.7725], ['tenBagger', 104.78], ['bust', 98.735], ['crash', 97.7275], ['meltdown', 96.72]].map(([key, price]) => ({ key, price })), crossedTiers: ['bagger'] }, entryAtMs: Date.parse('2026-10-13T13:45:00.000Z') });
 const preview = previewLadder({ previousClose: 99, threshold: 2 });
-const v4 = v4Ladder({ levels: { baseline: 150, baggerBomb: 154.5, doubleBagger: 156.75, tenBagger: 159, bust: 145.5, crash: 143.25, meltdown: 141, threshold: 3 } });
+// Ruling 2026-11-07 (§0.4(a), rule (i)): a held legacy-scored position's preview (bombView.buildLadder).
+const heldPreview = { ...previewLadder({ previousClose: 99, threshold: 2 }), heldPreview: true };
+const v4 =v4Ladder({ levels: { baseline: 150, baggerBomb: 154.5, doubleBagger: 156.75, tenBagger: 159, bust: 145.5, crash: 143.25, meltdown: 141, threshold: 3 } });
 
 // Every template is called with a value for each of its own parameters, by name;
 // a template with a parameter missing here fails the coverage row below.
@@ -60,7 +62,7 @@ function renderedStates() {
   const trace = traceParts([{ timestamp: Date.parse('2026-10-14T16:56:00.000Z') / 1000, close: 102.6 }, { timestamp: Date.parse('2026-10-14T16:57:00.000Z') / 1000, close: 102.7 }], [{ atMs: Date.parse('2026-10-14T16:59:00.000Z'), price: 102.71 }]);
   const clock = { state: 'countdown', label: '1:15 · 09:00' };
   const states = [];
-  for (const ladder of [measured, preview, v4]) {
+  for (const ladder of [measured, preview, heldPreview, v4]) {
     const go = toGo(ladder, 102.7);
     const view = { ladder, go, live: 102.7, decimals: 2, mode: 'fuse', nowMs: Date.parse('2026-10-14T17:06:00.000Z'), clock, ghost, trace, checkDots: [], bankedTimes: { bagger: Date.parse('2026-10-14T17:15:00.000Z') }, moment: null, redZoneScored: scoredChipText({ live: 102.7, scored: { price: 102.69, atMs: Date.parse('2026-10-14T17:00:30.000Z') }, always: true }), sheetScored: null, sheetLine: sheetLine({ ladder, clockLabel: '1:15', decimals: 2 }) };
     states.push(renderToStaticMarkup(<FuseChart ladder={ladder} live={102.7} decimals={2} go={go} ghost={ghost} bankedTimes={view.bankedTimes} />));
@@ -117,6 +119,25 @@ describe('a preview never says "entry" (BA-1)', () => {
   });
   it('the only "entered" a preview carries is the conditional of its own label', () => {
     expect(BOMB_COPY.previewNeeds(99, 2)).toBe("Preview · rungs if it entered at yesterday's close ($99.00)");
+  });
+});
+
+describe('a held legacy-scored position: the held wording (ruling 2026-11-07, §0.4(a) rule (i))', () => {
+  it('the exact line, from BOMB_COPY', () => {
+    expect(BOMB_COPY.heldPreviewNeeds(155.6, 2)).toBe("Held · rungs shown from yesterday's close ($155.60) · this position's live ladder isn't shown here");
+    expect(sheetLine({ ladder: heldPreview, clockLabel: '1:15', decimals: 2 })).toBe(BOMB_COPY.heldPreviewNeeds(99, 2));
+  });
+  it('the rendered Fuse and sheet: held, never "entry" in any form (not even the preview\'s conditional), never "will bank", nothing banked', () => {
+    const view = { ladder: heldPreview, go: toGo(heldPreview, 100), live: 100, decimals: 2, sheetLine: sheetLine({ ladder: heldPreview, clockLabel: '1:15', decimals: 2 }), sheetScored: null };
+    const fuse = renderToStaticMarkup(<FuseChart ladder={heldPreview} live={100} decimals={2} go={view.go} bankedTimes={{ bagger: Date.parse('2026-10-14T17:15:00.000Z') }} />);
+    const sheet = renderToStaticMarkup(<BombSheet view={view} />);
+    const doc = new DOMParser().parseFromString(`<body>${fuse}${sheet}</body>`, 'text/html');
+    const text = doc.body.textContent;
+    expect(text).toContain("Held · rungs shown from yesterday's close ($99.00) · this position's live ladder isn't shown here");
+    expect(text).not.toMatch(/entr(y|ies|ed)\b/i);
+    expect(text).not.toMatch(/will\s+bank|a check decides/i);
+    expect(text).not.toMatch(/banked|✓/i);
+    expect(doc.querySelectorAll('[data-rung-banked="1"], [data-fuse-banked-at]')).toHaveLength(0);
   });
 });
 

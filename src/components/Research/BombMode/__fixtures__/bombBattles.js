@@ -33,3 +33,65 @@ export function legacyBattle(over = {}) {
   };
   return { ...base, ...over };
 }
+
+/**
+ * The selector's MEASURED answer for a held position (selectBombRecord's
+ * measured shape, as the Battle View hands it to the modal in
+ * bombContext.record), hand-built. Since the 2026-11-07 ruling on spec
+ * §0.4(a) a legacy record draws only the preview, so the red-zone, clock and
+ * banked-moment rows run on a measured record. The selector's own measured
+ * branch is pinned on the real corrected-battle harness (selectBombRecord.test.js;
+ * the modal's committedRow rows).
+ *   fill, thresholdPct  the targets are fill × (1 + multiplier × thresholdPct / 100)
+ *   crossedTiers        the committed context's crossed tiers
+ *   lastScoredAt        scoreState.lastScoredAt; scored: the check's currentPrice at its providerAsOf
+ */
+const MULTIPLIERS = Object.freeze({ bagger: 1, doubleBagger: 1.5, tenBagger: 2, bust: -1, crash: -1.5, meltdown: -2 });
+export function measuredRecord({
+  symbol, positionId, tier = 'star', slot = 0, fill, thresholdPct, crossedTiers = [],
+  lastScoredAt = '2026-10-14T17:00:40.000Z', scored = null, expiresAt = '2026-10-20T20:00:00.000Z',
+  enteredAt = '2026-10-13T13:45:00.000Z', checkDots = [],
+}) {
+  const entryAtMs = Date.parse(enteredAt);
+  return {
+    symbol,
+    tier,
+    slot,
+    positionId,
+    battleExpiresAtMs: Date.parse(expiresAt),
+    lastScoredAtMs: Date.parse(lastScoredAt),
+    model: 'measured',
+    entry: { price: fill, atMs: entryAtMs },
+    measured: {
+      measured: true,
+      baselinePrice: fill,
+      targets: Object.entries(MULTIPLIERS).map(([key, m]) => ({ key, price: fill * (1 + (m * thresholdPct) / 100) })),
+      crossedTiers: [...crossedTiers],
+    },
+    scored: scored ? { ...scored, source: 'stockRewardContexts' } : null,
+    checkDots: checkDots.filter((d) => d.atMs >= entryAtMs),
+  };
+}
+
+/**
+ * A held EOG at the legacy fixture's own rung prices, so the rows keep their
+ * numbers: the fill is that fixture's previous close ($155.60) and the targets
+ * its 3.6 % ladder (+15 at $161.20, +30 at $164.00, +50 at $166.80); +15 banked
+ * (its maxMultiplier 1.12), last scored at 1:00:40 with $160.19 at 1:00:31, and
+ * its two check dots since entry.
+ */
+export function measuredEogRecord(over = {}) {
+  return measuredRecord({
+    symbol: 'EOG',
+    positionId: 'pos-eog',
+    fill: 155.6,
+    thresholdPct: 3.6,
+    crossedTiers: ['bagger'],
+    scored: { price: 160.19, atMs: Date.parse('2026-10-14T17:00:31.000Z') },
+    checkDots: [
+      { atMs: Date.parse('2026-10-14T16:45:00.000Z'), px: 159.8 },
+      { atMs: Date.parse('2026-10-14T17:00:00.000Z'), px: 160.19 },
+    ],
+    ...over,
+  });
+}
