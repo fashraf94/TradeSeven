@@ -292,6 +292,19 @@ const DARK_BY_DESIGN = {
   //   'allowlist' → 'off') by moving the literal and its pin together; every
   //   mode-off arm stays in the code until the cleanup PR, after 'on' has run
   //   in production.
+  // RESEARCH_MODAL_SHEET_MODE intentionally ABSENT, and it must stay absent:
+  // Research Modal Build C's sheet in battle (spec
+  // docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md §4.1) is a STRING
+  // TRI-STATE ('off' | 'allowlist' | 'on') beside RESEARCH_MODAL_BOMB_MODE in
+  // src/config/researchModalFlags.js, so buildFlagMap never sees it and the
+  // integrity test below would fail the key outright. Noted HERE so a flip is
+  // loud in the place a reader looks for the dark runway;
+  // researchModalSheetFlag.test.js asserts both halves.
+  //   Runway: 'off' ships with Build C (dark). 'allowlist' (the founder and
+  //   FT_QA, per agent battle by the cockpit-status verdict) and then 'on' are
+  //   each their own one-line founder PR after merge, never a build PR; each
+  //   step moves the pin row in researchModalSheetFlag.test.js in the same
+  //   commit (BUILD_RULES §2). Rollback: one step back with its pin row.
   // ACTIVATION_EVIDENCE_ENABLED intentionally ABSENT: the ID-1 activation observer
   // flipped true on 2026-11-06 in the founder's own flip PR (flip checklist:
   // docs/audits/20261106_BUILD_ACTIVATION_OBSERVER_REVIEW_FIXES.md §11) — the
