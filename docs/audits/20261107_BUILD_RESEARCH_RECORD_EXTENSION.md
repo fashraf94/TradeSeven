@@ -2,7 +2,7 @@
 
 **Date:** 7 November 2026 · **Built by:** Claude Code (Opus 5.5), fresh session in its own worktree, from Fable's build prompt of 7 Nov 2026 · **Base:** `origin/main` `d503dd07` (fetched first; unchanged when the final checks ran) · **Branch:** pushed as `claude/research-record-extension` (the app's local worktree branch carries a suffix, `claude/research-record-extension-ba93d4`) · **Code head:** `0b5c12dc` · **Contract note:** `docs/design/20261107_RESEARCH_RECORD_EXTENSION_V1.md`
 
-> **Follow-up V2 (same day, same PR):** the four clarifications and the eleven rulings were applied after this report's §1–§11, on `main` `d09603b2` (merged in), code head `ded8808d`. **§12 records it** — what changed, the size cuts, its own review and its runs. Where §1–§11 and §12 differ (the question's rule, `symbolKeys` on host records, the summary and url caps, the eleven questions), §12 and the amended contract note govern.
+> **Follow-up V2 (same day, same PR):** the four clarifications and the eleven rulings were applied after this report's §1–§11, on `main` `d09603b2` (merged in), code head `ded8808d`. **§12 records it** — what changed, the size cuts, its own review and its runs. Where §1–§11 and §12 differ (the question's rule, `symbolKeys` on host records, the summary and url caps, the eleven questions), §12 and the amended contract note govern. **The closing-rules fix** (same day, code head `e5980324`) is §12.8: 20 revisions again (746,827 bytes), adoption from an open record only, and on a Shared Research close the reason agrees with the subject.
 
 ## 0. Verdict
 
@@ -301,3 +301,37 @@ An early full suite at `d0399c1d`, run while the reviewers and the mutants were 
 1. Read the contract note's §10 (ten items for B1), especially Q6 (20 revisions would fit now that urls are 1,024) and Q4 (the merged-total ref cap).
 2. Merge when satisfied.
 3. **After merge, deploy the new `researchWork` index** (`firebase deploy --only firestore:indexes`). No rules deploy is needed.
+
+### 12.8 Addendum — the three closing rules before merge (7 Nov 2026)
+
+Fable's fix "three closing rules before merge" was run in this session on the same branch and PR, on head `2026f1cd`. Code commit `e5980324`: 5 files, +100 / −11 lines, under the BUILD_RULES §2 threshold, so no review round; one planted mutant or more per rule. The contract note's §9.1 lists the changes; its §10 marks Q3, Q5 and Q6 settled and Q4 deferred.
+
+| The fix asked | Done | Where |
+|---|---|---|
+| `SUMMARY_REVISIONS_MAX` back to 20; urls stay 1,024; the 21st refused; the size test pins the new figure and still asserts ≤ 1,000,000 | Done: **746,827 bytes**, pinned | `api/_utils/researchRecords/model.js:619`, `:897`; `size.test.js` |
+| Adoption needs an open investigation (`record_not_open`) | Done | `api/_utils/hypothesisRecords/model.js:412` |
+| On a `shared_research` record, in `closePatch` and in a mint already closed: `concluded` with a subject, and `saved_to_list` without one, are `invalid_terminal_reason`; host origins unchanged | Done | `model.js:516` (the rule), `:492` (the mint), `:595` (the close: the record's list, or the one this close sets) |
+| Q4, a version's total refs | Not changed: deferred, trigger recorded (contract §10 Q4) | — |
+
+**Tests.**
+- The 20th revision lands and the 21st is refused.
+- The builder refuses a completed, an abandoned and a failed record.
+- Shared Research closes: `concluded` with a subject refused (set by the close, or already on the record); `saved_to_list` without one refused in each terminal state, including with a subject that sets no list. Both rules also hold for a mint already closed.
+- The host sweep is extended: `main`'s `closePatch`, copied verbatim into the test, is compared with this one over 5 host origins × 2 records (with and without a list) × 3 terminal states × 5 reasons × 3 subjects. That is 450 comparisons, all equal. A host mint already closed `saved_to_list` without a list is still accepted.
+- Targeted run: 24 files, 855 rows passed.
+
+**Mutants (C01–C14)**, on a fresh LF snapshot of `e5980324`, after an unmutated control run (19 files, 534 passed). All 14 were killed, and each mutated file was restored and checked against the commit by SHA-256:
+- the cap at 10, at 21, and off by one;
+- each subject check removed;
+- the mint-side call and the close-side call dropped;
+- the close ignoring the subject it sets, or the list the record already names;
+- the rule widened to host origins;
+- the mint reading every record as having a subject;
+- `record_not_open` dropped, narrowed to `completed` only, or answered with another code.
+
+**Runs.** The five checks (full suite, `test:rules`, `lint:gate`, `vite build`, the golden guard) ran on Linux on the exact pushed head, which carries this addendum. The PR description records the results.
+
+**Founder's steps** (replacing §12.7's first step):
+1. Read the contract note's §10. Q3, Q5 and Q6 are settled. Q4 is deferred until the first route passes server refs to `createPlayerVersion`. Q1, Q2 and Q7–Q10 are for B1.
+2. Merge when satisfied.
+3. After merge, deploy the `researchWork` index (`firebase deploy --only firestore:indexes`).

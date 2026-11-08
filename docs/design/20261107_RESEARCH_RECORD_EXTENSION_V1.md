@@ -1,12 +1,12 @@
 # The Research Record Extension — contract V1
 
-**Date:** 7 November 2026 · **Built by:** Claude Code, from the build prompt "The Research Record Extension (for Shared Research's first slice)" and its follow-up V2 "the four clarifications and the eleven questions" (Fable, framework chat, both 7 Nov 2026) · **Base:** `main` `d503dd07`, then `main` `d09603b2` merged before the follow-up · **Build report:** `docs/audits/20261107_BUILD_RESEARCH_RECORD_EXTENSION.md`
+**Date:** 7 November 2026 · **Built by:** Claude Code, from the build prompt "The Research Record Extension (for Shared Research's first slice)", its follow-up V2 "the four clarifications and the eleven questions", and the fix "three closing rules before merge" (Fable, framework chat, all 7 Nov 2026) · **Base:** `main` `d503dd07`, then `main` `d09603b2` merged before the follow-up · **Build report:** `docs/audits/20261107_BUILD_RESEARCH_RECORD_EXTENSION.md`
 
-This note gives the exact shapes Shared Research's first slice ("work an idea"; concept `SHARED_RESEARCH_WORK_AN_IDEA_CONCEPT_V1`) specs against. It records what was built, not a proposal. It is still version 1 and unmerged: the follow-up amended it in place, and §9 lists every change the follow-up made.
+This note gives the exact shapes Shared Research's first slice ("work an idea"; concept `SHARED_RESEARCH_WORK_AN_IDEA_CONCEPT_V1`) specs against. It records what was built, not a proposal. It is still version 1 and unmerged: the follow-up and then the closing-rules fix amended it in place, and §9 lists every change each made.
 
 ## 0. In plain terms
 
-A **Shared Research** investigation is a research record (`researchWork/{id}`, origin `shared_research`). It starts from a **question**, collects **findings** (each fact with where it came from, which stock it is about, and how sure it is), and keeps a short **summary** that can be revised. It carries **symbol keys** so a reader can find every investigation about one stock. When the player adopts the investigation, a pure builder makes the idea's first version, already `researched`, citing the investigation, the findings the player kept and the exchange where they confirmed. An idea version can now cite a single item of evidence or a single exchange of a conversation. Every new chat exchange gets its own id.
+A **Shared Research** investigation is a research record (`researchWork/{id}`, origin `shared_research`). It starts from a **question**, collects **findings** (each fact with where it came from, which stock it is about, and how sure it is), and keeps a short **summary** that can be revised. It carries **symbol keys** so a reader can find every investigation about one stock. When the player adopts an open investigation, a pure builder makes the idea's first version, already `researched`, citing the investigation, the findings the player kept and the exchange where they confirmed. An idea version can now cite a single item of evidence or a single exchange of a conversation. Every new chat exchange gets its own id.
 
 These fields belong to Shared Research records only. No other research record ever carries them, and nothing writes them yet except tests: the Shared Research route that will is the Command Center arc's next build (B1). The exchange id is the one live change: the three Forge host routes write it on every new exchange.
 
@@ -94,7 +94,7 @@ summary = { rev, text, at, basedOn: [findingId] }
 | `basedOn` | 1–25 (`BASED_ON_MAX`) **current** findings of the record, each once. Empty, more than 25, a repeat or a malformed id → `invalid_based_on`; an id the record does not hold → `based_on_unknown`; a superseded one → `based_on_superseded`. |
 | `rev` | the number of revisions before it + 1 (the first is 1). The stored `summary` must equal the last stored revision (key order aside) — or be absent when there is none — or the write is refused (`summary_unreadable`). |
 | One write | the revision is appended to `summaryRevisions[]` **and** becomes `summary`, in one transaction |
-| Cap | **10** revisions (`SUMMARY_REVISIONS_MAX`, cut from 20 by the size rule, §2.7); the 11th is refused (`summary_revisions_full`) |
+| Cap | **20** revisions (`SUMMARY_REVISIONS_MAX`); the 21st is refused (`summary_revisions_full`). The follow-up's first size cut took it to 10; the closing-rules fix put 20 back, because the url cut alone keeps the record within the size rule (§2.7) |
 | Concurrency | two concurrent revisions land as rev n+1 and n+2. A caller that passes `expectedRev` (the rev it saw, 0 for none) gets `summary_conflict` if another revision landed first. Never a lost revision. |
 
 Nothing is overwritten: every revision stays in `summaryRevisions[]`. A closed record refuses revisions (`record_closed`).
@@ -107,7 +107,8 @@ Nothing is overwritten: every revision stays in `summaryRevisions[]`. A closed r
 | `HOST_COLLECTIONS.shared_research` | `sharedResearchSessions` |
 | Record id | `sr_<host id>` (`researchWorkIdFor({ collection: 'sharedResearchSessions', id })`); `isResearchWorkId` accepts `sr_…`; the old prefixes `ws_`, `rs_`, `as_`, `wl_` are unchanged |
 | `STAGES_BY_ORIGIN.shared_research` | `[]` — every funnel stage is `null` on such a record in V1 |
-| `TERMINAL_REASONS.concluded` | `concluded` — an investigation completed without an idea. `closePatch` (and `buildRecord`, for a record minted closed) accepts it only on a `shared_research` record closing `completed`; anywhere else it is `invalid_terminal_reason`. `saved_to_list` and `player_authored` are unchanged. |
+| `TERMINAL_REASONS.concluded` | `concluded` — an investigation completed without an idea. `closePatch` (and `buildRecord`, for a record minted closed) accepts it only on a `shared_research` record closing `completed`; anywhere else it is `invalid_terminal_reason`. `player_authored` is unchanged. |
+| The reason agrees with the subject (the closing-rules fix) | On a `shared_research` record, `closePatch` and a mint already closed refuse **`concluded` with a subject** (an investigation completed without an idea names no list) and **`saved_to_list` without one**, in any terminal state (`invalid_terminal_reason`). "With a subject" means the record already names a list, or the close itself sets one (a subject that sets no list is none). Other reasons are not tied to the subject. **Host-origin records are unchanged**: every host close is exactly `main`'s, pinned by comparing it with `main`'s `closePatch` over every host origin, terminal state, reason and subject; a host mint already closed `saved_to_list` with no list is still accepted. |
 | Rules for `sharedResearchSessions` | none in this build: they come with the collection's first writer, the Shared Research route |
 
 The Forge's research line (`src/components/Forge/Watchlist/ideaCopy.js` `LINE_STAGES`) lists `shared_research: []`, which is what an unlisted origin already got: a Shared Research record shows no stage line. In the summaries the Forge is given (`researchSummariesOf`), a Shared Research record attached to a list comes **last**, after the list's own research and its analysis sessions, so however many there are they never push those past the cap of 20. With no such record (every list today) the order is unchanged. What the Idea panel says for a Shared Research record is the Command Center chat's decision.
@@ -125,15 +126,16 @@ Each is one Firestore transaction: a fresh read of the record, the owner check (
 
 ### 2.7 Size
 
-`api/_utils/researchRecords/size.test.js` builds the largest `shared_research` record the caps allow, through the model's own writers: every cap full — 100 findings (25 current, then 75 corrections each superseding the last), each with a 12-character symbol, the most-bytes url at the cap, a time pin and a 64-character status reason; 10 revisions of 1,000 characters with 25 `basedOn` ids each; a 500-character question; a 100-symbol cohort with both entry flags and 100 keys; 40 telemetry screens of 40 symbols (a turn may carry screens); 3-byte UTF-8 text wherever text is allowed; a 128-character 3-byte uid; ids at their schemes' maxima (`watchlistId`, `userId` and `terminalReason` are bounded by their writers, not by this model). It measures by Firestore's documented storage-size rules, read literally: a map is "calculated the same way as document size", so it counts its own 32 bytes. The rule is **at most 1,000,000 bytes** (Firestore's limit is 1,048,576), leaving room for the session's budget and telemetry.
+`api/_utils/researchRecords/size.test.js` builds the largest `shared_research` record the caps allow, through the model's own writers: every cap full — 100 findings (25 current, then 75 corrections each superseding the last), each with a 12-character symbol, the most-bytes url at the cap, a time pin and a 64-character status reason; 20 revisions of 1,000 characters with 25 `basedOn` ids each; a 500-character question; a 100-symbol cohort with both entry flags and 100 keys; 40 telemetry screens of 40 symbols (a turn may carry screens); 3-byte UTF-8 text wherever text is allowed; a 128-character 3-byte uid; ids at their schemes' maxima (`watchlistId`, `userId` and `terminalReason` are bounded by their writers, not by this model). It measures by Firestore's documented storage-size rules, read literally: a map is "calculated the same way as document size", so it counts its own 32 bytes. The rule is **at most 1,000,000 bytes** (Firestore's limit is 1,048,576), leaving room for the session's budget and telemetry.
 
 | Measured | Bytes |
 |---|---|
 | First measurement (a narrower record, maps without their 32 bytes): 20 revisions, 2,048-character urls | 1,010,671 — over the rule → the first named cut: **revisions 20 → 10** |
 | Every cap full, maps with their 32 bytes (review V2A-1): 10 revisions, 2,048-character urls | 1,013,417 — still over → the second named cut: **urls 2,048 → 1,024** |
-| **Both cuts** | **706,217 — within it (pinned)** |
+| Both cuts: 10 revisions, 1,024-character urls | 706,217 — within it |
+| **The closing-rules fix: 20 revisions again, 1,024-character urls** | **746,827 — within it (pinned)** |
 
-No other cut was made. (With the second cut in place, 20 revisions would also fit: 746,827 bytes — §10 Q6.)
+The first cut is undone: the url cut alone keeps the record within the rule, about 253,000 bytes under it (§10 Q6). No other cut was made.
 
 ## 3. The idea version (`watchlists/{id}/hypothesisVersions/v{n}`)
 
@@ -174,7 +176,7 @@ Three kinds. Each ref is exactly its kind's keys:
 
 | Part | Value |
 |---|---|
-| Refusals (`HypothesisInputError.code`) | `list_not_from_session` — the list is not this owner's, is not the list `watchlistId` names (the version is written under it), is not `shared_research` by `originOf`, or its `sourceSharedResearchSessionId` is not `sessionId`; `record_not_from_session` — the record is not this owner's `shared_research` record for this session (`sr_<sessionId>`); `question_missing` — the record has no question; `invalid_kept_findings` — `keptFindingIds` empty, repeated, or naming anything that is not a current finding on the record; plus `buildContent`'s (`invalid_statement` — over the cap is refused, never cut; `invalid_horizon`; `invalid_condition`) and `serverEvidenceRefsOf`'s (`invalid_evidence_refs`; `too_many_evidence_refs` past 30 refs, i.e. 28 kept findings) |
+| Refusals (`HypothesisInputError.code`) | `list_not_from_session` — the list is not this owner's, is not the list `watchlistId` names (the version is written under it), is not `shared_research` by `originOf`, or its `sourceSharedResearchSessionId` is not `sessionId`; `record_not_from_session` — the record is not this owner's `shared_research` record for this session (`sr_<sessionId>`); `record_not_open` — the record is not `open` (the closing-rules fix: a completed, abandoned or failed investigation is read-only; B1's route completes the record, `saved_to_list`, in the adoption's own transaction); `question_missing` — the record has no question; `invalid_kept_findings` — `keptFindingIds` empty, repeated, or naming anything that is not a current finding on the record; plus `buildContent`'s (`invalid_statement` — over the cap is refused, never cut; `invalid_horizon`; `invalid_condition`) and `serverEvidenceRefsOf`'s (`invalid_evidence_refs`; `too_many_evidence_refs` past 30 refs, i.e. 28 kept findings) |
 | Content | the statement as given; `horizonEnum` with `horizonSource: 'player'`; the conditions through `normalizeConditions`; `publishedAt: null`; the origin from `originOf(list)` |
 | `evidenceRefs`, in order | 1. the research record `{ kind: 'researchWork', id: 'sr_<sessionId>' }`; 2. each kept finding `{ kind: 'evidenceItem', recordKind: 'researchWork', recordId: 'sr_<sessionId>', itemId: <findingId> }`; 3. the confirming exchange `{ kind: 'exchange', hostCollection: 'sharedResearchSessions', hostId: <sessionId>, exchangeId }` |
 | The version | `version: 1`; `status: 'researched'`, `stateSource: 'research'`, `stateReason: 'shared_research_completed'` (`STATE_REASONS.sharedResearchCompleted`); `opId: adopt_<sessionId>`; `opFingerprint` over `{ kind: 'adopt', payload: { sessionId, statement, horizonEnum, activation, invalidation, keptFindingIds, confirmExchangeId } }` — everything the player previewed |
@@ -220,7 +222,7 @@ Every exchange **newly** written to a host session's `exchanges[]` carries `exch
 | `question_already_set` | a question offered for a record that has one |
 | `invalid_question` | not 1–500 characters |
 | `question_missing` | a `shared_research` record closing `completed` without a question |
-| `invalid_terminal_reason` | `concluded` anywhere but a `shared_research` record closing `completed` |
+| `invalid_terminal_reason` | `concluded` anywhere but a `shared_research` record closing `completed`; on a `shared_research` record (a close, or a mint already closed), `concluded` with a subject or `saved_to_list` without one |
 | `invalid_finding` | not an object, or a field outside the finding's own (including `findingId`) |
 | `invalid_finding_kind`, `invalid_symbol`, `invalid_fact`, `invalid_source`, `retrieval_needs_url`, `invalid_at`, `invalid_as_of`, `as_of_not_before_write`, `invalid_status`, `invalid_status_reason`, `invalid_pin`, `invalid_supersedes` | the field named (`invalid_source` also: a `researchWork` source naming the record itself) |
 | `findings_full` | the record already holds 100 findings |
@@ -228,11 +230,11 @@ Every exchange **newly** written to a host session's `exchanges[]` carries `exch
 | `supersedes_unknown` | `supersedes` names no finding on the record |
 | `finding_already_superseded` | another finding already supersedes it |
 | `invalid_summary_text`, `invalid_based_on`, `based_on_unknown`, `based_on_superseded` | the field named |
-| `summary_revisions_full` | the record already holds 10 revisions |
+| `summary_revisions_full` | the record already holds 20 revisions |
 | `summary_conflict` | `expectedRev` is not the stored rev |
 | `summary_unreadable` | the stored `summary` is not the last of `summaryRevisions[]` (or is present with none) |
 
-`HypothesisInputError.code` (idea version): `invalid_evidence_refs` (a malformed ref, in content or in the server's list), `too_many_evidence_refs` (more than 30 server refs), `invalid_origin` (an origin outside `ORIGINS`), and the builder's `list_not_from_session`, `record_not_from_session`, `question_missing`, `invalid_kept_findings` (§3.3).
+`HypothesisInputError.code` (idea version): `invalid_evidence_refs` (a malformed ref, in content or in the server's list), `too_many_evidence_refs` (more than 30 server refs), `invalid_origin` (an origin outside `ORIGINS`), and the builder's `list_not_from_session`, `record_not_from_session`, `record_not_open`, `question_missing`, `invalid_kept_findings` (§3.3).
 
 ## 7. The contract's questions, as ruled (follow-up V2 §2)
 
@@ -267,21 +269,34 @@ The build at `693ee59a` was amended before merge, in place (still version 1: not
 8. **Q5**: `basedOn` holds 1–25 current findings (`based_on_superseded` new).
 9. **Q10**: the `equippedHypothesis` census and the 30-ref cap (`too_many_evidence_refs`).
 10. **Q11**: documented (§3.1).
-11. **Size**: the §2.7 test; both named cuts — `SUMMARY_REVISIONS_MAX` 20 → 10 and `SOURCE_URL_MAX_LEN` 2,048 → 1,024 — now 706,217 bytes. No other cut.
+11. **Size**: the §2.7 test; both named cuts — `SUMMARY_REVISIONS_MAX` 20 → 10 and `SOURCE_URL_MAX_LEN` 2,048 → 1,024 — then 706,217 bytes. No other cut. (The closing-rules fix undid the first cut, §9.1.)
 12. **The adoption builder** `buildSharedResearchVersion` and `STATE_REASONS.sharedResearchCompleted` (§3.3).
 13. **From the follow-up's review**: the close rules hold for a record minted closed; the builder refuses a `watchlistId` its list does not carry; the census widened (every read form the review found, fixtures scanned) and lists the carriage's re-hash as an allowed whole read.
 
 Unchanged by the follow-up: every existing idea version's content hash, the gate-off and dialogue goldens, every write to a host-origin record a host makes, `carriage.js` and `buildSaveVersion`. (Two refusals are new on host-origin records — `concluded`, and a mint with a question — but no host writes either.)
 
+### 9.1 Changed by the closing-rules fix (7 Nov 2026)
+
+The follow-up's head `2026f1cd` was amended before merge, in place (still version 1). Code commit `e5980324`.
+
+1. **Revisions back to 20** (§10 Q6): `SUMMARY_REVISIONS_MAX` 10 → 20; the 21st is refused (`summary_revisions_full`). Urls stay 1,024. The size test pins 746,827 bytes and still asserts at most 1,000,000 (§2.7).
+2. **Adoption needs an open investigation** (§10 Q3): `buildSharedResearchVersion` refuses a record that is not `open` (`record_not_open`, new), §3.3.
+3. **The reason agrees with the subject** (§10 Q5): on a `shared_research` record, `closePatch` and a mint already closed refuse `concluded` with a subject and `saved_to_list` without one (`invalid_terminal_reason`), §2.5.
+4. **A version's total refs** (§10 Q4): not changed; deferred, with its trigger.
+
+Unchanged by the fix: every host-origin close (now compared with `main`'s `closePatch` over every host origin, terminal state, reason and subject), every existing content hash, the gate-off and dialogue goldens, `carriage.js` and `buildSaveVersion`.
+
 ## 10. Open for the Shared Research route (B1)
+
+The closing-rules fix settled Q3, Q5 and Q6 and deferred Q4; each is marked below. The rest stay open for B1.
 
 1. **The subject's symbol keys.** The follow-up lists "subject" among the Shared Research writes that write `symbolKeys` fresh, and also says `subjectPatch` behaves exactly as on `main`. The build keeps `subjectPatch` as on `main`: a subject set through `closePatch` writes the keys; a subject set alone writes none — it cannot leave them stale, since the keys depend only on findings and the cohort. If the route sets the subject alone and wants the field rewritten too, it adds `symbolKeysOf(record)` to that write.
 2. **Normalize before building.** The adoption fingerprint covers the request as sent, while the content is normalized (the statement trimmed, condition symbols upper-cased). A retry that differs only in whitespace or case conflicts on `adopt_<sessionId>`; the route should normalize what it previewed before calling the builder.
-3. **Which record states adopt.** The builder accepts the session's record in any state (open, completed, abandoned). Should adoption require an open or a completed record?
-4. **A version's total refs.** The 30-ref cap is per server batch; a version made by `createPlayerVersion` with server refs also carries every research record attached to its list (up to 200, as before). If the battle copy must stay bounded, the cap belongs on the merged total.
-5. **`concluded` with a subject.** `closePatch` accepts `concluded` together with a subject (a list and version) — "completed without an idea" while naming one. Should that be refused?
-6. **Twenty revisions again?** The letter's cuts are sequential: 20 → 10 revisions came first (on the narrower measure), then urls 2,048 → 1,024 (on the full measure). With the url cut in place, 20 revisions would also fit (measured: 746,827 bytes). Restoring 20 is a founder call.
+3. **Which record states adopt — settled (the closing-rules fix).** The builder accepted the session's record in any state. It now refuses any record that is not `open` (`record_not_open`): a completed, abandoned or failed investigation is read-only, and B1's route completes the record (`saved_to_list`, with the subject) in the adoption's own transaction (§3.3).
+4. **A version's total refs — deferred.** The 30-ref cap is per server batch; a version made by `createPlayerVersion` with server refs also carries every research record attached to its list (up to 200, as before). If the battle copy must stay bounded, the cap belongs on the merged total. **Not changed now. Trigger:** the first route that passes server refs to `createPlayerVersion`. V1 creates ideas only through the adoption builder, whose refs are capped at 30.
+5. **`concluded` with a subject — settled (the closing-rules fix).** `closePatch` accepted `concluded` together with a subject. On a `shared_research` record, `concluded` with a subject and `saved_to_list` without one are now `invalid_terminal_reason`, in `closePatch` and in a mint already closed; host-origin closes are unchanged (§2.5).
+6. **Twenty revisions again — settled (the closing-rules fix).** The letter's cuts were sequential: 20 → 10 revisions first (on the narrower measure), then urls 2,048 → 1,024 (on the full measure). With the url cut in place, 20 revisions fit, so 20 is restored: 746,827 bytes, pinned (§2.4, §2.7).
 7. **The Idea panel.** `noResearchRecorded` treats only `dialogue_completed` as "researched by its source": a `shared_research_completed` version on a list with no research attached would read "No research recorded for this idea yet." It cannot happen while the route sets the investigation's subject at adoption.
 8. **The list document carries its own `watchlistId`.** The builder checks `list.watchlistId === watchlistId`. Every list-creating path at this head writes that field (`api/forge/watchlists.js`); the Shared Research route's list save must too, and pass the stored document as `list`.
-9. **Fields this model does not bound.** `terminalReason`, `userId` and `watchlistId` (and the length of a cohort or screen symbol) are bounded by their writers, not by the model — the size measure uses the longest each writer produces. A route that wrote a much longer value would eat the size margin (about 294,000 bytes at the caps).
+9. **Fields this model does not bound.** `terminalReason`, `userId` and `watchlistId` (and the length of a cohort or screen symbol) are bounded by their writers, not by the model — the size measure uses the longest each writer produces. A route that wrote a much longer value would eat the size margin (about 253,000 bytes at the caps).
 10. **A corrupt stored record at adoption.** A stored `findings` that is not a list makes the builder answer `invalid_kept_findings` (no kept finding is current), not a corrupt-record code.
