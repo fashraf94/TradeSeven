@@ -191,7 +191,8 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   // never blocked. Flag OFF → deployAgentId === agentId (byte-identical).
   if (CASUAL_CLONE_CONCURRENCY_ENABLED) {
     let cloneId = null;
-    try {
+    // FL4-b (Nov 7 2026): doubled so the flag picks a whole try (Rollup never folds a ternary inside one); the cleanup PR collapses it to the first arm.
+    if (PER_GAME_LOADOUT_ENABLED) try {
       // getIdToken sits between setDeployTarget #1 and here, so the raw gap
       // between the two target reports is NOT the clone round trip. Marking the
       // request separates auth time from clone time — the pre-warm decision only
@@ -209,16 +210,36 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
         // setDeployTarget never fires a second time, so the clone outcome is
         // recorded here as a DISTINCT outcome rather than a missing value.
         ceremonyTiming.markCloneFallback(`http_${cloneRes.status}`);
-        // FL4 (flip, Nov 7 2026): with per-game loadouts on, the deploy is refused below (A2R-3 (b)), so the line says so;
-        // off, it keeps today's words. A literal ternary, but inside a try block, where Rollup does not fold (its
-        // tryCatchDeoptimization): the build ships this ternary and both strings (the flip report, §4). The catch's
-        // ternary below folds.
-        console.warn(PER_GAME_LOADOUT_ENABLED ? '[Deploy] casual clone ensure did not return a clone — refusing the BaggerBomb deploy:' : '[Deploy] casual clone ensure did not return a clone — deploying the real agent:', cloneRes.status, cloneData?.error || '');
+        console.warn('[Deploy] casual clone ensure did not return a clone — refusing the BaggerBomb deploy:', cloneRes.status, cloneData?.error || '');
       }
     } catch (err) {
       // Fallback: the target stays the ranked agent, already reported above.
       ceremonyTiming.markCloneFallback('threw');
-      console.warn(PER_GAME_LOADOUT_ENABLED ? '[Deploy] casual clone ensure errored — refusing the BaggerBomb deploy:' : '[Deploy] casual clone ensure errored — deploying the real agent:', err?.message || err);
+      console.warn('[Deploy] casual clone ensure errored — refusing the BaggerBomb deploy:', err?.message || err);
+    } else try {
+      // getIdToken sits between setDeployTarget #1 and here, so the raw gap
+      // between the two target reports is NOT the clone round trip. Marking the
+      // request separates auth time from clone time — the pre-warm decision only
+      // gets to claim the latter.
+      ceremonyTiming.markCloneRequest();
+      const cloneRes = await fetch('/api/agent/ensure-casual-clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      const cloneData = await cloneRes.text().then((t) => { try { return JSON.parse(t); } catch { return null; } });
+      if (cloneRes.ok && cloneData && typeof cloneData.cloneId === 'string') {
+        cloneId = cloneData.cloneId;
+      } else {
+        // Fallback: the target stays the ranked agent, already reported above.
+        // setDeployTarget never fires a second time, so the clone outcome is
+        // recorded here as a DISTINCT outcome rather than a missing value.
+        ceremonyTiming.markCloneFallback(`http_${cloneRes.status}`);
+        console.warn('[Deploy] casual clone ensure did not return a clone — deploying the real agent:', cloneRes.status, cloneData?.error || '');
+      }
+    } catch (err) {
+      // Fallback: the target stays the ranked agent, already reported above.
+      ceremonyTiming.markCloneFallback('threw');
+      console.warn('[Deploy] casual clone ensure errored — deploying the real agent:', err?.message || err);
     }
     // R1 — after the clone ensure, and before its target is reported or POSTed:
     // an old request never deploys anything once the account has changed.

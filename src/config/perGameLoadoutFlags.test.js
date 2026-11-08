@@ -123,9 +123,12 @@ const SERVER_READS = {
 };
 
 /**
- * The client's reads: each a literal ternary (or `FLAG && …` inside one) that Rollup folds to today's expression — and,
- * since the A2 fix pass, one literal `if` (agentDeploy.js, A2R-3 (b)) whose test folds to false, so the statement leaves
- * the bundle. The lobbies' A2R-1 reads swap the group read for one that tells a failure apart, count a failure as a
+ * The client's reads: each a literal ternary (or `FLAG && …` inside one) that Rollup folds to today's expression — and
+ * two literal `if`s in agentDeploy.js: A2R-3 (b)'s refusal, whose test folds to false, so the statement leaves the
+ * bundle; and FL4-b's `if (FLAG) try {…} catch {…} else try {…} catch {…}` (founder ruling, Nov 7 2026), whose else arm
+ * is today's clone-ensure block verbatim. Rollup keeps a ternary inside a `try` as written (tryCatchDeoptimization), so
+ * FL4's log lines choose the whole block outside it instead; flag off, Rollup cuts `if (…) … else ` and leaves the else
+ * arm's text. The lobbies' A2R-1 reads swap the group read for one that tells a failure apart, count a failure as a
  * known seat, and provide the line's group-known context; each flag-off arm is today's text.
  */
 const CLIENT_READS = {
@@ -188,8 +191,7 @@ const CLIENT_READS = {
     "{PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (",
   ],
   "src/services/agentDeploy.js": [
-    "console.warn(PER_GAME_LOADOUT_ENABLED ? '[Deploy] casual clone ensure did not return a clone — refusing the BaggerBomb deploy:' : '[Deploy] casual clone ensure did not return a clone — deploying the real agent:', cloneRes.status, cloneData?.error || '');",
-    "console.warn(PER_GAME_LOADOUT_ENABLED ? '[Deploy] casual clone ensure errored — refusing the BaggerBomb deploy:' : '[Deploy] casual clone ensure errored — deploying the real agent:', err?.message || err);",
+    'if (PER_GAME_LOADOUT_ENABLED) try {',
     "if (PER_GAME_LOADOUT_ENABLED && cloneId === null) return { outcome: DEPLOY_OUTCOMES.REFUSED, success: false, postIssued: false, error: 'casual_clone_unavailable', details: LOADOUT_COPY.deployCloneFailed };",
   ],
 };
@@ -204,8 +206,8 @@ describe('PER_GAME_LOADOUT_ENABLED — every read, exact', () => {
   for (const [file, lines] of Object.entries(CLIENT_READS)) {
     it(`${file}: the client's reads, each a literal ternary`, () => {
       expect(readsOf(file)).toEqual(lines);
-      // the ternary's `?` on the line, or opening the next (a multi-line declaration)
-      for (const line of lines) expect(line).toMatch(/PER_GAME_LOADOUT_ENABLED(?: && AGENT_FORM_ARMORY_ENABLED)?(?: && [^?]+)?(?: \?|$)/);
+      // the ternary's `?` on the line, or opening the next (a multi-line declaration); or FL4-b's `if (FLAG) try {`
+      for (const line of lines) expect(line).toMatch(/PER_GAME_LOADOUT_ENABLED(?: && AGENT_FORM_ARMORY_ENABLED)?(?: && [^?]+)?(?: \?|\) try \{$|$)/);
     });
   }
 
