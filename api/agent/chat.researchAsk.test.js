@@ -15,6 +15,8 @@ const H = vi.hoisted(() => ({
   promptArgs: [],
   archetype: { mode: 'off' },
   market: { state: 'OPEN' },
+  sheet: { mode: 'on' },
+  allow: { list: [] },
 }));
 let activeFirestore = null;
 // Counts node:crypto randomUUID calls in chat.js (the exchange id is minted once per sheet Ask).
@@ -32,7 +34,9 @@ vi.mock('../_utils/tournamentTime.js', () => ({ getTournamentClaimWindow: () => 
 // Only the market state is driven; the calendar (horizon.js, the banked item's next check) is the real one.
 vi.mock('../_utils/marketSchedule.js', async (importOriginal) => ({ ...(await importOriginal()), getMarketState: () => ({ state: H.market.state, isOpen: H.market.state === 'OPEN' }) }));
 vi.mock('../_utils/gemmaClient.js', () => ({ callGemmaVoice: (o) => H.gemma.impl(o), parseVoiceLayerResponse: (c) => JSON.parse(c) }));
-vi.mock('../_utils/callRecords/allowlist.js', async (importOriginal) => ({ ...(await importOriginal()), readCockpitAllowlist: () => [] }));
+vi.mock('../_utils/callRecords/allowlist.js', async (importOriginal) => ({ ...(await importOriginal()), readCockpitAllowlist: () => H.allow.list }));
+// The sheet's flag, driven per row (the shipped value is 'off'; most rows run the sheet 'on').
+vi.mock('../../src/config/researchModalFlags.js', async (importOriginal) => ({ ...(await importOriginal()), get RESEARCH_MODAL_SHEET_MODE() { return H.sheet.mode; } }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get ARCHETYPE_INTEGRITY_MODE() { return H.archetype.mode; },
@@ -65,8 +69,8 @@ beforeAll(async () => {
   PACK = buildPacks({ battle: BATTLE, symbol: 'AAPL', nowMs: SHEET_NOW, row: { positionId: 'position-agent' }, live: 103.2, dailyBars: AAPL_DAILY, rankings: RANKINGS, standing: { player: 62, opponent: 68 }, directive: BATTLE.directive, battleId: 'battle-1' }).packs.protect_lead;
 });
 
-/** A Firestore double: update() records; batch() records; `failFirstCommit` makes the shared writer's batch throw ALREADY_EXISTS once (its retry path). */
-function fakeFirestore({ battle, failFirstCommit = false }) {
+/** A Firestore double: update() records; batch() records. (The retry path has its own stand-in below.) */
+function fakeFirestore({ battle }) {
   const writes = [];
   let commits = 0;
   const collection = (name) => ({
@@ -81,7 +85,7 @@ function fakeFirestore({ battle, failFirstCommit = false }) {
     const ops = [];
     return {
       update: (ref, u) => ops.push({ id: ref.id, updates: u }), create: () => {},
-      commit: async () => { commits += 1; if (failFirstCommit && commits === 1) { const e = new Error('6 ALREADY_EXISTS'); e.code = 6; throw e; } writes.push(...ops.map((o) => ({ kind: 'batch', ...o }))); },
+      commit: async () => { commits += 1; writes.push(...ops.map((o) => ({ kind: 'batch', ...o }))); },
     };
   };
   return { db: { collection, batch }, writes };
@@ -105,6 +109,8 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
   H.archetype.mode = 'off';
   H.market.state = 'OPEN';
+  H.sheet.mode = 'on';
+  H.allow.list = [];
   H.gemma.impl = async () => '{"response":"Item 1 carries it: the +15 is banked."}';
 });
 
@@ -179,6 +185,41 @@ describe('the exchange id is minted once — the shared writer\'s retry re-sends
 });
 
 describe('every refusal comes before the one write: nothing charged', () => {
+  it('the sheet mode off (the shipped value): a sheet Ask is a 403 research_ask_off — no prompt, nothing written', async () => {
+    H.sheet.mode = 'off';
+    const { res, writes } = await call(askBody());
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'research_ask_off' });
+    expect(H.promptArgs).toHaveLength(0);
+    expect(writes).toHaveLength(0);
+  });
+  it('the sheet mode off: an ordinary turn (no researchAsk) still answers and writes as before', async () => {
+    H.sheet.mode = 'off';
+    const { res, writes } = await call({ agentId: 'agent-1', battleId: 'battle-1', message: 'How is AAPL doing?' });
+    expect(res.statusCode).toBe(200);
+    expect(exchangesOf(writes)).toHaveLength(1);
+  });
+  it("'allowlist' and the owner not listed: refused, nothing written", async () => {
+    H.sheet.mode = 'allowlist';
+    H.allow.list = ['someone-else'];
+    const { res, writes } = await call(askBody());
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'research_ask_off' });
+    expect(writes).toHaveLength(0);
+  });
+  it("'allowlist' and the owner listed: the Ask goes through and spends one message", async () => {
+    H.sheet.mode = 'allowlist';
+    H.allow.list = ['test-user'];
+    const { res, writes } = await call(askBody());
+    expect(res.statusCode).toBe(200);
+    expect(writes[0].updates.chatBudgetUsed).toEqual({ __op: 'increment', n: 1 });
+  });
+  it('an unknown mode value reads off', async () => {
+    H.sheet.mode = 'shadow';
+    const { res, writes } = await call(askBody());
+    expect(res.statusCode).toBe(403);
+    expect(writes).toHaveLength(0);
+  });
   it('an invalid researchAsk is a 400 and writes nothing', async () => {
     const { res, writes } = await call(askBody({ researchAsk: { symbol: 'AAPL', questionId: 'what_now', items: PACK.items } }));
     expect(res.statusCode).toBe(400);

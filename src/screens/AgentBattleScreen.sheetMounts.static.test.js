@@ -47,10 +47,16 @@ describe('the Battle View passes sheetContext only when the sheet resolves on (�
     const helper = SRC.slice(SRC.indexOf('const sheetContextFor = '), SRC.indexOf('});', SRC.indexOf('const sheetContextFor = ')) + 3);
     expect(helper).toContain('battle: agentBattle,');
     expect(helper).toContain('directive: thisTurnDirective,');
-    expect(helper).toContain('{ player: comparison.pair[0], opponent: comparison.pair[1], digits: comparison.fractionDigits ?? 0 }');
-    expect(helper).toContain('{ player: displayPlayerScore, opponent: displayOpponentScore, digits: 0 }');
+    // The header's own digits (its formatter) and its own lead — never re-rounded in the sheet (review A6).
+    expect(helper).toContain('you: comparison.digits?.[0] ?? formatScoreDisplay(comparison.pair[0], { fractionDigits: comparison.fractionDigits ?? 0 }),');
+    expect(helper).toContain('them: comparison.digits?.[1] ?? formatScoreDisplay(comparison.pair[1], { fractionDigits: comparison.fractionDigits ?? 0 }),');
+    expect(helper).toContain('lead: comparison.lead,');
+    expect(helper).toContain('you: formatScoreDisplay(displayPlayerScore), them: formatScoreDisplay(displayOpponentScore),');
+    expect(helper).toContain("lead: displayPlayerScore > displayOpponentScore ? 'player' : displayPlayerScore < displayOpponentScore ? 'cpu' : 'tie',");
     expect(helper).toContain("...(sheetCockpitDoor ? { onOpenCockpit: sheetCockpitDoor } : {}),");
     expect(helper).toContain('...(sheetIncumbent && sheetIncumbent.symbol === symbol ? { incumbent: sheetIncumbent.incumbent } : {}),');
+    // BC-11: the bench door records WHICH name the call would replace (review C5 — CM1).
+    expect(SRC).toContain('setSheetIncumbent(incumbent ? { symbol, incumbent } : null);');
     expect(SRC).toMatch(/const sheetCockpitDoor = cockpitOn && \(isDesktop \|\| phoneCockpit\)/);
   });
 });

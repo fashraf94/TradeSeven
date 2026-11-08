@@ -68,7 +68,7 @@ import { fileDirectiveTransactional } from '../_utils/directiveWriter.js';
 // resolved 'on' only; null everywhere else (the prompt is byte-identical).
 import { buildCallsBlockForChat } from '../_utils/callRecords/callsBlock.js';
 // Research Modal Build C (spec docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md §4.3): the sheet's Ask.
-import { parseResearchAsk, verifyResearchItems, researchAskForPrompt } from '../_utils/researchAsk.js';
+import { parseResearchAsk, verifyResearchItems, researchAskForPrompt, researchAskAllowed } from '../_utils/researchAsk.js';
 // Integrity follow-up 2 (Part B): the owner-writable `dailyGrades`, type-checked.
 import { dailyGradesOf } from '../_utils/playerFieldReaders.js';
 
@@ -447,6 +447,12 @@ export default async function handler(req, res) {
   const researchAsk = researchAskParsed.ask;
   if (researchAsk && req.body.leagueAsk === true) {
     return res.status(400).json({ error: 'research_ask_battle_only' });
+  }
+  // The flag, server side: a sheet Ask is refused unless RESEARCH_MODAL_SHEET_MODE
+  // admits this caller ('on', or 'allowlist' and the cockpit allowlist names them —
+  // the battle's owner, checked at step 7). Before any read or charge.
+  if (researchAsk && !researchAskAllowed(user.uid)) {
+    return res.status(403).json({ error: 'research_ask_off' });
   }
 
   // 5. Sanitize message

@@ -34,8 +34,11 @@
 //
 // THE PRESET is the one the check uses — presetKeyOf(battle.strategyPreset)
 // (agent-evaluate.js :1163, through playerFieldReaders.js) — and the hftConfig
-// is resolveHftConfig(archetypeConfig, battle.gameMode) (:1910). Never the
-// archetype's defaultPreset.
+// is the cron's own composition (agent-evaluate.js :1909-1913):
+// clampHftConfig({ hftConfig: resolveHftConfig(archetypeConfig, battle.gameMode),
+// desiredTempo: desiredTempoOf(battle), dialEnabled: TEMPO_DIAL_ENABLED }), so
+// the tempo dial moves the stall count here exactly as it does at the check.
+// Never the archetype's defaultPreset.
 //
 // §2.3 IMPORT RATCHET: this module is the sheet's ONE direct importer of the
 // legacy archetype tables (archetypeScoring, agentArchetypeConfig,
@@ -43,11 +46,13 @@
 
 import { ARCHETYPE_WEIGHTS } from '../../../../api/_utils/archetypeScoring.js';
 import { ARCHETYPE_CONFIGS, getArchetypeConfig, resolveHftConfig } from '../../../../api/_utils/agentArchetypeConfig.js';
+import { clampHftConfig, desiredTempoOf } from '../../../../api/_utils/tempoDialClamp.js';
+import { TEMPO_DIAL_ENABLED } from '../../../config/featureFlags.js';
 import { PRESET_CONFIGS, getPresetConfig } from '../../../../api/_utils/agentPresetConfig.js';
 import { presetKeyOf } from '../../../../api/_utils/playerFieldReaders.js';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay.js';
 import { agentBombContext, agentPositionOf, recordMs, selectBombRecord } from '../BombMode/selectBombRecord.js';
-import { measuredLadder } from '../BombMode/ladder.js';
+import { measuredLadder, toGo } from '../BombMode/ladder.js';
 import { checkClock, etClock, etDate, etWeekday } from '../BombMode/checkClock.js';
 import { priceDecimals } from '../priceFormat.js';
 import { SHEET_COPY, RISK_WORDS, RISK_REASON_WORDS, REGIME_WORDS } from './sheetCopy.js';
@@ -139,7 +144,7 @@ const FACTOR_ORDER = Object.freeze(['technicalScore', 'baggerBombFit', 'atrPerce
  */
 export const SERVER_KINDS = Object.freeze([
   'check_read', 'rule_trend', 'rule_fit', 'rule_volatility', 'rule_fundamentals', 'rule_contrarian', 'rule_sectors',
-  'risk_lever', 'risk_verdict', 'banked', 'incumbent', 'stalled', 'rung_compare', 'bench_signal', 'idea', 'told_it',
+  'risk_lever', 'risk_verdict', 'banked', 'stalled', 'rung_compare', 'bench_signal', 'idea', 'told_it',
 ]);
 /** Why a client-only kind is unverified. */
 export const CLIENT_REASON = Object.freeze({
@@ -148,6 +153,9 @@ export const CLIENT_REASON = Object.freeze({
   drawdown: 'from_chart',
   rank_scores: 'rankings_doc',
   standing: 'as_shown',
+  // "{SYM} is the name it would replace" comes from the cockpit's open call, which is not
+  // on the battle document the server re-reads (review A7/B3): never verified.
+  incumbent: 'from_cockpit',
 });
 export const FACT_MAX = 200;
 /** The huddle plan's directive thread prefix (Huddle S1 spec V1.1 §4.5; origin/claude/huddle-s1 planTemplates.js PLAN_THREAD_PREFIX). */
@@ -224,7 +232,12 @@ export function lensOf(battle) {
   const archetype = typeof battle?.agentContext?.archetype === 'string' ? battle.agentContext.archetype : null;
   const known = archetype !== null && Object.hasOwn(ARCHETYPE_CONFIGS, archetype);
   const weights = known && ARCHETYPE_WEIGHTS[archetype] ? { ...ARCHETYPE_WEIGHTS[archetype] } : {};
-  const hft = known ? resolveHftConfig(getArchetypeConfig(archetype), battle?.gameMode) : null;
+  // The cron's composition (agent-evaluate.js :1909-1913), the tempo dial included (review A1).
+  const hft = known ? clampHftConfig({
+    hftConfig: resolveHftConfig(getArchetypeConfig(archetype), battle?.gameMode),
+    desiredTempo: desiredTempoOf(battle),
+    dialEnabled: TEMPO_DIAL_ENABLED,
+  }).hftConfig : null;
   const presetKey = presetKeyOf(battle?.strategyPreset);
   const preset = getPresetConfig(presetKey);
   return {
@@ -318,12 +331,30 @@ function latestEvidence(battle, symbol) {
   return ev && typeof ev === 'object' ? { entry, ev, atMs: recordMs(entry.timestamp) } : null;
 }
 
-function standingItem({ standing, symbol, battleId }) {
-  if (!standing || !finite(standing.player) || !finite(standing.opponent)) return null;
+/**
+ * The standing AS THE HEADER SHOWS IT (BUILD_RULES §9, BC-13; review A6): the
+ * screen hands its own digits (`you`, `them` — the header's formatScoreDisplay
+ * text) and its own lead ('player' | 'cpu' | 'tie' — the precise pair's, which
+ * the header tints and words by). Without them (a caller that passes only the
+ * numbers), the lead is the precise pair's and the digits are rounded to
+ * `digits` places. Unavailable → null.
+ */
+export function shownStanding(standing) {
+  if (!standing) return null;
+  if (typeof standing.you === 'string' && typeof standing.them === 'string' && ['player', 'cpu', 'tie'].includes(standing.lead)) {
+    return { you: standing.you, them: standing.them, lead: standing.lead };
+  }
+  if (!finite(standing.player) || !finite(standing.opponent)) return null;
   const digits = finite(standing.digits) ? standing.digits : 0;
-  const you = standing.player.toFixed(digits);
-  const them = standing.opponent.toFixed(digits);
-  const fact = Number(you) < Number(them) ? SHEET_COPY.standingTrail(you, them) : Number(you) > Number(them) ? SHEET_COPY.standingLead(you, them) : SHEET_COPY.standingTied(you, them);
+  const lead = standing.player > standing.opponent ? 'player' : standing.player < standing.opponent ? 'cpu' : 'tie';
+  return { you: standing.player.toFixed(digits), them: standing.opponent.toFixed(digits), lead };
+}
+
+function standingItem({ standing, symbol, battleId }) {
+  const shown = shownStanding(standing);
+  if (!shown) return null;
+  const { you, them, lead } = shown;
+  const fact = lead === 'cpu' ? SHEET_COPY.standingTrail(you, them) : lead === 'player' ? SHEET_COPY.standingLead(you, them) : SHEET_COPY.standingTied(you, them);
   return makeItem({ kind: 'standing', symbol, fact, recordKind: 'scoreState', recordId: battleId, label: SHEET_COPY.srcStanding });
 }
 
@@ -375,22 +406,24 @@ function riskLeverItem({ lens, symbol }) {
   if (!lens.known) return null;
   const r = lens.preset?.risk ?? {};
   if (!finite(r.bustBuffer) || !finite(r.vwapFailureTicks) || !finite(r.trailStopATR)) return null;
+  // The dead band as the risk manager reads it (agentRiskManager.js: `vwapDeadBandPct ?? 0.5`).
+  const band = finite(r.vwapDeadBandPct) ? r.vwapDeadBandPct : 0.5;
   return makeItem({
     kind: 'risk_lever', symbol,
-    fact: SHEET_COPY.riskLever(lens.label, lens.preset.label, Math.abs(r.bustBuffer).toFixed(2).replace(/0$/, ''), r.vwapFailureTicks, String(r.trailStopATR)),
+    fact: SHEET_COPY.riskLever(lens.label, lens.preset.label, Math.abs(r.bustBuffer).toFixed(2).replace(/0$/, ''), r.vwapFailureTicks, String(band), String(r.trailStopATR)),
     recordKind: 'presetConfig', recordId: lens.presetKey, label: SHEET_COPY.srcPreset,
   });
 }
 
 function rungDistanceItem({ holding, symbol, live }) {
-  const next = holding.ladder?.next;
-  if (!next || !positive(live) || !positive(next.price)) return null;
-  const d = priceDecimals(live);
-  const gap = next.price - live;
-  if (gap <= 0) return null; // reached at the live price: it banks only at a check — the banked item says what has banked
+  // Build A's toGo (ladder.js): the distance and the % from the DISPLAYED rung and live
+  // price, so the sheet and Bomb mode print one number (BUILD_RULES §9; review A5).
+  const go = toGo(holding.ladder, live);
+  if (!go || !positive(go.rung?.price)) return null;
+  if (!(go.distance > 0)) return null; // reached at the live price: it banks only at a check — the banked item says what has banked
   return makeItem({
-    kind: 'rung_distance', symbol, fact: SHEET_COPY.rungDistance(next.points, next.price, d, gap, (gap / live) * 100),
-    recordKind: 'position', recordId: holding.record.positionId ?? symbol, label: SHEET_COPY.srcLive, pin: pricePin(next.price),
+    kind: 'rung_distance', symbol, fact: SHEET_COPY.rungDistance(go.rung.points, go.rungShown, go.decimals, go.distance, go.pctShown),
+    recordKind: 'position', recordId: holding.record.positionId ?? symbol, label: SHEET_COPY.srcLiveRung, pin: pricePin(go.rung.price),
   });
 }
 
@@ -435,13 +468,20 @@ function drawdownItem({ holding, symbol, live, dailyBars }) {
   const lastDate = dailyBars.map((b) => b?.date).filter((x) => typeof x === 'string').sort().at(-1)?.slice(0, 10) ?? null;
   const high = Number(top.high);
   const d = priceDecimals(live);
+  // The daily bars start with the ENTRY DAY's whole bar (its high may come before the
+  // fill), so the item names that day, never "since entry" (review A11).
+  const sinceDay = dayLabel(holding.entryAtMs);
+  const source = { recordKind: 'chart', recordId: `${symbol}:${lastDate ?? ''}`, label: SHEET_COPY.srcChart(lastDate ? dayLabel(Date.parse(`${lastDate}T16:00:00Z`)) : '') };
+  // The live price at or above every bar's high: the high IS the live price — the
+  // number the header shows — never an older bar's (review A11).
+  if (live >= high) {
+    return makeItem({ kind: 'drawdown', symbol, fact: SHEET_COPY.atHighLive(live, d, sinceDay), ...source, pin: pricePin(live) });
+  }
   const topMs = Date.parse(`${top.date.slice(0, 10)}T16:00:00Z`);
-  const when = dayLabel(topMs);
   const off = ((high - live) / high) * 100;
   return makeItem({
-    kind: 'drawdown', symbol, fact: off > 0 ? SHEET_COPY.drawdown(off, high, d, when) : SHEET_COPY.atHigh(high, d, when),
-    recordKind: 'chart', recordId: `${symbol}:${lastDate ?? ''}`, label: SHEET_COPY.srcChart(lastDate ? dayLabel(Date.parse(`${lastDate}T16:00:00Z`)) : ''),
-    atMs: topMs, pin: pricePin(high),
+    kind: 'drawdown', symbol, fact: SHEET_COPY.drawdown(off, high, d, dayLabel(topMs), sinceDay),
+    ...source, atMs: topMs, pin: pricePin(high),
   });
 }
 
@@ -472,7 +512,7 @@ function incumbentItem({ battle, lens, incumbent }) {
   return makeItem({
     kind: 'incumbent', symbol: incumbent,
     fact: on ? SHEET_COPY.incumbent(incumbent, ticksOf(battle, incumbent), lens.label, fr.ticksThreshold) : SHEET_COPY.incumbentNoRotation(incumbent),
-    recordKind: 'cronState', recordId: `stagnationTicks.${incumbent}`, label: SHEET_COPY.srcCounter, asOfMs: recordMs(battle?.scoreState?.lastScoredAt),
+    recordKind: 'cronState', recordId: `stagnationTicks.${incumbent}`, label: SHEET_COPY.srcCall, asOfMs: recordMs(battle?.scoreState?.lastScoredAt),
   });
 }
 
@@ -483,7 +523,10 @@ function scoredGapOf(battle, sym, nowMs) {
   const ladder = measuredLadder({ measured: rec.measured, entryAtMs: rec.entry?.atMs ?? null });
   if (ladder.status !== 'ok') return null;
   if (!ladder.next) return { sym, positionId: rec.positionId, top: true, atMs: rec.scored.atMs };
-  return { sym, positionId: rec.positionId, gap: Math.max(0, ladder.next.price - rec.scored.price), points: ladder.next.points, decimals: priceDecimals(rec.scored.price), atMs: rec.scored.atMs };
+  // Displayed values, as the rung-distance item and Bomb mode (ladder.js toGo; BUILD_RULES §9).
+  const go = toGo(ladder, rec.scored.price);
+  if (!go) return null;
+  return { sym, positionId: rec.positionId, gap: Math.max(0, go.distance), points: ladder.next.points, decimals: go.decimals, atMs: rec.scored.atMs };
 }
 
 function rungCompareItem({ battle, lens, symbol, incumbent, nowMs }) {
@@ -650,13 +693,10 @@ export function stanceOf({ battle, symbol, nowMs, row, live }) {
 
 /** BC-13: the questions in standing order (trailing → catch up first; leading → protect the lead first). */
 export function questionOrder(standing) {
-  if (standing && finite(standing.player) && finite(standing.opponent)) {
-    const digits = finite(standing.digits) ? standing.digits : 0;
-    const you = Number(standing.player.toFixed(digits));
-    const them = Number(standing.opponent.toFixed(digits));
-    if (you < them) return ['catch_up', 'protect_lead', 'better_than_stalled'];
-    if (you > them) return ['protect_lead', 'catch_up', 'better_than_stalled'];
-  }
+  // The header's own lead (shownStanding) — never a re-derivation from rounded digits (review A6).
+  const shown = shownStanding(standing);
+  if (shown?.lead === 'cpu') return ['catch_up', 'protect_lead', 'better_than_stalled'];
+  if (shown?.lead === 'player') return ['protect_lead', 'catch_up', 'better_than_stalled'];
   return [...QUESTION_IDS];
 }
 

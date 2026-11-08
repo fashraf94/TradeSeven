@@ -10,7 +10,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 vi.hoisted(() => { process.env.TZ = 'UTC'; });
-const net = vi.hoisted(() => ({ calls: [], ask: null, asks: [] }));
+const net = vi.hoisted(() => ({ calls: [], ask: null, asks: [], rankings: null, history: null }));
 const rec = vi.hoisted(() => ({ markers: [], lines: [] }));
 const spy = vi.hoisted(() => ({ buildPacks: 0 }));
 vi.mock('../Research/Sheet/packs.js', async (importOriginal) => {
@@ -20,6 +20,7 @@ vi.mock('../Research/Sheet/packs.js', async (importOriginal) => {
 vi.mock('../../services/eodhdAPI', () => ({
   fetchHistoricalOHLCV: (symbol, timeframe, opts) => {
     net.calls.push(['history', symbol, timeframe, opts ?? null]);
+    if (net.history) return net.history(timeframe);
     if (timeframe !== '1d') return Promise.resolve([]);
     return Promise.resolve([
       { date: '2026-10-14', open: 101, high: 104.1, low: 100.6, close: 103.2, volume: 1 },
@@ -56,8 +57,15 @@ vi.mock('./CompeteTab', () => ({ default: () => null }));
 vi.mock('./SectorTab', () => ({ default: () => null }));
 vi.mock('../Research/SmartMoneyTab', () => ({ default: () => null }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: { currentUser: null }, default: {} }));
+// The rankings read (useSheetView readRankings) — counted, and resolved when the row says so.
+vi.mock('firebase/firestore', async (importOriginal) => ({
+  ...(await importOriginal()),
+  doc: (_db, ...path) => ({ path: path.join('/') }),
+  getDoc: (ref) => { net.calls.push(['getDoc', ref.path]); return net.rankings ? net.rankings() : Promise.resolve({ exists: () => false, data: () => null }); },
+}));
 
 import { measuredSheetBattle, SHEET_NOW, RANKINGS } from '../Research/Sheet/__fixtures__/sheetBattles.js';
+import { selectBombRecord } from '../Research/BombMode/selectBombRecord.js';
 import { enrichHeldPosition } from '../../screens/AgentBattleScreen.jsx';
 import { buildResearchAsset } from '../../utils/researchAssetBuilder.js';
 import AssetResearchModal from './AssetResearchModal';
@@ -74,7 +82,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   vi.setSystemTime(new Date(SHEET_NOW));
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
-  net.calls.length = 0; net.asks.length = 0; rec.markers.length = 0; rec.lines.length = 0; spy.buildPacks = 0;
+  net.calls.length = 0; net.asks.length = 0; rec.markers.length = 0; rec.lines.length = 0; spy.buildPacks = 0; net.rankings = null; net.history = null;
+  Element.prototype.scrollIntoView = vi.fn();
   net.ask = async () => ({ ok: true, status: 200, json: async () => ({ agentMessage: 'Item 1 carries it.', exchangeId: 'ex-1', hasDirective: false, directive: null }) });
   vi.spyOn(console, 'log').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -157,12 +166,43 @@ describe('BC-8 — the record on the chart, one label open', () => {
     await open();
     const last = rec.markers.at(-1);
     expect(last.length).toBeGreaterThan(0);
-    expect(last.filter((m) => m.text).map((m) => m.text)).toEqual(['What it decided · Wed 12:45']);
+    // Dots on the canvas; the one open label is the caption over the chart (review D6).
+    expect(last.filter((m) => m.text)).toEqual([]);
+    expect($('[data-pin-caption]').textContent.trim()).toBe('● What it decided · Wed 12:45');
     await click($('[data-sheet-question="protect_lead"]'));
     rec.lines.length = 0;
-    await click($$('[data-pack-item]')[1]); // drawdown: a price pin at the high since entry ($104.10)
-    expect(rec.lines.filter((l) => l.title).map((l) => [l.price, l.title, l.lineWidth])).toEqual([[104.1, 'from the chart, as of Wed 10/14', 2]]);
-    expect(rec.markers.at(-1).filter((m) => m.text)).toEqual([]);
+    await click($$('[data-pack-item]')[1]); // drawdown: a price pin at the high ($104.10)
+    // Its own line, named for what the price IS — never the item's source label (review D5b).
+    expect(rec.lines.filter((l) => l.title).map((l) => [l.price, l.title, l.lineWidth, l.axisLabelVisible])).toEqual([[104.1, 'the high · $104.10', 2, true]]);
+    expect($('[data-pin-caption]')).toBeNull();
+  });
+  it('a tapped item with a time pin opens the record marker AT that instant — the entry, never the check later that day (review D5a)', async () => {
+    await open();
+    await click($('[data-sheet-question="catch_up"]'));
+    const i = $$('[data-pack-item]').findIndex((b) => b.dataset.packItem === 'move_since_entry');
+    expect(i).toBeGreaterThanOrEqual(0);
+    await click($$('[data-pack-item]')[i]);
+    expect($('[data-pin-caption]').dataset.pinCaption).toBe('entry');
+    expect($('[data-pin-caption]').textContent.trim()).toMatch(/^● Entry · Wed /);
+  });
+  it('a tapped rung item draws its own line "next rung · $…", never "live price vs …" (review D5b, A9)', async () => {
+    await open();
+    await click($('[data-sheet-question="catch_up"]'));
+    rec.lines.length = 0;
+    await click($('[data-pack-item="rung_distance"]'));
+    const titled = rec.lines.filter((l) => l.title);
+    expect(titled).toHaveLength(1);
+    expect(titled[0].title).toMatch(/^next rung · \$\d/);
+    expect($('[data-pack-item="rung_distance"]').textContent).toContain('live price vs the next rung');
+  });
+  it('"● on the chart" only where the pin is drawn: a time pin is not on 1W (review D12)', async () => {
+    await open();
+    await click($('[data-sheet-question="catch_up"]'));
+    expect($('[data-pack-item="move_since_entry"]').textContent).toContain('● on the chart');
+    const w = $$('button').find((b) => b.textContent.trim() === '1W');
+    await click(w);
+    expect($('[data-pack-item="move_since_entry"]').textContent).not.toContain('● on the chart');
+    expect($('[data-pack-item="rung_distance"]').textContent).toContain('● on the chart');
   });
 });
 
@@ -188,7 +228,71 @@ describe('BC-7 — the Ask', () => {
     await rerender(ctx({ battle: { ...BATTLE, chatBudgetUsed: 4, chatExchanges: [{ exchangeId: 'ex-1' }] } }));
     expect($('[data-sheet-filed]').dataset.sheetFiled).toBe('1');
     expect($('[data-sheet-filed]').textContent).toBe('✓ filed to chat');
+    // The answered question is not offered again for another message (review D1)…
+    expect($('[data-sheet-ask]').dataset.sheetAsk).toBe('asked');
+    expect($('[data-sheet-ask]').disabled).toBe(true);
+    expect($('[data-sheet-ask]').textContent).toBe('Asked Trend Follower · the answer is below');
+    await click($('[data-sheet-ask]'));
+    expect(net.asks).toHaveLength(1);
+    // …and another question can be asked, from the new count.
+    await click($('[data-sheet-or-ask] [data-sheet-question="catch_up"]'));
+    expect($('[data-sheet-ask]').dataset.sheetAsk).toBe('ready');
     expect($('[data-sheet-ask]').textContent).toContain('6 left');
+  });
+  it('the reply card is brought into the drawer\'s view on sending and on the answer (review D1)', async () => {
+    await open();
+    await click($('[data-sheet-question="protect_lead"]'));
+    await click($('[data-sheet-ask]'));
+    const calls = Element.prototype.scrollIntoView.mock.instances;
+    expect(calls.length).toBeGreaterThanOrEqual(1);
+    expect(calls.at(-1).hasAttribute('data-sheet-reply-slot')).toBe(true);
+    expect(Element.prototype.scrollIntoView.mock.calls.at(-1)[0]).toEqual({ block: 'nearest' });
+  });
+  it('the answer shows ONLY under the question it answered (review B5)', async () => {
+    await open();
+    await click($('[data-sheet-question="protect_lead"]'));
+    await click($('[data-sheet-ask]'));
+    expect($('[data-sheet-reply]').dataset.sheetReply).toBe('answered');
+    await click($('[data-sheet-or-ask] [data-sheet-question="catch_up"]'));
+    expect($('[data-sheet-pack]').dataset.sheetPack).toBe('catch_up');
+    expect($('[data-sheet-reply]')).toBeNull();
+    expect($('[data-sheet-pack]').textContent).toContain('free · no message spent');
+    await click($('[data-sheet-or-ask] [data-sheet-question="protect_lead"]'));
+    expect($('[data-sheet-reply]').dataset.sheetReply).toBe('answered');
+  });
+  it('a double tap sends ONE POST (one Ask in flight per stock)', async () => {
+    let resolve;
+    net.ask = () => new Promise((r) => { resolve = r; });
+    await open();
+    await click($('[data-sheet-question="protect_lead"]'));
+    const btn = $('[data-sheet-ask]');
+    await act(async () => { btn.dispatchEvent(new MouseEvent('click', { bubbles: true })); btn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush();
+    expect(net.asks).toHaveLength(1);
+    await act(async () => { resolve({ ok: true, status: 200, json: async () => ({ agentMessage: 'Late.', exchangeId: 'ex-9' }) }); });
+    await flush();
+  });
+  it('a late answer for one stock never re-opens another stock\'s Ask while that one is in flight (review B6)', async () => {
+    const pending = [];
+    net.ask = () => new Promise((r) => { pending.push(r); });
+    await open();
+    await click($('[data-sheet-question="protect_lead"]'));
+    await click($('[data-sheet-ask]'));
+    expect(net.asks.map((b) => b.researchAsk.symbol)).toEqual(['AAPL']);
+    await rerender(ctx({ row: { held: false } }), 'NVDA');
+    await click($('[data-sheet-question="catch_up"]'));
+    await click($('[data-sheet-ask]'));
+    expect(net.asks.map((b) => b.researchAsk.symbol)).toEqual(['AAPL', 'NVDA']);
+    expect($('[data-sheet-ask]').disabled).toBe(true);
+    await act(async () => { pending[0]({ ok: true, status: 200, json: async () => ({ agentMessage: 'For AAPL.', exchangeId: 'ex-a' }) }); });
+    await flush();
+    expect($('[data-sheet-ask]').disabled).toBe(true);
+    await click($('[data-sheet-ask]'));
+    expect(net.asks).toHaveLength(2);
+    expect($('[data-sheet-reply]').dataset.sheetReply).toBe('sending');
+    await act(async () => { pending[1]({ ok: true, status: 200, json: async () => ({ agentMessage: 'For NVDA.', exchangeId: 'ex-n' }) }); });
+    await flush();
+    expect($('[data-sheet-reply-text]').textContent).toBe('For NVDA.');
   });
   it('a filed directive is said, with its text', async () => {
     net.ask = async () => ({ ok: true, status: 200, json: async () => ({ agentMessage: 'Holding it.', exchangeId: 'ex-2', hasDirective: true, directive: { text: 'Hold AAPL through the close' } }) });
@@ -212,8 +316,12 @@ describe('BC-7 — the Ask', () => {
     [403, { error: 'chat_budget_exceeded' }, 'none', 'No messages left this game. No message was used.'],
     [400, { error: 'research_ask_battle_only' }, 'none', 'This game isn’t taking questions now. No message was used.'],
     [500, { error: 'Agent unavailable.' }, 'unknown', 'Something went wrong. Check chat before asking again — a message may have been used.'],
+    [403, { error: 'research_ask_off' }, 'none', 'This game isn’t taking questions now. No message was used.'],
+    // A platform gateway answer (no JSON from the route — a kill after the write): never "not charged" (review B7).
+    [504, undefined, 'unknown', 'Something went wrong. Check chat before asking again — a message may have been used.'],
+    [502, undefined, 'unknown', 'Something went wrong. Check chat before asking again — a message may have been used.'],
   ])('a failed turn (%s) says it was not charged only when the route answered before its write', async (status, body, charged, line) => {
-    net.ask = async () => ({ ok: false, status, json: async () => body });
+    net.ask = async () => ({ ok: false, status, json: async () => { if (body === undefined) throw new SyntaxError('Unexpected token < in JSON'); return body; } });
     await open();
     await click($('[data-sheet-question="protect_lead"]'));
     await click($('[data-sheet-ask]'));
@@ -245,6 +353,96 @@ describe('BC-11, BC-12 — the cockpit door', () => {
     await rerender(ctx({ onOpenCockpit }));
     await click($('[data-sheet-cockpit]'));
     expect(onOpenCockpit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the drawer never opens low and jumps: the chart\'s skeleton and error box are the sheet\'s chart height (review D7)', () => {
+  const chartBoxHeight = () => [...document.body.querySelectorAll('div')].find((d) => d.style.position === 'relative' && /px$/.test(d.style.height) && d.parentElement?.style.background)?.style.height;
+  it('while the series loads, and when it fails, the box is the height the chart will take', async () => {
+    await open();
+    const loaded = chartBoxHeight();
+    expect(loaded).toMatch(/^\d+px$/);
+    act(() => root.unmount());
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    net.history = () => new Promise(() => {});
+    await open();
+    const skeleton = [...document.body.querySelectorAll('div')].find((d) => /shimmer/.test(d.style.animation))?.parentElement;
+    expect(skeleton?.style.height).toBe(loaded);
+    act(() => root.unmount());
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    net.history = () => Promise.reject(new Error('down'));
+    await open();
+    const failed = [...document.body.querySelectorAll('span')].find((s) => s.textContent === 'Chart data unavailable')?.parentElement;
+    expect(failed?.style.height).toBe(loaded);
+  });
+});
+
+describe('Bomb mode with the sheet on: the 💣 view keeps its full height (review D2)', () => {
+  const boxHeight = () => Number(([...document.body.querySelectorAll('div')].find((d) => d.style.position === 'relative' && /px$/.test(d.style.height) && d.parentElement?.style.background)
+    ?? [...document.body.querySelectorAll('div')].find((d) => /shimmer/.test(d.style.animation))?.parentElement)?.style.height.replace('px', ''));
+  const bar = (iso, o, hi, lo, c) => ({ date: iso, datetime: iso, timestamp: Math.floor(Date.parse(iso) / 1000), open: o, high: hi, low: lo, close: c, volume: 100 });
+  const DAILY = [
+    { date: '2026-10-14', open: 101, high: 104.1, low: 100.6, close: 103.2, volume: 1 },
+    { date: '2026-10-13', open: 99.4, high: 101.2, low: 99, close: 100.9, volume: 1 },
+  ];
+  const THIRTY = [bar('2026-10-14T16:30:00.000Z', 103, 103.5, 102.9, 103.2), bar('2026-10-14T16:00:00.000Z', 102.5, 103.1, 102.4, 103), bar('2026-10-14T13:30:00.000Z', 101, 101.4, 100.6, 101.2)];
+  it('1D at the sheet\'s height; 💣 at the modal\'s full chart height (the Fuse is never cut under the drawer)', async () => {
+    net.history = (tf) => Promise.resolve(tf === '1d' ? DAILY : tf === '30m' ? THIRTY : []);
+    await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={103.2} sheetContext={ctx()} bombContext={{ kind: 'agent', battleId: 'stock-battle', held: true, record: selectBombRecord(BATTLE, 'AAPL', SHEET_NOW) }} />); });
+    await flush();
+    const day = boxHeight();
+    const bomb = $$('button').find((b) => b.textContent === '\uD83D\uDCA3');
+    expect(bomb).toBeTruthy();
+    await click(bomb);
+    const fuse = boxHeight();
+    // (jsdom lays out no container, so the modal's full chart height computes to 0 here; the sheet's floor is 180.)
+    expect(fuse).not.toBe(day);
+    act(() => root.unmount());
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={103.2} bombContext={{ kind: 'agent', battleId: 'stock-battle', held: true, record: selectBombRecord(BATTLE, 'AAPL', SHEET_NOW) }} />); });
+    await flush();
+    expect(fuse).toBe(boxHeight()); // the same height the 💣 view has with the sheet off
+  });
+});
+
+describe('an ended battle takes no Ask (review C7 — CU2)', () => {
+  it('status completed: the Ask is disabled and sends nothing', async () => {
+    await open({ context: ctx({ battle: { ...BATTLE, status: 'completed' } }) });
+    await click($('[data-sheet-question="protect_lead"]'));
+    expect($('[data-sheet-ask]').disabled).toBe(true);
+    await click($('[data-sheet-ask]'));
+    expect(net.asks).toHaveLength(0);
+  });
+});
+
+describe('Layer 0 keeps the fold with a long sentence and a long name (review D3)', () => {
+  it('the quoted sentence shows two lines until tapped; the eyebrow and the name tag ellipsize, never widen the drawer', async () => {
+    await open();
+    const line = $('[data-sheet-voice-line]');
+    expect(line.style.webkitLineClamp || line.style.WebkitLineClamp).toBe('2');
+    expect(line.getAttribute('aria-expanded')).toBe('false');
+    await click(line);
+    expect($('[data-sheet-voice-line]').getAttribute('aria-expanded')).toBe('true');
+    expect($('[data-sheet-voice-line]').style.webkitLineClamp || '').toBe('');
+    const tag = $('[data-sheet-agent-tag]');
+    expect([tag.style.whiteSpace, tag.style.textOverflow, tag.style.minWidth]).toEqual(['nowrap', 'ellipsis', '0px']);
+    expect(tag.parentElement.style.minWidth).toBe('0px');
+  });
+});
+
+describe('the rankings: one read for the modal\'s life (review N2)', () => {
+  it('leaving the stalled question before the read lands keeps it; coming back reads nothing more', async () => {
+    let land;
+    net.rankings = () => new Promise((r) => { land = r; });
+    await open({ context: ctx({ rankings: undefined }) });
+    await click($('[data-sheet-question="better_than_stalled"]'));
+    expect(net.calls.filter((c) => c[0] === 'getDoc')).toEqual([['getDoc', 'indexIntelligence/stockRankings']]);
+    await click($('[data-sheet-back]'));
+    await act(async () => { land({ exists: () => true, data: () => RANKINGS }); });
+    await flush();
+    await click($('[data-sheet-question="better_than_stalled"]'));
+    expect(net.calls.filter((c) => c[0] === 'getDoc')).toHaveLength(1);
+    expect($('[data-pack-item="rank_scores"]')).toBeTruthy();
   });
 });
 

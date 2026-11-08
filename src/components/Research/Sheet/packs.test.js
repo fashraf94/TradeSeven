@@ -154,9 +154,9 @@ describe('BC-5 — no stop price, ever', () => {
     for (const i of items) expect(i.fact).not.toMatch(/\bstop\b|\btarget\b/i);
     for (const i of items.filter((x) => x.kind === 'risk_lever' || x.kind === 'risk_verdict')) expect(i.fact).not.toMatch(/\$/);
   });
-  it('the lever says what the code does: swaps out N ATR below entry, after N checks under VWAP, protects the gain past +N ATR (agentRiskManager.js evaluateRiskAction)', () => {
+  it('the lever says what the code does: swaps out N ATR below entry, after N checks IN A ROW under VWAP ending past the dead band, and past +N ATR a dip under the 5-min average SELLS (agentRiskManager.js evaluateRiskAction; review A13/A17)', () => {
     const lever = candidateItems(full(BATTLES.momentum_chaser)).items.find((i) => i.kind === 'risk_lever');
-    expect(lever.fact).toBe('Trend Follower on Aggressive: swaps out 0.9 ATR below entry or after 3 checks under VWAP; past +1.5 ATR it protects the gain');
+    expect(lever.fact).toBe('Trend Follower on Aggressive: swaps out 0.9 ATR below entry, or after 3 checks in a row under VWAP ending 0.7% below; past +1.5 ATR, a dip under its 5-min average sells it');
   });
   it('the risk verdict is the latest check\'s, in plain words with its time', () => {
     const v = candidateItems(full(BATTLES.momentum_chaser)).items.find((i) => i.kind === 'risk_verdict');
@@ -288,9 +288,21 @@ describe('BC-13 — the questions in standing order', () => {
     expect(questionOrder({ player: 68, opponent: 68 })).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
     expect(questionOrder(null)).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
   });
-  it('compared at the digits the header shows (68.4 vs 68.2 at 0 digits is a tie)', () => {
-    expect(questionOrder({ player: 68.4, opponent: 68.2, digits: 0 })).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
-    expect(questionOrder({ player: 68.4, opponent: 68.2, digits: 1 })).toEqual(['protect_lead', 'catch_up', 'better_than_stalled']);
+  it('the HEADER\'s lead decides, never the rounded digits: 1234.4 vs 1234.1 shows +1234 / +1234 and "You lead by less than 1" — protect the lead first (review A6)', () => {
+    const shown = { player: 1234.4, opponent: 1234.1, digits: 0, you: '+1234', them: '+1234', lead: 'player' };
+    expect(questionOrder(shown)).toEqual(['protect_lead', 'catch_up', 'better_than_stalled']);
+    expect(questionOrder({ ...shown, lead: 'tie' })).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
+    expect(questionOrder({ ...shown, lead: 'cpu' })).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
+    // A caller with numbers only: the precise pair's lead.
+    expect(questionOrder({ player: 68.4, opponent: 68.2, digits: 0 })).toEqual(['protect_lead', 'catch_up', 'better_than_stalled']);
+  });
+  it('the standing item prints the header\'s own text and words its lead (review A6): "-2" / "+12", never toFixed\'s "-3" / "12"', () => {
+    const item = (standing) => candidateItems({ ...full(BATTLES.momentum_chaser), standing }).items.find((i) => i.kind === 'standing');
+    expect(item({ player: -2.5, opponent: 12, digits: 0, you: '-2', them: '+12', lead: 'cpu' }).fact).toBe('You trail -2 – +12');
+    expect(item({ player: 1234.4, opponent: 1234.1, digits: 0, you: '+1234', them: '+1234', lead: 'player' }).fact).toBe('You lead +1234 – +1234');
+    expect(item({ player: 5, opponent: 5, digits: 0, you: '+5', them: '+5', lead: 'tie' }).fact).toBe('Tied +5 – +5');
+    expect(item({ player: 62, opponent: 68, digits: 0 }).fact).toBe('You trail 62 – 68');
+    expect(item(null)).toBeUndefined();
   });
 });
 

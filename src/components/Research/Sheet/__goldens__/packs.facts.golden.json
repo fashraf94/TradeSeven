@@ -1,0 +1,794 @@
+{
+ "momentum_chaser": {
+  "items": [
+   [
+    "rung_distance",
+    "Next rung +30 at $103.77 · $0.57 (0.55%) to go",
+    "live price vs the next rung",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "move_since_entry",
+    "+2.4% since entry at $100.75 (Wed 10/14)",
+    "live price vs entry",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "check_read",
+    "The Wed 12:45 check saw a widening trend · +2.6% from entry · 1.05× a rung step (the first rung is 1.00×) · its tightest range in 7 days",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rule_trend",
+    "Trend Follower ranks names by the technical trend first (40% of its ranking), then BaggerBomb fit (30%)",
+    "Trend Follower’s config",
+    "verified",
+    null
+   ],
+   [
+    "standing",
+    "You trail +62 – +68",
+    "the scoreboard",
+    "unverified",
+    "as_shown"
+   ],
+   [
+    "risk_lever",
+    "Trend Follower on Aggressive: swaps out 0.9 ATR below entry, or after 3 checks in a row under VWAP ending 0.7% below; past +1.5 ATR, a dip under its 5-min average sells it",
+    "its risk setting",
+    "verified",
+    null
+   ],
+   [
+    "risk_verdict",
+    "Risk check at Wed 12:45: hold — close to the next rung",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "banked",
+    "+15 banked at the checks · next check 1:15",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "drawdown",
+    "0.9% off its high since Wed 10/14 ($104.10, Wed 10/14)",
+    "from the chart, as of Wed 10/14",
+    "unverified",
+    "from_chart"
+   ],
+   [
+    "incumbent",
+    "ETH is the name it would replace · 6 quiet checks in a row; Trend Follower counts a name stalled at 5",
+    "its call in the cockpit",
+    "unverified",
+    "from_cockpit"
+   ],
+   [
+    "stalled",
+    "Stalled by Trend Follower’s own count (5 quiet checks): ETH (6)",
+    "its stall counter",
+    "verified",
+    null
+   ],
+   [
+    "rung_compare",
+    "At the last check: AAPL $0.37 from +30",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "rank_scores",
+    "Trend Follower’s ranking: AAPL 78 · ETH 52 (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "idea",
+    "This game’s idea: “Big caps with clean balance sheets keep leading while rates hold; buy the leaders on quiet pullbacks.”",
+    "this game’s idea",
+    "verified",
+    null
+   ],
+   [
+    "told_it",
+    "“Keep AAPL through the close unless it loses VWAP.”",
+    "What you told it · Wed 11:40",
+    "verified",
+    null
+   ]
+  ],
+  "packs": {
+   "catch_up": [
+    "move_since_entry",
+    "rule_trend",
+    "rung_distance",
+    "idea",
+    "told_it"
+   ],
+   "protect_lead": [
+    "banked",
+    "drawdown",
+    "risk_lever",
+    "idea",
+    "told_it"
+   ],
+   "better_than_stalled": [
+    "incumbent",
+    "stalled",
+    "rank_scores",
+    "idea",
+    "told_it"
+   ]
+  }
+ },
+ "contrarian": {
+  "items": [
+   [
+    "rung_distance",
+    "Next rung +30 at $103.77 · $0.57 (0.55%) to go",
+    "live price vs the next rung",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "move_since_entry",
+    "+2.4% since entry at $100.75 (Wed 10/14)",
+    "live price vs entry",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "check_read",
+    "The Wed 12:45 check saw a widening trend · +2.6% from entry · 1.05× a rung step (the first rung is 1.00×) · its tightest range in 7 days",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rule_contrarian",
+    "Contrarian ranks names by names the platform scores low first (40% of its ranking), then volatility (20%)",
+    "Contrarian’s config",
+    "verified",
+    null
+   ],
+   [
+    "standing",
+    "You trail +62 – +68",
+    "the scoreboard",
+    "unverified",
+    "as_shown"
+   ],
+   [
+    "risk_lever",
+    "Contrarian on Balanced: swaps out 0.85 ATR below entry, or after 2 checks in a row under VWAP ending 0.5% below; past +1.5 ATR, a dip under its 5-min average sells it",
+    "its risk setting",
+    "verified",
+    null
+   ],
+   [
+    "risk_verdict",
+    "Risk check at Wed 12:45: hold — close to the next rung",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "banked",
+    "+15 banked at the checks · next check 1:15",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "drawdown",
+    "0.9% off its high since Wed 10/14 ($104.10, Wed 10/14)",
+    "from the chart, as of Wed 10/14",
+    "unverified",
+    "from_chart"
+   ],
+   [
+    "incumbent",
+    "ETH is the name it would replace · 6 quiet checks in a row; Contrarian counts a name stalled at 6",
+    "its call in the cockpit",
+    "unverified",
+    "from_cockpit"
+   ],
+   [
+    "stalled",
+    "Stalled by Contrarian’s own count (6 quiet checks): ETH (6)",
+    "its stall counter",
+    "verified",
+    null
+   ],
+   [
+    "rung_compare",
+    "At the last check: AAPL $0.37 from +30",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "rank_scores",
+    "Contrarian’s ranking: AAPL 31 · ETH 59 (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "idea",
+    "This game’s idea: “Big caps with clean balance sheets keep leading while rates hold; buy the leaders on quiet pullbacks.”",
+    "this game’s idea",
+    "verified",
+    null
+   ],
+   [
+    "told_it",
+    "“Keep AAPL through the close unless it loses VWAP.”",
+    "What you told it · Wed 11:40",
+    "verified",
+    null
+   ]
+  ],
+  "packs": {
+   "catch_up": [
+    "rule_contrarian",
+    "check_read",
+    "rung_distance",
+    "idea",
+    "told_it"
+   ],
+   "protect_lead": [
+    "risk_lever",
+    "risk_verdict",
+    "drawdown",
+    "idea",
+    "told_it"
+   ],
+   "better_than_stalled": [
+    "rank_scores",
+    "rung_compare",
+    "incumbent",
+    "idea",
+    "told_it"
+   ]
+  }
+ },
+ "degen": {
+  "items": [
+   [
+    "rung_distance",
+    "Next rung +30 at $103.77 · $0.57 (0.55%) to go",
+    "live price vs the next rung",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "move_since_entry",
+    "+2.4% since entry at $100.75 (Wed 10/14)",
+    "live price vs entry",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "check_read",
+    "The Wed 12:45 check saw a widening trend · +2.6% from entry · 1.05× a rung step (the first rung is 1.00×) · its tightest range in 7 days",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rule_volatility",
+    "Speculator ranks names by volatility first (60% of its ranking), then BaggerBomb fit (25%)",
+    "Speculator’s config",
+    "verified",
+    null
+   ],
+   [
+    "standing",
+    "You trail +62 – +68",
+    "the scoreboard",
+    "unverified",
+    "as_shown"
+   ],
+   [
+    "risk_lever",
+    "Speculator on Aggressive: swaps out 0.9 ATR below entry, or after 3 checks in a row under VWAP ending 0.7% below; past +1.5 ATR, a dip under its 5-min average sells it",
+    "its risk setting",
+    "verified",
+    null
+   ],
+   [
+    "risk_verdict",
+    "Risk check at Wed 12:45: hold — close to the next rung",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "banked",
+    "+15 banked at the checks · next check 1:15",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "drawdown",
+    "0.9% off its high since Wed 10/14 ($104.10, Wed 10/14)",
+    "from the chart, as of Wed 10/14",
+    "unverified",
+    "from_chart"
+   ],
+   [
+    "incumbent",
+    "ETH is the name it would replace · 6 quiet checks in a row; Speculator counts a name stalled at 3",
+    "its call in the cockpit",
+    "unverified",
+    "from_cockpit"
+   ],
+   [
+    "stalled",
+    "Stalled by Speculator’s own count (3 quiet checks): ETH (6)",
+    "its stall counter",
+    "verified",
+    null
+   ],
+   [
+    "rung_compare",
+    "At the last check: AAPL $0.37 from +30",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "rank_scores",
+    "Speculator’s ranking: AAPL 65 · ETH 41 (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "idea",
+    "This game’s idea: “Big caps with clean balance sheets keep leading while rates hold; buy the leaders on quiet pullbacks.”",
+    "this game’s idea",
+    "verified",
+    null
+   ],
+   [
+    "told_it",
+    "“Keep AAPL through the close unless it loses VWAP.”",
+    "What you told it · Wed 11:40",
+    "verified",
+    null
+   ]
+  ],
+  "packs": {
+   "catch_up": [
+    "check_read",
+    "rule_volatility",
+    "rung_distance",
+    "idea",
+    "told_it"
+   ],
+   "protect_lead": [
+    "drawdown",
+    "banked",
+    "risk_lever",
+    "idea",
+    "told_it"
+   ],
+   "better_than_stalled": [
+    "rank_scores",
+    "rung_compare",
+    "incumbent",
+    "idea",
+    "told_it"
+   ]
+  }
+ },
+ "guardian": {
+  "items": [
+   [
+    "rung_distance",
+    "Next rung +30 at $103.77 · $0.57 (0.55%) to go",
+    "live price vs the next rung",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "move_since_entry",
+    "+2.4% since entry at $100.75 (Wed 10/14)",
+    "live price vs entry",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "check_read",
+    "The Wed 12:45 check saw a widening trend · +2.6% from entry · 1.05× a rung step (the first rung is 1.00×) · its tightest range in 7 days",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rule_sectors",
+    "Capital Preserver ranks names by sector spread first (35% of its ranking), then fundamentals (30%)",
+    "Capital Preserver’s config",
+    "verified",
+    null
+   ],
+   [
+    "standing",
+    "You trail +62 – +68",
+    "the scoreboard",
+    "unverified",
+    "as_shown"
+   ],
+   [
+    "risk_lever",
+    "Capital Preserver on Defensive: swaps out 0.75 ATR below entry, or after 1 check in a row under VWAP ending 0.3% below; past +1 ATR, a dip under its 5-min average sells it",
+    "its risk setting",
+    "verified",
+    null
+   ],
+   [
+    "risk_verdict",
+    "Risk check at Wed 12:45: hold — close to the next rung",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "banked",
+    "+15 banked at the checks · next check 1:15",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "drawdown",
+    "0.9% off its high since Wed 10/14 ($104.10, Wed 10/14)",
+    "from the chart, as of Wed 10/14",
+    "unverified",
+    "from_chart"
+   ],
+   [
+    "incumbent",
+    "ETH is the name it would replace",
+    "its call in the cockpit",
+    "unverified",
+    "from_cockpit"
+   ],
+   [
+    "stalled",
+    "Capital Preserver doesn’t rotate out of quiet names",
+    "Capital Preserver’s config",
+    "verified",
+    null
+   ],
+   [
+    "rung_compare",
+    "At the last check: AAPL $0.37 from +30",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "rank_scores",
+    "Capital Preserver’s ranking: AAPL 70 · ETH 66 (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "idea",
+    "This game’s idea: “Big caps with clean balance sheets keep leading while rates hold; buy the leaders on quiet pullbacks.”",
+    "this game’s idea",
+    "verified",
+    null
+   ],
+   [
+    "told_it",
+    "“Keep AAPL through the close unless it loses VWAP.”",
+    "What you told it · Wed 11:40",
+    "verified",
+    null
+   ]
+  ],
+  "packs": {
+   "catch_up": [
+    "rule_sectors",
+    "move_since_entry",
+    "rung_distance",
+    "idea",
+    "told_it"
+   ],
+   "protect_lead": [
+    "risk_lever",
+    "risk_verdict",
+    "banked",
+    "idea",
+    "told_it"
+   ],
+   "better_than_stalled": [
+    "rank_scores",
+    "incumbent",
+    "stalled",
+    "idea",
+    "told_it"
+   ]
+  }
+ },
+ "diversifier": {
+  "items": [
+   [
+    "rung_distance",
+    "Next rung +30 at $103.77 · $0.57 (0.55%) to go",
+    "live price vs the next rung",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "move_since_entry",
+    "+2.4% since entry at $100.75 (Wed 10/14)",
+    "live price vs entry",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "check_read",
+    "The Wed 12:45 check saw a widening trend · +2.6% from entry · 1.05× a rung step (the first rung is 1.00×) · its tightest range in 7 days",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rule_sectors",
+    "Diversifier ranks names by sector spread first (30% of its ranking), then fundamentals (25%)",
+    "Diversifier’s config",
+    "verified",
+    null
+   ],
+   [
+    "standing",
+    "You trail +62 – +68",
+    "the scoreboard",
+    "unverified",
+    "as_shown"
+   ],
+   [
+    "risk_lever",
+    "Diversifier on Balanced: swaps out 0.85 ATR below entry, or after 2 checks in a row under VWAP ending 0.5% below; past +1.5 ATR, a dip under its 5-min average sells it",
+    "its risk setting",
+    "verified",
+    null
+   ],
+   [
+    "risk_verdict",
+    "Risk check at Wed 12:45: hold — close to the next rung",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "banked",
+    "+15 banked at the checks · next check 1:15",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "drawdown",
+    "0.9% off its high since Wed 10/14 ($104.10, Wed 10/14)",
+    "from the chart, as of Wed 10/14",
+    "unverified",
+    "from_chart"
+   ],
+   [
+    "incumbent",
+    "ETH is the name it would replace · 6 quiet checks in a row; Diversifier counts a name stalled at 6",
+    "its call in the cockpit",
+    "unverified",
+    "from_cockpit"
+   ],
+   [
+    "stalled",
+    "Stalled by Diversifier’s own count (6 quiet checks): ETH (6)",
+    "its stall counter",
+    "verified",
+    null
+   ],
+   [
+    "rung_compare",
+    "At the last check: AAPL $0.37 from +30",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "rank_scores",
+    "Diversifier’s ranking: AAPL 70 · ETH 64 (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "idea",
+    "This game’s idea: “Big caps with clean balance sheets keep leading while rates hold; buy the leaders on quiet pullbacks.”",
+    "this game’s idea",
+    "verified",
+    null
+   ],
+   [
+    "told_it",
+    "“Keep AAPL through the close unless it loses VWAP.”",
+    "What you told it · Wed 11:40",
+    "verified",
+    null
+   ]
+  ],
+  "packs": {
+   "catch_up": [
+    "rule_sectors",
+    "rung_distance",
+    "move_since_entry",
+    "idea",
+    "told_it"
+   ],
+   "protect_lead": [
+    "risk_lever",
+    "risk_verdict",
+    "banked",
+    "idea",
+    "told_it"
+   ],
+   "better_than_stalled": [
+    "rank_scores",
+    "incumbent",
+    "stalled",
+    "idea",
+    "told_it"
+   ]
+  }
+ },
+ "analyst": {
+  "items": [
+   [
+    "rung_distance",
+    "Next rung +30 at $103.77 · $0.57 (0.55%) to go",
+    "live price vs the next rung",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "move_since_entry",
+    "+2.4% since entry at $100.75 (Wed 10/14)",
+    "live price vs entry",
+    "unverified",
+    "live_quote"
+   ],
+   [
+    "check_read",
+    "The Wed 12:45 check saw a widening trend · +2.6% from entry · 1.05× a rung step (the first rung is 1.00×) · its tightest range in 7 days",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rule_fundamentals",
+    "Fundamental Investor ranks names by fundamentals first (40% of its ranking), then the technical trend (30%)",
+    "Fundamental Investor’s config",
+    "verified",
+    null
+   ],
+   [
+    "standing",
+    "You trail +62 – +68",
+    "the scoreboard",
+    "unverified",
+    "as_shown"
+   ],
+   [
+    "risk_lever",
+    "Fundamental Investor on Balanced: swaps out 0.85 ATR below entry, or after 2 checks in a row under VWAP ending 0.5% below; past +1.5 ATR, a dip under its 5-min average sells it",
+    "its risk setting",
+    "verified",
+    null
+   ],
+   [
+    "risk_verdict",
+    "Risk check at Wed 12:45: hold — close to the next rung",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "banked",
+    "+15 banked at the checks · next check 1:15",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "drawdown",
+    "0.9% off its high since Wed 10/14 ($104.10, Wed 10/14)",
+    "from the chart, as of Wed 10/14",
+    "unverified",
+    "from_chart"
+   ],
+   [
+    "incumbent",
+    "ETH is the name it would replace · 6 quiet checks in a row; Fundamental Investor counts a name stalled at 6",
+    "its call in the cockpit",
+    "unverified",
+    "from_cockpit"
+   ],
+   [
+    "stalled",
+    "Stalled by Fundamental Investor’s own count (6 quiet checks): ETH (6)",
+    "its stall counter",
+    "verified",
+    null
+   ],
+   [
+    "rung_compare",
+    "At the last check: AAPL $0.37 from +30",
+    "the battle record",
+    "verified",
+    null
+   ],
+   [
+    "rank_scores",
+    "Fundamental Investor’s ranking: AAPL 74 · ETH 61 (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "idea",
+    "This game’s idea: “Big caps with clean balance sheets keep leading while rates hold; buy the leaders on quiet pullbacks.”",
+    "this game’s idea",
+    "verified",
+    null
+   ],
+   [
+    "told_it",
+    "“Keep AAPL through the close unless it loses VWAP.”",
+    "What you told it · Wed 11:40",
+    "verified",
+    null
+   ]
+  ],
+  "packs": {
+   "catch_up": [
+    "rule_fundamentals",
+    "move_since_entry",
+    "rung_distance",
+    "idea",
+    "told_it"
+   ],
+   "protect_lead": [
+    "risk_lever",
+    "risk_verdict",
+    "banked",
+    "idea",
+    "told_it"
+   ],
+   "better_than_stalled": [
+    "rank_scores",
+    "incumbent",
+    "stalled",
+    "idea",
+    "told_it"
+   ]
+  }
+ }
+}

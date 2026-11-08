@@ -31,6 +31,7 @@ import BombPlot, { RedZoneChip } from '../Research/BombMode/BombPlot';
 import BombSheet from '../Research/BombMode/BombSheet';
 import useSheetView from '../Research/Sheet/useSheetView';
 import AnalysisSheet, { SheetActionRow } from '../Research/Sheet/AnalysisSheet';
+import { ST } from '../Research/Sheet/sheetTheme';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -448,6 +449,11 @@ const AssetResearchModal = ({
   // fold; the action row is pinned under the drawer's scroll area. Measured in a
   // headless browser at 390×844 and 430×932 (the build report).
   const sheetGeom = !!sheetView && sheetActive;
+  // The chart section's height in sheet mode: the sheet's on 1D / 1W; on 💣 / spectate
+  // the Fuse keeps its full height and the measured section moves the drawer down (the
+  // fold is the 1D view's — review D2). The skeleton and the error box use it too, so
+  // the drawer never opens low and jumps when the chart lands (review D7).
+  const sheetChartH = sheetGeom && !bombViewOpen ? sheetChartHeight : chartHeight;
   const sheetChartRef = useRef(null);
   const [sheetChartBox, setSheetChartBox] = useState(null);
   // The drawer sits on the chart section's measured bottom: re-measured after every
@@ -942,10 +948,10 @@ const AssetResearchModal = ({
               {researchData.loading && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  height: `${chartHeight}px`, background: '#0a0e14',
+                  height: `${sheetChartH}px`, background: '#0a0e14',
                 }}>
                   <div style={{
-                    width: '90%', height: '200px', borderRadius: '8px',
+                    width: '90%', height: sheetGeom ? `${Math.max(60, sheetChartH - 24)}px` : '200px', borderRadius: '8px',
                     background: 'linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)',
                     backgroundSize: '200% 100%',
                     animation: 'shimmer 1.5s infinite',
@@ -955,7 +961,7 @@ const AssetResearchModal = ({
               {researchData.error && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  height: `${chartHeight}px`, background: '#0a0e14', gap: '12px',
+                  height: `${sheetChartH}px`, background: '#0a0e14', gap: '12px',
                 }}>
                   <span style={{ color: HOLO_COLORS.textSecondary, fontSize: '14px' }}>
                     Chart data unavailable
@@ -983,7 +989,7 @@ const AssetResearchModal = ({
                   levels={chartLevels}
                   smaData={researchData.smaData}
                   activeHighlight={chartHighlight}
-                  height={sheetGeom ? sheetChartHeight : chartHeight}
+                  height={sheetChartH}
                   bombData={bombHidden ? null : bombOn ? (bombData || BOMB_MODE_PILL) : bombData}
                   symbol={currentAsset?.symbol}
                   todayDailyCandle={researchData.todayDailyCandle}
@@ -1023,7 +1029,7 @@ const AssetResearchModal = ({
               isSectorETF={isSectorETF}
               hasBombData={bombOn ? true : bombHidden ? false : !!bombData}
               isGameContext={bombHidden ? false : isGameContext}
-              {...(sheetGeom ? { midY: sheetChartBox ?? (sheetChartHeight + 40), footer: <SheetActionRow view={sheetView} /> } : {})}
+              {...(sheetGeom ? { midY: sheetChartBox ?? (sheetChartH + 6), footer: <SheetActionRow view={sheetView} /> } : {})}
               {...(sheetOn ? { analysisAlways: true } : {})}
             >
               {activeTab === 'fundamental' && sheetView && (
@@ -1031,13 +1037,13 @@ const AssetResearchModal = ({
                   view={sheetView}
                   wallSt={analystChipEl || null}
                   about={profile && !profileLoading && profileSymbol === currentAsset?.symbol && (profile.description || (profile.sector && profile.sector !== 'Unknown')) ? (
-                    <div data-sheet-about-body style={{ padding: '8px 10px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div data-sheet-about-body style={{ padding: '8px 10px', borderRadius: '8px', background: ST.surface, border: `1px solid ${ST.hair}` }}>
                       {(profile.sector && profile.sector !== 'Unknown') && (
                         <div style={{ fontSize: '10px', fontWeight: '600', color: HOLO_COLORS.textSecondary, marginBottom: profile.description ? '6px' : 0 }}>
                           {[profile.sector, profile.industry && profile.industry !== 'Unknown' ? profile.industry : null].filter(Boolean).join(' · ')}
                         </div>
                       )}
-                      {profile.description && <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '11px', lineHeight: '1.5', margin: 0 }}>{profile.description}</p>}
+                      {profile.description && <p style={{ color: ST.ink2, fontSize: '11px', lineHeight: '1.5', margin: 0 }}>{profile.description}</p>}
                     </div>
                   ) : null}
                 />

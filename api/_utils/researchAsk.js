@@ -21,6 +21,12 @@
 //                         kinds their own (a live quote, the chart, the rankings,
 //                         the scoreboard as shown), a server kind the record no
 //                         longer holds 'not_on_record'.
+//   researchAskAllowed    the flag, server side: RESEARCH_MODAL_SHEET_MODE 'on'
+//                         admits every owner, 'allowlist' only an owner
+//                         cockpit-status calls allowlisted (the same
+//                         isCockpitOwnerAllowlisted the client's verdict comes
+//                         from), 'off' nobody — so a hand-made POST cannot
+//                         spend a sheet Ask while the sheet is dark.
 //   researchAskForPrompt  the named input buildVoiceLayerPrompt renders as the
 //                         RESEARCH ASK block (voiceLayerPrompt.js), the question
 //                         in the server's own words (sheetCopy.js QUESTION_TEXT).
@@ -32,11 +38,13 @@
 import { QUESTION_IDS, ITEM_KINDS, RECORD_KINDS, SERVER_KINDS, CLIENT_REASON, FACT_MAX, candidateItems } from '../../src/components/Research/Sheet/packs.js';
 import { agentPositionOf } from '../../src/components/Research/BombMode/selectBombRecord.js';
 import { QUESTION_TEXT } from '../../src/components/Research/Sheet/sheetCopy.js';
-import { sanitizeChatText } from './chatTextSanitize.js';
+import { packLine, packLineClamped, PACK_LABEL_MAX } from './researchAskText.js';
+import { resolveSheetMode } from '../../src/components/Research/Sheet/sheetMode.js';
+import { isCockpitOwnerAllowlisted } from './callRecords/mode.js';
 
 export const RESEARCH_ASK_MAX_ITEMS = 5;
 const RECORD_ID_MAX = 256;
-const LABEL_MAX = 120;
+const LABEL_MAX = PACK_LABEL_MAX;
 const TICKER = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -46,11 +54,8 @@ const isoOrNull = (v) => {
   if (typeof v === 'string' && ISO.test(v) && Number.isFinite(Date.parse(v)) && new Date(Date.parse(v)).toISOString() === v) return { ok: true, value: v };
   return { ok: false };
 };
-const cleanText = (v, max) => {
-  if (typeof v !== 'string') return null;
-  const t = sanitizeChatText(v);
-  return t && t.length <= max ? t : null;
-};
+// One line, no tags, no line separators (researchAskText.js — the chat sanitizer, composed).
+const cleanText = (v, max) => packLine(v, max);
 
 function parseItem(raw, askSymbol) {
   if (!isPlain(raw)) return { error: 'item_not_object' };
@@ -61,7 +66,7 @@ function parseItem(raw, askSymbol) {
   if (typeof symbol !== 'string' || !TICKER.test(symbol)) return { error: 'item_symbol' };
   const src = raw.source;
   if (!isPlain(src) || !RECORD_KINDS.includes(src.recordKind)) return { error: 'item_source' };
-  const recordId = typeof src.recordId === 'string' && src.recordId.length <= RECORD_ID_MAX ? sanitizeChatText(src.recordId) : null;
+  const recordId = typeof src.recordId === 'string' && src.recordId.length <= RECORD_ID_MAX ? (packLine(src.recordId, RECORD_ID_MAX) ?? '') : null;
   const label = cleanText(src.label, LABEL_MAX);
   if (recordId === null || !label) return { error: 'item_source' };
   const at = isoOrNull(raw.at);
@@ -98,6 +103,20 @@ export function parseResearchAsk(raw) {
 }
 
 /**
+ * May this owner spend a sheet Ask? The flag read NOW (sheetMode.js), the
+ * allowlist read NOW (callRecords/mode.js). Never throws.
+ */
+export function researchAskAllowed(ownerId) {
+  try {
+    const mode = resolveSheetMode();
+    if (mode === 'on') return true;
+    return mode === 'allowlist' && isCockpitOwnerAllowlisted(ownerId);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The Ask's items with the server's status (BC-7): a server kind it re-derived
  * is the SERVER's item, `verified`; everything else is the client's, `unverified`.
  * Never throws: a rebuild that fails leaves every item unverified ('not_reread').
@@ -110,15 +129,21 @@ export function verifyResearchItems({ battle, battleId = null, ask, nowMs }) {
     // The row: the agent's OWN position for the symbol (an Ask is the agent's lens; the
     // client never names the row). A client item naming another position — the CPU's, on
     // a ticker both hold — is still not verified: its record id is not the server item's.
-    const own = agentPositionOf(battle, ask.symbol)?.asset?.positionId ?? null;
-    server = candidateItems({ battle, symbol: ask.symbol, nowMs, row: own ? { positionId: own } : {}, battleId, directive: battle?.directive ?? null, incumbent }).items;
+    // A position with no positionId (a legacy or crypto row) is named by its own slot — the
+    // posKey agentBombContext checks — so a CPU on the same ticker never hides it (review A8).
+    const pos = agentPositionOf(battle, ask.symbol);
+    const own = pos?.asset?.positionId ?? null;
+    const row = own ? { positionId: own } : pos ? { posKey: `player:${pos.tier}:${pos.slot}` } : {};
+    server = candidateItems({ battle, symbol: ask.symbol, nowMs, row, battleId, directive: battle?.directive ?? null, incumbent }).items;
   } catch {
     reread = false;
   }
   return ask.items.map((it) => {
     if (SERVER_KINDS.includes(it.kind)) {
       const own = reread ? server.find((s) => s.kind === it.kind && s.source.recordId === it.source.recordId) : null;
-      if (own) return { ...own, status: 'verified', statusReason: null };
+      // The server's own item — its words come from stored records (an idea statement, a
+      // directive, a signal summary), so they are made one clean line too (A12/B1).
+      if (own) return { ...own, fact: packLineClamped(own.fact, FACT_MAX), source: { ...own.source, label: packLineClamped(own.source?.label ?? '', LABEL_MAX) }, status: 'verified', statusReason: null };
       return { ...it, status: 'unverified', statusReason: reread ? 'not_on_record' : 'not_reread' };
     }
     return { ...it, status: 'unverified', statusReason: CLIENT_REASON[it.kind] ?? 'client_only' };

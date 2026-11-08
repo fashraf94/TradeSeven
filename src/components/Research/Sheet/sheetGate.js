@@ -17,32 +17,11 @@
 //                shared). Until the answer comes in, 'allowlist' reads off.
 
 import { useEffect, useState } from 'react';
-import { RESEARCH_MODAL_SHEET_MODE, RESEARCH_MODAL_SHEET_MODES } from '../../../config/researchModalFlags.js';
 import { readFilmRoomVerdict, cachedFilmRoomVerdict } from '../../../utils/filmRoomGate.js';
+import { resolveSheetMode, sheetModeOn } from './sheetMode.js';
 
-const OFF = 'off';
-
-/** The mode, when it is one of the walked states, else 'off'. Never throws. */
-export function resolveSheetMode() {
-  try {
-    const modes = RESEARCH_MODAL_SHEET_MODES;
-    const mode = RESEARCH_MODAL_SHEET_MODE;
-    return Array.isArray(modes) && modes.includes(mode) ? mode : OFF;
-  } catch {
-    return OFF;
-  }
-}
-
-/**
- * Does the sheet resolve on for one mount? Pure.
- * @param {'off'|'allowlist'|'on'} mode
- * @param {{ agentBattle?: boolean, verdict?: boolean }} [opts]
- */
-export function sheetModeOn(mode, { agentBattle = false, verdict } = {}) {
-  if (mode === 'on') return agentBattle === true;
-  if (mode === 'allowlist') return agentBattle === true && verdict === true;
-  return false;
-}
+// The pure resolver lives in sheetMode.js (the server's Ask gate reads it too).
+export { resolveSheetMode, sheetModeOn };
 
 /**
  * Does the sheet resolve on for this AGENT battle? 'off' and 'on' answer without

@@ -916,8 +916,11 @@ const StockChart = ({
   // Build C (BC-8, BC-9): the record's price lines — the measured entry, the
   // idea's conditions behind the Idea pill, a tapped pack item's price. Absent
   // or empty: nothing is drawn and no library call is made. The chart effect
-  // above rebuilds the series whenever its data changes, so lines left on a
-  // series that no longer exists are simply forgotten, never removed from it.
+  // above rebuilds the series whenever ANY of its dependencies change, so this
+  // effect and the markers' carry the same dependencies (declared after it, they
+  // run after it in the same commit and re-apply to the new series — review
+  // C1/D4); lines left on a series that no longer exists are simply forgotten,
+  // never removed from it. Only the open line shows a price-axis tag (D8).
   const hasIdeaLines = Array.isArray(priceLines) && priceLines.some((l) => l?.group === 'idea');
   useEffect(() => {
     const series = candleSeriesRef.current;
@@ -936,19 +939,22 @@ const StockChart = ({
           ...(l.color ? { color: l.color } : {}),
           lineWidth: l.emphasis ? 2 : 1,
           lineStyle: l.group === 'record' ? 0 : 2, // record solid, idea / pin dashed
-          axisLabelVisible: true,
+          axisLabelVisible: l.emphasis === true,
           title: l.title || '',
         }));
       } catch (e) {
         console.warn('[StockChart] Sheet line error:', e);
       }
     }
-  }, [priceLines, showIdea, chartData, isBombView]);
+  }, [priceLines, showIdea, chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]);
 
   // Build C (BC-8): the record as dots, 1D only (1W draws the price pins only),
   // through createSeriesMarkers — re-applied whenever the series is rebuilt
-  // (a new series gets a new markers plugin). A marker's time IS its day's bar
-  // time (Phase 0 §N); a day with no bar on the chart draws nothing.
+  // (a new series gets a new markers plugin; the effect carries the chart
+  // effect's dependencies — review C1/D4). A marker's time IS its day's bar
+  // time (Phase 0 §N); a day with no bar on the chart draws nothing. Markers
+  // are dots: the ONE open label is a caption over the chart (below), never
+  // canvas text the pane clips at its right edge (review D6).
   useEffect(() => {
     const series = candleSeriesRef.current;
     const plugin = markersPluginRef.current;
@@ -965,7 +971,7 @@ const StockChart = ({
         position: m.position || 'aboveBar',
         shape: m.shape || 'circle',
         ...(m.color ? { color: m.color } : {}),
-        ...(m.text ? { text: m.text } : {}),
+        ...(m.text ? { size: 1.5 } : {}),
         ...(m.id ? { id: m.id } : {}),
       }))
       .sort((a, b) => a.time - b.time);
@@ -975,7 +981,15 @@ const StockChart = ({
     } catch (e) {
       console.warn('[StockChart] Markers error:', e);
     }
-  }, [markers, chartData, timeframe, isBombView]);
+  }, [markers, chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]);
+
+  // The open marker's label (BC-8: one open label), when its day has a bar on the 1D chart.
+  const openPin = (() => {
+    if (isBombView || timeframe !== '1D' || !Array.isArray(markers)) return null;
+    const m = markers.find((x) => x && typeof x.text === 'string' && x.text);
+    if (!m || !(chartData || []).some((b) => calendarDateOf(b.time) === m.day)) return null;
+    return m;
+  })();
 
   const pillStyle = (active, variant) => {
     const isBomb = variant === 'bomb';
@@ -1057,6 +1071,19 @@ const StockChart = ({
 
         {/* OHLC overlay — hidden in spectate view (back button uses same position) */}
         {!isSpectateView && <OHLCDisplay data={displayOhlc} showUnavailable={controlled} />}
+
+        {/* Build C: the open pin's label, bottom-left above the time axis (review D6) */}
+        {openPin && (
+          <div data-pin-caption={openPin.id || ''} style={{
+            position: 'absolute', left: 8, bottom: 30, zIndex: 2, pointerEvents: 'none',
+            maxWidth: 'calc(100% - 76px)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            fontSize: 10.5, fontWeight: 700, lineHeight: 1.3, padding: '1px 6px', borderRadius: 6,
+            color: openPin.color || HOLO_COLORS.textSecondary, background: HOLO_COLORS.bgDeep,
+            border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+          }}>
+            ● {openPin.text}
+          </div>
+        )}
 
         {/* Spectate mode: Back button */}
         {isSpectateView && (

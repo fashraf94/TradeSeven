@@ -67,6 +67,8 @@ function Stance({ view }) {
 }
 
 function Voice({ view, collapsed }) {
+  // Layer 0 shows two lines of the sentence (the fold, BC-2); a tap shows all of it (review D3).
+  const [whole, setWhole] = useState(false);
   const l = view.latest;
   const quoted = typeof l.text === 'string' && l.text;
   const eyebrow = l.source === 'rationale' ? SHEET_COPY.voiceDecided
@@ -74,6 +76,7 @@ function Voice({ view, collapsed }) {
       : l.source === 'bench' ? SHEET_COPY.voiceFlagged : SHEET_COPY.voiceNothing;
   const line = quoted ? l.text
     : l.source === 'template_checked' ? SHEET_COPY.checkedNothingSaid(view.latestTime ?? '', view.symbol)
+      : l.source === 'template_looked' ? SHEET_COPY.lastLookedAt(view.latestTime ?? '')
       : SHEET_COPY.notLooked(view.archetype);
   return (
     <div data-sheet-voice={l.source} style={{
@@ -81,21 +84,26 @@ function Voice({ view, collapsed }) {
       padding: collapsed ? '6px 11px' : '8px 11px 9px', display: 'flex', flexDirection: collapsed ? 'row' : 'column', gap: collapsed ? 8 : 6,
       alignItems: collapsed ? 'center' : 'stretch', minWidth: 0,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-        <span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, color: ST.teal, whiteSpace: 'nowrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: collapsed ? 0 : 1, minWidth: 0 }}>
+        <span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, color: ST.teal, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flexShrink: 1 }}>
           {eyebrow}
           {view.latestWho && quoted && !collapsed && <span style={{ color: ST.ink3, fontWeight: 500 }}> · {view.latestWho}</span>}
         </span>
         {!collapsed && view.agentName && quoted && (
-          <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: ST.ink3, border: `1px solid ${ST.hair}`, borderRadius: 6, padding: '1px 6px' }}>{view.agentName}</span>
+          <span data-sheet-agent-tag style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: ST.ink3, border: `1px solid ${ST.hair}`, borderRadius: 6, padding: '1px 6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '45%', minWidth: 0, flexShrink: 1 }}>{view.agentName}</span>
         )}
       </div>
-      <div data-sheet-voice-line style={{
-        fontSize: collapsed ? 12 : 13, fontStyle: quoted ? 'italic' : 'normal', color: ST.ink2, lineHeight: 1.35, minWidth: 0,
-        ...(collapsed
-          ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }
-          : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
-      }}>
+      <div
+        data-sheet-voice-line
+        {...(!collapsed && quoted ? { role: 'button', tabIndex: 0, 'aria-expanded': whole, title: SHEET_COPY.voiceMore, 'data-sheet-voice-whole': whole ? '1' : '0', onClick: () => setWhole((w) => !w), onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setWhole((w) => !w); } } } : {})}
+        style={{
+          fontSize: collapsed ? 12 : 13, fontStyle: quoted ? 'italic' : 'normal', color: ST.ink2, lineHeight: 1.35, minWidth: 0,
+          ...(collapsed
+            ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }
+            : whole ? { cursor: 'pointer', overflowWrap: 'anywhere' }
+              : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere', ...(quoted ? { cursor: 'pointer' } : {}) }),
+        }}
+      >
         {quoted ? `“${line}”` : line}
       </div>
     </div>
@@ -178,7 +186,7 @@ function Pack({ view }) {
               <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, lineHeight: 1.35, color: ST.ink }}>{it.fact}</span>
               <span style={{ marginTop: 3, fontFamily: MONO, fontSize: 9, color: ST.ink3, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <span>{it.source.label}</span>
-                {it.pin && <span style={{ color: on ? ST.teal : ST.ink3 }}>{SHEET_COPY.pinTag}</span>}
+                {it.pin && view.pinsShown?.[it.pin.type] && <span style={{ color: on ? ST.teal : ST.ink3 }}>{SHEET_COPY.pinTag}</span>}
               </span>
             </span>
           </button>
@@ -241,14 +249,15 @@ export function SheetActionRow({ view }) {
   const out = view.budget.left <= 0;
   const label = out ? SHEET_COPY.askOut
     : view.answering ? SHEET_COPY.askSending(view.archetype)
-      : q ? SHEET_COPY.askQuestion(view.archetype, QUESTION_TEXT[q]) : SHEET_COPY.askPick(view.archetype);
+      : view.askedThis ? SHEET_COPY.askAsked(view.archetype)
+        : q ? SHEET_COPY.askQuestion(view.archetype, QUESTION_TEXT[q]) : SHEET_COPY.askPick(view.archetype);
   return (
     <div data-sheet-actions style={{
       display: 'flex', gap: 8, padding: '8px 12px 10px', borderTop: `1px solid ${ST.hair}`, background: ST.surface,
     }}>
       <button
         type="button"
-        data-sheet-ask={out ? 'out' : view.canAsk ? 'ready' : 'disabled'}
+        data-sheet-ask={out ? 'out' : view.canAsk ? 'ready' : view.askedThis ? 'asked' : 'disabled'}
         disabled={!view.canAsk}
         onClick={view.ask}
         style={{
@@ -260,7 +269,7 @@ export function SheetActionRow({ view }) {
         }}
       >
         <span style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.25 }}>{label}</span>
-        {!out && q && !view.answering && (
+        {!out && q && !view.answering && !view.askedThis && (
           <span data-sheet-cost style={{ fontFamily: MONO, fontSize: 9.5, color: view.canAsk ? ST.purple : ST.ink3 }}>{SHEET_COPY.askCost(view.budget.left)}</span>
         )}
       </button>

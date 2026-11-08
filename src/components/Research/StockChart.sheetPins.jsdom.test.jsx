@@ -100,10 +100,21 @@ describe('markers — createSeriesMarkers, 1D only, on their day\'s bar', () => 
     for (const m of drawn) expect(barTimes).toContain(m.time);
     expect(drawn.map((m) => dayOf(m.time))).toEqual(['2026-09-28', '2026-09-30']);
   });
-  it('one open label: only the marker the caller gave text carries it', () => {
+  it('one open label: the marker the caller gave text is a CAPTION over the chart, never canvas text the pane clips (review D6); its dot is the larger one', () => {
     render({ markers: MARKERS });
     const drawn = log.plugins[0].calls.at(-1);
-    expect(drawn.filter((m) => m.text)).toEqual([expect.objectContaining({ id: 'entry', text: 'Entry · Mon 10:02' })]);
+    expect(drawn.filter((m) => m.text)).toEqual([]);
+    expect(drawn.filter((m) => m.size).map((m) => m.id)).toEqual(['entry']);
+    const caps = [...container.querySelectorAll('[data-pin-caption]')];
+    expect(caps.map((c) => [c.dataset.pinCaption, c.textContent.trim()])).toEqual([['entry', '● Entry · Mon 10:02']]);
+  });
+  it('no caption when the open marker has no bar on the chart, on 1W, or with no open marker', () => {
+    render({ markers: [{ id: 'gone', day: '2026-09-12', text: 'Called · Sat 9/12' }] });
+    expect(container.querySelector('[data-pin-caption]')).toBeNull();
+    render({ markers: MARKERS, ohlcvData: WEEKLY, timeframe: '1W' });
+    expect(container.querySelector('[data-pin-caption]')).toBeNull();
+    render({ markers: [MARKERS[1]] });
+    expect(container.querySelector('[data-pin-caption]')).toBeNull();
   });
   it('re-applied after a rebuild: new data rebuilds the series and the markers go onto the NEW series', () => {
     render({ markers: MARKERS });
@@ -164,5 +175,35 @@ describe('inert without the props', () => {
     ] });
     expect(log.plugins).toHaveLength(0);
     expect(candle()?.lines.map((l) => l.title).filter((t) => t === 'entry $100.75') ?? []).toEqual([]);
+  });
+});
+
+describe('re-applied after EVERY series rebuild, not only a data change (review C1/D4)', () => {
+  for (const [what, change] of [['the height (rotation, resize)', { height: 210 }], ['the symbol', { symbol: 'MSFT' }]]) {
+    it(`a rebuild caused by ${what}: the markers and the lines go onto the NEW series`, () => {
+      render({ symbol: 'AAPL', markers: MARKERS, priceLines: LINES });
+      const first = candle();
+      render({ symbol: 'AAPL', markers: MARKERS, priceLines: LINES, ...change });
+      expect(candle()).not.toBe(first);
+      expect(log.plugins.at(-1).series).toBe(candle());
+      expect(log.plugins.at(-1).calls.at(-1).map((m) => m.id)).toEqual(['entry', 'check']);
+      expect(candle().lines.map((l) => l.price)).toEqual([100.75, 98.5, 96.2]);
+    });
+  }
+});
+
+describe('markers reach the library in time order (v5 binary-searches them — review C7, CK1)', () => {
+  it('an unsorted list (a tapped item\'s own pin appended last) is drawn sorted', () => {
+    render({ markers: [MARKERS[1], { id: 'pin', day: '2026-09-25', text: 'This item · Fri 10:00' }, MARKERS[0]] });
+    const drawn = log.plugins[0].calls.at(-1);
+    expect(drawn.map((m) => m.id)).toEqual(['pin', 'entry', 'check']);
+    expect(drawn.map((m) => m.time)).toEqual([...drawn.map((m) => m.time)].sort((a, b) => a - b));
+  });
+});
+
+describe('only the open line shows a price-axis tag (review D8)', () => {
+  it('axisLabelVisible on the emphasized line alone', () => {
+    render({ priceLines: LINES });
+    expect(candle().lines.map((l) => [l.price, l.axisLabelVisible])).toEqual([[100.75, true], [98.5, false], [96.2, false]]);
   });
 });

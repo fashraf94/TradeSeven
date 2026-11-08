@@ -9,15 +9,27 @@
 // only when the route answered before its one write (useSheetView
 // NOT_CHARGED_STATUSES); otherwise it says to check chat.
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { SHEET_COPY } from './sheetCopy.js';
 import { ST, MONO, tint } from './sheetTheme.js';
 
 export default function AskReply({ view }) {
   const r = view.reply;
+  // The card sits below the items; on every new state it is brought into the drawer's
+  // view (nearest edge, no animation), so the player sees what the Ask did (review D1).
+  const slot = useRef(null);
+  useEffect(() => {
+    if (r.status === 'idle') return;
+    try { slot.current?.scrollIntoView?.({ block: 'nearest' }); } catch { /* ok */ }
+  }, [r.status, r.questionId]);
+  const card = replyCard(view, r);
+  return card ? <div ref={slot} data-sheet-reply-slot>{card}</div> : null;
+}
+
+function replyCard(view, r) {
   if (r.status === 'sending') {
     return (
-      <div data-sheet-reply="sending" style={{ ...card(ST.purple), fontStyle: 'italic', color: ST.ink2, fontSize: 13 }}>
+      <div data-sheet-reply="sending" style={{ ...cardStyle(ST.purple), fontStyle: 'italic', color: ST.ink2, fontSize: 13 }}>
         {SHEET_COPY.askSending(view.archetype)}
       </div>
     );
@@ -27,14 +39,14 @@ export default function AskReply({ view }) {
       ? (r.why === 'out' ? SHEET_COPY.failNotChargedOut : r.why === 'closed' ? SHEET_COPY.failNotChargedClosed : SHEET_COPY.failNotCharged(view.archetype))
       : SHEET_COPY.failUnknown;
     return (
-      <div data-sheet-reply="failed" data-sheet-charged={r.charged} role="status" style={{ ...card(ST.red), fontSize: 12.5, color: ST.ink2 }}>
+      <div data-sheet-reply="failed" data-sheet-charged={r.charged} role="status" style={{ ...cardStyle(ST.red), fontSize: 12.5, color: ST.ink2 }}>
         {line}
       </div>
     );
   }
   if (r.status !== 'answered') return null;
   return (
-    <div data-sheet-reply="answered" style={{ ...card(ST.purple), display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div data-sheet-reply="answered" style={{ ...cardStyle(ST.purple), display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, color: ST.purple, whiteSpace: 'nowrap' }}>
           {SHEET_COPY.replyEyebrow}
@@ -57,7 +69,7 @@ export default function AskReply({ view }) {
   );
 }
 
-function card(accent) {
+function cardStyle(accent) {
   return {
     borderRadius: 12, background: ST.surface, border: `1px solid ${ST.hair}`, borderLeft: `3px solid ${accent}`,
     padding: '8px 11px 9px',

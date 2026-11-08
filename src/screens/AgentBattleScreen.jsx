@@ -3022,9 +3022,20 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     ...(sheetCockpitDoor ? { onOpenCockpit: sheetCockpitDoor } : {}),
     battle: agentBattle,
     ...(cockpitOn && cockpitCallsRead.status === 'ready' && Array.isArray(cockpitCallsRead.value) ? { calls: cockpitCallsRead.value } : {}),
+    // The standing AS THE HEADER SHOWS IT (BC-13, BUILD_RULES §9): its digits through the
+    // header's own formatter and its lead (the precise pair's) — never re-rounded in the sheet.
     standing: comparison !== undefined
-      ? (comparison.available === true ? { player: comparison.pair[0], opponent: comparison.pair[1], digits: comparison.fractionDigits ?? 0 } : null)
-      : { player: displayPlayerScore, opponent: displayOpponentScore, digits: 0 },
+      ? (comparison.available === true ? {
+        player: comparison.pair[0], opponent: comparison.pair[1], digits: comparison.fractionDigits ?? 0,
+        you: comparison.digits?.[0] ?? formatScoreDisplay(comparison.pair[0], { fractionDigits: comparison.fractionDigits ?? 0 }),
+        them: comparison.digits?.[1] ?? formatScoreDisplay(comparison.pair[1], { fractionDigits: comparison.fractionDigits ?? 0 }),
+        lead: comparison.lead,
+      } : null)
+      : {
+        player: displayPlayerScore, opponent: displayOpponentScore, digits: 0,
+        you: formatScoreDisplay(displayPlayerScore), them: formatScoreDisplay(displayOpponentScore),
+        lead: displayPlayerScore > displayOpponentScore ? 'player' : displayPlayerScore < displayOpponentScore ? 'cpu' : 'tie',
+      },
     directive: thisTurnDirective,
   });
   if (gatedPath) {
