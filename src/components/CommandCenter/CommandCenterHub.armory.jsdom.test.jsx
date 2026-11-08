@@ -34,6 +34,10 @@ const { userState, listWatchlists, equipWatchlist, unequipWatchlist, changeArche
   forms: { next: 0, live: new Map(), mounts: 0, unmounts: 0, silent: false },
 }));
 vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_ARMORY_ENABLED() { return armory.on; } }));
+// The armory flip (Nov 7, 2026): KILL-SWITCH rows for the rollback's first step. Per-game loadouts are held off, so these rows keep
+// guarding A1's armory with one loadout, which PER_GAME_LOADOUT_ENABLED alone back to false restores (CommandCenterHub.loadouts
+// .jsdom.test.jsx holds the armory with both flags on).
+vi.mock('../../config/perGameLoadoutFlags', () => ({ PER_GAME_LOADOUT_ENABLED: false }));
 vi.mock('framer-motion', async (importOriginal) => ({ ...(await importOriginal()), useReducedMotion: () => motion.reduced }));
 vi.mock('../AgentForm/AgentForm', () => ({
   default: class AgentFormProbe extends Component {

@@ -6,7 +6,24 @@
 // mutant: counting another agent's days), the field mask, and the whole
 // answer over the tape suites' in-memory Firestore.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// The armory flip (Nov 7, 2026). The per-game flag is held here, not read live, so a rollback reddens only its pin. The
+// rows in KILL_SWITCH_ROWS run with it held OFF, and keep guarding the path a rollback restores: each files its cards
+// through createCard against the agent's current archetype, the flag-off rule (A2's R4); with per-game loadouts on a
+// card is checked against its battle's own archetype and shelved against both loadouts, which cardStore.perGame.test.js
+// holds, and nothing else in the ledger reads the flag. Every other row runs with it ON, the shipped state.
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "buildCounter — the whole answer: the window, the weekly counts, the cards with their shelving, each open Watch card's recurrences > an open Watch card gets its recurrences on its own agent's later days; a Practice card and a Set card get none; the counts cover every day",
+  "buildCounter — the whole answer: the window, the weekly counts, the cards with their shelving, each open Watch card's recurrences > a shelved Watch card (the agent changed archetype) gets no recurrences and is not open; a retired one neither",
+  "buildCounter — the whole answer: the window, the weekly counts, the cards with their shelving, each open Watch card's recurrences > the mutant: the counter never counts another agent's days as a card's recurrences even when they fall in the window after the card",
+  "B2.1 B3 (Amendment H RH-6) — an unavailable day gives one answer: neither counted nor a recurrence, only counted as unavailable > buildCounter: the unavailable day's moment is no recurrence and no weekly count; the answer reports the unavailable days per agent (the mutant: the counter counting an unavailable day)",
+  "RK-1 — the counter answers for the attribution agent (the casual clone's parent) > asked with the clone (the battle's own agent): the answer names the parent, its ledger, the clone day's recurrence of a card filed from a ranked day, and the clone's unavailable day under the parent — never another owner's clone (the mutants: the clone day left out; another owner's clone counted)",
+  "RK-1 — the counter answers for the attribution agent (the casual clone's parent) > review KR1-6 — shelving on the counter's read is the PARENT's archetype: the clone stale and the parent on the card's archetype → open; the parent moved on and the clone on the card's → shelved (the mutant: shelving by the clone)",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardCounter.js imports src/utils/filmRoomMoments.js, src/utils/tapeSchedule.js and
 // src/constants/filmTape.js, and through the store (Amendment K RK-1) api/_utils/casualClone.js and
 // src/constants/leagueTournament.js; this import of the counter is the runtime guard that they stay Node-clean — never mocked.

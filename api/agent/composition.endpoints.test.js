@@ -10,6 +10,7 @@
 // only; the REAL endpoint modules + kernel run).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { leagueGroupsDouble } from '../_utils/__fixtures__/leagueGroupsDouble.js';
 
 // ── mutable flag holder: the compositionConfig mock reads through getters ──
 const flagState = { mode: 'off', fence: false, candidate: false, compiler: false };
@@ -140,6 +141,7 @@ function makeFakeFirestore({ agentDocs = {}, bundleDocs = {}, epochDoc = null, a
         return buildEpochRef();
       } };
     }
+    if (name === 'tournamentGroups') return leagueGroupsDouble(); // the armory flip: the League writers' lock read
     throw new Error(`Unmocked collection: ${name}`);
   };
 

@@ -19,6 +19,17 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+// The armory flip (Nov 7, 2026). The per-game flag is held here, not read live, so a rollback reddens only its pin. The
+// rows in KILL_SWITCH_ROWS run with it held OFF, and keep guarding the path a rollback restores: it pins the chooser's
+// per-pod loadout override, which per-game loadouts retire (FD-4: training wears the League loadout;
+// trainingClone.test.js and lobby-endpoints.test.js hold it). Every other row runs with it ON, the shipped state.
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "sweepTrainingActivation (Slice 3) > LOADOUT OVERRIDE (Slice 5b-ii): the group carrier drives the provisioned clone, not the ranked loadout",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
+
 // TOURNAMENT_ADVANCEMENT_FROZEN defaults TRUE (the emergency freeze). This
 // suite drives runMondayPipeline (whose Friday catch-up calls the now-frozen-by-
 // default runFridayAdvancement) and runOrchestratorTick — exercise them in the

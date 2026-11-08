@@ -12,6 +12,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 const { userState } = vi.hoisted(() => ({ userState: { user: { displayName: 'Flash', username: 'flash' } } }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
+// The armory flip (Nov 7, 2026): these rows run with both flags on, held here (not read live) so a rollback reddens only the
+// pins; the League lock read answers "no ranked group" (open), as most players stand between weeks.
+vi.mock('../../config/perGameLoadoutFlags', () => ({ PER_GAME_LOADOUT_ENABLED: true }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_ARMORY_ENABLED: true }));
+vi.mock('../../services/leagueLockService', () => ({ subscribeLeagueLock: (uid, onLock) => { onLock({ locked: false, groupId: null, status: null, endsAtMs: null }); return () => {}; } }));
 // The Daily Regime Brief's read (hooks/useDailyRegimeBrief.js) is not under test here. Left real it reaches Firestore (`db` is `{}`),
 // fails, and its 1.5 s retry can outlive this file (the PR #1003 CI flake). `loading` is the state the real read held for those 1.5 s.
 vi.mock('../../hooks/useDailyRegimeBrief', () => ({

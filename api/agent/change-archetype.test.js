@@ -20,6 +20,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ARCHETYPE_DEFAULT_TRAITS } from '../../src/data/traitLibrary.js';
 import { makeCompositionStoreDouble } from '../_utils/__fixtures__/compositionStoreDouble.js';
+import { leagueGroupsDouble } from '../_utils/__fixtures__/leagueGroupsDouble.js';
 
 // ==================== HOISTED MOCK STATE ====================
 
@@ -128,6 +129,7 @@ function makeFakeFirestore({ agentDocs = {}, subcollections = {} } = {}) {
     if (name === 'agents') return { doc: (id) => buildAgentRef(id) };
     const __c = __composition.collection(name);
     if (__c) return __c;
+    if (name === 'tournamentGroups') return leagueGroupsDouble(); // the armory flip: the League writers' lock read
     throw new Error(`Unmocked collection: ${name}`);
   };
 

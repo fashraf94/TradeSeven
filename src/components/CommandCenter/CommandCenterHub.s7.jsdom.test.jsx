@@ -25,6 +25,41 @@
 import React, { Component, act } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The armory flip (Nov 7, 2026). Both flipped flags are held here, not read live, so a rollback reddens only their
+// pins. The rows in KILL_SWITCH_ROWS run with both held OFF, and keep guarding the path a rollback restores: each
+// drives a surface that exists only with the flags off (the pre-flip Loadout tab's cards and their Change buttons, the
+// legacy archetype and watchlist sheets, the hero as it was before the armory). Every other row runs with both ON, the
+// shipped state; the League lock read answers "no ranked group".
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../config/perGameLoadoutFlags', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+vi.mock('../../services/leagueLockService', () => ({ subscribeLeagueLock: (uid, onLock) => { onLock({ locked: false, groupId: null, status: null, endsAtMs: null }); return () => {}; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "which hero draws where (R-S7-1, R-S7-2) > the phone at 390 px: the armored hero at 200 px, at the phone's one rate",
+  "which hero draws where (R-S7-1, R-S7-2) > the phone at 360 px: the armored hero at 196 px, at the phone's one rate",
+  "the response to an area selection at a hub 1216 px wide (R-S7-3) > the Loadout link on the Deploy card is a selection of the Equipped Archetype: a response from another area, none from itself",
+  "the response to an area selection at a hub 770 px wide (R-S7-3) > the Loadout link on the Deploy card is a selection of the Equipped Archetype: a response from another area, none from itself",
+  "the response to an area selection at a hub 614 px wide (R-S7-3) > the Loadout link on the Deploy card is a selection of the Equipped Archetype: a response from another area, none from itself",
+  "connected: processing follows the attempt (R-S7-3) > ambient, then processing only while the hub-started deployment is submitting — the form researches — then ambient again",
+  "connected: processing follows the attempt (R-S7-3) > a creation the ceremony-off handoff navigates away from is acknowledged at once: processing ends, nothing answers",
+  "connected: processing follows the attempt (R-S7-3) > an existing terminal is not a created terminal: the card's word on the line, ambient, no response",
+  "connected: processing follows the attempt (R-S7-3) > an refused terminal is not a created terminal: the card's word on the line, ambient, no response",
+  "connected: processing follows the attempt (R-S7-3) > an uncertain terminal is not a created terminal: the card's word on the line, ambient, no response",
+  "connected: processing follows the attempt (R-S7-3) > a connected hub with no attempt: ambient, no response, however many frames",
+  "connected: a created terminal on the hub answers once per attempt (R-S7-3) > ceremony closed while the request is out: the creation stays, \"Deployed\", and the form answers exactly once however long it stays",
+  "connected: a created terminal on the hub answers once per attempt (R-S7-3) > a second attempt's created terminal answers again, once",
+  "connected: a created terminal on the hub answers once per attempt (R-S7-3) > a poll refresh (new retained objects, no change of attempt) is not a response, with a created terminal on screen",
+  "connected: a created terminal on the hub answers once per attempt (R-S7-3) > a hub that mounts over an unacknowledged created terminal does not answer it (the past is not an event)",
+  "connected: a created terminal on the hub answers once per attempt (R-S7-3) > \"Battle confirmed\" — a creation recovered from an uncertain answer — answers once",
+  "connected: the root ceremony covers the page, so the form pauses (R-S7-5) > the form is paused while the ceremony is open, a response that arrives behind it reaches it paused, and it resumes once the page is back",
+  "connected: the root ceremony covers the page, so the form pauses (R-S7-5) > under reduced motion a created terminal behind the ceremony reaches the paused form, for the engine to flash once the page is back",
+  "connected: the root ceremony covers the page, so the form pauses (R-S7-5) > no ceremony, no pause: the form runs through a deployment that has none",
+  "connected, the wide site at 770 px: the same attempt, the same pause (R-S7-3, R-S7-5) > processing while submitting, one response for the created terminal however long it stays, and the line says \"Deployed\"",
+  "connected, the wide site at 770 px: the same attempt, the same pause (R-S7-3, R-S7-5) > the form is paused behind the ceremony, a response that arrives behind it reaches it paused, and the box keeps its size",
+  "connected, the wide site at 614 px: the same attempt, the same pause (R-S7-3, R-S7-5) > processing while submitting, one response for the created terminal however long it stays, and the line says \"Deployed\"",
+  "connected, the wide site at 614 px: the same attempt, the same pause (R-S7-3, R-S7-5) > the form is paused behind the ceremony, a response that arrives behind it reaches it paused, and the box keeps its size",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
+
 const h = vi.hoisted(() => ({
   authListeners: [],
   deploy: null,
@@ -41,7 +76,7 @@ const h = vi.hoisted(() => ({
 }));
 
 // These rows are the armored hero's whichever way the flag ships, so a one-line rollback reddens its pins and nothing else.
-vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_HUB_ENABLED: true }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_HUB_ENABLED: true, get AGENT_FORM_ARMORY_ENABLED() { return flip.on; } }));
 vi.mock('firebase/auth', () => ({ onAuthStateChanged: (_auth, cb) => { h.authListeners.push(cb); return () => {}; } }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 // The Daily Regime Brief's read (hooks/useDailyRegimeBrief.js) is not under test here. Left real it reaches Firestore (`db` is `{}`),

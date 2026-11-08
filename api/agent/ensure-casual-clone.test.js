@@ -46,7 +46,11 @@ function makeDb(initial = {}) {
     return docs;
   };
   const snap = (docs) => ({ docs, empty: docs.length === 0, forEach: (cb) => docs.forEach(cb) });
-  const docRef = (path) => ({
+  // The armory flip (Nov 7, 2026): with per-game loadouts on, every create and resync ends with the clone's trait
+  // scan (casualClone.js seedBaggerbombTraits → archetypeSeeding.js softDeleteReplacedTraitRuleDocs), which reaches the
+  // store through `ref.firestore`, as an Admin DocumentReference does.
+    const docRef = (path) => ({
+    get firestore() { return db; },
     get: async () => { const d = store.get(path); return { exists: d !== undefined, id: path.split('/').pop(), data: () => structuredClone(d) }; },
     set: async (d) => { store.set(path, structuredClone(d)); },
     create: async (d) => { if (store.has(path)) { const e = new Error('ALREADY_EXISTS'); e.code = 6; throw e; } store.set(path, structuredClone(d)); },
@@ -70,7 +74,8 @@ function makeDb(initial = {}) {
     create: async (ref, d) => ref.create(d),
     update: async (ref, u) => ref.update(u),
   });
-  return { db: { collection: (n) => coll(n), runTransaction }, store };
+  const db = { collection: (n) => coll(n), runTransaction };
+  return { db, store };
 }
 
 function makeReqRes({ method = 'POST', body = {} } = {}) {

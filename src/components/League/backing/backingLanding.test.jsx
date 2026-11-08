@@ -55,6 +55,9 @@ vi.mock('../../../contexts/UserContext', () => ({ useUser: () => ({ user: { uid:
 vi.mock('../../../services/tournamentGroupService', () => ({
   // The real subscription ALWAYS answers — the viewer's group, or null.
   subscribeMyGroup: (_uid, cb) => { cb(hooked.myGroup ?? null); return () => {}; }, subscribeMyMostRecentVoidedGroup: () => () => {}, subscribeMyTrainingPod: () => () => {},
+  // The armory flip (Nov 7, 2026): with both flags on the lobbies read the group through the failure-aware read (A2R-1); it
+  // answers as subscribeMyGroup does here, so these rows run the same with the flags on or rolled back.
+  subscribeMyGroupOrFailure: (_uid, cb) => { cb(hooked.myGroup ?? null); return () => {}; },
   subscribeGroup: () => () => {}, getGroup: async () => null, fetchDisplayNames: async () => ({}),
 }));
 vi.mock('../../../services/backingService', () => ({

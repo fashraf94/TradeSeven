@@ -103,6 +103,9 @@ function matchesFilters(data, filters) {
       if (!(val >= f.value)) return false;
     } else if (f.op === '<') {
       if (!(val < f.value)) return false;
+    } else if (f.op === 'array-contains') {
+      // The armory flip (Nov 7, 2026): the League writers' lock read, `groupMembers array-contains uid`.
+      if (!(Array.isArray(val) && val.includes(f.value))) return false;
     } else {
       throw new Error(`mock query: unsupported op '${f.op}'`);
     }
@@ -294,6 +297,9 @@ export function makeMockDb(initialDocs = {}) {
         const writes = [];
         const t = {
           async get(ref) {
+            // The armory flip (Nov 7, 2026): a query read inside the transaction (the League writers' lock read,
+            // api/_utils/perGameLoadout.js readLeagueLockInTx) answers as the query does; documents keep their versions.
+            if (ref && ref.path === undefined && typeof ref.get === 'function') return ref.get();
             countRead(ref.path);
             readVersions.set(ref.path, versionOf(ref.path));
             return snapOf(ref.path);

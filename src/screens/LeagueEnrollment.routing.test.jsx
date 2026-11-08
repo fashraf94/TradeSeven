@@ -30,6 +30,9 @@ vi.mock('../hooks/useMyTournamentBattle', () => ({ default: () => ({ battle: sta
 vi.mock('../hooks/usePreOpenPhase', () => ({ default: () => state.preOpen }));
 vi.mock('../services/tournamentGroupService', () => ({
   subscribeMyGroup: (_uid, cb) => { state.listeners.add(cb); cb(state.group); return () => state.listeners.delete(cb); },
+  // The armory flip (Nov 7, 2026): with both flags on the lobbies read the group through the failure-aware read (A2R-1); it
+  // answers as subscribeMyGroup does here, so these rows run the same with the flags on or rolled back.
+  subscribeMyGroupOrFailure: (_uid, cb) => { state.listeners.add(cb); cb(state.group); return () => state.listeners.delete(cb); },
   subscribeMyTrainingPod: (_uid, cb) => { cb(null); return () => {}; },
   subscribeMyMostRecentVoidedGroup: (_uid, cb) => { cb(null); return () => {}; },
   subscribeMyMostRecentCompletedGroup: (_uid, cb) => { cb(null); return () => {}; },

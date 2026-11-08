@@ -11,6 +11,76 @@
 
 import React, { act } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The armory flip (Nov 7, 2026). Both flipped flags are held here, not read live, so a rollback reddens only their
+// pins. The rows in KILL_SWITCH_ROWS run with both held OFF, and keep guarding the path a rollback restores: each
+// drives a surface that exists only with the flags off (the pre-flip Loadout tab's cards and their Change buttons, the
+// legacy archetype and watchlist sheets, the hero as it was before the armory). Every other row runs with both ON, the
+// shipped state; the League lock read answers "no ranked group".
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../config/perGameLoadoutFlags', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_ARMORY_ENABLED() { return flip.on; } }));
+vi.mock('../../services/leagueLockService', () => ({ subscribeLeagueLock: (uid, onLock) => { onLock({ locked: false, groupId: null, status: null, endsAtMs: null }); return () => {}; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "the Loadout states (ruling R-S5-1) > loading: the agent has not resolved — the frame's loading line, every picker disabled, no identity row",
+  "the Loadout states (ruling R-S5-1) > ready: the archetype's name and approach, the list's name and names, the stored agent name",
+  "the Loadout states (ruling R-S5-1) > reads the lists once at mount, and the card shows the stored name until they arrive",
+  "the Loadout states (ruling R-S5-1) > on an account change the previous account's lists are not shown while the new read is pending (spec §3)",
+  "the Loadout states (ruling R-S5-1) > no list equipped: the plain \"No watchlist equipped\" card, no names, no label",
+  "the Loadout states (ruling R-S5-1) > a list that cannot be resolved: its stored name, marked unavailable, with the reason",
+  "the Loadout states (ruling R-S5-1) > a failed lists read is its own state with a Retry — and Retry reads again",
+  "the Loadout states (ruling R-S5-1) > a long list shows its first names and \"+N more\"",
+  "the Loadout states (ruling R-S5-1) > the strip-and-card loadout line: archetype and list; no list; an unavailable one",
+  "the idea-first labels on the watchlist card (ruling R-S5-2; the design note), for a player KNOWN to be admitted (Q-S5-4a) > a positive pointer: \"Universe · N names\"",
+  "the idea-first labels on the watchlist card (ruling R-S5-2; the design note), for a player KNOWN to be admitted (Q-S5-4a) > an absent or null pointer with the records on: \"Plain watchlist · no idea yet\"",
+  "the idea-first labels on the watchlist card (ruling R-S5-2; the design note), for a player KNOWN to be admitted (Q-S5-4a) > the records off, or a malformed pointer: the neutral \"N names\", claiming nothing about ideas",
+  "the idea-first labels on the watchlist card (ruling R-S5-2; the design note), for a player KNOWN to be admitted (Q-S5-4a) > S5 passes no answer, so the default is \"unknown\": everyone reads the neutral \"N names\", whatever the pointer and the records flag say (founder ruling Q-S5-4a)",
+  "the idea-first labels on the watchlist card (ruling R-S5-2; the design note), for a player KNOWN to be admitted (Q-S5-4a) > \"unknown\", \"not_admitted\" and anything that is not one of the three words: the neutral label, even for an idea pointer with the records on",
+  "the idea-first labels on the watchlist card (ruling R-S5-2; the design note), for a player KNOWN to be admitted (Q-S5-4a) > \"admitted\" is the only word that turns the labels on, and a change of the answer on the same mount follows",
+  "the idea-first labels on the watchlist card (ruling R-S5-2; the design note), for a player KNOWN to be admitted (Q-S5-4a) > it never shows an idea's statement or status — the card has no such text and the hub reads no idea record",
+  "the equip lock (ruling R-S5-1): one predicate for the line and every picker > locked in a live game: \"Locked in battle · …\", the pickers disabled; the record and the Forge doors still open",
+  "the equip lock (ruling R-S5-1): one predicate for the line and every picker > not locked: the line says so, and the pickers are enabled",
+  "the equip lock (ruling R-S5-1): one predicate for the line and every picker > concurrency off: any live battle locks, as the shells' label does",
+  "the entry points — each opens its real destination (ruling R-S5-4; spec §2) > the archetype opens the existing picker, handed the agent and the dock (bottom on the phone)",
+  "the entry points — each opens its real destination (ruling R-S5-4; spec §2) > the watchlist opens its quick sheet with the shells' rows: \"No watchlist\" and the committed lists, the equipped one selected",
+  "the entry points — each opens its real destination (ruling R-S5-4; spec §2) > choosing a list equips it through agentService, closes the sheet and reads the lists again",
+  "the entry points — each opens its real destination (ruling R-S5-4; spec §2) > \"No watchlist\" unequips",
+  "the entry points — each opens its real destination (ruling R-S5-4; spec §2) > a failed equip is logged and the sheet closes either way — the shells' own write path",
+  "the entry points — each opens its real destination (ruling R-S5-4; spec §2) > closing the watchlist sheet without a choice also reads the lists again; closing the record or the picker does not",
+  "the entry points — each opens its real destination (ruling R-S5-4; spec §2) > the watchlist sheet draws its loading state while the lists are still being read, then the rows",
+  "the entry points — each opens its real destination (ruling R-S5-4; spec §2) > a failed lists read puts a Retry in the sheet instead of a lone \"No watchlist\" row",
+  "the Forge doors (ruling R-S5-5) — each names the area it opens > \"Forge Lists\" opens the Lists area, returning to the dashboard",
+  "the Forge doors (ruling R-S5-5) — each names the area it opens > the watchlist sheet's footer opens the Lists area and closes the sheet",
+  "every overlay the hub opens registers with one stack (ruling R-S5-6) > a legacy sheet makes the app root inert and modalOpen true; closing restores both and returns focus to the opener",
+  "every overlay the hub opens registers with one stack (ruling R-S5-6) > the phone site's root carries modalOpen too (it is its own root, not the wide one)",
+  "every overlay the hub opens registers with one stack (ruling R-S5-6) > a site switch with a sheet open (the shell remounts under the same stack) leaves the app root interactive",
+  "every overlay the hub opens registers with one stack (ruling R-S5-6) > the hub unmounting with a sheet open (the sheet's Forge door replaced the dashboard) leaves the app root interactive",
+  "review fixes — what the sheets are handed, what the card says about a list (E2-6, E4-2, E4-5, E4-7) > the watchlist sheet takes the shells' fixed teal whatever the player's colour; the other sheets take the player's",
+  "review fixes — what the sheets are handed, what the card says about a list (E2-6, E4-2, E4-5, E4-7) > a list is counted once, by the card and by the sheet: duplicates and malformed entries dropped, the singular for one",
+  "review fixes — what the sheets are handed, what the card says about a list (E2-6, E4-2, E4-5, E4-7) > an equip made elsewhere to a list committed after the hub read: the lists are read once more and the card shows it",
+  "review fixes — what the sheets are handed, what the card says about a list (E2-6, E4-2, E4-5, E4-7) > until that read answers the card is checking, not unavailable: the lists on hand were read before the equip",
+  "review fixes — what the sheets are handed, what the card says about a list (E2-6, E4-2, E4-5, E4-7) > a list that was gone from the start is answered by the mount read: unavailable at once, one read, and a note that claims no cause and no agent behaviour",
+  "review fixes — what the sheets are handed, what the card says about a list (E2-6, E4-2, E4-5, E4-7) > a list equipped elsewhere that is gone too: one extra read, then the plain facts, and no more reads however it renders",
+  "review fixes — what the sheets are handed, what the card says about a list (E2-6, E4-2, E4-5, E4-7) > if the read for the new list fails the card says so, with Retry, and does not say unavailable",
+  "review fixes — focus survives a site switch with a sheet open (E3-2) > a legacy sheet and the hub's own History sheet: focus lands on the new shell, never <body>",
+  "every legacy sheet registers with the one stack, the traits sheet included, on both sites (ruling R-S5-6; E5-1) > archetype on the desktop site: the app root is inert and modalOpen true while it is open; closing restores both and returns focus to its opener",
+  "every legacy sheet registers with the one stack, the traits sheet included, on both sites (ruling R-S5-6; E5-1) > watchlist on the desktop site: the app root is inert and modalOpen true while it is open; closing restores both and returns focus to its opener",
+  "every legacy sheet registers with the one stack, the traits sheet included, on both sites (ruling R-S5-6; E5-1) > archetype on the mobile site: the app root is inert and modalOpen true while it is open; closing restores both and returns focus to its opener",
+  "every legacy sheet registers with the one stack, the traits sheet included, on both sites (ruling R-S5-6; E5-1) > watchlist on the mobile site: the app root is inert and modalOpen true while it is open; closing restores both and returns focus to its opener",
+  "every legacy sheet registers with the one stack, the traits sheet included, on both sites (ruling R-S5-6; E5-1) > an opener that cannot take focus back (the equip lock disabled it while the sheet was open): the hub root gets it, never <body> (S1 review L3-3; E5-8)",
+  "what each sheet is handed, on each site (ruling R-S5-4; E5-4, E5-5, E5-8) > desktop site: the agent, the accent, the loading flag and the site's dock reach every sheet, and only the sheet asked for is open",
+  "what each sheet is handed, on each site (ruling R-S5-4; E5-4, E5-5, E5-8) > mobile site: the agent, the accent, the loading flag and the site's dock reach every sheet, and only the sheet asked for is open",
+  "the phone site wires the same sheets the wide site does (E5-4) > the watchlist sheet: the lists the hub read are its rows, and its footer opens the Forge Lists area and closes it",
+  "the phone site wires the same sheets the wide site does (E5-4) > a pick equips through agentService and the lists are read again; so is a close without a pick — the record and the picker close without a re-read",
+  "the phone site wires the same sheets the wide site does (E5-4) > a failed lists read puts the Retry into the sheet, and the Retry reads again",
+  "the watchlist sheet's working latch (ruling R-S5-4: the shells' own equip handler, step for step; E5-2) > a second equip in a later open of the same sheet is a second write: the latch let go after the first",
+  "the watchlist sheet's working latch (ruling R-S5-4: the shells' own equip handler, step for step; E5-2) > a FAILED equip lets the latch go too",
+  "the watchlist sheet's working latch (ruling R-S5-4: the shells' own equip handler, step for step; E5-2) > while an equip is in flight every row is disabled and a second press — even one that reaches the handler — is no second write; it closes the sheet once, when it settles",
+  "the watchlist sheet's rows agree with the shells' (E5-9) > nothing equipped: \"No watchlist\" is the selected row and no list row is",
+  "the watchlist sheet's rows agree with the shells' (E5-9) > a list with no name is \"Untitled watchlist\" in the sheet, as in the shells",
+  "whose lists these are: the account the agent document names, not the document itself (E5-11) > another agent document of the SAME owner keeps the lists on hand: no blank card, no extra read",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

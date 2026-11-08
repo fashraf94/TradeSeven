@@ -13,8 +13,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const h = vi.hoisted(() => ({ reduced: false }));
 
-vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_HUB_ENABLED: false }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_HUB_ENABLED: false, AGENT_FORM_ARMORY_ENABLED: false }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
+// The armory flip (Nov 7, 2026): the armory and per-game loadouts are held OFF here with the hub's form, as the armory's pin
+// requires (agentFormFlags.test.js: the armory is on only while the hub's form is), so these rows keep guarding the hub a
+// rollback of the forms restores.
+vi.mock('../../config/perGameLoadoutFlags', () => ({ PER_GAME_LOADOUT_ENABLED: false }));
 vi.mock('../../hooks/useDailyRegimeBrief', () => ({
   default: function useDailyRegimeBrief() {
     return { dailyBrief: null, forDate: null, generatedAt: null, isStale: false, loading: true, error: null, refetch: () => {} };

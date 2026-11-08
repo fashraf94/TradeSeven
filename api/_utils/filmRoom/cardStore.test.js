@@ -8,7 +8,38 @@
 // acceptance D). Over the tape suites' in-memory Firestore (real optimistic
 // transactions, so the cap's race is a row, not a comment).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// The armory flip (Nov 7, 2026). The per-game flag is held here, not read live, so a rollback reddens only its pin. The
+// rows in KILL_SWITCH_ROWS run with it held OFF, and keep guarding the path a rollback restores: each files its cards
+// through createCard against the agent's current archetype, the flag-off rule (A2's R4); with per-game loadouts on a
+// card is checked against its battle's own archetype and shelved against both loadouts, which cardStore.perGame.test.js
+// holds, and nothing else in the ledger reads the flag. Every other row runs with it ON, the shipped state.
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "createCard — written once, as spec §4 lists it > writes the entry at agents/{agentId}/plays/{opId} with exactly the spec's fields and the envelope; version 1; the stage from the route",
+  "createCard — written once, as spec §4 lists it > the stage by route: Watch and Set file a `card`; Practice (`drill`) files a `nominated` entry",
+  "createCard — written once, as spec §4 lists it > idempotent by op id: the same op id with the same request is the entry again, and nothing is written twice",
+  "createCard — written once, as spec §4 lists it > the same op id with a DIFFERENT request → 409 op_conflict; nothing written",
+  "the open-card cap (S9) — only cards that are neither shelved nor retired count > S9 is the slots module's value (5); the sixth open card is refused with the cap named",
+  "the open-card cap (S9) — only cards that are neither shelved nor retired count > a RETIRED card does not count: retire one of five, and the sixth files",
+  "the open-card cap (S9) — only cards that are neither shelved nor retired count > a SHELVED card does not count: five cards under another archetype leave the cap untouched (the mutant: the cap counting a shelved card)",
+  "the open-card cap (S9) — only cards that are neither shelved nor retired count > the cap is race-safe: a card landed between a creating transaction's read and its commit is counted on the retry",
+  "retireCard — a compare-and-set on the version the caller saw > moves the stage to retired, appends the stage row with its op id, and bumps the version — once",
+  "retireCard — a compare-and-set on the version the caller saw > idempotent: the same retire op id again is the entry as retired, with no second write; a different request under that op id → op_conflict",
+  "retireCard — a compare-and-set on the version the caller saw > the version does not match → 409 version_conflict naming the current version; nothing written",
+  "retireCard — a compare-and-set on the version the caller saw > a SHELVED card cannot move stage → 409 shelved; it moves again once the archetype returns (no write in between)",
+  "retireCard — a compare-and-set on the version the caller saw > retired → retired is no transition (409 illegal_transition under a new op id); a missing entry → 404; another user → 403",
+  "readCards — shelving is computed at read, never written (ruling 5; contract acceptance D) > an archetype change shelves the entries; changing back restores them; no play document is written in between, and none ever holds `shelved`",
+  "readCards — shelving is computed at read, never written (ruling 5; contract acceptance D) > reads the owner's own entries only, and refuses another user or a missing agent",
+  "review L1-1 / L5-1 — a day taped under another archetype than the agent's current one files no card (it would be shelved at birth) > six creates under the tape's archetype while the agent is on another: every one 409 archetype_changed, nothing written, the cap never bypassed; the same creates file once the agent returns",
+  "review L1-4 — the create fingerprint hashes the client's request, not the server-resolved payload > the same request after a re-tag moved the stored items' version label (situationVersion 2 → 3 in the payload) is the idempotent success, not op_conflict",
+  "Amendment I RI-1 (Astra F1) — a create replay answers only the entry's own owner; the cap counts only the caller's entries > Astra's repro: the entry under the caller's agent carries another user's ownerId, nothing else changed — the same op id and request → 409 op_conflict, nothing of the entry, nothing written",
+  "Amendment I RI-1 (Astra F1) — a create replay answers only the entry's own owner; the cap counts only the caller's entries > a missing ownerId is refused the same way; the same owner's replay stays the idempotent success (the control)",
+  "Amendment I RI-1 (Astra F1) — a create replay answers only the entry's own owner; the cap counts only the caller's entries > the cap ignores an open entry under the caller's agent owned by another user or by no one: four own + those two → the fifth own card files, the sixth is refused at 5 (the mutant: the cap counting them)",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardStore.js imports src/data/cardSlots.js; this import of the store is the runtime
 // guard that the slots module stays Node-clean — never mocked.
 import { makeTapeDb } from '../filmTape/__fixtures__/tapeFirestore.js';
