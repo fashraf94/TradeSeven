@@ -19,6 +19,12 @@
 // (effects run, so a subscription or a fetch would be counted).
 
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
+
+// The armory flip (Nov 7, 2026): KILL-SWITCH rows, the desktop League lobby (its League and Training tabs) as it was before the flip. Both flags are held OFF here, not
+// read live: these captures are today's markup (the League tab with no loadout line, the Training tab's Customize loadout),
+// which a rollback (both flags back to false) restores. With both on the lobbies are LeagueLoadoutLine.lobbies.jsdom.test.jsx's.
+vi.mock('../../../config/perGameLoadoutFlags', () => ({ PER_GAME_LOADOUT_ENABLED: false }));
+vi.mock('../../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_ARMORY_ENABLED: false }));
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';

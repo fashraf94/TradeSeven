@@ -19,6 +19,19 @@
 //         timestamp, so poisoning the instrumentation cannot move the machine.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// The armory flip (Nov 7, 2026). Both flipped flags are held here, not read live, so a rollback reddens only their
+// pins. The rows in KILL_SWITCH_ROWS run with both held OFF, and keep guarding the path a rollback restores: it pins
+// the deploy fallback to the ranked agent, which with per-game loadouts on is refused instead (A2R-3 (b)). Every other
+// row runs with both ON, the shipped state; the League lock read answers "no ranked group".
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../../config/perGameLoadoutFlags', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+vi.mock('../../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_ARMORY_ENABLED() { return flip.on; } }));
+vi.mock('../../../services/leagueLockService', () => ({ subscribeLeagueLock: (uid, onLock) => { onLock({ locked: false, groupId: null, status: null, endsAtMs: null }); return () => {}; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "clone round trip (§6.4) > fallback: setDeployTarget #2 never fires → a distinct OUTCOME, not a null or a crash",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';

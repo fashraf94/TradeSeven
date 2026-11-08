@@ -16,6 +16,35 @@
 import React, { act } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The armory flip (Nov 7, 2026). Both flipped flags are held here, not read live, so a rollback reddens only their
+// pins. The rows in KILL_SWITCH_ROWS run with both held OFF, and keep guarding the path a rollback restores: each
+// drives a surface that exists only with the flags off (the pre-flip Loadout tab's cards and their Change buttons, the
+// legacy archetype and watchlist sheets, the hero as it was before the armory). Every other row runs with both ON, the
+// shipped state; the League lock read answers "no ranked group".
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../config/perGameLoadoutFlags', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_ARMORY_ENABLED() { return flip.on; } }));
+vi.mock('../../services/leagueLockService', () => ({ subscribeLeagueLock: (uid, onLock) => { onLock({ locked: false, groupId: null, status: null, endsAtMs: null }); return () => {}; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "the real sheets open, close and give the page back > archetype: opens with the app root inert and the sheet itself live; closing restores the page and focus",
+  "the real sheets open, close and give the page back > watchlist: opens with the app root inert and the sheet itself live; closing restores the page and focus",
+  "re-opening a sheet inside its own exit animation (review E3-1, E2-1) > archetype, desktop dock: the re-opened sheet is interactive and the page behind it is inert",
+  "re-opening a sheet inside its own exit animation (review E3-1, E2-1) > watchlist, desktop dock: the re-opened sheet is interactive and the page behind it is inert",
+  "re-opening a sheet inside its own exit animation (review E3-1, E2-1) > watchlist, phone bottom dock: the same",
+  "re-opening a sheet inside its own exit animation (review E3-1, E2-1) > a different sheet opened inside the first one's exit window is live too",
+  "re-opening a sheet inside its own exit animation (review E3-1, E2-1) > after the exit has finished, a re-open is the ordinary one",
+  "re-opening a sheet inside its own exit animation (review E3-1, E2-1) > open, close, re-open and close again, three times over: nothing is left inert",
+  "the rest of the real flows the stack touches > the watchlist sheet: pick a list, it is equipped, the sheet closes, focus returns to a CONNECTED opener and the stack is released",
+  "the rest of the real flows the stack touches > StrictMode around the hub: a real sheet opens and closes with the stack consistent",
+  "the rest of the real flows the stack touches > the hub unmounting while a sheet is still animating out leaves nothing inert",
+  "the rest of the real flows the stack touches > the console stays quiet through all of it",
+  "the real sheets are dialogs (the S8 review S8-8; ruling R-S8F-6) > archetype: role dialog, aria-modal, named by its title; focus on Close; Tab stays inside; Escape closes; focus returns to the opener once",
+  "the real sheets are dialogs (the S8 review S8-8; ruling R-S8F-6) > watchlist: role dialog, aria-modal, named by its title; focus on Close; Tab stays inside; Escape closes; focus returns to the opener once",
+  "review fix L1-1: focus that fell out of an open sheet > Escape with focus on <body> still closes the sheet, and focus returns to the opener",
+  "review fix L1-1: focus that fell out of an open sheet > Tab and Shift+Tab with focus on <body> go back into the sheet, never into the page behind it",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
+
 const { userState, listWatchlists, equipWatchlist, unequipWatchlist, changeArchetype, flags, slots } = vi.hoisted(() => ({
   userState: { user: { displayName: 'Flash', username: 'flash' } },
   listWatchlists: vi.fn(),

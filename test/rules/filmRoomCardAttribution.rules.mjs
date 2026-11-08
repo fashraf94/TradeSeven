@@ -19,14 +19,26 @@
 //     clone's unavailable day counts under the parent; another owner's clone
 //     never counts;
 //   · the cap counts the parent's cards across clone and ranked battles;
-//   · the archetype checks read the parent (both directions);
+//   · the archetype checks read the parent (both directions) with per-game
+//     loadouts off; with them on (Build A2's R4), the battle's own archetype;
 //   · the replay and the retire are keyed on the parent.
 // Every row works under ids unique to the run; afterAll deletes them.
 //
 // Only the Admin handle (the emulator's), the security and auth middleware and
-// the two flags are doubled.
+// the three flags are doubled.
 
 import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
+
+// The armory flip (Nov 7, 2026). The per-game flag is held here, not read live, so a rollback reddens only its pin (the
+// default suite's api/film-room/card.test.js pattern). The row in KILL_SWITCH_ROWS runs with it held OFF and keeps
+// guarding the rule a rollback restores: a card is checked against the attribution agent's current archetype. With
+// per-game loadouts on (A2's R4) a card is checked against its battle's own archetype, which the two "flag on" rows hold
+// on the emulator. Every other row runs with it ON, the shipped state.
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "RK-1 on the real emulator — the card is filed under the battle's attribution agent > the archetype checks read the parent: the clone on the tape's archetype, the parent on another → 409 archetype_changed, nothing written; the clone stale, the parent on the tape's → files",
+]);
 
 const state = vi.hoisted(() => ({ db: null, uid: null }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
@@ -71,11 +83,14 @@ let n = 0;
 const docs = [];
 const battles = [];
 
-/** A fresh battle id for this run, over a copy of the real day. `agentId` is what the battle and its tape record. */
-async function battleFor(row, agentId, { ownerId = UID, etDate = D, tags = null } = {}) {
+/**
+ * A fresh battle id for this run, over a copy of the real day. `agentId` is what the battle and its tape record.
+ * `agentContext` replaces the battle's own (the tape keeps the day's archetype as the close pass wrote it).
+ */
+async function battleFor(row, agentId, { ownerId = UID, etDate = D, tags = null, agentContext = null } = {}) {
   const id = `rk1-${row}-${RUN}-${(n += 1)}`;
   battles.push(id);
-  await db.doc(`agentBattles/${id}`).set({ ...fixture.battle, id, ownerId, agentId });
+  await db.doc(`agentBattles/${id}`).set({ ...fixture.battle, id, ownerId, agentId, ...(agentContext ? { agentContext } : {}) });
   const tape = { ...fixture.tape, battleId: id, ownerId, agentId, etDate };
   if (tags === 'unavailable') tape.coverage = { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } };
   await db.doc(`agentBattles/${id}/tape/${etDate}`).set(tape);
@@ -114,9 +129,13 @@ beforeAll(async () => {
   const tape = t.store.get(`agentBattles/b-attr/tape/${D}`);
   expect(tape.tags.items.map((i) => [i.symbol, i.tickSeq])).toEqual([['ACN', 4], ['ACN', 5]]);
   expect(tape.coverage.tags.status).toBe('complete');
+  // the day records the battle's own archetype (tapeTags.js tagInputs reads battle.agentContext.archetype)
+  expect(fx.battle.agentContext.archetype).toBe('momentum_chaser');
+  expect(tape.tags.inputs.archetypeCodeId).toBe('momentum_chaser');
   fixture = { battle: fx.battle, tape };
 });
 beforeEach(async () => {
+  flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName);
   process.env.COCKPIT_ALLOWLIST_UIDS = UID;
   state.uid = UID;
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -189,6 +208,30 @@ describe('RK-1 on the real emulator — the card is filed under the battle\'s at
     expect(counter.open).toBe(0);
   });
 
+  it('flag on (A2\'s R4 and R6): the tape day\'s archetype is the battle\'s own → the card files under the parent although the parent wears another; it reads shelved at once and the cap does not count it', async () => {
+    const b = await battleFor('battle-own', CLONE);
+    await agentDoc(PARENT, parentAt({ archetype: 'guardian' }));
+    const res = await post(create(b, CLONE));
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ idempotent: false, open: 0, cap: 5 });
+    expect(res.body.card).toMatchObject({ ownerId: UID, agentId: PARENT, archetypeCodeId: 'momentum_chaser' });
+    expect((await db.doc(`agents/${PARENT}/plays/${res.body.card.entryId}`).get()).data()).toEqual(res.body.card);
+    expect(await plays(CLONE)).toEqual([]);
+    // R6: neither loadout wears the day's archetype (the parent has no BaggerBomb slot, so both are its League one)
+    const counter = await buildCounter(db, { uid: UID, agentId: CLONE, nowMs: COUNTER_NOW });
+    expect(counter.cards.map((c) => [c.agentId, c.archetypeCodeId, c.shelved])).toEqual([[PARENT, 'momentum_chaser', true]]);
+    expect(counter.open).toBe(0);
+  });
+
+  it('flag on (A2\'s R4): a tape day whose archetype is not the battle\'s own → 409 archetype_changed naming the battle\'s, nothing written, though the parent and the clone wear the day\'s', async () => {
+    const b = await battleFor('battle-other', CLONE, { agentContext: { ...fixture.battle.agentContext, archetype: 'guardian' } });
+    const res = await post(create(b, CLONE));
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'archetype_changed', message: CARD_ROUTE_COPY.archetype_changed, archetypeCodeId: 'momentum_chaser', current: 'guardian' });
+    expect(await plays(PARENT)).toEqual([]);
+    expect(await plays(CLONE)).toEqual([]);
+  });
+
   it('the replay and the retire are keyed on the parent: a lost answer re-tapped after the day turned unavailable replays the one card; the clone\'s id retires the parent\'s card', async () => {
     const b = await battleFor('replay', CLONE);
     const body = create(b, CLONE);
@@ -230,10 +273,13 @@ describe('RK-1 on the real emulator — the counter answers for the attribution 
     await agentDoc(FOREIGN_CLONE, { ownerId: OTHER, name: 'Theirs (casual)', archetype: 'momentum_chaser', rankedAgentId: PARENT });
     const foreign = await battleFor('foreign', FOREIGN_CLONE);
     await battleFor('foreign-unread', FOREIGN_CLONE, { etDate: D2, tags: 'unavailable' });
-    // the Watch card, filed under the parent from the ranked battle's day before any of the days above
+    // the Watch card, filed under the parent from the ranked battle's day before any of the days above, with the
+    // battle's own archetype handed in as the route hands it (api/film-room/card.js: battle?.agentContext?.archetype ?? null)
+    const rankedBattle = (await db.doc(`agentBattles/${ranked}`).get()).data();
     const card = await createCard(db, {
       uid: UID, agentId: PARENT, opId: `w_${RUN}`, nowIso: '2026-09-20T02:00:00.000Z',
       payload: { archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: fixture.tape.tags.items[0].version, battleId: ranked, etDate: '2026-09-18', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5, questionId: 'stalled.want', questionVersion: 1, note: 'Watch it.', route: 'watch' },
+      battleArchetype: rankedBattle?.agentContext?.archetype ?? null,
     });
     for (const asked of [CLONE, PARENT]) {
       const out = await buildCounter(db, { uid: UID, agentId: asked, nowMs: COUNTER_NOW });

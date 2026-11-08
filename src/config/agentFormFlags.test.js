@@ -55,18 +55,23 @@ describe('AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and AGENT_FORM_LEAGU
   });
 });
 
-// Build A1 — THE ARMORY'S PIN (BUILD_RULES §2). Dark by design until the founder's phone test: flipped only on the
-// never-merge smoke branch. Every read is a literal ternary that Rollup folds, so flag-off the build is main's, byte for
-// byte (the build report's masked comparison), and agentForm.flagOffBundle.test.js reads what each module leaves.
-describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by design', () => {
-  it('the armory is dark on main', () => {
-    expect(AGENT_FORM_ARMORY_ENABLED).toBe(false);
+// Build A1 — THE ARMORY'S PIN (BUILD_RULES §2).
+// LIVE — TRUE since the armory flip, with PER_GAME_LOADOUT_ENABLED in the same commit (founder rulings FL1 and FL2,
+// Nov 7, 2026), and both stay as kill switches. The rollback is two steps: PER_GAME_LOADOUT_ENABLED alone back to
+// false returns A1's armory with one loadout; both back to false returns the app as it was before the flip. The armory
+// never goes off while per-game loadouts are on (the pin row). A rollback moves a flag and its pin; the DARK_BY_DESIGN
+// entry stays out.
+// Every read is a literal ternary that Rollup folds, so with the flag off the build is what it was before the flip,
+// byte for byte, and agentForm.flagOffBundle.test.js reads what each module leaves.
+describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), a kill switch', () => {
+  it('the armory is live: true since the flip, a kill switch (back to false with per-game loadouts returns the app as it was before the flip)', () => {
+    expect(AGENT_FORM_ARMORY_ENABLED).toBe(true);
   });
 
-  it('it is the module\'s literal, not in featureFlags.js, and flagPinGuard lists it as dark by design', () => {
+  it('it is the module\'s literal, not in featureFlags.js, and flagPinGuard no longer lists it as dark by design (a rollback leaves the entry out)', () => {
     expect(FLAGS).toMatch(/^export const AGENT_FORM_ARMORY_ENABLED = (?:true|false);$/m);
     expect(read('featureFlags.js')).not.toMatch(/AGENT_FORM_ARMORY/);
-    expect(read('flagPinGuard.test.js')).toMatch(/\n {2}AGENT_FORM_ARMORY_ENABLED:\n/);
+    expect(read('flagPinGuard.test.js')).not.toMatch(/\n {2}AGENT_FORM_ARMORY_ENABLED:\n/);
   });
 
   it('the armory is on only while the hub\'s agent form is (it draws it): a hub rollback with the armory on reds here', () => {
@@ -90,6 +95,8 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
     expect(at(`${hub}CommandCenterHub.jsx`)).toEqual([
       IMPORT,
       `loadoutLine: ${A2} ? scopeDeployLine(use(PerGameLoadoutContext)) ?? loadoutLineOf(sections.loadout) : loadoutLineOf(sections.loadout),`,
+      // The armory flip's LD-1: the League door's one-shot intent, taken by the phone's tab and desktop's area.
+      `const [tab, setTab] = useState(${A2} ? () => (takeLoadoutEntry() ? PHONE_TABS.LOADOUT : DEFAULT_PHONE_TAB) : DEFAULT_PHONE_TAB);`,
       // The follow-up's N2(d): the phone armory steps aside for a tab switch, a hold and the strip's Retry.
       'const selectTab = AGENT_FORM_ARMORY_ENABLED',
       // The fix pass (review AR-9): the hold's phase compared by name, so a stored 'idle' could never close it.
@@ -99,6 +106,7 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
       'onAction={AGENT_FORM_ARMORY_ENABLED && actions.deployAction ? (kind) => { if (kind === DISPLAY_ACTIONS.RETRY && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet(); actions.deployAction(kind); } : actions.deployAction}',
       // A1 carry AR-5: the armory's sheet context (the opener) around LoadoutSheets, at both shells.
       '{runtime.live && (AGENT_FORM_ARMORY_ENABLED ? (',
+      `const [area, setArea] = useState(${A2} ? () => (takeLoadoutEntry() ? HUB_AREAS.ARCHETYPE : DEFAULT_AREA) : DEFAULT_AREA);`,
       'paused={AGENT_FORM_ARMORY_ENABLED ? coverOpen || sheet.sheet === HUB_SHEETS.ARCHETYPE : coverOpen}',
       `const panel = ${A2} ? (`,
       `deploy: ${A2} ? (`,
@@ -128,7 +136,7 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
     expect(at(`${lg}leagueLoadoutSlot.jsx`)).toEqual([IMPORT, `const LazyLeagueLine = ${A2}`, `const LazyTrainingLine = ${A2}`, `export const LeagueGroupKnownContext = ${A2}`]);
     expect(at('../App.jsx')).toEqual([
       "import { AGENT_FORM_ARMORY_ENABLED } from './config/agentFormFlags';",
-      `agentLoadout={primaryAgent ? (${A2} ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName, openLoadout: () => setScreen('dashboard') } : { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName }) : null}`,
+      `agentLoadout={primaryAgent ? (${A2} ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName, openLoadout: () => openCommandCenterOnLoadout(setScreen) } : { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName }) : null}`,
     ]);
     expect(at(`${hub}ShadowStage.jsx`)).toEqual([IMPORT, 'return AGENT_FORM_ARMORY_ENABLED ? (']);
     // The follow-up's N1 retired A1's `instant` read: the hero's view is main's file again, and reads no armory flag.

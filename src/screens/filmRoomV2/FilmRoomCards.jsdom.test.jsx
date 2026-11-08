@@ -35,6 +35,21 @@
 process.env.TZ = 'UTC';
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+
+// The armory flip (Nov 7, 2026). The per-game flag is held here, not read live, so a rollback reddens only its pin. The
+// rows in KILL_SWITCH_ROWS run with it held OFF, and keep guarding the path a rollback restores: each files its cards
+// through createCard against the agent's current archetype, the flag-off rule (A2's R4); with per-game loadouts on a
+// card is checked against its battle's own archetype and shelved against both loadouts, which cardStore.perGame.test.js
+// holds, and nothing else in the ledger reads the flag. Every other row runs with it ON, the shipped state.
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > Amendment K RK-10 — no open Watch card: no line, however many days could not be read — none filed, a Practice card, a retired Watch card (the mutant: the unavailable-day line with no open Watch card)",
+  "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > RK-10 — one open Watch card: the line as built, beside its list",
+  "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > review SPR-C-4 — another agent's unavailable days are that agent's: the line counts the battle's own agent alone",
+  "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > review SPR-T-8 — two of its own: RJ-7's plural (the mutant: the line always singular)",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
 import React from 'react';
 
 const state = vi.hoisted(() => ({ cards: 'on', db: null, uid: 'owner-1', characterTab: true, tempoDial: true }));

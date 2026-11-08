@@ -17,7 +17,9 @@ import { injectTokens } from './__fixtures__/hubTestKit';
 
 const flags = vi.hoisted(() => ({ hub: false }));
 const seen = vi.hoisted(() => ({ forms: [] }));
-vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_HUB_ENABLED() { return flags.hub; } }));
+// The armory flip (Nov 7, 2026): the armory follows the hub flag here, as its pin requires (agentFormFlags.test.js: the armory is on
+// only while the hub's form is), so the hub-off rows stay the forms' kill switch and the hub-on rows run the shipped state.
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_HUB_ENABLED() { return flags.hub; }, get AGENT_FORM_ARMORY_ENABLED() { return flags.hub; } }));
 // The stage reads the deploy provider's progress store, whose module loads the Firebase client (the reviewFixes suite's stand-in).
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 vi.mock('../AgentForm/AgentForm', () => ({

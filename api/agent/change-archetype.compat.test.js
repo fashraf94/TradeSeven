@@ -17,6 +17,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { makeCompositionStoreDouble } from '../_utils/__fixtures__/compositionStoreDouble.js';
+import { leagueGroupsDouble } from '../_utils/__fixtures__/leagueGroupsDouble.js';
 
 const { authReturnValue, shadowLogCalls, shadowLogReturnsFalse } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
@@ -100,6 +101,7 @@ function makeFakeFirestore({ agentDocs = {}, subcollections = {}, failSubreads =
       if (name === 'agents') return { doc: (id) => buildAgentRef(id) };
       const __c = __composition.collection(name);
       if (__c) return __c;
+      if (name === 'tournamentGroups') return leagueGroupsDouble(); // the armory flip: the League writers' lock read
       throw new Error(`Unmocked collection: ${name}`);
     },
     runTransaction: async (fn) =>

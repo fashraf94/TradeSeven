@@ -141,4 +141,17 @@ describe('the lobbies (FD-4): the Customize loadout button and its sheet are gon
     expect(host.querySelector('[data-chooser]')).not.toBeNull();
     expect(host.querySelector('[data-training-loadout]')).toBeNull();
   });
+
+  // The armory flip's LD-1, its kill-switch row: with the flags held off the League tab has no loadout line, so no door
+  // (App's flag-off arm hands the lobby no `openLoadout` either), as before the flip. The control: the same open week
+  // with the flags on shows the door.
+  it('LD-1 kill switch: the League tab\'s door is absent with the flags held off, and present with them on', async () => {
+    const open = () => <LeagueGroupKnownContext.Provider value>{phone('ranked', { agentLoadout: LOADOUT({ openLoadout: vi.fn() }) })}</LeagueGroupKnownContext.Provider>;
+    await render(open());
+    expect(host.querySelector('button[data-league-loadout]')).not.toBeNull();
+    h.perGame.on = false;
+    await render(open());
+    expect(host.querySelector('[data-league-loadout]')).toBeNull();
+    expect(button(LOADOUT_COPY.leagueDoor)).toBeNull();
+  });
 });

@@ -19,7 +19,8 @@
 //                            they read (build A1: the armory's two looks are read inside AGENT_FORM_ARMORY_ENABLED's
 //                            ternaries, so they fold away with it);
 //   hub/hubCopy.js           HUB_COPY used (every hub view) → HUB_COPY alone (ARMORY_COPY, build A1, is dropped too).
-// Build A1, the armory (AGENT_FORM_ARMORY_ENABLED, dark):
+// Build A1, the armory (AGENT_FORM_ARMORY_ENABLED; live since the armory flip of Nov 7, 2026, and a kill switch, so these
+// rows read what each module leaves when it is set back to false):
 //   Armory.jsx               imported and unused (LoadoutSheets.jsx, ShadowStage.jsx and CommandCenterHub.jsx read it
 //                            only inside that flag's ternaries) → nothing (its context is marked pure);
 //   hub/archetypeLines.js    archetypeLines used (the Loadout) → archetypeLines alone (armoryLines is dropped);
@@ -53,7 +54,8 @@ const ARMORY = 'src/components/CommandCenter/Armory.jsx';
 const LINES = 'src/components/CommandCenter/hub/archetypeLines.js';
 const STAGE = 'src/components/CommandCenter/ShadowStage.jsx';
 const STAGE_USED = ['PhoneStage', 'ShadowStage', 'StatusLine', 'connectorPath'];
-// Build A2 (per-game loadouts, PER_GAME_LOADOUT_ENABLED, dark): the flag's own module, rewritten false as the agent form
+// Build A2 (per-game loadouts, PER_GAME_LOADOUT_ENABLED; live since the armory flip of Nov 7, 2026, and a kill switch, so
+// these rows read what each module leaves when it is set back to false): the flag's own module, rewritten false as the agent form
 // flags are, and the A2 modules the flag-off graph reaches — each imported and unused (every read of it sits inside a
 // `PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED` ternary), so each bundles to nothing.
 const PER_GAME_FLAGS = 'src/config/perGameLoadoutFlags.js';
@@ -227,19 +229,19 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
     expect(code).not.toMatch(/\bAGENT_FORM_COPY\b/);
   }, 30000);
 
-  it('Armory.jsx (build A1), imported and unused: nothing (its context is marked pure; every read of it is inside the flag\'s ternaries)', async () => {
+  it('kill switch, the armory off (build A1): Armory.jsx, imported and unused: nothing (its context is marked pure; every read of it is inside the flag\'s ternaries)', async () => {
     const { code } = await bundle(ARMORY, []);
     expect(leftovers(code)).toEqual([]);
     expect(code.trim()).toBe('');
   }, 30000);
 
-  it.each(A2_UNUSED)('build A2: %s, imported and unused: nothing (its module-level calls are literals or marked pure)', async (rel) => {
+  it.each(A2_UNUSED)('kill switch, per-game loadouts off (build A2): %s, imported and unused: nothing (its module-level calls are literals or marked pure)', async (rel) => {
     const { code } = await bundle(rel, []);
     expect(leftovers(code)).toEqual([]);
     expect(code.trim()).toBe('');
   }, 30000);
 
-  it('build A2: the shipped hub modules that read the per-game flag bundle with nothing of A2 when it is off', async () => {
+  it('kill switch, per-game loadouts off (build A2): the shipped hub modules that read the per-game flag bundle with nothing of A2', async () => {
     for (const [rel, used, gone] of [
       ['src/components/CommandCenter/panels/LoadoutPanel.jsx', ['default'], /\bLoadoutCards\b|\bAdjustmentsCard\b/],
       ['src/components/CommandCenter/sections/DeploySection.jsx', ['default', 'PhoneDeployCard'], /\bDeployLoadoutLine\b/],
@@ -253,21 +255,21 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
     }
   }, 60000);
 
-  it('hub/archetypeLines.js, with archetypeLines used: archetypeLines alone (armoryLines, build A1, is dropped)', async () => {
+  it('kill switch, the armory off (build A1): hub/archetypeLines.js, with archetypeLines used: archetypeLines alone (armoryLines is dropped)', async () => {
     const { code } = await bundle(LINES, ['archetypeLines']);
     expect(exportsOf(code)).toEqual(['archetypeLines']);
     expect(leftovers(code)).toEqual([]);
     expect(code).not.toMatch(/\barmoryLines\b/);
   }, 30000);
 
-  it('ShadowStage.jsx, with its four exports used: those, and nothing of the phone armory\'s stage (build A1)', async () => {
+  it('kill switch, the armory off (build A1): ShadowStage.jsx, with its four exports used: those, and nothing of the phone armory\'s stage', async () => {
     const { code } = await bundle(STAGE, STAGE_USED);
     expect(exportsOf(code).sort()).toEqual([...STAGE_USED].sort());
     expect(leftovers(code)).toEqual([]);
     expect(code).not.toMatch(/\bPhoneArmoryStage\b|\bPhoneSummaries\b|\bArmoryStageContext\b/);
   }, 30000);
 
-  it('agentFormSpec.js (build A1): with the flag off its spec reads neither armory look, so the module bundles as before', async () => {
+  it('kill switch, the armory off (build A1): agentFormSpec.js reads neither armory look, so the module bundles as before A1', async () => {
     const { code } = await bundle(SPEC, ['formForArchetype', 'hasWebGL', 'agentFormSpec']);
     expect(code).not.toMatch(/\bunlit\b|\bSET_ALONE\b|\bsetAloneKeys\b|\bbrain\b/);
     expect(code).toMatch(/pal: opponent \? "copper" : "teal"|pal: opponent \? 'copper' : 'teal'/);
@@ -275,7 +277,7 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
 
   // The A1 fix pass (founder rulings D-B, D-C): the engine reads the flag for the core's level and its breath. Flag off,
   // each read folds to main's expression, so the engine modules bundle as they did, with nothing of the breath in them.
-  it('the engine (fix pass, D-B and D-C): with the flag off nothing of the core\'s level or breath bundles; each site is main\'s expression', async () => {
+  it('kill switch, the armory off (A1 fix pass, D-B and D-C): nothing of the core\'s level or breath bundles; each site is the expression before A1', async () => {
     const ENGINE = 'src/components/AgentForm/engine/';
     const core = (await bundle(`${ENGINE}core.js`, ['buildBrain'])).code;
     expect(core).not.toMatch(/\bS\.level\b|multiplyScalar\(S\./);

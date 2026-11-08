@@ -14,6 +14,20 @@
 import React, { Component } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The armory flip (Nov 7, 2026). Both flipped flags are held here, not read live, so a rollback reddens only their
+// pins. The rows in KILL_SWITCH_ROWS run with both held OFF, and keep guarding the path a rollback restores: each
+// drives a surface that exists only with the flags off (the pre-flip Loadout tab's cards and their Change buttons, the
+// legacy archetype and watchlist sheets, the hero as it was before the armory). Every other row runs with both ON, the
+// shipped state; the League lock read answers "no ranked group".
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../config/perGameLoadoutFlags', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+vi.mock('../../services/leagueLockService', () => ({ subscribeLeagueLock: (uid, onLock) => { onLock({ locked: false, groupId: null, status: null, endsAtMs: null }); return () => {}; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "S1 production state — every section in its loading state (ruling R-S1-4) > every later-slice action renders disabled: the Forge actions, the pickers and the profile",
+  "S1 header and status > the hero draws at the phone's size (200 px, 196 under 375) and the wide sites' (340 desktop, 260 tablet and stacked)",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
+
 const { userState, motionState, formState } = vi.hoisted(() => ({
   userState: { user: { displayName: 'Flash', username: 'flash' } },
   motionState: { reduced: false },
@@ -21,7 +35,7 @@ const { userState, motionState, formState } = vi.hoisted(() => ({
   formState: { live: false, props: null },
 }));
 // These rows are the armored hero's whichever way the flag ships, so a one-line rollback reddens its pins and nothing else.
-vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_HUB_ENABLED: true }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_HUB_ENABLED: true, get AGENT_FORM_ARMORY_ENABLED() { return flip.on; } }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 // Slices S3 and S5: the hub module imports its readers and reaches the shipped sheets and services,
 // all of which import the Firebase config (it validates at import); nothing here reads.

@@ -54,9 +54,13 @@ function makeDb(initial = {}) {
   function snapshotOf(docs) {
     return { docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) };
   }
-  function makeDocRef(path) {
+  // The armory flip (Nov 7, 2026): with per-game loadouts on, every create and resync ends with the clone's trait
+  // scan (casualClone.js seedBaggerbombTraits → archetypeSeeding.js softDeleteReplacedTraitRuleDocs), which reaches the
+  // store through `ref.firestore`, as an Admin DocumentReference does.
+    function makeDocRef(path) {
     return {
       path,
+      get firestore() { return db; },
       get: async () => {
         const data = store.get(path);
         return { exists: data !== undefined, id: path.split('/').pop(), data: () => structuredClone(data) };
@@ -98,7 +102,8 @@ function makeDb(initial = {}) {
     create: async (ref, d) => ref.create(d),
     update: async (ref, u) => ref.update(u),
   });
-  return { db: { collection: (name) => makeCollection(name), runTransaction }, store };
+  const db = { collection: (name) => makeCollection(name), runTransaction };
+  return { db, store };
 }
 
 const RANKED = Object.freeze({
@@ -491,6 +496,10 @@ describe('ensureCasualClone', () => {
           : { exists: true, data: () => structuredClone(winner) };
       },
       create: async () => { const e = new Error('ALREADY_EXISTS: document already exists'); e.code = 6; throw e; },
+      // The armory flip (Nov 7, 2026): the creation's trait scan (per-game loadouts on) reads the clone's rules through
+      // the ref, and the write-epoch fence through `ref.firestore`, before the create() that loses the race.
+      get firestore() { return db; },
+      collection: () => ({ get: async () => ({ docs: [], empty: true, forEach() {} }), doc: () => ({ update: async () => {} }) }),
     };
     const db = {
       collection: (name) => ({

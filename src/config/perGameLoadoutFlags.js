@@ -25,11 +25,15 @@
  *   - with AGENT_FORM_ARMORY_ENABLED also on, the hub draws the two loadout cards, the Deploy card's line and the
  *     armory's context, and the League lobby its line.
  *
- * DARK — default FALSE. With it false the server behaves exactly as today (the `loadout` field is ignored) and every
- * client read is a literal ternary that Rollup folds, so the build is byte-identical to main's. It is flipped only on
- * a never-merge smoke branch until the founder's phone test; the go-live is its own flip PR, which moves the pin in
- * perGameLoadoutFlags.test.js and drops the DARK_BY_DESIGN entry in flagPinGuard.test.js in the same commit
- * (BUILD_RULES §2).
+ * LIVE — TRUE since the armory flip, with AGENT_FORM_ARMORY_ENABLED in the same commit (founder rulings FL1 and FL2,
+ * Nov 7, 2026), and both stay as kill switches. The rollback is two steps: PER_GAME_LOADOUT_ENABLED alone back to
+ * false returns A1's armory with one loadout; both back to false returns the app as it was before the flip. The armory
+ * never goes off while per-game loadouts are on (the pin row). A rollback moves a flag and its pin; the DARK_BY_DESIGN
+ * entry stays out. Off, the server behaves as before A2 (the `loadout` field is ignored) and every client read is a
+ * literal ternary that Rollup folds.
+ *
+ * Per-game loadouts never run without casual clones (FL3, pinned in perGameLoadoutFlags.test.js): with
+ * CASUAL_CLONE_CONCURRENCY_ENABLED off, every BaggerBomb deploy runs on the ranked record in the League loadout.
  */
 // Pinned by: perGameLoadoutFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const PER_GAME_LOADOUT_ENABLED = false;
+export const PER_GAME_LOADOUT_ENABLED = true;
