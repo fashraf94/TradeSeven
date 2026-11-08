@@ -35,6 +35,25 @@
 //   · No filtering, trading-performance or behavioural claim follows from any figure here; the M1/M2
 //     limits stand (the recorded replay is below the 20-joined-moment floor).
 //
+// THREE POPULATIONS, never one (correction round D2), each labelled in the report and in the JSON `meta`:
+//   · "Tick-label aggregates selected by --from/--to" — the tick records of the selected battles whose
+//     `capturedAt` falls in the requested range (every record when no range is given).
+//   · "Lifetime tick coverage for the selected battles" — the export's coverage over EVERY minted tick of
+//     each selected battle, its whole life, NOT limited to the range.
+//   · "Current global retained acquisition state" — setupMenuLabelState/main as read once, when the census
+//     runs: every owner, every battle, the sessions the tenant still retains. Not limited to the selected
+//     battles or the range, and later than any tick it is printed beside.
+//   RUN-LEVEL STALENESS: a tick's labels and Slice 2 history fields are as of its run memo (reads.js): one
+//   state read per cron invocation, and one read per snapshot shared by every later tick of it (`readsShared`).
+//   A shared value can be up to the invocation's length older than the tick that records it — an `absent`
+//   may since have been written. The census reads nothing new to correct it; it reports the shared counts.
+//
+// THE STATE IS VALIDATED EXACTLY AS THE PRODUCTION READER VALIDATES IT (correction round F3), with the same
+// pure functions (setupMenuLabels/stateShape.js; never the state writer): an unsupported document or a failed
+// read is `unreadable` and an absent one `absent` — every figure null (unknown), never a measured zero. A
+// readable document with malformed entries is `partial`: the malformed entries are counted apart and never
+// aggregated (no coerced `n`, no outcome), and the figures are labelled "partial valid-entry subtotals".
+//
 // AGGREGATES ONLY, ON EVERY CHANNEL: counts and distributions; no owner, battle, tick or snapshot id,
 // no symbol. Every label read from a document is printed only when it is on its closed list, else as
 // `other`.
@@ -51,6 +70,7 @@ import { scopeOf } from '../api/_utils/activationEvidence/scope.js';
 import {
   SETUP_LABEL_STATUSES, SETUP_MENU_BLOCK_STATUSES, SETUP_S2_OUTCOMES, STATE_COLLECTION, STATE_DOC, STATE_REASONS,
 } from '../api/_utils/setupMenuLabels/constants.js';
+import { stateDocReadable, stateEntryIds, stateEntryWellFormed } from '../api/_utils/setupMenuLabels/stateShape.js';
 
 const bump = (obj, key, n = 1) => { obj[key] = (obj[key] || 0) + n; };
 const onList = (value, list) => (typeof value === 'string' && list.includes(value) ? value : 'other');
@@ -59,9 +79,71 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 /** Join classes (spec V2 §5.5, kept). */
 export const JOIN_CLASSES = Object.freeze(['same_tick', 'proposal_tick_unevaluated', 'ambiguous', 'missing']);
 
+/** The three populations (D2): label, scope, and the top-level keys of the census that belong to each. */
+export const CENSUS_POPULATIONS = Object.freeze({
+  tickLabels: Object.freeze({
+    label: 'Tick-label aggregates selected by --from/--to',
+    scope: 'the permanent tick records of the selected battles whose capturedAt falls in the requested range (every record when no range is given)',
+    keys: Object.freeze(['ticks', 'tickClass', 'candidates', 'cohorts', 'absent', 'providerCapture', 'joins']),
+  }),
+  coverage: Object.freeze({
+    label: 'Lifetime tick coverage for the selected battles',
+    scope: 'every minted tick of each selected battle over its whole life (the export\'s coverage rules), NOT limited to the requested range',
+    keys: Object.freeze(['coverage']),
+  }),
+  state: Object.freeze({
+    label: 'Current global retained acquisition state',
+    scope: 'setupMenuLabelState/main as read once when the census runs: every owner and battle, the sessions the tenant still retains; NOT limited to the selected battles or the requested range',
+    keys: Object.freeze(['state']),
+  }),
+});
+
+/** The run memo's staleness (reads.js, compose.js THE TIMES), printed with the tick-label figures. */
+export const RUN_MEMO_NOTE = 'A tick\'s labels and Slice 2 history are as of its cron invocation\'s run memo: one state read per invocation, and one snapshot read shared by every later tick of it (readsShared). A shared value can be up to the invocation\'s length older than the tick recording it (an absent may since have been written); the census reads nothing new to correct it.';
+
+/** State statuses (F3). `partial` = a readable document with malformed entries, which are never aggregated. */
+export const STATE_CENSUS_STATUSES = Object.freeze(['read', 'partial', 'absent', 'unreadable', 'not_read']);
+const COMPLETE_TOTALS = 'complete';
+const PARTIAL_TOTALS = 'partial valid-entry subtotals';
+
+/**
+ * The state's figures, validated exactly as the production reader validates them (stateShape.js). Pure.
+ * @param {object|null} raw the stored document as read (null: no document)
+ * @param {'read'|'absent'|'read_failed'|'not_read'} readStatus how the one read went ('unreadable' is read as 'read_failed')
+ */
+export function stateCensusOf(raw, readStatus) {
+  const unknown = { entries: null, validEntries: null, malformedEntries: null, totals: null, reservations: null, lastOutcome: null, lastReason: null };
+  if (readStatus === 'not_read') return { status: 'not_read', cause: null, ...unknown };
+  if (readStatus === 'read_failed' || readStatus === 'unreadable') return { status: 'unreadable', cause: 'read_failed', ...unknown };
+  if (readStatus === 'absent' || raw === null || raw === undefined) return { status: 'absent', cause: null, ...unknown };
+  if (!stateDocReadable(raw)) return { status: 'unreadable', cause: 'unsupported_document', ...unknown };
+  const reasons = {};
+  const outcomes = {};
+  let entries = 0;
+  let validEntries = 0;
+  let reservations = 0;
+  for (const id of stateEntryIds(raw.attempts)) {
+    entries += 1;
+    const e = raw.attempts[id];
+    if (!stateEntryWellFormed(e)) continue; // malformed: counted apart, never aggregated — no coerced n, no outcome
+    validEntries += 1;
+    reservations += e.n; // a well-formed entry's n is an integer >= 0
+    if (e.lastReason !== null && e.lastReason !== undefined) bump(reasons, onList(e.lastReason, STATE_REASONS));
+    bump(outcomes, e.lastOutcome === null || e.lastOutcome === undefined ? 'none_recorded' : onList(e.lastOutcome, SETUP_S2_OUTCOMES));
+  }
+  const malformedEntries = entries - validEntries;
+  return {
+    status: malformedEntries > 0 ? 'partial' : 'read',
+    cause: null,
+    entries, validEntries, malformedEntries,
+    totals: malformedEntries > 0 ? PARTIAL_TOTALS : COMPLETE_TOTALS,
+    reservations, lastOutcome: outcomes, lastReason: reasons,
+  };
+}
+
 function emptyAggregate() {
   return {
-    ticks: { records: 0, withBlock: 0, blockStatus: {}, exitReason: {} },
+    ticks: { records: 0, withBlock: 0, blockStatus: {}, exitReason: {}, readsIssued: 0, readsShared: 0 },
     tickClass: { modelDispatched: 0, attemptedNotDispatched: 0, dispatchedFailed: 0, notAttempted: 0 },
     candidates: { total: 0, status: {}, omitted: 0, truncated: 0, unrecordable: 0 },
     cohorts: {
@@ -93,6 +175,8 @@ function addRecord(agg, rec) {
   agg.candidates.omitted += Number.isFinite(block.omittedCount) ? block.omittedCount : 0;
   agg.candidates.truncated += Number.isFinite(block.truncatedCount) ? block.truncatedCount : 0;
   agg.candidates.unrecordable += Number.isFinite(block.unrecordableCount) ? block.unrecordableCount : 0;
+  agg.ticks.readsIssued += Number.isInteger(block.readsIssued) && block.readsIssued >= 0 ? block.readsIssued : 0;
+  agg.ticks.readsShared += Number.isInteger(block.readsShared) && block.readsShared >= 0 ? block.readsShared : 0;
 
   const candidates = Array.isArray(block.candidates) ? block.candidates.filter(isObj) : [];
   const bySymbol = new Map(candidates.map((c) => [c.symbol, c]));
@@ -152,40 +236,58 @@ export function coverageTotalsOf(coverage) {
   return out;
 }
 
+/** A requested range bound, printed only when it is a plain date (never free text). */
+const dateOrNull = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+
 /**
  * The census over records already read. Pure.
- * @param {object[]} records permanent tick records (each one battle's tick)
- * @param {{ coverage?: object, state?: object|null, stateStatus?: string }} [extra]
+ * @param {object[]} records permanent tick records (each one battle's tick), already selected by the range
+ * @param {{ coverage?: object, state?: object|null, stateStatus?: 'read'|'absent'|'read_failed'|'not_read', range?: { from?: string|null, to?: string|null } }} [extra]
+ *   `stateStatus` says how the one state read went: 'read' (a document came back; it is validated here), 'absent',
+ *   'read_failed' (the read threw), 'not_read'.
  */
-export function aggregateSetupMenu(records, { coverage = null, state = null, stateStatus = 'not_read' } = {}) {
+export function aggregateSetupMenu(records, { coverage = null, state = null, stateStatus = 'not_read', range = {} } = {}) {
   const agg = emptyAggregate();
   for (const rec of records) addRecord(agg, rec);
-  const reasons = {};
-  const outcomes = {};
-  let entries = 0;
-  let reservations = 0;
-  if (isObj(state?.attempts)) {
-    for (const e of Object.values(state.attempts)) {
-      if (!isObj(e)) continue;
-      entries += 1;
-      reservations += Number.isInteger(e.n) && e.n > 0 ? e.n : 0;
-      if (e.lastReason !== null && e.lastReason !== undefined) bump(reasons, onList(e.lastReason, STATE_REASONS));
-      bump(outcomes, e.lastOutcome === null || e.lastOutcome === undefined ? 'none_recorded' : onList(e.lastOutcome, SETUP_S2_OUTCOMES));
-    }
-  }
+  const requested = { from: dateOrNull(range?.from), to: dateOrNull(range?.to) };
   return {
+    meta: {
+      range: requested,
+      populations: CENSUS_POPULATIONS,
+      runMemo: RUN_MEMO_NOTE,
+    },
     ...agg,
     coverage: coverageTotalsOf(coverage),
-    state: { status: ['read', 'absent', 'unreadable', 'not_read'].includes(stateStatus) ? stateStatus : 'other', entries, reservations, lastOutcome: outcomes, lastReason: reasons },
+    state: stateCensusOf(state, ['read', 'absent', 'read_failed', 'unreadable', 'not_read'].includes(stateStatus) ? stateStatus : 'not_read'),
   };
+}
+
+const figure = (v) => (v === null || v === undefined ? 'unknown' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+
+/** The state's line, its status first; null figures print as unknown, never as zero. Pure. */
+function stateLines(s) {
+  if (s.status === 'absent') return ['Status: absent: no state document was found. Every figure is unknown (not zero).'];
+  if (s.status === 'unreadable') return [`Status: unreadable (${s.cause === 'read_failed' ? 'the read failed' : 'a document this code does not read'}). Every figure is unknown (not zero).`];
+  if (s.status === 'not_read') return ['Status: not read. Every figure is unknown.'];
+  const head = s.status === 'partial'
+    ? `Status: partial: ${s.malformedEntries} malformed entries counted apart and NOT aggregated; ${s.validEntries} valid of ${s.entries} entries. Figures are ${s.totals}:`
+    : `Status: read (${s.totals}): ${s.entries} entries.`;
+  return [head, `Reservations counted: ${figure(s.reservations)} · last outcome ${figure(s.lastOutcome)} · typed reason ${figure(s.lastReason)}`];
 }
 
 /** The report, aggregates only. Pure. */
 export function formatReport(c, { scope = '' } = {}) {
+  const pop = c.meta?.populations ?? CENSUS_POPULATIONS;
+  const range = c.meta?.range ?? { from: null, to: null };
   const lines = [
     `# Setup-label census${scope ? ` — ${scope}` : ''}`,
     '',
     'Aggregates only. A reservation is not a provider request; capture time is not availability; bench membership is not dispatch.',
+    `Requested range: --from ${range.from ?? '(none)'} --to ${range.to ?? '(none)'}. Three populations follow; their figures are not comparable with one another.`,
+    '',
+    `## 1. ${pop.tickLabels.label}`,
+    `Scope: ${pop.tickLabels.scope}.`,
+    `Run memo: ${RUN_MEMO_NOTE} Reads issued ${c.ticks.readsIssued} · shared from an earlier tick ${c.ticks.readsShared}.`,
     '',
     `Tick records: ${c.ticks.records} · with a setupMenu block: ${c.ticks.withBlock}`,
     `Block status: ${JSON.stringify(c.ticks.blockStatus)}`,
@@ -203,8 +305,13 @@ export function formatReport(c, { scope = '' } = {}) {
     `Provider capture before the freeze (NOT availability at the decision): ${JSON.stringify(c.providerCapture)}`,
     `Joins (one record each): pick ${JSON.stringify(c.joins.pick)} · actions ${JSON.stringify(c.joins.actions)} (proposal_tick_unevaluated is INFERRED: a model-sourced swap that is not the tick's own decision)`,
     '',
-    `State (${c.state.status}): ${c.state.entries} entries · ${c.state.reservations} reservations counted · last outcome ${JSON.stringify(c.state.lastOutcome)} · typed reason ${JSON.stringify(c.state.lastReason)}`,
+    `## 2. ${pop.coverage.label}`,
+    `Scope: ${pop.coverage.scope}.`,
     c.coverage ? `Coverage (the export's): ${JSON.stringify(c.coverage)}` : 'Coverage: not computed',
+    '',
+    `## 3. ${pop.state.label}`,
+    `Scope: ${pop.state.scope}.`,
+    ...stateLines(c.state),
     '',
     'No filtering, trading-performance or behavioural claim follows from these figures (M1/M2 limits).',
   ];
@@ -232,12 +339,12 @@ export async function runCensus(reader, flags) {
   let stateStatus = 'not_read';
   try {
     const s = await reader.readState();
-    stateStatus = s ? 'read' : 'absent';
-    state = s;
+    stateStatus = s === null || s === undefined ? 'absent' : 'read'; // a document came back: validated in stateCensusOf
+    state = s ?? null;
   } catch {
-    stateStatus = 'unreadable';
+    stateStatus = 'read_failed';
   }
-  return aggregateSetupMenu(records, { coverage: computeCoverage(inputs), state, stateStatus });
+  return aggregateSetupMenu(records, { coverage: computeCoverage(inputs), state, stateStatus, range: { from: flags?.from ?? null, to: flags?.to ?? null } });
 }
 
 /** The cohort predicate: an allowlisted owner's battle in the slice's own scope — scopeOf, the predicate the freeze and the tenant use (review SM3 aside). Pure. */

@@ -41,12 +41,13 @@ import {
   CONFIRM_MARGIN_MS, IN_FLIGHT_MS, MAX_RESERVATIONS_PER_KEY_PER_SESSION, NEXT_RUN_MS, RECOVERY_DUE_MS, STATE_COLLECTION,
   STATE_DOC, STATE_MAX_KEYS, STATE_OUTCOMES, STATE_REASONS, STATE_SCHEMA_VERSION, STORE_CONFIRM_AFTER_MS, TRANSIENT_REASONS,
 } from './constants.js';
+// The readability rules, shared with the read-only census so both apply the same ones (correction round F3).
+import { isPlainObject, sessionOrNull, stateDocReadable, stateEntryIds, stateEntryWellFormed } from './stateShape.js';
 
-const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+export { stateDocReadable };
+
 const finiteOrNull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const stringOrNull = (v) => (typeof v === 'string' && v.length > 0 ? v : null);
-const SESSION_RE = /^\d{4}-\d{2}-\d{2}$/;
-const sessionOrNull = (v) => (typeof v === 'string' && SESSION_RE.test(v) ? v : null);
 
 export const stateRefOf = (db) => db.collection(STATE_COLLECTION).doc(STATE_DOC);
 
@@ -55,36 +56,14 @@ export function emptyState() {
 }
 
 // FAIL CLOSED (review SM1-1). A document this code does not recognise — another schema version, or an
-// \`attempts\` that is not a map — is UNREADABLE: never read as empty, never rewritten (no request follows,
+// `attempts` that is not a map — is UNREADABLE: never read as empty, never rewritten (no request follows,
 // and no transaction writes over it). An ENTRY whose fields are not the shapes this code writes is MALFORMED:
 // its key is refused (no reservation, no request), it counts toward the key cap, it is never pruned, and every
 // whole-document write puts it back exactly as it was read. Nothing is ever read as zero, false or "due now".
 
-/** Can this code read the stored document, and rewrite it whole? Pure. */
-export function stateDocReadable(raw) {
-  return isPlainObject(raw) && raw.schemaVersion === STATE_SCHEMA_VERSION && (raw.attempts === undefined || isPlainObject(raw.attempts));
-}
-
-const absentOr = (v, ok) => v === undefined || v === null || ok(v);
-const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
-const INSTANT_FIELDS = Object.freeze(['reservedAt', 'inFlightUntil', 'lastAt', 'dueAt', 'recoveredAt']);
-
-/** Is a stored entry exactly the shapes this code writes (missing optional fields allowed)? Pure. */
-function entryWellFormed(raw) {
-  return isPlainObject(raw)
-    && Number.isInteger(raw.n) && raw.n >= 0
-    && absentOr(raw.done, (v) => typeof v === 'boolean')
-    && absentOr(raw.session, (v) => sessionOrNull(v) !== null)
-    && absentOr(raw.activeToken, (v) => typeof v === 'string' && v.length > 0)
-    && absentOr(raw.lastToken, (v) => typeof v === 'string' && v.length > 0)
-    && INSTANT_FIELDS.every((k) => absentOr(raw[k], isFiniteNumber))
-    && absentOr(raw.lastOutcome, (v) => STATE_OUTCOMES.includes(v))
-    && absentOr(raw.lastReason, (v) => STATE_REASONS.includes(v));
-}
-
 /** One entry, normalised; a malformed one is kept verbatim and marked (refused, never rewritten). Pure. */
 export function normalizeEntry(raw) {
-  if (!entryWellFormed(raw)) return { malformed: true, raw: isPlainObject(raw) ? { ...raw } : raw };
+  if (!stateEntryWellFormed(raw)) return { malformed: true, raw: isPlainObject(raw) ? { ...raw } : raw };
   return {
     malformed: false,
     session: sessionOrNull(raw.session),
@@ -112,9 +91,7 @@ export function normalizeState(raw) {
     out.governedSessions.current = sessionOrNull(raw.governedSessions.current);
   }
   if (isPlainObject(raw.attempts)) {
-    for (const [id, e] of Object.entries(raw.attempts)) {
-      if (id) out.attempts[id] = normalizeEntry(e);
-    }
+    for (const id of stateEntryIds(raw.attempts)) out.attempts[id] = normalizeEntry(raw.attempts[id]);
   }
   out.updatedAt = stringOrNull(raw.updatedAt);
   return out;
