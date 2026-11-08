@@ -297,7 +297,9 @@ async function acquire({ db, handlerStartMs, now = () => new Date(), fetchPayloa
     let res;
     try {
       await before('reserve');
-      res = await serial(() => reserveKey({ db, id, session, token, nowMs: clock() }));
+      // Admission is checked again when the serialiser reaches this unit (review SM3-2): a reservation queued behind a
+      // slow transaction never STARTS past the reserve, so no write needs a cancel afterwards.
+      res = await serial(() => (admissionHolds() ? reserveKey({ db, id, session, token, nowMs: clock() }) : { status: 'refused', reason: 'admission_closed' }));
     } catch (err) {
       // UNCERTAIN: the commit may have landed. No request; a token-checked cancel refunds only if it did.
       counts.reserveFailed += 1;
@@ -383,7 +385,8 @@ async function acquire({ db, handlerStartMs, now = () => new Date(), fetchPayloa
     try {
       await before('finish');
       const f = await serial(() => finishRun({ db, governed: { previous: previousSessionOf(session), current: session }, ownersCursor, nowMs: clock() }));
-      counts.stateWritten = true;
+      if (f.skipped) bump(counts.deferred, f.skipped);
+      counts.stateWritten = !f.skipped;
       counts.pruned = f.pruned;
     } catch (err) {
       bump(counts.failures, `finish:${errorCodeOf(err)}`);

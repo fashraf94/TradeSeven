@@ -147,6 +147,14 @@ describe('Correction B — failed outcome writes and lost acknowledgements', () 
     expect(store.calls).toEqual([]);
     expect(db.__log.queries).toEqual([]);
   });
+  it('SM1-1 a state document of another schema: NO request, no reservation, nothing written over it', async () => {
+    const doc = { schemaVersion: 2, attempts: { [idOf('AAPL')]: { session: SESSION, n: 3 } } };
+    const db = makeMemoryDb({ docs: Object.fromEntries([tf('b1', 'owner-1', ['AAPL']), [STATE_PATH, doc]]) });
+    const r = await run(db);
+    expect(r).toMatchObject({ state: 'unreadable', deferred: { state_unreadable: 1 }, reservations: 0, storeCalls: 0 });
+    expect(store.calls).toEqual([]);
+    expect(db.read(STATE_PATH)).toEqual(doc);
+  });
   it('2.8 reservation refused by Firestore (commit did not land): no request; the token-checked cancel finds nothing', async () => {
     const db = oneKey();
     db.planTransactions('fail');
@@ -172,10 +180,34 @@ describe('Correction B — failed outcome writes and lost acknowledgements', () 
   it('B-9 admission lost during the reservation: a slow transaction ate the reserve → no store call, the reservation cancelled under its token', async () => {
     const db = oneKey();
     const deadline = T0 + C.TENANT_SLICE_MS;
-    const r = await run(db, { before: async (kind, clock) => { if (kind === 'reserve') clock.ms = deadline - C.ADMISSION_RESERVE_MS + 1; } });
+    let clockRef = null;
+    const base = db.runTransaction.bind(db);
+    let first = true;
+    // The reservation transaction itself is slow: it starts with time to spare and commits after the reserve is gone.
+    db.runTransaction = async (cb) => { const r = await base(cb); if (first) { first = false; clockRef.ms = deadline - C.ADMISSION_RESERVE_MS + 1; } return r; };
+    const r = await run(db, { before: async (_kind, clock) => { clockRef = clock; } });
     expect(r).toMatchObject({ reservations: 1, storeCalls: 0, cancelled: { admission_lost_applied: 1 } });
     expect(store.calls).toEqual([]);
     expect(stateOf(db).attempts[idOf('AAPL')]).toMatchObject({ n: 0, activeToken: null });
+  });
+  it('SM3-2 reservations queued behind a slow transaction never START past the reserve: refused admission_closed, no write, nothing to cancel', async () => {
+    const db = makeMemoryDb({ docs: Object.fromEntries([tf('b1', 'owner-1', ['AAPL', 'MSFT', 'AMZN'])]) });
+    const deadline = T0 + C.TENANT_SLICE_MS;
+    let clockRef = null;
+    const base = db.runTransaction.bind(db);
+    let first = true;
+    const starts = [];
+    db.runTransaction = async (cb) => {
+      starts.push(clockRef.ms - deadline);
+      if (first) { first = false; const r = await base(cb); clockRef.ms = deadline + 1_000; return r; } // the first transaction is slow
+      return base(cb);
+    };
+    const r = await run(db, { before: async (_kind, clock) => { clockRef = clock; } });
+    expect(r.refused).toEqual({ admission_closed: 2 });
+    expect(r).toMatchObject({ reservations: 1, storeCalls: 0, cancelled: { admission_lost_applied: 1 } });
+    expect(starts.filter((d) => d > 0)).toHaveLength(1); // only the first unit's own cancel starts past the deadline
+    expect(store.calls).toEqual([]);
+    expect(Object.keys(stateOf(db).attempts)).toEqual([idOf('AAPL')]);
   });
   it('B-6 / 2.10 completed fetch, LOST outcome write: the reservation stands; +15 min recovers it with no request; +31 min after that it is requested again; the cap holds at 3', async () => {
     const db = oneKey();

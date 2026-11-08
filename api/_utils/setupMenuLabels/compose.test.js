@@ -84,6 +84,10 @@ describe('Slice 2\'s own history: zero, missing and unreadable stay distinct (ro
     expect(c).toMatchObject({ s2LastOutcome: 'pending', s2LastAt: new Date(at).toISOString() });
     expect(Object.keys(c).filter((k) => /live|lease|attempt/i.test(k))).toEqual([]);
   });
+  it('a malformed entry in a readable state is unreadable for that key: s2Entry null, never zero (review SM1-1)', () => {
+    const state = new Map([['CRM', { malformed: true, raw: { n: '3' } }]]);
+    expect(cand(composeSetupMenuBlock(poolOf(['CRM']), obsOf({ CRM: ok(null) }, { stateRead: true, state })), 'CRM')).toMatchObject({ s2Entry: null, s2Reservations: null, s2Exhausted: null });
+  });
   it('s2Exhausted only from the reservation count, in this session', () => {
     const mk = (n, session = SESSION) => composeSetupMenuBlock(poolOf(['CRM']), obsOf({ CRM: ok(null) }, { stateRead: true, state: new Map([['CRM', { session, n }]]) })).candidates[0].s2Exhausted;
     expect([mk(2), mk(3), mk(4), mk(3, '2026-09-04')]).toEqual([false, true, true, false]);

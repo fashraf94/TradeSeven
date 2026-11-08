@@ -45,6 +45,7 @@ import { fileURLToPath } from 'node:url';
 import { computeCoverage } from '../api/_utils/tickCapture/captureCoverage.js';
 import { TICKS_SUBCOLLECTION, TICK_BODIES_SUBCOLLECTION } from '../api/_utils/tickCapture/captureConfig.js';
 import { battleCohortForRange, buildBattleInput, inWindow, rangeBounds } from './export-tick-capture.js';
+import { scopeOf } from '../api/_utils/activationEvidence/scope.js';
 import {
   SETUP_LABEL_STATUSES, SETUP_MENU_BLOCK_STATUSES, SETUP_S2_OUTCOMES, STATE_COLLECTION, STATE_DOC, STATE_REASONS,
 } from '../api/_utils/setupMenuLabels/constants.js';
@@ -226,9 +227,9 @@ export async function runCensus(reader, flags) {
   return aggregateSetupMenu(records, { coverage: computeCoverage(inputs), state, stateStatus });
 }
 
-/** The cohort predicate: an allowlisted owner's in-scope battle (the reader applies it; pure). */
+/** The cohort predicate: an allowlisted owner's battle in the slice's own scope — scopeOf, the predicate the freeze and the tenant use (review SM3 aside). Pure. */
 export function inCohort(battle, owners) {
-  return isObj(battle) && owners.includes(battle.ownerId) && battle.agentContext?.archetype === 'momentum_chaser' && battle.isCpu !== true;
+  return isObj(battle) && Array.isArray(owners) && owners.includes(battle.ownerId) && scopeOf(battle).inScope === true;
 }
 
 async function main() {

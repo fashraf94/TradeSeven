@@ -54,10 +54,39 @@ export function emptyState() {
   return { schemaVersion: STATE_SCHEMA_VERSION, cursors: { owners: null }, governedSessions: { previous: null, current: null }, attempts: {}, updatedAt: null };
 }
 
-/** One entry, normalised: anything malformed is dropped to its safe reading. Pure. */
+// FAIL CLOSED (review SM1-1). A document this code does not recognise — another schema version, or an
+// \`attempts\` that is not a map — is UNREADABLE: never read as empty, never rewritten (no request follows,
+// and no transaction writes over it). An ENTRY whose fields are not the shapes this code writes is MALFORMED:
+// its key is refused (no reservation, no request), it counts toward the key cap, it is never pruned, and every
+// whole-document write puts it back exactly as it was read. Nothing is ever read as zero, false or "due now".
+
+/** Can this code read the stored document, and rewrite it whole? Pure. */
+export function stateDocReadable(raw) {
+  return isPlainObject(raw) && raw.schemaVersion === STATE_SCHEMA_VERSION && (raw.attempts === undefined || isPlainObject(raw.attempts));
+}
+
+const absentOr = (v, ok) => v === undefined || v === null || ok(v);
+const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
+const INSTANT_FIELDS = Object.freeze(['reservedAt', 'inFlightUntil', 'lastAt', 'dueAt', 'recoveredAt']);
+
+/** Is a stored entry exactly the shapes this code writes (missing optional fields allowed)? Pure. */
+function entryWellFormed(raw) {
+  return isPlainObject(raw)
+    && Number.isInteger(raw.n) && raw.n >= 0
+    && absentOr(raw.done, (v) => typeof v === 'boolean')
+    && absentOr(raw.session, (v) => sessionOrNull(v) !== null)
+    && absentOr(raw.activeToken, (v) => typeof v === 'string' && v.length > 0)
+    && absentOr(raw.lastToken, (v) => typeof v === 'string' && v.length > 0)
+    && INSTANT_FIELDS.every((k) => absentOr(raw[k], isFiniteNumber))
+    && absentOr(raw.lastOutcome, (v) => STATE_OUTCOMES.includes(v))
+    && absentOr(raw.lastReason, (v) => STATE_REASONS.includes(v));
+}
+
+/** One entry, normalised; a malformed one is kept verbatim and marked (refused, never rewritten). Pure. */
 export function normalizeEntry(raw) {
-  if (!isPlainObject(raw)) return null;
+  if (!entryWellFormed(raw)) return { malformed: true, raw: isPlainObject(raw) ? { ...raw } : raw };
   return {
+    malformed: false,
     session: sessionOrNull(raw.session),
     n: Number.isInteger(raw.n) && raw.n >= 0 ? raw.n : 0,
     activeToken: stringOrNull(raw.activeToken),
@@ -73,10 +102,10 @@ export function normalizeEntry(raw) {
   };
 }
 
-/** The stored document, normalised. Pure. */
+/** The stored document, normalised (an unreadable one reads as empty here; callers test stateDocReadable first). Pure. */
 export function normalizeState(raw) {
   const out = emptyState();
-  if (!isPlainObject(raw) || raw.schemaVersion !== STATE_SCHEMA_VERSION) return out;
+  if (!stateDocReadable(raw)) return out;
   if (isPlainObject(raw.cursors)) out.cursors.owners = stringOrNull(raw.cursors.owners);
   if (isPlainObject(raw.governedSessions)) {
     out.governedSessions.previous = sessionOrNull(raw.governedSessions.previous);
@@ -84,8 +113,7 @@ export function normalizeState(raw) {
   }
   if (isPlainObject(raw.attempts)) {
     for (const [id, e] of Object.entries(raw.attempts)) {
-      const entry = normalizeEntry(e);
-      if (id && entry) out.attempts[id] = entry;
+      if (id) out.attempts[id] = normalizeEntry(e);
     }
   }
   out.updatedAt = stringOrNull(raw.updatedAt);
@@ -100,7 +128,9 @@ export async function readLabelState(db) {
   try {
     const snap = await stateRefOf(db).get();
     if (!snap.exists) return { status: 'absent', state: emptyState() };
-    return { status: 'read', state: normalizeState(snap.data()) };
+    const raw = snap.data();
+    if (!stateDocReadable(raw)) return { status: 'unreadable', state: emptyState() }; // never read as empty (SM1-1)
+    return { status: 'read', state: normalizeState(raw) };
   } catch {
     return { status: 'unreadable', state: emptyState() };
   }
@@ -125,11 +155,33 @@ export function dueAtOf(outcome, reason, lastAt) {
  */
 export function refusalOf(entry, { nowMs, isNewKey, keyCount }) {
   if (!entry) return isNewKey && keyCount >= STATE_MAX_KEYS ? 'state_full' : null;
+  if (entry.malformed) return 'malformed';
   if (entry.done) return 'done';
   if (entry.activeToken) return entry.inFlightUntil !== null && entry.inFlightUntil > nowMs ? 'in_flight' : 'recover';
   if (entry.n >= MAX_RESERVATIONS_PER_KEY_PER_SESSION) return 'exhausted';
   if (entry.dueAt !== null && entry.dueAt > nowMs) return 'not_due';
   return null;
+}
+
+/** The document a transaction writes: every entry as normalised, a malformed one exactly as it was read. Pure. */
+export function stateDocOf(state, nowMs, over = {}) {
+  const attempts = {};
+  for (const [id, e] of Object.entries(state.attempts)) {
+    if (e?.malformed) { attempts[id] = e.raw; continue; }
+    const entry = { ...e };
+    delete entry.malformed;
+    attempts[id] = entry;
+  }
+  return { schemaVersion: STATE_SCHEMA_VERSION, cursors: state.cursors, governedSessions: state.governedSessions, attempts, updatedAt: new Date(nowMs).toISOString(), ...over };
+}
+
+/** Read the document inside a transaction: an unreadable one is reported, never normalised to empty (SM1-1). */
+async function readInTx(tx, ref) {
+  const snap = await tx.get(ref);
+  if (!snap.exists) return { state: emptyState() };
+  const raw = snap.data();
+  if (!stateDocReadable(raw)) return { unreadable: true };
+  return { state: normalizeState(raw) };
 }
 
 /**
@@ -139,22 +191,23 @@ export function refusalOf(entry, { nowMs, isNewKey, keyCount }) {
 export async function reserveKey({ db, id, session, token, nowMs }) {
   const ref = stateRefOf(db);
   return db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const state = snap.exists ? normalizeState(snap.data()) : emptyState();
+    const read = await readInTx(tx, ref);
+    if (read.unreadable) return { status: 'refused', reason: 'state_unreadable' }; // no write over a document this code cannot read
+    const { state } = read;
     const entry = state.attempts[id] ?? null;
     if (entry?.activeToken === token) return { status: 'reserved', replay: true, n: entry.n }; // a re-run of our own committed attempt
     const refusal = refusalOf(entry, { nowMs, isNewKey: !entry, keyCount: Object.keys(state.attempts).length });
     if (refusal === 'recover') {
       // Correction B: the outcome was never saved. Durable, once: the next run sees not_due, not this.
       state.attempts[id] = { ...entry, activeToken: null, inFlightUntil: null, lastOutcome: 'unresolved', lastReason: null, lastAt: nowMs, dueAt: nowMs + RECOVERY_DUE_MS, recoveredAt: nowMs };
-      tx.set(ref, { ...state, updatedAt: new Date(nowMs).toISOString() });
+      tx.set(ref, stateDocOf(state, nowMs));
       return { status: 'refused', reason: 'recovered' };
     }
     if (refusal) return { status: 'refused', reason: refusal };
     const base = entry ?? { session, n: 0, activeToken: null, lastToken: null, reservedAt: null, inFlightUntil: null, lastOutcome: null, lastReason: null, lastAt: null, dueAt: null, done: false, recoveredAt: null };
     const next = { ...base, session, n: base.n + 1, activeToken: token, reservedAt: nowMs, inFlightUntil: nowMs + IN_FLIGHT_MS };
     state.attempts[id] = next;
-    tx.set(ref, { ...state, updatedAt: new Date(nowMs).toISOString() });
+    tx.set(ref, stateDocOf(state, nowMs));
     return { status: 'reserved', replay: false, n: next.n };
   });
 }
@@ -163,13 +216,15 @@ export async function reserveKey({ db, id, session, token, nowMs }) {
 async function ownedTransition({ db, id, token, nowMs, apply }) {
   const ref = stateRefOf(db);
   return db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const state = snap.exists ? normalizeState(snap.data()) : emptyState();
+    const read = await readInTx(tx, ref);
+    if (read.unreadable) return { status: 'state_unreadable' };
+    const { state } = read;
     const entry = state.attempts[id] ?? null;
     if (!entry) return { status: 'missing' };
+    if (entry.malformed) return { status: 'malformed' };
     if (entry.activeToken !== token) return { status: entry.lastToken === token ? 'already_applied' : 'stale' };
     state.attempts[id] = { ...apply(entry), activeToken: null, lastToken: token, inFlightUntil: null };
-    tx.set(ref, { ...state, updatedAt: new Date(nowMs).toISOString() });
+    tx.set(ref, stateDocOf(state, nowMs));
     return { status: 'applied' };
   });
 }
@@ -209,8 +264,9 @@ const maxSession = (a, b) => (a === null ? b : b === null ? a : (a > b ? a : b))
 export async function finishRun({ db, governed, ownersCursor, nowMs }) {
   const ref = stateRefOf(db);
   return db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const state = snap.exists ? normalizeState(snap.data()) : emptyState();
+    const read = await readInTx(tx, ref);
+    if (read.unreadable) return { pruned: 0, governedSessions: null, skipped: 'state_unreadable' };
+    const { state } = read;
     const stored = state.governedSessions;
     // Forward only: the newer of the two currents wins, with ITS previous (an older run never moves it back).
     const own = { previous: sessionOrNull(governed?.previous), current: sessionOrNull(governed?.current) };
@@ -219,10 +275,10 @@ export async function finishRun({ db, governed, ownersCursor, nowMs }) {
     let pruned = 0;
     if (merged.previous !== null) {
       for (const [id, entry] of Object.entries(state.attempts)) {
-        if (entry.session !== null && entry.session < merged.previous) { delete state.attempts[id]; pruned += 1; }
+        if (!entry.malformed && entry.session !== null && entry.session < merged.previous) { delete state.attempts[id]; pruned += 1; }
       }
     }
-    tx.set(ref, { ...state, cursors: { owners: stringOrNull(ownersCursor) ?? state.cursors.owners }, governedSessions: merged, updatedAt: new Date(nowMs).toISOString() });
+    tx.set(ref, stateDocOf(state, nowMs, { cursors: { owners: stringOrNull(ownersCursor) ?? state.cursors.owners }, governedSessions: merged }));
     return { pruned, governedSessions: merged };
   });
 }

@@ -86,12 +86,15 @@ export function freezeSetupMenuPool(tickCapture, battle, inputsOf, { env = REAL_
   try {
     if (tickCapture?.enabled !== true) return; // capture off: the inert context, nothing to record
     if (!setupMenuLabelsAdmits(battle?.ownerId)) return; // flag off or owner not allowlisted: nothing at all
+    // The battle's scope BEFORE any input is evaluated (review SM1-2): an out-of-scope battle gets no block, even an
+    // error one. scopeOf already excludes the tournament mode; the tick's own tournament context is checked below.
+    if (!poolScopeAdmits(battle, { isTournament: false })) return;
     let input;
     let frozenAtMs = env.now();
     let pool = { frozenAtMs, session: null, calendarMissing: false, ruleSet: null, selector: null, rebuilt: null, list: null };
     try {
       input = inputsOf();
-      if (!poolScopeAdmits(battle, { isTournament: input?.isTournament === true })) return; // out of scope: nothing
+      if (input?.isTournament === true) return; // a tournament context: nothing
       if (Number.isFinite(input?.frozenAtMs)) frozenAtMs = input.frozenAtMs;
       const ruleSet = describeRuleSet();
       pool = { ...pool, frozenAtMs, ruleSet };

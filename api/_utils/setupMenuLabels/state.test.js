@@ -216,6 +216,37 @@ describe('governed sessions only move forward (Correction B; row 2.9)', () => {
   });
 });
 
+describe('fail closed on what this code cannot read (review SM1-1)', () => {
+  const v2 = { schemaVersion: 2, attempts: { [ID]: { session: SESSION, n: 3 }, other: { session: SESSION, n: 3 } } };
+  it('an unrecognised document is UNREADABLE: never read as empty, never written over by any transaction', async () => {
+    for (const doc of [v2, { schemaVersion: 1, attempts: ['not', 'a', 'map'] }]) {
+      const db = makeMemoryDb({ docs: { [PATH]: doc } });
+      expect((await readLabelState(db)).status).toBe('unreadable');
+      expect(await reserveKey({ db, id: ID, session: SESSION, token: 't', nowMs: T0 })).toEqual({ status: 'refused', reason: 'state_unreadable' });
+      expect(await completeKey({ db, id: ID, token: 't', outcome: 'final', nowMs: T0 })).toEqual({ status: 'state_unreadable' });
+      expect(await cancelKey({ db, id: ID, token: 't', nowMs: T0 })).toEqual({ status: 'state_unreadable' });
+      expect(await finishRun({ db, governed: { previous: '2026-09-04', current: '2026-09-08' }, ownersCursor: 'o', nowMs: T0 })).toMatchObject({ skipped: 'state_unreadable' });
+      expect(db.read(PATH)).toEqual(doc);
+      expect(db.__log.sets).toEqual([]);
+    }
+  });
+  it.each([
+    ['a count that is a string', { session: SESSION, n: '3' }],
+    ['a done flag that is a number', { session: SESSION, n: 1, done: 1 }],
+    ['a due time that is a string', { session: SESSION, n: 1, dueAt: '2026-09-09T14:00:00.000Z' }],
+    ['an outcome this code does not know', { session: SESSION, n: 1, lastOutcome: 'teleported' }],
+    ['no count at all', { session: SESSION }],
+  ])('a malformed entry (%s) is refused — never read as zero, false or due — and is written back verbatim by other keys\' transactions', async (_l, bad) => {
+    const db = makeMemoryDb({ docs: { [PATH]: { ...emptyState(), attempts: { [ID]: bad } } } });
+    expect(await reserveKey({ db, id: ID, session: SESSION, token: 't1', nowMs: T0 })).toEqual({ status: 'refused', reason: 'malformed' });
+    expect(await completeKey({ db, id: ID, token: 't1', outcome: 'final', nowMs: T0 })).toEqual({ status: 'malformed' });
+    expect(await reserveKey({ db, id: 'another-key', session: SESSION, token: 't2', nowMs: T0 })).toMatchObject({ status: 'reserved' });
+    await finishRun({ db, governed: { previous: '2026-09-09', current: '2026-09-10' }, ownersCursor: null, nowMs: T0 }); // would prune SESSION entries
+    expect(db.read(PATH).attempts[ID]).toEqual(bad);
+    expect(Object.hasOwn(db.read(PATH).attempts['another-key'] ?? {}, 'malformed')).toBe(false);
+  });
+});
+
 describe('the plain read', () => {
   it('absent → empty, read → normalised, unreadable → empty, never rejects', async () => {
     expect(await readLabelState(makeMemoryDb())).toEqual({ status: 'absent', state: emptyState() });

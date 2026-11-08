@@ -97,6 +97,15 @@ describe('FREEZE — gate first, contained, pure', () => {
       expect(Object.hasOwn(ctx.state, 'setupMenu')).toBe(false);
     }
   }));
+  it('SM1-2 an out-of-scope battle never has its inputs evaluated — even inputs that would throw leave no block', () => runWithTickCaptureScope(() => {
+    for (const battle of [{ ...BATTLE, agentContext: { archetype: 'analyst' } }, { ...BATTLE, isCpu: true }, { ...BATTLE, gameMode: 'baggerbomb_tournament' }]) {
+      const ctx = liveCtx();
+      const inputsOf = vi.fn(() => { throw new Error('would have been an error block'); });
+      freezeSetupMenuPool(ctx, battle, inputsOf);
+      expect(inputsOf).not.toHaveBeenCalled();
+      expect(Object.hasOwn(ctx.state, 'setupMenu')).toBe(false);
+    }
+  }));
   it('capture off (the inert NOOP): nothing evaluated, nothing thrown', () => {
     const inputsOf = vi.fn(inputs());
     expect(() => freezeSetupMenuPool(NOOP_TICK_CAPTURE, BATTLE, inputsOf)).not.toThrow();
@@ -172,6 +181,18 @@ describe('START → SETTLE — no wait: only what is already available (Correcti
       expect(obs.results).toEqual(resultsAtSeal);
       expect(cand(ctx, 'AAPL').status).toBe('read_unsettled');
       expect(ctx.state.setupMenu.blockStatus).toBe('reads_unsettled');
+    });
+  });
+  it('SM1-1 a state document of another schema is unreadable on the record: stateRead false, every s2 field null', async () => {
+    const db = makeMemoryDb({ docs: { ...docsFor(['AAPL']), [STATE_PATH]: { schemaVersion: 2, attempts: { [idOf('AAPL')]: { session: SESSION, n: 3 } } } } });
+    await runWithTickCaptureScope(async () => {
+      const ctx = liveCtx();
+      freezeSetupMenuPool(ctx, BATTLE, inputs({ hotBenchSymbols: ['AAPL'] }));
+      const obs = startSetupMenuReads({ db, tickCapture: ctx, summary: {} });
+      await flush();
+      settleSetupMenuReads(obs, ctx);
+      expect(ctx.state.setupMenu.stateRead).toBe(false);
+      expect(cand(ctx, 'AAPL')).toMatchObject({ status: 'labelled', s2Entry: null, s2Reservations: null });
     });
   });
   it('A-6 rejected reads are read_failed, a rejected state read is stateRead false, and no rejection goes unhandled', async () => {

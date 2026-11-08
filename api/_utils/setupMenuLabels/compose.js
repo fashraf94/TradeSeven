@@ -11,12 +11,18 @@
 // an unreadable instant null. The writer still sanitizes the block in its own pass (captureWriter.js)
 // and, should anything be rejected after all, records the error form instead (Correction C).
 //
+// THE TIMES. `readsStartedAt` and `observedAt` bound THIS tick's observation (its read start and its seal).
+// A read it shares from the run memo (`readsShared`) may have been issued by an earlier tick of the same handler
+// invocation, before this tick's freeze; its result is then as of that earlier instant (review SM1-4). V2's
+// `settleWaitMs` (always 0 under Correction A) and `readMs` (derivable from the two instants) are not recorded.
+//
 // THE MEANINGS (Correction D):
 //   capturedBeforeFreeze — the snapshot's `capturedAt` (the provider response time: snapshotDocOf
 //     sets it to the fetch's `fetchedAt`) compared with `frozenAt`. A comparison of capture time
 //     ONLY: it does not say the snapshot was in the database, or readable, at the decision.
 //   inBenchAtFreeze / heldAtFreeze — membership of the frozen sets (pool.js), not dispatch.
-//   s2Entry — null: Slice 2's state was not read in time (unreadable or unsettled); false: read, no
+//   s2Entry — null: Slice 2's state, or this key's entry in it, could not be read (unreadable, unrecognised,
+//     malformed or unsettled); false: read, no
 //     entry for the key (never reserved, or pruned); true: an entry exists. Then s2Reservations is
 //     that entry's count of non-refunded RESERVATIONS — not provider requests, not failures — and
 //     s2LastOutcome / s2LastAt the last outcome Slice 2 recorded for it (historical: `pending` is a
@@ -105,6 +111,7 @@ function labelOf(snapshot, frozenAtMs) {
 function s2Of({ stateRead, entry, session }) {
   if (stateRead !== true) return { ...NULL_S2 };
   if (!isPlainObject(entry)) return { ...NULL_S2, s2Entry: false };
+  if (entry.malformed === true) return { ...NULL_S2 }; // an entry this code cannot read is unreadable, never "no entry" or zero (review SM1-1)
   const n = Number.isInteger(entry.n) && entry.n >= 0 ? entry.n : null;
   return {
     s2Entry: true,

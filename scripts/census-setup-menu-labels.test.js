@@ -117,10 +117,15 @@ describe('the runner: the export\'s read path and coverage (row 6.4)', () => {
     const c = await runCensus(reader({ ticks: [], minted: 0, state }), {});
     expect(c.state).toMatchObject({ status: 'read', entries: 3, reservations: 4, lastReason: { insufficient_history: 1, other: 1 }, lastOutcome: { retryable: 2, final: 1 } });
   });
-  it('the cohort: an allowlisted owner\'s Trend Follower battle, never a CPU side', () => {
-    expect(inCohort({ ownerId: 'o', agentContext: { archetype: 'momentum_chaser' } }, ['o'])).toBe(true);
-    expect(inCohort({ ownerId: 'o', isCpu: true, agentContext: { archetype: 'momentum_chaser' } }, ['o'])).toBe(false);
-    expect(inCohort({ ownerId: 'x', agentContext: { archetype: 'momentum_chaser' } }, ['o'])).toBe(false);
+  it('the cohort is the slice\'s own scope (scopeOf): an allowlisted owner\'s tiered Trend Follower battle — never a CPU side, a training clone or a tournament (review SM3 aside)', () => {
+    const tf = { ownerId: 'o', gameMode: 'baggerbomb_agent', agentId: 'agent-1', agentContext: { archetype: 'momentum_chaser' } };
+    expect(inCohort(tf, ['o'])).toBe(true);
+    expect(inCohort({ ...tf, gameMode: undefined }, ['o'])).toBe(true);
+    expect(inCohort({ ...tf, isCpu: true }, ['o'])).toBe(false);
+    expect(inCohort({ ...tf, agentId: 'training-agent-1' }, ['o'])).toBe(false);
+    expect(inCohort({ ...tf, gameMode: 'baggerbomb_tournament' }, ['o'])).toBe(false);
+    expect(inCohort({ ...tf, agentContext: { archetype: 'analyst' } }, ['o'])).toBe(false);
+    expect(inCohort({ ...tf, ownerId: 'x' }, ['o'])).toBe(false);
   });
 });
 
@@ -146,7 +151,7 @@ describe('the static imports (read-only by construction)', () => {
   ];
   it('only pure modules statically; credentials and the database only lazily, inside main()', () => {
     expect(specifiers.sort()).toEqual([
-      '../api/_utils/callRecords/allowlist.js', '../api/_utils/firebaseAdmin.js', '../api/_utils/setupMenuLabels/constants.js',
+      '../api/_utils/activationEvidence/scope.js', '../api/_utils/callRecords/allowlist.js', '../api/_utils/firebaseAdmin.js', '../api/_utils/setupMenuLabels/constants.js',
       '../api/_utils/tickCapture/captureConfig.js', '../api/_utils/tickCapture/captureCoverage.js', './export-tick-capture.js', './loadLocalEnv.js',
       'node:fs', 'node:url',
     ].sort());
