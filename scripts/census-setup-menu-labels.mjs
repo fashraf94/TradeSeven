@@ -29,7 +29,9 @@
 //     Reason-level figures come only from the typed `lastReason` the state stores.
 //   · Joins are scoped to one tick record (one battle, one tick id; never an evalId across battles).
 //     An action that executed a pending proposal is `proposal_tick_unevaluated` (its proposing tick
-//     would need the battle's trades, which this census does not read), never `same_tick`.
+//     would need the battle's trades, which this census does not read), never `same_tick`. The class is
+//     INFERRED, not recorded: the capture stamps a proposal's execution like a model swap (source haiku), so a
+//     model-sourced swap that is not this tick's own decision is counted here (review SM1-5).
 //   · No filtering, trading-performance or behavioural claim follows from any figure here; the M1/M2
 //     limits stand (the recorded replay is below the 20-joined-moment floor).
 //
