@@ -35,28 +35,31 @@
 // `usage`); a turn whose usage is not known makes the total 'unknown' for
 // good — never estimated, never a partial sum presented as a total.
 //
-// THE EXTENSION (7 Nov 2026 — the Research Record Extension build; contract
-// docs/design/20261107_RESEARCH_RECORD_EXTENSION_V1.md), for Shared Research's
-// first slice. Every field below is SERVER-WRITTEN, and nothing writes one yet
-// except tests: the Shared Research route that will is the Command Center
-// arc's next build.
+// THE EXTENSION (7 Nov 2026 — the Research Record Extension build and its
+// follow-up V2; contract docs/design/20261107_RESEARCH_RECORD_EXTENSION_V1.md),
+// for Shared Research's first slice. Every field below is SERVER-WRITTEN and
+// belongs to `shared_research` records ONLY (any other origin: wrong_origin;
+// no host write ever adds one). Nothing writes them yet except tests: the
+// Shared Research route that will is the Command Center arc's next build.
 //
-//   QUESTION (set once)    question — at most QUESTION_MAX_LEN, written in the
-//                          same write as the subject, never after; absent on
-//                          every record written without one
+//   QUESTION (set once)    question — at most QUESTION_MAX_LEN, at the mint or
+//                          once later (questionPatch), never changed; a
+//                          completed close needs it; absent when never set
 //   FINDINGS (append-only) findings[] ≤ FINDINGS_MAX — each { findingId, kind,
-//                          fact, source, at, asOf, status, statusReason, pin,
-//                          supersedes }; a correction is a NEW finding that
+//                          symbol, fact, source, at, asOf, status, statusReason,
+//                          pin, supersedes }; a correction is a NEW finding that
 //                          supersedes an earlier one; nothing is edited or removed
 //   SUMMARY (append-only)  summaryRevisions[] ≤ SUMMARY_REVISIONS_MAX, and
-//                          summary = the last of them, written in one transaction
-//   SYMBOL KEYS (derived)  symbolKeys[] — from symbols[] and the findings'
-//                          records, recomputed on every write to a record that
-//                          carries them (the researchWork (userId, symbolKeys
+//                          summary = the last of them, written in one
+//                          transaction; it rests on 1–BASED_ON_MAX current findings
+//   SYMBOL KEYS (derived)  symbolKeys[] — the current findings' symbols, then
+//                          symbols[]; written fresh by every write to a Shared
+//                          Research record (the researchWork (userId, symbolKeys
 //                          CONTAINS, createdAt DESC) index)
 //
-// Each closed list here is defined ONCE and grows only with a new schema
-// version (extension.test.js pins every list against RECORD_SCHEMA_VERSION).
+// Each closed list here is defined ONCE and, once records are stored, grows
+// only with a new schema version (extension.test.js pins every list against
+// RECORD_SCHEMA_VERSION).
 
 import {
   RESEARCH_ORIGINS, RESEARCH_STATES, RESEARCH_TERMINAL_STATES, RESEARCH_STAGES, STAGES_BY_ORIGIN, SYMBOL_OUTCOMES,
@@ -481,6 +484,11 @@ export function buildRecord({
     throw new Error('researchRecords: hypothesisVersion must be a version number or null');
   }
   if (question !== null && origin !== SHARED_RESEARCH_ORIGIN) throw new ResearchRecordError('wrong_origin');
+  // The close rules hold for a record minted already closed too (review V2A-2): `concluded` only on a
+  // Shared Research record completed; such a record completed only with its question.
+  const sharedCompleted = origin === SHARED_RESEARCH_ORIGIN && state === 'completed';
+  if (terminalReason === TERMINAL_REASONS.concluded && !sharedCompleted) throw new ResearchRecordError('invalid_terminal_reason');
+  if (sharedCompleted && question === null) throw new ResearchRecordError('question_missing');
   const record = {
     schemaVersion: RECORD_SCHEMA_VERSION,
     researchWorkId, userId, origin, host: host ? { collection: host.collection, id: host.id } : null, createdAt,
@@ -593,7 +601,13 @@ export const SUMMARY_REVISIONS_MAX = 10;
 export const BASED_ON_MAX = 25;
 /** A source record's id (any record kind) and an evidence item's id: bounded, printable. */
 export const RECORD_ID_MAX_LEN = 256;
-export const SOURCE_URL_MAX_LEN = 2048;
+/**
+ * At most 1,024 characters (was 2,048): the follow-up's size rule (V2 §3), its
+ * SECOND named cut — with every cap full and Firestore's map rule read
+ * cautiously, the largest record still measured 1,013,417 bytes at 10
+ * revisions, over 1,000,000 (size.test.js measures it).
+ */
+export const SOURCE_URL_MAX_LEN = 1024;
 export const FINDING_ID_PREFIX = 'f_';
 
 /** What a finding says it is. Closed: grows only with a new schema version. */
@@ -846,10 +860,11 @@ export function currentFindingsOf(record) {
 
 /**
  * A summary revision: appended to summaryRevisions[] AND made the summary, in
- * one patch; `rev` = the previous + 1. Refused, typed: the record closed, the
- * 21st revision, a `basedOn` naming a finding the record does not hold, or —
- * when the caller says which revision it saw (`expectedRev`, 0 for none) — a
- * revision written since (summary_conflict). Nothing is overwritten.
+ * one patch; `rev` = the previous + 1. Refused, typed: another origin, the
+ * record closed, a revision past SUMMARY_REVISIONS_MAX, a `basedOn` that is not
+ * 1–BASED_ON_MAX current findings of the record, or — when the caller says
+ * which revision it saw (`expectedRev`, 0 for none) — a revision written since
+ * (summary_conflict). Nothing is overwritten.
  */
 export function summaryRevisionPatch(record, { text, basedOn = [], expectedRev = null }, { nowIso }) {
   assertWritable(record);

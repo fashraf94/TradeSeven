@@ -155,7 +155,12 @@ export const EVIDENCE_REF_KEYS = Object.freeze({
 const HOST_COLLECTION_NAMES = Object.freeze(Object.values(HOST_COLLECTIONS));
 const exactKeys = (r, keys) => Object.keys(r).length === keys.length && keys.every((k) => Object.hasOwn(r, k));
 const isItemId = (v) => v === null || (typeof v === 'string' && v.length > 0 && v.length <= RECORD_ID_MAX_LEN && !/[\u0000-\u001f\u007f]/.test(v)); // eslint-disable-line no-control-regex
-/** The most refs the server may put on one version it saves (follow-up ruling Q10b: a battle's copy stays small). */
+/**
+ * The most refs ONE server batch may carry (follow-up ruling Q10b: a battle's copy stays small) — what
+ * serverEvidenceRefsOf accepts, and so every ref of an adopted first version (buildSharedResearchVersion).
+ * It does not cap a version's total: createPlayerVersion also merges the list's research refs, uncapped
+ * as before this extension (review V2B-3; a question for the Command Center arc's B1).
+ */
 export const SERVER_EVIDENCE_REFS_MAX = 30;
 
 /**
@@ -392,7 +397,9 @@ export function buildSharedResearchVersion({
   keptFindingIds, confirmExchangeId, nowIso,
 }) {
   const fail = (code) => new HypothesisInputError(code);
-  if (!isPlainObject(list) || list.userId !== userId || originOf(list) !== SHARED_RESEARCH_ORIGIN
+  // The list is the owner's Shared Research list for this session — and the very list the version is
+  // written under (review V2A-3: `watchlistId` is never trusted apart from the list it names).
+  if (!isPlainObject(list) || list.userId !== userId || list.watchlistId !== watchlistId || originOf(list) !== SHARED_RESEARCH_ORIGIN
     || list[SHARED_RESEARCH_LIST_MARKER] !== sessionId) throw fail('list_not_from_session');
   let recordId = null;
   try { recordId = researchWorkIdFor({ collection: 'sharedResearchSessions', id: sessionId }); } catch { /* a malformed session id names no record */ }

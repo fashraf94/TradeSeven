@@ -28,7 +28,7 @@ import { makeCallsFirestore, stored } from '../__fixtures__/callsFirestore.js';
 import {
   RECORD_SCHEMA_VERSION, SYMBOLS_MAX, HOST_COLLECTIONS, STAGES_BY_ORIGIN, RESEARCH_STAGES, RESEARCH_ORIGINS, TERMINAL_REASONS,
   FINDING_KINDS, FINDING_RECORD_KINDS, EVIDENCE_ITEM_RECORD_KINDS, FINDING_STATUSES, PIN_TYPES,
-  QUESTION_MAX_LEN, FINDINGS_MAX, FINDING_FACT_MAX_LEN, SOURCE_LABEL_MAX_LEN, SUMMARY_TEXT_MAX_LEN, SUMMARY_REVISIONS_MAX, BASED_ON_MAX,
+  QUESTION_MAX_LEN, FINDINGS_MAX, FINDING_FACT_MAX_LEN, SOURCE_LABEL_MAX_LEN, SOURCE_URL_MAX_LEN, SUMMARY_TEXT_MAX_LEN, SUMMARY_REVISIONS_MAX, BASED_ON_MAX,
   researchWorkIdFor, isResearchWorkId, researchRefOf, isOwnedRecord, buildRecord, subjectPatch, turnPatch, closePatch, questionPatch,
   manualFunnel, dialogueFunnel, analysisFunnel, screenerFunnel, emptyTelemetry, recordSummaryOf,
   buildFinding, findingAppendPatch, currentFindingsOf, summaryRevisionPatch, symbolKeysOf, symbolKeyOf, isFindingId,
@@ -103,8 +103,8 @@ describe('closed lists — defined once in the model, version 1 amended in place
     expect(body).toMatch(/^export const FINDING_RECORD_KINDS = Object\.freeze\(\[[\s'A-Za-z,]*\]\);$/);
   });
   it('the caps, as the contract states them', () => {
-    expect({ QUESTION_MAX_LEN, FINDINGS_MAX, FINDING_FACT_MAX_LEN, SOURCE_LABEL_MAX_LEN, SUMMARY_TEXT_MAX_LEN, SUMMARY_REVISIONS_MAX, BASED_ON_MAX, SYMBOLS_MAX, SERVER_EVIDENCE_REFS_MAX })
-      .toEqual({ QUESTION_MAX_LEN: 500, FINDINGS_MAX: 100, FINDING_FACT_MAX_LEN: 500, SOURCE_LABEL_MAX_LEN: 120, SUMMARY_TEXT_MAX_LEN: 1000, SUMMARY_REVISIONS_MAX: 10, BASED_ON_MAX: 25, SYMBOLS_MAX: 100, SERVER_EVIDENCE_REFS_MAX: 30 });
+    expect({ QUESTION_MAX_LEN, FINDINGS_MAX, FINDING_FACT_MAX_LEN, SOURCE_LABEL_MAX_LEN, SOURCE_URL_MAX_LEN, SUMMARY_TEXT_MAX_LEN, SUMMARY_REVISIONS_MAX, BASED_ON_MAX, SYMBOLS_MAX, SERVER_EVIDENCE_REFS_MAX })
+      .toEqual({ QUESTION_MAX_LEN: 500, FINDINGS_MAX: 100, FINDING_FACT_MAX_LEN: 500, SOURCE_LABEL_MAX_LEN: 120, SOURCE_URL_MAX_LEN: 1024, SUMMARY_TEXT_MAX_LEN: 1000, SUMMARY_REVISIONS_MAX: 10, BASED_ON_MAX: 25, SYMBOLS_MAX: 100, SERVER_EVIDENCE_REFS_MAX: 30 });
   });
 });
 
@@ -183,6 +183,16 @@ describe('`concluded` — a Shared Research investigation completed without an i
       for (const state of ['completed', 'abandoned']) expect(code(() => closePatch(hostRecord(origin), { state, terminalReason: 'concluded', atIso: NOW, funnel: HOST_FUNNEL[origin]() })), `${origin} ${state}`).toBe('invalid_terminal_reason');
     }
   });
+  it('the close rules hold for a record MINTED already closed too (review V2A-2)', () => {
+    const mint = (origin, over) => (origin === 'shared_research' ? srRecord({ question: null, ...over }) : hostRecord(origin, over));
+    expect(code(() => mint('shared_research', { state: 'completed', terminalReason: 'saved_to_list' }))).toBe('question_missing');
+    expect(code(() => mint('shared_research', { state: 'completed', terminalReason: 'concluded' }))).toBe('question_missing');
+    expect(srRecord({ state: 'completed', terminalReason: 'concluded', endedAt: EARLIER })).toMatchObject({ state: 'completed', terminalReason: 'concluded' });
+    expect(code(() => mint('shared_research', { state: 'abandoned', terminalReason: 'concluded' }))).toBe('invalid_terminal_reason');
+    for (const origin of HOST_ORIGINS) expect(code(() => mint(origin, { state: 'completed', terminalReason: 'concluded' })), origin).toBe('invalid_terminal_reason');
+    // What the hosts mint today is unchanged: a manual list's record, completed and player-authored.
+    expect(hostRecord('manual', { state: 'completed', terminalReason: 'player_authored', endedAt: EARLIER })).toMatchObject({ state: 'completed', terminalReason: 'player_authored' });
+  });
   it('every host close with its own reasons is exactly what it was', () => {
     for (const origin of HOST_ORIGINS) {
       const p = closePatch(hostRecord(origin), { state: 'abandoned', terminalReason: 'user_close', atIso: NOW, funnel: HOST_FUNNEL[origin]() });
@@ -259,7 +269,9 @@ describe('findings — shape, caps and closed lists', () => {
     expect(code(() => built(1, { source: { recordKind: 'retrieval', recordId: 'r-1', label: 'Reuters', url: null } }))).toBe('retrieval_needs_url');
     expect(built(1, { source: { recordKind: 'retrieval', recordId: 'r-1', label: 'Reuters', url: 'https://r.example/x' } }).source)
       .toEqual({ recordKind: 'retrieval', recordId: 'r-1', label: 'Reuters', url: 'https://r.example/x' });
-    for (const url of ['ftp://x', 'javascript:alert(1)', 'not a url', `https://e.x/${'a'.repeat(2048)}`]) {
+    const atCap = `https://e.x/${'a'.repeat(SOURCE_URL_MAX_LEN - 12)}`;
+    expect(built(1, { source: { recordKind: 'retrieval', recordId: 'r-1', label: 'R', url: atCap } }).source.url).toHaveLength(1024);
+    for (const url of ['ftp://x', 'javascript:alert(1)', 'not a url', `${atCap}a`]) {
       expect(code(() => built(1, { source: { recordKind: 'retrieval', recordId: 'r-1', label: 'R', url } })), url.slice(0, 12)).toBe('invalid_source');
     }
     expect(Object.keys(built(1).source)).toEqual(['recordKind', 'recordId', 'label']);

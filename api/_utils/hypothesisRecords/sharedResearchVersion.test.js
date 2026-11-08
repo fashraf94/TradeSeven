@@ -71,6 +71,10 @@ describe('buildSharedResearchVersion — every refusal', () => {
     expect(code(() => adoptedVersion({ list: adoptionList({ [SHARED_RESEARCH_LIST_MARKER]: 'srs-other' }) }))).toBe('list_not_from_session');
     expect(code(() => adoptedVersion({ list: null }))).toBe('list_not_from_session');
   });
+  it('the list is the very list the version is written under (review V2A-3)', () => {
+    expect(code(() => adoptedVersion({ watchlistId: 'wl-someone-else' }))).toBe('list_not_from_session');
+    expect(code(() => adoptedVersion({ list: adoptionList({ watchlistId: 'wl-other' }) }))).toBe('list_not_from_session');
+  });
   it('the record: not this owner\'s shared_research record for this session', () => {
     const r = adoptionRecord();
     expect(code(() => adoptedVersion({ record: { ...r, userId: 'someone-else' } }))).toBe('record_not_from_session');
