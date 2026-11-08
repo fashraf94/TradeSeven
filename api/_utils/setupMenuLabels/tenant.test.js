@@ -254,6 +254,18 @@ describe('the run\'s limits (rows 4.3, 4.4, 4.6, 4.7)', () => {
     expect(peak).toBeLessThanOrEqual(C.ACQUISITION_CONCURRENCY);
     expect(r.deferred.not_reached).toBe(20 - C.MAX_ACQUISITIONS_PER_RUN);
   });
+  it('slow reservations: units still deciding count toward the call cap — exactly 12 reservations, none reserved and then cancelled for the cap (mutant SMX-B11)', async () => {
+    const hot = Array.from({ length: 20 }, (_, i) => `K${i}`);
+    const db = makeMemoryDb({ docs: Object.fromEntries([tf('b1', 'owner-1', hot)]) });
+    const base = db.runTransaction.bind(db);
+    db.runTransaction = async (cb) => { await new Promise((r) => setTimeout(r, 3)); return base(cb); }; // every transaction is slow
+    store.impl = async () => ({ status: 'final', snapshot: {} });
+    const r = await run(db);
+    expect(r.storeCalls).toBe(C.MAX_ACQUISITIONS_PER_RUN);
+    expect(r.reserveTransactions).toBe(C.MAX_ACQUISITIONS_PER_RUN);
+    expect(r.cancelled).toEqual({});
+    expect(r.deferred.not_reached).toBe(20 - C.MAX_ACQUISITIONS_PER_RUN);
+  });
   it('4.6 keys are taken in turn across battles: a battle with 40 names cannot take the whole run', async () => {
     const big = Array.from({ length: 40 }, (_, i) => `B${i}`);
     const db = makeMemoryDb({ docs: Object.fromEntries([tf('b1', 'owner-1', big), tf('b2', 'owner-1', ['X1', 'X2', 'X3'])]) });
