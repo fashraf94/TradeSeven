@@ -781,7 +781,7 @@ function buildPin(raw) {
  * the SOURCE knew the fact — absent means null, never the write time: one
  * equal to (or later than) the write time `nowIso` is refused.
  *
- * @param {object} raw  { kind, fact, source, at, asOf?, status, statusReason?, pin?, supersedes? }
+ * @param {object} raw  { kind, symbol?, fact, source, at, asOf?, status, statusReason?, pin?, supersedes? }
  * @param {{ findingId: string, nowIso: string }} server
  */
 export function buildFinding(raw, { findingId, nowIso }) {
