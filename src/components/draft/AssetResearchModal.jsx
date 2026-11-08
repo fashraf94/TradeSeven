@@ -450,14 +450,21 @@ const AssetResearchModal = ({
   const sheetGeom = !!sheetView && sheetActive;
   const sheetChartRef = useRef(null);
   const [sheetChartBox, setSheetChartBox] = useState(null);
+  // The drawer sits on the chart section's measured bottom: re-measured after every
+  // render (the chart replaces its skeleton in a later render) and on any resize;
+  // a section with no chart in it yet (only its padding) is not a measure.
+  const measureSheetChart = useCallback(() => {
+    const h = sheetChartRef.current ? sheetChartRef.current.offsetHeight : 0;
+    const next = h > 40 ? h : null;
+    setSheetChartBox((prev) => (prev === next ? prev : next));
+  }, []);
+  React.useLayoutEffect(() => { if (sheetGeom) measureSheetChart(); });
   useEffect(() => {
     if (!sheetGeom || !sheetChartRef.current) return undefined;
-    const measure = () => { if (sheetChartRef.current) setSheetChartBox(sheetChartRef.current.offsetHeight || null); };
-    measure();
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver(measureSheetChart);
     observer.observe(sheetChartRef.current);
     return () => observer.disconnect();
-  }, [sheetGeom]);
+  }, [sheetGeom, measureSheetChart]);
 
   // v2: Measure container height for drawer snap points
   useEffect(() => {

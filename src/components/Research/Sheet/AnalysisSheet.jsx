@@ -116,7 +116,7 @@ function Questions({ view }) {
           data-sheet-question={q}
           onClick={() => view.pickQuestion(q)}
           style={{
-            all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 46, padding: '0 14px', borderRadius: 12,
+            all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 44, padding: '0 14px', borderRadius: 12,
             display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, fontWeight: 700, color: ST.ink,
             background: tint(ST.teal, 8), border: `1px solid ${tint(ST.teal, 35)}`,
           }}
@@ -226,7 +226,7 @@ function Tucked({ about, wallSt }) {
 export default function AnalysisSheet({ view, about = null, wallSt = null }) {
   const layer = view.question ? 1 : 0;
   return (
-    <div data-sheet-root data-sheet-layer={layer} style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '2px 0 8px' }}>
+    <div data-sheet-root data-sheet-layer={layer} style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '2px 0 4px' }}>
       <Stance view={view} />
       <Voice view={view} collapsed={layer > 0} />
       {layer === 0 ? <Questions view={view} /> : <Pack view={view} />}

@@ -4,6 +4,9 @@ import { HOLO_COLORS } from '../../constants/holoTheme';
 import useDrawerSnap from './useDrawerSnap';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
+// Build C: the scroll area's bottom padding when a footer is pinned under it.
+const FOOTER_PAD = 12;
+
 const TAB_CONFIGS = [
   { key: 'marketContext', label: '\uD83C\uDF10 Market', activeColor: '#00D9FF' },
   { key: 'health', label: '\u26D3\uFE0F Health', activeColor: HOLO_COLORS.amber },
@@ -219,13 +222,15 @@ const AnalysisDrawer = ({
       {/* Scrollable content — explicit height from measured header */}
       <div
         style={{
-          height: scrollHeight > 0 ? scrollHeight : 'auto',
+          // With a footer the scroll area ends where the footer begins: the app ships
+          // content-box sizing, so the bottom padding is taken out of the height.
+          height: scrollHeight > 0 ? (footer ? scrollHeight - FOOTER_PAD : scrollHeight) : 'auto',
           flexShrink: 0,
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
           touchAction: 'pan-y',
-          padding: '0 12px 80px',
+          padding: footer ? `0 12px ${FOOTER_PAD}px` : '0 12px 80px',
         }}
       >
         {children}

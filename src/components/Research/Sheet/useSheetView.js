@@ -14,8 +14,9 @@
 //                           shape (useCalls), opened only while the sheet is on;
 //   the chart's daily bars  the modal's own 1D series (the last one seen for this
 //                           symbol is kept, so a 1W switch does not drop a fact);
-//   the rankings            indexIntelligence/stockRankings, ONE read per sheet,
-//                           only when the stalled question opens.
+//   the rankings            indexIntelligence/stockRankings — the doc in
+//                           sheetContext.rankings when the screen holds one, else
+//                           ONE read per sheet, only when the stalled question opens.
 // The Ask is the only request it makes: one POST /api/agent/chat, one message.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -98,9 +99,10 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
   const question = ui.key === sheetKey ? ui.question : (incumbent ? 'better_than_stalled' : null);
   const activeItem = ui.key === sheetKey ? ui.activeItem : null;
 
-  // ── The rankings: one read, when the stalled question first opens ──
+  // ── The rankings: the doc the screen hands over when it holds one, else one read when the stalled question first opens ──
+  const screenRankings = ctx?.rankings && typeof ctx.rankings === 'object' ? ctx.rankings : null;
   const [rankings, setRankings] = useState({ key: null, doc: null });
-  const wantRankings = !!ctx && question === 'better_than_stalled';
+  const wantRankings = !!ctx && !screenRankings && question === 'better_than_stalled';
   useEffect(() => {
     if (!wantRankings || rankings.key === sheetKey) return undefined;
     let live = true;
@@ -116,7 +118,7 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     const row = { posKey: rowPosKey, positionId: rowPositionId };
     const args = {
       battle, symbol, nowMs, row, live, dailyBars, battleId,
-      rankings: rankings.key === sheetKey ? rankings.doc : null,
+      rankings: screenRankings ?? (rankings.key === sheetKey ? rankings.doc : null),
       standing,
       directive,
       incumbent,
@@ -127,7 +129,7 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     const pins = recordPinsOf({ battle, symbol, nowMs, row, calls });
     return { ...built, stance, latest, pins, order: questionOrder(standing) };
     // standing reaches it through standingKey; ctx itself is new every render.
-  }, [!!ctx, battle, symbol, nowMs, rowPosKey, rowPositionId, live, dailyBars, battleId, rankings, sheetKey, incumbent, calls, standingKey, directive]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!ctx, battle, symbol, nowMs, rowPosKey, rowPositionId, live, dailyBars, battleId, rankings, screenRankings, sheetKey, incumbent, calls, standingKey, directive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── The chart's pins (BC-8): one label open — the tapped item's pin, else the latest marker ──
   const pack = model && question ? model.packs[question] : null;
