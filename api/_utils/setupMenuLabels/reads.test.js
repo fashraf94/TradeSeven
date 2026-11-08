@@ -200,6 +200,24 @@ describe('START → SETTLE — no wait: only what is already available (Correcti
   });
 });
 
+describe('NO WAIT, structurally (Correction A)', () => {
+  it('freeze, start, settle and seal are synchronous functions: none returns a promise, so none can be awaited into a wait', async () => {
+    const db = makeMemoryDb();
+    db.onGet('setupEvidence/*', () => new Promise(() => {}));
+    db.onGet(STATE_PATH, () => new Promise(() => {}));
+    await runWithTickCaptureScope(async () => {
+      const ctx = liveCtx();
+      for (const fn of [freezeSetupMenuPool, startSetupMenuReads, settleSetupMenuReads, sealSetupMenuReads]) expect(fn.constructor.name).toBe('Function');
+      expect(freezeSetupMenuPool(ctx, BATTLE, inputs())).toBeUndefined();
+      const obs = startSetupMenuReads({ db, tickCapture: ctx, summary: {} });
+      expect(obs).not.toBeInstanceOf(Promise);
+      expect(settleSetupMenuReads(obs, ctx)).toBeUndefined();
+      expect(sealSetupMenuReads(obs)).toBeUndefined();
+      expect(ctx.state.setupMenu.blockStatus).toBe('reads_unsettled');
+    });
+  });
+});
+
 describe('SEAL — closed means closed (Correction A)', () => {
   it('A-7 / A-9 the error exit seals: the deadline timer is cleared, later results are ignored, the pool fact stays', async () => {
     const db = makeMemoryDb({ docs: docsFor(['AAPL']) });

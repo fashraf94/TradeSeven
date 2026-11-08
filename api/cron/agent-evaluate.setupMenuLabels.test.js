@@ -408,6 +408,19 @@ describe('Correction D.2 — membership is literal; the real lists are unchanged
   });
 });
 
+describe('the tick never waits on Slice 2 (Correction A), in source', () => {
+  it('the five Slice 2 calls in agent-evaluate.js are never awaited, and the settle sits immediately before finalizeTickCapture', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('./agent-evaluate.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+    const calls = [...src.matchAll(/^.*\b(freezeSetupMenuPool|startSetupMenuReads|settleSetupMenuReads|sealSetupMenuReads)\(.*$/gm)].map((m) => m[0]);
+    expect(calls.filter((l) => !/^\s*import\b/.test(l))).toHaveLength(5);
+    for (const line of calls) expect(line).not.toMatch(/\bawait\b/);
+    expect(src).toMatch(/settleSetupMenuReads\(setupMenuReads, tickCapture\);\n\s*const captureResult = await finalizeTickCapture\(db, tickCapture, \{/);
+    // The admission test is computed before the read start that follows it.
+    expect(src.indexOf('const budget = shouldStartHaikuCall(')).toBeLessThan(src.indexOf('setupMenuReads = startSetupMenuReads({ db, tickCapture, summary });', src.indexOf('const budget = shouldStartHaikuCall(')));
+  });
+});
+
 describe('no block before the pool exists (row 1.9)', () => {
   it.each([
     ['degraded_quotes', () => { const p = prices(); delete p.NVDA; return { p }; }],
