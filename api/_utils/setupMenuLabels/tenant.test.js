@@ -259,7 +259,8 @@ describe('the run\'s limits (rows 4.3, 4.4, 4.6, 4.7)', () => {
     const db = makeMemoryDb({ docs: Object.fromEntries([tf('b1', 'owner-1', hot)]) });
     const base = db.runTransaction.bind(db);
     db.runTransaction = async (cb) => { await new Promise((r) => setTimeout(r, 3)); return base(cb); }; // every transaction is slow
-    store.impl = async () => ({ status: 'final', snapshot: {} });
+    // One long store call breaks the three slots' lock-step, so units are still deciding when the cap is near.
+    store.impl = async ({ symbol }) => { if (symbol === 'K0') await new Promise((r) => setTimeout(r, 40)); return { status: 'final', snapshot: {} }; };
     const r = await run(db);
     expect(r.storeCalls).toBe(C.MAX_ACQUISITIONS_PER_RUN);
     expect(r.reserveTransactions).toBe(C.MAX_ACQUISITIONS_PER_RUN);
