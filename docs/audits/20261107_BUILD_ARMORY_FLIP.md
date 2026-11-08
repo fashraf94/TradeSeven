@@ -1,8 +1,10 @@
 # Flip: the armory and per-game loadouts go live (build report)
 
-**Date:** 2026-11-07. **Model:** Claude Opus 5.5. **Branch:** `claude/armory-flip`, cut from `main` @ `d09603b2` (the merge of PR #1029, Build A2), pushed from the worktree branch by refspec. **PR:** see the PR that cites this report (`claude/armory-flip`), draft. **Smoke:** `claude/armory-flip-smoke` @ `f2e826e6`. **Preview:** https://trade-seven-mnd439rkr-fais-projects-bc179554.vercel.app/?loadoutStates=1 (the Command Center itself is at the same address without the query, signed in).
+**Date:** 2026-11-07. **Model:** Claude Opus 5.5. **Branch:** `claude/armory-flip`, cut from `main` @ `d09603b2` (the merge of PR #1029, Build A2), pushed from the worktree branch by refspec. **PR:** see the PR that cites this report (`claude/armory-flip`). **Smoke:** `claude/armory-flip-smoke` @ `f2e826e6`. **Smoke preview:** https://trade-seven-mnd439rkr-fais-projects-bc179554.vercel.app/?loadoutStates=1. **The PR's own preview** (Vercel's comment on the PR; it follows the branch's latest push): https://trade-seven-git-claude-armory-flip-fais-projects-bc179554.vercel.app
 
 **Preamble.** `git fetch origin` ran first; `origin/main` was `d09603b2`, which holds PR #1029's merge, so the brief's STOP does not apply. The tree was clean. Fenced files edited: none. Fenced functions called: none (`decide.js`, `agentBattleService.js` and `createAgentBattle` have no diff). Nothing under `api/` changed except tests and two test fixtures.
+
+**CI fixes (a second session, Nov 7, 2026).** The PR's `firestore rules + emulator suites` job was red: 5 rows in 2 emulator files that the first session's red-row sweep never ran. The fix brief's rulings FL4-b (fold FL4) and CI-1 (the emulator rows' dispositions) are built, the production check it asked for is settled from the code, and every check below was re-run on the new code head `54a2725c`. That session's own account is §12; the sections above it are updated where the fixes changed them.
 
 **The founder merges. Nothing reaches players until he does, and the merge waits for #1029's `firestore.rules` in the Firebase Console.**
 
@@ -14,17 +16,19 @@
 |---|---|---|
 | 1 | **The flip (FL1)** | **Both flags are `true` in one commit** (`8763e57a`) with their pins, both `DARK_BY_DESIGN` entries dropped, and FL2's rollback story in the docstrings and pin titles. |
 | 2 | **Kill switches (FL2)** | Kept. `LoadoutChooserSheet.jsx` and every flag-off arm stay. Rollback is two steps (§6). |
-| 3 | **Red rows** | **464 rows in 42 files went red** with both flags on. **274 are kill-switch rows** (held off by mock), **186 rewritten** (they run with the flags on, assertions unchanged), **4 pins moved**, **0 deleted** (§2). |
+| 3 | **Red rows** | **464 rows in 42 files went red** in the default suite with both flags on. **274 are kill-switch rows** (held off by mock), **186 rewritten** (they run with the flags on, assertions unchanged), **4 pins moved**, **0 deleted** (§2). The emulator suite's 5 are row 14. |
 | 4 | **FL3** | A pin row: per-game loadouts never run without casual clones. It fails with casual clones off (§5). |
-| 5 | **FL4** | Built as ruled: two literal ternaries. **One of them does not fold** (it sits inside a `try`, where Rollup does not tree-shake), so the kill-switch build is not byte-identical to `main`: **2 lines in the entry chunk differ**. The behaviour is today's. A form that makes it identical was built and measured on a scratch tree (byte-identical off, only the two strings on, lint green); whether to swap it in is the one founder question (§4, §10 Q1). |
-| 6 | **Kill-switch build** | **54 of 55 non-map files identical** (hash-masked); the entry chunk differs by FL4's 2 lines. Not 0 (§4). |
-| 7 | **Flags-on build** | Against `main` with the two literals `true`: **56 of 57 non-map files identical** (hash-masked); the entry chunk (where `agentDeploy.js` lives) differs by 3 lines, all FL4's (§4). |
-| 8 | **One-flag rollback** | `PER_GAME_LOADOUT_ENABLED` and its pin back to `false`, the armory still `true`: **full suite exit 0**, 1,315 files, 29,016 rows, 0 failed (§3). |
-| 9 | **Full Linux suite** | **Exit 0** on the code head `73e142da`: 1,315 files (1,307 passed, 8 skipped), 29,016 rows (28,927 passed, 89 skipped, **0 failed**), 293 s. Also exit 0 on the flip commit `8763e57a` before the census (1,314 files, 29,004 rows, 0 failed). |
-| 10 | **`lint:gate`** | Exit 0. **Minified build:** exit 0. |
-| 11 | **Mutation** | **4 of 4 killed:** FL3's row with casual clones off; the hub's League card, the League line and the Training line, one mutant each (§5). |
+| 5 | **FL4** | **Folded (FL4-b).** First built as two literal ternaries, one of which sat inside a `try`, where Rollup does not fold. The flag now picks a whole `try` block outside it: `if (PER_GAME_LOADOUT_ENABLED) try {…} catch {…} else try {…main's block verbatim…} catch {…}` (`src/services/agentDeploy.js:194-243`, §4). |
+| 6 | **Kill-switch build** | **0 of 55 non-map files differ** from `main`: the raw `diff -rq` of the unminified Linux builds, source maps excluded, hashes in the names included (the entry is `index-ok8k4FzL.js` in both) (§3). |
+| 7 | **Flags-on build** | Against `main` with the two literals `true`: **56 of 57 non-map files are twins**; the entry chunk differs by **exactly FL4's two strings**, with no ternary and no flag declaration (§3). |
+| 8 | **One-flag rollback** | `PER_GAME_LOADOUT_ENABLED` and its pin back to `false`, the armory still `true`: **full suite exit 0**, 1,315 files, 29,016 rows, 0 failed (§3; run on `73e142da`, before the CI fixes). |
+| 9 | **Full Linux suite** | **Exit 0** on the code head `54a2725c`: 1,315 files (1,307 passed, 8 skipped), 29,016 rows (28,927 passed, 89 skipped, **0 failed**), 280 s. Before the CI fixes, exit 0 on `73e142da` and on the flip commit `8763e57a` (§3). |
+| 10 | **`lint:gate`** | Exit 0 on `54a2725c`. **Minified build:** exit 0, 111 files. |
+| 11 | **Mutation** | **4 of 4 killed:** FL3's row with casual clones off; the hub's League card, the League line and the Training line, one mutant each (§5). **The CI fixes: 2 of 2 killed** (§12). |
 | 12 | **Census (FL6)** | **0 ranked groups lock at the flip, 0 players, 0 stale.** Production holds 18 group documents, none in a locking status (§7). |
-| 13 | **Review threshold** | **Over it:** the cumulative diff against `main` is **51 files, about 1,350 lines** (+1,295 / −54 with this report; without it, 50 files, +950 / −54 = 1,004 lines). The file count alone crosses the threshold (10), so **a review session runs before merge**; the line count does not (1,500). BUILD_RULES §2 asks for a review at 10 files or 1,500 lines. |
+| 13 | **Review threshold** | **Over it:** the cumulative diff against `main` is **53 files, 1,553 lines** (+1,487 / −66, this report included; without it, 52 files, +1,041 / −66 = 1,107 lines). The file count crosses the threshold (10), and with this report the line count does too (1,500), so **a review session runs before merge**. BUILD_RULES §2 asks for a review at 10 files or 1,500 lines. |
+| 14 | **The rules job (CI)** | **It was red on the PR: 5 rows in 2 emulator files** (`filmRoomCardAttribution.rules.mjs`, `filmRoomCardReplayOwner.rules.mjs`), which ran with the live flag. Fixed (CI-1, §12): 1 kill-switch row, 2 flag-on twins, 4 rows handed the battle's archetype and run flags-on, 0 deleted. `npm run test:rules` on Linux: **exit 0, 32 files, 633 rows** with both flags on, and the same with both literals `false`. |
+| 15 | **Production check** | **No battle can have its cards refused for good.** The tape day's archetype is written from the same battle field the route hands the store, and nothing changes that field after the battle is created; a battle without one has untagged days, which the route already refuses before the store, flags on or off. No fallback added; no production count needed (§12). |
 
 ---
 
@@ -36,9 +40,16 @@
 | FL2 | The flags stay as kill switches; `LoadoutChooserSheet.jsx` and every flag-off arm stay; replaces item 3 of the A2 report's §16. | Nothing deleted. The same rollback paragraph is in four places: the two flag docstrings, the per-game pin file's header, the armory pin's block in `agentFormFlags.test.js`, and the guard's note. The pin rows' titles say "a kill switch" and name the step. |
 | FL2, rollback | Two steps; the armory never goes off while per-game loadouts are on; a rollback moves a flag and its pin; `DARK_BY_DESIGN` stays out. | §6. The existing pin row (`!PER_GAME_LOADOUT_ENABLED \|\| AGENT_FORM_ARMORY_ENABLED`) is retitled to say it. Step 1 was run on the whole suite (§3). |
 | FL3 | Per-game loadouts never run without casual clones: a pin row with a message that says why. | `perGameLoadoutFlags.test.js:72`, "is on only while casual clones are on (FL3)": `!PER_GAME_LOADOUT_ENABLED \|\| CASUAL_CLONE_CONCURRENCY_ENABLED`, message: "FL3: per-game loadouts never run without casual clones. With CASUAL_CLONE_CONCURRENCY_ENABLED off, every BaggerBomb deploy runs on the ranked record in the League loadout (the BaggerBomb loadout lives only on the clone). Turn PER_GAME_LOADOUT_ENABLED off (with its pin) before casual clones." |
-| FL4 | The refusal's two log lines tell the truth: each a literal ternary on the flag; on, it says the deploy is refused; off, today's text exactly; both reads in `CLIENT_READS`. | `src/services/agentDeploy.js:216`, `:221`: on, "… — refusing the BaggerBomb deploy:"; off, "… — deploying the real agent:", unchanged. Both lines are in `CLIENT_READS`. **The first one does not fold in the build** (§4). |
+| FL4 | The refusal's two log lines tell the truth: each a literal ternary on the flag; on, it says the deploy is refused; off, today's text exactly; both reads in `CLIENT_READS`. | First built as ruled (`8763e57a`): on, "… — refusing the BaggerBomb deploy:"; off, "… — deploying the real agent:", unchanged. The first ternary did not fold in the build (§4). **Replaced by FL4-b's form.** |
 | FL5 | The A2 report's §17.6 readings are accepted as built. | No change. `BackingPreviewScreen.jsx` shows Checking (dev-only). |
 | FL6 | Count the locks before they switch on. | `scripts/per-game-loadout-preflip-census.mjs` and its test; run against production (§7). |
+
+**The fix brief's rulings (Nov 7, 2026), as built (§12):**
+
+| # | Ruling | Built |
+|---|---|---|
+| FL4-b | Take the fold built on the scratch tree, `if (PER_GAME_LOADOUT_ENABLED) try {…} else try {…main's block verbatim…}`, in place of FL4's ternaries, with a one-line comment at the `if` saying why the block is doubled and that the cleanup PR collapses it. | `54a2725c`: `src/services/agentDeploy.js:194-243`. The comment is `:194`; the `else` arm (`:219-243`) is `main`'s block byte for byte. `CLIENT_READS` lists `if (PER_GAME_LOADOUT_ENABLED) try {` in place of the two ternaries, and its shape check admits that line (§4). |
+| CI-1 | The emulator job's red rows get the step-2 dispositions: kill-switch row (flag held `false`), rewrite (flag on, no looser), or delete (only if the subject exists with neither flag setting); list each. | `2623d31e`: 1 kill-switch row, 4 rewrites, 2 flag-on twins, 0 deletes; each listed in §12. |
 
 ---
 
@@ -49,7 +60,11 @@
 | `96f6b43f` | The dispositions of the red rows (§2): test files and two fixtures only. Neutral with today's literals: the 42 files and the bundle test, **43 files, 1,351 rows, exit 0** with both flags off (Linux, `TZ=UTC`). |
 | `8763e57a` | The flip (FL1, FL2's words, FL3, FL4): 6 files, +68 / −34. |
 | `73e142da` | The census (FL6): the script, its test, one `.gitignore` line. |
-| (the last commit) | This report. |
+| `edc7b189` | FL4's comment corrected to what the build measured: the `try` block's ternary does not fold (a comment only). |
+| `845f83d7` | This report, as first pushed. |
+| `2623d31e` | CI-1: the two Film Room emulator files hold the per-game flag; 1 kill-switch row, 2 flag-on twins, 4 rows handed the battle's archetype (§12). |
+| `54a2725c` | FL4-b: the fold (§4), and `CLIENT_READS` with its shape check. |
+| (the last commit) | This report's CI fixes. |
 
 Every line of the source diff that is not a test or a fixture:
 
@@ -57,7 +72,7 @@ Every line of the source diff that is not a test or a fixture:
 |---|---|
 | `src/config/agentFormFlags.js` | The armory's literal → `true`; its docstring (comments) |
 | `src/config/perGameLoadoutFlags.js` | The literal → `true`; its docstring (comments) |
-| `src/services/agentDeploy.js:216`, `:221` | FL4's two ternaries, and one comment |
+| `src/services/agentDeploy.js:194-243` | FL4-b's doubled `try` block: the flag-on arm with the two refusing lines, `main`'s block verbatim as the `else` arm, and one comment |
 | `scripts/per-game-loadout-preflip-census.mjs` | New (FL6) |
 | `.gitignore` | The census report's name |
 
@@ -65,7 +80,7 @@ Every line of the source diff that is not a test or a fixture:
 
 ## §2 The rows that went red
 
-The flip alone (both literals `true` on `main` @ `d09603b2`), full Linux suite: **464 rows red in 42 files** (`Test Files 42 failed | 1264 passed | 8 skipped`, `Tests 464 failed | 28450 passed | 89 skipped`). Two mock gaps caused most of them, not behaviour:
+The flip alone (both literals `true` on `main` @ `d09603b2`), full Linux suite: **464 rows red in 42 files** (`Test Files 42 failed | 1264 passed | 8 skipped`, `Tests 464 failed | 28450 passed | 89 skipped`). **This sweep ran the default suite only** (`vitest run`). The emulator suite (`npm run test:rules`, the `*.rules.mjs` files) is a separate runner the sweep never started, and 5 of its rows were red too; CI found them, and §12 disposes of them. Two mock gaps caused most of the default suite's 464, not behaviour:
 
 - **The hub's suites** mock `firebase/config` as `{}`. With both flags on the hub mounts the per-game scope, whose League lock read (`src/services/leagueLockService.js`) calls Firestore's `collection()` on that `{}` and throws. That one throw took 277 rows down in 8 hub files.
 - **The League lobby suites** mock `tournamentGroupService` without `subscribeMyGroupOrFailure`, the failure-aware read the lobbies use with the flags on (A2R-1). 37 rows in 5 files.
@@ -149,44 +164,42 @@ The flip alone (both literals `true` on `main` @ `d09603b2`), full Linux suite: 
 
 ### Kill switch and flags on (the builds)
 
-Unminified Linux builds (`vite build --minify false`, WSL, Node 20.20.2, lockfile `40382e64edb6` on every tree).
+Unminified Linux builds (`vite build --minify false`, WSL, Node 20.20.2, lockfile `40382e64edb6` on every tree), on the code head `54a2725c` (after FL4-b, §4).
 
-**A raw `diff -rq` is not the measure here, and why.** With any one chunk changed, its content hash changes, so every chunk that imports it is renamed too: the raw `diff -rq` (maps excluded) lists 99 entries for the kill switch and 103 for flags on, almost all of them "only in A / only in B" pairs of the same file under two names. So each pair of trees was compared with the content hashes masked in file names and in the text, and every non-map file paired with its masked twin. (A first masked pass reported 0 differences for flags on: it keyed files by masked name, and two `index-*.js` files collided. That 0 was wrong, which the string search below showed; the pairing that replaced it matches by name and content.)
-
-**Kill switch:** the code head `73e142da` with only the two literals set back to `false`, against `main` @ `d09603b2`.
+**Kill switch:** `54a2725c` with only the two literals set back to `false`, against `main` @ `d09603b2`.
 
 | | Result |
 |---|---|
-| Non-map files | 55 and 55 |
-| Identical once hashes are masked | **54** |
-| Differing | **1, the entry chunk (`index-*.js`), by 2 lines** |
-| Docstring comments in the diff | none (esbuild drops them) |
+| Non-map files | 55 and 55 (107 files each) |
+| Raw `diff -rq`, source maps excluded | **0 entries: 0 of 55 non-map files differ**, content hashes in the names included |
+| The entry chunk | `index-ok8k4FzL.js` in both, so its content hash too |
+| Maps | 49 differ: 48 only by the tree's directory in `sources`; the entry's map also in `sourcesContent` and `mappings`, because `agentDeploy.js`'s source text changed (the doubled block) while its emitted code did not (`vite.config.js` sets `sourcemap: true`) |
 
-```diff
-+ const PER_GAME_LOADOUT_ENABLED = false;
-- console.warn("[Deploy] casual clone ensure did not return a clone — deploying the real agent:", cloneRes.status, cloneData?.error || "");
-+ console.warn(PER_GAME_LOADOUT_ENABLED ? "[Deploy] casual clone ensure did not return a clone — refusing the BaggerBomb deploy:" : "[Deploy] casual clone ensure did not return a clone — deploying the real agent:", cloneRes.status, cloneData?.error || "");
-```
-
-**This is not the 0 the brief asks for.** Both lines are FL4's first ternary, which does not fold (§4). With the flags off the app logs today's words: the ternary picks them at run time.
-
-**Flags on:** the code head `73e142da` against `main` with only the two literals set to `true`.
+**Flags on:** `54a2725c` against `main` with only the two literals set to `true`. The entry chunk changes, so its content hash changes and every chunk that imports it is renamed: the raw `diff -rq` (maps excluded) lists 103 entries, all "only in A / only in B" pairs of the same file under two names. So the non-map files were paired by their masked name **and** their masked content (hashes masked in names and in the text), which keeps the two `index-*.js` files from colliding.
 
 | | Result |
 |---|---|
 | Non-map files | 57 and 57 |
-| Identical once hashes are masked | **56** |
-| Differing | **1, the entry chunk, where `agentDeploy.js` lives, by 3 lines** |
+| Twins (same masked name and masked content) | **56** |
+| Left over | **1, the entry chunk** (`index-CC_2ttPZ.js` → `index-mv_AsICR.js`), **by exactly FL4's two strings** |
 
 ```diff
-+ const PER_GAME_LOADOUT_ENABLED = true;
-- console.warn("[Deploy] casual clone ensure did not return a clone — deploying the real agent:", cloneRes.status, cloneData?.error || "");
-+ console.warn(PER_GAME_LOADOUT_ENABLED ? "[Deploy] casual clone ensure did not return a clone — refusing the BaggerBomb deploy:" : "[Deploy] casual clone ensure did not return a clone — deploying the real agent:", cloneRes.status, cloneData?.error || "");
-- console.warn("[Deploy] casual clone ensure errored — deploying the real agent:", err?.message || err);
-+ console.warn("[Deploy] casual clone ensure errored — refusing the BaggerBomb deploy:", err?.message || err);
+-        console.warn("[Deploy] casual clone ensure did not return a clone — deploying the real agent:", cloneRes.status, cloneData?.error || "");
++        console.warn("[Deploy] casual clone ensure did not return a clone — refusing the BaggerBomb deploy:", cloneRes.status, cloneData?.error || "");
+-      console.warn("[Deploy] casual clone ensure errored — deploying the real agent:", err?.message || err);
++      console.warn("[Deploy] casual clone ensure errored — refusing the BaggerBomb deploy:", err?.message || err);
 ```
 
-So only `agentDeploy.js`'s chunk differs, and only by FL4's two strings, **but one of them ships as the unfolded ternary, with the flag's declaration beside it.** The minified build (`73e142da`) carries the same: both of the first line's strings are in the shipped entry chunk.
+No ternary and no flag declaration ship.
+
+**Before FL4-b** (the code head as first pushed, `73e142da`): the kill-switch build differed from `main` by 2 entry-chunk lines (FL4's first ternary, unfolded, and `const PER_GAME_LOADOUT_ENABLED = false;`), and the flags-on build by 3 (the same two and the second string). §4 says why.
+
+### The Firestore rules suite, both flag states
+
+`npm run test:rules` (the Firestore emulator; WSL, Temurin JDK 21.0.13, Node 20.20.2), the `firestore rules + emulator suites` job's own command:
+
+- **Both flags on** (the code head `54a2725c`): **exit 0, `Test Files 32 passed (32)`, `Tests 633 passed (633)`**, 188 s. 633 is CI's 631 and the two flag-on twins (§12).
+- **The kill-switch state** (both literals `false`, on a scratch tree at `54a2725c`): **exit 0, 32 files, 633 rows**, 165 s.
 
 ### One-flag rollback
 
@@ -194,33 +207,32 @@ On a scratch tree at `73e142da`: `PER_GAME_LOADOUT_ENABLED = false` and its pin 
 
 ### Suite, lint, minified build
 
-- **Full Linux suite** (WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, 8 workers):
-  - on the code head `73e142da`: **exit 0**, `Test Files 1307 passed | 8 skipped (1315)`, `Tests 28927 passed | 89 skipped (29016)`, vitest's Duration 293 s;
-  - on the flip commit `8763e57a`: exit 0, `Test Files 1306 passed | 8 skipped (1314)`, `Tests 28915 passed | 89 skipped (29004)`, 304 s. The 12 rows between the two are the census test's.
+- **Full Linux suite** (WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, 8 workers), the `vitest (unit)` job's command with this machine's worker count:
+  - on the code head `54a2725c`: **exit 0**, `Test Files 1307 passed | 8 skipped (1315)`, `Tests 28927 passed | 89 skipped (29016)`, vitest's Duration 280 s;
+  - before the CI fixes, on `73e142da`: exit 0, the same counts, 293 s; on the flip commit `8763e57a`: exit 0, `Test Files 1306 passed | 8 skipped (1314)`, `Tests 28915 passed | 89 skipped (29004)`, 304 s. The 12 rows between the two are the census test's.
 - **Commit 1 alone** (`96f6b43f`, today's literals): the 42 red files and the bundle test, 43 files, 1,351 rows, exit 0. The dispositions are neutral with the flags off.
-- **`lint:gate`** on `73e142da`: exit 0.
-- **Minified build** (`vite build`) of `73e142da`: exit 0, 111 files. `edc7b189` after it changes one comment in `agentDeploy.js` (esbuild drops comments), and the pushed head adds only this report. The minified build of the exact pushed head ran last, after this text was final; its result is in the PR description.
+- **`lint:gate`** on `54a2725c`: exit 0 (and on `73e142da` before it).
+- **Minified build** (`vite build`) of `54a2725c`: exit 0, 111 files. The pushed head adds only this report; the checks of the exact pushed head ran last, after this text was final, and their results are in the PR description.
 
 ---
 
-## §4 FL4 and the build: why one ternary does not fold
+## §4 FL4 and the build: the fold (FL4-b)
 
-FL4 is built as ruled (`src/services/agentDeploy.js:216`, `:221`):
+**Why the first build did not fold.** FL4 was first built as ruled, two literal ternaries on the flag (`8763e57a`):
 
 ```js
 console.warn(PER_GAME_LOADOUT_ENABLED ? '[Deploy] casual clone ensure did not return a clone — refusing the BaggerBomb deploy:' : '[Deploy] casual clone ensure did not return a clone — deploying the real agent:', cloneRes.status, cloneData?.error || '');
 console.warn(PER_GAME_LOADOUT_ENABLED ? '[Deploy] casual clone ensure errored — refusing the BaggerBomb deploy:' : '[Deploy] casual clone ensure errored — deploying the real agent:', err?.message || err);
 ```
 
-Every other client read of the two flags is a literal ternary that Rollup folds, which is what keeps a rolled-back build identical to `main`. **These two sit in a `try … catch`.** The first is inside the `try` block (the clone answer's `else` branch), the second inside the `catch`. Rollup's default `treeshake.tryCatchDeoptimization` keeps everything inside a `try` block as written, so the first ternary is emitted whole, and the flag module's `const` comes into the entry chunk with it. The `catch` block is not deoptimized, so the second folds. The minifier does not fold it either (the minified entry carries both strings).
+Every other client read of the two flags is a literal ternary that Rollup folds, which is what keeps a rolled-back build identical to `main`. **These two sat in a `try … catch`.** The first was inside the `try` block (the clone answer's `else` branch), the second inside the `catch`. Rollup's default `treeshake.tryCatchDeoptimization` keeps everything inside a `try` block as written, so the first ternary was emitted whole, and the flag module's `const` came into the entry chunk with it. The `catch` block is not deoptimized, so the second folded. The minifier did not fold it either. Nothing a player saw changed (the logs said the right words either way), but the kill-switch build differed from `main` by 2 lines and the live build shipped one unused string.
 
-**What it changes:** nothing a player sees. Flags on, the line reads "… refusing the BaggerBomb deploy:"; flags off, "… deploying the real agent:", exactly today's. What it costs is the build-level proof: the kill-switch build differs from `main` by those 2 lines, and the flags-on build carries one unused string.
-
-**A form that folds, measured on a scratch tree (not in the PR).** The choice moves outside the `try`, as a statement-level literal `if` with brace-less arms, and `main`'s `try … catch` block stays verbatim as the `else` arm:
+**The fold, built (FL4-b, `54a2725c`, `src/services/agentDeploy.js:194-243`).** The choice moves outside the `try`, as a statement-level literal `if` with brace-less arms, and `main`'s `try … catch` block stays verbatim as the `else` arm:
 
 ```js
+// FL4-b (Nov 7 2026): doubled so the flag picks a whole try (Rollup never folds a ternary inside one); the cleanup PR collapses it to the first arm.
 if (PER_GAME_LOADOUT_ENABLED) try {
-  …main's block, with the two refusing lines…
+  …main's block, with the two lines saying the deploy is refused…
 } catch (err) {
   …
 } else try {
@@ -230,22 +242,23 @@ if (PER_GAME_LOADOUT_ENABLED) try {
 }
 ```
 
-Rollup folds a literal `if` outside a `try` by cutting `if (…) … else ` and keeping the other arm's exact text. (A braced arm would leave a bare `{ }` block and break identity again.) Measured, on `73e142da` with only this change:
+Rollup folds a literal `if` outside a `try` by cutting `if (…) … else ` and keeping the other arm's exact text. (A braced arm would leave a bare `{ }` block and break identity again.) It is the form measured on the scratch tree (the diff saved at `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261107_FL4_fold_variant.diff`), with the one-line comment the ruling asks for in place of `edc7b189`'s, which described the ternaries.
 
 | Check | Result |
 |---|---|
-| Flags off vs `main` | **byte-identical**: the same entry file name (`index-ok8k4FzL.js`, so its content hash too), and 54 of 54 other non-map files twins |
-| Flags on vs `main` + literals | only the entry chunk differs, by **exactly FL4's two strings**, no ternary and no flag declaration |
-| `lint:gate` on the file | exit 0 (the gate enforces `no-undef` and rules-of-hooks; `curly` is not in it) |
-| Cost | +24 lines in `agentDeploy.js`: the 24-line block duplicated, as A2's desktop lobby duplicated its `<DeskLobby>` arm. The cleanup PR deletes the flag-off arm. |
-
-The diff is saved at `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261107_FL4_fold_variant.diff`. In the PR it would also change `CLIENT_READS`' two FL4 entries to the one `if (PER_GAME_LOADOUT_ENABLED) try {` line and widen that row's shape check to allow it. **It is not in the PR because it is not FL4's ruled form (a literal ternary).** It is the founder question (§10).
+| The `else` arm | `main`'s block byte for byte (compared after the edit: 1,485 characters each, equal) |
+| Flags off vs `main` | **0 of 55 non-map files differ** (raw `diff -rq`, §3) |
+| Flags on vs `main` + literals | only the entry chunk differs, by **exactly FL4's two strings**, no ternary and no flag declaration (§3) |
+| `CLIENT_READS` | `perGameLoadoutFlags.test.js` lists `if (PER_GAME_LOADOUT_ENABLED) try {` in place of the two ternaries; the shape check admits a line ending `) try {`; the doc comment says why |
+| `lint:gate` | exit 0 (the gate enforces `no-undef` and rules-of-hooks; `curly` is not in it) |
+| Rows | the full suite (§3). `ceremonyDeployTarget.test.jsx` drives both arms through its flag getter: flag on, a failed ensure refuses with `markCloneFallback` called (`:147`); flag off, the fallback deploys the ranked agent with its telemetry (`:134`) |
+| Cost | +24 lines in `agentDeploy.js`: the 24-line block doubled, as A2's desktop lobby doubled its `<DeskLobby>` arm. The cleanup PR collapses it to the first arm (§6). |
 
 ---
 
 ## §5 Mutation
 
-Each mutant is one edit on the scratch tree `~/pd-ci-flipx` at the code head `73e142da`, checked to land exactly once. The run is the files vitest relates to the edited module (`vitest related`, the pin and census files among them), `TZ=UTC`, 8 workers, with a control of the same set first. Killed means a non-zero exit. The tree is reset after each.
+Each mutant is one edit on the scratch tree `~/pd-ci-flipx` at the then code head `73e142da`, checked to land exactly once. The run is the files vitest relates to the edited module (`vitest related`, the pin and census files among them), `TZ=UTC`, 8 workers, with a control of the same set first. Killed means a non-zero exit. The tree is reset after each.
 
 | # | Mutant | Edit | Run | Result | Rows that caught it |
 |---|---|---|---|---|---|
@@ -254,7 +267,7 @@ Each mutant is one edit on the scratch tree `~/pd-ci-flipx` at the code head `73
 | M2 | the League line reads every known week as open | `const lock = leagueLockOf([]);` (`League/LeagueLoadoutLine.jsx:56`) | 317 rows (control green) | **killed**, 5 rows | `LeagueLoadoutLine.jsdom` (locked by the ranked group; the phone League tab locked by the active group) and `LeagueLoadoutLine.lobbies.jsdom` (both real lobbies: Checking, then Open, then Locked; the context reaching the slot) |
 | M3 | the Training line draws nothing | `TrainingLoadoutLine` returns null for any loadout (`LeagueLoadoutLine.jsx:86`) | 317 rows (control green) | **killed**, 3 rows | `LeagueLoadoutLine.jsdom`: the Training tab's line, the phone Training tab, the desktop Training panel |
 
-**4 of 4 killed.** The rows that caught M1 to M3 are A2's flag-on rows, which hold the flags on in their own mocks. None of this PR's 186 rewritten rows assert the cards or the lines (they are the hub's and the lobbies' other behaviour, made to run with the flags on); with the flags now live those A2 rows are the shipped state's guard, and the mutants show they bite. Two more spot mutants were run on the census (§7).
+**4 of 4 killed.** The rows that caught M1 to M3 are A2's flag-on rows, which hold the flags on in their own mocks. None of this PR's 186 rewritten rows assert the cards or the lines (they are the hub's and the lobbies' other behaviour, made to run with the flags on); with the flags now live those A2 rows are the shipped state's guard, and the mutants show they bite. Two more spot mutants were run on the census (§7), and the CI fixes' two (C1, C2) are in §12.
 
 ---
 
@@ -263,7 +276,13 @@ Each mutant is one edit on the scratch tree `~/pd-ci-flipx` at the code head `73
 1. **`PER_GAME_LOADOUT_ENABLED` alone back to `false`** (`src/config/perGameLoadoutFlags.js:39`), with its pin (`perGameLoadoutFlags.test.js`, "is live: true since the flip …" → `toBe(false)`): A1's armory with one loadout. The full suite is green this way (§3).
 2. **Both flags back to `false`**, each with its pin (`agentFormFlags.test.js`, "the armory is live …" → `toBe(false)`): the app as it was before the flip (§3 and §4 for the build).
 
-The armory never goes off while per-game loadouts are on: the pin row fails if it does. A rollback moves a flag and its pin; the `DARK_BY_DESIGN` entries stay out (the guard's rows assert they are gone). Per-game loadouts must also go off before casual clones do (FL3).
+The armory never goes off while per-game loadouts are on: the pin row fails if it does. A rollback moves a flag and its pin; the `DARK_BY_DESIGN` entries stay out (the guard's rows assert they are gone). Per-game loadouts must also go off before casual clones do (FL3). **A rollback runs `npm run test:rules` as well as the default suite** (the cleanup checklist's line 3, below): with both flags off, the emulator suite was green on a scratch tree (§3).
+
+**The cleanup PR's checklist** (for when the kill switches are retired; FL2 keeps them for now). The flip report had no such list until the CI fixes, so it starts here:
+
+1. Collapse FL4-b's doubled block in `src/services/agentDeploy.js` to its first arm, the one that says the deploy is refused (§4).
+2. Delete `LoadoutChooserSheet.jsx`, the flag-off arms listed in `perGameLoadoutFlags.test.js` `CLIENT_READS`, and the kill-switch rows that guard them (the A2 report's §16 item 3, which FL2 deferred).
+3. **Any flag change runs `npm run test:rules` as well as the default suite.** The emulator suites hold flag-dependent rows too, and the default suite never runs them: the flip's red-row sweep missed 5 that way (§12).
 
 ---
 
@@ -292,7 +311,7 @@ node scripts/per-game-loadout-preflip-census.mjs
 
 ## §8 The smoke branch
 
-`claude/armory-flip-smoke` @ `f2e826e6`: one commit, "SMOKE ONLY, NEVER MERGE", whose parent is the flip's code head `73e142da` (the PR's head adds only this report on top). Built by git plumbing (a temporary index and `commit-tree`), so it touches exactly two files:
+`claude/armory-flip-smoke` @ `f2e826e6`: one commit, "SMOKE ONLY, NEVER MERGE", whose parent is the flip's code head `73e142da` (the code head before the CI fixes; their two commits change test files, a log line's form and the census row, nothing a screen shows, so the smoke was not rebuilt). Built by git plumbing (a temporary index and `commit-tree`), so it touches exactly two files:
 
 - `src/screens/LoadoutStatesSmoke.jsx`, brought across from `claude/armory-a2-smoke` @ `06e5ff02` and refreshed to the current copy: the League week is Nov 9–13, so a dated lock reads "Fri Nov 13"; the League lines pass `groupKnown`, which they now need (A2R-1).
 - `src/App.jsx`: `?loadoutStates=1` routes to it (10 lines, as the A2 smoke had them). No corner readout this time, and both flags are already on at its parent.
@@ -319,7 +338,7 @@ Nothing on the page writes: the fixture agent has no id, the book rows and Equip
 
 ## §9 iPhone checklist (on the flip preview, then the smoke page)
 
-1. **The flip preview, signed in:** open the Command Center. The hero is the bare Shadow, breathing. Tap Loadout: two cards, BaggerBomb on top, League under it.
+1. **The flip preview, signed in** (https://trade-seven-git-claude-armory-flip-fais-projects-bc179554.vercel.app, the PR's own preview from Vercel's comment on the PR; it serves the branch's latest push): open the Command Center. The hero is the bare Shadow, breathing. Tap Loadout: two cards, BaggerBomb on top, League under it.
 2. **The League card:** if you have a ranked group for next week, it is locked and reads "Locked until the week is scored, after the close on Fri Nov 13."; otherwise it is open. (The census found no ranked group in any locking status tonight, so expect open unless you register first.)
 3. **Change BaggerBomb's armor and hold Deploy:** the game wears the new armor.
 4. **The League tab:** its line reads Checking for a moment, then open or locked. **The Training tab** says it uses your League loadout, and there is no Customize loadout button.
@@ -329,11 +348,7 @@ Nothing on the page writes: the fixture agent has no id, the book rows and Equip
 
 ## §10 Founder question
 
-**Q1. FL4's first log line: keep the ternary, or fold it?** The ruling's literal ternary is built, and it logs the right words either way. But the first of the two sits inside a `try` block, where the build cannot fold it, so the rolled-back build is not byte-for-byte `main`'s (2 lines in the entry chunk, §3) and the live build ships one unused string. Pick one:
-
-- **(a) Fold it (recommended).** Swap in the form measured in §4: the rolled-back build is then `main`'s byte for byte and the live build carries only the refusing words, at the cost of 24 duplicated lines until the cleanup PR. One commit on this PR; the build checks re-run.
-- **(b) Keep it as built.** Nothing else changes; the logs are right either way, and the cleanup PR that removes the flag-off arms makes the line plain. The rollback proof stays "54 of 55 files, and 2 named lines".
-- **(c) Change only the second line** (the one in `catch`, which folds) and leave the first as today: the rolled-back build is `main`'s exactly, but while the flags are on the first line says "deploying the real agent" when it does not. Not recommended: it is what FL4 set out to fix.
+**Q1 (FL4's first log line: keep the ternary, or fold it?) is answered: FL4-b, fold it** (option (a), Nov 7, 2026). Built in `54a2725c` (§4). No question is open.
 
 ---
 
@@ -343,3 +358,89 @@ Nothing on the page writes: the fixture agent has no id, the book rows and Equip
 - **WSL:** `~/pd-ci-flip` (the suites, `lint:gate`, the flip's builds), `~/pd-ci-flipm` (`main`'s builds, the smoke build) and `~/pd-ci-flipx` (the discovery runs, the kill-switch build, the mutants, the FL4 variant, the one-flag rollback), detached worktrees of `~/pd-ci` with `node_modules` linked to `~/pd-af0` (lockfile `40382e64edb6` on every tree). Node 20.20.2, `TZ=UTC`, 8 workers, each full suite under `flock /tmp/pd-suite.lock`. Runs went under `~/pd-flip-runs/armory/` (the folder `~/pd-flip-runs` already held another session's Oct 28 files, left alone).
 - **Cleanup:** the three trees and `~/pd-flip-runs/armory/` were removed after the last build, under the suite lock (`unlink` each `node_modules` link, `git -C ~/pd-ci worktree remove --force`, `worktree prune`). `~/pd-ci`, `~/pd-ci-af1`, `~/pd-af0` and other sessions' trees were not touched. The space freed is in the PR description.
 - **Scripts** in the session scratchpad (not committed): the sync, step, list, build, compare, mutant, variant, rollback and cleanup runners, the dispositions generator, and the smoke composer.
+
+**The CI fixes (the second session):**
+
+- **Windows:** worktree `C:/Users/fashr/portfolio-duel/.claude/worktrees/armory-flip-fixes-0b868c`, branch `claude/armory-flip-fixes-0b868c`, reset to the PR head `845f83d7` and pushed by refspec to `claude/armory-flip`. The census pin file and the two deploy-ceremony files ran there as a first check (3 files, 68 rows, exit 0).
+- **WSL:** `~/pd-ci-flipfx` (the code head: the full suite, the rules suite, `lint:gate`, both builds), `~/pd-ci-flipfxm` (`main` @ `d09603b2`: its build, and its build with the two literals `true`) and `~/pd-ci-flipfxx` (the kill-switch state: its rules suite and build; then the mutants), detached worktrees of `~/pd-ci` with `node_modules` linked to `~/pd-af0` (lockfile `40382e64edb6`, checked inside WSL on every tree). Node 20.20.2, JDK 21.0.13, `TZ=UTC`, 8 workers, the full suite under `flock /tmp/pd-suite.lock` (it waited behind another session's suite). Runs under `~/pd-flipfx-runs`.
+- **Cleanup:** the three trees and `~/pd-flipfx-runs` are removed after the last check, under the suite lock; the space freed is in the PR description.
+
+---
+
+## §12 CI fixes (Nov 7, 2026)
+
+**Brief:** the founder's fix brief of Nov 7, 2026 ("Flip fixes: the red emulator job, FL4's fold, and the report"), with rulings FL4-b and CI-1. **Session:** Claude Opus 5.5, a fresh session. `git fetch origin` first: the PR head was `845f83d7`, as the brief required, and `origin/main` was still `d09603b2`, so there was nothing to merge (fetched again before the push: unchanged). Fenced files: none edited, none called.
+
+### What failed
+
+`gh pr checks 1033` before the fixes listed **one failing check, `firestore rules + emulator suites`** (run `42435192524`, job `128592419410`, 2 m 28 s). The others passed: `vitest (unit)` (15 m 52 s), Vercel, Vercel Preview Comments, and both Socket Security checks. The job's log (`gh run view 42435192524 --log-failed`): `Test Files 2 failed | 30 passed (32)`, `Tests 5 failed | 626 passed (631)`. Nothing beyond these 5 rows was red.
+
+| # | File and row | Line in CI's log | What it saw |
+|---|---|---|---|
+| 1 | `test/rules/filmRoomCardAttribution.rules.mjs`, "the archetype checks read the parent: the clone on the tape's archetype, the parent on another → 409 archetype_changed, …" | `:176` | `expected 200 to be 409`: the route filed the card |
+| 2 | the same file, "a parent-filed Watch card lists a clone day's recurrence; …" | `:234` (its `createCard`) | `archetype_changed` thrown at `api/_utils/filmRoom/cardStore.js:280` |
+| 3 | `test/rules/filmRoomCardReplayOwner.rules.mjs`, "another user's ownerId, nothing else changed → 409 op_conflict …" | `:71` (the `file` helper, `:65`) | the same |
+| 4 | the same file, "no ownerId at all → the same refusal; …" | `:84` | the same |
+| 5 | the same file, "the cap counts the caller's own entries: …" | `:97` | the same |
+
+### Why (the founder's reading, confirmed from the code)
+
+- **Neither file mocked `src/config/perGameLoadoutFlags.js`**, so both ran with the live flag, now `true`. VERIFIED (both files at `845f83d7`). The build's red-row sweep ran only the default suite; these files end in `.rules.mjs` and run only under `npm run test:rules` (`vitest.rules.config.mjs:15`).
+- **Rows 2 to 5 call `createCard` directly without `battleArchetype`.** With the flag on, the store's check is `payload.archetypeCodeId !== battleArchetype` (`cardStore.js:280`), and `battleArchetype` defaults to `null` (`cardStore.js:270`), so every create compared the tape's `momentum_chaser` with `null`: 409 `archetype_changed`, `current: null`. VERIFIED.
+- **Row 1 asserts today's rule**: the tape day against the attribution agent's (the parent's) current archetype. Under A2's R4 the day is compared with the battle's own archetype, which the route hands in (`api/film-room/card.js:206`: `battle?.agentContext?.archetype ?? null`) and which is the tape's, so the route filed the card: 200. VERIFIED.
+
+### Each row's disposition (CI-1)
+
+Both files now hold the flag in a getter mock, the default suite's pattern (`filmRoomCardAttribution.rules.mjs:37-41`, `filmRoomCardReplayOwner.rules.mjs:34-35`), so a rollback reddens only the pin.
+
+| Row | Disposition | What changed |
+|---|---|---|
+| 1, "the archetype checks read the parent" (`filmRoomCardAttribution.rules.mjs:191`) | **Kill-switch row** (the flag held `false`; the file's `KILL_SWITCH_ROWS`) | Nothing in the row. It keeps guarding the rule a rollback restores. |
+| 2, the counter's Watch card (`filmRoomCardAttribution.rules.mjs:268`) | **Rewrite** (flag on, no looser) | `createCard` gets the battle's own archetype, read from the battle document and passed as the route passes it (`:276-282`). Assertions unchanged. |
+| 3 to 5, the replay-owner rows (`filmRoomCardReplayOwner.rules.mjs:79`, `:92`, `:105`) | **Rewrite** (flag on, no looser) | The `file` helper hands the store the battle's own archetype, as the route would (`:73-75`). Assertions unchanged. Their subject is the replay and the cap. |
+| new: "flag on (A2's R4 and R6): the tape day's archetype is the battle's own → …" (`filmRoomCardAttribution.rules.mjs:211`) | **Flag-on twin** of row 1 | Through the route, on the emulator: the clone's battle and its day on `momentum_chaser`, the parent on `guardian` → 200, filed under the parent with the day's archetype, `open: 0`; the counter reads it shelved at once (R6: neither loadout wears it) with open 0; nothing under the clone. |
+| new: "flag on (A2's R4): a tape day whose archetype is not the battle's own → …" (`:226`) | **Flag-on twin** of row 1 | The battle's own archetype set to `guardian` while its day records `momentum_chaser`, with the parent and the clone on `momentum_chaser` → 409 with exactly `{ error: 'archetype_changed', message, archetypeCodeId: 'momentum_chaser', current: 'guardian' }`; nothing under the parent or the clone. |
+| — | **Delete** | None: every row's subject exists with one flag setting or the other. |
+
+The attribution file's `beforeAll` also asserts that the fixture battle and its tape day both record `momentum_chaser` (`:133-134`), so the twins cannot pass on a fixture that changed under them.
+
+### The production check
+
+**The question.** The route passes `battle?.agentContext?.archetype ?? null` (`api/film-room/card.js:206`). With the flag on, a battle with a tape day but no `agentContext.archetype` would have every card from that day refused, for good.
+
+**Finding: it cannot happen, so no fallback was added and no production count was run (the code settles it).**
+
+1. **The tape day's archetype is written from the same field.** The tagger takes `tags.inputs.archetypeCodeId` from `str(battle?.agentContext?.archetype)` (`api/_utils/filmTape/tapeTags.js:200`; `str` keeps a non-empty string, `:83`), over the battle document re-read inside the tape write's own transaction (`api/_utils/filmTape/writeTapeDay.js:142-150`). The route reads the same raw document (`api/film-room/card.js:142` → `api/_utils/filmTape/tapeSources.js:26-30`) and hands the store the same field (`card.js:206`). VERIFIED.
+2. **A battle without an archetype has no card to refuse.** With none (or `'unknown'`, which the registry does not know: `api/_utils/archetypeRegistry.js:123`), the tagger resolves no thresholds and writes `items: null` with the tags' coverage unavailable (`tapeTags.js:204-206`, `:451-455`). The route then refuses the day, 409 `tags_unavailable` (`card.js:94`), before the store is reached, with the flag on or off, as it does today. VERIFIED.
+3. **Nothing changes the field after the battle is created.** `agentContext.archetype` is written once, by `createAgentBattle` (`api/_utils/agentBattleService.js:193`, `agentData.archetype || 'unknown'`; read, not edited), which both deploy paths call (`api/agent/decide.js:964`, `:1554`) and which commits through `commitBattleDocWithPin` (`api/_utils/compositionGenerationFence.js:167-170`). A client cannot create a battle or touch `agentContext` (`firestore.rules:475-480`: the owner's update is limited to ten other fields; create and delete are `false`). No server path updates it: a search of every non-test `agentContext` line under `api/` (136) finds reads, `createAgentBattle`'s literal, and `manifestDerivedBattleView` (`api/_utils/shadowAssemblyCapture.js:142`), which builds a copy for a capture and writes nothing back. VERIFIED by search.
+4. **The dates, for the record:** battles have carried the field since `c315707d` (Mar 25, 2026); tape days began with `7f29ae6e` (Sep 27, 2026) and tags with `ec3fd0df` (Oct 14, 2026), which has read this field since its first commit. VERIFIED (`git log -S`).
+
+So every day that reaches `createCard` was tagged from its battle's own archetype, and the route hands the store the same value: the flag-on check agrees for every real day. Its 409 guards a day and a battle that disagree, which the second twin pins.
+
+### Mutation
+
+On `~/pd-ci-flipfxx` at `54a2725c`: each mutant is one edit, checked to land exactly once; the file is restored from `git show HEAD:path` after each run and the tree confirmed clean. Each run is the two emulator files (`firebase emulators:exec --only firestore --project demo-tradeseven-rules "vitest run --config vitest.rules.config.mjs test/rules/filmRoomCard"`) and the default suite's three card-store files (`cardStore.test.js`, `cardStore.perGame.test.js`, `api/film-room/card.test.js`), `TZ=UTC`. Killed means a non-zero exit. **Control** (unmutated): emulator 2 files, 13 rows, exit 0; default 3 files, 74 rows, exit 0.
+
+| # | Mutant | Edit (`cardStore.js:280`) | Emulator | Default suite |
+|---|---|---|---|---|
+| C1 | the store compares with the parent's archetype while the flag is on | `… ? payload.archetypeCodeId !== battleArchetype : …` → `… !== agent.archetype : …` | **killed**: both flag-on twins (2 of 13 rows) | killed: 6 rows of `cardStore.perGame.test.js` |
+| C2 | the store uses the flag-on check whatever the flag | the test `PER_GAME_LOADOUT_ENABLED ?` → `true ?` | **killed**: the kill-switch row (1 of 13) | killed: the 22 kill-switch rows (20 in `cardStore.test.js`, 2 in `card.test.js`) |
+| — | removing the production check's fallback | none was added (above) | — | — |
+
+**2 of 2 killed.**
+
+### The checks, on the code head `54a2725c`
+
+| Check | Result |
+|---|---|
+| `lint:gate` (both CI jobs' first gate) | exit 0 |
+| Full Linux suite (the `vitest (unit)` job's command, 8 workers, `flock`, `TZ=UTC`) | **exit 0**, 1,315 files, 29,016 rows, 0 failed, 280 s |
+| `npm run test:rules` (the `firestore rules + emulator suites` job's command), both flags on | **exit 0**, 32 files, 633 rows |
+| `npm run test:rules`, both literals `false` | **exit 0**, 32 files, 633 rows |
+| Kill-switch build vs `main` | **0 of 55** non-map files differ (raw `diff -rq`, maps excluded) |
+| Flags-on build vs `main` + literals | 56 of 57 twins; the entry chunk by exactly FL4's two strings |
+| Minified build | exit 0, 111 files |
+
+### The report
+
+This section; `edc7b189` in §1's table; the rules suite in both flag states in §3; FL4-b in §0, §4 and §10; the PR's own preview link in §9's step 1; and the cleanup PR's checklist in §6, which the report did not have, so it starts there with the line the brief asks for (any flag change runs `npm run test:rules` as well as the default suite).
