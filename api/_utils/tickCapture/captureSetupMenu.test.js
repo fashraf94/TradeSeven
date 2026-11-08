@@ -7,11 +7,11 @@
 // would reject is contained as the error form — never the body's `rejectedFields`, never the shared
 // fault text. The context's setter is inert on the NOOP and never writes `faulted`.
 
-import { describe, it, expect } from 'vitest';
-import { buildCaptureDocuments, admitOptionalSetupMenu, approxBytes, resolveBodyHolder } from './captureWriter.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { buildCaptureDocuments, admitOptionalSetupMenu, approxBytes, resolveBodyHolder, finalizeTickCapture } from './captureWriter.js';
 import { createTickCaptureContext, NOOP_TICK_CAPTURE, runWithTickCaptureScope } from './captureContext.js';
 import { buildUniverse, findFreeText } from './captureSerializer.js';
-import { TICK_CAPTURE_BODY_DOC_MAX_BYTES } from './captureConfig.js';
+import { TICK_CAPTURE_BODY_DOC_MAX_BYTES, TICK_CAPTURE_DEADLINE_MS } from './captureConfig.js';
 import { composeSetupMenuBlock } from '../setupMenuLabels/compose.js';
 import { candidatesOf } from '../setupMenuLabels/pool.js';
 import { describeRuleSet } from '../setupEvaluator/thresholds.js';
@@ -50,6 +50,14 @@ function blockOf(hot = SYMBOLS, results = {}) {
 }
 
 describe('absent unless set (row 5.8 at the writer)', () => {
+  it('F4 a null block is the omission the composer returns: the key is removed and the record has no block', async () => {
+    const ctx = await tick({ block: blockOf() });
+    expect(Object.hasOwn(ctx.state, 'setupMenu')).toBe(true);
+    ctx.setupMenu(null);
+    expect(Object.hasOwn(ctx.state, 'setupMenu')).toBe(false);
+    expect(Object.hasOwn((await docs(ctx)).permanent, 'setupMenu')).toBe(false);
+    expect(ctx.state.faulted).toBeNull();
+  });
   it('a tick that set no block has no `setupMenu` key and no state key', async () => {
     const ctx = await tick();
     expect(Object.hasOwn(ctx.state, 'setupMenu')).toBe(false);
@@ -189,15 +197,64 @@ describe('Correction C — malformed and error-form blocks are contained locally
 });
 
 describe('the context setter never writes the shared fault text', () => {
-  it('a block is set (last call wins); a non-object is ignored; `faulted` stays null', async () => {
+  it('a block is set (last call wins); a non-object is ignored; null (the omission, F4) removes it; `faulted` stays null', async () => {
     const ctx = await tick();
     const a = blockOf(['AAPL']);
     const b = blockOf(['MSFT']);
     ctx.setupMenu(a);
     ctx.setupMenu(b);
-    ctx.setupMenu(null);
     ctx.setupMenu('text');
+    ctx.setupMenu(undefined);
+    ctx.setupMenu([b]);
     expect(ctx.state.setupMenu).toBe(b);
+    ctx.setupMenu(null);
+    expect(Object.hasOwn(ctx.state, 'setupMenu')).toBe(false);
     expect(ctx.state.faulted).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------- correction round D1 (Astra's review of 4e99b1f8)
+// SIMULATED CLOCK — an ordering counterexample, not a performance benchmark. The fake clock is moved by hand at the
+// real admission boundary: the base record is composed with `remaining` ms of the capture deadline left, the optional
+// block's admission costs 20 ms (charged the first time the sanitizer reads it), and the commit takes `commitMs`.
+// The base cost is identical in both runs. Rows "(Astra)" are Astra's supplied counterexample
+// (evidence/deadline.counterexample.test.js, SHA-256 fc49b383…), adapted; they PASS on the reviewed code too: they
+// document what the reserve does not promise, which is what D1 corrects in the wording (captureWriter.js).
+describe('D1 — the 1 s reserve reduces the deadline risk; it does not remove it (simulated clock)', () => {
+  const T0 = Date.parse('2026-09-09T15:00:00Z');
+  afterEach(() => vi.useRealTimers());
+  async function capture({ optional, remaining = 1010, commitMs = 1000 }) {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    let optionalWork = 0;
+    let landed = false;
+    const staged = [];
+    const ctx = runWithTickCaptureScope(() => createTickCaptureContext({ battleId: 'b1', tickSeq: 1, enabled: true }));
+    ctx.exit('no_trigger');
+    const block = { blockStatus: 'error', get errorCode() { if (optionalWork === 0) { optionalWork = 20; vi.setSystemTime(Date.now() + 20); } return 'compose_failed'; } };
+    // Read once the base record is composed: the clock then stands `remaining` ms before the capture deadline.
+    Object.defineProperty(ctx.state, 'setupMenu', { get() { vi.setSystemTime(T0 + TICK_CAPTURE_DEADLINE_MS - remaining); return optional ? block : undefined; } });
+    const ref = { collection: () => ({ doc: () => ({}) }) };
+    const db = { collection: () => ({ doc: () => ref }), batch: () => ({ set: (_ref, doc) => staged.push(doc), commit: () => new Promise((resolve) => setTimeout(() => { landed = true; resolve(); }, commitMs)) }) };
+    const promise = finalizeTickCapture(db, ctx, { remainingBudgetMs: 20_000 });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(commitMs);
+    const result = await promise;
+    vi.useRealTimers();
+    return { disposition: result.disposition, optionalWork, attached: Boolean(staged[0]?.setupMenu), landed };
+  }
+  it('D1 (Astra) 1,010 ms left, 20 ms of optional work, a 1,000 ms commit: the base record is written; with the block it is timed_out', async () => {
+    expect(TICK_CAPTURE_DEADLINE_MS).toBe(3_000); // the deadline is not enlarged
+    expect(await capture({ optional: false })).toEqual({ disposition: 'written', optionalWork: 0, attached: false, landed: true });
+    const optional = await capture({ optional: true });
+    expect(optional).toMatchObject({ disposition: 'timed_out', optionalWork: 20, attached: true });
+    // A timeout is not proof that the commit never landed: here it landed after the deadline.
+    expect(optional.landed).toBe(true);
+  });
+  it('control (Astra): below the 1,000 ms reserve the block is dropped unexamined — no optional work, no block', async () => {
+    expect(await capture({ optional: true, remaining: 999, commitMs: 500 })).toEqual({ disposition: 'written', optionalWork: 0, attached: false, landed: true });
+  });
+  it('control (Astra): a faster commit is written with the same optional cost', async () => {
+    expect(await capture({ optional: true, commitMs: 500 })).toEqual({ disposition: 'written', optionalWork: 20, attached: true, landed: true });
   });
 });

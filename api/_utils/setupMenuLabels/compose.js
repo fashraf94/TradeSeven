@@ -205,22 +205,37 @@ export function composeSetupMenuBlock(pool, obs, { maxBytes = SETUP_MENU_MAX_BYT
       candidates,
     };
 
-    // The byte cap: candidates dropped from the tail until the block fits, counted.
-    while (block.candidates.length > 0 && approxBytes(block) > maxBytes) {
+    // The counts and the status, from the candidates the block holds NOW. Precedence: error > calendar_missing >
+    // truncated > reads_unsettled > ok (the lower facts stay in their counters).
+    const finalize = () => {
+      block.counts = emptyCounts();
+      for (const c of block.candidates) block.counts[COUNT_OF_STATUS[c.status]] += 1;
+      block.blockStatus = pool.calendarMissing === true ? 'calendar_missing'
+        : block.truncatedCount > 0 ? 'truncated'
+          : block.counts.unsettled > 0 ? 'reads_unsettled'
+            : 'ok';
+      return block;
+    };
+    // The byte cap (correction round F4): measured on the FINAL block — its counts, status and truncation counter
+    // recomputed after every removal — so the bytes measured are the bytes emitted. Candidates drop from the tail.
+    while (block.candidates.length > 0 && approxBytes(finalize()) > maxBytes) {
       block.candidates.pop();
       block.truncatedCount += 1;
     }
-    for (const c of block.candidates) block.counts[COUNT_OF_STATUS[c.status]] += 1;
-
-    // Precedence: error > calendar_missing > truncated > reads_unsettled > ok (the lower facts stay in their counters).
-    block.blockStatus = pool.calendarMissing === true ? 'calendar_missing'
-      : block.truncatedCount > 0 ? 'truncated'
-        : block.counts.unsettled > 0 ? 'reads_unsettled'
-          : 'ok';
+    finalize();
     if (!SETUP_MENU_BLOCK_STATUSES.includes(block.blockStatus)) return errorBlockOf(pool, 'compose_failed');
     for (const c of block.candidates) if (!SETUP_LABEL_STATUSES.includes(c.status)) return errorBlockOf(pool, 'compose_failed');
+    // Even the candidate-free block over the cap (bounded identity fields make this unreachable at 24 KiB): the error
+    // form if IT fits, else no block at all — never an emitted block over the cap.
+    if (approxBytes(block) > maxBytes) return errorFormWithin(pool, maxBytes);
     return deepFreeze(block);
   } catch {
-    return errorBlockOf(pool, 'compose_failed');
+    return errorFormWithin(pool, maxBytes);
   }
+}
+
+/** The error form when it fits the cap, else null: the block is omitted (F4). Pure; cannot throw. */
+function errorFormWithin(pool, maxBytes) {
+  const form = errorBlockOf(pool, 'compose_failed');
+  return approxBytes(form) <= maxBytes ? form : null;
 }

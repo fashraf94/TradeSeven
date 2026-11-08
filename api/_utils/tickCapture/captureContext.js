@@ -308,10 +308,13 @@ export function createTickCaptureContext({
      * HERE and never written to `faulted`, whose text would change the body
      * (kickoff Correction C; rows 1.7 / 5.5). The key exists on the state only
      * once a block is set, so every other tick's state is exactly as before.
+     * `null` is the composer's omission (correction round F4: not even the
+     * error form fits the cap): the key is removed, as if no block was set.
      */
     setupMenu: (block) => {
       try {
-        if (block !== null && typeof block === 'object' && !Array.isArray(block)) state.setupMenu = block;
+        if (block === null) delete state.setupMenu;
+        else if (typeof block === 'object' && !Array.isArray(block)) state.setupMenu = block;
       } catch { /* contained: the record simply has no block */ }
     },
   };

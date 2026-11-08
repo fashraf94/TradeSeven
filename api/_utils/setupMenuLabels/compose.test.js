@@ -11,6 +11,7 @@ import { menuSnapshotSet, snapshotFor } from './__fixtures__/menuSnapshots.js';
 import { sanitizePermanentDocument, findFreeText, buildUniverse } from '../tickCapture/captureSerializer.js';
 import { describeRuleSet } from '../setupEvaluator/thresholds.js';
 import { SETUP_MENU_MAX_BYTES } from './constants.js';
+import { admitOptionalSetupMenu } from '../tickCapture/captureWriter.js';
 
 const SESSION = '2026-09-08';
 const FETCHED = '2026-09-09T13:00:00.000Z';
@@ -184,5 +185,83 @@ describe('nothing rejected (rows 5.3, 5.6): every fixture block through the REAL
     expect(snapshotServes(fx.AAPL.snapshot, { session: '2026-09-04', symbol: 'AAPL', ruleSet })).toBe(false);
     expect(snapshotServes({ ...fx.AAPL.snapshot, capturedAt: 'later' }, { session: SESSION, symbol: 'AAPL', ruleSet })).toBe(false);
     expect(snapshotServes({ ...fx.AAPL.snapshot, entry: null }, { session: SESSION, symbol: 'AAPL', ruleSet })).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------- correction round F4 (Astra's review of 4e99b1f8)
+// The cap is measured on the FINAL block: counts, status and truncation counter recomputed after every removal, so
+// the bytes measured are the bytes emitted (UTF-8 of the JSON). The first row is Astra's supplied regression file
+// (evidence/block-cap.regression.test.js, SHA-256 82e1c2b7…), adapted: 48 candidates with closed-enum fields and
+// 56-character reason ids (58 for the first) — a robustness case, not a claim that today's evaluator emits these
+// reasons. Before the fix it was measured with zeroed counts and emitted at 24,577 bytes.
+describe('F4 — every emitted block fits the cap, measured on its final bytes', () => {
+  const symbols = Array.from({ length: 48 }, (_, i) => `S${i}`);
+  const capPool = () => ({
+    session: SESSION, ruleSet, frozenAtMs: FROZEN_MS, calendarMissing: false, selector: 'carried', rebuilt: false,
+    list: candidatesOf({ hotBenchSymbols: symbols, assetMapKeys: [], benchAtFreeze: symbols, heldAtFreeze: [] }),
+  });
+  /** 48 labelled candidates whose reason ids are `reasonLength` long (the first `firstDelta` longer); `unsettledFrom` leaves the tail unread. */
+  function capBlock(reasonLength, { firstDelta = 0, unsettledFrom = symbols.length, maxBytes } = {}) {
+    const results = new Map(symbols.slice(0, unsettledFrom).map((symbol, i) => [symbol, { ok: true, value: {
+      schemaVersion: 1, key: { session: SESSION, symbol, ruleSet }, status: 'ok', capturedAt: FETCHED, asOf: SESSION,
+      entry: { verdict: 'invalid', pattern: 'pullback_resume', regime: 'uptrend', reason: 'r'.repeat(reasonLength + (i === 0 ? firstDelta : 0)) },
+      evidenceClass: { bars: 'later_reconstruction' },
+    } }]));
+    const stateBySymbol = new Map(symbols.map((s) => [s, { session: SESSION, n: 3, lastOutcome: 'retryable', lastAt: FROZEN_MS }]));
+    const obs = { readsStartedAtMs: FROZEN_MS, observedAtMs: FROZEN_MS + 100, stateRead: true, stateBySymbol, results, readsIssued: 48, readsShared: 0 };
+    return composeSetupMenuBlock(capPool(), obs, maxBytes === undefined ? undefined : { maxBytes });
+  }
+  const countsSum = (b) => Object.values(b.counts).reduce((a, n) => a + n, 0);
+
+  it('F4 (Astra) the 48-candidate case that emitted 24,577 bytes now emits at most 24,576, through the writer too', () => {
+    const block = capBlock(56, { firstDelta: 2 });
+    expect(approxBytes(block)).toBeLessThanOrEqual(SETUP_MENU_MAX_BYTES);
+    expect(block).toMatchObject({ blockStatus: 'truncated', truncatedCount: 1 });
+    expect(block.candidates).toHaveLength(47);
+    expect(countsSum(block)).toBe(47); // the counts describe the candidates emitted
+    expect(sanitized(block, symbols).rejected).toEqual([]);
+    const permanent = {};
+    expect(admitOptionalSetupMenu(permanent, block, { universe: new Set(symbols) })).toBe('admitted');
+    expect(approxBytes(permanent.setupMenu)).toBe(approxBytes(block));
+    expect(approxBytes(permanent.setupMenu)).toBeLessThanOrEqual(SETUP_MENU_MAX_BYTES);
+  });
+  it('boundary control: a final block of exactly 24,576 bytes keeps all 48 candidates, untruncated', () => {
+    const block = capBlock(56, { firstDelta: 1 });
+    expect(approxBytes(block)).toBe(SETUP_MENU_MAX_BYTES);
+    expect(block).toMatchObject({ blockStatus: 'ok', truncatedCount: 0 });
+    expect(block.candidates).toHaveLength(48);
+    expect(countsSum(block)).toBe(48);
+  });
+  it('control: a short reason stays within the cap untruncated (Astra\'s negative control)', () => {
+    const block = capBlock(10);
+    expect(approxBytes(block)).toBeLessThan(SETUP_MENU_MAX_BYTES);
+    expect(block.truncatedCount).toBe(0);
+  });
+  it('near the cap with unsettled reads: `truncated` outranks `reads_unsettled`, and the counts cover only the candidates kept', () => {
+    const block = capBlock(56, { firstDelta: 2, unsettledFrom: 40 });
+    expect(approxBytes(block)).toBeLessThanOrEqual(SETUP_MENU_MAX_BYTES);
+    const unsettledKept = block.candidates.filter((c) => c.status === 'read_unsettled').length;
+    expect(block.blockStatus).toBe(block.truncatedCount > 0 ? 'truncated' : 'reads_unsettled');
+    expect(block.counts.unsettled).toBe(unsettledKept);
+    expect(countsSum(block)).toBe(block.candidates.length);
+    expect(block.candidates.length + block.truncatedCount).toBe(48);
+  });
+  it('a sweep: for every reason length 0–120 the emitted block fits, and its counters agree with what it holds', () => {
+    for (let len = 0; len <= 120; len += 1) {
+      const block = capBlock(len, { firstDelta: len % 3 });
+      expect(approxBytes(block)).toBeLessThanOrEqual(SETUP_MENU_MAX_BYTES);
+      expect(countsSum(block)).toBe(block.candidates.length);
+      expect(block.candidates.length + block.truncatedCount).toBe(48);
+      expect(block.blockStatus).toBe(block.truncatedCount > 0 ? 'truncated' : 'ok');
+    }
+  });
+  it('even the candidate-free block over the cap: the error form when it fits, else no block (null)', () => {
+    const empty = capBlock(10, { maxBytes: 0 });
+    expect(empty).toBeNull(); // nothing fits a zero cap: omitted
+    const errorSize = approxBytes(errorBlockOf(capPool(), 'compose_failed'));
+    const errorOnly = capBlock(10, { maxBytes: errorSize });
+    expect(errorOnly).toMatchObject({ blockStatus: 'error', errorCode: 'compose_failed', session: SESSION });
+    expect(approxBytes(errorOnly)).toBeLessThanOrEqual(errorSize);
+    expect(capBlock(10, { maxBytes: errorSize - 1 })).toBeNull();
   });
 });

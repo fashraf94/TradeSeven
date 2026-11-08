@@ -193,8 +193,10 @@ export function buildCaptureDocuments(state, {
   // exist and BEFORE the final measurement — it could not previously include
   // the serialization it was supposed to describe.
   timingAtComposition = null,
-  // Slice 2 (review SM2-1): the optional setupMenu block is admitted only before this instant (epoch ms), so
-  // its admission work can never eat into the commit's share of the capture deadline. Infinity = no limit.
+  // Slice 2 (review SM2-1; wording corrected in the correction round, D1): the optional setupMenu block is
+  // admitted only before this instant (epoch ms). That reduces the risk; it does not remove it — the admission's
+  // CPU and the block's bytes still consume the shared deadline, so a commit that would have landed in time without
+  // the block can still be reported `timed_out` with it. Infinity = no limit.
   optionalBlockNotAfterMs = Infinity,
 } = {}) {
   const capturedAt = new Date(nowMs).toISOString();
@@ -527,9 +529,15 @@ const SETUP_MENU_IDENTITY_KEYS = ['session', 'setupVersion', 'thresholdsHash', '
 
 /**
  * Slice 2 (review SM2-1): the optional setupMenu block is admitted only while at least this much of the capture's
- * single deadline (TICK_CAPTURE_DEADLINE_MS, unchanged) remains after the base record is composed. Its admission
- * costs milliseconds of CPU (a sanitize pass and a size measure); with this margin it can never be what turns a
- * near-deadline commit into `timed_out`. Not a capture budget constant: it governs only the optional block.
+ * single deadline (TICK_CAPTURE_DEADLINE_MS, unchanged) remains after the base record is composed. Not a capture
+ * budget constant: it governs only the optional block.
+ *
+ * WHAT IT DOES NOT PROMISE (correction round D1). The reserve REDUCES the risk; it does not remove it. The block's
+ * admission CPU (a sanitize pass, size measures) and its payload (bytes serialized and committed) still consume the
+ * same deadline, so with 1,010 ms left, 20 ms of optional work and a 1,000 ms commit, the base record alone is
+ * `written` and the record with the block is `timed_out` (captureSetupMenu.test.js, a simulated clock). Warm timing
+ * medians and the reported busy-host result are observations, not hard ceilings. And `timed_out` does not prove the
+ * commit never landed: a late commit can still land after the deadline (the export resolves it by presence).
  */
 export const OPTIONAL_BLOCK_DEADLINE_MARGIN_MS = 1_000;
 
