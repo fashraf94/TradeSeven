@@ -34,6 +34,9 @@ import { beforeFirstTradingDay, etDateOf, firstSessionOpenMs } from '../utils/ti
 import { feedBeatUnconfirmed } from '../data/executionOutcome';
 // BaggerBomb stock thresholds v2 (Ruling 16): the committed-score display rule.
 import { displayedStockScores } from '../utils/stockThresholdModel.js';
+// Build A2 (Phase 0's R3): with per-game loadouts a casual game's clone may wear another archetype than the ranked
+// record, so the battle's own snapshot is read first (a literal ternary: flag off, today's order exactly).
+import { PER_GAME_LOADOUT_ENABLED } from '../config/perGameLoadoutFlags.js';
 
 export const PHASE = Object.freeze({
   PRE_OPEN: 'PRE_OPEN',
@@ -591,7 +594,7 @@ export function buildBaggerbombAdapter(battle, voiceLayerCacheDoc, agent, now, m
     statusFeed: buildAlertFeed(battle, now),
 
     loadout: {
-      archetype: agent?.archetype ?? battle?.agentContext?.archetype ?? null,
+      archetype: PER_GAME_LOADOUT_ENABLED ? battle?.agentContext?.archetype ?? agent?.archetype ?? null : agent?.archetype ?? battle?.agentContext?.archetype ?? null,
       watchlistLabel: battle?.agentContext?.equippedWatchlist?.name ?? null,
       // Never was a stored field — EquipBench.jsx:88 and EquipStation.jsx:110
       // each derive it locally from the same expression. The adapter is the

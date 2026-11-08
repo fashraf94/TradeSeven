@@ -95,7 +95,7 @@
 // import reaches it, so it ships in its own chunk and is requested only when
 // the gate renders (the hub flag on).
 
-import React, { useId, useRef, useState } from 'react';
+import React, { use, useId, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useUser } from '../../contexts/UserContext';
 import { BATTLE_TYPE_BAGGERBOMB } from '../../utils/commandCenterLiveBattles';
@@ -155,6 +155,12 @@ import { PhoneStage, ShadowStage } from './ShadowStage';
 import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
 import { PhoneArmoryScope, armoryHeroRead } from './Armory';
 import { HOLD_PHASES } from './hub/selectors/attemptVocabulary';
+// Build A2 (per-game loadouts): the flag on its own line (agentFormFlags.test.js pins the lines above), the scope and its
+// context, and the armory's sheet context (AR-5: the opener reaches HubSheet). Every read below is a literal ternary.
+import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
+import PerGameLoadoutScope from './PerGameLoadoutScope';
+import { PerGameLoadoutContext, scopeDeployLine } from './hub/perGameLoadoutContext';
+import { ArmorySheetContext } from './Armory';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
 export function shadowSizeFor(composition, width) {
@@ -219,7 +225,7 @@ function useShared(sections, attemptId = null) {
     allEnding: liveCounts.allEnding,
     liveKnown: liveReadKnown(sections.games, sections.deploy),
     summaries: areaSummaries(sections),
-    loadoutLine: loadoutLineOf(sections.loadout),
+    loadoutLine: PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? scopeDeployLine(use(PerGameLoadoutContext)) ?? loadoutLineOf(sections.loadout) : loadoutLineOf(sections.loadout),
     dateText: formatHubDate(new Date()),
     name: headerName(user),
   };
@@ -401,7 +407,14 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
         </div>
         <PhoneTabRow idBase={shared.idBase} tab={tab} onSelect={selectTab} />
         <div style={{ padding: '14px 14px 24px' }}>
-          <PhonePanel idBase={shared.idBase} tab={tab} sections={sections} actions={actions} reducedMotion={shared.reducedMotion} />
+          {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+            // Build A2: the panel's loadout surfaces take the shell's committed lists through the scope's context.
+            <PerGameLoadoutContext.Provider value={{ ...use(PerGameLoadoutContext), lists: runtime.lists }}>
+              <PhonePanel idBase={shared.idBase} tab={tab} sections={sections} actions={actions} reducedMotion={shared.reducedMotion} />
+            </PerGameLoadoutContext.Provider>
+          ) : (
+            <PhonePanel idBase={shared.idBase} tab={tab} sections={sections} actions={actions} reducedMotion={shared.reducedMotion} />
+          )}
         </div>
       </section>
       <DeployStrip
@@ -435,7 +448,20 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
       {sheet.sheet === HUB_SHEETS.ACTIVITY && (
         <ActivitySheet activity={sections.activity} phone onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpen={actions.openActivity} />
       )}
-      {runtime.live && (
+      {runtime.live && (AGENT_FORM_ARMORY_ENABLED ? (
+        <ArmorySheetContext.Provider value={{ opener: sheet.opener, fallbackFocus: sheet.fallback }}>
+          <LoadoutSheets
+            sheet={sheet.sheet}
+            traitsEpoch={sheet.traitsEpoch}
+            onClose={runtime.closeSheet}
+            dock={SHEET_DOCK.PHONE}
+            agent={runtime.agent}
+            agentLoading={runtime.agentLoading}
+            lists={runtime.lists}
+            onOpenForgeLists={actions.openForgeLists}
+          />
+        </ArmorySheetContext.Provider>
+      ) : (
         <LoadoutSheets
           sheet={sheet.sheet}
           traitsEpoch={sheet.traitsEpoch}
@@ -446,7 +472,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
           lists={runtime.lists}
           onOpenForgeLists={actions.openForgeLists}
         />
-      )}
+      ))}
     </HubLayoutContext.Provider>
   );
 }
@@ -495,7 +521,19 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
       progress={deploy?.progress ?? null}
     />
   );
-  const panel = (
+  const panel = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+    // Build A2: the panel's loadout cards take the shell's committed lists through the scope's context.
+    <PerGameLoadoutContext.Provider value={{ ...use(PerGameLoadoutContext), lists: runtime.lists }}>
+      <AreaPanel
+        area={area}
+        panelId={areaPanelId(shared.idBase)}
+        tabId={areaTabId(shared.idBase, area)}
+        sections={sections}
+        actions={actions}
+        reducedMotion={shared.reducedMotion}
+      />
+    </PerGameLoadoutContext.Provider>
+  ) : (
     <AreaPanel
       area={area}
       panelId={areaPanelId(shared.idBase)}
@@ -507,7 +545,21 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
   );
   const side = {
     games: <GamesSection games={sections.games} onOpenHistory={actions.openHistory} onOpenGame={actions.openGame} onOpenTape={actions.openTape} onRetry={actions.retryGames} />,
-    deploy: (
+    deploy: PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+      // Build A2 (board 2): the Deploy card's loadout line counts the book's names from the shell's committed lists.
+      <PerGameLoadoutContext.Provider value={{ ...use(PerGameLoadoutContext), lists: runtime.lists }}>
+        <DeploySection
+          deploy={sections.deploy}
+          loadoutLine={shared.loadoutLine}
+          onOpenLoadout={() => selectArea(HUB_AREAS.ARCHETYPE)}
+          onAction={actions.deployAction}
+          holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.CARD) ?? null}
+          holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.CARD ? deploy.holdPhase : null}
+          onOpenBoard={actions.openBoard}
+          idea={sections.deployingWith ?? null}
+        />
+      </PerGameLoadoutContext.Provider>
+    ) : (
       <DeploySection
         deploy={sections.deploy}
         loadoutLine={shared.loadoutLine}
@@ -564,7 +616,21 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
       {sheet.sheet === HUB_SHEETS.ACTIVITY && (
         <ActivitySheet activity={sections.activity} onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpen={actions.openActivity} />
       )}
-      {runtime.live && (
+      {runtime.live && (AGENT_FORM_ARMORY_ENABLED ? (
+        // A1 carry AR-5: the dialog's HubSheet returns focus to the control that opened it, as the History sheet's does.
+        <ArmorySheetContext.Provider value={{ opener: sheet.opener, fallbackFocus: sheet.fallback }}>
+          <LoadoutSheets
+            sheet={sheet.sheet}
+            traitsEpoch={sheet.traitsEpoch}
+            onClose={runtime.closeSheet}
+            dock={SHEET_DOCK.WIDE}
+            agent={runtime.agent}
+            agentLoading={runtime.agentLoading}
+            lists={runtime.lists}
+            onOpenForgeLists={actions.openForgeLists}
+          />
+        </ArmorySheetContext.Provider>
+      ) : (
         <LoadoutSheets
           sheet={sheet.sheet}
           traitsEpoch={sheet.traitsEpoch}
@@ -575,7 +641,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
           lists={runtime.lists}
           onOpenForgeLists={actions.openForgeLists}
         />
-      )}
+      ))}
       {deploy && runtime.live && scoutingBoardOn() && (
         <ScoutingBoard
           open={sheet.sheet === HUB_SHEETS.SCOUTING}
@@ -648,12 +714,25 @@ function ConnectedHub({ site, hub, sections }) {
   // Agent form build A1 follow-up (founder ruling N1): with the armory on, outside a game Shadow is neutral, so the hero
   // (wide and phone) reads the same agent wearing nothing: bare Shadow whatever its archetype, and Shadow's own label. The
   // Loadout reads `agentRead` itself, so its Archetype card still names the archetype; only the armory's preview dresses.
+  // Build A2: with per-game loadouts on (and the armory, which draws them), the shells sit in the loadout scope: the
+  // owner's record, the League lock and the live games, for the cards, the lines and the armory's context. The hero
+  // stays bare (N1).
   return AGENT_FORM_HUB_ENABLED ? (
+    PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+    <PerGameLoadoutScope agentRead={readers.agent} activeBattles={hub?.activeBattles ?? null}>
+      <HubAgentFormContext.Provider value={armoryHeroRead(readers.agent)}>
+        {site === HUB_SITES.MOBILE
+          ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
+          : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />}
+      </HubAgentFormContext.Provider>
+    </PerGameLoadoutScope>
+  ) : (
     <HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>
       {site === HUB_SITES.MOBILE
         ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
         : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />}
     </HubAgentFormContext.Provider>
+    )
   ) : site === HUB_SITES.MOBILE
     ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
     : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />;

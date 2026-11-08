@@ -30,6 +30,10 @@ import { resolveRankedAgent } from '../_utils/trainingClone.js';
 import { findActiveTrainingPodForUser } from '../_utils/tournamentGroupService.js';
 import { validateLoadoutSpecShape } from '../_utils/trainingLoadoutSpec.js';
 import { LEAGUE_NEXT_ARC_ENABLED } from '../../src/config/featureFlags.js';
+// Build A2 (FD-4): with PER_GAME_LOADOUT_ENABLED on, a training pod wears the League loadout, so the chooser's
+// `loadoutSpec` is not read — ignored, not refused (an older client may still send one) — and the pod is formed with
+// no override: ensureTrainingClones copies the ranked record's own fields, which are the League loadout (FD-2).
+import { PER_GAME_LOADOUT_ENABLED } from '../../src/config/perGameLoadoutFlags.js';
 
 export const config = { maxDuration: 30 };
 
@@ -69,7 +73,7 @@ export default function handler(req, res) {
     // watchlist (the same gates as api/agent/equip-watchlist.js), with the name
     // RE-DERIVED server-side. Absent spec → null → pure inherit (the fast-start
     // path, unchanged from 5b-i).
-    const shape = validateLoadoutSpecShape(body?.loadoutSpec);
+    const shape = PER_GAME_LOADOUT_ENABLED ? { valid: true, value: null } : validateLoadoutSpecShape(body?.loadoutSpec);
     if (!shape.valid) {
       return res.status(400).json({ error: 'invalid_loadout_spec', message: 'That loadout selection isn’t valid.' });
     }

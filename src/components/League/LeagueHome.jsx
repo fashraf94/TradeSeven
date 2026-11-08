@@ -17,7 +17,7 @@ import './league.css';
 import useLeagueState from '../../hooks/useLeagueState';
 import { logLeagueSignal } from '../../services/leagueSignals';
 import { useUser } from '../../contexts/UserContext';
-import { subscribeMyGroup, subscribeMyMostRecentVoidedGroup, subscribeMyTrainingPod } from '../../services/tournamentGroupService';
+import { subscribeMyGroup, subscribeMyGroupOrFailure, subscribeMyMostRecentVoidedGroup, subscribeMyTrainingPod } from '../../services/tournamentGroupService';
 import { LEAGUE_NEXT_ARC_ENABLED } from '../../config/featureFlags';
 import { LTOKENS, LX } from './leagueTokens';
 import Lobby, { LobbyTabbed } from './LeagueLobbyRedesign';
@@ -33,6 +33,10 @@ import LeagueVoidedNotice from './LeagueVoidedNotice';
 import BackingLandingStrip from './backing/BackingLandingStrip';
 import BackingScreen from './backing/BackingScreen';
 import { fetchTapePod } from '../../services/backingService';
+// Build A2 fix pass (A2R-1): the League loadout line hears whether this lobby's group read has answered.
+import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
+import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
+import { LeagueGroupKnownContext } from './leagueLoadoutSlot';
 
 const ACCENT = LX.energy; // teal — the league energy accent
 
@@ -93,9 +97,14 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
   // pod-list requests, two sets of stake listeners). The desktop lobby's rule
   // (WIRE-7, the desktop review record), mirrored.
   const [seatFor, setSeatFor] = React.useState(null);
+  // Build A2 fix pass (A2R-1), per-game loadouts on: a FAILED read is told apart from "no group". The lobby still
+  // shows what it shows today (no group, the strip in its place); `seatFor` records the failure, so the League
+  // loadout line stays Checking rather than reading the failure as an open week.
   React.useEffect(() => {
     if (!uid) { setActiveGroup(null); return undefined; }
-    return subscribeMyGroup(uid, (group) => { setActiveGroup(group); setSeatFor(uid); });
+    return PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED
+      ? subscribeMyGroupOrFailure(uid, (group) => { setActiveGroup(group); setSeatFor(uid); }, () => { setActiveGroup(null); setSeatFor({ failedFor: uid }); })
+      : subscribeMyGroup(uid, (group) => { setActiveGroup(group); setSeatFor(uid); });
   }, [uid]);
 
   // L-A follow-up (B) — the member voided-card on the DEFAULT League landing (this
@@ -143,7 +152,7 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
   // seat is known (above). A component that renders null while dark: no
   // element, no gap. The centre is a gapped column, as on desktop, so the
   // strip brings no margin of its own there (`inColumn` — PLACE-B1).
-  const seatKnown = !uid || seatFor === uid;
+  const seatKnown = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? !uid || seatFor === uid || seatFor?.failedFor === uid : !uid || seatFor === uid;
   const backingSlot = seatKnown ? <BackingLandingStrip uid={uid} accent={ACCENT} onOpen={openBacking} inColumn /> : null;
   // tab-switch: front-end navigation telemetry (NOT a §4 trading-signal).
   // Emitted only on a real switch, never on mount.
@@ -162,7 +171,7 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, 
     ? <BackingScreen uid={uid} accent={ACCENT} viewport="mobile" onBack={backToLobby} onOpenTape={openTape} />
     : screen === 'spectate' && spec
       ? <Spectate pod={spec.pod} focusId={spec.focusId} accent={ACCENT} onBack={backToLobby} onEnter={backToLobby} />
-      : lobby;
+      : PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? <LeagueGroupKnownContext.Provider value={!uid || seatFor === uid}>{lobby}</LeagueGroupKnownContext.Provider> : lobby;
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', maxWidth: 448, margin: '0 auto', background: LTOKENS.bg, color: LTOKENS.ink }}>

@@ -44,6 +44,10 @@ import {
 } from './compositionProvisionerLease.js';
 import { pinActivationDescriptor } from './compositionGenerationFence.js';
 import { selectIdentityVersion, birthProvenanceStamp } from './compositionActivationService.js';
+// Build A2 (FD-4): with PER_GAME_LOADOUT_ENABLED on, training reads the League loadout — the ranked record's own fields,
+// which the inherit-forward copy below already is — and the Slice-5 chooser's per-pod override is gone: a pod's
+// `loadoutSpecByUser` is not read (one written before the flip included).
+import { PER_GAME_LOADOUT_ENABLED } from '../../src/config/perGameLoadoutFlags.js';
 
 const LOG_PREFIX = '[TrainingClone]';
 
@@ -274,7 +278,7 @@ export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null
       // at the next seat boundary instead of writing past a possible watermark.
       assertLeaseCurrent(lease);
 
-      const loadoutSpec = loadoutSpecByUser ? loadoutSpecByUser[odUserId] : null;
+      const loadoutSpec = PER_GAME_LOADOUT_ENABLED ? null : (loadoutSpecByUser ? loadoutSpecByUser[odUserId] : null);
       // Copy the rules/bundles subcollections FIRST, then write the clone doc LAST
       // as the completion sentinel. If provisioning is interrupted (timeout/crash)
       // between the two, the clone doc won't exist, so the next run re-provisions

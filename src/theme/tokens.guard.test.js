@@ -89,6 +89,9 @@ const GUARDED_FILES = [
   'src/components/League/battleArena/leagueAgentFormSlot.jsx',
   'src/components/League/battleArena/fuseFormLayout.js',
   'src/components/League/battleArena/finishedRivalRead.js',
+  // Build A2: the League lobby's loadout lines and their folded lazy slot, on the vocabulary from birth.
+  'src/components/League/LeagueLoadoutLine.jsx',
+  'src/components/League/leagueLoadoutSlot.jsx',
   // Agent form build S1: the battle forms, on the vocabulary from birth.
   'src/screens/battleView/BattleAgentForm.jsx',
   'src/screens/battleView/agentMood.js',
@@ -166,6 +169,13 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/HubAgentForm.jsx',
   // Agent form build A1: the armory, on the vocabulary from birth.
   'src/components/CommandCenter/Armory.jsx',
+  // Build A2: the per-game loadout surfaces, on the vocabulary from birth (hazard 34).
+  'src/components/CommandCenter/LoadoutCards.jsx',
+  'src/components/CommandCenter/LoadoutBookSheet.jsx',
+  'src/components/CommandCenter/PerGameLoadoutScope.jsx',
+  'src/components/CommandCenter/hub/perGameLoadoutContext.js',
+  'src/components/CommandCenter/hub/perGameLoadoutModel.js',
+  'src/components/CommandCenter/hub/useLeagueLoadoutLock.js',
   'src/components/CommandCenter/ShadowStill.jsx',
   'src/components/CommandCenter/__fixtures__/hubLayoutFixtures.js',
   'src/components/CommandCenter/__fixtures__/hubTestKit.js',
@@ -259,6 +269,8 @@ const GUARDED_FILES = [
   'src/components/AgentForm/engine/vocab.js',
   'src/components/AgentForm/AgentForm.jsx',
   'src/components/AgentForm/AgentFormStill.jsx',
+  // Build A2: the loadout cards' and lines' still (hazard 34).
+  'src/components/AgentForm/LoadoutStill.jsx',
   'src/components/AgentForm/agentFormSpec.js',
   'src/components/AgentForm/agentFormTokens.js',
   'src/components/AgentForm/agentGrowth.js',
