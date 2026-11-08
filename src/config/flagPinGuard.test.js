@@ -281,12 +281,17 @@ const DARK_BY_DESIGN = {
   // so buildFlagMap never sees it and the integrity test below would fail the
   // key outright. Noted HERE so a flip is loud in the place a reader looks for
   // the dark runway; researchModalFlags.test.js asserts both halves.
-  //   Runway: 'off' is CURRENT (Build A, 2026-11-07): the modal byte for byte
-  //   as before. 'allowlist' — per agent battle, the cockpit-status verdict —
-  //   is a separate one-line founder PR after merge; 'on' its own PR after
-  //   that. Never a build PR; each step moves the pin row in
-  //   researchModalFlags.test.js in the same commit (BUILD_RULES §2).
-  //   Rollback: one line back a step, with its pin row.
+  //   Runway: 'allowlist' is CURRENT (the founder's flip PR, 2026-11-08; 'off'
+  //   from Build A, PR #1031, until then): per agent battle, the
+  //   cockpit-status verdict (the founder and FT_QA); everyone else, and every
+  //   mount with no agent battle, is the modal byte for byte as before. 'on' is
+  //   its own founder PR after one clean live session on the allowlist. Never
+  //   a build PR; each step moves the pin row in researchModalFlags.test.js in
+  //   the same commit (BUILD_RULES §2).
+  //   Rollback: a kill switch: roll back one step at a time ('on' →
+  //   'allowlist' → 'off') by moving the literal and its pin together; every
+  //   mode-off arm stays in the code until the cleanup PR, after 'on' has run
+  //   in production.
   // ACTIVATION_EVIDENCE_ENABLED intentionally ABSENT: the ID-1 activation observer
   // flipped true on 2026-11-06 in the founder's own flip PR (flip checklist:
   // docs/audits/20261106_BUILD_ACTIVATION_OBSERVER_REVIEW_FIXES.md §11) — the
