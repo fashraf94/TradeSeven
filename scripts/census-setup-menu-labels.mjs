@@ -142,6 +142,17 @@ function addRecord(agg, rec) {
 }
 
 /**
+ * The export's coverage TOTALS only (review SMV1-N1): its per-battle `rows` carry battle ids and missing
+ * sequences, which no channel of this census may print. Every other key is a count or a ratio. Pure.
+ */
+export function coverageTotalsOf(coverage) {
+  if (!isObj(coverage)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(coverage)) if (k !== 'rows' && (typeof v === 'number' || typeof v === 'boolean' || v === null)) out[k] = v;
+  return out;
+}
+
+/**
  * The census over records already read. Pure.
  * @param {object[]} records permanent tick records (each one battle's tick)
  * @param {{ coverage?: object, state?: object|null, stateStatus?: string }} [extra]
@@ -164,7 +175,7 @@ export function aggregateSetupMenu(records, { coverage = null, state = null, sta
   }
   return {
     ...agg,
-    coverage: coverage ?? null,
+    coverage: coverageTotalsOf(coverage),
     state: { status: ['read', 'absent', 'unreadable', 'not_read'].includes(stateStatus) ? stateStatus : 'other', entries, reservations, lastOutcome: outcomes, lastReason: reasons },
   };
 }
@@ -190,7 +201,7 @@ export function formatReport(c, { scope = '' } = {}) {
     `Last recorded outcome: ${JSON.stringify(c.absent.lastOutcome)}`,
     '',
     `Provider capture before the freeze (NOT availability at the decision): ${JSON.stringify(c.providerCapture)}`,
-    `Joins (one record each): pick ${JSON.stringify(c.joins.pick)} · actions ${JSON.stringify(c.joins.actions)}`,
+    `Joins (one record each): pick ${JSON.stringify(c.joins.pick)} · actions ${JSON.stringify(c.joins.actions)} (proposal_tick_unevaluated is INFERRED: a model-sourced swap that is not the tick's own decision)`,
     '',
     `State (${c.state.status}): ${c.state.entries} entries · ${c.state.reservations} reservations counted · last outcome ${JSON.stringify(c.state.lastOutcome)} · typed reason ${JSON.stringify(c.state.lastReason)}`,
     c.coverage ? `Coverage (the export's): ${JSON.stringify(c.coverage)}` : 'Coverage: not computed',

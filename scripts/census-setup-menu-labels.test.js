@@ -143,6 +143,22 @@ describe('aggregates only (every channel)', () => {
   });
 });
 
+describe('aggregates only through the runner too (review SMV1-N1)', () => {
+  it('the export\'s coverage reaches the report and the JSON as totals only — no battle id, no missing sequence list', async () => {
+    const reader = {
+      findBattleIds: async () => ['battle-SENTINEL'],
+      readBattle: async () => ({ inCohort: true, mintedTickSeq: 3 }),
+      readTicks: async () => [rec({ battleId: 'battle-SENTINEL', tickSeq: 1 })],
+      readBodyIds: async () => [],
+      readState: async () => null,
+    };
+    const c = await runCensus(reader, {});
+    expect(c.coverage).toMatchObject({ battles: 1, minted: 3, captured: 1 });
+    expect(Object.hasOwn(c.coverage, 'rows')).toBe(false);
+    for (const out of [formatReport(c, { scope: 'window' }), JSON.stringify(c)]) expect(out).not.toMatch(/SENTINEL/);
+  });
+});
+
 describe('the static imports (read-only by construction)', () => {
   // Static `import … from '…'` statements (line-anchored) and dynamic `import('…')` calls.
   const specifiers = [
