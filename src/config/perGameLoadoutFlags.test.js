@@ -66,7 +66,10 @@ describe('PER_GAME_LOADOUT_ENABLED — the pin (BUILD_RULES §2)', () => {
   });
 
   it('is on only while the armory is on (the hub\'s surfaces sit behind both): the armory never goes off while per-game loadouts are on', () => {
-    expect(!PER_GAME_LOADOUT_ENABLED || AGENT_FORM_ARMORY_ENABLED).toBe(true);
+    expect(
+      !PER_GAME_LOADOUT_ENABLED || AGENT_FORM_ARMORY_ENABLED,
+      'The rollback order (FL2): the armory never goes off while per-game loadouts are on. Step 1 turns PER_GAME_LOADOUT_ENABLED off (with its pin); only then step 2 turns AGENT_FORM_ARMORY_ENABLED off (with its pin).',
+    ).toBe(true);
   });
 
   it('is on only while casual clones are on (FL3)', () => {
@@ -216,5 +219,32 @@ describe('PER_GAME_LOADOUT_ENABLED — every read, exact', () => {
       .filter((rel) => rel !== 'src/config/perGameLoadoutFlags.js' && readsOf(rel).length > 0)
       .sort();
     expect(readers).toEqual([...Object.keys(SERVER_READS), ...Object.keys(CLIENT_READS)].sort());
+  });
+});
+
+// The armory flip review, AF-6: FL4's words were guarded by the build comparison alone. FL4-b's doubled block
+// (src/services/agentDeploy.js) logs from both arms; each arm's two console.warn lines must say what that arm does.
+describe('FL4-b: each arm\'s log lines say what it does (AF-6)', () => {
+  it('flag on, both lines say the deploy is refused; the else arm (the kill switch) keeps main\'s "deploying the real agent"', () => {
+    const src = strip(read('src/services/agentDeploy.js'));
+    const on = src.indexOf('if (PER_GAME_LOADOUT_ENABLED) try {');
+    const off = src.indexOf('} else try {', on);
+    const end = src.indexOf('if (!stillOwned()) return orphaned(false);', off);
+    expect(on).toBeGreaterThan(-1);
+    expect(off).toBeGreaterThan(on);
+    expect(end).toBeGreaterThan(off);
+    const warns = (block) => block.split('\n').filter((line) => line.includes('console.warn(')).map((line) => line.trim());
+    const onWarns = warns(src.slice(on, off));
+    const offWarns = warns(src.slice(off, end));
+    expect(onWarns).toHaveLength(2);
+    expect(offWarns).toHaveLength(2);
+    for (const line of onWarns) {
+      expect(line).toContain('refusing the BaggerBomb deploy');
+      expect(line).not.toContain('deploying the real agent');
+    }
+    for (const line of offWarns) {
+      expect(line).toContain('deploying the real agent');
+      expect(line).not.toContain('refusing');
+    }
   });
 });

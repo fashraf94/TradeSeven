@@ -233,6 +233,7 @@ export const LEAGUE_BATTLE_VIEW_V2_ENABLED = true;
  * The flag gates CREATION only (agentDeploy); the redirects key on the id prefix
  * so a mid-pilot rollback still attributes existing casual battles correctly. Do
  * NOT flip it in a build PR (the PR #510 lesson) — only after a Vercel preview.
+ * Per-game loadouts go off before this flag: perGameLoadoutFlags.test.js, the FL3 row.
  */
 export const CASUAL_CLONE_CONCURRENCY_ENABLED = true;
 

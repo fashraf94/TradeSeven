@@ -742,7 +742,7 @@ The identity-write surface is deliberately re-widened, last, after every other s
 
 | Change | From | To | Verification |
 |---|---|---|---|
-| `CASUAL_CLONE_CONCURRENCY_ENABLED` (`featureFlags.js:237`) | `false` | **`true`** | no hardcoded value pin exists (grep over every `expect(...)`; the two `toMatch` rows assert import shape, not value) and the flag is **not** in the guard's `DARK_BY_DESIGN` set — so BUILD_RULES §2's same-commit pin reconciliation has nothing to reconcile. `flagPinGuard.test.js` green. |
+| `CASUAL_CLONE_CONCURRENCY_ENABLED` (`featureFlags.js:237`) | `false` | **`true`** | no hardcoded value pin exists (grep over every `expect(...)`; the two `toMatch` rows assert import shape, not value) and the flag is **not** in the guard's `DARK_BY_DESIGN` set — so BUILD_RULES §2's same-commit pin reconciliation has nothing to reconcile. `flagPinGuard.test.js` green. **Amended 2026-11-07 (the armory flip review, AF-5):** still no value pin, but no longer nothing to reconcile. Since the armory flip (PR #1033) turned `PER_GAME_LOADOUT_ENABLED` on, the FL3 row in `src/config/perGameLoadoutFlags.test.js` fails while this flag is `false` and per-game loadouts are on, so per-game loadouts go off (with their pin) before this flag does. The flag's docstring in `featureFlags.js` says so. |
 | `vercel.json` — `process-pending-reflections` | removed at step −1 | **restored verbatim** `*/15 13,14,15,16,17,18,19,20,21,22,23,0 * * *` | schedule copied from the step −1 JSON block, byte-for-byte |
 | `vercel.json` — `agent-batch-review` | removed at step −1 | **restored verbatim** `25 20,21 * * 1-5` | same |
 | Cron registration | 37 | **39** | `grep -c '"path"' vercel.json` = **39** ✓ · JSON re-parsed valid, `crons.length` 39 |

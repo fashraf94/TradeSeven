@@ -38,9 +38,24 @@ const GROUPS = [
   // a slot claim for the week after next, no members yet.
   { id: 'GRP-SENTINEL-G', status: 'forming', updatedAt: '2026-11-07T08:00:00.000Z', battleStartWeek: { anchorEtDate: '2026-11-16' }, groupMembers: [] },
 ];
+// The armory flip review, AF-2: the double answers as Firestore's select() does, so a field the census's mask leaves out
+// reads as absent here too. Each document keeps its id and only the masked paths it has, nested as Firestore nests them
+// ('startAnchor.anchorEtDate' → { startAnchor: { anchorEtDate } }); a path the document lacks stays absent.
+const pick = (doc, fields) => {
+  const out = { id: doc.id };
+  for (const field of fields) {
+    const keys = field.split('.');
+    const value = keys.reduce((o, k) => (o != null && typeof o === 'object' ? o[k] : undefined), doc);
+    if (value === undefined) continue;
+    let at = out;
+    for (const k of keys.slice(0, -1)) at = (at[k] ??= {});
+    at[keys.at(-1)] = structuredClone(value);
+  }
+  return out;
+};
 const readerOf = (docs) => {
   const calls = [];
-  return { calls, query: async (q) => { calls.push(q); return docs.map((d) => structuredClone(d)); } };
+  return { calls, query: async (q) => { calls.push(q); return docs.map((d) => pick(d, q.fields)); } };
 };
 
 describe('the answer', () => {

@@ -30,7 +30,25 @@ const h = vi.hoisted(() => ({
   slots: { current: [{ id: 'archetype', filled: true }, { id: 'watchlist', filled: true }] },
   perGame: { on: true },
   forms: { next: 0, live: new Map(), mounts: 0, unmounts: 0 },
+  invalidations: 0,
+  // E-2's connected row (the last describe)
+  connected: false,
+  connectedAgent: null,
+  authListeners: [],
 }));
+const { CONNECTED_UID } = vi.hoisted(() => ({ CONNECTED_UID: 'u-1' }));
+// The armory flip review, AF-8: the idea reader runs real; only its invalidate() is counted (and still called through), so
+// the book sheet's return re-read is visible here.
+vi.mock('./hub/useHubResearch', async (importOriginal) => {
+  const real = await importOriginal();
+  return {
+    ...real,
+    default: function useHubResearch(args) {
+      const read = real.default(args);
+      return { ...read, invalidate: () => { h.invalidations += 1; read.invalidate(); } };
+    },
+  };
+});
 vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_ARMORY_ENABLED: true }));
 vi.mock('../../config/perGameLoadoutFlags', () => ({ get PER_GAME_LOADOUT_ENABLED() { return h.perGame.on; } }));
 vi.mock('framer-motion', async (importOriginal) => ({ ...(await importOriginal()), useReducedMotion: () => false }));
@@ -45,7 +63,57 @@ vi.mock('../AgentForm/AgentForm', () => ({
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => h.userState }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {} }));
 const { READ } = vi.hoisted(() => ({ READ: Symbol('agentRead') }));
-vi.mock('./hub/useHubReaders', () => ({ default: (hub) => ({ sections: {}, actions: {}, agent: hub?.[READ] ?? null }) }));
+// Every row but E-2's (the last describe) reads the agent from the hub object. E-2's row sets `h.connected` and runs the
+// real readers inside App's deploy provider, on the seams the S7 suite's connected hub mocks (below, each inert unless
+// `h.connected`).
+vi.mock('./hub/useHubReaders', async (importOriginal) => {
+  const real = await importOriginal();
+  return {
+    ...real,
+    default: function useHubReaders(hub, ...rest) {
+      return h.connected ? real.default(hub, ...rest) : { sections: {}, actions: {}, agent: hub?.[READ] ?? null };
+    },
+  };
+});
+vi.mock('firebase/auth', async (importOriginal) => ({ ...(await importOriginal()), onAuthStateChanged: (_auth, cb) => { h.authListeners.push(cb); return () => {}; } }));
+vi.mock('../../firebase/authService', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getIdToken: async () => (h.connected ? 'tok' : null),
+  getCurrentUser: () => (h.connected ? { uid: CONNECTED_UID } : null),
+}));
+vi.mock('../../hooks/useAgent', () => ({
+  default: (uid, options) => ({
+    status: uid ? 'ready' : 'loading', agent: uid ? h.connectedAgent : null, ownerUid: uid ?? null, ownerEpoch: options?.ownerEpoch ?? null,
+    readError: null, retry: () => {}, activeDirectives: [],
+  }),
+}));
+vi.mock('./hub/useHubCompletedBattles', async () => {
+  const { readAuthIdentity } = await import('../../services/authIdentity');
+  return {
+    default: function useHubCompletedBattles() {
+      const id = readAuthIdentity();
+      return {
+        battles: [], status: 'ready', error: null, ownerUid: id.uid, ownerEpoch: id.authEpoch, lastSuccessfulAt: Date.now(), generation: 1,
+        reviews: {}, checking: false, refreshing: false, nextAttemptAt: null, refresh: () => {},
+      };
+    },
+  };
+});
+vi.mock('../../hooks/useDailyRegimeBrief', () => ({
+  default: function useDailyRegimeBrief() {
+    return { dailyBrief: null, forDate: null, generatedAt: null, isStale: false, loading: true, error: null, refetch: () => {} };
+  },
+}));
+vi.mock('../../utils/marketSchedule', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, getMarketState: (...a) => (h.connected ? { state: 'OPEN', isOpen: true } : real.getMarketState(...a)) };
+});
+vi.mock('../../services/dueIdeaCheck', () => ({ checkDueIdea: async () => null }));
+vi.mock('../../services/agentBattleVerify', () => ({ findActiveBattleForAgent: async () => ({ found: false, battle: null }) }));
+vi.mock('../../services/ownedBattleRead', () => ({ readOwnedBattle: async () => null }));
+vi.mock('../../hooks/useDeployTargetProgress', () => ({ default: () => ({ deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false }) }));
+vi.mock('../Dashboard/deployCeremony/DeployCeremony', () => ({ default: (props) => <div data-ceremony={props.attemptId} /> }));
+vi.mock('../../config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), isDeployCeremonyOn: () => false }));
 vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists: (...a) => h.listWatchlists(...a) }));
 vi.mock('../../services/agentService', () => ({ equipWatchlist: vi.fn(), unequipWatchlist: vi.fn(), changeArchetype: vi.fn() }));
 vi.mock('../../services/loadoutService', async (importOriginal) => {
@@ -74,6 +142,10 @@ import { SET_ALONE } from '../AgentForm/agentFormSpec';
 import { armoryLines } from './hub/archetypeLines';
 import DeploySection from './sections/DeploySection';
 import { PerGameLoadoutContext } from './hub/perGameLoadoutContext';
+import { DeployAttemptProvider } from '../../contexts/DeployAttemptContext';
+import { resetAuthIdentityForTests } from '../../services/authIdentity';
+import { __resetHoldClaim } from '../../hooks/holdClaim';
+import { installFakeCanvas } from './__fixtures__/shadowCanvasKit';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -110,6 +182,10 @@ beforeEach(() => {
   h.lockSubs = [];
   h.perGame.on = true;
   h.forms.next = 0; h.forms.live = new Map(); h.forms.mounts = 0; h.forms.unmounts = 0;
+  h.invalidations = 0;
+  h.connected = false;
+  h.connectedAgent = null;
+  h.authListeners = [];
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 afterEach(() => {
@@ -413,18 +489,27 @@ describe('board 4: the armory with a loadout context', () => {
 describe('the book door: today\'s watchlist sheet with the loadout\'s context', () => {
   it('BaggerBomb: titled for BaggerBomb, its book selected; a list equips it, "No book · open market" clears it', async () => {
     await renderHub();
+    // AF-8: the book sheet sits under the watchlist sheet's id, so its return reads the lists and the idea once more
+    // (useHubRuntime.js closeSheet), with the flags on as with them off.
+    const listReads = h.listWatchlists.mock.calls.length;
     click(row('baggerbomb', 'book'));
     await flush();
     expect(document.body.textContent).toContain('Choose a book for BaggerBomb');
+    expect(h.listWatchlists).toHaveBeenCalledTimes(listReads);
+    expect(h.invalidations).toBe(0);
     click(byRole(document, 'button', /Industrials/)[0] || [...document.querySelectorAll('*')].find((el) => el.textContent === 'Industrials' && el.closest('button')));
     await flush();
     expect(h.writers.equipLoadoutBook).toHaveBeenCalledWith('ag-1', 'wl-ind', 'baggerbomb');
+    expect(h.listWatchlists).toHaveBeenCalledTimes(listReads + 1);
+    expect(h.invalidations).toBe(1);
     click(row('baggerbomb', 'book'));
     await flush();
     const none = [...document.querySelectorAll('button')].find((b) => b.textContent.includes('No book · open market'));
     click(none);
     await flush();
     expect(h.writers.unequipLoadoutBook).toHaveBeenCalledWith('ag-1', 'baggerbomb');
+    expect(h.listWatchlists).toHaveBeenCalledTimes(listReads + 2);
+    expect(h.invalidations).toBe(2);
   });
 
   it('League, open: titled for League, writing the League book', async () => {
@@ -494,6 +579,79 @@ describe('N1: outside a game, no figure wears a loadout\'s archetype but the sti
       for (const m of mounted) m.unmount();
       mounted = [];
     }
+  });
+});
+
+// The armory flip review §3.9, E-2: the clone-specific refusal (A2R-3 (b)) on the screen. The real deployAgent, the
+// clone ensure answering 500, with both flags on: the deploy is refused before any POST, and the phone's Deploy card
+// says "Couldn’t start the BaggerBomb game · try again" with the strip offering its Retry. The connected hub is the S7
+// suite's (App's deploy provider, the real readers, the hold the player uses), with the per-game scope of this file.
+describe('E-2: a clone ensure that fails refuses the deploy on the screen, with the retry line and the strip\'s Retry', () => {
+  const T0 = Date.UTC(2026, 10, 9, 15, 0);
+  let kit;
+  let nowSpy;
+  afterEach(() => {
+    nowSpy?.mockRestore();
+    nowSpy = null;
+    kit?.restore();
+    kit = null;
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('the phone at 390: refused before any POST; the card carries the clone line, the strip its Retry', async () => {
+    resetAuthIdentityForTests();
+    __resetHoldClaim();
+    h.connected = true;
+    h.connectedAgent = AGENT({ ownerId: CONNECTED_UID });
+    kit = installFakeCanvas();
+    const calls = [];
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      calls.push(url);
+      if (url === '/api/agent/ensure-casual-clone') return { ok: false, status: 500, text: async () => JSON.stringify({ error: 'server_error' }) };
+      return { ok: true, status: 200, text: async () => JSON.stringify({ success: true, agentBattleId: 'b-should-not-exist', portfolio: {}, bench: [] }) };
+    }));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(T0);
+    nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => kit.state.now);
+    layout.state.hubWidth = 390;
+    const hub = {
+      activeBattles: [],
+      activePoll: { epoch: 1, status: 'ready', ownerUid: CONNECTED_UID, ownerEpoch: 1, lastSuccessfulAt: T0 - 30000, error: null, refreshing: false },
+      refreshActiveBattles: vi.fn(async () => true),
+      openGame: vi.fn(), openFilmRoom: vi.fn(), setScreen: vi.fn(), onOpenForge: vi.fn(),
+    };
+    mounted.push(mount(
+      <DeployAttemptProvider hubEnabled userName="flash" onCreateAgentBattle={vi.fn()} onEnterBattle={vi.fn()} onOpenBattle={vi.fn()} refreshActiveBattles={hub.refreshActiveBattles} clearCeremonyStash={vi.fn()}>
+        <CommandCenterHub site="mobile" hub={hub} />
+      </DeployAttemptProvider>,
+    ));
+    act(() => { for (const cb of [...h.authListeners]) cb({ uid: CONNECTED_UID }); });
+    await flush();
+    answerLock(OPEN);
+    click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+    await flush();
+    const strip = () => document.querySelector('[data-hub-strip]');
+    const phoneCard = () => document.querySelector('[data-hub-deploy-card="phone"]');
+    expect(card('baggerbomb')).not.toBeNull();   // the per-game scope is on: the flags-on hub
+    // the player's hold on the strip: press, the 1.3 s charge, the locked beat, the request out
+    const holdControl = byRole(strip(), 'button', COPY.deploy.holdLabel)[0] ?? strip().querySelector('button[aria-label]');
+    act(() => {
+      const e = new Event('pointerdown', { bubbles: true, cancelable: true });
+      Object.defineProperty(e, 'pointerId', { value: 1 });
+      holdControl.dispatchEvent(e);
+    });
+    kit.tick(650);
+    kit.tick(650);
+    await act(async () => { vi.advanceTimersByTime(450); });
+    await flush();
+    await flush();
+    // refused before any POST: the ensure was the one deploy request (the idea reader's own read is the hub's, not the deploy's)
+    expect(calls.filter((url) => url.startsWith('/api/agent/'))).toEqual(['/api/agent/ensure-casual-clone']);
+    expect(phoneCard().textContent).toContain(LOADOUT_COPY.deployCloneFailed);
+    expect(LOADOUT_COPY.deployCloneFailed).toBe('Couldn’t start the BaggerBomb game · try again');
+    expect(strip().getAttribute('data-hub-strip')).toBe('failed');
+    expect(byRole(strip(), 'button', COPY.deploy.retry)).toHaveLength(1);
   });
 });
 

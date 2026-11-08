@@ -52,6 +52,17 @@ afterEach(() => { act(() => root.unmount()); host.remove(); });
 const render = (el) => act(() => { root.render(el); });
 const slot = (id) => seen.slots.filter((s) => s.seat.id === id).at(-1);
 
+// The armory flip review, AF-3: the arena reads Reduce Motion from the browser (arenaEngineCore.js prefersReducedMotion,
+// a bare matchMedia); jsdom has none, so a row that needs it on stubs it for its own render and takes it away after.
+const REDUCE_QUERY = '(prefers-reduced-motion: reduce)';
+const withReducedMotion = (fn) => {
+  vi.stubGlobal('matchMedia', (query) => ({
+    matches: query === REDUCE_QUERY, media: query, onchange: null,
+    addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent() { return false; },
+  }));
+  try { fn(); } finally { vi.unstubAllGlobals(); }
+};
+
 const SEATS = [
   { id: 'a', name: 'Ada', color: '#F2C14E', archId: 'momentum_chaser', score: 1 },
   { id: 'me', name: 'Me', color: '#5EEAD4', archId: 'degen', you: true, score: 2 },
@@ -126,6 +137,15 @@ describe('the fuse hero (the live arena, ranked and training)', () => {
     expect(slot('me').board.complete).toBe(false);
     render(fuse({ state: 'complete' }));
     expect(slot('me').board.complete).toBe(true);
+  });
+
+  // AF-3: the form holds its breath at the midpoint only when told (AgentForm engine vocab.js), so the seat must hand on
+  // the arena's Reduce Motion (FuseHero.jsx, the tip's LeagueAgentFormSlot).
+  it('every seat\'s form is handed the arena\'s reduced motion: on when the browser asks for it, off when it does not (AF-3)', () => {
+    withReducedMotion(() => render(fuse()));
+    for (const s of SEATS) expect(slot(s.id).reducedMotion, s.id).toBe(true);
+    render(fuse());
+    for (const s of SEATS) expect(slot(s.id).reducedMotion, s.id).toBe(false);
   });
 });
 
@@ -288,6 +308,14 @@ describe('the climb (the Training tab\'s preview, and the fuse-off fallback)', (
   it('with no player on the board (a stranger\'s view) nobody is told where to look', () => {
     render(climb({ youId: 'nobody' }));
     expect(SEATS.map((s) => slot(s.id).facing)).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  // AF-3: the climb's seat (ClimbArena.jsx's LeagueAgentFormSlot) hands on the same reduced motion.
+  it('every seat\'s form is handed the arena\'s reduced motion: on when the browser asks for it, off when it does not (AF-3)', () => {
+    withReducedMotion(() => render(climb()));
+    for (const s of SEATS) expect(slot(s.id).reducedMotion, s.id).toBe(true);
+    render(climb());
+    for (const s of SEATS) expect(slot(s.id).reducedMotion, s.id).toBe(false);
   });
 
   it('a surge does not remount the form: the engine view lives through it', () => {

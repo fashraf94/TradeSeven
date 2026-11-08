@@ -140,6 +140,17 @@ describe('agentDeploy — reports the resolved deploy target (§3)', () => {
     expect(cloneFallbacks).toEqual(['http_500']);
   });
 
+  // The armory flip review, AF-1: the kill switch's `catch` (agentDeploy.js, FL4-b's `else` arm). Flag off (main's value),
+  // a thrown ensure falls back to the ranked agent exactly as today, its telemetry included. The flag-on rows below drive
+  // only the first arm's `catch`; this row is the one that runs the rollback path's.
+  it('fallback: the clone ensure throws → target stays the RANKED agent, flag off (AF-1)', async () => {
+    const { reported, body, result } = await runDeploy({ cloneOk: false, cloneThrows: true });
+    expect(result.success).toBe(true);
+    expect(reported).toEqual([RANKED]);
+    expect(body.agentId).toBe(RANKED);   // the id reported === the id deployed
+    expect(cloneFallbacks).toEqual(['threw']);
+  });
+
   // Build A2 fix pass — A2R-3 (b), founder ruling Nov 7 2026: with per-game loadouts on, a BaggerBomb deploy NEVER falls
   // back to the ranked agent (it would wear the League loadout and hold the ranked record's battle).
   describe('A2R-3 (b): with PER_GAME_LOADOUT_ENABLED on, a failed clone ensure refuses the deploy', () => {
