@@ -194,6 +194,7 @@ export const SHEET_COPY = Object.freeze({
   pinCall: (when) => `Called · ${when}`,
   pinAnswer: (when) => `You answered · ${when}`,
   pinCheck: (when) => `What it decided · ${when}`,
+  pinFlag: (when) => `What it flagged · ${when}`,
   lineEntry: (price, d) => `entry ${money(price, d)}`,
   lineIdeaLive: (side, price, d) => `live ${side} ${money(price, d)}`,
   lineIdeaWrong: (side, price, d) => `wrong ${side} ${money(price, d)}`,

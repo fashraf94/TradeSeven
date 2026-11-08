@@ -722,7 +722,11 @@ export function recordPinsOf({ battle, symbol, nowMs, row, calls }) {
   const latest = latestRationaleEntry(battle);
   const check = latestCheckOn(battle, symbol) ?? (latest && namesSymbol(latest.rationale, symbol) ? latest : null);
   const checkMs = recordMs(check?.timestamp);
-  if (finite(checkMs)) markers.push({ id: `check:${check.evalId ?? checkMs}`, kind: 'check', atMs: checkMs, label: SHEET_COPY.pinCheck(whenLabel(checkMs)) });
+  // The pin says what that check did for THIS stock: a name it only flagged (on its
+  // candidates list, not held, no evidence of its own) was flagged, never "decided".
+  const onlyFlagged = !!check && !holding.held && !(check.evidence && typeof check.evidence === 'object' && check.evidence[symbol])
+    && Array.isArray(check.candidates) && check.candidates.some((c) => c?.symbol === symbol);
+  if (finite(checkMs)) markers.push({ id: `check:${check.evalId ?? checkMs}`, kind: 'check', atMs: checkMs, label: onlyFlagged ? SHEET_COPY.pinFlag(whenLabel(checkMs)) : SHEET_COPY.pinCheck(whenLabel(checkMs)) });
   markers.sort((a, b) => a.atMs - b.atMs);
 
   const lines = [];
