@@ -37,7 +37,13 @@ const root = createRoot(document.getElementById('root'));
 // Vite dev server or on a Vercel preview host, never on production
 // (src/components/League/backing/backingPreview.js decides); anywhere else the
 // app renders exactly as before. The page is its own lazily loaded chunk.
-if (backingPreviewRequested(window.location, { DEV: import.meta.env.DEV, VITE_VERCEL_ENV: import.meta.env.VITE_VERCEL_ENV })) {
+// SMOKE ONLY, NEVER MERGE — Research Modal Build A spec §8: the Bomb mode fixture loader.
+const bombFixture = new URLSearchParams(window.location.search).get('bombFixture');
+if (bombFixture) {
+  import('./smoke/BombSmokeScreen')
+    .then((m) => { root.render(<m.default state={bombFixture} />); })
+    .catch((err) => console.error('[BombSmoke] the fixture page failed to load:', err));
+} else if (backingPreviewRequested(window.location, { DEV: import.meta.env.DEV, VITE_VERCEL_ENV: import.meta.env.VITE_VERCEL_ENV })) {
   import('./screens/BackingPreviewScreen')
     .then((preview) => {
       const BackingPreviewScreen = preview.default;

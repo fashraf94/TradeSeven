@@ -1,0 +1,2285 @@
+{
+ "before": {
+  "id": "stock-battle",
+  "agentId": "agent",
+  "ownerId": "owner",
+  "gameMode": "baggerbomb_agent",
+  "duration": "fullday",
+  "status": "active",
+  "activatedAt": "2026-10-14T14:02:00.000Z",
+  "portfolio": {
+   "star": [
+    {
+     "symbol": "EOG",
+     "baseATR": 2.5,
+     "positionId": "position-agent",
+     "slotVersion": 1,
+     "stockThresholdReceipt": {
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+      "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+      "battleId": "stock-battle",
+      "side": "agent",
+      "tier": "star",
+      "slot": 0,
+      "positionId": "position-agent",
+      "slotVersion": 1,
+      "symbol": "EOG",
+      "securityId": "EODHD:EOG.US:US-EOG",
+      "snapshotId": "ceede732-595d-47dc-921c-80b9eb583940",
+      "inputRef": "stockThresholdInputs/ceede732-595d-47dc-921c-80b9eb583940",
+      "inputHash": "3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9",
+      "snapshotHash": "0facbdf53847d859aac4de8e1d3ca8f4475a2ef5bfc3ae3ba0c2783fe3d7fa46",
+      "snapshotCapturedAt": "2026-10-14T14:02:00.000Z",
+      "sourceSession": "2026-10-13",
+      "atr14Dollars": 2,
+      "measuredPct": 2,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "fill": 154.76,
+      "fillQuote": {
+       "provider": "EODHD",
+       "source": "real-time",
+       "price": 154.76,
+       "quoteAsOf": "2026-10-14T13:47:00.000Z",
+       "observedAt": "2026-10-14T14:02:00.000Z",
+       "validation": "accepted_original_quote",
+       "raw": {
+        "code": "EOG.US",
+        "close": 154.76,
+        "high": 309.52,
+        "low": 1,
+        "previousClose": 100,
+        "timestamp": 1791985620
+       }
+      },
+      "enteredAt": "2026-10-14T14:02:00.000Z",
+      "receiptHash": "91ecb9bbaf3f3b0d5ee5b05c03e74bd413149205497d0bc569644b9f39f639a1"
+     },
+     "swapPrice": 154.76,
+     "swappedInAt": "2026-10-14T14:02:00.000Z"
+    }
+   ],
+   "core": [],
+   "support": [],
+   "bench": {
+    "stocks": [
+     {
+      "symbol": "MSFT",
+      "baseATR": 3
+     }
+    ],
+    "crypto": null
+   },
+   "startingPrices": {
+    "EOG": 154.76
+   }
+  },
+  "opponent": {
+   "portfolio": {
+    "star": [
+     {
+      "symbol": "CVX",
+      "baseATR": 2.5,
+      "positionId": "position-cpu",
+      "slotVersion": 1,
+      "stockThresholdReceipt": {
+       "modelId": "stock_measured_atr14_fullday_v2",
+       "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+       "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+       "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+       "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+       "battleId": "stock-battle",
+       "side": "cpu",
+       "tier": "star",
+       "slot": 0,
+       "positionId": "position-cpu",
+       "slotVersion": 1,
+       "symbol": "CVX",
+       "securityId": "EODHD:CVX.US:US-CVX",
+       "snapshotId": "a53e3ac2-efaa-4d49-8ddc-37e05b9f439e",
+       "inputRef": "stockThresholdInputs/a53e3ac2-efaa-4d49-8ddc-37e05b9f439e",
+       "inputHash": "f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076",
+       "snapshotHash": "76ae860c732cd9dfe16712fd460458dceb6e3bc34f865f0c5f990fc13e53f3fb",
+       "snapshotCapturedAt": "2026-10-14T14:02:00.000Z",
+       "sourceSession": "2026-10-13",
+       "atr14Dollars": 2,
+       "measuredPct": 2,
+       "scoringPct": 3.6,
+       "scoringPctDecimal": "3.600000",
+       "fill": 61.2,
+       "fillQuote": {
+        "provider": "EODHD",
+        "source": "real-time",
+        "price": 61.2,
+        "quoteAsOf": "2026-10-14T13:47:00.000Z",
+        "observedAt": "2026-10-14T14:02:00.000Z",
+        "validation": "accepted_original_quote",
+        "raw": {
+         "code": "CVX.US",
+         "close": 61.2,
+         "high": 200,
+         "low": 1,
+         "previousClose": 100,
+         "timestamp": 1791985620
+        }
+       },
+       "enteredAt": "2026-10-14T14:02:00.000Z",
+       "receiptHash": "8c5157f6a6a417f0abe45c5e21d53b9f6a719004eaa40b30cd5fcc1e3fca7b2b"
+      },
+      "swapPrice": 61.2,
+      "swappedInAt": "2026-10-14T14:02:00.000Z"
+     }
+    ],
+    "core": [],
+    "support": []
+   }
+  },
+  "scoring": {
+   "stockThresholdModel": {
+    "modelId": "stock_measured_atr14_fullday_v2",
+    "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+    "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+    "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+    "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+    "admittedAt": "2026-10-14T14:02:00.000Z"
+   },
+   "stockRosterVersion": 1,
+   "stockScoreVersion": 1,
+   "thresholds": {},
+   "stockRewardHistory": {
+    "agent": {
+     "position-agent": {
+      "positionId": "position-agent",
+      "side": "agent",
+      "receiptHash": "91ecb9bbaf3f3b0d5ee5b05c03e74bd413149205497d0bc569644b9f39f639a1",
+      "high": 160.19,
+      "low": 154.76,
+      "observedAt": "2026-10-16T17:00:00.000Z",
+      "crossedTiers": [],
+      "maxMultiplier": 0.9746273800292939,
+      "minMultiplier": 0
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "positionId": "position-cpu",
+      "side": "cpu",
+      "receiptHash": "8c5157f6a6a417f0abe45c5e21d53b9f6a719004eaa40b30cd5fcc1e3fca7b2b",
+      "high": 61.5,
+      "low": 61.2,
+      "observedAt": "2026-10-16T17:00:00.000Z",
+      "crossedTiers": [],
+      "maxMultiplier": 0.13616557734204662,
+      "minMultiplier": 0
+     }
+    }
+   },
+   "stockRiskHistory": {
+    "agent": {
+     "position-agent": {
+      "positionId": "position-agent",
+      "maxMultiplier": 1.4034634272421833,
+      "minMultiplier": 0
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "positionId": "position-cpu",
+      "maxMultiplier": 0.19607843137254716,
+      "minMultiplier": 0
+     }
+    }
+   },
+   "stockScoreComponents": {},
+   "stockRewardContexts": {
+    "agent": {
+     "position-agent": {
+      "status": "valid",
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "positionId": "position-agent",
+      "receiptHash": "91ecb9bbaf3f3b0d5ee5b05c03e74bd413149205497d0bc569644b9f39f639a1",
+      "receiptContent": "{\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"atr14Dollars\":2,\"battleId\":\"stock-battle\",\"enteredAt\":\"2026-10-14T14:02:00.000Z\",\"fill\":154.76,\"fillQuote\":{\"observedAt\":\"2026-10-14T14:02:00.000Z\",\"price\":154.76,\"provider\":\"EODHD\",\"quoteAsOf\":\"2026-10-14T13:47:00.000Z\",\"raw\":{\"close\":154.76,\"code\":\"EOG.US\",\"high\":309.52,\"low\":1,\"previousClose\":100,\"timestamp\":1791985620},\"source\":\"real-time\",\"validation\":\"accepted_original_quote\"},\"inputHash\":\"3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9\",\"inputRef\":\"stockThresholdInputs/ceede732-595d-47dc-921c-80b9eb583940\",\"measuredPct\":2,\"modelId\":\"stock_measured_atr14_fullday_v2\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-agent\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"securityId\":\"EODHD:EOG.US:US-EOG\",\"side\":\"agent\",\"slot\":0,\"slotVersion\":1,\"snapshotCapturedAt\":\"2026-10-14T14:02:00.000Z\",\"snapshotHash\":\"0facbdf53847d859aac4de8e1d3ca8f4475a2ef5bfc3ae3ba0c2783fe3d7fa46\",\"snapshotId\":\"ceede732-595d-47dc-921c-80b9eb583940\",\"sourceSession\":\"2026-10-13\",\"symbol\":\"EOG\",\"tier\":\"star\"}",
+      "inputRef": "stockThresholdInputs/ceede732-595d-47dc-921c-80b9eb583940",
+      "fill": 154.76,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "currentPrice": 160.19,
+      "multiplier": 0.9746273800292939,
+      "targets": [
+       {
+        "key": "bagger",
+        "label": "BaggerBomb",
+        "emoji": "💣",
+        "multiplier": 1,
+        "points": 15,
+        "k": 1,
+        "target": 160.33136
+       },
+       {
+        "key": "doubleBagger",
+        "label": "Double Bagger",
+        "emoji": "💣💣",
+        "multiplier": 1.5,
+        "points": 30,
+        "k": 1.5,
+        "target": 163.11704
+       },
+       {
+        "key": "tenBagger",
+        "label": "TenBagger",
+        "emoji": "🚀💣",
+        "multiplier": 2,
+        "points": 50,
+        "k": 2,
+        "target": 165.90272
+       },
+       {
+        "key": "bust",
+        "label": "Bust",
+        "emoji": "📉",
+        "multiplier": 1,
+        "points": -10,
+        "k": -1,
+        "target": 149.18864
+       },
+       {
+        "key": "crash",
+        "label": "Crash",
+        "emoji": "💥",
+        "multiplier": 1.5,
+        "points": -20,
+        "k": -1.5,
+        "target": 146.40295999999998
+       },
+       {
+        "key": "meltdown",
+        "label": "Meltdown",
+        "emoji": "🔥",
+        "multiplier": 2,
+        "points": -35,
+        "k": -2,
+        "target": 143.61728
+       }
+      ],
+      "crossedTiers": [],
+      "nextTarget": {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 160.33136
+      },
+      "nextPenalty": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 149.18864
+      },
+      "penaltyProximity": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 149.18864,
+       "distance": 1.974627380029294,
+       "approaching": false
+      },
+      "proximity": {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 160.33136,
+       "distance": 0.025372619970705848,
+       "locked": true,
+       "progress": 0.9746273800292942
+      },
+      "quoteEvidence": {
+       "kind": "post_fill_quote",
+       "providerAsOf": "2026-10-16T17:00:00.000Z",
+       "observedAt": "2026-10-16T17:00:00.000Z"
+      },
+      "history": {
+       "positionId": "position-agent",
+       "side": "agent",
+       "receiptHash": "91ecb9bbaf3f3b0d5ee5b05c03e74bd413149205497d0bc569644b9f39f639a1",
+       "high": 160.19,
+       "low": 154.76,
+       "observedAt": "2026-10-16T17:00:00.000Z",
+       "crossedTiers": [],
+       "maxMultiplier": 0.9746273800292939,
+       "minMultiplier": 0
+      }
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "status": "valid",
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "positionId": "position-cpu",
+      "receiptHash": "8c5157f6a6a417f0abe45c5e21d53b9f6a719004eaa40b30cd5fcc1e3fca7b2b",
+      "receiptContent": "{\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"atr14Dollars\":2,\"battleId\":\"stock-battle\",\"enteredAt\":\"2026-10-14T14:02:00.000Z\",\"fill\":61.2,\"fillQuote\":{\"observedAt\":\"2026-10-14T14:02:00.000Z\",\"price\":61.2,\"provider\":\"EODHD\",\"quoteAsOf\":\"2026-10-14T13:47:00.000Z\",\"raw\":{\"close\":61.2,\"code\":\"CVX.US\",\"high\":200,\"low\":1,\"previousClose\":100,\"timestamp\":1791985620},\"source\":\"real-time\",\"validation\":\"accepted_original_quote\"},\"inputHash\":\"f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076\",\"inputRef\":\"stockThresholdInputs/a53e3ac2-efaa-4d49-8ddc-37e05b9f439e\",\"measuredPct\":2,\"modelId\":\"stock_measured_atr14_fullday_v2\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-cpu\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"securityId\":\"EODHD:CVX.US:US-CVX\",\"side\":\"cpu\",\"slot\":0,\"slotVersion\":1,\"snapshotCapturedAt\":\"2026-10-14T14:02:00.000Z\",\"snapshotHash\":\"76ae860c732cd9dfe16712fd460458dceb6e3bc34f865f0c5f990fc13e53f3fb\",\"snapshotId\":\"a53e3ac2-efaa-4d49-8ddc-37e05b9f439e\",\"sourceSession\":\"2026-10-13\",\"symbol\":\"CVX\",\"tier\":\"star\"}",
+      "inputRef": "stockThresholdInputs/a53e3ac2-efaa-4d49-8ddc-37e05b9f439e",
+      "fill": 61.2,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "currentPrice": 61.5,
+      "multiplier": 0.13616557734204662,
+      "targets": [
+       {
+        "key": "bagger",
+        "label": "BaggerBomb",
+        "emoji": "💣",
+        "multiplier": 1,
+        "points": 15,
+        "k": 1,
+        "target": 63.403200000000005
+       },
+       {
+        "key": "doubleBagger",
+        "label": "Double Bagger",
+        "emoji": "💣💣",
+        "multiplier": 1.5,
+        "points": 30,
+        "k": 1.5,
+        "target": 64.5048
+       },
+       {
+        "key": "tenBagger",
+        "label": "TenBagger",
+        "emoji": "🚀💣",
+        "multiplier": 2,
+        "points": 50,
+        "k": 2,
+        "target": 65.60640000000001
+       },
+       {
+        "key": "bust",
+        "label": "Bust",
+        "emoji": "📉",
+        "multiplier": 1,
+        "points": -10,
+        "k": -1,
+        "target": 58.9968
+       },
+       {
+        "key": "crash",
+        "label": "Crash",
+        "emoji": "💥",
+        "multiplier": 1.5,
+        "points": -20,
+        "k": -1.5,
+        "target": 57.8952
+       },
+       {
+        "key": "meltdown",
+        "label": "Meltdown",
+        "emoji": "🔥",
+        "multiplier": 2,
+        "points": -35,
+        "k": -2,
+        "target": 56.7936
+       }
+      ],
+      "crossedTiers": [],
+      "nextTarget": {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 63.403200000000005
+      },
+      "nextPenalty": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 58.9968
+      },
+      "penaltyProximity": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 58.9968,
+       "distance": 1.1361655773420476,
+       "approaching": false
+      },
+      "proximity": {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 63.403200000000005,
+       "distance": 0.8638344226579544,
+       "locked": false,
+       "progress": 0.13616557734204648
+      },
+      "quoteEvidence": {
+       "kind": "post_fill_quote",
+       "providerAsOf": "2026-10-16T17:00:00.000Z",
+       "observedAt": "2026-10-16T17:00:00.000Z"
+      },
+      "history": {
+       "positionId": "position-cpu",
+       "side": "cpu",
+       "receiptHash": "8c5157f6a6a417f0abe45c5e21d53b9f6a719004eaa40b30cd5fcc1e3fca7b2b",
+       "high": 61.5,
+       "low": 61.2,
+       "observedAt": "2026-10-16T17:00:00.000Z",
+       "crossedTiers": [],
+       "maxMultiplier": 0.13616557734204662,
+       "minMultiplier": 0
+      }
+     }
+    }
+   }
+  },
+  "thresholdHistory": {},
+  "trades": [],
+  "scoreState": {
+   "tradeCount": 0,
+   "dailyScores": {},
+   "activeScore": 70,
+   "bankedScore": 0,
+   "currentScore": 70,
+   "opponentScore": 10,
+   "lastScoredAt": "2026-10-16T17:00:40.000Z",
+   "stockScoreEvidence": {
+    "status": "valid",
+    "reason": null,
+    "model": {
+     "modelId": "stock_measured_atr14_fullday_v2",
+     "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+     "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+     "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+     "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+     "admittedAt": "2026-10-14T14:02:00.000Z"
+    },
+    "rosterToken": "[{\"modelId\":\"stock_measured_atr14_fullday_v2\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"admittedAt\":\"2026-10-14T14:02:00.000Z\"},1,[[\"agent\",\"star\",0,\"EOG\",\"position-agent\",1,\"91ecb9bbaf3f3b0d5ee5b05c03e74bd413149205497d0bc569644b9f39f639a1\"],[\"cpu\",\"star\",0,\"CVX\",\"position-cpu\",1,\"8c5157f6a6a417f0abe45c5e21d53b9f6a719004eaa40b30cd5fcc1e3fca7b2b\"]]]",
+    "scoreVersion": 1,
+    "currentScore": 70,
+    "opponentScore": 10,
+    "componentContent": "{}",
+    "at": "2026-10-16T17:00:00.000Z",
+    "contextContent": "[[\"agent\",\"position-agent\",{\"crossedTiers\":[],\"currentPrice\":160.19,\"fill\":154.76,\"history\":{\"crossedTiers\":[],\"high\":160.19,\"low\":154.76,\"maxMultiplier\":0.9746273800292939,\"minMultiplier\":0,\"observedAt\":\"2026-10-16T17:00:00.000Z\",\"positionId\":\"position-agent\",\"receiptHash\":\"91ecb9bbaf3f3b0d5ee5b05c03e74bd413149205497d0bc569644b9f39f639a1\",\"side\":\"agent\"},\"inputRef\":\"stockThresholdInputs/ceede732-595d-47dc-921c-80b9eb583940\",\"modelId\":\"stock_measured_atr14_fullday_v2\",\"multiplier\":0.9746273800292939,\"nextPenalty\":{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},\"nextTarget\":{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":160.33136},\"penaltyProximity\":{\"approaching\":false,\"distance\":1.974627380029294,\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-agent\",\"proximity\":{\"distance\":0.025372619970705848,\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"locked\":true,\"multiplier\":1,\"points\":15,\"progress\":0.9746273800292942,\"target\":160.33136},\"quoteEvidence\":{\"kind\":\"post_fill_quote\",\"observedAt\":\"2026-10-16T17:00:00.000Z\",\"providerAsOf\":\"2026-10-16T17:00:00.000Z\"},\"receiptContent\":\"{\\\"approvedPolicyRef\\\":\\\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\\\",\\\"atr14Dollars\\\":2,\\\"battleId\\\":\\\"stock-battle\\\",\\\"enteredAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"fill\\\":154.76,\\\"fillQuote\\\":{\\\"observedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"price\\\":154.76,\\\"provider\\\":\\\"EODHD\\\",\\\"quoteAsOf\\\":\\\"2026-10-14T13:47:00.000Z\\\",\\\"raw\\\":{\\\"close\\\":154.76,\\\"code\\\":\\\"EOG.US\\\",\\\"high\\\":309.52,\\\"low\\\":1,\\\"previousClose\\\":100,\\\"timestamp\\\":1791985620},\\\"source\\\":\\\"real-time\\\",\\\"validation\\\":\\\"accepted_original_quote\\\"},\\\"inputHash\\\":\\\"3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9\\\",\\\"inputRef\\\":\\\"stockThresholdInputs/ceede732-595d-47dc-921c-80b9eb583940\\\",\\\"measuredPct\\\":2,\\\"modelId\\\":\\\"stock_measured_atr14_fullday_v2\\\",\\\"policyHash\\\":\\\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\\\",\\\"positionId\\\":\\\"position-agent\\\",\\\"publicationRuleHash\\\":\\\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\\\",\\\"publicationRuleId\\\":\\\"eodhd_us_completed_session_observation_v1\\\",\\\"scoringPct\\\":3.6,\\\"scoringPctDecimal\\\":\\\"3.600000\\\",\\\"securityId\\\":\\\"EODHD:EOG.US:US-EOG\\\",\\\"side\\\":\\\"agent\\\",\\\"slot\\\":0,\\\"slotVersion\\\":1,\\\"snapshotCapturedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"snapshotHash\\\":\\\"0facbdf53847d859aac4de8e1d3ca8f4475a2ef5bfc3ae3ba0c2783fe3d7fa46\\\",\\\"snapshotId\\\":\\\"ceede732-595d-47dc-921c-80b9eb583940\\\",\\\"sourceSession\\\":\\\"2026-10-13\\\",\\\"symbol\\\":\\\"EOG\\\",\\\"tier\\\":\\\"star\\\"}\",\"receiptHash\":\"91ecb9bbaf3f3b0d5ee5b05c03e74bd413149205497d0bc569644b9f39f639a1\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"status\":\"valid\",\"targets\":[{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":160.33136},{\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"multiplier\":1.5,\"points\":30,\"target\":163.11704},{\"emoji\":\"🚀💣\",\"k\":2,\"key\":\"tenBagger\",\"label\":\"TenBagger\",\"multiplier\":2,\"points\":50,\"target\":165.90272},{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},{\"emoji\":\"💥\",\"k\":-1.5,\"key\":\"crash\",\"label\":\"Crash\",\"multiplier\":1.5,\"points\":-20,\"target\":146.40295999999998},{\"emoji\":\"🔥\",\"k\":-2,\"key\":\"meltdown\",\"label\":\"Meltdown\",\"multiplier\":2,\"points\":-35,\"target\":143.61728}]}],[\"cpu\",\"position-cpu\",{\"crossedTiers\":[],\"currentPrice\":61.5,\"fill\":61.2,\"history\":{\"crossedTiers\":[],\"high\":61.5,\"low\":61.2,\"maxMultiplier\":0.13616557734204662,\"minMultiplier\":0,\"observedAt\":\"2026-10-16T17:00:00.000Z\",\"positionId\":\"position-cpu\",\"receiptHash\":\"8c5157f6a6a417f0abe45c5e21d53b9f6a719004eaa40b30cd5fcc1e3fca7b2b\",\"side\":\"cpu\"},\"inputRef\":\"stockThresholdInputs/a53e3ac2-efaa-4d49-8ddc-37e05b9f439e\",\"modelId\":\"stock_measured_atr14_fullday_v2\",\"multiplier\":0.13616557734204662,\"nextPenalty\":{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},\"nextTarget\":{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":63.403200000000005},\"penaltyProximity\":{\"approaching\":false,\"distance\":1.1361655773420476,\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-cpu\",\"proximity\":{\"distance\":0.8638344226579544,\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"locked\":false,\"multiplier\":1,\"points\":15,\"progress\":0.13616557734204648,\"target\":63.403200000000005},\"quoteEvidence\":{\"kind\":\"post_fill_quote\",\"observedAt\":\"2026-10-16T17:00:00.000Z\",\"providerAsOf\":\"2026-10-16T17:00:00.000Z\"},\"receiptContent\":\"{\\\"approvedPolicyRef\\\":\\\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\\\",\\\"atr14Dollars\\\":2,\\\"battleId\\\":\\\"stock-battle\\\",\\\"enteredAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"fill\\\":61.2,\\\"fillQuote\\\":{\\\"observedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"price\\\":61.2,\\\"provider\\\":\\\"EODHD\\\",\\\"quoteAsOf\\\":\\\"2026-10-14T13:47:00.000Z\\\",\\\"raw\\\":{\\\"close\\\":61.2,\\\"code\\\":\\\"CVX.US\\\",\\\"high\\\":200,\\\"low\\\":1,\\\"previousClose\\\":100,\\\"timestamp\\\":1791985620},\\\"source\\\":\\\"real-time\\\",\\\"validation\\\":\\\"accepted_original_quote\\\"},\\\"inputHash\\\":\\\"f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076\\\",\\\"inputRef\\\":\\\"stockThresholdInputs/a53e3ac2-efaa-4d49-8ddc-37e05b9f439e\\\",\\\"measuredPct\\\":2,\\\"modelId\\\":\\\"stock_measured_atr14_fullday_v2\\\",\\\"policyHash\\\":\\\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\\\",\\\"positionId\\\":\\\"position-cpu\\\",\\\"publicationRuleHash\\\":\\\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\\\",\\\"publicationRuleId\\\":\\\"eodhd_us_completed_session_observation_v1\\\",\\\"scoringPct\\\":3.6,\\\"scoringPctDecimal\\\":\\\"3.600000\\\",\\\"securityId\\\":\\\"EODHD:CVX.US:US-CVX\\\",\\\"side\\\":\\\"cpu\\\",\\\"slot\\\":0,\\\"slotVersion\\\":1,\\\"snapshotCapturedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"snapshotHash\\\":\\\"76ae860c732cd9dfe16712fd460458dceb6e3bc34f865f0c5f990fc13e53f3fb\\\",\\\"snapshotId\\\":\\\"a53e3ac2-efaa-4d49-8ddc-37e05b9f439e\\\",\\\"sourceSession\\\":\\\"2026-10-13\\\",\\\"symbol\\\":\\\"CVX\\\",\\\"tier\\\":\\\"star\\\"}\",\"receiptHash\":\"8c5157f6a6a417f0abe45c5e21d53b9f6a719004eaa40b30cd5fcc1e3fca7b2b\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"status\":\"valid\",\"targets\":[{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":63.403200000000005},{\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"multiplier\":1.5,\"points\":30,\"target\":64.5048},{\"emoji\":\"🚀💣\",\"k\":2,\"key\":\"tenBagger\",\"label\":\"TenBagger\",\"multiplier\":2,\"points\":50,\"target\":65.60640000000001},{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},{\"emoji\":\"💥\",\"k\":-1.5,\"key\":\"crash\",\"label\":\"Crash\",\"multiplier\":1.5,\"points\":-20,\"target\":57.8952},{\"emoji\":\"🔥\",\"k\":-2,\"key\":\"meltdown\",\"label\":\"Meltdown\",\"multiplier\":2,\"points\":-35,\"target\":56.7936}]}]]"
+   }
+  },
+  "expiresAt": "2026-10-23T20:00:00.000Z",
+  "agentContext": {
+   "agentName": "Shadow",
+   "archetype": "momentum"
+  },
+  "timing": {
+   "tradingDays": [
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-15",
+    "2026-10-16",
+    "2026-10-19",
+    "2026-10-20",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23"
+   ]
+  },
+  "evaluations": [
+   {
+    "evalId": "e1",
+    "timestamp": "2026-10-14T15:00:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 156.1
+     }
+    }
+   },
+   {
+    "evalId": "e2",
+    "timestamp": "2026-10-15T17:15:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 160.41
+     }
+    }
+   },
+   {
+    "evalId": "e3",
+    "timestamp": "2026-10-16T16:45:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 160.19
+     }
+    }
+   }
+  ]
+ },
+ "after": {
+  "id": "stock-battle",
+  "agentId": "agent",
+  "ownerId": "owner",
+  "gameMode": "baggerbomb_agent",
+  "duration": "fullday",
+  "status": "active",
+  "activatedAt": "2026-10-14T14:02:00.000Z",
+  "portfolio": {
+   "star": [
+    {
+     "symbol": "EOG",
+     "baseATR": 2.5,
+     "positionId": "position-agent",
+     "slotVersion": 1,
+     "stockThresholdReceipt": {
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+      "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+      "battleId": "stock-battle",
+      "side": "agent",
+      "tier": "star",
+      "slot": 0,
+      "positionId": "position-agent",
+      "slotVersion": 1,
+      "symbol": "EOG",
+      "securityId": "EODHD:EOG.US:US-EOG",
+      "snapshotId": "86ef4431-bf0e-4c70-97d8-a59de9951c50",
+      "inputRef": "stockThresholdInputs/86ef4431-bf0e-4c70-97d8-a59de9951c50",
+      "inputHash": "3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9",
+      "snapshotHash": "9ecbf413c6c7af2bc93a00c2b0200f8ec6b925ed347b6b220dea6203a9604aea",
+      "snapshotCapturedAt": "2026-10-14T14:02:00.000Z",
+      "sourceSession": "2026-10-13",
+      "atr14Dollars": 2,
+      "measuredPct": 2,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "fill": 154.76,
+      "fillQuote": {
+       "provider": "EODHD",
+       "source": "real-time",
+       "price": 154.76,
+       "quoteAsOf": "2026-10-14T13:47:00.000Z",
+       "observedAt": "2026-10-14T14:02:00.000Z",
+       "validation": "accepted_original_quote",
+       "raw": {
+        "code": "EOG.US",
+        "close": 154.76,
+        "high": 309.52,
+        "low": 1,
+        "previousClose": 100,
+        "timestamp": 1791985620
+       }
+      },
+      "enteredAt": "2026-10-14T14:02:00.000Z",
+      "receiptHash": "f5d84364037c8e164f12e8430da18941de11378c6bacca0e507139c4bbf44d14"
+     },
+     "swapPrice": 154.76,
+     "swappedInAt": "2026-10-14T14:02:00.000Z"
+    }
+   ],
+   "core": [],
+   "support": [],
+   "bench": {
+    "stocks": [
+     {
+      "symbol": "MSFT",
+      "baseATR": 3
+     }
+    ],
+    "crypto": null
+   },
+   "startingPrices": {
+    "EOG": 154.76
+   }
+  },
+  "opponent": {
+   "portfolio": {
+    "star": [
+     {
+      "symbol": "CVX",
+      "baseATR": 2.5,
+      "positionId": "position-cpu",
+      "slotVersion": 1,
+      "stockThresholdReceipt": {
+       "modelId": "stock_measured_atr14_fullday_v2",
+       "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+       "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+       "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+       "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+       "battleId": "stock-battle",
+       "side": "cpu",
+       "tier": "star",
+       "slot": 0,
+       "positionId": "position-cpu",
+       "slotVersion": 1,
+       "symbol": "CVX",
+       "securityId": "EODHD:CVX.US:US-CVX",
+       "snapshotId": "effcb1c9-9d47-4f3c-b643-a46ee0105467",
+       "inputRef": "stockThresholdInputs/effcb1c9-9d47-4f3c-b643-a46ee0105467",
+       "inputHash": "f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076",
+       "snapshotHash": "64ee5299f86b44ae4458d556d9e22ad50443da0f95021dd7c8286e9773929296",
+       "snapshotCapturedAt": "2026-10-14T14:02:00.000Z",
+       "sourceSession": "2026-10-13",
+       "atr14Dollars": 2,
+       "measuredPct": 2,
+       "scoringPct": 3.6,
+       "scoringPctDecimal": "3.600000",
+       "fill": 61.2,
+       "fillQuote": {
+        "provider": "EODHD",
+        "source": "real-time",
+        "price": 61.2,
+        "quoteAsOf": "2026-10-14T13:47:00.000Z",
+        "observedAt": "2026-10-14T14:02:00.000Z",
+        "validation": "accepted_original_quote",
+        "raw": {
+         "code": "CVX.US",
+         "close": 61.2,
+         "high": 200,
+         "low": 1,
+         "previousClose": 100,
+         "timestamp": 1791985620
+        }
+       },
+       "enteredAt": "2026-10-14T14:02:00.000Z",
+       "receiptHash": "c24250a0c94397dde7da6702a87eac88d9b409dff7df1b5023708a7c141313ba"
+      },
+      "swapPrice": 61.2,
+      "swappedInAt": "2026-10-14T14:02:00.000Z"
+     }
+    ],
+    "core": [],
+    "support": []
+   }
+  },
+  "scoring": {
+   "stockThresholdModel": {
+    "modelId": "stock_measured_atr14_fullday_v2",
+    "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+    "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+    "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+    "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+    "admittedAt": "2026-10-14T14:02:00.000Z"
+   },
+   "stockRosterVersion": 1,
+   "stockScoreVersion": 1,
+   "thresholds": {},
+   "stockRewardHistory": {
+    "agent": {
+     "position-agent": {
+      "positionId": "position-agent",
+      "side": "agent",
+      "receiptHash": "f5d84364037c8e164f12e8430da18941de11378c6bacca0e507139c4bbf44d14",
+      "high": 160.41,
+      "low": 154.76,
+      "observedAt": "2026-10-16T17:15:00.000Z",
+      "crossedTiers": [
+       "bagger"
+      ],
+      "maxMultiplier": 1.01411504551851,
+      "minMultiplier": 0
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "positionId": "position-cpu",
+      "side": "cpu",
+      "receiptHash": "c24250a0c94397dde7da6702a87eac88d9b409dff7df1b5023708a7c141313ba",
+      "high": 61.5,
+      "low": 61.2,
+      "observedAt": "2026-10-16T17:15:00.000Z",
+      "crossedTiers": [],
+      "maxMultiplier": 0.13616557734204662,
+      "minMultiplier": 0
+     }
+    }
+   },
+   "stockRiskHistory": {
+    "agent": {
+     "position-agent": {
+      "positionId": "position-agent",
+      "maxMultiplier": 1.4603256655466545,
+      "minMultiplier": 0
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "positionId": "position-cpu",
+      "maxMultiplier": 0.19607843137254716,
+      "minMultiplier": 0
+     }
+    }
+   },
+   "stockScoreComponents": {},
+   "stockRewardContexts": {
+    "agent": {
+     "position-agent": {
+      "status": "valid",
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "positionId": "position-agent",
+      "receiptHash": "f5d84364037c8e164f12e8430da18941de11378c6bacca0e507139c4bbf44d14",
+      "receiptContent": "{\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"atr14Dollars\":2,\"battleId\":\"stock-battle\",\"enteredAt\":\"2026-10-14T14:02:00.000Z\",\"fill\":154.76,\"fillQuote\":{\"observedAt\":\"2026-10-14T14:02:00.000Z\",\"price\":154.76,\"provider\":\"EODHD\",\"quoteAsOf\":\"2026-10-14T13:47:00.000Z\",\"raw\":{\"close\":154.76,\"code\":\"EOG.US\",\"high\":309.52,\"low\":1,\"previousClose\":100,\"timestamp\":1791985620},\"source\":\"real-time\",\"validation\":\"accepted_original_quote\"},\"inputHash\":\"3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9\",\"inputRef\":\"stockThresholdInputs/86ef4431-bf0e-4c70-97d8-a59de9951c50\",\"measuredPct\":2,\"modelId\":\"stock_measured_atr14_fullday_v2\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-agent\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"securityId\":\"EODHD:EOG.US:US-EOG\",\"side\":\"agent\",\"slot\":0,\"slotVersion\":1,\"snapshotCapturedAt\":\"2026-10-14T14:02:00.000Z\",\"snapshotHash\":\"9ecbf413c6c7af2bc93a00c2b0200f8ec6b925ed347b6b220dea6203a9604aea\",\"snapshotId\":\"86ef4431-bf0e-4c70-97d8-a59de9951c50\",\"sourceSession\":\"2026-10-13\",\"symbol\":\"EOG\",\"tier\":\"star\"}",
+      "inputRef": "stockThresholdInputs/86ef4431-bf0e-4c70-97d8-a59de9951c50",
+      "fill": 154.76,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "currentPrice": 160.41,
+      "multiplier": 1.01411504551851,
+      "targets": [
+       {
+        "key": "bagger",
+        "label": "BaggerBomb",
+        "emoji": "💣",
+        "multiplier": 1,
+        "points": 15,
+        "k": 1,
+        "target": 160.33136
+       },
+       {
+        "key": "doubleBagger",
+        "label": "Double Bagger",
+        "emoji": "💣💣",
+        "multiplier": 1.5,
+        "points": 30,
+        "k": 1.5,
+        "target": 163.11704
+       },
+       {
+        "key": "tenBagger",
+        "label": "TenBagger",
+        "emoji": "🚀💣",
+        "multiplier": 2,
+        "points": 50,
+        "k": 2,
+        "target": 165.90272
+       },
+       {
+        "key": "bust",
+        "label": "Bust",
+        "emoji": "📉",
+        "multiplier": 1,
+        "points": -10,
+        "k": -1,
+        "target": 149.18864
+       },
+       {
+        "key": "crash",
+        "label": "Crash",
+        "emoji": "💥",
+        "multiplier": 1.5,
+        "points": -20,
+        "k": -1.5,
+        "target": 146.40295999999998
+       },
+       {
+        "key": "meltdown",
+        "label": "Meltdown",
+        "emoji": "🔥",
+        "multiplier": 2,
+        "points": -35,
+        "k": -2,
+        "target": 143.61728
+       }
+      ],
+      "crossedTiers": [
+       "bagger"
+      ],
+      "nextTarget": {
+       "key": "doubleBagger",
+       "label": "Double Bagger",
+       "emoji": "💣💣",
+       "multiplier": 1.5,
+       "points": 30,
+       "k": 1.5,
+       "target": 163.11704
+      },
+      "nextPenalty": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 149.18864
+      },
+      "penaltyProximity": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 149.18864,
+       "distance": 2.0141150455185097,
+       "approaching": false
+      },
+      "proximity": {
+       "key": "doubleBagger",
+       "label": "Double Bagger",
+       "emoji": "💣💣",
+       "multiplier": 1.5,
+       "points": 30,
+       "k": 1.5,
+       "target": 163.11704,
+       "distance": 0.4858849544814922,
+       "locked": false,
+       "progress": 0.676076697012339
+      },
+      "quoteEvidence": {
+       "kind": "post_fill_quote",
+       "providerAsOf": "2026-10-16T17:15:00.000Z",
+       "observedAt": "2026-10-16T17:15:00.000Z"
+      },
+      "history": {
+       "positionId": "position-agent",
+       "side": "agent",
+       "receiptHash": "f5d84364037c8e164f12e8430da18941de11378c6bacca0e507139c4bbf44d14",
+       "high": 160.41,
+       "low": 154.76,
+       "observedAt": "2026-10-16T17:15:00.000Z",
+       "crossedTiers": [
+        "bagger"
+       ],
+       "maxMultiplier": 1.01411504551851,
+       "minMultiplier": 0
+      }
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "status": "valid",
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "positionId": "position-cpu",
+      "receiptHash": "c24250a0c94397dde7da6702a87eac88d9b409dff7df1b5023708a7c141313ba",
+      "receiptContent": "{\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"atr14Dollars\":2,\"battleId\":\"stock-battle\",\"enteredAt\":\"2026-10-14T14:02:00.000Z\",\"fill\":61.2,\"fillQuote\":{\"observedAt\":\"2026-10-14T14:02:00.000Z\",\"price\":61.2,\"provider\":\"EODHD\",\"quoteAsOf\":\"2026-10-14T13:47:00.000Z\",\"raw\":{\"close\":61.2,\"code\":\"CVX.US\",\"high\":200,\"low\":1,\"previousClose\":100,\"timestamp\":1791985620},\"source\":\"real-time\",\"validation\":\"accepted_original_quote\"},\"inputHash\":\"f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076\",\"inputRef\":\"stockThresholdInputs/effcb1c9-9d47-4f3c-b643-a46ee0105467\",\"measuredPct\":2,\"modelId\":\"stock_measured_atr14_fullday_v2\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-cpu\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"securityId\":\"EODHD:CVX.US:US-CVX\",\"side\":\"cpu\",\"slot\":0,\"slotVersion\":1,\"snapshotCapturedAt\":\"2026-10-14T14:02:00.000Z\",\"snapshotHash\":\"64ee5299f86b44ae4458d556d9e22ad50443da0f95021dd7c8286e9773929296\",\"snapshotId\":\"effcb1c9-9d47-4f3c-b643-a46ee0105467\",\"sourceSession\":\"2026-10-13\",\"symbol\":\"CVX\",\"tier\":\"star\"}",
+      "inputRef": "stockThresholdInputs/effcb1c9-9d47-4f3c-b643-a46ee0105467",
+      "fill": 61.2,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "currentPrice": 61.5,
+      "multiplier": 0.13616557734204662,
+      "targets": [
+       {
+        "key": "bagger",
+        "label": "BaggerBomb",
+        "emoji": "💣",
+        "multiplier": 1,
+        "points": 15,
+        "k": 1,
+        "target": 63.403200000000005
+       },
+       {
+        "key": "doubleBagger",
+        "label": "Double Bagger",
+        "emoji": "💣💣",
+        "multiplier": 1.5,
+        "points": 30,
+        "k": 1.5,
+        "target": 64.5048
+       },
+       {
+        "key": "tenBagger",
+        "label": "TenBagger",
+        "emoji": "🚀💣",
+        "multiplier": 2,
+        "points": 50,
+        "k": 2,
+        "target": 65.60640000000001
+       },
+       {
+        "key": "bust",
+        "label": "Bust",
+        "emoji": "📉",
+        "multiplier": 1,
+        "points": -10,
+        "k": -1,
+        "target": 58.9968
+       },
+       {
+        "key": "crash",
+        "label": "Crash",
+        "emoji": "💥",
+        "multiplier": 1.5,
+        "points": -20,
+        "k": -1.5,
+        "target": 57.8952
+       },
+       {
+        "key": "meltdown",
+        "label": "Meltdown",
+        "emoji": "🔥",
+        "multiplier": 2,
+        "points": -35,
+        "k": -2,
+        "target": 56.7936
+       }
+      ],
+      "crossedTiers": [],
+      "nextTarget": {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 63.403200000000005
+      },
+      "nextPenalty": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 58.9968
+      },
+      "penaltyProximity": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 58.9968,
+       "distance": 1.1361655773420476,
+       "approaching": false
+      },
+      "proximity": {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 63.403200000000005,
+       "distance": 0.8638344226579544,
+       "locked": false,
+       "progress": 0.13616557734204648
+      },
+      "quoteEvidence": {
+       "kind": "post_fill_quote",
+       "providerAsOf": "2026-10-16T17:15:00.000Z",
+       "observedAt": "2026-10-16T17:15:00.000Z"
+      },
+      "history": {
+       "positionId": "position-cpu",
+       "side": "cpu",
+       "receiptHash": "c24250a0c94397dde7da6702a87eac88d9b409dff7df1b5023708a7c141313ba",
+       "high": 61.5,
+       "low": 61.2,
+       "observedAt": "2026-10-16T17:15:00.000Z",
+       "crossedTiers": [],
+       "maxMultiplier": 0.13616557734204662,
+       "minMultiplier": 0
+      }
+     }
+    }
+   }
+  },
+  "thresholdHistory": {},
+  "trades": [],
+  "scoreState": {
+   "tradeCount": 0,
+   "dailyScores": {},
+   "activeScore": 88,
+   "bankedScore": 0,
+   "currentScore": 88,
+   "opponentScore": 10,
+   "lastScoredAt": "2026-10-16T17:15:24.000Z",
+   "stockScoreEvidence": {
+    "status": "valid",
+    "reason": null,
+    "model": {
+     "modelId": "stock_measured_atr14_fullday_v2",
+     "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+     "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+     "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+     "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+     "admittedAt": "2026-10-14T14:02:00.000Z"
+    },
+    "rosterToken": "[{\"modelId\":\"stock_measured_atr14_fullday_v2\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"admittedAt\":\"2026-10-14T14:02:00.000Z\"},1,[[\"agent\",\"star\",0,\"EOG\",\"position-agent\",1,\"f5d84364037c8e164f12e8430da18941de11378c6bacca0e507139c4bbf44d14\"],[\"cpu\",\"star\",0,\"CVX\",\"position-cpu\",1,\"c24250a0c94397dde7da6702a87eac88d9b409dff7df1b5023708a7c141313ba\"]]]",
+    "scoreVersion": 1,
+    "currentScore": 88,
+    "opponentScore": 10,
+    "componentContent": "{}",
+    "at": "2026-10-16T17:15:00.000Z",
+    "contextContent": "[[\"agent\",\"position-agent\",{\"crossedTiers\":[\"bagger\"],\"currentPrice\":160.41,\"fill\":154.76,\"history\":{\"crossedTiers\":[\"bagger\"],\"high\":160.41,\"low\":154.76,\"maxMultiplier\":1.01411504551851,\"minMultiplier\":0,\"observedAt\":\"2026-10-16T17:15:00.000Z\",\"positionId\":\"position-agent\",\"receiptHash\":\"f5d84364037c8e164f12e8430da18941de11378c6bacca0e507139c4bbf44d14\",\"side\":\"agent\"},\"inputRef\":\"stockThresholdInputs/86ef4431-bf0e-4c70-97d8-a59de9951c50\",\"modelId\":\"stock_measured_atr14_fullday_v2\",\"multiplier\":1.01411504551851,\"nextPenalty\":{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},\"nextTarget\":{\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"multiplier\":1.5,\"points\":30,\"target\":163.11704},\"penaltyProximity\":{\"approaching\":false,\"distance\":2.0141150455185097,\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-agent\",\"proximity\":{\"distance\":0.4858849544814922,\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"locked\":false,\"multiplier\":1.5,\"points\":30,\"progress\":0.676076697012339,\"target\":163.11704},\"quoteEvidence\":{\"kind\":\"post_fill_quote\",\"observedAt\":\"2026-10-16T17:15:00.000Z\",\"providerAsOf\":\"2026-10-16T17:15:00.000Z\"},\"receiptContent\":\"{\\\"approvedPolicyRef\\\":\\\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\\\",\\\"atr14Dollars\\\":2,\\\"battleId\\\":\\\"stock-battle\\\",\\\"enteredAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"fill\\\":154.76,\\\"fillQuote\\\":{\\\"observedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"price\\\":154.76,\\\"provider\\\":\\\"EODHD\\\",\\\"quoteAsOf\\\":\\\"2026-10-14T13:47:00.000Z\\\",\\\"raw\\\":{\\\"close\\\":154.76,\\\"code\\\":\\\"EOG.US\\\",\\\"high\\\":309.52,\\\"low\\\":1,\\\"previousClose\\\":100,\\\"timestamp\\\":1791985620},\\\"source\\\":\\\"real-time\\\",\\\"validation\\\":\\\"accepted_original_quote\\\"},\\\"inputHash\\\":\\\"3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9\\\",\\\"inputRef\\\":\\\"stockThresholdInputs/86ef4431-bf0e-4c70-97d8-a59de9951c50\\\",\\\"measuredPct\\\":2,\\\"modelId\\\":\\\"stock_measured_atr14_fullday_v2\\\",\\\"policyHash\\\":\\\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\\\",\\\"positionId\\\":\\\"position-agent\\\",\\\"publicationRuleHash\\\":\\\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\\\",\\\"publicationRuleId\\\":\\\"eodhd_us_completed_session_observation_v1\\\",\\\"scoringPct\\\":3.6,\\\"scoringPctDecimal\\\":\\\"3.600000\\\",\\\"securityId\\\":\\\"EODHD:EOG.US:US-EOG\\\",\\\"side\\\":\\\"agent\\\",\\\"slot\\\":0,\\\"slotVersion\\\":1,\\\"snapshotCapturedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"snapshotHash\\\":\\\"9ecbf413c6c7af2bc93a00c2b0200f8ec6b925ed347b6b220dea6203a9604aea\\\",\\\"snapshotId\\\":\\\"86ef4431-bf0e-4c70-97d8-a59de9951c50\\\",\\\"sourceSession\\\":\\\"2026-10-13\\\",\\\"symbol\\\":\\\"EOG\\\",\\\"tier\\\":\\\"star\\\"}\",\"receiptHash\":\"f5d84364037c8e164f12e8430da18941de11378c6bacca0e507139c4bbf44d14\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"status\":\"valid\",\"targets\":[{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":160.33136},{\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"multiplier\":1.5,\"points\":30,\"target\":163.11704},{\"emoji\":\"🚀💣\",\"k\":2,\"key\":\"tenBagger\",\"label\":\"TenBagger\",\"multiplier\":2,\"points\":50,\"target\":165.90272},{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},{\"emoji\":\"💥\",\"k\":-1.5,\"key\":\"crash\",\"label\":\"Crash\",\"multiplier\":1.5,\"points\":-20,\"target\":146.40295999999998},{\"emoji\":\"🔥\",\"k\":-2,\"key\":\"meltdown\",\"label\":\"Meltdown\",\"multiplier\":2,\"points\":-35,\"target\":143.61728}]}],[\"cpu\",\"position-cpu\",{\"crossedTiers\":[],\"currentPrice\":61.5,\"fill\":61.2,\"history\":{\"crossedTiers\":[],\"high\":61.5,\"low\":61.2,\"maxMultiplier\":0.13616557734204662,\"minMultiplier\":0,\"observedAt\":\"2026-10-16T17:15:00.000Z\",\"positionId\":\"position-cpu\",\"receiptHash\":\"c24250a0c94397dde7da6702a87eac88d9b409dff7df1b5023708a7c141313ba\",\"side\":\"cpu\"},\"inputRef\":\"stockThresholdInputs/effcb1c9-9d47-4f3c-b643-a46ee0105467\",\"modelId\":\"stock_measured_atr14_fullday_v2\",\"multiplier\":0.13616557734204662,\"nextPenalty\":{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},\"nextTarget\":{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":63.403200000000005},\"penaltyProximity\":{\"approaching\":false,\"distance\":1.1361655773420476,\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-cpu\",\"proximity\":{\"distance\":0.8638344226579544,\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"locked\":false,\"multiplier\":1,\"points\":15,\"progress\":0.13616557734204648,\"target\":63.403200000000005},\"quoteEvidence\":{\"kind\":\"post_fill_quote\",\"observedAt\":\"2026-10-16T17:15:00.000Z\",\"providerAsOf\":\"2026-10-16T17:15:00.000Z\"},\"receiptContent\":\"{\\\"approvedPolicyRef\\\":\\\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\\\",\\\"atr14Dollars\\\":2,\\\"battleId\\\":\\\"stock-battle\\\",\\\"enteredAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"fill\\\":61.2,\\\"fillQuote\\\":{\\\"observedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"price\\\":61.2,\\\"provider\\\":\\\"EODHD\\\",\\\"quoteAsOf\\\":\\\"2026-10-14T13:47:00.000Z\\\",\\\"raw\\\":{\\\"close\\\":61.2,\\\"code\\\":\\\"CVX.US\\\",\\\"high\\\":200,\\\"low\\\":1,\\\"previousClose\\\":100,\\\"timestamp\\\":1791985620},\\\"source\\\":\\\"real-time\\\",\\\"validation\\\":\\\"accepted_original_quote\\\"},\\\"inputHash\\\":\\\"f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076\\\",\\\"inputRef\\\":\\\"stockThresholdInputs/effcb1c9-9d47-4f3c-b643-a46ee0105467\\\",\\\"measuredPct\\\":2,\\\"modelId\\\":\\\"stock_measured_atr14_fullday_v2\\\",\\\"policyHash\\\":\\\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\\\",\\\"positionId\\\":\\\"position-cpu\\\",\\\"publicationRuleHash\\\":\\\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\\\",\\\"publicationRuleId\\\":\\\"eodhd_us_completed_session_observation_v1\\\",\\\"scoringPct\\\":3.6,\\\"scoringPctDecimal\\\":\\\"3.600000\\\",\\\"securityId\\\":\\\"EODHD:CVX.US:US-CVX\\\",\\\"side\\\":\\\"cpu\\\",\\\"slot\\\":0,\\\"slotVersion\\\":1,\\\"snapshotCapturedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"snapshotHash\\\":\\\"64ee5299f86b44ae4458d556d9e22ad50443da0f95021dd7c8286e9773929296\\\",\\\"snapshotId\\\":\\\"effcb1c9-9d47-4f3c-b643-a46ee0105467\\\",\\\"sourceSession\\\":\\\"2026-10-13\\\",\\\"symbol\\\":\\\"CVX\\\",\\\"tier\\\":\\\"star\\\"}\",\"receiptHash\":\"c24250a0c94397dde7da6702a87eac88d9b409dff7df1b5023708a7c141313ba\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"status\":\"valid\",\"targets\":[{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":63.403200000000005},{\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"multiplier\":1.5,\"points\":30,\"target\":64.5048},{\"emoji\":\"🚀💣\",\"k\":2,\"key\":\"tenBagger\",\"label\":\"TenBagger\",\"multiplier\":2,\"points\":50,\"target\":65.60640000000001},{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},{\"emoji\":\"💥\",\"k\":-1.5,\"key\":\"crash\",\"label\":\"Crash\",\"multiplier\":1.5,\"points\":-20,\"target\":57.8952},{\"emoji\":\"🔥\",\"k\":-2,\"key\":\"meltdown\",\"label\":\"Meltdown\",\"multiplier\":2,\"points\":-35,\"target\":56.7936}]}]]"
+   }
+  },
+  "expiresAt": "2026-10-23T20:00:00.000Z",
+  "agentContext": {
+   "agentName": "Shadow",
+   "archetype": "momentum"
+  },
+  "timing": {
+   "tradingDays": [
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-15",
+    "2026-10-16",
+    "2026-10-19",
+    "2026-10-20",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23"
+   ]
+  },
+  "evaluations": [
+   {
+    "evalId": "e1",
+    "timestamp": "2026-10-14T15:00:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 156.1
+     }
+    }
+   },
+   {
+    "evalId": "e2",
+    "timestamp": "2026-10-15T17:15:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 160.41
+     }
+    }
+   },
+   {
+    "evalId": "e3",
+    "timestamp": "2026-10-16T16:45:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 160.19
+     }
+    }
+   }
+  ]
+ },
+ "heldBanked": {
+  "id": "stock-battle",
+  "agentId": "agent",
+  "ownerId": "owner",
+  "gameMode": "baggerbomb_agent",
+  "duration": "fullday",
+  "status": "active",
+  "activatedAt": "2026-10-14T14:02:00.000Z",
+  "portfolio": {
+   "star": [
+    {
+     "symbol": "EOG",
+     "baseATR": 2.5,
+     "positionId": "position-agent",
+     "slotVersion": 1,
+     "stockThresholdReceipt": {
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+      "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+      "battleId": "stock-battle",
+      "side": "agent",
+      "tier": "star",
+      "slot": 0,
+      "positionId": "position-agent",
+      "slotVersion": 1,
+      "symbol": "EOG",
+      "securityId": "EODHD:EOG.US:US-EOG",
+      "snapshotId": "45d6eeae-9ecd-47cb-ad7d-8f421d418962",
+      "inputRef": "stockThresholdInputs/45d6eeae-9ecd-47cb-ad7d-8f421d418962",
+      "inputHash": "3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9",
+      "snapshotHash": "210854a2ef91c77657b4cceb0b4cffdff9546788a5de89b29fb76875379f012f",
+      "snapshotCapturedAt": "2026-10-14T14:02:00.000Z",
+      "sourceSession": "2026-10-13",
+      "atr14Dollars": 2,
+      "measuredPct": 2,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "fill": 154.76,
+      "fillQuote": {
+       "provider": "EODHD",
+       "source": "real-time",
+       "price": 154.76,
+       "quoteAsOf": "2026-10-14T13:47:00.000Z",
+       "observedAt": "2026-10-14T14:02:00.000Z",
+       "validation": "accepted_original_quote",
+       "raw": {
+        "code": "EOG.US",
+        "close": 154.76,
+        "high": 309.52,
+        "low": 1,
+        "previousClose": 100,
+        "timestamp": 1791985620
+       }
+      },
+      "enteredAt": "2026-10-14T14:02:00.000Z",
+      "receiptHash": "90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137"
+     },
+     "swapPrice": 154.76,
+     "swappedInAt": "2026-10-14T14:02:00.000Z"
+    }
+   ],
+   "core": [],
+   "support": [],
+   "bench": {
+    "stocks": [
+     {
+      "symbol": "MSFT",
+      "baseATR": 3
+     }
+    ],
+    "crypto": null
+   },
+   "startingPrices": {
+    "EOG": 154.76
+   }
+  },
+  "opponent": {
+   "portfolio": {
+    "star": [
+     {
+      "symbol": "CVX",
+      "baseATR": 2.5,
+      "positionId": "position-cpu",
+      "slotVersion": 1,
+      "stockThresholdReceipt": {
+       "modelId": "stock_measured_atr14_fullday_v2",
+       "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+       "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+       "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+       "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+       "battleId": "stock-battle",
+       "side": "cpu",
+       "tier": "star",
+       "slot": 0,
+       "positionId": "position-cpu",
+       "slotVersion": 1,
+       "symbol": "CVX",
+       "securityId": "EODHD:CVX.US:US-CVX",
+       "snapshotId": "acdac272-81cc-4eca-980b-5f5b6c0cb9c1",
+       "inputRef": "stockThresholdInputs/acdac272-81cc-4eca-980b-5f5b6c0cb9c1",
+       "inputHash": "f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076",
+       "snapshotHash": "88d08e3e542aa68dd38db5877f705d10d0dc4915c13f9a1ce5582e7a04093a75",
+       "snapshotCapturedAt": "2026-10-14T14:02:00.000Z",
+       "sourceSession": "2026-10-13",
+       "atr14Dollars": 2,
+       "measuredPct": 2,
+       "scoringPct": 3.6,
+       "scoringPctDecimal": "3.600000",
+       "fill": 61.2,
+       "fillQuote": {
+        "provider": "EODHD",
+        "source": "real-time",
+        "price": 61.2,
+        "quoteAsOf": "2026-10-14T13:47:00.000Z",
+        "observedAt": "2026-10-14T14:02:00.000Z",
+        "validation": "accepted_original_quote",
+        "raw": {
+         "code": "CVX.US",
+         "close": 61.2,
+         "high": 200,
+         "low": 1,
+         "previousClose": 100,
+         "timestamp": 1791985620
+        }
+       },
+       "enteredAt": "2026-10-14T14:02:00.000Z",
+       "receiptHash": "a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c"
+      },
+      "swapPrice": 61.2,
+      "swappedInAt": "2026-10-14T14:02:00.000Z"
+     }
+    ],
+    "core": [],
+    "support": []
+   }
+  },
+  "scoring": {
+   "stockThresholdModel": {
+    "modelId": "stock_measured_atr14_fullday_v2",
+    "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+    "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+    "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+    "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+    "admittedAt": "2026-10-14T14:02:00.000Z"
+   },
+   "stockRosterVersion": 1,
+   "stockScoreVersion": 1,
+   "thresholds": {},
+   "stockRewardHistory": {
+    "agent": {
+     "position-agent": {
+      "positionId": "position-agent",
+      "side": "agent",
+      "receiptHash": "90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137",
+      "high": 160.41,
+      "low": 154.76,
+      "observedAt": "2026-10-15T17:15:00.000Z",
+      "crossedTiers": [
+       "bagger"
+      ],
+      "maxMultiplier": 1.01411504551851,
+      "minMultiplier": 0
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "positionId": "position-cpu",
+      "side": "cpu",
+      "receiptHash": "a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c",
+      "high": 61.5,
+      "low": 61.2,
+      "observedAt": "2026-10-15T17:15:00.000Z",
+      "crossedTiers": [],
+      "maxMultiplier": 0.13616557734204662,
+      "minMultiplier": 0
+     }
+    }
+   },
+   "stockRiskHistory": {
+    "agent": {
+     "position-agent": {
+      "positionId": "position-agent",
+      "maxMultiplier": 1.4603256655466545,
+      "minMultiplier": 0
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "positionId": "position-cpu",
+      "maxMultiplier": 0.19607843137254716,
+      "minMultiplier": 0
+     }
+    }
+   },
+   "stockScoreComponents": {},
+   "stockRewardContexts": {
+    "agent": {
+     "position-agent": {
+      "status": "valid",
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "positionId": "position-agent",
+      "receiptHash": "90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137",
+      "receiptContent": "{\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"atr14Dollars\":2,\"battleId\":\"stock-battle\",\"enteredAt\":\"2026-10-14T14:02:00.000Z\",\"fill\":154.76,\"fillQuote\":{\"observedAt\":\"2026-10-14T14:02:00.000Z\",\"price\":154.76,\"provider\":\"EODHD\",\"quoteAsOf\":\"2026-10-14T13:47:00.000Z\",\"raw\":{\"close\":154.76,\"code\":\"EOG.US\",\"high\":309.52,\"low\":1,\"previousClose\":100,\"timestamp\":1791985620},\"source\":\"real-time\",\"validation\":\"accepted_original_quote\"},\"inputHash\":\"3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9\",\"inputRef\":\"stockThresholdInputs/45d6eeae-9ecd-47cb-ad7d-8f421d418962\",\"measuredPct\":2,\"modelId\":\"stock_measured_atr14_fullday_v2\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-agent\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"securityId\":\"EODHD:EOG.US:US-EOG\",\"side\":\"agent\",\"slot\":0,\"slotVersion\":1,\"snapshotCapturedAt\":\"2026-10-14T14:02:00.000Z\",\"snapshotHash\":\"210854a2ef91c77657b4cceb0b4cffdff9546788a5de89b29fb76875379f012f\",\"snapshotId\":\"45d6eeae-9ecd-47cb-ad7d-8f421d418962\",\"sourceSession\":\"2026-10-13\",\"symbol\":\"EOG\",\"tier\":\"star\"}",
+      "inputRef": "stockThresholdInputs/45d6eeae-9ecd-47cb-ad7d-8f421d418962",
+      "fill": 154.76,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "currentPrice": 160.41,
+      "multiplier": 1.01411504551851,
+      "targets": [
+       {
+        "key": "bagger",
+        "label": "BaggerBomb",
+        "emoji": "💣",
+        "multiplier": 1,
+        "points": 15,
+        "k": 1,
+        "target": 160.33136
+       },
+       {
+        "key": "doubleBagger",
+        "label": "Double Bagger",
+        "emoji": "💣💣",
+        "multiplier": 1.5,
+        "points": 30,
+        "k": 1.5,
+        "target": 163.11704
+       },
+       {
+        "key": "tenBagger",
+        "label": "TenBagger",
+        "emoji": "🚀💣",
+        "multiplier": 2,
+        "points": 50,
+        "k": 2,
+        "target": 165.90272
+       },
+       {
+        "key": "bust",
+        "label": "Bust",
+        "emoji": "📉",
+        "multiplier": 1,
+        "points": -10,
+        "k": -1,
+        "target": 149.18864
+       },
+       {
+        "key": "crash",
+        "label": "Crash",
+        "emoji": "💥",
+        "multiplier": 1.5,
+        "points": -20,
+        "k": -1.5,
+        "target": 146.40295999999998
+       },
+       {
+        "key": "meltdown",
+        "label": "Meltdown",
+        "emoji": "🔥",
+        "multiplier": 2,
+        "points": -35,
+        "k": -2,
+        "target": 143.61728
+       }
+      ],
+      "crossedTiers": [
+       "bagger"
+      ],
+      "nextTarget": {
+       "key": "doubleBagger",
+       "label": "Double Bagger",
+       "emoji": "💣💣",
+       "multiplier": 1.5,
+       "points": 30,
+       "k": 1.5,
+       "target": 163.11704
+      },
+      "nextPenalty": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 149.18864
+      },
+      "penaltyProximity": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 149.18864,
+       "distance": 2.0141150455185097,
+       "approaching": false
+      },
+      "proximity": {
+       "key": "doubleBagger",
+       "label": "Double Bagger",
+       "emoji": "💣💣",
+       "multiplier": 1.5,
+       "points": 30,
+       "k": 1.5,
+       "target": 163.11704,
+       "distance": 0.4858849544814922,
+       "locked": false,
+       "progress": 0.676076697012339
+      },
+      "quoteEvidence": {
+       "kind": "post_fill_quote",
+       "providerAsOf": "2026-10-15T17:15:00.000Z",
+       "observedAt": "2026-10-15T17:15:00.000Z"
+      },
+      "history": {
+       "positionId": "position-agent",
+       "side": "agent",
+       "receiptHash": "90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137",
+       "high": 160.41,
+       "low": 154.76,
+       "observedAt": "2026-10-15T17:15:00.000Z",
+       "crossedTiers": [
+        "bagger"
+       ],
+       "maxMultiplier": 1.01411504551851,
+       "minMultiplier": 0
+      }
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "status": "valid",
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "positionId": "position-cpu",
+      "receiptHash": "a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c",
+      "receiptContent": "{\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"atr14Dollars\":2,\"battleId\":\"stock-battle\",\"enteredAt\":\"2026-10-14T14:02:00.000Z\",\"fill\":61.2,\"fillQuote\":{\"observedAt\":\"2026-10-14T14:02:00.000Z\",\"price\":61.2,\"provider\":\"EODHD\",\"quoteAsOf\":\"2026-10-14T13:47:00.000Z\",\"raw\":{\"close\":61.2,\"code\":\"CVX.US\",\"high\":200,\"low\":1,\"previousClose\":100,\"timestamp\":1791985620},\"source\":\"real-time\",\"validation\":\"accepted_original_quote\"},\"inputHash\":\"f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076\",\"inputRef\":\"stockThresholdInputs/acdac272-81cc-4eca-980b-5f5b6c0cb9c1\",\"measuredPct\":2,\"modelId\":\"stock_measured_atr14_fullday_v2\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-cpu\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"securityId\":\"EODHD:CVX.US:US-CVX\",\"side\":\"cpu\",\"slot\":0,\"slotVersion\":1,\"snapshotCapturedAt\":\"2026-10-14T14:02:00.000Z\",\"snapshotHash\":\"88d08e3e542aa68dd38db5877f705d10d0dc4915c13f9a1ce5582e7a04093a75\",\"snapshotId\":\"acdac272-81cc-4eca-980b-5f5b6c0cb9c1\",\"sourceSession\":\"2026-10-13\",\"symbol\":\"CVX\",\"tier\":\"star\"}",
+      "inputRef": "stockThresholdInputs/acdac272-81cc-4eca-980b-5f5b6c0cb9c1",
+      "fill": 61.2,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "currentPrice": 61.5,
+      "multiplier": 0.13616557734204662,
+      "targets": [
+       {
+        "key": "bagger",
+        "label": "BaggerBomb",
+        "emoji": "💣",
+        "multiplier": 1,
+        "points": 15,
+        "k": 1,
+        "target": 63.403200000000005
+       },
+       {
+        "key": "doubleBagger",
+        "label": "Double Bagger",
+        "emoji": "💣💣",
+        "multiplier": 1.5,
+        "points": 30,
+        "k": 1.5,
+        "target": 64.5048
+       },
+       {
+        "key": "tenBagger",
+        "label": "TenBagger",
+        "emoji": "🚀💣",
+        "multiplier": 2,
+        "points": 50,
+        "k": 2,
+        "target": 65.60640000000001
+       },
+       {
+        "key": "bust",
+        "label": "Bust",
+        "emoji": "📉",
+        "multiplier": 1,
+        "points": -10,
+        "k": -1,
+        "target": 58.9968
+       },
+       {
+        "key": "crash",
+        "label": "Crash",
+        "emoji": "💥",
+        "multiplier": 1.5,
+        "points": -20,
+        "k": -1.5,
+        "target": 57.8952
+       },
+       {
+        "key": "meltdown",
+        "label": "Meltdown",
+        "emoji": "🔥",
+        "multiplier": 2,
+        "points": -35,
+        "k": -2,
+        "target": 56.7936
+       }
+      ],
+      "crossedTiers": [],
+      "nextTarget": {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 63.403200000000005
+      },
+      "nextPenalty": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 58.9968
+      },
+      "penaltyProximity": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 58.9968,
+       "distance": 1.1361655773420476,
+       "approaching": false
+      },
+      "proximity": {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 63.403200000000005,
+       "distance": 0.8638344226579544,
+       "locked": false,
+       "progress": 0.13616557734204648
+      },
+      "quoteEvidence": {
+       "kind": "post_fill_quote",
+       "providerAsOf": "2026-10-15T17:15:00.000Z",
+       "observedAt": "2026-10-15T17:15:00.000Z"
+      },
+      "history": {
+       "positionId": "position-cpu",
+       "side": "cpu",
+       "receiptHash": "a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c",
+       "high": 61.5,
+       "low": 61.2,
+       "observedAt": "2026-10-15T17:15:00.000Z",
+       "crossedTiers": [],
+       "maxMultiplier": 0.13616557734204662,
+       "minMultiplier": 0
+      }
+     }
+    }
+   }
+  },
+  "thresholdHistory": {},
+  "trades": [],
+  "scoreState": {
+   "tradeCount": 0,
+   "dailyScores": {},
+   "activeScore": 88,
+   "bankedScore": 0,
+   "currentScore": 88,
+   "opponentScore": 10,
+   "lastScoredAt": "2026-10-16T18:45:40.000Z",
+   "stockScoreEvidence": {
+    "status": "valid",
+    "reason": null,
+    "model": {
+     "modelId": "stock_measured_atr14_fullday_v2",
+     "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+     "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+     "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+     "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+     "admittedAt": "2026-10-14T14:02:00.000Z"
+    },
+    "rosterToken": "[{\"modelId\":\"stock_measured_atr14_fullday_v2\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"admittedAt\":\"2026-10-14T14:02:00.000Z\"},1,[[\"agent\",\"star\",0,\"EOG\",\"position-agent\",1,\"90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137\"],[\"cpu\",\"star\",0,\"CVX\",\"position-cpu\",1,\"a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c\"]]]",
+    "scoreVersion": 1,
+    "currentScore": 88,
+    "opponentScore": 10,
+    "componentContent": "{}",
+    "at": "2026-10-15T17:15:00.000Z",
+    "contextContent": "[[\"agent\",\"position-agent\",{\"crossedTiers\":[\"bagger\"],\"currentPrice\":160.41,\"fill\":154.76,\"history\":{\"crossedTiers\":[\"bagger\"],\"high\":160.41,\"low\":154.76,\"maxMultiplier\":1.01411504551851,\"minMultiplier\":0,\"observedAt\":\"2026-10-15T17:15:00.000Z\",\"positionId\":\"position-agent\",\"receiptHash\":\"90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137\",\"side\":\"agent\"},\"inputRef\":\"stockThresholdInputs/45d6eeae-9ecd-47cb-ad7d-8f421d418962\",\"modelId\":\"stock_measured_atr14_fullday_v2\",\"multiplier\":1.01411504551851,\"nextPenalty\":{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},\"nextTarget\":{\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"multiplier\":1.5,\"points\":30,\"target\":163.11704},\"penaltyProximity\":{\"approaching\":false,\"distance\":2.0141150455185097,\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-agent\",\"proximity\":{\"distance\":0.4858849544814922,\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"locked\":false,\"multiplier\":1.5,\"points\":30,\"progress\":0.676076697012339,\"target\":163.11704},\"quoteEvidence\":{\"kind\":\"post_fill_quote\",\"observedAt\":\"2026-10-15T17:15:00.000Z\",\"providerAsOf\":\"2026-10-15T17:15:00.000Z\"},\"receiptContent\":\"{\\\"approvedPolicyRef\\\":\\\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\\\",\\\"atr14Dollars\\\":2,\\\"battleId\\\":\\\"stock-battle\\\",\\\"enteredAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"fill\\\":154.76,\\\"fillQuote\\\":{\\\"observedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"price\\\":154.76,\\\"provider\\\":\\\"EODHD\\\",\\\"quoteAsOf\\\":\\\"2026-10-14T13:47:00.000Z\\\",\\\"raw\\\":{\\\"close\\\":154.76,\\\"code\\\":\\\"EOG.US\\\",\\\"high\\\":309.52,\\\"low\\\":1,\\\"previousClose\\\":100,\\\"timestamp\\\":1791985620},\\\"source\\\":\\\"real-time\\\",\\\"validation\\\":\\\"accepted_original_quote\\\"},\\\"inputHash\\\":\\\"3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9\\\",\\\"inputRef\\\":\\\"stockThresholdInputs/45d6eeae-9ecd-47cb-ad7d-8f421d418962\\\",\\\"measuredPct\\\":2,\\\"modelId\\\":\\\"stock_measured_atr14_fullday_v2\\\",\\\"policyHash\\\":\\\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\\\",\\\"positionId\\\":\\\"position-agent\\\",\\\"publicationRuleHash\\\":\\\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\\\",\\\"publicationRuleId\\\":\\\"eodhd_us_completed_session_observation_v1\\\",\\\"scoringPct\\\":3.6,\\\"scoringPctDecimal\\\":\\\"3.600000\\\",\\\"securityId\\\":\\\"EODHD:EOG.US:US-EOG\\\",\\\"side\\\":\\\"agent\\\",\\\"slot\\\":0,\\\"slotVersion\\\":1,\\\"snapshotCapturedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"snapshotHash\\\":\\\"210854a2ef91c77657b4cceb0b4cffdff9546788a5de89b29fb76875379f012f\\\",\\\"snapshotId\\\":\\\"45d6eeae-9ecd-47cb-ad7d-8f421d418962\\\",\\\"sourceSession\\\":\\\"2026-10-13\\\",\\\"symbol\\\":\\\"EOG\\\",\\\"tier\\\":\\\"star\\\"}\",\"receiptHash\":\"90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"status\":\"valid\",\"targets\":[{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":160.33136},{\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"multiplier\":1.5,\"points\":30,\"target\":163.11704},{\"emoji\":\"🚀💣\",\"k\":2,\"key\":\"tenBagger\",\"label\":\"TenBagger\",\"multiplier\":2,\"points\":50,\"target\":165.90272},{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},{\"emoji\":\"💥\",\"k\":-1.5,\"key\":\"crash\",\"label\":\"Crash\",\"multiplier\":1.5,\"points\":-20,\"target\":146.40295999999998},{\"emoji\":\"🔥\",\"k\":-2,\"key\":\"meltdown\",\"label\":\"Meltdown\",\"multiplier\":2,\"points\":-35,\"target\":143.61728}]}],[\"cpu\",\"position-cpu\",{\"crossedTiers\":[],\"currentPrice\":61.5,\"fill\":61.2,\"history\":{\"crossedTiers\":[],\"high\":61.5,\"low\":61.2,\"maxMultiplier\":0.13616557734204662,\"minMultiplier\":0,\"observedAt\":\"2026-10-15T17:15:00.000Z\",\"positionId\":\"position-cpu\",\"receiptHash\":\"a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c\",\"side\":\"cpu\"},\"inputRef\":\"stockThresholdInputs/acdac272-81cc-4eca-980b-5f5b6c0cb9c1\",\"modelId\":\"stock_measured_atr14_fullday_v2\",\"multiplier\":0.13616557734204662,\"nextPenalty\":{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},\"nextTarget\":{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":63.403200000000005},\"penaltyProximity\":{\"approaching\":false,\"distance\":1.1361655773420476,\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-cpu\",\"proximity\":{\"distance\":0.8638344226579544,\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"locked\":false,\"multiplier\":1,\"points\":15,\"progress\":0.13616557734204648,\"target\":63.403200000000005},\"quoteEvidence\":{\"kind\":\"post_fill_quote\",\"observedAt\":\"2026-10-15T17:15:00.000Z\",\"providerAsOf\":\"2026-10-15T17:15:00.000Z\"},\"receiptContent\":\"{\\\"approvedPolicyRef\\\":\\\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\\\",\\\"atr14Dollars\\\":2,\\\"battleId\\\":\\\"stock-battle\\\",\\\"enteredAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"fill\\\":61.2,\\\"fillQuote\\\":{\\\"observedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"price\\\":61.2,\\\"provider\\\":\\\"EODHD\\\",\\\"quoteAsOf\\\":\\\"2026-10-14T13:47:00.000Z\\\",\\\"raw\\\":{\\\"close\\\":61.2,\\\"code\\\":\\\"CVX.US\\\",\\\"high\\\":200,\\\"low\\\":1,\\\"previousClose\\\":100,\\\"timestamp\\\":1791985620},\\\"source\\\":\\\"real-time\\\",\\\"validation\\\":\\\"accepted_original_quote\\\"},\\\"inputHash\\\":\\\"f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076\\\",\\\"inputRef\\\":\\\"stockThresholdInputs/acdac272-81cc-4eca-980b-5f5b6c0cb9c1\\\",\\\"measuredPct\\\":2,\\\"modelId\\\":\\\"stock_measured_atr14_fullday_v2\\\",\\\"policyHash\\\":\\\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\\\",\\\"positionId\\\":\\\"position-cpu\\\",\\\"publicationRuleHash\\\":\\\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\\\",\\\"publicationRuleId\\\":\\\"eodhd_us_completed_session_observation_v1\\\",\\\"scoringPct\\\":3.6,\\\"scoringPctDecimal\\\":\\\"3.600000\\\",\\\"securityId\\\":\\\"EODHD:CVX.US:US-CVX\\\",\\\"side\\\":\\\"cpu\\\",\\\"slot\\\":0,\\\"slotVersion\\\":1,\\\"snapshotCapturedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"snapshotHash\\\":\\\"88d08e3e542aa68dd38db5877f705d10d0dc4915c13f9a1ce5582e7a04093a75\\\",\\\"snapshotId\\\":\\\"acdac272-81cc-4eca-980b-5f5b6c0cb9c1\\\",\\\"sourceSession\\\":\\\"2026-10-13\\\",\\\"symbol\\\":\\\"CVX\\\",\\\"tier\\\":\\\"star\\\"}\",\"receiptHash\":\"a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"status\":\"valid\",\"targets\":[{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":63.403200000000005},{\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"multiplier\":1.5,\"points\":30,\"target\":64.5048},{\"emoji\":\"🚀💣\",\"k\":2,\"key\":\"tenBagger\",\"label\":\"TenBagger\",\"multiplier\":2,\"points\":50,\"target\":65.60640000000001},{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},{\"emoji\":\"💥\",\"k\":-1.5,\"key\":\"crash\",\"label\":\"Crash\",\"multiplier\":1.5,\"points\":-20,\"target\":57.8952},{\"emoji\":\"🔥\",\"k\":-2,\"key\":\"meltdown\",\"label\":\"Meltdown\",\"multiplier\":2,\"points\":-35,\"target\":56.7936}]}]]"
+   }
+  },
+  "expiresAt": "2026-10-23T20:00:00.000Z",
+  "agentContext": {
+   "agentName": "Shadow",
+   "archetype": "momentum"
+  },
+  "timing": {
+   "tradingDays": [
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-15",
+    "2026-10-16",
+    "2026-10-19",
+    "2026-10-20",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23"
+   ]
+  },
+  "evaluations": [
+   {
+    "evalId": "e1",
+    "timestamp": "2026-10-14T15:00:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 156.1
+     }
+    }
+   },
+   {
+    "evalId": "e2",
+    "timestamp": "2026-10-15T17:15:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 160.41
+     }
+    }
+   },
+   {
+    "evalId": "e3",
+    "timestamp": "2026-10-16T16:45:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 160.19
+     }
+    }
+   }
+  ]
+ },
+ "legacyNoEntry": {
+  "id": "battle-legacy-no-entry",
+  "status": "active",
+  "ownerId": "owner-smoke",
+  "gameMode": "baggerbomb_agent",
+  "activatedAt": "2026-10-16T13:45:00.000Z",
+  "timing": {
+   "tradingDays": [
+    "2026-10-16",
+    "2026-10-19"
+   ]
+  },
+  "expiresAt": "2026-10-19T20:00:00.000Z",
+  "portfolio": {
+   "star": [
+    {
+     "symbol": "EOG",
+     "baseATR": 3.6,
+     "positionId": "pos-eog"
+    }
+   ],
+   "core": [],
+   "support": [],
+   "startingPrices": {}
+  },
+  "opponent": {
+   "portfolio": {
+    "star": [
+     {
+      "symbol": "CVX",
+      "baseATR": 2.4
+     }
+    ],
+    "core": [],
+    "support": []
+   }
+  },
+  "thresholdHistory": {},
+  "cronState": {},
+  "scoreState": {
+   "lastScoredAt": "2026-10-16T17:00:40.000Z"
+  },
+  "evaluations": []
+ },
+ "legacyHeld": {
+  "id": "battle-legacy-held",
+  "status": "active",
+  "ownerId": "owner-smoke",
+  "gameMode": "baggerbomb_agent",
+  "activatedAt": "2026-10-14T13:45:00.000Z",
+  "timing": {
+   "tradingDays": [
+    "2026-10-14",
+    "2026-10-15",
+    "2026-10-16",
+    "2026-10-19"
+   ]
+  },
+  "expiresAt": "2026-10-19T20:00:00.000Z",
+  "portfolio": {
+   "star": [
+    {
+     "symbol": "EOG",
+     "baseATR": 3.6,
+     "positionId": "pos-eog"
+    }
+   ],
+   "core": [],
+   "support": [],
+   "startingPrices": {
+    "EOG": 154.76
+   }
+  },
+  "opponent": {
+   "portfolio": {
+    "star": [
+     {
+      "symbol": "CVX",
+      "baseATR": 2.4
+     }
+    ],
+    "core": [],
+    "support": []
+   }
+  },
+  "thresholdHistory": {
+   "EOG": {
+    "maxMultiplier": 1.12,
+    "minMultiplier": -0.31,
+    "badges": [
+     "bagger"
+    ]
+   }
+  },
+  "cronState": {
+   "lastTickPrice": {
+    "EOG": 160.19
+   },
+   "lastTickTimestamp": {
+    "EOG": 1792170031000
+   }
+  },
+  "scoreState": {
+   "lastScoredAt": "2026-10-16T17:00:40.000Z"
+  },
+  "evaluations": []
+ },
+ "heldCrypto": {
+  "id": "stock-battle",
+  "agentId": "agent",
+  "ownerId": "owner",
+  "gameMode": "baggerbomb_agent",
+  "duration": "fullday",
+  "status": "active",
+  "activatedAt": "2026-10-14T14:02:00.000Z",
+  "portfolio": {
+   "star": [
+    {
+     "symbol": "EOG",
+     "baseATR": 2.5,
+     "positionId": "position-agent",
+     "slotVersion": 1,
+     "stockThresholdReceipt": {
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+      "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+      "battleId": "stock-battle",
+      "side": "agent",
+      "tier": "star",
+      "slot": 0,
+      "positionId": "position-agent",
+      "slotVersion": 1,
+      "symbol": "EOG",
+      "securityId": "EODHD:EOG.US:US-EOG",
+      "snapshotId": "45d6eeae-9ecd-47cb-ad7d-8f421d418962",
+      "inputRef": "stockThresholdInputs/45d6eeae-9ecd-47cb-ad7d-8f421d418962",
+      "inputHash": "3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9",
+      "snapshotHash": "210854a2ef91c77657b4cceb0b4cffdff9546788a5de89b29fb76875379f012f",
+      "snapshotCapturedAt": "2026-10-14T14:02:00.000Z",
+      "sourceSession": "2026-10-13",
+      "atr14Dollars": 2,
+      "measuredPct": 2,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "fill": 154.76,
+      "fillQuote": {
+       "provider": "EODHD",
+       "source": "real-time",
+       "price": 154.76,
+       "quoteAsOf": "2026-10-14T13:47:00.000Z",
+       "observedAt": "2026-10-14T14:02:00.000Z",
+       "validation": "accepted_original_quote",
+       "raw": {
+        "code": "EOG.US",
+        "close": 154.76,
+        "high": 309.52,
+        "low": 1,
+        "previousClose": 100,
+        "timestamp": 1791985620
+       }
+      },
+      "enteredAt": "2026-10-14T14:02:00.000Z",
+      "receiptHash": "90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137"
+     },
+     "swapPrice": 154.76,
+     "swappedInAt": "2026-10-14T14:02:00.000Z"
+    }
+   ],
+   "core": [
+    {
+     "symbol": "BTC",
+     "name": "Bitcoin",
+     "isCrypto": true,
+     "baseATR": 4,
+     "positionId": "position-agent-btc"
+    }
+   ],
+   "support": [],
+   "bench": {
+    "stocks": [
+     {
+      "symbol": "MSFT",
+      "baseATR": 3
+     }
+    ],
+    "crypto": null
+   },
+   "startingPrices": {
+    "EOG": 154.76,
+    "BTC": 64250
+   }
+  },
+  "opponent": {
+   "portfolio": {
+    "star": [
+     {
+      "symbol": "CVX",
+      "baseATR": 2.5,
+      "positionId": "position-cpu",
+      "slotVersion": 1,
+      "stockThresholdReceipt": {
+       "modelId": "stock_measured_atr14_fullday_v2",
+       "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+       "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+       "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+       "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+       "battleId": "stock-battle",
+       "side": "cpu",
+       "tier": "star",
+       "slot": 0,
+       "positionId": "position-cpu",
+       "slotVersion": 1,
+       "symbol": "CVX",
+       "securityId": "EODHD:CVX.US:US-CVX",
+       "snapshotId": "acdac272-81cc-4eca-980b-5f5b6c0cb9c1",
+       "inputRef": "stockThresholdInputs/acdac272-81cc-4eca-980b-5f5b6c0cb9c1",
+       "inputHash": "f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076",
+       "snapshotHash": "88d08e3e542aa68dd38db5877f705d10d0dc4915c13f9a1ce5582e7a04093a75",
+       "snapshotCapturedAt": "2026-10-14T14:02:00.000Z",
+       "sourceSession": "2026-10-13",
+       "atr14Dollars": 2,
+       "measuredPct": 2,
+       "scoringPct": 3.6,
+       "scoringPctDecimal": "3.600000",
+       "fill": 61.2,
+       "fillQuote": {
+        "provider": "EODHD",
+        "source": "real-time",
+        "price": 61.2,
+        "quoteAsOf": "2026-10-14T13:47:00.000Z",
+        "observedAt": "2026-10-14T14:02:00.000Z",
+        "validation": "accepted_original_quote",
+        "raw": {
+         "code": "CVX.US",
+         "close": 61.2,
+         "high": 200,
+         "low": 1,
+         "previousClose": 100,
+         "timestamp": 1791985620
+        }
+       },
+       "enteredAt": "2026-10-14T14:02:00.000Z",
+       "receiptHash": "a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c"
+      },
+      "swapPrice": 61.2,
+      "swappedInAt": "2026-10-14T14:02:00.000Z"
+     }
+    ],
+    "core": [],
+    "support": []
+   }
+  },
+  "scoring": {
+   "stockThresholdModel": {
+    "modelId": "stock_measured_atr14_fullday_v2",
+    "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+    "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+    "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+    "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+    "admittedAt": "2026-10-14T14:02:00.000Z"
+   },
+   "stockRosterVersion": 1,
+   "stockScoreVersion": 1,
+   "thresholds": {},
+   "stockRewardHistory": {
+    "agent": {
+     "position-agent": {
+      "positionId": "position-agent",
+      "side": "agent",
+      "receiptHash": "90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137",
+      "high": 160.41,
+      "low": 154.76,
+      "observedAt": "2026-10-15T17:15:00.000Z",
+      "crossedTiers": [
+       "bagger"
+      ],
+      "maxMultiplier": 1.01411504551851,
+      "minMultiplier": 0
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "positionId": "position-cpu",
+      "side": "cpu",
+      "receiptHash": "a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c",
+      "high": 61.5,
+      "low": 61.2,
+      "observedAt": "2026-10-15T17:15:00.000Z",
+      "crossedTiers": [],
+      "maxMultiplier": 0.13616557734204662,
+      "minMultiplier": 0
+     }
+    }
+   },
+   "stockRiskHistory": {
+    "agent": {
+     "position-agent": {
+      "positionId": "position-agent",
+      "maxMultiplier": 1.4603256655466545,
+      "minMultiplier": 0
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "positionId": "position-cpu",
+      "maxMultiplier": 0.19607843137254716,
+      "minMultiplier": 0
+     }
+    }
+   },
+   "stockScoreComponents": {},
+   "stockRewardContexts": {
+    "agent": {
+     "position-agent": {
+      "status": "valid",
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "positionId": "position-agent",
+      "receiptHash": "90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137",
+      "receiptContent": "{\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"atr14Dollars\":2,\"battleId\":\"stock-battle\",\"enteredAt\":\"2026-10-14T14:02:00.000Z\",\"fill\":154.76,\"fillQuote\":{\"observedAt\":\"2026-10-14T14:02:00.000Z\",\"price\":154.76,\"provider\":\"EODHD\",\"quoteAsOf\":\"2026-10-14T13:47:00.000Z\",\"raw\":{\"close\":154.76,\"code\":\"EOG.US\",\"high\":309.52,\"low\":1,\"previousClose\":100,\"timestamp\":1791985620},\"source\":\"real-time\",\"validation\":\"accepted_original_quote\"},\"inputHash\":\"3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9\",\"inputRef\":\"stockThresholdInputs/45d6eeae-9ecd-47cb-ad7d-8f421d418962\",\"measuredPct\":2,\"modelId\":\"stock_measured_atr14_fullday_v2\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-agent\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"securityId\":\"EODHD:EOG.US:US-EOG\",\"side\":\"agent\",\"slot\":0,\"slotVersion\":1,\"snapshotCapturedAt\":\"2026-10-14T14:02:00.000Z\",\"snapshotHash\":\"210854a2ef91c77657b4cceb0b4cffdff9546788a5de89b29fb76875379f012f\",\"snapshotId\":\"45d6eeae-9ecd-47cb-ad7d-8f421d418962\",\"sourceSession\":\"2026-10-13\",\"symbol\":\"EOG\",\"tier\":\"star\"}",
+      "inputRef": "stockThresholdInputs/45d6eeae-9ecd-47cb-ad7d-8f421d418962",
+      "fill": 154.76,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "currentPrice": 160.41,
+      "multiplier": 1.01411504551851,
+      "targets": [
+       {
+        "key": "bagger",
+        "label": "BaggerBomb",
+        "emoji": "💣",
+        "multiplier": 1,
+        "points": 15,
+        "k": 1,
+        "target": 160.33136
+       },
+       {
+        "key": "doubleBagger",
+        "label": "Double Bagger",
+        "emoji": "💣💣",
+        "multiplier": 1.5,
+        "points": 30,
+        "k": 1.5,
+        "target": 163.11704
+       },
+       {
+        "key": "tenBagger",
+        "label": "TenBagger",
+        "emoji": "🚀💣",
+        "multiplier": 2,
+        "points": 50,
+        "k": 2,
+        "target": 165.90272
+       },
+       {
+        "key": "bust",
+        "label": "Bust",
+        "emoji": "📉",
+        "multiplier": 1,
+        "points": -10,
+        "k": -1,
+        "target": 149.18864
+       },
+       {
+        "key": "crash",
+        "label": "Crash",
+        "emoji": "💥",
+        "multiplier": 1.5,
+        "points": -20,
+        "k": -1.5,
+        "target": 146.40295999999998
+       },
+       {
+        "key": "meltdown",
+        "label": "Meltdown",
+        "emoji": "🔥",
+        "multiplier": 2,
+        "points": -35,
+        "k": -2,
+        "target": 143.61728
+       }
+      ],
+      "crossedTiers": [
+       "bagger"
+      ],
+      "nextTarget": {
+       "key": "doubleBagger",
+       "label": "Double Bagger",
+       "emoji": "💣💣",
+       "multiplier": 1.5,
+       "points": 30,
+       "k": 1.5,
+       "target": 163.11704
+      },
+      "nextPenalty": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 149.18864
+      },
+      "penaltyProximity": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 149.18864,
+       "distance": 2.0141150455185097,
+       "approaching": false
+      },
+      "proximity": {
+       "key": "doubleBagger",
+       "label": "Double Bagger",
+       "emoji": "💣💣",
+       "multiplier": 1.5,
+       "points": 30,
+       "k": 1.5,
+       "target": 163.11704,
+       "distance": 0.4858849544814922,
+       "locked": false,
+       "progress": 0.676076697012339
+      },
+      "quoteEvidence": {
+       "kind": "post_fill_quote",
+       "providerAsOf": "2026-10-15T17:15:00.000Z",
+       "observedAt": "2026-10-15T17:15:00.000Z"
+      },
+      "history": {
+       "positionId": "position-agent",
+       "side": "agent",
+       "receiptHash": "90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137",
+       "high": 160.41,
+       "low": 154.76,
+       "observedAt": "2026-10-15T17:15:00.000Z",
+       "crossedTiers": [
+        "bagger"
+       ],
+       "maxMultiplier": 1.01411504551851,
+       "minMultiplier": 0
+      }
+     }
+    },
+    "cpu": {
+     "position-cpu": {
+      "status": "valid",
+      "modelId": "stock_measured_atr14_fullday_v2",
+      "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+      "positionId": "position-cpu",
+      "receiptHash": "a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c",
+      "receiptContent": "{\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"atr14Dollars\":2,\"battleId\":\"stock-battle\",\"enteredAt\":\"2026-10-14T14:02:00.000Z\",\"fill\":61.2,\"fillQuote\":{\"observedAt\":\"2026-10-14T14:02:00.000Z\",\"price\":61.2,\"provider\":\"EODHD\",\"quoteAsOf\":\"2026-10-14T13:47:00.000Z\",\"raw\":{\"close\":61.2,\"code\":\"CVX.US\",\"high\":200,\"low\":1,\"previousClose\":100,\"timestamp\":1791985620},\"source\":\"real-time\",\"validation\":\"accepted_original_quote\"},\"inputHash\":\"f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076\",\"inputRef\":\"stockThresholdInputs/acdac272-81cc-4eca-980b-5f5b6c0cb9c1\",\"measuredPct\":2,\"modelId\":\"stock_measured_atr14_fullday_v2\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-cpu\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"securityId\":\"EODHD:CVX.US:US-CVX\",\"side\":\"cpu\",\"slot\":0,\"slotVersion\":1,\"snapshotCapturedAt\":\"2026-10-14T14:02:00.000Z\",\"snapshotHash\":\"88d08e3e542aa68dd38db5877f705d10d0dc4915c13f9a1ce5582e7a04093a75\",\"snapshotId\":\"acdac272-81cc-4eca-980b-5f5b6c0cb9c1\",\"sourceSession\":\"2026-10-13\",\"symbol\":\"CVX\",\"tier\":\"star\"}",
+      "inputRef": "stockThresholdInputs/acdac272-81cc-4eca-980b-5f5b6c0cb9c1",
+      "fill": 61.2,
+      "scoringPct": 3.6,
+      "scoringPctDecimal": "3.600000",
+      "currentPrice": 61.5,
+      "multiplier": 0.13616557734204662,
+      "targets": [
+       {
+        "key": "bagger",
+        "label": "BaggerBomb",
+        "emoji": "💣",
+        "multiplier": 1,
+        "points": 15,
+        "k": 1,
+        "target": 63.403200000000005
+       },
+       {
+        "key": "doubleBagger",
+        "label": "Double Bagger",
+        "emoji": "💣💣",
+        "multiplier": 1.5,
+        "points": 30,
+        "k": 1.5,
+        "target": 64.5048
+       },
+       {
+        "key": "tenBagger",
+        "label": "TenBagger",
+        "emoji": "🚀💣",
+        "multiplier": 2,
+        "points": 50,
+        "k": 2,
+        "target": 65.60640000000001
+       },
+       {
+        "key": "bust",
+        "label": "Bust",
+        "emoji": "📉",
+        "multiplier": 1,
+        "points": -10,
+        "k": -1,
+        "target": 58.9968
+       },
+       {
+        "key": "crash",
+        "label": "Crash",
+        "emoji": "💥",
+        "multiplier": 1.5,
+        "points": -20,
+        "k": -1.5,
+        "target": 57.8952
+       },
+       {
+        "key": "meltdown",
+        "label": "Meltdown",
+        "emoji": "🔥",
+        "multiplier": 2,
+        "points": -35,
+        "k": -2,
+        "target": 56.7936
+       }
+      ],
+      "crossedTiers": [],
+      "nextTarget": {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 63.403200000000005
+      },
+      "nextPenalty": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 58.9968
+      },
+      "penaltyProximity": {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 58.9968,
+       "distance": 1.1361655773420476,
+       "approaching": false
+      },
+      "proximity": {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 63.403200000000005,
+       "distance": 0.8638344226579544,
+       "locked": false,
+       "progress": 0.13616557734204648
+      },
+      "quoteEvidence": {
+       "kind": "post_fill_quote",
+       "providerAsOf": "2026-10-15T17:15:00.000Z",
+       "observedAt": "2026-10-15T17:15:00.000Z"
+      },
+      "history": {
+       "positionId": "position-cpu",
+       "side": "cpu",
+       "receiptHash": "a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c",
+       "high": 61.5,
+       "low": 61.2,
+       "observedAt": "2026-10-15T17:15:00.000Z",
+       "crossedTiers": [],
+       "maxMultiplier": 0.13616557734204662,
+       "minMultiplier": 0
+      }
+     }
+    }
+   }
+  },
+  "thresholdHistory": {
+   "BTC": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": 0
+   }
+  },
+  "trades": [],
+  "scoreState": {
+   "tradeCount": 0,
+   "dailyScores": {},
+   "activeScore": 88,
+   "bankedScore": 0,
+   "currentScore": 88,
+   "opponentScore": 10,
+   "lastScoredAt": "2026-10-16T18:45:40.000Z",
+   "stockScoreEvidence": {
+    "status": "valid",
+    "reason": null,
+    "model": {
+     "modelId": "stock_measured_atr14_fullday_v2",
+     "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+     "policyHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+     "publicationRuleHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+     "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+     "admittedAt": "2026-10-14T14:02:00.000Z"
+    },
+    "rosterToken": "[{\"modelId\":\"stock_measured_atr14_fullday_v2\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"publicationRuleHash\":\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\",\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"admittedAt\":\"2026-10-14T14:02:00.000Z\"},1,[[\"agent\",\"star\",0,\"EOG\",\"position-agent\",1,\"90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137\"],[\"cpu\",\"star\",0,\"CVX\",\"position-cpu\",1,\"a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c\"]]]",
+    "scoreVersion": 1,
+    "currentScore": 88,
+    "opponentScore": 10,
+    "componentContent": "{}",
+    "at": "2026-10-15T17:15:00.000Z",
+    "contextContent": "[[\"agent\",\"position-agent\",{\"crossedTiers\":[\"bagger\"],\"currentPrice\":160.41,\"fill\":154.76,\"history\":{\"crossedTiers\":[\"bagger\"],\"high\":160.41,\"low\":154.76,\"maxMultiplier\":1.01411504551851,\"minMultiplier\":0,\"observedAt\":\"2026-10-15T17:15:00.000Z\",\"positionId\":\"position-agent\",\"receiptHash\":\"90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137\",\"side\":\"agent\"},\"inputRef\":\"stockThresholdInputs/45d6eeae-9ecd-47cb-ad7d-8f421d418962\",\"modelId\":\"stock_measured_atr14_fullday_v2\",\"multiplier\":1.01411504551851,\"nextPenalty\":{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},\"nextTarget\":{\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"multiplier\":1.5,\"points\":30,\"target\":163.11704},\"penaltyProximity\":{\"approaching\":false,\"distance\":2.0141150455185097,\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-agent\",\"proximity\":{\"distance\":0.4858849544814922,\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"locked\":false,\"multiplier\":1.5,\"points\":30,\"progress\":0.676076697012339,\"target\":163.11704},\"quoteEvidence\":{\"kind\":\"post_fill_quote\",\"observedAt\":\"2026-10-15T17:15:00.000Z\",\"providerAsOf\":\"2026-10-15T17:15:00.000Z\"},\"receiptContent\":\"{\\\"approvedPolicyRef\\\":\\\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\\\",\\\"atr14Dollars\\\":2,\\\"battleId\\\":\\\"stock-battle\\\",\\\"enteredAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"fill\\\":154.76,\\\"fillQuote\\\":{\\\"observedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"price\\\":154.76,\\\"provider\\\":\\\"EODHD\\\",\\\"quoteAsOf\\\":\\\"2026-10-14T13:47:00.000Z\\\",\\\"raw\\\":{\\\"close\\\":154.76,\\\"code\\\":\\\"EOG.US\\\",\\\"high\\\":309.52,\\\"low\\\":1,\\\"previousClose\\\":100,\\\"timestamp\\\":1791985620},\\\"source\\\":\\\"real-time\\\",\\\"validation\\\":\\\"accepted_original_quote\\\"},\\\"inputHash\\\":\\\"3f41f0e07964e81f4158ccbe27d88ca79fc3b3819315a592852c7a06d092c7d9\\\",\\\"inputRef\\\":\\\"stockThresholdInputs/45d6eeae-9ecd-47cb-ad7d-8f421d418962\\\",\\\"measuredPct\\\":2,\\\"modelId\\\":\\\"stock_measured_atr14_fullday_v2\\\",\\\"policyHash\\\":\\\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\\\",\\\"positionId\\\":\\\"position-agent\\\",\\\"publicationRuleHash\\\":\\\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\\\",\\\"publicationRuleId\\\":\\\"eodhd_us_completed_session_observation_v1\\\",\\\"scoringPct\\\":3.6,\\\"scoringPctDecimal\\\":\\\"3.600000\\\",\\\"securityId\\\":\\\"EODHD:EOG.US:US-EOG\\\",\\\"side\\\":\\\"agent\\\",\\\"slot\\\":0,\\\"slotVersion\\\":1,\\\"snapshotCapturedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"snapshotHash\\\":\\\"210854a2ef91c77657b4cceb0b4cffdff9546788a5de89b29fb76875379f012f\\\",\\\"snapshotId\\\":\\\"45d6eeae-9ecd-47cb-ad7d-8f421d418962\\\",\\\"sourceSession\\\":\\\"2026-10-13\\\",\\\"symbol\\\":\\\"EOG\\\",\\\"tier\\\":\\\"star\\\"}\",\"receiptHash\":\"90abde58cfe8f4a74e1086af1fa52750974f8c7befc2bc84488ded4ca6438137\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"status\":\"valid\",\"targets\":[{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":160.33136},{\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"multiplier\":1.5,\"points\":30,\"target\":163.11704},{\"emoji\":\"🚀💣\",\"k\":2,\"key\":\"tenBagger\",\"label\":\"TenBagger\",\"multiplier\":2,\"points\":50,\"target\":165.90272},{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":149.18864},{\"emoji\":\"💥\",\"k\":-1.5,\"key\":\"crash\",\"label\":\"Crash\",\"multiplier\":1.5,\"points\":-20,\"target\":146.40295999999998},{\"emoji\":\"🔥\",\"k\":-2,\"key\":\"meltdown\",\"label\":\"Meltdown\",\"multiplier\":2,\"points\":-35,\"target\":143.61728}]}],[\"cpu\",\"position-cpu\",{\"crossedTiers\":[],\"currentPrice\":61.5,\"fill\":61.2,\"history\":{\"crossedTiers\":[],\"high\":61.5,\"low\":61.2,\"maxMultiplier\":0.13616557734204662,\"minMultiplier\":0,\"observedAt\":\"2026-10-15T17:15:00.000Z\",\"positionId\":\"position-cpu\",\"receiptHash\":\"a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c\",\"side\":\"cpu\"},\"inputRef\":\"stockThresholdInputs/acdac272-81cc-4eca-980b-5f5b6c0cb9c1\",\"modelId\":\"stock_measured_atr14_fullday_v2\",\"multiplier\":0.13616557734204662,\"nextPenalty\":{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},\"nextTarget\":{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":63.403200000000005},\"penaltyProximity\":{\"approaching\":false,\"distance\":1.1361655773420476,\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},\"policyHash\":\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\",\"positionId\":\"position-cpu\",\"proximity\":{\"distance\":0.8638344226579544,\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"locked\":false,\"multiplier\":1,\"points\":15,\"progress\":0.13616557734204648,\"target\":63.403200000000005},\"quoteEvidence\":{\"kind\":\"post_fill_quote\",\"observedAt\":\"2026-10-15T17:15:00.000Z\",\"providerAsOf\":\"2026-10-15T17:15:00.000Z\"},\"receiptContent\":\"{\\\"approvedPolicyRef\\\":\\\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\\\",\\\"atr14Dollars\\\":2,\\\"battleId\\\":\\\"stock-battle\\\",\\\"enteredAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"fill\\\":61.2,\\\"fillQuote\\\":{\\\"observedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"price\\\":61.2,\\\"provider\\\":\\\"EODHD\\\",\\\"quoteAsOf\\\":\\\"2026-10-14T13:47:00.000Z\\\",\\\"raw\\\":{\\\"close\\\":61.2,\\\"code\\\":\\\"CVX.US\\\",\\\"high\\\":200,\\\"low\\\":1,\\\"previousClose\\\":100,\\\"timestamp\\\":1791985620},\\\"source\\\":\\\"real-time\\\",\\\"validation\\\":\\\"accepted_original_quote\\\"},\\\"inputHash\\\":\\\"f347239e52762d0cd152db918e928b39f22d32f3183fbc1dfb4112fc298af076\\\",\\\"inputRef\\\":\\\"stockThresholdInputs/acdac272-81cc-4eca-980b-5f5b6c0cb9c1\\\",\\\"measuredPct\\\":2,\\\"modelId\\\":\\\"stock_measured_atr14_fullday_v2\\\",\\\"policyHash\\\":\\\"22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b\\\",\\\"positionId\\\":\\\"position-cpu\\\",\\\"publicationRuleHash\\\":\\\"3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f\\\",\\\"publicationRuleId\\\":\\\"eodhd_us_completed_session_observation_v1\\\",\\\"scoringPct\\\":3.6,\\\"scoringPctDecimal\\\":\\\"3.600000\\\",\\\"securityId\\\":\\\"EODHD:CVX.US:US-CVX\\\",\\\"side\\\":\\\"cpu\\\",\\\"slot\\\":0,\\\"slotVersion\\\":1,\\\"snapshotCapturedAt\\\":\\\"2026-10-14T14:02:00.000Z\\\",\\\"snapshotHash\\\":\\\"88d08e3e542aa68dd38db5877f705d10d0dc4915c13f9a1ce5582e7a04093a75\\\",\\\"snapshotId\\\":\\\"acdac272-81cc-4eca-980b-5f5b6c0cb9c1\\\",\\\"sourceSession\\\":\\\"2026-10-13\\\",\\\"symbol\\\":\\\"CVX\\\",\\\"tier\\\":\\\"star\\\"}\",\"receiptHash\":\"a874d308e6feaaf4b3c4baceac8c0e19cdcfc40dd0150bf53bd1235cffc9ae8c\",\"scoringPct\":3.6,\"scoringPctDecimal\":\"3.600000\",\"status\":\"valid\",\"targets\":[{\"emoji\":\"💣\",\"k\":1,\"key\":\"bagger\",\"label\":\"BaggerBomb\",\"multiplier\":1,\"points\":15,\"target\":63.403200000000005},{\"emoji\":\"💣💣\",\"k\":1.5,\"key\":\"doubleBagger\",\"label\":\"Double Bagger\",\"multiplier\":1.5,\"points\":30,\"target\":64.5048},{\"emoji\":\"🚀💣\",\"k\":2,\"key\":\"tenBagger\",\"label\":\"TenBagger\",\"multiplier\":2,\"points\":50,\"target\":65.60640000000001},{\"emoji\":\"📉\",\"k\":-1,\"key\":\"bust\",\"label\":\"Bust\",\"multiplier\":1,\"points\":-10,\"target\":58.9968},{\"emoji\":\"💥\",\"k\":-1.5,\"key\":\"crash\",\"label\":\"Crash\",\"multiplier\":1.5,\"points\":-20,\"target\":57.8952},{\"emoji\":\"🔥\",\"k\":-2,\"key\":\"meltdown\",\"label\":\"Meltdown\",\"multiplier\":2,\"points\":-35,\"target\":56.7936}]}]]"
+   }
+  },
+  "expiresAt": "2026-10-23T20:00:00.000Z",
+  "agentContext": {
+   "agentName": "Shadow",
+   "archetype": "momentum"
+  },
+  "timing": {
+   "tradingDays": [
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-15",
+    "2026-10-16",
+    "2026-10-19",
+    "2026-10-20",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23"
+   ]
+  },
+  "evaluations": [
+   {
+    "evalId": "e1",
+    "timestamp": "2026-10-14T15:00:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 156.1
+     }
+    }
+   },
+   {
+    "evalId": "e2",
+    "timestamp": "2026-10-15T17:15:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 160.41
+     }
+    }
+   },
+   {
+    "evalId": "e3",
+    "timestamp": "2026-10-16T16:45:00.000Z",
+    "evidence": {
+     "EOG": {
+      "px": 160.19
+     }
+    }
+   }
+  ]
+ }
+}

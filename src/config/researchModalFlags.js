@@ -48,4 +48,4 @@ export const RESEARCH_MODAL_BOMB_MODES = Object.freeze(['off', 'allowlist', 'on'
  * records the client already holds and requests nothing new.
  */
 // Pinned by: researchModalFlags.test.js (the pin and this value move together — BUILD_RULES §2).
-export const RESEARCH_MODAL_BOMB_MODE = 'off';
+export const RESEARCH_MODAL_BOMB_MODE = 'on'; // SMOKE ONLY, NEVER MERGE — forced on for the preview (spec §8)
