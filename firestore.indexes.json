@@ -860,6 +860,11 @@
       "collectionGroup": "activationObserverState",
       "fieldPath": "outstandingKeys",
       "indexes": []
+    },
+    {
+      "collectionGroup": "setupMenuLabelState",
+      "fieldPath": "attempts",
+      "indexes": []
     }
   ]
 }

@@ -511,7 +511,58 @@ export function buildCaptureDocuments(state, {
     }
   }
 
+  // ---- Slice 2: the OPTIONAL setupMenu block, admitted LAST ----------------
+  // Everything above composed, sanitized and shed the base record exactly as
+  // it would without the block, so the block's bytes can never trigger body
+  // shedding or a rejection in the body (kickoff Correction C).
+  admitOptionalSetupMenu(permanent, state.setupMenu, { universe, maxDocBytes });
+
   return { permanent, body, universeSize: universe.size, rejected, freeTextPaths: findFreeText(permanent, { universe }) };
+}
+
+const SETUP_MENU_IDENTITY_KEYS = ['session', 'setupVersion', 'thresholdsHash', 'semanticsId', 'frozenAt'];
+
+/**
+ * Measured Trend Evidence Slice 2 — THE OPTIONAL-BLOCK ADMISSION (kickoff of
+ * 7 Nov 2026, Correction C). Called once the base permanent record is final —
+ * composed, sanitized, its body shed — and never before, so the block is
+ * absent from every measurement and every rejection the base record makes.
+ *
+ *   1. The block is sanitized in its OWN pass with the tick's universe. Any
+ *      rejection is contained here: the block becomes its minimal error form
+ *      (`block_rejected`). Nothing reaches the body's `rejectedFields`, and the
+ *      base record's `capture.rejectedFieldCount` is not touched.
+ *   2. The WHOLE permanent record with the block — its metadata included, all
+ *      of it final by now — must fit the existing document budget. If it does
+ *      not, the minimal error form (`record_budget`) is tried; if even that
+ *      does not fit, the block is omitted.
+ *
+ * Mutates `permanent` only by adding `setupMenu`. Never throws.
+ * @returns {'absent'|'admitted'|'error_form'|'dropped'}
+ */
+export function admitOptionalSetupMenu(permanent, block, { universe = new Set(), maxDocBytes = TICK_CAPTURE_BODY_DOC_MAX_BYTES } = {}) {
+  if (block === null || block === undefined || typeof block !== 'object' || Array.isArray(block)) return 'absent';
+  try {
+    const clean = (candidate) => {
+      const { doc, rejected } = sanitizePermanentDocument({ setupMenu: candidate }, { universe });
+      return rejected.length === 0 && doc && typeof doc.setupMenu === 'object' ? doc.setupMenu : null;
+    };
+    const fits = (candidate) => approxBytes({ ...permanent, setupMenu: candidate }) <= maxDocBytes;
+    const errorForm = (errorCode) => {
+      const identity = {};
+      for (const key of SETUP_MENU_IDENTITY_KEYS) if (typeof block[key] === 'string') identity[key] = block[key];
+      return clean({ blockStatus: 'error', errorCode, ...identity }) ?? clean({ blockStatus: 'error', errorCode });
+    };
+    let chosen = clean(block);
+    let disposition = 'admitted';
+    if (chosen === null) { chosen = errorForm('block_rejected'); disposition = 'error_form'; }
+    if (chosen !== null && !fits(chosen)) { chosen = errorForm('record_budget'); disposition = 'error_form'; }
+    if (chosen === null || !fits(chosen)) return 'dropped';
+    permanent.setupMenu = chosen;
+    return disposition;
+  } catch {
+    return 'dropped';
+  }
 }
 
 /**

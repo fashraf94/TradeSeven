@@ -138,15 +138,19 @@ describe('flag ON — the sixth tenant', () => {
 });
 
 describe('the host, pinned in source', () => {
-  it('TIME_BUDGET_MS stays 50 s and maxDuration 120 s; the observer is the LAST tenant, inside the handler\'s try', () => {
+  // Measured Trend Evidence Slice 2 (docs/audits/20261107_BUILD_SETUP_MENU_LABELS.md) seated a SEVENTH tenant
+  // strictly after the observer's await, so "the LAST tenant" became "after the review pass, before Slice 2's".
+  it('TIME_BUDGET_MS stays 50 s and maxDuration 120 s; the observer runs after the review pass and before Slice 2\'s tenant, inside the handler\'s try', () => {
     expect(CRON_SRC).toMatch(/^const TIME_BUDGET_MS = 50_000;/m);
     expect(CRON_SRC).toMatch(/export const config = \{ maxDuration: 120 \};/);
     const review = CRON_SRC.indexOf('await runHypothesisReviewPass(');
     const observer = CRON_SRC.indexOf('await runActivationObserver({ db, handlerStartMs: startTime })');
     expect(review).toBeGreaterThan(0);
     expect(observer).toBeGreaterThan(review);
-    expect(CRON_SRC.indexOf('const duration = Date.now() - startTime;')).toBeGreaterThan(observer);
-    expect(CRON_SRC).toMatch(/\.\.\.\(activationEvidence && !activationEvidence\.skipped \? \{ activationEvidence \} : \{\}\),\s*duration,/);
+    const slice2 = CRON_SRC.indexOf('await runSetupMenuAcquisition({ db, handlerStartMs: startTime })');
+    expect(slice2).toBeGreaterThan(observer);
+    expect(CRON_SRC.indexOf('const duration = Date.now() - startTime;')).toBeGreaterThan(slice2);
+    expect(CRON_SRC).toMatch(/\.\.\.\(activationEvidence && !activationEvidence\.skipped \? \{ activationEvidence \} : \{\}\),\s*\.\.\.\(setupMenuLabels && !setupMenuLabels\.skipped \? \{ setupMenuLabels \} : \{\}\),\s*duration,/);
     // In code (comments stripped): declared once, read by the Wire sweep and the editorial only — 4 uses at base f3da14a3, 4 now.
     expect(CRON_SRC.replace(/\/\/.*$/gm, '').match(/TIME_BUDGET_MS/g).length).toBe(4);
   });

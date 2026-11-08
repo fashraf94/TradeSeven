@@ -50,6 +50,8 @@ const FLAG_SOURCE_MODULES = [
   'src/config/agentFormFlags.js',
   // ID-1 Build 2: the activation observer's flag, a module of its own (its header says why).
   'src/config/activationEvidenceFlags.js',
+  // Measured Trend Evidence Slice 2: the setup-label flag, a module of its own (its header says why).
+  'src/config/setupMenuLabelsFlags.js',
 ];
 
 // ── Deliberately-dark flags (founder ruling 2026-08-10: keep the loud tripwire) ─
@@ -221,6 +223,8 @@ const DARK_BY_DESIGN = {
   // value AND, turned around, that this entry is gone — a rollback moves both
   // lines back together. The Film Room screen gate is FILM_ROOM_V2_MODE
   // (below).
+  SETUP_MENU_LABELS_ENABLED:
+    'Measured Trend Evidence Slice 2 — dated setup labels on the candidate menu of each in-scope tick\'s permanent record, and the seventh reflections tenant that acquires them (spec docs/design/20261107_P3_SLICE2_BUILD_SPEC_DRAFT_V2.md as amended by the kickoff\'s Corrections A–D; build report docs/audits/20261107_BUILD_SETUP_MENU_LABELS.md). Built dark: with it false no read starts, the record has no setupMenu key and the cron response is byte-identical. Flips only in the founder\'s own PR, never a build PR, after ID-1\'s first census week is recorded complete, D-6 (the provider budget authority) is resolved, and the setupMenuLabelState rules and its index exemption are published. The flip moves the pin in setupMenuLabelsFlags.test.js to true and drops this entry in the same commit',
   RESPONSE_FORK_ATTRIBUTION_ENABLED:
     'Cockpit Build 1a (spec §11, Astra B1R2-9) — the response-fork hook\'s CAUSAL attribution ("In response to …"). Build 1a records prompt inclusion only; the causal field needs the round-3 declarations schema + nudge and its replay gate, then flips in the founder\'s own one-line PR, never a build PR. The flip moves the pin in cockpitFlags.test.js to true AND removes this entry in the same commit',
   // COCKPIT_UI_ENABLED intentionally ABSENT: the cockpit screen flipped true in
