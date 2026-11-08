@@ -35,6 +35,8 @@ import { extractTickerSymbols } from '../_utils/watchlistEquip.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
+// The Research Record Extension (7 Nov 2026): every newly written exchange's id.
+import { randomUUID } from 'node:crypto';
 // Pilot P2 — the research record (pilot spec §3; the P2 build prompt). Gate on
 // for the caller only: a new session mints its record in the same write that
 // creates it, with the list and its current hypothesis version as subject
@@ -582,12 +584,17 @@ export default async function handler(req, res) {
     const suggestedActions = sanitizeSuggestedActions(parsed.suggestedActions);
 
     const nowIso = new Date().toISOString();
+    // The Research Record Extension (7 Nov 2026): a NEW exchange carries its
+    // own `exchangeId` (the id an idea version's exchange ref names), minted
+    // once, before the transaction. Earlier exchanges have none (legacy); the
+    // history read below picks only userMessage and message.
     const exchange = {
       userMessage: sanitizedMessage,
       message,
       tier2Included: digest.tier2Included,
       tier3Included: digest.tier3Included,
       timestamp: nowIso,
+      exchangeId: randomUUID(),
     };
 
     turn.persisting = true; // Pilot P2: from here a thrown error may follow a committed turn

@@ -11,8 +11,13 @@
 // api/ importers under the BUILD_RULES §4 import rule (their test imports are
 // the dependency-surface guard).
 
-/** Where a research run came from. `analysis` is a session over a SAVED list. */
-export const RESEARCH_ORIGINS = Object.freeze(['signaldrop', 'theme', 'screener', 'analysis', 'manual']);
+/**
+ * Where a research run came from. `analysis` is a session over a SAVED list.
+ * `shared_research` (the Research Record Extension, 7 Nov 2026 —
+ * docs/design/20261107_RESEARCH_RECORD_EXTENSION_V1.md) is a Shared Research
+ * session; no route writes one yet (the Command Center arc's next build).
+ */
+export const RESEARCH_ORIGINS = Object.freeze(['signaldrop', 'theme', 'screener', 'analysis', 'manual', 'shared_research']);
 
 /** A record is `open` until its host closes it; a session that never closes stays open (that is honest, not a bug). */
 export const RESEARCH_STATES = Object.freeze(['open', 'completed', 'abandoned', 'failed']);
@@ -34,6 +39,8 @@ export const STAGES_BY_ORIGIN = Object.freeze({
   screener: Object.freeze(['universeSize', 'matchedPreLimit', 'shortlisted', 'eligible']),
   analysis: Object.freeze(['selectedForInvestigation', 'investigationsCompleted']),
   manual: Object.freeze([]),
+  // V1: a Shared Research session has no funnel — every stage is null on its record.
+  shared_research: Object.freeze([]),
 });
 
 /** A symbol's terminal outcome — disjoint within the cohort. `null` only while the record is open and nothing has decided it yet. */

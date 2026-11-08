@@ -269,6 +269,20 @@ const DARK_BY_DESIGN = {
   //   each step moves the pin row in filmRoomCardsFlags.test.js in the same
   //   commit (BUILD_RULES §2). Rollback: one line back a step — 'allowlist'
   //   → 'off' — with its pin row.
+  // RESEARCH_MODAL_BOMB_MODE intentionally ABSENT, and it must stay absent:
+  // Research Modal Build A's Bomb mode (spec
+  // docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md §4.1) is a STRING
+  // TRI-STATE ('off' | 'allowlist' | 'on') in its own module,
+  // src/config/researchModalFlags.js, after the FILM_ROOM_CARDS_MODE pattern,
+  // so buildFlagMap never sees it and the integrity test below would fail the
+  // key outright. Noted HERE so a flip is loud in the place a reader looks for
+  // the dark runway; researchModalFlags.test.js asserts both halves.
+  //   Runway: 'off' is CURRENT (Build A, 2026-11-07): the modal byte for byte
+  //   as before. 'allowlist' — per agent battle, the cockpit-status verdict —
+  //   is a separate one-line founder PR after merge; 'on' its own PR after
+  //   that. Never a build PR; each step moves the pin row in
+  //   researchModalFlags.test.js in the same commit (BUILD_RULES §2).
+  //   Rollback: one line back a step, with its pin row.
   // ACTIVATION_EVIDENCE_ENABLED intentionally ABSENT: the ID-1 activation observer
   // flipped true on 2026-11-06 in the founder's own flip PR (flip checklist:
   // docs/audits/20261106_BUILD_ACTIVATION_OBSERVER_REVIEW_FIXES.md §11) — the

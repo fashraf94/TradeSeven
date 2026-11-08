@@ -258,6 +258,11 @@ export const LINE_STAGES = Object.freeze({
   screener: Object.freeze(['universeSize', 'matchedPreLimit', 'shortlisted', 'eligible']),
   analysis: Object.freeze(['selectedForInvestigation', 'investigationsCompleted']),
   manual: Object.freeze([]),
+  // The Research Record Extension (7 Nov 2026): a Shared Research record has no
+  // funnel in V1, so its line shows no stage — exactly what the `|| []` below
+  // already gave an unlisted origin. What the panel says for one is the Shared
+  // Research slice's decision; no route writes such a record yet.
+  shared_research: Object.freeze([]),
 });
 
 const isCount = (v) => Number.isSafeInteger(v) && v >= 0;

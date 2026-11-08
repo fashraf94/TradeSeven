@@ -53,6 +53,13 @@ const StockChart = ({
   realtimeExtremes,  // Battle hook's real-time intraday high/low { high, low } (optional backup)
   controlledSession, // Optional { crypto }: controlled held research. Absent = legacy.
   onToggleSR,        // Optional (isOn) => void, called when the S/R pill flips
+  // Research Modal Build A (spec docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md
+  // §4.4): with Bomb mode on, the modal hands a plot (the Fuse or the red zone)
+  // and the RED ZONE chip. On the bomb and spectate views the plot area is
+  // then that plot — no chart is created and no candle is drawn. Absent
+  // (every mode-off caller), nothing below changes.
+  bombPlot = null,   // Optional React node: the bomb/spectate plot area
+  bombChip = null,   // Optional React node: the control bar's state chip
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -77,6 +84,10 @@ const StockChart = ({
 
   const isBombView = timeframe === 'bomb' || timeframe === 'spectate';
   const isSpectateView = timeframe === 'spectate';
+  // Bomb mode owns the plot area on the bomb and spectate views (the red zone
+  // IS the spectate view there): the chart container is not rendered, so the
+  // chart effect below finds no container and creates nothing.
+  const plotOwned = isBombView && bombPlot != null;
 
   // Controlled held research: "today" is the session date (UTC for crypto),
   // the readout shows only observed current-session values ("—" otherwise),
@@ -928,7 +939,7 @@ const StockChart = ({
           {bombData && (
             <button
               onClick={() => { setIsSpectateMode(false); setSpectateLevel(null); onTimeframeChange('bomb'); }}
-              style={pillStyle(isBombView && !isSpectateView, 'bomb')}
+              style={pillStyle(isBombView && (!isSpectateView || plotOwned), 'bomb')}
             >
               {'\uD83D\uDCA3'}
             </button>
@@ -946,10 +957,12 @@ const StockChart = ({
             </button>
           </div>
         )}
+        {plotOwned && bombChip}
       </div>
 
       {/* Chart container with distance indicator overlay */}
       <div style={{ position: 'relative', width: '100%', height: `${height}px` }}>
+        {plotOwned ? bombPlot : <>
         <div
           ref={chartContainerRef}
           style={{ width: '100%', height: '100%' }}
@@ -1082,6 +1095,7 @@ const StockChart = ({
             </div>
           );
         })()}
+        </>}
       </div>
 
       {/* Pulse animation for close-to-level indicator */}

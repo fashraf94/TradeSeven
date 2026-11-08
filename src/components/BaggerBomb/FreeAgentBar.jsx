@@ -7,6 +7,7 @@ import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import AssetResearchModal from '../draft/AssetResearchModal';
+import { resolveBombMode, bombModeOn } from '../Research/BombMode/bombModeGate';
 import { buildResearchAsset } from '../../utils/researchAssetBuilder';
 import { calculateAgentPriceChanges } from '../../utils/battleHelpers';
 
@@ -450,6 +451,7 @@ export default function FreeAgentBar({
           version={2}
           defaultTab="baggerbomb"
           defaultTimeframe="bomb"
+          {...(bombModeOn(resolveBombMode()) ? { bombContext: { kind: 'bench' } } : {})}
         />
       )}
     </div>

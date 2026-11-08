@@ -74,6 +74,11 @@ export const STATE_REASONS = Object.freeze({
   // and no trades) — that was not a deploy of the idea; the review pass
   // unwinds it (stateSource 'review_pass') and its clock has not started.
   deployVoided: 'deploy_voided',
+  // The Research Record Extension follow-up (§4; concept SHARED_RESEARCH_WORK_AN_IDEA_CONCEPT_V1 §4.6):
+  // the first version an adopted Shared Research investigation creates, `researched` at birth like the
+  // dialogue's automatic v1 (stateSource 'research'). Its builder is hypothesisRecords/model.js
+  // buildSharedResearchVersion; no route calls it yet (the Command Center arc's B1).
+  sharedResearchCompleted: 'shared_research_completed',
 });
 
 const NON_TERMINAL = HYPOTHESIS_STATUSES.filter((s) => !TERMINAL_STATUSES.includes(s));

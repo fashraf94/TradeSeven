@@ -19,7 +19,8 @@
 //
 // Per-message exchange shape (vs workshop-chat's per-turn exchanges):
 // each exchange is a single { role: 'user'|'agent', content, phase,
-// timestamp, suggestedActions? } record. A single user turn appends two
+// timestamp, suggestedActions?, exchangeId } record (exchangeId since the
+// Research Record Extension, 7 Nov 2026; absent on legacy exchanges). A single user turn appends two
 // exchange records (the user's message at the OLD phase, then the agent's
 // response at the NEW phase if advancement occurred).
 //
@@ -37,6 +38,8 @@ import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { FORGE_ID_REGEX, FORGE_ID_MAX_LEN, isValidForgeId } from '../_utils/idValidation.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { waitUntil } from '@vercel/functions';
+// The Research Record Extension (7 Nov 2026): every newly written exchange's id.
+import { randomUUID } from 'node:crypto';
 // Pilot P2 — the research record (pilot spec §3; the P2 build prompt). This
 // file changes ONLY to mint the record and record telemetry: no prompt input,
 // prompt byte or candidate rule moves. Gate on for the caller only — a new
@@ -1390,13 +1393,19 @@ export default async function handler(req, res) {
     }
 
     // 17. Build per-message exchange records (pre-transaction — these
-    // don't depend on fresh state).
+    // don't depend on fresh state). The Research Record Extension (7 Nov
+    // 2026): each NEW exchange carries its own `exchangeId` — the id an idea
+    // version's `{ kind: 'exchange' }` evidence ref names — minted here, once,
+    // so a retried transaction unions the same two objects. An exchange
+    // written before has none; readers treat that as legacy. No reader of
+    // exchanges reads the field (the prompt builders pick their own keys).
     const nowIso = new Date().toISOString();
     const userExchange = {
       role: 'user',
       content: sanitizedMessage,
       phase: currentPhase,
       timestamp: nowIso,
+      exchangeId: randomUUID(),
     };
     const agentExchange = {
       role: 'agent',
@@ -1404,6 +1413,7 @@ export default async function handler(req, res) {
       phase: transition.newPhase,
       timestamp: nowIso,
       suggestedActions: normalized.suggestedActions,
+      exchangeId: randomUUID(),
     };
 
     turn.persisting = true; // Pilot P2: from here a thrown error may follow a committed turn

@@ -36,6 +36,11 @@ import { callGemmaVoiceWithRetry, parseVoiceLayerResponse } from '../_utils/gemm
 import { screenStocks, screenIndustries } from '../_utils/screenStocks.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
+// The Research Record Extension (7 Nov 2026): a NEW exchange carries its own
+// `exchangeId` (the id an idea version's exchange ref names), minted once
+// before the write, so a retried transaction unions the same object. Earlier
+// exchanges have none (legacy); the history read picks only its own keys.
+import { randomUUID } from 'node:crypto';
 // Pilot P2 — the research record (pilot spec §3; the P2 build prompt). Only
 // when the gate resolves on for the caller: a new session mints its record in
 // the same write that creates it; a continuing session's successful turn
@@ -366,6 +371,7 @@ export default async function handler(req, res) {
         appliedSpec: screen.appliedSpec,
         matchCount: screen.matchCount,
         timestamp: nowIso,
+        exchangeId: randomUUID(),
       };
       if (turn.recordId) {
         screenTelemetry = safely('screener', () => screenEntryOf({
@@ -390,6 +396,7 @@ export default async function handler(req, res) {
         appliedSpec: null,
         matchCount: null,
         timestamp: nowIso,
+        exchangeId: randomUUID(),
       };
     }
 
