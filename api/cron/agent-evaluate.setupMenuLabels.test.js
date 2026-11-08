@@ -33,7 +33,7 @@ const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBa
 const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
 const flagState = vi.hoisted(() => ({ labels: true, tickCapture: true, callsMode: 'off', allow: ['owner-uid-1'] }));
 const admissions = vi.hoisted(() => []);
-const composeHook = vi.hoisted(() => ({ throwMessage: null }));
+const composeHook = vi.hoisted(() => ({ throwMessage: null, advanceMs: 0 }));
 
 vi.mock('../_utils/executionAuthority.js', () => ({ get LAUNCH_EXECUTION_MODE() { return 'autopilot'; } }));
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -55,7 +55,11 @@ vi.mock('../_utils/agentEvalTransport.js', async (importOriginal) => {
 });
 vi.mock('../_utils/setupMenuLabels/compose.js', async (importOriginal) => {
   const real = await importOriginal();
-  return { ...real, composeSetupMenuBlock: (...a) => { if (composeHook.throwMessage) throw new Error(composeHook.throwMessage); return real.composeSetupMenuBlock(...a); } };
+  return { ...real, composeSetupMenuBlock: (...a) => {
+    if (composeHook.throwMessage) throw new Error(composeHook.throwMessage);
+    if (composeHook.advanceMs && a[1]) vi.setSystemTime(new Date(Date.now() + composeHook.advanceMs)); // a[1]: the settle's observation (null at the freeze)
+    return real.composeSetupMenuBlock(...a);
+  } };
 });
 vi.mock('../_utils/tournamentAgentLedger.js', () => ({
   resolveTournamentContext: vi.fn(async () => null),
@@ -260,6 +264,9 @@ describe('disabled: nothing is read, nothing changes (rows 5.8, 1.6, G.3)', () =
   });
 });
 
+// THE CLOCK IS FROZEN in this suite (Date only). These rows therefore prove ORDER and the ABSENCE OF A WAIT —
+// the admission is computed before any read exists and nothing awaits a read — never equal CPU time: Slice 2's
+// synchronous work is real and is measured, not asserted away (review SM2-2; the build report's cost table).
 describe('Correction A — the model-admission boundaries are untouched (rows 1.1, 1.2)', () => {
   const at = (remainingMs) => Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - remainingMs);
   it.each([
@@ -275,7 +282,7 @@ describe('Correction A — the model-admission boundaries are untouched (rows 1.
       expect(r.admissions).toHaveLength(1);
       expect(r.admissions[0].r.proceed).toBe(admitted);
     }
-    expect(on.admissions[0]).toEqual(off.admissions[0]); // the same inputs and the same answer, to the millisecond
+    expect(on.admissions[0]).toEqual(off.admissions[0]); // the same inputs and answer on the frozen clock: no read was waited for before it
     expect(on.admissions[0].args.callsReserveMs).toBe(callsMode === 'shadow' ? 4_000 : 0);
     expect(on.admissions[0].r.requiredMs).toBe(callsMode === 'shadow' ? 68_000 : 64_000);
     expect(Boolean(on.request)).toBe(admitted);
@@ -316,7 +323,7 @@ describe('Correction A — no wait: only what is already available', () => {
     expect(cand(r, 'PLTR')).toMatchObject({ status: 'absent', s2Entry: true, s2Reservations: 2, s2LastOutcome: 'retryable' });
     expect(cand(r, 'AMD')).toMatchObject({ status: 'absent', s2Entry: false });
   });
-  it('1.4 hung reads: the tick completes, every candidate read_unsettled, and the capture is handed exactly the budget it has with Slice 2 off', async () => {
+  it('1.4 hung reads: the tick completes, every candidate read_unsettled, and nothing waited for them (frozen clock: the capture budget matches the flag-off run)', async () => {
     const off = await runTick({ labels: false });
     const slice2 = makeSlice2Store({ hold: ['*'] });
     const on = await runTick({ slice2 });
@@ -335,7 +342,7 @@ describe('Correction A — no wait: only what is already available', () => {
     expect(withoutBlock(on.permanent)).toEqual(off.permanent);
     expect(on.updates).toEqual(off.updates);
   });
-  it('A-10 two battles on one handler clock: battle 1\'s hung reads add no wait to battle 2, are shared, and are never issued twice', async () => {
+  it('A-10 two battles on one handler clock: battle 1\'s hung reads are never waited for by battle 2 (frozen clock), are shared, and are never issued twice', async () => {
     const summary = {};
     const slice2 = makeSlice2Store({ hold: [idOf('CRM')] });
     const first = await runTick({ slice2, summary });
@@ -408,14 +415,60 @@ describe('Correction D.2 — membership is literal; the real lists are unchanged
   });
 });
 
+describe('review SM2-1 / SM2-3 — the base record\'s budget, and the error exit', () => {
+  it('SM2-1 the settle\'s own CPU cannot move the capture-floor decision: a settle that costs 3 ms at 10,002 ms left still writes the record, with the flag-off budget', async () => {
+    const at = Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 10_002);
+    const off = await runTick({ labels: false, cronStartTime: at });
+    composeHook.advanceMs = 3; // the mocked composer moves the (frozen) clock by 3 ms when it composes at the settle
+    const on = await runTick({ cronStartTime: at });
+    composeHook.advanceMs = 0;
+    expect(off.permanent.capture.remainingBudgetMs).toBe(10_002);
+    expect(on.permanent).not.toBeNull();
+    expect(on.permanent.capture.remainingBudgetMs).toBe(off.permanent.capture.remainingBudgetMs);
+  });
+  it('SM2-3 an error exit after the reads started is sealed at once and its record carries its own read start and counts', async () => {
+    const { newTickCaptureScope, runInTickCaptureScope, claimTickCaptureContext } = await import('../_utils/tickCapture/captureContext.js');
+    const { finalizeTickCapture } = await import('../_utils/tickCapture/captureWriter.js');
+    flagState.labels = true; flagState.tickCapture = true; flagState.callsMode = 'off'; flagState.allow = ['owner-uid-1'];
+    const p = prices();
+    mocks.create.mockReset();
+    mocks.getStockAnalysisData.mockImplementation(async (symbol) => (p[symbol] ? { price: p[symbol], daily: [] } : {}));
+    mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
+    mocks.create.mockImplementation(async () => makeToolUseResponse(makeHoldResult()));
+    const slice2 = makeSlice2Store({ hold: ['*'] });
+    const db = slice2.attach(makeCallsDb({ battle: tfBattle(), rankingsDoc: rankings(), techDocs: makeTechDocs() }));
+    // The final battle update (the one carrying evaluations) throws: a tick_error after the reads started.
+    const base = db.collection.bind(db);
+    db.collection = (col) => {
+      const c = base(col);
+      if (col !== 'agentBattles') return c;
+      return { ...c, doc: (id) => { const ref = c.doc(id); return { ...ref, update: async (payload) => { if (Array.isArray(payload?.evaluations)) throw new Error('final update failed (injected)'); return ref.update(payload); } }; } };
+    };
+    const scope = newTickCaptureScope();
+    let thrown = null;
+    try { await runInTickCaptureScope(scope, () => processAgentBattle(db, tfBattle(), {}, Date.now(), new Map(), { everEnabled: false })); } catch (err) { thrown = err; }
+    expect(thrown?.message).toMatch(/final update failed/);
+    const ctx = claimTickCaptureContext(scope);
+    await finalizeTickCapture(db, ctx, { remainingBudgetMs: 200_000 });
+    const rec = permanentDoc(db, BATTLE_ID, ctx.state.tickId);
+    expect(rec.exitReason).toBe('tick_error');
+    expect(rec.setupMenu).toMatchObject({ blockStatus: 'reads_unsettled', readsStartedAt: expect.any(String), observedAt: expect.any(String) });
+    expect(rec.setupMenu.readsIssued).toBeGreaterThan(0);
+    const before = slice2.access.length;
+    await slice2.release();
+    expect(slice2.access.length).toBe(before); // sealed: nothing queued was started after the error
+  });
+});
+
 describe('the tick never waits on Slice 2 (Correction A), in source', () => {
-  it('the five Slice 2 calls in agent-evaluate.js are never awaited, and the settle sits immediately before finalizeTickCapture', async () => {
+  it('the six Slice 2 calls in agent-evaluate.js are never awaited; the capture budget is read before the settle, which sits immediately before finalizeTickCapture; the error exit settles too', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(new URL('./agent-evaluate.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
     const calls = [...src.matchAll(/^.*\b(freezeSetupMenuPool|startSetupMenuReads|settleSetupMenuReads|sealSetupMenuReads)\(.*$/gm)].map((m) => m[0]);
-    expect(calls.filter((l) => !/^\s*import\b/.test(l))).toHaveLength(5);
+    expect(calls.filter((l) => !/^\s*import\b/.test(l))).toHaveLength(6);
     for (const line of calls) expect(line).not.toMatch(/\bawait\b/);
-    expect(src).toMatch(/settleSetupMenuReads\(setupMenuReads, tickCapture\);\n\s*const captureResult = await finalizeTickCapture\(db, tickCapture, \{/);
+    expect(src).toMatch(/const captureRemainingBudgetMs = TIME_BUDGET_MS - \(Date\.now\(\) - cronStartTime\);\n(?:\s*\/\/.*\n)*\s*settleSetupMenuReads\(setupMenuReads, tickCapture\);\n\s*const captureResult = await finalizeTickCapture\(db, tickCapture, \{\n\s*remainingBudgetMs: captureRemainingBudgetMs,/);
+    expect(src).toMatch(/tickCapture\.exit\('tick_error'\);\n\s*\}\);\n(?:\s*\/\/.*\n)*\s*settleSetupMenuReads\(setupMenuReads, tickCapture\);/);
     // The admission test is computed before the read start that follows it.
     expect(src.indexOf('const budget = shouldStartHaikuCall(')).toBeLessThan(src.indexOf('setupMenuReads = startSetupMenuReads({ db, tickCapture, summary });', src.indexOf('const budget = shouldStartHaikuCall(')));
   });

@@ -4962,6 +4962,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     captureStep(tickCapture, () => {
       tickCapture.exit('tick_error');
     });
+    // Slice 2 SETTLE on the error exit (review SM2-3): seal now and record what the reads produced by this
+    // instant, so the errored tick's record carries its own read start and counts. Synchronous; never throws.
+    settleSetupMenuReads(setupMenuReads, tickCapture);
     // Clear lock on any error
     await battleRef.update({ 'cronState.evaluatingAt': null }).catch(() => {});
     throw err;
@@ -5074,10 +5077,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // Mark THIS scope done so the handler's error path can never finalize a
       // tick that already finalized itself (F3).
       markTickCaptureClaimed(tickCaptureScope);
+      // The base record's budget is read BEFORE Slice 2's settle (review SM2-1), so the settle's CPU can never
+      // move the capture-floor decision or the recorded remainingBudgetMs. Flag off, the settle returns at once.
+      const captureRemainingBudgetMs = TIME_BUDGET_MS - (Date.now() - cronStartTime);
       // Slice 2 SETTLE — synchronous: seal, take only the results already available, compose once. No wait.
       settleSetupMenuReads(setupMenuReads, tickCapture);
       const captureResult = await finalizeTickCapture(db, tickCapture, {
-        remainingBudgetMs: TIME_BUDGET_MS - (Date.now() - cronStartTime),
+        remainingBudgetMs: captureRemainingBudgetMs,
       });
       // F7 (Astra round 1): the TOTAL — body resolution + serialization +
       // commit — logged AFTER the commit, because the number written INSIDE

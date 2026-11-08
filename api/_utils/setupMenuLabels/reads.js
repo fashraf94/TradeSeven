@@ -156,7 +156,7 @@ function releaseSlot(memo, rec, env) {
   if (rec.slotTimer !== null) safe(() => env.clearTimer(rec.slotTimer));
   rec.slotTimer = null;
   memo.inflight -= 1;
-  pump(memo, env);
+  safe(() => pump(memo, env)); // nothing a pump does can escape into a settlement callback (review SM2-4)
 }
 
 /** Issue one snapshot read into the memo. Its handlers are attached in the same expression that creates it. */
@@ -165,7 +165,7 @@ function issue(memo, { db, id, session, symbol, ruleSet }, env) {
   memo.reads.set(id, rec);
   memo.issued += 1;
   memo.inflight += 1;
-  rec.slotTimer = env.setTimer(() => releaseSlot(memo, rec, env), LABEL_READ_SLOT_MS);
+  rec.slotTimer = env.setTimer(() => safe(() => releaseSlot(memo, rec, env)), LABEL_READ_SLOT_MS);
   let promise;
   try { promise = Promise.resolve(readSnapshot({ db, session, symbol, ruleSet })); } catch (err) { promise = Promise.reject(err); }
   promise.then((value) => settleRec(memo, rec, true, value ?? null, env), () => settleRec(memo, rec, false, null, env));

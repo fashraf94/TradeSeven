@@ -124,6 +124,26 @@ describe('Correction C — the whole record\'s budget decides', () => {
   });
 });
 
+describe('review SM2-1 — the block yields near the capture deadline', () => {
+  it('past its admission instant the block is omitted unexamined; the base record is as without it', async () => {
+    const block = blockOf();
+    const plain = await docs(await tick());
+    const late = await docs(await tick({ block }), { optionalBlockNotAfterMs: Date.now() - 1 });
+    expect(Object.hasOwn(late.permanent, 'setupMenu')).toBe(false);
+    expect(late.permanent).toEqual(plain.permanent);
+    expect(late.body).toEqual(plain.body);
+    const inTime = await docs(await tick({ block }), { optionalBlockNotAfterMs: Date.now() + 60_000 });
+    expect(inTime.permanent.setupMenu).toEqual(block);
+  });
+  it('finalizeTickCapture passes the margin: the shared deadline minus OPTIONAL_BLOCK_DEADLINE_MARGIN_MS', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('./captureWriter.js', import.meta.url), 'utf8');
+    expect(src).toMatch(/optionalBlockNotAfterMs: deadlineAt - OPTIONAL_BLOCK_DEADLINE_MARGIN_MS,/);
+    const { OPTIONAL_BLOCK_DEADLINE_MARGIN_MS } = await import('./captureWriter.js');
+    expect(OPTIONAL_BLOCK_DEADLINE_MARGIN_MS).toBe(1_000);
+  });
+});
+
 describe('Correction C — malformed and error-form blocks are contained locally', () => {
   it('C-4 a block the sanitizer would reject (a symbol outside the tick\'s universe; an unknown enum) becomes the error form `block_rejected` — never rejectedFields, never the rejected count', async () => {
     const plain = await docs(await tick());
