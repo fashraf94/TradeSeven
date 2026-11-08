@@ -38,14 +38,21 @@ export const RESEARCH_MODAL_BOMB_MODES = Object.freeze(['off', 'allowlist', 'on'
  *                and gets Bomb mode; every other mount loses the 💣 pill and
  *                the Bomb tab (BA-5).
  *
- * RUNWAY: 'off' ships (this build, dark). 'allowlist' (the founder and
- * FT_QA) is a separate one-line PR after merge, never a build PR; 'on' is its
- * own founder PR after that. Each step moves the first row of
+ * RUNWAY: 'off' shipped with Build A (PR #1031, dark). CURRENT: 'allowlist'
+ * (the founder's flip PR, 2026-11-08): the owners the cockpit's server-side
+ * allowlist admits (the founder and FT_QA). 'on' is its own founder PR, merged
+ * only after one clean live market session on the allowlist. Each step is a
+ * one-line founder PR, never a build PR, and moves the first row of
  * researchModalFlags.test.js in the same commit (BUILD_RULES §2).
- * ROLLBACK: one line back a step, with that pin row.
+ * ROLLBACK: a kill switch: roll back one step at a time ('on' → 'allowlist'
+ * → 'off') by moving the literal and its pin together; every mode-off arm
+ * stays in the code until the cleanup PR, after 'on' has run in production.
+ * The cleanup PR (after 'on' has run in production) deletes the unreachable
+ * legacy ladder code, the dead setMarkers call, the mode-off arms and the
+ * spec's §8 smoke list; until then the mode-off goldens guard 'off'.
  *
  * NOTHING THE AGENT SEES OR TRADES changes at any value: Bomb mode reads
  * records the client already holds and requests nothing new.
  */
 // Pinned by: researchModalFlags.test.js (the pin and this value move together — BUILD_RULES §2).
-export const RESEARCH_MODAL_BOMB_MODE = 'off';
+export const RESEARCH_MODAL_BOMB_MODE = 'allowlist';

@@ -22,6 +22,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'researchModalFlags.js'), 'utf8');
 const GUARD = readFileSync(path.join(HERE, 'flagPinGuard.test.js'), 'utf8');
 const FEATURE_FLAGS = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
+const SELF = readFileSync(fileURLToPath(import.meta.url), 'utf8');
 
 const docstringOf = (name) => {
   const idx = SRC.indexOf(`export const ${name} = `);
@@ -30,9 +31,9 @@ const docstringOf = (name) => {
 };
 
 describe('RESEARCH_MODAL_BOMB_MODE — the pin (BUILD_RULES §2; Build A spec §4.1)', () => {
-  it("is 'off': Bomb mode ships dark — the modal is today's modal byte for byte and the battle screen never calls the record selector", () => {
+  it("is 'allowlist' — a kill switch: roll back one step at a time ('on' → 'allowlist' → 'off') by moving the literal and its pin together; every mode-off arm stays in the code until the cleanup PR, after 'on' has run in production", () => {
     // THE ROW THAT MOVES WITH A FLIP ('off' → 'allowlist' → 'on'), in the flip PR's own commit; a rollback moves it back.
-    expect(RESEARCH_MODAL_BOMB_MODE).toBe('off');
+    expect(RESEARCH_MODAL_BOMB_MODE).toBe('allowlist');
   });
 
   it('the allowed values: exactly off · allowlist · on, frozen, in walk order, and the shipped value is one of them', () => {
@@ -55,6 +56,14 @@ describe('RESEARCH_MODAL_BOMB_MODE — the pin (BUILD_RULES §2; Build A spec §
     expect(doc).toContain('ROLLBACK');
     expect(doc).toContain('byte for byte');
     expect(doc).toContain('NOTHING THE AGENT SEES OR TRADES');
+  });
+
+  it("the rollback story (BF-2) is written once, in the same words, in the docstring, the pin row's title and the guard's note", () => {
+    const ROLLBACK = "a kill switch: roll back one step at a time ('on' → 'allowlist' → 'off') by moving the literal and its pin together; every mode-off arm stays in the code until the cleanup PR, after 'on' has run in production";
+    // Comment wrapping is not part of the words: each source's line breaks and comment markers read as one space.
+    expect(docstringOf('RESEARCH_MODAL_BOMB_MODE').replace(/\r?\n \* ?/g, ' ')).toContain(ROLLBACK);
+    expect(SELF).toContain(`"is '${RESEARCH_MODAL_BOMB_MODE}' — ${ROLLBACK}"`);
+    expect(GUARD.replace(/\r?\n\s*\/\/\s*/g, ' ')).toContain(ROLLBACK);
   });
 
   it('never a DARK_BY_DESIGN key (the guard scans *_ENABLED booleans only), but noted by name in that block', () => {
