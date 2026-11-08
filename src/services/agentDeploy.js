@@ -210,7 +210,9 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
         // recorded here as a DISTINCT outcome rather than a missing value.
         ceremonyTiming.markCloneFallback(`http_${cloneRes.status}`);
         // FL4 (flip, Nov 7 2026): with per-game loadouts on, the deploy is refused below (A2R-3 (b)), so the line says so;
-        // off, it keeps today's words. A literal ternary: either way the shipped build carries one string.
+        // off, it keeps today's words. A literal ternary, but inside a try block, where Rollup does not fold (its
+        // tryCatchDeoptimization): the build ships this ternary and both strings (the flip report, §4). The catch's
+        // ternary below folds.
         console.warn(PER_GAME_LOADOUT_ENABLED ? '[Deploy] casual clone ensure did not return a clone — refusing the BaggerBomb deploy:' : '[Deploy] casual clone ensure did not return a clone — deploying the real agent:', cloneRes.status, cloneData?.error || '');
       }
     } catch (err) {
