@@ -41,6 +41,8 @@ import {
   ACTION_KINDS, ACTION_SOURCES, BODY_STATUSES, CALL_KINDS, CAPTURE_DISPOSITIONS, CHECK_RESULTS,
   CHECK_STATUSES, DECISIONS, EXIT_REASONS, GUARDRAIL_FAULT_CLASSES, HOLD_KINDS,
   MODEL_OUTCOMES, STAGES, TIMEOUT_KINDS,
+  SETUP_MENU_BLOCK_STATUSES, SETUP_MENU_SELECTORS, SETUP_MENU_SOURCES, SETUP_LABEL_STATUSES, SETUP_VERDICTS,
+  SETUP_PATTERNS, SETUP_REGIMES, SETUP_BARS_CLASSES, SETUP_SNAPSHOT_STATUSES, SETUP_S2_OUTCOMES,
 } from './captureConfig.js';
 
 // Cockpit Build 0 (spec §3.9): the call kinds, re-exported from the one source.
@@ -51,6 +53,9 @@ export const ENUM_LISTS = Object.freeze({
   ACTION_KINDS, ACTION_SOURCES, BODY_STATUSES, CALL_KINDS, CAPTURE_DISPOSITIONS, CHECK_RESULTS,
   CHECK_STATUSES, DECISIONS, EXIT_REASONS, GUARDRAIL_FAULT_CLASSES, HOLD_KINDS,
   MODEL_OUTCOMES, STAGES, TIMEOUT_KINDS,
+  // Measured Trend Evidence Slice 2 (spec V2 §5.2, amended): the setupMenu block's lists.
+  SETUP_MENU_BLOCK_STATUSES, SETUP_MENU_SELECTORS, SETUP_MENU_SOURCES, SETUP_LABEL_STATUSES, SETUP_VERDICTS,
+  SETUP_PATTERNS, SETUP_REGIMES, SETUP_BARS_CLASSES, SETUP_SNAPSHOT_STATUSES, SETUP_S2_OUTCOMES,
 });
 
 const ID_RE = /^[A-Za-z0-9_:.+\-/]{1,120}$/;
@@ -206,6 +211,58 @@ export const PERMANENT_FIELD_KINDS = Object.freeze({
   'capture.remainingBudgetMs': 'number',
   'capture.disposition': 'enum:CAPTURE_DISPOSITIONS',
   'capture.rejectedFieldCount': 'number',
+
+  // Measured Trend Evidence Slice 2 (spec V2 §5, amended by the kickoff's
+  // Corrections C and D): the optional `setupMenu` block — an ARRAY of
+  // candidates, each symbol a VALUE (a dotted symbol cannot be a key under a
+  // wildcard path: pathProbes splits on '.'), so no key kind is declared. The
+  // writer admits the block in its own pass (captureWriter.js).
+  'setupMenu.blockStatus': 'enum:SETUP_MENU_BLOCK_STATUSES',
+  'setupMenu.errorCode': 'id',
+  'setupMenu.session': 'id',
+  'setupMenu.setupVersion': 'id',
+  'setupMenu.thresholdsHash': 'id',
+  'setupMenu.semanticsId': 'id',
+  'setupMenu.selector': 'enum:SETUP_MENU_SELECTORS',
+  'setupMenu.rebuilt': 'bool',
+  'setupMenu.frozenAt': 'timestamp',
+  'setupMenu.readsStartedAt': 'timestamp',
+  'setupMenu.observedAt': 'timestamp',
+  'setupMenu.stateRead': 'bool',
+  'setupMenu.presentedCount': 'number',
+  'setupMenu.uniqueCount': 'number',
+  'setupMenu.omittedCount': 'number',
+  'setupMenu.unrecordableCount': 'number',
+  'setupMenu.truncatedCount': 'number',
+  'setupMenu.readsIssued': 'number',
+  'setupMenu.readsShared': 'number',
+  'setupMenu.counts.labelled': 'number',
+  'setupMenu.counts.refused': 'number',
+  'setupMenu.counts.absent': 'number',
+  'setupMenu.counts.excluded': 'number',
+  'setupMenu.counts.symbolForm': 'number',
+  'setupMenu.counts.stale': 'number',
+  'setupMenu.counts.failed': 'number',
+  'setupMenu.counts.unsettled': 'number',
+  'setupMenu.candidates.*.symbol': 'symbol',
+  'setupMenu.candidates.*.source': 'enum:SETUP_MENU_SOURCES',
+  'setupMenu.candidates.*.inBenchAtFreeze': 'bool',
+  'setupMenu.candidates.*.heldAtFreeze': 'bool',
+  'setupMenu.candidates.*.status': 'enum:SETUP_LABEL_STATUSES',
+  'setupMenu.candidates.*.verdict': 'enum:SETUP_VERDICTS',
+  'setupMenu.candidates.*.reason': 'id',
+  'setupMenu.candidates.*.pattern': 'enum:SETUP_PATTERNS',
+  'setupMenu.candidates.*.regime': 'enum:SETUP_REGIMES',
+  'setupMenu.candidates.*.asOf': 'id',
+  'setupMenu.candidates.*.barsClass': 'enum:SETUP_BARS_CLASSES',
+  'setupMenu.candidates.*.capturedAt': 'timestamp',
+  'setupMenu.candidates.*.capturedBeforeFreeze': 'bool',
+  'setupMenu.candidates.*.snapshotStatus': 'enum:SETUP_SNAPSHOT_STATUSES',
+  'setupMenu.candidates.*.s2Entry': 'bool',
+  'setupMenu.candidates.*.s2Reservations': 'number',
+  'setupMenu.candidates.*.s2LastOutcome': 'enum:SETUP_S2_OUTCOMES',
+  'setupMenu.candidates.*.s2LastAt': 'timestamp',
+  'setupMenu.candidates.*.s2Exhausted': 'bool',
 });
 
 /**
@@ -268,6 +325,11 @@ export const PERMANENT_CONTAINER_KINDS = Object.freeze({
   'scores': 'object',
   'scores.stockModel': 'object',
   'capture': 'object',
+  // Measured Trend Evidence Slice 2: the optional block (no key kind: an array of candidates).
+  'setupMenu': 'object',
+  'setupMenu.counts': 'object',
+  'setupMenu.candidates': 'array',
+  'setupMenu.candidates.*': 'object',
 });
 
 /** The tick's own symbol universe: held ∪ bench ∪ rendered candidates. */

@@ -42,6 +42,13 @@
  * RD-1 — docs/specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_AMENDMENT_D_20261016.md):
  *   · `risk.stagnation` (Film Room B1.1, Amendment C RC-2) — accepted under
  *     versions 1 and 2 by RD-1.
+ *   · `setupMenu` (Measured Trend Evidence Slice 2, decision D-2 under RD-1 —
+ *     docs/design/20261107_P3_SLICE2_BUILD_SPEC_DRAFT_V2.md §5 as amended by
+ *     docs/design/20261107_P3_SLICE2_DISABLED_BUILD_KICKOFF_V2_CORRECTIONS.md):
+ *     an optional block, present only on a tick of an in-scope battle while
+ *     SETUP_MENU_LABELS_ENABLED is on, admitted by the writer only when the
+ *     whole permanent record still fits its budget — accepted under versions 1
+ *     and 2 by RD-1. No version bump.
  */
 export const TICK_CAPTURE_SCHEMA_VERSION = 1;
 
@@ -236,3 +243,20 @@ export const ACTION_KINDS = Object.freeze(['swap']);
  * the capture modules import only their sibling constants.
  */
 export const CALL_KINDS = Object.freeze(['called_shot', 'confirmation', 'pick']);
+
+/**
+ * Measured Trend Evidence Slice 2 — the `setupMenu` block's closed lists (spec
+ * V2 §5.2, amended). The same lists as api/_utils/setupMenuLabels/constants.js,
+ * pinned equal there (constants.test.js); restated here because the capture
+ * modules import only their sibling constants.
+ */
+export const SETUP_MENU_BLOCK_STATUSES = Object.freeze(['ok', 'truncated', 'reads_unsettled', 'calendar_missing', 'error']);
+export const SETUP_MENU_SELECTORS = Object.freeze(['archetype', 'legacy', 'carried']);
+export const SETUP_MENU_SOURCES = Object.freeze(['hotbench', 'catalyst']);
+export const SETUP_LABEL_STATUSES = Object.freeze(['labelled', 'refused', 'absent', 'excluded', 'symbol_form', 'stale_snapshot', 'read_failed', 'read_unsettled']);
+export const SETUP_VERDICTS = Object.freeze(['valid', 'invalid', 'unknown']);
+export const SETUP_PATTERNS = Object.freeze(['breakout', 'pullback_resume']);
+export const SETUP_REGIMES = Object.freeze(['uptrend', 'downtrend', 'no_trend', 'unknown']);
+export const SETUP_BARS_CLASSES = Object.freeze(['contemporaneous', 'later_reconstruction']);
+export const SETUP_SNAPSHOT_STATUSES = Object.freeze(['ok', 'refused']);
+export const SETUP_S2_OUTCOMES = Object.freeze(['final', 'excluded', 'retryable', 'pending', 'threw', 'unresolved']);
