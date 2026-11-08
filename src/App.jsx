@@ -69,6 +69,8 @@ const CorrelationLab = lazy(() => import('./components/Research/CorrelationLab')
 // AGENT_FORM_LAB_ENABLED false this is `null` and Rollup drops the import(), so
 // the bundle carries no lab chunk and no three.js.
 const AgentFormLab = AGENT_FORM_LAB_ENABLED ? lazy(() => import('./screens/AgentFormLab')) : null;
+// SMOKE ONLY (claude/armory-flip-smoke, NEVER MERGE): the armory flip's loadout states page, ?loadoutStates=1.
+const LoadoutStatesSmoke = lazy(() => import('./screens/LoadoutStatesSmoke'));
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -10279,6 +10281,14 @@ export default function PortfolioDuel() {
   // EarningsGame, ClashBot, the starfield) draws beside the lab's frame
   // readout, signed in or out. With the flag false Rollup folds this block
   // away and the URL is never read.
+  // SMOKE ONLY (claude/armory-flip-smoke, NEVER MERGE): the loadout states page, full screen, signed in or out.
+  if (new URLSearchParams(window.location.search).get('loadoutStates') === '1') {
+    return (
+      <Suspense fallback={<AppLoadingScreen />}>
+        <LoadoutStatesSmoke />
+      </Suspense>
+    );
+  }
   if (AGENT_FORM_LAB_ENABLED && new URLSearchParams(window.location.search).get('agentFormLab') === '1') {
     return (
       <Suspense fallback={<AppLoadingScreen />}>
