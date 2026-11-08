@@ -489,6 +489,7 @@ export function buildRecord({
   const sharedCompleted = origin === SHARED_RESEARCH_ORIGIN && state === 'completed';
   if (terminalReason === TERMINAL_REASONS.concluded && !sharedCompleted) throw new ResearchRecordError('invalid_terminal_reason');
   if (sharedCompleted && question === null) throw new ResearchRecordError('question_missing');
+  if (state !== 'open') assertSharedReasonAgreesWithSubject(origin, terminalReason, watchlistId !== null);
   const record = {
     schemaVersion: RECORD_SCHEMA_VERSION,
     researchWorkId, userId, origin, host: host ? { collection: host.collection, id: host.id } : null, createdAt,
@@ -503,6 +504,19 @@ export function buildRecord({
   };
   if (origin === SHARED_RESEARCH_ORIGIN) record.symbolKeys = symbolKeysOf(record);
   return record;
+}
+
+/**
+ * On a `shared_research` record the terminal reason agrees with the subject
+ * (the closing-rules fix, 7 Nov 2026): `concluded` means no idea was made, so
+ * it comes without a subject; `saved_to_list` means one was, so it comes with
+ * one. Either disagreement is `invalid_terminal_reason`. Any other origin:
+ * nothing checked here (every host close is exactly what it was).
+ */
+function assertSharedReasonAgreesWithSubject(origin, terminalReason, hasSubject) {
+  if (origin !== SHARED_RESEARCH_ORIGIN) return;
+  if (terminalReason === TERMINAL_REASONS.concluded && hasSubject) throw new ResearchRecordError('invalid_terminal_reason', 'a concluded investigation made no idea, so it names no list.');
+  if (terminalReason === TERMINAL_REASONS.savedToList && !hasSubject) throw new ResearchRecordError('invalid_terminal_reason', 'a saved investigation names the list it was saved to.');
 }
 
 /** The subject, set at most once: only while the record names no list yet. */
@@ -564,6 +578,9 @@ export function turnPatch(record, { kind, elapsedMs, usage = null, atIso, budget
  * `shared_research` record closing `completed` (else
  * `invalid_terminal_reason`), and such a record cannot close `completed`
  * without its question (`question_missing`; abandoned or failed need none).
+ * The closing-rules fix: on such a record the reason agrees with the subject
+ * the close leaves (the record's, or the one this close sets) — `concluded`
+ * without one, `saved_to_list` with one (`invalid_terminal_reason`).
  * Every other close is exactly what it was.
  */
 export function closePatch(record, { state, terminalReason, atIso, funnel, subject = null }) {
@@ -574,11 +591,13 @@ export function closePatch(record, { state, terminalReason, atIso, funnel, subje
   const sharedCompleted = record.origin === SHARED_RESEARCH_ORIGIN && state === 'completed';
   if (terminalReason === TERMINAL_REASONS.concluded && !sharedCompleted) throw new ResearchRecordError('invalid_terminal_reason');
   if (sharedCompleted && !nonEmptyString(record.question)) throw new ResearchRecordError('question_missing');
+  const subjectSet = subject ? subjectPatch(record, subject) : {};
+  assertSharedReasonAgreesWithSubject(record.origin, terminalReason, record.watchlistId != null || nonEmptyString(subjectSet.watchlistId));
   return withFreshSymbolKeys(record, {
     state, terminalReason, endedAt: atIso, updatedAt: atIso,
     stages: stagesFor(record.origin, funnel.stages),
     ...capSymbols(funnel.symbols),
-    ...(subject ? subjectPatch(record, subject) : {}),
+    ...subjectSet,
   });
 }
 
@@ -591,12 +610,13 @@ export const SOURCE_LABEL_MAX_LEN = 120;
 /** The follow-up's clarification 3: the short answer holds up to 1,000 characters (was 600). */
 export const SUMMARY_TEXT_MAX_LEN = 1000;
 /**
- * At most 10 revisions (was 20): the follow-up's size rule (V2 §3) — with
- * 1,000-character summaries the largest record measured 1,010,671 bytes at 20,
- * over the 1,000,000-byte rule; this is the first cut the rule names
- * (size.test.js measures it).
+ * At most 20 revisions. The follow-up's size rule (V2 §3) first cut this to 10,
+ * then cut source urls to 1,024 characters; the url cut alone brings the
+ * largest record under the 1,000,000-byte rule (746,827 bytes at 20 —
+ * size.test.js measures it), so the closing-rules fix (7 Nov 2026) put 20 back:
+ * an opening summary plus ten answer-changing steps is eleven revisions.
  */
-export const SUMMARY_REVISIONS_MAX = 10;
+export const SUMMARY_REVISIONS_MAX = 20;
 /** A summary rests on 1–25 CURRENT findings (follow-up ruling Q5). */
 export const BASED_ON_MAX = 25;
 /** A source record's id (any record kind) and an evidence item's id: bounded, printable. */

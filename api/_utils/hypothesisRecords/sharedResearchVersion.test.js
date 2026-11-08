@@ -84,6 +84,13 @@ describe('buildSharedResearchVersion — every refusal', () => {
     expect(code(() => adoptedVersion({ record: null }))).toBe('record_not_from_session');
     expect(code(() => adoptedVersion({ sessionId: 'a/b', list: adoptionList({ [SHARED_RESEARCH_LIST_MARKER]: 'a/b' }) }))).toBe('record_not_from_session');
   });
+  it('the record is not open: a completed, an abandoned or a failed investigation is read-only (the closing-rules fix)', () => {
+    const r = adoptionRecord();
+    expect(r.state).toBe('open');
+    for (const state of ['completed', 'abandoned', 'failed']) {
+      expect(code(() => adoptedVersion({ record: { ...r, state, terminalReason: 'user_close', endedAt: NOW } })), state).toBe('record_not_open');
+    }
+  });
   it('the record has no question', () => {
     const { question, ...noQuestion } = adoptionRecord();
     expect(question).toBeTruthy();

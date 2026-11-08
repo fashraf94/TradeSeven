@@ -380,6 +380,8 @@ export function buildSaveVersion({ session, watchlistId, userId, sessionId, nowI
  *                           by origin, or its marker names another session
  *   record_not_from_session the record is not this owner's `shared_research`
  *                           record for this session (`sr_<sessionId>`)
+ *   record_not_open         the record is not open (adoption closes it; a
+ *                           closed investigation is read-only)
  *   question_missing        the record has no question
  *   invalid_kept_findings   keptFindingIds empty, repeated, or naming anything
  *                           that is not a CURRENT finding on the record
@@ -405,6 +407,9 @@ export function buildSharedResearchVersion({
   try { recordId = researchWorkIdFor({ collection: 'sharedResearchSessions', id: sessionId }); } catch { /* a malformed session id names no record */ }
   if (!isPlainObject(record) || recordId === null || record.researchWorkId !== recordId || record.userId !== userId
     || record.origin !== SHARED_RESEARCH_ORIGIN || !RESEARCH_STATES.includes(record.state)) throw fail('record_not_from_session');
+  // Adoption completes the record (saved_to_list) in the same transaction, and a closed record never moves:
+  // a concluded, abandoned or failed investigation is read-only (the closing-rules fix, 7 Nov 2026).
+  if (record.state !== 'open') throw fail('record_not_open');
   if (!nonEmptyString(record.question)) throw fail('question_missing');
   const current = new Set(currentFindingsOf(record).map((f) => f?.findingId));
   if (!Array.isArray(keptFindingIds) || keptFindingIds.length === 0 || new Set(keptFindingIds).size !== keptFindingIds.length

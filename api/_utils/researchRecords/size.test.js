@@ -145,7 +145,8 @@ describe('the largest Shared Research record fits (follow-up §3)', () => {
   it('the figure the contract note reports, pinned (any change to a cap or a shape moves it, and the note with it)', () => {
     // Measured: 1,010,671 at 20 revisions / 2,048-character urls (the first test's narrower record);
     // 1,013,417 at 10 revisions with every cap full and maps counted cautiously (review V2A-1);
-    // after the second named cut (urls to 1,024): this.
-    expect(size).toBe(706_217);
+    // after the second named cut (urls to 1,024): 706,217 at 10 revisions; the closing-rules fix put
+    // 20 revisions back (the url cut alone brings the record under the rule): this.
+    expect(size).toBe(746_827);
   });
 });

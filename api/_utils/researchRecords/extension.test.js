@@ -30,7 +30,7 @@ import {
   FINDING_KINDS, FINDING_RECORD_KINDS, EVIDENCE_ITEM_RECORD_KINDS, FINDING_STATUSES, PIN_TYPES,
   QUESTION_MAX_LEN, FINDINGS_MAX, FINDING_FACT_MAX_LEN, SOURCE_LABEL_MAX_LEN, SOURCE_URL_MAX_LEN, SUMMARY_TEXT_MAX_LEN, SUMMARY_REVISIONS_MAX, BASED_ON_MAX,
   researchWorkIdFor, isResearchWorkId, researchRefOf, isOwnedRecord, buildRecord, subjectPatch, turnPatch, closePatch, questionPatch,
-  manualFunnel, dialogueFunnel, analysisFunnel, screenerFunnel, emptyTelemetry, recordSummaryOf,
+  manualFunnel, dialogueFunnel, analysisFunnel, screenerFunnel, emptyTelemetry, recordSummaryOf, stagesFor, capSymbols,
   buildFinding, findingAppendPatch, currentFindingsOf, summaryRevisionPatch, symbolKeysOf, symbolKeyOf, isFindingId,
   normalizeQuestion, isRecordRef, ResearchRecordError,
 } from './model.js';
@@ -104,7 +104,7 @@ describe('closed lists — defined once in the model, version 1 amended in place
   });
   it('the caps, as the contract states them', () => {
     expect({ QUESTION_MAX_LEN, FINDINGS_MAX, FINDING_FACT_MAX_LEN, SOURCE_LABEL_MAX_LEN, SOURCE_URL_MAX_LEN, SUMMARY_TEXT_MAX_LEN, SUMMARY_REVISIONS_MAX, BASED_ON_MAX, SYMBOLS_MAX, SERVER_EVIDENCE_REFS_MAX })
-      .toEqual({ QUESTION_MAX_LEN: 500, FINDINGS_MAX: 100, FINDING_FACT_MAX_LEN: 500, SOURCE_LABEL_MAX_LEN: 120, SOURCE_URL_MAX_LEN: 1024, SUMMARY_TEXT_MAX_LEN: 1000, SUMMARY_REVISIONS_MAX: 10, BASED_ON_MAX: 25, SYMBOLS_MAX: 100, SERVER_EVIDENCE_REFS_MAX: 30 });
+      .toEqual({ QUESTION_MAX_LEN: 500, FINDINGS_MAX: 100, FINDING_FACT_MAX_LEN: 500, SOURCE_LABEL_MAX_LEN: 120, SOURCE_URL_MAX_LEN: 1024, SUMMARY_TEXT_MAX_LEN: 1000, SUMMARY_REVISIONS_MAX: 20, BASED_ON_MAX: 25, SYMBOLS_MAX: 100, SERVER_EVIDENCE_REFS_MAX: 30 });
   });
 });
 
@@ -192,6 +192,62 @@ describe('`concluded` — a Shared Research investigation completed without an i
     for (const origin of HOST_ORIGINS) expect(code(() => mint(origin, { state: 'completed', terminalReason: 'concluded' })), origin).toBe('invalid_terminal_reason');
     // What the hosts mint today is unchanged: a manual list's record, completed and player-authored.
     expect(hostRecord('manual', { state: 'completed', terminalReason: 'player_authored', endedAt: EARLIER })).toMatchObject({ state: 'completed', terminalReason: 'player_authored' });
+  });
+  it('the reason agrees with the subject on a Shared Research close (the closing-rules fix): `concluded` without one, `saved_to_list` with one', () => {
+    const r = srRecord();
+    const withSubject = { ...srRecord(), watchlistId: 'wl-0', hypothesisVersion: 1 };
+    const close = (rec, over) => closePatch(rec, { state: 'completed', atIso: NOW, funnel: manualFunnel(), ...over });
+    // concluded with a subject — set by this close, or already on the record — is refused.
+    expect(code(() => close(r, { terminalReason: 'concluded', subject: { watchlistId: 'wl-1', hypothesisVersion: 1 } }))).toBe('invalid_terminal_reason');
+    expect(code(() => close(withSubject, { terminalReason: 'concluded' }))).toBe('invalid_terminal_reason');
+    expect(close(r, { terminalReason: 'concluded' })).toMatchObject({ terminalReason: 'concluded' });
+    // saved_to_list without a subject is refused, in any terminal state; with one it closes.
+    for (const state of ['completed', 'abandoned', 'failed']) expect(code(() => close(r, { state, terminalReason: 'saved_to_list' })), state).toBe('invalid_terminal_reason');
+    expect(code(() => close(r, { terminalReason: 'saved_to_list', subject: { watchlistId: '' } }))).toBe('invalid_terminal_reason'); // a subject that sets nothing is no subject
+    expect(close(r, { terminalReason: 'saved_to_list', subject: { watchlistId: 'wl-1', hypothesisVersion: 1 } })).toMatchObject({ terminalReason: 'saved_to_list', watchlistId: 'wl-1' });
+    expect(close(withSubject, { terminalReason: 'saved_to_list' })).toMatchObject({ terminalReason: 'saved_to_list' });
+    // Other reasons are not tied to the subject.
+    expect(closePatch(r, { state: 'abandoned', terminalReason: 'user_close', atIso: NOW, funnel: manualFunnel() })).toMatchObject({ state: 'abandoned' });
+  });
+  it('…and for a Shared Research record MINTED already closed', () => {
+    expect(code(() => srRecord({ state: 'completed', terminalReason: 'concluded', endedAt: EARLIER, watchlistId: 'wl-1' }))).toBe('invalid_terminal_reason');
+    expect(code(() => srRecord({ state: 'completed', terminalReason: 'saved_to_list', endedAt: EARLIER }))).toBe('invalid_terminal_reason');
+    expect(code(() => srRecord({ state: 'abandoned', terminalReason: 'saved_to_list', endedAt: EARLIER }))).toBe('invalid_terminal_reason');
+    expect(srRecord({ state: 'completed', terminalReason: 'saved_to_list', endedAt: EARLIER, watchlistId: 'wl-1' })).toMatchObject({ terminalReason: 'saved_to_list', watchlistId: 'wl-1' });
+    expect(srRecord({ state: 'completed', terminalReason: 'concluded', endedAt: EARLIER })).toMatchObject({ terminalReason: 'concluded', watchlistId: null });
+    expect(srRecord({ watchlistId: null })).toMatchObject({ state: 'open' }); // an open mint names no reason and is not checked
+  });
+  it('host origins: every close is exactly main\'s — every reason, state and subject (the extended sweep)', () => {
+    // main d09603b2's closePatch, verbatim (its helpers — stagesFor, capSymbols, subjectPatch — are unchanged).
+    const mainClosePatch = (record, { state, terminalReason, atIso, funnel, subject = null }) => {
+      if (!(record !== null && typeof record === 'object' && !Array.isArray(record)) || record.state !== 'open') return null;
+      if (!['completed', 'abandoned', 'failed'].includes(state) || !(typeof terminalReason === 'string' && terminalReason.length > 0) || !(typeof atIso === 'string' && atIso.length > 0)) {
+        throw new Error('researchRecords: a close needs a terminal state, a reason and a time');
+      }
+      return {
+        state, terminalReason, endedAt: atIso, updatedAt: atIso,
+        stages: stagesFor(record.origin, funnel.stages),
+        ...capSymbols(funnel.symbols),
+        ...(subject ? subjectPatch(record, subject) : {}),
+      };
+    };
+    let compared = 0;
+    for (const origin of HOST_ORIGINS) {
+      for (const rec of [hostRecord(origin), { ...hostRecord(origin), watchlistId: 'wl-0', hypothesisVersion: 2 }]) {
+        for (const state of ['completed', 'abandoned', 'failed']) {
+          for (const terminalReason of ['saved_to_list', 'player_authored', 'user_close', 'finalize_intent', 'anything']) {
+            for (const subject of [null, { watchlistId: 'wl-9', hypothesisVersion: 1 }, { watchlistId: '' }]) {
+              const args = { state, terminalReason, atIso: NOW, funnel: HOST_FUNNEL[origin](), subject };
+              expect(closePatch(rec, args), `${origin} ${state} ${terminalReason}`).toEqual(mainClosePatch(rec, args));
+              compared += 1;
+            }
+          }
+        }
+      }
+      // A host mint already closed as saved_to_list without a subject is still accepted (the new rule is Shared Research's only).
+      expect(hostRecord(origin, { state: 'completed', terminalReason: 'saved_to_list', endedAt: EARLIER })).toMatchObject({ terminalReason: 'saved_to_list', watchlistId: null });
+    }
+    expect(compared).toBe(HOST_ORIGINS.length * 2 * 3 * 5 * 3);
   });
   it('every host close with its own reasons is exactly what it was', () => {
     for (const origin of HOST_ORIGINS) {
@@ -461,7 +517,7 @@ describe('summary — one revision at a time, appended and made the summary toge
     expect(b.summaryRevisions[0]).toEqual(ra.summaryRevisions[0]);
     expect(Object.keys(b).sort()).toEqual(['summary', 'summaryRevisions', 'symbolKeys', 'updatedAt']);
   });
-  it('the 10th lands; the 11th is refused with summary_revisions_full (the cap the size rule set)', () => {
+  it('the 20th lands; the 21st is refused with summary_revisions_full (20 again: the closing-rules fix)', () => {
     let r = r2();
     for (let i = 1; i <= SUMMARY_REVISIONS_MAX; i++) r = { ...r, ...summaryRevisionPatch(r, { text: `rev ${i}`, basedOn: [fid(1)] }, { nowIso: NOW }) };
     expect(r.summary.rev).toBe(SUMMARY_REVISIONS_MAX);
