@@ -83,6 +83,28 @@ describe('the evidence-ref kinds — each exactly its keys', () => {
   });
 });
 
+describe('the follow-up\'s ref rules (V2 §2 Q1, Q10b)', () => {
+  const FID = 'f_00000000-0000-4000-8000-000000000001';
+  it('an evidenceItem names a finding: recordKind researchWork, the record id, itemId the findingId (or null for the whole record)', () => {
+    const finding = { kind: 'evidenceItem', recordKind: 'researchWork', recordId: 'sr_s-1', itemId: FID };
+    expect(isEvidenceRef(finding)).toBe(true);
+    expect(isEvidenceRef({ ...finding, itemId: null })).toBe(true);
+    for (const itemId of ['news-1', 'f_1', FID.toUpperCase()]) expect(isEvidenceRef({ ...finding, itemId }), itemId).toBe(false);
+    for (const recordId of ['sr_', 'not-a-record']) expect(isEvidenceRef({ ...finding, recordId }), recordId).toBe(false);
+  });
+  it('an evidenceItem never names an exchange (it has its own kind) or a retrieval (cite the finding holding its url)', () => {
+    expect(isEvidenceRef({ kind: 'evidenceItem', recordKind: 'exchange', recordId: UUID, itemId: null })).toBe(false);
+    expect(isEvidenceRef({ kind: 'evidenceItem', recordKind: 'retrieval', recordId: 'r-1', itemId: null })).toBe(false);
+    expect(code(() => evidenceItemRefOf({ recordKind: 'retrieval', recordId: 'r-1' }))).toBe('invalid_evidence_refs');
+    for (const recordKind of ['stockRankings', 'peerRankings']) expect(isEvidenceRef({ kind: 'evidenceItem', recordKind, recordId: 'doc-1', itemId: 'NVDA' }), recordKind).toBe(true);
+  });
+  it('the server may put at most 30 refs on one version: 30 accepted, 31 refused (too_many_evidence_refs)', () => {
+    const refs = (n) => Array.from({ length: n }, (_, i) => ({ kind: 'researchWork', id: `sr_s-${i}` }));
+    expect(serverEvidenceRefsOf(refs(30))).toHaveLength(30);
+    expect(code(() => serverEvidenceRefsOf(refs(31)))).toBe('too_many_evidence_refs');
+  });
+});
+
 describe('refs stay server-merged', () => {
   it('mergeEvidenceRefs: first-seen order, each ref once by its canonical form, across kinds; a malformed entry is dropped', () => {
     const merged = mergeEvidenceRefs([research, item], [{ ...item }, { exchangeId: UUID, hostId: 's-1', hostCollection: 'sharedResearchSessions', kind: 'exchange' }, { kind: 'bogus' }], [exch, whole, research]);

@@ -106,8 +106,14 @@ export const isHostId = (v) => typeof v === 'string' && HOST_ID_RE.test(v);
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const isUuid = (v) => typeof v === 'string' && UUID_RE.test(v);
 
-/** Why a record ended. An abandoned record carries the host's OWN abandonReason ('user_close'). */
-export const TERMINAL_REASONS = Object.freeze({ savedToList: 'saved_to_list', playerAuthored: 'player_authored' });
+/**
+ * Why a record ended. An abandoned record carries the host's OWN abandonReason ('user_close').
+ * `concluded` (the Research Record Extension follow-up): a Shared Research investigation
+ * completed without an idea — accepted only on a `shared_research` record closing `completed`.
+ */
+export const TERMINAL_REASONS = Object.freeze({ savedToList: 'saved_to_list', playerAuthored: 'player_authored', concluded: 'concluded' });
+/** The one origin whose records carry the extension's fields (follow-up ruling Q2/Q8). */
+export const SHARED_RESEARCH_ORIGIN = 'shared_research';
 
 /**
  * A symbol's typed reason — taken from what the host records, never inventing
@@ -450,10 +456,13 @@ export function applyTurn(telemetry, { kind, elapsedMs, usage = null, atIso, scr
  * A complete new record. Validates identity and state; the funnel is shaped
  * by stagesFor (absent stages null) and capSymbols.
  *
- * The extension: a `question` is accepted only together with the subject (a
- * `watchlistId` in the same write) and is stored only when given — a record
- * written without one has no `question` key at all. A Shared Research record
- * carries `symbolKeys` from its first write; no other origin's mint does.
+ * The extension (as amended by its follow-up): the extension fields belong to
+ * `shared_research` records ONLY (ruling Q2/Q8). Such a record may be minted
+ * with its `question` — no subject needed: an investigation starts from a
+ * question, and the subject comes later, at adoption — and it carries
+ * `symbolKeys` from its first write. A question on any other origin's mint is
+ * refused (`wrong_origin`); a record written without one has no `question`
+ * key at all. No other origin's record ever gets `symbolKeys`.
  */
 export function buildRecord({
   researchWorkId, userId, origin, host, createdAt, watchlistId = null, hypothesisVersion = null,
@@ -471,7 +480,7 @@ export function buildRecord({
   if (!(hypothesisVersion === null || (Number.isSafeInteger(hypothesisVersion) && hypothesisVersion > 0))) {
     throw new Error('researchRecords: hypothesisVersion must be a version number or null');
   }
-  if (question !== null && !nonEmptyString(watchlistId)) throw new ResearchRecordError('question_without_subject');
+  if (question !== null && origin !== SHARED_RESEARCH_ORIGIN) throw new ResearchRecordError('wrong_origin');
   const record = {
     schemaVersion: RECORD_SCHEMA_VERSION,
     researchWorkId, userId, origin, host: host ? { collection: host.collection, id: host.id } : null, createdAt,
@@ -484,44 +493,38 @@ export function buildRecord({
     state, terminalReason, endedAt,
     updatedAt: createdAt,
   };
-  // An extension write carries symbolKeys: a Shared Research mint, or any mint that sets a question (review A8 — one shape).
-  if (origin === 'shared_research' || question !== null) record.symbolKeys = symbolKeysOf(record);
+  if (origin === SHARED_RESEARCH_ORIGIN) record.symbolKeys = symbolKeysOf(record);
   return record;
 }
 
-/**
- * The subject, set at most once: only while the record names no list yet.
- * The extension: a `question` rides ONLY with the subject — in this same
- * patch, never after (a different question is a different investigation) —
- * and its write is an extension write, so it carries `symbolKeys`. A question
- * offered anywhere else is REFUSED, never silently dropped (review A3): with
- * no list, on a record whose subject is already set, or a second time.
- * Without a question the patch is exactly what it always was.
- */
-export function subjectPatch(record, { watchlistId, hypothesisVersion = null, question = null }) {
-  if (question !== null && isPlainObject(record)) {
-    if (record.question !== undefined) throw new ResearchRecordError('question_already_set');
-    if (record.watchlistId != null) throw new ResearchRecordError('question_after_subject');
-    if (!nonEmptyString(watchlistId)) throw new ResearchRecordError('question_without_subject');
-  }
+/** The subject, set at most once: only while the record names no list yet. */
+export function subjectPatch(record, { watchlistId, hypothesisVersion = null }) {
   if (!isPlainObject(record) || record.watchlistId != null || !nonEmptyString(watchlistId)) return {};
-  const patch = { watchlistId, hypothesisVersion: Number.isSafeInteger(hypothesisVersion) && hypothesisVersion > 0 ? hypothesisVersion : null };
-  if (question !== null) {
-    patch.question = normalizeQuestion(question);
-    patch.symbolKeys = symbolKeysOf(record);
-  }
-  return patch;
+  return { watchlistId, hypothesisVersion: Number.isSafeInteger(hypothesisVersion) && hypothesisVersion > 0 ? hypothesisVersion : null };
 }
 
 /**
- * symbolKeys on a HOST write: recomputed (from the record as the patch leaves
- * it) only when the record already carries them, or the patch itself is an
- * extension write (a subject set with its question) — a host never adds the
- * field to a record that has none, and never lets one it has go stale.
+ * symbolKeys on a write to a `shared_research` record: written fresh from the
+ * record as that write leaves it (ruling Q2/Q8 — every write: mint, question,
+ * turn, close, finding, summary). Any other origin's patch is returned exactly
+ * as built: no host write ever adds the field.
  */
-const withFreshSymbolKeys = (record, patch) => (Array.isArray(record?.symbolKeys) || Object.hasOwn(patch, 'symbolKeys')
+const withFreshSymbolKeys = (record, patch) => (record?.origin === SHARED_RESEARCH_ORIGIN
   ? { ...patch, symbolKeys: symbolKeysOf({ ...record, ...patch }) }
   : patch);
+
+/**
+ * Set the question of a `shared_research` record that has none — once, at any
+ * time while it is open; it never changes after (a different question is a
+ * different investigation). Typed refusals: `wrong_origin`, `record_closed`,
+ * `question_already_set`, `invalid_question`.
+ */
+export function questionPatch(record, { question, atIso }) {
+  assertWritable(record);
+  if (record.question !== undefined && record.question !== null) throw new ResearchRecordError('question_already_set');
+  if (!isInstant(atIso)) throw new Error('researchRecords: a question needs the write time');
+  return withFreshSymbolKeys(record, { question: normalizeQuestion(question), updatedAt: atIso });
+}
 
 /**
  * A successful (or failed, or cancelled) turn's patch: telemetry, the host's
@@ -548,12 +551,21 @@ export function turnPatch(record, { kind, elapsedMs, usage = null, atIso, budget
  * Close an open record (completed | abandoned | failed) with its final funnel
  * and, when the close attaches it to a list, its subject. A terminal record
  * never moves: null.
+ *
+ * The extension's follow-up: `concluded` is accepted only on a
+ * `shared_research` record closing `completed` (else
+ * `invalid_terminal_reason`), and such a record cannot close `completed`
+ * without its question (`question_missing`; abandoned or failed need none).
+ * Every other close is exactly what it was.
  */
 export function closePatch(record, { state, terminalReason, atIso, funnel, subject = null }) {
   if (!isPlainObject(record) || record.state !== 'open') return null;
   if (!RESEARCH_TERMINAL_STATES.includes(state) || !nonEmptyString(terminalReason) || !nonEmptyString(atIso)) {
     throw new Error('researchRecords: a close needs a terminal state, a reason and a time');
   }
+  const sharedCompleted = record.origin === SHARED_RESEARCH_ORIGIN && state === 'completed';
+  if (terminalReason === TERMINAL_REASONS.concluded && !sharedCompleted) throw new ResearchRecordError('invalid_terminal_reason');
+  if (sharedCompleted && !nonEmptyString(record.question)) throw new ResearchRecordError('question_missing');
   return withFreshSymbolKeys(record, {
     state, terminalReason, endedAt: atIso, updatedAt: atIso,
     stages: stagesFor(record.origin, funnel.stages),
@@ -568,8 +580,17 @@ export const QUESTION_MAX_LEN = 500;
 export const FINDINGS_MAX = 100;
 export const FINDING_FACT_MAX_LEN = 500;
 export const SOURCE_LABEL_MAX_LEN = 120;
-export const SUMMARY_TEXT_MAX_LEN = 600;
-export const SUMMARY_REVISIONS_MAX = 20;
+/** The follow-up's clarification 3: the short answer holds up to 1,000 characters (was 600). */
+export const SUMMARY_TEXT_MAX_LEN = 1000;
+/**
+ * At most 10 revisions (was 20): the follow-up's size rule (V2 §3) — with
+ * 1,000-character summaries the largest record measured 1,010,671 bytes at 20,
+ * over the 1,000,000-byte rule; this is the first cut the rule names
+ * (size.test.js measures it).
+ */
+export const SUMMARY_REVISIONS_MAX = 10;
+/** A summary rests on 1–25 CURRENT findings (follow-up ruling Q5). */
+export const BASED_ON_MAX = 25;
 /** A source record's id (any record kind) and an evidence item's id: bounded, printable. */
 export const RECORD_ID_MAX_LEN = 256;
 export const SOURCE_URL_MAX_LEN = 2048;
@@ -588,6 +609,14 @@ export const FINDING_KINDS = Object.freeze([
  */
 export { FINDING_RECORD_KINDS };
 export const RETRIEVAL_RECORD_KIND = 'retrieval';
+export const EXCHANGE_RECORD_KIND = 'exchange';
+export const RESEARCH_WORK_RECORD_KIND = 'researchWork';
+/**
+ * The record an idea version's `evidenceItem` ref may name (follow-up ruling
+ * Q1): the finding source list minus `exchange` (it has its own ref kind) and
+ * `retrieval` (cite the finding that holds its url instead).
+ */
+export const EVIDENCE_ITEM_RECORD_KINDS = Object.freeze(FINDING_RECORD_KINDS.filter((k) => k !== EXCHANGE_RECORD_KIND && k !== RETRIEVAL_RECORD_KIND));
 /** Whether the fact stands checked. Not `verified` → a typed `statusReason`. Closed. */
 export const FINDING_STATUSES = Object.freeze(['verified', 'unverified', 'unavailable']);
 /** What a finding pins on a chart: a price level or an instant. Closed. */
@@ -626,13 +655,26 @@ export const isFindingId = (v) => typeof v === 'string' && FINDING_ID_RE.test(v)
  */
 export const SYMBOL_DAY_EVIDENCE_ID_RE = /^(\d{4}-\d{2}-\d{2})_([A-Z0-9][A-Z0-9.-]{0,11})$/;
 
-/** A source record's id, for its kind: bounded printable text; a symbolDayEvidence id has its own shape. */
+/**
+ * A source record's id, for its kind: bounded printable text, and three kinds
+ * have their own shape — a `symbolDayEvidence` id is `{etDate}_{SYMBOL}` on a
+ * real date; a `researchWork` id is a research record id (citing an earlier
+ * investigation); an `exchange` id is the exchange's own `exchangeId`, a v4
+ * UUID of the record's own host session (the route checks it exists).
+ */
 export function isRecordRef(recordKind, recordId) {
   if (!FINDING_RECORD_KINDS.includes(recordKind) || !boundedText(recordId, RECORD_ID_MAX_LEN)) return false;
+  if (recordKind === RESEARCH_WORK_RECORD_KIND) return isResearchWorkId(recordId);
+  if (recordKind === EXCHANGE_RECORD_KIND) return isUuid(recordId);
   if (recordKind !== 'symbolDayEvidence') return true;
-  const m = SYMBOL_DAY_EVIDENCE_ID_RE.exec(recordId);
+  return symbolDayEvidenceSymbolOf(recordId) !== null;
+}
+
+/** The symbol a `symbolDayEvidence` id names, as written in the id (dot or hyphen), or null when the id is not one. */
+export function symbolDayEvidenceSymbolOf(recordId) {
+  const m = typeof recordId === 'string' ? SYMBOL_DAY_EVIDENCE_ID_RE.exec(recordId) : null;
   const day = m ? Date.parse(`${m[1]}T00:00:00.000Z`) : NaN;
-  return Number.isFinite(day) && new Date(day).toISOString().slice(0, 10) === m[1];
+  return Number.isFinite(day) && new Date(day).toISOString().slice(0, 10) === m[1] ? m[2] : null;
 }
 
 /** An http(s) URL, bounded. */
@@ -661,24 +703,18 @@ export function symbolKeyOf(raw) {
   return /^[A-Z0-9][A-Z0-9-]{0,11}$/.test(key) ? key : null;
 }
 
-/** The symbol a finding's source record names by its id, or null (only a symbolDayEvidence id carries one). */
-function sourceSymbolOf(finding) {
-  const src = finding?.source;
-  if (src?.recordKind !== 'symbolDayEvidence' || typeof src.recordId !== 'string') return null;
-  const m = SYMBOL_DAY_EVIDENCE_ID_RE.exec(src.recordId);
-  return m ? m[2] : null;
-}
-
 /**
- * symbolKeys — derived, never supplied: the record's cohort symbols, then the
- * symbols its findings' records name, as keys (upper case, hyphen form),
- * first-seen order, each once, at most SYMBOLS_MAX.
+ * symbolKeys — derived, never supplied (follow-up ruling Q3): the CURRENT
+ * findings' own `symbol`s in record order (a superseded finding's no longer
+ * counts), then the record's cohort `symbols[]`, as keys (upper case, hyphen
+ * form), each once, at most SYMBOLS_MAX. No id is parsed: a finding names its
+ * symbol explicitly.
  */
 export function symbolKeysOf(record) {
   const r = isPlainObject(record) ? record : {};
   const raw = [
+    ...currentFindingsOf(r).map((f) => (isPlainObject(f) ? f.symbol : null)),
     ...(Array.isArray(r.symbols) ? r.symbols.map((e) => (isPlainObject(e) ? e.symbol : e)) : []),
-    ...(Array.isArray(r.findings) ? r.findings.map(sourceSymbolOf) : []),
   ];
   const out = [];
   const seen = new Set();
@@ -689,7 +725,21 @@ export function symbolKeysOf(record) {
   return out.slice(0, SYMBOLS_MAX);
 }
 
-const FINDING_INPUT_KEYS = Object.freeze(['kind', 'fact', 'source', 'at', 'asOf', 'status', 'statusReason', 'pin', 'supersedes']);
+const FINDING_INPUT_KEYS = Object.freeze(['kind', 'symbol', 'fact', 'source', 'at', 'asOf', 'status', 'statusReason', 'pin', 'supersedes']);
+
+/**
+ * A finding's `symbol` (follow-up ruling Q3): null, or one symbol already in
+ * key form (upper case, hyphen). A `symbolDayEvidence` finding with no symbol
+ * takes its id's; one naming a different symbol is refused (`invalid_symbol`).
+ */
+function findingSymbolOf(raw, source) {
+  const given = raw.symbol ?? null;
+  if (given !== null && !(typeof given === 'string' && symbolKeyOf(given) === given)) throw refuse('invalid_symbol', 'symbol is one symbol in key form (upper case, hyphen).');
+  if (source.recordKind !== 'symbolDayEvidence') return given;
+  const fromId = symbolKeyOf(symbolDayEvidenceSymbolOf(source.recordId));
+  if (given !== null && given !== fromId) throw refuse('invalid_symbol', 'the symbol differs from the one the source record names.');
+  return fromId;
+}
 const SOURCE_KEYS = Object.freeze(['recordKind', 'recordId', 'label', 'url']);
 const keysWithin = (o, allowed) => Object.keys(o).every((k) => allowed.includes(k));
 
@@ -727,6 +777,7 @@ export function buildFinding(raw, { findingId, nowIso }) {
   const fact = typeof raw.fact === 'string' ? raw.fact.trim() : '';
   if (!fact || fact.length > FINDING_FACT_MAX_LEN) throw refuse('invalid_fact', `fact must be 1–${FINDING_FACT_MAX_LEN} characters.`);
   const source = buildSource(raw.source);
+  const symbol = findingSymbolOf(raw, source);
   if (!isInstant(raw.at)) throw refuse('invalid_at', 'at is the instant of the fact itself (ISO-8601 UTC).');
   const asOf = raw.asOf ?? null;
   if (asOf !== null) {
@@ -740,7 +791,7 @@ export function buildFinding(raw, { findingId, nowIso }) {
   }
   const supersedes = raw.supersedes ?? null;
   if (!(supersedes === null || isFindingId(supersedes))) throw refuse('invalid_supersedes');
-  return { findingId, kind: raw.kind, fact, source, at: raw.at, asOf, status: raw.status, statusReason, pin: buildPin(raw.pin), supersedes };
+  return { findingId, kind: raw.kind, symbol, fact, source, at: raw.at, asOf, status: raw.status, statusReason, pin: buildPin(raw.pin), supersedes };
 }
 
 const findingsOf = (record) => (Array.isArray(record?.findings) ? record.findings : []);
@@ -756,8 +807,10 @@ function storedListOf(record, key) {
   return v;
 }
 
+/** An extension write's preconditions: a readable record, of the `shared_research` origin (ruling Q2/Q8), still open. */
 function assertWritable(record) {
   if (!isPlainObject(record) || !RESEARCH_STATES.includes(record.state)) throw refuse('record_unreadable');
+  if (record.origin !== SHARED_RESEARCH_ORIGIN) throw refuse('wrong_origin', 'only a Shared Research record carries findings, a question or a summary.');
   if (record.state !== 'open') throw refuse('record_closed', 'a closed record never moves.');
 }
 
@@ -771,6 +824,10 @@ export function findingAppendPatch(record, finding, { nowIso }) {
   assertWritable(record);
   const prior = storedListOf(record, 'findings');
   if (prior.length >= FINDINGS_MAX) throw refuse('findings_full', `a record holds at most ${FINDINGS_MAX} findings.`);
+  // A `researchWork` source cites an EARLIER investigation, never this record itself.
+  if (finding.source?.recordKind === RESEARCH_WORK_RECORD_KIND && finding.source.recordId === record.researchWorkId) {
+    throw refuse('invalid_source', 'a finding cannot cite its own record.');
+  }
   if (prior.some((f) => f?.findingId === finding.findingId)) throw refuse('finding_id_taken');
   if (finding.supersedes !== null) {
     if (!prior.some((f) => f?.findingId === finding.supersedes)) throw refuse('supersedes_unknown', 'supersedes names no finding on this record.');
@@ -805,9 +862,14 @@ export function summaryRevisionPatch(record, { text, basedOn = [], expectedRev =
   if (currentRev >= SUMMARY_REVISIONS_MAX) throw refuse('summary_revisions_full', `a record holds at most ${SUMMARY_REVISIONS_MAX} summary revisions.`);
   const t = typeof text === 'string' ? text.trim() : '';
   if (!t || t.length > SUMMARY_TEXT_MAX_LEN) throw refuse('invalid_summary_text', `summary text must be 1–${SUMMARY_TEXT_MAX_LEN} characters.`);
-  if (!Array.isArray(basedOn) || !basedOn.every(isFindingId) || new Set(basedOn).size !== basedOn.length) throw refuse('invalid_based_on');
-  const held = new Set(storedListOf(record, 'findings').map((f) => f?.findingId));
-  if (!basedOn.every((id) => held.has(id))) throw refuse('based_on_unknown', 'basedOn names a finding this record does not hold.');
+  if (!Array.isArray(basedOn) || basedOn.length === 0 || basedOn.length > BASED_ON_MAX || !basedOn.every(isFindingId) || new Set(basedOn).size !== basedOn.length) {
+    throw refuse('invalid_based_on', `basedOn names 1–${BASED_ON_MAX} findings, each once.`);
+  }
+  const held = storedListOf(record, 'findings');
+  const heldIds = new Set(held.map((f) => f?.findingId));
+  if (!basedOn.every((id) => heldIds.has(id))) throw refuse('based_on_unknown', 'basedOn names a finding this record does not hold.');
+  const current = new Set(currentFindingsOf({ findings: held }).map((f) => f?.findingId));
+  if (!basedOn.every((id) => current.has(id))) throw refuse('based_on_superseded', 'basedOn names a finding a later one superseded.');
   const summary = { rev: currentRev + 1, text: t, at: nowIso, basedOn: [...basedOn] };
   return { summary, summaryRevisions: [...prior, summary], symbolKeys: symbolKeysOf(record), updatedAt: nowIso };
 }

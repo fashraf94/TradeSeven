@@ -43,8 +43,9 @@ import {
 // a source record, and a host session's exchange — whose record kinds, host
 // collections and id shapes are the research record's own.
 import {
-  RESEARCH_EVIDENCE_KIND, isResearchWorkId, researchRefOf, FINDING_RECORD_KINDS, isRecordRef, HOST_COLLECTIONS, isHostId, isUuid,
-  RECORD_ID_MAX_LEN,
+  RESEARCH_EVIDENCE_KIND, isResearchWorkId, researchRefOf, isRecordRef, HOST_COLLECTIONS, isHostId, isUuid,
+  RECORD_ID_MAX_LEN, EVIDENCE_ITEM_RECORD_KINDS, RESEARCH_WORK_RECORD_KIND, isFindingId, researchWorkIdFor,
+  SHARED_RESEARCH_ORIGIN, RESEARCH_STATES, currentFindingsOf,
 } from '../researchRecords/model.js';
 import { stableStringify } from '../canonicalHash.js';
 
@@ -154,20 +155,26 @@ export const EVIDENCE_REF_KEYS = Object.freeze({
 const HOST_COLLECTION_NAMES = Object.freeze(Object.values(HOST_COLLECTIONS));
 const exactKeys = (r, keys) => Object.keys(r).length === keys.length && keys.every((k) => Object.hasOwn(r, k));
 const isItemId = (v) => v === null || (typeof v === 'string' && v.length > 0 && v.length <= RECORD_ID_MAX_LEN && !/[\u0000-\u001f\u007f]/.test(v)); // eslint-disable-line no-control-regex
+/** The most refs the server may put on one version it saves (follow-up ruling Q10b: a battle's copy stays small). */
+export const SERVER_EVIDENCE_REFS_MAX = 30;
 
 /**
  * One evidence ref, exactly its kind's keys:
  *   { kind: 'researchWork', id }                              a research record (Pilot P2)
  *   { kind: 'evidenceItem', recordKind, recordId, itemId }    an item of a source record — for a
- *       symbolDayEvidence news item, recordId `{etDate}_{SYMBOL}` and itemId its newsId; itemId null
- *       for the whole record (the extension)
+ *       symbolDayEvidence news item, recordId `{etDate}_{SYMBOL}` and itemId its newsId; for a
+ *       finding, recordKind 'researchWork', recordId the research record and itemId the findingId;
+ *       itemId null for the whole record. Never an `exchange` or a `retrieval` (follow-up ruling Q1).
  *   { kind: 'exchange', hostCollection, hostId, exchangeId }  one exchange of a host session (the extension)
  * Refs are SERVER-merged: no route accepts one from a caller.
  */
 export function isEvidenceRef(r) {
   if (!isPlainObject(r) || !EVIDENCE_REF_KINDS.includes(r.kind) || !exactKeys(r, EVIDENCE_REF_KEYS[r.kind])) return false;
   if (r.kind === RESEARCH_EVIDENCE_KIND) return isResearchWorkId(r.id);
-  if (r.kind === EVIDENCE_ITEM_KIND) return isRecordRef(r.recordKind, r.recordId) && isItemId(r.itemId);
+  if (r.kind === EVIDENCE_ITEM_KIND) {
+    if (!EVIDENCE_ITEM_RECORD_KINDS.includes(r.recordKind) || !isRecordRef(r.recordKind, r.recordId)) return false;
+    return r.recordKind === RESEARCH_WORK_RECORD_KIND ? (r.itemId === null || isFindingId(r.itemId)) : isItemId(r.itemId);
+  }
   return HOST_COLLECTION_NAMES.includes(r.hostCollection) && isHostId(r.hostId) && isUuid(r.exchangeId);
 }
 
@@ -201,9 +208,11 @@ export function mergeEvidenceRefs(...lists) {
  * The SERVER's refs for a version it saves (the Shared Research route's
  * helper): each validated — one malformed ref refuses the whole list
  * (invalid_evidence_refs), never silently drops a citation — and canonical.
+ * At most SERVER_EVIDENCE_REFS_MAX (too_many_evidence_refs; follow-up Q10b).
  */
 export function serverEvidenceRefsOf(refs) {
   if (!Array.isArray(refs)) throw new HypothesisInputError('invalid_evidence_refs');
+  if (refs.length > SERVER_EVIDENCE_REFS_MAX) throw new HypothesisInputError('too_many_evidence_refs', `at most ${SERVER_EVIDENCE_REFS_MAX} evidence refs.`);
   return refs.map(canonicalEvidenceRef);
 }
 
@@ -349,6 +358,64 @@ export function buildSaveVersion({ session, watchlistId, userId, sessionId, nowI
       publishedAt: null, origin,
     },
     status: 'researched', stateSource: 'research', stateReason: STATE_REASONS.dialogueCompleted,
+  });
+}
+
+/**
+ * The Research Record Extension follow-up (§4; concept
+ * SHARED_RESEARCH_WORK_AN_IDEA_CONCEPT_V1 §4.6) — the FIRST version an adopted
+ * Shared Research investigation creates. PURE. Like the dialogue's automatic
+ * v1 it is born `researched` (stateSource 'research', reason
+ * `shared_research_completed`); "use it in my next game" is the existing
+ * `ready` action (researched → ready). No route calls this yet (the Command
+ * Center arc's B1).
+ *
+ * Refused (HypothesisInputError):
+ *   list_not_from_session   the list is not this owner's, not `shared_research`
+ *                           by origin, or its marker names another session
+ *   record_not_from_session the record is not this owner's `shared_research`
+ *                           record for this session (`sr_<sessionId>`)
+ *   question_missing        the record has no question
+ *   invalid_kept_findings   keptFindingIds empty, repeated, or naming anything
+ *                           that is not a CURRENT finding on the record
+ *   plus buildContent's own refusals (a statement over the cap is refused,
+ *   never cut; a horizon outside the enum; a malformed condition) and
+ *   serverEvidenceRefsOf's (a malformed exchange id; more than 30 refs, i.e.
+ *   more than 28 kept findings).
+ *
+ * evidenceRefs, in order: the research record; each kept finding as an
+ * evidence item of that record; the confirming exchange. The fingerprint
+ * covers everything the player previewed.
+ */
+export function buildSharedResearchVersion({
+  list, watchlistId, record, userId, sessionId, statement, horizonEnum, activation = [], invalidation = [],
+  keptFindingIds, confirmExchangeId, nowIso,
+}) {
+  const fail = (code) => new HypothesisInputError(code);
+  if (!isPlainObject(list) || list.userId !== userId || originOf(list) !== SHARED_RESEARCH_ORIGIN
+    || list[SHARED_RESEARCH_LIST_MARKER] !== sessionId) throw fail('list_not_from_session');
+  let recordId = null;
+  try { recordId = researchWorkIdFor({ collection: 'sharedResearchSessions', id: sessionId }); } catch { /* a malformed session id names no record */ }
+  if (!isPlainObject(record) || recordId === null || record.researchWorkId !== recordId || record.userId !== userId
+    || record.origin !== SHARED_RESEARCH_ORIGIN || !RESEARCH_STATES.includes(record.state)) throw fail('record_not_from_session');
+  if (!nonEmptyString(record.question)) throw fail('question_missing');
+  const current = new Set(currentFindingsOf(record).map((f) => f?.findingId));
+  if (!Array.isArray(keptFindingIds) || keptFindingIds.length === 0 || new Set(keptFindingIds).size !== keptFindingIds.length
+    || !keptFindingIds.every((id) => isFindingId(id) && current.has(id))) throw fail('invalid_kept_findings');
+  const evidenceRefs = serverEvidenceRefsOf([
+    researchRefOf(recordId),
+    ...keptFindingIds.map((itemId) => ({ kind: EVIDENCE_ITEM_KIND, recordKind: RESEARCH_WORK_RECORD_KIND, recordId, itemId })),
+    { kind: EXCHANGE_EVIDENCE_KIND, hostCollection: 'sharedResearchSessions', hostId: sessionId, exchangeId: confirmExchangeId },
+  ]);
+  return buildVersionDoc({
+    version: 1, watchlistId, userId, opId: `adopt_${sessionId}`,
+    opFingerprint: opFingerprintOf({ kind: 'adopt', payload: { sessionId, statement, horizonEnum, activation, invalidation, keptFindingIds, confirmExchangeId } }),
+    createdAt: nowIso,
+    content: {
+      statement, horizonEnum, horizonSource: 'player', activation, invalidation,
+      evidenceRefs, publishedAt: null, origin: originOf(list),
+    },
+    status: 'researched', stateSource: 'research', stateReason: STATE_REASONS.sharedResearchCompleted,
   });
 }
 

@@ -24,6 +24,8 @@
 //                       (fresh read, owner, cap, shape, supersedes, append)
 //   reviseSummary       one summary revision appended AND made the summary,
 //                       in ONE transaction; rev n+1 or a typed refusal
+// Both write `shared_research` records only (the follow-up's ruling Q2/Q8:
+// any other origin is refused `wrong_origin`, and nothing is written).
 
 import { randomUUID } from 'node:crypto';
 import {

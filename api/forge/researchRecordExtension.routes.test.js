@@ -183,8 +183,11 @@ describe('who may NAME the marker and the server-only ref parameter (source cens
     expect(files.length).toBeGreaterThan(500);
     expect(files).toContain('api/forge/watchlists.js');
   });
-  it(`'${SHARED_RESEARCH_LIST_MARKER}' is named by the idea model alone (its first writer is the Shared Research route — not this build)`, () => {
-    expect(naming(SHARED_RESEARCH_LIST_MARKER)).toEqual(['api/_utils/hypothesisRecords/model.js']);
+  it(`'${SHARED_RESEARCH_LIST_MARKER}' is named by the idea model alone, and the adoption fixture (its first writer is the Shared Research route — not this build)`, () => {
+    expect(naming(SHARED_RESEARCH_LIST_MARKER)).toEqual([
+      'api/_utils/hypothesisRecords/__fixtures__/sharedResearchAdoption.js', // the follow-up's builder fixture: a list as the route will save it
+      'api/_utils/hypothesisRecords/model.js',
+    ]);
   });
   it('the server-only ref parameter is named by the idea store alone — no route passes refs', () => {
     expect(naming('serverEvidenceRefs')).toEqual(['api/_utils/hypothesisRecords/store.js']);

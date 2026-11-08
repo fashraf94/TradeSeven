@@ -117,7 +117,7 @@ describe('summary — concurrent revisions', () => {
   it('two concurrent revisions produce rev n+1 and n+2 — never a lost revision', async () => {
     const id = await seedRecord(1);
     await reviseSummary(db, { researchWorkId: id, uid: UID, text: 'rev one', basedOn: [fid(1)], nowIso: NOW });
-    const out = await settled(['A', 'B'].map((t) => reviseSummary(db, { researchWorkId: id, uid: UID, text: `concurrent ${t}`, nowIso: NOW })));
+    const out = await settled(['A', 'B'].map((t) => reviseSummary(db, { researchWorkId: id, uid: UID, text: `concurrent ${t}`, basedOn: [fid(1)], nowIso: NOW })));
     expect(out.every((o) => o.status === 'fulfilled')).toBe(true);
     expect(out.map((o) => o.value.summary.rev).sort()).toEqual([2, 3]);
     const rec = await read(id);
@@ -127,8 +127,8 @@ describe('summary — concurrent revisions', () => {
   });
   it('when both say they saw rev 1, exactly one lands and the other is a typed summary_conflict', async () => {
     const id = await seedRecord(1);
-    await reviseSummary(db, { researchWorkId: id, uid: UID, text: 'rev one', nowIso: NOW });
-    const out = await settled(['A', 'B'].map((t) => reviseSummary(db, { researchWorkId: id, uid: UID, text: `saw one ${t}`, expectedRev: 1, nowIso: NOW })));
+    await reviseSummary(db, { researchWorkId: id, uid: UID, text: 'rev one', basedOn: [fid(1)], nowIso: NOW });
+    const out = await settled(['A', 'B'].map((t) => reviseSummary(db, { researchWorkId: id, uid: UID, text: `saw one ${t}`, basedOn: [fid(1)], expectedRev: 1, nowIso: NOW })));
     expect(out.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
     expect(out.filter((o) => o.status === 'rejected').map((o) => o.reason.code)).toEqual(['summary_conflict']);
     const rec = await read(id);
