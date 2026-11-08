@@ -294,14 +294,15 @@ export function formatReport(c, { scope = '' } = {}) {
     `Tick classes: ${JSON.stringify(c.tickClass)}`,
     `Candidates: ${c.candidates.total} · status ${JSON.stringify(c.candidates.status)} · omitted ${c.candidates.omitted} · truncated ${c.candidates.truncated} · unrecordable ${c.candidates.unrecordable}`,
     '',
-    '## Cohorts (each its own denominator)',
+    '### 1a. Cohorts (each its own denominator)',
     ...Object.entries(c.cohorts).map(([k, v]) => `- ${k}: ${v.total} · ${JSON.stringify(v.status)}`),
     '',
-    '## Absent snapshots',
+    '### 1b. Absent snapshots',
     `By source: ${JSON.stringify(c.absent.bySource)} (catalyst additions are not acquired by design)`,
-    `Slice 2 history (reservations and recorded outcomes only): ${JSON.stringify(c.absent.slice2History)}`,
+    `Slice 2 history on the tick records (reservations and recorded outcomes only): ${JSON.stringify(c.absent.slice2History)}`,
     `Last recorded outcome: ${JSON.stringify(c.absent.lastOutcome)}`,
     '',
+    '### 1c. Provider capture and joins',
     `Provider capture before the freeze (NOT availability at the decision): ${JSON.stringify(c.providerCapture)}`,
     `Joins (one record each): pick ${JSON.stringify(c.joins.pick)} · actions ${JSON.stringify(c.joins.actions)} (proposal_tick_unevaluated is INFERRED: a model-sourced swap that is not the tick's own decision)`,
     '',
@@ -322,7 +323,28 @@ export function formatReport(c, { scope = '' } = {}) {
  * The census through a restricted reader (reads only).
  * @param {{ findBattleIds: Function, readBattle: Function, readTicks: Function, readBodyIds: Function, readState: Function }} reader
  */
+/**
+ * The requested range, refused unless each given bound is a real YYYY-MM-DD date and from <= to (review SC2-2): a
+ * bound that is not a date would otherwise still filter (the export compares strings) while printing as no range.
+ * Called before any read. Pure; throws a RangeError (code `invalid_range`) with a usage message.
+ * @returns {{ from: string|null, to: string|null }}
+ */
+export function requestedRangeOf(flags) {
+  const out = {};
+  for (const key of ['from', 'to']) {
+    const v = flags?.[key];
+    if (v === null || v === undefined) { out[key] = null; continue; }
+    const ok = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T00:00:00.000Z`).toISOString().slice(0, 10) === v;
+    if (!ok) throw Object.assign(new RangeError(`--${key} must be a date YYYY-MM-DD`), { code: 'invalid_range' });
+    out[key] = v;
+  }
+  if (out.from !== null && out.to !== null && out.from > out.to) throw Object.assign(new RangeError('--from must not be after --to'), { code: 'invalid_range' });
+  return out;
+}
+
 export async function runCensus(reader, flags) {
+  const range = requestedRangeOf(flags); // before any read
+  flags = { ...flags, from: range.from, to: range.to };
   const bounds = rangeBounds(flags);
   const battleIds = await reader.findBattleIds(bounds);
   const records = [];
@@ -354,8 +376,9 @@ export function inCohort(battle, owners) {
 
 async function main() {
   const args = process.argv.slice(2);
-  const flag = (name) => { const i = args.indexOf(`--${name}`); return i === -1 ? null : args[i + 1] ?? null; };
-  const flags = { from: flag('from'), to: flag('to') };
+  // A flag given without a value reads as '' (refused), never as "no range" (review SC2-2).
+  const flag = (name) => { const i = args.indexOf(`--${name}`); return i === -1 ? null : args[i + 1] ?? ''; };
+  const flags = requestedRangeOf({ from: flag('from'), to: flag('to') }); // refused before credentials or any read
   const { loadLocalEnv } = await import('./loadLocalEnv.js');
   loadLocalEnv();
   const { getFirebaseAdmin } = await import('../api/_utils/firebaseAdmin.js');
@@ -384,5 +407,10 @@ async function main() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  main().catch((err) => { console.error(`census failed: ${err?.name ?? 'Error'} ${err?.code ?? ''}`); process.exit(1); });
+  main().catch((err) => {
+    // A refused range prints its own fixed message (no input echoed); any other failure prints its name and code only.
+    if (err?.code === 'invalid_range') console.error(`census refused: ${err.message}. Usage: --from YYYY-MM-DD --to YYYY-MM-DD`);
+    else console.error(`census failed: ${err?.name ?? 'Error'} ${err?.code ?? ''}`);
+    process.exit(1);
+  });
 }

@@ -138,7 +138,7 @@ describe('aggregates only (every channel)', () => {
       blockStatus: 'SENTINEL-block',
     })], { state: { schemaVersion: 1, attempts: { 'snap-SENTINEL': { n: 1, lastOutcome: 'SENTINEL', lastReason: 'SENTINEL' }, 'snap2-SENTINEL': { n: 2, lastOutcome: 'final' } } }, stateStatus: 'read', range: { from: 'SENTINEL', to: '2026-09-09' } });
     expect(c.state).toMatchObject({ status: 'partial', malformedEntries: 1, reservations: 2 });
-    expect(c.meta.range).toEqual({ from: null, to: '2026-09-09' }); // a range bound that is not a date never prints
+    expect(c.meta.range).toEqual({ from: null, to: '2026-09-09' }); // a bound that is not a date never prints in the range line or the JSON (runCensus and main refuse one before any read: SC2-2 rows)
     for (const out of [formatReport(c, { scope: 'window' }), JSON.stringify(c)]) {
       expect(out).not.toMatch(/SENTINEL|SENTL/);
     }
@@ -180,8 +180,12 @@ describe('the static imports (read-only by construction)', () => {
     // The validator module the census imports has no I/O and no write path of its own (F3).
     const shape = readFileSync(join(HERE, '../api/_utils/setupMenuLabels/stateShape.js'), 'utf8');
     const shapeCode = shape.split(/\r?\n/).filter((l) => !l.trim().startsWith('//')).join('\n');
-    expect([...shapeCode.matchAll(/^\s*import\b[^'"`;]*?['"`]([^'"`]+)['"`]/gm)].map((m) => m[1])).toEqual(['./constants.js']);
-    expect(shapeCode).not.toMatch(/\.(collection|doc|get|set|update|create|delete|commit|runTransaction|batch)\(/);
+    expect([
+      ...[...shapeCode.matchAll(/^\s*import\b[^'"`;]*?['"`]([^'"`]+)['"`]/gm)].map((m) => m[1]),
+      ...[...shapeCode.matchAll(/\bimport\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g)].map((m) => m[1]),
+    ]).toEqual(['./constants.js']);
+    expect(shapeCode).not.toMatch(/\bimport\s*\(|\brequire\s*\(|getBuiltinModule|process\.|globalThis|\bfetch\s*\(/); // no dynamic module, no host access (review SC2-5)
+    expect(shapeCode).not.toMatch(/\.(collection|doc|get|set|update|create|delete|commit|runTransaction|batch|writeFile\w*|appendFile\w*)\(/);
     const code = SRC.split(/\r?\n/).filter((l) => !l.trim().startsWith('//')).join('\n');
     expect(code).not.toMatch(/\.(set|update|create|delete|commit|runTransaction|batch)\(/);
     expect(code).not.toMatch(/getOrAcquireSnapshot/);
@@ -194,7 +198,7 @@ describe('the static imports (read-only by construction)', () => {
 // outcome counted) and is rewritten to the corrected shape. The production reader runs on the in-memory store.
 const { readLabelState } = await import('../api/_utils/setupMenuLabels/state.js');
 const { makeMemoryDb } = await import('../api/_utils/setupMenuLabels/__fixtures__/memoryDb.js');
-const { stateCensusOf, CENSUS_POPULATIONS } = await import('./census-setup-menu-labels.mjs');
+const { stateCensusOf, CENSUS_POPULATIONS, RUN_MEMO_NOTE, requestedRangeOf } = await import('./census-setup-menu-labels.mjs');
 
 const stateReader = (state, { throws = false } = {}) => ({ findBattleIds: async () => [], readState: async () => { if (throws) throw new Error('denied'); return state; } });
 const live = (state) => readLabelState(makeMemoryDb({ docs: state === null ? {} : { 'setupMenuLabelState/main': state } }));
@@ -314,6 +318,15 @@ describe('D2 — three populations, each labelled with its scope, in the report 
     expect(at('Reservations counted: 3')).toBeGreaterThan(at(heads[2]));
     expect(report).toMatch(/Reads issued 2 · shared from an earlier tick 1\./);
     expect(report.match(/^Scope: /gm)).toHaveLength(3);
+    // The run memo's staleness, printed inside population 1 (review SC2-4).
+    expect(report).toContain(`Run memo: ${RUN_MEMO_NOTE}`);
+    expect(at('Run memo: ')).toBeGreaterThan(at(heads[0]));
+    expect(at('Run memo: ')).toBeLessThan(at(heads[1]));
+    // Population 1's sub-sections are nested under it, never siblings of the numbered populations (review SC2-7).
+    const subs = ['### 1a. Cohorts', '### 1b. Absent snapshots', '### 1c. Provider capture and joins'];
+    for (const h of subs) { expect(at(h)).toBeGreaterThan(at(heads[0])); expect(at(h)).toBeLessThan(at(heads[1])); }
+    expect(report.match(/^## /gm)).toHaveLength(3);
+    expect(at('Provider capture before the freeze')).toBeGreaterThan(at(subs[2]));
   });
   it('no range: every record, and the report says so', async () => {
     const c = await runCensus(rangeReader(), {});
@@ -330,5 +343,61 @@ describe('D2 — three populations, each labelled with its scope, in the report 
     expect(falseNegative.joins.actions).toEqual({ 'same_tick:haiku:absent': 1 });
     expect(formatReport(falsePositive)).toContain('INFERRED');
     expect(formatReport(falsePositive)).toMatch(/M1\/M2 limits/);
+  });
+});
+
+// Review SC2-2: a bound that is not a real YYYY-MM-DD date (or a from after its to) is refused BEFORE any read — it
+// would otherwise still filter (the export compares strings) while printing as no range.
+describe('SC2-2 — the requested range is refused unless it is a real date range, before any read', () => {
+  const countingReader = () => {
+    const calls = [];
+    const r = {
+      calls,
+      findBattleIds: async () => { calls.push('findBattleIds'); return []; },
+      readBattle: async () => { calls.push('readBattle'); return null; },
+      readTicks: async () => { calls.push('readTicks'); return []; },
+      readBodyIds: async () => { calls.push('readBodyIds'); return []; },
+      readState: async () => { calls.push('readState'); return null; },
+    };
+    return r;
+  };
+  it.each([
+    ['a word', { from: 'SENTINEL' }],
+    ['an unpadded date', { from: '2026-9-1' }],
+    ['an unpadded to', { to: '2026-9-30' }],
+    ['the next flag taken as a value', { from: '--to' }],
+    ['an impossible date', { from: '2026-02-30' }],
+    ['a flag given without a value', { from: '' }],
+    ['a from after its to', { from: '2026-09-10', to: '2026-09-09' }],
+    ['a non-string', { to: 20260909 }],
+  ])('%s: refused (RangeError, invalid_range) and nothing is read', async (_, flags) => {
+    const r = countingReader();
+    await expect(runCensus(r, flags)).rejects.toMatchObject({ name: 'RangeError', code: 'invalid_range' });
+    expect(r.calls).toEqual([]);
+    expect(() => requestedRangeOf(flags)).toThrow(RangeError);
+  });
+  it('the refusal message is fixed text: it never echoes the bound', () => {
+    try { requestedRangeOf({ from: 'SENTINEL' }); } catch (err) { expect(err.message).not.toMatch(/SENTINEL/); }
+  });
+  it.each([
+    [{}, { from: null, to: null }],
+    [{ from: null, to: undefined }, { from: null, to: null }],
+    [{ from: '2026-09-09' }, { from: '2026-09-09', to: null }],
+    [{ to: '2026-09-09' }, { from: null, to: '2026-09-09' }],
+    [{ from: '2026-09-09', to: '2026-09-09' }, { from: '2026-09-09', to: '2026-09-09' }],
+    [{ from: '2028-02-29', to: '2028-03-01' }, { from: '2028-02-29', to: '2028-03-01' }],
+  ])('accepted: %j', async (flags, range) => {
+    expect(requestedRangeOf(flags)).toEqual(range);
+    const r = countingReader();
+    const c = await runCensus(r, flags);
+    expect(c.meta.range).toEqual(range);
+    expect(r.calls).toEqual(['findBattleIds', 'readState']);
+  });
+  it('main() validates the range before credentials or any read, and builds its title from the validated range', () => {
+    const main = SRC.slice(SRC.indexOf('async function main()'));
+    expect(main.indexOf('requestedRangeOf(')).toBeGreaterThan(-1);
+    expect(main.indexOf('requestedRangeOf(')).toBeLessThan(main.indexOf('loadLocalEnv'));
+    expect(main.indexOf('requestedRangeOf(')).toBeLessThan(main.indexOf('getFirebaseAdmin'));
+    expect(main).toMatch(/args\[i \+ 1\] \?\? ''/); // a flag without a value is '' (refused), never "no range"
   });
 });

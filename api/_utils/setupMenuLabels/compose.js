@@ -223,8 +223,8 @@ export function composeSetupMenuBlock(pool, obs, { maxBytes = SETUP_MENU_MAX_BYT
       block.truncatedCount += 1;
     }
     finalize();
-    if (!SETUP_MENU_BLOCK_STATUSES.includes(block.blockStatus)) return errorBlockOf(pool, 'compose_failed');
-    for (const c of block.candidates) if (!SETUP_LABEL_STATUSES.includes(c.status)) return errorBlockOf(pool, 'compose_failed');
+    if (!SETUP_MENU_BLOCK_STATUSES.includes(block.blockStatus)) return errorFormWithin(pool, maxBytes);
+    for (const c of block.candidates) if (!SETUP_LABEL_STATUSES.includes(c.status)) return errorFormWithin(pool, maxBytes);
     // Even the candidate-free block over the cap (bounded identity fields make this unreachable at 24 KiB): the error
     // form if IT fits, else no block at all — never an emitted block over the cap.
     if (approxBytes(block) > maxBytes) return errorFormWithin(pool, maxBytes);

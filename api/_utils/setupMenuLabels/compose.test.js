@@ -201,12 +201,12 @@ describe('F4 — every emitted block fits the cap, measured on its final bytes',
     list: candidatesOf({ hotBenchSymbols: symbols, assetMapKeys: [], benchAtFreeze: symbols, heldAtFreeze: [] }),
   });
   /** 48 labelled candidates whose reason ids are `reasonLength` long (the first `firstDelta` longer); `unsettledFrom` leaves the tail unread. */
-  function capBlock(reasonLength, { firstDelta = 0, unsettledFrom = symbols.length, maxBytes } = {}) {
-    const results = new Map(symbols.slice(0, unsettledFrom).map((symbol, i) => [symbol, { ok: true, value: {
+  function capBlock(reasonLength, { firstDelta = 0, unsettledFrom = symbols.length, unsettled = (i) => i >= unsettledFrom, maxBytes } = {}) {
+    const results = new Map(symbols.flatMap((symbol, i) => (unsettled(i) ? [] : [[symbol, { ok: true, value: {
       schemaVersion: 1, key: { session: SESSION, symbol, ruleSet }, status: 'ok', capturedAt: FETCHED, asOf: SESSION,
       entry: { verdict: 'invalid', pattern: 'pullback_resume', regime: 'uptrend', reason: 'r'.repeat(reasonLength + (i === 0 ? firstDelta : 0)) },
       evidenceClass: { bars: 'later_reconstruction' },
-    } }]));
+    } }]])));
     const stateBySymbol = new Map(symbols.map((s) => [s, { session: SESSION, n: 3, lastOutcome: 'retryable', lastAt: FROZEN_MS }]));
     const obs = { readsStartedAtMs: FROZEN_MS, observedAtMs: FROZEN_MS + 100, stateRead: true, stateBySymbol, results, readsIssued: 48, readsShared: 0 };
     return composeSetupMenuBlock(capPool(), obs, maxBytes === undefined ? undefined : { maxBytes });
@@ -237,14 +237,36 @@ describe('F4 — every emitted block fits the cap, measured on its final bytes',
     expect(approxBytes(block)).toBeLessThan(SETUP_MENU_MAX_BYTES);
     expect(block.truncatedCount).toBe(0);
   });
-  it('near the cap with unsettled reads: `truncated` outranks `reads_unsettled`, and the counts cover only the candidates kept', () => {
-    const block = capBlock(56, { firstDelta: 2, unsettledFrom: 40 });
+  it('near the cap with unsettled reads KEPT: `truncated` outranks `reads_unsettled`, and the counts cover only the candidates kept (review SC2-3)', () => {
+    // The unsettled candidates are the HEAD of the list, so truncation (from the tail) keeps them.
+    const block = capBlock(100, { unsettled: (i) => i < 4 });
     expect(approxBytes(block)).toBeLessThanOrEqual(SETUP_MENU_MAX_BYTES);
-    const unsettledKept = block.candidates.filter((c) => c.status === 'read_unsettled').length;
-    expect(block.blockStatus).toBe(block.truncatedCount > 0 ? 'truncated' : 'reads_unsettled');
-    expect(block.counts.unsettled).toBe(unsettledKept);
+    expect(block.truncatedCount).toBeGreaterThan(0);
+    expect(block.counts.unsettled).toBe(4);
+    expect(block.blockStatus).toBe('truncated');
+    expect(block.candidates.filter((c) => c.status === 'read_unsettled')).toHaveLength(4);
     expect(countsSum(block)).toBe(block.candidates.length);
     expect(block.candidates.length + block.truncatedCount).toBe(48);
+  });
+  it('truncated to NO candidates and still fitting: counts and status are recomputed for the empty list (mutant SCX-15)', () => {
+    // The smallest cap at which the result is a block rather than the error form or null: the candidate-free block.
+    const isBlock = (b) => b !== null && b.blockStatus !== 'error';
+    let lo = 0; let hi = 4_000;
+    expect(isBlock(capBlock(10, { maxBytes: hi }))).toBe(true);
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (isBlock(capBlock(10, { maxBytes: mid }))) hi = mid; else lo = mid; }
+    const empty = capBlock(10, { maxBytes: hi });
+    expect(empty.candidates).toEqual([]);
+    expect(empty).toMatchObject({ blockStatus: 'truncated', truncatedCount: 48 });
+    expect(countsSum(empty)).toBe(0);
+    expect(approxBytes(empty)).toBe(hi); // measured on the final bytes: exactly at its cap
+    expect(capBlock(10, { maxBytes: hi - 1 })).toMatchObject({ blockStatus: 'error', errorCode: 'compose_failed' });
+  });
+  it('the catch path is bounded too: a composer that throws gives the error form when it fits, else null (review SC2-6)', () => {
+    const broken = { ...capPool(), list: null }; // reading the list throws inside the composer
+    const errorSize = approxBytes(errorBlockOf(capPool(), 'compose_failed'));
+    expect(composeSetupMenuBlock(broken, null, { maxBytes: errorSize })).toMatchObject({ blockStatus: 'error', errorCode: 'compose_failed', session: SESSION });
+    expect(composeSetupMenuBlock(broken, null, { maxBytes: errorSize - 1 })).toBeNull();
+    expect(composeSetupMenuBlock(broken, null)).toMatchObject({ blockStatus: 'error' }); // the production cap
   });
   it('a sweep: for every reason length 0–120 the emitted block fits, and its counters agree with what it holds', () => {
     for (let len = 0; len <= 120; len += 1) {
