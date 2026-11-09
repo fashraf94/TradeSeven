@@ -4,6 +4,9 @@ import { HOLO_COLORS } from '../../constants/holoTheme';
 import useDrawerSnap from './useDrawerSnap';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
+// Build C: the scroll area's bottom padding when a footer is pinned under it.
+const FOOTER_PAD = 12;
+
 const TAB_CONFIGS = [
   { key: 'marketContext', label: '\uD83C\uDF10 Market', activeColor: '#00D9FF' },
   { key: 'health', label: '\u26D3\uFE0F Health', activeColor: HOLO_COLORS.amber },
@@ -38,8 +41,23 @@ const AnalysisDrawer = ({
   isSectorETF = false,
   hasBombData = false,
   isGameContext = false,
+  // Research Modal Build C (spec docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md
+  // BC-2): the sheet's own geometry, both optional and inert when absent.
+  //   midY    the mid snap point in px from the container top (the sheet puts the
+  //           drawer right under its shorter chart so Layer 0 fits the fold).
+  //           useDrawerSnap derives its mid point as a fixed share of the height
+  //           it is given, so it is handed the height whose share IS midY.
+  //   footer  a node pinned under the scroll area, never scrolled (the sheet's
+  //           action row): the scroll area shrinks by its measured height.
+  midY = null,
+  footer = null,
+  // Build C: the sheet is the Analysis tab, crypto holdings included (BC-15) —
+  // true keeps the Analysis tab for a crypto asset, which it otherwise hides.
+  analysisAlways = false,
 }) => {
   const { isMobile } = useIsMobile();
+  const snapShare = isMobile ? 0.62 : 0.55;
+  const snapBasis = typeof midY === 'number' && Number.isFinite(midY) && midY > 0 ? midY / snapShare : containerHeight;
   const {
     y,
     snapState,
@@ -48,10 +66,11 @@ const AnalysisDrawer = ({
     onDragEnd,
     toggleDrawer,
     dragConstraints,
-  } = useDrawerSnap(containerHeight, isMobile);
+  } = useDrawerSnap(snapBasis, isMobile);
 
   const dragControls = useDragControls();
   const headerRef = useRef(null);
+  const footerRef = useRef(null);
   const [scrollHeight, setScrollHeight] = useState(0);
 
   // Notify parent of snap state changes
@@ -63,10 +82,11 @@ const AnalysisDrawer = ({
   // Recalculates when snap state changes so scroll area matches visible drawer portion
   useEffect(() => {
     const headerH = headerRef.current?.getBoundingClientRect().height || 110;
+    const footerH = footer ? (footerRef.current?.getBoundingClientRect().height || 0) : 0;
     const currentY = snapState === 'full' ? 0 : MID_Y;
     const visibleDrawerH = containerHeight - currentY;
-    setScrollHeight(visibleDrawerH - headerH);
-  }, [containerHeight, snapState, MID_Y]);
+    setScrollHeight(visibleDrawerH - headerH - footerH);
+  }, [containerHeight, snapState, MID_Y, footer]);
 
   return (
     <motion.div
@@ -164,7 +184,7 @@ const AnalysisDrawer = ({
             if (!isIndex && t.key === 'marketContext') return false;
             if (isSectorETF && ['fundamental', 'health', 'marketContext', 'baggerbomb'].includes(t.key)) return false;
             if (!isSectorETF && t.key === 'holdings') return false;
-            if (isCrypto && ['fundamental', 'compete', 'sector', 'holdings', 'smartMoney'].includes(t.key)) return false;
+            if (isCrypto && ['fundamental', 'compete', 'sector', 'holdings', 'smartMoney'].includes(t.key) && !(analysisAlways && t.key === 'fundamental')) return false;
             if (t.key === 'smartMoney' && (isIndex || isSectorETF)) return false;
             if (!isCrypto && !isIndex && !isSectorETF && t.key === 'health') return false;
             if (t.key === 'baggerbomb' && !hasBombData && !isGameContext) return false;
@@ -202,17 +222,24 @@ const AnalysisDrawer = ({
       {/* Scrollable content — explicit height from measured header */}
       <div
         style={{
-          height: scrollHeight > 0 ? scrollHeight : 'auto',
+          // With a footer the scroll area ends where the footer begins: the app ships
+          // content-box sizing, so the bottom padding is taken out of the height.
+          height: scrollHeight > 0 ? (footer ? scrollHeight - FOOTER_PAD : scrollHeight) : 'auto',
           flexShrink: 0,
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
           touchAction: 'pan-y',
-          padding: '0 12px 80px',
+          padding: footer ? `0 12px ${FOOTER_PAD}px` : '0 12px 80px',
         }}
       >
         {children}
       </div>
+      {footer && (
+        <div ref={footerRef} data-drawer-footer style={{ flexShrink: 0 }}>
+          {footer}
+        </div>
+      )}
     </motion.div>
   );
 };

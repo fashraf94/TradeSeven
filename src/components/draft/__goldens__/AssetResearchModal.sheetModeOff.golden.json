@@ -1,0 +1,615 @@
+{
+ "held_controlled_analysis": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\"></span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$101.20</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 2.22%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(245, 158, 11, 0.1);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.2); color: rgb(245, 158, 11); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">💣</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 12px; font-size: 11px; font-family: monospace; pointer-events: none;\"><span><span style=\"color: rgba(255, 255, 255, 0.4);\">O</span> <span style=\"color: rgb(230, 237, 243);\">100.00</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">H</span> <span style=\"color: rgb(230, 237, 243);\">103.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">L</span> <span style=\"color: rgb(230, 237, 243);\">99.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">C</span> <span style=\"color: rgb(0, 255, 136);\">101.20</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">Vol</span> <span style=\"color: rgb(230, 237, 243);\">300</span></span></div><div style=\"position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.75); border: 1px solid rgb(0, 255, 136); color: rgb(0, 255, 136); font-size: 11px; font-weight: 700; font-family: monospace; display: flex; align-items: center; gap: 4px; z-index: 10; cursor: pointer; animation: none;\"><span>↑</span><span>1.55%</span><span style=\"opacity: 0.7;\">to +15</span><span style=\"font-size: 9px; color: rgb(110, 118, 129); margin-left: 2px;\">TAP</span></div></div><style>\n          @keyframes bombPulse {\n            0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }\n            50% { opacity: 0.7; box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }\n          }\n        </style></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 217, 255); background: rgba(0, 217, 255, 0.125); color: rgb(0, 217, 255); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">💣 Bomb</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><div style=\"padding: 8px 0px;\"><div style=\"display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;\"><span style=\"color: rgb(0, 217, 255); font-weight: 600; font-size: 12px; padding: 2px 8px; border-radius: 8px; background: rgba(0, 217, 255, 0.082); border: 1px solid rgba(0, 217, 255, 0.25);\">Wall St: Buy · 24 analysts</span></div><div style=\"margin-bottom: 12px; padding: 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);\"><div style=\"display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;\"><span style=\"background: rgba(16, 185, 129, 0.15); color: rgb(16, 185, 129); padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 600;\">Technology</span><span style=\"background: rgba(139, 92, 246, 0.15); color: rgb(129, 140, 248); padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 600;\">Consumer Electronics</span></div><p style=\"color: rgba(255, 255, 255, 0.55); font-size: 11px; line-height: 1.5; margin: 0px; overflow: hidden; max-height: 48px;\">Apple designs, manufactures and markets smartphones, personal computers, tablets, wearables and accessories, and sells a variety of related services worldwide.</p><button style=\"color: rgb(20, 184, 166); background: none; border: medium; font-size: 10px; cursor: pointer; padding: 4px 0px 0px; font-weight: 500;\">Read more</button></div><div style=\"display: flex; flex-direction: column; gap: 8px; padding: 8px 0px;\"><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-building2 lucide-building-2\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M10 12h4\"></path><path d=\"M10 8h4\"></path><path d=\"M14 21v-3a2 2 0 0 0-4 0v3\"></path><path d=\"M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2\"></path><path d=\"M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">What does this company do?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-swords\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><polyline points=\"14.5 17.5 3 6 3 3 6 3 17.5 14.5\"></polyline><line x1=\"13\" x2=\"19\" y1=\"19\" y2=\"13\"></line><line x1=\"16\" x2=\"20\" y1=\"16\" y2=\"20\"></line><line x1=\"19\" x2=\"21\" y1=\"21\" y2=\"19\"></line><polyline points=\"14.5 6.5 18 3 21 3 21 6 17.5 9.5\"></polyline><line x1=\"5\" x2=\"9\" y1=\"14\" y2=\"18\"></line><line x1=\"7\" x2=\"4\" y1=\"17\" y2=\"20\"></line><line x1=\"3\" x2=\"5\" y1=\"19\" y2=\"21\"></line></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Who are the competitors?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-triangle-alert\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"></path><path d=\"M12 9v4\"></path><path d=\"M12 17h.01\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">What are the key risks?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-chart-column\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M3 3v16a2 2 0 0 0 2 2h16\"></path><path d=\"M18 17V9\"></path><path d=\"M13 17V5\"></path><path d=\"M8 17v-3\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Summarize latest earnings</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-newspaper\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M15 18h-5\"></path><path d=\"M18 14h-8\"></path><path d=\"M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2\"></path><rect width=\"8\" height=\"4\" x=\"10\" y=\"6\" rx=\"1\"></rect></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Generate news sentiment</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div></div></div></div></div></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "30m",
+    {
+     "days": 20
+    }
+   ],
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 5
+    }
+   ],
+   [
+    "profile",
+    "AAPL"
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 104.78
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 103.77250000000001
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 102.765
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100.75
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 98.735
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 97.72749999999999
+    }
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    4,
+    {
+     "time": 1791988200,
+     "open": 100.9,
+     "high": 101.2,
+     "low": 100.85,
+     "close": 101.2,
+     "volume": 100
+    }
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    104.78,
+    "🔥 +50 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    103.77250000000001,
+    "💣💣 +30 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    102.765,
+    "💣 +15 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    100.75,
+    "— Entry —"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    98.735,
+    "📉 Bust -10 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    97.72749999999999,
+    "⚠️ Crash -20 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    96.72,
+    "☠️ Meltdown -35 pts"
+   ]
+  ]
+ },
+ "held_ws_analysis": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\"></span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$101.20</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 2.22%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(245, 158, 11, 0.1);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.2); color: rgb(245, 158, 11); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">💣</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 12px; font-size: 11px; font-family: monospace; pointer-events: none;\"><span><span style=\"color: rgba(255, 255, 255, 0.4);\">O</span> <span style=\"color: rgb(230, 237, 243);\">100.00</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">H</span> <span style=\"color: rgb(230, 237, 243);\">103.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">L</span> <span style=\"color: rgb(230, 237, 243);\">99.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">C</span> <span style=\"color: rgb(0, 255, 136);\">101.20</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">Vol</span> <span style=\"color: rgb(230, 237, 243);\">300</span></span></div><div style=\"position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.75); border: 1px solid rgb(0, 255, 136); color: rgb(0, 255, 136); font-size: 11px; font-weight: 700; font-family: monospace; display: flex; align-items: center; gap: 4px; z-index: 10; cursor: pointer; animation: none;\"><span>↑</span><span>1.55%</span><span style=\"opacity: 0.7;\">to +15</span><span style=\"font-size: 9px; color: rgb(110, 118, 129); margin-left: 2px;\">TAP</span></div></div><style>\n          @keyframes bombPulse {\n            0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }\n            50% { opacity: 0.7; box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }\n          }\n        </style></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 217, 255); background: rgba(0, 217, 255, 0.125); color: rgb(0, 217, 255); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">💣 Bomb</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><div style=\"padding: 8px 0px;\"><div style=\"display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;\"><span style=\"color: rgb(0, 217, 255); font-weight: 600; font-size: 12px; padding: 2px 8px; border-radius: 8px; background: rgba(0, 217, 255, 0.082); border: 1px solid rgba(0, 217, 255, 0.25);\">Wall St: Buy · 24 analysts</span></div><div style=\"margin-bottom: 12px; padding: 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);\"><div style=\"display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;\"><span style=\"background: rgba(16, 185, 129, 0.15); color: rgb(16, 185, 129); padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 600;\">Technology</span><span style=\"background: rgba(139, 92, 246, 0.15); color: rgb(129, 140, 248); padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 600;\">Consumer Electronics</span></div><p style=\"color: rgba(255, 255, 255, 0.55); font-size: 11px; line-height: 1.5; margin: 0px; overflow: hidden; max-height: 48px;\">Apple designs, manufactures and markets smartphones, personal computers, tablets, wearables and accessories, and sells a variety of related services worldwide.</p><button style=\"color: rgb(20, 184, 166); background: none; border: medium; font-size: 10px; cursor: pointer; padding: 4px 0px 0px; font-weight: 500;\">Read more</button></div><div style=\"display: flex; flex-direction: column; gap: 8px; padding: 8px 0px;\"><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-building2 lucide-building-2\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M10 12h4\"></path><path d=\"M10 8h4\"></path><path d=\"M14 21v-3a2 2 0 0 0-4 0v3\"></path><path d=\"M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2\"></path><path d=\"M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">What does this company do?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-swords\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><polyline points=\"14.5 17.5 3 6 3 3 6 3 17.5 14.5\"></polyline><line x1=\"13\" x2=\"19\" y1=\"19\" y2=\"13\"></line><line x1=\"16\" x2=\"20\" y1=\"16\" y2=\"20\"></line><line x1=\"19\" x2=\"21\" y1=\"21\" y2=\"19\"></line><polyline points=\"14.5 6.5 18 3 21 3 21 6 17.5 9.5\"></polyline><line x1=\"5\" x2=\"9\" y1=\"14\" y2=\"18\"></line><line x1=\"7\" x2=\"4\" y1=\"17\" y2=\"20\"></line><line x1=\"3\" x2=\"5\" y1=\"19\" y2=\"21\"></line></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Who are the competitors?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-triangle-alert\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"></path><path d=\"M12 9v4\"></path><path d=\"M12 17h.01\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">What are the key risks?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-chart-column\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M3 3v16a2 2 0 0 0 2 2h16\"></path><path d=\"M18 17V9\"></path><path d=\"M13 17V5\"></path><path d=\"M8 17v-3\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Summarize latest earnings</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-newspaper\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M15 18h-5\"></path><path d=\"M18 14h-8\"></path><path d=\"M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2\"></path><rect width=\"8\" height=\"4\" x=\"10\" y=\"6\" rx=\"1\"></rect></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Generate news sentiment</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div></div></div></div></div></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "30m",
+    {
+     "days": 20
+    }
+   ],
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 5
+    }
+   ],
+   [
+    "quote",
+    "AAPL"
+   ],
+   [
+    "profile",
+    "AAPL"
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 104.78
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 103.77250000000001
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 102.765
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100.75
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 98.735
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 97.72749999999999
+    }
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    4,
+    {
+     "time": 1791988200,
+     "open": 100.9,
+     "high": 101.2,
+     "low": 100.85,
+     "close": 101.2,
+     "volume": 100
+    }
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    104.78,
+    "🔥 +50 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    103.77250000000001,
+    "💣💣 +30 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    102.765,
+    "💣 +15 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    100.75,
+    "— Entry —"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    98.735,
+    "📉 Bust -10 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    97.72749999999999,
+    "⚠️ Crash -20 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    96.72,
+    "☠️ Meltdown -35 pts"
+   ]
+  ]
+ },
+ "bench_analysis": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\">Apple</span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$101.20</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 2.22%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(245, 158, 11, 0.1);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.2); color: rgb(245, 158, 11); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">💣</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 12px; font-size: 11px; font-family: monospace; pointer-events: none;\"><span><span style=\"color: rgba(255, 255, 255, 0.4);\">O</span> <span style=\"color: rgb(230, 237, 243);\">100.00</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">H</span> <span style=\"color: rgb(230, 237, 243);\">103.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">L</span> <span style=\"color: rgb(230, 237, 243);\">99.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">C</span> <span style=\"color: rgb(0, 255, 136);\">101.20</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">Vol</span> <span style=\"color: rgb(230, 237, 243);\">300</span></span></div><div style=\"position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.75); border: 1px solid rgb(255, 215, 0); color: rgb(255, 215, 0); font-size: 11px; font-weight: 700; font-family: monospace; display: flex; align-items: center; gap: 4px; z-index: 10; cursor: pointer; animation: none;\"><span>↑</span><span>2.72%</span><span style=\"opacity: 0.7;\">to +50</span><span style=\"font-size: 9px; color: rgb(110, 118, 129); margin-left: 2px;\">TAP</span></div></div><style>\n          @keyframes bombPulse {\n            0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }\n            50% { opacity: 0.7; box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }\n          }\n        </style></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 217, 255); background: rgba(0, 217, 255, 0.125); color: rgb(0, 217, 255); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">💣 Bomb</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><div style=\"padding: 8px 0px;\"><div style=\"display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;\"><span style=\"color: rgb(0, 217, 255); font-weight: 600; font-size: 12px; padding: 2px 8px; border-radius: 8px; background: rgba(0, 217, 255, 0.082); border: 1px solid rgba(0, 217, 255, 0.25);\">Wall St: Buy · 24 analysts</span></div><div style=\"margin-bottom: 12px; padding: 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);\"><div style=\"display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;\"><span style=\"background: rgba(16, 185, 129, 0.15); color: rgb(16, 185, 129); padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 600;\">Technology</span><span style=\"background: rgba(139, 92, 246, 0.15); color: rgb(129, 140, 248); padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 600;\">Consumer Electronics</span></div><p style=\"color: rgba(255, 255, 255, 0.55); font-size: 11px; line-height: 1.5; margin: 0px; overflow: hidden; max-height: 48px;\">Apple designs, manufactures and markets smartphones, personal computers, tablets, wearables and accessories, and sells a variety of related services worldwide.</p><button style=\"color: rgb(20, 184, 166); background: none; border: medium; font-size: 10px; cursor: pointer; padding: 4px 0px 0px; font-weight: 500;\">Read more</button></div><div style=\"display: flex; flex-direction: column; gap: 8px; padding: 8px 0px;\"><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-building2 lucide-building-2\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M10 12h4\"></path><path d=\"M10 8h4\"></path><path d=\"M14 21v-3a2 2 0 0 0-4 0v3\"></path><path d=\"M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2\"></path><path d=\"M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">What does this company do?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-swords\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><polyline points=\"14.5 17.5 3 6 3 3 6 3 17.5 14.5\"></polyline><line x1=\"13\" x2=\"19\" y1=\"19\" y2=\"13\"></line><line x1=\"16\" x2=\"20\" y1=\"16\" y2=\"20\"></line><line x1=\"19\" x2=\"21\" y1=\"21\" y2=\"19\"></line><polyline points=\"14.5 6.5 18 3 21 3 21 6 17.5 9.5\"></polyline><line x1=\"5\" x2=\"9\" y1=\"14\" y2=\"18\"></line><line x1=\"7\" x2=\"4\" y1=\"17\" y2=\"20\"></line><line x1=\"3\" x2=\"5\" y1=\"19\" y2=\"21\"></line></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Who are the competitors?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-triangle-alert\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"></path><path d=\"M12 9v4\"></path><path d=\"M12 17h.01\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">What are the key risks?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-chart-column\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M3 3v16a2 2 0 0 0 2 2h16\"></path><path d=\"M18 17V9\"></path><path d=\"M13 17V5\"></path><path d=\"M8 17v-3\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Summarize latest earnings</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-newspaper\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M15 18h-5\"></path><path d=\"M18 14h-8\"></path><path d=\"M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2\"></path><rect width=\"8\" height=\"4\" x=\"10\" y=\"6\" rx=\"1\"></rect></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Generate news sentiment</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div></div></div></div></div></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "30m",
+    {
+     "days": 20
+    }
+   ],
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 5
+    }
+   ],
+   [
+    "quote",
+    "AAPL"
+   ],
+   [
+    "profile",
+    "AAPL"
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 103.95
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 102.7125
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 101.475
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 99
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 96.52499999999999
+    }
+   ],
+   [
+    "addSeries",
+    "Area"
+   ],
+   [
+    "setData",
+    "Area",
+    4,
+    {
+     "time": 1791988200,
+     "value": 95.28750000000001
+    }
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    4,
+    {
+     "time": 1791988200,
+     "open": 100.9,
+     "high": 101.2,
+     "low": 100.85,
+     "close": 101.2,
+     "volume": 100
+    }
+   ],
+   [
+    "setMarkers",
+    "Candlestick",
+    2
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    4,
+    {
+     "time": 1791988200,
+     "value": 100,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    103.95,
+    "🔥 +50 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    102.7125,
+    "✅ 💣💣 +30 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    101.475,
+    "✅ 💣 +15 pts HIT!"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    99,
+    "— Baseline —"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    96.52499999999999,
+    "📉 Bust -10 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    95.28750000000001,
+    "⚠️ Crash -20 pts"
+   ],
+   [
+    "priceLine",
+    "Candlestick",
+    94.05,
+    "☠️ Meltdown -35 pts"
+   ]
+  ]
+ },
+ "browse_analysis": {
+  "html": "<div></div><div style=\"position: fixed; inset: 0px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 1100; animation: fadeIn 0.2s ease-out;\"></div><div style=\"position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90vw; max-height: 90vh; background: rgb(13, 17, 23); border-radius: 12px; border: 1px solid rgba(0, 255, 255, 0.3); box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 255, 0.15); z-index: 1101; overflow: hidden; display: flex; flex-direction: column; animation: modalSlideIn 0.3s ease-out; max-width: 900px; height: 90vh;\"><style>\n          @keyframes pulse-alert {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.7);\n            }\n            50% {\n              box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);\n            }\n          }\n\n          @keyframes pulse-urgent {\n            0%, 100% {\n              box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);\n            }\n            50% {\n              box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);\n            }\n          }\n\n          .on-the-clock-alert {\n            animation: pulse-alert 1.5s ease-in-out infinite;\n          }\n\n          .on-the-clock-urgent {\n            animation: pulse-urgent 0.5s ease-in-out infinite;\n          }\n\n          @media (prefers-reduced-motion: reduce) {\n            .on-the-clock-alert,\n            .on-the-clock-urgent {\n              animation: none !important;\n            }\n          }\n        </style><div style=\"height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 217, 255, 0.1); flex-shrink: 0;\"><div style=\"display: flex; align-items: center; gap: 8px; min-width: 0px; flex: 1 1 0%;\"><span style=\"font-size: 16px; font-weight: 800; color: rgb(230, 237, 243); letter-spacing: 0.5px;\">AAPL</span><span style=\"font-size: 14px; color: rgb(139, 148, 158); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\">Apple</span></div><div style=\"display: flex; align-items: center; gap: 8px; flex-shrink: 0;\"><span style=\"font-size: 15px; font-weight: 700; color: rgb(230, 237, 243); font-family: monospace;\">$101.20</span><span style=\"padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; background: rgba(0, 255, 136, 0.15); color: rgb(0, 255, 136);\">▲ 2.22%</span><button style=\"background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.2); border-radius: 10px; color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; padding: 2px 8px; cursor: pointer;\">Why?</button><button style=\"background: none; border: medium; color: rgb(139, 148, 158); cursor: pointer; padding: 4px; font-size: 18px; line-height: 1; display: flex; align-items: center;\">✕</button></div></div><div style=\"flex: 1 1 0%; position: relative; overflow: visible;\"><div style=\"flex-shrink: 0; position: relative; z-index: 1; padding-bottom: 40px;\"><div style=\"display: flex; flex-direction: column; background: rgb(10, 14, 20);\"><div style=\"display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgb(13, 17, 23); border-bottom: 1px solid rgba(0, 255, 255, 0.05);\"><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(0, 217, 255, 0.5); background: rgba(0, 217, 255, 0.2); color: rgb(0, 217, 255); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1D</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">1W</button></div><div style=\"display: flex; gap: 4px;\"><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">SMA</button><button style=\"padding: 4px 10px; border-radius: 12px; border: 1px solid rgb(33, 38, 45); background: rgb(33, 38, 45); color: rgb(139, 148, 158); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;\">S/R</button></div></div><div style=\"position: relative; width: 100%; height: 0px;\"><div style=\"width: 100%; height: 100%;\"></div><div style=\"position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 12px; font-size: 11px; font-family: monospace; pointer-events: none;\"><span><span style=\"color: rgba(255, 255, 255, 0.4);\">O</span> <span style=\"color: rgb(230, 237, 243);\">100.00</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">H</span> <span style=\"color: rgb(230, 237, 243);\">103.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">L</span> <span style=\"color: rgb(230, 237, 243);\">99.50</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">C</span> <span style=\"color: rgb(0, 255, 136);\">101.20</span></span><span><span style=\"color: rgba(255, 255, 255, 0.4);\">Vol</span> <span style=\"color: rgb(230, 237, 243);\">1</span></span></div></div></div></div><div data-drawer-root=\"true\" style=\"position: absolute; bottom: 0px; left: 0px; right: 0px; height: 0px; display: flex; flex-direction: column; z-index: 10; background: rgb(13, 17, 23); border-top-left-radius: 16px; border-top-right-radius: 16px; border-top: 1px solid rgba(0, 217, 255, 0.15); box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5); transform: none;\"><div style=\"flex-shrink: 0;\"><div style=\"cursor: grab; touch-action: none; user-select: none;\"><div style=\"display: flex; justify-content: center; padding: 10px 0px 6px;\"><div style=\"width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.3);\"></div></div><div style=\"display: flex; align-items: center; padding: 0px 12px 8px;\"><span style=\"font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: rgb(139, 148, 158); text-transform: uppercase;\">AI Analysis</span></div></div><div class=\"drawer-tabs-scroll\" style=\"display: flex; gap: 6px; padding: 0px 12px 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;\"><style>.drawer-tabs-scroll::-webkit-scrollbar { display: none; }</style><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgb(0, 217, 255); background: rgba(0, 217, 255, 0.125); color: rgb(0, 217, 255); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Analysis</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Ranks</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Smart Money</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Sector</button><button style=\"padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.6); font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; flex-shrink: 0; white-space: nowrap;\">Technical</button></div></div><div style=\"height: auto; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0px 12px 80px;\"><div style=\"padding: 8px 0px;\"><div style=\"display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;\"><span style=\"color: rgb(0, 217, 255); font-weight: 600; font-size: 12px; padding: 2px 8px; border-radius: 8px; background: rgba(0, 217, 255, 0.082); border: 1px solid rgba(0, 217, 255, 0.25);\">Wall St: Buy · 24 analysts</span></div><div style=\"margin-bottom: 12px; padding: 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);\"><div style=\"display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;\"><span style=\"background: rgba(16, 185, 129, 0.15); color: rgb(16, 185, 129); padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 600;\">Technology</span><span style=\"background: rgba(139, 92, 246, 0.15); color: rgb(129, 140, 248); padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 600;\">Consumer Electronics</span></div><p style=\"color: rgba(255, 255, 255, 0.55); font-size: 11px; line-height: 1.5; margin: 0px; overflow: hidden; max-height: 48px;\">Apple designs, manufactures and markets smartphones, personal computers, tablets, wearables and accessories, and sells a variety of related services worldwide.</p><button style=\"color: rgb(20, 184, 166); background: none; border: medium; font-size: 10px; cursor: pointer; padding: 4px 0px 0px; font-weight: 500;\">Read more</button></div><div style=\"display: flex; flex-direction: column; gap: 8px; padding: 8px 0px;\"><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-building2 lucide-building-2\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M10 12h4\"></path><path d=\"M10 8h4\"></path><path d=\"M14 21v-3a2 2 0 0 0-4 0v3\"></path><path d=\"M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2\"></path><path d=\"M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">What does this company do?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-swords\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><polyline points=\"14.5 17.5 3 6 3 3 6 3 17.5 14.5\"></polyline><line x1=\"13\" x2=\"19\" y1=\"19\" y2=\"13\"></line><line x1=\"16\" x2=\"20\" y1=\"16\" y2=\"20\"></line><line x1=\"19\" x2=\"21\" y1=\"21\" y2=\"19\"></line><polyline points=\"14.5 6.5 18 3 21 3 21 6 17.5 9.5\"></polyline><line x1=\"5\" x2=\"9\" y1=\"14\" y2=\"18\"></line><line x1=\"7\" x2=\"4\" y1=\"17\" y2=\"20\"></line><line x1=\"3\" x2=\"5\" y1=\"19\" y2=\"21\"></line></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Who are the competitors?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-triangle-alert\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"></path><path d=\"M12 9v4\"></path><path d=\"M12 17h.01\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">What are the key risks?</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-chart-column\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M3 3v16a2 2 0 0 0 2 2h16\"></path><path d=\"M18 17V9\"></path><path d=\"M13 17V5\"></path><path d=\"M8 17v-3\"></path></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Summarize latest earnings</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div><div style=\"background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; overflow: hidden; transition: background 0.2s;\"><button style=\"width: 100%; display: flex; align-items: center; gap: 10px; padding: 0px 16px; height: 56px; background: transparent; border: medium; cursor: pointer; text-align: left;\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-newspaper\" aria-hidden=\"true\" style=\"color: rgba(255, 255, 255, 0.5); flex-shrink: 0;\"><path d=\"M15 18h-5\"></path><path d=\"M18 14h-8\"></path><path d=\"M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2\"></path><rect width=\"8\" height=\"4\" x=\"10\" y=\"6\" rx=\"1\"></rect></svg><span style=\"flex: 1 1 0%; font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);\">Generate news sentiment</span><span style=\"color: rgba(255, 255, 255, 0.4); font-size: 11px; display: flex; align-items: center; flex-shrink: 0; transform: none;\">▶</span></button></div></div></div></div></div></div><style>\n          @keyframes fadeIn {\n            from { opacity: 0; }\n            to { opacity: 1; }\n          }\n          @keyframes modalSlideIn {\n            from {\n              opacity: 0;\n              transform: translate(-50%, -45%);\n            }\n            to {\n              opacity: 1;\n              transform: translate(-50%, -50%);\n            }\n          }\n        </style></div><style>\n        @keyframes whyMovingPulse {\n          0%, 100% { opacity: 1; transform: scale(1); }\n          50% { opacity: 0.4; transform: scale(0.8); }\n        }\n      </style>",
+  "net": [
+   [
+    "history",
+    "AAPL",
+    "1d",
+    {
+     "days": 400
+    }
+   ],
+   [
+    "quote",
+    "AAPL"
+   ],
+   [
+    "profile",
+    "AAPL"
+   ]
+  ],
+  "chart": [
+   [
+    "createChart"
+   ],
+   [
+    "addSeries",
+    "Candlestick"
+   ],
+   [
+    "setData",
+    "Candlestick",
+    3,
+    {
+     "time": 1791936000,
+     "open": 100,
+     "high": 103.5,
+     "low": 99.5,
+     "close": 101.2,
+     "volume": 1
+    }
+   ],
+   [
+    "addSeries",
+    "Histogram"
+   ],
+   [
+    "setData",
+    "Histogram",
+    3,
+    {
+     "time": 1791936000,
+     "value": 1,
+     "color": "rgba(0, 255, 136, 0.3)"
+    }
+   ]
+  ]
+ }
+}
