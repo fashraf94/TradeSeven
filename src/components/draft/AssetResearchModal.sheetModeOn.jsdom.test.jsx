@@ -174,10 +174,14 @@ describe('FQ-9 (2026-11-08) — with Bomb mode on, a measured held stock in the 
     expect($('[data-sheet-root]')).toBeTruthy();
     expect(series()).not.toContain('30m');
   });
-  it('the held mount (its controlled quote) decides from that quote', async () => {
-    await show({ controlledQuote: { posKey: 'player:star:0', symbol: 'AAPL', price: 103.4, extremes: null } });
+  it('the held mount decides from ITS controlled quote, never the asset\'s own price (the two disagree here, both ways)', async () => {
+    await show({ theAsset: { ...asset(), price: 103.2, currentPrice: 103.2 }, controlledQuote: { posKey: 'player:star:0', symbol: 'AAPL', price: 103.4, extremes: null } });
     expect($('[data-sheet-root]')).toBeNull();
     expect($('[data-bomb-sheet]')).toBeTruthy();
+    act(() => root.unmount());
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    await show({ theAsset: { ...asset(), price: 103.4, currentPrice: 103.4 }, controlledQuote: { posKey: 'player:star:0', symbol: 'AAPL', price: 103.2, extremes: null } });
+    expect($('[data-sheet-root]')).toBeTruthy();
   });
   it('no price yet → the sheet', async () => {
     await show({ theAsset: { ...asset(), price: 0, currentPrice: 0 } });
