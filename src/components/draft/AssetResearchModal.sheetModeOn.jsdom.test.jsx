@@ -216,11 +216,14 @@ describe('FQ-6 (2026-11-08) — on a phone, sheet mode sizes the modal from the 
     globalThis.CSS = { supports: (p, v) => p === 'height' && v === '100dvh' };
     await open();
     expect(modalBox()?.style.height).toBe('100dvh');
+    // The 1 px border is counted inside that height: the outer edge IS the visible viewport.
+    expect(modalBox()?.style.boxSizing).toBe('border-box');
     act(() => root.unmount());
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="fundamental" wsPrice={103.2} />); });
     await flush();
     expect(modalBox()?.style.height).toBe('100vh');
+    expect(modalBox()?.style.boxSizing).toBe('');
     act(() => root.unmount());
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     globalThis.CSS = { supports: () => false };

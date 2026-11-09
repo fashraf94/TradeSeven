@@ -635,6 +635,9 @@ const AssetResearchModal = ({
       // FQ-6 (2026-11-08): in sheet mode, the visible viewport (100dvh, else 100vh) —
       // the action row is never under Safari's toolbar. Mode off: 100vh, as before.
       height: sheetOn ? visibleViewportHeight() : '100vh',
+      // … and its 1 px border counted inside that height (the app ships content-box), so
+      // the whole action row sits inside the visible viewport (the fold row at 390×664).
+      ...(sheetOn ? { boxSizing: 'border-box' } : {}),
       top: 0,
       left: 0,
       transform: 'none',
