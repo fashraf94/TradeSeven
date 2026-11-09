@@ -2,35 +2,53 @@
 
 **Run:** 2026-11-08 · **Spec of record:** `docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md` (the build prompt, verbatim, first commit) · **Branch:** `claude/research-modal-sheet` · **PR:** draft, not merged · **Flag:** `RESEARCH_MODAL_SHEET_MODE = 'off'`
 
-**Smoke (phone):** https://trade-seven-l2170njv5-fais-projects-bc179554.vercel.app/?sheetFixture=held_tf — and `held_cp`, `held_legacy`, `bench_incumbent`, `unexamined`, `budget_out`. Never-merge branch `claude/research-modal-sheet-smoke` @ `8e10c0e1`: the mode forced `'on'`, the fixtures from committed JSON (no production read), the Ask answered by a canned reply marked **SMOKE ONLY** (no model call, nothing charged).
+**Smoke (phone):** https://trade-seven-nywqnm7it-fais-projects-bc179554.vercel.app/?sheetFixture=held_tf — and `held_cp`, `held_legacy`, `bench_incumbent`, `unexamined`, `budget_out`, and `held_redzone` (the sheet and Bomb mode on, a held stock in the red zone: it opens on 💣, FQ-9). Never-merge branch `claude/research-modal-sheet-smoke` @ `70c42057`: the mode forced `'on'`, the fixtures from committed JSON (no production read), the Ask answered by a canned reply marked **SMOKE ONLY** (no model call, nothing charged).
+
+## 0. Ruling pass — 2026-11-08
+
+You ruled on all eight questions in §12 and added FQ-9. The rulings are recorded in the spec's new dated section (*Rulings and corrections — 2026-11-08*, the end of `docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md`). They are built at `b0fb9db9`, `f407394f`, `b669d0a1` and `f68ddc83`; every check in §2 and §10 was re-run on `f68ddc83`, and the smoke was rebuilt from it with a `held_redzone` fixture.
+
+| Ruling | What was built | Rows | Mutants (round 5) |
+|---|---|---|---|
+| **FQ-1** — BC-3 step 1 searches the latest check that LOOKED at the name | Step 1 now quotes the first sentence naming the stock in the latest check whose evidence or candidates name it, at that check's time (`latestLine.js latestVoicedCheckOn`). **Reading:** a check whose model call failed or was budget-skipped still is not a check (the A2 reading, carried over); its real stamps still feed the check-read and risk items. The chart's check pin names the same check. | `latestLine.test.js`: rule 1, a check that never looked, a newer non-looking rationale, "checked, nothing said" at the newest look, a sold name's sentence, a failed look skipped. `packs.test.js`: the pin skips a failed check. | R5-F1a, F1b, F1c — killed |
+| **FQ-2** — *Looked at {time} · not held now* | A name not held that a check examined (sold, an exit flag, an older list) gets that stance, after the bench stance; on the idea's list it still carries the idea chip. | `packs.test.js`: a sold name, an exit-flagged name, a name on the list, a failed check is not a look. The modal on screen. | R5-F2a, F2b — killed |
+| **FQ-3** — 💣 with the sheet on | As built. | — | — |
+| **FQ-4** — one Ask per question per opening | As built. | — | — |
+| **FQ-5** — an exit flag, *What it flagged · exit · {time}* | Rule 3 quotes a `potential_exit` flag on any name, held or not, in its own words, after a naming sentence and after a call. The eyebrow is the ruling's words, with no archetype between them. | `latestLine.test.js`: exit quoted, held too, the order. The modal on screen. | R5-F5a, F5b, F5c — killed |
+| **FQ-6** — the visible viewport | Sheet mode on a phone: the modal is `100dvh` (else `100vh`), border-box so its 1 px border sits inside that height; mode off untouched. The fold row at 390×664 found the action row 1 px under the screen before the border-box line (the app ships content-box). | `sheetOpen.test.js` (the helper); the modal: `100dvh` / `100vh` / mode off unchanged, border-box in sheet mode only; the browser row at 390×664: the whole action row inside the visible viewport, every Layer 0 fixture. | R5-F6a–F6e — killed |
+| **FQ-7** — axis tags | Accepted as built. | — | — |
+| **FQ-8** — guard data lines are in scope | Recorded in the spec's dated rulings section. | — | — |
+| **FQ-9** — 💣 in the red zone at open | `Sheet/sheetOpen.js opensInRedZone` runs Build A's own pieces (the ladder, `toGo`, the session clock, the red-zone machine) once, in the modal's first render, on the price the screen holds: the held mount's controlled quote, else `wsPrice`, else the asset's price. In the band with the market open → the Bomb tab and 💣; else, or with no price, the sheet. Never set again. | `sheetOpen.test.js`: in the band, the band edge as Bomb mode prints it ($103.25 in, $103.24 out), past an unbanked rung, market closed, no price, crypto / legacy / not held / no Bomb mode. The modal: in → 💣, out → the sheet, the held mount's quote against the asset's own price (both ways), no price, never switched after open (both ways). The browser: `held_redzone` → 💣, `held_tf` with Bomb mode → the sheet. | R5-F9a–F9g — killed; F9e survived once (the held asset already carries the scored price), killed after the row made the quote and the price disagree |
+
+Round 5 is 20 mutants, 20 killed, every file restored byte for byte. One limit to state plainly: a headless browser has no toolbar, so it cannot tell `100dvh` from `100vh`. The rows pin the choice and the geometry; **the iPhone check (§11) is still the proof for Safari.**
 
 ## 1. Verdict
 
 | | Status | What the player sees | What they saw before |
 |---|---|---|---|
 | **The flag** | Built and shipped **dark**: `RESEARCH_MODAL_SHEET_MODE = 'off'`. With it off, every existing test passes and the modal, the battle screen and `chat.js` are byte-identical (three goldens); the only edits to existing test files are the flag-pin guard's note and ruling lines in three census files (§3, FQ-8). The server refuses a sheet Ask too unless the mode admits the owner. Turning it on is a separate one-line PR (`'allowlist'` first). | Nothing changes until the flag moves. | — |
-| **Layer 0 and the fold** | Built and **measured**: at 390×844 and 430×932 every held, unexamined and out-of-messages stock opens with the whole of Layer 0 above the action row and no inner scroll; 320×568 scrolls (allowed); no sideways scroll anywhere. Not met with Safari's bars showing (390×664: one question visible) — reported. | Tapping a stock in a live agent battle opens on one screen: where it stands ("Holding since Wed 10/14 · entry $100.75 · +2.4% · +15 banked"), the archetype's latest sentence about it in quotes, a short 1D chart with the record's pins, three questions in the order the score calls for, a tucked *About · Wall St* row, and the Ask button with *→ Cockpit*. | The 💣 Bomb tab and chart, and an AI Analysis tab with canned company questions. |
-| **The latest sentence** | Built: quoted, never written. The latest check's first sentence naming the stock → else its latest call → else (bench) its entry flag → else "Checked at 1:15 · nothing said about EOG" / "Last looked at …" / "hasn't looked at this one". The template never claims "nothing said" about a check that said something. Two readings open (FQ-1, FQ-2). | "*AAPL is still printing higher lows above VWAP, so the trend is intact and the position stays.*" — Trend Follower · Wed 12:45 | Nothing from the agent on the research screen. |
+| **Layer 0 and the fold** | Built and **measured**: at 390×844 and 430×932 every held, unexamined and out-of-messages stock opens with the whole of Layer 0 above the action row and no inner scroll; 320×568 scrolls (allowed); no sideways scroll anywhere. With Safari's bars showing the modal takes the visible viewport (FQ-6): Layer 0 scrolls there and the whole action row stays on screen (measured at 390×664). | Tapping a stock in a live agent battle opens on one screen: where it stands ("Holding since Wed 10/14 · entry $100.75 · +2.4% · +15 banked"), the archetype's latest sentence about it in quotes, a short 1D chart with the record's pins, three questions in the order the score calls for, a tucked *About · Wall St* row, and the Ask button with *→ Cockpit*. | The 💣 Bomb tab and chart, and an AI Analysis tab with canned company questions. |
+| **The latest sentence** | Built: quoted, never written. The first sentence naming the stock in the latest check that LOOKED at it, at that check's time (FQ-1) → else its latest call → else its flag on the latest list, in its own words: an exit flag as *What it flagged · exit · {time}* (FQ-5), a bench flag as *What it flagged* → else "Checked at 1:15 · nothing said about EOG" / "Last looked at …" / "hasn't looked at this one". A name a check examined that is not held now reads *Looked at {time} · not held now* (FQ-2). | "*AAPL is still printing higher lows above VWAP, so the trend is intact and the position stays.*" — Trend Follower · Wed 12:45 | Nothing from the agent on the research screen. |
 | **The packs and their order** | Built: 3–5 items per question, from the battle's own record and the archetype's own config, ordered by that archetype's weights (six archetypes pinned word for word). Free. Each item says where it came from and whether the server can re-read it. | "Does this protect the lead?" → *+15 banked at the checks · next check 1:15*, *0.9% off its high since Wed 10/14*, *Trend Follower on Aggressive: swaps out 0.9 ATR below entry, or after 3 checks in a row under VWAP ending 0.7% below; past +1.5 ATR, a dip under its 5-min average sells it*, the game's idea, what you told it. | — |
 | **The Ask and its budget** | Built: ONE message from the battle's chat 10, through the same chat route, filed to chat as the same exchange; the agent answers from the pack, every item marked verified (re-read by the server) or unverified (with why). The answer is scrolled into view; a question once asked is not offered again; a double tap sends one. A failed turn says "No message was used" only when the route answered before charging. | "Ask Trend Follower: does this protect the lead? · 1 message · 7 left" → the answer under the items, *✓ filed to chat*. | Asking meant leaving for the chat tab and typing. |
 | **Pins and the Idea layer** | Built: the entry, its calls and your answers, and the latest check as dots on the 1D chart; the entry and the idea's levels as lines (the idea behind an *Idea* pill). One label open at a time, shown as a caption (never clipped, never under the chart's logo); a check's pin says what it did for this stock (*decided* / *flagged*); tapping an item opens its own pin. | Tapping "+2.4% since entry" opens "● Entry · Wed 10:02"; tapping the rung item draws "next rung · $103.77". | No record on the chart. |
 | **The cockpit door and the incumbent** | Built: a bench call's *Research* opens the sheet on "Is this better than what's stalled?" with the held name the call would replace side by side (marked unverified: it comes from the call, which the server does not re-read). *→ Cockpit* returns to the cockpit. | "ETH is the name it would replace · 6 quiet checks in a row; Trend Follower counts a name stalled at 5", then the rankings side by side. | Research opened on the Bomb tab with no link back. |
-| **The mounts** | Built: all three battle mounts (held gated, non-held gated, legacy) hand the sheet the screen's own document, row, header pair, directive and cockpit door — no second subscription, no new price request (measured: the same quote, series and profile requests as the sheet-off view; one rankings read only when the stalled question opens; one POST only on Ask). | The sheet wherever a stock is tapped in battle. | — |
+| **The mounts** | Built: all three battle mounts (held gated, non-held gated, legacy) hand the sheet the screen's own document, row, header pair, directive and cockpit door — no second subscription, no new price request (measured: the same quote, series and profile requests as the sheet-off view; one rankings read only when the stalled question opens; one POST only on Ask). With Bomb mode also on, a measured held stock already in the red zone when the modal opens opens on 💣 instead, decided once at open (FQ-9). | The sheet wherever a stock is tapped in battle — or 💣, when that stock is about to bank. | — |
 
-**Eight questions for you** (§12): FQ-1 quote a sold name's last sentence · FQ-2 the stance of a name examined before but not held · FQ-3 the 💣 view with the sheet on · FQ-4 asking the same question twice · FQ-5 an exit flag on a name · FQ-6 the fold beyond the two named sizes · FQ-7 the entry line's price tag at rest · FQ-8 the census data lines beyond §5's file list. None blocks the PR; each is built one way and says so.
+**The eight questions in §12 were ruled on 2026-11-08, with FQ-9 added; §0 records each ruling and what was built.** Still open: the iPhone check (§11).
 
 ## 2. Cut, commits, checks
 
 - **Cut from** `origin/main` **`f095dc29`** (it already holds the Bomb mode allowlist flip, PR #1035). `origin/main` has not moved since (fetched 2026-11-08), so the branch IS the merged tree the checks ran on.
-- **Commits** (oldest first): `37c5fe79` spec · `28bf8237` flag, its pin, the guard note, the three sheet-off goldens · `01e237d0` the build · `de16d116` the fold · `8e094607` the rows (the reviewed head) · `2b30ff72` mutation round 1 · `0b8ec484` the review fixes (lenses A–D) · `78a25de4` lens D refuter follow-ups, the fold row, the request counts · `d777461e` D1 simplified · `348fcfeb` the census ruling for the A2 fix · `31938a1a` the open pin's caption clear of the chart's attribution logo · `e27b51b4` a bench name's check pin says "What it flagged" · `d8600ca9` its row (the code head) · this report (docs only). The last two fixes came from looking at the deployed smoke, not from a number.
+- **Commits** (oldest first): `37c5fe79` spec · `28bf8237` flag, its pin, the guard note, the three sheet-off goldens · `01e237d0` the build · `de16d116` the fold · `8e094607` the rows (the reviewed head) · `2b30ff72` mutation round 1 · `0b8ec484` the review fixes (lenses A–D) · `78a25de4` lens D refuter follow-ups, the fold row, the request counts · `d777461e` D1 simplified · `348fcfeb` the census ruling for the A2 fix · `31938a1a` the open pin's caption clear of the chart's attribution logo · `e27b51b4` a bench name's check pin says "What it flagged" · `d8600ca9` its row · `6f9df27b` this report · the ruling pass: `b0fb9db9` FQ-1, 2, 5, 6, 8, 9 · `f407394f` the pin row · `b669d0a1` FQ-9's held-mount row · `f68ddc83` FQ-6's border inside the viewport (the code head) · the report's ruling pass (docs only). `e27b51b4` and `31938a1a` came from looking at the deployed smoke, not from a number.
 - **Checks** (Linux, WSL Ubuntu, Node v20.20.2, `TZ=UTC`, `flock /tmp/pd-suite.lock`, `--maxWorkers=8`, lock `40382e64edb6`):
 
 | Check | Head | Exit | Result |
 |---|---|---|---|
-| Full suite (`npm run test:run`) | `d8600ca9` | 0 | Test Files 1366 passed \| 9 skipped (1375) · Tests 29980 passed \| 105 skipped (30085) |
-| Rules (`npm run test:rules`, emulator) | `d8600ca9` | 0 | `Test Files  35 passed (35) · Tests  666 passed (666)` |
-| `npm run lint:gate` | `d8600ca9` | 0 | no problems (`--max-warnings 0`) |
-| `vite build` | `d8600ca9` — and the report commit (docs only) again before the push: the PR description records it | 0 | `✓ built in 15.31s` |
+| Full suite (`npm run test:run`) | `f68ddc83` | 0 | Test Files 1367 passed \| 9 skipped (1376) · Tests 30006 passed \| 107 skipped (30113) |
+| Rules (`npm run test:rules`, emulator) | `f68ddc83` | 0 | `Test Files  35 passed (35) · Tests  666 passed (666)` |
+| `npm run lint:gate` | `f68ddc83` | 0 | no problems (`--max-warnings 0`) |
+| `vite build` | `f68ddc83` — and the report commit (docs only) again before the push: the PR description records it | 0 | `✓ built in 15.53s` |
 
   The suite count includes the fold file, skipped there (it needs a fixture page; §6 records its run). Read from the log's `Test Files` line, exit asserted, never piped through `tail`.
 
@@ -113,7 +131,7 @@ Where the archetypes differ:
 
 ## 5. Decisions made in the build (for the founder's eye)
 
-1. **The mounts open on the sheet.** With the mode on, a stock tapped in battle opens on the Analysis tab and the 1D chart (§1 "opens on one line and a question"); the 💣 pill and the Bomb tab stay one tap away. The three mounts keep passing `defaultTab="baggerbomb" defaultTimeframe="bomb"`; the modal overrides them only when it is handed a `sheetContext` (`AssetResearchModal.jsx openTab`, `initialTimeframe`). With the mode off nothing changes (the goldens).
+1. **The mounts open on the sheet.** With the mode on, a stock tapped in battle opens on the Analysis tab and the 1D chart (§1 "opens on one line and a question"); the 💣 pill and the Bomb tab stay one tap away. The three mounts keep passing `defaultTab="baggerbomb" defaultTimeframe="bomb"`; the modal overrides them only when it is handed a `sheetContext` (`AssetResearchModal.jsx openTab`, `initialTimeframe`). With the mode off nothing changes (the goldens). **Ruled 2026-11-08 (FQ-9):** with Bomb mode also on, a measured held stock already in the red zone when the modal opens opens on 💣 instead — decided once at open, never switched.
 2. **`sheetContext` carries more than §4.2 lists** — all of it data the screen already holds, so the sheet opens no second battle subscription: `battle` (the screen's subscribed document), `calls` (the cockpit's reader, when the cockpit is on), `standing` (the score as the header shows it — its own digits through `formatScoreDisplay` and its own lead, `comparison.lead` on a gated battle, else `displayPlayerScore` / `displayOpponentScore`; BUILD_RULES §9, review A6), `directive` (the slot THIS TURN shows), and optionally `rankings`. The archetype is read from the document (`battle.agentContext.archetype`); the `archetype` field is the screen's copy of that same read.
 3. **The ordering table** (`packs.js KIND_FACTOR`) maps each item kind to one `ARCHETYPE_WEIGHTS` factor. The archetype's *entry rule* is one item whose kind names its top factor (`rule_trend`, `rule_sectors`, `rule_fundamentals`, …) — one plain-word template per factor — so different archetypes lead with different kinds, mechanically. *Defensiveness* (the protect-the-lead risk items' factor) is computed from the four preset risk levers across the three presets: aggressive 0, balanced 0.33, defensive 1. Ties: the stock's facts before the archetype's rule before the standing. The loop items (the idea, what you told it) carry no factor, ride last and are never cut.
 4. **The token rule applies to BC-3 too.** A rationale sentence "names the symbol" only as a whole uppercase token of three or more letters (BC-10's rule): a one- or two-letter ticker (F, GE, ON, A) would match ordinary prose, so such a name falls through to its calls, its bench summary or the template.
@@ -129,57 +147,57 @@ Where the archetypes differ:
 14. **The record on the chart:** markers are dots; the one open label is a caption over the chart, never canvas text the pane clips; only the open line shows an axis tag (FQ-7); a tapped item opens the record pin AT its instant (the entry, never the check later that day) and a price pin of its own is named for what its price is (*next rung · $103.77*); pins are re-applied after every series rebuild (review C1/D4, D5, D6, D8).
 15. **Layer 0 shows two lines of the sentence** until it is tapped, and the eyebrow and the agent's name ellipsize, so a long sentence or a 20-character name keeps the fold and never widens the drawer at 320 (review D3).
 16. **On 💣 / spectate the chart keeps the modal's full height** and the drawer moves down (FQ-3); the skeleton and the error box stand in for the whole sheet chart (its 44 px control row and its plot), so the drawer opens where it stays (review D2, D7).
-17. **The template never claims "nothing said" about a check that said something**: a failed or budget-skipped call (`haikuError` set — the cron's canned rationale) is not "the latest check"; a check that named the stock, or flagged it, reads *Last looked at …* (review A2; FQ-1). A `potential_exit` candidate is never quoted as a bench flag (review A4; FQ-5).
+17. **The template never claims "nothing said" about a check that said something**: a failed or budget-skipped call (`haikuError` set — the cron's canned rationale) is not a check (review A2). **Ruled 2026-11-08:** rule 1 quotes the latest check that LOOKED at the name, at its time (FQ-1); a `potential_exit` flag is quoted as *What it flagged · exit · {time}*, never as a bench flag (FQ-5); a name examined but not held reads *Looked at {time} · not held now* (FQ-2).
 18. **Displayed numbers are the screen's own** (BUILD_RULES §9): the rung distance is Bomb mode's `toGo` (displayed rung and live price, two-decimal %); the drawdown names the day its bars start and never shows a high under the live price; the standing is the header's text and lead (review A5, A6, A11).
 
 ## 6. The fold (BC-2), measured
 
-Headless Edge (DPR 2, touch), the real modal on the fixture page, animations off, at the code head. The same measurements are now a committed row (`src/components/Research/Sheet/sheetFold.browser.test.js`, 16 rows: every Layer 0 fixture at 390×844 and 430×932, the worst cases, 320 with no sideways scroll, the answer in view after an Ask, the open pin's label unclipped, no drawer jump on a slow or failed chart, the 💣 Fuse never under the drawer). It runs when pointed at a fixture page (`SHEET_FOLD_URL=…`); CI skips it. **Run against the fixture page at the code head and against the deployed smoke preview: 16 of 16 passed** (the smoke preview at `8e10c0e1`).
+Headless Edge (DPR 2, touch), the real modal on the fixture page, animations off, at the code head. The same measurements are now a committed row (`src/components/Research/Sheet/sheetFold.browser.test.js`, 18 rows: every Layer 0 fixture at 390×844 and 430×932, the worst cases, 320 with no sideways scroll, the answer in view after an Ask, the open pin's label unclipped, no drawer jump on a slow or failed chart, the 💣 Fuse never under the drawer, and since the ruling pass the whole action row inside the visible viewport at 390×664 (FQ-6) and `held_redzone` opening on 💣 (FQ-9)). It runs when pointed at a fixture page (`SHEET_FOLD_URL=…`); CI skips it. **Run against the deployed smoke preview at the code head: 18 of 18 passed** (the smoke at `70c42057`). The tables below were re-measured there after FQ-6: the phone modal is now border-box in sheet mode, so every number is 1–2 px from the first measurements (the chart is 196 at 390×844), and at 390 the Layer 1 heading *Is this better than what's stalled?* wraps to two lines (Layer 1 scrolls).
 
-**The chart's height in sheet mode** (reported, BC-2): a quarter of the container on a phone, 150–210 px (198 at 390×844, 210 at 430×932, 150 at 320×568); a third elsewhere, 180–260 px. The chart's control row is 44 px at every size. On 💣 the chart keeps the modal's full height (FQ-3).
+**The chart's height in sheet mode** (reported, BC-2): a quarter of the container on a phone, 150–210 px (196 at 390×844, 210 at 430×932, 150 at 320×568); a third elsewhere, 180–260 px. The chart's control row is 44 px at every size. On 💣 the chart keeps the modal's full height (FQ-3).
 
 | Fixture | Size | Layer | Chart | Sheet (top → bottom) | Action row (top → bottom) | Scroll area (content / visible) | Layer 0 above the row | Sideways scroll |
 |---|---|---|---|---|---|---|---|---|
-| held_tf | 390×844 | 0 | 198 | 388 → 755.7 | 780.8 → 845 | 393 / 393 | **yes** | none |
-| held_cp | 390×844 | 0 | 198 | 388 → 755.7 | 780.8 → 845 | 393 / 393 | **yes** | none |
-| held_legacy | 390×844 | 0 | 198 | 388 → 728.7 | 780.8 → 845 | 393 / 393 | **yes** | none |
-| bench_incumbent | 390×844 | 1 | 198 | 388 → 914.2 | 769.8 → 845 | 538 / 382 | n/a (opens on Layer 1, BC-11) | none |
-| unexamined | 390×844 | 0 | 198 | 388 → 680.5 | 780.8 → 845 | 393 / 393 | **yes** | none |
-| budget_out | 390×844 | 0 | 198 | 388 → 755.7 | 782 → 845 | 394 / 394 | **yes** | none |
-| held_tf | 430×932 | 0 | 210 | 400 → 767.7 | 870 → 933 | 470 / 470 | **yes** | none |
-| held_cp | 430×932 | 0 | 210 | 400 → 767.7 | 870 → 933 | 470 / 470 | **yes** | none |
-| held_legacy | 430×932 | 0 | 210 | 400 → 740.7 | 870 → 933 | 470 / 470 | **yes** | none |
-| bench_incumbent | 430×932 | 1 | 210 | 400 → 926.2 | 857.8 → 933 | 538 / 458 | n/a (opens on Layer 1, BC-11) | none |
-| unexamined | 430×932 | 0 | 210 | 400 → 692.5 | 870 → 933 | 470 / 470 | **yes** | none |
-| budget_out | 430×932 | 0 | 210 | 400 → 767.7 | 870 → 933 | 470 / 470 | **yes** | none |
-| held_tf | 320×568 | 0 | 150 | 340 → 707.7 | 504.8 → 569 | 380 / 165 | no — scrolls | none |
-| held_cp | 320×568 | 0 | 150 | 340 → 707.7 | 504.8 → 569 | 380 / 165 | no — scrolls | none |
-| held_legacy | 320×568 | 0 | 150 | 340 → 707.7 | 504.8 → 569 | 380 / 165 | no — scrolls | none |
-| bench_incumbent | 320×568 | 1 | 150 | 340 → 909.9 | 493.8 → 569 | 582 / 154 | n/a (opens on Layer 1, BC-11) | none |
-| unexamined | 320×568 | 0 | 150 | 340 → 632.5 | 504.8 → 569 | 305 / 165 | no — scrolls | none |
-| budget_out | 320×568 | 0 | 150 | 340 → 707.7 | 504.8 → 569 | 380 / 165 | no — scrolls | none |
+| held_tf | 390×844 | 0 | 196 | 387 → 754.7 | 778.8 → 843 | 392 / 392 | **yes** | none |
+| held_cp | 390×844 | 0 | 196 | 387 → 754.7 | 778.8 → 843 | 392 / 392 | **yes** | none |
+| held_legacy | 390×844 | 0 | 196 | 387 → 727.7 | 778.8 → 843 | 392 / 392 | **yes** | none |
+| bench_incumbent | 390×844 | 1 | 196 | 387 → 923.2 | 767.8 → 843 | 548 / 381 | n/a (opens on Layer 1, BC-11) | none |
+| unexamined | 390×844 | 0 | 196 | 387 → 679.5 | 778.8 → 843 | 392 / 392 | **yes** | none |
+| budget_out | 390×844 | 0 | 196 | 387 → 754.7 | 780 → 843 | 393 / 393 | **yes** | none |
+| held_tf | 430×932 | 0 | 210 | 400 → 767.7 | 868 → 931 | 468 / 468 | **yes** | none |
+| held_cp | 430×932 | 0 | 210 | 400 → 767.7 | 868 → 931 | 468 / 468 | **yes** | none |
+| held_legacy | 430×932 | 0 | 210 | 400 → 740.7 | 868 → 931 | 468 / 468 | **yes** | none |
+| bench_incumbent | 430×932 | 1 | 210 | 400 → 926.2 | 855.8 → 931 | 538 / 456 | n/a (opens on Layer 1, BC-11) | none |
+| unexamined | 430×932 | 0 | 210 | 400 → 692.5 | 868 → 931 | 468 / 468 | **yes** | none |
+| budget_out | 430×932 | 0 | 210 | 400 → 767.7 | 868 → 931 | 468 / 468 | **yes** | none |
+| held_tf | 320×568 | 0 | 150 | 340 → 707.7 | 502.8 → 567 | 380 / 163 | no — scrolls | none |
+| held_cp | 320×568 | 0 | 150 | 340 → 707.7 | 502.8 → 567 | 380 / 163 | no — scrolls | none |
+| held_legacy | 320×568 | 0 | 150 | 340 → 707.7 | 502.8 → 567 | 380 / 163 | no — scrolls | none |
+| bench_incumbent | 320×568 | 1 | 150 | 340 → 909.9 | 491.8 → 567 | 582 / 152 | n/a (opens on Layer 1, BC-11) | none |
+| unexamined | 320×568 | 0 | 150 | 340 → 632.5 | 502.8 → 567 | 305 / 163 | no — scrolls | none |
+| budget_out | 320×568 | 0 | 150 | 340 → 707.7 | 502.8 → 567 | 380 / 163 | no — scrolls | none |
 
 The review's worst cases (the fixture page's measurement parameters: a long sentence, a 20-character agent name — the app's cap — and Fundamental Investor):
 
 | Fixture | Size | Layer | Chart | Sheet (top → bottom) | Action row (top → bottom) | Scroll area (content / visible) | Layer 0 above the row | Sideways scroll |
 |---|---|---|---|---|---|---|---|---|
-| held_tf · long=1 | 390×844 | 0 | 198 | 388 → 755.7 | 780.8 → 845 | 393 / 393 | **yes** | none |
-| held_tf · name=The Momentum Machine · arch=analyst | 390×844 | 0 | 198 | 388 → 755.7 | 780.8 → 845 | 393 / 393 | **yes** | none |
-| held_cp · long=1 · name=The Momentum Machine | 390×844 | 0 | 198 | 388 → 755.7 | 780.8 → 845 | 393 / 393 | **yes** | none |
-| held_tf · long=1 | 320×568 | 0 | 150 | 340 → 707.7 | 504.8 → 569 | 380 / 165 | no — scrolls | none |
-| held_tf · name=The Momentum Machine · arch=analyst | 320×568 | 0 | 150 | 340 → 707.7 | 504.8 → 569 | 380 / 165 | no — scrolls | none |
-| held_cp · long=1 · name=The Momentum Machine | 320×568 | 0 | 150 | 340 → 707.7 | 504.8 → 569 | 380 / 165 | no — scrolls | none |
+| held_tf · long=1 | 390×844 | 0 | 196 | 387 → 754.7 | 778.8 → 843 | 392 / 392 | **yes** | none |
+| held_tf · name=The Momentum Machine · arch=analyst | 390×844 | 0 | 196 | 387 → 754.7 | 778.8 → 843 | 392 / 392 | **yes** | none |
+| held_cp · long=1 · name=The Momentum Machine | 390×844 | 0 | 196 | 387 → 754.7 | 778.8 → 843 | 392 / 392 | **yes** | none |
+| held_tf · long=1 | 320×568 | 0 | 150 | 340 → 707.7 | 502.8 → 567 | 380 / 163 | no — scrolls | none |
+| held_tf · name=The Momentum Machine · arch=analyst | 320×568 | 0 | 150 | 340 → 707.7 | 502.8 → 567 | 380 / 163 | no — scrolls | none |
+| held_cp · long=1 · name=The Momentum Machine | 320×568 | 0 | 150 | 340 → 707.7 | 502.8 → 567 | 380 / 163 | no — scrolls | none |
 
-Viewports BC-2 does not name (Safari with its bars showing; a common Android size) — reported, not claimed:
+Viewports BC-2 does not name (Safari with its bars showing; a common Android size). Since FQ-6 the modal is the visible viewport there: Layer 0 may scroll, and the whole action row stays on screen:
 
 | Fixture | Size | Layer | Chart | Sheet (top → bottom) | Action row (top → bottom) | Scroll area (content / visible) | Layer 0 above the row | Sideways scroll |
 |---|---|---|---|---|---|---|---|---|
-| held_tf | 390×664 | 0 | 152 | 343 → 710.7 | 600.8 → 665 | 380 / 258 | no — scrolls | none |
-| unexamined | 390×664 | 0 | 152 | 343 → 635.5 | 600.8 → 665 | 305 / 258 | no — scrolls | none |
-| held_tf | 430×739 | 0 | 172 | 362 → 729.7 | 677 → 740 | 380 / 315 | no — scrolls | none |
-| unexamined | 430×739 | 0 | 172 | 362 → 654.5 | 677 → 740 | 315 / 315 | **yes** | none |
-| held_tf | 360×780 | 0 | 182 | 372 → 739.7 | 716.8 → 781 | 380 / 345 | no — scrolls | none |
-| unexamined | 360×780 | 0 | 182 | 372 → 664.5 | 716.8 → 781 | 345 / 345 | **yes** | none |
+| held_tf | 390×664 | 0 | 152 | 342 → 709.7 | 598.8 → 663 | 380 / 257 | no — scrolls | none |
+| unexamined | 390×664 | 0 | 152 | 342 → 634.5 | 598.8 → 663 | 305 / 257 | no — scrolls | none |
+| held_tf | 430×739 | 0 | 170 | 361 → 728.7 | 675 → 738 | 380 / 314 | no — scrolls | none |
+| unexamined | 430×739 | 0 | 170 | 361 → 653.5 | 675 → 738 | 314 / 314 | **yes** | none |
+| held_tf | 360×780 | 0 | 180 | 371 → 738.7 | 714.8 → 779 | 380 / 344 | no — scrolls | none |
+| unexamined | 360×780 | 0 | 180 | 371 → 663.5 | 714.8 → 779 | 344 / 344 | **yes** | none |
 
 ## 7. The mounts and the requests
 
@@ -215,9 +233,10 @@ Every mutant ran on a fresh `git archive` of its head (`node run-mutants.cjs`): 
 | 2 — the review fixes | `0b8ec484` | 57 | **57** | one per fix, one per test gap the review found |
 | 3 — refuter D follow-ups | `78a25de4` | 3 | **3** | D7's control row; two §3 request mutants |
 | 4 — seen on the deployed smoke | `d8600ca9` | 2 | **2** | the pin's "flagged" wording and its held-name guard (the guard's mutant survived once; the row that kills it was added) |
+| 5 — the 2026-11-08 rulings | `f407394f`, `b669d0a1`, `f68ddc83` | 20 | **20** | FQ-1 ×3, FQ-2 ×2, FQ-5 ×3, FQ-6 ×5, FQ-9 ×7 (F9e survived once — the held asset already carries the scored price — and was killed after the row made the quote and the asset's price disagree) |
 | Browser rows | `d777461e`, `31938a1a` | 9 | **9** | D1 ×2, D7 ×2, D2, D3 ×2, D6 ×2 (the second: the caption back under the attribution logo); control 16/16 after each run |
 
-Every file restored: 179 of 179 SHA-256 equal. Rounds 2, 3, 4 and the browser mutants:
+Every file restored: 199 of 199 SHA-256 equal. Rounds 2–5 and the browser mutants:
 
 | Mutant | Reverts | File | Killed by | Restored |
 |---|---|---|---|---|
@@ -283,6 +302,26 @@ Every file restored: 179 of 179 SHA-256 equal. Rounds 2, 3, 4 and the browser mu
 | R3-REQ2 | §3: the sheet asks for a second daily series | `src/components/Research/Sheet/useSheetView.js` | sheet on vs off on the same 1D view: the same quote, series and profile requests; nothing  | SHA-256 ✓ |
 | R4-PF | a bench name's check pin says "What it decided" (the check only flagged it) | `src/components/Research/Sheet/packs.js` | a bench name the check only FLAGGED: its pin says "What it flagged", never "What it decide | SHA-256 ✓ |
 | R4-PF2 | a held name's check pin says "What it flagged" (the guard on held/evidence dropped) | `src/components/Research/Sheet/packs.js` | a HELD name the check also listed (an exit flag) keeps "What it decided": the check had it | SHA-256 ✓ |
+| R5-F1a | FQ-1: step 1 back to the latest rationale (not the check that looked) | `src/components/Research/Sheet/latestLine.js` | 4a. a name an earlier check looked at but no longer held (swapped out): still "checked", w | SHA-256 ✓ |
+| R5-F1b | FQ-1: a failed check counts as the check that looked | `src/components/Research/Sheet/latestLine.js` | a FAILED check that looked at the name is not "the check that looked": the one before it i | SHA-256 ✓ |
+| R5-F1c | FQ-1: the check pin names any look (a failed one too), not the quoted check | `src/components/Research/Sheet/packs.js` | the check pin names the check the voice line quotes: a newer FAILED check that stamped the | SHA-256 ✓ |
+| R5-F2a | FQ-2: a name examined, not held, reads "Not examined" again | `src/components/Research/Sheet/packs.js` | "What it flagged · exit · Wed 12:45", the flag in its own words, and the stance "Looked at | SHA-256 ✓ |
+| R5-F2b | FQ-2: the stance's look counts a failed check | `src/components/Research/Sheet/packs.js` | a FAILED check that stamped the name is not a look: still "Not examined" (the A2 reading) | SHA-256 ✓ |
+| R5-F5a | FQ-5: an exit flag is not quoted | `src/components/Research/Sheet/latestLine.js` | "What it flagged · exit · Wed 12:45", the flag in its own words, and the stance "Looked at | SHA-256 ✓ |
+| R5-F5b | FQ-5: the exit flag wears the bench flag's words | `src/components/Research/Sheet/AnalysisSheet.jsx` | "What it flagged · exit · Wed 12:45", the flag in its own words, and the stance "Looked at | SHA-256 ✓ |
+| R5-F5c | FQ-5: the exit eyebrow carries the archetype between (not the ruling's words) | `src/components/Research/Sheet/AnalysisSheet.jsx` | "What it flagged · exit · Wed 12:45", the flag in its own words, and the stance "Looked at | SHA-256 ✓ |
+| R5-F6a | FQ-6: the helper never answers 100dvh | `src/components/Research/Sheet/sheetViewport.js` | 100dvh where the browser has it; 100vh where it does not; mode off keeps 100vh | SHA-256 ✓ |
+| R5-F6b | FQ-6: sheet mode keeps 100vh | `src/components/draft/AssetResearchModal.jsx` | 100dvh where the browser has it; 100vh where it does not; mode off keeps 100vh | SHA-256 ✓ |
+| R5-F6c | FQ-6: mode off takes 100dvh too (mode off must be unchanged) | `src/components/draft/AssetResearchModal.jsx` | 100dvh where the browser has it; 100vh where it does not; mode off keeps 100vh | SHA-256 ✓ |
+| R5-F9a | FQ-9: never opens on 💣 | `src/components/Research/Sheet/sheetOpen.js` | inside the band ($103.40: 0.36 % to +30) → the 💣 view and the Bomb tab, not the sheet | SHA-256 ✓ |
+| R5-F9b | FQ-9: decided on every render (switches after open) | `src/components/draft/AssetResearchModal.jsx` | decided ONCE at open: a price that moves into the band after open never switches the sheet | SHA-256 ✓ |
+| R5-F9c | FQ-9: the market's hours ignored | `src/components/Research/Sheet/sheetOpen.js` | the market closed (Wed 8:00 PM ET, Sat noon) → the sheet, even inside the band | SHA-256 ✓ |
+| R5-F9d | FQ-9: the band judged on the raw % (not Bomb mode's printed %) | `src/components/Research/Sheet/sheetOpen.js` | the band edge as Bomb mode prints it: $103.25 is 0.50 % → in; $103.24 is 0.51 % → out | SHA-256 ✓ |
+| R5-F9e | FQ-9: the held mount's quote ignored (the asset's price used) | `src/components/draft/AssetResearchModal.jsx` | the held mount decides from ITS controlled quote, never the asset's own price (the two dis | SHA-256 ✓ |
+| R5-F9f | FQ-9: a name not held enters (the held guard dropped) | `src/components/Research/Sheet/sheetOpen.js` | never for crypto, a legacy-scored holding, a name not held, or a mount without Bomb mode | SHA-256 ✓ |
+| R5-F9g | FQ-9: crypto enters | `src/components/Research/Sheet/sheetOpen.js` | never for crypto, a legacy-scored holding, a name not held, or a mount without Bomb mode | SHA-256 ✓ |
+| R5-F6d | FQ-6: the modal's border outside the visible viewport (content-box) | `src/components/draft/AssetResearchModal.jsx` | 100dvh where the browser has it; 100vh where it does not; mode off keeps 100vh | SHA-256 ✓ |
+| R5-F6e | FQ-6: mode off becomes border-box too (mode off must be unchanged) | `src/components/draft/AssetResearchModal.jsx` | 100dvh where the browser has it; 100vh where it does not; mode off keeps 100vh | SHA-256 ✓ |
 | B-D1a | D1: the reply card is never scrolled into view | `src/components/Research/Sheet/AskReply.jsx` (browser) | the answer is in view when it lands, and the asked question is not off — AssertionError: expected 1011.15625 to be less than or equal to 781.75 | SHA-256 ✓ |
 | B-D1b | D1: no scroll margin (the card flush with an edge that moves when the footer is re-measured) | `src/components/Research/Sheet/AskReply.jsx` (browser) | the answer is in view when it lands, and the asked question is not off — AssertionError: expected 782.15625 to be less than or equal to 781.75 | SHA-256 ✓ |
 | B-D7 | D7: the skeleton without the control row | `src/components/draft/AssetResearchModal.jsx` (browser) | the drawer opens where it stays: no jump when a slow chart lands, and  — AssertionError: expected 44 to be less than or equal to 1 | SHA-256 ✓ |
@@ -351,26 +390,29 @@ Every full Linux run of this branch, oldest first (WSL Ubuntu, Node v20.20.2, `T
 | `d777461e` | **1** | 1 failed \| 1365 passed \| 9 skipped (1375) | 1 failed \| 29977 passed \| 105 skipped (30083) | the unconfirmedOutcome census: the A2 fix made `latestLine.js` read `haikuError`, unruled — ruled at `348fcfeb` (§3, FQ-8) |
 | `348fcfeb` | 0 | 1366 passed \| 9 skipped (1375) | 29978 passed \| 105 skipped (30083) | |
 | `31938a1a` | 0 | 1366 passed \| 9 skipped (1375) | 29978 passed \| 105 skipped (30083) | |
-| **`d8600ca9` (the code head)** | **0** | **1366 passed \| 9 skipped (1375)** | **29980 passed \| 105 skipped (30085)** | the final run |
+| `d8600ca9` | 0 | 1366 passed \| 9 skipped (1375) | 29980 passed \| 105 skipped (30085) | the first PR head's code |
+| `b669d0a1` | 0 | 1367 passed \| 9 skipped (1376) | 30006 passed \| 107 skipped (30113) | the ruling pass |
+| **`f68ddc83` (the code head)** | **0** | **1367 passed \| 9 skipped (1376)** | **30006 passed \| 107 skipped (30113)** | the final run |
 
-- **Rules** (`npm run test:rules`, the Firestore emulator, Java 21): EXIT 0, `Test Files 35 passed (35)`, `Tests 666 passed (666)` at `d777461e`, `31938a1a` and `d8600ca9`.
+- **Rules** (`npm run test:rules`, the Firestore emulator, Java 21): EXIT 0, `Test Files 35 passed (35)`, `Tests 666 passed (666)` at `d777461e`, `31938a1a`, `d8600ca9`, `b669d0a1` and `f68ddc83`.
 - **`npm run lint:gate`:** EXIT 0 at every head above.
-- **`vite build`:** EXIT 0 at `d777461e`, `31938a1a`, `d8600ca9` (`✓ built in 15.31s`), and the report commit before the push.
-- **The fold rows in a real browser** (`SHEET_FOLD_URL`): 16 of 16 against the fixture page at the code head and 16 of 16 against the deployed smoke preview.
+- **`vite build`:** EXIT 0 at `d777461e`, `31938a1a`, `d8600ca9`, `6f9df27b`, `b669d0a1` and `f68ddc83` (`✓ built in 15.53s`), and the report commit before the push.
+- **The fold rows in a real browser** (`SHEET_FOLD_URL`): 18 of 18 against the deployed smoke preview at the code head.
 - The suite's skipped files include the fold file (no page in CI) — 9 skipped at every head since it was added, 8 before.
 
 ## 11. The smoke
 
-- **URL:** https://trade-seven-l2170njv5-fais-projects-bc179554.vercel.app — open `/?sheetFixture=held_tf` (and the five others) on the phone.
-- **Branch:** `claude/research-modal-sheet-smoke` @ `8e10c0e1`, two commits on the code head `d8600ca9` — `5351fd9a` (the mode `'on'`) and `8e10c0e1` (the `?sheetFixture` loader in `src/main.jsx`, `src/smoke/SheetSmokeScreen.jsx`, `src/smoke/sheetFixtures.battles.json`). Never merge it.
+- **URL:** https://trade-seven-nywqnm7it-fais-projects-bc179554.vercel.app — open `/?sheetFixture=held_tf` (and the six others) on the phone.
+- **Branch:** `claude/research-modal-sheet-smoke` @ `70c42057`, two commits on the code head `f68ddc83` — `b8373d6f` (the mode `'on'`) and `70c42057` (the `?sheetFixture` loader in `src/main.jsx`, `src/smoke/SheetSmokeScreen.jsx`, `src/smoke/sheetFixtures.battles.json`). Never merge it.
 - **What it is:** the real modal, mounted exactly as the battle screen mounts it, on JSON fixtures shaped from real battle documents by the corrected-battle harness (no production read for the sheet). The clock is fixed at Wed Oct 14 2026, 1:07 PM ET. The Ask is answered on the page by a canned reply that says **SMOKE ONLY** — no model call, no message charged anywhere; the page then files the exchange to its own copy of the battle so *✓ filed to chat* lights.
+- **`held_redzone`** (FQ-9): the sheet and Bomb mode both on, AAPL at $103.40 — $0.37 (0.36 %) under the +30 rung with the market open — so the modal opens on 💣 in the red zone; *Analysis* is one tap away.
 - **Measurement parameters** (SMOKE ONLY, for the fold row and the review's worst cases): `&name=` (an agent name), `&arch=` (an archetype), `&long=1`, `&bars=1`, `&bomb=1` (Bomb mode on as well), `&delay=N`, `&fail=1`.
-- **Please check on the iPhone:** the action row (Ask, → Cockpit) with Safari's bottom bar showing — the phone modal is `100vh` tall, which iOS Safari can draw under its toolbar (§12).
+- **Please check on the iPhone:** the action row (Ask, → Cockpit) with Safari's bottom bar showing. Since FQ-6 the sheet's modal is the visible viewport (`100dvh`); a headless browser has no toolbar, so only a phone can confirm it.
 - The modal's other tabs (Ranks, Technical …) on the smoke page are the app's own and read what they read in the app; the sheet reads nothing but its fixtures.
 
 ## 12. Found on the way, and the questions
 
-**Questions for the founder** (each built one way; the PR does not wait on them):
+**Questions for the founder** — all ruled on 2026-11-08 (§0): FQ-1, FQ-2, FQ-5, FQ-6 and FQ-9 built; FQ-3, FQ-4 and FQ-7 as built; FQ-8 in scope. Kept below as they were asked:
 
 - **FQ-1 (BC-3, review A2):** BC-3 quotes the LATEST check's rationale and searches no older check. A name sold two checks ago, whose selling check said why, now shows "Last looked at Tue 11:00" — never "nothing said". Should step 1 also search the latest check that LOOKED at the name (its evidence or candidates), so that sentence is quoted?
 - **FQ-2 (BC-15, review A3):** a name not held now that an earlier check examined (sold, or on an old candidates list) reads **"Not examined in this game"** — BC-15's letter ("any other name") — while its voice line says when it was looked at. Proposed: "Looked at Tue 11:00 · not held now".
@@ -383,7 +425,7 @@ Every full Linux run of this branch, oldest first (WSL Ubuntu, Node v20.20.2, `T
 
 **Found on the way:**
 
-- **iOS Safari, 100vh** (refuter D): the phone modal is `height: 100vh` (`AssetResearchModal.jsx:617`); on iOS Safari with the toolbar shown that can put the pinned action row under the toolbar. The mode-off scroll area's 80 px bottom padding (replaced by the footer in sheet mode) may have been the old compensation. Needs the phone check (§11).
+- **iOS Safari, 100vh** (refuter D): ruled as FQ-6 — in sheet mode the phone modal is now `100dvh`, border-box. The new 390×664 row found the last pixel: with the app's content-box sizing, the modal's 1 px border put the action row's bottom at 665 in a 664 px screen. Mode off keeps `100vh`. The phone check (§11) still stands.
 - **Pre-existing, mode-off, out of scope:** StockChart's S/R and highlight lines have the same gap the pins had (D4): a height-only rebuild (rotation, resize) drops them until the data changes.
 - **Snap and landscape (D9, D10, nits):** during the ~250 ms drawer spring the action row sits off its rest place (the scroll height follows the target snap, not the motion value); on a landscape phone (844×390) the action row is below the screen at mid snap, reachable at full.
 - **Action row height:** its label swap (two lines idle, one while answering) moves the scroll area's bottom 12 px on each Ask.
