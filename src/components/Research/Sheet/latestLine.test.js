@@ -52,14 +52,14 @@ describe('the token rule (BC-10, applied to BC-3)', () => {
 
 describe('BC-3 — each branch, in order', () => {
   const battle = (evaluations) => ({ evaluations });
-  it('1. the first sentence of the LATEST check\'s rationale that names the symbol, verbatim, with the check\'s time', () => {
+  it('1. the first sentence naming the symbol in the latest check that LOOKED at it (FQ-1), verbatim, with that check\'s time', () => {
     const b = battle([
-      ev('e1', '2026-10-14T15:00:00.000Z', { rationale: 'EOG first said here.' }),
-      ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'Midday chop. EOG keeps higher lows, so it stays. EOG again.' }),
+      ev('e1', '2026-10-14T15:00:00.000Z', { rationale: 'EOG first said here.', evidence: { EOG: { px: 159 } } }),
+      ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'Midday chop. EOG keeps higher lows, so it stays. EOG again.', evidence: { EOG: { px: 160 } } }),
     ]);
     expect(latestLineOf({ battle: b, symbol: 'EOG', held: true })).toEqual({ source: 'rationale', text: 'EOG keeps higher lows, so it stays.', atMs: Date.parse('2026-10-14T16:45:00.000Z'), recordId: 'e2' });
   });
-  it('only the latest check is searched: an older rationale naming the symbol does not reach back', () => {
+  it('a check that never LOOKED at the name (no evidence, no candidates) is not quoted, even when its prose names it (FQ-1)', () => {
     const b = battle([
       ev('e1', '2026-10-14T15:00:00.000Z', { rationale: 'EOG said here.' }),
       ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'Nothing about it.' }),
@@ -114,7 +114,7 @@ describe('BC-3 — each branch, in order', () => {
 describe('the order between branches, with the record in its delivered shapes (review C4)', () => {
   const battle = (evaluations) => ({ evaluations });
   it('a naming rationale AND a call: the rationale wins (rule 1 before rule 2)', () => {
-    const b = battle([ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'EOG keeps higher lows.' })]);
+    const b = battle([ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'EOG keeps higher lows.', evidence: { EOG: { px: 160 } } })]);
     const calls = [{ callId: 'c9', symbol: 'EOG', said: 'If EOG loses $158 I take it off.', mintedAt: Date.parse('2026-10-14T17:00:00.000Z') }];
     expect(latestLineOf({ battle: b, symbol: 'EOG', held: true, calls }).source).toBe('rationale');
   });
@@ -143,10 +143,17 @@ describe('the order between branches, with the record in its delivered shapes (r
 
 describe('the template never claims "nothing said" about a check that said something (review A2, A4)', () => {
   const battle = (evaluations) => ({ evaluations });
-  it('a newer budget-skipped rationale (no stamps): the template names THAT check — the one rule 1 searched — never the older one it did not', () => {
+  it('a newer rationale that did not look at the name (no stamps): the check that LOOKED is quoted, at its own time (FQ-1)', () => {
     const b = battle([
       ev('e1', '2026-10-14T16:45:00.000Z', { rationale: 'AAPL rides the trend, so it stays.', evidence: { AAPL: { px: 103 } } }),
       ev('e2', '2026-10-14T17:00:00.000Z', { rationale: 'Budget skipped this check.' }),
+    ]);
+    expect(latestLineOf({ battle: b, symbol: 'AAPL', held: true })).toEqual({ source: 'rationale', text: 'AAPL rides the trend, so it stays.', atMs: Date.parse('2026-10-14T16:45:00.000Z'), recordId: 'e1' });
+  });
+  it('the latest check that looked at the name said nothing about it: "checked, nothing said" at THAT check (the older naming check is not reached)', () => {
+    const b = battle([
+      ev('e1', '2026-10-14T16:45:00.000Z', { rationale: 'AAPL rides the trend, so it stays.', evidence: { AAPL: { px: 103 } } }),
+      ev('e2', '2026-10-14T17:00:00.000Z', { rationale: 'Midday chop.', evidence: { AAPL: { px: 103.1 } } }),
     ]);
     expect(latestLineOf({ battle: b, symbol: 'AAPL', held: true })).toEqual({ source: 'template_checked', text: null, atMs: Date.parse('2026-10-14T17:00:00.000Z'), recordId: 'e2' });
   });
@@ -157,16 +164,32 @@ describe('the template never claims "nothing said" about a check that said somet
     ]);
     expect(latestLineOf({ battle: b, symbol: 'AAPL', held: true })).toEqual({ source: 'rationale', text: 'AAPL rides the trend, so it stays.', atMs: Date.parse('2026-10-14T16:45:00.000Z'), recordId: 'e1' });
   });
-  it('a sold name whose last check named it (older than the latest rationale): "last looked at" that check, not "nothing said"', () => {
+  it('a sold name whose last check named it (older than the latest rationale): THAT sentence, at that check\'s time (FQ-1)', () => {
     const b = battle([
       ev('e1', '2026-10-13T15:00:00.000Z', { rationale: 'XOM lost VWAP, so it goes.', evidence: { XOM: { px: 110 } } }),
       ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'Nothing about it.', evidence: { EOG: { px: 160 } } }),
     ]);
-    expect(latestLineOf({ battle: b, symbol: 'XOM', held: false })).toEqual({ source: 'template_looked', text: null, atMs: Date.parse('2026-10-13T15:00:00.000Z'), recordId: 'e1' });
+    expect(latestLineOf({ battle: b, symbol: 'XOM', held: false })).toEqual({ source: 'rationale', text: 'XOM lost VWAP, so it goes.', atMs: Date.parse('2026-10-13T15:00:00.000Z'), recordId: 'e1' });
   });
-  it('a potential_exit candidate is never a bench flag: its note is not quoted as one, and the template says "last looked at"', () => {
+  it('a FAILED check that looked at the name is not "the check that looked": the one before it is quoted', () => {
+    const b = battle([
+      ev('e1', '2026-10-14T16:45:00.000Z', { rationale: 'AAPL rides the trend, so it stays.', evidence: { AAPL: { px: 103 } } }),
+      ev('e2', '2026-10-14T17:00:00.000Z', { rationale: 'Haiku call failed — defaulting to HOLD', evidence: { AAPL: { px: 103.1 } }, haikuError: { failureClass: 'timeout', evalId: 'e2' } }),
+    ]);
+    expect(latestLineOf({ battle: b, symbol: 'AAPL', held: true })).toMatchObject({ source: 'rationale', recordId: 'e1' });
+  });
+  it('a potential_exit flag is quoted as an EXIT flag, in its own words, at its check\'s time — never as a bench flag (FQ-5)', () => {
     const b = battle([ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'Nothing.', candidates: [{ symbol: 'XOM', direction: 'potential_exit', signalSummary: 'Exit: lost VWAP twice.' }] })]);
-    expect(latestLineOf({ battle: b, symbol: 'XOM', held: false })).toEqual({ source: 'template_looked', text: null, atMs: Date.parse('2026-10-14T16:45:00.000Z'), recordId: 'e2' });
+    expect(latestLineOf({ battle: b, symbol: 'XOM', held: false })).toEqual({ source: 'exit', text: 'Exit: lost VWAP twice.', atMs: Date.parse('2026-10-14T16:45:00.000Z'), recordId: 'e2' });
+    // A held name's exit flag too (the check flagged it to leave).
+    const held = battle([ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'Midday chop.', evidence: { XOM: { px: 110 } }, candidates: [{ symbol: 'XOM', direction: 'potential_exit', signalSummary: 'Exit: lost VWAP twice.' }] })]);
+    expect(latestLineOf({ battle: held, symbol: 'XOM', held: true }).source).toBe('exit');
+  });
+  it('the exit flag comes after a naming sentence and after a call (rule 3)', () => {
+    const b = battle([ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'XOM lost VWAP twice.', evidence: { XOM: { px: 110 } }, candidates: [{ symbol: 'XOM', direction: 'potential_exit', signalSummary: 'Exit.' }] })]);
+    expect(latestLineOf({ battle: b, symbol: 'XOM', held: true }).source).toBe('rationale');
+    const c = battle([ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'Midday chop.', evidence: { XOM: { px: 110 } }, candidates: [{ symbol: 'XOM', direction: 'potential_exit', signalSummary: 'Exit.' }] })]);
+    expect(latestLineOf({ battle: c, symbol: 'XOM', held: true, calls: [{ callId: 'k', symbol: 'XOM', said: 'XOM goes at the next check.', mintedAt: 9 }] }).source).toBe('call');
   });
   it('a potential_entry candidate is the bench flag', () => {
     const b = battle([ev('e2', '2026-10-14T16:45:00.000Z', { rationale: 'Nothing.', candidates: [{ symbol: 'XOM', direction: 'potential_entry', signalSummary: 'Back above VWAP.' }] })]);

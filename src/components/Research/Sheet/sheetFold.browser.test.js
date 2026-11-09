@@ -165,6 +165,39 @@ describe.skipIf(!BASE)('BC-2 — Layer 0 above the action row, measured in a rea
     } finally { await failed.ctx.close(); }
   }, ROW_TIMEOUT);
 
+  it('390×664 (Safari with its bars): the whole action row sits inside the visible viewport; Layer 0 may scroll (FQ-6, 2026-11-08)', async () => {
+    for (const f of LAYER0) {
+      const { ctx, page } = await open(390, 664, `sheetFixture=${f}`);
+      try {
+        await settle(page);
+        const a = await page.evaluate(() => {
+          const row = document.querySelector('[data-sheet-actions]').getBoundingClientRect();
+          const vv = window.visualViewport;
+          return { top: row.top, bottom: row.bottom, vTop: vv ? vv.offsetTop : 0, vBottom: vv ? vv.offsetTop + vv.height : innerHeight };
+        });
+        expect(a.top, f).toBeGreaterThanOrEqual(a.vTop);
+        expect(a.bottom, f).toBeLessThanOrEqual(a.vBottom + 0.5);
+      } finally { await ctx.close(); }
+    }
+  }, ROW_TIMEOUT * 5);
+
+  it('the sheet and Bomb mode on, a measured held stock in the red zone at open → 💣, not the sheet; outside the band → the sheet (FQ-9, 2026-11-08)', async () => {
+    // held_redzone opens on 💣, so the sheet root never mounts (open() waits for it): opened by hand.
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    try {
+      const page = await ctx.newPage();
+      await page.goto(`${BASE.replace(/\/$/, '')}/?sheetFixture=held_redzone`, { waitUntil: 'domcontentloaded', timeout: ROW_TIMEOUT });
+      await page.waitForSelector('[data-bomb-plot]', { timeout: ROW_TIMEOUT });
+      await page.waitForTimeout(1500);
+      expect(await page.$('[data-sheet-root]')).toBeNull();
+      expect(await page.$('[data-bomb-sheet]')).not.toBeNull();
+      const other = await ctx.newPage();
+      await other.goto(`${BASE.replace(/\/$/, '')}/?sheetFixture=held_tf&bomb=1`, { waitUntil: 'domcontentloaded', timeout: ROW_TIMEOUT });
+      await other.waitForSelector('[data-sheet-root]', { timeout: ROW_TIMEOUT });
+      expect(await other.$('[data-bomb-plot]')).toBeNull();
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT * 3);
+
   it('Bomb mode with the sheet on: the 💣 Fuse is never under the drawer (review D2)', async () => {
     for (const [w, h] of [[390, 844], [320, 568]]) {
       const { ctx, page } = await open(w, h, 'sheetFixture=held_tf&bomb=1');

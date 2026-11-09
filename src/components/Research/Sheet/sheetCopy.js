@@ -88,6 +88,8 @@ export const SHEET_COPY = Object.freeze({
   stanceBanked: (points) => `+${points} banked`,
   stanceBench: (time) => `On the bench · flagged at ${time}`,
   stanceUnexamined: 'Not examined in this game',
+  // FQ-2 (2026-11-08): a name a check examined, not held now.
+  stanceLooked: (time) => `Looked at ${time} · not held now`,
   stanceIdeaUnexamined: 'In this game’s idea · not examined',
   stanceIdea: (date) => `In this game’s idea · since ${date}`,
   ideaOpen: 'Tap to read the whole idea',
@@ -100,6 +102,8 @@ export const SHEET_COPY = Object.freeze({
   voiceNothing: 'From the record',
   voiceWho: (arch, time) => `${arch} · ${time}`,
   checkedNothingSaid: (time, sym) => `Checked at ${time} · nothing said about ${sym}`,
+  // FQ-5 (2026-11-08): an exit flag, quoted in its own words — never a bench flag.
+  voiceFlaggedExit: (time) => `What it flagged · exit · ${time}`,
   lastLookedAt: (time) => `Last looked at ${time}`,
   notLooked: (arch) => `${arch} hasn’t looked at this one`,
 

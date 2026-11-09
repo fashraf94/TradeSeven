@@ -56,7 +56,7 @@ import { measuredLadder, toGo } from '../BombMode/ladder.js';
 import { checkClock, etClock, etDate, etWeekday } from '../BombMode/checkClock.js';
 import { priceDecimals } from '../priceFormat.js';
 import { SHEET_COPY, RISK_WORDS, RISK_REASON_WORDS, REGIME_WORDS } from './sheetCopy.js';
-import { benchCandidateOf, latestCheckOn, latestRationaleEntry, namesSymbol } from './latestLine.js';
+import { benchCandidateOf, latestCheckOn, latestVoicedCheckOn, namesSymbol } from './latestLine.js';
 
 // ── The closed vocabularies (the server validates an Ask against them) ──────
 
@@ -675,9 +675,14 @@ export function stanceOf({ battle, symbol, nowMs, row, live }) {
     }
   } else {
     const bench = benchCandidateOf(battle, symbol);
+    const looked = bench ? null : latestVoicedCheckOn(battle, symbol);
     if (bench) {
       kind = 'bench';
       chips.push({ text: SHEET_COPY.stanceBench(whenLabel(recordMs(bench.entry.timestamp)) ?? ''), tone: 'amber' });
+    } else if (looked) {
+      // FQ-2 (2026-11-08): a check examined it (sold since, or an older list) — never "Not examined".
+      kind = 'looked';
+      chips.push({ text: SHEET_COPY.stanceLooked(whenLabel(recordMs(looked.timestamp)) ?? ''), tone: null });
     } else if (idea?.onList) {
       kind = 'idea_unexamined';
       chips.push({ text: SHEET_COPY.stanceIdeaUnexamined, tone: null });
@@ -719,8 +724,8 @@ export function recordPinsOf({ battle, symbol, nowMs, row, calls }) {
     const filed = recordMs(c.playerResponse?.filedAt);
     if (finite(filed)) markers.push({ id: `answer:${id}`, kind: 'answer', atMs: filed, label: SHEET_COPY.pinAnswer(whenLabel(filed)) });
   }
-  const latest = latestRationaleEntry(battle);
-  const check = latestCheckOn(battle, symbol) ?? (latest && namesSymbol(latest.rationale, symbol) ? latest : null);
+  // The check the voice line quotes (FQ-1): the latest that looked at the name and spoke.
+  const check = latestVoicedCheckOn(battle, symbol);
   const checkMs = recordMs(check?.timestamp);
   // The pin says what that check did for THIS stock: a name it only flagged (on its
   // candidates list, not held, no evidence of its own) was flagged, never "decided".

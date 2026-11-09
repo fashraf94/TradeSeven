@@ -317,3 +317,19 @@ Then include:
 - found on the way.
 
 Open a draft PR titled `feat(research-modal): Build C — the sheet in battle (packs, Ask, pins), dark`. Its body is the verdict table. **STOP.** The allowlist flip is a separate one-line PR after merge.
+
+---
+
+## Rulings and corrections — 2026-11-08 (founder, on the Build C report §12)
+
+The prompt above stays as it was given. These rulings, made on the build report (PR #1036), override it where they differ.
+
+1. **FQ-1 — BC-3 step 1.** Step 1 searches the latest check that LOOKED at the name (its evidence or its candidates) and quotes that check's first sentence naming it, attributed to that check's time. (Built reading: a check whose model call failed or was budget-skipped is not a check that looked — the A2 reading carried over.)
+2. **FQ-2 — BC-15.** A name not held now that a check examined reads *Looked at {time} · not held now*, never *Not examined in this game*.
+3. **FQ-3 — 💣 with the sheet on.** As built: the 💣 view keeps the modal's full chart height and the drawer moves down.
+4. **FQ-4 — the Ask.** As built: no second Ask of the same question on one opening.
+5. **FQ-5 — exit flags.** A `potential_exit` flag is quoted as *What it flagged · exit · {time}*, in its own words — never as a bench flag.
+6. **FQ-6 — the visible viewport.** In sheet mode only, the phone modal is sized from the visible viewport (`100dvh`, falling back to `100vh`), so the action row is never under Safari's toolbar. The chart keeps its sizes; Layer 0 may scroll where the visible viewport is shorter than the named sizes. A fold row at 390×664 asserts the whole action row sits inside the visible viewport. Mode off unchanged.
+7. **FQ-7 — axis tags.** Accepted as built: only the open line shows its price tag on the axis.
+8. **FQ-8 — §5's file list.** In scope. Data lines a repo guard demands — census, carriage, ratchet — are the same class as the ratchet baseline §5 lists: adding one for a new reader, in the same commit, is not a STOP.
+9. **FQ-9 — where the modal opens.** §5 decision 1 (the mounts open on the sheet) is accepted, with one exception: with Bomb mode also on, a measured held stock that is inside the red-zone band when the modal opens (the market open; Build A's red-zone machine; ≤ 0.5 %) opens on 💣 in the red zone instead of the sheet. Decided once at open, from the price the screen already holds; with no price yet, the sheet. Never switched after open.

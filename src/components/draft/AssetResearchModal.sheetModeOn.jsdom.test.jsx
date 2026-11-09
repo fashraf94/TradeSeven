@@ -65,7 +65,7 @@ vi.mock('firebase/firestore', async (importOriginal) => ({
 }));
 
 import { measuredSheetBattle, SHEET_NOW, RANKINGS } from '../Research/Sheet/__fixtures__/sheetBattles.js';
-import { selectBombRecord } from '../Research/BombMode/selectBombRecord.js';
+import { selectBombRecord, agentBombContext } from '../Research/BombMode/selectBombRecord.js';
 import { enrichHeldPosition } from '../../screens/AgentBattleScreen.jsx';
 import { buildResearchAsset } from '../../utils/researchAssetBuilder.js';
 import AssetResearchModal from './AssetResearchModal';
@@ -135,6 +135,93 @@ describe('BC-1 — the mount opens on the sheet: the Analysis tab, 1D, the arche
     await click($('[data-sheet-about]'));
     expect($('[data-sheet-about-body]').textContent).toContain('Apple makes phones.');
     expect(net.calls.filter((c) => c[0] === 'profile').length).toBe(profiles);
+  });
+});
+
+describe('Founder rulings 2026-11-08 on screen — an exit flag (FQ-5) and a name looked at, not held (FQ-2)', () => {
+  it('"What it flagged · exit · Wed 12:45", the flag in its own words, and the stance "Looked at Wed 12:45 · not held now"', async () => {
+    const b = JSON.parse(JSON.stringify(BATTLE));
+    b.evaluations[1].candidates.push({ symbol: 'XOM', direction: 'potential_exit', signalSummary: 'Exit: lost VWAP twice.' });
+    await open({ context: ctx({ battle: b, row: { held: false } }), symbol: 'XOM', battle: b });
+    expect($('[data-sheet-voice]').dataset.sheetVoice).toBe('exit');
+    const eyebrow = $('[data-sheet-voice]').firstElementChild.textContent;
+    expect(eyebrow).toContain('What it flagged · exit · Wed 12:45');
+    expect(eyebrow).not.toContain('Trend Follower ·');
+    expect($('[data-sheet-voice-line]').textContent).toBe('“Exit: lost VWAP twice.”');
+    expect($('[data-sheet-stance]').dataset.sheetStance).toBe('looked');
+    expect($('[data-sheet-stance]').textContent).toContain('Looked at Wed 12:45 · not held now');
+  });
+});
+
+describe('FQ-9 (2026-11-08) — with Bomb mode on, a measured held stock in the red zone at OPEN opens on 💣', () => {
+  const bombCtx = () => agentBombContext(BATTLE, 'AAPL', SHEET_NOW, { battleId: 'stock-battle', positionId: 'position-agent' });
+  const show = async ({ wsPrice, theAsset = asset(), controlledQuote } = {}) => {
+    await act(async () => {
+      root.render(<AssetResearchModal asset={theAsset} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb"
+        {...(wsPrice !== undefined ? { wsPrice } : {})} {...(controlledQuote ? { controlledQuote } : {})} sheetContext={ctx()} bombContext={bombCtx()} />);
+    });
+    await flush();
+  };
+  const series = () => net.calls.filter((c) => c[0] === 'history').map((c) => c[2]);
+  it('inside the band ($103.40: 0.36 % to +30) → the 💣 view and the Bomb tab, not the sheet', async () => {
+    await show({ wsPrice: 103.4 });
+    expect($('[data-sheet-root]')).toBeNull();
+    expect($('[data-bomb-sheet]')).toBeTruthy();
+    expect(series()).toContain('30m');
+  });
+  it('outside the band ($103.20: 0.55 %) → the sheet, on 1D', async () => {
+    await show({ wsPrice: 103.2 });
+    expect($('[data-sheet-root]')).toBeTruthy();
+    expect(series()).not.toContain('30m');
+  });
+  it('the held mount (its controlled quote) decides from that quote', async () => {
+    await show({ controlledQuote: { posKey: 'player:star:0', symbol: 'AAPL', price: 103.4, extremes: null } });
+    expect($('[data-sheet-root]')).toBeNull();
+    expect($('[data-bomb-sheet]')).toBeTruthy();
+  });
+  it('no price yet → the sheet', async () => {
+    await show({ theAsset: { ...asset(), price: 0, currentPrice: 0 } });
+    expect($('[data-sheet-root]')).toBeTruthy();
+  });
+  it('decided ONCE at open: a price that moves into the band after open never switches the sheet away …', async () => {
+    await show({ wsPrice: 103.2 });
+    expect($('[data-sheet-root]')).toBeTruthy();
+    await show({ wsPrice: 103.4 });
+    expect($('[data-sheet-root]')).toBeTruthy();
+    expect(series()).not.toContain('30m');
+  });
+  it('… and one that leaves the band never switches the 💣 view to the sheet', async () => {
+    await show({ wsPrice: 103.4 });
+    expect($('[data-sheet-root]')).toBeNull();
+    await show({ wsPrice: 103.2 });
+    expect($('[data-sheet-root]')).toBeNull();
+    expect($('[data-bomb-sheet]')).toBeTruthy();
+  });
+});
+
+describe('FQ-6 (2026-11-08) — on a phone, sheet mode sizes the modal from the visible viewport', () => {
+  const realWidth = window.innerWidth;
+  const realCSS = globalThis.CSS;
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', { value: realWidth, configurable: true, writable: true });
+    if (realCSS === undefined) delete globalThis.CSS; else globalThis.CSS = realCSS;
+  });
+  const modalBox = () => [...document.body.querySelectorAll('div')].find((d) => d.style.width === '100vw');
+  it('100dvh where the browser has it; 100vh where it does not; mode off keeps 100vh', async () => {
+    Object.defineProperty(window, 'innerWidth', { value: 390, configurable: true, writable: true });
+    globalThis.CSS = { supports: (p, v) => p === 'height' && v === '100dvh' };
+    await open();
+    expect(modalBox()?.style.height).toBe('100dvh');
+    act(() => root.unmount());
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="fundamental" wsPrice={103.2} />); });
+    await flush();
+    expect(modalBox()?.style.height).toBe('100vh');
+    act(() => root.unmount());
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    globalThis.CSS = { supports: () => false };
+    await open();
+    expect(modalBox()?.style.height).toBe('100vh');
   });
 });
 

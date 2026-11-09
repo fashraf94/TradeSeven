@@ -73,7 +73,8 @@ function Voice({ view, collapsed }) {
   const quoted = typeof l.text === 'string' && l.text;
   const eyebrow = l.source === 'rationale' ? SHEET_COPY.voiceDecided
     : l.source === 'call' ? SHEET_COPY.voiceCalled
-      : l.source === 'bench' ? SHEET_COPY.voiceFlagged : SHEET_COPY.voiceNothing;
+      : l.source === 'bench' ? SHEET_COPY.voiceFlagged
+        : l.source === 'exit' ? SHEET_COPY.voiceFlaggedExit(view.latestTime ?? '') : SHEET_COPY.voiceNothing;
   const line = quoted ? l.text
     : l.source === 'template_checked' ? SHEET_COPY.checkedNothingSaid(view.latestTime ?? '', view.symbol)
       : l.source === 'template_looked' ? SHEET_COPY.lastLookedAt(view.latestTime ?? '')
@@ -87,7 +88,7 @@ function Voice({ view, collapsed }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: collapsed ? 0 : 1, minWidth: 0 }}>
         <span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, color: ST.teal, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flexShrink: 1 }}>
           {eyebrow}
-          {view.latestWho && quoted && !collapsed && <span style={{ color: ST.ink3, fontWeight: 500 }}> · {view.latestWho}</span>}
+          {view.latestWho && quoted && !collapsed && l.source !== 'exit' && <span style={{ color: ST.ink3, fontWeight: 500 }}> · {view.latestWho}</span>}
         </span>
         {!collapsed && view.agentName && quoted && (
           <span data-sheet-agent-tag style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: ST.ink3, border: `1px solid ${ST.hair}`, borderRadius: 6, padding: '1px 6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '45%', minWidth: 0, flexShrink: 1 }}>{view.agentName}</span>

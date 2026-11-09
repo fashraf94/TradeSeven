@@ -32,6 +32,8 @@ import BombSheet from '../Research/BombMode/BombSheet';
 import useSheetView from '../Research/Sheet/useSheetView';
 import AnalysisSheet, { SheetActionRow } from '../Research/Sheet/AnalysisSheet';
 import { ST } from '../Research/Sheet/sheetTheme';
+import { visibleViewportHeight } from '../Research/Sheet/sheetViewport';
+import { opensInRedZone } from '../Research/Sheet/sheetOpen';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -209,7 +211,13 @@ const AssetResearchModal = ({
   // Build C: the sheet is shown for a stock or a crypto in battle (never an index or a sector ETF),
   // and the modal then opens on it — the Analysis tab, on 1D (BC-1, §1 "opens on one line and a question").
   const sheetOn = version >= 2 && sheetContext != null && typeof sheetContext === 'object' && !isIndexAsset && !isSectorETF;
-  const openTab = sheetOn ? 'fundamental' : defaultTab;
+  // FQ-9 (founder ruling 2026-11-08): with Bomb mode also on, a measured held stock
+  // inside the red-zone band when the modal OPENS opens on 💣 in the red zone, not the
+  // sheet. Decided ONCE, at open, from the price the screen already holds (none yet →
+  // the sheet); never switched after open (this state is never set again).
+  const [sheetOpensOnBomb] = useState(() => sheetOn && version >= 2 && bombContext != null && typeof bombContext === 'object'
+    && opensInRedZone({ bombContext, symbol: asset?.symbol, live: controlledMode ? controlledPrice : (wsPrice || asset?.price || asset?.currentPrice || null), nowMs: Date.now(), isCrypto }));
+  const openTab = sheetOpensOnBomb ? 'baggerbomb' : sheetOn ? 'fundamental' : defaultTab;
 
   const isGameContext = isGameContextProp !== undefined
     ? isGameContextProp
@@ -307,7 +315,7 @@ const AssetResearchModal = ({
     isCrypto: isCrypto,
     // A mount that loses the 💣 view (BA-5) opens on 1D, never fetching the bomb series it cannot show;
     // the sheet (Build C) opens on 1D, the chart its record is pinned to.
-    initialTimeframe: sheetOn || (bombHidden && (defaultTimeframe === 'bomb' || defaultTimeframe === 'spectate')) ? '1D' : defaultTimeframe,
+    initialTimeframe: sheetOpensOnBomb ? 'bomb' : sheetOn || (bombHidden && (defaultTimeframe === 'bomb' || defaultTimeframe === 'spectate')) ? '1D' : defaultTimeframe,
     technicalActive: activeTab === 'technical',
     srRequested: srOn,
     ...(controlledMode ? { controlled: { extremes: controlledValid ? (controlledQuote.extremes || null) : null } } : {}),
@@ -624,7 +632,9 @@ const AssetResearchModal = ({
   const v2ModalStyle = version >= 2 ? (
     isMobile ? {
       width: '100vw',
-      height: '100vh',
+      // FQ-6 (2026-11-08): in sheet mode, the visible viewport (100dvh, else 100vh) —
+      // the action row is never under Safari's toolbar. Mode off: 100vh, as before.
+      height: sheetOn ? visibleViewportHeight() : '100vh',
       top: 0,
       left: 0,
       transform: 'none',

@@ -265,6 +265,23 @@ describe('BC-15 — the stance', () => {
     expect(stance(BATTLES.momentum_chaser, 'KO')).toMatchObject({ kind: 'unexamined', chips: [{ text: 'Not examined in this game' }] });
     expect(stance(BATTLES.momentum_chaser, 'MSFT')).toMatchObject({ kind: 'idea_unexamined', chips: [{ text: 'In this game’s idea · not examined' }] });
   });
+  it('a name a check examined, not held now: "Looked at {time} · not held now" — never "Not examined" (FQ-2, 2026-11-08)', () => {
+    const b = JSON.parse(JSON.stringify(BATTLES.momentum_chaser));
+    b.evaluations.unshift({ evalId: 'e0', timestamp: '2026-10-13T15:00:00.000Z', rationale: 'XOM lost VWAP, so it goes.', evidence: { XOM: { px: 110 } } });
+    expect(stance(b, 'XOM')).toMatchObject({ kind: 'looked', chips: [{ text: 'Looked at Tue 11:00 · not held now' }] });
+  });
+  it('an exit-flagged name not held reads "Looked at" its flagging check; on the frozen list it also carries the idea chip (FQ-2)', () => {
+    const b = JSON.parse(JSON.stringify(BATTLES.momentum_chaser));
+    b.evaluations[1].candidates.push({ symbol: 'XOM', direction: 'potential_exit', signalSummary: 'Exit: lost VWAP twice.' });
+    expect(stance(b, 'XOM').chips.map((c) => c.text)).toEqual(['Looked at Wed 12:45 · not held now']);
+    b.evaluations[0].evidence.MSFT = { px: 410 };
+    expect(stance(b, 'MSFT')).toMatchObject({ kind: 'looked', chips: [{ text: 'Looked at Wed 11:30 · not held now' }, { text: 'In this game’s idea · since Tue 10/13' }] });
+  });
+  it('a FAILED check that stamped the name is not a look: still "Not examined" (the A2 reading)', () => {
+    const b = JSON.parse(JSON.stringify(BATTLES.momentum_chaser));
+    b.evaluations.push({ evalId: 'e9', timestamp: '2026-10-14T16:50:00.000Z', rationale: 'Haiku call failed — defaulting to HOLD', evidence: { KO: { px: 68 } }, haikuError: { failureClass: 'timeout', evalId: 'e9' } });
+    expect(stance(b, 'KO').kind).toBe('unexamined');
+  });
   it("the CPU's row of a shared ticker is not the agent's holding (Build A's row identity)", () => {
     expect(stance(BATTLES.momentum_chaser, 'AAPL', { row: { positionId: 'position-cpu' } }).kind).not.toMatch(/^held/);
   });
