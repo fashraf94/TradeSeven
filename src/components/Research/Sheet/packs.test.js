@@ -338,6 +338,12 @@ describe('BC-8 — the record pinned', () => {
     const pins = recordPinsOf({ battle: BATTLES.momentum_chaser, symbol: 'NVDA', nowMs: SHEET_NOW, row: {}, calls: [] });
     expect(pins.markers.map((m) => [m.kind, m.label])).toEqual([['check', 'What it flagged · Wed 12:45']]);
   });
+  it('the check pin names the check the voice line quotes: a newer FAILED check that stamped the name is skipped (FQ-1)', () => {
+    const b = JSON.parse(JSON.stringify(BATTLES.momentum_chaser));
+    b.evaluations.push({ evalId: 'e9', timestamp: '2026-10-14T16:55:00.000Z', rationale: 'Haiku call failed — defaulting to HOLD', evidence: { AAPL: { px: 103.3 } }, haikuError: { failureClass: 'timeout', evalId: 'e9' } });
+    const check = recordPinsOf({ battle: b, symbol: 'AAPL', nowMs: SHEET_NOW, row: ROW, calls: [] }).markers.find((m) => m.kind === 'check');
+    expect([check.id, check.label]).toEqual(['check:e2', 'What it decided · Wed 12:45']);
+  });
   it('a HELD name the check also listed (an exit flag) keeps "What it decided": the check had its evidence', () => {
     const b = JSON.parse(JSON.stringify(BATTLES.momentum_chaser));
     b.evaluations[1].candidates.push({ symbol: 'AAPL', direction: 'potential_exit', signalSummary: 'Exit: lost VWAP.' });
