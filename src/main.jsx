@@ -37,7 +37,13 @@ const root = createRoot(document.getElementById('root'));
 // Vite dev server or on a Vercel preview host, never on production
 // (src/components/League/backing/backingPreview.js decides); anywhere else the
 // app renders exactly as before. The page is its own lazily loaded chunk.
-if (backingPreviewRequested(window.location, { DEV: import.meta.env.DEV, VITE_VERCEL_ENV: import.meta.env.VITE_VERCEL_ENV })) {
+// SMOKE ONLY, NEVER MERGE — Research Modal Build C spec §8: the sheet fixture loader.
+const sheetFixture = new URLSearchParams(window.location.search).get('sheetFixture');
+if (sheetFixture) {
+  import('./smoke/SheetSmokeScreen')
+    .then((m) => { root.render(<m.default state={sheetFixture} />); })
+    .catch((err) => console.error('[SheetSmoke] the fixture page failed to load:', err));
+} else if (backingPreviewRequested(window.location, { DEV: import.meta.env.DEV, VITE_VERCEL_ENV: import.meta.env.VITE_VERCEL_ENV })) {
   import('./screens/BackingPreviewScreen')
     .then((preview) => {
       const BackingPreviewScreen = preview.default;
