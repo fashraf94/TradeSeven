@@ -103,6 +103,17 @@ export function classifyTick(tick) {
   return null;
 }
 
+/**
+ * Is this battle in the release cohort? Agent mode, a real (non-CPU, non-empty) owner, and — with the allowlist in the shell — not
+ * allowlisted; without it, the control document's own bucket test (`inCohort`); null when neither is available (not determinable).
+ * Pure; carries no id.
+ */
+export function cohortFlagOf(b, { allowlist = null, inCohort = null } = {}) {
+  const agentReal = b?.gameMode === 'baggerbomb_agent' && b?.isCpu !== true && typeof b?.ownerId === 'string' && b.ownerId.length > 0;
+  if (allowlist) return agentReal && !allowlist.has(b.ownerId);
+  return inCohort ? inCohort(b) : null;
+}
+
 /** Owner ordinals ("owner1" …), assigned in memory in sorted order; the ids themselves are never kept in any result. */
 export function ordinalsOf(ownerIds) {
   const map = new Map();
@@ -359,10 +370,7 @@ async function main() {
     const b = doc.data();
     if (b.isCpu === true) continue; // CPU seats never call the model and never resolve `on`
     const ref = db.collection('agentBattles').doc(doc.id);
-    // Is this battle in the release cohort? agent mode, a real owner, and — with the allowlist in the shell — not allowlisted, else
-    // by the control document's own bucket test; null when neither is available. The tick carries only the flag, never the owner.
-    const isAgentReal = b.gameMode === 'baggerbomb_agent' && b.isCpu !== true && typeof b.ownerId === 'string' && b.ownerId.length > 0;
-    const cohort = allowlist ? (isAgentReal && !allowlist.has(b.ownerId)) : (inCohort ? inCohort(b) : null);
+    const cohort = cohortFlagOf(b, { allowlist, inCohort }); // the tick carries only this flag, never the owner
     const ts = (await ref.collection('ticks').select('schemaVersion', 'capturedAt', 'model', 'callEnvelope').get()).docs.map((t) => ({ ...t.data(), cohort }));
     ticks.push(...ts);
     const onDays = new Set(ts.filter((t) => classifyTick(t) === 'on').map((t) => etDay(toMs(t.capturedAt))));

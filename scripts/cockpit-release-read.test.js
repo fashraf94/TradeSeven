@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  classifyTick, evaluatorRead, checksRead, answersRead, cohortRead, sweepLagRead, costRead, renderStage, ordinalsOf, sessionDays, etDay, toMs,
+  classifyTick, cohortFlagOf, evaluatorRead, checksRead, answersRead, cohortRead, sweepLagRead, costRead, renderStage, ordinalsOf, sessionDays, etDay, toMs,
   percentile, WALL_TRIP_MS, ON_ERA_START_MS, ON_EXTRA_USD_PER_CHECK, HAIKU_PRICE_PER_MTOK,
 } from './cockpit-release-read.mjs';
 
@@ -186,6 +186,29 @@ describe('the release-cohort battle count — by owner ordinal, never by id', ()
   });
 });
 
+describe('the per-battle cohort flag that tags each tick', () => {
+  const b = (over = {}) => ({ gameMode: 'baggerbomb_agent', isCpu: false, ownerId: 'zz-bob', ...over });
+  it('with the allowlist: agent mode, a real owner, outside it — League, a CPU seat, an empty owner and an allowlisted owner are not the cohort', () => {
+    const allowlist = new Set(['zz-alice']);
+    expect(cohortFlagOf(b(), { allowlist })).toBe(true);
+    expect(cohortFlagOf(b({ ownerId: 'zz-alice' }), { allowlist })).toBe(false);
+    expect(cohortFlagOf(b({ gameMode: 'baggerbomb_tournament' }), { allowlist })).toBe(false);
+    expect(cohortFlagOf(b({ isCpu: true }), { allowlist })).toBe(false);
+    expect(cohortFlagOf(b({ ownerId: '' }), { allowlist })).toBe(false);
+    expect(cohortFlagOf(b({ ownerId: null }), { allowlist })).toBe(false);
+  });
+  it('without the allowlist: the control document\'s bucket test decides; with neither, null — never a guess', () => {
+    expect(cohortFlagOf(b(), { inCohort: () => true })).toBe(true);
+    expect(cohortFlagOf(b(), { inCohort: () => false })).toBe(false);
+    expect(cohortFlagOf(b(), {})).toBeNull();
+    expect(cohortFlagOf(b())).toBeNull();
+  });
+  it('main() tags every tick through it (not an inline copy)', () => {
+    const src = readFileSync(resolve(HERE, 'cockpit-release-read.mjs'), 'utf8');
+    expect(src).toContain('const cohort = cohortFlagOf(b, { allowlist, inCohort });');
+  });
+});
+
 describe('sweep lag', () => {
   const NOW = Date.parse('2026-11-13T20:00:00Z');
   const call = (stateSource, changed, due) => ({ stateSource, stateChangedAt: Date.parse(changed), horizon: { expiresAt: Date.parse(due) } });
@@ -305,7 +328,7 @@ describe('the script is read-only, needs no uid and prints no id', () => {
     expect(src).toContain('deadlineOf: callDeadlineMs');
   });
   it('the arm is read from the tick\'s own schemaVersion, never from the owner', () => {
-    const fn = src.slice(src.indexOf('export function classifyTick'), src.indexOf('/** Owner ordinals'));
+    const fn = src.slice(src.indexOf('export function classifyTick'), src.indexOf('/**\n * Is this battle in the release cohort?'));
     expect(fn).toMatch(/schemaVersion/);
     expect(fn).not.toMatch(/ownerId|allowlist/);
   });
