@@ -48,7 +48,8 @@ describe('E7: membership from the two readers (huddleMemberOf) — positive evid
 
 describe('the next action (C6): a game in session → Huddle ready → a game waiting for the open → a review → the first deployment', () => {
   const huddle = huddleCandidateOf(read(record()), OPEN - 3_600_000);
-  const inSession = { id: 'g1', preOpen: false, mode: 'BaggerBomb', opponent: 'CPU', clock: 'ends 4:00 PM' };
+  // Amendment E §E6 re-pinned this row: a game is in session by its own `inSession` (the market open), never by `preOpen` alone
+  const inSession = { id: 'g1', preOpen: false, inSession: true, mode: 'BaggerBomb', opponent: 'CPU', clock: 'ends 4:00 PM' };
   const preOpen = { id: 'g2', preOpen: true, mode: 'Ranked', opponent: 'Pod', clock: 'waiting for the open' };
   const base = { battles: [], rowsById: new Map(), firstDeployment: true, liveResolved: true };
 

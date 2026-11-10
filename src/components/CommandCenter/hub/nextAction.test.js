@@ -367,3 +367,56 @@ describe("the review title's day (S8-4)", () => {
     expect(d.title).not.toMatch(/2026/);
   });
 });
+
+// Huddle S1.1 — Amendment E §E6 (the Command Center chat's ruling L3-11): a game is IN SESSION only while its market session
+// is open (derivePhase === LIVE). A multi-day game between sessions (LIVE_CLOSED) is deployed and waiting, ranked with a
+// PRE_OPEN game, BELOW "Huddle ready". Order: a game in session → Huddle ready → a game waiting → a review → the first
+// deployment. Row 2 is the regression pin (it failed on the old `row.preOpen !== true` predicate).
+describe('E6 — "in session" means the market session is open (L3-11)', () => {
+  const ET = '2026-10-23';
+  const huddleReady = { key: 'huddle', id: ET, title: COPY.huddle.readyTitle, why: COPY.huddle.readyWhy, cta: COPY.huddle.open, laterKey: `huddle:${ET}` };
+  const OPEN_MARKET = { state: 'OPEN', isOpen: true };
+  const BEFORE_OPEN = { state: 'CLOSED_PREMARKET', isOpen: false };
+  // a multi-day game already scored (evaluated), and one not scored yet
+  const scoredMultiDay = live('bb_multi', { expiresAt: iso(NOW + 50 * 3600 * 1000), scoreState: { currentScore: 3.1, tradeCount: 1, evaluationCount: 4, lastScoredAt: iso(NOW - 15 * 3600 * 1000) } });
+  const unscored = live('rk_wait', { scoreState: { currentScore: 0, tradeCount: 0, evaluationCount: 0, lastScoredAt: null } });
+  const rowsFor = (marketState, docs) => inputs({ liveDocs: docs, marketState });
+
+  it('liveGameRows: inSession is exactly derivePhase === LIVE, beside preOpen; a scored multi-day game before the open is neither', () => {
+    expect(rowsFor(OPEN_MARKET, [scoredMultiDay]).liveRows[0]).toMatchObject({ inSession: true, preOpen: false });
+    expect(rowsFor(BEFORE_OPEN, [scoredMultiDay]).liveRows[0]).toMatchObject({ inSession: false, preOpen: false });
+    expect(rowsFor(BEFORE_OPEN, [unscored]).liveRows[0]).toMatchObject({ inSession: false, preOpen: true });
+  });
+
+  it('row 1 — market open, a scored multi-day game (LIVE), Huddle ready: the game', () => {
+    const c = deriveNextAction({ ...rowsFor(OPEN_MARKET, [scoredMultiDay]), liveResolved: true, huddle: huddleReady }).candidate;
+    expect(c).toMatchObject({ key: NEXT_ACTION_KINDS.OPEN_GAME, id: 'bb_multi' });
+  });
+
+  it('row 2 (the regression pin) — closed before the open, a scored multi-day game (LIVE_CLOSED), Huddle ready: THE HUDDLE; the game is next', () => {
+    const args = { ...rowsFor(BEFORE_OPEN, [scoredMultiDay]), liveResolved: true, huddle: huddleReady };
+    expect(deriveNextAction(args).candidate).toMatchObject({ key: 'huddle', laterKey: `huddle:${ET}` });
+    expect(deriveNextAction({ ...args, dismissed: new Set([`huddle:${ET}`]) }).candidate).toMatchObject({ key: NEXT_ACTION_KINDS.OPEN_GAME, id: 'bb_multi' });
+  });
+
+  it('row 3 — closed before the open, an unscored game (PRE_OPEN), Huddle ready: the Huddle; the game is next', () => {
+    const args = { ...rowsFor(BEFORE_OPEN, [unscored]), liveResolved: true, huddle: huddleReady };
+    expect(deriveNextAction(args).candidate).toMatchObject({ key: 'huddle' });
+    expect(deriveNextAction({ ...args, dismissed: new Set([`huddle:${ET}`]) }).candidate).toMatchObject({ key: NEXT_ACTION_KINDS.OPEN_GAME, id: 'rk_wait', title: COPY.nextAction.preOpenTitle });
+  });
+
+  it('row 4 — closed before the open, LIVE_CLOSED, no Huddle or the Huddle set aside (huddle:{etDate}): the game', () => {
+    expect(deriveNextAction({ ...rowsFor(BEFORE_OPEN, [scoredMultiDay]), liveResolved: true, huddle: null }).candidate).toMatchObject({ key: NEXT_ACTION_KINDS.OPEN_GAME, id: 'bb_multi' });
+    expect(deriveNextAction({ ...rowsFor(BEFORE_OPEN, [scoredMultiDay]), liveResolved: true, huddle: huddleReady, dismissed: new Set([`huddle:${ET}`]) }).candidate).toMatchObject({ key: NEXT_ACTION_KINDS.OPEN_GAME, id: 'bb_multi' });
+  });
+
+  it('row 5 — closed before the open, LIVE_CLOSED, Huddle ready, the live poll not answered (liveResolved === false): loading', () => {
+    expect(deriveNextAction({ ...rowsFor(BEFORE_OPEN, [scoredMultiDay]), liveResolved: false, huddle: huddleReady })).toEqual({ status: 'loading', candidate: null });
+  });
+
+  it('a game in session still outranks the Huddle, and the non-Huddle live rule is unchanged (a LIVE_CLOSED game is still the first live card with no Huddle)', () => {
+    const both = rowsFor(OPEN_MARKET, [unscored, scoredMultiDay]);
+    expect(deriveNextAction({ ...both, liveResolved: true, huddle: huddleReady }).candidate).toMatchObject({ key: NEXT_ACTION_KINDS.OPEN_GAME });
+    expect(deriveNextAction({ ...rowsFor(BEFORE_OPEN, [scoredMultiDay]), liveResolved: true }).candidate).toMatchObject({ key: NEXT_ACTION_KINDS.OPEN_GAME, id: 'bb_multi' });
+  });
+});

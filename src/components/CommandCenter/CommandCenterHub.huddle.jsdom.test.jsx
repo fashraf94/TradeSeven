@@ -39,7 +39,9 @@ const NOW = Date.UTC(2026, 9, 23, 13, 0);
 const UID = 'uid-A';
 const iso = (ms) => new Date(ms).toISOString();
 const HOUR = 3600 * 1000;
-// A ranked game deployed and waiting for the open, and a multi-day BaggerBomb game already scored (in session).
+// A ranked game deployed and waiting for the open, and a multi-day BaggerBomb game already scored. Before the open the scored
+// game is LIVE_CLOSED — deployed and waiting, below "Huddle ready" (Amendment E §E6, ruling L3-11); with the market open it is
+// in session, above it.
 const RANKED_PREOPEN = { id: 'rk_wait', ownerId: UID, agentId: 'agent-a', groupId: 'g1', status: 'active', activatedAt: iso(NOW - HOUR), expiresAt: iso(NOW + 8 * HOUR), scoreState: { currentScore: 0, tradeCount: 0, evaluationCount: 0, lastScoredAt: null } };
 const BB_SCORED = { id: 'bb_live', ownerId: UID, agentId: `casual-agent-${UID}`, status: 'active', activatedAt: iso(NOW - 20 * HOUR), expiresAt: iso(NOW + 30 * HOUR), scoreState: { currentScore: 3.1, tradeCount: 1, evaluationCount: 4, lastScoredAt: iso(NOW - 15 * HOUR) } };
 const HUDDLE = {
@@ -113,12 +115,21 @@ describe('the hub with the Huddle on (review L3-6)', () => {
   });
 
   it('L3-1: a game in session outranks the Huddle, and the card\'s Open opens THAT game, not the ranked game waiting for the open', async () => {
-    const hub = hubOf({ activeBattles: [RANKED_PREOPEN, BB_SCORED] });
+    // E6 re-pinned this row: a game is in session only with its market OPEN; the ranked game starts on a later day (PRE_OPEN)
+    r.market = { state: 'OPEN', isOpen: true };
+    const hub = hubOf({ activeBattles: [{ ...RANKED_PREOPEN, timing: { tradingDays: ['2026-10-26'] } }, BB_SCORED] });
     await render('desktop', hub);
     expect(nextCard().getAttribute('data-hub-next-action')).toBe('openGame');
     click(byRole(nextCard(), 'button', COPY.nextAction.openGame)[0]);
     expect(hub.openGame).toHaveBeenCalledTimes(1);
     expect(hub.openGame.mock.calls[0][0].id).toBe('bb_live');
+  });
+
+  it('E6 (L3-11): BEFORE the open, a multi-day game already scored (LIVE_CLOSED) waits below "Huddle ready"; Later on the Huddle shows that game', async () => {
+    await render('desktop', hubOf({ activeBattles: [BB_SCORED] }));
+    expect(nextCard().getAttribute('data-hub-next-action')).toBe('huddle');
+    await act(async () => { click(byRole(nextCard(), 'button', COPY.nextAction.later)[0]); await Promise.resolve(); });
+    expect(nextCard().getAttribute('data-hub-next-action')).toBe('openGame');
   });
 
   it('Partnership\'s summary beside Shadow says today\'s plan, not "Not in this release"', async () => {
