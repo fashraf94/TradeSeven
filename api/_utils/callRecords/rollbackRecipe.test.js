@@ -277,12 +277,16 @@ describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
   });
 
   it('the read script carries --rollback-check, reads the allowlist through the server reader, and is read-only', () => {
-    const src = readFileSync(resolve(HERE, '../../../scripts/shadow-read-call-records.mjs'), 'utf8');
+    const raw = readFileSync(resolve(HERE, '../../../scripts/shadow-read-call-records.mjs'), 'utf8').replace(/\r\n/g, '\n');
+    // Comment-stripped: a wiring line that is merely COMMENTED OUT must not satisfy a pin (RS-L4-4 / B3b, B5).
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
     expect(src).toContain("args.includes('--rollback-check')");
     expect(src).toContain('computeRollbackCheck(battles, { allowlist: readCockpitAllowlist(), cohort, nowMs: readAtMs, sinceMs })');
     // The release cohort (BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): one forced read of the control document, through release.js.
     expect(src).toContain("import { ensureReleaseView, getReleaseView } from '../api/_utils/callRecords/release.js';");
     expect(src).toContain('await ensureReleaseView(db, { force: true, timeoutMs: 10_000 });');
+    expect(src).toContain('const cohort = getReleaseView();'); // the view that was just read is the one pooled (B2: `const cohort = null`)
+    expect(src.indexOf('await ensureReleaseView(db, { force: true')).toBeLessThan(src.indexOf('const cohort = getReleaseView();'));
     expect(src).toContain("if (rollbackCheck?.verdict === 'NO ALLOWLIST') process.exitCode = 2;");
     // --since is REQUIRED with --rollback-check: no run can silently pool an earlier era (fail closed).
     expect(src).toContain("if (wantRollbackCheck && !sinceArg) throw new Error('--rollback-check needs --since=<ISO instant>");

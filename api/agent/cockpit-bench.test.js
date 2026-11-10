@@ -42,7 +42,7 @@ vi.mock('../_utils/firebaseAdmin.js', () => {
   return { getFirebaseAdmin: () => ({ collection: (name) => ({ doc: (id) => docRef(`${name}/${id}`) }) }) };
 });
 
-const { resetReleaseView, bucketOf } = await import('../_utils/callRecords/release.js'); // the real module, never mocked
+const { resetReleaseView } = await import('../_utils/callRecords/release.js'); // the real module, never mocked
 const { default: handler, resetCockpitBenchRateLimit, buildBenchRows, benchPriceRows, COCKPIT_BENCH_USER_RATE_LIMIT, BENCH_ROW_STATUSES } = await import('./cockpit-bench.js');
 
 const NOW = Date.parse('2026-10-15T17:00:00.000Z');
@@ -239,7 +239,6 @@ describe('the release cohort — the bench read follows the resolver', () => {
     const res = await get();
     expect(res.statusCode).toBe(200);
     expect(state.controlReads).toEqual(['cockpitConfig/release']);
-    expect(bucketOf('owner-uid-1', 'salt-a')).toBeLessThan(10000);
   });
   it('League, a CPU seat, a disabled, a missing and a malformed document → 404 cockpit_unavailable', async () => {
     for (const [control, over, why] of [[CONTROL, { gameMode: 'baggerbomb_tournament' }, 'League'], [CONTROL, { isCpu: true }, 'CPU seat'], [{ ...CONTROL, disabled: true }, {}, 'disabled'], [undefined, {}, 'missing'], [{ shareBp: -5, disabled: false, salt: 's' }, {}, 'malformed']]) {

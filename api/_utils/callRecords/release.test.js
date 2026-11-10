@@ -540,3 +540,78 @@ describe('a failed read — the cost is bounded: a late landing corrects the cac
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------- review round 1, lens 4 (test integrity)
+
+describe('lens 4 — fail-closed against an ACTIVE view, the default bound, the timeout TTL, force vs an in-flight read, the timer', () => {
+  beforeEach(() => { resetReleaseView(); vi.spyOn(console, 'warn').mockImplementation(() => {}); });
+  afterEach(() => { resetReleaseView(); vi.useRealTimers(); vi.restoreAllMocks(); });
+  /** Each read follows the next step ({ data | throws | hang | delay }); the last repeats. */
+  function scripted(steps) {
+    let n = 0;
+    const calls = [];
+    return {
+      calls,
+      collection: () => ({ doc: () => ({ get: async () => {
+        const s = steps[Math.min(n, steps.length - 1)]; n += 1; calls.push(s);
+        if (s.hang) return new Promise(() => {});
+        if (s.delay) await new Promise((r) => setTimeout(r, s.delay));
+        if (s.throws) throw new Error('down');
+        return { exists: s.data !== undefined, data: () => s.data };
+      } }) }),
+    };
+  }
+  const T = 7_000_000;
+
+  it('RS-L4-2: an ACTIVE view followed by an error, a hang, a deleted document or a Console typo is an EMPTY cohort — never kept (no fail-open until the 10-minute cut-off)', async () => {
+    for (const [label, second] of [
+      ['error', { throws: true }], ['hang', { hang: true }], ['deleted', { data: undefined }],
+      ['typo', { data: { shareBp: '500', disabled: false, salt: 's' } }], ['disabled', { data: { ...GOOD, disabled: true } }],
+    ]) {
+      resetReleaseView();
+      const db = scripted([{ data: GOOD }, second]);
+      await ensureReleaseView(db, { nowMs: T });
+      expect(getReleaseView({ nowMs: T }).active, `${label}: first`).toBe(true);
+      await ensureReleaseView(db, { nowMs: T + RELEASE_VIEW_TTL_MS, timeoutMs: 20 });
+      expect(getReleaseView({ nowMs: T + RELEASE_VIEW_TTL_MS }).active, label).toBe(false);
+      expect(db.calls, label).toHaveLength(2);
+    }
+  });
+
+  it('RS-L4-5: the DEFAULT bound is the 1,500 ms constant — a read that never answers is a timeout at about 1.5 s, not 60 s', async () => {
+    vi.useFakeTimers();
+    const p = ensureReleaseView(scripted([{ hang: true }]));
+    let done = false;
+    p.then(() => { done = true; });
+    await vi.advanceTimersByTimeAsync(RELEASE_READ_TIMEOUT_MS - 1);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(done).toBe(true);
+    expect(await p).toMatchObject({ status: 'timeout', active: false });
+  });
+
+  it('RS-L4-6 (R5): a TIMEOUT view is remembered for at most 15 s too, not the full 60 s', async () => {
+    const db = scripted([{ hang: true }, { data: GOOD }]);
+    await ensureReleaseView(db, { nowMs: T, timeoutMs: 10 });
+    expect(db.calls).toHaveLength(1);
+    await ensureReleaseView(db, { nowMs: T + RELEASE_FAILURE_TTL_MS - 1, timeoutMs: 10 });
+    expect(db.calls).toHaveLength(1);
+    await ensureReleaseView(db, { nowMs: T + RELEASE_FAILURE_TTL_MS, timeoutMs: 10 });
+    expect(db.calls).toHaveLength(2);
+    expect(getReleaseView({ nowMs: T + RELEASE_FAILURE_TTL_MS }).active).toBe(true);
+  });
+
+  it('RS-L4-6 (R6): a FORCED read never joins an in-flight non-forced one — it makes its own read', async () => {
+    const db = scripted([{ delay: 30, data: GOOD }]);
+    const slow = ensureReleaseView(db);
+    const forced = ensureReleaseView(db, { force: true });
+    await Promise.all([slow, forced]);
+    expect(db.calls).toHaveLength(2);
+  });
+
+  it('RS-L4-6 (R7): the bound timer is cleared once the read settles — none is left armed (a CLI would linger for its whole bound)', async () => {
+    vi.useFakeTimers();
+    await ensureReleaseView(scripted([{ data: GOOD }]), { timeoutMs: 10_000 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

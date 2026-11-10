@@ -661,6 +661,13 @@ describe('the release cohort in the sweep — one control read a run, before any
     expect(callsOf(db, B1)[`${B1}:eval_001:call:0`].state).toBe('expired_unresolved');
   });
 
+  it('the sweep reads the control document on EVERY run, even with a fresh cached view (force): two runs inside the 60 s TTL → two reads (S12)', async () => {
+    const { db, controlReads } = cohortDb(CONTROL);
+    await run(db);
+    await run(db);
+    expect(controlReads.n).toBe(2);
+  });
+
   it('a failing control read is NOT retried by the sweep (it has a budget to protect): exactly one attempt, then the allowlist alone decides (RS-L2-1 / M50)', async () => {
     const { db } = cohortDb(CONTROL, { ownerId: 'owner-on' });
     const collection = db.collection;

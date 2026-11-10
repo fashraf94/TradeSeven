@@ -138,6 +138,20 @@ describe('the census: the files that use the resolver are exactly the wired ones
       'api/agent/call-response.js', 'api/agent/chat.js', 'api/agent/cockpit-bench.js', 'api/agent/cockpit-status.js', 'api/agent/file-directive.js', 'api/cron/agent-evaluate.js',
     ]);
   });
+  it('each wired file uses the resolver EXACTLY as often as today — a second resolver site inside a listed file (an export, a helper, a second call) is a new site that needs its own decision about its view (RS-L4-3 / S18, S19)', () => {
+    // [resolveCallRecordsMode identifiers, isReleaseCohortBattle identifiers] — an import line and one call, per handler; the sweep has three calls.
+    const EXPECTED = {
+      'api/_utils/callRecords/mode.js': [1, 2], 'api/_utils/callRecords/sweep.js': [4, 0], 'api/_utils/huddle/applyPlan.js': [2, 0], 'api/_utils/huddle/applyRules.js': [2, 0],
+      'api/agent/call-response.js': [2, 0], 'api/agent/chat.js': [2, 0], 'api/agent/cockpit-bench.js': [2, 0], 'api/agent/cockpit-status.js': [2, 0],
+      'api/agent/file-directive.js': [2, 0], 'api/cron/agent-evaluate.js': [2, 0],
+    };
+    const count = (c, id) => (c.match(new RegExp(`\\b${id}\\b`, 'g')) || []).length;
+    const got = Object.fromEntries(sources().filter((s) => EXPECTED[s.rel]).map((s) => [s.rel, [count(s.c, 'resolveCallRecordsMode'), count(s.c, 'isReleaseCohortBattle')]]));
+    expect(got).toEqual(EXPECTED);
+    // and the planted second site is seen: one more identifier in chat.js moves its count
+    const chat = sources().find((s) => s.rel === 'api/agent/chat.js').c;
+    expect(count(`${chat}\nexport const __probe = (b) => resolveCallRecordsMode(b);`, 'resolveCallRecordsMode')).toBe(EXPECTED['api/agent/chat.js'][0] + 1);
+  });
   it('no namespace import of mode.js (a `mode["resolveCallRecordsMode"]` call would hide from the census), and no re-export of the resolver', () => {
     for (const s of sources()) {
       expect(s.c, s.rel).not.toMatch(/import \* as \w+ from '[^']*callRecords\/mode\.js'/);
@@ -175,6 +189,17 @@ describe('planted defects: each check fails on the mutation it names (a guard th
       }
       // the import dropped
       expect(problemsOfHandler(src.replace(', ensureReleaseView', ''), spec).length).toBeGreaterThan(0);
+      // each check names its own problem (RS-L4-9): an anchor that is gone, a resolver that is gone, an ensure that sits inside the transaction
+      expect(problemsOfHandler(src, { ...spec, resolver: 'noSuchResolver(' })).toContain('resolver anchor not found');
+      if (spec.before) {
+        expect(problemsOfHandler(src, { ...spec, before: 'db.noSuchTransaction(' })).toContain('transaction anchor not found');
+        const lines = src.split('\n');
+        const at = lines.findIndex((l) => l.includes('await ensureReleaseView(db'));
+        const txi = lines.findIndex((l) => l.includes(spec.before));
+        expect(txi).toBeGreaterThan(at);
+        const inside = [...lines.slice(0, at), ...lines.slice(at + 1, txi + 1), lines[at], ...lines.slice(txi + 1)].join('\n');
+        expect(problemsOfHandler(inside, spec)).toContain('awaits the view after the transaction opens');
+      }
       if (!spec.ensure) {
         // a dead branch, and an argument that dates the view in 1970 (the resolver would then read it as stale)
         expect(problemsOfHandler(src.replace(/^(\s*)await ensureReleaseView\(db\);/m, '$1if (Date.now() < 0) await ensureReleaseView(db);'), spec).length).toBeGreaterThan(0);
@@ -201,5 +226,16 @@ describe('planted defects: each check fails on the mutation it names (a guard th
     const before = src.replace(line, '').replace("const global = resolveGlobalCallRecordsMode();", `${line}\n  const global = resolveGlobalCallRecordsMode();`);
     expect(problemsOfSweep(before)).not.toEqual([]);
     expect(problemsOfSweep(src.replace('async function sweepBattle', 'export async function sweepBattle'))).not.toEqual([]);
+    // each condition names its own defect (RS-L4-8 / RS-L4-9): the import dropped; a SECOND forced read; the one read outside runCallSweep
+    expect(problemsOfSweep(src.replace(', ensureReleaseView }', ' }'))).toContain('does not import ensureReleaseView from mode.js');
+    expect(problemsOfSweep(src.replace(line, `${line}\n${line}`))).toContain('2 ensureReleaseView calls (want exactly one)');
+    const outside = src.replace(line, '').replace('export async function runCallSweep', `async function __readViewOutside(db, deadlineMs) {\n${line}\n}\nexport async function runCallSweep`);
+    expect(problemsOfSweep(outside)).toEqual(['no forced read inside runCallSweep']);
+  });
+  it('the evaluator: the import dropped and each anchor gone are caught by name', () => {
+    const src = read('cron/agent-evaluate.js');
+    expect(problemsOfEvaluator(src.replace('resolveCallRecordsMode, ensureReleaseView, ', 'resolveCallRecordsMode, '))).toContain('does not import ensureReleaseView from mode.js');
+    expect(problemsOfEvaluator(src.replace('activeBattles.length === 0', 'activeBattles.length === 99'))).toContain('anchors not found');
+    expect(problemsOfEvaluator(src.replace('for (const [index, battle] of activeBattles.entries())', 'for (const [index, battle] of activeBattles.slice().entries())'))).toContain('anchors not found');
   });
 });

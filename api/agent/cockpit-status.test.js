@@ -294,7 +294,7 @@ describe('the release cohort — `on` follows the resolver, `allowlisted` stays 
     expect(state.reads.filter((r) => r === 'cockpitConfig/release')).toHaveLength(2);
   });
 
-  it('a control-document read that fails or never answers cannot fail the route: the cohort is empty and the allowlist alone decides', async () => {
+  it('a control-document read that FAILS cannot fail the route: the cohort is empty and the allowlist alone decides (a read that never answers is the default-bound row in release.test.js)', async () => {
     const owner = ownerInBuckets(SALT, 0, 10000);
     asOwner(owner);
     state.control = { shareBp: 10000, disabled: false, salt: SALT };
