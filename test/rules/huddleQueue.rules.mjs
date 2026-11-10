@@ -167,7 +167,10 @@ describe('one job (V1.1 §5.3; A §A7; R-11)', () => {
     expect(r.transcript).toContain('The game plan');
     expect(r.cards.map((cd) => cd.title)).toContain('AAA');
     expect(r.evidence).toHaveLength(2);
-    expect(Object.keys(r.generation.timings).sort()).toEqual(['gatherMs', 'scriptMs', 'speechMs', 'storeMs', 'totalMs']);
+    // Amendment E §E4: the speech attempts (one retry inside the job) are timed too
+    expect(Object.keys(r.generation.timings).sort()).toEqual(['gatherMs', 'scriptMs', 'speechAttempts', 'speechMs', 'storeMs', 'totalMs']);
+    expect(r.generation.timings.speechAttempts).toBe(1);
+    expect(r.generation.sourcesSkipped).toEqual([]);
     expect(await row('job1', etDate)).toMatchObject({ status: 'done' });
   });
 

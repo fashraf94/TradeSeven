@@ -21,7 +21,7 @@ import { eventLabelsOf } from './confirmPlan.js';
 import {
   SYSTEM_PROMPT, buildUserPrompt, callScriptModel, validateScript, scriptClean, regenerationNoteOf, proposalOf, HUDDLE_SCRIPT_MODEL, MODEL_BEATS,
 } from './scriptPrompt.js';
-import { joinBeats, beatTimings, synthesizeWithTimestamps, alignmentDurationMs } from './speech.js';
+import { joinBeats, beatTimings, synthesizeWithTimestamps, synthesizeWithRetry, alignmentDurationMs } from './speech.js';
 import { storeHuddleAudio } from './audioStore.js';
 import { archetypeWordsOf } from './archetypeWords.js';
 
@@ -135,8 +135,11 @@ export async function runHuddleJob(db, { uid, etDate, generation, session, share
     const sourceFailures = [...gathered.sourceFailures];
     const { text: spoken, spans } = joinBeats(beats);
     let audio = null;
-    const speech = await (deps.synthesize || synthesizeWithTimestamps)({ text: spoken, signal });
+    // Amendment E §E4 (R-19): one retry inside the job on a 429, a 5xx or an attempt timeout; no new model call
+    const speech = await synthesizeWithRetry({ text: spoken, signal, deadlineMs: deadline, clock, synthesize: deps.synthesize || synthesizeWithTimestamps, ...(deps.speechRetry || {}) });
     timings.speechMs = clock() - t;
+    timings.speechAttempts = speech.attempts ?? 1;
+    if (speech.firstFailure) sourceFailures.push(`speech_retried:${speech.firstFailure}`);
     if (speech.ok) {
       const timed = beatTimings(spans, speech.alignment, spoken);
       if (timed) for (const tm of timed) Object.assign(beats.find((b) => b.id === tm.id), { startMs: tm.startMs, endMs: tm.endMs });

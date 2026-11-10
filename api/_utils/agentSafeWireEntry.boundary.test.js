@@ -14,6 +14,9 @@
 //     nothing downstream of the boundary.
 //   P2-5 (newsLine half) — the fourth consumer's guard: unknown versions
 //     never become DTOs.
+//   E5 (Huddle S1.1, Amendment E §E5; Fable's ruling R-20) — the attributed readers: the
+//     Huddle's FantasyTimes headline reader joins the voice-layer consumer set in its own
+//     role, speaking a headline only as "FantasyTimes reported: …".
 
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -201,5 +204,59 @@ describe('P2-5 (newsLine half): the fourth consumer fails closed on unknown vers
     const resolved = resolveAgentSafeEntries(days, ['2026-07-24'], 'NVDA');
     expect(resolved).toHaveLength(1);
     expect(resolved[0].dto.digest).toBe('NVDA earnings: EPS +8.2% vs consensus.');
+  });
+});
+
+// ── Huddle S1.1, Amendment E §E5 (Fable's ruling R-20): the Huddle's FantasyTimes headline reader joins the voice-layer
+// consumer set in its OWN role — an ATTRIBUTED READER. It reads the story collection itself (its source text names
+// `fantasyTimesStories`, so the consumer set's P2-41 tripwire cannot hold it: registering it there literally would fail
+// that row, which is right for every renderer that must never read the collection), and it may speak a story's headline
+// ONLY as an attribution, "FantasyTimes reported: …", to the player, in Shadow's morning script. The trading brain never
+// reads the text: the plan a player confirms is filed from code-rendered templates, never from evidence.
+const ATTRIBUTED_READERS = Object.freeze({
+  'api/_utils/evidence/fantasyTimesStories.js': {
+    role: "the Huddle's morning script: a story headline, spoken to the player as \"FantasyTimes reported: …\"",
+    directImporters: ['api/_utils/huddle/gather.js'],
+  },
+});
+
+describe('E5 (R-20): attributed readers — the story collection read for the voice layer, headlines only as attributions', () => {
+  // forward slashes on every platform (path.relative gives backslashes on Windows)
+  const files = apiFiles().map((p) => p.split('\\').join('/'));
+  const importersOf = (rel) => files.filter((f) => f !== rel && new RegExp(`from\\s+['"][^'"]*${rel.split('/').pop().replace('.js', '')}(\\.js)?['"]`).test(readFileSync(resolve(REPO_ROOT, f), 'utf-8')));
+
+  it.each(Object.keys(ATTRIBUTED_READERS))('%s exists, reads the story collection (its role), and never imports the raw Wire reader', (rel) => {
+    expect(files).toContain(rel);
+    const src = readFileSync(resolve(REPO_ROOT, rel), 'utf-8');
+    expect(src.includes('fantasyTimesStories')).toBe(true);
+    expect(src).not.toMatch(/from\s+['"][^'"]*wireReader(\.js)?['"]/);
+    expect(CONSUMER_SET).not.toContain(rel); // its own role, not the renderers' set (P2-41 holds for those)
+  });
+
+  it.each(Object.entries(ATTRIBUTED_READERS))('%s has exactly its registered direct importers (no prompt assembler, no voice-layer renderer)', (rel, entry) => {
+    expect(importersOf(rel).sort()).toEqual([...entry.directImporters].sort());
+    for (const f of [...CONSUMER_SET, 'api/agent/decide.js', 'api/_utils/agentPromptAssembly.js', 'api/_utils/agentEvalPromptAssembly.js', SOLE_READER_IMPORTER]) {
+      expect(importersOf(rel), f).not.toContain(f);
+    }
+  });
+
+  it('a story headline leaves the reader only as an attribution: "FantasyTimes reported: …" (a poisoned headline included)', async () => {
+    const { storiesForSymbol } = await import('./evidence/fantasyTimesStories.js');
+    const { headlineItem } = await import('./evidence/packItem.js');
+    const story = { id: 'st1', type: 'news', tickers: ['NVDA'], headline: POISON.headline, publishedAt: '2026-11-09T12:00:00.000Z', body: POISON.body, sentiment: POISON.sentiment };
+    const items = storiesForSymbol([story], 'NVDA');
+    expect(items).toEqual([expect.objectContaining({ sourceKind: 'fantasytimes_story', source: 'FantasyTimes', title: POISON.headline })]);
+    expect(JSON.stringify(items)).not.toMatch(/POISON_PROSE_MARKER|POISON_SENTIMENT_MARKER/);
+    const item = headlineItem(items[0]);
+    expect(item.fact).toBe(`FantasyTimes reported: ${POISON.headline}`);
+    expect(item.source.label).toBe('FantasyTimes');
+  });
+
+  it("the trading brain never reads the text: the plan's slot is rendered from the templates alone, which import no evidence", () => {
+    for (const rel of ['api/_utils/huddle/planTemplates.js', 'api/_utils/huddle/applyRules.js', 'api/_utils/huddle/applyPlan.js', 'api/_utils/huddle/sweep.js']) {
+      const src = readFileSync(resolve(REPO_ROOT, rel), 'utf-8');
+      expect(src, rel).not.toMatch(/from\s+['"][^'"]*evidence\//);
+      expect(src.includes('fantasyTimesStories'), rel).toBe(false);
+    }
   });
 });
