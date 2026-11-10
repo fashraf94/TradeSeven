@@ -130,7 +130,12 @@ function ruleBlocks(text, pathRe) {
 
 describe('the posture is written down, not only inherited', () => {
   it('NO GRANT: no block that names the collection may allow anything — today none exists (the root default-deny covers it); an explicit `allow read, write: if false;` block (what the sibling cockpit collections carry) would also pass; a grant fails here', () => {
-    const named = ruleBlocks(RULES_TEXT, /\/cockpitConfig\/[^\s{]*/);
+    // Every spelling of a match block for the path: `/cockpitConfig/{doc}`, `/cockpitConfig/release`, a bare `/cockpitConfig/{doc=**}`,
+    // and the collection-group form `/{path=**}/cockpitConfig/{doc}`.
+    const named = [
+      ...ruleBlocks(RULES_TEXT, /\/cockpitConfig\/(?:\{[^}]*\}|[^\s{]+)/),
+      ...ruleBlocks(RULES_TEXT, /\/\{[^}]*=\*\*\}\/cockpitConfig\/(?:\{[^}]*\}|[^\s{]+)/),
+    ];
     for (const statements of named) expect(statements).toEqual(['allow read, write: if false;']);
     expect(RULES_TEXT).not.toMatch(/cockpitConfig[^\n]*\n[^}]*allow\s+(read|write|get|list|create|update|delete)[^;]*if\s+(?!false)/);
   });

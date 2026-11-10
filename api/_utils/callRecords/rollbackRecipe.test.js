@@ -329,15 +329,31 @@ describe('the release cohort — pooled into the live rollback check', () => {
     expect(none).toMatchObject({ battles: 0, total: 0 });
   });
 
-  it('an inactive, absent or empty cohort changes NOTHING: the check is the allowlist-only check, byte for byte', () => {
+  it('no cohort view supplied (null / undefined) changes NOTHING: the check is the allowlist-only check, byte for byte; a supplied but inactive view changes only the measured numbers never, and adds the control line', () => {
     const base = computeRollbackCheck([battle('founder', 70, 2), battle('stranger', 70, 5)], { allowlist: ['founder'], ...AT });
-    for (const cohort of [null, undefined, { ...ACTIVE, active: false, status: 'disabled' }, { status: 'unread', active: false, shareBp: 0, salt: '', readAtMs: null }]) {
+    for (const cohort of [null, undefined]) {
       const r = computeRollbackCheck([battle('founder', 70, 2), battle('stranger', 70, 5)], { allowlist: ['founder'], cohort, ...AT });
       expect(r).toEqual(base);
       expect(renderRollbackCheck(r)).toBe(renderRollbackCheck(base));
     }
+    for (const cohort of [{ ...ACTIVE, active: false, status: 'disabled' }, { status: 'unread', active: false, shareBp: 0, salt: '', readAtMs: null }]) {
+      const r = computeRollbackCheck([battle('founder', 70, 2), battle('stranger', 70, 5)], { allowlist: ['founder'], cohort, ...AT });
+      expect({ ...r, window: { ...r.window, control: null } }).toEqual(base); // every measured figure is the allowlist-only one
+      expect(renderRollbackCheck(r).split('\n').filter((l) => !l.startsWith('- Release cohort control document')).join('\n')).toBe(renderRollbackCheck(base));
+    }
     expect(base).toMatchObject({ battles: 1, total: 70, invalid: 2 });
     expect(computeRollbackCheck([], { allowlist: [], cohort: { ...ACTIVE, active: false }, ...AT }).verdict).toBe('NO ALLOWLIST');
+  });
+
+  it('the control document\'s read status is printed whenever a view was supplied: a failed or unread read says the cohort was NOT measured; ok, disabled and absent say what they are (RS-L5-8)', () => {
+    const line = (cohort) => renderRollbackCheck(computeRollbackCheck([battle('founder', 70, 0)], { allowlist: ['founder'], cohort, ...AT })).split('\n').find((l) => l.startsWith('- Release cohort control document'));
+    expect(line(ACTIVE)).toBe('- Release cohort control document: active, 10000 bp.');
+    expect(line({ status: 'disabled', active: false, shareBp: 500, salt: 's' })).toBe('- Release cohort control document: disabled (the kill switch is on) — the cohort is empty.');
+    expect(line({ status: 'absent', active: false, shareBp: 0, salt: '' })).toBe('- Release cohort control document: absent (the dark state) — the cohort is empty.');
+    for (const status of ['error', 'timeout', 'malformed', 'unread']) {
+      expect(line({ status, active: false, shareBp: 0, salt: '' }), status).toBe(`- Release cohort control document: ${status} — the control document was NOT read: any release-cohort battles were NOT measured here; read again before taking a NO TRIP as clear.`);
+    }
+    expect(line(null)).toBeUndefined();
   });
 
   it('a TRIP names the no-redeploy kill switch when a cohort is pooled, and keeps the allowlist wording when not', () => {

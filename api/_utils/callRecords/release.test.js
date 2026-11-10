@@ -372,3 +372,171 @@ describe('the module is server-only and writes nothing', () => {
     expect(hits).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Review findings (docs/audits/20261110_COCKPIT_RELEASE_READINESS.md §10.9): the hardening each one earned.
+describe('review hardening — out-of-order reads, guarded arguments, a trusted clock, an own-field document', () => {
+  beforeEach(() => { resetReleaseView(); });
+  afterEach(() => { resetReleaseView(); });
+  /** A db whose read takes `delayMs` and returns `data`. */
+  const slowDb = (data, delayMs) => ({ collection: () => ({ doc: () => ({ get: async () => { await new Promise((r) => setTimeout(r, delayMs)); return { exists: true, data: () => data }; } }) }) });
+
+  it('RS-L1-1: a slow, earlier-started read that lands AFTER a newer one cannot undo it — a stale "ok" never overwrites a newer "disabled" (the kill switch)', async () => {
+    const slowOk = ensureReleaseView(slowDb(GOOD, 120), { force: true, timeoutMs: 1000 });
+    await new Promise((r) => setTimeout(r, 10));
+    const fastDisabled = await ensureReleaseView(slowDb({ ...GOOD, disabled: true }, 5), { force: true, timeoutMs: 1000 });
+    expect(fastDisabled.status).toBe('disabled');
+    const late = await slowOk; // the older read finishes last
+    expect(getReleaseView().status).toBe('disabled');
+    expect(getReleaseView().active).toBe(false);
+    expect(late.status).toBe('disabled'); // it reports the view that stands, not its own
+  });
+
+  it('RS-L1-1: the same for a non-forced reader overtaken by a forced one', async () => {
+    const slow = ensureReleaseView(slowDb(GOOD, 120), { timeoutMs: 1000 });
+    await new Promise((r) => setTimeout(r, 10));
+    await ensureReleaseView(slowDb({ ...GOOD, disabled: true }, 5), { force: true, timeoutMs: 1000 });
+    await slow;
+    expect(getReleaseView().status).toBe('disabled');
+  });
+
+  it('RS-L1-3/4/9: a null, non-object or hostile options argument and a non-finite, non-number or absurd bound or TTL never throw or leak a rejection', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    const db = fakeDb({ data: GOOD });
+    for (const opts of [null, undefined, 7, 'x', [], { ttlMs: 1n }, { ttlMs: Infinity }, { ttlMs: -5 }, { ttlMs: 1e15 }, { timeoutMs: NaN }, { timeoutMs: Infinity }, { timeoutMs: 2 ** 40 }, { nowMs: NaN }, { nowMs: null }, { nowMs: 'x' }]) {
+      resetReleaseView();
+      await expect(ensureReleaseView(db, opts), JSON.stringify(opts, (k, v) => (typeof v === 'bigint' ? 'big' : v))).resolves.toBeDefined();
+    }
+    await new Promise((r) => setTimeout(r, 20));
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(() => getReleaseView(null)).not.toThrow();
+    expect(() => getReleaseView(7)).not.toThrow();
+  });
+
+  it('RS-L1-6: a bad clock cannot make a stale view look fresh — a NaN/garbage nowMs reads the real clock; a view dated in the future is not trusted; a pinned TTL is clamped', async () => {
+    const db = fakeDb({ data: GOOD });
+    await ensureReleaseView(db, { nowMs: Date.now() - RELEASE_VIEW_MAX_AGE_MS - 1000 }); // a 10-minute-old view
+    for (const nowMs of [NaN, null, 'x', {}, undefined]) expect(getReleaseView({ nowMs }).active, String(nowMs)).toBe(false);
+    resetReleaseView();
+    await ensureReleaseView(db, { nowMs: Date.now() + 3_600_000 }); // read "an hour from now": a clock stepped back since
+    expect(getReleaseView().active).toBe(false);
+    resetReleaseView();
+    await ensureReleaseView(db, { ttlMs: 1e15 });
+    expect(getReleaseView().active).toBe(true);
+    // the TTL was clamped to the max age, so a non-forced ask after that reads again (it is never pinned)
+    const reads = db.calls.reads.length;
+    await ensureReleaseView(db, { nowMs: Date.now() + RELEASE_VIEW_MAX_AGE_MS + 1 });
+    expect(db.calls.reads.length).toBe(reads + 1);
+  });
+
+  it('RS-L1-5: a document with inherited fields, or a throwing getter, is malformed — not "ok"', () => {
+    const inherited = Object.create({ shareBp: 10000, disabled: false, salt: 'x' });
+    expect(parseReleaseDocument(inherited)).toMatchObject({ status: 'malformed', active: false });
+    const hostile = { get shareBp() { throw new Error('x'); }, disabled: false, salt: '' };
+    expect(() => parseReleaseDocument(hostile)).not.toThrow();
+    expect(parseReleaseDocument(hostile)).toMatchObject({ status: 'malformed', active: false });
+    expect(parseReleaseDocument({ shareBp: 10000, disabled: false })).toMatchObject({ status: 'malformed' });
+  });
+
+  it('RS-L1-8: a hand-built view is not trusted by coercion — a string or infinite shareBp or a non-string salt admits nobody', () => {
+    const owner = 'o1';
+    expect(isInReleaseCohort(battleOf(owner), viewOf(10000))).toBe(true); // control
+    for (const bad of [{ shareBp: '10000' }, { shareBp: Infinity }, { shareBp: NaN }, { shareBp: 1.5 }, { shareBp: -1 }, { shareBp: 10001 }, { salt: 5 }, { salt: undefined }]) {
+      expect(isInReleaseCohort(battleOf(owner), { ...viewOf(10000), ...bad }), JSON.stringify(bad)).toBe(false);
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RS-L2-1 / RS-L2-2 / RS-L1-2 / RS-L3-4: what a FAILED read costs a cohort battle, and how much of it is avoidable
+// without breaking the founder's rule that a read error or timeout is an EMPTY cohort (fail closed).
+describe('a failed read — the cost is bounded: a late landing corrects the cache, a forced read retries once, a failure leaves a line', () => {
+  beforeEach(() => { resetReleaseView(); });
+  afterEach(() => { resetReleaseView(); vi.restoreAllMocks(); });
+  /** A db whose reads follow a script: each entry { delay, data | throws | hang }, in order, then the last repeats. */
+  function scripted(steps) {
+    let n = 0;
+    const calls = [];
+    return {
+      calls,
+      collection: () => ({ doc: () => ({ get: async () => {
+        const s = steps[Math.min(n, steps.length - 1)]; n += 1; calls.push(s);
+        if (s.hang) return new Promise(() => {});
+        if (s.delay) await new Promise((r) => setTimeout(r, s.delay));
+        if (s.throws) throw new Error('down');
+        return { exists: s.data !== undefined, data: () => s.data };
+      } }) }),
+    };
+  }
+
+  it('a read that misses its bound reports timeout NOW (the caller is not held), then the late document REPLACES the failure — a cold instance\'s slow first RPC is not a 15 s outage', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const db = scripted([{ delay: 120, data: GOOD }]);
+    const t0 = Date.now();
+    const v = await ensureReleaseView(db, { timeoutMs: 20 });
+    expect(Date.now() - t0).toBeLessThan(100);
+    expect(v.status).toBe('timeout');
+    expect(getReleaseView().active).toBe(false);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(getReleaseView()).toMatchObject({ status: 'ok', active: true });
+  });
+
+  it('a late landing never overrides a newer read: a late "ok" cannot undo a newer "disabled"', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await ensureReleaseView(scripted([{ delay: 150, data: GOOD }]), { timeoutMs: 20 }); // timeout view standing; the real read in flight
+    await ensureReleaseView(scripted([{ data: { ...GOOD, disabled: true } }]), { force: true });
+    await new Promise((r) => setTimeout(r, 250));
+    expect(getReleaseView().status).toBe('disabled');
+  });
+
+  it('a late FAILURE changes nothing (and is not an unhandled rejection)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    const db = { collection: () => ({ doc: () => ({ get: () => new Promise((_, rej) => setTimeout(() => rej(new Error('late')), 60)) }) }) };
+    await ensureReleaseView(db, { timeoutMs: 10 });
+    await new Promise((r) => setTimeout(r, 120));
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(getReleaseView().active).toBe(false);
+  });
+
+  it('a FORCED read (the evaluator, once per run) retries once on an error or a timeout — a single blip no longer empties the cohort for the whole run', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const first of [{ throws: true }, { hang: true }]) {
+      resetReleaseView();
+      const db = scripted([first, { data: GOOD }]);
+      const v = await ensureReleaseView(db, { force: true, timeoutMs: 30 });
+      expect(db.calls).toHaveLength(2);
+      expect(v).toMatchObject({ status: 'ok', active: true });
+    }
+  });
+
+  it('...but gives up after the one retry (fail closed), `retry: false` opts out (the sweep), and a non-forced request-path read never retries', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const down = scripted([{ throws: true }]);
+    expect((await ensureReleaseView(down, { force: true })).status).toBe('error');
+    expect(down.calls).toHaveLength(2);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[release] control view error'));
+    resetReleaseView();
+    const noRetry = scripted([{ throws: true }, { data: GOOD }]);
+    expect((await ensureReleaseView(noRetry, { force: true, retry: false })).status).toBe('error');
+    expect(noRetry.calls).toHaveLength(1);
+    resetReleaseView();
+    const request = scripted([{ throws: true }, { data: GOOD }]);
+    expect((await ensureReleaseView(request)).status).toBe('error');
+    expect(request.calls).toHaveLength(1);
+  });
+
+  it('an absent or disabled document is NOT a failure: no retry and no warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const absent = scripted([{ data: undefined }]);
+    await ensureReleaseView(absent, { force: true });
+    expect(absent.calls).toHaveLength(1);
+    resetReleaseView();
+    await ensureReleaseView(scripted([{ data: { ...GOOD, disabled: true } }]), { force: true });
+    expect(warn).not.toHaveBeenCalled();
+  });
+});

@@ -510,7 +510,7 @@ async function main() {
   else console.log(md);
   if (jsonPath) writeFileSync(jsonPath, JSON.stringify({ readAtMs, base, shad, trig, violations, calls, decls, receipts: Object.fromEntries(receipts), queue, flipsList, diagList, wire, decl, callStats, tickRefs, ...(callsEnabledWindow ? { callsEnabledWindow } : {}), ...(rollbackCheck ? { rollbackCheck } : {}) }, null, 2));
   console.error(`[shadow-read] battles=${battles.size} shadowEntries=${shadowEntries.length} calls=${calls.length} violations=${violations.length} tripped=${tripped.length}`);
-  if (rollbackCheck) console.error(`[rollback-check] verdict=${rollbackCheck.verdict} invalid=${rollbackCheck.invalid} total=${rollbackCheck.total} p=${rollbackCheck.p === null ? 'n/a' : rollbackCheck.p.toFixed(4)} owners=${rollbackCheck.owners}`);
+  if (rollbackCheck) console.error(`[rollback-check] verdict=${rollbackCheck.verdict} invalid=${rollbackCheck.invalid} total=${rollbackCheck.total} p=${rollbackCheck.p === null ? 'n/a' : rollbackCheck.p.toFixed(4)} owners=${rollbackCheck.owners} control=${rollbackCheck.window.control?.status ?? 'not read'}`);
   // An unset allowlist measured nothing — never a quiet exit 0 that reads like "no trip" (review L1-6).
   if (rollbackCheck?.verdict === 'NO ALLOWLIST') process.exitCode = 2;
 }

@@ -242,6 +242,10 @@ export function computeRollbackCheck(battles, {
     perDay: rows,
     coverage: { battles: admitted.length, truncatedBattles },
     cohort: cohortView ? { shareBp: cohortView.shareBp, battles: cohortBattles } : null,
+    // What the control document read as, when a view was supplied at all (null when none was: the allowlist-only check prints nothing
+    // about it). A failed or unread document empties the cohort SILENTLY otherwise — a NO TRIP would read as clear while the cohort
+    // went unmeasured (review RS-L5-8).
+    control: cohort && typeof cohort === 'object' && typeof cohort.status === 'string' ? { status: cohort.status, shareBp: Number.isFinite(cohort.shareBp) ? cohort.shareBp : null } : null,
   };
   const total = rows.reduce((s, r) => s + r.modelCalls, 0);
   const invalid = rows.reduce((s, r) => s + r.invalid, 0);
@@ -268,6 +272,18 @@ export function computeRollbackCheck(battles, {
   };
 }
 
+/** The control document's line — only when a view was supplied; a read that did not succeed says the cohort was NOT measured. */
+function controlLines(result) {
+  const c = result.window.control;
+  if (!c) return [];
+  const text = {
+    ok: `active, ${c.shareBp} bp`,
+    disabled: 'disabled (the kill switch is on) — the cohort is empty',
+    absent: 'absent (the dark state) — the cohort is empty',
+  }[c.status] ?? `${c.status} — the control document was NOT read: any release-cohort battles were NOT measured here; read again before taking a NO TRIP as clear`;
+  return [`- Release cohort control document: ${text}.`];
+}
+
 /** The live check's plain lines (the verdict first, then every count and bar). */
 export function renderRollbackCheck(result, { check = ROLLBACK_CHECK } = {}) {
   const pct = (v) => (v === null ? 'n/a' : `${(100 * v).toFixed(2)}%`);
@@ -283,6 +299,7 @@ export function renderRollbackCheck(result, { check = ROLLBACK_CHECK } = {}) {
   const floor = `not before ${result.window.notBefore ?? '—'}${result.window.sinceMs !== null && result.window.sinceMs !== undefined ? `, since ${new Date(result.window.sinceMs).toISOString()}` : ''}`;
   return [
     `- Verdict: **${result.verdict}**${action}`,
+    ...controlLines(result),
     `- Allowlisted owners ${result.owners}${result.window.cohort ? `; release cohort ${result.window.cohort.shareBp} bp, ${result.window.cohort.battles} battle(s) outside the allowlist; the admitted` : '; their'} battles ${result.battles}; window ${result.window.days.length ? result.window.days.join(', ') : 'none'} (the last ${ROLLBACK_SESSIONS} regular sessions by the calendar, ${floor}).`,
     `- invalid_tool_result ${result.invalid} of ${result.total} calls-enabled model calls (rate ${pct(result.rate)}).`,
     `- Bars (all three must hold to trip): total ≥ ${check.minTotal} — ${yes(result.bars.minSample)}; rate > ${(100 * check.tripRate).toFixed(0)} % — ${yes(result.bars.rate)}; one-sided Fisher p < ${check.alpha} against ${check.baseline.label} — ${yes(result.bars.significant)} (p = ${result.p === null ? 'n/a' : result.p.toFixed(4)}).`,

@@ -109,9 +109,32 @@ describe('`on` against the `off` baseline of the same session', () => {
     const [d1, d2] = checksRead([tick('2026-11-12T15:00:00Z', { outcome: 'failed', failureClass: 'timeout' }), tick('2026-11-13T15:00:00Z')], DAYS);
     expect(d1.flags.timeout).toBe('no baseline');
     expect(d1.tripped).toBe(false);
-    expect(d2.flags).toEqual({ timeout: 'ok', e400: 'ok', invalid: 'ok' });
+    expect(d2.flags).toEqual({ timeout: 'ok', e400: 'ok', invalid: 'ok', other: 'ok' });
     const empty = checksRead([], DAYS)[0];
-    expect(empty.flags).toEqual({ timeout: 'none', e400: 'none', invalid: 'none' });
+    expect(empty.flags).toEqual({ timeout: 'none', e400: 'none', invalid: 'none', other: 'none' });
+    expect(empty.cohortFlags).toEqual({ timeout: 'none', e400: 'none', invalid: 'none', other: 'none' });
+  });
+  it('the "other" failure class (truncated_response, build_timeout, 5xx …) is flagged like the named three — a failure class is never hidden (RS-L5-3)', () => {
+    const on = [tick('2026-11-12T15:00:00Z'), tick('2026-11-12T15:15:00Z', { outcome: 'failed', failureClass: 'truncated_response' })];
+    const off = Array.from({ length: 3 }, (_, i) => tick(`2026-11-12T1${i}:00:00Z`, { v: 1 }));
+    const [d1] = checksRead([...on, ...off], DAYS);
+    expect(d1.flags.other).toBe('ABOVE');
+    expect(d1.tripped).toBe(true);
+    expect(renderStage({ ...cleanRead(), checks: [d1, checksRead([], DAYS)[1]] })).toMatch(/above the `off` baseline \(other\)/);
+  });
+  it('the COHORT\'s own checks are a separate arm: a cohort regression is not diluted by the pilot\'s volume, and a clean cohort beside a failing pilot is not a cohort trip (RS-L5-1)', () => {
+    const pilot = Array.from({ length: 20 }, (_, i) => ({ ...tick(`2026-11-12T15:${String(i).padStart(2, '0')}:00Z`), cohort: false })); // 20 clean pilot checks
+    const bad = [{ ...tick('2026-11-12T16:00:00Z', { outcome: 'failed', failureClass: 'timeout' }), cohort: true }, { ...tick('2026-11-12T16:01:00Z'), cohort: true }]; // 50 % in the cohort
+    const off = [tick('2026-11-12T14:00:00Z', { v: 1 }), tick('2026-11-12T14:01:00Z', { v: 1 }), tick('2026-11-12T14:02:00Z', { v: 1 }), tick('2026-11-12T14:03:00Z', { v: 1, outcome: 'failed', failureClass: 'timeout' })]; // 25 %
+    const [d1] = checksRead([...pilot, ...bad, ...off], DAYS);
+    expect(d1.on.n).toBe(22);
+    expect(d1.flags.timeout).toBe('ok'); // 1/22 is under the 25 % baseline: the pooled `on` arm hides it
+    expect(d1.cohort).toEqual({ n: 2, timeout: 1, e400: 0, invalid: 0, other: 0 });
+    expect(d1.cohortFlags.timeout).toBe('ABOVE'); // the cohort's own rate (50 %) is above
+    expect(d1.tripped).toBe(true);
+    expect(renderStage({ ...cleanRead(), checks: [d1, checksRead([], DAYS)[1]] })).toMatch(/the COHORT's `on` checks above the `off` baseline \(timeout\)/);
+    // a tick whose cohort membership is not determinable (null/absent) is in the pooled arm only
+    expect(checksRead([{ ...tick('2026-11-12T15:00:00Z'), cohort: null }, tick('2026-11-12T15:01:00Z')], DAYS)[0].cohort.n).toBe(0);
   });
 });
 
@@ -176,7 +199,18 @@ describe('sweep lag', () => {
     ] }, DAYS);
     expect(out.perDay[0]).toMatchObject({ day: D1, swept: 3, medianMs: 30 * 60000, maxMs: 60 * 60000 });
     expect(out.perDay[0].p90Ms).toBeCloseTo(54 * 60000, -2);
-    expect(out.perDay[1]).toEqual({ day: D2, swept: 0, medianMs: null, p90Ms: null, maxMs: null });
+    expect(out.perDay[1]).toEqual({ day: D2, swept: 0, endedWithBattle: 0, medianMs: null, p90Ms: null, maxMs: null });
+  });
+  it('lag buckets by the session of the call\'s DEADLINE, not the stamp\'s day: a Friday-close call the sweep settled on Saturday is Friday\'s lag (RS-L5-5)', () => {
+    const days = ['2026-11-13', '2026-11-16'];
+    const out = sweepLagRead({ nowMs: Date.parse('2026-11-16T20:00:00Z'), queue: [], calls: [call('sweep', '2026-11-14T15:00:00Z', '2026-11-13T21:00:00Z')] }, days); // Fri 4 PM ET deadline, stamped Sat
+    expect(out.perDay[0]).toMatchObject({ day: '2026-11-13', swept: 1, maxMs: 18 * 3600000 });
+    expect(out.perDay[1].swept).toBe(0);
+  });
+  it('an ended_with_battle settle is counted apart and carries no lag: its deadline is after the battle\'s end, so a lag would clamp to 0 (RS-L5-4)', () => {
+    const ended = { ...call('sweep', '2026-11-12T21:00:00Z', '2026-11-12T22:00:00Z'), state: 'ended_with_battle' };
+    const out = sweepLagRead({ nowMs: NOW, queue: [], calls: [ended, { ...call('sweep', '2026-11-12T21:00:00Z', '2026-11-12T20:00:00Z'), state: 'expired' }] }, DAYS);
+    expect(out.perDay[0]).toMatchObject({ swept: 1, endedWithBattle: 1, maxMs: 60 * 60000 });
   });
   it('the deadline is the sweep\'s own (a next_check call settles at the session close, so its lag is not counted from the slot): an injected deadlineOf replaces horizon.expiresAt', () => {
     const c = { stateSource: 'sweep', stateChangedAt: Date.parse('2026-11-12T21:00:00Z'), horizon: { expiresAt: Date.parse('2026-11-12T15:15:00Z'), basis: 'next_check' } };
@@ -209,12 +243,16 @@ describe('the cost line', () => {
   });
 });
 
-describe('the rendering', () => {
-  const clean = () => ({
+function cleanRead() {
+  return {
     readAtMs: Date.parse('2026-11-13T20:00:00Z'), days: DAYS, control: 'active, 500 bp',
     evaluator: evaluatorRead([], DAYS), checks: checksRead([tick('2026-11-12T15:00:00Z'), tick('2026-11-12T15:00:00Z', { v: 1 })], DAYS), answers: answersRead({ calls: [], events: [] }, DAYS),
     cohort: cohortRead({ [D1]: [], [D2]: [] }, { allowlist: new Set(['x']) }), sweep: sweepLagRead({ calls: [], queue: [], nowMs: 1 }, DAYS), cost: costRead([tick('2026-11-12T15:00:00Z')], DAYS),
-  });
+  };
+}
+
+describe('the rendering', () => {
+  const clean = cleanRead;
   it('a clean read says "Trips: none" and carries every section and the control line', () => {
     const md = renderStage(clean());
     expect(md).toContain('**Trips:** none.');
@@ -238,10 +276,23 @@ describe('the rendering', () => {
 describe('the script is read-only, needs no uid and prints no id', () => {
   const src = readFileSync(resolve(HERE, 'cockpit-release-read.mjs'), 'utf8').replace(/\r\n/g, '\n');
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  // A write is `.set/.add/.update/.delete/.create(` on anything but the two local Maps (`map`, `owners`), or a transaction/batch/bulk
+  // writer. Receiver-checked, not name-blinded: a Firestore `ref.set(` or `db.collection(…).doc(…).set(` must be caught (RS-L5-2).
+  const MAP_RECEIVERS = new Set(['map', 'owners']);
+  const foreignWrites = (c) => [
+    ...[...c.matchAll(/([\w$]+|\))\s*\.\s*(set|add|update|delete|create)\s*\(/g)].filter(([, r, m]) => !(m === 'set' && MAP_RECEIVERS.has(r))).map(([s]) => s),
+    ...(c.match(/runTransaction|bulkWriter|\.batch\s*\(|writeBatch|recursiveDelete|\.create\s*\(/g) || []),
+  ];
   it('no Firestore write call exists; the only file written is --out', () => {
-    expect(code.replace(/\.(set|has)\(/g, '')).not.toMatch(/\.(update|delete|create|add)\(|runTransaction|bulkWriter|\.batch\(|writeBatch/);
+    expect(foreignWrites(code)).toEqual([]);
     expect(code.match(/writeFileSync\(/g)).toHaveLength(1);
     expect(code).toMatch(/\.get\(\)/);
+  });
+  it('planted: the write scan is not blind — a Firestore set/update/delete/add/create, a chained set, a transaction or a batch each fail it', () => {
+    for (const planted of ["ref.set({ a: 1 });", "db.collection('x').doc('y').set({ a: 1 });", "ref.update({ a: 1 });", "ref.delete();", "col.add({});", "await db.runTransaction(async () => {});", "db.batch();", "const w = db.bulkWriter();"]) {
+      expect(foreignWrites(`${code}\n${planted}`).length, planted).toBeGreaterThan(0);
+    }
+    expect(foreignWrites(`${code}\nowners.set(1, 2); map.set('a', 'b');`)).toEqual([]); // the two local Maps stay allowed
   });
   it('the allowlist is OPTIONAL (no "must hold" throw), and the rendering never touches ownerId / agentId / battle ids', () => {
     expect(src).not.toMatch(/must hold/);

@@ -45,7 +45,11 @@ function problemsOfHandler(src, spec) {
   const c = code(src);
   const out = [];
   if (!/import \{[^}]*\bensureReleaseView\b[^}]*\} from '[^']*callRecords\/mode\.js'/.test(c)) out.push('does not import ensureReleaseView from mode.js');
-  const ensure = idx(c, spec.ensure ?? ENSURE);
+  // The await is an UNCONDITIONAL statement on its own line with exactly `(db)`: a dead-branch ensure (`if (x) await …`) or an
+  // argument that changes the view (`{ nowMs: 0 }`) would pass a text-order check and be a silent defect (RS-L2-3 / RS-L3-3).
+  const exact = spec.ensure ? null : /^[ \t]*await ensureReleaseView\(db\);[ \t]*$/m.exec(c);
+  if (!spec.ensure && !exact) out.push('the await is not an unconditional `await ensureReleaseView(db);` statement');
+  const ensure = exact ? exact.index : idx(c, spec.ensure ?? ENSURE);
   const resolver = idx(c, spec.resolver);
   if (ensure < 0) out.push('never awaits the view');
   if (resolver < 0) out.push('resolver anchor not found');
@@ -110,34 +114,45 @@ describe('every site awaits the view before it resolves the mode', () => {
   });
 });
 
-describe('the census: the files that call the resolver are exactly the wired ones', () => {
-  it('no new `resolveCallRecordsMode(` call site appears without a decision about its view', () => {
-    const files = [];
-    (function walk(dir) {
-      for (const name of readdirSync(dir)) {
-        const p = resolve(dir, name);
-        if (statSync(p).isDirectory()) { if (name !== 'node_modules') walk(p); continue; }
-        if (!/\.js$/.test(name) || /\.test\./.test(name) || p.includes(`${sep}__fixtures__${sep}`)) continue;
-        if (/\bresolveCallRecordsMode\(/.test(code(readFileSync(p, 'utf8')))) files.push(relative(API, p).split(sep).join('/'));
-      }
-    })(API);
+describe('the census: the files that use the resolver are exactly the wired ones', () => {
+  /** Every non-test, non-fixture .js/.mjs under api/ and scripts/, with its comment-stripped code. */
+  function sources() {
+    const out = [];
+    const roots = [API, resolve(API, '../scripts')];
+    for (const root of roots) {
+      (function walk(dir) {
+        for (const name of readdirSync(dir)) {
+          const p = resolve(dir, name);
+          if (statSync(p).isDirectory()) { if (name !== 'node_modules') walk(p); continue; }
+          if (!/\.(js|mjs)$/.test(name) || /\.test\./.test(name) || p.includes(`${sep}__fixtures__${sep}`)) continue;
+          out.push({ rel: relative(resolve(API, '..'), p).split(sep).join('/'), c: code(readFileSync(p, 'utf8')) });
+        }
+      })(root);
+    }
+    return out;
+  }
+  it('no new use of resolveCallRecordsMode / isReleaseCohortBattle — called, aliased or passed — appears without a decision about its view', () => {
+    const files = sources().filter((s) => /\b(resolveCallRecordsMode|isReleaseCohortBattle)\b/.test(s.c)).map((s) => s.rel);
     expect(files.sort()).toEqual([
-      '_utils/callRecords/mode.js', '_utils/callRecords/sweep.js', '_utils/huddle/applyPlan.js', '_utils/huddle/applyRules.js',
-      'agent/call-response.js', 'agent/chat.js', 'agent/cockpit-bench.js', 'agent/cockpit-status.js', 'agent/file-directive.js', 'cron/agent-evaluate.js',
+      'api/_utils/callRecords/mode.js', 'api/_utils/callRecords/sweep.js', 'api/_utils/huddle/applyPlan.js', 'api/_utils/huddle/applyRules.js',
+      'api/agent/call-response.js', 'api/agent/chat.js', 'api/agent/cockpit-bench.js', 'api/agent/cockpit-status.js', 'api/agent/file-directive.js', 'api/cron/agent-evaluate.js',
     ]);
   });
+  it('no namespace import of mode.js (a `mode["resolveCallRecordsMode"]` call would hide from the census), and no re-export of the resolver', () => {
+    for (const s of sources()) {
+      expect(s.c, s.rel).not.toMatch(/import \* as \w+ from '[^']*callRecords\/mode\.js'/);
+      expect(s.c, s.rel).not.toMatch(/export \{[^}]*\b(resolveCallRecordsMode|isReleaseCohortBattle)\b[^}]*\} from/);
+    }
+  });
+  it('the exported processAgentBattle (the evaluator\'s check, which resolves the mode) is called only by the evaluator handler — never by another route that has not read the view', () => {
+    const callers = sources().filter((s) => /\bprocessAgentBattle\(/.test(s.c) && !/function processAgentBattle\b/.test(s.c)).map((s) => s.rel);
+    expect(callers).toEqual([]);
+    const own = sources().find((s) => s.rel === 'api/cron/agent-evaluate.js').c;
+    expect(own.match(/\bprocessAgentBattle\(/g).length).toBe(2); // the definition and the one call in the handler's loop
+  });
   it('Huddle: applyRules.js resolves the mode only inside rules that applyPlanToBattle alone calls — nobody else calls decideApplication or slotHoldsLiveCall', () => {
-    const callers = [];
-    (function walk(dir) {
-      for (const name of readdirSync(dir)) {
-        const p = resolve(dir, name);
-        if (statSync(p).isDirectory()) { if (name !== 'node_modules') walk(p); continue; }
-        if (!/\.js$/.test(name) || /\.test\./.test(name) || p.includes(`${sep}__fixtures__${sep}`)) continue;
-        const c = code(readFileSync(p, 'utf8'));
-        if (/\b(decideApplication|slotHoldsLiveCall)\(/.test(c) && !/function (decideApplication|slotHoldsLiveCall)\b/.test(c)) callers.push(relative(API, p).split(sep).join('/'));
-      }
-    })(API);
-    expect(callers.sort()).toEqual(['_utils/huddle/applyPlan.js']);
+    const callers = sources().filter((s) => /\b(decideApplication|slotHoldsLiveCall)\(/.test(s.c) && !/function (decideApplication|slotHoldsLiveCall)\b/.test(s.c)).map((s) => s.rel);
+    expect(callers.sort()).toEqual(['api/_utils/huddle/applyPlan.js']);
   });
 });
 
@@ -160,6 +175,11 @@ describe('planted defects: each check fails on the mutation it names (a guard th
       }
       // the import dropped
       expect(problemsOfHandler(src.replace(', ensureReleaseView', ''), spec).length).toBeGreaterThan(0);
+      if (!spec.ensure) {
+        // a dead branch, and an argument that dates the view in 1970 (the resolver would then read it as stale)
+        expect(problemsOfHandler(src.replace(/^(\s*)await ensureReleaseView\(db\);/m, '$1if (Date.now() < 0) await ensureReleaseView(db);'), spec).length).toBeGreaterThan(0);
+        expect(problemsOfHandler(src.replace(/^(\s*)await ensureReleaseView\(db\);/m, '$1await ensureReleaseView(db, { nowMs: 0 });'), spec).length).toBeGreaterThan(0);
+      }
     });
   }
   it('the evaluator: no read, a second read, a read before the early return and a read after the loop starts are each caught', () => {
@@ -176,7 +196,6 @@ describe('planted defects: each check fails on the mutation it names (a guard th
     const line = src.split('\n').find((l) => l.includes('await ensureReleaseView(db, { force: true'));
     expect(line).toBeTruthy();
     expect(problemsOfSweep(src.replace(line, ''))).not.toEqual([]);
-    expect(problemsOfSweep(src.replace(line, '').replace('let state;', `let state;\n${line}`).replace('const snap = await withTimeout(sweepStateRef(db).get()', `${line}\n    const snap = await withTimeout(sweepStateRef(db).get()`)).length).toBeGreaterThanOrEqual(0);
     const after = src.replace(line, '').replace('  summary.phaseBefore = { ...state };', `${line}\n  summary.phaseBefore = { ...state };`);
     expect(problemsOfSweep(after)).not.toEqual([]);
     const before = src.replace(line, '').replace("const global = resolveGlobalCallRecordsMode();", `${line}\n  const global = resolveGlobalCallRecordsMode();`);

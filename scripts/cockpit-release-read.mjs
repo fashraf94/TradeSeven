@@ -30,6 +30,12 @@
 // delete, create, runTransaction, batch or bulkWriter (scripts/cockpit-release-read.test.js
 // greps it). The only file written is --out (the tables).
 //
+// KNOWN LIMITS (stated, review RS-L5-6/7/11): commands vs acknowledgments are classed by the call's CURRENT answer kind, so an
+// acknowledgment later replaced by a `replace` counts both answers as commands; the overdue queue-row count is raw (a
+// `next_check` row is overdue from its slot but the sweep holds it to the session close, so mid-session it over-counts); owner
+// ordinals are re-assigned on each read; the "largest run" columns are independent maxima; weekends are skipped and market
+// holidays print an all-zero row; a run killed at the platform ceiling writes no agentEvalRuns record.
+//
 // USAGE (repo root):
 //   node scripts/cockpit-release-read.mjs --from 2026-11-12 --to 2026-11-14 [--out <tables.md>]
 //   --from / --to: ET dates, inclusive (default: today's ET date). Weekends are skipped.
@@ -131,30 +137,42 @@ const rate = (n, d) => (d > 0 ? n / d : null);
 export function checksRead(ticks, days) {
   const blank = () => ({ n: 0, timeout: 0, e400: 0, invalid: 0, other: 0 });
   const out = {};
-  for (const d of days) out[d] = { day: d, on: blank(), off: blank(), shadow: blank() };
-  for (const t of Array.isArray(ticks) ? ticks : []) {
-    const arm = classifyTick(t);
-    if (!arm) continue;
-    const row = out[etDay(toMs(t.capturedAt ?? t.at))];
-    if (!row) continue;
-    const a = row[arm];
+  for (const d of days) out[d] = { day: d, on: blank(), cohort: blank(), off: blank(), shadow: blank() };
+  const count = (a, t) => {
     a.n += 1;
     if (t.model?.outcome === 'failed') {
       const k = t.model?.failureClass;
       if (k === 'timeout') a.timeout += 1; else if (k === '400') a.e400 += 1; else if (k === 'invalid_tool_result') a.invalid += 1; else a.other += 1;
     }
+  };
+  for (const t of Array.isArray(ticks) ? ticks : []) {
+    const arm = classifyTick(t);
+    if (!arm) continue;
+    const row = out[etDay(toMs(t.capturedAt ?? t.at))];
+    if (!row) continue;
+    count(row[arm], t);
+    // The COHORT's own checks, apart from the allowlisted pilot's (League and agent mode): a cohort regression must not be
+    // diluted by the pilot's volume (review RS-L5-1). main() sets `cohort` per tick; null/absent = not determinable.
+    if (arm === 'on' && t.cohort === true) count(row.cohort, t);
   }
+  const CLASSES = ['timeout', 'e400', 'invalid', 'other'];
+  const flagsOf = (a, off) => {
+    const flags = {};
+    for (const k of CLASSES) {
+      const onRate = rate(a[k], a.n);
+      const offRate = rate(off[k], off.n);
+      // Above the `off` baseline of the same session; with no `off` check that session there is no baseline (null), and a
+      // failure on an `on` check with no baseline is flagged for a human to read, never passed silently. `other` is every
+      // failure class that is not one of the three named (truncated_response, build_timeout, 429/5xx …) — never hidden.
+      flags[k] = onRate === null ? 'none' : (offRate === null ? (a[k] > 0 ? 'no baseline' : 'ok') : (onRate > offRate ? 'ABOVE' : 'ok'));
+    }
+    return flags;
+  };
   return days.map((d) => {
     const row = out[d];
-    const flags = {};
-    for (const k of ['timeout', 'e400', 'invalid']) {
-      const onRate = rate(row.on[k], row.on.n);
-      const offRate = rate(row.off[k], row.off.n);
-      // Above the `off` baseline of the same session; with no `off` check that session there is no baseline (null), and a
-      // failure on an `on` check with no baseline is flagged for a human to read, never passed silently.
-      flags[k] = onRate === null ? 'none' : (offRate === null ? (row.on[k] > 0 ? 'no baseline' : 'ok') : (onRate > offRate ? 'ABOVE' : 'ok'));
-    }
-    return { ...row, flags, tripped: Object.values(flags).some((f) => f === 'ABOVE') };
+    const flags = flagsOf(row.on, row.off);
+    const cohortFlags = flagsOf(row.cohort, row.off);
+    return { ...row, flags, cohortFlags, tripped: [...Object.values(flags), ...Object.values(cohortFlags)].some((f) => f === 'ABOVE') };
   });
 }
 
@@ -208,19 +226,25 @@ export function cohortRead(battleDays, { allowlist = null, inCohort = null } = {
  */
 export function sweepLagRead({ calls, queue, nowMs, deadlineOf = (c) => toMs(c?.horizon?.expiresAt) }, days) {
   const lags = {};
-  for (const d of days) lags[d] = [];
+  const ended = {};
+  for (const d of days) { lags[d] = []; ended[d] = 0; }
   for (const c of Array.isArray(calls) ? calls : []) {
     if (c?.stateSource !== 'sweep') continue;
     const at = toMs(c.stateChangedAt);
     const due = deadlineOf(c);
-    const bucket = lags[etDay(at)];
-    if (!bucket || !finite(at) || !finite(due)) continue;
-    bucket.push(Math.max(0, at - due));
+    if (!finite(at) || !finite(due)) continue;
+    // Bucketed by the session of the call's DEADLINE (not the stamp's day): a Friday-close call stamped on Saturday is Friday's lag
+    // (review RS-L5-5). An `ended_with_battle` settle is counted apart: its deadline is by construction after the battle's end, so a
+    // lag from it would clamp to 0 however late the sweep ran (RS-L5-4).
+    const day = etDay(due);
+    if (!(day in lags)) continue;
+    if (c.state === 'ended_with_battle') { ended[day] += 1; continue; }
+    lags[day].push(Math.max(0, at - due));
   }
   const overdue = (Array.isArray(queue) ? queue : []).filter((r) => finite(toMs(r?.nextExpiresAt)) && toMs(r.nextExpiresAt) > 0 && toMs(r.nextExpiresAt) < nowMs).length;
   return {
     overdueQueueRows: overdue,
-    perDay: days.map((d) => ({ day: d, swept: lags[d].length, medianMs: percentile(lags[d], 0.5), p90Ms: percentile(lags[d], 0.9), maxMs: lags[d].length ? Math.max(...lags[d]) : null })),
+    perDay: days.map((d) => ({ day: d, swept: lags[d].length, endedWithBattle: ended[d], medianMs: percentile(lags[d], 0.5), p90Ms: percentile(lags[d], 0.9), maxMs: lags[d].length ? Math.max(...lags[d]) : null })),
   };
 }
 
@@ -262,15 +286,23 @@ export function renderStage(read) {
   L.push(`Read at ${new Date(read.readAtMs).toISOString()} · ET sessions ${read.days.join(', ')} · control document: ${read.control}. No uid, owner id, agent id or battle id is printed; owners are ordinals.`, '');
   const trips = [];
   for (const e of read.evaluator) if (e.tripped) trips.push(`${e.day}: evaluator (${e.budgetSkippedRuns} budget-skipped run(s), ${e.deferredRuns} deferred, ${e.overWallRuns} over ${WALL_TRIP_MS / 1000} s)`);
-  for (const c of read.checks) if (c.tripped) trips.push(`${c.day}: \`on\` checks above the \`off\` baseline (${Object.entries(c.flags).filter(([, f]) => f === 'ABOVE').map(([k]) => k).join(', ')})`);
-  for (const c of read.checks) for (const [k, f] of Object.entries(c.flags)) if (f === 'no baseline') trips.push(`${c.day}: \`on\` ${k} with no \`off\` baseline that session — read it`);
+  for (const c of read.checks) {
+    const above = (flags) => Object.entries(flags).filter(([, f]) => f === 'ABOVE').map(([k]) => k).join(', ');
+    if (above(c.flags)) trips.push(`${c.day}: \`on\` checks above the \`off\` baseline (${above(c.flags)})`);
+    if (above(c.cohortFlags)) trips.push(`${c.day}: the COHORT's \`on\` checks above the \`off\` baseline (${above(c.cohortFlags)})`);
+  }
+  for (const c of read.checks) for (const [k, f] of Object.entries({ ...c.flags })) if (f === 'no baseline') trips.push(`${c.day}: \`on\` ${k} with no \`off\` baseline that session — read it`);
+  for (const c of read.checks) for (const [k, f] of Object.entries(c.cohortFlags)) if (f === 'no baseline') trips.push(`${c.day}: the cohort's ${k} with no \`off\` baseline that session — read it`);
   L.push(`**Trips:** ${trips.length ? trips.join('; ') : 'none'}.`, '');
   L.push('### Evaluator runs (agentEvalRuns)', '');
   L.push(table(['ET day', 'Runs', 'budgetSkipped > 0', 'deferred > 0', `wallMs > ${WALL_TRIP_MS / 1000} s`, 'Max wall', 'Max battles', 'Max model calls'],
     read.evaluator.map((e) => [e.day, e.runs, e.budgetSkippedRuns, e.deferredRuns, e.overWallRuns, secs(e.maxWallMs), e.maxBattles, e.maxModelCalls])), '');
   L.push('### Model-call checks — `on` against the `off` baseline of the same session', '');
-  L.push(table(['ET day', '`on` checks', '`on` timeout / 400 / invalid', '`off` checks', '`off` timeout / 400 / invalid', 'Flags (timeout · 400 · invalid)'],
-    read.checks.map((c) => [c.day, c.on.n, `${c.on.timeout} / ${c.on.e400} / ${c.on.invalid} (${pct(c.on.timeout + c.on.e400 + c.on.invalid, c.on.n)})`, c.off.n, `${c.off.timeout} / ${c.off.e400} / ${c.off.invalid} (${pct(c.off.timeout + c.off.e400 + c.off.invalid, c.off.n)})`, `${c.flags.timeout} · ${c.flags.e400} · ${c.flags.invalid}`])), '');
+  const fails = (a) => `${a.timeout} / ${a.e400} / ${a.invalid} / ${a.other} (${pct(a.timeout + a.e400 + a.invalid + a.other, a.n)})`;
+  const flagText = (f) => `${f.timeout} · ${f.e400} · ${f.invalid} · ${f.other}`;
+  L.push('Failures are timeout / 400 / invalid_tool_result / other (every other failure class: truncated_response, build_timeout, 429, 5xx …). The **cohort** columns are the release cohort\'s own `on` checks, apart from the allowlisted pilot\'s.', '');
+  L.push(table(['ET day', '`on` checks (all)', '`on` failures', 'Flags (all `on`)', 'Cohort `on` checks', 'Cohort failures', 'Flags (cohort)', '`off` checks', '`off` failures'],
+    read.checks.map((c) => [c.day, c.on.n, fails(c.on), flagText(c.flags), c.cohort.n, fails(c.cohort), flagText(c.cohortFlags), c.off.n, fails(c.off)])), '');
   L.push('### Answers (commands, heard, acted, no_matching_trade — `on` battles)', '');
   L.push(table(['ET day', 'Commands', 'Acknowledgments', 'Heard', 'Acted', 'No matching trade'], read.answers.map((a) => [a.day, a.commands, a.acknowledgments, a.heard, a.acted, a.noMatchingTrade])), '');
   L.push(`### Release-cohort battles (agent mode, ${read.cohort.basis}, by owner ordinal)`, '');
@@ -278,7 +310,8 @@ export function renderStage(read) {
     read.cohort.perDay.map((c) => [c.day, c.onAgentBattles, dash(c.cohortBattles), c.owners.length ? c.owners.map((o) => `${o.ordinal} ×${o.battles}`).join(' · ') : '—'])), '');
   L.push('### Sweep lag (calls the sweep settled: stamp − deadline)', '');
   L.push(`Queue rows overdue at the read: **${read.sweep.overdueQueueRows}**.`, '');
-  L.push(table(['ET day', 'Swept', 'Median', 'p90', 'Max'], read.sweep.perDay.map((s) => [s.day, s.swept, mins(s.medianMs), mins(s.p90Ms), mins(s.maxMs)])), '');
+  L.push('By the session of the call\'s deadline; `ended_with_battle` settles are counted apart (their deadline is after the battle\'s end, so they have no lag to measure).', '');
+  L.push(table(['ET day (deadline)', 'Swept (expired)', 'Ended with battle', 'Median', 'p90', 'Max'], read.sweep.perDay.map((s) => [s.day, s.swept, s.endedWithBattle, mins(s.medianMs), mins(s.p90Ms), mins(s.maxMs)])), '');
   L.push(`### Cost line (Haiku 4.5 list price $${HAIKU_PRICE_PER_MTOK.input} in / $${HAIKU_PRICE_PER_MTOK.output} out per MTok; the declarations tool's extra at the report's estimate, $${ON_EXTRA_USD_PER_CHECK} per \`on\` check)`, '');
   L.push(table(['ET day', '`on` checks', 'Input tokens', 'Output tokens', 'Model cost', 'Estimated extra from `on`'], read.cost.map((c) => [c.day, c.onChecks, c.inputTokens.toLocaleString('en-US'), c.outputTokens.toLocaleString('en-US'), usd(c.modelUsd), usd(c.extraUsd)])), '');
   return L.join('\n');
@@ -326,7 +359,11 @@ async function main() {
     const b = doc.data();
     if (b.isCpu === true) continue; // CPU seats never call the model and never resolve `on`
     const ref = db.collection('agentBattles').doc(doc.id);
-    const ts = (await ref.collection('ticks').select('schemaVersion', 'capturedAt', 'model', 'callEnvelope').get()).docs.map((t) => t.data());
+    // Is this battle in the release cohort? agent mode, a real owner, and — with the allowlist in the shell — not allowlisted, else
+    // by the control document's own bucket test; null when neither is available. The tick carries only the flag, never the owner.
+    const isAgentReal = b.gameMode === 'baggerbomb_agent' && b.isCpu !== true && typeof b.ownerId === 'string' && b.ownerId.length > 0;
+    const cohort = allowlist ? (isAgentReal && !allowlist.has(b.ownerId)) : (inCohort ? inCohort(b) : null);
+    const ts = (await ref.collection('ticks').select('schemaVersion', 'capturedAt', 'model', 'callEnvelope').get()).docs.map((t) => ({ ...t.data(), cohort }));
     ticks.push(...ts);
     const onDays = new Set(ts.filter((t) => classifyTick(t) === 'on').map((t) => etDay(toMs(t.capturedAt))));
     for (const d of onDays) if (battleDays[d]) battleDays[d].push({ gameMode: b.gameMode, isCpu: b.isCpu, ownerId: b.ownerId, ordinal: ordinal.get(b.ownerId) });

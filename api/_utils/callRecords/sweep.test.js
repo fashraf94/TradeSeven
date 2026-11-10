@@ -677,3 +677,33 @@ describe('the release cohort in the sweep — one control read a run, before any
     expect(controlReads.n).toBe(0);
   });
 });
+
+// RS-L3-2: the control read must not spend the sweep's starvation floor. On a budget just over the floor
+// (2,100 ms) a control document that never answers is cut at 100 ms (budget − floor), not at the full 1.5 s,
+// so the sweep still reaches its own state read; with the full 20 s the read gets its whole bound.
+describe('the release read is bounded by the sweep\'s starvation floor', () => {
+  beforeEach(async () => { const { resetReleaseView } = await import('./release.js'); resetReleaseView(); });
+  afterEach(async () => { const { resetReleaseView } = await import('./release.js'); resetReleaseView(); });
+  const hangingControl = (db, bounds) => {
+    const collection = db.collection.bind(db);
+    db.collection = (name) => (name === 'cockpitConfig'
+      ? { doc: () => ({ get: () => { bounds.started = Date.now(); return new Promise(() => {}); } }) }
+      : collection(name));
+    return db;
+  };
+  it('a nearly starved budget: a hanging control read times out in about budget − floor and the sweep still runs (phaseBefore is set, nothing stopped)', async () => {
+    const bounds = {};
+    const db = hangingControl(oneBattle(), bounds);
+    const t0 = performance.now();
+    const res = await run(db, { handlerStartMs: NOW - SWEEP_HANDLER_CAP_MS + SWEEP_STARVATION_MS + 100 });
+    const waited = performance.now() - t0;
+    expect(res.starved).toBeFalsy();
+    expect(res.stopped).toBeUndefined();
+    expect(res.phaseBefore).not.toBeNull();
+    expect(waited).toBeLessThan(900); // ~100 ms, never the full 1,500 ms bound
+  });
+  it('the source bounds the read by the starvation floor', () => {
+    const src = readFileSync(resolve(HERE, 'sweep.js'), 'utf8').replace(/\r\n/g, '\n');
+    expect(src).toContain('Math.min(RELEASE_READ_TIMEOUT_MS, Math.max(1, deadlineMs - Date.now() - SWEEP_STARVATION_MS))');
+  });
+});

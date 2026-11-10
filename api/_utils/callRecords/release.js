@@ -101,14 +101,21 @@ export const RELEASE_EMPTY_VIEW = emptyView('unread');
  * @returns {{ status: string, active: boolean, shareBp: number, salt: string, readAtMs: number|null }}
  */
 export function parseReleaseDocument(data, readAtMs = null) {
-  if (data === null || data === undefined) return emptyView('absent', readAtMs);
-  if (!isPlain(data)) return emptyView('malformed', readAtMs);
-  const { shareBp, disabled, salt } = data;
-  if (!Number.isInteger(shareBp) || shareBp < 0 || shareBp > RELEASE_BP_MAX) return emptyView('malformed', readAtMs);
-  if (typeof disabled !== 'boolean') return emptyView('malformed', readAtMs);
-  if (typeof salt !== 'string') return emptyView('malformed', readAtMs);
-  if (disabled) return Object.freeze({ status: 'disabled', active: false, shareBp, salt, readAtMs });
-  return Object.freeze({ status: 'ok', active: true, shareBp, salt, readAtMs });
+  try {
+    if (data === null || data === undefined) return emptyView('absent', readAtMs);
+    if (!isPlain(data)) return emptyView('malformed', readAtMs);
+    // OWN fields only: an inherited property is not something a Console write made.
+    for (const k of ['shareBp', 'disabled', 'salt']) if (!Object.prototype.hasOwnProperty.call(data, k)) return emptyView('malformed', readAtMs);
+    const { shareBp, disabled, salt } = data;
+    if (!Number.isInteger(shareBp) || shareBp < 0 || shareBp > RELEASE_BP_MAX) return emptyView('malformed', readAtMs);
+    if (typeof disabled !== 'boolean') return emptyView('malformed', readAtMs);
+    if (typeof salt !== 'string') return emptyView('malformed', readAtMs);
+    if (disabled) return Object.freeze({ status: 'disabled', active: false, shareBp, salt, readAtMs });
+    return Object.freeze({ status: 'ok', active: true, shareBp, salt, readAtMs });
+  } catch {
+    // A throwing getter on the data: not a document this module can read.
+    return emptyView('malformed', readAtMs);
+  }
 }
 
 /**
@@ -133,6 +140,8 @@ export function bucketOf(ownerId, salt) {
 export function isInReleaseCohort(battle, view) {
   try {
     if (!view || view.active !== true) return false;
+    // The view's own fields are re-checked: a hand-built view (a script's argument) is not trusted by coercion.
+    if (!Number.isInteger(view.shareBp) || view.shareBp < 0 || view.shareBp > RELEASE_BP_MAX || typeof view.salt !== 'string') return false;
     if (!battle || typeof battle !== 'object') return false;
     if (battle.gameMode !== RELEASE_COHORT_GAME_MODE) return false;
     if (battle.isCpu === true) return false;
@@ -151,17 +160,25 @@ export function isInReleaseCohort(battle, view) {
 let cached = RELEASE_EMPTY_VIEW; // the last view read (or the empty one)
 let cachedExpiresAtMs = 0;       // when a non-forced ensure may reuse it
 let inflight = null;             // one shared read for concurrent non-forced callers
+// Reads are numbered by START: a read that finishes AFTER a later-started one has already landed must not overwrite
+// the newer view (a slow stale 'ok' must never undo a newer 'disabled' — the kill switch).
+let seq = 0;
+let appliedSeq = 0;
+// One Firestore Admin handle per process in production, so the cache is not keyed by it.
 
 /**
  * The cached view, SYNCHRONOUSLY — what the resolver reads. A view that was
  * never loaded, or is older than RELEASE_VIEW_MAX_AGE_MS, is the empty view.
  * Never throws.
  */
-export function getReleaseView({ nowMs = Date.now() } = {}) {
+export function getReleaseView(opts) {
   try {
+    const nowMs = opts && typeof opts.nowMs === 'number' && Number.isFinite(opts.nowMs) ? opts.nowMs : Date.now();
     const at = cached.readAtMs;
     if (typeof at !== 'number' || !Number.isFinite(at)) return RELEASE_EMPTY_VIEW;
-    if (nowMs - at > RELEASE_VIEW_MAX_AGE_MS) return RELEASE_EMPTY_VIEW;
+    const age = nowMs - at;
+    // `!(age <= MAX)` also rejects NaN; a view dated well in the future (a clock stepped back) is not trusted either.
+    if (!(age <= RELEASE_VIEW_MAX_AGE_MS) || age < -RELEASE_VIEW_TTL_MS) return RELEASE_EMPTY_VIEW;
     return cached;
   } catch {
     return RELEASE_EMPTY_VIEW;
@@ -173,18 +190,26 @@ export function resetReleaseView() {
   cached = RELEASE_EMPTY_VIEW;
   cachedExpiresAtMs = 0;
   inflight = null;
+  appliedSeq = seq; // a read still in flight from before the reset can no longer land
 }
 
-/** One bounded read of the document → a view. Never throws, never rejects. */
-async function readOnce(db, { timeoutMs, nowMs }) {
+/**
+ * One bounded read of the document → a view. Never throws, never rejects. A read that misses its bound reports 'timeout'
+ * NOW (the caller is never held past the bound) but is not abandoned: if it later lands with a document, `onLate(view)` is
+ * handed that view, so a slow first RPC of a cold function instance corrects the cache when it arrives instead of 15 s later.
+ */
+async function readOnce(db, { timeoutMs, nowMs, onLate = null }) {
   let timer = null;
   try {
     const read = Promise.resolve().then(() => db.collection(RELEASE_COLLECTION).doc(RELEASE_DOC).get());
     const bound = new Promise((resolve) => { timer = setTimeout(() => resolve('__timeout__'), Math.max(1, timeoutMs)); });
     const snap = await Promise.race([read, bound]);
-    // The losing read may still reject later: swallow it so it is never an unhandled rejection.
+    if (snap === '__timeout__') {
+      // The losing read may still land (hand the late document over) or reject (swallow it: never an unhandled rejection).
+      read.then((late) => { try { if (onLate) onLate(parseReleaseDocument(late && late.exists ? late.data() : null, nowMs)); } catch { /* best effort */ } }, () => {});
+      return emptyView('timeout', nowMs);
+    }
     read.catch(() => {});
-    if (snap === '__timeout__') return emptyView('timeout', nowMs);
     const data = snap && snap.exists ? snap.data() : null;
     return parseReleaseDocument(data, nowMs);
   } catch {
@@ -201,26 +226,49 @@ async function readOnce(db, { timeoutMs, nowMs }) {
  * sweep, ONCE PER RUN). A failed read is cached for RELEASE_FAILURE_TTL_MS at most.
  *
  * @param {object} db  the Firestore Admin handle
- * @param {{ force?: boolean, ttlMs?: number, timeoutMs?: number, nowMs?: number }} [opts]
+ * @param {{ force?: boolean, retry?: boolean, ttlMs?: number, timeoutMs?: number, nowMs?: number }} [opts]
  */
-export async function ensureReleaseView(db, { force = false, ttlMs = RELEASE_VIEW_TTL_MS, timeoutMs = RELEASE_READ_TIMEOUT_MS, nowMs } = {}) {
+export async function ensureReleaseView(db, opts) {
   try {
-    const now = typeof nowMs === 'number' && Number.isFinite(nowMs) ? nowMs : Date.now();
+    // Every option is sanitised: a non-number, a non-finite or a non-positive value is the default, and the
+    // bounds are clamped (a timer past 2^31 ms would fire at once and fail closed anyway).
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const force = o.force === true;
+    const ttlMs = typeof o.ttlMs === 'number' && Number.isFinite(o.ttlMs) && o.ttlMs > 0 ? Math.min(o.ttlMs, RELEASE_VIEW_MAX_AGE_MS) : RELEASE_VIEW_TTL_MS;
+    const timeoutMs = typeof o.timeoutMs === 'number' && Number.isFinite(o.timeoutMs) && o.timeoutMs > 0 ? Math.min(o.timeoutMs, 30_000) : RELEASE_READ_TIMEOUT_MS;
+    const now = typeof o.nowMs === 'number' && Number.isFinite(o.nowMs) ? o.nowMs : Date.now();
     if (!force) {
       if (cached.readAtMs !== null && now < cachedExpiresAtMs) return getReleaseView({ nowMs: now });
       if (inflight) return await inflight;
     }
+    const mySeq = ++seq;
+    const keepFor = (view) => (view.status === 'ok' || view.status === 'disabled' || view.status === 'absent' || view.status === 'malformed'
+      ? ttlMs
+      : Math.min(ttlMs, RELEASE_FAILURE_TTL_MS));
+    // A read that timed out and lands later replaces the failure — only while that failure is still the standing view.
+    const onLate = (late) => { if (appliedSeq === mySeq && cached.status === 'timeout') { cached = late; cachedExpiresAtMs = now + keepFor(late); } };
+    // A FORCED read (the evaluator: once per run, with nothing to refresh it) is retried once on a failure before the run
+    // gives up on the cohort; `retry: false` (the sweep, which has a budget to protect) opts out. Request paths read once.
+    const retry = force && o.retry !== false;
     const run = (async () => {
-      const view = await readOnce(db, { timeoutMs, nowMs: now });
-      const keepMs = view.status === 'ok' || view.status === 'disabled' || view.status === 'absent' || view.status === 'malformed'
-        ? ttlMs
-        : Math.min(ttlMs, RELEASE_FAILURE_TTL_MS);
-      cached = view;
-      cachedExpiresAtMs = now + keepMs;
-      return view;
+      let view = await readOnce(db, { timeoutMs, nowMs: now, onLate }); // never rejects
+      if (retry && (view.status === 'error' || view.status === 'timeout')) view = await readOnce(db, { timeoutMs, nowMs: now, onLate });
+      if (mySeq > appliedSeq) {
+        appliedSeq = mySeq;
+        cached = view;
+        cachedExpiresAtMs = now + keepFor(view);
+        // A failed or malformed read is the one thing that silently empties the cohort: leave a line (the house `[calls]` style).
+        if (view.status === 'error' || view.status === 'timeout' || view.status === 'malformed') {
+          console.warn(`[release] control view ${view.status} — the release cohort is EMPTY (the allowlist alone decides) for ${Math.round(keepFor(view) / 1000)} s`);
+        }
+        return view;
+      }
+      return cached; // a later-started read already landed: its view stands
     })();
-    if (!force) inflight = run.finally(() => { if (inflight) inflight = null; });
-    return await run;
+    if (force) return await run;
+    const tracked = run.then((v) => { if (inflight === tracked) inflight = null; return v; });
+    inflight = tracked;
+    return await tracked;
   } catch {
     return RELEASE_EMPTY_VIEW;
   }

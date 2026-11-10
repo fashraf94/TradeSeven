@@ -98,7 +98,11 @@ export default async function handler(req, res) {
     const db = getFirebaseAdmin();
     // The release cohort's control view is made fresh alongside the battle read
     // (cached 60 s; it never throws and fails closed to the allowlist).
-    const [snap] = await Promise.all([db.collection('agentBattles').doc(battleId.trim()).get(), ensureReleaseView(db)]);
+    const [snap, releaseView] = await Promise.all([db.collection('agentBattles').doc(battleId.trim()).get(), ensureReleaseView(db)]);
+    // The control read ran in parallel with the first RPC of a possibly cold instance; if it failed (an error, or no answer in
+    // its bound) the channel is warm now, so ask ONCE more rather than answer `on: false` for a cohort player — the client
+    // re-asks only on a status change.
+    if (releaseView?.status === 'error' || releaseView?.status === 'timeout') await ensureReleaseView(db, { force: true, retry: false });
     if (!snap.exists) return res.status(404).json({ error: 'not_found' });
     const battle = snap.data();
     if (battle?.ownerId !== user.uid) return res.status(403).json({ error: 'forbidden' });

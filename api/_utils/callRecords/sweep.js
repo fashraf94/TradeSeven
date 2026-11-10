@@ -458,7 +458,9 @@ export async function runCallSweep({ db, handlerStartMs, nowMs = Date.now() }) {
   // (force), bounded by the sweep's own deadline, before any row's parent resolves
   // the mode (sweepTransition, the due/nullOnly pages and the reconcile page all do).
   // Never throws; fails closed to the allowlist alone.
-  await ensureReleaseView(db, { force: true, timeoutMs: Math.min(RELEASE_READ_TIMEOUT_MS, Math.max(1, deadlineMs - Date.now())) });
+  // The read is bounded so it cannot spend the sweep's starvation floor (SWEEP_STARVATION_MS): with the full 20 s it gets
+  // the whole 1.5 s; on a nearly starved budget a slow read times out (an empty cohort) instead of starving the sweep.
+  await ensureReleaseView(db, { force: true, retry: false, timeoutMs: Math.min(RELEASE_READ_TIMEOUT_MS, Math.max(1, deadlineMs - Date.now() - SWEEP_STARVATION_MS)) });
   let state;
   try {
     const snap = await withTimeout(sweepStateRef(db).get(), deadlineMs - Date.now(), 'calls_sweep_state');

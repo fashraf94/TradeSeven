@@ -16,7 +16,7 @@
 // between the read and the commit — discards the buffer and RE-RUNS the body
 // against the changed doc, the way the real client retries on contention.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 
 const state = vi.hoisted(() => ({
@@ -87,6 +87,7 @@ function readDoc(col, id) {
   if (col === 'agents') return docSnap(state.agent && state.agent.__id === id ? state.agent : null, id);
   if (col === 'tournamentGroups') return docSnap(state.group, id);
   if (col === 'agentChatBudget') return docSnap(state.budgetDocs[id] ?? null, id);
+  if (col === 'cockpitConfig') return docSnap(state.control ?? null, id); // the release cohort's control document
   return docSnap(null, id);
 }
 function applyWrite(w) {
@@ -592,5 +593,41 @@ describe('file-directive — concurrency: a double-tap charges once', () => {
     expect(res.statusCode).toBe(429);
     expect(state.battle.chatBudgetUsed).toBe(10);
     expect(state.committed).toEqual([]);
+  });
+});
+
+// ---- The cockpit's own release switch (BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): the route awaits the control view BEFORE its transaction ----
+describe('file-directive — the release cohort: a non-allowlisted agent-mode owner under the share is resolved on', () => {
+  const CALL_SLOT = {
+    text: "Hold off on the AMD entry until today's close.", expiry: 'until_ms', directiveThreadId: 'thread-call-0001', createdAt: '2026-09-09T14:20:00.000Z',
+    family: 'call', expiresAtMs: 4_102_444_800_000, basis: 'this_session', callId: 'battle-1:eval_001:call:0', kind: 'call_hold',
+    action: { direction: 'entry', symbol: 'AMD', slot: 'support', counterpart: 'KO' }, answerId: 'battle-1:eval_001:call:0:answer:hold:',
+    filedAt: '2026-09-09T14:20:00.000Z', textVersion: 'callActions.v1',
+  };
+  const CONTROL = { shareBp: 10000, disabled: false, salt: 'salt-a' };
+  beforeEach(async () => { const { resetReleaseView } = await import('../_utils/callRecords/release.js'); resetReleaseView(); state.callsMode = 'on'; state.allow = []; state.control = undefined; });
+  afterEach(async () => { const { resetReleaseView } = await import('../_utils/callRecords/release.js'); resetReleaseView(); state.control = undefined; });
+
+  it('in the cohort: replacing a call-family slot creates the superseded event in the same transaction (calls mode resolved on)', async () => {
+    state.control = CONTROL;
+    state.battle = makeBattle({ directive: CALL_SLOT });
+    const res = await post({ ...BODY, expectedDirectiveThreadId: 'thread-call-0001' });
+    expect(res.statusCode).toBe(200);
+    expect(state.committed.map((w) => w.op)).toEqual(['update', 'create']);
+    expect(state.events['agentBattles/battle-1/callEvents/thread-call-0001:superseded']).toMatchObject({ kind: 'superseded' });
+  });
+
+  it('no document, disabled, malformed, League and a CPU seat: resolved off — the same replacement writes no event', async () => {
+    const { resetReleaseView } = await import('../_utils/callRecords/release.js');
+    for (const [control, over, why] of [[undefined, {}, 'no document'], [{ ...CONTROL, disabled: true }, {}, 'disabled'], [{ ...CONTROL, shareBp: 'x' }, {}, 'malformed'], [CONTROL, { gameMode: 'baggerbomb_tournament', groupId: 'group-xyz' }, 'League'], [CONTROL, { isCpu: true }, 'CPU seat']]) {
+      resetReleaseView();
+      state.committed = []; state.events = {};
+      state.control = control;
+      state.battle = makeBattle({ directive: CALL_SLOT, ...over });
+      const res = await post({ ...BODY, expectedDirectiveThreadId: 'thread-call-0001' });
+      expect(res.statusCode, why).toBe(200);
+      expect(state.committed.map((w) => w.op), why).not.toContain('create'); // (League also writes its day budget: a 'set')
+      expect(state.events, why).toEqual({});
+    }
   });
 });

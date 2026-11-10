@@ -15,7 +15,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // `control` is the release cohort's control document (cockpitConfig/release): undefined = absent, the dark state.
-const state = vi.hoisted(() => ({ uid: 'owner-uid-1', authFails: false, callsMode: 'on', middlewareHandles: false, battles: {}, reads: [], throwOnRead: false, control: undefined, controlThrows: false }));
+const state = vi.hoisted(() => ({ uid: 'owner-uid-1', authFails: false, callsMode: 'on', middlewareHandles: false, battles: {}, reads: [], throwOnRead: false, control: undefined, controlThrows: false, controlFailFirst: false }));
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => state.middlewareHandles }));
 vi.mock('../_utils/authMiddleware.js', () => ({
   requireAuth: async (_req, res) => {
@@ -34,6 +34,7 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({
         get: async () => {
           state.reads.push(`${name}/${id}`);
           if (name === 'cockpitConfig' && state.controlThrows) throw new Error('control read down');
+          if (name === 'cockpitConfig' && state.controlFailFirst) { state.controlFailFirst = false; throw new Error('cold start'); }
           if (state.throwOnRead && name !== 'cockpitConfig') throw new Error('firestore down');
           const data = name === 'cockpitConfig' ? state.control : state.battles[id];
           return { exists: data !== undefined, data: () => data };
@@ -69,6 +70,7 @@ beforeEach(() => {
   state.throwOnRead = false;
   state.control = undefined;
   state.controlThrows = false;
+  state.controlFailFirst = false;
   resetReleaseView();
   process.env.COCKPIT_ALLOWLIST_UIDS = 'owner-uid-1';
   resetCockpitStatusRateLimit();
@@ -301,5 +303,29 @@ describe('the release cohort — `on` follows the resolver, `allowlisted` stays 
     const res = await get();
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ on: false, allowlisted: false, serverNowMs: NOW });
+  });
+});
+
+// RS-L2-2: the control read ran alongside the first RPC of a possibly cold instance. If it fails, the channel is warm by the
+// time the battle read lands, so the route asks ONCE more rather than answer `on: false` for a cohort player (the client
+// re-asks only on a status change).
+describe('a failed control read is retried once after the battle read', () => {
+  it('an error on the first control read, then a good one → the cohort player is answered on: true', async () => {
+    const owner = ownerInBuckets('salt-a', 0, 10000);
+    asOwner(owner);
+    state.control = { shareBp: 10000, disabled: false, salt: 'salt-a' };
+    state.controlFailFirst = true;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect((await get()).body).toEqual({ on: true, allowlisted: false, serverNowMs: NOW });
+    expect(state.reads.filter((r) => r === 'cockpitConfig/release')).toHaveLength(2);
+  });
+  it('a control read that keeps failing answers off (fail closed), after exactly one retry', async () => {
+    const owner = ownerInBuckets('salt-a', 0, 10000);
+    asOwner(owner);
+    state.control = { shareBp: 10000, disabled: false, salt: 'salt-a' };
+    state.controlThrows = true;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect((await get()).body).toEqual({ on: false, allowlisted: false, serverNowMs: NOW });
+    expect(state.reads.filter((r) => r === 'cockpitConfig/release')).toHaveLength(2);
   });
 });
