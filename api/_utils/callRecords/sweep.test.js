@@ -661,6 +661,17 @@ describe('the release cohort in the sweep — one control read a run, before any
     expect(callsOf(db, B1)[`${B1}:eval_001:call:0`].state).toBe('expired_unresolved');
   });
 
+  it('a failing control read is NOT retried by the sweep (it has a budget to protect): exactly one attempt, then the allowlist alone decides (RS-L2-1 / M50)', async () => {
+    const { db } = cohortDb(CONTROL, { ownerId: 'owner-on' });
+    const collection = db.collection;
+    let attempts = 0;
+    db.collection = (name) => { if (name === 'cockpitConfig') { attempts += 1; throw new Error('control down'); } return collection(name); };
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = await run(db);
+    expect(res.stopped).toBeUndefined();
+    expect(attempts).toBe(1);
+  });
+
   it("global 'off' and 'shadow': the sweep still returns before ANY read — the control document included", async () => {
     for (const mode of ['off', 'shadow']) {
       flag.mode = mode;
