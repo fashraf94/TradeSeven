@@ -292,7 +292,7 @@ export function renderRollbackCheck(result, { check = ROLLBACK_CHECK } = {}) {
   // takes effect when production is redeployed (review L1-2).
   const action = {
     TRIP: result.window.cohort
-      ? ' — set `disabled: true` on cockpitConfig/release (no redeploy) and, if the allowlisted battles tripped too, remove the uid from COCKPIT_ALLOWLIST_UIDS and redeploy production; report (spec §10.4).'
+      ? ' — SAVE THIS OUTPUT FIRST (once the cohort is disabled a re-read no longer pools its battles), then set `disabled: true` on cockpitConfig/release (no redeploy) and, if the allowlisted battles tripped too, remove the uid from COCKPIT_ALLOWLIST_UIDS and redeploy production; report (spec §10.4).'
       : ' — remove the uid from COCKPIT_ALLOWLIST_UIDS, redeploy production, and report (spec §10.4).',
     'NO ALLOWLIST': ' — COCKPIT_ALLOWLIST_UIDS is not set in this shell or .env.local; nothing was measured.',
   }[result.verdict] ?? '';

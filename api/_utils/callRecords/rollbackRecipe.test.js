@@ -361,6 +361,7 @@ describe('the release cohort — pooled into the live rollback check', () => {
     const withCohort = computeRollbackCheck(tripping, { allowlist: [], cohort: ACTIVE, ...AT });
     expect(withCohort.verdict).toBe('TRIP');
     expect(renderRollbackCheck(withCohort).split('\n')[0]).toContain('set `disabled: true` on cockpitConfig/release (no redeploy)');
+    expect(renderRollbackCheck(withCohort).split('\n')[0]).toContain('SAVE THIS OUTPUT FIRST'); // disabling empties the cohort: a re-read would no longer pool its battles
     const allowOnly = computeRollbackCheck([battle('founder', 60, 6)], { allowlist: ['founder'], ...AT });
     expect(renderRollbackCheck(allowOnly).split('\n')[0]).toBe('- Verdict: **TRIP** — remove the uid from COCKPIT_ALLOWLIST_UIDS, redeploy production, and report (spec §10.4).');
   });

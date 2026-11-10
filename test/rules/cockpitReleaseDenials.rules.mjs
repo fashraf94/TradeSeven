@@ -139,6 +139,21 @@ describe('the posture is written down, not only inherited', () => {
     for (const statements of named) expect(statements).toEqual(['allow read, write: if false;']);
     expect(RULES_TEXT).not.toMatch(/cockpitConfig[^\n]*\n[^}]*allow\s+(read|write|get|list|create|update|delete)[^;]*if\s+(?!false)/);
   });
+  it('planted: the pin is not blind — a one-line, multi-line, literal-document and collection-group grant each produce a block that is not `allow read, write: if false;`', () => {
+    const pins = [/\/cockpitConfig\/(?:\{[^}]*\}|[^\s{]+)/, /\/\{[^}]*=\*\*\}\/cockpitConfig\/(?:\{[^}]*\}|[^\s{]+)/];
+    const found = (rules) => pins.flatMap((re) => ruleBlocks(rules, re));
+    for (const grant of [
+      'match /cockpitConfig/{docId} { allow read: if true; }',
+      'match /cockpitConfig/{docId} {\n  allow read: if true;\n}',
+      'match /cockpitConfig/release {\n  allow write: if request.auth != null;\n}',
+      'match /{path=**}/cockpitConfig/{docId} {\n  allow read: if true;\n}',
+    ]) {
+      const blocks = found(grant);
+      expect(blocks.length, grant).toBe(1);
+      expect(blocks[0], grant).not.toEqual(['allow read, write: if false;']);
+    }
+    expect(found('match /cockpitConfig/{docId} {\n  allow read, write: if false;\n}')).toEqual([['allow read, write: if false;']]);
+  });
   it('the root default-deny is the cover, and says exactly `allow read, write: if false;`', () => {
     const m = RULES_TEXT.match(/match \/\{document=\*\*\} \{([^}]*)\}/);
     expect(m, 'the root default-deny block').not.toBeNull();
