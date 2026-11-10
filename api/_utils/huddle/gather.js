@@ -20,7 +20,7 @@ import { TICKER_RE } from './planTemplates.js';
 import { buildSessionEvents } from './events.js';
 import { isCpuBattle, battleKindOf } from './applyRules.js';
 import { rankedAgentOf } from './confirmPlan.js';
-import { huddleDayRef } from './records.js';
+import { huddleDayRef, sessionWindowOf, nextSessionDateOf } from './records.js';
 import { getSessionForDate } from '../marketSchedule.js';
 import { packItem, headlineItem } from '../evidence/packItem.js';
 import { ensureSymbolEvidence } from '../evidence/symbolDayEvidence.js';
@@ -31,7 +31,6 @@ import { fetchLastClose } from '../evidence/lastClose.js';
 
 export const EVIDENCE_SYMBOL_CAP = 8;
 export const HEADLINES_PER_SYMBOL = 3;
-export const STRIP_LISTED = 8;
 const KIND_LABEL = Object.freeze({ ranked: 'ranked', casual: 'BaggerBomb', training: 'training' });
 // The readable name of each source on a source_status item (the transcript's and the cards' source lines); never in the id.
 const SOURCE_LABEL = Object.freeze({ eodhd: 'EODHD news', newsfilter: 'newsfilter', fantasytimes: 'FantasyTimes', marketContext: 'market context', macro: 'macro calendar', earnings: 'earnings calendar' });
@@ -183,13 +182,17 @@ export async function gatherForPlayer(db, { uid, etDate, session, shared, owner,
     }
   }
 
-  // ---- today's events: macro, and the earnings of names in the universe first ----
+  // ---- the events: today's macro prints, and the player's OWN names' reports — today's and the next session's before
+  // the open (Amendment E §E2: NO_ADDS_TO_BEFORE_REPORT's names; §E3 f: whether and when the player's names report, never
+  // the calendar's size). The session window decides which macro prints a NO_ADDS_BEFORE line may name (E2). ----
   const earnings = Array.isArray(shared?.earnings) ? shared.earnings : [];
-  const ordered = [...earnings.filter((r) => universe.has(r.symbol)), ...earnings.filter((r) => !universe.has(r.symbol))];
-  const listedEarnings = ordered.slice(0, STRIP_LISTED);
-  const events = buildSessionEvents({ etDate, macroEvents: shared?.macroEvents || [], earnings: listedEarnings });
+  const listedEarnings = earnings.filter((r) => universe.has(r.symbol));
+  const window = sessionWindowOf(session);
+  const nextEtDate = shared?.nextEtDate ?? nextSessionDateOf(etDate);
+  const events = buildSessionEvents({ etDate, macroEvents: shared?.macroEvents || [], earnings: listedEarnings, window, nextEtDate });
   for (const e of events.strip) {
-    add(packItem({ kind: 'event', fact: `${e.label.charAt(0).toUpperCase()}${e.label.slice(1)} is scheduled today.`, recordKind: e.source === 'macro' ? 'calendar.macro' : 'calendar.earnings', recordId: e.eventId || e.label, label: e.source === 'macro' ? 'macro calendar' : 'EODHD earnings calendar', at: etDate, asOf: etDate }));
+    const said = `${e.label.charAt(0).toUpperCase()}${e.label.slice(1)}`;
+    add(packItem({ kind: 'event', fact: e.next ? `${said} is scheduled.` : `${said} is scheduled today.`, recordKind: e.source === 'macro' ? 'calendar.macro' : 'calendar.earnings', recordId: e.eventId || e.label, label: e.source === 'macro' ? 'macro calendar' : 'EODHD earnings calendar', at: e.etDate ?? etDate, asOf: e.etDate ?? etDate }));
   }
 
   // ---- yesterday's plan ----
@@ -215,6 +218,8 @@ export async function gatherForPlayer(db, { uid, etDate, session, shared, owner,
     names: names.map((n) => ({ ...n, hasClose: closes.has(n.ticker) })),
     closes,
     events,
+    window,
+    nextEtDate,
     eventsListed: { listed: events.strip.length, earningsListed: listedEarnings.length, earningsTotal: earnings.length },
     tape: shared?.tape ?? null,
     evidence,

@@ -16,7 +16,7 @@ function strings(node, out = []) {
   else if (typeof node === 'function') {
     const sample = node('ARG0', { ARG0: 'ARG1' });
     if (typeof sample === 'string') out.push(sample);
-    for (const kind of ['HOLD', 'TRIM', 'WATCH', 'CHASE', 'FADE', 'NO_ADDS_BEFORE', 'NO_SWAPS_TODAY', 'CUT_IF_BELOW', 'NO_CHASE_ABOVE']) {
+    for (const kind of ['HOLD', 'TRIM', 'WATCH', 'CHASE', 'FADE', 'NO_ADDS_BEFORE', 'NO_SWAPS_TODAY', 'CUT_IF_BELOW', 'NO_CHASE_ABOVE', 'NO_ADDS_TO_BEFORE_REPORT']) {
       const item = node({ kind, ticker: 'ARGT', level: 48, eventId: 'e' }, { e: 'the ARGE data' });
       if (typeof item === 'string' && item) out.push(item);
     }
@@ -71,6 +71,10 @@ describe('the Huddle block of hubCopy.js', () => {
       expired: 'Expired at the close',
     });
     expect([H.readyTitle, H.open, H.deployReconfirm, H.deployReconfirmDoor]).toEqual(['Huddle ready', 'Open huddle', 'Your game plan was confirmed under a different approach.', 'Reconfirm']);
+  });
+
+  it("Amendment E §E2: the new line reads \"No adds to {t} before its report\"", () => {
+    expect(H.itemText({ kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'RKLB' }, {})).toBe('No adds to RKLB before its report');
   });
 
   it("a card's source line names each source once, in order", () => {

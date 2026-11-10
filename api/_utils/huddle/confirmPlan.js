@@ -39,7 +39,7 @@
 //
 // SKIP `{ etDate }`: a proposed plan becomes `skipped`, `measurement.skippedAt`.
 
-import { huddleDayRef, queueRowRef, PLAN_STATUS, RECORD_STATUS } from './records.js';
+import { huddleDayRef, queueRowRef, PLAN_STATUS, RECORD_STATUS, sessionWindowOf } from './records.js';
 import {
   validatePlan, validationChanged, revisionOf, renderPlan, renderedTooLong, renderedTextHashOf, isEmptyPlan,
 } from './planTemplates.js';
@@ -68,16 +68,25 @@ export function rankedAgentOf(docs) {
   return typeof found.data === 'function' ? { id: found.id, ...found.data() } : found;
 }
 
-/** The validation context the record froze at generation (plan.context): universe, closes, events. */
+/**
+ * The validation context the record froze at generation (plan.context): universe, closes, events — and, from Amendment E
+ * §E2, the session window (else the record's own session's), the events outside it and the report names. A record frozen
+ * before E2 has no report list: a NO_ADDS_TO_BEFORE_REPORT line on it is dropped (it cannot be checked).
+ */
 export function contextOfRecord(record, archetype) {
   const c = record?.plan?.context || {};
+  const list = (v) => (Array.isArray(v) ? v : []);
   return {
-    universe: new Set(Array.isArray(c.universe) ? c.universe : []),
+    universe: new Set(list(c.universe)),
     closes: new Map(Object.entries(c.closes || {})),
     events: {
-      eligible: new Map((Array.isArray(c.eligibleEvents) ? c.eligibleEvents : []).map((e) => [e.eventId, e])),
-      untimedIds: new Set(Array.isArray(c.untimedEventIds) ? c.untimedEventIds : []),
+      eligible: new Map(list(c.eligibleEvents).map((e) => [e.eventId, e])),
+      untimedIds: new Set(list(c.untimedEventIds)),
+      outsideSessionIds: new Set(list(c.outsideSessionEventIds)),
+      reportTickers: new Set(list(c.reportTickers)),
+      untimedReportTickers: new Set(list(c.untimedReportTickers)),
     },
+    window: c.window && typeof c.window.open === 'string' ? c.window : sessionWindowOf(record?.session),
     archetype,
   };
 }

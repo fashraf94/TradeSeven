@@ -7,6 +7,8 @@
 // session universe, the morning closes the ±25 % band is measured against, and the
 // session's eligible events with their fixed labels — so confirm re-validates an edit
 // against exactly what the plan was built from, server-side, without re-gathering.
+// Amendment E §E2 adds the session window, the events outside it, and the names that
+// report after today's close or before the next open (NO_ADDS_TO_BEFORE_REPORT's).
 
 import { validatePlan, revisionOf, TEMPLATE_VERSION } from './planTemplates.js';
 
@@ -15,9 +17,9 @@ import { validatePlan, revisionOf, TEMPLATE_VERSION } from './planTemplates.js';
  *           events: { eligible: Map<string, object>, untimedIds: Set<string> }, archetype: string|null }} p
  * @returns {{ plan: object, drops: object[] }}
  */
-export function buildPlanAtGeneration({ proposal, universe, closes, events, archetype }) {
+export function buildPlanAtGeneration({ proposal, universe, closes, events, archetype, window = null }) {
   const universeSet = new Set(universe);
-  const v = validatePlan(proposal, { universe: universeSet, closes, events, archetype });
+  const v = validatePlan(proposal, { universe: universeSet, closes, events, archetype, window });
   const closesObj = {};
   for (const [sym, close] of closes instanceof Map ? closes : []) {
     if (typeof close === 'number' && Number.isFinite(close)) closesObj[sym] = close;
@@ -37,6 +39,10 @@ export function buildPlanAtGeneration({ proposal, universe, closes, events, arch
       closes: closesObj,
       eligibleEvents: [...(events?.eligible?.values?.() || [])].map((e) => ({ eventId: e.eventId, label: e.label, source: e.source, etDate: e.etDate })),
       untimedEventIds: [...(events?.untimedIds || [])].sort(),
+      window: window ? { open: window.open, close: window.close } : null,
+      outsideSessionEventIds: [...(events?.outsideSessionIds || [])].sort(),
+      reportTickers: [...(events?.reportTickers?.keys?.() || events?.reportTickers || [])].sort(),
+      untimedReportTickers: [...(events?.untimedReportTickers || [])].sort(),
     },
     confirmations: [],
     confirmed: null,

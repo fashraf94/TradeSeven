@@ -194,6 +194,7 @@ export const HUB_COPY = Object.freeze({
         case 'NO_SWAPS_TODAY': return 'No swaps today';
         case 'CUT_IF_BELOW': return `Cut ${item.ticker} if it trades below ${at(item.level)}`;
         case 'NO_CHASE_ABOVE': return `Don't chase ${item.ticker} above ${at(item.level)}`;
+        case 'NO_ADDS_TO_BEFORE_REPORT': return `No adds to ${item.ticker} before its report`;
         default: return '';
       }
     },

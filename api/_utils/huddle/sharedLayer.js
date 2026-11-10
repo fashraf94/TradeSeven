@@ -8,13 +8,15 @@
 //              volume field exists there and none is passed (C §C12)
 //   macro      today's events from the existing macro module (api/_utils/macroCalendar.js;
 //              2026-only, its 2027 switch is its own task)
-//   earnings   today's reports, ONE raw EODHD /calendar/earnings call for today, parsed from
-//              the capture's keys (evidence/earnings.js; C §C11, report_date)
+//   earnings   today's reports and the next session's, ONE raw EODHD /calendar/earnings call
+//              from today through the next session (Amendment E §E2: a name reporting before
+//              the next open is what NO_ADDS_TO_BEFORE_REPORT names), parsed from the
+//              capture's keys (evidence/earnings.js; C §C11, report_date)
 // Each source's outcome is recorded; an error is said, never hidden.
 
 import { getMacroEventsInWindow } from '../macroCalendar.js';
 import { parseEarningsRows } from '../evidence/earnings.js';
-import { huddleRunRef } from './records.js';
+import { huddleRunRef, nextSessionDateOf } from './records.js';
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const str = (v) => (typeof v === 'string' && v ? v : null);
@@ -38,16 +40,16 @@ export function tapeOf(mc) {
   };
 }
 
-/** Today's US earnings rows, one call. Never throws. */
-export async function fetchTodaysEarnings({ etDate, signal, apiKey = process.env.EODHD_API_KEY, fetchImpl = fetch }) {
+/** Today's and the next session's US earnings rows, one call. Never throws. */
+export async function fetchTodaysEarnings({ etDate, toDate = nextSessionDateOf(etDate) ?? etDate, signal, apiKey = process.env.EODHD_API_KEY, fetchImpl = fetch }) {
   if (!apiKey) return { status: 'skipped', rows: [], reason: 'no_api_key' };
-  const url = `https://eodhd.com/api/calendar/earnings?fmt=json&from=${etDate}&to=${etDate}&api_token=${apiKey}`;
+  const url = `https://eodhd.com/api/calendar/earnings?fmt=json&from=${etDate}&to=${toDate}&api_token=${apiKey}`;
   try {
     const res = await fetchImpl(url, { signal });
     if (!res.ok) return { status: 'error', rows: [], reason: `http_${res.status}` };
     const data = await res.json();
     if (!Array.isArray(data?.earnings)) return { status: 'error', rows: [], reason: 'no_earnings_array' };
-    return { status: 'ok', rows: parseEarningsRows(data.earnings).filter((r) => r.reportDate === etDate) };
+    return { status: 'ok', rows: parseEarningsRows(data.earnings).filter((r) => r.reportDate === etDate || r.reportDate === toDate) };
   } catch (err) {
     return { status: 'error', rows: [], reason: err?.name === 'AbortError' ? 'aborted' : 'request_failed' };
   }
@@ -72,9 +74,11 @@ export async function buildSharedLayer(db, { etDate, nowMs = Date.now(), fetchEa
   } catch {
     sources.macro = 'error';
   }
-  const earn = await fetchEarnings({ etDate });
+  const nextEtDate = nextSessionDateOf(etDate);
+  const earn = await fetchEarnings({ etDate, toDate: nextEtDate ?? etDate });
   sources.earnings = earn.status;
-  return { tape, macroEvents, earnings: earn.rows, earningsTotal: earn.rows.length, sources, builtAt: new Date(nowMs).toISOString() };
+  // the counts stay today's (the run marker's record; never spoken, Amendment E §E3 f)
+  return { tape, macroEvents, earnings: earn.rows, earningsTotal: earn.rows.filter((r) => r.reportDate === etDate).length, nextEtDate: nextEtDate ?? null, sources, builtAt: new Date(nowMs).toISOString() };
 }
 
 /** Read the stored shared layer (null when the enqueue stage has not built it). */

@@ -42,6 +42,38 @@ export function etDateOfMs(ms) {
 }
 
 export const isEtDate = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+const ET_CLOCK = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+/** The ET wall clock of an instant, "HHmm" (Intl, never offset arithmetic). */
+export function etClockOfMs(ms) {
+  const parts = ET_CLOCK.formatToParts(new Date(ms));
+  const part = (type) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('hour').padStart(2, '0')}${part('minute').padStart(2, '0')}`;
+}
+
+/**
+ * Amendment E §E2: the regular session's window in ET clock terms, { open: '0930', close: '1600' } (an early close
+ * '1300'), from the session's own bounds — or null when the day has none (the event check then fails closed).
+ */
+export function sessionWindowOf(session) {
+  if (!session || typeof session.openMs !== 'number' || typeof session.closeMs !== 'number') return null;
+  return { open: etClockOfMs(session.openMs), close: etClockOfMs(session.closeMs) };
+}
+
+/** The next trading session after `etDate` (holidays and weekends skipped), or null beyond the calendar's horizon. */
+export function nextSessionDateOf(etDate) {
+  if (!isEtDate(etDate)) return null;
+  const [y, m, d] = etDate.split('-').map(Number);
+  let cursor = Date.UTC(y, m - 1, d, 12, 0, 0);
+  for (let i = 0; i < 15; i += 1) {
+    cursor += 86_400_000;
+    const ds = new Date(cursor).toISOString().slice(0, 10);
+    const s = getSessionForDate(ds);
+    if (!s) return null;
+    if (s.isTradingDay) return ds;
+  }
+  return null;
+}
 const isUid = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(v);
 
 /**

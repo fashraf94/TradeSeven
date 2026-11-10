@@ -20,6 +20,7 @@ import { buildPlanAtGeneration } from '../../api/_utils/huddle/planRecord.js';
 import { buildSessionEvents } from '../../api/_utils/huddle/events.js';
 import { issuePlaybackToken, resolvePlaybackToken, tokenHashOf } from '../../api/_utils/huddle/playback.js';
 import { getSessionForDate } from '../../api/_utils/marketSchedule.js';
+import { sessionWindowOf } from '../../api/_utils/huddle/records.js';
 
 const RUN = Date.now().toString(36);
 const ET = '2026-11-09';
@@ -39,7 +40,8 @@ beforeAll(() => {
 });
 afterAll(async () => { if (app) await deleteApp(app); });
 
-const EVENTS = buildSessionEvents({ etDate: ET, macroEvents: [{ date: ET, time: '10:00 AM ET', category: 'ISM Manufacturing', impact: 'high', event: 'ISM' }], earnings: [] });
+// Amendment E §E2: a NO_ADDS_BEFORE event must fall inside the session's window (the 10:00 AM ET print does)
+const EVENTS = buildSessionEvents({ etDate: ET, window: sessionWindowOf(SESSION), macroEvents: [{ date: ET, time: '10:00 AM ET', category: 'ISM Manufacturing', impact: 'high', event: 'ISM' }], earnings: [] });
 const PROPOSAL = {
   stances: [{ kind: 'FADE', ticker: 'AAA', level: 48 }, { kind: 'HOLD', ticker: 'BBB' }, { kind: 'WATCH', ticker: 'CCC' }],
   lines: [{ kind: 'NO_ADDS_BEFORE', eventId: `macro:ism_manufacturing:${ET}:1000` }, { kind: 'CUT_IF_BELOW', ticker: 'BBB', level: 42 }],
@@ -48,7 +50,7 @@ const PROPOSAL = {
 async function seed({ archetype = 'analyst', proposal = PROPOSAL } = {}) {
   n += 1;
   const uid = `cu${RUN}${n}`;
-  const { plan } = buildPlanAtGeneration({ proposal, universe: ['AAA', 'BBB', 'CCC'], closes: new Map([['AAA', 50], ['BBB', 44], ['CCC', 100]]), events: EVENTS, archetype });
+  const { plan } = buildPlanAtGeneration({ proposal, universe: ['AAA', 'BBB', 'CCC'], closes: new Map([['AAA', 50], ['BBB', 44], ['CCC', 100]]), events: EVENTS, archetype, window: sessionWindowOf(SESSION) });
   await db.doc(`huddles/${uid}/days/${ET}`).set({
     uid, etDate: ET, status: 'ready', session: { etDate: ET, isTradingDay: true, isEarlyClose: false, openMs: SESSION.openMs, closeMs: SESSION.closeMs },
     plan, measurement: { editCount: 0 }, audio: { gcsPath: `huddle/${uid}/${ET}/1/audio.mp3`, durationMs: 60_000 },

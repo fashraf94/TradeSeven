@@ -95,7 +95,7 @@ export const SYSTEM_PROMPT = [
   '',
   'NEVER: promise a clock time for the agent (it reads the plan "at its next check"); say anything about the player confirming, editing or skipping; say the agent "will" do something, or anything is "guaranteed", or the agent "has seen" anything; give a pre-market price or number; claim that you or the agent learn, improve, grow, remember or get smarter; mention trading volume or relative volume at all (the volume picture is unknown); say "nothing happened" (say "nothing found in the sources we checked").',
   '',
-  'PLAN PROPOSAL. stances: at most 3, each { kind, ticker, level } with kind one of HOLD, TRIM, CHASE, FADE, WATCH, the ticker from UNIVERSE, and level a price with at most two decimals within 25% of that ticker\'s prior close (only for CHASE or FADE "above" a level; otherwise null). lines: at most 2, each { kind, eventId, ticker, level } with kind one of NO_ADDS_BEFORE (eventId from EVENT IDS, ticker and level null), NO_SWAPS_TODAY (all null), CUT_IF_BELOW or NO_CHASE_ABOVE (ticker from UNIVERSE and a level; eventId null). Propose only what the evidence supports; an empty plan is fine on a quiet morning.',
+  'PLAN PROPOSAL. stances: at most 3, each { kind, ticker, level } with kind one of HOLD, TRIM, CHASE, FADE, WATCH, the ticker from UNIVERSE, and level a price with at most two decimals within 25% of that ticker\'s prior close (only for CHASE or FADE "above" a level; otherwise null). lines: at most 2, each { kind, eventId, ticker, level } with kind one of NO_ADDS_BEFORE (eventId from EVENT IDS: a print inside today\'s session; ticker and level null), NO_ADDS_TO_BEFORE_REPORT (ticker from REPORTS: a name that reports after today\'s close or before the next open; eventId and level null), NO_SWAPS_TODAY (all null), CUT_IF_BELOW or NO_CHASE_ABOVE (ticker from UNIVERSE and a level; eventId null). An earnings report is never a NO_ADDS_BEFORE event: it would freeze every add all day. Propose only what the evidence supports; an empty plan is fine on a quiet morning.',
   '',
   'Vary your opening by weekday. Plain spoken English, no lists, no markup, no emoji.',
 ].join('\n');
@@ -114,9 +114,14 @@ export function buildUserPrompt({ etDate, weekday, gathered, archetypeLabel, arc
   const t = gathered.tape;
   lines.push(t ? `TAPE (prior session${t.asOf ? `, as of ${t.asOf}` : ''}): regime ${t.regime ?? 'unknown'}; breadth ${t.breadthTier ?? 'unknown'}; volatility ${t.volatilityRegime ?? 'unknown'}; top sector ${t.topSector ?? 'unknown'}${t.topSectorChange !== null ? ` (${t.topSectorChange}%)` : ''}; worst sector ${t.worstSector ?? 'unknown'}${t.worstSectorChange !== null ? ` (${t.worstSectorChange}%)` : ''}; SPY ${t.spyChangePercent ?? 'n/a'}%, QQQ ${t.qqqChangePercent ?? 'n/a'}%` : 'TAPE: unavailable this morning');
   lines.push(`EVENTS: ${gathered.eventsListed.earningsListed} of ${gathered.eventsListed.earningsTotal} earnings reports listed today.`);
-  lines.push('EVENT IDS (the only ids a NO_ADDS_BEFORE line may use):');
+  lines.push('EVENT IDS (the only ids a NO_ADDS_BEFORE line may use: prints inside today\'s session):');
   for (const [id, e] of gathered.events.eligible) lines.push(`  ${id} — ${e.label}`);
   if (gathered.events.eligible.size === 0) lines.push('  (none)');
+  // Amendment E §E2: the names a NO_ADDS_TO_BEFORE_REPORT line may name
+  const reports = gathered.events.reportTickers instanceof Map ? [...gathered.events.reportTickers] : [];
+  lines.push('REPORTS (the only tickers a NO_ADDS_TO_BEFORE_REPORT line may name):');
+  for (const [sym, e] of reports) lines.push(`  ${sym} — ${e.label}`);
+  if (reports.length === 0) lines.push('  (none)');
   lines.push(gathered.priorPlan ? `PRIOR PLAN: ${gathered.priorPlan.etDate}, ${gathered.priorPlan.status}` : 'PRIOR PLAN: none (write yesterday as null)');
   lines.push('EVIDENCE (id | kind | status | at | fact):');
   for (const e of gathered.evidence) lines.push(`  ${e.id} | ${e.kind} | ${e.status} | ${e.at ?? '-'} | ${e.fact}`);

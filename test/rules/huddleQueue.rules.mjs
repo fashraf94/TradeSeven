@@ -17,7 +17,7 @@ import { drainQueue, runWorkerInvocation, runReconcilePass, IN_FLIGHT, DRAIN_RES
 import { buildSessionEvents } from '../../api/_utils/huddle/events.js';
 import { packItem } from '../../api/_utils/evidence/packItem.js';
 import { getSessionForDate } from '../../api/_utils/marketSchedule.js';
-import { sessionOf } from '../../api/_utils/huddle/records.js';
+import { sessionOf, sessionWindowOf } from '../../api/_utils/huddle/records.js';
 
 const MIN = 60_000;
 let app;
@@ -40,13 +40,13 @@ const rec = async (uid, etDate) => (await db.doc(`huddles/${uid}/days/${etDate}`
 
 /** A gather stand-in: two names in the universe, a close each, one headline, one ISM event. */
 function fakeGather(etDate) {
-  const events = buildSessionEvents({ etDate, macroEvents: [{ date: etDate, time: '10:00 AM ET', category: 'ISM Manufacturing' }], earnings: [] });
+  const events = buildSessionEvents({ etDate, window: sessionWindowOf(sessionOf(etDate)), macroEvents: [{ date: etDate, time: '10:00 AM ET', category: 'ISM Manufacturing' }], earnings: [] });
   const headline = packItem({ kind: 'headline', fact: 'finance.yahoo.com reported: AAA raises guidance', recordKind: 'symbolDayEvidence.news', recordId: 'n1', label: 'finance.yahoo.com via EODHD', at: `${etDate}T02:00:00.000Z` });
   const close = packItem({ kind: 'close', fact: 'AAA closed at 50.00.', recordKind: 'symbolDayEvidence.price', recordId: `${etDate}_AAA`, label: 'EODHD daily bars', at: etDate });
   return async () => ({
     agentId: 'a1', archetype: 'contrarian', battles: [], universe: new Set(['AAA', 'BBB']),
     names: [{ ticker: 'AAA', source: 'activeBattle', exposure: 20, hasClose: true }, { ticker: 'BBB', source: 'watchlist', exposure: 0, hasClose: true }],
-    closes: new Map([['AAA', 50], ['BBB', 40]]), events, eventsListed: { listed: 1, earningsListed: 0, earningsTotal: 0 },
+    closes: new Map([['AAA', 50], ['BBB', 40]]), events, window: sessionWindowOf(sessionOf(etDate)), eventsListed: { listed: 1, earningsListed: 0, earningsTotal: 0 },
     tape: { regime: 'risk-on' }, evidence: [headline, close], priorPlan: null, sourceFailures: [], watchlistTickers: ['BBB'],
     _ids: { headline: headline.id, close: close.id },
   });

@@ -3,6 +3,8 @@
 // Huddle S1 — the template family plan.v1 (spec V1.1 §4, §9 unit list; A §A1; C §C2,
 // §C11, §C15): every drop reason, the event-id formatters, the 500-char rejection,
 // hash stability, dissent per archetype and fail-closed, rendering and narration.
+// Amendment E §E2 (earnings never freeze the book): NO_ADDS_BEFORE only for an event inside today's regular session
+// (event_outside_session otherwise), and the new line NO_ADDS_TO_BEFORE_REPORT t — written before the code (tests first).
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -12,10 +14,18 @@ import {
 } from './planTemplates.js';
 import { buildSessionEvents, macroEventOf, earningsEventOf, parseEtClock } from './events.js';
 import { canonicalContentHash } from '../canonicalHash.js';
+import { buildPlanAtGeneration } from './planRecord.js';
+import { NOV9, NOV9_PROPOSAL, NOV9_CONTEXT, NOV9_SESSION } from '../../../test/rules/__fixtures__/huddleFounderNov9.js';
+import { sessionWindowOf } from './records.js';
 
 const ET = '2026-11-09';
+// the regular session in ET (Mon Nov 9 2026: 9:30 AM to 4:00 PM), and the next session (Tue Nov 10)
+const WINDOW = Object.freeze({ open: '0930', close: '1600' });
+const NEXT = '2026-11-10';
 const EVENTS = buildSessionEvents({
   etDate: ET,
+  window: WINDOW,
+  nextEtDate: NEXT,
   macroEvents: [
     { date: ET, day: 'Monday', time: '10:00 AM ET', category: 'ISM Manufacturing', impact: 'high', event: 'ISM Manufacturing PMI' },
     { date: ET, day: 'Monday', time: 'TBD', category: 'CPI', impact: 'high', event: 'CPI' },
@@ -24,6 +34,9 @@ const EVENTS = buildSessionEvents({
   earnings: [
     { symbol: 'AAA', reportDate: ET, timing: 'amc', period: '2026-09-30', currency: 'USD', epsActual: null, epsEstimate: 1.2 },
     { symbol: 'BBB', reportDate: ET, timing: null, period: '2026-09-30', currency: 'USD', epsActual: null, epsEstimate: null },
+    { symbol: 'CCC', reportDate: NEXT, timing: 'bmo', period: '2026-09-30', currency: 'USD', epsActual: null, epsEstimate: 2.1 },
+    { symbol: 'DDD', reportDate: ET, timing: 'bmo', period: '2026-09-30', currency: 'USD', epsActual: null, epsEstimate: null },
+    { symbol: 'BRK.B', reportDate: NEXT, timing: 'amc', period: '2026-09-30', currency: 'USD', epsActual: null, epsEstimate: null },
   ],
 });
 const CTX = {
@@ -61,9 +74,10 @@ describe('event ids are built by code from the structured objects (V1.1 §4.3; C
     expect(earningsEventOf({ symbol: 'BBB', reportDate: ET, timing: null })).toMatchObject({ eventId: null, timed: false });
   });
 
-  it('the eligible set holds only this session\'s timed events', () => {
-    expect([...EVENTS.eligible.keys()].sort()).toEqual([`earn:AAA:${ET}:amc`, `macro:ism_manufacturing:${ET}:1000`]);
-    expect(EVENTS.strip.map((e) => e.etDate).every((d) => d === ET)).toBe(true);
+  it("E2: the eligible set holds only this session's timed events INSIDE the regular session, never an earnings report", () => {
+    expect([...EVENTS.eligible.keys()].sort()).toEqual([`macro:ism_manufacturing:${ET}:1000`]);
+    expect([...EVENTS.outsideSessionIds].sort()).toEqual([`earn:AAA:${ET}:amc`, `earn:DDD:${ET}:bmo`]);
+    expect(EVENTS.strip.filter((e) => e.etDate !== ET).map((e) => e.eventId)).toEqual([`earn:CCC:${NEXT}:bmo`]);
   });
 });
 
@@ -103,6 +117,8 @@ describe('validatePlan — every drop reason (V1.1 §4.3)', () => {
     ['event unknown', { kind: 'NO_ADDS_BEFORE', eventId: 'macro:cpi:2026-11-10:0830' }, DROP_REASONS.EVENT_UNKNOWN],
     ['event a model label', { kind: 'NO_ADDS_BEFORE', eventId: 'the CPI print' }, DROP_REASONS.EVENT_UNKNOWN],
     ['event untimed', { kind: 'NO_ADDS_BEFORE', eventId: `earn:BBB:${ET}:amc` }, DROP_REASONS.EVENT_UNTIMED],
+    ['E2: an earnings report (after the close) is outside the session', { kind: 'NO_ADDS_BEFORE', eventId: `earn:AAA:${ET}:amc` }, DROP_REASONS.EVENT_OUTSIDE_SESSION],
+    ['E2: an earnings report (before the open) is outside the session', { kind: 'NO_ADDS_BEFORE', eventId: `earn:DDD:${ET}:bmo` }, DROP_REASONS.EVENT_OUTSIDE_SESSION],
     ['line level required', { kind: 'CUT_IF_BELOW', ticker: 'BBB' }, DROP_REASONS.LEVEL_FORMAT],
     ['line level out of range (−25 %)', { kind: 'NO_CHASE_ABOVE', ticker: 'BBB', level: 29.99 }, DROP_REASONS.LEVEL_OUT_OF_RANGE],
     ['line ticker not in universe', { kind: 'CUT_IF_BELOW', ticker: 'ZZZ', level: 10 }, DROP_REASONS.TICKER_NOT_IN_UNIVERSE],
@@ -134,6 +150,106 @@ describe('validatePlan — every drop reason (V1.1 §4.3)', () => {
     expect(v.transforms).toEqual([{ kind: 'stance', index: 0, reason: TRANSFORM_REASONS.ORIGIN_NORMALIZED }]);
     expect(v.current.stances[0].origin).toEqual(HUDDLE_ORIGIN);
     expect(validationChanged(v)).toBe(true);
+  });
+});
+
+describe('E2 — earnings never freeze the book (Amendment E §E2)', () => {
+  const window = { open: '0930', close: '1600' };
+  const sessionEvents = (macroEvents, earnings = [], w = window) => buildSessionEvents({ etDate: ET, window: w, nextEtDate: NEXT, macroEvents, earnings });
+  const ctxWith = (events, over = {}) => ({ ...CTX, events, ...over });
+  const lineReasons = (line, events, over) => reasonsOf(validatePlan({ stances: [], lines: [line] }, ctxWith(events, over)));
+  const outside = `line#0:${DROP_REASONS.EVENT_OUTSIDE_SESSION}`;
+
+  it('NO_ADDS_BEFORE: an intraday macro print inside the session is eligible (10:00 AM ET); one before the open (8:30 AM ET) is event_outside_session', () => {
+    const events = sessionEvents([
+      { date: ET, time: '10:00 AM ET', category: 'ISM Manufacturing' },
+      { date: ET, time: '8:30 AM ET', category: 'CPI' },
+      { date: ET, time: '9:30 AM ET', category: 'JOLTS' },
+    ]);
+    expect(lineReasons({ kind: 'NO_ADDS_BEFORE', eventId: `macro:ism_manufacturing:${ET}:1000` }, events)).toEqual([]);
+    expect(lineReasons({ kind: 'NO_ADDS_BEFORE', eventId: `macro:cpi:${ET}:0830` }, events)).toEqual([outside]);
+    // the open itself is inside the session; the close is not
+    expect(lineReasons({ kind: 'NO_ADDS_BEFORE', eventId: `macro:jolts:${ET}:0930` }, events)).toEqual([]);
+  });
+
+  it('NO_ADDS_BEFORE on an early close (1:00 PM ET): a 2:00 PM FOMC decision and a print AT the close are outside the session', () => {
+    const events = sessionEvents([{ date: ET, time: '2:00 PM ET', category: 'FOMC' }, { date: ET, time: '1:00 PM ET', category: 'GDP' }], [], { open: '0930', close: '1300' });
+    expect(lineReasons({ kind: 'NO_ADDS_BEFORE', eventId: `macro:fomc:${ET}:1400` }, events)).toEqual([outside]);
+    expect(lineReasons({ kind: 'NO_ADDS_BEFORE', eventId: `macro:gdp:${ET}:1300` }, events)).toEqual([outside]);
+  });
+
+  it('NO_ADDS_BEFORE: no session window known fails closed — no event is eligible', () => {
+    const events = sessionEvents([{ date: ET, time: '10:00 AM ET', category: 'ISM Manufacturing' }], [], null);
+    expect(events.eligible.size).toBe(0);
+    expect(lineReasons({ kind: 'NO_ADDS_BEFORE', eventId: `macro:ism_manufacturing:${ET}:1000` }, events)).toEqual([outside]);
+  });
+
+  it('NO_ADDS_BEFORE: an S1 record that froze an earnings report as eligible is still refused (the backstop on the id itself)', () => {
+    const s1 = { eligible: new Map([[`earn:RKLB:${ET}:amc`, { eventId: `earn:RKLB:${ET}:amc`, label: "RKLB's report after the close" }]]), untimedIds: new Set() };
+    expect(lineReasons({ kind: 'NO_ADDS_BEFORE', eventId: `earn:RKLB:${ET}:amc` }, s1, { universe: new Set(['RKLB']) })).toEqual([outside]);
+  });
+
+  it("NO_ADDS_TO_BEFORE_REPORT t: eligible for a name in the universe that reports after today's close or before the next session's open", () => {
+    const v = validatePlan({ stances: [], lines: [{ kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'AAA' }, { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'CCC' }] }, CTX);
+    expect(v.drops).toEqual([]);
+    expect(v.current.lines).toEqual([
+      { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'AAA', origin: HUDDLE_ORIGIN },
+      { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'CCC', origin: HUDDLE_ORIGIN },
+    ]);
+    expect([...EVENTS.reportTickers.keys()].sort()).toEqual(['AAA', 'CCC']);
+  });
+
+  it.each([
+    ['a name outside the universe', { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'ZZZ' }, DROP_REASONS.TICKER_NOT_IN_UNIVERSE],
+    ['a lowercase ticker', { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'aaa' }, DROP_REASONS.TICKER_SYNTAX],
+    ['an untimed report (no BMO/AMC label)', { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'BBB' }, DROP_REASONS.EVENT_UNTIMED],
+    ["a report before TODAY's open (already out)", { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'DDD' }, DROP_REASONS.REPORT_NOT_ELIGIBLE],
+    ["a report after the NEXT session's close", { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'BRK.B' }, DROP_REASONS.REPORT_NOT_ELIGIBLE],
+    ['an unknown key (an event id rides along)', { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'AAA', eventId: `earn:AAA:${ET}:amc` }, DROP_REASONS.UNKNOWN_KEY],
+  ])('NO_ADDS_TO_BEFORE_REPORT: %s is dropped', (_name, line, reason) => {
+    expect(lineReasons(line, EVENTS)).toEqual([`line#0:${reason}`]);
+  });
+
+  it("the founder's Nov 9 plan (read-only fixture): \"No adds before RKLB's report after the close\" no longer survives generation; the same intent is NO_ADDS_TO_BEFORE_REPORT RKLB", () => {
+    const events = buildSessionEvents({
+      etDate: NOV9, window: sessionWindowOf(NOV9_SESSION), nextEtDate: '2026-11-10',
+      earnings: [{ symbol: 'RKLB', reportDate: NOV9, timing: 'amc', period: '2026-09-30', currency: 'USD', epsActual: null, epsEstimate: null }],
+    });
+    const args = { universe: NOV9_CONTEXT.universe, closes: new Map(Object.entries(NOV9_CONTEXT.closes)), events, archetype: 'contrarian', window: sessionWindowOf(NOV9_SESSION) };
+    const asProposed = buildPlanAtGeneration({ ...args, proposal: NOV9_PROPOSAL });
+    expect(asProposed.drops.map((d) => d.reason)).toEqual([DROP_REASONS.EVENT_OUTSIDE_SESSION]);
+    expect(asProposed.plan.current.lines).toEqual([]);
+    const intent = buildPlanAtGeneration({ ...args, proposal: { stances: NOV9_PROPOSAL.stances, lines: [{ kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'RKLB' }] } });
+    expect(intent.drops).toEqual([]);
+    expect(renderPlan(intent.plan.current, { etDate: NOV9, eventLabels: new Map() })).toContain('Lines: no adds to RKLB before its report.');
+    expect(intent.plan.context).toMatchObject({ window: { open: '0930', close: '1600' }, reportTickers: ['RKLB'], outsideSessionEventIds: [`earn:RKLB:${NOV9}:amc`] });
+  });
+
+  it('NO_ADDS_TO_BEFORE_REPORT: a record that froze no report list drops the line (it cannot be checked)', () => {
+    expect(lineReasons({ kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'AAA' }, { eligible: new Map(), untimedIds: new Set() })).toEqual([`line#0:${DROP_REASONS.REPORT_NOT_ELIGIBLE}`]);
+  });
+
+  it('NO_ADDS_TO_BEFORE_REPORT: duplicates collapse to the first; it counts against the two lines', () => {
+    const v = validatePlan({ stances: [], lines: [{ kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'AAA' }, { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'AAA' }, { kind: 'NO_SWAPS_TODAY' }, { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'CCC' }] }, CTX);
+    expect(reasonsOf(v)).toEqual(['line#1:duplicate', 'line#3:count_exceeded']);
+  });
+
+  it('renders "no adds to {t} before its report" — the slot and the spoken plan beat — and the 500-character cap holds', () => {
+    const current = validatePlan({ stances: [{ kind: 'HOLD', ticker: 'CCC' }], lines: [{ kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'AAA' }] }, CTX).current;
+    expect(renderPlan(current, { etDate: ET, eventLabels: new Map() })).toBe([
+      `GAME PLAN for ${ET}, confirmed by the player.`,
+      'Stances: HOLD CCC.',
+      'Lines: no adds to AAA before its report.',
+      "These are the player's instructions for this session. Apply them within your archetype's method.",
+    ].join('\n'));
+    expect(narratePlan(current, { eventLabels: new Map() })).toBe("Here's what I'd carry in today: hold CCC. One line: no adds to AAA before its report.");
+    // the longest plan the new line allows is still under the cap
+    const longest = validatePlan({
+      stances: [{ kind: 'FADE', ticker: 'AAA', level: 48 }, { kind: 'CHASE', ticker: 'CCC', level: 110 }, { kind: 'FADE', ticker: 'BRK.B', level: 510.55 }],
+      lines: [{ kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'AAA' }, { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'CCC' }],
+    }, { ...CTX, archetype: null }).current;
+    expect(longest.lines).toHaveLength(2);
+    expect(renderedTooLong(renderPlan(longest, { etDate: ET, eventLabels: new Map() }))).toBe(false);
   });
 });
 
