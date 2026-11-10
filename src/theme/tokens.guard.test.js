@@ -256,6 +256,13 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/hub/shadowCanvas.js',
   'src/components/CommandCenter/hub/shadowStatus.js',
   'src/components/CommandCenter/__fixtures__/shadowCanvasKit.js',
+  // Huddle S1 (the chip, the sheet, the hub's pure view of the Huddle, and the sheet's body outside the hub directory):
+  // token-only and motion-token-only from birth. Introduced in the hub checkpoint commit without registration; the Linux
+  // full suite caught it and they are registered in the final-check commit (hazard 34).
+  'src/components/CommandCenter/HuddleChip.jsx',
+  'src/components/CommandCenter/HuddleSheet.jsx',
+  'src/components/CommandCenter/hub/huddleView.js',
+  'src/components/Huddle/HuddleSheetBody.jsx',
   // Agent form build S0 (the WebGL engine port, its wrapper and the lab): every colour through readToken /
   // cssVar from birth — zero core-palette literals, registered in the commit that introduces them (hazard 34).
   'src/components/AgentForm/engine/armor.js',

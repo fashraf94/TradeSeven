@@ -181,6 +181,15 @@ export default function useHubReaders(hub, deployAttempt = null, hubModalOpen = 
   };
   const nextAction = deriveNextAction({ ...nextInputs, dismissed: later.dismissed });
   const candidate = nextAction.candidate;
+  // Setting a candidate aside can take the focused Later button with it: the last candidate takes the card, and on the phone a card
+  // that moves between its two slots (a live game's above the rows, a review's below) is mounted afresh. A control that unmounts
+  // drops focus to <body>, so once the render is in, focus follows the card (its Later button) or, with none left, the hub's root.
+  // Huddle S1: one handler per Later key, so ConnectedHub's "Huddle ready" candidate is set aside the same way.
+  const laterFor = (laterKey) => (event) => {
+    const shell = event?.currentTarget?.closest?.('[data-hub="shell"]') ?? null;
+    flushSync(() => later.dismiss(laterKey));
+    if (shell && !shell.contains(document.activeElement)) (shell.querySelector('[data-hub-next-action] [data-hub-later]') ?? shell).focus();
+  };
 
   // A live row opens the poll's own record, even when the window holds the same id (review T0R-1).
   const documents = new Map([...(completed.battles || []), ...live].map((b) => [b.id, b]));
@@ -206,14 +215,7 @@ export default function useHubReaders(hub, deployAttempt = null, hubModalOpen = 
     nextAction: candidate?.key === NEXT_ACTION_KINDS.OPEN_GAME && openGame ? () => openGame({ id: candidate.id })
       : candidate?.key === NEXT_ACTION_KINDS.REVIEW && openTape ? () => openTape({ id: candidate.id })
         : undefined,
-    // Setting a candidate aside can take the focused Later button with it: the last candidate takes the card, and on the phone a card
-    // that moves between its two slots (a live game's above the rows, a review's below) is mounted afresh. A control that unmounts
-    // drops focus to <body>, so once the render is in, focus follows the card (its Later button) or, with none left, the hub's root.
-    laterNextAction: candidate ? (event) => {
-      const shell = event?.currentTarget?.closest?.('[data-hub="shell"]') ?? null;
-      flushSync(() => later.dismiss(candidate.laterKey));
-      if (shell && !shell.contains(document.activeElement)) (shell.querySelector('[data-hub-next-action] [data-hub-later]') ?? shell).focus();
-    } : undefined,
+    laterNextAction: candidate ? laterFor(candidate.laterKey) : undefined,
     retryBrief: brief.retry,
     // An Activity row for a game opens that game's record, as Games' row does; a loadout row opens nothing.
     openActivity: openGame ? (row) => { if (row?.battleId) openGame({ id: row.battleId }); } : undefined,
@@ -234,5 +236,8 @@ export default function useHubReaders(hub, deployAttempt = null, hubModalOpen = 
     agent: loadoutAgent,
     liveBattles: live,
     ceremonyAgent: Object.freeze({ directiveCount: Array.isArray(agent?.activeDirectives) ? agent.activeDirectives.length : 0 }),
+    // Huddle S1 (Huddle C §C6): the next action's inputs and Later, so ConnectedHub can add the "Huddle ready" rule from its own
+    // reader (hub/nextAction.js) — no read here.
+    next: { inputs: nextInputs, dismissed: later.dismissed, laterFor },
   };
 }

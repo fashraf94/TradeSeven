@@ -42,6 +42,8 @@ export const HUB_SHEETS = Object.freeze({
   // Slice S2b (ruling R-S2b-7): the Scouting Board, the shipped EquipSheet wrapper — registered `within`, like the
   // four shipped sheets above (S5 §13: it repeats the exit-animation defect otherwise).
   SCOUTING: 'scouting',
+  // Huddle S1 (Huddle C §C8; Command Center Amendment D §D3): the Huddle sheet, a HubSheet, which registers itself.
+  HUDDLE: 'huddle',
 });
 
 const LEGACY = new Set([HUB_SHEETS.RECORD, HUB_SHEETS.ARCHETYPE, HUB_SHEETS.WATCHLIST, HUB_SHEETS.TRAITS, HUB_SHEETS.SCOUTING]);

@@ -600,6 +600,22 @@
     "src/components/CommandCenter/__fixtures__/shadowCanvasKit.js": {
       "count": 0,
       "authority": "Command Center hub S7 (spec V1.2 section 10; rulings R-S7-1 to R-S7-7; founder ruling R-S1-2) - Shadow moving: colours only through readToken, canvas drawing with no CSS transition or animation, zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/HuddleChip.jsx": {
+      "count": 0,
+      "authority": "Huddle S1 (Huddle spec Amendment C V1.2 sections C4, C8; Command Center spec V1.2 Amendment D) - the chip, the sheet, the hub view of the Huddle and the sheet body: colours only through cssVar, motion only through the vocabulary, zero raw transition literals from birth. Registered in the final-check commit after the Linux full suite caught the hub checkpoint without it."
+    },
+    "src/components/CommandCenter/HuddleSheet.jsx": {
+      "count": 0,
+      "authority": "Huddle S1 (Huddle spec Amendment C V1.2 sections C4, C8; Command Center spec V1.2 Amendment D) - the chip, the sheet, the hub view of the Huddle and the sheet body: colours only through cssVar, motion only through the vocabulary, zero raw transition literals from birth. Registered in the final-check commit after the Linux full suite caught the hub checkpoint without it."
+    },
+    "src/components/CommandCenter/hub/huddleView.js": {
+      "count": 0,
+      "authority": "Huddle S1 (Huddle spec Amendment C V1.2 sections C4, C8; Command Center spec V1.2 Amendment D) - the chip, the sheet, the hub view of the Huddle and the sheet body: colours only through cssVar, motion only through the vocabulary, zero raw transition literals from birth. Registered in the final-check commit after the Linux full suite caught the hub checkpoint without it."
+    },
+    "src/components/Huddle/HuddleSheetBody.jsx": {
+      "count": 0,
+      "authority": "Huddle S1 (Huddle spec Amendment C V1.2 sections C4, C8; Command Center spec V1.2 Amendment D) - the chip, the sheet, the hub view of the Huddle and the sheet body: colours only through cssVar, motion only through the vocabulary, zero raw transition literals from birth. Registered in the final-check commit after the Linux full suite caught the hub checkpoint without it."
     }
   }
 }

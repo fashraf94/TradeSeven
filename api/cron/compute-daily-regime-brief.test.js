@@ -34,6 +34,15 @@ vi.mock('../_utils/fetchMacroEvents.js', () => ({
 }));
 vi.mock('../_utils/fetchEarningsCalendarEODHD.js', () => ({ fetchEarningsCalendarEODHD: async () => state.earnings }));
 vi.mock('../_utils/shadowLogger.js', () => ({ logDailyRegimeBrief: async () => {} }));
+// The worker's enqueue and drain stages, spied (mutation lens survivor 3: an enqueue that threw on this file's stub db looked
+// exactly like one that never ran). markRun and the rest of worker.js stay real, so the marker below is the real write.
+const stages = vi.hoisted(() => ({ runEnqueueStage: null, drainQueue: null }));
+vi.mock('../_utils/huddle/worker.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  stages.runEnqueueStage = vi.fn(async () => ({ enqueued: 0, created: 0 }));
+  stages.drainQueue = vi.fn(async () => ({ started: 0, results: [] }));
+  return { ...actual, runEnqueueStage: (...a) => stages.runEnqueueStage(...a), drainQueue: (...a) => stages.drainQueue(...a) };
+});
 
 import handler, { readBriefAnswer } from './compute-daily-regime-brief.js';
 
@@ -59,6 +68,13 @@ const res = () => {
 };
 const run = async () => { const r = res(); await handler({ headers: { 'x-vercel-cron': '1' } }, r); return r; };
 /** The JSON a log line carried, by its message. */
+/**
+ * Huddle S1 (spec V1.1 §5.1 as replaced by Amendment A §A10): the handler now also writes ONE huddleRuns marker
+ * after the brief stage, so the rows that pinned 'one write' or 'nothing written' pin the BRIEF document's writes;
+ * the marker has its own rows at the end of this file.
+ */
+const briefWrites = () => state.set.mock.calls.filter(([id]) => id === 'dailyRegimeBrief');
+const markerWrites = () => state.set.mock.calls.filter(([id]) => id !== 'dailyRegimeBrief');
 const logged = (spy, message) => spy.mock.calls.filter((c) => String(c[0]).includes(message)).map((c) => JSON.parse(c[1]));
 
 let log;
@@ -83,8 +99,8 @@ describe('a complete answer: stored as before, with stop_reason and usage logged
   it('writes the same fields as before, and only those', async () => {
     const r = await run();
     expect(r.statusCode).toBe(200);
-    expect(state.set).toHaveBeenCalledTimes(1);
-    const [id, doc] = state.set.mock.calls[0];
+    expect(briefWrites()).toHaveLength(1);
+    const [id, doc] = briefWrites()[0];
     expect(id).toBe('dailyRegimeBrief');
     expect(Object.keys(doc).sort()).toEqual(['dailyBrief', 'forDate', 'generatedAt', 'keyEvents', 'model', 'sourceFailures', 'themes', 'tokenUsage']);
     expect(doc).toEqual({
@@ -181,7 +197,7 @@ describe('a cut-off answer keeps the day (founder ruling Oct 29 2026)', () => {
     const r = await run();
     expect(r.statusCode).toBe(500);
     expect(r.body.error).toBe('Brief cut off at the output cap (stop_reason max_tokens)');
-    expect(state.set).not.toHaveBeenCalled();
+    expect(briefWrites()).toEqual([]);
     expect(logged(err, 'Brief generation failed')[0]).toMatchObject({ stopReason: 'max_tokens', shape: { brief: 'string:39', keyEvents: 'missing', keys: ['brief'] } });
   });
 });
@@ -199,7 +215,7 @@ describe('(c) only a missing or empty brief fails, and a failed run never overwr
       const r = await run();
       expect(r.statusCode).toBe(500);
       expect(r.body.error).toMatch(/non-empty brief/);
-      expect(state.set).not.toHaveBeenCalled();
+      expect(briefWrites()).toEqual([]);
       expect(logged(err, 'Brief generation failed')[0]).toMatchObject({ forDate: TODAY, stopReason: 'max_tokens', usage: { input: 2300, output: 2500 }, earnings: 57 });
       // The answer is logged before it is read, so a read that fails still leaves its "Sonnet answered" line.
       expect(logged(log, 'Sonnet answered')).toHaveLength(1);
@@ -211,14 +227,14 @@ describe('(c) only a missing or empty brief fails, and a failed run never overwr
     const r = await run();
     expect(r.statusCode).toBe(500);
     expect(r.body.error).toBe('No tool_use block in Sonnet response');
-    expect(state.set).not.toHaveBeenCalled();
+    expect(briefWrites()).toEqual([]);
   });
 
   it('an API error: 500, nothing written, the failure log with the input counts and no stop_reason', async () => {
     state.create = vi.fn(async () => { throw new Error('overloaded'); });
     const r = await run();
     expect(r.statusCode).toBe(500);
-    expect(state.set).not.toHaveBeenCalled();
+    expect(briefWrites()).toEqual([]);
     expect(logged(err, 'Brief generation failed')[0]).toMatchObject({ message: 'overloaded', forDate: TODAY, earnings: 57, stopReason: null, usage: null });
   });
 
@@ -234,12 +250,12 @@ describe('(c) only a missing or empty brief fails, and a failed run never overwr
     // A shorter timeout would have answered by now (review L3 #19: the row passed for any timeout of 45 s or less).
     expect(settled).toBe(false);
     expect(r.statusCode).toBeNull();
-    expect(state.set).not.toHaveBeenCalled();
+    expect(briefWrites()).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     await pending;
     expect(r.statusCode).toBe(500);
     expect(r.body.error).toBe('Sonnet timeout (45s)');
-    expect(state.set).not.toHaveBeenCalled();
+    expect(briefWrites()).toEqual([]);
   });
 
   it('an answer that arrives in time clears the timeout: no 45 s timer is left running after a run', async () => {
@@ -259,7 +275,7 @@ describe('(c) only a missing or empty brief fails, and a failed run never overwr
     const r = await run();
     expect(r.statusCode).toBe(500);
     expect(r.body.error).toBe('bad request');
-    expect(state.set).not.toHaveBeenCalled();
+    expect(briefWrites()).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -308,5 +324,46 @@ describe('readBriefAnswer — the reader on its own', () => {
     expect(eventTime).toBeDefined();
     expect(readBriefAnswer(answer({ ...FULL, keyEvents: [noTime] })).keyEvents).toEqual([noTime]);
     expect(readBriefAnswer(answer({ brief: FULL.brief, themes: FULL.themes, keyEvents: [noTime, noTime] }, { stop: 'max_tokens' })).keyEvents).toEqual([noTime]);
+  });
+});
+
+describe('Huddle S1 — the staged run marker around the brief stage (spec V1.1 §5.1 as replaced by A §A10), flag off', () => {
+  // DRB_HUDDLE_ENABLED ships false (src/config/huddleFlags.js): the marker is the ONLY new write and the response is unchanged.
+  it('a stored brief: one marker write AFTER the brief write, keyed by the ET date, briefStage done; the response keys are unchanged', async () => {
+    const r = await run();
+    expect(r.statusCode).toBe(200);
+    expect(Object.keys(r.body).sort()).toEqual(['briefLength', 'duration', 'forDate', 'sourceFailures', 'success', 'tokenUsage']);
+    expect(state.set.mock.calls.map(([id]) => id)).toEqual(['dailyRegimeBrief', TODAY]);
+    const [[, marker]] = markerWrites();
+    expect(marker).toMatchObject({ etDate: TODAY, briefStage: 'done' });
+    expect(Object.keys(marker).sort()).toEqual(['briefAt', 'briefStage', 'etDate', 'updatedAt']);
+    // dark: the enqueue and drain stages never run (not merely fail)
+    expect(stages.runEnqueueStage).not.toHaveBeenCalled();
+    expect(stages.drainQueue).not.toHaveBeenCalled();
+  });
+
+  it('a failed brief: the marker says failed, and still nothing is written to the brief', async () => {
+    state.create = vi.fn(async () => answer({ keyEvents: [], themes: [] }));
+    const r = await run();
+    expect(r.statusCode).toBe(500);
+    expect(briefWrites()).toEqual([]);
+    expect(markerWrites().map(([, d]) => d.briefStage)).toEqual(['failed']);
+    expect(Object.keys(r.body).sort()).toEqual(['duration', 'error', 'forDate', 'success']);
+  });
+
+  it('already generated today: the marker says done (the stage is complete), no enqueue while dark', async () => {
+    state.existing = { forDate: TODAY, dailyBrief: 'x' };
+    await run();
+    expect(state.set.mock.calls.map(([id]) => id)).toEqual([TODAY]);
+    expect(markerWrites()[0][1].briefStage).toBe('done');
+    expect(stages.runEnqueueStage).not.toHaveBeenCalled();
+    expect(stages.drainQueue).not.toHaveBeenCalled();
+  });
+
+  it('a marker that cannot be written never changes the brief\'s response', async () => {
+    state.set = vi.fn(async (id) => { if (id !== 'dailyRegimeBrief') throw new Error('marker down'); });
+    const r = await run();
+    expect(r.statusCode).toBe(200);
+    expect(r.body).toMatchObject({ success: true, forDate: TODAY });
   });
 });
