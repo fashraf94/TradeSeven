@@ -104,15 +104,18 @@ export async function runHuddleJob(db, { uid, etDate, generation, session, share
     let answer = await call({ system: SYSTEM_PROMPT, user: userPrompt(null), signal });
     if (answer.usage) usage.push(answer.usage);
     if (!answer.ok) return await fail(`script_${answer.reason}`);
-    let validated = validateScript(answer.output, { universe: gathered.universe, evidence: gathered.evidence });
+    let validated = validateScript(answer.output, { universe: gathered.universe, evidence: gathered.evidence, exposureLeaders: gathered.exposureLeaders ?? [] });
     let regenerated = false;
+    // the first answer's failures, kept on the record (Amendment E: the regeneration rate and its causes are the smoke's question)
+    let regeneratedFor = null;
     if (!scriptClean(validated)) {
       regenerated = true;
+      regeneratedFor = regenerationNoteOf(validated).slice(0, 400);
       const second = await call({ system: SYSTEM_PROMPT, user: userPrompt(regenerationNoteOf(validated)), signal });
       if (second.usage) usage.push(second.usage);
       if (!second.ok) return await fail(`script_${second.reason}`);
       answer = second;
-      validated = validateScript(answer.output, { universe: gathered.universe, evidence: gathered.evidence });
+      validated = validateScript(answer.output, { universe: gathered.universe, evidence: gathered.evidence, exposureLeaders: gathered.exposureLeaders ?? [] });
       if (validated.tickerFailures.length > 0) return await fail(`ticker_outside_universe:${validated.tickerFailures.join(',')}`.slice(0, 200));
     }
     const dropped = new Set(Object.entries(validated.beatFailures).filter(([, f]) => f.length > 0).map(([id]) => id));
@@ -158,7 +161,7 @@ export async function runHuddleJob(db, { uid, etDate, generation, session, share
       uid, etDate, status: RECORD_STATUS.READY, session,
       generation: {
         claimGeneration: generation, startedAt: iso(t0), finishedAt: iso(clock()), model: HUDDLE_SCRIPT_MODEL, tokenUsage: usage,
-        regenerated, sourceFailures: [...new Set(sourceFailures)], drops: [...drops, ...planDrops], timings,
+        regenerated, regeneratedFor, sourceFailures: [...new Set(sourceFailures)], sourcesSkipped: gathered.sourcesSkipped ?? [], drops: [...drops, ...planDrops], timings,
       },
       script: { beats: beats.map((b) => ({ id: b.id, text: b.text, source: b.source, startMs: b.startMs ?? null, endMs: b.endMs ?? null, sentences: b.sentences })) },
       transcript: transcriptOf(beats, gathered.evidence),

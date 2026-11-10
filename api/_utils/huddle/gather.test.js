@@ -54,14 +54,26 @@ describe('the gather step\'s pack: one item, one id, per fact', () => {
   });
 });
 
-describe('the gather step\'s source lines', () => {
-  it('a source the morning did not check is named in words on its source_status item (never its key), and the label is not in the id', async () => {
+describe('the gather step\'s source lines (Amendment E §E3 a, R-22)', () => {
+  it('a source the job SKIPPED is silent — no item, no failure line; one it TRIED and could not reach is one item, "Couldn\'t reach {source} this morning."', async () => {
     const g = await gatherForPlayer(memoryDb({ agents: [], agentBattles: [battle] }), {
       uid: 'u1', etDate: ET, session: sessionOf(ET), shared: { sources: { earnings: 'skipped', marketContext: 'error', macro: 'ok' } }, owner: 'u1#1', deps,
     });
     const status = g.evidence.filter((e) => e.kind === 'source_status');
-    expect(status.map((e) => [e.source.recordId, e.source.label])).toEqual([
-      ['eodhd', 'EODHD news'], ['newsfilter', 'newsfilter'], ['fantasytimes', 'FantasyTimes'], ['earnings', 'earnings calendar'], ['marketContext', 'market context'],
+    // eodhd and newsfilter were skipped (deps), FantasyTimes answered, the earnings calendar was skipped: none of them is said
+    expect(status.map((e) => [e.source.recordId, e.source.label, e.fact])).toEqual([
+      ['marketContext', 'market context', "Couldn't reach the market context this morning."],
     ]);
+    expect(g.sourceFailures).toEqual(['marketContext:error']);
+    // (this in-memory database has no transactions, so every symbol's shared record is skipped: all three news sources)
+    expect(g.sourcesSkipped.sort()).toEqual(['earnings', 'eodhd', 'fantasytimes', 'newsfilter']);
+    for (const e of g.evidence) expect(e.fact, e.fact).not.toMatch(/not checked|unavailable|\bdown\b/i);
+  });
+
+  it('each source that errored is one item, in words; the calendars are said with "the"', async () => {
+    const g = await gatherForPlayer(memoryDb({ agents: [], agentBattles: [battle] }), {
+      uid: 'u1', etDate: ET, session: sessionOf(ET), shared: { sources: { earnings: 'error', macro: 'error', marketContext: 'ok' } }, owner: 'u1#1', deps,
+    });
+    expect(g.evidence.filter((e) => e.kind === 'source_status').map((e) => e.fact)).toEqual(["Couldn't reach the earnings calendar this morning.", "Couldn't reach the macro calendar this morning."]);
   });
 });

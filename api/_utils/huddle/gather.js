@@ -13,6 +13,13 @@
 //   - per symbol, this morning's shared evidence (price, news, sources), fetched once.
 // Every fact becomes a C10 pack item with a deterministic id; the script cites them.
 // NO volume or relative-volume value is gathered or passed (C12).
+//
+// Amendment E §E3: every fact's date is in spoken form (spoken.js: "Friday, November 6",
+// never ISO, E3 d); a source the job SKIPPED makes no item and no line the script sees
+// (only one it tried and could not reach does: "Couldn't reach {source} this morning.",
+// E3 a — the skip is kept apart in `sourcesSkipped`); the earnings the script hears are the
+// player's own names' (E3 f, with E2); one `tape` item per index (E3 g); and the names with
+// the largest holding exposure (`exposureLeaders`) for the validator's order check (E3 c).
 
 import { flattenPortfolioServer } from '../agentScoring.js';
 import { resolveEquippedWatchlist, extractTickerSymbols } from '../watchlistEquip.js';
@@ -22,7 +29,8 @@ import { isCpuBattle, battleKindOf } from './applyRules.js';
 import { rankedAgentOf } from './confirmPlan.js';
 import { huddleDayRef, sessionWindowOf, nextSessionDateOf } from './records.js';
 import { getSessionForDate } from '../marketSchedule.js';
-import { packItem, headlineItem } from '../evidence/packItem.js';
+import { packItem, headlineItem, tapeItem } from '../evidence/packItem.js';
+import { spokenDateOf } from './spoken.js';
 import { ensureSymbolEvidence } from '../evidence/symbolDayEvidence.js';
 import { fetchEodhdNews } from '../evidence/eodhdNews.js';
 import { fetchStoriesSince, storiesForSymbol } from '../evidence/fantasyTimesStories.js';
@@ -34,6 +42,8 @@ export const HEADLINES_PER_SYMBOL = 3;
 const KIND_LABEL = Object.freeze({ ranked: 'ranked', casual: 'BaggerBomb', training: 'training' });
 // The readable name of each source on a source_status item (the transcript's and the cards' source lines); never in the id.
 const SOURCE_LABEL = Object.freeze({ eodhd: 'EODHD news', newsfilter: 'newsfilter', fantasytimes: 'FantasyTimes', marketContext: 'market context', macro: 'macro calendar', earnings: 'earnings calendar' });
+// A source as said in its one sentence (E3 a: "Couldn't reach {source} this morning.").
+const SOURCE_SAID = Object.freeze({ eodhd: 'EODHD news', newsfilter: 'newsfilter', fantasytimes: 'FantasyTimes', marketContext: 'the market context', macro: 'the macro calendar', earnings: 'the earnings calendar' });
 
 const isTicker = (s) => typeof s === 'string' && TICKER_RE.test(s);
 
@@ -62,6 +72,22 @@ export function universeOf({ battles, watchlistTickers }) {
   return { universe: new Set(names.map((n) => n.ticker)), names };
 }
 
+/**
+ * E3 c (R-24): the names with the LARGEST holding exposure across the player's games — summed allocation, ties all kept;
+ * empty when nothing is held (the check is then vacuous).
+ */
+export function exposureLeadersOf(battles) {
+  const held = new Map();
+  for (const b of Array.isArray(battles) ? battles : []) {
+    for (const h of b.holdings || []) {
+      const a = typeof h.allocation === 'number' && Number.isFinite(h.allocation) ? h.allocation : 0;
+      if (isTicker(h.symbol)) held.set(h.symbol, (held.get(h.symbol) || 0) + a);
+    }
+  }
+  const top = Math.max(0, ...held.values());
+  return top > 0 ? [...held.entries()].filter(([, a]) => a === top).map(([s]) => s).sort() : [];
+}
+
 function picksOf(battle) {
   const raw = battle?.agentContext?.tournament?.userPicksAtDeploy;
   return (Array.isArray(raw) ? raw : []).map((p) => (typeof p === 'string' ? p : p?.symbol)).filter(isTicker);
@@ -76,6 +102,7 @@ export async function gatherForPlayer(db, { uid, etDate, session, shared, owner,
   const fetchClose = deps.fetchLastClose || fetchLastClose;
   const fetchStories = deps.fetchStoriesSince || fetchStoriesSince;
   const sourceFailures = [];
+  const sourcesSkipped = [];
   const evidence = [];
   const add = (item) => { if (!evidence.some((e) => e.id === item.id)) evidence.push(item); return item; };
 
@@ -161,25 +188,36 @@ export async function gatherForPlayer(db, { uid, etDate, session, shared, owner,
     const recordId = `${etDate}_${symbol}`;
     if (typeof price?.lastClose === 'number') {
       closes.set(symbol, price.lastClose);
-      add(packItem({ kind: 'close', fact: `${symbol} closed at ${price.lastClose.toFixed(2)} on ${price.lastCloseAsOf} (the prior session's close).`, recordKind: 'symbolDayEvidence.price', recordId, label: 'EODHD daily bars', at: price.lastCloseAsOf, asOf: price.lastCloseAsOf }));
+      const on = spokenDateOf(price.lastCloseAsOf);
+      add(packItem({ kind: 'close', fact: `${symbol} closed at ${price.lastClose.toFixed(2)}${on ? ` on ${on}` : ''} (the prior session's close).`, recordKind: 'symbolDayEvidence.price', recordId, label: 'EODHD daily bars', at: price.lastCloseAsOf, asOf: price.lastCloseAsOf }));
     } else {
-      add(packItem({ kind: 'close', fact: `${symbol}'s prior close is not available this morning.`, recordKind: 'symbolDayEvidence.price', recordId, label: 'EODHD daily bars', at: etDate, status: 'unavailable', reason: skipped?.includes('price') ? 'skipped' : 'no_close' }));
+      add(packItem({ kind: 'close', fact: `No prior close for ${symbol} is on file this morning.`, recordKind: 'symbolDayEvidence.price', recordId, label: 'EODHD daily bars', at: etDate, status: 'unavailable', reason: skipped?.includes('price') ? 'skipped' : 'no_close' }));
     }
     for (const n of (record?.news || []).slice(0, HEADLINES_PER_SYMBOL)) add(headlineItem(n));
     for (const [k, set] of Object.entries(sourceTotals)) set.add(skipped?.includes('news') ? 'skipped' : (record?.sources?.[k] ?? 'skipped'));
   }
+  // E3 a: a source the job TRIED and could not reach is one item, "Couldn't reach {source} this morning."; a source it
+  // skipped (no key, switched off — newsfilter every morning in S1) is silent: no item, no failure line, only sourcesSkipped.
+  const sourceStatus = (key, outcome) => {
+    if (outcome === 'error') {
+      sourceFailures.push(`${key}:error`);
+      add(packItem({ kind: 'source_status', fact: `Couldn't reach ${SOURCE_SAID[key] ?? key} this morning.`, recordKind: 'source', recordId: key, label: SOURCE_LABEL[key] ?? key, at: etDate, status: 'unavailable', reason: 'error' }));
+    } else if (outcome === 'skipped') {
+      sourcesSkipped.push(key);
+    }
+  };
   for (const [source, statuses] of Object.entries(sourceTotals)) {
-    const worst = statuses.has('error') ? 'error' : statuses.has('skipped') ? 'skipped' : statuses.has('ok') ? 'ok' : null;
-    if (worst && worst !== 'ok') {
-      sourceFailures.push(`${source}:${worst}`);
-      add(packItem({ kind: 'source_status', fact: `${source === 'eodhd' ? 'EODHD news' : source === 'newsfilter' ? 'newsfilter' : 'FantasyTimes'} was ${worst === 'error' ? 'unavailable (an error)' : 'not checked'} this morning.`, recordKind: 'source', recordId: source, label: SOURCE_LABEL[source] ?? source, at: etDate, status: 'unavailable', reason: worst }));
-    }
+    sourceStatus(source, statuses.has('error') ? 'error' : statuses.has('skipped') ? 'skipped' : null);
   }
-  for (const [k, v] of Object.entries(shared?.sources || {})) {
-    if (v !== 'ok') {
-      sourceFailures.push(`${k}:${v}`);
-      add(packItem({ kind: 'source_status', fact: `The ${k === 'earnings' ? 'earnings calendar' : k === 'macro' ? 'macro calendar' : 'market context'} was ${v === 'error' ? 'unavailable (an error)' : 'not checked'} this morning.`, recordKind: 'source', recordId: k, label: SOURCE_LABEL[k] ?? k, at: etDate, status: 'unavailable', reason: v }));
-    }
+  for (const [k, v] of Object.entries(shared?.sources || {})) if (v !== 'ok') sourceStatus(k, v === 'error' ? 'error' : 'skipped');
+
+  // E3 g (R-25): one tape item per index from the morning's market context — the prior session's close, said with its
+  // date — so a tape sentence's index figures cite an item. Only a pre-market context carries closes (an intraday one is a
+  // live price, never a close), and none is made without the prior session's date.
+  const tape = shared?.tape ?? null;
+  const tapeDate = previousEtDate;
+  if (tape && tape.mode === 'premarket' && spokenDateOf(tapeDate) && Array.isArray(tape.indices)) {
+    for (const i of tape.indices) add(tapeItem({ ...i, asOf: tapeDate, asOfSaid: spokenDateOf(tapeDate) }));
   }
 
   // ---- the events: today's macro prints, and the player's OWN names' reports — today's and the next session's before
@@ -203,7 +241,7 @@ export async function gatherForPlayer(db, { uid, etDate, session, shared, owner,
       const plan = prev.exists ? prev.data()?.plan : null;
       if (plan) {
         priorPlan = { etDate: previousEtDate, status: plan.status, stances: (plan.confirmed?.current ?? plan.current)?.stances?.map((s) => `${s.kind} ${s.ticker}`) ?? [] };
-        add(packItem({ kind: 'prior_plan', fact: `Yesterday's plan (${previousEtDate}) was ${plan.status}${priorPlan.stances.length ? `: ${priorPlan.stances.join(', ')}` : ''}. It has no grade yet.`, recordKind: 'huddle', recordId: previousEtDate, label: 'your huddle record', at: previousEtDate, asOf: previousEtDate }));
+        add(packItem({ kind: 'prior_plan', fact: `Your plan for ${spokenDateOf(previousEtDate) ?? 'the prior session'} was ${plan.status}${priorPlan.stances.length ? `: ${priorPlan.stances.join(', ')}` : ''}. It has no grade yet.`, recordKind: 'huddle', recordId: previousEtDate, label: 'your huddle record', at: previousEtDate, asOf: previousEtDate }));
       }
     } catch {
       sourceFailures.push('prior_huddle');
@@ -220,11 +258,13 @@ export async function gatherForPlayer(db, { uid, etDate, session, shared, owner,
     events,
     window,
     nextEtDate,
+    exposureLeaders: exposureLeadersOf(battles),
     eventsListed: { listed: events.strip.length, earningsListed: listedEarnings.length, earningsTotal: earnings.length },
     tape: shared?.tape ?? null,
     evidence,
     priorPlan,
     sourceFailures: [...new Set(sourceFailures)],
+    sourcesSkipped: [...new Set(sourcesSkipped)],
     watchlistTickers,
   };
 }

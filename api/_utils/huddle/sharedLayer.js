@@ -35,6 +35,9 @@ export function tapeOf(mc) {
     worstSectorChange: num(mc.worstSectorChange),
     spyChangePercent: num(mc.spy?.changePercent),
     qqqChangePercent: num(mc.qqq?.changePercent),
+    // E3 g: each index's close and change, for one `tape` pack item per index (marketContext's own fields)
+    indices: ['spy', 'qqq', 'dia', 'iwm'].map((k) => ({ symbol: k.toUpperCase(), close: num(mc[k]?.price), changePct: num(mc[k]?.changePercent) }))
+      .filter((i) => i.close !== null && i.changePct !== null),
     mode: str(mc.mode),
     asOf: toIso(mc.updatedAt),
   };

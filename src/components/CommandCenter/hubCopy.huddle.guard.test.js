@@ -33,7 +33,9 @@ describe('the Huddle block of hubCopy.js', () => {
   });
 
   it('trips none of the voice rules\' forbidden patterns that apply to words on the hub (no clock promise, no guarantee, no "will", no "has seen", no volume)', () => {
-    const applicable = ['clock_930', 'agent_clock', 'guarantee', 'will_do', 'has_seen', 'premarket_number', 'rvol', 'volume_number', 'nothing_happened'];
+    // Amendment E §E3 adds the rules that bind card text too: no ISO date (d), no calendar count (f), the archetype in the
+    // third person (b), no false outage of a source (a)
+    const applicable = ['clock_930', 'agent_clock', 'guarantee', 'will_do', 'has_seen', 'premarket_number', 'rvol', 'volume_number', 'nothing_happened', 'iso_date', 'calendar_count', 'archetype_person', 'source_outage'];
     const hits = ALL.flatMap((s) => applicable.filter((name) => FORBIDDEN_SCRIPT_PATTERNS[name].test(s)).map((name) => `${name}: ${s}`));
     expect(hits).toEqual([]);
   });

@@ -40,8 +40,8 @@
 | §1.1 a skipped source is silent (E3 a) | `gather.js` makes a `source_status` item only for a source that errored; a skipped one makes no item and no failure line; the script's input never mentions it |
 | §1.2 plan beat by code | `narratePlan` writes it; the model's tool schema has no plan-beat field |
 | §1.2 exposure order (E3 c) | `validateScript` checks the first ticker of the names beat against the largest exposure among the gathered holdings; a miss regenerates |
-| §1.4 / §2.10 dates (E3 d) | pack-item facts and the prompt's date lines are written in spoken form; `FORBIDDEN_SCRIPT_PATTERNS.iso_date` on every beat and name read; the hub's card and source lines render "Nov 6" |
-| §1.5 publication names (E3 e) | `api/_utils/evidence/publicationNames.js` maps hosts to names inside `headlineItem` and the news fetcher, so the model only ever sees the name |
+| §1.4 / §2.10 dates (E3 d) | pack-item facts and every date in the script's input are written in spoken form (`api/_utils/huddle/spoken.js`); `FORBIDDEN_SCRIPT_PATTERNS.iso_date` on every beat and every name read (a card's text); the hub's own dates render "Nov 6" (`hubDate.js`); the hub copy guard holds its strings to the same pattern |
+| §1.5 publication names (E3 e) | `api/_utils/evidence/publicationNames.js` maps hosts to names where a headline becomes a pack item (`packItem.headlineItem`: the fact and the source label), so the model only ever sees the name, for cached evidence records too |
 | §1.7 / §2.11 calendar (E3 f) | the prompt no longer carries the day's report counts; `FORBIDDEN_SCRIPT_PATTERNS.calendar_count` |
 | §1.8 evidence ids | `validateScript` checks every names-beat sentence's `evidenceIds[]` against the record's `evidence[].id` |
 | §1.8 tape items (E3 g) | `gather.js` adds one `tape` item per index from the shared tape; the prompt asks tape sentences to cite them |
