@@ -144,7 +144,9 @@ export function buildUserPrompt({ etDate, weekday, gathered, archetypeLabel, arc
   }
   const t = gathered.tape;
   // E3 g: the index figures are TAPE items in EVIDENCE (cite them); this line carries only the picture's words
-  lines.push(t ? `TAPE (the prior session's picture): regime ${t.regime ?? 'unknown'}; breadth ${t.breadthTier ?? 'unknown'}; volatility ${t.volatilityRegime ?? 'unknown'}; top sector ${t.topSector ?? 'unknown'}${t.topSectorChange !== null && t.topSectorChange !== undefined ? ` (${t.topSectorChange}%)` : ''}; worst sector ${t.worstSector ?? 'unknown'}${t.worstSectorChange !== null && t.worstSectorChange !== undefined ? ` (${t.worstSectorChange}%)` : ''}. Index closes: the TAPE items in EVIDENCE.` : 'TAPE: none this morning (say nothing about the market picture).');
+  const tapeItems = (gathered.evidence || []).filter((e) => e?.kind === 'tape').length;
+  const indexNote = tapeItems > 0 ? 'Index closes: the TAPE items in EVIDENCE.' : 'No index closes this morning: name no index figure.';
+  lines.push(t ? `TAPE (the prior session's picture): regime ${t.regime ?? 'unknown'}; breadth ${t.breadthTier ?? 'unknown'}; volatility ${t.volatilityRegime ?? 'unknown'}; top sector ${t.topSector ?? 'unknown'}${t.topSectorChange !== null && t.topSectorChange !== undefined ? ` (${t.topSectorChange}%)` : ''}; worst sector ${t.worstSector ?? 'unknown'}${t.worstSectorChange !== null && t.worstSectorChange !== undefined ? ` (${t.worstSectorChange}%)` : ''}. ${indexNote}` : 'TAPE: none this morning (say nothing about the market picture).');
   lines.push('EVENT IDS (the only ids a NO_ADDS_BEFORE line may use: prints inside today\'s session):');
   for (const [id, e] of gathered.events.eligible) lines.push(`  ${id} — ${e.label}`);
   if (gathered.events.eligible.size === 0) lines.push('  (none)');
