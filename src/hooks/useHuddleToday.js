@@ -13,7 +13,9 @@
 //   - the page becoming visible again (`visibilitychange`), the one listener, removed on
 //     unmount (registered in commandCenterHub.activity.guard.test.js).
 // With `enabled` false (DRB_HUDDLE_ENABLED off) it reads nothing, registers nothing and
-// stays `idle`. A read that fails keeps the last good answer, said "as of" its time.
+// stays `idle`. A read that fails keeps the last good answer, said "as of" its time — except
+// a 404, the server's answer for a player outside the Huddle's cohort (Amendment E §E7): that
+// is a settled `outside` answer, and the hub then shows exactly its flag-off self.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { confirmHuddlePlan, fetchHuddleToday, skipHuddlePlan } from '../services/huddleService';
@@ -42,6 +44,8 @@ export default function useHuddleToday({ auth, enabled }) {
       setRead({ key, status: 'ready', huddle: body.huddle ?? null, asOf: body.asOf ?? new Date().toISOString(), error: null, refreshing: false });
     } catch (err) {
       if (keyRef.current !== key || seq !== seqRef.current) return;
+      // E7: the status route's 404 is the cohort's (or the flag's) refusal — an answer, never an error to retry or keep
+      if (err?.status === 404) { setRead({ ...IDLE, key, status: 'outside' }); return; }
       setRead((prev) => (prev.key === key && prev.status === 'ready'
         ? { ...prev, refreshing: false, error: err?.message || 'read_failed', stale: true }
         : { ...IDLE, key, status: 'error', error: err?.message || 'read_failed' }));

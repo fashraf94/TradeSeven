@@ -10,6 +10,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ create: null, set: null, existing: null, earnings: null, macro: null }));
+// The Huddle's flag, held by a getter so each describe pins the state it names whatever the shipped value (Amendment E §E7).
+const huddle = vi.hoisted(() => ({ on: true }));
+vi.mock('../../src/config/huddleFlags.js', () => ({ get DRB_HUDDLE_ENABLED() { return huddle.on; } }));
+const COHORT_BEFORE = process.env.HUDDLE_PLAYER_UIDS;
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicDouble {
@@ -93,6 +97,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
+  huddle.on = true;
+  if (COHORT_BEFORE === undefined) delete process.env.HUDDLE_PLAYER_UIDS; else process.env.HUDDLE_PLAYER_UIDS = COHORT_BEFORE;
 });
 
 describe('a complete answer: stored as before, with stop_reason and usage logged', () => {
@@ -327,8 +333,18 @@ describe('readBriefAnswer — the reader on its own', () => {
   });
 });
 
-describe('Huddle S1 — the staged run marker around the brief stage (spec V1.1 §5.1 as replaced by A §A10), flag off', () => {
-  // DRB_HUDDLE_ENABLED ships false (src/config/huddleFlags.js): the marker is the ONLY new write and the response is unchanged.
+// Three states behave exactly alike (A §A10; Amendment E §E7, fail closed): the flag off; the flag on with the cohort
+// HUDDLE_PLAYER_UIDS unset; the flag on with it blank. In each the marker is the ONLY new write and the response is unchanged.
+const DARK_STATES = [
+  ['flag off', false, 'u1'],
+  ['flag on, cohort unset', true, undefined],
+  ['flag on, cohort blank', true, ' , '],
+];
+describe.each(DARK_STATES)('Huddle — the staged run marker around the brief stage (spec V1.1 §5.1 as replaced by A §A10), %s', (_name, on, cohort) => {
+  beforeEach(() => {
+    huddle.on = on;
+    if (cohort === undefined) delete process.env.HUDDLE_PLAYER_UIDS; else process.env.HUDDLE_PLAYER_UIDS = cohort;
+  });
   it('a stored brief: one marker write AFTER the brief write, keyed by the ET date, briefStage done; the response keys are unchanged', async () => {
     const r = await run();
     expect(r.statusCode).toBe(200);
@@ -365,5 +381,18 @@ describe('Huddle S1 — the staged run marker around the brief stage (spec V1.1 
     const r = await run();
     expect(r.statusCode).toBe(200);
     expect(r.body).toMatchObject({ success: true, forDate: TODAY });
+  });
+});
+
+describe('Huddle — LIVE (the flag on and a cohort named, Amendment E §E7): the enqueue and drain stages run after the brief stage', () => {
+  it('a stored brief, cohort `u1`: the marker, then the enqueue stage and the drain; the response keys are unchanged', async () => {
+    huddle.on = true;
+    process.env.HUDDLE_PLAYER_UIDS = 'u1';
+    const r = await run();
+    expect(r.statusCode).toBe(200);
+    expect(Object.keys(r.body).sort()).toEqual(['briefLength', 'duration', 'forDate', 'sourceFailures', 'success', 'tokenUsage']);
+    expect(markerWrites()[0][1]).toMatchObject({ etDate: TODAY, briefStage: 'done' });
+    expect(stages.runEnqueueStage).toHaveBeenCalledTimes(1);
+    expect(stages.drainQueue).toHaveBeenCalledTimes(1);
   });
 });

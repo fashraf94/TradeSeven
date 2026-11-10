@@ -19,6 +19,19 @@ const timeOf = (iso) => {
   return t ? COPY.time.et(t) : '';
 };
 
+/**
+ * E7 (Amendment E §E7): is this player inside the Huddle's cohort, as far as the hub's two readers show? Only on positive
+ * evidence — today's read answered (the status route answers a player outside the cohort with a 404, which the reader
+ * settles as `outside`) AND it holds a record or the history read holds a plan. Loading, any error, the 404, or no record
+ * today and none in history: outside, and the hub renders exactly its flag-off self (no chip, no sheet, no Huddle next
+ * action, the reserved Partnership text and summary, no Reconfirm line). No new reader: the two readers the hub has.
+ */
+export function huddleMemberOf(todayRead, historyRead) {
+  if (todayRead?.status !== 'ready') return false;
+  if (todayRead.huddle) return true;
+  return historyRead?.status === 'ready' && Array.isArray(historyRead.plans) && historyRead.plans.length > 0;
+}
+
 /** "1:10" from milliseconds (a duration rendered from data, the numeral rule). */
 export function durationText(ms) {
   if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return '';

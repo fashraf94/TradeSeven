@@ -4,8 +4,10 @@
 // Amendment B §B1–B2): committed → the committed slot is mirrored; unknown (deadline or
 // error after dispatch) → nothing mirrored, ever, even if the commit lands later; a CPU
 // seat, a short budget or a malformed battle dispatch nothing; it never throws.
+// Amendment E §E7: the owner must be in the cohort (HUDDLE_PLAYER_UIDS, fail closed) — outside it, or with no cohort,
+// the sweep returns exactly the flag-off answer before any dispatch.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../../src/config/huddleFlags.js', () => ({ DRB_HUDDLE_ENABLED: true }));
 const apply = vi.hoisted(() => ({ fn: null }));
@@ -18,9 +20,14 @@ const SLOT = { text: 'GAME PLAN', directiveThreadId: 'plan:u1:2026-11-09:r1', cr
 const battle = (over = {}) => ({ id: 'b1', ownerId: 'u1', timing: { tradingDays: ['2026-11-09'] }, directive: null, ...over });
 const ctx = (over = {}) => ({ db: {}, cronStartTime: Date.now(), timeBudgetMs: 290_000, ...over });
 
+const COHORT_BEFORE = process.env.HUDDLE_PLAYER_UIDS;
 beforeEach(() => {
   apply.fn = vi.fn(async () => ({ outcome: 'written', disposition: 'written', slot: SLOT }));
   vi.spyOn(console, 'warn').mockImplementation(() => {});
+  process.env.HUDDLE_PLAYER_UIDS = 'u1';
+});
+afterEach(() => {
+  if (COHORT_BEFORE === undefined) delete process.env.HUDDLE_PLAYER_UIDS; else process.env.HUDDLE_PLAYER_UIDS = COHORT_BEFORE;
 });
 
 describe('applyPendingPlanForCheck', () => {
@@ -63,6 +70,7 @@ describe('applyPendingPlanForCheck', () => {
 
   it('a CPU seat, a short budget, or a battle with no session dispatch nothing', async () => {
     expect((await applyPendingPlanForCheck(battle({ isCpu: true }), ctx())).outcome).toBe('skipped');
+    process.env.HUDDLE_PLAYER_UIDS = 'u1,cpu-1'; // a CPU owner listed in the cohort is still skipped as a CPU seat
     expect((await applyPendingPlanForCheck(battle({ ownerId: 'cpu-1' }), ctx())).outcome).toBe('skipped');
     expect((await applyPendingPlanForCheck(battle(), ctx({ timeBudgetMs: SWEEP_MIN_BUDGET_MS - 1 }))).outcome).toBe('no_budget');
     expect((await applyPendingPlanForCheck(battle({ timing: {} }), ctx())).outcome).toBe('skipped');
@@ -71,5 +79,32 @@ describe('applyPendingPlanForCheck', () => {
 
   it('the settle backstop runs the reconcile pass when on', async () => {
     expect(await runSettleReconcile({})).toMatchObject({ outcome: 'reconciled', visited: 0 });
+  });
+});
+
+describe('the cohort (E7): the sweep and the settle backstop are the flag off outside it', () => {
+  it('cohort UNSET: the flag-off answer, no dispatch, the battle untouched', async () => {
+    delete process.env.HUDDLE_PLAYER_UIDS;
+    const b = battle();
+    expect(await applyPendingPlanForCheck(b, ctx())).toEqual({ outcome: 'off' });
+    expect(await runSettleReconcile({})).toEqual({ outcome: 'off' });
+    expect(apply.fn).not.toHaveBeenCalled();
+    expect(b.directive).toBeNull();
+  });
+
+  it('cohort EMPTY: the same', async () => {
+    process.env.HUDDLE_PLAYER_UIDS = ' , ';
+    expect(await applyPendingPlanForCheck(battle(), ctx())).toEqual({ outcome: 'off' });
+    expect(await runSettleReconcile({})).toEqual({ outcome: 'off' });
+    expect(apply.fn).not.toHaveBeenCalled();
+  });
+
+  it('OUTSIDE: a battle whose owner is not in the cohort dispatches nothing; INSIDE: one whose owner is, dispatches', async () => {
+    process.env.HUDDLE_PLAYER_UIDS = 'someone-else';
+    expect(await applyPendingPlanForCheck(battle(), ctx())).toEqual({ outcome: 'off' });
+    expect(apply.fn).not.toHaveBeenCalled();
+    process.env.HUDDLE_PLAYER_UIDS = 'someone-else,u1';
+    expect((await applyPendingPlanForCheck(battle(), ctx())).outcome).toBe('committed');
+    expect(apply.fn).toHaveBeenCalledTimes(1);
   });
 });

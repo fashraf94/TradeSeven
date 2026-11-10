@@ -6,9 +6,13 @@
 // composite): `agentBattles.status == 'active'`, `agentBattles.completedAt >= from`
 // (the closePass completedBetween shape, closePass.js:95-100), `agents.lastDeployedAt >=
 // from` (an ISO string, decide.js:723). The count is recorded on the run marker.
+//
+// THE COHORT (Amendment E §E7): only players in `HUDDLE_PLAYER_UIDS` are enqueued — the active players INTERSECTED with
+// the cohort. Unset or blank is no one (gate.js huddleCohortOf), replacing S1's optional scope where unset meant everyone.
 
 import { getPreviousSessionDate, getSessionForDate } from '../marketSchedule.js';
 import { isCpuUserId } from '../../../src/constants/leagueTournament.js';
+import { huddleCohortOf } from './gate.js';
 
 export const RECENT_SESSIONS = 5;
 
@@ -24,22 +28,14 @@ export function recentWindowStartIso(etDate, n = RECENT_SESSIONS) {
   return s?.openMs ? new Date(s.openMs).toISOString() : null;
 }
 
-/**
- * An optional scope (the founder's smoke, or a staged rollout): `HUDDLE_PLAYER_UIDS`, a comma-separated uid list. Unset or
- * blank, every active player (the spec's behaviour). The preview shares the production database, so without a scope one
- * flag-on worker run on the smoke preview would make a huddle for every active player (spec V1.1 §9: "one real huddle for
- * the founder's account").
- */
-export function playerScopeOf(env = process.env) {
-  const raw = env?.HUDDLE_PLAYER_UIDS;
-  if (typeof raw !== 'string' || !raw.trim()) return null;
-  return new Set(raw.split(',').map((s) => s.trim()).filter(Boolean));
-}
-
 const isHumanOwner = (ownerId) => typeof ownerId === 'string' && ownerId.length > 0 && !isCpuUserId(ownerId);
 
-/** @returns {Promise<{ uids: string[], counts: { active: number, recent: number, deployed: number }, skippedCpu: number }>} */
-export async function enumerateActivePlayers(db, { etDate, env = process.env }) {
+/**
+ * The active players inside the cohort (E7). An empty cohort reads nothing and enqueues no one.
+ * @returns {Promise<{ uids: string[], counts: { active: number, recent: number, deployed: number }, skippedCpu: number, outsideCohort: number }>}
+ */
+export async function enumerateActivePlayers(db, { etDate, env = process.env, cohort = huddleCohortOf(env) }) {
+  if (!(cohort instanceof Set) || cohort.size === 0) return { uids: [], counts: { active: 0, recent: 0, deployed: 0 }, skippedCpu: 0, outsideCohort: 0 };
   const from = recentWindowStartIso(etDate);
   const owners = new Set();
   let skippedCpu = 0;
@@ -57,7 +53,6 @@ export async function enumerateActivePlayers(db, { etDate, env = process.env }) 
     const deployed = await db.collection('agents').where('lastDeployedAt', '>=', from).get();
     deployed.docs.forEach((d) => { deployedCount += 1; take(d.data()?.ownerId, d.data()?.isCpu); });
   }
-  const scope = playerScopeOf(env);
-  const uids = [...owners].filter((uid) => !scope || scope.has(uid)).sort();
-  return { uids, counts: { active: active.size, recent: recentCount, deployed: deployedCount }, skippedCpu, scoped: scope ? owners.size - uids.length : 0 };
+  const uids = [...owners].filter((uid) => cohort.has(uid)).sort();
+  return { uids, counts: { active: active.size, recent: recentCount, deployed: deployedCount }, skippedCpu, outsideCohort: owners.size - uids.length };
 }

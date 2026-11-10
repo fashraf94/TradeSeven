@@ -7,11 +7,13 @@
 // and expiry. Range support: 206 with Content-Range, Accept-Ranges: bytes, 416 for an
 // unsatisfiable range; `Cache-Control: private, no-store`; the storage stream is
 // destroyed when the client disconnects. Same origin, allowed by the CSP's default-src
-// 'self' (vercel.json:38). 404 while DRB_HUDDLE_ENABLED is off. Nothing here logs the
-// token or the request path.
+// 'self' (vercel.json:38). 404 while DRB_HUDDLE_ENABLED is off or HUDDLE_PLAYER_UIDS is empty, and 404 when the token's
+// owner is outside the cohort (Amendment E §E7) — the flag-off answer exactly. Nothing here logs the token or the
+// request path.
 
 import { getFirebaseAdmin } from '../../_utils/firebaseAdmin.js';
-import { admitHuddleRoute } from '../../_utils/huddle/routeKit.js';
+import { admitHuddleRoute, sendNotFound } from '../../_utils/huddle/routeKit.js';
+import { huddleAdmits } from '../../_utils/huddle/gate.js';
 import { resolvePlaybackToken, parseRange } from '../../_utils/huddle/playback.js';
 import { audioSizeOf, openAudioStream } from '../../_utils/huddle/audioStore.js';
 
@@ -28,6 +30,8 @@ export default async function handler(req, res, deps = {}) {
   try {
     const found = await resolvePlaybackToken(db, { token });
     if (found.kind !== 'ok') return res.status(found.status).json({ error: found.status === 410 ? 'expired' : 'not_found' });
+    // E7: a token whose owner has left the cohort plays nothing; the answer is the flag-off 404
+    if (!huddleAdmits(found.uid)) return sendNotFound(res);
     const size = await sizeOf(found.gcsPath);
     if (size === null) return res.status(404).json({ error: 'not_found' });
     const range = parseRange(req.headers?.range, size);

@@ -161,7 +161,7 @@ import { DRB_HUDDLE_ENABLED } from '../../config/huddleFlags';
 import useHuddleToday from '../../hooks/useHuddleToday';
 import useHuddleHistory from '../../hooks/useHuddleHistory';
 import { deriveNextAction, NEXT_ACTION_KINDS } from './hub/nextAction';
-import { HUDDLE_KIND, huddleActivityOf, huddleCandidateOf, huddleChipOf, huddlePartnershipOf, huddlePartnershipSummaryOf, needsReconfirmOf } from './hub/huddleView';
+import { HUDDLE_KIND, huddleActivityOf, huddleCandidateOf, huddleChipOf, huddleMemberOf, huddlePartnershipOf, huddlePartnershipSummaryOf, needsReconfirmOf } from './hub/huddleView';
 import HuddleChip from './HuddleChip';
 import HuddleSheet from './HuddleSheet';
 // Build A2 (per-game loadouts): the flag on its own line (agentFormFlags.test.js pins the lines above), the scope and its
@@ -759,8 +759,10 @@ function ConnectedHub({ site, hub, sections }) {
   const live = { ...sections, ...readers.sections };
   // Huddle S1: the section, the next action's rule (C6), Partnership (C8), Activity's rows (C8) and the reconfirm line (C15), all
   // pure derivations of the two readers and the agent read the hub already holds. A literal false folds this away.
+  // Amendment E §E7: only for a player the readers show inside the cohort (hub/huddleView.js huddleMemberOf); outside it —
+  // and while either read is still out — `huddle` stays null and `live` untouched, so the hub is its flag-off self.
   let huddle = null;
-  if (DRB_HUDDLE_ENABLED) {
+  if (DRB_HUDDLE_ENABLED && huddleMemberOf(huddleToday.read, huddleHistory.read)) {
     const candidate = huddleCandidateOf(huddleToday.read, Date.now());
     if (readers.next) live.nextAction = deriveNextAction({ ...readers.next.inputs, dismissed: readers.next.dismissed, huddle: candidate });
     live.huddlePartnership = huddlePartnershipOf(huddleToday.read, huddleHistory.read);

@@ -81,7 +81,7 @@ export async function resolvePlaybackToken(db, { token, nowMs = Date.now() }) {
   const exp = Date.parse(record.playback?.expiresAt);
   if (!Number.isFinite(exp) || nowMs >= exp) return { kind: 'refused', status: 410 };
   if (typeof record.audio?.gcsPath !== 'string') return { kind: 'refused', status: 404 };
-  return { kind: 'ok', gcsPath: record.audio.gcsPath, durationMs: record.audio.durationMs ?? null };
+  return { kind: 'ok', uid: entry.uid, gcsPath: record.audio.gcsPath, durationMs: record.audio.durationMs ?? null };
 }
 
 /**

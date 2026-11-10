@@ -315,8 +315,16 @@ const DARK_BY_DESIGN = {
   // live true value AND, turned around, that this entry is gone — a rollback moves
   // the flag line and both rows back together. Re-adding it while it ships true
   // fails the DARK_BY_DESIGN integrity test below.
-  DRB_HUDDLE_ENABLED:
-    'Huddle S1 (docs/specs/20261030_HUDDLE_S1_BUILD_SPEC_V1_1.md §13 as replaced by Amendment A §A10; build report docs/audits/20261107_BUILD_HUDDLE_S1.md) — the per-player spoken brief and game plan, built dark: off, the brief behaves as HEAD but for its huddleRuns marker, the worker exits at once, every /api/huddle/* route 404s, the sweep and the settle reconcile return before any read, and the hub renders nothing new. Flipped only on the never-merge smoke branch for the founder\'s preview; the real flip waits for S1–S4 (concept R-10) and is its own founder PR, carrying the brief\'s DST pin, trading-day skip and brief-card removal. The flip moves the pin in huddleFlags.test.js to true and drops this entry in the same commit',
+  // DRB_HUDDLE_ENABLED intentionally ABSENT: the Huddle turned on in code on
+  // 2026-11-10 in the S1.1 PR (Amendment E §E7, docs/specs/
+  // 20261110_HUDDLE_S1_BUILD_SPEC_V1_1_AMENDMENT_E.md) — for a named cohort only:
+  // HUDDLE_PLAYER_UIDS fails closed (unset or empty is no one), so with no cohort
+  // every server path and the hub behave as the flag off but for the morning
+  // huddleRuns marker. The deliberate flip drops it here in the same commit, per
+  // the guard's own "if DELIBERATE" instruction. Its pin in huddleFlags.test.js
+  // asserts the live true value AND, turned around, that this entry is gone — a
+  // rollback moves the flag line and both rows back together. The public flip
+  // (every player) still waits for S2–S4 (concept R-10).
   SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:
     'Shadow vs CPU quote integrity (SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md; build record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md) — built dark; the producer metadata (quoteOrigin, the stock isFallback marker) ships live while this stays false. Flips only in the founder\'s own PR, never a build PR, and no earlier than the first regular US market open after the founder confirms the complete additive metadata path is live in production (R-11). The flip moves the pin in shadowCpuQuoteIntegrityFlags.test.js to true and drops this entry in the same commit; no URL, localStorage or environment override exists',
   // HYPOTHESIS_RECORDS_ENABLED intentionally ABSENT: the record slice (Pilot

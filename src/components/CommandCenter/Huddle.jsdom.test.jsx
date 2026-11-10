@@ -294,6 +294,26 @@ describe('the record\'s reader (C7): no poll; mount, visibility and explicit tri
     delete document.visibilityState;
     vi.useRealTimers();
   });
+
+  it('E7: the status route\'s 404 (outside the cohort) is a settled `outside` answer — not an error, no huddle kept', async () => {
+    let last = null;
+    keep(mount(<Probe enabled onRead={(r) => { last = r; }} />));
+    await act(async () => { await Promise.resolve(); });
+    expect(last.read.status).toBe('ready');
+    service.fetchHuddleToday.mockRejectedValueOnce(Object.assign(new Error('not_found'), { status: 404 }));
+    await act(async () => { await last.refresh(); });
+    expect(last.read.status).toBe('outside');
+    expect(last.read.huddle).toBeNull();
+    expect(last.read.stale).toBeUndefined();
+  });
+
+  it('E7: any other failure keeps its S1 meaning (an error first time, the last answer kept after)', async () => {
+    service.fetchHuddleToday.mockRejectedValueOnce(Object.assign(new Error('status_failed'), { status: 500 }));
+    let last = null;
+    keep(mount(<Probe enabled onRead={(r) => { last = r; }} />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(last.read.status).toBe('error');
+  });
 });
 
 describe('the plan history\'s reader (review L3-12)', () => {

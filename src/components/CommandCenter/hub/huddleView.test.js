@@ -9,7 +9,7 @@ import { deriveNextAction, laterKeyOf, NEXT_ACTION_KINDS } from './nextAction';
 import { HUB_COPY as COPY } from './hubCopy';
 import {
   HUDDLE_KIND, huddleLaterKeyOf, huddleChipOf, huddleCandidateOf, battleStatusText, huddleStatusOf, needsReconfirmOf,
-  huddlePartnershipOf, huddlePartnershipSummaryOf, huddleActivityOf, durationText,
+  huddlePartnershipOf, huddlePartnershipSummaryOf, huddleActivityOf, durationText, huddleMemberOf,
 } from './huddleView';
 import { deriveActivity, ACTIVITY_KINDS } from './activityRows';
 
@@ -22,6 +22,29 @@ const record = (over = {}, plan = {}) => ({
   ...over,
 });
 const read = (huddle, over = {}) => ({ key: 'u:1', status: 'ready', huddle, asOf: '2026-11-09T13:00:00Z', ...over });
+
+describe('E7: membership from the two readers (huddleMemberOf) — positive evidence only', () => {
+  const plans = (n) => ({ status: 'ready', plans: Array.from({ length: n }, (_, i) => ({ etDate: `2026-11-0${i + 1}`, planStatus: 'confirmed' })) });
+  it('inside: today answered with a record (history not needed, or still out)', () => {
+    expect(huddleMemberOf(read(record()), { status: 'loading', plans: null })).toBe(true);
+    expect(huddleMemberOf(read(record(), { stale: true }), plans(0))).toBe(true);
+  });
+  it('inside: today answered with no record, and the history holds a plan', () => {
+    expect(huddleMemberOf(read(null), plans(1))).toBe(true);
+  });
+  it('outside: the 404 (settled `outside`), even with a history', () => {
+    expect(huddleMemberOf({ key: 'u:1', status: 'outside', huddle: null }, plans(2))).toBe(false);
+  });
+  it('outside: today answered with no record and no history, or the history still out or failed', () => {
+    expect(huddleMemberOf(read(null), plans(0))).toBe(false);
+    expect(huddleMemberOf(read(null), { status: 'loading', plans: null })).toBe(false);
+    expect(huddleMemberOf(read(null), { status: 'error', plans: null })).toBe(false);
+  });
+  it('outside: today still loading, idle or failed — whatever the history holds', () => {
+    for (const status of ['loading', 'idle', 'error']) expect(huddleMemberOf({ key: 'u:1', status, huddle: null }, plans(3)), status).toBe(false);
+    expect(huddleMemberOf(null, plans(3))).toBe(false);
+  });
+});
 
 describe('the next action (C6): a game in session → Huddle ready → a game waiting for the open → a review → the first deployment', () => {
   const huddle = huddleCandidateOf(read(record()), OPEN - 3_600_000);
