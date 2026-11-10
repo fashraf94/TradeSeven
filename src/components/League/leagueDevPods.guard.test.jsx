@@ -119,6 +119,8 @@ vi.mock('../../config/featureFlags', async (importOriginal) => {
 vi.mock('../../services/tournamentGroupService', async (importOriginal) => ({
   ...(await importOriginal()),
   subscribeMyGroup: (_uid, cb) => { cb(ctx.myGroup); return () => {}; },
+  // The armory flip (Nov 7, 2026): the lobbies' failure-aware read of the same seat (A2R-1), member-scoped too.
+  subscribeMyGroupOrFailure: (_uid, cb) => { cb(ctx.myGroup); return () => {}; },
   subscribeMyTrainingPod: (_uid, cb) => { cb(null); return () => {}; },
   subscribeMyMostRecentVoidedGroup: (_uid, cb) => { cb(null); return () => {}; },
   subscribeBracket: (_id, cb) => { cb(null); return () => {}; },

@@ -17,7 +17,9 @@ import { injectTokens } from './__fixtures__/hubTestKit';
 
 const flags = vi.hoisted(() => ({ hub: false }));
 const seen = vi.hoisted(() => ({ forms: [] }));
-vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_HUB_ENABLED() { return flags.hub; } }));
+// The armory flip (Nov 7, 2026): the armory follows the hub flag here, as its pin requires (agentFormFlags.test.js: the armory is on
+// only while the hub's form is), so the hub-off rows stay the forms' kill switch and the hub-on rows run the shipped state.
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_HUB_ENABLED() { return flags.hub; }, get AGENT_FORM_ARMORY_ENABLED() { return flags.hub; } }));
 // The stage reads the deploy provider's progress store, whose module loads the Firebase client (the reviewFixes suite's stand-in).
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 vi.mock('../AgentForm/AgentForm', () => ({
@@ -84,7 +86,11 @@ describe('the hero\'s read is the readers\' agent read — the one the Loadout s
     // Agent form build A1 follow-up (founder ruling N1): with the armory on, the same read made bare (no archetype);
     // with it off, a literal ternary that folds to readers.agent, as before.
     expect(hub).toContain('<HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>');
-    expect(hub.match(/agentRead=\{readers\.agent\}/g)).toHaveLength(4);
+    // Build A2: with per-game loadouts on too, the shells sit in the loadout scope, which takes the same read, and the hero's
+    // read is the same bare read (N1); the flag-off arm is the line above. Two shells per arm, and the scope: seven.
+    expect(hub).toContain('<PerGameLoadoutScope agentRead={readers.agent} activeBattles={hub?.activeBattles ?? null}>');
+    expect(hub).toContain('<HubAgentFormContext.Provider value={armoryHeroRead(readers.agent)}>');
+    expect(hub.match(/agentRead=\{readers\.agent\}/g)).toHaveLength(7);
   });
 });
 

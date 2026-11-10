@@ -11,6 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeCompositionStoreDouble } from '../_utils/__fixtures__/compositionStoreDouble.js';
+import { leagueGroupsDouble } from '../_utils/__fixtures__/leagueGroupsDouble.js';
 
 // ==================== HOISTED MOCK STATE ====================
 
@@ -91,6 +92,7 @@ function makeFakeFirestore({ agentDocs = {}, watchlistDocs = {} } = {}) {
     if (name === 'watchlists') return { doc: (id) => buildWatchlistRef(id) };
     const __c = __composition.collection(name);
     if (__c) return __c;
+    if (name === 'tournamentGroups') return leagueGroupsDouble(); // the armory flip: the League writers' lock read
     throw new Error(`Unmocked collection: ${name}`);
   };
 

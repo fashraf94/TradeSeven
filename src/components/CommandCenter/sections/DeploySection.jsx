@@ -26,6 +26,12 @@ import { HUB_COPY as COPY } from '../hub/hubCopy';
 import { C, tint } from '../hub/hubStyle';
 import { Card, HubLink, Icon, Section } from '../HubParts';
 import HubHold from './HubHold';
+// Build A2 (board 2): with per-game loadouts and the armory on, the Deploy card's line is what the next BaggerBomb
+// deploy carries — the set's still, its book and the count — with its door to the BaggerBomb card. Literal ternaries at
+// today's elements, so flag-off folds to them.
+import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';
+import { PER_GAME_LOADOUT_ENABLED } from '../../../config/perGameLoadoutFlags';
+import { DeployLoadoutLine } from '../LoadoutCards';
 
 const LINE_ICON_COLOR = { lock: C.ink3, info: C.copper, check: C.pos };
 
@@ -120,7 +126,12 @@ export function PhoneDeployCard({ deploy, onAction, onOpenBoard, idea = null, re
   return (
     <Section label={COPY.deploy.label} data-hub-section="deploy">
       <Card data-hub-deploy={display.displayState} data-hub-deploy-card="phone" style={{ background: C.surface, paddingTop: 6 }}>
-        <DeployingWith idea={idea} displayState={display.displayState} />
+        {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? (
+          <>
+            <DeployLoadoutLine />
+            <DeployingWith idea={idea} displayState={display.displayState} />
+          </>
+        ) : <DeployingWith idea={idea} displayState={display.displayState} />}
         <DeployLines
           display={display.cardLine ? display : { ...display, cardLine: { icon: null, text: display.status, action: null } }}
           onAction={onAction}
@@ -151,11 +162,13 @@ export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoa
         style={{ background: tinted ? `linear-gradient(135deg, ${tint('blue-action', 0.1)}, ${C.surface} 70%)` : C.surface }}
       >
         <div style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>{COPY.deploy.title}</div>
+        {PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? <DeployLoadoutLine onOpen={onOpenLoadout} /> : (
         <div style={{ fontSize: 12.5, color: C.ink2, marginTop: 4, lineHeight: 1.5 }}>
           <span>{loadoutLine}</span>
           <span>{COPY.sep}</span>
           <HubLink onPress={onOpenLoadout}>{COPY.deploy.loadoutLink}</HubLink>
         </div>
+        )}
         <DeployingWith idea={idea} displayState={display.displayState} />
         <div style={{ marginTop: 14 }}>
           <HubHold full canStart={display.canStart} label={display.cardHoldLabel} onDeploy={onDeploy} wiring={holdWiring} holding={holding} />

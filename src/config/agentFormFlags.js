@@ -90,9 +90,12 @@ export const AGENT_FORM_LEAGUE_ENABLED = true;
  * wide compositions it is board 6's dialog over the paused hero; on the phone it opens in the hero's own box
  * (founder ruling FD-8). The old ArchetypePicker stays for the League chooser and the fallback shells.
  *
- * DARK — default FALSE, and it STAYS false on main until the founder's phone test. It is flipped only on a
- * never-merge smoke branch. Every read is a literal ternary (or `FLAG && …`) that Rollup folds, so with it FALSE the
- * hub chunk, the agent form wrapper and every other chunk are byte-identical to main's.
+ * LIVE — TRUE since the armory flip, with PER_GAME_LOADOUT_ENABLED in the same commit (founder rulings FL1 and FL2,
+ * Nov 7, 2026), and both stay as kill switches. The rollback is two steps: PER_GAME_LOADOUT_ENABLED alone back to
+ * false returns A1's armory with one loadout; both back to false returns the app as it was before the flip. The armory
+ * never goes off while per-game loadouts are on (the pin row). A rollback moves a flag and its pin; the DARK_BY_DESIGN
+ * entry stays out. Every read is a literal ternary (or `FLAG && …`) that Rollup folds, so with it FALSE the hub chunk,
+ * the agent form wrapper and every other chunk are what they were before A1.
  */
 // Pinned by: agentFormFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const AGENT_FORM_ARMORY_ENABLED = false;
+export const AGENT_FORM_ARMORY_ENABLED = true;

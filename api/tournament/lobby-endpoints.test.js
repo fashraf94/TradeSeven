@@ -15,7 +15,10 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ flag: true, nextArc: false, db: null, user: { uid: 'u1', name: 'Ada' } }));
+const h = vi.hoisted(() => ({ flag: true, nextArc: false, perGame: false, db: null, user: { uid: 'u1', name: 'Ada' } }));
+
+// Build A2 (FD-4): PER_GAME_LOADOUT_ENABLED through a getter, false except in the A2 describe below.
+vi.mock('../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return h.perGame; } }));
 
 vi.mock('../../src/config/featureFlags.js', () => ({
   get LEAGUE_LOBBY_ENABLED() { return h.flag; },
@@ -144,6 +147,7 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
   h.flag = true;
   h.nextArc = false;
+  h.perGame = false;
   h.user = { uid: 'u1', name: 'Ada' };
   h.db = null;
 });
@@ -384,6 +388,34 @@ describe('lobby-quickplay-training — loadout chooser (Slice 5b-ii)', () => {
     await trainingHandler(req, res);
     expect(res.statusCode).toBe(400);
     expect(res.body.error).toBe('invalid_loadout_spec');
+  });
+});
+
+// ==================== Build A2 (FD-4): the chooser's override is gone ====================
+describe('lobby-quickplay-training — A2, PER_GAME_LOADOUT_ENABLED on: the pod wears the League loadout', () => {
+  it('a valid loadoutSpec is ignored: the pod forms with no carrier, so the clone pure-inherits the League loadout', async () => {
+    const { db, store } = withRankings({
+      ...RANKED_AGENT_U1,
+      'watchlists/wl-u1': { userId: 'u1', status: 'committed', name: 'Momentum Names', tickers: ['SYM1'] },
+    });
+    h.db = db;
+    h.nextArc = true;
+    h.perGame = true;
+    const { req, res } = makeReqRes({ loadoutSpec: { archetype: 'guardian', equippedWatchlistId: 'wl-u1' } });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(store.get(`tournamentGroups/${res.body.groupId}`)).not.toHaveProperty('loadoutSpecByUser');
+  });
+
+  it('an invalid loadoutSpec (an old client) is ignored too, not refused: the pod still forms', async () => {
+    const { db, store } = withRankings(RANKED_AGENT_U1);
+    h.db = db;
+    h.nextArc = true;
+    h.perGame = true;
+    const { req, res } = makeReqRes({ loadoutSpec: { archetype: 'wizard', equippedTraits: ['x'] } });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(store.get(`tournamentGroups/${res.body.groupId}`)).not.toHaveProperty('loadoutSpecByUser');
   });
 });
 

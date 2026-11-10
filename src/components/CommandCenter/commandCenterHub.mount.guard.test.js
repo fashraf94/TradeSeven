@@ -633,6 +633,19 @@ const PERMITTED_TERMINALS = Object.freeze({
   'src/hooks/useHuddleToday.js': "the Huddle record's one reader: the status route on mount, Retry, sheet open, confirm/skip and visibilitychange — no poll (Huddle C §C7)",
   'src/hooks/useHuddleHistory.js': "the plan history's one reader, once per owner and epoch (Huddle C §C7)",
   'src/components/Huddle/HuddleSheetBody.jsx': 'the Huddle sheet body: audio (no autoplay; stops on unmount, hidden tab, ceremony), transcript, plan card (Huddle C §C8)',
+  // Build A2 (per-game loadouts; Phase 0 armory report §9 A2): reached only from the arms both PER_GAME_LOADOUT_ENABLED and
+  // AGENT_FORM_ARMORY_ENABLED hold. The flag module imports nothing; the model and the copy table are Node-clean and pure
+  // (the server shares the model; the League's lazy line shares the table); the two services are the writers' thin clients
+  // and the League lock's client read.
+  'src/config/perGameLoadoutFlags.js': 'PER_GAME_LOADOUT_ENABLED — per-game loadouts, read as a literal ternary so flag-off folds away (build A2)',
+  'src/constants/perGameLoadout.js': 'the per-game loadout model the server shares: the two loadouts, the League lock and its end (build A2)',
+  'src/constants/loadoutCopy.js': 'LOADOUT_COPY — the loadout surfaces\' words, one table for the hub and the League, a hub copy guard table (build A2)',
+  'src/services/loadoutService.js': 'changeLoadoutArchetype, equipLoadoutBook, unequipLoadoutBook — today\'s three writers with the `loadout` they set (build A2)',
+  'src/services/leagueLockService.js': 'subscribeLeagueLock — the League lock\'s client read: the writers\' own query, judged by the shared rule (build A2)',
+  // The armory flip's LD-1 (founder ruling, Nov 8, 2026): the League door's one-shot intent. Outside this directory because
+  // App marks it (App reaches here only through the gate, the picker and the chrome predicates); it imports nothing and
+  // reads no flag, so the walk stopping here hides nothing.
+  'src/utils/hubEntryIntent.js': 'takeLoadoutEntry — the League door\'s one-shot intent, taken by each shell\'s first render on the flag-on arm (LD-1)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -700,6 +713,8 @@ const AGENT_FORM_WRAPPER = Object.freeze([
   `${AGENT_FORM_DIR}/agentFormTokens.js`,
   `${AGENT_FORM_DIR}/agentGrowth.js`,
   `${AGENT_FORM_DIR}/loadEngine.js`,
+  // Build A2: the loadout cards' and lines' still (the wrapper at the still rate), shared with the League's lazy line.
+  `${AGENT_FORM_DIR}/LoadoutStill.jsx`,
 ]);
 /** R6a: the one load-time edge the hub graph may hold — the wrapper's loader into the engine's lazy entry. */
 const ENGINE_EDGE = `${AGENT_FORM_DIR}/loadEngine.js -> lazy ${AGENT_FORM_DIR}/engine/index.js`;
@@ -759,6 +774,9 @@ const ALLOWED_ACTIVITY = Object.freeze({
   // commandCenterHub.activity.guard.test.js. The engine's own loop, observer and listener are behind the lazy edge,
   // in its own lifecycle suite; the hub view (HubAgentForm.jsx) holds no activity at all.
   [`${AGENT_FORM_DIR}/AgentForm.jsx`]: ['\\baddEventListener\\b', '\\buseEffect\\b'],
+  // Build A2 (FD-3): the League lock — one effect that starts the owner's one subscription (the client read's) and stops it.
+  // Call by call in commandCenterHub.activity.guard.test.js.
+  [HUB_FILE('hub/useLeagueLoadoutLock.js')]: ['\\bsubscribe\\w*\\s*\\(', '\\buseEffect\\b'],
 });
 
 function activityInCode(rel, code) {
@@ -1301,6 +1319,12 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     '/hooks/useHuddleToday': ['default'],
     '/hooks/useHuddleHistory': ['default'],
     '/Huddle/HuddleSheetBody': ['default'],
+    // Build A2: the three writers with the `loadout` they set (the armory's Equip, the book sheet's equip and clear) and the
+    // refusal's test; the League lock's one client read.
+    '/services/loadoutService': ['changeLoadoutArchetype', 'equipLoadoutBook', 'isLeagueLock', 'unequipLoadoutBook'],
+    '/services/leagueLockService': ['subscribeLeagueLock'],
+    // The armory flip's LD-1: ONE name, the take (App alone marks the intent).
+    '/utils/hubEntryIntent': ['takeLoadoutEntry'],
   });
 
   it('across every file of the directory, exactly these names and no others', () => {
@@ -1345,7 +1369,14 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
       `${HUB_FILE('hub/useHubResearch.js')}: ../../../services/hypothesisVersionService`,
       // S2b: the deploy provider suites' kit reads the same identity source (tests only; no hub module reaches it).
       `${HUB_FILE('__fixtures__/deployAttemptKit.jsx')}: ../../../services/authIdentity`,
+      // Build A2: the loadout writers (the armory's Equip, the book sheet) and the League lock's read.
+      `${HUB_FILE('Armory.jsx')}: ../../services/loadoutService`,
+      `${HUB_FILE('LoadoutBookSheet.jsx')}: ../../services/loadoutService`,
+      `${HUB_FILE('hub/useLeagueLoadoutLock.js')}: ../../../services/leagueLockService`,
     ].sort());
+    // Build A2: each loadout writer file's own names.
+    expect(importedNames(stripComments(read(HUB_FILE('Armory.jsx'))), '/services/loadoutService')).toEqual(['changeLoadoutArchetype', 'isLeagueLock']);
+    expect(importedNames(stripComments(read(HUB_FILE('LoadoutBookSheet.jsx'))), '/services/loadoutService')).toEqual(['equipLoadoutBook', 'unequipLoadoutBook']);
   });
 
   // S6 (review H-3): the server's own ticker filter is called, not copied, and from one place — the module that decides what the

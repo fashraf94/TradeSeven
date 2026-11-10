@@ -107,6 +107,9 @@ const NOOP_METHODS = [
   // Cockpit Build 0 (spec §3.9): the confirmed call references, and the
   // tick's emitted capture schema (resolved once, read by both composers).
   'call', 'schema',
+  // Measured Trend Evidence Slice 2 (spec V2 §4.5, amended): the optional
+  // setupMenu block — inert here, so capture off reads nothing and sets nothing.
+  'setupMenu',
 ];
 
 /** The inert context. Flag off, every call site runs against this. */
@@ -297,6 +300,23 @@ export function createTickCaptureContext({
     schema: guard((resolved) => {
       if (state.captureSchema === null && resolved && typeof resolved === 'object') state.captureSchema = resolved;
     }),
+
+    /**
+     * Measured Trend Evidence Slice 2: the optional `setupMenu` block, last call
+     * wins (the pool fact at the freeze, the composed block at the capture
+     * stage). DELIBERATELY NOT `guard`: an optional block's failure is contained
+     * HERE and never written to `faulted`, whose text would change the body
+     * (kickoff Correction C; rows 1.7 / 5.5). The key exists on the state only
+     * once a block is set, so every other tick's state is exactly as before.
+     * `null` is the composer's omission (correction round F4: not even the
+     * error form fits the cap): the key is removed, as if no block was set.
+     */
+    setupMenu: (block) => {
+      try {
+        if (block === null) delete state.setupMenu;
+        else if (typeof block === 'object' && !Array.isArray(block)) state.setupMenu = block;
+      } catch { /* contained: the record simply has no block */ }
+    },
   };
 
   // Bound to THIS tick's async chain — nothing is keyed by battle id, so no

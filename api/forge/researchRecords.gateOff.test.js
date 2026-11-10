@@ -27,7 +27,9 @@
 // `includeUsage` on the model call.
 //
 // This file and its harness (api/_utils/__fixtures__/researchHostHarness.js)
-// import nothing that is new in P2, so they run unchanged on main.
+// import nothing that is new in P2, so they run unchanged on main. Since the
+// Research Record Extension they also import api/_utils/__fixtures__/exchangeIds.js,
+// which is self-contained: a recapture on a main that predates it copies it alongside.
 
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -36,6 +38,7 @@ import {
   OWNER, OTHER, NOW, ALLOWLIST_ENV, AGENT_ID, DROP_ID, makeHostDb, call, rankingsDoc, agentDoc, parseResult, signalDropDoc,
   screenReply, dialogueReply, analysisReply, dialogueSession, screenerSession, savedList, analysisSession,
 } from '../_utils/__fixtures__/researchHostHarness.js';
+import { stripExchangeIds, writesWithoutMintedIds } from '../_utils/__fixtures__/exchangeIds.js';
 
 const state = vi.hoisted(() => ({ flagOn: false, replies: [], calls: [], logs: [] }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
@@ -82,10 +85,16 @@ const { default: transitionHandler } = await import('./watchlists/[id]/hypothesi
 // Serialised in insertion order: a key-order change in a body or a payload is a difference (byte identity).
 const canon = (v) => JSON.stringify(v);
 const sha = (v) => createHash('sha256').update(canon(v)).digest('hex');
+// The Research Record Extension (7 Nov 2026): every exchange a host NEWLY writes
+// carries `exchangeId: randomUUID()`, whatever the gate. The writes are compared
+// with those ids taken out — each one checked first (a v4 UUID on every exchange
+// a write adds; exchangeIds.js) — so everything else must still be main's, byte
+// for byte. A capturing run (on main, which mints none) only strips.
 function traceOf(res, db) {
   const a = db.__access;
+  const writes = process.env.P2_GOLDEN_WRITE === '1' ? stripExchangeIds(a.writes).value : writesWithoutMintedIds(a.writes).writes;
   return {
-    status: res.statusCode, body: res.body, reads: a.reads, queries: a.queries, writes: a.writes,
+    status: res.statusCode, body: res.body, reads: a.reads, queries: a.queries, writes,
     txAttempts: db.__txAttempts, logs: state.logs, model: state.calls,
   };
 }

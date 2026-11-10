@@ -22,6 +22,7 @@
 // same composition PR 2 used, now with both helper arms behaviorally pinned.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { leagueGroupsDouble } from '../_utils/__fixtures__/leagueGroupsDouble.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -94,6 +95,7 @@ function makeFake({ agentDocs = {}, subDocs = {}, topDocs = {}, epochDoc = null 
         if (docId !== 'writeEpoch') throw new Error(`wrong epoch doc id: ${docId}`);
         return epochRef;
       } };
+      if (name === 'tournamentGroups') return leagueGroupsDouble(); // the armory flip: the League writers' lock read
       return { doc: (docId) => ({
         get: async () => {
           const d = state.topDocs[`${name}/${docId}`];

@@ -1,0 +1,495 @@
+{
+ "held_measured_chip": {
+  "screen": {
+   "sha256": "92625f1dd1ba4c7a55482b30b7e6e611fcbda16df9964ddf03098ab43c88a4b3",
+   "length": 43513
+  },
+  "modal": {
+   "asset": {
+    "symbol": "AAPL",
+    "baseATR": 2.5,
+    "positionId": "position-agent",
+    "slotVersion": 1,
+    "stockThresholdReceipt": {
+     "modelId": "stock_measured_atr14_fullday_v2",
+     "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+     "policyHash": "<hash>",
+     "publicationRuleHash": "<hash>",
+     "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+     "battleId": "stock-battle",
+     "side": "agent",
+     "tier": "star",
+     "slot": 0,
+     "positionId": "position-agent",
+     "slotVersion": 1,
+     "symbol": "AAPL",
+     "securityId": "EODHD:AAPL.US:US-AAPL",
+     "snapshotId": "<uuid>",
+     "inputRef": "stockThresholdInputs/<uuid>",
+     "inputHash": "<hash>",
+     "snapshotHash": "<hash>",
+     "snapshotCapturedAt": "2026-10-14T14:02:00.000Z",
+     "sourceSession": "2026-10-13",
+     "atr14Dollars": 2,
+     "measuredPct": 2,
+     "scoringPct": 2,
+     "scoringPctDecimal": "2.000000",
+     "fill": 100.75,
+     "fillQuote": {
+      "provider": "EODHD",
+      "source": "real-time",
+      "price": 100.75,
+      "quoteAsOf": "2026-10-14T13:47:00.000Z",
+      "observedAt": "2026-10-14T14:02:00.000Z",
+      "validation": "accepted_original_quote",
+      "raw": {
+       "code": "AAPL.US",
+       "close": 100.75,
+       "high": 201.5,
+       "low": 1,
+       "previousClose": 100,
+       "timestamp": 1791985620
+      }
+     },
+     "enteredAt": "2026-10-14T14:02:00.000Z",
+     "receiptHash": "<hash>"
+    },
+    "swapPrice": 100.75,
+    "swappedInAt": "2026-10-14T14:02:00.000Z",
+    "stockRewardRoute": true,
+    "rewardContext": {
+     "status": "valid",
+     "modelId": "stock_measured_atr14_fullday_v2",
+     "policyHash": "<hash>",
+     "positionId": "position-agent",
+     "receiptHash": "<hash>",
+     "receiptContent": "{\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"atr14Dollars\":2,\"battleId\":\"stock-battle\",\"enteredAt\":\"2026-10-14T14:02:00.000Z\",\"fill\":100.75,\"fillQuote\":{\"observedAt\":\"2026-10-14T14:02:00.000Z\",\"price\":100.75,\"provider\":\"EODHD\",\"quoteAsOf\":\"2026-10-14T13:47:00.000Z\",\"raw\":{\"close\":100.75,\"code\":\"AAPL.US\",\"high\":201.5,\"low\":1,\"previousClose\":100,\"timestamp\":1791985620},\"source\":\"real-time\",\"validation\":\"accepted_original_quote\"},\"inputHash\":\"<hash>\",\"inputRef\":\"stockThresholdInputs/<uuid>\",\"measuredPct\":2,\"modelId\":\"stock_measured_atr14_fullday_v2\",\"policyHash\":\"<hash>\",\"positionId\":\"position-agent\",\"publicationRuleHash\":\"<hash>\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"scoringPct\":2,\"scoringPctDecimal\":\"2.000000\",\"securityId\":\"EODHD:AAPL.US:US-AAPL\",\"side\":\"agent\",\"slot\":0,\"slotVersion\":1,\"snapshotCapturedAt\":\"2026-10-14T14:02:00.000Z\",\"snapshotHash\":\"<hash>\",\"snapshotId\":\"<uuid>\",\"sourceSession\":\"2026-10-13\",\"symbol\":\"AAPL\",\"tier\":\"star\"}",
+     "inputRef": "stockThresholdInputs/<uuid>",
+     "fill": 100.75,
+     "scoringPct": 2,
+     "scoringPctDecimal": "2.000000",
+     "currentPrice": 101,
+     "multiplier": 0.12406947890818859,
+     "targets": [
+      {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 102.765
+      },
+      {
+       "key": "doubleBagger",
+       "label": "Double Bagger",
+       "emoji": "💣💣",
+       "multiplier": 1.5,
+       "points": 30,
+       "k": 1.5,
+       "target": 103.77250000000001
+      },
+      {
+       "key": "tenBagger",
+       "label": "TenBagger",
+       "emoji": "🚀💣",
+       "multiplier": 2,
+       "points": 50,
+       "k": 2,
+       "target": 104.78
+      },
+      {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 98.735
+      },
+      {
+       "key": "crash",
+       "label": "Crash",
+       "emoji": "💥",
+       "multiplier": 1.5,
+       "points": -20,
+       "k": -1.5,
+       "target": 97.72749999999999
+      },
+      {
+       "key": "meltdown",
+       "label": "Meltdown",
+       "emoji": "🔥",
+       "multiplier": 2,
+       "points": -35,
+       "k": -2,
+       "target": 96.72
+      }
+     ],
+     "crossedTiers": [],
+     "nextTarget": {
+      "key": "bagger",
+      "label": "BaggerBomb",
+      "emoji": "💣",
+      "multiplier": 1,
+      "points": 15,
+      "k": 1,
+      "target": 102.765
+     },
+     "nextPenalty": {
+      "key": "bust",
+      "label": "Bust",
+      "emoji": "📉",
+      "multiplier": 1,
+      "points": -10,
+      "k": -1,
+      "target": 98.735
+     },
+     "penaltyProximity": {
+      "key": "bust",
+      "label": "Bust",
+      "emoji": "📉",
+      "multiplier": 1,
+      "points": -10,
+      "k": -1,
+      "target": 98.735,
+      "distance": 1.1240694789081889,
+      "approaching": false
+     },
+     "proximity": {
+      "key": "bagger",
+      "label": "BaggerBomb",
+      "emoji": "💣",
+      "multiplier": 1,
+      "points": 15,
+      "k": 1,
+      "target": 102.765,
+      "distance": 0.8759305210918117,
+      "locked": false,
+      "progress": 0.12406947890818855
+     },
+     "quoteEvidence": {
+      "kind": "post_fill_quote",
+      "providerAsOf": "2026-10-14T14:02:00.000Z",
+      "observedAt": "2026-10-14T14:02:00.000Z"
+     },
+     "history": {
+      "positionId": "position-agent",
+      "side": "agent",
+      "receiptHash": "<hash>",
+      "high": 101,
+      "low": 100.75,
+      "observedAt": "2026-10-14T14:02:00.000Z",
+      "crossedTiers": [],
+      "maxMultiplier": 0.12406947890818859,
+      "minMultiplier": 0
+     }
+    },
+    "points": 5,
+    "badges": [],
+    "history": {
+     "positionId": "position-agent",
+     "side": "agent",
+     "receiptHash": "<hash>",
+     "high": 101,
+     "low": 100.75,
+     "observedAt": "2026-10-14T14:02:00.000Z",
+     "crossedTiers": [],
+     "maxMultiplier": 0.12406947890818859,
+     "minMultiplier": 0
+    },
+    "priceChange": 0.24813895781637718,
+    "currentPrice": 101,
+    "openPrice": 100.75,
+    "price": 101,
+    "threshold": null,
+    "lockedPrice": 100.75,
+    "percentChange": 0.24813895781637718
+   },
+   "onClose": "[function]",
+   "showActionButton": false,
+   "isGameContext": true,
+   "version": 2,
+   "defaultTab": "baggerbomb",
+   "defaultTimeframe": "bomb",
+   "wsPrice": 100.75
+  },
+  "modalKeys": [
+   "asset",
+   "defaultTab",
+   "defaultTimeframe",
+   "isGameContext",
+   "onClose",
+   "showActionButton",
+   "version",
+   "wsPrice"
+  ]
+ },
+ "cpu_only_chip": {
+  "screen": {
+   "sha256": "8fd6494343d0f585a5e0c01c8ead7def80b5107c002bd889bed57b20993eeb2f",
+   "length": 43513
+  },
+  "modal": {
+   "asset": {
+    "symbol": "MSFT",
+    "baseATR": 2.5,
+    "positionId": "position-cpu",
+    "slotVersion": 1,
+    "stockThresholdReceipt": {
+     "modelId": "stock_measured_atr14_fullday_v2",
+     "publicationRuleId": "eodhd_us_completed_session_observation_v1",
+     "policyHash": "<hash>",
+     "publicationRuleHash": "<hash>",
+     "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+     "battleId": "stock-battle",
+     "side": "cpu",
+     "tier": "star",
+     "slot": 0,
+     "positionId": "position-cpu",
+     "slotVersion": 1,
+     "symbol": "MSFT",
+     "securityId": "EODHD:MSFT.US:US-MSFT",
+     "snapshotId": "<uuid>",
+     "inputRef": "stockThresholdInputs/<uuid>",
+     "inputHash": "<hash>",
+     "snapshotHash": "<hash>",
+     "snapshotCapturedAt": "2026-10-14T14:02:00.000Z",
+     "sourceSession": "2026-10-13",
+     "atr14Dollars": 2,
+     "measuredPct": 2,
+     "scoringPct": 2,
+     "scoringPctDecimal": "2.000000",
+     "fill": 99.5,
+     "fillQuote": {
+      "provider": "EODHD",
+      "source": "real-time",
+      "price": 99.5,
+      "quoteAsOf": "2026-10-14T13:47:00.000Z",
+      "observedAt": "2026-10-14T14:02:00.000Z",
+      "validation": "accepted_original_quote",
+      "raw": {
+       "code": "MSFT.US",
+       "close": 99.5,
+       "high": 200,
+       "low": 1,
+       "previousClose": 100,
+       "timestamp": 1791985620
+      }
+     },
+     "enteredAt": "2026-10-14T14:02:00.000Z",
+     "receiptHash": "<hash>"
+    },
+    "swapPrice": 99.5,
+    "swappedInAt": "2026-10-14T14:02:00.000Z",
+    "stockRewardRoute": true,
+    "rewardContext": {
+     "status": "valid",
+     "modelId": "stock_measured_atr14_fullday_v2",
+     "policyHash": "<hash>",
+     "positionId": "position-cpu",
+     "receiptHash": "<hash>",
+     "receiptContent": "{\"approvedPolicyRef\":\"owner_baggerbomb_stock_thresholds_v2_20261015@v1\",\"atr14Dollars\":2,\"battleId\":\"stock-battle\",\"enteredAt\":\"2026-10-14T14:02:00.000Z\",\"fill\":99.5,\"fillQuote\":{\"observedAt\":\"2026-10-14T14:02:00.000Z\",\"price\":99.5,\"provider\":\"EODHD\",\"quoteAsOf\":\"2026-10-14T13:47:00.000Z\",\"raw\":{\"close\":99.5,\"code\":\"MSFT.US\",\"high\":200,\"low\":1,\"previousClose\":100,\"timestamp\":1791985620},\"source\":\"real-time\",\"validation\":\"accepted_original_quote\"},\"inputHash\":\"<hash>\",\"inputRef\":\"stockThresholdInputs/<uuid>\",\"measuredPct\":2,\"modelId\":\"stock_measured_atr14_fullday_v2\",\"policyHash\":\"<hash>\",\"positionId\":\"position-cpu\",\"publicationRuleHash\":\"<hash>\",\"publicationRuleId\":\"eodhd_us_completed_session_observation_v1\",\"scoringPct\":2,\"scoringPctDecimal\":\"2.000000\",\"securityId\":\"EODHD:MSFT.US:US-MSFT\",\"side\":\"cpu\",\"slot\":0,\"slotVersion\":1,\"snapshotCapturedAt\":\"2026-10-14T14:02:00.000Z\",\"snapshotHash\":\"<hash>\",\"snapshotId\":\"<uuid>\",\"sourceSession\":\"2026-10-13\",\"symbol\":\"MSFT\",\"tier\":\"star\"}",
+     "inputRef": "stockThresholdInputs/<uuid>",
+     "fill": 99.5,
+     "scoringPct": 2,
+     "scoringPctDecimal": "2.000000",
+     "currentPrice": 101,
+     "multiplier": 0.7537688442211055,
+     "targets": [
+      {
+       "key": "bagger",
+       "label": "BaggerBomb",
+       "emoji": "💣",
+       "multiplier": 1,
+       "points": 15,
+       "k": 1,
+       "target": 101.49
+      },
+      {
+       "key": "doubleBagger",
+       "label": "Double Bagger",
+       "emoji": "💣💣",
+       "multiplier": 1.5,
+       "points": 30,
+       "k": 1.5,
+       "target": 102.485
+      },
+      {
+       "key": "tenBagger",
+       "label": "TenBagger",
+       "emoji": "🚀💣",
+       "multiplier": 2,
+       "points": 50,
+       "k": 2,
+       "target": 103.48
+      },
+      {
+       "key": "bust",
+       "label": "Bust",
+       "emoji": "📉",
+       "multiplier": 1,
+       "points": -10,
+       "k": -1,
+       "target": 97.51
+      },
+      {
+       "key": "crash",
+       "label": "Crash",
+       "emoji": "💥",
+       "multiplier": 1.5,
+       "points": -20,
+       "k": -1.5,
+       "target": 96.515
+      },
+      {
+       "key": "meltdown",
+       "label": "Meltdown",
+       "emoji": "🔥",
+       "multiplier": 2,
+       "points": -35,
+       "k": -2,
+       "target": 95.52
+      }
+     ],
+     "crossedTiers": [],
+     "nextTarget": {
+      "key": "bagger",
+      "label": "BaggerBomb",
+      "emoji": "💣",
+      "multiplier": 1,
+      "points": 15,
+      "k": 1,
+      "target": 101.49
+     },
+     "nextPenalty": {
+      "key": "bust",
+      "label": "Bust",
+      "emoji": "📉",
+      "multiplier": 1,
+      "points": -10,
+      "k": -1,
+      "target": 97.51
+     },
+     "penaltyProximity": {
+      "key": "bust",
+      "label": "Bust",
+      "emoji": "📉",
+      "multiplier": 1,
+      "points": -10,
+      "k": -1,
+      "target": 97.51,
+      "distance": 1.753768844221103,
+      "approaching": false
+     },
+     "proximity": {
+      "key": "bagger",
+      "label": "BaggerBomb",
+      "emoji": "💣",
+      "multiplier": 1,
+      "points": 15,
+      "k": 1,
+      "target": 101.49,
+      "distance": 0.2462311557788919,
+      "locked": false,
+      "progress": 0.7537688442211075
+     },
+     "quoteEvidence": {
+      "kind": "post_fill_quote",
+      "providerAsOf": "2026-10-14T14:02:00.000Z",
+      "observedAt": "2026-10-14T14:02:00.000Z"
+     },
+     "history": {
+      "positionId": "position-cpu",
+      "side": "cpu",
+      "receiptHash": "<hash>",
+      "high": 101,
+      "low": 99.5,
+      "observedAt": "2026-10-14T14:02:00.000Z",
+      "crossedTiers": [],
+      "maxMultiplier": 0.7537688442211055,
+      "minMultiplier": 0
+     }
+    },
+    "points": 30,
+    "badges": [],
+    "history": {
+     "positionId": "position-cpu",
+     "side": "cpu",
+     "receiptHash": "<hash>",
+     "high": 101,
+     "low": 99.5,
+     "observedAt": "2026-10-14T14:02:00.000Z",
+     "crossedTiers": [],
+     "maxMultiplier": 0.7537688442211055,
+     "minMultiplier": 0
+    },
+    "priceChange": 1.507537688442211,
+    "currentPrice": 101,
+    "openPrice": 99.5,
+    "price": 101,
+    "threshold": null,
+    "lockedPrice": 99.5,
+    "percentChange": 1.507537688442211
+   },
+   "onClose": "[function]",
+   "showActionButton": false,
+   "isGameContext": true,
+   "version": 2,
+   "defaultTab": "baggerbomb",
+   "defaultTimeframe": "bomb",
+   "wsPrice": "[undefined]"
+  },
+  "modalKeys": [
+   "asset",
+   "defaultTab",
+   "defaultTimeframe",
+   "isGameContext",
+   "onClose",
+   "showActionButton",
+   "version",
+   "wsPrice"
+  ]
+ },
+ "legacy_unstamped_chip": {
+  "screen": {
+   "sha256": "73cefe743e010f6bda5b469b6db97a95c8279c00a2d23cc87f6bbe4f93264e62",
+   "length": 42735
+  },
+  "modal": {
+   "asset": {
+    "symbol": "AAPL",
+    "name": "AAPL",
+    "price": 100.75,
+    "percentChange": 0,
+    "threshold": 2.5,
+    "lockedPrice": 100.75
+   },
+   "onClose": "[function]",
+   "showActionButton": false,
+   "isGameContext": true,
+   "version": 2,
+   "defaultTab": "baggerbomb",
+   "defaultTimeframe": "bomb",
+   "wsPrice": 100.75
+  },
+  "modalKeys": [
+   "asset",
+   "defaultTab",
+   "defaultTimeframe",
+   "isGameContext",
+   "onClose",
+   "showActionButton",
+   "version",
+   "wsPrice"
+  ]
+ },
+ "closed": {
+  "screen": {
+   "sha256": "59522962b47f0dac2e8c7ef8798107af6bc301decd62f0c6c23d1d1ba52000f4",
+   "length": 43475
+  },
+  "modal": null,
+  "modalKeys": null
+ }
+}

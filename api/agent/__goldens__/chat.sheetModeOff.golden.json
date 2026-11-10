@@ -1,0 +1,271 @@
+{
+ "plain_turn": {
+  "status": 200,
+  "response": {
+   "agentMessage": "EOG is holding its trend.",
+   "extractedRule": null,
+   "suggestedActions": null,
+   "exchangeNumber": 4,
+   "budgetTotal": 10,
+   "scratchpad": null,
+   "hasDirective": false,
+   "directive": null,
+   "lesson": null,
+   "forgeSuggestion": null,
+   "mode": "battle"
+  },
+  "promptInputs": [
+   {
+    "elicitationTarget": {
+     "dimension": "risk_appetite",
+     "instruction": "Create an opening for the user to reveal their comfort with risk. Present options that range from safe to aggressive."
+    },
+    "conversationHistory": [],
+    "anchorContext": null,
+    "marketSnapshot": null,
+    "mode": "battle",
+    "dailyReviews": [],
+    "dailyGrades": [],
+    "capabilitiesManifest": null,
+    "grounded": false,
+    "callsMode": "off",
+    "callsBlock": null,
+    "keys": [
+     "agent",
+     "anchorContext",
+     "battle",
+     "callsBlock",
+     "callsMode",
+     "capabilitiesManifest",
+     "conversationHistory",
+     "dailyGrades",
+     "dailyReviews",
+     "elicitationTarget",
+     "grounded",
+     "marketSnapshot",
+     "mode"
+    ]
+   }
+  ],
+  "written": [
+   {
+    "id": "battle-1",
+    "updates": {
+     "chatExchanges": {
+      "__op": "arrayUnion",
+      "items": [
+       {
+        "userMessage": "How is EOG doing?",
+        "agentResponse": "EOG is holding its trend.",
+        "scratchpad": null,
+        "hasDirective": false,
+        "directive": null,
+        "directiveThreadId": null,
+        "suggestedActions": null,
+        "elicitationTarget": "risk_appetite",
+        "timestamp": "<iso>",
+        "mode": "battle"
+       }
+      ]
+     },
+     "chatBudgetUsed": {
+      "__op": "increment",
+      "n": 1
+     },
+     "recentElicitationTargets": [
+      "risk_appetite"
+     ]
+    }
+   }
+  ]
+ },
+ "enforce_turn_with_directive": {
+  "status": 200,
+  "response": {
+   "agentMessage": "Holding EOG.",
+   "extractedRule": null,
+   "suggestedActions": null,
+   "exchangeNumber": 4,
+   "budgetTotal": 10,
+   "scratchpad": null,
+   "hasDirective": false,
+   "directive": null,
+   "lesson": null,
+   "forgeSuggestion": null,
+   "mode": "battle",
+   "directiveStatus": "no_change",
+   "directiveStatusLine": "No change made to your strategy this turn.",
+   "directiveFallback": "Talked it through — I didn't change my strategy on this one."
+  },
+  "promptInputs": [
+   {
+    "elicitationTarget": {
+     "dimension": "risk_appetite",
+     "instruction": "Create an opening for the user to reveal their comfort with risk. Present options that range from safe to aggressive."
+    },
+    "conversationHistory": [],
+    "anchorContext": null,
+    "marketSnapshot": null,
+    "mode": "battle",
+    "dailyReviews": [],
+    "dailyGrades": [],
+    "capabilitiesManifest": {
+     "user_can_short": false,
+     "user_can_make_claims": false,
+     "user_can_hedge": false,
+     "options_enabled": false,
+     "sector_hedges_enabled": false,
+     "flipsRemaining": null,
+     "claimsRemaining": null
+    },
+    "grounded": false,
+    "callsMode": "off",
+    "callsBlock": null,
+    "keys": [
+     "agent",
+     "anchorContext",
+     "battle",
+     "callsBlock",
+     "callsMode",
+     "capabilitiesManifest",
+     "conversationHistory",
+     "dailyGrades",
+     "dailyReviews",
+     "elicitationTarget",
+     "grounded",
+     "marketSnapshot",
+     "mode"
+    ]
+   }
+  ],
+  "written": [
+   {
+    "id": "battle-1",
+    "updates": {
+     "chatExchanges": {
+      "__op": "arrayUnion",
+      "items": [
+       {
+        "userMessage": "Hold EOG through the close.",
+        "agentResponse": "Holding EOG.",
+        "scratchpad": null,
+        "hasDirective": false,
+        "directive": null,
+        "directiveThreadId": null,
+        "suggestedActions": null,
+        "elicitationTarget": "risk_appetite",
+        "timestamp": "<iso>",
+        "mode": "battle",
+        "archetypeGate": {
+         "classification": null,
+         "selectedAdjustmentId": null,
+         "status": "no_proposal",
+         "repairUsed": true,
+         "originalUserAsk": null,
+         "counterOfferText": null,
+         "rejectionReason": null
+        }
+       }
+      ]
+     },
+     "chatBudgetUsed": {
+      "__op": "increment",
+      "n": 1
+     },
+     "recentElicitationTargets": [
+      "risk_appetite"
+     ]
+    }
+   }
+  ]
+ },
+ "plain_turn_extra_field": {
+  "status": 200,
+  "response": {
+   "agentMessage": "Same.",
+   "extractedRule": null,
+   "suggestedActions": null,
+   "exchangeNumber": 4,
+   "budgetTotal": 10,
+   "scratchpad": null,
+   "hasDirective": false,
+   "directive": null,
+   "lesson": null,
+   "forgeSuggestion": null,
+   "mode": "battle"
+  },
+  "promptInputs": [
+   {
+    "elicitationTarget": {
+     "dimension": "risk_appetite",
+     "instruction": "Create an opening for the user to reveal their comfort with risk. Present options that range from safe to aggressive."
+    },
+    "conversationHistory": [],
+    "anchorContext": null,
+    "marketSnapshot": null,
+    "mode": "battle",
+    "dailyReviews": [],
+    "dailyGrades": [],
+    "capabilitiesManifest": null,
+    "grounded": false,
+    "callsMode": "off",
+    "callsBlock": null,
+    "keys": [
+     "agent",
+     "anchorContext",
+     "battle",
+     "callsBlock",
+     "callsMode",
+     "capabilitiesManifest",
+     "conversationHistory",
+     "dailyGrades",
+     "dailyReviews",
+     "elicitationTarget",
+     "grounded",
+     "marketSnapshot",
+     "mode"
+    ]
+   }
+  ],
+  "written": [
+   {
+    "id": "battle-1",
+    "updates": {
+     "chatExchanges": {
+      "__op": "arrayUnion",
+      "items": [
+       {
+        "userMessage": "And now?",
+        "agentResponse": "Same.",
+        "scratchpad": null,
+        "hasDirective": false,
+        "directive": null,
+        "directiveThreadId": null,
+        "suggestedActions": null,
+        "elicitationTarget": "risk_appetite",
+        "timestamp": "<iso>",
+        "mode": "battle"
+       }
+      ]
+     },
+     "chatBudgetUsed": {
+      "__op": "increment",
+      "n": 1
+     },
+     "recentElicitationTargets": [
+      "risk_appetite"
+     ]
+    }
+   }
+  ]
+ },
+ "budget_spent": {
+  "status": 403,
+  "response": {
+   "error": "chat_budget_exceeded",
+   "message": "We've had a solid session. Let's let things play out and regroup later."
+  },
+  "promptInputs": [],
+  "written": []
+ }
+}

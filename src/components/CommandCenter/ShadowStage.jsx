@@ -43,7 +43,7 @@ import AreaControls from './AreaControls';
 import HubAgentForm, { HubAgentFormContext } from './HubAgentForm';
 import ShadowCanvas from './ShadowCanvas';
 import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
-import { ArmoryStageContext, PHONE_ARMORY, PHONE_HERO, PhoneArmoryDetails, PhoneArmoryRing, armoryHeroRead } from './Armory';
+import { ArmoryStageContext, PHONE_ARMORY, PHONE_ARMORY_GRID, PHONE_HERO, PhoneArmoryDetails, PhoneArmoryRing, armoryHeroRead, phoneArmoryGridHeight, phoneArmoryLayout } from './Armory';
 
 /** The charge in flight, as a percentage: visible, aria-hidden, never in the live region (spec §5.5). */
 function HoldPercent({ progress, small }) {
@@ -276,6 +276,8 @@ function PhoneArmoryStage({ size, status, processing, words, selectedArea, summa
   const hero = scope ? scope.hero : { size, stacked: false };
   const stacked = !open && hero.stacked;
   const { centre, extent, padding } = PHONE_ARMORY;
+  // A1 carry AR-6 (build A2): under 315 px of hub width the open armory is the hero over a 3 x 2 grid of the sets, not the ring.
+  const grid = open && phoneArmoryLayout(scope.width) === 'grid';
   const onKeyDown = (event) => {
     if (!open || event.key !== 'Escape') return;
     event.stopPropagation();
@@ -296,9 +298,9 @@ function PhoneArmoryStage({ size, status, processing, words, selectedArea, summa
       <div
         data-armory-box={open ? '' : undefined}
         data-hub-hero-layout={open ? undefined : stacked ? 'stacked' : 'beside'}
-        style={open ? { position: 'relative', width: extent, height: extent, margin: '0 auto' } : stacked ? { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 } : { display: 'flex', alignItems: 'center', gap: 6 }}
+        style={open ? (grid ? { position: 'relative', width: '100%', height: phoneArmoryGridHeight(), margin: '0 auto' } : { position: 'relative', width: extent, height: extent, margin: '0 auto' }) : stacked ? { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 } : { display: 'flex', alignItems: 'center', gap: 6 }}
       >
-        <div aria-hidden={open ? 'true' : undefined} data-armory-hero={open ? '' : undefined} style={open ? { position: 'absolute', left: (extent - centre) / 2, top: (extent - centre) / 2 } : { display: 'contents' }}>
+        <div aria-hidden={open ? 'true' : undefined} data-armory-hero={open ? '' : undefined} style={open ? (grid ? { position: 'absolute', left: '50%', marginLeft: -centre / 2, top: PHONE_ARMORY_GRID.top } : { position: 'absolute', left: (extent - centre) / 2, top: (extent - centre) / 2 }) : { display: 'contents' }}>
           <HubAgentFormContext.Provider value={heroRead}>
             <HubAgentForm size={open ? centre : hero.size} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} paused={paused} phone createdAttemptId={createdAttemptId} />
           </HubAgentFormContext.Provider>

@@ -46,6 +46,13 @@
 // TIME_BUDGET_MS (the five tenants' 50 s) is unchanged; maxDuration (120 s) is
 // the hard stop. The schedule gained the 01:00 UTC hour (vercel.json) so the
 // winter expiry (01:00 UTC) is followed by runs at 01:00–01:45 UTC.
+//
+// Measured Trend Evidence Slice 2 (docs/audits/20261107_BUILD_SETUP_MENU_LABELS.md):
+// the SEVENTH tenant, setup-label acquisition, strictly after the observer's
+// await. Its own slice, min(tenantStart + 20 s, handlerStart + 100 s), is an
+// ADMISSION deadline; its own constants and state (setupMenuLabelState), never
+// the observer's. TIME_BUDGET_MS, the observer and every earlier tenant are
+// unchanged. Gate off → { skipped: true } before any read, no response key.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { generateReflection } from '../agent/reflect.js';
@@ -66,6 +73,10 @@ import { runHypothesisReviewPass } from '../_utils/hypothesisRecords/reviewPass.
 // pass; with ACTIVATION_EVIDENCE_ENABLED false (or an empty allowlist) it
 // returns before any read and the response carries no new key.
 import { runActivationObserver } from '../_utils/activationEvidence/tenant.js';
+// Measured Trend Evidence Slice 2: setup-label acquisition — the SEVENTH tenant,
+// after the observer; with SETUP_MENU_LABELS_ENABLED false (or an empty
+// allowlist) it returns before any read and the response carries no new key.
+import { runSetupMenuAcquisition } from '../_utils/setupMenuLabels/tenant.js';
 
 // P-OUT-1: 60 → 120 s. The tenants' budget (TIME_BUDGET_MS) is unchanged; the
 // ceiling is raised so the rare consolidation path — a reflection at its full
@@ -315,6 +326,21 @@ export default async function handler(req, res) {
       activationEvidence = { action: 'error', error: String(observerErr?.message || observerErr) };
     }
 
+    // ---- 9. Measured Trend Evidence Slice 2 — setup-label acquisition (rider, LAST) ----
+    // Seventh tenant, strictly after the observer's await (its result is not
+    // inspected): its own slice, min(tenantStart + 20 s, handlerStart + 100 s),
+    // an ADMISSION deadline; every started store call is awaited. Gate off → it
+    // returns { skipped: true } before any read and the response carries no new
+    // key (byte-identical). A failure can never break the reflections
+    // (isolating try/catch).
+    let setupMenuLabels = null;
+    try {
+      setupMenuLabels = await runSetupMenuAcquisition({ db, handlerStartMs: startTime });
+    } catch (labelsErr) {
+      console.error(`${LOG_PREFIX} Setup-label acquisition failed (isolated):`, labelsErr?.message || labelsErr);
+      setupMenuLabels = { action: 'error', error: String(labelsErr?.message || labelsErr) };
+    }
+
     const duration = Date.now() - startTime;
     console.log(`${LOG_PREFIX} Complete in ${duration}ms:`, summary);
     return res.status(200).json({
@@ -325,6 +351,7 @@ export default async function handler(req, res) {
       ...(callSweep && !callSweep.skipped ? { callSweep } : {}),
       ...(hypothesisReview && !hypothesisReview.skipped ? { hypothesisReview } : {}),
       ...(activationEvidence && !activationEvidence.skipped ? { activationEvidence } : {}),
+      ...(setupMenuLabels && !setupMenuLabels.skipped ? { setupMenuLabels } : {}),
       duration,
     });
   } catch (err) {

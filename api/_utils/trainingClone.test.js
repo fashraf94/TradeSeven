@@ -21,7 +21,13 @@ import {
 import { trainingCloneDocId, TRAINING_CLONE_ID_PREFIX } from '../../src/constants/leagueTournament.js';
 import { ARCHETYPE_DEFAULT_TRAITS } from '../../src/data/traitLibrary.js';
 
+// Build A2 (FD-4): PER_GAME_LOADOUT_ENABLED through a getter, false for every row but the A2 describe at the end, so
+// the rows above run today's code exactly.
+const a2 = vi.hoisted(() => ({ perGame: false }));
+vi.mock('../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return a2.perGame; } }));
+
 beforeEach(() => {
+  a2.perGame = false;
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -420,5 +426,36 @@ describe('ensureTrainingClones', () => {
     const afterSecond = [...store.keys()].filter((k) => k.startsWith(`agents/${cloneId}/rules/bornwith__`)).length;
     // Deterministic ids overwrote in place — no duplicate born-with docs.
     expect(afterSecond).toBe(afterFirst);
+  });
+});
+
+// ==================== Build A2 (FD-4): training reads the League loadout ====================
+
+describe('A2, PER_GAME_LOADOUT_ENABLED on: a training clone wears the League loadout, with no override', () => {
+  beforeEach(() => { a2.perGame = true; });
+
+  it('a pod\'s loadoutSpecByUser (one written before the flip included) is not read: the clone is the ranked record\'s own loadout', async () => {
+    const { db, store } = seededDb();
+    await ensureTrainingClones(db, trainingGroup, {
+      now: new Date(),
+      loadoutSpecByUser: { u1: { archetype: 'guardian', equippedWatchlistId: 'wl-other', equippedWatchlistName: 'Other' } },
+    });
+    const cloneId = trainingCloneDocId('pod1', 'u1');
+    const clone = store.get(`agents/${cloneId}`);
+    expect(clone.archetype).toBe(RANKED.archetype);
+    expect(clone.equippedWatchlistId).toBe(RANKED.equippedWatchlistId);
+    expect(clone.equippedTraits).toEqual(RANKED.equippedTraits);
+    expect([...store.keys()].filter((k) => k.startsWith(`agents/${cloneId}/rules/bornwith__`))).toEqual([]);
+  });
+
+  it('the BaggerBomb slot never reaches training: the clone copies the League fields, not the slot', async () => {
+    const { db, store } = makeDb({
+      'agents/ranked1': { ...RANKED, loadouts: { baggerbomb: { archetype: 'analyst', book: { ref: { watchlistId: 'wl-bb' }, name: 'BB', pin: null } } } },
+    });
+    await ensureTrainingClones(db, trainingGroup, { now: new Date() });
+    const clone = store.get(`agents/${trainingCloneDocId('pod1', 'u1')}`);
+    expect(clone.archetype).toBe(RANKED.archetype);
+    expect(clone.equippedWatchlistId).toBe(RANKED.equippedWatchlistId);
+    expect(clone).not.toHaveProperty('loadouts');
   });
 });

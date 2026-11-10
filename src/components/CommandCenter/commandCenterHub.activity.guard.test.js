@@ -285,3 +285,36 @@ describe('S7: Shadow\'s canvas holds exactly the activity it was allowed (R-S7-1
     }
   });
 });
+
+// ── Build A2 (FD-3): the League lock's one subscription, call by call ───────────────────────────────────────────────
+//
+// The mount guard allows hub/useLeagueLoadoutLock.js two PATTERNS (an effect, a subscribe call). This pins what it DOES:
+// one effect, whose body starts the owner's one subscription through the client read and returns its unsubscribe as
+// the cleanup. The client read itself (src/services/leagueLockService.js) is a permitted terminal: one onSnapshot.
+describe('A2: the League lock holds exactly the activity it was allowed (FD-3)', () => {
+  const LOCK_HOOK = read('useLeagueLoadoutLock.js');
+
+  it('one effect, nothing else the scan counts', () => {
+    expect(activityOf(LOCK_HOOK)).toEqual(['useEffect']);
+  });
+
+  it('the effect starts one subscription, for the owner, and its cleanup is that subscription\'s unsubscribe', () => {
+    const code = LOCK_HOOK.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code.match(/\bsubscribeLeagueLock\(/g)).toHaveLength(1);
+    expect(code).toMatch(/return subscribeLeagueLock\(uid, /);
+    expect(code).toMatch(/\}, \[uid\]\);/);
+  });
+
+  it('the client read: one live query, the writers\' own, judged by the shared rule', () => {
+    const service = readFileSync(path.join(HERE, '..', '..', 'services', 'leagueLockService.js'), 'utf8').replace(/\r\n/g, '\n');
+    expect(activityOf(service)).toEqual(['onSnapshot']);
+    expect(service).toMatch(/where\('groupMembers', 'array-contains', uid\)/);
+    expect(service).toMatch(/onLock\(leagueLockOf\(/);
+  });
+
+  it('the scan bites: a second effect or a listener planted in the hook changes its list', () => {
+    for (const snippet of ['useEffect(() => {}, []);', "window.addEventListener('focus', () => {});", 'setInterval(() => {}, 1000);']) {
+      expect(activityOf(`${LOCK_HOOK}\n${snippet}\n`), snippet).not.toEqual(['useEffect']);
+    }
+  });
+});

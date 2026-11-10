@@ -12,6 +12,20 @@
 import React from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The armory flip (Nov 7, 2026). Both flipped flags are held here, not read live, so a rollback reddens only their
+// pins. The rows in KILL_SWITCH_ROWS run with both held OFF, and keep guarding the path a rollback restores: each
+// drives a surface that exists only with the flags off (the pre-flip Loadout tab's cards and their Change buttons, the
+// legacy archetype and watchlist sheets, the hero as it was before the armory). Every other row runs with both ON, the
+// shipped state; the League lock read answers "no ranked group".
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../config/perGameLoadoutFlags', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_ARMORY_ENABLED() { return flip.on; } }));
+vi.mock('../../services/leagueLockService', () => ({ subscribeLeagueLock: (uid, onLock) => { onLock({ locked: false, groupId: null, status: null, endsAtMs: null }); return () => {}; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "S1 review fixes — cleanup, layout contracts and static states (L5-12, L5-13, L5-14) > the Deploy card's Loadout link — one of S1's few live desktop actions — selects the Equipped Archetype area",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
+
 const { userState, motionState } = vi.hoisted(() => ({
   userState: { user: { displayName: 'Flash', username: 'flash' } },
   motionState: { reduced: false },

@@ -12,6 +12,43 @@
 import React, { act } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The armory flip (Nov 7, 2026). Both flipped flags are held here, not read live, so a rollback reddens only their
+// pins. The rows in KILL_SWITCH_ROWS run with both held OFF, and keep guarding the path a rollback restores: each
+// drives a surface that exists only with the flags off (the pre-flip Loadout tab's cards and their Change buttons, the
+// legacy archetype and watchlist sheets, the hero as it was before the armory). Every other row runs with both ON, the
+// shipped state; the League lock read answers "no ranked group".
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../config/perGameLoadoutFlags', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_ARMORY_ENABLED() { return flip.on; } }));
+vi.mock('../../services/leagueLockService', () => ({ subscribeLeagueLock: (uid, onLock) => { onLock({ locked: false, groupId: null, status: null, endsAtMs: null }); return () => {}; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "the Research panel, one row per state of spec §8.1's table (ruling R-S6-3) > a failed refresh keeps only this owner's and list's idea, with its age and a Retry",
+  "the Research panel, one row per state of spec §8.1's table (ruling R-S6-3) > a Retry over a kept answer shows that it is being read, and a refused press's note goes with the wait",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > an admitted player (the reader answered) sees \"Universe · N names\" for a list with an idea",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > ...and \"Plain watchlist · no idea yet\" for one without",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > not admitted (the typed disabled answer): the neutral \"N names\", never an idea word",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > the client gate off: the neutral label, and not one request",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > while the reader is out, and when it fails with nothing held: the neutral label (unknown is never admitted)",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > S5's `hub.ideaAccess` seam stands only while the reader holds nothing: the reader's answer wins over it, either way",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > a refresh in flight keeps the label, and so does one that FAILED (admission belongs to the account, Q-S6-8); the panel still tells the truth about its own list",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > ...and the Research panel is unchanged by that: after a failed refresh it still shows its own list's kept idea with its age and a Retry, while the label keeps the idea words",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > a list change keeps the account admitted while the next list loads, for a list whose own record carries an idea (the label is that list's, the admission the account's)",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > a hub remount keeps it: the Forge round trip comes back to the idea label while the first read is still out",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > a refused account stays refused across a remount until a read says otherwise",
+  "the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8) > another account or epoch starts with nothing: the new owner's label is the neutral one until its own read answers",
+  "\"Deploying with\" on the Deploy card (rulings R-S6-5, Q-S6-2) > N is the Loadout card's own count, each name once: the two cards cannot disagree",
+  "\"Deploying with\" on the Deploy card (rulings R-S6-5, Q-S6-2) > a failed refresh does not assert it: the line goes with the answer's freshness",
+  "the label and the panel say the same pointer (BUILD_RULES §9, review D-3) > the list document lags the reader: no pointer on the document, an idea on the reader → \"Universe\"; the reverse → \"Plain\"",
+  "the label and the panel say the same pointer (BUILD_RULES §9, review D-3) > while the reader holds nothing the document's pointer stands (S5)",
+  "a kept answer says how old it is in every state it can be kept in (review H-1) > \"No idea yet\" kept through a failed refresh carries the as-of note and its Retry, as a kept idea does",
+  "a kept answer says how old it is in every state it can be kept in (review H-1) > so does an unavailable pointer",
+  "Activity's idea rows (ruling R-S6-7) > a refresh that failed takes the idea rows with it (Activity carries no age note for them); the panel keeps its idea with one",
+  "the reads (ruling R-S6-2): when, and how often, through the whole hub > the watchlist sheet's return reads once more, with the equipped id unchanged — a close with a pick races nothing",
+  "the reads (ruling R-S6-2): when, and how often, through the whole hub > a return while the first read is still out schedules ONE follow-up, not two",
+  "the first-deployment card under a sheet (R-S6-1, Q-S4-12) > a hub sheet that opens leaves the card mounted — its hold stays the disabled one — and it is still there when the sheet closes",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
+
 const { userState } = vi.hoisted(() => ({ userState: { user: { displayName: 'Flash', username: 'flash' } } }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { createChart, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts';
+import { createChart, createSeriesMarkers, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { prepareChartData, formatTime, calculateBombLevels, measuredBombLevels, detectBombCrossings, calculateNearestLevel } from './chartUtils';
 import { detectTrendlines } from './trendlineDetection';
@@ -53,6 +53,27 @@ const StockChart = ({
   realtimeExtremes,  // Battle hook's real-time intraday high/low { high, low } (optional backup)
   controlledSession, // Optional { crypto }: controlled held research. Absent = legacy.
   onToggleSR,        // Optional (isOn) => void, called when the S/R pill flips
+  // Research Modal Build A (spec docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md
+  // §4.4): with Bomb mode on, the modal hands a plot (the Fuse or the red zone)
+  // and the RED ZONE chip. On the bomb and spectate views the plot area is
+  // then that plot — no chart is created and no candle is drawn. Absent
+  // (every mode-off caller), nothing below changes.
+  bombPlot = null,   // Optional React node: the bomb/spectate plot area
+  bombChip = null,   // Optional React node: the control bar's state chip
+  // Research Modal Build C (spec docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md
+  // BC-8, BC-9; Phase 0 §H, §L, §N): the agent's record pinned to the chart.
+  // Absent (every caller but the sheet), none of the code below is reached and
+  // the chart makes no new library call.
+  //   markers     [{ id, day: 'YYYY-MM-DD', color, text?, position?, shape? }] —
+  //               drawn on 1D only, through the library's createSeriesMarkers
+  //               (v5 has no series.setMarkers), each at the time of ITS OWN
+  //               daily bar (a day with no bar draws nothing), re-applied on
+  //               every series rebuild. The caller sets `text` on the one open pin.
+  //   priceLines  [{ id, price, color, title, group: 'record'|'idea'|'pin', emphasis? }]
+  //               — drawn on 1D and 1W; the 'idea' group follows the Idea pill
+  //               (on by default, a clone of the S/R pill and effect).
+  markers = null,
+  priceLines = null,
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -71,12 +92,20 @@ const StockChart = ({
   const [ohlcData, setOhlcData] = useState(null);
   const [showSMA, setShowSMA] = useState(false);
   const [showSR, setShowSR] = useState(false);
+  // Build C: the Idea pill (Amendment B-2: on by default when the stock is in an idea).
+  const [showIdea, setShowIdea] = useState(true);
+  const sheetLinesRef = useRef({ series: null, lines: [] });
+  const markersPluginRef = useRef(null);
   const [isSpectateMode, setIsSpectateMode] = useState(false);
   const [spectateLevel, setSpectateLevel] = useState(null);
 
 
   const isBombView = timeframe === 'bomb' || timeframe === 'spectate';
   const isSpectateView = timeframe === 'spectate';
+  // Bomb mode owns the plot area on the bomb and spectate views (the red zone
+  // IS the spectate view there): the chart container is not rendered, so the
+  // chart effect below finds no container and creates nothing.
+  const plotOwned = isBombView && bombPlot != null;
 
   // Controlled held research: "today" is the session date (UTC for crypto),
   // the readout shows only observed current-session values ("—" otherwise),
@@ -884,6 +913,84 @@ const StockChart = ({
     }
   }, [activeHighlight, chartData, isBombView]);
 
+  // Build C (BC-8, BC-9): the record's price lines — the measured entry, the
+  // idea's conditions behind the Idea pill, a tapped pack item's price. Absent
+  // or empty: nothing is drawn and no library call is made. The chart effect
+  // above rebuilds the series whenever ANY of its dependencies change, so this
+  // effect and the markers' carry the same dependencies (declared after it, they
+  // run after it in the same commit and re-apply to the new series — review
+  // C1/D4); lines left on a series that no longer exists are simply forgotten,
+  // never removed from it. Only the open line shows a price-axis tag (D8).
+  const hasIdeaLines = Array.isArray(priceLines) && priceLines.some((l) => l?.group === 'idea');
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    const held = sheetLinesRef.current;
+    if (held.series === series && series) {
+      held.lines.forEach((line) => { try { series.removePriceLine(line); } catch { /* ok */ } });
+    }
+    sheetLinesRef.current = { series, lines: [] };
+    if (!series || isBombView || !Array.isArray(priceLines) || priceLines.length === 0) return;
+    for (const l of priceLines) {
+      if (!l || typeof l.price !== 'number' || !Number.isFinite(l.price) || l.price <= 0) continue;
+      if (l.group === 'idea' && !showIdea) continue;
+      try {
+        sheetLinesRef.current.lines.push(series.createPriceLine({
+          price: l.price,
+          ...(l.color ? { color: l.color } : {}),
+          lineWidth: l.emphasis ? 2 : 1,
+          lineStyle: l.group === 'record' ? 0 : 2, // record solid, idea / pin dashed
+          axisLabelVisible: l.emphasis === true,
+          title: l.title || '',
+        }));
+      } catch (e) {
+        console.warn('[StockChart] Sheet line error:', e);
+      }
+    }
+  }, [priceLines, showIdea, chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]);
+
+  // Build C (BC-8): the record as dots, 1D only (1W draws the price pins only),
+  // through createSeriesMarkers — re-applied whenever the series is rebuilt
+  // (a new series gets a new markers plugin; the effect carries the chart
+  // effect's dependencies — review C1/D4). A marker's time IS its day's bar
+  // time (Phase 0 §N); a day with no bar on the chart draws nothing. Markers
+  // are dots: the ONE open label is a caption over the chart (below), never
+  // canvas text the pane clips at its right edge (review D6).
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    const plugin = markersPluginRef.current;
+    const want = !!series && !isBombView && timeframe === '1D' && Array.isArray(markers) && markers.length > 0;
+    if (!want) {
+      if (plugin && plugin.series === series && series) { try { plugin.api.setMarkers([]); } catch { /* ok */ } }
+      return;
+    }
+    const barOfDay = new Map((chartData || []).map((b) => [calendarDateOf(b.time), b.time]));
+    const list = markers
+      .filter((m) => m && barOfDay.has(m.day))
+      .map((m) => ({
+        time: barOfDay.get(m.day),
+        position: m.position || 'aboveBar',
+        shape: m.shape || 'circle',
+        ...(m.color ? { color: m.color } : {}),
+        ...(m.text ? { size: 1.5 } : {}),
+        ...(m.id ? { id: m.id } : {}),
+      }))
+      .sort((a, b) => a.time - b.time);
+    try {
+      if (plugin && plugin.series === series) plugin.api.setMarkers(list);
+      else markersPluginRef.current = { series, api: createSeriesMarkers(series, list) };
+    } catch (e) {
+      console.warn('[StockChart] Markers error:', e);
+    }
+  }, [markers, chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]);
+
+  // The open marker's label (BC-8: one open label), when its day has a bar on the 1D chart.
+  const openPin = (() => {
+    if (isBombView || timeframe !== '1D' || !Array.isArray(markers)) return null;
+    const m = markers.find((x) => x && typeof x.text === 'string' && x.text);
+    if (!m || !(chartData || []).some((b) => calendarDateOf(b.time) === m.day)) return null;
+    return m;
+  })();
+
   const pillStyle = (active, variant) => {
     const isBomb = variant === 'bomb';
     return {
@@ -928,7 +1035,7 @@ const StockChart = ({
           {bombData && (
             <button
               onClick={() => { setIsSpectateMode(false); setSpectateLevel(null); onTimeframeChange('bomb'); }}
-              style={pillStyle(isBombView && !isSpectateView, 'bomb')}
+              style={pillStyle(isBombView && (!isSpectateView || plotOwned), 'bomb')}
             >
               {'\uD83D\uDCA3'}
             </button>
@@ -944,12 +1051,19 @@ const StockChart = ({
             <button onClick={() => { setShowSR(v => !v); onToggleSR?.(!showSR); }} style={pillStyle(showSR)}>
               S/R
             </button>
+            {hasIdeaLines && (
+              <button data-idea-pill={showIdea ? 'on' : 'off'} onClick={() => setShowIdea(v => !v)} style={pillStyle(showIdea)}>
+                Idea
+              </button>
+            )}
           </div>
         )}
+        {plotOwned && bombChip}
       </div>
 
       {/* Chart container with distance indicator overlay */}
       <div style={{ position: 'relative', width: '100%', height: `${height}px` }}>
+        {plotOwned ? bombPlot : <>
         <div
           ref={chartContainerRef}
           style={{ width: '100%', height: '100%' }}
@@ -957,6 +1071,20 @@ const StockChart = ({
 
         {/* OHLC overlay — hidden in spectate view (back button uses same position) */}
         {!isSpectateView && <OHLCDisplay data={displayOhlc} showUnavailable={controlled} />}
+
+        {/* Build C: the open pin's label, bottom-left above the time axis, clear of the
+            library's attribution logo (x 10–45 px at every size; review D6) */}
+        {openPin && (
+          <div data-pin-caption={openPin.id || ''} style={{
+            position: 'absolute', left: 52, bottom: 30, zIndex: 2, pointerEvents: 'none',
+            maxWidth: 'calc(100% - 120px)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            fontSize: 10.5, fontWeight: 700, lineHeight: 1.3, padding: '1px 6px', borderRadius: 6,
+            color: openPin.color || HOLO_COLORS.textSecondary, background: HOLO_COLORS.bgDeep,
+            border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+          }}>
+            ● {openPin.text}
+          </div>
+        )}
 
         {/* Spectate mode: Back button */}
         {isSpectateView && (
@@ -1082,6 +1210,7 @@ const StockChart = ({
             </div>
           );
         })()}
+        </>}
       </div>
 
       {/* Pulse animation for close-to-level indicator */}

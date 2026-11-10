@@ -29,6 +29,16 @@ import { waitUntil } from '@vercel/functions';
 import { COMPILER_ENABLED } from '../../src/config/featureFlags.js';
 import { prepareCompileInputs, writeCompiledBuildsInTx } from '../_utils/compileOnSettingsChange.js';
 import { validateWriteEpochInTx } from '../_utils/compositionWriteEpoch.js';
+// Build A2 (per-game loadouts; rulings D1, FD-1, FD-3): with PER_GAME_LOADOUT_ENABLED on, the body's `loadout` picks
+// whose book this equip sets. 'league' (or absent, today's behaviour) writes the ranked record as today, refused while
+// the League week holds the loadout and snapshotting the BaggerBomb slot first when it is absent; 'baggerbomb' writes
+// the slot's book only, with no battle lock (the next deploy carries it). Flag off, the field is ignored.
+import { PER_GAME_LOADOUT_ENABLED } from '../../src/config/perGameLoadoutFlags.js';
+import { LOADOUT_KINDS, baggerbombLoadoutOf, bookFrom, bookIdOf, loadoutKindOf } from '../../src/constants/perGameLoadout.js';
+import {
+  LEAGUE_LOCKED, baggerbombSlotWith, isRankedAgentDoc, leagueLockedBody, leagueLockedError, materializeOnLeagueWrite,
+  readLeagueLockInTx, slotUpdate,
+} from '../_utils/perGameLoadout.js';
 
 export const config = { maxDuration: 10 };
 
@@ -40,7 +50,86 @@ const SENTINEL_TO_HTTP = Object.freeze({
   battle_active:       [409, 'battle_active',       'Cannot equip a watchlist while the agent has an active battle.'],
   watchlist_not_found: [404, 'watchlist_not_found', 'Watchlist not found.'],
   not_committed:       [400, 'not_committed',       'A watchlist must be committed before it can be equipped.'],
+  // Build A2: a loadout lives on the player's ranked record, never on a clone (reachable only with the flag on).
+  not_ranked_agent:    [409, 'not_ranked_agent',    'A loadout is set on your agent, not on a game copy of it.'],
 });
+
+/** A sentinel thrown in a transaction, as its HTTP answer; null for anything else. */
+function sentinelResponse(txErr) {
+  if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
+    const code = txErr.message.slice(SENTINEL_PREFIX.length);
+    if (PER_GAME_LOADOUT_ENABLED && code === LEAGUE_LOCKED) return [409, leagueLockedBody(txErr.lock)];
+    const mapped = SENTINEL_TO_HTTP[code];
+    if (mapped) {
+      const [statusCode, errorKey, humanCopy] = mapped;
+      return [statusCode, { error: errorKey, message: humanCopy }];
+    }
+  }
+  return null;
+}
+
+/** The watchlist checks every equip makes: exists, not soft-deleted, the caller's, committed. Returns its data. */
+function equippableWatchlist(watchlistSnap, uid) {
+  if (!watchlistSnap.exists) throw new Error(SENTINEL_PREFIX + 'watchlist_not_found');
+  const watchlist = watchlistSnap.data();
+  if (watchlist.deletedAt) throw new Error(SENTINEL_PREFIX + 'watchlist_not_found');
+  if (watchlist.userId !== uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
+  if (watchlist.status !== 'committed') throw new Error(SENTINEL_PREFIX + 'not_committed');
+  return watchlist;
+}
+
+/**
+ * Build A2, `loadout: 'baggerbomb'` (FD-1): the BaggerBomb slot's book, and nothing else — the same watchlist checks,
+ * no battle lock (a running game keeps the book it deployed with; the next deploy's resync carries this one), the
+ * ranked record's own watchlist fields and settingsRev untouched. While the slot is absent it is snapshotted from the
+ * ranked fields with this book in place. Idempotent: the BaggerBomb book is already this list → 200, no write, no log.
+ */
+async function equipBaggerbombBook({ res, user, db, agentRef, watchlistRef, agentId, watchlistId, nowIso }) {
+  let txResult;
+  try {
+    txResult = await db.runTransaction(async (tx) => {
+      const agentSnap = await tx.get(agentRef);
+      await validateWriteEpochInTx(tx, db, { sentinel: SENTINEL_PREFIX, actor: user.uid }); // #4: probe-window admission
+      const watchlistSnap = await tx.get(watchlistRef);
+      if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
+      const agent = agentSnap.data();
+      if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
+      if (!isRankedAgentDoc(agent)) throw new Error(SENTINEL_PREFIX + 'not_ranked_agent');
+      const watchlist = equippableWatchlist(watchlistSnap, user.uid);
+      const current = baggerbombLoadoutOf(agent).book;
+      if (bookIdOf(current) === watchlistId) return { idempotent: true, name: current.name ?? null };
+      const book = bookFrom(watchlistId, watchlist.name || '');
+      tx.update(agentRef, { ...slotUpdate(agent, baggerbombSlotWith(agent, { book })), updatedAt: nowIso });
+      return { idempotent: false, name: book.name };
+    });
+  } catch (txErr) {
+    const mapped = sentinelResponse(txErr);
+    if (mapped) return res.status(mapped[0]).json(mapped[1]);
+    console.error('[Phase5B1] equip-watchlist baggerbomb loadout error:', txErr);
+    return res.status(500).json({ error: 'server_error', message: 'Could not equip watchlist.' });
+  }
+  if (!txResult.idempotent) {
+    waitUntil(
+      logSignalDrops({
+        stage: 'watchlist_equip',
+        userId: user.uid,
+        agentId,
+        loadout: LOADOUT_KINDS.BAGGERBOMB,
+        watchlistId,
+        equippedWatchlistName: txResult.name,
+        loggedAt: nowIso,
+      }).catch(() => {}),
+    );
+  }
+  console.log(`[Phase5B1] equip-watchlist: agent ${agentId} baggerbomb book → ${watchlistId} (idempotent=${txResult.idempotent})`);
+  return res.status(200).json({
+    agentId,
+    equippedWatchlistId: watchlistId,
+    equippedWatchlistName: txResult.name,
+    idempotent: txResult.idempotent,
+    loadout: LOADOUT_KINDS.BAGGERBOMB,
+  });
+}
 
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60_000 } })) {
@@ -67,10 +156,20 @@ export default async function handler(req, res) {
     });
   }
 
+  // Build A2: whose book this equip sets. Flag off, always the League loadout's (the field is not read).
+  const loadout = PER_GAME_LOADOUT_ENABLED ? loadoutKindOf(req.body?.loadout) : LOADOUT_KINDS.LEAGUE;
+  if (loadout === null) {
+    return res.status(400).json({ error: 'invalid_loadout', message: 'loadout must be "baggerbomb" or "league".' });
+  }
+
   const db = getFirebaseAdmin();
   const agentRef = db.collection('agents').doc(agentId);
   const watchlistRef = db.collection('watchlists').doc(watchlistId);
   const nowIso = new Date().toISOString();
+
+  if (loadout === LOADOUT_KINDS.BAGGERBOMB) {
+    return equipBaggerbombBook({ res, user, db, agentRef, watchlistRef, agentId, watchlistId, nowIso });
+  }
 
   let txResult;
   try {
@@ -86,15 +185,16 @@ export default async function handler(req, res) {
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
+      // Build A2, FD-3: the League book locks with the archetype for the week (a read; flag off, none).
+      if (PER_GAME_LOADOUT_ENABLED) {
+        const lock = await readLeagueLockInTx(tx, db, user.uid);
+        if (lock.locked) throw leagueLockedError(SENTINEL_PREFIX, lock);
+      }
       if (agent.activeBattleId) throw new Error(SENTINEL_PREFIX + 'battle_active');
 
       // Watchlist must exist, belong to the caller, and be committed.
       // A soft-deleted watchlist reads as gone (mirrors the watchlist endpoints).
-      if (!watchlistSnap.exists) throw new Error(SENTINEL_PREFIX + 'watchlist_not_found');
-      const watchlist = watchlistSnap.data();
-      if (watchlist.deletedAt) throw new Error(SENTINEL_PREFIX + 'watchlist_not_found');
-      if (watchlist.userId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
-      if (watchlist.status !== 'committed') throw new Error(SENTINEL_PREFIX + 'not_committed');
+      const watchlist = equippableWatchlist(watchlistSnap, user.uid);
 
       // Idempotent: same watchlist already equipped → 200 no-op, no write.
       if (agent.equippedWatchlistId === watchlistId) {
@@ -120,6 +220,8 @@ export default async function handler(req, res) {
         equippedWatchlistName,
         equippedAt: nowIso,
         updatedAt: nowIso,
+        // Build A2 (materialize on first write): the BaggerBomb slot, snapshotted from the pre-change fields.
+        ...(PER_GAME_LOADOUT_ENABLED ? materializeOnLeagueWrite(agent) : {}),
       });
       // P2.4a (dark no-op): compile rides the settingsRev increment above.
       const compilePreviews = writeCompiledBuildsInTx(tx, {
@@ -144,14 +246,8 @@ export default async function handler(req, res) {
       };
     });
   } catch (txErr) {
-    if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
-      const code = txErr.message.slice(SENTINEL_PREFIX.length);
-      const mapped = SENTINEL_TO_HTTP[code];
-      if (mapped) {
-        const [statusCode, errorKey, humanCopy] = mapped;
-        return res.status(statusCode).json({ error: errorKey, message: humanCopy });
-      }
-    }
+    const mapped = sentinelResponse(txErr);
+    if (mapped) return res.status(mapped[0]).json(mapped[1]);
     console.error('[Phase5B1] equip-watchlist error:', txErr);
     return res.status(500).json({ error: 'server_error', message: 'Could not equip watchlist.' });
   }

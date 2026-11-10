@@ -55,18 +55,23 @@ describe('AGENT_FORM_HUB_ENABLED, AGENT_FORM_BATTLE_ENABLED and AGENT_FORM_LEAGU
   });
 });
 
-// Build A1 — THE ARMORY'S PIN (BUILD_RULES §2). Dark by design until the founder's phone test: flipped only on the
-// never-merge smoke branch. Every read is a literal ternary that Rollup folds, so flag-off the build is main's, byte for
-// byte (the build report's masked comparison), and agentForm.flagOffBundle.test.js reads what each module leaves.
-describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by design', () => {
-  it('the armory is dark on main', () => {
-    expect(AGENT_FORM_ARMORY_ENABLED).toBe(false);
+// Build A1 — THE ARMORY'S PIN (BUILD_RULES §2).
+// LIVE — TRUE since the armory flip, with PER_GAME_LOADOUT_ENABLED in the same commit (founder rulings FL1 and FL2,
+// Nov 7, 2026), and both stay as kill switches. The rollback is two steps: PER_GAME_LOADOUT_ENABLED alone back to
+// false returns A1's armory with one loadout; both back to false returns the app as it was before the flip. The armory
+// never goes off while per-game loadouts are on (the pin row). A rollback moves a flag and its pin; the DARK_BY_DESIGN
+// entry stays out.
+// Every read is a literal ternary that Rollup folds, so with the flag off the build is what it was before the flip,
+// byte for byte, and agentForm.flagOffBundle.test.js reads what each module leaves.
+describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), a kill switch', () => {
+  it('the armory is live: true since the flip, a kill switch (back to false with per-game loadouts returns the app as it was before the flip)', () => {
+    expect(AGENT_FORM_ARMORY_ENABLED).toBe(true);
   });
 
-  it('it is the module\'s literal, not in featureFlags.js, and flagPinGuard lists it as dark by design', () => {
+  it('it is the module\'s literal, not in featureFlags.js, and flagPinGuard no longer lists it as dark by design (a rollback leaves the entry out)', () => {
     expect(FLAGS).toMatch(/^export const AGENT_FORM_ARMORY_ENABLED = (?:true|false);$/m);
     expect(read('featureFlags.js')).not.toMatch(/AGENT_FORM_ARMORY/);
-    expect(read('flagPinGuard.test.js')).toMatch(/\n {2}AGENT_FORM_ARMORY_ENABLED:\n/);
+    expect(read('flagPinGuard.test.js')).not.toMatch(/\n {2}AGENT_FORM_ARMORY_ENABLED:\n/);
   });
 
   it('the armory is on only while the hub\'s agent form is (it draws it): a hub rollback with the armory on reds here', () => {
@@ -84,19 +89,55 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
       "pal: opponent ? 'copper' : AGENT_FORM_ARMORY_ENABLED && allegiance === UNLIT ? 'unlit' : 'teal',",
       "...(AGENT_FORM_ARMORY_ENABLED && coreStage === SET_ALONE ? setAloneKeys(framing, kind) : framing === 'tight' ? { zoom: TIGHT_ZOOM[kind] } : null),",
     ]);
+    // Build A2: the per-game loadout reads sit beside PER_GAME_LOADOUT_ENABLED (both flags hold the hub's loadout surfaces);
+    // perGameLoadoutFlags.test.js pins the same lines from that flag's side.
+    const A2 = 'PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED';
     expect(at(`${hub}CommandCenterHub.jsx`)).toEqual([
       IMPORT,
+      `loadoutLine: ${A2} ? scopeDeployLine(use(PerGameLoadoutContext)) ?? loadoutLineOf(sections.loadout) : loadoutLineOf(sections.loadout),`,
+      // The armory flip's LD-1: the League door's one-shot intent, taken by the phone's tab and desktop's area.
+      `const [tab, setTab] = useState(${A2} ? () => (takeLoadoutEntry() ? PHONE_TABS.LOADOUT : DEFAULT_PHONE_TAB) : DEFAULT_PHONE_TAB);`,
       // The follow-up's N2(d): the phone armory steps aside for a tab switch, a hold and the strip's Retry.
       'const selectTab = AGENT_FORM_ARMORY_ENABLED',
       // The fix pass (review AR-9): the hold's phase compared by name, so a stored 'idle' could never close it.
       'if (AGENT_FORM_ARMORY_ENABLED && (deploy?.holdPhase === HOLD_PHASES.CHARGING || deploy?.holdPhase === HOLD_PHASES.LOCKED) && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet();',
       '{AGENT_FORM_ARMORY_ENABLED ? (',
+      `{${A2} ? (`,
       'onAction={AGENT_FORM_ARMORY_ENABLED && actions.deployAction ? (kind) => { if (kind === DISPLAY_ACTIONS.RETRY && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet(); actions.deployAction(kind); } : actions.deployAction}',
+      // A1 carry AR-5: the armory's sheet context (the opener) around LoadoutSheets, at both shells.
+      '{runtime.live && (AGENT_FORM_ARMORY_ENABLED ? (',
+      `const [area, setArea] = useState(${A2} ? () => (takeLoadoutEntry() ? HUB_AREAS.ARCHETYPE : DEFAULT_AREA) : DEFAULT_AREA);`,
       'paused={AGENT_FORM_ARMORY_ENABLED ? coverOpen || sheet.sheet === HUB_SHEETS.ARCHETYPE : coverOpen}',
+      `const panel = ${A2} ? (`,
+      `deploy: ${A2} ? (`,
+      '{runtime.live && (AGENT_FORM_ARMORY_ENABLED ? (',
+      `${A2} ? (`,
       // The follow-up's N1: the hero's read is bare Shadow with the armory on.
       '<HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>',
     ]);
-    expect(at(`${hub}LoadoutSheets.jsx`)).toEqual([IMPORT, '{AGENT_FORM_ARMORY_ENABLED ? (']);
+    expect(at(`${hub}LoadoutSheets.jsx`)).toEqual([IMPORT, '{AGENT_FORM_ARMORY_ENABLED ? (', `{${A2} ? (`]);
+    const HUB_IMPORT_2 = "import { AGENT_FORM_ARMORY_ENABLED } from '../../../config/agentFormFlags';";
+    expect(at(`${hub}panels/LoadoutPanel.jsx`)).toEqual([HUB_IMPORT_2, `{${A2} ? (`, `{${A2} ? null : (`]);
+    expect(at(`${hub}sections/DeploySection.jsx`)).toEqual([HUB_IMPORT_2, `{${A2} ? (`, `{${A2} ? <DeployLoadoutLine onOpen={onOpenLoadout} /> : (`]);
+    expect(at(`${hub}hub/useHubRuntime.js`)).toEqual([
+      HUB_IMPORT_2,
+      `loadout: loadout.status === LOADOUT_STATUS.READY ? { ...loadout, summary: ${A2} ? scopeSummary(use(PerGameLoadoutContext)) ?? loadoutLineOf(loadout) : loadoutLineOf(loadout) } : loadout,`,
+      `changeArchetype: (${A2} ? ready : unlocked) ? sheets.open(HUB_SHEETS.ARCHETYPE) : undefined,`,
+      `changeWatchlist: (${A2} ? ready : unlocked) ? sheets.open(HUB_SHEETS.WATCHLIST) : undefined,`,
+    ]);
+    const lg = '../components/League/';
+    expect(at(`${lg}LeagueLobbyRedesign.jsx`)).toEqual([IMPORT, `{${A2} ? <TrainingLoadoutSlot agentLoadout={agentLoadout} /> : (`, `{${A2} ? null : (`, `{${A2} ? (`]);
+    expect(at(`${lg}LeagueDeskParts.jsx`)).toEqual([IMPORT, `{${A2} ? <TrainingLoadoutSlot agentLoadout={agentLoadout} /> : (`, `{${A2} ? null : (`]);
+    // The A2 fix pass (review A2R-1): both lobbies read the group through the failure-aware read, count a failed read
+    // as a known seat for the Backing strip, and provide the line's group-known context; each flag-off arm is today's.
+    const SEAT_KNOWN = `const seatKnown = ${A2} ? !uid || seatFor === uid || seatFor?.failedFor === uid : !uid || seatFor === uid;`;
+    expect(at(`${lg}LeagueLobbyDesktop.jsx`)).toEqual([IMPORT, `{${A2} ? (`, `return ${A2}`, SEAT_KNOWN, `return ${A2} ? (`]);
+    expect(at(`${lg}LeagueHome.jsx`)).toEqual([IMPORT, `return ${A2}`, SEAT_KNOWN, `: ${A2} ? <LeagueGroupKnownContext.Provider value={!uid || seatFor === uid}>{lobby}</LeagueGroupKnownContext.Provider> : lobby;`]);
+    expect(at(`${lg}leagueLoadoutSlot.jsx`)).toEqual([IMPORT, `const LazyLeagueLine = ${A2}`, `const LazyTrainingLine = ${A2}`, `export const LeagueGroupKnownContext = ${A2}`]);
+    expect(at('../App.jsx')).toEqual([
+      "import { AGENT_FORM_ARMORY_ENABLED } from './config/agentFormFlags';",
+      `agentLoadout={primaryAgent ? (${A2} ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName, openLoadout: () => openCommandCenterOnLoadout(setScreen) } : { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName }) : null}`,
+    ]);
     expect(at(`${hub}ShadowStage.jsx`)).toEqual([IMPORT, 'return AGENT_FORM_ARMORY_ENABLED ? (']);
     // The follow-up's N1 retired A1's `instant` read: the hero's view is main's file again, and reads no armory flag.
     expect(at(`${hub}HubAgentForm.jsx`)).toEqual([]);
@@ -141,6 +182,8 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
     };
     walk(SRC);
     expect(readers.sort()).toEqual([
+      // Build A2: App's League door and the per-game loadout surfaces, each beside PER_GAME_LOADOUT_ENABLED.
+      'App.jsx',
       'components/AgentForm/agentFormSpec.js',
       'components/AgentForm/engine/core.js',
       'components/AgentForm/engine/engine.js',
@@ -148,9 +191,17 @@ describe('AGENT_FORM_ARMORY_ENABLED — the pin (BUILD_RULES §2), dark by desig
       'components/CommandCenter/CommandCenterHub.jsx',
       'components/CommandCenter/LoadoutSheets.jsx',
       'components/CommandCenter/ShadowStage.jsx',
+      'components/CommandCenter/hub/useHubRuntime.js',
       'components/CommandCenter/hub/useHubSheets.js',
+      'components/CommandCenter/panels/LoadoutPanel.jsx',
+      'components/CommandCenter/sections/DeploySection.jsx',
+      'components/League/LeagueDeskParts.jsx',
+      'components/League/LeagueHome.jsx', // the A2 fix pass (A2R-1)
+      'components/League/LeagueLobbyDesktop.jsx',
+      'components/League/LeagueLobbyRedesign.jsx',
+      'components/League/leagueLoadoutSlot.jsx',
       'config/agentFormFlags.js',
-    ]);
+    ].sort());
   });
 });
 

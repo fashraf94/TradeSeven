@@ -34,6 +34,10 @@ import { HYPOTHESIS_NOTICES } from '../constants/hypothesisRecords';
 import { DEPLOY_OUTCOMES } from '../constants/deployOutcomes';
 import { stockPublicationOpensAt, STOCK_PUBLICATION_DELAY_MINUTES } from '../utils/stockAdmissionWindow';
 import { signedInUid } from './deployIdentity';
+// Build A2 fix pass (A2R-3 (b), founder ruling Nov 7 2026): with per-game loadouts on, a BaggerBomb deploy whose clone
+// could not be ensured is refused, never run on the ranked agent. A literal `if` on the flag: flag-off it folds away.
+import { PER_GAME_LOADOUT_ENABLED } from '../config/perGameLoadoutFlags';
+import { LOADOUT_COPY } from '../constants/loadoutCopy';
 
 // BaggerBomb measured thresholds (v2 Ruling 6, BR-4): a selected creation
 // can be refused this way, and — past the market calendar's maintained years
@@ -187,7 +191,32 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   // never blocked. Flag OFF → deployAgentId === agentId (byte-identical).
   if (CASUAL_CLONE_CONCURRENCY_ENABLED) {
     let cloneId = null;
-    try {
+    // FL4-b (Nov 7 2026): doubled so the flag picks a whole try (Rollup never folds a ternary inside one); the cleanup PR collapses it to the first arm.
+    if (PER_GAME_LOADOUT_ENABLED) try {
+      // getIdToken sits between setDeployTarget #1 and here, so the raw gap
+      // between the two target reports is NOT the clone round trip. Marking the
+      // request separates auth time from clone time — the pre-warm decision only
+      // gets to claim the latter.
+      ceremonyTiming.markCloneRequest();
+      const cloneRes = await fetch('/api/agent/ensure-casual-clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      const cloneData = await cloneRes.text().then((t) => { try { return JSON.parse(t); } catch { return null; } });
+      if (cloneRes.ok && cloneData && typeof cloneData.cloneId === 'string') {
+        cloneId = cloneData.cloneId;
+      } else {
+        // Fallback: the target stays the ranked agent, already reported above.
+        // setDeployTarget never fires a second time, so the clone outcome is
+        // recorded here as a DISTINCT outcome rather than a missing value.
+        ceremonyTiming.markCloneFallback(`http_${cloneRes.status}`);
+        console.warn('[Deploy] casual clone ensure did not return a clone — refusing the BaggerBomb deploy:', cloneRes.status, cloneData?.error || '');
+      }
+    } catch (err) {
+      // Fallback: the target stays the ranked agent, already reported above.
+      ceremonyTiming.markCloneFallback('threw');
+      console.warn('[Deploy] casual clone ensure errored — refusing the BaggerBomb deploy:', err?.message || err);
+    } else try {
       // getIdToken sits between setDeployTarget #1 and here, so the raw gap
       // between the two target reports is NOT the clone round trip. Marking the
       // request separates auth time from clone time — the pre-warm decision only
@@ -215,6 +244,13 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
     // R1 — after the clone ensure, and before its target is reported or POSTed:
     // an old request never deploys anything once the account has changed.
     if (!stillOwned()) return orphaned(false);
+    // A2R-3 (b), founder ruling Nov 7 2026 — with PER_GAME_LOADOUT_ENABLED on, the fallback above never deploys: the
+    // BaggerBomb loadout is applied only on the clone (api/_utils/casualClone.js), so the ranked agent would play this
+    // game in the LEAGUE loadout (ruling D1 broken) and hold the ranked record's activeBattleId (blocking that player's
+    // League deploy the next morning). The deploy is refused before any POST, with an honest retry line the strip
+    // shows beside its existing Retry; the fallback telemetry (markCloneFallback, above) is kept. Flag off, the
+    // fallback is exactly today's.
+    if (PER_GAME_LOADOUT_ENABLED && cloneId === null) return { outcome: DEPLOY_OUTCOMES.REFUSED, success: false, postIssued: false, error: 'casual_clone_unavailable', details: LOADOUT_COPY.deployCloneFailed };
     if (cloneId !== null) setDeployTarget(cloneId);
   }
 

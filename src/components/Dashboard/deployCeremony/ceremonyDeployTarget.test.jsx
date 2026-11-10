@@ -22,11 +22,20 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 // ── module mocks ───────────────────────────────────────────────────────────
-const { getIdTokenMock, targetProgressState, verifyMock } = vi.hoisted(() => ({
+const { getIdTokenMock, targetProgressState, verifyMock, perGame, cloneFallbacks } = vi.hoisted(() => ({
   getIdTokenMock: vi.fn(),
   targetProgressState: { value: null },
   verifyMock: vi.fn(),
+  // Build A2 fix pass (A2R-3 (b)): PER_GAME_LOADOUT_ENABLED as a getter, dark (main's value) unless a row turns it on
+  perGame: { on: false },
+  cloneFallbacks: [],
 }));
+vi.mock('../../../config/perGameLoadoutFlags', () => ({ get PER_GAME_LOADOUT_ENABLED() { return perGame.on; } }));
+// the fallback telemetry, recorded (the real marker still runs)
+vi.mock('./ceremonyTiming', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, markCloneFallback: (reason) => { cloneFallbacks.push(reason); return real.markCloneFallback(reason); } };
+});
 
 // R1 (R-R1-4): the deploy is owned by the signed-in uid; one stays signed in throughout.
 vi.mock('../../../firebase/authService', () => ({ getIdToken: getIdTokenMock, getCurrentUser: () => ({ uid: 'uid-1' }) }));
@@ -51,6 +60,9 @@ vi.mock('./ceremonyData', async (importOriginal) => ({
 const { deployAgent } = await import('../../../services/agentDeploy.js');
 const { default: useCeremonyStageMachine } = await import('./useCeremonyStageMachine.js');
 const { default: DeployCeremony } = await import('./DeployCeremony.jsx');
+const { LOADOUT_COPY } = await import('../../../constants/loadoutCopy.js');
+const { translateServiceResult } = await import('../../CommandCenter/hub/selectors/attemptVocabulary.js');
+const { deployResultFor } = await import('../deployResult.js');
 
 const RANKED = 'agent-ranked-1';
 const CLONE = 'casual-agent-uid1';
@@ -63,6 +75,8 @@ beforeEach(() => {
     window.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
   }
   seen = undefined;
+  perGame.on = false;
+  cloneFallbacks.length = 0;
   getIdTokenMock.mockReset();
   verifyMock.mockReset();
   verifyMock.mockResolvedValue({ found: false, battle: null });
@@ -85,13 +99,14 @@ describe('agentDeploy — reports the resolved deploy target (§3)', () => {
   // A deploy that resolves a clone, then POSTs. Records the call ORDER so we can
   // prove the report lands before the POST (which is what keeps §5's baseline
   // correct — subscribing after the server's first write is the residual race).
-  const runDeploy = async ({ cloneOk }) => {
+  const runDeploy = async ({ cloneOk, cloneThrows = false }) => {
     const order = [];
     const reported = [];
     getIdTokenMock.mockResolvedValue('tok');
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       order.push(`fetch:${url}`);
       if (url === '/api/agent/ensure-casual-clone') {
+        if (cloneThrows) throw new Error('network down');
         return cloneOk
           ? { ok: true, status: 200, text: async () => JSON.stringify({ cloneId: CLONE }) }
           : { ok: false, status: 500, text: async () => JSON.stringify({ error: 'boom' }) };
@@ -100,7 +115,8 @@ describe('agentDeploy — reports the resolved deploy target (§3)', () => {
     }));
     const onTarget = (id) => { order.push(`report:${id}`); reported.push(id); };
     const result = await deployAgent(RANKED, null, onTarget);
-    return { order, reported, result, body: JSON.parse(globalThis.fetch.mock.calls.at(-1)[1].body) };
+    const last = globalThis.fetch.mock.calls.at(-1);
+    return { order, reported, result, body: last?.[1]?.body ? JSON.parse(last[1].body) : null };
   };
 
   it('reports the CLONE id, and does so before the decide POST', async () => {
@@ -120,6 +136,50 @@ describe('agentDeploy — reports the resolved deploy target (§3)', () => {
     expect(reported).toEqual([RANKED]);
     expect(reported.at(-1)).toBe(RANKED);
     expect(body.agentId).toBe(RANKED);   // the id reported === the id deployed
+    // A2R-3 (b): flag off (main's value), the fallback is exactly today's, its telemetry included
+    expect(cloneFallbacks).toEqual(['http_500']);
+  });
+
+  // The armory flip review, AF-1: the kill switch's `catch` (agentDeploy.js, FL4-b's `else` arm). Flag off (main's value),
+  // a thrown ensure falls back to the ranked agent exactly as today, its telemetry included. The flag-on rows below drive
+  // only the first arm's `catch`; this row is the one that runs the rollback path's.
+  it('fallback: the clone ensure throws → target stays the RANKED agent, flag off (AF-1)', async () => {
+    const { reported, body, result } = await runDeploy({ cloneOk: false, cloneThrows: true });
+    expect(result.success).toBe(true);
+    expect(reported).toEqual([RANKED]);
+    expect(body.agentId).toBe(RANKED);   // the id reported === the id deployed
+    expect(cloneFallbacks).toEqual(['threw']);
+  });
+
+  // Build A2 fix pass — A2R-3 (b), founder ruling Nov 7 2026: with per-game loadouts on, a BaggerBomb deploy NEVER falls
+  // back to the ranked agent (it would wear the League loadout and hold the ranked record's battle).
+  describe('A2R-3 (b): with PER_GAME_LOADOUT_ENABLED on, a failed clone ensure refuses the deploy', () => {
+    for (const [label, opts, reason] of [['a non-ok answer', { cloneOk: false }, 'http_500'], ['a thrown fetch', { cloneOk: false, cloneThrows: true }, 'threw']]) {
+      it(`${label}: refused before any POST, with the retry line; no decide call; the fallback telemetry kept`, async () => {
+        perGame.on = true;
+        const { order, reported, result } = await runDeploy(opts);
+        expect(result).toEqual({ outcome: 'refused', success: false, postIssued: false, error: 'casual_clone_unavailable', details: LOADOUT_COPY.deployCloneFailed });
+        expect(order).not.toContain('fetch:/api/agent/decide');
+        expect(order.filter((x) => x.startsWith('fetch:'))).toEqual(['fetch:/api/agent/ensure-casual-clone']);
+        expect(reported).toEqual([RANKED]);   // reported first, as always; never deployed
+        expect(cloneFallbacks).toEqual([reason]);
+        // the strip and the ceremony read it as a refusal with that line and a Retry, not as lost contact
+        const t = translateServiceResult(result);
+        expect(t.phase).toBe('refused');
+        expect(t.detail.line).toBe('Couldn’t start the BaggerBomb game · try again');
+        expect(t.detail.postIssued).toBe(false);
+        expect(deployResultFor(result)).toMatchObject({ status: 'error', refused: true, postIssued: false, details: LOADOUT_COPY.deployCloneFailed });
+      });
+    }
+
+    it('a clone that resolves deploys the clone, as before', async () => {
+      perGame.on = true;
+      const { reported, body, result } = await runDeploy({ cloneOk: true });
+      expect(reported).toEqual([RANKED, CLONE]);
+      expect(body.agentId).toBe(CLONE);
+      expect(result.success).toBe(true);
+      expect(cloneFallbacks).toEqual([]);
+    });
   });
 
   it('a throwing consumer never breaks the deploy', async () => {

@@ -19,7 +19,8 @@
 //                            they read (build A1: the armory's two looks are read inside AGENT_FORM_ARMORY_ENABLED's
 //                            ternaries, so they fold away with it);
 //   hub/hubCopy.js           HUB_COPY used (every hub view) → HUB_COPY alone (ARMORY_COPY, build A1, is dropped too).
-// Build A1, the armory (AGENT_FORM_ARMORY_ENABLED, dark):
+// Build A1, the armory (AGENT_FORM_ARMORY_ENABLED; live since the armory flip of Nov 7, 2026, and a kill switch, so these
+// rows read what each module leaves when it is set back to false):
 //   Armory.jsx               imported and unused (LoadoutSheets.jsx, ShadowStage.jsx and CommandCenterHub.jsx read it
 //                            only inside that flag's ternaries) → nothing (its context is marked pure);
 //   hub/archetypeLines.js    archetypeLines used (the Loadout) → archetypeLines alone (armoryLines is dropped);
@@ -53,6 +54,25 @@ const ARMORY = 'src/components/CommandCenter/Armory.jsx';
 const LINES = 'src/components/CommandCenter/hub/archetypeLines.js';
 const STAGE = 'src/components/CommandCenter/ShadowStage.jsx';
 const STAGE_USED = ['PhoneStage', 'ShadowStage', 'StatusLine', 'connectorPath'];
+// Build A2 (per-game loadouts, PER_GAME_LOADOUT_ENABLED; live since the armory flip of Nov 7, 2026, and a kill switch, so
+// these rows read what each module leaves when it is set back to false): the flag's own module, rewritten false as the agent form
+// flags are, and the A2 modules the flag-off graph reaches — each imported and unused (every read of it sits inside a
+// `PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED` ternary), so each bundles to nothing.
+const PER_GAME_FLAGS = 'src/config/perGameLoadoutFlags.js';
+const A2_UNUSED = Object.freeze([
+  'src/components/CommandCenter/LoadoutCards.jsx',
+  'src/components/CommandCenter/LoadoutBookSheet.jsx',
+  'src/components/CommandCenter/PerGameLoadoutScope.jsx',
+  'src/components/CommandCenter/hub/perGameLoadoutContext.js',
+  'src/components/CommandCenter/hub/perGameLoadoutModel.js',
+  'src/components/CommandCenter/hub/useLeagueLoadoutLock.js',
+  'src/components/AgentForm/LoadoutStill.jsx',
+  'src/components/League/leagueLoadoutSlot.jsx',
+  'src/constants/perGameLoadout.js',
+  'src/constants/loadoutCopy.js',
+]);
+const A2_CONTEXT = 'src/components/CommandCenter/hub/perGameLoadoutContext.js';
+const A2_SLOT = 'src/components/League/leagueLoadoutSlot.jsx';
 
 /** Each module the flag-off graph reaches, with the exports that graph reads from it. */
 const REACHED = [
@@ -65,6 +85,7 @@ const REACHED = [
   [ARMORY, []],
   [LINES, ['archetypeLines']],
   [STAGE, STAGE_USED],
+  ...A2_UNUSED.map((rel) => [rel, []]),
 ];
 
 const ENTRY = '\0agent-form-flag-off-entry';
@@ -78,7 +99,7 @@ const flagOff = (code) => code.replace(/^(export const \w+_ENABLED = )true;$/gm,
  * does not list it).
  */
 async function bundle(rel, used, source) {
-  const target = idOf(rel), flags = idOf(FLAGS);
+  const target = idOf(rel), flags = idOf(FLAGS), perGame = idOf(PER_GAME_FLAGS);
   const entry = used.length ? `export { ${used.join(', ')} } from ${JSON.stringify(target)};` : `import ${JSON.stringify(target)};`;
   const loaded = [];
   const result = await build({
@@ -94,12 +115,14 @@ async function bundle(rel, used, source) {
         if (spec === ENTRY) return ENTRY;
         if (importer === ENTRY) return target;
         if (importer !== target) return null;
+        if (/(^|\/)perGameLoadoutFlags(\.js)?$/.test(spec)) return perGame; // build A2: the second flag module, internal too
         return /(^|\/)agentFormFlags(\.js)?$/.test(spec) ? flags : { id: spec, external: true };
       },
       load(id) {
         loaded.push(id);
         if (id === ENTRY) return entry;
         if (id === flags) return flagOff(read(FLAGS));
+        if (id === perGame) return flagOff(read(PER_GAME_FLAGS));
         if (id === target && source != null) return source;
         return null;
       },
@@ -206,27 +229,47 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
     expect(code).not.toMatch(/\bAGENT_FORM_COPY\b/);
   }, 30000);
 
-  it('Armory.jsx (build A1), imported and unused: nothing (its context is marked pure; every read of it is inside the flag\'s ternaries)', async () => {
+  it('kill switch, the armory off (build A1): Armory.jsx, imported and unused: nothing (its context is marked pure; every read of it is inside the flag\'s ternaries)', async () => {
     const { code } = await bundle(ARMORY, []);
     expect(leftovers(code)).toEqual([]);
     expect(code.trim()).toBe('');
   }, 30000);
 
-  it('hub/archetypeLines.js, with archetypeLines used: archetypeLines alone (armoryLines, build A1, is dropped)', async () => {
+  it.each(A2_UNUSED)('kill switch, per-game loadouts off (build A2): %s, imported and unused: nothing (its module-level calls are literals or marked pure)', async (rel) => {
+    const { code } = await bundle(rel, []);
+    expect(leftovers(code)).toEqual([]);
+    expect(code.trim()).toBe('');
+  }, 30000);
+
+  it('kill switch, per-game loadouts off (build A2): the shipped hub modules that read the per-game flag bundle with nothing of A2', async () => {
+    for (const [rel, used, gone] of [
+      ['src/components/CommandCenter/panels/LoadoutPanel.jsx', ['default'], /\bLoadoutCards\b|\bAdjustmentsCard\b/],
+      ['src/components/CommandCenter/sections/DeploySection.jsx', ['default', 'PhoneDeployCard'], /\bDeployLoadoutLine\b/],
+      ['src/components/CommandCenter/LoadoutSheets.jsx', ['default'], /\bLoadoutBookSheet\b/],
+      ['src/components/CommandCenter/hub/useHubRuntime.js', ['useHubRuntime'], /\bscopeSummary\b|\bPerGameLoadoutContext\b/],
+      ['src/adapters/baggerbombAdapter.js', ['buildBaggerbombAdapter'], /\bPER_GAME_LOADOUT_ENABLED\b/],
+    ]) {
+      const { code } = await bundle(rel, used);
+      expect(code, rel).not.toMatch(gone);
+      expect(code, rel).not.toMatch(/\bperGameLoadout|\bloadoutService\b|\bleagueLockService\b/);
+    }
+  }, 60000);
+
+  it('kill switch, the armory off (build A1): hub/archetypeLines.js, with archetypeLines used: archetypeLines alone (armoryLines is dropped)', async () => {
     const { code } = await bundle(LINES, ['archetypeLines']);
     expect(exportsOf(code)).toEqual(['archetypeLines']);
     expect(leftovers(code)).toEqual([]);
     expect(code).not.toMatch(/\barmoryLines\b/);
   }, 30000);
 
-  it('ShadowStage.jsx, with its four exports used: those, and nothing of the phone armory\'s stage (build A1)', async () => {
+  it('kill switch, the armory off (build A1): ShadowStage.jsx, with its four exports used: those, and nothing of the phone armory\'s stage', async () => {
     const { code } = await bundle(STAGE, STAGE_USED);
     expect(exportsOf(code).sort()).toEqual([...STAGE_USED].sort());
     expect(leftovers(code)).toEqual([]);
     expect(code).not.toMatch(/\bPhoneArmoryStage\b|\bPhoneSummaries\b|\bArmoryStageContext\b/);
   }, 30000);
 
-  it('agentFormSpec.js (build A1): with the flag off its spec reads neither armory look, so the module bundles as before', async () => {
+  it('kill switch, the armory off (build A1): agentFormSpec.js reads neither armory look, so the module bundles as before A1', async () => {
     const { code } = await bundle(SPEC, ['formForArchetype', 'hasWebGL', 'agentFormSpec']);
     expect(code).not.toMatch(/\bunlit\b|\bSET_ALONE\b|\bsetAloneKeys\b|\bbrain\b/);
     expect(code).toMatch(/pal: opponent \? "copper" : "teal"|pal: opponent \? 'copper' : 'teal'/);
@@ -234,7 +277,7 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
 
   // The A1 fix pass (founder rulings D-B, D-C): the engine reads the flag for the core's level and its breath. Flag off,
   // each read folds to main's expression, so the engine modules bundle as they did, with nothing of the breath in them.
-  it('the engine (fix pass, D-B and D-C): with the flag off nothing of the core\'s level or breath bundles; each site is main\'s expression', async () => {
+  it('kill switch, the armory off (A1 fix pass, D-B and D-C): nothing of the core\'s level or breath bundles; each site is the expression before A1', async () => {
     const ENGINE = 'src/components/AgentForm/engine/';
     const core = (await bundle(`${ENGINE}core.js`, ['buildBrain'])).code;
     expect(core).not.toMatch(/\bS\.level\b|multiplyScalar\(S\./);
@@ -274,6 +317,9 @@ describe('the flag-off pure marks (agent form S1 review SR-3): each module the f
       ['a frozen copy key list nothing reads', HUB_COPY_FILE, ['HUB_COPY'], `${read(HUB_COPY_FILE)}\nexport const AGENT_FORM_COPY_KEYS = Object.freeze(Object.keys(AGENT_FORM_COPY));\n`],
       ['S2R-2: a frozen key list nothing reads, in fuseFormLayout.js', FUSE_LAYOUT, [], `${read(FUSE_LAYOUT)}\nexport const FUSE_FORM_KEYS = Object.freeze(Object.keys(FUSE_FORM_PX));\n`],
       ['A1: the mark off the armory\'s context', ARMORY, [], plant(ARMORY, 'ArmoryStageContext = /* @__PURE__ */ createContext(null)', 'ArmoryStageContext = createContext(null)')],
+      ['A2: the mark off the loadout context', A2_CONTEXT, [], plant(A2_CONTEXT, 'PerGameLoadoutContext = /* @__PURE__ */ createContext(null)', 'PerGameLoadoutContext = createContext(null)')],
+      ['A2: the League line declared without its flags', A2_SLOT, [], plant(A2_SLOT, 'const LazyLeagueLine = PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED\n  ? lazy', 'const LazyLeagueLine = true\n  ? lazy')],
+      ['A2: a model constant that reads another binding\'s property', 'src/constants/perGameLoadout.js', [], plant('src/constants/perGameLoadout.js', "Object.freeze(['baggerbomb', 'league'])", 'Object.freeze([LOADOUT_KINDS.BAGGERBOMB, LOADOUT_KINDS.LEAGUE])')],
     ];
     for (const [what, rel, used, source] of plants) expect(leftovers((await bundle(rel, used, source)).code), what).not.toEqual([]);
     for (const [rel, used] of REACHED) expect(leftovers((await bundle(rel, used, read(rel))).code), rel).toEqual([]);

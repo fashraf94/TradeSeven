@@ -128,6 +128,10 @@ import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import { calculateAssetScoreV3 } from '../utils/baggerBombUtils';
 import { DEFAULT_THRESHOLD, buildResearchAsset } from '../utils/researchAssetBuilder';
 import AssetResearchModal from '../components/draft/AssetResearchModal';
+import useBombModeForBattle from '../components/Research/BombMode/useBombModeForBattle';
+import { agentBombContext } from '../components/Research/BombMode/selectBombRecord';
+import { useSheetModeForBattle } from '../components/Research/Sheet/sheetGate';
+import { incumbentOfCall } from '../components/Research/Sheet/packs';
 import TermResearchModal from '../components/shared/TermResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import FilmRoomBanner from '../components/FilmRoom/FilmRoomBanner';
@@ -1213,6 +1217,18 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     feedBookmarks,
     loading: battleLoading,
   } = gatedPath ? gatedFields : battleHook;
+  // Research Modal Build A (spec docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md
+  // §4.1): does Bomb mode resolve on for THIS agent battle? 'off' is one
+  // call-time read and no request; 'allowlist' asks cockpit-status once per
+  // owner (the Film Room gate's cached verdict).
+  const bombModeOn = useBombModeForBattle(agentBattleId, agentBattle?.ownerId ?? null);
+  // Research Modal Build C (spec docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md
+  // §4.1): does the sheet resolve on for THIS agent battle? The same gate shape
+  // and the same cached cockpit-status verdict. And BC-11: the incumbent the
+  // bench door hands the sheet, { symbol, incumbent } — set only by that door,
+  // dropped when research closes.
+  const sheetModeOn = useSheetModeForBattle(agentBattleId, agentBattle?.ownerId ?? null);
+  const [sheetIncumbent, setSheetIncumbent] = useState(null);
 
   // ── Cockpit Build 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md §4) ──────────
   //
@@ -2816,6 +2832,18 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     && Boolean(cockpitAnswer.pending) && cockpitAnswer.pending.callId === cockpitFlow.confirm.callId;
   // While the research modal stands over the bench sheet, the sheet defers to it (review CB4-9, CB5-1).
   const cockpitResearchOpen = gatedPath ? Boolean(researchView) : Boolean(researchAsset);
+  // Build C (BC-11): the bench door's own handler — it hands the sheet the held
+  // name the call would replace (an exit call's symbol; an entry call's held
+  // counterpart), then opens research exactly as the shared door does. The two
+  // Monitoring onSymbolClick doors keep handleCockpitSymbol and pass none.
+  const handleCockpitBenchResearch = (symbol) => {
+    const incumbent = incumbentOfCall(cockpitBenchCall, symbol);
+    setSheetIncumbent(incumbent ? { symbol, incumbent } : null);
+    handleCockpitSymbol(symbol);
+  };
+  useEffect(() => {
+    if (!cockpitResearchOpen && sheetIncumbent) setSheetIncumbent(null);
+  }, [cockpitResearchOpen, sheetIncumbent]);
   const cockpitVintage = BATTLE_VIEW_COPY.cockpitVintage(checkOf(latestPromptBuiltAt(agentBattle?.evaluations)), turnLine?.nextDecisionAt ?? null);
   const cockpitFeedElement = cockpitOn && cockpitFeed ? (cockpit2b ? (
     <Cockpit2b
@@ -2898,7 +2926,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       onClose={closeCockpitBench}
       onSort={setCockpitBenchSort}
       onPick={handleCockpitBenchPick}
-      onResearch={handleCockpitSymbol}
+      onResearch={sheetModeOn ? handleCockpitBenchResearch : handleCockpitSymbol}
       confirmLine={cockpitConfirmLine('bench', cockpitBench?.cardKey ?? null, cockpitBench?.callId ?? null)}
       confirmSending={cockpitConfirmSending('bench', cockpitBench?.cardKey ?? null, cockpitBench?.callId ?? null)}
       onConfirmReplace={() => { const pick = cockpitFlow.confirm?.pickSymbol ?? null; cockpitFlow.replace().then((r) => onCockpitBenchResult(r, pick)); }}
@@ -2960,6 +2988,56 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // Each closes — and stays closed: recovery needs a new click.
   let heldResearch = null;
   let breakdownGated = null;
+  // Research Modal Build A (spec §4.2): the in-battle Bomb mode contract,
+  // built ONLY when the mode resolves on — off, the record selector is never
+  // called and no mount receives a new prop. A position the player's agent
+  // holds gets its record; anything else (a bench name, the CPU's position —
+  // its posKey or positionId is not the agent's, or a shared ticker the mount
+  // cannot tell apart) gets a labelled preview (agentBombContext).
+  const bombContextFor = (symbol, ids = {}) => agentBombContext(agentBattle, symbol, Date.now(), { battleId: agentBattleId, ...ids });
+  // Research Modal Build C (spec §4.2): the in-battle sheet contract, built ONLY
+  // when the sheet resolves on — off, no mount receives a new prop. Everything in
+  // it is what this screen already holds: the subscribed document, the cockpit's
+  // calls reader (when the cockpit is on), the score pair the header shows
+  // (BC-13, BUILD_RULES §9: the gated comparison, else the displayed totals), the
+  // directive THIS TURN shows, and → Cockpit through the screen's own path
+  // (BC-12: the desktop pane, or the phone's Cockpit screen) — only when the
+  // cockpit is on, otherwise absent.
+  const closeResearchForCockpit = () => { if (gatedPath) closeGatedResearch(); else setResearchAsset(null); };
+  const sheetCockpitDoor = cockpitOn && (isDesktop || phoneCockpit)
+    ? () => {
+      const invoker = typeof document !== 'undefined' ? document.activeElement : null;
+      closeResearchForCockpit();
+      if (isDesktop) pane.openPane(PANE_SECTION.COCKPIT, invoker);
+      else setPhoneScreen(PHONE_SCREEN.COCKPIT);
+    }
+    : null;
+  const sheetContextFor = (symbol, ids = {}, held = false) => ({
+    battleId: agentBattleId,
+    agentId: agentBattle?.agentId ?? null,
+    archetype: agentBattle?.agentContext?.archetype ?? null,
+    agentName: agentBattle?.agentContext?.agentName ?? null,
+    row: { held, ...ids },
+    ...(sheetIncumbent && sheetIncumbent.symbol === symbol ? { incumbent: sheetIncumbent.incumbent } : {}),
+    ...(sheetCockpitDoor ? { onOpenCockpit: sheetCockpitDoor } : {}),
+    battle: agentBattle,
+    ...(cockpitOn && cockpitCallsRead.status === 'ready' && Array.isArray(cockpitCallsRead.value) ? { calls: cockpitCallsRead.value } : {}),
+    // The standing AS THE HEADER SHOWS IT (BC-13, BUILD_RULES §9): its digits through the
+    // header's own formatter and its lead (the precise pair's) — never re-rounded in the sheet.
+    standing: comparison !== undefined
+      ? (comparison.available === true ? {
+        player: comparison.pair[0], opponent: comparison.pair[1], digits: comparison.fractionDigits ?? 0,
+        you: comparison.digits?.[0] ?? formatScoreDisplay(comparison.pair[0], { fractionDigits: comparison.fractionDigits ?? 0 }),
+        them: comparison.digits?.[1] ?? formatScoreDisplay(comparison.pair[1], { fractionDigits: comparison.fractionDigits ?? 0 }),
+        lead: comparison.lead,
+      } : null)
+      : {
+        player: displayPlayerScore, opponent: displayOpponentScore, digits: 0,
+        you: formatScoreDisplay(displayPlayerScore), them: formatScoreDisplay(displayOpponentScore),
+        lead: displayPlayerScore > displayOpponentScore ? 'player' : displayPlayerScore < displayOpponentScore ? 'cpu' : 'tie',
+      },
+    directive: thisTurnDirective,
+  });
   if (gatedPath) {
     if (researchView) {
       let valid = admitted && researchView.ctx === gatedContextKey;
@@ -4123,6 +4201,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             defaultTab="baggerbomb"
             defaultTimeframe="bomb"
             controlledQuote={heldResearch.controlledQuote}
+            {...(bombModeOn ? { bombContext: bombContextFor(heldResearch.asset.symbol, { posKey: heldResearch.controlledQuote.posKey }) } : {})}
+            {...(sheetModeOn ? { sheetContext: sheetContextFor(heldResearch.asset.symbol, { posKey: heldResearch.controlledQuote.posKey }, true) } : {})}
           />
         ) : (researchView?.kind === 'nonheld' && stableResearchAsset ? (
           <AssetResearchModal
@@ -4135,6 +4215,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             defaultTimeframe="bomb"
             wsPrice={effectivePrices[stableResearchAsset?.symbol]}
             onNavigateAdmission={handleNavigateAdmission}
+            {...(bombModeOn ? { bombContext: bombContextFor(stableResearchAsset.symbol, { positionId: stableResearchAsset.positionId ?? null }) } : {})}
+            {...(sheetModeOn ? { sheetContext: sheetContextFor(stableResearchAsset.symbol, { positionId: stableResearchAsset.positionId ?? null }) } : {})}
           />
         ) : null)
       ) : stableResearchAsset && (
@@ -4147,6 +4229,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           defaultTab="baggerbomb"
           defaultTimeframe="bomb"
           wsPrice={effectivePrices[stableResearchAsset?.symbol]}
+          {...(bombModeOn ? { bombContext: bombContextFor(stableResearchAsset.symbol, { positionId: stableResearchAsset.positionId ?? null }) } : {})}
+          {...(sheetModeOn ? { sheetContext: sheetContextFor(stableResearchAsset.symbol, { positionId: stableResearchAsset.positionId ?? null }) } : {})}
         />
       )}
 

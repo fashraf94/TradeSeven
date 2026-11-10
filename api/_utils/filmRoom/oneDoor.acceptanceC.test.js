@@ -20,6 +20,21 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// The armory flip (Nov 7, 2026). The per-game flag is held here, not read live, so a rollback reddens only its pin. The
+// rows in KILL_SWITCH_ROWS run with it held OFF, and keep guarding the path a rollback restores: each files its cards
+// through createCard against the agent's current archetype, the flag-off rule (A2's R4); with per-game loadouts on a
+// card is checked against its battle's own archetype and shelved against both loadouts, which cardStore.perGame.test.js
+// holds, and nothing else in the ledger reads the flag. Every other row runs with it ON, the shipped state.
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "acceptance C — the assembled trading prompt with a ledger is byte-identical to one with an empty ledger > the ledger is really there, under the battle's agent, readable through the very handle the assemblers get",
+  "acceptance C — the assembled trading prompt with a ledger is byte-identical to one with an empty ledger > every assembler: the same bytes with and without the ledger, a LIVE read log in both runs (the institutional reads are in it), and no read of plays in either",
+  "acceptance C — the assembled trading prompt with a ledger is byte-identical to one with an empty ledger > the bite for the read log: a prompt path that read plays through the handle would be in the log by name",
+  "acceptance C — the assembled trading prompt with a ledger is byte-identical to one with an empty ledger > the bite: a prompt that DID read the ledger would differ — the comparison can fail",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
+
 const state = vi.hoisted(() => ({ db: null }));
 vi.mock('../firebaseAdmin.js', () => ({ getFirebaseAdmin: () => state.db, getFirebaseAuth: () => ({}) }));
 vi.mock('firebase-admin/app', () => ({ getApps: () => [{}], initializeApp: () => ({}), cert: () => ({}) }));

@@ -52,6 +52,10 @@ const FLAG_SOURCE_MODULES = [
   'src/config/activationEvidenceFlags.js',
   // Huddle S1: the Huddle's flag, a module of its own (its header says why).
   'src/config/huddleFlags.js',
+  // Measured Trend Evidence Slice 2: the setup-label flag, a module of its own (its header says why).
+  'src/config/setupMenuLabelsFlags.js',
+  // Build A2: the per-game loadout flag, a module of its own (its header says why; both sides read it).
+  'src/config/perGameLoadoutFlags.js',
 ];
 
 // ── Deliberately-dark flags (founder ruling 2026-08-10: keep the loud tripwire) ─
@@ -150,8 +154,13 @@ const DARK_BY_DESIGN = {
   // and its pin, and the entry here stays out, because the flag is now a live kill switch, not dark by design.
   // AGENT_FORM_LAB_ENABLED stays listed above. Re-adding one while it ships true fails the DARK_BY_DESIGN integrity test
   // below.
-  AGENT_FORM_ARMORY_ENABLED:
-    'Agent form build A1 — the armory in place of the hub\'s archetype picker (Phase 0 armory report §9 A1). Stays false on main until the founder\'s phone test: it is flipped only on a never-merge smoke branch; flag-off every read folds and the build is byte-identical to main (agentFormFlags.test.js)',
+  // PER_GAME_LOADOUT_ENABLED and AGENT_FORM_ARMORY_ENABLED intentionally ABSENT: LIVE — TRUE since the armory flip, in
+  // the same commit (founder rulings FL1 and FL2, Nov 7, 2026), and both stay as kill switches. The rollback is two
+  // steps: PER_GAME_LOADOUT_ENABLED alone back to false returns A1's armory with one loadout; both back to false returns
+  // the app as it was before the flip. The armory never goes off while per-game loadouts are on (the pin row). A
+  // rollback moves a flag and its pin; the DARK_BY_DESIGN entry stays out. Their pins in perGameLoadoutFlags.test.js and
+  // agentFormFlags.test.js assert the live values AND, turned around, that these entries are gone. Re-adding one while
+  // it ships true fails the DARK_BY_DESIGN integrity test below.
   COMMAND_CENTER_SYNC_ENABLED:
     'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
   // COMMAND_CENTER_HUB_ENABLED intentionally ABSENT: the Command Center hub
@@ -223,6 +232,8 @@ const DARK_BY_DESIGN = {
   // value AND, turned around, that this entry is gone — a rollback moves both
   // lines back together. The Film Room screen gate is FILM_ROOM_V2_MODE
   // (below).
+  SETUP_MENU_LABELS_ENABLED:
+    'Measured Trend Evidence Slice 2 — dated setup labels on the candidate menu of each in-scope tick\'s permanent record, and the seventh reflections tenant that acquires them (spec docs/design/20261107_P3_SLICE2_BUILD_SPEC_DRAFT_V2.md as amended by the kickoff\'s Corrections A–D; build report docs/audits/20261107_BUILD_SETUP_MENU_LABELS.md). Built dark: with it false no read starts, the record has no setupMenu key and the cron response is byte-identical. Flips only in the founder\'s own PR, never a build PR, after ID-1\'s first census week is recorded complete, D-6 (the provider budget authority) is resolved, and the setupMenuLabelState rules and its index exemption are published. The flip moves the pin in setupMenuLabelsFlags.test.js to true and drops this entry in the same commit',
   RESPONSE_FORK_ATTRIBUTION_ENABLED:
     'Cockpit Build 1a (spec §11, Astra B1R2-9) — the response-fork hook\'s CAUSAL attribution ("In response to …"). Build 1a records prompt inclusion only; the causal field needs the round-3 declarations schema + nudge and its replay gate, then flips in the founder\'s own one-line PR, never a build PR. The flip moves the pin in cockpitFlags.test.js to true AND removes this entry in the same commit',
   // COCKPIT_UI_ENABLED intentionally ABSENT: the cockpit screen flipped true in
@@ -264,6 +275,38 @@ const DARK_BY_DESIGN = {
   //   each step moves the pin row in filmRoomCardsFlags.test.js in the same
   //   commit (BUILD_RULES §2). Rollback: one line back a step — 'allowlist'
   //   → 'off' — with its pin row.
+  // RESEARCH_MODAL_BOMB_MODE intentionally ABSENT, and it must stay absent:
+  // Research Modal Build A's Bomb mode (spec
+  // docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md §4.1) is a STRING
+  // TRI-STATE ('off' | 'allowlist' | 'on') in its own module,
+  // src/config/researchModalFlags.js, after the FILM_ROOM_CARDS_MODE pattern,
+  // so buildFlagMap never sees it and the integrity test below would fail the
+  // key outright. Noted HERE so a flip is loud in the place a reader looks for
+  // the dark runway; researchModalFlags.test.js asserts both halves.
+  //   Runway: 'allowlist' is CURRENT (the founder's flip PR, 2026-11-08; 'off'
+  //   from Build A, PR #1031, until then): per agent battle, the
+  //   cockpit-status verdict (the founder and FT_QA); everyone else, and every
+  //   mount with no agent battle, is the modal byte for byte as before. 'on' is
+  //   its own founder PR after one clean live session on the allowlist. Never
+  //   a build PR; each step moves the pin row in researchModalFlags.test.js in
+  //   the same commit (BUILD_RULES §2).
+  //   Rollback: a kill switch: roll back one step at a time ('on' →
+  //   'allowlist' → 'off') by moving the literal and its pin together; every
+  //   mode-off arm stays in the code until the cleanup PR, after 'on' has run
+  //   in production.
+  // RESEARCH_MODAL_SHEET_MODE intentionally ABSENT, and it must stay absent:
+  // Research Modal Build C's sheet in battle (spec
+  // docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md §4.1) is a STRING
+  // TRI-STATE ('off' | 'allowlist' | 'on') beside RESEARCH_MODAL_BOMB_MODE in
+  // src/config/researchModalFlags.js, so buildFlagMap never sees it and the
+  // integrity test below would fail the key outright. Noted HERE so a flip is
+  // loud in the place a reader looks for the dark runway;
+  // researchModalSheetFlag.test.js asserts both halves.
+  //   Runway: 'off' ships with Build C (dark). 'allowlist' (the founder and
+  //   FT_QA, per agent battle by the cockpit-status verdict) and then 'on' are
+  //   each their own one-line founder PR after merge, never a build PR; each
+  //   step moves the pin row in researchModalSheetFlag.test.js in the same
+  //   commit (BUILD_RULES §2). Rollback: one step back with its pin row.
   // ACTIVATION_EVIDENCE_ENABLED intentionally ABSENT: the ID-1 activation observer
   // flipped true on 2026-11-06 in the founder's own flip PR (flip checklist:
   // docs/audits/20261106_BUILD_ACTIVATION_OBSERVER_REVIEW_FIXES.md §11) — the

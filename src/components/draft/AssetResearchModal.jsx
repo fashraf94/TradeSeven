@@ -24,6 +24,16 @@ import { SECTORS } from '../../constants/sectors';
 import HoldingsTab from '../Research/HoldingsTab';
 import SectorETFRanksTab from '../Research/SectorETFRanksTab';
 import SmartMoneyTab from '../Research/SmartMoneyTab';
+import { getVolatilityThresholds } from '../../services/volatilityService';
+import { resolveBombMode } from '../Research/BombMode/bombModeGate';
+import useBombView from '../Research/BombMode/useBombView';
+import BombPlot, { RedZoneChip } from '../Research/BombMode/BombPlot';
+import BombSheet from '../Research/BombMode/BombSheet';
+import useSheetView from '../Research/Sheet/useSheetView';
+import AnalysisSheet, { SheetActionRow } from '../Research/Sheet/AnalysisSheet';
+import { ST } from '../Research/Sheet/sheetTheme';
+import { visibleViewportHeight } from '../Research/Sheet/sheetViewport';
+import { opensInRedZone } from '../Research/Sheet/sheetOpen';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -50,6 +60,10 @@ import SmartMoneyTab from '../Research/SmartMoneyTab';
  * - showActionButton: boolean (default: true) - show/hide action section
  * - controlledQuote / onNavigateAdmission: optional battle-screen contracts
  *   (Shadow vs CPU quote integrity) — see the note at the component.
+ * - bombContext: optional Bomb mode contract (Research Modal Build A) — see the
+ *   note at the component.
+ * - sheetContext: optional in-battle sheet contract (Research Modal Build C) —
+ *   see the note at the component.
  */
 
 // Mock fundamental data (in production, fetch from API)
@@ -79,6 +93,10 @@ const getMockFundamentals = (symbol) => {
 
   return { ...defaults, ...(stockData[symbol] || {}) };
 };
+
+// Bomb mode: an in-battle mount always shows the 💣 pill (BA-5), even before a
+// ladder can be drawn (the plot then says why) — this stands in for bombData.
+const BOMB_MODE_PILL = Object.freeze({ bombMode: true });
 
 const AssetResearchModal = ({
   asset,
@@ -123,6 +141,30 @@ const AssetResearchModal = ({
   //   put and makes no request for it.
   controlledQuote = null,
   onNavigateAdmission = null,
+  // Research Modal Build A — Bomb mode (spec
+  // docs/specs/RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md §4.2). Passed ONLY by
+  // the in-battle mounts, and only when RESEARCH_MODAL_BOMB_MODE resolves on
+  // for them: { kind: 'agent', battleId, held, record } (the agent Battle View;
+  // `record` from selectBombRecord) | { kind: 'v4', dailyLevels } (a V4
+  // BaggerBomb battle) | { kind: 'bench' } (a name in a battle the player does
+  // not hold). With it, the 💣 view is the Fuse / red zone and the Bomb tab is
+  // the one sheet. Without it and with the mode 'on', this mount shows no 💣
+  // pill and no Bomb tab (BA-5). With the mode off nobody passes it and nothing
+  // here changes.
+  bombContext = null,
+  // Research Modal Build C — the sheet in battle (spec
+  // docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md §4.2, BC-1). Passed ONLY
+  // by the agent Battle View's three mounts, and only when
+  // RESEARCH_MODAL_SHEET_MODE resolves on for them: { battleId, agentId,
+  // archetype, agentName, row: { held, posKey | positionId }, incumbent?,
+  // onOpenCockpit?, battle, calls?, standing, directive } — `battle` is the
+  // screen's own subscribed document (no second listener), `calls` its cockpit
+  // reader when it holds one, `standing` the score pair its header shows,
+  // `directive` the slot its THIS TURN strip shows. With it, the modal opens on
+  // the Analysis tab and 1D, and that tab is the sheet (the archetype's lens:
+  // stance, latest sentence, questions, packs, the Ask) — the profile and the
+  // preset questions are not shown there. Without it nothing here changes.
+  sheetContext = null,
 }) => {
   const controlledMode = controlledQuote != null;
   const controlledValid = controlledMode
@@ -166,11 +208,25 @@ const AssetResearchModal = ({
 
   const isIndexAsset = useMemo(() => isIndex(currentAsset?.symbol), [currentAsset?.symbol]);
   const isSectorETF = useMemo(() => !!SECTORS[currentAsset?.symbol], [currentAsset?.symbol]);
+  // Build C: the sheet is shown for a stock or a crypto in battle (never an index or a sector ETF),
+  // and the modal then opens on it — the Analysis tab, on 1D (BC-1, §1 "opens on one line and a question").
+  const sheetOn = version >= 2 && sheetContext != null && typeof sheetContext === 'object' && !isIndexAsset && !isSectorETF;
+  // FQ-9 (founder ruling 2026-11-08): with Bomb mode also on, a measured held stock
+  // inside the red-zone band when the modal OPENS opens on 💣 in the red zone, not the
+  // sheet. Decided ONCE, at open, from the price the screen already holds (none yet →
+  // the sheet); never switched after open (this state is never set again).
+  const [sheetOpensOnBomb] = useState(() => sheetOn && version >= 2 && bombContext != null && typeof bombContext === 'object'
+    && opensInRedZone({ bombContext, symbol: asset?.symbol, live: controlledMode ? controlledPrice : (wsPrice || asset?.price || asset?.currentPrice || null), nowMs: Date.now(), isCrypto }));
+  const openTab = sheetOpensOnBomb ? 'baggerbomb' : sheetOn ? 'fundamental' : defaultTab;
 
   const isGameContext = isGameContextProp !== undefined
     ? isGameContextProp
     : (onAcquire !== null || showActionButton);
-  const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : isSectorETF ? 'holdings' : 'fundamental'));
+  // Bomb mode: on for a mount that passes bombContext; under 'on', a mount that
+  // does not is a browse / acquire mount and loses the 💣 pill and the Bomb tab.
+  const bombOn = version >= 2 && bombContext != null && typeof bombContext === 'object';
+  const bombHidden = !bombOn && resolveBombMode() === 'on';
+  const [activeTab, setActiveTab] = useState(openTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : isSectorETF ? 'holdings' : 'fundamental'));
   const [whyMovingOpen, setWhyMovingOpen] = useState(false);
   const [profile, setProfile] = useState(null);
   const [profileSymbol, setProfileSymbol] = useState(null); // the symbol `profile` was fetched for
@@ -193,6 +249,10 @@ const AssetResearchModal = ({
     setChartSymbol(currentAsset?.symbol);
     setHighlightedLevel(null);
     setSrOn(false);
+  }
+  // BA-5: a hidden Bomb tab is never the open one.
+  if (bombHidden && activeTab === 'baggerbomb') {
+    setActiveTab(isCrypto ? 'health' : isIndexAsset ? 'marketContext' : isSectorETF ? 'holdings' : 'fundamental');
   }
 
   const handleNavigateToStock = useCallback((ticker, name) => {
@@ -231,6 +291,11 @@ const AssetResearchModal = ({
       ? Math.max(Math.round(v2ContainerHeight * 0.5), 280)
       : Math.min(isTablet ? 260 : 300, Math.round(v2ContainerHeight * 0.45))
     : isMobile ? 200 : isTablet ? 260 : 300;
+  // Build C (BC-2): the sheet's chart height — a quarter of the container on a
+  // phone (150–210 px), a third elsewhere (up to 260 px). Reported in the build report.
+  const sheetChartHeight = isMobile
+    ? Math.max(150, Math.min(210, Math.round(v2ContainerHeight * 0.25)))
+    : Math.max(180, Math.min(260, Math.round(v2ContainerHeight * 0.34)));
 
   // One price for the whole sheet (BUILD_RULES §9): the live price the header's
   // "% today" and the chart's live candle follow — wsPrice for the original
@@ -248,10 +313,13 @@ const AssetResearchModal = ({
   const researchData = useResearchData(version >= 2 && !failClosed ? currentAsset?.symbol : null, {
     currentPrice: sheetPrice,
     isCrypto: isCrypto,
-    initialTimeframe: defaultTimeframe,
+    // A mount that loses the 💣 view (BA-5) opens on 1D, never fetching the bomb series it cannot show;
+    // the sheet (Build C) opens on 1D, the chart its record is pinned to.
+    initialTimeframe: sheetOpensOnBomb ? 'bomb' : sheetOn || (bombHidden && (defaultTimeframe === 'bomb' || defaultTimeframe === 'spectate')) ? '1D' : defaultTimeframe,
     technicalActive: activeTab === 'technical',
     srRequested: srOn,
     ...(controlledMode ? { controlled: { extremes: controlledValid ? (controlledQuote.extremes || null) : null } } : {}),
+    ...(bombOn ? { bombMode: true } : {}),
   });
 
   // The chart is on screen exactly when it has bars; it starts with S/R off
@@ -329,6 +397,93 @@ const AssetResearchModal = ({
       currentAsset?.startPrice, currentAsset?.startingPrice, currentAsset?.basePrice, currentAsset?.draftPrice,
       currentAsset?.price, currentAsset?.currentPrice, measuredBombKey]);
 
+  // Bomb mode's one view model (Fuse / red zone / sheet), or null when off. A
+  // measured position's ladder IS bombData.measured (spec §3.1); a preview —
+  // and, by the 2026-11-07 ruling on §0.4(a), a held legacy-scored position
+  // (bombView.buildLadder) — takes yesterday's close for the chart and the
+  // sheet alike (BA-1), never the fallback chain above (which stays the
+  // mode-off chart's, byte for byte).
+  const [bombThreshold, setBombThreshold] = useState(null); // { symbol, threshold } — the sheet's thresholds answer
+  const bombView = useBombView({
+    on: bombOn,
+    context: bombContext,
+    symbol: currentAsset?.symbol,
+    isOriginal: isOriginalAsset,
+    bombData,
+    assetThreshold: currentAsset?.threshold,
+    fetchedThreshold: bombThreshold && bombThreshold.symbol === currentAsset?.symbol ? bombThreshold.threshold : null,
+    isCrypto,
+    previousClose: researchData.previousClose,
+    live: shownAsset?.price,
+    timeframe: researchData.timeframe,
+    setTimeframe: researchData.setTimeframe,
+    bars: researchData.ohlcvData,
+  });
+  // The sheet asks for a threshold exactly when BaggerBombTab does today (the
+  // tab is showing, the asset carries none, it is not a measured position) —
+  // and once when the 💣 view opens without one, which the Fuse needs as much
+  // as the sheet does (review B, N2: otherwise the 💣 view says "no ladder yet"
+  // until the tab is opened). The same request.
+  const bombViewOpen = researchData.timeframe === 'bomb' || researchData.timeframe === 'spectate';
+  const haveBombThreshold = !!bombThreshold && bombThreshold.symbol === currentAsset?.symbol;
+  const askBombThreshold = bombOn && (activeTab === 'baggerbomb' || (bombViewOpen && !haveBombThreshold));
+  useEffect(() => {
+    if (!askBombThreshold) return undefined;
+    if (currentAsset?.stockRewardRoute || currentAsset?.threshold) return undefined;
+    const symbol = currentAsset?.symbol;
+    if (!symbol) return undefined;
+    let cancelled = false;
+    getVolatilityThresholds([symbol], currentAsset?.isCrypto ? 'crypto' : 'stock')
+      .then(result => { if (!cancelled && result?.[symbol]) setBombThreshold({ symbol, threshold: result[symbol].threshold }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [askBombThreshold, currentAsset?.symbol, currentAsset?.threshold, currentAsset?.isCrypto, currentAsset?.stockRewardRoute]);
+
+  // Build C: the sheet's view model, or null when off (no clock, no listener, no read).
+  const sheetActive = sheetOn && activeTab === 'fundamental';
+  const sheetView = useSheetView({
+    on: sheetOn,
+    context: sheetContext,
+    symbol: currentAsset?.symbol,
+    isOriginal: isOriginalAsset,
+    live: shownAsset?.price,
+    rawData: researchData.rawData,
+    timeframe: researchData.timeframe,
+    isCrypto,
+    analysisActive: sheetActive,
+  });
+  // BC-2: on the sheet the chart is shorter and the drawer sits right under it, so
+  // Layer 0 — everything above the action row, the chart included — fits a phone's
+  // fold; the action row is pinned under the drawer's scroll area. Measured in a
+  // headless browser at 390×844 and 430×932 (the build report).
+  const sheetGeom = !!sheetView && sheetActive;
+  // The chart section's height in sheet mode: the sheet's on 1D / 1W; on 💣 / spectate
+  // the Fuse keeps its full height and the measured section moves the drawer down (the
+  // fold is the 1D view's — review D2). The skeleton and the error box use it too, so
+  // the drawer never opens low and jumps when the chart lands (review D7).
+  const sheetChartH = sheetGeom && !bombViewOpen ? sheetChartHeight : chartHeight;
+  // In sheet mode the skeleton and the error box stand in for the WHOLE chart — its
+  // control row (StockChart's timeframe and overlay pills: 44 px, measured at
+  // 320/390/430/1440) and its plot — so the drawer sits where it will stay (review D7).
+  const sheetChartBoxH = sheetGeom ? sheetChartH + 44 : chartHeight;
+  const sheetChartRef = useRef(null);
+  const [sheetChartBox, setSheetChartBox] = useState(null);
+  // The drawer sits on the chart section's measured bottom: re-measured after every
+  // render (the chart replaces its skeleton in a later render) and on any resize;
+  // a section with no chart in it yet (only its padding) is not a measure.
+  const measureSheetChart = useCallback(() => {
+    const h = sheetChartRef.current ? sheetChartRef.current.offsetHeight : 0;
+    const next = h > 40 ? h : null;
+    setSheetChartBox((prev) => (prev === next ? prev : next));
+  }, []);
+  React.useLayoutEffect(() => { if (sheetGeom) measureSheetChart(); });
+  useEffect(() => {
+    if (!sheetGeom || !sheetChartRef.current) return undefined;
+    const observer = new ResizeObserver(measureSheetChart);
+    observer.observe(sheetChartRef.current);
+    return () => observer.disconnect();
+  }, [sheetGeom, measureSheetChart]);
+
   // v2: Measure container height for drawer snap points
   useEffect(() => {
     if (version < 2 || !v2ContainerRef.current) return;
@@ -352,7 +507,7 @@ const AssetResearchModal = ({
   // UNLESS the asset type changed (e.g. index → stock), in which case reset to avoid showing
   // an invalid tab (marketContext for a stock, or fundamental for an index).
   useEffect(() => {
-    const correctTab = defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : isSectorETF ? 'holdings' : 'fundamental');
+    const correctTab = openTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : isSectorETF ? 'holdings' : 'fundamental');
     if (isInternalNavRef.current) {
       isInternalNavRef.current = false;
       // Reset tab if it's invalid for the new asset type
@@ -362,14 +517,14 @@ const AssetResearchModal = ({
         (activeTab === 'holdings' && !isSectorETF) ||
         (isIndexAsset && activeTab !== 'marketContext' && activeTab !== 'technical') ||
         (isSectorETF && !['holdings', 'compete', 'sector', 'technical'].includes(activeTab)) ||
-        (isCrypto && activeTab !== 'health')
+        (isCrypto && activeTab !== 'health' && !(sheetOn && activeTab === 'fundamental'))
       ) {
         setActiveTab(correctTab);
       }
       return;
     }
     setActiveTab(correctTab);
-  }, [currentAsset?.symbol, defaultTab]);
+  }, [currentAsset?.symbol, openTab]);
 
   useEffect(() => {
     if (failClosed) return;
@@ -477,7 +632,12 @@ const AssetResearchModal = ({
   const v2ModalStyle = version >= 2 ? (
     isMobile ? {
       width: '100vw',
-      height: '100vh',
+      // FQ-6 (2026-11-08): in sheet mode, the visible viewport (100dvh, else 100vh) —
+      // the action row is never under Safari's toolbar. Mode off: 100vh, as before.
+      height: sheetOn ? visibleViewportHeight() : '100vh',
+      // … and its 1 px border counted inside that height (the app ships content-box), so
+      // the whole action row sits inside the visible viewport (the fold row at 390×664).
+      ...(sheetOn ? { boxSizing: 'border-box' } : {}),
       top: 0,
       left: 0,
       transform: 'none',
@@ -801,14 +961,14 @@ const AssetResearchModal = ({
 
           {/* v2: Chart Section */}
           {version >= 2 && (
-            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: '40px' }}>
+            <div ref={sheetGeom ? sheetChartRef : undefined} style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: sheetGeom ? '6px' : '40px' }}>
               {researchData.loading && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  height: `${chartHeight}px`, background: '#0a0e14',
+                  height: `${sheetChartBoxH}px`, background: '#0a0e14',
                 }}>
                   <div style={{
-                    width: '90%', height: '200px', borderRadius: '8px',
+                    width: '90%', height: sheetGeom ? `${Math.max(60, sheetChartH - 24)}px` : '200px', borderRadius: '8px',
                     background: 'linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)',
                     backgroundSize: '200% 100%',
                     animation: 'shimmer 1.5s infinite',
@@ -818,7 +978,7 @@ const AssetResearchModal = ({
               {researchData.error && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  height: `${chartHeight}px`, background: '#0a0e14', gap: '12px',
+                  height: `${sheetChartBoxH}px`, background: '#0a0e14', gap: '12px',
                 }}>
                   <span style={{ color: HOLO_COLORS.textSecondary, fontSize: '14px' }}>
                     Chart data unavailable
@@ -846,13 +1006,15 @@ const AssetResearchModal = ({
                   levels={chartLevels}
                   smaData={researchData.smaData}
                   activeHighlight={chartHighlight}
-                  height={chartHeight}
-                  bombData={bombData}
+                  height={sheetChartH}
+                  bombData={bombHidden ? null : bombOn ? (bombData || BOMB_MODE_PILL) : bombData}
                   symbol={currentAsset?.symbol}
                   todayDailyCandle={researchData.todayDailyCandle}
                   realtimeExtremes={isOriginalAsset && !controlledMode ? realtimeExtremes : null}
                   controlledSession={controlledMode ? { crypto: !!isCrypto } : undefined}
                   onToggleSR={setSrOn}
+                  {...(bombView ? { bombPlot: <BombPlot view={bombView} height={chartHeight} />, bombChip: <RedZoneChip mode={bombView.mode} /> } : {})}
+                  {...(sheetView?.chart ? { markers: sheetView.chart.markers, priceLines: sheetView.chart.priceLines } : {})}
                 />
               )}
             </div>
@@ -882,10 +1044,28 @@ const AssetResearchModal = ({
               isCrypto={isCrypto}
               isIndex={isIndexAsset}
               isSectorETF={isSectorETF}
-              hasBombData={!!bombData}
-              isGameContext={isGameContext}
+              hasBombData={bombOn ? true : bombHidden ? false : !!bombData}
+              isGameContext={bombHidden ? false : isGameContext}
+              {...(sheetGeom ? { midY: sheetChartBox ?? (sheetChartBoxH + 6), footer: <SheetActionRow view={sheetView} /> } : {})}
+              {...(sheetOn ? { analysisAlways: true } : {})}
             >
-              {activeTab === 'fundamental' && (
+              {activeTab === 'fundamental' && sheetView && (
+                <AnalysisSheet
+                  view={sheetView}
+                  wallSt={analystChipEl || null}
+                  about={profile && !profileLoading && profileSymbol === currentAsset?.symbol && (profile.description || (profile.sector && profile.sector !== 'Unknown')) ? (
+                    <div data-sheet-about-body style={{ padding: '8px 10px', borderRadius: '8px', background: ST.surface, border: `1px solid ${ST.hair}` }}>
+                      {(profile.sector && profile.sector !== 'Unknown') && (
+                        <div style={{ fontSize: '10px', fontWeight: '600', color: HOLO_COLORS.textSecondary, marginBottom: profile.description ? '6px' : 0 }}>
+                          {[profile.sector, profile.industry && profile.industry !== 'Unknown' ? profile.industry : null].filter(Boolean).join(' · ')}
+                        </div>
+                      )}
+                      {profile.description && <p style={{ color: ST.ink2, fontSize: '11px', lineHeight: '1.5', margin: 0 }}>{profile.description}</p>}
+                    </div>
+                  ) : null}
+                />
+              )}
+              {activeTab === 'fundamental' && !sheetView && (
                 <div style={{ padding: '8px 0' }}>
                   {/* Wall Street analyst consensus */}
                   {analystChipEl && (
@@ -955,7 +1135,7 @@ const AssetResearchModal = ({
               )}
 
               {activeTab === 'baggerbomb' && (
-                <BaggerBombTab asset={currentAsset} />
+                bombView ? <BombSheet view={bombView} /> : <BaggerBombTab asset={currentAsset} />
               )}
 
               {activeTab === 'holdings' && isSectorETF && (

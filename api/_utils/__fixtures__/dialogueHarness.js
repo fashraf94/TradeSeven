@@ -17,6 +17,7 @@
 // ZERO product imports.
 
 import { makeCallsFirestore } from './callsFirestore.js';
+import { stripExchangeIds, writesWithoutMintedIds } from './exchangeIds.js';
 
 export const OWNER = 'p1c-owner-1';
 export const AGENT_ID = 'p1c-agent-1';
@@ -233,9 +234,21 @@ export function makeRes() {
   };
 }
 
-/** One run's capture — everything the dialogue showed the model, answered and wrote. */
+/**
+ * One run's capture — everything the dialogue showed the model, answered and wrote.
+ *
+ * The Research Record Extension (7 Nov 2026): every exchange the dialogue NEWLY
+ * writes carries `exchangeId: randomUUID()`. The capture takes those ids out —
+ * after checking each is a v4 UUID and that every exchange a write adds carries
+ * one (exchangeIds.js) — so it still compares byte for byte with main's frozen
+ * capture and two runs still compare with each other. Legacy exchanges (seeded
+ * sessions) carry none and pass through as they are.
+ */
 export function captureDialogue({ db, res, modelCalls, shadow }) {
   const clone = (v) => JSON.parse(JSON.stringify(v));
+  const { writes, ids } = writesWithoutMintedIds(clone(db.__access.writes));
+  const docs = stripExchangeIds(clone(Object.fromEntries([...db.__docs.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))));
+  if (docs.ids.some((id) => !ids.includes(id))) throw new Error('a stored exchangeId was never written by this run');
   return clone({
     response: { status: res.statusCode, body: res.body },
     modelRequests: modelCalls.map(({ systemPrompt, conversationHistory, userMessage, includeUsage }) => ({
@@ -244,9 +257,9 @@ export function captureDialogue({ db, res, modelCalls, shadow }) {
     store: {
       reads: db.__access.reads,
       queries: db.__access.queries,
-      writes: db.__access.writes,
+      writes,
     },
     shadow,
-    docs: Object.fromEntries([...db.__docs.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
+    docs: docs.value,
   });
 }

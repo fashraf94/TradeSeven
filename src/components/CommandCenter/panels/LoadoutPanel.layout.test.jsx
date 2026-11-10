@@ -13,7 +13,13 @@
 
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// The armory flip (Nov 7, 2026): KILL-SWITCH rows, the hub's Loadout tab as it was before the flip. Both flags are held
+// OFF here, not read live: with them on the panel draws the per-game cards (CommandCenterHub.loadouts.jsdom.test.jsx),
+// so this file keeps guarding the panel a rollback (both flags back to false) restores.
+vi.mock('../../../config/perGameLoadoutFlags', () => ({ PER_GAME_LOADOUT_ENABLED: false }));
+vi.mock('../../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_ARMORY_ENABLED: false }));
 import { HubLayoutContext } from '../HubParts';
 import { LOADOUT_CARD_MIN } from '../hub/hubStyle';
 import { FORGE_DOOR, IDEA_LABEL, LOADOUT_STATUS, WATCHLIST_STATE } from '../hub/selectors/loadout';

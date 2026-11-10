@@ -21,6 +21,11 @@ const h = vi.hoisted(() => ({ authListeners: [], deploy: null, posts: [], gamesP
 
 vi.mock('firebase/auth', () => ({ onAuthStateChanged: (_auth, cb) => { h.authListeners.push(cb); return () => {}; } }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
+// The armory flip (Nov 7, 2026): these rows run with both flags on, held here (not read live) so a rollback reddens only the
+// pins; the League lock read answers "no ranked group" (open), as most players stand between weeks.
+vi.mock('../../config/perGameLoadoutFlags', () => ({ PER_GAME_LOADOUT_ENABLED: true }));
+vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), AGENT_FORM_ARMORY_ENABLED: true }));
+vi.mock('../../services/leagueLockService', () => ({ subscribeLeagueLock: (uid, onLock) => { onLock({ locked: false, groupId: null, status: null, endsAtMs: null }); return () => {}; } }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => ({ user: { displayName: 'Flash', username: 'flash' } }) }));
 vi.mock('../../hooks/useAgent', () => ({
   default: (uid, options) => ({

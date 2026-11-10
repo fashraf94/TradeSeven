@@ -92,6 +92,11 @@ vi.mock('./sections/GamesSection', async (importOriginal) => {
 });
 // Agent form build A1 follow-up: the armory flag, held off for every row but the N2(d) block at the end (dark on main).
 vi.mock('../../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_ARMORY_ENABLED() { return h.armory; } }));
+// The armory flip (Nov 7, 2026): KILL-SWITCH rows. Per-game loadouts are held OFF here, not read live: the rows with the armory off
+// run the hub a rollback of both flags restores, and the armory rows (N2(d), which open the armory from the pre-flip Loadout tab's
+// Change archetype) run A1's armory with one loadout, which PER_GAME_LOADOUT_ENABLED alone back to false restores. The deploy
+// strip with both flags on is CommandCenterHub.s4s2b's and s7's.
+vi.mock('../../config/perGameLoadoutFlags', () => ({ PER_GAME_LOADOUT_ENABLED: false }));
 vi.mock('../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   isDeploySkyCouplingOn: () => true,

@@ -283,7 +283,7 @@ service cloud.firestore {
                     && !request.resource.data.keys().hasAny(['standingLeans', 'dials', 'settingsRev',
                                  'equippedTraits', 'deployedStrategy', 'activeBattleId',
                                  'lessons', 'forgeSuggestions', 'isTrainingClone',
-                                 'isCasualClone', 'rankedAgentId'])
+                                 'isCasualClone', 'rankedAgentId', 'loadouts'])
                     && (!('stats' in request.resource.data)
                         || (request.resource.data.stats is map
                             && request.resource.data.stats.keys().hasOnly(['wins', 'losses', 'gamesPlayed',
@@ -1291,6 +1291,14 @@ service cloud.firestore {
     // observer's cursors, battle index and carried keys. SERVER-ONLY, never
     // read by any reader of evidence. test/rules/activationEvidenceDenials.rules.mjs asserts it.
     match /activationObserverState/{name} {
+      allow read, write: if false;  // Admin SDK only
+    }
+
+    // Measured Trend Evidence Slice 2 (docs/audits/20261107_BUILD_SETUP_MENU_LABELS.md):
+    // setupMenuLabelState/{name}, the acquisition tenant's reservations, outcomes,
+    // cursors and governed sessions. SERVER-ONLY: no client read or write.
+    // test/rules/setupMenuLabelsDenials.rules.mjs asserts it.
+    match /setupMenuLabelState/{name} {
       allow read, write: if false;  // Admin SDK only
     }
 

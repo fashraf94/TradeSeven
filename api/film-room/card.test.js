@@ -17,6 +17,19 @@
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 
+// The armory flip (Nov 7, 2026). The per-game flag is held here, not read live, so a rollback reddens only its pin. The
+// rows in KILL_SWITCH_ROWS run with it held OFF, and keep guarding the path a rollback restores: each files its cards
+// through createCard against the agent's current archetype, the flag-off rule (A2's R4); with per-game loadouts on a
+// card is checked against its battle's own archetype and shelved against both loadouts, which cardStore.perGame.test.js
+// holds, and nothing else in the ledger reads the flag. Every other row runs with it ON, the shipped state.
+const flip = vi.hoisted(() => ({ on: true }));
+vi.mock('../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
+const KILL_SWITCH_ROWS = new Set([
+  "review L1-1 / L5-1 — a born-shelved card is never filed: the day's archetype must be the agent's current one > the agent on another archetype than the tape day records: six creates → six 409 archetype_changed, nothing written; the counter shows no card, open 0",
+  "RK-1 — through the handler: a casual clone's battle files under the parent, never the clone > the archetype checks read the parent: the clone on the tape's archetype and the parent on another → 409 archetype_changed, nothing written; the clone stale and the parent on the tape's → files (the mutant: the check reading the clone)",
+]);
+beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTestName); });
+
 const state = vi.hoisted(() => ({ mode: 'on', uid: 'owner-1', authFails: false, middlewareHandles: false, db: null, middlewareCalls: [], menu: null }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),

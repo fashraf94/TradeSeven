@@ -136,6 +136,12 @@ import { forgeAreaOf, hubOwnsDashboard } from './components/CommandCenter/hubChr
 import { excludeVoidedGroupBattles } from './utils/commandCenterLiveBattles';
 import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn, isCharacterPaneOn, isCommandCenterHubOn } from './config/featureFlags';
 import { AGENT_FORM_LAB_ENABLED } from './config/agentFormFlags';
+// Build A2 (board 3): the League line's door to the Command Center rides the League lobby's existing `agentLoadout`
+// value (a literal ternary, so flag-off folds to today's object). The flags on their own lines.
+import { AGENT_FORM_ARMORY_ENABLED } from './config/agentFormFlags';
+import { PER_GAME_LOADOUT_ENABLED } from './config/perGameLoadoutFlags';
+// The armory flip's LD-1: the door opens the Command Center on its Loadout tab, once (utils/hubEntryIntent.js).
+import { openCommandCenterOnLoadout } from './utils/hubEntryIntent';
 import { pickCeremonyEntry } from './components/Dashboard/deployCeremony/ceremonyData';
 import { handoffBattleId, isHandoffOwnerCurrent, buildOptimisticBattleEntry, appendOptimisticBattle, ownedCeremonyEntryInputs } from './components/Dashboard/deployHandoff';
 import { signedInUid } from './services/deployIdentity';
@@ -10200,7 +10206,7 @@ export default function PortfolioDuel() {
         <LeagueScreen
           onOpenTrainingPod={onOpenTrainingPod}
           hasAgent={agentLoading ? undefined : hasAgent}
-          agentLoadout={primaryAgent ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName } : null}
+          agentLoadout={primaryAgent ? (PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName, openLoadout: () => openCommandCenterOnLoadout(setScreen) } : { name: primaryAgent.name, archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName }) : null}
           onOpenForge={() => setShowForge(true)}
           isDesktop={isDesktop}
         />

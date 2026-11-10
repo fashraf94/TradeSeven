@@ -36,11 +36,20 @@ import {
   FRESH_STATS,
   copyAgentSubcollections,
 } from './trainingClone.js';
-import { birthProvenanceStamp } from './compositionActivationService.js';
+import { birthProvenanceStamp, selectIdentityVersion } from './compositionActivationService.js';
 import { pinActivationDescriptor } from './compositionGenerationFence.js';
 import {
   acquireProvisionerLease, assertLeaseCurrent, releaseProvisionerLease,
 } from './compositionProvisionerLease.js';
+// Build A2 (per-game loadouts; ruling D1, FD-1, FD-11): with PER_GAME_LOADOUT_ENABLED on, the casual clone wears the
+// BaggerBomb loadout — the slot's archetype and book over the inherited fields, or the default (the ranked record's
+// own fields) while the slot is absent — at creation and at every resync (GUARD 1 unchanged: never mid-battle). When
+// the slot's archetype differs from the ranked record's, the clone is seeded with THAT archetype's born-with traits,
+// as the training override does (trainingClone.js), so a clone is never archetype≠traits. decide.js and
+// createAgentBattle then read and stamp the clone's own document, unchanged (the fence untouched).
+import { PER_GAME_LOADOUT_ENABLED } from '../../src/config/perGameLoadoutFlags.js';
+import { applyBaggerbombLoadout } from './perGameLoadout.js';
+import { seedArchetypeTraitsDeterministic, hasBornWithSet, softDeleteReplacedTraitRuleDocs } from './archetypeSeeding.js';
 
 const LOG_PREFIX = '[CasualClone]';
 const AGENTS_COLLECTION = 'agents';
@@ -70,7 +79,8 @@ export function buildCasualCloneDoc(rankedAgent, { odUserId, nowIso }) {
   }
   assignLoadoutLineage(loadout, rankedAgent); // BL2: source birth stamp -> lineage fields
   return {
-    ...loadout,
+    // Build A2: the BaggerBomb loadout over the inherited fields (the default passes them unchanged).
+    ...(PER_GAME_LOADOUT_ENABLED ? applyBaggerbombLoadout(loadout, rankedAgent) : loadout),
     ownerId: odUserId,            // the PLAYER — mastery (owner-keyed) reaches them
     isCasualClone: true,          // ranked owner-lookups exclude on this (+ id prefix)
     rankedAgentId: rankedAgent.id, // the attribution target for every redirect
@@ -106,6 +116,30 @@ export function buildCasualCloneResync(rankedAgent) {
   }
   assignLoadoutLineage(out, rankedAgent); // BL2: lineage refreshes on re-sync; the clone's OWN birth stamp is untouched (not in the copy set)
   out.memory = inheritedMemory(rankedAgent);
+  // Build A2: the BaggerBomb loadout over the inherited fields (the default passes them unchanged).
+  return PER_GAME_LOADOUT_ENABLED ? applyBaggerbombLoadout(out, rankedAgent) : out;
+}
+
+/**
+ * Build A2 — the archetype↔traits invariant on a casual clone wearing the BaggerBomb loadout (the training override's
+ * rule, trainingClone.js). Runs after the parent's rules/bundles were copied onto the clone and before the clone doc is
+ * written. When the clone's archetype (the slot's) differs from the parent's, THAT archetype's born-with traits are
+ * seeded with deterministic rule-doc ids (a re-run overwrites) and become the clone's equippedTraits; otherwise the
+ * clone keeps the parent's. Then, on EVERY call, the trait rule docs outside the final set are soft-deleted: the copy
+ * re-sets the parent's docs at each resync but never removes a previous deploy's seeded ones, so when BaggerBomb
+ * returns to the parent's archetype the last set's docs would otherwise stay live behind the projection gate.
+ * Returns the fields the clone doc takes ({ equippedTraits } or nothing).
+ */
+async function seedBaggerbombTraits(cloneRef, archetype, parent, pin) {
+  const out = {};
+  if (archetype && archetype !== parent.archetype) {
+    const identityVersion = pin?.dark ? null : (pin?.descriptor ? selectIdentityVersion(pin.descriptor) : null);
+    if (hasBornWithSet(archetype, { identityVersion })) {
+      const { equippedTraits } = await seedArchetypeTraitsDeterministic(cloneRef, archetype, { identityVersion });
+      if (equippedTraits) out.equippedTraits = equippedTraits;
+    }
+  }
+  await softDeleteReplacedTraitRuleDocs(cloneRef, out.equippedTraits ?? (Array.isArray(parent.equippedTraits) ? parent.equippedTraits : []));
   return out;
 }
 
@@ -220,7 +254,13 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
           assertLeaseCurrent(lease); // B2 (F6): the RE-SYNC copy is a write phase — currency-check BEFORE it, parity with the create path
           await copyAgentSubcollections(db, parent.id, cloneId); // refresh the Trading Brain
           assertLeaseCurrent(lease); // B2 (F6): the copy may have straddled the TTL — re-check before the doc write
-          await cloneRef.update({ ...buildCasualCloneResync(parent), updatedAt: nowIso });
+          const resync = buildCasualCloneResync(parent);
+          // Build A2: the slot's archetype's born-with traits (a write phase, so the lease is re-checked after it).
+          if (PER_GAME_LOADOUT_ENABLED) {
+            Object.assign(resync, await seedBaggerbombTraits(cloneRef, resync.archetype, parent, clonePin));
+            assertLeaseCurrent(lease);
+          }
+          await cloneRef.update({ ...resync, updatedAt: nowIso });
           console.log(`${LOG_PREFIX} re-synced casual clone ${cloneId} to parent ${parent.id} at deploy`);
         } else {
           console.warn(`${LOG_PREFIX} skipped re-sync of ${cloneId} — parent ${fresh.rankedAgentId} missing or not same-owner`);
@@ -247,6 +287,11 @@ export async function ensureCasualClone(db, { odUserId, now = new Date() }) {
     assertLeaseCurrent(lease); // B2: no write phase after the TTL deadline
     await copyAgentSubcollections(db, ranked.id, cloneId);
     const cloneDoc = buildCasualCloneDoc(ranked, { odUserId, nowIso });
+    // Build A2: a slot set before the first-ever deploy reaches the clone's birth too (traits seeded before the sentinel).
+    if (PER_GAME_LOADOUT_ENABLED) {
+      assertLeaseCurrent(lease);
+      Object.assign(cloneDoc, await seedBaggerbombTraits(cloneRef, cloneDoc.archetype, ranked, clonePin));
+    }
     assertLeaseCurrent(lease); // B2: the sentinel-doc phase re-checks too
 
     if (priorDoc) {
