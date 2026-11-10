@@ -154,6 +154,20 @@ describe('the posture is written down, not only inherited', () => {
     }
     expect(found('match /cockpitConfig/{docId} {\n  allow read, write: if false;\n}')).toEqual([['allow read, write: if false;']]);
   });
+  it('no match block opens on a WILDCARD first segment except the two that exist today (the root default-deny and the `hypothesisVersions` collection group): a `match /{col}/{id}` grant would cover the control document without naming it (RS-L4-11)', () => {
+    const wildcardFirst = (rules) => {
+      const text = rules.split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
+      const re = /match\s+(\/(?:[^\s{}]+|\{[^}]*\})(?:\/(?:[^\s{}]+|\{[^}]*\}))*)\s*\{/g;
+      return [...text.matchAll(re)].map((m) => m[1]).filter((p) => p.startsWith('/{'));
+    };
+    const KNOWN = [/^\/\{path=\*\*\}\/hypothesisVersions\//, /^\/\{document=\*\*\}$/];
+    const unknown = (rules) => wildcardFirst(rules).filter((p) => !KNOWN.some((k) => k.test(p)));
+    expect(unknown(RULES_TEXT)).toEqual([]);
+    // planted: a grant on any wildcard collection, with or without a condition, is seen
+    expect(unknown('match /{col}/{id} { allow read; }')).toEqual(['/{col}/{id}']);
+    expect(unknown('match /{col}/release {\n  allow read: if true;\n}')).toEqual(['/{col}/release']);
+    expect(unknown('match /{path=**}/cockpitConfig/{docId} {\n  allow read: if true;\n}')).toHaveLength(1);
+  });
   it('the root default-deny is the cover, and says exactly `allow read, write: if false;`', () => {
     const m = RULES_TEXT.match(/match \/\{document=\*\*\} \{([^}]*)\}/);
     expect(m, 'the root default-deny block').not.toBeNull();
