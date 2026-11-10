@@ -53,8 +53,11 @@ export function etDateParam(value) {
 
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o && o[k] !== undefined).map((k) => [k, o[k]]));
 
-/** The client's view of a huddle record. Never the playback hash or a storage path. */
-export function clientViewOf(record) {
+/**
+ * The client's view of a huddle record. Never the playback hash or a storage path. `reconfirm` (the status route's, E1) is
+ * the archetypes in play and those missing a confirmation, or null.
+ */
+export function clientViewOf(record, { reconfirm = null } = {}) {
   if (!record) return null;
   const plan = record.plan || null;
   return {
@@ -85,6 +88,7 @@ export function clientViewOf(record) {
       universe: plan.context?.universe || [],
       confirmed: plan.confirmed ? pick(plan.confirmed, ['revision', 'archetype', 'renderedText', 'confirmedAt']) : null,
       confirmations: (plan.confirmations || []).map((c) => pick(c, ['revision', 'archetype', 'confirmedAt'])),
+      reconfirm: reconfirm && Array.isArray(reconfirm.missing) ? { inPlay: [...(reconfirm.inPlay || [])], missing: [...reconfirm.missing] } : null,
       skippedAt: plan.skippedAt ?? null,
       expiredAt: plan.expiredAt ?? null,
       battles: statusOfBattles(plan),

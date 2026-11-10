@@ -63,7 +63,8 @@ describe('the Huddle block of hubCopy.js', () => {
       liveCall: 'Waiting on your cockpit call',
       inactive: 'Waiting for the game to be live',
       retry: 'Waiting to file',
-      staleApproach: 'Confirmed under a different approach · Reconfirm',
+      // Amendment E §E1 moved this pin: the door (" · Reconfirm") is added only while a reconfirm would file
+      staleApproach: 'Confirmed under a different approach',
       otherSession: "Not this session's game",
       newerInstruction: 'Your newer instruction stands',
       unsupported: "Not filed for this game's archetype",

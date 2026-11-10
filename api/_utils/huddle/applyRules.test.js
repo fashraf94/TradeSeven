@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DISPOSITIONS, decideApplication, selectConfirmation, upsertReceipt, receiptOf, latestReceiptOf, statusReceiptOf,
   buildPlanSlot, buildPlanExchange, battleKindOf, isCpuBattle, isTerminal, GAME_PLAN_SOURCE,
+  archetypesInPlayOf, missingArchetypesOf, battleInPlay,
 } from './applyRules.js';
 import { planThreadIdOf } from './planTemplates.js';
 import { getSessionForDate } from '../marketSchedule.js';
@@ -101,6 +102,48 @@ describe('C §C15 — a plan belongs to the archetype it was confirmed under', (
     expect(decide(battle({ agentContext: { archetype: 'contrarian' } }), rec).confirmation.renderedText).toBe('B text');
     expect(decide(battle({ agentContext: { archetype: 'analyst' } }), rec).confirmation.renderedText).toBe('A text');
     expect(selectConfirmation(rec.plan, 'guardian')).toBeNull();
+  });
+});
+
+describe('E1 — the archetypes in play: the equipped one and every in-play game\'s frozen one, with a dissent row', () => {
+  const game = (archetype, over = {}) => battle({ id: `g-${archetype}`, agentContext: { archetype }, ...over });
+  it('equipped plus each in-play game, sorted, with the count of games; the equipped one counts with no game', () => {
+    const out = archetypesInPlayOf({ equipped: 'contrarian', battles: [game('diversifier'), game('diversifier', { id: 'g2' }), game('contrarian')], uid: UID, etDate: ET });
+    expect(out).toEqual({ inPlay: ['contrarian', 'diversifier'], games: { contrarian: 1, diversifier: 2 }, unsupported: [] });
+    expect(archetypesInPlayOf({ equipped: 'analyst', battles: [], uid: UID, etDate: ET })).toEqual({ inPlay: ['analyst'], games: { analyst: 0 }, unsupported: [] });
+  });
+  it("a game of another session, another owner, a CPU seat or a game that is not active is not in play (decideApplication's own checks)", () => {
+    const out = archetypesInPlayOf({
+      equipped: null,
+      battles: [game('degen', { timing: { tradingDays: ['2026-11-06'] } }), game('analyst', { ownerId: 'someone' }), game('guardian', { isCpu: true }), game('momentum_chaser', { status: 'pending' })],
+      uid: UID, etDate: ET,
+    });
+    expect(out.inPlay).toEqual([]);
+    for (const b of [game('degen', { timing: {} }), game('degen', { ownerId: 'cpu-1' })]) expect(battleInPlay(b, { uid: UID, etDate: ET })).toBe(false);
+    expect(battleInPlay(game('degen'), { uid: UID, etDate: ET })).toBe(true);
+  });
+  it('an archetype with no dissent row is never in play (it gets no confirmation); it is reported apart', () => {
+    const out = archetypesInPlayOf({ equipped: 'unknown_one', battles: [game('constructor'), game('degen')], uid: UID, etDate: ET });
+    expect(out.inPlay).toEqual(['degen']);
+    expect(out.unsupported).toEqual(['constructor', 'unknown_one']);
+  });
+  it('missing: the archetypes in play with no confirmation yet', () => {
+    const plan = { confirmations: [{ archetype: 'contrarian', revision: 'r' }] };
+    expect(missingArchetypesOf(plan, ['contrarian', 'diversifier'])).toEqual(['diversifier']);
+    expect(missingArchetypesOf(plan, ['contrarian'])).toEqual([]);
+    expect(missingArchetypesOf({}, ['analyst'])).toEqual(['analyst']);
+  });
+  it("a shared revision (two archetypes, one current): a receipt of the battle's OWN archetype is never hidden; another archetype's still is", () => {
+    // contrarian and diversifier confirmed at the same revision r1 (no row changed anything); analyst at r2
+    const confirmations = [{ revision: 'r1', archetype: 'contrarian' }, { revision: 'r1', archetype: 'diversifier' }, { revision: 'r2', archetype: 'analyst' }];
+    const written = { battleId: 'b1', revision: 'r1', archetype: 'diversifier', disposition: 'written', at: '2026-11-09T14:00:00.000Z' };
+    const ownRetry = { battleId: 'b1', revision: 'r1x', archetype: 'diversifier', disposition: 'retry_live_call', at: '2026-11-09T16:00:00.000Z' };
+    const stray = { battleId: 'b1', revision: 'r2', archetype: 'diversifier', disposition: 'retry_error', at: '2026-11-09T15:00:00.000Z' };
+    expect(statusReceiptOf([written, stray], 'b1', confirmations)).toBe(written);
+    // r1 is under BOTH contrarian and diversifier: with the battle's own archetype in that set, a newer receipt there shows
+    const ownShared = { battleId: 'b1', revision: 'r1', archetype: 'diversifier', disposition: 'retry_live_call', at: '2026-11-09T17:00:00.000Z' };
+    expect(statusReceiptOf([written, stray, { ...ownShared, revision: 'r1' }], 'b1', [...confirmations, { revision: 'r1', archetype: 'diversifier' }]).disposition).toBe('retry_live_call');
+    expect(statusReceiptOf([written, ownRetry], 'b1', confirmations)).toBe(ownRetry); // no confirmation names r1x: not hidden
   });
 });
 

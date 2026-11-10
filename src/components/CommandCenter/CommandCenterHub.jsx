@@ -767,7 +767,7 @@ function ConnectedHub({ site, hub, sections }) {
     if (readers.next) live.nextAction = deriveNextAction({ ...readers.next.inputs, dismissed: readers.next.dismissed, huddle: candidate });
     live.huddlePartnership = huddlePartnershipOf(huddleToday.read, huddleHistory.read);
     if (live.activityInputs) live.activityInputs = { ...live.activityInputs, huddle: huddleActivityOf(huddleHistory.read, readers.inputs?.auth?.uid ?? null) };
-    const reconfirm = needsReconfirmOf(huddleToday.read, readers.agent?.agent?.archetype ?? null);
+    const reconfirm = needsReconfirmOf(huddleToday.read, Date.now());
     huddle = {
       read: huddleToday.read,
       chip: huddleChipOf(huddleToday.read),

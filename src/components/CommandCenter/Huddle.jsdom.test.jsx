@@ -88,11 +88,32 @@ describe('the sheet (C8): a HubSheet; no autoplay; Confirm sends the base revisi
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
-    expect(props.confirm).toHaveBeenCalledWith({ baseRevision: 'r1', replacement: { stances: [{ kind: 'FADE', ticker: 'BBB', level: 47.5 }], lines: [{ kind: 'NO_SWAPS_TODAY' }] } });
+    expect(props.confirm).toHaveBeenCalledWith({ baseRevision: 'r1', replacement: { stances: [{ kind: 'FADE', ticker: 'BBB', level: 47.5 }], lines: [{ kind: 'NO_SWAPS_TODAY' }] }, acknowledged: null });
+  });
+
+  it('E1: a per-archetype preview is shown line by line, and the next Confirm sends its revisions back as acknowledged', async () => {
+    const previews = [
+      { archetype: 'diversifier', archetypeName: 'Diversifier', games: 1, revision: 'rv-d', changes: [{ index: 1, kind: 'stance', from: 'FADE', to: 'WATCH', ticker: 'BBB' }] },
+      { archetype: 'degen', archetypeName: 'Speculator', games: 0, revision: 'rv-s', changes: [{ index: 1, kind: 'stance', from: 'FADE', to: 'WATCH', ticker: 'BBB' }] },
+    ];
+    const confirm = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 422, body: { error: 'validation_changed', drops: [], transforms: [], previews } })
+      .mockResolvedValueOnce({ ok: true, status: 200, body: {} });
+    keep(mount(<HubOverlayProvider><HuddleSheet huddle={huddleProp({ confirm })} onClose={vi.fn()} reducedMotion /></HubOverlayProvider>));
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect([...document.body.querySelectorAll('[data-huddle-preview]')].map((p) => p.textContent)).toEqual([
+      'For your Diversifier game: Fade BBB becomes Watch BBB',
+      'For your Speculator: Fade BBB becomes Watch BBB',
+    ]);
+    expect(document.body.querySelector('[role="alert"]').textContent).toBe(COPY.huddle.notices.previewedApproaches);
+    expect(confirm.mock.calls[0][0].acknowledged).toBeNull();
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect(confirm.mock.calls[1][0].acknowledged).toEqual({ diversifier: 'rv-d', degen: 'rv-s' });
+    expect(document.body.querySelectorAll('[data-huddle-preview]').length).toBe(0);
   });
 
   it('a 422 preview and a 409 conflict each say so; the words are the copy table\'s', async () => {
-    const confirm = vi.fn(async () => ({ ok: false, status: 422, body: { error: 'validation_changed' } }));
+    const confirm = vi.fn(async () => ({ ok: false, status: 422, body: { error: 'validation_changed', drops: [{ kind: 'stance', index: 0, reason: 'level_out_of_range' }], transforms: [] } }));
     keep(mount(<HubOverlayProvider><HuddleSheet huddle={huddleProp({ confirm })} onClose={vi.fn()} reducedMotion /></HubOverlayProvider>));
     await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
     expect(document.body.querySelector('[role="alert"]').textContent).toBe(COPY.huddle.notices.previewed);

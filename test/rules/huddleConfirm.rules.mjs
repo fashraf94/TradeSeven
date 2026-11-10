@@ -3,7 +3,8 @@
 // Huddle S1 — CONFIRM, SKIP AND PLAYBACK ISSUANCE AGAINST THE REAL FIRESTORE EMULATOR
 // (spec V1.1 §6 as replaced by Amendment A §A1; §9 "confirm with a stale baseRevision
 // (409)"; A §A11 "confirm returning 422 on a transformed replacement"; Amendment C V1.2
-// §C15's reconfirm rows; the playback token's rotation). Admin SDK, as in production;
+// Amendment E §E1's rows — one confirm per archetype in play, the founder's Nov 9 case from a read-only fixture —
+// which replace C15's reconfirm rows; the playback token's rotation). Admin SDK, as in production;
 // the emulator runner (`npm run test:rules`). Each row works under its own uid.
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the REAL, unmocked imports are the guard.
@@ -11,7 +12,9 @@
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { confirmPlan, skipPlan } from '../../api/_utils/huddle/confirmPlan.js';
+import { confirmPlan, skipPlan, reconfirmStateOf } from '../../api/_utils/huddle/confirmPlan.js';
+import { DISPOSITIONS } from '../../api/_utils/huddle/applyRules.js';
+import { FOUNDER_UID, NOV9, NOV9_SESSION, NOV9_PROPOSAL, NOV9_CONTEXT, NOV9_AGENTS, NOV9_GAME, NOV9_GAME_ID } from './__fixtures__/huddleFounderNov9.js';
 import { applyConfirmedPlan } from '../../api/_utils/huddle/applyPlan.js';
 import { buildPlanAtGeneration } from '../../api/_utils/huddle/planRecord.js';
 import { buildSessionEvents } from '../../api/_utils/huddle/events.js';
@@ -114,38 +117,141 @@ describe('A §A1 — confirm is two-step when validation changes anything', () =
   });
 });
 
-describe('C §C15 — reconfirm only when the equipped archetype changed', () => {
-  it('a change of archetype reconfirms: the dissent transform is a 422 preview, then a second confirmation is appended under the new archetype', async () => {
-    const { uid, plan } = await seed();
-    await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, nowMs: BEFORE_OPEN });
-    await db.doc(`agents/ranked-${uid}`).update({ archetype: 'momentum_chaser' });
-    const preview = await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, nowMs: BEFORE_OPEN + MIN });
-    expect(preview).toMatchObject({ status: 422, code: 'validation_changed' });
-    expect(preview.body.dissent).toEqual([expect.objectContaining({ from: 'FADE', to: 'WATCH', archetype: 'momentum_chaser', ticker: 'AAA' })]);
-    const ok = await confirmPlan(db, { uid, etDate: ET, baseRevision: preview.body.revision, replacement: preview.body.current, nowMs: BEFORE_OPEN + 2 * MIN });
-    expect(ok).toMatchObject({ kind: 'confirmed', body: { reconfirm: true } });
-    const rec = await read(uid);
-    expect(rec.plan.confirmations.map((c) => c.archetype)).toEqual(['analyst', 'momentum_chaser']);
-    expect(rec.plan.confirmed.archetype).toBe('momentum_chaser');
-    // with the archetype unchanged since, a repeat is idempotent
-    expect((await confirmPlan(db, { uid, etDate: ET, baseRevision: rec.plan.revision, replacement: rec.plan.current, nowMs: BEFORE_OPEN + 3 * MIN })).kind).toBe('already_confirmed');
+// Amendment E §E1 (replacing C15's confirm and reconfirm; superseding R-18): ONE confirm covers every archetype in play —
+// the equipped one and every in-play game's frozen one — appending one confirmation each, in one transaction.
+async function seedGame(id, uid, archetype, over = {}) {
+  await db.doc(`agentBattles/${id}`).set({
+    ownerId: uid, agentId: `agent-${id}`, status: 'active', gameMode: 'baggerbomb_agent',
+    agentContext: { archetype }, timing: { tradingDays: [ET] }, directive: null, chatExchanges: [], ...over,
+  });
+}
+const slotOf = async (id) => (await db.doc(`agentBattles/${id}`).get()).data().directive;
+
+describe('E1 — one confirm per archetype in play', () => {
+  it("the founder's Nov 9 case (read-only fixture): equipped Contrarian, live game Diversifier — ONE confirm files into the game", async () => {
+    const uid = `fnd${RUN}`;
+    const { plan } = buildPlanAtGeneration({
+      proposal: NOV9_PROPOSAL, universe: NOV9_CONTEXT.universe, closes: new Map(Object.entries(NOV9_CONTEXT.closes)),
+      events: { eligible: new Map(NOV9_CONTEXT.eligibleEvents.map((e) => [e.eventId, e])), untimedIds: new Set() }, archetype: 'contrarian',
+    });
+    const swap = (o) => JSON.parse(JSON.stringify(o).split(FOUNDER_UID).join(uid));
+    await db.doc(`huddles/${uid}/days/${NOV9}`).set({ uid, etDate: NOV9, status: 'ready', session: NOV9_SESSION, plan, measurement: { editCount: 0 } });
+    for (const a of NOV9_AGENTS) { const { id, ...doc } = swap(a); await db.doc(`agents/${id}-${RUN}`).set(doc); }
+    const gameId = `${NOV9_GAME_ID}-${RUN}`;
+    const { id: _ignored, ...game } = swap(NOV9_GAME);
+    await db.doc(`agentBattles/${gameId}`).set({ ...game, directive: null, chatExchanges: [] });
+
+    const nowMs = NOV9_SESSION.openMs + 4 * 60 * MIN; // 1:30 PM ET, the smoke's afternoon
+    const out = await confirmPlan(db, { uid, etDate: NOV9, baseRevision: plan.revision, replacement: plan.current, nowMs });
+    expect(out).toMatchObject({ kind: 'confirmed', body: { archetypes: ['contrarian', 'diversifier'], reconfirm: false } });
+    const rec = (await db.doc(`huddles/${uid}/days/${NOV9}`).get()).data();
+    expect(rec.plan.confirmations.map((c) => c.archetype)).toEqual(['contrarian', 'diversifier']);
+    expect(rec.plan.confirmed.archetype).toBe('contrarian');
+    await applyConfirmedPlan(db, { uid, etDate: NOV9, writtenBy: 'confirm', nowMs: nowMs + 1000 });
+    const after = (await db.doc(`huddles/${uid}/days/${NOV9}`).get()).data();
+    expect(after.plan.applications.map((r) => [r.battleId, r.disposition, r.archetype])).toEqual([[gameId, DISPOSITIONS.WRITTEN, 'diversifier']]);
+    expect((await db.doc(`agentBattles/${gameId}`).get()).data().directive.text).toContain('Stances: HOLD CCI; WATCH RKLB.');
+    // nothing missing now: the door stays shut, and a repeat is the confirmed state unchanged
+    expect(await reconfirmStateOf(db, { uid, record: after, nowMs: nowMs + 2000 })).toEqual({ inPlay: ['contrarian', 'diversifier'], missing: [] });
   });
 
-  it('two live battles under the two archetypes each receive only their own confirmation', async () => {
-    const { uid, plan } = await seed();
-    await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, nowMs: BEFORE_OPEN });
-    await db.doc(`agents/ranked-${uid}`).update({ archetype: 'momentum_chaser' });
-    const preview = await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, nowMs: BEFORE_OPEN + MIN });
-    await confirmPlan(db, { uid, etDate: ET, baseRevision: preview.body.revision, replacement: preview.body.current, nowMs: BEFORE_OPEN + 2 * MIN });
-    for (const [id, archetype] of [[`ba${uid}`, 'analyst'], [`bt${uid}`, 'momentum_chaser']]) {
-      await db.doc(`agentBattles/${id}`).set({ ownerId: uid, agentId: `agent-${id}`, status: 'active', gameMode: 'baggerbomb_agent', agentContext: { archetype }, timing: { tradingDays: [ET] }, directive: null, chatExchanges: [] });
-    }
-    await applyConfirmedPlan(db, { uid, etDate: ET, writtenBy: 'sweep', nowMs: SESSION.openMs + MIN });
-    const a = (await db.doc(`agentBattles/ba${uid}`).get()).data().directive.text;
-    const t = (await db.doc(`agentBattles/bt${uid}`).get()).data().directive.text;
-    expect(a).toContain('FADE AAA above 48.00');
+  it('two live games under A and B each receive only their own confirmation, from one confirm', async () => {
+    const { uid, plan } = await seed({ archetype: 'analyst' });
+    await seedGame(`ga${uid}`, uid, 'analyst');
+    await seedGame(`gt${uid}`, uid, 'momentum_chaser');
+    // the Trend Follower's row turns FADE AAA into WATCH AAA: a preview naming that archetype only
+    const preview = await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, nowMs: BEFORE_OPEN });
+    expect(preview).toMatchObject({ kind: 'refused', status: 422, code: 'validation_changed' });
+    const acknowledged = Object.fromEntries(preview.body.previews.map((p) => [p.archetype, p.revision]));
+    const ok = await confirmPlan(db, { uid, etDate: ET, baseRevision: preview.body.revision, replacement: preview.body.current, acknowledged, nowMs: BEFORE_OPEN + MIN });
+    expect(ok).toMatchObject({ kind: 'confirmed', body: { archetypes: ['analyst', 'momentum_chaser'] } });
+    await applyConfirmedPlan(db, { uid, etDate: ET, writtenBy: 'confirm', nowMs: SESSION.openMs + MIN });
+    expect((await slotOf(`ga${uid}`)).text).toContain('FADE AAA above 48.00');
+    const t = (await slotOf(`gt${uid}`)).text;
     expect(t).toContain('WATCH AAA');
     expect(t).not.toContain('FADE');
+  });
+
+  it("a dissent change under one archetype only is a 422 naming THAT archetype — its name, its games, its changed items; nothing is confirmed until it is acknowledged", async () => {
+    const { uid, plan } = await seed({ archetype: 'analyst' });
+    await seedGame(`gt${uid}`, uid, 'momentum_chaser');
+    const out = await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, nowMs: BEFORE_OPEN });
+    expect(out).toMatchObject({ status: 422, code: 'validation_changed', body: { drops: [], transforms: [] } });
+    expect(out.body.previews).toEqual([{
+      archetype: 'momentum_chaser', archetypeName: 'Trend Follower', games: 1, revision: expect.any(String),
+      changes: [{ index: 0, kind: 'stance', from: 'FADE', to: 'WATCH', ticker: 'AAA', reason: expect.stringMatching(/trend follower/i) }],
+    }]);
+    expect((await read(uid)).plan.status).toBe('proposed');
+    // a stale or missing acknowledgement never commits: the fresh preview again
+    const stale = await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, acknowledged: { momentum_chaser: 'not-the-revision' }, nowMs: BEFORE_OPEN + MIN });
+    expect(stale).toMatchObject({ status: 422, code: 'validation_changed' });
+    expect((await read(uid)).plan.status).toBe('proposed');
+    // acknowledged at exactly its revision: one confirm, both confirmations
+    const ok = await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, acknowledged: { momentum_chaser: out.body.previews[0].revision }, nowMs: BEFORE_OPEN + 2 * MIN });
+    expect(ok.kind).toBe('confirmed');
+    const rec = await read(uid);
+    expect(rec.plan.confirmations.map((c) => [c.archetype, c.current.stances[0].kind])).toEqual([['analyst', 'FADE'], ['momentum_chaser', 'WATCH']]);
+    expect(rec.plan.current.stances[0].kind).toBe('FADE'); // the player's plan; the Trend Follower's version is its confirmation's
+  });
+
+  it('a game deployed AFTER confirming, under a new archetype, reads stale_approach with the door; a reconfirm files it — the missing archetype only', async () => {
+    const { uid, plan } = await seed({ archetype: 'analyst', proposal: { stances: [{ kind: 'HOLD', ticker: 'BBB' }], lines: [] } });
+    await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, nowMs: BEFORE_OPEN });
+    await seedGame(`gc${uid}`, uid, 'contrarian');
+    await applyConfirmedPlan(db, { uid, etDate: ET, writtenBy: 'sweep', nowMs: SESSION.openMs + MIN });
+    let rec = await read(uid);
+    expect(rec.plan.applications.map((r) => r.disposition)).toEqual([DISPOSITIONS.STALE_APPROACH]);
+    expect(await reconfirmStateOf(db, { uid, record: rec, nowMs: SESSION.openMs + MIN })).toEqual({ inPlay: ['analyst', 'contrarian'], missing: ['contrarian'] });
+    // an edit cannot ride on a reconfirm: 409, nothing written
+    const edited = await confirmPlan(db, { uid, etDate: ET, baseRevision: rec.plan.revision, replacement: { stances: [], lines: [] }, nowMs: SESSION.openMs + 2 * MIN });
+    expect(edited).toMatchObject({ status: 409, code: 'revision_mismatch' });
+    const re = await confirmPlan(db, { uid, etDate: ET, baseRevision: rec.plan.revision, replacement: rec.plan.current, nowMs: SESSION.openMs + 3 * MIN });
+    expect(re).toMatchObject({ kind: 'confirmed', body: { archetypes: ['contrarian'], reconfirm: true } });
+    await applyConfirmedPlan(db, { uid, etDate: ET, writtenBy: 'confirm', nowMs: SESSION.openMs + 4 * MIN });
+    rec = await read(uid);
+    expect(rec.plan.confirmations.map((c) => c.archetype)).toEqual(['analyst', 'contrarian']);
+    expect((await slotOf(`gc${uid}`)).text).toContain('HOLD BBB');
+    expect(rec.plan.applications.find((r) => r.battleId === `gc${uid}` && r.disposition === DISPOSITIONS.WRITTEN)).toBeTruthy();
+  });
+
+  it('a reconfirm with nothing missing is idempotent, and the door stays shut', async () => {
+    const { uid, plan } = await seed({ archetype: 'analyst' });
+    await seedGame(`ga${uid}`, uid, 'analyst');
+    await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, nowMs: BEFORE_OPEN });
+    const rec = await read(uid);
+    const again = await confirmPlan(db, { uid, etDate: ET, baseRevision: rec.plan.revision, replacement: rec.plan.current, nowMs: BEFORE_OPEN + MIN });
+    expect(again).toMatchObject({ kind: 'already_confirmed', body: { archetypes: ['analyst'] } });
+    expect((await read(uid)).plan.confirmations).toHaveLength(1);
+    expect(await reconfirmStateOf(db, { uid, record: rec, nowMs: BEFORE_OPEN + MIN })).toEqual({ inPlay: ['analyst'], missing: [] });
+  });
+
+  it('an archetype switch with no game under the new one: the equipped archetype is in play, so the door opens and the reconfirm files it', async () => {
+    const { uid, plan } = await seed({ archetype: 'analyst' });
+    await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, nowMs: BEFORE_OPEN });
+    await db.doc(`agents/ranked-${uid}`).update({ archetype: 'momentum_chaser' });
+    let rec = await read(uid);
+    expect((await reconfirmStateOf(db, { uid, record: rec, nowMs: BEFORE_OPEN + MIN })).missing).toEqual(['momentum_chaser']);
+    const preview = await confirmPlan(db, { uid, etDate: ET, baseRevision: rec.plan.revision, replacement: rec.plan.current, nowMs: BEFORE_OPEN + MIN });
+    expect(preview).toMatchObject({ status: 422, body: { previews: [expect.objectContaining({ archetype: 'momentum_chaser', games: 0 })] } });
+    expect((await read(uid)).plan.status).toBe('confirmed'); // a reconfirm preview writes nothing
+    const ok = await confirmPlan(db, { uid, etDate: ET, baseRevision: rec.plan.revision, replacement: rec.plan.current, acknowledged: { momentum_chaser: preview.body.previews[0].revision }, nowMs: BEFORE_OPEN + 2 * MIN });
+    expect(ok).toMatchObject({ kind: 'confirmed', body: { archetypes: ['momentum_chaser'], reconfirm: true } });
+    rec = await read(uid);
+    expect(rec.plan.confirmations.map((c) => c.archetype)).toEqual(['analyst', 'momentum_chaser']);
+    expect(rec.plan.confirmed.archetype).toBe('momentum_chaser');
+  });
+
+  it('a game of another session, a CPU seat, or an archetype with no dissent row is NOT in play; the unsupported game keeps archetype_unsupported', async () => {
+    const { uid, plan } = await seed({ archetype: 'analyst' });
+    await seedGame(`go${uid}`, uid, 'contrarian', { timing: { tradingDays: ['2026-11-06'] } });
+    await seedGame(`gp${uid}`, uid, 'degen', { isCpu: true });
+    await seedGame(`gu${uid}`, uid, 'no_such_archetype');
+    const out = await confirmPlan(db, { uid, etDate: ET, baseRevision: plan.revision, replacement: plan.current, nowMs: BEFORE_OPEN });
+    expect(out).toMatchObject({ kind: 'confirmed', body: { archetypes: ['analyst'] } });
+    await applyConfirmedPlan(db, { uid, etDate: ET, writtenBy: 'confirm', nowMs: SESSION.openMs + MIN });
+    const rec = await read(uid);
+    expect(rec.plan.applications.find((r) => r.battleId === `gu${uid}`).disposition).toBe(DISPOSITIONS.ARCHETYPE_UNSUPPORTED);
+    expect(await reconfirmStateOf(db, { uid, record: rec, nowMs: SESSION.openMs + MIN })).toEqual({ inPlay: ['analyst'], missing: [] });
   });
 });
 

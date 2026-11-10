@@ -74,8 +74,11 @@ export function huddleCandidateOf(read, nowMs) {
   };
 }
 
-/** One game's status line, from its newest receipt (§6.4, A §A4, C §C3, §C7, §C15). */
-export function battleStatusText(b) {
+/**
+ * One game's status line, from its newest receipt (§6.4, A §A4, C §C3, §C7, §C15). `door` (Amendment E §E1): a game whose
+ * approach has no confirmation shows " · Reconfirm" only while a reconfirm would file (the server's missing list).
+ */
+export function battleStatusText(b, { door = false } = {}) {
   const game = COPY.huddle.games[b?.battleKind] ?? COPY.huddle.games.other;
   const W = COPY.huddle.battle;
   let words;
@@ -89,7 +92,7 @@ export function battleStatusText(b) {
     case 'retry_live_call': words = b.expiredAt ? W.expired : W.liveCall; break;
     case 'retry_inactive': words = b.expiredAt ? W.expired : W.inactive; break;
     case 'retry_error': words = b.expiredAt ? W.expired : W.retry; break;
-    case 'stale_approach': words = b.expiredAt ? W.expired : W.staleApproach; break;
+    case 'stale_approach': words = b.expiredAt ? W.expired : door ? `${W.staleApproach}${COPY.sep}${COPY.huddle.reconfirm}` : W.staleApproach; break;
     case 'skipped_session': words = W.otherSession; break;
     case 'skipped_newer_instruction': words = W.newerInstruction; break;
     case 'archetype_unsupported': words = W.unsupported; break;
@@ -99,7 +102,7 @@ export function battleStatusText(b) {
 }
 
 /** The plan's own line and one line per game, for the sheet (receipts only). CPU seats are never shown. */
-export function huddleStatusOf(huddle) {
+export function huddleStatusOf(huddle, { door = false } = {}) {
   const plan = huddle?.plan;
   if (!plan) return { plan: '', battles: [] };
   const S = COPY.huddle.planState;
@@ -109,18 +112,22 @@ export function huddleStatusOf(huddle) {
     : plan.status === 'skipped' ? S.skipped
       : plan.status === 'expired' ? S.expired
         : S.proposed;
-  return { plan: line, battles: battles.map((b) => ({ battleId: b.battleId, text: battleStatusText(b) })) };
+  return { plan: line, battles: battles.map((b) => ({ battleId: b.battleId, text: battleStatusText(b, { door }) })) };
 }
 
 /**
- * C15: does the plan need reconfirming? The archetype the hub's own agent read shows differs from the newest
- * confirmation's. Pure derivation from readers the hub already has; the Deploy card makes no call of its own.
+ * Amendment E §E1 (replacing C15's hub bullet): the Reconfirm door shows only when an archetype in play has no
+ * confirmation — exactly when pressing it would file. That is the server's own acceptance predicate, carried on the status
+ * answer as `plan.reconfirm.missing` (confirmPlan.reconfirmStateOf; BUILD_RULES §9), read here with the session still
+ * open. Pure: no read of its own; the Deploy card makes no call.
  */
-export function needsReconfirmOf(read, agentArchetype) {
-  const plan = huddleOf(read)?.plan;
-  if (!plan || plan.status !== 'confirmed' || typeof agentArchetype !== 'string' || !agentArchetype) return false;
-  const newest = plan.confirmations?.[plan.confirmations.length - 1] ?? plan.confirmed ?? null;
-  return typeof newest?.archetype === 'string' && newest.archetype !== agentArchetype;
+export function needsReconfirmOf(read, nowMs) {
+  const h = huddleOf(read);
+  const plan = h?.plan;
+  if (!plan || plan.status !== 'confirmed') return false;
+  const closeMs = h.session?.closeMs;
+  if (typeof closeMs !== 'number' || typeof nowMs !== 'number' || !(nowMs < closeMs)) return false;
+  return Array.isArray(plan.reconfirm?.missing) && plan.reconfirm.missing.length > 0;
 }
 
 const historyStateOf = (p) => (p.planStatus === 'confirmed' ? 'confirmed'

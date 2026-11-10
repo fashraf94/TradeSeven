@@ -62,9 +62,9 @@ export default function useHuddleToday({ auth, enabled }) {
   }, [key, load]);
 
   const etDate = read.huddle?.etDate ?? null;
-  const confirm = useCallback(async ({ baseRevision, replacement }) => {
+  const confirm = useCallback(async ({ baseRevision, replacement, acknowledged = null }) => {
     if (!key || !etDate) return { ok: false, status: 0, body: { error: 'no_record' } };
-    const r = await confirmHuddlePlan({ etDate, baseRevision, replacement });
+    const r = await confirmHuddlePlan({ etDate, baseRevision, replacement, acknowledged });
     await load();
     return r;
   }, [key, etDate, load]);

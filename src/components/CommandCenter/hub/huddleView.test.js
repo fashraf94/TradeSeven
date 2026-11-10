@@ -128,13 +128,24 @@ describe('per-game status from receipts only (§6.4; A §A4; C §C7, §C15)', ()
   });
 });
 
-describe('C15 — the reconfirm line is a pure derivation', () => {
-  const confirmed = read(record({}, { status: 'confirmed', confirmations: [{ archetype: 'analyst', revision: 'r1' }] }));
-  it('shows when the agent read\'s archetype differs from the newest confirmation\'s, and only then', () => {
-    expect(needsReconfirmOf(confirmed, 'contrarian')).toBe(true);
-    expect(needsReconfirmOf(confirmed, 'analyst')).toBe(false);
-    expect(needsReconfirmOf(confirmed, null)).toBe(false);
-    expect(needsReconfirmOf(read(record()), 'contrarian')).toBe(false);
+describe('E1 — the Reconfirm door is the server\'s acceptance predicate (plan.reconfirm.missing), only while it would file', () => {
+  const confirmedWith = (missing) => read(record({}, { status: 'confirmed', confirmations: [{ archetype: 'analyst', revision: 'r1' }], reconfirm: missing === undefined ? undefined : { inPlay: ['analyst', ...missing], missing } }));
+  const before = OPEN - 3_600_000;
+  it('an archetype in play with no confirmation opens the door; none missing keeps it shut', () => {
+    expect(needsReconfirmOf(confirmedWith(['contrarian']), before)).toBe(true);
+    expect(needsReconfirmOf(confirmedWith([]), before)).toBe(false);
+  });
+  it('no reconfirm state (a failed read, an older answer), a proposed plan, or a closed session: shut', () => {
+    expect(needsReconfirmOf(confirmedWith(undefined), before)).toBe(false);
+    expect(needsReconfirmOf(read(record({}, { reconfirm: { inPlay: ['degen'], missing: ['degen'] } })), before)).toBe(false);
+    expect(needsReconfirmOf(confirmedWith(['contrarian']), CLOSE)).toBe(false);
+    expect(needsReconfirmOf(confirmedWith(['contrarian']), undefined)).toBe(false);
+  });
+  it('a game line under an approach with no confirmation shows " · Reconfirm" only with the door', () => {
+    const b = { battleId: 'b1', battleKind: 'casual', disposition: 'stale_approach' };
+    expect(battleStatusText(b)).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.staleApproach}`);
+    expect(battleStatusText(b, { door: true })).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.staleApproach}${COPY.sep}${COPY.huddle.reconfirm}`);
+    expect(battleStatusText({ ...b, expiredAt: 'x' }, { door: true })).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.expired}`);
   });
 });
 

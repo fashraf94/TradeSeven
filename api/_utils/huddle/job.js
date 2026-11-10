@@ -23,19 +23,12 @@ import {
 } from './scriptPrompt.js';
 import { joinBeats, beatTimings, synthesizeWithTimestamps, alignmentDurationMs } from './speech.js';
 import { storeHuddleAudio } from './audioStore.js';
-import { getArchetypeDefinition } from '../archetypeRegistry.js';
+import { archetypeWordsOf } from './archetypeWords.js';
 
 export const JOB_BUDGET_MS = 120_000;
 const BEAT_TITLE = Object.freeze({ yesterday: "Yesterday's plan", tape: 'The tape', names: 'Your names', armor: "The armor's take", plan: 'The game plan' });
-/** The archetype's name and one-line disposition, through the registry (the path new consumers take; no §2.3 importer). */
-export function archetypeWordsOf(archetype) {
-  try {
-    const def = archetype ? getArchetypeDefinition(archetype) : null;
-    return [def?.displayName ?? null, def?.identity?.disposition ?? null];
-  } catch {
-    return [null, null];
-  }
-}
+/** The archetype's name and one-line disposition (archetypeWords.js, shared with the confirm route's preview). */
+export { archetypeWordsOf };
 const WEEKDAY = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'long' });
 
 const iso = (ms) => new Date(ms).toISOString();

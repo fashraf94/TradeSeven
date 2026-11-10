@@ -181,11 +181,12 @@ describe('one job (V1.1 §5.3; A §A7; R-11)', () => {
     expect((await runHuddleJob(db, { uid: 'rec1', etDate, generation: c.generation, session, shared: null, deps, clock: () => now + MIN })).outcome).toBe('published');
     expect(await row('rec1', etDate)).toMatchObject({ status: 'done', reconcile: true });
     // before the close: visited and stamped, still proposed, still in the set
-    await runReconcilePass(db, { etDate, nowMs: session.openMs + 60 * MIN });
+    // Amendment E §E7: the pass keeps to the cohort (HUDDLE_PLAYER_UIDS, fail closed); this row's is its one player
+    await runReconcilePass(db, { etDate, nowMs: session.openMs + 60 * MIN, cohort: new Set(['rec1']) });
     expect((await rec('rec1', etDate)).plan.status).toBe('proposed');
     expect(await row('rec1', etDate)).toMatchObject({ reconcile: true, reconciledAt: new Date(session.openMs + 60 * MIN).toISOString() });
     // after the close: expired, and the row leaves the set
-    await runReconcilePass(db, { etDate, nowMs: session.closeMs + MIN });
+    await runReconcilePass(db, { etDate, nowMs: session.closeMs + MIN, cohort: new Set(['rec1']) });
     expect((await rec('rec1', etDate)).plan.status).toBe('expired');
     expect(await row('rec1', etDate)).toMatchObject({ reconcile: false });
   });
@@ -243,7 +244,7 @@ describe('the worker (A §A3, §A6)', () => {
     await enqueuePlayers(db, { etDate, uids });
     let inFlight = 0;
     let peak = 0;
-    let fakeNow = getSessionForDate(etDate).openMs - 90 * MIN;
+    let fakeNow = getSessionForDate(etDate).openMs - 55 * MIN; // 8:35 AM ET
     // A barrier, not a sleep: the first jobs wait until IN_FLIGHT are running (capped at 3 s), so the peak does not depend on
     // how fast the emulator answers the claims (a 20 ms sleep let the first job finish before the fourth lane started).
     let release;
@@ -256,12 +257,12 @@ describe('the worker (A §A3, §A6)', () => {
       return { outcome: 'published', uid };
     };
     const start = fakeNow;
-    const out = await drainQueue(db, { etDate, session: sessionOf(etDate), shared: null, invocationStartMs: start, clock: () => fakeNow, runJob });
+    const out = await drainQueue(db, { etDate, session: sessionOf(etDate), shared: null, invocationStartMs: start, clock: () => fakeNow, runJob, cohort: new Set([...uids, 'd7']) });
     expect(out.started).toBe(6);
     expect(peak).toBe(IN_FLIGHT);
     // with the reserve gone nothing starts
     await enqueuePlayers(db, { etDate, uids: ['d7'] });
-    const late = await drainQueue(db, { etDate, session: sessionOf(etDate), shared: null, invocationStartMs: start - (300_000 - DRAIN_RESERVE_MS) - 1, clock: () => fakeNow, runJob });
+    const late = await drainQueue(db, { etDate, session: sessionOf(etDate), shared: null, invocationStartMs: start - (300_000 - DRAIN_RESERVE_MS) - 1, clock: () => fakeNow, runJob, cohort: new Set([...uids, 'd7']) });
     expect(late.started).toBe(0);
   });
 
@@ -272,6 +273,7 @@ describe('the worker (A §A3, §A6)', () => {
     const started = [];
     const out = await runWorkerInvocation(db, {
       clock: () => at,
+      cohort: new Set(['r1', 'r2']),
       deps: {
         enqueue: { buildSharedLayer: async () => ({ tape: null, macroEvents: [], earnings: [], earningsTotal: 0, sources: {} }), enumerateActivePlayers: async () => ({ uids: ['r1', 'r2'], counts: {}, skippedCpu: 0 }) },
         runJob: async (_db, { uid }) => { started.push(uid); return { outcome: 'published' }; },
@@ -281,8 +283,19 @@ describe('the worker (A §A3, §A6)', () => {
     expect(started.sort()).toEqual(['r1', 'r2']);
     expect((await db.doc(`huddleRuns/${etDate}`).get()).data()).toMatchObject({ enqueueStage: 'done', playersEnqueued: 2 });
     // a second invocation does not enqueue again
-    const again = await runWorkerInvocation(db, { clock: () => at + 2 * MIN, deps: { runJob: async () => ({ outcome: 'published' }) } });
+    const again = await runWorkerInvocation(db, { clock: () => at + 2 * MIN, cohort: new Set(['r1', 'r2']), deps: { runJob: async () => ({ outcome: 'published' }) } });
     expect(again.recovered).toBe(false);
+  });
+
+  it('E7: the drain claims only the cohort\'s rows; a row of a player outside it stays pending', async () => {
+    const etDate = nextDate();
+    await enqueuePlayers(db, { etDate, uids: ['in1', 'out1'] });
+    const at = getSessionForDate(etDate).openMs - 50 * MIN;
+    const ran = [];
+    const out = await drainQueue(db, { etDate, session: sessionOf(etDate), shared: null, invocationStartMs: at, clock: () => at, runJob: async (_db, { uid }) => { ran.push(uid); return { outcome: 'published' }; }, cohort: new Set(['in1']) });
+    expect(out.started).toBe(1);
+    expect(ran).toEqual(['in1']);
+    expect(await row('out1', etDate)).toMatchObject({ status: 'pending', attempts: 0 });
   });
 
   it('a non-trading day exits at once', async () => {

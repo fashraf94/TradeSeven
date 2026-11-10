@@ -21,7 +21,7 @@ export default function HuddleSheet({ huddle, phone = false, onClose, opener = n
       <HuddleSheetBody
         copy={COPY.huddle}
         read={huddle?.read ?? null}
-        status={huddleStatusOf(huddleRecord)}
+        status={huddleStatusOf(huddleRecord, { door: huddle?.needsReconfirm === true })}
         confirm={huddle?.confirm}
         skip={huddle?.skip}
         needsReconfirm={huddle?.needsReconfirm === true}
