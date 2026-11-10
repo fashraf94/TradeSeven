@@ -139,3 +139,44 @@ describe('the hub with the Huddle on (review L3-6)', () => {
     expect(stage.textContent).not.toContain(COPY.partnership.summary);
   });
 });
+
+// Huddle S1.1 — Amendment E §E8: the Deploy card's Reconfirm line through the LIVE layout. Main ships per-game loadouts and
+// the armory on (src/config/perGameLoadoutFlags.js, agentFormFlags.js), so the hub renders the PerGameLoadoutScope arm
+// (CommandCenterHub.jsx ConnectedHub) and the wide shell's live Deploy copy (the `reconfirm` prop in WideHub's
+// PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED arm) and, on a phone, PhoneTabs' Deploy card under the Loadout tab.
+// Before these rows, removing either prop failed nothing (S1 merge, the mutant that survived). The door shows only when the
+// status answer says an archetype in play has no confirmation (E1: the server's own acceptance predicate).
+describe('E8: the Deploy card\'s Reconfirm line, through the live layout (per-game loadouts and the armory on)', () => {
+  const confirmedWith = (missing) => ({
+    ...HUDDLE,
+    plan: { ...HUDDLE.plan, status: 'confirmed', confirmed: { revision: 'r1', archetype: 'contrarian', confirmedAt: iso(NOW - HOUR) }, confirmations: [{ revision: 'r1', archetype: 'contrarian', confirmedAt: iso(NOW - HOUR) }], reconfirm: { inPlay: ['contrarian', ...missing], missing } },
+  });
+  const deployCard = () => document.querySelector('[data-hub-section="deploy"]');
+
+  it('desktop: an archetype in play with no confirmation puts the line and its Reconfirm door on the Deploy card; the door opens the Huddle sheet', async () => {
+    service.fetchHuddleToday.mockResolvedValue({ asOf: iso(NOW), huddle: confirmedWith(['degen']) });
+    await render('desktop', hubOf());
+    const line = deployCard().querySelector('[data-hub-huddle-reconfirm]');
+    expect(line).not.toBeNull();
+    expect(line.textContent).toContain(COPY.huddle.deployReconfirm);
+    await act(async () => { click(byRole(line, 'button', COPY.huddle.deployReconfirmDoor)[0] ?? line.querySelector('button')); await Promise.resolve(); });
+    expect(dialog()).not.toBeNull();
+    expect(dialog().querySelector('[data-huddle-reconfirm]')).not.toBeNull();
+  });
+
+  it('desktop: nothing missing — no line, no door (no door that does nothing)', async () => {
+    service.fetchHuddleToday.mockResolvedValue({ asOf: iso(NOW), huddle: confirmedWith([]) });
+    await render('desktop', hubOf());
+    expect(deployCard()).not.toBeNull();
+    expect(document.querySelector('[data-hub-huddle-reconfirm]')).toBeNull();
+  });
+
+  it('phone: the Loadout tab\'s Deploy card carries the same line, only while a confirmation is missing', async () => {
+    service.fetchHuddleToday.mockResolvedValue({ asOf: iso(NOW), huddle: confirmedWith(['degen']) });
+    await render('mobile', hubOf());
+    await act(async () => { click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]); await Promise.resolve(); });
+    const card = document.querySelector('[data-hub-deploy-card="phone"]');
+    expect(card).not.toBeNull();
+    expect(card.querySelector('[data-hub-huddle-reconfirm]')).not.toBeNull();
+  });
+});
