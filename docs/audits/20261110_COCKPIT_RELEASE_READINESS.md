@@ -380,7 +380,7 @@ The founder ruled on the four questions §7 put. Each ruling is applied as follo
 
 ## 10. The build — the cockpit's own release switch (dark)
 
-Branch `claude/cockpit-release-readiness` (the report's branch; local `-d2754a`), built on `origin/main` @ `7f883c9c` (fetched first; main had moved to `7f883c9c`, #1032 Huddle S1, and was merged in). Code head `@@CODE@@`. Nothing was merged, deployed, flagged or written to production; **no control document exists**, which is the dark state.
+Branch `claude/cockpit-release-readiness` (the report's branch; local `-d2754a`), built on `origin/main` @ `7f883c9c` (fetched first; main had moved to `7f883c9c`, #1032 Huddle S1, and was merged in). Code head `171e053c`. Nothing was merged, deployed, flagged or written to production; **no control document exists**, which is the dark state.
 
 ### 10.1 Read this first: two things the prompt did not list
 
@@ -448,7 +448,19 @@ Also: `src/config/featureFlags.js` (a doc comment) and the title of one `callRec
 
 ### 10.8 Verification
 
-@@VERIFY@@
+| Check | Result |
+|---|---|
+| Full suite — `vitest run --maxWorkers=8`, `TZ=UTC`, under `flock /tmp/pd-suite.lock` | **1,400 files; 30,545 tests: 30,438 passed, 107 skipped, 0 failed; exit 0** |
+| `npm run lint:gate` (`--max-warnings 0`) | **exit 0** |
+| `npm run build` (`vite build`) | **exit 0** |
+| `npm run test:rules` (Firestore emulator, Java 21) | **41 files, 741 tests passed; exit 0** — including `cockpitReleaseDenials.rules.mjs` (the runtime denials for four identities with positive controls, and the static pins) |
+| Mutation battery | **83 / 83 killed** (review record §5) |
+| uid hygiene | all 3,889 lines added in `origin/main..HEAD` scanned for both known uids (10-character windows) and for uid-shaped tokens: **none** |
+| Production | two read-only runs of the stage read (`.get()` only, no uid in its environment); nothing else touched production; **no write, no deploy, no flag, no environment variable changed** |
+
+**The merge with main.** `origin/main` @ `7f883c9c` (#1032, Huddle S1) is an ancestor of the branch (merged at `a0a4ba87`); it was re-fetched before the run and had not moved. The run is therefore on the tree CI would test (the PR merged with main), in WSL (Ubuntu), in a private worktree of `~/pd-ci` at the exact commit.
+
+**Notes.** (1) The first rules attempt exited 1 because **another session's emulator held port 8080**; the rules step was re-run alone once the ports were free and is green (the suite, lint and build ran once, on the same commit). (2) On Windows two **pre-existing** rows are red on a CRLF working tree — `agent-evaluate.tickStamps.pins` (an anti-vacuous check) and an `agent-evaluate.evalRun` row that counts "exactly ONE block … allow read, write: if false;" (a file this build extended, but not its rows); both are green on Linux, the CI platform. (3) The checked commit is `e5618ddd` (code head `171e053c`); the commit that records these numbers is docs-only, and `vite build` was re-run on the exact commit that was pushed (below).
 
 ### 10.9 The BUILD_RULES §2 review
 
