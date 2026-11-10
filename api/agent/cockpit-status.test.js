@@ -14,7 +14,8 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const state = vi.hoisted(() => ({ uid: 'owner-uid-1', authFails: false, callsMode: 'on', middlewareHandles: false, battles: {}, reads: [], throwOnRead: false }));
+// `control` is the release cohort's control document (cockpitConfig/release): undefined = absent, the dark state.
+const state = vi.hoisted(() => ({ uid: 'owner-uid-1', authFails: false, callsMode: 'on', middlewareHandles: false, battles: {}, reads: [], throwOnRead: false, control: undefined, controlThrows: false }));
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => state.middlewareHandles }));
 vi.mock('../_utils/authMiddleware.js', () => ({
   requireAuth: async (_req, res) => {
@@ -32,8 +33,9 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({
       doc: (id) => ({
         get: async () => {
           state.reads.push(`${name}/${id}`);
-          if (state.throwOnRead) throw new Error('firestore down');
-          const data = state.battles[id];
+          if (name === 'cockpitConfig' && state.controlThrows) throw new Error('control read down');
+          if (state.throwOnRead && name !== 'cockpitConfig') throw new Error('firestore down');
+          const data = name === 'cockpitConfig' ? state.control : state.battles[id];
           return { exists: data !== undefined, data: () => data };
         },
       }),
@@ -42,6 +44,8 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({
 }));
 
 const { default: handler, resetCockpitStatusRateLimit, COCKPIT_STATUS_USER_RATE_LIMIT } = await import('./cockpit-status.js');
+// The release cohort's cached view, reset per row (the real module — never mocked; BUILD_RULES §4 runtime guard).
+const { resetReleaseView, bucketOf, RELEASE_VIEW_TTL_MS } = await import('../_utils/callRecords/release.js');
 
 const BATTLE = 'battle-1';
 // Cockpit Build 2b (spec S-9): the 200 body carries the server's own clock — frozen here so it is exact.
@@ -63,6 +67,9 @@ beforeEach(() => {
   state.battles = { [BATTLE]: { ownerId: 'owner-uid-1', status: 'active' } };
   state.reads = [];
   state.throwOnRead = false;
+  state.control = undefined;
+  state.controlThrows = false;
+  resetReleaseView();
   process.env.COCKPIT_ALLOWLIST_UIDS = 'owner-uid-1';
   resetCockpitStatusRateLimit();
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -80,7 +87,10 @@ describe('the answer — the server\'s own resolution, for the owner alone', () 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ on: true, allowlisted: true, serverNowMs: NOW });
     expect(res.headers['cache-control']).toBe('no-store');
-    expect(state.reads).toEqual([`agentBattles/${BATTLE}`]);
+    // One battle read, and (release switch) the control document's view, read once and then cached for 60 s.
+    expect(state.reads.filter((r) => r.startsWith('agentBattles/'))).toEqual([`agentBattles/${BATTLE}`]);
+    expect(state.reads.filter((r) => r.startsWith('cockpitConfig/'))).toEqual(['cockpitConfig/release']);
+    expect(state.reads).toHaveLength(2);
   });
 
   it('off: global off, global shadow, or an owner not on the allowlist → 200 { on: false } — `allowlisted` is the allowlist alone, never the calls mode', async () => {
@@ -193,5 +203,103 @@ describe('the route is read-only and never decides on the client\'s word', () =>
     expect(src).toContain("resolveCallRecordsMode(battle) === 'on'");
     expect(src).toContain('allowlisted: isCockpitOwnerAllowlisted(battle?.ownerId)');
     expect(src).toMatch(/requireAuth\(req, res\)/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The cockpit's own release switch (build prompt BUILD_PROMPT_COCKPIT_RELEASE_SWITCH):
+// `on` follows the resolver (the allowlist OR the release cohort); `allowlisted`
+// stays the allowlist verdict ALONE — Film Room cards, Bomb mode, the sheet and Ask
+// read it as their pilot cohort, so it must not move with the cockpit's release.
+
+/** The first synthetic owner id whose bucket under `salt` is in [lo, hi). */
+function ownerInBuckets(salt, lo, hi) {
+  for (let i = 0; i < 200000; i += 1) {
+    const id = `cohort-owner-${i}`;
+    const b = bucketOf(id, salt);
+    if (b >= lo && b < hi) return id;
+  }
+  throw new Error('no owner found');
+}
+const SALT = 'salt-a';
+const asOwner = (id, battle = {}) => {
+  state.uid = id;
+  state.battles = { [BATTLE]: { ownerId: id, status: 'active', gameMode: 'baggerbomb_agent', ...battle } };
+};
+
+describe('the release cohort — `on` follows the resolver, `allowlisted` stays the allowlist alone', () => {
+  it('a non-allowlisted agent-mode owner under the share → on: true, allowlisted: false', async () => {
+    state.control = { shareBp: 5000, disabled: false, salt: SALT };
+    asOwner(ownerInBuckets(SALT, 0, 5000));
+    expect((await get()).body).toEqual({ on: true, allowlisted: false, serverNowMs: NOW });
+  });
+
+  it('an owner at or over the share, a disabled document, a missing one and a malformed one → on: false (allowlisted false in every case)', async () => {
+    const over = ownerInBuckets(SALT, 5000, 10000);
+    const under = ownerInBuckets(SALT, 0, 5000);
+    for (const [control, owner, why] of [
+      [{ shareBp: 5000, disabled: false, salt: SALT }, over, 'over the share'],
+      [{ shareBp: 5000, disabled: true, salt: SALT }, under, 'disabled'],
+      [undefined, under, 'no document'],
+      [{ shareBp: '5000', disabled: false, salt: SALT }, under, 'malformed shareBp'],
+      [{ shareBp: 5000, disabled: false }, under, 'no salt'],
+      [{ shareBp: 0, disabled: false, salt: SALT }, under, 'share 0'],
+    ]) {
+      resetReleaseView();
+      resetCockpitStatusRateLimit();
+      state.control = control;
+      asOwner(owner);
+      expect((await get()).body, why).toEqual({ on: false, allowlisted: false, serverNowMs: NOW });
+    }
+  });
+
+  it('League, a CPU seat and an ownerless battle are never in the cohort, even at share 10000', async () => {
+    state.control = { shareBp: 10000, disabled: false, salt: SALT };
+    const owner = ownerInBuckets(SALT, 0, 10000);
+    for (const [battle, why] of [[{ gameMode: 'baggerbomb_tournament' }, 'League'], [{ isCpu: true }, 'CPU seat'], [{ gameMode: undefined }, 'no game mode']]) {
+      resetReleaseView();
+      resetCockpitStatusRateLimit();
+      asOwner(owner, battle);
+      expect((await get()).body.on, why).toBe(false);
+    }
+  });
+
+  it('an allowlisted owner is unchanged: on in League and in agent mode, with the control document absent or disabled (the allowlist path is not touched)', async () => {
+    for (const control of [undefined, { shareBp: 0, disabled: true, salt: SALT }]) {
+      for (const gameMode of ['baggerbomb_tournament', 'baggerbomb_agent']) {
+        resetReleaseView();
+        resetCockpitStatusRateLimit();
+        state.control = control;
+        asOwner('owner-uid-1', { gameMode });
+        expect((await get()).body, `${gameMode}`).toEqual({ on: true, allowlisted: true, serverNowMs: NOW });
+      }
+    }
+  });
+
+  it('the kill switch: the view is cached for 60 s, so `disabled: true` shows on the first ask after the TTL — and not before', async () => {
+    const owner = ownerInBuckets(SALT, 0, 10000);
+    state.control = { shareBp: 10000, disabled: false, salt: SALT };
+    asOwner(owner);
+    expect((await get()).body.on).toBe(true);
+    state.control = { shareBp: 10000, disabled: true, salt: SALT };
+    vi.setSystemTime(NOW + RELEASE_VIEW_TTL_MS - 1);
+    resetCockpitStatusRateLimit();
+    expect((await get()).body.on).toBe(true);
+    expect(state.reads.filter((r) => r === 'cockpitConfig/release')).toHaveLength(1);
+    vi.setSystemTime(NOW + RELEASE_VIEW_TTL_MS + 1);
+    resetCockpitStatusRateLimit();
+    expect((await get()).body).toEqual({ on: false, allowlisted: false, serverNowMs: NOW + RELEASE_VIEW_TTL_MS + 1 });
+    expect(state.reads.filter((r) => r === 'cockpitConfig/release')).toHaveLength(2);
+  });
+
+  it('a control-document read that fails or never answers cannot fail the route: the cohort is empty and the allowlist alone decides', async () => {
+    const owner = ownerInBuckets(SALT, 0, 10000);
+    asOwner(owner);
+    state.control = { shareBp: 10000, disabled: false, salt: SALT };
+    // a read error on the control document only
+    state.controlThrows = true;
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ on: false, allowlisted: false, serverNowMs: NOW });
   });
 });

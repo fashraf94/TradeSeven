@@ -113,7 +113,7 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
-import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
+import { resolveCallRecordsMode, ensureReleaseView } from '../_utils/callRecords/mode.js';
 // Cockpit Build 2a (spec S-4): the legality table's ONE home, shared with the
 // cockpit's tiles — re-exported here under the names this route always had.
 import { classifyAnswer, isUpsideCall, isExitNotHeld, isEntryAlreadyHeld, ANSWERS_1A, DEFERRED_ANSWERS, wireAnswers, answerTakesPick, isGoAcknowledgment, ANSWER_REPLACE } from '../_utils/callRecords/answers.js';
@@ -281,6 +281,10 @@ export default async function handler(req, res) {
   const db = getFirebaseAdmin();
   const battleRef = db.collection('agentBattles').doc(battleId);
   const callRef = battleRef.collection('calls').doc(callId);
+
+  // The release cohort's control view, made fresh BEFORE the transaction (the
+  // resolver at step 2 is synchronous and reads the cached view).
+  await ensureReleaseView(db);
 
   try {
     const outcome = await db.runTransaction(async (tx) => {

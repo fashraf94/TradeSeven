@@ -49,6 +49,8 @@
 
 import { getSessionForDate } from '../marketSchedule.js';
 import { etDateOf } from './horizon.js';
+// The release cohort (BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): the SAME membership test the server resolves with.
+import { isInReleaseCohort } from './release.js';
 
 export const ROLLBACK_SESSIONS = 5;
 export const ROLLBACK_TRIP_RATE = 0.03;
@@ -197,6 +199,10 @@ export function lastRegularSessions(nowMs, sessions = ROLLBACK_SESSIONS) {
  * @param {object[]|Map} battles   `{ id, ownerId, evaluations }` (or a Map id → data)
  * @param {object} p
  * @param {string[]} p.allowlist   the admitted owner uids (allowlist.js readCockpitAllowlist())
+ * @param {{ active: boolean, shareBp: number, salt: string }|null} [p.cohort]  the release cohort's control view (release.js
+ *                                 getReleaseView / ensureReleaseView): when ACTIVE, an agent-mode, non-CPU battle whose owner's bucket
+ *                                 is under shareBp is admitted too — by the server's own test, never a copy. Needs NO uid. Absent or
+ *                                 inactive: the allowlist alone, exactly as before.
  * @param {number} [p.nowMs]       the run's instant — the window ends at its ET date
  * @param {number|null} [p.sinceMs] --since: no entry before this instant (the flip's deploy)
  * @param {string} [p.notBefore]   no session before this ET date (default: the end of the shadow era)
@@ -205,11 +211,14 @@ export function lastRegularSessions(nowMs, sessions = ROLLBACK_SESSIONS) {
  *            verdict: 'TRIP'|'NO TRIP'|'NO DATA'|'NO ALLOWLIST' }}
  */
 export function computeRollbackCheck(battles, {
-  allowlist, nowMs = Date.now(), sinceMs = null, notBefore = ROLLBACK_CHECK.notBefore, sessions = ROLLBACK_SESSIONS, check = ROLLBACK_CHECK,
+  allowlist, cohort = null, nowMs = Date.now(), sinceMs = null, notBefore = ROLLBACK_CHECK.notBefore, sessions = ROLLBACK_SESSIONS, check = ROLLBACK_CHECK,
 } = {}) {
   const owners = new Set((Array.isArray(allowlist) ? allowlist : []).filter((u) => typeof u === 'string' && u.length > 0));
   const list = battles instanceof Map ? [...battles.entries()].map(([id, b]) => ({ id, ...b })) : (Array.isArray(battles) ? battles : []);
-  const admitted = list.filter((b) => typeof b?.ownerId === 'string' && owners.has(b.ownerId));
+  const cohortView = cohort && cohort.active === true ? cohort : null;
+  const byAllowlist = (b) => typeof b?.ownerId === 'string' && owners.has(b.ownerId);
+  const admitted = list.filter((b) => byAllowlist(b) || isInReleaseCohort(b, cohortView));
+  const cohortBattles = list.filter((b) => !byAllowlist(b) && isInReleaseCohort(b, cohortView)).length;
   const days = lastRegularSessions(nowMs, sessions).filter((d) => typeof notBefore !== 'string' || d >= notBefore);
   const perDay = new Map(days.map((d) => [d, { day: d, modelCalls: 0, invalid: 0 }]));
   const floorMs = finite(sinceMs) ? sinceMs : -Infinity;
@@ -232,6 +241,7 @@ export function computeRollbackCheck(battles, {
     days, notBefore, sinceMs: finite(sinceMs) ? sinceMs : null,
     perDay: rows,
     coverage: { battles: admitted.length, truncatedBattles },
+    cohort: cohortView ? { shareBp: cohortView.shareBp, battles: cohortBattles } : null,
   };
   const total = rows.reduce((s, r) => s + r.modelCalls, 0);
   const invalid = rows.reduce((s, r) => s + r.invalid, 0);
@@ -253,7 +263,8 @@ export function computeRollbackCheck(battles, {
     p,
     bars,
     tripped,
-    verdict: owners.size === 0 ? 'NO ALLOWLIST' : (total === 0 ? 'NO DATA' : (tripped ? 'TRIP' : 'NO TRIP')),
+    // Neither an allowlist nor an active cohort: nothing was measured.
+    verdict: owners.size === 0 && !cohortView ? 'NO ALLOWLIST' : (total === 0 ? 'NO DATA' : (tripped ? 'TRIP' : 'NO TRIP')),
   };
 }
 
@@ -264,13 +275,15 @@ export function renderRollbackCheck(result, { check = ROLLBACK_CHECK } = {}) {
   // A Vercel environment change reaches only NEW deployments: removing the uid
   // takes effect when production is redeployed (review L1-2).
   const action = {
-    TRIP: ' — remove the uid from COCKPIT_ALLOWLIST_UIDS, redeploy production, and report (spec §10.4).',
+    TRIP: result.window.cohort
+      ? ' — set `disabled: true` on cockpitConfig/release (no redeploy) and, if the allowlisted battles tripped too, remove the uid from COCKPIT_ALLOWLIST_UIDS and redeploy production; report (spec §10.4).'
+      : ' — remove the uid from COCKPIT_ALLOWLIST_UIDS, redeploy production, and report (spec §10.4).',
     'NO ALLOWLIST': ' — COCKPIT_ALLOWLIST_UIDS is not set in this shell or .env.local; nothing was measured.',
   }[result.verdict] ?? '';
   const floor = `not before ${result.window.notBefore ?? '—'}${result.window.sinceMs !== null && result.window.sinceMs !== undefined ? `, since ${new Date(result.window.sinceMs).toISOString()}` : ''}`;
   return [
     `- Verdict: **${result.verdict}**${action}`,
-    `- Allowlisted owners ${result.owners}; their battles ${result.battles}; window ${result.window.days.length ? result.window.days.join(', ') : 'none'} (the last ${ROLLBACK_SESSIONS} regular sessions by the calendar, ${floor}).`,
+    `- Allowlisted owners ${result.owners}${result.window.cohort ? `; release cohort ${result.window.cohort.shareBp} bp, ${result.window.cohort.battles} battle(s) outside the allowlist; the admitted` : '; their'} battles ${result.battles}; window ${result.window.days.length ? result.window.days.join(', ') : 'none'} (the last ${ROLLBACK_SESSIONS} regular sessions by the calendar, ${floor}).`,
     `- invalid_tool_result ${result.invalid} of ${result.total} calls-enabled model calls (rate ${pct(result.rate)}).`,
     `- Bars (all three must hold to trip): total ≥ ${check.minTotal} — ${yes(result.bars.minSample)}; rate > ${(100 * check.tripRate).toFixed(0)} % — ${yes(result.bars.rate)}; one-sided Fisher p < ${check.alpha} against ${check.baseline.label} — ${yes(result.bars.significant)} (p = ${result.p === null ? 'n/a' : result.p.toFixed(4)}).`,
     `- Coverage: ${result.window.coverage.truncatedBattles.length} of the allowlisted battles at the 150-entry retention cap — a truncated history may undercount.`,

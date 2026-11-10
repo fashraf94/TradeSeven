@@ -93,7 +93,7 @@ import { buildDirectiveRecord, buildDirectiveSlot, BATTLE_CHAT_BUDGET } from '..
 // Cockpit Build 1a (spec §6): the shared slot writer and the battle's resolved
 // calls mode (for the `superseded` event when a call-family slot is replaced).
 import { fileDirectiveTransactional } from '../_utils/directiveWriter.js';
-import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
+import { resolveCallRecordsMode, ensureReleaseView } from '../_utils/callRecords/mode.js';
 import { GROUNDING_VERSION } from '../_utils/voiceLayerGrounding.js';
 import { DIRECTIVE_FILED_MESSAGE_TYPE } from '../../src/data/decisionRecord.js';
 
@@ -195,6 +195,10 @@ export default async function handler(req, res) {
   const db = getFirebaseAdmin();
   const battleRef = db.collection('agentBattles').doc(battleId);
   const agentRef = db.collection('agents').doc(agentId);
+
+  // The release cohort's control view, made fresh BEFORE the transaction (the
+  // resolver inside it is synchronous and reads the cached view).
+  await ensureReleaseView(db);
 
   try {
     const outcome = await db.runTransaction(async (tx) => {

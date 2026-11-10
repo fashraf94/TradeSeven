@@ -872,3 +872,46 @@ describe('Amendment F (F-2): no answer on an entry whose stock the fresh parent 
     expect(check, 'the directive check sits immediately before `const eligible`').toBeGreaterThan(-1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The cockpit's own release switch (build prompt BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): the
+// endpoint awaits the control view BEFORE its transaction (the resolver at step 2 is
+// synchronous), so a non-allowlisted owner in the release cohort is answered like an
+// allowlisted one; League, a CPU seat, a missing or disabled document are not.
+describe('the release cohort — a non-allowlisted agent-mode owner under the share is answered; nobody else is', () => {
+  const COHORT = { shareBp: 10000, disabled: false, salt: 'salt-a' };
+  const dbWith = (control, battleOver = {}) => makeDb({ battle: makeTickBattle({ directive: null, ...battleOver }), extra: control === undefined ? {} : { 'cockpitConfig/release': control } });
+  beforeEach(async () => {
+    const { resetReleaseView } = await import('../_utils/callRecords/release.js');
+    resetReleaseView();
+    state.allow = ['somebody-else']; // the owner is NOT on the allowlist
+  });
+
+  it('in the cohort → 200 and the call is read and answered', async () => {
+    activeDb = dbWith(COHORT);
+    const res = await post(answerBody({ callId: HOLD_CALL, answer: 'hold' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.playerResponse).toMatchObject({ answer: 'hold' });
+    expect(callReads(activeDb)).toBeGreaterThan(0);
+  });
+
+  it('League, a CPU seat, a disabled document, a missing document and a malformed one → 404 cockpit_unavailable, no call read, nothing written', async () => {
+    const { resetReleaseView } = await import('../_utils/callRecords/release.js');
+    for (const [control, over, why] of [
+      [COHORT, { gameMode: 'baggerbomb_tournament' }, 'League'],
+      [COHORT, { isCpu: true }, 'CPU seat'],
+      [{ ...COHORT, disabled: true }, {}, 'disabled'],
+      [undefined, {}, 'no document'],
+      [{ ...COHORT, shareBp: 'all' }, {}, 'malformed'],
+      [{ ...COHORT, shareBp: 0 }, {}, 'share 0'],
+    ]) {
+      resetReleaseView();
+      activeDb = dbWith(control, over);
+      const res = await post(answerBody());
+      expect(res.statusCode, why).toBe(404);
+      expect(res.body, why).toEqual({ error: 'cockpit_unavailable' });
+      expect(callReads(activeDb), why).toBe(0);
+      expect(activeDb.__access.writes, why).toEqual([]);
+    }
+  });
+});

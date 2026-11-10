@@ -600,3 +600,80 @@ describe('reconciliation — open calls lacking a queue row are enrolled (spec �
     expect(SWEEP_PAGE).toBe(20);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The cockpit's own release switch (build prompt BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): the
+// sweep reads the control document ONCE per run (force), before any parent resolves the mode,
+// so an agent-mode, real-owner battle in the release cohort is swept like an allowlisted one;
+// without the document it is only discovered and skipped, exactly as before.
+describe('the release cohort in the sweep — one control read a run, before any parent resolves', () => {
+  const COHORT_OWNER = 'owner-cohort';
+  const CONTROL = { shareBp: 10000, disabled: false, salt: 'salt-a' };
+  /** A past-deadline open call on a battle whose owner is NOT on the allowlist, with its queue row. */
+  const cohortDb = (control, battleOver = {}) => {
+    const db = makeDb({
+      [`agentBattles/${B1}`]: battleDoc(B1, { ownerId: COHORT_OWNER, ...battleOver }),
+      [P(B1, 'calls', `${B1}:eval_001:call:0`)]: call(B1, 0, { horizon: { phrase: 'this_session', expiresAt: NOW - 1000, basis: 'this_session' } }),
+      [Q(B1)]: { battleId: B1, nextExpiresAt: NOW - 1000, pendingHeard: [], updatedAt: 1 },
+      ...(control === undefined ? {} : { 'cockpitConfig/release': control }),
+    });
+    const controlReads = { n: 0, beforeFirstParent: null };
+    const collection = db.collection.bind(db);
+    db.collection = (name) => {
+      if (name === 'cockpitConfig') controlReads.n += 1;
+      if (name === 'agentBattles' && controlReads.beforeFirstParent === null) controlReads.beforeFirstParent = controlReads.n;
+      return collection(name);
+    };
+    return { db, controlReads };
+  };
+  beforeEach(async () => { const { resetReleaseView } = await import('./release.js'); resetReleaseView(); });
+  afterEach(async () => { const { resetReleaseView } = await import('./release.js'); resetReleaseView(); });
+
+  it('in the cohort: the call is swept (expired_unresolved), nothing is skipped, and the document was read ONCE, before the first battle read', async () => {
+    const { db, controlReads } = cohortDb(CONTROL);
+    const res = await run(db);
+    expect(res.skippedOff).toBe(0);
+    expect(callsOf(db, B1)[`${B1}:eval_001:call:0`].state).toBe('expired_unresolved');
+    expect(controlReads.n).toBe(1);
+    expect(controlReads.beforeFirstParent).toBe(1);
+  });
+
+  it('no document, a disabled one, League and a CPU seat: the battle is only discovered and skipped (the call stays open)', async () => {
+    const { resetReleaseView } = await import('./release.js');
+    for (const [control, over, why] of [
+      [undefined, {}, 'no document'], [{ ...CONTROL, disabled: true }, {}, 'disabled'],
+      [CONTROL, { gameMode: 'baggerbomb_tournament' }, 'League'], [CONTROL, { isCpu: true }, 'CPU seat'],
+    ]) {
+      resetReleaseView();
+      const { db } = cohortDb(control, over);
+      const res = await run(db);
+      expect(res.skippedOff, why).toBeGreaterThan(0);
+      expect(callsOf(db, B1)[`${B1}:eval_001:call:0`].state, why).toBe('open');
+    }
+  });
+
+  it('a failing control read fails closed and cannot fail the sweep: the allowlisted battle is still swept', async () => {
+    const { db } = cohortDb(CONTROL, { ownerId: 'owner-on' });
+    const collection = db.collection;
+    db.collection = (name) => { if (name === 'cockpitConfig') throw new Error('control down'); return collection(name); };
+    const res = await run(db);
+    expect(res.stopped).toBeUndefined();
+    expect(callsOf(db, B1)[`${B1}:eval_001:call:0`].state).toBe('expired_unresolved');
+  });
+
+  it("global 'off' and 'shadow': the sweep still returns before ANY read — the control document included", async () => {
+    for (const mode of ['off', 'shadow']) {
+      flag.mode = mode;
+      const { db, controlReads } = cohortDb(CONTROL);
+      expect(await run(db)).toEqual({ skipped: mode, reads: 0 });
+      expect(controlReads.n).toBe(0);
+    }
+  });
+
+  it('a starved sweep reads nothing either (the document is read only once the sweep will do work)', async () => {
+    const { db, controlReads } = cohortDb(CONTROL);
+    const res = await run(db, { handlerStartMs: NOW - 44_000 });
+    expect(res.starved).toBe(true);
+    expect(controlReads.n).toBe(0);
+  });
+});

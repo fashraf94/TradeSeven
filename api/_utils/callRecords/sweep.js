@@ -59,7 +59,8 @@
 
 import { withTimeout } from '../intraday/evaluatorHook.js';
 import { TICK_STAMPS_ENABLED } from '../../../src/config/featureFlags.js';
-import { resolveCallRecordsMode, resolveGlobalCallRecordsMode } from './mode.js';
+import { resolveCallRecordsMode, resolveGlobalCallRecordsMode, ensureReleaseView } from './mode.js';
+import { RELEASE_READ_TIMEOUT_MS } from './release.js';
 import { sessionCloseAfter, battleExpiryMs } from './horizon.js';
 import { buildReceipt, receiptPathOf } from './receipt.js';
 import { buildCallEvent, createCallEvent } from './events.js';
@@ -453,6 +454,11 @@ export async function runCallSweep({ db, handlerStartMs, nowMs = Date.now() }) {
     console.log(`[calls] sweep starved available=${deadlineMs - nowMs}ms (< ${SWEEP_STARVATION_MS}) — no read performed; the next invocation covers it`);
     return summary;
   }
+  // The cockpit's release cohort — the control document, read ONCE per sweep run
+  // (force), bounded by the sweep's own deadline, before any row's parent resolves
+  // the mode (sweepTransition, the due/nullOnly pages and the reconcile page all do).
+  // Never throws; fails closed to the allowlist alone.
+  await ensureReleaseView(db, { force: true, timeoutMs: Math.min(RELEASE_READ_TIMEOUT_MS, Math.max(1, deadlineMs - Date.now())) });
   let state;
   try {
     const snap = await withTimeout(sweepStateRef(db).get(), deadlineMs - Date.now(), 'calls_sweep_state');

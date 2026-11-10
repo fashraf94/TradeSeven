@@ -51,7 +51,7 @@ import { buildTradeDecisionTool } from '../_utils/agentEvalToolSchema.js';
 // Every call site below runs through callsStep — inert at CALL_RECORDS_MODE
 // 'off' (nothing inside it runs), isolated at shadow/on (a calls defect costs
 // the check a record, never a decision, a write or an exit).
-import { resolveCallRecordsMode, createCallsContext, attachCheckContext, callsActive, callsStep, callsStepAsync } from '../_utils/callRecords/mode.js';
+import { resolveCallRecordsMode, ensureReleaseView, createCallsContext, attachCheckContext, callsActive, callsStep, callsStepAsync } from '../_utils/callRecords/mode.js';
 // Cockpit Build 1a (spec §7): the heard writer — injected into the model phase
 // like the flips, so publish.js imports neither.
 import { runHeardPhase } from '../_utils/callRecords/heard.js';
@@ -478,6 +478,14 @@ export default async function handler(req, res) {
       return respond(200, { evaluated: 0, expired: summary.expired, canonicalOpenSweep: summary.canonicalOpenSweep, message: 'No active agent battles' });
     }
     evalRun.battlesTotal = activeBattles.length;
+
+    // ---- 3b'. The cockpit's release cohort — the control document, read ONCE per
+    // run (force), before any battle resolves its calls mode (processAgentBattle,
+    // resolveCallRecordsMode). Bounded (1 s), never throws, fails closed to the
+    // allowlist alone; at global 'off'/'shadow' it reads nothing. With no document
+    // every battle resolves exactly as before this switch existed. (Not a fenced
+    // file; the seam is this one awaited line.)
+    await ensureReleaseView(db, { force: true });
 
     console.log(`${LOG_PREFIX} Found ${activeBattles.length} active agent battle(s) (${summary.expired} expired and completed)`);
 

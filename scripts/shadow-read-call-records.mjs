@@ -22,7 +22,11 @@
 //        [--rollback-check --since=<ISO>]  Build 2a S-9: the live check over the allowlisted battles,
 //                                   counting only entries at/after --since (the flip's production
 //                                   deploy; required) — needs COCKPIT_ALLOWLIST_UIDS in .env.local
-//                                   or the shell
+//                                   or the shell. It ALSO pools the release cohort (BUILD_PROMPT_COCKPIT_RELEASE_SWITCH):
+//                                   the control document cockpitConfig/release is read (`.get()` only) and, when it is active,
+//                                   every agent-mode, non-CPU battle whose owner's bucket is under shareBp is admitted by the
+//                                   server's own membership test — which needs no uid. With no document, or a disabled one,
+//                                   the allowlist alone decides, exactly as before.
 //
 // WHAT IT CANNOT READ: Vercel function logs. The `[calls] phase … removed=`,
 // `[calls] call_conflict`, `[calls] truncation_event` and `[calls] flips …`
@@ -39,6 +43,8 @@ import { getFirebaseAdmin } from '../api/_utils/firebaseAdmin.js';
 // the server reads it (COCKPIT_ALLOWLIST_UIDS; .env.local via loadLocalEnv.js, or the shell).
 import { computeCallsEnabledWindow, renderCallsEnabledWindow, computeRollbackCheck, renderRollbackCheck } from '../api/_utils/callRecords/rollbackRecipe.js';
 import { readCockpitAllowlist } from '../api/_utils/callRecords/allowlist.js';
+// The release cohort's control view (release.js — read with `.get()` only; the module never writes).
+import { ensureReleaseView, getReleaseView } from '../api/_utils/callRecords/release.js';
 
 // ---------------------------------------------------------------- constants
 
@@ -487,7 +493,10 @@ async function main() {
 
   let rollbackCheck = null;
   if (wantRollbackCheck) {
-    rollbackCheck = computeRollbackCheck(battles, { allowlist: readCockpitAllowlist(), nowMs: readAtMs, sinceMs });
+    // The cohort: one forced read of cockpitConfig/release (fails closed to an empty cohort).
+    await ensureReleaseView(db, { force: true, timeoutMs: 10_000 });
+    const cohort = getReleaseView();
+    rollbackCheck = computeRollbackCheck(battles, { allowlist: readCockpitAllowlist(), cohort, nowMs: readAtMs, sinceMs });
     p('### I. Live rollback check (Build 2a S-9) — the allowlisted battles');
     p();
     p(renderRollbackCheck(rollbackCheck));

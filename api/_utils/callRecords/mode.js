@@ -12,7 +12,14 @@
 //   global 'shadow' → 'shadow'
 //   global 'on'     → 'on' iff ownerId is on the server-side allowlist (the
 //                     COCKPIT_ALLOWLIST_UIDS environment variable, read at
-//                     call time by allowlist.js — Build 2a S-5), else 'off'
+//                     call time by allowlist.js — Build 2a S-5) — UNCHANGED, for
+//                     every game mode, League included — OR the battle is in the
+//                     RELEASE COHORT (release.js: an agent-mode, non-CPU battle
+//                     whose owner's bucket is under the control document's
+//                     shareBp; the document is read through ensureReleaseView
+//                     below and consulted here from its CACHED view), else 'off'.
+//                     With no control document the cohort is empty and this is
+//                     exactly the allowlist-only resolution of Build 2a.
 //   anything malformed — an unknown flag value, a non-array allowlist, a
 //   non-string owner, a hermetic test mock that omits a name and throws on
 //   access — → 'off': the only state that changes nothing.
@@ -37,6 +44,8 @@ import { CALL_RECORDS_MODE, CALL_RECORDS_MODES } from '../../../src/config/featu
 // Build 2a (spec S-5, ruling R2A-7): the allowlist is server-only, read from
 // the environment at call time — it no longer exists in the client bundle.
 import { readCockpitAllowlist } from './allowlist.js';
+// The cockpit's own release switch (build prompt BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): the cohort test and the cached view.
+import { isInReleaseCohort, getReleaseView, ensureReleaseView as loadReleaseView, RELEASE_EMPTY_VIEW } from './release.js';
 
 /** The fail-closed default. */
 export const CALLS_MODE_OFF = 'off';
@@ -78,10 +87,48 @@ export function isCockpitOwnerAllowlisted(ownerId) {
  * @returns {'off'|'shadow'|'on'}
  */
 export function resolveCallRecordsMode(battle) {
-  const global = resolveGlobalCallRecordsMode();
-  if (battle === undefined) return global;
-  if (global !== 'on') return global;
-  return isCockpitOwnerAllowlisted(battle?.ownerId) ? 'on' : CALLS_MODE_OFF;
+  try {
+    const global = resolveGlobalCallRecordsMode();
+    if (battle === undefined) return global;
+    if (global !== 'on') return global;
+    if (isCockpitOwnerAllowlisted(battle?.ownerId)) return 'on';
+    return isReleaseCohortBattle(battle) ? 'on' : CALLS_MODE_OFF;
+  } catch {
+    // A hostile battle (a throwing getter) is the one input the inner guards cannot see: off, the state that changes nothing.
+    return CALLS_MODE_OFF;
+  }
+}
+
+/**
+ * Is this battle in the release cohort NOW — read from the cached control view
+ * (release.js getReleaseView), synchronously? An empty or never-loaded view is an
+ * empty cohort. Never throws.
+ */
+export function isReleaseCohortBattle(battle) {
+  try {
+    return isInReleaseCohort(battle, getReleaseView());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Make the cohort view fresh before the resolver is asked — THE ONE AWAIT every
+ * handler that resolves the mode makes first (and, outside a transaction: the
+ * resolver itself stays synchronous). `force: true` is once per evaluator run
+ * and once per sweep run; request paths reuse a view for 60 s. At global 'off'
+ * or 'shadow' there is no cohort to learn, so nothing is read. Never throws.
+ *
+ * @param {object} db
+ * @param {{ force?: boolean, timeoutMs?: number }} [opts]
+ */
+export async function ensureReleaseView(db, opts) {
+  try {
+    if (resolveGlobalCallRecordsMode() !== 'on') return RELEASE_EMPTY_VIEW;
+    return await loadReleaseView(db, opts);
+  } catch {
+    return RELEASE_EMPTY_VIEW;
+  }
 }
 
 /** Does this mode record calls at all? ('shadow' and 'on' do; 'off' does nothing.) */
