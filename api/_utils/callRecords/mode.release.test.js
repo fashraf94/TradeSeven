@@ -216,3 +216,65 @@ describe('never throws', () => {
     expect(resolveCallRecordsMode({})).toBe('off');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE DARK PROOF, differentially: with an EMPTY cohort view — never loaded, absent, disabled, malformed,
+// a read error, a timeout, a stale view — the resolver is, for every battle, exactly the allowlist-only
+// resolver this build replaced (global gate, then isCockpitOwnerAllowlisted, else 'off').
+describe('with an empty cohort view the resolver is the pre-switch resolver, for every battle', () => {
+  const legacy = (battle) => {
+    const g = flag.mode;
+    const global = ['off', 'shadow', 'on'].includes(g) ? g : 'off';
+    if (battle === undefined) return global;
+    if (global !== 'on') return global;
+    return isCockpitOwnerAllowlisted(battle?.ownerId) ? 'on' : 'off';
+  };
+  const OWNERS = [ALLOWED, 'owner-other', MEMBER, OUTSIDER, '', null, 42, 'cpu-1'];
+  const MODES = [AGENT, LEAGUE, undefined, 'baggerbomb_other'];
+  const CPUS = [undefined, true, false];
+  const EMPTY_VIEWS = {
+    unread: async () => {},
+    absent: async () => { control.value = undefined; await ensureReleaseView(db); },
+    disabled: async () => { control.value = { shareBp: 10000, disabled: true, salt: SALT }; await ensureReleaseView(db); },
+    malformed: async () => { control.value = { shareBp: 12345, disabled: false, salt: SALT }; await ensureReleaseView(db); },
+    'read error': async () => { control.throws = true; await ensureReleaseView(db); },
+    timeout: async () => { await ensureReleaseView({ collection: () => ({ doc: () => ({ get: () => new Promise(() => {}) }) }) }, { timeoutMs: 15 }); },
+    shareZero: async () => { control.value = { shareBp: 0, disabled: false, salt: SALT }; await ensureReleaseView(db); },
+  };
+  for (const [viewName, arrange] of Object.entries(EMPTY_VIEWS)) {
+    it(`${viewName}: global off / shadow / on / unknown × owners × game modes × isCpu — identical to the allowlist-only resolver`, async () => {
+      await arrange();
+      let compared = 0;
+      for (const g of ['off', 'shadow', 'on', 'banana']) {
+        flag.mode = g;
+        for (const ownerId of OWNERS) for (const gameMode of MODES) for (const isCpu of CPUS) {
+          const battle = { id: 'b', ownerId, gameMode, isCpu, status: 'active' };
+          expect(resolveCallRecordsMode(battle), `${viewName} ${g} ${String(ownerId)} ${gameMode} ${isCpu}`).toBe(legacy(battle));
+          compared += 1;
+        }
+        expect(resolveCallRecordsMode(), `${viewName} ${g} (no battle)`).toBe(legacy(undefined));
+      }
+      expect(compared).toBe(4 * OWNERS.length * MODES.length * CPUS.length);
+    });
+  }
+  it('a stale view (older than 10 minutes) is the same: the allowlist alone', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const t0 = Date.parse('2026-11-12T15:00:00Z');
+    vi.setSystemTime(t0);
+    control.value = { shareBp: 10000, disabled: false, salt: SALT };
+    await ensureReleaseView(db);
+    vi.setSystemTime(t0 + RELEASE_VIEW_MAX_AGE_MS + 1);
+    for (const ownerId of OWNERS) for (const gameMode of MODES) {
+      const battle = { id: 'b', ownerId, gameMode, status: 'active' };
+      expect(resolveCallRecordsMode(battle)).toBe(legacy(battle));
+    }
+  });
+  it('the control row: the SAME battles ARE admitted by an active cohort — so the differential above is not vacuous', async () => {
+    control.value = { shareBp: 10000, disabled: false, salt: SALT };
+    await ensureReleaseView(db);
+    const diff = OWNERS.flatMap((ownerId) => MODES.flatMap((gameMode) => CPUS.map((isCpu) => ({ id: 'b', ownerId, gameMode, isCpu, status: 'active' }))))
+      .filter((b) => resolveCallRecordsMode(b) !== legacy(b));
+    expect(diff.length).toBeGreaterThan(0);
+    for (const b of diff) expect(b).toMatchObject({ gameMode: AGENT });
+  });
+});
