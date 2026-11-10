@@ -330,24 +330,13 @@ export function renderStage(read) {
 
 // ---------------------------------------------------------------- the run (reads only)
 
-async function main() {
-  const { writeFileSync } = await import('node:fs');
-  const path = (await import('node:path')).default;
-  const { PROJECT_ROOT } = await import('./loadLocalEnv.js');
-  const { getFirebaseAdmin } = await import('../api/_utils/firebaseAdmin.js');
-  const { ensureReleaseView, getReleaseView } = await import('../api/_utils/callRecords/release.js');
-  const { isInReleaseCohort } = await import('../api/_utils/callRecords/release.js');
-  const { readCockpitAllowlist } = await import('../api/_utils/callRecords/allowlist.js');
-  const { callDeadlineMs } = await import('../api/_utils/callRecords/sweep.js');
-  const args = process.argv.slice(2);
-  const argOf = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
-  const today = etDay(Date.now());
-  const from = argOf('--from') || today;
-  const to = argOf('--to') || from;
-  const days = sessionDays(from, to);
-  if (!days.length) throw new Error('--from/--to name no weekday');
-  const db = getFirebaseAdmin();
-  const readAtMs = Date.now();
+/**
+ * Everything the stage read reads — through `.get()` only — and the tallies over it. `db` is a Firestore Admin handle; `control` the
+ * release view already read (release.js); `allowlistList` the allowlist's uids ([] when the shell has none); `isInCohort(battle, view)`
+ * the server's own membership test; `deadlineOf` the sweep's own call deadline. Exported so a test can drive the wiring with a fake
+ * handle (review RS-L4-7): the masks, the window, the CPU skip, the cohort flag, the control line.
+ */
+export async function gatherStage(db, { days, readAtMs, control, allowlistList = [], deadlineOf, isInCohort }) {
   const floorIso = new Date(Date.parse(`${days[0]}T00:00:00Z`) - 86_400_000).toISOString();
   const ceilIso = new Date(Date.parse(`${days[days.length - 1]}T00:00:00Z`) + 2 * 86_400_000).toISOString();
 
@@ -357,12 +346,9 @@ async function main() {
   const battleDocs = (await db.collection('agentBattles').where('expiresAt', '>=', floorIso).where('expiresAt', '<=', ceilIso)
     .select('ownerId', 'gameMode', 'isCpu', 'status', 'expiresAt').get()).docs;
   const ordinal = ordinalsOf(battleDocs.map((d) => d.data().ownerId));
-  // 3. the control document (cohort basis) and the optional allowlist
-  await ensureReleaseView(db, { force: true, timeoutMs: 10_000 });
-  const control = getReleaseView();
-  const list = readCockpitAllowlist();
-  const allowlist = list.length ? new Set(list) : null;
-  const inCohort = control.active ? (b) => isInReleaseCohort(b, control) : null;
+  // 3. the cohort basis: the optional allowlist, else the control document's own bucket test
+  const allowlist = allowlistList.length ? new Set(allowlistList) : null;
+  const inCohort = control.active ? (b) => isInCohort(b, control) : null;
 
   const ticks = []; const calls = []; const events = []; const battleDays = {};
   for (const d of days) battleDays[d] = [];
@@ -382,16 +368,39 @@ async function main() {
   }
   const queue = (await db.collection('callSweepQueue').select('nextExpiresAt').get()).docs.map((q) => q.data());
 
-  const read = {
+  return {
     readAtMs, days,
     control: control.active ? `active, ${control.shareBp} bp` : `${control.status} (the cohort is empty)`,
     evaluator: evaluatorRead(runs, days),
     checks: checksRead(ticks, days),
     answers: answersRead({ calls, events }, days),
     cohort: cohortRead(battleDays, { allowlist, inCohort }),
-    sweep: sweepLagRead({ calls, queue, nowMs: readAtMs, deadlineOf: callDeadlineMs }, days),
+    sweep: sweepLagRead({ calls, queue, nowMs: readAtMs, deadlineOf }, days),
     cost: costRead(ticks, days),
   };
+}
+
+async function main() {
+  const { writeFileSync } = await import('node:fs');
+  const path = (await import('node:path')).default;
+  const { PROJECT_ROOT } = await import('./loadLocalEnv.js');
+  const { getFirebaseAdmin } = await import('../api/_utils/firebaseAdmin.js');
+  const { ensureReleaseView, getReleaseView } = await import('../api/_utils/callRecords/release.js');
+  const { isInReleaseCohort } = await import('../api/_utils/callRecords/release.js');
+  const { readCockpitAllowlist } = await import('../api/_utils/callRecords/allowlist.js');
+  const { callDeadlineMs } = await import('../api/_utils/callRecords/sweep.js');
+  const args = process.argv.slice(2);
+  const argOf = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
+  const today = etDay(Date.now());
+  const from = argOf('--from') || today;
+  const to = argOf('--to') || from;
+  const days = sessionDays(from, to);
+  if (!days.length) throw new Error('--from/--to name no weekday');
+  const db = getFirebaseAdmin();
+  const readAtMs = Date.now();
+  await ensureReleaseView(db, { force: true, timeoutMs: 10_000 });
+  const control = getReleaseView();
+  const read = await gatherStage(db, { days, readAtMs, control, allowlistList: readCockpitAllowlist(), deadlineOf: callDeadlineMs, isInCohort: isInReleaseCohort });
   const out = renderStage(read);
   if (argOf('--out')) writeFileSync(path.resolve(PROJECT_ROOT, argOf('--out')), out); else process.stdout.write(out + '\n');
 }

@@ -12,9 +12,11 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  classifyTick, cohortFlagOf, evaluatorRead, checksRead, answersRead, cohortRead, sweepLagRead, costRead, renderStage, ordinalsOf, sessionDays, etDay, toMs,
+  classifyTick, cohortFlagOf, gatherStage, evaluatorRead, checksRead, answersRead, cohortRead, sweepLagRead, costRead, renderStage, ordinalsOf, sessionDays, etDay, toMs,
   percentile, WALL_TRIP_MS, ON_ERA_START_MS, ON_EXTRA_USD_PER_CHECK, HAIKU_PRICE_PER_MTOK,
 } from './cockpit-release-read.mjs';
+
+import { bucketOf, parseReleaseDocument, isInReleaseCohort, RELEASE_EMPTY_VIEW } from '../api/_utils/callRecords/release.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const D1 = '2026-11-12';
@@ -331,5 +333,129 @@ describe('the script is read-only, needs no uid and prints no id', () => {
     const fn = src.slice(src.indexOf('export function classifyTick'), src.indexOf('/**\n * Is this battle in the release cohort?'));
     expect(fn).toMatch(/schemaVersion/);
     expect(fn).not.toMatch(/ownerId|allowlist/);
+  });
+});
+
+// RS-L4-7: the stage read's wiring, driven through a FAKE Firestore handle (no credential, no network). Every mutant that survived the
+// pure-tally rows lived here: the cohort ternaries, the control line, the CPU skip, the field mask, the window.
+describe('gatherStage — the read\'s wiring against a fake handle', () => {
+  const SALT = 'stage-salt';
+  const SHARE = 5000;
+  /** The first synthetic owner (not already taken) whose bucket under the stage salt satisfies the predicate. */
+  const taken = new Set();
+  const owner = (pred) => { for (let i = 0; i < 100000; i += 1) { const id = `own-${i}`; if (!taken.has(id) && pred(bucketOf(id, SALT))) { taken.add(id); return id; } } throw new Error('no owner'); };
+  const PILOT = owner((x) => x >= SHARE);          // allowlisted, over the share (so the bucket test alone would NOT admit it)
+  const COHORT = owner((x) => x < SHARE);          // not allowlisted, under the share
+  const OVER2 = owner((x) => x >= SHARE);          // not allowlisted, over the share
+  const LEAGUE_OWNER = owner((x) => x < SHARE);    // allowlisted League owner, under the share (League is out whatever the bucket)
+  const IDS = [PILOT, COHORT, OVER2, LEAGUE_OWNER, 'cpu-1', 'zzbattle-P', 'zzbattle-C', 'zzbattle-X', 'zzbattle-L', 'zzbattle-K'];
+  const CONTROL = parseReleaseDocument({ shareBp: SHARE, disabled: false, salt: SALT }, 1);
+  const D1T = '2026-11-12T15:00:00Z';
+  const tk = (v, outcome = 'ok', failureClass = null) => ({ schemaVersion: v, capturedAt: D1T, model: { dispatched: true, outcome, failureClass }, callEnvelope: { inputTokens: 1000, outputTokens: 100 } });
+  const BATTLES = [
+    ['zzbattle-P', { ownerId: PILOT, gameMode: 'baggerbomb_agent', status: 'completed', expiresAt: D1T }],
+    ['zzbattle-C', { ownerId: COHORT, gameMode: 'baggerbomb_agent', status: 'completed', expiresAt: D1T }],
+    ['zzbattle-X', { ownerId: OVER2, gameMode: 'baggerbomb_agent', status: 'completed', expiresAt: D1T }],
+    ['zzbattle-L', { ownerId: LEAGUE_OWNER, gameMode: 'baggerbomb_tournament', status: 'completed', expiresAt: D1T }],
+    ['zzbattle-K', { ownerId: 'cpu-1', gameMode: 'baggerbomb_tournament', isCpu: true, status: 'completed', expiresAt: D1T }],
+  ];
+  const TICKS = {
+    'zzbattle-P': [tk(2), tk(2)],
+    'zzbattle-C': [tk(2), tk(2, 'failed', 'timeout')],
+    'zzbattle-X': [tk(1), tk(1)],
+    'zzbattle-L': [tk(2)],
+    'zzbattle-K': [tk(2)],
+  };
+  const CALLS = { 'zzbattle-C': [{ callId: 'c1', playerResponse: { kind: 'directive', answer: 'go_now' }, stateSource: 'flip' }] };
+  const EVENTS = { 'zzbattle-C': [{ kind: 'answered', at: Date.parse(D1T), callIds: ['c1'] }] };
+  /** A fake Admin handle: queries record what they were asked and answer from the fixtures; it has no write method at all. */
+  function fakeStageDb() {
+    const log = [];
+    const snap = (pairs) => ({ docs: pairs.map(([id, data]) => ({ id, data: () => data })) });
+    const query = (path, pairs) => {
+      const q = {
+        wheres: [], mask: null,
+        where(f, op, v) { q.wheres.push([f, op, v]); return q; },
+        select(...f) { q.mask = f; return q; },
+        async get() { log.push({ path, wheres: q.wheres, mask: q.mask }); return snap(pairs); },
+      };
+      return q;
+    };
+    const sub = (id, name) => {
+      const src = { ticks: TICKS, calls: CALLS, callEvents: EVENTS }[name];
+      return query(`agentBattles/${id}/${name}`, (src[id] || []).map((d, i) => [`${name}${i}`, d]));
+    };
+    return {
+      log,
+      collection(name) {
+        if (name === 'agentBattles') { const q = query(name, BATTLES); q.doc = (id) => ({ collection: (s) => sub(id, s) }); return q; }
+        return query(name, []);
+      },
+    };
+  }
+  const base = { days: DAYS, readAtMs: Date.parse('2026-11-13T20:00:00Z'), deadlineOf: () => null, isInCohort: isInReleaseCohort };
+
+  it('with the allowlist in the shell: the cohort is every agent-mode, non-CPU, non-allowlisted battle; League and the pilot are not', async () => {
+    const db = fakeStageDb();
+    const read = await gatherStage(db, { ...base, control: CONTROL, allowlistList: [PILOT, LEAGUE_OWNER] });
+    const [d1] = read.checks;
+    expect(d1.on).toEqual({ n: 5, timeout: 1, e400: 0, invalid: 0, other: 0 }); // pilot 2 + cohort 2 + League 1 (the CPU seat is never read)
+    expect(d1.cohort).toEqual({ n: 2, timeout: 1, e400: 0, invalid: 0, other: 0 }); // only the cohort battle's own checks
+    expect(d1.off.n).toBe(2);
+    expect(d1.cohortFlags.timeout).toBe('ABOVE');
+    expect(read.cohort.basis).toBe('outside the allowlist');
+    expect(read.cohort.perDay[0]).toMatchObject({ onAgentBattles: 2, cohortBattles: 1 });
+    expect(read.answers[0]).toMatchObject({ commands: 1 });
+    expect(read.control).toBe('active, 5000 bp');
+  });
+
+  it('without the allowlist: the control document\'s bucket test decides — the pilot and the over-share owner are out, the under-share owner is in', async () => {
+    const read = await gatherStage(fakeStageDb(), { ...base, control: CONTROL, allowlistList: [] });
+    expect(read.checks[0].cohort.n).toBe(2);
+    expect(read.cohort.basis).toBe('bucket under the share');
+    expect(read.cohort.perDay[0]).toMatchObject({ onAgentBattles: 2, cohortBattles: 1 });
+  });
+
+  it('with neither an allowlist nor an active control document the cohort is NOT DETERMINABLE — never a guess — and the control line says why', async () => {
+    const read = await gatherStage(fakeStageDb(), { ...base, control: RELEASE_EMPTY_VIEW, allowlistList: [] });
+    expect(read.checks[0].cohort.n).toBe(0);
+    expect(read.checks[0].on.n).toBe(5);
+    expect(read.cohort.basis).toBe('not determinable');
+    expect(read.cohort.perDay[0].cohortBattles).toBeNull();
+    expect(read.control).toBe('unread (the cohort is empty)');
+    const disabled = await gatherStage(fakeStageDb(), { ...base, control: parseReleaseDocument({ shareBp: 10000, disabled: true, salt: 's' }, 1), allowlistList: [] });
+    expect(disabled.control).toBe('disabled (the cohort is empty)');
+  });
+
+  it('what it asks for: the window is [first day − 1 d, last day + 2 d], the battle mask names no portfolio, chat or evaluation field, a CPU seat is never read, off-only battles read no calls', async () => {
+    const db = fakeStageDb();
+    await gatherStage(db, { ...base, control: CONTROL, allowlistList: [PILOT] });
+    const FLOOR = '2026-11-11T00:00:00.000Z';
+    const CEIL = '2026-11-15T00:00:00.000Z';
+    const find = (path) => db.log.filter((e) => e.path === path);
+    expect(find('agentBattles')).toEqual([{ path: 'agentBattles', wheres: [['expiresAt', '>=', FLOOR], ['expiresAt', '<=', CEIL]], mask: ['ownerId', 'gameMode', 'isCpu', 'status', 'expiresAt'] }]);
+    expect(find('agentEvalRuns')).toEqual([{ path: 'agentEvalRuns', wheres: [['startedAt', '>=', FLOOR], ['startedAt', '<=', CEIL]], mask: null }]);
+    expect(find('callSweepQueue')[0].mask).toEqual(['nextExpiresAt']);
+    const paths = db.log.map((e) => e.path);
+    expect(paths.filter((p) => p.includes('zzbattle-K'))).toEqual([]); // a CPU seat: nothing is read
+    expect(paths).toContain('agentBattles/zzbattle-X/ticks');
+    expect(paths.filter((p) => p.startsWith('agentBattles/zzbattle-X/') && !p.endsWith('/ticks'))).toEqual([]); // no `on` check → no calls or events read
+    expect(paths).toContain('agentBattles/zzbattle-C/calls');
+    expect(paths).toContain('agentBattles/zzbattle-C/callEvents');
+    for (const e of db.log.filter((x) => x.path.endsWith('/ticks'))) expect(e.mask).toEqual(['schemaVersion', 'capturedAt', 'model', 'callEnvelope']);
+    expect(db.log.flatMap((e) => e.mask || []).filter((f) => /portfolio|evaluations|chat|message/i.test(f))).toEqual([]);
+  });
+
+  it('the rendering carries no owner id, no battle id and no CPU id — ordinals only', async () => {
+    const read = await gatherStage(fakeStageDb(), { ...base, control: CONTROL, allowlistList: [PILOT] });
+    const out = renderStage(read) + JSON.stringify(read);
+    for (const id of IDS) expect(out, id).not.toContain(id);
+    expect(out).toMatch(/owner\d+ ×1/);
+  });
+
+  it('main() runs it with the sweep\'s own deadline and the server\'s own membership test, after one forced control read', () => {
+    const src = readFileSync(resolve(HERE, 'cockpit-release-read.mjs'), 'utf8').replace(/\r\n/g, '\n');
+    expect(src).toContain("await ensureReleaseView(db, { force: true, timeoutMs: 10_000 });\n  const control = getReleaseView();");
+    expect(src).toContain('gatherStage(db, { days, readAtMs, control, allowlistList: readCockpitAllowlist(), deadlineOf: callDeadlineMs, isInCohort: isInReleaseCohort })');
   });
 });
