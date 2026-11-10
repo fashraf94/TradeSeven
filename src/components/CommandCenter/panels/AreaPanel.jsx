@@ -27,7 +27,8 @@ import PartnershipPanel from './PartnershipPanel';
 import ResearchPanel from './ResearchPanel';
 
 export function AreaBody({ area, sections, actions }) {
-  if (area === HUB_AREAS.PARTNERSHIP) return <PartnershipPanel />;
+  // Huddle S1: the game plan's panel only when the hub hands a Huddle section (flag on); otherwise the reserved line.
+  if (area === HUB_AREAS.PARTNERSHIP) return sections.huddlePartnership ? <PartnershipPanel huddle={sections.huddlePartnership} onOpenHuddle={actions.openHuddle} onRetry={actions.retryHuddle} /> : <PartnershipPanel />;
   if (area === HUB_AREAS.RESEARCH) return <ResearchPanel research={sections.research} onOpenForge={actions.openResearchForge} onRetry={actions.retryResearch} />;
   return (
     <LoadoutPanel

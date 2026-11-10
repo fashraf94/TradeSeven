@@ -155,6 +155,15 @@ import { PhoneStage, ShadowStage } from './ShadowStage';
 import { AGENT_FORM_ARMORY_ENABLED } from '../../config/agentFormFlags';
 import { PhoneArmoryScope, armoryHeroRead } from './Armory';
 import { HOLD_PHASES } from './hub/selectors/attemptVocabulary';
+// Huddle S1 (Huddle spec Amendment C V1.2 §C4, §C6–C8, §C15; Command Center spec V1.2 Amendment D): the flag as a literal, so
+// with it off every Huddle branch below folds away; the two readers (outside this directory, permitted terminals); the pure view.
+import { DRB_HUDDLE_ENABLED } from '../../config/huddleFlags';
+import useHuddleToday from '../../hooks/useHuddleToday';
+import useHuddleHistory from '../../hooks/useHuddleHistory';
+import { deriveNextAction, NEXT_ACTION_KINDS } from './hub/nextAction';
+import { HUDDLE_KIND, huddleActivityOf, huddleCandidateOf, huddleChipOf, huddlePartnershipOf, huddlePartnershipSummaryOf, needsReconfirmOf } from './hub/huddleView';
+import HuddleChip from './HuddleChip';
+import HuddleSheet from './HuddleSheet';
 // Build A2 (per-game loadouts): the flag on its own line (agentFormFlags.test.js pins the lines above), the scope and its
 // context, and the armory's sheet context (AR-5: the opener reaches HubSheet). Every read below is a literal ternary.
 import { PER_GAME_LOADOUT_ENABLED } from '../../config/perGameLoadoutFlags';
@@ -170,7 +179,11 @@ export function shadowSizeFor(composition, width) {
   return 260;
 }
 
-/** The three area summaries, in area order. Partnership's is fixed; the others are loading until their reader resolves. */
+/**
+ * The three area summaries, in area order. Partnership's is the reserved line, or — Huddle S1, only while the hub holds a Huddle
+ * Partnership section (DRB_HUDDLE_ENABLED on) — that section's state in one line (Huddle C §C8; Amendment D §D5). The others
+ * are loading until their reader resolves.
+ */
 export function areaSummaries(sections) {
   const of = (section, loading) => (section?.status === 'ready' && section.summary ? section.summary : loading);
   // S5: a resolved absence of the agent is an answer, not a wait; since the S3 merge so is a failed read.
@@ -181,7 +194,8 @@ export function areaSummaries(sections) {
   // S6: every settled Research state has its own one-line summary (hub/researchView.js deriveResearch); a loading one has none.
   const research = sections.research;
   const researchLine = research && research.status !== 'loading' && typeof research.summary === 'string' && research.summary ? research.summary : COPY.research.summaryLoading;
-  return [COPY.partnership.summary, researchLine, loadout];
+  const partnership = (sections.huddlePartnership ? huddlePartnershipSummaryOf(sections.huddlePartnership) : null) ?? COPY.partnership.summary;
+  return [partnership, researchLine, loadout];
 }
 
 const rootStyle = { position: 'relative', zIndex: HUB_LAYERS.page, color: C.ink, outline: 'none' };
@@ -299,6 +313,36 @@ function deployActionsOf(deploy, sheet, runtime) {
 }
 
 /**
+ * Huddle S1: the shell actions the Huddle adds — open the sheet (its open refreshes the status: Huddle C §C7), Retry, the Deploy
+ * card's Reconfirm door (C15), and the next action's Open and Later (C6). None without a Huddle.
+ *
+ * The card ConnectedHub shows is derived WITH the Huddle rule; the readers' own actions were built for the card derived
+ * without it, and the two can name different games (a game in session is picked among the opened rows only). So the
+ * card's Open and Later always act on the card's own candidate (review L3-1): the Huddle's sheet, a game, a review, or
+ * the readers' own handler for the first deployment (its hold is the deploy action, R-S4-8).
+ */
+export function huddleActionsOf(huddle, sheet, nextAction, base = NO_ACTIONS) {
+  if (!huddle) return null;
+  const openSheet = sheet.open(HUB_SHEETS.HUDDLE);
+  const open = (event) => { huddle.refresh(); openSheet(event); };
+  const shown = nextAction?.status === 'ready' ? nextAction.candidate ?? null : null;
+  let card = {};
+  if (shown?.key === HUDDLE_KIND) card = { nextAction: open, laterNextAction: huddle.laterFor(shown.laterKey) };
+  else if (shown) {
+    const act = shown.key === NEXT_ACTION_KINDS.OPEN_GAME && base.openGame ? () => base.openGame({ id: shown.id })
+      : shown.key === NEXT_ACTION_KINDS.REVIEW && base.openTape ? () => base.openTape({ id: shown.id })
+        : base.nextAction;
+    card = { nextAction: act, laterNextAction: huddle.laterFor(shown.laterKey) ?? base.laterNextAction };
+  }
+  return {
+    openHuddle: open,
+    retryHuddle: huddle.retry,
+    reconfirmHuddle: huddle.needsReconfirm ? open : undefined,
+    ...card,
+  };
+}
+
+/**
  * Slice S2b (ruling R-S2b-7): the shipped Scouting Board, registered `within` the hub's stack by useHubSheets. Its
  * footer deploy is a tap through the provider's admission, inside its own modal and nowhere else.
  */
@@ -319,7 +363,7 @@ function ScoutingBoard({ open, onClose, dock, agent, deploy, board, sections, pr
 }
 
 /** The mobile site: header → compact stage → sticky tabs → section, and the strip above BottomNav. */
-function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null, attemptId = null, coverOpen = false }) {
+function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null, attemptId = null, coverOpen = false, huddle = null }) {
   const rootRef = useRef(null);
   const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef, researchRead });
   const { sections, sheets: sheet } = runtime;
@@ -336,6 +380,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
     ...deployActionsOf(deploy, sheet, runtime),
     openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
     openAllActivity: sheet.open(HUB_SHEETS.ACTIVITY),
+    ...(DRB_HUDDLE_ENABLED ? huddleActionsOf(huddle, sheet, sections.nextAction, wired) : null),
   };
   // Changing area before commitment cancels the charge (spec §5.5); the panels stay mounted while it charges.
   // Agent form build A1 follow-up (founder ruling N2(d)): the phone armory is part of the page, so the page stays usable,
@@ -406,6 +451,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
               progress={deploy?.progress ?? null}
             />
           )}
+          {DRB_HUDDLE_ENABLED && huddle ? <HuddleChip chip={huddle.chip} onOpen={actions.openHuddle} /> : null}
         </div>
         <PhoneTabRow idBase={shared.idBase} tab={tab} onSelect={selectTab} />
         <div style={{ padding: '14px 14px 24px' }}>
@@ -450,6 +496,9 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
       {sheet.sheet === HUB_SHEETS.ACTIVITY && (
         <ActivitySheet activity={sections.activity} phone onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpen={actions.openActivity} />
       )}
+      {DRB_HUDDLE_ENABLED && huddle && sheet.sheet === HUB_SHEETS.HUDDLE ? (
+        <HuddleSheet huddle={huddle} phone onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} ceremonyActive={coverOpen} />
+      ) : null}
       {runtime.live && (AGENT_FORM_ARMORY_ENABLED ? (
         <ArmorySheetContext.Provider value={{ opener: sheet.opener, fallbackFocus: sheet.fallback }}>
           <LoadoutSheets
@@ -480,7 +529,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
 }
 
 /** The desktop site: Desktop, Tablet or Stacked by the hub's own width. */
-function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null, attemptId = null, coverOpen = false }) {
+function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null, attemptId = null, coverOpen = false, huddle = null }) {
   const rootRef = useRef(null);
   const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef, researchRead });
   const { sections, sheets: sheet } = runtime;
@@ -497,6 +546,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
     ...deployActionsOf(deploy, sheet, runtime),
     openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
     openAllActivity: sheet.open(HUB_SHEETS.ACTIVITY),
+    ...(DRB_HUDDLE_ENABLED ? huddleActionsOf(huddle, sheet, sections.nextAction, wired) : null),
   };
   // Changing area before commitment cancels the charge (spec §5.5).
   const selectArea = (next) => { deploy?.cancelCharging(); if (next !== area) setAreaEvent((n) => n + 1); setArea(next); };
@@ -560,6 +610,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
           holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.CARD ? deploy.holdPhase : null}
           onOpenBoard={actions.openBoard}
           idea={sections.deployingWith ?? null}
+          reconfirm={DRB_HUDDLE_ENABLED && actions.reconfirmHuddle ? { onReconfirm: actions.reconfirmHuddle } : null}
         />
       </PerGameLoadoutContext.Provider>
     ) : (
@@ -572,6 +623,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
         holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.CARD ? deploy.holdPhase : null}
         onOpenBoard={actions.openBoard}
         idea={sections.deployingWith ?? null}
+        reconfirm={DRB_HUDDLE_ENABLED && actions.reconfirmHuddle ? { onReconfirm: actions.reconfirmHuddle } : null}
       />
     ),
     activity: <ActivitySection activity={sections.activity} limit={DESKTOP_ACTIVITY_LIMIT} onOpen={actions.openActivity} onAll={actions.openAllActivity} />,
@@ -585,7 +637,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
         <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />
       </div>
       <div data-hub-slot="main" style={grid.main}>
-        <div data-hub-slot="stage" style={{ gridArea: 'stage', minWidth: 0 }}>{stage}</div>
+        <div data-hub-slot="stage" style={{ gridArea: 'stage', minWidth: 0 }}>{stage}{DRB_HUDDLE_ENABLED && huddle ? <HuddleChip chip={huddle.chip} onOpen={actions.openHuddle} /> : null}</div>
         <div data-hub-slot="panel" style={{ gridArea: 'panel', minWidth: 0 }}>{panel}</div>
       </div>
       <div data-hub-slot="side" style={grid.side}>
@@ -619,6 +671,9 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
       {sheet.sheet === HUB_SHEETS.ACTIVITY && (
         <ActivitySheet activity={sections.activity} onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpen={actions.openActivity} />
       )}
+      {DRB_HUDDLE_ENABLED && huddle && sheet.sheet === HUB_SHEETS.HUDDLE ? (
+        <HuddleSheet huddle={huddle} onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} ceremonyActive={coverOpen} />
+      ) : null}
       {runtime.live && (AGENT_FORM_ARMORY_ENABLED ? (
         // A1 carry AR-5: the dialog's HubSheet returns focus to the control that opened it, as the History sheet's does.
         <ArmorySheetContext.Provider value={{ opener: sheet.opener, fallbackFocus: sheet.fallback }}>
@@ -695,8 +750,34 @@ function ConnectedHub({ site, hub, sections }) {
   // render them alone, without the Firebase configuration the idea service's auth wrapper loads. Hub chunk only — nothing the
   // root deploy provider imports reaches it.
   const research = useHubResearch({ auth: readers.inputs?.auth ?? null, listId: readers.agent?.agent?.equippedWatchlistId ?? null, gateOn: hubFlags().hypothesisRecordsOn });
+  // Huddle S1 (Huddle C §C7; Command Center Amendment D §D4): the two Huddle readers, called here beside the idea reader for the
+  // same reason (their one service loads the Firebase configuration the readers' suites render without). Hub chunk only — nothing
+  // the root deploy provider imports reaches them. Off, each is idle: no read, no listener.
+  const huddleToday = useHuddleToday({ auth: readers.inputs?.auth ?? null, enabled: DRB_HUDDLE_ENABLED });
+  const huddleHistory = useHuddleHistory({ auth: readers.inputs?.auth ?? null, enabled: DRB_HUDDLE_ENABLED });
   const deploy = useHubDeploy({ deployAttempt, readers, hub });
   const live = { ...sections, ...readers.sections };
+  // Huddle S1: the section, the next action's rule (C6), Partnership (C8), Activity's rows (C8) and the reconfirm line (C15), all
+  // pure derivations of the two readers and the agent read the hub already holds. A literal false folds this away.
+  let huddle = null;
+  if (DRB_HUDDLE_ENABLED) {
+    const candidate = huddleCandidateOf(huddleToday.read, Date.now());
+    if (readers.next) live.nextAction = deriveNextAction({ ...readers.next.inputs, dismissed: readers.next.dismissed, huddle: candidate });
+    live.huddlePartnership = huddlePartnershipOf(huddleToday.read, huddleHistory.read);
+    if (live.activityInputs) live.activityInputs = { ...live.activityInputs, huddle: huddleActivityOf(huddleHistory.read, readers.inputs?.auth?.uid ?? null) };
+    const reconfirm = needsReconfirmOf(huddleToday.read, readers.agent?.agent?.archetype ?? null);
+    huddle = {
+      read: huddleToday.read,
+      chip: huddleChipOf(huddleToday.read),
+      refresh: huddleToday.refresh,
+      retry: () => { huddleToday.refresh(); huddleHistory.refresh(); },
+      confirm: async (args) => { const r = await huddleToday.confirm(args); huddleHistory.refresh(); return r; },
+      skip: async () => { const r = await huddleToday.skip(); huddleHistory.refresh(); return r; },
+      needsReconfirm: reconfirm,
+      focusPlan: reconfirm,
+      laterFor: readers.next ? readers.next.laterFor : () => undefined,
+    };
+  }
   let actions = readers.actions;
   let board = null;
   if (deploy) {
@@ -725,20 +806,20 @@ function ConnectedHub({ site, hub, sections }) {
     <PerGameLoadoutScope agentRead={readers.agent} activeBattles={hub?.activeBattles ?? null}>
       <HubAgentFormContext.Provider value={armoryHeroRead(readers.agent)}>
         {site === HUB_SITES.MOBILE
-          ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
-          : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />}
+          ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />
+          : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />}
       </HubAgentFormContext.Provider>
     </PerGameLoadoutScope>
   ) : (
     <HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>
       {site === HUB_SITES.MOBILE
-        ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
-        : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />}
+        ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />
+        : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />}
     </HubAgentFormContext.Provider>
     )
   ) : site === HUB_SITES.MOBILE
-    ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
-    : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />;
+    ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />
+    : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />;
 }
 
 /**

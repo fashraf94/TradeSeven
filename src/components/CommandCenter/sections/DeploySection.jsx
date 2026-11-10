@@ -105,7 +105,23 @@ function DeployingWith({ idea, displayState }) {
  * its one action. The hold stays on the strip; this card has none. The strip's
  * status button opens this tab.
  */
-export function PhoneDeployCard({ deploy, onAction, onOpenBoard, idea = null }) {
+/**
+ * Huddle S1 (Huddle spec Amendment C V1.2 §C15; Command Center spec V1.2 Amendment D §D8): the one reconfirm line and its
+ * door, when the archetype the agent read shows differs from the newest confirmation's. A pure derivation (hub/huddleView.js
+ * needsReconfirmOf) from readers the hub already has: the card makes no call, and the line never blocks or delays a deploy.
+ */
+function ReconfirmLine({ reconfirm }) {
+  if (!reconfirm) return null;
+  return (
+    <div data-hub-huddle-reconfirm="" style={{ marginTop: 10, fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
+      <span>{COPY.huddle.deployReconfirm}</span>
+      <span>{COPY.sep}</span>
+      <HubLink onPress={reconfirm.onReconfirm}>{COPY.huddle.deployReconfirmDoor}</HubLink>
+    </div>
+  );
+}
+
+export function PhoneDeployCard({ deploy, onAction, onOpenBoard, idea = null, reconfirm = null }) {
   const display = deployDisplay(deploy);
   return (
     <Section label={COPY.deploy.label} data-hub-section="deploy">
@@ -120,6 +136,7 @@ export function PhoneDeployCard({ deploy, onAction, onOpenBoard, idea = null }) 
           display={display.cardLine ? display : { ...display, cardLine: { icon: null, text: display.status, action: null } }}
           onAction={onAction}
         />
+        <ReconfirmLine reconfirm={reconfirm} />
         {onOpenBoard && (
           <div data-hub-scouting-entry="" style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.45 }}>
             <HubLink onPress={onOpenBoard}>{COPY.deploy.scoutingBoard}</HubLink>
@@ -134,7 +151,7 @@ export function PhoneDeployCard({ deploy, onAction, onOpenBoard, idea = null }) 
  * Slice S2b: `holdWiring` / `holding` are the deploy provider's wiring for the card's control (hub/useHubDeploy.js);
  * `onOpenBoard` opens the Scouting Board, "See what it's eyeing" (ruling R-S2b-7), when the board is on.
  */
-export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoadout, onAction, holdWiring = null, holding = null, onOpenBoard, idea = null }) {
+export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoadout, onAction, holdWiring = null, holding = null, onOpenBoard, idea = null, reconfirm = null }) {
   const display = deployDisplay(deploy);
   const tinted = display.displayState === 'ready' || display.displayState === 'ready_stale';
   return (
@@ -157,6 +174,7 @@ export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoa
           <HubHold full canStart={display.canStart} label={display.cardHoldLabel} onDeploy={onDeploy} wiring={holdWiring} holding={holding} />
         </div>
         <DeployLines display={display} onAction={onAction} />
+        <ReconfirmLine reconfirm={reconfirm} />
         {onOpenBoard && (
           <div data-hub-scouting-entry="" style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.45 }}>
             <HubLink onPress={onOpenBoard}>{COPY.deploy.scoutingBoard}</HubLink>

@@ -623,6 +623,16 @@ const PERMITTED_TERMINALS = Object.freeze({
   // sake), read as the literal AGENT_FORM_HUB_ENABLED at the two stage sites and the read scope. It imports nothing:
   // graph() stops here without reading it, so the "flag module imports nothing" row pins that (S1 review SR-2).
   'src/config/agentFormFlags.js': 'AGENT_FORM_HUB_ENABLED — the armored hero, read as a literal ternary so flag-off folds away (build S1)',
+  // Huddle S1 (Huddle spec Amendment C V1.2 §C7, §C8; Command Center spec V1.2 Amendment D §D3, §D4): the Huddle's flag module
+  // (its own, for the entry chunk's sake; read as the literal DRB_HUDDLE_ENABLED, so flag-off folds away; it imports nothing:
+  // the row below reads inside it), the two readers — one per record, keyed by uid and auth epoch, each with a single import of
+  // src/services/huddleService.js, called once in ConnectedHub — and the sheet's body, which holds the <audio> element, its
+  // listeners and the playback-token call the hub may not (a static import: the hub graph keeps its one lazy edge; build report
+  // RF-4). Each reader's and the body's activity is pinned call by call in commandCenterHub.activity.guard.test.js.
+  'src/config/huddleFlags.js': 'DRB_HUDDLE_ENABLED — the Huddle, read as a literal so flag-off folds away (Huddle S1)',
+  'src/hooks/useHuddleToday.js': "the Huddle record's one reader: the status route on mount, Retry, sheet open, confirm/skip and visibilitychange — no poll (Huddle C §C7)",
+  'src/hooks/useHuddleHistory.js': "the plan history's one reader, once per owner and epoch (Huddle C §C7)",
+  'src/components/Huddle/HuddleSheetBody.jsx': 'the Huddle sheet body: audio (no autoplay; stops on unmount, hidden tab, ceremony), transcript, plan card (Huddle C §C8)',
   // Build A2 (per-game loadouts; Phase 0 armory report §9 A2): reached only from the arms both PER_GAME_LOADOUT_ENABLED and
   // AGENT_FORM_ARMORY_ENABLED hold. The flag module imports nothing; the model and the copy table are Node-clean and pure
   // (the server shares the model; the League's lazy line shares the table); the two services are the writers' thin clients
@@ -940,6 +950,43 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
 
   it('the gate\'s copy table imports nothing: the hub\'s copy table stays in the lazy chunk (S1 review L2-1)', () => {
     expect(importsOf('src/components/CommandCenter/hubGateCopy.js')).toEqual([]);
+  });
+
+  it('Huddle S1: the Huddle flag module imports nothing; each reader and the sheet body make ONE import of the Huddle service, and no hub file imports it (Huddle C §C7)', () => {
+    expect(importsOf('src/config/huddleFlags.js')).toEqual([]);
+    expect(lazyImportsOfCode(stripComments(read('src/config/huddleFlags.js')))).toEqual([]);
+    for (const rel of ['src/hooks/useHuddleToday.js', 'src/hooks/useHuddleHistory.js', 'src/components/Huddle/HuddleSheetBody.jsx']) {
+      expect(importsOf(rel).filter((spec) => /huddleService/.test(spec)), rel).toHaveLength(1);
+      expect(importsOf(rel).filter((spec) => /\/services\//.test(spec)), rel).toHaveLength(1);
+      expect(lazyImportsOfCode(stripComments(read(rel))), rel).toEqual([]);
+    }
+    expect(hubDirFiles().filter((rel) => /huddleService/.test(stripComments(read(rel))))).toEqual([]);
+    // the readers are called once each, in ConnectedHub, and nowhere else in the directory
+    const callers = (name) => hubDirFiles().filter((rel) => new RegExp(`\\b${name}\\(`).test(stripComments(read(rel))));
+    expect(callers('useHuddleToday')).toEqual([HUB_FILE('CommandCenterHub.jsx')]);
+    expect(callers('useHuddleHistory')).toEqual([HUB_FILE('CommandCenterHub.jsx')]);
+    const hubCode = stripComments(read(HUB_FILE('CommandCenterHub.jsx')));
+    expect(hubCode.match(/\buseHuddleToday\(/g)).toHaveLength(1);
+    expect(hubCode.match(/\buseHuddleHistory\(/g)).toHaveLength(1);
+  });
+
+  it('Huddle S1: nothing the root deploy provider imports reaches the Huddle service (Huddle C §C7: the client post-deploy hook is not built)', () => {
+    const seen = new Set();
+    const queue = ['src/contexts/DeployAttemptContext.jsx', 'src/services/agentDeploy.js'];
+    while (queue.length) {
+      const rel = queue.pop();
+      if (seen.has(rel) || !existsSync(path.join(REPO_ROOT, rel))) continue;
+      seen.add(rel);
+      // static AND lazy edges: a lazy import() of the Huddle service from the provider is exactly the post-deploy hook C7
+      // says is not built (mutation lens O4: the walk followed static edges only)
+      for (const spec of [...importsOf(rel), ...lazyImportsOfCode(stripComments(read(rel)))]) {
+        if (!spec.startsWith('.')) continue;
+        const resolved = resolveRelative(rel, spec);
+        if (resolved && resolved.startsWith('src/')) queue.push(resolved);
+      }
+    }
+    expect(seen.size, 'the provider walk found nothing').toBeGreaterThan(3);
+    expect([...seen].filter((rel) => /huddle/i.test(rel))).toEqual([]);
   });
 
   it('the agent form flag module imports nothing: the walk stops at it as a terminal, so this row reads inside it (agent form S1 review SR-2)', () => {
@@ -1267,6 +1314,11 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     '/services/hypothesisVersionService': ['listHypothesisVersions'],
     '/Forge/Watchlist/ideaCopy': ['HORIZON_LABELS', 'STATUS_LABELS', 'formatIdeaDate', 'lifecycleLineFor', 'researchLinesOf', 'windowTextOf'],
     '/api/_utils/watchlistEquip.js': ['extractTickerSymbols'],
+    // Huddle S1 (Huddle C §C7, §C8): the flag, the two readers (default exports, called once each in ConnectedHub) and the sheet body.
+    '/config/huddleFlags': ['DRB_HUDDLE_ENABLED'],
+    '/hooks/useHuddleToday': ['default'],
+    '/hooks/useHuddleHistory': ['default'],
+    '/Huddle/HuddleSheetBody': ['default'],
     // Build A2: the three writers with the `loadout` they set (the armory's Equip, the book sheet's equip and clear) and the
     // refusal's test; the League lock's one client read.
     '/services/loadoutService': ['changeLoadoutArchetype', 'equipLoadoutBook', 'isLeagueLock', 'unequipLoadoutBook'],

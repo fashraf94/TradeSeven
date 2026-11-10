@@ -132,6 +132,120 @@ export const HUB_COPY = Object.freeze({
     reserved: "Partnership isn't part of this release. A preference will only ever stand once you confirm it.",
   }),
 
+  /**
+   * Huddle S1 (Huddle spec Amendment C V1.2 §C4, §C8, §C14, §C15; Command Center spec V1.2 Amendment D). Shown only while
+   * DRB_HUDDLE_ENABLED is on. Plan status words come from receipts only; durations, clock times and levels render from data
+   * (the numeral rule); the plan is never paired with an idea (the pairing fence); no learning claim.
+   */
+  huddle: Object.freeze({
+    /** The chip under Shadow: a state label and a door (C4). */
+    chip: (duration) => (duration ? `Huddle · ${duration}` : 'Huddle'),
+    chipPreparing: 'Huddle · preparing',
+    chipUnavailable: 'Huddle unavailable',
+    /** The chip once the plan is answered or expired: its status, never "heard" (review L3-7; C3 keeps "read" for the agent). */
+    chipPlan: Object.freeze({ confirmed: 'Huddle · plan confirmed', skipped: 'Huddle · plan skipped', expired: 'Huddle · plan expired' }),
+    chipLabel: (state) => `Open your huddle · ${state}`,
+    sheetTitle: 'Huddle',
+    sheetEyebrow: 'Huddle with Shadow',
+    sheetLabel: 'Your morning huddle',
+    loading: 'Checking your huddle',
+    none: 'No huddle yet today',
+    loadError: "Couldn't load your huddle",
+    /** A record that is not ready yet, or could not be made (the chip opens the sheet for both: C4, C8). */
+    preparing: 'Your huddle is still being prepared.',
+    unavailable: "This morning's huddle couldn't be prepared. There is no game plan to confirm.",
+    listenLabel: 'Listen',
+    play: 'Play',
+    pause: 'Pause',
+    audioUnavailable: 'Audio is not available for this huddle · the transcript is below',
+    transcript: 'Transcript',
+    beats: Object.freeze({ yesterday: "Yesterday's plan", tape: 'The tape', names: 'Your names', armor: "The armor's take", plan: 'The game plan' }),
+    sourcesOf: (labels) => {
+      const list = [...new Set((Array.isArray(labels) ? labels : [labels]).filter((l) => typeof l === 'string' && l))];
+      return list.length ? `Source: ${list.join('; ')}` : '';
+    },
+    planTitle: 'The game plan',
+    nothingToConfirm: 'Nothing to confirm today: stand pat.',
+    instructionNote: 'Lines are instructions your agent reads at its next check. They do not bind what it trades.',
+    remove: 'Remove',
+    keep: 'Keep',
+    levelLabel: (ticker) => `Level for ${ticker}`,
+    confirm: 'Confirm',
+    skip: 'Skip',
+    reconfirm: 'Reconfirm',
+    working: 'Working…',
+    reconfirmLine: 'Your archetype changed since you confirmed this plan. Reconfirm it under the new one.',
+    itemText: (item, labels) => {
+      const at = (v) => (typeof v === 'number' ? v.toFixed(2) : '');
+      switch (item?.kind) {
+        case 'HOLD': return `Hold ${item.ticker}`;
+        case 'TRIM': return `Trim ${item.ticker}`;
+        case 'WATCH': return `Watch ${item.ticker}`;
+        case 'CHASE': return typeof item.level === 'number' ? `Chase ${item.ticker} above ${at(item.level)}` : `Chase ${item.ticker}`;
+        case 'FADE': return typeof item.level === 'number' ? `Fade ${item.ticker} above ${at(item.level)}` : `Fade ${item.ticker}`;
+        case 'NO_ADDS_BEFORE': return `No adds before ${labels?.[item.eventId] ?? 'the scheduled event'}`;
+        case 'NO_SWAPS_TODAY': return 'No swaps today';
+        case 'CUT_IF_BELOW': return `Cut ${item.ticker} if it trades below ${at(item.level)}`;
+        case 'NO_CHASE_ABOVE': return `Don't chase ${item.ticker} above ${at(item.level)}`;
+        default: return '';
+      }
+    },
+    notices: Object.freeze({
+      conflict: 'This plan changed since you opened it. Here is the current version: check it and confirm again.',
+      previewed: 'Some items changed to fit the plan rules. This is exactly what would be filed: check it and confirm again.',
+      closed: 'The session has closed: this plan has expired.',
+      failed: "Couldn't confirm the plan. Please try again.",
+      archetype_unsupported: "This plan can't be filed for your archetype.",
+      empty_plan: 'Nothing to confirm today.',
+      rendered_too_long: 'This plan is too long to file. Remove a line and confirm again.',
+    }),
+    /** The plan's own state line (receipts and plan status only). */
+    planState: Object.freeze({
+      proposed: 'Proposed · not confirmed yet',
+      confirmed: (time) => (time ? `Confirmed at ${time}` : 'Confirmed'),
+      skipped: 'Skipped for today',
+      expired: 'Expired at the close',
+      waitingForGame: 'Confirmed · waiting for a game',
+    }),
+    games: Object.freeze({ ranked: 'Ranked game', casual: 'BaggerBomb game', training: 'Training game', other: 'Game' }),
+    /** One game's status, from its receipt (Huddle spec §6.4, A §A4, C §C3, §C7, §C15). */
+    battle: Object.freeze({
+      filed: "Filed · waiting for your agent's next read",
+      firstRead: "Waiting for your agent's first read",
+      heard: (time) => `Read by your agent at ${time}`,
+      noLongerCurrent: 'No longer current',
+      noLongerCurrentSince: (time) => `No longer current since ${time}`,
+      retired: 'Retired at the close',
+      liveCall: 'Waiting on your cockpit call',
+      inactive: 'Waiting for the game to be live',
+      retry: 'Waiting to file',
+      staleApproach: 'Confirmed under a different approach · Reconfirm',
+      otherSession: "Not this session's game",
+      newerInstruction: 'Your newer instruction stands',
+      unsupported: "Not filed for this game's archetype",
+      expired: 'Expired at the close',
+    }),
+    /** The next action (C6). */
+    readyTitle: 'Huddle ready',
+    readyWhy: 'Your morning huddle is ready to hear, with a game plan to confirm.',
+    open: 'Open huddle',
+    /** The Partnership panel (C8; Amendment D §D5): a trading control for one session, never a preference. */
+    partnershipHeading: 'Game plan',
+    partnershipNote: 'A game plan is a trading instruction for one session. It never stands as a preference.',
+    partnershipLoading: 'Checking your game plan',
+    partnershipNone: 'No game plan today',
+    partnershipError: "Couldn't load your game plans",
+    partnershipRetry: 'Retry',
+    partnershipAsOf: (time) => `As of ${time} · couldn’t refresh`,
+    recentPlans: 'Recent plans',
+    historyRow: (day, state) => `${day} · ${state}`,
+    historyState: Object.freeze({ confirmed: 'Confirmed', skipped: 'Skipped', expired: 'Expired', proposed: 'Not confirmed', none: 'No plan' }),
+    openToday: 'Open today’s huddle',
+    /** The Deploy card's line (C15): never blocks or delays a deploy. */
+    deployReconfirm: 'Your game plan was confirmed under a different approach.',
+    deployReconfirmDoor: 'Reconfirm',
+  }),
+
   research: Object.freeze({
     summaryLoading: 'Checking your research',
     loading: 'Checking your research',
@@ -462,6 +576,10 @@ export const HUB_COPY = Object.freeze({
     staleAsOf: (time) => (time ? `As of ${time} · couldn’t refresh` : 'Couldn’t refresh'),
     /** The phone Overview's and the side column's link to the whole list (the design's; the sheet is S4's). */
     all: (n) => `All activity · ${n}`,
+    /** Huddle S1 (Huddle C §C8; Command Center Amendment D §D7): the plan's two rows, from the plan history. */
+    planConfirmed: 'Plan confirmed',
+    planSkipped: 'Plan skipped',
+    planSub: (day) => `Game plan for ${day}`,
     /** An activity row's name: what happened, its line, and when (the visible time; S1 review L3-8). */
     rowLabel: (text, sub, at) => `${text}${sub ? `: ${sub}` : ''}${at ? `, ${at}` : ''}`,
 

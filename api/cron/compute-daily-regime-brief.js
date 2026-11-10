@@ -33,8 +33,42 @@ import {
   buildDailyRegimeBriefPrompt,
 } from '../_utils/dailyRegimeBriefPrompt.js';
 import { logDailyRegimeBrief } from '../_utils/shadowLogger.js';
+// Huddle S1 (spec V1.1 §5.1 as replaced by Amendment A §A10): the staged run marker
+// around the brief stage, and — only while DRB_HUDDLE_ENABLED is on — the enqueue and
+// drain stages after it. With the flag off the only new behaviour is the marker write;
+// the cron entry, the brief stage and every response are as before.
+import { isHuddleOn } from '../_utils/huddle/gate.js';
+import { etDateOfMs } from '../_utils/huddle/records.js';
+import { markRun, runEnqueueStage, drainQueue } from '../_utils/huddle/worker.js';
 
 export const config = { maxDuration: 60 };
+
+/**
+ * After the brief stage (done, skipped as already generated, or failed): write the
+ * huddleRuns marker, then — flag on — run the enqueue stage and the drain stage under this
+ * handler's own 60 s budget (the drain starts a job only with 130 s left, so here it
+ * claims nothing and records drainedInHandler 0; the worker drains within two minutes,
+ * and recovers an enqueue this handler did not finish, A §A3). Never throws and never
+ * changes the response.
+ */
+export async function afterBriefStage(db, { briefStage, handlerStartMs, nowMs = Date.now() }) {
+  if (!db) return;
+  const etDate = etDateOfMs(nowMs);
+  try {
+    await markRun(db, etDate, { etDate, briefStage, briefAt: new Date(nowMs).toISOString() });
+  } catch (err) {
+    logError('huddleRuns marker write failed', { message: err?.message });
+    return;
+  }
+  if (!isHuddleOn() || briefStage !== 'done') return;
+  try {
+    await runEnqueueStage(db, { etDate, nowMs });
+    const drain = await drainQueue(db, { etDate, session: null, shared: null, invocationStartMs: handlerStartMs, maxDurationMs: config.maxDuration * 1000 });
+    await markRun(db, etDate, { drainedInHandler: drain.started });
+  } catch (err) {
+    logError('huddle enqueue stage failed (the worker recovers it)', { message: err?.message });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Logging
@@ -195,9 +229,10 @@ export default async function handler(req, res) {
   // Carried into the failure log: the inputs' counts once the prompt is built, the answer's stop_reason and usage once it arrives.
   let callCounts = null;
   let answerLog = null;
+  let db = null;
 
   try {
-    const db = getFirebaseAdmin();
+    db = getFirebaseAdmin();
     const briefRef = db.collection('indexIntelligence').doc('dailyRegimeBrief');
 
     // -------------------------------------------------------------------
@@ -206,6 +241,7 @@ export default async function handler(req, res) {
     const existing = await briefRef.get();
     if (existing.exists && existing.data()?.forDate === today) {
       logInfo('Brief already generated for today — skipping', { forDate: today });
+      await afterBriefStage(db, { briefStage: 'done', handlerStartMs: startedAt });
       return res.status(200).json({
         success: true,
         skipped: true,
@@ -341,6 +377,7 @@ export default async function handler(req, res) {
       duration,
     }).catch(() => {});
 
+    await afterBriefStage(db, { briefStage: 'done', handlerStartMs: startedAt });
     return res.status(200).json({
       success: true,
       forDate: today,
@@ -361,6 +398,7 @@ export default async function handler(req, res) {
       usage: answerLog?.usage ?? null,
       shape: answerLog?.shape ?? null,
     });
+    await afterBriefStage(db, { briefStage: 'failed', handlerStartMs: startedAt });
     return res.status(500).json({
       success: false,
       error: error.message,

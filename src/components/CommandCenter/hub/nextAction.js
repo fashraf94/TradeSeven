@@ -17,6 +17,9 @@
 //      gamesPlayed of exactly 0, and canStart.
 //   4  none.
 //
+// Huddle S1 (Huddle spec Amendment C V1.2 §C6; Command Center spec V1.2 Amendment D §D1) adds ONE rule, read only when
+// its candidate is handed in: "Huddle ready" between a game in session and a game deployed and waiting for the open.
+//
 // A candidate's Later key is the action kind and the record id (`openGame:{id}`,
 // `review:{id}`, `deploy:first`): what is set aside is that action on that
 // record, and a new game or a new review is a new key.
@@ -126,14 +129,29 @@ const byNewest = (a, b) => {
  * @param {{ stale: boolean, asOf: number|null }} [p.liveFreshness]  the Deploy card's freshness of the live list
  *                                    (selectors/deployState.js): stale, the live candidate's detail carries its age
  * @param {number}   [p.nowMs]         the clock: a review's day from another year carries its year (none without one)
+ * @param {object|null} [p.huddle]     Huddle S1 (Huddle spec Amendment C V1.2 §C6; Command Center spec V1.2 Amendment D §D1):
+ *                                    today's "Huddle ready" candidate (hub/huddleView.js huddleCandidateOf), or null. It sits
+ *                                    below a game IN SESSION and above a game deployed and waiting for the open, with its own
+ *                                    Later key `huddle:{etDate}`. Null (the flag off, no huddle, a plan confirmed or skipped)
+ *                                    leaves this function exactly the S4 rules.
  * @returns {{ status: 'ready' | 'loading', candidate: null | object }}
  */
-export function deriveNextAction({ liveRows, battles, rowsById, firstDeployment, liveResolved, liveFreshness = null, nowMs = null, dismissed = new Set() }) {
+export function deriveNextAction({ liveRows, battles, rowsById, firstDeployment, liveResolved, liveFreshness = null, nowMs = null, dismissed = new Set(), huddle = null }) {
   const later = dismissed instanceof Set ? dismissed : new Set();
   const rows = rowsById instanceof Map ? rowsById : new Map();
   const liveList = Array.isArray(liveRows) ? liveRows : [];
   const liveIds = new Set(liveList.map((row) => row.id));
   const done = (Array.isArray(battles) ? battles : []).filter((doc) => doc && typeof doc.id === 'string' && !liveIds.has(doc.id));
+
+  // Huddle S1 (C6): a game in session → Huddle ready → a game waiting for the open → a review → the first deployment.
+  const huddleReady = huddle && typeof huddle.laterKey === 'string' && !later.has(huddle.laterKey) ? huddle : null;
+  if (huddleReady) {
+    const inSession = liveList.find((row) => row.preOpen !== true && !later.has(laterKeyOf(NEXT_ACTION_KINDS.OPEN_GAME, row.id)));
+    if (inSession) return Object.freeze({ status: 'ready', candidate: Object.freeze(liveCandidate(inSession, liveFreshness)) });
+    // Until the poll answers, a game in session may yet exist: the card waits rather than swap under the player.
+    if (liveResolved === false) return Object.freeze({ status: 'loading', candidate: null });
+    return Object.freeze({ status: 'ready', candidate: Object.freeze({ ...huddleReady }) });
+  }
 
   const live = liveList.find((row) => !later.has(laterKeyOf(NEXT_ACTION_KINDS.OPEN_GAME, row.id)));
   if (live) return Object.freeze({ status: 'ready', candidate: Object.freeze(liveCandidate(live, liveFreshness)) });
