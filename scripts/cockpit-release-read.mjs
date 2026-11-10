@@ -201,14 +201,18 @@ export function cohortRead(battleDays, { allowlist = null, inCohort = null } = {
   };
 }
 
-/** Sweep lag per session: for calls the sweep settled, stateChangedAt − horizon.expiresAt (never negative); and the overdue queue rows now. */
-export function sweepLagRead({ calls, queue, nowMs }, days) {
+/**
+ * Sweep lag per session: for calls the sweep settled, stateChangedAt − the call's deadline (never negative); and the overdue
+ * queue rows now. `deadlineOf(call)` is the sweep's own `callDeadlineMs` (sweep.js — a `next_check` call settles at the session
+ * close by design, so its deadline is the H2 cutoff, not horizon.expiresAt) supplied by main(); the default reads horizon.expiresAt.
+ */
+export function sweepLagRead({ calls, queue, nowMs, deadlineOf = (c) => toMs(c?.horizon?.expiresAt) }, days) {
   const lags = {};
   for (const d of days) lags[d] = [];
   for (const c of Array.isArray(calls) ? calls : []) {
     if (c?.stateSource !== 'sweep') continue;
     const at = toMs(c.stateChangedAt);
-    const due = toMs(c.horizon?.expiresAt);
+    const due = deadlineOf(c);
     const bucket = lags[etDay(at)];
     if (!bucket || !finite(at) || !finite(due)) continue;
     bucket.push(Math.max(0, at - due));
@@ -290,6 +294,7 @@ async function main() {
   const { ensureReleaseView, getReleaseView } = await import('../api/_utils/callRecords/release.js');
   const { isInReleaseCohort } = await import('../api/_utils/callRecords/release.js');
   const { readCockpitAllowlist } = await import('../api/_utils/callRecords/allowlist.js');
+  const { callDeadlineMs } = await import('../api/_utils/callRecords/sweep.js');
   const args = process.argv.slice(2);
   const argOf = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
   const today = etDay(Date.now());
@@ -339,7 +344,7 @@ async function main() {
     checks: checksRead(ticks, days),
     answers: answersRead({ calls, events }, days),
     cohort: cohortRead(battleDays, { allowlist, inCohort }),
-    sweep: sweepLagRead({ calls, queue, nowMs: readAtMs }, days),
+    sweep: sweepLagRead({ calls, queue, nowMs: readAtMs, deadlineOf: callDeadlineMs }, days),
     cost: costRead(ticks, days),
   };
   const out = renderStage(read);

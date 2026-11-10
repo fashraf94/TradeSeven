@@ -113,6 +113,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 const cron = await import('./agent-evaluate.js');
 const handler = cron.default;
 const { processAgentBattle, composeEvalRunRecord, DEFERRED_BEAT_CAP, EVAL_RUN_DEFERRED_ID_CAP } = cron;
+const cronTool = await import('../_utils/agentEvalToolSchema.js');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FROZEN_MS = Date.parse(FROZEN_NOW);
@@ -791,5 +792,54 @@ describe('the release cohort — the control view is read once per run, before t
     await handler({ headers: { 'x-vercel-cron': '1' } }, res);
     expect(res.statusCode).toBe(200);
     expect(res.payload.evaluated).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The release cohort, through the REAL handler and a REAL model-calling check (build prompt
+// BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): a non-allowlisted, agent-mode, real-owner battle is checked
+// `on` — the request carries the `on` tool with `declarations` — only when the control document
+// admits it. Absent, disabled, malformed, a read error, a League battle and a CPU seat get the base
+// tool, byte for byte: the dark state changes nothing the model sees.
+describe('the release cohort — what the model is sent', () => {
+  const CONTROL = { shareBp: 10000, disabled: false, salt: 'salt-a' };
+  /** Run the handler over one battle with the control document served through the wrapped `collection`; return the model request. */
+  async function requestFor(battle, control, { throws = false } = {}) {
+    world.battles = [battle];
+    world.db = makeRunDb({ battles: [battle] });
+    const collection = world.db.collection.bind(world.db);
+    world.db.collection = (name) => (name === 'cockpitConfig'
+      ? { doc: () => ({ get: async () => { if (throws) throw new Error('control down'); return { exists: control !== undefined, data: () => control }; } }) }
+      : collection(name));
+    const res = makeRes(world.db.__order);
+    await handler({ headers: { 'x-vercel-cron': '1' } }, res);
+    expect(mocks.create, 'the check dispatched exactly one model call').toHaveBeenCalledTimes(1);
+    const request = mocks.create.mock.calls[0][0];
+    mocks.create.mockClear();
+    return request;
+  }
+  const { buildTradeDecisionTool, TRADE_DECISION_TOOL } = cronTool;
+  afterEach(async () => { const { resetReleaseView } = await import('../_utils/callRecords/release.js'); resetReleaseView(); });
+
+  it('in the cohort → the `on` tool (with `declarations`), exactly the one buildTradeDecisionTool({ declarations: \'on\' }) builds', async () => {
+    const req = await requestFor(makeTickBattle({ id: 'cohort-1' }), CONTROL);
+    expect(req.tools[0].input_schema.properties.declarations).toBeTruthy();
+    expect(req.tools[0]).toEqual(buildTradeDecisionTool({ declarations: 'on' }));
+  });
+
+  it('no document, a disabled one, a malformed one, a failing read, League and a CPU-owned battle → the BASE tool, with no `declarations`', async () => {
+    const cases = [
+      [makeTickBattle({ id: 'a' }), undefined, {}, 'no document'],
+      [makeTickBattle({ id: 'b' }), { ...CONTROL, disabled: true }, {}, 'disabled'],
+      [makeTickBattle({ id: 'c' }), { ...CONTROL, shareBp: 'all' }, {}, 'malformed'],
+      [makeTickBattle({ id: 'd' }), CONTROL, { throws: true }, 'a failing read'],
+      [makeTickBattle({ id: 'e', gameMode: 'baggerbomb_tournament' }), CONTROL, {}, 'League'],
+      [makeTickBattle({ id: 'f', ownerId: 'cpu-2' }), CONTROL, {}, 'a CPU-owned battle'],
+    ];
+    for (const [battle, control, opts, why] of cases) {
+      const req = await requestFor(battle, control, opts);
+      expect(req.tools[0].input_schema.properties.declarations, why).toBeUndefined();
+      expect(req.tools[0], why).toEqual(TRADE_DECISION_TOOL);
+    }
   });
 });

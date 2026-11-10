@@ -26,7 +26,8 @@
 //   the cohort test        isInReleaseCohort(battle, view): ALL of
 //                            gameMode === 'baggerbomb_agent' (TIERED_GAME_MODE; League
 //                              and every other mode is out — founder ruling 1),
-//                            not a CPU seat (battle.isCpu !== true),
+//                            not a CPU seat (battle.isCpu !== true AND the owner id is not a CPU
+//                              seat's — isCpuUserId, the League's own codec, as Huddle's isCpuBattle also reads),
 //                            a non-empty string owner id,
 //                            an active view,
 //                            bucketOf(ownerId, salt) < shareBp.
@@ -52,6 +53,7 @@
 
 import { createHash } from 'node:crypto';
 import { TIERED_GAME_MODE } from '../../../src/constants/agentGameModes.js';
+import { isCpuUserId } from '../../../src/constants/leagueTournament.js';
 
 /** The control document's place: cockpitConfig/release. */
 export const RELEASE_COLLECTION = 'cockpitConfig';
@@ -65,8 +67,14 @@ export const RELEASE_VIEW_TTL_MS = 60_000;
 export const RELEASE_FAILURE_TTL_MS = 15_000;
 /** The synchronous reader treats a view older than this as never loaded (a handler that forgot to refresh fails closed). */
 export const RELEASE_VIEW_MAX_AGE_MS = 600_000;
-/** The bound on one control-document read. */
-export const RELEASE_READ_TIMEOUT_MS = 1_000;
+/**
+ * The bound on one control-document read: 1,500 ms — the house precedent for a bounded read on a request path
+ * (callsBlock.js CALLS_BLOCK_TIMEOUT_MS, sweep.js SWEEP_TX_MS), below the run-record write's 2,000 ms
+ * (agent-evaluate.js EVAL_RUN_WRITE_TIMEOUT_MS) and well inside cockpit-status's 5 s maxDuration.
+ * A tighter bound would turn an ordinary Firestore slow moment into an empty cohort (and a cached empty
+ * cohort for RELEASE_FAILURE_TTL_MS) for a cohort player's first answer after an idle spell.
+ */
+export const RELEASE_READ_TIMEOUT_MS = 1_500;
 /** The game mode the cohort admits — nothing else (League is its own later arc). */
 export const RELEASE_COHORT_GAME_MODE = TIERED_GAME_MODE;
 
@@ -128,6 +136,7 @@ export function isInReleaseCohort(battle, view) {
     if (!battle || typeof battle !== 'object') return false;
     if (battle.gameMode !== RELEASE_COHORT_GAME_MODE) return false;
     if (battle.isCpu === true) return false;
+    if (isCpuUserId(battle.ownerId)) return false; // a CPU seat by its owner id, whatever its isCpu flag says
     const owner = battle.ownerId;
     if (typeof owner !== 'string' || owner.length === 0) return false;
     const bucket = bucketOf(owner, view.salt);

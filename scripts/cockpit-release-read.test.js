@@ -178,6 +178,14 @@ describe('sweep lag', () => {
     expect(out.perDay[0].p90Ms).toBeCloseTo(54 * 60000, -2);
     expect(out.perDay[1]).toEqual({ day: D2, swept: 0, medianMs: null, p90Ms: null, maxMs: null });
   });
+  it('the deadline is the sweep\'s own (a next_check call settles at the session close, so its lag is not counted from the slot): an injected deadlineOf replaces horizon.expiresAt', () => {
+    const c = { stateSource: 'sweep', stateChangedAt: Date.parse('2026-11-12T21:00:00Z'), horizon: { expiresAt: Date.parse('2026-11-12T15:15:00Z'), basis: 'next_check' } };
+    const byHorizon = sweepLagRead({ nowMs: NOW, queue: [], calls: [c] }, DAYS);
+    expect(byHorizon.perDay[0].maxMs).toBe(345 * 60000);
+    const bySweep = sweepLagRead({ nowMs: NOW, queue: [], calls: [c], deadlineOf: () => Date.parse('2026-11-12T20:00:00Z') }, DAYS);
+    expect(bySweep.perDay[0].maxMs).toBe(60 * 60000);
+    expect(sweepLagRead({ nowMs: NOW, queue: [], calls: [c], deadlineOf: () => null }, DAYS).perDay[0].swept).toBe(0);
+  });
   it('overdue queue rows: nextExpiresAt in the past; null and future rows are not overdue', () => {
     const out = sweepLagRead({ nowMs: NOW, calls: [], queue: [{ nextExpiresAt: NOW - 1 }, { nextExpiresAt: NOW + 1 }, { nextExpiresAt: null }, { nextExpiresAt: 0 }, {}] }, DAYS);
     expect(out.overdueQueueRows).toBe(1);
@@ -240,6 +248,10 @@ describe('the script is read-only, needs no uid and prints no id', () => {
     const render = src.slice(src.indexOf('export function renderStage'), src.indexOf('// ---------------------------------------------------------------- the run'));
     expect(render).not.toMatch(/ownerId|agentId|battleId|\.id\b|doc\.id/);
     expect(code).not.toMatch(/console\.(log|error|warn)\([^)]*(ownerId|\.id\b|uid)/);
+  });
+  it('main() hands the sweep lag the sweep\'s own callDeadlineMs', () => {
+    expect(src).toContain("const { callDeadlineMs } = await import('../api/_utils/callRecords/sweep.js');");
+    expect(src).toContain('deadlineOf: callDeadlineMs');
   });
   it('the arm is read from the tick\'s own schemaVersion, never from the owner', () => {
     const fn = src.slice(src.indexOf('export function classifyTick'), src.indexOf('/** Owner ordinals'));

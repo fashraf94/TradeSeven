@@ -481,7 +481,7 @@ export default async function handler(req, res) {
 
     // ---- 3b'. The cockpit's release cohort — the control document, read ONCE per
     // run (force), before any battle resolves its calls mode (processAgentBattle,
-    // resolveCallRecordsMode). Bounded (1 s), never throws, fails closed to the
+    // resolveCallRecordsMode). Bounded (1.5 s), never throws, fails closed to the
     // allowlist alone; at global 'off'/'shadow' it reads nothing. With no document
     // every battle resolves exactly as before this switch existed. (Not a fenced
     // file; the seam is this one awaited line.)

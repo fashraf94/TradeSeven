@@ -112,9 +112,29 @@ describe('cockpitConfig/release — server-only: no client verb for anyone', () 
   }
 });
 
+/** The statements of every `match <path> {` block whose path matches `pathRe`, comments stripped, nested blocks included. */
+function ruleBlocks(text, pathRe) {
+  const blocks = [];
+  const re = new RegExp(`match ${pathRe.source} \\{`, 'g');
+  while (re.exec(text) !== null) {
+    let depth = 1;
+    let i = re.lastIndex;
+    for (; i < text.length && depth > 0; i += 1) {
+      if (text[i] === '{') depth += 1;
+      else if (text[i] === '}') depth -= 1;
+    }
+    blocks.push(text.slice(re.lastIndex, i - 1).split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean));
+  }
+  return blocks;
+}
+
 describe('the posture is written down, not only inherited', () => {
-  it('no block names the collection: it rests on the root default-deny, and a grant added later fails here', () => {
-    expect(RULES_TEXT).not.toMatch(/cockpitConfig/);
+  it('NO GRANT: no block that names the collection may allow anything — today none exists (the root default-deny covers it); an explicit `allow read, write: if false;` block (what the sibling cockpit collections carry) would also pass; a grant fails here', () => {
+    const named = ruleBlocks(RULES_TEXT, /\/cockpitConfig\/[^\s{]*/);
+    for (const statements of named) expect(statements).toEqual(['allow read, write: if false;']);
+    expect(RULES_TEXT).not.toMatch(/cockpitConfig[^\n]*\n[^}]*allow\s+(read|write|get|list|create|update|delete)[^;]*if\s+(?!false)/);
+  });
+  it('the root default-deny is the cover, and says exactly `allow read, write: if false;`', () => {
     const m = RULES_TEXT.match(/match \/\{document=\*\*\} \{([^}]*)\}/);
     expect(m, 'the root default-deny block').not.toBeNull();
     expect(m[1].split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean)).toEqual(['allow read, write: if false;']);

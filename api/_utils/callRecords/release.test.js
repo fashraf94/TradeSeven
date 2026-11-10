@@ -131,6 +131,10 @@ describe('the cohort — agent mode, a real owner, an active view, bucket < shar
       expect(isInReleaseCohort(battleOf('o1', { gameMode }), v), String(gameMode)).toBe(false);
     }
     expect(isInReleaseCohort(battleOf('o1', { isCpu: true }), v)).toBe(false);
+    // a CPU seat by its owner id (League's cpu-{n} codec), whatever its isCpu flag says
+    expect(isInReleaseCohort(battleOf('cpu-3'), v)).toBe(false);
+    expect(isInReleaseCohort(battleOf('cpu-3', { isCpu: false }), v)).toBe(false);
+    expect(isInReleaseCohort(battleOf('cpu3'), v)).toBe(true); // only the `cpu-` prefix is a seat
     expect(isInReleaseCohort(battleOf('o1', { isCpu: false }), v)).toBe(true);
     expect(isInReleaseCohort(battleOf('o1', { isCpu: undefined }), v)).toBe(true);
     for (const ownerId of ['', null, undefined, 42, {}, []]) expect(isInReleaseCohort(battleOf(ownerId), v), String(ownerId)).toBe(false);
@@ -271,7 +275,7 @@ describe('ensureReleaseView — one bounded read, cached, never throws, fails cl
     const v = await ensureReleaseView(fakeDb({ hang: true }), { timeoutMs: 30 });
     expect(v).toMatchObject({ status: 'timeout', active: false });
     expect(Date.now() - t0).toBeLessThan(1500);
-    expect(RELEASE_READ_TIMEOUT_MS).toBe(1000);
+    expect(RELEASE_READ_TIMEOUT_MS).toBe(1500); // the house precedent (callsBlock.js, sweep.js), not tighter
   });
 
   it('a slow read inside the bound still lands; one past it is a timeout', async () => {
