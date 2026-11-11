@@ -179,4 +179,14 @@ describe('E8: the Deploy card\'s Reconfirm line, through the live layout (per-ga
     expect(card).not.toBeNull();
     expect(card.querySelector('[data-hub-huddle-reconfirm]')).not.toBeNull();
   });
+
+  // review HU-9: the phone arm's own negative row (PhoneTabs' conditional)
+  it('phone: nothing missing — the Loadout tab\'s Deploy card carries no line', async () => {
+    service.fetchHuddleToday.mockResolvedValue({ asOf: iso(NOW), huddle: confirmedWith([]) });
+    await render('mobile', hubOf());
+    await act(async () => { click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]); await Promise.resolve(); });
+    const card = document.querySelector('[data-hub-deploy-card="phone"]');
+    expect(card).not.toBeNull();
+    expect(document.querySelector('[data-hub-huddle-reconfirm]')).toBeNull();
+  });
 });

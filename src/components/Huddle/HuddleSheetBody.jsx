@@ -67,6 +67,12 @@ function BeatLine({ beat, active, copy }) {
   );
 }
 
+/** E1's preview line names the card's own item — its level included (review HU-6) — when the change's index is that stance. */
+function previewFromOf(plan, change) {
+  const item = change?.kind === 'stance' ? plan?.current?.stances?.[change.index] : null;
+  return item && item.ticker === change.ticker && item.kind === change.from ? item : { kind: change.from, ticker: change.ticker };
+}
+
 export default function HuddleSheetBody({ copy, read, status = null, confirm, skip, needsReconfirm = false, focusPlan = false, ceremonyActive = false }) {
   const huddle = read?.huddle ?? null;
   const audioRef = useRef(null);
@@ -185,7 +191,9 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
     const previewed = r.status === 422 && r.body?.error === 'validation_changed';
     const replaced = r.ok || r.status === 409 || previewed;
     if (replaced) { setRemoved(new Set()); setLevels({}); }
-    setPreviews(previewed && Array.isArray(r.body?.previews) ? r.body.previews : []);
+    // the previews go with the plan they were made on (confirmed, a conflict, a new preview); any other failure keeps them,
+    // so the retry still sends their acknowledgement (review HU-7)
+    if (replaced) setPreviews(previewed && Array.isArray(r.body?.previews) ? r.body.previews : []);
     if (r.ok) return;
     if (r.status === 409) setNotice(copy.notices.conflict);
     else if (previewed) setNotice((r.body?.drops?.length || r.body?.transforms?.length) ? copy.notices.previewed : copy.notices.previewedApproaches);
@@ -202,7 +210,8 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
       r = { ok: false, status: 0 };
     }
     setBusy(false);
-    if (!r.ok) setNotice(r.status === 410 ? copy.notices.closed : copy.notices.failed);
+    if (r.ok) { setPreviews([]); return; } // a skipped plan has nothing to preview (review HU-7)
+    setNotice(r.status === 410 ? copy.notices.closed : copy.notices.failed);
   };
 
   const proposed = plan?.status === 'proposed';
@@ -251,12 +260,12 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
                 aria-label={copy.levelLabel(item.ticker)}
                 inputMode="decimal"
                 value={levels[key] ?? (typeof item.level === 'number' ? String(item.level) : '')}
-                onChange={(e) => setLevels((prev) => ({ ...prev, [key]: e.target.value }))}
+                onChange={(e) => { setPreviews([]); setLevels((prev) => ({ ...prev, [key]: e.target.value })); }}
                 style={{ width: 84, minHeight: 44, borderRadius: 10, border: `1px solid ${hair}`, background: 'transparent', color: ink, padding: '0 8px' }}
               />
             )}
             {proposed && (
-              <button type="button" style={buttonStyle} onClick={() => setRemoved((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; })}>
+              <button type="button" style={buttonStyle} onClick={() => { setPreviews([]); setRemoved((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }}>
                 {removed.has(key) ? copy.keep : copy.remove}
               </button>
             )}
@@ -265,7 +274,7 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
         {(plan?.dissent || []).map((d) => <p key={`${d.archetype}-${d.ticker}-${d.from}`} style={{ margin: '6px 0 0', fontSize: 12.5, color: ink2 }}>{d.reason}</p>)}
         {previews.flatMap((p) => (p.changes || []).map((c) => (
           <p key={`preview-${p.archetype}-${c.ticker}-${c.from}`} data-huddle-preview={p.archetype} style={{ margin: '6px 0 0', fontSize: 13, color: ink }}>
-            {copy.previewLine(p.archetypeName, p.games, copy.itemText({ kind: c.from, ticker: c.ticker }, {}), copy.itemText({ kind: c.to, ticker: c.ticker }, {}))}
+            {copy.previewLine(p.archetypeName, p.games, copy.itemText(previewFromOf(plan, c), {}), copy.itemText({ kind: c.to, ticker: c.ticker }, {}))}
           </p>
         )))}
         <p style={{ margin: '8px 0 0', fontSize: 12.5, color: ink2 }}>{copy.instructionNote}</p>

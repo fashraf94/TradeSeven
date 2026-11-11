@@ -176,7 +176,7 @@ export const HUB_COPY = Object.freeze({
     working: 'Working…',
     /** Amendment E §E1: the door shows only when an approach in play has no confirmation — pressing it files one. */
     reconfirmLine: "One of your approaches isn't covered by this plan yet. Reconfirm to file it there too.",
-    /** E1's preview, one line per changed item: "For your Diversifier game: Fade CCI becomes Watch CCI". */
+    /** E1's preview, one line per changed item: "For your Diversifier game: Chase CCI above 90.00 becomes Watch CCI". */
     previewLine: (name, games, fromText, toText) => {
       const who = typeof name !== 'string' || !name ? 'For another approach'
         : games > 1 ? `For your ${name} games` : games === 1 ? `For your ${name} game` : `For your ${name}`;

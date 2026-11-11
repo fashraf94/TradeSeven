@@ -137,7 +137,7 @@ const historyStateOf = (p) => (p.planStatus === 'confirmed' ? 'confirmed'
       : p.planStatus === 'proposed' ? 'proposed' : 'none');
 
 /** The Partnership panel (C8; Amendment D §D5): loading, none, error, and an as-of note on a kept answer. */
-export function huddlePartnershipOf(todayRead, historyRead) {
+export function huddlePartnershipOf(todayRead, historyRead, { door = false } = {}) {
   const today = huddleOf(todayRead);
   const history = Array.isArray(historyRead?.plans) ? historyRead.plans : null;
   // The Research panel's states (C8; D5): a read that failed with nothing kept is an error (with Retry), whatever the other
@@ -151,7 +151,8 @@ export function huddlePartnershipOf(todayRead, historyRead) {
     etDate: p.etDate,
     text: COPY.huddle.historyRow(formatHubDay(hubMs(`${p.etDate}T16:00:00Z`)) || p.etDate, COPY.huddle.historyState[historyStateOf(p)]),
   }));
-  const status = huddleStatusOf(today);
+  // E1: a game's line carries the Reconfirm door wherever it shows — here as in the sheet (review HU-5)
+  const status = huddleStatusOf(today, { door });
   const kept = todayRead?.stale === true || historyRead?.stale === true;
   return {
     status: today || rows.length ? 'ready' : 'none',

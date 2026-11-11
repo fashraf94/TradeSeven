@@ -185,6 +185,30 @@ describe('E7: what an outsider costs, and a member removed mid-session (review H
   });
 });
 
+describe('E7: the Huddle sheet open when membership lapses (review HU-4)', () => {
+  it.each(['desktop', 'mobile'])('%s: a 404 refresh closes the sheet, and a later 200 does not reopen it without a tap', async (site) => {
+    service.fetchHuddleToday.mockResolvedValue({ asOf: iso(NOW), huddle: HUDDLE });
+    service.fetchHuddleHistory.mockResolvedValue([]);
+    flag.on = true;
+    layout.state.hubWidth = site === 'mobile' ? 390 : 1216;
+    const m = mount(<CommandCenterHub site={site} hub={hubOf()} />);
+    mounted.push(m);
+    const settle = async () => { await act(async () => { for (let i = 0; i < 6; i += 1) await Promise.resolve(); }); };
+    await settle();
+    await act(async () => { document.querySelector('[data-hub-huddle-chip] button').click(); for (let i = 0; i < 6; i += 1) await Promise.resolve(); });
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    service.fetchHuddleToday.mockRejectedValue(notFound());
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await settle();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    service.fetchHuddleToday.mockResolvedValue({ asOf: iso(NOW), huddle: HUDDLE });
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await settle();
+    expect(document.querySelector('[data-hub-huddle-chip]')).not.toBeNull(); // a member again
+    expect(document.querySelector('[role="dialog"]')).toBeNull(); // the sheet stays closed
+  });
+});
+
 describe('control: a player INSIDE the cohort renders the Huddle (the comparison bites)', () => {
   it.each(['desktop', 'mobile'])('%s: a record today puts the chip and the Partnership plan line on the hub', async (site) => {
     service.fetchHuddleToday.mockResolvedValue({ asOf: iso(NOW), huddle: HUDDLE });

@@ -148,6 +148,15 @@ describe('E1 — the Reconfirm door is the server\'s acceptance predicate (plan.
     expect(battleStatusText(b, { door: true })).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.staleApproach}${COPY.sep}${COPY.huddle.reconfirm}`);
     expect(battleStatusText({ ...b, expiredAt: 'x' }, { door: true })).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.expired}`);
   });
+  it('Partnership\'s game line carries the same door as the sheet\'s (review HU-5)', () => {
+    const today = read(record({}, { status: 'confirmed', battles: [{ battleId: 'b1', battleKind: 'casual', disposition: 'stale_approach' }] }));
+    const history = { status: 'ready', plans: [] };
+    const line = (door) => huddlePartnershipOf(today, history, door === undefined ? undefined : { door }).today.battles[0].text;
+    expect(line(true)).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.staleApproach}${COPY.sep}${COPY.huddle.reconfirm}`);
+    expect(line(false)).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.staleApproach}`);
+    expect(line(undefined)).toBe(line(false));
+    expect(line(true)).toBe(huddleStatusOf(today.huddle, { door: true }).battles[0].text);
+  });
 });
 
 describe('the Partnership panel (C8): loading, none, error, as-of', () => {

@@ -23,7 +23,9 @@ function strings(node, out = []) {
   } else if (node && typeof node === 'object') for (const v of Object.values(node)) strings(v, out);
   return out;
 }
-const ALL = [...new Set(strings(H))].filter(Boolean);
+// review HU-8: the preview line's four branches (another approach; no game, one game, games), with real item words
+const PREVIEW_SAMPLES = [null, 'Trend Follower'].flatMap((name) => [0, 1, 2].map((games) => H.previewLine(name, games, H.itemText({ kind: 'FADE', ticker: 'ARGT', level: 48 }, {}), H.itemText({ kind: 'WATCH', ticker: 'ARGT' }, {}))));
+const ALL = [...new Set([...strings(H), ...PREVIEW_SAMPLES])].filter(Boolean);
 
 describe('the Huddle block of hubCopy.js', () => {
   it('is not empty, and is read whole (the sampler reaches every function)', () => {
