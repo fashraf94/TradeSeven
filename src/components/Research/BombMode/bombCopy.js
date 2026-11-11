@@ -156,4 +156,9 @@ export const BOMB_COPY = Object.freeze({
   downHitLine: (label, points, check) => `${label} · ${downPts(points)} · hit${check ? ` at ${check}` : ''}`,
   // Battle View → Why? (BD-7)
   seeAllLevels: 'See all levels ›',
+  // The views' accessible names (review A3: the Danger Zone is named as itself; every edited label lives here)
+  ariaFuse: 'Bomb chart: the ladder from the bottom rung to the top rung, with the baseline and the live price',
+  ariaRail: 'The ladder rail, from the bottom rung to the top rung',
+  ariaRedZone: 'Red zone: the next rung as the goal line and the last hour of prices',
+  dangerAriaZone: 'Danger zone: the next rung below as the goal line and the last hour of prices',
 });

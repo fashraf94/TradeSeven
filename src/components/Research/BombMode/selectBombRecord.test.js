@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectBombRecord, agentBombContext, isActivationDayAt, checkDotsOf, recordMs } from './selectBombRecord.js';
 import { legacyBattle } from './__fixtures__/bombBattles.js';
+import { scoredChipText } from './bombView.js';
 import { STOCK_TEST_NOW, correctedStockBattle, stockWriterDb } from '../../../../api/_utils/__fixtures__/stockThresholdHarness.js';
 import { correctedScorePatch, scoreCorrectedPosition } from '../../../../api/_utils/stockThresholdAdmission.js';
 
@@ -118,9 +119,12 @@ describe('check dots (spec §3.4): evidence[SYM].px at each timestamp, since ent
     const b = legacyBattle(); b.portfolio.star[0].swappedInAt = '2026-10-14T16:50:00.000Z';
     expect(selectBombRecord(b, 'EOG', WED_1PM).checkDots.map((d) => d.px)).toEqual([160.19]);
   });
-  it('measured: since the receipt\'s enteredAt', async () => {
+  it('measured: since the fill quote\'s time (BD-9, 2026-11-10; was enteredAt) — a check between the two instants is drawn (review C7)', async () => {
     const b = await committedMeasured();
     expect(selectBombRecord(b, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z')).checkDots).toEqual([{ atMs: Date.parse('2026-10-14T14:15:00.000Z'), px: 100.9 }]);
+    // quoteAsOf 13:47 < 13:55 < enteredAt 14:02: since quoteAsOf it is drawn; since enteredAt it would not be.
+    const between = { ...b, evaluations: [...b.evaluations, { timestamp: '2026-10-14T13:55:00.000Z', evidence: { AAPL: { px: 100.7 } } }] };
+    expect(selectBombRecord(between, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z')).checkDots.map((d) => d.px)).toEqual([100.7, 100.9]);
   });
   it('checkDotsOf ignores non-positive prices and unreadable times', () => {
     const b = { evaluations: [{ timestamp: 'x', evidence: { A: { px: 1 } } }, { timestamp: '2026-10-14T14:15:00.000Z', evidence: { A: { px: 0 } } }, { timestamp: '2026-10-14T14:30:00.000Z', evidence: { A: { px: 2 } } }] };
@@ -174,5 +178,40 @@ describe('agentBombContext — which row is the agent\'s (review A4, C1)', () =>
   });
   it('a name the agent does not hold → a preview', () => {
     expect(agentBombContext(legacyBattle(), 'NVDA', WED_1PM, {})).toEqual({ kind: 'agent', battleId: null, held: false, record: null });
+  });
+});
+
+describe('review fixes (2026-11-11), lens C — the selector on the real harness', () => {
+  it('C1 (BD-8): the check is named from the moment the check READ the quote (observedAt), not the provider time — 16 minutes apart here', async () => {
+    const prior = process.env.EODHD_API_KEY; process.env.EODHD_API_KEY = 'isolated-key';
+    try {
+      const { battle } = await correctedStockBattle({ fill: 100.75 });
+      const at = '2026-10-14T14:47:20.000Z'; // the 10:45 check reads…
+      const prices = { AAPL: { current: 101, timestamp: Date.parse('2026-10-14T14:31:00.000Z') / 1000 } }; // …a quote EODHD stamps 10:31
+      const scores = ['agent', 'cpu'].map((side) => scoreCorrectedPosition(battle, { ...(side === 'agent' ? battle.portfolio : battle.opponent.portfolio).star[0], tier: 'star' }, side, prices, at));
+      const h = stockWriterDb({ battle }); await h.db.doc('battle').update(correctedScorePatch(battle, [scores[0]], [scores[1]], at)); Object.assign(battle, h.store.get('battle'));
+      const r = selectBombRecord(battle, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z'));
+      expect(r.scored.atMs).toBe(Date.parse('2026-10-14T14:31:00.000Z'));
+      expect(r.scored.checkAtMs).toBe(Date.parse(at));
+      expect(r.scored.checkAtMs).not.toBe(r.scored.atMs);
+      expect(scoredChipText({ live: 101.2, scored: r.scored, decimals: 2, always: true, nowMs: Date.parse('2026-10-14T14:50:00.000Z') })).toBe('live $101.20 · scored $101.00 at the 10:45 check');
+    } finally { if (prior === undefined) delete process.env.EODHD_API_KEY; else process.env.EODHD_API_KEY = prior; }
+  });
+  it('C6 (BD-6): Details carry the committed context\'s facts unchanged', async () => {
+    const b = await committedMeasured(101);
+    const ctx = b.scoring.stockRewardContexts.agent['position-agent'];
+    const r = selectBombRecord(b, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z'));
+    expect(r.details).toEqual({
+      scoringPctDecimal: ctx.scoringPctDecimal,
+      targets: ctx.targets.map((t) => ({ key: t.key, label: t.label, target: t.target })),
+      currentPrice: ctx.currentPrice,
+      providerAsOf: ctx.quoteEvidence.providerAsOf,
+      positionId: ctx.positionId,
+      receiptHash: ctx.receiptHash,
+      inputRef: ctx.inputRef,
+      modelId: ctx.modelId,
+    });
+    expect(r.details.currentPrice).toBe(101);
+    expect(r.details.currentPrice).not.toBe(ctx.fill);
   });
 });

@@ -59,7 +59,7 @@ export function toGoParts(ladder, go, { closed = false, withLive = true } = {}) 
 
 /** BD-3 — the downside's to-go label, the mirror of toGoParts; null when nothing below is left unhit. */
 export function downToGoParts(ladder, goDown, { closed = false, withLive = true, short = false } = {}) {
-  if (!goDown) return null;
+  if (!goDown) return ladder?.nextDown ? null : { base: BOMB_COPY.downEveryRungHit, suffix: null };
   const r = goDown.rung;
   const base = goDown.distance <= 0
     ? (ladder.kind === 'preview' ? BOMB_COPY.downToGoAtPreview : BOMB_COPY.downToGoAt)(r.label, r.points)
@@ -127,11 +127,15 @@ const inlinePriceBox = (x, y, text) => textBox(x, y + 4.5, text, 8.5);
  * levels table carries every price); if the side is still crowded, its next
  * rung's price moves up onto its points' line. A name or the points are never
  * dropped. Returns { keep: Set of keys that keep a price, inline: Set of keys
- * whose price sits on the points' line }.
+ * whose price sits on the points' line, small: Set of inline keys drawn at 7 px }.
+ * Review D5: an inline price must end inside the plot's width `W` — at 8.5 px,
+ * else at 7 px, else it is dropped too (the levels table carries it).
  */
-export function pricedRungs(rungs, labelX) {
+export const INLINE_PRICE_SMALL = 7;
+export function pricedRungs(rungs, labelX, W = Infinity) {
   const keep = new Set(rungs.map((r) => r.key));
   const inline = new Set();
+  const small = new Set();
   for (const side of ['up', 'down']) {
     const list = rungs.filter((r) => r.side === side).sort((a, b) => a.y - b.y);
     const blocksOf = (r) => [pointsBox(labelX, r.y, r.pointsText), ...(!keep.has(r.key) ? [] : inline.has(r.key) ? [inlinePriceBox(inlinePriceX(labelX, r.pointsText), r.y, r.priceText)] : [priceBox(labelX, r.y, r.priceText)])];
@@ -144,7 +148,14 @@ export function pricedRungs(rungs, labelX) {
     for (const r of list) if (r.state !== 'next') keep.delete(r.key);
     if (crowded()) for (const r of list) if (keep.has(r.key)) inline.add(r.key);
   }
-  return { keep, inline };
+  for (const r of rungs) {
+    if (!inline.has(r.key)) continue;
+    const x = inlinePriceX(labelX, r.pointsText);
+    if (x + monoWidth(r.priceText, 8.5) <= W - 2) continue;
+    if (x + monoWidth(r.priceText, INLINE_PRICE_SMALL) <= W - 2) small.add(r.key);
+    else { keep.delete(r.key); inline.delete(r.key); }
+  }
+  return { keep, inline, small };
 }
 
 export default function FuseChart({ ladder, live, decimals, go, goDown = null, lead = null, ghost = [], checkDots = [], bankedTimes = {}, hitTimes = {}, closed = false, width = 360, height = 300 }) {
@@ -200,7 +211,7 @@ export default function FuseChart({ ladder, live, decimals, go, goDown = null, l
   }));
   const upRungs = rungs.filter((r) => r.side === 'up');
   const downRungs = rungs.filter((r) => r.side === 'down');
-  const { keep: keepPrice, inline: inlinePrice } = pricedRungs(rungs, labelX);
+  const { keep: keepPrice, inline: inlinePrice, small: smallPrice } = pricedRungs(rungs, labelX, W);
   // A kept price: under its points, or — on a crowded side — on the points' own line.
   const priceAt = (r) => (inlinePrice.has(r.key) ? { x: inlinePriceX(labelX, r.pointsText), y: r.y + 4.5 } : { x: labelX, y: r.y + 15.5 });
   const top = upRungs[upRungs.length - 1];
@@ -232,7 +243,7 @@ export default function FuseChart({ ladder, live, decimals, go, goDown = null, l
       ? [toGoParts(ladder, go, { closed, withLive: isLead })]
       : [downToGoParts(ladder, goDown, { closed, withLive: isLead }), downToGoParts(ladder, goDown, { closed, withLive: isLead, short: true })];
     if (!variants[0]) return null;
-    const anchorY = side === 'up' ? (ladder.next ? Y(ladder.next.k) : (top ? top.y : plotTop)) : Y(ladder.nextDown.k);
+    const anchorY = side === 'up' ? (ladder.next ? Y(ladder.next.k) : (top ? top.y : plotTop)) : (ladder.nextDown ? Y(ladder.nextDown.k) : (bottom ? bottom.y : plotBot));
     const sizes = isLead ? [{ fs: 9, ls: 0.4 }, { fs: 8, ls: 0.2 }, { fs: 7.5, ls: 0 }] : [{ fs: 8, ls: 0.2 }, { fs: 7.5, ls: 0 }];
     const sets = [];
     for (const v of variants) {
@@ -270,7 +281,11 @@ export default function FuseChart({ ladder, live, decimals, go, goDown = null, l
   // the left-hand labels and the pills.
   const liveLabel = (() => {
     if (liveY === null || inBand) return null;
-    const blocks = [...rungs.map((r) => [r.y - 11, r.y + (keepPrice.has(r.key) && !inlinePrice.has(r.key) ? 19 : 8)]), [yEntry - 10, yEntry + 12]];
+    // (Review D7, 2026-11-11: no band is reserved at the baseline — right of the rail
+    // only the rail's own entry tick is drawn there, left of the label column — so a
+    // live price just off the baseline keeps its label on the right instead of
+    // falling back onto the baseline's title.)
+    const blocks = rungs.map((r) => [r.y - 11, r.y + (keepPrice.has(r.key) && !inlinePrice.has(r.key) ? 19 : 8)]);
     // The date axis (H − 16 … H) is off limits on both sides.
     const inPlot = (y) => y - 12 > plotTop - 8 && y + 14 < H - 16;
     const clear = (y) => blocks.every(([a, b]) => y + 14 < a || y - 12 > b) && inPlot(y);
@@ -299,7 +314,7 @@ export default function FuseChart({ ladder, live, decimals, go, goDown = null, l
 
   return (
     <div data-bomb-view="fuse" data-fuse-lead={leadSide} style={{ position: 'relative', width: '100%', height: H, background: BT.bg, overflow: 'hidden' }}>
-      <svg width={W} height={H} style={{ display: 'block', fontFamily: MONO }} aria-label="Bomb chart: the ladder from the bottom rung to the top rung, with the baseline and the live price">
+      <svg width={W} height={H} style={{ display: 'block', fontFamily: MONO }} aria-label={BOMB_COPY.ariaFuse}>
         <defs>
           <radialGradient id="bombFuseHalo"><stop offset="0" style={{ stopColor: BT.teal, stopOpacity: 0.6 }} /><stop offset="1" style={{ stopColor: BT.teal, stopOpacity: 0 }} /></radialGradient>
           <radialGradient id="bombFuseHaloDown"><stop offset="0" style={{ stopColor: BT.red, stopOpacity: 0.6 }} /><stop offset="1" style={{ stopColor: BT.red, stopOpacity: 0 }} /></radialGradient>
@@ -375,13 +390,13 @@ export default function FuseChart({ ladder, live, decimals, go, goDown = null, l
         {downRungs.map((r) => (
           <g key={`d${r.key}`} data-fuse-down={r.key} data-down-hit={r.hit ? '1' : '0'} data-side="down">
             <text x={labelX} y={r.y + 4.5} fontSize="13" fontWeight="800" style={{ fill: r.state === 'later' ? tint(BT.red, 60) : BT.red }}>{r.pointsText}</text>
-            {keepPrice.has(r.key) && <text data-fuse-price={r.key} x={priceAt(r).x} y={priceAt(r).y} fontSize="8.5" style={{ fill: BT.ink3 }}>{r.priceText}</text>}
+            {keepPrice.has(r.key) && <text data-fuse-price={r.key} x={priceAt(r).x} y={priceAt(r).y} fontSize={smallPrice.has(r.key) ? INLINE_PRICE_SMALL : 8.5} style={{ fill: BT.ink3 }}>{r.priceText}</text>}
           </g>
         ))}
         {upRungs.map((r) => (
           <g key={`l${r.key}`} data-fuse-rung-label={r.key}>
             <text x={labelX} y={r.y + 4.5} fontSize="13" fontWeight="800" style={{ fill: r.state === 'banked' ? BT.green : r.state === 'next' ? BT.gold : tint(BT.gold, 60) }}>{r.pointsText}</text>
-            {keepPrice.has(r.key) && <text data-fuse-price={r.key} x={priceAt(r).x} y={priceAt(r).y} fontSize="8.5" style={{ fill: BT.ink3 }}>{r.priceText}</text>}
+            {keepPrice.has(r.key) && <text data-fuse-price={r.key} x={priceAt(r).x} y={priceAt(r).y} fontSize={smallPrice.has(r.key) ? INLINE_PRICE_SMALL : 8.5} style={{ fill: BT.ink3 }}>{r.priceText}</text>}
           </g>
         ))}
 
@@ -395,7 +410,7 @@ export default function FuseChart({ ladder, live, decimals, go, goDown = null, l
         {liveLabelY !== null && (
           <g data-fuse-live-label="1">
             <text x={liveLabel.x} y={liveLabelY} textAnchor={liveLabel.anchor} fontSize="11" fontWeight="700" style={{ fill: BT.ink }}>{money(live, d)}</text>
-            <text x={liveLabel.x} y={liveLabelY + 11} textAnchor={liveLabel.anchor} fontSize="8.5" fontWeight="700" style={{ fill: kLive < 0 ? BT.red : BT.teal }}>{(closed ? BOMB_COPY.lastPct : BOMB_COPY.livePct)(liveMovePct(ladder, live, d)).toUpperCase()}</text>
+            <text x={liveLabel.x} y={liveLabelY + 11} textAnchor={liveLabel.anchor} fontSize="8.5" fontWeight="700" style={{ fill: liveMovePct(ladder, live, d) < 0 ? BT.red : BT.teal }}>{(closed ? BOMB_COPY.lastPct : BOMB_COPY.livePct)(liveMovePct(ladder, live, d)).toUpperCase()}</text>
           </g>
         )}
         {n > 0 && <text x={x0} y={H - 6} fontSize="8.5" fontWeight="700" letterSpacing="0.6" style={{ fill: BT.ink3 }}>{dayLabel(pts[0].t)}</text>}

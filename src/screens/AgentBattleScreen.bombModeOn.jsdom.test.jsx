@@ -198,6 +198,7 @@ describe('BD-7 — Battle View → Why?: the proximity line, then "See all level
     await click(whyToggle('AAPL'));
     const panel = container.querySelector('[data-why-levels-door]');
     expect(panel).toBeTruthy();
+    expect(container.querySelector('[data-why-symbol="AAPL"]')).toBeTruthy(); // the proximity line's panel stays (review C8, SC7x)
     expect(container.textContent).not.toContain('BAGGERBOMB STATS');
     expect(container.querySelector('[aria-label="Measured stock reward targets"]')).toBeNull();
     const door = container.querySelector('[data-see-all-levels="AAPL"]');

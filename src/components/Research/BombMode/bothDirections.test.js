@@ -140,3 +140,16 @@ describe('BD-2 — the lead side, with a one-brick band', () => {
     expect(stepLead('up', { up: 4, down: -0.2 })).toBe('down');
   });
 });
+
+describe('review fixes (2026-11-11), lens C — the pure rows', () => {
+  it('C10: a distance of exactly N bricks reads N on both sides, float error included ($99 at 3 %: brick $0.495)', () => {
+    const l = previewLadder({ previousClose: 99, threshold: 3 });
+    expect(toGoDown(l, 97.02).bricks).toBe(2);
+    expect(toGoDown(l, 98.01).bricks).toBe(4);
+    expect(toGo(l, 100.98).bricks).toBe(2);
+  });
+  it('N1: the band\'s edge — exactly one brick nearer moves the lead', () => {
+    expect(stepLead('up', { up: 6.5, down: 5.5 })).toBe('down');
+    expect(stepLead('down', { up: 5.5, down: 6.5 })).toBe('up');
+  });
+});

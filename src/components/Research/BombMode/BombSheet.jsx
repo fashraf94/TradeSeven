@@ -31,6 +31,8 @@ import { priceText } from '../priceFormat.js';
 import useMeasuredWidth from './useMeasuredWidth.js';
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+/** The to-go text with a no-break space after its arrow (review D9). */
+const nbspArrow = (text) => text.replace(/^(\S+) /, '$1\u00a0');
 
 /** One side's to-go text: the lead's in full (with the live number inside its band), the other's short. */
 function sideText(ladder, side, g, { lead, closed }) {
@@ -40,7 +42,7 @@ function sideText(ladder, side, g, { lead, closed }) {
     if (g.distance <= 0 || g.bricks == null) return toGoParts(ladder, g, { closed, withLive: false }).base;
     return BOMB_COPY.toGoShort(g.pctShown, g.bricks, g.rung.points);
   }
-  if (!g) return null;
+  if (!g) return ladder.nextDown ? null : BOMB_COPY.downEveryRungHit;
   if (lead) { const p = downToGoParts(ladder, g, { closed }); return p.suffix ? `${p.base} · ${p.suffix}` : p.base; }
   if (g.distance <= 0 || g.bricks == null) return downToGoParts(ladder, g, { closed, withLive: false }).base;
   return BOMB_COPY.downToGoShort(g.pctShown, g.bricks, g.rung.label, g.rung.points);
@@ -99,7 +101,9 @@ export function levelRows(view) {
   if (finite(view.live) && view.live > 0) {
     const shown = (p) => Number(priceText(p, d));
     const liveShown = shown(view.live);
-    const at = rows.findIndex((r) => shown(r.price) < liveShown);
+    // Review A6: a live price ON a rung sits past it in that rung's award direction —
+    // above an upside rung (reaching it is the upside's condition), below a downside one.
+    const at = rows.findIndex((r) => (r.side === 'down' ? shown(r.price) < liveShown : shown(r.price) <= liveShown));
     const pct = liveMovePct(ladder, view.live, d);
     const text = (view.marketOpen === false ? BOMB_COPY.levelLast : BOMB_COPY.levelLive)(view.live, d, pct);
     rows.splice(at === -1 ? rows.length : at, 0, { key: 'live', side: 'live', text });
@@ -215,12 +219,13 @@ export default function BombSheet({ view }) {
       </div>
       {togo && (
         <div data-sheet-togo="1" style={{ marginTop: 8, fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', lineHeight: 1.45, overflowWrap: 'anywhere' }}>
-          {togo.lead && <span data-sheet-togo-lead={togo.lead.side} style={{ fontWeight: 700, color: togo.lead.side === 'down' ? BT.red : BT.gold }}>{togo.lead.text}</span>}
-          {togo.lead && togo.other && <span style={{ color: BT.ink3 }}>{' · '}</span>}
-          {togo.other && <span data-sheet-togo-other={togo.other.side} style={{ fontWeight: 500, color: BT.ink3 }}>{togo.other.text}</span>}
+          {/* Review D9: no-break spaces bind each arrow to its number and each "·" to the text before it, so a wrap never strands either. */}
+          {togo.lead && <span data-sheet-togo-lead={togo.lead.side} style={{ fontWeight: 700, color: togo.lead.side === 'down' ? BT.red : BT.gold }}>{nbspArrow(togo.lead.text)}</span>}
+          {togo.lead && togo.other && <span style={{ color: BT.ink3 }}>{'\u00a0· '}</span>}
+          {togo.other && <span data-sheet-togo-other={togo.other.side} style={{ fontWeight: 500, color: BT.ink3 }}>{nbspArrow(togo.other.text)}</span>}
         </div>
       )}
-      <svg width={W} height={62} style={{ display: 'block', marginTop: 4, overflow: 'visible' }} aria-label="The ladder rail, from the bottom rung to the top rung">
+      <svg width={W} height={62} style={{ display: 'block', marginTop: 4, overflow: 'visible' }} aria-label={BOMB_COPY.ariaRail}>
         <rect x={x0} y={16} width={xEntry - x0} height={4} rx={2} style={{ fill: tint(BT.red, 10), stroke: tint(BT.red, 8) }} />
         <rect x={xEntry} y={16} width={x1 - xEntry} height={4} rx={2} style={{ fill: tint(BT.ink, 8), stroke: tint(BT.ink, 7) }} />
         {kLive !== null && kLive > 0 && <rect data-sheet-fill="up" x={xEntry} y={16} width={fx(kLive) - xEntry} height={4} rx={2} style={{ fill: BT.teal }} />}
@@ -239,7 +244,7 @@ export default function BombSheet({ view }) {
               {r.banked
                 ? <g><circle cx={x} cy={18} r={8} style={{ fill: BT.green }} /><path d={`M${x - 4} 18l3 3 5-6`} fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ stroke: BT.bg }} /></g>
                 : <circle cx={x} cy={18} r={isNext ? 7 : 5} strokeWidth={isNext ? 2 : 1.5} style={{ fill: BT.bg, stroke: BT.gold, opacity: isNext ? 1 : 0.55 }} />}
-              <text data-sheet-points={r.key} x={labelX(r.k)} y={41} textAnchor={anchorOf(r.k)} fontSize="10" fontWeight="800" style={{ fill: r.banked ? BT.green : isNext ? BT.gold : tint(BT.gold, 55) }}>{BOMB_COPY.rungPoints(r.points, r.banked)}</text>
+              <text data-sheet-points={r.key} x={labelX(r.k)} y={41} textAnchor={anchorOf(r.k)} fontSize="10" fontWeight="800" style={{ fill: r.banked ? BT.green : isNext ? BT.gold : tint(BT.gold, 55) }}>{BOMB_COPY.rungPoints(r.points, false) /* review D6: the green check disc marks banked; a ✓ here collided at full scale */}</text>
               {isNext && <text data-sheet-price={r.key} x={labelX(r.k)} y={54} textAnchor={anchorOf(r.k)} fontSize={priceSize(price)} style={{ fill: BT.ink3 }}>{price}</text>}
             </g>
           );

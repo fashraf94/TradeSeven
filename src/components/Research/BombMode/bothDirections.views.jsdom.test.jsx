@@ -47,7 +47,7 @@ describe('BD-3 — the Fuse in both directions (the founder\'s AMZN at $268.09)'
       expect(textOf(g.querySelector('text'))).toBe(title);
       const right = d.querySelector(`[data-fuse-down="${key}"]`);
       expect(right.querySelector('text').textContent).toBe(pts);
-      if (key === 'bust') expect(textOf(right.querySelector(`[data-fuse-price="${key}"]`))).toBe(price);
+      expect(textOf(right.querySelector(`[data-fuse-price="${key}"]`))).toBe(price); // at 354 px every price is drawn (review N6)
     }
     expect(textOf(d.querySelector('[data-fuse-rung="bagger"] text'))).toBe('BAGGERBOMB · +3.96%');
   });
@@ -116,7 +116,7 @@ function labelBoxes(d) {
   for (const t of d.querySelectorAll('svg text')) {
     if (t.closest('[data-fuse-togo]') || t.closest('[data-bomb-preview-chip]')) continue;
     const group = t.closest('[data-fuse-rung-label], [data-fuse-down], [data-fuse-live-label]');
-    boxes.push({ ...textBox(Number(t.getAttribute('x')), Number(t.getAttribute('y')), t.textContent, Number(t.getAttribute('font-size')), Number(t.getAttribute('letter-spacing') || 0), t.getAttribute('text-anchor') || 'start'), group, what: t.textContent });
+    boxes.push({ ...textBox(Number(t.getAttribute('x')), Number(t.getAttribute('y')), t.textContent, Number(t.getAttribute('font-size')), Number(t.getAttribute('letter-spacing') || 0), t.getAttribute('text-anchor') || 'start'), group, base: Number(t.getAttribute('y')), what: t.textContent });
   }
   for (const r of d.querySelectorAll('[data-fuse-togo] rect, [data-bomb-preview-chip] rect')) {
     const x = Number(r.getAttribute('x')); const y = Number(r.getAttribute('y'));
@@ -128,7 +128,9 @@ const overlaps = (boxes) => {
   const out = [];
   for (let i = 0; i < boxes.length; i += 1) for (let j = i + 1; j < boxes.length; j += 1) {
     const a = boxes[i]; const b = boxes[j];
-    if (a.group && a.group === b.group) continue; // one rung's own points over its own price: one block
+    // One rung's own points STACKED over its own price is one block (the model's quarter-em descent meets
+    // the price's cap by 0.75 px); on the SAME line (an inline price) they must not touch (review C9).
+    if (a.group && a.group === b.group && a.base !== b.base) continue;
     const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
     const h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
     if (w > 0 && h > 0) out.push(`${a.what} × ${b.what}`);
@@ -153,6 +155,8 @@ describe('BD-3 — legibility at a 375-px phone at the phone chart heights: no t
     for (const height of HEIGHTS) {
       const d = fuse(ladder, live, { lead, height, hitTimes: { bust: Date.parse('2026-11-10T18:15:00.000Z') }, bankedTimes: { bagger: Date.parse('2026-11-10T18:15:00.000Z') } });
       expect(overlaps(labelBoxes(d)), `375×${height}`).toEqual([]);
+      // …and every label ends inside the plot (review C9: no right-edge bound before)
+      for (const b of labelBoxes(d)) expect(b.x1, `375×${height} ${b.what}`).toBeLessThanOrEqual(375 + 1e-9);
       // every rung keeps its name and its points
       for (const r of ladder.rungs) {
         expect(d.querySelector(`[data-fuse-rung="${r.key}"] text`), `${r.key} title @${height}`).not.toBeNull();
@@ -197,7 +201,9 @@ describe('BD-4 — the bar at full scale and the one to-go line', () => {
   });
   it('one to-go line, the lead first in its color and weight, the other quieter: ↓ 3.2% · 5 bricks to Bust −10 · ↑ 4.8% · 8 to +15', () => {
     const line = d.querySelector('[data-sheet-togo]');
-    expect(line.textContent).toBe('↓ 3.2% · 5 bricks to Bust −10 · ↑ 4.8% · 8 to +15'); // the ruling's example, to the character
+    expect(line.textContent.replace(/\u00a0/g, ' ')).toBe('↓ 3.2% · 5 bricks to Bust −10 · ↑ 4.8% · 8 to +15'); // the ruling's example, to the character
+    // review D9: no-break spaces after each arrow and before the joining "·" — a wrap never strands either
+    expect(line.textContent).toBe('↓\u00a03.2% · 5 bricks to Bust −10\u00a0· ↑\u00a04.8% · 8 to +15');
     const lead = line.querySelector('[data-sheet-togo-lead="down"]');
     expect(lead.getAttribute('style')).toMatch(/font-weight:\s*700/);
     expect(lead.getAttribute('style')).toContain('--ft-neg');
@@ -235,7 +241,7 @@ describe('BD-4 — "What has to happen" is lead-aware', () => {
 });
 
 describe('BD-6 — the levels table under the bar', () => {
-  const view = viewOf(amzn(), 268.09, { lead: 'down', details: amznRecord().details ?? null });
+  const view = viewOf(amzn(), 268.09, { lead: 'down' });
   const d = doc(renderToStaticMarkup(<BombSheet view={view} />));
   const rows = () => [...d.querySelectorAll('[data-level], [data-level-live]')];
   it('seven rows top to bottom by price, the live marker between the baseline and Bust: Live $268.09 · −0.8%', () => {
@@ -369,5 +375,114 @@ describe('BD-9 — the entry line shows the fill quote\'s time', () => {
     const syk = amznRecord({ symbol: 'SYK', fill: 325.73, enteredAt: '2026-11-10T03:21:18.150Z', quoteAsOf: '2026-11-09T21:05:00.000Z' });
     const l = measuredLadder({ measured: syk.measured, entryAtMs: syk.entry.atMs });
     expect(doc(renderToStaticMarkup(<BombSheet view={viewOf(l, 323.04)} />)).querySelector('[data-bomb-sheet-baseline]').textContent).toBe('Entry $325.73 · Mon 4:05 PM');
+  });
+});
+
+// ── Review fixes (2026-11-11), lens A ─────────────────────────────────────────
+describe('review A1 — the printed brick count at the baseline is the rung\'s own 6, on both sides', () => {
+  it('AMZN at its fill: 6 bricks to +15 and 6 to Bust (the exact unit printed 7)', () => {
+    const l = amzn();
+    expect(toGo(l, 270.22).bricks).toBe(6);
+    expect(toGoDown(l, 270.22).bricks).toBe(6);
+  });
+  it('a sweep of fills and measured %s: at live = fill the count reads 6 both ways, every time', () => {
+    for (const fill of [20.07, 45.88, 99.99, 136.68, 270.22, 325.73, 488.41]) for (const pct of [1.123457, 2.375, 3.559142, 3.954943, 4.365161, 5.135255]) {
+      const targets = [['bagger', 1], ['doubleBagger', 1.5], ['tenBagger', 2], ['bust', -1], ['crash', -1.5], ['meltdown', -2]].map(([key, k]) => ({ key, price: fill * (1 + (k * pct) / 100) }));
+      const l = measuredLadder({ measured: { measured: true, baselinePrice: fill, targets, crossedTiers: [] } });
+      expect([toGo(l, fill).bricks, toGoDown(l, fill).bricks], `${fill} @ ${pct}`).toEqual([6, 6]);
+    }
+  });
+});
+
+describe('review A6 — ties are broken in each rung\'s award direction; the live % colour follows the printed %', () => {
+  it('live ON the +15 price: the marker sits above +15 (reaching it is the upside\'s condition); ON Bust: below Bust', () => {
+    const order = (live) => levelRows(viewOf(amzn(), live)).map((r) => r.key);
+    expect(order(280.91)).toEqual(['tenBagger', 'doubleBagger', 'live', 'bagger', 'baseline', 'bust', 'crash', 'meltdown']);
+    expect(order(259.53)).toEqual(['tenBagger', 'doubleBagger', 'bagger', 'baseline', 'bust', 'live', 'crash', 'meltdown']);
+  });
+  it('a live price that prints +0.0% is not painted red', () => {
+    const d = fuse(amzn(), 270.219);
+    const pct = [...d.querySelectorAll('[data-fuse-live-label] text')][1];
+    expect(pct.textContent).toBe('+0.0% · LIVE');
+    expect(pct.getAttribute('style')).toContain('--ft-teal');
+  });
+});
+
+describe('review A9 — every rung below hit says so, like every rung banked above', () => {
+  it('the bar\'s line and the Fuse\'s quiet pill', () => {
+    const l = amzn({ crossedTiers: ['bust', 'crash', 'meltdown'] });
+    const t = sheetToGo(l, toGo(l, 250), toGoDown(l, 250), 'up');
+    expect(t.other.text).toBe(`↓ ${BOMB_COPY.downEveryRungHit}`);
+    expect(fuse(l, 250).querySelector('[data-fuse-togo="down"]').textContent).toBe(BOMB_COPY.downEveryRungHit.toUpperCase());
+  });
+});
+
+// ── Review fixes (2026-11-11), lens D ─────────────────────────────────────────
+describe('review D1–D4 — the Danger Zone\'s text is one column, and its goal stays in the plot', () => {
+  const ladder = amzn();
+  const scored = { price: 260.71, atMs: Date.parse('2026-11-10T17:44:00.000Z'), checkAtMs: Date.parse('2026-11-10T18:00:28.000Z') };
+  const trace = { line: [], dots: [], lastBarMs: null, intervalMin: null };
+  const draw = (live, over = {}) => doc(renderToStaticMarkup(<RedZone side="down" ladder={over.ladder ?? ladder} go={toGoDown(over.ladder ?? ladder, live)} live={live} decimals={2} mode={over.mode ?? 'danger'} trace={trace} clock={{ state: 'countdown', label: '1:15' }} scoredText={scoredChipText({ live, scored, always: true })} hitTimes={over.hitTimes ?? {}} nowMs={Date.parse('2026-11-10T18:02:30.000Z')} width={375} height={over.height ?? 354} />));
+  it('the tags, the numeral, its sub-line and the hit line sit in ONE flow column (a wrapped tag row pushes the numeral down; nothing is pinned over it)', () => {
+    const hit = amzn({ crossedTiers: ['bust'] });
+    const d = draw(254.7, { ladder: hit, mode: 'dangerClosed', hitTimes: { bust: Date.parse('2026-11-10T18:15:00.000Z') } });
+    const col = d.querySelector('[data-rz-tags]').parentElement;
+    expect(col.contains(d.querySelector('[data-rz-distance]'))).toBe(true);
+    expect(col.contains(d.querySelector('[data-dz-hit-line]'))).toBe(true);
+    expect(d.querySelector('[data-rz-distance]').getAttribute('style')).not.toMatch(/position:\s*absolute/);
+  });
+  it('the plot starts under the column (without a measure, at 110 px), so no trace or goal is drawn in the text\'s band', () => {
+    for (const live of [260.05, 259.53, 257.46, 255.64]) {
+      const goal = Number(draw(live).querySelector('[data-rz-goal="down"]').getAttribute('y')) + 2;
+      expect(goal, String(live)).toBeGreaterThanOrEqual(110);
+      expect(goal, String(live)).toBeLessThanOrEqual(354 - 70);
+    }
+  });
+  it('live at or below the rung (0.8 %, 1.5 % under Bust): the goal line is still drawn inside the plot', () => {
+    for (const live of [257.46, 255.64]) {
+      const y = Number(draw(live).querySelector('[data-rz-goal="down"]').getAttribute('y')) + 2;
+      expect(y, String(live)).toBeGreaterThanOrEqual(110);
+      expect(y, String(live)).toBeLessThanOrEqual(284);
+    }
+  });
+  it('the numeral is in the risk red, never the red zone\'s amber heat (review N5)', () => {
+    const style = draw(260.05).querySelector('[data-rz-distance] div').getAttribute('style');
+    expect(style).toContain('--ft-red');
+    expect(style).not.toContain('--ft-amber');
+  });
+  it('the red zone (side up) keeps Build A\'s layout: its numeral is still placed by the goal, not in the column', () => {
+    const up = doc(renderToStaticMarkup(<RedZone ladder={ladder} go={toGo(ladder, 280.2)} live={280.2} decimals={2} mode="approaching" trace={trace} clock={null} scoredText={null} nowMs={Date.parse('2026-11-10T18:02:30.000Z')} />));
+    expect(up.querySelector('[data-rz-distance]').getAttribute('style')).toMatch(/position:\s*absolute/);
+  });
+});
+
+describe('review D5 — a crowded side\'s inline price never runs past the plot\'s edge', () => {
+  it('a sub-cent ladder at 280 px: the moved price ends inside W (at 7 px), or is dropped', () => {
+    const p = previewLadder({ previousClose: 0.00001234, threshold: 8 });
+    for (const width of [320, 375, 430]) {
+      const d = fuse(p, 0.0000133, { width, height: 280 });
+      for (const t of d.querySelectorAll('[data-fuse-price]')) {
+        const box = textBox(Number(t.getAttribute('x')), Number(t.getAttribute('y')), t.textContent, Number(t.getAttribute('font-size')));
+        expect(box.x1, `${width}: ${t.textContent}`).toBeLessThanOrEqual(width - 2 + 1e-9);
+      }
+    }
+  });
+});
+
+describe('review D6 — the bar\'s banked points carry no ✓ (the green disc marks them), so all three fit at 320', () => {
+  it('every upside rung banked: "+15", "+30", "+50" in green, each on a check disc', () => {
+    const l = amzn({ crossedTiers: ['bagger', 'doubleBagger', 'tenBagger'] });
+    const d = doc(renderToStaticMarkup(<BombSheet view={viewOf(l, 293)} />));
+    expect(['bagger', 'doubleBagger', 'tenBagger'].map((k) => d.querySelector(`[data-sheet-points="${k}"]`).textContent)).toEqual(['+15', '+30', '+50']);
+    for (const k of ['bagger', 'doubleBagger', 'tenBagger']) expect(d.querySelector(`[data-sheet-rung="${k}"]`).getAttribute('data-rung-banked')).toBe('1');
+  });
+});
+
+describe('review D7 — near the baseline at 320×280 the live label clears the baseline label', () => {
+  it('live 0.15–0.4 thresholds above the baseline: no label box overlaps (320×280 and 375×280)', () => {
+    for (const width of [320, 375]) for (const live of [271.82, 272.3, 272.9, 273.43, 274.0, 274.49]) {
+      const d = fuse(amzn(), live, { width, height: 280 });
+      expect(overlaps(labelBoxes(d)), `${width} @ ${live}`).toEqual([]);
+    }
   });
 });

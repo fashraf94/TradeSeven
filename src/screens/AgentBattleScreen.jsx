@@ -233,9 +233,10 @@ export function StockDispatchRow({ onSeeAllLevels = null, ...props }) {
       {typeof onSeeAllLevels === 'function'
         ? (
           <div data-why-levels-door="1" style={{ padding: '8px 12px 10px', minWidth: 0 }}>
+            {/* Review D10: index.css forces every button to 16 px (!important), so the size lives on a span; the padding makes the tap target. */}
             <button type="button" data-see-all-levels={props.leftAsset.symbol} onClick={() => onSeeAllLevels(props.leftAsset)}
-              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: BOMB_MONO, fontSize: 12, fontWeight: 700, color: BOMB_TOKENS.teal }}>
-              {BOMB_COPY.seeAllLevels}
+              style={{ background: 'none', border: 'none', padding: '8px 0', cursor: 'pointer', fontFamily: BOMB_MONO, fontWeight: 700, color: BOMB_TOKENS.teal, lineHeight: 1 }}>
+              <span style={{ fontSize: 12 }}>{BOMB_COPY.seeAllLevels}</span>
             </button>
           </div>
         )

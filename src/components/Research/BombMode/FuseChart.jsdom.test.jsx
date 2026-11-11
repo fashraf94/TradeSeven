@@ -116,6 +116,8 @@ const wholeInSheet = (el) => {
   expect(el.tagName).toBe('DIV');
   expect(el.closest('svg')).toBeNull();
   expect(el.getAttribute('style')).toMatch(/overflow-wrap:\s*anywhere/);
+  // review C12: nothing in the line may refuse to wrap (its real wrapping is the browser record in the build report)
+  expect(el.outerHTML).not.toMatch(/white-space:\s*(nowrap|pre)/);
 };
 describe('the sheet keeps its to-go label whole inside the sheet (D1)', () => {
   it('the line is HTML in the sheet\'s flow (it wraps), never an SVG text placed by x — at the rail\'s right end too', () => {

@@ -137,7 +137,7 @@ export const isDangerZoneMode = (mode) => mode === 'danger' || mode === 'dangerC
 export const isZoneMode = (mode) => isRedZoneMode(mode) || isDangerZoneMode(mode);
 
 /** Both machines, and which zone shows. */
-export const ZONES_INITIAL = Object.freeze({ red: RED_ZONE_INITIAL, danger: DANGER_ZONE_INITIAL, shown: null });
+export const ZONES_INITIAL = Object.freeze({ red: RED_ZONE_INITIAL, danger: DANGER_ZONE_INITIAL, shown: null, mode: 'fuse' });
 
 /**
  * One step of BOTH zones (BD-5). Each machine keeps its own bands and memory;

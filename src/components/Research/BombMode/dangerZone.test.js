@@ -96,8 +96,10 @@ describe('both zones on one view', () => {
     const d = runZ([held({ nextDown: { key: 'bust', pct: 0.3 } }), held({ next: { key: 'bagger', pct: 0.01 }, nextDown: { key: 'bust', pct: 0.45 } })]);
     expect(d).toMatchObject({ shown: 'danger', mode: 'danger' });
   });
-  it('the red zone\'s banked moment always shows (the one takeover)', () => {
-    const s = runZ([held({ next: { key: 'bagger', pct: 0.1 }, nextDown: { key: 'bust', pct: 0.4 } }), held({ bankedUp: ['bagger'], next: { key: 'doubleBagger', pct: 1.4 }, nextDown: { key: 'bust', pct: 0.4 } })]);
+  it('the red zone\'s banked moment always shows (the one takeover) — even over a Danger Zone that was showing (review C4)', () => {
+    const first = runZ([held({ next: { key: 'bagger', pct: 0.4 }, nextDown: { key: 'bust', pct: 0.1 } })]);
+    expect(first.shown).toBe('danger');
+    const s = stepZones(first, held({ bankedUp: ['bagger'], next: { key: 'doubleBagger', pct: 1.4 }, nextDown: { key: 'bust', pct: 0.1 } }));
     expect(s).toMatchObject({ shown: 'red', mode: 'banked' });
   });
   it('a preview never shows either zone, even inside both bands', () => {

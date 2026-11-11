@@ -196,6 +196,22 @@ export function brickUnit(ladder) {
 }
 
 /**
+ * The brick as the to-go counts measure it: one sixth of the DISPLAYED first-rung
+ * step (shown +1 rung − shown baseline), in the decimals the distance is shown in
+ * (review A1: an exact unit against a displayed distance printed "7 bricks" at the
+ * baseline for about half of all positions, to a rung drawn on brick 6). Falls
+ * back to the exact unit when the displayed step is not positive (a sub-cent ladder).
+ */
+export function shownBrickUnit(ladder, decimals) {
+  const exact = brickUnit(ladder);
+  if (exact === null) return null;
+  const first = ladder.up.find((r) => r.k === 1);
+  const d = finite(decimals) ? decimals : priceDecimals(first.price);
+  const step = Number(priceText(first.price, d)) - Number(priceText(ladder.baseline.price, d));
+  return step > 0 ? step / BRICKS_PER_THRESHOLD : exact;
+}
+
+/**
  * The brick unit (dollars) and each rung's brick count on ONE side, or null when
  * bricks are omitted on that side. `brickPlan(ladder)` is the upside (BAGGER_TIERS,
  * unchanged); `brickPlan(ladder, BUST_TIERS)` the downside (BD-1: the same unit
@@ -230,9 +246,11 @@ export function toGo(ladder, live, { decimals = null, tiers = BAGGER_TIERS } = {
   // THIS number, so a displayed 0.50% enters (BUILD_RULES §9, rounds before zoning).
   const pctShown = Number(pct.toFixed(2));
   const plan = brickPlan(ladder, tiers);
-  const bricks = plan ? (distance > 0 ? Math.ceil(distance / plan.unit - 1e-9) : 0) : null;
+  // Review A1 (2026-11-11): the brick is measured in DISPLAYED values too, like the
+  // distance it divides (§9) — at the baseline the count then reads the rung's own 6.
+  const unit = shownBrickUnit(ladder, d);
+  const bricks = plan && unit !== null ? (distance > 0 ? Math.ceil(distance / unit - 1e-9) : 0) : null;
   // BD-2: the unrounded distance in bricks, for the lead rule (never shown).
-  const unit = brickUnit(ladder);
   const bricksExact = unit !== null ? distance / unit : null;
   return { rung: ladder.next, rungShown, liveShown, distance, pct, pctShown, bricks, bricksExact, decimals: d, side: 'up' };
 }
@@ -254,8 +272,8 @@ export function toGoDown(ladder, live, { decimals = null, tiers = BUST_TIERS } =
   const pct = (distance / liveShown) * 100;
   const pctShown = Number(pct.toFixed(2));
   const plan = brickPlan(ladder, tiers);
-  const bricks = plan ? (distance > 0 ? Math.ceil(distance / plan.unit - 1e-9) : 0) : null;
-  const unit = brickUnit(ladder);
+  const unit = shownBrickUnit(ladder, d);
+  const bricks = plan && unit !== null ? (distance > 0 ? Math.ceil(distance / unit - 1e-9) : 0) : null;
   const bricksExact = unit !== null ? distance / unit : null;
   return { rung: ladder.nextDown, rungShown, liveShown, distance, pct, pctShown, bricks, bricksExact, decimals: d, side: 'down' };
 }

@@ -59,6 +59,23 @@ export default function useBombView({
     setHitTimes({});
     setObservations([]);
   }
+  // Review B1 (2026-11-11): another POSITION of the same symbol (sold and bought
+  // again while the modal stays open) starts its own zone memory, lead and seen
+  // times too — its banks and hits are its own checks. A null blip (one not-held
+  // frame) is not a new position: the times the modal saw survive it. The quotes
+  // observed (BA-6) are the symbol's, and stay.
+  const positionNow = record?.positionId ?? null;
+  const [forPosition, setForPosition] = useState(positionNow);
+  if (positionNow !== null && forPosition !== positionNow) {
+    setForPosition(positionNow);
+    if (forPosition !== null) {
+      setZones(ZONES_INITIAL);
+      setLead(null);
+      setMomentDone(null);
+      setBankedTimes({});
+      setHitTimes({});
+    }
+  }
   const rz = zones.red;
 
   const threshold = assetThreshold > 0 ? assetThreshold : fetchedThreshold > 0 ? fetchedThreshold : null;
@@ -69,6 +86,13 @@ export default function useBombView({
   const go = enabled && ladder ? toGo(ladder, live, { decimals }) : null;
   const goDown = enabled && ladder ? toGoDown(ladder, live, { decimals }) : null;
   const held = !!ladder && ladder.status === 'ok' && ladder.kind === 'held';
+  // Review B2: a preview that becomes held (the agent buys the name the modal is
+  // open on), or the reverse, is a new ladder: the lead takes a fresh first look.
+  const [leadHeld, setLeadHeld] = useState(held);
+  if (leadHeld !== held) {
+    setLeadHeld(held);
+    setLead(null);
+  }
   const marketOpen = sessionOpenAt(nowMs);
 
   // The quotes observed while the modal is open (BA-6): one per change of the live price.
@@ -175,7 +199,10 @@ export default function useBombView({
   const moment = rz.moment && held ? { key: rz.moment.key, keys: rz.moment.keys, points: momentPoints, atMs: bankedTimes[rz.moment.key] ?? null, price: scored?.price ?? null } : null;
   // The lead the views draw: the committed one, or — before the first step has
   // committed — the first look's own answer, so no frame draws without a lead.
-  const shownLead = lead ?? stepLead(null, { up: upBricks, down: downBricks, zone: held ? zoneSide(zones.shown) : null });
+  const firstLead = lead ?? stepLead(null, { up: upBricks, down: downBricks, zone: held ? zoneSide(zones.shown) : null });
+  // Review A8: a side with no next rung never leads — also for the one render before the
+  // effect commits a lead the ladder has just made stale (the last rung on a side crossed).
+  const shownLead = firstLead === 'up' && !go && goDown ? 'down' : firstLead === 'down' && !goDown && go ? 'up' : firstLead;
   return {
     ladder,
     go,
