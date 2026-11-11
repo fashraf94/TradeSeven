@@ -129,7 +129,8 @@ export const BOMB_COPY = Object.freeze({
   downNextBelow: (label, price, d) => `next below: ${label} at ${money(price, d)}`,
   // The levels table under the bar (BD-6)
   levelsTitle: 'All levels',
-  levelSub: (pctText, price, d) => `${pctText} · ${money(price, d)}`,
+  // Takes the rung's ALREADY-PRINTED % and price (bombView.rungFacts): the table re-formats nothing (§9).
+  levelSub: (pctText, priceText) => `${pctText} · ${priceText}`,
   levelPoints: (points) => `+${points}`,
   levelBanked: (time) => `✓ banked${time ? ` ${time}` : ''}`,
   downLevelHit: (time) => `hit${time ? ` ${time}` : ''}`,

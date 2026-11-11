@@ -44,7 +44,7 @@ const v4 =v4Ladder({ levels: { baseline: 150, baggerBomb: 154.5, doubleBagger: 1
 // a template with a parameter missing here fails the coverage row below.
 const ARG = { price: 160.33, d: 2, when: 'Tue 9:45 AM', label: 'BaggerBomb', pct: 2.4, points: 15, banked: true, time: '1:15', bricks: 3, base: '2.4% · 3 bricks to +30', live: 160.27, last: '$160.27', emoji: '💣', interval: '1-min', minutes: 1, scored: 160.19, at: '1:00', clockLabel: '3:45',
   // Refinement 2026-11-10 (BD-1 – BD-8): the new templates' parameters.
-  day: 'Mon', check: 'the 1:15 check', pctText: '+3.96%', pctDecimal: '3.954943', target: 291.594, asOf: '2026-11-10T17:44:00Z', id: 'pos-1', hash: 'abc123', ref: 'stockThresholdInputs/snap-1' };
+  day: 'Mon', check: 'the 1:15 check', pctText: '+3.96%', priceText: '$280.91', pctDecimal: '3.954943', target: 291.594, asOf: '2026-11-10T17:44:00Z', id: 'pos-1', hash: 'abc123', ref: 'stockThresholdInputs/snap-1' };
 const paramsOf = (fn) => fn.toString().slice(fn.toString().indexOf('(') + 1, fn.toString().indexOf(')')).split(',').map((p) => p.trim()).filter(Boolean);
 function templates() {
   const out = [];

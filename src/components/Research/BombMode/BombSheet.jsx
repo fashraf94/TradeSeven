@@ -86,7 +86,7 @@ export function levelRows(view) {
     else if (held && side === 'down' && ladder.nextDown?.key === r.key) { state = 'next'; stateText = BOMB_COPY.levelNext(view.goDown?.bricks); }
     return {
       key: r.key, side, emoji: r.emoji, name: r.label, price: r.price, priceText: facts.priceText,
-      sub: BOMB_COPY.levelSub(facts.pctText, r.price, d),
+      sub: BOMB_COPY.levelSub(facts.pctText, facts.priceText),
       points: side === 'down' ? BOMB_COPY.downPoints(r.points) : BOMB_COPY.levelPoints(r.points),
       state, stateText,
     };
