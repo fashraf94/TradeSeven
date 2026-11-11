@@ -120,7 +120,7 @@ describe('E9: no enqueue and no job claim before 8:30 AM ET, in either DST state
   const EST_DAY = '2026-11-10'; // EST: 8:30 AM ET is 13:30 UTC; the brief's 12:30 UTC run is 7:30 AM ET
   const EDT_DAY = '2026-10-28'; // EDT: 8:30 AM ET is 12:30 UTC
   const utc = (day, hhmm) => Date.parse(`${day}T${hhmm}:00Z`);
-  const enqueueDeps = (calls) => ({ buildSharedLayer: async () => { calls.push('shared'); return {}; }, enumerateActivePlayers: async () => { calls.push('players'); return { uids: [] }; } });
+  const enqueueDeps = (calls) => ({ buildSharedLayer: async () => { calls.push('shared'); return {}; }, enumerateActivePlayers: async () => { calls.push('players'); return { uids: ['u1'] }; } });
   const writeDb = { collection: () => ({ doc: () => ({ set: async () => {} }) }), batch: () => ({ set() {}, commit: async () => {} }) };
 
   it('the pin reads the ET wall clock: 8:30 AM ET is reached at 13:30 UTC in EST and 12:30 UTC in EDT, not a minute before', () => {
@@ -140,14 +140,14 @@ describe('E9: no enqueue and no job claim before 8:30 AM ET, in either DST state
     expect(await runEnqueueStage(null, { etDate: EST_DAY, nowMs: utc(EST_DAY, '12:30'), deps: enqueueDeps(calls), cohort: new Set(['u1']) })).toEqual({ enqueued: 0, created: 0, skipped: 'before_start_et' });
     expect(calls).toEqual([]);
     await runEnqueueStage(writeDb, { etDate: EST_DAY, nowMs: utc(EST_DAY, '13:30'), deps: enqueueDeps(calls), cohort: new Set(['u1']) }).catch(() => {});
-    expect(calls).toEqual(['shared', 'players']);
+    expect(calls).toEqual(['players', 'shared']);
   });
 
   it('EDT: 8:29 AM ET enqueues nothing; 8:30 AM ET (the brief\'s own 12:30 UTC run) does', async () => {
     const calls = [];
     expect((await runEnqueueStage(null, { etDate: EDT_DAY, nowMs: utc(EDT_DAY, '12:29'), deps: enqueueDeps(calls), cohort: new Set(['u1']) })).skipped).toBe('before_start_et');
     await runEnqueueStage(writeDb, { etDate: EDT_DAY, nowMs: utc(EDT_DAY, '12:30'), deps: enqueueDeps(calls), cohort: new Set(['u1']) }).catch(() => {});
-    expect(calls).toEqual(['shared', 'players']);
+    expect(calls).toEqual(['players', 'shared']);
   });
 
   it.each([[EST_DAY, '13:29', '13:30'], [EDT_DAY, '12:29', '12:30']])('%s: the drain claims nothing at %s UTC (8:29 AM ET) and claims at %s UTC (8:30 AM ET)', async (day, before, at) => {
@@ -213,6 +213,16 @@ describe('the cohort (E7): every stage keeps to HUDDLE_PLAYER_UIDS', () => {
       expect(await runEnqueueStage(null, { etDate: '2026-11-09', deps, ...(cohort ? { cohort } : {}) })).toEqual({ enqueued: 0, created: 0, skipped: 'no_cohort' });
     }
     expect(calls).toEqual([]);
+  });
+
+  it('a cohort with no active player: the stage is marked done with nobody enqueued, and the shared layer (its vendor call) is never built (review HC-7)', async () => {
+    const calls = [];
+    const marks = [];
+    const deps = { buildSharedLayer: async () => { calls.push('shared'); return {}; }, enumerateActivePlayers: async () => { calls.push('players'); return { uids: [], counts: {}, skippedCpu: 0, outsideCohort: 3 }; } };
+    const db = { collection: () => ({ doc: () => ({ set: async (fields) => { marks.push(fields); } }) }), batch: () => ({ set() {}, commit: async () => {} }) };
+    expect(await runEnqueueStage(db, { etDate: '2026-11-09', nowMs: at, deps, cohort: new Set(['u7']) })).toEqual({ enqueued: 0, created: 0 });
+    expect(calls).toEqual(['players']);
+    expect(marks.at(-1)).toMatchObject({ enqueueStage: 'done', playersEnqueued: 0, shared: null });
   });
 
   it('the enqueue stage hands the cohort to the player enumeration', async () => {

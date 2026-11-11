@@ -28,10 +28,13 @@ export default async function handler(req, res, deps = {}) {
   const token = typeof req.query?.token === 'string' ? req.query.token : '';
   res.setHeader('Cache-Control', 'private, no-store');
   try {
-    const found = await resolvePlaybackToken(db, { token });
-    if (found.kind !== 'ok') return res.status(found.status).json({ error: found.status === 410 ? 'expired' : 'not_found' });
-    // E7: a token whose owner has left the cohort plays nothing; the answer is the flag-off 404
-    if (!huddleAdmits(found.uid)) return sendNotFound(res);
+    // E7: a token whose owner is outside the cohort plays nothing, live or expired: the flag-off 404, judged before the
+    // record is read (review HC-4)
+    const found = await resolvePlaybackToken(db, { token, admits: (uid) => huddleAdmits(uid) });
+    if (found.kind !== 'ok') {
+      if (found.outside) return sendNotFound(res);
+      return res.status(found.status).json({ error: found.status === 410 ? 'expired' : 'not_found' });
+    }
     const size = await sizeOf(found.gcsPath);
     if (size === null) return res.status(404).json({ error: 'not_found' });
     const range = parseRange(req.headers?.range, size);

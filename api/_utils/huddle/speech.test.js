@@ -137,9 +137,28 @@ describe('E4 (R-19): one retry inside the job — a 429, a 5xx or an attempt tim
     expect(await h.go()).toMatchObject({ ok: true, attempts: 2, firstFailure: 'timeout' });
   });
 
-  it("the JOB's deadline (its signal aborted) is never retried", async () => {
+  // review HD-6: each row aborts the JOB while the attempt's own answer is RETRYABLE (or the attempt timer fired), so each of
+  // the three job-abort guards is the only thing that stops a second call
+  it("the JOB's deadline is never retried: aborted while the attempt answers a retryable 503", async () => {
     const job = new AbortController();
-    const h = run([(args) => { job.abort(); return args.signal.aborted ? { ok: false, reason: 'aborted' } : { ok: false, reason: 'aborted' }; }, OK], { signal: job.signal, attemptTimeoutMs: 50 });
+    const h = run([() => { job.abort(); return { ok: false, reason: 'http_503' }; }, OK], { signal: job.signal, deadlineMs: Infinity });
+    expect(await h.go()).toMatchObject({ ok: false, reason: 'http_503', attempts: 1 });
+    expect(h.synthesize).toHaveBeenCalledTimes(1);
+    expect(h.sleep).not.toHaveBeenCalled(); // given up at once: no wait spent on a job already out of time
+  });
+
+  it("the JOB's deadline is never retried: aborted during the wait before the second attempt", async () => {
+    const job = new AbortController();
+    const h = run([{ ok: false, reason: 'http_429' }, OK], { signal: job.signal, deadlineMs: Infinity });
+    h.sleep.mockImplementation(async () => { job.abort(); });
+    expect(await h.go()).toMatchObject({ ok: false, reason: 'http_429', attempts: 1 });
+    expect(h.synthesize).toHaveBeenCalledTimes(1);
+  });
+
+  it("the JOB's deadline is never read as the attempt's own timeout: both fired, the failure stays `aborted`", async () => {
+    const job = new AbortController();
+    const hang = (args) => new Promise((resolve) => { args.signal.addEventListener('abort', () => { job.abort(); resolve({ ok: false, reason: 'aborted' }); }); });
+    const h = run([hang, OK], { signal: job.signal, attemptTimeoutMs: 5, deadlineMs: Infinity });
     expect(await h.go()).toMatchObject({ ok: false, reason: 'aborted', attempts: 1 });
     expect(h.synthesize).toHaveBeenCalledTimes(1);
   });

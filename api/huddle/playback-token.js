@@ -4,7 +4,9 @@
 // (Huddle S1 spec V1.1 §6, Astra AR-7). Body `{ etDate }`. The plaintext token is
 // returned ONCE; only its SHA-256 is stored, and issuance rotates the previous one
 // (api/_utils/huddle/playback.js). The sheet calls it before playing and again on expiry.
-// 404 while DRB_HUDDLE_ENABLED is off. Owner auth as api/agent/chat.js:421. The token is
+// Answers the flag-off 404 while DRB_HUDDLE_ENABLED is off or the cohort HUDDLE_PLAYER_UIDS is empty, and for a
+// signed-in uid outside it (Amendment E §E7; routeKit.js).
+// Owner auth as api/agent/chat.js:421. The token is
 // never logged.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';

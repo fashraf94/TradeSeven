@@ -10,6 +10,10 @@
 //   5. the cohort (E7): a signed-in uid outside it gets the flag-off answer exactly — 404 `{ error: 'not_found' }` —
 //      before any read. The audio stream, which has no uid at admission, checks the token's owner the same way
 //      (audio/[token].js).
+// With a NON-EMPTY cohort an outsider's request is not byte-for-byte the flag-off one in every case (review HC-3,
+// accepted): steps 2–4 run first, so a wrong method is a 405, an OPTIONS preflight a 200, a missing or bad token a 401, a
+// burst a 429, and the 404 itself carries the security and CORS headers. The body of the 404 is the flag-off body; the
+// hub never sends these requests, so an outsider sees no difference — only that the Huddle is live for someone.
 // And the client's view of a huddle record: no playback hash, no storage path.
 
 import { applySecurityMiddleware } from '../security.js';

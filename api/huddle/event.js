@@ -4,8 +4,9 @@
 // AR-11 "listens, completions, confirmations, per player per session"). Body
 // `{ etDate, kind: 'listened' | 'completed' }`. An AWAITED write, never fire-and-forget
 // (BUILD_RULES §5): the first `listened` sets `measurement.listenedAt`, the first
-// `completed` sets `measurement.completedAt`; a repeat changes nothing. 404 while
-// DRB_HUDDLE_ENABLED is off. Owner auth as api/agent/chat.js:421.
+// `completed` sets `measurement.completedAt`; a repeat changes nothing. Answers the flag-off 404 while DRB_HUDDLE_ENABLED is off or the cohort HUDDLE_PLAYER_UIDS is empty, and for a
+// signed-in uid outside it (Amendment E §E7; routeKit.js).
+// Owner auth as api/agent/chat.js:421.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { admitHuddleRoute, etDateParam } from '../_utils/huddle/routeKit.js';

@@ -70,6 +70,37 @@ describe('the gather step\'s source lines (Amendment E §E3 a, R-22)', () => {
     for (const e of g.evidence) expect(e.fact, e.fact).not.toMatch(/not checked|unavailable|\bdown\b/i);
   });
 
+  // review HD-5: the rows above reach every symbol's record through the catch path (no transactions here), so the per-symbol
+  // news sources never answered; this one drives them through the record's own fetch
+  it('a per-symbol news source the job TRIED and could not reach is said once, whatever the number of symbols; one it skipped is silent', async () => {
+    const ensureSymbolEvidence = async (db, { fetchGroup }) => {
+      const price = await fetchGroup('price');
+      const news = await fetchGroup('news');
+      return { record: { ...price.fields, ...news.fields }, skipped: [] };
+    };
+    const g = await gatherForPlayer(memoryDb({ agents: [], agentBattles: [battle] }), {
+      uid: 'u1', etDate: ET, session: sessionOf(ET), shared: null, owner: 'u1#1',
+      deps: {
+        ...deps, ensureSymbolEvidence,
+        // EODHD answered for AAA and CCC, errored for BBB and DDD; FantasyTimes errored; newsfilter is skipped (no key)
+        fetchEodhdNews: async ({ symbol }) => (['BBB', 'DDD'].includes(symbol) ? { status: 'error', items: [] } : { status: 'ok', items: [] }),
+        fetchStoriesSince: async () => ({ status: 'error', stories: [] }),
+      },
+    });
+    expect(g.evidence.filter((e) => e.kind === 'source_status').map((e) => [e.source.recordId, e.fact])).toEqual([
+      ['eodhd', "Couldn't reach EODHD news this morning."],
+      ['fantasytimes', "Couldn't reach FantasyTimes this morning."],
+    ]);
+    expect(g.sourceFailures).toEqual(['eodhd:error', 'fantasytimes:error']);
+    expect(g.sourcesSkipped).toEqual(['newsfilter']);
+    // every per-symbol source answered or was skipped: nothing is said
+    const quiet = await gatherForPlayer(memoryDb({ agents: [], agentBattles: [battle] }), {
+      uid: 'u1', etDate: ET, session: sessionOf(ET), shared: null, owner: 'u1#1', deps: { ...deps, ensureSymbolEvidence },
+    });
+    expect(quiet.evidence.filter((e) => e.kind === 'source_status')).toEqual([]);
+    expect(quiet.sourcesSkipped.sort()).toEqual(['eodhd', 'newsfilter']);
+  });
+
   it('each source that errored is one item, in words; the calendars are said with "the"', async () => {
     const g = await gatherForPlayer(memoryDb({ agents: [], agentBattles: [battle] }), {
       uid: 'u1', etDate: ET, session: sessionOf(ET), shared: { sources: { earnings: 'error', macro: 'error', marketContext: 'ok' } }, owner: 'u1#1', deps,

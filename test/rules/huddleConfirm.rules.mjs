@@ -181,6 +181,9 @@ describe('E1 — one confirm per archetype in play', () => {
     expect(out).toMatchObject({ status: 422, code: 'validation_changed', body: { drops: [], transforms: [] } });
     expect(out.body.previews).toEqual([{
       archetype: 'momentum_chaser', archetypeName: 'Trend Follower', games: 1, revision: expect.any(String),
+      // review HD-11: the archetype's own plan and its rendered text, as it would file
+      current: expect.objectContaining({ stances: [expect.objectContaining({ kind: 'WATCH', ticker: 'AAA' }), expect.objectContaining({ kind: 'HOLD', ticker: 'BBB' }), expect.objectContaining({ kind: 'WATCH', ticker: 'CCC' })] }),
+      renderedText: expect.stringMatching(/Stances: WATCH AAA[^;]*; HOLD BBB; WATCH CCC\./),
       changes: [{ index: 0, kind: 'stance', from: 'FADE', to: 'WATCH', ticker: 'AAA', reason: expect.stringMatching(/trend follower/i) }],
     }]);
     expect((await read(uid)).plan.status).toBe('proposed');
@@ -212,6 +215,8 @@ describe('E1 — one confirm per archetype in play', () => {
     await applyConfirmedPlan(db, { uid, etDate: ET, writtenBy: 'confirm', nowMs: SESSION.openMs + 4 * MIN });
     rec = await read(uid);
     expect(rec.plan.confirmations.map((c) => c.archetype)).toEqual(['analyst', 'contrarian']);
+    // review HD-8: the equipped archetype's confirmation stays the plan's confirmed one — its time unchanged
+    expect(rec.plan.confirmed).toMatchObject({ archetype: 'analyst', confirmedAt: new Date(BEFORE_OPEN).toISOString() });
     expect((await slotOf(`gc${uid}`)).text).toContain('HOLD BBB');
     expect(rec.plan.applications.find((r) => r.battleId === `gc${uid}` && r.disposition === DISPOSITIONS.WRITTEN)).toBeTruthy();
   });

@@ -121,13 +121,19 @@ export function perArchetypeOf(record, current, targets) {
   });
 }
 
-/** The E1 preview of the archetypes whose row changes an item: what the plan card shows ("For your Diversifier game: …"). */
-export function previewsOf(per, games) {
+/**
+ * The E1 preview of the archetypes whose row changes an item: what the plan card shows ("For your Diversifier game: …"),
+ * with each affected archetype's plan and its rendered text — exactly what would file into its games (E1's Preview bullet;
+ * review HD-11).
+ */
+export function previewsOf(per, games, { etDate = null, eventLabels = new Map() } = {}) {
   return per.filter((p) => p.changed).map((p) => ({
     archetype: p.archetype,
     archetypeName: archetypeNameOf(p.archetype),
     games: games?.[p.archetype] ?? 0,
     revision: p.revision,
+    current: p.current,
+    renderedText: renderPlan(p.current, { etDate, eventLabels }),
     changes: p.dissent.map(({ index, kind, from, to, ticker, reason }) => ({ index, kind, from, to, ticker, reason })),
   }));
 }
@@ -182,7 +188,8 @@ export async function confirmPlan(db, { uid, etDate, baseRevision, replacement, 
     }
     const targets = reconfirm ? missing : play.inPlay;
     const per = perArchetypeOf(record, v.current, targets);
-    const previews = previewsOf(per, play.games);
+    const eventLabels = eventLabelsOf(record);
+    const previews = previewsOf(per, play.games, { etDate, eventLabels });
     const editFields = edited ? {
       'plan.editCount': (Number.isInteger(plan.editCount) ? plan.editCount : 0) + 1,
       'measurement.editCount': (Number.isInteger(record.measurement?.editCount) ? record.measurement.editCount : 0) + 1,
@@ -209,7 +216,6 @@ export async function confirmPlan(db, { uid, etDate, baseRevision, replacement, 
       };
     }
 
-    const eventLabels = eventLabelsOf(record);
     const rendered = per.map((p) => ({ ...p, renderedText: renderPlan(p.current, { etDate, eventLabels }) }));
     const tooLong = rendered.find((p) => renderedTooLong(p.renderedText));
     if (tooLong) return { kind: 'refused', status: 422, code: CONFIRM_REFUSALS.RENDERED_TOO_LONG, body: { length: tooLong.renderedText.length, archetype: tooLong.archetype } };
@@ -219,7 +225,9 @@ export async function confirmPlan(db, { uid, etDate, baseRevision, replacement, 
       current: p.current, revision: p.revision, archetype: p.archetype, renderedText: p.renderedText, renderedTextHash: renderedTextHashOf(p.renderedText), confirmedAt: at,
     }));
     const confirmations = [...(Array.isArray(plan.confirmations) ? plan.confirmations : []), ...appended];
-    const confirmed = appended.find((c) => c.archetype === equipped) ?? appended[appended.length - 1];
+    // the equipped archetype's newest confirmation, else the newest — chosen from ALL of them, so a reconfirm for a missing
+    // archetype leaves an equipped confirmation in place (review HD-8: "Confirmed at …", history, tomorrow's prior plan)
+    const confirmed = [...confirmations].reverse().find((c) => c.archetype === equipped) ?? confirmations[confirmations.length - 1];
     const dissent = per.flatMap((p) => p.dissent);
     tx.update(dayRef, {
       'plan.status': PLAN_STATUS.CONFIRMED,

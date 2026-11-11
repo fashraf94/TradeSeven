@@ -32,10 +32,16 @@
  * /api/huddle/* route answers the flag-off 404, the sweep and the settle reconcile
  * return before any read, and the hub renders its flag-off self (it shows the
  * Huddle only to a player its two readers show inside the cohort, huddleView.js
- * huddleMemberOf). The public flip (every player) still waits for S2–S4 (concept
- * R-10); how "everyone" is expressed is ruled then. Rollback: this line back to
- * false, with its pin and the DARK_BY_DESIGN entry (flagPinGuard.test.js), in one
- * commit.
+ * huddleMemberOf). Two reads remain for EVERY signed-in player: the hub's status
+ * GET (/api/huddle/status) on mount, owner or epoch change and each page-visible
+ * transition — for an outsider a 404 before any Firestore read (auth only, with a
+ * non-empty cohort) — while the plan-history query runs only after that GET has
+ * answered 200 (review HU-11, HC-5). The public flip (every player) still waits for
+ * S2–S4 (concept R-10); how "everyone" is expressed is ruled then. Rollback: this
+ * line back to false, with its pin and the DARK_BY_DESIGN entry
+ * (flagPinGuard.test.js), in one commit — after the close: a confirmed plan filed
+ * that day stays in its game until the battle completes (review HC-1). A cohort
+ * change takes effect on the next deployment (gate.js).
  */
 // Pinned by: huddleFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const DRB_HUDDLE_ENABLED = true;

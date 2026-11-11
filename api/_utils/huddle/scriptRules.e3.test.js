@@ -59,6 +59,8 @@ describe('E3: the offline replay — every sentence that broke a rule fails on T
     ['source_outage', 'review HD-10', 'EODHD news was not available this morning.'],
     ['source_outage', 'review HD-4', 'A news feed outage left us with nothing on your names.'],
     ['calendar_count', 'review HD-3', '256 reports are on the calendar today.'],
+    ['calendar_count', 'review HD-3', 'Over 40 companies report today.'],
+    ['calendar_count', 'review HD-3', '256 names are due to report this week.'],
     // (d) ISO dates
     ['iso_date', 'Nov 9', 'Monday morning. The prior session, 2026-11-06, closed with the regime still labeled a correction.'],
     ['iso_date', 'Nov 9', 'The prior close was 88.60 on 2026-11-06.'],
@@ -114,6 +116,10 @@ describe('E3: the same thoughts said the right way pass — and look-alikes are 
     'The 8:30 CPI report lands before the open.',
     'RKLB has a November 10 report after the close.',
     'On November 6 reports said Crown Castle would present.',
+    'On Tuesday, November 10, RKLB reports after the close.',
+    "RKLB's November 10 report comes after the close.",
+    'The 10:00 ISM report lands mid-morning.',
+    "Crown Castle's 2026 earnings reports showed steady margins.",
     // review HD-4: an outage in a headline about a name is market news, not a source
     'Yahoo Finance reported that WEC restored power after a storm outage.',
     'Seeking Alpha reported that the AWS outage hit CCI tenants.',

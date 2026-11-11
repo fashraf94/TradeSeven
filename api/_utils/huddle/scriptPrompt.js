@@ -73,10 +73,11 @@ export const FORBIDDEN_SCRIPT_PATTERNS = Object.freeze({
   // E3 d: never an ISO date
   iso_date: /\b\d{4}-\d{2}-\d{2}\b/,
   // E3 f: no calendar mechanics — "Eight of 256 … reports", "256 reports", "45 earnings reports", "reports are listed".
-  // A count is a whole number before PLURAL "reports" (at most one calendar word between); never a price's decimals
-  // ("closed at 53.07 and reports after the close"), a clock ("the 8:30 jobs report") nor a month and day ("a November 10
-  // report"), which E3 f asks Shadow to say (review HD-3).
-  calendar_count: /\b(?:\d[\d,]*|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+of\s+(?:the\s+)?\d[\d,]*\b[^.]*\breports?\b|(?<![\d.,:])(?<!\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s)\b\d[\d,]*\s+(?:(?:earnings|company|corporate|quarterly)\s+)?reports\b|\breports?\s+(?:are\s+|were\s+)?listed\b/i,
+  // A count is a whole number before PLURAL "reports" (at most one calendar word between) or before companies / names /
+  // stocks that "report" ("Over 40 companies report today"); never a price's decimals ("closed at 53.07 and reports after
+  // the close"), a clock ("the 8:30 jobs report"), a month and day ("On Tuesday, November 10, RKLB reports") nor a year
+  // ("its 2026 earnings reports"), which E3 f asks Shadow to say or which say nothing of the calendar (review HD-3).
+  calendar_count: /\b(?:\d[\d,]*|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+of\s+(?:the\s+)?\d[\d,]*\b[^.]*\breports?\b|(?<![\d.,:])(?<!\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s)\b(?!(?:19|20)\d{2}\b)\d[\d,]*\s+(?:(?:(?:earnings|company|corporate|quarterly)\s+)?reports\b|(?:companies|names|stocks|firms|tickers|issuers)\s+(?:(?:are|were)\s+)?(?:(?:due|set|scheduled)\s+to\s+)?report)|\breports?\s+(?:are\s+|were\s+)?listed\b/i,
   // E3 a (R-22): no false outage of a SOURCE — down, unavailable, offline, "not checked" / "wasn't checked" / "not
   // available" said of a source, or an outage in a sentence that names a source. "Outage" in a headline about a name
   // ("restored power after a storm outage") is market news, not a source (review HD-4).

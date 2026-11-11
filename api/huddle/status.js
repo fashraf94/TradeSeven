@@ -9,7 +9,8 @@
 // confirmation (Amendment E §E1): the hub's Reconfirm door reads exactly that list.
 //
 // No poll calls this (Amendment C V1.2 §C7): the hub's reader asks on sheet open, on
-// confirm or skip, and on visibilitychange. 404 while DRB_HUDDLE_ENABLED is off. Owner
+// confirm or skip, and on visibilitychange. Answers the flag-off 404 while DRB_HUDDLE_ENABLED is off or the cohort HUDDLE_PLAYER_UIDS is empty, and for a
+// signed-in uid outside it (Amendment E §E7; routeKit.js). Owner
 // auth as api/agent/chat.js:421. 200 with `huddle: null` when there is no record yet.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';

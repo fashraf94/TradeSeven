@@ -69,8 +69,9 @@ export async function runEnqueueStage(db, { etDate, nowMs = Date.now(), deps = {
   if (!startReached(nowMs, etDate)) return { enqueued: 0, created: 0, skipped: 'before_start_et' };
   // E7: no cohort, no stage — not even the shared layer's one vendor call
   if (!(cohort instanceof Set) || cohort.size === 0) return { enqueued: 0, created: 0, skipped: 'no_cohort' };
-  const shared = await (deps.buildSharedLayer || buildSharedLayer)(db, { etDate, nowMs });
   const players = await (deps.enumerateActivePlayers || enumerateActivePlayers)(db, { etDate, cohort });
+  // no active player in the cohort, no shared layer: its earnings call and market read would serve no huddle (review HC-7)
+  const shared = players.uids.length > 0 ? await (deps.buildSharedLayer || buildSharedLayer)(db, { etDate, nowMs }) : null;
   const { created } = await enqueuePlayers(db, { etDate, uids: players.uids, nowMs });
   await markRun(db, etDate, {
     enqueueStage: 'done', playersEnqueued: players.uids.length, rowsCreated: created, playersSkipped: players.skippedCpu,

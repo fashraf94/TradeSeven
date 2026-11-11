@@ -3,7 +3,8 @@
 // Huddle S1 — what the hub shows of the Huddle, PURE (Huddle spec Amendment C V1.2 §C4,
 // §C6, §C8, §C15; Command Center spec V1.2 Amendment D). It reads only its arguments: the
 // two readers' answers (src/hooks/useHuddleToday.js, useHuddleHistory.js, called in
-// ConnectedHub), the agent read the hub already holds, and a clock. No read, effect, timer
+// ConnectedHub) — the Reconfirm door from the status answer's plan.reconfirm, the server's own acceptance predicate (E1) —
+// and a clock. No read, effect, timer
 // or listener. Every word is hubCopy.js's `huddle` block; status words come from receipts.
 
 import { HUB_COPY as COPY } from './hubCopy';

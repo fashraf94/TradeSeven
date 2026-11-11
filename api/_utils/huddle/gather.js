@@ -101,6 +101,8 @@ export async function gatherForPlayer(db, { uid, etDate, session, shared, owner,
   const fetchNews = deps.fetchEodhdNews || fetchEodhdNews;
   const fetchClose = deps.fetchLastClose || fetchLastClose;
   const fetchStories = deps.fetchStoriesSince || fetchStoriesSince;
+  // the shared per-symbol record's claim-and-fetch (injectable so a unit row can drive the per-symbol sources: review HD-5)
+  const ensureEvidence = deps.ensureSymbolEvidence || ensureSymbolEvidence;
   const sourceFailures = [];
   const sourcesSkipped = [];
   const evidence = [];
@@ -174,7 +176,7 @@ export async function gatherForPlayer(db, { uid, etDate, session, shared, owner,
       return { fields: { news, sources: { eodhd: eod.status, newsfilter: nf.status, fantasytimes: stories.status } }, state: 'ready' };
     };
     try {
-      const { record, skipped } = await ensureSymbolEvidence(db, { etDate, symbol, owner, fetchGroup });
+      const { record, skipped } = await ensureEvidence(db, { etDate, symbol, owner, fetchGroup });
       perSymbol.set(symbol, { record, skipped });
     } catch {
       perSymbol.set(symbol, { record: null, skipped: ['price', 'news'] });

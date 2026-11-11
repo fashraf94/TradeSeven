@@ -156,6 +156,23 @@ describe('GET /api/huddle/audio/{token}', () => {
     expect(opened).toBeNull();
   });
 
+  it('E7: an EXPIRED token whose owner is outside the cohort is the flag-off 404 too, not a 410 — and the record is never read (review HC-4)', async () => {
+    const { token, db } = setup({ expiresAt: new Date(NOW - 1000).toISOString() });
+    const reads = [];
+    const watched = { collection: (c) => ({ doc: (d) => { const ref = db.collection(c).doc(d); return { ...ref, get: async () => { reads.push(`${c}/${d}`); return ref.get(); }, collection: (sc) => ({ doc: (sd) => { const sub = ref.collection(sc).doc(sd); return { ...sub, get: async () => { reads.push(`${c}/${d}/${sc}/${sd}`); return sub.get(); } }; } }) }; } }) };
+    process.env.HUDDLE_PLAYER_UIDS = 'someone-else';
+    const rr = fakeReqRes(token);
+    await handler(rr.req, rr.res, deps(watched));
+    expect(rr.res.statusCode).toBe(404);
+    expect(rr.res.body).toEqual({ error: 'not_found' });
+    expect(reads).toEqual([`huddleRuns/${ET}`]);
+    // the control: the same expired token of a member is the 410
+    process.env.HUDDLE_PLAYER_UIDS = UID;
+    const member = fakeReqRes(token);
+    await handler(member.req, member.res, deps(db));
+    expect(member.res.statusCode).toBe(410);
+  });
+
   it('a client disconnect destroys the storage stream', async () => {
     const { token, db } = setup();
     const { req, res } = fakeReqRes(token, 'bytes=0-');

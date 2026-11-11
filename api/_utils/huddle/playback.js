@@ -65,16 +65,19 @@ export async function issuePlaybackToken(db, { uid, etDate, nowMs = Date.now() }
 
 /**
  * Resolve a presented token to the record's audio, or a refusal. Reads the day's index,
- * then the record; both must agree, and the token must not have expired.
- * @returns {Promise<{ kind: 'ok', gcsPath: string, durationMs: number|null } | { kind: 'refused', status: number }>}
+ * then the record; both must agree, and the token must not have expired. `admits` (the cohort, Amendment E §E7) is
+ * asked of the token's owner right after the index read: outside it the answer is `outside` — before the record is read
+ * and before expiry is judged, so an expired token of a non-member is the flag-off 404 too, never a 410 (review HC-4).
+ * @returns {Promise<{ kind: 'ok', uid: string, gcsPath: string, durationMs: number|null } | { kind: 'refused', status: number, outside?: true }>}
  */
-export async function resolvePlaybackToken(db, { token, nowMs = Date.now() }) {
+export async function resolvePlaybackToken(db, { token, nowMs = Date.now(), admits = () => true }) {
   const parsed = parsePlaybackToken(token);
   if (!parsed) return { kind: 'refused', status: 404 };
   const hash = tokenHashOf(token);
   const runSnap = await huddleRunRef(db, parsed.etDate).get();
   const entry = runSnap.exists ? runSnap.data()?.playback?.[hash] : null;
   if (!entry || typeof entry.uid !== 'string') return { kind: 'refused', status: 404 };
+  if (!admits(entry.uid)) return { kind: 'refused', status: 404, outside: true };
   const recSnap = await huddleDayRef(db, entry.uid, parsed.etDate).get();
   const record = recSnap.exists ? recSnap.data() : null;
   if (!record || !sameHash(record.playback?.tokenHash, hash)) return { kind: 'refused', status: 404 };

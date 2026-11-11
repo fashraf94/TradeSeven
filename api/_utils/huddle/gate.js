@@ -15,7 +15,10 @@
 //                      its huddleRuns marker (E7; build prompt hard rule 2).
 //   huddleAdmits(uid)  "on for this player": the flag on and the uid in the cohort. Outside, a route answers exactly the
 //                      flag-off 404, the enqueue skips the player, the sweep returns before any read.
-// The env is read on every call (no cache): the founder sets the cohort in Vercel and the next invocation obeys it.
+// The env is read on every call (no cache) — but Vercel gives a deployment the environment it was built with: a change to
+// HUDDLE_PLAYER_UIDS (adding, removing, emptying) takes effect only once the project is redeployed (review HC-9).
+// Removing a player or emptying the cohort mid-session leaves that day's filed plans in their games until the battle
+// completes (the close-time retirement keeps to the cohort, as the flag off does): change it after the close (HC-1).
 
 import { DRB_HUDDLE_ENABLED } from '../../../src/config/huddleFlags.js';
 
