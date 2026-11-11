@@ -36,6 +36,10 @@ function offReference(name, actual, expected) {
 
 // ── Boundaries ───────────────────────────────────────────────────────────────
 const net = vi.hoisted(() => ({ calls: [], daily: {}, intraday: {}, quote: {}, popupBodies: [], hold: new Set() }));
+// Bomb mode 'on' (the flip PR, 2026-11-11): KILL-SWITCH ROWS. These mounts pass no bombContext, so under 'on'
+// they would lose the 💣 pill and the Bomb tab (BA-5); this file pins the mode-off modal, so it holds
+// RESEARCH_MODAL_BOMB_MODE at 'off' by mock (its other exports kept).
+vi.mock('../../config/researchModalFlags', async (importOriginal) => ({ ...(await importOriginal()), RESEARCH_MODAL_BOMB_MODE: 'off' }));
 vi.mock('../../services/eodhdAPI', () => ({
   fetchHistoricalOHLCV: (symbol, timeframe, opts) => {
     net.calls.push(['fetchHistoricalOHLCV', symbol, timeframe, opts ?? null]);

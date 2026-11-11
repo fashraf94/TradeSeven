@@ -45,6 +45,10 @@ function offReference(name, actual, expected) {
 
 // ── Flags (accessors only — never the constants) ─────────────────────────────
 const flags = vi.hoisted(() => ({ gate: false, controller: true, pane: true, presence: false, forms: true }));
+// Bomb mode 'on' (the flip PR, 2026-11-11): KILL-SWITCH ROWS. This file's OFF references were captured with
+// Bomb mode off, so it holds RESEARCH_MODAL_BOMB_MODE at 'off' by mock (its other exports kept); Bomb mode's
+// own behaviour is pinned by Build A's and the refinement's suites, which mock the flag themselves.
+vi.mock('../config/researchModalFlags', async (importOriginal) => ({ ...(await importOriginal()), RESEARCH_MODAL_BOMB_MODE: 'off' }));
 vi.mock('./../config/agentFormFlags', async (importOriginal) => ({ ...(await importOriginal()), get AGENT_FORM_BATTLE_ENABLED() { return flags.forms; } }));
 vi.mock('./../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
