@@ -50,9 +50,11 @@ const MULTIPLIERS = Object.freeze({ bagger: 1, doubleBagger: 1.5, tenBagger: 2, 
 export function measuredRecord({
   symbol, positionId, tier = 'star', slot = 0, fill, thresholdPct, crossedTiers = [],
   lastScoredAt = '2026-10-14T17:00:40.000Z', scored = null, expiresAt = '2026-10-20T20:00:00.000Z',
-  enteredAt = '2026-10-13T13:45:00.000Z', checkDots = [],
+  enteredAt = '2026-10-13T13:45:00.000Z', quoteAsOf = null, checkDots = [], details = null,
 }) {
-  const entryAtMs = Date.parse(enteredAt);
+  // BD-9: the selector's entry instant is the fill quote's provider time when the
+  // fixture names one (quoteAsOf), else — as before — the receipt's enteredAt.
+  const entryAtMs = Date.parse(quoteAsOf ?? enteredAt);
   return {
     symbol,
     tier,
@@ -70,7 +72,39 @@ export function measuredRecord({
     },
     scored: scored ? { ...scored, source: 'stockRewardContexts' } : null,
     checkDots: checkDots.filter((d) => d.atMs >= entryAtMs),
+    ...(details ? { details } : {}),
   };
+}
+
+/**
+ * THE FOUNDER'S AMZN (Tue Nov 10, 2026; battle read in the build report §1.1),
+ * in PRODUCTION SHAPE: fill $270.22 at 3.954943 %, entered 11:16:05 AM ET on a
+ * fill quote EODHD timestamps 11:00 AM; the 1:00 check scored $268.09 on a quote
+ * the provider stamps 12:44 PM, observed at 1:00:28 PM, committed 1:00:59 PM —
+ * the ~16-minute lag BD-I1 found, so a row can tell the quote's minute from the
+ * check. Rungs: +15 $280.91, +30 $286.25, +50 $291.59; Bust $259.53, Crash
+ * $254.19, Meltdown $248.85.
+ */
+export const AMZN_SCORING_PCT = 3.954943;
+export function amznRecord(over = {}) {
+  return measuredRecord({
+    symbol: 'AMZN',
+    positionId: 'pos-amzn',
+    tier: 'core',
+    fill: 270.22,
+    thresholdPct: AMZN_SCORING_PCT,
+    crossedTiers: [],
+    enteredAt: '2026-11-10T16:16:05.359Z',
+    quoteAsOf: '2026-11-10T16:00:00.000Z',
+    lastScoredAt: '2026-11-10T18:00:58.906Z',
+    expiresAt: '2026-11-11T01:00:00.000Z',
+    scored: { price: 268.09, atMs: Date.parse('2026-11-10T17:44:00.000Z'), checkAtMs: Date.parse('2026-11-10T18:00:28.000Z') },
+    checkDots: [
+      { atMs: Date.parse('2026-11-10T17:45:59.686Z'), px: 268.97 },
+      { atMs: Date.parse('2026-11-10T18:00:58.906Z'), px: 268.09 },
+    ],
+    ...over,
+  });
 }
 
 /**

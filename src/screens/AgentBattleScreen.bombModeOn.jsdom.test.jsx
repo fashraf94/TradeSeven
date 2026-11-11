@@ -189,6 +189,48 @@ describe('a shared ticker the shipped mount cannot tell apart (no positionId on 
   });
 });
 
+// Bomb mode refinement (BD-7, 2026-11-10): Battle View → Why? on a measured row.
+const whyToggle = (symbol) => [...container.querySelectorAll('[role="button"][aria-expanded]')].find((el) => el.querySelector('[data-why-label]') && el.textContent.includes(symbol));
+describe('BD-7 — Battle View → Why?: the proximity line, then "See all levels ›" (Bomb mode on) or the stats table (off)', () => {
+  it("mode 'on': no StockRewardDetails block; one row, See all levels ›, which opens the modal on 💣 for that stock through the screen's door", async () => {
+    flag.mode = 'on';
+    HOOK.doc = await committedBattle({ cpuSymbol: 'MSFT' }); await mount('MSFT');
+    await click(whyToggle('AAPL'));
+    const panel = container.querySelector('[data-why-levels-door]');
+    expect(panel).toBeTruthy();
+    expect(container.textContent).not.toContain('BAGGERBOMB STATS');
+    expect(container.querySelector('[aria-label="Measured stock reward targets"]')).toBeNull();
+    const door = container.querySelector('[data-see-all-levels="AAPL"]');
+    expect(door.textContent).toBe('See all levels ›');
+    const before = OPENED.props.length;
+    await click(door);
+    expect(OPENED.props.length).toBeGreaterThan(before);
+    const p = lastProps();
+    expect(p.asset.symbol).toBe('AAPL');
+    expect(p.defaultTab).toBe('baggerbomb');
+    expect(p.defaultTimeframe).toBe('bomb');
+    expect(p.opensOnBomb).toBe(true);
+    expect(p.bombContext).toMatchObject({ kind: 'agent', held: true, record: { model: 'measured', symbol: 'AAPL' } });
+  });
+  it('a plain symbol tap afterwards carries no opensOnBomb (the door\'s intent is dropped when research closes)', async () => {
+    flag.mode = 'on';
+    HOOK.doc = await committedBattle({ cpuSymbol: 'MSFT' }); await mount('MSFT');
+    await click(whyToggle('AAPL'));
+    await click(container.querySelector('[data-see-all-levels="AAPL"]'));
+    expect(lastProps().opensOnBomb).toBe(true);
+    await act(async () => { lastProps().onClose(); }); await settle();
+    await click(chip('AAPL'));
+    expect(lastProps()).not.toHaveProperty('opensOnBomb');
+  });
+  it("mode 'off': the Why? panel is today's — the proximity line and StockRewardDetails, no levels door, and no prop leaks", async () => {
+    flag.mode = 'off';
+    HOOK.doc = await committedBattle({ cpuSymbol: 'MSFT' }); await mount('MSFT');
+    await click(whyToggle('AAPL'));
+    expect(container.querySelector('[data-why-levels-door]')).toBeNull();
+    expect(container.querySelector('[aria-label="Measured stock reward targets"]')).toBeTruthy();
+  });
+});
+
 describe("mode 'allowlist' — per agent battle, by the cockpit-status verdict", () => {
   beforeEach(() => { flag.mode = 'allowlist'; });
   it('allowlisted: the mounts get bombContext', async () => {

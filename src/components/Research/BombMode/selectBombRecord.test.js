@@ -75,8 +75,12 @@ describe('the scored price (spec §3.2) and lastScoredAt', () => {
     const b = await committedMeasured(101);
     const ctx = b.scoring.stockRewardContexts.agent['position-agent'];
     const r = selectBombRecord(b, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z'));
-    expect(r).toMatchObject({ model: 'measured', positionId: 'position-agent', entry: { price: 100.75, atMs: Date.parse(STOCK_TEST_NOW) } });
-    expect(r.scored).toEqual({ price: 101, atMs: Date.parse(ctx.quoteEvidence.providerAsOf), source: 'stockRewardContexts' });
+    // BD-9 (2026-11-10): the entry instant is the fill quote's provider time, not enteredAt (the harness puts them 15 minutes apart).
+    const fillQuoteAsOf = Date.parse(b.portfolio.star[0].stockThresholdReceipt.fillQuote.quoteAsOf);
+    expect(fillQuoteAsOf).not.toBe(Date.parse(b.portfolio.star[0].stockThresholdReceipt.enteredAt));
+    expect(r).toMatchObject({ model: 'measured', positionId: 'position-agent', entry: { price: 100.75, atMs: fillQuoteAsOf } });
+    // BD-8: the scored price also carries the moment the check READ it (quoteEvidence.observedAt), which names the check.
+    expect(r.scored).toEqual({ price: 101, atMs: Date.parse(ctx.quoteEvidence.providerAsOf), checkAtMs: Date.parse(ctx.quoteEvidence.observedAt), source: 'stockRewardContexts' });
     expect(r.scored.price).toBe(ctx.currentPrice);
   });
   it('measured: the price the LATEST check read — not the position\'s high (two checks: 103, then 101)', async () => {
@@ -91,7 +95,7 @@ describe('the scored price (spec §3.2) and lastScoredAt', () => {
       const ctx = battle.scoring.stockRewardContexts.agent['position-agent'];
       expect(ctx.history.high).toBe(103); // the bagger ($102.765) stays banked
       const r = selectBombRecord(battle, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z'));
-      expect(r.scored).toEqual({ price: 101, atMs: Date.parse('2026-10-14T14:17:00.000Z'), source: 'stockRewardContexts' });
+      expect(r.scored).toEqual({ price: 101, atMs: Date.parse('2026-10-14T14:17:00.000Z'), checkAtMs: Date.parse(ctx.quoteEvidence.observedAt), source: 'stockRewardContexts' });
       expect(r.measured.crossedTiers).toEqual(['bagger']);
     } finally { if (prior === undefined) delete process.env.EODHD_API_KEY; else process.env.EODHD_API_KEY = prior; }
   });

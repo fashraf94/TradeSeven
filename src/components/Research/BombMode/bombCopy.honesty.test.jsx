@@ -25,7 +25,7 @@ import FuseChart from './FuseChart.jsx';
 import RedZone from './RedZone.jsx';
 import BombSheet from './BombSheet.jsx';
 import BombPlot, { RedZoneChip } from './BombPlot.jsx';
-import { previewLadder, measuredLadder, v4Ladder, toGo } from './ladder.js';
+import { previewLadder, measuredLadder, v4Ladder, toGo, toGoDown } from './ladder.js';
 import { sheetLine, scoredChipText, traceParts } from './bombView.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -42,7 +42,9 @@ const v4 =v4Ladder({ levels: { baseline: 150, baggerBomb: 154.5, doubleBagger: 1
 
 // Every template is called with a value for each of its own parameters, by name;
 // a template with a parameter missing here fails the coverage row below.
-const ARG = { price: 160.33, d: 2, when: 'Tue 9:45 AM', label: 'BaggerBomb', pct: 2.4, points: 15, banked: true, time: '1:15', bricks: 3, base: '2.4% · 3 bricks to +30', live: 160.27, last: '$160.27', emoji: '💣', interval: '1-min', minutes: 1, scored: 160.19, at: '1:00', clockLabel: '3:45' };
+const ARG = { price: 160.33, d: 2, when: 'Tue 9:45 AM', label: 'BaggerBomb', pct: 2.4, points: 15, banked: true, time: '1:15', bricks: 3, base: '2.4% · 3 bricks to +30', live: 160.27, last: '$160.27', emoji: '💣', interval: '1-min', minutes: 1, scored: 160.19, at: '1:00', clockLabel: '3:45',
+  // Refinement 2026-11-10 (BD-1 – BD-8): the new templates' parameters.
+  day: 'Mon', check: 'the 1:15 check', pctText: '+3.96%', pctDecimal: '3.954943', target: 291.594, asOf: '2026-11-10T17:44:00Z', id: 'pos-1', hash: 'abc123', ref: 'stockThresholdInputs/snap-1' };
 const paramsOf = (fn) => fn.toString().slice(fn.toString().indexOf('(') + 1, fn.toString().indexOf(')')).split(',').map((p) => p.trim()).filter(Boolean);
 function templates() {
   const out = [];
@@ -53,6 +55,9 @@ function templates() {
     if (names.includes('banked')) out.push([k, v(...names.map((n) => (n === 'banked' ? false : ARG[n])))]);
     if (names.includes('at')) out.push([k, v(...names.map((n) => (n === 'at' ? null : ARG[n])))]);
     if (names.includes('time')) out.push([k, v(...names.map((n) => (n === 'time' ? null : ARG[n])))]);
+    if (names.includes('check')) out.push([k, v(...names.map((n) => (n === 'check' ? null : ARG[n])))]);
+    // A downside template is called with downside points, as the views call it.
+    if (/^(down|danger)/.test(k) && names.includes('points')) out.push([k, v(...names.map((n) => (n === 'points' ? -10 : ARG[n])))]);
   }
   return out;
 }
@@ -69,6 +74,23 @@ function renderedStates() {
     states.push(renderToStaticMarkup(<BombSheet view={view} />));
     for (const mode of ['approaching', 'banked', 'closed']) {
       states.push(renderToStaticMarkup(<RedZone ladder={ladder} go={go} live={102.7} decimals={2} mode={mode} trace={trace} clock={mode === 'closed' ? { state: 'later', label: 'Thu 9:30 AM' } : clock} scoredText={view.redZoneScored} moment={mode === 'banked' ? { key: 'bagger', atMs: Date.parse('2026-10-14T17:15:00.000Z'), price: 102.77 } : null} nowMs={view.nowMs} />));
+      states.push(renderToStaticMarkup(<RedZoneChip mode={mode} />));
+    }
+  }
+  // Refinement 2026-11-10: both directions — the downside drawn and leading, a rung hit (seen and unseen),
+  // the Danger Zone live and closed, its chip, the levels table and the Details.
+  const hitLadder = measuredLadder({ measured: { measured: true, baselinePrice: 100.75, targets: [['bagger', 102.765], ['doubleBagger', 103.7725], ['tenBagger', 104.78], ['bust', 98.735], ['crash', 97.7275], ['meltdown', 96.72]].map(([key, price]) => ({ key, price })), crossedTiers: ['bust'] }, entryAtMs: Date.parse('2026-10-13T13:45:00.000Z') });
+  const details = { scoringPctDecimal: '2.000000', targets: hitLadder.rungs.map((r) => ({ key: r.key, label: r.label, target: r.price })), currentPrice: 97.9, providerAsOf: '2026-10-14T16:44:00.000Z', positionId: 'pos-1', receiptHash: 'abc123', inputRef: 'stockThresholdInputs/snap-1', modelId: 'stock_measured_atr14_fullday_v2' };
+  for (const [hitTimes, live] of [[{ bust: Date.parse('2026-10-14T17:15:00.000Z') }, 97.9], [{}, 98.2], [{}, 101.4]]) {
+    const go = toGo(hitLadder, live);
+    const goDown = toGoDown(hitLadder, live);
+    for (const lead of ['up', 'down']) {
+      const view = { ladder: hitLadder, go, goDown, lead, live, decimals: 2, mode: 'fuse', nowMs: Date.parse('2026-10-14T17:16:00.000Z'), clock, ghost, trace, checkDots: [], bankedTimes: {}, hitTimes, details, moment: null, sheetScored: null, marketOpen: true, sheetLine: sheetLine({ ladder: hitLadder, clockLabel: '1:30', hitTimes, lead, decimals: 2 }) };
+      states.push(renderToStaticMarkup(<FuseChart ladder={hitLadder} live={live} decimals={2} go={go} goDown={goDown} lead={lead} ghost={ghost} hitTimes={hitTimes} />));
+      states.push(renderToStaticMarkup(<BombSheet view={view} />));
+    }
+    for (const mode of ['danger', 'dangerClosed']) {
+      states.push(renderToStaticMarkup(<RedZone side="down" ladder={hitLadder} go={goDown} live={live} decimals={2} mode={mode} trace={trace} clock={clock} scoredText={scoredChipText({ live, scored: { price: 97.9, atMs: Date.parse('2026-10-14T16:44:00.000Z'), checkAtMs: Date.parse('2026-10-14T17:00:30.000Z') }, always: true })} hitTimes={hitTimes} nowMs={Date.parse('2026-10-14T17:16:00.000Z')} />));
       states.push(renderToStaticMarkup(<RedZoneChip mode={mode} />));
     }
   }
@@ -189,5 +211,61 @@ describe('every visible word comes from BOMB_COPY', () => {
   });
   it.each(SOURCES.filter((f) => f.endsWith('.jsx')))('%s types no copy inline in JSX', (f) => {
     expect(inlineCopy(readFileSync(path.join(HERE, f), 'utf8'))).toEqual([]);
+  });
+});
+
+// Refinement 2026-11-10 — BD-10: the both-directions copy.
+describe('BD-10 — both directions: a crossed downside rung is "hit", never "banked"', () => {
+  // BY CONSTRUCTION: bombCopy.js keys every downside template `down…` or `danger…`
+  // (its NAMING RULE), and the views tag every downside node data-side="down" /
+  // data-level-side="down" / the Danger Zone view — so these rows enumerate them,
+  // they do not list them by hand.
+  const DOWN_KEY = /^(down|danger)/;
+  it('the downside templates exist under the naming rule (the enumeration is not empty)', () => {
+    const keys = Object.keys(BOMB_COPY).filter((k) => DOWN_KEY.test(k));
+    expect(keys.length).toBeGreaterThanOrEqual(15);
+    expect(keys).toEqual(expect.arrayContaining(['downHitTitle', 'downLevelHit', 'downHitAt', 'downHitLine', 'dangerZoneChip', 'downToGoBricks']));
+  });
+  it('no downside template says "banked" (every argument variant)', () => {
+    for (const [k, s] of templates()) if (DOWN_KEY.test(k)) expect(s, `${k}: ${s}`).not.toMatch(/bank/i);
+  });
+  it('no rendered downside node says "banked": the Fuse\'s and the bar\'s downside rungs, the table\'s downside rows, the Danger Zone view', () => {
+    let seen = 0;
+    for (const { html } of renderedStates()) {
+      const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+      for (const el of doc.querySelectorAll('[data-side="down"], [data-level-side="down"], [data-bomb-view="dangerzone"], [data-bomb-zone-chip="danger"]')) {
+        seen += 1;
+        expect(el.textContent, el.outerHTML.slice(0, 160)).not.toMatch(/bank/i);
+        for (const a of el.getAttributeNames()) expect(`${a}=${el.getAttribute(a)}`).not.toMatch(/bank/i);
+      }
+    }
+    expect(seen).toBeGreaterThan(20);
+  });
+  it('every new data- attribute on a downside node names it "hit" — none says "banked"', () => {
+    const src = ['FuseChart.jsx', 'BombSheet.jsx', 'RedZone.jsx', 'BombPlot.jsx'].map(codeOf).join('\n');
+    const attrs = [...src.matchAll(/data-[a-z-]+/g)].map((m) => m[0]);
+    expect(attrs).toEqual(expect.arrayContaining(['data-down-hit', 'data-rung-hit']));
+    expect(attrs.filter((a) => /down|danger|hit/.test(a) && /bank/.test(a))).toEqual([]);
+  });
+});
+
+describe('BD-10 — the rest of the both-directions copy rules', () => {
+  it('no template says "will" (no forecast; scoreboard language only)', () => {
+    for (const [k, s] of templates()) expect(hit(s, 'will'), `${k}: ${s}`).toBe(false);
+  });
+  it('"Danger zone" is the only new name: the only zone names in the copy are the two chips', () => {
+    const zoneStrings = [...new Set(templates().map(([, s]) => s).filter((s) => /\bzone\b/i.test(s)))];
+    expect(zoneStrings.sort()).toEqual(['Danger zone', 'Red zone']);
+  });
+  it('no agent verb in any new template (the Desk guard\'s list, on the downside templates by name)', () => {
+    for (const [k, s] of templates()) if (/^(down|danger|level|details|needsFor|upNeeds|checkName|toGoShort|seeAllLevels)/.test(k)) for (const term of DESK_FORBIDDEN) expect(hit(s, term), `${k}: ${s}`).toBe(false);
+  });
+  it('a preview\'s levels table carries no state and never says "entry"', () => {
+    const view = { ladder: preview, go: toGo(preview, 100.4), goDown: toGoDown(preview, 100.4), lead: 'up', live: 100.4, decimals: 2, sheetLine: sheetLine({ ladder: preview, decimals: 2 }), sheetScored: null, bankedTimes: {}, hitTimes: {} };
+    const doc = new DOMParser().parseFromString(`<body>${renderToStaticMarkup(<BombSheet view={view} />)}</body>`, 'text/html');
+    const table = doc.querySelector('[data-bomb-levels]');
+    expect(table.querySelector('[data-bomb-levels-preview]').textContent).toBe(BOMB_COPY.levelsPreview);
+    expect([...table.querySelectorAll('[data-level-state]')].map((e) => e.getAttribute('data-level-state'))).toEqual(Array(7).fill('none'));
+    expect(table.textContent).not.toMatch(/entr(y|ies|ed)\b/i);
   });
 });
