@@ -189,6 +189,17 @@ describe('E2 — earnings never freeze the book (Amendment E §E2)', () => {
     expect(lineReasons({ kind: 'NO_ADDS_BEFORE', eventId: `earn:RKLB:${ET}:amc` }, s1, { universe: new Set(['RKLB']) })).toEqual([outside]);
   });
 
+  // mutation lens HM-19b: S1 froze every timed print of the day as eligible; the window check on the id's own time is all
+  // that refuses a pre-open or after-the-close print such a record carries
+  it('NO_ADDS_BEFORE: an S1 record that froze a macro print outside the session as eligible is still refused (the window backstop)', () => {
+    const ids = [`macro:cpi:${ET}:0830`, `macro:fomc:${ET}:1400`];
+    const s1 = { eligible: new Map(ids.map((id) => [id, { eventId: id, label: 'a print' }])), untimedIds: new Set() };
+    for (const eventId of ids) expect(lineReasons({ kind: 'NO_ADDS_BEFORE', eventId }, s1, { window: { open: '0930', close: '1300' } }), eventId).toEqual([outside]);
+    // the control: a print inside that window, frozen the same way, passes
+    const inside = `macro:ism_manufacturing:${ET}:1000`;
+    expect(lineReasons({ kind: 'NO_ADDS_BEFORE', eventId: inside }, { eligible: new Map([[inside, { eventId: inside, label: 'ISM' }]]), untimedIds: new Set() }, { window: { open: '0930', close: '1300' } })).toEqual([]);
+  });
+
   it("NO_ADDS_TO_BEFORE_REPORT t: eligible for a name in the universe that reports after today's close or before the next session's open", () => {
     const v = validatePlan({ stances: [], lines: [{ kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'AAA' }, { kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'CCC' }] }, CTX);
     expect(v.drops).toEqual([]);

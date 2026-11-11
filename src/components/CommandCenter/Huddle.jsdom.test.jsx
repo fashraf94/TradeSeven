@@ -130,6 +130,26 @@ describe('the sheet (C8): a HubSheet; no autoplay; Confirm sends the base revisi
     expect(confirm.mock.calls[2][0].acknowledged).toBeNull();
   });
 
+  // mutation lens HM-30c1: typing a new level is an edit too
+  it('E1: a typed level drops the previews, and the next Confirm acknowledges nothing', async () => {
+    const previews = [{ archetype: 'momentum_chaser', archetypeName: 'Trend Follower', games: 1, revision: 'rv-t', changes: [{ index: 1, kind: 'stance', from: 'FADE', to: 'WATCH', ticker: 'BBB' }] }];
+    const confirm = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 422, body: { error: 'validation_changed', drops: [], transforms: [], previews } })
+      .mockResolvedValueOnce({ ok: true, status: 200, body: {} });
+    keep(mount(<HubOverlayProvider><HuddleSheet huddle={huddleProp({ confirm })} onClose={vi.fn()} reducedMotion /></HubOverlayProvider>));
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect(document.body.querySelectorAll('[data-huddle-preview]').length).toBe(1);
+    const input = document.body.querySelector(`input[aria-label="${COPY.huddle.levelLabel('BBB')}"]`);
+    expect(input).not.toBeNull();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, '49');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(document.body.querySelectorAll('[data-huddle-preview]').length).toBe(0);
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect(confirm.mock.calls[1][0].acknowledged).toBeNull();
+  });
+
   it('E1: a successful Skip drops the previews (review HU-7)', async () => {
     const previews = [{ archetype: 'degen', archetypeName: 'Speculator', games: 1, revision: 'rv-s', changes: [{ index: 1, kind: 'stance', from: 'FADE', to: 'WATCH', ticker: 'BBB' }] }];
     const confirm = vi.fn().mockResolvedValueOnce({ ok: false, status: 422, body: { error: 'validation_changed', drops: [], transforms: [], previews } });
