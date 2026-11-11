@@ -10,8 +10,8 @@
 
 | # | Area | Status | What the player sees | What they saw before |
 |---|---|---|---|---|
-| 1 | **PR 1** (the refinement) | **Built, ready for the founder's merge.** Branch `claude/bomb-both-directions`. PR number and head are in the PR description. | Everything below, on the allowlist (the founder and FT_QA) until PR 2. | — |
-| 2 | **PR 2** (`'allowlist'` → `'on'`) | **Built as a DRAFT.** Branch `claude/bomb-mode-on`, one commit `d920c1a5`. BO-1 passed. **Merge only after PR 1 and the phone check.** | Bomb mode for every player in a live agent battle. | Bomb mode only for the founder and FT_QA. |
+| 1 | **PR 1** (the refinement) | **Built, ready for the founder's merge: PR #1041.** Branch `claude/bomb-both-directions`; its head is in the PR description. | Everything below, on the allowlist (the founder and FT_QA) until PR 2. | — |
+| 2 | **PR 2** (`'allowlist'` → `'on'`) | **Built as a DRAFT: PR #1042.** Branch `claude/bomb-mode-on`, one commit `d920c1a5`. BO-1 passed. **Merge only after PR 1 and the phone check.** | Bomb mode for every player in a live agent battle. | Bomb mode only for the founder and FT_QA. |
 | 3 | Both directions (BD-1, BD-3) | Built | Bust, Crash and Meltdown with names, prices and % on one scale with the upside; a hit rung reads `BUST · HIT 1:15`. | "−10 −20 −35" ticks in a "Below · compressed" strip. |
 | 4 | The lead (BD-2) | Built | The nearer side's pill is the strong one; it changes only when the other side is a full brick nearer, so a flat stock doesn't flicker. | One pill, always the upside's, even when Bust was nearer. |
 | 5 | The bar and its line (BD-4) | Built | Meltdown … TenBagger on one bar; `↓ 3.2% · 5 bricks to Bust −10 · ↑ 4.8% · 8 to +15`; "What has to happen" names the side that leads. | Entry → upside only. |
@@ -321,7 +321,7 @@ Copies are in `C:/Users/fashr/Documents/FantasyTrades/ResearchModal/BombBothDire
 
 **BO-3, League, accepted.** A League battle never scores stocks on the measured model, so a League stock shows the held-preview line ("Held · rungs shown from yesterday's close …"). It never shows the Danger Zone, because it reaches the zone machines with `held` false.
 
-**BO-4, the description.** It opens "Merge only after PR 1 (#…) is merged and the founder's phone check is clean." It then says, in plain words:
+**BO-4, the description.** It opens "Merge only after PR 1 (#1041) is merged and the founder's phone check is clean." It then says, in plain words:
 - what everyone gets;
 - held crypto and legacy-scored stocks show the held line;
 - League, per BO-3;
