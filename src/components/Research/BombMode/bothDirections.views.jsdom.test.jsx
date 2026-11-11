@@ -445,6 +445,14 @@ describe('review D1–D4 — the Danger Zone\'s text is one column, and its goal
       expect(y, String(live)).toBeLessThanOrEqual(284);
     }
   });
+  it('live under the rung with a trace that never reached it: the trace\'s high is drawn BELOW the goal line, not on it (review D4 — the goal is the window\'s top, not clamped onto the trace)', () => {
+    const bars = [...Array(30)].map((_, i) => ({ t: Date.parse('2026-11-10T17:30:00.000Z') + i * 60000, c: Number((258.2 - i * 0.08).toFixed(2)) }));
+    const t = { line: bars, dots: [], lastBarMs: bars[bars.length - 1].t, intervalMin: 1 };
+    const d = doc(renderToStaticMarkup(<RedZone side="down" ladder={ladder} go={toGoDown(ladder, 255.64)} live={255.64} decimals={2} mode="danger" trace={t} clock={null} scoredText={null} nowMs={Date.parse('2026-11-10T18:02:30.000Z')} width={375} height={354} />));
+    const goalY = Number(d.querySelector('[data-rz-goal="down"]').getAttribute('y')) + 2;
+    const ys = d.querySelector('[data-rz-trace-line]').getAttribute('d').match(/,[\d.]+/g).map((s) => Number(s.slice(1)));
+    expect(Math.min(...ys)).toBeGreaterThan(goalY + 1); // $258.20 sits clearly under Bust $259.53
+  });
   it('the numeral is in the risk red, never the red zone\'s amber heat (review N5)', () => {
     const style = draw(260.05).querySelector('[data-rz-distance] div').getAttribute('style');
     expect(style).toContain('--ft-red');
@@ -460,7 +468,11 @@ describe('review D5 — a crowded side\'s inline price never runs past the plot\
   it('a sub-cent ladder at 280 px: the moved price ends inside W (at 7 px), or is dropped', () => {
     const p = previewLadder({ previousClose: 0.00001234, threshold: 8 });
     for (const width of [320, 375, 430]) {
-      const d = fuse(p, 0.0000133, { width, height: 280 });
+      // In the price's OWN decimals (8): "$0.00001135", 11 characters (the shared helper prints 2, which always fits).
+      const d = doc(renderToStaticMarkup(<FuseChart ladder={p} live={0.0000133} decimals={8} go={toGo(p, 0.0000133)} goDown={toGoDown(p, 0.0000133)} width={width} height={280} />));
+      const bust = d.querySelector('[data-fuse-price="bust"]');
+      expect(bust.textContent).toBe('$0.00001135'); // the case is real: the next rung's price is moved inline
+      expect(bust.getAttribute('y')).toBe(d.querySelector('[data-fuse-down="bust"] text').getAttribute('y'));
       for (const t of d.querySelectorAll('[data-fuse-price]')) {
         const box = textBox(Number(t.getAttribute('x')), Number(t.getAttribute('y')), t.textContent, Number(t.getAttribute('font-size')));
         expect(box.x1, `${width}: ${t.textContent}`).toBeLessThanOrEqual(width - 2 + 1e-9);
