@@ -121,6 +121,13 @@ describe('E1 — the archetypes in play: the equipped one and every in-play game
     expect(out.inPlay).toEqual([]);
     for (const b of [game('degen', { timing: {} }), game('degen', { ownerId: 'cpu-1' })]) expect(battleInPlay(b, { uid: UID, etDate: ET })).toBe(false);
     expect(battleInPlay(game('degen'), { uid: UID, etDate: ET })).toBe(true);
+    // review HD-13: a game with no agent of its own is not in play — decideApplication would read it retry_error
+    for (const agentId of [undefined, null, '']) {
+      const b = game('degen', { agentId });
+      expect(battleInPlay(b, { uid: UID, etDate: ET }), String(agentId)).toBe(false);
+      const record = { plan: { status: 'confirmed', confirmations: [{ archetype: 'degen', revision: 'r' }] }, session: { etDate: ET, closeMs: 2e13 } };
+      expect(decideApplication({ battle: b, uid: UID, record, nowMs: 0 }).disposition).toBe(DISPOSITIONS.RETRY_ERROR);
+    }
   });
   it('an archetype with no dissent row is never in play (it gets no confirmation); it is reported apart', () => {
     const out = archetypesInPlayOf({ equipped: 'unknown_one', battles: [game('constructor'), game('degen')], uid: UID, etDate: ET });

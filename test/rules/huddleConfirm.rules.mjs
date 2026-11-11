@@ -21,6 +21,7 @@ import { buildSessionEvents } from '../../api/_utils/huddle/events.js';
 import { issuePlaybackToken, resolvePlaybackToken, tokenHashOf } from '../../api/_utils/huddle/playback.js';
 import { getSessionForDate } from '../../api/_utils/marketSchedule.js';
 import { sessionWindowOf } from '../../api/_utils/huddle/records.js';
+import { revisionOf, renderPlan, renderedTextHashOf } from '../../api/_utils/huddle/planTemplates.js';
 
 const RUN = Date.now().toString(36);
 const ET = '2026-11-09';
@@ -219,6 +220,29 @@ describe('E1 — one confirm per archetype in play', () => {
     expect(rec.plan.confirmed).toMatchObject({ archetype: 'analyst', confirmedAt: new Date(BEFORE_OPEN).toISOString() });
     expect((await slotOf(`gc${uid}`)).text).toContain('HOLD BBB');
     expect(rec.plan.applications.find((r) => r.battleId === `gc${uid}` && r.disposition === DISPOSITIONS.WRITTEN)).toBeTruthy();
+  });
+
+  it('a plan confirmed on S1 code with a line E2 now refuses (an after-close earnings print): no door, since a reconfirm would be refused (review HD-12)', async () => {
+    n += 1;
+    const uid = `cu${RUN}${n}`;
+    const eventId = `earn:RKLB:${ET}:amc`;
+    const current = { stances: [{ kind: 'HOLD', ticker: 'BBB', origin: { kind: 'huddle', recordKind: null, recordId: null } }], lines: [{ kind: 'NO_ADDS_BEFORE', eventId, origin: { kind: 'huddle', recordKind: null, recordId: null } }] };
+    const revision = revisionOf(current);
+    const renderedText = renderPlan(current, { etDate: ET, eventLabels: new Map([[eventId, "RKLB's report after the close"]]) });
+    const confirmation = { current, revision, archetype: 'analyst', renderedText, renderedTextHash: renderedTextHashOf(renderedText), confirmedAt: new Date(BEFORE_OPEN).toISOString() };
+    // the S1 record shape: the context has no window, no outside-session ids, no report tickers
+    await db.doc(`huddles/${uid}/days/${ET}`).set({
+      uid, etDate: ET, status: 'ready', session: { etDate: ET, isTradingDay: true, isEarlyClose: false, openMs: SESSION.openMs, closeMs: SESSION.closeMs }, measurement: { editCount: 0 },
+      plan: { templateVersion: 'plan.v1', status: 'confirmed', proposed: current, current, revision, editCount: 0, dissent: [], archetypeAtGeneration: 'analyst', archetypeSupported: true,
+        context: { universe: ['BBB', 'RKLB'], closes: { BBB: 44 }, eligibleEvents: [{ eventId, label: "RKLB's report after the close", source: 'earnings', etDate: ET }], untimedEventIds: [] },
+        confirmations: [confirmation], confirmed: confirmation, applications: [] },
+    });
+    await db.doc(`agents/ranked-${uid}`).set({ ownerId: uid, archetype: 'analyst' });
+    await seedGame(`gs${uid}`, uid, 'contrarian');
+    const rec = await read(uid);
+    const press = await confirmPlan(db, { uid, etDate: ET, baseRevision: rec.plan.revision, replacement: rec.plan.current, nowMs: SESSION.openMs + MIN });
+    expect(press).toMatchObject({ status: 409, code: 'revision_mismatch' }); // what a press would get
+    expect(await reconfirmStateOf(db, { uid, record: rec, nowMs: SESSION.openMs + MIN })).toEqual({ inPlay: ['analyst', 'contrarian'], missing: [] });
   });
 
   it('a reconfirm with nothing missing is idempotent, and the door stays shut', async () => {

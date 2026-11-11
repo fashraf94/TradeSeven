@@ -126,7 +126,7 @@ export async function runHuddleJob(db, { uid, etDate, generation, session, share
     timings.scriptMs = clock() - t;
 
     // ---- the plan: templates only; its beat narrated by code ----
-    const { plan, drops: planDrops } = buildPlanAtGeneration({ proposal: proposalOf(answer.output), universe: gathered.universe, closes: gathered.closes, events: gathered.events, archetype: gathered.archetype, window: gathered.window ?? null });
+    const { plan, drops: planDrops } = buildPlanAtGeneration({ proposal: proposalOf(answer.output, { eligible: gathered.events?.eligible ?? null }), universe: gathered.universe, closes: gathered.closes, events: gathered.events, archetype: gathered.archetype, window: gathered.window ?? null });
     const planText = narratePlan(plan.current, { eventLabels: eventLabelsOf({ plan }) });
     const beats = assembleBeats({ validated, dropped, planText });
 

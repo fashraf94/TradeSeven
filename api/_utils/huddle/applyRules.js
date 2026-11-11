@@ -86,9 +86,13 @@ export function battleArchetypeOf(battle) {
   return typeof battle?.agentContext?.archetype === 'string' && battle.agentContext.archetype ? battle.agentContext.archetype : null;
 }
 
-/** E1: would this module file a plan of (uid, etDate) into this battle? The owner's, not a CPU seat, active, this session. */
+/**
+ * E1: would this module file a plan of (uid, etDate) into this battle? The owner's, not a CPU seat, its agent its own, active,
+ * this session — decideApplication's checks before the archetype's (review HD-13: the agent check was missing).
+ */
 export function battleInPlay(battle, { uid, etDate }) {
-  return !!battle && battle.ownerId === uid && !isCpuBattle(battle) && battle.status === 'active' && battle.timing?.tradingDays?.[0] === etDate;
+  return !!battle && battle.ownerId === uid && !isCpuBattle(battle) && agentBelongsToBattle(battle, battle.agentId)
+    && battle.status === 'active' && battle.timing?.tradingDays?.[0] === etDate;
 }
 
 /**
@@ -155,7 +159,8 @@ export function statusReceiptOf(applications, battleId, confirmations = []) {
   // E1: archetypes in play often share one revision (the same current when no dissent row fires), so a revision names a SET
   // of archetypes. The newer receipt hides the written one only when its revision has a confirmation under some archetype
   // and none under the battle's own (the receipt's `archetype`, the battle's frozen one): such a confirmation can never
-  // reach this battle. Receipts written before E1 carry no archetype: then the first confirmation of each revision, as S1.
+  // reach this battle. A WRITTEN receipt has always carried its archetype (applyPlan stamps decision.archetype, S1 included:
+  // review HR-HD-7); the archetype-less branch below is S1's rule, kept as a defence for a receipt without one.
   const list = Array.isArray(confirmations) ? confirmations : [];
   const archetypesOf = (rev) => new Set(list.filter((c) => c && c.revision === rev).map((c) => c.archetype));
   const own = typeof written.archetype === 'string' ? written.archetype : typeof newest.archetype === 'string' ? newest.archetype : null;

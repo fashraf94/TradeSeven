@@ -36,6 +36,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { STANCE_KINDS, LINE_KINDS, MAX_STANCES, MAX_LINES } from './planTemplates.js';
 import { spokenDateOf, spokenWhenOf } from './spoken.js';
 import { PUBLICATION_NAMES } from '../evidence/publicationNames.js';
+import { DISSENT_TABLE } from './dissentTable.js';
+import { archetypeNameOf } from './archetypeWords.js';
 
 export const HUDDLE_SCRIPT_MODEL = 'claude-sonnet-5-5';
 export const HUDDLE_SCRIPT_EFFORT = 'medium';
@@ -48,6 +50,10 @@ export const ACRONYMS = Object.freeze([
   'AM', 'PM', 'ET', 'US', 'USA', 'UK', 'EU', 'CPI', 'PPI', 'PCE', 'GDP', 'ISM', 'FOMC', 'NFP', 'JOLTS', 'EPS', 'CEO', 'CFO',
   'AI', 'ETF', 'ETFS', 'IPO', 'SEC', 'FDA', 'FTC', 'DOJ', 'NYSE', 'EODHD', 'OK', 'TV', 'API', 'GLP', 'EV', 'EVS', 'BMO', 'AMC',
 ]);
+
+/** The archetypes' display names ("Trend Follower", "Contrarian", …), escaped for a pattern: `archetype_person` names them. */
+const ARCHETYPE_NAMES_RE = Object.keys(DISSENT_TABLE).map((a) => archetypeNameOf(a)).filter(Boolean)
+  .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
 
 /** What a source is called in a sentence (E3 a) — the subject `source_outage` looks for. */
 const SOURCE_SUBJECT = String.raw`(?:newsfilter|eodhd(?:\s+news)?|fantasytimes|news\s+(?:sources?|feeds?|wires?)|(?:earnings|macro)\s+calendar|market\s+context|sources?|feeds?)`;
@@ -67,9 +73,10 @@ export const FORBIDDEN_SCRIPT_PATTERNS = Object.freeze({
   nothing_happened: /\bnothing happened\b/i,
   rvol: /\brvol\b/i,
   volume_number: /\bvolume\b[^.]{0,40}\d|\d[\d.,%x]*\s*(?:[a-z-]+\s+){0,3}volume\b/i,
-  // E3 b (R-23): the archetype in the third person — never "As a Diversifier, I …", "as the Contrarian, you …" nor
-  // "As your Diversifier, I …" (E3 b's regex letter, widened to the article forms the rule forbids too: review HD-10)
-  archetype_person: /\b[Aa]s (?:an?|the|your) [A-Z]\w*(?: \w+)?, (?:I|you)\b/,
+  // E3 b (R-23): the archetype in the third person — never "As a Diversifier, I …" nor "As a Contrarian, you …" (E3 b's
+  // regex, verbatim), nor "as the Contrarian, you …" / "As your Diversifier, I …": the other article forms, anchored on the
+  // archetypes' display names so "As the Fed meets, I …" is not one (review HD-10 and its refuter)
+  archetype_person: new RegExp(`\\bAs an? [A-Z]\\w*(?: \\w+)?, (?:I|you)\\b|\\b[Aa]s (?:an?|the|your) (?:${ARCHETYPE_NAMES_RE}), (?:I|you)\\b`),
   // E3 d: never an ISO date
   iso_date: /\b\d{4}-\d{2}-\d{2}\b/,
   // E3 f: no calendar mechanics — "Eight of 256 … reports", "256 reports", "45 earnings reports", "reports are listed".
@@ -164,7 +171,8 @@ export function buildUserPrompt({ etDate, weekday, gathered, archetypeLabel, arc
   const indexNote = tapeItems > 0 ? 'Index closes: the TAPE items in EVIDENCE.' : 'No index closes this morning: name no index figure.';
   lines.push(t ? `TAPE (the prior session's picture): regime ${t.regime ?? 'unknown'}; breadth ${t.breadthTier ?? 'unknown'}; volatility ${t.volatilityRegime ?? 'unknown'}; top sector ${t.topSector ?? 'unknown'}${t.topSectorChange !== null && t.topSectorChange !== undefined ? ` (${t.topSectorChange}%)` : ''}; worst sector ${t.worstSector ?? 'unknown'}${t.worstSectorChange !== null && t.worstSectorChange !== undefined ? ` (${t.worstSectorChange}%)` : ''}. ${indexNote}` : 'TAPE: none this morning (say nothing about the market picture).');
   lines.push('EVENT IDS (the only ids a NO_ADDS_BEFORE line may use: prints inside today\'s session):');
-  for (const [id, e] of gathered.events.eligible) lines.push(`  ${id} — ${e.label}`);
+  // E3 d: each id without its ISO date (every eligible print is today's, E2); proposalOf maps it back (review HD-9)
+  for (const [id, e] of gathered.events.eligible) lines.push(`  ${eventAliasOf(id)} — ${e.label}`);
   if (gathered.events.eligible.size === 0) lines.push('  (none)');
   // Amendment E §E2: the names a NO_ADDS_TO_BEFORE_REPORT line may name
   const reports = gathered.events.reportTickers instanceof Map ? [...gathered.events.reportTickers] : [];
@@ -216,12 +224,20 @@ export async function callScriptModel({ system = SYSTEM_PROMPT, user, signal, ti
   }
 }
 
-/** The plan proposal as template instances: nulls removed (the template's closed schema owns the keys). */
-export function proposalOf(output) {
+/** E3 d: an event id as the model sees it — its ISO date taken out ("macro:ism_manufacturing:1000"). */
+export const eventAliasOf = (id) => String(id).replace(/:\d{4}-\d{2}-\d{2}(?=:|$)/, '');
+
+/**
+ * The plan proposal as template instances: nulls removed (the template's closed schema owns the keys). A line's event id
+ * the model gave as its alias (EVENT IDS) is mapped back to the eligible id; any other id passes as given, for validatePlan.
+ */
+export function proposalOf(output, { eligible = null } = {}) {
   const strip = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== null && v !== undefined));
+  const ids = new Map(eligible instanceof Map ? [...eligible.keys()].map((id) => [eventAliasOf(id), id]) : []);
+  const unalias = (l) => (typeof l.eventId === 'string' && ids.has(l.eventId) ? { ...l, eventId: ids.get(l.eventId) } : l);
   return {
     stances: (output?.planProposal?.stances || []).slice(0, MAX_STANCES * 2).map(strip),
-    lines: (output?.planProposal?.lines || []).slice(0, MAX_LINES * 2).map(strip),
+    lines: (output?.planProposal?.lines || []).slice(0, MAX_LINES * 2).map(strip).map(unalias),
   };
 }
 

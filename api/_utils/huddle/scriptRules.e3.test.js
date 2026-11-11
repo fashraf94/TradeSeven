@@ -7,7 +7,7 @@
 // way pass; and market words that only look like a violation ("SPY closed down") are not refused.
 
 import { describe, it, expect } from 'vitest';
-import { FORBIDDEN_SCRIPT_PATTERNS, validateScript, scriptClean, regenerationNoteOf, SYSTEM_PROMPT, buildUserPrompt } from './scriptPrompt.js';
+import { FORBIDDEN_SCRIPT_PATTERNS, validateScript, scriptClean, regenerationNoteOf, SYSTEM_PROMPT, buildUserPrompt, proposalOf, eventAliasOf } from './scriptPrompt.js';
 import { packItem, headlineItem, tapeItem } from '../evidence/packItem.js';
 import { publicationNameOf, PUBLICATION_NAMES } from '../evidence/publicationNames.js';
 import { spokenDateOf, spokenWhenOf } from './spoken.js';
@@ -123,6 +123,9 @@ describe('E3: the same thoughts said the right way pass — and look-alikes are 
     // review HD-4: an outage in a headline about a name is market news, not a source
     'Yahoo Finance reported that WEC restored power after a storm outage.',
     'Seeking Alpha reported that the AWS outage hit CCI tenants.',
+    // the person rule's widening is anchored on the archetypes' names (review HD-10's refuter)
+    'As the Fed meets, I would wait for the print.',
+    'As the market opened, you could see the bid.',
   ])('passes: "%s"', (text) => {
     expect(hits(text)).toEqual([]);
   });
@@ -186,7 +189,7 @@ describe('E3: the input is fixed first (the model is never handed what it must n
       gathered: {
         universe: new Set(['CCI', 'RKLB']), names: [{ ticker: 'CCI', source: 'activeBattle' }, { ticker: 'RKLB', source: 'activeBattle' }],
         closes: new Map([['CCI', 88.6]]), exposureLeaders: ['CCI'], tape: { regime: 'correction', asOf: '2026-11-09T11:30:00.000Z' },
-        events: { eligible: new Map(), reportTickers: new Map([['RKLB', { label: "RKLB's report after the close" }]]) },
+        events: { eligible: new Map([['macro:ism_manufacturing:2026-11-09:1000', { label: 'the 10:00 AM ET ISM manufacturing data' }]]), reportTickers: new Map([['RKLB', { label: "RKLB's report after the close" }]]) },
         priorPlan: { etDate: '2026-11-06', status: 'confirmed' },
         evidence: [packItem({ kind: 'close', fact: 'CCI closed at 88.60 on Friday, November 6 (the prior session\'s close).', recordKind: 'symbolDayEvidence.price', recordId: '2026-11-09_CCI', label: 'EODHD daily bars', at: '2026-11-06', asOf: '2026-11-06' })],
       },
@@ -196,9 +199,19 @@ describe('E3: the input is fixed first (the model is never handed what it must n
     expect(user).toContain('PRIOR PLAN: Friday, November 6, confirmed');
     expect(user).toContain('| Friday, November 6 | CCI closed');
     expect(user).toContain('ARCHETYPE (say "your Contrarian" or "the Contrarian")');
+    // review HD-9: an event id reaches the model without its ISO date, and comes back mapped to the eligible id
+    expect(user).toContain('  macro:ism_manufacturing:1000 — the 10:00 AM ET ISM manufacturing data');
     expect(user).not.toMatch(/\b\d{4}-\d{2}-\d{2}\b/);
     expect(user).not.toMatch(/reports listed|\bof \d+ earnings/);
     expect(user).not.toMatch(/yahoo\.com|unavailable/);
+  });
+
+  it('an event id the model gives as its alias is mapped back to the eligible id; any other id passes as given (review HD-9)', () => {
+    const eligible = new Map([['macro:ism_manufacturing:2026-11-09:1000', { label: 'the 10:00 AM ET ISM manufacturing data' }]]);
+    const output = { planProposal: { stances: [], lines: [{ kind: 'NO_ADDS_BEFORE', eventId: 'macro:ism_manufacturing:1000', ticker: null, level: null }, { kind: 'NO_ADDS_BEFORE', eventId: 'macro:cpi:0830', ticker: null, level: null }] } };
+    expect(proposalOf(output, { eligible }).lines).toEqual([{ kind: 'NO_ADDS_BEFORE', eventId: 'macro:ism_manufacturing:2026-11-09:1000' }, { kind: 'NO_ADDS_BEFORE', eventId: 'macro:cpi:0830' }]);
+    expect(proposalOf(output).lines[0].eventId).toBe('macro:ism_manufacturing:1000');
+    expect(eventAliasOf('macro:ism_manufacturing:2026-11-09:1000')).toBe('macro:ism_manufacturing:1000');
   });
 
   it('spoken dates: an ET date is its weekday and month and day; an instant is its ET day and clock', () => {

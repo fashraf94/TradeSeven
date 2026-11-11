@@ -262,7 +262,11 @@ export async function reconfirmStateOf(db, { uid, record, nowMs = Date.now() }) 
   const agent = rankedAgentOf(agentsSnap.docs);
   const equipped = typeof agent?.archetype === 'string' ? agent.archetype : null;
   const play = archetypesInPlayOf({ equipped, battles, uid, etDate: record.session?.etDate ?? record.etDate });
-  return { inPlay: play.inPlay, missing: missingArchetypesOf(plan, play.inPlay) };
+  // a reconfirm files the confirmed plan as it stands; one the archetype-neutral validation would now change (a line an S1
+  // record carried that E2 refuses: an earnings or pre-open print) is refused 409 — so no door (review HD-12)
+  const v = validatePlan(plan.current, contextOfRecord(record, null));
+  const acceptable = !validationChanged(v) && revisionOf(v.current) === plan.revision;
+  return { inPlay: play.inPlay, missing: acceptable ? missingArchetypesOf(plan, play.inPlay) : [] };
 }
 
 /** SKIP: a proposed plan becomes skipped (V1.1 §6). */
