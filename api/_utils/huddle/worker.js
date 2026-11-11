@@ -84,6 +84,8 @@ export async function runEnqueueStage(db, { etDate, nowMs = Date.now(), deps = {
  * each visit is stamped, and a settled day leaves the set (review L1-3). I/O injectable for tests.
  */
 export async function runReconcilePass(db, { etDate, nowMs, budgetMs = RECONCILE_BUDGET_MS, clock = () => Date.now(), deps = {}, cohort = huddleCohortOf() }) {
+  // E7: no cohort, no pass — not even the query (review HC-2: the filter alone ran after the read)
+  if (!(cohort instanceof Set) || cohort.size === 0) return { visited: 0, of: 0, retired: 0 };
   const start = clock();
   // E7: only the cohort's rows are visited
   const inCohort = (uid) => cohort instanceof Set && cohort.has(uid);
@@ -116,6 +118,8 @@ export async function drainQueue(db, { etDate, session, shared, invocationStartM
   const canStart = () => deadlineMs - clock() >= DRAIN_RESERVE_MS && clock() < closeMs && startReached(clock(), etDate);
   const results = [];
   if (!canStart()) return { started: 0, results };
+  // E7: no cohort, no drain — not even the query (review HC-2)
+  if (!(cohort instanceof Set) || cohort.size === 0) return { started: 0, results };
   // E7: only the cohort's rows are claimed
   const candidates = (await (io.selectClaimable || selectClaimable)(db, { etDate, nowMs: clock() }))
     .filter((row) => cohort instanceof Set && cohort.has(row?.uid));
@@ -156,6 +160,8 @@ export async function runWorkerInvocation(db, { clock = () => Date.now(), deps =
   const session = sessionOf(etDate);
   if (!session) return { etDate, outcome: 'calendar_missing' };
   if (!session.isTradingDay) return { etDate, outcome: 'not_a_trading_day' };
+  // E7: no cohort, no invocation — no read at all (the cron handler exits first; this holds without it: review HC-2)
+  if (!(cohort instanceof Set) || cohort.size === 0) return { etDate, outcome: 'no_cohort' };
 
   // The reconcile pass never stops the drain (review L2-7).
   let reconcile;

@@ -754,11 +754,14 @@ function ConnectedHub({ site, hub, sections }) {
   // same reason (their one service loads the Firebase configuration the readers' suites render without). Hub chunk only — nothing
   // the root deploy provider imports reaches them. Off, each is idle: no read, no listener.
   const huddleToday = useHuddleToday({ auth: readers.inputs?.auth ?? null, enabled: DRB_HUDDLE_ENABLED });
-  const huddleHistory = useHuddleHistory({ auth: readers.inputs?.auth ?? null, enabled: DRB_HUDDLE_ENABLED });
+  // Amendment E §E7 (review HC-5): the history is read only once today's status read has answered 200 — a player outside the
+  // cohort gets the status route's 404 ('outside') and so never pays the history query, whose answer could not admit them.
+  const huddleHistory = useHuddleHistory({ auth: readers.inputs?.auth ?? null, enabled: DRB_HUDDLE_ENABLED && huddleToday.read.status === 'ready' });
   const deploy = useHubDeploy({ deployAttempt, readers, hub });
   const live = { ...sections, ...readers.sections };
-  // Huddle S1: the section, the next action's rule (C6), Partnership (C8), Activity's rows (C8) and the reconfirm line (C15), all
-  // pure derivations of the two readers and the agent read the hub already holds. A literal false folds this away.
+  // Huddle S1: the section, the next action's rule (C6), Partnership (C8), Activity's rows (C8) and the reconfirm line (E1: from
+  // the status answer's plan.reconfirm, the server's own acceptance predicate), all pure derivations of the two readers. A
+  // literal false folds this away.
   // Amendment E §E7: only for a player the readers show inside the cohort (hub/huddleView.js huddleMemberOf); outside it —
   // and while either read is still out — `huddle` stays null and `live` untouched, so the hub is its flag-off self.
   let huddle = null;

@@ -153,6 +153,38 @@ describe('E7: flag ON, the player outside the cohort — the hub is byte-identic
   }
 });
 
+describe('E7: what an outsider costs, and a member removed mid-session (review HC-5, HC-8)', () => {
+  it.each(['desktop', 'mobile'])('%s: outside (the 404) or a failed status read, the history query is never made', async (site) => {
+    for (const answer of [notFound(), serverError()]) {
+      service.fetchHuddleToday.mockRejectedValue(answer);
+      service.fetchHuddleHistory.mockResolvedValue(HISTORY);
+      await bodyOf(site, { on: true });
+      expect(service.fetchHuddleToday).toHaveBeenCalled();
+      expect(service.fetchHuddleHistory).not.toHaveBeenCalled();
+      vi.clearAllMocks();
+    }
+  });
+
+  it('desktop: a member whose status refresh answers 404 (removed from the cohort) gets the flag-off hub, byte for byte', async () => {
+    service.fetchHuddleToday.mockRejectedValue(notFound());
+    service.fetchHuddleHistory.mockResolvedValue([]);
+    const off = await bodyOf('desktop', { on: false });
+    service.fetchHuddleToday.mockResolvedValue({ asOf: iso(NOW), huddle: HUDDLE });
+    flag.on = true;
+    layout.state.hubWidth = 1216;
+    const m = mount(<CommandCenterHub site="desktop" hub={hubOf()} />);
+    mounted.push(m);
+    await act(async () => { for (let i = 0; i < 6; i += 1) await Promise.resolve(); });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 900); }); });
+    expect(document.body.innerHTML).toContain('data-hub-huddle-chip'); // a member first
+    service.fetchHuddleToday.mockRejectedValue(notFound());
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); for (let i = 0; i < 6; i += 1) await Promise.resolve(); });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 900); }); });
+    expect(service.fetchHuddleToday).toHaveBeenCalledTimes(2);
+    expect(firstDiff(stableIds(document.body.innerHTML), off)).toBeNull();
+  });
+});
+
 describe('control: a player INSIDE the cohort renders the Huddle (the comparison bites)', () => {
   it.each(['desktop', 'mobile'])('%s: a record today puts the chip and the Partnership plan line on the hub', async (site) => {
     service.fetchHuddleToday.mockResolvedValue({ asOf: iso(NOW), huddle: HUDDLE });

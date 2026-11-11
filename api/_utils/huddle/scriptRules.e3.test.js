@@ -51,6 +51,14 @@ describe('E3: the offline replay — every sentence that broke a rule fails on T
     ['archetype_person', 'Run B', "As a Diversifier, you spread the bets so no single one can sink you, and with news sources down I'd keep the book balanced."],
     ['archetype_person', 'Nov 9', 'As a Contrarian, you look for what others are giving up on, and in a correction with a busy tape, nothing in the sources we checked shows a name being dumped.'],
     ['archetype_person', 'planted', 'As a Fundamental Investor, I would wait for the print.'],
+    // review HD-10: the article forms R-23 forbids too, and the contracted outage forms
+    ['archetype_person', 'review HD-10', 'Today, as a Contrarian, you look for what the crowd is dumping.'],
+    ['archetype_person', 'review HD-10', 'As the Contrarian, I would wait for the crowd to tire.'],
+    ['archetype_person', 'review HD-10', 'As your Diversifier, I keep the bets spread.'],
+    ['source_outage', 'review HD-10', "Newsfilter wasn't checked this morning."],
+    ['source_outage', 'review HD-10', 'EODHD news was not available this morning.'],
+    ['source_outage', 'review HD-4', 'A news feed outage left us with nothing on your names.'],
+    ['calendar_count', 'review HD-3', '256 reports are on the calendar today.'],
     // (d) ISO dates
     ['iso_date', 'Nov 9', 'Monday morning. The prior session, 2026-11-06, closed with the regime still labeled a correction.'],
     ['iso_date', 'Nov 9', 'The prior close was 88.60 on 2026-11-06.'],
@@ -100,6 +108,15 @@ describe('E3: the same thoughts said the right way pass — and look-alikes are 
     'Nothing turned up in the sources we checked, and QQQ closed down on Friday.',
     'Yahoo Finance reported on November 6 that Crown Castle will present at a conference.',
     'In Q3 reports, margins held.',
+    // review HD-3: a price, a clock or a month and day before "report" is when, not a count (E3 f asks for when)
+    'RKLB closed at 53.07 and reports after the close today.',
+    'Watch the 8:30 jobs report on Friday.',
+    'The 8:30 CPI report lands before the open.',
+    'RKLB has a November 10 report after the close.',
+    'On November 6 reports said Crown Castle would present.',
+    // review HD-4: an outage in a headline about a name is market news, not a source
+    'Yahoo Finance reported that WEC restored power after a storm outage.',
+    'Seeking Alpha reported that the AWS outage hit CCI tenants.',
   ])('passes: "%s"', (text) => {
     expect(hits(text)).toEqual([]);
   });
@@ -117,6 +134,25 @@ describe('E3: the same thoughts said the right way pass — and look-alikes are 
   it('(g) a tape sentence with no index needs no tape item; one naming an index cites one', () => {
     expect(validateScript(answer({ tape: { sentences: [s('The regime is still labeled a correction, and RKLB reports after the close.')] } }), CTX).beatFailures.tape).toEqual([]);
     expect(validateScript(answer({ tape: { sentences: [s('QQQ fell on Friday.', [TAPE_QQQ.id])] } }), CTX).beatFailures.tape).toEqual([]);
+  });
+
+  it('(e) every publication the map names, said as EVIDENCE names it, is not a ticker — in a beat and on a card (review HD-1)', () => {
+    for (const [host, name] of Object.entries(PUBLICATION_NAMES)) {
+      const h = headlineItem({ newsId: `n-${host}`, source: host, title: 'Chevron raises its dividend', publishedAt: '2026-11-06T13:00:00.000Z', sourceKind: 'coverage' });
+      const said = `${name} reported on Friday that Chevron raised its dividend, and CVX sits in your support slot.`;
+      const v = validateScript(answer({
+        namesBeat: { sentences: [s('LLY is your largest holding, and nothing new turned up on it.', [HOLD_LLY.id]), s(said, [h.id, HOLD_CVX.id])] },
+        names: [{ ticker: 'CVX', read: `${name} reported a dividend raise; a report, not a verdict.`, evidenceIds: [h.id] }],
+        mentionedTickers: ['SPY', 'QQQ', 'LLY', 'CVX'],
+      }), { ...CTX, evidence: [...EV, h] });
+      expect(v.tickerFailures, name).toEqual([]);
+      expect(v.beatFailures.names, name).toEqual([]);
+      expect(v.names.map((n) => n.ticker), name).toEqual(['CVX']);
+      expect(scriptClean(v), name).toBe(true);
+    }
+    // only the whole name is taken out: a bare PR (a listed ticker outside this universe) is still refused
+    const bare = validateScript(answer({ namesBeat: { sentences: [s('LLY is your largest holding, and PR rallied on Friday.', [HOLD_LLY.id])] } }), CTX);
+    expect(bare.tickerFailures).toEqual(['said:PR']);
   });
 
   it('a name\'s read (the card) holds the same rules: an ISO date drops the name', () => {

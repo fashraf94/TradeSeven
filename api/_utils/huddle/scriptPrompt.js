@@ -35,6 +35,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { STANCE_KINDS, LINE_KINDS, MAX_STANCES, MAX_LINES } from './planTemplates.js';
 import { spokenDateOf, spokenWhenOf } from './spoken.js';
+import { PUBLICATION_NAMES } from '../evidence/publicationNames.js';
 
 export const HUDDLE_SCRIPT_MODEL = 'claude-sonnet-5-5';
 export const HUDDLE_SCRIPT_EFFORT = 'medium';
@@ -47,6 +48,9 @@ export const ACRONYMS = Object.freeze([
   'AM', 'PM', 'ET', 'US', 'USA', 'UK', 'EU', 'CPI', 'PPI', 'PCE', 'GDP', 'ISM', 'FOMC', 'NFP', 'JOLTS', 'EPS', 'CEO', 'CFO',
   'AI', 'ETF', 'ETFS', 'IPO', 'SEC', 'FDA', 'FTC', 'DOJ', 'NYSE', 'EODHD', 'OK', 'TV', 'API', 'GLP', 'EV', 'EVS', 'BMO', 'AMC',
 ]);
+
+/** What a source is called in a sentence (E3 a) — the subject `source_outage` looks for. */
+const SOURCE_SUBJECT = String.raw`(?:newsfilter|eodhd(?:\s+news)?|fantasytimes|news\s+(?:sources?|feeds?|wires?)|(?:earnings|macro)\s+calendar|market\s+context|sources?|feeds?)`;
 
 /**
  * The voice rules' forbidden patterns (SHADOW_VOICE_RULES_V1.md §2). Each is tested per
@@ -63,14 +67,25 @@ export const FORBIDDEN_SCRIPT_PATTERNS = Object.freeze({
   nothing_happened: /\bnothing happened\b/i,
   rvol: /\brvol\b/i,
   volume_number: /\bvolume\b[^.]{0,40}\d|\d[\d.,%x]*\s*(?:[a-z-]+\s+){0,3}volume\b/i,
-  // E3 b (R-23): the archetype in the third person — never "As a Diversifier, I …" nor "As a Contrarian, you …"
-  archetype_person: /\bAs an? [A-Z]\w*(?: \w+)?, (?:I|you)\b/,
+  // E3 b (R-23): the archetype in the third person — never "As a Diversifier, I …", "as the Contrarian, you …" nor
+  // "As your Diversifier, I …" (E3 b's regex letter, widened to the article forms the rule forbids too: review HD-10)
+  archetype_person: /\b[Aa]s (?:an?|the|your) [A-Z]\w*(?: \w+)?, (?:I|you)\b/,
   // E3 d: never an ISO date
   iso_date: /\b\d{4}-\d{2}-\d{2}\b/,
-  // E3 f: no calendar mechanics — "Eight of 256 … reports", "45 earnings reports", "reports are listed"
-  calendar_count: /\b(?:\d[\d,]*|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+of\s+(?:the\s+)?\d[\d,]*\b[^.]*\breports?\b|\b\d[\d,]*\s+(?:\w+\s+)?reports?\b|\breports?\s+(?:are\s+|were\s+)?listed\b/i,
-  // E3 a (R-22): no false outage of a SOURCE — down, unavailable, offline or "not checked" said of a source; "outage" anywhere
-  source_outage: /\b(?:newsfilter|eodhd(?:\s+news)?|fantasytimes|news\s+(?:sources?|feeds?|wires?)|(?:earnings|macro)\s+calendar|market\s+context|sources?|feeds?)\b(?:\s+(?:was|were|is|are|went|been|being|both|all|also|still|either|appeared|seemed|showed))*\s+(?:down|unavailable|offline|not\s+checked)\b|\boutage/i,
+  // E3 f: no calendar mechanics — "Eight of 256 … reports", "256 reports", "45 earnings reports", "reports are listed".
+  // A count is a whole number before PLURAL "reports" (at most one calendar word between); never a price's decimals
+  // ("closed at 53.07 and reports after the close"), a clock ("the 8:30 jobs report") nor a month and day ("a November 10
+  // report"), which E3 f asks Shadow to say (review HD-3).
+  calendar_count: /\b(?:\d[\d,]*|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+of\s+(?:the\s+)?\d[\d,]*\b[^.]*\breports?\b|(?<![\d.,:])(?<!\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s)\b\d[\d,]*\s+(?:(?:earnings|company|corporate|quarterly)\s+)?reports\b|\breports?\s+(?:are\s+|were\s+)?listed\b/i,
+  // E3 a (R-22): no false outage of a SOURCE — down, unavailable, offline, "not checked" / "wasn't checked" / "not
+  // available" said of a source, or an outage in a sentence that names a source. "Outage" in a headline about a name
+  // ("restored power after a storm outage") is market news, not a source (review HD-4).
+  source_outage: new RegExp(
+    `\\b${SOURCE_SUBJECT}\\b(?:\\s+(?:was|were|is|are|went|been|being|both|all|also|still|either|appeared|seemed|showed))*\\s+`
+    + `(?:down|unavailable|offline|(?:not\\s+|(?:was|were|is|are)n['’]t\\s+)(?:checked|available|reachable))\\b`
+    + `|\\b${SOURCE_SUBJECT}\\b[^.]*\\boutages?\\b|\\boutages?\\b[^.]*\\b${SOURCE_SUBJECT}\\b`,
+    'i',
+  ),
 });
 const LEARNING = /\b(?:learn\w*|improv\w*|smarter|evolv\w*|grows?|growing|grew|grown|remember\w*|level(?:s|ed)?\s+up|unlock\w*|intelligen\w*)\b/i;
 const ABOUT_US = /\b(?:agent|shadow|I|I'm|I've|we|we're|me|my)\b/i;
@@ -210,6 +225,14 @@ export function proposalOf(output) {
 }
 
 const TICKERISH = /\b[A-Z]{2,5}(?:\.[A-Z])?\b/g;
+/**
+ * The publications the evidence layer names (E3 e), longest first. Said as EVIDENCE names them they are not tickers:
+ * "CNBC reported", "PR Newswire reported" (review HD-1). Only the whole name is taken out before the scan, so a bare
+ * "PR" (a listed ticker) is still checked against the universe.
+ */
+const SAID_PUBLICATIONS = Object.freeze([...new Set(Object.values(PUBLICATION_NAMES))].sort((a, b) => b.length - a.length));
+/** The ticker-shaped words of a text, its publication names taken out first. */
+export const tickerishOf = (text) => SAID_PUBLICATIONS.reduce((t, name) => t.split(name).join(' '), String(text ?? '')).match(TICKERISH) || [];
 
 /**
  * Validate the model's beats.
@@ -226,7 +249,7 @@ export function validateScript(output, { universe, evidence, exposureLeaders = [
   for (const t of Array.isArray(output?.mentionedTickers) ? output.mentionedTickers : []) {
     // the acronyms the spoken text may use are not tickers wherever they appear (the verification run's first answer
     // listed ISM here and was regenerated for it, build report RF-14)
-    if (acronyms.has(t)) continue;
+    if (acronyms.has(t) || SAID_PUBLICATIONS.includes(t)) continue;
     if (!allowedTickers.has(t)) tickerFailures.push(`mentioned:${t}`);
   }
   const beats = {
@@ -254,18 +277,18 @@ export function validateScript(output, { universe, evidence, exposureLeaders = [
       }
       for (const [name, re] of Object.entries(FORBIDDEN_SCRIPT_PATTERNS)) if (re.test(text)) fails.push(`forbidden:${name}`);
       if (LEARNING.test(text) && ABOUT_US.test(text)) fails.push('forbidden:learning_claim');
-      for (const word of text.match(TICKERISH) || []) {
+      for (const word of tickerishOf(text)) {
         if (acronyms.has(word)) continue;
         if (!allowedTickers.has(word)) tickerFailures.push(`said:${word}`);
       }
       // E3 g (R-25): a tape sentence that names an index cites a `tape` item for it
-      if (id === 'tape' && (text.match(TICKERISH) || []).some((w) => INDEX_NAMES.includes(w))
+      if (id === 'tape' && tickerishOf(text).some((w) => INDEX_NAMES.includes(w))
         && !ids.some((eid) => evidenceById.get(eid)?.kind === 'tape')) fails.push('tape_uncited');
     }
     // E3 c (R-24): the names beat's FIRST ticker is a largest holding (ties accepted; nothing held, nothing to check)
     if (id === 'names' && Array.isArray(exposureLeaders) && exposureLeaders.length > 0) {
       const leaders = new Set(exposureLeaders);
-      const first = sentences.flatMap((s) => (typeof s?.text === 'string' ? s.text.match(TICKERISH) || [] : []))
+      const first = sentences.flatMap((s) => (typeof s?.text === 'string' ? tickerishOf(s.text) : []))
         .find((w) => !acronyms.has(w) && !INDEX_NAMES.includes(w) && (universe || new Set()).has(w));
       if (first !== undefined && !leaders.has(first)) fails.push('exposure_order');
     }
@@ -288,7 +311,7 @@ export function validateScript(output, { universe, evidence, exposureLeaders = [
     for (const eid of ids) if (evidenceById.get(eid).status === 'unverified' && !/\bunverified\b/i.test(read)) fails.push(`unverified_unsaid:${eid}`);
     for (const [name, re] of Object.entries(FORBIDDEN_SCRIPT_PATTERNS)) if (re.test(read)) fails.push(`forbidden:${name}`);
     if (LEARNING.test(read) && ABOUT_US.test(read)) fails.push('forbidden:learning_claim');
-    for (const word of read.match(TICKERISH) || []) if (!acronyms.has(word) && !allowedTickers.has(word)) fails.push(`said:${word}`);
+    for (const word of tickerishOf(read)) if (!acronyms.has(word) && !allowedTickers.has(word)) fails.push(`said:${word}`);
     if (fails.length) { nameFailures[n.ticker] = [...new Set(fails)]; continue; }
     names.push({ ticker: n.ticker, read, evidenceIds: ids });
   }

@@ -107,7 +107,7 @@ describe('the enqueue stage and the drain (review L2-7, L2-8)', () => {
       where: () => query,
       doc: () => ({ get: async () => ({ exists: true, data: () => ({ briefStage: 'done', enqueueStage: 'done', shared: null }) }) }),
     }) };
-    const out = await runWorkerInvocation(db, { clock: () => at, deps: { runJob: async () => ({ outcome: 'published' }) } });
+    const out = await runWorkerInvocation(db, { clock: () => at, cohort: new Set(['u1']), deps: { runJob: async () => ({ outcome: 'published' }) } });
     expect(out.reconcile).toHaveProperty('error');
     expect(out.outcome).not.toBe(undefined);
   });
@@ -192,6 +192,19 @@ describe('E9: no enqueue and no job claim before 8:30 AM ET, in either DST state
 describe('the cohort (E7): every stage keeps to HUDDLE_PLAYER_UIDS', () => {
   const session = sessionOf('2026-11-09');
   const at = session.openMs - 30 * 60_000; // 9:00 AM ET
+
+  // review HC-2: with the cohort empty (unset, blank, or passed empty) no stage reads — the filters alone ran after the queries
+  it('an EMPTY cohort: the invocation, the reconcile pass and the drain return before any read', async () => {
+    const db = { collection: (name) => { throw new Error(`read ${name} with no cohort`); }, runTransaction: () => { throw new Error('transaction with no cohort'); } };
+    const io = { selectClaimable: async () => { throw new Error('claimable read with no cohort'); }, claimRow: async () => { throw new Error('claim with no cohort'); } };
+    const deps = { rowsToReconcile: async () => { throw new Error('reconcile read with no cohort'); } };
+    for (const cohort of [new Set(), undefined]) {
+      const c = cohort ? { cohort } : {};
+      expect(await runWorkerInvocation(db, { clock: () => at, ...c })).toEqual({ etDate: '2026-11-09', outcome: 'no_cohort' });
+      expect(await runReconcilePass(db, { etDate: '2026-11-09', clock: () => at, deps, ...c })).toEqual({ visited: 0, of: 0, retired: 0 });
+      expect(await drainQueue(db, { etDate: '2026-11-09', session, shared: null, invocationStartMs: at, clock: () => at, runJob: async () => { throw new Error('job with no cohort'); }, io, ...c })).toEqual({ started: 0, results: [] });
+    }
+  });
 
   it('the enqueue stage with an EMPTY cohort builds nothing, counts nothing, writes nothing', async () => {
     const calls = [];
