@@ -2248,3 +2248,39 @@ describe('agent/chat — follow-up 2: an owner-written dailyGrades reaches the p
     }
   });
 });
+
+// ==================== The cockpit's own release switch (BUILD_PROMPT_COCKPIT_RELEASE_SWITCH) ====================
+// The chat route awaits the control view BEFORE it resolves the turn's calls mode (the prompt builder is told it).
+describe('agent/chat — the release cohort: a non-allowlisted agent-mode owner under the share is resolved on; nobody else is', () => {
+  const CONTROL = { shareBp: 10000, disabled: false, salt: 'salt-a' };
+  const run = async (control, battleOver = {}) => {
+    voiceLayerArgs.current = [];
+    callGemmaVoiceImpl.current = async () => '{"response":"ok"}';
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, gameMode: 'baggerbomb_agent', ...battleOver } });
+    const collection = fixture.db.collection.bind(fixture.db);
+    fixture.db.collection = (name) => (name === 'cockpitConfig'
+      ? { doc: () => ({ get: async () => ({ exists: control !== undefined, data: () => control }) }) }
+      : collection(name));
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+    return res;
+  };
+  beforeEach(async () => { const { resetReleaseView } = await import('../_utils/callRecords/release.js'); resetReleaseView(); callsFlag.mode = 'on'; callsFlag.allow = ['somebody-else']; });
+  afterEach(async () => { const { resetReleaseView } = await import('../_utils/callRecords/release.js'); resetReleaseView(); });
+
+  it('in the cohort → the turn resolves calls mode on', async () => {
+    const res = await run(CONTROL);
+    expect(res.statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].callsMode).toBe('on');
+  });
+  it('no document, disabled, malformed, League and a CPU seat → off', async () => {
+    const { resetReleaseView } = await import('../_utils/callRecords/release.js');
+    for (const [control, over, why] of [[undefined, {}, 'no document'], [{ ...CONTROL, disabled: true }, {}, 'disabled'], [{ ...CONTROL, shareBp: 'x' }, {}, 'malformed'], [CONTROL, { gameMode: 'baggerbomb_tournament', groupId: 'group-xyz' }, 'League'], [CONTROL, { isCpu: true }, 'CPU seat']]) {
+      resetReleaseView();
+      const res = await run(control, over);
+      expect(res.statusCode, why).toBe(200);
+      expect(voiceLayerArgs.current[0].callsMode, why).toBe('off');
+    }
+  });
+});

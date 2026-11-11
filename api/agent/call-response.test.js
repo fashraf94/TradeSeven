@@ -12,7 +12,7 @@
 // an optimistic transaction with a conflict set, create-once events, and an
 // access log keyed by path.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makeCallsFirestore, stored, storedUnder, touches, FieldValueDouble } from '../_utils/__fixtures__/callsFirestore.js';
 import { makeTickBattle } from '../_utils/__fixtures__/tickStampsHarness.js';
 
@@ -78,7 +78,10 @@ const post = async (body) => { const res = mkRes(); await handler({ method: 'POS
 const answerBody = (over = {}) => ({ battleId: BATTLE_ID, callId: CALL, answer: 'hold', expectedDirectiveThreadId: null, ...over });
 const callReads = (db) => db.__access.reads.filter((p) => p.includes('/calls/')).length;
 
-beforeEach(() => {
+beforeEach(async () => {
+  // The release view is module-level: every row starts with none, so no row depends on what an earlier one cached (RS-L4-1).
+  const { resetReleaseView } = await import('../_utils/callRecords/release.js');
+  resetReleaseView();
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(NOW));
   state.uid = 'owner-uid-1';
@@ -148,13 +151,17 @@ describe('rows 1–2: owner and the resolved mode — the 404 lands before any c
   });
 
   it("global 'off', global 'shadow', and 'on' for a NON-allowlisted owner → 404 cockpit_unavailable after the parent read, no call read, nothing written", async () => {
+    const { resetReleaseView } = await import('../_utils/callRecords/release.js');
     for (const [mode, allow] of [['off', ['owner-uid-1']], ['shadow', ['owner-uid-1']], ['on', ['somebody-else']], ['on', []]]) {
+      resetReleaseView(); // each pass reads the control document afresh (or, below 'on', not at all)
       state.callsMode = mode; state.allow = allow;
       activeDb = makeDb();
       const res = await post(answerBody());
       expect(res.statusCode, `${mode}/${allow}`).toBe(404);
       expect(res.body).toEqual({ error: 'cockpit_unavailable' });
-      expect(activeDb.__access.reads).toEqual([`agentBattles/${BATTLE_ID}`]);
+      // the parent is the ONLY battle-side read; the control document is read once at global 'on' (it is absent) and never below it
+      expect(activeDb.__access.reads.filter((p) => !p.startsWith('cockpitConfig/'))).toEqual([`agentBattles/${BATTLE_ID}`]);
+      expect(activeDb.__access.reads.filter((p) => p.startsWith('cockpitConfig/')), `${mode}/${allow}`).toEqual(mode === 'on' ? ['cockpitConfig/release'] : []);
       expect(callReads(activeDb)).toBe(0);
       expect(touches(activeDb)).toEqual({ reads: 0, writes: 0, queries: 0 });
     }
@@ -870,5 +877,49 @@ describe('Amendment F (F-2): no answer on an entry whose stock the fresh parent 
     expect(src).not.toMatch(/function isEntryAlreadyHeld/);
     const check = src.indexOf("if (isEntryAlreadyHeld(call, parent)) return { kind: 'ineligible_action', reason: 'symbol_already_held' };\n      const eligible");
     expect(check, 'the directive check sits immediately before `const eligible`').toBeGreaterThan(-1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The cockpit's own release switch (build prompt BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): the
+// endpoint awaits the control view BEFORE its transaction (the resolver at step 2 is
+// synchronous), so a non-allowlisted owner in the release cohort is answered like an
+// allowlisted one; League, a CPU seat, a missing or disabled document are not.
+describe('the release cohort — a non-allowlisted agent-mode owner under the share is answered; nobody else is', () => {
+  const COHORT = { shareBp: 10000, disabled: false, salt: 'salt-a' };
+  const dbWith = (control, battleOver = {}) => makeDb({ battle: makeTickBattle({ directive: null, ...battleOver }), extra: control === undefined ? {} : { 'cockpitConfig/release': control } });
+  beforeEach(async () => {
+    const { resetReleaseView } = await import('../_utils/callRecords/release.js');
+    resetReleaseView();
+    state.allow = ['somebody-else']; // the owner is NOT on the allowlist
+  });
+  afterEach(async () => { const { resetReleaseView } = await import('../_utils/callRecords/release.js'); resetReleaseView(); }); // no view leaks out of this describe (RS-L4-1)
+
+  it('in the cohort → 200 and the call is read and answered', async () => {
+    activeDb = dbWith(COHORT);
+    const res = await post(answerBody({ callId: HOLD_CALL, answer: 'hold' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.playerResponse).toMatchObject({ answer: 'hold' });
+    expect(callReads(activeDb)).toBeGreaterThan(0);
+  });
+
+  it('League, a CPU seat, a disabled document, a missing document and a malformed one → 404 cockpit_unavailable, no call read, nothing written', async () => {
+    const { resetReleaseView } = await import('../_utils/callRecords/release.js');
+    for (const [control, over, why] of [
+      [COHORT, { gameMode: 'baggerbomb_tournament' }, 'League'],
+      [COHORT, { isCpu: true }, 'CPU seat'],
+      [{ ...COHORT, disabled: true }, {}, 'disabled'],
+      [undefined, {}, 'no document'],
+      [{ ...COHORT, shareBp: 'all' }, {}, 'malformed'],
+      [{ ...COHORT, shareBp: 0 }, {}, 'share 0'],
+    ]) {
+      resetReleaseView();
+      activeDb = dbWith(control, over);
+      const res = await post(answerBody());
+      expect(res.statusCode, why).toBe(404);
+      expect(res.body, why).toEqual({ error: 'cockpit_unavailable' });
+      expect(callReads(activeDb), why).toBe(0);
+      expect(activeDb.__access.writes, why).toEqual([]);
+    }
   });
 });

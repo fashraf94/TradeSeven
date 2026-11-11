@@ -61,7 +61,7 @@
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
-import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
+import { resolveCallRecordsMode, ensureReleaseView } from '../_utils/callRecords/mode.js';
 import { canComeIn, swapListNames, benchRowLockedAt } from '../_utils/callRecords/swappable.js';
 import { isCockpit2bOn } from '../../src/config/featureFlags.js';
 
@@ -226,6 +226,8 @@ export default async function handler(req, res) {
     if (!snap.exists) return res.status(404).json({ error: 'not_found' });
     const battle = snap.data();
     if (battle?.ownerId !== user.uid) return res.status(403).json({ error: 'forbidden' });
+    // The release cohort's control view, fresh (cached 60 s) before the resolver is asked.
+    await ensureReleaseView(db);
     if (resolveCallRecordsMode(battle) !== 'on' || !isCockpit2bOn()) return res.status(404).json({ error: 'cockpit_unavailable' });
     let call = null;
     if (nonEmpty(callIdRaw)) {

@@ -60,7 +60,7 @@ import { buildDirectiveRecord, buildDirectiveSlot, BATTLE_CHAT_BUDGET } from '..
 // Cockpit Build 1a (spec §3): the history windows' cockpit rule and the
 // per-battle calls mode it keys on (resolved once per turn, below).
 import { selectLegacyChatHistory } from '../_utils/chatHistoryWindow.js';
-import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
+import { resolveCallRecordsMode, ensureReleaseView } from '../_utils/callRecords/mode.js';
 // Cockpit Build 1a (spec §6): the shared slot writer — chat's plain update,
 // byte for byte, from this turn's validated plan.
 import { fileDirectiveTransactional } from '../_utils/directiveWriter.js';
@@ -484,7 +484,9 @@ export default async function handler(req, res) {
     // Cockpit Build 1a (spec §3): the battle's RESOLVED calls mode, once per
     // turn, on the authoritative battle just read — the history windows filter
     // cockpit filings before slicing unless it is 'on'; the calls block (§9)
-    // renders only at 'on'. Never re-read mid-turn.
+    // renders only at 'on'. Never re-read mid-turn. The release cohort's control
+    // view is made fresh first (cached 60 s; fails closed to the allowlist).
+    await ensureReleaseView(db);
     const callsMode = resolveCallRecordsMode(battle);
 
     // 7b. Verify the agent belongs to THIS battle. `agentId` is required above,

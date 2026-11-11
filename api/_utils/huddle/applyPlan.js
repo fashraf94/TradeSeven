@@ -32,7 +32,7 @@
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { fileDirectiveTransactional } from '../directiveWriter.js';
-import { resolveCallRecordsMode } from '../callRecords/mode.js';
+import { resolveCallRecordsMode, ensureReleaseView } from '../callRecords/mode.js';
 import { ARCHETYPE_INTEGRITY_MODE } from '../../../src/config/featureFlags.js';
 import { TICKS_SUBCOLLECTION } from '../tickCapture/captureConfig.js';
 import { huddleDayRef, battleRefOf, PLAN_STATUS } from './records.js';
@@ -59,6 +59,11 @@ const nonEmpty = (v) => typeof v === 'string' && v.length > 0;
 export async function applyPlanToBattle(db, { uid, etDate, battleId, writtenBy, nowMs = Date.now(), integrityMode = ARCHETYPE_INTEGRITY_MODE }) {
   const dayRef = huddleDayRef(db, uid, etDate);
   const battleRef = battleRefOf(db, battleId);
+  // The cockpit's release cohort (BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): this function is the ONE seam every
+  // Huddle path (confirm, the sweep, reconcile) passes through before the mode is resolved inside the
+  // transaction (decideApplication → slotHoldsLiveCall, and the callsMode below), which reads the CACHED
+  // control view — so it is made fresh here, before the transaction. Never throws; fails closed.
+  await ensureReleaseView(db);
   return db.runTransaction(async (tx) => {
     const recordSnap = await tx.get(dayRef);
     const battleSnap = await tx.get(battleRef);

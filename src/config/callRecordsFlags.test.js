@@ -41,7 +41,7 @@ const CRON = readFileSync(path.join(HERE, '..', '..', 'api', 'cron', 'agent-eval
 const CRON_CODE = CRON.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
 
 describe('CALL_RECORDS_MODE — the pin (BUILD_RULES §2)', () => {
-  it("the cockpit flip: 'on' — the records, for the allowlisted owners' battles only (every other battle resolves 'off')", () => {
+  it("the cockpit flip: 'on' — the records, for the allowlisted owners' battles and the release cohort (every other battle resolves 'off')", () => {
     // THE ROW THAT MOVES WITH THE WALK. 'off' → 'shadow' → 'on', each in its
     // own founder PR, each updating this literal in the same commit.
     expect(CALL_RECORDS_MODE).toBe('on');
