@@ -73,7 +73,7 @@ Around it:
 | Record | Count | Dates |
 |---|---|---|
 | `mandates` (books) | **0** | — |
-| `archetypeVintages` | **0** | — (every creation publishes one before it writes the book, `api/_utils/mandateCreationService.js:57`, so no creation call has ever reached that step) |
+| `archetypeVintages` | **0** | — (every creation publishes one before it writes the book, `api/_utils/mandateCreationService.js:57`, into this top-level collection, `api/_utils/mandateVintage.js:158`; no record shows a creation call ever reached that step) |
 | `mandateBatches`, `mandateBatchStats` | 0, 0 | batch transport never ran |
 | `mandateUniverseDaily` | 64 | 14 Aug → 12 Nov 2026; 136 stocks each, 0 held |
 | `mandateUniverseSnapshots` | 251 | `2026-08-14_close` → `2026-11-12_open30` (63 open+30, 62 midday, 63 pre-close, 63 close) |
@@ -81,7 +81,7 @@ Around it:
 
 **Spend.** Model: **$0**. No book has ever been evaluated, so there are no last-evaluated dates and no cost telemetry. Market data: the counter counts one per quote request, one per fundamentals refetch and one per splits or dividends request. 280 = 272 splits and dividends requests plus 8 quote requests; 416 adds 136 fundamentals refetches. EODHD bills quotes per ticker and fundamentals at 10 per request (`docs/audits/20260918_PHASE0_INTRADAY_ADDENDA.md:46`, `:48`, both founder-measured; also `api/_utils/marketDataCache.js:446`). Splits and dividends are billed at 1 each, ASSUMED there (`docs/audits/20260918_PHASE0_INTRADAY_ADDENDA.md:55`). In billed units that is about 816 a day when fundamentals are cached and about 2,176 when they are refetched: **≈ 1,700 units a weekday, ≈ 105,000 units over the 63 full trading days since 14 Aug (ESTIMATE from the counter)**. The plan ceiling is 100,000 a day (`api/_utils/mandateConfig.js:104`), so this is under 2 % of one day's allowance. It is small, and it buys nothing. The fundamentals cache key is shared (`api/_utils/marketDataCache.js:618`), so some of those refetches also serve other features (INFERRED).
 
-**Why the live acceptance wave never happened.** The acceptance report's live rows all wait on a ≥ 10-day run of six founder books (`docs/audits/MANDATE_ACCEPTANCE_REPORT_V1.md:14-23`, procedure at `:77`). With no vintage and no book in production, Part C (creating the six books) never started, and Part D's batch window (Aug 24 to Sep 4, `:81`) passed unused.
+**Why the live acceptance wave never happened.** The acceptance report's live rows all wait on a ≥ 10-day run of six founder books (`docs/audits/MANDATE_ACCEPTANCE_REPORT_V1.md:14-23`, procedure at `:77`). With no vintage and no book in production, no record shows that Part C (creating the six books) ever started; a deleted book would leave no trace in this census. Part D's batch window (Aug 24 to Sep 4, `:81`) passed unused.
 
 ### Q2. The open Mandate PRs
 
@@ -124,7 +124,7 @@ The baked assumptions were found by grepping every non-test use of each constant
 
 `DeskSeasonRail.jsx` shares the name only; it is the League's weekly ladder rail.
 
-**Scheduled? No.** No `vercel.json` entry names a season handler. The daily engine says so itself: "⚠ NOT SCHEDULED — THIS HANDLER DOES NOT RUN (as of Jul 25, 2026)." (`api/cron/season-daily-evaluate.js:9`). There is no season feature flag.
+**Scheduled? No.** No `vercel.json` entry names a season handler. The daily engine says so itself: "⚠ NOT SCHEDULED — THIS HANDLER DOES NOT RUN (as of Jul 25, 2026)." (`api/cron/season-daily-evaluate.js:9`). There is no season feature flag: no exported constant in `src/config/featureFlags.js` names a season.
 
 The four `api/season/*` endpoints still deploy (`.vercelignore` excludes only tests and `api/scripts/**`). They check sign-in and ownership only (`api/season/create-entry.js:331`, `:471`). The screens are still wired into `App.jsx`, imported at `src/App.jsx:107` and rendered at `:9793`. The only way in from outside is a mobile banner shown while an entry is active (`:12682`), fed by an unflagged query (`:3767`).
 
@@ -132,7 +132,7 @@ The four `api/season/*` endpoints still deploy (`.vercelignore` excludes only te
 
 **Its model.** $100,000 starting cash (`api/_utils/seasonConfig.js:8`), trades at the daily close (`api/_utils/seasonSettlement.js:9`), terms of 5, 10, 15 or 20 days (`api/season/create-entry.js:41`), no friction. It made Haiku, Sonnet (`api/_utils/seasonPrompts/pitStopDebrief.js:288`) and OpenRouter calls (`api/season/pit-stop-reply.js:3`), none of which runs now.
 
-**Overlap with the Mandate.** No imports either way. The Mandate *forked* the season maths and fixed it: "forked from season math (I12 fork ledger)" (`api/_utils/mandateExecution.js:4`) and "FORKED from the season math" (`api/_utils/mandateRiskMetrics.js:4`). Two season defects show why the forks are the better base:
+**Overlap with the Mandate.** No imports either way (a `git grep` of both file families finds none). The Mandate *forked* the season maths and fixed it: "forked from season math (I12 fork ledger)" (`api/_utils/mandateExecution.js:4`) and "FORKED from the season math" (`api/_utils/mandateRiskMetrics.js:4`). Two season defects show why the forks are the better base:
 - TRIM can sell more shares than are held: `api/_utils/seasonSettlement.js:68` computes shares from dollars and `:87` subtracts them unclamped.
 - The SPY anchor is never set at entry (`spyStartPrice: 0`, `api/season/create-entry.js:100`). Settlement then falls back to the first point of a price history (`api/_utils/seasonSettlement.js:320`), so its "alpha" is measured from an older SPY price than the term's start (INFERRED by the sub-reader from the 90-day history window).
 
@@ -204,8 +204,8 @@ A Watch or Set card cannot be sent without a new op, because its stage is fixed 
 | Rule bundles | `api/agent/equip-bundle.js:229` | `equippedBundleIds`, `activeRules` | `api/_utils/agentBattleService.js:196` → `api/_utils/agentEvalPromptAssembly.js:1251` |
 | Leans | `api/agent/equip-lean.js:230` | `standingLeans` | `api/_utils/agentBattleService.js:239` → `api/_utils/agentEvalPromptAssembly.js:1241` |
 | Tempo dial | `api/agent/set-tempo-dial.js:149` | `dials.tempo` | the battle snapshot (`api/_utils/agentBattleService.js:239`) |
-| Guardrails and traits | `api/agent/update-agent-settings.js:206` | `deployedStrategy`, `equippedTraits` | `applyGuardrails` in the fenced `agentGuardrails.js` |
-| Archetype | `api/agent/change-archetype.js:351` | `archetype` | the archetype config read at battle time |
+| Guardrails and traits | `api/agent/update-agent-settings.js:206` | `deployedStrategy`, `equippedTraits` | snapshot `api/_utils/agentBattleService.js:200` → `applyGuardrails` in the fenced `agentGuardrails.js`, called at `api/cron/agent-evaluate.js:3663`, `:5993` |
+| Archetype | `api/agent/change-archetype.js:351` | `archetype` | `api/_utils/agentBattleService.js:193` → `getArchetypeConfig(ctx.archetype)` at `api/cron/agent-evaluate.js:1917` |
 | Compiled builds | `api/_utils/compileOnSettingsChange.js:438` | `compiledBuilds/{mode}` | dark: `COMPILER_ENABLED = false` (`src/config/featureFlags.js:1437`) |
 | Today's instruction (one battle) | Huddle `api/_utils/huddle/applyPlan.js:104` and the directive endpoints | `battle.directive` | `api/_utils/agentEvalPromptAssembly.js:1240`; Huddle is off on `main` (`src/config/huddleFlags.js:38`) |
 
@@ -243,7 +243,7 @@ They cannot give a return or a profit figure, and they cover only the Trend Foll
   - The deploy prompt prints "RECENT GAME MEMORY" (`api/_utils/agentPromptAssembly.js:95-96`).
   - Memory keeps five entries (`api/agent/reflect.js:521`).
   - Consolidation reads memory (`api/_utils/agentConsolidationPrompt.js:216`) into the consolidated insight. Each new battle copies that insight (`api/_utils/agentBattleService.js:242`) and the evaluation prints it (`api/_utils/agentEvalPromptAssembly.js:774`).
-- **(iii) A note in a research record: no route found.**
+- **(iii) A note in a research record: no route found.** None of `api/agent/decide.js`, `api/cron/agent-evaluate.js` or either prompt assembler mentions `researchWork` or `researchRecord`.
 - **The instruction slot is closed to model text** by rule: "No model string ever reaches the battle's instruction slot" (`api/_utils/huddle/planTemplates.js:6`).
 
 **Default.** Test notes in their own record reach no battle prompt. Only the Forge hand-off (Q7) changes what the agent does.
@@ -348,7 +348,7 @@ None of the three holds parts worth keeping: each is a flag flip and its pins.
 | # | Package | Size | Fenced-file contact | Depends on |
 |---|---|---|---|---|
 | **P0** | **Housekeeping.** Fix the sector-cap units in `mandateVintage.js` (§9.1). Add the eval `rationale` (and `conviction`) to the decision record (`api/_utils/mandateSchema.js:271-301`). Optionally skip the snapshot build while no active book exists (decision 1) | Small: 2–3 non-fenced files plus tests | None. The vintage reads the fenced tables through the registry (read-permitted) | Decisions 1 and 14 |
-| **P1** | **Founder-only benchmark test, the smallest watchable one.** One test book per founder in `mandates`, with a `kind` marker. A creation path that does not claim the one-Mandate-book slot, takes starting money and a length in sessions, and limits the candidate slate to the subject's stocks inside the shared snapshot. The existing `mandate-evaluate` sweep then evaluates and closes it unchanged. A daily benchmark row (SPY or a sector fund) written at the close. A read-only founder screen showing the book, today's rationale and the gap to the benchmark, behind its own flag module and a server-only uid list (Q10) | Medium: about 8–12 files, likely past the BUILD_RULES §2 review threshold | None | P0; decisions 3–7 |
+| **P1** | **Founder-only benchmark test, the smallest watchable one.** One test book per founder in `mandates`, with a `kind` marker. A creation path that does not claim the one-Mandate-book slot, takes starting money and a length in sessions, and limits the candidate slate to the subject's stocks inside the shared snapshot. The existing `mandate-evaluate` sweep picks the book up, because it queries every active document in `mandates` (`api/cron/mandate-evaluate.js:362-367`), and closes it daily. **Three edits are still needed in non-fenced Mandate files:** (1) the subject-limited candidate slate, since `runBookEval` passes the default slate to `assembleMandatePrompt` (`api/cron/mandate-evaluate.js:156-160`); (2) a gate check that keeps entries inside the subject, since today's universe check admits any snapshot symbol (`api/_utils/mandateGate.js:111-114`); (3) an end at the test's length, since nothing ends a book at a term today (the quarter rollover only rolls a book on, and it is dark). A daily benchmark row (SPY or a sector fund) written at the close. A read-only founder screen showing the book, today's rationale and the gap to the benchmark, behind its own flag module and a server-only uid list (Q10) | Medium: about 8–12 files, likely past the BUILD_RULES §2 review threshold | None | P0; decisions 3–7 |
 | **P2** | **Film Room → test.** A "send to test" op on `nominated` cards (`api/film-room/card.js`, `api/_utils/filmRoom/cardStore.js`), the test keyed on the card's entry id, and the reserved `drilled` stage written back when the test finishes | Small to medium | None | P1; decision 10; cards on for the player |
 | **P3** | **The result and the Forge offer.** A headline measure and length declared at start, a verdict record against the twin, and an "apply to the archetype" offer through the existing equip endpoints (Q7), with the `installed` stage | Medium | None while it uses existing endpoints. A rule-version result is fence work, out of scope | P1; decisions 9 and 11 |
 | **P4** | **The agent twin.** A second book whose manager prompt carries the player's equipped list, leans and rules as new Mandate prompt inputs (`api/_utils/mandatePromptAssembly.js:41-43` is the allowlist to extend) | Medium | None: the Mandate assembler is not fenced. It reads the same equipped fields the battle does, never the battle prompt | P1; decision 5 |
