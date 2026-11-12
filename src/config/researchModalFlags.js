@@ -38,10 +38,13 @@ export const RESEARCH_MODAL_BOMB_MODES = Object.freeze(['off', 'allowlist', 'on'
  *                and gets Bomb mode; every other mount loses the 💣 pill and
  *                the Bomb tab (BA-5).
  *
- * RUNWAY: 'off' shipped with Build A (PR #1031, dark). CURRENT: 'allowlist'
- * (the founder's flip PR, 2026-11-08): the owners the cockpit's server-side
- * allowlist admits (the founder and FT_QA). 'on' is its own founder PR, merged
- * only after one clean live market session on the allowlist. Each step is a
+ * RUNWAY: 'off' shipped with Build A (PR #1031, dark). 'allowlist' (the
+ * founder's flip PR #1035, 2026-11-08): the owners the cockpit's server-side
+ * allowlist admits (the founder and FT_QA). CURRENT: 'on' (the founder's flip
+ * PR, 2026-11-11), merged only after the both-directions refinement and the
+ * founder's phone check of it on the allowlist, with measured scoring on for
+ * every owner (stockThresholdControl/admission read enabled, audience all —
+ * docs/audits/20261111_BUILD_BOMB_BOTH_DIRECTIONS.md, BO-1). Each step is a
  * one-line founder PR, never a build PR, and moves the first row of
  * researchModalFlags.test.js in the same commit (BUILD_RULES §2).
  * ROLLBACK: a kill switch: roll back one step at a time ('on' → 'allowlist'
@@ -55,7 +58,7 @@ export const RESEARCH_MODAL_BOMB_MODES = Object.freeze(['off', 'allowlist', 'on'
  * records the client already holds and requests nothing new.
  */
 // Pinned by: researchModalFlags.test.js (the pin and this value move together — BUILD_RULES §2).
-export const RESEARCH_MODAL_BOMB_MODE = 'allowlist';
+export const RESEARCH_MODAL_BOMB_MODE = 'on';
 
 /** The walked states of RESEARCH_MODAL_SHEET_MODE, in runway order. */
 export const RESEARCH_MODAL_SHEET_MODES = Object.freeze(['off', 'allowlist', 'on']);

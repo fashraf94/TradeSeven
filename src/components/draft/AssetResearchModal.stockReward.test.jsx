@@ -11,6 +11,10 @@ import { createRoot } from 'react-dom/client';
 const net = vi.hoisted(() => ({ daily: {}, intraday: {}, profile: null }));
 const lines = vi.hoisted(() => []);
 const charts = vi.hoisted(() => ({ created: 0 }));
+// Bomb mode 'on' (the flip PR, 2026-11-11): KILL-SWITCH ROWS. These mounts pass no bombContext, so under 'on'
+// they would lose the 💣 pill and the Bomb tab (BA-5); this file pins the mode-off modal (v2 Ruling 15's
+// measured chart, deleted at the 'on' cleanup), so it holds RESEARCH_MODAL_BOMB_MODE at 'off' by mock.
+vi.mock('../../config/researchModalFlags', async (importOriginal) => ({ ...(await importOriginal()), RESEARCH_MODAL_BOMB_MODE: 'off' }));
 vi.mock('../../services/eodhdAPI', () => ({
   fetchHistoricalOHLCV: (symbol, timeframe) => Promise.resolve((timeframe === '1d' ? net.daily : timeframe === '30m' ? net.intraday : {})[symbol] ?? []),
   getStockPrice: (symbol) => Promise.resolve({ symbol, price: 0 }),

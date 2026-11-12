@@ -31,9 +31,9 @@ const docstringOf = (name) => {
 };
 
 describe('RESEARCH_MODAL_BOMB_MODE — the pin (BUILD_RULES §2; Build A spec §4.1)', () => {
-  it("is 'allowlist' — a kill switch: roll back one step at a time ('on' → 'allowlist' → 'off') by moving the literal and its pin together; every mode-off arm stays in the code until the cleanup PR, after 'on' has run in production", () => {
+  it("is 'on' — a kill switch: roll back one step at a time ('on' → 'allowlist' → 'off') by moving the literal and its pin together; every mode-off arm stays in the code until the cleanup PR, after 'on' has run in production", () => {
     // THE ROW THAT MOVES WITH A FLIP ('off' → 'allowlist' → 'on'), in the flip PR's own commit; a rollback moves it back.
-    expect(RESEARCH_MODAL_BOMB_MODE).toBe('allowlist');
+    expect(RESEARCH_MODAL_BOMB_MODE).toBe('on');
   });
 
   it('the allowed values: exactly off · allowlist · on, frozen, in walk order, and the shipped value is one of them', () => {
