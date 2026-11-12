@@ -2,7 +2,9 @@
 //
 // POST /api/huddle/skip — the player skips today's game plan (Huddle S1 spec V1.1 §6):
 // a proposed plan becomes `skipped` and `measurement.skippedAt` is set. Body `{ etDate }`.
-// 404 while DRB_HUDDLE_ENABLED is off. Owner auth as api/agent/chat.js:421. 409 when the
+// Answers the flag-off 404 while DRB_HUDDLE_ENABLED is off or the cohort HUDDLE_PLAYER_UIDS is empty, and for a
+// signed-in uid outside it (Amendment E §E7; routeKit.js).
+// Owner auth as api/agent/chat.js:421. 409 when the
 // plan is not proposed (a confirmed plan is not skipped), 410 after the close.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';

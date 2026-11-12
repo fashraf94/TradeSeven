@@ -8,6 +8,18 @@
 // start is its first character's start time, its end its last character's end time.
 // No voice id set → no call: the huddle publishes transcript-only (R-10's transcript
 // fallback) with the reason recorded.
+//
+// THE CAPTURE (Amendment E §E4, R-17): the reader is written against one real response,
+// api/_utils/__fixtures__/elevenLabsTimestampsCapture.js — four top-level keys, of which it
+// reads `audio_base64` and `alignment` (its three arrays) and nothing else; the raw
+// `alignment` covers the joined text exactly, "\n\n" between beats included, so the beat
+// boundaries compute (`normalized_alignment` does not match the text and is never read).
+//
+// ONE RETRY INSIDE THE JOB (E4, R-19): a 429, a 5xx or an attempt that times out is retried
+// once after a short wait, within the job's budget, with no new model call
+// (synthesizeWithRetry); each attempt has its own timeout, chained to the job's signal (the
+// job's own deadline is never retried). A second failure publishes the day text-only, as
+// before; the record's immutability (A §A2) stands.
 
 export const SPEECH_MODEL = 'eleven_multilingual_v2';
 export const SPEECH_OUTPUT_FORMAT = 'mp3_44100_128';
@@ -90,4 +102,48 @@ export async function synthesizeWithTimestamps({ text, signal, voiceId = process
   log.log?.('[huddle/speech] answered', JSON.stringify({ keys, hasAlignment, chars: text.length }));
   if (typeof body?.audio_base64 !== 'string' || !hasAlignment) return { ok: false, reason: 'missing_audio_or_alignment', keys };
   return { ok: true, mp3: Buffer.from(body.audio_base64, 'base64'), alignment: body.alignment, voiceId, keys };
+}
+
+export const SPEECH_ATTEMPT_TIMEOUT_MS = 30_000;
+export const SPEECH_RETRY_WAIT_MS = 2_000;
+/** A retry is started only with at least this much of the job left after the wait (one Nov 9 attempt took ~6 s). */
+export const SPEECH_RETRY_MIN_LEFT_MS = 15_000;
+
+/** E4: the failures a second attempt may cure — a 429, a 5xx, or an attempt that timed out (never the job's deadline). */
+export const isRetryableSpeechFailure = (reason) => typeof reason === 'string' && (/^http_(?:429|5\d\d)(?::|$)/.test(reason) || reason === 'timeout');
+
+/**
+ * E4 (R-19): the speech call with ONE retry inside the job. Each attempt gets its own AbortController, aborted by the job's
+ * signal or by the attempt's timeout (a timed-out attempt reads `timeout`, retryable; the job's abort reads `aborted`,
+ * not). The retry waits `waitMs` and starts only when at least `minLeftMs` of the job's deadline remain after it. No model
+ * call is involved: the same text is voiced again.
+ * @returns {Promise<object>} the attempt's result with `attempts` (1 or 2) and, after a retry, `firstFailure`
+ */
+export async function synthesizeWithRetry({
+  text, signal, deadlineMs = Infinity, clock = () => Date.now(), sleep = (ms) => new Promise((r) => { setTimeout(r, ms); }),
+  attemptTimeoutMs = SPEECH_ATTEMPT_TIMEOUT_MS, waitMs = SPEECH_RETRY_WAIT_MS, minLeftMs = SPEECH_RETRY_MIN_LEFT_MS,
+  synthesize = synthesizeWithTimestamps, ...rest
+}) {
+  const attempt = async () => {
+    const ctl = new AbortController();
+    let timedOut = false;
+    const onAbort = () => ctl.abort();
+    if (signal?.aborted) ctl.abort();
+    signal?.addEventListener?.('abort', onAbort);
+    const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, Math.max(1, Math.min(attemptTimeoutMs, deadlineMs - clock())));
+    try {
+      const r = await synthesize({ text, signal: ctl.signal, ...rest });
+      return !r.ok && timedOut && !signal?.aborted ? { ...r, reason: 'timeout' } : r;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener?.('abort', onAbort);
+    }
+  };
+  const first = await attempt();
+  if (first.ok || !isRetryableSpeechFailure(first.reason) || signal?.aborted) return { ...first, attempts: 1 };
+  if (deadlineMs - clock() < waitMs + minLeftMs) return { ...first, attempts: 1, retry: 'no_budget' };
+  await sleep(waitMs);
+  if (signal?.aborted) return { ...first, attempts: 1 };
+  const second = await attempt();
+  return { ...second, attempts: 2, firstFailure: first.reason };
 }

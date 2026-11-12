@@ -6,8 +6,9 @@
 // applyPendingPlanForCheck (spec V1.1 §6.3 as replaced by Amendment A §A5 and Amendment B
 // §B1–§B2). Called once per check, after the migration guard's mirror and before the
 // governing preset is resolved:
-//   - DRB_HUDDLE_ENABLED off → returns before ANY read (the dark goldens, capture-off,
-//     call-record goldens and P4 equivalence never see it);
+//   - DRB_HUDDLE_ENABLED off, or the battle's owner outside the Huddle's cohort
+//     (HUDDLE_PLAYER_UIDS, Amendment E §E7 — unset or empty is no one) → returns before ANY
+//     read (the dark goldens, capture-off, call-record goldens and P4 equivalence never see it);
 //   - skips CPU seats; requires ≥ 5 s of the check's remaining budget;
 //   - dispatches ONE B1 transaction (applyPlan.applyPlanToBattle: the battle's slot and the
 //     huddle record's receipt in one commit) and waits for it at most 3 s;
@@ -23,9 +24,9 @@
 // check; one after it waits for the next (B2). The heard-stamp invariant is untouched.
 //
 // runSettleReconcile (B §B3): the evening settle run's reconcile pass, kept only as a
-// backstop to the worker's retirement within two minutes of the close. Off → at once.
+// backstop to the worker's retirement within two minutes of the close. Off, or an empty cohort → at once.
 
-import { isHuddleOn } from './gate.js';
+import { huddleAdmits, isHuddleLive } from './gate.js';
 import { applyPlanToBattle } from './applyPlan.js';
 import { isCpuBattle } from './applyRules.js';
 import { etDateOfMs } from './records.js';
@@ -41,7 +42,8 @@ const TIMED_OUT = Symbol('sweep_deadline');
  * @returns {Promise<{ outcome: string, disposition?: string|null }>}
  */
 export async function applyPendingPlanForCheck(battle, ctx) {
-  if (!isHuddleOn()) return { outcome: 'off' };
+  // E7: the flag AND the owner in the cohort, before any read — outside it, exactly the flag-off return
+  if (!huddleAdmits(battle?.ownerId)) return { outcome: 'off' };
   try {
     if (!battle || typeof battle.id !== 'string' || isCpuBattle(battle)) return { outcome: 'skipped' };
     const remaining = (ctx?.timeBudgetMs ?? 0) - (Date.now() - (ctx?.cronStartTime ?? Date.now()));
@@ -76,7 +78,7 @@ export async function applyPendingPlanForCheck(battle, ctx) {
 
 /** The settle run's backstop reconcile. Never throws. */
 export async function runSettleReconcile(db, { clock = () => Date.now() } = {}) {
-  if (!isHuddleOn()) return { outcome: 'off' };
+  if (!isHuddleLive()) return { outcome: 'off' };
   try {
     return { outcome: 'reconciled', ...(await runReconcilePass(db, { etDate: etDateOfMs(clock()), clock })) };
   } catch (err) {

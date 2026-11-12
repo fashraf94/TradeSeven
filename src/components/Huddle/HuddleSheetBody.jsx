@@ -21,6 +21,9 @@
 // TRANSCRIPT: always shown, the current beat highlighted from the beat timings.
 // PLAN: values edited or items removed — never typed text; Confirm sends the base revision
 // and the replacement; a 409 or a 422 shows the server's current version and asks again.
+// Amendment E §E1: one confirm covers every archetype in play; a 422 may carry a preview per
+// archetype whose rule changes an item ("For your Diversifier game: Fade CCI becomes Watch
+// CCI"), and the next Confirm (or Reconfirm) sends those revisions back as `acknowledged`.
 // STATUS: per game, from receipts only, never spoken.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -64,6 +67,12 @@ function BeatLine({ beat, active, copy }) {
   );
 }
 
+/** E1's preview line names the card's own item — its level included (review HU-6) — when the change's index is that stance. */
+function previewFromOf(plan, change) {
+  const item = change?.kind === 'stance' ? plan?.current?.stances?.[change.index] : null;
+  return item && item.ticker === change.ticker && item.kind === change.from ? item : { kind: change.from, ticker: change.ticker };
+}
+
 export default function HuddleSheetBody({ copy, read, status = null, confirm, skip, needsReconfirm = false, focusPlan = false, ceremonyActive = false }) {
   const huddle = read?.huddle ?? null;
   const audioRef = useRef(null);
@@ -80,6 +89,8 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
   const [levels, setLevels] = useState({});
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
+  // E1: the last per-archetype preview the server answered with, acknowledged by the next confirm
+  const [previews, setPreviews] = useState([]);
 
   // The audio element's ref: on detach (the sheet closing) it stops and drops its source (React 19 ref cleanup).
   const audioElement = useCallback((el) => {
@@ -170,17 +181,22 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
     setBusy(true);
     setNotice(null);
     let r;
+    const acknowledged = previews.length ? Object.fromEntries(previews.map((p) => [p.archetype, p.revision])) : null;
     try {
-      r = await confirm({ baseRevision: plan.revision, replacement: replacementOf(items, removed, levels) });
+      r = await confirm({ baseRevision: plan.revision, replacement: replacementOf(items, removed, levels), acknowledged });
     } catch {
       r = { ok: false, status: 0, body: null };
     }
     setBusy(false);
-    const replaced = r.ok || r.status === 409 || (r.status === 422 && r.body?.error === 'validation_changed');
+    const previewed = r.status === 422 && r.body?.error === 'validation_changed';
+    const replaced = r.ok || r.status === 409 || previewed;
     if (replaced) { setRemoved(new Set()); setLevels({}); }
+    // the previews go with the plan they were made on (confirmed, a conflict, a new preview); any other failure keeps them,
+    // so the retry still sends their acknowledgement (review HU-7)
+    if (replaced) setPreviews(previewed && Array.isArray(r.body?.previews) ? r.body.previews : []);
     if (r.ok) return;
     if (r.status === 409) setNotice(copy.notices.conflict);
-    else if (r.status === 422 && r.body?.error === 'validation_changed') setNotice(copy.notices.previewed);
+    else if (previewed) setNotice((r.body?.drops?.length || r.body?.transforms?.length) ? copy.notices.previewed : copy.notices.previewedApproaches);
     else if (r.status === 410) setNotice(copy.notices.closed);
     else setNotice(copy.notices[r.body?.error] ?? copy.notices.failed);
   };
@@ -194,7 +210,8 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
       r = { ok: false, status: 0 };
     }
     setBusy(false);
-    if (!r.ok) setNotice(r.status === 410 ? copy.notices.closed : copy.notices.failed);
+    if (r.ok) { setPreviews([]); return; } // a skipped plan has nothing to preview (review HU-7)
+    setNotice(r.status === 410 ? copy.notices.closed : copy.notices.failed);
   };
 
   const proposed = plan?.status === 'proposed';
@@ -243,18 +260,23 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
                 aria-label={copy.levelLabel(item.ticker)}
                 inputMode="decimal"
                 value={levels[key] ?? (typeof item.level === 'number' ? String(item.level) : '')}
-                onChange={(e) => setLevels((prev) => ({ ...prev, [key]: e.target.value }))}
+                onChange={(e) => { setPreviews([]); setLevels((prev) => ({ ...prev, [key]: e.target.value })); }}
                 style={{ width: 84, minHeight: 44, borderRadius: 10, border: `1px solid ${hair}`, background: 'transparent', color: ink, padding: '0 8px' }}
               />
             )}
             {proposed && (
-              <button type="button" style={buttonStyle} onClick={() => setRemoved((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; })}>
+              <button type="button" style={buttonStyle} onClick={() => { setPreviews([]); setRemoved((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }}>
                 {removed.has(key) ? copy.keep : copy.remove}
               </button>
             )}
           </div>
         ))}
-        {(plan?.dissent || []).map((d) => <p key={`${d.ticker}-${d.from}`} style={{ margin: '6px 0 0', fontSize: 12.5, color: ink2 }}>{d.reason}</p>)}
+        {(plan?.dissent || []).map((d) => <p key={`${d.archetype}-${d.ticker}-${d.from}`} style={{ margin: '6px 0 0', fontSize: 12.5, color: ink2 }}>{d.reason}</p>)}
+        {previews.flatMap((p) => (p.changes || []).map((c) => (
+          <p key={`preview-${p.archetype}-${c.ticker}-${c.from}`} data-huddle-preview={p.archetype} style={{ margin: '6px 0 0', fontSize: 13, color: ink }}>
+            {copy.previewLine(p.archetypeName, p.games, copy.itemText(previewFromOf(plan, c), {}), copy.itemText({ kind: c.to, ticker: c.ticker }, {}))}
+          </p>
+        )))}
         <p style={{ margin: '8px 0 0', fontSize: 12.5, color: ink2 }}>{copy.instructionNote}</p>
         {notice && <p role="alert" style={{ margin: '8px 0 0', fontSize: 13, color: ink }}>{notice}</p>}
         {proposed && items.length > 0 && (
@@ -264,7 +286,7 @@ export default function HuddleSheetBody({ copy, read, status = null, confirm, sk
           </div>
         )}
         {confirmed && needsReconfirm && (
-          // C15: the equipped archetype changed since the plan was confirmed — the same confirm, under the new archetype
+          // E1: an archetype in play has no confirmation — the same confirm files the missing ones only
           <div style={{ marginTop: 10 }}>
             <p style={{ margin: '0 0 8px', fontSize: 13, color: ink }}>{copy.reconfirmLine}</p>
             <button type="button" style={{ ...buttonStyle, borderColor: teal, color: teal }} onClick={onConfirm} disabled={busy} data-huddle-reconfirm="">{busy ? copy.working : copy.reconfirm}</button>

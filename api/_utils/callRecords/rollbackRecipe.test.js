@@ -277,9 +277,16 @@ describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
   });
 
   it('the read script carries --rollback-check, reads the allowlist through the server reader, and is read-only', () => {
-    const src = readFileSync(resolve(HERE, '../../../scripts/shadow-read-call-records.mjs'), 'utf8');
+    const raw = readFileSync(resolve(HERE, '../../../scripts/shadow-read-call-records.mjs'), 'utf8').replace(/\r\n/g, '\n');
+    // Comment-stripped: a wiring line that is merely COMMENTED OUT must not satisfy a pin (RS-L4-4 / B3b, B5).
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
     expect(src).toContain("args.includes('--rollback-check')");
-    expect(src).toContain('computeRollbackCheck(battles, { allowlist: readCockpitAllowlist(), nowMs: readAtMs, sinceMs })');
+    expect(src).toContain('computeRollbackCheck(battles, { allowlist: readCockpitAllowlist(), cohort, nowMs: readAtMs, sinceMs })');
+    // The release cohort (BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): one forced read of the control document, through release.js.
+    expect(src).toContain("import { ensureReleaseView, getReleaseView } from '../api/_utils/callRecords/release.js';");
+    expect(src).toContain('await ensureReleaseView(db, { force: true, timeoutMs: 10_000 });');
+    expect(src).toContain('const cohort = getReleaseView();'); // the view that was just read is the one pooled (B2: `const cohort = null`)
+    expect(src.indexOf('await ensureReleaseView(db, { force: true')).toBeLessThan(src.indexOf('const cohort = getReleaseView();'));
     expect(src).toContain("if (rollbackCheck?.verdict === 'NO ALLOWLIST') process.exitCode = 2;");
     // --since is REQUIRED with --rollback-check: no run can silently pool an earlier era (fail closed).
     expect(src).toContain("if (wantRollbackCheck && !sinceArg) throw new Error('--rollback-check needs --since=<ISO instant>");
@@ -287,5 +294,79 @@ describe('Build 2a — computeRollbackCheck (spec S-9)', () => {
     // (`.set(` / `.delete(` appear only on the script's in-memory Maps; no Firestore write exists.)
     const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     expect(code).not.toMatch(/runTransaction|bulkWriter|\.batch\(|\.update\(|\.create\(/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The release cohort in the rollback check (build prompt BUILD_PROMPT_COCKPIT_RELEASE_SWITCH; report §7):
+// when the control document is active, an agent-mode, non-CPU battle under the share is pooled WITH the
+// allowlisted battles, by the server's own membership test (release.js isInReleaseCohort) and without
+// needing a uid. With no active cohort the check is exactly the allowlist-only check of Build 2a.
+describe('the release cohort — pooled into the live rollback check', () => {
+  const SESSIONS_5 = ['2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-14'];
+  const AT = { nowMs: Date.parse('2026-09-14T21:00:00.000Z'), notBefore: '2026-09-01' };
+  const ACTIVE = { status: 'ok', active: true, shareBp: 10000, salt: 'salt-a', readAtMs: 1 };
+  const battle = (ownerId, n, k, over = {}) => ({
+    id: `b-${ownerId}-${n}-${k}`, ownerId, gameMode: 'baggerbomb_agent',
+    evaluations: Array.from({ length: n }, (_, i) => (i < k ? invalid(SESSIONS_5[i % 5]) : entry(SESSIONS_5[i % 5]))), ...over,
+  });
+
+  it('with an EMPTY allowlist, an active cohort is measured: the verdict is not NO ALLOWLIST and the cohort battle is counted', () => {
+    const r = computeRollbackCheck([battle('stranger', 70, 1)], { allowlist: [], cohort: ACTIVE, ...AT });
+    expect(r).toMatchObject({ owners: 0, battles: 1, total: 70, invalid: 1, verdict: 'NO TRIP' });
+    expect(r.window.cohort).toEqual({ shareBp: 10000, battles: 1 });
+    expect(renderRollbackCheck(r)).toContain('release cohort 10000 bp, 1 battle(s) outside the allowlist; the admitted battles 1');
+  });
+
+  it('an allowlisted battle and a cohort battle are POOLED; the allowlisted one is not counted twice in the cohort figure', () => {
+    const r = computeRollbackCheck([battle('founder', 40, 0), battle('stranger', 40, 0)], { allowlist: ['founder'], cohort: ACTIVE, ...AT });
+    expect(r).toMatchObject({ owners: 1, battles: 2, total: 80 });
+    expect(r.window.cohort).toEqual({ shareBp: 10000, battles: 1 });
+  });
+
+  it('League, a CPU seat and a battle over the share are never pooled', () => {
+    const r = computeRollbackCheck([
+      battle('a', 70, 0, { gameMode: 'baggerbomb_tournament' }), battle('b', 70, 0, { isCpu: true }), battle('c', 70, 0, { ownerId: '' }),
+    ], { allowlist: [], cohort: ACTIVE, ...AT });
+    expect(r).toMatchObject({ battles: 0, total: 0, verdict: 'NO DATA' });
+    const none = computeRollbackCheck([battle('stranger', 70, 0)], { allowlist: [], cohort: { ...ACTIVE, shareBp: 0 }, ...AT });
+    expect(none).toMatchObject({ battles: 0, total: 0 });
+  });
+
+  it('no cohort view supplied (null / undefined) changes NOTHING: the check is the allowlist-only check, byte for byte; a supplied but inactive view changes only the measured numbers never, and adds the control line', () => {
+    const base = computeRollbackCheck([battle('founder', 70, 2), battle('stranger', 70, 5)], { allowlist: ['founder'], ...AT });
+    for (const cohort of [null, undefined]) {
+      const r = computeRollbackCheck([battle('founder', 70, 2), battle('stranger', 70, 5)], { allowlist: ['founder'], cohort, ...AT });
+      expect(r).toEqual(base);
+      expect(renderRollbackCheck(r)).toBe(renderRollbackCheck(base));
+    }
+    for (const cohort of [{ ...ACTIVE, active: false, status: 'disabled' }, { status: 'unread', active: false, shareBp: 0, salt: '', readAtMs: null }]) {
+      const r = computeRollbackCheck([battle('founder', 70, 2), battle('stranger', 70, 5)], { allowlist: ['founder'], cohort, ...AT });
+      expect({ ...r, window: { ...r.window, control: null } }).toEqual(base); // every measured figure is the allowlist-only one
+      expect(renderRollbackCheck(r).split('\n').filter((l) => !l.startsWith('- Release cohort control document')).join('\n')).toBe(renderRollbackCheck(base));
+    }
+    expect(base).toMatchObject({ battles: 1, total: 70, invalid: 2 });
+    expect(computeRollbackCheck([], { allowlist: [], cohort: { ...ACTIVE, active: false }, ...AT }).verdict).toBe('NO ALLOWLIST');
+  });
+
+  it('the control document\'s read status is printed whenever a view was supplied: a failed or unread read says the cohort was NOT measured; ok, disabled and absent say what they are (RS-L5-8)', () => {
+    const line = (cohort) => renderRollbackCheck(computeRollbackCheck([battle('founder', 70, 0)], { allowlist: ['founder'], cohort, ...AT })).split('\n').find((l) => l.startsWith('- Release cohort control document'));
+    expect(line(ACTIVE)).toBe('- Release cohort control document: active, 10000 bp.');
+    expect(line({ status: 'disabled', active: false, shareBp: 500, salt: 's' })).toBe('- Release cohort control document: disabled (the kill switch is on) — the cohort is empty.');
+    expect(line({ status: 'absent', active: false, shareBp: 0, salt: '' })).toBe('- Release cohort control document: absent (the dark state) — the cohort is empty.');
+    for (const status of ['error', 'timeout', 'malformed', 'unread']) {
+      expect(line({ status, active: false, shareBp: 0, salt: '' }), status).toBe(`- Release cohort control document: ${status} — the control document was NOT read: any release-cohort battles were NOT measured here; read again before taking a NO TRIP as clear.`);
+    }
+    expect(line(null)).toBeUndefined();
+  });
+
+  it('a TRIP names the no-redeploy kill switch when a cohort is pooled, and keeps the allowlist wording when not', () => {
+    const tripping = [battle('stranger', 60, 6)];
+    const withCohort = computeRollbackCheck(tripping, { allowlist: [], cohort: ACTIVE, ...AT });
+    expect(withCohort.verdict).toBe('TRIP');
+    expect(renderRollbackCheck(withCohort).split('\n')[0]).toContain('set `disabled: true` on cockpitConfig/release (no redeploy)');
+    expect(renderRollbackCheck(withCohort).split('\n')[0]).toContain('SAVE THIS OUTPUT FIRST'); // disabling empties the cohort: a re-read would no longer pool its battles
+    const allowOnly = computeRollbackCheck([battle('founder', 60, 6)], { allowlist: ['founder'], ...AT });
+    expect(renderRollbackCheck(allowOnly).split('\n')[0]).toBe('- Verdict: **TRIP** — remove the uid from COCKPIT_ALLOWLIST_UIDS, redeploy production, and report (spec §10.4).');
   });
 });

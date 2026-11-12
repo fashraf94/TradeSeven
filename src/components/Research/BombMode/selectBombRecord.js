@@ -16,8 +16,9 @@
 //     the rungs are NOT re-derived here — the modal's own `bombData.measured`
 //     (AssetResearchModal.jsx :308–313, the committed context's exact targets
 //     and crossed tiers) is the ladder (spec §3.1 "Reuse it"). The record adds
-//     the entry instant (`stockThresholdReceipt.enteredAt`) and the scored
-//     price below.
+//     the entry instant (since BD-9, 2026-11-10: the fill quote's provider time,
+//     `stockThresholdReceipt.fillQuote.quoteAsOf`; Build A read `enteredAt`),
+//     the scored price below, and the levels table's Details facts (BD-6).
 //   legacy: the three inputs of the server's rung-test baseline — swapPrice,
 //     the activation-day starting price, and whether today IS the activation
 //     day — plus the threshold the scorer divides by and today's high/low
@@ -169,11 +170,21 @@ export function selectBombRecord(battle, symbol, nowMs) {
   if (route === 'unavailable') return { ...common, model: 'unsupported', reason: 'unsupported_stock_model', checkDots: [] };
   if (route === 'corrected' && isStock(asset)) {
     const receipt = asset.stockThresholdReceipt || null;
-    const entryAtMs = instantMs(receipt?.enteredAt);
+    // BD-9 (refinement 2026-11-10): the entry instant is the fill quote's
+    // provider time — where the server starts the reward history (v2 Ruling 1,
+    // stockThresholdModel.js initialRewardHistory: observedAt = fillQuote.quoteAsOf)
+    // — not the wall-clock commit (enteredAt). An overnight entry shows the
+    // price's real time (Mon 4:05 PM, not Mon 10:21 PM); during the session the
+    // two are ~16 minutes apart on EODHD's quotes (build report §1.2). The
+    // baseline label, the ghost line's entry split and the check dots all take it.
+    const entryAtMs = instantMs(receipt?.fillQuote?.quoteAsOf);
     const context = common.positionId ? battle.scoring?.stockRewardContexts?.agent?.[common.positionId] : null;
     const scoredAtMs = context?.status === 'valid' ? instantMs(context.quoteEvidence?.providerAsOf) : null;
+    // BD-8: the moment the check READ the quote (quoteEvidence.observedAt) — the
+    // instant that names the check; the provider time above can be ~16 minutes older.
+    const checkAtMs = context?.status === 'valid' ? instantMs(context.quoteEvidence?.observedAt) : null;
     const scored = context?.status === 'valid' && positive(context.currentPrice) && scoredAtMs !== null
-      ? { price: context.currentPrice, atMs: scoredAtMs, source: 'stockRewardContexts' }
+      ? { price: context.currentPrice, atMs: scoredAtMs, ...(checkAtMs !== null ? { checkAtMs } : {}), source: 'stockRewardContexts' }
       : null;
     // The ladder: the SAME committed context the modal's bombData.measured is
     // built from (the screen's enrichHeldPosition → committedStockContext;
@@ -184,7 +195,23 @@ export function selectBombRecord(battle, symbol, nowMs) {
     // re-derived: the targets and crossed tiers are the context's.
     const committed = committedStockContext(battle, asset, 'agent', tier, slot);
     const measured = committed.status === 'valid'
-      ? { measured: true, baselinePrice: committed.fill, targets: committed.targets.map((t) => ({ key: t.key, price: t.target })), crossedTiers: [...committed.crossedTiers] }
+      // BP-3: the frozen scoringPct rides along, so a rung's % is the rule's % (k × it)
+      // — the same number Details prints from scoringPctDecimal (one committed context).
+      ? { measured: true, baselinePrice: committed.fill, scoringPct: committed.scoringPct, targets: committed.targets.map((t) => ({ key: t.key, price: t.target })), crossedTiers: [...committed.crossedTiers] }
+      : null;
+    // BD-6: the levels table's collapsed Details — StockRewardDetails' facts,
+    // carried unchanged from the same committed context (nothing re-derived).
+    const details = committed.status === 'valid'
+      ? {
+        scoringPctDecimal: committed.scoringPctDecimal,
+        targets: committed.targets.map((t) => ({ key: t.key, label: t.label, target: t.target })),
+        currentPrice: committed.currentPrice,
+        providerAsOf: committed.quoteEvidence?.providerAsOf ?? null,
+        positionId: committed.positionId,
+        receiptHash: committed.receiptHash,
+        inputRef: committed.inputRef,
+        modelId: committed.modelId,
+      }
       : null;
     return {
       ...common,
@@ -192,6 +219,7 @@ export function selectBombRecord(battle, symbol, nowMs) {
       entry: { price: positive(receipt?.fill) ? receipt.fill : null, atMs: entryAtMs },
       measured,
       scored: measured ? scored : null,
+      ...(details ? { details } : {}),
       checkDots: checkDotsOf(battle, symbol, entryAtMs),
     };
   }

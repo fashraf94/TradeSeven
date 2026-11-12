@@ -328,7 +328,7 @@ describe('BC-8 — the record pinned', () => {
     const calls = [{ callId: 'c1', symbol: 'AAPL', mintedAt: Date.parse('2026-10-13T15:30:00.000Z'), playerResponse: { filedAt: Date.parse('2026-10-13T15:41:00.000Z') } }, { callId: 'c2', symbol: 'XOM', mintedAt: 1 }];
     const pins = recordPinsOf({ battle: BATTLES.momentum_chaser, symbol: 'AAPL', nowMs: SHEET_NOW, row: ROW, calls });
     expect(pins.markers.map((m) => [m.kind, m.label])).toEqual([
-      ['call', 'Called · Tue 11:30'], ['answer', 'You answered · Tue 11:41'], ['entry', 'Entry · Wed 10:02'], ['check', 'What it decided · Wed 12:45'],
+      ['call', 'Called · Tue 11:30'], ['answer', 'You answered · Tue 11:41'], ['entry', 'Entry · Wed 9:47'] /* BD-9 (2026-11-10): the record's entry instant is the fill quote's time; the sheet's marker reads the same field (§9) */, ['check', 'What it decided · Wed 12:45'],
     ]);
     expect(pins.lines.map((l) => [l.kind, l.price, l.label, l.group])).toEqual([
       ['entry', 100.75, 'entry $100.75', 'record'], ['idea_live', 98.5, 'live above $98.50', 'idea'], ['idea_wrong', 96.2, 'wrong below $96.20', 'idea'],

@@ -10,7 +10,7 @@ import RedZone from './RedZone.jsx';
 import useMeasuredWidth from './useMeasuredWidth.js';
 import { BOMB_COPY } from './bombCopy.js';
 import { BT, MONO, HEAT, tint } from './bombTheme.js';
-import { isRedZoneMode } from './redZone.js';
+import { isRedZoneMode, isDangerZoneMode, isZoneMode } from './redZone.js';
 
 /** The one-line state for a ladder that cannot be drawn. */
 export function ladderStateCopy(status) {
@@ -37,24 +37,29 @@ export default function BombPlot({ view, height }) {
     );
   } else if (isRedZoneMode(view.mode)) {
     body = <RedZone ladder={ladder} go={view.go} live={view.live} decimals={view.decimals} mode={view.mode} trace={view.trace} clock={view.clock} scoredText={view.redZoneScored} moment={view.moment} nowMs={view.nowMs} width={width} height={height} />;
+  } else if (isDangerZoneMode(view.mode)) {
+    // BD-5: the Danger Zone — the red zone's layout, the downside rung as the goal.
+    body = <RedZone side="down" ladder={ladder} go={view.goDown} live={view.live} decimals={view.decimals} mode={view.mode} trace={view.trace} clock={view.clock} scoredText={view.redZoneScored} hitTimes={view.hitTimes} nowMs={view.nowMs} width={width} height={height} />;
   } else {
-    body = <FuseChart ladder={ladder} live={view.live} decimals={view.decimals} go={view.go} ghost={view.ghost} checkDots={view.checkDots} bankedTimes={view.bankedTimes} closed={view.marketOpen === false} width={width} height={height} />;
+    body = <FuseChart ladder={ladder} live={view.live} decimals={view.decimals} go={view.go} goDown={view.goDown} lead={view.lead} ghost={view.ghost} checkDots={view.checkDots} bankedTimes={view.bankedTimes} hitTimes={view.hitTimes} closed={view.marketOpen === false} width={width} height={height} />;
   }
   return <div ref={ref} data-bomb-plot="1" style={{ width: '100%', height, overflow: 'hidden' }}>{body}</div>;
 }
 
-/** The control bar's RED ZONE chip — a state indicator, not a tab (R-11′(e)). */
+/** The control bar's RED ZONE / DANGER ZONE chip — a state indicator, not a tab (R-11′(e); BD-5). */
 export function RedZoneChip({ mode }) {
-  if (!isRedZoneMode(mode)) return null;
-  const frozen = mode === 'closed';
+  if (!isZoneMode(mode)) return null;
+  const danger = isDangerZoneMode(mode);
+  const frozen = mode === 'closed' || mode === 'dangerClosed';
+  const accent = danger ? BT.red : HEAT; // BP-2: one red for the downside (--ft-neg)
   return (
-    <span data-bomb-redzone-chip={mode} style={{
+    <span data-bomb-redzone-chip={mode} {...(danger ? { 'data-bomb-zone-chip': 'danger' } : {})} style={{
       fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, whiteSpace: 'nowrap',
-      color: frozen ? BT.ink2 : HEAT, background: frozen ? tint(BT.ink, 5) : tint(HEAT, 14), border: `1px solid ${frozen ? tint(BT.ink, 12) : tint(HEAT, 40)}`,
+      color: frozen ? BT.ink2 : accent, background: frozen ? tint(BT.ink, 5) : tint(accent, 14), border: `1px solid ${frozen ? tint(BT.ink, 12) : tint(accent, 40)}`,
       padding: '3px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 6,
     }}>
-      <span style={{ width: 6, height: 6, borderRadius: 3, background: frozen ? BT.ink3 : HEAT }} />
-      {BOMB_COPY.redZoneChip}
+      <span style={{ width: 6, height: 6, borderRadius: 3, background: frozen ? BT.ink3 : accent }} />
+      {danger ? BOMB_COPY.dangerZoneChip : BOMB_COPY.redZoneChip}
     </span>
   );
 }

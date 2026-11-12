@@ -57,3 +57,28 @@ describe('the Battle View passes bombContext only when Bomb mode resolves on (§
     expect(SRC).toMatch(/const bombContextFor = \(symbol, ids = \{\}\) => agentBombContext\(agentBattle, symbol, Date\.now\(\), \{ battleId: agentBattleId, \.\.\.ids \}\);/);
   });
 });
+
+// Bomb mode refinement BD-7 (2026-11-10; review C8, 2026-11-11): the gated mounts render only behind
+// SHADOW_CPU_QUOTE_INTEGRITY_ENABLED (dark), so the "See all levels ›" door's reach is pinned here at the source.
+describe('BD-7 — the levels door reaches every mount, gated on bombModeOn, keyed to that mount\'s own symbol', () => {
+  const DOOR = /\{\.\.\.\(bombModeOn && bombLevelsDoor === ([^?]+?) \? \{ opensOnBomb: true \} : \{\}\)\}/g;
+  it.each([
+    ['held (gated)', 0, 'heldResearch.asset.symbol'],
+    ['non-held (gated)', 1, 'stableResearchAsset.symbol'],
+    ['legacy', 2, 'stableResearchAsset.symbol'],
+  ])('%s mount: one opensOnBomb spread, gated on bombModeOn, for its own symbol', (_, idx, sym) => {
+    const spreads = [...mounts()[idx].matchAll(DOOR)];
+    expect(spreads).toHaveLength(1);
+    expect(spreads[0][1].trim()).toBe(sym);
+  });
+  it('the door opens research through the gated admission with the player\'s side on the gated path, the shipped door otherwise', () => {
+    const start = SRC.indexOf('const handleSeeAllLevels');
+    const fn = SRC.slice(start, SRC.indexOf('\n  };', start));
+    expect(fn).toContain('setBombLevelsDoor(symbol);');
+    expect(fn).toContain("if (gatedPath) handleGatedSymbolClick(asset, { side: 'player' });");
+    expect(fn).toContain('else handleSymbolClick(asset);');
+  });
+  it('the row receives the door only when Bomb mode is on', () => {
+    expect(SRC).toMatch(/\{\.\.\.\(bombModeOn && whyable \? \{ onSeeAllLevels: handleSeeAllLevels \} : \{\}\)\}/);
+  });
+});

@@ -31,7 +31,14 @@
 // SERVER's time (spec §8), the clock the answer endpoint refuses by.
 //
 // It answers for the caller's own battle only, so it is no oracle on who is
-// admitted: a non-owner learns nothing but 403. One document read; no write.
+// admitted: a non-owner learns nothing but 403. One battle read, and (release
+// switch) the cohort's control view — cached 60 s, fails closed; no write.
+//
+// THE RELEASE SWITCH (BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): `on` follows the
+// resolver — the allowlist OR the release cohort (agent mode, a stable share of
+// owners; mode.js, release.js) — while `allowlisted` stays the allowlist verdict
+// ALONE, because Film Room cards, Bomb mode, the sheet and Ask read it as their
+// pilot cohort and must not move with the cockpit's release.
 // Cache-Control: no-store on every answer — after a rollback (the uid removed
 // from the environment and production redeployed: Vercel applies environment
 // changes to new deployments only) the next ask must reach the new value,
@@ -40,7 +47,7 @@
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
-import { resolveCallRecordsMode, isCockpitOwnerAllowlisted } from '../_utils/callRecords/mode.js';
+import { resolveCallRecordsMode, isCockpitOwnerAllowlisted, ensureReleaseView } from '../_utils/callRecords/mode.js';
 
 export const config = { maxDuration: 5 };
 
@@ -88,11 +95,21 @@ export default async function handler(req, res) {
   }
 
   try {
-    const snap = await getFirebaseAdmin().collection('agentBattles').doc(battleId.trim()).get();
+    const db = getFirebaseAdmin();
+    // The release cohort's control view is made fresh alongside the battle read
+    // (cached 60 s; it never throws and fails closed to the allowlist).
+    const [snap, releaseView] = await Promise.all([db.collection('agentBattles').doc(battleId.trim()).get(), ensureReleaseView(db)]);
+    // The control read ran in parallel with the first RPC of a possibly cold instance; if it failed (an error, or no answer in
+    // its bound) the channel is warm now, so ask ONCE more rather than answer `on: false` for a cohort player — the client
+    // re-asks only on a status change.
+    if (releaseView?.status === 'error' || releaseView?.status === 'timeout') await ensureReleaseView(db, { force: true, retry: false });
     if (!snap.exists) return res.status(404).json({ error: 'not_found' });
     const battle = snap.data();
     if (battle?.ownerId !== user.uid) return res.status(403).json({ error: 'forbidden' });
     return res.status(200).json({
+      // `on` follows the resolver: the allowlist OR the release cohort. `allowlisted`
+      // below stays the allowlist verdict ALONE — Film Room cards, Bomb mode, the sheet
+      // and Ask read it as their pilot cohort and must not move with the cockpit's release.
       on: resolveCallRecordsMode(battle) === 'on',
       allowlisted: isCockpitOwnerAllowlisted(battle?.ownerId),
       serverNowMs: Date.now(),

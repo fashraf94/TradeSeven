@@ -136,9 +136,12 @@ describe('the pack item (C §C10)', () => {
     expect(a.id).toMatch(/^[0-9a-f]{12}$/);
     expect(Object.keys(a).sort()).toEqual(['asOf', 'at', 'fact', 'id', 'kind', 'reason', 'source', 'status']);
     const h = headlineItem({ newsId: 'n1', source: 'finance.yahoo.com', title: 'Pfizer maps out a center', publishedAt: '2026-11-06T23:09:01.000Z', sourceKind: 'coverage' });
-    expect(h.fact).toBe('finance.yahoo.com reported: Pfizer maps out a center');
+    // Amendment E §E3 e: the publication's name, never its host — in the fact AND the label
+    expect(h.fact).toBe('Yahoo Finance reported: Pfizer maps out a center');
+    expect(h.source.label).toBe('Yahoo Finance via EODHD');
     expect(h.status).toBe('verified');
-    expect(PACK_KINDS).toEqual(['close', 'headline', 'event', 'holding', 'agent_pick', 'opener', 'prior_plan', 'source_status']);
+    // E3 g (R-25): C10's kinds gain `tape`
+    expect(PACK_KINDS).toEqual(['close', 'headline', 'event', 'holding', 'agent_pick', 'opener', 'prior_plan', 'source_status', 'tape']);
     expect(() => packItem({ kind: 'rumor', fact: 'x' })).toThrow();
   });
 });

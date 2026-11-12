@@ -53,29 +53,31 @@ describe('buildLadder — which ladder a mount gets (BA-1)', () => {
 
 describe('the LIVE · SCORED chip (spec §3.2)', () => {
   const scored = { price: 160.19, atMs: at('2026-10-14T17:00:31.000Z') };
-  it('format: live $160.27 · scored $160.19 at 1:00, from the shared priceFormat', () => {
-    expect(scoredChipText({ live: 160.27, scored, decimals: 2, always: true })).toBe('live $160.27 · scored $160.19 at 1:00');
+  // Refinement 2026-11-10 (BD-8): the chip names the CHECK (`at the 1:00 check`), not a bare time.
+  it('format: live $160.27 · scored $160.19 at the 1:00 check, from the shared priceFormat', () => {
+    expect(scoredChipText({ live: 160.27, scored, decimals: 2, always: true })).toBe('live $160.27 · scored $160.19 at the 1:00 check');
   });
-  it('red zone: always, even when the two agree', () => { expect(scoredChipText({ live: 160.19, scored, decimals: 2, always: true })).toBe('live $160.19 · scored $160.19 at 1:00'); });
+  it('red zone: always, even when the two agree', () => { expect(scoredChipText({ live: 160.19, scored, decimals: 2, always: true })).toBe('live $160.19 · scored $160.19 at the 1:00 check'); });
   it('elsewhere: only when they differ by at least one display unit', () => {
     expect(scoredChipText({ live: 160.194, scored, decimals: 2 })).toBeNull();
-    expect(scoredChipText({ live: 160.2, scored, decimals: 2 })).toBe('live $160.20 · scored $160.19 at 1:00');
+    expect(scoredChipText({ live: 160.2, scored, decimals: 2 })).toBe('live $160.20 · scored $160.19 at the 1:00 check');
   });
-  it('the closed view says last tick', () => { expect(scoredChipText({ live: 162.86, scored, decimals: 2, always: true, frozen: true })).toBe('last $162.86 · scored $160.19 at 1:00'); });
+  it('the closed view says last tick', () => { expect(scoredChipText({ live: 162.86, scored, decimals: 2, always: true, frozen: true })).toBe('last $162.86 · scored $160.19 at the 1:00 check'); });
   it('no scored price (a preview) → no chip', () => { expect(scoredChipText({ live: 160, scored: null, always: true })).toBeNull(); });
-  it('a sub-dollar asset prints with its own decimals', () => { expect(scoredChipText({ live: 0.2049, scored: { price: 0.2051, atMs: scored.atMs }, decimals: 4 })).toBe('live $0.2049 · scored $0.2051 at 1:00'); });
+  it('a sub-dollar asset prints with its own decimals', () => { expect(scoredChipText({ live: 0.2049, scored: { price: 0.2051, atMs: scored.atMs }, decimals: 4 })).toBe('live $0.2049 · scored $0.2051 at the 1:00 check'); });
 });
 
 describe('what has to happen — templates only (spec §4.3)', () => {
   const held = legacyLadder({ record: selectBombRecord(legacyBattle({ thresholdHistory: {} }), 'EOG', WED_1PM), previousClose: 155.6, nowMs: WED_1PM });
-  it('held: Needs $X at a check · next check 3:45', () => { expect(sheetLine({ ladder: held, clockLabel: '3:45', decimals: 2 })).toBe('Needs $161.20 at a check · next check 3:45'); });
+  // Refinement 2026-11-10 (BD-4): the held line is lead-aware; with the upside leading it names the points and the bust price too.
+  it('held, up leading: Needs $X at a check for +15 · Bust at $Y · next check 3:45', () => { expect(sheetLine({ ladder: held, clockLabel: '3:45', decimals: 2 })).toBe('Needs $161.21 at a check for +15 · Bust at $149.99 · next check 3:45'); });
   it('after a bank the modal SAW: +15 banked at the 1:15 check. Next: …', () => {
     const banked = legacyLadder({ record: selectBombRecord(legacyBattle(), 'EOG', WED_1PM), previousClose: 155.6, nowMs: WED_1PM });
-    expect(sheetLine({ ladder: banked, bankedTimes: { bagger: at('2026-10-14T17:15:00.000Z') }, decimals: 2 })).toBe('+15 banked at the 1:15 check. Next: $164.00 at a check');
+    expect(sheetLine({ ladder: banked, bankedTimes: { bagger: at('2026-10-14T17:15:00.000Z') }, decimals: 2 })).toBe('+15 banked at the 1:15 check. Next: $164.01 at a check');
   });
   it('BA-4: a bank the modal did not see carries no time', () => {
     const banked = legacyLadder({ record: selectBombRecord(legacyBattle(), 'EOG', WED_1PM), previousClose: 155.6, nowMs: WED_1PM });
-    expect(sheetLine({ ladder: banked, bankedTimes: {}, decimals: 2 })).toBe('+15 banked. Next: $164.00 at a check');
+    expect(sheetLine({ ladder: banked, bankedTimes: {}, decimals: 2 })).toBe('+15 banked. Next: $164.01 at a check');
   });
   it('preview: Preview · rungs if it entered at yesterday\'s close ($X) — never "entry price"', () => {
     const line = sheetLine({ ladder: previewLadder({ previousClose: 99, threshold: 2 }), decimals: 2 });

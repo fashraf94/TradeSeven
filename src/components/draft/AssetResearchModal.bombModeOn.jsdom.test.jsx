@@ -169,16 +169,16 @@ describe('a held measured position', () => {
     const record = selectBombRecord(battle, 'AAPL', Date.now());
     await render(<AssetResearchModal asset={research(left)} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" controlledQuote={{ posKey: 'player:star:0', symbol: 'AAPL', price: 101.2, extremes: null }} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
     expect(q('[data-bomb-view="fuse"]')).not.toBeNull();
-    expect(q('[data-fuse-baseline]').textContent).toBe('ENTRY $100.75 · WED 10:02 AM');
+    expect(q('[data-fuse-baseline]').textContent).toBe('ENTRY $100.75 · WED 9:47 AM'); // BD-9 (2026-11-10): the fill quote's time, 15 min before enteredAt in the harness
     expect(q('[data-fuse-rung-label="bagger"]').textContent).toBe('+15$102.77');
-    expect(q('[data-bomb-what]').textContent).toBe('What has to happenNeeds $102.77 at a check · next check 1:15 · 09:00');
+    expect(q('[data-bomb-what]').textContent).toBe('What has to happenNeeds $102.77 at a check for +15 · Bust at $98.73 · next check 1:15 · 09:00'); // BD-4 (2026-11-10): the up-leading line
     expect(rec.calls.some((c) => c[0] === 'createChart')).toBe(false);
   });
   it('the record\'s ladder is the modal\'s bombData.measured — the same committed context, one source', async () => {
     const { battle, left } = await committedRow();
     const record = selectBombRecord(battle, 'AAPL', Date.parse('2026-10-14T17:06:00.000Z'));
     const ctx = research(left).rewardContext;
-    expect(record.measured).toEqual({ measured: true, baselinePrice: ctx.fill, targets: ctx.targets.map((t) => ({ key: t.key, price: t.target })), crossedTiers: ctx.crossedTiers });
+    expect(record.measured).toEqual({ measured: true, baselinePrice: ctx.fill, scoringPct: ctx.scoringPct, targets: ctx.targets.map((t) => ({ key: t.key, price: t.target })), crossedTiers: ctx.crossedTiers });
   });
   it('a check that lands while the modal is open reaches the ladder on the shipped (non-controlled) mount, whose asset stays the one it opened with', async () => {
     const before = await committedRow(101);
@@ -200,7 +200,7 @@ describe('honest after the close and across days', () => {
     seed('2026-10-15T21:00:00.000Z'); // Thu 5:00 PM ET, closed
     const record = selectBombRecord(battle, 'AAPL', Date.now());
     await render(<AssetResearchModal asset={research(left)} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={101.2} bombContext={{ kind: 'agent', battleId: battle.id, held: true, record }} />);
-    expect(q('[data-bomb-sheet-scored]').textContent).toBe('last $101.20 · scored $101.00 at Wed 10:02');
+    expect(q('[data-bomb-sheet-scored]').textContent).toBe("last $101.20 · scored $101.00 at Wed's 10:00 check"); // BD-8 (2026-11-10): an earlier session's check names its day
     expect(q('[data-fuse-live-label]').textContent).toContain('· LAST');
   });
 });
@@ -225,11 +225,11 @@ describe('the red zone — automatic, on the 1-minute series the view already fe
   };
   it('enters within 0.5 % of the next rung: the goal-line view, the RED ZONE chip, the 1-minute request and its 15-second poll', async () => {
     seedEog('2026-10-14T17:00:00.000Z');
-    await open(163.6); // $0.40 / 0.24 % below +30 at $164.00
+    await open(163.6); // $0.41 / 0.25 % below +30 at $164.01 (exact $164.0024, shown rounded UP — BP-1)
     expect(q('[data-bomb-view="redzone"]')).not.toBeNull();
     expect(q('[data-bomb-redzone-chip="approaching"]')).not.toBeNull();
-    expect(q('[data-rz-distance]').textContent).toBe('$0.40to +30 · 0.24%');
-    expect(q('[data-rz-scored]').textContent).toBe('live $163.60 · scored $160.19 at 1:00');
+    expect(q('[data-rz-distance]').textContent).toBe('$0.41to +30 · 0.25%');
+    expect(q('[data-rz-scored]').textContent).toBe('live $163.60 · scored $160.19 at the 1:00 check'); // BD-8 (2026-11-10): the chip names the check
     expect(q('[data-rz-clock="countdown"]').textContent).toBe('NEXT CHECK1:15') // exactly 15:00 out: no mm:ss (under fifteen minutes only);
     // CALL COUNT: the 30-minute series the view opened on, then the 1-minute series — the same two requests the distance pill made
     const history = net.calls.filter((c) => c[0] === 'history').map((c) => [c[2], c[3]]);
@@ -429,17 +429,17 @@ describe('lens C: the check clock in the sheet and the banked time', () => {
     seedEog('2026-10-14T17:16:00.000Z'); // the 1:15 slot; the fixture was last scored at 1:00:40
     await open(158, measuredEogRecord({ crossedTiers: [] }));
     expect(q('[data-bomb-view="fuse"]')).not.toBeNull();
-    expect(q('[data-bomb-what]').textContent).toBe('What has to happenNeeds $161.20 at a check · checking…');
+    expect(q('[data-bomb-what]').textContent).toBe('What has to happenNeeds $161.21 at a check for +15 · Bust at $149.99 · checking…'); // BD-4 (2026-11-10): the up-leading line
   });
-  it('A3: the zone enters on the DISPLAYED % — $0.82 below +30 is 0.5025 %, shown 0.50 %, and is in the red zone', async () => {
+  it('A3: the zone enters on the DISPLAYED % — $0.82 below +30 ($164.01 since BP-1) is 0.5025 %, shown 0.50 %, and is in the red zone', async () => {
     seedEog('2026-10-14T17:00:00.000Z');
-    await open(163.18, measuredEogRecord());
+    await open(163.19, measuredEogRecord());
     expect(q('[data-bomb-view="redzone"]')).not.toBeNull();
     expect(q('[data-rz-distance]').textContent).toBe('$0.82to +30 · 0.50%');
   });
   it('D6: two tiers banked at one check — one moment for +45, and both rungs carry the check time the modal saw', async () => {
     seedEog('2026-10-14T17:16:00.000Z');
-    await open(161.1, measuredEogRecord({ crossedTiers: [] })); // 0.06 % below +15 at $161.20
+    await open(161.1, measuredEogRecord({ crossedTiers: [] })); // 0.07 % below +15 at $161.21
     expect(q('[data-bomb-view="redzone"]')).not.toBeNull();
     const after = after115('2026-10-14T17:15:31.000Z', '2026-10-14T17:15:40.000Z');
     await open(164.05, after);

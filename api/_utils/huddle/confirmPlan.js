@@ -1,38 +1,50 @@
 // api/_utils/huddle/confirmPlan.js
 //
-// Huddle S1 — CONFIRM AND SKIP (spec V1.1 §6 as replaced by Amendment A §A1; Amendment
-// C V1.2 §C15). One transaction each over the huddle record (and, for confirm, the
-// player's ranked agent read and the queue row's reconcile mark). Confirm's
-// applications run AFTER its commit, each its own B1 transaction (applyPlan.js).
+// Huddle — CONFIRM AND SKIP (spec V1.1 §6 as replaced by Amendment A §A1; Amendment E §E1, which replaces Amendment C
+// V1.2 §C15's confirm and reconfirm bullets and supersedes Fable's ruling R-18). One transaction each over the huddle
+// record (and, for confirm, the player's ranked agent read and the queue row's reconcile mark). Confirm's applications run
+// AFTER its commit, each its own B1 transaction (applyPlan.js).
 //
-// CONFIRM `{ etDate, baseRevision, replacement }`:
-//   1. the plan is proposed (or confirmed, for a reconfirm — below); its revision equals
-//      baseRevision, else 409 with the stored `current` and `revision`; the session has
-//      not closed, else 410 and a proposed plan is marked `expired`;
-//   2. `replacement` is validated (planTemplates.validatePlan) against the record's own
-//      session context and the player's EQUIPPED archetype — the ranked agent's
-//      `archetype` (the `agents` doc with this ownerId that is neither a training nor a
-//      casual clone, the exclusion of src/services/agentService.js:20-34), the field the
-//      deploy freezes into agentContext.archetype (agentBattleService.js:193). If
-//      validation drops or transforms anything, nothing is confirmed: the normalized
-//      result becomes the new `current` with a new `revision`, and the answer is 422
-//      `{ current, revision, drops, transforms, dissent }` (the sheet previews it);
-//   3. an archetype without a dissent row is 422 `archetype_unsupported`, an empty plan
-//      422 `empty_plan`, a rendering over 500 characters 422 `rendered_too_long` — each
-//      with nothing written; otherwise the confirmation is FROZEN and APPENDED to
-//      `plan.confirmations[]` (`plan.confirmed` is the newest), `status = 'confirmed'`,
-//      `measurement.confirmedAt` set once.
-// RECONFIRM (C15): an already-confirmed plan is accepted only when the equipped archetype
-// differs from the newest confirmation's; it runs steps 2–3 under the current archetype
-// and appends. Otherwise the confirmed state is returned unchanged (idempotent, A1).
+// ONE CONFIRM COVERS EVERY ARCHETYPE IN PLAY (E1). The archetypes in play are the EQUIPPED archetype — the ranked agent's
+// `archetype` (the `agents` doc with this ownerId that is neither a training nor a casual clone, the exclusion of
+// src/services/agentService.js:20-34), read inside the transaction — and the frozen agentContext.archetype of every battle
+// the apply module would file into this session (applyRules.archetypesInPlayOf: the owner's, not a CPU seat, active, this
+// session), keeping only archetypes with a dissent row. The battles are read just BEFORE the transaction, not inside it:
+// a battle's archetype is frozen at deploy and never changes, and the evaluator writes those documents every check, so a
+// transaction over them would contend for nothing it needs (a game deployed between that read and the commit is filed
+// by the next reconfirm, its line showing the door).
+//
+// CONFIRM `{ etDate, baseRevision, replacement, acknowledged? }`:
+//   1. the plan is proposed (or confirmed, for a reconfirm — below); its revision equals baseRevision, else 409 with the
+//      stored `current` and `revision`; the session has not closed, else 410 and a proposed plan is marked `expired`;
+//   2. the VALUES of `replacement` are validated once, archetype-neutral (planTemplates.validatePlan with no archetype).
+//      A drop or a normalized value is A §A1's 422 `validation_changed`: the normalized result becomes the new `current`
+//      with a new `revision`, and the answer carries the drops, the transforms and the per-archetype previews below;
+//   3. then ONCE PER ARCHETYPE IN PLAY, that archetype's dissent row over the validated values. If any row changes any
+//      item, the confirm is a 422 `validation_changed` PREVIEW carrying, per affected archetype, its name, its games, the
+//      revision it would file and the changed items ("For your Diversifier game: Fade CCI becomes Watch CCI"); the
+//      player's edit (if any) is kept as the new `current`. The second confirm carries `acknowledged: { [archetype]:
+//      revision }`: A §A1's baseRevision rule, per archetype — only an acknowledged revision EQUAL to the one recomputed
+//      now commits; anything else (a newer edit, a game deployed since) is answered with the fresh preview;
+//   4. no archetype in play with a dissent row is 422 `archetype_unsupported`, an empty plan 422 `empty_plan`, any
+//      archetype's rendering over 500 characters 422 `rendered_too_long` — each with nothing written; otherwise ONE
+//      confirmation per archetype in play `{ current, revision, archetype, renderedText, renderedTextHash, confirmedAt }`
+//      is APPENDED to `plan.confirmations[]`, all in this one transaction; `plan.confirmed` is the equipped archetype's
+//      (else the newest), for readers; `status = 'confirmed'`; `measurement.confirmedAt` set once.
+// RECONFIRM (E1): an already-confirmed plan is accepted only when an archetype in play has no confirmation (a game deployed
+// after confirming under another archetype; an archetype switch). It files the confirmed plan as it stands — the
+// replacement must be that plan, unchanged, else 409 — under the MISSING archetypes only, through steps 3–4 (their
+// previews included). Otherwise the confirmed state is returned unchanged (idempotent, A1). Apply is unchanged: a battle
+// takes the newest confirmation under its own frozen archetype (applyRules.selectConfirmation), none → `stale_approach`.
 //
 // SKIP `{ etDate }`: a proposed plan becomes `skipped`, `measurement.skippedAt`.
 
-import { huddleDayRef, queueRowRef, PLAN_STATUS, RECORD_STATUS } from './records.js';
+import { huddleDayRef, queueRowRef, PLAN_STATUS, RECORD_STATUS, sessionWindowOf } from './records.js';
 import {
   validatePlan, validationChanged, revisionOf, renderPlan, renderedTooLong, renderedTextHashOf, isEmptyPlan,
 } from './planTemplates.js';
-import { isArchetypeSupported } from './dissentTable.js';
+import { archetypesInPlayOf, missingArchetypesOf } from './applyRules.js';
+import { archetypeNameOf } from './archetypeWords.js';
 
 export const CONFIRM_REFUSALS = Object.freeze({
   NOT_FOUND: 'not_found',
@@ -56,16 +68,25 @@ export function rankedAgentOf(docs) {
   return typeof found.data === 'function' ? { id: found.id, ...found.data() } : found;
 }
 
-/** The validation context the record froze at generation (plan.context): universe, closes, events. */
+/**
+ * The validation context the record froze at generation (plan.context): universe, closes, events — and, from Amendment E
+ * §E2, the session window (else the record's own session's), the events outside it and the report names. A record frozen
+ * before E2 has no report list: a NO_ADDS_TO_BEFORE_REPORT line on it is dropped (it cannot be checked).
+ */
 export function contextOfRecord(record, archetype) {
   const c = record?.plan?.context || {};
+  const list = (v) => (Array.isArray(v) ? v : []);
   return {
-    universe: new Set(Array.isArray(c.universe) ? c.universe : []),
+    universe: new Set(list(c.universe)),
     closes: new Map(Object.entries(c.closes || {})),
     events: {
-      eligible: new Map((Array.isArray(c.eligibleEvents) ? c.eligibleEvents : []).map((e) => [e.eventId, e])),
-      untimedIds: new Set(Array.isArray(c.untimedEventIds) ? c.untimedEventIds : []),
+      eligible: new Map(list(c.eligibleEvents).map((e) => [e.eventId, e])),
+      untimedIds: new Set(list(c.untimedEventIds)),
+      outsideSessionIds: new Set(list(c.outsideSessionEventIds)),
+      reportTickers: new Set(list(c.reportTickers)),
+      untimedReportTickers: new Set(list(c.untimedReportTickers)),
     },
+    window: c.window && typeof c.window.open === 'string' ? c.window : sessionWindowOf(record?.session),
     archetype,
   };
 }
@@ -73,13 +94,60 @@ export function contextOfRecord(record, archetype) {
 export const eventLabelsOf = (record) => new Map((record?.plan?.context?.eligibleEvents || []).map((e) => [e.eventId, e.label]));
 
 const iso = (ms) => new Date(ms).toISOString();
+const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** The owner's active battles (the apply module's own query, equality filters only: Q-A1, no composite). */
+export async function readActiveBattles(db, uid) {
+  const snap = await db.collection('agentBattles').where('ownerId', '==', uid).where('status', '==', 'active').get();
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/** The acknowledgements a request may carry: archetype → revision, strings only (anything else is none). */
+export function acknowledgementsOf(raw) {
+  if (!isPlainObject(raw)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) if (typeof k === 'string' && typeof v === 'string' && k.length <= 64 && v.length <= 128) out[k] = v;
+  return out;
+}
 
 /**
+ * Each target archetype's dissent row over the validated values (pure): its current, revision, dissent and whether the
+ * row changed anything — the E1 preview's material.
+ */
+export function perArchetypeOf(record, current, targets) {
+  return targets.map((archetype) => {
+    const va = validatePlan(current, contextOfRecord(record, archetype));
+    return { archetype, current: va.current, revision: revisionOf(va.current), dissent: va.dissent, changed: va.transforms.length > 0 || va.drops.length > 0 };
+  });
+}
+
+/**
+ * The E1 preview of the archetypes whose row changes an item: what the plan card shows ("For your Diversifier game: …"),
+ * with each affected archetype's plan and its rendered text — exactly what would file into its games (E1's Preview bullet;
+ * review HD-11).
+ */
+export function previewsOf(per, games, { etDate = null, eventLabels = new Map() } = {}) {
+  return per.filter((p) => p.changed).map((p) => ({
+    archetype: p.archetype,
+    archetypeName: archetypeNameOf(p.archetype),
+    games: games?.[p.archetype] ?? 0,
+    revision: p.revision,
+    current: p.current,
+    renderedText: renderPlan(p.current, { etDate, eventLabels }),
+    changes: p.dissent.map(({ index, kind, from, to, ticker, reason }) => ({ index, kind, from, to, ticker, reason })),
+  }));
+}
+
+/**
+ * @param {{ uid, etDate, baseRevision, replacement, acknowledged?, nowMs?, battles? }} p  `battles` (the owner's active
+ *   battles) may be handed in; otherwise read here, before the transaction
  * @returns {Promise<{ kind: 'confirmed'|'already_confirmed'|'refused', status?: number, code?: string, body?: object }>}
  */
-export async function confirmPlan(db, { uid, etDate, baseRevision, replacement, nowMs = Date.now() }) {
+export async function confirmPlan(db, { uid, etDate, baseRevision, replacement, acknowledged = null, nowMs = Date.now(), battles = null }) {
   const dayRef = huddleDayRef(db, uid, etDate);
   const agentsQuery = db.collection('agents').where('ownerId', '==', uid);
+  const games = Array.isArray(battles) ? battles : await readActiveBattles(db, uid);
+  const ack = acknowledgementsOf(acknowledged);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(dayRef);
     const agentsSnap = await tx.get(agentsQuery);
@@ -88,14 +156,16 @@ export async function confirmPlan(db, { uid, etDate, baseRevision, replacement, 
     if (record.status !== RECORD_STATUS.READY || !record.plan) return { kind: 'refused', status: 409, code: CONFIRM_REFUSALS.NOT_READY };
     const plan = record.plan;
     const agent = rankedAgentOf(agentsSnap.docs);
-    const archetype = typeof agent?.archetype === 'string' ? agent.archetype : null;
+    const equipped = typeof agent?.archetype === 'string' ? agent.archetype : null;
+    const sessionDate = typeof record.session?.etDate === 'string' ? record.session.etDate : etDate;
+    const play = archetypesInPlayOf({ equipped, battles: games, uid, etDate: sessionDate });
+    const missing = missingArchetypesOf(plan, play.inPlay);
     const closeMs = record.session?.closeMs;
     const open = typeof closeMs === 'number' && Number.isFinite(closeMs) && nowMs < closeMs;
 
-    const newest = Array.isArray(plan.confirmations) && plan.confirmations.length > 0 ? plan.confirmations[plan.confirmations.length - 1] : null;
-    const reconfirm = plan.status === PLAN_STATUS.CONFIRMED && newest && newest.archetype !== archetype;
-    if (plan.status === PLAN_STATUS.CONFIRMED && !reconfirm) {
-      return { kind: 'already_confirmed', body: { revision: plan.revision, archetype: newest?.archetype ?? null } };
+    const reconfirm = plan.status === PLAN_STATUS.CONFIRMED;
+    if (reconfirm && missing.length === 0) {
+      return { kind: 'already_confirmed', body: { revision: plan.revision, archetypes: (plan.confirmations || []).map((c) => c.archetype) } };
     }
     if (plan.status !== PLAN_STATUS.PROPOSED && !reconfirm) {
       return { kind: 'refused', status: plan.status === PLAN_STATUS.EXPIRED ? 410 : 409, code: CONFIRM_REFUSALS.NOT_PROPOSED, body: { planStatus: plan.status } };
@@ -108,47 +178,95 @@ export async function confirmPlan(db, { uid, etDate, baseRevision, replacement, 
       return { kind: 'refused', status: 409, code: CONFIRM_REFUSALS.REVISION_MISMATCH, body: { current: plan.current, revision: plan.revision } };
     }
 
-    const v = validatePlan(replacement, contextOfRecord(record, archetype));
+    // ---- the values, once, archetype-neutral ----
+    const v = validatePlan(replacement, contextOfRecord(record, null));
     const nextRevision = revisionOf(v.current);
     const edited = nextRevision !== plan.revision;
+    // a reconfirm files the confirmed plan as it stands: no edit rides on it
+    if (reconfirm && (validationChanged(v) || edited)) {
+      return { kind: 'refused', status: 409, code: CONFIRM_REFUSALS.REVISION_MISMATCH, body: { current: plan.current, revision: plan.revision } };
+    }
+    const targets = reconfirm ? missing : play.inPlay;
+    const per = perArchetypeOf(record, v.current, targets);
+    const eventLabels = eventLabelsOf(record);
+    const previews = previewsOf(per, play.games, { etDate, eventLabels });
+    const editFields = edited ? {
+      'plan.editCount': (Number.isInteger(plan.editCount) ? plan.editCount : 0) + 1,
+      'measurement.editCount': (Number.isInteger(record.measurement?.editCount) ? record.measurement.editCount : 0) + 1,
+    } : {};
+
     if (validationChanged(v)) {
-      tx.update(dayRef, {
-        'plan.current': v.current,
-        'plan.revision': nextRevision,
-        'plan.dissent': v.dissent,
-        'plan.editCount': (Number.isInteger(plan.editCount) ? plan.editCount : 0) + (edited ? 1 : 0),
-        'measurement.editCount': (Number.isInteger(record.measurement?.editCount) ? record.measurement.editCount : 0) + (edited ? 1 : 0),
-        updatedAt: iso(nowMs),
-      });
+      // A §A1: a drop or a normalized value — the normalized plan becomes current; the player sees exactly what would file
+      tx.update(dayRef, { 'plan.current': v.current, 'plan.revision': nextRevision, ...editFields, updatedAt: iso(nowMs) });
       return {
         kind: 'refused', status: 422, code: CONFIRM_REFUSALS.VALIDATION_CHANGED,
-        body: { current: v.current, revision: nextRevision, drops: v.drops, transforms: v.transforms, dissent: v.dissent, archetype },
+        body: { current: v.current, revision: nextRevision, drops: v.drops, transforms: v.transforms, dissent: per.flatMap((p) => p.dissent), previews, archetype: equipped },
       };
     }
-    if (!isArchetypeSupported(archetype)) return { kind: 'refused', status: 422, code: CONFIRM_REFUSALS.ARCHETYPE_UNSUPPORTED, body: { archetype } };
+    if (targets.length === 0) return { kind: 'refused', status: 422, code: CONFIRM_REFUSALS.ARCHETYPE_UNSUPPORTED, body: { archetype: equipped, unsupported: play.unsupported } };
     if (isEmptyPlan(v.current)) return { kind: 'refused', status: 422, code: CONFIRM_REFUSALS.EMPTY_PLAN };
-    const renderedText = renderPlan(v.current, { etDate, eventLabels: eventLabelsOf(record) });
-    if (renderedTooLong(renderedText)) return { kind: 'refused', status: 422, code: CONFIRM_REFUSALS.RENDERED_TOO_LONG, body: { length: renderedText.length } };
 
-    const confirmation = {
-      current: v.current, revision: nextRevision, archetype, renderedText, renderedTextHash: renderedTextHashOf(renderedText), confirmedAt: iso(nowMs),
-    };
-    const confirmations = [...(Array.isArray(plan.confirmations) ? plan.confirmations : []), confirmation];
+    // ---- E1: one preview per archetype whose row changes an item, until acknowledged at exactly this revision ----
+    const unacknowledged = per.filter((p) => p.changed && ack[p.archetype] !== p.revision);
+    if (unacknowledged.length > 0) {
+      if (edited) tx.update(dayRef, { 'plan.current': v.current, 'plan.revision': nextRevision, ...editFields, updatedAt: iso(nowMs) });
+      return {
+        kind: 'refused', status: 422, code: CONFIRM_REFUSALS.VALIDATION_CHANGED,
+        body: { current: v.current, revision: nextRevision, drops: [], transforms: [], dissent: per.flatMap((p) => p.dissent), previews, archetype: equipped },
+      };
+    }
+
+    const rendered = per.map((p) => ({ ...p, renderedText: renderPlan(p.current, { etDate, eventLabels }) }));
+    const tooLong = rendered.find((p) => renderedTooLong(p.renderedText));
+    if (tooLong) return { kind: 'refused', status: 422, code: CONFIRM_REFUSALS.RENDERED_TOO_LONG, body: { length: tooLong.renderedText.length, archetype: tooLong.archetype } };
+
+    const at = iso(nowMs);
+    const appended = rendered.map((p) => ({
+      current: p.current, revision: p.revision, archetype: p.archetype, renderedText: p.renderedText, renderedTextHash: renderedTextHashOf(p.renderedText), confirmedAt: at,
+    }));
+    const confirmations = [...(Array.isArray(plan.confirmations) ? plan.confirmations : []), ...appended];
+    // the equipped archetype's newest confirmation, else the newest — chosen from ALL of them, so a reconfirm for a missing
+    // archetype leaves an equipped confirmation in place (review HD-8: "Confirmed at …", history, tomorrow's prior plan)
+    const confirmed = [...confirmations].reverse().find((c) => c.archetype === equipped) ?? confirmations[confirmations.length - 1];
+    const dissent = per.flatMap((p) => p.dissent);
     tx.update(dayRef, {
       'plan.status': PLAN_STATUS.CONFIRMED,
-      'plan.current': v.current,
-      'plan.revision': nextRevision,
-      'plan.dissent': v.dissent,
       'plan.confirmations': confirmations,
-      'plan.confirmed': confirmation,
-      ...(edited ? { 'plan.editCount': (Number.isInteger(plan.editCount) ? plan.editCount : 0) + 1, 'measurement.editCount': (Number.isInteger(record.measurement?.editCount) ? record.measurement.editCount : 0) + 1 } : {}),
-      ...(record.measurement?.confirmedAt ? {} : { 'measurement.confirmedAt': iso(nowMs) }),
-      updatedAt: iso(nowMs),
+      'plan.confirmed': confirmed,
+      ...(reconfirm ? { 'plan.dissent': [...(Array.isArray(plan.dissent) ? plan.dissent : []), ...dissent] } : {
+        'plan.current': v.current,
+        'plan.revision': nextRevision,
+        'plan.dissent': dissent,
+        ...editFields,
+        ...(record.measurement?.confirmedAt ? {} : { 'measurement.confirmedAt': at }),
+      }),
+      updatedAt: at,
     });
     // the queue row marks the day for the worker's reconcile pass (equality query, no composite: Q-W3)
-    tx.set(queueRowRef(db, uid, etDate), { reconcile: true, updatedAt: iso(nowMs) }, { merge: true });
-    return { kind: 'confirmed', body: { revision: nextRevision, archetype, reconfirm: !!reconfirm } };
+    tx.set(queueRowRef(db, uid, etDate), { reconcile: true, updatedAt: at }, { merge: true });
+    return { kind: 'confirmed', body: { revision: reconfirm ? plan.revision : nextRevision, archetypes: appended.map((c) => c.archetype), reconfirm } };
   });
+}
+
+/**
+ * E1: what the hub's Reconfirm door reads — the archetypes in play now and those without a confirmation — through the same
+ * function confirm accepts a reconfirm by (BUILD_RULES §9: the door is the server's own predicate). Reads the owner's
+ * agents and active battles; only for a confirmed plan whose session is still open (otherwise nothing is missing).
+ * @returns {Promise<{ inPlay: string[], missing: string[] } | null>}
+ */
+export async function reconfirmStateOf(db, { uid, record, nowMs = Date.now() }) {
+  const plan = record?.plan;
+  const closeMs = record?.session?.closeMs;
+  if (!plan || plan.status !== PLAN_STATUS.CONFIRMED || !(typeof closeMs === 'number' && nowMs < closeMs)) return null;
+  const [agentsSnap, battles] = await Promise.all([db.collection('agents').where('ownerId', '==', uid).get(), readActiveBattles(db, uid)]);
+  const agent = rankedAgentOf(agentsSnap.docs);
+  const equipped = typeof agent?.archetype === 'string' ? agent.archetype : null;
+  const play = archetypesInPlayOf({ equipped, battles, uid, etDate: record.session?.etDate ?? record.etDate });
+  // a reconfirm files the confirmed plan as it stands; one the archetype-neutral validation would now change (a line an S1
+  // record carried that E2 refuses: an earnings or pre-open print) is refused 409 — so no door (review HD-12)
+  const v = validatePlan(plan.current, contextOfRecord(record, null));
+  const acceptable = !validationChanged(v) && revisionOf(v.current) === plan.revision;
+  return { inPlay: play.inPlay, missing: acceptable ? missingArchetypesOf(plan, play.inPlay) : [] };
 }
 
 /** SKIP: a proposed plan becomes skipped (V1.1 §6). */

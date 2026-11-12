@@ -21,6 +21,15 @@
 // Terminal dispositions stop re-application of THAT revision on that battle; retryable
 // ones are re-attempted by the next caller (sweep, status read, worker) until the close.
 // No chat budget is charged (V1.1 §6.1 step 5).
+//
+// ARCHETYPES IN PLAY (Amendment E §E1, replacing C15's one-archetype confirm): for a player on
+// a session, the equipped archetype together with the frozen agentContext.archetype of every
+// battle this module would file into — the owner's, not a CPU seat, active, and on this
+// session (`battleInPlay`, the same checks decideApplication makes before it looks for a
+// confirmation) — keeping only archetypes with a dissent row (one without gets no
+// confirmation; its battles keep `archetype_unsupported`). Confirm files one confirmation per
+// archetype in play; reconfirm files the missing ones; the status answer carries the missing
+// list, so the hub's Reconfirm door is exactly this acceptance predicate (BUILD_RULES §9).
 
 import { isCallDirectivePendingAt } from '../directiveUtils.js';
 import { deriveKilledDirectiveIds } from '../controlPromptRenderer.js';
@@ -72,6 +81,44 @@ export function battleKindOf(battle) {
   return 'casual';
 }
 
+/** The battle's frozen archetype (agentContext.archetype, agentBattleService.js:193, fenced, read only), or null. */
+export function battleArchetypeOf(battle) {
+  return typeof battle?.agentContext?.archetype === 'string' && battle.agentContext.archetype ? battle.agentContext.archetype : null;
+}
+
+/**
+ * E1: would this module file a plan of (uid, etDate) into this battle? The owner's, not a CPU seat, its agent its own, active,
+ * this session — decideApplication's checks before the archetype's (review HD-13: the agent check was missing).
+ */
+export function battleInPlay(battle, { uid, etDate }) {
+  return !!battle && battle.ownerId === uid && !isCpuBattle(battle) && agentBelongsToBattle(battle, battle.agentId)
+    && battle.status === 'active' && battle.timing?.tradingDays?.[0] === etDate;
+}
+
+/**
+ * E1: the archetypes in play for a player on a session — the equipped archetype and every in-play battle's frozen one —
+ * that have a dissent row, sorted, each with the count of its games; and the unsupported ones, apart.
+ * @returns {{ inPlay: string[], games: Record<string, number>, unsupported: string[] }}
+ */
+export function archetypesInPlayOf({ equipped, battles, uid, etDate }) {
+  const games = {};
+  const unsupported = new Set();
+  const note = (archetype, isGame) => {
+    if (typeof archetype !== 'string' || !archetype) return;
+    if (!isArchetypeSupported(archetype)) { unsupported.add(archetype); return; }
+    games[archetype] = (games[archetype] ?? 0) + (isGame ? 1 : 0);
+  };
+  note(equipped, false);
+  for (const b of Array.isArray(battles) ? battles : []) if (battleInPlay(b, { uid, etDate })) note(battleArchetypeOf(b), true);
+  return { inPlay: Object.keys(games).sort(), games, unsupported: [...unsupported].sort() };
+}
+
+/** E1: the archetypes in play that have no confirmation on the plan yet (what a reconfirm would file). */
+export function missingArchetypesOf(plan, inPlay) {
+  const confirmed = new Set((Array.isArray(plan?.confirmations) ? plan.confirmations : []).map((c) => c?.archetype).filter(Boolean));
+  return (Array.isArray(inPlay) ? inPlay : []).filter((a) => !confirmed.has(a));
+}
+
 /** C15: the newest confirmation made under `archetype`, or null. */
 export function selectConfirmation(plan, archetype) {
   const list = Array.isArray(plan?.confirmations) ? plan.confirmations : [];
@@ -109,7 +156,20 @@ export function statusReceiptOf(applications, battleId, confirmations = []) {
     if (r && r.battleId === battleId && r.disposition === DISPOSITIONS.WRITTEN && (!written || (ms(r.at) ?? 0) >= (ms(written.at) ?? 0))) written = r;
   }
   if (!written) return newest;
-  const archetypeOf = (rev) => (Array.isArray(confirmations) ? confirmations : []).find((c) => c && c.revision === rev)?.archetype ?? null;
+  // E1: archetypes in play often share one revision (the same current when no dissent row fires), so a revision names a SET
+  // of archetypes. The newer receipt hides the written one only when its revision has a confirmation under some archetype
+  // and none under the battle's own (the receipt's `archetype`, the battle's frozen one): such a confirmation can never
+  // reach this battle. A WRITTEN receipt has always carried its archetype (applyPlan stamps decision.archetype, S1 included:
+  // review HR-HD-7); the archetype-less branch below is S1's rule, kept as a defence for a receipt without one.
+  const list = Array.isArray(confirmations) ? confirmations : [];
+  const archetypesOf = (rev) => new Set(list.filter((c) => c && c.revision === rev).map((c) => c.archetype));
+  const own = typeof written.archetype === 'string' ? written.archetype : typeof newest.archetype === 'string' ? newest.archetype : null;
+  if (own !== null) {
+    const heldSet = archetypesOf(written.revision);
+    const otherSet = archetypesOf(newest.revision);
+    return heldSet.has(own) && otherSet.size > 0 && !otherSet.has(own) ? written : newest;
+  }
+  const archetypeOf = (rev) => list.find((c) => c && c.revision === rev)?.archetype ?? null;
   const held = archetypeOf(written.revision);
   const other = archetypeOf(newest.revision);
   return held !== null && other !== null && held !== other ? written : newest;

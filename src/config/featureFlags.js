@@ -2831,7 +2831,11 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
  *   'on'     (shipped — the cockpit flip, Build 2a spec §10.3) Build 1/2
  *            surfaces read the records (the chat calls block, the answer
  *            endpoint, the cockpit tiles), for the allowlisted owners'
- *            battles only: every other battle resolves 'off' (mode.js).
+ *            battles and for the RELEASE COHORT (mode.js; the control
+ *            document cockpitConfig/release, api/_utils/callRecords/release.js:
+ *            agent-mode, non-CPU battles of a stable share of owners — empty
+ *            unless the document exists and is not disabled): every other
+ *            battle resolves 'off'.
  *
  * RUNWAY: 'off' → 'shadow' is its own one-line founder PR after this build
  * merges AND the `calls` composite index (firestore.indexes.json) is deployed —

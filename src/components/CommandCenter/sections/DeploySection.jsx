@@ -107,8 +107,9 @@ function DeployingWith({ idea, displayState }) {
  */
 /**
  * Huddle S1 (Huddle spec Amendment C V1.2 §C15; Command Center spec V1.2 Amendment D §D8): the one reconfirm line and its
- * door, when the archetype the agent read shows differs from the newest confirmation's. A pure derivation (hub/huddleView.js
- * needsReconfirmOf) from readers the hub already has: the card makes no call, and the line never blocks or delays a deploy.
+ * door, only while an archetype in play has no confirmation (Amendment E §E1: the status answer's plan.reconfirm, the server's
+ * own acceptance predicate). A pure derivation (hub/huddleView.js needsReconfirmOf) from the reader the hub already has: the
+ * card makes no call, and the line never blocks or delays a deploy.
  */
 function ReconfirmLine({ reconfirm }) {
   if (!reconfirm) return null;

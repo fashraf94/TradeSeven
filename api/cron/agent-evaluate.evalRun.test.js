@@ -56,7 +56,7 @@ const mocks = vi.hoisted(() => ({
   marketOpen: true,
 }));
 const world = vi.hoisted(() => ({ db: null, battles: null }));
-const flags = vi.hoisted(() => ({ beat: false }));
+const flags = vi.hoisted(() => ({ beat: false, callsMode: 'on' }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicMock { constructor() { this.messages = { create: (...a) => mocks.create(...a) }; } },
@@ -106,11 +106,14 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   TICK_CAPTURE_ENABLED: false,
   get EVAL_DEFERRED_BEAT_ENABLED() { return flags.beat; },
+  // The real value ('on'); a getter so the release-view rows can drive the global gate.
+  get CALL_RECORDS_MODE() { return flags.callsMode; },
 }));
 
 const cron = await import('./agent-evaluate.js');
 const handler = cron.default;
 const { processAgentBattle, composeEvalRunRecord, DEFERRED_BEAT_CAP, EVAL_RUN_DEFERRED_ID_CAP } = cron;
+const cronTool = await import('../_utils/agentEvalToolSchema.js');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FROZEN_MS = Date.parse(FROZEN_NOW);
@@ -277,6 +280,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(FROZEN_NOW));
   flags.beat = false;
+  flags.callsMode = 'on';
   mocks.marketOpen = true;
   mocks.getStockAnalysisData.mockReset();
   mocks.fetchIntradayBatch.mockReset();
@@ -743,5 +747,99 @@ describe('firestore.rules — agentEvalRuns is server-only (source tripwire)', (
       expect(head).toMatch(/^\/\{[a-z]+=\*\*\}\/(?!agentEvalRuns\/)[A-Za-z]+\/\{[^}/]+\}$/);
     }
     expect(ruleBlocks(rules, /\/\{document=\*\*\}/)).toEqual([['allow read, write: if false;']]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The cockpit's own release switch (build prompt BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): the handler
+// reads the control document ONCE per run — after the active battles are known, before the first
+// battle resolves its calls mode — and never in a run that evaluates nothing.
+describe('the release cohort — the control view is read once per run, before the loop', () => {
+  /** Run the real handler over `battles`, logging every collection the handler touches, in order. */
+  async function runLogged(battles, { query } = {}) {
+    world.battles = battles;
+    world.db = makeRunDb({ battles });
+    const seq = [];
+    const collection = world.db.collection.bind(world.db);
+    world.db.collection = (name) => { seq.push(name); return collection(name); };
+    const res = makeRes(world.db.__order);
+    await handler({ headers: { 'x-vercel-cron': '1' }, query }, res);
+    return { res, seq };
+  }
+  it('three battles → exactly ONE read of cockpitConfig, and it comes before every battle tick', async () => {
+    const { seq } = await runLogged([cpuBattle('c1'), cpuBattle('c2'), cpuBattle('c3')]);
+    expect(seq.filter((n) => n === 'cockpitConfig')).toHaveLength(1);
+    // Every battle's own tick (one `agentBattles` access each) comes AFTER the one control read.
+    const after = seq.slice(seq.indexOf('cockpitConfig') + 1);
+    expect(after.filter((n) => n === 'agentBattles').length).toBeGreaterThanOrEqual(3);
+  });
+  it('no active battle → no read; the settle-only run → no read', async () => {
+    expect((await runLogged([])).seq).not.toContain('cockpitConfig');
+    expect((await runLogged([cpuBattle('c1')], { query: { mode: 'settle' } })).seq).not.toContain('cockpitConfig');
+  });
+  it("global 'off' and 'shadow' → no read (nothing to learn below 'on')", async () => {
+    for (const mode of ['off', 'shadow']) {
+      flags.callsMode = mode;
+      expect((await runLogged([cpuBattle('c1')])).seq, mode).not.toContain('cockpitConfig');
+    }
+  });
+  it('a control read that throws cannot fail the run: the battles still evaluate', async () => {
+    world.battles = [cpuBattle('c1')];
+    world.db = makeRunDb({ battles: world.battles });
+    const collection = world.db.collection.bind(world.db);
+    world.db.collection = (name) => { if (name === 'cockpitConfig') throw new Error('control down'); return collection(name); };
+    const res = makeRes(world.db.__order);
+    await handler({ headers: { 'x-vercel-cron': '1' } }, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.evaluated).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The release cohort, through the REAL handler and a REAL model-calling check (build prompt
+// BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): a non-allowlisted, agent-mode, real-owner battle is checked
+// `on` — the request carries the `on` tool with `declarations` — only when the control document
+// admits it. Absent, disabled, malformed, a read error, a League battle and a CPU seat get the base
+// tool, byte for byte: the dark state changes nothing the model sees.
+describe('the release cohort — what the model is sent', () => {
+  const CONTROL = { shareBp: 10000, disabled: false, salt: 'salt-a' };
+  /** Run the handler over one battle with the control document served through the wrapped `collection`; return the model request. */
+  async function requestFor(battle, control, { throws = false } = {}) {
+    world.battles = [battle];
+    world.db = makeRunDb({ battles: [battle] });
+    const collection = world.db.collection.bind(world.db);
+    world.db.collection = (name) => (name === 'cockpitConfig'
+      ? { doc: () => ({ get: async () => { if (throws) throw new Error('control down'); return { exists: control !== undefined, data: () => control }; } }) }
+      : collection(name));
+    const res = makeRes(world.db.__order);
+    await handler({ headers: { 'x-vercel-cron': '1' } }, res);
+    expect(mocks.create, 'the check dispatched exactly one model call').toHaveBeenCalledTimes(1);
+    const request = mocks.create.mock.calls[0][0];
+    mocks.create.mockClear();
+    return request;
+  }
+  const { buildTradeDecisionTool, TRADE_DECISION_TOOL } = cronTool;
+  afterEach(async () => { const { resetReleaseView } = await import('../_utils/callRecords/release.js'); resetReleaseView(); });
+
+  it('in the cohort → the `on` tool (with `declarations`), exactly the one buildTradeDecisionTool({ declarations: \'on\' }) builds', async () => {
+    const req = await requestFor(makeTickBattle({ id: 'cohort-1' }), CONTROL);
+    expect(req.tools[0].input_schema.properties.declarations).toBeTruthy();
+    expect(req.tools[0]).toEqual(buildTradeDecisionTool({ declarations: 'on' }));
+  });
+
+  it('no document, a disabled one, a malformed one, a failing read, League and a CPU-owned battle → the BASE tool, with no `declarations`', async () => {
+    const cases = [
+      [makeTickBattle({ id: 'a' }), undefined, {}, 'no document'],
+      [makeTickBattle({ id: 'b' }), { ...CONTROL, disabled: true }, {}, 'disabled'],
+      [makeTickBattle({ id: 'c' }), { ...CONTROL, shareBp: 'all' }, {}, 'malformed'],
+      [makeTickBattle({ id: 'd' }), CONTROL, { throws: true }, 'a failing read'],
+      [makeTickBattle({ id: 'e', gameMode: 'baggerbomb_tournament' }), CONTROL, {}, 'League'],
+      [makeTickBattle({ id: 'f', ownerId: 'cpu-2' }), CONTROL, {}, 'a CPU-owned battle'],
+    ];
+    for (const [battle, control, opts, why] of cases) {
+      const req = await requestFor(battle, control, opts);
+      expect(req.tools[0].input_schema.properties.declarations, why).toBeUndefined();
+      expect(req.tools[0], why).toEqual(TRADE_DECISION_TOOL);
+    }
   });
 });

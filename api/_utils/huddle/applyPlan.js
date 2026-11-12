@@ -32,7 +32,7 @@
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { fileDirectiveTransactional } from '../directiveWriter.js';
-import { resolveCallRecordsMode } from '../callRecords/mode.js';
+import { resolveCallRecordsMode, ensureReleaseView } from '../callRecords/mode.js';
 import { ARCHETYPE_INTEGRITY_MODE } from '../../../src/config/featureFlags.js';
 import { TICKS_SUBCOLLECTION } from '../tickCapture/captureConfig.js';
 import { huddleDayRef, battleRefOf, PLAN_STATUS } from './records.js';
@@ -59,6 +59,11 @@ const nonEmpty = (v) => typeof v === 'string' && v.length > 0;
 export async function applyPlanToBattle(db, { uid, etDate, battleId, writtenBy, nowMs = Date.now(), integrityMode = ARCHETYPE_INTEGRITY_MODE }) {
   const dayRef = huddleDayRef(db, uid, etDate);
   const battleRef = battleRefOf(db, battleId);
+  // The cockpit's release cohort (BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): this function is the ONE seam every
+  // Huddle path (confirm, the sweep, reconcile) passes through before the mode is resolved inside the
+  // transaction (decideApplication → slotHoldsLiveCall, and the callsMode below), which reads the CACHED
+  // control view — so it is made fresh here, before the transaction. Never throws; fails closed.
+  await ensureReleaseView(db);
   return db.runTransaction(async (tx) => {
     const recordSnap = await tx.get(dayRef);
     const battleSnap = await tx.get(battleRef);
@@ -279,14 +284,16 @@ export async function reconcileHuddle(db, { uid, etDate, nowMs = Date.now(), int
     if (snap.exists) fresh = snap.data();
   } catch { tally.errors += 1; }
   const written = (fresh.plan?.applications || []).filter((r) => r && r.disposition === DISPOSITIONS.WRITTEN && !r.retiredAt && !r.closedAt);
-  const confirmation = (rev) => (fresh.plan?.confirmations || []).find((c) => c && c.revision === rev) || null;
+  // E1: archetypes can share a revision (the same current); the receipt's own archetype picks its confirmation first
+  const confs = fresh.plan?.confirmations || [];
+  const confirmation = (rev, archetype) => confs.find((c) => c && c.revision === rev && c.archetype === archetype) || confs.find((c) => c && c.revision === rev) || null;
   for (const receipt of written) {
     try {
       const battleSnap = await battleRefOf(db, receipt.battleId).get();
       const battle = battleSnap.exists ? battleSnap.data() : null;
       const stamps = observeWrittenReceipt(receipt, battle, { nowMs });
       if (!receipt.heardAt) {
-        const conf = confirmation(receipt.revision);
+        const conf = confirmation(receipt.revision, receipt.archetype);
         const heard = conf ? await findHeardTick(db, { battleId: receipt.battleId, sinceIso: receipt.at, threadId: receipt.directiveThreadId, textHash: conf.renderedTextHash }) : null;
         if (heard) { Object.assign(stamps, heard); tally.heard += 1; }
       }

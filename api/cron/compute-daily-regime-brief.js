@@ -34,10 +34,11 @@ import {
 } from '../_utils/dailyRegimeBriefPrompt.js';
 import { logDailyRegimeBrief } from '../_utils/shadowLogger.js';
 // Huddle S1 (spec V1.1 §5.1 as replaced by Amendment A §A10): the staged run marker
-// around the brief stage, and — only while DRB_HUDDLE_ENABLED is on — the enqueue and
-// drain stages after it. With the flag off the only new behaviour is the marker write;
-// the cron entry, the brief stage and every response are as before.
-import { isHuddleOn } from '../_utils/huddle/gate.js';
+// around the brief stage, and — only while DRB_HUDDLE_ENABLED is on AND the Huddle's cohort
+// (HUDDLE_PLAYER_UIDS, Amendment E §E7) names someone — the enqueue and drain stages after it.
+// Otherwise the only new behaviour is the marker write; the cron entry, the brief stage and
+// every response are as before.
+import { isHuddleLive } from '../_utils/huddle/gate.js';
 import { etDateOfMs } from '../_utils/huddle/records.js';
 import { markRun, runEnqueueStage, drainQueue } from '../_utils/huddle/worker.js';
 
@@ -60,7 +61,7 @@ export async function afterBriefStage(db, { briefStage, handlerStartMs, nowMs = 
     logError('huddleRuns marker write failed', { message: err?.message });
     return;
   }
-  if (!isHuddleOn() || briefStage !== 'done') return;
+  if (!isHuddleLive() || briefStage !== 'done') return;
   try {
     await runEnqueueStage(db, { etDate, nowMs });
     const drain = await drainQueue(db, { etDate, session: null, shared: null, invocationStartMs: handlerStartMs, maxDurationMs: config.maxDuration * 1000 });

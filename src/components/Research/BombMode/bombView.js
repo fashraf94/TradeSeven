@@ -7,8 +7,8 @@
 
 import { priceDecimals, priceText } from '../priceFormat.js';
 import { nextEligibleSlot } from '../../../../api/_utils/callRecords/horizon.js';
-import { measuredLadder, previewLadder, v4Ladder, v4LevelsFor } from './ladder.js';
-import { BOMB_COPY } from './bombCopy.js';
+import { measuredLadder, previewLadder, v4Ladder, v4LevelsFor, rungPct, rungShown } from './ladder.js';
+import { BOMB_COPY, money, rungPctText } from './bombCopy.js';
 import { etClock, etDate, etWeekday } from './checkClock.js';
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -57,10 +57,54 @@ export function scoredChipText({ live, scored, decimals, always = false, frozen 
   const d = finite(decimals) ? decimals : priceDecimals(live);
   const differs = priceText(live, d) !== priceText(scored.price, d);
   if (!always && !differs) return null;
+  return (frozen ? BOMB_COPY.lastTickChip : BOMB_COPY.scoredChip)(live, scored.price, scoredAtText(scored, nowMs), d);
+}
+
+/**
+ * BD-8 — WHICH CHECK scored the price: `the 1:00 check`, or `Mon's 3:45 check`
+ * for an earlier session. The check is the slot of the moment the check READ the
+ * quote — `scored.checkAtMs`, the committed context's quoteEvidence.observedAt —
+ * NOT the quote's provider time (`scored.atMs`): EODHD stamps its quotes about
+ * 16 minutes before the check observes them (build report §1.1, BD-I1), so the
+ * provider time names the check two slots early (12:44 → "the 12:30 check" for
+ * the 1:00 check). A record without an observation instant (the legacy tick,
+ * whose time IS the evaluator's clock) uses `atMs`. With no slot, today's
+ * wording: the time, with its day when it is an earlier session's.
+ */
+export function scoredAtText(scored, nowMs = null) {
+  const readMs = finite(scored?.checkAtMs) ? scored.checkAtMs : scored?.atMs;
+  const slot = checkSlotOf(readMs);
+  if (slot !== null) {
+    const sameDay = !finite(nowMs) || etDate(slot) === etDate(nowMs);
+    return sameDay ? BOMB_COPY.checkName(etClock(slot)) : BOMB_COPY.checkNameDay(etWeekday(slot), etClock(slot));
+  }
   // A check from an earlier session names its day: "at 1:15" alone would read as today's.
   const sameDay = finite(nowMs) && etDate(scored.atMs) === etDate(nowMs);
-  const at = sameDay || !finite(nowMs) ? etClock(scored.atMs) : `${etWeekday(scored.atMs)} ${etClock(scored.atMs)}`;
-  return (frozen ? BOMB_COPY.lastTickChip : BOMB_COPY.scoredChip)(live, scored.price, at, d);
+  return sameDay || !finite(nowMs) ? etClock(scored.atMs) : `${etWeekday(scored.atMs)} ${etClock(scored.atMs)}`;
+}
+
+/** The check name for a seen bank or hit instant (a slot instant): `the 1:15 check`. */
+export const checkNameAt = (ms) => (finite(ms) ? BOMB_COPY.checkName(etClock(ms)) : null);
+
+/**
+ * BD-6, BUILD_RULES §9 — ONE rung's printed facts, from the one ladder and the
+ * one decimals: the Fuse's titles and price labels, the bar and the levels
+ * table all print these exact strings for a rung. The price is the rung's
+ * displayed price, rounded toward its award (ladder.rungShown, BP-1); the % is
+ * the rule's (ladder.rungPct, BP-3).
+ */
+export function rungFacts(ladder, rung, decimals) {
+  const pct = rungPct(ladder, rung, decimals);
+  const shown = rungShown(rung, decimals);
+  return { pct, pctText: finite(pct) ? rungPctText(pct) : null, shown, priceText: money(shown, finite(decimals) ? decimals : priceDecimals(rung.price)) };
+}
+
+/** The live price's move from the baseline, % of the displayed baseline, from the displayed prices — the Fuse's live label and the table's live row print it (§9). */
+export function liveMovePct(ladder, live, decimals) {
+  if (!ladder || ladder.status !== 'ok' || !positive(live)) return null;
+  const d = finite(decimals) ? decimals : priceDecimals(live);
+  const base = Number(priceText(ladder.baseline.price, d));
+  return base > 0 ? ((Number(priceText(live, d)) - base) / base) * 100 : null;
 }
 
 /**
@@ -77,23 +121,43 @@ export function checkSlotOf(ms, battleExpiresAtMs = null) {
 }
 
 /**
- * The sheet's one line (spec §4.3 templates). `bankedTimes`: tier → the check
- * instant the modal SAW it bank at (BA-4); absent → no time is written.
+ * The sheet's one line — what has to happen (spec §4.3 templates; lead-aware
+ * since BD-4). `bankedTimes` / `hitTimes`: tier → the check instant the modal
+ * SAW it bank / hit at (BA-4); absent → no time is written. `lead`: the lead
+ * side (BD-2; null reads as up).
+ *
+ *   up leads      Needs $280.91 at a check for +15 · Bust at $259.53 · next check 1:15
+ *   down leads    Bust (−10) if it's at or below $259.53 at a check · +15 needs $280.91 · next check 1:15
+ *   after a hit   Bust −10 hit at the 1:15 check · next below: Crash at $253.47   (down leading)
+ *   banked / all  the Build A lines, unchanged (up leading)
+ *
+ * Every rung price here is the rung's displayed price (ladder.rungShown, BP-1):
+ * "Needs $X at a check" and "Bust (−10) if it's at or below $X" are true at X.
  */
-export function sheetLine({ ladder, clockLabel = null, checking = false, bankedTimes = {}, decimals }) {
+export function sheetLine({ ladder, clockLabel = null, checking = false, bankedTimes = {}, hitTimes = {}, lead = null, decimals }) {
   if (!ladder || ladder.status !== 'ok') return null;
   const d = decimals;
+  const px = (r) => rungShown(r, d);
   if (ladder.kind === 'preview') {
     if (ladder.model === 'v4') return BOMB_COPY.previewV4(ladder.baseline.price, d);
     return (ladder.heldPreview === true ? BOMB_COPY.heldPreviewNeeds : BOMB_COPY.previewNeeds)(ladder.baseline.price, d);
   }
-  if (!ladder.next) return BOMB_COPY.allRungsBanked(ladder.bankedPoints);
+  const join = (...parts) => parts.filter(Boolean).join(' · ');
+  const clock = checking ? BOMB_COPY.checking : clockLabel ? BOMB_COPY.nextCheckInline(clockLabel) : null;
+  const next = ladder.next;
+  const nextDown = ladder.nextDown ?? null;
+  if (lead === 'down' && nextDown) {
+    const lastHit = [...ladder.down].reverse().find((r) => r.hit) || null;
+    if (lastHit) return join(BOMB_COPY.downHitAt(lastHit.label, lastHit.points, checkNameAt(hitTimes[lastHit.key])), BOMB_COPY.downNextBelow(nextDown.label, px(nextDown), d));
+    return join(BOMB_COPY.downIfAtCheck(nextDown.label, nextDown.points, px(nextDown), d), next ? BOMB_COPY.upNeeds(next.points, px(next), d) : null, clock);
+  }
+  if (!next) return BOMB_COPY.allRungsBanked(ladder.bankedPoints);
   const lastBanked = [...ladder.up].reverse().find((r) => r.banked) || null;
   if (lastBanked) {
     const at = finite(bankedTimes[lastBanked.key]) ? etClock(bankedTimes[lastBanked.key]) : null;
-    return BOMB_COPY.afterBank(lastBanked.points, at, ladder.next.price, d);
+    return BOMB_COPY.afterBank(lastBanked.points, at, px(next), d);
   }
-  return checking ? BOMB_COPY.needsChecking(ladder.next.price, d) : BOMB_COPY.needs(ladder.next.price, d, clockLabel);
+  return join(BOMB_COPY.needsFor(px(next), d, next.points), nextDown ? BOMB_COPY.downAt(nextDown.label, px(nextDown), d) : null, clock);
 }
 
 /**

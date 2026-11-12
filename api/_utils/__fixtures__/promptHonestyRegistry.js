@@ -57,7 +57,7 @@ export const PROMPT_CONTRIBUTING_MODULES = [
   'callRecords/callsBlock.js', // Cockpit Build 1a: the chat calls block rendered into the voice prompt at resolved 'on' (spec §9)
   'evalCryptoSlotBlock.js',  // Crypto Slot paragraph: the tiered eval prompt's YOUR CRYPTO SLOT block (registered in the same commit as the fenced splice)
   'evalStockRewardBlock.js', // BaggerBomb stock thresholds v2 Ruling 10: the tiered reward prose per game, measured or legacy (registered in the same commit as the fenced splice)
-  'huddle/planTemplates.js', // Huddle S1: the game plan's rendered slot text (renderPlan) — model-visible through the directive block, as callRecords/callActions.js is; dark behind DRB_HUDDLE_ENABLED (BUILD_RULES §2 review, L1-4)
+  'huddle/planTemplates.js', // Huddle S1: the game plan's rendered slot text (renderPlan) — model-visible through the directive block, as callRecords/callActions.js is; on for the HUDDLE_PLAYER_UIDS cohort since S1.1 (Amendment E §E7; BUILD_RULES §2 review, L1-4)
 ];
 
 // Every OTHER same-directory module the two fenced assemblers import,

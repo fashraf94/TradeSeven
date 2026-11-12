@@ -124,6 +124,7 @@ describe('results view and local runner', () => {
     const input = demoInput();
     input.title = '<img src="https://example.invalid/x" onerror="alert(1)">';
     const run = make({ input });
+    const unchanged = JSON.stringify(run);
     const dom = new JSDOM(renderReport(run, ':root{}'));
     const doc = dom.window.document;
     expect(doc.querySelectorAll('article').length).toBe(run.summary.total);
@@ -131,9 +132,30 @@ describe('results view and local runner', () => {
     expect(doc.querySelector('meta[http-equiv="Content-Security-Policy"]').content).toContain("default-src 'none'");
     expect(doc.body.textContent).toContain(input.title);
     for (const [i, article] of [...doc.querySelectorAll('article')].entries()) {
-      expect([...article.querySelectorAll('.comparison strong')].map(x => x.textContent)).toEqual([run.cases[i].baseline.decision, run.cases[i].candidate.decision]);
+      const decisions = [...article.querySelectorAll('.comparison strong')];
+      expect(decisions.map(x => x.dataset.decision)).toEqual([run.cases[i].baseline.decision, run.cases[i].candidate.decision]);
+      const expected = { admitted: 'Eligible', refused: 'Not eligible', unknown: 'Unknown' };
+      expect(decisions.map(x => x.textContent)).toEqual([expected[run.cases[i].baseline.decision], expected[run.cases[i].candidate.decision]]);
+      expect(JSON.parse(article.querySelector('pre').textContent).entry).toEqual(run.cases[i].entry);
     }
+    expect(doc.body.textContent).toContain('The evaluator needs 55 completed sessions. This window supplies 54.');
+    expect(doc.body.textContent).toContain('Decision changed from Eligible to Unknown.');
+    expect(JSON.stringify(run)).toBe(unchanged);
     dom.window.close();
+  });
+
+  it('distinguishes the requested date, completed session, and later download without inventing an outcome', () => {
+    const input = demoInput();
+    input.cases[0].evidenceKind = 'later_reconstruction';
+    input.cases[0].observedAt = '2026-10-09T15:00:00.000Z';
+    const doc = new JSDOM(renderReport(make({ input, candidate: 'baseline-control-v1' }), ':root{}')).window.document;
+    expect(doc.body.textContent).toContain('Requested date: 2026-10-09');
+    expect(doc.body.textContent).toContain('Completed session evaluated: 2026-10-08');
+    expect(doc.body.textContent).toContain('Historical downloads were captured after their evaluation dates');
+    expect(doc.body.textContent).toContain('Same rules as baseline (control)');
+    expect(doc.body.textContent).toContain('Market outcome: not observed');
+    expect(doc.body.textContent).toContain('does not establish consolidated market-volume coverage');
+    doc.defaultView.close();
   });
 
   it('writes unique local outputs and verifies a saved record with network disabled', async () => {

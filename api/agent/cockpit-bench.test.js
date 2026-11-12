@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const state = vi.hoisted(() => ({ uid: 'owner-uid-1', authFails: false, callsMode: 'on', allow: ['owner-uid-1'], v2: true, middlewareHandles: false, docs: {}, reads: [], writes: [], throwOnRead: false }));
+const state = vi.hoisted(() => ({ uid: 'owner-uid-1', authFails: false, callsMode: 'on', allow: ['owner-uid-1'], v2: true, middlewareHandles: false, docs: {}, reads: [], controlReads: [], writes: [], throwOnRead: false }));
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => state.middlewareHandles }));
 vi.mock('../_utils/authMiddleware.js', () => ({
   requireAuth: async (_req, res) => {
@@ -26,6 +26,9 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 vi.mock('../_utils/firebaseAdmin.js', () => {
   const docRef = (path) => ({
     get: async () => {
+      // The release cohort's control view (cockpitConfig/release) is its own read, counted apart so every
+      // exact `state.reads` list below still pins the endpoint's DATA reads.
+      if (path.startsWith('cockpitConfig/')) { state.controlReads.push(path); return { exists: state.docs[path] !== undefined, data: () => state.docs[path] }; }
       state.reads.push(path);
       if (state.throwOnRead) throw new Error('firestore down');
       const data = state.docs[path];
@@ -39,6 +42,7 @@ vi.mock('../_utils/firebaseAdmin.js', () => {
   return { getFirebaseAdmin: () => ({ collection: (name) => ({ doc: (id) => docRef(`${name}/${id}`) }) }) };
 });
 
+const { resetReleaseView } = await import('../_utils/callRecords/release.js'); // the real module, never mocked
 const { default: handler, resetCockpitBenchRateLimit, buildBenchRows, benchPriceRows, COCKPIT_BENCH_USER_RATE_LIMIT, BENCH_ROW_STATUSES } = await import('./cockpit-bench.js');
 
 const NOW = Date.parse('2026-10-15T17:00:00.000Z');
@@ -84,7 +88,8 @@ const get = async (query = { battleId: BATTLE }, method = 'GET') => { const res 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
-  Object.assign(state, { uid: 'owner-uid-1', authFails: false, callsMode: 'on', allow: ['owner-uid-1'], v2: true, middlewareHandles: false, reads: [], writes: [], throwOnRead: false });
+  Object.assign(state, { uid: 'owner-uid-1', authFails: false, callsMode: 'on', allow: ['owner-uid-1'], v2: true, middlewareHandles: false, reads: [], controlReads: [], writes: [], throwOnRead: false });
+  resetReleaseView();
   state.docs = {
     [`agentBattles/${BATTLE}`]: battleDoc(),
     [`agentBattles/${BATTLE}/calls/${EXIT}`]: exitCall(),
@@ -213,5 +218,42 @@ describe('the pure parts', () => {
   it('benchPriceRows: a non-finite price or change is null; a missing document reads empty', () => {
     expect(benchPriceRows(cache).bySymbol).toEqual({ DHR: { price: 258.7, changePct: 2.1 }, CEG: { price: 236.9, changePct: 3.4 }, EA: { price: null, changePct: null }, 'ETH-USD.CC': { price: null, changePct: null } });
     expect(benchPriceRows(null)).toEqual({ asOf: null, bySymbol: {} });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The cockpit's own release switch (build prompt BUILD_PROMPT_COCKPIT_RELEASE_SWITCH): the bench
+// read awaits the control view after the owner check and before the mode; a non-allowlisted owner in
+// the release cohort (agent mode, a real owner, under the share) reads the bench; nobody else does.
+describe('the release cohort — the bench read follows the resolver', () => {
+  const CONTROL = { shareBp: 10000, disabled: false, salt: 'salt-a' };
+  const asCohortOwner = (control, battleOver = {}) => {
+    state.allow = ['someone-else'];
+    process.env.COCKPIT_ALLOWLIST_UIDS = 'someone-else';
+    state.docs['cockpitConfig/release'] = control;
+    if (control === undefined) delete state.docs['cockpitConfig/release'];
+    state.docs[`agentBattles/${BATTLE}`] = battleDoc({ gameMode: 'baggerbomb_agent', ...battleOver });
+  };
+  it('in the cohort → 200 rows, and the control document was read once', async () => {
+    asCohortOwner(CONTROL);
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(state.controlReads).toEqual(['cockpitConfig/release']);
+  });
+  it('League, a CPU seat, a disabled, a missing and a malformed document → 404 cockpit_unavailable', async () => {
+    for (const [control, over, why] of [[CONTROL, { gameMode: 'baggerbomb_tournament' }, 'League'], [CONTROL, { isCpu: true }, 'CPU seat'], [{ ...CONTROL, disabled: true }, {}, 'disabled'], [undefined, {}, 'missing'], [{ shareBp: -5, disabled: false, salt: 's' }, {}, 'malformed']]) {
+      resetReleaseView();
+      resetCockpitBenchRateLimit();
+      asCohortOwner(control, over);
+      const res = await get();
+      expect(res.statusCode, why).toBe(404);
+      expect(res.body, why).toEqual({ error: 'cockpit_unavailable' });
+    }
+  });
+  it('a non-owner is refused 403 BEFORE the control view is read (no read for a request that is refused anyway)', async () => {
+    asCohortOwner(CONTROL);
+    state.uid = 'someone-else';
+    expect((await get()).statusCode).toBe(403);
+    expect(state.controlReads).toEqual([]);
   });
 });
