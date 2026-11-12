@@ -11,7 +11,8 @@
 // The AMZN fixture is the founder's Nov 10 position (fill $270.22 at 3.954943 %).
 
 import { describe, it, expect } from 'vitest';
-import React from 'react';
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import FuseChart from './FuseChart.jsx';
 import BombSheet, { levelRows } from './BombSheet.jsx';
@@ -190,9 +191,9 @@ describe('BP-2 — one red: the Danger Zone draws in the downside levels\' red (
     expect(d.querySelector('[data-rz-goal-tag="down"] span').getAttribute('style')).toContain('--ft-neg');
     expect(states[4][1]).toContain('--ft-neg');
   });
-  it('the red zone keeps Build A\'s heat (the --ft-red / amber mix) — BT.risk stays only there', () => {
-    const rz = renderToStaticMarkup(<RedZone ladder={l} go={toGo(l, 280.2)} live={280.2} decimals={2} mode="approaching" trace={trace} clock={null} scoredText={null} nowMs={NOW} />);
-    expect(rz).toContain('color-mix(in srgb, var(--ft-red) 55%, var(--ft-amber))');
+  it('the red zone keeps Build A\'s heat (the --ft-red / amber mix) on its numeral — BT.risk stays only there (review C5: the numeral, not just the gradient)', () => {
+    const rz = doc(renderToStaticMarkup(<RedZone ladder={l} go={toGo(l, 280.2)} live={280.2} decimals={2} mode="approaching" trace={trace} clock={null} scoredText={null} nowMs={NOW} />));
+    expect(rz.querySelector('[data-rz-distance] div').getAttribute('style')).toContain('color-mix(in srgb, var(--ft-red) 55%, var(--ft-amber))');
   });
 });
 
@@ -215,8 +216,10 @@ describe('BP-3 — a rung\'s % is the rule\'s %: k × the threshold', () => {
       expect(label.length).toBeGreaterThan(0);
     }
   });
-  it('a preview prints k × its threshold', () => {
+  it('a preview prints k × its threshold on every rung (review C3: +15 is +3.60 %, where the shown $160.34 would give +3.61 %)', () => {
     const p = previewLadder({ previousClose: 154.76, threshold: 3.6 });
+    expect(rungFacts(p, at(p, 'bagger'), 2).pctText).toBe('+3.60%');
+    expect(rungFacts(p, at(p, 'bust'), 2).pctText).toBe('−3.60%');
     expect(rungFacts(p, at(p, 'doubleBagger'), 2).pctText).toBe('+5.40%');
     expect(rungFacts(p, at(p, 'meltdown'), 2).pctText).toBe('−7.20%');
   });
@@ -297,6 +300,9 @@ describe('BP-4 — the red zone gets the Danger Zone\'s layout: one text column,
     const m = d.querySelector('[data-rz-banked-moment]');
     expect(m.getAttribute('style')).toContain(`top:${(46 + (H - 70)) / 2 - 56}px`);
     expect(d.querySelector('[data-redzone-state]').getAttribute('data-redzone-state')).toBe('banked');
+    // review D1: its goal tag keeps Build A's place too, min(goalY + 8, bot − 90)
+    const gy = Number(d.querySelector('[data-rz-goal="up"]').getAttribute('y')) + 2;
+    expect(d.querySelector('[data-rz-goal-tag="up"]').getAttribute('style')).toContain(`top:${Math.min(gy + 8, H - 70 - 90)}px`);
   });
   it('the closed view keeps its behaviour: frozen state, the market-closed tag, the numeral in ink', () => {
     const d = draw(280.2, { mode: 'closed' });
@@ -309,17 +315,73 @@ describe('BP-4 — the red zone gets the Danger Zone\'s layout: one text column,
 // ── BP-5 ──────────────────────────────────────────────────────────────────────
 describe('BP-5 — the baseline label reads cleanly over the 30-minute line', () => {
   it('it is painted after the ghost line and its check dots, with a halo in the plot\'s background (paint-order: stroke), at the same place', () => {
-    const ghost = [...Array(14)].map((_, i) => ({ timestamp: Date.parse('2026-11-10T14:30:00.000Z') / 1000 + i * 1800, close: 270.22 + (i % 3) * 0.4 - 0.4 }));
-    const d = fuse(amzn(), 268.09, { ghost });
+    const t0 = Date.parse('2026-11-10T14:30:00.000Z');
+    const ghost = [...Array(14)].map((_, i) => ({ timestamp: t0 / 1000 + i * 1800, close: 270.22 + (i % 3) * 0.4 - 0.4 }));
+    const checkDots = [{ atMs: t0 + 3 * 1800 * 1000, px: 270.3 }, { atMs: t0 + 9 * 1800 * 1000, px: 270.1 }]; // review C7: dots drawn, so their order is tested
+    const l = amzn();
+    const d = doc(renderToStaticMarkup(<FuseChart ladder={l} live={268.09} decimals={2} go={toGo(l, 268.09)} goDown={toGoDown(l, 268.09)} ghost={ghost} checkDots={checkDots} width={375} height={354} />));
     const label = d.querySelector('[data-fuse-baseline]');
     const paths = [...d.querySelectorAll('[data-fuse-ghost]')];
+    const dots = [...d.querySelectorAll('[data-fuse-check-dot]')];
     expect(paths.length).toBeGreaterThan(0);
-    for (const p of paths) expect(p.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(dots.length).toBe(2);
+    for (const p of [...paths, ...dots]) expect(p.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const style = label.getAttribute('style');
     expect(style).toContain('paint-order:stroke');
     expect(style).toContain('stroke:var(--ft-bg-dashboard)');
     expect(style).toContain('fill:var(--ft-ink-2)');
     expect(label.getAttribute('stroke')).toBeNull(); // §10: the halo's colour goes through style, never an attribute
     expect(Number(label.getAttribute('y')) + 5).toBeCloseTo(Number(d.querySelector('[data-fuse-rung="bagger"] line').getAttribute('y1')) + (Number(d.querySelector('[data-fuse-rung="bust"] line').getAttribute('y1')) - Number(d.querySelector('[data-fuse-rung="bagger"] line').getAttribute('y1'))) / 2, 6);
+  });
+});
+
+// ── Review lens C (2026-11-11): rows that make the build's claims able to fail ─────
+describe('review C1 — mounted, the red zone measures its text column and starts the plot under it', () => {
+  it('a 150 px column (offsets stubbed: top 10, height 140) puts the plot top at 160: the falling trace stays under it', () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    const l = amzn();
+    const desc = { top: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetTop'), h: Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight') };
+    Object.defineProperty(HTMLElement.prototype, 'offsetTop', { configurable: true, get() { return 10; } });
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get() { return 140; } });
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      const bars = [...Array(60)].map((_, i) => ({ t: Date.parse('2026-11-10T17:02:00.000Z') + i * 60000, c: Number((280.9 - i * 0.03).toFixed(2)) }));
+      const trace = { line: bars, dots: [], lastBarMs: bars[bars.length - 1].t, intervalMin: 1 };
+      act(() => root.render(<RedZone ladder={l} go={toGo(l, 279.1)} live={279.1} decimals={2} mode="approaching" trace={trace} clock={null} scoredText={null} nowMs={NOW} width={375} height={354} />));
+      const ys = (host.querySelector('[data-rz-trace-line]').getAttribute('d').match(/,[\d.]+/g) || []).map((s) => Number(s.slice(1)));
+      expect(Math.min(...ys)).toBeGreaterThanOrEqual(160);
+      expect(Number(host.querySelector('[data-rz-goal="up"]').getAttribute('y')) + 2).toBeGreaterThanOrEqual(160);
+    } finally {
+      act(() => root.unmount());
+      host.remove();
+      if (desc.top) Object.defineProperty(HTMLElement.prototype, 'offsetTop', desc.top); else delete HTMLElement.prototype.offsetTop;
+      if (desc.h) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', desc.h); else delete HTMLElement.prototype.offsetHeight;
+    }
+  });
+});
+
+describe('review C2, C4, C6 — the moved cents and the short plot', () => {
+  const ladderOf = (fill, pct) => measuredLadder({ measured: { measured: true, baselinePrice: fill, scoringPct: pct, crossedTiers: [],
+    targets: [['bagger', 1], ['doubleBagger', 1.5], ['tenBagger', 2], ['bust', -1], ['crash', -1.5], ['meltdown', -2]].map(([key, k]) => ({ key, price: fill * (1 + (k * pct) / 100) })) } });
+  it('C4: down leading, nothing hit — "Bust (−10) if it\'s at or below $149.99" (EOG 155.6 at 3.6 %: exact $149.9984, nearest $150.00)', () => {
+    expect(sheetLine({ ladder: ladderOf(155.6, 3.6), lead: 'down', decimals: 2 })).toBe("Bust (−10) if it's at or below $149.99 at a check · +15 needs $161.21");
+  });
+  it('C2: a short plot (H 240 and 200): the up goal tag stays under the column and inside the plot', () => {
+    const l = amzn();
+    const empty = { line: [], dots: [], lastBarMs: null, intervalMin: null };
+    const tagTop = (live, height) => Number(doc(renderToStaticMarkup(<RedZone ladder={l} go={toGo(l, live)} live={live} decimals={2} mode="approaching" trace={empty} clock={null} scoredText={null} nowMs={NOW} width={375} height={height} />))
+      .querySelector('[data-rz-goal-tag="up"]').getAttribute('style').match(/top:(-?[\d.]+)px/)[1]);
+    for (const live of [279.6, 280.2, 280.91, 285.13]) {
+      expect(tagTop(live, 240), `240 @ ${live}`).toBeGreaterThanOrEqual(110);
+      expect(tagTop(live, 240) + 22, `240 @ ${live}`).toBeLessThanOrEqual(240 - 70);
+      expect(tagTop(live, 200), `200 @ ${live}`).toBeGreaterThanOrEqual(110);
+    }
+  });
+  it('C6: a sub-cent fill (270.2249, shown $270.22): the table\'s live marker at $270.22 sits over the baseline row (against the printed baseline)', () => {
+    const l = ladderOf(270.2249, 3.954943);
+    const order = levelRows(viewOf(l, 270.22)).map((r) => r.key);
+    expect(order.indexOf('live')).toBeLessThan(order.indexOf('baseline'));
   });
 });

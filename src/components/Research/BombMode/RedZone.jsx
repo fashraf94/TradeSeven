@@ -176,7 +176,8 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
         // (BP-4: held inside the plot, so it never reaches the text column).
         <div data-rz-goal-tag={down ? 'down' : 'up'} style={{ position: 'absolute', left: 12, top: down
           ? (goalY - 30 >= top - 2 ? Math.min(goalY - 30, bot - 26) : Math.min(goalY + 8, bot - 26))
-          : (goalY + 8 <= bot - 26 ? goalY + 8 : Math.max(top, goalY - 30)) }}>
+          // (The banked moment keeps Build A's tag place, as it keeps Build A's plot — review D1.)
+          : showMoment ? Math.min(goalY + 8, bot - 90) : (goalY + 8 <= bot - 26 ? goalY + 8 : Math.max(top, goalY - 30)) }}>
           <Tag color={down ? BT.red : BT.gold} solid>{down
             ? BOMB_COPY.dangerRungTag(goalRung.emoji, goalRung.label, goalRung.points, rungShown(goalRung, d), d)
             : BOMB_COPY.rungTag(goalRung.emoji, goalRung.label, goalRung.points, rungShown(goalRung, d), d)}</Tag>
