@@ -300,9 +300,12 @@ describe('BP-4 — the red zone gets the Danger Zone\'s layout: one text column,
     const m = d.querySelector('[data-rz-banked-moment]');
     expect(m.getAttribute('style')).toContain(`top:${(46 + (H - 70)) / 2 - 56}px`);
     expect(d.querySelector('[data-redzone-state]').getAttribute('data-redzone-state')).toBe('banked');
-    // review D1: its goal tag keeps Build A's place too, min(goalY + 8, bot − 90)
-    const gy = Number(d.querySelector('[data-rz-goal="up"]').getAttribute('y')) + 2;
-    expect(d.querySelector('[data-rz-goal-tag="up"]').getAttribute('style')).toContain(`top:${Math.min(gy + 8, H - 70 - 90)}px`);
+    // review D1: its goal tag keeps Build A's place too, min(goalY + 8, bot − 90) — also with the
+    // price over the next rung (+30 $286.26 at $290), where the goal sits on the window's floor.
+    for (const [live, doc1] of [[281.4, d], [290, draw(290, { l: banked, mode: 'banked', moment: { key: 'bagger', keys: ['bagger'], points: 15, atMs: Date.parse('2026-11-10T18:00:00.000Z'), price: 290 } })]]) {
+      const gy = Number(doc1.querySelector('[data-rz-goal="up"]').getAttribute('y')) + 2;
+      expect(doc1.querySelector('[data-rz-goal-tag="up"]').getAttribute('style'), String(live)).toContain(`top:${Math.min(gy + 8, H - 70 - 90)}px`);
+    }
   });
   it('the closed view keeps its behaviour: frozen state, the market-closed tag, the numeral in ink', () => {
     const d = draw(280.2, { mode: 'closed' });
