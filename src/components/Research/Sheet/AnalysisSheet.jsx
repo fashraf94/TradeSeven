@@ -259,12 +259,14 @@ export function WallStLine({ wallSt = null, aboutName = null, about = null }) {
         {wallSt && <span data-shell-wallst>{wallSt}</span>}
         {/* The separator travels with About, so a wrapped line never ends on a lone "·" (review D7). */}
         {canAbout && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap', minWidth: 0 }}>
-            {wallSt && <span aria-hidden="true" style={{ color: ST.ink3 }}>·</span>}
+          // A long company name ellipsizes inside the button — the chevron always shows, nothing
+          // runs past the view (refuter: D7's grouping); the group wraps as a whole.
+          <span data-shell-about-group style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0, maxWidth: '100%' }}>
+            {wallSt && <span aria-hidden="true" style={{ color: ST.ink3, flexShrink: 0 }}>·</span>}
             <button type="button" data-sheet-about={open ? 'open' : 'closed'} aria-expanded={open} onClick={() => setOpen((v) => !v)}
-              style={{ all: 'unset', cursor: 'pointer', color: ST.ink2, display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44 }}>
-              <span style={{ fontSize: 13 }}>{open ? SHELL_COPY.aboutHide : SHELL_COPY.aboutName(aboutName)}</span>
-              <Chevron color={ST.ink3} down={open} />
+              style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', color: ST.ink2, display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44, minWidth: 0, maxWidth: '100%' }}>
+              <span data-shell-about-name style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{open ? SHELL_COPY.aboutHide : SHELL_COPY.aboutName(aboutName)}</span>
+              <span style={{ flexShrink: 0, display: 'inline-flex' }}><Chevron color={ST.ink3} down={open} /></span>
             </button>
           </span>
         )}

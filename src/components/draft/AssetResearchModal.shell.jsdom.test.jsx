@@ -713,6 +713,52 @@ describe('review C — the promises the first rows did not pin', () => {
   });
 });
 
+describe('refuter (lens D) — the layout fixes, pinned on every run (the browser rows measure them)', () => {
+  it('D1 / D4: the strip spans the view with 10 px sides and 6 px gaps; each tab carries 6 px side padding (its whole box takes the tap); the labels size by clamp(12px, 3.6vw, 13.5px)', async () => {
+    await battle();
+    const strip = $('[data-shell-strip]');
+    expect([strip.style.gap, strip.style.padding, strip.style.margin]).toEqual(['6px', '0px 10px', '0px -16px']);
+    for (const t of $$('[data-shell-tab]')) expect([t.style.padding, t.style.minHeight]).toEqual(['0px 6px', '44px']);
+    // jsdom drops clamp() from a serialized style: the source holds the rule (the 320 px browser row measures it).
+    const { readFileSync } = await import('node:fs');
+    const path = await import('node:path');
+    const src = readFileSync(path.resolve(process.cwd(), 'src/components/Research/Sheet/ShellTabs.jsx'), 'utf8');
+    expect(src).toContain("<span style={{ fontSize: 'clamp(12px, 3.6vw, 13.5px)' }}>{LABEL[t]}</span>");
+  });
+  it('D3: a tab picked while the strip is stuck scrolls the view back to the strip (the new tab from its top)', async () => {
+    await battle();
+    const box = $('[data-shell-scroll="analysis"]');
+    const writes = [];
+    let top = 900;
+    Object.defineProperty(box, 'scrollTop', { configurable: true, get: () => top, set: (v) => { writes.push(v); top = v; } });
+    const realRect = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function rect() {
+      if (this.hasAttribute('data-shell-tabs')) return { top: -340, bottom: 400, left: 0, right: 375, width: 375, height: 740 };
+      if (this.getAttribute('data-shell-scroll') === 'analysis') return { top: 110, bottom: 740, left: 0, right: 375, width: 375, height: 630 };
+      return realRect.call(this);
+    });
+    await click($('[data-shell-tab="ranks"]'));
+    expect(writes).toEqual([900 - 450]);
+    // Not stuck (the strip below the box's top): no scroll.
+    HTMLElement.prototype.getBoundingClientRect.mockImplementation(function rect() {
+      if (this.hasAttribute('data-shell-tabs')) return { top: 560, bottom: 1400, left: 0, right: 375, width: 375, height: 840 };
+      if (this.getAttribute('data-shell-scroll') === 'analysis') return { top: 110, bottom: 740, left: 0, right: 375, width: 375, height: 630 };
+      return realRect.call(this);
+    });
+    await click($('[data-shell-tab="sector"]'));
+    expect(writes).toEqual([450]);
+  });
+  it('D6 / D7: the stock row gives only the name room to shrink (6 px gaps); a long About name ellipsizes inside its button, the chevron kept', async () => {
+    await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'TSM', name: 'Taiwan Semiconductor Manufacturing Company Limited', price: 180 }} onClose={() => {}} version={2} />); });
+    await flush();
+    expect($('[data-shell-stock-row]').style.gap).toBe('6px');
+    const name = $('[data-shell-about-name]');
+    expect([name.style.whiteSpace, name.style.overflow, name.style.textOverflow, name.style.minWidth]).toEqual(['nowrap', 'hidden', 'ellipsis', '0px']);
+    expect([$('[data-sheet-about]').style.minWidth, $('[data-sheet-about]').style.maxWidth]).toEqual(['0px', '100%']);
+    expect($('[data-shell-about-group]').style.maxWidth).toBe('100%');
+  });
+});
+
 describe('SB-10 — the action row: in browse, the mount\'s own action, unchanged', () => {
   it('the watchlist action renders under the Analysis and Chart views and calls the mount\'s handler', async () => {
     WATCH.mockClear();

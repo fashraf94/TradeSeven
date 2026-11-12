@@ -66,7 +66,9 @@ export default function ShellHeader({ asset, onClose, onBack, shell }) {
   const tone = up ? ST.green : ST.red;
   return (
     <div data-shell-header style={{ flexShrink: 0, background: ST.bg, borderBottom: `1px solid ${ST.hair}` }}>
-      <div style={{ height: 52, display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px 0 14px' }}>
+      {/* Only the name shrinks in this row: 6 px gaps keep the 36 px back and 44 px close boxes
+          (review D5) inside 320 px beside a long symbol, price and change (refuter: D6). */}
+      <div data-shell-stock-row style={{ height: 52, display: 'flex', alignItems: 'center', gap: 6, padding: '0 2px 0 12px' }}>
         {onBack && (
           <button type="button" data-shell-back aria-label={SHELL_COPY.headerBack} onClick={onBack} style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', color: ST.teal, minWidth: 36, minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <span style={{ fontSize: 18, lineHeight: 1 }}>{'←'}</span>
