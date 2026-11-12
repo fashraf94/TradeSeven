@@ -8,12 +8,12 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Parser } from 'acorn';
 import acornJsx from 'acorn-jsx';
-import { SHEET_COPY, QUESTION_TEXT, FACTOR_WORDS, RISK_WORDS, RISK_REASON_WORDS, REGIME_WORDS } from './sheetCopy.js';
+import { SHEET_COPY, SHELL_COPY, QUESTION_TEXT, FACTOR_WORDS, RISK_WORDS, RISK_REASON_WORDS, REGIME_WORDS } from './sheetCopy.js';
 import { buildPacks, stanceOf, QUESTION_IDS } from './packs.js';
 import { latestLineOf } from './latestLine.js';
 import AnalysisSheet, { SheetActionRow } from './AnalysisSheet.jsx';
@@ -32,6 +32,9 @@ const STOP_PRICE = /\b(stop|target|stop-loss|stoploss)\b[^.]{0,20}\$\s?\d/i;
 
 const ARG = { arch: 'Trend Follower', sym: 'EOG', time: 'Fri 1:15', when: 'Tue 10/13', date: 'Tue 10/13', price: 154.76, d: 2, movePct: 4.3, points: 15, q: 'Does this protect the lead?', left: 7, question: 'Does this protect the lead?', text: 'Hold EOG.', label: 'next check 1:15', words: 'hold', preset: 'Aggressive', bust: '0.9', ticks: 3, trail: '1.5', next: 'next check 1:15', offPct: 1.2, high: 161.55, n: 6, rows: ['EOG 78'], gap: 1.64, gapPct: 1.0, asOf: 'Thu 10/15', score: 78.4, summary: 'Volume 2× on a break.', statement: 'An idea.', you: '62', them: '68', parts: ['an uptrend'], chg: 2.6, atrX: 1.05, entry: 154.76, f1: 'technicalScore', w1: 0.4, f2: 'baggerBombFit', w2: 0.3, side: 'above', huddle: true, names: ['XOM (6)'], band: '0.5', since: 'Tue 10/13', live: 162.1, word: 'next rung' };
 const paramsOf = (fn) => fn.toString().slice(fn.toString().indexOf('(') + 1, fn.toString().indexOf(')')).split(',').map((p) => p.trim()).filter(Boolean);
+// The two-view shell's templates (SHELL_COPY, SB-13): their own arguments. The agent's name is
+// always handed in — a sample one here, never a literal in the copy.
+const SHELL_ARG = { agent: 'Juno', arch: 'Trend Follower', time: 'Fri 1:15', rating: 'Buy', n: 24, name: 'EOG Resources', change: '+2.2%', who: 'Juno', group: 'Utilities', kind: 'technical', day: 'Wed Nov 11' };
 function templates() {
   const out = [];
   for (const [k, v] of Object.entries(SHEET_COPY)) {
@@ -42,6 +45,15 @@ function templates() {
     if (names.includes('points')) out.push([k, v(...names.map((n) => (n === 'points' ? 0 : ARG[n])))]);
     if (names.includes('names')) out.push([k, v(...names.map((n) => (n === 'names' ? [] : ARG[n])))]);
     if (names.includes('f2')) out.push([k, v(...names.map((n) => (n === 'f2' || n === 'w2' ? null : ARG[n])))]);
+  }
+  for (const [k, v] of Object.entries(SHELL_COPY)) {
+    if (typeof v === 'string') { out.push([`shell.${k}`, v]); continue; }
+    const names = paramsOf(v);
+    for (const n of names) expect(SHELL_ARG, `shell.${k}(${n})`).toHaveProperty(n);
+    out.push([`shell.${k}`, v(...names.map((n) => SHELL_ARG[n]))]);
+    // Each optional argument absent (no agent, no time, no day, browse's no one, n = 1).
+    for (const gone of ['agent', 'time', 'day', 'who', 'change']) if (names.includes(gone)) out.push([`shell.${k}`, v(...names.map((n) => (n === gone ? null : SHELL_ARG[n])))]);
+    if (names.includes('n')) out.push([`shell.${k}`, v(...names.map((n) => (n === 'n' ? 1 : SHELL_ARG[n])))]);
   }
   for (const table of [QUESTION_TEXT, FACTOR_WORDS, RISK_WORDS, RISK_REASON_WORDS, REGIME_WORDS]) for (const [k, v] of Object.entries(table)) out.push([k, v]);
   return out;
@@ -85,7 +97,7 @@ describe('every template of the copy module', () => {
 });
 
 describe('the sheet components hold no words of their own — every string is the copy module\'s', () => {
-  it.each(['AnalysisSheet.jsx', 'AskReply.jsx'])('%s has no JSX text or string child with letters', (file) => {
+  it.each(['AnalysisSheet.jsx', 'AskReply.jsx', 'ShellTabs.jsx', 'WhatsMoving.jsx'])('%s has no JSX text or string child with letters', (file) => {
     const src = readFileSync(path.join(HERE, file), 'utf8');
     const ast = Parser.extend(acornJsx()).parse(src, { ecmaVersion: 'latest', sourceType: 'module' });
     const bad = [];
@@ -99,6 +111,24 @@ describe('the sheet components hold no words of their own — every string is th
   });
 });
 
+describe('the agent\'s name is never a literal (SB-13, R-23): the shell\'s sources hold no agent name', () => {
+  it('no string literal in the sheet\'s modules or the header names an agent ("Shadow", the round-5 sample, or any other)', () => {
+    const files = [...readdirSync(HERE).filter((f) => /\.(js|jsx)$/.test(f) && !/\.test\./.test(f)).map((f) => path.join(HERE, f)), path.join(HERE, '..', 'ChartHeader.jsx')];
+    const found = [];
+    for (const f of files) {
+      const ast = Parser.extend(acornJsx()).parse(readFileSync(f, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' });
+      (function walk(n) {
+        if (!n || typeof n !== 'object') return;
+        const s = n.type === 'Literal' && typeof n.value === 'string' ? n.value : n.type === 'TemplateElement' ? n.value.cooked : n.type === 'JSXText' ? n.value : null;
+        if (s && /\b(Shadow|Juno)\b/.test(s)) found.push(`${path.basename(f)}: ${s}`);
+        for (const v of Object.values(n)) if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v.type === 'string') walk(v);
+      })(ast);
+    }
+    expect(files.length).toBeGreaterThan(10);
+    expect(found).toEqual([]);
+  });
+});
+
 describe('every rendered pack — six archetypes, three questions, and Layer 0', () => {
   it.each(ARCHETYPES)('%s: no forbidden term, no stop price, no RSI / RVOL / MACD claim (a held receipt never has them — Phase 0 §B)', (a) => {
     const html = [null, ...QUESTION_IDS].map((q) => renderToStaticMarkup(<><AnalysisSheet view={viewOf(BATTLES[a], q)} /><SheetActionRow view={viewOf(BATTLES[a], q)} /></>)).join('\n');
@@ -107,7 +137,10 @@ describe('every rendered pack — six archetypes, three questions, and Layer 0',
     for (const term of ALL) expect(hit(text, term), term).toBe(false);
     expect(STOP_PRICE.test(text)).toBe(false);
     expect(text).not.toMatch(/\bRSI\b|\bRVOL\b|\bMACD\b/);
-    expect(text).not.toMatch(/\bShadow\b/); // R-12: the archetype is the voice; Shadow is not in the modal
+    // R-23 (amends R-12): the voice label names the player's OWN agent — the view's agentName
+    // (Juno here) — never a hardcoded one; the round-5 sample name never reaches the modal.
+    expect(text).toContain(`Juno · ${viewOf(BATTLES[a], null).archetype}`);
+    expect(text).not.toMatch(/\bShadow\b/);
   });
 });
 

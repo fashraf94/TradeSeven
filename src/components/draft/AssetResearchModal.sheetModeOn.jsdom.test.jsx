@@ -1,15 +1,38 @@
 // @vitest-environment jsdom
 //
-// Research Modal Build C — THE SHEET IN THE MODAL (spec §1, BC-1–BC-15): the real
-// modal, the real sheet and the real StockChart (lightweight-charts recorded),
-// on the real corrected-battle harness. The network is faked; the Ask's POST is
-// recorded through fetchWithAuth.
+// Research Modal Build C — THE SHEET IN THE MODAL (spec §1, BC-1–BC-15), as the
+// two-view shell delivers it (Amendment C R-28; spec
+// docs/specs/RESEARCH_MODAL_SHELL_SPEC_V1.md SB-4–SB-10): the real modal, the
+// real sheet and the real StockChart (lightweight-charts recorded), on the real
+// corrected-battle harness. The network is faked; the Ask's POST is recorded
+// through fetchWithAuth.
+//
+// Build C's rows, re-driven through the shell: the record logic is unchanged
+// (the stance, the latest sentence, the questions, the packs, the Ask, the
+// pins, FQ-9), so each row keeps its assertion on it; what moved is WHERE it is
+// — the Analysis view opens with no chart, the pins are the Chart view's, a
+// pack item reaches its pin by "see on chart ›". Retired with the drawer (R-28):
+// the drawer's mid snap and footer geometry (review D7's skeleton box is now the
+// Chart view's own, below) and "● on the chart" as a status tag (review D12:
+// every pinned item now carries the link, and a time pin moves the chart to 1D).
+// RESEARCH_MODAL_SHEET_MODE is mocked 'on' (each row that needs 'off' says so):
+// since the shell, the modal reads the mode itself and ignores a sheetContext
+// at 'off' — the last row pins that.
 
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 vi.hoisted(() => { process.env.TZ = 'UTC'; });
+const FLAG = vi.hoisted(() => ({ sheet: 'on', bomb: 'on' }));
+const FLAGS = vi.hoisted(() => ({
+  get RESEARCH_MODAL_SHEET_MODE() { return FLAG.sheet; },
+  RESEARCH_MODAL_SHEET_MODES: Object.freeze(['off', 'allowlist', 'on']),
+  get RESEARCH_MODAL_BOMB_MODE() { return FLAG.bomb; },
+  RESEARCH_MODAL_BOMB_MODES: Object.freeze(['off', 'allowlist', 'on']),
+}));
+vi.mock('../../config/researchModalFlags', () => FLAGS);
+vi.mock('../../config/researchModalFlags.js', () => FLAGS);
 const net = vi.hoisted(() => ({ calls: [], ask: null, asks: [], rankings: null, history: null }));
 const rec = vi.hoisted(() => ({ markers: [], lines: [] }));
 const spy = vi.hoisted(() => ({ buildPacks: 0 }));
@@ -83,6 +106,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date(SHEET_NOW));
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
   net.calls.length = 0; net.asks.length = 0; rec.markers.length = 0; rec.lines.length = 0; spy.buildPacks = 0; net.rankings = null; net.history = null;
+  FLAG.sheet = 'on'; FLAG.bomb = 'on';
   Element.prototype.scrollIntoView = vi.fn();
   net.ask = async () => ({ ok: true, status: 200, json: async () => ({ agentMessage: 'Item 1 carries it.', exchangeId: 'ex-1', hasDirective: false, directive: null }) });
   vi.spyOn(console, 'log').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -92,6 +116,10 @@ const flush = async () => { for (let i = 0; i < 8; i++) await act(async () => { 
 const $ = (sel) => document.body.querySelector(sel);
 const $$ = (sel) => [...document.body.querySelectorAll(sel)];
 const click = async (el) => { expect(el).toBeTruthy(); await act(async () => { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); }); await flush(); };
+const view = () => $('[data-shell-view]')?.dataset.shellView ?? null;
+const pill = (v) => $(`[data-shell-pill="${v}"]`);
+const see = (kind) => $(`[data-pack-item="${kind}"] [data-pack-see]`);
+const remount = () => { act(() => root.unmount()); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); };
 
 const asset = (battle = BATTLE, symbol = 'AAPL') => {
   const pos = battle.portfolio.star[0];
@@ -108,12 +136,17 @@ const rerender = async (context, symbol = 'AAPL') => {
   await flush();
 };
 
-describe('BC-1 — the mount opens on the sheet: the Analysis tab, 1D, the archetype speaking', () => {
-  it('Layer 0 on open, the 1D series requested (never the 30-minute bomb series), no Haiku preset questions', async () => {
+describe('BC-1 — the mount opens on the Analysis view: 1D, no chart, the archetype speaking', () => {
+  it('Layer 0 on open, the 1D series requested (never the 30-minute bomb series), no Haiku preset questions, no chart drawn', async () => {
     await open();
+    expect(view()).toBe('analysis');
     expect($('[data-sheet-root]')?.dataset.sheetLayer).toBe('0');
     expect(net.calls.filter((c) => c[0] === 'history').map((c) => c[2])).not.toContain('30m');
     expect(net.calls.filter((c) => c[0] === 'history').map((c) => c[2])).toContain('1d');
+    // SB-4: no chart on the Analysis view — nothing pinned, no caption, no drawer.
+    expect(rec.markers).toEqual([]);
+    expect($('[data-pin-caption]')).toBeNull();
+    expect($('[data-drawer-root]')).toBeNull();
     const text = document.body.textContent;
     expect(text).not.toContain('What does this company do?');
     expect(net.calls.some((c) => c[1] === '/api/ai-advisor')).toBe(false);
@@ -123,18 +156,26 @@ describe('BC-1 — the mount opens on the sheet: the Analysis tab, 1D, the arche
     expect($('[data-sheet-stance]').textContent).toContain('+15 banked');
     expect($('[data-sheet-voice]').dataset.sheetVoice).toBe('rationale');
     expect($('[data-sheet-voice-line]').textContent).toBe('“AAPL is still printing higher lows above VWAP, so the trend is intact and the position stays.”');
-    expect($('[data-sheet-voice]').textContent).toContain('Trend Follower · Wed 12:45');
+    // R-23: the voice label is the player's agent name, then the archetype, then the quote's time.
+    expect($('[data-shell-voice-label]').textContent).toBe('Juno · Trend Follower · Wed 12:45');
     expect($$('[data-sheet-question]').map((b) => b.dataset.sheetQuestion)).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
-    expect($('[data-sheet-tucked]').textContent).toContain('Wall St: Buy · 41 analysts');
+    expect($('[data-sheet-tucked]').textContent).toContain('Wall St Buy · 41 analysts');
     expect($('[data-sheet-ask]').dataset.sheetAsk).toBe('disabled');
-    expect($('[data-sheet-ask]').textContent).toBe('Ask Trend Follower · pick a question first');
+    // R-29: the Ask is addressed to the player's agent by name.
+    expect($('[data-sheet-ask]').textContent).toBe('Ask Juno · pick a question first');
   });
-  it('the About chip opens the profile the modal already fetched — no second request', async () => {
+  it('About opens the profile the modal already fetched — no second request', async () => {
     await open();
     const profiles = net.calls.filter((c) => c[0] === 'profile').length;
+    expect($('[data-sheet-about]').textContent).toContain('About Apple Inc');
     await click($('[data-sheet-about]'));
     expect($('[data-sheet-about-body]').textContent).toContain('Apple makes phones.');
     expect(net.calls.filter((c) => c[0] === 'profile').length).toBe(profiles);
+  });
+  it('a battle that names no agent: the archetype alone, in the label and the Ask', async () => {
+    await open({ context: ctx({ agentName: null }) });
+    expect($('[data-shell-voice-label]').textContent).toBe('Trend Follower · Wed 12:45');
+    expect($('[data-sheet-ask]').textContent).toBe('Ask Trend Follower · pick a question first');
   });
 });
 
@@ -146,7 +187,8 @@ describe('Founder rulings 2026-11-08 on screen — an exit flag (FQ-5) and a nam
     expect($('[data-sheet-voice]').dataset.sheetVoice).toBe('exit');
     const eyebrow = $('[data-sheet-voice]').firstElementChild.textContent;
     expect(eyebrow).toContain('What it flagged · exit · Wed 12:45');
-    expect(eyebrow).not.toContain('Trend Follower ·');
+    // The exit eyebrow names the time; the label does not repeat it.
+    expect($('[data-shell-voice-label]').textContent).toBe('Juno · Trend Follower');
     expect($('[data-sheet-voice-line]').textContent).toBe('“Exit: lost VWAP twice.”');
     expect($('[data-sheet-stance]').dataset.sheetStance).toBe('looked');
     expect($('[data-sheet-stance]').textContent).toContain('Looked at Wed 12:45 · not held now');
@@ -163,42 +205,41 @@ describe('FQ-9 (2026-11-08) — with Bomb mode on, a measured held stock in the 
     await flush();
   };
   const series = () => net.calls.filter((c) => c[0] === 'history').map((c) => c[2]);
-  it('inside the band ($103.40: 0.36 % to +30) → the 💣 view and the Bomb tab, not the sheet', async () => {
+  it('inside the band ($103.40: 0.36 % to +30) → the 💣 view and its sheet, not Analysis', async () => {
     await show({ wsPrice: 103.4 });
-    expect($('[data-sheet-root]')).toBeNull();
+    expect(view()).toBe('bomb');
     expect($('[data-bomb-sheet]')).toBeTruthy();
     expect(series()).toContain('30m');
   });
-  it('outside the band ($103.20: 0.55 %) → the sheet, on 1D', async () => {
+  it('outside the band ($103.20: 0.55 %) → Analysis, on 1D', async () => {
     await show({ wsPrice: 103.2 });
-    expect($('[data-sheet-root]')).toBeTruthy();
+    expect(view()).toBe('analysis');
     expect(series()).not.toContain('30m');
   });
   it('the held mount decides from ITS controlled quote, never the asset\'s own price (the two disagree here, both ways)', async () => {
     await show({ theAsset: { ...asset(), price: 103.2, currentPrice: 103.2 }, controlledQuote: { posKey: 'player:star:0', symbol: 'AAPL', price: 103.4, extremes: null } });
-    expect($('[data-sheet-root]')).toBeNull();
+    expect(view()).toBe('bomb');
     expect($('[data-bomb-sheet]')).toBeTruthy();
-    act(() => root.unmount());
-    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    remount();
     await show({ theAsset: { ...asset(), price: 103.4, currentPrice: 103.4 }, controlledQuote: { posKey: 'player:star:0', symbol: 'AAPL', price: 103.2, extremes: null } });
-    expect($('[data-sheet-root]')).toBeTruthy();
+    expect(view()).toBe('analysis');
   });
-  it('no price yet → the sheet', async () => {
+  it('no price yet → Analysis', async () => {
     await show({ theAsset: { ...asset(), price: 0, currentPrice: 0 } });
-    expect($('[data-sheet-root]')).toBeTruthy();
+    expect(view()).toBe('analysis');
   });
-  it('decided ONCE at open: a price that moves into the band after open never switches the sheet away …', async () => {
+  it('decided ONCE at open: a price that moves into the band after open never switches Analysis away …', async () => {
     await show({ wsPrice: 103.2 });
-    expect($('[data-sheet-root]')).toBeTruthy();
+    expect(view()).toBe('analysis');
     await show({ wsPrice: 103.4 });
-    expect($('[data-sheet-root]')).toBeTruthy();
+    expect(view()).toBe('analysis');
     expect(series()).not.toContain('30m');
   });
-  it('… and one that leaves the band never switches the 💣 view to the sheet', async () => {
+  it('… and one that leaves the band never switches the 💣 view to Analysis', async () => {
     await show({ wsPrice: 103.4 });
-    expect($('[data-sheet-root]')).toBeNull();
+    expect(view()).toBe('bomb');
     await show({ wsPrice: 103.2 });
-    expect($('[data-sheet-root]')).toBeNull();
+    expect(view()).toBe('bomb');
     expect($('[data-bomb-sheet]')).toBeTruthy();
   });
   it('BD-7 (2026-11-10): the Battle View\'s "See all levels ›" door (opensOnBomb) opens on 💣 and the levels table even OUTSIDE the band', async () => {
@@ -207,14 +248,14 @@ describe('FQ-9 (2026-11-08) — with Bomb mode on, a measured held stock in the 
         wsPrice={103.2} sheetContext={ctx()} bombContext={bombCtx()} opensOnBomb />);
     });
     await flush();
-    expect($('[data-sheet-root]')).toBeNull();
+    expect(view()).toBe('bomb');
     expect($('[data-bomb-sheet]')).toBeTruthy();
     expect($('[data-bomb-levels]')).toBeTruthy();
     expect(series()).toContain('30m');
   });
 });
 
-describe('FQ-6 (2026-11-08) — on a phone, sheet mode sizes the modal from the visible viewport', () => {
+describe('FQ-6 (2026-11-08), kept by the shell (SB-10) — on a phone, the modal is sized from the visible viewport', () => {
   const realWidth = window.innerWidth;
   const realCSS = globalThis.CSS;
   afterEach(() => {
@@ -229,14 +270,14 @@ describe('FQ-6 (2026-11-08) — on a phone, sheet mode sizes the modal from the 
     expect(modalBox()?.style.height).toBe('100dvh');
     // The 1 px border is counted inside that height: the outer edge IS the visible viewport.
     expect(modalBox()?.style.boxSizing).toBe('border-box');
-    act(() => root.unmount());
-    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    remount();
+    FLAG.sheet = 'off';
     await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="fundamental" wsPrice={103.2} />); });
     await flush();
     expect(modalBox()?.style.height).toBe('100vh');
     expect(modalBox()?.style.boxSizing).toBe('');
-    act(() => root.unmount());
-    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    remount();
+    FLAG.sheet = 'on';
     globalThis.CSS = { supports: () => false };
     await open();
     expect(modalBox()?.style.height).toBe('100vh');
@@ -254,60 +295,76 @@ describe('BC-13 — the questions in the standing the header shows', () => {
   });
 });
 
-describe('Layer 1 — a question opens its pack, free', () => {
+describe('Layer 1 — a question opens its pack in place, free', () => {
   it('tapping a question shows the archetype-ordered pack, labelled, and sends nothing', async () => {
     await open();
     await click($('[data-sheet-question="protect_lead"]'));
+    expect(view()).toBe('analysis');
     expect($('[data-sheet-root]').dataset.sheetLayer).toBe('1');
     expect($$('[data-pack-item]').map((b) => b.dataset.packItem)).toEqual(['banked', 'drawdown', 'risk_lever', 'idea', 'told_it']);
     expect($('[data-sheet-weighs]').textContent).toBe('What Trend Follower weighs');
     expect(net.calls.some((c) => c[1] === '/api/agent/chat')).toBe(false);
-    expect($('[data-sheet-ask]').textContent).toBe('Ask Trend Follower: does this protect the lead?· 1 message · 7 left');
+    expect($('[data-sheet-ask]').textContent).toBe('Ask Juno: does this protect the lead?· 1 message · 7 left');
+    // "see on chart ›" on exactly the items with a pin.
+    expect($$('[data-pack-see]').map((b) => b.closest('[data-pack-item]').dataset.packItem)).toEqual(['banked', 'drawdown', 'idea']);
   });
 });
 
-describe('BC-8 — the record on the chart, one label open', () => {
-  it('markers through createSeriesMarkers; the latest pin open; a tapped item moves the open label; a price item lights its line', async () => {
+describe('BC-8 — the record on the Chart view, one label open; "see on chart ›" opens an item\'s pin there', () => {
+  it('the Chart view draws the markers (createSeriesMarkers) with the latest pin open; an item\'s link opens the Chart view on its own line', async () => {
     await open();
+    expect(rec.markers).toEqual([]);
+    await click(pill('chart'));
+    expect(view()).toBe('chart');
     const last = rec.markers.at(-1);
     expect(last.length).toBeGreaterThan(0);
     // Dots on the canvas; the one open label is the caption over the chart (review D6).
     expect(last.filter((m) => m.text)).toEqual([]);
     expect($('[data-pin-caption]').textContent.trim()).toBe('● What it decided · Wed 12:45');
+    await click(pill('analysis'));
     await click($('[data-sheet-question="protect_lead"]'));
     rec.lines.length = 0;
-    await click($$('[data-pack-item]')[1]); // drawdown: a price pin at the high ($104.10)
+    await click(see('drawdown')); // a price pin at the high ($104.10)
+    expect(view()).toBe('chart');
     // Its own line, named for what the price IS — never the item's source label (review D5b).
     expect(rec.lines.filter((l) => l.title).map((l) => [l.price, l.title, l.lineWidth, l.axisLabelVisible])).toEqual([[104.1, 'the high · $104.10', 2, true]]);
     expect($('[data-pin-caption]')).toBeNull();
+    // Back on Analysis the item is the open one; its link again keeps it open (tapItem toggles — never closed by the link).
+    await click(pill('analysis'));
+    expect($('[data-pack-item="drawdown"]').dataset.packOn).toBe('1');
+    rec.lines.length = 0;
+    await click(see('drawdown'));
+    expect(rec.lines.filter((l) => l.title).map((l) => l.title)).toEqual(['the high · $104.10']);
   });
-  it('a tapped item with a time pin opens the record marker AT that instant — the entry, never the check later that day (review D5a)', async () => {
+  it('an item with a time pin opens the record marker AT that instant — the entry, never the check later that day (review D5a)', async () => {
     await open();
     await click($('[data-sheet-question="catch_up"]'));
-    const i = $$('[data-pack-item]').findIndex((b) => b.dataset.packItem === 'move_since_entry');
-    expect(i).toBeGreaterThanOrEqual(0);
-    await click($$('[data-pack-item]')[i]);
+    await click(see('move_since_entry'));
+    expect(view()).toBe('chart');
     expect($('[data-pin-caption]').dataset.pinCaption).toBe('entry');
     expect($('[data-pin-caption]').textContent.trim()).toMatch(/^● Entry · Wed /);
   });
-  it('a tapped rung item draws its own line "next rung · $…", never "live price vs …" (review D5b, A9)', async () => {
+  it('a rung item draws its own line "next rung · $…" at the DISPLAYED rung price, the fact\'s own cent (B1, pre-flip audit §10)', async () => {
     await open();
     await click($('[data-sheet-question="catch_up"]'));
+    const fact = $('[data-pack-item="rung_distance"]').textContent;
+    expect(fact).toContain('Next rung +30 at $103.78');
+    expect(fact).toContain('live price vs the next rung');
     rec.lines.length = 0;
-    await click($('[data-pack-item="rung_distance"]'));
+    await click(see('rung_distance'));
     const titled = rec.lines.filter((l) => l.title);
-    expect(titled).toHaveLength(1);
-    expect(titled[0].title).toMatch(/^next rung · \$\d/);
-    expect($('[data-pack-item="rung_distance"]').textContent).toContain('live price vs the next rung');
+    expect(titled.map((l) => [l.price, l.title])).toEqual([[103.78, 'next rung · $103.78']]);
   });
-  it('"● on the chart" only where the pin is drawn: a time pin is not on 1W (review D12)', async () => {
+  it('a time pin on 1W: the link moves the chart to 1D, where the pin and its caption are drawn (BC-8; replaces review D12\'s tag)', async () => {
     await open();
+    await click(pill('chart'));
+    await click($$('button').find((b) => b.textContent.trim() === '1W'));
+    expect($('[data-pin-caption]')).toBeNull();
+    await click(pill('analysis'));
     await click($('[data-sheet-question="catch_up"]'));
-    expect($('[data-pack-item="move_since_entry"]').textContent).toContain('● on the chart');
-    const w = $$('button').find((b) => b.textContent.trim() === '1W');
-    await click(w);
-    expect($('[data-pack-item="move_since_entry"]').textContent).not.toContain('● on the chart');
-    expect($('[data-pack-item="rung_distance"]').textContent).toContain('● on the chart');
+    await click(see('move_since_entry'));
+    expect(view()).toBe('chart');
+    expect($('[data-pin-caption]').dataset.pinCaption).toBe('entry');
   });
 });
 
@@ -336,7 +393,7 @@ describe('BC-7 — the Ask', () => {
     // The answered question is not offered again for another message (review D1)…
     expect($('[data-sheet-ask]').dataset.sheetAsk).toBe('asked');
     expect($('[data-sheet-ask]').disabled).toBe(true);
-    expect($('[data-sheet-ask]').textContent).toBe('Asked Trend Follower · the answer is below');
+    expect($('[data-sheet-ask]').textContent).toBe('Asked Juno · the answer is below');
     await click($('[data-sheet-ask]'));
     expect(net.asks).toHaveLength(1);
     // …and another question can be asked, from the new count.
@@ -344,7 +401,19 @@ describe('BC-7 — the Ask', () => {
     expect($('[data-sheet-ask]').dataset.sheetAsk).toBe('ready');
     expect($('[data-sheet-ask]').textContent).toContain('6 left');
   });
-  it('the reply card is brought into the drawer\'s view on sending and on the answer (review D1)', async () => {
+  it('the Ask is pinned under every view: Analysis, Chart and 💣', async () => {
+    await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} wsPrice={103.2} sheetContext={ctx()} bombContext={{ kind: 'agent', battleId: 'stock-battle', held: true, record: selectBombRecord(BATTLE, 'AAPL', SHEET_NOW) }} />); });
+    await flush();
+    for (const v of ['analysis', 'chart', 'bomb']) {
+      if (view() !== v) await click(pill(v));
+      expect(view()).toBe(v);
+      const row = $('[data-sheet-actions]');
+      expect(row).toBeTruthy();
+      // Outside the view's scroll box: the row never scrolls away.
+      expect(row.closest('[data-shell-scroll]')).toBeNull();
+    }
+  });
+  it('the reply card is brought into the view on sending and on the answer (review D1)', async () => {
     await open();
     await click($('[data-sheet-question="protect_lead"]'));
     await click($('[data-sheet-ask]'));
@@ -444,8 +513,9 @@ describe('BC-7 — the Ask', () => {
 });
 
 describe('BC-11, BC-12 — the cockpit door', () => {
-  it('with an incumbent the sheet opens on "Is this better than what\'s stalled?" with it side by side', async () => {
+  it('with an incumbent the view opens on "Is this better than what\'s stalled?" with it side by side', async () => {
     await open({ context: ctx({ incumbent: 'ETH', row: { held: false, positionId: null } }), symbol: 'NVDA' });
+    expect(view()).toBe('analysis');
     expect($('[data-sheet-root]').dataset.sheetLayer).toBe('1');
     expect($('[data-sheet-pack]').dataset.sheetPack).toBe('better_than_stalled');
     expect($$('[data-pack-item]').map((b) => b.dataset.packItem)).toContain('incumbent');
@@ -461,53 +531,35 @@ describe('BC-11, BC-12 — the cockpit door', () => {
   });
 });
 
-describe('the drawer never opens low and jumps: the chart\'s skeleton and error box are the whole sheet chart — its 44 px control row and its plot (review D7)', () => {
-  const chartBoxHeight = () => [...document.body.querySelectorAll('div')].find((d) => d.style.position === 'relative' && /px$/.test(d.style.height) && d.parentElement?.style.background)?.style.height;
-  it('while the series loads, and when it fails, the box is the height the chart will take', async () => {
+describe('the Chart view\'s skeleton and error box stand in for the whole chart — its 44 px control row and its plot (after review D7)', () => {
+  it('while the series loads, and when it fails, the box is the height the chart takes (jsdom measures 0 → the 240 px floor)', async () => {
     await open();
-    const loaded = chartBoxHeight();
-    expect(loaded).toMatch(/^\d+px$/);
-    act(() => root.unmount());
-    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    await click(pill('chart'));
+    const plot = [...document.body.querySelectorAll('[data-shell-scroll="chart"] div')].find((d) => d.style.position === 'relative' && /px$/.test(d.style.height))?.style.height;
+    expect(plot).toBe('240px');
+    remount();
     net.history = () => new Promise(() => {});
     await open();
-    const skeleton = [...document.body.querySelectorAll('div')].find((d) => /shimmer/.test(d.style.animation))?.parentElement;
-    const whole = `${parseInt(loaded, 10) + 44}px`;
-    expect(skeleton?.style.height).toBe(whole);
-    act(() => root.unmount());
-    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    await click(pill('chart'));
+    expect($('[data-shell-chart-state="loading"]').style.height).toBe('284px');
+    remount();
     net.history = () => Promise.reject(new Error('down'));
     await open();
-    const failed = [...document.body.querySelectorAll('span')].find((s) => s.textContent === 'Chart data unavailable')?.parentElement;
-    expect(failed?.style.height).toBe(whole);
+    await click(pill('chart'));
+    expect($('[data-shell-chart-state="error"]').style.height).toBe('284px');
+    expect($('[data-shell-chart-state="error"]').textContent).toContain('Chart data unavailable');
   });
 });
 
-describe('Bomb mode with the sheet on: the 💣 view keeps its full height (review D2)', () => {
-  const boxHeight = () => Number(([...document.body.querySelectorAll('div')].find((d) => d.style.position === 'relative' && /px$/.test(d.style.height) && d.parentElement?.style.background)
-    ?? [...document.body.querySelectorAll('div')].find((d) => /shimmer/.test(d.style.animation))?.parentElement)?.style.height.replace('px', ''));
-  const bar = (iso, o, hi, lo, c) => ({ date: iso, datetime: iso, timestamp: Math.floor(Date.parse(iso) / 1000), open: o, high: hi, low: lo, close: c, volume: 100 });
-  const DAILY = [
-    { date: '2026-10-14', open: 101, high: 104.1, low: 100.6, close: 103.2, volume: 1 },
-    { date: '2026-10-13', open: 99.4, high: 101.2, low: 99, close: 100.9, volume: 1 },
-  ];
-  const THIRTY = [bar('2026-10-14T16:30:00.000Z', 103, 103.5, 102.9, 103.2), bar('2026-10-14T16:00:00.000Z', 102.5, 103.1, 102.4, 103), bar('2026-10-14T13:30:00.000Z', 101, 101.4, 100.6, 101.2)];
-  it('1D at the sheet\'s height; 💣 at the modal\'s full chart height (the Fuse is never cut under the drawer)', async () => {
-    net.history = (tf) => Promise.resolve(tf === '1d' ? DAILY : tf === '30m' ? THIRTY : []);
-    await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={103.2} sheetContext={ctx()} bombContext={{ kind: 'agent', battleId: 'stock-battle', held: true, record: selectBombRecord(BATTLE, 'AAPL', SHEET_NOW) }} />); });
+describe('SB-9 — the 💣 view\'s plot is the Chart view\'s height (after review D2: the Fuse is never cut)', () => {
+  it('the BombPlot box and the chart\'s plot box are the same height', async () => {
+    await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} wsPrice={103.2} sheetContext={ctx()} bombContext={{ kind: 'agent', battleId: 'stock-battle', held: true, record: selectBombRecord(BATTLE, 'AAPL', SHEET_NOW) }} />); });
     await flush();
-    const day = boxHeight();
-    const bomb = $$('button').find((b) => b.textContent === '\uD83D\uDCA3');
-    expect(bomb).toBeTruthy();
-    await click(bomb);
-    const fuse = boxHeight();
-    // (jsdom lays out no container, so the modal's full chart height computes to 0 here; the sheet's floor is 180.)
-    expect(fuse).not.toBe(day);
-    act(() => root.unmount());
-    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
-    await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={103.2} bombContext={{ kind: 'agent', battleId: 'stock-battle', held: true, record: selectBombRecord(BATTLE, 'AAPL', SHEET_NOW) }} />); });
-    await flush();
-    expect(fuse).toBe(boxHeight()); // the same height the 💣 view has with the sheet off
+    await click(pill('chart'));
+    const chartPlot = [...document.body.querySelectorAll('[data-shell-scroll="chart"] div')].find((d) => d.style.position === 'relative' && /px$/.test(d.style.height))?.style.height;
+    await click(pill('bomb'));
+    expect($('[data-bomb-plot]').style.height).toBe(chartPlot);
+    expect($('[data-shell-bomb-sheet] [data-bomb-sheet]')).toBeTruthy();
   });
 });
 
@@ -521,32 +573,33 @@ describe('an ended battle takes no Ask (review C7 — CU2)', () => {
   });
 });
 
-describe('Layer 0 keeps the fold with a long sentence and a long name (review D3)', () => {
-  it('the quoted sentence shows two lines until tapped; the eyebrow and the name tag ellipsize, never widen the drawer', async () => {
-    await open();
+describe('the latest sentence and the label keep the fold with a long sentence and a long name (after review D3)', () => {
+  it('the quoted sentence shows two lines until tapped; the label ellipsizes, never widens the view', async () => {
+    await open({ context: ctx({ agentName: 'A Remarkably Long Agent Name For The Fold' }) });
     const line = $('[data-sheet-voice-line]');
     expect(line.style.webkitLineClamp || line.style.WebkitLineClamp).toBe('2');
     expect(line.getAttribute('aria-expanded')).toBe('false');
     await click(line);
     expect($('[data-sheet-voice-line]').getAttribute('aria-expanded')).toBe('true');
     expect($('[data-sheet-voice-line]').style.webkitLineClamp || '').toBe('');
-    const tag = $('[data-sheet-agent-tag]');
-    expect([tag.style.whiteSpace, tag.style.textOverflow, tag.style.minWidth]).toEqual(['nowrap', 'ellipsis', '0px']);
-    expect(tag.parentElement.style.minWidth).toBe('0px');
+    const label = $('[data-shell-voice-label]');
+    expect([label.style.whiteSpace, label.style.textOverflow, label.style.minWidth]).toEqual(['nowrap', 'ellipsis', '0px']);
+    expect(label.parentElement.style.minWidth).toBe('0px');
   });
 });
 
-describe('§3: no new price request — the sheet reads what the modal already loads', () => {
+describe('§3: no new price request — the shell reads what the modal already loads', () => {
   const tally = () => {
     const by = (k) => net.calls.filter((c) => c[0] === k).length;
     return { quote: by('quote'), history1d: net.calls.filter((c) => c[0] === 'history' && c[2] === '1d').length, historyOther: net.calls.filter((c) => c[0] === 'history' && c[2] !== '1d').length, profile: by('profile'), fetchWithAuth: by('fetchWithAuth'), getDoc: by('getDoc') };
   };
-  it('sheet on vs off on the same 1D view: the same quote, series and profile requests; nothing more until the player opens a question or asks', async () => {
+  it('the shell in battle vs mode off on the same 1D view: the same quote, series and profile requests; nothing more until the player opens a question or asks', async () => {
+    FLAG.sheet = 'off';
     await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="fundamental" defaultTimeframe="1D" wsPrice={103.2} />); });
     await flush();
     const off = tally();
-    act(() => root.unmount());
-    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    remount();
+    FLAG.sheet = 'on';
     net.calls.length = 0;
     await open({ context: ctx({ rankings: undefined }) });
     const on = tally();
@@ -580,11 +633,21 @@ describe('the rankings: one read for the modal\'s life (review N2)', () => {
 
 describe('mode off: the builder is never called', () => {
   it('no sheetContext → no pack built, the Analysis tab is today\'s', async () => {
+    FLAG.sheet = 'off';
     await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="fundamental" wsPrice={103.2} />); });
     await flush();
     expect(spy.buildPacks).toBe(0);
     expect($('[data-sheet-root]')).toBeNull();
     expect(document.body.textContent).toContain('What does this company do?');
     expect(rec.markers).toEqual([]);
+  });
+  it('a sheetContext handed over at \'off\' is ignored: the modal reads the mode itself (SB-1) — no pack, no shell', async () => {
+    FLAG.sheet = 'off';
+    await open();
+    expect(spy.buildPacks).toBe(0);
+    expect($('[data-sheet-root]')).toBeNull();
+    expect($('[data-shell-view]')).toBeNull();
+    expect($('[data-drawer-root]')).toBeTruthy();
+    expect(document.body.textContent).toContain('Why?');
   });
 });
