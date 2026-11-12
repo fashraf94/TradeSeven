@@ -73,6 +73,14 @@ describe('BP-1 — rungShown: every rung rounded toward its award', () => {
     expect(rungShown(up(t15), 2)).toBe(101.12); // …so it is not printed as $101.11
     expect(98.93 <= tBust).toBe(false);
     expect(rungShown(down(tBust), 2)).toBe(98.92);
+    // Refuter A: true decimal excess under the slack, not float noise — 72.40 at 4.903315 % puts +15 at
+    // 75.95000006 and Bust at 68.84999994 exactly; a quote of $75.95 / $68.85 never crosses them.
+    const amz = 72.4 * (1 + 4.903315 / 100);
+    const bust = 72.4 * (1 - 4.903315 / 100);
+    expect(75.95 >= amz).toBe(false);
+    expect(68.85 <= bust).toBe(false);
+    expect(rungShown(up(amz), 2)).toBe(75.96);
+    expect(rungShown(down(bust), 2)).toBe(68.84);
     // the same unit on the side where it IS true stays put
     expect(rungShown(up(259.5300000001), 2)).toBe(259.54);
     expect(rungShown(down(259.5299999999), 2)).toBe(259.52);
