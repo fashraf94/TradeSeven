@@ -130,6 +130,8 @@ import { DEFAULT_THRESHOLD, buildResearchAsset } from '../utils/researchAssetBui
 import AssetResearchModal from '../components/draft/AssetResearchModal';
 import useBombModeForBattle from '../components/Research/BombMode/useBombModeForBattle';
 import { agentBombContext } from '../components/Research/BombMode/selectBombRecord';
+import { BOMB_COPY } from '../components/Research/BombMode/bombCopy';
+import { BT as BOMB_TOKENS, MONO as BOMB_MONO } from '../components/Research/BombMode/bombTheme';
 import { useSheetModeForBattle } from '../components/Research/Sheet/sheetGate';
 import { incumbentOfCall } from '../components/Research/Sheet/packs';
 import TermResearchModal from '../components/shared/TermResearchModal';
@@ -213,18 +215,36 @@ const entryPriceOf = (asset, startingPrices) => asset.swapPrice || startingPrice
  * position's qualified current and its retained GENUINE close. Same arithmetic,
  * one copy (the scoring-copy lesson, BUILD_RULES §4).
  */
-export function StockDispatchRow(props) {
+export function StockDispatchRow({ onSeeAllLevels = null, ...props }) {
   if (!props.leftAsset?.stockRewardRoute && !props.rightAsset?.stockRewardRoute) return <TacticalRow {...props} />;
   // The model selects facts, not a replacement design. Keep the normal row,
   // side-aware research door, price, badges, gauge, footer and Why interaction.
   // The legacy breakdown reconstructs ATR targets, so measured points open
   // the existing research view, which already understands committed context.
+  //
+  // Bomb mode refinement (BD-7, 2026-11-10): when Bomb mode is on for the
+  // viewer the screen hands `onSeeAllLevels`, and the Why? panel keeps the
+  // proximity line but swaps the old stats table for ONE row, "See all levels ›",
+  // which opens the research modal on 💣 (the levels table lives under the bar).
+  // Without it (Bomb mode off) the panel is exactly as before.
   const renderWhy = props.renderWhy && props.leftAsset?.stockRewardRoute
     ? proximity => <>
       {props.renderWhy(proximity)}
-      <div style={{ padding: 12, minWidth: 0, overflowX: 'auto' }}>
-        <StockRewardDetails context={props.leftAsset.rewardContext} symbol={props.leftAsset.symbol} />
-      </div>
+      {typeof onSeeAllLevels === 'function'
+        ? (
+          <div data-why-levels-door="1" style={{ padding: '8px 12px 10px', minWidth: 0 }}>
+            {/* Review D10: index.css forces every button to 16 px (!important), so the size lives on a span; the padding makes the tap target. */}
+            <button type="button" data-see-all-levels={props.leftAsset.symbol} onClick={() => onSeeAllLevels(props.leftAsset)}
+              style={{ background: 'none', border: 'none', padding: '8px 0', cursor: 'pointer', fontFamily: BOMB_MONO, fontWeight: 700, color: BOMB_TOKENS.teal, lineHeight: 1 }}>
+              <span style={{ fontSize: 12 }}>{BOMB_COPY.seeAllLevels}</span>
+            </button>
+          </div>
+        )
+        : (
+          <div style={{ padding: 12, minWidth: 0, overflowX: 'auto' }}>
+            <StockRewardDetails context={props.leftAsset.rewardContext} symbol={props.leftAsset.symbol} />
+          </div>
+        )}
     </>
     : props.renderWhy;
   return <TacticalRow {...props} renderWhy={renderWhy} onPointsClick={(asset, ...args) => {
@@ -2844,6 +2864,23 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   useEffect(() => {
     if (!cockpitResearchOpen && sheetIncumbent) setSheetIncumbent(null);
   }, [cockpitResearchOpen, sheetIncumbent]);
+  // Bomb mode refinement (BD-7, 2026-11-10): the Why? panel's "See all levels ›"
+  // door. It opens research through the SAME door a tap on the row's symbol uses
+  // (the gated admission with the player's side, or the shipped modal), and
+  // remembers that it wants 💣 — with the sheet on, the modal would otherwise open
+  // on Analysis (Build C §5, FQ-9). Handed to the row only when Bomb mode is on;
+  // set only by that door, dropped when research closes (the bench door's pattern).
+  const [bombLevelsDoor, setBombLevelsDoor] = useState(null);
+  const handleSeeAllLevels = (asset) => {
+    const symbol = asset?.symbol;
+    if (typeof symbol !== 'string' || !symbol) return;
+    setBombLevelsDoor(symbol);
+    if (gatedPath) handleGatedSymbolClick(asset, { side: 'player' });
+    else handleSymbolClick(asset);
+  };
+  useEffect(() => {
+    if (!cockpitResearchOpen && bombLevelsDoor) setBombLevelsDoor(null);
+  }, [cockpitResearchOpen, bombLevelsDoor]);
   const cockpitVintage = BATTLE_VIEW_COPY.cockpitVintage(checkOf(latestPromptBuiltAt(agentBattle?.evaluations)), turnLine?.nextDecisionAt ?? null);
   const cockpitFeedElement = cockpitOn && cockpitFeed ? (cockpit2b ? (
     <Cockpit2b
@@ -3149,6 +3186,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               isCryptoSlot={tier.hasCrypto && i === tier.slots - 1}
               onSymbolClick={gatedPath ? handleGatedSymbolClick : handleSymbolClick}
               onPointsClick={gatedPath ? handleGatedPointsClick : handlePointsClick}
+              // BD-7 (2026-11-10): Why? → "See all levels ›" → 💣, only when Bomb
+              // mode is on for this battle — absent off, so the row is the shipped one.
+              {...(bombModeOn && whyable ? { onSeeAllLevels: handleSeeAllLevels } : {})}
               // Quote integrity (§7.2 item 1): the row names its side in the
               // click callbacks. Absent flag-off, so the row is the shipped one.
               {...(gatedPath ? { reportClickSide: true } : {})}
@@ -4202,6 +4242,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             defaultTimeframe="bomb"
             controlledQuote={heldResearch.controlledQuote}
             {...(bombModeOn ? { bombContext: bombContextFor(heldResearch.asset.symbol, { posKey: heldResearch.controlledQuote.posKey }) } : {})}
+            {...(bombModeOn && bombLevelsDoor === heldResearch.asset.symbol ? { opensOnBomb: true } : {})}
             {...(sheetModeOn ? { sheetContext: sheetContextFor(heldResearch.asset.symbol, { posKey: heldResearch.controlledQuote.posKey }, true) } : {})}
           />
         ) : (researchView?.kind === 'nonheld' && stableResearchAsset ? (
@@ -4216,6 +4257,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             wsPrice={effectivePrices[stableResearchAsset?.symbol]}
             onNavigateAdmission={handleNavigateAdmission}
             {...(bombModeOn ? { bombContext: bombContextFor(stableResearchAsset.symbol, { positionId: stableResearchAsset.positionId ?? null }) } : {})}
+            {...(bombModeOn && bombLevelsDoor === stableResearchAsset.symbol ? { opensOnBomb: true } : {})}
             {...(sheetModeOn ? { sheetContext: sheetContextFor(stableResearchAsset.symbol, { positionId: stableResearchAsset.positionId ?? null }) } : {})}
           />
         ) : null)
@@ -4230,6 +4272,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           defaultTimeframe="bomb"
           wsPrice={effectivePrices[stableResearchAsset?.symbol]}
           {...(bombModeOn ? { bombContext: bombContextFor(stableResearchAsset.symbol, { positionId: stableResearchAsset.positionId ?? null }) } : {})}
+          {...(bombModeOn && bombLevelsDoor === stableResearchAsset.symbol ? { opensOnBomb: true } : {})}
           {...(sheetModeOn ? { sheetContext: sheetContextFor(stableResearchAsset.symbol, { positionId: stableResearchAsset.positionId ?? null }) } : {})}
         />
       )}

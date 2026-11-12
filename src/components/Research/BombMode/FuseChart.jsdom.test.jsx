@@ -75,7 +75,9 @@ describe('the pill fits its ghost area and covers no label (D2 and its refuter)'
   it('right of the rail, the live label clears every rung label block (points + price) and the down ticks (refuter C, V-L2)', () => {
     const ladder = held([]);
     let right = 0;
-    for (const live of [101, 102, 103, 104.2, 105.2, 106.2, 107, 108.3, 109.4, 110.6, 98.5, 95.5]) {
+    // (+ 100.7, 105.5, 97.2 since the both-directions refinement, 2026-11-10: with the six rungs at full scale
+    // the right column has fewer clear gaps, and these land in them, so the row still checks ≥ 3 right-hand labels.)
+    for (const live of [101, 102, 103, 104.2, 105.2, 106.2, 107, 108.3, 109.4, 110.6, 98.5, 95.5, 100.7, 105.5, 97.2]) {
       const d = doc(renderToStaticMarkup(<FuseChart ladder={ladder} live={live} decimals={2} go={toGo(ladder, live)} width={390} height={324} />));
       const texts = [...d.querySelectorAll('[data-fuse-live-label] text')];
       if (!texts.length || texts[0].getAttribute('text-anchor') !== 'start') continue;
@@ -106,17 +108,25 @@ describe('the pill fits its ghost area and covers no label (D2 and its refuter)'
   });
 });
 
+// Refinement 2026-11-10 (BD-4): the sheet's to-go line is ONE HTML line in the sheet's own flow (the lead
+// in its color and weight, the other quieter), so it wraps inside the sheet; the SVG label these rows
+// clamped by x is gone. The rows now pin what keeps it whole: HTML, outside the rail's SVG, free to wrap.
+const sheetLineEl = (d) => d.querySelector('[data-sheet-togo]');
+const wholeInSheet = (el) => {
+  expect(el.tagName).toBe('DIV');
+  expect(el.closest('svg')).toBeNull();
+  expect(el.getAttribute('style')).toMatch(/overflow-wrap:\s*anywhere/);
+  // review C12: nothing in the line may refuse to wrap (its real wrapping is the browser record in the build report)
+  expect(el.outerHTML).not.toMatch(/white-space:\s*(nowrap|pre)/);
+};
 describe('the sheet keeps its to-go label whole inside the sheet (D1)', () => {
-  it('the label is centred over the next rung but clamped by its own drawn width', () => {
+  it('the line is HTML in the sheet\'s flow (it wraps), never an SVG text placed by x — at the rail\'s right end too', () => {
     const ladder = held(['bagger', 'doubleBagger']); // next = +50 at the rail's right end
     const go = toGo(ladder, 111.9);
     const view = { ladder, go, live: 111.9, decimals: 2, sheetLine: sheetLine({ ladder, decimals: 2 }), sheetScored: null };
     const d = doc(renderToStaticMarkup(<BombSheet view={view} />));
-    const el = d.querySelector('[data-sheet-togo]');
-    const w = monoWidth(el.textContent, 8.5, 0.5);
-    const W = Number(d.querySelector('svg').getAttribute('width'));
-    expect(Number(el.getAttribute('x')) + w / 2).toBeLessThanOrEqual(W - 4 + 1e-9);
-    expect(Number(el.getAttribute('x')) - w / 2).toBeGreaterThanOrEqual(14 - 1e-9);
+    wholeInSheet(sheetLineEl(d));
+    expect(sheetLineEl(d).querySelector('[data-sheet-togo-lead="up"]').textContent).toContain('+50');
   });
   it('…at the left end too: on a narrow sheet (270 px measured) a long label over the first rung stays inside the left edge (refuter C, X-S1)', async () => {
     const big = measuredLadder({ measured: { measured: true, baselinePrice: 1000000, targets: [['bagger', 1060000], ['doubleBagger', 1090000], ['tenBagger', 1120000], ['bust', 940000], ['crash', 910000], ['meltdown', 880000]].map(([key, price]) => ({ key, price })), crossedTiers: [] } });
@@ -128,11 +138,9 @@ describe('the sheet keeps its to-go label whole inside the sheet (D1)', () => {
     try {
       await act(async () => { root.render(<BombSheet view={view} />); });
       expect(host.querySelector('svg').getAttribute('width')).toBe('270');
-      const el = host.querySelector('[data-sheet-togo]');
-      const w = monoWidth(el.textContent, 8.5, 0.5);
-      const rungX = Number(host.querySelector('[data-sheet-rung="bagger"] circle').getAttribute('cx'));
-      expect(rungX - w / 2).toBeLessThan(14); // centred on the rung it would start left of the sheet: the clamp binds
-      expect(Number(el.getAttribute('x')) - w / 2).toBeGreaterThanOrEqual(14 - 1e-9);
+      const el = sheetLineEl(host);
+      expect(monoWidth(el.textContent, 10, 0.4)).toBeGreaterThan(270); // longer than the sheet: it must wrap, not run off
+      wholeInSheet(el);
     } finally {
       act(() => root.unmount());
       spy.mockRestore();

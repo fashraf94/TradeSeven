@@ -14,6 +14,14 @@ import { priceText } from '../priceFormat.js';
 
 export const money = (price, decimals) => `$${priceText(price, decimals)}`;
 const signedPct = (pct, digits = 1) => `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(digits)}%`;
+/**
+ * A rung's move from the baseline (ladder.rungPct: from the DISPLAYED prices),
+ * two decimals, signed — the ONE string the Fuse's titles, the bar and the
+ * levels table print for a rung (BD-6, BUILD_RULES §9).
+ */
+export const rungPctText = (pct) => signedPct(pct, 2);
+/** Downside points with the typographic minus: −10. */
+const downPts = (points) => `−${Math.abs(points)}`;
 /** A to-go %: two decimals under 1 % — the red zone's own precision, so the pill and the zone agree at the band — one decimal from 1 % up. */
 const goPct = (pct) => (Math.abs(pct) < 1 ? Math.abs(pct).toFixed(2) : Math.abs(pct).toFixed(1));
 
@@ -24,8 +32,7 @@ export const BOMB_COPY = Object.freeze({
   baselineFromClose: (price, d) => `From yesterday's close ${money(price, d)}`,
   baselinePreview: (price, d) => `Yesterday's close ${money(price, d)}`,
   baselineV4: (price, d) => `Today's baseline ${money(price, d)}`,
-  belowCompressed: 'Below · compressed',
-  rungTitle: (label, pct) => `${label.toUpperCase()} · ${signedPct(pct)}`,
+  rungTitle: (label, pct) => `${label.toUpperCase()} · ${rungPctText(pct)}`,
   rungPoints: (points, banked) => `${points > 0 ? '+' : ''}${points}${banked ? ' ✓' : ''}`,
   bankedAt: (time) => `Banked · ${time}`,
   liveTag: 'live',
@@ -76,8 +83,7 @@ export const BOMB_COPY = Object.freeze({
   // The sheet: what has to happen (templates only — spec §4.3)
   sheetTitle: 'The ladder',
   whatHasToHappen: 'What has to happen',
-  needs: (price, d, clockLabel) => `Needs ${money(price, d)} at a check${clockLabel ? ` · next check ${clockLabel}` : ''}`,
-  needsChecking: (price, d) => `Needs ${money(price, d)} at a check · checking…`,
+  // (Build A's `needs` / `needsChecking` lines are retired: the held line is lead-aware since BD-4 — see below.)
   afterBank: (points, at, price, d) => `+${points} banked${at ? ` at the ${at} check` : ''}. Next: ${money(price, d)} at a check`,
   allRungsBanked: (points) => `+${points} banked · every rung is banked`,
   previewNeeds: (price, d) => `Preview · rungs if it entered at yesterday's close (${money(price, d)})`,
@@ -88,4 +94,71 @@ export const BOMB_COPY = Object.freeze({
   heldPreviewNeeds: (price, d) => `Held · rungs shown from yesterday's close (${money(price, d)}) · this position's live ladder isn't shown here`,
   previewV4: (price, d) => `Preview · today's levels from today's baseline (${money(price, d)})`,
   sheetBankedSoFar: (points) => `+${points} banked`,
+
+  // ── Refinement 2026-11-10: both directions (BD-1 – BD-8) ────────────────────
+  // NAMING RULE: every DOWNSIDE template's key starts with `down` or `danger`, so
+  // the honesty test enumerates them by construction (BD-10: a crossed downside
+  // rung is "hit", never "banked"). Upside templates never start with either.
+  //
+  // The scored chip names the CHECK (BD-8): `at the 1:00 check`, or for an
+  // earlier session `at Mon's 3:45 check`; with no slot, today's time.
+  checkName: (time) => `the ${time} check`,
+  checkNameDay: (day, time) => `${day}'s ${time} check`,
+  // The to-go line, both sides (BD-3 pills, BD-4 bar): the lead in full, the
+  // other short. Arrows say the side.
+  upArrow: '↑',
+  downArrow: '↓',
+  toGoShort: (pct, bricks, points) => `${goPct(pct)}% · ${bricks} to +${points}`,
+  downToGoBricks: (pct, bricks, label, points) => `${goPct(pct)}% · ${bricks} brick${bricks === 1 ? '' : 's'} to ${label} ${downPts(points)}`,
+  downToGoBricksShort: (pct, bricks, points) => `${goPct(pct)}% · ${bricks} brick${bricks === 1 ? '' : 's'} to ${downPts(points)}`,
+  downToGoPlain: (pct, label, points) => `${goPct(pct)}% to ${label} ${downPts(points)}`,
+  downToGoShort: (pct, bricks, label, points) => `${goPct(pct)}% · ${bricks} to ${label} ${downPts(points)}`,
+  downToGoAt: (label, points) => `At ${label} ${downPts(points)} · a check decides`,
+  downToGoAtPreview: (label, points) => `At ${label} ${downPts(points)}`,
+  downEveryRungHit: 'Every rung below hit',
+  // The Fuse's downside rungs (BD-3)
+  downPoints: (points) => downPts(points),
+  downHitTitle: (label, time) => `${label.toUpperCase()} · HIT${time ? ` ${time}` : ''}`,
+  // What has to happen, lead-aware (BD-4). Up leads: needsFor + downAt (+ the clock);
+  // down leads: downIfAtCheck + upNeeds (+ the clock); after a hit: downHitAt + downNextBelow.
+  needsFor: (price, d, points) => `Needs ${money(price, d)} at a check for +${points}`,
+  upNeeds: (points, price, d) => `+${points} needs ${money(price, d)}`,
+  downAt: (label, price, d) => `${label} at ${money(price, d)}`,
+  downIfAtCheck: (label, points, price, d) => `${label} (${downPts(points)}) if it's at or below ${money(price, d)} at a check`,
+  downHitAt: (label, points, check) => `${label} ${downPts(points)} hit${check ? ` at ${check}` : ''}`,
+  downNextBelow: (label, price, d) => `next below: ${label} at ${money(price, d)}`,
+  // The levels table under the bar (BD-6)
+  levelsTitle: 'All levels',
+  // Takes the rung's ALREADY-PRINTED % and price (bombView.rungFacts): the table re-formats nothing (§9).
+  levelSub: (pctText, priceText) => `${pctText} · ${priceText}`,
+  levelPoints: (points) => `+${points}`,
+  levelBanked: (time) => `✓ banked${time ? ` ${time}` : ''}`,
+  downLevelHit: (time) => `hit${time ? ` ${time}` : ''}`,
+  levelNext: (bricks) => (Number.isFinite(bricks) ? `next · ${bricks} brick${bricks === 1 ? '' : 's'}` : 'next'),
+  levelLive: (price, d, pct) => `Live ${money(price, d)} · ${signedPct(pct)}`,
+  levelLast: (price, d, pct) => `Last ${money(price, d)} · ${signedPct(pct)}`,
+  levelsPreview: 'Preview',
+  // The collapsed Details for a measured position — StockRewardDetails' facts, moved unchanged
+  detailsTitle: 'Details',
+  detailsMeasured: (pctDecimal) => `Frozen measured %: ${pctDecimal}% (exact)`,
+  detailsTarget: (label, target) => `${label}: exact $${target}`,
+  detailsQuote: (price, asOf) => `Quote $${price} as of ${asOf}`,
+  detailsPosition: (id) => `Position ${id}`,
+  detailsReceipt: (hash) => `Receipt ${hash}`,
+  detailsInput: (ref) => `Input ${ref}`,
+  detailsModel: (id) => `Model ${id}`,
+  detailsCents: 'Cents are rounded half-even for display only; awards use the exact targets.',
+  // The Danger Zone (BD-5) — the red zone's layout, the downside rung as the goal
+  dangerZoneChip: 'Danger zone',
+  dangerRungTag: (emoji, label, points, price, d) => `${emoji} ${label} · ${downPts(points)} pts · ${money(price, d)}`,
+  dangerDistanceSub: (label, points, pct) => `to ${label} ${downPts(points)} · ${Math.abs(pct).toFixed(2)}%`,
+  dangerBelowSub: (label, points) => `at or below ${label} ${downPts(points)} · a check decides`,
+  downHitLine: (label, points, check) => `${label} · ${downPts(points)} · hit${check ? ` at ${check}` : ''}`,
+  // Battle View → Why? (BD-7)
+  seeAllLevels: 'See all levels ›',
+  // The views' accessible names (review A3: the Danger Zone is named as itself; every edited label lives here)
+  ariaFuse: 'Bomb chart: the ladder from the bottom rung to the top rung, with the baseline and the live price',
+  ariaRail: 'The ladder rail, from the bottom rung to the top rung',
+  ariaRedZone: 'Red zone: the next rung as the goal line and the last hour of prices',
+  dangerAriaZone: 'Danger zone: the next rung below as the goal line and the last hour of prices',
 });

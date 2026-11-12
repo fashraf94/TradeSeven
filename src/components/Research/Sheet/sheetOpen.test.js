@@ -11,6 +11,7 @@ import { visibleViewportHeight } from './sheetViewport.js';
 import { measuredSheetBattle, SHEET_NOW } from './__fixtures__/sheetBattles.js';
 import { agentBombContext } from '../BombMode/selectBombRecord.js';
 import { RED_ZONE_ENTER_PCT } from '../BombMode/redZone.js';
+import { measuredLadder } from '../BombMode/ladder.js';
 
 let BATTLE;
 let HELD;
@@ -44,6 +45,13 @@ describe('FQ-9 — the red zone at open (the next rung is +30 at $103.77; Wed 1:
   });
   it('no price yet → the sheet', () => {
     for (const live of [null, undefined, 0, Number.NaN]) expect(open({ live })).toBe(false);
+  });
+  it('BD-5 (refinement 2026-11-10): inside the Danger Zone band at open (0.5 % above the next unhit downside rung) → also 💣', () => {
+    const below = measuredLadder({ measured: HELD.record.measured }).nextDown;
+    expect(below).not.toBeNull();
+    expect(open({ live: Number((below.price * 1.003).toFixed(2)) })).toBe(true);
+    expect(open({ live: Number((below.price * 1.008).toFixed(2)) })).toBe(false);
+    expect(open({ live: Number((below.price * 1.003).toFixed(2)), nowMs: Date.parse('2026-10-17T16:00:00.000Z') })).toBe(false); // closed: the sheet
   });
   it('never for crypto, a legacy-scored holding, a name not held, or a mount without Bomb mode', () => {
     expect(open({ isCrypto: true })).toBe(false);

@@ -201,6 +201,17 @@ describe('FQ-9 (2026-11-08) — with Bomb mode on, a measured held stock in the 
     expect($('[data-sheet-root]')).toBeNull();
     expect($('[data-bomb-sheet]')).toBeTruthy();
   });
+  it('BD-7 (2026-11-10): the Battle View\'s "See all levels ›" door (opensOnBomb) opens on 💣 and the levels table even OUTSIDE the band', async () => {
+    await act(async () => {
+      root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb"
+        wsPrice={103.2} sheetContext={ctx()} bombContext={bombCtx()} opensOnBomb />);
+    });
+    await flush();
+    expect($('[data-sheet-root]')).toBeNull();
+    expect($('[data-bomb-sheet]')).toBeTruthy();
+    expect($('[data-bomb-levels]')).toBeTruthy();
+    expect(series()).toContain('30m');
+  });
 });
 
 describe('FQ-6 (2026-11-08) — on a phone, sheet mode sizes the modal from the visible viewport', () => {

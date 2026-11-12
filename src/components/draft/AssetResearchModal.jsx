@@ -62,6 +62,8 @@ import { opensInRedZone } from '../Research/Sheet/sheetOpen';
  *   (Shadow vs CPU quote integrity) — see the note at the component.
  * - bombContext: optional Bomb mode contract (Research Modal Build A) — see the
  *   note at the component.
+ * - opensOnBomb: optional (Bomb mode refinement BD-7) — with bombContext, open on
+ *   💣 even when the sheet is on (the Battle View's "See all levels ›" door).
  * - sheetContext: optional in-battle sheet contract (Research Modal Build C) —
  *   see the note at the component.
  */
@@ -152,6 +154,7 @@ const AssetResearchModal = ({
   // pill and no Bomb tab (BA-5). With the mode off nobody passes it and nothing
   // here changes.
   bombContext = null,
+  opensOnBomb = false,
   // Research Modal Build C — the sheet in battle (spec
   // docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md §4.2, BC-1). Passed ONLY
   // by the agent Battle View's three mounts, and only when
@@ -215,8 +218,11 @@ const AssetResearchModal = ({
   // inside the red-zone band when the modal OPENS opens on 💣 in the red zone, not the
   // sheet. Decided ONCE, at open, from the price the screen already holds (none yet →
   // the sheet); never switched after open (this state is never set again).
+  // Bomb mode refinement (BD-7, 2026-11-10): the Battle View's "See all levels ›"
+  // door asks for 💣 by name (`opensOnBomb`), so it lands on the levels table
+  // even with the sheet on. Without the sheet the mount's own defaultTab is 💣.
   const [sheetOpensOnBomb] = useState(() => sheetOn && version >= 2 && bombContext != null && typeof bombContext === 'object'
-    && opensInRedZone({ bombContext, symbol: asset?.symbol, live: controlledMode ? controlledPrice : (wsPrice || asset?.price || asset?.currentPrice || null), nowMs: Date.now(), isCrypto }));
+    && (opensOnBomb === true || opensInRedZone({ bombContext, symbol: asset?.symbol, live: controlledMode ? controlledPrice : (wsPrice || asset?.price || asset?.currentPrice || null), nowMs: Date.now(), isCrypto })));
   const openTab = sheetOpensOnBomb ? 'baggerbomb' : sheetOn ? 'fundamental' : defaultTab;
 
   const isGameContext = isGameContextProp !== undefined
