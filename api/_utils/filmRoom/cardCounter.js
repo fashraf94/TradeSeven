@@ -40,7 +40,7 @@ import { momentsOf, sameMoment, MOMENT_KEYS } from '../../../src/utils/filmRoomM
 import { etDateOf, isEtDate, nextCalendarDate } from '../../../src/utils/tapeSchedule.js';
 import { TAPE_SUBCOLLECTION } from '../../../src/constants/filmTape.js';
 import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
-import { readCards, isOpen, ownerAttributionOf, CardRouteError, CARD_ROUTE_COPY } from './cardStore.js';
+import { readCards, isOpen, isFollowedWatch, ownerAttributionOf, CardRouteError, CARD_ROUTE_COPY } from './cardStore.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
@@ -163,8 +163,12 @@ export function weeklyCounts(days) {
   return out;
 }
 
-/** Is this card an open WATCH card — the kind the counter follows (RG-4)? `shelved` is the card's computed field. */
-export const isOpenWatchCard = (card, archetype) => card?.route === 'watch' && isOpen(card, archetype) && card?.shelved !== true;
+/**
+ * Is this card an open WATCH card — the kind the counter follows (RG-4)? Route `watch` at `card` (Build C §3: the one
+ * export's isFollowedWatch, which the screen's Watch list reads too — a Watch card offered later is followed no more),
+ * open, and not shelved (`shelved` is the card's computed field).
+ */
+export const isOpenWatchCard = (card, archetype) => isFollowedWatch(card) && isOpen(card, archetype) && card?.shelved !== true;
 
 /**
  * The recurrences of one open Watch card over `days`: the moments of its

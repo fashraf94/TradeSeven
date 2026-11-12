@@ -2,12 +2,18 @@
 //
 // Film Room B2 item 4 — THE LEDGER (Build B spec §4; shared contract §5;
 // Amendment G RG-8): `agents/{agentId}/plays/{entryId}`. A card and, in the
-// camp's later builds, a play are ONE entry at different stages. This build
-// writes stages `card`, `nominated` (route `drill`) and `retired`; the later
-// stages belong to the camp. Writes are SERVER-ONLY (the Admin SDK, through
-// POST /api/film-room/card); the owner reads, by the document's own ownerId
-// (firestore.rules). The gate is the ROUTE's job (cardsGate.js); nothing here
-// reads the flag.
+// camp's later builds, a play are ONE entry at different stages. Film Room
+// Build C (spec docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md §3)
+// moves the ledger to STAGE VOCABULARY v2 — `card → nominated → testing →
+// tested → installed → retired` — read from ONE export
+// (src/data/cardStages.js, re-exported here whole); every entry written from
+// C1 on records `stageVocabVersion: 2`, and an entry without it reads as v1
+// and is never rewritten. The player's ops write `card`, `nominated` and
+// `retired`; `testing`, `tested`, `installed` and a server retire are the
+// Practice Field's, through the transition helper below
+// (applyServerTransition). Writes are SERVER-ONLY (the Admin SDK); the owner
+// reads, by the document's own ownerId (firestore.rules). The gate is the
+// ROUTE's job (cardsGate.js); nothing here reads the flag.
 //
 // THE WRITE PATTERN follows api/_utils/hypothesisRecords/store.js: every write
 // is ONE transaction, all reads before any write; idempotent by op id, with an
@@ -54,17 +60,19 @@ import { CARD_SLOTS, CARD_SLOTS_VERSION } from '../../../src/data/cardSlots.js';
 // the Film Room arc owns the rest of this file.
 import { PER_GAME_LOADOUT_ENABLED } from '../../../src/config/perGameLoadoutFlags.js';
 import { loadoutArchetypesOf } from '../../../src/constants/perGameLoadout.js';
+// Build C §3: the stage vocabulary v2, from its one export — re-exported whole, so every server reader takes it from here
+import { CARD_STAGE_VOCAB_VERSION, NOMINATION_STATES, isOpenStage } from '../../../src/data/cardStages.js';
+
+export * from '../../../src/data/cardStages.js';
 
 export const PLAYS_SUBCOLLECTION = 'plays';
 export const CARD_SCHEMA_VERSION = 1;
 /** A card's three routes (spec §4): Watch, Practice (`drill`), Set. */
 export const CARD_ROUTES = Object.freeze(['watch', 'drill', 'set']);
-/** The stages this build writes. The camp's `drilled → drafted → proven → installed` are not here. */
-export const CARD_STAGES = Object.freeze(['card', 'nominated', 'retired']);
-/** The stages an entry is OPEN at (it counts toward S9 when it is not shelved). */
-export const OPEN_STAGES = Object.freeze(['card', 'nominated']);
-/** Who moves a card in this build: the player, through the card endpoint. */
+/** Who moves a card: the player, through the card endpoint. */
 export const BY_PLAYER = 'player';
+/** Build C §3: a server write through the transition helper — `stageHistory[].by`, with the writer named beside it. */
+export const BY_SERVER = 'server';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
@@ -89,6 +97,8 @@ export const CARD_ROUTE_COPY = Object.freeze({
   cap_reached: 'The open-card cap for this agent is reached. Retire a card first.',
   shelved: 'This card is shelved: it was made under another archetype and cannot move until the agent returns to it.',
   illegal_transition: 'That change is not allowed from the card\'s current stage.',
+  invalid_transition: 'That transition or its payload is not one the ledger takes.',
+  nomination_mismatch: 'That record is not the one this card is bound to.',
   agent_unresolved: 'This agent records no archetype, so no card can be filed under it.',
   archetype_changed: 'This day was taped under another archetype than the agent\'s current one, so a card from it would be shelved at birth. Nothing was filed.',
   attribution_unavailable: 'The agent these cards belong to could not be resolved. Nothing was changed; try again.',
@@ -155,8 +165,11 @@ const docsOf = (snap) => (snap?.docs || []).map((d) => (typeof d.data === 'funct
 
 /** Ruling 5: an entry made under another archetype than the agent's current one is shelved. Computed at read. */
 export const isShelved = (entry, currentArchetype) => (Array.isArray(currentArchetype) ? !currentArchetype.includes(entry?.archetypeCodeId) : entry?.archetypeCodeId !== currentArchetype);
-/** Open: at `card` or `nominated`, and not shelved — what S9 counts (RG-8). */
-export const isOpen = (entry, currentArchetype) => OPEN_STAGES.includes(entry?.stage) && !isShelved(entry, currentArchetype);
+/**
+ * Open: open by its stage (Build C §3 — `card`, `nominated`, `testing`, or `tested` with no `parkedAt`: the one export's
+ * isOpenStage), and not shelved — what S9 counts (RG-8).
+ */
+export const isOpen = (entry, currentArchetype) => isOpenStage(entry) && !isShelved(entry, currentArchetype);
 /** The entries with their computed `shelved` beside them (a read-time field, never stored). */
 export const withShelving = (entries, currentArchetype) => entries.map((e) => ({ ...e, shelved: isShelved(e, currentArchetype) }));
 /** How many of the entries count against S9. */
@@ -176,6 +189,8 @@ export function buildCardDoc({ entryId, uid, agentId, opId, opFingerprint, nowIs
   const stage = stageForRoute(payload.route);
   return {
     schemaVersion: CARD_SCHEMA_VERSION,
+    // Build C §3: written once, at create; an entry without it reads as v1 and is never rewritten
+    stageVocabVersion: CARD_STAGE_VOCAB_VERSION,
     entryId,
     ownerId: uid,
     agentId,
@@ -307,7 +322,9 @@ export async function retireCard(db, { uid, agentId, entryId, opId, expectedVers
     }
     if (expectedVersion !== entry.version) throw fail(409, 'version_conflict', { currentVersion: entry.version });
     if (isShelved(entry, agent.shelf)) throw fail(409, 'shelved', { archetypeCodeId: entry.archetypeCodeId });
-    if (entry.stage === 'retired' || !OPEN_STAGES.includes(entry.stage)) throw fail(409, 'illegal_transition', { stage: entry.stage });
+    // Build C §3: the player retires an OPEN card, as before — open by the one export's predicate (`card`, `nominated`,
+    // `testing`, or `tested` unparked); `retired`, `installed` and a parked card are no transition
+    if (!isOpenStage(entry)) throw fail(409, 'illegal_transition', { stage: entry.stage });
     const patch = {
       stage: 'retired',
       stageAt: nowIso,
@@ -316,6 +333,127 @@ export async function retireCard(db, { uid, agentId, entryId, opId, expectedVers
     };
     tx.update(ref, patch);
     return { idempotent: false, card: { ...entry, ...patch } };
+  });
+}
+
+// ── the server's transitions (Build C §3, §4): the Practice Field's one way in ──────────────────────────────────
+
+/**
+ * The server's transitions and the order they keep (spec §3: `nominated → testing → tested → installed`, `tested →
+ * retired`): the stage each moves FROM, the stage it moves TO, and the ONE field of the entry it sets. `nomination`
+ * moves no stage: it copies the book's nomination state onto the entry, which stays `nominated`.
+ */
+export const SERVER_TRANSITIONS = Object.freeze({
+  nomination: Object.freeze({ from: 'nominated', to: 'nominated', field: 'nomination' }),
+  testing: Object.freeze({ from: 'nominated', to: 'testing', field: 'idea' }),
+  tested: Object.freeze({ from: 'testing', to: 'tested', field: 'result' }),
+  installed: Object.freeze({ from: 'tested', to: 'installed', field: 'offer' }),
+  retired: Object.freeze({ from: 'tested', to: 'retired', field: 'offer' }),
+});
+
+/** A writer's name on a server row: a short identifier (`practice_field`, `practice_field.t2`). */
+const WRITER_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+/** The longest agent reason the ledger keeps a copy of, in code points (the book bounds its own; this is the copy's guard). */
+export const NOMINATION_REASON_MAX = 2000;
+const idOk = (v) => typeof v === 'string' && v.length > 0 && v.length <= 200;
+const wordOk = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
+const isoOk = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));
+const invalid = (why) => fail(400, 'invalid_transition', { why });
+
+/**
+ * The field a transition sets, from its payload — exactly the fields spec §3 names, and nothing else of the payload.
+ * Throws 400 invalid_transition on a payload the ledger does not take.
+ */
+function fieldOfTransition(to, payload) {
+  const p = isObj(payload) ? payload : {};
+  if (to === 'nomination') {
+    if (!NOMINATION_STATES.includes(p.state) || p.state === 'queued') throw invalid('state');
+    if (!idOk(p.bookId) || !idOk(p.nominationId)) throw invalid('ids');
+    if (p.reason != null && (typeof p.reason !== 'string' || [...p.reason].length > NOMINATION_REASON_MAX)) throw invalid('reason');
+    if (p.consideredAt != null && !isoOk(p.consideredAt)) throw invalid('consideredAt');
+    return { bookId: p.bookId, nominationId: p.nominationId, state: p.state, reason: p.reason ?? null, consideredAt: p.consideredAt ?? null };
+  }
+  if (to === 'testing') {
+    if (!idOk(p.bookId) || !idOk(p.ideaId)) throw invalid('ids');
+    return { bookId: p.bookId, ideaId: p.ideaId };
+  }
+  if (to === 'tested') {
+    if (!idOk(p.ideaId) || !idOk(p.resultRef)) throw invalid('ids');
+    if (!wordOk(p.contractCondition) || !wordOk(p.economicResult)) throw invalid('result');
+    return { ideaId: p.ideaId, resultRef: p.resultRef, contractCondition: p.contractCondition, economicResult: p.economicResult };
+  }
+  if (to === 'installed') {
+    if (!idOk(p.offerId) || !wordOk(p.state)) throw invalid('offer');
+    return { offerId: p.offerId, state: p.state };
+  }
+  // retired — the server's retire: the idea retired, with the Forge offer's state (or none, its id null)
+  if (p.offerId != null && !idOk(p.offerId)) throw invalid('offer');
+  if (!wordOk(p.state)) throw invalid('offer');
+  return { offerId: p.offerId ?? null, state: p.state };
+}
+
+/**
+ * The record a transition must be BOUND to (spec §3: bound to the idea's original run and the entry's owner): a
+ * nomination copy names the entry's own nomination; `testing` the entry's own book; `tested` the entry's own idea.
+ */
+function boundOf(to, entry, field) {
+  if (to === 'nomination') return entry.nomination?.bookId === field.bookId && entry.nomination?.nominationId === field.nominationId;
+  if (to === 'testing') return entry.nomination?.bookId === field.bookId;
+  if (to === 'tested') return entry.idea?.ideaId === field.ideaId;
+  return true;
+}
+
+/**
+ * Build C §3 — THE LEDGER'S TRANSITION HELPER, server-only, for the Practice Field: one transaction that moves an entry
+ * along the server's legal order, or copies the book's nomination state onto it.
+ *
+ *   to          `nomination` (copies `{ state, reason, consideredAt, bookId, nominationId }` onto `entry.nomination`;
+ *               the stage stays `nominated`), `testing` (sets `idea`), `tested` (sets `result`), `installed` (sets
+ *               `offer`) or `retired` (the server's retire, with `offer.state`).
+ *   checks      the entry exists (404 not_found); it is `ownerId`'s and `agentId`'s (403 forbidden); its op id has not
+ *               been used (a replay of the same transition is the IDEMPOTENT answer; another under that op id → 409
+ *               op_conflict); it is at the transition's FROM stage (409 illegal_transition); the payload names the
+ *               entry's own nomination, book or idea (409 nomination_mismatch).
+ *   writes      the one field, the stage and its instant (a stage move), a `stageHistory` row `by: 'server'` with the
+ *               writer named (`writer`), and `version + 1`. Never `note`, `question`, `route` or `source`; never
+ *               `stageVocabVersion` (a v1 entry stays v1).
+ * A SHELVED entry still transitions (spec §3, contract V2 §7): shelving is not read here.
+ *
+ * @param {object} db
+ * @param {{ entryId: string, ownerId: string, agentId: string, to: string, by: string, payload: object, opId: string, nowIso?: string }} p
+ * @returns {Promise<{ idempotent: boolean, entry: object }>}
+ */
+export async function applyServerTransition(db, { entryId, ownerId, agentId, to, by, payload, opId, nowIso = new Date().toISOString() }) {
+  const step = Object.prototype.hasOwnProperty.call(SERVER_TRANSITIONS, to) ? SERVER_TRANSITIONS[to] : null;
+  if (!step) throw invalid('to');
+  if (typeof by !== 'string' || !WRITER_NAME.test(by)) throw invalid('by');
+  if (!idOk(entryId) || !idOk(ownerId) || !idOk(agentId) || !idOk(opId)) throw invalid('ids');
+  const field = fieldOfTransition(to, payload);
+  const opFingerprint = canonicalContentHash({ kind: 'server', to, agentId, entryId, by, field });
+  return db.runTransaction(async (tx) => {
+    const ref = playRefOf(db, agentId, entryId);
+    const snap = await tx.get(ref);
+    if (!snap?.exists) throw fail(404, 'not_found');
+    const entry = typeof snap.data === 'function' ? snap.data() : snap.data;
+    if (!isObj(entry) || entry.ownerId !== ownerId || entry.agentId !== agentId) throw fail(403, 'forbidden');
+    const history = Array.isArray(entry.stageHistory) ? entry.stageHistory : [];
+    const replay = history.find((h) => h?.opId === opId);
+    if (replay) {
+      if (replay.opFingerprint === opFingerprint) return { idempotent: true, entry };
+      throw fail(409, 'op_conflict', { entryId });
+    }
+    if (entry.stage !== step.from) throw fail(409, 'illegal_transition', { stage: entry.stage });
+    if (!boundOf(to, entry, field)) throw fail(409, 'nomination_mismatch', { entryId });
+    const row = { stage: step.to, at: nowIso, by: BY_SERVER, writer: by, opId, opFingerprint };
+    if (to === 'nomination') Object.assign(row, { event: 'nomination', state: field.state });
+    const patch = {
+      [step.field]: field,
+      ...(step.to !== entry.stage ? { stage: step.to, stageAt: nowIso } : {}),
+      stageHistory: [...history, row],
+      version: entry.version + 1,
+    };
+    tx.update(ref, patch);
+    return { idempotent: false, entry: { ...entry, ...patch } };
   });
 }
 

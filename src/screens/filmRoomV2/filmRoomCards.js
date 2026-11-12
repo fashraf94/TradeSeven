@@ -27,6 +27,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getAuth } from 'firebase/auth';
 import { readFilmRoomVerdict, resolveFilmRoomCardsForBattle, filmRoomBattleId } from '../../utils/filmRoomGate';
 import { momentsOf, momentAnchor } from '../../utils/filmRoomMoments';
+// Build C §3: the stage vocabulary v2, from its one export (the store reads the same module)
+import { CARD_STAGES, isOpenStage, isFollowedWatch } from '../../data/cardStages';
 import { numberAt } from './filmRoomModel';
 
 export const FILM_ROOM_CARD_PATH = '/api/film-room/card';
@@ -154,21 +156,27 @@ export function ledgerOf(counter, extra = null) {
   return cards;
 }
 
-/** The lists of My cards: active (open), shelved, retired — and 'other' for a stage this release does not know (never counted as active; review L3-10). */
+/**
+ * The lists of My cards (Build C §3, the one export's stages and open predicate): active (open), shelved, parked (a
+ * tested card the player parked), equipped (`installed`), retired — and 'other' for a stage the vocabulary does not
+ * know (never counted as active; review L3-10).
+ */
 export function groupCards(cards) {
-  const active = []; const shelved = []; const retired = []; const other = [];
+  const active = []; const shelved = []; const parked = []; const equipped = []; const retired = []; const other = [];
   for (const c of cards) {
     if (c.stage === 'retired') retired.push(c);
-    else if (c.stage !== 'card' && c.stage !== 'nominated') other.push(c);
+    else if (!CARD_STAGES.includes(c.stage)) other.push(c);
     else if (c.shelved) shelved.push(c);
-    else active.push(c);
+    else if (isOpenStage(c)) active.push(c);
+    else if (c.stage === 'installed') equipped.push(c);
+    else parked.push(c);   // the one stage left that is neither open nor installed: `tested`, parked
   }
-  return { active, shelved, retired, other };
+  return { active, shelved, parked, equipped, retired, other };
 }
 
-/** The open Watch cards the header follows (RG-4), with their recurrences from the counter. */
+/** The open Watch cards the header follows (RG-4; the one export's isFollowedWatch), with their recurrences from the counter. */
 export function watchCardsOf(counter, cards) {
-  return cards.filter((c) => c.route === 'watch' && c.stage === 'card' && !c.shelved).map((c) => ({ card: c, recurrences: Array.isArray(counter?.recurrences?.[c.entryId]) ? counter.recurrences[c.entryId] : [] }));
+  return cards.filter((c) => isFollowedWatch(c) && !c.shelved).map((c) => ({ card: c, recurrences: Array.isArray(counter?.recurrences?.[c.entryId]) ? counter.recurrences[c.entryId] : [] }));
 }
 
 // ── the hook ────────────────────────────────────────────────────────────────

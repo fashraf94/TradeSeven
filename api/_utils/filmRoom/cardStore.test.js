@@ -72,9 +72,9 @@ describe('createCard — written once, as spec §4 lists it', () => {
     expect(r).toMatchObject({ open: 1, cap: OPEN_CARD_CAP });
     const stored = t.store.get(playPath('op_1'));
     expect(stored).toEqual(r.card);
-    expect(Object.keys(stored)).toEqual(['schemaVersion', 'entryId', 'ownerId', 'agentId', 'createdAt', 'archetypeCodeId', 'situationId', 'situationVersion', 'source', 'questionId', 'questionVersion', 'note', 'route', 'slotsVersion', 'stage', 'stageAt', 'stageHistory', 'version', 'opId', 'opFingerprint']);
+    expect(Object.keys(stored)).toEqual(['schemaVersion', 'stageVocabVersion', 'entryId', 'ownerId', 'agentId', 'createdAt', 'archetypeCodeId', 'situationId', 'situationVersion', 'source', 'questionId', 'questionVersion', 'note', 'route', 'slotsVersion', 'stage', 'stageAt', 'stageHistory', 'version', 'opId', 'opFingerprint']);
     expect(stored).toMatchObject({
-      schemaVersion: CARD_SCHEMA_VERSION, entryId: 'op_1', ownerId: UID, agentId: AGENT, createdAt: NOW, archetypeCodeId: 'momentum_chaser',
+      schemaVersion: CARD_SCHEMA_VERSION, stageVocabVersion: 2, entryId: 'op_1', ownerId: UID, agentId: AGENT, createdAt: NOW, archetypeCodeId: 'momentum_chaser',
       situationId: 'stalled', situationVersion: 2, source: { battleId: 'b-1', etDate: '2026-10-20', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 },
       questionId: 'stalled.want', questionVersion: 1, note: 'Let it go sooner.', route: 'watch', stage: 'card', stageAt: NOW, version: 1, opId: 'op_1',
     });
@@ -86,8 +86,8 @@ describe('createCard — written once, as spec §4 lists it', () => {
 
   it('the stage by route: Watch and Set file a `card`; Practice (`drill`) files a `nominated` entry', async () => {
     expect(CARD_ROUTES).toEqual(['watch', 'drill', 'set']);
-    expect(CARD_STAGES).toEqual(['card', 'nominated', 'retired']);
-    expect(OPEN_STAGES).toEqual(['card', 'nominated']);
+    expect(CARD_STAGES).toEqual(['card', 'nominated', 'testing', 'tested', 'installed', 'retired']);
+    expect(OPEN_STAGES).toEqual(['card', 'nominated', 'testing']);
     expect(['watch', 'drill', 'set'].map(stageForRoute)).toEqual(['card', 'nominated', 'card']);
     const t = fresh();
     for (const [i, route] of CARD_ROUTES.entries()) {
@@ -185,12 +185,14 @@ describe('the open-card cap (S9) — only cards that are neither shelved nor ret
     const cards = [
       { stage: 'card', archetypeCodeId: 'a' }, { stage: 'nominated', archetypeCodeId: 'a' }, { stage: 'retired', archetypeCodeId: 'a' },
       { stage: 'card', archetypeCodeId: 'b' }, { stage: 'drilled', archetypeCodeId: 'a' },
+      // Build C §3: `testing` is open; `tested` is open until parked; `installed` is not
+      { stage: 'testing', archetypeCodeId: 'a' }, { stage: 'tested', archetypeCodeId: 'a' }, { stage: 'tested', archetypeCodeId: 'a', parkedAt: NOW }, { stage: 'installed', archetypeCodeId: 'a' },
     ];
-    expect(cards.map((c) => isShelved(c, 'a'))).toEqual([false, false, false, true, false]);
-    expect(cards.map((c) => isOpen(c, 'a'))).toEqual([true, true, false, false, false]);
-    expect(openCardCount(cards, 'a')).toBe(2);
+    expect(cards.map((c) => isShelved(c, 'a'))).toEqual([false, false, false, true, false, false, false, false, false]);
+    expect(cards.map((c) => isOpen(c, 'a'))).toEqual([true, true, false, false, false, true, true, false, false]);
+    expect(openCardCount(cards, 'a')).toBe(4);
     expect(openCardCount(cards, 'b')).toBe(1);
-    expect(withShelving(cards, 'b').map((c) => c.shelved)).toEqual([true, true, true, false, true]);
+    expect(withShelving(cards, 'b').map((c) => c.shelved)).toEqual([true, true, true, false, true, true, true, true, true]);
   });
 });
 

@@ -56,6 +56,8 @@ import React, { useEffect, useId, useState } from 'react';
 import { SITUATIONS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { CARD_SLOTS } from '../../data/cardSlots';
+// Build C §3: the stage vocabulary v2, from its one export
+import { isOpenStage } from '../../data/cardStages';
 import { RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED } from '../../config/featureFlags';
 import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
@@ -77,7 +79,6 @@ const S10 = CARD_SLOTS.S10.noteMaxChars;
 const CONTROL_CHAR = /\p{Cc}/u;
 /** A stage or route word: the copy's, or the record's own value where the copy has none (never the screen's voice for an unknown id). */
 const wordOf = (table, id) => (Object.prototype.hasOwnProperty.call(table, id) ? table[id] : <Rec>{String(id)}</Rec>);
-const OPEN_STAGES = ['card', 'nominated'];
 
 /**
  * B2.1 B1 (Amendment H RH-1; RJ-8) — the day's stagnation rule, as the tagger stored what it used
@@ -272,11 +273,16 @@ function CardFacts({ card }) {
   );
 }
 
-/** RG-5 — what happens next, as true for the card's state: the route's sentence while it is open; nothing, said so, once retired or while shelved. */
+/**
+ * RG-5 — what happens next, as true for the card's state: the route's sentence while the card sits where its route
+ * filed it; nothing, said so, once retired or while shelved. Build C §3: a card the Practice Field has moved on
+ * (`testing`, `tested`, `installed`) gets no route sentence — its chain says what happened.
+ */
 function nextOf(card) {
   if (card.stage === 'retired') return T.stateNotes.retired;
   if (card.shelved) return T.stateNotes.shelved;
-  return OPEN_STAGES.includes(card.stage) && Object.prototype.hasOwnProperty.call(T.routeNotes, card.route) ? T.routeNotes[card.route] : null;
+  const filedAt = card.route === 'drill' ? 'nominated' : 'card';
+  return card.stage === filedAt && Object.prototype.hasOwnProperty.call(T.routeNotes, card.route) ? T.routeNotes[card.route] : null;
 }
 
 /**
@@ -306,7 +312,8 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = 
     if (!r?.ok) setRefusal(T.refusals[r?.code] ?? T.refusals.retireDefault);
   };
   const next = nextOf(live);
-  const canRetire = OPEN_STAGES.includes(live.stage) && !live.shelved;
+  // the store retires an OPEN card (Build C §3: the one export's predicate), never a shelved one
+  const canRetire = isOpenStage(live) && !live.shelved;
   // RK-2 / RK-3: an OPEN Set card's receipt says Set's words for its source day and holds the link where RK-2 allows
   // it — judged from the tape on screen, only when that is the card's own day (battle and date); otherwise RG-5's
   // sentence alone, which is true of every day
@@ -431,7 +438,7 @@ export function SinceLastTime({ day = null, battleId = null, counter, onOpenMome
         <div data-my-cards="" style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
           <span style={{ ...eyebrow, color: C.ink2 }}>{T.myCards}</span>
           {!cards.length ? <span style={foot}>{T.noCards}</span> : null}
-          {['active', 'shelved', 'retired', 'other'].map((g) => (groups[g].length ? (
+          {['active', 'shelved', 'parked', 'equipped', 'retired', 'other'].map((g) => (groups[g].length ? (
             <div key={g} data-my-cards-group={g} style={{ display: 'flex', flexDirection: 'column' }}>
               <span style={mono(10, C.ink3, { letterSpacing: '0.12em', textTransform: 'uppercase' })}>{T.groups[g]}</span>
               {groups[g].map((c) => <CardRow key={c.entryId} card={c} onShow={onShowCard} />)}

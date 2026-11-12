@@ -369,7 +369,8 @@ export const FILM_ROOM_COPY = Object.freeze({
     on: 'on',
     route: 'Route',
     stage: 'Stage',
-    stageWords: { card: 'card', nominated: 'nominated for the Practice Field', retired: 'retired' },
+    // Build C §3: one word per stage of the vocabulary v2 (src/data/cardStages.js) — `installed` reads "equipped"
+    stageWords: { card: 'card', nominated: 'nominated for the Practice Field', testing: 'testing', tested: 'tested', installed: 'equipped', retired: 'retired' },
     // RG-5 for a card that is no longer open: what happens next is nothing, said so
     stateNotes: {
       retired: 'Retired: nothing happens next.',
@@ -388,7 +389,7 @@ export const FILM_ROOM_COPY = Object.freeze({
     otherBattleUnreadable: 'That battle could not be read, so it was not opened.',
     noWatchCards: 'No open Watch card.',
     myCards: 'My cards',
-    groups: { active: 'Active', shelved: 'Shelved', retired: 'Retired', other: 'Other' },
+    groups: { active: 'Active', shelved: 'Shelved', parked: 'Parked', equipped: 'Equipped', retired: 'Retired', other: 'Other' },
     noCards: 'No cards yet.',
     shelvedExplainer: 'A card made under another archetype is shelved: kept, not counted as open, and back by itself when the agent returns to that archetype.',
     loading: 'Loading the cards…',

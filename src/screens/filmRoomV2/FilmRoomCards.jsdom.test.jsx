@@ -678,17 +678,18 @@ describe('review round — the screen (findings L3-1 … L3-11, L4-2 … L4-10, 
     await m.flush();
     await fileCard();
     const doc = t.store.get(`agents/${AGENT}/plays/op_1`);
-    t.store.set(`agents/${AGENT}/plays/op_camp`, { ...doc, entryId: 'op_camp', opId: 'op_camp', stage: 'installed', note: 'A camp card.' });
+    // Build C §3: `installed` is vocabulary v2's own word now; `drafted` was dropped before anything wrote it, so it is a stage this release does not know
+    t.store.set(`agents/${AGENT}/plays/op_camp`, { ...doc, entryId: 'op_camp', opId: 'op_camp', stage: 'drafted', note: 'A camp card.' });
     m.teardown(); m.setup(); globalThis.localStorage.clear();
     await open();
     expect(m.qa('[data-my-cards-group="active"] [data-my-card]').map((b) => b.getAttribute('data-my-card'))).toEqual(['op_1']);
     const other = m.q('[data-my-cards-group="other"] [data-my-card="op_camp"]');
     expect(other).toBeTruthy();
-    expect([...other.querySelectorAll('[data-record-text]')].map((r) => r.textContent)).toContain('installed');
+    expect([...other.querySelectorAll('[data-record-text]')].map((r) => r.textContent)).toContain('drafted');
     m.click(other);
     await m.flush();
     const receipt = m.q('[data-card-receipt="op_camp"]');
-    expect([...receipt.querySelectorAll('[data-record-text]')].map((r) => r.textContent)).toContain('installed');
+    expect([...receipt.querySelectorAll('[data-record-text]')].map((r) => r.textContent)).toContain('drafted');
     expect(receipt.querySelector('[data-card-next]')).toBeNull();
     expect(m.buttons('Retire')).toHaveLength(0);
     await sweepAll(fx.tape2, 'other stage');
@@ -1485,5 +1486,40 @@ describe('B2.1 B2 (Amendment H RH-2) — a recurrence in another battle opens th
     release();
     await m.flush(8);
     expect(events).toHaveLength(1);
+  });
+});
+
+// ── Film Room C1 (Build C spec V1, docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md) ──────────────────────────
+describe('C1 item 1 — My cards under the stage vocabulary v2 (spec §3)', () => {
+  it('testing and an unparked tested card are active and count open; a parked tested card lists under Parked; installed under Equipped, its stage word "equipped"; a v1 entry (no stageVocabVersion) reads and counts as before', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const doc = t.store.get(`agents/${AGENT}/plays/op_1`);
+    expect(doc.stageVocabVersion).toBe(2);
+    const plant = (id, minute, over) => t.store.set(`agents/${AGENT}/plays/${id}`, { ...doc, entryId: id, opId: id, note: `The card ${id}.`, createdAt: `2026-09-25T2${minute}:00:00.000Z`, ...over });
+    plant('c_testing', 1, { stage: 'testing' });
+    plant('c_tested', 2, { stage: 'tested' });
+    plant('c_parked', 3, { stage: 'tested', parkedAt: '2026-09-25T23:30:00.000Z' });
+    plant('c_installed', 0, { stage: 'installed' });
+    const v1 = { ...doc, entryId: 'c_v1', opId: 'c_v1', note: 'A v1 card.', createdAt: '2026-09-25T19:00:00.000Z' };
+    delete v1.stageVocabVersion;
+    t.store.set(`agents/${AGENT}/plays/c_v1`, v1);
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    const group = (g) => m.qa(`[data-my-cards-group="${g}"] [data-my-card]`).map((b) => b.getAttribute('data-my-card'));
+    expect(group('active').sort()).toEqual(['c_tested', 'c_testing', 'c_v1', 'op_1']);
+    expect(group('parked')).toEqual(['c_parked']);
+    expect(group('equipped')).toEqual(['c_installed']);
+    expect(m.q('[data-my-cards-group="equipped"]').textContent).toContain('Equipped');
+    expect(m.q('[data-my-card="c_installed"]').textContent).toContain('equipped');
+    expect(m.q('[data-my-card="c_testing"]').textContent).toContain('testing');
+    expect(m.q('[data-my-cards-group="other"]')).toBeNull();
+    // the form's open count: four open (card, testing, tested unparked, the v1 card) — the oracle recounts it by the one export
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(Number(m.q('[data-open-count] [data-num-aggregate="count(plays[] open)"]').getAttribute('data-agg-value'))).toBe(4);
+    await sweepAll(fx.tape2, 'v2 groups');
   });
 });
