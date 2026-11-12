@@ -513,7 +513,8 @@ const AssetResearchModal = ({
   // The Analysis view fades in each time it is shown (SB-14: `fade`, instant under reduced
   // motion). It stays mounted while hidden, so its tab and what that tab loaded are kept
   // (the Chart and 💣 views mount on show and fade in through their own motion wrapper).
-  useEffect(() => {
+  // A layout effect: the fade starts before the first paint, so the view never flashes in whole.
+  React.useLayoutEffect(() => {
     if (!shellOn || shellView !== 'analysis' || !analysisScrollRef.current) return undefined;
     let controls = null;
     try {
@@ -728,13 +729,14 @@ const AssetResearchModal = ({
         symbol={currentAsset?.symbol}
         isMobile={isMobile}
         onNavigateToStock={handleNavigateToStock}
-        // What's moving: the Why? popup's own props, exactly as the modal hands them below.
+        // What's moving: the Why? popup's own props as the modal hands them below, but for `change`:
+        // the day's change the header shows (BUILD_RULES §9 — the title prints it beside the header),
+        // and only once known, as the controlled view's popup already sends it. A battle asset's own
+        // percentChange can be its change since entry, which the header never shows.
         moving={{
           symbol: currentAsset?.symbol,
           name: currentAsset?.name,
-          change: controlledMode
-            ? (Number.isFinite(researchData.dailyChange) ? researchData.dailyChange : undefined)
-            : currentAsset?.percentChange || currentAsset?.change,
+          change: Number.isFinite(researchData.dailyChange) ? researchData.dailyChange : undefined,
           price: currentAsset?.price,
           open: researchData.todayDailyCandle?.open,
           high: researchData.todayDailyCandle?.high,
@@ -779,8 +781,8 @@ const AssetResearchModal = ({
             {researchData.error && !researchData.ohlcvData && (
               <div data-shell-chart-state="error" style={{ height: `${shellChartH + 44}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: ST.bg }}>
                 <span style={{ color: ST.ink2, fontSize: '14px' }}>{SHELL_COPY.chartUnavailable}</span>
-                <button type="button" onClick={researchData.retry} style={{ padding: '6px 16px', borderRadius: '6px', border: `1px solid ${ST.hair}`, background: ST.surface, color: ST.teal, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-                  {SHELL_COPY.chartRetry}
+                <button type="button" onClick={researchData.retry} style={{ padding: '6px 16px', borderRadius: '6px', border: `1px solid ${ST.hair}`, background: ST.surface, color: ST.teal, fontWeight: 600, cursor: 'pointer' }}>
+                  <span style={{ fontSize: '12px' }}>{SHELL_COPY.chartRetry}</span>
                 </button>
               </div>
             )}

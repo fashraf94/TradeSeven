@@ -31,6 +31,8 @@ import { ST, MONO, tint } from './sheetTheme.js';
 import AskReply from './AskReply.jsx';
 
 const TONE = { green: ST.green, amber: ST.amber, purple: ST.purple };
+// src/index.css forces every <button>'s own font-size to 16px (!important, iOS zoom): a
+// button's text takes its size from an inner span, never from the button's style.
 const EYEBROW = { fontFamily: MONO, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700, whiteSpace: 'nowrap' };
 const ROW = { all: 'unset', boxSizing: 'border-box', cursor: 'pointer', width: '100%', display: 'flex', alignItems: 'center', gap: 10 };
 
@@ -75,12 +77,12 @@ function Stance({ view }) {
               aria-label={open ? SHEET_COPY.ideaClose : SHEET_COPY.ideaOpen}
               onClick={() => setOpen((v) => !v)}
               style={{
-                all: 'unset', cursor: 'pointer', boxSizing: 'border-box', width: '100%', fontSize: 12.5, color: ST.ink2,
+                all: 'unset', cursor: 'pointer', boxSizing: 'border-box', width: '100%', color: ST.ink2,
                 fontStyle: 'italic', lineHeight: 1.4,
                 ...(open ? {} : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }),
               }}
             >
-              “{idea.statement}”
+              <span style={{ fontSize: 12.5 }}>“{idea.statement}”</span>
             </button>
           )}
         </div>
@@ -143,9 +145,9 @@ function Questions({ view }) {
             type="button"
             data-sheet-question={q}
             onClick={() => view.pickQuestion(q)}
-            style={{ ...ROW, minHeight: 46, borderTop: i ? `1px solid ${ST.hair}` : 'none', fontSize: 14.5, fontWeight: 600, color: ST.ink, lineHeight: 1.3 }}
+            style={{ ...ROW, minHeight: 46, borderTop: i ? `1px solid ${ST.hair}` : 'none', fontWeight: 600, color: ST.ink, lineHeight: 1.3 }}
           >
-            <span style={{ flex: 1 }}>{QUESTION_TEXT[q]}</span>
+            <span style={{ flex: 1, fontSize: 14.5 }}>{QUESTION_TEXT[q]}</span>
             <Chevron />
           </button>
         ))}
@@ -170,7 +172,7 @@ function Pack({ view, onSeeOnChart }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 32 }}>
         <button type="button" data-sheet-back aria-label={SHEET_COPY.backToQuestions} onClick={view.backToQuestions}
-          style={{ all: 'unset', cursor: 'pointer', color: ST.ink2, fontSize: 18, padding: '0 6px 0 0' }}>‹</button>
+          style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', color: ST.ink2, minWidth: 28, minHeight: 32, display: 'flex', alignItems: 'center' }}><span style={{ fontSize: 18, lineHeight: 1 }}>‹</span></button>
         <span style={{ fontSize: 15, fontWeight: 700, flex: 1, color: ST.ink }}>{QUESTION_TEXT[view.question]}</span>
         <span style={{ fontFamily: MONO, fontSize: 9.5, color: ST.ink3, whiteSpace: 'nowrap' }}>{asked ? SHEET_COPY.packAsked : SHEET_COPY.packFree}</span>
       </div>
@@ -199,8 +201,8 @@ function Pack({ view, onSeeOnChart }) {
                   <span style={{ fontFamily: MONO, fontSize: 9.5, color: ST.ink3 }}>{it.source.label}</span>
                   {it.pin && typeof onSeeOnChart === 'function' && (
                     <button type="button" data-pack-see={i} onClick={() => onSeeOnChart(i, it)}
-                      style={{ all: 'unset', cursor: 'pointer', fontFamily: MONO, fontSize: 10, fontWeight: 700, color: ST.teal, whiteSpace: 'nowrap', minHeight: 24, display: 'inline-flex', alignItems: 'center' }}>
-                      {SHELL_COPY.seeOnChart}
+                      style={{ all: 'unset', cursor: 'pointer', fontWeight: 700, color: ST.teal, whiteSpace: 'nowrap', minHeight: 28, display: 'inline-flex', alignItems: 'center' }}>
+                      <span style={{ fontFamily: MONO, fontSize: 10 }}>{SHELL_COPY.seeOnChart}</span>
                     </button>
                   )}
                 </span>
@@ -215,8 +217,8 @@ function Pack({ view, onSeeOnChart }) {
         {view.order.filter((q) => q !== view.question).map((q) => (
           <button key={q} type="button" data-sheet-question={q} onClick={() => view.pickQuestion(q)} style={{
             all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 34, padding: '0 12px', borderRadius: 999,
-            fontSize: 12, color: ST.ink2, border: `1px solid ${ST.hair}`, display: 'inline-flex', alignItems: 'center',
-          }}>{QUESTION_TEXT[q]}</button>
+            color: ST.ink2, border: `1px solid ${ST.hair}`, display: 'inline-flex', alignItems: 'center',
+          }}><span style={{ fontSize: 12 }}>{QUESTION_TEXT[q]}</span></button>
         ))}
       </div>
     </motion.section>
@@ -243,7 +245,7 @@ export function WallStLine({ wallSt = null, aboutName = null, about = null }) {
         {canAbout && (
           <button type="button" data-sheet-about={open ? 'open' : 'closed'} aria-expanded={open} onClick={() => setOpen((v) => !v)}
             style={{ all: 'unset', cursor: 'pointer', color: ST.ink2, display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44 }}>
-            {open ? SHELL_COPY.aboutHide : SHELL_COPY.aboutName(aboutName)}
+            <span style={{ fontSize: 13 }}>{open ? SHELL_COPY.aboutHide : SHELL_COPY.aboutName(aboutName)}</span>
             <Chevron color={ST.ink3} down={open} />
           </button>
         )}
@@ -259,8 +261,8 @@ export function BrowseAsk({ children }) {
   return (
     <section data-shell-browse-ask={open ? 'open' : 'closed'} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)}
-        style={{ ...ROW, minHeight: 46, borderTop: `1px solid ${ST.hair}`, borderBottom: open ? 'none' : `1px solid ${ST.hair}`, fontSize: 14.5, fontWeight: 600, color: ST.ink }}>
-        <span style={{ flex: 1 }}>{SHELL_COPY.browseAsk}</span>
+        style={{ ...ROW, minHeight: 46, borderTop: `1px solid ${ST.hair}`, borderBottom: open ? 'none' : `1px solid ${ST.hair}`, fontWeight: 600, color: ST.ink }}>
+        <span style={{ flex: 1, fontSize: 14.5 }}>{SHELL_COPY.browseAsk}</span>
         <Chevron down={open} />
       </button>
       {open && children}
@@ -356,11 +358,11 @@ export function SheetActionRow({ view }) {
           onClick={view.cockpit}
           style={{
             all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 48, padding: '0 14px', borderRadius: 12,
-            display: 'flex', alignItems: 'center', fontSize: 13, fontWeight: 700, color: ST.teal,
+            display: 'flex', alignItems: 'center', fontWeight: 700, color: ST.teal,
             border: `1px solid ${tint(ST.teal, 45)}`, whiteSpace: 'nowrap',
           }}
         >
-          {SHEET_COPY.toCockpit}
+          <span style={{ fontSize: 13 }}>{SHEET_COPY.toCockpit}</span>
         </button>
       )}
     </div>

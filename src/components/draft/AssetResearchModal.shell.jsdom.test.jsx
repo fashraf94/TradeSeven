@@ -362,6 +362,12 @@ describe("What's moving — the Why? popup's content inline, loaded on a tap, ne
     expect(Object.keys(net.why[0]).sort()).toEqual(['change', 'close', 'high', 'low', 'open', 'price', 'symbol']);
     // `price` is the asset's own (currentAsset.price), exactly the popup's expression — not the live tick.
     expect([net.why[0].symbol, net.why[0].price]).toEqual(['AAPL', heldAsset().price]);
+    // `change` is the day's change the header shows (§9): the title's number and the header's agree,
+    // never the battle asset's own percentChange (its change since entry).
+    const header = Number($('[data-shell-change]').textContent.replace(/[^\d.]/g, ''));
+    expect(Number(net.why[0].change.toFixed(2))).toBe(header);
+    expect($('[data-shell-moving] h3').textContent).toBe(`Why is AAPL +${header.toFixed(1)}%?`);
+    expect(heldAsset().percentChange?.toFixed?.(2)).not.toBe(header.toFixed(2));
     expect(document.body.textContent).toContain('Apple rose on strong iPhone demand.');
     expect(document.body.textContent).toContain('reuters.com');
     expect($('[data-shell-moving-foot]').textContent).toBe('From the wire and the day’s bar · not Juno’s view');

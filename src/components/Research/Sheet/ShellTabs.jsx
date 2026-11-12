@@ -60,11 +60,12 @@ export default function ShellTabs({ tab, onTab, symbol, isMobile, onNavigateToSt
               onClick={() => { if (!on) onTab(t); }}
               style={{
                 all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
-                fontSize: 13.5, fontWeight: on ? 700 : 500, color: on ? ST.ink : ST.ink2, whiteSpace: 'nowrap',
+                fontWeight: on ? 700 : 500, color: on ? ST.ink : ST.ink2, whiteSpace: 'nowrap',
                 boxShadow: on ? `inset 0 -2px 0 ${ST.teal}` : 'none',
               }}
             >
-              {LABEL[t]}
+              {/* src/index.css forces a <button>'s own font-size to 16px: the label's size sits on a span. */}
+              <span style={{ fontSize: 13.5 }}>{LABEL[t]}</span>
             </button>
           );
         })}

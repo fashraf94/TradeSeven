@@ -32,13 +32,14 @@ function ShellPills({ views, active, onView, warm }) {
             onClick={() => { if (!on) onView(v); }}
             style={{
               all: 'unset', boxSizing: 'border-box', cursor: 'pointer', flex: 1, minWidth: 0, minHeight: 44, borderRadius: 999,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, whiteSpace: 'nowrap',
               color: on ? ST.bg : ST.ink2,
               background: on ? accent : heat ? tint(HEAT, 16) : 'transparent',
               border: `1px solid ${on ? accent : heat ? tint(HEAT, 70) : ST.hair}`,
             }}
           >
-            {v === 'analysis' ? SHELL_COPY.viewAnalysis : v === 'chart' ? SHELL_COPY.viewChart : SHELL_COPY.viewBomb}
+            {/* src/index.css forces a <button>'s own font-size to 16px: the label's size sits on a span. */}
+            <span style={{ fontSize: 14, lineHeight: 1 }}>{v === 'analysis' ? SHELL_COPY.viewAnalysis : v === 'chart' ? SHELL_COPY.viewChart : SHELL_COPY.viewBomb}</span>
           </button>
         );
       })}
@@ -55,8 +56,8 @@ function ShellHeader({ asset, onClose, onBack, shell }) {
     <div data-shell-header style={{ flexShrink: 0, background: ST.bg, borderBottom: `1px solid ${ST.hair}` }}>
       <div style={{ height: 52, display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px 0 14px' }}>
         {onBack && (
-          <button type="button" data-shell-back onClick={onBack} style={{ all: 'unset', cursor: 'pointer', color: ST.teal, fontSize: 18, padding: '2px 4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-            {'←'}
+          <button type="button" data-shell-back onClick={onBack} style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', color: ST.teal, minWidth: 32, minHeight: 44, padding: '0 4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <span style={{ fontSize: 18, lineHeight: 1 }}>{'←'}</span>
           </button>
         )}
         <span style={{ fontSize: 17, fontWeight: 800, color: ST.ink, whiteSpace: 'nowrap' }}>{asset.symbol}</span>
@@ -65,8 +66,8 @@ function ShellHeader({ asset, onClose, onBack, shell }) {
         <span data-shell-change style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 700, color: tone, background: tint(tone, 14), borderRadius: 999, padding: '4px 8px', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
           {up ? '▲' : '▼'} {Math.abs(priceChange)?.toFixed(2)}%
         </span>
-        <button type="button" data-shell-close onClick={onClose} style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', width: 40, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: ST.ink2, fontSize: 18, lineHeight: 1 }}>
-          {'✕'}
+        <button type="button" data-shell-close onClick={onClose} style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', width: 40, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: ST.ink2 }}>
+          <span style={{ fontSize: 18, lineHeight: 1 }}>{'✕'}</span>
         </button>
       </div>
       <div style={{ padding: '0 14px 12px' }}>
