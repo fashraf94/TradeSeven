@@ -129,12 +129,17 @@ function timeLeft(minutes) {
  * order. `marketState` is getMarketState()'s, read once at render: a game with
  * no evaluation yet while the market is not open is waiting for the open (the
  * Desk's own PRE_OPEN rule, adapters/baggerbombAdapter.js derivePhase).
+ *
+ * Huddle S1.1 (Amendment E §E6, the Command Center chat's ruling L3-11): the phase is derived ONCE per row and kept;
+ * `inSession` (the market session is open: derivePhase === LIVE) sits beside `preOpen`. A multi-day game between sessions
+ * (LIVE_CLOSED) is neither: it is deployed and waiting. `clock`, `ending`, `startsOn` and `detail` do not change.
  */
 export function liveGameRows(battles, { nowMs, marketState }) {
   return sortLiveBattles(Array.isArray(battles) ? battles : []).map((battle) => {
     // C5: `nowMs` is the clock this row already takes. A game before its first trading
     // day is waiting, not live, and says when it starts (the adapter's one derivation).
-    const preOpen = derivePhase(battle, marketState, nowMs) === PHASE.PRE_OPEN;
+    const phase = derivePhase(battle, marketState, nowMs);
+    const preOpen = phase === PHASE.PRE_OPEN;
     const startsAtEt = deriveStartsAtEt(battle, nowMs);
     const endsMs = hubMs(battle.expiresAt);
     const minutes = minutesLeft(endsMs, nowMs);
@@ -151,6 +156,7 @@ export function liveGameRows(battles, { nowMs, marketState }) {
       opponent: opponentOf(battle),
       live: true,
       preOpen,
+      inSession: phase === PHASE.LIVE,
       // Opened and past its end time: the clock reads "ending" (hub/hubModel.js liveCountsOf counts it; ruling R-S8F-7).
       ending: !preOpen && minutes !== null && minutes <= 0,
       clock: preOpen ? (startsAtEt ? COPY.games.startsAt(startsAtEt) : COPY.games.waitingForOpen) : timeLeft(minutes),

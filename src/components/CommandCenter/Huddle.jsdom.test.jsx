@@ -88,11 +88,80 @@ describe('the sheet (C8): a HubSheet; no autoplay; Confirm sends the base revisi
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
-    expect(props.confirm).toHaveBeenCalledWith({ baseRevision: 'r1', replacement: { stances: [{ kind: 'FADE', ticker: 'BBB', level: 47.5 }], lines: [{ kind: 'NO_SWAPS_TODAY' }] } });
+    expect(props.confirm).toHaveBeenCalledWith({ baseRevision: 'r1', replacement: { stances: [{ kind: 'FADE', ticker: 'BBB', level: 47.5 }], lines: [{ kind: 'NO_SWAPS_TODAY' }] }, acknowledged: null });
+  });
+
+  it('E1: a per-archetype preview is shown line by line, and the next Confirm sends its revisions back as acknowledged', async () => {
+    const previews = [
+      { archetype: 'momentum_chaser', archetypeName: 'Trend Follower', games: 1, revision: 'rv-t', changes: [{ index: 1, kind: 'stance', from: 'FADE', to: 'WATCH', ticker: 'BBB' }] },
+      { archetype: 'degen', archetypeName: 'Speculator', games: 0, revision: 'rv-s', changes: [{ index: 1, kind: 'stance', from: 'FADE', to: 'WATCH', ticker: 'BBB' }] },
+    ];
+    const confirm = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 422, body: { error: 'validation_changed', drops: [], transforms: [], previews } })
+      .mockResolvedValueOnce({ ok: true, status: 200, body: {} });
+    keep(mount(<HubOverlayProvider><HuddleSheet huddle={huddleProp({ confirm })} onClose={vi.fn()} reducedMotion /></HubOverlayProvider>));
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect([...document.body.querySelectorAll('[data-huddle-preview]')].map((p) => p.textContent)).toEqual([
+      'For your Trend Follower game: Fade BBB above 48.00 becomes Watch BBB',
+      'For your Speculator: Fade BBB above 48.00 becomes Watch BBB',
+    ]);
+    expect(document.body.querySelector('[role="alert"]').textContent).toBe(COPY.huddle.notices.previewedApproaches);
+    expect(confirm.mock.calls[0][0].acknowledged).toBeNull();
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect(confirm.mock.calls[1][0].acknowledged).toEqual({ momentum_chaser: 'rv-t', degen: 'rv-s' });
+    expect(document.body.querySelectorAll('[data-huddle-preview]').length).toBe(0);
+  });
+
+  // review HU-7: the previews stay through a failed request (the retry still acknowledges them) and go with any edit
+  it('E1: a confirm that throws keeps the previews and the retry sends their acknowledgement; an edit drops them', async () => {
+    const previews = [{ archetype: 'momentum_chaser', archetypeName: 'Trend Follower', games: 1, revision: 'rv-t', changes: [{ index: 1, kind: 'stance', from: 'FADE', to: 'WATCH', ticker: 'BBB' }] }];
+    const confirm = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 422, body: { error: 'validation_changed', drops: [], transforms: [], previews } })
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce({ ok: false, status: 500, body: { error: 'confirm_failed' } });
+    keep(mount(<HubOverlayProvider><HuddleSheet huddle={huddleProp({ confirm })} onClose={vi.fn()} reducedMotion /></HubOverlayProvider>));
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect(confirm.mock.calls[1][0].acknowledged).toEqual({ momentum_chaser: 'rv-t' });
+    expect(document.body.querySelectorAll('[data-huddle-preview]').length).toBe(1);
+    await act(async () => { click(byText(document.body, COPY.huddle.remove)); });
+    expect(document.body.querySelectorAll('[data-huddle-preview]').length).toBe(0);
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect(confirm.mock.calls[2][0].acknowledged).toBeNull();
+  });
+
+  // mutation lens HM-30c1: typing a new level is an edit too
+  it('E1: a typed level drops the previews, and the next Confirm acknowledges nothing', async () => {
+    const previews = [{ archetype: 'momentum_chaser', archetypeName: 'Trend Follower', games: 1, revision: 'rv-t', changes: [{ index: 1, kind: 'stance', from: 'FADE', to: 'WATCH', ticker: 'BBB' }] }];
+    const confirm = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 422, body: { error: 'validation_changed', drops: [], transforms: [], previews } })
+      .mockResolvedValueOnce({ ok: true, status: 200, body: {} });
+    keep(mount(<HubOverlayProvider><HuddleSheet huddle={huddleProp({ confirm })} onClose={vi.fn()} reducedMotion /></HubOverlayProvider>));
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect(document.body.querySelectorAll('[data-huddle-preview]').length).toBe(1);
+    const input = document.body.querySelector(`input[aria-label="${COPY.huddle.levelLabel('BBB')}"]`);
+    expect(input).not.toBeNull();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, '49');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(document.body.querySelectorAll('[data-huddle-preview]').length).toBe(0);
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect(confirm.mock.calls[1][0].acknowledged).toBeNull();
+  });
+
+  it('E1: a successful Skip drops the previews (review HU-7)', async () => {
+    const previews = [{ archetype: 'degen', archetypeName: 'Speculator', games: 1, revision: 'rv-s', changes: [{ index: 1, kind: 'stance', from: 'FADE', to: 'WATCH', ticker: 'BBB' }] }];
+    const confirm = vi.fn().mockResolvedValueOnce({ ok: false, status: 422, body: { error: 'validation_changed', drops: [], transforms: [], previews } });
+    keep(mount(<HubOverlayProvider><HuddleSheet huddle={huddleProp({ confirm })} onClose={vi.fn()} reducedMotion /></HubOverlayProvider>));
+    await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
+    expect(document.body.querySelectorAll('[data-huddle-preview]').length).toBe(1);
+    await act(async () => { click(document.body.querySelector('[data-huddle-skip]')); });
+    expect(document.body.querySelectorAll('[data-huddle-preview]').length).toBe(0);
   });
 
   it('a 422 preview and a 409 conflict each say so; the words are the copy table\'s', async () => {
-    const confirm = vi.fn(async () => ({ ok: false, status: 422, body: { error: 'validation_changed' } }));
+    const confirm = vi.fn(async () => ({ ok: false, status: 422, body: { error: 'validation_changed', drops: [{ kind: 'stance', index: 0, reason: 'level_out_of_range' }], transforms: [] } }));
     keep(mount(<HubOverlayProvider><HuddleSheet huddle={huddleProp({ confirm })} onClose={vi.fn()} reducedMotion /></HubOverlayProvider>));
     await act(async () => { click(document.body.querySelector('[data-huddle-confirm]')); });
     expect(document.body.querySelector('[role="alert"]').textContent).toBe(COPY.huddle.notices.previewed);
@@ -293,6 +362,38 @@ describe('the record\'s reader (C7): no poll; mount, visibility and explicit tri
     expect(last.read.huddle.etDate).toBe(ET);
     delete document.visibilityState;
     vi.useRealTimers();
+  });
+
+  it('E7: the status route\'s 404 (outside the cohort) is a settled `outside` answer — not an error, no huddle kept', async () => {
+    let last = null;
+    keep(mount(<Probe enabled onRead={(r) => { last = r; }} />));
+    await act(async () => { await Promise.resolve(); });
+    expect(last.read.status).toBe('ready');
+    service.fetchHuddleToday.mockRejectedValueOnce(Object.assign(new Error('not_found'), { status: 404 }));
+    await act(async () => { await last.refresh(); });
+    expect(last.read.status).toBe('outside');
+    expect(last.read.huddle).toBeNull();
+    expect(last.read.stale).toBeUndefined();
+  });
+
+  // review HU-2: the sheet's acknowledgement must reach the service through the hook, or every previewing confirm previews again
+  it('E1: confirm hands `acknowledged` to the service exactly; without one it sends null', async () => {
+    service.confirmHuddlePlan.mockResolvedValue({ ok: true, status: 200, body: {} });
+    let last = null;
+    keep(mount(<Probe enabled onRead={(r) => { last = r; }} />));
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await last.confirm({ baseRevision: 'r1', replacement: HUDDLE.plan.current, acknowledged: { momentum_chaser: 'rev-tf' } }); });
+    expect(service.confirmHuddlePlan).toHaveBeenLastCalledWith({ etDate: ET, baseRevision: 'r1', replacement: HUDDLE.plan.current, acknowledged: { momentum_chaser: 'rev-tf' } });
+    await act(async () => { await last.confirm({ baseRevision: 'r1', replacement: HUDDLE.plan.current }); });
+    expect(service.confirmHuddlePlan).toHaveBeenLastCalledWith({ etDate: ET, baseRevision: 'r1', replacement: HUDDLE.plan.current, acknowledged: null });
+  });
+
+  it('E7: any other failure keeps its S1 meaning (an error first time, the last answer kept after)', async () => {
+    service.fetchHuddleToday.mockRejectedValueOnce(Object.assign(new Error('status_failed'), { status: 500 }));
+    let last = null;
+    keep(mount(<Probe enabled onRead={(r) => { last = r; }} />));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(last.read.status).toBe('error');
   });
 });
 

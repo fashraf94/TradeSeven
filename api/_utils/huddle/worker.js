@@ -18,18 +18,38 @@
 //      than 130 s of the 300 s maxDuration remain (A6's reserve for the longest job plus
 //      writes); then the in-flight jobs finish and the invocation exits.
 // An invocation with nothing to do exits in well under a second.
+//
+// THE 8:30 AM ET PIN AND THE TRADING-DAY SKIP (Amendment E §E9, the two A §A10 items as E9 states them: "no huddle on a
+// market holiday" and "no job claims before 8:30 AM ET in either DST state"). The brief's own cron entry and handler are
+// untouched (A §A10; build prompt hard rule 2): `30 12 * * 1-5` is 8:30 AM ET in EDT but 7:30 AM ET in EST. So the enqueue
+// stage refuses to run before 8:30 AM ET (the ET wall clock by Intl, never an offset) and leaves its stage unfinished; the
+// worker, which runs every two minutes, recovers it at its first tick at or after 8:30 (A §A3); and the drain claims no job
+// before 8:30 AM ET. A non-trading day enqueues nothing and the worker exits at once (getSessionForDate, holidays included).
+//
+// THE COHORT (Amendment E §E7). The cron and the brief handler run none of this unless the flag is on AND
+// HUDDLE_PLAYER_UIDS names someone (gate.js isHuddleLive). Inside, every stage keeps to the cohort: the enqueue
+// enumerates only cohort members, the reconcile pass visits only their rows, and the drain claims only their rows — so a
+// row left by a player since removed from the cohort (or by a preview with another scope) is never worked here.
 
-import { huddleRunRef, sessionOf, etDateOfMs } from './records.js';
+import { huddleRunRef, sessionOf, etDateOfMs, etClockOfMs } from './records.js';
 import { enqueuePlayers, selectClaimable, claimRow, rowsToReconcile, markReconciled } from './queue.js';
 import { enumerateActivePlayers } from './players.js';
 import { buildSharedLayer } from './sharedLayer.js';
 import { reconcileHuddle } from './applyPlan.js';
 import { runHuddleJob } from './job.js';
+import { huddleCohortOf } from './gate.js';
 
 export const WORKER_MAX_DURATION_MS = 300_000;
 export const DRAIN_RESERVE_MS = 130_000;
 export const IN_FLIGHT = 4;
 export const RECONCILE_BUDGET_MS = 10_000;
+/** E9: no enqueue and no job claim before 8:30 AM ET (the ET wall clock, "HHmm"). */
+export const HUDDLE_START_ET = '0830';
+/** E9: has the morning reached 8:30 AM ET on `etDate` at `ms`? (Later ET days count as reached.) */
+export function startReached(ms, etDate) {
+  const day = etDateOfMs(ms);
+  return day > etDate || (day === etDate && etClockOfMs(ms) >= HUDDLE_START_ET);
+}
 
 const iso = (ms) => new Date(ms).toISOString();
 
@@ -43,14 +63,19 @@ export async function markRun(db, etDate, fields) {
 }
 
 /** The enqueue stage (idempotent row keys). Nothing on a non-trading day: the brief cron also runs on weekday holidays (review L2-8). */
-export async function runEnqueueStage(db, { etDate, nowMs = Date.now(), deps = {} }) {
+export async function runEnqueueStage(db, { etDate, nowMs = Date.now(), deps = {}, cohort = huddleCohortOf() }) {
   if (!sessionOf(etDate)?.isTradingDay) return { enqueued: 0, created: 0, skipped: 'not_a_trading_day' };
-  const shared = await (deps.buildSharedLayer || buildSharedLayer)(db, { etDate, nowMs });
-  const players = await (deps.enumerateActivePlayers || enumerateActivePlayers)(db, { etDate });
+  // E9: never before 8:30 AM ET — the stage stays unfinished and the worker's first tick at or after 8:30 recovers it (A §A3)
+  if (!startReached(nowMs, etDate)) return { enqueued: 0, created: 0, skipped: 'before_start_et' };
+  // E7: no cohort, no stage — not even the shared layer's one vendor call
+  if (!(cohort instanceof Set) || cohort.size === 0) return { enqueued: 0, created: 0, skipped: 'no_cohort' };
+  const players = await (deps.enumerateActivePlayers || enumerateActivePlayers)(db, { etDate, cohort });
+  // no active player in the cohort, no shared layer: its earnings call and market read would serve no huddle (review HC-7)
+  const shared = players.uids.length > 0 ? await (deps.buildSharedLayer || buildSharedLayer)(db, { etDate, nowMs }) : null;
   const { created } = await enqueuePlayers(db, { etDate, uids: players.uids, nowMs });
   await markRun(db, etDate, {
     enqueueStage: 'done', playersEnqueued: players.uids.length, rowsCreated: created, playersSkipped: players.skippedCpu,
-    playerCounts: players.counts, shared,
+    playerCounts: players.counts, playersOutsideCohort: players.outsideCohort ?? null, shared,
   });
   return { enqueued: players.uids.length, created };
 }
@@ -59,9 +84,13 @@ export async function runEnqueueStage(db, { etDate, nowMs = Date.now(), deps = {
  * The reconcile pass over today's published and confirmed huddles, inside its budget, least recently reconciled first;
  * each visit is stamped, and a settled day leaves the set (review L1-3). I/O injectable for tests.
  */
-export async function runReconcilePass(db, { etDate, nowMs, budgetMs = RECONCILE_BUDGET_MS, clock = () => Date.now(), deps = {} }) {
+export async function runReconcilePass(db, { etDate, nowMs, budgetMs = RECONCILE_BUDGET_MS, clock = () => Date.now(), deps = {}, cohort = huddleCohortOf() }) {
+  // E7: no cohort, no pass — not even the query (review HC-2: the filter alone ran after the read)
+  if (!(cohort instanceof Set) || cohort.size === 0) return { visited: 0, of: 0, retired: 0 };
   const start = clock();
-  const rows = await (deps.rowsToReconcile || rowsToReconcile)(db, { etDate });
+  // E7: only the cohort's rows are visited
+  const inCohort = (uid) => cohort instanceof Set && cohort.has(uid);
+  const rows = (await (deps.rowsToReconcile || rowsToReconcile)(db, { etDate })).filter((row) => inCohort(row?.uid));
   const visit = deps.reconcileHuddle || reconcileHuddle;
   const mark = deps.markReconciled || markReconciled;
   const tallies = [];
@@ -81,15 +110,20 @@ export async function runReconcilePass(db, { etDate, nowMs, budgetMs = RECONCILE
  * The drain: up to IN_FLIGHT jobs at once, replenished as each finishes, while at least
  * DRAIN_RESERVE_MS of the invocation remain. `runJob` is injectable for tests.
  */
-export async function drainQueue(db, { etDate, session, shared, invocationStartMs, clock = () => Date.now(), maxDurationMs = WORKER_MAX_DURATION_MS, runJob = runHuddleJob, deps = {}, io = {} }) {
+export async function drainQueue(db, { etDate, session, shared, invocationStartMs, clock = () => Date.now(), maxDurationMs = WORKER_MAX_DURATION_MS, runJob = runHuddleJob, deps = {}, io = {}, cohort = huddleCohortOf() }) {
   const deadlineMs = invocationStartMs + maxDurationMs;
   // No job starts once the session has closed: its plan would expire at once (review L2-8). Without a session (the brief
   // handler's in-handler drain, which claims nothing anyway) only the reserve applies.
   const closeMs = typeof session?.closeMs === 'number' ? session.closeMs : Infinity;
-  const canStart = () => deadlineMs - clock() >= DRAIN_RESERVE_MS && clock() < closeMs;
+  // E9: and no job claim before 8:30 AM ET, in either DST state
+  const canStart = () => deadlineMs - clock() >= DRAIN_RESERVE_MS && clock() < closeMs && startReached(clock(), etDate);
   const results = [];
   if (!canStart()) return { started: 0, results };
-  const candidates = await (io.selectClaimable || selectClaimable)(db, { etDate, nowMs: clock() });
+  // E7: no cohort, no drain — not even the query (review HC-2)
+  if (!(cohort instanceof Set) || cohort.size === 0) return { started: 0, results };
+  // E7: only the cohort's rows are claimed
+  const candidates = (await (io.selectClaimable || selectClaimable)(db, { etDate, nowMs: clock() }))
+    .filter((row) => cohort instanceof Set && cohort.has(row?.uid));
   const claimOne = io.claimRow || claimRow;
   let next = 0;
   let started = 0;
@@ -121,17 +155,19 @@ export async function drainQueue(db, { etDate, session, shared, invocationStartM
  * One worker invocation. The caller has already checked the flag (it exits at once off).
  * @returns {Promise<object>} the summary the cron logs and returns
  */
-export async function runWorkerInvocation(db, { clock = () => Date.now(), deps = {} } = {}) {
+export async function runWorkerInvocation(db, { clock = () => Date.now(), deps = {}, cohort = huddleCohortOf() } = {}) {
   const invocationStartMs = clock();
   const etDate = etDateOfMs(invocationStartMs);
   const session = sessionOf(etDate);
   if (!session) return { etDate, outcome: 'calendar_missing' };
   if (!session.isTradingDay) return { etDate, outcome: 'not_a_trading_day' };
+  // E7: no cohort, no invocation — no read at all (the cron handler exits first; this holds without it: review HC-2)
+  if (!(cohort instanceof Set) || cohort.size === 0) return { etDate, outcome: 'no_cohort' };
 
   // The reconcile pass never stops the drain (review L2-7).
   let reconcile;
   try {
-    reconcile = await runReconcilePass(db, { etDate, clock });
+    reconcile = await runReconcilePass(db, { etDate, clock, cohort });
   } catch (err) {
     reconcile = { error: String(err?.message || err).slice(0, 120) };
   }
@@ -140,12 +176,12 @@ export async function runWorkerInvocation(db, { clock = () => Date.now(), deps =
   let run = runSnap.exists ? runSnap.data() : null;
   let recovered = false;
   if (run?.briefStage === 'done' && run?.enqueueStage !== 'done') {
-    await runEnqueueStage(db, { etDate, nowMs: clock(), deps: deps.enqueue || {} });
-    recovered = true;
+    const stage = await runEnqueueStage(db, { etDate, nowMs: clock(), deps: deps.enqueue || {}, cohort });
+    recovered = !stage?.skipped;
     run = (await huddleRunRef(db, etDate).get()).data();
   }
   if (run?.enqueueStage !== 'done') return { etDate, outcome: 'not_enqueued', reconcile };
 
-  const drain = await drainQueue(db, { etDate, session, shared: run.shared ?? null, invocationStartMs, clock, runJob: deps.runJob, deps: deps.job || {} });
+  const drain = await drainQueue(db, { etDate, session, shared: run.shared ?? null, invocationStartMs, clock, runJob: deps.runJob, deps: deps.job || {}, cohort });
   return { etDate, outcome: 'drained', reconcile, recovered, started: drain.started, results: drain.results };
 }

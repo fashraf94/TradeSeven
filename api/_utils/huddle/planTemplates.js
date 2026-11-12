@@ -9,13 +9,21 @@
 //
 //   Stances (≤ 3 names):  HOLD t · TRIM t · CHASE t [above L] · FADE t [above L] · WATCH t
 //   Lines (≤ 2):          NO_ADDS_BEFORE eventId · NO_SWAPS_TODAY · CUT_IF_BELOW t L ·
-//                         NO_CHASE_ABOVE t L
+//                         NO_CHASE_ABOVE t L · NO_ADDS_TO_BEFORE_REPORT t (Amendment E §E2, additive)
 //
 // Values (§4.3): `t` matches ^[A-Z]{1,5}(\.[A-Z])?$ AND is in the session universe
 // (ranked seat picks ∪ active-battle holdings ∪ equipped watchlist tickers); `L` is
 // finite, positive, at most two decimals, within ±25 % of the symbol's morning close;
 // `eventId` is a key of the session's deterministic event map (events.js). Every
-// drop is recorded with its reason. Every stance and line carries
+// drop is recorded with its reason.
+//
+// EARNINGS NEVER FREEZE THE BOOK (E2). NO_ADDS_BEFORE names only an event inside today's
+// regular session: an earnings report never (`event_outside_session`, checked on the id
+// itself, so a record frozen before E2 is refused too), a macro print outside the session's
+// window neither. NO_ADDS_TO_BEFORE_REPORT t names a universe name that reports after
+// today's close or before the next session's open (the frozen `reportTickers`; an untimed
+// row is `event_untimed`, anything else `report_not_eligible`); it renders "no adds to {t}
+// before its report". Every stance and line carries
 // `origin: { kind: 'huddle', recordKind: null, recordId: null }` in S1 (C2).
 //
 // The archetype's dissent row (dissentTable.js) is applied after the values: a stance
@@ -27,11 +35,12 @@
 
 import { canonicalContentHash } from '../canonicalHash.js';
 import { dissentRowOf } from './dissentTable.js';
+import { hhmmOfMacroId, insideSession } from './events.js';
 
 export const TEMPLATE_VERSION = 'plan.v1';
 export const STANCE_KINDS = Object.freeze(['HOLD', 'TRIM', 'CHASE', 'FADE', 'WATCH']);
 export const LEVEL_STANCE_KINDS = Object.freeze(['CHASE', 'FADE']);
-export const LINE_KINDS = Object.freeze(['NO_ADDS_BEFORE', 'NO_SWAPS_TODAY', 'CUT_IF_BELOW', 'NO_CHASE_ABOVE']);
+export const LINE_KINDS = Object.freeze(['NO_ADDS_BEFORE', 'NO_SWAPS_TODAY', 'CUT_IF_BELOW', 'NO_CHASE_ABOVE', 'NO_ADDS_TO_BEFORE_REPORT']);
 export const MAX_STANCES = 3;
 export const MAX_LINES = 2;
 export const LEVEL_BAND = 0.25;
@@ -51,6 +60,8 @@ export const DROP_REASONS = Object.freeze({
   LEVEL_NO_REFERENCE: 'level_no_reference',
   EVENT_UNKNOWN: 'event_unknown',
   EVENT_UNTIMED: 'event_untimed',
+  EVENT_OUTSIDE_SESSION: 'event_outside_session',
+  REPORT_NOT_ELIGIBLE: 'report_not_eligible',
   DUPLICATE: 'duplicate',
   COUNT_EXCEEDED: 'count_exceeded',
 });
@@ -74,6 +85,7 @@ const LINE_KEYS = Object.freeze({
   NO_SWAPS_TODAY: ['kind', 'origin'],
   CUT_IF_BELOW: ['kind', 'ticker', 'level', 'origin'],
   NO_CHASE_ABOVE: ['kind', 'ticker', 'level', 'origin'],
+  NO_ADDS_TO_BEFORE_REPORT: ['kind', 'ticker', 'origin'],
 });
 
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -126,7 +138,8 @@ function unknownKey(item, allowed) {
  * values, then apply the archetype's dissent row.
  *
  * @param {{ stances?: unknown[], lines?: unknown[] }} input
- * @param {{ universe: Set<string>, closes: Map<string, number|null>, events: { eligible: Map, untimedIds: Set }, archetype: string|null }} ctx
+ * @param {{ universe: Set<string>, closes: Map<string, number|null>, events: { eligible: Map, untimedIds: Set, outsideSessionIds?: Set,
+ *           reportTickers?: Map|Set, untimedReportTickers?: Set }, window?: { open, close }|null, archetype: string|null }} ctx
  * @returns {{ current: { stances: object[], lines: object[] }, drops: object[], transforms: object[], dissent: object[], archetypeSupported: boolean }}
  */
 export function validatePlan(input, ctx) {
@@ -137,6 +150,10 @@ export function validatePlan(input, ctx) {
   const closes = ctx?.closes instanceof Map ? ctx.closes : new Map();
   const eligible = ctx?.events?.eligible instanceof Map ? ctx.events.eligible : new Map();
   const untimed = ctx?.events?.untimedIds instanceof Set ? ctx.events.untimedIds : new Set();
+  const outsideSession = ctx?.events?.outsideSessionIds instanceof Set ? ctx.events.outsideSessionIds : new Set();
+  const reports = ctx?.events?.reportTickers instanceof Map || ctx?.events?.reportTickers instanceof Set ? ctx.events.reportTickers : new Set();
+  const untimedReports = ctx?.events?.untimedReportTickers instanceof Set ? ctx.events.untimedReportTickers : new Set();
+  const window = ctx?.window ?? null;
   const row = dissentRowOf(ctx?.archetype ?? null);
 
   const rawStances = Array.isArray(input?.stances) ? input.stances : [];
@@ -189,10 +206,21 @@ export function validatePlan(input, ctx) {
       out = { kind: item.kind, origin: { ...HUDDLE_ORIGIN } };
       dedupeKey = item.kind;
     } else if (item.kind === 'NO_ADDS_BEFORE') {
-      if (typeof item.eventId !== 'string') return drop(DROP_REASONS.EVENT_UNKNOWN);
-      if (!eligible.has(item.eventId)) return drop(untimed.has(item.eventId) ? DROP_REASONS.EVENT_UNTIMED : DROP_REASONS.EVENT_UNKNOWN);
-      out = { kind: item.kind, eventId: item.eventId, origin: { ...HUDDLE_ORIGIN } };
-      dedupeKey = `${item.kind}|${item.eventId}`;
+      const id = item.eventId;
+      if (typeof id !== 'string') return drop(DROP_REASONS.EVENT_UNKNOWN);
+      if (untimed.has(id)) return drop(DROP_REASONS.EVENT_UNTIMED);
+      // E2: never an earnings report (on the id itself), never an event outside the session's window
+      if (id.startsWith('earn:') || outsideSession.has(id)) return drop(DROP_REASONS.EVENT_OUTSIDE_SESSION);
+      if (window && hhmmOfMacroId(id) !== null && !insideSession(hhmmOfMacroId(id), window)) return drop(DROP_REASONS.EVENT_OUTSIDE_SESSION);
+      if (!eligible.has(id)) return drop(DROP_REASONS.EVENT_UNKNOWN);
+      out = { kind: item.kind, eventId: id, origin: { ...HUDDLE_ORIGIN } };
+      dedupeKey = `${item.kind}|${id}`;
+    } else if (item.kind === 'NO_ADDS_TO_BEFORE_REPORT') {
+      const tickerReason = checkTicker(item.ticker, universe);
+      if (tickerReason) return drop(tickerReason);
+      if (!reports.has(item.ticker)) return drop(untimedReports.has(item.ticker) ? DROP_REASONS.EVENT_UNTIMED : DROP_REASONS.REPORT_NOT_ELIGIBLE);
+      out = { kind: item.kind, ticker: item.ticker, origin: { ...HUDDLE_ORIGIN } };
+      dedupeKey = `${item.kind}|${item.ticker}`;
     } else {
       const tickerReason = checkTicker(item.ticker, universe);
       if (tickerReason) return drop(tickerReason);
@@ -232,6 +260,7 @@ function renderLine(l, eventLabelOf) {
     case 'NO_SWAPS_TODAY': return 'no swaps today';
     case 'CUT_IF_BELOW': return `cut ${l.ticker} if it trades below ${formatLevel(l.level)}`;
     case 'NO_CHASE_ABOVE': return `do not chase ${l.ticker} above ${formatLevel(l.level)}`;
+    case 'NO_ADDS_TO_BEFORE_REPORT': return `no adds to ${l.ticker} before its report`;
     default: throw new Error(`plan.v1: no renderer for line kind ${l.kind}`);
   }
 }

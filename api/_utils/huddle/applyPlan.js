@@ -284,14 +284,16 @@ export async function reconcileHuddle(db, { uid, etDate, nowMs = Date.now(), int
     if (snap.exists) fresh = snap.data();
   } catch { tally.errors += 1; }
   const written = (fresh.plan?.applications || []).filter((r) => r && r.disposition === DISPOSITIONS.WRITTEN && !r.retiredAt && !r.closedAt);
-  const confirmation = (rev) => (fresh.plan?.confirmations || []).find((c) => c && c.revision === rev) || null;
+  // E1: archetypes can share a revision (the same current); the receipt's own archetype picks its confirmation first
+  const confs = fresh.plan?.confirmations || [];
+  const confirmation = (rev, archetype) => confs.find((c) => c && c.revision === rev && c.archetype === archetype) || confs.find((c) => c && c.revision === rev) || null;
   for (const receipt of written) {
     try {
       const battleSnap = await battleRefOf(db, receipt.battleId).get();
       const battle = battleSnap.exists ? battleSnap.data() : null;
       const stamps = observeWrittenReceipt(receipt, battle, { nowMs });
       if (!receipt.heardAt) {
-        const conf = confirmation(receipt.revision);
+        const conf = confirmation(receipt.revision, receipt.archetype);
         const heard = conf ? await findHeardTick(db, { battleId: receipt.battleId, sinceIso: receipt.at, threadId: receipt.directiveThreadId, textHash: conf.renderedTextHash }) : null;
         if (heard) { Object.assign(stamps, heard); tally.heard += 1; }
       }

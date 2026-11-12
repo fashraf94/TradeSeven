@@ -11,20 +11,21 @@ import {
   callScriptModel, HUDDLE_SCRIPT_MODEL, INDEX_NAMES,
 } from './scriptPrompt.js';
 import { narratePlan } from './planTemplates.js';
-import { packItem } from '../evidence/packItem.js';
+import { packItem, tapeItem } from '../evidence/packItem.js';
 
 const EV = [
-  packItem({ kind: 'close', fact: 'AAA closed at 50.00 on 2026-11-06 (the prior session\'s close).', recordKind: 'symbolDayEvidence.price', recordId: '2026-11-09_AAA', label: 'EODHD daily bars', at: '2026-11-06', asOf: '2026-11-06' }),
+  packItem({ kind: 'close', fact: 'AAA closed at 50.00 on Friday, November 6 (the prior session\'s close).', recordKind: 'symbolDayEvidence.price', recordId: '2026-11-09_AAA', label: 'EODHD daily bars', at: '2026-11-06', asOf: '2026-11-06' }),
   packItem({ kind: 'headline', fact: 'finance.yahoo.com reported: AAA raises guidance', recordKind: 'symbolDayEvidence.news', recordId: 'n1', label: 'finance.yahoo.com via EODHD', at: '2026-11-08T22:00:00.000Z' }),
   packItem({ kind: 'opener', fact: 'Your agent\'s opener said: "AAA is a momentum name."', recordKind: 'agentBattle.opener', recordId: 'b1#0', label: "your agent's opener", at: '2026-11-08T13:00:00Z', status: 'unverified' }),
+  tapeItem({ symbol: 'SPY', close: 682.1, changePct: 0.66, asOf: '2026-11-06', asOfSaid: 'Friday, November 6' }),
 ];
-const [CLOSE, HEADLINE, OPENER] = EV.map((e) => e.id);
+const [CLOSE, HEADLINE, OPENER, TAPE_SPY] = EV.map((e) => e.id);
 const CTX = { universe: new Set(['AAA', 'BBB']), evidence: EV };
 const sentence = (text, evidenceIds = []) => ({ text, evidenceIds });
 const ok = (over = {}) => ({
   names: [{ ticker: 'AAA', read: 'Strength into the print.', evidenceIds: [HEADLINE] }],
   yesterday: null,
-  tape: { sentences: [sentence('The tape closed firm yesterday, with SPY up and the ISM data due today.')] },
+  tape: { sentences: [sentence('The tape closed firm on Friday, with SPY up and the ISM data due today.', [TAPE_SPY])] },
   namesBeat: { sentences: [sentence('Yahoo Finance reported that AAA raised guidance last night.', [HEADLINE]), sentence('AAA closed at 50.00 on Friday.', [CLOSE])] },
   armor: { sentences: [sentence('Your Contrarian would wait for the crowd to tire before leaning in.')] },
   mentionedTickers: ['AAA', 'SPY'],
@@ -62,12 +63,12 @@ describe('the system prompt states every voice rule (SHADOW_VOICE_RULES_V1.md)',
     expect(JSON.stringify(SCRIPT_SCHEMA)).not.toMatch(/plan(?:Beat|Text|Narration)/);
   });
 
-  it('the call sends structured outputs at low effort, no tool_choice and no thinking override, and logs stop_reason and usage', async () => {
+  it('the call sends structured outputs at MEDIUM effort (Fable\'s review §4: every low-effort script regenerated), no tool_choice and no thinking override, and logs stop_reason and usage', async () => {
     let sent = null;
     const logs = [];
     const out = await callScriptModel({ user: 'u', create: async (body, opts) => { sent = { body, opts }; return { stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 20 }, content: [{ type: 'text', text: JSON.stringify(ok()) }] }; }, log: { log: (...a) => logs.push(a), warn: () => {} } });
     expect(out.ok).toBe(true);
-    expect(sent.body).toMatchObject({ model: 'claude-sonnet-5-5', output_config: { effort: 'low', format: { type: 'json_schema' } } });
+    expect(sent.body).toMatchObject({ model: 'claude-sonnet-5-5', output_config: { effort: 'medium', format: { type: 'json_schema' } } });
     expect(sent.body).not.toHaveProperty('tool_choice');
     expect(sent.body).not.toHaveProperty('thinking');
     expect(JSON.parse(logs[0][1])).toMatchObject({ stopReason: 'end_turn', usage: { input: 10, output: 20 } });
@@ -152,7 +153,7 @@ describe('validateScript (A §A7, AR-12, C §C5)', () => {
   it('a beat over its length cap fails as too long; the regeneration note names beats and failures, never evidence text', () => {
     const v = validateScript(withNames(sentence(`AAA ${'is strong '.repeat(120)}.`, [HEADLINE])), CTX);
     expect(v.beatFailures.names).toContain('too_long');
-    expect(regenerationNoteOf(v)).toBe('names: too_long');
+    expect(regenerationNoteOf(v)).toBe('names: too_long (keep it under 950 characters)');
   });
 
   it('the plan proposal loses its nulls (the template\'s closed schema owns the keys)', () => {
@@ -186,6 +187,9 @@ describe('the user prompt carries no volume (C §C12)', () => {
       },
     });
     expect(user).not.toMatch(/volume|rvol/i);
-    expect(user).toContain('1 of 45 earnings reports listed today.');
+    // Amendment E §E3 f: no calendar counts in the input either; d: no ISO date anywhere in it
+    expect(user).not.toMatch(/\bof 45\b|reports listed/);
+    expect(user).not.toMatch(/\b\d{4}-\d{2}-\d{2}\b/);
+    expect(user).toContain('DATE: Monday, November 9');
   });
 });

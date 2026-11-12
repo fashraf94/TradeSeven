@@ -3,8 +3,10 @@
 // Huddle S1 — the audio route (spec V1.1 §6 audio row, §9 "audio route (206, 416,
 // expiry, rotation)"), flag on, on in-memory stand-ins for Firestore and storage.
 // The playback index → record → expiry chain is the real module (playback.js).
+// Amendment E §E7: the token's owner must be in the cohort (HUDDLE_PLAYER_UIDS, fail closed); outside it the answer is
+// the flag-off 404 and no stream opens.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 
 vi.mock('../../src/config/huddleFlags.js', () => ({ DRB_HUDDLE_ENABLED: true }));
@@ -61,11 +63,16 @@ const deps = (db) => ({
   openAudioStream: (path, r) => { opened = { path, ...r }; stream = new FakeStream(); return stream; },
 });
 
+const COHORT_BEFORE = process.env.HUDDLE_PLAYER_UIDS;
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
   stream = null;
   opened = null;
+  process.env.HUDDLE_PLAYER_UIDS = UID;
+});
+afterEach(() => {
+  if (COHORT_BEFORE === undefined) delete process.env.HUDDLE_PLAYER_UIDS; else process.env.HUDDLE_PLAYER_UIDS = COHORT_BEFORE;
 });
 
 describe('parseRange', () => {
@@ -132,6 +139,38 @@ describe('GET /api/huddle/audio/{token}', () => {
     await handler(rr.req, rr.res, deps(unknown.db));
     expect(rr.res.statusCode).toBe(404);
     expect(opened).toBeNull();
+  });
+
+  it('E7: a token whose owner is OUTSIDE the cohort is the flag-off 404 and opens no stream; an EMPTY cohort is the same', async () => {
+    const { token, db } = setup();
+    process.env.HUDDLE_PLAYER_UIDS = 'someone-else';
+    let rr = fakeReqRes(token);
+    await handler(rr.req, rr.res, deps(db));
+    expect(rr.res.statusCode).toBe(404);
+    expect(rr.res.body).toEqual({ error: 'not_found' });
+    process.env.HUDDLE_PLAYER_UIDS = '';
+    rr = fakeReqRes(token);
+    await handler(rr.req, rr.res, deps(db));
+    expect(rr.res.statusCode).toBe(404);
+    expect(rr.res.body).toEqual({ error: 'not_found' });
+    expect(opened).toBeNull();
+  });
+
+  it('E7: an EXPIRED token whose owner is outside the cohort is the flag-off 404 too, not a 410 — and the record is never read (review HC-4)', async () => {
+    const { token, db } = setup({ expiresAt: new Date(NOW - 1000).toISOString() });
+    const reads = [];
+    const watched = { collection: (c) => ({ doc: (d) => { const ref = db.collection(c).doc(d); return { ...ref, get: async () => { reads.push(`${c}/${d}`); return ref.get(); }, collection: (sc) => ({ doc: (sd) => { const sub = ref.collection(sc).doc(sd); return { ...sub, get: async () => { reads.push(`${c}/${d}/${sc}/${sd}`); return sub.get(); } }; } }) }; } }) };
+    process.env.HUDDLE_PLAYER_UIDS = 'someone-else';
+    const rr = fakeReqRes(token);
+    await handler(rr.req, rr.res, deps(watched));
+    expect(rr.res.statusCode).toBe(404);
+    expect(rr.res.body).toEqual({ error: 'not_found' });
+    expect(reads).toEqual([`huddleRuns/${ET}`]);
+    // the control: the same expired token of a member is the 410
+    process.env.HUDDLE_PLAYER_UIDS = UID;
+    const member = fakeReqRes(token);
+    await handler(member.req, member.res, deps(db));
+    expect(member.res.statusCode).toBe(410);
   });
 
   it('a client disconnect destroys the storage stream', async () => {

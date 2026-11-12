@@ -12,10 +12,17 @@
 // headline is stored as an ATTRIBUTION ("{source} reported: {title}") and is `verified` as
 // that attribution only; a source that errored or was skipped is a `source_status` item,
 // `unavailable`, with its reason. Nothing `unverified` is spoken without the word.
+//
+// Amendment E §E3: a source the job SKIPPED makes no item at all (only one it tried and could not reach is a
+// `source_status` item, "Couldn't reach {source} this morning."); a headline names its publication, never its host
+// (publicationNames.js); and C10's kinds gain `tape` (R-25): one item per index from the morning's market context,
+// `verified` with its `asOf`, carrying its figures `{ symbol, close, changePct, asOf }` so a tape sentence's index
+// figures cite an item (checking that a spoken figure matches its item is S2's).
 
 import { createHash } from 'node:crypto';
+import { publicationNameOf } from './publicationNames.js';
 
-export const PACK_KINDS = Object.freeze(['close', 'headline', 'event', 'holding', 'agent_pick', 'opener', 'prior_plan', 'source_status']);
+export const PACK_KINDS = Object.freeze(['close', 'headline', 'event', 'holding', 'agent_pick', 'opener', 'prior_plan', 'source_status', 'tape']);
 export const PACK_STATUS = Object.freeze(['verified', 'unverified', 'unavailable']);
 
 export const packItemIdOf = ({ kind, recordKind, recordId, at }) => createHash('sha256')
@@ -38,17 +45,37 @@ export function packItem({ kind, fact, recordKind = null, recordId = null, label
   };
 }
 
-/** A headline as an attribution, never a fact (C10). */
+/** A headline as an attribution, never a fact (C10), by the publication's name (E3 e). */
 export function headlineItem(news) {
+  const name = publicationNameOf(news.source) ?? news.source;
   return packItem({
     kind: 'headline',
-    fact: `${news.source} reported: ${news.title}`,
+    fact: `${name} reported: ${news.title}`,
     recordKind: 'symbolDayEvidence.news',
     recordId: news.newsId,
-    label: news.sourceKind === 'fantasytimes_story' ? 'FantasyTimes' : `${news.source} via EODHD`,
+    label: news.sourceKind === 'fantasytimes_story' ? 'FantasyTimes' : `${name} via EODHD`,
     at: news.publishedAt,
     asOf: news.publishedAt,
     status: 'verified',
     reason: null,
   });
+}
+
+/**
+ * E3 g (R-25): one index's tape item — its prior close and day's change from the morning market context, said with its
+ * date — carrying the figures `{ symbol, close, changePct, asOf }`. `asOfSaid` is the date as Shadow says it.
+ */
+export function tapeItem({ symbol, close, changePct, asOf, asOfSaid }) {
+  const dir = changePct > 0 ? 'up' : changePct < 0 ? 'down' : 'flat';
+  const pct = Math.abs(changePct).toFixed(2);
+  const item = packItem({
+    kind: 'tape',
+    fact: `${symbol} closed at ${close.toFixed(2)} on ${asOfSaid}, ${dir === 'flat' ? 'flat on the day' : `${dir} ${pct} percent`}.`,
+    recordKind: 'marketContext',
+    recordId: symbol,
+    label: 'market context',
+    at: asOf,
+    asOf,
+  });
+  return { ...item, figures: { symbol, close, changePct, asOf } };
 }

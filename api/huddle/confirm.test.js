@@ -14,7 +14,8 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({
   getFirebaseAuth: () => ({}),
 }));
 vi.mock('../_utils/huddle/routeKit.js', async (importOriginal) => ({ ...(await importOriginal()), admitHuddleRoute: async () => ({ uid: 'u1' }) }));
-vi.mock('../_utils/huddle/confirmPlan.js', () => ({ confirmPlan: async () => ({ kind: 'confirmed', body: { revision: 'r2' } }) }));
+const confirmCalls = vi.hoisted(() => []);
+vi.mock('../_utils/huddle/confirmPlan.js', () => ({ confirmPlan: async (_db, args) => { confirmCalls.push(args); return { kind: 'confirmed', body: { revision: 'r2' } }; } }));
 const apply = vi.hoisted(() => ({ applyConfirmedPlan: vi.fn() }));
 vi.mock('../_utils/huddle/applyPlan.js', async (importOriginal) => ({ ...(await importOriginal()), applyConfirmedPlan: apply.applyConfirmedPlan }));
 
@@ -37,5 +38,13 @@ describe('the confirm route (review L2-12)', () => {
     expect(res.body.huddle.plan.status).toBe('confirmed');
     expect(apply.applyConfirmedPlan).toHaveBeenCalledTimes(1);
     warn.mockRestore();
+  });
+
+  it('E1: the body\'s acknowledgements reach the confirm (null when absent)', async () => {
+    confirmCalls.length = 0;
+    apply.applyConfirmedPlan.mockResolvedValue([]);
+    await handler({ method: 'POST', body: { etDate: '2026-11-09', baseRevision: 'r1', replacement: { stances: [], lines: [] }, acknowledged: { diversifier: 'rv' } } }, resOf());
+    await handler({ method: 'POST', body: { etDate: '2026-11-09', baseRevision: 'r1', replacement: { stances: [], lines: [] } } }, resOf());
+    expect(confirmCalls.map((c) => c.acknowledged)).toEqual([{ diversifier: 'rv' }, null]);
   });
 });

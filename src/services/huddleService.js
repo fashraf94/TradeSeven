@@ -7,7 +7,7 @@
 // not built). Every call is a request on a trigger — no timer, no poll, no listener here.
 //
 //   today     GET  /api/huddle/status        (reconciled on read)
-//   confirm   POST /api/huddle/confirm       { etDate, baseRevision, replacement }
+//   confirm   POST /api/huddle/confirm       { etDate, baseRevision, replacement, acknowledged? }
 //   skip      POST /api/huddle/skip          { etDate }
 //   playback  POST /api/huddle/playback-token { etDate } → a same-origin audio URL
 //   event     POST /api/huddle/event         { etDate, kind: 'listened' | 'completed' }
@@ -39,9 +39,12 @@ export async function fetchHuddleToday({ etDate } = {}) {
   return r.body;
 }
 
-/** Confirm (or reconfirm): resolves `{ ok, status, body }` — 200, or the 409 / 410 / 422 refusal the sheet shows. */
-export async function confirmHuddlePlan({ etDate, baseRevision, replacement }) {
-  return asJson(await fetchWithAuth('/api/huddle/confirm', { method: 'POST', body: JSON.stringify({ etDate, baseRevision, replacement }) }));
+/**
+ * Confirm (or reconfirm): resolves `{ ok, status, body }` — 200, or the 409 / 410 / 422 refusal the sheet shows.
+ * `acknowledged` (Amendment E §E1): archetype → the revision its preview showed, sent back on the second confirm.
+ */
+export async function confirmHuddlePlan({ etDate, baseRevision, replacement, acknowledged = null }) {
+  return asJson(await fetchWithAuth('/api/huddle/confirm', { method: 'POST', body: JSON.stringify({ etDate, baseRevision, replacement, ...(acknowledged ? { acknowledged } : {}) }) }));
 }
 
 export async function skipHuddlePlan({ etDate }) {

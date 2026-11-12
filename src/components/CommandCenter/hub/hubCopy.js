@@ -174,7 +174,14 @@ export const HUB_COPY = Object.freeze({
     skip: 'Skip',
     reconfirm: 'Reconfirm',
     working: 'Working…',
-    reconfirmLine: 'Your archetype changed since you confirmed this plan. Reconfirm it under the new one.',
+    /** Amendment E §E1: the door shows only when an approach in play has no confirmation — pressing it files one. */
+    reconfirmLine: "One of your approaches isn't covered by this plan yet. Reconfirm to file it there too.",
+    /** E1's preview, one line per changed item: "For your Diversifier game: Chase CCI above 90.00 becomes Watch CCI". */
+    previewLine: (name, games, fromText, toText) => {
+      const who = typeof name !== 'string' || !name ? 'For another approach'
+        : games > 1 ? `For your ${name} games` : games === 1 ? `For your ${name} game` : `For your ${name}`;
+      return `${who}: ${fromText} becomes ${toText}`;
+    },
     itemText: (item, labels) => {
       const at = (v) => (typeof v === 'number' ? v.toFixed(2) : '');
       switch (item?.kind) {
@@ -187,12 +194,15 @@ export const HUB_COPY = Object.freeze({
         case 'NO_SWAPS_TODAY': return 'No swaps today';
         case 'CUT_IF_BELOW': return `Cut ${item.ticker} if it trades below ${at(item.level)}`;
         case 'NO_CHASE_ABOVE': return `Don't chase ${item.ticker} above ${at(item.level)}`;
+        case 'NO_ADDS_TO_BEFORE_REPORT': return `No adds to ${item.ticker} before its report`;
         default: return '';
       }
     },
     notices: Object.freeze({
       conflict: 'This plan changed since you opened it. Here is the current version: check it and confirm again.',
       previewed: 'Some items changed to fit the plan rules. This is exactly what would be filed: check it and confirm again.',
+      /** E1: only an approach's own rule changed items — nothing of the player's plan was dropped. */
+      previewedApproaches: 'Some items change to fit an approach your games run. This is exactly what each will get: check it and confirm again.',
       closed: 'The session has closed: this plan has expired.',
       failed: "Couldn't confirm the plan. Please try again.",
       archetype_unsupported: "This plan can't be filed for your archetype.",
@@ -219,7 +229,8 @@ export const HUB_COPY = Object.freeze({
       liveCall: 'Waiting on your cockpit call',
       inactive: 'Waiting for the game to be live',
       retry: 'Waiting to file',
-      staleApproach: 'Confirmed under a different approach · Reconfirm',
+      /** Without its door; " · Reconfirm" is added only while a reconfirm would file (E1: no door that does nothing). */
+      staleApproach: 'Confirmed under a different approach',
       otherSession: "Not this session's game",
       newerInstruction: 'Your newer instruction stands',
       unsupported: "Not filed for this game's archetype",

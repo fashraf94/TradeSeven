@@ -21,21 +21,14 @@ import { eventLabelsOf } from './confirmPlan.js';
 import {
   SYSTEM_PROMPT, buildUserPrompt, callScriptModel, validateScript, scriptClean, regenerationNoteOf, proposalOf, HUDDLE_SCRIPT_MODEL, MODEL_BEATS,
 } from './scriptPrompt.js';
-import { joinBeats, beatTimings, synthesizeWithTimestamps, alignmentDurationMs } from './speech.js';
+import { joinBeats, beatTimings, synthesizeWithTimestamps, synthesizeWithRetry, alignmentDurationMs } from './speech.js';
 import { storeHuddleAudio } from './audioStore.js';
-import { getArchetypeDefinition } from '../archetypeRegistry.js';
+import { archetypeWordsOf } from './archetypeWords.js';
 
 export const JOB_BUDGET_MS = 120_000;
 const BEAT_TITLE = Object.freeze({ yesterday: "Yesterday's plan", tape: 'The tape', names: 'Your names', armor: "The armor's take", plan: 'The game plan' });
-/** The archetype's name and one-line disposition, through the registry (the path new consumers take; no §2.3 importer). */
-export function archetypeWordsOf(archetype) {
-  try {
-    const def = archetype ? getArchetypeDefinition(archetype) : null;
-    return [def?.displayName ?? null, def?.identity?.disposition ?? null];
-  } catch {
-    return [null, null];
-  }
-}
+/** The archetype's name and one-line disposition (archetypeWords.js, shared with the confirm route's preview). */
+export { archetypeWordsOf };
 const WEEKDAY = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'long' });
 
 const iso = (ms) => new Date(ms).toISOString();
@@ -111,15 +104,18 @@ export async function runHuddleJob(db, { uid, etDate, generation, session, share
     let answer = await call({ system: SYSTEM_PROMPT, user: userPrompt(null), signal });
     if (answer.usage) usage.push(answer.usage);
     if (!answer.ok) return await fail(`script_${answer.reason}`);
-    let validated = validateScript(answer.output, { universe: gathered.universe, evidence: gathered.evidence });
+    let validated = validateScript(answer.output, { universe: gathered.universe, evidence: gathered.evidence, exposureLeaders: gathered.exposureLeaders ?? [] });
     let regenerated = false;
+    // the first answer's failures, kept on the record (Amendment E: the regeneration rate and its causes are the smoke's question)
+    let regeneratedFor = null;
     if (!scriptClean(validated)) {
       regenerated = true;
+      regeneratedFor = regenerationNoteOf(validated).slice(0, 400);
       const second = await call({ system: SYSTEM_PROMPT, user: userPrompt(regenerationNoteOf(validated)), signal });
       if (second.usage) usage.push(second.usage);
       if (!second.ok) return await fail(`script_${second.reason}`);
       answer = second;
-      validated = validateScript(answer.output, { universe: gathered.universe, evidence: gathered.evidence });
+      validated = validateScript(answer.output, { universe: gathered.universe, evidence: gathered.evidence, exposureLeaders: gathered.exposureLeaders ?? [] });
       if (validated.tickerFailures.length > 0) return await fail(`ticker_outside_universe:${validated.tickerFailures.join(',')}`.slice(0, 200));
     }
     const dropped = new Set(Object.entries(validated.beatFailures).filter(([, f]) => f.length > 0).map(([id]) => id));
@@ -130,7 +126,7 @@ export async function runHuddleJob(db, { uid, etDate, generation, session, share
     timings.scriptMs = clock() - t;
 
     // ---- the plan: templates only; its beat narrated by code ----
-    const { plan, drops: planDrops } = buildPlanAtGeneration({ proposal: proposalOf(answer.output), universe: gathered.universe, closes: gathered.closes, events: gathered.events, archetype: gathered.archetype });
+    const { plan, drops: planDrops } = buildPlanAtGeneration({ proposal: proposalOf(answer.output, { eligible: gathered.events?.eligible ?? null }), universe: gathered.universe, closes: gathered.closes, events: gathered.events, archetype: gathered.archetype, window: gathered.window ?? null });
     const planText = narratePlan(plan.current, { eventLabels: eventLabelsOf({ plan }) });
     const beats = assembleBeats({ validated, dropped, planText });
 
@@ -139,8 +135,11 @@ export async function runHuddleJob(db, { uid, etDate, generation, session, share
     const sourceFailures = [...gathered.sourceFailures];
     const { text: spoken, spans } = joinBeats(beats);
     let audio = null;
-    const speech = await (deps.synthesize || synthesizeWithTimestamps)({ text: spoken, signal });
+    // Amendment E §E4 (R-19): one retry inside the job on a 429, a 5xx or an attempt timeout; no new model call
+    const speech = await synthesizeWithRetry({ text: spoken, signal, deadlineMs: deadline, clock, synthesize: deps.synthesize || synthesizeWithTimestamps, ...(deps.speechRetry || {}) });
     timings.speechMs = clock() - t;
+    timings.speechAttempts = speech.attempts ?? 1;
+    if (speech.firstFailure) sourceFailures.push(`speech_retried:${speech.firstFailure}`);
     if (speech.ok) {
       const timed = beatTimings(spans, speech.alignment, spoken);
       if (timed) for (const tm of timed) Object.assign(beats.find((b) => b.id === tm.id), { startMs: tm.startMs, endMs: tm.endMs });
@@ -165,7 +164,7 @@ export async function runHuddleJob(db, { uid, etDate, generation, session, share
       uid, etDate, status: RECORD_STATUS.READY, session,
       generation: {
         claimGeneration: generation, startedAt: iso(t0), finishedAt: iso(clock()), model: HUDDLE_SCRIPT_MODEL, tokenUsage: usage,
-        regenerated, sourceFailures: [...new Set(sourceFailures)], drops: [...drops, ...planDrops], timings,
+        regenerated, regeneratedFor, sourceFailures: [...new Set(sourceFailures)], sourcesSkipped: gathered.sourcesSkipped ?? [], drops: [...drops, ...planDrops], timings,
       },
       script: { beats: beats.map((b) => ({ id: b.id, text: b.text, source: b.source, startMs: b.startMs ?? null, endMs: b.endMs ?? null, sentences: b.sentences })) },
       transcript: transcriptOf(beats, gathered.evidence),

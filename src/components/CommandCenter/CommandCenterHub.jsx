@@ -161,7 +161,7 @@ import { DRB_HUDDLE_ENABLED } from '../../config/huddleFlags';
 import useHuddleToday from '../../hooks/useHuddleToday';
 import useHuddleHistory from '../../hooks/useHuddleHistory';
 import { deriveNextAction, NEXT_ACTION_KINDS } from './hub/nextAction';
-import { HUDDLE_KIND, huddleActivityOf, huddleCandidateOf, huddleChipOf, huddlePartnershipOf, huddlePartnershipSummaryOf, needsReconfirmOf } from './hub/huddleView';
+import { HUDDLE_KIND, huddleActivityOf, huddleCandidateOf, huddleChipOf, huddleMemberOf, huddlePartnershipOf, huddlePartnershipSummaryOf, needsReconfirmOf } from './hub/huddleView';
 import HuddleChip from './HuddleChip';
 import HuddleSheet from './HuddleSheet';
 // Build A2 (per-game loadouts): the flag on its own line (agentFormFlags.test.js pins the lines above), the scope and its
@@ -395,6 +395,9 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
   // The archetype sheet is not registered with the overlay stack while the armory is on (hub/useHubSheets.js), so the
   // close releases nothing outside this component.
   if (AGENT_FORM_ARMORY_ENABLED && (deploy?.holdPhase === HOLD_PHASES.CHARGING || deploy?.holdPhase === HOLD_PHASES.LOCKED) && sheet.sheet === HUB_SHEETS.ARCHETYPE) runtime.closeSheet();
+  // Amendment E §E7 (review HU-4): membership lapsing while the Huddle sheet is open (a 404 refresh, an owner change) frees
+  // the sheet slot too, so a later 200 never reopens the sheet without a tap. This component's own state, set in its own render.
+  if (DRB_HUDDLE_ENABLED && !huddle && sheet.sheet === HUB_SHEETS.HUDDLE) runtime.closeSheet();
   return (
     <HubLayoutContext.Provider value={composition}>
       <style data-hub-css="">{HUB_SCOPED_CSS}</style>
@@ -554,6 +557,9 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
   const tablet = composition === HUB_COMPOSITIONS.TABLET;
   const gutter = desktop ? 28 : tablet ? 24 : 20;
 
+  // Amendment E §E7 (review HU-4): membership lapsing while the Huddle sheet is open (a 404 refresh, an owner change) frees
+  // the sheet slot too, so a later 200 never reopens the sheet without a tap. This component's own state, set in its own render.
+  if (DRB_HUDDLE_ENABLED && !huddle && sheet.sheet === HUB_SHEETS.HUDDLE) runtime.closeSheet();
   const stage = (
     <ShadowStage
       composition={composition}
@@ -754,18 +760,24 @@ function ConnectedHub({ site, hub, sections }) {
   // same reason (their one service loads the Firebase configuration the readers' suites render without). Hub chunk only — nothing
   // the root deploy provider imports reaches them. Off, each is idle: no read, no listener.
   const huddleToday = useHuddleToday({ auth: readers.inputs?.auth ?? null, enabled: DRB_HUDDLE_ENABLED });
-  const huddleHistory = useHuddleHistory({ auth: readers.inputs?.auth ?? null, enabled: DRB_HUDDLE_ENABLED });
+  // Amendment E §E7 (review HC-5): the history is read only once today's status read has answered 200 — a player outside the
+  // cohort gets the status route's 404 ('outside') and so never pays the history query, whose answer could not admit them.
+  const huddleHistory = useHuddleHistory({ auth: readers.inputs?.auth ?? null, enabled: DRB_HUDDLE_ENABLED && huddleToday.read.status === 'ready' });
   const deploy = useHubDeploy({ deployAttempt, readers, hub });
   const live = { ...sections, ...readers.sections };
-  // Huddle S1: the section, the next action's rule (C6), Partnership (C8), Activity's rows (C8) and the reconfirm line (C15), all
-  // pure derivations of the two readers and the agent read the hub already holds. A literal false folds this away.
+  // Huddle S1: the section, the next action's rule (C6), Partnership (C8), Activity's rows (C8) and the reconfirm line (E1: from
+  // the status answer's plan.reconfirm, the server's own acceptance predicate), all pure derivations of the two readers. A
+  // literal false folds this away.
+  // Amendment E §E7: only for a player the readers show inside the cohort (hub/huddleView.js huddleMemberOf); outside it —
+  // and while today's read is still out (or a member with no record today awaits the history) — `huddle` stays null and
+  // `live` untouched, so the hub is its flag-off self.
   let huddle = null;
-  if (DRB_HUDDLE_ENABLED) {
+  if (DRB_HUDDLE_ENABLED && huddleMemberOf(huddleToday.read, huddleHistory.read)) {
     const candidate = huddleCandidateOf(huddleToday.read, Date.now());
     if (readers.next) live.nextAction = deriveNextAction({ ...readers.next.inputs, dismissed: readers.next.dismissed, huddle: candidate });
-    live.huddlePartnership = huddlePartnershipOf(huddleToday.read, huddleHistory.read);
+    const reconfirm = needsReconfirmOf(huddleToday.read, Date.now());
+    live.huddlePartnership = huddlePartnershipOf(huddleToday.read, huddleHistory.read, { door: reconfirm });
     if (live.activityInputs) live.activityInputs = { ...live.activityInputs, huddle: huddleActivityOf(huddleHistory.read, readers.inputs?.auth?.uid ?? null) };
-    const reconfirm = needsReconfirmOf(huddleToday.read, readers.agent?.agent?.archetype ?? null);
     huddle = {
       read: huddleToday.read,
       chip: huddleChipOf(huddleToday.read),

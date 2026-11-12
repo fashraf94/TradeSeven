@@ -9,7 +9,7 @@ import { deriveNextAction, laterKeyOf, NEXT_ACTION_KINDS } from './nextAction';
 import { HUB_COPY as COPY } from './hubCopy';
 import {
   HUDDLE_KIND, huddleLaterKeyOf, huddleChipOf, huddleCandidateOf, battleStatusText, huddleStatusOf, needsReconfirmOf,
-  huddlePartnershipOf, huddlePartnershipSummaryOf, huddleActivityOf, durationText,
+  huddlePartnershipOf, huddlePartnershipSummaryOf, huddleActivityOf, durationText, huddleMemberOf,
 } from './huddleView';
 import { deriveActivity, ACTIVITY_KINDS } from './activityRows';
 
@@ -23,9 +23,33 @@ const record = (over = {}, plan = {}) => ({
 });
 const read = (huddle, over = {}) => ({ key: 'u:1', status: 'ready', huddle, asOf: '2026-11-09T13:00:00Z', ...over });
 
+describe('E7: membership from the two readers (huddleMemberOf) — positive evidence only', () => {
+  const plans = (n) => ({ status: 'ready', plans: Array.from({ length: n }, (_, i) => ({ etDate: `2026-11-0${i + 1}`, planStatus: 'confirmed' })) });
+  it('inside: today answered with a record (history not needed, or still out)', () => {
+    expect(huddleMemberOf(read(record()), { status: 'loading', plans: null })).toBe(true);
+    expect(huddleMemberOf(read(record(), { stale: true }), plans(0))).toBe(true);
+  });
+  it('inside: today answered with no record, and the history holds a plan', () => {
+    expect(huddleMemberOf(read(null), plans(1))).toBe(true);
+  });
+  it('outside: the 404 (settled `outside`), even with a history', () => {
+    expect(huddleMemberOf({ key: 'u:1', status: 'outside', huddle: null }, plans(2))).toBe(false);
+  });
+  it('outside: today answered with no record and no history, or the history still out or failed', () => {
+    expect(huddleMemberOf(read(null), plans(0))).toBe(false);
+    expect(huddleMemberOf(read(null), { status: 'loading', plans: null })).toBe(false);
+    expect(huddleMemberOf(read(null), { status: 'error', plans: null })).toBe(false);
+  });
+  it('outside: today still loading, idle or failed — whatever the history holds', () => {
+    for (const status of ['loading', 'idle', 'error']) expect(huddleMemberOf({ key: 'u:1', status, huddle: null }, plans(3)), status).toBe(false);
+    expect(huddleMemberOf(null, plans(3))).toBe(false);
+  });
+});
+
 describe('the next action (C6): a game in session → Huddle ready → a game waiting for the open → a review → the first deployment', () => {
   const huddle = huddleCandidateOf(read(record()), OPEN - 3_600_000);
-  const inSession = { id: 'g1', preOpen: false, mode: 'BaggerBomb', opponent: 'CPU', clock: 'ends 4:00 PM' };
+  // Amendment E §E6 re-pinned this row: a game is in session by its own `inSession` (the market open), never by `preOpen` alone
+  const inSession = { id: 'g1', preOpen: false, inSession: true, mode: 'BaggerBomb', opponent: 'CPU', clock: 'ends 4:00 PM' };
   const preOpen = { id: 'g2', preOpen: true, mode: 'Ranked', opponent: 'Pod', clock: 'waiting for the open' };
   const base = { battles: [], rowsById: new Map(), firstDeployment: true, liveResolved: true };
 
@@ -105,13 +129,33 @@ describe('per-game status from receipts only (§6.4; A §A4; C §C7, §C15)', ()
   });
 });
 
-describe('C15 — the reconfirm line is a pure derivation', () => {
-  const confirmed = read(record({}, { status: 'confirmed', confirmations: [{ archetype: 'analyst', revision: 'r1' }] }));
-  it('shows when the agent read\'s archetype differs from the newest confirmation\'s, and only then', () => {
-    expect(needsReconfirmOf(confirmed, 'contrarian')).toBe(true);
-    expect(needsReconfirmOf(confirmed, 'analyst')).toBe(false);
-    expect(needsReconfirmOf(confirmed, null)).toBe(false);
-    expect(needsReconfirmOf(read(record()), 'contrarian')).toBe(false);
+describe('E1 — the Reconfirm door is the server\'s acceptance predicate (plan.reconfirm.missing), only while it would file', () => {
+  const confirmedWith = (missing) => read(record({}, { status: 'confirmed', confirmations: [{ archetype: 'analyst', revision: 'r1' }], reconfirm: missing === undefined ? undefined : { inPlay: ['analyst', ...missing], missing } }));
+  const before = OPEN - 3_600_000;
+  it('an archetype in play with no confirmation opens the door; none missing keeps it shut', () => {
+    expect(needsReconfirmOf(confirmedWith(['contrarian']), before)).toBe(true);
+    expect(needsReconfirmOf(confirmedWith([]), before)).toBe(false);
+  });
+  it('no reconfirm state (a failed read, an older answer), a proposed plan, or a closed session: shut', () => {
+    expect(needsReconfirmOf(confirmedWith(undefined), before)).toBe(false);
+    expect(needsReconfirmOf(read(record({}, { reconfirm: { inPlay: ['degen'], missing: ['degen'] } })), before)).toBe(false);
+    expect(needsReconfirmOf(confirmedWith(['contrarian']), CLOSE)).toBe(false);
+    expect(needsReconfirmOf(confirmedWith(['contrarian']), undefined)).toBe(false);
+  });
+  it('a game line under an approach with no confirmation shows " · Reconfirm" only with the door', () => {
+    const b = { battleId: 'b1', battleKind: 'casual', disposition: 'stale_approach' };
+    expect(battleStatusText(b)).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.staleApproach}`);
+    expect(battleStatusText(b, { door: true })).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.staleApproach}${COPY.sep}${COPY.huddle.reconfirm}`);
+    expect(battleStatusText({ ...b, expiredAt: 'x' }, { door: true })).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.expired}`);
+  });
+  it('Partnership\'s game line carries the same door as the sheet\'s (review HU-5)', () => {
+    const today = read(record({}, { status: 'confirmed', battles: [{ battleId: 'b1', battleKind: 'casual', disposition: 'stale_approach' }] }));
+    const history = { status: 'ready', plans: [] };
+    const line = (door) => huddlePartnershipOf(today, history, door === undefined ? undefined : { door }).today.battles[0].text;
+    expect(line(true)).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.staleApproach}${COPY.sep}${COPY.huddle.reconfirm}`);
+    expect(line(false)).toBe(`${COPY.huddle.games.casual}${COPY.sep}${COPY.huddle.battle.staleApproach}`);
+    expect(line(undefined)).toBe(line(false));
+    expect(line(true)).toBe(huddleStatusOf(today.huddle, { door: true }).battles[0].text);
   });
 });
 

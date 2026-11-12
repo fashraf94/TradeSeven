@@ -16,14 +16,16 @@ function strings(node, out = []) {
   else if (typeof node === 'function') {
     const sample = node('ARG0', { ARG0: 'ARG1' });
     if (typeof sample === 'string') out.push(sample);
-    for (const kind of ['HOLD', 'TRIM', 'WATCH', 'CHASE', 'FADE', 'NO_ADDS_BEFORE', 'NO_SWAPS_TODAY', 'CUT_IF_BELOW', 'NO_CHASE_ABOVE']) {
+    for (const kind of ['HOLD', 'TRIM', 'WATCH', 'CHASE', 'FADE', 'NO_ADDS_BEFORE', 'NO_SWAPS_TODAY', 'CUT_IF_BELOW', 'NO_CHASE_ABOVE', 'NO_ADDS_TO_BEFORE_REPORT']) {
       const item = node({ kind, ticker: 'ARGT', level: 48, eventId: 'e' }, { e: 'the ARGE data' });
       if (typeof item === 'string' && item) out.push(item);
     }
   } else if (node && typeof node === 'object') for (const v of Object.values(node)) strings(v, out);
   return out;
 }
-const ALL = [...new Set(strings(H))].filter(Boolean);
+// review HU-8: the preview line's four branches (another approach; no game, one game, games), with real item words
+const PREVIEW_SAMPLES = [null, 'Trend Follower'].flatMap((name) => [0, 1, 2].map((games) => H.previewLine(name, games, H.itemText({ kind: 'FADE', ticker: 'ARGT', level: 48 }, {}), H.itemText({ kind: 'WATCH', ticker: 'ARGT' }, {}))));
+const ALL = [...new Set([...strings(H), ...PREVIEW_SAMPLES])].filter(Boolean);
 
 describe('the Huddle block of hubCopy.js', () => {
   it('is not empty, and is read whole (the sampler reaches every function)', () => {
@@ -33,7 +35,9 @@ describe('the Huddle block of hubCopy.js', () => {
   });
 
   it('trips none of the voice rules\' forbidden patterns that apply to words on the hub (no clock promise, no guarantee, no "will", no "has seen", no volume)', () => {
-    const applicable = ['clock_930', 'agent_clock', 'guarantee', 'will_do', 'has_seen', 'premarket_number', 'rvol', 'volume_number', 'nothing_happened'];
+    // Amendment E §E3 adds the rules that bind card text too: no ISO date (d), no calendar count (f), the archetype in the
+    // third person (b), no false outage of a source (a)
+    const applicable = ['clock_930', 'agent_clock', 'guarantee', 'will_do', 'has_seen', 'premarket_number', 'rvol', 'volume_number', 'nothing_happened', 'iso_date', 'calendar_count', 'archetype_person', 'source_outage'];
     const hits = ALL.flatMap((s) => applicable.filter((name) => FORBIDDEN_SCRIPT_PATTERNS[name].test(s)).map((name) => `${name}: ${s}`));
     expect(hits).toEqual([]);
   });
@@ -63,13 +67,18 @@ describe('the Huddle block of hubCopy.js', () => {
       liveCall: 'Waiting on your cockpit call',
       inactive: 'Waiting for the game to be live',
       retry: 'Waiting to file',
-      staleApproach: 'Confirmed under a different approach · Reconfirm',
+      // Amendment E §E1 moved this pin: the door (" · Reconfirm") is added only while a reconfirm would file
+      staleApproach: 'Confirmed under a different approach',
       otherSession: "Not this session's game",
       newerInstruction: 'Your newer instruction stands',
       unsupported: "Not filed for this game's archetype",
       expired: 'Expired at the close',
     });
     expect([H.readyTitle, H.open, H.deployReconfirm, H.deployReconfirmDoor]).toEqual(['Huddle ready', 'Open huddle', 'Your game plan was confirmed under a different approach.', 'Reconfirm']);
+  });
+
+  it("Amendment E §E2: the new line reads \"No adds to {t} before its report\"", () => {
+    expect(H.itemText({ kind: 'NO_ADDS_TO_BEFORE_REPORT', ticker: 'RKLB' }, {})).toBe('No adds to RKLB before its report');
   });
 
   it("a card's source line names each source once, in order", () => {

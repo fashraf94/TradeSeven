@@ -1,41 +1,65 @@
 // api/_utils/huddle/players.test.js
 //
-// Huddle S1 — who gets a huddle (spec V1.1 §5.4): every human owner with an active game, a game completed in the last five
-// sessions, or a deploy in that window, CPU seats out; and the optional HUDDLE_PLAYER_UIDS scope, so the founder's smoke
-// on a preview (which shares the production database) makes one huddle, not one per active player (V1.1 §9).
+// Huddle — who gets a huddle (spec V1.1 §5.4): every human owner with an active game, a game completed in the last five
+// sessions, or a deploy in that window, CPU seats out — INTERSECTED with the Huddle's own cohort, HUDDLE_PLAYER_UIDS
+// (Amendment E §E7). The cohort fails closed: unset or blank enqueues no one and reads nothing.
 
 import { describe, it, expect } from 'vitest';
-import { enumerateActivePlayers, playerScopeOf } from './players.js';
+import { enumerateActivePlayers } from './players.js';
 
 function memoryDb({ active = [], completed = [], deployed = [] }) {
+  const reads = [];
   const docs = (rows) => ({ size: rows.length, docs: rows.map((r) => ({ data: () => r })) });
   return {
+    reads,
     collection: (name) => ({
       where: (field) => ({
-        get: async () => (name === 'agents' ? docs(deployed) : field === 'status' ? docs(active) : docs(completed)),
+        get: async () => {
+          reads.push(`${name}.${field}`);
+          return name === 'agents' ? docs(deployed) : field === 'status' ? docs(active) : docs(completed);
+        },
       }),
     }),
   };
 }
-const DB = memoryDb({
+const rows = () => ({
   active: [{ ownerId: 'u-b' }, { ownerId: 'cpu-1', isCpu: true }],
   completed: [{ ownerId: 'u-a' }],
   deployed: [{ ownerId: 'u-c' }],
 });
 
-describe('enumerateActivePlayers', () => {
-  it('unscoped: every human owner, sorted; CPU seats out', async () => {
-    const r = await enumerateActivePlayers(DB, { etDate: '2026-11-09', env: {} });
-    expect(r.uids).toEqual(['u-a', 'u-b', 'u-c']);
-    expect(r.skippedCpu).toBe(1);
-    expect(r.scoped).toBe(0);
+describe('enumerateActivePlayers — the cohort (E7)', () => {
+  it('cohort UNSET: no one, and nothing is read', async () => {
+    const db = memoryDb(rows());
+    const r = await enumerateActivePlayers(db, { etDate: '2026-11-09', env: {} });
+    expect(r.uids).toEqual([]);
+    expect(db.reads).toEqual([]);
   });
 
-  it('HUDDLE_PLAYER_UIDS keeps only the listed players (blank means unscoped)', async () => {
-    const r = await enumerateActivePlayers(DB, { etDate: '2026-11-09', env: { HUDDLE_PLAYER_UIDS: ' u-b , u-z ' } });
-    expect(r.uids).toEqual(['u-b']);
-    expect(r.scoped).toBe(2);
-    expect(playerScopeOf({ HUDDLE_PLAYER_UIDS: '  ' })).toBeNull();
-    expect(playerScopeOf({})).toBeNull();
+  it('cohort EMPTY or blank: no one, and nothing is read', async () => {
+    for (const raw of ['', '   ', ' , ,']) {
+      const db = memoryDb(rows());
+      const r = await enumerateActivePlayers(db, { etDate: '2026-11-09', env: { HUDDLE_PLAYER_UIDS: raw } });
+      expect(r.uids, JSON.stringify(raw)).toEqual([]);
+      expect(db.reads).toEqual([]);
+    }
+  });
+
+  it('a cohort with no active player in it: the active players are read, and no one is enqueued (all outside)', async () => {
+    const r = await enumerateActivePlayers(memoryDb(rows()), { etDate: '2026-11-09', env: { HUDDLE_PLAYER_UIDS: 'u-z' } });
+    expect(r.uids).toEqual([]);
+    expect(r.outsideCohort).toBe(3);
+  });
+
+  it('INSIDE: only the cohort members who are active players, sorted; CPU seats out; an inactive cohort member is not enqueued', async () => {
+    const r = await enumerateActivePlayers(memoryDb(rows()), { etDate: '2026-11-09', env: { HUDDLE_PLAYER_UIDS: ' u-c , u-b , u-z ' } });
+    expect(r.uids).toEqual(['u-b', 'u-c']);
+    expect(r.skippedCpu).toBe(1);
+    expect(r.outsideCohort).toBe(1);
+  });
+
+  it('an explicit cohort set wins over the env', async () => {
+    const r = await enumerateActivePlayers(memoryDb(rows()), { etDate: '2026-11-09', env: {}, cohort: new Set(['u-a', 'u-b', 'u-c']) });
+    expect(r.uids).toEqual(['u-a', 'u-b', 'u-c']);
   });
 });
