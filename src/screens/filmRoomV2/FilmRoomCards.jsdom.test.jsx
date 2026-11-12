@@ -44,7 +44,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 const flip = vi.hoisted(() => ({ on: true }));
 vi.mock('../../config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
 const KILL_SWITCH_ROWS = new Set([
-  "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > Amendment K RK-10 — no open Watch card: no line, however many days could not be read — none filed, a Practice card, a retired Watch card (the mutant: the unavailable-day line with no open Watch card)",
+  "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > Amendment K RK-10 — no open Watch card: no line, however many days could not be read — none filed, an Offer card, a retired Watch card (the mutant: the unavailable-day line with no open Watch card)",
   "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > RK-10 — one open Watch card: the line as built, beside its list",
   "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > review SPR-C-4 — another agent's unavailable days are that agent's: the line counts the battle's own agent alone",
   "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > review SPR-T-8 — two of its own: RJ-7's plural (the mutant: the line always singular)",
@@ -73,10 +73,13 @@ import { stalledDay } from '../../../api/_utils/filmTape/__fixtures__/tagFixture
 import { buildCounter } from '../../../api/_utils/filmRoom/cardCounter.js';
 import { retireCard, createCard } from '../../../api/_utils/filmRoom/cardStore.js';
 import cardHandler from '../../../api/film-room/card.js';
+import { setPracticeFieldSeam, resetPracticeFieldSeam } from '../../../api/_utils/filmRoom/practiceFieldSeam.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
 import { ledgerOf } from './filmRoomCards';
-import { setRuleOf, setStateOf } from './FilmRoomCardRegions';
+import { setRuleOf, setStateOf, YourCall } from './FilmRoomCardRegions';
+import { FILM_ROOM_COPY } from './filmRoomCopy';
+const COPY_CARDS = FILM_ROOM_COPY.cards;
 import { FORGE_AREAS, forgeAreaOf } from '../../components/CommandCenter/hubChrome';
 import { OPEN_BATTLE_REVIEW_EVENT } from '../../components/Forge/Watchlist/ideaNavigation';
 import {
@@ -91,7 +94,8 @@ const D2 = '2026-09-25';
 const NIGHT = (d) => Date.parse(`${d}T22:15:30.000-04:00`) + 60_000;
 const RG5 = {
   watch: 'The Film Room counts each time this comes back.',
-  drill: 'The Practice Field opens later; this keeps the moment for it.',
+  // Build C §5 (BC-3): Offer replaces Practice, and its note is the spec's sentence
+  offer: 'Your agent considers this moment at its next chance. It may take it, defer it or decline it, and says why.',
   set: 'You change the setting yourself; this card changes nothing.',
 };
 
@@ -160,7 +164,10 @@ beforeEach(() => {
   globalThis.localStorage.clear();
   m.setup();
 });
-afterEach(() => { m.teardown(); vi.restoreAllMocks(); });
+afterEach(() => { m.teardown(); vi.restoreAllMocks(); resetPracticeFieldSeam(); });
+/** Build C §4: the owner's book open, through the Practice Field's seam (T1a's helper, stubbed) — the counter and the card handler both read it. */
+const BOOK_ID = 'book-1';
+const openBook = (status = 'active') => setPracticeFieldSeam({ bookForOwner: async (_db, { uid, attributionAgentId }) => (uid === OWNER && attributionAgentId === AGENT ? { bookId: BOOK_ID, status } : null) });
 
 let lastReaders = null;
 /** `readBattle` (B2.1 B2): the readers' read of another battle's document; `openAt`: what App hands the screen it opens. */
@@ -337,7 +344,10 @@ describe('your-call — the form (spec §6; RG-5, RG-8, RG-9)', () => {
     expect(form.id).toBe('your-call');
     expect(form.querySelector('[data-moment-facts]')).toBeTruthy();
     expect(m.qa('[data-question]').map((l) => l.textContent)).toEqual(SITUATION_QUESTIONS.map((q) => q.text));
-    for (const r of ['watch', 'drill', 'set']) expect(m.q(`[data-route="${r}"]`).textContent).toContain(RG5[r]);
+    // Build C §5: no book (the seam's default) → Watch and Set only, and not a word of the book
+    expect(m.qa('[data-route]').map((l) => l.getAttribute('data-route'))).toEqual(['watch', 'set']);
+    for (const r of ['watch', 'set']) expect(m.q(`[data-route="${r}"]`).textContent).toContain(RG5[r]);
+    expect(form.textContent).not.toMatch(/Offer|Practice|book/);
     expect(m.q('[data-route="set"]').querySelector('a')).toBeNull();
     // B2.1 B1: this mount hands the screen no Forge door, so Set shows no link even with the day's rule on
     expect(fx.tape1.tags.inputs.forcedRotation.enabled).toBe(true);
@@ -393,13 +403,15 @@ describe('receipt — the filed card (spec §6; R7)', () => {
     expect(m.qa('[data-my-cards-group="active"] [data-my-card]')).toHaveLength(1);
     await sweepAll(fx.tape2, 'receipt');
   });
-  it('Practice nominates (the stage says so); Set files a card with its words', async () => {
+  it('Offer nominates, the owner\'s book open (the stage says so, the Offer sentence says what happens next); Set files a card with its words', async () => {
+    openBook();
     await open();
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
-    await fileCard({ note: 'Practice the exit.', route: 'drill', question: 'stalled.ready' });
-    expect(m.q('[data-card-receipt]').textContent).toContain('Stage · nominated for the Practice Field');
-    expect(m.q('[data-card-receipt]').textContent).toContain(RG5.drill);
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    expect(m.q('[data-card-receipt]').textContent).toContain('Route · Offer · Stage · nominated for the Practice Field');
+    expect(m.q('[data-card-receipt]').textContent).toContain(RG5.offer);
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/op_1`)).toMatchObject({ state: 'queued' });
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
     await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
@@ -492,12 +504,13 @@ describe('since-last-time — open Watch cards, their recurrences (RG-4), My car
     await m.flush(8);
     expect(m.q('[data-moment-opened]')).toBeNull();
   });
-  it('no open Watch card: says so; a Practice card is not followed', async () => {
+  it('no open Watch card: says so; an Offer card is not followed', async () => {
+    openBook();
     await open();
     expect(region('since-last-time').textContent).toContain('No open Watch card.');
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
-    await fileCard({ route: 'drill', note: 'Practice it.' });
+    await fileCard({ route: 'offer', note: 'Practice it.' });
     expect(region('since-last-time').textContent).toContain('No open Watch card.');
     expect(m.qa('[data-watch-card]')).toEqual([]);
   });
@@ -767,16 +780,17 @@ describe('review round — the screen (findings L3-1 … L3-11, L4-2 … L4-10, 
     await m.flush(10);
     expect(m.q('[data-card-receipt]').textContent).toContain('Stage · retired');
   });
-  it('R3-1 — a retired Practice card: nothing happens next, not the Practice Field sentence', async () => {
+  it('R3-1 — a retired Offer card: nothing happens next, not the Offer sentence', async () => {
+    openBook();
     await open();
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
-    await fileCard({ route: 'drill', note: 'Practice the exit.', question: 'stalled.ready' });
-    expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe(RG5.drill);
+    await fileCard({ route: 'offer', note: 'Practice the exit.', question: 'stalled.ready' });
+    expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe(RG5.offer);
     m.click(m.buttons('Retire')[0]);
     await m.flush(10);
     expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe('Retired: nothing happens next.');
-    expect(m.q('[data-card-receipt]').textContent).not.toContain(RG5.drill);
+    expect(m.q('[data-card-receipt]').textContent).not.toContain(RG5.offer);
   });
 });
 
@@ -842,21 +856,21 @@ describe('Amendment I RI-2 (Astra B1) — a successful write wins on screen when
 describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7\'s style', () => {
   /** A card filed straight into the ledger (the real store) from day 1's moment, before day 2 — a Watch card's list is what the line explains (Amendment K RK-10). */
   const seedCard = (route) => createCard(state.db, {
-    uid: OWNER, agentId: AGENT, opId: `seed_${route}`, nowIso: `${D1}T23:00:00.000Z`,
+    uid: OWNER, agentId: AGENT, opId: `seed_${route}`, nowIso: `${D1}T23:00:00.000Z`, book: { bookId: BOOK_ID, status: 'active' },
     payload: { archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: fx.tape1.tags.items[0].version, battleId: B, etDate: D1, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5, questionId: 'stalled.want', questionVersion: 1, note: 'Watch this.', route },
   });
   const unreadable = (tape) => ({ ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
 
-  it('Amendment K RK-10 — no open Watch card: no line, however many days could not be read — none filed, a Practice card, a retired Watch card (the mutant: the unavailable-day line with no open Watch card)', async () => {
+  it('Amendment K RK-10 — no open Watch card: no line, however many days could not be read — none filed, an Offer card, a retired Watch card (the mutant: the unavailable-day line with no open Watch card)', async () => {
     for (const [d, tape] of [[D1, fx.tape1], [D2, fx.tape2]]) t.store.set(`agentBattles/${B}/tape/${d}`, unreadable(tape));
     expect((await buildCounter(state.db, { uid: state.uid, agentId: AGENT, nowMs: COUNTER_NOW })).unavailableDays[AGENT]).toBe(2);
     await open();
     expect(region('since-last-time').textContent).toContain('No open Watch card.');
     expect(m.q('[data-unavailable-days]')).toBeNull();
-    await seedCard('drill');
+    await seedCard('offer');
     m.teardown(); m.setup();
     await open();
-    expect(m.q('[data-my-card="seed_drill"]')).toBeTruthy();
+    expect(m.q('[data-my-card="seed_offer"]')).toBeTruthy();
     expect(m.q('[data-unavailable-days]')).toBeNull();
     await seedCard('watch');
     await retireCard(state.db, { uid: OWNER, agentId: AGENT, entryId: 'seed_watch', opId: 'r_seed', expectedVersion: 1, nowIso: `${D2}T23:00:00.000Z` });
@@ -1070,9 +1084,9 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
   it('FQ-1 — a casual clone\'s battle with no tempo recorded links like the ranked one, and the card files under the RANKED parent (the mutant: the link withheld from a clone, RL-1\'s condition left in)', async () => {
     await setOnClone(fx.tape2, () => {}, { file: false });
     expect(formSet()).toBe(RG5.set);
-    // review KRT-3: Set's words are Set's alone — Watch and Practice keep RG-5's sentences
+    // review KRT-3: Set's words are Set's alone — Watch keeps RG-5's sentence; with no book there is no Offer route (Build C §5)
     expect(m.q('[data-route-note="watch"]').textContent).toBe(RG5.watch);
-    expect(m.q('[data-route-note="drill"]').textContent).toBe(RG5.drill);
+    expect(m.q('[data-route-note="offer"]')).toBeNull();
     expect(m.q('[data-set-link]')).toBeNull();
     await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
     // the parent the card is filed under is the ranked agent (RK-1)
@@ -1521,5 +1535,84 @@ describe('C1 item 1 — My cards under the stage vocabulary v2 (spec §3)', () =
     await m.flush();
     expect(Number(m.q('[data-open-count] [data-num-aggregate="count(plays[] open)"]').getAttribute('data-agg-value'))).toBe(4);
     await sweepAll(fx.tape2, 'v2 groups');
+  });
+});
+
+describe('C1 item 5 — the form: Watch, Offer and Set; Offer only with the owner\'s book open (spec §5; BC-3)', () => {
+  it('the book open (the counter says so): the routes Watch, Offer, Set in that order, Offer with the spec\'s sentence; the counter answered `book: { open: true }` and nothing else of the book', async () => {
+    openBook();
+    await open();
+    expect((await buildCounter(state.db, { uid: state.uid, agentId: AGENT, nowMs: COUNTER_NOW })).book).toEqual({ open: true });
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(m.qa('[data-route]').map((l) => l.getAttribute('data-route'))).toEqual(['watch', 'offer', 'set']);
+    expect(m.q('[data-route="offer"]').textContent).toBe(`Offer${RG5.offer}`);
+    expect(m.q('[data-route-note="offer"]').textContent).toBe(RG5.offer);
+    await sweepAll(fx.tape2, 'offer form');
+  });
+
+  it('no book, and a book not active: no Offer route and no word of the book (the mutant: the Offer route shown with no book)', async () => {
+    for (const status of [null, 'closed']) {
+      if (status) openBook(status); else resetPracticeFieldSeam();
+      await open();
+      m.click(m.buttons('Take this home')[0]);
+      await m.flush();
+      expect(m.qa('[data-route]').map((l) => l.getAttribute('data-route')), String(status)).toEqual(['watch', 'set']);
+      expect(m.q('[data-card-form]').textContent).not.toMatch(/Offer|book|Practice/);
+      m.teardown(); m.setup();
+    }
+  });
+
+  it('the Practice route and its sentence are gone (the mutant: the Practice sentence back): not in the copy, not on any form', async () => {
+    expect(Object.keys(COPY_CARDS.routes)).toEqual(['watch', 'offer', 'set']);
+    expect(Object.keys(COPY_CARDS.routeNotes)).toEqual(['watch', 'offer', 'set']);
+    expect(JSON.stringify(COPY_CARDS)).not.toContain('The Practice Field opens later');
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(m.q('[data-route="drill"]')).toBeNull();
+    expect(text()).not.toContain('The Practice Field opens later');
+  });
+
+  it('Offer picked, then the counter re-reads the book closed: the Offer route goes, the choice falls back to Watch, and Watch is what is sent (no Offer to a closed book)', async () => {
+    const moment = momentsOf(fx.tape2.tags.items)[0];
+    const sent = [];
+    const form = (bookOpen) => <YourCall tape={fx.tape2} moment={moment} counter={{ status: 'ready', data: { open: 0, cap: 5, book: { open: bookOpen } } }} mintOpId={() => 'op_form'} onFile={async (b) => { sent.push(b); return { ok: true }; }} onCancel={() => {}} />;
+    m.render(form(true));
+    await m.flush(2);
+    m.click(m.q('[data-route="offer"] input'));
+    await m.flush(1);
+    expect(m.q('[data-route="offer"] input').checked).toBe(true);
+    m.render(form(false));
+    await m.flush(1);
+    expect(m.q('[data-route="offer"]')).toBeNull();
+    expect(m.q('[data-route="watch"] input').checked).toBe(true);
+    await (async () => { const ta = m.q('[data-note]'); await import('react').then(({ act }) => act(() => setValue(ta, 'Watch it.'))); })();
+    await m.flush(1);
+    m.click(m.q('[data-card-form] button[type="submit"]'));
+    await m.flush(2);
+    expect(sent.map((x) => x.route)).toEqual(['watch']);
+  });
+
+  it('a stored `drill` entry (v1, never written in production) reads as Offer on My cards and its receipt', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const doc = t.store.get(`agents/${AGENT}/plays/op_1`);
+    const v1 = { ...doc, entryId: 'c_drill', opId: 'c_drill', route: 'drill', stage: 'nominated', note: 'A v1 Practice card.' };
+    delete v1.stageVocabVersion;
+    t.store.set(`agents/${AGENT}/plays/c_drill`, v1);
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    expect(m.q('[data-my-card="c_drill"]').textContent).toContain('Offer · nominated for the Practice Field');
+    m.click(m.q('[data-my-card="c_drill"]'));
+    await m.flush();
+    const receipt = m.q('[data-card-receipt="c_drill"]');
+    expect(receipt.textContent).toContain('Route · Offer');
+    // a v1 Practice card holds no nomination record: nothing is said to come next
+    expect(receipt.querySelector('[data-card-next]')).toBeNull();
+    await sweepAll(fx.tape2, 'v1 drill');
   });
 });

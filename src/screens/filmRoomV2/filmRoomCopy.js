@@ -314,11 +314,13 @@ export const FILM_ROOM_COPY = Object.freeze({
     note: 'Your note',
     noteLimit: 'characters',
     routeTitle: 'What happens next',
-    routes: { watch: 'Watch', drill: 'Practice', set: 'Set' },
-    // RG-5: each route says only what will happen
+    // Build C §4, §5 (BC-3): Offer replaces Practice; a stored `drill` entry reads as Offer (the one export's routeOf)
+    routes: { watch: 'Watch', offer: 'Offer', set: 'Set' },
+    // RG-5: each route says only what will happen. Build C §5: Offer's note is the spec's sentence; the form shows Offer
+    // only when the counter reports the owner's book open, and with no book says nothing of it
     routeNotes: {
       watch: 'The Film Room counts each time this comes back.',
-      drill: 'The Practice Field opens later; this keeps the moment for it.',
+      offer: 'Your agent considers this moment at its next chance. It may take it, defer it or decline it, and says why.',
       set: 'You change the setting yourself; this card changes nothing.',
     },
     // B2.1 B1 (Amendment H RH-1; Amendment J RJ-8): with the day's stagnation rule on, Set links the one setting that
@@ -361,6 +363,9 @@ export const FILM_ROOM_COPY = Object.freeze({
       illegal_transition: 'This card has already moved.',
       forbidden: 'Not authorized for this battle.',
       not_found: 'This battle was not found.',
+      // Build C §4: the book closed between the counter's read and the filing (the form offers Offer only when it was open)
+      book_not_open: 'This moment cannot be offered to your agent now. Nothing was filed.',
+      calendar_unavailable: "The offer's expiry could not be placed on the market calendar. Nothing was filed.",
       default: 'The card could not be filed.',
       retireDefault: 'The card could not be retired.',
     },

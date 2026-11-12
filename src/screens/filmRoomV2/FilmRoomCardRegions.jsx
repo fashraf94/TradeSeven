@@ -57,7 +57,7 @@ import { SITUATIONS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { CARD_SLOTS } from '../../data/cardSlots';
 // Build C §3: the stage vocabulary v2, from its one export
-import { isOpenStage } from '../../data/cardStages';
+import { CARD_ROUTES, NOMINATING_ROUTE, isOpenStage, routeOf } from '../../data/cardStages';
 import { RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED } from '../../config/featureFlags';
 import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
@@ -191,6 +191,12 @@ export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel }) 
   // the op id is minted once the form is up for a moment (the same effect that resets the form for a new moment), never per attempt
   const [opId, setOpId] = useState(null);
   useEffect(() => { setQuestionId(questions[0]?.id ?? null); setRoute('watch'); setNote(''); setRefusal(null); setOpId(mintOpId()); }, [moment]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // Build C §5 (BC-3): the routes are Watch, Offer and Set — Offer only when the counter reports the owner's book open;
+  // with no book the form holds Watch and Set and says nothing of the book. A route the form no longer shows (the book
+  // closed on a re-read) is never sent: the choice falls back to Watch
+  const bookOpen = counter?.data?.book?.open === true;
+  const routes = bookOpen ? CARD_ROUTES : CARD_ROUTES.filter((r) => r !== NOMINATING_ROUTE);
+  const chosen = routes.includes(route) ? route : 'watch';
   const length = noteLength(note);
   const data = counter?.status === 'ready' ? counter.data : null;
   const open = Number.isInteger(data?.open) ? data.open : null;
@@ -203,7 +209,7 @@ export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel }) 
     setBusy(true);
     setRefusal(null);
     const q = questions.find((x) => x.id === questionId);
-    const r = await onFile({ opId, battleId: tape.battleId, etDate: tape.etDate, moment, questionId, questionVersion: q?.version ?? null, note: note.trim(), route });
+    const r = await onFile({ opId, battleId: tape.battleId, etDate: tape.etDate, moment, questionId, questionVersion: q?.version ?? null, note: note.trim(), route: chosen });
     setBusy(false);
     if (!r?.ok) setRefusal(T.refusals[r?.code] ?? T.refusals.default);
   };
@@ -233,9 +239,9 @@ export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel }) 
       </span>
       <fieldset style={{ border: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <legend style={{ ...eyebrow, color: C.ink3, padding: 0, marginBottom: 4 }}>{T.routeTitle}</legend>
-        {['watch', 'drill', 'set'].map((r) => (
+        {routes.map((r) => (
           <label key={r} data-route={r} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-            <input type="radio" name={`${id}-route`} value={r} checked={route === r} onChange={() => setRoute(r)} />
+            <input type="radio" name={`${id}-route`} value={r} checked={chosen === r} onChange={() => setRoute(r)} />
             <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span style={mono(11.5, C.ink, { fontWeight: 700 })}>{T.routes[r]}</span>
               <span data-route-note={r} style={foot}>{T.routeNotes[r]}{r === 'set' && setSay ? <> {setSay}</> : null}</span>
@@ -281,8 +287,12 @@ function CardFacts({ card }) {
 function nextOf(card) {
   if (card.stage === 'retired') return T.stateNotes.retired;
   if (card.shelved) return T.stateNotes.shelved;
-  const filedAt = card.route === 'drill' ? 'nominated' : 'card';
-  return card.stage === filedAt && Object.prototype.hasOwnProperty.call(T.routeNotes, card.route) ? T.routeNotes[card.route] : null;
+  const route = routeOf(card.route);
+  if (card.stage === 'card') return Object.prototype.hasOwnProperty.call(T.routeNotes, route) ? T.routeNotes[route] : null;
+  // Build C §5: a QUEUED nomination is what the Offer route said would happen; once the agent has answered, the chain
+  // says what happened. A v1 Practice card holds no nomination, so nothing is said to come
+  if (card.stage === 'nominated' && card.nomination?.state === 'queued') return T.routeNotes[NOMINATING_ROUTE];
+  return null;
 }
 
 /**
@@ -328,7 +338,7 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = 
       <span style={{ ...eyebrow, color: C.teal }}>{T.receipt} · {T.filedCard}</span>
       <CardFacts card={live} />
       <Quotation doc={ledger} path={['cards', live.entryId, 'note']} by="you" at={['cards', live.entryId, 'createdAt']} docLabel="ledger" />
-      <span style={mono(11, C.ink2)}>{T.route} · {wordOf(T.routes, live.route)} · {T.stage} · {wordOf(T.stageWords, live.stage)}{live.shelved ? ` · ${T.groups.shelved}` : ''}</span>
+      <span style={mono(11, C.ink2)}>{T.route} · {wordOf(T.routes, routeOf(live.route))} · {T.stage} · {wordOf(T.stageWords, live.stage)}{live.shelved ? ` · ${T.groups.shelved}` : ''}</span>
       {next ? <span data-card-next="" style={foot}>{next}{setSay ? <> {setSay}</> : null}{linked ? <> {T.setNextBattle}</> : null}</span> : null}
       {/* RH-1 / RJ-8 / RK-2: the one setting that reaches `stalled` is the tempo dial — linked on every battle where the day's rule is on */}
       {linked ? (
@@ -395,7 +405,7 @@ function CardRow({ card, onShow }) {
       <span style={mono(11, C.ink2)}>{titleOf(card.situationId)}</span>
       <span style={mono(11.5, C.ink, { fontWeight: 700 })}><Rec>{card.source?.symbol ?? ''}</Rec></span>
       <When style={mono(10.5, C.ink2)}>{etDateLabel(card.source?.etDate, { short: true }) ?? ''}</When>
-      <span style={mono(10.5, C.ink2)}>{wordOf(T.routes, card.route)} · {wordOf(T.stageWords, card.stage)}</span>
+      <span style={mono(10.5, C.ink2)}>{wordOf(T.routes, routeOf(card.route))} · {wordOf(T.stageWords, card.stage)}</span>
       <Label style={{ color: C.teal }}>{T.openCard}</Label>
     </button>
   );
