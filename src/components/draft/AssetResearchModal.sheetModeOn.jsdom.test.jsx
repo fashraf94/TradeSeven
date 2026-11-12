@@ -610,9 +610,16 @@ describe('the latest sentence and the label keep the fold with a long sentence a
     await click(line);
     expect($('[data-sheet-voice-line]').getAttribute('aria-expanded')).toBe('true');
     expect($('[data-sheet-voice-line]').style.webkitLineClamp || '').toBe('');
+    // The name and archetype ellipsize; the quote's time is its own span that never shrinks (review D2),
+    // and the label wraps under the eyebrow rather than widen the view.
     const label = $('[data-shell-voice-label]');
-    expect([label.style.whiteSpace, label.style.textOverflow, label.style.minWidth]).toEqual(['nowrap', 'ellipsis', '0px']);
-    expect(label.parentElement.style.minWidth).toBe('0px');
+    expect(label.textContent).toBe('A Remarkably Long Agent Name For The Fold · Trend Follower · Wed 12:45');
+    const who = $('[data-shell-voice-who]');
+    expect([who.style.whiteSpace, who.style.textOverflow, who.style.minWidth]).toEqual(['nowrap', 'ellipsis', '0px']);
+    expect($('[data-shell-voice-time]').style.flexShrink).toBe('0');
+    expect($('[data-shell-voice-time]').textContent).toBe(' · Wed 12:45');
+    expect([label.style.minWidth, label.style.maxWidth]).toEqual(['0px', '100%']);
+    expect(label.parentElement.style.flexWrap).toBe('wrap');
   });
 });
 

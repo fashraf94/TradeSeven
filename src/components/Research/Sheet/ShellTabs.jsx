@@ -15,7 +15,7 @@
 // A tab mounts only while it is the one shown, so its reads go out on the
 // player's tap, as the drawer's tabs do today.
 
-import React from 'react';
+import React, { useRef } from 'react';
 import CompeteTab from '../../draft/CompeteTab';
 import SectorTab from '../../draft/SectorTab';
 import SmartMoneyTab from '../SmartMoneyTab';
@@ -34,17 +34,33 @@ const LABEL = { moving: SHELL_COPY.tabMoving, ranks: SHELL_COPY.tabRanks, smartM
  * @param {boolean}  p.isMobile
  * @param {Function} p.onNavigateToStock   the modal's own internal navigation
  * @param {object}   p.moving              WhatsMoving's props (the popup's own, as the modal passes them)
+ * @param {number}   [p.bodyMinHeight]     the view's height less the strip's: a short tab still fills the
+ *                                         view, so a strip stuck at the top stays there when the tab changes
  */
-export default function ShellTabs({ tab, onTab, symbol, isMobile, onNavigateToStock, moving }) {
+export default function ShellTabs({ tab, onTab, symbol, isMobile, onNavigateToStock, moving, bodyMinHeight = 0 }) {
+  const sectionRef = useRef(null);
+  // A tab picked while the strip is stuck under the header: the new tab starts at its top, under the
+  // strip, instead of mid-way down at the old tab's scroll (review D3). Measured on the tap — no listener.
+  const pick = (t) => {
+    const section = sectionRef.current;
+    const scroller = section?.closest?.('[data-shell-scroll]');
+    if (section && scroller) {
+      const delta = section.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      if (delta < 0) scroller.scrollTop += delta;
+    }
+    onTab(t);
+  };
   return (
-    <section data-shell-tabs={tab} style={{ display: 'flex', flexDirection: 'column' }}>
+    <section ref={sectionRef} data-shell-tabs={tab} style={{ display: 'flex', flexDirection: 'column' }}>
       <div
         role="tablist"
         aria-label={SHELL_COPY.tabsLabel}
         data-shell-strip
         style={{
-          position: 'sticky', top: 0, zIndex: 2, background: ST.bg, display: 'flex', gap: 18,
-          margin: '0 -16px', padding: '0 16px', borderBottom: `1px solid ${ST.hair}`,
+          // The strip spans the view (margin -16px); each tab carries its own 6 px side padding, so its
+          // whole 44 px box takes the tap (review D4) and the first label sits on the 16 px gutter.
+          position: 'sticky', top: 0, zIndex: 2, background: ST.bg, display: 'flex', gap: 6,
+          margin: '0 -16px', padding: '0 10px', borderBottom: `1px solid ${ST.hair}`,
           overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none',
         }}
       >
@@ -57,20 +73,21 @@ export default function ShellTabs({ tab, onTab, symbol, isMobile, onNavigateToSt
               role="tab"
               aria-selected={on}
               data-shell-tab={t}
-              onClick={() => { if (!on) onTab(t); }}
+              onClick={() => { if (!on) pick(t); }}
               style={{
-                all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
+                all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 44, padding: '0 6px', display: 'flex', alignItems: 'center', flexShrink: 0,
                 fontWeight: on ? 700 : 500, color: on ? ST.ink : ST.ink2, whiteSpace: 'nowrap',
                 boxShadow: on ? `inset 0 -2px 0 ${ST.teal}` : 'none',
               }}
             >
-              {/* src/index.css forces a <button>'s own font-size to 16px: the label's size sits on a span. */}
-              <span style={{ fontSize: 13.5 }}>{LABEL[t]}</span>
+              {/* src/index.css forces a <button>'s own font-size to 16px: the label's size sits on a span.
+                  13.5 px down to 12 px on the narrowest phones, so the four tabs fit 320 px (review D1). */}
+              <span style={{ fontSize: 'clamp(12px, 3.6vw, 13.5px)' }}>{LABEL[t]}</span>
             </button>
           );
         })}
       </div>
-      <div data-shell-tab-body={tab} style={{ paddingTop: 16 }}>
+      <div data-shell-tab-body={tab} style={{ paddingTop: 16, minHeight: bodyMinHeight > 0 ? bodyMinHeight : undefined }}>
         {tab === 'moving' && <WhatsMoving key={symbol} {...moving} />}
         {tab === 'ranks' && <CompeteTab symbol={symbol} isMobile={isMobile} onNavigateToStock={onNavigateToStock} rankLabel />}
         {tab === 'smartMoney' && <SmartMoneyTab symbol={symbol} isMobile={isMobile} />}

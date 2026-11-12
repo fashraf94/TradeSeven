@@ -746,6 +746,8 @@ const AssetResearchModal = ({
         symbol={currentAsset?.symbol}
         isMobile={isMobile}
         onNavigateToStock={handleNavigateToStock}
+        // The view's height less the strip's (45 px): a short tab still fills the view (review D3).
+        bodyMinHeight={Math.max(0, shellBodyHeight - 45)}
         // What's moving: the Why? popup's own props as the modal hands them below, but for `change`
         // and `price`: the day's change and the price the shell's header shows (BUILD_RULES §9 —
         // the title prints the change beside the header), the change only once known, as the

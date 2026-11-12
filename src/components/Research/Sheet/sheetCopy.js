@@ -220,8 +220,12 @@ export const SHELL_COPY = Object.freeze({
   viewChart: 'Chart',
   viewBomb: '💣',
   viewBombLabel: 'Bomb mode',
+  headerBack: 'Back',
+  headerClose: 'Close',
   // ── What it decided (R-23): the player's agent name, then the archetype; the time of a quoted line ──
   voiceLabel: (agent, arch, time) => [agent, arch, time].filter((s) => typeof s === 'string' && s).join(' · '),
+  // The quote's time, set after the name and archetype in its own span (it is never ellipsized).
+  voiceTime: (time) => ` · ${time}`,
   // ── A pack item with a place on the chart ──
   seeOnChart: 'see on chart ›',
   // ── The Chart view's own states (today's chart box, in the shell's skin) ──

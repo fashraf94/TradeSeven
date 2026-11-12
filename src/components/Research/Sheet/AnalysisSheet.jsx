@@ -113,12 +113,18 @@ function Decided({ view, collapsed }) {
       : l.source === 'template_looked' ? SHEET_COPY.lastLookedAt(view.latestTime ?? '')
         : SHEET_COPY.notLooked(view.archetype);
   // The quote's time belongs to the quote; an exit flag's eyebrow already names it.
-  const label = SHELL_COPY.voiceLabel(view.agentName, view.archetype, quoted && l.source !== 'exit' ? view.latestTime : null);
+  const time = quoted && l.source !== 'exit' ? view.latestTime : null;
+  const who = SHELL_COPY.voiceLabel(view.agentName, view.archetype, null);
   return (
     <section data-sheet-voice={l.source} style={{ display: 'flex', flexDirection: 'column', gap: collapsed ? 4 : 6, minWidth: 0 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', minWidth: 0 }}>
+      {/* The label wraps under the eyebrow when the line is short of room; only the name and
+          archetype ever ellipsize — the quote's time is never the part cut (review D2). */}
+      <div style={{ display: 'flex', columnGap: 8, rowGap: 2, alignItems: 'baseline', flexWrap: 'wrap', minWidth: 0 }}>
         <span style={{ ...EYEBROW, color: ST.teal, flexShrink: 0 }}>{eyebrow}</span>
-        <span data-shell-voice-label style={{ fontFamily: MONO, fontSize: 10.5, color: ST.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{label}</span>
+        <span data-shell-voice-label style={{ display: 'inline-flex', maxWidth: '100%', minWidth: 0, fontFamily: MONO, fontSize: 10.5, color: ST.ink3 }}>
+          <span data-shell-voice-who style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{who}</span>
+          {time && <span data-shell-voice-time style={{ whiteSpace: 'pre', flexShrink: 0 }}>{SHELL_COPY.voiceTime(time)}</span>}
+        </span>
       </div>
       <p
         data-sheet-voice-line
@@ -179,7 +185,7 @@ function Pack({ view, onSeeOnChart }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 32 }}>
         <button type="button" data-sheet-back aria-label={SHEET_COPY.backToQuestions} onClick={view.backToQuestions}
-          style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', color: ST.ink2, minWidth: 28, minHeight: 32, display: 'flex', alignItems: 'center' }}><span style={{ fontSize: 18, lineHeight: 1 }}>‹</span></button>
+          style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', color: ST.ink2, minWidth: 36, minHeight: 44, margin: '-6px 0', display: 'flex', alignItems: 'center' }}><span style={{ fontSize: 18, lineHeight: 1 }}>‹</span></button>
         <span style={{ fontSize: 15, fontWeight: 700, flex: 1, color: ST.ink }}>{QUESTION_TEXT[view.question]}</span>
         <span style={{ fontFamily: MONO, fontSize: 9.5, color: ST.ink3, whiteSpace: 'nowrap' }}>{asked ? SHEET_COPY.packAsked : SHEET_COPY.packFree}</span>
       </div>
@@ -249,13 +255,16 @@ export function WallStLine({ wallSt = null, aboutName = null, about = null }) {
     <div data-sheet-tucked style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 13, color: ST.ink2, lineHeight: 1.4, minHeight: 44 }}>
         {wallSt && <span data-shell-wallst>{wallSt}</span>}
-        {wallSt && canAbout && <span aria-hidden="true" style={{ color: ST.ink3 }}>·</span>}
+        {/* The separator travels with About, so a wrapped line never ends on a lone "·" (review D7). */}
         {canAbout && (
-          <button type="button" data-sheet-about={open ? 'open' : 'closed'} aria-expanded={open} onClick={() => setOpen((v) => !v)}
-            style={{ all: 'unset', cursor: 'pointer', color: ST.ink2, display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44 }}>
-            <span style={{ fontSize: 13 }}>{open ? SHELL_COPY.aboutHide : SHELL_COPY.aboutName(aboutName)}</span>
-            <Chevron color={ST.ink3} down={open} />
-          </button>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap', minWidth: 0 }}>
+            {wallSt && <span aria-hidden="true" style={{ color: ST.ink3 }}>·</span>}
+            <button type="button" data-sheet-about={open ? 'open' : 'closed'} aria-expanded={open} onClick={() => setOpen((v) => !v)}
+              style={{ all: 'unset', cursor: 'pointer', color: ST.ink2, display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 44 }}>
+              <span style={{ fontSize: 13 }}>{open ? SHELL_COPY.aboutHide : SHELL_COPY.aboutName(aboutName)}</span>
+              <Chevron color={ST.ink3} down={open} />
+            </button>
+          </span>
         )}
       </div>
       {open && about}

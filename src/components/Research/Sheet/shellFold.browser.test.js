@@ -90,6 +90,42 @@ describe.skipIf(!BASE)('the shell measured in a real browser', () => {
     } finally { await ctx.close(); }
   }, ROW_TIMEOUT);
 
+  it('the four tabs fit the strip at 320 and 375 — no tab clipped, nothing hidden behind a scroll (review D1)', async () => {
+    for (const [w, h] of [[320, 568], [375, 812]]) {
+      const { ctx, page } = await open(w, h, 'sheetFixture=held_tf', '[data-sheet-root]');
+      try {
+        const s = await page.evaluate(() => {
+          const strip = document.querySelector('[data-shell-strip]');
+          const r = strip.getBoundingClientRect();
+          const tabs = [...strip.querySelectorAll('[data-shell-tab]')].map((b) => b.getBoundingClientRect());
+          return { scroll: strip.scrollWidth - strip.clientWidth, left: r.left, right: r.right, tabs: tabs.map((t) => [t.left, t.right]) };
+        });
+        expect(s.scroll, `${w}`).toBeLessThanOrEqual(1);
+        for (const [l, rgt] of s.tabs) { expect(l, `${w}`).toBeGreaterThanOrEqual(s.left - 0.5); expect(rgt, `${w}`).toBeLessThanOrEqual(s.right + 0.5); }
+      } finally { await ctx.close(); }
+    }
+  }, ROW_TIMEOUT * 2);
+
+  it('a tab changed while the strip is stuck keeps it stuck, the new tab from its top (review D3)', async () => {
+    const { ctx, page } = await open(375, 812, 'sheetFixture=held_tf', '[data-sheet-root]');
+    try {
+      await page.click('[data-shell-tab="ranks"]');
+      await page.waitForTimeout(3000);
+      await page.evaluate(() => { const b = document.querySelector('[data-shell-scroll="analysis"]'); b.scrollTop = b.scrollHeight; });
+      await page.waitForTimeout(300);
+      await page.click('[data-shell-tab="moving"]');
+      await page.waitForTimeout(600);
+      const s = await page.evaluate(() => {
+        const box = document.querySelector('[data-shell-scroll="analysis"]').getBoundingClientRect();
+        const strip = document.querySelector('[data-shell-strip]').getBoundingClientRect();
+        const body = document.querySelector('[data-shell-tab-body]').getBoundingClientRect();
+        return { boxTop: box.top, stripTop: strip.top, stripBottom: strip.bottom, bodyTop: body.top };
+      });
+      expect(Math.abs(s.stripTop - s.boxTop)).toBeLessThanOrEqual(1);
+      expect(Math.abs(s.bodyTop - s.stripBottom)).toBeLessThanOrEqual(1);
+    } finally { await ctx.close(); }
+  }, ROW_TIMEOUT);
+
   it('390×664 (Safari with its bars): the whole action row sits inside the visible viewport (FQ-6, kept by SB-10)', async () => {
     for (const f of OPEN_ON_ANALYSIS) {
       const { ctx, page } = await open(390, 664, `sheetFixture=${f}`, '[data-sheet-root]');
