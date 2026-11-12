@@ -12,6 +12,7 @@
 // in the SAME transaction as the close+create (F6 — never a follow-up write).
 
 import { publishVintage, VINTAGE_COLLECTION, resolveVintage } from './mandateVintage.js';
+import { isSectorCapCorrected, VINTAGE_UNCORRECTED } from './mandateSectorCap.js';
 import { deriveQuarterSummary } from './mandateQuarterSummary.js';
 import {
   buildNewMandateDoc, buildDecision, deriveManagerAgentId, clearedOpenSubmissionPatch,
@@ -42,7 +43,8 @@ function toDate(v) {
  *   | { ok:true, oldMandateId, newMandateId, vintageRef, managerAgentId, cadenceTier, quarterKey,
  *       nextRolloverAt, idempotentReplay:boolean }
  *   | { ok:false, code:'unknown_archetype'|'no_active_book'|'escape_already_used'|'book_missing'
- *              |'not_owner'|'not_active'|'escape_window_expired'|'concurrent_modification' }
+ *              |'not_owner'|'not_active'|'escape_window_expired'|'concurrent_modification'
+ *              |'vintage_uncorrected' }
  * >}
  */
 export async function escapeMandate(db, { userId, archetype, now = new Date(), requestKey = null }) {
@@ -79,6 +81,8 @@ export async function escapeMandate(db, { userId, archetype, now = new Date(), r
   const { docId } = resolveVintage(archetype);
   const vDoc = await db.collection(VINTAGE_COLLECTION).doc(docId).get();
   if (!vDoc.exists) throw new Error(`MANDATE_ESCAPE_VINTAGE_MISSING ${vintageRef} (Risk-3)`);
+  // Admission (T0a): never pin a vintage without the sector-cap translation stamp.
+  if (!isSectorCapCorrected(vDoc.data()?.gateConfig)) return { ok: false, code: VINTAGE_UNCORRECTED };
   const managerAgentId = deriveManagerAgentId(userId, archetype); // FR-7 stable per user×archetype
 
   const newMandateRef = db.collection('mandates').doc(); // pre-allocate the replacement id

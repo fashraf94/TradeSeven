@@ -1,4 +1,5 @@
 # Agent Learning Charter V1 — The BaggerBomb Training Ground
+> Scope Addendum A (12 Nov 2026): docs/20261112_AGENT_LEARNING_CHARTER_SCOPE_ADDENDUM_A.md — the Practice Field's idea book under this Charter. Addition only; no clause loosened.
 
 **Date:** July 21, 2026
 **Status:** LOCKED upon founder ratification. Governs all Learning Phase B design decisions.

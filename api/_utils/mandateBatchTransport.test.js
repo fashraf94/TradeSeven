@@ -54,7 +54,7 @@ const VINTAGE = {
   codeId: 'analyst',
   displayVintage: 'Fundamental Investor v2',
   archetypeContent: { displayName: 'Fundamental Investor', identity: { reveal: 'r', voice: 'v' }, character: { factors: {} } },
-  gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 0.30, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
+  gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 0.30, sectorCapConversionVersion: 1, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
   modelSeat: { model: 'claude-haiku-4-5-20251001', params: { temperature: 0.7, maxTokens: 600 } },
 };
 const VERBS = ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'];
@@ -447,6 +447,27 @@ describe('harvestOpenBatches — the §3.3 validation → §3.5 execution path',
     expect(dec.failCondition).toBe('exit_only_mode'); // harvest gates against the book as it IS
     // I1 set-completeness (SPEC-P5-7): the gated terminal ALSO releases the gate.
     expect(db._get('mandates/m1').execState.openBatchId).toBe(null);
+  });
+
+  it('T0a: an UNCORRECTED vintage at harvest disposes failed/vintage_uncorrected — never gated, never executed, still billed', async () => {
+    const { sectorCapConversionVersion, ...legacyGate } = VINTAGE.gateConfig;
+    const { db, env } = seedSubmitted({
+      'archetypeVintages/analyst_x': { ...VINTAGE, gateConfig: { ...legacyGate, sectorConcentrationCap: 3 } },
+    });
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'x' });
+    batchApi.results.mockResolvedValue(asAsyncIterable([
+      { custom_id: env.requestId, result: succeededResult({ verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, rationale: 'q' }) },
+    ]));
+    await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: H_NOW });
+    const dec = db._get(`mandates/m1/decisions/${env.requestId}`);
+    expect(dec.status).toBe('failed');
+    expect(dec.failCondition).toBe('vintage_uncorrected');
+    const book = db._get('mandates/m1');
+    expect(book.portfolio.positions?.AAPL).toBeUndefined(); // no trade
+    expect(book.execState.executed).toBe(0);
+    expect(book.health.consecutiveEvalFailures).toBe(1);
+    expect(book.costTelemetry.tokensIn).toBe(1200); // the real spend is still billed
+    expect(book.execState.openBatchId).toBe(null);   // the gate clears (I1)
   });
 
   it('a result with NO tool_use reaches terminal failed (I1 — never the direct path soft-skip)', async () => {

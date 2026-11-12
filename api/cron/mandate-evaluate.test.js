@@ -49,7 +49,7 @@ const VINTAGE = {
   codeId: 'analyst',
   displayVintage: 'Fundamental Investor v2',
   archetypeContent: { displayName: 'Fundamental Investor', identity: { reveal: 'You buy good businesses.', voice: 'v' }, character: { factors: {} } },
-  gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 0.30, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
+  gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 0.30, sectorCapConversionVersion: 1, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
   modelSeat: { model: 'claude-haiku-4-5-20251001', params: { temperature: 0.7, maxTokens: 600 } },
 };
 const SNAP = { tickKey: '2026-08-12_open30', symbols: { AAPL: { complete: true, price: 200, sector: 'Technology' }, XOM: { complete: true, price: 100, sector: 'Energy' } } };
@@ -261,5 +261,40 @@ describe('telemetryPatch — §6.2 accumulation', () => {
     expect(p.costTelemetry.unpricedCalls).toBe(1);
     expect(p.costTelemetry.tokensIn).toBe(500);
     expect(p.costTelemetry.estUsd).toBe(0); // unchanged, flagged via unpricedCalls
+  });
+});
+
+// ── T0a: admission refuses an uncorrected vintage ──────────────────────────
+// A vintage without the sector-cap translation stamp carries the raw slot count
+// (3 → read as 300%). The eval refuses it before the prompt, the model call and
+// any batch enqueue: no trade, no spend, a typed reason for the sweep.
+describe('T0a — runBookEval refuses an uncorrected vintage (vintage_uncorrected)', () => {
+  const { sectorCapConversionVersion, ...legacyGate } = VINTAGE.gateConfig;
+  const UNCORRECTED = { ...VINTAGE, gateConfig: { ...legacyGate, sectorConcentrationCap: 3 } };
+
+  it.each(['direct', 'batch'])('%s transport: skipped with vintage_uncorrected; no model call, no enqueue, no money moved', async (transport) => {
+    const db = makeFakeDb({ 'mandates/m1': bookFixture() });
+    const ref = db.collection('mandates').doc('m1');
+    const model = fakeModel({ verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, rationale: 'x' });
+    const r = await runBookEval(db, {
+      book: { _id: 'm1', ...bookFixture() }, mandateRef: ref, vintage: UNCORRECTED, snapshot: SNAP,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW, callModel: model, transport,
+    });
+    expect(r).toEqual({ outcome: 'skipped', reason: 'vintage_uncorrected' });
+    expect(model).not.toHaveBeenCalled();
+    expect(db._store.get('mandates/m1').portfolio.cash).toBe(100000);
+    expect([...db._store.keys()].filter((k) => k.includes('/decisions/'))).toEqual([]);
+  });
+
+  it('CONTROL: the stamped fixture reaches the model', async () => {
+    const db = makeFakeDb({ 'mandates/m1': bookFixture() });
+    const ref = db.collection('mandates').doc('m1');
+    const model = fakeModel({ verb: 'HOLD', rationale: 'x' });
+    const r = await runBookEval(db, {
+      book: { _id: 'm1', ...bookFixture() }, mandateRef: ref, vintage: VINTAGE, snapshot: SNAP,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW, callModel: model,
+    });
+    expect(r.outcome).toBe('terminal');
+    expect(model).toHaveBeenCalledTimes(1);
   });
 });

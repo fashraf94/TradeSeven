@@ -43,6 +43,7 @@ import {
   MANDATE_MAX_SINGLE_POSITION_WEIGHT_PCT,
   MANDATE_DECISION_VERBS,
 } from './mandateConfig.js';
+import { translateSectorCapSlots } from './mandateSectorCap.js';
 
 export const VINTAGE_SCHEMA_VERSION = 1;
 export const VINTAGE_COLLECTION = 'archetypeVintages';
@@ -85,14 +86,24 @@ export function buildVintagePayload(codeId) {
   // Gate configuration (D-44 / FR-6 + O-5 / §3.4). Universal spec constants +
   // the per-archetype sector cap read from the registry (physics), frozen so the
   // P2 mandateSectorCap reads cap VALUES from the pin.
-  const sectorConcentrationCap = def.physics?.sectorConcentrationCap ?? null;
+  //
+  // UNITS (T0a, concept V6.1 ruling 25): physics.sectorConcentrationCap is a
+  // COUNT of the battle's six picks; the gate compares a FRACTION of book value.
+  // Translated here, once (2 → 1/3, 3 → 1/2, 4 → 2/3), recording the source
+  // count, the denominator, the fraction and the conversion version; a
+  // malformed count throws (no vintage). archetypeContent.physics keeps the
+  // count as the registry gives it. The fenced archetype table is not touched.
+  const sectorCap = translateSectorCapSlots(def.physics?.sectorConcentrationCap ?? null);
   const gateConfig = {
     cashFloorPct: MANDATE_CASH_FLOOR_PCT,
     minPositions: MANDATE_MIN_POSITIONS,
     maxPositions: MANDATE_MAX_POSITIONS,
     maxSinglePositionWeightPct: MANDATE_MAX_SINGLE_POSITION_WEIGHT_PCT,
     decisionVerbs: [...MANDATE_DECISION_VERBS],
-    sectorConcentrationCap,
+    sectorCapSlots: sectorCap.sectorCapSlots,
+    sectorCapDenominator: sectorCap.sectorCapDenominator,
+    sectorConcentrationCap: sectorCap.sectorConcentrationCap,
+    sectorCapConversionVersion: sectorCap.sectorCapConversionVersion,
   };
 
   // All contributing archetype-behavior version constants (§5.1 / Q2). Platform

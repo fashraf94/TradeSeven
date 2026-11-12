@@ -41,6 +41,7 @@ import { assembleMandatePrompt } from '../_utils/mandatePromptAssembly.js';
 import { buildSubmissionEnvelope, callMandateModelDirect } from '../_utils/mandateModelCall.js';
 import { normalizeDecisionInput, effectiveVerbs } from '../_utils/mandateDecisionTool.js';
 import { evaluateGate } from '../_utils/mandateGate.js';
+import { isSectorCapCorrected, VINTAGE_UNCORRECTED } from '../_utils/mandateSectorCap.js';
 import { executeDecision, disposeSubmission } from '../_utils/mandateExecution.js';
 import { markFor } from '../_utils/mandateUniverseSnapshot.js';
 import { resolveRegime } from '../_utils/mandateRegime.js';
@@ -93,6 +94,10 @@ export async function runBookEval(db, {
   // Tier gating (§3.1): cadence tiers map to session-relative slots.
   if (!tierEligibleAt(book.cadenceTier, slot)) return { outcome: 'skipped_tier' };
   if (!vintage) return { outcome: 'skipped', reason: 'no_vintage' };
+  // Admission (T0a): a vintage without the sector-cap translation stamp carries
+  // the raw slot count as its cap. Refused before the prompt, the model call and
+  // any enqueue — no trade, no spend. Counted as an eval failure like no_vintage.
+  if (!isSectorCapCorrected(vintage.gateConfig)) return { outcome: 'skipped', reason: VINTAGE_UNCORRECTED };
 
   // Double-submit gate (§3.3) — TRANSPORT-INDEPENDENT by design (F26): "a
   // mid-drain mandate cannot submit under the NEW mode until its old batch
@@ -505,10 +510,15 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
           // eval failure of the infrastructure kind (§6.4), not a quiet skip.
           // The P3 review found these books wrote NOTHING: they pinned the
           // page frontier forever, were re-processed every fire, and could
-          // never alert or quarantine.
+          // never alert or quarantine. An UNCORRECTED vintage (T0a) is the
+          // same class: the book cannot trade until a migration or stop policy.
           summary.skipped++;
           const failures = (book.health?.consecutiveEvalFailures || 0) + 1;
-          console.error(`${LOG_PREFIX} MANDATE_NO_VINTAGE ${book._id} — vintage ${book.vintageRef} unreadable (${failures} consecutive)`);
+          if (result.reason === VINTAGE_UNCORRECTED) {
+            console.error(`${LOG_PREFIX} MANDATE_VINTAGE_UNCORRECTED ${book._id} — vintage ${book.vintageRef} has no sector-cap conversion stamp; refused, no trade (${failures} consecutive)`);
+          } else {
+            console.error(`${LOG_PREFIX} MANDATE_NO_VINTAGE ${book._id} — vintage ${book.vintageRef} unreadable (${failures} consecutive)`);
+          }
           await persistOutcome({
             health: { lastEvalSweepAt: now, consecutiveEvalFailures: failures, ...quarantinePatchFor(failures) },
             execState: { lastSweepTickKey: tick.tickKey },

@@ -84,6 +84,7 @@ import {
 } from './mandateModelCall.js';
 import { executeDecision, disposeSubmission } from './mandateExecution.js';
 import { evaluateGate } from './mandateGate.js';
+import { isSectorCapCorrected, VINTAGE_UNCORRECTED } from './mandateSectorCap.js';
 import { normalizeDecisionInput } from './mandateDecisionTool.js';
 import { markFor, classifyBookTick, SNAPSHOT_COLLECTION } from './mandateUniverseSnapshot.js';
 import { frictionForDecision } from './mandateFrictionModel.js';
@@ -327,6 +328,16 @@ async function processSucceededResult(db, {
     // durably, so it must still reach a terminal decision (I1), not a soft skip.
     if (!vintage) {
       const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'no_vintage', envelope: entry.envelope });
+      const billedNow = await billUnderLease(book);
+      if (!out.idempotent) await bookkeepHealth(mandateRef, book, out, { now });
+      return { ...out, ...(billedNow ? { billedUsage: true } : {}) };
+    }
+
+    // Admission at harvest (T0a): a vintage without the sector-cap translation
+    // stamp never reaches the gate. Same terminal shape as no_vintage: the
+    // submission is disposed failed (I1) and its real spend is still billed.
+    if (!isSectorCapCorrected(vintage.gateConfig)) {
+      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: VINTAGE_UNCORRECTED, envelope: entry.envelope });
       const billedNow = await billUnderLease(book);
       if (!out.idempotent) await bookkeepHealth(mandateRef, book, out, { now });
       return { ...out, ...(billedNow ? { billedUsage: true } : {}) };

@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { escapeMandate } from './mandateEscape.js';
+import { resolveVintage } from './mandateVintage.js';
 import { makeMandateFakeDb } from './__testsupport__/mandateFakeFirestore.js';
 import { buildNewMandateDoc, buildDailyRow, deriveManagerAgentId } from './mandateSchema.js';
 
@@ -149,5 +150,27 @@ describe('escapeMandate — two-writer contention (F6)', () => {
     const mandates = [...db._store.keys()].filter((k) => /^mandates\/[^/]+$/.test(k));
     expect(mandates.length).toBe(2);
     expect(db._get('userMeta/u1').activeMandateId).toBe(bWon.newMandateId);
+  });
+});
+
+// ── T0a: admission refuses an uncorrected replacement vintage ───────────────
+function uncorrectedVintageAt(code) {
+  const { payload, vintageRef } = resolveVintage(code);
+  const { sectorCapSlots, sectorCapDenominator, sectorCapConversionVersion, ...rest } = payload.gateConfig;
+  return { [vintageRef]: { ...payload, gateConfig: { ...rest, sectorConcentrationCap: sectorCapSlots } } };
+}
+
+describe('escapeMandate — T0a admission (vintage_uncorrected)', () => {
+  it('refuses a replacement vintage without the sector-cap stamp: the old book and the once-ever flag are untouched', async () => {
+    const db = makeMandateFakeDb({ ...seed(), ...uncorrectedVintageAt('contrarian') });
+    const r = await escapeMandate(db, { userId: 'u1', archetype: 'contrarian', now: NOW, requestKey: 'req-t0a' });
+    expect(r).toEqual({ ok: false, code: 'vintage_uncorrected' });
+    const old = db._get('mandates/old1');
+    expect(old.status).toBe('active');
+    expect(old.voided).toBe(false);
+    expect(old.revision).toBe(3);
+    const meta = db._get('userMeta/u1');
+    expect(meta.activeMandateId).toBe('old1');
+    expect(meta.mandateEscapeHatchUsed).toBe(false);
   });
 });

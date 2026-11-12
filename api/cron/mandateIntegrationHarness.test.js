@@ -170,7 +170,7 @@ describe('(c) the in-lease fresh read (not the page copy) prevents a double bill
   const VINTAGE = {
     codeId: 'analyst', displayVintage: 'Fundamental Investor v2',
     archetypeContent: { displayName: 'Fundamental Investor', identity: { reveal: 'You buy good businesses.', voice: 'v' }, character: { factors: {} } },
-    gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 0.30, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
+    gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 0.30, sectorCapConversionVersion: 1, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
     modelSeat: { model: 'claude-haiku-4-5-20251001', params: { temperature: 0.7, maxTokens: 600 } },
   };
   const EVAL_TICK = { date: '2026-08-12', slot: 'open30', tickKey: '2026-08-12_open30' };
@@ -240,6 +240,42 @@ describe('(d) no_vintage is an eval failure that reaches quarantine', () => {
     expect(modelSpy).toHaveBeenCalledTimes(0);
     expect(errs.some((e) => e.includes('MANDATE_NO_VINTAGE') && e.includes('m1'))).toBe(true);
     expect(errs.some((e) => e.includes('MANDATE_QUARANTINED') && e.includes('m1'))).toBe(true);
+    expect(captured.body.skipped).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ── (d2) T0a: an uncorrected vintage is refused like no_vintage ───────────────
+describe('(d2) T0a — an uncorrected vintage is an eval failure with its own alert, never a trade', () => {
+  const EVAL_TICK = { date: '2026-08-12', slot: 'open30', tickKey: '2026-08-12_open30' };
+  const EVAL_NOW = new Date('2026-08-12T14:05:00Z');
+  // The pre-T0a gate config: the raw slot count (3) and no conversion stamp.
+  const UNCORRECTED = {
+    codeId: 'analyst', displayVintage: 'Fundamental Investor v2',
+    archetypeContent: { displayName: 'Fundamental Investor', identity: { reveal: 'r', voice: 'v' }, character: { factors: {} } },
+    gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 3, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
+    modelSeat: { model: 'claude-haiku-4-5-20251001', params: { temperature: 0.7, maxTokens: 600 } },
+  };
+
+  it('logs MANDATE_VINTAGE_UNCORRECTED, counts a failure, advances the frontier, never reaches the model', async () => {
+    const db = makeMandateFakeDb({
+      'mandateUniverseSnapshots/2026-08-12_open30': { tickKey: '2026-08-12_open30', symbols: { AAPL: { complete: true, price: 200, sector: 'Technology' } } },
+      'archetypeVintages/analyst_x': UNCORRECTED,
+      'mandates/m1': seedBook({ cadenceTier: 'fast' }),
+    });
+    modelImpl = async () => { throw new Error('model must not be reached on vintage_uncorrected'); };
+    const errs = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((m) => errs.push(String(m)));
+    const { req, res, captured } = fakeReqRes();
+    await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db });
+    spy.mockRestore();
+
+    const book = db._get('mandates/m1');
+    expect(book.health.consecutiveEvalFailures).toBe(1);
+    expect(book.health.lastEvalSweepAt).toEqual(EVAL_NOW);
+    expect(book.portfolio.cash).toBe(seedBook().portfolio.cash);
+    expect(modelSpy).toHaveBeenCalledTimes(0);
+    expect(errs.some((e) => e.includes('MANDATE_VINTAGE_UNCORRECTED') && e.includes('m1'))).toBe(true);
+    expect(errs.some((e) => e.includes('MANDATE_NO_VINTAGE'))).toBe(false); // the alert names the real cause
     expect(captured.body.skipped).toBeGreaterThanOrEqual(1);
   });
 });
