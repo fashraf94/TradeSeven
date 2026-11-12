@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardRequest.js imports src/data/situationQuestions.js, src/data/cardSlots.js,
 // src/utils/filmRoomMoments.js and src/utils/tapeSchedule.js; this import is the runtime guard that they stay Node-clean — never mocked.
-import { parseCreateBody, parseRetireBody, normalizeNote, noteLength, questionFor, momentOfDay, NOTE_MAX_CHARS, CONTROL_CHAR } from './cardRequest.js';
+import { parseCreateBody, parseRetireBody, parseNominateBody, normalizeNote, noteLength, questionFor, momentOfDay, NOTE_MAX_CHARS, CONTROL_CHAR } from './cardRequest.js';
 import { CARD_SLOTS } from '../../../src/data/cardSlots.js';
 import { SITUATION_QUESTIONS } from '../../../src/data/situationQuestions.js';
 
@@ -61,6 +61,8 @@ describe('parseCreateBody / parseRetireBody — typed, every field checked', () 
     ['moment', null, 'invalid_moment'], ['moment', { symbol: 'ACN' }, 'invalid_moment'], ['moment', { situationId: 'stalled', symbol: 'ACN', fromTickSeq: '4', toTickSeq: 5 }, 'invalid_moment'], ['moment', { situationId: 'stalled', symbol: 'ACN', fromTickSeq: -1, toTickSeq: 5 }, 'invalid_moment'],
     ['questionId', 7, 'invalid_question'], ['questionVersion', 0, 'invalid_question'], ['questionVersion', '1', 'invalid_question'],
     ['note', 'x'.repeat(281), 'note_too_long'], ['route', 'practice', 'invalid_route'], ['route', undefined, 'invalid_route'],
+    // Build C §4: `drill` reads as `offer` on a stored entry, and is never written again — refused on the way in
+    ['route', 'drill', 'invalid_route'],
   ])('a bad %s (%j) → %s', (field, value, want) => {
     expect(code(() => parseCreateBody({ ...GOOD, [field]: value }))).toBe(want);
   });
@@ -69,6 +71,13 @@ describe('parseCreateBody / parseRetireBody — typed, every field checked', () 
     expect(code(() => parseRetireBody({ opId: 'r1', agentId: 'agent-1', entryId: 'op_1', expectedVersion: 0 }))).toBe('invalid_expected_version');
     expect(code(() => parseRetireBody({ opId: 'r1', agentId: 'agent-1', entryId: 'a/b', expectedVersion: 1 }))).toBe('invalid_entry_id');
     expect(code(() => parseRetireBody(null))).toBe('invalid_op_id');
+  });
+  it('Build C §4 — the routes are Watch, Offer, Set (the one export); a nominate body is typed as a retire body is', () => {
+    for (const route of ['watch', 'offer', 'set']) expect(parseCreateBody({ ...GOOD, route }).route).toBe(route);
+    expect(parseNominateBody({ opId: 'n1', agentId: 'agent-1', entryId: 'op_1', expectedVersion: 1 })).toEqual({ opId: 'n1', agentId: 'agent-1', entryId: 'op_1', expectedVersion: 1 });
+    expect(code(() => parseNominateBody({ opId: 'n1', agentId: 'agent-1', entryId: 'op_1', expectedVersion: 0 }))).toBe('invalid_expected_version');
+    expect(code(() => parseNominateBody({ opId: '__n__', agentId: 'agent-1', entryId: 'op_1', expectedVersion: 1 }))).toBe('invalid_op_id');
+    expect(code(() => parseNominateBody({ opId: 'n1', agentId: 'agent-1', entryId: 'a/b', expectedVersion: 1 }))).toBe('invalid_entry_id');
   });
 });
 

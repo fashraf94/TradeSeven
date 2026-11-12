@@ -58,7 +58,10 @@ async function handleOf(seeded) {
   const t = makeTapeDb({ [`agents/${AGENT}`]: { ownerId: UID, name: 'Aurora', archetype: 'momentum_chaser' } });
   if (seeded) {
     await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c_card', payload: payload(), nowIso: NOW });
-    await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c_nominated', payload: payload({ route: 'drill', note: 'Practice the exit.' }), nowIso: '2026-09-09T02:01:00.000Z' });
+    // Build C §4 (C1): a `nominated` entry is born of the Offer route with its nomination record beside it, in the book
+    // the store is handed (the Practice Field's seam answers no book for anyone until T1a) — so the populated handle
+    // holds a nomination record too, under mandates/, and the prompts must still be byte-identical
+    await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c_nominated', payload: payload({ route: 'offer', note: 'Practice the exit.' }), nowIso: '2026-09-09T02:01:00.000Z', book: { bookId: 'book-c', status: 'active' } });
     await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c_retired', payload: payload({ route: 'set', note: 'A setting to change.' }), nowIso: '2026-09-09T02:02:00.000Z' });
     await retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c_retired', opId: 'r_1', expectedVersion: 1, nowIso: '2026-09-09T02:03:00.000Z' });
     t.readLog.length = 0;

@@ -278,3 +278,21 @@ describe('Build C §3 — the player\'s retire reads the one open predicate', ()
     expect(await code(retireCard(q.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: installed.version, nowIso: LATEST }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'installed' } });
   });
 });
+
+describe('Build C §4 — the store refuses an Offer card without an open book, and never writes `drill`', () => {
+  it('createCard with route offer and no book, or a book not active → 409 book_not_open, nothing written (the mutant: an Offer create with no book writing the entry); with an open book both halves land', async () => {
+    const t = fresh();
+    for (const book of [null, { bookId: 'b', status: 'closed' }, { bookId: '', status: 'active' }, { status: 'active' }]) {
+      expect(await code(createCard(t.db, { uid: UID, agentId: AGENT, opId: 'o1', payload: payload({ route: 'offer' }), nowIso: NOW, battleArchetype: 'momentum_chaser', book })), JSON.stringify(book)).toMatchObject({ status: 409, code: 'book_not_open' });
+    }
+    expect(t.writeLog).toEqual([]);
+    const r = await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'o1', payload: payload({ route: 'offer' }), nowIso: NOW, battleArchetype: 'momentum_chaser', book: { bookId: BOOK, status: 'active' } });
+    expect(r.card).toMatchObject({ stage: 'nominated', nomination: { bookId: BOOK, nominationId: 'o1', state: 'queued' } });
+    expect(t.writeLog.map((w) => [w.op, w.path])).toEqual([['tx.create', playPath('o1')], ['tx.set', `mandates/${BOOK}/nominations/o1`]]);
+  });
+  it('createCard with route drill → 400 invalid_route, whatever the caller parsed; nothing written', async () => {
+    const t = fresh();
+    expect(await code(createCard(t.db, { uid: UID, agentId: AGENT, opId: 'd1', payload: payload({ route: 'drill' }), nowIso: NOW, battleArchetype: 'momentum_chaser', book: { bookId: BOOK, status: 'active' } }))).toMatchObject({ status: 400, code: 'invalid_route' });
+    expect(t.writeLog).toEqual([]);
+  });
+});

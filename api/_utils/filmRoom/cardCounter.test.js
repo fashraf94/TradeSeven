@@ -16,7 +16,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const flip = vi.hoisted(() => ({ on: true }));
 vi.mock('../../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
 const KILL_SWITCH_ROWS = new Set([
-  "buildCounter — the whole answer: the window, the weekly counts, the cards with their shelving, each open Watch card's recurrences > an open Watch card gets its recurrences on its own agent's later days; a Practice card and a Set card get none; the counts cover every day",
+  "buildCounter — the whole answer: the window, the weekly counts, the cards with their shelving, each open Watch card's recurrences > an open Watch card gets its recurrences on its own agent's later days; an Offer card and a Set card get none; the counts cover every day",
   "buildCounter — the whole answer: the window, the weekly counts, the cards with their shelving, each open Watch card's recurrences > a shelved Watch card (the agent changed archetype) gets no recurrences and is not open; a retired one neither",
   "buildCounter — the whole answer: the window, the weekly counts, the cards with their shelving, each open Watch card's recurrences > the mutant: the counter never counts another agent's days as a card's recurrences even when they fall in the window after the card",
   "B2.1 B3 (Amendment H RH-6) — an unavailable day gives one answer: neither counted nor a recurrence, only counted as unavailable > buildCounter: the unavailable day's moment is no recurrence and no weekly count; the answer reports the unavailable days per agent (the mutant: the counter counting an unavailable day)",
@@ -166,10 +166,10 @@ describe('buildCounter — the whole answer: the window, the weekly counts, the 
     'agentBattles/b-1/tape/2026-10-21': tapeDoc({ battleId: 'b-1', etDate: '2026-10-21', items: [item('2026-10-21', 'MSFT', 2)] }),
     'agentBattles/b-2/tape/2026-10-27': tapeDoc({ battleId: 'b-2', etDate: '2026-10-27', agentId: A2, items: [item('2026-10-27', 'NVDA', 3), item('2026-10-27', 'NVDA', 4)] }),
   });
-  it('an open Watch card gets its recurrences on its own agent\'s later days; a Practice card and a Set card get none; the counts cover every day', async () => {
+  it('an open Watch card gets its recurrences on its own agent\'s later days; an Offer card and a Set card get none; the counts cover every day', async () => {
     const t = seed();
     await createCard(t.db, { uid: UID, agentId: A1, opId: 'w1', payload: payload(), nowIso: '2026-10-20T02:00:00.000Z' });
-    await createCard(t.db, { uid: UID, agentId: A1, opId: 'p1', payload: payload({ route: 'drill' }), nowIso: '2026-10-20T02:01:00.000Z' });
+    await createCard(t.db, { uid: UID, agentId: A1, opId: 'p1', payload: payload({ route: 'offer' }), nowIso: '2026-10-20T02:01:00.000Z', book: { bookId: 'book-1', status: 'active' } });
     await createCard(t.db, { uid: UID, agentId: A1, opId: 's1', payload: payload({ route: 'set' }), nowIso: '2026-10-20T02:02:00.000Z' });
     const out = await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW });
     expect(out.window).toEqual({ from: '2026-06-30', to: '2026-10-28' });
@@ -178,7 +178,7 @@ describe('buildCounter — the whole answer: the window, the weekly counts, the 
       [A2]: { stalled: { '2026-10-26': { tags: 2, moments: 1 } } },
     });
     expect(out).toMatchObject({ agentId: A1, archetypeCodeId: 'momentum_chaser', open: 3, cap: 5 });
-    expect(out.cards.map((c) => [c.entryId, c.route, c.stage, c.shelved])).toEqual([['s1', 'set', 'card', false], ['p1', 'drill', 'nominated', false], ['w1', 'watch', 'card', false]]);
+    expect(out.cards.map((c) => [c.entryId, c.route, c.stage, c.shelved])).toEqual([['s1', 'set', 'card', false], ['p1', 'offer', 'nominated', false], ['w1', 'watch', 'card', false]]);
     expect(Object.keys(out.recurrences)).toEqual(['w1']);
     expect(out.recurrences.w1.map((x) => [x.battleId, x.etDate, x.symbol, x.checks])).toEqual([['b-1', '2026-10-21', 'MSFT', 1]]);
     // nothing but the masked fields reaches the answer: no score, price or result from any tape day

@@ -9,6 +9,18 @@
 //     → 200 { idempotent, card, open, cap }
 //   { op: 'retire', opId, agentId, entryId, expectedVersion }
 //     → 200 { idempotent, card }
+//   { op: 'nominate', opId, agentId, entryId, expectedVersion }      (Build C §4)
+//     → 200 { idempotent, card }
+//
+// BUILD C (spec docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md §4): the
+// routes are Watch, Offer, Set; `drill` is refused 400 invalid_route. An Offer
+// create and a nominate read the owner's book for the attribution agent ONCE,
+// through the Practice Field's helper (practiceFieldSeam.js bookForOwner — "no
+// book" until T1a), before their transaction; the store judges it in the
+// spec's order (after the entry's owner, its replay, its version and its
+// stage) and writes the nomination record and the entry at `nominated` in ONE
+// transaction, or refuses 409 book_not_open and writes nothing — the body
+// naming nothing of any book.
 //
 // Gated (api/_utils/filmRoom/cardsGate.js): the mode off, or the owner not
 // admitted → 404 { error: 'disabled' } before any read. Then, for a create,
@@ -52,8 +64,10 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { gateFilmRoomCardsRoute, sendCardError } from '../_utils/filmRoom/cardsGate.js';
-import { parseCreateBody, parseRetireBody, questionFor, momentOfDay } from '../_utils/filmRoom/cardRequest.js';
-import { createCard, replayCreate, retireCard, attributionAgentOf, CardRouteError, CARD_ROUTE_COPY } from '../_utils/filmRoom/cardStore.js';
+import { parseCreateBody, parseRetireBody, parseNominateBody, questionFor, momentOfDay } from '../_utils/filmRoom/cardRequest.js';
+import { createCard, replayCreate, retireCard, nominateCard, attributionAgentOf, CardRouteError, CARD_ROUTE_COPY, NOMINATING_ROUTE } from '../_utils/filmRoom/cardStore.js';
+// Build C §4 (refinement R-C1-3): the owner's book, read once through the Practice Field's seam (no book until T1a)
+import { bookForOwner } from '../_utils/filmRoom/practiceFieldSeam.js';
 import { readBattle, tapeRef } from '../_utils/filmTape/tapeSources.js';
 import { isTieredBattle } from '../_utils/filmTape/writeTapeDay.js';
 
@@ -74,8 +88,22 @@ const COPY = Object.freeze({
   source_changed: 'This day\'s tape changed while the card was being filed. Nothing was filed; try again.',
   archetype_unknown: 'This day records no archetype, so no card can be filed from it.',
   question_not_on_menu: 'That question is not on the menu for this situation.',
-  invalid_op: 'op must be create or retire.',
+  invalid_op: 'op must be create, retire or nominate.',
 });
+
+/**
+ * Build C §4 precondition 4 — the owner's book for the attribution agent: ONE read through the Practice Field's helper
+ * (bookForOwner, the seam), never a client-side guess. A read that fails is no open book (fail closed: the store then
+ * refuses book_not_open and writes nothing), with a server trace.
+ */
+export async function bookOf(db, uid, attributionAgentId) {
+  try {
+    return await bookForOwner(db, { uid, attributionAgentId });
+  } catch (err) {
+    console.error('[film-room/card] book read failed:', err?.message ?? err);
+    return null;
+  }
+}
 const refuse = (status, code, extra = {}) => new CardRouteError(status, code, COPY[code] ?? CARD_ROUTE_COPY[code] ?? code, extra);
 export { sendCardError };
 
@@ -202,8 +230,11 @@ export default async function handler(req, res) {
         if (!replay) throw err;
         return res.status(200).json({ idempotent: replay.idempotent, card: replay.card, open: replay.open, cap: replay.cap });
       }
+      // Build C §4: an Offer card reads the owner's book BEFORE its transaction (precondition 4); the store judges it
+      // after its replay check, so a lost answer re-tapped after the book closed still gets its card back
+      const book = payload.route === NOMINATING_ROUTE ? await bookOf(db, user.uid, attributionAgentId) : null;
       // Build A2 (R4): the battle's own archetype, which the store compares the tape day's with while the flag is on
-      const out = await createCard(db, { uid: user.uid, agentId: attributionAgentId, opId: parsed.opId, payload, nowIso, request: requestOf(parsed), verifySource: verifySourceIn(db, user.uid, parsed, payload), battleArchetype: battle?.agentContext?.archetype ?? null });
+      const out = await createCard(db, { uid: user.uid, agentId: attributionAgentId, opId: parsed.opId, payload, nowIso, request: requestOf(parsed), verifySource: verifySourceIn(db, user.uid, parsed, payload), battleArchetype: battle?.agentContext?.archetype ?? null, book });
       return res.status(200).json({ idempotent: out.idempotent, card: out.card, open: out.open, cap: out.cap });
     } catch (err) {
       return sendCardError(res, err, 'create');
@@ -218,6 +249,18 @@ export default async function handler(req, res) {
       return res.status(200).json({ idempotent: out.idempotent, card: out.card });
     } catch (err) {
       return sendCardError(res, err, 'retire');
+    }
+  }
+  if (body.op === 'nominate') {
+    try {
+      const parsed = parseNominateBody(body);
+      // RK-1: the entry and the book are the named agent's ATTRIBUTION agent's — a casual clone's parent, never the clone
+      const agentId = await attributionAgentOf(db, parsed.agentId);
+      const book = await bookOf(db, user.uid, agentId);
+      const out = await nominateCard(db, { uid: user.uid, agentId, entryId: parsed.entryId, opId: parsed.opId, expectedVersion: parsed.expectedVersion, nowIso, book });
+      return res.status(200).json({ idempotent: out.idempotent, card: out.card });
+    } catch (err) {
+      return sendCardError(res, err, 'nominate');
     }
   }
   return res.status(400).json({ error: 'invalid_op', message: COPY.invalid_op });

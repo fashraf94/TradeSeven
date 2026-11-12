@@ -61,14 +61,17 @@ import { CARD_SLOTS, CARD_SLOTS_VERSION } from '../../../src/data/cardSlots.js';
 import { PER_GAME_LOADOUT_ENABLED } from '../../../src/config/perGameLoadoutFlags.js';
 import { loadoutArchetypesOf } from '../../../src/constants/perGameLoadout.js';
 // Build C §3: the stage vocabulary v2, from its one export — re-exported whole, so every server reader takes it from here
-import { CARD_STAGE_VOCAB_VERSION, NOMINATION_STATES, isOpenStage } from '../../../src/data/cardStages.js';
+import { CARD_STAGE_VOCAB_VERSION, CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_STATES, NOMINATION_EXPIRY_SESSIONS, isOpenStage } from '../../../src/data/cardStages.js';
+// Build C §4 (refinement R-C1-3): the nomination record's shape is the Practice Field's builder, reached through the seam
+import { buildNominationDoc } from './practiceFieldSeam.js';
 
 export * from '../../../src/data/cardStages.js';
 
 export const PLAYS_SUBCOLLECTION = 'plays';
 export const CARD_SCHEMA_VERSION = 1;
-/** A card's three routes (spec §4): Watch, Practice (`drill`), Set. */
-export const CARD_ROUTES = Object.freeze(['watch', 'drill', 'set']);
+/** Build C §4: the book's nominations, `mandates/{bookId}/nominations/{nominationId}` — the one book path the Film Room writes, in its own transactions. */
+export const BOOKS_COLLECTION = 'mandates';
+export const NOMINATIONS_SUBCOLLECTION = 'nominations';
 /** Who moves a card: the player, through the card endpoint. */
 export const BY_PLAYER = 'player';
 /** Build C §3: a server write through the transition helper — `stageHistory[].by`, with the writer named beside it. */
@@ -99,6 +102,10 @@ export const CARD_ROUTE_COPY = Object.freeze({
   illegal_transition: 'That change is not allowed from the card\'s current stage.',
   invalid_transition: 'That transition or its payload is not one the ledger takes.',
   nomination_mismatch: 'That record is not the one this card is bound to.',
+  // Build C §4 precondition 4: the body names nothing of any book
+  book_not_open: 'This card cannot be offered now. Nothing was changed.',
+  invalid_route: 'That route is not one a card can be filed on.',
+  calendar_unavailable: 'The expiry of this offer could not be placed on the market calendar. Nothing was changed; try again later.',
   agent_unresolved: 'This agent records no archetype, so no card can be filed under it.',
   archetype_changed: 'This day was taped under another archetype than the agent\'s current one, so a card from it would be shelved at birth. Nothing was filed.',
   attribution_unavailable: 'The agent these cards belong to could not be resolved. Nothing was changed; try again.',
@@ -108,6 +115,10 @@ const fail = (status, code, extra) => new CardRouteError(status, code, CARD_ROUT
 export const agentRefOf = (db, agentId) => db.collection('agents').doc(agentId);
 export const playsColOf = (db, agentId) => agentRefOf(db, agentId).collection(PLAYS_SUBCOLLECTION);
 export const playRefOf = (db, agentId, entryId) => playsColOf(db, agentId).doc(entryId);
+export const nominationRefOf = (db, bookId, nominationId) => db.collection(BOOKS_COLLECTION).doc(bookId).collection(NOMINATIONS_SUBCOLLECTION).doc(nominationId);
+
+/** Build C §4 precondition 4: the book the route read through the seam (`{ bookId, status }`) is open — status 'active'. */
+export const isBookOpen = (book) => isObj(book) && typeof book.bookId === 'string' && book.bookId.length > 0 && book.status === 'active';
 
 // ── the attribution agent (RK-1) ────────────────────────────────────────────
 
@@ -177,15 +188,17 @@ export const openCardCount = (entries, currentArchetype) => entries.filter((e) =
 /** S9 as it stands. */
 export const OPEN_CARD_CAP = CARD_SLOTS.S9.openCardsPerAgent;
 
-/** The stage a route starts at: Practice nominates; Watch and Set file a card. */
-export const stageForRoute = (route) => (route === 'drill' ? 'nominated' : 'card');
+/** The stage a route starts at (Build C §4): Offer nominates; Watch and Set file a card. */
+export const stageForRoute = (route) => (route === NOMINATING_ROUTE ? 'nominated' : 'card');
 
 /**
  * The entry as created (spec §4): written once — the identity, the archetype
  * it was created under, the situation and its version, the source moment, the
  * question and its version, the note verbatim, the route — and the envelope.
+ * Build C §4: an Offer card is born `nominated`, its `nomination` (`{ bookId, nominationId, state: 'queued' }`) beside
+ * it — `book` is the open book the route read; the record itself is written in the same transaction (createCard).
  */
-export function buildCardDoc({ entryId, uid, agentId, opId, opFingerprint, nowIso, payload }) {
+export function buildCardDoc({ entryId, uid, agentId, opId, opFingerprint, nowIso, payload, book = null }) {
   const stage = stageForRoute(payload.route);
   return {
     schemaVersion: CARD_SCHEMA_VERSION,
@@ -205,6 +218,7 @@ export function buildCardDoc({ entryId, uid, agentId, opId, opFingerprint, nowIs
     route: payload.route,
     slotsVersion: CARD_SLOTS_VERSION,
     stage,
+    ...(stage === 'nominated' && book ? { nomination: { bookId: book.bookId, nominationId: entryId, state: 'queued' } } : {}),
     stageAt: nowIso,
     stageHistory: [{ stage, at: nowIso, by: BY_PLAYER, opId }],
     version: 1,
@@ -279,10 +293,14 @@ export async function replayCreate(db, { uid, agentId, opId, request }) {
  * @param {{ uid: string, agentId: string, opId: string, nowIso: string, request?: object,
  *           payload: { archetypeCodeId: string, situationId: string, situationVersion: number,
  *                      battleId: string, etDate: string, symbol: string, fromTickSeq: number|null, toTickSeq: number|null,
- *                      questionId: string, questionVersion: number, note: string, route: 'watch'|'drill'|'set' } }} p
+ *                      questionId: string, questionVersion: number, note: string, route: 'watch'|'offer'|'set' }, book?: { bookId: string, status: string }|null }} p
  * @returns {Promise<{ idempotent: boolean, card: object, open: number, cap: number }>}
  */
-export async function createCard(db, { uid, agentId, opId, payload, nowIso, request = null, verifySource = null, battleArchetype = null }) {
+export async function createCard(db, { uid, agentId, opId, payload, nowIso, request = null, verifySource = null, battleArchetype = null, book = null }) {
+  // Build C §4: a route outside the vocabulary — `drill` included, read as `offer` but never written again — is refused
+  // here too, whatever the caller parsed, so nothing ever writes it
+  if (!CARD_ROUTES.includes(payload?.route)) throw fail(400, 'invalid_route');
+  const offer = payload.route === NOMINATING_ROUTE;
   const opFingerprint = createFingerprint(agentId, request, payload);
   return db.runTransaction(async (tx) => {
     const { agent, ref, open, replay } = await createReads(tx, db, { uid, agentId, opId, opFingerprint });
@@ -293,11 +311,86 @@ export async function createCard(db, { uid, agentId, opId, payload, nowIso, requ
     // refuses rather than filing a card for a moment the tape no longer holds. A read, so it precedes the write.
     if (verifySource) await verifySource(tx);
     if (PER_GAME_LOADOUT_ENABLED ? payload.archetypeCodeId !== battleArchetype : payload.archetypeCodeId !== agent.archetype) throw fail(409, 'archetype_changed', { archetypeCodeId: payload.archetypeCodeId, current: PER_GAME_LOADOUT_ENABLED ? battleArchetype : agent.archetype });
+    // Build C §4 precondition 4, for the Offer route: the owner's book, read by the route through the seam BEFORE this
+    // transaction (`book`), is open — judged after the replay, so a lost answer re-tapped after the book closed still
+    // gets its card back. No book → 409 book_not_open, nothing written, the body naming nothing of any book.
+    if (offer && !isBookOpen(book)) throw fail(409, 'book_not_open');
     if (open >= OPEN_CARD_CAP) throw fail(409, 'cap_reached', { cap: OPEN_CARD_CAP, open });
-    const card = buildCardDoc({ entryId: opId, uid, agentId, opId, opFingerprint, nowIso, payload });
-    tx.create(ref, card);
+    const card = buildCardDoc({ entryId: opId, uid, agentId, opId, opFingerprint, nowIso, payload, book: offer ? book : null });
+    if (offer) {
+      // one transaction, both halves (exit criterion 12): the record under the op id — refused if that id was already
+      // used for another nomination in the book — and the entry at `nominated` beside it
+      const nominationRef = nominationRefOf(db, book.bookId, opId);
+      if ((await tx.get(nominationRef))?.exists) throw fail(409, 'op_conflict', { entryId: opId });
+      const nomination = nominationDocOf({ entryId: opId, card, nowIso });
+      tx.create(ref, card);
+      tx.set(nominationRef, nomination);
+    } else {
+      tx.create(ref, card);
+    }
     // the count the predicate gives (flag off a new card is always open, so +1; A2's R4 can file one shelved)
     return { idempotent: false, card, open: open + (isOpen(card, agent.shelf) ? 1 : 0), cap: OPEN_CARD_CAP };
+  });
+}
+
+/** The nomination record for an entry, by the Practice Field's builder (the seam); a walk off the calendar → 503. */
+function nominationDocOf({ entryId, card, nowIso }) {
+  try {
+    return buildNominationDoc({ entryId, situationId: card.situationId, questionId: card.questionId, questionVersion: card.questionVersion, nowIso, expiresAfterSessions: NOMINATION_EXPIRY_SESSIONS });
+  } catch (err) {
+    if (err?.code === 'calendar_unavailable') throw fail(503, 'calendar_unavailable');
+    throw err;
+  }
+}
+
+const nominateFingerprint = (agentId, entryId, expectedVersion) => canonicalContentHash({ kind: 'nominate', agentId, entryId, expectedVersion });
+
+/**
+ * Build C §4 — NOMINATE: offer a card to the agent. The preconditions in the spec's order, each with its refusal:
+ *   the entry is the caller's, under the attribution agent the route resolved (404 not_found; 403 forbidden — RK-1);
+ *   a replay of the same op id is the IDEMPOTENT answer (another request under it → 409 op_conflict);
+ *   the version the caller saw (409 version_conflict);
+ *   the entry is at `card` and not shelved (409 illegal_transition — the spec's one refusal for both);
+ *   the owner's book is open — `book`, read by the route through the seam BEFORE this transaction and judged here,
+ *   in its place in the order (409 book_not_open, the body naming nothing of any book).
+ * Then ONE transaction writes both halves: the nomination record at `mandates/{bookId}/nominations/{opId}` (the
+ * Practice Field's builder; the op id is the nomination id, refused 409 op_conflict if the book already holds one under
+ * it) and the entry's move to `nominated` with `nomination: { bookId, nominationId, state: 'queued' }`, a player row in
+ * `stageHistory`, `version + 1`. Never the note, the question, the route or the source.
+ *
+ * @returns {Promise<{ idempotent: boolean, card: object }>}
+ */
+export async function nominateCard(db, { uid, agentId, entryId, opId, expectedVersion, nowIso, book = null }) {
+  const opFingerprint = nominateFingerprint(agentId, entryId, expectedVersion);
+  return db.runTransaction(async (tx) => {
+    const agent = ownedAgent(await tx.get(agentRefOf(db, agentId)), uid);
+    const ref = playRefOf(db, agentId, entryId);
+    const snap = await tx.get(ref);
+    if (!snap?.exists) throw fail(404, 'not_found');
+    const entry = typeof snap.data === 'function' ? snap.data() : snap.data;
+    if (!isObj(entry) || entry.ownerId !== uid) throw fail(403, 'forbidden');
+    const history = Array.isArray(entry.stageHistory) ? entry.stageHistory : [];
+    const replay = history.find((h) => h?.opId === opId);
+    if (replay) {
+      if (replay.opFingerprint === opFingerprint) return { idempotent: true, card: entry };
+      throw fail(409, 'op_conflict', { entryId });
+    }
+    if (expectedVersion !== entry.version) throw fail(409, 'version_conflict', { currentVersion: entry.version });
+    if (entry.stage !== 'card' || isShelved(entry, agent.shelf)) throw fail(409, 'illegal_transition', { stage: entry.stage });
+    if (!isBookOpen(book)) throw fail(409, 'book_not_open');
+    const nominationRef = nominationRefOf(db, book.bookId, opId);
+    if ((await tx.get(nominationRef))?.exists) throw fail(409, 'op_conflict', { entryId });
+    const nomination = nominationDocOf({ entryId, card: entry, nowIso });
+    const patch = {
+      stage: 'nominated',
+      stageAt: nowIso,
+      nomination: { bookId: book.bookId, nominationId: opId, state: 'queued' },
+      stageHistory: [...history, { stage: 'nominated', at: nowIso, by: BY_PLAYER, opId, opFingerprint }],
+      version: entry.version + 1,
+    };
+    tx.set(nominationRef, nomination);
+    tx.update(ref, patch);
+    return { idempotent: false, card: { ...entry, ...patch } };
   });
 }
 

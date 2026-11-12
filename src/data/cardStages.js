@@ -51,3 +51,15 @@ export const NOMINATION_STATES = Object.freeze(['queued', 'considered', 'accepte
  * receipt's "not considered within n sessions" read one number.
  */
 export const NOMINATION_EXPIRY_SESSIONS = 10;
+
+/** A card's three routes (spec §4): Watch, Offer, Set. BC-3: Offer replaces Practice. */
+export const CARD_ROUTES = Object.freeze(['watch', 'offer', 'set']);
+
+/** A stored route read under another name: `drill` (Practice — never written in production) reads as `offer`, and is never written again. */
+export const STORED_ROUTE_ALIASES = Object.freeze({ drill: 'offer' });
+
+/** The route a stored entry reads as (spec §4): its own, or its alias. */
+export const routeOf = (route) => (Object.prototype.hasOwnProperty.call(STORED_ROUTE_ALIASES, route) ? STORED_ROUTE_ALIASES[route] : route);
+
+/** The route that files its card at `nominated`, its nomination record written in the same transaction (spec §4). */
+export const NOMINATING_ROUTE = 'offer';

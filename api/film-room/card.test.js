@@ -144,12 +144,14 @@ describe('create — the happy path over the real tape day', () => {
     });
     expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toEqual(res.body.card);
     expect(res.headers['cache-control']).toBe('no-store');
-    // Practice nominates; Set files a card; a replay is idempotent
-    expect((await post(create({ opId: 'op_2', route: 'drill' }))).body.card.stage).toBe('nominated');
+    // Build C §4: Offer with no book (the seam's default until T1a) is refused book_not_open; `drill` is no route any
+    // more (400 invalid_route); Set files a card; a replay is idempotent
+    expect(await post(create({ opId: 'op_2', route: 'offer' }))).toMatchObject({ statusCode: 409, body: { error: 'book_not_open' } });
+    expect(await post(create({ opId: 'op_2', route: 'drill' }))).toMatchObject({ statusCode: 400, body: { error: 'invalid_route' } });
     expect((await post(create({ opId: 'op_3', route: 'set' }))).body.card.stage).toBe('card');
     const again = await post(create());
     expect(again.body).toMatchObject({ idempotent: true, card: res.body.card });
-    expect(playWrites()).toHaveLength(3);
+    expect(playWrites()).toHaveLength(2);
   });
   it('the moment the client sends is the one the screen lists: the helper\'s own moment of the stored items, no more and no less', async () => {
     const tape = t.store.get(`agentBattles/${BATTLE}/tape/${D}`);
@@ -661,5 +663,162 @@ describe('RK-1 — through the handler: a casual clone\'s battle files under the
     expect(sixth.statusCode).toBe(409);
     expect(sixth.body).toMatchObject({ error: 'cap_reached', cap: 5, open: 5 });
     expect([...t.store.keys()].filter((k) => k.startsWith(`agents/${AGENT}/plays/`))).toHaveLength(5);
+  });
+});
+
+// ── Film Room C1 item 3 — nominate and the Offer route (Build C spec V1 §4; acceptance C-NOMINATE, C-NOBOOK, C-OWNER) ──
+const { setPracticeFieldSeam, resetPracticeFieldSeam } = await import('../_utils/filmRoom/practiceFieldSeam.js');
+describe('C1 item 3 — nominate and the Offer route, through the handler', () => {
+  const BOOK_ID = 'book-1';
+  /** The owner's open book for the ranked agent, injected through the seam (T1a's helper, stubbed); every call logged. */
+  let bookCalls;
+  const withBook = (status = 'active') => {
+    bookCalls = [];
+    setPracticeFieldSeam({ bookForOwner: async (_db, { uid, attributionAgentId }) => { bookCalls.push([uid, attributionAgentId]); return uid === OWNER && attributionAgentId === AGENT ? { bookId: BOOK_ID, status } : null; } });
+  };
+  afterEach(() => resetPracticeFieldSeam());
+  const nominate = (over = {}) => ({ op: 'nominate', opId: 'nom_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
+  const bookWrites = () => t.writeLog.filter((w) => w.path.startsWith('mandates/'));
+  const nominationAt = (id) => t.store.get(`mandates/${BOOK_ID}/nominations/${id}`);
+  const filed = async () => { const r = await post(create()); expect(r.statusCode).toBe(200); return r.body.card; };
+
+  it('C-NOBOOK: with no book (the seam\'s default), an Offer create and a nominate are refused 409 book_not_open — the body only the code and its sentence, naming no book — and NOTHING is written (the mutants: nominate with no book writing anything; an Offer create with no book writing the entry)', async () => {
+    const offer = await post(create({ route: 'offer' }));
+    expect(offer.statusCode).toBe(409);
+    expect(offer.body).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+    expect(playWrites()).toEqual([]);
+    expect(bookWrites()).toEqual([]);
+    await filed();
+    const before = t.writeLog.length;
+    const res = await post(nominate());
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+    expect(JSON.stringify(res.body)).not.toMatch(/bookId|status|mandates|active/);
+    expect(t.writeLog.length).toBe(before);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ stage: 'card', version: 1 });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).not.toHaveProperty('nomination');
+    // a book that exists but is not active is no open book
+    withBook('closed');
+    expect((await post(nominate())).body.error).toBe('book_not_open');
+    expect(bookWrites()).toEqual([]);
+  });
+
+  it('C-NOMINATE: a card-stage entry is nominated in ONE transaction — the record at mandates/{book}/nominations/{op id} in the contract\'s shape, and the entry at nominated with its nomination, version + 1, a player row; a replay answers the same; a second nominate is illegal_transition', async () => {
+    withBook();
+    const card = await filed();
+    const res = await post(nominate());
+    expect(res.statusCode).toBe(200);
+    expect(res.body.idempotent).toBe(false);
+    const entry = t.store.get(`agents/${AGENT}/plays/op_1`);
+    expect(res.body.card).toEqual(entry);
+    expect(entry).toMatchObject({ stage: 'nominated', version: 2, nomination: { bookId: BOOK_ID, nominationId: 'nom_1', state: 'queued' }, note: card.note, route: 'watch', source: card.source, questionId: card.questionId });
+    expect(entry.stageHistory.at(-1)).toMatchObject({ stage: 'nominated', by: 'player', opId: 'nom_1' });
+    expect(nominationAt('nom_1')).toEqual({
+      state: 'queued',
+      source: { kind: 'film_room_card', entryId: 'op_1', situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1 },
+      queuedAt: entry.stageAt, expiresAt: expect.any(String),
+      stateHistory: [{ state: 'queued', at: entry.stageAt }],
+    });
+    expect(Date.parse(nominationAt('nom_1').expiresAt)).toBeGreaterThan(Date.parse(entry.stageAt));
+    // both halves in the one commit: the record's set and the entry's update are adjacent writes of one transaction
+    expect(t.writeLog.slice(-2).map((w) => [w.op, w.path])).toEqual([['tx.set', `mandates/${BOOK_ID}/nominations/nom_1`], ['tx.update', `agents/${AGENT}/plays/op_1`]]);
+    expect(bookCalls).toEqual([[OWNER, AGENT]]);
+    // the replay: the same op and body → the same answer, nothing written
+    const writes = t.writeLog.length;
+    const again = await post(nominate());
+    expect(again.body).toEqual({ idempotent: true, card: entry });
+    expect(t.writeLog.length).toBe(writes);
+    // the same op id with another body → op_conflict
+    expect((await post(nominate({ expectedVersion: 2 }))).body.error).toBe('op_conflict');
+    // a second nominate (a new op id, the right version) on the nominated entry → illegal_transition (the mutant: nominate on a nominated entry succeeding)
+    expect(await post(nominate({ opId: 'nom_2', expectedVersion: 2 }))).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition', stage: 'nominated' } });
+    expect(nominationAt('nom_2')).toBeUndefined();
+    expect(t.writeLog.length).toBe(writes);
+  });
+
+  it('the spec\'s order: a replay after the book closed → 200 idempotent; a nominated entry with no book → 409 illegal_transition; a stale version → 409 version_conflict; another owner with no book → 403 forbidden; a missing entry → 404', async () => {
+    withBook();
+    await filed();
+    expect((await post(nominate())).statusCode).toBe(200);
+    resetPracticeFieldSeam();   // the book is gone
+    expect(await post(nominate())).toMatchObject({ statusCode: 200, body: { idempotent: true } });
+    expect(await post(nominate({ opId: 'nom_2', expectedVersion: 2 }))).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition' } });
+    expect(await post(nominate({ opId: 'nom_3', expectedVersion: 1 }))).toMatchObject({ statusCode: 409, body: { error: 'version_conflict', currentVersion: 2 } });
+    state.uid = 'intruder';
+    expect(await post(nominate({ opId: 'nom_4', expectedVersion: 2 }))).toMatchObject({ statusCode: 403, body: { error: 'forbidden' } });
+    state.uid = OWNER;
+    expect(await post(nominate({ opId: 'nom_5', entryId: 'nope' }))).toMatchObject({ statusCode: 404, body: { error: 'not_found' } });
+  });
+
+  it('a shelved card is no transition: 409 illegal_transition (the spec\'s one refusal for "at card, not shelved"), nothing written', async () => {
+    withBook();
+    await filed();
+    t.store.set(`agents/${AGENT}`, { ...t.store.get(`agents/${AGENT}`), archetype: 'guardian' });
+    const before = t.writeLog.length;
+    expect(await post(nominate())).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition', stage: 'card' } });
+    expect(t.writeLog.length).toBe(before);
+  });
+
+  it('exit criterion 12: the two halves land together or not at all — the record\'s write refused, the entry stays at card; the entry\'s write refused, no record (the mutants: one half without the other)', async () => {
+    const seed = Object.fromEntries([...t.store.entries()]);
+    let refuse = null;
+    t = makeTapeDb(seed, { hooks: { beforeWrite: (op, path) => { if (refuse && path.startsWith(refuse)) throw new Error(`refused ${path}`); } } });
+    state.db = t.db;
+    withBook();
+    await filed();
+    refuse = 'mandates/';
+    expect((await post(nominate())).statusCode).toBe(500);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ stage: 'card', version: 1 });
+    expect(nominationAt('nom_1')).toBeUndefined();
+    refuse = `agents/${AGENT}/plays/`;
+    expect((await post(nominate())).statusCode).toBe(500);
+    expect(nominationAt('nom_1')).toBeUndefined();
+    refuse = null;
+    expect((await post(nominate())).statusCode).toBe(200);
+    expect(nominationAt('nom_1')).toBeTruthy();
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('nominated');
+  });
+
+  it('an Offer create with an open book: the entry born nominated with its nomination, the record beside it, in one transaction; a replay after the book closed is the idempotent 200; an op id the book already holds → op_conflict, nothing written', async () => {
+    withBook();
+    const res = await post(create({ route: 'offer' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card).toMatchObject({ route: 'offer', stage: 'nominated', nomination: { bookId: BOOK_ID, nominationId: 'op_1', state: 'queued' }, stageVocabVersion: 2 });
+    expect(res.body.card.stageHistory).toEqual([{ stage: 'nominated', at: res.body.card.createdAt, by: 'player', opId: 'op_1' }]);
+    expect(nominationAt('op_1')).toMatchObject({ state: 'queued', source: { kind: 'film_room_card', entryId: 'op_1' } });
+    expect(t.writeLog.slice(-2).map((w) => w.op)).toEqual(['tx.create', 'tx.set']);
+    resetPracticeFieldSeam();
+    expect(await post(create({ route: 'offer' }))).toMatchObject({ statusCode: 200, body: { idempotent: true, card: res.body.card } });
+    // a planted record under the next op id: refused, nothing of either half written
+    withBook();
+    t.store.set(`mandates/${BOOK_ID}/nominations/op_9`, { state: 'queued', source: { kind: 'film_room_card', entryId: 'someone-else' } });
+    const before = t.writeLog.length;
+    expect(await post(create({ opId: 'op_9', route: 'offer' }))).toMatchObject({ statusCode: 409, body: { error: 'op_conflict' } });
+    expect(t.writeLog.length).toBe(before);
+    expect(t.store.has(`agents/${AGENT}/plays/op_9`)).toBe(false);
+  });
+
+  it('a nominated card counts against the cap like an open card (S9): the sixth Offer is refused at 5, its record never written', async () => {
+    withBook();
+    for (let i = 0; i < 5; i += 1) expect((await post(create({ opId: `o_${i}`, route: 'offer', note: `Offer ${i}.` }))).statusCode).toBe(200);
+    expect(await post(create({ opId: 'o_5', route: 'offer' }))).toMatchObject({ statusCode: 409, body: { error: 'cap_reached', cap: 5, open: 5 } });
+    expect(nominationAt('o_5')).toBeUndefined();
+  });
+
+  it('C-OWNER: a casual clone\'s battle — the card files under the parent and nominates into the PARENT\'s book; the seam is asked for the parent, never the clone; nothing under the clone', async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    t.store.set(`agentBattles/b-clone`, { ...fixture.battle, id: 'b-clone', agentId: CLONE });
+    t.store.set(`agentBattles/b-clone/tape/${D}`, { ...t.store.get(`agentBattles/${BATTLE}/tape/${D}`), battleId: 'b-clone', agentId: CLONE });
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    withBook();
+    const res = await post(create({ battleId: 'b-clone', agentId: CLONE, route: 'offer' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card).toMatchObject({ agentId: AGENT, stage: 'nominated', nomination: { bookId: BOOK_ID } });
+    expect(bookCalls).toEqual([[OWNER, AGENT]]);
+    // and a nominate named by the clone keys the parent's entry and book
+    expect((await post(create({ opId: 'op_w', battleId: 'b-clone', agentId: CLONE }))).statusCode).toBe(200);
+    expect((await post(nominate({ agentId: CLONE, entryId: 'op_w' }))).statusCode).toBe(200);
+    expect(bookCalls).toEqual([[OWNER, AGENT], [OWNER, AGENT]]);
+    expect(t.writeLog.filter((w) => w.path.startsWith(`agents/${CLONE}`))).toEqual([]);
   });
 });

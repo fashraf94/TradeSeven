@@ -19,7 +19,7 @@ const flip = vi.hoisted(() => ({ on: true }));
 vi.mock('../../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
 const KILL_SWITCH_ROWS = new Set([
   "createCard — written once, as spec §4 lists it > writes the entry at agents/{agentId}/plays/{opId} with exactly the spec's fields and the envelope; version 1; the stage from the route",
-  "createCard — written once, as spec §4 lists it > the stage by route: Watch and Set file a `card`; Practice (`drill`) files a `nominated` entry",
+  "createCard — written once, as spec §4 lists it > the stage by route: Watch and Set file a `card`; Offer files a `nominated` entry with its nomination beside it; `drill` is refused",
   "createCard — written once, as spec §4 lists it > idempotent by op id: the same op id with the same request is the entry again, and nothing is written twice",
   "createCard — written once, as spec §4 lists it > the same op id with a DIFFERENT request → 409 op_conflict; nothing written",
   "the open-card cap (S9) — only cards that are neither shelved nor retired count > S9 is the slots module's value (5); the sixth open card is refused with the cap named",
@@ -53,6 +53,8 @@ const UID = 'owner-1';
 const AGENT = 'agent-1';
 const NOW = '2026-10-21T21:00:00.000Z';
 const LATER = '2026-10-21T21:05:00.000Z';
+/** Build C §4: the open book an Offer card is filed into (the route reads it through the Practice Field's seam). */
+const BOOK = Object.freeze({ bookId: 'book-1', status: 'active' });
 const agentDoc = (over = {}) => ({ ownerId: UID, name: 'Aurora', archetype: 'momentum_chaser', ...over });
 const payload = (over = {}) => ({
   archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: 2,
@@ -84,16 +86,21 @@ describe('createCard — written once, as spec §4 lists it', () => {
     expect(playWrites(t).map((w) => w.op)).toEqual(['tx.create']);
   });
 
-  it('the stage by route: Watch and Set file a `card`; Practice (`drill`) files a `nominated` entry', async () => {
-    expect(CARD_ROUTES).toEqual(['watch', 'drill', 'set']);
+  it('the stage by route: Watch and Set file a `card`; Offer files a `nominated` entry with its nomination beside it; `drill` is refused', async () => {
+    expect(CARD_ROUTES).toEqual(['watch', 'offer', 'set']);
     expect(CARD_STAGES).toEqual(['card', 'nominated', 'testing', 'tested', 'installed', 'retired']);
     expect(OPEN_STAGES).toEqual(['card', 'nominated', 'testing']);
-    expect(['watch', 'drill', 'set'].map(stageForRoute)).toEqual(['card', 'nominated', 'card']);
+    expect(['watch', 'offer', 'set'].map(stageForRoute)).toEqual(['card', 'nominated', 'card']);
     const t = fresh();
     for (const [i, route] of CARD_ROUTES.entries()) {
-      const r = await createCard(t.db, { uid: UID, agentId: AGENT, opId: `op_${i}`, payload: payload({ route }), nowIso: NOW });
+      const r = await createCard(t.db, { uid: UID, agentId: AGENT, opId: `op_${i}`, payload: payload({ route }), nowIso: NOW, book: BOOK });
       expect(r.card.stage).toBe(stageForRoute(route));
+      expect(Boolean(r.card.nomination), route).toBe(route === 'offer');
     }
+    // Build C §4: `drill` reads as `offer` but is never written again — refused at the store too, nothing written
+    const before = playWrites(t).length;
+    expect(await code(createCard(t.db, { uid: UID, agentId: AGENT, opId: 'op_d', payload: payload({ route: 'drill' }), nowIso: NOW, book: BOOK }))).toMatchObject({ status: 400, code: 'invalid_route' });
+    expect(playWrites(t).length).toBe(before);
   });
 
   it('idempotent by op id: the same op id with the same request is the entry again, and nothing is written twice', async () => {
@@ -155,7 +162,7 @@ describe('the open-card cap (S9) — only cards that are neither shelved nor ret
     expect(playWrites(t).length).toBe(before + 1);
     // …and a nominated card counts like a card
     const u = fresh();
-    await fill(u, 5, { route: 'drill' });
+    for (let i = 0; i < 5; i += 1) await createCard(u.db, { uid: UID, agentId: AGENT, opId: `fill_${i}`, payload: payload({ route: 'offer' }), nowIso: NOW, book: BOOK });
     expect(await code(createCard(u.db, { uid: UID, agentId: AGENT, opId: 'op_6', payload: payload(), nowIso: NOW }))).toMatchObject({ code: 'cap_reached', extra: { open: 5 } });
   });
 
@@ -249,7 +256,7 @@ describe('readCards — shelving is computed at read, never written (ruling 5; c
   it('an archetype change shelves the entries; changing back restores them; no play document is written in between, and none ever holds `shelved`', async () => {
     const t = fresh();
     await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c1', payload: payload(), nowIso: NOW });
-    await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c2', payload: payload({ route: 'drill' }), nowIso: LATER });
+    await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c2', payload: payload({ route: 'offer' }), nowIso: LATER, book: BOOK });
     const writesBefore = playWrites(t).length;
     const a = await readCards(t.db, { uid: UID, agentId: AGENT });
     expect(a).toMatchObject({ agentId: AGENT, archetypeCodeId: 'momentum_chaser', open: 2, cap: 5 });
