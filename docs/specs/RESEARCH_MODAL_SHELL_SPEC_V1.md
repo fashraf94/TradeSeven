@@ -19,7 +19,7 @@ With the flag `'off'` the modal is today's, byte for byte (the mode-off goldens)
 | R-24 | Two states of the Analysis view | State 1 built; state 2 recorded (§9), not built. |
 | R-25 | First research version uses existing fields | Nothing of state 2 built. |
 | R-26 | Tap first | Every action is a tap: pills, tabs, rows, *see on chart*, *Look it up*. No drag. |
-| R-27 | H1: three filled pills of equal width, two in browse; 💣 warms in a zone; no *Why?* door; *What's moving* first tab | Built in `ChartHeader.jsx` (`ShellPills`): `flex: 1` each, the active one filled with its accent, the others a hairline; 💣 warms with `HEAT` while `isZoneMode(bombView.mode)` and it is not the active pill. Round 5 H1's drawing gives 💣 a fixed 64 px; the ruling's letter (*equal width*) was built. |
+| R-27 | H1: three filled pills of equal width, two in browse; 💣 warms in a zone; no *Why?* door; *What's moving* first tab | Built in `ChartHeader.jsx` (`ShellPills`): `flex: 1` each, the active one filled with its accent, the others a hairline; 💣 warms with `HEAT` while the view model is in a LIVE zone (`isLiveZoneMode`: approaching, banked, danger — never a shut market's frozen view) and it is not the active pill. Round 5 H1's drawing gives 💣 a fixed 64 px; the ruling's letter (*equal width*) was built. The header's change pill is the day's change only (the research hook's), shown once known. |
 | R-28 | The shell is Build C's delivery under `RESEARCH_MODAL_SHEET_MODE` | Build C's record logic reused unchanged (`useSheetView`, `packs.js`, `latestLine.js`, `AskReply.jsx`, `sheetOpen.js`, the server path). Build C's layout — the shorter chart above the drawer, the drawer's mid snap and footer — is removed from the modal. `AnalysisDrawer`'s Build C props (`midY`, `footer`, `analysisAlways`) are no longer passed by anyone; their removal is for the cleanup PR. |
 | R-29 | The pinned Ask as Build C built it, *Ask {Agent}: {question} · 1 msg* | `SheetActionRow` as built (its cost line `· 1 message · N left`, → Cockpit), addressed to the agent by name (the archetype when none). See reading §6.4. |
 | R-30 | A door that doesn't exist yet is absent | No *Work this idea*, no technical-read strip, no placeholder row. |
@@ -57,6 +57,8 @@ With the flag `'off'` the modal is today's, byte for byte (the mode-off goldens)
 | analysis | *see on chart ›* on a pack item | `chart` | `'1D'` when the pin is a time pin and the chart is on 1W; none otherwise. The item becomes the open one (never toggled closed by the link). |
 | any | navigation (Ranks, Sector) to a stock | stays | none; the Analysis view scrolls to the top |
 | any | navigation to a crypto / index / sector ETF | today's modal for that asset (R-35); back to the stock returns to the shell | — |
+| today's modal | the shell appears on the open modal (a late `'allowlist'` verdict; a stock reached from an index or ETF) | the view of the series on screen: `bomb` on the bomb series with Bomb mode, `chart` for the legacy bomb chart, else `analysis` (`viewOnShellAppear`, review B2) | none |
+| any | *Ask* from Chart or 💣 | `analysis` (the Ask's card is there) | as the pill switch |
 
 The Analysis view stays mounted while another view shows (its open tab and what that tab loaded survive a switch). The Chart and 💣 views mount on show. S/R is reset when the chart unmounts.
 
@@ -100,7 +102,7 @@ Off = today's modal. Shell (battle) = the archetype's Analysis view + Build C's 
 1b. **What's moving's number is the header's** (BUILD_RULES §9): the title prints, and the request carries, the day's change the header shows (`researchData.dailyChange`), only once known — the rule the controlled view's popup already followed. Today's popup sends the battle asset's own `percentChange` (for a held position, its change since entry) on the other mounts; the popup itself is unchanged.
 2. **"The holding line, when held" (§3.2)** is built as Build C's stance for every kind: held, *On the bench · flagged at …*, *Looked at … · not held now* (FQ-2's ruling on screen), *Not examined in this game*. Build C's move chip reads *+2.4%*, not round 5's *+4.3% since entry* (the stance's text is Build C's, reused unchanged).
 3. **Pills of equal width** (R-27's letter) — round 5 H1's drawing gives 💣 a fixed 64 px.
-4. **The Ask's label** is *Ask {Agent}: {question}* (R-29), with Build C's cost line *· 1 message · N left* kept as built (SB-10), not round 5's *Ask · 1 msg*. The reply card's failure lines still name the archetype (`AskReply.jsx` reused unchanged).
+4. **The Ask's label** is *Ask {Agent}: {question}* (R-29), with Build C's cost line *· 1 message · N left* kept as built (SB-10), not round 5's *Ask · 1 msg*. The reply card (`AskReply.jsx`, unchanged) is handed the same name, so *Juno is answering…* / *Juno didn't answer* match the row (review A2); the archetype when the battle names no agent. An Ask sent from Chart or 💣 brings the player to its card on the Analysis view (review A1).
 5. **Build C's crypto sheet (BC-15) is not reachable** under R-35: a crypto holding in battle gets today's modal at every value until the crypto shell.
 6. **Mounts with a `bombContext` but no `sheetContext`** (BaggerBomb battle view, free agent bar) get three pills over the browse content at `'on'` and open on Analysis, not their `defaultTab` 💣.
 7. **The smoke's tabs read public market data** (§8).
