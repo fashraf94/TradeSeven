@@ -400,9 +400,21 @@ describe('SB-8 — the Chart view: the full-canvas chart with its trend lines an
     await flush();
     expect(rec.lines.some((l) => l.price === 101.5)).toBe(true);
   });
-  it('no stop price anywhere in the Chart view — its text, and every line the chart draws — with each pinned item opened', async () => {
+  it('no stop price anywhere in the Chart view — every text it shows (header, chart, Technical, action row), and every line the chart draws — with each pinned item opened', async () => {
     await battle();
     const STOP = /\b(stop|stop-loss|stoploss)\b/i;
+    // Text node by text node: textContent glues neighbours ("Idea" + "Stop $157.90" → "IdeaStop …"),
+    // which hides a leading word boundary. The hidden Analysis view is not part of the Chart view.
+    const shown = () => ['[data-shell-header]', '[data-shell-scroll="chart"]', '[data-sheet-actions]'].flatMap((sel) => {
+      const el = $(sel);
+      const out = [];
+      if (!el) return out;
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      while (w.nextNode()) { const t = w.currentNode.nodeValue.trim(); if (t) out.push(t); }
+      return out;
+    });
+    const stops = () => shown().filter((t) => STOP.test(t));
+    let checked = 0;
     for (const q of ['catch_up', 'protect_lead', 'better_than_stalled']) {
       if (view() !== 'analysis') await click(pill('analysis'));
       await click($(`[data-sheet-question="${q}"]`));
@@ -410,13 +422,16 @@ describe('SB-8 — the Chart view: the full-canvas chart with its trend lines an
         if (view() !== 'analysis') await click(pill('analysis'));
         await click($$('[data-pack-see]')[i]);
         expect(view()).toBe('chart');
-        expect($('[data-shell-scroll="chart"]').textContent).not.toMatch(STOP);
+        expect(shown().length).toBeGreaterThan(5);
+        expect(stops()).toEqual([]);
+        checked += 1;
       }
       await click(pill('analysis'));
       await click($('[data-sheet-back]'));
     }
+    expect(checked).toBeGreaterThanOrEqual(5);
     await click(pill('chart'));
-    expect($('[data-shell-scroll="chart"]').textContent).not.toMatch(STOP);
+    expect(stops()).toEqual([]);
     expect(rec.lines.map((l) => l.title ?? '').filter((s) => STOP.test(s))).toEqual([]);
   });
   it('no technical-read strip and no Work this idea door (R-30)', async () => {
