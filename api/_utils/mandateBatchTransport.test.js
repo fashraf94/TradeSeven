@@ -450,10 +450,9 @@ describe('harvestOpenBatches — the §3.3 validation → §3.5 execution path',
   });
 
   it('T0a: an UNCORRECTED vintage at harvest disposes failed/vintage_uncorrected — never gated, never executed, still billed', async () => {
-    const { sectorCapConversionVersion, ...legacyGate } = VINTAGE.gateConfig;
-    const { db, env } = seedSubmitted({
-      'archetypeVintages/analyst_x': { ...VINTAGE, gateConfig: { ...legacyGate, sectorConcentrationCap: 3 } },
-    });
+    const legacyGate = { ...VINTAGE.gateConfig, sectorConcentrationCap: 3 };
+    delete legacyGate.sectorCapConversionVersion;
+    const { db, env } = seedSubmitted({ 'archetypeVintages/analyst_x': { ...VINTAGE, gateConfig: legacyGate } });
     batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'x' });
     batchApi.results.mockResolvedValue(asAsyncIterable([
       { custom_id: env.requestId, result: succeededResult({ verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, rationale: 'q' }) },

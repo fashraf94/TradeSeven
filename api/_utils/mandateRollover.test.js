@@ -243,12 +243,15 @@ describe('rollOneBoundary — open-batch disposal (I1)', () => {
 // ── T0a: admission refuses an uncorrected re-pin ────────────────────────────
 function uncorrectedVintageAt(code) {
   const { payload, vintageRef } = resolveVintage(code);
-  const { sectorCapSlots, sectorCapDenominator, sectorCapConversionVersion, ...rest } = payload.gateConfig;
-  return { [vintageRef]: { ...payload, gateConfig: { ...rest, sectorConcentrationCap: sectorCapSlots } } };
+  const gateConfig = { ...payload.gateConfig, sectorConcentrationCap: payload.gateConfig.sectorCapSlots };
+  delete gateConfig.sectorCapSlots;
+  delete gateConfig.sectorCapDenominator;
+  delete gateConfig.sectorCapConversionVersion;
+  return { [vintageRef]: { ...payload, gateConfig } };
 }
 
 describe('rollOneBoundary — T0a admission (vintage_uncorrected)', () => {
-  it('throws a typed vintage_uncorrected (reaching the cron failure counter) and leaves the book un-rolled', async () => {
+  it('throws a typed vintage_uncorrected (catchUpBook does not catch it, so the cron failure counter sees it) and leaves the book un-rolled', async () => {
     const db = makeMandateFakeDb({ 'mandates/m1': book(), ...q1Rows(), ...uncorrectedVintageAt('analyst') });
     await expect(rollOneBoundary(db, db.doc('mandates/m1'), { now: NOW }))
       .rejects.toMatchObject({ code: 'vintage_uncorrected', message: expect.stringContaining('MANDATE_ROLLOVER_VINTAGE_UNCORRECTED') });

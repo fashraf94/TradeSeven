@@ -156,8 +156,11 @@ describe('escapeMandate — two-writer contention (F6)', () => {
 // ── T0a: admission refuses an uncorrected replacement vintage ───────────────
 function uncorrectedVintageAt(code) {
   const { payload, vintageRef } = resolveVintage(code);
-  const { sectorCapSlots, sectorCapDenominator, sectorCapConversionVersion, ...rest } = payload.gateConfig;
-  return { [vintageRef]: { ...payload, gateConfig: { ...rest, sectorConcentrationCap: sectorCapSlots } } };
+  const gateConfig = { ...payload.gateConfig, sectorConcentrationCap: payload.gateConfig.sectorCapSlots };
+  delete gateConfig.sectorCapSlots;
+  delete gateConfig.sectorCapDenominator;
+  delete gateConfig.sectorCapConversionVersion;
+  return { [vintageRef]: { ...payload, gateConfig } };
 }
 
 describe('escapeMandate — T0a admission (vintage_uncorrected)', () => {

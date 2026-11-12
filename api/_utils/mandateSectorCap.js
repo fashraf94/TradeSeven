@@ -28,13 +28,19 @@
 // policy; it is NOT equivalent for unequal holdings. The fenced table is not
 // touched and keeps its game meaning.
 
-/** Version of the slot-count → book-share translation stamped on every vintage. */
+/**
+ * Version of the slot-count → book-share translation stamped on every vintage.
+ * isSectorCapCorrected admits exactly this version. A future bump must decide,
+ * explicitly, which older pinned versions the eval and the harvest still admit
+ * (a list of versions this code understands, never "any stamp"), while creation,
+ * escape and rollover keep requiring the current one (T0a review, A-2).
+ */
 export const SECTOR_CAP_CONVERSION_VERSION = 1;
 
 /**
  * The denominator of the source policy: the battle's six equal picks
- * (AGENT_PICKS_PER_AGENT, src/constants/leagueTournament.js). Held as a local
- * constant (no api→src runtime import); a test binds the two.
+ * (AGENT_PICKS_PER_AGENT, src/constants/leagueTournament.js). Kept as a local
+ * constant so this module stays import-free; a test binds the two values.
  */
 export const SECTOR_CAP_SLOT_DENOMINATOR = 6;
 

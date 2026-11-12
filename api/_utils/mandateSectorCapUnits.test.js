@@ -5,8 +5,14 @@
 // the battle's six equal picks; the book's gate compares a FRACTION of book
 // value. Before T0a the vintage copied the count, so a cap of 3 allowed 300%.
 // These rows drive the six REAL vintage payloads (buildVintagePayload) through
-// the real gate and the real prompt assembler — each row fails on the pre-fix
-// code, where the gate config carried the raw count.
+// the real gate and the real prompt assembler. The rows that DISCRIMINATE the
+// fix from the bug (they fail against the pre-fix behaviour, a raw count in the
+// cap): the translation table and changed hash, one cent over the limit, the
+// second half of each "counts" row, a dollar over the headroom, the raw count
+// refused as malformed, the prompt rows, the translation rows and the fence
+// hash. The rest (at the limit, other sectors, a dollar under, unknown sector,
+// zero book value, the null policy, valid fractions, "null prints none") are
+// CONTROLS that pass either way; they pin that the fix did not over-tighten.
 //
 // Resolution-point refusals (vintage_uncorrected) live beside each harness:
 // mandateCreationService / mandateEscape / mandateRollover / mandateBatchTransport
@@ -29,9 +35,8 @@ import {
 } from './mandateSectorCap.js';
 import { evaluateGate } from './mandateGate.js';
 import { assembleMandatePrompt } from './mandatePromptAssembly.js';
-// BUILD_RULES §4 dependency-surface guard: this import of a src/ module is the
-// runtime guard that its graph stays Node-clean (leagueTournament.js holds a
-// zero-import invariant). Never mock it.
+// Read only to bind SECTOR_CAP_SLOT_DENOMINATOR to the battle's six picks
+// (leagueTournament.js holds a zero-import invariant, so this stays Node-clean).
 import { AGENT_PICKS_PER_AGENT } from '../../src/constants/leagueTournament.js';
 
 // The fenced table's counts (api/_utils/agentArchetypeConfig.js:66/95/122/151/182/214,
@@ -90,7 +95,7 @@ describe('T0a — the translation table (all six archetypes)', () => {
 });
 
 describe('T0a — translateSectorCapSlots (construction, fail-closed)', () => {
-  it.each([1, 2, 3, 4, 5, 6])('%i of 6 → %i/6', (n) => {
+  it.each([1, 2, 3, 4, 5, 6])('%i of 6 → n/6', (n) => {
     expect(translateSectorCapSlots(n)).toEqual({
       sectorCapSlots: n, sectorCapDenominator: 6, sectorConcentrationCap: n / 6, sectorCapConversionVersion: 1,
     });
@@ -126,8 +131,12 @@ describe('T0a — admission predicate', () => {
   });
 });
 
-// ── The boundary: exact cents on a non-dyadic book ──────────────────────────
-// T = $123,456.78 divides by 6 exactly ($20,576.13), so n/6 × T is a whole cent.
+// ── The boundary: whole cents on a non-dyadic book ──────────────────────────
+// T = $123,456.78 divides by 6 exactly ($20,576.13), so n/6 × T is a whole cent
+// in DECIMAL. In floating point the at-limit weight lands a hair above the cap
+// for 1/3 and 2/3 (+5.6e-17, +1.1e-16; exact for 1/2), so those at-limit rows
+// pass through checkSectorCap's `cap + 1e-9` tolerance and pin it; one cent is
+// +8.1e-8, far outside it, so the one-cent rows stay sharp.
 const T = 123456.78;
 const SIXTH_CENTS = 2057613;
 const CURRENT_CENTS = 3000011; // $30,000.11 already in the sector

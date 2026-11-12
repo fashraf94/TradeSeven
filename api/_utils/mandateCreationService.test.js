@@ -153,8 +153,11 @@ describe('createMandate — validation', () => {
 // slot count, no metadata) is refused before any book or claim is written.
 function uncorrectedVintageAt(code) {
   const { payload, vintageRef } = resolveVintage(code);
-  const { sectorCapSlots, sectorCapDenominator, sectorCapConversionVersion, ...rest } = payload.gateConfig;
-  return { [vintageRef]: { ...payload, gateConfig: { ...rest, sectorConcentrationCap: sectorCapSlots } } };
+  const gateConfig = { ...payload.gateConfig, sectorConcentrationCap: payload.gateConfig.sectorCapSlots };
+  delete gateConfig.sectorCapSlots;
+  delete gateConfig.sectorCapDenominator;
+  delete gateConfig.sectorCapConversionVersion;
+  return { [vintageRef]: { ...payload, gateConfig } };
 }
 
 describe('createMandate — T0a admission (vintage_uncorrected)', () => {

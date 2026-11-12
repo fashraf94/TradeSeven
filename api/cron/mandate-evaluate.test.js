@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { unionHeldTickers, runBookEval, telemetryPatch } from './mandate-evaluate.js';
+import { buildVintagePayload } from '../_utils/mandateVintage.js';
 
 // Fake Firestore with subcollections, transactions, and ref.id.
 function makeFakeDb(seed = {}) {
@@ -269,10 +270,11 @@ describe('telemetryPatch — §6.2 accumulation', () => {
 // (3 → read as 300%). The eval refuses it before the prompt, the model call and
 // any batch enqueue: no trade, no spend, a typed reason for the sweep.
 describe('T0a — runBookEval refuses an uncorrected vintage (vintage_uncorrected)', () => {
-  const { sectorCapConversionVersion, ...legacyGate } = VINTAGE.gateConfig;
-  const UNCORRECTED = { ...VINTAGE, gateConfig: { ...legacyGate, sectorConcentrationCap: 3 } };
+  const legacyGate = { ...VINTAGE.gateConfig, sectorConcentrationCap: 3 };
+  delete legacyGate.sectorCapConversionVersion;
+  const UNCORRECTED = { ...VINTAGE, gateConfig: legacyGate };
 
-  it.each(['direct', 'batch'])('%s transport: skipped with vintage_uncorrected; no model call, no enqueue, no money moved', async (transport) => {
+  it.each(['direct', 'batch'])('%s transport: the outcome is skipped/vintage_uncorrected (direct: no model call; batch: no enqueue); no money moved', async (transport) => {
     const db = makeFakeDb({ 'mandates/m1': bookFixture() });
     const ref = db.collection('mandates').doc('m1');
     const model = fakeModel({ verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, rationale: 'x' });
@@ -286,6 +288,32 @@ describe('T0a — runBookEval refuses an uncorrected vintage (vintage_uncorrecte
     expect([...db._store.keys()].filter((k) => k.includes('/decisions/'))).toEqual([]);
   });
 
+  // Pins the built letter of the prompt ("refused ... and no trade"): an exit is
+  // refused too, while the gate alone would let it through the exit lane. Open
+  // founder question (T0a report §5, A-1): exit-only or full stop for such books.
+  it('AS BUILT: a SELL on an uncorrected book is refused as well (no exit), unlike the stamped control', async () => {
+    const held = bookFixture({
+      portfolio: { cash: 50000, positions: { AAPL: { shares: 250, costBasisTotal: 50000, lastMark: 200, sector: 'Technology' } }, totalValue: 100000, initialValue: 100000, quarterDrawdownFromPeak: 0 },
+    });
+    const db = makeFakeDb({ 'mandates/m1': held });
+    const ref = db.collection('mandates').doc('m1');
+    const model = fakeModel({ verb: 'SELL', ticker: 'AAPL', rationale: 'x' });
+    const r = await runBookEval(db, {
+      book: { _id: 'm1', ...held }, mandateRef: ref, vintage: UNCORRECTED, snapshot: SNAP,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW, callModel: model,
+    });
+    expect(r).toEqual({ outcome: 'skipped', reason: 'vintage_uncorrected' });
+    expect(db._store.get('mandates/m1').portfolio.positions.AAPL.shares).toBe(250);
+
+    const db2 = makeFakeDb({ 'mandates/m1': held });
+    const r2 = await runBookEval(db2, {
+      book: { _id: 'm1', ...held }, mandateRef: db2.collection('mandates').doc('m1'), vintage: VINTAGE, snapshot: SNAP,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW, callModel: fakeModel({ verb: 'SELL', ticker: 'AAPL', rationale: 'x' }),
+    });
+    expect(r2.status).toBe('executed');
+    expect(db2._store.get('mandates/m1').portfolio.positions.AAPL).toBeUndefined();
+  });
+
   it('CONTROL: the stamped fixture reaches the model', async () => {
     const db = makeFakeDb({ 'mandates/m1': bookFixture() });
     const ref = db.collection('mandates').doc('m1');
@@ -296,5 +324,39 @@ describe('T0a — runBookEval refuses an uncorrected vintage (vintage_uncorrecte
     });
     expect(r.outcome).toBe('terminal');
     expect(model).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── T0a: a REAL vintage, end to end through the eval ────────────────────────
+// The fixtures above carry a hand-written cap. This row pins the shipped
+// translation where it matters: a Diversifier vintage built by
+// buildVintagePayload (cap 1/3) gates a BUY that would take Technology past a
+// third of the book, and the decision record names the sector cap.
+describe('T0a — a real buildVintagePayload vintage binds the sector cap through runBookEval', () => {
+  const REAL = { codeId: 'diversifier', ...buildVintagePayload('diversifier') };
+  // $100,000 book: $30,000 in Technology (30%), cash $70,000.
+  const book = () => bookFixture({
+    portfolio: { cash: 70000, positions: { AAPL: { shares: 150, costBasisTotal: 30000, lastMark: 200, sector: 'Technology' } }, totalValue: 100000, initialValue: 100000, quarterDrawdownFromPeak: 0 },
+  });
+  const SNAP2 = { tickKey: '2026-08-12_open30', symbols: { ...SNAP.symbols, MSFT: { complete: true, price: 400, sector: 'Technology' } } };
+
+  it('a BUY that would take Technology past 1/3 is gated by sector_cap; a smaller one executes', async () => {
+    const db = makeFakeDb({ 'mandates/m1': book() });
+    const r = await runBookEval(db, {
+      book: { _id: 'm1', ...book() }, mandateRef: db.collection('mandates').doc('m1'), vintage: REAL, snapshot: SNAP2,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW,
+      callModel: fakeModel({ verb: 'BUY', ticker: 'MSFT', sizeUsd: 4000, rationale: 'x' }), // 34% after
+    });
+    expect(r.status).toBe('gated');
+    expect(db._store.get(`mandates/m1/decisions/${r.decisionId}`).gateOutcome).toEqual({ rule: 'sector_cap', passed: false });
+    expect(db._store.get('mandates/m1').portfolio.cash).toBe(70000);
+
+    const db2 = makeFakeDb({ 'mandates/m1': book() });
+    const r2 = await runBookEval(db2, {
+      book: { _id: 'm1', ...book() }, mandateRef: db2.collection('mandates').doc('m1'), vintage: REAL, snapshot: SNAP2,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW,
+      callModel: fakeModel({ verb: 'BUY', ticker: 'MSFT', sizeUsd: 3000, rationale: 'x' }), // 33% after
+    });
+    expect(r2.status).toBe('executed');
   });
 });
