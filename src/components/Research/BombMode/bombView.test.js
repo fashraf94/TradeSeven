@@ -70,14 +70,14 @@ describe('the LIVE · SCORED chip (spec §3.2)', () => {
 describe('what has to happen — templates only (spec §4.3)', () => {
   const held = legacyLadder({ record: selectBombRecord(legacyBattle({ thresholdHistory: {} }), 'EOG', WED_1PM), previousClose: 155.6, nowMs: WED_1PM });
   // Refinement 2026-11-10 (BD-4): the held line is lead-aware; with the upside leading it names the points and the bust price too.
-  it('held, up leading: Needs $X at a check for +15 · Bust at $Y · next check 3:45', () => { expect(sheetLine({ ladder: held, clockLabel: '3:45', decimals: 2 })).toBe('Needs $161.20 at a check for +15 · Bust at $150.00 · next check 3:45'); });
+  it('held, up leading: Needs $X at a check for +15 · Bust at $Y · next check 3:45', () => { expect(sheetLine({ ladder: held, clockLabel: '3:45', decimals: 2 })).toBe('Needs $161.21 at a check for +15 · Bust at $149.99 · next check 3:45'); });
   it('after a bank the modal SAW: +15 banked at the 1:15 check. Next: …', () => {
     const banked = legacyLadder({ record: selectBombRecord(legacyBattle(), 'EOG', WED_1PM), previousClose: 155.6, nowMs: WED_1PM });
-    expect(sheetLine({ ladder: banked, bankedTimes: { bagger: at('2026-10-14T17:15:00.000Z') }, decimals: 2 })).toBe('+15 banked at the 1:15 check. Next: $164.00 at a check');
+    expect(sheetLine({ ladder: banked, bankedTimes: { bagger: at('2026-10-14T17:15:00.000Z') }, decimals: 2 })).toBe('+15 banked at the 1:15 check. Next: $164.01 at a check');
   });
   it('BA-4: a bank the modal did not see carries no time', () => {
     const banked = legacyLadder({ record: selectBombRecord(legacyBattle(), 'EOG', WED_1PM), previousClose: 155.6, nowMs: WED_1PM });
-    expect(sheetLine({ ladder: banked, bankedTimes: {}, decimals: 2 })).toBe('+15 banked. Next: $164.00 at a check');
+    expect(sheetLine({ ladder: banked, bankedTimes: {}, decimals: 2 })).toBe('+15 banked. Next: $164.01 at a check');
   });
   it('preview: Preview · rungs if it entered at yesterday\'s close ($X) — never "entry price"', () => {
     const line = sheetLine({ ladder: previewLadder({ previousClose: 99, threshold: 2 }), decimals: 2 });

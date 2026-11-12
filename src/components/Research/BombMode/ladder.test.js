@@ -140,13 +140,13 @@ describe('bricks (R-11′(a), §3.6)', () => {
 });
 
 describe('toGo — the distance from DISPLAYED values (BUILD_RULES §9)', () => {
-  it('rung and live are rounded to the display decimals first; % is of the displayed live price', () => {
+  it('rung (rounded UP, BP-1) and live (nearest) are taken at the display decimals first; % is of the displayed live price', () => {
     const l = previewLadder({ previousClose: 154.76, threshold: 3.6 }); // bagger 160.33136
     const go = toGo(l, 160.2649);
-    expect(go.rungShown).toBe(160.33);
+    expect(go.rungShown).toBe(160.34);
     expect(go.liveShown).toBe(160.26);
-    expect(go.distance).toBe(0.07);
-    expect(go.pct).toBeCloseTo((0.07 / 160.26) * 100, 12);
+    expect(go.distance).toBe(0.08);
+    expect(go.pct).toBeCloseTo((0.08 / 160.26) * 100, 12);
   });
   it('a price above an unbanked rung has distance ≤ 0 and zero bricks', () => {
     const l = previewLadder({ previousClose: 100, threshold: 2 });

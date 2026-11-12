@@ -11,8 +11,8 @@
 //   (c) closed       the trace frozen · "Market closed · last tick {time}" · the next check's day and time
 //
 // THE DANGER ZONE (refinement 2026-11-10, BD-5) is this layout with side="down":
-// the next unhit DOWNSIDE rung is the goal line (below the price, in the risk
-// red, no amber heat), the distance above it is the big number, the chip reads
+// the next unhit DOWNSIDE rung is the goal line (below the price, in the
+// downside levels' own red, --ft-neg since BP-2; no amber heat), the distance above it is the big number, the chip reads
 // "Danger zone" (BombPlot's chip). A hit plays NO moment: one quiet line names a
 // hit the modal saw ("Bust · −10 · hit at the 1:15 check"), and the zone
 // re-bases or leaves.
@@ -29,6 +29,7 @@ import { BOMB_COPY, money } from './bombCopy.js';
 import { priceText } from '../priceFormat.js';
 import { etClock, etClockAmPm } from './checkClock.js';
 import { checkNameAt } from './bombView.js';
+import { rungShown } from './ladder.js';
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const HOUR_MS = 60 * 60 * 1000;
@@ -59,25 +60,29 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
   const frozen = mode === 'closed' || mode === 'dangerClosed';
   const showMoment = !down && mode === 'banked' && !!moment;
   const goalRung = down ? ladder.nextDown : ladder.next;
-  const accent = down ? BT.risk : HEAT;
-  // Review D1–D4 (2026-11-11; refuter D's tested layout): on the DOWN side the text
-  // is one flow column — the tags (which may wrap), then the numeral, its sub-line
-  // and the quiet hit line — and the trace's plot starts under the column's
-  // measured bottom, so neither a wrapped tag row, the hit line nor a falling
-  // trace can land on the numeral. The red zone (side up) keeps Build A's layout.
+  // BP-2 (2026-11-11): ONE red. The Danger Zone draws in BT.red (--ft-neg), the red
+  // the downside levels use in the Fuse, the bar and the table; BT.risk stays only
+  // in the red zone's heat mix (HEAT), where Build A used it.
+  const accent = down ? BT.red : HEAT;
+  // Review D1–D4 (2026-11-11; refuter D's tested layout), and BP-4 for the red zone
+  // (side up): the text is one flow column — the tags (which may wrap), then the
+  // numeral, its sub-line and (down) the quiet hit line — and the trace's plot
+  // starts under the column's measured bottom, so neither a wrapped tag row, the
+  // hit line nor a trace can land on the numeral. The red zone's banked moment
+  // keeps Build A's plot (its column holds only the tags; the moment is centred).
   const colRef = React.useRef(null);
   const [colBottom, setColBottom] = React.useState(null);
   React.useLayoutEffect(() => {
-    if (!down || !colRef.current) return;
+    if (!colRef.current) return;
     const b = colRef.current.offsetTop + colRef.current.offsetHeight;
     if (b !== colBottom) setColBottom(b);
   });
-  const top = down ? Math.max(46, (colBottom ?? 100) + 10) : 46;
+  const top = showMoment ? 46 : Math.max(46, (colBottom ?? 100) + 10);
   const bot = H - 70;
   const x0 = 16;
   const x1 = W - 34;
 
-  const goal = go ? go.rungShown : goalRung?.price ?? null;
+  const goal = go ? go.rungShown : goalRung ? rungShown(goalRung, d) : null;
   const lastBanked = down ? null : [...ladder.up].reverse().find((r) => r.banked) || null;
   const values = [...trace.line.map((p) => p.c), ...trace.dots.map((o) => o.price), ...(finite(live) ? [live] : [])];
   let hi;
@@ -88,9 +93,11 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
     hi = Math.max(goal ?? 0, finite(live) ? live * 1.01 : 0, ...values); // the goal always in the window (review D4)
     if (!(lo < hi)) hi = lo * 1.01;
   } else {
+    // The goal is the window's ceiling; BP-4 (review D4's mirror): it is also never
+    // above the floor, so a live price over the rung keeps the goal line in the plot.
     const floor = Math.max(finite(live) ? live * 0.99 : 0, lastBanked ? lastBanked.price : 0);
     hi = Math.max(goal ?? 0, ...values);
-    lo = Math.min(floor > 0 ? floor : hi, ...values);
+    lo = Math.min(floor > 0 ? floor : hi, goal ?? Infinity, ...values);
     if (!(lo < hi)) lo = hi * 0.99;
   }
   const Y = (v) => top + ((hi - v) / (hi - lo)) * (bot - top);
@@ -110,7 +117,7 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
   const dist = distanceText(go);
   // The floor's distance from the DISPLAYED live price (it is live × 0.99 only when no trace value is lower).
   const floorPct = !down && finite(live) ?((Number(priceText(lo, d)) - Number(priceText(live, d))) / Number(priceText(live, d))) * 100 : null;
-  const goalY = goal !== null ? (down ? Math.max(top, Math.min(bot, Y(goal))) : Y(goal)) : down ? bot : top;
+  const goalY = goal !== null ? Math.max(top, Math.min(bot, Y(goal))) : down ? bot : top;
   const hitLine = down ? hitLineText(ladder, hitTimes) : null;
   const momentRung = showMoment ? ladder.up.find((r) => r.key === moment.key) : null;
   const pop = motionToken('bouncy', { reducedMotion: reduced });
@@ -119,12 +126,14 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
     <div data-bomb-view={down ? 'dangerzone' : 'redzone'} {...(down ? { 'data-dangerzone-state': frozen ? 'closed' : 'live' } : { 'data-redzone-state': showMoment ? 'banked' : frozen ? 'closed' : 'approaching' })}
       style={{ position: 'relative', width: '100%', height: H, background: BT.bg, overflow: 'hidden', fontFamily: MONO }}>
       <svg width={W} height={H} style={{ display: 'block', position: 'absolute', inset: 0 }} aria-label={down ? BOMB_COPY.dangerAriaZone : BOMB_COPY.ariaRedZone}>
-        <defs>
-          <linearGradient id="bombRzHeat" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" style={{ stopColor: HEAT, stopOpacity: showMoment ? 0.07 : frozen ? 0.1 : 0.26 }} />
-            <stop offset="1" style={{ stopColor: HEAT, stopOpacity: 0 }} />
-          </linearGradient>
-        </defs>
+        {!down && (
+          <defs>
+            <linearGradient id="bombRzHeat" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" style={{ stopColor: HEAT, stopOpacity: showMoment ? 0.07 : frozen ? 0.1 : 0.26 }} />
+              <stop offset="1" style={{ stopColor: HEAT, stopOpacity: 0 }} />
+            </linearGradient>
+          </defs>
+        )}
         {!down && <rect x="0" y={goalY} width={W} height={Math.max(0, bot - goalY)} style={{ fill: 'url(#bombRzHeat)' }} />}
         {!down && (lastBanked && Math.abs(lo - lastBanked.price) < 1e-9
           ? <rect x="0" y={bot - 2} width={W} height={4} style={{ fill: BT.green }} />
@@ -144,7 +153,7 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
           </g>
         )}
         {frozen && lastLine && <circle cx={X(lastLine.t)} cy={Y(lastLine.c)} r="4.5" strokeWidth="1.5" style={{ fill: BT.bg, stroke: BT.ink2 }} />}
-        <rect data-rz-goal={down ? 'down' : 'up'} x="0" y={goalY - 2} width={W} height={4} style={{ fill: down ? BT.risk : BT.gold }} />
+        <rect data-rz-goal={down ? 'down' : 'up'} x="0" y={goalY - 2} width={W} height={4} style={{ fill: down ? BT.red : BT.gold }} />
       </svg>
 
       <div ref={colRef} style={{ position: 'absolute', left: 12, top: 10, right: 12 }}>
@@ -152,7 +161,7 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
         <Tag color={BT.teal}>{BOMB_COPY.yourPosition}</Tag>
         {frozen && <Tag color={BT.ink2} dim>{lastTickMs ? BOMB_COPY.marketClosed(etClockAmPm(lastTickMs)) : BOMB_COPY.marketClosedNoTick}</Tag>}
       </div>
-      {down && dist && (
+      {dist && !showMoment && (
         <div data-rz-distance="1" style={{ marginTop: 11 }}>
           <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.02em', color: frozen ? BT.ink2 : accent }}>{dist.big}</div>
           <div style={{ marginTop: 5, fontSize: 12, color: BT.ink2 }}>{dist.sub}</div>
@@ -162,16 +171,16 @@ export default function RedZone({ ladder, go, live, decimals, mode, trace, clock
       {down && !dist && hitLine && <div data-dz-hit-line="1" style={{ marginTop: 8, fontSize: 9.5, color: BT.ink2 }}>{hitLine}</div>}
       </div>
       {goalRung && (
-        <div style={{ position: 'absolute', left: 12, top: down ? (goalY - 30 >= top - 2 ? Math.min(goalY - 30, bot - 26) : Math.min(goalY + 8, bot - 26)) : Math.min(goalY + 8, bot - 90) }}>
-          <Tag color={down ? BT.risk : BT.gold} solid>{down
-            ? BOMB_COPY.dangerRungTag(goalRung.emoji, goalRung.label, goalRung.points, goalRung.price, d)
-            : BOMB_COPY.rungTag(goalRung.emoji, goalRung.label, goalRung.points, goalRung.price, d)}</Tag>
-        </div>
-      )}
-      {dist && !showMoment && !down && (
-        <div data-rz-distance="1" style={{ position: 'absolute', left: 12, top: down ? top - 6 : Math.min(goalY + 34, bot - 64) }}>
-          <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.02em', color: frozen ? BT.ink2 : accent }}>{dist.big}</div>
-          <div style={{ marginTop: 5, fontSize: 12, color: BT.ink2 }}>{dist.sub}</div>
+        // The goal's tag hugs the goal line inside the plot: the Danger Zone's above
+        // its floor goal when there is room, the red zone's under its ceiling goal
+        // (BP-4: held inside the plot, so it never reaches the text column).
+        <div data-rz-goal-tag={down ? 'down' : 'up'} style={{ position: 'absolute', left: 12, top: down
+          ? (goalY - 30 >= top - 2 ? Math.min(goalY - 30, bot - 26) : Math.min(goalY + 8, bot - 26))
+          // (The banked moment keeps Build A's tag place, as it keeps Build A's plot — review D1.)
+          : showMoment ? Math.min(goalY + 8, bot - 90) : (goalY + 8 <= bot - 26 ? goalY + 8 : Math.max(top, goalY - 30)) }}>
+          <Tag color={down ? BT.red : BT.gold} solid>{down
+            ? BOMB_COPY.dangerRungTag(goalRung.emoji, goalRung.label, goalRung.points, rungShown(goalRung, d), d)
+            : BOMB_COPY.rungTag(goalRung.emoji, goalRung.label, goalRung.points, rungShown(goalRung, d), d)}</Tag>
         </div>
       )}
       {!down && <div data-rz-floor="1" style={{ position: 'absolute', left: 12, top: bot + 4, fontSize: 8, letterSpacing: '0.1em', fontWeight: 700, color: lastBanked && Math.abs(lo - lastBanked.price) < 1e-9 ? BT.green : BT.ink3 }}>

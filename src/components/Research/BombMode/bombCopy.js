@@ -15,8 +15,8 @@ import { priceText } from '../priceFormat.js';
 export const money = (price, decimals) => `$${priceText(price, decimals)}`;
 const signedPct = (pct, digits = 1) => `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(digits)}%`;
 /**
- * A rung's move from the baseline (ladder.rungPct: from the DISPLAYED prices),
- * two decimals, signed — the ONE string the Fuse's titles, the bar and the
+ * A rung's move from the baseline (ladder.rungPct: k × the threshold since
+ * BP-3; from the displayed prices only for a V4 ladder), two decimals, signed — the ONE string the Fuse's titles, the bar and the
  * levels table print for a rung (BD-6, BUILD_RULES §9).
  */
 export const rungPctText = (pct) => signedPct(pct, 2);
@@ -147,7 +147,8 @@ export const BOMB_COPY = Object.freeze({
   detailsReceipt: (hash) => `Receipt ${hash}`,
   detailsInput: (ref) => `Input ${ref}`,
   detailsModel: (id) => `Model ${id}`,
-  detailsCents: 'Cents are rounded half-even for display only; awards use the exact targets.',
+  // BP-1 (2026-11-11): Bomb mode rounds every rung toward its award (ladder.rungShown).
+  detailsCents: 'Prices are rounded toward the award (up for the upside, down for the downside), so a price that reaches the shown number scores. Awards use the exact targets.',
   // The Danger Zone (BD-5) — the red zone's layout, the downside rung as the goal
   dangerZoneChip: 'Danger zone',
   dangerRungTag: (emoji, label, points, price, d) => `${emoji} ${label} · ${downPts(points)} pts · ${money(price, d)}`,

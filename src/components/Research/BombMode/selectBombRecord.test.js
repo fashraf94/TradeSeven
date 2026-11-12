@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { selectBombRecord, agentBombContext, isActivationDayAt, checkDotsOf, recordMs } from './selectBombRecord.js';
 import { legacyBattle } from './__fixtures__/bombBattles.js';
 import { scoredChipText } from './bombView.js';
+import { measuredLadder, rungPct } from './ladder.js';
 import { STOCK_TEST_NOW, correctedStockBattle, stockWriterDb } from '../../../../api/_utils/__fixtures__/stockThresholdHarness.js';
 import { correctedScorePatch, scoreCorrectedPosition } from '../../../../api/_utils/stockThresholdAdmission.js';
 
@@ -213,5 +214,15 @@ describe('review fixes (2026-11-11), lens C — the selector on the real harness
     });
     expect(r.details.currentPrice).toBe(101);
     expect(r.details.currentPrice).not.toBe(ctx.fill);
+  });
+  it('BP-3: the measured record carries the committed context\'s scoringPct — the % Details prints — so a rung\'s % is the rule\'s', async () => {
+    const b = await committedMeasured(101);
+    const ctx = b.scoring.stockRewardContexts.agent['position-agent'];
+    const r = selectBombRecord(b, 'AAPL', Date.parse('2026-10-14T15:00:00.000Z'));
+    expect(r.measured.scoringPct).toBe(ctx.scoringPct);
+    expect(r.measured.scoringPct).toBe(Number(r.details.scoringPctDecimal));
+    const l = measuredLadder({ measured: r.measured, entryAtMs: r.entry.atMs });
+    expect(l.threshold).toBe(ctx.scoringPct);
+    expect(rungPct(l, l.up[0], 2)).toBe(ctx.scoringPct);
   });
 });

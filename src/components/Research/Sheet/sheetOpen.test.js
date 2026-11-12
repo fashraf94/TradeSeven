@@ -21,19 +21,19 @@ beforeAll(async () => {
 });
 const open = (over = {}) => opensInRedZone({ bombContext: HELD, symbol: 'AAPL', live: 103.4, nowMs: SHEET_NOW, ...over });
 
-describe('FQ-9 — the red zone at open (the next rung is +30 at $103.77; Wed 1:07 PM ET, the market open)', () => {
+describe('FQ-9 — the red zone at open (the next rung is +30, exact $103.7725, shown $103.78 since Bomb mode BP-1; Wed 1:07 PM ET, the market open)', () => {
   it('the fixture is what the rows assume: a measured held record, the band is 0.5 %', () => {
     expect([HELD.kind, HELD.held, HELD.record?.model]).toEqual(['agent', true, 'measured']);
     expect(RED_ZONE_ENTER_PCT).toBe(0.5);
   });
-  it('inside the band (live $103.40: $0.37 to go, 0.36 %) → opens on 💣', () => {
+  it('inside the band (live $103.40: $0.38 to go, 0.37 %) → opens on 💣', () => {
     expect(open()).toBe(true);
   });
-  it('the band edge as Bomb mode prints it: $103.25 is 0.50 % → in; $103.24 is 0.51 % → out', () => {
-    expect(open({ live: 103.25 })).toBe(true);
-    expect(open({ live: 103.24 })).toBe(false);
+  it('the band edge as Bomb mode prints it: $103.26 is 0.50 % → in; $103.25 is 0.51 % → out', () => {
+    expect(open({ live: 103.26 })).toBe(true);
+    expect(open({ live: 103.25 })).toBe(false);
   });
-  it('outside the band (live $103.20: 0.55 %) → the sheet', () => {
+  it('outside the band (live $103.20: 0.56 %) → the sheet', () => {
     expect(open({ live: 103.2 })).toBe(false);
   });
   it('a price past an unbanked rung is in the zone (the check has not read it yet) → 💣', () => {

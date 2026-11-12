@@ -72,10 +72,12 @@ describe('BD-1 — one ladder, both directions', () => {
     expect(toGoDown(l, 96, { tiers: odd }).bricksExact).toBeCloseTo(2, 12); // the lead rule still measures it
     expect(toGo(l, 104).bricks).toBe(2);
   });
-  it('rungPct: the move from the DISPLAYED baseline to the displayed rung (AMZN +15: $270.22 → $280.91 = +3.956 %)', () => {
+  it('rungPct (BP-3): the rule\'s % — k × the measured scoringPct (AMZN +15 = +3.954943 %), not the +3.956 % worked back from $270.22 → $280.91', () => {
     const l = amzn();
-    expect(rungPct(l, at(l, 'bagger'), 2)).toBeCloseTo(((280.91 - 270.22) / 270.22) * 100, 12);
-    expect(rungPct(l, at(l, 'bust'), 2)).toBeCloseTo(((259.53 - 270.22) / 270.22) * 100, 12);
+    expect(rungPct(l, at(l, 'bagger'), 2)).toBe(3.954943);
+    expect(rungPct(l, at(l, 'tenBagger'), 2)).toBeCloseTo(2 * 3.954943, 12);
+    expect(rungPct(l, at(l, 'bust'), 2)).toBe(-3.954943);
+    expect(rungPct(l, at(l, 'meltdown'), 2)).toBeCloseTo(-2 * 3.954943, 12);
   });
 });
 

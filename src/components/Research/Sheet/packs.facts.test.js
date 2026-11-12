@@ -60,8 +60,8 @@ describe('the numbers, worked by hand on the shared fixture (Trend Follower, liv
     expect(factOf(items(BATTLES.momentum_chaser), 'check_read')).toContain('+2.6% from entry');
     expect(factOf(items(BATTLES.momentum_chaser), 'check_read')).toContain('1.05× a rung step (the first rung is 1.00×)');
   });
-  it('the rung compare: from the SCORED price, in displayed values ($103.77 − $103.40 = $0.37 to +30)', () => {
-    expect(factOf(items(BATTLES.momentum_chaser), 'rung_compare')).toContain('AAPL $0.37 from +30');
+  it('the rung compare: from the SCORED price, in displayed values ($103.78 − $103.40 = $0.38 to +30; the rung $103.7725 shown rounded UP, Bomb mode BP-1)', () => {
+    expect(factOf(items(BATTLES.momentum_chaser), 'rung_compare')).toContain('AAPL $0.38 from +30');
   });
   it('the standing: the header\'s text and lead', () => {
     expect(factOf(items(BATTLES.momentum_chaser), 'standing')).toBe('You trail +62 – +68');
@@ -69,11 +69,11 @@ describe('the numbers, worked by hand on the shared fixture (Trend Follower, liv
 });
 
 describe('the distance to the next rung is Bomb mode\'s own number (ladder.js toGo; BUILD_RULES §9 — review A5)', () => {
-  it('live $102.2673, rung $103.7725: "$1.50 (1.47%) to go" — the displayed $103.77 − $102.27, of $102.27', () => {
+  it('live $102.2673, rung $103.7725: "$1.51 (1.48%) to go" — the displayed $103.78 (rounded UP, Bomb mode BP-1) − $102.27, of $102.27', () => {
     const live = 102.2673;
-    expect(factOf(items(BATTLES.momentum_chaser, { live }), 'rung_distance')).toBe('Next rung +30 at $103.77 · $1.50 (1.47%) to go');
+    expect(factOf(items(BATTLES.momentum_chaser, { live }), 'rung_distance')).toBe('Next rung +30 at $103.78 · $1.51 (1.48%) to go');
     const go = toGo(holdingOf(BATTLES.momentum_chaser, 'AAPL', SHEET_NOW, ROW).ladder, live);
-    expect([go.distance, go.pctShown]).toEqual([1.5, 1.47]);
+    expect([go.rungShown, go.distance, go.pctShown]).toEqual([103.78, 1.51, 1.48]);
   });
   it('the live price at or past the next rung: no distance item (it banks only at a check — never a negative "to go")', () => {
     expect(factOf(items(BATTLES.momentum_chaser, { live: 103.78 }), 'rung_distance')).toBeUndefined();

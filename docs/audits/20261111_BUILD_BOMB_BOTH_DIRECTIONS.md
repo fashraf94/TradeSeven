@@ -164,7 +164,10 @@ The runner (`mutate.mjs`, session scratchpad) works on a `git archive` snapshot 
 - RC1 (BD-8 at the selector), RC2 (the Fuse ignores the banded lead), RC3a–c (the Danger Zone through the plot), RC4, RC5, RC6a–b (Details), RC7 (check dots since `enteredAt`), RC8a–d (the door at the source; the proximity line kept), RC9a–b (an inline price on its points; labels past the right edge), RC10 (float slack), RC11a–b (the honesty net's per-kind counts; the all-hit wording), RC12 (`nowrap` on the to-go line);
 - RN1 (the band's edge), RN5 (amber in the Danger Zone).
 
-The per-mutant results are in `mutants.result.json` beside this report's copy.
+The per-mutant results are in three files beside this report's copy (in `BombBothDirections/`). *(Corrected 2026-11-11 by the pre-flip fix PR, BP-8. This line first named one file, `mutants.result.json`, which is not there.)*
+- `mutants-brief.result.json`: the brief's seven, M1–M7, all killed.
+- `mutants-review.result.json`: the 38 review-fix and lens C mutants, first pass. RD4 and RD5 read SURVIVED there.
+- `mutants-review-RD4-RD5.result.json`: the rerun of RD4 and RD5 after their rows were made able to fail. Both killed.
 
 ## 6. The review (BUILD_RULES §2)
 
@@ -363,6 +366,8 @@ You're on the allowlist, so you see it before anyone else. Times are Central (th
 7. **The Danger Zone:** if a held stock sits within 0.5 % above a downside rung, the 💣 view turns into the Danger zone: a red goal line, the distance as the big number, "to Bust −10 · 0.42%". If none does, write "no Danger Zone this session".
 8. **The entry line's time:** a stock entered overnight shows its price's time ("Mon 4:05 PM", not "Mon 10:21 PM"). A stock entered during the session now shows about **16 minutes earlier** than before. AMZN would read "Tue 11:00 AM", not "11:16 AM", because that is the time EODHD stamps on the fill price (§1.2).
 9. **On your phone's font:** look for any label touching another on the 💣 chart, especially the rung names against the pills. The layout assumes a monospace glyph about 0.6 em wide. Some phones draw bold monospace wider (§6.4, refuter D's extra finding). A screenshot of any touch is enough.
+10. **A rung's price ends in the cent that makes its line true** *(added by the pre-flip fix PR, BP-1)*. An upside rung is rounded up, a downside rung down. For example AMZN's Crash shows **$254.18**, not $254.19, and its +30 shows $286.26. The Fuse, the bar, the levels table and "What has to happen" all print the same number.
+11. **The downside levels and the Danger Zone are the same red** *(added by the pre-flip fix PR, BP-2)*. Compare the Bust row's red in the levels table with the Danger Zone's goal line and big number.
 
 ## 12. What ran, where, and cleanup
 
@@ -374,4 +379,17 @@ You're on the allowlist, so you see it before anyone else. Times are Central (th
 - **Production reads (read-only, §1):** the session scratchpad's `prod/bo1-show.mjs`, `bdi-find*.mjs`, `bdi-read.mjs` and `bdi-vintage.mjs`.
 - **Review:** eight subagents (four lenses, four refuters), each on its own `git archive` snapshot in the scratchpad. Their harnesses and results stay there.
 - **Cleanup:** after the last check, both WSL trees, their `node_modules` links and `~/pd-bombdir-runs` are removed under the suite lock (`unlink`, `git -C ~/pd-ci worktree remove --force`, `worktree prune`); PR 2's Windows worktree and the review snapshots are removed (junctions first). The space freed is in the PR description.
+- **What was deleted and what survives** *(added 2026-11-11 by the pre-flip fix PR, BP-8, from a directory listing that day; the bullet above did not say)*:
+  - **Deleted:** the eight reviewers' `git archive` snapshot trees, with their `node_modules` junctions. These were the four lenses' and the four refuters' working copies. Also deleted: the mutation tree `mut/tree`, where every mutant ran (each `mut/out-*/*-control.json` records that path). Also deleted: PR 2's Windows worktree, and the WSL trees `~/pd-ci-bombdir` and `~/pd-ci-bombdirk` with `~/pd-bombdir-runs`. On Nov 11, none of those paths exists, and `git -C ~/pd-ci worktree list` shows no `bombdir` entry.
+  - **Survives in the session scratchpad** (`…/36afc57d2939746c/317d0735-…/scratchpad/`):
+    - `review/lensD-out/` (29 files): lens D's Edge harness and measurements;
+    - `review/refC-out/` (23 files): refuter C's import-graph sweep;
+    - `review/refD-out/` (57 files): refuter D's layout probes;
+    - `review/pr1.diff`;
+    - `mut/out-brief/`, `mut/out-review/` and `mut/out-review2/`: each mutant's control and mutant JSON, plus each set's `mutants.result.json`;
+    - `phone/`: the five renders' HTML and PNG;
+    - `prod/`: the five read-only production scripts;
+    - `wsl/`: the twelve step scripts.
+  - Lenses A and B and refuters A and B returned their findings as text, so they have no result folder.
+  - **Survives in `C:/Users/fashr/Documents/FantasyTrades/ResearchModal/BombBothDirections/`:** the five PNGs and the three result files named in §5.
 
