@@ -7,7 +7,7 @@
 
 import { priceDecimals, priceText } from '../priceFormat.js';
 import { nextEligibleSlot } from '../../../../api/_utils/callRecords/horizon.js';
-import { measuredLadder, previewLadder, v4Ladder, v4LevelsFor, rungPct } from './ladder.js';
+import { measuredLadder, previewLadder, v4Ladder, v4LevelsFor, rungPct, rungShown } from './ladder.js';
 import { BOMB_COPY, money, rungPctText } from './bombCopy.js';
 import { etClock, etDate, etWeekday } from './checkClock.js';
 
@@ -89,11 +89,14 @@ export const checkNameAt = (ms) => (finite(ms) ? BOMB_COPY.checkName(etClock(ms)
 /**
  * BD-6, BUILD_RULES §9 — ONE rung's printed facts, from the one ladder and the
  * one decimals: the Fuse's titles and price labels, the bar and the levels
- * table all print these exact strings for a rung.
+ * table all print these exact strings for a rung. The price is the rung's
+ * displayed price, rounded toward its award (ladder.rungShown, BP-1); the % is
+ * the rule's (ladder.rungPct, BP-3).
  */
 export function rungFacts(ladder, rung, decimals) {
   const pct = rungPct(ladder, rung, decimals);
-  return { pct, pctText: finite(pct) ? rungPctText(pct) : null, priceText: money(rung.price, decimals) };
+  const shown = rungShown(rung, decimals);
+  return { pct, pctText: finite(pct) ? rungPctText(pct) : null, shown, priceText: money(shown, finite(decimals) ? decimals : priceDecimals(rung.price)) };
 }
 
 /** The live price's move from the baseline, % of the displayed baseline, from the displayed prices — the Fuse's live label and the table's live row print it (§9). */
@@ -127,10 +130,14 @@ export function checkSlotOf(ms, battleExpiresAtMs = null) {
  *   down leads    Bust (−10) if it's at or below $259.53 at a check · +15 needs $280.91 · next check 1:15
  *   after a hit   Bust −10 hit at the 1:15 check · next below: Crash at $253.47   (down leading)
  *   banked / all  the Build A lines, unchanged (up leading)
+ *
+ * Every rung price here is the rung's displayed price (ladder.rungShown, BP-1):
+ * "Needs $X at a check" and "Bust (−10) if it's at or below $X" are true at X.
  */
 export function sheetLine({ ladder, clockLabel = null, checking = false, bankedTimes = {}, hitTimes = {}, lead = null, decimals }) {
   if (!ladder || ladder.status !== 'ok') return null;
   const d = decimals;
+  const px = (r) => rungShown(r, d);
   if (ladder.kind === 'preview') {
     if (ladder.model === 'v4') return BOMB_COPY.previewV4(ladder.baseline.price, d);
     return (ladder.heldPreview === true ? BOMB_COPY.heldPreviewNeeds : BOMB_COPY.previewNeeds)(ladder.baseline.price, d);
@@ -141,16 +148,16 @@ export function sheetLine({ ladder, clockLabel = null, checking = false, bankedT
   const nextDown = ladder.nextDown ?? null;
   if (lead === 'down' && nextDown) {
     const lastHit = [...ladder.down].reverse().find((r) => r.hit) || null;
-    if (lastHit) return join(BOMB_COPY.downHitAt(lastHit.label, lastHit.points, checkNameAt(hitTimes[lastHit.key])), BOMB_COPY.downNextBelow(nextDown.label, nextDown.price, d));
-    return join(BOMB_COPY.downIfAtCheck(nextDown.label, nextDown.points, nextDown.price, d), next ? BOMB_COPY.upNeeds(next.points, next.price, d) : null, clock);
+    if (lastHit) return join(BOMB_COPY.downHitAt(lastHit.label, lastHit.points, checkNameAt(hitTimes[lastHit.key])), BOMB_COPY.downNextBelow(nextDown.label, px(nextDown), d));
+    return join(BOMB_COPY.downIfAtCheck(nextDown.label, nextDown.points, px(nextDown), d), next ? BOMB_COPY.upNeeds(next.points, px(next), d) : null, clock);
   }
   if (!next) return BOMB_COPY.allRungsBanked(ladder.bankedPoints);
   const lastBanked = [...ladder.up].reverse().find((r) => r.banked) || null;
   if (lastBanked) {
     const at = finite(bankedTimes[lastBanked.key]) ? etClock(bankedTimes[lastBanked.key]) : null;
-    return BOMB_COPY.afterBank(lastBanked.points, at, next.price, d);
+    return BOMB_COPY.afterBank(lastBanked.points, at, px(next), d);
   }
-  return join(BOMB_COPY.needsFor(next.price, d, next.points), nextDown ? BOMB_COPY.downAt(nextDown.label, nextDown.price, d) : null, clock);
+  return join(BOMB_COPY.needsFor(px(next), d, next.points), nextDown ? BOMB_COPY.downAt(nextDown.label, px(nextDown), d) : null, clock);
 }
 
 /**

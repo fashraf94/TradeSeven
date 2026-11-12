@@ -195,7 +195,9 @@ export function selectBombRecord(battle, symbol, nowMs) {
     // re-derived: the targets and crossed tiers are the context's.
     const committed = committedStockContext(battle, asset, 'agent', tier, slot);
     const measured = committed.status === 'valid'
-      ? { measured: true, baselinePrice: committed.fill, targets: committed.targets.map((t) => ({ key: t.key, price: t.target })), crossedTiers: [...committed.crossedTiers] }
+      // BP-3: the frozen scoringPct rides along, so a rung's % is the rule's % (k × it)
+      // — the same number Details prints from scoringPctDecimal (one committed context).
+      ? { measured: true, baselinePrice: committed.fill, scoringPct: committed.scoringPct, targets: committed.targets.map((t) => ({ key: t.key, price: t.target })), crossedTiers: [...committed.crossedTiers] }
       : null;
     // BD-6: the levels table's collapsed Details — StockRewardDetails' facts,
     // carried unchanged from the same committed context (nothing re-derived).

@@ -51,7 +51,7 @@ export function RedZoneChip({ mode }) {
   if (!isZoneMode(mode)) return null;
   const danger = isDangerZoneMode(mode);
   const frozen = mode === 'closed' || mode === 'dangerClosed';
-  const accent = danger ? BT.risk : HEAT;
+  const accent = danger ? BT.red : HEAT; // BP-2: one red for the downside (--ft-neg)
   return (
     <span data-bomb-redzone-chip={mode} {...(danger ? { 'data-bomb-zone-chip': 'danger' } : {})} style={{
       fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, whiteSpace: 'nowrap',

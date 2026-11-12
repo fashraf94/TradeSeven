@@ -104,17 +104,17 @@ describe('BD-5 — the Danger Zone in the hook', () => {
     await render(props(amznRecord(), 259.9)); // inside the band above Bust
     expect(out.mode).toBe('danger');
     const after = amznRecord({ crossedTiers: ['bust'], lastScoredAt: '2026-11-10T18:15:58.000Z', scored: { price: 259.4, atMs: Date.parse('2026-11-10T17:59:00.000Z'), checkAtMs: Date.parse('2026-11-10T18:15:30.000Z') } });
-    await render(props(after, 259.4)); // Crash ($254.19) is 2 % away: the zone leaves
+    await render(props(after, 259.4)); // Crash ($254.18) is 2 % away: the zone leaves
     expect(out.hitTimes).toEqual({ bust: Date.parse('2026-11-10T18:15:00.000Z') });
     expect(out.moment).toBeNull();
     expect(out.mode).toBe('fuse');
-    expect(out.sheetLine).toBe('Bust −10 hit at the 1:15 check · next below: Crash at $254.19');
+    expect(out.sheetLine).toBe('Bust −10 hit at the 1:15 check · next below: Crash at $254.18');
   });
   it('a rung already hit at the first look has no seen time (no invented check)', async () => {
     start('2026-11-10T18:16:10.000Z');
     await render(props(amznRecord({ crossedTiers: ['bust'] }), 258));
     expect(out.hitTimes).toEqual({});
-    expect(out.sheetLine).toBe('Bust −10 hit · next below: Crash at $254.19');
+    expect(out.sheetLine).toBe('Bust −10 hit · next below: Crash at $254.18');
   });
 });
 
@@ -198,7 +198,7 @@ describe('review fixes (2026-11-11), lens C — the hook through the plot and th
     start('2026-11-10T18:16:10.000Z');
     await render(props(amznRecord(), 259.9, { timeframe: 'spectate' }));
     await render(props(amznRecord({ crossedTiers: ['bust'], lastScoredAt: '2026-11-10T18:15:58.000Z' }), 254.7, { timeframe: 'spectate' }));
-    expect(out.mode).toBe('danger'); // Crash $254.19 is 0.2 % below
+    expect(out.mode).toBe('danger'); // Crash $254.18 is 0.2 % below
     expect(renderToStaticMarkup(<BombPlot view={out} height={354} />)).toContain('Bust · −10 · hit at the 1:15 check');
   });
   it('C6: the record\'s Details reach the sheet unchanged through the hook', async () => {

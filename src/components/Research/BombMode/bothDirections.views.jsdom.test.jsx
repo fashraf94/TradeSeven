@@ -41,7 +41,7 @@ const textOf = (el) => (el ? el.textContent : null);
 describe('BD-3 — the Fuse in both directions (the founder\'s AMZN at $268.09)', () => {
   const d = fuse(amzn(), 268.09, { lead: 'down' });
   it('the downside rungs are drawn like the upside: a line across the plot, the title with its %, the points and price right of the rail', () => {
-    for (const [key, title, pts, price] of [['bust', 'BUST · −3.96%', '−10', '$259.53'], ['crash', 'CRASH · −5.93%', '−20', '$254.19'], ['meltdown', 'MELTDOWN · −7.91%', '−35', '$248.85']]) {
+    for (const [key, title, pts, price] of [['bust', 'BUST · −3.95%', '−10', '$259.53'], ['crash', 'CRASH · −5.93%', '−20', '$254.18'], ['meltdown', 'MELTDOWN · −7.91%', '−35', '$248.84']]) {
       const g = d.querySelector(`[data-fuse-rung="${key}"][data-side="down"]`);
       expect(g.querySelector('line')).not.toBeNull();
       expect(textOf(g.querySelector('text'))).toBe(title);
@@ -49,7 +49,7 @@ describe('BD-3 — the Fuse in both directions (the founder\'s AMZN at $268.09)'
       expect(right.querySelector('text').textContent).toBe(pts);
       expect(textOf(right.querySelector(`[data-fuse-price="${key}"]`))).toBe(price); // at 354 px every price is drawn (review N6)
     }
-    expect(textOf(d.querySelector('[data-fuse-rung="bagger"] text'))).toBe('BAGGERBOMB · +3.96%');
+    expect(textOf(d.querySelector('[data-fuse-rung="bagger"] text'))).toBe('BAGGERBOMB · +3.95%');
   });
   it('"Below · compressed" is gone; the faint red tint below the baseline stays', () => {
     expect(d.body.textContent).not.toMatch(/compressed/i);
@@ -229,13 +229,13 @@ describe('BD-4 — "What has to happen" is lead-aware', () => {
     expect(sheetLine({ ladder: l, lead: 'down', clockLabel: '1:15', decimals: 2 })).toBe("Bust (−10) if it's at or below $259.53 at a check · +15 needs $280.91 · next check 1:15");
     expect(sheetLine({ ladder: l, lead: 'down', checking: true, decimals: 2 })).toBe("Bust (−10) if it's at or below $259.53 at a check · +15 needs $280.91 · checking…");
   });
-  it('after a hit: Bust −10 hit at the 1:15 check · next below: Crash at $254.19 — the check only when the modal saw it (BA-4)', () => {
+  it('after a hit: Bust −10 hit at the 1:15 check · next below: Crash at $254.18 — the check only when the modal saw it (BA-4)', () => {
     const hit = amzn({ crossedTiers: ['bust'] });
-    expect(sheetLine({ ladder: hit, lead: 'down', hitTimes: { bust: Date.parse('2026-11-10T18:15:00.000Z') }, decimals: 2 })).toBe('Bust −10 hit at the 1:15 check · next below: Crash at $254.19');
-    expect(sheetLine({ ladder: hit, lead: 'down', decimals: 2 })).toBe('Bust −10 hit · next below: Crash at $254.19');
+    expect(sheetLine({ ladder: hit, lead: 'down', hitTimes: { bust: Date.parse('2026-11-10T18:15:00.000Z') }, decimals: 2 })).toBe('Bust −10 hit at the 1:15 check · next below: Crash at $254.18');
+    expect(sheetLine({ ladder: hit, lead: 'down', decimals: 2 })).toBe('Bust −10 hit · next below: Crash at $254.18');
   });
   it('the banked and all-banked lines stay', () => {
-    expect(sheetLine({ ladder: amzn({ crossedTiers: ['bagger'] }), lead: 'up', decimals: 2 })).toBe('+15 banked. Next: $286.25 at a check');
+    expect(sheetLine({ ladder: amzn({ crossedTiers: ['bagger'] }), lead: 'up', decimals: 2 })).toBe('+15 banked. Next: $286.26 at a check');
     expect(sheetLine({ ladder: amzn({ crossedTiers: ['bagger', 'doubleBagger', 'tenBagger'] }), lead: 'up', decimals: 2 })).toBe('+95 banked · every rung is banked');
   });
 });
@@ -252,9 +252,9 @@ describe('BD-6 — the levels table under the bar', () => {
   it('each row: the emoji and name over `±x.xx% · $price`; the points (bold, in color) over the state', () => {
     const r = d.querySelector('[data-level="bagger"]');
     expect(r.textContent).toContain('💣 BaggerBomb');
-    expect(d.querySelector('[data-level-sub="bagger"]').textContent).toBe('+3.96% · $280.91');
+    expect(d.querySelector('[data-level-sub="bagger"]').textContent).toBe('+3.95% · $280.91');
     expect(d.querySelector('[data-level-points="bagger"]').textContent).toBe('+15');
-    expect(d.querySelector('[data-level-sub="bust"]').textContent).toBe('−3.96% · $259.53');
+    expect(d.querySelector('[data-level-sub="bust"]').textContent).toBe('−3.95% · $259.53');
     expect(d.querySelector('[data-level-points="bust"]').textContent).toBe('−10');
     expect(d.querySelector('[data-level-points="bust"]').getAttribute('style')).toMatch(/font-weight:\s*800/);
   });
@@ -268,7 +268,7 @@ describe('BD-6 — the levels table under the bar', () => {
     expect(both.querySelector('[data-level-state-text="bagger"]').getAttribute('style')).toContain('--ft-pos');
     expect(both.querySelector('[data-level-state-text="bust"]').textContent).toBe('hit 1:15');
     expect(both.querySelector('[data-level-state-text="bust"]').getAttribute('style')).toContain('--ft-neg');
-    expect(both.querySelector('[data-level-state-text="crash"]').textContent).toBe('next · 8 bricks'); // $268.09 − $254.19 = $13.90 = 7.8 bricks → 8
+    expect(both.querySelector('[data-level-state-text="crash"]').textContent).toBe('next · 8 bricks'); // $268.09 − $254.18 = $13.91 = 7.8 bricks → 8
   });
   it('the market closed: the marker says Last', () => {
     const closed = doc(renderToStaticMarkup(<BombSheet view={viewOf(amzn(), 268.09, { marketOpen: false })} />));
@@ -304,7 +304,9 @@ describe('BD-6 — Details, collapsed, StockRewardDetails\' facts moved unchange
     const el = d.querySelector('details[data-bomb-details]');
     expect(el).not.toBeNull();
     expect(el.hasAttribute('open')).toBe(false);
-    expect(el.textContent).toBe(['Details', 'Frozen measured %: 3.954943% (exact)', 'BaggerBomb: exact $280.90704218846', 'Quote $268.09 as of 2026-11-10T17:44:00.000Z', 'Position pos-amzn', `Receipt ${'a'.repeat(64)}`, 'Input stockThresholdInputs/snap-1', 'Model stock_measured_atr14_fullday_v2', 'Cents are rounded half-even for display only; awards use the exact targets.'].join(''));
+    expect(el.textContent).toBe(['Details', 'Frozen measured %: 3.954943% (exact)', 'BaggerBomb: exact $280.90704218846', 'Quote $268.09 as of 2026-11-10T17:44:00.000Z', 'Position pos-amzn', `Receipt ${'a'.repeat(64)}`, 'Input stockThresholdInputs/snap-1', 'Model stock_measured_atr14_fullday_v2', BOMB_COPY.detailsCents].join(''));
+    // BP-1: the note says how Bomb mode rounds (toward the award), not half-even.
+    expect(BOMB_COPY.detailsCents).toBe('Prices are rounded toward the award (up for the upside, down for the downside), so a price that reaches the shown number scores. Awards use the exact targets.');
   });
   it('no Details on a preview', () => {
     const p = previewLadder({ previousClose: 99, threshold: 2 });
@@ -325,9 +327,9 @@ describe('BD-5 — the Danger Zone view', () => {
     expect(d.querySelector('[data-rz-clock]').textContent).toContain('1:15');
     expect(d.querySelector('[data-rz-scored]').textContent).toBe('live $260.62 · scored $260.65 at the 1:00 check');
   });
-  it('the goal line is the downside rung in the risk red, with no amber heat', () => {
+  it('the goal line is the downside rung in the downside levels\' red (--ft-neg since BP-2), with no amber heat', () => {
     const d = render('danger');
-    expect(d.querySelector('[data-rz-goal="down"]').getAttribute('style')).toContain('--ft-red');
+    expect(d.querySelector('[data-rz-goal="down"]').getAttribute('style')).toContain('--ft-neg');
     expect(d.querySelector('[data-bomb-view] > svg').innerHTML).not.toContain('url(#bombRzHeat)');
     expect(d.body.textContent).toContain('📉 Bust · −10 pts · $259.53');
   });
@@ -453,14 +455,16 @@ describe('review D1–D4 — the Danger Zone\'s text is one column, and its goal
     const ys = d.querySelector('[data-rz-trace-line]').getAttribute('d').match(/,[\d.]+/g).map((s) => Number(s.slice(1)));
     expect(Math.min(...ys)).toBeGreaterThan(goalY + 1); // $258.20 sits clearly under Bust $259.53
   });
-  it('the numeral is in the risk red, never the red zone\'s amber heat (review N5)', () => {
+  it('the numeral is in the downside levels\' red (--ft-neg, BP-2: one red), never the red zone\'s amber heat (review N5, rewritten)', () => {
     const style = draw(260.05).querySelector('[data-rz-distance] div').getAttribute('style');
-    expect(style).toContain('--ft-red');
+    expect(style).toContain('--ft-neg');
     expect(style).not.toContain('--ft-amber');
+    expect(style).not.toContain('--ft-red');
   });
-  it('the red zone (side up) keeps Build A\'s layout: its numeral is still placed by the goal, not in the column', () => {
+  it('the red zone (side up) now has the same column (BP-4): its numeral is in the flow column, not placed by the goal', () => {
     const up = doc(renderToStaticMarkup(<RedZone ladder={ladder} go={toGo(ladder, 280.2)} live={280.2} decimals={2} mode="approaching" trace={trace} clock={null} scoredText={null} nowMs={Date.parse('2026-11-10T18:02:30.000Z')} />));
-    expect(up.querySelector('[data-rz-distance]').getAttribute('style')).toMatch(/position:\s*absolute/);
+    expect(up.querySelector('[data-rz-distance]').getAttribute('style')).not.toMatch(/position:\s*absolute/);
+    expect(up.querySelector('[data-rz-tags]').parentElement.contains(up.querySelector('[data-rz-distance]'))).toBe(true);
   });
 });
 

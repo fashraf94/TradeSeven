@@ -87,7 +87,7 @@ export function levelRows(view) {
     else if (held && side === 'up' && ladder.next?.key === r.key) { state = 'next'; stateText = BOMB_COPY.levelNext(view.go?.bricks); }
     else if (held && side === 'down' && ladder.nextDown?.key === r.key) { state = 'next'; stateText = BOMB_COPY.levelNext(view.goDown?.bricks); }
     return {
-      key: r.key, side, emoji: r.emoji, name: r.label, price: r.price, priceText: facts.priceText,
+      key: r.key, side, emoji: r.emoji, name: r.label, price: r.price, shown: facts.shown, priceText: facts.priceText,
       sub: BOMB_COPY.levelSub(facts.pctText, facts.priceText),
       points: side === 'down' ? BOMB_COPY.downPoints(r.points) : BOMB_COPY.levelPoints(r.points),
       state, stateText,
@@ -95,15 +95,16 @@ export function levelRows(view) {
   };
   const rows = [
     ...[...ladder.up].sort((a, b) => b.k - a.k).map((r) => rungRow(r, 'up')),
-    { key: 'baseline', side: 'base', emoji: null, name: baselineText(ladder, d), price: ladder.baseline.price, sub: null, points: null, state: null, stateText: null },
+    { key: 'baseline', side: 'base', emoji: null, name: baselineText(ladder, d), price: ladder.baseline.price, shown: Number(priceText(ladder.baseline.price, d)), sub: null, points: null, state: null, stateText: null },
     ...[...ladder.down].sort((a, b) => b.k - a.k).map((r) => rungRow(r, 'down')),
   ];
   if (finite(view.live) && view.live > 0) {
-    const shown = (p) => Number(priceText(p, d));
-    const liveShown = shown(view.live);
+    const liveShown = Number(priceText(view.live, d));
     // Review A6: a live price ON a rung sits past it in that rung's award direction —
     // above an upside rung (reaching it is the upside's condition), below a downside one.
-    const at = rows.findIndex((r) => (r.side === 'down' ? shown(r.price) < liveShown : shown(r.price) <= liveShown));
+    // BP-1: against each row's PRINTED price (a rung's rungShown), so the marker never
+    // sits above a rung it is a cent under.
+    const at = rows.findIndex((r) => (r.side === 'down' ? r.shown < liveShown : r.shown <= liveShown));
     const pct = liveMovePct(ladder, view.live, d);
     const text = (view.marketOpen === false ? BOMB_COPY.levelLast : BOMB_COPY.levelLive)(view.live, d, pct);
     rows.splice(at === -1 ? rows.length : at, 0, { key: 'live', side: 'live', text });

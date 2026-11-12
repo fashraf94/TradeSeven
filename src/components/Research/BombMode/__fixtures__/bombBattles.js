@@ -67,6 +67,7 @@ export function measuredRecord({
     measured: {
       measured: true,
       baselinePrice: fill,
+      scoringPct: thresholdPct, // BP-3: the selector carries the committed context's scoringPct
       targets: Object.entries(MULTIPLIERS).map(([key, m]) => ({ key, price: fill * (1 + (m * thresholdPct) / 100) })),
       crossedTiers: [...crossedTiers],
     },
@@ -82,8 +83,9 @@ export function measuredRecord({
  * fill quote EODHD timestamps 11:00 AM; the 1:00 check scored $268.09 on a quote
  * the provider stamps 12:44 PM, observed at 1:00:28 PM, committed 1:00:59 PM —
  * the ~16-minute lag BD-I1 found, so a row can tell the quote's minute from the
- * check. Rungs: +15 $280.91, +30 $286.25, +50 $291.59; Bust $259.53, Crash
- * $254.19, Meltdown $248.85.
+ * check. Rungs as shown since BP-1 (rounded toward the award): +15 $280.91,
+ * +30 $286.26, +50 $291.60; Bust $259.53, Crash $254.18, Meltdown $248.84
+ * (nearest-cent before: $286.25, $291.59, $254.19, $248.85).
  */
 export const AMZN_SCORING_PCT = 3.954943;
 export function amznRecord(over = {}) {

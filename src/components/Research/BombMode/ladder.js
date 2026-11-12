@@ -22,7 +22,7 @@
 //   model: 'measured' | 'legacy' | 'preview' | 'v4',
 //   baseline: { price, source, atMs }, rungs: [rung], up: [rung] (k asc),
 //   down: [rung] (k desc), next: rung | null, bankedPoints,
-//   nextDown: rung | null, hitPoints }
+//   nextDown: rung | null, hitPoints, threshold: number | null }
 // rung: { key, label, emoji, points, k, price, banked, hit }
 //
 // BOTH DIRECTIONS (refinement 2026-11-10, BD-1): `next` is the first unbanked
@@ -92,6 +92,9 @@ export function measuredLadder({ measured, entryAtMs = null } = {}) {
   return finish({
     status: 'ok', kind: 'held', model: 'measured',
     baseline: { price: measured.baselinePrice, source: 'fill', atMs: finite(entryAtMs) ? entryAtMs : null },
+    // BP-3: the rule's % — the committed context's frozen scoringPct (the one
+    // Details prints), carried by the selector; never back-derived from the targets.
+    threshold: positive(measured.scoringPct) ? measured.scoringPct : null,
     rungs,
   });
 }
@@ -148,6 +151,7 @@ export function legacyLadder({ record, previousClose, nowMs } = {}) {
   return finish({
     status: 'ok', kind: 'held', model: 'legacy',
     baseline: { price: baseline, source, atMs: source === 'previous_close' ? null : (finite(record.entryAtMs) ? record.entryAtMs : null) },
+    threshold,
     rungs,
   });
 }
@@ -156,7 +160,7 @@ export function legacyLadder({ record, previousClose, nowMs } = {}) {
 export function previewLadder({ previousClose, threshold } = {}) {
   if (!positive(previousClose) || !positive(threshold)) return unavailable('preview_unavailable', { kind: 'preview', model: 'preview' });
   const rungs = TIERS.map((t) => rungOf(t, previousClose * (1 + (t.k * threshold) / 100), false));
-  return finish({ status: 'ok', kind: 'preview', model: 'preview', baseline: { price: previousClose, source: 'previous_close', atMs: null }, rungs });
+  return finish({ status: 'ok', kind: 'preview', model: 'preview', baseline: { price: previousClose, source: 'previous_close', atMs: null }, threshold, rungs });
 }
 
 /** The V4 cron's level names per tier (compute-daily-baggerbomb-levels; BaggerBombTab cronTargetMap). */
@@ -167,7 +171,7 @@ export function v4Ladder({ levels } = {}) {
   if (!levels || !positive(levels.baseline)) return unavailable('preview_unavailable', { kind: 'preview', model: 'v4' });
   const rungs = TIERS.map((t) => rungOf(t, levels[V4_LEVEL_KEYS[t.key]], false));
   if (rungs.some((r) => !positive(r.price))) return unavailable('preview_unavailable', { kind: 'preview', model: 'v4' });
-  return finish({ status: 'ok', kind: 'preview', model: 'v4', baseline: { price: levels.baseline, source: 'daily_levels', atMs: null }, rungs });
+  return finish({ status: 'ok', kind: 'preview', model: 'v4', baseline: { price: levels.baseline, source: 'daily_levels', atMs: null }, threshold: null, rungs });
 }
 
 /** A V4 battle's levels for one symbol, only when they are TODAY's (useBaggerBombBattleV4's rule). */
@@ -176,6 +180,36 @@ export function v4LevelsFor(dailyLevels, symbol, nowMs) {
   if (!finite(nowMs) || dailyLevels.date !== etDateOf(nowMs)) return null;
   const levels = dailyLevels.assets[symbol];
   return levels && typeof levels === 'object' ? levels : null;
+}
+
+// ── The rung's displayed price (BP-1, 2026-11-11) ───────────────────────────
+
+/** Float slack for "already on a whole display unit": 1e-9 of the scaled price. */
+export const RUNG_SHOWN_SLACK = 1e-9;
+
+/**
+ * BP-1 — A RUNG'S DISPLAYED PRICE, rounded in its AWARD direction at the
+ * asset's display decimals, so every line that names it is true at that exact
+ * number: an upside rung rounds UP (a price that reaches the shown number has
+ * reached the exact target), a downside rung rounds DOWN (a price at or below
+ * the shown number is at or below the exact target). A target already on a
+ * whole display unit stays put, within float slack (1e-9 relative), so
+ * 259.5300000001 and 280.91 (28091.000000000004 cents) print as themselves.
+ * Every surface that prints a rung (the Fuse, the pills, the bar, the levels
+ * table, the sheet line, the red-zone and Danger Zone goal tags) takes the
+ * price from here (BUILD_RULES §9), and toGo / toGoDown measure from it. The
+ * exact targets stay the record's: Details prints them, awards use them.
+ * Returns a number at `decimals` places, or null.
+ */
+export function rungShown(rung, decimals) {
+  if (!rung || !positive(rung.price) || !finite(rung.k) || rung.k === 0) return null;
+  const d = finite(decimals) ? decimals : priceDecimals(rung.price);
+  const scale = 10 ** d;
+  const scaled = rung.price * scale;
+  const whole = Math.round(scaled);
+  const onUnit = Math.abs(scaled - whole) <= RUNG_SHOWN_SLACK * Math.abs(scaled);
+  const units = onUnit ? whole : rung.k > 0 ? Math.ceil(scaled) : Math.floor(scaled);
+  return Number((units / scale).toFixed(d));
 }
 
 // ── Bricks and the distance to the next rung ───────────────────────────────
@@ -207,7 +241,8 @@ export function shownBrickUnit(ladder, decimals) {
   if (exact === null) return null;
   const first = ladder.up.find((r) => r.k === 1);
   const d = finite(decimals) ? decimals : priceDecimals(first.price);
-  const step = Number(priceText(first.price, d)) - Number(priceText(ladder.baseline.price, d));
+  // BP-1: the displayed +1 rung is rungShown's (rounded up), like the distance it divides.
+  const step = rungShown(first, d) - Number(priceText(ladder.baseline.price, d));
   return step > 0 ? step / BRICKS_PER_THRESHOLD : exact;
 }
 
@@ -231,16 +266,17 @@ export function brickPlan(ladder, tiers = BAGGER_TIERS) {
 
 /**
  * The distance from the live price to the next unbanked upside rung, in
- * DISPLAYED values (BUILD_RULES §9): the rung and the live price are rounded to
- * the asset's display decimals first, and the distance, the % (of the
- * displayed live price) and the bricks (rounded UP) all come from those two.
+ * DISPLAYED values (BUILD_RULES §9): the rung (rungShown, rounded UP — BP-1)
+ * and the live price (nearest) at the asset's display decimals first, and the
+ * distance, the % (of the displayed live price) and the bricks (rounded UP) all
+ * come from those two.
  */
 export function toGo(ladder, live, { decimals = null, tiers = BAGGER_TIERS } = {}) {
   if (!ladder || ladder.status !== 'ok' || !ladder.next || !positive(live)) return null;
   const d = finite(decimals) ? decimals : priceDecimals(live);
-  const rungShown = Number(priceText(ladder.next.price, d));
+  const shown = rungShown(ladder.next, d);
   const liveShown = Number(priceText(live, d));
-  const distance = Number((rungShown - liveShown).toFixed(d));
+  const distance = Number((shown - liveShown).toFixed(d));
   const pct = (distance / liveShown) * 100;
   // The % as the red zone prints it (two decimals) — the band is decided on
   // THIS number, so a displayed 0.50% enters (BUILD_RULES §9, rounds before zoning).
@@ -252,12 +288,13 @@ export function toGo(ladder, live, { decimals = null, tiers = BAGGER_TIERS } = {
   const bricks = plan && unit !== null ? (distance > 0 ? Math.ceil(distance / unit - 1e-9) : 0) : null;
   // BD-2: the unrounded distance in bricks, for the lead rule (never shown).
   const bricksExact = unit !== null ? distance / unit : null;
-  return { rung: ladder.next, rungShown, liveShown, distance, pct, pctShown, bricks, bricksExact, decimals: d, side: 'up' };
+  return { rung: ladder.next, rungShown: shown, liveShown, distance, pct, pctShown, bricks, bricksExact, decimals: d, side: 'up' };
 }
 
 /**
  * BD-1 — the mirror of toGo for the next unhit DOWNSIDE rung, in DISPLAYED
- * values (BUILD_RULES §9): `distance = liveShown − rungShown`, positive while
+ * values (BUILD_RULES §9; the rung by rungShown, rounded DOWN — BP-1):
+ * `distance = liveShown − rungShown`, positive while
  * the live price is above the rung; `distance ≤ 0` means at or below the rung,
  * and a check has not read it yet. `pct` is of the displayed live price and
  * `pctShown` its two-decimal print (the band decides on it, as upside); bricks
@@ -266,30 +303,38 @@ export function toGo(ladder, live, { decimals = null, tiers = BAGGER_TIERS } = {
 export function toGoDown(ladder, live, { decimals = null, tiers = BUST_TIERS } = {}) {
   if (!ladder || ladder.status !== 'ok' || !ladder.nextDown || !positive(live)) return null;
   const d = finite(decimals) ? decimals : priceDecimals(live);
-  const rungShown = Number(priceText(ladder.nextDown.price, d));
+  const shown = rungShown(ladder.nextDown, d);
   const liveShown = Number(priceText(live, d));
-  const distance = Number((liveShown - rungShown).toFixed(d));
+  const distance = Number((liveShown - shown).toFixed(d));
   const pct = (distance / liveShown) * 100;
   const pctShown = Number(pct.toFixed(2));
   const plan = brickPlan(ladder, tiers);
   const unit = shownBrickUnit(ladder, d);
   const bricks = plan && unit !== null ? (distance > 0 ? Math.ceil(distance / unit - 1e-9) : 0) : null;
   const bricksExact = unit !== null ? distance / unit : null;
-  return { rung: ladder.nextDown, rungShown, liveShown, distance, pct, pctShown, bricks, bricksExact, decimals: d, side: 'down' };
+  return { rung: ladder.nextDown, rungShown: shown, liveShown, distance, pct, pctShown, bricks, bricksExact, decimals: d, side: 'down' };
 }
 
 /**
- * A rung's move from the baseline, % of the DISPLAYED baseline, from the
- * displayed prices (BUILD_RULES §9: the % a player could work out from the two
- * prices on screen). The Fuse, the bar and the levels table all print it at two
- * decimals through BOMB_COPY.rungPct, so one rung reads one string everywhere.
+ * A rung's move from the baseline, in %. The Fuse, the bar and the levels table
+ * all print it at two decimals through BOMB_COPY.rungPctText, so one rung reads
+ * one string everywhere (BD-6).
+ *
+ * BP-3 (2026-11-11): THE RULE'S %. A ladder built from a threshold — a measured
+ * position (the committed context's scoringPct, the % Details prints) or a
+ * preview (the Bomb tab's threshold) — prints k × that threshold: AMZN's +15 is
+ * +3.95 %, Details' "3.954943 %" at two decimals, not the +3.96 % worked back
+ * from two rounded prices. A V4 ladder (levels given as prices) has no
+ * threshold and keeps the move from the displayed baseline to the displayed
+ * level (rungShown). To-go %s are unchanged: they come from displayed values.
  */
 export function rungPct(ladder, rung, decimals) {
   if (!ladder || ladder.status !== 'ok' || !rung || !positive(rung.price)) return null;
+  if (positive(ladder.threshold) && finite(rung.k)) return rung.k * ladder.threshold;
   const d = finite(decimals) ? decimals : priceDecimals(rung.price);
   const base = Number(priceText(ladder.baseline.price, d));
-  const shown = Number(priceText(rung.price, d));
-  return base > 0 ? ((shown - base) / base) * 100 : null;
+  const shown = rungShown(rung, d);
+  return base > 0 && shown !== null ? ((shown - base) / base) * 100 : null;
 }
 
 /** BD-2: how much nearer (in bricks) the other side must be before the lead moves. */

@@ -345,11 +345,15 @@ export default function FuseChart({ ladder, live, decimals, go, goDown = null, l
           </g>
         ))}
         <line x1={x0} y1={yEntry} x2={x1} y2={yEntry} style={{ stroke: tint(BT.ink, 30) }} />
-        <text data-fuse-baseline="1" x={x0} y={yEntry - 5} fontSize="8.5" letterSpacing="0.6" style={{ fill: BT.ink2 }}>{baselineText(ladder, d).toUpperCase()}</text>
 
-        {pre && <path d={pre} fill="none" strokeWidth="1.2" strokeLinejoin="round" style={{ stroke: BT.ink3, strokeOpacity: 0.7 }} />}
-        {post && <path d={post} fill="none" strokeWidth="1.1" strokeLinejoin="round" style={{ stroke: BT.teal, strokeOpacity: 0.5 }} />}
+        {pre && <path data-fuse-ghost="pre" d={pre} fill="none" strokeWidth="1.2" strokeLinejoin="round" style={{ stroke: BT.ink3, strokeOpacity: 0.7 }} />}
+        {post && <path data-fuse-ghost="post" d={post} fill="none" strokeWidth="1.1" strokeLinejoin="round" style={{ stroke: BT.teal, strokeOpacity: 0.5 }} />}
         {dots.map((c, i) => <circle key={i} data-fuse-check-dot="1" cx={X(c.i)} cy={Y(kOf(ladder, c.px))} r="1.4" style={{ fill: BT.teal, fillOpacity: 0.9 }} />)}
+        {/* BP-5 (2026-11-11): the baseline label is painted AFTER the 30-minute ghost line
+            and its check dots, with a halo in the plot's background (paint-order: stroke,
+            colours through style — BUILD_RULES §10), so the line passes behind the words.
+            Same place, same size: no layout change. */}
+        <text data-fuse-baseline="1" x={x0} y={yEntry - 5} fontSize="8.5" letterSpacing="0.6" style={{ fill: BT.ink2, stroke: BT.bg, strokeWidth: 3, strokeLinejoin: 'round', paintOrder: 'stroke' }}>{baselineText(ladder, d).toUpperCase()}</text>
         {entryIdx >= 0 && <circle cx={X(entryIdx)} cy={yEntry} r="3.5" strokeWidth="1.5" style={{ fill: BT.bg, stroke: BT.ink2 }} />}
         {lastPt && liveY !== null && <line x1={lastPt.x} y1={lastPt.y} x2={railX - 7} y2={liveY} strokeDasharray="2 3" style={{ stroke: BT.teal, strokeOpacity: 0.85 }} />}
 
