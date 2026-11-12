@@ -40,7 +40,9 @@ import { momentsOf, sameMoment, MOMENT_KEYS } from '../../../src/utils/filmRoomM
 import { etDateOf, isEtDate, nextCalendarDate } from '../../../src/utils/tapeSchedule.js';
 import { TAPE_SUBCOLLECTION } from '../../../src/constants/filmTape.js';
 import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
-import { readCards, isOpen, isFollowedWatch, ownerAttributionOf, CardRouteError, CARD_ROUTE_COPY } from './cardStore.js';
+import { readCards, isOpen, isFollowedWatch, isBookOpen, ownerAttributionOf, CardRouteError, CARD_ROUTE_COPY } from './cardStore.js';
+// Build C §4, §5: whether the owner's book is open, read once through the Practice Field's seam (no book until T1a)
+import { bookForOwner } from './practiceFieldSeam.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
@@ -198,13 +200,28 @@ export function recurrencesOf(card, days, targetOf = (id) => id) {
 const unavailable503 = (agentId) => new CardRouteError(503, 'attribution_unavailable', CARD_ROUTE_COPY.attribution_unavailable, { agentId });
 
 /**
+ * Build C §4, §5 — `book: { open }` for the counter's answer: ONE read through the Practice Field's helper
+ * (bookForOwner) for the owner and the ATTRIBUTION agent, open when its status is 'active'. The boolean alone leaves
+ * the server — no id, no status. A read that fails is no open book (the form then offers no Offer route), with a
+ * server trace.
+ */
+export async function bookStateOf(db, { uid, attributionAgentId }) {
+  try {
+    return { open: isBookOpen(await bookForOwner(db, { uid, attributionAgentId })) };
+  } catch (err) {
+    console.error('[film-room/counter] book read failed:', err?.message ?? err);
+    return { open: false };
+  }
+}
+
+/**
  * The counter's whole answer for one owner and the agent the screen knows, ANSWERED FOR that agent's attribution agent
  * (RK-1, `attributionAgentId`): its ledger and every tape day that attributes to it. An answer that would be FOR a
  * casual clone — the owner's own clone unresolved (its document missing or without a parent, or the parent not the
  * owner's — the resolver's fallback), or any clone-named agent — → 503 attribution_unavailable, as the create refuses
  * it (cardStore.js attributionAgentOf; review KR1-1): no ledger is read under a clone.
  *
- * @returns {Promise<{ agentId, attributionAgentId, archetypeCodeId, window: { from, to }, weekly, cards, open, cap, recurrences: { [entryId]: object[] }, unavailableDays: { [agentId]: number } }>}
+ * @returns {Promise<{ agentId, attributionAgentId, archetypeCodeId, window: { from, to }, weekly, cards, open, cap, recurrences: { [entryId]: object[] }, book: { open: boolean }, unavailableDays: { [agentId]: number } }>}
  */
 export async function buildCounter(db, { uid, agentId, nowMs, from = null, to = null }) {
   const asked = windowOf(nowMs, { from, to });
@@ -242,9 +259,11 @@ export async function buildCounter(db, { uid, agentId, nowMs, from = null, to = 
   const { days, unavailable } = await readOwnerTapeWindow(db, { uid, from: window.from, to: window.to });
   const recurrences = {};
   for (const card of ledger.cards) if (isOpenWatchCard(card, ledger.archetypeCodeId)) recurrences[card.entryId] = recurrencesOf(card, days, targetOf);
+  // Build C §5: the form offers the Offer route only when this says the owner's book is open
+  const book = await bookStateOf(db, { uid, attributionAgentId: target });
   return {
     agentId, attributionAgentId: target, archetypeCodeId: ledger.archetypeCodeId, window, weekly: weeklyCounts(days),
-    cards: ledger.cards, open: ledger.open, cap: ledger.cap, recurrences,
+    cards: ledger.cards, open: ledger.open, cap: ledger.cap, recurrences, book,
     // RH-6: the days in the window whose situations could not be read, per ATTRIBUTION agent (RK-1; the screen says
     // so, RJ-7's style, under the agent this answer names)
     unavailableDays: unavailableDaysOf(unavailable, targetOf),
