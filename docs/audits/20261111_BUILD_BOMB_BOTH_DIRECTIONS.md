@@ -366,6 +366,8 @@ You're on the allowlist, so you see it before anyone else. Times are Central (th
 7. **The Danger Zone:** if a held stock sits within 0.5 % above a downside rung, the 💣 view turns into the Danger zone: a red goal line, the distance as the big number, "to Bust −10 · 0.42%". If none does, write "no Danger Zone this session".
 8. **The entry line's time:** a stock entered overnight shows its price's time ("Mon 4:05 PM", not "Mon 10:21 PM"). A stock entered during the session now shows about **16 minutes earlier** than before. AMZN would read "Tue 11:00 AM", not "11:16 AM", because that is the time EODHD stamps on the fill price (§1.2).
 9. **On your phone's font:** look for any label touching another on the 💣 chart, especially the rung names against the pills. The layout assumes a monospace glyph about 0.6 em wide. Some phones draw bold monospace wider (§6.4, refuter D's extra finding). A screenshot of any touch is enough.
+10. **A rung's price ends in the cent that makes its line true** *(added by the pre-flip fix PR, BP-1)*. An upside rung is rounded up, a downside rung down. For example AMZN's Crash shows **$254.18**, not $254.19, and its +30 shows $286.26. The Fuse, the bar, the levels table and "What has to happen" all print the same number.
+11. **The downside levels and the Danger Zone are the same red** *(added by the pre-flip fix PR, BP-2)*. Compare the Bust row's red in the levels table with the Danger Zone's goal line and big number.
 
 ## 12. What ran, where, and cleanup
 
