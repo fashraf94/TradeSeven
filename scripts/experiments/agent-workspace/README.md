@@ -1,4 +1,4 @@
-# Agent Workspace, offline slice 1
+# Agent Workspace, offline comparisons
 
 Run a saved Trend Follower experiment and open its results locally. This is the first founder workspace increment. It does not add an app route, activate Forge, run Mandate, change live agent behavior, call a model, or write to Firestore.
 
@@ -40,6 +40,30 @@ The demo reuses six synthetic repository fixtures. Expected results: four baseli
 
 The results page shows the shared evaluator verdict separately from each arm's experiment admission. All displayed decisions and checks come directly from the saved run record. Outcomes remain `not_observed`. No return, alpha, win-rate, or improvement score is invented.
 
+The founder view uses **Eligible**, **Not eligible**, and **Unknown**, with a sentence explaining each decision. These translate the stored `admitted`, `refused`, and `unknown` values without changing them. Summary counts, friendly fact/check names, the requested date, and the completed session are visible. Original identifiers and full evaluator records remain under technical details. A false check describes a condition, not a software failure. Different patterns require different conditions.
+
+## Saved real-market pilot
+
+The second increment reuses `EODHD-PILOT-001-real-data-review.zip`, already downloaded for the earlier research pilot. It makes no new provider requests. The fixed sample is AAPL.US, MSFT.US, and NVDA.US at noon EDT on October 28, 29, and 30, 2026. The calendar resolves the last completed daily sessions to October 27, 28, and 29. This is daily evidence available at those noon checkpoints, not an intraday strategy or a holding-period comparison.
+
+Extract the existing ZIP manually into a private directory. The importer reads only `PACKAGE-MANIFEST.json`, `inputs/slice-manifest.json`, and the three named `inputs/slices/*.json` files. It does not run any archived scripts. Keep these provider files and generated packets outside tracked source directories.
+
+```sh
+node scripts/experiments/agent-workspace/prepare-pilot.mjs --source PATH_TO_EXTRACTED_PACKAGE --out scripts/output/agent-workspace/inputs
+node scripts/experiments/agent-workspace/run.mjs --input PATH_PRINTED_BY_PREPARATION
+node scripts/experiments/agent-workspace/run.mjs --input PATH_PRINTED_BY_PREPARATION --candidate baseline-control-v1
+```
+
+Replace each uppercase placeholder with its local path. Quote paths containing spaces. These commands work in PowerShell and a POSIX shell. The preparation command prints a unique `input.json` path and an `input-manifest.json` sidecar. The runner prints the HTML report path to open manually.
+
+Preparation checks the selected file sizes and SHA-256 hashes against both saved manifests. It preserves raw close and volume, retains adjusted close separately for the adapter's split heuristic, rejects duplicate daily dates, clips future/incomplete bars, and keeps at most the required 55 completed bars per case. Missing values remain null. The production adapter then checks the selected windows and retains unknown results when evidence fails. The importer uses a fixed sample chosen before evaluation, with no selection by verdict.
+
+The sidecar records source file hashes, original response hashes reported by the package, original retrieval timestamps, the exact input hash, importer hash, runtime/source identity, and field mapping. Hash agreement proves package consistency, not independent provider authenticity. The input carries retrieval time normalized to milliseconds. The sidecar retains its original precision.
+
+These histories were retrieved on November 3, after the October evaluation dates. Every case stays `later_reconstruction`. Point-in-time availability and later revisions remain unverified. Volume coverage is unresolved in the earlier pilot, so the report preserves the feed's daily values without claiming consolidated volume. The run measures rule behavior over these saved fields, not market performance.
+
+The first fixed run produced nine cases: baseline 2 eligible, 7 not eligible, 0 unknown. Breakout-only: 0 eligible, 9 not eligible, 0 unknown. The two changes are MSFT pullbacks at the October 28 and 29 noon checkpoints, using completed sessions October 27 and 28. The unchanged control produced zero differences. This small, overlapping sample does not establish relative strategy quality or nine independent market observations.
+
 ## Saved input format
 
 ```json
@@ -80,10 +104,12 @@ The schema marks training use `unreviewed`. No training export exists. Model, kn
 ## Tests
 
 ```sh
-npx vitest run scripts/experiments/agent-workspace/workspace.test.js api/_utils/setupEvaluator/tfSetupV1.entry.test.js api/_utils/setupEvaluator/tfSetupV1.holding.test.js api/_utils/setupEvaluator/dailyBarsAdapter.test.js
+npx vitest run scripts/experiments/agent-workspace/workspace.test.js scripts/experiments/agent-workspace/prepare-pilot.test.js api/_utils/setupEvaluator/tfSetupV1.entry.test.js api/_utils/setupEvaluator/tfSetupV1.holding.test.js api/_utils/setupEvaluator/dailyBarsAdapter.test.js
 ```
 
 Tests cover known outcomes, unknown evidence, a pre-close clock, missing sessions, unchanged control, input ownership, fingerprint changes, tampering, schema refusal, HTML escaping, displayed-record agreement, unique local writes, and replay. The network check blocks global fetch during the local-run test. It is not an OS-level network monitor. Real imports provide the Node dependency-surface guard. No production handlers or execution functions are called.
+
+Preparation tests also cover fixed sample dates, future-bar exclusion, raw/adjusted field separation, missing-value preservation, source substitution, duplicate dates, package and slice hash mismatches, output hashes, and zero fetch calls. Report tests preserve machine records while checking friendly decisions, explanations, and requested/completed date separation.
 
 ## Following slices
 
