@@ -276,6 +276,22 @@ export function brickPlan(ladder, tiers = BAGGER_TIERS) {
 }
 
 /**
+ * The bricks still to go, rounded UP, from a DISPLAYED distance and the displayed
+ * brick unit. Review D4 (2026-11-11): a displayed distance carries up to one
+ * display unit of rounding (the rung toward its award, the live and baseline
+ * prices to the nearest), so within one display unit of a whole brick the count
+ * is that brick, never one more: AMZN at its fill with +15 banked is $16.04 from
+ * +30 ($286.26), 9.003 bricks of $1.7817, and reads the rail's 9, not 10. The
+ * tolerance is capped at half a brick (a brick smaller than a display unit cannot
+ * be resolved either way). Never 0 while the distance is positive.
+ */
+function brickCount(distance, unit, d) {
+  if (!(distance > 0)) return 0;
+  const tolerance = Math.min(0.5, Math.max(1e-9, 10 ** -d / unit));
+  return Math.max(1, Math.ceil(distance / unit - tolerance));
+}
+
+/**
  * The distance from the live price to the next unbanked upside rung, in
  * DISPLAYED values (BUILD_RULES §9): the rung (rungShown, rounded UP — BP-1)
  * and the live price (nearest) at the asset's display decimals first, and the
@@ -296,7 +312,7 @@ export function toGo(ladder, live, { decimals = null, tiers = BAGGER_TIERS } = {
   // Review A1 (2026-11-11): the brick is measured in DISPLAYED values too, like the
   // distance it divides (§9) — at the baseline the count then reads the rung's own 6.
   const unit = shownBrickUnit(ladder, d);
-  const bricks = plan && unit !== null ? (distance > 0 ? Math.ceil(distance / unit - 1e-9) : 0) : null;
+  const bricks = plan && unit !== null ? brickCount(distance, unit, d) : null;
   // BD-2: the unrounded distance in bricks, for the lead rule (never shown).
   const bricksExact = unit !== null ? distance / unit : null;
   return { rung: ladder.next, rungShown: shown, liveShown, distance, pct, pctShown, bricks, bricksExact, decimals: d, side: 'up' };
@@ -321,7 +337,7 @@ export function toGoDown(ladder, live, { decimals = null, tiers = BUST_TIERS } =
   const pctShown = Number(pct.toFixed(2));
   const plan = brickPlan(ladder, tiers);
   const unit = shownBrickUnit(ladder, d);
-  const bricks = plan && unit !== null ? (distance > 0 ? Math.ceil(distance / unit - 1e-9) : 0) : null;
+  const bricks = plan && unit !== null ? brickCount(distance, unit, d) : null;
   const bricksExact = unit !== null ? distance / unit : null;
   return { rung: ladder.nextDown, rungShown: shown, liveShown, distance, pct, pctShown, bricks, bricksExact, decimals: d, side: 'down' };
 }

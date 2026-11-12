@@ -18,7 +18,8 @@ import FuseChart from './FuseChart.jsx';
 import BombSheet, { levelRows } from './BombSheet.jsx';
 import RedZone from './RedZone.jsx';
 import { RedZoneChip } from './BombPlot.jsx';
-import { measuredLadder, previewLadder, v4Ladder, rungShown, rungPct, toGo, toGoDown, RUNG_SHOWN_SLACK } from './ladder.js';
+import { measuredLadder, previewLadder, v4Ladder, rungShown, rungPct, toGo, toGoDown, brickPlan, RUNG_SHOWN_SLACK } from './ladder.js';
+import { BUST_TIERS } from '../../../constants/baggerBombScoring.js';
 import { sheetLine, rungFacts } from './bombView.js';
 import { priceDecimals } from '../priceFormat.js';
 import { amznRecord, AMZN_SCORING_PCT } from './__fixtures__/bombBattles.js';
@@ -211,9 +212,9 @@ describe('BP-3 — a rung\'s % is the rule\'s %: k × the threshold', () => {
     const f = fuse(l, 268.09);
     const s = doc(renderToStaticMarkup(<BombSheet view={viewOf(l, 268.09)} />));
     for (const [key, label, pct] of [['bagger', 'BAGGERBOMB', '+3.95%'], ['doubleBagger', 'DOUBLE BAGGER', '+5.93%'], ['tenBagger', 'TENBAGGER', '+7.91%'], ['bust', 'BUST', '−3.95%'], ['crash', 'CRASH', '−5.93%'], ['meltdown', 'MELTDOWN', '−7.91%']]) {
-      expect(f.querySelector(`[data-fuse-rung="${key}"] text`).textContent, key).toBe(`${at(l, key).label.toUpperCase()} · ${pct}`);
+      // (review C8: the literal titles, not the ladder's own label echoed back)
+      expect(f.querySelector(`[data-fuse-rung="${key}"] text`).textContent, key).toBe(`${label} · ${pct}`);
       expect(s.querySelector(`[data-level-sub="${key}"]`).textContent.startsWith(`${pct} · `), key).toBe(true);
-      expect(label.length).toBeGreaterThan(0);
     }
   });
   it('a preview prints k × its threshold on every rung (review C3: +15 is +3.60 %, where the shown $160.34 would give +3.61 %)', () => {
@@ -362,6 +363,35 @@ describe('review C1 — mounted, the red zone measures its text column and start
       if (desc.top) Object.defineProperty(HTMLElement.prototype, 'offsetTop', desc.top); else delete HTMLElement.prototype.offsetTop;
       if (desc.h) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', desc.h); else delete HTMLElement.prototype.offsetHeight;
     }
+  });
+});
+
+describe('review D4 — a brick count reads the rail\'s rung brick, not one more from a rounded-up cent', () => {
+  it('AMZN at its fill: with +15 banked, 9 bricks to +30 ($16.04 = 9.003 bricks); with Bust hit, 9 to Crash', () => {
+    const up = amzn({ crossedTiers: ['bagger'] });
+    expect(toGo(up, 270.22)).toMatchObject({ rungShown: 286.26, distance: 16.04, bricks: 9 });
+    const dn = amzn({ crossedTiers: ['bust'] });
+    expect(toGoDown(dn, 270.22)).toMatchObject({ rungShown: 254.18, distance: 16.04, bricks: 9 });
+  });
+  it('a grid of 2-dp fills at live = fill (a brick of a cent or more): every count equals the rail\'s brick for that rung, both sides, every banked state', () => {
+    const keys = [['bagger', 1], ['doubleBagger', 1.5], ['tenBagger', 2], ['bust', -1], ['crash', -1.5], ['meltdown', -2]];
+    let n = 0;
+    for (let i = 0; i < 160; i += 1) {
+      const fill = Number((20 + i * 3.137 + (i % 13) * 0.071).toFixed(2));
+      for (const pct of [1.123457, 2.375, 3.559142, 3.954943, 4.365161, 5.135255]) for (const crossed of [[], ['bagger'], ['bagger', 'doubleBagger'], ['bust'], ['bust', 'crash']]) {
+        const l = measuredLadder({ measured: { measured: true, baselinePrice: fill, scoringPct: pct, crossedTiers: crossed, targets: keys.map(([key, k]) => ({ key, price: fill * (1 + (k * pct) / 100) })) } });
+        for (const [g, plan] of [[toGo(l, fill, { decimals: 2 }), brickPlan(l)], [toGoDown(l, fill, { decimals: 2 }), brickPlan(l, BUST_TIERS)]]) {
+          if (!g) continue;
+          expect(g.bricks, `${fill}@${pct} ${crossed.join('+')} → ${g.rung.key}`).toBe(plan.rungBricks[g.rung.key]);
+          n += 1;
+        }
+      }
+    }
+    expect(n).toBeGreaterThan(9000);
+  });
+  it('never 0 bricks while the distance is positive (a cent short of +15 reads 1)', () => {
+    const l = amzn();
+    expect(toGo(l, 280.9)).toMatchObject({ distance: 0.01, bricks: 1 });
   });
 });
 
