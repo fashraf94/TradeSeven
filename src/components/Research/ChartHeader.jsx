@@ -47,10 +47,15 @@ function ShellPills({ views, active, onView, warm }) {
   );
 }
 
-/** The shell's two-row header: the stock row, then the pills. No Why? door (R-27). */
+/**
+ * The shell's two-row header: the stock row, then the pills. No Why? door (R-27).
+ * Its change pill is the DAY's change only (`shell.change`, the research hook's daily change),
+ * shown once known: a battle asset's own percentChange can be its change since entry, so it is
+ * never the fallback here (BUILD_RULES §9; What's moving's title reads the same number).
+ */
 function ShellHeader({ asset, onClose, onBack, shell }) {
-  const priceChange = asset.percentChange || asset.change || 0;
-  const up = priceChange >= 0;
+  const priceChange = typeof shell.change === 'number' && Number.isFinite(shell.change) ? shell.change : null;
+  const up = priceChange === null || priceChange >= 0;
   const tone = up ? ST.green : ST.red;
   return (
     <div data-shell-header style={{ flexShrink: 0, background: ST.bg, borderBottom: `1px solid ${ST.hair}` }}>
@@ -63,9 +68,11 @@ function ShellHeader({ asset, onClose, onBack, shell }) {
         <span style={{ fontSize: 17, fontWeight: 800, color: ST.ink, whiteSpace: 'nowrap' }}>{asset.symbol}</span>
         <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: ST.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{asset.name}</span>
         <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700, color: ST.ink, whiteSpace: 'nowrap' }}>${priceText(asset.price) || '—'}</span>
-        <span data-shell-change style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 700, color: tone, background: tint(tone, 14), borderRadius: 999, padding: '4px 8px', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
-          {up ? '▲' : '▼'} {Math.abs(priceChange)?.toFixed(2)}%
-        </span>
+        {priceChange !== null && (
+          <span data-shell-change style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 700, color: tone, background: tint(tone, 14), borderRadius: 999, padding: '4px 8px', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+            {up ? '▲' : '▼'} {Math.abs(priceChange).toFixed(2)}%
+          </span>
+        )}
         <button type="button" data-shell-close onClick={onClose} style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', width: 40, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: ST.ink2 }}>
           <span style={{ fontSize: 18, lineHeight: 1 }}>{'✕'}</span>
         </button>

@@ -413,6 +413,33 @@ describe('BC-7 — the Ask', () => {
       expect(row.closest('[data-shell-scroll]')).toBeNull();
     }
   });
+  it('an Ask sent from the Chart view brings the player to its card on the Analysis view — the answer, or a failed turn\'s warning, is never left on a hidden view (review A1)', async () => {
+    net.ask = async () => ({ ok: false, status: 504, json: async () => { throw new SyntaxError('Unexpected token <'); } });
+    await open();
+    await click($('[data-sheet-question="protect_lead"]'));
+    await click(see('drawdown'));
+    expect(view()).toBe('chart');
+    await click($('[data-sheet-ask]'));
+    expect(net.asks).toHaveLength(1);
+    expect(view()).toBe('analysis');
+    const card = $('[data-sheet-reply]');
+    expect(card.dataset.sheetReply).toBe('failed');
+    expect(card.dataset.sheetCharged).toBe('unknown');
+    expect(card.closest('[data-shell-scroll="analysis"]').style.display).toBe('block');
+    expect(card.textContent).toBe('Something went wrong. Check chat before asking again — a message may have been used.');
+  });
+  it('while it is answering, the row and the card name the same speaker (review A2)', async () => {
+    let resolve;
+    net.ask = () => new Promise((r) => { resolve = r; });
+    await open();
+    await click($('[data-sheet-question="protect_lead"]'));
+    await click($('[data-sheet-ask]'));
+    expect($('[data-sheet-ask]').textContent).toBe('Juno is answering…');
+    expect($('[data-sheet-reply="sending"]').textContent).toContain('Juno');
+    expect($('[data-sheet-reply="sending"]').textContent).not.toContain('Trend Follower');
+    await act(async () => { resolve({ ok: true, status: 200, json: async () => ({ agentMessage: 'Done.', exchangeId: 'ex-3' }) }); });
+    await flush();
+  });
   it('the reply card is brought into the view on sending and on the answer (review D1)', async () => {
     await open();
     await click($('[data-sheet-question="protect_lead"]'));
@@ -485,8 +512,9 @@ describe('BC-7 — the Ask', () => {
     expect(net.asks).toHaveLength(0);
   });
   it.each([
-    [502, { error: 'gemma_invalid_shape' }, 'none', 'Trend Follower didn’t answer. No message was used.'],
-    [504, { error: 'timeout' }, 'none', 'Trend Follower didn’t answer. No message was used.'],
+    // The card names who the Ask addressed — the agent, as the row does (review A2).
+    [502, { error: 'gemma_invalid_shape' }, 'none', 'Juno didn’t answer. No message was used.'],
+    [504, { error: 'timeout' }, 'none', 'Juno didn’t answer. No message was used.'],
     [403, { error: 'chat_budget_exceeded' }, 'none', 'No messages left this game. No message was used.'],
     [400, { error: 'research_ask_battle_only' }, 'none', 'This game isn’t taking questions now. No message was used.'],
     [500, { error: 'Agent unavailable.' }, 'unknown', 'Something went wrong. Check chat before asking again — a message may have been used.'],

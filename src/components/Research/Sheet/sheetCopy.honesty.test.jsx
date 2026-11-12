@@ -34,7 +34,7 @@ const ARG = { arch: 'Trend Follower', sym: 'EOG', time: 'Fri 1:15', when: 'Tue 1
 const paramsOf = (fn) => fn.toString().slice(fn.toString().indexOf('(') + 1, fn.toString().indexOf(')')).split(',').map((p) => p.trim()).filter(Boolean);
 // The two-view shell's templates (SHELL_COPY, SB-13): their own arguments. The agent's name is
 // always handed in — a sample one here, never a literal in the copy.
-const SHELL_ARG = { agent: 'Juno', arch: 'Trend Follower', time: 'Fri 1:15', rating: 'Buy', n: 24, name: 'EOG Resources', change: '+2.2%', who: 'Juno', group: 'Utilities', kind: 'technical', day: 'Wed Nov 11' };
+const SHELL_ARG = { agent: 'Juno', arch: 'Trend Follower', time: 'Fri 1:15', rating: 'Buy', n: 24, name: 'EOG Resources', change: '+2.2%', who: 'Juno', group: 'Utilities', kind: 'technical', day: 'Wed Nov 11', v: 2.28 };
 function templates() {
   const out = [];
   for (const [k, v] of Object.entries(SHEET_COPY)) {

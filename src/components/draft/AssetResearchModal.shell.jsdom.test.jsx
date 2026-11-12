@@ -28,11 +28,12 @@ const FLAGS = vi.hoisted(() => ({
 vi.mock('../../config/researchModalFlags', () => FLAGS);
 vi.mock('../../config/researchModalFlags.js', () => FLAGS);
 
-const net = vi.hoisted(() => ({ calls: [], why: [], daily: null }));
+const net = vi.hoisted(() => ({ calls: [], why: [], daily: null, whyGate: null, fail: false }));
 const rec = vi.hoisted(() => ({ series: [], lines: [], markers: [], tabs: [], technical: [] }));
 vi.mock('../../services/eodhdAPI', () => ({
   fetchHistoricalOHLCV: (symbol, timeframe, opts) => {
     net.calls.push(['history', symbol, timeframe, opts ?? null]);
+    if (net.fail) return Promise.reject(new Error('down'));
     if (timeframe === '1d' || timeframe === '1w') return Promise.resolve(net.daily ?? [
       { date: '2026-10-14', open: 101, high: 104.1, low: 100.6, close: 103.2, volume: 1 },
       { date: '2026-10-13', open: 99.4, high: 101.2, low: 99, close: 100.9, volume: 1 },
@@ -49,7 +50,17 @@ const WHY = { catalyst: 'Apple rose on strong iPhone demand.', catalystType: 'ne
 vi.mock('../../utils/fetchWithAuth', () => ({
   fetchWithAuth: async (u, o) => {
     net.calls.push(['fetchWithAuth', String(u), o?.method ?? null]);
-    if (String(u) === '/api/why-moving') { net.why.push(JSON.parse(o.body)); return { ok: true, status: 200, json: async () => ({ success: true, data: WHY }) }; }
+    if (String(u) === '/api/why-moving') {
+      net.why.push(JSON.parse(o.body));
+      if (net.whyGate) {
+        const gate = net.whyGate;
+        await new Promise((resolve, reject) => {
+          gate.then(resolve);
+          o?.signal?.addEventListener?.('abort', () => { const e = new Error('aborted'); e.name = 'AbortError'; reject(e); });
+        });
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true, data: WHY }) };
+    }
     return { ok: true, status: 200, json: async () => ({ success: true }) };
   },
 }));
@@ -69,7 +80,7 @@ vi.mock('./CompeteTab', () => ({ default: (p) => { rec.tabs.push(['ranks', p]); 
 vi.mock('./SectorTab', () => ({ default: (p) => { rec.tabs.push(['sector', p]); return <div data-stub="sector" />; } }));
 vi.mock('../Research/SmartMoneyTab', () => ({ default: (p) => { rec.tabs.push(['smartMoney', p]); return <div data-stub="smartMoney" />; } }));
 vi.mock('../Research/TechnicalTabV2', () => ({ default: (p) => { rec.technical.push(p); return <div data-stub="technical" />; } }));
-vi.mock('../Research/HoldingsTab', () => ({ default: () => <div data-stub="holdings" /> }));
+vi.mock('../Research/HoldingsTab', () => ({ default: (p) => <div data-stub="holdings"><button type="button" data-nav-stock onClick={() => p.onNavigateToStock('AAPL', 'Apple Inc')}>nav</button></div> }));
 vi.mock('../Research/SectorETFRanksTab', () => ({ default: () => null }));
 vi.mock('../Research/MarketContextTab', () => ({ default: () => null }));
 vi.mock('../Research/HealthTab', () => ({ default: () => <div data-stub="health" /> }));
@@ -99,7 +110,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   vi.setSystemTime(new Date(SHEET_NOW));
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
-  net.calls.length = 0; net.why.length = 0; net.daily = null;
+  net.calls.length = 0; net.why.length = 0; net.daily = null; net.whyGate = null; net.fail = false;
   for (const k of Object.keys(rec)) rec[k].length = 0;
   FLAG.sheet = 'on'; FLAG.bomb = 'on';
   Element.prototype.scrollIntoView = vi.fn();
@@ -179,6 +190,33 @@ describe('SB-2 — every v2 mount resolves the shell through sheetModeOn, on its
     expect($('[data-shell-view]')).toBeNull();
     expect($('[data-drawer-root]')).toBeTruthy();
   });
+  it("the shell appearing on an open modal shows the view of the series on screen (review B2): a late allowlist verdict over today's 💣 tab → the 💣 view, never Analysis over the bomb series", async () => {
+    FLAG.sheet = 'allowlist';
+    await battle({ sheetContext: null }); // the verdict has not landed: today's modal, on its bomb series
+    expect($('[data-shell-view]')).toBeNull();
+    expect(history()).toContain('30m');
+    await battle(); // the verdict lands: the screen hands sheetContext
+    expect(view()).toBe('bomb');
+    expect($('[data-bomb-sheet]')).toBeTruthy();
+    // and its pills behave from there: Analysis restores the chart's 1D.
+    const before = history().length;
+    await click(pill('analysis'));
+    expect(view()).toBe('analysis');
+    await click(pill('chart'));
+    expect(history().slice(before)).not.toContain('30m');
+  });
+  it("…and a stock reached from a sector ETF on a 💣 mount opens on the 💣 view; one reached on 1D opens on Analysis", async () => {
+    await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'XLK', name: 'Technology Select Sector SPDR', price: 230 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="holdings" defaultTimeframe="bomb" bombContext={{ kind: 'bench' }} />); });
+    await flush();
+    expect($('[data-shell-view]')).toBeNull();
+    await click($('[data-nav-stock]'));
+    expect(view()).toBe('bomb');
+    remount();
+    await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'XLK', name: 'Technology Select Sector SPDR', price: 230 }} onClose={() => {}} showActionButton={false} version={2} defaultTab="holdings" />); });
+    await flush();
+    await click($('[data-nav-stock]'));
+    expect(view()).toBe('analysis');
+  });
   it("internal navigation: a stock → a sector ETF is today's layout → back to the stock is the shell again", async () => {
     await browse();
     await click($('[data-shell-tab="ranks"]'));
@@ -224,6 +262,23 @@ describe('SB-3 — the header control (H1): filled pills of equal width; no Why?
     expect(pill('bomb').dataset.shellPillWarm).toBe('1');
     await battle({ wsPrice: 102.5 }); // 1.2 % to +30: past the 0.75 % exit band
     expect(pill('bomb').dataset.shellPillWarm).toBe('0');
+  });
+  it('a shut market\'s frozen zone never warms the pill (review A3): at 5:30 PM ET, 0.36 % under +30, the 💣 view shows the frozen chip and the pill stays cool', async () => {
+    vi.setSystemTime(new Date('2026-10-14T21:30:00.000Z'));
+    await battle({ wsPrice: 103.4 });
+    expect(view()).toBe('analysis'); // FQ-9 counts only a live zone
+    expect(pill('bomb').dataset.shellPillWarm).toBe('0');
+    await click(pill('bomb'));
+    expect($('[data-bomb-redzone-chip]').dataset.bombRedzoneChip).toBe('closed');
+    await click(pill('analysis'));
+    expect(pill('bomb').dataset.shellPillWarm).toBe('0');
+  });
+  it('the header\'s change is the day\'s only: with the daily series failed it shows none — never the battle asset\'s change since entry (review A5)', async () => {
+    net.fail = true;
+    await battle();
+    expect($('[data-shell-header]')).toBeTruthy();
+    expect($('[data-shell-change]')).toBeNull();
+    expect($('[data-shell-moving] h3').textContent).toBe('Why is AAPL moving?');
   });
   it("off the shell, ChartHeader renders today's header: the same markup with no shell prop and with shell={null}, its Why? door included", () => {
     const props = { asset: { symbol: 'AAPL', name: 'Apple Inc', price: 103.2, percentChange: 1.2 }, onClose() {}, onWhyMoving() {} };
@@ -355,22 +410,39 @@ describe("What's moving — the Why? popup's content inline, loaded on a tap, ne
     expect(net.why).toEqual([]);
     expect(net.calls.filter((c) => c[0] === 'fetchWithAuth')).toEqual([]);
     expect($('[data-shell-moving]').dataset.shellMoving).toBe('unasked');
-    expect($('[data-shell-moving] h3').textContent).toMatch(/^Why is .+ [+-]\d+\.\d%\?$/);
+    expect($('[data-shell-moving] h3').textContent).toMatch(/^Why is .+ [+−]\d+\.\d\d%\?$/);
     await click($('[data-shell-moving-ask]'));
     expect(net.why).toHaveLength(1);
     // The popup's own body (the held asset carries no name here, so JSON drops it, as the popup's would).
     expect(Object.keys(net.why[0]).sort()).toEqual(['change', 'close', 'high', 'low', 'open', 'price', 'symbol']);
-    // `price` is the asset's own (currentAsset.price), exactly the popup's expression — not the live tick.
-    expect([net.why[0].symbol, net.why[0].price]).toEqual(['AAPL', heldAsset().price]);
-    // `change` is the day's change the header shows (§9): the title's number and the header's agree,
-    // never the battle asset's own percentChange (its change since entry).
+    // `change` and `price` are the ones the header shows (§9): the title's number and the header's agree
+    // to the digit, never the battle asset's own percentChange (its change since entry) or its stale price.
     const header = Number($('[data-shell-change]').textContent.replace(/[^\d.]/g, ''));
     expect(Number(net.why[0].change.toFixed(2))).toBe(header);
-    expect($('[data-shell-moving] h3').textContent).toBe(`Why is AAPL +${header.toFixed(1)}%?`);
+    expect($('[data-shell-moving] h3').textContent).toBe(`Why is AAPL +${header.toFixed(2)}%?`);
     expect(heldAsset().percentChange?.toFixed?.(2)).not.toBe(header.toFixed(2));
+    expect([net.why[0].symbol, net.why[0].price]).toEqual(['AAPL', 103.2]);
+    expect($('[data-shell-header]').textContent).toContain('$103.20');
     expect(document.body.textContent).toContain('Apple rose on strong iPhone demand.');
     expect(document.body.textContent).toContain('reuters.com');
     expect($('[data-shell-moving-foot]').textContent).toBe('From the wire and the day’s bar · not Juno’s view');
+  });
+  it('one tap is ONE request: live ticks while it is in flight never abort and re-send it (reviews A4, B1 — each re-send a provider call)', async () => {
+    let answer;
+    net.whyGate = new Promise((r) => { answer = r; });
+    await battle({ wsPrice: 103.2 });
+    await click($('[data-shell-moving-ask]'));
+    for (const p of [103.3, 103.25, 103.1]) await battle({ wsPrice: p });
+    expect(net.why).toHaveLength(1);
+    expect($('[data-shell-moving]').dataset.shellMoving).toBe('loading');
+    // The title follows the header's live number; the request keeps what the tap sent.
+    const header = Number($('[data-shell-change]').textContent.replace(/[^\d.]/g, ''));
+    expect($('[data-shell-moving] h3').textContent).toContain(header.toFixed(2));
+    await act(async () => { answer(); });
+    await flush();
+    expect($('[data-shell-moving]').dataset.shellMoving).toBe('success');
+    expect(net.why).toHaveLength(1);
+    net.whyGate = null;
   });
   it('in browse no partner speaks: the foot names no one', async () => {
     await browse();

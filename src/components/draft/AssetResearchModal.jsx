@@ -39,7 +39,7 @@ import { SHELL_COPY } from '../Research/Sheet/sheetCopy';
 import { visibleViewportHeight } from '../Research/Sheet/sheetViewport';
 import { opensInRedZone } from '../Research/Sheet/sheetOpen';
 import { resolveSheetMode, sheetModeOn } from '../Research/Sheet/sheetMode';
-import { shellViewsFor, openingView, switchView, seeOnChartTimeframe, isChartTimeframe, shellChartHeight } from '../Research/Sheet/shellView';
+import { shellViewsFor, openingView, switchView, seeOnChartTimeframe, isChartTimeframe, isLiveZoneMode, viewOnShellAppear, shellChartHeight } from '../Research/Sheet/shellView';
 import { motionToken } from '../../theme/motion';
 
 /**
@@ -548,6 +548,23 @@ const AssetResearchModal = ({
     if (tf) researchData.setTimeframe(tf);
     setShellView('chart');
   };
+  // The Ask is pinned under every view, but its answer (and a failed turn's warning) is a card in
+  // the Analysis view's pack: an Ask sent from Chart or 💣 brings the player to that card.
+  const sheetActionView = sheetView && shownView !== 'analysis'
+    ? { ...sheetView, ask: () => { onShellView('analysis'); sheetView.ask(); } }
+    : sheetView;
+  // The view and the hook's timeframe agree when the shell APPEARS on an open modal (review B2) —
+  // a late per-battle verdict at 'allowlist', or a stock reached from an index or a sector ETF:
+  // the shell shows the view of the series today's modal was on (💣 on the bomb series when
+  // Bomb mode draws it; the Chart view for the legacy bomb chart; else Analysis), never Analysis
+  // over the 30-minute series or the red zone's 1-minute poll. Inside the shell the pill and
+  // "see on chart" handlers keep the two together.
+  const shellWasRef = useRef(shellOn);
+  React.useLayoutEffect(() => {
+    const was = shellWasRef.current;
+    shellWasRef.current = shellOn;
+    if (shellOn && !was) setShellView(viewOnShellAppear({ timeframe: researchData.timeframe, bomb: !!bombView }));
+  }, [shellOn]); // eslint-disable-line react-hooks/exhaustive-deps -- decided once, as the shell appears
 
   const handleDrawerSnapChange = useCallback((state) => {
     setDrawerSnapState(state);
@@ -729,15 +746,17 @@ const AssetResearchModal = ({
         symbol={currentAsset?.symbol}
         isMobile={isMobile}
         onNavigateToStock={handleNavigateToStock}
-        // What's moving: the Why? popup's own props as the modal hands them below, but for `change`:
-        // the day's change the header shows (BUILD_RULES §9 — the title prints it beside the header),
-        // and only once known, as the controlled view's popup already sends it. A battle asset's own
-        // percentChange can be its change since entry, which the header never shows.
+        // What's moving: the Why? popup's own props as the modal hands them below, but for `change`
+        // and `price`: the day's change and the price the shell's header shows (BUILD_RULES §9 —
+        // the title prints the change beside the header), the change only once known, as the
+        // controlled view's popup already sends it. (A battle asset's own percentChange can be its
+        // change since entry; the shell's header never shows that.) WhatsMoving freezes the
+        // request's inputs at the tap, so a live tick never re-sends it.
         moving={{
           symbol: currentAsset?.symbol,
           name: currentAsset?.name,
           change: Number.isFinite(researchData.dailyChange) ? researchData.dailyChange : undefined,
-          price: currentAsset?.price,
+          price: enrichedAsset?.price,
           open: researchData.todayDailyCandle?.open,
           high: researchData.todayDailyCandle?.high,
           low: researchData.todayDailyCandle?.low,
@@ -966,7 +985,7 @@ const AssetResearchModal = ({
 
         {/* Header: v2 compact header vs v1 original header */}
         {version >= 2 ? (
-          <ChartHeader asset={enrichedAsset} sector={sector} category={category} isIndex={isIndexAsset} onClose={handleClose} onWhyMoving={() => setWhyMovingOpen(true)} onBack={canGoBack ? handleNavigateBack : undefined} {...(shellOn ? { shell: { views: shellViews, active: shownView, onView: onShellView, warm: !!bombView && isZoneMode(bombView.mode) } } : {})} />
+          <ChartHeader asset={enrichedAsset} sector={sector} category={category} isIndex={isIndexAsset} onClose={handleClose} onWhyMoving={() => setWhyMovingOpen(true)} onBack={canGoBack ? handleNavigateBack : undefined} {...(shellOn ? { shell: { views: shellViews, active: shownView, onView: onShellView, warm: !!bombView && isLiveZoneMode(bombView.mode), change: Number.isFinite(researchData.dailyChange) ? researchData.dailyChange : null } } : {})} />
         ) : (
           <div
             style={{
@@ -1690,7 +1709,7 @@ const AssetResearchModal = ({
         {/* Action Button Section - Flexible Configuration. Under the shell in battle, Build C's
             action row (the Ask with its cost, → Cockpit — SB-10, R-29), pinned under every view;
             in browse, the mount's own action below, unchanged. */}
-        {shellOn && sheetView ? <SheetActionRow view={sheetView} /> : showActionButton && (
+        {shellOn && sheetView ? <SheetActionRow view={sheetActionView} /> : showActionButton && (
           <div
             style={{
               padding: '16px 20px',

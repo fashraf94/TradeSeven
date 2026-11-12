@@ -36,6 +36,13 @@ const TONE = { green: ST.green, amber: ST.amber, purple: ST.purple };
 const EYEBROW = { fontFamily: MONO, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700, whiteSpace: 'nowrap' };
 const ROW = { all: 'unset', boxSizing: 'border-box', cursor: 'pointer', width: '100%', display: 'flex', alignItems: 'center', gap: 10 };
 
+/**
+ * Who the Ask addresses and who answers (R-23, R-29): the player's agent by name, the
+ * archetype when the battle names none. The action row and the reply card both use it, so
+ * the row's "Ask Juno …" is never answered by a card naming the archetype (review A2).
+ */
+export const voiceName = (view) => (typeof view.agentName === 'string' && view.agentName ? view.agentName : view.archetype);
+
 function Chevron({ color = ST.teal, down = false }) {
   return <span aria-hidden="true" style={{ color, fontSize: 16, lineHeight: 1, flexShrink: 0, display: 'inline-block', transform: down ? 'rotate(90deg)' : 'none' }}>›</span>;
 }
@@ -211,7 +218,8 @@ function Pack({ view, onSeeOnChart }) {
           );
         })}
       </div>
-      <AskReply view={view} />
+      {/* AskReply (Build C, unchanged) names `view.archetype` in its lines: handed the agent's name. */}
+      <AskReply view={voiceName(view) === view.archetype ? view : { ...view, archetype: voiceName(view) }} />
       <div data-sheet-or-ask style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', paddingTop: 2 }}>
         <span style={{ ...EYEBROW, fontSize: 9, color: ST.ink3 }}>{SHEET_COPY.orAsk}</span>
         {view.order.filter((q) => q !== view.question).map((q) => (
@@ -324,7 +332,7 @@ export default function AnalysisSheet({ view, wallSt = null, tabs = null, onSeeO
 export function SheetActionRow({ view }) {
   const q = view.question;
   const out = view.budget.left <= 0;
-  const who = typeof view.agentName === 'string' && view.agentName ? view.agentName : view.archetype;
+  const who = voiceName(view);
   const label = out ? SHEET_COPY.askOut
     : view.answering ? SHEET_COPY.askSending(who)
       : view.askedThis ? SHEET_COPY.askAsked(who)

@@ -28,7 +28,27 @@ export function openingView({ opensOnBomb }) {
 
 /** The Chart view's own timeframes (the 💣 view's are 'bomb' and 'spectate'). */
 export const isChartTimeframe = (tf) => tf === '1D' || tf === '1W';
-const isBombTimeframe = (tf) => tf === 'bomb' || tf === 'spectate';
+export const isBombTimeframe = (tf) => tf === 'bomb' || tf === 'spectate';
+
+/**
+ * R-27: the 💣 pill warms while a held stock is IN a zone — the live red zone (its
+ * approach and its banked moment) or the live Danger Zone. The frozen views of a shut
+ * market ('closed', 'dangerClosed') are not live (redZone.js: "the zone is never live"
+ * there; Bomb mode greys its own chip), so they never warm the pill — the same live
+ * modes FQ-9's opensInRedZone counts, plus the banked moment.
+ */
+export const isLiveZoneMode = (mode) => mode === 'approaching' || mode === 'banked' || mode === 'danger';
+
+/**
+ * The shell appeared on an open modal (a late per-battle verdict, or a stock reached from
+ * an index or a sector ETF): the view that matches what today's modal was showing — 💣
+ * when it was on the bomb series and Bomb mode draws it; the Chart view when it was on the
+ * bomb series with Bomb mode rolled back (the legacy 💣 chart lives there); else Analysis.
+ */
+export function viewOnShellAppear({ timeframe, bomb }) {
+  if (!isBombTimeframe(timeframe)) return 'analysis';
+  return bomb ? 'bomb' : 'chart';
+}
 
 /**
  * One view switch: the view, and the timeframe to set with it (null → none).

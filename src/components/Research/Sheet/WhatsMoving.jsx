@@ -16,27 +16,33 @@
 // player's agent by name, else the archetype); in browse no partner speaks.
 
 import React, { useState } from 'react';
-import { useWhyMoving, WhyMovingBody, whyMovingChangeText } from '../WhyMovingPopup.jsx';
+import { useWhyMoving, WhyMovingBody } from '../WhyMovingPopup.jsx';
 import { SHELL_COPY } from './sheetCopy.js';
 import { ST, MONO, tint } from './sheetTheme.js';
 
 /**
- * @param {object} p  the popup's own props, as the modal passes them (symbol, name, change, price, open, high, low, close)
+ * @param {object} p  the popup's props as the modal passes them (symbol, name, change, price, open, high, low, close);
+ *                    `change` and `price` are the ones the shell's header shows
  * @param {string|null} [p.who]  whose view it is not (the agent's name, else the archetype); null in browse
  */
 export default function WhatsMoving({ symbol, name, change, price, open, high, low, close, who = null }) {
-  const [asked, setAsked] = useState(false);
-  const { state, data, retry } = useWhyMoving({ symbol, name, change, price, open, high, low, close, active: asked });
+  // The request's inputs, FROZEN AT THE TAP (reviews A4 / B1): the day's change and price move
+  // with every live tick, and the hook re-sends whenever they change mid-request — each re-send
+  // a provider call. One tap is one request; the title keeps reading the header's live number.
+  const [asked, setAsked] = useState(null);
+  const q = asked ?? {};
+  const { state, data, retry } = useWhyMoving({ symbol, name, change: q.change, price: q.price, open: q.open, high: q.high, low: q.low, close: q.close, active: asked !== null });
+  const shown = typeof change === 'number' && Number.isFinite(change) ? SHELL_COPY.movingChange(change) : null;
   return (
     <div data-shell-moving={asked ? state : 'unasked'} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: ST.ink, lineHeight: 1.35 }}>
-        {SHELL_COPY.movingTitle(name || symbol, whyMovingChangeText(change))}
+        {SHELL_COPY.movingTitle(name || symbol, shown)}
       </h3>
       {!asked && (
         <button
           type="button"
           data-shell-moving-ask
-          onClick={() => setAsked(true)}
+          onClick={() => setAsked({ change, price, open, high, low, close })}
           style={{
             all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 48, padding: '0 14px', borderRadius: 12,
             display: 'flex', alignItems: 'center', gap: 10, background: tint(ST.teal, 8), border: `1px solid ${tint(ST.teal, 35)}`,

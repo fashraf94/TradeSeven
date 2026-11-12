@@ -5,7 +5,20 @@
 // modal (AssetResearchModal.shell.jsdom.test.jsx).
 
 import { describe, it, expect } from 'vitest';
-import { shellViewsFor, openingView, switchView, seeOnChartTimeframe, isChartTimeframe, shellChartHeight } from './shellView.js';
+import { shellViewsFor, openingView, switchView, seeOnChartTimeframe, isChartTimeframe, shellChartHeight, isLiveZoneMode, viewOnShellAppear } from './shellView.js';
+
+describe('the warm 💣 pill and the shell appearing on an open modal', () => {
+  it('warm only in a live zone: the red zone (its approach, its banked moment) and the Danger Zone; never frozen, never the Fuse', () => {
+    expect(['approaching', 'banked', 'danger', 'closed', 'dangerClosed', 'fuse', null].map(isLiveZoneMode)).toEqual([true, true, true, false, false, false, false]);
+  });
+  it('the view of the series on screen: 💣 on the bomb series with Bomb mode, the Chart view for the legacy bomb chart, else Analysis', () => {
+    expect(viewOnShellAppear({ timeframe: 'bomb', bomb: true })).toBe('bomb');
+    expect(viewOnShellAppear({ timeframe: 'spectate', bomb: true })).toBe('bomb');
+    expect(viewOnShellAppear({ timeframe: 'bomb', bomb: false })).toBe('chart');
+    expect(viewOnShellAppear({ timeframe: '1D', bomb: true })).toBe('analysis');
+    expect(viewOnShellAppear({ timeframe: '1W', bomb: false })).toBe('analysis');
+  });
+});
 
 describe('the pills and the opening view', () => {
   it('three pills with Bomb mode, two without (browse)', () => {

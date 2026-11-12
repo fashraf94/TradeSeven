@@ -242,6 +242,8 @@ export const SHELL_COPY = Object.freeze({
   tabSector: 'Sector',
   // ── What's moving: loaded on the player's tap, never on open (no request on open) ──
   movingTitle: (name, change) => `Why is ${name} ${change || 'moving'}?`,
+  // The day's change as the header prints it: two decimals (one source, one precision — §9).
+  movingChange: (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%`,
   movingLookUp: 'Look it up',
   movingFrom: 'from the wire and the day’s bar',
   movingFoot: (who) => (who ? `From the wire and the day’s bar · not ${who}’s view` : 'From the wire and the day’s bar'),
