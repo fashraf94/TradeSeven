@@ -44,3 +44,10 @@ export const isFollowedWatch = (entry) => entry?.route === 'watch' && entry?.sta
  * then the Practice Field's own writes, each copied onto the entry by the ledger's transition helper.
  */
 export const NOMINATION_STATES = Object.freeze(['queued', 'considered', 'accepted', 'deferred', 'declined', 'expired']);
+
+/**
+ * B6 (shared contract V2, restated in spec §4 and §5): a queued nomination expires after this many sessions on the
+ * maintained calendar. The Practice Field's value, copied here so the record's `expiresAt` (the seam's builder) and the
+ * receipt's "not considered within n sessions" read one number.
+ */
+export const NOMINATION_EXPIRY_SESSIONS = 10;
