@@ -423,7 +423,9 @@ function rungDistanceItem({ holding, symbol, live }) {
   if (!(go.distance > 0)) return null; // reached at the live price: it banks only at a check — the banked item says what has banked
   return makeItem({
     kind: 'rung_distance', symbol, fact: SHEET_COPY.rungDistance(go.rung.points, go.rungShown, go.decimals, go.distance, go.pctShown),
-    recordKind: 'position', recordId: holding.record.positionId ?? symbol, label: SHEET_COPY.srcLiveRung, pin: pricePin(go.rung.price),
+    // B1 (founder ruling 2026-11-11, pre-flip audit §10): the pin is the DISPLAYED rung price —
+    // the one the fact prints — so the pin's line and the fact agree to the cent (BUILD_RULES §9).
+    recordKind: 'position', recordId: holding.record.positionId ?? symbol, label: SHEET_COPY.srcLiveRung, pin: pricePin(go.rungShown),
   });
 }
 

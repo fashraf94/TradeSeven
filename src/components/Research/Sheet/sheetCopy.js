@@ -207,6 +207,51 @@ export const SHEET_COPY = Object.freeze({
   pinLine: (word, price, d) => (word ? `${word} · ${money(price, d)}` : money(price, d)),
 });
 
+/**
+ * The two-view shell (Amendment C; spec docs/specs/RESEARCH_MODAL_SHELL_SPEC_V1.md
+ * SB-13) — every string the shell adds: the header's pills, the Analysis view's
+ * blocks, the tab strip, What's moving, the Ranks label and the browse row. The
+ * agent's name is always handed in (the sheet context's agentName), never written here.
+ */
+export const SHELL_COPY = Object.freeze({
+  // ── The header control (H1, R-27) ──
+  viewsLabel: 'View',
+  viewAnalysis: 'Analysis',
+  viewChart: 'Chart',
+  viewBomb: '💣',
+  viewBombLabel: 'Bomb mode',
+  // ── What it decided (R-23): the player's agent name, then the archetype; the time of a quoted line ──
+  voiceLabel: (agent, arch, time) => [agent, arch, time].filter((s) => typeof s === 'string' && s).join(' · '),
+  // ── A pack item with a place on the chart ──
+  seeOnChart: 'see on chart ›',
+  // ── The Chart view's own states (today's chart box, in the shell's skin) ──
+  chartUnavailable: 'Chart data unavailable',
+  chartRetry: 'Retry',
+  // ── The Wall St · About line (R-27's quiet line; the analyst consensus, labelled) ──
+  wallSt: (rating, n) => `Wall St ${rating} · ${n} ${n === 1 ? 'analyst' : 'analysts'}`,
+  wallStNone: 'Wall St · no coverage',
+  aboutName: (name) => `About ${name}`,
+  aboutHide: 'Hide',
+  // ── Browse: today's five preset questions, folded into one row (SQ-3) ──
+  browseAsk: 'Ask about this stock',
+  // ── The tab strip (SB-7) ──
+  tabsLabel: 'Analysis sections',
+  tabMoving: 'What’s moving',
+  tabRanks: 'Ranks',
+  tabSmartMoney: 'Smart Money',
+  tabSector: 'Sector',
+  // ── What's moving: loaded on the player's tap, never on open (no request on open) ──
+  movingTitle: (name, change) => `Why is ${name} ${change || 'moving'}?`,
+  movingLookUp: 'Look it up',
+  movingFrom: 'from the wire and the day’s bar',
+  movingFoot: (who) => (who ? `From the wire and the day’s bar · not ${who}’s view` : 'From the wire and the day’s bar'),
+  // ── The Ranks label (R-32): the group the rank is within, the rank, the day of the reading ──
+  ranksLabel: (group, kind, day) => (day ? `${group} · ${kind} rank · ${day}` : `${group} · ${kind} rank`),
+  ranksAllStocks: 'All stocks',
+  ranksFundamental: 'fundamental',
+  ranksTechnical: 'technical',
+});
+
 /** What a tapped item's price IS, for its own line's title (never the item's source label). */
 export const PIN_LINE_WORDS = Object.freeze({
   rung_distance: 'next rung',

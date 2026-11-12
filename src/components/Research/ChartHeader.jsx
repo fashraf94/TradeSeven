@@ -2,13 +2,91 @@ import React from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor } from '../../constants/holoTheme';
 import { INDEX_REGISTRY } from '../../constants/indexRegistry';
 import { priceText } from './priceFormat';
+import { ST, MONO, tint } from './Sheet/sheetTheme';
+import { SHELL_COPY } from './Sheet/sheetCopy';
+import { HEAT } from './BombMode/bombTheme';
+
+/**
+ * The two-view shell's header control (Amendment C R-27, H1; spec
+ * docs/specs/RESEARCH_MODAL_SHELL_SPEC_V1.md SB-3): filled pills of equal
+ * width with space between them — Analysis · Chart · 💣 in battle, Analysis ·
+ * Chart in browse — the active one filled. The 💣 pill warms with Bomb mode's
+ * heat accent while the view model is in a red zone or the Danger Zone.
+ */
+function ShellPills({ views, active, onView, warm }) {
+  return (
+    <div role="tablist" aria-label={SHELL_COPY.viewsLabel} data-shell-pills={views.length} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      {views.map((v) => {
+        const on = v === active;
+        const bomb = v === 'bomb';
+        const heat = bomb && warm === true && !on;
+        const accent = bomb ? ST.amber : ST.teal;
+        return (
+          <button
+            key={v}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            data-shell-pill={v}
+            {...(bomb ? { 'aria-label': SHELL_COPY.viewBombLabel, 'data-shell-pill-warm': heat ? '1' : '0' } : {})}
+            onClick={() => { if (!on) onView(v); }}
+            style={{
+              all: 'unset', boxSizing: 'border-box', cursor: 'pointer', flex: 1, minWidth: 0, minHeight: 44, borderRadius: 999,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap',
+              color: on ? ST.bg : ST.ink2,
+              background: on ? accent : heat ? tint(HEAT, 16) : 'transparent',
+              border: `1px solid ${on ? accent : heat ? tint(HEAT, 70) : ST.hair}`,
+            }}
+          >
+            {v === 'analysis' ? SHELL_COPY.viewAnalysis : v === 'chart' ? SHELL_COPY.viewChart : SHELL_COPY.viewBomb}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The shell's two-row header: the stock row, then the pills. No Why? door (R-27). */
+function ShellHeader({ asset, onClose, onBack, shell }) {
+  const priceChange = asset.percentChange || asset.change || 0;
+  const up = priceChange >= 0;
+  const tone = up ? ST.green : ST.red;
+  return (
+    <div data-shell-header style={{ flexShrink: 0, background: ST.bg, borderBottom: `1px solid ${ST.hair}` }}>
+      <div style={{ height: 52, display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px 0 14px' }}>
+        {onBack && (
+          <button type="button" data-shell-back onClick={onBack} style={{ all: 'unset', cursor: 'pointer', color: ST.teal, fontSize: 18, padding: '2px 4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            {'←'}
+          </button>
+        )}
+        <span style={{ fontSize: 17, fontWeight: 800, color: ST.ink, whiteSpace: 'nowrap' }}>{asset.symbol}</span>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: ST.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{asset.name}</span>
+        <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700, color: ST.ink, whiteSpace: 'nowrap' }}>${priceText(asset.price) || '—'}</span>
+        <span data-shell-change style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 700, color: tone, background: tint(tone, 14), borderRadius: 999, padding: '4px 8px', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+          {up ? '▲' : '▼'} {Math.abs(priceChange)?.toFixed(2)}%
+        </span>
+        <button type="button" data-shell-close onClick={onClose} style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', width: 40, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: ST.ink2, fontSize: 18, lineHeight: 1 }}>
+          {'✕'}
+        </button>
+      </div>
+      <div style={{ padding: '0 14px 12px' }}>
+        <ShellPills views={shell.views} active={shell.active} onView={shell.onView} warm={shell.warm} />
+      </div>
+    </div>
+  );
+}
 
 /**
  * ChartHeader - Compact 56px header bar for the redesigned research modal.
  * Replaces the giant hero block with a space-efficient layout.
+ *
+ * `shell` (the two-view shell, SB-3): { views, active, onView, warm } — the
+ * header becomes the stock row and the view pills, with no Why? door. Absent
+ * (the shell off), the header below renders exactly as it always has.
  */
-const ChartHeader = ({ asset, sector, category, isIndex, onClose, onWhyMoving, onBack }) => {
+const ChartHeader = ({ asset, sector, category, isIndex, onClose, onWhyMoving, onBack, shell = null }) => {
   if (!asset) return null;
+  if (shell) return <ShellHeader asset={asset} onClose={onClose} onBack={onBack} shell={shell} />;
 
   const sectorColor = getSectorColor(sector);
   const priceChange = asset.percentChange || asset.change || 0;

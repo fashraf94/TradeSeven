@@ -64,38 +64,48 @@ export const RESEARCH_MODAL_BOMB_MODE = 'on';
 export const RESEARCH_MODAL_SHEET_MODES = Object.freeze(['off', 'allowlist', 'on']);
 
 /**
- * RESEARCH_MODAL_SHEET_MODE — Build C: the sheet in battle (spec of record
- * docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md §4.1). In a live agent
- * battle the Analysis tab becomes the equipped archetype's lens on the stock:
- * the stance line, its latest sentence, the three questions, the
+ * RESEARCH_MODAL_SHEET_MODE — the two-view shell, which delivers Build C (spec
+ * of record docs/specs/RESEARCH_MODAL_SHELL_SPEC_V1.md SB-1; design of record
+ * Amendment C, R-28 — Build C's spec docs/specs/RESEARCH_MODAL_BUILD_C_SHEET_SPEC_V1.md
+ * §4.1 for its record logic). Opening a stock shows one of three full-screen
+ * views switched by header pills — Analysis (opens first), Chart and 💣 (in
+ * battle) — with four tabs of today's content under the Analysis view. In a
+ * live agent battle the Analysis view is the equipped archetype's lens on the
+ * stock: the holding line, its latest sentence, the three questions, the
  * archetype-ordered evidence packs, the record pinned to the chart and the
- * Ask (one message from the per-battle chat 10).
+ * Ask (one message from the per-battle chat 10). A crypto, an index or a
+ * sector ETF keeps today's modal at every value (R-35). There is no third flag.
  *
  * A STRING TRI-STATE ('off' | 'allowlist' | 'on'), resolved at CALL time by
  * resolveSheetMode() (src/components/Research/Sheet/sheetMode.js — the client
  * gate sheetGate.js and the server's Ask gate api/_utils/researchAsk.js both
  * read it), which maps any value outside RESEARCH_MODAL_SHEET_MODES to 'off'.
- * Never read at module scope.
+ * Every v2 mount resolves through sheetModeOn() there. Never read at module scope.
  *
- *   'off'        the modal is today's modal byte for byte: the Analysis tab
- *                keeps the profile and the preset questions, the chart takes
- *                no pins, chat.js writes every exchange as before and refuses
- *                a sheet Ask (403 research_ask_off, before any read or charge).
- *                The battle screen builds no sheet context and the pack
- *                builder is never called.
- *   'allowlist'  PER AGENT BATTLE: on only when the existing
+ *   'off'        the modal is today's modal byte for byte, on every mount: the
+ *                chart above the drawer of tabs, the Analysis tab keeps the
+ *                profile and the preset questions, the chart takes no pins,
+ *                chat.js writes every exchange as before and refuses a sheet
+ *                Ask (403 research_ask_off, before any read or charge). The
+ *                battle screen builds no sheet context and the pack builder is
+ *                never called.
+ *   'allowlist'  PER AGENT BATTLE: the shell for an allowlisted owner's agent
+ *                Battle View mounts only — on when the existing
  *                GET /api/agent/cockpit-status answers `allowlisted` for the
  *                caller's own battle, through the Film Room gate's cached
- *                verdict (the same cache Bomb mode reads). A mount with no
- *                agent battle resolves 'allowlist' to off. chat.js admits a
- *                sheet Ask only from an owner the same allowlist names
+ *                verdict (the same cache Bomb mode reads; this verdict is
+ *                unchanged). Every mount with no agent battle — browse, draft,
+ *                search — keeps today's modal. chat.js admits a sheet Ask only
+ *                from an owner the same allowlist names
  *                (isCockpitOwnerAllowlisted, read at call time).
- *   'on'         the agent Battle View's three mounts (and the cockpit bench
- *                door through them) open the sheet; every other mount is
- *                unchanged.
+ *   'on'         the shell on every v2 mount, browse included: the agent
+ *                Battle View's three mounts (and the cockpit bench door
+ *                through them) with the archetype's Analysis view, every other
+ *                mount with the stock's facts.
  *
- * RUNWAY: 'off' ships with Build C (dark). 'allowlist' (the founder and FT_QA)
- * is its own one-line founder PR after merge; 'on' is another, after one clean
+ * RUNWAY: 'off' ships with the shell build (dark; Build C shipped 'off' and
+ * never left it). 'allowlist' (the founder and FT_QA) is its own one-line
+ * founder PR after merge and the phone check; 'on' is another, after one clean
  * live session on the allowlist. Never a build PR; each step moves the first
  * row of researchModalSheetFlag.test.js in the same commit (BUILD_RULES §2).
  * ROLLBACK: a kill switch: roll back one step at a time ('on' → 'allowlist'

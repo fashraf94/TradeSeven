@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
+import { motion, animate, useReducedMotion } from 'framer-motion';
 import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor, getRatingColor } from '../../constants/holoTheme';
 import { getCompanyProfile } from '../../services/fundamentalsService';
 import { getStockPrice } from '../../services/eodhdAPI';
@@ -29,11 +30,17 @@ import { resolveBombMode } from '../Research/BombMode/bombModeGate';
 import useBombView from '../Research/BombMode/useBombView';
 import BombPlot, { RedZoneChip } from '../Research/BombMode/BombPlot';
 import BombSheet from '../Research/BombMode/BombSheet';
+import { isZoneMode } from '../Research/BombMode/redZone';
 import useSheetView from '../Research/Sheet/useSheetView';
-import AnalysisSheet, { SheetActionRow } from '../Research/Sheet/AnalysisSheet';
-import { ST } from '../Research/Sheet/sheetTheme';
+import { SheetActionRow, AnalysisBlocks, battleBlocks, browseBlocks, WallStLine, BrowseAsk } from '../Research/Sheet/AnalysisSheet';
+import ShellTabs from '../Research/Sheet/ShellTabs';
+import { ST, MONO as SHEET_MONO } from '../Research/Sheet/sheetTheme';
+import { SHELL_COPY } from '../Research/Sheet/sheetCopy';
 import { visibleViewportHeight } from '../Research/Sheet/sheetViewport';
 import { opensInRedZone } from '../Research/Sheet/sheetOpen';
+import { resolveSheetMode, sheetModeOn } from '../Research/Sheet/sheetMode';
+import { shellViewsFor, openingView, switchView, seeOnChartTimeframe, isChartTimeframe, shellChartHeight } from '../Research/Sheet/shellView';
+import { motionToken } from '../../theme/motion';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -211,18 +218,30 @@ const AssetResearchModal = ({
 
   const isIndexAsset = useMemo(() => isIndex(currentAsset?.symbol), [currentAsset?.symbol]);
   const isSectorETF = useMemo(() => !!SECTORS[currentAsset?.symbol], [currentAsset?.symbol]);
-  // Build C: the sheet is shown for a stock or a crypto in battle (never an index or a sector ETF),
-  // and the modal then opens on it — the Analysis tab, on 1D (BC-1, §1 "opens on one line and a question").
-  const sheetOn = version >= 2 && sheetContext != null && typeof sheetContext === 'object' && !isIndexAsset && !isSectorETF;
+  // The two-view shell (Amendment C; spec docs/specs/RESEARCH_MODAL_SHELL_SPEC_V1.md SB-1, SB-2),
+  // under RESEARCH_MODAL_SHEET_MODE. Every v2 mount resolves through sheetModeOn, on its DISPLAYED
+  // asset: a crypto, an index or a sector ETF keeps today's modal at every value (R-35). An agent
+  // Battle View mount whose per-battle gate resolved on hands over sheetContext — that IS its
+  // verdict; every other mount is browse, on at 'on' only. Off, nothing below changes.
+  const shellAsset = isCrypto ? 'crypto' : isIndexAsset ? 'index' : isSectorETF ? 'sectorEtf' : 'stock';
+  const battleSheet = sheetContext != null && typeof sheetContext === 'object';
+  const shellOn = version >= 2 && sheetModeOn(resolveSheetMode(), { agentBattle: battleSheet, verdict: battleSheet, asset: shellAsset });
+  // Build C's content — the archetype's lens on the stock — is the battle mounts' Analysis view.
+  const sheetOn = shellOn && battleSheet;
   // FQ-9 (founder ruling 2026-11-08): with Bomb mode also on, a measured held stock
-  // inside the red-zone band when the modal OPENS opens on 💣 in the red zone, not the
-  // sheet. Decided ONCE, at open, from the price the screen already holds (none yet →
-  // the sheet); never switched after open (this state is never set again).
+  // inside a zone's band when the modal OPENS opens on 💣 in that zone, not on the
+  // Analysis view. Decided ONCE, at open, from the price the screen already holds
+  // (none yet → Analysis); never switched after open (this state is never set again).
   // Bomb mode refinement (BD-7, 2026-11-10): the Battle View's "See all levels ›"
-  // door asks for 💣 by name (`opensOnBomb`), so it lands on the levels table
-  // even with the sheet on. Without the sheet the mount's own defaultTab is 💣.
-  const [sheetOpensOnBomb] = useState(() => sheetOn && version >= 2 && bombContext != null && typeof bombContext === 'object'
+  // door asks for 💣 by name (`opensOnBomb`), so it lands on the levels table.
+  // Off the shell the mount's own defaultTab decides.
+  const [sheetOpensOnBomb] = useState(() => shellOn && version >= 2 && bombContext != null && typeof bombContext === 'object'
     && (opensOnBomb === true || opensInRedZone({ bombContext, symbol: asset?.symbol, live: controlledMode ? controlledPrice : (wsPrice || asset?.price || asset?.currentPrice || null), nowMs: Date.now(), isCrypto })));
+  // The shell's state (SB-4): the view on screen, the Analysis view's tab, the Chart view's last timeframe.
+  const [shellView, setShellView] = useState(() => openingView({ opensOnBomb: sheetOpensOnBomb }));
+  const [shellTab, setShellTab] = useState('moving');
+  const [chartTf, setChartTf] = useState('1D');
+  const reducedMotion = useReducedMotion() === true;
   const openTab = sheetOpensOnBomb ? 'baggerbomb' : sheetOn ? 'fundamental' : defaultTab;
 
   const isGameContext = isGameContextProp !== undefined
@@ -297,11 +316,11 @@ const AssetResearchModal = ({
       ? Math.max(Math.round(v2ContainerHeight * 0.5), 280)
       : Math.min(isTablet ? 260 : 300, Math.round(v2ContainerHeight * 0.45))
     : isMobile ? 200 : isTablet ? 260 : 300;
-  // Build C (BC-2): the sheet's chart height — a quarter of the container on a
-  // phone (150–210 px), a third elsewhere (up to 260 px). Reported in the build report.
-  const sheetChartHeight = isMobile
-    ? Math.max(150, Math.min(210, Math.round(v2ContainerHeight * 0.25)))
-    : Math.max(180, Math.min(260, Math.round(v2ContainerHeight * 0.34)));
+  // The shell's Chart and 💣 views: the plot at the view's own measured height (SB-8, SB-9).
+  const shellBodyRef = useRef(null);
+  const analysisScrollRef = useRef(null);
+  const [shellBodyHeight, setShellBodyHeight] = useState(0);
+  const shellChartH = shellChartHeight(shellBodyHeight);
 
   // One price for the whole sheet (BUILD_RULES §9): the live price the header's
   // "% today" and the chart's live candle follow — wsPrice for the original
@@ -320,9 +339,10 @@ const AssetResearchModal = ({
     currentPrice: sheetPrice,
     isCrypto: isCrypto,
     // A mount that loses the 💣 view (BA-5) opens on 1D, never fetching the bomb series it cannot show;
-    // the sheet (Build C) opens on 1D, the chart its record is pinned to.
-    initialTimeframe: sheetOpensOnBomb ? 'bomb' : sheetOn || (bombHidden && (defaultTimeframe === 'bomb' || defaultTimeframe === 'spectate')) ? '1D' : defaultTimeframe,
-    technicalActive: activeTab === 'technical',
+    // the shell opens on 1D (the Chart view's, the record's pins are drawn on), or on 💣 (FQ-9, BD-7).
+    initialTimeframe: sheetOpensOnBomb ? 'bomb' : shellOn || (bombHidden && (defaultTimeframe === 'bomb' || defaultTimeframe === 'spectate')) ? '1D' : defaultTimeframe,
+    // The shell shows the Technical content below the chart in the Chart view (SQ-1).
+    technicalActive: shellOn ? shellView === 'chart' : activeTab === 'technical',
     srRequested: srOn,
     ...(controlledMode ? { controlled: { extremes: controlledValid ? (controlledQuote.extremes || null) : null } } : {}),
     ...(bombOn ? { bombMode: true } : {}),
@@ -333,6 +353,8 @@ const AssetResearchModal = ({
   // reported state goes with it.
   const chartShown = version >= 2 && !!researchData.ohlcvData && researchData.ohlcvData.length > 0;
   if (srOn && !chartShown) setSrOn(false);
+  // The Chart view's last timeframe: leaving 💣 restores it (SB-4).
+  if (shellOn && isChartTimeframe(researchData.timeframe) && chartTf !== researchData.timeframe) setChartTf(researchData.timeframe);
 
   // The chart's S/R lines and its highlighted level are sided from the same
   // shown price as the Technical tab's rows ("Current"), by the same helper —
@@ -432,7 +454,8 @@ const AssetResearchModal = ({
   // until the tab is opened). The same request.
   const bombViewOpen = researchData.timeframe === 'bomb' || researchData.timeframe === 'spectate';
   const haveBombThreshold = !!bombThreshold && bombThreshold.symbol === currentAsset?.symbol;
-  const askBombThreshold = bombOn && (activeTab === 'baggerbomb' || (bombViewOpen && !haveBombThreshold));
+  // Under the shell the sheet IS the 💣 view: asked only when that view is open without one.
+  const askBombThreshold = bombOn && (shellOn ? bombViewOpen && !haveBombThreshold : (activeTab === 'baggerbomb' || (bombViewOpen && !haveBombThreshold)));
   useEffect(() => {
     if (!askBombThreshold) return undefined;
     if (currentAsset?.stockRewardRoute || currentAsset?.threshold) return undefined;
@@ -446,7 +469,9 @@ const AssetResearchModal = ({
   }, [askBombThreshold, currentAsset?.symbol, currentAsset?.threshold, currentAsset?.isCrypto, currentAsset?.stockRewardRoute]);
 
   // Build C: the sheet's view model, or null when off (no clock, no listener, no read).
-  const sheetActive = sheetOn && activeTab === 'fundamental';
+  // Under the shell the record's pins are the Chart view's (Amendment C §4), so they are
+  // handed to the chart whenever the sheet is on — the chart is only drawn in that view.
+  const sheetActive = sheetOn;
   const sheetView = useSheetView({
     on: sheetOn,
     context: sheetContext,
@@ -458,39 +483,11 @@ const AssetResearchModal = ({
     isCrypto,
     analysisActive: sheetActive,
   });
-  // BC-2: on the sheet the chart is shorter and the drawer sits right under it, so
-  // Layer 0 — everything above the action row, the chart included — fits a phone's
-  // fold; the action row is pinned under the drawer's scroll area. Measured in a
-  // headless browser at 390×844 and 430×932 (the build report).
-  const sheetGeom = !!sheetView && sheetActive;
-  // The chart section's height in sheet mode: the sheet's on 1D / 1W; on 💣 / spectate
-  // the Fuse keeps its full height and the measured section moves the drawer down (the
-  // fold is the 1D view's — review D2). The skeleton and the error box use it too, so
-  // the drawer never opens low and jumps when the chart lands (review D7).
-  const sheetChartH = sheetGeom && !bombViewOpen ? sheetChartHeight : chartHeight;
-  // In sheet mode the skeleton and the error box stand in for the WHOLE chart — its
-  // control row (StockChart's timeframe and overlay pills: 44 px, measured at
-  // 320/390/430/1440) and its plot — so the drawer sits where it will stay (review D7).
-  const sheetChartBoxH = sheetGeom ? sheetChartH + 44 : chartHeight;
-  const sheetChartRef = useRef(null);
-  const [sheetChartBox, setSheetChartBox] = useState(null);
-  // The drawer sits on the chart section's measured bottom: re-measured after every
-  // render (the chart replaces its skeleton in a later render) and on any resize;
-  // a section with no chart in it yet (only its padding) is not a measure.
-  const measureSheetChart = useCallback(() => {
-    const h = sheetChartRef.current ? sheetChartRef.current.offsetHeight : 0;
-    const next = h > 40 ? h : null;
-    setSheetChartBox((prev) => (prev === next ? prev : next));
-  }, []);
-  React.useLayoutEffect(() => { if (sheetGeom) measureSheetChart(); });
-  useEffect(() => {
-    if (!sheetGeom || !sheetChartRef.current) return undefined;
-    const observer = new ResizeObserver(measureSheetChart);
-    observer.observe(sheetChartRef.current);
-    return () => observer.disconnect();
-  }, [sheetGeom, measureSheetChart]);
+  // (Build C's drawer geometry — the shorter chart above the drawer, its mid snap and
+  // footer — is replaced by the shell, R-28: the sheet now lives only in the shell.)
 
-  // v2: Measure container height for drawer snap points
+  // v2: Measure container height for drawer snap points (the drawer exists only off the shell;
+  // a stock → sector-ETF navigation under the shell mounts it later, so it re-measures then).
   useEffect(() => {
     if (version < 2 || !v2ContainerRef.current) return;
     const measure = () => {
@@ -502,7 +499,54 @@ const AssetResearchModal = ({
     const observer = new ResizeObserver(measure);
     observer.observe(v2ContainerRef.current);
     return () => observer.disconnect();
-  }, [version]);
+  }, [version, shellOn]);
+
+  // The shell: its views' measured height (the Chart and 💣 plots take it — SB-8, SB-9).
+  useEffect(() => {
+    if (!shellOn || !shellBodyRef.current) return undefined;
+    const measure = () => { if (shellBodyRef.current) setShellBodyHeight(shellBodyRef.current.clientHeight); };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(shellBodyRef.current);
+    return () => observer.disconnect();
+  }, [shellOn]);
+  // The Analysis view fades in each time it is shown (SB-14: `fade`, instant under reduced
+  // motion). It stays mounted while hidden, so its tab and what that tab loaded are kept
+  // (the Chart and 💣 views mount on show and fade in through their own motion wrapper).
+  useEffect(() => {
+    if (!shellOn || shellView !== 'analysis' || !analysisScrollRef.current) return undefined;
+    let controls = null;
+    try {
+      controls = animate(analysisScrollRef.current, { opacity: [0, 1] }, motionToken('fade', { reducedMotion }));
+    } catch {
+      analysisScrollRef.current.style.opacity = '1';
+    }
+    return () => { if (controls && typeof controls.stop === 'function') controls.stop(); };
+  }, [shellOn, shellView]); // eslint-disable-line react-hooks/exhaustive-deps -- reduced motion is read at each show
+  // A stock reached by navigation (Ranks, Sector) starts at the top of the Analysis view.
+  useEffect(() => {
+    if (shellOn && analysisScrollRef.current) analysisScrollRef.current.scrollTop = 0;
+  }, [currentAsset?.symbol]); // eslint-disable-line react-hooks/exhaustive-deps -- a new symbol only
+
+  // The shell's views (SB-4): 💣 exists only with Bomb mode's view model for this mount.
+  const shellViews = shellViewsFor({ bomb: !!bombView });
+  const shownView = shellView === 'bomb' && !bombView ? 'analysis' : shellView;
+  // A view switch and the timeframe it needs, in the pill's own handler (never an effect):
+  // 💣 sets 'bomb'; leaving it restores the Chart view's last timeframe; Analysis ↔ Chart sets none.
+  const onShellView = (to) => {
+    const next = switchView({ to, timeframe: researchData.timeframe, lastChartTf: chartTf });
+    if (next.timeframe) researchData.setTimeframe(next.timeframe);
+    if (shownView === 'chart' && to !== 'chart') setSrOn(false); // the chart unmounts with its S/R pill
+    setShellView(next.view);
+  };
+  // "See on chart ›" (Amendment C §3 item 4): that item's pin open, on the Chart view.
+  const onSeeOnChart = (i, item) => {
+    if (!sheetView) return;
+    if (sheetView.activeItem !== i) sheetView.tapItem(i); // tapItem toggles: never close the pin being opened
+    const tf = seeOnChartTimeframe({ pin: item?.pin, timeframe: researchData.timeframe });
+    if (tf) researchData.setTimeframe(tf);
+    setShellView('chart');
+  };
 
   const handleDrawerSnapChange = useCallback((state) => {
     setDrawerSnapState(state);
@@ -638,12 +682,12 @@ const AssetResearchModal = ({
   const v2ModalStyle = version >= 2 ? (
     isMobile ? {
       width: '100vw',
-      // FQ-6 (2026-11-08): in sheet mode, the visible viewport (100dvh, else 100vh) —
-      // the action row is never under Safari's toolbar. Mode off: 100vh, as before.
-      height: sheetOn ? visibleViewportHeight() : '100vh',
+      // FQ-6 (2026-11-08), kept by the shell (SB-10): under the shell, the visible viewport
+      // (100dvh, else 100vh) — the pinned action row is never under Safari's toolbar. Off: 100vh, as before.
+      height: shellOn ? visibleViewportHeight() : '100vh',
       // … and its 1 px border counted inside that height (the app ships content-box), so
       // the whole action row sits inside the visible viewport (the fold row at 390×664).
-      ...(sheetOn ? { boxSizing: 'border-box' } : {}),
+      ...(shellOn ? { boxSizing: 'border-box' } : {}),
       top: 0,
       left: 0,
       transform: 'none',
@@ -657,6 +701,140 @@ const AssetResearchModal = ({
       borderRadius: '12px',
     }
   ) : {};
+
+  // ── The two-view shell's body (Amendment C §3–§5; SB-4–SB-9) ──
+  // Built only under the shell; off it, the content area below renders as it always has.
+  let shellBody = null;
+  if (shellOn) {
+    // The quiet line's consensus: the analyst chip's own source and conditions (BUILD_RULES §9).
+    const wallStText = analystChip ? (analystTotal === 0 ? SHELL_COPY.wallStNone : SHELL_COPY.wallSt(profile.ratingText, analystTotal)) : null;
+    const aboutReady = !!profile && !profileLoading && profileSymbol === currentAsset?.symbol
+      && !!(profile.description || (profile.sector && profile.sector !== 'Unknown'));
+    const aboutBody = aboutReady ? (
+      <div data-sheet-about-body style={{ padding: '10px 12px', borderRadius: '10px', background: ST.surface, border: `1px solid ${ST.hair}` }}>
+        {(profile.sector && profile.sector !== 'Unknown') && (
+          <div style={{ fontFamily: SHEET_MONO, fontSize: '10.5px', fontWeight: 600, color: ST.ink2, marginBottom: profile.description ? '6px' : 0 }}>
+            {[profile.sector, profile.industry && profile.industry !== 'Unknown' ? profile.industry : null].filter(Boolean).join(' · ')}
+          </div>
+        )}
+        {profile.description && <p style={{ color: ST.ink2, fontSize: '12.5px', lineHeight: 1.55, margin: 0 }}>{profile.description}</p>}
+      </div>
+    ) : null;
+    const wallStLine = <WallStLine key={currentAsset?.symbol} wallSt={wallStText} aboutName={aboutReady ? (profile?.Name || currentAsset?.name || currentAsset?.symbol) : null} about={aboutBody} />;
+    const tabs = (
+      <ShellTabs
+        tab={shellTab}
+        onTab={setShellTab}
+        symbol={currentAsset?.symbol}
+        isMobile={isMobile}
+        onNavigateToStock={handleNavigateToStock}
+        // What's moving: the Why? popup's own props, exactly as the modal hands them below.
+        moving={{
+          symbol: currentAsset?.symbol,
+          name: currentAsset?.name,
+          change: controlledMode
+            ? (Number.isFinite(researchData.dailyChange) ? researchData.dailyChange : undefined)
+            : currentAsset?.percentChange || currentAsset?.change,
+          price: currentAsset?.price,
+          open: researchData.todayDailyCandle?.open,
+          high: researchData.todayDailyCandle?.high,
+          low: researchData.todayDailyCandle?.low,
+          close: researchData.todayDailyCandle?.close,
+          who: sheetView ? (sheetView.agentName || sheetView.archetype || null) : null,
+        }}
+      />
+    );
+    // R-34: the Analysis view is an ordered list of blocks (a later build prepends state 2's).
+    // In battle, Build C's content; in browse, the stock's facts. A battle mount whose sheet has
+    // no model yet shows the browse blocks without today's preset questions (BC-1: in battle
+    // nothing answers for the agent).
+    const blocks = sheetView
+      ? battleBlocks({ view: sheetView, wallSt: wallStLine, tabs, onSeeOnChart })
+      : browseBlocks({
+        ask: sheetOn ? null : (
+          <BrowseAsk key={currentAsset?.symbol}>
+            <AnalysisQATab symbol={currentAsset?.symbol} companyName={profile?.Name || currentAsset?.name} />
+          </BrowseAsk>
+        ),
+        wallSt: wallStLine,
+        tabs,
+      });
+    const viewScroll = { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' };
+    const fadeIn = { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: motionToken('fade', { reducedMotion }) };
+    shellBody = (
+      <div ref={shellBodyRef} data-shell-view={shownView} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: ST.bg, color: ST.ink }}>
+        {/* Analysis: kept mounted while hidden, so its tab and what that tab loaded survive a switch */}
+        <div ref={analysisScrollRef} data-shell-scroll="analysis" style={{ ...viewScroll, display: shownView === 'analysis' ? 'block' : 'none' }}>
+          <div style={{ padding: '16px 16px 28px' }}>
+            <AnalysisBlocks blocks={blocks} layer={sheetView ? (sheetView.question ? 1 : 0) : null} />
+          </div>
+        </div>
+        {shownView === 'chart' && (
+          <motion.div key="chart" data-shell-scroll="chart" {...fadeIn} style={viewScroll}>
+            {researchData.loading && !researchData.ohlcvData && (
+              <div data-shell-chart-state="loading" style={{ height: `${shellChartH + 44}px`, display: 'flex', alignItems: 'center', justifyContent: 'center', background: ST.bg }}>
+                <div style={{ width: '90%', height: `${Math.max(60, shellChartH - 24)}px`, borderRadius: '8px', background: ST.surface }} />
+              </div>
+            )}
+            {researchData.error && !researchData.ohlcvData && (
+              <div data-shell-chart-state="error" style={{ height: `${shellChartH + 44}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: ST.bg }}>
+                <span style={{ color: ST.ink2, fontSize: '14px' }}>{SHELL_COPY.chartUnavailable}</span>
+                <button type="button" onClick={researchData.retry} style={{ padding: '6px 16px', borderRadius: '6px', border: `1px solid ${ST.hair}`, background: ST.surface, color: ST.teal, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                  {SHELL_COPY.chartRetry}
+                </button>
+              </div>
+            )}
+            {chartShown && (
+              <StockChart
+                key={currentAsset?.symbol}
+                ohlcvData={researchData.ohlcvData}
+                rawData={researchData.rawData}
+                timeframe={researchData.timeframe}
+                onTimeframeChange={researchData.setTimeframe}
+                levels={chartLevels}
+                smaData={researchData.smaData}
+                activeHighlight={chartHighlight}
+                height={shellChartH}
+                // 💣 is a view of its own here (the header's pill), never a pill inside the chart;
+                // with Bomb mode rolled back the legacy bomb chart keeps its pill (bombData).
+                bombData={bombOn || bombHidden ? null : bombData}
+                symbol={currentAsset?.symbol}
+                todayDailyCandle={researchData.todayDailyCandle}
+                realtimeExtremes={isOriginalAsset && !controlledMode ? realtimeExtremes : null}
+                controlledSession={controlledMode ? { crypto: !!isCrypto } : undefined}
+                onToggleSR={setSrOn}
+                {...(sheetView?.chart ? { markers: sheetView.chart.markers, priceLines: sheetView.chart.priceLines } : {})}
+              />
+            )}
+            {/* SQ-1: today's Technical tab, below the chart in the same scroll; a level tapped here still lights on the chart */}
+            <div data-shell-technical style={{ padding: '16px 16px 28px' }}>
+              <TechnicalTabV2
+                asset={shownAsset}
+                dailyData={researchData.dailyData}
+                indicators={researchData.indicators}
+                levels={researchData.levels}
+                sessionDate={sessionDateOf(Date.now(), !!isCrypto)}
+                onLevelHighlight={setHighlightedLevel}
+              />
+            </div>
+          </motion.div>
+        )}
+        {shownView === 'bomb' && bombView && (
+          <motion.div key="bomb" data-shell-scroll="bomb" {...fadeIn} style={viewScroll}>
+            {isZoneMode(bombView.mode) && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 12px 6px' }}>
+                <RedZoneChip mode={bombView.mode} />
+              </div>
+            )}
+            <BombPlot view={bombView} height={shellChartH} />
+            <div data-shell-bomb-sheet style={{ padding: '12px 12px 28px' }}>
+              <BombSheet view={bombView} />
+            </div>
+          </motion.div>
+        )}
+      </div>
+    );
+  }
 
   // Use Portal to render at document.body level, bypassing any parent CSS constraints
   return ReactDOM.createPortal(
@@ -786,7 +964,7 @@ const AssetResearchModal = ({
 
         {/* Header: v2 compact header vs v1 original header */}
         {version >= 2 ? (
-          <ChartHeader asset={enrichedAsset} sector={sector} category={category} isIndex={isIndexAsset} onClose={handleClose} onWhyMoving={() => setWhyMovingOpen(true)} onBack={canGoBack ? handleNavigateBack : undefined} />
+          <ChartHeader asset={enrichedAsset} sector={sector} category={category} isIndex={isIndexAsset} onClose={handleClose} onWhyMoving={() => setWhyMovingOpen(true)} onBack={canGoBack ? handleNavigateBack : undefined} {...(shellOn ? { shell: { views: shellViews, active: shownView, onView: onShellView, warm: !!bombView && isZoneMode(bombView.mode) } } : {})} />
         ) : (
           <div
             style={{
@@ -845,7 +1023,9 @@ const AssetResearchModal = ({
           </div>
         )}
 
-        {/* Content Area — v2: positioned container for chart+drawer, v1: scrollable */}
+        {/* The two-view shell (SB-4): one view at a time, full height — no drawer, no chart on Analysis */}
+        {shellOn ? shellBody : (
+        /* Content Area — v2: positioned container for chart+drawer, v1: scrollable */
         <div
           ref={version >= 2 ? v2ContainerRef : undefined}
           style={version >= 2
@@ -967,14 +1147,14 @@ const AssetResearchModal = ({
 
           {/* v2: Chart Section */}
           {version >= 2 && (
-            <div ref={sheetGeom ? sheetChartRef : undefined} style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: sheetGeom ? '6px' : '40px' }}>
+            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: '40px' }}>
               {researchData.loading && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  height: `${sheetChartBoxH}px`, background: '#0a0e14',
+                  height: `${chartHeight}px`, background: '#0a0e14',
                 }}>
                   <div style={{
-                    width: '90%', height: sheetGeom ? `${Math.max(60, sheetChartH - 24)}px` : '200px', borderRadius: '8px',
+                    width: '90%', height: '200px', borderRadius: '8px',
                     background: 'linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)',
                     backgroundSize: '200% 100%',
                     animation: 'shimmer 1.5s infinite',
@@ -984,7 +1164,7 @@ const AssetResearchModal = ({
               {researchData.error && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  height: `${sheetChartBoxH}px`, background: '#0a0e14', gap: '12px',
+                  height: `${chartHeight}px`, background: '#0a0e14', gap: '12px',
                 }}>
                   <span style={{ color: HOLO_COLORS.textSecondary, fontSize: '14px' }}>
                     Chart data unavailable
@@ -1012,7 +1192,7 @@ const AssetResearchModal = ({
                   levels={chartLevels}
                   smaData={researchData.smaData}
                   activeHighlight={chartHighlight}
-                  height={sheetChartH}
+                  height={chartHeight}
                   bombData={bombHidden ? null : bombOn ? (bombData || BOMB_MODE_PILL) : bombData}
                   symbol={currentAsset?.symbol}
                   todayDailyCandle={researchData.todayDailyCandle}
@@ -1020,7 +1200,6 @@ const AssetResearchModal = ({
                   controlledSession={controlledMode ? { crypto: !!isCrypto } : undefined}
                   onToggleSR={setSrOn}
                   {...(bombView ? { bombPlot: <BombPlot view={bombView} height={chartHeight} />, bombChip: <RedZoneChip mode={bombView.mode} /> } : {})}
-                  {...(sheetView?.chart ? { markers: sheetView.chart.markers, priceLines: sheetView.chart.priceLines } : {})}
                 />
               )}
             </div>
@@ -1052,26 +1231,8 @@ const AssetResearchModal = ({
               isSectorETF={isSectorETF}
               hasBombData={bombOn ? true : bombHidden ? false : !!bombData}
               isGameContext={bombHidden ? false : isGameContext}
-              {...(sheetGeom ? { midY: sheetChartBox ?? (sheetChartBoxH + 6), footer: <SheetActionRow view={sheetView} /> } : {})}
-              {...(sheetOn ? { analysisAlways: true } : {})}
             >
-              {activeTab === 'fundamental' && sheetView && (
-                <AnalysisSheet
-                  view={sheetView}
-                  wallSt={analystChipEl || null}
-                  about={profile && !profileLoading && profileSymbol === currentAsset?.symbol && (profile.description || (profile.sector && profile.sector !== 'Unknown')) ? (
-                    <div data-sheet-about-body style={{ padding: '8px 10px', borderRadius: '8px', background: ST.surface, border: `1px solid ${ST.hair}` }}>
-                      {(profile.sector && profile.sector !== 'Unknown') && (
-                        <div style={{ fontSize: '10px', fontWeight: '600', color: HOLO_COLORS.textSecondary, marginBottom: profile.description ? '6px' : 0 }}>
-                          {[profile.sector, profile.industry && profile.industry !== 'Unknown' ? profile.industry : null].filter(Boolean).join(' · ')}
-                        </div>
-                      )}
-                      {profile.description && <p style={{ color: ST.ink2, fontSize: '11px', lineHeight: '1.5', margin: 0 }}>{profile.description}</p>}
-                    </div>
-                  ) : null}
-                />
-              )}
-              {activeTab === 'fundamental' && !sheetView && (
+              {activeTab === 'fundamental' && (
                 <div style={{ padding: '8px 0' }}>
                   {/* Wall Street analyst consensus */}
                   {analystChipEl && (
@@ -1522,9 +1683,12 @@ const AssetResearchModal = ({
           </div>
           )}
         </div>
+        )}
 
-        {/* Action Button Section - Flexible Configuration */}
-        {showActionButton && (
+        {/* Action Button Section - Flexible Configuration. Under the shell in battle, Build C's
+            action row (the Ask with its cost, → Cockpit — SB-10, R-29), pinned under every view;
+            in browse, the mount's own action below, unchanged. */}
+        {shellOn && sheetView ? <SheetActionRow view={sheetView} /> : showActionButton && (
           <div
             style={{
               padding: '16px 20px',

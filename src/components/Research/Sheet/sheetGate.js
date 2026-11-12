@@ -45,7 +45,9 @@ export function useSheetModeForBattle(battleId, ownerId = null) {
     return () => { live = false; };
   }, [ask, id, owner]);
 
-  if (!ask) return mode === 'allowlist' ? false : sheetModeOn(mode, { agentBattle: id !== null });
+  // The battle screen's answer needs a battle: since the shell (SB-2) 'on' alone
+  // answers on for any mount, so a screen with no battle id yet stays off here.
+  if (!ask) return mode === 'allowlist' ? false : id !== null && sheetModeOn(mode, { agentBattle: true });
   const key = `${id}|${owner}`;
   const verdict = answer?.key === key ? answer.verdict : cachedFilmRoomVerdict(id, { ownerId: owner });
   return sheetModeOn(mode, { agentBattle: true, verdict });
