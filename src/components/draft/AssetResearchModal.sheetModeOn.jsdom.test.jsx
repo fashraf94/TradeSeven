@@ -119,7 +119,7 @@ const click = async (el) => { expect(el).toBeTruthy(); await act(async () => { e
 const view = () => $('[data-shell-view]')?.dataset.shellView ?? null;
 const pill = (v) => $(`[data-shell-pill="${v}"]`);
 const see = (kind) => $(`[data-pack-item="${kind}"] [data-pack-see]`);
-const remount = () => { act(() => root.unmount()); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); };
+const remount = () => { act(() => root.unmount()); container.remove(); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); };
 
 const asset = (battle = BATTLE, symbol = 'AAPL') => {
   const pos = battle.portfolio.star[0];
@@ -676,13 +676,23 @@ describe('mode off: the builder is never called', () => {
     expect(document.body.textContent).toContain('What does this company do?');
     expect(rec.markers).toEqual([]);
   });
-  it('a sheetContext handed over at \'off\' is ignored: the modal reads the mode itself (SB-1) — no pack, no shell', async () => {
+  it('a sheetContext handed over at \'off\' is ignored: the modal reads the mode itself (SB-1) — no pack, no shell, and the render and its requests are the render without it, byte for byte (review C11)', async () => {
     FLAG.sheet = 'off';
-    await open();
+    const run = async (withContext) => {
+      net.calls.length = 0;
+      await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={103.2} {...(withContext ? { sheetContext: ctx() } : {})} />); });
+      await flush();
+      const out = { html: document.body.innerHTML.replace(/_r_\w+_/g, '_r_'), requests: net.calls.map((c) => c.slice(0, 3).join(':')) };
+      remount();
+      return out;
+    };
+    const without = await run(false);
+    const withIt = await run(true);
+    expect(withIt.html).toBe(without.html);
+    expect(withIt.requests).toEqual(without.requests);
     expect(spy.buildPacks).toBe(0);
-    expect($('[data-sheet-root]')).toBeNull();
-    expect($('[data-shell-view]')).toBeNull();
-    expect($('[data-drawer-root]')).toBeTruthy();
-    expect(document.body.textContent).toContain('Why?');
+    expect(withIt.html).not.toContain('data-sheet-root');
+    expect(withIt.html).not.toContain('data-shell-view');
+    expect(withIt.html).toContain('data-drawer-root');
   });
 });

@@ -112,7 +112,9 @@ describe('the sheet components hold no words of their own — every string is th
 });
 
 describe('the agent\'s name is never a literal (SB-13, R-23): the shell\'s sources hold no agent name', () => {
-  it('no string literal in the sheet\'s modules or the header names an agent ("Shadow", the round-5 sample, or any other)', () => {
+  // A literal scan can only look for names it knows: the round-5 sample and the test fixtures' own.
+  // The rendered rows (here and in the modal's) prove the label carries the view's agentName.
+  it('no string literal in the sheet\'s modules or the header names a known agent ("Shadow", the round-5 sample; "Juno", the fixtures\')', () => {
     const files = [...readdirSync(HERE).filter((f) => /\.(js|jsx)$/.test(f) && !/\.test\./.test(f)).map((f) => path.join(HERE, f)), path.join(HERE, '..', 'ChartHeader.jsx')];
     const found = [];
     for (const f of files) {

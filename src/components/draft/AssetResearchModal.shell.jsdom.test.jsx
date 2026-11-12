@@ -28,12 +28,13 @@ const FLAGS = vi.hoisted(() => ({
 vi.mock('../../config/researchModalFlags', () => FLAGS);
 vi.mock('../../config/researchModalFlags.js', () => FLAGS);
 
-const net = vi.hoisted(() => ({ calls: [], why: [], daily: null, whyGate: null, fail: false }));
+const net = vi.hoisted(() => ({ calls: [], why: [], daily: null, whyGate: null, fail: false, thirty: null, whyFail: false }));
 const rec = vi.hoisted(() => ({ series: [], lines: [], markers: [], tabs: [], technical: [] }));
 vi.mock('../../services/eodhdAPI', () => ({
   fetchHistoricalOHLCV: (symbol, timeframe, opts) => {
     net.calls.push(['history', symbol, timeframe, opts ?? null]);
     if (net.fail) return Promise.reject(new Error('down'));
+    if (timeframe === '30m' && net.thirty) return Promise.resolve(net.thirty);
     if (timeframe === '1d' || timeframe === '1w') return Promise.resolve(net.daily ?? [
       { date: '2026-10-14', open: 101, high: 104.1, low: 100.6, close: 103.2, volume: 1 },
       { date: '2026-10-13', open: 99.4, high: 101.2, low: 99, close: 100.9, volume: 1 },
@@ -52,6 +53,7 @@ vi.mock('../../utils/fetchWithAuth', () => ({
     net.calls.push(['fetchWithAuth', String(u), o?.method ?? null]);
     if (String(u) === '/api/why-moving') {
       net.why.push(JSON.parse(o.body));
+      if (net.whyFail) return { ok: true, status: 200, json: async () => ({ success: false, error: 'down' }) };
       if (net.whyGate) {
         const gate = net.whyGate;
         await new Promise((resolve, reject) => {
@@ -76,7 +78,7 @@ vi.mock('lightweight-charts', () => {
   };
 });
 // Today's tabs, as recorded stand-ins: which mounted, with which props.
-vi.mock('./CompeteTab', () => ({ default: (p) => { rec.tabs.push(['ranks', p]); return <div data-stub="ranks"><button type="button" data-nav-etf onClick={() => p.onNavigateToStock('XLK', 'Technology Select Sector SPDR')}>nav</button></div>; } }));
+vi.mock('./CompeteTab', () => ({ default: (p) => { rec.tabs.push(['ranks', p]); return <div data-stub="ranks"><button type="button" data-nav-etf onClick={() => p.onNavigateToStock('XLK', 'Technology Select Sector SPDR')}>nav</button><button type="button" data-nav-msft onClick={() => p.onNavigateToStock('MSFT', 'Microsoft')}>nav</button></div>; } }));
 vi.mock('./SectorTab', () => ({ default: (p) => { rec.tabs.push(['sector', p]); return <div data-stub="sector" />; } }));
 vi.mock('../Research/SmartMoneyTab', () => ({ default: (p) => { rec.tabs.push(['smartMoney', p]); return <div data-stub="smartMoney" />; } }));
 vi.mock('../Research/TechnicalTabV2', () => ({ default: (p) => { rec.technical.push(p); return <div data-stub="technical" />; } }));
@@ -110,7 +112,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   vi.setSystemTime(new Date(SHEET_NOW));
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
-  net.calls.length = 0; net.why.length = 0; net.daily = null; net.whyGate = null; net.fail = false;
+  net.calls.length = 0; net.why.length = 0; net.daily = null; net.whyGate = null; net.fail = false; net.thirty = null; net.whyFail = false;
   for (const k of Object.keys(rec)) rec[k].length = 0;
   FLAG.sheet = 'on'; FLAG.bomb = 'on';
   Element.prototype.scrollIntoView = vi.fn();
@@ -125,6 +127,11 @@ const view = () => $('[data-shell-view]')?.dataset.shellView ?? null;
 const pill = (v) => $(`[data-shell-pill="${v}"]`);
 const pills = () => $$('[data-shell-pill]').map((b) => b.dataset.shellPill);
 const blocks = () => $$('[data-shell-block]').map((b) => b.dataset.shellBlock);
+// The view boxes actually displayed (review C1: the wrapper's data-shell-view alone is not the screen).
+const shown = () => $$('[data-shell-scroll]').filter((b) => b.style.display !== 'none').map((b) => b.dataset.shellScroll);
+const tfButton = (t) => $$('[data-shell-scroll="chart"] button').find((b) => b.textContent.trim() === t);
+// StockChart's active pill style (pillStyle(active)): the one timeframe the chart is on.
+const activeTf = () => ['1D', '1W'].find((t) => tfButton(t)?.style.background === 'rgba(0, 217, 255, 0.2)') ?? null;
 const history = () => net.calls.filter((c) => c[0] === 'history').map((c) => c[2]);
 const remount = () => { act(() => root.unmount()); container.remove(); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); };
 
@@ -168,21 +175,24 @@ describe('SB-2 — every v2 mount resolves the shell through sheetModeOn, on its
     expect($('[data-shell-view]')).toBeNull();
     expect($('[data-drawer-root]')).toBeTruthy();
   });
-  it("R-35: a crypto with a sheetContext at 'on' renders exactly as a crypto at 'off' with none — today's layout, byte for byte", async () => {
+  it("R-35: a crypto battle mount with a sheetContext at 'on' renders AND requests exactly as at 'off' with none — today's layout, byte for byte (the mount's own props: 💣 tab, bomb series, bombContext)", async () => {
     const crypto = { symbol: 'BTC-USD', name: 'Bitcoin', price: 67000, isCrypto: true };
-    const html = async (mode, sheetContext) => {
+    const run = async (mode, sheetContext) => {
       FLAG.sheet = mode;
-      await act(async () => { root.render(<AssetResearchModal asset={crypto} onClose={() => {}} showActionButton={false} isGameContext version={2} {...(sheetContext ? { sheetContext } : {})} />); });
+      net.calls.length = 0;
+      await act(async () => { root.render(<AssetResearchModal asset={crypto} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" bombContext={{ kind: 'bench' }} {...(sheetContext ? { sheetContext } : {})} />); });
       await flush();
-      const out = document.body.innerHTML.replace(/_r_\w+_/g, '_r_');
+      const out = { html: document.body.innerHTML.replace(/_r_\w+_/g, '_r_'), requests: net.calls.map((c) => c.slice(0, 3).join(':')) };
       remount();
       return out;
     };
-    const off = await html('off', null);
-    const on = await html('on', ctx({ row: { held: false } }));
-    if (on !== off) { let i = 0; while (on[i] === off[i]) i++; process.stderr.write(`DIFF@${i} OFF ${JSON.stringify(off.slice(Math.max(0, i - 150), i + 150))}\nON  ${JSON.stringify(on.slice(Math.max(0, i - 150), i + 150))}\n`); }
-    expect(on).toBe(off);
-    expect(on).not.toContain('data-shell-view');
+    const off = await run('off', null);
+    const on = await run('on', ctx({ row: { held: false } }));
+    if (on.html !== off.html) { let i = 0; while (on.html[i] === off.html[i]) i++; process.stderr.write(`DIFF@${i} OFF ${JSON.stringify(off.html.slice(Math.max(0, i - 150), i + 150))}\nON  ${JSON.stringify(on.html.slice(Math.max(0, i - 150), i + 150))}\n`); }
+    expect(on.html).toBe(off.html);
+    expect(on.requests).toEqual(off.requests);
+    expect(on.requests).toContain('history:BTC-USD:30m'); // today's crypto 💣 tab, on its bomb series
+    expect(on.html).not.toContain('data-shell-view');
   });
   it.each([['an index', 'SPY', 'SPDR S&P 500'], ['a sector ETF', 'XLK', 'Technology Select Sector SPDR']])("R-35: %s keeps today's layout at 'on'", async (_, symbol, name) => {
     FLAG.sheet = 'on';
@@ -316,14 +326,13 @@ describe('SB-4 — three views, one at a time; the state machine', () => {
     expect(history()).toContain('30m');
     await click(pill('chart'));
     expect(view()).toBe('chart');
-    // The 1W pill is the active one: its style is StockChart's active style.
-    expect(w().style.background).toBe($$('[data-shell-scroll="chart"] button').find((b) => b.textContent.trim() === '1W').style.background);
-    expect(w().style.background).not.toBe($$('[data-shell-scroll="chart"] button').find((b) => b.textContent.trim() === '1D').style.background);
+    // The 1W pill is the active one (StockChart's own active style).
+    expect(activeTf()).toBe('1W');
     // 💣 → Analysis restores it too (the chart, met again, is still on 1W).
     await click(pill('bomb'));
     await click(pill('analysis'));
     await click(pill('chart'));
-    expect(w().style.background).not.toBe($$('[data-shell-scroll="chart"] button').find((b) => b.textContent.trim() === '1D').style.background);
+    expect(activeTf()).toBe('1W');
   });
   it('no refetch on a view switch: Analysis ↔ Chart asks the hook for nothing it holds, and the Analysis tab keeps what it loaded', async () => {
     await battle();
@@ -532,6 +541,159 @@ describe('SB-9 — the 💣 view: the plot, then the bar, What has to happen and
     expect(scroll.querySelector('[data-bomb-plot]').compareDocumentPosition(scroll.querySelector('[data-bomb-sheet]')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // No candlestick chart in the 💣 view (no 💣 pill inside a chart either).
     expect(rec.series).toEqual([]);
+  });
+});
+
+describe('review C — the promises the first rows did not pin', () => {
+  const bar = (iso, o, hi, lo, c) => ({ date: iso, datetime: iso, timestamp: Math.floor(Date.parse(iso) / 1000), open: o, high: hi, low: lo, close: c, volume: 100 });
+  const THIRTY = [bar('2026-10-14T16:30:00.000Z', 103, 103.5, 102.9, 103.3), bar('2026-10-14T16:00:00.000Z', 102.5, 103.1, 102.4, 103), bar('2026-10-14T15:30:00.000Z', 102, 102.6, 101.9, 102.5), bar('2026-10-14T13:30:00.000Z', 101, 101.4, 100.6, 101.2)];
+  it('C1: one view on screen at a time — the Analysis box is hidden under Chart and 💣, and under an FQ-9 open', async () => {
+    await battle();
+    expect(shown()).toEqual(['analysis']);
+    await click(pill('chart'));
+    expect(shown()).toEqual(['chart']);
+    await click(pill('bomb'));
+    expect(shown()).toEqual(['bomb']);
+    await click(pill('analysis'));
+    expect(shown()).toEqual(['analysis']);
+    remount();
+    await battle({ wsPrice: 103.4 });
+    expect(view()).toBe('bomb');
+    expect(shown()).toEqual(['bomb']);
+  });
+  it('C2: stock → stock inside the shell: the header\'s back arrow, the Analysis view back at its top, What\'s moving asks only on its own tap — never for the stock left or returned to', async () => {
+    await browse();
+    const writes = [];
+    Object.defineProperty($('[data-shell-scroll="analysis"]'), 'scrollTop', { configurable: true, get: () => 0, set: (v) => { writes.push(v); } });
+    expect($('[data-shell-back]')).toBeNull();
+    await click($('[data-shell-tab="ranks"]'));
+    await click($('[data-nav-msft]'));
+    expect(view()).toBe('analysis');
+    expect($('[data-shell-header]').textContent).toContain('MSFT');
+    expect(writes).toContain(0);
+    expect($('[data-shell-back]').getAttribute('aria-label')).toBe('Back');
+    await click($('[data-shell-tab="moving"]'));
+    expect(net.why).toEqual([]);
+    await click($('[data-shell-moving-ask]'));
+    expect(net.why.map((b) => b.symbol)).toEqual(['MSFT']);
+    await click($('[data-shell-back]'));
+    expect($('[data-shell-header]').textContent).toContain('CEG');
+    expect($('[data-shell-moving]').dataset.shellMoving).toBe('unasked');
+    expect(net.why.map((b) => b.symbol)).toEqual(['MSFT']);
+  });
+  it('C3: the header\'s ✕ closes the modal; its change pill points down on a falling day', async () => {
+    const onClose = vi.fn();
+    net.daily = [
+      { date: '2026-10-14', open: 101, high: 101.5, low: 99, close: 99.5, volume: 1 },
+      { date: '2026-10-13', open: 100, high: 101.2, low: 99, close: 100.9, volume: 1 },
+    ];
+    await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'CEG', name: 'Constellation Energy', price: 99.5 }} onClose={onClose} version={2} />); });
+    await flush();
+    expect($('[data-shell-change]').textContent).toMatch(/^▼ 1\.39%$/);
+    expect($('[data-shell-moving] h3').textContent).toBe('Why is Constellation Energy −1.39%?');
+    expect($('[data-shell-close]').getAttribute('aria-label')).toBe('Close');
+    await click($('[data-shell-close]'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+  it('C4: a draft mount under the shell keeps ON THE CLOCK and Acquire; the Close fallback when the displayed name is off-board', async () => {
+    const onAcquire = vi.fn();
+    const draft = (extra) => act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'CEG', name: 'Constellation Energy', price: 344.15 }} onClose={() => {}} version={2} isMyTurn canPick timeRemaining={42} onAcquire={onAcquire} {...extra} />); });
+    await draft({});
+    await flush();
+    expect(view()).toBe('analysis');
+    expect(document.body.textContent).toContain("YOU'RE ON THE CLOCK!");
+    await click($$('button').find((b) => b.textContent === 'Acquire CEG'));
+    expect(onAcquire).toHaveBeenCalledTimes(1);
+    remount();
+    await draft({ isAcquirable: () => false });
+    await flush();
+    expect(view()).toBe('analysis');
+    expect($$('button').some((b) => b.textContent === 'Acquire CEG')).toBe(false);
+    const close = $$('button').find((b) => b.textContent === 'Close');
+    expect(close).toBeTruthy();
+    expect(close.closest('[data-shell-scroll]')).toBeNull();
+  });
+  it('C5: a mount with Bomb mode but no sheet (the free-agent bar, the BaggerBomb battle view): three pills over the browse blocks, Analysis on open, no 30-minute series for it', async () => {
+    await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'CEG', name: 'Constellation Energy', price: 344.15 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" bombContext={{ kind: 'bench' }} />); });
+    await flush();
+    expect(pills()).toEqual(['analysis', 'chart', 'bomb']);
+    expect(view()).toBe('analysis');
+    expect(blocks()).toEqual(['browseAsk', 'wallSt', 'tabs']);
+    expect(history()).not.toContain('30m');
+  });
+  it('C6: after an FQ-9 open on 💣 (in the red zone, on its minute series), Analysis puts the hook back on 1D — the minute poll stops — and the chart met next is on 1D', async () => {
+    net.thirty = THIRTY;
+    await battle({ wsPrice: 103.4 });
+    expect(view()).toBe('bomb');
+    const minute = () => history().filter((t) => t === '1m').length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
+    expect(minute()).toBeGreaterThan(0); // the red zone's poll, while 💣 is on screen
+    await click(pill('analysis'));
+    const before = minute();
+    await act(async () => { await vi.advanceTimersByTimeAsync(61_000); });
+    expect(minute()).toBe(before);
+    await click(pill('chart'));
+    expect(activeTf()).toBe('1D');
+  });
+  it('C6b: a price pin on 1W keeps the chart on 1W (its line is drawn there)', async () => {
+    await battle();
+    await click(pill('chart'));
+    await click(tfButton('1W'));
+    expect(activeTf()).toBe('1W');
+    await click(pill('analysis'));
+    await click($('[data-sheet-question="protect_lead"]'));
+    await click($('[data-pack-item="drawdown"] [data-pack-see]'));
+    expect(view()).toBe('chart');
+    expect(activeTf()).toBe('1W');
+  });
+  it('C7: the Chart and 💣 plots take the view\'s MEASURED height (a 600 px view → a 484 px plot), and a short tab fills the view (600 − 45)', async () => {
+    const real = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return this.hasAttribute('data-shell-view') ? 600 : 0; } });
+    try {
+      await battle();
+      expect($('[data-shell-tab-body]').style.minHeight).toBe('555px');
+      await click(pill('chart'));
+      const plot = [...document.body.querySelectorAll('[data-shell-scroll="chart"] div')].find((d) => d.style.position === 'relative' && /px$/.test(d.style.height))?.style.height;
+      expect(plot).toBe('484px');
+      await click(pill('bomb'));
+      expect($('[data-bomb-plot]').style.height).toBe('484px');
+    } finally {
+      if (real) Object.defineProperty(HTMLElement.prototype, 'clientHeight', real); else delete HTMLElement.prototype.clientHeight;
+    }
+  });
+  it('C9: What\'s moving after a failed answer: its Retry asks again; a battle naming no agent says whose view it is not by the archetype', async () => {
+    net.whyFail = true;
+    await battle({ sheetContext: ctx({ agentName: null }) });
+    expect($('[data-shell-moving-foot]').textContent).toBe('From the wire and the day’s bar · not Trend Follower’s view');
+    await click($('[data-shell-moving-ask]'));
+    expect(net.why).toHaveLength(1);
+    expect($('[data-shell-moving]').dataset.shellMoving).toBe('error');
+    net.whyFail = false;
+    await click($$('[data-shell-moving] button').find((b) => b.textContent === 'Retry'));
+    expect(net.why).toHaveLength(2);
+    expect($('[data-shell-moving]').dataset.shellMoving).toBe('success');
+  });
+  it('C10: Bomb mode rolled back under the shell: two pills, and the Chart view keeps the legacy in-chart 💣 pill (SB-8)', async () => {
+    FLAG.bomb = 'off';
+    await act(async () => { root.render(<AssetResearchModal asset={heldAsset()} onClose={() => {}} showActionButton={false} isGameContext version={2} wsPrice={103.2} sheetContext={ctx()} />); });
+    await flush();
+    expect(pills()).toEqual(['analysis', 'chart']);
+    await click(pill('chart'));
+    expect($$('[data-shell-scroll="chart"] button').some((b) => b.textContent === '💣')).toBe(true);
+  });
+  it('C12: a browse mount on a phone under the shell is sized from the visible viewport too (100dvh, border inside)', async () => {
+    const realWidth = window.innerWidth;
+    const realCSS = globalThis.CSS;
+    Object.defineProperty(window, 'innerWidth', { value: 390, configurable: true, writable: true });
+    globalThis.CSS = { supports: (p, v) => p === 'height' && v === '100dvh' };
+    try {
+      await browse();
+      const box = $$('div').find((d) => d.style.width === '100vw');
+      expect([box?.style.height, box?.style.boxSizing]).toEqual(['100dvh', 'border-box']);
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { value: realWidth, configurable: true, writable: true });
+      if (realCSS === undefined) delete globalThis.CSS; else globalThis.CSS = realCSS;
+    }
   });
 });
 

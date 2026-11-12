@@ -9,7 +9,8 @@ import { ranksLabelOf, readingMs, etDayLabel } from './ranksLabel.js';
 
 // Wed Nov 11, 2026, 22:05 ET = Thu 03:05 UTC: the ET day, never the UTC one.
 const WED_EVENING_ET = Date.UTC(2026, 10, 12, 3, 5);
-const PEER = { sectorName: 'Utilities', compositeRank: 12, totalPeers: 38, computedAt: new Date(WED_EVENING_ET).toISOString() };
+// The peer group and the sector are named apart, so each branch's group is pinned (review C8).
+const PEER = { sectorName: 'Independent Power', compositeRank: 12, totalPeers: 38, computedAt: new Date(WED_EVENING_ET).toISOString() };
 const RANKINGS = { computedAt: { toMillis: () => WED_EVENING_ET } };
 const ROW = { symbol: 'CEG', sectorName: 'Utilities', sectorTechnicalRank: 4, sectorTechnicalTotal: 38 };
 const TECH = { technicalRank: 31, updatedAt: { seconds: Math.floor(Date.UTC(2026, 10, 10, 21, 0) / 1000), nanoseconds: 0 } };
@@ -17,7 +18,7 @@ const TECH = { technicalRank: 31, updatedAt: { seconds: Math.floor(Date.UTC(2026
 describe('ranksLabelOf', () => {
   it('fundamental (the badge CompeteTab opens on): the peer group, the peer-rankings day', () => {
     expect(ranksLabelOf({ data: PEER, rankingsData: RANKINGS, currentStockRanking: ROW, techData: TECH, selectedView: 'fundamental' }))
-      .toBe('Utilities · fundamental rank · Wed Nov 11');
+      .toBe('Independent Power · fundamental rank · Wed Nov 11');
   });
   it('technical within the sector: the sector, the stockRankings day', () => {
     expect(ranksLabelOf({ data: PEER, rankingsData: RANKINGS, currentStockRanking: ROW, techData: TECH, selectedView: 'technical' }))
@@ -27,12 +28,16 @@ describe('ranksLabelOf', () => {
     expect(ranksLabelOf({ data: PEER, rankingsData: RANKINGS, currentStockRanking: { symbol: 'CEG' }, techData: TECH, selectedView: 'technical' }))
       .toBe('All stocks · technical rank · Tue Nov 10');
   });
+  it('technical within the sector, the row naming no sector: the peer group\'s name stands in', () => {
+    expect(ranksLabelOf({ data: PEER, rankingsData: RANKINGS, currentStockRanking: { ...ROW, sectorName: '' }, techData: TECH, selectedView: 'technical' }))
+      .toBe('Independent Power · technical rank · Wed Nov 11');
+  });
   it('never All stocks when the rank is within a sector', () => {
     const label = ranksLabelOf({ data: PEER, rankingsData: RANKINGS, currentStockRanking: ROW, techData: TECH, selectedView: 'technical' });
     expect(label).not.toContain('All stocks');
   });
   it('no reading time: the group and the rank, no day (never "today")', () => {
-    expect(ranksLabelOf({ data: { ...PEER, computedAt: undefined }, selectedView: 'fundamental' })).toBe('Utilities · fundamental rank');
+    expect(ranksLabelOf({ data: { ...PEER, computedAt: undefined }, selectedView: 'fundamental' })).toBe('Independent Power · fundamental rank');
   });
   it('nothing to name: no label', () => {
     expect(ranksLabelOf({ data: null, selectedView: 'fundamental' })).toBe(null);
