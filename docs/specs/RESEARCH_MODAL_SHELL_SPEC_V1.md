@@ -59,6 +59,7 @@ With the flag `'off'` the modal is today's, byte for byte (the mode-off goldens)
 | any | navigation to a crypto / index / sector ETF | today's modal for that asset (R-35); back to the stock returns to the shell | — |
 | today's modal | the shell appears on the open modal (a late `'allowlist'` verdict; a stock reached from an index or ETF) | the view of the series on screen: `bomb` on the bomb series with Bomb mode, `chart` for the legacy bomb chart, else `analysis` (`viewOnShellAppear`, review B2) | none |
 | any | *Ask* from Chart or 💣 | `analysis` (the Ask's card is there) | as the pill switch |
+| Chart or 💣 | an Ask's answer or failed turn lands (asked from Analysis, then the player switched) | `analysis` (refuter A1); away from Analysis an asked row reads *Asked {Agent} · the answer is on Analysis* | as the pill switch |
 
 The Analysis view stays mounted while another view shows (its open tab and what that tab loaded survive a switch). The Chart and 💣 views mount on show. S/R is reset when the chart unmounts.
 
@@ -99,13 +100,14 @@ Off = today's modal. Shell (battle) = the archetype's Analysis view + Build C's 
 ## 6. Readings — built one way, put to the founder
 
 1. **What's moving loads on a tap.** The tab is the first one and mounts with the Analysis view; loading on mount would send `/api/why-moving` (a provider call) on every open, which the build forbids. It shows its title and *Look it up · from the wire and the day's bar ›*; one tap sends the popup's request, as the old *Why?* door did. Round 5 A draws it already loaded.
-1b. **What's moving's number is the header's** (BUILD_RULES §9): the title prints, and the request carries, the day's change the header shows (`researchData.dailyChange`), only once known — the rule the controlled view's popup already followed. Today's popup sends the battle asset's own `percentChange` (for a held position, its change since entry) on the other mounts; the popup itself is unchanged.
+1b. **What's moving's number is the header's** (BUILD_RULES §9): the title prints (at two decimals, as the header), and the request carries, the day's change and price the header shows, the change only once known — the rule the controlled view's popup already followed. The request's inputs are frozen at the tap (a live tick never aborts and re-sends it — each re-send a provider call); a Retry is a new tap with the numbers then on screen. Today's popup sends the battle asset's own `percentChange` (for a held position, its change since entry) on the other mounts; the popup itself is unchanged.
 2. **"The holding line, when held" (§3.2)** is built as Build C's stance for every kind: held, *On the bench · flagged at …*, *Looked at … · not held now* (FQ-2's ruling on screen), *Not examined in this game*. Build C's move chip reads *+2.4%*, not round 5's *+4.3% since entry* (the stance's text is Build C's, reused unchanged).
 3. **Pills of equal width** (R-27's letter) — round 5 H1's drawing gives 💣 a fixed 64 px.
-4. **The Ask's label** is *Ask {Agent}: {question}* (R-29), with Build C's cost line *· 1 message · N left* kept as built (SB-10), not round 5's *Ask · 1 msg*. The reply card (`AskReply.jsx`, unchanged) is handed the same name, so *Juno is answering…* / *Juno didn't answer* match the row (review A2); the archetype when the battle names no agent. An Ask sent from Chart or 💣 brings the player to its card on the Analysis view (review A1).
+4. **The Ask's label** is *Ask {Agent}: {question}* (R-29), with Build C's cost line *· 1 message · N left* kept as built (SB-10), not round 5's *Ask · 1 msg*. The reply card's sending and failure lines (`AskReply.jsx`, unchanged) are handed the same name, so *Juno is answering…* / *Juno didn't answer* match the row (review A2); the answered card keeps *Its answer · {Archetype}* beside the agent's tag. The archetype when the battle names no agent. An Ask sent from Chart or 💣, or answered while the player looks there, brings the player to its card on the Analysis view (review A1).
 5. **Build C's crypto sheet (BC-15) is not reachable** under R-35: a crypto holding in battle gets today's modal at every value until the crypto shell.
 6. **Mounts with a `bombContext` but no `sheetContext`** (BaggerBomb battle view, free agent bar) get three pills over the browse content at `'on'` and open on Analysis, not their `defaultTab` 💣.
 7. **The smoke's tabs read public market data** (§8).
+8. **R-27's "warms … in the red zone or the Danger Zone"** is read as the LIVE zones (approaching, the banked moment, danger): after the bell the zone is frozen (Bomb mode greys its own chip, "never live"), and the pill stays cool (review A3). At first build the pill followed `isZoneMode`, which includes the frozen views.
 
 ## 7. Tests
 
