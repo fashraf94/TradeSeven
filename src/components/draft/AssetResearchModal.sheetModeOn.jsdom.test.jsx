@@ -428,6 +428,24 @@ describe('BC-7 — the Ask', () => {
     expect(card.closest('[data-shell-scroll="analysis"]').style.display).toBe('block');
     expect(card.textContent).toBe('Something went wrong. Check chat before asking again — a message may have been used.');
   });
+  it('the switch is at the tap: while an Ask sent from Chart is in flight, its card already shows on Analysis (review A1 — not only once the answer lands)', async () => {
+    let resolve;
+    net.ask = () => new Promise((r) => { resolve = r; });
+    await open();
+    await click($('[data-sheet-question="protect_lead"]'));
+    await click(see('drawdown'));
+    expect(view()).toBe('chart');
+    await click($('[data-sheet-ask]'));
+    expect(net.asks).toHaveLength(1);
+    expect(view()).toBe('analysis');
+    const card = $('[data-sheet-reply]');
+    expect(card.dataset.sheetReply).toBe('sending');
+    expect(card.closest('[data-shell-scroll="analysis"]').style.display).toBe('block');
+    expect(card.textContent).toBe('Juno is answering…');
+    await act(async () => { resolve({ ok: true, status: 200, json: async () => ({ agentMessage: 'Landed.', exchangeId: 'ex-7' }) }); });
+    await flush();
+    expect($('[data-sheet-reply]').dataset.sheetReply).toBe('answered');
+  });
   it('an answer — or a failed turn — that lands while the player looks at Chart brings them to its card; away from Analysis the row says where the answer is (refuter, A1)', async () => {
     for (const outcome of ['failed', 'answered']) {
       let resolve;
