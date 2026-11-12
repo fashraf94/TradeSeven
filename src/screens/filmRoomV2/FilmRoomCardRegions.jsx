@@ -57,12 +57,12 @@ import { SITUATIONS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { CARD_SLOTS } from '../../data/cardSlots';
 // Build C §3: the stage vocabulary v2, from its one export
-import { CARD_ROUTES, NOMINATING_ROUTE, isOpenStage, routeOf } from '../../data/cardStages';
+import { CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_EXPIRY_SESSIONS, isOpenStage, routeOf } from '../../data/cardStages';
 import { RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED } from '../../config/featureFlags';
 import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, eyebrow, foot, mono, plain, tint, AggNum, TapeNum, When, Rec, Coverage, Quotation, TextButton, PrimaryButton, Label } from './FilmRoomKit';
-import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf } from './filmRoomCards';
+import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf, chainOf } from './filmRoomCards';
 
 const T = COPY.cards;
 /**
@@ -295,6 +295,77 @@ function nextOf(card) {
   return null;
 }
 
+const has = (table, id) => Object.prototype.hasOwnProperty.call(table, id);
+
+/**
+ * Build C §5 — ONE LINE of a card's chain (chainOf), in the Film Room's own voice: the state's words and its time (an
+ * instant, with its date when it is not the shown day's). The record's own words stand where the copy has none — an
+ * answer or a stage the copy does not know — and always for a result's words and an offer's state, exactly as the
+ * ledger stores them (exit criterion 11). No link and no quotation here: the receipt sets them beside the line, and
+ * "since last time" shows the line alone.
+ */
+export function ChainLine({ card, line, day = null }) {
+  const W = T.chain;
+  const when = <When>{etWhen(line.at, day) ?? W.timeNotRecorded}</When>;
+  if (line.kind === 'filed') return <>{W.filed} · {when}</>;
+  if (line.kind === 'offered') return <>{W.offered} · {when}</>;
+  if (line.kind === 'nomination') {
+    if (has(W.answers, line.state)) return <>{W.answers[line.state]} · {when}</>;
+    if (line.state === 'expired') return <>{W.expired.before} <AggNum value={NOMINATION_EXPIRY_SESSIONS} aggregate="count(sessions a queued nomination waits, B6)" size={10.5} /> {W.expired.after} · {when}</>;
+    return <>{W.answer} · <Rec>{String(line.state)}</Rec> · {when}</>;
+  }
+  if (line.kind === 'testing') return <>{W.testing} {when}</>;
+  if (line.kind === 'tested') {
+    const r = isObjLike(card?.result) ? card.result : null;
+    return (
+      <>
+        {W.tested} · {when}
+        {r && typeof r.contractCondition === 'string' ? <> · {W.contractCondition} <Rec><span data-result-field="contractCondition">{r.contractCondition}</span></Rec></> : null}
+        {r && typeof r.economicResult === 'string' ? <> · {W.economicResult} <Rec><span data-result-field="economicResult">{r.economicResult}</span></Rec></> : null}
+      </>
+    );
+  }
+  if (line.kind === 'installed') return <>{W.installed} · {when}</>;
+  if (line.kind === 'parked') return <>{W.parked} · {when}</>;
+  if (line.kind === 'retired') {
+    const offer = line.by === 'server' && isObjLike(card?.offer) && typeof card.offer.state === 'string' ? card.offer : null;
+    return <>{W.retired} · {when}{offer ? <> · {W.forgeOffer} <Rec><span data-offer-state="">{offer.state}</span></Rec></> : null}</>;
+  }
+  return <><Rec>{String(line.stage ?? line.kind)}</Rec> · {when}</>;
+}
+const isObjLike = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Build C §5 — the receipt's chain: every line chainOf gives, newest first. Beside a line, where the ledger holds it:
+ * the agent's reason for the LATEST nomination answer, the one the entry's `nomination` copy holds — a quotation bound
+ * to `nomination.reason`, credited "your agent" at `nomination.consideredAt` (BC-1); and a link slot — "Open the idea"
+ * (taken into an idea; testing), "Open the result" (tested) — that renders ONLY when the screen is handed the book's
+ * door (`onOpenBook`). C1 hands none: no book screen exists yet, so no slot renders (no new door).
+ */
+function Chain({ card, ledger, day, onOpenBook }) {
+  const W = T.chain;
+  const lines = chainOf(card);
+  if (!lines.length) return null;
+  const nomination = isObjLike(card.nomination) ? card.nomination : null;
+  const link = (label, target) => (typeof onOpenBook === 'function' ? <TextButton onClick={() => onOpenBook(target)}>{label}</TextButton> : null);
+  return (
+    <div data-card-chain="" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ ...eyebrow, color: C.ink3 }}>{W.title}</span>
+      {lines.map((line) => (
+        <div key={`${line.k}:${line.kind}`} data-chain-line={line.kind} data-chain-state={line.state ?? undefined} data-chain-row={line.k} style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '4px 0', borderTop: `1px solid ${C.hair}` }}>
+          <span style={mono(11, C.ink2)}><ChainLine card={card} line={line} day={day} /></span>
+          {line.kind === 'nomination' && line.state === 'accepted' && nomination ? link(W.openIdea, { bookId: nomination.bookId, nominationId: nomination.nominationId }) : null}
+          {line.kind === 'testing' && isObjLike(card.idea) ? link(W.openIdea, { bookId: card.idea.bookId, ideaId: card.idea.ideaId }) : null}
+          {line.kind === 'tested' && isObjLike(card.result) ? link(W.openResult, { ideaId: card.result.ideaId, resultRef: card.result.resultRef }) : null}
+          {line.kind === 'nomination' && line.latest && nomination && nomination.state === line.state ? (
+            <Quotation doc={ledger} path={['cards', card.entryId, 'nomination', 'reason']} by="yourAgent" at={['cards', card.entryId, 'nomination', 'consideredAt']} docLabel="ledger" />
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
  * @param {string|null} props.day      the day the screen shows — the instant's date is shown when it is not this day's
  *                                     (review L3-7)
@@ -304,8 +375,10 @@ function nextOf(card) {
  *                                     judged from it only when it is the card's own source day; a card from any other
  *                                     day says RG-5's sentence alone, with no link
  * @param {Function}    [props.onOpenForge] App's Forge door (hub S5), `({ area })` — Set's link to the tempo dial
+ * @param {Function}    [props.onOpenBook]  Build C §5: the book's door — the chain's idea and result links render only
+ *                                     beside it; C1 hands none (no book screen exists yet)
  */
-export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = null, onOpenForge = null }) {
+export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = null, onOpenForge = null, onOpenBook = null }) {
   const data = counter?.status === 'ready' || counter?.data ? counter.data : null;
   const cards = ledgerOf(data, card);
   const live = cards.find((c) => c.entryId === card.entryId) ?? card;
@@ -339,6 +412,7 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = 
       <CardFacts card={live} />
       <Quotation doc={ledger} path={['cards', live.entryId, 'note']} by="you" at={['cards', live.entryId, 'createdAt']} docLabel="ledger" />
       <span style={mono(11, C.ink2)}>{T.route} · {wordOf(T.routes, routeOf(live.route))} · {T.stage} · {wordOf(T.stageWords, live.stage)}{live.shelved ? ` · ${T.groups.shelved}` : ''}</span>
+      <Chain card={live} ledger={ledger} day={day} onOpenBook={onOpenBook} />
       {next ? <span data-card-next="" style={foot}>{next}{setSay ? <> {setSay}</> : null}{linked ? <> {T.setNextBattle}</> : null}</span> : null}
       {/* RH-1 / RJ-8 / RK-2: the one setting that reaches `stalled` is the tempo dial — linked on every battle where the day's rule is on */}
       {linked ? (

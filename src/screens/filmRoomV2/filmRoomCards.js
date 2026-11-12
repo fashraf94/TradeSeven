@@ -174,6 +174,39 @@ export function groupCards(cards) {
   return { active, shelved, parked, equipped, retired, other };
 }
 
+/**
+ * Build C §5 — THE CHAIN of one card, newest first: one line per row of the entry's own `stageHistory` (what the
+ * ledger holds, and nothing it does not — exit criterion 11), each `{ kind, at, k }` (k: the row's index):
+ *   filed      the first row (the create) — and `offered` beside it when the create was the Offer route's (`nominated`)
+ *   offered    a player row at `nominated` (the nominate op)
+ *   nomination a server row copying the book's nomination state (`event: 'nomination'`, its `state`); `latest` marks
+ *              the last such row — the one whose state the entry's `nomination` copy holds, and whose reason it keeps
+ *   testing · tested · installed · retired   a row at that stage (`by` kept: a server retire carries the offer's state)
+ *   parked     a player row `event: 'parked'`
+ *   stage      a row at a stage the vocabulary does not know (its own word, `stage`)
+ * A row that is not an object, or that names nothing the chain knows, gives no line — the chain never invents a state.
+ */
+export function chainOf(card) {
+  const history = Array.isArray(card?.stageHistory) ? card.stageHistory : [];
+  const lines = [];
+  let lastNomination = -1;
+  history.forEach((h, k) => {
+    if (!isObj(h)) return;
+    if (k === 0) {
+      lines.push({ kind: 'filed', at: h.at, k });
+      if (h.stage === 'nominated') lines.push({ kind: 'offered', at: h.at, k });
+      return;
+    }
+    if (h.event === 'parked') { lines.push({ kind: 'parked', at: h.at, k }); return; }
+    if (h.event === 'nomination') { lastNomination = lines.length; lines.push({ kind: 'nomination', state: h.state, at: h.at, k }); return; }
+    if (h.stage === 'nominated') { lines.push({ kind: 'offered', at: h.at, k }); return; }
+    if (CARD_STAGES.includes(h.stage) && h.stage !== 'card') { lines.push({ kind: h.stage, at: h.at, k, by: h.by }); return; }
+    if (typeof h.stage === 'string' && h.stage) lines.push({ kind: 'stage', stage: h.stage, at: h.at, k });
+  });
+  if (lastNomination >= 0) lines[lastNomination] = { ...lines[lastNomination], latest: true };
+  return lines.reverse();
+}
+
 /** The open Watch cards the header follows (RG-4; the one export's isFollowedWatch), with their recurrences from the counter. */
 export function watchCardsOf(counter, cards) {
   return cards.filter((c) => isFollowedWatch(c) && !c.shelved).map((c) => ({ card: c, recurrences: Array.isArray(counter?.recurrences?.[c.entryId]) ? counter.recurrences[c.entryId] : [] }));

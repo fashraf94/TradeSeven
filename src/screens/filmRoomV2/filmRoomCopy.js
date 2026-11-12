@@ -208,7 +208,9 @@ export const FILM_ROOM_COPY = Object.freeze({
   // R7: who a quotation's words are, as the tape records it; a stored record with no recorded author is named as
   // the record ("the stored plan"), never given a guessed one
   // B2: the player's own note on a filed card is credited "you" (spec §6; the ledger's `note`, bound by path)
-  quoteBy: { agent: 'the agent', player: 'the player', platform: 'the platform', plan: 'the stored plan', directive: 'the stored directive', you: 'you' },
+  // Build C §5 (BC-1): the agent's reason when it considered a card's nomination, credited "your agent" (the ledger's
+  // `nomination.reason`, bound by path, at its `consideredAt`)
+  quoteBy: { agent: 'the agent', player: 'the player', platform: 'the platform', plan: 'the stored plan', directive: 'the stored directive', you: 'you', yourAgent: 'your agent' },
   plans: 'Plans',
   plansNone: 'No plan entries were recorded this day.',
   plansAll: 'All',
@@ -381,6 +383,30 @@ export const FILM_ROOM_COPY = Object.freeze({
       retired: 'Retired: nothing happens next.',
       shelved: 'Shelved: nothing happens while the agent is on another archetype.',
     },
+    // Build C §5 — THE CHAIN: the receipt's view of one card, newest state first, each state one line with its time, in
+    // the Film Room's own voice (facts only, BC-1); the agent's words beside them are quotations. A result's words and
+    // an offer's state are the record's own (Rec), never rewritten; an answer or a stage the copy has no line for is
+    // the record's own word too.
+    chain: {
+      title: 'Since it was filed',
+      filed: 'Filed',
+      offered: 'Offered to your agent',
+      answers: { accepted: 'Taken into an idea', deferred: 'Deferred', declined: 'Declined' },
+      answer: "Your agent's answer",
+      // "Not considered within {n} sessions" — n is B6, a marked number
+      expired: { before: 'Not considered within', after: 'sessions' },
+      testing: 'Testing · from',
+      tested: 'Tested',
+      contractCondition: 'contract condition',
+      economicResult: 'economic result',
+      installed: 'Equipped',
+      parked: 'Parked',
+      retired: 'Retired',
+      forgeOffer: 'Forge offer',
+      openIdea: 'Open the idea',
+      openResult: 'Open the result',
+      timeNotRecorded: 'time not recorded',
+    },
     retire: 'Retire',
     retiring: 'Retiring…',
     recurrences: 'Since this card',
@@ -414,4 +440,6 @@ export const DIRECTIVE_EXPLAINER = Object.freeze([
 ]);
 
 /** BA-41 / the sweep: words the screen's own copy never uses (recorded quotations are the record's). */
-export const FORBIDDEN_WORDS = Object.freeze(['biggest', 'best', 'worst', 'mistake', 'should have', 'missed', 'good trade', 'bad trade', 'lesson', 'grade']);
+// Build C §5: the chain renders a result's words exactly as stored and never judges them — "validated", "proven",
+// "supported" join the list
+export const FORBIDDEN_WORDS = Object.freeze(['biggest', 'best', 'worst', 'mistake', 'should have', 'missed', 'good trade', 'bad trade', 'lesson', 'grade', 'validated', 'proven', 'supported']);

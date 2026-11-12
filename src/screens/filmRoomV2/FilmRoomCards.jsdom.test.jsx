@@ -71,13 +71,13 @@ import { makeTapeDb } from '../../../api/_utils/filmTape/__fixtures__/tapeFirest
 import { seedDay, OWNER, AGENT } from '../../../api/_utils/filmTape/__fixtures__/tapeFixtures.js';
 import { stalledDay } from '../../../api/_utils/filmTape/__fixtures__/tagFixtures.js';
 import { buildCounter } from '../../../api/_utils/filmRoom/cardCounter.js';
-import { retireCard, createCard } from '../../../api/_utils/filmRoom/cardStore.js';
+import { retireCard, createCard, applyServerTransition } from '../../../api/_utils/filmRoom/cardStore.js';
 import cardHandler from '../../../api/film-room/card.js';
 import { setPracticeFieldSeam, resetPracticeFieldSeam } from '../../../api/_utils/filmRoom/practiceFieldSeam.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
 import { ledgerOf } from './filmRoomCards';
-import { setRuleOf, setStateOf, YourCall } from './FilmRoomCardRegions';
+import { setRuleOf, setStateOf, YourCall, Receipt } from './FilmRoomCardRegions';
 import { FILM_ROOM_COPY } from './filmRoomCopy';
 const COPY_CARDS = FILM_ROOM_COPY.cards;
 import { FORGE_AREAS, forgeAreaOf } from '../../components/CommandCenter/hubChrome';
@@ -1614,5 +1614,159 @@ describe('C1 item 5 — the form: Watch, Offer and Set; Offer only with the owne
     // a v1 Practice card holds no nomination record: nothing is said to come next
     expect(receipt.querySelector('[data-card-next]')).toBeNull();
     await sweepAll(fx.tape2, 'v1 drill');
+  });
+});
+
+describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), every state from the ledger\'s own writes', () => {
+  /** A server transition through the REAL helper (the Practice Field's one way in), at an instant on the shown day. */
+  const move = (entryId, to, payload, clock) => applyServerTransition(state.db, { entryId, ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${to}_${clock.replace(/\D/g, '')}`, nowIso: `${D2}T${clock}:00.000Z` });
+  const NOM = (state, reason, consideredAt) => ({ bookId: BOOK_ID, nominationId: 'op_1', state, reason, consideredAt });
+  const reopen = async (id) => {
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q(`[data-my-card="${id}"]`));
+    await m.flush();
+    return m.q(`[data-card-receipt="${id}"]`);
+  };
+  const lines = (receipt) => [...receipt.querySelectorAll('[data-chain-line]')].map((l) => [l.getAttribute('data-chain-line'), l.getAttribute('data-chain-state')]);
+  const lineText = (receipt, i) => receipt.querySelectorAll('[data-chain-line]')[i].querySelector('span').textContent;
+  const offerCard = async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+  };
+
+  it('filed by the Offer route: "Offered to your agent" and "Filed", newest first, each with its time; the note "— you" stays; what comes next is the Offer sentence', async () => {
+    await offerCard();
+    const receipt = m.q('[data-card-receipt="op_1"]');
+    expect(lines(receipt)).toEqual([['offered', null], ['filed', null]]);
+    // the card was filed now, not on the shown day: its instant carries its date (review L3-7)
+    expect(lineText(receipt, 0)).toMatch(/^Offered to your agent · ([A-Z][a-z]{2} \d{1,2}, )?\d{1,2}:\d{2} [AP]M$/);
+    expect(lineText(receipt, 1)).toMatch(/^Filed · /);
+    expect(receipt.querySelectorAll('[data-chain-line] [data-time]')).toHaveLength(2);
+    expect(receipt.querySelector('[data-quotation="you"]')).toBeTruthy();
+    expect(receipt.querySelector('[data-card-next]').textContent).toBe(RG5.offer);
+    await sweepAll(fx.tape2, 'offered');
+  });
+
+  it('deferred, then accepted: each answer a line; the agent\'s reason quoted beside the LATEST answer only, "— your agent · {time}", bound to the ledger\'s copy; no Offer sentence once answered', async () => {
+    await offerCard();
+    await move('op_1', 'nomination', NOM('deferred', 'Not this week: the book is full.', `${D2}T20:10:00.000Z`), '20:15');
+    let receipt = await reopen('op_1');
+    expect(lines(receipt)).toEqual([['nomination', 'deferred'], ['offered', null], ['filed', null]]);
+    expect(lineText(receipt, 0)).toBe('Deferred · 4:15 PM');
+    const q1 = receipt.querySelector('[data-quotation="yourAgent"]');
+    expect(q1.querySelector('[data-quote-path]').textContent).toBe('Not this week: the book is full.');
+    expect(q1.querySelector('[data-quote-path]').getAttribute('data-quote-path')).toBe('cards.op_1.nomination.reason');
+    expect(q1.querySelector('[data-quote-attribution]').textContent).toBe('— your agent · 4:10 PM');
+    expect(receipt.querySelector('[data-card-next]')).toBeNull();
+    await sweepAll(fx.tape2, 'deferred');
+    await move('op_1', 'nomination', NOM('accepted', 'I will test holding one more check after the stall.', `${D2}T20:40:00.000Z`), '20:45');
+    receipt = await reopen('op_1');
+    expect(lines(receipt)).toEqual([['nomination', 'accepted'], ['nomination', 'deferred'], ['offered', null], ['filed', null]]);
+    expect(lineText(receipt, 0)).toBe('Taken into an idea · 4:45 PM');
+    const quotes = [...receipt.querySelectorAll('[data-quotation="yourAgent"]')];
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0].closest('[data-chain-line]').getAttribute('data-chain-state')).toBe('accepted');
+    expect(quotes[0].querySelector('[data-quote-path]').textContent).toBe('I will test holding one more check after the stall.');
+    // no book door is handed in: "Open the idea" renders nowhere (the mutant: a book link with no door)
+    expect(m.buttons('Open the idea')).toHaveLength(0);
+    await sweepAll(fx.tape2, 'accepted');
+  });
+
+  it('testing, tested, installed: the lines in the ledger\'s order; the result\'s words EXACTLY as stored (the mutant: the result in other words); no idea or result link without the door; never "validated", "proven" or "supported"', async () => {
+    await offerCard();
+    await move('op_1', 'nomination', NOM('accepted', 'I will test it.', `${D2}T20:40:00.000Z`), '20:45');
+    await move('op_1', 'testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    let receipt = await reopen('op_1');
+    expect(lineText(receipt, 0)).toBe('Testing · from 4:50 PM');
+    expect(receipt.querySelector('[data-card-next]')).toBeNull();
+    await move('op_1', 'tested', { ideaId: 'idea-1', resultRef: 'mandates/book-1/ideas/idea-1/results/r1', contractCondition: 'breached', economicResult: 'within band' }, '20:55');
+    receipt = await reopen('op_1');
+    expect(lines(receipt).map((l) => l[0])).toEqual(['tested', 'testing', 'nomination', 'offered', 'filed']);
+    expect(lineText(receipt, 0)).toBe('Tested · 4:55 PM · contract condition breached · economic result within band');
+    expect([...receipt.querySelectorAll('[data-result-field]')].map((e) => [e.getAttribute('data-result-field'), e.textContent])).toEqual([['contractCondition', 'breached'], ['economicResult', 'within band']]);
+    expect(receipt.querySelector('[data-result-field]').closest('[data-record-text]')).toBeTruthy();
+    expect(m.buttons('Open the result')).toHaveLength(0);
+    expect(m.buttons('Open the idea')).toHaveLength(0);
+    expect(receipt.textContent).not.toMatch(/validated|proven|supported|\bright\b|\bwrong\b/i);
+    expect(receipt.textContent).toContain('Stage · tested');
+    await sweepAll(fx.tape2, 'tested');
+    await move('op_1', 'installed', { offerId: 'offer-1', state: 'accepted' }, '21:00');
+    receipt = await reopen('op_1');
+    expect(lineText(receipt, 0)).toBe('Equipped · 5:00 PM');
+    expect(receipt.textContent).toContain('Stage · equipped');
+    expect(m.buttons('Retire')).toHaveLength(0);
+    await sweepAll(fx.tape2, 'installed');
+  });
+
+  it('expired: "Not considered within 10 sessions", ten a derived number (B6); retired by the server: the Forge offer\'s state as stored', async () => {
+    await offerCard();
+    await move('op_1', 'nomination', NOM('expired', null, null), '20:15');
+    let receipt = await reopen('op_1');
+    // the ten carries its class mark (D) beside it
+    expect(lineText(receipt, 0)).toBe('Not considered within 10D sessions · 4:15 PM');
+    const n = receipt.querySelector('[data-num-aggregate="count(sessions a queued nomination waits, B6)"]');
+    expect(n.getAttribute('data-num-class')).toBe('derived');
+    expect(Number(n.getAttribute('data-agg-value'))).toBe(10);
+    expect(receipt.querySelector('[data-quotation="yourAgent"]')).toBeNull();   // no reason stored, no quotation
+    await sweepAll(fx.tape2, 'expired');
+  });
+
+  it('retired by the server from tested, with the Forge offer\'s state: "Retired · {time} · Forge offer {state}", the state the record\'s own word', async () => {
+    await offerCard();
+    await move('op_1', 'nomination', NOM('accepted', 'I will test it.', `${D2}T20:40:00.000Z`), '20:45');
+    await move('op_1', 'testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('op_1', 'tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'unmeasurable' }, '20:55');
+    await move('op_1', 'retired', { offerId: null, state: 'no_offer' }, '21:05');
+    const receipt = await reopen('op_1');
+    expect(lineText(receipt, 0)).toBe('Retired · 5:05 PM · Forge offer no_offer');
+    expect(receipt.querySelector('[data-offer-state]').closest('[data-record-text]')).toBeTruthy();
+    expect(receipt.querySelector('[data-card-next]').textContent).toBe('Retired: nothing happens next.');
+    await sweepAll(fx.tape2, 'server retired');
+  });
+
+  it('the chain says only what the ledger holds (exit criterion 11): a result planted on a card-stage entry shows no tested line; an answer the copy has no line for is the record\'s own word', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const doc = t.store.get(`agents/${AGENT}/plays/op_1`);
+    t.store.set(`agents/${AGENT}/plays/op_1`, { ...doc, result: { ideaId: 'x', resultRef: 'x', contractCondition: 'met', economicResult: 'ahead' } });
+    let receipt = await reopen('op_1');
+    expect(lines(receipt)).toEqual([['filed', null]]);
+    expect(receipt.textContent).not.toContain('Tested');
+    expect(receipt.textContent).not.toContain('ahead');
+    // a nominated entry whose copied answer is one the copy names no line for ('considered')
+    t.store.set(`agents/${AGENT}/plays/op_1`, { ...doc, stage: 'nominated', nomination: { bookId: BOOK_ID, nominationId: 'op_1', state: 'considered', reason: null, consideredAt: null }, stageHistory: [...doc.stageHistory, { stage: 'nominated', at: `${D2}T20:00:00.000Z`, by: 'player', opId: 'n1' }, { stage: 'nominated', event: 'nomination', state: 'considered', at: `${D2}T20:05:00.000Z`, by: 'server', writer: 'practice_field', opId: 's1' }] });
+    receipt = await reopen('op_1');
+    expect(lineText(receipt, 0)).toBe("Your agent's answer · considered · 4:05 PM");
+    expect(receipt.querySelectorAll('[data-chain-line]')[0].querySelector('[data-record-text]').textContent).toBe('considered');
+    await sweepAll(fx.tape2, 'unknown answer');
+  });
+
+  it('the link slots render only beside the book\'s door (onOpenBook): handed one, "Open the idea" and "Open the result" open the entry\'s own idea and result; handed none (C1, everywhere), no slot', async () => {
+    await offerCard();
+    await move('op_1', 'nomination', NOM('accepted', 'I will test it.', `${D2}T20:40:00.000Z`), '20:45');
+    await move('op_1', 'testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('op_1', 'tested', { ideaId: 'idea-1', resultRef: 'r-1', contractCondition: 'met', economicResult: 'ahead' }, '20:55');
+    const entry = t.store.get(`agents/${AGENT}/plays/op_1`);
+    const opened = [];
+    m.teardown(); m.setup();
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [entry] } }} card={entry} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} onOpenBook={(target) => opened.push(target)} />);
+    await m.flush(2);
+    expect(m.buttons('Open the idea')).toHaveLength(2);   // taken into an idea; testing
+    expect(m.buttons('Open the result')).toHaveLength(1);
+    // newest first: the tested line's result, the testing line's idea, then the accepted line's
+    m.click(m.buttons('Open the result')[0]);
+    m.click(m.buttons('Open the idea')[0]);
+    m.click(m.buttons('Open the idea')[1]);
+    expect(opened).toEqual([{ ideaId: 'idea-1', resultRef: 'r-1' }, { bookId: BOOK_ID, ideaId: 'idea-1' }, { bookId: BOOK_ID, nominationId: 'op_1' }]);
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [entry] } }} card={entry} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} />);
+    await m.flush(2);
+    expect(m.buttons('Open the idea')).toHaveLength(0);
+    expect(m.buttons('Open the result')).toHaveLength(0);
   });
 });

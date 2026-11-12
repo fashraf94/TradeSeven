@@ -89,6 +89,9 @@ export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
   // B2.1 B3 (Amendment H RH-6): the counter's count of the days in its window whose situations could not be read —
   // a count of tape days, derived
   'count(tape days with situations unavailable)': 'derived',
+  // Build C §5: an expired nomination's "not considered within n sessions" — n is B6 (src/data/cardStages.js), said as
+  // a derived number, as the build prompt rules
+  'count(sessions a queued nomination waits, B6)': 'derived',
 });
 
 /**
