@@ -60,12 +60,22 @@ describe('BP-1 — rungShown: every rung rounded toward its award', () => {
       expect(rungShown(down(p), d), `down ${p}`).toBe(p);
     }
   });
-  it('float noise within 1e-9 (relative) is on the unit: 259.5300000001 and 259.5299999999 print $259.53 on either side', () => {
-    for (const p of [259.5300000001, 259.5299999999]) {
-      expect(rungShown(up(p), 2), `up ${p}`).toBe(259.53);
-      expect(rungShown(down(p), 2), `down ${p}`).toBe(259.53);
-    }
+  it('float slack (1e-9 relative) keeps a whole unit when the unit is true: a Bust of 259.5300000001 and a +15 of 259.5299999999 print $259.53', () => {
+    expect(rungShown(down(259.5300000001), 2)).toBe(259.53);
+    expect(rungShown(up(259.5299999999), 2)).toBe(259.53);
     expect(RUNG_SHOWN_SLACK).toBe(1e-9);
+  });
+  it('review A1: the slack never keeps a unit the scorer would not honour — the printed price passes the scorer\'s own float comparison', () => {
+    // The scorer's targets are fill × (1 + k × pct / 100) in floats, compared `high >= target` / `low <= target`.
+    const t15 = 100 * (1 + (1 * 1.11) / 100); // 101.11000000000001
+    const tBust = 100 * (1 + (-1 * 1.07) / 100); // 98.92999999999999
+    expect(101.11 >= t15).toBe(false); // a check at $101.11 would NOT bank it…
+    expect(rungShown(up(t15), 2)).toBe(101.12); // …so it is not printed as $101.11
+    expect(98.93 <= tBust).toBe(false);
+    expect(rungShown(down(tBust), 2)).toBe(98.92);
+    // the same unit on the side where it IS true stays put
+    expect(rungShown(up(259.5300000001), 2)).toBe(259.54);
+    expect(rungShown(down(259.5299999999), 2)).toBe(259.52);
   });
   it('a sub-cent asset at its own decimals: up rounds up, down rounds down', () => {
     expect(rungShown(up(0.000012345), 8)).toBe(0.00001235);
@@ -81,7 +91,7 @@ describe('BP-1 — rungShown: every rung rounded toward its award', () => {
 });
 
 describe('BP-1 — a truth sweep: every shown upside price ≥ its exact target, every shown downside price ≤ it', () => {
-  it('a property grid of fills × thresholds × decimals: the line "reaches $X" / "at or below $X" is true at X, and X is within one display unit', () => {
+  it('a property grid of fills × thresholds × decimals: the line "reaches $X" / "at or below $X" is true at X in the scorer\'s own float comparison, and X is within one display unit', () => {
     const fills = [0.00001234, 0.000987, 0.0123, 0.2049, 0.99996, 1.07, 3.33, 9.99, 20.07, 45.88, 97.625, 99.99, 136.68, 155.6, 270.22, 325.73, 488.41, 1234.56, 64321.5];
     for (let i = 0; i < 120; i += 1) fills.push(Number((1 + i * 7.31 + (i % 7) * 0.013).toFixed(2)));
     const pcts = [0.4, 0.5, 1.123457, 2.375, 3.554943, 3.954943, 4.365161, 5.135255, 8];
@@ -93,10 +103,10 @@ describe('BP-1 — a truth sweep: every shown upside price ≥ its exact target,
         const unit = 10 ** -d;
         for (const r of l.rungs) {
           const shown = rungShown(r, d);
-          const slack = RUNG_SHOWN_SLACK * r.price;
-          if (r.k > 0) expect(shown >= r.price - slack, `up ${r.key} ${fill}@${pct} d${d}: ${shown} < ${r.price}`).toBe(true);
-          else expect(shown <= r.price + slack, `down ${r.key} ${fill}@${pct} d${d}: ${shown} > ${r.price}`).toBe(true);
-          expect(Math.abs(shown - r.price) < unit + slack, `within a unit ${r.key} ${fill}@${pct} d${d}`).toBe(true);
+          // Strict, in the scorer's own float comparison (review A1): no slack in the truth test.
+          if (r.k > 0) expect(shown >= r.price, `up ${r.key} ${fill}@${pct} d${d}: ${shown} < ${r.price}`).toBe(true);
+          else expect(shown <= r.price, `down ${r.key} ${fill}@${pct} d${d}: ${shown} > ${r.price}`).toBe(true);
+          expect(Math.abs(shown - r.price) < unit * (1 + 1e-6), `within a unit ${r.key} ${fill}@${pct} d${d}`).toBe(true);
           checked += 1;
         }
       }
@@ -256,6 +266,13 @@ describe('BP-4 — the red zone gets the Danger Zone\'s layout: one text column,
       const trace = { line: bars, dots: [], lastBarMs: bars[bars.length - 1].t, intervalMin: 1 };
       const d = draw(284.2, { width, trace });
       expect(Math.max(...traceYs(d))).toBeLessThan(goalY(d) - 1); // $281.80 sits clearly over +15 $280.91
+    });
+    it(`${width} px: live more than 1 % over the rung, the goal line is the window's floor AT ITS OWN PRICE — the floor label under the plot names the goal's $280.91, not a price above it (mutant P6a: a clamp alone would pin the line there at the wrong price)`, () => {
+      for (const live of [285.13, 290]) {
+        const d = draw(live, { width });
+        expect(goalY(d), String(live)).toBeCloseTo(H - 70, 6);
+        expect(d.querySelector('[data-rz-floor]').textContent, String(live)).toMatch(/^Floor \$280\.91 · /);
+      }
     });
     it(`${width} px: the goal's tag stays inside the plot, under the column`, () => {
       for (const live of [279.6, 280.91, 285.13]) {

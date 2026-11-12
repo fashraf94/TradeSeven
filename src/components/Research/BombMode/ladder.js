@@ -199,6 +199,15 @@ export const RUNG_SHOWN_SLACK = 1e-9;
  * table, the sheet line, the red-zone and Danger Zone goal tags) takes the
  * price from here (BUILD_RULES §9), and toGo / toGoDown measure from it. The
  * exact targets stay the record's: Details prints them, awards use them.
+ *
+ * Review A1 (2026-11-11): the printed price must pass the SCORER'S OWN float
+ * comparison against the target it is drawn from (stockThresholdModel.js
+ * crossedTiers: `high >= target` up, `low <= target` down). The slack keeps a
+ * whole unit only when that unit passes; otherwise the price steps one unit
+ * toward the award. So a target computed as 101.11000000000001 prints $101.12
+ * on the upside (a check at $101.11 would not bank it), while 280.91 (a float
+ * equal to the cent) still prints $280.91, and a Bust of 259.5300000001
+ * still prints $259.53.
  * Returns a number at `decimals` places, or null.
  */
 export function rungShown(rung, decimals) {
@@ -208,8 +217,10 @@ export function rungShown(rung, decimals) {
   const scaled = rung.price * scale;
   const whole = Math.round(scaled);
   const onUnit = Math.abs(scaled - whole) <= RUNG_SHOWN_SLACK * Math.abs(scaled);
-  const units = onUnit ? whole : rung.k > 0 ? Math.ceil(scaled) : Math.floor(scaled);
-  return Number((units / scale).toFixed(d));
+  const at = (u) => Number((u / scale).toFixed(d));
+  let units = onUnit ? whole : rung.k > 0 ? Math.ceil(scaled) : Math.floor(scaled);
+  if (rung.k > 0) { while (at(units) < rung.price) units += 1; } else { while (at(units) > rung.price) units -= 1; }
+  return at(units);
 }
 
 // ── Bricks and the distance to the next rung ───────────────────────────────
