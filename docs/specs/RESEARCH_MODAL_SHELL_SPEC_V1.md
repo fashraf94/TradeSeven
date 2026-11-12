@@ -63,7 +63,7 @@ With the flag `'off'` the modal is today's, byte for byte (the mode-off goldens)
 
 The Analysis view stays mounted while another view shows (its open tab and what that tab loaded survive a switch). The Chart and 💣 views mount on show. S/R is reset when the chart unmounts.
 
-## 4. The mounts (every `<AssetResearchModal` site — 20 in 17 files; 18 pass `version={2}`, 2 take the default `version = 2`)
+## 4. The mounts (every `<AssetResearchModal` site — 19 in 17 files; 17 pass `version={2}` (an 18th hit is a comment), 2 take the default `version = 2`)
 
 Off = today's modal. Shell (battle) = the archetype's Analysis view + Build C's action row. Shell (browse) = the stock's facts + the mount's action. Pills: 3 with a `bombContext`, else 2. Crypto, index and sector-ETF assets are today's modal at every value (R-35).
 
