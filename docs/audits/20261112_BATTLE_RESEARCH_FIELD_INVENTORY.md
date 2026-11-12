@@ -5,7 +5,7 @@
 **HEAD at start:** `68a237a8a46ec47330837cd4faacf2dae37cfbe1`, the #1042 merge. That was also `origin/main` after `git fetch origin`, run first, before any comparison (BUILD_RULES §3). The tree was clean.
 **What changed in the repo:** this report and one row in `docs/README.md`. No code, no flag and no rule changed.
 **Production reads:** Admin SDK `get`, `select` and `count` only, between 1:32 PM and 1:44 PM ET, with the market open. Credentials were parsed in place from the main checkout's `.env.local` and never printed or copied. Every script passed a write-verb grep (`set`, `update`, `delete`, `add`, `create`, `commit`, `batch`, `runTransaction`, `fetch`, `http`) before it ran. Owners are labelled A, B, C… by first appearance, and no uid or email appears here.
-**No provider call** (EODHD) and **no model call** (Anthropic, OpenRouter) was made. Two questions stopped there (§12).
+**No provider call** (EODHD) and **no model call** (Anthropic, OpenRouter) was made. Two questions stopped there (§10).
 **Markers:** **VERIFIED** means I read the code at that line in this session. **MEASURED** means a production read in this session. **ASSUMED** means inferred but not proven.
 
 ---
@@ -15,8 +15,8 @@
 | # | Field | Verdict | One line | Gate · provider cost |
 |---|---|---|---|---|
 | F1 | Technical rank (and score) | **one read away** | Every non-crypto name in every group has it, both universe-wide (1–228) and within its sector. It sits in one public Firestore document that the battle screen does not read yet. | None (public doc) · 0 provider calls; one 422 KB read |
-| F2 | Today's move | **split** — book `ready` · persisted bench `one read away` · hot bench and watchlists `no path` | The screen polls prices for the held book only. The persisted bench's move is in the battle's 15-minute voice-layer cache. Hot-bench and watchlist names have no move a battle client can read. | Bench via the cache: owner-only read, 0 provider calls. The fix for the rest (§2.4): a server read of `intradaySnapshots/latest`, 0 new provider calls, but a build |
-| F3 | Size of one scoring rung | **held `ready` · candidate `one read away` (proxy) · exact candidate `no path`** | A held measured stock carries its frozen % on the battle doc. For a candidate, the rankings' ATR % is the same formula and agreed to two decimals on the same bars. The modal's preview draws a different number (§3.5). | 0 provider calls for the proxy; the exact number is measured only at swap time, with EODHD calls |
+| F2 | Today's move | **split** — book `ready` · persisted bench `one read away` · hot bench and watchlists `no path` | The screen polls prices for the held book only. The persisted bench's move is in the battle's 15-minute voice-layer cache. Hot-bench and watchlist names have no move a battle client can read. | Bench via the cache: owner-only read, 0 provider calls. The fix for the rest (§3.4): a server read of `intradaySnapshots/latest`, 0 new provider calls, but a build |
+| F3 | Size of one scoring rung | **held `ready` · candidate `one read away` (proxy) · exact candidate `no path`** | A held measured stock carries its frozen % on the battle doc. For a candidate, the rankings' ATR % is the same formula: on the same bars it matched to two decimals for five of six held stocks, and COST, whose window holds a 0.15% price adjustment, was off by 0.01. The modal's preview draws a different number (§4.2). | 0 provider calls for the proxy; the exact number is measured only at swap time, with EODHD calls |
 | F4 | Overlap with holdings | **no path** | No candidate-against-book result is stored anywhere a client can read. The Correlation Lab fetches bars from EODHD on a cache miss. `priceHistory` already holds 200 daily closes for every name (Admin-only), so a server build could compute overlap with 0 provider calls. | Lab: up to 11 EODHD fetches per candidate · `priceHistory` route: 0 |
 | F5 | Game eligibility | **ready** (`no price` is one read away) | The rule the bench sheet uses (`canComeIn`) is pure, already bundled in the browser, and reads only the subscribed battle doc. | Cockpit-on battles for the sheet's own labels · 0 |
 | F6 | Sector | **ready** | A static ticker→sector map is already imported by client code. It agrees with the rankings document on 228 of 228 names. | None · 0 reads |
@@ -48,7 +48,7 @@ The battle doc carries five lists (`selectSymbolRoster.js:10-16`, `battleUnivers
 
 All MEASURED. Rankings coverage on the three ended battles matched the live one: 100% of non-crypto names in every group.
 
-**A League tournament battle carries no bench lists at all** (MEASURED on `6pXV…`). On a League battle, the bench and watchlist selector would be empty except for the owner's saved lists (Q5).
+**A League tournament battle starts with no bench lists, by design.** The prescribed deploy writes an empty persisted bench and an empty hot bench (`decide.js:1335-1350`, `:1431-1437`, VERIFIED; founder ruling D5). The evaluation cron then fills the hot bench during play, filtered by the group ledger (`agent-evaluate.js:1597-1660`, `:787-806`, VERIFIED). The one ended League battle read had every bench list empty (MEASURED on `6pXV…`). No League battle was live, so a live one was not counted. On a League battle the selector would therefore have the cron's hot bench and the owner's saved lists, but never a persisted bench (Q5).
 
 ---
 
@@ -120,13 +120,13 @@ The doc has 228 rows; all carry `technicalRank`, `sectorTechnicalRank`, `technic
 | Bench brief `changePercent` | — | 6/6 | 0/1 | 0/15 | 0/18 | 1/42 (the one also on the bench) |
 | `intradaySnapshots` price + change + `priceAsOf` | 7/7 | 6/6 | 1/1 | 15/15 | 18/18 | 42/42 |
 
-No rankings row carries a price or a day change (MEASURED key list, 38 keys). This confirms the note at `cockpit-bench.js:42-47`.
+No rankings row carries a price or a day change (MEASURED key list, 37 keys). This confirms the note at `cockpit-bench.js:42-47`.
 
 **3.3 Freshness.**
 - **The poll** is held up to 60 seconds, plus three caches (`#1043` §1, re-VERIFIED here): the browser's per-symbol cache of 2 minutes (`src/services/cacheService.js:37-39`, `:68`; `eodhdAPI.js:143-150`), the server's memory cache of 60 seconds, and the CDN's `s-maxage` 60 seconds + SWR 30 seconds (`api/_utils/serverCache.js:114`; `prices.js:84-89`). Behind all of that sits the vendor's own delay.
 - **The vendor delay**, measured on the same EODHD real-time feed in `intradaySnapshots` at 1:43 PM ET: median quote age 19 minutes, 90th percentile 20 minutes (MEASURED). Three symbols carry an older quote: PARA, WBD and SOL. None is ranked or in any of this battle's groups (MEASURED).
 - **The bench brief** runs every 15 minutes, 13:00–20:45 UTC on weekdays (`vercel.json:173-174`), and only while the market state is OPEN or PRE_MARKET (`voice-layer-cache.js:851-855`). The last useful run is 3:45 PM ET, so the last 15 minutes of the session are never refreshed. At the read the cache was 2 minutes old, plus the vendor's ~19 minutes (MEASURED).
-- **What `change_p` means before the open** cannot be settled without a provider call (§12, S1).
+- **What `change_p` means before the open** cannot be settled without a provider call (§10, S1).
 - **The intraday snapshot** was swept 1 minute before the read (MEASURED). It collects from the open until 30 minutes after the close (`intraday-poll.js:4-6`).
 
 **3.4 Access path in a live battle.**
@@ -181,10 +181,16 @@ In a battle the modal never asks for (c). The asset always arrives with a thresh
 
 The recomputed (a) matched every stored `scoringPct` to 4 dp, which proves the bar read.
 
-- **(a) vs (b), same bars:** equal to 2 dp on all six. The mixed raw-and-adjusted basis matters only when a dividend or split falls inside the 15-day window.
+- **(a) vs (b), same bars:** equal to 2 dp on five of six.
+  - **COST differs by 0.01:** 2.0077 rounds to 2.01, and the same-bars figure is 2.00. Its stored bars carry an adjustment factor of 0.9985–1.0 on the sessions before Oct 31 (MEASURED; a dividend, ASSUMED), and (b)'s mixed basis adjusts only the close.
+  - The other five windows hold no adjustment (factor 1.0 throughout, MEASURED).
+  - So the mixed raw-and-adjusted basis matters only when a dividend or split falls inside the 15-day window, and then only slightly.
 - **(a) vs (b), as stored now:** within 0.17 points (DLTR, −3.9%). The gap comes from the window moving onto today's live bar, not from the formula.
 - **(a) vs (c):** 0.05 to **2.66** points higher (RKLB +34%, AMD +30%, AVGO +23%), because 30% of the weight sits on the last 5 days.
-- **(a) vs (d):** −1.37 (COST, a 0.08 percentile × 8 = 0.64 against a real 2.0%) to +1.79 (AVGO).
+- **(a) vs (d):** −1.37 (COST, a 0.08 percentile × 8 = 0.64 against a real 2.0%) to +2.18 (DLTR, 6.64 vs 4.46).
+  - COST, JNJ and AVGO came in mid-battle and have no `scoring.thresholds` entry, so their (d) values are the row's own `baseATR`.
+  - **No modal path draws (d) for a held measured stock.** The builder returns `threshold: null` for it (`researchAssetBuilder.js:72`), and the held ladder uses (a) (`bombView.js:36`).
+  - For held rows, the (d) column is shown for comparison only.
 
 For **bench names**, which have no receipt, the preview number (d) runs **1.7 to 2.4 points above** today's (b): CHTR 6.96 vs 5.25, ACN 6.48 vs 4.05, MOS 6.72 vs 4.89, NEM 6.40 vs 4.36, TTWO 6.08 vs 4.23, DHI 6.24 vs 4.20 (MEASURED). Hot-bench and watchlist names mostly have no thresholds entry (1/15, 1/18, 2/42), so they preview at the 2.5 default.
 
@@ -206,7 +212,7 @@ For **bench names**, which have no receipt, the preview number (d) runs **1.7 to
 
 **4.6 Verdict:**
 - Held: **`ready`**.
-- Candidate proxy: **`one read away`** (0 provider calls; within 0.17 points of the scorer today, equal on the same bars).
+- Candidate proxy: **`one read away`** (0 provider calls; within 0.17 points of the scorer today; on the same bars equal to 2 dp for five of six, with COST off by 0.01).
 - Exact candidate number: **`no path`** (it needs a provider call by design).
 
 ---
@@ -361,7 +367,59 @@ The alternative is the battle doc's own `chatExchanges`, but the Film Room does 
 
 ---
 
-## 10. The eight fields
+## 10. Questions that stopped on a provider call
+
+- **S1. What EODHD's `real-time` `change_p` means before the open.** The voice-layer cache runs pre-market (`voice-layer-cache.js:853`). Whether a pre-market bench brief's change is yesterday's move or 0 can be answered only by calling EODHD. ASSUMED: yesterday's move.
+- **S2. Whether EODHD's `eod` answer during the session includes today's partial bar.** If it does, the live Bomb-tab blend (F3 (c)) would use a window one day later than the receipts. The comparison in §4.2 used the receipts' own stored bars instead, so the comparison itself did **not** stop.
+
+---
+
+## 11. Founder questions
+
+- **Q1. Which "watchlist" does the selector mean?** The candidates on the live battle:
+  - (a) the owner's saved lists (`watchlists/*`): 8 lists, 42 names, 26 committed;
+  - (b) the equipped-list snapshot on the battle: 0 names here, 8–9 on two ended battles;
+  - (c) the agent's hot bench (`watchlist.hotBench`): 15;
+  - (d) the monitoring list: 18;
+  - (e) the device-local dashboard list.
+- **Q2.** For today's move on hot-bench and watchlist names, should the first version include the server read of `intradaySnapshots/latest`? That is a build, with 0 provider calls. Or should it ship the move for the book and persisted bench only?
+- **Q3.** Should a candidate row's "one rung" be the rankings ATR % (the scorer's formula)? And should the in-battle preview's percentile × 8 / 2.5 (H3) be put to a separate task?
+- **Q4.** Where should a battle question be stored: a new `researchWork` schema version (origin, battle host, selector/conditions/ordering/rows), or the battle doc's `chatExchanges` (the Show-it shape)? And should the Film Room gain a reader for whichever it is?
+- **Q5.** A League tournament battle never has a persisted bench; its hot bench is filled by the cron during play (§1). Should the first version cover League battles with the hot bench and saved lists only, or be agent-battle-only?
+
+---
+
+## 12. Found outside scope (reported for separate tasking, not fixed)
+
+- **H1.** The client price fallback reads as a flat 0.00% on the battle screen (`eodhdAPI.js:196-231`; `AgentBattleScreen.jsx:1516-1519`).
+- **H2.** `price.change_p || 0` in the portfolio brief (`voice-layer-cache.js:154`) and the price route (`prices.js:133`): a missing move is a 0.
+- **H3.** In a battle, the research modal draws a non-held name's preview ladder from `atrPercentile × 8` (or 2.5), while the bench sheet beside it shows the ATR %. These are different quantities (BUILD_RULES §9).
+- **H4.** Every hot-bench name is `no price` on the bench sheet (already a founder question in `cockpit-bench.js:48-55`). `intradaySnapshots/latest` would answer it with 0 provider calls.
+- **H5.** 4 of 6 live bench rows carry no `sector`. The display is unaffected because of the rankings fallback.
+- **H6.** `priceHistory` stores unadjusted closes. That matters to any return or correlation built on it.
+
+---
+
+## 13. Method and evidence
+
+- **Fenced files** (BUILD_RULES §1): read, none edited.
+  - Read: `api/agent/decide.js`, `api/_utils/agentBattleService.js`, `api/_utils/agentGuardrails.js`.
+  - Seen only as grep hits: `agentScoring.js`, `agentRiskManager.js`, `agentSwapExecution.js`, `agentEvalPromptAssembly.js`.
+- **Census scripts** (scratchpad, copied beside this report's Documents copy, each with its output JSON):
+  - `census.cjs`: the live battle; with `CENSUS_RECENT=1`, the ended battles;
+  - `keys.cjs`: field-name listings only;
+  - `census3.cjs`: watchlist overlap, `intradaySnapshots`, `priceHistory`, the F3 bars, research hosts, the League battle;
+  - `snapage.cjs` and `stale.cjs`: quote ages;
+  - `factors.cjs`: the F3 receipts' adjustment factors;
+  - `sectors.mjs`: sector agreement.
+  - Each passed the write-verb grep shown in §0 before its run.
+  - `stale.cjs` and `sectors.mjs` were first run with printed output, then re-run to save their JSON. The results were identical.
+- **Read instants:** census 1:32:08 PM ET, ended battles 1:33:18 PM, pass 3 1:43:23 PM, quote ages 1:44 PM, factors and the re-runs shortly after (Node `Intl`, `America/New_York`).
+- **The two code-vs-prompt disagreements** are in §0.
+
+---
+
+## 14. The eight fields
 
 | # | Field | Verdict | Gate | Provider cost |
 |---|---|---|---|---|
@@ -374,54 +432,6 @@ The alternative is the battle doc's own `chatExchanges`, but the Film Room does 
 | F7 | Bench and watchlist groups | **bench lists `ready` · saved lists `one read away`** | owner read | 0 |
 | F8 | Research record | **no path** (schema version) | — | — |
 
-## 11. What the first version can offer from `ready` and `one read away` alone
+## 15. What the first version can offer from `ready` and `one read away` alone
 
-From the subscribed battle doc plus two reads it does not make yet (the public `stockRankings` doc and the owner-only `voiceLayerCache/{battleId}`, with no provider call), the first version can offer:
-
-- a **bench/watchlist selector** over the battle's own lists: persisted bench, hot bench and monitoring on the doc, plus the owner's saved lists with one query;
-- **sort by technical rank**, universe-wide or within the sector, for every non-crypto name;
-- **filter by sector**, from the static map;
-- **filter by eligibility** with the same rule the bench sheet uses: lock, can't come in, available. "Available" still carries the §6.2 caveats, and 40 of 42 saved-list names will read "can't come in";
-- **an ATR % per row as "one rung,"** which matches the scorer's formula.
-
-**Today's move, in either direction, and "up or down today"** can be offered only for the held book (the poll, with no quote time) and the persisted bench (the 15-minute cache plus about 19 minutes of vendor delay, with no per-quote time). That is 13–14 of the live battle's ~70 names. A filter must drop fallback-priced names (H1). For the hot bench and the watchlists it waits for a build that reads `intradaySnapshots/latest` server-side, which adds no provider call.
-
-**Overlap lowest-first is not available** in the first version without a build. The provider-free route is `priceHistory`.
-
----
-
-## 12. Questions that stopped on a provider call
-
-- **S1. What EODHD's `real-time` `change_p` means before the open.** The voice-layer cache runs pre-market (`voice-layer-cache.js:853`). Whether a pre-market bench brief's change is yesterday's move or 0 can be answered only by calling EODHD. ASSUMED: yesterday's move.
-- **S2. Whether EODHD's `eod` answer during the session includes today's partial bar.** If it does, the live Bomb-tab blend (F3 (c)) would use a window one day later than the receipts. The comparison in §4.2 used the receipts' own stored bars instead, so the comparison itself did **not** stop.
-
----
-
-## 13. Founder questions
-
-- **Q1. Which "watchlist" does the selector mean?** The candidates on the live battle:
-  - (a) the owner's saved lists (`watchlists/*`): 8 lists, 42 names, 26 committed;
-  - (b) the equipped-list snapshot on the battle: 0 names here, 8–9 on two ended battles;
-  - (c) the agent's hot bench (`watchlist.hotBench`): 15;
-  - (d) the monitoring list: 18;
-  - (e) the device-local dashboard list.
-- **Q2.** For today's move on hot-bench and watchlist names, should the first version include the server read of `intradaySnapshots/latest`? That is a build, with 0 provider calls. Or should it ship the move for the book and persisted bench only?
-- **Q3.** Should a candidate row's "one rung" be the rankings ATR % (the scorer's formula)? And should the in-battle preview's percentile × 8 / 2.5 (H3) be put to a separate task?
-- **Q4.** Where should a battle question be stored: a new `researchWork` schema version (origin, battle host, selector/conditions/ordering/rows), or the battle doc's `chatExchanges` (the Show-it shape)? And should the Film Room gain a reader for whichever it is?
-- **Q5.** League tournament battles carry no bench lists (§1). Is Battle Research agent-battle-only for the first version?
-
-## 14. Found outside scope (reported for separate tasking, not fixed)
-
-- **H1.** The client price fallback reads as a flat 0.00% on the battle screen (`eodhdAPI.js:196-231`; `AgentBattleScreen.jsx:1516-1519`).
-- **H2.** `price.change_p || 0` in the portfolio brief (`voice-layer-cache.js:154`) and the price route (`prices.js:133`): a missing move is a 0.
-- **H3.** In a battle, the research modal draws a non-held name's preview ladder from `atrPercentile × 8` (or 2.5), while the bench sheet beside it shows the ATR %. These are different quantities (BUILD_RULES §9).
-- **H4.** Every hot-bench name is `no price` on the bench sheet (already a founder question in `cockpit-bench.js:48-55`). `intradaySnapshots/latest` would answer it with 0 provider calls.
-- **H5.** 4 of 6 live bench rows carry no `sector`. The display is unaffected because of the rankings fallback.
-- **H6.** `priceHistory` stores unadjusted closes. That matters to any return or correlation built on it.
-
-## 15. Method and evidence
-
-- **Fenced files** (BUILD_RULES §1): read, none edited. `api/agent/decide.js`, `api/_utils/agentBattleService.js` and `api/_utils/agentGuardrails.js` were read. `agentScoring.js`, `agentRiskManager.js`, `agentSwapExecution.js` and `agentEvalPromptAssembly.js` were seen only as grep hits.
-- **Census scripts** (scratchpad, copied beside this report's Documents copy): `census.cjs` (live battle; and `CENSUS_RECENT=1` for the ended battles), `keys.cjs` (field-name listings only), `census3.cjs` (watchlist overlap, `intradaySnapshots`, `priceHistory`, F3 bars, research hosts, the League battle), `snapage.cjs` and `stale.cjs` (quote ages), and `sectors.mjs` (sector agreement). Each passed the write-verb grep shown in §0 before its run, and each output JSON is kept beside it.
-- **Read instants:** census 1:32:08 PM ET, ended battles 1:33:18 PM, pass 3 1:43:23 PM, quote ages 1:44 PM (Node `Intl`, `America/New_York`).
-- **The two code-vs-prompt disagreements** are in §0.
+From the subscribed battle doc plus two reads it does not make yet, both free of provider calls (the public `stockRankings` doc and the owner-only `voiceLayerCache/{battleId}`), the first version can offer a **bench/watchlist selector** over the battle's own lists (persisted bench, hot bench and monitoring, plus the owner's saved lists through one query). It can **sort by technical rank**, universe-wide or within the sector, for every non-crypto name, **filter by sector** from the static map, and **filter by eligibility** with the bench sheet's own rule (locked, can't come in, available). "Available" still carries the §6.2 caveats, and 40 of 42 saved-list names will read "can't come in". It can show **an ATR % per row as "one rung"**, which is the scorer's formula. **Today's move, in either direction, and "up or down today"** can be offered only for the held book (the poll, with no quote time) and the persisted bench (the 15-minute cache plus about 19 minutes of vendor delay, with no per-quote time): 13–14 of the live battle's ~70 names, with fallback-priced names dropped (H1). For the hot bench and the watchlists, the move waits on a build that reads `intradaySnapshots/latest` server-side, with no new provider call. **Overlap lowest-first** is not available without a build; its provider-free route is `priceHistory`.
