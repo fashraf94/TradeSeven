@@ -673,6 +673,22 @@ describe('review C — the promises the first rows did not pin', () => {
     expect(net.why).toHaveLength(2);
     expect($('[data-shell-moving]').dataset.shellMoving).toBe('success');
   });
+  it('Retry is a new tap: it sends the change and price on screen at the Retry, not the first tap\'s (refuter NEW-2)', async () => {
+    net.whyFail = true;
+    await battle({ wsPrice: 103.2 });
+    await click($('[data-shell-moving-ask]'));
+    expect($('[data-shell-moving]').dataset.shellMoving).toBe('error');
+    const first = net.why[0];
+    await battle({ wsPrice: 103.9 });
+    net.whyFail = false;
+    await click($$('[data-shell-moving] button').find((b) => b.textContent === 'Retry'));
+    expect(net.why).toHaveLength(2);
+    expect(net.why[1].price).toBe(103.9);
+    expect(net.why[1].change).not.toBe(first.change);
+    const header = Number($('[data-shell-change]').textContent.replace(/[^\d.]/g, ''));
+    expect(Number(net.why[1].change.toFixed(2))).toBe(header);
+    expect($('[data-shell-moving]').dataset.shellMoving).toBe('success');
+  });
   it('C10: Bomb mode rolled back under the shell: two pills, and the Chart view keeps the legacy in-chart 💣 pill (SB-8)', async () => {
     FLAG.bomb = 'off';
     await act(async () => { root.render(<AssetResearchModal asset={heldAsset()} onClose={() => {}} showActionButton={false} isGameContext version={2} wsPrice={103.2} sheetContext={ctx()} />); });

@@ -224,8 +224,10 @@ function Pack({ view, onSeeOnChart }) {
           );
         })}
       </div>
-      {/* AskReply (Build C, unchanged) names `view.archetype` in its lines: handed the agent's name. */}
-      <AskReply view={voiceName(view) === view.archetype ? view : { ...view, archetype: voiceName(view) }} />
+      {/* AskReply (Build C, unchanged) names `view.archetype` in its lines. Its sending and failure
+          lines answer the row's "Ask {Agent}", so they get the agent's name (review A2); the answered
+          card keeps its own "Its answer · {Archetype}" beside the agent's tag (R-23 — refuter NEW-1). */}
+      <AskReply view={(view.reply.status === 'sending' || view.reply.status === 'failed') && voiceName(view) !== view.archetype ? { ...view, archetype: voiceName(view) } : view} />
       <div data-sheet-or-ask style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', paddingTop: 2 }}>
         <span style={{ ...EYEBROW, fontSize: 9, color: ST.ink3 }}>{SHEET_COPY.orAsk}</span>
         {view.order.filter((q) => q !== view.question).map((q) => (
@@ -338,13 +340,14 @@ export default function AnalysisSheet({ view, wallSt = null, tabs = null, onSeeO
  * player's agent by name (R-23, R-29: *Ask {Agent}: …*), the archetype when the
  * battle names no agent.
  */
-export function SheetActionRow({ view }) {
+export function SheetActionRow({ view, onAnalysis = true }) {
   const q = view.question;
   const out = view.budget.left <= 0;
   const who = voiceName(view);
+  // The answer card lives on the Analysis view: away from it, the row says so (never "below").
   const label = out ? SHEET_COPY.askOut
     : view.answering ? SHEET_COPY.askSending(who)
-      : view.askedThis ? SHEET_COPY.askAsked(who)
+      : view.askedThis ? (onAnalysis ? SHEET_COPY.askAsked(who) : SHELL_COPY.askAskedOnAnalysis(who))
         : q ? SHEET_COPY.askQuestion(who, QUESTION_TEXT[q]) : SHEET_COPY.askPick(who);
   return (
     <div data-sheet-actions style={{

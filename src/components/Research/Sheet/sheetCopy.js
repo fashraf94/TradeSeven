@@ -226,6 +226,8 @@ export const SHELL_COPY = Object.freeze({
   voiceLabel: (agent, arch, time) => [agent, arch, time].filter((s) => typeof s === 'string' && s).join(' · '),
   // The quote's time, set after the name and archetype in its own span (it is never ellipsized).
   voiceTime: (time) => ` · ${time}`,
+  // ── The action row away from the Analysis view, where the Ask's answer card is ──
+  askAskedOnAnalysis: (who) => `Asked ${who} · the answer is on Analysis`,
   // ── A pack item with a place on the chart ──
   seeOnChart: 'see on chart ›',
   // ── The Chart view's own states (today's chart box, in the shell's skin) ──

@@ -553,6 +553,15 @@ const AssetResearchModal = ({
   const sheetActionView = sheetView && shownView !== 'analysis'
     ? { ...sheetView, ask: () => { onShellView('analysis'); sheetView.ask(); } }
     : sheetView;
+  // …and an answer (or a failed turn) that lands while the player looks at Chart or 💣 brings
+  // them to it too: never a warning left unseen while the row goes back to ready (refuter, A1).
+  const replyStatus = sheetView?.reply?.status ?? 'idle';
+  const replyWasRef = useRef(replyStatus);
+  React.useLayoutEffect(() => {
+    const was = replyWasRef.current;
+    replyWasRef.current = replyStatus;
+    if (shellOn && was === 'sending' && (replyStatus === 'answered' || replyStatus === 'failed') && shownView !== 'analysis') onShellView('analysis');
+  }, [replyStatus]); // eslint-disable-line react-hooks/exhaustive-deps -- acts on the reply's landing only
   // The view and the hook's timeframe agree when the shell APPEARS on an open modal (review B2) —
   // a late per-battle verdict at 'allowlist', or a stock reached from an index or a sector ETF:
   // the shell shows the view of the series today's modal was on (💣 on the bomb series when
@@ -1711,7 +1720,7 @@ const AssetResearchModal = ({
         {/* Action Button Section - Flexible Configuration. Under the shell in battle, Build C's
             action row (the Ask with its cost, → Cockpit — SB-10, R-29), pinned under every view;
             in browse, the mount's own action below, unchanged. */}
-        {shellOn && sheetView ? <SheetActionRow view={sheetActionView} /> : showActionButton && (
+        {shellOn && sheetView ? <SheetActionRow view={sheetActionView} onAnalysis={shownView === 'analysis'} /> : showActionButton && (
           <div
             style={{
               padding: '16px 20px',

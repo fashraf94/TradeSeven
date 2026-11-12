@@ -428,6 +428,42 @@ describe('BC-7 — the Ask', () => {
     expect(card.closest('[data-shell-scroll="analysis"]').style.display).toBe('block');
     expect(card.textContent).toBe('Something went wrong. Check chat before asking again — a message may have been used.');
   });
+  it('an answer — or a failed turn — that lands while the player looks at Chart brings them to its card; away from Analysis the row says where the answer is (refuter, A1)', async () => {
+    for (const outcome of ['failed', 'answered']) {
+      let resolve;
+      net.ask = () => new Promise((r) => { resolve = r; });
+      await open();
+      await click($('[data-sheet-question="protect_lead"]'));
+      await click($('[data-sheet-ask]'));
+      expect(view()).toBe('analysis');
+      await click(pill('chart'));
+      expect(view()).toBe('chart');
+      await act(async () => {
+        resolve(outcome === 'failed'
+          ? { ok: false, status: 504, json: async () => { throw new SyntaxError('Unexpected token <'); } }
+          : { ok: true, status: 200, json: async () => ({ agentMessage: 'Landed.', exchangeId: 'ex-7' }) });
+      });
+      await flush();
+      expect(view(), outcome).toBe('analysis');
+      expect($('[data-sheet-reply]').dataset.sheetReply).toBe(outcome);
+      expect($('[data-sheet-reply]').closest('[data-shell-scroll="analysis"]').style.display).toBe('block');
+      if (outcome === 'answered') {
+        await click(pill('chart'));
+        expect($('[data-sheet-ask]').textContent).toBe('Asked Juno · the answer is on Analysis');
+        await click(pill('analysis'));
+        expect($('[data-sheet-ask]').textContent).toBe('Asked Juno · the answer is below');
+      }
+      remount();
+    }
+  });
+  it('the answered card keeps "Its answer · {Archetype}" beside the agent\'s tag — the agent named once (refuter NEW-1)', async () => {
+    await open();
+    await click($('[data-sheet-question="protect_lead"]'));
+    await click($('[data-sheet-ask]'));
+    const card = $('[data-sheet-reply="answered"]');
+    expect(card.textContent).toContain('Its answer · Trend Follower');
+    expect(card.textContent.match(/Juno/g)).toHaveLength(1);
+  });
   it('while it is answering, the row and the card name the same speaker (review A2)', async () => {
     let resolve;
     net.ask = () => new Promise((r) => { resolve = r; });

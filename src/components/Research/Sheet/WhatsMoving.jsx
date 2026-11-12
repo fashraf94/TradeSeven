@@ -29,9 +29,11 @@ export default function WhatsMoving({ symbol, name, change, price, open, high, l
   // The request's inputs, FROZEN AT THE TAP (reviews A4 / B1): the day's change and price move
   // with every live tick, and the hook re-sends whenever they change mid-request — each re-send
   // a provider call. One tap is one request; the title keeps reading the header's live number.
+  // A Retry is a new tap: it freezes the numbers on screen THEN (refuter NEW-2), as a new attempt.
   const [asked, setAsked] = useState(null);
+  const freeze = (attempt) => setAsked({ change, price, open, high, low, close, attempt });
   const q = asked ?? {};
-  const { state, data, retry } = useWhyMoving({ symbol, name, change: q.change, price: q.price, open: q.open, high: q.high, low: q.low, close: q.close, active: asked !== null });
+  const { state, data } = useWhyMoving({ symbol, name, change: q.change, price: q.price, open: q.open, high: q.high, low: q.low, close: q.close, active: asked !== null, attempt: q.attempt });
   const shown = typeof change === 'number' && Number.isFinite(change) ? SHELL_COPY.movingChange(change) : null;
   return (
     <div data-shell-moving={asked ? state : 'unasked'} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -42,7 +44,7 @@ export default function WhatsMoving({ symbol, name, change, price, open, high, l
         <button
           type="button"
           data-shell-moving-ask
-          onClick={() => setAsked({ change, price, open, high, low, close })}
+          onClick={() => freeze(1)}
           style={{
             all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 48, padding: '0 14px', borderRadius: 12,
             display: 'flex', alignItems: 'center', gap: 10, background: tint(ST.teal, 8), border: `1px solid ${tint(ST.teal, 35)}`,
@@ -53,7 +55,7 @@ export default function WhatsMoving({ symbol, name, change, price, open, high, l
           <span aria-hidden="true" style={{ color: ST.teal, fontSize: 16 }}>›</span>
         </button>
       )}
-      {asked && <WhyMovingBody state={state} data={data} onRetry={retry} />}
+      {asked && <WhyMovingBody state={state} data={data} onRetry={() => freeze(asked.attempt + 1)} />}
       <div data-shell-moving-foot style={{ fontFamily: MONO, fontSize: 10.5, color: ST.ink3, lineHeight: 1.45 }}>{SHELL_COPY.movingFoot(who)}</div>
     </div>
   );

@@ -290,7 +290,11 @@ export const whyMovingChangeText = (change) => (typeof change === 'number'
   ? `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`
   : '');
 
-export function useWhyMoving({ symbol, name, change, price, open, high, low, close, peerMoves, active }) {
+/**
+ * `attempt` (optional; the popup passes none): a new value asks again while active — the shell's
+ * What's moving uses it for a Retry that carries the numbers on screen at that tap.
+ */
+export function useWhyMoving({ symbol, name, change, price, open, high, low, close, peerMoves, active, attempt }) {
   const [state, setState] = useState('idle'); // 'idle' | 'loading' | 'success' | 'error'
   const [data, setData] = useState(null);
   const cacheRef = useRef({});
@@ -354,7 +358,7 @@ export function useWhyMoving({ symbol, name, change, price, open, high, low, clo
     if (!active) {
       setState('idle');
     }
-  }, [active, symbol, fetchExplanation]);
+  }, [active, symbol, fetchExplanation, attempt]);
 
   // Cleanup abort controller on unmount
   useEffect(() => {
