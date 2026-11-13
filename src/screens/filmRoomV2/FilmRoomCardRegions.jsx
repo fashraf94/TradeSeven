@@ -44,6 +44,14 @@
 //                   says it could not be read; and My cards: active, shelved,
 //                   retired, with shelving explained in plain words. The
 //                   moment a recurrence opened is marked in the prepared case.
+// FILM ROOM C1 (Build C spec docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md
+// §3, §5): the form's routes are Watch, Offer and Set — Offer only when the
+// counter reports the owner's book open (BC-3); the receipt is the CHAIN, one
+// line per row of the entry's own stageHistory, newest first, with the agent's
+// reason as a quotation and a result's words as stored, its idea and result
+// links only beside a book door (none in C1); "Park this card" on a tested
+// receipt is the one new button; since-last-time lists every card past the
+// card stage with its newest chain line (refinement R-C1-1).
 // Every number carries its marker (BA-42, R4(a): the screen's aggregates are
 // declared in SCREEN_AGGREGATE_CLASSES); every instant is marked as one, with
 // its date when it is not the shown day's (review L3-7); the note reaches the
