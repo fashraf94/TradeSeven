@@ -198,14 +198,14 @@ describe('Build C §3 — applyServerTransition, the Practice Field\'s one way i
     const uWrites = playWrites(u).length;
     expect(await code(move(u, { to: 'tested', opId: 'x3', payload: RESULT }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'nominated' } });
     expect(await code(move(u, { to: 'installed', opId: 'x4', payload: { ideaId: 'idea-9', offerId: 'o', state: 'accepted' } }))).toMatchObject({ code: 'illegal_transition' });
-    expect(await code(move(u, { to: 'retired', opId: 'x5', payload: { ideaId: 'idea-9', state: 'no_offer' } }))).toMatchObject({ code: 'illegal_transition' });
+    expect(await code(move(u, { to: 'retired', opId: 'x5', payload: { ideaId: 'idea-9', offerId: null, state: 'no_offer' } }))).toMatchObject({ code: 'illegal_transition' });
     expect(await code(move(u, { to: 'offered', opId: 'x5b', payload: { ideaId: 'idea-9', offerId: 'o', state: 'offered' } }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'nominated' } });
     expect(playWrites(u).length).toBe(uWrites);
     await move(u, { to: 'nomination', opId: 's1', payload: NOMINATION });   // CA-11: testing needs the accepted copy
     await move(u, { to: 'testing', opId: 's2', payload: IDEA });
     const afterTesting = playWrites(u).length;
     expect(await code(move(u, { to: 'installed', opId: 'x6', payload: { ideaId: 'idea-9', offerId: 'o', state: 'accepted' } }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'testing' } });
-    expect(await code(move(u, { to: 'retired', opId: 'x7', payload: { ideaId: 'idea-9', state: 'no_offer' } }))).toMatchObject({ code: 'illegal_transition' });
+    expect(await code(move(u, { to: 'retired', opId: 'x7', payload: { ideaId: 'idea-9', offerId: null, state: 'no_offer' } }))).toMatchObject({ code: 'illegal_transition' });
     expect(await code(move(u, { to: 'nomination', opId: 'x8', payload: NOMINATION }))).toMatchObject({ code: 'illegal_transition' });
     expect(playWrites(u).length).toBe(afterTesting);
   });
@@ -1258,9 +1258,89 @@ describe('C1 fix round — the helper\'s instant check takes only a full ISO 860
 
   it('the builder\'s record (F2) is held to it too: a date-only queuedAt or a zone-less expiresAt is malformed — nothing written', () => {
     const given = { entryId: 'e', situationId: 's', questionId: 'q', questionVersion: 1 };
-    const record = { state: 'queued', source: { kind: 'film_room_card', ...given }, queuedAt: '2026-11-12T15:00:00.000Z', expiresAt: '2026-11-26T21:00:00.000Z', stateHistory: [] };
+    const record = { state: 'queued', source: { kind: 'film_room_card', ...given }, queuedAt: '2026-11-12T15:00:00.000Z', expiresAt: '2026-11-26T21:00:00.000Z', stateHistory: [{ state: 'queued', at: '2026-11-12T15:00:00.000Z' }] };
     expect(nominationRecordDefectOf(record, given)).toBeNull();
     expect(nominationRecordDefectOf({ ...record, queuedAt: '2026-11-12' }, given)).toBe('queuedAt');
     expect(nominationRecordDefectOf({ ...record, expiresAt: '2026-11-26T21:00:00' }, given)).toBe('expiresAt');
+  });
+});
+
+// ── the fix round's §2 review (report §9.7): the withdrawal's checks, the server retire's offerId ───────────────────
+describe('C1 fix round §2 review — the withdrawal is held to THIS entry\'s record, whatever the builder does', () => {
+  const RECORD_PATH = `mandates/${BOOK}/nominations/nom_c1`;
+  const withRecord = (t, over = {}) => {
+    const rec = seam.PRACTICE_FIELD_SEAM_DEFAULTS.buildNominationDoc({ entryId: 'c1', situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1, nowIso: NOW, expiresAfterSessions: 10 });
+    t.store.set(RECORD_PATH, { ...rec, ...over });
+    return t.store.get(RECORD_PATH);
+  };
+  const retire = (t, at) => retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: at.version, nowIso: LATEST });
+  afterEach(() => seam.resetPracticeFieldSeam());
+
+  it('A1 (BLOCKER, the F2 class at the withdrawal): a builder that edits the record IN PLACE to name another entry, and returns it, is refused 503 nomination_unavailable — nothing written, the card not retired', async () => {
+    const t = fresh();
+    const at = await nominated(t);
+    withRecord(t);
+    seam.setPracticeFieldSeam({ buildWithdrawal: (rec) => { rec.source.entryId = 'someone-elses-entry'; rec.state = 'withdrawn'; return rec; } });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const writes = t.writeLog.length;
+    expect(await code(retire(t, at))).toMatchObject({ status: 503, code: 'nomination_unavailable' });
+    expect(t.writeLog.length).toBe(writes);
+    expect(t.store.get(RECORD_PATH)).toMatchObject({ state: 'queued', source: { entryId: 'c1' } });
+    expect(t.store.get(playPath('c1')).stage).toBe('nominated');
+    errors.mockRestore();
+  });
+
+  it('A5 / C2: a record at the copy\'s ids that names ANOTHER entry, or no entry (source {}), or another kind, is not withdrawn — 503, nothing written', async () => {
+    for (const over of [{ source: { kind: 'film_room_card', entryId: 'OTHER-ENTRY', situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1 } }, { source: {} }, { source: { kind: 'signal_drop', entryId: 'c1' } }, { source: null }]) {
+      const t = fresh();
+      const at = await nominated(t);
+      withRecord(t, over);
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const writes = t.writeLog.length;
+      expect(await code(retire(t, at)), JSON.stringify(over)).toMatchObject({ status: 503, code: 'nomination_unavailable' });
+      expect(t.writeLog.length).toBe(writes);
+      errors.mockRestore();
+    }
+  });
+
+  it('A3: a withdrawal builder that throws ANY error — a contention-shaped code 10 included — fails closed 503, never a raw rethrow', async () => {
+    const t = fresh();
+    const at = await nominated(t);
+    withRecord(t);
+    seam.setPracticeFieldSeam({ buildWithdrawal: () => { throw Object.assign(new Error('ABORTED'), { code: 10 }); } });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await code(retire(t, at))).toMatchObject({ status: 503, code: 'nomination_unavailable' });
+    expect(t.store.get(playPath('c1')).stage).toBe('nominated');
+    errors.mockRestore();
+  });
+
+  it('the control: the default builder, and a builder returning a NEW object with the record\'s own source and extra fields, both withdraw', async () => {
+    const t = fresh();
+    const at = await nominated(t);
+    withRecord(t);
+    seam.setPracticeFieldSeam({ buildWithdrawal: (rec, { nowIso }) => ({ ...rec, state: 'withdrawn', withdrawnAt: nowIso, note: 'kept' }) });
+    expect((await retire(t, at)).card.nomination.state).toBe('withdrawn');
+    expect(t.store.get(RECORD_PATH)).toMatchObject({ state: 'withdrawn', note: 'kept', source: { entryId: 'c1' } });
+  });
+
+  it('A6: the server\'s retire sends offerId explicitly — null with no offer; an omitted offerId is refused 400 before any read', async () => {
+    const t = fresh();
+    await tested(t);
+    const reads = t.readLog.length;
+    expect(await code(move(t, { to: 'retired', opId: 'x', payload: { ideaId: 'idea-9', state: 'no_offer' } }))).toMatchObject({ status: 400, code: 'invalid_transition', extra: { why: 'offer' } });
+    expect(t.readLog.length).toBe(reads);
+    expect((await move(t, { to: 'retired', opId: 's9', payload: { ideaId: 'idea-9', offerId: null, state: 'no_offer' } })).entry.stage).toBe('retired');
+  });
+
+  it('A4: the F2 check holds the builder\'s clock — queued at the instant handed in, expiring after it — and a history of plain rows, at least one', () => {
+    const given = { entryId: 'e', situationId: 's', questionId: 'q', questionVersion: 1, nowIso: '2026-11-12T15:00:00.000Z' };
+    const record = { state: 'queued', source: { kind: 'film_room_card', entryId: 'e', situationId: 's', questionId: 'q', questionVersion: 1 }, queuedAt: '2026-11-12T15:00:00.000Z', expiresAt: '2026-11-26T21:00:00.000Z', stateHistory: [{ state: 'queued', at: '2026-11-12T15:00:00.000Z' }] };
+    expect(nominationRecordDefectOf(record, given)).toBeNull();
+    expect(nominationRecordDefectOf({ ...record, queuedAt: '2026-11-12T10:00:00-05:00' }, given)).toBeNull();   // the same instant, another offset
+    expect(nominationRecordDefectOf({ ...record, queuedAt: '2026-11-12T15:00:01.000Z' }, given)).toBe('queuedAt');
+    expect(nominationRecordDefectOf({ ...record, expiresAt: '2000-01-01T00:00:00.000Z' }, given)).toBe('expiresAt');
+    expect(nominationRecordDefectOf({ ...record, expiresAt: record.queuedAt }, given)).toBe('expiresAt');
+    expect(nominationRecordDefectOf({ ...record, stateHistory: [] }, given)).toBe('stateHistory');
+    expect(nominationRecordDefectOf({ ...record, stateHistory: ['queued'] }, given)).toBe('stateHistory');
   });
 });

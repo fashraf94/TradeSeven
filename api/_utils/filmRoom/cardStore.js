@@ -394,15 +394,18 @@ const isPlainObject = (v) => v !== null && typeof v === 'object' && [Object.prot
  * question and question version it was given; `queuedAt` and `expiresAt` instants; `stateHistory` an array. Any other
  * field the Practice Field adds passes through untouched.
  */
-export function nominationRecordDefectOf(record, { entryId, situationId, questionId, questionVersion }) {
+export function nominationRecordDefectOf(record, { entryId, situationId, questionId, questionVersion, nowIso = null }) {
   if (!isPlainObject(record)) return 'record';
   if (record.state !== NOMINATION_QUEUED) return 'state';
   const s = record.source;
   if (!isPlainObject(s) || s.kind !== NOMINATION_SOURCE_KIND) return 'source.kind';
   if (s.entryId !== entryId || s.situationId !== situationId || s.questionId !== questionId || s.questionVersion !== questionVersion) return 'source';
   if (!isoOk(record.queuedAt)) return 'queuedAt';
-  if (!isoOk(record.expiresAt)) return 'expiresAt';
-  if (!Array.isArray(record.stateHistory)) return 'stateHistory';
+  // §2 review (A4): the clock is the one it was given — queued at the instant handed in, expiring after it
+  if (nowIso !== null && Date.parse(record.queuedAt) !== Date.parse(nowIso)) return 'queuedAt';
+  if (!isoOk(record.expiresAt) || Date.parse(record.expiresAt) <= Date.parse(record.queuedAt)) return 'expiresAt';
+  // and the history holds at least its filing, each row a plain object
+  if (!Array.isArray(record.stateHistory) || !record.stateHistory.length || !record.stateHistory.every(isPlainObject)) return 'stateHistory';
   return null;
 }
 
@@ -420,7 +423,7 @@ function nominationDocOf({ entryId, card, nowIso }) {
     if (err?.code === 'calendar_unavailable') throw fail(503, 'calendar_unavailable');
     throw err;
   }
-  const defect = nominationRecordDefectOf(record, given);
+  const defect = nominationRecordDefectOf(record, { ...given, nowIso });
   if (defect) {
     const err = new Error(`the nomination builder's record is malformed (${defect}); nothing was written`);
     err.code = 'nomination_malformed';
@@ -516,16 +519,25 @@ const sameSource = (a, b) => isPlainObject(a) && isPlainObject(b) && ['kind', 'e
  * a plain object, `state: 'withdrawn'`, and the record's OWN source reference. A builder that throws, or an output that
  * is not that, fails closed — 503 nomination_unavailable, nothing written, the card not retired.
  */
-function withdrawalOf(record, nowIso) {
+function withdrawalOf(record, entryId, nowIso) {
+  // C1 fix round §2 review (A1, A5/C2): the record must be THIS entry's — a Film Room card's record naming this entry —
+  // before anything is built from it; and its source reference is copied BEFORE the builder runs, so a builder that
+  // edits its input in place cannot pass the check it is held to (F2's association, at the withdrawal)
+  const src = isPlainObject(record.source) ? record.source : null;
+  if (!src || src.kind !== NOMINATION_SOURCE_KIND || src.entryId !== entryId) {
+    console.error('[film-room/cards] the nomination record names another card; nothing was written');
+    throw unavailableNomination();
+  }
+  const own = Object.fromEntries(['kind', 'entryId', 'situationId', 'questionId', 'questionVersion'].map((k) => [k, src[k]]));
   let out;
   try {
     out = buildWithdrawal(record, { nowIso });
   } catch (err) {
-    if (err?.code === GRPC_ABORTED) throw err;
+    // CA-2: a builder that throws fails closed, whatever it threw (a pure builder has no contention of its own)
     console.error('[film-room/cards] withdrawal builder failed:', err?.message ?? err);
     throw unavailableNomination();
   }
-  if (!isPlainObject(out) || out.state !== 'withdrawn' || !sameSource(out.source, record.source)) {
+  if (!isPlainObject(out) || out.state !== 'withdrawn' || !sameSource(out.source, own)) {
     console.error('[film-room/cards] withdrawal builder returned a malformed record; nothing was written');
     throw unavailableNomination();
   }
@@ -598,7 +610,7 @@ export async function retireCard(db, { uid, agentId, entryId, opId, expectedVers
         if (!isObj(record) || !NOMINATION_STATES.includes(record.state)) throw unavailableNomination();
         if (record.state === 'accepted') throw fail(409, 'illegal_transition', { stage: 'nominated', nominationState: 'accepted' });
         if (WITHDRAWABLE_STATES.includes(record.state)) {
-          withdrawal = withdrawalOf(record, nowIso);
+          withdrawal = withdrawalOf(record, entryId, nowIso);
           copyState = 'withdrawn';
         } else {
           copyState = record.state;   // declined, expired, withdrawn: the copy takes the record's state
@@ -762,8 +774,10 @@ function fieldOfTransition(to, payload) {
     if (!idOk(p.offerId) || !wordOk(p.state)) throw invalid('offer');
     return { ideaId: p.ideaId, offerId: p.offerId, state: p.state };
   }
-  // retired — the server's retire: the idea retired, with the Forge offer's state (or none, its id null)
+  // retired — the server's retire: the idea retired, with the Forge offer's state (or none: `offerId: null`, sent as such
+  // — CA-14's letter; §2 review A6)
   if (!idOk(p.ideaId)) throw invalid('ideaId');
+  if (!Object.prototype.hasOwnProperty.call(p, 'offerId')) throw invalid('offer');
   if (p.offerId != null && !idOk(p.offerId)) throw invalid('offer');
   if (!wordOk(p.state)) throw invalid('offer');
   return { ideaId: p.ideaId, offerId: p.offerId ?? null, state: p.state };

@@ -959,6 +959,43 @@ describe('C1 fix round F1 — a new nomination judges its source again, in its t
     neitherHalf('race');
   });
 
+  // the fix round's §2 review (C1): the BATTLE and the CLONE are read through the transaction too — a change to either
+  // between its read and the commit conflicts and is judged again
+  it('the battle\'s owner changed BETWEEN the transaction\'s read of the battle and its commit: retried, judged again → 403 forbidden; neither half', async () => {
+    const BATTLE_PATH = `agentBattles/${BATTLE}`;
+    const seed = Object.fromEntries([...t.store.entries()]);
+    let strike = false;
+    t = makeTapeDb(seed, { hooks: { afterTxRead: async (label, db) => { if (!strike || label !== BATTLE_PATH) return; strike = false; await db.collection('agentBattles').doc(BATTLE).set({ ...t.store.get(BATTLE_PATH), ownerId: 'someone-else' }); } } });
+    state.db = t.db;
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    const retries = t.db.txRetries;
+    strike = true;
+    expect(await post(nominate())).toMatchObject({ statusCode: 403, body: { error: 'forbidden' } });
+    expect(t.db.txRetries).toBeGreaterThan(retries);
+    neitherHalf('battle race');
+  });
+
+  it('a casual clone repointed BETWEEN the transaction\'s read of the clone and its commit: retried, judged again → 403 forbidden; neither half', async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    const CLONE_PATH = `agents/${CLONE}`;
+    t.store.set('agentBattles/b-clone', { ...fixture.battle, id: 'b-clone', agentId: CLONE });
+    t.store.set(`agentBattles/b-clone/tape/${D}`, { ...t.store.get(TAPE), battleId: 'b-clone', agentId: CLONE });
+    t.store.set(CLONE_PATH, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    t.store.set('agents/agent-x', { ownerId: OWNER, name: 'Other', archetype: 'momentum_chaser' });
+    const seed = Object.fromEntries([...t.store.entries()]);
+    let strike = false;
+    t = makeTapeDb(seed, { hooks: { afterTxRead: async (label, db) => { if (!strike || label !== CLONE_PATH) return; strike = false; await db.collection('agents').doc(CLONE).set({ ...t.store.get(CLONE_PATH), rankedAgentId: 'agent-x' }); } } });
+    state.db = t.db;
+    withBook();
+    expect((await post(create({ battleId: 'b-clone', agentId: CLONE }))).statusCode).toBe(200);
+    const retries = t.db.txRetries;
+    strike = true;
+    expect(await post(nominate())).toMatchObject({ statusCode: 403, body: { error: 'forbidden' } });
+    expect(t.db.txRetries).toBeGreaterThan(retries);
+    neitherHalf('clone race');
+  });
+
   it("the race's control: the tape rewritten unchanged between the read and the commit conflicts, is judged again, and nominates — the retry judges, it does not refuse on any conflict", async () => {
     const seed = Object.fromEntries([...t.store.entries()]);
     let strike = false;
@@ -1065,6 +1102,11 @@ describe('C1 fix round F2 — a malformed nomination record from the builder wri
     ['null', () => null],
     ['an array', (r) => [r]],
     ['a class instance', (r) => Object.assign(new (class Rec {})(), r)],
+    // the fix round's §2 review (A4): the clock it was given, and a history of plain rows
+    ['an expiresAt before its queuedAt', (r) => ({ ...r, expiresAt: '2000-01-01T00:00:00.000Z' })],
+    ['a queuedAt that is not the instant handed in', (r) => ({ ...r, queuedAt: '2026-01-01T00:00:00.000Z' })],
+    ['an empty stateHistory', (r) => ({ ...r, stateHistory: [] })],
+    ['a stateHistory row that is not an object', (r) => ({ ...r, stateHistory: ['queued'] })],
     ['a string', () => 'queued'],
   ];
   const nominate = { op: 'nominate', opId: 'nom_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1 };
