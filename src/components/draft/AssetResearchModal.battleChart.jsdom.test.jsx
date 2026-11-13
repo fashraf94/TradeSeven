@@ -31,6 +31,8 @@ vi.mock('../../services/eodhdAPI', () => ({
       if (net.fallback) { const d = [...net.daily]; d._meta = { actualTimeframe: '1d' }; return Promise.resolve(d); }
       return Promise.resolve(net.intraday(timeframe));
     }
+    // 1W: the server's weekly bars (dated by the week's first session), never the daily ones.
+    if (timeframe === '1w') return Promise.resolve([{ date: '2026-10-12', open: 98.8, high: 104.1, low: 98.1, close: 103.2, volume: 3 }, { date: '2026-10-05', open: 96, high: 99, low: 95, close: 98.6, volume: 5 }]);
     return Promise.resolve(net.daily);
   },
   getStockPrice: (symbol) => { net.calls.push(['quote', symbol]); return Promise.resolve({ symbol, price: 0 }); },
@@ -374,6 +376,18 @@ describe('the PR 2 review round (lens D — rows that pin what had no row)', () 
     await click($('[data-nav-msft]'));
     await click($('[data-shell-back]'));
     await click(shellPill('chart'));
+    expect(activePill()).toBe('1D');
+  });
+  it('D6 — and by a price item\'s see on chart (it keeps the current pill): back on the battle\'s stock it is 1D, not the Battle left on before', async () => {
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    await click(shellPill('analysis'));
+    await click($('[data-shell-tab="ranks"]'));
+    await click($('[data-nav-msft]'));
+    await click($('[data-shell-back]'));
+    await click($('[data-sheet-question="take_profit"]'));
+    await click($('[data-pack-item="rung_down"] [data-pack-see]'));
     expect(activePill()).toBe('1D');
   });
 });
