@@ -5,10 +5,11 @@
 // real '*/' and deleted the code between.
 //
 // A '/' opens a regex literal where an expression may start: at the file's start, after an operator or opening
-// punctuation, or after a keyword such as return. Anywhere else it is division. That is enough for the code this
-// repository holds; the scans' own rows check it on every src/ file.
+// punctuation, or after a keyword such as return. Anywhere else it is division. JSX's '</tag>' and '/>' are never
+// regexes ('<' is not in the set, and a '/' before '>' is not one). That is enough for the code this repository holds;
+// the scans' own rows check it on every src/ file.
 
-const REGEX_AFTER = new Set(['(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '<', '>', '~', '^']);
+const REGEX_AFTER = new Set(['(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '>', '~', '^']);
 const REGEX_KEYWORDS = /(?:^|[^\w$])(?:return|typeof|case|do|else|in|of|new|delete|void|throw|yield|await)$/;
 
 export function stripComments(code) {
@@ -28,8 +29,8 @@ export function stripComments(code) {
       const end = code.indexOf('*/', i + 2);
       i = end < 0 ? n : end + 2;
       out += ' ';
-    } else if (ch === '/' && next === '/') { // a line comment: up to the line's end (the newline is kept)
-      while (i < n && code[i] !== '\n') i += 1;
+    } else if (ch === '/' && next === '/') { // a line comment: up to the line's end (its CR or LF is kept)
+      while (i < n && code[i] !== '\n' && code[i] !== '\r') i += 1;
     } else if (ch === "'" || ch === '"' || ch === '`') { // a string or a template, escapes honoured
       let j = i + 1;
       while (j < n && code[j] !== ch) {
@@ -39,10 +40,10 @@ export function stripComments(code) {
       }
       out += code.slice(i, j + 1);
       i = j + 1;
-    } else if (ch === '/' && regexMayStart()) { // a regex literal, its [classes] honoured
+    } else if (ch === '/' && next !== '>' && regexMayStart()) { // a regex literal, its [classes] honoured
       let j = i + 1;
       let inClass = false;
-      while (j < n && code[j] !== '\n') {
+      while (j < n && code[j] !== '\n' && code[j] !== '\r') {
         if (code[j] === '\\') j += 1;
         else if (code[j] === '[') inClass = true;
         else if (code[j] === ']') inClass = false;

@@ -115,6 +115,7 @@ describe('dark by construction (K-3)', () => {
   it('the comment strip keeps strings, templates and regex literals whole (review d3)', () => {
     expect(stripComments("a('x/*y'); /* gone */ b(`p//q`); // gone\nc(/[/*]+/g, 1 / 2); /* gone */")).toBe("a('x/*y');   b(`p//q`); \nc(/[/*]+/g, 1 / 2);  ");
     expect(stripComments("return /'/.test(s) ? 'a' : 'b'; // gone")).toBe("return /'/.test(s) ? 'a' : 'b'; ");
+    expect(stripComments('<p>a</p> {/* gone */}<X a={b}/> // gone\r\nnext')).toBe('<p>a</p> { }<X a={b}/> \r\nnext'); // JSX: no false regex
   });
   it('nothing outside the directory reaches the service either (the body is its one importer)', () => {
     const files = walk(resolve(REPO, 'src')).filter((p) => !isTest(p));
