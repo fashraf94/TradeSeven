@@ -23,7 +23,7 @@ const FLAGS = vi.hoisted(() => ({
 }));
 vi.mock('../../config/researchModalFlags', () => FLAGS);
 vi.mock('../../config/researchModalFlags.js', () => FLAGS);
-const net = vi.hoisted(() => ({ daily: {}, intraday: {}, calls: [], docs: {}, failRead: false }));
+const net = vi.hoisted(() => ({ daily: {}, intraday: {}, calls: [], docs: {}, failRead: false, hold: {} }));
 vi.mock('../../services/eodhdAPI', () => ({
   fetchHistoricalOHLCV: (symbol, timeframe, opts) => {
     net.calls.push(['history', symbol, timeframe, opts ?? null]);
@@ -49,7 +49,8 @@ vi.mock('../Research/TechnicalTabV2', () => ({ default: () => null }));
 vi.mock('../Research/HealthTab', () => ({ default: () => null }));
 vi.mock('./ResearchTabs/TechnicalAnalysisTab', () => ({ default: () => null }));
 vi.mock('./SectorTab', () => ({ default: () => null }));
-vi.mock('./CompeteTab', () => ({ default: () => null }));
+// The Ranks tab as a stand-in that navigates inside the modal (review C2: held → a non-held peer).
+vi.mock('./CompeteTab', () => ({ default: (p) => <button type="button" data-nav-acn onClick={() => p.onNavigateToStock('ACN', 'Accenture')}>nav</button> }));
 vi.mock('../Research/MarketContextTab', () => ({ default: () => null }));
 vi.mock('../Research/HoldingsTab', () => ({ default: () => null }));
 vi.mock('../Research/SectorETFRanksTab', () => ({ default: () => null }));
@@ -61,8 +62,10 @@ vi.mock('firebase/firestore', async (orig) => ({
   getDoc: (ref) => {
     net.calls.push(['getDoc', ref.path]);
     if (net.failRead) return Promise.reject(new Error('unavailable'));
-    const d = net.docs[ref.path];
-    return Promise.resolve({ exists: () => d != null, data: () => d ?? null });
+    const answer = () => { const d = net.docs[ref.path]; return { exists: () => d != null, data: () => d ?? null }; };
+    // A held read (review C5, C26): answered when the row releases it.
+    if (net.hold[ref.path]) return net.hold[ref.path].then(answer);
+    return Promise.resolve(answer());
   },
 }));
 
@@ -84,7 +87,7 @@ let container, root;
 beforeEach(() => {
   flag.bomb = 'on'; flag.sheet = 'off';
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
-  net.calls.length = 0; net.docs = {}; net.daily = {}; net.intraday = {}; net.failRead = false;
+  net.calls.length = 0; net.docs = {}; net.daily = {}; net.intraday = {}; net.failRead = false; net.hold = {};
   vi.spyOn(console, 'log').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.useRealTimers(); });
@@ -318,13 +321,88 @@ describe('BS-4 — unchanged: every other ladder', () => {
     expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual([]);
   });
 
-  it('a bench or V4 context (the BaggerBomb mounts) and Bomb mode off read nothing', async () => {
+  it.each([
+    ['a bench context (the free-agent bar)', { kind: 'bench' }],
+    ['a V4 context (the BaggerBomb battle view)', { kind: 'v4', dailyLevels: { date: '2026-10-14', assets: {} } }],
+  ])('%s reads nothing and keeps its own threshold', async (_, bombContext) => {
     seed('ACN'); scores('ACN', 4.05);
-    await open(nonHeld('ACN', { threshold: 6.48 }), { kind: 'bench' });
+    await open(nonHeld('ACN', { threshold: 6.48 }), bombContext);
     expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$319.44');
-    act(() => root.unmount()); container.remove(); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
-    flag.bomb = 'off';
+    expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual([]);
+  });
+
+  it('with no bombContext — how the battle screen hands Bomb mode off (review V1: the modal never reads the flag for this) — nothing is read', async () => {
+    seed('ACN'); scores('ACN', 4.05);
     await open(nonHeld('ACN', { threshold: 6.48 }), undefined);
     expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual([]);
+  });
+
+  it("review C3: a battle whose stock model cannot be read ('unavailable') is not a measured battle — its non-held stock keeps the screen's threshold and reads nothing", async () => {
+    seed('ACN'); scores('ACN', 4.05);
+    const battle = { ...BATTLE, scoring: { ...BATTLE.scoring, stockThresholdModel: { ...BATTLE.scoring.stockThresholdModel, modelId: 'not_a_model' } } };
+    const ctx = agentBombContext(battle, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' });
+    expect(ctx.stockModel).toBe('unavailable');
+    await open(nonHeld('ACN', { threshold: 6.48 }), ctx);
+    expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$319.44');
+    expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual([]);
+  });
+});
+
+describe('BS-4 — the read\'s wiring in the modal (review C)', () => {
+  it('C1: off the shell the read waits for the Bomb tab — a mount opening on Analysis and 1D reads nothing until 💣 Bomb is tapped, then once', async () => {
+    seed('ACN'); scores('ACN', 4.05);
+    await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }), { defaultTab: 'fundamental', defaultTimeframe: '1D' });
+    expect(reads()).toEqual([]);
+    const bomb = [...document.body.querySelectorAll('button')].find((b) => b.textContent.trim() === '💣 Bomb');
+    await act(async () => { bomb.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    expect(reads()).toEqual(['stockTechnicalScores/ACN']);
+    expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$312.15');
+  });
+
+  it('C2: from the agent\'s held measured stock, a navigation inside the modal to a non-held peer takes the ATR arm — its reading, one read, never the thresholds request', async () => {
+    seed('AAPL', 99); seed('ACN'); scores('ACN', 4.05);
+    const left = enrichHeldPosition(BATTLE.portfolio.star[0], 'star', { stockBattle: BATTLE, stockSide: 'agent', stockSlot: 0 });
+    const asset = buildResearchAsset(left, { livePrices: { AAPL: 101.2 }, thresholds: { AAPL: { threshold: 2.5 } }, startingPrices: { AAPL: 100.75 }, useDefaultThreshold: true });
+    await open(asset, agentBombContext(BATTLE, 'AAPL', Date.parse(NOW), { battleId: 'stock-battle', positionId: 'position-agent' }));
+    const tab = (label) => [...document.body.querySelectorAll('button')].find((b) => b.textContent.trim() === label);
+    await act(async () => { tab('Ranks').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    await act(async () => { q('[data-nav-acn]').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    await act(async () => { tab('💣 Bomb').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$312.15');
+    expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual(['stockTechnicalScores/ACN']);
+    expect(thresholdAsks()).toEqual([]);
+  });
+
+  it('C5: while the read is in flight the preview says the reading is loading — never that the name has none — then draws', async () => {
+    seed('ACN'); scores('ACN', 4.05);
+    let release; net.hold['stockTechnicalScores/ACN'] = new Promise((r) => { release = r; });
+    await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
+    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_loading');
+    expect(q('[data-bomb-view="state"]').textContent).toContain("The ATR reading or yesterday's close hasn't loaded.");
+    await act(async () => { release(); }); await flush();
+    expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$312.15');
+  });
+
+  it('C6: an unranked name is read once for the modal\'s life, not on every 💣 reopen', async () => {
+    flag.sheet = 'on'; seed('ZZZZ');
+    const sheetContext = { battleId: 'stock-battle', agentId: 'agent', archetype: 'momentum_chaser', agentName: 'Juno', row: { held: false }, battle: BATTLE, calls: [], standing: null, directive: null };
+    await open(nonHeld('ZZZZ'), agentBombContext(BATTLE, 'ZZZZ', Date.parse(NOW), { battleId: 'stock-battle' }), { sheetContext });
+    const pill = async (v) => { await act(async () => { q(`[data-shell-pill="${v}"]`).dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush(); };
+    await pill('bomb'); await pill('analysis'); await pill('bomb');
+    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_unavailable');
+    expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual(['stockTechnicalScores/ZZZZ']);
+  });
+
+  it('C26: a stock changed while its read is in flight — the new stock is read and drawn, and the late answer is never shown under it', async () => {
+    seed('ACN'); seed('MSFT'); scores('ACN', 4.05); scores('MSFT', 2.2);
+    let release; net.hold['stockTechnicalScores/ACN'] = new Promise((r) => { release = r; });
+    const show = (sym) => render(<AssetResearchModal key="one" asset={nonHeld(sym, { threshold: 6.48 })} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={301} bombContext={agentBombContext(BATTLE, sym, Date.parse(NOW), { battleId: 'stock-battle' })} />);
+    await show('ACN');
+    await show('MSFT');
+    await act(async () => { release(); }); await flush();
+    expect(reads()).toEqual(['stockTechnicalScores/ACN', 'stockTechnicalScores/MSFT']);
+    // 300 × (1 + 2.2 %) = 306.60 — MSFT's own reading.
+    expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$306.60');
+    expect(what()).toContain('ATR reading 2.2%');
   });
 });

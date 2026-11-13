@@ -1,6 +1,6 @@
 // Research Modal Build A — the view helpers (spec §3.2, §3.5, §4.3, BA-1, BA-4, BA-6).
 import { describe, it, expect } from 'vitest';
-import { buildLadder, scoredChipText, sheetLine, traceParts, checkSlotOf } from './bombView.js';
+import { buildLadder, scoredChipText, sheetLine, traceParts, checkSlotOf, atrAsOfText } from './bombView.js';
 import { previewLadder, legacyLadder, measuredLadder } from './ladder.js';
 import { selectBombRecord } from './selectBombRecord.js';
 import { legacyBattle, measuredEogRecord } from './__fixtures__/bombBattles.js';
@@ -43,6 +43,17 @@ describe('buildLadder — BS-4: the ATR arm (a non-held stock in a measured batt
     expect(atrReadingOf({ atrPercent: 4.05 }, now)).toEqual({ pct: null, asOfMs: null });
     expect(atrReadingOf({ atrPercent: 0, updatedAt: now }, now).pct).toBeNull();
     expect(ATR_READING_MAX_AGE_MS).toBe(96 * 3600_000);
+  });
+  it('review C28: "as of" names the day in ET — after 8 PM ET (past midnight UTC) today\'s 4:05 PM run is still today\'s', () => {
+    expect(atrAsOfText(Date.parse('2026-10-14T20:05:00.000Z'), Date.parse('2026-10-15T01:00:00.000Z'))).toBe('4:05 PM');
+    expect(atrAsOfText(Date.parse('2026-10-13T20:05:00.000Z'), Date.parse('2026-10-15T01:00:00.000Z'))).toBe('Tue 4:05 PM');
+    expect(atrAsOfText(null, WED_1PM)).toBeNull();
+  });
+  it('review C15: a reading with no time on it prints no "as of"', () => {
+    const l = buildLadder({ context: { kind: 'agent' }, record: null, previousClose: 300, threshold: 6.48, symbol: 'ACN', nowMs: WED_1PM, atrReading: { status: 'ready', pct: 4.05, asOfMs: null } });
+    const line = sheetLine({ ladder: l, decimals: 2, nowMs: WED_1PM });
+    expect(line).toContain('4.0%');
+    expect(line).not.toMatch(/as.of|null|undefined/);
   });
   it('a held measured record keeps its frozen ladder even with a reading handed', () => {
     const l = buildLadder({ context: { kind: 'agent' }, record: measuredEogRecord(), previousClose: 155.6, threshold: 3.6, symbol: 'EOG', nowMs: WED_1PM, atrReading: ready });
