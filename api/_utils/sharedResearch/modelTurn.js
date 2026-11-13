@@ -34,10 +34,12 @@ export const THINKING = Object.freeze({ step: Object.freeze({ type: 'between_too
 /**
  * Anthropic's published first-party prices, USD per million tokens (Claude
  * Sonnet 5.5 $2 / $10; Claude Haiku 5.5 $0.10 / $0.50 for prompts up to 100K
- * tokens — a step's prompt is capped at 16K). Source: Anthropic's model price
- * table as published on the date below.
+ * tokens — a step's prompt is capped at 16K). Source: Anthropic's pricing
+ * page (platform.claude.com/docs/en/about-claude/pricing), read on the date
+ * below. Cache reads and writes are not priced here: no request sets
+ * cache_control, so a usage carries none.
  */
-export const PRICES_AS_OF = '2026-11-03';
+export const PRICES_AS_OF = '2026-11-12';
 export const MODEL_PRICES = Object.freeze({
   'claude-sonnet-5-5': Object.freeze({ inputPerMTok: 2, outputPerMTok: 10 }),
   'claude-haiku-5-5': Object.freeze({ inputPerMTok: 0.1, outputPerMTok: 0.5 }),
