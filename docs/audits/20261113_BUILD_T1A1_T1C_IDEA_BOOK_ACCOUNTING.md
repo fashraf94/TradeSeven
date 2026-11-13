@@ -633,13 +633,13 @@ Line numbers below are at `b13fa2da`.
 
 CI's one failure was `api/forge/shared-research.route.test.js:473` (two investigations created in the same millisecond). `main` fixed it at `ac57f81b` ("an earlier investigation created in the same millisecond still counts as previous", PR #1057) after this branch was cut. The merge at `34ddc863` brings it in: `git merge-base --is-ancestor ac57f81b HEAD` succeeds. No Shared Research file was edited.
 
-`main` moved after the merge, to `979b030c` (PR #1060, a Research modal follow-up). It changes 8 files and none of them is on this branch; a scratch merge is clean (`git merge-tree`). It is not merged here: this round's merge was the one of the `origin/main` recorded at the start. CI tests the branch merged with `main` as it then stands.
+`main` moved after the merge, to `979b030c` (PR #1060, a Research modal follow-up). It changes 8 files and none of them is on this branch; a scratch merge is clean (`git merge-tree`). It is not merged here: this round's merge was the one of the `origin/main` recorded at the start. CI tests the branch merged with `main` as it then stands, so the full suite was also run on a throwaway local merge of the pushed head with `979b030c` (§9.4), never pushed.
 
-The test file run 20 times in a loop on Linux (WSL, Node 20.20.2, `TZ=UTC`), passes counted by vitest's exit code: **20 passes, 0 failures** (`Tests 43 passed (43)` each run).
+The test file run 20 times in a loop on Linux (WSL, Node 20.20.2, `TZ=UTC`) at `e5404262`, passes counted by vitest's exit code: **20 passes, 0 failures** (`Tests 43 passed (43)` each run). No Shared Research file changed after `e5404262`: every later commit touches only `api/_utils/practiceField/` and `docs/`. The full suite at the code head includes the file again (§9.4).
 
 ### 9.4 Checks (Linux, the record)
 
-All on Linux (WSL Ubuntu, Node 20.20.2, `TZ=UTC`), on a worktree of `~/pd-ci` at the code head `b13fa2da`, unless a row says otherwise.
+All on Linux (WSL Ubuntu, Node 20.20.2, `TZ=UTC`), on a worktree of `~/pd-ci` at the code head `b13fa2da`, unless a row says otherwise. **One deviation from "Linux, the record": the mutation battery ran on Windows** (Git Bash, the main checkout's vitest, on LF `git archive` trees of the code head), as the build's own battery did; the test files it names pass on both platforms.
 
 | Check | Command | Exit | Result line |
 |---|---|---|---|
@@ -647,11 +647,14 @@ All on Linux (WSL Ubuntu, Node 20.20.2, `TZ=UTC`), on a worktree of `~/pd-ci` at
 | Astra's seventeen-file command, from its review | as written there (the nine + the protected-store, money-rounding and rationale scans, four Film Room files, the flag-pin guard) | 0 | `Test Files  17 passed (17)` · `Tests  333 passed (333)` (Astra had 303) |
 | Astra's dividend regression, committed | `close.test.js` › "Astra's regression, through the REAL feed parser, daily layer and close-snapshot builder…" | 0 | passes (with the two files above). Astra recorded its regression failing on `2fe788d8`; with the applied-loop dedupe removed (mutant `FX1-03`) it fails here too, checked directly |
 | Full suite | `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | **0** (written to a file by the run script, read back) | `Test Files  1456 passed \| 10 skipped (1466)` · `Tests  32493 passed \| 120 skipped (32613)` · `Duration  255.77s` |
+| Full suite on the branch merged with today's `main` | the same command, on a throwaway local merge of `ef79bcc0` with `979b030c` (`8fa25423`, never pushed) | **0** (read back from the file) | `Test Files  1456 passed \| 10 skipped (1466)` · `Tests  32497 passed \| 120 skipped (32617)` · `Duration  248.83s` (the 4 extra tests are #1060's) |
 | Lint gate | `npm run lint:gate` | 0 | `eslint . --config eslint.gate.config.js --max-warnings 0`, no findings |
 | Build | `npx vite build` | 0 | `✓ built in 15.78s` (only the standing chunk-size notice) |
 | The Shared Research route test, 20 times | §9.3 | 20 × 0 | 20 passes, 0 failures, counted by exit code |
 
 The suite ran twice on the code head: the first run's log gave the same two result lines, but its exit code was cut from the captured output, so it was run again with the exit code written beside the log. Nothing else ran beside either run.
+
+**The build's 200 rows.** None was removed, and every one passes. Four were rewritten for a fix: fix 3's three B-STAMP rows, which handed the close a snapshot, and fix 4's read-count row. Nine had an expectation changed, each with its reason written beside it: the seven fix-2 rows listed in §9.2, the `ideaBook.test.js` equity-helper line, and the end-to-end pin (§9.6). Seven more changed only how they give the close its snapshot: they store it first, or drop the argument.
 
 **One check failed on the way and was fixed.** At `ebbeac4b` the deny-by-default protected-store scan (`api/_utils/compositionProtectedStores.scan.test.js`) listed one new write site as unresolved: `fixtures.js` `storeCloseSnapshot`'s `ref.set`, whose collection name came from an imported constant. With the literal `'mandateUniverseSnapshots'` the scan resolves the write to a collection that is not protected, so nothing was added to the allowlist; a module-scope check keeps the literal equal to the engine's `SNAPSHOT_COLLECTION` (`300fb4b0`). On Windows the money-rounding scan's two path-closure rows fail at the base too — the separator limitation the scan documents (`mandateRationale.imports.test.js:45`); they pass on Linux.
 
@@ -713,6 +716,16 @@ BUILD_RULES §2 applies: the money path changed. One independent lens (accountin
 | RF-A4 | Outside the conflict branch, `applyLedgerActions` still adds a feed row's raw ticker to `unresolved` (and a lower-case split is never applied) | Note: pre-existing; the feed parsers upper-case every ticker, so only a hand-written row could carry one. Not changed |
 | RF-A5 | No row asserted that a presented conflict is not also announced as unsettled | **Row added** (`b13fa2da`) |
 
+**Rules this round added beyond the brief's letter, for the founder's ruling.** Each was driven by the review and is fail-closed; each can be loosened by a ruling without touching the rest.
+
+| Rule | Where | Why |
+|---|---|---|
+| An unsettled conflict on an action the holding was entitled to keeps the idea's and the book's rows not full quality, with no end date, until a consistent row settles it | `close.js:157`, `ledger.js:102` (R-23) | FR-A1: otherwise its held-back dividend later reads as a clean gap. The brief's "as R-9 does" alone would let it clear once the feed drops the rows |
+| `postEntryFillCount` must be exactly 0 | `reconcile.js:116` | FR-A3: nothing in T1a-1 raises it, and a raised count would switch the same-stock tie off |
+| Realised P&L must be 0 on every ledger | `reconcile.js:67` | RF-A3: this build has no sale; a cent in cash plus a cent in realised P&L would otherwise conserve |
+| Dividends must equal the income on the ledger's applied receipts | `reconcile.js:66` | RF-A3: the same, for a cent in cash plus a cent in dividends |
+| The same-stock tie compares recorded marks; every paper holding's mark must be a real number | `reconcile.js:106`, `:84` | FR-A3: a corrupted comparison mark passed and later froze the comparison |
+
 **What was not re-refuted.** The fixes made after the refuter reported (`b13fa2da`) were not sent to a second refuter pass. They are covered by new rows and by mutants in the final battery (§9.4), and by the full suite, all run on the final code.
 
 ### 9.6 The end-to-end store hash, before and after
@@ -733,6 +746,11 @@ Fix 4, the test commits and the review commits moved nothing.
 | T1A-06 | The daily top-up race keeps old entries but can lose newly fetched corporate-action data | T1a-2 | T1a-2 |
 | T1A-07 | The protected-store scan protects these money writes partly by accident: it does not see writes under `mandates` (M06 survives) | T5 | **T1a-2**, earlier than Astra's suggested T5, because T1a-2 adds the first sale |
 | T1A-08 | Off-mode recovery must keep the original clock and recover missed dates separately | T1a-2 | T1a-2 |
+
+**T1a-2's first later fill or sale will fail reconciliation by design** until it lifts two bounds this round set:
+
+- `MAX_POST_ENTRY_FILLS = 0` (`reconcile.js:116`), with its writer that increments `postEntryFillCount`;
+- the realised-P&L-is-zero rule (`reconcile.js:67`), with the sale's own receipt. Until then, a sale's realised P&L has no receipt to be checked against.
 
 Also carried to T1a-2, from this round's review (§9.5), not fixed here:
 
