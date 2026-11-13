@@ -39,7 +39,7 @@ import { SHELL_COPY } from '../Research/Sheet/sheetCopy';
 import { visibleViewportHeight } from '../Research/Sheet/sheetViewport';
 import { opensInRedZone } from '../Research/Sheet/sheetOpen';
 import { resolveSheetMode, sheetModeOn } from '../Research/Sheet/sheetMode';
-import { shellViewsFor, openingView, switchView, seeOnChartTimeframe, isChartTimeframe, isLiveZoneMode, viewOnShellAppear, shellChartHeight } from '../Research/Sheet/shellView';
+import { shellViewsFor, openingView, bombOnlyOpensOnBomb, switchView, seeOnChartTimeframe, isChartTimeframe, isLiveZoneMode, viewOnShellAppear, shellChartHeight } from '../Research/Sheet/shellView';
 import { motionToken } from '../../theme/motion';
 
 /**
@@ -234,9 +234,10 @@ const AssetResearchModal = ({
   // (none yet → Analysis); never switched after open (this state is never set again).
   // Bomb mode refinement (BD-7, 2026-11-10): the Battle View's "See all levels ›"
   // door asks for 💣 by name (`opensOnBomb`), so it lands on the levels table.
-  // Off the shell the mount's own defaultTab decides.
+  // BS-1 (2026-11-12): a mount with Bomb mode but no sheet opens on 💣 when its own
+  // defaultTab / defaultTimeframe asks for the bomb. Off the shell the mount's own defaultTab decides.
   const [sheetOpensOnBomb] = useState(() => shellOn && version >= 2 && bombContext != null && typeof bombContext === 'object'
-    && (opensOnBomb === true || opensInRedZone({ bombContext, symbol: asset?.symbol, live: controlledMode ? controlledPrice : (wsPrice || asset?.price || asset?.currentPrice || null), nowMs: Date.now(), isCrypto })));
+    && (opensOnBomb === true || (!battleSheet && bombOnlyOpensOnBomb({ defaultTab, defaultTimeframe })) || opensInRedZone({ bombContext, symbol: asset?.symbol, live: controlledMode ? controlledPrice : (wsPrice || asset?.price || asset?.currentPrice || null), nowMs: Date.now(), isCrypto })));
   // The shell's state (SB-4): the view on screen, the Analysis view's tab, the Chart view's last timeframe.
   const [shellView, setShellView] = useState(() => openingView({ opensOnBomb: sheetOpensOnBomb }));
   const [shellTab, setShellTab] = useState('moving');

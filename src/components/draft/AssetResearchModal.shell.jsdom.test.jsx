@@ -613,13 +613,44 @@ describe('review C — the promises the first rows did not pin', () => {
     expect(close).toBeTruthy();
     expect(close.closest('[data-shell-scroll]')).toBeNull();
   });
-  it('C5: a mount with Bomb mode but no sheet (the free-agent bar, the BaggerBomb battle view): three pills over the browse blocks, Analysis on open, no 30-minute series for it', async () => {
-    await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'CEG', name: 'Constellation Energy', price: 344.15 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" bombContext={{ kind: 'bench' }} />); });
+  // BS-1 (the founder's ruling on reading 7, 2026-11-12; review C5 first pinned the reading as built).
+  const bombOnly = async (over = {}) => {
+    await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'CEG', name: 'Constellation Energy', price: 344.15 }} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" bombContext={{ kind: 'bench' }} {...over} />); });
     await flush();
+  };
+  it('BS-1: the free-agent bar (defaultTab 💣, defaultTimeframe bomb, a bench context) opens on the 💣 view, three pills, on the 30-minute series — as it does off the shell', async () => {
+    await bombOnly();
+    expect(pills()).toEqual(['analysis', 'chart', 'bomb']);
+    expect(view()).toBe('bomb');
+    expect(shown()).toEqual(['bomb']);
+    expect(history()).toContain('30m');
+    // Analysis from there is the browse content.
+    await click(pill('analysis'));
+    expect(shown()).toEqual(['analysis']);
+    expect(blocks()).toEqual(['browseAsk', 'wallSt', 'tabs']);
+  });
+  it.each([
+    ['a row tap (defaultTab null)', null],
+    ['a red-zone tap (defaultTab 💣)', 'baggerbomb'],
+  ])('BS-1: the BaggerBomb battle view — %s with defaultTimeframe bomb and a V4 context — opens on 💣', async (_, defaultTab) => {
+    await bombOnly({ defaultTab, bombContext: { kind: 'v4', dailyLevels: { date: '2026-10-14', assets: {} } } });
+    expect(view()).toBe('bomb');
+    expect(history()).toContain('30m');
+  });
+  it('BS-1: a Bomb-mode mount whose defaultTab and defaultTimeframe ask for neither opens on Analysis over the browse blocks, with no 30-minute series', async () => {
+    await bombOnly({ defaultTab: 'fundamental', defaultTimeframe: '1D' });
     expect(pills()).toEqual(['analysis', 'chart', 'bomb']);
     expect(view()).toBe('analysis');
     expect(blocks()).toEqual(['browseAsk', 'wallSt', 'tabs']);
     expect(history()).not.toContain('30m');
+  });
+  it('BS-1 leaves the battle mounts alone: with a sheetContext, defaultTab 💣 and defaultTimeframe bomb still open on Analysis outside a zone, and on 💣 inside one (FQ-9 unchanged)', async () => {
+    await battle();
+    expect(view()).toBe('analysis');
+    expect(history()).not.toContain('30m');
+    remount();
+    await battle({ wsPrice: 103.4 });
+    expect(view()).toBe('bomb');
   });
   it('C6: after an FQ-9 open on 💣 (in the red zone, on its minute series), Analysis puts the hook back on 1D — the minute poll stops — and the chart met next is on 1D', async () => {
     net.thirty = THIRTY;
