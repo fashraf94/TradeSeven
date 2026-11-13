@@ -9,7 +9,7 @@
 import React, { useId, useState } from 'react';
 import { SR_COPY as COPY } from './sharedResearchCopy';
 import { T, S, wash, buttonStyle, linkStyle } from './sharedResearchStyle';
-import { labelOf, toneOf, reasonLabelOf, dateLineOf, sourceLabelOf, safeUrlOf, formatDay } from './sharedResearchView';
+import { labelOf, toneOf, dateLineOf, sourceLabelOf, safeUrlOf, formatDay, withoutRole } from './sharedResearchView';
 import { ELIGIBILITY_LABELS } from '../../constants/sharedResearch';
 
 export function Eyebrow({ children, tone = null, as = 'div' }) {
@@ -110,7 +110,6 @@ export function Finding({ finding, superseded = false }) {
         {superseded && <Tag dim>{COPY.superseded}</Tag>}
       </div>
       <p style={{ ...S.body, fontSize: 13.5, color: superseded ? T.ink2 : T.ink }}>{finding.fact}</p>
-      {finding.status === 'unavailable' && <p style={{ ...S.small, color: T.copper }}>{reasonLabelOf(finding.statusReason)}</p>}
       <div style={{ ...S.small, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {words && formatDay(finding.at) ? <span>{COPY.youWhen(formatDay(finding.at))}</span> : null}
         {!words && source && <span>{source}</span>}
@@ -135,7 +134,7 @@ export function CompanyCard({ company, findings, canExamine, onExamine, onAdopt,
       </div>
       <p style={S.body}>{company.relationship}</p>
       {company.openQuestion && (
-        <p style={{ ...S.meta }}><span style={{ color: T.ink3 }}>{COPY.stillOpen}</span>{company.openQuestion.fact}</p>
+        <p style={{ ...S.meta }}><span style={{ color: T.ink3 }}>{COPY.stillOpen}</span>{withoutRole(company.openQuestion.fact)}</p>
       )}
       <div style={S.row}>
         <span style={S.small}>{ELIGIBILITY_LABELS[company.eligibility] ?? ELIGIBILITY_LABELS.unresolved}</span>

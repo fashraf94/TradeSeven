@@ -15,7 +15,7 @@
 // own check (namesCompany) is authoritative; a parity table pins the two equal
 // (sharedResearchView.test.js).
 
-import { findingLabelOf, STATUS_REASON_LABELS, STATUS_REASON_FALLBACK, AGE_DAYS } from '../../constants/sharedResearch';
+import { findingLabelOf, STATUS_REASON_LABELS, STATUS_REASON_FALLBACK, AGE_DAYS, RELATIONSHIP_ROLES, ROLE_SEPARATOR } from '../../constants/sharedResearch';
 
 export const UNDATED_SUFFIX = ' · undated';
 const ET = 'America/New_York';
@@ -90,6 +90,16 @@ export function splitNext(fact) {
   const s = typeof fact === 'string' ? fact : '';
   const i = s.indexOf(' — ');
   return i > 0 ? { label: s.slice(0, i), purpose: s.slice(i + 3) } : { label: s, purpose: null };
+}
+
+/**
+ * A relationship fact without its role prefix ('{Role} · {fact}', the closed list the server writes — companies.js
+ * splitRole, mirrored and pinned): for a line that already shows the company's role beside it.
+ */
+export function withoutRole(fact) {
+  const f = typeof fact === 'string' ? fact : '';
+  const i = f.indexOf(ROLE_SEPARATOR);
+  return i > 0 && RELATIONSHIP_ROLES.includes(f.slice(0, i)) ? f.slice(i + ROLE_SEPARATOR.length) : f;
 }
 
 /** Every finding of the projection by id: the current ones and the superseded ones. */

@@ -22,7 +22,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S, wash } from '../sharedResearchStyle';
-import { adoptableOf, carriedByCompanyOf, draftOf, findingsById, strayNamesOf, STATEMENT_MAX } from '../sharedResearchView';
+import { adoptableOf, carriedByCompanyOf, draftOf, findingsById, strayNamesOf, STATEMENT_MAX, withoutRole } from '../sharedResearchView';
 import { Button, Eyebrow, Field, Finding, LinkButton, Notice, Running, Tag } from '../parts';
 import { ADOPTABLE_HORIZONS, HORIZON_HELPER, HORIZON_LABELS } from '../../../constants/sharedResearch';
 
@@ -154,7 +154,7 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
                 <input type="checkbox" checked={on} disabled={!c.adoptable || busy} onChange={() => toggle(c.symbol)} style={{ marginTop: 3, width: 18, height: 18 }} />
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={S.row}><span style={{ fontSize: 14.5, fontWeight: 600, color: T.ink }}>{c.name}</span><span style={S.small}>{c.symbol}</span><Tag tone="teal" dim>{c.role}</Tag></span>
-                  {open && <span style={{ display: 'block', ...S.small, color: T.copper, marginTop: 2 }}>{COPY.doubt(open.fact)}</span>}
+                  {open && <span style={{ display: 'block', ...S.small, color: T.copper, marginTop: 2 }}>{COPY.doubt(withoutRole(open.fact))}</span>}
                   {!c.adoptable && <span style={{ display: 'block', ...S.small, marginTop: 2 }}>{COPY.tooMuch}</span>}
                 </span>
               </label>
