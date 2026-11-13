@@ -168,7 +168,8 @@ describe("mode 'on' — the in-battle contract", () => {
     HOOK.doc = await committedBattle(); await mount();
     await click(container.querySelector('[data-measured-stock][aria-label="CPU AAPL"] div[style*="inline-block"]'));
     expect(lastProps().asset.positionId).toBe('position-cpu');
-    expect(lastProps().bombContext).toEqual({ kind: 'agent', battleId: 'stock-battle', held: false, record: null });
+    // BS-4: the context names the battle's stock model (a stamped battle: the measured ATR model).
+    expect(lastProps().bombContext).toEqual({ kind: 'agent', battleId: 'stock-battle', held: false, record: null, stockModel: 'corrected' });
   });
   it('a CPU-only name: a preview', async () => {
     watch(['MSFT']); HOOK.doc = await committedBattle({ cpuSymbol: 'MSFT' }); await mount('MSFT'); await click(chip('MSFT'));
@@ -185,7 +186,7 @@ describe('a shared ticker the shipped mount cannot tell apart (no positionId on 
   it("the agent's own chip on a ticker the CPU also holds: a preview, never a ladder that might be the CPU's", async () => {
     HOOK.doc = await committedBattle({ stamped: false }); await mount(); await click(chip('AAPL'));
     expect(lastProps().asset.positionId).toBeUndefined();
-    expect(lastProps().bombContext).toEqual({ kind: 'agent', battleId: 'stock-battle', held: false, record: null });
+    expect(lastProps().bombContext).toEqual({ kind: 'agent', battleId: 'stock-battle', held: false, record: null, stockModel: 'legacy' });
   });
 });
 

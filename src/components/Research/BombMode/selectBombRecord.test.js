@@ -178,7 +178,7 @@ describe('agentBombContext — which row is the agent\'s (review A4, C1)', () =>
     expect(agentBombContext(legacyBattle(), 'EOG', WED_1PM, {}).held).toBe(true);
   });
   it('a name the agent does not hold → a preview', () => {
-    expect(agentBombContext(legacyBattle(), 'NVDA', WED_1PM, {})).toEqual({ kind: 'agent', battleId: null, held: false, record: null });
+    expect(agentBombContext(legacyBattle(), 'NVDA', WED_1PM, {})).toEqual({ kind: 'agent', battleId: null, held: false, record: null, stockModel: 'legacy' });
   });
 });
 

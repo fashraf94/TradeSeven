@@ -5,7 +5,7 @@
 // modal (AssetResearchModal.shell.jsdom.test.jsx).
 
 import { describe, it, expect } from 'vitest';
-import { shellViewsFor, openingView, switchView, seeOnChartTimeframe, isChartTimeframe, shellChartHeight, isLiveZoneMode, viewOnShellAppear } from './shellView.js';
+import { shellViewsFor, openingView, bombOnlyOpensOnBomb, switchView, seeOnChartTimeframe, isChartTimeframe, shellChartHeight, isLiveZoneMode, viewOnShellAppear } from './shellView.js';
 
 describe('the warm 💣 pill and the shell appearing on an open modal', () => {
   it('warm only in a live zone: the red zone (its approach, its banked moment) and the Danger Zone; never frozen, never the Fuse', () => {
@@ -29,6 +29,13 @@ describe('the pills and the opening view', () => {
     expect(openingView({ opensOnBomb: false })).toBe('analysis');
     expect(openingView({ opensOnBomb: undefined })).toBe('analysis');
     expect(openingView({ opensOnBomb: true })).toBe('bomb');
+  });
+  it('BS-1: a Bomb-only mount asks for 💣 by its own defaultTab or defaultTimeframe, else Analysis', () => {
+    expect(bombOnlyOpensOnBomb({ defaultTab: 'baggerbomb', defaultTimeframe: '1D' })).toBe(true);
+    expect(bombOnlyOpensOnBomb({ defaultTab: null, defaultTimeframe: 'bomb' })).toBe(true);
+    expect(bombOnlyOpensOnBomb({ defaultTab: undefined, defaultTimeframe: 'spectate' })).toBe(true);
+    expect(bombOnlyOpensOnBomb({ defaultTab: 'fundamental', defaultTimeframe: '1D' })).toBe(false);
+    expect(bombOnlyOpensOnBomb({ defaultTab: undefined, defaultTimeframe: undefined })).toBe(false);
   });
 });
 

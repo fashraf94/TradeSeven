@@ -355,6 +355,36 @@ describe('BC-8 — the record on the Chart view, one label open; "see on chart �
     const titled = rec.lines.filter((l) => l.title);
     expect(titled.map((l) => [l.price, l.title])).toEqual([[103.78, 'next rung · $103.78']]);
   });
+  it('BS-2 (shell report §12 A8, the refuter\'s repro): "see on chart" holds the ITEM, not its slot — rung_distance drops at $103.83 and check_read takes its slot: the caption closes, check_read is never opened, and rung_distance coming back stays closed', async () => {
+    const at = async (px) => { await act(async () => { root.render(<AssetResearchModal asset={asset()} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={px} sheetContext={ctx()} />); }); await flush(); };
+    const items = () => $$('[data-pack-item]').map((b) => [b.dataset.packItem, b.dataset.packOn]);
+    // The Chart view's caption with nothing tapped: the latest record pin.
+    await at(103.2);
+    await click(pill('chart'));
+    const idle = $('[data-pin-caption]').dataset.pinCaption;
+    await click(pill('analysis'));
+    await click($('[data-sheet-question="catch_up"]'));
+    expect(items().map(([k]) => k)).toEqual(['move_since_entry', 'rule_trend', 'rung_distance', 'idea', 'told_it']);
+    rec.lines.length = 0;
+    await click(see('rung_distance'));
+    expect(rec.lines.filter((l) => l.title).map((l) => l.title)).toEqual(['next rung · $103.78']);
+    // A tick past the rung, with the player on the Chart view: the item leaves the pack.
+    rec.lines.length = 0;
+    await at(103.83);
+    expect(view()).toBe('chart');
+    expect(rec.lines.filter((l) => l.title)).toEqual([]);
+    expect($('[data-pin-caption]').dataset.pinCaption).toBe(idle);
+    await click(pill('analysis'));
+    // check_read now sits in rung_distance's slot, and it is NOT the open item.
+    expect(items()).toEqual([['move_since_entry', '0'], ['rule_trend', '0'], ['check_read', '0'], ['idea', '0'], ['told_it', '0']]);
+    // The price comes back: rung_distance returns to the pack, closed — reopening it is a new tap.
+    await at(103.2);
+    expect(items()).toEqual([['move_since_entry', '0'], ['rule_trend', '0'], ['rung_distance', '0'], ['idea', '0'], ['told_it', '0']]);
+    rec.lines.length = 0;
+    await click(pill('chart'));
+    expect(rec.lines.filter((l) => l.title)).toEqual([]);
+    expect($('[data-pin-caption]').dataset.pinCaption).toBe(idle);
+  });
   it('a time pin on 1W: the link moves the chart to 1D, where the pin and its caption are drawn (BC-8; replaces review D12\'s tag)', async () => {
     await open();
     await click(pill('chart'));

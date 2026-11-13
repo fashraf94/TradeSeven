@@ -36,7 +36,7 @@ import { BATTLE_CHAT_BUDGET } from '../../../../api/_utils/directiveFiling.js';
 import { readToken } from '../../../theme/cssTokens.js';
 import { etDate } from '../BombMode/checkClock.js';
 import { priceDecimals } from '../priceFormat.js';
-import { buildPacks, stanceOf, recordPinsOf, questionOrder, QUESTION_IDS, whenLabel } from './packs.js';
+import { buildPacks, stanceOf, recordPinsOf, questionOrder, QUESTION_IDS, whenLabel, itemKeyOf } from './packs.js';
 import { latestLineOf } from './latestLine.js';
 import { SHEET_COPY, QUESTION_TEXT, PIN_LINE_WORDS } from './sheetCopy.js';
 
@@ -114,6 +114,7 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
 
   // ── The question, the item the player tapped, and the Ask ──
   const sheetKey = ctx ? `${battleId}|${symbol}|${incumbent ?? ''}` : null;
+  // `activeItem` holds the open item's KEY (packs.itemKeyOf), never its slot (BS-2).
   const [ui, setUi] = useState({ key: null, question: null, activeItem: null });
   const [asks, setAsks] = useState({}); // sheetKey → { status, questionId, … }
   const inFlightRef = useRef(new Set()); // sheetKeys with a POST in flight (synchronous: a double tap sends one)
@@ -122,7 +123,7 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     setUi({ key: sheetKey, question: incumbent ? 'better_than_stalled' : null, activeItem: null });
   }
   const question = ui.key === sheetKey ? ui.question : (incumbent ? 'better_than_stalled' : null);
-  const activeItem = ui.key === sheetKey ? ui.activeItem : null;
+  const activeKey = ui.key === sheetKey ? ui.activeItem : null;
 
   // ── The rankings: the doc the screen hands over when it holds one, else one read when the stalled question first opens ──
   const screenRankings = ctx?.rankings && typeof ctx.rankings === 'object' ? ctx.rankings : null;
@@ -158,7 +159,13 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
 
   // ── The chart's pins (BC-8): one label open — the tapped item's pin, else the latest marker ──
   const pack = model && question ? model.packs[question] : null;
-  const tapped = pack && Number.isInteger(activeItem) ? pack.items[activeItem] ?? null : null;
+  // BS-2 (shell report §12 A8): the open item is found by its key in TODAY's pack. One that has left
+  // the pack (a tick reshuffled it out) closes — the caption never moves to the item now in its slot —
+  // and it stays closed if it comes back: reopening it is a new tap.
+  const activeIndex = pack && typeof activeKey === 'string' ? pack.items.findIndex((it) => itemKeyOf(it) === activeKey) : -1;
+  if (pack && typeof activeKey === 'string' && activeIndex < 0) setUi((u) => (u.key === sheetKey && u.activeItem === activeKey ? { ...u, activeItem: null } : u));
+  const activeItem = activeIndex >= 0 ? activeIndex : null;
+  const tapped = activeIndex >= 0 ? pack.items[activeIndex] : null;
   const chart = useMemo(() => {
     if (!model) return null;
     const markers = model.pins.markers.map((m) => ({ ...m, day: sessionDay(m.atMs, isCrypto), token: PIN_TOKEN[m.kind] }));
@@ -244,7 +251,13 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     setUi({ key: sheetKey, question: q, activeItem: null });
   }, [sheetKey]);
   const backToQuestions = useCallback(() => setUi({ key: sheetKey, question: null, activeItem: null }), [sheetKey]);
-  const tapItem = useCallback((i) => setUi((u) => ({ ...u, key: sheetKey, activeItem: u.activeItem === i ? null : i })), [sheetKey]);
+  // A tap on slot i opens (or closes) the item IN that slot now, held by its key.
+  const tapItem = useCallback((i) => {
+    const it = pack && Number.isInteger(i) ? pack.items[i] : null;
+    if (!it) return;
+    const k = itemKeyOf(it);
+    setUi((u) => ({ ...u, key: sheetKey, activeItem: u.activeItem === k ? null : k }));
+  }, [sheetKey, pack]);
 
   if (!ctx || !model) return null;
   // The reply shows only under the question it answered (review B5).

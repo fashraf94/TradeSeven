@@ -1,14 +1,77 @@
 // Research Modal Build A — the view helpers (spec §3.2, §3.5, §4.3, BA-1, BA-4, BA-6).
 import { describe, it, expect } from 'vitest';
-import { buildLadder, scoredChipText, sheetLine, traceParts, checkSlotOf } from './bombView.js';
+import { buildLadder, scoredChipText, sheetLine, traceParts, checkSlotOf, atrAsOfText } from './bombView.js';
 import { previewLadder, legacyLadder, measuredLadder } from './ladder.js';
 import { selectBombRecord } from './selectBombRecord.js';
 import { legacyBattle, measuredEogRecord } from './__fixtures__/bombBattles.js';
 import { baselineText, toGoText } from './FuseChart.jsx';
 import { toGo } from './ladder.js';
+import { atrReadingOf, ATR_READING_MAX_AGE_MS } from './atrReading.js';
 
 const WED_1PM = Date.parse('2026-10-14T17:00:00.000Z');
 const at = (iso) => Date.parse(iso);
+
+describe('buildLadder — BS-4: the ATR arm (a non-held stock in a measured battle; the modal hands atrReading only there)', () => {
+  const ready = { status: 'ready', pct: 4.05, asOfMs: Date.parse('2026-10-14T16:05:00.000Z') };
+  it('the rungs take the reading, never the screen\'s threshold (6.48 = atrPercentile × 8)', () => {
+    const l = buildLadder({ context: { kind: 'agent' }, record: null, previousClose: 300, threshold: 6.48, symbol: 'ACN', nowMs: WED_1PM, atrReading: ready });
+    expect(l).toMatchObject({ status: 'ok', kind: 'preview', model: 'preview', threshold: 4.05, atrReading: { pct: 4.05, asOfMs: ready.asOfMs } });
+    expect(l.rungs.find((r) => r.key === 'bagger').price).toBeCloseTo(312.15, 9);
+    // Review D2: the added separators, "ATR reading", "as of" and the time are bound by no-break spaces.
+    expect(sheetLine({ ladder: l, decimals: 2, nowMs: WED_1PM })).toContain('(\u00a0· estimated rung size\u00a0· ATR\u00a0reading\u00a04.0%\u00a0· as\u00a0of\u00a012:05\u00a0PM'.slice(1));
+    expect(sheetLine({ ladder: l, decimals: 2, nowMs: WED_1PM }).replace(/\u00a0/g, ' ')).toBe("Preview · rungs if it entered at yesterday's close ($300.00) · estimated rung size · ATR reading 4.0% · as of 12:05 PM");
+  });
+  it('no reading → "No ladder yet" with the arm\'s own why: atr_unavailable (no current reading), atr_loading, atr_failed — never the 2.5 default', () => {
+    for (const [status, want] of [['none', 'atr_unavailable'], ['loading', 'atr_loading'], ['failed', 'atr_failed']]) {
+      const l = buildLadder({ context: { kind: 'agent' }, record: null, previousClose: 300, threshold: 2.5, symbol: 'ZZZZ', nowMs: WED_1PM, atrReading: { status, pct: null, asOfMs: null } });
+      expect(l.status, status).toBe(want);
+      expect(l.rungs, status).toEqual([]);
+    }
+  });
+  it('review A2: a reading no ladder can be drawn from (a rung at or below $0) is atr_unavailable; with no close yet, atr_loading', () => {
+    expect(buildLadder({ context: { kind: 'agent' }, record: null, previousClose: 40, threshold: 2.5, symbol: 'X', nowMs: WED_1PM, atrReading: { status: 'ready', pct: 55, asOfMs: null } }).status).toBe('atr_unavailable');
+    expect(buildLadder({ context: { kind: 'agent' }, record: null, previousClose: null, threshold: 2.5, symbol: 'X', nowMs: WED_1PM, atrReading: { status: 'ready', pct: 4.05, asOfMs: null } }).status).toBe('atr_loading');
+    // previewLadder itself refuses a non-positive rung (as measuredLadder and v4Ladder do); 49 % still draws.
+    expect(previewLadder({ previousClose: 40, threshold: 50 }).status).toBe('preview_unavailable');
+    expect(previewLadder({ previousClose: 40, threshold: 49 }).status).toBe('ok');
+  });
+  it('review A1 / B2: the reading must be fresh — at most 96 hours old, with a time on it', () => {
+    const now = WED_1PM;
+    const doc = (ageH) => ({ atrPercent: 4.05, updatedAt: { toMillis: () => now - ageH * 3600_000 } });
+    expect(atrReadingOf(doc(96), now)).toEqual({ pct: 4.05, asOfMs: now - 96 * 3600_000 });
+    expect(atrReadingOf(doc(96.01), now)).toEqual({ pct: null, asOfMs: null });
+    expect(atrReadingOf({ atrPercent: 4.05 }, now)).toEqual({ pct: null, asOfMs: null });
+    expect(atrReadingOf({ atrPercent: 0, updatedAt: now }, now).pct).toBeNull();
+    expect(ATR_READING_MAX_AGE_MS).toBe(96 * 3600_000);
+  });
+  it('review C28: "as of" names the day in ET — after 8 PM ET (past midnight UTC) today\'s 4:05 PM run is still today\'s', () => {
+    expect(atrAsOfText(Date.parse('2026-10-14T20:05:00.000Z'), Date.parse('2026-10-15T01:00:00.000Z'))).toBe('4:05 PM');
+    expect(atrAsOfText(Date.parse('2026-10-13T20:05:00.000Z'), Date.parse('2026-10-15T01:00:00.000Z'))).toBe('Tue 4:05 PM');
+    expect(atrAsOfText(null, WED_1PM)).toBeNull();
+  });
+  it('review C15: a reading with no time on it prints no "as of"', () => {
+    const l = buildLadder({ context: { kind: 'agent' }, record: null, previousClose: 300, threshold: 6.48, symbol: 'ACN', nowMs: WED_1PM, atrReading: { status: 'ready', pct: 4.05, asOfMs: null } });
+    const line = sheetLine({ ladder: l, decimals: 2, nowMs: WED_1PM });
+    expect(line).toContain('4.0%');
+    expect(line).not.toMatch(/as.of|null|undefined/);
+  });
+  it('a held measured record keeps its frozen ladder even with a reading handed', () => {
+    const l = buildLadder({ context: { kind: 'agent' }, record: measuredEogRecord(), previousClose: 155.6, threshold: 3.6, symbol: 'EOG', nowMs: WED_1PM, atrReading: ready });
+    expect(l).toMatchObject({ status: 'ok', kind: 'held', model: 'measured', baseline: { price: 155.6, source: 'fill' } });
+    expect(l.atrReading).toBeUndefined();
+  });
+  it('a held legacy record (legacy stocks, crypto) keeps the held-preview line at its own threshold', () => {
+    const record = selectBombRecord(legacyBattle(), 'EOG', WED_1PM);
+    const l = buildLadder({ context: { kind: 'agent' }, record, previousClose: 155.6, threshold: 3.6, symbol: 'EOG', nowMs: WED_1PM, atrReading: ready });
+    expect(l).toMatchObject({ heldPreview: true, threshold: 3.6 });
+    expect(l.atrReading).toBeUndefined();
+  });
+  it('a bench or V4 context never takes the reading (the BaggerBomb mounts)', () => {
+    expect(buildLadder({ context: { kind: 'bench' }, record: null, previousClose: 300, threshold: 6.48, symbol: 'ACN', nowMs: WED_1PM, atrReading: ready }).threshold).toBe(6.48);
+    const l = buildLadder({ context: { kind: 'v4', dailyLevels: null }, record: null, previousClose: 300, threshold: 6.48, symbol: 'ACN', nowMs: WED_1PM, atrReading: ready });
+    expect([l.threshold, l.atrReading]).toEqual([6.48, undefined]);
+  });
+});
 
 describe('buildLadder — which ladder a mount gets (BA-1)', () => {
   const record = selectBombRecord(legacyBattle(), 'EOG', WED_1PM);

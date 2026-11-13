@@ -7,7 +7,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { measuredSheetBattle, SHEET_NOW, ARCHETYPES, AAPL_DAILY, RANKINGS } from './__fixtures__/sheetBattles.js';
 import {
   buildPacks, candidateItems, packFor, orderItems, lensOf, defensivenessOf, weightOf, stanceOf, questionOrder, recordPinsOf, ideaOf,
-  directiveFor, incumbentOfCall, QUESTION_IDS, ITEM_KINDS, RECORD_KINDS, KIND_FACTOR, SERVER_KINDS, CLIENT_REASON, PACK_MAX, FACT_MAX, LOOP_KINDS,
+  directiveFor, incumbentOfCall, itemKeyOf, QUESTION_IDS, ITEM_KINDS, RECORD_KINDS, KIND_FACTOR, SERVER_KINDS, CLIENT_REASON, PACK_MAX, FACT_MAX, LOOP_KINDS,
 } from './packs.js';
 
 const ROW = { positionId: 'position-agent' };
@@ -145,6 +145,23 @@ describe('BC-4 — the item shape, omission, the label', () => {
   });
   it('no pack is built for an unknown question', () => {
     expect(packFor('what_now', candidateItems(full(BATTLES.momentum_chaser)))).toBeNull();
+  });
+  it('BS-2: an item\'s key (itemKeyOf: its kind and symbol, no new field) is unique within every pack — every archetype, at prices on both sides of the next rung, with and without an incumbent', () => {
+    for (const a of ARCHETYPES) {
+      for (const live of [103.2, 103.83, 99.1]) {
+        for (const incumbent of ['ETH', null]) {
+          const { items } = candidateItems(full(BATTLES[a], { live, incumbent }));
+          // The source of the guarantee: at most one candidate per kind.
+          expect(new Set(items.map((i) => i.kind)).size).toBe(items.length);
+          const { packs } = buildPacks(full(BATTLES[a], { live, incumbent }));
+          for (const q of QUESTION_IDS) {
+            const keys = packs[q].items.map(itemKeyOf);
+            expect(new Set(keys).size).toBe(keys.length);
+          }
+        }
+      }
+    }
+    expect(itemKeyOf({ kind: 'rung_distance', symbol: 'AAPL', fact: 'x' })).toBe('rung_distance|AAPL');
   });
 });
 
