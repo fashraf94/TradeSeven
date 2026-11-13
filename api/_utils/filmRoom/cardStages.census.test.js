@@ -9,9 +9,11 @@
 // words cover exactly the vocabulary's stages.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardStore.js re-exports src/data/cardStages.js; these imports, never mocked,
+// are the runtime guard that the vocabulary module stays Node-clean.
 import { CARD_STAGES, OPEN_STAGES, isOpenStage } from '../../../src/data/cardStages.js';
 import * as store from './cardStore.js';
 
@@ -37,7 +39,8 @@ const STAGE = CARD_STAGES.join('|');
 /** An array literal of two or more stage words, or two stage comparisons chained by && / || in one expression. */
 const OWN_LIST = [
   new RegExp(`\\[\\s*(['"])(${STAGE})\\1\\s*,\\s*(['"])(${STAGE})\\3`),
-  new RegExp(`stage\\s*[!=]==?\\s*(['"])(${STAGE})\\1\\s*(&&|\\|\\|)\\s*[\\w.?]*stage\\s*[!=]==?\\s*(['"])(${STAGE})\\4`),
+  // (C1 review C-2: each comparison may sit in its own parentheses)
+  new RegExp(`stage\\s*[!=]==?\\s*(['"])(${STAGE})\\1\\s*\\)?\\s*(&&|\\|\\|)\\s*\\(?\\s*[\\w.?]*stage\\s*[!=]==?\\s*(['"])(${STAGE})\\4`),
   // C1 review A-12: a switch whose cases fall through two stage words is a list too
   new RegExp(`case\\s*(['"])(${STAGE})\\1\\s*:\\s*case\\s*(['"])(${STAGE})\\3`),
 ];
@@ -63,6 +66,7 @@ describe('C-VOCAB — every reader reads the stages from the one export', () => 
       expect(ownStageListsIn(`${src}\nconst open = (c) => c.stage === 'card' || c.stage === 'testing';\n`).length, `${file} chain`).toBe(1);
       expect(ownStageListsIn(`${src}\nconst open = (c) => c.stage !== 'tested' && c?.stage !== "installed";\n`).length, `${file} chain, other quotes`).toBe(1);
       expect(ownStageListsIn(`${src}\nswitch (c.stage) { case 'card':\n  case 'nominated': return true; default: return false; }\n`).length, `${file} switch`).toBe(1);
+      expect(ownStageListsIn(`${src}\nconst open = (c) => (c.stage === 'card') || (c.stage === 'nominated');\n`).length, `${file} parenthesized chain`).toBe(1);
     }
     // a list in a comment is not code
     expect(ownStageListsIn("// the stages ['card', 'nominated'] were v1's\nconst x = 1;")).toEqual([]);
@@ -70,8 +74,20 @@ describe('C-VOCAB — every reader reads the stages from the one export', () => 
     expect(ownStageListsIn("if (c.stage === 'retired') x();")).toEqual([]);
   });
 
-  it('DOCUMENTED LIMIT, stated on purpose: an object keyed by stage words is not read as a list — the copy\'s stageWords and the store\'s SERVER_TRANSITIONS are such maps by design; the copy\'s keys are pinned equal to the vocabulary below instead', () => {
+  it('DOCUMENTED LIMITS, stated on purpose (the motion guard\'s precedent): the census reads text, so it does not see an object keyed by stage words (the copy\'s stageWords and the store\'s SERVER_TRANSITIONS are such maps by design — the copy\'s keys are pinned equal to the vocabulary below instead), a stage held in a local alias, a template-literal list, or a list that opens with a non-stage. A reader that diverges that way is caught by its behaviour rows, not here', () => {
     expect(ownStageListsIn("const open = { card: true, nominated: true };")).toEqual([]);
+    expect(ownStageListsIn("const s = c.stage; const open = s === 'card' || s === 'nominated';")).toEqual([]);
+    expect(ownStageListsIn('const open = [`card`, `nominated`];')).toEqual([]);
+    expect(ownStageListsIn("const open = [null, 'card', 'nominated'];")).toEqual([]);
+  });
+
+  it('DISCOVERY (C1 review C-2): every non-test module of the Film Room\'s card code that reads `.stage` is the export or a listed reader — a new reader cannot go unscanned', () => {
+    const walk = (dir) => readdirSync(abs(dir), { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? (d.name === '__fixtures__' ? [] : walk(`${dir}/${d.name}`)) : [`${dir}/${d.name}`]));
+    const files = ['api/_utils/filmRoom', 'api/film-room', 'src/screens/filmRoomV2', 'src/data'].flatMap(walk)
+      .filter((f) => /\.(js|jsx|mjs)$/.test(f) && !/\.test\.|\.rules\./.test(f))
+      .filter((f) => /\.stage\b/.test(stripComments(readFileSync(abs(f), 'utf8'))));
+    expect(files.length).toBeGreaterThan(2);
+    expect(files.filter((f) => f !== 'src/data/cardStages.js' && !Object.prototype.hasOwnProperty.call(STAGE_READERS, f))).toEqual([]);
   });
 
   it('the export itself is the one place the lists live — and the store\'s are the same objects', () => {

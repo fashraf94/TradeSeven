@@ -13,9 +13,12 @@
 // Over the tape suites' in-memory Firestore (real optimistic transactions).
 
 import { describe, it, expect } from 'vitest';
+// DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardStore.js imports src/data/cardStages.js and, through
+// practiceFieldSeam.js, api/_utils/marketSchedule.js → src/utils/marketCalendar.js; this import of the store, never
+// mocked, is the runtime guard that they stay Node-clean.
 import { makeTapeDb } from '../filmTape/__fixtures__/tapeFirestore.js';
 import {
-  createCard, retireCard, readCards, applyServerTransition, parkCard, isOpen, SERVER_TRANSITIONS, PLAYS_SUBCOLLECTION,
+  createCard, retireCard, readCards, applyServerTransition, parkCard, nominateCard, isOpen, SERVER_TRANSITIONS, PLAYS_SUBCOLLECTION,
   CARD_STAGE_VOCAB_VERSION, CARD_STAGES, OPEN_STAGES, isOpenStage,
 } from './cardStore.js';
 import * as stages from '../../../src/data/cardStages.js';
@@ -88,6 +91,17 @@ describe('Build C §3 — the stage vocabulary v2, one export', () => {
     const after = t.store.get(playPath('v1'));
     expect(after.stage).toBe('retired');
     expect('stageVocabVersion' in after).toBe(false);
+  });
+
+  it('C1 review C-1: a v1 entry at card (B2\'s, no stageVocabVersion) nominated by the player keeps no stageVocabVersion (the mutant: nominate rewriting a v1 entry)', async () => {
+    const t = fresh();
+    const { card } = await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c1', payload: payload(), nowIso: NOW, battleArchetype: 'momentum_chaser' });
+    const v1 = { ...card };
+    delete v1.stageVocabVersion;
+    t.store.set(playPath('c1'), v1);
+    const r = await nominateCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'n1', expectedVersion: 1, nowIso: LATER, book: { bookId: BOOK, status: 'active' } });
+    expect(r.card.stage).toBe('nominated');
+    expect('stageVocabVersion' in t.store.get(playPath('c1'))).toBe(false);
   });
 
   it('a v1 `nominated` entry (B2\'s Practice route, no nomination record) counts open as before, and the helper copies nothing onto it (409 nomination_mismatch)', async () => {

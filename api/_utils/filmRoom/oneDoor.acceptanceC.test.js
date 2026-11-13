@@ -103,6 +103,8 @@ describe('acceptance C — the assembled trading prompt with a ledger is byte-id
     const r = await readCards(t.db, { uid: UID, agentId: AGENT });
     expect(r.cards.map((c) => [c.entryId, c.stage])).toEqual([['c_retired', 'retired'], ['c_nominated', 'nominated'], ['c_card', 'card']]);
     expect(r.open).toBe(2);
+    // Build C §4: the nominated entry's record is in the book on the same handle (C1 review C-5)
+    expect(t.store.get('mandates/book-c/nominations/c_nominated')).toMatchObject({ state: 'queued', source: { kind: 'film_room_card', entryId: 'c_nominated' } });
   });
 
   it('every assembler: the same bytes with and without the ledger, a LIVE read log in both runs (the institutional reads are in it), and no read of plays in either', async () => {

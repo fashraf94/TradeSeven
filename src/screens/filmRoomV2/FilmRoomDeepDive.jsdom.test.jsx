@@ -106,6 +106,7 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     rule.actions[0] = { ...rule.actions[0], exitReason: 'stagnation', mechanism: EXIT_MECHANISMS.stagnation };
     m.render(<Harness key="rule" tape={rule} series={sep23Series} start={symbolOut} />);
     expect(m.q('[data-swap-label="0"]').textContent).toBe('Exit · 12:45 PM · by platform rule · stagnation');
+    expect(m.q('[data-region="symbol-facts"]').textContent).toContain('Exit by platform rule · stagnation');
     m.click(chip(symbolIn));
     expect(m.q('[data-swap-label="0"]').textContent).toBe('Entry · 12:45 PM · in for MSFT · by platform rule · stagnation');
     expect(sweepWords(m.container, docsFor(rule, sep23Series))).toEqual([]);
