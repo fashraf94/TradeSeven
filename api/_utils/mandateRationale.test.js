@@ -105,6 +105,13 @@ describe('boundRationale — present / absent / truncated', () => {
     expect(cut).toEqual({ rationale: marks.slice(0, 10), rationaleStatus: 'truncated' });
   });
 
+  it('the segmented prefix carries one whole code point of right context (a modifier pair just past the bound)', () => {
+    // 👍 ends exactly at the bound; 🏻 (a surrogate pair) extends it. Without
+    // the whole pair in view, the cut would keep a 👍 that is not a whole cluster.
+    const out = boundRationale(`${'a'.repeat(38)}👍🏻 tail`, { maxChars: 40 });
+    expect(out).toEqual({ rationale: 'a'.repeat(38), rationaleStatus: 'truncated' });
+  });
+
   it('the cut costs the same on a huge input: only a prefix is segmented, with the same boundaries', () => {
     const big = `${'Reason with é and 👨‍👩‍👧 inside. '.repeat(60_000)}`; // ~2.4M units
     const started = performance.now();
