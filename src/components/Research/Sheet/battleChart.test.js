@@ -106,3 +106,15 @@ describe('a year the market calendar does not cover: the fixed 9:30–16:00 sess
     expect(battleCandlesOf(raw, { days: ['2032-10-14'], nowMs: Date.parse('2032-10-15T00:00:00.000Z') }).map((c) => c.date)).toEqual(['2032-10-14T13:30:00.000Z', '2032-10-14T19:55:00.000Z']);
   });
 });
+
+describe('lens D (D18, D19) — the 16:00 cutoff on a battle day; duplicate bar times', () => {
+  const bar = (iso, p = 100) => ({ date: iso, open: p, high: p + 1, low: p - 1, close: p, volume: 1 });
+  it('a battle day\'s after-hours bars are not the session (4:00 PM ET on)', () => {
+    const raw = [bar('2026-10-14T20:05:00.000Z'), bar('2026-10-14T20:00:00.000Z'), bar('2026-10-14T19:55:00.000Z')];
+    expect(battleCandlesOf(raw, { days: ['2026-10-14'], nowMs: Date.parse('2026-10-14T22:00:00.000Z') }).map((c) => c.date)).toEqual(['2026-10-14T19:55:00.000Z']);
+  });
+  it('one bar per time (the chart library needs strictly ascending times)', () => {
+    const raw = [bar('2026-10-14T14:00:00.000Z', 101), bar('2026-10-14T14:00:00.000Z', 102), bar('2026-10-14T13:55:00.000Z')];
+    expect(battleCandlesOf(raw, { days: ['2026-10-14'], nowMs: NOW }).map((c) => c.timestamp)).toEqual([Z('2026-10-14T13:55:00.000Z') / 1000, Z('2026-10-14T14:00:00.000Z') / 1000]);
+  });
+});

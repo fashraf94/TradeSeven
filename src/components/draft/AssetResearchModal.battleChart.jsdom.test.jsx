@@ -23,7 +23,7 @@ vi.mock('../../config/researchModalFlags', () => FLAGS);
 vi.mock('../../config/researchModalFlags.js', () => FLAGS);
 
 const net = vi.hoisted(() => ({ calls: [], intraday: null, daily: null, fallback: false }));
-const rec = vi.hoisted(() => ({ lines: [], markers: [], clicks: [] }));
+const rec = vi.hoisted(() => ({ lines: [], markers: [], clicks: [], charts: [] }));
 vi.mock('../../services/eodhdAPI', () => ({
   fetchHistoricalOHLCV: (symbol, timeframe, opts) => {
     net.calls.push(['history', symbol, timeframe, opts ?? null]);
@@ -42,7 +42,7 @@ vi.mock('../../utils/fetchWithAuth', () => ({ fetchWithAuth: async (u) => { net.
 vi.mock('lightweight-charts', () => {
   const series = () => ({ setData() {}, createPriceLine(o) { rec.lines.push(o); return o; }, removePriceLine() {}, setMarkers() {}, priceScale() { return { applyOptions() {} }; }, applyOptions() {} });
   return {
-    createChart: () => ({
+    createChart: (_el, opts) => (rec.charts.push(opts), {
       addSeries: () => series(), removeSeries() {}, subscribeCrosshairMove() {},
       subscribeClick(fn) { rec.clicks.push(fn); }, unsubscribeClick(fn) { rec.clicks = rec.clicks.filter((f) => f !== fn); },
       timeScale() { return { applyOptions() {}, fitContent() {}, scrollToRealTime() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange() { return null; } }; },
@@ -116,7 +116,7 @@ beforeEach(() => {
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
   net.calls.length = 0; net.daily = DAILY; net.fallback = false;
   net.intraday = (tf) => bars(tf === '5m' ? 5 : 30, ['2026-10-12', '2026-10-13', '2026-10-14']);
-  rec.lines.length = 0; rec.markers.length = 0; rec.clicks = [];
+  rec.lines.length = 0; rec.markers.length = 0; rec.clicks = []; rec.charts.length = 0;
   Element.prototype.scrollIntoView = vi.fn();
   vi.spyOn(console, 'log').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -288,5 +288,92 @@ describe('the PR 2 review round (B1–B3, A1)', () => {
     expect(intradayAsks()).toHaveLength(2);
     // The refresh keeps the bars drawn while it asks.
     expect($('[data-shell-chart-state]')).toBeNull();
+  });
+});
+
+describe('the PR 2 review round (lens D — rows that pin what had no row)', () => {
+  it('D8/D9 — Battle\'s time axis shows the time of day, in ET', async () => {
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    const opts = rec.charts.at(-1);
+    expect(opts.timeScale.timeVisible).toBe(true);
+    expect(typeof opts.localization?.timeFormatter).toBe('function');
+    expect(opts.localization.timeFormatter(T('14:20') / 1000)).toBe('10:20 AM');
+  });
+  it('D10 — the OHLC header shows the Battle bar\'s own values, never today\'s daily high merged in', async () => {
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    const text = $('[data-shell-scroll="chart"]').textContent;
+    expect(text).toMatch(/H\s*10\d\.\d\d/);
+    expect(text).not.toMatch(/H\s*104\.10/);
+  });
+  it('D14/E3/E4 — 1W with the Battle pill: the day\'s one counted marker on the week bar holding it, its caption', async () => {
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('1W'));
+    expect(lastMarkers().map((m) => m.id)).toEqual(['day:2026-10-14']);
+    expect($('[data-pin-caption]').textContent).toBe('● Wed · 6');
+  });
+  it('D22 — a fallback marked 1d is refused even when its rows carry a time of day', async () => {
+    net.intraday = () => { const rows = bars(5, ['2026-10-14']); rows._meta = { actualTimeframe: '1d' }; return rows; };
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    expect($('[data-shell-chart-state]').dataset.shellChartState).toBe('battle-error');
+  });
+  it('D23 — rows with no time of day are refused even with no fallback mark', async () => {
+    net.intraday = () => [...DAILY];
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    expect($('[data-shell-chart-state]').dataset.shellChartState).toBe('battle-error');
+  });
+  it('D21 — Retry asks again and draws', async () => {
+    net.fallback = true;
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    net.fallback = false;
+    await click($('[data-battle-retry]'));
+    expect(intradayAsks()).toHaveLength(2);
+    expect($('[data-shell-chart-state]')).toBeNull();
+    expect(activePill()).toBe('battle');
+  });
+  it('D24 — from an error, the back button returns to 1D', async () => {
+    net.fallback = true;
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    await click($('[data-battle-back]'));
+    expect(activePill()).toBe('1D');
+  });
+  it('D20 — no bars of the battle\'s sessions yet: "none yet", with Retry', async () => {
+    net.intraday = () => bars(5, ['2026-10-13']);
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    expect($('[data-shell-chart-state]').dataset.shellChartState).toBe('battle-empty');
+    expect($('[data-shell-chart-state]').textContent).toContain('No battle bars yet');
+    expect($('[data-battle-retry]')).toBeTruthy();
+  });
+  it('D25 — the day chips belong to 1D / 1W, never under Battle', async () => {
+    await open();
+    await click(shellPill('chart'));
+    expect($('[data-shell-record-days]')).toBeTruthy();
+    await click(chartPill('battle'));
+    expect($('[data-shell-record-days]')).toBeNull();
+  });
+  it('D6 — a stock change starts the Chart view on 1D: back on the battle\'s stock after navigation, Battle is not still on', async () => {
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    await click(shellPill('analysis'));
+    await click($('[data-shell-tab="ranks"]'));
+    await click($('[data-nav-msft]'));
+    await click($('[data-shell-back]'));
+    await click(shellPill('chart'));
+    expect(activePill()).toBe('1D');
   });
 });

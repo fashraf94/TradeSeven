@@ -56,6 +56,11 @@ describe("BC2-2 — the '5m' timeframe", () => {
     await handler({ query: { symbol: 'AAPL', timeframe: '5m', days: '5' } }, res());
     expect(urls).toHaveLength(1);
   });
+  it('the days are part of the key (lens D, E5): another window is another request', async () => {
+    await handler({ query: { symbol: 'AAPL', timeframe: '5m', days: '5' } }, res());
+    await handler({ query: { symbol: 'AAPL', timeframe: '5m', days: '10' } }, res());
+    expect(urls).toHaveLength(2);
+  });
   it("cached five minutes, not TECHNICAL's hour (a live session's bars — PR 2 review A1/C2); 30m keeps its tier", async () => {
     await handler({ query: { symbol: 'AAPL', timeframe: '5m', days: '5' } }, res());
     await handler({ query: { symbol: 'AAPL', timeframe: '30m', days: '20' } }, res());
