@@ -383,6 +383,33 @@ describe('BS-4 — the read\'s wiring in the modal (review C)', () => {
     expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$312.15');
   });
 
+  it('refuter NEW-R2-1: a view change while a read is in flight never cancels and re-sends it — one read', async () => {
+    seed('ACN'); scores('ACN', 4.05);
+    let release; net.hold['stockTechnicalScores/ACN'] = new Promise((r) => { release = r; });
+    await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
+    const tab = (label) => [...document.body.querySelectorAll('button')].find((b) => b.textContent.trim() === label);
+    await act(async () => { tab('Technical').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    await act(async () => { tab('💣 Bomb').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    await act(async () => { release(); }); await flush();
+    expect(reads()).toEqual(['stockTechnicalScores/ACN']);
+    expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$312.15');
+  });
+
+  it('refuter NEW-R2-2: while the retry after a failure is in flight the preview says loading, not failed', async () => {
+    seed('ACN'); scores('ACN', 4.05); net.failRead = true;
+    await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
+    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_failed');
+    net.failRead = false;
+    let release; net.hold['stockTechnicalScores/ACN'] = new Promise((r) => { release = r; });
+    const tab = (label) => [...document.body.querySelectorAll('button')].find((b) => b.textContent.trim() === label);
+    await act(async () => { tab('Technical').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    await act(async () => { tab('💣 Bomb').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_loading');
+    await act(async () => { release(); }); await flush();
+    expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$312.15');
+    expect(reads()).toEqual(['stockTechnicalScores/ACN', 'stockTechnicalScores/ACN']);
+  });
+
   it('C6: an unranked name is read once for the modal\'s life, not on every 💣 reopen', async () => {
     flag.sheet = 'on'; seed('ZZZZ');
     const sheetContext = { battleId: 'stock-battle', agentId: 'agent', archetype: 'momentum_chaser', agentName: 'Juno', row: { held: false }, battle: BATTLE, calls: [], standing: null, directive: null };

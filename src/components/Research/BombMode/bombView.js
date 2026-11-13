@@ -45,7 +45,7 @@ export function buildLadder({ context, record, bombData, previousClose, threshol
   // battle); a held ladder above, a legacy-scored battle, a bench or V4 context never
   // reach here. With no ladder: "No ladder yet", with the arm's own why — atr_loading
   // (the reading or yesterday's close still coming), atr_failed (the read failed; asked
-  // again when 💣 reopens), atr_unavailable (no current reading, or one no ladder can be
+  // again on the next change of view, tab or timeframe), atr_unavailable (no current reading, or one no ladder can be
   // drawn from: a rung at or below $0 — review A2).
   if (context?.kind === 'agent' && atrReading) {
     const pct = positive(atrReading.pct) ? atrReading.pct : null;

@@ -450,15 +450,16 @@ const AssetResearchModal = ({
   // a FAILED read is not kept as an answer, so the next time 💣 opens it is asked again (review A5, B1).
   const [atrReads, setAtrReads] = useState({}); // symbol → { status, pct, asOfMs }
   const atrRead = atrReads[currentAsset?.symbol] ?? null;
-  // Refuter NEW-2: a failed read is asked again on the next change of the view, the tab or the
-  // timeframe (viewN, in the read's deps) — off the shell the battle mounts sit on the Bomb tab AND
-  // the bomb series, so leaving and reopening 💣 never dropped the ask there. A failure changes none
-  // of the deps, so it is never re-asked at once: one read per change.
+  // Refuter NEW-2: a failed read is the answer only until the view, the tab or the timeframe next
+  // changes — off the shell the battle mounts sit on the Bomb tab AND the bomb series, so leaving
+  // and reopening 💣 never dropped the ask there. The change is counted (viewN) and the failure
+  // remembers the count it failed at; viewN is NOT in the read's deps, so a view change never cancels
+  // and re-sends a read in flight (refuter NEW-R2-1). One read per change, never an immediate re-ask.
   const viewToken = `${shellView}|${activeTab}|${researchData.timeframe}`;
   const [viewSeen, setViewSeen] = useState({ token: viewToken, n: 0 });
   if (viewSeen.token !== viewToken) setViewSeen({ token: viewToken, n: viewSeen.n + 1 });
   const viewN = viewSeen.token === viewToken ? viewSeen.n : viewSeen.n + 1;
-  const haveAtr = !!atrRead && atrRead.status !== 'failed';
+  const haveAtr = !!atrRead && (atrRead.status !== 'failed' || atrRead.failedAtView === viewN);
   const bombSeries = researchData.timeframe === 'bomb' || researchData.timeframe === 'spectate';
   const askAtr = atrArm && !haveAtr && (shellOn ? bombSeries : (activeTab === 'baggerbomb' || bombSeries));
   useEffect(() => {
@@ -466,10 +467,13 @@ const AssetResearchModal = ({
     const symbol = currentAsset?.symbol;
     if (!symbol) return undefined;
     let cancelled = false;
-    readAtrReading(symbol).then((r) => { if (!cancelled) setAtrReads((m) => ({ ...m, [symbol]: r })); });
+    const atView = viewN;
+    readAtrReading(symbol).then((r) => { if (!cancelled) setAtrReads((m) => ({ ...m, [symbol]: r.status === 'failed' ? { ...r, failedAtView: atView } : r })); });
     return () => { cancelled = true; };
-  }, [askAtr, currentAsset?.symbol, viewN]);
-  const atrReading = atrArm ? (atrRead ? { status: atrRead.status, pct: atrRead.pct, asOfMs: atrRead.asOfMs } : { status: 'loading', pct: null, asOfMs: null }) : null;
+  }, [askAtr, currentAsset?.symbol]); // eslint-disable-line react-hooks/exhaustive-deps -- viewN is read at the ask, never a reason to re-ask (NEW-R2-1)
+  // While a retry after a failure is in flight the preview says the reading is loading, not that it failed (NEW-R2-2).
+  const atrShown = atrRead && !(atrRead.status === 'failed' && askAtr) ? atrRead : null;
+  const atrReading = atrArm ? (atrShown ? { status: atrShown.status, pct: atrShown.pct, asOfMs: atrShown.asOfMs } : { status: 'loading', pct: null, asOfMs: null }) : null;
   const bombView = useBombView({
     on: bombOn,
     context: bombContext,
