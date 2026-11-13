@@ -455,7 +455,7 @@ describe('(f) T0c — the qualified idle skip', () => {
   // The duty read the idle check makes: status 'open', bounded to one doc.
   const DUTY_READ = [['where', 'status', '==', 'open'], ['limit', 1]];
 
-  it('eval, no books and no open batch: one idle line, no fetch, the store untouched, the model never reached', async () => {
+  it('eval, no books and no open batch: one bounded duty read, one idle line, no fetch, the store untouched', async () => {
     const db = makeMandateFakeDb({ 'archetypeVintages/analyst_x': VINTAGE });
     const before = storeImage(db);
     const batchReads = hookBatchQueries(db);
