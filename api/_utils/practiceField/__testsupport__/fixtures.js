@@ -10,6 +10,8 @@ import { makeMandateFakeDb } from '../../__testsupport__/mandateFakeFirestore.js
 import { etWallClockToMs } from '../../../../src/utils/marketCalendar.js';
 import { resolveSessionSlots } from '../../mandateSessionSlots.js';
 import { SNAPSHOT_COLLECTION } from '../../mandateUniverseSnapshot.js';
+
+if (SNAPSHOT_COLLECTION !== 'mandateUniverseSnapshots') throw new Error('fixtures.js: the close-snapshot collection was renamed; update storeCloseSnapshot');
 import { createIdeaBook } from '../ideaBook.js';
 import { admitIdea } from '../admission.js';
 import { enterIdea } from '../entry.js';
@@ -159,7 +161,9 @@ export async function admitAndEnter(db, bookId, { contract, opId = 'idea-1', adm
  */
 export async function storeCloseSnapshot(db, date, quotes) {
   const snap = closeSnapshot(date, quotes);
-  const ref = db.collection(SNAPSHOT_COLLECTION).doc(snap.tickKey);
+  // The collection by its literal name, so the protected-store scan resolves this write (to a non-protected
+  // collection); the module-scope check below keeps the literal equal to the engine's constant.
+  const ref = db.collection('mandateUniverseSnapshots').doc(snap.tickKey);
   const existing = await ref.get();
   if (existing.exists) {
     const same = JSON.stringify(existing.data()) === JSON.stringify(snap);
