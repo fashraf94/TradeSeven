@@ -61,7 +61,8 @@ const payload = (over = {}) => ({
   battleId: 'b-1', etDate: '2026-10-20', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5,
   questionId: 'stalled.want', questionVersion: 1, note: 'Let it go sooner.', route: 'watch', ...over,
 });
-const fresh = (agent = agentDoc()) => makeTapeDb({ [`agents/${AGENT}`]: agent });
+// Amendment A CA-12: the book document behind BOOK — the Offer transaction re-reads it (the owner's idea book, active, the agent's)
+const fresh = (agent = agentDoc()) => makeTapeDb({ [`agents/${AGENT}`]: agent, [`mandates/${BOOK.bookId}`]: { userId: UID, kind: 'idea_book', status: 'active', attributionAgentId: AGENT } });
 const playPath = (id) => `agents/${AGENT}/${PLAYS_SUBCOLLECTION}/${id}`;
 const playWrites = (t) => t.writeLog.filter((w) => w.path.includes(`/${PLAYS_SUBCOLLECTION}/`));
 const code = async (p) => { try { await p; return null; } catch (e) { return e.cardRoute ? { status: e.status, code: e.code, extra: e.extra, message: e.message } : { thrown: String(e) }; } };

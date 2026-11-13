@@ -24,6 +24,11 @@
 //       `calendar_unavailable`: an expiry is never guessed.
 //       OWNER: the Practice Field's T2 replaces it (the nominations rule is declared there too, spec §9).
 //
+//   bookIsForAgent(bookDoc, attributionAgentId) → boolean   (Amendment A CA-12)
+//       Pure: is the book document (re-read inside the nominate and Offer transactions) the attribution agent's?
+//       DEFAULT: compares a field named `attributionAgentId`. A throw, or any answer but `true`, refuses book_not_open.
+//       OWNER: the Practice Field's T1a, which names the book's real attribution field.
+//
 //   buildWithdrawal(record, { nowIso })   (Amendment A CA-2)
 //       → the record withdrawn by the player's retire of a nominated card the agent has not taken (`queued`,
 //       `considered` or `deferred`): written by the retire's ONE transaction beside the entry's move to `retired`.
@@ -115,9 +120,16 @@ function defaultBuildWithdrawal(record, { nowIso }) {
   return { ...record, state: 'withdrawn', withdrawnAt: nowIso, stateHistory: [...history, { state: 'withdrawn', at: nowIso, by: 'player' }] };
 }
 
-/** The defaults: no book for anyone (no read at all), the contract's record, and its withdrawal. */
+/**
+ * Amendment A CA-12 — the default: the book names the attribution agent in a field called `attributionAgentId`. Pure
+ * (it runs inside the nominate and Offer transactions). T1a names the real field and replaces it.
+ */
+const defaultBookIsForAgent = (bookDoc, attributionAgentId) => bookDoc !== null && typeof bookDoc === 'object' && typeof bookDoc.attributionAgentId === 'string' && bookDoc.attributionAgentId.length > 0 && bookDoc.attributionAgentId === attributionAgentId;
+
+/** The defaults: no book for anyone (no read at all), the contract's record, its withdrawal, and the book's agent. */
 export const PRACTICE_FIELD_SEAM_DEFAULTS = Object.freeze({
   bookForOwner: async () => null,
+  bookIsForAgent: defaultBookIsForAgent,
   buildNominationDoc: defaultBuildNominationDoc,
   buildWithdrawal: defaultBuildWithdrawal,
 });
@@ -129,6 +141,9 @@ export const bookForOwner = (db, { uid, attributionAgentId }) => live.bookForOwn
 
 /** The nomination record, contract V2 §5.2's shape (the default until T2). */
 export const buildNominationDoc = (args) => live.buildNominationDoc(args);
+
+/** Amendment A CA-12: is this book document the attribution agent's? (the default until T1a replaces it) */
+export const bookIsForAgent = (bookDoc, attributionAgentId) => live.bookIsForAgent(bookDoc, attributionAgentId);
 
 /** Amendment A CA-2: the record withdrawn by the player's retire (the default until the Practice Field replaces it). */
 export const buildWithdrawal = (record, opts) => live.buildWithdrawal(record, opts);

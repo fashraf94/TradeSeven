@@ -105,6 +105,12 @@ afterEach(() => {
   if (ENV_BEFORE === undefined) delete process.env.COCKPIT_ALLOWLIST_UIDS; else process.env.COCKPIT_ALLOWLIST_UIDS = ENV_BEFORE;
 });
 const playWrites = () => t.writeLog.filter((w) => w.path.includes('/plays/'));
+/**
+ * Amendment A CA-12: the book document behind an injected `bookForOwner` — the nominate and Offer transactions re-read
+ * `mandates/{bookId}` and require the owner's idea book, active, for the attribution agent (the seam's default
+ * bookIsForAgent reads `attributionAgentId`).
+ */
+const seedBook = (status = 'active', over = {}, bookId = 'book-1') => t.store.set(`mandates/${bookId}`, { userId: OWNER, kind: 'idea_book', status, attributionAgentId: AGENT, ...over });
 
 describe('the gate (Build B spec §7)', () => {
   it("mode 'off': 404 { error: 'disabled' } with no read and no write — before auth", async () => {
@@ -675,6 +681,7 @@ describe('C1 item 3 — nominate and the Offer route, through the handler', () =
   const withBook = (status = 'active') => {
     bookCalls = [];
     setPracticeFieldSeam({ bookForOwner: async (_db, { uid, attributionAgentId }) => { bookCalls.push([uid, attributionAgentId]); return uid === OWNER && attributionAgentId === AGENT ? { bookId: BOOK_ID, status } : null; } });
+    seedBook(status);
   };
   afterEach(() => resetPracticeFieldSeam());
   const nominate = (over = {}) => ({ op: 'nominate', opId: 'nom_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
@@ -839,6 +846,7 @@ describe('C1 item 7 — park, through the handler', () => {
 
   it('a tested card parks: 200, parkedAt set, the counter\'s open count drops; a replay is idempotent; parked twice → 409', async () => {
     setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: 'book-1', status: 'active' }) });
+    seedBook();
     expect((await post(create({ route: 'offer' }))).statusCode).toBe(200);
     const by = { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, by: 'practice_field' };
     await applyServerTransition(t.db, { ...by, to: 'nomination', opId: 's1', payload: { bookId: 'book-1', nominationId: 'op_1', state: 'accepted', ideaId: 'i1', reason: 'Testing it.', consideredAt: '2026-09-25T20:00:00.000Z' } });
@@ -879,7 +887,7 @@ describe('C1 fix round F1 — a new nomination judges its source again, in its t
   const BOOK_ID = 'book-1';
   const TAPE = `agentBattles/${BATTLE}/tape/${D}`;
   afterEach(() => resetPracticeFieldSeam());
-  const withBook = () => setPracticeFieldSeam({ bookForOwner: async (_db, { uid, attributionAgentId }) => (uid === OWNER && attributionAgentId === AGENT ? { bookId: BOOK_ID, status: 'active' } : null) });
+  const withBook = () => { setPracticeFieldSeam({ bookForOwner: async (_db, { uid, attributionAgentId }) => (uid === OWNER && attributionAgentId === AGENT ? { bookId: BOOK_ID, status: 'active' } : null) }); seedBook(); };
   const nominate = (over = {}) => ({ op: 'nominate', opId: 'nom_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
   const bookWrites = () => t.writeLog.filter((w) => w.path.startsWith('mandates/'));
   const entry = () => t.store.get(`agents/${AGENT}/plays/op_1`);
@@ -1031,10 +1039,13 @@ describe('C1 fix round F2 — a malformed nomination record from the builder wri
   const BOOK_ID = 'book-1';
   afterEach(() => resetPracticeFieldSeam());
   /** The book open, and the builder replaced by the default's output passed through `mangle`. */
-  const withBuilder = (mangle) => setPracticeFieldSeam({
-    bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }),
-    buildNominationDoc: (args) => mangle(PRACTICE_FIELD_SEAM_DEFAULTS.buildNominationDoc(args)),
-  });
+  const withBuilder = (mangle) => {
+    setPracticeFieldSeam({
+      bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }),
+      buildNominationDoc: (args) => mangle(PRACTICE_FIELD_SEAM_DEFAULTS.buildNominationDoc(args)),
+    });
+    seedBook();
+  };
   const without = (key) => (r) => { const out = { ...r }; delete out[key]; return out; };
   const MALFORMED = [
     ['the source naming another entry (Astra\'s repro)', (r) => ({ ...r, source: { ...r.source, entryId: 'absent-entry' } })],
@@ -1090,6 +1101,7 @@ describe('C1 fix round F2 — a malformed nomination record from the builder wri
       bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }),
       buildNominationDoc: () => { const e = new Error('off the calendar'); e.code = 'calendar_unavailable'; throw e; },
     });
+    seedBook();
     expect(await post(create({ opId: 'op_o', route: 'offer' }))).toMatchObject({ statusCode: 503, body: { error: 'calendar_unavailable' } });
     expect((await post(create())).statusCode).toBe(200);
     expect(await post(nominate)).toMatchObject({ statusCode: 503, body: { error: 'calendar_unavailable' } });
@@ -1103,6 +1115,7 @@ describe('Amendment A CA-2 — the retire op withdraws an untaken nomination, th
   afterEach(() => resetPracticeFieldSeam());
   const offer = async () => {
     setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }) });
+    seedBook();
     const r = await post(create({ route: 'offer' }));
     expect(r.statusCode).toBe(200);
     resetPracticeFieldSeam();   // the withdrawal never reads the book: none is needed
@@ -1137,5 +1150,39 @@ describe('Amendment A CA-2 — the retire op withdraws an untaken nomination, th
     expect(res.body).toEqual({ error: 'nomination_unavailable', message: CARD_ROUTE_COPY.nomination_unavailable });
     expect(t.writeLog.length).toBe(before);
     expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('nominated');
+  });
+});
+
+// ── Amendment A CA-12 — the book re-read, through the handler ──────────────────────────────────────────────────────
+describe('Amendment A CA-12 — the book re-read in the transaction, through the handler', () => {
+  afterEach(() => resetPracticeFieldSeam());
+  const openSeam = () => setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: 'book-1', status: 'active' }) });
+  const nominate = (over = {}) => ({ op: 'nominate', opId: 'nom_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
+
+  it('the pre-read says open, the book itself does not (closed, another owner, a portfolio book, the CLONE\'s rather than the ranked parent\'s): 409 book_not_open, the body only the code and its sentence; nothing written', async () => {
+    openSeam();
+    expect((await post(create())).statusCode).toBe(200);
+    for (const over of [{ status: 'closed' }, { userId: 'someone-else' }, { kind: 'portfolio' }, { attributionAgentId: `casual-agent-${OWNER}` }]) {
+      seedBook('active', over);
+      const before = t.writeLog.length;
+      const res = await post(nominate());
+      expect(res.statusCode, JSON.stringify(over)).toBe(409);
+      expect(res.body, JSON.stringify(over)).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+      expect(t.writeLog.length).toBe(before);
+    }
+    seedBook();
+    expect((await post(nominate())).statusCode).toBe(200);
+  });
+
+  it('a casual clone\'s battle: the book is the ranked PARENT\'s — the nominate named by the clone lands in it', async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    t.store.set('agentBattles/b-clone', { ...fixture.battle, id: 'b-clone', agentId: CLONE });
+    t.store.set(`agentBattles/b-clone/tape/${D}`, { ...t.store.get(`agentBattles/${BATTLE}/tape/${D}`), battleId: 'b-clone', agentId: CLONE });
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    openSeam();
+    seedBook();
+    expect((await post(create({ battleId: 'b-clone', agentId: CLONE }))).statusCode).toBe(200);
+    expect((await post(nominate({ agentId: CLONE }))).statusCode).toBe(200);
+    expect(t.store.get('mandates/book-1/nominations/nom_1')).toMatchObject({ state: 'queued', source: { entryId: 'op_1' } });
   });
 });

@@ -64,7 +64,7 @@ import { loadoutArchetypesOf } from '../../../src/constants/perGameLoadout.js';
 import { CARD_STAGE_VOCAB_VERSION, CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_STATES, NOMINATION_EXPIRY_SESSIONS, WITHDRAWABLE_STATES, isOpenStage, isRetirableByPlayer, nominationMayMove } from '../../../src/data/cardStages.js';
 // Build C §4 (refinement R-C1-3): the nomination record's shape is the Practice Field's builder, reached through the seam;
 // Amendment A CA-2: so is its withdrawal's
-import { buildNominationDoc, buildWithdrawal, NOMINATION_SOURCE_KIND, NOMINATION_QUEUED } from './practiceFieldSeam.js';
+import { buildNominationDoc, buildWithdrawal, bookIsForAgent, NOMINATION_SOURCE_KIND, NOMINATION_QUEUED } from './practiceFieldSeam.js';
 import { isValidForgeId } from '../idValidation.js';
 
 export * from '../../../src/data/cardStages.js';
@@ -132,6 +132,42 @@ export const nominationRefOf = (db, bookId, nominationId) => db.collection(BOOKS
 
 /** Build C §4 precondition 4: the book the route read through the seam (`{ bookId, status }`) is open — status 'active'. */
 export const isBookOpen = (book) => isObj(book) && typeof book.bookId === 'string' && book.bookId.length > 0 && book.status === 'active';
+
+/** Amendment A CA-12: the book document the transaction re-reads, `mandates/{bookId}` (an idea book is a Mandate book of its own kind). */
+export const bookRefOf = (db, bookId) => db.collection(BOOKS_COLLECTION).doc(bookId);
+/** CA-12: the only kind of book a nomination may land in (contract V2 §3). */
+export const IDEA_BOOK_KIND = 'idea_book';
+
+/**
+ * Amendment A CA-12 — THE BOOK, RE-READ INSIDE THE TRANSACTION, at the existing book precondition's place: the route's
+ * pre-read (`book`, through the seam, for the counter's sake too) must say open, and then `mandates/{bookId}` read
+ * THROUGH THIS TRANSACTION must exist, be the caller's (`userId`), an idea book (`kind: 'idea_book'`), `status:
+ * 'active'`, and for the attribution agent by the seam's pure `bookIsForAgent` (T1a owns it; a throw or any answer but
+ * `true` fails closed). A change to the book between the pre-read and the commit conflicts and is judged again on the
+ * retry. Any failure is 409 book_not_open, nothing written, the body naming nothing of any book; an ordinary failed
+ * read is the same refusal (with a server trace); a contention abort (gRPC ABORTED) is rethrown as it came.
+ */
+async function requireOpenBookIn(tx, db, { book, uid, agentId }) {
+  if (!isBookOpen(book) || !pathIdOk(book.bookId)) throw fail(409, 'book_not_open');
+  let doc;
+  try {
+    const snap = await tx.get(bookRefOf(db, book.bookId));
+    doc = snap?.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
+  } catch (err) {
+    if (err?.cardRoute || err?.code === GRPC_ABORTED) throw err;
+    console.error('[film-room/cards] book re-read failed:', err?.message ?? err);
+    throw fail(409, 'book_not_open');
+  }
+  if (!isObj(doc) || doc.userId !== uid || doc.kind !== IDEA_BOOK_KIND || doc.status !== 'active') throw fail(409, 'book_not_open');
+  let forAgent = false;
+  try {
+    forAgent = bookIsForAgent(doc, agentId) === true;
+  } catch (err) {
+    console.error('[film-room/cards] bookIsForAgent failed:', err?.message ?? err);
+    forAgent = false;
+  }
+  if (!forAgent) throw fail(409, 'book_not_open');
+}
 
 // ── the attribution agent (RK-1) ────────────────────────────────────────────
 
@@ -328,7 +364,9 @@ export async function createCard(db, { uid, agentId, opId, payload, nowIso, requ
     // Build C §4 precondition 4, for the Offer route: the owner's book, read by the route through the seam BEFORE this
     // transaction (`book`), is open — judged after the replay, so a lost answer re-tapped after the book closed still
     // gets its card back. No book → 409 book_not_open, nothing written, the body naming nothing of any book.
-    if (offer && !isBookOpen(book)) throw fail(409, 'book_not_open');
+    // Amendment A CA-12: and the book itself, re-read in this transaction (after replay, source and archetype; before
+    // the cap and the id-conflict check)
+    if (offer) await requireOpenBookIn(tx, db, { book, uid, agentId });
     if (open >= OPEN_CARD_CAP) throw fail(409, 'cap_reached', { cap: OPEN_CARD_CAP, open });
     const card = buildCardDoc({ entryId: opId, uid, agentId, opId, opFingerprint, nowIso, payload, book: offer ? book : null });
     // one transaction, both halves (exit criterion 12): for an Offer card, the record under the op id — refused if that
@@ -435,7 +473,8 @@ export async function nominateCard(db, { uid, agentId, entryId, opId, expectedVe
     if (entry.stage !== 'card' || isShelved(entry, agent.shelf)) throw fail(409, 'illegal_transition', { stage: entry.stage });
     // F1: the filed source, judged again inside this transaction (reads only, so before every write)
     await verifySource(tx, entry, agentId);
-    if (!isBookOpen(book)) throw fail(409, 'book_not_open');
+    // Amendment A CA-12: the book re-read in this transaction, at the precondition's place
+    await requireOpenBookIn(tx, db, { book, uid, agentId });
     const nominationRef = nominationRefOf(db, book.bookId, opId);
     if ((await tx.get(nominationRef))?.exists) throw fail(409, 'op_conflict', { entryId });
     const nomination = nominationDocOf({ entryId, card: entry, nowIso });

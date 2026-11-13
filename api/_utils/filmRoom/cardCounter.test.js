@@ -170,6 +170,7 @@ describe('buildCounter — the whole answer: the window, the weekly counts, the 
   it('an open Watch card gets its recurrences on its own agent\'s later days; an Offer card and a Set card get none; the counts cover every day', async () => {
     const t = seed();
     await createCard(t.db, { uid: UID, agentId: A1, opId: 'w1', payload: payload(), nowIso: '2026-10-20T02:00:00.000Z' });
+    t.store.set('mandates/book-1', { userId: UID, kind: 'idea_book', status: 'active', attributionAgentId: A1 });   // CA-12: the book the transaction re-reads
     await createCard(t.db, { uid: UID, agentId: A1, opId: 'p1', payload: payload({ route: 'offer' }), nowIso: '2026-10-20T02:01:00.000Z', book: { bookId: 'book-1', status: 'active' } });
     await createCard(t.db, { uid: UID, agentId: A1, opId: 's1', payload: payload({ route: 'set' }), nowIso: '2026-10-20T02:02:00.000Z' });
     const out = await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW });

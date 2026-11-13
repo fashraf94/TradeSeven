@@ -167,7 +167,9 @@ beforeEach(() => {
 afterEach(() => { m.teardown(); vi.restoreAllMocks(); resetPracticeFieldSeam(); });
 /** Build C §4: the owner's book open, through the Practice Field's seam (T1a's helper, stubbed) — the counter and the card handler both read it. */
 const BOOK_ID = 'book-1';
-const openBook = (status = 'active') => setPracticeFieldSeam({ bookForOwner: async (_db, { uid, attributionAgentId }) => (uid === OWNER && attributionAgentId === AGENT ? { bookId: BOOK_ID, status } : null) });
+/** Amendment A CA-12: the book document the nominate and Offer transactions re-read — the owner's idea book, for the agent. */
+const seedBookDoc = (status = 'active') => t.store.set(`mandates/${BOOK_ID}`, { userId: OWNER, kind: 'idea_book', status, attributionAgentId: AGENT });
+const openBook = (status = 'active') => { setPracticeFieldSeam({ bookForOwner: async (_db, { uid, attributionAgentId }) => (uid === OWNER && attributionAgentId === AGENT ? { bookId: BOOK_ID, status } : null) }); seedBookDoc(status); };
 
 let lastReaders = null;
 /** `readBattle` (B2.1 B2): the readers' read of another battle's document; `openAt`: what App hands the screen it opens. */
@@ -855,10 +857,10 @@ describe('Amendment I RI-2 (Astra B1) — a successful write wins on screen when
 
 describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7\'s style', () => {
   /** A card filed straight into the ledger (the real store) from day 1's moment, before day 2 — a Watch card's list is what the line explains (Amendment K RK-10). */
-  const seedCard = (route) => createCard(state.db, {
+  const seedCard = (route) => { seedBookDoc(); /* Amendment A CA-12: the Offer transaction re-reads the book document */ return createCard(state.db, {
     uid: OWNER, agentId: AGENT, opId: `seed_${route}`, nowIso: `${D1}T23:00:00.000Z`, book: { bookId: BOOK_ID, status: 'active' },
     payload: { archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: fx.tape1.tags.items[0].version, battleId: B, etDate: D1, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5, questionId: 'stalled.want', questionVersion: 1, note: 'Watch this.', route },
-  });
+  }); };
   const unreadable = (tape) => ({ ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
 
   it('Amendment K RK-10 — no open Watch card: no line, however many days could not be read — none filed, an Offer card, a retired Watch card (the mutant: the unavailable-day line with no open Watch card)', async () => {

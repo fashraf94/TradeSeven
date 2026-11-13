@@ -36,7 +36,9 @@ const payload = (over = {}) => ({
   battleId: 'b-1', etDate: '2026-11-11', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5,
   questionId: 'stalled.want', questionVersion: 1, note: 'Let it go sooner.', route: 'watch', ...over,
 });
-const fresh = (agent = agentDoc()) => makeTapeDb({ [`agents/${AGENT}`]: agent });
+/** Amendment A CA-12: the owner's idea book, active, for the agent — what the nominate and Offer transactions re-read. */
+const BOOK_DOC = Object.freeze({ userId: UID, kind: 'idea_book', status: 'active', attributionAgentId: AGENT });
+const fresh = (agent = agentDoc()) => makeTapeDb({ [`agents/${AGENT}`]: agent, [`mandates/${BOOK}`]: BOOK_DOC });
 const playPath = (id) => `agents/${AGENT}/${PLAYS_SUBCOLLECTION}/${id}`;
 const playWrites = (t) => t.writeLog.filter((w) => w.path.includes(`/${PLAYS_SUBCOLLECTION}/`));
 const code = async (p) => { try { await p; return null; } catch (e) { return e.cardRoute ? { status: e.status, code: e.code, extra: e.extra } : { thrown: String(e) }; } };
@@ -520,7 +522,7 @@ describe('Amendment A CA-3 — the open predicate: a nominated card closes when 
 const seam = await import('./practiceFieldSeam.js');
 describe('Amendment A CA-1 / CA-2 / CA-5 — what the player may retire, and the withdrawal the record decides', () => {
   const RECORD_PATH = `mandates/${BOOK}/nominations/nom_c1`;
-  const freshWith = (hooks) => makeTapeDb({ [`agents/${AGENT}`]: agentDoc() }, { hooks });
+  const freshWith = (hooks) => makeTapeDb({ [`agents/${AGENT}`]: agentDoc(), [`mandates/${BOOK}`]: BOOK_DOC }, { hooks });
   /** The book's record for the planted nomination (`nom_c1`), the default builder's shape, at `state`. */
   const withRecord = (t, state, over = {}) => {
     const rec = seam.PRACTICE_FIELD_SEAM_DEFAULTS.buildNominationDoc({ entryId: 'c1', situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1, nowIso: NOW, expiresAfterSessions: 10 });
@@ -1113,5 +1115,121 @@ describe('Amendment A CA-22 — an idea that ends before its first fill: `tested
     s.store.set(`agents/${AGENT}`, agentDoc({ archetype: 'guardian' }));
     expect((await move(s, { to: 'tested', opId: 's3', payload: ENDED })).entry.stage).toBe('tested');
     expect(entry.idea).toEqual({ bookId: BOOK, ideaId: 'idea-9' });
+  });
+});
+
+// ── Amendment A CA-12 — the book re-read inside the nominate and Offer transactions ────────────────────────────────
+describe('Amendment A CA-12 — the book is re-read in the transaction: the owner\'s active idea book, for the agent', () => {
+  const OPEN = { bookId: BOOK, status: 'active' };
+  const BOOK_PATH = `mandates/${BOOK}`;
+  const nominateIt = (t, over = {}) => nominateCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'n1', expectedVersion: 1, nowIso: LATER, book: OPEN, verifySource: SOURCE_OK, ...over });
+  const offerIt = (t, over = {}) => createCard(t.db, { uid: UID, agentId: AGENT, opId: 'o1', payload: payload({ route: 'offer' }), nowIso: NOW, battleArchetype: 'momentum_chaser', book: OPEN, ...over });
+  const filed = async (t) => createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c1', payload: payload(), nowIso: NOW, battleArchetype: 'momentum_chaser' });
+  const bookWrites = (t) => t.writeLog.filter((w) => w.path.startsWith('mandates/'));
+  afterEach(() => seam.resetPracticeFieldSeam());
+
+  const DEFECTS = [
+    ['no book document', (t) => t.store.delete(BOOK_PATH)],
+    ['another owner\'s book', (t) => t.store.set(BOOK_PATH, { ...BOOK_DOC, userId: 'someone-else' })],
+    ['a portfolio book', (t) => t.store.set(BOOK_PATH, { ...BOOK_DOC, kind: 'portfolio' })],
+    ['a book with no kind', (t) => { const { kind: _k, ...rest } = BOOK_DOC; t.store.set(BOOK_PATH, rest); }],
+    ['a closed book (the pre-read said active)', (t) => t.store.set(BOOK_PATH, { ...BOOK_DOC, status: 'closed' })],
+    ['a draining book', (t) => t.store.set(BOOK_PATH, { ...BOOK_DOC, status: 'draining' })],
+    ['another agent\'s book', (t) => t.store.set(BOOK_PATH, { ...BOOK_DOC, attributionAgentId: 'agent-other' })],
+    ['a book naming no agent', (t) => { const { attributionAgentId: _a, ...rest } = BOOK_DOC; t.store.set(BOOK_PATH, rest); }],
+    ['a predicate that throws', () => seam.setPracticeFieldSeam({ bookIsForAgent: () => { throw new Error('no field'); } })],
+    ['a predicate answering a truthy non-true', () => seam.setPracticeFieldSeam({ bookIsForAgent: () => 'yes' })],
+  ];
+  for (const [name, defect] of DEFECTS) {
+    it(`${name} → 409 book_not_open on BOTH paths, nothing written, the body naming no book (the mutants: the book re-read skipped; a closed book accepted)`, async () => {
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const t = fresh();
+      await filed(t);
+      defect(t);
+      const writes = t.writeLog.length;
+      const a = await code(nominateIt(t));
+      expect(a, name).toEqual({ status: 409, code: 'book_not_open', extra: {} });
+      expect(await code(offerIt(t)), name).toEqual({ status: 409, code: 'book_not_open', extra: {} });
+      expect(t.writeLog.length, name).toBe(writes);
+      expect(bookWrites(t), name).toEqual([]);
+      errors.mockRestore();
+    });
+  }
+
+  it('the control: the owner\'s active idea book for the agent → both paths write their two halves; a T1a predicate over its own field is honoured', async () => {
+    const t = fresh();
+    await filed(t);
+    expect((await nominateIt(t)).card.stage).toBe('nominated');
+    expect((await offerIt(t)).card.stage).toBe('nominated');
+    const u = fresh();
+    await filed(u);
+    u.store.set(BOOK_PATH, { ...BOOK_DOC, attributionAgentId: undefined, managerAgentId: AGENT });
+    seam.setPracticeFieldSeam({ bookIsForAgent: (doc, id) => doc.managerAgentId === id });
+    expect((await nominateIt(u)).card.stage).toBe('nominated');
+  });
+
+  it('the book changed BETWEEN the transaction\'s read and its commit: the commit conflicts, is retried, and the closed book refuses — nothing written; an unchanged rewrite is judged again and lands', async () => {
+    let strike = null;
+    const t = makeTapeDb({ [`agents/${AGENT}`]: agentDoc(), [BOOK_PATH]: BOOK_DOC }, { hooks: { afterTxRead: async (label, db) => { if (!strike || label !== BOOK_PATH) return; const next = strike; strike = null; await db.collection('mandates').doc(BOOK).set(next); } } });
+    await filed(t);
+    strike = { ...BOOK_DOC, status: 'closed' };
+    const retries = t.db.txRetries;
+    expect(await code(nominateIt(t))).toMatchObject({ status: 409, code: 'book_not_open' });
+    expect(t.db.txRetries).toBeGreaterThan(retries);
+    expect(bookWrites(t).filter((w) => w.path.includes('/nominations/'))).toEqual([]);
+    t.store.set(BOOK_PATH, BOOK_DOC);
+    strike = { ...BOOK_DOC };
+    expect((await nominateIt(t)).card.stage).toBe('nominated');
+  });
+
+  it('a book re-read that fails is 409 book_not_open (never 500), with a trace; a contention abort is rethrown as it came', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let fail = null;
+    const t = makeTapeDb({ [`agents/${AGENT}`]: agentDoc(), [BOOK_PATH]: BOOK_DOC }, { hooks: { beforeRead: (label) => { if (fail && label === `tx:${BOOK_PATH}`) throw fail; } } });
+    await filed(t);
+    fail = new Error('book read failed');
+    expect(await code(nominateIt(t))).toEqual({ status: 409, code: 'book_not_open', extra: {} });
+    expect(await code(offerIt(t))).toEqual({ status: 409, code: 'book_not_open', extra: {} });
+    expect(errors.mock.calls.some((c) => String(c.join(' ')).includes('book read failed'))).toBe(true);
+    fail = Object.assign(new Error('ABORTED'), { code: 10 });
+    const err = await nominateIt(t).then(() => null, (e) => e);
+    expect(err).toMatchObject({ code: 10 });
+    expect(err.cardRoute).toBeUndefined();
+    errors.mockRestore();
+  });
+
+  it('THE ORDER is unchanged (CA-12): a replay returns before any re-read (the book closed since); an already-nominated card with no book → illegal_transition; another owner → forbidden; a stale version → version_conflict; an op id the book already holds, with the book closed → book_not_open (the book before the id); at the cap with the book closed → book_not_open (the book before the cap) (the mutant: a successful replay refused after the book closed)', async () => {
+    const t = fresh();
+    await filed(t);
+    const first = await nominateIt(t);
+    t.store.set(BOOK_PATH, { ...BOOK_DOC, status: 'closed' });
+    const reads = t.readLog.length;
+    expect(await nominateIt(t)).toEqual({ idempotent: true, card: first.card });
+    expect(t.readLog.slice(reads).filter((l) => l.includes(BOOK_PATH))).toEqual([]);
+    expect(await code(nominateIt(t, { opId: 'n2', expectedVersion: 2, book: null }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'nominated' } });
+    expect(await code(nominateIt(t, { opId: 'n3', uid: 'intruder', book: null }))).toMatchObject({ code: 'forbidden' });
+    expect(await code(nominateIt(t, { opId: 'n4', expectedVersion: 1 }))).toMatchObject({ code: 'version_conflict' });
+    const u = fresh();
+    await filed(u);
+    u.store.set(`mandates/${BOOK}/nominations/n1`, { state: 'queued' });
+    u.store.set(BOOK_PATH, { ...BOOK_DOC, status: 'closed' });
+    expect(await code(nominateIt(u))).toMatchObject({ code: 'book_not_open' });
+    const v = fresh();
+    for (let i = 0; i < 5; i += 1) await createCard(v.db, { uid: UID, agentId: AGENT, opId: `w${i}`, payload: payload({ note: `Watch ${i}.` }), nowIso: NOW, battleArchetype: 'momentum_chaser' });
+    v.store.set(BOOK_PATH, { ...BOOK_DOC, status: 'closed' });
+    expect(await code(offerIt(v))).toMatchObject({ code: 'book_not_open' });
+    v.store.set(BOOK_PATH, BOOK_DOC);
+    expect(await code(offerIt(v))).toMatchObject({ code: 'cap_reached' });
+  });
+
+  it('the withdrawal never reads the book (CA-12): a nominated card in a closed or deleted book still withdraws', async () => {
+    const t = fresh();
+    await filed(t);
+    await nominateIt(t);
+    t.store.set(BOOK_PATH, { ...BOOK_DOC, status: 'closed' });
+    const reads = t.readLog.length;
+    const r = await retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: 2, nowIso: LATEST });
+    expect(r.card).toMatchObject({ stage: 'retired', nomination: { state: 'withdrawn' } });
+    expect(t.readLog.slice(reads).filter((l) => l === `tx:${BOOK_PATH}`)).toEqual([]);
   });
 });

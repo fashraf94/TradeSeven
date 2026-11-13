@@ -310,7 +310,9 @@ describe('RK-1 on the real emulator — the counter answers for the attribution 
 // and its status — so the card endpoint's one transaction writes the nomination record into a real book path.
 describe('C1 on the real emulator — nominate and the Offer route, through an injected seam against a synthetic book', () => {
   const BOOK_ID = `c1-book-${RUN}`;
-  const book = (over = {}) => ({ userId: UID, kind: 'idea_book', managerAgentId: PARENT, status: 'active', ...over });
+  // Amendment A CA-12: the store re-reads the book in its transaction and asks the seam's bookIsForAgent, whose default
+  // reads `attributionAgentId` (T1a names the real field)
+  const book = (over = {}) => ({ userId: UID, kind: 'idea_book', managerAgentId: PARENT, attributionAgentId: PARENT, status: 'active', ...over });
   const asked = [];
   beforeEach(async () => {
     asked.length = 0;
@@ -504,5 +506,23 @@ describe('C1 on the real emulator — nominate and the Offer route, through an i
     expect(await post(retireBody(id, `ca2u_${(n += 1)}_${RUN}`))).toMatchObject({ statusCode: 503, body: { error: 'nomination_unavailable' } });
     expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'nominated', version: 1 });
     expect((await nominationAt(id)).data().state).toBe('misfiled');
+  });
+
+  // ── Amendment A CA-12 — the book re-read in the transaction, on the real emulator ───────────────────────────────
+  it('CA-12: the seam\'s pre-read says open but the book document itself is closed (or another owner\'s) → 409 book_not_open, nothing written; open again → the nomination lands', async () => {
+    const b = await battleFor('ca12', PARENT);
+    const id = (await post(create(b, PARENT))).body.card.entryId;
+    setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }) });
+    const opId = `ca12n_${RUN}`;
+    for (const over of [{ status: 'closed' }, { userId: OTHER }]) {
+      await db.doc(`mandates/${BOOK_ID}`).set(book(over));
+      const res = await post({ op: 'nominate', opId, agentId: PARENT, entryId: id, expectedVersion: 1 });
+      expect(res, JSON.stringify(over)).toMatchObject({ statusCode: 409, body: { error: 'book_not_open' } });
+      expect((await nominationAt(opId)).exists).toBe(false);
+      expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'card', version: 1 });
+    }
+    await db.doc(`mandates/${BOOK_ID}`).set(book());
+    expect((await post({ op: 'nominate', opId, agentId: PARENT, entryId: id, expectedVersion: 1 })).statusCode).toBe(200);
+    expect((await nominationAt(opId)).exists).toBe(true);
   });
 });
