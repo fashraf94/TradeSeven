@@ -9,7 +9,7 @@ import { priceDecimals, priceText } from '../priceFormat.js';
 import { nextEligibleSlot } from '../../../../api/_utils/callRecords/horizon.js';
 import { measuredLadder, previewLadder, v4Ladder, v4LevelsFor, rungPct, rungShown } from './ladder.js';
 import { BOMB_COPY, money, rungPctText } from './bombCopy.js';
-import { etClock, etDate, etWeekday } from './checkClock.js';
+import { etClock, etClockAmPm, etDate, etWeekday } from './checkClock.js';
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const positive = (v) => finite(v) && v > 0;
@@ -29,13 +29,29 @@ const FIFTEEN_MIN_MS = 15 * 60 * 1000;
  * chip, no check dots, no red zone and nothing banked. ladder.js legacyLadder
  * stays in the tree, unreachable from here, until the 'on' cleanup.
  */
-export function buildLadder({ context, record, bombData, previousClose, threshold, symbol, nowMs }) {
+export function buildLadder({ context, record, bombData, previousClose, threshold, symbol, nowMs, atrReading = null }) {
   if (context?.kind === 'agent' && record && record.symbol === symbol) {
     // The live record's committed context (same shape and source as the
     // modal's bombData.measured); bombData only when the record has none.
     if (record.model === 'measured') return measuredLadder({ measured: record.measured, entryAtMs: record.entry?.atMs ?? null });
     if (record.model === 'legacy') return { ...previewLadder({ previousClose, threshold }), heldPreview: true };
     return { status: record.reason === 'short_position' ? 'short_unsupported' : 'model_unavailable', kind: 'held', model: 'unsupported', rungs: [], up: [], down: [], next: null, bankedPoints: 0 };
+  }
+  // BS-4 (founder ruling Q3, 2026-11-12): a stock the agent does not hold, in a battle
+  // scored by the measured ATR model, previews its rungs at the rankings' ATR reading
+  // (atrReading.js) — the scorer's own formula, the number the bench sheet's ATR column
+  // shows — never the screen's threshold (atrPercentile × 8, or the 2.5 default). The
+  // modal hands `atrReading` ONLY on that arm (a non-held, non-crypto stock in such a
+  // battle); a held ladder above, a legacy-scored battle, a bench or V4 context never
+  // reach here. With no reading: "No ladder yet" — still loading, the read failed, or
+  // (atr_unavailable) the name has none.
+  if (context?.kind === 'agent' && atrReading) {
+    const pct = positive(atrReading.pct) ? atrReading.pct : null;
+    if (pct === null) {
+      return { ...previewLadder({ previousClose, threshold: null }), status: atrReading.status === 'none' ? 'atr_unavailable' : 'preview_unavailable' };
+    }
+    const ladder = previewLadder({ previousClose, threshold: pct });
+    return ladder.status === 'ok' ? { ...ladder, atrReading: { pct, asOfMs: finite(atrReading.asOfMs) ? atrReading.asOfMs : null } } : ladder;
   }
   if (context?.kind === 'v4') {
     const levels = v4LevelsFor(context.dailyLevels, symbol, nowMs);
@@ -81,6 +97,13 @@ export function scoredAtText(scored, nowMs = null) {
   // A check from an earlier session names its day: "at 1:15" alone would read as today's.
   const sameDay = finite(nowMs) && etDate(scored.atMs) === etDate(nowMs);
   return sameDay || !finite(nowMs) ? etClock(scored.atMs) : `${etWeekday(scored.atMs)} ${etClock(scored.atMs)}`;
+}
+
+/** BS-4: the ATR reading's time — the rankings run's: '1:00 PM' today, 'Fri 3:00 PM' from an earlier day; null when unknown. */
+export function atrAsOfText(asOfMs, nowMs = null) {
+  if (!finite(asOfMs)) return null;
+  const sameDay = finite(nowMs) && etDate(asOfMs) === etDate(nowMs);
+  return sameDay ? etClockAmPm(asOfMs) : `${etWeekday(asOfMs)} ${etClockAmPm(asOfMs)}`;
 }
 
 /** The check name for a seen bank or hit instant (a slot instant): `the 1:15 check`. */
@@ -134,12 +157,15 @@ export function checkSlotOf(ms, battleExpiresAtMs = null) {
  * Every rung price here is the rung's displayed price (ladder.rungShown, BP-1):
  * "Needs $X at a check" and "Bust (−10) if it's at or below $X" are true at X.
  */
-export function sheetLine({ ladder, clockLabel = null, checking = false, bankedTimes = {}, hitTimes = {}, lead = null, decimals }) {
+export function sheetLine({ ladder, clockLabel = null, checking = false, bankedTimes = {}, hitTimes = {}, lead = null, decimals, nowMs = null }) {
   if (!ladder || ladder.status !== 'ok') return null;
   const d = decimals;
   const px = (r) => rungShown(r, d);
   if (ladder.kind === 'preview') {
     if (ladder.model === 'v4') return BOMB_COPY.previewV4(ladder.baseline.price, d);
+    // BS-4: the rung size is the ATR reading — labelled as an estimate, with its value as the
+    // bench sheet prints it (one decimal) and the rankings run's time.
+    if (ladder.atrReading) return BOMB_COPY.previewNeedsAtr(ladder.baseline.price, d, ladder.atrReading.pct, atrAsOfText(ladder.atrReading.asOfMs, nowMs));
     return (ladder.heldPreview === true ? BOMB_COPY.heldPreviewNeeds : BOMB_COPY.previewNeeds)(ladder.baseline.price, d);
   }
   const join = (...parts) => parts.filter(Boolean).join(' · ');

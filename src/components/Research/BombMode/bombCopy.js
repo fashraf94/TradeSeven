@@ -20,6 +20,12 @@ const signedPct = (pct, digits = 1) => `${pct >= 0 ? '+' : '−'}${Math.abs(pct)
  * levels table print for a rung (BD-6, BUILD_RULES §9).
  */
 export const rungPctText = (pct) => signedPct(pct, 2);
+/**
+ * BS-4 — an ATR reading as the bench sheet's ATR column prints it (cockpit2bModel.js:
+ * `${atrPct.toFixed(1)}%`): one decimal (founder ruling, 2026-11-12), so the two read the
+ * same (BUILD_RULES §9). The ladder itself takes the exact reading.
+ */
+export const atrReadingText = (pct) => `${pct.toFixed(1)}%`;
 /** Downside points with the typographic minus: −10. */
 const downPts = (points) => `−${Math.abs(points)}`;
 /** A to-go %: two decimals under 1 % — the red zone's own precision, so the pill and the zone agree at the band — one decimal from 1 % up. */
@@ -54,6 +60,8 @@ export const BOMB_COPY = Object.freeze({
   measuredUnavailableWhy: "This position's measured score can't be confirmed right now. It updates on the next check.",
   previewUnavailable: 'No ladder yet',
   previewUnavailableWhy: "Yesterday's close or this stock's threshold hasn't loaded.",
+  // BS-4: an unranked name has no ATR reading, so no rung size — never a default.
+  atrUnavailableWhy: "This stock has no ATR reading in today's rankings, so no rung size is shown.",
   shortUnsupported: 'No upside ladder for a short position',
   modelUnavailable: 'Scoring model unavailable',
   modelUnavailableWhy: "This battle's scoring model can't be read here, so no rung is drawn.",
@@ -87,6 +95,10 @@ export const BOMB_COPY = Object.freeze({
   afterBank: (points, at, price, d) => `+${points} banked${at ? ` at the ${at} check` : ''}. Next: ${money(price, d)} at a check`,
   allRungsBanked: (points) => `+${points} banked · every rung is banked`,
   previewNeeds: (price, d) => `Preview · rungs if it entered at yesterday's close (${money(price, d)})`,
+  // BS-4 (2026-11-12): in a battle scored by the measured ATR model, a stock the agent does
+  // not hold previews its rungs at the rankings' ATR reading — an estimate of the rung size a
+  // swap would measure, shown as the bench sheet prints it (one decimal), with its run's time.
+  previewNeedsAtr: (price, d, pct, asOf) => `Preview · rungs if it entered at yesterday's close (${money(price, d)}) · estimated rung size · ATR reading ${atrReadingText(pct)}${asOf ? ` · as of ${asOf}` : ''}`,
   // Ruling 2026-11-07 (§0.4(a), rule (i)): a position the agent holds whose
   // score is the legacy model's (legacy stocks, every crypto) draws the
   // preview's rungs, said plainly as held — never "entry price", never "will

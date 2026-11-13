@@ -36,6 +36,9 @@ const zoneSide = (shown) => (shown === 'red' ? 'red' : shown === 'danger' ? 'dan
 export default function useBombView({
   on = false, context = null, symbol = null, isOriginal = true, bombData = null, assetThreshold = null,
   fetchedThreshold = null, isCrypto = false, previousClose = null, live = null, timeframe = null, setTimeframe = null, bars = null,
+  // BS-4: { status, pct, asOfMs } — handed by the modal ONLY for a non-held, non-crypto stock in a
+  // battle scored by the measured ATR model (bombView.buildLadder's ATR arm); null everywhere else.
+  atrReading = null,
 } = {}) {
   const enabled = on === true && !!context && typeof symbol === 'string' && symbol.length > 0;
   const record = enabled && context.kind === 'agent' && isOriginal ? (context.record ?? null) : null;
@@ -79,9 +82,12 @@ export default function useBombView({
   const rz = zones.red;
 
   const threshold = assetThreshold > 0 ? assetThreshold : fetchedThreshold > 0 ? fetchedThreshold : null;
+  const atrStatus = atrReading ? atrReading.status ?? null : null;
+  const atrPct = atrReading ? atrReading.pct ?? null : null;
+  const atrAsOfMs = atrReading ? atrReading.asOfMs ?? null : null;
   const ladder = useMemo(() => (enabled
-    ? buildLadder({ context, record, bombData, previousClose, threshold, symbol, nowMs })
-    : null), [enabled, context, record, bombData, previousClose, threshold, symbol, nowMs]);
+    ? buildLadder({ context, record, bombData, previousClose, threshold, symbol, nowMs, atrReading: atrStatus === null ? null : { status: atrStatus, pct: atrPct, asOfMs: atrAsOfMs } })
+    : null), [enabled, context, record, bombData, previousClose, threshold, symbol, nowMs, atrStatus, atrPct, atrAsOfMs]);
   const decimals = finite(live) && live > 0 ? priceDecimals(live) : 2;
   const go = enabled && ladder ? toGo(ladder, live, { decimals }) : null;
   const goDown = enabled && ladder ? toGoDown(ladder, live, { decimals }) : null;
@@ -223,6 +229,6 @@ export default function useBombView({
     redZoneScored: scoredChipText({ live, scored, decimals, always: true, frozen, nowMs }),
     sheetScored: scoredChipText({ live, scored, decimals, always: false, frozen: isCrypto !== true && !marketOpen, nowMs }),
     marketOpen: isCrypto === true || marketOpen,
-    sheetLine: sheetLine({ ladder, clockLabel: clock && (clock.state === 'countdown' || clock.state === 'later') ? clock.label : null, checking: clock?.state === 'checking', bankedTimes, hitTimes, lead: shownLead, decimals }),
+    sheetLine: sheetLine({ ladder, clockLabel: clock && (clock.state === 'countdown' || clock.state === 'later') ? clock.label : null, checking: clock?.state === 'checking', bankedTimes, hitTimes, lead: shownLead, decimals, nowMs }),
   };
 }

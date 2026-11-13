@@ -38,6 +38,8 @@ const measured = measuredLadder({ measured: { measured: true, baselinePrice: 100
 const preview = previewLadder({ previousClose: 99, threshold: 2 });
 // Ruling 2026-11-07 (§0.4(a), rule (i)): a held legacy-scored position's preview (bombView.buildLadder).
 const heldPreview = { ...previewLadder({ previousClose: 99, threshold: 2 }), heldPreview: true };
+// BS-4 (2026-11-12): a non-held stock in a measured battle, at the rankings' ATR reading (bombView.buildLadder).
+const atrPreview = { ...previewLadder({ previousClose: 99, threshold: 4.05 }), atrReading: { pct: 4.05, asOfMs: Date.parse('2026-10-14T16:05:00.000Z') } };
 const v4 =v4Ladder({ levels: { baseline: 150, baggerBomb: 154.5, doubleBagger: 156.75, tenBagger: 159, bust: 145.5, crash: 143.25, meltdown: 141, threshold: 3 } });
 
 // Every template is called with a value for each of its own parameters, by name;
@@ -73,9 +75,9 @@ function computeRenderedStates() {
   const trace = traceParts([{ timestamp: Date.parse('2026-10-14T16:56:00.000Z') / 1000, close: 102.6 }, { timestamp: Date.parse('2026-10-14T16:57:00.000Z') / 1000, close: 102.7 }], [{ atMs: Date.parse('2026-10-14T16:59:00.000Z'), price: 102.71 }]);
   const clock = { state: 'countdown', label: '1:15 · 09:00' };
   const states = [];
-  for (const ladder of [measured, preview, heldPreview, v4]) {
+  for (const ladder of [measured, preview, heldPreview, atrPreview, v4]) {
     const go = toGo(ladder, 102.7);
-    const view = { ladder, go, live: 102.7, decimals: 2, mode: 'fuse', nowMs: Date.parse('2026-10-14T17:06:00.000Z'), clock, ghost, trace, checkDots: [], bankedTimes: { bagger: Date.parse('2026-10-14T17:15:00.000Z') }, moment: null, redZoneScored: scoredChipText({ live: 102.7, scored: { price: 102.69, atMs: Date.parse('2026-10-14T17:00:30.000Z') }, always: true }), sheetScored: null, sheetLine: sheetLine({ ladder, clockLabel: '1:15', decimals: 2 }) };
+    const view = { ladder, go, live: 102.7, decimals: 2, mode: 'fuse', nowMs: Date.parse('2026-10-14T17:06:00.000Z'), clock, ghost, trace, checkDots: [], bankedTimes: { bagger: Date.parse('2026-10-14T17:15:00.000Z') }, moment: null, redZoneScored: scoredChipText({ live: 102.7, scored: { price: 102.69, atMs: Date.parse('2026-10-14T17:00:30.000Z') }, always: true }), sheetScored: null, sheetLine: sheetLine({ ladder, clockLabel: '1:15', decimals: 2, nowMs: Date.parse('2026-10-14T17:06:00.000Z') }) };
     states.push(renderToStaticMarkup(<FuseChart ladder={ladder} live={102.7} decimals={2} go={go} ghost={ghost} bankedTimes={view.bankedTimes} />));
     states.push(renderToStaticMarkup(<BombSheet view={view} />));
     for (const mode of ['approaching', 'banked', 'closed']) {
@@ -108,7 +110,7 @@ function computeRenderedStates() {
     states.push(renderToStaticMarkup(<FuseChart ladder={allHit} live={96.4} decimals={2} go={go} goDown={goDown} lead={lead} hitTimes={{ meltdown: Date.parse('2026-10-14T17:15:00.000Z') }} />));
     states.push(renderToStaticMarkup(<BombSheet view={{ ladder: allHit, go, goDown, lead, live: 96.4, decimals: 2, marketOpen: true, bankedTimes: {}, hitTimes: { meltdown: Date.parse('2026-10-14T17:15:00.000Z') }, sheetScored: null, sheetLine: sheetLine({ ladder: allHit, lead, decimals: 2 }) }} />));
   }
-  for (const status of ['entry_unavailable', 'measured_unavailable', 'preview_unavailable', 'short_unsupported']) {
+  for (const status of ['entry_unavailable', 'measured_unavailable', 'preview_unavailable', 'atr_unavailable', 'short_unsupported']) {
     states.push(renderToStaticMarkup(<BombPlot view={{ ladder: { status } }} height={300} />));
     states.push(renderToStaticMarkup(<BombSheet view={{ ladder: { status } }} />));
   }
@@ -143,7 +145,7 @@ describe('Bomb mode copy: no forbidden term anywhere it can reach a player', () 
 
 describe('a preview never says "entry" (BA-1)', () => {
   it('the preview and V4 sheet lines and baseline labels', () => {
-    for (const ladder of [preview, v4]) {
+    for (const ladder of [preview, atrPreview, v4]) {
       const view = { ladder, go: toGo(ladder, 100), live: 100, decimals: 2, sheetLine: sheetLine({ ladder, decimals: 2 }), sheetScored: null };
       const fuse = renderToStaticMarkup(<FuseChart ladder={ladder} live={100} decimals={2} go={view.go} />);
       const sheet = renderToStaticMarkup(<BombSheet view={view} />);
@@ -155,6 +157,9 @@ describe('a preview never says "entry" (BA-1)', () => {
   });
   it('the only "entered" a preview carries is the conditional of its own label', () => {
     expect(BOMB_COPY.previewNeeds(99, 2)).toBe("Preview · rungs if it entered at yesterday's close ($99.00)");
+    // BS-4: the ATR preview's line is the same line, then an estimate named as one, at the bench sheet's precision.
+    expect(BOMB_COPY.previewNeedsAtr(99, 2, 4.05, '12:05 PM')).toBe("Preview · rungs if it entered at yesterday's close ($99.00) · estimated rung size · ATR reading 4.0% · as of 12:05 PM");
+    expect(sheetLine({ ladder: atrPreview, decimals: 2, nowMs: Date.parse('2026-10-14T17:06:00.000Z') })).toBe(BOMB_COPY.previewNeedsAtr(99, 2, 4.05, '12:05 PM'));
   });
 });
 

@@ -19,6 +19,7 @@ export function ladderStateCopy(status) {
     case 'measured_unavailable': return [BOMB_COPY.measuredUnavailable, BOMB_COPY.measuredUnavailableWhy];
     case 'short_unsupported': return [BOMB_COPY.shortUnsupported, ''];
     case 'model_unavailable': return [BOMB_COPY.modelUnavailable, BOMB_COPY.modelUnavailableWhy];
+    case 'atr_unavailable': return [BOMB_COPY.previewUnavailable, BOMB_COPY.atrUnavailableWhy];
     default: return [BOMB_COPY.previewUnavailable, BOMB_COPY.previewUnavailableWhy];
   }
 }

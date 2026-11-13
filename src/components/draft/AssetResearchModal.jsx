@@ -28,6 +28,7 @@ import SmartMoneyTab from '../Research/SmartMoneyTab';
 import { getVolatilityThresholds } from '../../services/volatilityService';
 import { resolveBombMode } from '../Research/BombMode/bombModeGate';
 import useBombView from '../Research/BombMode/useBombView';
+import { readAtrReading } from '../Research/BombMode/atrReading';
 import BombPlot, { RedZoneChip } from '../Research/BombMode/BombPlot';
 import BombSheet from '../Research/BombMode/BombSheet';
 import { isZoneMode } from '../Research/BombMode/redZone';
@@ -433,6 +434,27 @@ const AssetResearchModal = ({
   // sheet alike (BA-1), never the fallback chain above (which stays the
   // mode-off chart's, byte for byte).
   const [bombThreshold, setBombThreshold] = useState(null); // { symbol, threshold } — the sheet's thresholds answer
+  // BS-4 (founder ruling Q3, 2026-11-12): a stock the agent does not hold, in a battle scored by the
+  // measured ATR model, previews its rungs at the rankings' ATR reading — ONE read of
+  // stockTechnicalScores/{SYM} per stock (atrReading.js), only while its 💣 view or Bomb tab shows —
+  // never the screen's threshold (atrPercentile × 8, or the 2.5 default) and never the thresholds
+  // request below. Never for a held name, a crypto, a legacy-scored battle, a bench or V4 context,
+  // or with Bomb mode off (no bombContext).
+  const atrArm = bombOn && bombContext.kind === 'agent' && bombContext.stockModel === 'corrected' && !isCrypto
+    && !(isOriginalAsset && bombContext.record != null && bombContext.record.symbol === currentAsset?.symbol);
+  const [atrRead, setAtrRead] = useState(null); // { symbol, status, pct, asOfMs }
+  const haveAtr = !!atrRead && atrRead.symbol === currentAsset?.symbol;
+  const bombSeries = researchData.timeframe === 'bomb' || researchData.timeframe === 'spectate';
+  const askAtr = atrArm && !haveAtr && (shellOn ? bombSeries : (activeTab === 'baggerbomb' || bombSeries));
+  useEffect(() => {
+    if (!askAtr) return undefined;
+    const symbol = currentAsset?.symbol;
+    if (!symbol) return undefined;
+    let cancelled = false;
+    readAtrReading(symbol).then((r) => { if (!cancelled) setAtrRead({ symbol, ...r }); });
+    return () => { cancelled = true; };
+  }, [askAtr, currentAsset?.symbol]);
+  const atrReading = atrArm ? (haveAtr ? { status: atrRead.status, pct: atrRead.pct, asOfMs: atrRead.asOfMs } : { status: 'loading', pct: null, asOfMs: null }) : null;
   const bombView = useBombView({
     on: bombOn,
     context: bombContext,
@@ -447,6 +469,7 @@ const AssetResearchModal = ({
     timeframe: researchData.timeframe,
     setTimeframe: researchData.setTimeframe,
     bars: researchData.ohlcvData,
+    atrReading,
   });
   // The sheet asks for a threshold exactly when BaggerBombTab does today (the
   // tab is showing, the asset carries none, it is not a measured position) —
@@ -456,7 +479,8 @@ const AssetResearchModal = ({
   const bombViewOpen = researchData.timeframe === 'bomb' || researchData.timeframe === 'spectate';
   const haveBombThreshold = !!bombThreshold && bombThreshold.symbol === currentAsset?.symbol;
   // Under the shell the sheet IS the 💣 view: asked only when that view is open without one.
-  const askBombThreshold = bombOn && (shellOn ? bombViewOpen && !haveBombThreshold : (activeTab === 'baggerbomb' || (bombViewOpen && !haveBombThreshold)));
+  // (BS-4: never on the ATR arm, whose rungs take the ATR reading instead — that request can reach a provider.)
+  const askBombThreshold = bombOn && !atrArm && (shellOn ? bombViewOpen && !haveBombThreshold : (activeTab === 'baggerbomb' || (bombViewOpen && !haveBombThreshold)));
   useEffect(() => {
     if (!askBombThreshold) return undefined;
     if (currentAsset?.stockRewardRoute || currentAsset?.threshold) return undefined;

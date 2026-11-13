@@ -10,6 +10,39 @@ import { toGo } from './ladder.js';
 const WED_1PM = Date.parse('2026-10-14T17:00:00.000Z');
 const at = (iso) => Date.parse(iso);
 
+describe('buildLadder — BS-4: the ATR arm (a non-held stock in a measured battle; the modal hands atrReading only there)', () => {
+  const ready = { status: 'ready', pct: 4.05, asOfMs: Date.parse('2026-10-14T16:05:00.000Z') };
+  it('the rungs take the reading, never the screen\'s threshold (6.48 = atrPercentile × 8)', () => {
+    const l = buildLadder({ context: { kind: 'agent' }, record: null, previousClose: 300, threshold: 6.48, symbol: 'ACN', nowMs: WED_1PM, atrReading: ready });
+    expect(l).toMatchObject({ status: 'ok', kind: 'preview', model: 'preview', threshold: 4.05, atrReading: { pct: 4.05, asOfMs: ready.asOfMs } });
+    expect(l.rungs.find((r) => r.key === 'bagger').price).toBeCloseTo(312.15, 9);
+    expect(sheetLine({ ladder: l, decimals: 2, nowMs: WED_1PM })).toBe("Preview · rungs if it entered at yesterday's close ($300.00) · estimated rung size · ATR reading 4.0% · as of 12:05 PM");
+  });
+  it('no reading → "No ladder yet": atr_unavailable for an unranked name, preview_unavailable while loading or after a failed read — never the 2.5 default', () => {
+    for (const [status, want] of [['none', 'atr_unavailable'], ['loading', 'preview_unavailable'], ['failed', 'preview_unavailable']]) {
+      const l = buildLadder({ context: { kind: 'agent' }, record: null, previousClose: 300, threshold: 2.5, symbol: 'ZZZZ', nowMs: WED_1PM, atrReading: { status, pct: null, asOfMs: null } });
+      expect(l.status, status).toBe(want);
+      expect(l.rungs, status).toEqual([]);
+    }
+  });
+  it('a held measured record keeps its frozen ladder even with a reading handed', () => {
+    const l = buildLadder({ context: { kind: 'agent' }, record: measuredEogRecord(), previousClose: 155.6, threshold: 3.6, symbol: 'EOG', nowMs: WED_1PM, atrReading: ready });
+    expect(l).toMatchObject({ status: 'ok', kind: 'held', model: 'measured', baseline: { price: 155.6, source: 'fill' } });
+    expect(l.atrReading).toBeUndefined();
+  });
+  it('a held legacy record (legacy stocks, crypto) keeps the held-preview line at its own threshold', () => {
+    const record = selectBombRecord(legacyBattle(), 'EOG', WED_1PM);
+    const l = buildLadder({ context: { kind: 'agent' }, record, previousClose: 155.6, threshold: 3.6, symbol: 'EOG', nowMs: WED_1PM, atrReading: ready });
+    expect(l).toMatchObject({ heldPreview: true, threshold: 3.6 });
+    expect(l.atrReading).toBeUndefined();
+  });
+  it('a bench or V4 context never takes the reading (the BaggerBomb mounts)', () => {
+    expect(buildLadder({ context: { kind: 'bench' }, record: null, previousClose: 300, threshold: 6.48, symbol: 'ACN', nowMs: WED_1PM, atrReading: ready }).threshold).toBe(6.48);
+    const l = buildLadder({ context: { kind: 'v4', dailyLevels: null }, record: null, previousClose: 300, threshold: 6.48, symbol: 'ACN', nowMs: WED_1PM, atrReading: ready });
+    expect([l.threshold, l.atrReading]).toEqual([6.48, undefined]);
+  });
+});
+
 describe('buildLadder — which ladder a mount gets (BA-1)', () => {
   const record = selectBombRecord(legacyBattle(), 'EOG', WED_1PM);
   it('an agent battle\'s MEASURED record for THIS symbol → the held ladder (the committed context\'s)', () => {
