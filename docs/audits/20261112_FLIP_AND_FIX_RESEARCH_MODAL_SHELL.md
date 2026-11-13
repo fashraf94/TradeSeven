@@ -30,7 +30,7 @@
 | 11 | **PR B off path** | The four mode-off goldens: test files and golden data untouched by this branch, all passing — byte-identical to main. |
 | 12 | **PR B mutation** | **36 of 36 killed**, every file restored (SHA-256): the brief's six, every review fix, and the nine survivors lens C found (each now killed by a row added for it). |
 | 13 | **Both together** | **Green.** PR B's final head with PR A's flip applied: full suite `Test Files 1412 passed \| 10 skipped (1422)`, `Tests 31260 passed \| 120 skipped (31380)`, exit 0; rules 41 files, 748 rows, exit 0. No STOP. |
-| 14 | **Review threshold** | **PR A: under** (2 files, 19 lines; the report rides on PR B). **PR B: met** — 25 files (24 + this report); before this report, +1,039 / −37 across 24 files. The review ran: §7. |
+| 14 | **Review threshold** | **PR A: under** (2 files, 19 lines; the report rides on PR B). **PR B: met** — 26 files (24 + this report + its README row); before this report, +1,039 / −37 across 24 files. The review ran: §7. |
 
 ---
 
@@ -237,7 +237,7 @@ An earlier run on the pre-review head `d0a2da22` + `a2debb0b` was also green (`T
 
 ## §7 The review (BUILD_RULES §2)
 
-**Threshold: met** — 25 files (24 + this report; before it, +1,039 / −37 = 1,076 lines) against ≥ 10 files or ≥ 1,500 lines.
+**Threshold: met** — 26 files (24 + this report and its README row; before it, +1,039 / −37 = 1,076 lines) against ≥ 10 files or ≥ 1,500 lines.
 
 **How it ran.** Four lenses, each on its own `git archive` snapshot under the session scratchpad (read-only on git and on this tree): **A** display honesty and correctness, **B** wiring, lifecycle and the flag-off path (both on `d0a2da22`); **C** test integrity — the mutating lens, its own tree, 33 mutants — and **D** phone layout, tokens and motion (headless Edge against the smoke preview and a static harness) (both on `4ea7b3c0`). Then two refuters on fresh snapshots, each told to refute every finding with a repro and to re-check every fix: **R1** for A and B (on `4ea7b3c0`), **R2** for C and D (on `5fdd469a`). Every fix carries a row and every row a mutant (§6).
 
