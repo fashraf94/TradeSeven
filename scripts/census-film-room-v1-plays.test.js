@@ -99,3 +99,75 @@ describe('CA-13 — the v1 plays census: read-only, count-only', () => {
     expect(failureLine(Object.assign(new TypeError('x'), {}))).toBe('[census-v1-plays] failed: TypeError');
   });
 });
+
+// ── the fix round's §2 review (report §9.7): the whole table, the drill line, the credential's prompt ──────────────
+import { EventEmitter } from 'node:events';
+import { readHidden, credentialText } from './census-film-room-v1-plays.mjs';
+
+describe('CA-13 §2 review — the whole table pinned, the drill line, and the credential', () => {
+  it('C3: the route x stage table, every cell, for the fixture documents', () => {
+    const r = countPlays(DOCS.map((d) => d.data));
+    const zero = Object.fromEntries(STAGE_BUCKETS.map((s) => [s, 0]));
+    expect(r.byRouteStage).toEqual({
+      watch: { ...zero, card: 1 },
+      offer: { ...zero, nominated: 1 },
+      set: { ...zero, tested: 1 },
+      drill: { ...zero, nominated: 1, retired: 1 },
+      missing: { ...zero, card: 1, missing: 1 },
+      unknown: { ...zero, unknown: 3 },
+    });
+  });
+
+  it('C4: the drill line says how many drill entries are not yet retired — a retired one needs nothing', () => {
+    const r = countPlays(DOCS.map((d) => d.data));
+    expect(renderCensus(r)).toContain('stored v1 Practice entries (route drill): 2, not yet retired: 1 — retire each of those from its receipt before on');
+    const allRetired = countPlays([{ route: 'drill', stage: 'retired' }, { route: 'drill', stage: 'retired' }]);
+    const line = renderCensus(allRetired).split('\n').find((l) => l.startsWith('stored v1'));
+    expect(line).toBe('stored v1 Practice entries (route drill): 2, not yet retired: 0');
+  });
+
+  /** A fake terminal: stdin an emitter, stdout a recorder. */
+  const fakeIo = (isTTY = false) => {
+    const stdin = Object.assign(new EventEmitter(), { isTTY, raw: [], setRawMode(on) { this.raw.push(on); }, resume() {}, pause() {} });
+    const written = [];
+    return { stdin, stdout: { write: (s) => { written.push(s); } }, written };
+  };
+
+  it('C5: a multi-line service account JSON, pasted in chunks, is taken WHOLE (the input ends when it parses), nothing of it echoed; raw mode on and off on a terminal', async () => {
+    const io = fakeIo(true);
+    const sa = { type: 'service_account', project_id: 'p-test', private_key: '-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n', client_email: 'x@y' };
+    const pasted = JSON.stringify(sa, null, 2).replace(/\n/g, '\r\n');
+    const p = readHidden('Q: ', io);
+    for (let i = 0; i < pasted.length; i += 17) io.stdin.emit('data', pasted.slice(i, i + 17));
+    const text = await p;
+    expect(JSON.parse(text)).toEqual(sa);
+    expect(io.written).toEqual(['Q: ', '\n']);
+    expect(io.stdin.raw).toEqual([true, false]);
+    expect(io.stdin.listenerCount('data')).toBe(0);
+  });
+
+  it('C5: Ctrl-D or the end of a piped input ends it; Ctrl-C cancels; the environment\'s value is used without asking, and the script reads no file but itself', async () => {
+    const io = fakeIo();
+    const p = readHidden('Q: ', io);
+    io.stdin.emit('data', '{"a":\n');
+    io.stdin.emit('data', '\u0004');
+    expect(await p).toBe('{"a":\n');
+    const io2 = fakeIo();
+    const p2 = readHidden('Q: ', io2);
+    io2.stdin.emit('data', '{"b"');
+    io2.stdin.emit('end');
+    expect(await p2).toBe('{"b"');
+    const io3 = fakeIo();
+    const p3 = readHidden('Q: ', io3);
+    io3.stdin.emit('data', '\u0003');
+    await expect(p3).rejects.toThrow('cancelled');
+    let asked = 0;
+    expect(await credentialText({ env: { FIREBASE_ADMIN_CREDENTIALS: '{"x":1}' }, ask: async () => { asked += 1; return ''; } })).toBe('{"x":1}');
+    expect(await credentialText({ env: {}, ask: async () => { asked += 1; return '{"y":2}'; } })).toBe('{"y":2}');
+    expect(asked).toBe(1);
+    const code = readFileSync(resolve(REPO, GATED_FILE), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+    expect(code.match(/readFileSync\(/g)).toHaveLength(1);
+    expect(code).toContain('readFileSync(path.join(REPO, GATED_FILE)');
+    expect(code).not.toMatch(/\.env\.local|['"`]\.env['"`]|dotenv|loadEnv|existsSync/);
+  });
+});

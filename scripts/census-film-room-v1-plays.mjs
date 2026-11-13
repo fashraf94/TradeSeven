@@ -21,7 +21,8 @@
 //
 // USAGE (the founder, once, before 'on'; never run by a build session against production):
 //   node scripts/census-film-room-v1-plays.mjs
-// The prompt asks for the service account JSON (one line); paste it and press Enter. Or, in PowerShell, put it in
+// The prompt asks for the service account JSON; paste it whole (as downloaded, any number of lines — the input ends when
+// it parses, or at Ctrl-D), nothing is echoed. Or, in PowerShell, put it in
 // the process's environment through a hidden prompt first:
 //   $sec = Read-Host -AsSecureString "Service account JSON"
 //   $b = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec); $env:FIREBASE_ADMIN_CREDENTIALS = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($b); [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($b)
@@ -90,7 +91,9 @@ export function renderCensus(r) {
   const L = [];
   L.push('# Film Room — stored plays by route and stage (counts only)');
   L.push(`entries read: ${r.total}`);
-  L.push(`stored v1 Practice entries (route drill): ${r.byRoute.drill}${r.byRoute.drill ? ' — retire each from its receipt before on (Amendment A CA-13)' : ''}`);
+  // §2 review (C4): a drill entry already retired needs nothing; the ones still to retire are the rest
+  const toRetire = r.byRoute.drill - r.byRouteStage.drill.retired;
+  L.push(`stored v1 Practice entries (route drill): ${r.byRoute.drill}, not yet retired: ${toRetire}${toRetire ? ' — retire each of those from its receipt before on (Amendment A CA-13)' : ''}`);
   L.push('');
   L.push('## by route');
   for (const k of ROUTE_BUCKETS) L.push(`- ${k}: ${r.byRoute[k]}`);
@@ -120,26 +123,42 @@ export const failureLine = (err) => `[census-v1-plays] failed: ${errorClassOf(er
 
 // ── main (the credential and the read live only here) ──────────────────────
 
-/** A line typed into a prompt that echoes nothing (raw mode on a terminal; a plain line read when stdin is piped). */
-function readHidden(question) {
+/** Does the typed text parse as a JSON object (the service account, whole)? */
+const isWholeJson = (text) => { try { const v = JSON.parse(text); return v !== null && typeof v === 'object'; } catch { return false; } };
+
+/**
+ * The credential typed into a prompt that echoes nothing (raw mode on a terminal). §2 review (C5): the service
+ * account's JSON as Google downloads it spans many lines, so the input ends when what was typed parses as a whole JSON
+ * object — or at end of input (Ctrl-D, or a piped stdin's end) — never at the first newline, so no line of a pasted key
+ * is left for the shell. Ctrl-C cancels. The streams are handed in, so a test drives it.
+ */
+export function readHidden(question, { stdin = process.stdin, stdout = process.stdout } = {}) {
   return new Promise((resolve, reject) => {
-    const { stdin, stdout } = process;
     stdout.write(question);
     let text = '';
     const raw = Boolean(stdin.isTTY);
-    const done = (value) => { stdin.removeListener('data', onData); if (raw) stdin.setRawMode(false); stdin.pause(); stdout.write('\n'); resolve(value); };
+    const finish = () => { stdin.removeListener('data', onData); stdin.removeListener('end', onEnd); if (raw) stdin.setRawMode(false); stdin.pause(); };
+    const done = () => { finish(); stdout.write('\n'); resolve(text); };
+    const onEnd = () => done();
     const onData = (chunk) => {
       for (const ch of String(chunk)) {
-        if (ch === '\u0003') { stdin.removeListener('data', onData); if (raw) stdin.setRawMode(false); reject(new Error('cancelled')); return; }
-        if (ch === '\r' || ch === '\n') { done(text); return; }
-        if (ch === '\u007f' || ch === '\b') text = text.slice(0, -1);
-        else text += ch;
+        if (ch === '\u0003') { finish(); reject(new Error('cancelled')); return; }
+        if (ch === '\u0004') { done(); return; }
+        if (ch === '\u007f' || ch === '\b') { text = text.slice(0, -1); continue; }
+        text += ch === '\r' ? '\n' : ch;
+        if ((ch === '\r' || ch === '\n' || ch === '}') && isWholeJson(text)) { done(); return; }
       }
     };
     if (raw) stdin.setRawMode(true);
     stdin.resume();
     stdin.on('data', onData);
+    stdin.on('end', onEnd);
   });
+}
+
+/** The credential's text: the environment's FIREBASE_ADMIN_CREDENTIALS when set, else the hidden prompt — never a file. */
+export async function credentialText({ env = process.env, ask = readHidden } = {}) {
+  return env.FIREBASE_ADMIN_CREDENTIALS || ask('Service account JSON (hidden; paste it whole): ');
 }
 
 function stop(message, code = 2) {
@@ -152,7 +171,7 @@ async function main() {
   const hits = writeCallsIn(readFileSync(path.join(REPO, GATED_FILE), 'utf8'));
   if (hits.length) stop(`write-grep gate: ${GATED_FILE} has ${hits.length} line(s) matching a write call (${hits.map(([n]) => n).join(', ')}) — refusing to run`, 3);
   console.log(`[census-v1-plays] gate: ${GATED_FILE} — no write call`);
-  const typed = process.env.FIREBASE_ADMIN_CREDENTIALS || await readHidden('Service account JSON (hidden): ');
+  const typed = await credentialText();
   let sa = null;
   try { sa = JSON.parse(typed); } catch { sa = null; }
   if (!sa || typeof sa.private_key !== 'string') stop('no usable Firebase service account (value not printed)');
