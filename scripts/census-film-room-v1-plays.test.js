@@ -193,3 +193,18 @@ describe('CA-13 §2 review — the rendered table, line for line', () => {
     expect(byStage).toEqual(['- card: 2', '- nominated: 2', '- testing: 0', '- tested: 1', '- installed: 0', '- retired: 1', '- missing: 1', '- unknown: 3']);
   });
 });
+
+describe('CA-13 §2 review (the mutating lens, LD-2) — the hidden prompt\'s erase keys', () => {
+  for (const [name, erase] of [['DEL', '\u007f'], ['backspace', '\b']]) {
+    it(`${name} erases the last typed character — the corrected JSON is what is taken`, async () => {
+      const stdin = Object.assign(new EventEmitter(), { isTTY: true, setRawMode() {}, resume() {}, pause() {} });
+      const written = [];
+      const p = readHidden('Q: ', { stdin, stdout: { write: (s) => { written.push(s); } } });
+      stdin.emit('data', '{"a":1x');
+      stdin.emit('data', erase);
+      stdin.emit('data', '}');
+      expect(await p).toBe('{"a":1}');
+      expect(written).toEqual(['Q: ', '\n']);
+    });
+  }
+});

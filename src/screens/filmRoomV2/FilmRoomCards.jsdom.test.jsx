@@ -2712,3 +2712,28 @@ describe('C1 fix round §2 review A2 — a casual clone\'s offer names the paren
     expect(await api.postCard({ ...sent[0], agentId: CLONE })).toMatchObject({ ok: false, status: 503, body: { error: 'attribution_unavailable' } });
   });
 });
+
+describe('C1 fix round §2 review (the mutating lens, LD-3) — Offer and Retire never run at once from one receipt', () => {
+  const card = { entryId: 'e1', ownerId: OWNER, agentId: AGENT, createdAt: `${D2}T20:00:00.000Z`, situationId: 'stalled', source: { battleId: B, etDate: D2, symbol: 'ACN' }, questionId: 'stalled.want', note: 'A note.', route: 'watch', stage: 'card', stageHistory: [{ stage: 'card', at: `${D2}T20:00:00.000Z`, by: 'player', opId: 'e1' }], version: 1, stageVocabVersion: 2 };
+  const counter = { status: 'ready', data: { cards: [card], book: { open: true } } };
+
+  it('while an offer is in flight Retire is disabled, and while a retire is in flight Offer is disabled; each enabled again when it settles', async () => {
+    let settle;
+    m.render(<Receipt day={D2} counter={counter} card={card} mintOpId={() => 'op_r'} onRetire={() => new Promise((r) => { settle = r; })} onNominate={() => new Promise((r) => { settle = r; })} />);
+    await m.flush(2);
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(1);
+    expect(m.buttons('Offering…')).toHaveLength(1);
+    expect(m.buttons('Retire')[0].disabled).toBe(true);
+    settle({ ok: false, code: 'book_not_open' });
+    await m.flush(2);
+    expect(m.buttons('Retire')[0].disabled).toBe(false);
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(1);
+    expect(m.buttons('Retiring…')).toHaveLength(1);
+    expect(m.buttons('Offer to your agent')[0].disabled).toBe(true);
+    settle({ ok: false, code: 'version_conflict' });
+    await m.flush(2);
+    expect(m.buttons('Offer to your agent')[0].disabled).toBe(false);
+  });
+});
