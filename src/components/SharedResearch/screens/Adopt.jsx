@@ -142,7 +142,7 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
   const status = sr.save.status;
   const uncertain = status === 'uncertain' || status === 'checking';
   const busy = status === 'saving' || status === 'checking' || sr.pending !== null;
-  const canSave = Boolean(statement.trim()) && !over && picked.length > 0 && horizon && stray.length === 0 && !busy && !uncertain && status !== 'closed' && !sr.waiting;
+  const canSave = Boolean(statement.trim()) && !over && picked.length > 0 && horizon && stray.length === 0 && !busy && !uncertain && status !== 'closed' && !sr.waiting && !sr.gated;
   const level = (raw) => {
     const n = Number(raw);
     return Number.isFinite(n) && n > 0 ? n : null;
@@ -172,7 +172,7 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
               <label key={c.symbol} data-sr-pick={c.symbol} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 10px', borderRadius: 10, background: T.bg, border: `1px solid ${on ? wash('teal', 0.5) : T.hair}`, cursor: c.adoptable ? 'pointer' : 'not-allowed', opacity: c.adoptable ? 1 : 0.6, minHeight: 44, boxSizing: 'border-box' }}>
                 <input type="checkbox" checked={on} disabled={!c.adoptable || busy} onChange={() => toggle(c.symbol)} style={{ marginTop: 3, width: 18, height: 18 }} />
                 <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={S.row}><span style={{ fontSize: 14.5, fontWeight: 600, color: T.ink }}>{c.name}</span><span style={S.small}>{c.symbol}</span><Tag tone="teal" dim>{c.role}</Tag></span>
+                  <span style={S.row}><span style={{ fontSize: 14.5, fontWeight: 600, color: T.ink, overflowWrap: 'anywhere' }}>{c.name}</span><span style={S.small}>{c.symbol}</span><Tag tone="teal" dim>{c.role}</Tag></span>
                   {open && <span style={{ display: 'block', ...S.small, color: T.copper, marginTop: 2 }}>{COPY.doubt(withoutRole(open.fact))}</span>}
                   {!c.adoptable && <span style={{ display: 'block', ...S.small, marginTop: 2 }}>{COPY.tooMuch}</span>}
                 </span>
@@ -181,7 +181,7 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
           })}
           {leads.map((l) => (
             <div key={`${l.symbol ?? ''}:${l.name}`} style={{ display: 'flex', gap: 10, padding: '9px 10px', borderRadius: 10, border: `1px dashed ${T.hair}`, opacity: 0.6 }}>
-              <span style={{ fontSize: 14.5, fontWeight: 600, color: T.ink }}>{l.name}</span>
+              <span style={{ fontSize: 14.5, fontWeight: 600, color: T.ink, overflowWrap: 'anywhere' }}>{l.name}</span>
               <span style={S.small}>{COPY.leadPick}</span>
             </div>
           ))}
@@ -191,10 +191,10 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
       <div style={S.box}>
         <Field id="sr-statement" label={COPY.thesisLabel} help={COPY.thesisHelp}>
           <div style={{ ...S.row, marginBottom: 6 }}><Tag tone="gold">{COPY.thesisTag}</Tag><span style={S.small}>{COPY.thesisTagNote}</span></div>
-          <textarea id="sr-statement" value={statement} disabled={busy} onChange={(e) => { setStatement(e.target.value); setEdited(true); }} rows={7} style={{ ...S.input, minHeight: 170, resize: 'vertical' }} />
+          <textarea id="sr-statement" aria-describedby="sr-statement-help sr-statement-count" value={statement} disabled={busy} onChange={(e) => { setStatement(e.target.value); setEdited(true); }} rows={7} style={{ ...S.input, minHeight: 170, resize: 'vertical' }} />
         </Field>
         <div style={S.row}>
-          <span style={{ ...S.small, color: over ? T.neg : T.ink3 }} data-sr-count="">{COPY.count(statement.length)}{over ? COPY.over : ''}</span>
+          <span style={{ ...S.small, color: over ? T.neg : T.ink3 }} data-sr-count="" id="sr-statement-count">{COPY.count(statement.length)}{over ? COPY.over : ''}</span>
           {edited && <LinkButton onClick={() => { setStatement(draftOf(preview, picked)); setEdited(false); }}>{COPY.resetDraft}</LinkButton>}
         </div>
         {stray.length > 0 && <Notice role="alert" attrs={{ 'data-sr-stray': '' }}>{COPY.stray(stray)}</Notice>}
@@ -203,9 +203,9 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
       <div style={S.box}>
         <Eyebrow as="h3">{COPY.timeFrame}</Eyebrow>
         <p style={S.small}>{HORIZON_HELPER}</p>
-        <div role="radiogroup" aria-label={COPY.timeFrame} style={S.row}>
+        <div role="group" aria-label={COPY.timeFrame} style={S.row}>
           {ADOPTABLE_HORIZONS.map((h) => (
-            <Button key={h} kind={horizon === h ? 'primary' : 'secondary'} disabled={busy} onClick={() => setHorizon(h)} attrs={{ role: 'radio', 'aria-checked': horizon === h, 'data-sr-horizon': h }}>{HORIZON_LABELS[h]}</Button>
+            <Button key={h} kind={horizon === h ? 'primary' : 'secondary'} disabled={busy} onClick={() => setHorizon(h)} attrs={{ 'aria-pressed': horizon === h, 'data-sr-horizon': h }}>{HORIZON_LABELS[h]}</Button>
           ))}
         </div>
         {!horizon && <p style={S.small}>{COPY.timeFrameNone}</p>}
@@ -219,7 +219,7 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
             {[['live', COPY.liveAbove], ['wrong', COPY.wrongBelow]].map(([key, side]) => (
               <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 220px', minWidth: 0, ...S.meta }}>
                 <span style={{ whiteSpace: 'nowrap' }}>{`${c.symbol} · ${side}`}</span>
-                <input inputMode="decimal" value={cond[c.symbol]?.[key] ?? ''} disabled={busy} aria-label={COPY.conditionLabel(c.name, side)}
+                <input inputMode="decimal" value={cond[c.symbol]?.[key] ?? ''} disabled={busy} aria-label={COPY.conditionLabel(c.symbol, side, c.name)}
                   onChange={(e) => setCond((v) => ({ ...v, [c.symbol]: { ...(v[c.symbol] ?? {}), [key]: e.target.value.replace(/[^0-9.]/g, '') } }))}
                   style={{ ...S.input, minHeight: 40, flex: 1, minWidth: 80 }} />
               </label>
@@ -232,7 +232,7 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
         <Eyebrow as="h3">{COPY.carried}</Eyebrow>
         {carried.length ? carried.map((c) => (
           <div key={c.symbol} style={{ display: 'flex', flexDirection: 'column', gap: 6 }} data-sr-carried-for={c.symbol}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: T.ink2 }}>{c.name}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.ink2, overflowWrap: 'anywhere' }}>{c.name}</span>
             {c.carried.map((fid) => byId.get(fid)).filter(Boolean).map((f) => <Finding key={f.findingId} finding={f} />)}
           </div>
         )) : <p style={S.small}>{COPY.carriedNone}</p>}
@@ -246,7 +246,7 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
           <li>{COPY.createsEvidence}</li>
           <li>{COPY.createsClose}</li>
         </ul>
-        <p style={S.small}>{COPY.previewHonest}</p>
+        <p style={S.small}>{COPY.honest(agentName)}</p>
       </div>
 
       {status === 'failed' && <Notice role="alert" attrs={{ 'data-sr-save': 'failed' }}>{sr.save.message}</Notice>}

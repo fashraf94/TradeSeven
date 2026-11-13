@@ -30,18 +30,29 @@ const walk = (dir, out = []) => {
 };
 const isTest = (p) => /\.test\./.test(p);
 const stripComments = (code) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-/** Every module specifier a file names: static imports and re-exports, dynamic import(), require(). */
+/**
+ * Every module specifier a file names — static imports and re-exports (spaced or not), bare imports, dynamic import()
+ * (quotes or backticks, with or without options), import.meta.glob() and require() (review d2). The rows below back it
+ * with a literal scan: any string naming the directory counts, however it would be used.
+ */
 export function specifiersOf(code) {
   const c = stripComments(code);
   return [
-    ...[...c.matchAll(/\b(?:import|export)\s[^'"`;]*?from\s*['"]([^'"]+)['"]/g)].map((m) => m[1]),
-    ...[...c.matchAll(/\bimport\s*['"]([^'"]+)['"]/g)].map((m) => m[1]),
-    ...[...c.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m) => m[1]),
-    ...[...c.matchAll(/\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m) => m[1]),
+    ...[...c.matchAll(/\b(?:import|export)\b[^'"`;]*?\bfrom\s*['"`]([^'"`]+)['"`]/g)].map((m) => m[1]),
+    ...[...c.matchAll(/\bimport\s*['"`]([^'"`]+)['"`]/g)].map((m) => m[1]),
+    ...[...c.matchAll(/\bimport\s*\(\s*['"`]([^'"`]+)['"`]/g)].map((m) => m[1]),
+    ...[...c.matchAll(/\bimport\.meta\.glob\s*\(\s*['"`]([^'"`]+)['"`]/g)].map((m) => m[1]),
+    ...[...c.matchAll(/\brequire\s*\(\s*['"`]([^'"`]+)['"`]/g)].map((m) => m[1]),
   ];
+}
+/** The string literals in the code (quotes or backticks) that contain `fragment` — the backstop for forms a scan misses. */
+export function namesInStrings(code, fragment) {
+  const c = stripComments(code);
+  return [...c.matchAll(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g)].map((m) => m[0]).filter((s) => s.includes(fragment));
 }
 const resolveFrom = (file, spec) => {
   if (spec.startsWith('@/')) return posix.join('src', spec.slice(2));
+  if (spec.startsWith('/src/')) return spec.slice(1); // root-absolute: Vite resolves it from the project root
   if (!spec.startsWith('.')) return spec;
   return posix.normalize(posix.join(posix.dirname(rel(file)), spec));
 };
@@ -58,9 +69,18 @@ describe('the boundary (K-2)', () => {
   });
   it('the scan bites (planted)', () => {
     const body = join(HERE, 'SharedResearchSheetBody.jsx');
-    for (const planted of ["import { HUB_COPY } from '../CommandCenter/hub/hubCopy';", "const H = () => import('../CommandCenter/HubSheet');", "export { useHubOverlays } from '@/components/CommandCenter/hub/HubOverlays';"]) {
-      expect(specifiersOf(planted).map((s) => resolveFrom(body, s)).some((t) => t.startsWith('src/components/CommandCenter'))).toBe(true);
+    for (const planted of [
+      "import { HUB_COPY } from '../CommandCenter/hub/hubCopy';", "const H = () => import('../CommandCenter/HubSheet');",
+      "export { useHubOverlays } from '@/components/CommandCenter/hub/HubOverlays';", 'const H = () => import(`../CommandCenter/HubSheet`);',
+      "import{HUB_COPY}from'../CommandCenter/hub/hubCopy';", "export*from'../CommandCenter/hub/hubCopy';",
+      "import X from '/src/components/CommandCenter/HubSheet';", "const m = import.meta.glob('../CommandCenter/*.jsx');",
+      "const H = () => import('../CommandCenter/HubSheet', { with: {} });",
+    ]) {
+      expect(specifiersOf(planted).map((s) => resolveFrom(body, s)).some((t) => t.startsWith('src/components/CommandCenter')), planted).toBe(true);
     }
+  });
+  it.each(OURS.map((p) => [rel(p), p]))('%s names no hub path in any string', (_r, p) => {
+    expect(namesInStrings(readFileSync(p, 'utf8'), 'CommandCenter/')).toEqual([]);
   });
 });
 
@@ -72,7 +92,22 @@ describe('dark by construction (K-3)', () => {
     const importers = outside.map((p) => [p, readFileSync(p, 'utf8')]).filter(([, c]) => c.includes('SharedResearch'))
       .filter(([p, c]) => specifiersOf(c).map((s) => resolveFrom(p, s)).some((t) => t.startsWith('src/components/SharedResearch')));
     expect(importers.map(([p]) => rel(p))).toEqual([]);
+    // …and no string outside names the directory, whatever form would load it (review d2: backticks, globs, '/src/…')
+    const naming = outside.map((p) => [p, readFileSync(p, 'utf8')]).filter(([, c]) => c.includes('SharedResearch/'))
+      .filter(([, c]) => namesInStrings(c, 'SharedResearch/').length > 0);
+    expect(naming.map(([p]) => rel(p))).toEqual([]);
   }, 30_000);
+  it('the dark scans bite (planted: a backtick lazy import, a root-absolute import, a glob)', () => {
+    const discover = resolve(REPO, 'src/components/discover/DiscoverPanel.jsx');
+    for (const planted of [
+      'const B = () => import(`../SharedResearch/SharedResearchSheetBody`);',
+      "import B from '/src/components/SharedResearch/SharedResearchSheetBody';",
+      "const all = import.meta.glob('../SharedResearch/*.jsx');",
+    ]) {
+      expect(specifiersOf(planted).map((s) => resolveFrom(discover, s)).some((t) => t.startsWith('src/components/SharedResearch')), planted).toBe(true);
+      expect(namesInStrings(planted, 'SharedResearch/').length, planted).toBeGreaterThan(0);
+    }
+  });
   it('nothing outside the directory reaches the service either (the body is its one importer)', () => {
     const files = walk(resolve(REPO, 'src')).filter((p) => !isTest(p));
     const importers = files.map((p) => [p, readFileSync(p, 'utf8')]).filter(([, c]) => c.includes('sharedResearchService'))

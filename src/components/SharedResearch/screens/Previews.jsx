@@ -70,7 +70,7 @@ export function ItemPreview({ sr, story, direction: given, gated, phone, onBack,
         <p style={{ ...S.body, fontSize: 16, fontWeight: 700 }}>{story.headline}</p>
         {story.context && <p style={S.meta}>{story.context}</p>}
         <div style={S.row}>
-          <Tag tone="gold">{COPY.fromFantasyTimes(story.reporterName, formatWhen(story.publishedAt) ?? '')}</Tag>
+          <Tag tone="gold">{COPY.fromFantasyTimes(story.reporterName, formatWhen(story.publishedAt))}</Tag>
         </div>
       </div>
       <QuestionAndDirection idPrefix="sr-item" question={question} setQuestion={setQuestion} direction={direction} setDirection={setDirection} disabled={gated} />

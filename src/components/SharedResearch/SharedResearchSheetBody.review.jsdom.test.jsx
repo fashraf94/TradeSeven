@@ -132,13 +132,12 @@ describe('a7: one findings count for one investigation', () => {
   });
 });
 
-describe('a8 / a9: the preview carries no review line and no unchecked claim', () => {
-  it('the preview shows the design\'s line; the review line only once saved', async () => {
+describe('a9: the preview makes no claim the client never checked (a8 refuted: R7 puts the honest line on every idea surface)', () => {
+  it('no "carries a price" claim; the honest line on the preview and on the saved view', async () => {
     await toAdopt({ adopt: A.adoptSaved });
     const reviewLine = REVIEW_HONEST_LINE.replace('[AGENT]', 'Atlas');
-    expect(textOf()).toContain(COPY.previewHonest);
-    expect(textOf()).not.toContain(reviewLine);
     expect(textOf()).not.toMatch(/carries a price/);
+    expect(textOf()).toContain(reviewLine);
     click($('[data-sr-horizon="swing"]'));
     click($('[data-sr-save-button]'));
     await flush();
@@ -316,5 +315,67 @@ describe('a5 / a16: a lead with a symbol wears no status of its own', () => {
     expect(lead.firstElementChild.textContent).toBe(`Vertiv Holdings Co${COPY.lead}VRT`);
     expect(lead.firstElementChild.textContent).not.toContain('Source-backed');
     expect(lead.querySelector('[data-sr-finding]').textContent).toContain('Source-backed');
+  });
+});
+
+describe('refuter (a) N1: a story with no reporter or no time reads cleanly', () => {
+  it('"reporter" for a missing name (the server\'s word); no trailing separator without a time', async () => {
+    await open({ mode: 'item', item: storyOf({ reporterName: null, publishedAt: null }) });
+    const tag = [...document.querySelectorAll('[data-screen-label="Item preview"] span')].find((s) => s.textContent.startsWith('From FantasyTimes'));
+    expect(tag.textContent).toBe('From FantasyTimes · reporter');
+  });
+});
+
+describe('refuter (a) on a2: "published" only for a retrieved source', () => {
+  it('the stored-claims fact (same-day at and asOf, not a publication) shows its date alone', async () => {
+    await open({ mode: 'session', sessionId: IDS.storySid }, { get: A.getStory });
+    click($('[data-sr-evidence] button'));
+    const claims = A.getStory.body.record.findings.find((f) => f.source.recordKind === 'ingestedClaims');
+    const line = $(`[data-sr-finding="${claims.findingId}"] [data-sr-date]`);
+    expect(line.dataset.srDate).toBe('dated');
+    expect(line.textContent).toBe('Nov 5, 2026');
+  });
+});
+
+describe('lens c: focus, roles and names', () => {
+  it('c1: a screen that replaces the one the player was on leaves focus inside the sheet, never on <body>', async () => {
+    await open({ mode: 'item', item: storyOf() }, { open: A.openStory });
+    $('[data-sr-investigate]').focus();
+    click($('[data-sr-investigate]'));
+    await flush();
+    expect($('[data-screen-label="Opening · no answer yet"]')).not.toBeNull();
+    expect(document.activeElement).not.toBe(document.body);
+    expect($('[data-shared-research-body]').contains(document.activeElement)).toBe(true);
+  });
+  it('c3: the open-research list that did not load is an alert', async () => {
+    await open({}, { list: NETWORK });
+    expect($('[data-sr-list-failed]').getAttribute('role')).toBe('alert');
+  });
+  it('c5: a condition input\'s name starts with what the screen shows beside it', async () => {
+    await toAdopt();
+    const input = $$('input[inputmode="decimal"]')[0];
+    const shown = input.closest('label').querySelector('span').textContent;
+    expect(input.getAttribute('aria-label').startsWith(shown)).toBe(true);
+  });
+  it('c7: the time frame is a group of pressed buttons, not radios without arrow keys', async () => {
+    await toAdopt();
+    expect($('[role="radiogroup"]')).toBeNull();
+    expect($('[data-sr-horizon="swing"]').getAttribute('role')).toBeNull();
+    click($('[data-sr-horizon="swing"]'));
+    expect($('[data-sr-horizon="swing"]').getAttribute('aria-pressed')).toBe('true');
+  });
+  it('c9: a story card and a Continue row are named by everything they show', async () => {
+    await open({}, { list: A.list });
+    expect($('[data-sr-story]').getAttribute('aria-label')).toBeNull();
+    expect($(`[data-sr-continue="${IDS.spSid}"]`).getAttribute('aria-label')).toBeNull();
+  });
+  it('c10: a field\'s help and the statement\'s count describe their inputs', async () => {
+    await toAdopt();
+    const ids = $('#sr-statement').getAttribute('aria-describedby').split(' ');
+    expect(ids.map((id) => document.getElementById(id)?.textContent ?? null)).toEqual([COPY.thesisHelp, expect.stringContaining('/ 1,000')]);
+  });
+  it('c10: the own-words box is described by its help', async () => {
+    await open({});
+    expect(document.getElementById($('#sr-own').getAttribute('aria-describedby')).textContent).toBe(COPY.ownHelp);
   });
 });

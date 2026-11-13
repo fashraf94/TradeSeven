@@ -18,11 +18,10 @@ function StoryCard({ story, onPick }) {
     <button
       type="button"
       onClick={onPick}
-      aria-label={COPY.storyLabel(story.headline, story.question)}
       data-sr-story={story.itemRef?.recordId}
       style={{ appearance: 'none', font: 'inherit', cursor: 'pointer', textAlign: 'left', width: '100%', boxSizing: 'border-box', ...S.card, color: T.ink }}
     >
-      <span style={{ ...S.small, color: T.ink2 }}>{COPY.fromFantasyTimes(story.reporterName, formatWhen(story.publishedAt) ?? '')}</span>
+      <span style={{ ...S.small, color: T.ink2 }}>{COPY.fromFantasyTimes(story.reporterName, formatWhen(story.publishedAt))}</span>
       <span style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{story.headline}</span>
       {story.context && <span style={{ ...S.meta }}>{story.context}</span>}
       <span style={{ padding: '8px 10px', borderRadius: 10, border: `1px solid ${T.hair}`, background: T.surface, fontSize: 13.5, fontWeight: 600, lineHeight: 1.4, overflowWrap: 'anywhere' }}>{story.question}</span>
@@ -54,8 +53,9 @@ export default function Start({ sr, stories, gated, phone, prefill, onPickStory,
       {!gated && sr.list.open.length > 0 && (
         <section aria-label={COPY.continueHead} data-screen-label="Continue your research" style={S.section}>
           <Eyebrow tone="teal" as="h3">{COPY.continueHead}</Eyebrow>
+          {sr.pending?.kind === 'read' && <Running>{COPY.opening}</Running>}
           {sr.list.open.slice(0, 3).map((row) => (
-            <button key={row.sessionId} type="button" onClick={(e) => onContinue(row.sessionId, e)} aria-label={COPY.continueLabel(row.question ?? '')} data-sr-continue={row.sessionId}
+            <button key={row.sessionId} type="button" disabled={sr.pending !== null || sr.waiting} onClick={(e) => onContinue(row.sessionId, e)} data-sr-continue={row.sessionId}
               style={{ appearance: 'none', font: 'inherit', cursor: 'pointer', textAlign: 'left', width: '100%', boxSizing: 'border-box', minHeight: 48, ...S.card, color: T.ink }}>
               <span style={S.small}>{COPY.continueRow(formatWhen(row.lastTurnAt) ?? formatWhen(row.updatedAt) ?? '', row.findingsCount ?? 0)}</span>
               <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{row.question}</span>
@@ -64,7 +64,7 @@ export default function Start({ sr, stories, gated, phone, prefill, onPickStory,
         </section>
       )}
       {!gated && sr.list.status === 'failed' && (
-        <div style={S.row}><span style={S.small}>{COPY.listFailed}</span><LinkButton onClick={sr.loadList}>{COPY.retry}</LinkButton></div>
+        <div style={S.row} role="alert" data-sr-list-failed=""><span style={S.small}>{COPY.listFailed}</span><LinkButton onClick={sr.loadList}>{COPY.retry}</LinkButton></div>
       )}
 
       {gated && (

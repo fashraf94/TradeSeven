@@ -82,14 +82,17 @@ export function safeUrlOf(f) {
  */
 export function dateLineOf(f) {
   if (isUndated(f)) {
-    const read = formatFactDay(f.at);
+    const read = formatDay(f.at); // the read is a clock instant: Eastern, as every clock time (no check reads it)
     return read ? { kind: 'undated', text: read, published: null } : null;
   }
   if (f?.status !== 'verified') return null;
   const day = formatFactDay(f.at);
   if (!day) return null;
   const published = formatFactDay(f.asOf);
-  if (published && f.asOf === f.at) return { kind: 'published', text: published, published };
+  // Only a retrieved source has a publication date the server fell back to; a cache's or a stored count's same-day `at` and
+  // `asOf` are when it was computed, not published (refuter of a2).
+  if (published && f.asOf === f.at && f.source?.recordKind === 'retrieval') return { kind: 'published', text: published, published };
+  if (published && f.asOf === f.at) return { kind: 'dated', text: day, published: null };
   return { kind: 'dated', text: day, published };
 }
 

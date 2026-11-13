@@ -9,8 +9,12 @@
 //     typed text and a fresh dropId → the confirm phase with "Try again" and "Start dialogue";
 //   - onStartDialogue's arguments: exactly { parseResult, dropId } — the parse answer as received, the request's id;
 //   - the bailout footer: only "Try a different signal";
-//   - the card's whole rendered content, phase by phase, as a SHA-256 of its innerHTML (the card's own animated
-//     style excluded: framer-motion owns it) — so any change to what the modal draws reds a row.
+//   - the card's rendered content, phase by phase, as a SHA-256 of its innerHTML (input, typed, confirming, bailout).
+// The third block (added after review d1, its hashes measured on main d9b4e3c1's file and on this branch's alike) pins
+// more: the whole overlay's outerHTML — the overlay's and the card's own attributes and style included, only
+// framer-motion's animated opacity/transform masked — at desktop, at 390 px and in the submitting phase; the phone
+// header's back arrow; Escape, the overlay click and Close each closing; the error copy of a failed parse.
+// What it still does not pin: the image and URL request bodies, the scroll lock, the close-reset timer, autofocus.
 // No network: fetchWithAuth is mocked. The rows for the new props live in the second describe block.
 
 import React from 'react';
@@ -179,5 +183,76 @@ describe('the two additive props (Shared Research B2: K-4, P-1)', () => {
     open({ zIndex: 1001 });
     expect(overlayOf().style.zIndex).toBe('1001');
     expect(sha(cardOf().innerHTML)).toBe(PINNED.input);
+  });
+});
+
+// The whole overlay, its own attributes and style included — only framer-motion's animated values masked.
+const maskedOverlay = () => {
+  const c = overlayOf().cloneNode(true);
+  for (const el of [c, c.firstElementChild]) { el.style.removeProperty('opacity'); el.style.removeProperty('transform'); }
+  return c.outerHTML;
+};
+// Measured on main d9b4e3c1's SignalDropEntry.jsx and on this branch's, identical (review d1; the build report).
+const PINNED_OVERLAY = Object.freeze({
+  desktop: '94c3dafba31b0901031b589d26b96fc669efb5d77ad2c361dd5de95a3091955e',
+  submitting: '1c9979ce8e232e76e4a5c6e5b631542ad5a6386f129de1592bbcb19817e0fb76',
+  phone: '42c5efdcc27e32b4ba3c0d342da2d1a55b5c13b9385f68e9dca6abbf0d599cbc',
+});
+
+describe("SignalDropEntry with no ctaLabel and no zIndex: the whole overlay and the dismissals (review d1)", () => {
+  let width;
+  beforeEach(() => { width = window.innerWidth; });
+  afterEach(() => { window.innerWidth = width; });
+  const readButton = () => buttonNamed('Read this signal');
+
+  it('desktop input: the overlay, attributes and style included', () => {
+    open();
+    expect(sha(maskedOverlay())).toBe(PINNED_OVERLAY.desktop);
+  });
+  it('submitting (the parse held in flight): "Reading…", as drawn', async () => {
+    fetchWithAuth.mockReturnValueOnce(new Promise(() => {}));
+    open();
+    typeInto(cardOf().querySelector('textarea'), 'Utilities are adding gas turbines for data centers.');
+    click(readButton());
+    await flush();
+    expect(cardOf().textContent).toContain('Reading…');
+    expect(sha(maskedOverlay())).toBe(PINNED_OVERLAY.submitting);
+  });
+  it('phone (390 px) input: the full-screen overlay, as drawn', () => {
+    window.innerWidth = 390;
+    open();
+    expect(sha(maskedOverlay())).toBe(PINNED_OVERLAY.phone);
+  });
+  it('phone confirm: the header\'s back arrow returns to the input; it does not close', async () => {
+    window.innerWidth = 390;
+    const { onClose } = open();
+    await readSignal();
+    click(cardOf().querySelector('button[aria-label="Back"]'));
+    await flush();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(readButton()).not.toBeNull();
+  });
+  it('Escape closes; Close closes; a click on the desktop overlay closes — and a click inside the card does not', () => {
+    const a = open();
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(a.onClose).toHaveBeenCalledTimes(1);
+    click(cardOf().querySelector('button[aria-label="Close"]'));
+    expect(a.onClose).toHaveBeenCalledTimes(2);
+    click(cardOf());
+    expect(a.onClose).toHaveBeenCalledTimes(2);
+    click(overlayOf());
+    expect(a.onClose).toHaveBeenCalledTimes(3);
+  });
+  it('a failed parse shows the server\'s message, then "Network error. Try again." when nothing answered', async () => {
+    open();
+    fetchWithAuth.mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ message: 'That text is too long.' }) });
+    typeInto(cardOf().querySelector('textarea'), 'Utilities are adding gas turbines for data centers.');
+    click(readButton());
+    await flush();
+    expect(cardOf().textContent).toContain('That text is too long.');
+    fetchWithAuth.mockRejectedValueOnce(new Error(''));
+    click(readButton());
+    await flush();
+    expect(cardOf().textContent).toContain('Network error. Try again.');
   });
 });

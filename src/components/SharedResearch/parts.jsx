@@ -12,12 +12,15 @@ import { T, S, wash, buttonStyle, linkStyle } from './sharedResearchStyle';
 import { labelOf, toneOf, dateLineOf, sourceLabelOf, safeUrlOf, formatDay, withoutRole } from './sharedResearchView';
 import { ELIGIBILITY_LABELS } from '../../constants/sharedResearch';
 
+/** Small text on a tone's own wash: purple is too dark for 4.5:1 at these sizes, so its words are drawn in ink (review c4). */
+const textOn = (tone) => (tone === 'purple' ? T.ink2 : T[tone] ?? T.ink3);
+
 export function Eyebrow({ children, tone = null, as = 'div' }) {
-  return React.createElement(as, { style: { ...S.eyebrow, color: tone ? T[tone] : T.ink3 } }, children);
+  return React.createElement(as, { style: { ...S.eyebrow, color: tone ? textOn(tone) : T.ink3 } }, children);
 }
 
 export function Tag({ tone = 'ink3', children, dim = false }) {
-  const color = T[tone] ?? T.ink3;
+  const color = tone === 'purple' ? T.ink : textOn(tone);
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, lineHeight: 1.5, color, background: dim ? 'transparent' : wash(tone === 'ink3' ? 'ink-2' : tone, 0.1), border: `1px solid ${dim ? T.hair : wash(tone === 'ink3' ? 'ink-2' : tone, 0.35)}`, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
       {children}
@@ -80,12 +83,15 @@ export function Disclosure({ label, count = null, children, attrs = {} }) {
   );
 }
 
+/** A labelled field; its help is tied to the input (aria-describedby, review c10) when the input is the one child. */
 export function Field({ id, label, help = null, children }) {
+  const helpId = help ? `${id}-help` : null;
+  const input = helpId && React.isValidElement(children) && !children.props['aria-describedby'] ? React.cloneElement(children, { 'aria-describedby': helpId }) : children;
   return (
     <div style={{ minWidth: 0 }}>
       <label htmlFor={id} style={S.label}>{label}</label>
-      {children}
-      {help && <p style={{ ...S.small, marginTop: 6 }}>{help}</p>}
+      {input}
+      {help && <p id={helpId} style={{ ...S.small, marginTop: 6 }}>{help}</p>}
     </div>
   );
 }
@@ -105,7 +111,7 @@ export function Finding({ finding, superseded = false }) {
   const source = sourceLabelOf(finding);
   const words = finding.kind === 'observation';
   return (
-    <div data-sr-finding={finding.findingId} style={{ padding: '10px 12px', borderRadius: 12, background: T.bg, border: `1px solid ${superseded ? T.hair : wash(toneOf(finding), 0.3)}`, display: 'flex', flexDirection: 'column', gap: 6, opacity: superseded ? 0.8 : 1, minWidth: 0 }}>
+    <div data-sr-finding={finding.findingId} style={{ padding: '10px 12px', borderRadius: 12, background: T.bg, border: `1px solid ${superseded ? T.hair : wash(toneOf(finding), 0.3)}`, borderStyle: superseded ? 'dashed' : 'solid', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
       <div style={S.row}>
         <StatusTag finding={finding} />
         {superseded && <Tag dim>{COPY.superseded}</Tag>}

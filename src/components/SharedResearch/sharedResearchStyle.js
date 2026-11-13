@@ -26,7 +26,7 @@ export const T = Object.freeze({
   gold: cssVar('gold'),
   copper: cssVar('copper'),
   purple: cssVar('purple'),
-  pos: cssVar('pos'),
+  pos: cssVar('emerald'), // the saved idea's green: emerald, so its mark matches its wash (wash('pos') — review c12)
   neg: cssVar('neg'),
   bg: cssVar('bg-app'),
   surface: cssVar('bg-card'),
@@ -46,7 +46,7 @@ export const S = Object.freeze({
   h3: { margin: 0, fontSize: 17, fontWeight: 700, color: T.ink, letterSpacing: '-0.01em' },
   body: { margin: 0, fontSize: 14, color: T.ink, lineHeight: 1.5, overflowWrap: 'anywhere' },
   small: { margin: 0, fontSize: 12.5, color: T.ink3, lineHeight: 1.5, overflowWrap: 'anywhere' },
-  meta: { fontSize: 12.5, color: T.ink2, lineHeight: 1.45, overflowWrap: 'anywhere' },
+  meta: { margin: 0, fontSize: 12.5, color: T.ink2, lineHeight: 1.45, overflowWrap: 'anywhere' },
   row: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 },
   actions: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   input: {
@@ -73,6 +73,6 @@ export function buttonStyle(kind = 'secondary', { full = false, disabled = false
 }
 /** A text link that is a button. */
 export const linkStyle = {
-  appearance: 'none', font: 'inherit', background: 'none', border: 'none', padding: '6px 0', minHeight: 32, cursor: 'pointer',
+  appearance: 'none', font: 'inherit', background: 'none', border: 'none', padding: '6px 0', minHeight: 44, display: 'inline-flex', alignItems: 'center', cursor: 'pointer',
   color: T.teal, fontWeight: 600, textAlign: 'left', textDecoration: 'underline', textUnderlineOffset: 3,
 };

@@ -138,6 +138,17 @@ describe('the SignalDrop door, inside a real HubSheet (spec §4.1; K-4; P-1)', (
     expect(sheetOverlay().hasAttribute('inert')).toBe(true);
   });
 
+  it('c2: opened at once (mode signaldrop), closed with Escape: focus is back in the sheet, not on <body>', async () => {
+    await inSheet({ mode: 'signaldrop' });
+    await flush();
+    expect(dropCard()).not.toBeNull();
+    press(dropCard(), 'Escape');
+    await flush();
+    expect(sheetOverlay().hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).not.toBe(document.body);
+    expect(sheetOverlay().contains(document.activeElement)).toBe(true);
+  });
+
   it('unmounting with the modal open releases its hold on the stack', async () => {
     const m = await inSheet({ mode: 'signaldrop' });
     const host = m.host;
@@ -240,7 +251,7 @@ describe('Correction C: adoption from the server\'s preview (spec §9; K-7)', ()
     await toAdopt({ adopt: A.adoptSaved });
     click(pick('AAPL'));
     click($('[data-sr-horizon="positional"]'));
-    typeInto($('[aria-label="Shopify Inc.: Live above $ on a daily close"]'), '150');
+    typeInto($('[aria-label="SHOP · Live above $ — Shopify Inc., on a daily close"]'), '150');
     click($('[data-sr-save-button]'));
     await flush();
     const sent = server.sent('adopt')[0];

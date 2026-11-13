@@ -59,7 +59,6 @@ export const SR_COPY = Object.freeze({
   // ── Start ───────────────────────────────────────────────────────────────────
   continueHead: 'Continue your research',
   continueRow: (when, n) => (when ? `Open · last update ${when} · ${n} ${plural(n, 'finding', 'findings')}` : `Open · ${n} ${plural(n, 'finding', 'findings')}`),
-  continueLabel: (question) => `Continue: ${question}`,
   stories: 'Recent stories',
   storiesSub: 'From FantasyTimes. Pick one; its question is ready to go.',
   general: 'General selection',
@@ -68,7 +67,6 @@ export const SR_COPY = Object.freeze({
   noStoriesSub: 'You can still bring your own starting point below.',
   more: (n) => `Show more stories · ${n}`,
   fewer: 'Show fewer',
-  storyLabel: (headline, question) => `${headline}. ${question}. Open the preview`,
   own: 'Bring your own starting point',
   ownLabel: 'What caught your attention?',
   ownHelp: 'A product name, a company, a question, or a few words is enough.',
@@ -89,7 +87,7 @@ export const SR_COPY = Object.freeze({
   // ── previews ────────────────────────────────────────────────────────────────
   allStories: '← All stories',
   backStart: '← Back to the start',
-  fromFantasyTimes: (reporter, when) => `From FantasyTimes · ${reporter} · ${when}`,
+  fromFantasyTimes: (reporter, when) => ['From FantasyTimes', reporter || 'reporter', when].filter(Boolean).join(' · '), // the server's own fallback word (opening.js)
   yourDrop: (type, when) => (type ? `Your drop · ${type} · ${when}` : `Your drop · ${when}`),
   dropTopic: 'What your drop is about',
   dropNames: 'Names it mentions',
@@ -227,7 +225,7 @@ export const SR_COPY = Object.freeze({
   conditionsHelp: 'Optional, on a daily close. Empty unless you set them; I never fill a number in.',
   liveAbove: 'Live above $',
   wrongBelow: 'Wrong below $',
-  conditionLabel: (name, side) => `${name}: ${side} on a daily close`,
+  conditionLabel: (symbol, side, name) => `${symbol} · ${side} — ${name}, on a daily close`,
   pickFirst: 'Choose a company first.',
   carried: 'Evidence carried into this idea',
   carriedNote: 'Only this evidence, including the complication and the open link, is carried. References stay traceable to their sources.',
@@ -262,7 +260,5 @@ export const SR_COPY = Object.freeze({
   replaced: (list) => `· replaced ${list}`,
   equipFailed: 'Saved, not equipped.',
   leaveSaved: 'Leave it saved',
-  /** The preview's line (the V2 design's): no review line before anything is saved (review a8). */
-  previewHonest: 'Research interest does not grant permission to trade. A link between research and a game is shown only once the game records it.',
   honest: (name) => `${honestOf(name)} A link between research and a game is shown only once the game records it.`,
 });

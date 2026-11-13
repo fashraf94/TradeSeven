@@ -68,6 +68,8 @@ export default function SharedResearchSheetBody({
   const [preselect, setPreselect] = useState(null);
   const [adoptEpoch, setAdoptEpoch] = useState(0);
   const [earlier, setEarlier] = useState(null); // { returnTo } while the earlier investigation is on screen (ruling P-2)
+  const live = useRef(true);
+  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
 
   // ── the SignalDrop modal, registered `within` the hub's stack while open (spec §4.1; P-1) ──
   const openDropModal = (event) => {
@@ -98,7 +100,9 @@ export default function SharedResearchSheetBody({
   useEffect(() => {
     if (mode === 'session' && sessionId) sr.loadSession(sessionId);
     else sr.loadList();
-    if (mode === 'signaldrop' && !gated) openDropModal(null);
+    // After the sheet's own registration (a parent's effect runs after this child's): the modal then sits ABOVE the sheet
+    // in the stack, so its close hands focus back into the sheet (review c2; HuddleSheetBody's microtask precedent).
+    if (mode === 'signaldrop' && !gated) Promise.resolve().then(() => { if (live.current) openDropModal(null); });
   }, []);
   // Gated while the modal is open (a server 404 disabled): the modal goes, and its hold on the stack with it.
   useEffect(() => {
@@ -109,6 +113,12 @@ export default function SharedResearchSheetBody({
   useEffect(() => {
     if (sr.epoch > 0 && view !== 'adopt' && view !== 'discard') setView('work');
   }, [sr.epoch]);
+  // Focus never falls out of the sheet (review c1): a control that disables while its request runs, or a screen that
+  // replaces the one the player was on, would drop focus to <body> — where Escape no longer reaches the sheet. After any
+  // render that leaves focus on <body>, the body's root takes it (it is inside the dialog, so its keys still work).
+  useEffect(() => {
+    if (document.activeElement === document.body && rootRef.current?.isConnected && !rootRef.current.closest('[inert]')) rootRef.current.focus({ preventScroll: true });
+  });
   // The drop preview takes focus when it replaces the modal.
   useEffect(() => {
     if (view === 'drop') rootRef.current?.querySelector('#sr-drop-q')?.focus();
@@ -189,7 +199,7 @@ export default function SharedResearchSheetBody({
   }
 
   return (
-    <div ref={rootRef} data-shared-research-body="" style={{ minWidth: 0 }}>
+    <div ref={rootRef} tabIndex={-1} data-shared-research-body="" style={{ minWidth: 0, outline: 'none' }}>
       {body}
       {!sr.gated && (
         <SignalDropEntry open={dropOpen} onClose={closeDropModal} onStartDialogue={onDropResult} ctaLabel={COPY.investigateCta} zIndex={SR_DROP_LAYER} />

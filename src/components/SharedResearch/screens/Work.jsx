@@ -141,6 +141,8 @@ export default function Work({ sr, agentName, phone, viewingEarlier = false, onB
     if (p.intent === 'examine') return COPY.running.examine(p.label ?? '');
     return COPY.running[p.intent] ?? COPY.running.next;
   })();
+  // Try again is on offer for this failure (the same stepId); while it is, Next is not offered beside it (refuter of b3).
+  const retryOffered = Boolean(failure) && RETRYABLE.has(failure.code) && failure.reason !== 'findings_full' && sr.canRetry(failure.attempt);
   const closeRefusal = sr.failure?.action === 'close' ? sr.failure : null;
   const readFailure = sr.failure?.action === 'read' ? sr.failure : null; // the earlier one, or back, did not load (review b6)
   const examineTarget = (c) => ({ symbol: c.symbol, relationshipFindingId: c.relationshipFindingId, openFindingId: c.openQuestion?.findingId ?? null });
@@ -228,7 +230,7 @@ export default function Work({ sr, agentName, phone, viewingEarlier = false, onB
             <>
               <Notice role="alert" attrs={{ 'data-sr-step-failed': failure.code }}>{failure.message}</Notice>
               <div style={S.actions}>
-                {RETRYABLE.has(failure.code) && failure.reason !== 'findings_full' && sr.canRetry(failure.attempt) && (
+                {retryOffered && (
                   <Button kind="primary" disabled={sr.pending !== null || sr.waiting || spent} onClick={retryOf(failure.attempt)} attrs={{ 'data-sr-retry-step': '' }}>{COPY.retry}</Button>
                 )}
                 <span style={S.small}>{COPY.remaining(remaining)}</span>
@@ -237,7 +239,7 @@ export default function Work({ sr, agentName, phone, viewingEarlier = false, onB
           )}
           {!running && spent && <Notice role="status" tone="gold" attrs={{ 'data-sr-limit': 'budget_spent' }}>{COPY.server.budget_spent}</Notice>}
           {!running && !spent && quota.stepLimit && <Notice role="status" tone="gold" attrs={{ 'data-sr-limit': 'step_limit' }}>{COPY.server.step_limit}</Notice>}
-          {!running && !spent && next && (
+          {!running && !spent && next && !retryOffered && (
             <div style={S.section}>
               <Button kind="primary" full={phone} disabled={blocked} onClick={() => sr.step({ intent: 'next', label: null })} label={`${splitNext(next.fact).label}. ${COPY.remaining(remaining)}`} attrs={{ 'data-sr-next': '' }}>
                 {splitNext(next.fact).label}
