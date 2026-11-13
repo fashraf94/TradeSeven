@@ -9,6 +9,8 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 vi.mock('../../../firebase/config', () => ({ db: {}, auth: { currentUser: null }, default: {} }));
+const fsLog = vi.hoisted(() => ({ reads: [] }));
+vi.mock('firebase/firestore', () => ({ doc: (_db, ...p) => p.join('/'), getDoc: async (path) => { fsLog.reads.push(path); return { exists: () => false, data: () => null }; } }));
 
 import useSheetView from './useSheetView.js';
 import AnalysisSheet, { SheetActionRow } from './AnalysisSheet.jsx';
@@ -101,5 +103,27 @@ describe('QF-8 — the agent\'s name through agentNameOf: Shadow, never shadow',
     expect(seen.agentName).toBeNull();
     expect(container.textContent).not.toMatch(/Your Agent/);
     expect(container.textContent).toContain('Ask Trend Follower');
+  });
+});
+
+describe('the review round (B1, B3)', () => {
+  it('B1 — navigate away inside the modal and back: the row keeps the set decided at its first opening', () => {
+    show(UP, 'AAPL', 103.4);
+    expect(seen.order[0]).toBe('take_profit');
+    show(DOWN, 'MSFT', 420, { row: { held: false } }, false);
+    expect(seen.order[0]).toBe('better_than_stalled');
+    show(DOWN, 'AAPL', 99.9);
+    expect(seen.order).toEqual(['take_profit', 'catch_up', 'protect_lead']);
+  });
+  it('B3 — a held stock opened with a bench-door incumbent: no pre-set stalled question, and no rankings read for it', async () => {
+    fsLog.reads = [];
+    show(UP, 'AAPL', 103.4, { incumbent: 'EQIX', rankings: undefined });
+    await act(async () => { await Promise.resolve(); });
+    expect(seen.question).toBeNull();
+    expect(fsLog.reads).toEqual([]);
+    // Opening a question that reads them reads them once.
+    act(() => seen.pickQuestion('take_profit'));
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(fsLog.reads).toEqual(['indexIntelligence/stockRankings']);
   });
 });

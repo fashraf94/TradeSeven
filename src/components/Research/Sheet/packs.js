@@ -60,7 +60,7 @@ import { priceDecimals, priceText } from '../priceFormat.js';
 import { swappableNames } from '../../../../api/_utils/callRecords/swappable.js';
 import { SHEET_COPY, RISK_WORDS, RISK_REASON_WORDS, REGIME_WORDS, rungsText } from './sheetCopy.js';
 import { benchCandidateOf, latestCheckOn, latestVoicedCheckOn, namesSymbol } from './latestLine.js';
-import { bookOf, rankedBook, weakestOf, offLadderOf, bookCheckMs, lockNowOf } from './book.js';
+import { bookOf, rankedBook, offLadderOf, unscoredOf, bookCheckMs, lockNowOf } from './book.js';
 
 // ── The closed vocabularies (the server validates an Ask against them) ──────
 
@@ -114,7 +114,8 @@ export const ANCHOR_KINDS = Object.freeze({
   protect_lead: Object.freeze([]),
   better_than_stalled: Object.freeze(['incumbent', 'book_rank']),
   weakest_spot: Object.freeze(['book_rank', 'bench_alternative']),
-  take_profit: Object.freeze(['lock_now', 'rung_down']),
+  // rung_distance too: QF-7's instruction weighs the lock against the next rung (review C3).
+  take_profit: Object.freeze(['lock_now', 'rung_distance', 'rung_down']),
 });
 export const LOOP_KINDS = Object.freeze(['idea', 'told_it']);
 export const PACK_MAX = 5;
@@ -588,8 +589,11 @@ function scoredGapOf(battle, sym, nowMs) {
 function compareOf({ holding, incumbent, book, symbol }) {
   if (incumbent) return incumbent;
   if (holding.held) return null;
-  const w = weakestOf(book);
-  return w && w.symbol !== symbol ? w.symbol : null;
+  return weakestOtherThan(book, symbol)?.symbol ?? null;
+}
+/** QF-2's weakest held stock other than the opened one (the CPU's row of a ticker the agent also holds — review C2). */
+function weakestOtherThan(book, symbol) {
+  return rankedBook(book).find((e) => e.symbol !== symbol) ?? null;
 }
 
 function rungCompareItem({ battle, lens, symbol, nowMs, ...rest }) {
@@ -654,7 +658,7 @@ function bookRankItem({ holding, book, incumbent, symbol }) {
   if (!ranked.length) return null;
   let subject = null;
   if (isMeasuredHeld(holding)) subject = ranked.find((e) => e === ownEntry(book, holding)) ?? null;
-  else if (!holding.held && !incumbent) subject = ranked[0];
+  else if (!holding.held && !incumbent) subject = weakestOtherThan(book, symbol);
   if (!subject) return null;
   const rank = ranked.indexOf(subject) + 1;
   const atMs = bookCheckMs(ranked);
@@ -662,7 +666,7 @@ function bookRankItem({ holding, book, incumbent, symbol }) {
   const own = subject.symbol === symbol;
   return makeItem({
     kind: 'book_rank', symbol: subject.symbol,
-    fact: SHEET_COPY.bookRank(subject.symbol, rungsText(subject.rungsShown), rank, ranked.length, ranked[0].symbol, rungsText(ranked[0].rungsShown), time, offLadderOf(book)),
+    fact: SHEET_COPY.bookRank(subject.symbol, rungsText(subject.rungsShown), rank, ranked.length, ranked[0].symbol, rungsText(ranked[0].rungsShown), time, offLadderOf(book), unscoredOf(book)),
     recordKind: 'scoreState', recordId: `book:${subject.positionId ?? subject.symbol}`, label: time ? SHEET_COPY.srcCheck(time) : SHEET_COPY.srcPosition,
     atMs, pin: own ? timePin(atMs) : null,
   });
@@ -701,7 +705,8 @@ function benchAlternativeItem({ battle, lens, symbol, holding, rankings, nowMs }
   }
   if (!best) return null;
   const scores = rankings.stocks.map(scoreOf).filter((v) => v !== null);
-  const rank = 1 + scores.filter((v) => v > best.score).length;
+  // The rank of the score AS PRINTED (review A6): names that print the same score share a rank.
+  const rank = 1 + scores.filter((v) => Math.round(v) > Math.round(best.score)).length;
   const ms = rankingsMs(rankings);
   const atr = atrReadingOf({ atrPercent: best.row?.techRaw?.atrPercent, updatedAt: ms }, nowMs).pct;
   return makeItem({
@@ -783,7 +788,10 @@ export function candidateItems(p) {
   const lens = lensOf(battle);
   const holding = holdingOf(battle, symbol, nowMs, p.row);
   const book = bookOf(battle);
-  const args = { ...p, incumbent: p.incumbent ?? null, lens, holding, book, battleId: p.battleId ?? null };
+  // An incumbent the agent no longer holds (a stale call) is no incumbent: the compare falls back to the
+  // weakest holding, as with none (review A2 / C5; incumbentItem already drops it).
+  const incumbent = typeof p.incumbent === 'string' && p.incumbent && agentPositionOf(battle, p.incumbent) ? p.incumbent : null;
+  const args = { ...p, incumbent, lens, holding, book, battleId: p.battleId ?? null };
   const list = [
     rungDistanceItem(args), moveItem(args), checkReadItem(args), ruleItem(args), standingItem(args),
     riskLeverItem(args), riskVerdictItem(args), bankedItem(args), drawdownItem(args),
@@ -874,8 +882,8 @@ export function standingOrder(standing) {
  * QF-1 — THE QUESTION SET FOLLOWS THE ROW. The caller decides it ONCE when the row opens and keeps it
  * (the FQ-9 rule: never switched while the modal is open — useSheetView freezes it per opening).
  *   held, measured        the state question, then the standing two: `take_profit` when the last
- *                         check's committed context has the position up from entry (rungs from entry
- *                         > 0 — the same reading QF-2 ranks), else `weakest_spot` (down, flat, or no
+ *                         check's committed context has the position up from entry (its exact rungs
+ *                         from entry > 0, i.e. gain > 0), else `weakest_spot` (down, flat, or no
  *                         committed context yet)
  *   held, not measured    the standing two only, and the line that it isn't on the measured ladder
  *   not held              `better_than_stalled` ("…than our weakest holding?"), then the standing two
@@ -887,6 +895,9 @@ export function questionSetOf({ battle, symbol, nowMs, row, standing }) {
   if (!holding.held) return { questions: ['better_than_stalled', ...standingTwo], notOnLadder: false };
   if (holding.record?.model !== 'measured') return { questions: standingTwo, notOnLadder: true };
   const own = ownEntry(bookOf(battle), holding);
+  // The prompt's letter: up from entry at the last check — gain > 0 on the committed context, the exact
+  // reading (review A1 was refuted on this letter; a position printing 0.0 rungs but above its fill is up —
+  // its pack prints a positive gain and no rungs figure). QF-2's RANK is on the printed number.
   const up = !!own?.scored && own.rungs > 0;
   return { questions: [up ? 'take_profit' : 'weakest_spot', ...standingTwo], notOnLadder: false };
 }

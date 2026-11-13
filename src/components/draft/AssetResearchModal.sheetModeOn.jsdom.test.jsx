@@ -747,7 +747,7 @@ describe('the rankings: one read for the modal\'s life (review N2)', () => {
     await flush();
     await click($('[data-sheet-question="take_profit"]'));
     expect(net.calls.filter((c) => c[0] === 'getDoc')).toHaveLength(1);
-    expect($('[data-pack-item="bench_alternative"]')).toBeTruthy();
+    expect($('[data-sheet-pack]').dataset.sheetPack).toBe('take_profit');
   });
 });
 

@@ -42,7 +42,7 @@ import { readToken } from '../../../theme/cssTokens.js';
 import { etDate } from '../BombMode/checkClock.js';
 import { priceDecimals } from '../priceFormat.js';
 import { buildPacks, stanceOf, recordPinsOf, questionSetOf, whenLabel, itemKeyOf } from './packs.js';
-import { agentNameOf } from '../../../screens/battleView/cockpit2bModel.js';
+import { agentNameOf } from '../../../screens/battleView/agentName.js';
 import { latestLineOf } from './latestLine.js';
 import { SHEET_COPY, QUESTION_TEXT, PIN_LINE_WORDS } from './sheetCopy.js';
 
@@ -138,14 +138,6 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
   const screenRankings = ctx?.rankings && typeof ctx.rankings === 'object' ? ctx.rankings : null;
   const [rankings, setRankings] = useState({ done: false, doc: null });
   const rankingsAsked = useRef(false);
-  const wantRankings = !!ctx && !screenRankings && RANKINGS_QUESTIONS.includes(question);
-  useEffect(() => {
-    if (!wantRankings || rankingsAsked.current) return;
-    rankingsAsked.current = true; // one read for the modal's life; leaving the question never discards it (review N2)
-    readRankings()
-      .then((doc) => { if (liveRef.current) setRankings({ done: true, doc }); })
-      .catch(() => { if (liveRef.current) setRankings({ done: true, doc: null }); });
-  }, [wantRankings]);
 
   // ── The model ──
   const model = useMemo(() => {
@@ -168,11 +160,25 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
 
   // ── QF-1: the question set, decided ONCE per opening (sheetKey) from the record at open, then kept —
   // a tick, a check landing or a lead change never switches it while the modal is open (the FQ-9 rule).
-  const [frozen, setFrozen] = useState({ key: null, set: null });
-  const set = frozen.key === sheetKey && frozen.set ? frozen.set : (model ? questionSetOf(model.args) : null);
-  if (model && set && frozen.key !== sheetKey) setFrozen({ key: sheetKey, set });
+  // One entry PER sheetKey (review B1): navigating away inside the modal and back finds the set decided
+  // at that row's first opening, never a re-decision from the record of the moment.
+  const [frozen, setFrozen] = useState({});
+  const kept = sheetKey ? frozen[sheetKey] ?? null : null;
+  const set = kept ?? (model ? questionSetOf(model.args) : null);
+  if (model && set && sheetKey && !kept) setFrozen((all) => (all[sheetKey] ? all : { ...all, [sheetKey]: set }));
   // A question the set does not hold is never shown (a stale pick across an opening).
   const shownQuestion = question && set?.questions.includes(question) ? question : null;
+
+  // The rankings read: when a question that reads it is SHOWN (review B3 — never for a pre-set question
+  // the row's set does not hold).
+  const wantRankings = !!ctx && !screenRankings && RANKINGS_QUESTIONS.includes(shownQuestion);
+  useEffect(() => {
+    if (!wantRankings || rankingsAsked.current) return;
+    rankingsAsked.current = true; // one read for the modal's life; leaving the question never discards it (review N2)
+    readRankings()
+      .then((doc) => { if (liveRef.current) setRankings({ done: true, doc }); })
+      .catch(() => { if (liveRef.current) setRankings({ done: true, doc: null }); });
+  }, [wantRankings]);
 
   // ── The chart's pins (BC-8): one label open — the tapped item's pin, else the latest marker ──
   const pack = model && shownQuestion ? model.packs[shownQuestion] : null;
