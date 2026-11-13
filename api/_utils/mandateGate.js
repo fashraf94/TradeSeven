@@ -29,7 +29,7 @@
 
 import { markBook, positionMarketValue } from './mandateValuation.js';
 import { isSymbolActionable } from './mandateUniverseSnapshot.js';
-import { checkSectorCap } from './mandateSectorCap.js';
+import { checkSectorCap, VINTAGE_UNCORRECTED } from './mandateSectorCap.js';
 import { EXIT_VERBS, ENTRY_VERBS } from './mandateDecisionTool.js';
 
 const EPS = 1e-9;
@@ -50,13 +50,14 @@ function outcome(passed, rule, extra = {}) {
  * @param {Set<string>} [args.actionableHeld]        held symbols with a fresh mark (I2)
  * @param {boolean} [args.quarantined]               §6.4/I2 exit-only mode: entries blocked, exits untouched
  * @param {Set<string>} [args.caFrozen]              §4.3/I7 gap-detector frozen symbols this tick
+ * @param {boolean} [args.vintageUncorrected]       T0a: the pinned vintage lacks the sector-cap conversion stamp → entries refused, exits untouched
  * @returns {{
  *   passed:boolean, rule:string, gateOutcome:{rule,passed}, reason?:string,
  *   execSizeUsd?:number|null, clamped?:boolean, bootstrapping:boolean,
  *   sector?:string, cap?:number, weightAfter?:number, deferred?:boolean,
  * }}
  */
-export function evaluateGate({ decision, positions = {}, cash = 0, snapshot = null, gateConfig = {}, actionableHeld = null, quarantined = false, caFrozen = null }) {
+export function evaluateGate({ decision, positions = {}, cash = 0, snapshot = null, gateConfig = {}, actionableHeld = null, quarantined = false, caFrozen = null, vintageUncorrected = false }) {
   const verb = decision?.verb;
   const ticker = decision?.ticker;
 
@@ -99,6 +100,16 @@ export function evaluateGate({ decision, positions = {}, cash = 0, snapshot = nu
   // of the restricted decision tool (the model shouldn't even emit an entry).
   if (quarantined) {
     return outcome(false, 'quarantined', { reason: 'exit_only_mode', bootstrapping });
+  }
+
+  // 0a. Unstamped vintage (T0a; founder ruling, 12 Nov 2026: exit-only). A book
+  // pinned to a vintage without the sector-cap conversion stamp carries an
+  // untranslated cap, so no entry can be checked against it: ENTRIES are refused
+  // with the typed reason. The exit lane above already passed, so a SELL/TRIM is
+  // never suppressed (C-21). (The malformed_cap check below would also refuse a
+  // legacy count; this names the cause.)
+  if (vintageUncorrected) {
+    return outcome(false, 'sector_cap', { reason: VINTAGE_UNCORRECTED, bootstrapping });
   }
 
   // 0b. Suspected/pending-CA symbol this tick (§4.3/I7): the fresh mark is

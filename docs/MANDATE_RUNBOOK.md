@@ -1,4 +1,5 @@
 # The Mandate — Operations Runbook (Spec 1)
+> Supersession note (12 Nov 2026): docs/20261112_MANDATE_SPEC1_SUPERSESSION_NOTE.md — the quarterly product is retired; the engine stays as the Practice Field's substrate. This document's text is kept as recorded.
 
 **Status:** operational reference of record for the founder-only dark run and beyond. Consolidates the operational knowledge accrued across the four phase audits (`docs/audits/20260812_MANDATE_PHASE2…` through `…PHASE5…`), the spec (`docs/SPEC1_MANDATE_SUBSTRATE_SPEC_V1_4.md`), and the charter (`docs/QUARTERLY_PORTFOLIO_RESTRUCTURE_CHARTER_V1_2.md`).
 **Audience:** the founder (non-technical but rigorous), operating a headless, founder-only system. **The Mandate stays founder-only until Spec 2 exists** — nothing here un-flags anything for real users.

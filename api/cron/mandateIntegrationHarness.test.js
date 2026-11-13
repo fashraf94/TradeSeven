@@ -170,7 +170,7 @@ describe('(c) the in-lease fresh read (not the page copy) prevents a double bill
   const VINTAGE = {
     codeId: 'analyst', displayVintage: 'Fundamental Investor v2',
     archetypeContent: { displayName: 'Fundamental Investor', identity: { reveal: 'You buy good businesses.', voice: 'v' }, character: { factors: {} } },
-    gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 0.30, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
+    gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 0.30, sectorCapConversionVersion: 1, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
     modelSeat: { model: 'claude-haiku-4-5-20251001', params: { temperature: 0.7, maxTokens: 600 } },
   };
   const EVAL_TICK = { date: '2026-08-12', slot: 'open30', tickKey: '2026-08-12_open30' };
@@ -241,6 +241,46 @@ describe('(d) no_vintage is an eval failure that reaches quarantine', () => {
     expect(errs.some((e) => e.includes('MANDATE_NO_VINTAGE') && e.includes('m1'))).toBe(true);
     expect(errs.some((e) => e.includes('MANDATE_QUARANTINED') && e.includes('m1'))).toBe(true);
     expect(captured.body.skipped).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ── (d2) T0a: an uncorrected vintage is exit-only, not an eval failure ────────
+describe('(d2) T0a — an uncorrected vintage: its own alert, exits execute, no failure counted', () => {
+  const EVAL_TICK = { date: '2026-08-12', slot: 'open30', tickKey: '2026-08-12_open30' };
+  const EVAL_NOW = new Date('2026-08-12T14:05:00Z');
+  // The pre-T0a gate config: the raw slot count (3) and no conversion stamp.
+  const UNCORRECTED = {
+    codeId: 'analyst', displayVintage: 'Fundamental Investor v2',
+    archetypeContent: { displayName: 'Fundamental Investor', identity: { reveal: 'r', voice: 'v' }, character: { factors: {} } },
+    gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 3, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
+    modelSeat: { model: 'claude-haiku-4-5-20251001', params: { temperature: 0.7, maxTokens: 600 } },
+  };
+  const held = () => seedBook({
+    cadenceTier: 'fast',
+    portfolio: { cash: 9800000, positions: { AAPL: { shares: 1000, costBasisTotal: 200000, avgCost: 200, lastMark: 200, sector: 'Technology', openedAt: '2026-08-03' } } },
+  });
+
+  it('logs MANDATE_VINTAGE_UNCORRECTED, reaches the model, executes a SELL, counts no failure', async () => {
+    const db = makeMandateFakeDb({
+      'mandateUniverseSnapshots/2026-08-12_open30': { tickKey: '2026-08-12_open30', symbols: { AAPL: { complete: true, price: 200, sector: 'Technology' } } },
+      'archetypeVintages/analyst_x': UNCORRECTED,
+      'mandates/m1': held(),
+    });
+    modelImpl = async () => ({ decision: { ok: true, input: { verb: 'SELL', ticker: 'AAPL', rationale: 'x' } }, usage: null });
+    const errs = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((m) => errs.push(String(m)));
+    const { req, res, captured } = fakeReqRes();
+    await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db });
+    spy.mockRestore();
+
+    const book = db._get('mandates/m1');
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(book.portfolio.positions.AAPL).toBeUndefined();           // the exit executed
+    expect(book.health.consecutiveEvalFailures || 0).toBe(0);        // not an eval failure
+    expect(book.health.quarantined).toBeFalsy();
+    expect(errs.some((e) => e.includes('MANDATE_VINTAGE_UNCORRECTED') && e.includes('m1') && e.includes('exits allowed'))).toBe(true);
+    expect(errs.some((e) => e.includes('MANDATE_NO_VINTAGE') || e.includes('MANDATE_QUARANTINED'))).toBe(false);
+    expect(captured.body.executed).toBe(1);
   });
 });
 

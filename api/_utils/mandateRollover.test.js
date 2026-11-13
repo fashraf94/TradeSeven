@@ -6,6 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { rollOneBoundary, catchUpBook, assertCapitalConserved } from './mandateRollover.js';
+import { resolveVintage } from './mandateVintage.js';
 import { makeMandateFakeDb } from './__testsupport__/mandateFakeFirestore.js';
 import { buildNewMandateDoc, buildDailyRow, deriveManagerAgentId } from './mandateSchema.js';
 
@@ -236,5 +237,27 @@ describe('rollOneBoundary — open-batch disposal (I1)', () => {
     expect(b.execState.openBatchId).toBeNull();
     expect(b.execState.openBatchSubmittedAt).toBeNull();
     expect(db._get('mandates/m1/decisions/batch_xyz').status).toBe('cancelled');
+  });
+});
+
+// ── T0a: admission refuses an uncorrected re-pin ────────────────────────────
+function uncorrectedVintageAt(code) {
+  const { payload, vintageRef } = resolveVintage(code);
+  const gateConfig = { ...payload.gateConfig, sectorConcentrationCap: payload.gateConfig.sectorCapSlots };
+  delete gateConfig.sectorCapSlots;
+  delete gateConfig.sectorCapDenominator;
+  delete gateConfig.sectorCapConversionVersion;
+  return { [vintageRef]: { ...payload, gateConfig } };
+}
+
+describe('rollOneBoundary — T0a admission (vintage_uncorrected)', () => {
+  it('throws a typed vintage_uncorrected (catchUpBook does not catch it, so the cron failure counter sees it) and leaves the book un-rolled', async () => {
+    const db = makeMandateFakeDb({ 'mandates/m1': book(), ...q1Rows(), ...uncorrectedVintageAt('analyst') });
+    await expect(rollOneBoundary(db, db.doc('mandates/m1'), { now: NOW }))
+      .rejects.toMatchObject({ code: 'vintage_uncorrected', message: expect.stringContaining('MANDATE_ROLLOVER_VINTAGE_UNCORRECTED') });
+    const b = db._get('mandates/m1');
+    expect(b.quarterIndex).toBe(1);
+    expect(b.vintageRef).toBe('archetypeVintages/analyst_OLD');
+    expect(b.revision).toBe(42);
   });
 });

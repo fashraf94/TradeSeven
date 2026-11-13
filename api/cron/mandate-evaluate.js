@@ -41,6 +41,7 @@ import { assembleMandatePrompt } from '../_utils/mandatePromptAssembly.js';
 import { buildSubmissionEnvelope, callMandateModelDirect } from '../_utils/mandateModelCall.js';
 import { normalizeDecisionInput, effectiveVerbs } from '../_utils/mandateDecisionTool.js';
 import { evaluateGate } from '../_utils/mandateGate.js';
+import { isSectorCapCorrected, VINTAGE_UNCORRECTED } from '../_utils/mandateSectorCap.js';
 import { executeDecision, disposeSubmission } from '../_utils/mandateExecution.js';
 import { markFor } from '../_utils/mandateUniverseSnapshot.js';
 import { resolveRegime } from '../_utils/mandateRegime.js';
@@ -203,10 +204,12 @@ export async function runBookEval(db, {
 
   // Deterministic gate (§3.4) — quarantine blocks entries (never exits); a
   // CA-frozen symbol blocks entries and defers pricing to last-good on exits.
+  // T0a (founder ruling, exit-only): a vintage without the sector-cap
+  // conversion stamp blocks entries (vintage_uncorrected), never exits.
   const gateResult = evaluateGate({
     decision, positions, cash: book.portfolio?.cash || 0, snapshot: evalSnapshot,
     gateConfig: vintage.gateConfig || {}, actionableHeld: actionable,
-    quarantined, caFrozen,
+    quarantined, caFrozen, vintageUncorrected: !isSectorCapCorrected(vintage.gateConfig),
   });
 
   // Direct transport (P2): submit mark == harvest mark (same tick), so the drift
@@ -417,6 +420,12 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
           const vSnap = await db.doc(book.vintageRef).get();
           vintage = vSnap.exists ? vSnap.data() : null;
           vintageCache.set(book.vintageRef, vintage);
+        }
+        // T0a (founder ruling, exit-only): a book pinned to a vintage without
+        // the sector-cap conversion stamp still evaluates — the gate refuses its
+        // entries and lets its exits through. Not an eval failure; loud each fire.
+        if (vintage && !isSectorCapCorrected(vintage.gateConfig)) {
+          console.error(`${LOG_PREFIX} MANDATE_VINTAGE_UNCORRECTED ${book._id} — vintage ${book.vintageRef} has no sector-cap conversion stamp; exits allowed, entries refused (${VINTAGE_UNCORRECTED})`);
         }
 
         const result = await runBookEval(db, {

@@ -1,4 +1,5 @@
 # Spec 1 — Mandate Substrate — Build Spec V1.4 (LOCK CANDIDATE)
+> Supersession note (12 Nov 2026): docs/20261112_MANDATE_SPEC1_SUPERSESSION_NOTE.md — the quarterly product is retired; the engine stays as the Practice Field's substrate. This document's text is kept as recorded.
 
 > **Terminology (O-1 resolved).** The feature is **The Mandate**. A manager is *granted a mandate* (the three-month term, the entity: `mandates/{mandateId}`) and *runs a book* under it (the portfolio: the `portfolio` field). Both terms are load-bearing and non-interchangeable: the mandate is the relationship and its term; the book is the money.
 

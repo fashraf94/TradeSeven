@@ -55,6 +55,15 @@ function fmtUsd(n) {
 function pct(frac) {
   return Number.isFinite(frac) ? `${(frac * 100).toFixed(1)}%` : 'n/a';
 }
+// The sector cap is a share of book value in (0, 1] (T0a translation: 33.3% /
+// 50.0% / 66.7%). Only null means "none". Anything else (an untranslated slot
+// count, a missing key) is never printed as a percentage: the gate refuses
+// entries with malformed_cap, and the prompt says so instead of "300%".
+function sectorCapText(cap) {
+  if (cap === null) return 'none';
+  if (Number.isFinite(cap) && cap > 0 && cap <= 1) return pct(cap);
+  return 'unavailable (new entries are refused)';
+}
 
 /** Identity system scaffold, assembled from the PINNED vintage (§3.2). */
 function buildSystemPrompt(vintage) {
@@ -82,7 +91,7 @@ function buildSystemPrompt(vintage) {
   lines.push(`- Keep at least ${pct(gc.cashFloorPct)} of the book in cash.`);
   lines.push(`- No single position above ${pct(gc.maxSinglePositionWeightPct)} of the book.`);
   lines.push(`- Hold no more than ${gc.maxPositions ?? 'n/a'} positions; build toward at least ${gc.minPositions ?? 'n/a'}.`);
-  lines.push(`- Sector concentration cap: ${gc.sectorConcentrationCap != null ? pct(gc.sectorConcentrationCap) : 'none'}.`);
+  lines.push(`- Sector concentration cap: ${sectorCapText(gc.sectorConcentrationCap)}.`);
   lines.push('');
   lines.push('## Honesty note');
   lines.push('Prices are marks from a shared market snapshot. Modeled frictions are IDEALIZED (a spread proxy and slippage, no market impact) — they are not realistic execution cost.');
