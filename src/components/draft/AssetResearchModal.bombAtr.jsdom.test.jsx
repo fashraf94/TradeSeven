@@ -395,6 +395,22 @@ describe('BS-4 — the read\'s wiring in the modal (review C)', () => {
     expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$312.15');
   });
 
+  it('a read that fails after the view changed under it says it failed (never stuck on loading), and the next change asks again', async () => {
+    seed('ACN'); scores('ACN', 4.05);
+    let reject; net.hold['stockTechnicalScores/ACN'] = new Promise((_, rj) => { reject = rj; });
+    await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
+    const tab = (label) => [...document.body.querySelectorAll('button')].find((b) => b.textContent.trim() === label);
+    await act(async () => { tab('Technical').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    await act(async () => { tab('💣 Bomb').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    await act(async () => { reject(new Error('unavailable')); }); await flush();
+    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_failed');
+    delete net.hold['stockTechnicalScores/ACN'];
+    await act(async () => { tab('Technical').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    await act(async () => { tab('💣 Bomb').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$312.15');
+    expect(reads()).toEqual(['stockTechnicalScores/ACN', 'stockTechnicalScores/ACN']);
+  });
+
   it('refuter NEW-R2-2: while the retry after a failure is in flight the preview says loading, not failed', async () => {
     seed('ACN'); scores('ACN', 4.05); net.failRead = true;
     await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));

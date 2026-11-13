@@ -460,6 +460,10 @@ const AssetResearchModal = ({
   if (viewSeen.token !== viewToken) setViewSeen({ token: viewToken, n: viewSeen.n + 1 });
   const viewN = viewSeen.token === viewToken ? viewSeen.n : viewSeen.n + 1;
   const haveAtr = !!atrRead && (atrRead.status !== 'failed' || atrRead.failedAtView === viewN);
+  // The count at the moment a failure LANDS, not when it was asked: a view change while a read is in
+  // flight would otherwise stamp a count that never comes back, and the preview would sit on "loading".
+  const viewNRef = useRef(viewN);
+  useEffect(() => { viewNRef.current = viewN; });
   const bombSeries = researchData.timeframe === 'bomb' || researchData.timeframe === 'spectate';
   const askAtr = atrArm && !haveAtr && (shellOn ? bombSeries : (activeTab === 'baggerbomb' || bombSeries));
   useEffect(() => {
@@ -467,10 +471,9 @@ const AssetResearchModal = ({
     const symbol = currentAsset?.symbol;
     if (!symbol) return undefined;
     let cancelled = false;
-    const atView = viewN;
-    readAtrReading(symbol).then((r) => { if (!cancelled) setAtrReads((m) => ({ ...m, [symbol]: r.status === 'failed' ? { ...r, failedAtView: atView } : r })); });
+    readAtrReading(symbol).then((r) => { if (!cancelled) setAtrReads((m) => ({ ...m, [symbol]: r.status === 'failed' ? { ...r, failedAtView: viewNRef.current } : r })); });
     return () => { cancelled = true; };
-  }, [askAtr, currentAsset?.symbol]); // eslint-disable-line react-hooks/exhaustive-deps -- viewN is read at the ask, never a reason to re-ask (NEW-R2-1)
+  }, [askAtr, currentAsset?.symbol]); // a view change is never a reason to re-send a read in flight (NEW-R2-1)
   // While a retry after a failure is in flight the preview says the reading is loading, not that it failed (NEW-R2-2).
   const atrShown = atrRead && !(atrRead.status === 'failed' && askAtr) ? atrRead : null;
   const atrReading = atrArm ? (atrShown ? { status: atrShown.status, pct: atrShown.pct, asOfMs: atrShown.asOfMs } : { status: 'loading', pct: null, asOfMs: null }) : null;
