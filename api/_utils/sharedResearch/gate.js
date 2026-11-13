@@ -96,9 +96,9 @@ export function sendSharedResearchError(res, err, label) {
   if (err?.hypothesisInput) return res.status(400).json({ error: 'invalid_adoption', reason: err.code, message: copyFor('invalid_adoption') });
   if (err instanceof ResearchRecordError || err?.researchRecord) {
     if (RECORD_CLIENT_CODES.has(err.code)) return res.status(400).json({ error: err.code, message: copyFor(err.code) });
-    console.error(`[shared-research:${label}] record refusal:`, err.code);
+    console.error(`[shared-research] ${label} record refusal:`, err.code);
     return res.status(500).json({ error: 'server_error', reason: err.code, message: copyFor('server_error') });
   }
-  console.error(`[shared-research:${label}] Error:`, err?.message || err);
+  console.error(`[shared-research] ${label} error:`, err?.message || err);
   return res.status(500).json({ error: 'server_error', message: copyFor('server_error') });
 }

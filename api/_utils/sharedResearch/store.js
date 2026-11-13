@@ -263,7 +263,7 @@ export async function noteFrameFailure(db, { uid, sessionId, reason, nowIso }) {
     }, { maxAttempts: 1 });
     return true;
   } catch (err) {
-    console.error('[shared-research:frame] failure not noted:', err?.message || err);
+    console.error('[shared-research] frame failure not noted:', err?.message || err);
     return false;
   }
 }
@@ -447,7 +447,7 @@ export async function failStep(db, { uid, sessionId, stepId, reason, nowIso }) {
     }, { maxAttempts: 1 });
     return true;
   } catch (err) {
-    console.error('[shared-research:step] failure not noted:', err?.message || err);
+    console.error('[shared-research] step failure not noted:', err?.message || err);
     return false;
   }
 }
