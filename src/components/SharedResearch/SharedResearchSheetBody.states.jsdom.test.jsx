@@ -296,6 +296,9 @@ describe('Companies (spec §7.2)', () => {
     expect(card.textContent).toContain("In the game's universe");
     expect($('[data-sr-examine="ETN"]')).not.toBeNull();
     expect($('[data-sr-adopt-from="ETN"]')).not.toBeNull();
+    // exactly the server's supported list: a lead never becomes a card (Correction A)
+    expect($$('[data-sr-company]').map((e) => e.dataset.srCompany)).toEqual(['ETN']);
+    expect($$('[data-sr-examine]').map((e) => e.dataset.srExamine)).toEqual(['ETN']);
   });
 
   it('leads: labelled, "Not an adoption choice until the connection has a source", no Examine', async () => {
