@@ -21,6 +21,7 @@ import {
   authorizedMethodFor,
 } from './loader.js';
 import { KB_PACKAGES } from './packages/index.js';
+import { KB_APP_USE } from './authorizations.js';
 
 const ID = 'KB-IDEA-EVALUATION-001';
 const VERSION = '0.1';
@@ -430,11 +431,24 @@ describe('the answer', () => {
   });
 });
 
-describe('the shipped list (empty)', () => {
-  it('both entry points answer not_authorized for the real package, whatever the audience', () => {
-    expect(loadAuthorizedMethod({ id: ID, version: VERSION, consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
-    expect(authorizedMethodFor({ consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
+describe('the shipped list', () => {
+  // The ONE pin the founder's activation PR moves is packages.test.js's
+  // `KB_APP_USE` deep-equals `[]`. This row follows that pin, so the first
+  // entry does not red it: while the list is empty, nothing is authorized; from
+  // the first entry, each shipped entry loads for its own consumers and nothing else.
+  it('both entry points answer not_authorized for the real package, whatever the audience, while the list is empty', () => {
     expect(verifyPackage({ id: ID, version: VERSION }).ok).toBe(true);
+    if (KB_APP_USE.length === 0) {
+      expect(loadAuthorizedMethod({ id: ID, version: VERSION, consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
+      expect(authorizedMethodFor({ consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
+      return;
+    }
+    for (const e of KB_APP_USE) {
+      for (const consumer of e.consumers) {
+        expect(loadAuthorizedMethod({ id: e.id, version: e.version, consumer, inAudience: yes }).ok).toBe(true);
+      }
+      expect(loadAuthorizedMethod({ id: e.id, version: e.version, consumer: 'kb0.unlisted.consumer', inAudience: yes })).toEqual({ ok: false, reason: 'scope' });
+    }
   });
 });
 
@@ -449,22 +463,26 @@ describe('never throws', () => {
   const label = (g) => (typeof g === 'symbol' ? 'symbol' : g === hostile ? 'a hostile proxy' : JSON.stringify(g) ?? String(g));
 
   it.each(GARBAGE.map((g) => [label(g), g]))('every entry point, given %s, answers a refusal', (_label, g) => {
-    // As deps, anything but an object reads as none given: the real list, which verifies.
-    const asDeps = verifyPackage({ id: ID, version: VERSION }, g);
-    if (g === hostile) expect(asDeps).toEqual({ ok: false, reason: 'corrupt' });
-    else expect(asDeps.ok).toBe(true);
-    for (const r of [
-      verifyParts(g),
-      verifyPackage(g),
-      loadAuthorizedMethod(g),
-      loadAuthorizedMethod({ id: ID, version: VERSION, consumer: CONSUMER, inAudience: yes }, g),
-      authorizedMethodFor(g),
-      authorizedMethodFor({ consumer: CONSUMER, inAudience: yes }, g),
-    ]) {
+    // As the request: a refusal, whatever the shipped list holds.
+    for (const r of [verifyParts(g), verifyPackage(g), loadAuthorizedMethod(g), authorizedMethodFor(g)]) {
       expect(r.ok).toBe(false);
       expect(KB_REFUSALS).toContain(r.reason);
     }
     expect(isAuthorizationEntry(g)).toBe(false);
+
+    // As deps: anything but an object reads as none given (the shipped lists), so the
+    // answer is exactly the no-deps answer; a hostile object is the raising check's refusal.
+    const loadReq = { id: ID, version: VERSION, consumer: CONSUMER, inAudience: yes };
+    const offerReq = { consumer: CONSUMER, inAudience: yes };
+    if (g === hostile) {
+      expect(verifyPackage({ id: ID, version: VERSION }, g)).toEqual({ ok: false, reason: 'corrupt' });
+      expect(loadAuthorizedMethod(loadReq, g)).toEqual({ ok: false, reason: 'corrupt' });
+      expect(authorizedMethodFor(offerReq, g)).toEqual({ ok: false, reason: 'not_authorized' });
+    } else {
+      expect(verifyPackage({ id: ID, version: VERSION }, g)).toEqual(verifyPackage({ id: ID, version: VERSION }));
+      expect(loadAuthorizedMethod(loadReq, g)).toEqual(loadAuthorizedMethod(loadReq));
+      expect(authorizedMethodFor(offerReq, g)).toEqual(authorizedMethodFor(offerReq));
+    }
   });
 
   it('hostile deps: throwing getters for packages and authorizations', () => {
