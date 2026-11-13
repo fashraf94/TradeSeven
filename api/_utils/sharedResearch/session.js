@@ -203,22 +203,27 @@ export const ENDED_STATUSES = Object.freeze(['completed', 'abandoned']);
 export const LIVE_STATUSES = Object.freeze(['open']);
 
 const newestFirst = (a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0);
+/** Newest created first, then newest updated: one item's investigations never overlap (only one is open at a time). */
+const newestCreatedFirst = (a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : newestFirst(a, b));
 
 /** The newest OPEN investigation among the owner's sessions on one item, or null. */
 export const liveSessionOf = (sessions) => (Array.isArray(sessions) ? sessions : []).filter((s) => s && LIVE_STATUSES.includes(s.status)).sort(newestFirst)[0] ?? null;
 
 /**
  * The newest ENDED investigation among the owner's sessions on one item that
- * came before `current` — never `current` itself (created strictly earlier;
- * "newest" by its last update, which is its close). Null when there is none.
- * Sorted in memory: the read is an equality-only query (no index).
+ * came before `current` — never `current` itself (created strictly earlier).
+ * "Newest" is the last created: an item's investigations run one after another
+ * (only an open one answers `existing`), so the last created is the last to
+ * end — and a late write to an ended session (a step failure landing after its
+ * close) cannot reorder them (refuter SI-1). Null when there is none. Sorted in
+ * memory: the read is an equality-only query (no index).
  * @param {object[]} sessions   the owner's sessions with this itemKey
  * @param {{ sessionId: string, createdAt: string }} current
  */
 export function previousSessionOf(sessions, { sessionId, createdAt }) {
   return (Array.isArray(sessions) ? sessions : [])
     .filter((s) => s && ENDED_STATUSES.includes(s.status) && s.sessionId !== sessionId && typeof s.createdAt === 'string' && s.createdAt < createdAt)
-    .sort(newestFirst)[0] ?? null;
+    .sort(newestCreatedFirst)[0] ?? null;
 }
 
 /** What the sheet needs to offer "Open the earlier one": `{ sessionId, endedAt, terminalReason }`, from its record. */

@@ -24,8 +24,11 @@
 
 import { FINDING_FACT_MAX_LEN, SOURCE_LABEL_MAX_LEN, isInstant } from '../researchRecords/model.js';
 import { gameUniverse, resolveSymbol } from './companies.js';
-import { instantOf, strayTickersOf, forbiddenIn, LABELS } from './stepSchema.js';
+import { instantOf, strayTickersOf, forbiddenIn, maskStrayTickers, LABELS } from './stepSchema.js';
 import { METHOD_SOURCE } from './method.js';
+
+// The mask lives with the validator (a retrieval title is masked too — refuter SH-10); the opening's callers read it here.
+export { STRAY_TICKER_MASK, maskStrayTickers } from './stepSchema.js';
 
 /** At most this many names in scope, and drop claims, are written at open (the record holds 100 findings). */
 export const NAMES_IN_SCOPE_MAX = 10;
@@ -37,12 +40,18 @@ const clean = (v) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g
 const cut = (s, max) => (s.length <= max ? s : s.slice(0, max).trimEnd());
 const before = (iso, nowIso) => (isInstant(iso) && Date.parse(iso) < Date.parse(nowIso) ? iso : null);
 
-/** What a reporter's text says in place of a ticker the universe does not hold (no such ticker is written — spec STOP list). */
-export const STRAY_TICKER_MASK = "(symbol not in the app's records)";
-/** The text with every ticker-shaped word the universe, the index names and the acronyms do not hold masked. */
-export function maskStrayTickers(text, universe = gameUniverse) {
-  const stray = new Set(strayTickersOf(text, universe));
-  return stray.size ? String(text).replace(/\b[A-Z]{2,5}(?:[.-][A-Z])?\b/g, (w) => (stray.has(w) ? STRAY_TICKER_MASK : w)) : text;
+/** A parser's text as it is checked and written: NFKC first, so a fullwidth ＱＺＸＷ is the ticker QZXW (refuter SH-12). */
+const parsed = (v) => clean(typeof v === 'string' ? v.normalize('NFKC') : v);
+
+/**
+ * The drop's topic for the session entry (`parse.topic`, the parser's label —
+ * never the player's words): null when it names a ticker the universe does
+ * not hold (the STOP list — refuter SH-11) or breaks a forbidden pattern.
+ */
+export function dropTopicOf(drop, { partnerName = null, universe = gameUniverse } = {}) {
+  const t = cut(parsed(drop?.parse?.topic), 120);
+  if (!t) return null;
+  return strayTickersOf(t, universe).length === 0 && forbiddenIn(t, { partnerName }).length === 0 ? t : null;
 }
 
 /** The names in scope, resolved inside the universe, each once, at most NAMES_IN_SCOPE_MAX. */
@@ -109,8 +118,10 @@ const writtenDate = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); ret
 export function openingFindingsOf({ entryKind, story = null, drop = null, playerExchange = null, frame = null, names, stored, nowIso, universe = gameUniverse, partnerName = null }) {
   const out = [];
   if (entryKind === 'item') {
-    const published = instantOf(story.publishedAt);
-    // A story with no publication time is dated by the open and its label says so (§15 S-2 b's rule, applied to the story).
+    // A publication time later than the open dates nothing (spec §16 FQ-2's rule, applied to the story — refuter letter
+    // note); a story with no usable time is dated by the open and its label says so (§15 S-2 b's rule).
+    const given = instantOf(story.publishedAt);
+    const published = given && Date.parse(given) <= Date.parse(nowIso) ? given : null;
     const tail = published ? '' : LABELS.undated;
     const label = `${cut(['FantasyTimes', clean(story.reporterName) || 'reporter', clean(story.reporterBeat)].filter(Boolean).join(' · '), SOURCE_LABEL_MAX_LEN - tail.length)}${tail}`;
     out.push({
@@ -137,7 +148,7 @@ export function openingFindingsOf({ entryKind, story = null, drop = null, player
     // A parser claim that names a ticker the universe does not hold is not written (the STOP list: no such ticker
     // anywhere — review B8), nor one that breaks a forbidden pattern (spec §16 FQ-6; the partner's own name counts as a
     // subject). The drop's own text still stands above as "Your drop".
-    const claims = (Array.isArray(drop?.parse?.dataPoints) ? drop.parse.dataPoints : []).map(clean).filter(Boolean)
+    const claims = (Array.isArray(drop?.parse?.dataPoints) ? drop.parse.dataPoints : []).map(parsed).filter(Boolean)
       .filter((c) => strayTickersOf(c, universe).length === 0 && forbiddenIn(c, { partnerName }).length === 0).slice(0, DROP_CLAIMS_MAX);
     for (const c of claims) {
       out.push({

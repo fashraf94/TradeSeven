@@ -514,3 +514,75 @@ describe('spec §16 FQ-8 — one player\'s requests are limited after auth, per 
     expect((await rawPost({ action: 'close', sessionId: 'bad id!' })).statusCode).toBe(400);
   });
 });
+
+describe('the second refuter pass at the route (SI-2, SI-3, SI-4, SI-5, SH-11, FQ-2 in the prompt)', () => {
+  it('SI-2: thirty steps refused before any model call spend none of the day\'s 30 calls; the next real step runs', async () => {
+    const { session } = await openStory();
+    const sid = session.sessionId;
+    const stale = { symbol: 'ETN', relationshipFindingId: 'f_00000000-0000-4000-8000-000000000000', openFindingId: null };
+    for (let i = 1; i <= 30; i++) {
+      const r = await post({ action: 'step', sessionId: sid, stepId: uuid(i), intent: 'examine', target: stale });
+      expect([r.statusCode, r.body.error]).toEqual([400, 'invalid_target']);
+    }
+    expect(state.turns).toHaveLength(0);
+    expect([seedEnv.doc(`sharedResearchQuota/${UID}`).stepCalls, seedEnv.doc('sharedResearchQuota/_global').stepCalls]).toEqual([0, 0]);
+    const ok = await stepWith(sid, 31, 'next', quiet());
+    expect(ok.statusCode, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.body.quota).toMatchObject({ stepsToday: 1, stepsPerDay: 30 });
+  });
+  it('SI-2: a prompt over the cap gives its call back too', async () => {
+    const { session } = await openStory();
+    state.tooLarge = true;
+    const r = await stepWith(session.sessionId, 1, 'next', null);
+    expect([r.statusCode, r.body.error]).toEqual([400, 'prompt_too_large']);
+    expect(seedEnv.doc(`sharedResearchQuota/${UID}`).stepCalls).toBe(0);
+  });
+  it('SI-3: a frame with an item open\'s requestId is an invalid request, and the observation is not dropped silently', async () => {
+    await openStory({ requestId: 'same-req' });
+    const r = await post({ action: 'frame', observation: 'Reviews delay security deals.', requestId: 'same-req' });
+    expect([r.statusCode, r.body.error]).toEqual([400, 'invalid_request']);
+    expect(state.turns).toHaveLength(0);
+  });
+  it('SI-4: a replay of a step whose summary was withheld still says so', async () => {
+    const { session } = await openStory();
+    const sid = session.sessionId;
+    await stepWith(sid, 1, 'next', twoCompanies());
+    const withheld = turnOk({
+      reply: 'A guess at the share.', lines: { support: null, complication: null, missing: null }, nextAction: { label: 'Find a filing', purpose: 'Primary source.' }, companies: [],
+      findings: [{ tempId: 'i', kind: 'inference', fact: 'Data centers are likely about 40% of Eaton orders.', symbolCandidate: null, companyName: null, support: { kind: 'inference', index: null, from: [], reason: null }, at: null, supersedes: null }],
+      summary: { text: 'Eaton earns about 40% of its orders from data centers.', basedOn: ['i'] },
+    });
+    expect((await stepWith(sid, 2, 'next', withheld)).body.changed.summaryWithheld).toBe(true);
+    const again = await post({ action: 'step', sessionId: sid, stepId: uuid(2), intent: 'next' });
+    expect(again.body).toMatchObject({ replay: true, changed: { summary: false, findings: 0, summaryWithheld: true } });
+    expect(state.turns).toHaveLength(2);
+  });
+  it('SI-5: the room line keeps one place back for the validator\'s "No next step proposed." marker', async () => {
+    const { session } = await openStory();
+    const count = recordDoc(session.sessionId).findings.length;
+    await stepWith(session.sessionId, 1, 'next', quiet());
+    expect(state.turns[0].user).toContain(`Room on the record: at most ${100 - count - 1} more findings this step`);
+  });
+  it('SH-11: a drop\'s topic with a stray ticker is not kept on the entry', async () => {
+    seedEnv.store.set(`users/${UID}/signalDrops/drop-topic`, { dropId: 'drop-topic', userId: UID, input: { type: 'text', text: 'switchgear', note: null }, parse: { topic: 'QZXW switchgear backlog', dataPoints: [] }, validation: { validated: [{ symbol: 'ETN', sectorId: 'XLI' }], unsupported: [] }, shouldBailout: false, droppedAt: '2026-11-12T12:00:00.000Z' });
+    const r = await post({ action: 'open', requestId: 'd-topic', entry: { kind: 'signaldrop', itemRef: { recordKind: 'signalDrops', recordId: 'drop-topic' }, question: QUESTION } });
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.session.entry.topic).toBeNull();
+    expect(JSON.stringify(r.body)).not.toContain('QZXW');
+  });
+  it('spec §16 FQ-2 in the prompt: an item published after the read shows no date, and its fact is undated', async () => {
+    const { session } = await openStory();
+    const readAt = new Date().toISOString();
+    state.retrievalQueue.push({ items: [{ index: 0, url: 'https://news.example.com/later', title: 'Eaton books orders', host: 'news.example.com', publishedDate: '2099-01-01T00:00:00.000Z', highlights: ['Eaton said orders rose.'] }], costDollars: 0.005, elapsedMs: 300, readAt });
+    state.turnQueue.push(turnOk({
+      reply: 'Eaton books orders.', lines: { support: null, complication: null, missing: null }, nextAction: { label: 'Next', purpose: 'p' }, companies: [], summary: null,
+      findings: [{ tempId: 'e', kind: 'coverage', fact: 'Eaton books data-center orders.', symbolCandidate: 'ETN', companyName: 'Eaton', support: { kind: 'retrieval', index: 0, from: [], reason: null }, at: null, supersedes: null }],
+    }));
+    const r = await post({ action: 'step', sessionId: session.sessionId, stepId: uuid(1), intent: 'next' });
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    expect(state.turns[0].user).toContain('item 0 | news.example.com | no date | Eaton books orders');
+    const fact = recordDoc(session.sessionId).findings.find((x) => x.fact === 'Eaton books data-center orders.');
+    expect(fact).toMatchObject({ at: readAt, asOf: null, status: 'verified' });
+    expect(fact.source.label.endsWith(' · undated')).toBe(true);
+  });
+});

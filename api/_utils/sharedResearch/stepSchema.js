@@ -40,7 +40,7 @@ import {
   FINDINGS_MAX, FINDING_ID_PREFIX, currentFindingsOf, isInstant, buildFinding, isSourceUrl,
 } from '../researchRecords/model.js';
 import { RELATIONSHIP_ROLES, ROLE_SEPARATOR, UNRESOLVED_REASONS } from '../../../src/constants/sharedResearch.js';
-import { gameUniverse, resolveSymbol, namesCompany } from './companies.js';
+import { gameUniverse, resolveSymbol, namesCompany, isSameCompany } from './companies.js';
 import { METHOD_SOURCE } from './method.js';
 
 /**
@@ -76,6 +76,8 @@ export const LABELS = Object.freeze({
 });
 /** The marker when a step proposes no next action — exactly this (spec §16 NS-1): the server never claims the question is answered. */
 export const NO_NEXT_STEP_FACT = 'No next step proposed.';
+/** A next action that claims the question is answered ("None needed — the question is answered"): not written (NS-1). */
+const CLAIMS_ANSWERED = /\b(?:question|it)\s+(?:is|has\s+been|looks|seems|appears)\s+(?:(?:now|fully|already|largely)\s+)?answered\b|\b(?:none|nothing)\s+(?:further\s+)?(?:is\s+)?needed\b|\bno\s+(?:further|next|more)\s+steps?\s+(?:is\s+|are\s+)?needed\b/i;
 /** Findings a step may never supersede: the player's own material and the story the investigation started from. */
 export const PROTECTED_REASONS = Object.freeze(['player_words', 'player_drop', 'from_drop', 'reporter_content']);
 
@@ -160,6 +162,14 @@ export function strayTickersOf(text, universe = gameUniverse) {
   return out;
 }
 
+/** What a written text says in place of a ticker the universe does not hold (no such ticker is written — spec STOP list). */
+export const STRAY_TICKER_MASK = "(symbol not in the app's records)";
+/** The text with every ticker-shaped word the universe, the index names and the acronyms do not hold masked. */
+export function maskStrayTickers(text, universe = gameUniverse) {
+  const stray = new Set(strayTickersOf(text, universe));
+  return stray.size ? String(text).replace(TICKERISH, (w) => (stray.has(w) ? STRAY_TICKER_MASK : w)) : text;
+}
+
 /**
  * Learning claims (rulebook §2.4, §4 (6)). The strong words count in a sentence
  * about the agent, the partner (by name too), "I" or "we"; the softer ones —
@@ -171,21 +181,36 @@ const LEARNING_SOFT = /\b(?:improv\w*|evolv\w*|intelligen\w*|unlock\w*|grow(?:s|
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // "the partner" is business prose ("the partner portal"); the agent is "your partner", "my partner" or its own name.
 const PARTNER_WORDS = String.raw`agents?|(?:your|my|our|research)\s+partner`;
-/** The words that may stand between "considered" and its subject (auxiliaries and adverbs only — never another noun). */
-const CONSIDER_BETWEEN = String.raw`(?:\s+(?:have|has|had|also|already|carefully|briefly|then|just|first|now|not|never|did|do|does|was|were|is|are|been|being|be|will|would|could|might|may|should|shall|must|really|actually|previously|initially))*`;
-/** The subjects a sentence is "about us" by: the agent, the partner (and the partner's own name), I, we. */
-function subjectsOf(partnerName) {
-  const name = typeof partnerName === 'string' && partnerName.trim().length >= 2 ? `|${escapeRe(partnerName.trim())}` : '';
-  return {
-    us: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|I|I'm|I've|we|we're|we've|me|my|our${name})\b`, 'i'),
-    agent: new RegExp(String.raw`\b(?:${PARTNER_WORDS}${name})\b`, 'i'),
-    willDo: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|it|I|we${name})\s+will\s+(?:buy|sell|trade|swap|act|execute|hold|short|equip|deploy)\b`, 'i'),
-    // spec §16 FQ-3: "considered" with the agent, the partner (by name too), "I" or "we" as its subject — directly, through
-    // auxiliaries and adverbs ("we have carefully considered"), or as the passive's agent ("considered by the agent");
-    // "Eaton is widely considered the leader" is business prose and passes.
-    considered: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|I|we${name})(?:'ve|'d|'re|'m)?${CONSIDER_BETWEEN}\s+considered\b|\bconsidered\s+by\s+(?:the\s+)?(?:${PARTNER_WORDS}|me|us${name})\b`, 'i'),
-  };
+/**
+ * The partner's own name stands in a sentence as this token before the subject
+ * checks run, so a name with letters outside ASCII ("José", "Élodie") has real
+ * word edges (JS `\b` is ASCII-only — refuter SH-4).
+ */
+const PARTNER_TOKEN = 'PARTNERNAME';
+function withPartnerToken(s, partnerName) {
+  const n = typeof partnerName === 'string' ? partnerName.trim() : '';
+  if (n.length < 2) return s;
+  return s.replace(new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRe(n)}(?![\\p{L}\\p{N}_])`, 'giu'), PARTNER_TOKEN);
 }
+/** Curly apostrophes read as straight ones ("I’ve" is "I've" — refuter SH-3). */
+const straightApostrophes = (s) => s.replace(/[‘’ʼ]/g, "'");
+/**
+ * The words that may stand between "considered" and its subject: auxiliaries, negations ("haven't"), adverbs
+ * ("thoroughly"), "too"/"also" and commas around them — never another noun (refuter SH-3).
+ */
+const CONSIDER_FILLER = String.raw`(?:,?\s+(?:have|has|had|also|already|then|just|first|now|not|never|did|do|does|was|were|is|are|been|being|be|will|would|could|might|may|should|shall|must|too|all|both|ourselves|myself|itself|\w+ly|\w+n't),?)*`;
+/** The subjects a sentence is "about us" by: the agent, the partner (and the partner's own name, as PARTNER_TOKEN), I, we. */
+const SUBJECTS = Object.freeze({
+  us: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|I|I'm|I've|we|we're|we've|me|my|our|${PARTNER_TOKEN})\b`, 'i'),
+  agent: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|${PARTNER_TOKEN})\b`, 'i'),
+  willDo: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|it|I|we|${PARTNER_TOKEN})\s+will\s+(?:buy|sell|trade|swap|act|execute|hold|short|equip|deploy)\b`, 'i'),
+  // spec §16 FQ-3: "considered" with the agent, the partner (by name too), "I" or "we" as its subject — directly, through
+  // the filler above ("we have thoroughly considered"), or as the passive's agent ("considered by your agent");
+  // "Eaton is widely considered the leader" is business prose and passes.
+  considered: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|I|we|${PARTNER_TOKEN})(?:'ve|'d|'re|'m)?${CONSIDER_FILLER}\s+considered\b|\bconsidered\s+by\s+(?:(?:the|your|our|my|this)\s+)?(?:${PARTNER_WORDS}|${PARTNER_TOKEN})\b`, 'i'),
+  // "by me" / "by us" case-sensitively: "considered by US regulators" names no one of us (refuter SH-5).
+  consideredByUs: /\bconsidered\s+by\s+(?:me|us)\b/,
+});
 /** The forbidden patterns (spec §6.4 rule 7; rulebook §2 and §4 (6)) that need no subject. Tested per sentence. */
 export const FORBIDDEN_PATTERNS = Object.freeze({
   guarantee: /\bguarantee/i,
@@ -206,53 +231,94 @@ export const sentencesOf = (text) => String(text ?? '').split(/(?<=[.!?])\s+/).f
  * @param {{ partnerName?: string|null }} [opts]  the partner's own name counts as a subject
  */
 export function forbiddenIn(text, { partnerName = null } = {}) {
-  const subj = subjectsOf(partnerName);
   const hits = new Set();
   for (const s of sentencesOf(normalizeText(text))) {
     for (const [name, re] of Object.entries(FORBIDDEN_PATTERNS)) if (re.test(s)) hits.add(name);
-    if (subj.willDo.test(s)) hits.add('will_do');
-    if (subj.considered.test(s)) hits.add('considered');
+    const subj = withPartnerToken(straightApostrophes(s), partnerName); // the subject checks read this form
+    if (SUBJECTS.willDo.test(subj)) hits.add('will_do');
+    if (SUBJECTS.considered.test(subj) || SUBJECTS.consideredByUs.test(subj)) hits.add('considered');
     if (IMPERATIVE.test(s)) hits.add('buy_sell_advice');
-    if ((LEARNING_STRONG.test(s) && subj.us.test(s)) || (LEARNING_SOFT.test(s) && subj.agent.test(s))) hits.add('learning_claim');
+    if ((LEARNING_STRONG.test(s) && SUBJECTS.us.test(subj)) || (LEARNING_SOFT.test(s) && SUBJECTS.agent.test(subj))) hits.add('learning_claim');
   }
   return [...hits];
 }
 
+/** A finding id or a uuid in a text is an id, not a quantity (refuter SH-13: the prompt shows the model f_<uuid> ids). */
+const ID_SHAPED = /\bf_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+/** One digit run's comparable form: "1,200" → "1200", "1.90" → "1.9", ".75" → "0.75"; any other spelling ("3,75") is kept raw. */
+function numberKeyOf(raw) {
+  if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(raw)) return String(Number(raw.replace(/,/g, '')));
+  if (/^\d*\.?\d+$/.test(raw)) return String(Number(raw));
+  return `raw:${raw}`; // never equal to a different spelling: an unreadable figure is never "held" by accident
+}
 /**
- * The numbers a text states, normalized ("1,200" → "1200", "1.90" → "1.9"). A
+ * The numbers a text states, comparable (after NFKC: a fullwidth ４０ is 40). A
  * digit run glued to a letter or an underscore is an id or a label ("t1",
- * "f_0000…", "Q3"), not a stated quantity.
+ * "Q3"), not a stated quantity; so is a finding id. Digits outside ASCII that
+ * NFKC leaves (٤٠) are kept raw, so they are never held (refuter SH-9).
  */
 export function numberTokensOf(text) {
-  return (String(text ?? '').match(/(?<![A-Za-z_\d.,])\d+(?:,\d{3})*(?:\.\d+)?/g) || []).map((t) => String(Number(t.replace(/,/g, ''))));
+  const t = String(text ?? '').normalize('NFKC').replace(ID_SHAPED, ' ');
+  const out = (t.match(/(?<![A-Za-z_\d])\.?\d(?:[\d.,]*\d)?/g) || []).map(numberKeyOf);
+  for (const run of t.match(/\p{Nd}+/gu) || []) if (/[^0-9]/.test(run)) out.push(`raw:${run}`);
+  return out;
 }
-
-/** The numbers a finding's fact states — never its dates (a date part is not a held quantity). */
-export const heldNumbersOf = (f) => (f ? numberTokensOf(f.fact) : []);
 
 const MONTH_INDEX = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
-/** The calendar days ("YYYY-MM-DD") findings are dated by: their `at` and `asOf`. */
-export const heldDaysOf = (findings) => new Set(findings.flatMap((f) => [f?.at, f?.asOf]).filter((v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)).map((v) => v.slice(0, 10)));
-/**
- * The text with every date mention that names one of `days` taken out — an ISO
- * day ("2026-11-05"), or a month name and day with or without the year
- * ("November 5, 2026", "Nov 5"). A sentence that dates a fact by the fact's own
- * date asserts nothing new; any other date's numbers stay and must be held.
- */
-export function withoutHeldDates(text, days) {
-  if (!days || days.size === 0) return String(text ?? '');
-  const parts = [...days].map((d) => d.split('-').map(Number));
-  return String(text ?? '')
-    .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (m, y, mo, d) => (days.has(`${y}-${mo}-${d}`) ? ' ' : m))
-    .replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})(?:,?\s+(\d{4}))?\b/gi, (m, mon, d, y) => {
-      const mo = MONTH_INDEX[mon.slice(0, 3).toLowerCase()];
-      return parts.some(([py, pm, pd]) => pm === mo && pd === Number(d) && (y === undefined || py === Number(y))) ? ' ' : m;
-    });
+/** A real month name or its abbreviation — never a word that starts like one ("declined", "margin": refuter SH-6). */
+const MONTHS = 'January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec';
+const ISO_DAY_RE = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
+/** "November 5, 2026", "Nov. 5" — the day not followed by more digits or a percent ("Nov 5%" is no date). */
+const MONTH_DAY_RE = new RegExp(String.raw`\b(${MONTHS})\.?\s+(\d{1,2})(?![\d%]|[.,]\d)(?:,?\s+(\d{4})\b)?`, 'gi');
+
+/** The date mentions in a text, `{ y (or null), m, d }`. */
+export function dateMentionsOf(text) {
+  const t = String(text ?? '').normalize('NFKC');
+  const out = [];
+  for (const m of t.matchAll(ISO_DAY_RE)) out.push({ y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) });
+  for (const m of t.matchAll(MONTH_DAY_RE)) out.push({ y: m[3] ? Number(m[3]) : null, m: MONTH_INDEX[m[1].slice(0, 3).toLowerCase()], d: Number(m[2]) });
+  return out;
 }
-/** The first number a text states that no held finding states (its held dates excused), or undefined. */
+/** The text with the date mentions `keep(mention)` names taken out (all of them when `keep` is omitted). */
+function withoutDates(text, keep = () => true) {
+  const t = String(text ?? '').normalize('NFKC');
+  return t
+    .replace(ISO_DAY_RE, (m, y, mo, d) => (keep({ y: Number(y), m: Number(mo), d: Number(d) }) ? ' ' : m))
+    .replace(MONTH_DAY_RE, (m, mon, d, y) => (keep({ y: y ? Number(y) : null, m: MONTH_INDEX[mon.slice(0, 3).toLowerCase()], d: Number(d) }) ? ' ' : m));
+}
+
+/** The numbers a finding's fact states — never a date's parts, in its dates or in its text (review B2; refuter SH-8). */
+export const heldNumbersOf = (f) => (f ? numberTokensOf(withoutDates(f.fact)) : []);
+
+const isUndated = (f) => typeof f?.source?.label === 'string' && f.source.label.endsWith(LABELS.undated);
+/**
+ * The dates held findings carry: their `at` — unless it is only the day an
+ * undated item was read (refuter SH-7: the read day is no fact date) — their
+ * `asOf`, and the dates their own text states.
+ */
+export function heldDatesOf(findings) {
+  const out = [];
+  for (const f of findings) {
+    for (const v of [isUndated(f) ? null : f?.at, f?.asOf]) {
+      if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) out.push({ y: Number(v.slice(0, 4)), m: Number(v.slice(5, 7)), d: Number(v.slice(8, 10)) });
+    }
+    out.push(...dateMentionsOf(f?.fact));
+  }
+  return out;
+}
+/**
+ * The text with every date mention that names one of the held dates taken out.
+ * A sentence that dates a fact by a date the fact carries asserts nothing new;
+ * any other date's numbers stay and must be held.
+ */
+export function withoutHeldDates(text, dates) {
+  if (!dates || dates.length === 0) return String(text ?? '');
+  return withoutDates(text, (x) => dates.some((h) => h.m === x.m && h.d === x.d && (h.y === null || x.y === null || h.y === x.y)));
+}
+/** The first number a text states that no held finding states (the held dates excused), or undefined. */
 export function strayNumberOf(text, held) {
   const nums = new Set(held.flatMap(heldNumbersOf));
-  return numberTokensOf(withoutHeldDates(text, heldDaysOf(held))).find((n) => !nums.has(n));
+  return numberTokensOf(withoutHeldDates(text, heldDatesOf(held))).find((n) => !nums.has(n));
 }
 
 // ── small normalizers ───────────────────────────────────────────────────────
@@ -289,11 +355,14 @@ export function retrievalRecordIdOf(url) {
   return url.length <= RECORD_ID_MAX_LEN ? url : `url-sha256:${createHash('sha256').update(url).digest('hex')}`;
 }
 
-/** "{host} · {title}" within the label cap; the title is what is trimmed, and " · undated" (S-2 b) is kept whole. */
-export function retrievalLabelOf({ host, title }, { undated = false } = {}) {
+/**
+ * "{host} · {title}" within the label cap; the title is what is trimmed, and " · undated" (S-2 b) is kept whole. A
+ * ticker the universe does not hold in the title is masked (spec §6.4 rule 2, the STOP list — refuter SH-10).
+ */
+export function retrievalLabelOf({ host, title }, { undated = false, universe = gameUniverse } = {}) {
   const tail = undated ? LABELS.undated : '';
   const h = cut(clean(host) || 'source', 60);
-  const t = clean(title);
+  const t = maskStrayTickers(clean(title), universe);
   const room = SOURCE_LABEL_MAX_LEN - h.length - tail.length - ROLE_SEPARATOR.length;
   return t && room > 0 ? `${h}${ROLE_SEPARATOR}${cut(t, room)}${tail}` : `${h}${tail}`;
 }
@@ -377,11 +446,18 @@ export function validateStepTurn(output, ctx) {
    * (`names`: symbol → the company's stored name). A mismatch keeps no symbol:
    * another company's fact never supports a universe company.
    */
-  const identityOf = (candidate, companyName) => {
+  const identityOf = (candidate, companyName, factText = null) => {
     let symbol = resolveSymbol(candidate, universe);
     if (symbol === null && companyName) symbol = resolveSymbol(companyName, universe);
-    if (symbol !== null && companyName && !namesCompany(companyName, { symbol, name: names[symbol] })) {
+    if (symbol === null) return null;
+    // the named company must BE the symbol's (every word of the name in the stored name — refuter SH-2)
+    if (companyName && !isSameCompany(companyName, { symbol, name: names[symbol] })) {
       notes.push(`identity_mismatch:${symbol}`);
+      return null;
+    }
+    // a finding that names no company carries the symbol only when its own fact names that company (refuter SH-1)
+    if (!companyName && factText !== null && !namesCompany(factText, { symbol, name: names[symbol] })) {
+      notes.push(`identity_unnamed:${symbol}`);
       return null;
     }
     return symbol;
@@ -403,7 +479,7 @@ export function validateStepTurn(output, ctx) {
   };
 
   // Each finding's identity, resolved once (the roles below and the build both read it).
-  const symbolByTemp = new Map(rawFindings.map((rf) => [rf.tempId.trim(), identityOf(rf.symbolCandidate, clean(rf.companyName) || null)]));
+  const symbolByTemp = new Map(rawFindings.map((rf) => [rf.tempId.trim(), identityOf(rf.symbolCandidate, clean(rf.companyName) || null, clean(rf.fact))]));
 
   // Roles: a relationship fact takes the role of the company that cites it AND is the same company (same resolved
   // symbol, or both unresolved) — rule 4's "{Role} · {fact}"; review B10.
@@ -457,7 +533,7 @@ export function validateStepTurn(output, ctx) {
       const item = Number.isInteger(support.index) ? itemByIndex.get(support.index) : undefined;
       if (item && kind !== 'inference' && readAt && isSourceUrl(item.url) && item.url.length <= SOURCE_URL_MAX_LEN) {
         const d = retrievalDatesOf({ modelAt: rf.at, publishedDate: item.publishedDate, readAt, writeAt: nowIso });
-        source = { recordKind: 'retrieval', recordId: retrievalRecordIdOf(item.url), label: retrievalLabelOf(item, { undated: d.undated }), url: item.url };
+        source = { recordKind: 'retrieval', recordId: retrievalRecordIdOf(item.url), label: retrievalLabelOf(item, { undated: d.undated, universe }), url: item.url };
         status = 'verified';
         statusReason = null;
         ({ at, asOf } = d);
@@ -567,6 +643,9 @@ export function validateStepTurn(output, ctx) {
       if (nf) return nf;
     }
   }
+  // spec §16 NS-1: the server never claims the question is answered — a next action that says so is no next action
+  // (refuter SH-s); the plain marker stands in its place.
+  if (nextFact && CLAIMS_ANSWERED.test(nextFact)) { notes.push('next_action_claims_answered'); nextFact = null; }
   if (!nextFact && priorNext && priorNext.statusReason !== 'no_next_step') { nextFact = NO_NEXT_STEP_FACT; nextReason = 'no_next_step'; }
   if (nextFact) {
     const err = build({

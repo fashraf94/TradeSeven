@@ -34,7 +34,7 @@ import {
   readStory, readDrop, readStoredFacts, readRankingRows, readNames, openFromItem, openFromFraming, beginStep, recordStep,
   failStep, closeInvestigation, normalizeAdoption, adoptIdea, readQuota, listOpen, readPrevious, AGENTS_COLLECTION, SHARED_RESEARCH_ADAPTER,
 } from '../_utils/sharedResearch/store.js';
-import { namesInScopeOf, openingFindingsOf, dropTextOf, storedRowsOf } from '../_utils/sharedResearch/opening.js';
+import { namesInScopeOf, openingFindingsOf, dropTextOf, dropTopicOf, storedRowsOf } from '../_utils/sharedResearch/opening.js';
 import { companiesOf, projectionOf, resolveSymbol, splitRole } from '../_utils/sharedResearch/companies.js';
 import { adoptPreviewOf, isPreviewRev } from '../_utils/sharedResearch/adoptPreview.js';
 import { buildFrameSystemPrompt, renderFrameUser, buildStepSystemPrompt, renderStepUser, targetBlockOf } from '../_utils/sharedResearch/stepPrompt.js';
@@ -266,7 +266,7 @@ async function handleOpen(body, res, { db, uid }) {
     uid, requestId: body.requestId, sessionId: randomUUID(),
     entry: {
       kind: entry.kind, itemRef: { recordKind, recordId }, question, direction, observation: null,
-      topic: drop && typeof drop.parse?.topic === 'string' && drop.parse.topic.trim() ? drop.parse.topic.trim().slice(0, 120) : null,
+      topic: drop ? dropTopicOf(drop, { partnerName }) : null, // never a stray ticker or a forbidden pattern (refuter SH-11)
       names,
     },
     exchanges: dropExchange ? [dropExchange] : [],
@@ -308,13 +308,15 @@ async function handleStep(body, res, { db, uid }) {
     const lines = latestLinesOf(begun.session);
     return res.status(200).json({
       session: sessionViewOf(begun.session), record: projectionOf(begun.record, { lines, nowIso }),
-      companies: await companiesFor(db, begun.record), changed: { summary: false, findings: 0 }, quota: quotaViewOf(day), replay: true,
+      companies: await companiesFor(db, begun.record), quota: quotaViewOf(day), replay: true,
+      // the replayed step's own outcome: was its answer withheld (spec §16 FQ-5 — refuter SI-4)
+      changed: { summary: false, findings: 0, summaryWithheld: begun.session.lastStep?.stepId === stepId && begun.session.lastStep?.summaryWithheld === true },
     });
   }
   const { session, record } = begun;
-  const failed = async (status, reason, { turn = null, retrievalTally = null, cancellation = false } = {}) => {
+  const failed = async (status, reason, { turn = null, retrievalTally = null, cancellation = false, refundCall = false } = {}) => {
     const atIso = new Date().toISOString();
-    await failStep(db, { uid, sessionId, stepId, reason, nowIso: atIso });
+    await failStep(db, { uid, sessionId, stepId, reason, nowIso: atIso, refundCall });
     if (turn) {
       await recordTurnOutcome(db, { researchWorkId: session.researchWorkId, uid, kind: cancellation ? 'cancellation' : 'failure', elapsedMs: turn.elapsedMs, usage: turn.usage, atIso, label: 'shared-research' });
     }
@@ -328,7 +330,7 @@ async function handleStep(body, res, { db, uid }) {
   try {
     if (intent === 'examine') target = targetOf(body.target, record);
   } catch (err) {
-    await failStep(db, { uid, sessionId, stepId, reason: 'invalid_target', nowIso });
+    await failStep(db, { uid, sessionId, stepId, reason: 'invalid_target', nowIso, refundCall: true }); // no call was made (refuter SI-2)
     throw err;
   }
 
@@ -344,14 +346,17 @@ async function handleStep(body, res, { db, uid }) {
   const skipRetrieval = intent === 'refresh' && prior?.status === 'completed' && prior.query === query;
   const r = skipRetrieval ? null : await retrieve({ question: record.question, focus, direction, symbols });
   const retrievalTally = { calls: r ? 1 : 0, costDollars: r && !r.error ? (r.costDollars ?? 0) : 0, elapsedMs: r?.elapsedMs ?? 0 };
-  const items = r && !r.error ? r.items : [];
+  // A publishedDate later than the read is no date (spec §16 FQ-2): the prompt never shows it as the item's date either.
+  const readMs = r && !r.error ? Date.parse(r.readAt) : NaN;
+  const items = r && !r.error ? r.items.map((it) => (it.publishedDate && Date.parse(it.publishedDate) > readMs ? { ...it, publishedDate: null } : it)) : [];
   const retrievalState = !r ? 'none' : r.error ? 'failed' : 'items';
 
   // The prompt, sized before any call (§6.12 control 2).
   const agentSnap = session.attribution?.agentId ? await db.collection(AGENTS_COLLECTION).doc(session.attribution.agentId).get() : null;
   const partnerName = partnerNameOf(agentSnap?.exists ? agentSnap.data() : null);
   const system = buildStepSystemPrompt({ partnerName });
-  const room = Math.max(0, FINDINGS_MAX - (Array.isArray(record.findings) ? record.findings.length : 0));
+  // One place is kept back for the validator's own "No next step proposed." marker (refuter SI-5).
+  const room = Math.max(0, FINDINGS_MAX - (Array.isArray(record.findings) ? record.findings.length : 0) - 1);
   const protectedIds = new Set([...(record.summary?.basedOn ?? []), ...(target ? [target.relationshipFindingId, target.openFindingId].filter(Boolean) : [])]);
   const stepsLeft = Math.max(0, (session.stepBudget ?? 0) - (session.stepsUsed ?? 0) - 1);
   const fit = fitPrompt({
@@ -364,7 +369,7 @@ async function handleStep(body, res, { db, uid }) {
     }),
   });
   if (!fit.ok) {
-    await failStep(db, { uid, sessionId, stepId, reason: 'prompt_too_large', nowIso: new Date().toISOString() });
+    await failStep(db, { uid, sessionId, stepId, reason: 'prompt_too_large', nowIso: new Date().toISOString(), refundCall: true });
     if (retrievalTally.calls) await settle(captureLog(modelCallRecord({ uid, session, stepId, intent, turn: null, retrieval: retrievalTally, outcome: 'failure', failureReason: 'prompt_too_large' })), settleBy);
     throw refuse(400, 'prompt_too_large'); // the typed refusal (spec §6.3); no model call was made
   }
@@ -372,7 +377,7 @@ async function handleStep(body, res, { db, uid }) {
   // One model turn.
   const elapsed = Date.now() - t0;
   const budgetMs = Math.min(r ? MODEL_AFTER_RETRIEVAL_MS : MODEL_MS, DEADLINE_MS - elapsed);
-  if (budgetMs <= 0) return failed(504, 'deadline', { retrievalTally });
+  if (budgetMs <= 0) return failed(504, 'deadline', { retrievalTally, refundCall: true }); // no model call was made
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), budgetMs);
   let turn;
@@ -406,6 +411,7 @@ async function handleStep(body, res, { db, uid }) {
     saved = await recordStep(db, {
       uid, sessionId, stepId, findings: checked.findings, summary: checked.summary, expectedRev: (record.summaryRevisions ?? []).length,
       turn: { elapsedMs: turn.elapsedMs, usage: turn.usage }, partnerExchange, retrieval: retrievalTally, query, nowIso: persistIso,
+      summaryWithheld: checked.notes.some((n) => n.startsWith('summary_withheld:')),
     });
   } catch (err) {
     const code = err?.code ?? 'persist_failed';
@@ -429,7 +435,7 @@ async function handleStep(body, res, { db, uid }) {
     changed: {
       summary: Boolean(checked.summary), findings: checked.findings.length,
       // spec §16 FQ-5: the step wrote an answer that stated a number no Source-backed finding holds — the answer kept its last revision
-      summaryWithheld: checked.notes.some((n) => n.startsWith('summary_withheld:')),
+      summaryWithheld: saved.session.lastStep?.summaryWithheld === true,
     },
     quota: quotaViewOf(day),
   }, pending, settleBy);

@@ -62,8 +62,8 @@ export function buildStepSystemPrompt({ partnerName } = {}) {
     `- Unresolved reasons: ${UNRESOLVED_REASONS.join(', ')}.`,
     '- summary: null when this step does not change the answer. Otherwise at most 1,000 characters resting on 1 to 25 current findings (basedOn), and every number in it appears in one of those findings that is Source-backed (a retrieved fact or a stored record), never only in an inference, the player\'s words or a drop claim; a date may be the date of a fact it rests on. A summary that breaks this is not shown.',
     '- lines: the finding that most supports the answer, the one that most complicates it, the most important missing link.',
-    '- nextAction: the one next step, aimed at the weakest link; null only when the question is answered.',
-    '- reply: what this step found, plain sentences, at most 1,200 characters.',
+    '- nextAction: the one next step, aimed at the weakest link; null when you have no next step to propose.',
+    '- reply: what this step found, plain sentences, at most 1,200 characters. Write no sentence about yourself or your own process; say what the evidence shows.',
   ].join('\n');
 }
 

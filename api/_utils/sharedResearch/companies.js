@@ -74,6 +74,27 @@ export function namesCompany(text, { symbol, name }) {
   return core.split(/[\s,]+/).filter((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w.toLowerCase())).some((w) => wordIn(t, w));
 }
 
+/** A company name's words for identity: the core (suffixes dropped), lowercase, punctuation as spaces. */
+const nameWordsOf = (s) => coreNameOf(s).normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}&'-]+/gu, ' ').split(' ').filter(Boolean);
+/**
+ * Is `companyName` — what the model wrote a fact is about — THIS company
+ * (identity, review B1; refuter SH-2)? Its symbol, or every word of its core
+ * name is a word of the stored name: "Meta" and "Walt Disney" are their
+ * companies; "Meta Materials", "Texas Roadhouse" and "Apple Hospitality REIT"
+ * are not Meta Platforms, Texas Instruments and Apple. Stricter than
+ * namesCompany (which asks whether a TEXT names a company); no stored name →
+ * only the symbol itself identifies.
+ */
+export function isSameCompany(companyName, { symbol, name }) {
+  const c = String(companyName ?? '').trim();
+  if (!c) return false;
+  if (typeof symbol === 'string' && c.toUpperCase() === symbol) return true;
+  if (typeof name !== 'string' || !name.trim() || coreNameOf(name) === symbol) return false;
+  const stored = new Set(nameWordsOf(name));
+  const words = nameWordsOf(c);
+  return words.length > 0 && words.every((w) => stored.has(w));
+}
+
 /** "{Role} · {rest}" → { role, rest }; a fact without a known role prefix reads role null. */
 export function splitRole(fact) {
   const f = typeof fact === 'string' ? fact : '';

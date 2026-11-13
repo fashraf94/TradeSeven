@@ -228,6 +228,8 @@ export async function beginFraming(db, { uid, requestId, observation, playerExch
     const quotaSnap = await tx.get(quotaRefOf(db, uid));
     const globalSnap = await tx.get(quotaRefOf(db, GLOBAL_QUOTA_ID));
     const day = playerDayOf(dataOf(quotaSnap), etDate);
+    // a requestId names one request, in both directions: an item's or a drop's requestId never answers a framing (refuter SI-3)
+    if (prior && prior.entry?.kind !== 'observation') throw refuse(400, 'invalid_request');
     if (prior && (prior.status !== 'framing' || prior.frame || isFramingInFlight(prior, Date.parse(nowIso)))) return { session: prior, run: false, day };
     if (day.framingsRun >= FRAMINGS_PER_DAY) throw refuse(429, 'framing_limit');
     const g = globalDayOf(dataOf(globalSnap), etDate);
@@ -441,7 +443,7 @@ export async function beginStep(db, { uid, sessionId, stepId, intent, directionE
  * folded into the telemetry; the host's partner exchange, `stepsUsed + 1`,
  * `lastStep` completed and the retrieval tally; the app's step count + 1.
  */
-export async function recordStep(db, { uid, sessionId, stepId, findings, summary, expectedRev, turn, partnerExchange, retrieval, query = null, nowIso }) {
+export async function recordStep(db, { uid, sessionId, stepId, findings, summary, expectedRev, turn, partnerExchange, retrieval, query = null, summaryWithheld = false, nowIso }) {
   const ref = sessionRefOf(db, sessionId);
   const etDate = etDateOf(nowIso);
   return db.runTransaction(async (tx) => {
@@ -465,7 +467,8 @@ export async function recordStep(db, { uid, sessionId, stepId, findings, summary
     const sessionPatch = {
       exchanges: [...(s.exchanges ?? []), partnerExchange],
       stepsUsed: (s.stepsUsed ?? 0) + 1,
-      lastStep: { ...s.lastStep, status: 'completed', endedAt: nowIso, error: null, query },
+      // summaryWithheld (spec §16 FQ-5) is kept with the step, so its replay can say so too (refuter SI-4)
+      lastStep: { ...s.lastStep, status: 'completed', endedAt: nowIso, error: null, query, summaryWithheld: summaryWithheld === true },
       retrieval: {
         calls: (prior.calls ?? 0) + (retrieval?.calls ?? 0),
         costDollars: Math.round(((prior.costDollars ?? 0) + (retrieval?.costDollars ?? 0)) * 1e6) / 1e6,
@@ -486,15 +489,33 @@ export async function recordStep(db, { uid, sessionId, stepId, findings, summary
  * 30 s function): one attempt, at most TURN_OUTCOME_DEADLINE_MS — past it the
  * write is unconfirmed (logged; a running step older than 35 s is treated as
  * failed anyway). Never throws (BUILD_RULES §5).
+ *
+ * `refundCall`: the step was refused before its model call (an invalid target,
+ * a prompt over the cap, no time left) — the call beginStep counted is given
+ * back on the player's day and the app's, so only calls MADE count (refuter
+ * SI-2; fail-safe: an unconfirmed write keeps the count). An investigation that
+ * has already ended keeps its `updatedAt` (its close), which `previous` reads
+ * (refuter SI-1).
  */
-export async function failStep(db, { uid, sessionId, stepId, reason, nowIso, deadlineMs = TURN_OUTCOME_DEADLINE_MS }) {
+export async function failStep(db, { uid, sessionId, stepId, reason, nowIso, refundCall = false, deadlineMs = TURN_OUTCOME_DEADLINE_MS }) {
   let timer = null;
   try {
     const ref = sessionRefOf(db, sessionId);
+    const etDate = etDateOf(nowIso);
     const write = db.runTransaction(async (tx) => {
       const s = dataOf(await tx.get(ref));
       if (!isOwnedSession(s, uid) || s.lastStep?.stepId !== stepId || s.lastStep?.status !== 'running') return 'skipped';
-      tx.update(ref, { lastStep: { ...s.lastStep, status: 'failed', endedAt: nowIso, error: reason }, updatedAt: nowIso });
+      const started = typeof s.lastStep?.startedAt === 'string' ? etDateOf(s.lastStep.startedAt) : null;
+      const refund = refundCall && started === etDate; // a call counted on another ET day is never refunded into today
+      const playerSnap = refund ? await tx.get(quotaRefOf(db, uid)) : null;
+      const globalSnap = refund ? await tx.get(quotaRefOf(db, GLOBAL_QUOTA_ID)) : null;
+      tx.update(ref, { lastStep: { ...s.lastStep, status: 'failed', endedAt: nowIso, error: reason }, updatedAt: s.status === 'open' ? nowIso : s.updatedAt });
+      if (refund) {
+        const day = playerDayOf(dataOf(playerSnap), etDate);
+        const g = globalDayOf(dataOf(globalSnap), etDate);
+        if (day.stepCalls > 0) tx.set(quotaRefOf(db, uid), { ...day, stepCalls: day.stepCalls - 1, updatedAt: nowIso });
+        if (g.stepCalls > 0) tx.set(quotaRefOf(db, GLOBAL_QUOTA_ID), { ...g, stepCalls: g.stepCalls - 1, updatedAt: nowIso });
+      }
       return 'recorded';
     }, { maxAttempts: 1 });
     const out = await Promise.race([write, new Promise((r) => { timer = setTimeout(() => r('unconfirmed'), deadlineMs); })]);
