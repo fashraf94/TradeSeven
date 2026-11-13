@@ -1693,6 +1693,8 @@ describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), 
     receipt = await reopen('op_1');
     expect(lines(receipt).map((l) => l[0])).toEqual(['tested', 'testing', 'nomination', 'offered', 'filed']);
     expect(lineText(receipt, 0)).toBe('Tested · 4:55 PM · contract condition breached · economic result within band');
+    // Astra §4, CA-4: no closing note stored, no quotation; the acceptance had no thesis, so none there either
+    expect(receipt.querySelector('[data-quotation="yourAgent"]')).toBeNull();
     expect([...receipt.querySelectorAll('[data-result-field]')].map((e) => [e.getAttribute('data-result-field'), e.textContent])).toEqual([['contractCondition', 'breached'], ['economicResult', 'within band']]);
     expect(receipt.querySelector('[data-result-field]').closest('[data-record-text]')).toBeTruthy();
     expect(m.buttons('Open the result')).toHaveLength(0);

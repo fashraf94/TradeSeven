@@ -1,9 +1,9 @@
 // api/_utils/filmRoom/practiceFieldSeam.js
 //
 // Film Room C1 — THE PRACTICE FIELD SEAM (build prompt refinement R-C1-3; Build C spec
-// docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md §4, §9, §13 items 1 and 2). The Film Room's nomination path
-// reaches the Practice Field's book through exactly two helpers, both THE PRACTICE FIELD'S, reached through this one
-// module so the path is complete and tested before the book exists:
+// docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md §4, §9, §13 items 1 and 2; Amendment A CA-2, CA-12, CA-21). The
+// Film Room reaches the Practice Field's book through exactly FOUR helpers, all THE PRACTICE FIELD'S, reached through
+// this one module so the path is complete and tested before the book exists:
 //
 //   bookForOwner(db, { uid, attributionAgentId })  → { bookId, status } | null
 //       The owner's idea book for that attribution agent: ONE read, server-side. The Film Room offers a nomination only

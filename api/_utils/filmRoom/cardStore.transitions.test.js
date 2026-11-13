@@ -1344,3 +1344,80 @@ describe('C1 fix round §2 review — the withdrawal is held to THIS entry\'s re
     expect(nominationRecordDefectOf({ ...record, stateHistory: ['queued'] }, given)).toBe('stateHistory');
   });
 });
+
+// ── Astra §4's pinning tests, walked (report §9.7): CA-2's cross-product and write aborts; CA-12's races per field ───
+describe('Astra §4 — CA-2: every copy × every record, and both write abort points', () => {
+  const RECORD_PATH = `mandates/${BOOK}/nominations/nom_c1`;
+  const record = (state) => ({ ...seam.PRACTICE_FIELD_SEAM_DEFAULTS.buildNominationDoc({ entryId: 'c1', situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1, nowIso: NOW, expiresAfterSessions: 10 }), state });
+  const RECORD_STATES = ['queued', 'considered', 'deferred', 'accepted', 'declined', 'expired', 'withdrawn', null];
+
+  it('THE CROSS-PRODUCT: a copy queued, considered or deferred × a record in every state (and none) — the record decides: accepted refuses; queued, considered, deferred withdraw (record and copy withdrawn); declined, expired, withdrawn retire with the copy taking the record\'s state, the record untouched; none retires, the copy kept; version + 1 once', async () => {
+    for (const copyState of ['queued', 'considered', 'deferred']) {
+      for (const recState of RECORD_STATES) {
+        const where = `copy ${copyState} × record ${recState ?? 'none'}`;
+        const t = fresh();
+        const at = await nominated(t);
+        t.store.set(playPath('c1'), { ...at, nomination: { ...at.nomination, state: copyState } });
+        if (recState) t.store.set(RECORD_PATH, record(recState));
+        const before = t.store.get(RECORD_PATH);
+        const r = await code(retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: at.version, nowIso: LATEST }));
+        const entry = t.store.get(playPath('c1'));
+        if (recState === 'accepted') {
+          expect(r, where).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated', nominationState: 'accepted' } });
+          expect(entry.stage, where).toBe('nominated');
+          continue;
+        }
+        expect(r, where).toBeNull();
+        expect(entry, where).toMatchObject({ stage: 'retired', version: at.version + 1 });
+        if (['queued', 'considered', 'deferred'].includes(recState)) {
+          expect(t.store.get(RECORD_PATH).state, where).toBe('withdrawn');
+          expect(entry.nomination.state, where).toBe('withdrawn');
+        } else if (recState) {
+          expect(t.store.get(RECORD_PATH), where).toEqual(before);
+          expect(entry.nomination.state, where).toBe(recState);
+        } else {
+          expect(t.store.has(RECORD_PATH), where).toBe(false);
+          expect(entry.nomination.state, where).toBe(copyState);
+        }
+      }
+    }
+  });
+
+  it('THE WRITE ABORT POINTS: the record\'s withdrawal write refused, or the entry\'s retire write refused — the transaction commits neither half (the record stays queued, the card nominated)', async () => {
+    for (const refused of ['mandates/', `agents/${AGENT}/plays/`]) {
+      let refuse = null;
+      const t = makeTapeDb({ [`agents/${AGENT}`]: agentDoc(), [`mandates/${BOOK}`]: BOOK_DOC }, { hooks: { beforeWrite: (_op, path) => { if (refuse && path.startsWith(refuse)) throw new Error(`refused ${path}`); } } });
+      const at = await nominated(t);
+      t.store.set(RECORD_PATH, record('queued'));
+      refuse = refused;
+      const r = await code(retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: at.version, nowIso: LATEST }));
+      expect(r, refused).toMatchObject({ thrown: expect.stringContaining('refused') });
+      expect(t.store.get(RECORD_PATH).state, refused).toBe('queued');
+      expect(t.store.get(playPath('c1')).stage, refused).toBe('nominated');
+    }
+  });
+});
+
+describe('Astra §4 — CA-12: the book changed between the transaction\'s re-read and its commit, field by field, on BOTH paths', () => {
+  const BOOK_PATH = `mandates/${BOOK}`;
+  const CHANGES = [['status', { status: 'closed' }], ['userId', { userId: 'someone-else' }], ['kind', { kind: 'portfolio' }], ['the agent', { attributionAgentId: 'agent-other' }]];
+  const paths = {
+    nominate: (t) => nominateCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'n1', expectedVersion: 1, nowIso: LATER, book: { bookId: BOOK, status: 'active' }, verifySource: SOURCE_OK }),
+    'the Offer create': (t) => createCard(t.db, { uid: UID, agentId: AGENT, opId: 'o1', payload: payload({ route: 'offer' }), nowIso: NOW, battleArchetype: 'momentum_chaser', book: { bookId: BOOK, status: 'active' } }),
+  };
+  for (const [pathName, run] of Object.entries(paths)) {
+    for (const [field, change] of CHANGES) {
+      it(`${pathName}: ${field} changed after the re-read → the commit conflicts, is retried, and refuses book_not_open; nothing written`, async () => {
+        let strike = false;
+        const t = makeTapeDb({ [`agents/${AGENT}`]: agentDoc(), [BOOK_PATH]: BOOK_DOC }, { hooks: { afterTxRead: async (label, db) => { if (!strike || label !== BOOK_PATH) return; strike = false; await db.collection('mandates').doc(BOOK).set({ ...BOOK_DOC, ...change }); } } });
+        await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c1', payload: payload(), nowIso: NOW, battleArchetype: 'momentum_chaser' });
+        const retries = t.db.txRetries;
+        const writes = t.writeLog.length;
+        strike = true;
+        expect(await code(run(t)), `${pathName} ${field}`).toMatchObject({ status: 409, code: 'book_not_open' });
+        expect(t.db.txRetries).toBeGreaterThan(retries);
+        expect(t.writeLog.slice(writes).filter((w) => w.path !== BOOK_PATH)).toEqual([]);
+      });
+    }
+  }
+});

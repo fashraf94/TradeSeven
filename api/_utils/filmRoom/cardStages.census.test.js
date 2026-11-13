@@ -104,3 +104,29 @@ describe('C-VOCAB — every reader reads the stages from the one export', () => 
     expect(FILM_ROOM_COPY.cards.stageWords.installed).toBe('equipped');
   });
 });
+
+// ── Amendment A CA-3: "The census pins the new predicate" ─────────────────────────────────────────────────────────
+describe('Amendment A CA-3 — every reader asks the one predicate: none reads OPEN_STAGES, none holds its own closing states', () => {
+  const NOT_TAKEN = ['declined', 'expired', 'withdrawn'];
+  /** A reader's own list of nomination states that close a card: an array literal of two or more of them. */
+  const ownClosingList = new RegExp(`\\[\\s*(['"])(${NOT_TAKEN.join('|')})\\1\\s*,\\s*(['"])(${NOT_TAKEN.join('|')})\\3`);
+  const namesOpenStages = /\bOPEN_STAGES\b/;
+  const scan = (src) => { const code = stripComments(src); return { openStages: namesOpenStages.test(code), closingList: ownClosingList.test(code) }; };
+
+  for (const file of Object.keys(STAGE_READERS)) {
+    it(`${file}: names no OPEN_STAGES (open means isOpenStage) and holds no list of closing nomination states`, () => {
+      expect(scan(readFileSync(abs(file), 'utf8')), file).toEqual({ openStages: false, closingList: false });
+    });
+  }
+
+  it('THE BITE, in every reader: OPEN_STAGES read to mean "open", or a reader\'s own closing list, is caught; the export alone holds them', () => {
+    for (const file of Object.keys(STAGE_READERS)) {
+      const src = readFileSync(abs(file), 'utf8');
+      expect(scan(`${src}\nconst open = (c) => OPEN_STAGES.includes(c.stage);\n`).openStages, file).toBe(true);
+      expect(scan(`${src}\nconst closed = ['declined', 'expired'];\n`).closingList, file).toBe(true);
+    }
+    const exportSrc = readFileSync(abs('src/data/cardStages.js'), 'utf8');
+    expect(scan(exportSrc)).toEqual({ openStages: true, closingList: true });
+    expect(OPEN_STAGES).toEqual(['card', 'testing']);
+  });
+});
