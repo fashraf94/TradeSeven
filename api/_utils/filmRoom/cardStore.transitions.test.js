@@ -8,11 +8,12 @@
 //     `tested → retired`), is idempotent by op id, appends a `by: 'server'` row with the writer named, bumps the
 //     version, sets ONE field, and never touches `note`, `questionId`, `route` or `source`;
 //   · a shelved entry still transitions (contract V2 §7);
-//   · the player's retire reads the one open predicate: `testing` and an unparked `tested` card retire; a parked card,
+//   · the player's retire reads the one open predicate and Amendment A's player rule: an unparked `tested` card retires,
+//     a `testing` one does not (CA-1); a parked card,
 //     an installed one and a retired one do not.
 // Over the tape suites' in-memory Firestore (real optimistic transactions).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardStore.js imports src/data/cardStages.js and, through
 // practiceFieldSeam.js, api/_utils/marketSchedule.js → src/utils/marketCalendar.js; this import of the store, never
 // mocked, is the runtime guard that they stay Node-clean.
@@ -280,12 +281,12 @@ describe('Build C §3 — applyServerTransition, the Practice Field\'s one way i
 });
 
 describe('Build C §3 — the player\'s retire reads the one open predicate', () => {
-  it('testing and an unparked tested card retire; a parked card and an installed one are no transition (409 illegal_transition)', async () => {
+  it('an unparked tested card retires; a testing card does not (Amendment A CA-1, its own rows below); a parked card and an installed one are no transition (409 illegal_transition)', async () => {
     const t = fresh();
     await nominated(t);
     await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION });
     const { entry } = await move(t, { to: 'testing', opId: 's2', payload: IDEA });
-    expect((await retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: entry.version, nowIso: LATEST })).card.stage).toBe('retired');
+    expect(await code(retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: entry.version, nowIso: LATEST }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'testing' } });
     const u = fresh();
     const done = await tested(u);
     expect((await retireCard(u.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: done.entry.version, nowIso: LATEST })).card.stage).toBe('retired');
@@ -497,5 +498,287 @@ describe('Amendment A CA-3 — the open predicate: a nominated card closes when 
     u.store.set(playPath('c1'), v1);
     expect((await readCards(u.db, { uid: UID, agentId: AGENT })).open).toBe(1);
     expect((await retireCard(u.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: 1, nowIso: LATEST })).card.stage).toBe('retired');
+  });
+});
+
+// ── Amendment A CA-1, CA-2, CA-5 (retire side) — the player's retire and the withdrawal ─────────────────────────────
+const seam = await import('./practiceFieldSeam.js');
+describe('Amendment A CA-1 / CA-2 / CA-5 — what the player may retire, and the withdrawal the record decides', () => {
+  const RECORD_PATH = `mandates/${BOOK}/nominations/nom_c1`;
+  const freshWith = (hooks) => makeTapeDb({ [`agents/${AGENT}`]: agentDoc() }, { hooks });
+  /** The book's record for the planted nomination (`nom_c1`), the default builder's shape, at `state`. */
+  const withRecord = (t, state, over = {}) => {
+    const rec = seam.PRACTICE_FIELD_SEAM_DEFAULTS.buildNominationDoc({ entryId: 'c1', situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1, nowIso: NOW, expiresAfterSessions: 10 });
+    t.store.set(RECORD_PATH, { ...rec, state, ...over });
+    return t.store.get(RECORD_PATH);
+  };
+  const retire = (t, over = {}) => retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', nowIso: LATEST, ...over });
+  const bookWrites = (t) => t.writeLog.filter((w) => w.path.startsWith('mandates/'));
+  afterEach(() => seam.resetPracticeFieldSeam());
+
+  it('CA-1: a testing card\'s retire → 409 illegal_transition with { stage: \'testing\' } and nothing else; nothing written; the server\'s tested still lands (the mutant: a testing retire accepted)', async () => {
+    const t = fresh();
+    await nominated(t);
+    await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION });
+    const { entry } = await move(t, { to: 'testing', opId: 's2', payload: IDEA });
+    const writes = t.writeLog.length;
+    expect(await code(retire(t, { expectedVersion: entry.version }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'testing' } });
+    expect(t.writeLog.length).toBe(writes);
+    expect((await move(t, { to: 'tested', opId: 's3', payload: RESULT })).entry.stage).toBe('tested');
+    expect(stages.isRetirableByPlayer({ stage: 'testing' })).toBe(false);
+  });
+
+  it('CA-1: the refusal comes after the owner, replay, version and shelving checks — a stale version, another owner and a shelved testing card answer their own refusals; a successful retire\'s replay still answers', async () => {
+    const t = fresh();
+    await nominated(t);
+    await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION });
+    const { entry } = await move(t, { to: 'testing', opId: 's2', payload: IDEA });
+    expect(await code(retire(t, { expectedVersion: 1 }))).toMatchObject({ code: 'version_conflict' });
+    expect(await code(retire(t, { uid: 'intruder', expectedVersion: entry.version }))).toMatchObject({ code: 'forbidden' });
+    t.store.set(`agents/${AGENT}`, agentDoc({ archetype: 'guardian' }));
+    expect(await code(retire(t, { expectedVersion: entry.version }))).toMatchObject({ code: 'shelved' });
+    // a successful retire, replayed after its card moved on: the replay answers first
+    const u = fresh();
+    const done = await tested(u);
+    const first = await retire(u, { expectedVersion: done.entry.version });
+    expect(first.card.stage).toBe('retired');
+    expect(await retire(u, { expectedVersion: done.entry.version })).toEqual({ idempotent: true, card: first.card });
+  });
+
+  it('CA-5 (retire side): a tested card with an offer waiting → 409 { stage: \'tested\', offerState: \'offered\' }; parking is unaffected', async () => {
+    const t = fresh();
+    const { entry } = await tested(t);
+    t.store.set(playPath('c1'), { ...entry, offer: { ideaId: 'idea-9', offerId: 'offer-1', state: 'offered' } });
+    expect(await code(retire(t, { expectedVersion: entry.version }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'tested', offerState: 'offered' } });
+    expect((await parkCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'p1', expectedVersion: entry.version, nowIso: LATEST })).card.parkedAt).toBe(LATEST);
+  });
+
+  it('isRetirableByPlayer (pure), every stage and copy state: card yes; nominated with no copy (v1) or a copy queued, considered, deferred yes — accepted, declined, expired, withdrawn no; testing no; tested unparked with no offer yes, with an offer no; parked, installed, retired no', () => {
+    const r = stages.isRetirableByPlayer;
+    expect(r({ stage: 'card' })).toBe(true);
+    expect(r({ stage: 'nominated' })).toBe(true);
+    expect(['queued', 'considered', 'accepted', 'deferred', 'declined', 'expired', 'withdrawn', 'weird'].map((state) => r({ stage: 'nominated', nomination: { state } }))).toEqual([true, true, false, true, false, false, false, false]);
+    expect(r({ stage: 'testing' })).toBe(false);
+    expect(r({ stage: 'tested' })).toBe(true);
+    expect(r({ stage: 'tested', offer: { state: 'offered' } })).toBe(false);
+    expect(r({ stage: 'tested', parkedAt: NOW })).toBe(false);
+    expect(r({ stage: 'installed' })).toBe(false);
+    expect(r({ stage: 'retired' })).toBe(false);
+  });
+
+  for (const state of ['queued', 'considered', 'deferred']) {
+    it(`CA-2: the record ${state} → the record WITHDRAWN (the seam's buildWithdrawal) and the entry retired, its copy withdrawn — one transaction, version + 1 once (the mutant: a withdrawal that leaves the record queued)`, async () => {
+      const t = fresh();
+      const at = await nominated(t);
+      if (state !== 'queued') await move(t, { to: 'nomination', opId: 's1', payload: { ...NOMINATION, state, reason: 'Not yet.' } });
+      const before = t.store.get(playPath('c1'));
+      const rec = withRecord(t, state);
+      const r = await retire(t, { expectedVersion: before.version });
+      expect(r.idempotent).toBe(false);
+      const after = t.store.get(playPath('c1'));
+      expect(after).toEqual(r.card);
+      expect(after).toMatchObject({ stage: 'retired', stageAt: LATEST, version: before.version + 1, nomination: { ...before.nomination, state: 'withdrawn' } });
+      expect(after.stageHistory.at(-1)).toMatchObject({ stage: 'retired', at: LATEST, by: 'player', opId: 'r1' });
+      expect(t.store.get(RECORD_PATH)).toEqual({ ...rec, state: 'withdrawn', withdrawnAt: LATEST, stateHistory: [...rec.stateHistory, { state: 'withdrawn', at: LATEST, by: 'player' }] });
+      expect(t.writeLog.slice(-2).map((w) => [w.op, w.path])).toEqual([['tx.set', RECORD_PATH], ['tx.update', playPath('c1')]]);
+      expect(at.nomination.nominationId).toBe('nom_c1');
+    });
+  }
+
+  it('CA-2: the record ACCEPTED while the copy lags at queued → 409 { stage: \'nominated\', nominationState: \'accepted\' }; nothing written (the mutant: a retire with an accepted record but a queued copy accepted)', async () => {
+    const t = fresh();
+    const at = await nominated(t);
+    withRecord(t, 'accepted');
+    const writes = t.writeLog.length;
+    expect(await code(retire(t, { expectedVersion: at.version }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated', nominationState: 'accepted' } });
+    expect(t.writeLog.length).toBe(writes);
+    expect(t.store.get(RECORD_PATH).state).toBe('accepted');
+  });
+
+  it('CA-2: the copy itself accepted → refused on the copy\'s side with the same words, the record never read', async () => {
+    const t = fresh();
+    await nominated(t);
+    const { entry } = await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION });
+    withRecord(t, 'accepted');
+    const reads = t.readLog.length;
+    expect(await code(retire(t, { expectedVersion: entry.version }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated', nominationState: 'accepted' } });
+    expect(t.readLog.slice(reads).filter((l) => l.includes('mandates/'))).toEqual([]);
+  });
+
+  for (const state of ['declined', 'expired', 'withdrawn']) {
+    it(`CA-2: the record ${state} while the copy lags at queued → the entry retires, its copy ${state}; nothing written to the book`, async () => {
+      const t = fresh();
+      const at = await nominated(t);
+      const rec = withRecord(t, state);
+      const r = await retire(t, { expectedVersion: at.version });
+      expect(r.card).toMatchObject({ stage: 'retired', version: at.version + 1, nomination: { ...at.nomination, state } });
+      expect(bookWrites(t)).toEqual([]);
+      expect(t.store.get(RECORD_PATH)).toEqual(rec);
+    });
+  }
+
+  it('CA-2: no record document → the entry retires, its copy as it was; nothing written to the book; a v1 entry with no nomination reads no record', async () => {
+    const t = fresh();
+    const at = await nominated(t);
+    const r = await retire(t, { expectedVersion: at.version });
+    expect(r.card).toMatchObject({ stage: 'retired', nomination: at.nomination });
+    expect(bookWrites(t)).toEqual([]);
+    const u = fresh();
+    const { card } = await createCard(u.db, { uid: UID, agentId: AGENT, opId: 'c1', payload: payload(), nowIso: NOW, battleArchetype: 'momentum_chaser' });
+    const v1 = { ...card, route: 'drill', stage: 'nominated' };
+    delete v1.stageVocabVersion;
+    u.store.set(playPath('c1'), v1);
+    const reads = u.readLog.length;
+    expect((await retire(u, { expectedVersion: 1 })).card.stage).toBe('retired');
+    expect(u.readLog.slice(reads).filter((l) => l.includes('mandates/'))).toEqual([]);
+  });
+
+  it('CA-2 fails closed: a record read that fails, a record state not in NOMINATION_STATES → 503 nomination_unavailable, nothing written, the card not retired (the mutant: a failed record read that retires anyway)', async () => {
+    let failRead = false;
+    const t = freshWith({ beforeRead: (label) => { if (failRead && label === `tx:${RECORD_PATH}`) throw new Error('record read failed'); } });
+    const at = await nominated(t);
+    withRecord(t, 'queued');
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    failRead = true;
+    const writes = t.writeLog.length;
+    expect(await code(retire(t, { expectedVersion: at.version }))).toMatchObject({ status: 503, code: 'nomination_unavailable' });
+    failRead = false;
+    withRecord(t, 'weird');
+    expect(await code(retire(t, { expectedVersion: at.version }))).toMatchObject({ status: 503, code: 'nomination_unavailable' });
+    expect(t.writeLog.length).toBe(writes);
+    expect(t.store.get(playPath('c1')).stage).toBe('nominated');
+    expect(errors.mock.calls.some((c) => String(c.join(' ')).includes('record read failed'))).toBe(true);
+    errors.mockRestore();
+  });
+
+  it('CA-2: a contention abort (gRPC ABORTED) on the record read is rethrown as it came — never mapped to nomination_unavailable (the mutant: ABORTED swallowed)', async () => {
+    const t = freshWith({ beforeRead: (label) => { if (label === `tx:${RECORD_PATH}`) { const e = new Error('ABORTED: contention'); e.code = 10; throw e; } } });
+    const at = await nominated(t);
+    withRecord(t, 'queued');
+    const err = await retire(t, { expectedVersion: at.version }).then(() => null, (e) => e);
+    expect(err).toMatchObject({ code: 10, message: 'ABORTED: contention' });
+    expect(err.cardRoute).toBeUndefined();
+    expect(t.store.get(playPath('c1')).stage).toBe('nominated');
+  });
+
+  const MALFORMED = [
+    ['the builder throws', () => { throw new Error('no shape'); }],
+    ['an array', (rec) => [rec]],
+    ['a class instance', (rec) => Object.assign(new (class W {})(), rec, { state: 'withdrawn' })],
+    ['state queued', (rec) => ({ ...rec, state: 'queued' })],
+    ['no state', (rec) => { const o = { ...rec }; delete o.state; return o; }],
+    ['another entry\'s source', (rec) => ({ ...rec, state: 'withdrawn', source: { ...rec.source, entryId: 'other' } })],
+    ['no source', (rec) => { const o = { ...rec, state: 'withdrawn' }; delete o.source; return o; }],
+  ];
+  for (const [name, build] of MALFORMED) {
+    it(`CA-2 fails closed — the withdrawal builder: ${name} → 503 nomination_unavailable, nothing written, the card not retired`, async () => {
+      const t = fresh();
+      const at = await nominated(t);
+      withRecord(t, 'queued');
+      seam.setPracticeFieldSeam({ buildWithdrawal: build });
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const writes = t.writeLog.length;
+      expect(await code(retire(t, { expectedVersion: at.version })), name).toMatchObject({ status: 503, code: 'nomination_unavailable' });
+      expect(t.writeLog.length).toBe(writes);
+      expect(t.store.get(RECORD_PATH).state).toBe('queued');
+      errors.mockRestore();
+    });
+  }
+
+  it('CA-2: a withdrawal\'s replay answers after the record and the book are gone (the replay is judged first); a second retire is no transition', async () => {
+    const t = fresh();
+    const at = await nominated(t);
+    withRecord(t, 'queued');
+    const first = await retire(t, { expectedVersion: at.version });
+    t.store.delete(RECORD_PATH);
+    t.store.delete(`mandates/${BOOK}`);
+    const writes = t.writeLog.length;
+    expect(await retire(t, { expectedVersion: at.version })).toEqual({ idempotent: true, card: first.card });
+    expect(await code(retire(t, { opId: 'r2', expectedVersion: first.card.version }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'retired' } });
+    expect(t.writeLog.length).toBe(writes);
+  });
+
+  it('CA-2 concurrency — the retire first, the Practice Field\'s copy after: the copy finds the entry retired and is refused (no resurrection); the record stays withdrawn', async () => {
+    const t = fresh();
+    const at = await nominated(t);
+    withRecord(t, 'queued');
+    await retire(t, { expectedVersion: at.version });
+    expect(await code(move(t, { to: 'nomination', opId: 's1', payload: NOMINATION }))).toMatchObject({ status: 409, code: 'illegal_transition', extra: { stage: 'retired' } });
+    expect(t.store.get(playPath('c1')).stage).toBe('retired');
+    expect(t.store.get(RECORD_PATH).state).toBe('withdrawn');
+  });
+
+  it('CA-2 concurrency — the Practice Field accepts (record and copy) BETWEEN the retire\'s record read and its commit: the retire\'s commit conflicts, is retried, and is refused accepted; the record stays accepted, the entry nominated', async () => {
+    let strike = false;
+    const t = freshWith({
+      afterTxRead: async (label, db) => {
+        if (!strike || label !== RECORD_PATH) return;
+        strike = false;
+        await db.collection('mandates').doc(BOOK).collection('nominations').doc('nom_c1').set({ ...t.store.get(RECORD_PATH), state: 'accepted' });
+        await applyServerTransition(db, { entryId: 'c1', ownerId: UID, agentId: AGENT, by: 'practice_field', to: 'nomination', opId: 's1', payload: NOMINATION, nowIso: LATER });
+      },
+    });
+    const at = await nominated(t);
+    withRecord(t, 'queued');
+    strike = true;
+    const retries = t.db.txRetries;
+    expect(await code(retire(t, { expectedVersion: at.version }))).toMatchObject({ status: 409, code: 'version_conflict' });
+    expect(t.db.txRetries).toBeGreaterThan(retries);
+    expect(t.store.get(RECORD_PATH).state).toBe('accepted');
+    expect(t.store.get(playPath('c1'))).toMatchObject({ stage: 'nominated', nomination: { state: 'accepted' } });
+    // and with the version the player now sees: refused on the copy's side
+    expect(await code(retire(t, { opId: 'r2', expectedVersion: at.version + 1 }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated', nominationState: 'accepted' } });
+  });
+
+  it('CA-2 concurrency — the record alone accepted between the retire\'s read and its commit (the copy not yet delivered): retried, the record now decides — refused accepted, nothing written', async () => {
+    let strike = false;
+    const t = freshWith({
+      afterTxRead: async (label, db) => {
+        if (!strike || label !== RECORD_PATH) return;
+        strike = false;
+        await db.collection('mandates').doc(BOOK).collection('nominations').doc('nom_c1').set({ ...t.store.get(RECORD_PATH), state: 'accepted' });
+      },
+    });
+    const at = await nominated(t);
+    withRecord(t, 'queued');
+    strike = true;
+    expect(await code(retire(t, { expectedVersion: at.version }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated', nominationState: 'accepted' } });
+    expect(t.store.get(RECORD_PATH).state).toBe('accepted');
+    expect(t.store.get(playPath('c1')).stage).toBe('nominated');
+  });
+
+  it('CA-1 concurrency — the idea reaches testing between the retire\'s reads and its commit: retried, refused { stage: \'testing\' }; and the retire first, then testing: testing is refused (no idea runs on a retired card)', async () => {
+    let strike = false;
+    const t = freshWith({
+      afterTxRead: async (label, db) => {
+        if (!strike || label !== RECORD_PATH) return;
+        strike = false;
+        await db.collection('mandates').doc(BOOK).collection('nominations').doc('nom_c1').set({ ...t.store.get(RECORD_PATH), state: 'accepted' });
+        await applyServerTransition(db, { entryId: 'c1', ownerId: UID, agentId: AGENT, by: 'practice_field', to: 'nomination', opId: 's1', payload: NOMINATION, nowIso: LATER });
+        await applyServerTransition(db, { entryId: 'c1', ownerId: UID, agentId: AGENT, by: 'practice_field', to: 'testing', opId: 's2', payload: IDEA, nowIso: LATER });
+      },
+    });
+    const at = await nominated(t);
+    withRecord(t, 'queued');
+    strike = true;
+    expect(await code(retire(t, { expectedVersion: at.version }))).toMatchObject({ code: 'version_conflict' });
+    const now = t.store.get(playPath('c1'));
+    expect(now.stage).toBe('testing');
+    expect(await code(retire(t, { opId: 'r2', expectedVersion: now.version }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'testing' } });
+    // the other order
+    const u = fresh();
+    const at2 = await nominated(u);
+    withRecord(u, 'queued');
+    await retire(u, { expectedVersion: at2.version });
+    expect(await code(move(u, { to: 'testing', opId: 's2', payload: IDEA }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'retired' } });
+  });
+
+  it('CA-2: the transition helper never copies `withdrawn` (400 invalid_transition, before any read)', async () => {
+    const t = fresh();
+    await nominated(t);
+    const reads = t.readLog.length;
+    expect(await code(move(t, { to: 'nomination', opId: 'x', payload: { ...NOMINATION, state: 'withdrawn' } }))).toMatchObject({ status: 400, code: 'invalid_transition', extra: { why: 'state' } });
+    expect(t.readLog.length).toBe(reads);
+    expect(stages.NOMINATION_STATES).toContain('withdrawn');
   });
 });

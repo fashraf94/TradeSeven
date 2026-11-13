@@ -455,4 +455,54 @@ describe('C1 on the real emulator — nominate and the Offer route, through an i
       state.db = real;
     }
   });
+
+  // ── Amendment A CA-2 — retiring a nominated card withdraws it, on the real emulator ────────────────────────────
+  const retireBody = (id, opId, expectedVersion = 1) => ({ op: 'retire', opId, agentId: PARENT, entryId: id, expectedVersion });
+  const offerCard = async (row) => {
+    const b = await battleFor(row, PARENT);
+    const res = await post(create(b, PARENT, { route: 'offer' }));
+    expect(res.statusCode).toBe(200);
+    return res.body.card.entryId;
+  };
+
+  it('CA-2: a queued record — the retire withdraws it and retires the entry in ONE transaction: the record withdrawn (its history row by the player), the entry retired with its copy withdrawn, version 2', async () => {
+    const id = await offerCard('ca2-queued');
+    const res = await post(retireBody(id, `ca2r_${(n += 1)}_${RUN}`));
+    expect(res.statusCode).toBe(200);
+    const rec = (await nominationAt(id)).data();
+    expect(rec).toMatchObject({ state: 'withdrawn', withdrawnAt: res.body.card.stageAt, source: { kind: 'film_room_card', entryId: id } });
+    expect(rec.stateHistory.at(-1)).toEqual({ state: 'withdrawn', at: res.body.card.stageAt, by: 'player' });
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'retired', version: 2, nomination: { state: 'withdrawn' } });
+  });
+
+  it('CA-2: an accepted record → 409 illegal_transition { stage: nominated, nominationState: accepted }; neither the record nor the entry is written', async () => {
+    const id = await offerCard('ca2-accepted');
+    await db.doc(`mandates/${BOOK_ID}/nominations/${id}`).update({ state: 'accepted' });
+    const res = await post(retireBody(id, `ca2a_${(n += 1)}_${RUN}`));
+    expect(res).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition', stage: 'nominated', nominationState: 'accepted' } });
+    expect((await nominationAt(id)).data().state).toBe('accepted');
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'nominated', version: 1, nomination: { state: 'queued' } });
+  });
+
+  it('CA-2: a declined record behind a copy still queued → the entry retires, its copy declined; the record untouched. No record at all → the entry retires, nothing written to the book', async () => {
+    const id = await offerCard('ca2-declined');
+    await db.doc(`mandates/${BOOK_ID}/nominations/${id}`).update({ state: 'declined', reason: 'Not for this book.' });
+    const before = (await nominationAt(id)).data();
+    expect((await post(retireBody(id, `ca2d_${(n += 1)}_${RUN}`))).statusCode).toBe(200);
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'retired', nomination: { state: 'declined' } });
+    expect((await nominationAt(id)).data()).toEqual(before);
+    const gone = await offerCard('ca2-gone');
+    await db.doc(`mandates/${BOOK_ID}/nominations/${gone}`).delete();
+    expect((await post(retireBody(gone, `ca2g_${(n += 1)}_${RUN}`))).statusCode).toBe(200);
+    expect((await nominationAt(gone)).exists).toBe(false);
+    expect((await db.doc(`agents/${PARENT}/plays/${gone}`).get()).data()).toMatchObject({ stage: 'retired', nomination: { state: 'queued' } });
+  });
+
+  it('CA-2: a record whose state the store does not know → 503 nomination_unavailable; nothing written, the card not retired', async () => {
+    const id = await offerCard('ca2-unknown');
+    await db.doc(`mandates/${BOOK_ID}/nominations/${id}`).update({ state: 'misfiled' });
+    expect(await post(retireBody(id, `ca2u_${(n += 1)}_${RUN}`))).toMatchObject({ statusCode: 503, body: { error: 'nomination_unavailable' } });
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'nominated', version: 1 });
+    expect((await nominationAt(id)).data().state).toBe('misfiled');
+  });
 });

@@ -61,9 +61,10 @@ import { CARD_SLOTS, CARD_SLOTS_VERSION } from '../../../src/data/cardSlots.js';
 import { PER_GAME_LOADOUT_ENABLED } from '../../../src/config/perGameLoadoutFlags.js';
 import { loadoutArchetypesOf } from '../../../src/constants/perGameLoadout.js';
 // Build C §3: the stage vocabulary v2, from its one export — re-exported whole, so every server reader takes it from here
-import { CARD_STAGE_VOCAB_VERSION, CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_STATES, NOMINATION_EXPIRY_SESSIONS, isOpenStage } from '../../../src/data/cardStages.js';
-// Build C §4 (refinement R-C1-3): the nomination record's shape is the Practice Field's builder, reached through the seam
-import { buildNominationDoc, NOMINATION_SOURCE_KIND, NOMINATION_QUEUED } from './practiceFieldSeam.js';
+import { CARD_STAGE_VOCAB_VERSION, CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_STATES, NOMINATION_EXPIRY_SESSIONS, WITHDRAWABLE_STATES, isOpenStage, isRetirableByPlayer } from '../../../src/data/cardStages.js';
+// Build C §4 (refinement R-C1-3): the nomination record's shape is the Practice Field's builder, reached through the seam;
+// Amendment A CA-2: so is its withdrawal's
+import { buildNominationDoc, buildWithdrawal, NOMINATION_SOURCE_KIND, NOMINATION_QUEUED } from './practiceFieldSeam.js';
 import { isValidForgeId } from '../idValidation.js';
 
 export * from '../../../src/data/cardStages.js';
@@ -119,6 +120,8 @@ export const CARD_ROUTE_COPY = Object.freeze({
   agent_unresolved: 'This agent records no archetype, so no card can be filed under it.',
   archetype_changed: 'This day was taped under another archetype than the agent\'s current one, so a card from it would be shelved at birth. Nothing was filed.',
   attribution_unavailable: 'The agent these cards belong to could not be resolved. Nothing was changed; try again.',
+  // Amendment A CA-2: a nominated card's record could not be read or withdrawn — fail closed, the card not retired
+  nomination_unavailable: 'This card\'s offer could not be checked. Nothing was changed. Try again.',
 });
 const fail = (status, code, extra) => new CardRouteError(status, code, CARD_ROUTE_COPY[code], extra);
 
@@ -449,8 +452,66 @@ export async function nominateCard(db, { uid, agentId, entryId, opId, expectedVe
   });
 }
 
+/** gRPC ABORTED: a transaction's contention, which the Admin SDK retries — rethrown as it came, never mapped. */
+const GRPC_ABORTED = 10;
+const unavailableNomination = () => fail(503, 'nomination_unavailable');
+
 /**
- * Retire a card: a compare-and-set on the version the caller saw.
+ * Amendment A CA-1 / CA-2 / CA-5 — what a player retire the one export's isRetirableByPlayer refuses says: the stage,
+ * and beside it what holds the card — the copy's nomination state (an accepted nomination), or the waiting offer's state.
+ * A testing card says its stage and nothing else.
+ */
+function retireRefusalOf(entry) {
+  if (entry.stage === 'nominated') return { stage: 'nominated', nominationState: entry.nomination?.state ?? null };
+  if (entry.stage === 'tested') return { stage: 'tested', offerState: entry.offer?.state ?? null };
+  return { stage: entry.stage };
+}
+
+/** The source reference of a nomination record, field by field — the five the record names its card by. */
+const sameSource = (a, b) => isPlainObject(a) && isPlainObject(b) && ['kind', 'entryId', 'situationId', 'questionId', 'questionVersion'].every((k) => a[k] === b[k]);
+
+/**
+ * CA-2 — the record's withdrawal, by the Practice Field's builder (the seam's buildWithdrawal), checked before any write:
+ * a plain object, `state: 'withdrawn'`, and the record's OWN source reference. A builder that throws, or an output that
+ * is not that, fails closed — 503 nomination_unavailable, nothing written, the card not retired.
+ */
+function withdrawalOf(record, nowIso) {
+  let out;
+  try {
+    out = buildWithdrawal(record, { nowIso });
+  } catch (err) {
+    if (err?.code === GRPC_ABORTED) throw err;
+    console.error('[film-room/cards] withdrawal builder failed:', err?.message ?? err);
+    throw unavailableNomination();
+  }
+  if (!isPlainObject(out) || out.state !== 'withdrawn' || !sameSource(out.source, record.source)) {
+    console.error('[film-room/cards] withdrawal builder returned a malformed record; nothing was written');
+    throw unavailableNomination();
+  }
+  return out;
+}
+
+/**
+ * Retire a card: a compare-and-set on the version the caller saw. Its checks, in order: the owner, the replay (a
+ * successful retire's replay answers, whatever happened since), the version, shelving, the open predicate
+ * (isOpenStage), then Amendment A's player rule (isRetirableByPlayer, the one export's — the receipt reads it too):
+ *   CA-1  a `testing` card is refused, 409 illegal_transition `{ stage: 'testing' }` — its idea runs with it as its source;
+ *   CA-5  a `tested` card with an offer waiting is refused, `{ stage: 'tested', offerState }` — the offer is answered in
+ *         the Forge;
+ *   CA-2  a `nominated` card whose copy says `accepted` is refused, `{ stage: 'nominated', nominationState: 'accepted' }`.
+ * CA-2 — RETIRING A NOMINATED CARD WITHDRAWS IT: for a `nominated` entry holding a `nomination`, this transaction reads
+ * the book's record at the entry's own `nomination.bookId` / `nominationId` before any write, and THE RECORD, not the
+ * copy, decides —
+ *   accepted                         409 illegal_transition `{ stage: 'nominated', nominationState: 'accepted' }`; nothing written;
+ *   queued · considered · deferred   the record moves to `withdrawn` (the seam's buildWithdrawal, checked) and the entry
+ *                                    retires, its copy's state `withdrawn` — both in this one transaction;
+ *   declined · expired · withdrawn   the entry retires, its copy's state the record's; nothing written to the book;
+ *   no document                      the entry retires; nothing written to the book.
+ * It fails closed: a record read that fails, a record whose state is not one of NOMINATION_STATES, a builder that throws
+ * or returns anything but a plain `withdrawn` record with the record's own source → 503 nomination_unavailable, nothing
+ * written, the card not retired. A contention abort (gRPC ABORTED) is rethrown as it came, so the SDK retries. The book's
+ * status is not read: a withdrawal is the player's answer, whatever state the book is in (CA-12). A v1 entry with no
+ * `nomination` (stored route `drill`) retires as before.
  *
  * @returns {Promise<{ idempotent: boolean, card: object }>}
  */
@@ -473,12 +534,45 @@ export async function retireCard(db, { uid, agentId, entryId, opId, expectedVers
     // Build C §3: the player retires an OPEN card, as before — open by the one export's predicate (isOpenStage, Amendment
     // A CA-3); `retired`, `installed`, a parked card and a nominated card the agent did not take are no transition
     if (!isOpenStage(entry)) throw fail(409, 'illegal_transition', { stage: entry.stage });
+    // Amendment A CA-1 / CA-2 (the copy's side) / CA-5: the player's own rule, the one the receipt reads
+    if (!isRetirableByPlayer(entry)) throw fail(409, 'illegal_transition', retireRefusalOf(entry));
+    // CA-2: a nominated card's record, read before any write — the record decides
+    const copy = entry.stage === 'nominated' && isObj(entry.nomination) ? entry.nomination : null;
+    let recordRef = null;
+    let withdrawal = null;
+    let copyState = null;
+    if (copy) {
+      if (!pathIdOk(copy.bookId) || !pathIdOk(copy.nominationId)) throw unavailableNomination();
+      recordRef = nominationRefOf(db, copy.bookId, copy.nominationId);
+      let recordSnap;
+      try {
+        recordSnap = await tx.get(recordRef);
+      } catch (err) {
+        if (err?.cardRoute || err?.code === GRPC_ABORTED) throw err;
+        console.error('[film-room/cards] nomination record read failed:', err?.message ?? err);
+        throw unavailableNomination();
+      }
+      if (recordSnap?.exists) {
+        const record = typeof recordSnap.data === 'function' ? recordSnap.data() : recordSnap.data;
+        if (!isObj(record) || !NOMINATION_STATES.includes(record.state)) throw unavailableNomination();
+        if (record.state === 'accepted') throw fail(409, 'illegal_transition', { stage: 'nominated', nominationState: 'accepted' });
+        if (WITHDRAWABLE_STATES.includes(record.state)) {
+          withdrawal = withdrawalOf(record, nowIso);
+          copyState = 'withdrawn';
+        } else {
+          copyState = record.state;   // declined, expired, withdrawn: the copy takes the record's state
+        }
+      }
+    }
     const patch = {
       stage: 'retired',
       stageAt: nowIso,
+      ...(copyState ? { nomination: { ...copy, state: copyState } } : {}),
       stageHistory: [...entry.stageHistory, { stage: 'retired', at: nowIso, by: BY_PLAYER, opId, opFingerprint }],
       version: entry.version + 1,
     };
+    // CA-2 / CA-20: the record's withdrawal, beside the entry's retire — both or neither, in this one transaction
+    if (withdrawal) tx.set(recordRef, withdrawal);
     tx.update(ref, patch);
     return { idempotent: false, card: { ...entry, ...patch } };
   });
@@ -554,7 +648,8 @@ const invalid = (why) => fail(400, 'invalid_transition', { why });
 function fieldOfTransition(to, payload) {
   const p = isObj(payload) ? payload : {};
   if (to === 'nomination') {
-    if (!NOMINATION_STATES.includes(p.state) || p.state === 'queued') throw invalid('state');
+    // `queued` is the filing's, and `withdrawn` the player retire's alone (Amendment A CA-2): never a copied state
+    if (!NOMINATION_STATES.includes(p.state) || p.state === 'queued' || p.state === 'withdrawn') throw invalid('state');
     if (!idOk(p.bookId) || !idOk(p.nominationId)) throw invalid('ids');
     if (p.reason != null && (typeof p.reason !== 'string' || [...p.reason].length > NOMINATION_REASON_MAX)) throw invalid('reason');
     if (p.consideredAt != null && !isoOk(p.consideredAt)) throw invalid('consideredAt');

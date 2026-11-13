@@ -1096,3 +1096,46 @@ describe('C1 fix round F2 — a malformed nomination record from the builder wri
     expect(bookWrites()).toEqual([]);
   });
 });
+
+// ── Amendment A CA-2 — retiring a nominated card withdraws it, through the handler ─────────────────────────────────
+describe('Amendment A CA-2 — the retire op withdraws an untaken nomination, through the handler', () => {
+  const BOOK_ID = 'book-1';
+  afterEach(() => resetPracticeFieldSeam());
+  const offer = async () => {
+    setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }) });
+    const r = await post(create({ route: 'offer' }));
+    expect(r.statusCode).toBe(200);
+    resetPracticeFieldSeam();   // the withdrawal never reads the book: none is needed
+    return r.body.card;
+  };
+  const retire = (over = {}) => post({ op: 'retire', opId: 'rt_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
+  const RECORD = `mandates/${BOOK_ID}/nominations/op_1`;
+
+  it('a queued record: 200, the record withdrawn and the entry retired with its copy withdrawn — with no book read', async () => {
+    await offer();
+    const res = await retire();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card).toMatchObject({ stage: 'retired', version: 2, nomination: { bookId: BOOK_ID, nominationId: 'op_1', state: 'withdrawn' } });
+    expect(t.store.get(RECORD)).toMatchObject({ state: 'withdrawn', withdrawnAt: res.body.card.stageAt });
+    expect(t.store.get(RECORD).stateHistory.at(-1)).toEqual({ state: 'withdrawn', at: res.body.card.stageAt, by: 'player' });
+  });
+
+  it('an accepted record → 409 illegal_transition naming the stage and the nomination state; nothing written', async () => {
+    await offer();
+    t.store.set(RECORD, { ...t.store.get(RECORD), state: 'accepted' });
+    const before = t.writeLog.length;
+    expect(await retire()).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition', stage: 'nominated', nominationState: 'accepted' } });
+    expect(t.writeLog.length).toBe(before);
+  });
+
+  it('a record the store cannot judge → 503 nomination_unavailable with its sentence; nothing written, the card not retired', async () => {
+    await offer();
+    t.store.set(RECORD, { ...t.store.get(RECORD), state: 'misfiled' });
+    const before = t.writeLog.length;
+    const res = await retire();
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toEqual({ error: 'nomination_unavailable', message: CARD_ROUTE_COPY.nomination_unavailable });
+    expect(t.writeLog.length).toBe(before);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('nominated');
+  });
+});

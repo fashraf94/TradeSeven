@@ -60,9 +60,32 @@ export const isFollowedWatch = (entry) => entry?.route === 'watch' && entry?.sta
 
 /**
  * A nomination's states, as the book records them (shared contract V2 §5.2, restated in spec §4): `queued` at filing,
- * then the Practice Field's own writes, each copied onto the entry by the ledger's transition helper.
+ * then the Practice Field's own writes, each copied onto the entry by the ledger's transition helper. Amendment A CA-2
+ * adds `withdrawn`, written ONLY by the Film Room's player retire (through the seam's buildWithdrawal) — the transition
+ * helper never copies it.
  */
-export const NOMINATION_STATES = Object.freeze(['queued', 'considered', 'accepted', 'deferred', 'declined', 'expired']);
+export const NOMINATION_STATES = Object.freeze(['queued', 'considered', 'accepted', 'deferred', 'declined', 'expired', 'withdrawn']);
+
+/** CA-2: the record states a player retire may still withdraw — the agent has not taken the card. */
+export const WITHDRAWABLE_STATES = Object.freeze(['queued', 'considered', 'deferred']);
+
+/**
+ * Amendment A CA-1, CA-2 (the copy's side) and CA-5 — may the PLAYER retire this card? The store and the receipt both
+ * read this one predicate. Only an open card (isOpenStage); and not —
+ *   CA-1  at `testing`: the idea runs with the card as its source, and its chain must be able to receive `tested`;
+ *   CA-2  at `nominated` once the copy says the agent took it: only a copy `queued`, `considered` or `deferred` — or no
+ *         copy at all (a v1 entry) — may be taken back (the store then reads the book's record, which decides);
+ *   CA-5  at `tested` while an offer waits: the player answers the offer in the Forge.
+ * A `card` and an unparked `tested` card with no offer retire as before. Shelving is judged beside it, by the store.
+ */
+export function isRetirableByPlayer(entry) {
+  if (!isOpenStage(entry)) return false;
+  const stage = entry?.stage;
+  if (stage === 'testing') return false;
+  if (stage === 'nominated') return entry?.nomination == null || WITHDRAWABLE_STATES.includes(entry.nomination?.state);
+  if (stage === 'tested') return entry?.offer == null;
+  return true;
+}
 
 /**
  * B6 (shared contract V2, restated in spec §4 and §5): a queued nomination expires after this many sessions on the

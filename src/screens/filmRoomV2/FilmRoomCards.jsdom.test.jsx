@@ -2203,3 +2203,66 @@ describe('Amendment A CA-3 — My cards: a nominated card the agent did not take
     expect(g.shelved.every((c) => c.stage !== 'retired')).toBe(true);
   });
 });
+
+// ── Amendment A CA-1, CA-2, CA-5 — the receipt's Retire, and a withdrawn card's line ───────────────────────────────
+describe('Amendment A CA-1 / CA-2 / CA-5 — Retire shows where the player may retire; a withdrawal says so', () => {
+  const at = (hm) => `${D2}T${hm}:00.000Z`;
+  const base = (over = {}) => ({
+    entryId: 'e1', ownerId: OWNER, agentId: AGENT, createdAt: at('20:00'), archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: 2,
+    source: { battleId: B, etDate: D2, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 }, questionId: 'stalled.want', questionVersion: 1, note: 'A note.', route: 'offer',
+    stage: 'card', stageAt: at('20:00'), stageHistory: [{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }], version: 1, ...over,
+  });
+  const retireShown = async (card) => {
+    m.teardown(); m.setup();
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [card] } }} card={card} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} onPark={async () => ({ ok: true })} />);
+    await m.flush(2);
+    return m.buttons('Retire').length === 1;
+  };
+
+  it('the receipt reads isRetirableByPlayer: Retire on a card, a nominated card queued / considered / deferred or with no copy (v1); never on testing (CA-1), an accepted nomination (CA-2), a not-taken one, or a result with an offer waiting (CA-5) — Park still shows there', async () => {
+    const nom = (state) => base({ stage: 'nominated', nomination: { bookId: 'b', nominationId: 'e1', state } });
+    expect(await retireShown(base())).toBe(true);
+    for (const state of ['queued', 'considered', 'deferred']) expect(await retireShown(nom(state)), state).toBe(true);
+    expect(await retireShown(base({ route: 'drill', stage: 'nominated' }))).toBe(true);
+    for (const state of ['accepted', 'declined', 'expired']) expect(await retireShown(nom(state)), state).toBe(false);
+    expect(await retireShown(base({ stage: 'testing', idea: { bookId: 'b', ideaId: 'i' } }))).toBe(false);
+    expect(await retireShown(base({ stage: 'tested', result: { ideaId: 'i', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' } }))).toBe(true);
+    expect(await retireShown(base({ stage: 'tested', result: { ideaId: 'i', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' }, offer: { ideaId: 'i', offerId: 'o', state: 'offered' } }))).toBe(false);
+    expect(m.buttons('Park this card')).toHaveLength(1);
+  });
+
+  it('through the real handler: an Offer card retired while its record is queued — the record withdrawn, the chain\'s newest line "Withdrawn and retired · {time}", the card under Retired', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/op_1`).state).toBe('queued');
+    await atClock(`${D2}T20:30:00.000Z`, async () => {
+      m.click(m.buttons('Retire')[0]);
+      await m.flush(10);
+    });
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/op_1`)).toMatchObject({ state: 'withdrawn', withdrawnAt: `${D2}T20:30:00.000Z` });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ stage: 'retired', nomination: { state: 'withdrawn' } });
+    const r = m.q('[data-card-receipt="op_1"]');
+    expect(r.querySelector('[data-chain-line]').textContent).toBe('Withdrawn and retired · 4:30 PM');
+    expect(r.querySelector('[data-card-next]').textContent).toBe('Retired: nothing happens next.');
+    expect(m.qa('[data-my-cards-group="retired"] [data-my-card]').map((b) => b.getAttribute('data-my-card'))).toEqual(['op_1']);
+    await sweepAll(fx.tape2, 'withdrawn');
+  });
+
+  it('a Watch card retired (no nomination) still says "Retired", never "Withdrawn"; a server retire keeps its Forge offer line', () => {
+    const watch = base({ route: 'watch', stage: 'retired', stageHistory: [{ stage: 'card', at: at('20:00'), by: 'player' }, { stage: 'retired', at: at('20:30'), by: 'player' }] });
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [watch] } }} card={watch} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} />);
+    expect(m.q('[data-chain-line="retired"]').textContent).toBe('Retired · 4:30 PM');
+  });
+
+  it('the refusal nomination_unavailable says its own words: nothing changed, try again', async () => {
+    const card = base({ stage: 'nominated', nomination: { bookId: 'b', nominationId: 'e1', state: 'queued' } });
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [card] } }} card={card} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: false, code: 'nomination_unavailable' })} />);
+    await m.flush(2);
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(2);
+    expect(m.q('[data-card-refusal]').textContent).toBe("This card's offer could not be checked. Nothing was changed. Try again.");
+  });
+});

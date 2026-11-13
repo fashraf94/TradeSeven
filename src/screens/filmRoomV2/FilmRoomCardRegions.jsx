@@ -65,7 +65,7 @@ import { SITUATIONS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { CARD_SLOTS } from '../../data/cardSlots';
 // Build C §3: the stage vocabulary v2, from its one export
-import { CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_EXPIRY_SESSIONS, isOpenStage, isNotTaken, routeOf } from '../../data/cardStages';
+import { CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_EXPIRY_SESSIONS, isNotTaken, isRetirableByPlayer, routeOf } from '../../data/cardStages';
 import { RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED } from '../../config/featureFlags';
 import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
@@ -341,6 +341,8 @@ export function ChainLine({ card, line, day = null }) {
   if (line.kind === 'parked') return <>{W.parked} · {when}</>;
   if (line.kind === 'retired') {
     const offer = line.by === 'server' && isObjLike(card?.offer) && typeof card.offer.state === 'string' ? card.offer : null;
+    // Amendment A CA-2: the player's retire of a nominated card withdrew its offer — the copy the retire wrote says so
+    if (line.by !== 'server' && card?.nomination?.state === 'withdrawn') return <>{W.withdrawnRetired} · {when}</>;
     return <>{W.retired} · {when}{offer ? <> · {W.forgeOffer} <Rec><span data-offer-state="">{offer.state}</span></Rec></> : null}</>;
   }
   // a stage row the chain names no line for: the screen's own stage word where it has one (a v1 Practice entry's
@@ -425,8 +427,9 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark 
   };
   const canPark = typeof onPark === 'function' && live.stage === 'tested' && !live.parkedAt;
   const next = nextOf(live);
-  // the store retires an OPEN card (Build C §3: the one export's predicate), never a shelved one
-  const canRetire = isOpenStage(live) && !live.shelved;
+  // the store retires what the player may retire (Amendment A CA-1, CA-2, CA-5: the one export's isRetirableByPlayer —
+  // never a testing card, an accepted nomination or a result with an offer waiting), never a shelved one
+  const canRetire = isRetirableByPlayer(live) && !live.shelved;
   // RK-2 / RK-3: an OPEN Set card's receipt says Set's words for its source day and holds the link where RK-2 allows
   // it — judged from the tape on screen, only when that is the card's own day (battle and date); otherwise RG-5's
   // sentence alone, which is true of every day

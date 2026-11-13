@@ -24,8 +24,14 @@
 //       `calendar_unavailable`: an expiry is never guessed.
 //       OWNER: the Practice Field's T2 replaces it (the nominations rule is declared there too, spec §9).
 //
+//   buildWithdrawal(record, { nowIso })   (Amendment A CA-2)
+//       → the record withdrawn by the player's retire of a nominated card the agent has not taken (`queued`,
+//       `considered` or `deferred`): written by the retire's ONE transaction beside the entry's move to `retired`.
+//       DEFAULT: the record with `state: 'withdrawn'`, `withdrawnAt` and a `stateHistory` row `{ state: 'withdrawn', at,
+//       by: 'player' }`. Pure. OWNER: the Practice Field, as for buildNominationDoc.
+//
 // The Practice Field owns the book: nothing in the Film Room writes a book document except the nomination record this
-// builder shapes, inside the card endpoint's transaction. setPracticeFieldSeam swaps either helper FOR TESTS ONLY — it
+// builder shapes, inside the card endpoint's transaction, and CA-2's withdrawal, inside the retire's. setPracticeFieldSeam swaps either helper FOR TESTS ONLY — it
 // throws outside the vitest runner, so production can never call it.
 
 import { getSessionForDate } from '../marketSchedule.js';
@@ -99,10 +105,21 @@ function defaultBuildNominationDoc({ entryId, situationId, questionId, questionV
   };
 }
 
-/** The defaults: no book for anyone (no read at all), and the contract's record. */
+/**
+ * Amendment A CA-2 — the default withdrawal: the record as it stands, `state: 'withdrawn'`, `withdrawnAt`, and a
+ * `stateHistory` row `{ state: 'withdrawn', at, by: 'player' }`. Pure — it runs inside the retire transaction. The
+ * Practice Field owns the shape, as it owns buildNominationDoc's.
+ */
+function defaultBuildWithdrawal(record, { nowIso }) {
+  const history = Array.isArray(record?.stateHistory) ? record.stateHistory : [];
+  return { ...record, state: 'withdrawn', withdrawnAt: nowIso, stateHistory: [...history, { state: 'withdrawn', at: nowIso, by: 'player' }] };
+}
+
+/** The defaults: no book for anyone (no read at all), the contract's record, and its withdrawal. */
 export const PRACTICE_FIELD_SEAM_DEFAULTS = Object.freeze({
   bookForOwner: async () => null,
   buildNominationDoc: defaultBuildNominationDoc,
+  buildWithdrawal: defaultBuildWithdrawal,
 });
 
 let live = { ...PRACTICE_FIELD_SEAM_DEFAULTS };
@@ -112,6 +129,9 @@ export const bookForOwner = (db, { uid, attributionAgentId }) => live.bookForOwn
 
 /** The nomination record, contract V2 §5.2's shape (the default until T2). */
 export const buildNominationDoc = (args) => live.buildNominationDoc(args);
+
+/** Amendment A CA-2: the record withdrawn by the player's retire (the default until the Practice Field replaces it). */
+export const buildWithdrawal = (record, opts) => live.buildWithdrawal(record, opts);
 
 /** Is this process a test run (the vitest runner sets VITEST; production never does)? */
 const isTestRun = () => typeof process !== 'undefined' && Boolean(process.env?.VITEST) && process.env?.NODE_ENV !== 'production';

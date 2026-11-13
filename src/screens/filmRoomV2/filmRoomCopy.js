@@ -371,6 +371,8 @@ export const FILM_ROOM_COPY = Object.freeze({
       default: 'The card could not be filed.',
       retireDefault: 'The card could not be retired.',
       parkDefault: 'The card could not be parked.',
+      // Amendment A CA-2: a nominated card's record could not be read or withdrawn — nothing changed, the card not retired
+      nomination_unavailable: "This card's offer could not be checked. Nothing was changed. Try again.",
     },
     filedCard: 'The filed card',
     situation: 'Situation',
@@ -410,6 +412,8 @@ export const FILM_ROOM_COPY = Object.freeze({
       installed: 'Equipped',
       parked: 'Parked',
       retired: 'Retired',
+      // Amendment A CA-2: the player retired a nominated card the agent had not taken, withdrawing its offer
+      withdrawnRetired: 'Withdrawn and retired',
       forgeOffer: 'Forge offer',
       openIdea: 'Open the idea',
       openResult: 'Open the result',
