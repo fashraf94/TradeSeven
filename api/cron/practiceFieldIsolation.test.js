@@ -34,7 +34,8 @@ vi.mock('../_utils/mandateModelCall.js', async (importActual) => {
 let quoteBook = {};
 let quoteTs = 0;
 const quotesSpy = vi.fn(async (symbols) => Object.fromEntries(symbols.filter((s) => quoteBook[s] !== undefined).map((s) => [s, { close: quoteBook[s], timestamp: quoteTs }])));
-const fundamentalsSpy = vi.fn(async () => ({ fundamentals: { sector: 'Vendor Sector', industry: 'Vendor Industry', marketCap: 5e11 }, cacheStatus: { fundamentals: 'fresh' } }));
+const VENDOR_FUNDAMENTALS = async () => ({ fundamentals: { sector: 'Vendor Sector', industry: 'Vendor Industry', marketCap: 5e11 }, cacheStatus: { fundamentals: 'fresh' } });
+const fundamentalsSpy = vi.fn(VENDOR_FUNDAMENTALS);
 vi.mock('../_utils/tournamentPrices.js', async (importActual) => ({ ...(await importActual()), fetchBatchQuotes: (...a) => quotesSpy(...a) }));
 vi.mock('../_utils/marketDataCache.js', async (importActual) => ({ ...(await importActual()), getStockAnalysisData: (...a) => fundamentalsSpy(...a) }));
 
@@ -57,6 +58,7 @@ import { admitIdea } from '../_utils/practiceField/admission.js';
 import { PRACTICE_FIELD_FUNDS } from '../../src/data/practiceFieldFunds.js';
 import {
   seedBook as seedIdeaBook, admitAndEnter, contractOf, getBook, getIdea, getRow, etIso, etMs, tickOf, DAYS, ADMIT_ISO, countDocs,
+  takeSeededDbs, saleWordsOnMarkRows,
 } from '../_utils/practiceField/__testsupport__/fixtures.js';
 
 const PRICES = { AAPL: 231.47, MSFT: 418.13, LLY: 803.17, SPY: 597.31, XLK: 233.59, JPM: 241.37 };
@@ -118,7 +120,7 @@ let logs;
 let fetchCalls;
 beforeEach(() => {
   restoreMode = setPracticeFieldModeForTests('on');
-  modelSpy.mockClear(); quotesSpy.mockClear(); fundamentalsSpy.mockClear();
+  modelSpy.mockClear(); quotesSpy.mockClear(); fundamentalsSpy.mockClear(); fundamentalsSpy.mockImplementation(VENDOR_FUNDAMENTALS);
   for (const f of Object.values(batchApi)) f.mockReset();
   batchApi.cancel.mockResolvedValue({});
   quoteBook = { ...PRICES };
@@ -130,7 +132,10 @@ beforeEach(() => {
   process.env.EODHD_API_KEY = 'test-key';
   vi.stubGlobal('fetch', vi.fn(async (url) => { fetchCalls.push(String(url).replace(/api_token=[^&]+/, 'api_token=X')); return { ok: true, json: async () => [] }; }));
 });
-afterEach(() => { restoreMode(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete process.env.EODHD_API_KEY; });
+afterEach(() => {
+  restoreMode(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete process.env.EODHD_API_KEY;
+  for (const db of takeSeededDbs()) expect(saleWordsOnMarkRows(db)).toEqual([]); // B-MARK on every valuation row the sweeps wrote
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('kind isolation on every quarterly core — unconditional (run at mode on AND at the shipped mode off)', () => {
@@ -327,13 +332,22 @@ describe('the shared snapshot\'s build set, by book kind (build prompt §5)', ()
     expect(Object.keys(db._get(`mandateUniverseDaily/${DAYS.d2}`).symbols)).toHaveLength(4);
     const lookupsBefore = fundamentalsSpy.mock.calls.length;
     await db.doc('mandates/q1').set(quarterlyBook({ execState: { lastEvalTickKey: `${DAYS.d2}_midday` } }));
+    // The rebuild TOPS UP (refuter RF3-2): what the first build holds is kept exactly and not fetched again — even
+    // when the vendor now answers differently, or its corporate-actions feed is down.
+    const firstBuild = JSON.stringify(db._get(`mandateUniverseDaily/${DAYS.d2}`).symbols.AAPL);
+    fundamentalsSpy.mockImplementation(async () => ({ fundamentals: { sector: 'Later Sector', industry: 'Later Industry', marketCap: 7e11 }, cacheStatus: { fundamentals: 'fresh' } }));
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('the corporate-actions feed is down'); }));
     await evalOnce(db, DAYS.d2, 'midday');
     const daily = db._get(`mandateUniverseDaily/${DAYS.d2}`);
+    expect(JSON.stringify(daily.symbols.AAPL)).toBe(firstBuild);
+    expect(daily.symbols.AAPL).toMatchObject({ sector: 'Vendor Sector', marketCap: 5e11 });
+    expect(daily.symbols.AAPL).not.toHaveProperty('caFetchFailed');
+    expect(fundamentalsSpy.mock.calls.filter((c) => c[0] === 'AAPL')).toHaveLength(1);
     expect(Object.keys(daily.symbols).sort()).toEqual([...new Set([...CANDIDATE_UNIVERSE, 'AAPL', 'MSFT', 'SPY', 'XLK'])].sort());
     expect(daily).not.toHaveProperty('candidateUniverseOmitted');
     expect(logs.some((l) => /built without the candidate universe/.test(l))).toBe(true);
     const midday = db._get(`mandateUniverseSnapshots/${DAYS.d2}_midday`);
-    expect(midday.symbols.NVDA).toMatchObject({ sector: 'Vendor Sector', marketCap: 5e11, complete: true }); // classified: the sector cap can be checked
+    expect(midday.symbols.NVDA).toMatchObject({ sector: 'Later Sector', marketCap: 7e11, complete: true }); // classified: the sector cap can be checked
     expect(midday).toMatchObject({ degraded: false, coverageOnlySymbols: ['SPY', 'XLK'] });
     // Once: the rebuilt doc carries no mark, so the next slot adopts it.
     const lookupsAfter = fundamentalsSpy.mock.calls.length;
@@ -447,6 +461,53 @@ describe('the shared snapshot\'s build set, by book kind (build prompt §5)', ()
     // …and it is the prompt of a snapshot that never had them.
     const { coverageOnlySymbols: _c, ...plain } = built.snapshot;
     expect(headFirst).toBe(await run({ ...plain, symbols: rest }));
+  });
+
+  it('a quarterly book that appears in a slot whose snapshot was built for idea books only is NOT evaluated on it — no model call on an empty slate; the next slot serves it (refuter RF2-1)', async () => {
+    const db = makeMandateFakeDb({ 'archetypeVintages/analyst_x': { gateConfig: { sectorCapConversionVersion: 1, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] }, modelSeat: { model: 'm' } } });
+    await populatedIdeaBook(db);
+    await evalOnce(db); // open30: idea books only
+    expect(db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`)).toMatchObject({ candidateUniverseOmitted: true, completeCandidateCount: 0 });
+    await db.doc('mandates/q1').set(quarterlyBook());
+    modelSpy.mockClear();
+    const sameSlot = await evalOnce(db); // a later fire of the SAME slot
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(sameSlot).toMatchObject({ ok: true, evaluated: 0, gated: 0 });
+    expect(db._get('mandates/q1').execState.lastEvalTickKey ?? null).toBe(null); // not stamped, not billed, no decision
+    expect(countDocs(db, 'mandates/q1/decisions/')).toBe(0);
+    // The next slot is built WITH the universe and serves it.
+    modelSpy.mockImplementationOnce(async () => ({ decision: { ok: true, input: { verb: 'HOLD', rationale: 'Holding. Nothing to do.', conviction: 50 } }, usage: null }));
+    const nextSlot = await evalOnce(db, DAYS.d2, 'midday');
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    expect(nextSlot).toMatchObject({ evaluated: 1 });
+    expect(db._get(`mandateUniverseSnapshots/${DAYS.d2}_midday`)).not.toHaveProperty('candidateUniverseOmitted');
+    expect(JSON.stringify(modelSpy.mock.calls[0])).toContain(CANDIDATE_UNIVERSE[0]);
+  });
+
+  it('an open quarterly batch with no active quarterly book still gets the candidate universe beside an idea book — its harvest validates against this snapshot (refuter RF2-2)', async () => {
+    const db = makeMandateFakeDb();
+    await populatedIdeaBook(db);
+    await db.collection(MANDATE_BATCH_COLLECTION).doc('batch-open').set(buildBatchDoc({
+      providerBatchId: 'batch-open', tickKey: `${DAYS.d1}_preClose`, sessionDate: DAYS.d1, submittedAt: new Date(etIso(DAYS.d1, 15, 31)),
+      entries: { 'req-q': { mandateId: 'q-escaped', envelope: { requestId: 'req-q', baseRevision: 2 }, model: 'm' } },
+    }));
+    await evalOnce(db);
+    const snap = db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`);
+    expect(snap).not.toHaveProperty('candidateUniverseOmitted');
+    expect(Object.keys(snap.symbols)).toEqual(expect.arrayContaining([...CANDIDATE_UNIVERSE]));
+    expect(snap.coverageOnlySymbols).toEqual(['SPY', 'XLK']);
+    expect(db._get(`mandateUniverseDaily/${DAYS.d2}`)).not.toHaveProperty('candidateUniverseOmitted');
+  });
+
+  it('coverage is never dropped for the SIZE budget: a snapshot too large to store sheds uncovered candidates and keeps every covered symbol (refuter RF2-5)', async () => {
+    const fetchQuotes = async (symbols) => Object.fromEntries(symbols.map((s) => [s, { close: 100.01, timestamp: quoteTs }]));
+    const heavy = [{ type: 'cash_dividend', note: 'x'.repeat(9000) }];
+    const dailyDoc = { symbols: Object.fromEntries([...CANDIDATE_UNIVERSE, 'SPY', 'XLK'].map((s) => [s, { sector: 'S', industry: 'I', marketCap: 1e11, corporateActions: heavy }])) };
+    const covered = [CANDIDATE_UNIVERSE[CANDIDATE_UNIVERSE.length - 1], 'SPY', 'XLK'];
+    const built = await ensureUniverseSnapshot(makeMandateFakeDb(), { tickKey: `${DAYS.d2}_open30`, sessionDate: DAYS.d2, heldTickers: [], coverageTickers: covered, fetchQuotes, dailyDoc, now: evalNow(DAYS.d2, 'open30') });
+    expect(built.droppedForSize).toBeGreaterThan(0);
+    for (const s of covered) expect(built.snapshot.symbols[s], s).toMatchObject({ complete: true });
+    expect(built.snapshot.symbols[CANDIDATE_UNIVERSE[CANDIDATE_UNIVERSE.length - 2]]).toBeUndefined(); // the uncovered tail went first
   });
 
   it('reserved names that are ALSO default candidates still count as candidates: no false MANDATE_UNIVERSE_DEGRADED, however many are reserved (review L2-3)', async () => {
@@ -596,10 +657,12 @@ describe('the eval sweep: the idea-book pass beside the quarterly loop', () => {
     const fire = async (handle) => { const { req, res, captured } = fakeReqRes(); await runEvalSweep(req, res, { now: evalNow(DAYS.d1, 'preClose'), tick: tickOf(DAYS.d1, 'preClose'), db: handle }); return captured.body; };
     const first = await fire(flaky);
     expect(first.ideaBooks).toMatchObject({ books: 1, served: 1, entered: 0, errors: 1 });
+    expect(first.complete).toBe(false); // a pass with an error never lets the fire say "all served"
     expect(getBook(db, bookId).execState).not.toHaveProperty('lastIdeaTickKey'); // not stamped: the slot is still open to it
     expect(getIdea(db, bookId, a.ideaId).status).toBe('accepted');
     const second = await fire(db);
     expect(second.ideaBooks).toMatchObject({ books: 1, served: 1, entered: 1, errors: 0 });
+    expect(second.complete).toBe(true);
     expect(getIdea(db, bookId, a.ideaId)).toMatchObject({ status: 'holding', entry: { slot: 'preClose' } });
     expect(getBook(db, bookId).execState.lastIdeaTickKey).toBe(`${DAYS.d1}_preClose`);
   });
@@ -623,6 +686,9 @@ describe('the eval sweep: the idea-book pass beside the quarterly loop', () => {
     expect(a.body).toMatchObject({ ok: true, evaluated: 1, executed: 1, ideaBooks: { failed: true }, complete: false });
     expect(errors.some((e) => /PRACTICE_FIELD_PASS_FAILED/.test(e))).toBe(true);
     expect(db._get('mandates/q1').execState.lastEvalTickKey).toBe(`${DAYS.d2}_open30`);
+    // …and still not complete on the next fire, when the quarterly book is already served: the failed pass alone holds it back.
+    const a2 = await fire(failingKindQuery, 'open30');
+    expect(a2.body).toMatchObject({ ok: true, evaluated: 0, ideaBooks: { failed: true }, complete: false });
 
     // (b) the idea book's lease is held elsewhere: the quarterly book is served, the fire is NOT complete.
     const db2 = makeMandateFakeDb({ 'mandates/q1': quarterlyBook({ execState: { lastEvalTickKey: `${DAYS.d2}_midday` } }), 'archetypeVintages/analyst_x': vintage });
@@ -637,6 +703,12 @@ describe('the eval sweep: the idea-book pass beside the quarterly loop', () => {
     const b3 = await fire(db2, 'midday');
     expect(b3.body.complete).toBe(true);
     expect(getBook(db2, idea.bookId).execState.lastIdeaTickKey).toBe(`${DAYS.d2}_midday`);
+    // (c) under batch transport the session's LAST tick says the same: harvest-only, and not complete while an idea book is unserved.
+    const lastTick = async () => { quoteTs = Math.floor(etMs(DAYS.d2, 15, 15) / 1000); const { req, res, captured } = fakeReqRes(); await runEvalSweep(req, res, { now: evalNow(DAYS.d2, 'preClose'), tick: tickOf(DAYS.d2, 'preClose'), db: db2, transport: 'batch' }); return captured.body; };
+    await idea.bookRef.set({ lease: { ownerToken: 'another-fire', acquiredAt: evalNow(DAYS.d2, 'preClose'), expiresAt: new Date(evalNow(DAYS.d2, 'preClose').getTime() + 10 * 60_000) } }, { merge: true });
+    expect(await lastTick()).toMatchObject({ reason: 'last_tick_no_submit', ideaBooks: { leaseSkips: 1 }, complete: false });
+    await idea.bookRef.set({ lease: null }, { merge: true });
+    expect(await lastTick()).toMatchObject({ reason: 'last_tick_no_submit', ideaBooks: { served: 1, leaseSkips: 0 }, complete: true });
   });
 
   it('under BATCH transport the session\'s last slot still runs the idea-book pass (the last-tick rule is about submissions)', async () => {

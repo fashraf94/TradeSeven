@@ -14,6 +14,7 @@ import { ideaEntrySlots, isLastIdeaEntrySlot, ideaEntryNotBefore, ideaSchedule, 
 import { SLOT_NAMES } from '../mandateSessionSlots.js';
 import {
   seedBook, admitAndEnter, contractOf, getBook, getIdea, tickOf, tickSnapshot, closeSnapshot, slotOpenIso, etIso, DAYS, ADMIT_ISO, countDocs,
+  takeSeededDbs, saleWordsOnMarkRows,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, AMD: 2.6e11, LLY: 7.5e11, JPM: 6.8e11, XOM: 5.2e11, AVGO: 8.2e11 };
@@ -24,8 +25,11 @@ const openIdeas = (db, bookId) => getBook(db, bookId).openIdeaIds.map((id) => ge
 const nowAt = (date, slot) => new Date(Date.parse(slotOpenIso(date, slot)) + 2 * 60_000).toISOString();
 
 let restoreMode;
-beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); });
-afterEach(() => restoreMode());
+beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); takeSeededDbs(); });
+afterEach(() => {
+  restoreMode();
+  for (const db of takeSeededDbs()) expect(saleWordsOnMarkRows(db)).toEqual([]); // B-MARK on every valuation row this file's tests wrote
+});
 
 describe('windows.js — when the idea book\'s code acts, in one place', () => {
   it('the entry slots are the engine\'s existing three; the last one is preClose', () => {
@@ -324,6 +328,27 @@ describe('B-FILL and all-or-nothing', () => {
     const before = JSON.stringify([...ctx.db._store.entries()]);
     await expect(enter(ctx, DAYS.d1, 'open30', q('AAPL', 'MSFT', 'SPY'))).rejects.toThrow(TypeError);
     expect(JSON.stringify([...ctx.db._store.entries()])).toBe(before);
+  });
+
+  it('an entry that keeps FAILING leaves its reason on the idea, so a timeout at the close is explained (refuter RF3-1); a tick with no key is never "the slot\'s own" (RF3-5)', async () => {
+    const ctx = await admitOne(contractOf());
+    const snapshot = tickSnapshot(DAYS.d1, 'preClose', q('AAPL', 'SPY'));
+    const revisionBefore = getIdea(ctx.db, ctx.bookId, ctx.ideaId).revision;
+    // Every leg has an eligible mark; the entry transaction itself fails, every fire.
+    const failing = { ...ctx.db, runTransaction: async () => { throw Object.assign(new Error('UNAVAILABLE: injected'), { code: 14 }); } };
+    const out = await runIdeaBookEntryPass(failing, { bookRef: ctx.bookRef, tick: tickOf(DAYS.d1, 'preClose'), snapshot, now: new Date(nowAt(DAYS.d1, 'preClose')) });
+    expect(out).toMatchObject({ served: true, entered: 0, errors: 1 });
+    const idea = getIdea(ctx.db, ctx.bookId, ctx.ideaId);
+    expect(idea.status).toBe('accepted');
+    expect(idea.lastEntryAttempt).toEqual({ tickKey: `${DAYS.d1}_preClose`, slot: 'preClose', at: nowAt(DAYS.d1, 'preClose'), error: 'error' });
+    expect(idea.revision).toBe(revisionBefore); // bookkeeping: no revision, no money
+    // The record never creates an idea that is not there.
+    await ctx.bookRef.set({ openIdeaIds: [ctx.ideaId, 'ghost'] }, { merge: true });
+    await runIdeaBookEntryPass(failing, { bookRef: ctx.bookRef, tick: tickOf(DAYS.d1, 'preClose'), snapshot, now: new Date(nowAt(DAYS.d1, 'preClose')) });
+    expect(getIdea(ctx.db, ctx.bookId, 'ghost')).toBeUndefined();
+    // RF3-5: neither side carrying a key is a mismatch, not a match.
+    const { tickKey: _k, ...keyless } = snapshot;
+    await expect(enterIdea(ctx.db, { bookRef: ctx.bookRef, ideaId: ctx.ideaId, tick: { date: DAYS.d1, slot: 'preClose' }, snapshot: keyless, nowIso: nowAt(DAYS.d1, 'preClose') })).rejects.toThrow(/entry_snapshot_mismatch/);
   });
 
   it('the snapshot must be THIS slot\'s own: a close snapshot, or another slot\'s, handed in beside the tick is refused before any read (review L3-6)', async () => {

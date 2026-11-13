@@ -124,9 +124,16 @@ export async function idleAcquisitionCheck(db, activeSnap) {
 export async function snapshotBuildInputs(db, view) {
   const books = view.visibleDocs.map((d) => d.data());
   if (view.ideaCount === 0) return { heldTickers: unionHeldTickers(books), daily: {}, tick: {} };
+  // The candidate universe is wanted when a quarterly book is active — or when a quarterly batch is still open
+  // with no active quarterly book (its harvest validates against this snapshot; refuter RF2-2). That second case
+  // costs one read, made only then; a failed read keeps the universe.
+  let quarterlyActive = view.quarterlyCount > 0;
+  if (!quarterlyActive) {
+    try { quarterlyActive = await hasOpenBatch(db); } catch { quarterlyActive = true; }
+  }
   const pf = await practiceFieldBuildInputs(db, {
     ideaHeldTickers: unionHeldTickers(books.filter((b) => isIdeaBook(b))),
-    quarterlyActive: view.quarterlyCount > 0,
+    quarterlyActive,
   });
   return { heldTickers: unionHeldTickers(books.filter((b) => !isIdeaBook(b))), daily: pf.daily, tick: pf.tick };
 }
@@ -532,6 +539,18 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
           summary.errors++;
           console.error(`${LOG_PREFIX} ${docSnap.id} idea-book sweep stamp FAILED: ${writeErr.message}`);
         }
+        continue;
+      }
+
+      // A slot snapshot built with NO candidate universe (only idea books were
+      // active when it was built) holds nothing a quarterly book could enter.
+      // A quarterly book that appeared since holds nothing either, so it is
+      // not evaluated on it: no model call on an empty slate (Practice Field
+      // T1a-1, refuter RF2-1). Unstamped — the next slot's snapshot, built
+      // with the universe, serves it. No snapshot carries the mark unless an
+      // idea book was the only active book when it was built.
+      if (snapshot?.candidateUniverseOmitted === true && Object.keys(pageCopy.portfolio?.positions || {}).length === 0) {
+        summary.skipped++;
         continue;
       }
 

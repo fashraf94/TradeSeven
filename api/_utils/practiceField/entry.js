@@ -156,7 +156,7 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
   // 'off': no Practice Field code path runs, whoever calls. Before any read.
   if (!practiceFieldLive()) return { outcome: 'practice_field_off' };
   // The snapshot must be THIS slot's own (review L3-6): never a close snapshot or another slot's handed in beside the tick.
-  if (!snapshot || snapshot.tickKey !== tick.tickKey) throw new PracticeFieldError('entry_snapshot_mismatch', { tickKey: tick.tickKey, snapshotKey: snapshot?.tickKey ?? null });
+  if (!snapshot || typeof tick?.tickKey !== 'string' || snapshot.tickKey !== tick.tickKey) throw new PracticeFieldError('entry_snapshot_mismatch', { tickKey: tick.tickKey, snapshotKey: snapshot?.tickKey ?? null });
   const ideaRef = bookRef.collection('ideas').doc(ideaId);
   const coverageDocRef = coverageRefOf(db);
 
@@ -341,6 +341,12 @@ export async function runIdeaBookEntryPass(db, { bookRef, tick, snapshot, now = 
       out.errors += 1;
       const code = isPracticeFieldError(err) ? err.code : 'error';
       console.error(`${LOG_PREFIX} ${bookRef.id} idea ${ideaId} entry failed at ${tick.tickKey} (${code}): ${err.message}`);
+      // Leave the reason ON THE IDEA (refuter RF3-1): if the failure lasts to the session's last slot the close
+      // cancels the idea `entry_timeout`, and without this nothing on its record would say why. Bookkeeping only:
+      // no money moves and no revision; `update` never creates a missing idea; a failure here changes nothing.
+      await bookRef.collection('ideas').doc(ideaId)
+        .update({ lastEntryAttempt: { tickKey: tick.tickKey, slot: tick.slot, at: nowIso, error: code } })
+        .catch(() => {});
     }
   }
   return out;

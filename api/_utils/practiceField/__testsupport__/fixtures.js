@@ -112,7 +112,7 @@ const SEEDED_DBS = [];
 export function takeSeededDbs() { return SEEDED_DBS.splice(0, SEEDED_DBS.length); }
 
 /** A sale's words. On a valuation row no KEY may carry one (the wider list); no key or value may carry the four the build prompt names. */
-export const SALE_WORD_KEYS = /proceeds|realized|realised|sold|liquidat|sale|cashed|exit/i;
+export const SALE_WORD_KEYS = /proceeds|realized|realised|sold|liquidat|sale|cashed|cash_?out|exit|dispos|redeem|closed_?out/i;
 export const SALE_WORDS = /proceeds|realized|realised|sold|liquidat/i;
 const keysDeep = (v, out = []) => {
   if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { out.push(k); keysDeep(x, out); }

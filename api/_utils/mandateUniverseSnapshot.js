@@ -394,6 +394,7 @@ export async function ensureDailySnapshot(db, {
   // the mark today, so the create-once rule is unchanged for every existing caller.
   const omitsCandidates = uniqUpper(candidateUniverse).length === 0;
   let overwrite = force;
+  let carried = null; // on such a rebuild: the entries the first build already holds
   if (!force) {
     const existing = await ref.get();
     if (existing.exists) {
@@ -403,6 +404,7 @@ export async function ensureDailySnapshot(db, {
       }
       console.log(`${LOG_PREFIX} day doc ${date} was built without the candidate universe — rebuilding it with the universe`);
       overwrite = true;
+      carried = d.symbols || {};
     }
   }
 
@@ -420,6 +422,9 @@ export async function ensureDailySnapshot(db, {
   // fundamentals are cache hits after the first build; CA is fetched fresh).
   for (const group of chunk(symbols, concurrency)) {
     const results = await Promise.all(group.map(async (sym) => {
+      // The rebuild TOPS UP: a symbol the first build holds keeps its entry exactly (classification and corporate
+      // actions), with no second fetch — a failed re-fetch can lose nothing an idea book's close depends on.
+      if (carried && Object.hasOwn(carried, sym)) return { sym, carriedEntry: carried[sym], upstream: 0 };
       let sector = null; let industry = null; let marketCap = null; let upstream = 0;
       const known = staticClassifications && Object.hasOwn(staticClassifications, sym) ? staticClassifications[sym] : null;
       if (known) {
@@ -449,6 +454,13 @@ export async function ensureDailySnapshot(db, {
     }));
     for (const r of results) {
       upstreamCalls += r.upstream;
+      if (r.carriedEntry) {
+        if (r.carriedEntry.caFetchFailed) caFailedCount++;
+        if (r.carriedEntry.complete) completeCount++;
+        else missing.push(r.sym);
+        entries[r.sym] = r.carriedEntry;
+        continue;
+      }
       if (r.caFailed) caFailedCount++;
       const complete = r.sector != null; // sector is the field the gate depends on
       if (complete) completeCount++;
@@ -603,6 +615,8 @@ export async function ensureUniverseSnapshot(db, {
     degraded,
     droppedForSize: fitted.dropped,
     ...coverageOnlyField,
+    // Practice Field T1a-1: a snapshot built with NO candidate universe says so (as its day doc does).
+    ...(uniqUpper(candidateUniverse).length === 0 ? { candidateUniverseOmitted: true } : {}),
     symbols: finalEntries,
   };
 

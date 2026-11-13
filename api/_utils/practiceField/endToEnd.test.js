@@ -18,6 +18,7 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, closeOn, contractOf, getBook, getIdea, getRow, tickOf, tickSnapshot, slotOpenIso, dumpStore, countDocs, ADMIT_ISO,
+  takeSeededDbs, saleWordsOnMarkRows,
 } from './__testsupport__/fixtures.js';
 
 // The pinned evidence. A change here is a change to what the idea book records: re-pin it only with a reviewed
@@ -59,7 +60,10 @@ const reconcile = (db, bookId) => {
 
 let restoreMode;
 beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); });
-afterEach(() => restoreMode());
+afterEach(() => {
+  restoreMode();
+  for (const db of takeSeededDbs()) expect(saleWordsOnMarkRows(db)).toEqual([]); // B-MARK on every valuation row of the run
+});
 
 describe('the end-to-end synthetic run', () => {
   it('one book, three ideas, entry, twelve closes with a split and a dividend — reconciled after every step', async () => {

@@ -402,7 +402,8 @@ describe('B-MARK — an account mark is never reported as a liquidation fill', (
     expect(saleWordsOnMarkRows(db)).toEqual([]);
     const planted = makeMandateFakeDb({ 'x/1': { rowKind: 'valuation', basis: 'mark', raw: { exitValueUsd: 1 } }, 'x/2': { rowKind: 'valuation', basis: 'mark', note: 'sold at the close' }, 'x/3': { rowKind: 'valuation', basis: 'fill' } });
     expect(saleWordsOnMarkRows(planted)).toEqual(['x/1: key exitValueUsd', 'x/2: value', 'x/3: basis fill']);
-    for (const word of ['proceedsUsd', 'realizedGapUsd', 'soldShares', 'liquidationValue', 'saleValue', 'cashedOut', 'exitPrice']) expect(SALE_WORD_KEYS.test(word), word).toBe(true);
+    for (const word of ['proceedsUsd', 'realizedGapUsd', 'soldShares', 'liquidationValue', 'saleValue', 'cashedOut', 'exitPrice', 'disposalValueUsd', 'redeemedUsd', 'closedOutUsd', 'cashOutUsd']) expect(SALE_WORD_KEYS.test(word), word).toBe(true);
+    for (const word of ['closeSnapshotKey', 'markedHoldingsValue', 'markedGapUsd', 'entryCostTiersKnown', 'treasuryCash', 'reservedCash']) expect(SALE_WORD_KEYS.test(word), word).toBe(false);
   });
 });
 
