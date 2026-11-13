@@ -35,7 +35,7 @@ import {
   failStep, closeInvestigation, normalizeAdoption, adoptIdea, readQuota, listOpen, readPrevious, AGENTS_COLLECTION, SHARED_RESEARCH_ADAPTER,
 } from '../_utils/sharedResearch/store.js';
 import { namesInScopeOf, openingFindingsOf, dropTextOf, dropTopicOf, storedRowsOf } from '../_utils/sharedResearch/opening.js';
-import { companiesOf, projectionOf, resolveSymbol, splitRole } from '../_utils/sharedResearch/companies.js';
+import { companiesOf, projectionOf, resolveSymbol, splitRole, answerStaleOf } from '../_utils/sharedResearch/companies.js';
 import { adoptPreviewOf, isPreviewRev } from '../_utils/sharedResearch/adoptPreview.js';
 import { buildFrameSystemPrompt, renderFrameUser, buildStepSystemPrompt, renderStepUser, targetBlockOf } from '../_utils/sharedResearch/stepPrompt.js';
 import { STEP_SCHEMA, FRAME_SCHEMA, validateFrame, validateStepTurn } from '../_utils/sharedResearch/stepSchema.js';
@@ -366,6 +366,7 @@ async function handleStep(body, res, { db, uid }) {
       nextAction: nextAction?.fact ?? null, target: target ? targetBlockOf({ ...target, question: record.question }) : null,
       summary: record.summary ?? null, stepsLeft, findings: parts.findings, items: parts.items, retrieval: retrievalState,
       firstStep: (session.stepsUsed ?? 0) === 0, room,
+      answerStale: answerStaleOf(record), // spec §17 FQ-11: the prompt asks for a revision
     }),
   });
   if (!fit.ok) {

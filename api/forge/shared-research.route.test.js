@@ -586,3 +586,42 @@ describe('the second refuter pass at the route (SI-2, SI-3, SI-4, SI-5, SH-11, F
     expect(fact.source.label.endsWith(' · undated')).toBe(true);
   });
 });
+
+describe('spec §17 at the route (FQ-11, FQ-14, FQ-15)', () => {
+  it('FQ-11: a step that corrects a fact the answer rests on → the GET says answerStale, and the next prompt asks for a revision', async () => {
+    const { session } = await openStory();
+    const sid = session.sessionId;
+    await stepWith(sid, 1, 'next', twoCompanies());
+    const e = recordDoc(sid).findings.find((x) => x.kind === 'relationship' && x.fact.includes('Eaton sells switchgear to data-center builders.'));
+    expect(recordDoc(sid).summary.basedOn).toContain(e.findingId);
+    const correction = turnOk({
+      reply: 'A sharper source on Eaton.', summary: null, lines: { support: null, complication: null, missing: null }, nextAction: { label: 'Next', purpose: 'p' }, companies: [],
+      findings: [{ tempId: 'c', kind: 'relationship', fact: 'Eaton sells switchgear and transformers to data-center builders.', symbolCandidate: 'ETN', companyName: 'Eaton', support: { kind: 'retrieval', index: 0, from: [], reason: null }, at: null, supersedes: e.findingId }],
+    });
+    expect((await stepWith(sid, 2, 'next', correction)).statusCode).toBe(200);
+    expect((await get({ sessionId: sid })).body.record.answerStale).toBe(true);
+    await stepWith(sid, 3, 'next', quiet());
+    expect(state.turns.at(-1).user).toContain('This answer rests on a finding that has since been corrected. Revise it this step');
+  });
+  it('FQ-14: the player\'s drop text keeps its stray ticker in the record and the exchange; the model never sees it', async () => {
+    seedEnv.store.set(`users/${UID}/signalDrops/drop-qz`, { dropId: 'drop-qz', userId: UID, input: { type: 'text', text: 'QZXW is the switchgear winner', note: null }, parse: { topic: 'switchgear', dataPoints: [] }, validation: { validated: [{ symbol: 'ETN', sectorId: 'XLI' }], unsupported: [] }, shouldBailout: false, droppedAt: '2026-11-12T12:00:00.000Z' });
+    const r = await post({ action: 'open', requestId: 'd-qz', entry: { kind: 'signaldrop', itemRef: { recordKind: 'signalDrops', recordId: 'drop-qz' }, question: QUESTION } });
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    const sid = r.body.session.sessionId;
+    expect(recordDoc(sid).findings.find((x) => x.statusReason === 'player_drop').fact).toBe('QZXW is the switchgear winner');
+    expect(r.body.session.exchanges[0].text).toBe('QZXW is the switchgear winner');
+    await stepWith(sid, 1, 'next', quiet());
+    expect(state.turns[0].user).not.toContain('QZXW');
+  });
+  it('FQ-15: a reply with a number the record does not hold is replaced; the step lands with its findings', async () => {
+    const { session } = await openStory();
+    const before = recordDoc(session.sessionId).findings.length;
+    const r = await stepWith(session.sessionId, 1, 'next', turnOk({
+      reply: 'Eaton earns 40% of its orders from data centers.', summary: null, lines: { support: null, complication: null, missing: null }, nextAction: { label: 'Next', purpose: 'p' }, companies: [],
+      findings: [{ tempId: 'e', kind: 'relationship', fact: 'Eaton sells switchgear to data-center builders.', symbolCandidate: 'ETN', companyName: 'Eaton', support: { kind: 'retrieval', index: 0, from: [], reason: null }, at: null, supersedes: null }],
+    }));
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    expect(recordDoc(session.sessionId).findings.length).toBe(before + 2);
+    expect(r.body.session.exchanges.at(-1)).toMatchObject({ who: 'partner', kind: 'step', text: 'This step added 2 findings. The answer was not updated.' });
+  });
+});

@@ -181,7 +181,18 @@ export function etDaysBetween(fromIso, nowIso) {
 }
 
 /**
- * The read projection (spec §6.7, as amended by §15 S-5: no symbol keys).
+ * Does the answer rest on a finding that is no longer current (spec §17 FQ-11)? True when any of the summary's
+ * basedOn ids has been superseded (or is gone). Adoption is unaffected; the next step's prompt asks for a revision.
+ */
+export function answerStaleOf(record) {
+  const basedOn = Array.isArray(record?.summary?.basedOn) ? record.summary.basedOn : [];
+  if (basedOn.length === 0) return false;
+  const current = new Set(currentFindingsOf(record).map((f) => f.findingId));
+  return basedOn.some((id) => !current.has(id));
+}
+
+/**
+ * The read projection (spec §6.7, as amended by §15 S-5: no symbol keys; §17 FQ-11: `answerStale`).
  * @param {object} record  the stored research record
  * @param {{ lines?: object, nowIso: string }} ctx  lines: the latest step's refs (session.latestLinesOf)
  */
@@ -201,6 +212,7 @@ export function projectionOf(record, { lines = null, nowIso }) {
     createdAt: record.createdAt,
     lastTurnAt: record.telemetry?.lastTurnAt ?? null,
     summary: summary ? { rev: summary.rev, text: summary.text, at: summary.at, basedOn: [...(summary.basedOn ?? [])] } : null,
+    answerStale: answerStaleOf(record),
     summaryRevisions: (Array.isArray(record.summaryRevisions) ? record.summaryRevisions : []).map((r) => ({ rev: r.rev, text: r.text, at: r.at })),
     findings: current.map(findingViewOf),
     superseded: all.filter((f) => !currentIds.has(f?.findingId)).map(findingViewOf),

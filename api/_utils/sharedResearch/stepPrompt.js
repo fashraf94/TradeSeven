@@ -21,7 +21,7 @@
 
 import { ALL_TICKERS, isRetiredStock } from '../rankingConfig.js';
 import { METHOD } from './method.js';
-import { ACRONYMS, INDEX_NAMES } from './stepSchema.js';
+import { ACRONYMS, INDEX_NAMES, maskStrayTickers } from './stepSchema.js';
 import { RELATIONSHIP_ROLES, UNRESOLVED_REASONS } from '../../../src/constants/sharedResearch.js';
 
 /** The rulebook's §4 lines, in order (pinned to the rulebook by prompt.honesty.test.js). */
@@ -84,15 +84,23 @@ export function buildFrameSystemPrompt({ partnerName } = {}) {
   ].join('\n');
 }
 
+/**
+ * What the model sees of any text: a ticker the universe does not hold is masked (spec §17 FQ-14) — the player's
+ * words stay verbatim in the record and the exchange (rulebook §4 (1)), but the partner cannot echo such a ticker into
+ * a fact. Every text the prompts render goes through it (the record's own texts never hold one; retrieved titles and
+ * highlights may).
+ */
+const seen = (s) => maskStrayTickers(String(s ?? '').replace(/\s+/g, ' ').trim());
+
 /** The framing turn's user message. */
-export const renderFrameUser = ({ observation }) => `The player's observation (their words, not a fact):\n${observation}`;
+export const renderFrameUser = ({ observation }) => `The player's observation (their words, not a fact):\n${seen(observation)}`;
 
 const STARTED = {
   item: 'a FantasyTimes story (reporter content, not a primary source)',
   observation: "the player's own words (their observation, not a fact)",
   signaldrop: "the player's SignalDrop (their own material, not a fact)",
 };
-const line = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+const line = seen;
 
 /** The examine step's target block (Correction B): a different company is a different block. */
 export function targetBlockOf({ symbol, relationshipFact, openFact, question }) {
@@ -106,7 +114,7 @@ export function targetBlockOf({ symbol, relationshipFact, openFact, question }) 
  */
 export function renderStepUser({
   question, entryKind, intent, direction = null, nextAction = null, target = null, summary = null, stepsLeft,
-  findings, items, retrieval, firstStep = false, room = null,
+  findings, items, retrieval, firstStep = false, room = null, answerStale = false,
 }) {
   const out = [`Question (fixed; never change it): ${line(question)}`, `Started from: ${STARTED[entryKind] ?? 'the player'}`];
   if (intent === 'next') out.push(`This step: run the current next action${nextAction ? `: ${line(nextAction)}` : '.'}`);
@@ -118,6 +126,8 @@ export function renderStepUser({
   out.push(`Steps left after this one: ${stepsLeft}`);
   if (Number.isInteger(room)) out.push(`Room on the record: at most ${room} more findings this step, claims and the next action included.`);
   out.push(summary ? `Current answer (rev ${summary.rev}): ${line(summary.text)}` : 'Current answer: none yet.');
+  // spec §17 FQ-11: the answer rests on a finding that has since been corrected — this step must revise it
+  if (summary && answerStale) out.push('This answer rests on a finding that has since been corrected. Revise it this step (summary), resting it on current findings.');
   out.push('Record findings (id | kind | symbol | status | fact):');
   for (const f of findings) out.push(`  ${f.findingId} | ${f.kind} | ${f.symbol ?? '-'} | ${f.status}${f.statusReason ? `/${f.statusReason}` : ''} | ${line(f.fact)}`);
   if (findings.length === 0) out.push('  (none)');

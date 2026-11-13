@@ -179,8 +179,10 @@ export function maskStrayTickers(text, universe = gameUniverse) {
 const LEARNING_STRONG = /\b(?:learn(?:s|ed|t|ing)?|smarter|remember(?:s|ed|ing)?|level(?:s|ed)?\s+up|getting\s+better|got\s+better)\b/i;
 const LEARNING_SOFT = /\b(?:improv\w*|evolv\w*|intelligen\w*|unlock\w*|grow(?:s|n|ing)?|grew)\b/i;
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-// "the partner" is business prose ("the partner portal"); the agent is "your partner", "my partner" or its own name.
-const PARTNER_WORDS = String.raw`agents?|(?:your|my|our|research)\s+partner`;
+// Who is the agent (spec §17 FQ-9): "the agent", "your/my/our agent(s)", the partner ("your/my/our/research partner";
+// "the partner" is business prose — "the partner portal") and its own name (PARTNER_TOKEN). A bare plural "agents" is
+// business prose ("Leasing agents have considered lower rents", "AI agents") and is no one of us.
+const PARTNER_WORDS = String.raw`the\s+agent|(?:your|my|our)\s+agents?|(?:your|my|our|research)\s+partner`;
 /**
  * The partner's own name stands in a sentence as this token before the subject
  * checks run, so a name with letters outside ASCII ("José", "Élodie") has real
@@ -207,7 +209,7 @@ const SUBJECTS = Object.freeze({
   // spec §16 FQ-3: "considered" with the agent, the partner (by name too), "I" or "we" as its subject — directly, through
   // the filler above ("we have thoroughly considered"), or as the passive's agent ("considered by your agent");
   // "Eaton is widely considered the leader" is business prose and passes.
-  considered: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|I|we|${PARTNER_TOKEN})(?:'ve|'d|'re|'m)?${CONSIDER_FILLER}\s+considered\b|\bconsidered\s+by\s+(?:(?:the|your|our|my|this)\s+)?(?:${PARTNER_WORDS}|${PARTNER_TOKEN})\b`, 'i'),
+  considered: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|I|we|${PARTNER_TOKEN})(?:'ve|'d|'re|'m)?${CONSIDER_FILLER}\s+considered\b|\bconsidered\s+by\s+(?:${PARTNER_WORDS}|${PARTNER_TOKEN})\b`, 'i'),
   // "by me" / "by us" case-sensitively: "considered by US regulators" names no one of us (refuter SH-5).
   consideredByUs: /\bconsidered\s+by\s+(?:me|us)\b/,
 });
@@ -428,6 +430,14 @@ export function validateStepTurn(output, ctx) {
   if (rawFindings.length > STEP_FINDINGS_MAX) return fail('too_many_findings', rawFindings.length);
   const current = currentFindingsOf(record);
   const currentById = new Map(current.map((f) => [f.findingId, f]));
+  const allById = new Map((Array.isArray(record?.findings) ? record.findings : []).filter((f) => f?.findingId).map((f) => [f.findingId, f]));
+  /** Did the supersedes chain that ends at `f` begin with a Source-backed finding (spec §17 FQ-10)? */
+  const chainBeganVerified = (f) => {
+    let cur = f;
+    const seen = new Set();
+    while (cur?.supersedes && allById.has(cur.supersedes) && !seen.has(cur.findingId)) { seen.add(cur.findingId); cur = allById.get(cur.supersedes); }
+    return cur?.status === 'verified';
+  };
   const itemByIndex = new Map(items.map((it) => [it.index, it]));
   const exchangeSource = (label) => ({ recordKind: 'exchange', recordId: partnerExchangeId, label });
 
@@ -561,15 +571,17 @@ export function validateStepTurn(output, ctx) {
     }
     // rule 5: a correction names a current finding, and never forks a chain. It may not retire the player's own
     // material or the story — rule 3 and rulebook §4 (1): they are the player's (review B5). A Source-backed finding is
-    // superseded only by another Source-backed finding or an unavailable one; an inference never supersedes it — an
-    // uncited fact the server reads as an inference included (spec §16 FQ-4).
+    // superseded only by another Source-backed finding or an unavailable one (spec §16 FQ-4); and in a chain that BEGAN
+    // with a Source-backed finding, the new head may only be verified or unavailable at any depth — never an
+    // inference, by kind or by status (spec §17 FQ-10: verified → unavailable → inference is refused at the last link).
     let supersedes = null;
     if (rf.supersedes !== null && rf.supersedes !== undefined) {
       const s = typeof rf.supersedes === 'string' ? rf.supersedes.trim() : '';
       const target = currentById.get(s);
       if (!target) return fail('invalid_supersedes', `${tempId}:${s}`);
       if (!MODEL_FINDING_KINDS.includes(target.kind) || PROTECTED_REASONS.includes(target.statusReason)) return fail('invalid_supersedes', `${tempId}:protected`);
-      if (target.status === 'verified' && status !== 'verified' && status !== 'unavailable') return fail('invalid_supersedes', `${tempId}:weaker`);
+      const guarded = target.status === 'verified' || chainBeganVerified(target);
+      if (guarded && (kind === 'inference' || (status !== 'verified' && status !== 'unavailable'))) return fail('invalid_supersedes', `${tempId}:weaker`);
       if (supersededHere.has(s)) return fail('forked_chain', s);
       supersededHere.add(s);
       supersedes = s;
@@ -698,12 +710,29 @@ export function validateStepTurn(output, ctx) {
     missing: lineOf(output.lines?.missing),
   };
 
-  const reply = cut(clean(output.reply), REPLY_MAX);
+  let reply = cut(clean(output.reply), REPLY_MAX);
   if (reply) {
     const rf = textFail(reply, 'reply');
     if (rf) return rf;
+    // spec §17 FQ-15: the reply gets the summary's number check, against the Source-backed facts on the record as this
+    // turn leaves it. A reply that fails is replaced — the step's findings still land, the step does not fail.
+    const recordFacts = [...afterById.values()].filter((f) => f.status === 'verified');
+    const stray = sentencesOf(reply).map((sentence) => strayNumberOf(sentence, recordFacts)).find((n) => n !== undefined);
+    if (stray !== undefined) {
+      notes.push(`reply_replaced:unsupported_number:${stray}`);
+      reply = replacedReplyOf(built.length, summary !== null);
+    }
   }
   return { ok: true, findings: built, summary, lines, reply, notes };
+}
+
+/**
+ * The reply in place of one that stated an unsupported number (spec §17 FQ-15): "This step added {n} findings. The
+ * answer was not updated." ("finding" for one). When the step DID revise the answer, the second sentence says so —
+ * the server never writes a sentence that is false.
+ */
+export function replacedReplyOf(n, answerUpdated = false) {
+  return `This step added ${n} ${n === 1 ? 'finding' : 'findings'}. ${answerUpdated ? 'The answer was updated.' : 'The answer was not updated.'}`;
 }
 
 /** The partner exchange's time: when the turn's findings were said (S-2: inferences and the next action take it). */
