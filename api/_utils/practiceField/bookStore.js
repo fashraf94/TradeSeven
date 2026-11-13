@@ -4,25 +4,32 @@
 // reply §1). Imported into api/_utils/filmRoom/practiceFieldSeam.js, where they replace the seam's defaults.
 //
 // IMPORT-LIGHT ON PURPOSE: the Film Room's card and counter routes load this module on every cold start, so it
-// imports the mode gate and nothing else — no engine module, no Film Room module (cardStore.js imports the seam;
-// importing it back would be a cycle).
+// imports the mode gate and the zero-import book-kind test (mandateBookKind.js) and nothing else — no other engine
+// module, no Film Room module (cardStore.js imports the seam; importing it back would be a cycle).
 //
 //   bookForOwner(db, { uid, attributionAgentId })  → { bookId, status } | null
-//       ONE read, no side effects: the owner's one-open-book claim, `practiceFieldBooks/{uid}`. The claim is
-//       written only by the idea book's own creation (ideaBook.js), in the transaction that writes the book, and it
-//       carries the book's id, its status and its attribution agent — so the answer is an IDEA BOOK by
-//       construction and never a quarterly book (the quarterly product's claim is userMeta.activeMandateId, which
-//       nothing here reads). Null when the mode does not admit the owner (WITHOUT A READ — at 'off' the Film Room
-//       behaves exactly as before this build), when no claim is open, or when the open book is another agent's.
-//       A failed read THROWS; the Film Room treats a throw as "no open book".
-//       The answer is advisory: the Film Room re-reads `mandates/{bookId}` inside its own transaction and requires
-//       `userId`, `kind: 'idea_book'`, `status: 'active'` and bookIsForAgent there. Every later writer of a book's
-//       status (T1a-2's drain and close) must move the claim's `status` in the same transaction.
+//       AT MOST TWO READS, no side effects. First the owner's one-open-book claim, `practiceFieldBooks/{uid}`; then
+//       (Astra T1A-04) THE BOOK IT NAMES, `mandates/{bookId}`. The claim is a pointer, never proof: the answer is
+//       given only when that book exists, is an idea book (`kind: 'idea_book'`), belongs to this owner (`userId`), is
+//       this attribution agent's (`attributionAgentId`, bookIsForAgent) and is still open (`active` or `draining`);
+//       the `status` answered is the BOOK's own, never the claim's copy. So a stale or inconsistent claim — one that
+//       names a quarterly book, another owner's book, a missing book or a closed one — answers null. Null too when
+//       the mode does not admit the owner (WITHOUT A READ — at 'off' the Film Room behaves exactly as before this
+//       build), when no claim is open, or when the claim is another agent's (one read). A failed read THROWS; the
+//       Film Room treats a throw as "no open book".
+//       The answer is still advisory: the Film Room re-reads `mandates/{bookId}` inside its own transaction and
+//       requires `userId`, `kind: 'idea_book'`, `status: 'active'` and bookIsForAgent there, so a `draining` answer
+//       is `book_not_open`. Every later writer of a book's status (T1a-2's drain and close) should still move the
+//       claim's `status` in the same transaction; this helper no longer depends on it.
 //
 //   bookIsForAgent(bookDoc, attributionAgentId)  → boolean
 //       Pure: true only when the book's `attributionAgentId` — written once, at creation — is that agent.
 
 import { practiceFieldAdmits } from './mode.js';
+import { isIdeaBook } from '../mandateBookKind.js';
+
+/** The statuses of an idea book that is still open: the close serves both; only `active` takes a nomination. */
+const OPEN_BOOK_STATUSES = Object.freeze(['active', 'draining']);
 
 /** The owner's open idea book for that attribution agent, or null. */
 export async function bookForOwner(db, { uid, attributionAgentId } = {}) {
@@ -33,7 +40,15 @@ export async function bookForOwner(db, { uid, attributionAgentId } = {}) {
   const claim = snap.data() || {};
   if (typeof claim.bookId !== 'string' || claim.bookId.length === 0) return null;
   if (claim.attributionAgentId !== attributionAgentId) return null;
-  return { bookId: claim.bookId, status: typeof claim.status === 'string' ? claim.status : null };
+  // Astra T1A-04: the book the claim names, read and checked — never the claim's word for it.
+  const bookSnap = await db.collection('mandates').doc(claim.bookId).get();
+  if (!bookSnap.exists) return null;
+  const book = bookSnap.data();
+  if (!isIdeaBook(book)) return null;
+  if (book.userId !== uid) return null;
+  if (!bookIsForAgent(book, attributionAgentId)) return null;
+  if (!OPEN_BOOK_STATUSES.includes(book.status)) return null;
+  return { bookId: claim.bookId, status: book.status };
 }
 
 /** Is this book document the attribution agent's? Pure; false for another agent, a missing field, a non-object. */

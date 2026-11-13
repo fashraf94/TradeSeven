@@ -271,17 +271,78 @@ describe('the Film Room\'s two helpers (Amendment B item 1) and the seam they ar
     expect(await bookForOwner(untouchable, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).toBeNull();
   });
 
-  it('returns { bookId, status } for the owner\'s open idea book of THAT attribution agent, in exactly one read', async () => {
+  it('returns { bookId, status } for the owner\'s open idea book of THAT attribution agent, in at most two reads: the claim, then the book it names (Astra T1A-04)', async () => {
     const db = makeMandateFakeDb();
     const { bookId } = await createIdeaBook(db, args());
     const reads = [];
     const counting = { collection: (c) => ({ doc: (id) => ({ get: async () => { reads.push(`${c}/${id}`); return db.collection(c).doc(id).get(); } }) }) };
     expect(await bookForOwner(counting, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).toEqual({ bookId, status: 'active' });
+    expect(reads).toEqual(['practiceFieldBooks/owner-1', `mandates/${bookId}`]);
+    // Another agent's claim is refused at the first read; no second read is spent on it.
+    reads.length = 0;
+    expect(await bookForOwner(counting, { uid: 'owner-1', attributionAgentId: 'another-agent' })).toBeNull();
     expect(reads).toEqual(['practiceFieldBooks/owner-1']);
     expect(await seamBookForOwner(db, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).toEqual({ bookId, status: 'active' });
     expect(await bookForOwner(db, { uid: 'owner-1', attributionAgentId: 'another-agent' })).toBeNull();
     expect(await bookForOwner(db, { uid: 'owner-2', attributionAgentId: 'agent-ranked-1' })).toBeNull();
     expect(await bookForOwner(db, { uid: 'owner-1' })).toBeNull();
+  });
+
+  describe('Astra T1A-04 — the claim is a pointer, never proof: only a real, open idea book of this owner and agent is returned', () => {
+    const claimFor = (bookId, over = {}) => ({ bookId, epochId: 'epoch-0001', attributionAgentId: 'agent-ranked-1', archetypeCodeId: 'momentum_chaser', status: 'active', createOpId: 'create-1', ...over });
+    const ideaBookDoc = (over = {}) => ({ kind: 'idea_book', userId: 'owner-1', attributionAgentId: 'agent-ranked-1', status: 'active', ...over });
+    const ask = (db) => bookForOwner(db, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' });
+
+    it('a claim pointing at a QUARTERLY book answers null (Astra\'s poisoned claim)', async () => {
+      const db = makeMandateFakeDb({
+        'practiceFieldBooks/owner-1': claimFor('quarterly'),
+        'mandates/quarterly': { userId: 'owner-1', kind: 'quarterly', status: 'active', attributionAgentId: 'agent-ranked-1' },
+      });
+      expect(await ask(db)).toBeNull();
+      // A legacy quarterly book with no `kind` at all is quarterly too.
+      const legacy = makeMandateFakeDb({ 'practiceFieldBooks/owner-1': claimFor('q2'), 'mandates/q2': { userId: 'owner-1', status: 'active', attributionAgentId: 'agent-ranked-1' } });
+      expect(await ask(legacy)).toBeNull();
+    });
+
+    it('a claim pointing at ANOTHER OWNER\'s idea book answers null', async () => {
+      const db = makeMandateFakeDb({ 'practiceFieldBooks/owner-1': claimFor('pf_other'), 'mandates/pf_other': ideaBookDoc({ userId: 'owner-2' }) });
+      expect(await ask(db)).toBeNull();
+    });
+
+    it('a claim pointing at a MISSING book answers null, without a throw', async () => {
+      const db = makeMandateFakeDb({ 'practiceFieldBooks/owner-1': claimFor('pf_gone') });
+      expect(await ask(db)).toBeNull();
+    });
+
+    it('a claim pointing at a CLOSED book answers null, though the claim still says active', async () => {
+      const db = makeMandateFakeDb({ 'practiceFieldBooks/owner-1': claimFor('pf_1'), 'mandates/pf_1': ideaBookDoc({ status: 'closed' }) });
+      expect(await ask(db)).toBeNull();
+      for (const status of [undefined, null, '', 'paused', 'Active']) {
+        const odd = makeMandateFakeDb({ 'practiceFieldBooks/owner-1': claimFor('pf_1'), 'mandates/pf_1': ideaBookDoc({ status }) });
+        expect(await ask(odd), String(status)).toBeNull();
+      }
+    });
+
+    it('a book whose OWN attribution agent is another\'s answers null, though the claim names this agent', async () => {
+      const db = makeMandateFakeDb({ 'practiceFieldBooks/owner-1': claimFor('pf_1'), 'mandates/pf_1': ideaBookDoc({ attributionAgentId: 'agent-other' }) });
+      expect(await ask(db)).toBeNull();
+      const none = makeMandateFakeDb({ 'practiceFieldBooks/owner-1': claimFor('pf_1'), 'mandates/pf_1': ideaBookDoc({ attributionAgentId: undefined }) });
+      expect(await ask(none)).toBeNull();
+    });
+
+    it('the status answered is the BOOK\'s own: a draining book answers `draining` (the Film Room then refuses book_not_open), whatever the claim says', async () => {
+      const db = makeMandateFakeDb({ 'practiceFieldBooks/owner-1': claimFor('pf_1', { status: 'active' }), 'mandates/pf_1': ideaBookDoc({ status: 'draining' }) });
+      expect(await ask(db)).toEqual({ bookId: 'pf_1', status: 'draining' });
+      const stale = makeMandateFakeDb({ 'practiceFieldBooks/owner-1': claimFor('pf_1', { status: 'closed' }), 'mandates/pf_1': ideaBookDoc({ status: 'active' }) });
+      expect(await ask(stale)).toEqual({ bookId: 'pf_1', status: 'active' });
+    });
+
+    it('a failed read of the BOOK reaches the seam as a throw, like a failed read of the claim', async () => {
+      const db = makeMandateFakeDb({ 'practiceFieldBooks/owner-1': claimFor('pf_1') });
+      const failingBook = { collection: (c) => ({ doc: (id) => ({ get: async () => { if (c === 'mandates') throw new Error('UNAVAILABLE'); return db.collection(c).doc(id).get(); } }) }) };
+      await expect(bookForOwner(failingBook, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).rejects.toThrow('UNAVAILABLE');
+      await expect(seamBookForOwner(failingBook, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).rejects.toThrow('UNAVAILABLE');
+    });
   });
 
   it('a QUARTERLY book is never returned: the quarterly claim (userMeta.activeMandateId) is not this helper\'s', async () => {

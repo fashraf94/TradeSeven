@@ -6,12 +6,13 @@
 // this one module so the path is complete and tested before the book exists:
 //
 //   bookForOwner(db, { uid, attributionAgentId })  → { bookId, status } | null
-//       The owner's idea book for that attribution agent: ONE read, server-side. The Film Room offers a nomination only
-//       to a book whose `status` is 'active' (spec §4 precondition 4); anything else is `book_not_open`.
-//       THE PRACTICE FIELD'S, since T1a-1: api/_utils/practiceField/bookStore.js bookForOwner — one read of the
-//       owner's idea-book claim (`practiceFieldBooks/{uid}`), idea books only. While PRACTICE_FIELD_MODE does not admit
-//       the owner (the shipped 'off' admits nobody) it answers null and reads NOTHING, so every nomination is refused
-//       and the form never offers the Offer route — exactly the old default.
+//       The owner's idea book for that attribution agent: AT MOST TWO reads, server-side. The Film Room offers a
+//       nomination only to a book whose `status` is 'active' (spec §4 precondition 4); anything else is `book_not_open`.
+//       THE PRACTICE FIELD'S, since T1a-1: api/_utils/practiceField/bookStore.js bookForOwner — the owner's idea-book
+//       claim (`practiceFieldBooks/{uid}`), then the book it names (`mandates/{bookId}`, Astra T1A-04): an answer only
+//       for an existing, open idea book of that owner and agent, with the book's own status. While
+//       PRACTICE_FIELD_MODE does not admit the owner (the shipped 'off' admits nobody) it answers null and reads
+//       NOTHING, so every nomination is refused and the form never offers the Offer route — exactly the old default.
 //
 //   buildNominationDoc({ entryId, situationId, questionId, questionVersion, nowIso, expiresAfterSessions })
 //       → the nomination record, shared contract V2 §5.2's shape, written by the card endpoint's ONE transaction at
