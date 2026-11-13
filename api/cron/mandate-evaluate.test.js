@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { unionHeldTickers, runBookEval, telemetryPatch } from './mandate-evaluate.js';
 import { buildVintagePayload } from '../_utils/mandateVintage.js';
 import { generationConfigVersionOf } from '../_utils/mandateRationale.js';
+import { assembleMandatePrompt } from '../_utils/mandatePromptAssembly.js';
 import { MANDATE_RATIONALE_MAX_CHARS } from '../_utils/mandateConfig.js';
 
 // Fake Firestore with subcollections, transactions, and ref.id.
@@ -437,6 +438,25 @@ describe('T0b — direct transport keeps the reason on every terminal, bounded a
     expect(r.status).toBe('gated');
     expect(dec).toMatchObject({ status: 'gated', rationale: 'Momentum is strong.', rationaleStatus: 'present', convictionDiagnostic: 0, rationaleAt: RESPONDED });
     expect(dec.failCondition).toBeTruthy();
+  });
+
+  it('CANARY: on every direct terminal the reason lands on the decision record only, and the next prompt does not carry it', async () => {
+    const CANARY = 'canary-91d4e2-reason-text';
+    for (const input of [
+      { verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, rationale: CANARY }, // executed
+      { verb: 'BUY', ticker: 'TSLA', sizeUsd: 5000, rationale: CANARY },  // gated
+    ]) {
+      const db = makeFakeDb({ 'mandates/m1': bookFixture() });
+      const r = await runBookEval(db, {
+        book: { _id: 'm1', ...bookFixture() }, mandateRef: db.collection('mandates').doc('m1'), vintage: VINTAGE, snapshot: SNAP,
+        sessionDate: '2026-08-12', slot: 'open30', now: NOW, callModel: fakeModel(input), clock: () => RESPONDED,
+      });
+      const holders = [...db._store.entries()].filter(([, v]) => JSON.stringify(v).includes(CANARY)).map(([p]) => p);
+      expect(holders).toEqual([`mandates/m1/decisions/${r.decisionId}`]); // non-vacuous: it IS stored, once
+      expect(JSON.stringify(r)).not.toContain(CANARY);
+      const prompt = assembleMandatePrompt({ vintage: VINTAGE, book: db._store.get('mandates/m1'), snapshot: SNAP, now: NOW });
+      expect(JSON.stringify({ system: prompt.system, messages: prompt.messages, tools: prompt.tools })).not.toContain(CANARY);
+    }
   });
 
   it('a REFUSED (rejected_stale) decision keeps its reason', async () => {

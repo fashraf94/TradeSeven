@@ -7,34 +7,48 @@
 // (mandateDecisionTool.js); normalizeDecisionInput keeps both. Before T0b the
 // decision record dropped both. This module turns them into bounded,
 // attributed record fields. It is STORAGE ONLY:
-//   • the text is the model's outward explanation, quoted and unverified. It is
-//     never evidence, and nothing re-reads it into a prompt, memory,
-//     consolidation or screen (tripwire: mandateRationale.imports.test.js);
-//   • conviction is the model's self-reported number, kept as a DIAGNOSTIC.
-//     It is not a probability and not confidence; the field name says so;
+//   • the text is the model's outward explanation (the tool input's
+//     `rationale`; free text outside the tool call is never stored), quoted
+//     and unverified. It is never evidence, and no code re-reads it into a
+//     prompt, memory, consolidation or screen (tripwire:
+//     mandateRationale.imports.test.js). The book's owner can read decision
+//     records from the client by rule (firestore.rules, decisions/{id}); that
+//     is access, not a reader in code;
+//   • conviction is the model's self-reported confidence, uncalibrated, kept
+//     as a DIAGNOSTIC: never shown or used as confidence or as a probability.
+//     The field name says so;
 //   • the tool's "2–5 sentences" is an instruction to the model, not a
-//     validator. A one-sentence reason is still a reason.
+//     validator. A one-sentence reason is still a reason;
+//   • quoted, not rewritten, with two stated exceptions: outer whitespace is
+//     dropped, and a lone UTF-16 surrogate becomes U+FFFD (a string Firestore
+//     can store as UTF-8). Neither is flagged; a cut to the bound is.
 //
 // buildDecision (mandateSchema.js) calls boundRationale and
-// convictionDiagnosticOf itself, so every decision document is bounded BY
-// CONSTRUCTION, whatever its writer passes. Pure and Node-clean (node:crypto
-// through canonicalHash.js only).
+// convictionDiagnosticOf itself, and caps the record's other model- or
+// provider-lengthened strings with capStoredString, so every decision document
+// is bounded BY CONSTRUCTION, whatever its writer passes. Pure and Node-clean
+// (node:crypto through canonicalHash.js only).
 
 import { canonicalContentHash } from './canonicalHash.js';
 import { MANDATE_RATIONALE_MAX_CHARS } from './mandateConfig.js';
 
 /**
  * rationaleStatus — 'present' (stored whole), 'truncated' (cut to the bound at
- * a grapheme boundary), 'absent' (no text: the model returned none, or no model
- * result exists; the record's failCondition then says why).
+ * a grapheme boundary), 'absent' (no text stored). Absent covers: the model's
+ * tool input carried no reason; no model response existed when the record was
+ * written (modelId null: result-less and lifecycle terminals); or a response
+ * existed but carried no readable decision tool input (modelId set; the
+ * record's failCondition says why, e.g. no_decision_tool_use).
  */
 export const RATIONALE_STATUSES = Object.freeze(['present', 'truncated', 'absent']);
 
 /**
  * rationaleAtBasis — which clock `rationaleAt` was read from:
  *   'direct_response' — direct transport: when the model's response reached the engine;
- *   'batch_ended'     — batch transport: the provider's batch end time (every response in the batch existed by then);
- *   'batch_harvested' — batch transport with no readable provider end time: the harvest fire's clock (a later upper bound).
+ *   'batch_ended'     — batch transport: the provider's batch end time, a batch-level
+ *                       time (each response in the batch existed by then);
+ *   'batch_harvested' — batch transport with no readable provider end time: the
+ *                       harvest fire's clock, read at the fire's start.
  */
 export const RATIONALE_AT_BASES = Object.freeze(['direct_response', 'batch_ended', 'batch_harvested']);
 
@@ -104,6 +118,22 @@ export function boundRationale(raw, { maxChars = MANDATE_RATIONALE_MAX_CHARS } =
 }
 
 /**
+ * Cap one stored string at `maxUnits` UTF-16 units: well-formed, never half a
+ * surrogate pair. For the record's short strings (ticker, failing condition):
+ * real values never reach the cap, so no status flag rides with it. A
+ * non-string passes through (null stays null).
+ */
+export function capStoredString(value, maxUnits) {
+  if (typeof value !== 'string') return value ?? null;
+  const text = typeof value.toWellFormed === 'function' ? value.toWellFormed() : value;
+  if (text.length <= maxUnits) return text;
+  let end = maxUnits;
+  const edge = text.charCodeAt(end - 1);
+  if (edge >= 0xd800 && edge <= 0xdbff) end -= 1;
+  return text.slice(0, end);
+}
+
+/**
  * The self-reported conviction as a diagnostic integer 0–100, or null. Same
  * rule as normalizeDecisionInput (finite numbers only, rounded, clamped), so
  * re-applying it is idempotent.
@@ -132,7 +162,7 @@ export function generationConfigVersionOf(modelSeat) {
  */
 export function responseAttribution({ modelSeat = null, modelId = null, rationaleAt = null, rationaleAtBasis = null } = {}) {
   return {
-    modelId: modelSeat?.model ?? modelId ?? null,
+    modelId: modelSeat?.model || modelId || null,
     generationConfigVersion: generationConfigVersionOf(modelSeat),
     rationaleAt,
     rationaleAtBasis,

@@ -45,6 +45,7 @@ import { makeMandateFakeDb } from './__testsupport__/mandateFakeFirestore.js';
 import { buildNewMandateDoc } from './mandateSchema.js';
 import { MANDATE_RESULT_MAX_AGE_MS, MANDATE_BATCH_BILLING_GIVEUP_MS, MANDATE_RATIONALE_MAX_CHARS } from './mandateConfig.js';
 import { generationConfigVersionOf } from './mandateRationale.js';
+import { assembleMandatePrompt } from './mandatePromptAssembly.js';
 
 const NOW = new Date('2026-08-12T14:05:00Z'); // 10:05 ET — open30 window
 const TICK = { date: '2026-08-12', slot: 'open30', tickKey: '2026-08-12_open30' };
@@ -765,14 +766,43 @@ describe('T0b — batch harvest keeps the reason on every terminal it can, bound
     expect(dec).toMatchObject({ status: 'failed', failCondition: 'no_decision_tool_use', rationale: null, rationaleStatus: 'absent', ...ATTRIBUTED });
   });
 
-  it('vintage unreadable: absent with no_vintage; the model id falls back to the submit-time copy, the seat version is unknown', async () => {
-    const dec = await harvestWith(succeededResult({ verb: 'HOLD', rationale: 'r' }), {
+  it('vintage unreadable: the reason in hand is kept beside no_vintage; the model id falls back to the submit-time copy, the seat version is unknown', async () => {
+    const dec = await harvestWith(succeededResult({ verb: 'HOLD', conviction: 55, rationale: 'Waiting for the print.' }), {
       before: (db) => { db._store.delete('archetypeVintages/analyst_x'); },
     });
     expect(dec).toMatchObject({
-      status: 'failed', failCondition: 'no_vintage', rationale: null, rationaleStatus: 'absent',
+      status: 'failed', failCondition: 'no_vintage', rationale: 'Waiting for the print.', rationaleStatus: 'present', convictionDiagnostic: 55,
       modelId: 'claude-haiku-4-5-20251001', generationConfigVersion: null, rationaleAtBasis: 'batch_ended',
     });
+  });
+
+  it('book deleted out of band: the reason in hand is kept beside book_missing', async () => {
+    const dec = await harvestWith(succeededResult({ verb: 'HOLD', rationale: 'Holding through the noise.' }), {
+      before: (db) => { db._store.delete('mandates/m1'); },
+    });
+    expect(dec).toMatchObject({ status: 'failed', failCondition: 'book_missing', rationale: 'Holding through the noise.', rationaleStatus: 'present', ...ATTRIBUTED });
+  });
+
+  it('size guard on a real path: a model-named 6,000-character ticker is stored capped at 32', async () => {
+    const dec = await harvestWith(succeededResult({ verb: 'SELL', ticker: 'Z'.repeat(6000), rationale: 'Exit.' }));
+    expect(dec.status).toBe('gated'); // never held — the gate still saw the full string
+    expect(dec.ticker).toBe('Z'.repeat(32));
+    expect(dec.rationale).toBe('Exit.');
+  });
+
+  it('CANARY: the reason lands on the decision record and nowhere else, and the next prompt does not carry it', async () => {
+    const CANARY = 'canary-7f3a1c-reason-text';
+    const { db, env } = seedSubmitted();
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: ENDED_AT });
+    batchApi.results.mockResolvedValue(asAsyncIterable([
+      { custom_id: env.requestId, result: succeededResult({ verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, rationale: CANARY }) },
+    ]));
+    const summary = await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: H_NOW });
+    const holders = [...db._store.entries()].filter(([, e]) => JSON.stringify(e.data).includes(CANARY)).map(([p]) => p);
+    expect(holders).toEqual([`mandates/m1/decisions/${env.requestId}`]); // non-vacuous: it IS stored, once
+    expect(JSON.stringify(summary)).not.toContain(CANARY);
+    const prompt = assembleMandatePrompt({ vintage: VINTAGE, book: db._get('mandates/m1'), snapshot: HARVEST_SNAP, now: H_NOW });
+    expect(JSON.stringify({ system: prompt.system, messages: prompt.messages, tools: prompt.tools })).not.toContain(CANARY);
   });
 
   it('an ERRORED result has no reason and no model response: absent, null attribution, the error durable', async () => {

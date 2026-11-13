@@ -14,13 +14,18 @@ import {
   generationConfigVersionOf,
   responseAttribution,
   rationaleRecordInputs,
+  capStoredString,
   DECISION_RATIONALE_FIELDS,
   RATIONALE_STATUSES,
   RATIONALE_AT_BASES,
 } from './mandateRationale.js';
 import { buildDecision } from './mandateSchema.js';
 import { disposeSubmission } from './mandateExecution.js';
-import { MANDATE_RATIONALE_MAX_CHARS } from './mandateConfig.js';
+import {
+  MANDATE_RATIONALE_MAX_CHARS,
+  MANDATE_DECISION_TICKER_MAX_CHARS,
+  MANDATE_DECISION_FAIL_CONDITION_MAX_CHARS,
+} from './mandateConfig.js';
 import { makeMandateFakeDb } from './__testsupport__/mandateFakeFirestore.js';
 
 const SEAT = { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', params: { temperature: 0.7, maxTokens: 600 } };
@@ -144,6 +149,12 @@ describe('attribution — the pinned seat and the response time', () => {
     expect([...RATIONALE_AT_BASES]).toEqual(['direct_response', 'batch_ended', 'batch_harvested']);
   });
 
+  it('an empty model id in the seat falls back like a missing one (one truthiness rule for id and version)', () => {
+    const r = responseAttribution({ modelSeat: { ...SEAT, model: '' }, modelId: 'claude-x' });
+    expect(r.modelId).toBe('claude-x');
+    expect(r.generationConfigVersion).toBe(null);
+  });
+
   it('rationaleRecordInputs with no attribution means no model response stands behind the record', () => {
     expect(rationaleRecordInputs()).toEqual({
       rationale: null, convictionDiagnostic: null, modelId: null, generationConfigVersion: null, rationaleAt: null, rationaleAtBasis: null,
@@ -179,6 +190,25 @@ describe('buildDecision — the reason fields, bounded by construction', () => {
     expect(buildDecision({ decisionId: 'd3', rationaleAtBasis: 'guess' }).rationaleAtBasis).toBe(null);
   });
 
+  it('caps the two other model- or provider-lengthened strings; real values pass unchanged', () => {
+    expect(MANDATE_DECISION_TICKER_MAX_CHARS).toBe(32);
+    expect(MANDATE_DECISION_FAIL_CONDITION_MAX_CHARS).toBe(200);
+    const real = buildDecision({ decisionId: 'd5', ticker: 'BRK.B', failCondition: 'bad_decision:missing_ticker' });
+    expect(real.ticker).toBe('BRK.B');
+    expect(real.failCondition).toBe('bad_decision:missing_ticker');
+    const long = buildDecision({ decisionId: 'd6', ticker: 'Z'.repeat(6000), failCondition: `api_error:${'e'.repeat(6000)}` });
+    expect(long.ticker).toBe('Z'.repeat(32));
+    expect(long.failCondition).toHaveLength(200);
+    expect(buildDecision({ decisionId: 'd7' })).toMatchObject({ ticker: null, failCondition: null });
+  });
+
+  it('capStoredString keeps a pair whole at the edge and makes text well-formed', () => {
+    expect(capStoredString(`${'a'.repeat(31)}😀`, 32)).toBe('a'.repeat(31)); // the pair at units 31–32 moves out whole
+    expect(capStoredString('ab\ud800', 32)).toBe('ab�');
+    expect(capStoredString(null, 32)).toBe(null);
+    expect(capStoredString(undefined, 32)).toBe(null);
+  });
+
   it('a blank rationale from a writer is still absent, never an empty string', () => {
     const d = buildDecision({ decisionId: 'd4', rationale: '   ' });
     expect(d.rationale).toBe(null);
@@ -206,14 +236,16 @@ function valueSize(v) {
 const docSize = (segments, data) => segments.reduce((n, s) => n + strSize(s), 0) + 16 + valueSize(data) + 32;
 
 describe('document size — a decision stays well inside Firestore\'s limit by construction', () => {
-  // Worst case: every field populated, long ids, a reason of 3-byte characters
-  // (the most UTF-8 bytes per UTF-16 unit) far past the bound.
+  // Worst case: every field populated, long ids, and every string a model or
+  // provider can lengthen (reason, ticker, failing condition) fed far past its
+  // cap — the reason in 3-byte characters (the most UTF-8 bytes per UTF-16
+  // unit). The remaining strings are engine-written; they get generous values.
   const worst = buildDecision({
-    decisionId: 'x'.repeat(64), verb: 'TRIM', ticker: 'BRK.B-LONGX', requestedSizeUsd: 1e7, executedSizeUsd: 1e7,
+    decisionId: 'x'.repeat(64), verb: 'TRIM', ticker: '漢'.repeat(100_000), requestedSizeUsd: 1e7, executedSizeUsd: 1e7,
     executedShares: 123456.123456, executedPrice: 9999.99, realizedPnl: -1e6, fillMarkQuality: 'carry_over', clamped: true,
     friction: { slippageBps: 20, spreadProxyBps: 20, spreadBasis: 'proxy', frictionPaid: 1e5, frictionBasis: 'idealized_no_market_impact' },
     frictionModelVersion: 1, gateOutcome: { rule: 'price_drift', passed: false, driftBps: 1234.5678 },
-    failCondition: `shares_negative:${'Z'.repeat(40)}`, vintageRef: `archetypeVintages/momentum_chaser_${'f'.repeat(64)}`,
+    failCondition: `api_error:${'漢'.repeat(100_000)}`, vintageRef: `archetypeVintages/momentum_chaser_${'f'.repeat(64)}`,
     baseRevision: 1e6, submitTickKey: '2026-08-12_preClose', harvestTickKey: '2026-08-12_preClose', harvestSnapshotDegraded: true,
     mandatePromptTemplateVersion: 'v'.repeat(40), status: 'rejected_stale',
     rationale: '漢'.repeat(10_000), convictionDiagnostic: 100, modelId: 'claude-haiku-4-5-20251001',
@@ -221,9 +253,12 @@ describe('document size — a decision stays well inside Firestore\'s limit by c
   });
   const size = docSize(['mandates', 'm'.repeat(20), 'decisions', 'x'.repeat(64)], worst);
 
-  it('the stored reason is at most 3 × the bound in UTF-8 bytes', () => {
+  it('the stored reason is at most 3 × the bound in UTF-8 bytes; ticker and failing condition are capped', () => {
     expect(worst.rationale.length).toBe(MANDATE_RATIONALE_MAX_CHARS);
     expect(Buffer.byteLength(worst.rationale, 'utf8')).toBeLessThanOrEqual(3 * MANDATE_RATIONALE_MAX_CHARS);
+    expect(worst.ticker.length).toBe(MANDATE_DECISION_TICKER_MAX_CHARS);
+    expect(worst.failCondition.length).toBe(MANDATE_DECISION_FAIL_CONDITION_MAX_CHARS);
+    expect(worst.failCondition.startsWith('api_error:')).toBe(true);
   });
 
   it('the whole worst-case document is under 8 KiB — under 1% of the 1 MiB limit', () => {

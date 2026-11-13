@@ -66,6 +66,13 @@ export const MANDATE_DECISION_VERBS = Object.freeze(['BUY', 'SELL', 'TRIM', 'ADD
 // Storage only: this file is prompt-path infra, and the bound never reaches a
 // prompt.
 export const MANDATE_RATIONALE_MAX_CHARS = 1200;
+// The two other decision-record strings a model or provider can lengthen: the
+// ticker the model names (the universe's longest is 5 characters) and the
+// failing condition (engine-written, longest about 48, with provider error
+// types as suffixes). Capped where the record is built, so the record's size
+// bound holds by construction; real values never come near either cap.
+export const MANDATE_DECISION_TICKER_MAX_CHARS = 32;
+export const MANDATE_DECISION_FAIL_CONDITION_MAX_CHARS = 200;
 
 // ── Cadence tiers (D-19: cadence is an archetype property) ───────────────────
 // The tier VALUES are pinned in the vintage (recomputed from the new vintage at

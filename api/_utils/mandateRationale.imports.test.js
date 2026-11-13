@@ -3,34 +3,50 @@
 // T0b — NO READER. The manager's stored reason (decisions/{id}.rationale and
 // its sibling fields) is written and never read back into a model's input:
 // not a prompt, not memory, not consolidation (concept V6.1 §9 and rulings
-// 16–17). Source scans, the *.imports.test.js precedent:
+// 16–17). Source scans, the *.imports.test.js precedent; the runtime half is
+// the CANARY rows in mandate-evaluate.test.js and mandateBatchTransport.test.js
+// (a unique reason lands on the decision record only, and the next Mandate
+// prompt does not carry it).
 //
-//   1. Every prompt assembler under api/ — each module in the battle C-20
-//      registry (PROMPT_CONTRIBUTING_MODULES) and the Mandate registry
+//   1. Prompt assemblers under api/ — every module in the battle C-20 registry
+//      (PROMPT_CONTRIBUTING_MODULES) and the Mandate registry
 //      (MANDATE_PROMPT_CONTRIBUTING_MODULES), plus every api/ module whose file
 //      name says "prompt" (the consolidation prompt among them) — and the
-//      TRANSITIVE local-import closure of each: none touches the decisions
+//      TRANSITIVE local-import closure of each: none names the decisions
 //      store, none names a T0b record field, none reaches a decision writer.
-//      Two pure SHAPE modules are reached and exempt from the field-name
-//      check: mandatePromptAssembly → mandateUniverseSnapshot →
-//      mandateCorporateActions → mandateSchema (for CORPORATE_ACTION_TYPES,
-//      pre-T0b) → mandateRationale. They name the fields because they BUILD
-//      the record; the exemption holds only while their own import closure
-//      stays I/O-free, which is asserted.
-//   2. Repo-wide (api/ and src/): decisions-store access and the T0b-only
-//      field names appear in the sanctioned writer modules and nowhere else.
-//      A future reader (a screen, a memory pass, a handler feeding a prompt)
-//      must register here: a deliberate review event.
+//      Two pure SHAPE modules are reached: mandatePromptAssembly →
+//      mandateUniverseSnapshot → mandateCorporateActions → mandateSchema (for
+//      CORPORATE_ACTION_TYPES, pre-T0b) → mandateRationale. They name the
+//      fields because they BUILD the record. The exemption is an import EDGE,
+//      not a file: inside the closure only those two edges may import them,
+//      with exactly the pinned names, and their own closure stays I/O-free.
+//   2. Repo-wide (api/ and src/): every mention of the decisions store is
+//      COUNT-pinned per file (the money-rounding BASELINE idiom), and the
+//      T0b-only field names appear in the writer set only. A new reader — a
+//      screen, a memory pass, a helper inside a writer whose result a handler
+//      feeds to a prompt — moves a pinned count: a deliberate review event.
 //
-// STATED BLIND SPOTS: `rationale` itself is an ordinary word (the decision
-// tool asks the model for one; battle prompts use it), so it cannot be banned
-// by name — a reader is caught by its store access or a T0b-only field name,
-// not by `.rationale`. The closures follow static relative imports only; a
-// dynamic import() or a bare-package import is not followed.
+// STATED BLIND SPOTS:
+//   • `rationale` is an ordinary word (the tool asks the model for one; battle
+//     prompts use it), so it cannot be banned by name. A reader is caught by
+//     its store mention, a T0b-only field name, or the canary rows — not by
+//     `.rationale`.
+//   • "Prompt assembler" means the two registries plus a file-name heuristic.
+//     Prompt text built inside a handler is not a scan-1 root; for the Mandate
+//     path the canary rows cover it, for others scan 2's pins do.
+//   • The closure walker follows static `import … from` / `export … from`
+//     with relative specifiers only: not a side-effect `import './x.js'`, a
+//     `require()`, a dynamic `import()` or a bare-package import.
+//   • A store name built at run time (string concatenation) evades the literal.
+//   • Scan 2 covers api/ and src/ (not scripts/).
+//   • The walker's paths are POSIX on Linux (CI). On Windows, path.relative
+//     returns backslashes and the walker stops early (pre-existing, reported
+//     with T0b); the three-hop self-check below then fails loudly rather than
+//     passing on a truncated closure.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { resolve, join, relative, sep } from 'node:path';
+import { resolve, join, relative, dirname, sep } from 'node:path';
 import { evalPathClosure, REPO_ROOT } from './__fixtures__/mandateEvalPathClosure.js';
 import { PROMPT_CONTRIBUTING_MODULES } from './__fixtures__/promptHonestyRegistry.js';
 import { MANDATE_PROMPT_CONTRIBUTING_MODULES } from './__fixtures__/mandatePromptRegistry.js';
@@ -54,22 +70,35 @@ function listSources(dirRel) {
   return out;
 }
 
-// Access to the Mandate decisions store, in every Firestore shape: an Admin
-// SDK `.collection('decisions')` / `collectionGroup('decisions')`, a client
-// `collection(db, 'mandates', id, 'decisions')` / `doc(db, …, 'decisions', d)`,
-// or a path literal through `/decisions/`. A bare 'decisions' argument to a
-// non-Firestore call is not store access (shadowLogger's training-log stream
-// to Cloud Storage is the standing example — asserted below).
-const DECISIONS_STORE = /\b(?:collection|collectionGroup|doc)\s*\([^)]*['"`]decisions['"`]|['"`][^'"`\n]*\/decisions(?:\/|['"`])/;
+// Any mention of the decisions store: the collection name as a string literal
+// (an Admin `.collection('decisions')`, a client `collection(db, …, 'decisions')`,
+// a constant `const DECISIONS = 'decisions'`), or a path literal through
+// `/decisions/`. Counted per file.
+const DECISIONS_MENTION = /['"`]decisions['"`]|['"`][^'"`\n]*\/decisions(?:\/|['"`])/g;
+const mentions = (src) => (src.match(DECISIONS_MENTION) || []).length;
 // The record fields only T0b writes (`rationale` and `modelId` are ordinary words — see the blind spots).
 const T0B_FIELD = /\b(?:rationaleStatus|convictionDiagnostic|rationaleAt\w*|generationConfigVersion\w*|DECISION_RATIONALE_FIELDS)\b/;
 
-// The pure shape modules a prompt assembler reaches (header), and the only
-// modules their closure may contain.
+// file → { count, note }. Every mention was READ and classified at T0b.
+const STORE_BASELINE = {
+  'api/_utils/mandateClosePass.js': { count: 2, note: 'writer: close-pass expiry claim + corporate-action forced-exit record' },
+  'api/_utils/mandateEscape.js': { count: 1, note: 'writer: escape-hatch cancel record' },
+  'api/_utils/mandateExecution.js': { count: 2, note: 'writer: disposeSubmission + executeDecision claims (direct and batch)' },
+  'api/_utils/mandateRollover.js': { count: 1, note: 'writer: rollover cancel record' },
+  'api/_utils/shadowLogger.js': { count: 1, note: 'NOT the store: the Cloud Storage training-log stream name (logDecision); reached by battle prompt modules through injectionGuard.js' },
+};
+// Mentions a prompt assembler's closure may hold: the non-store entries only.
+const CLOSURE_MENTION_ALLOWED = { 'api/_utils/shadowLogger.js': 1 };
+
+// The shape modules and the only import edges into them allowed inside the closure.
 const SHAPE_MODULES = ['api/_utils/mandateSchema.js', 'api/_utils/mandateRationale.js'];
+const SHAPE_EDGES = {
+  'api/_utils/mandateCorporateActions.js -> api/_utils/mandateSchema.js': ['CORPORATE_ACTION_TYPES'],
+  'api/_utils/mandateSchema.js -> api/_utils/mandateRationale.js': ['RATIONALE_AT_BASES', 'boundRationale', 'capStoredString', 'convictionDiagnosticOf'],
+};
 const SHAPE_CLOSURE_ALLOWED = [...SHAPE_MODULES, 'api/_utils/mandateConfig.js', 'api/_utils/canonicalHash.js'].sort();
 
-// Every module that writes decision records (store access or the T0b fields).
+// Every module that writes decision records.
 const DECISION_WRITERS = [
   'api/_utils/mandateExecution.js',
   'api/_utils/mandateBatchTransport.js',
@@ -78,6 +107,27 @@ const DECISION_WRITERS = [
   'api/_utils/mandateEscape.js',
   'api/cron/mandate-evaluate.js',
 ];
+
+/**
+ * Static import/export-from statements with a relative specifier:
+ * [{ kind, clause, target }]. clause is the text between the keyword and
+ * `from` (`{ a, b as c }`, `* as ns`, `*`, `def`, `def, { a }`).
+ */
+const EDGE = /\b(import|export)\s+(\*\s*(?:as\s+[\w$]+)?|[\w$]+\s*,\s*\{[^}]*\}|[\w$]+\s*,\s*\*\s*as\s+[\w$]+|\{[^}]*\}|[\w$]+)\s*from\s*['"](\.{1,2}\/[^'"]+)['"]/g;
+function edgesOf(rel) {
+  const out = [];
+  for (const m of read(rel).matchAll(EDGE)) {
+    let target = posix(join(dirname(rel), m[3]));
+    if (!target.endsWith('.js')) target += '.js';
+    out.push({ kind: m[1], clause: m[2].trim(), target });
+  }
+  return out;
+}
+/** Named-only clause → the source-side names; anything else → null (not allowed into a shape module). */
+function namedOnly(clause) {
+  if (!clause.startsWith('{')) return null;
+  return clause.slice(1, -1).split(',').map((s) => s.trim()).filter(Boolean).map((s) => s.split(/\s+as\s+/)[0].trim()).sort();
+}
 
 // ── Scan 1: prompt assemblers and their import closures ──────────────────────
 
@@ -90,7 +140,7 @@ const CLOSURE = [...new Set(ROOTS.flatMap((root) => evalPathClosure(root, []).ma
   .sort();
 
 describe('T0b no reader: prompt assemblers under api/ never read the stored reason', () => {
-  it('the scan set is real: both registries resolve, the known assemblers and their helpers are in it (self-check)', () => {
+  it('the scan set is real: both registries resolve, and the walk reaches three hops down (self-check)', () => {
     for (const rel of REGISTERED) expect(existsSync(resolve(REPO_ROOT, rel)), `registry module missing: ${rel}`).toBe(true);
     for (const rel of [
       'api/_utils/mandatePromptAssembly.js',
@@ -99,19 +149,40 @@ describe('T0b no reader: prompt assemblers under api/ never read the stored reas
       'api/_utils/agentPromptAssembly.js',
       'api/_utils/agentEvalPromptAssembly.js',
       'api/_utils/agentConsolidationPrompt.js',
-      'api/_utils/mandateUniverseSnapshot.js', // a helper two hops down — the closure is followed
+      'api/_utils/mandateUniverseSnapshot.js',  // one hop: imported by mandatePromptAssembly
+      'api/_utils/mandateCorporateActions.js',  // two hops
+      'api/_utils/mandateSchema.js',            // three hops — a truncated walk fails here
     ]) expect(CLOSURE, `${rel} should be in the scan set`).toContain(rel);
     expect(CLOSURE.length).toBeGreaterThan(ROOTS.length);
   });
 
-  it('no module in the scan set touches the decisions store', () => {
-    const offenders = CLOSURE.filter((rel) => DECISIONS_STORE.test(read(rel)));
-    expect(offenders, `decisions-store access inside a prompt assembler's graph: ${offenders.join(', ')}`).toEqual([]);
+  it('no module in the scan set mentions the decisions store (beyond the pinned non-store use)', () => {
+    const offenders = CLOSURE
+      .filter((rel) => mentions(read(rel)) !== (CLOSURE_MENTION_ALLOWED[rel] ?? 0))
+      .map((rel) => `${rel} (${mentions(read(rel))})`);
+    expect(offenders, `decisions-store mention inside a prompt assembler's graph: ${offenders.join(', ')}`).toEqual([]);
   });
 
   it('no module in the scan set names a T0b record field, except the pure shape modules', () => {
     const offenders = CLOSURE.filter((rel) => !SHAPE_MODULES.includes(rel) && T0B_FIELD.test(read(rel)));
     expect(offenders, `T0b record field named inside a prompt assembler's graph: ${offenders.join(', ')}`).toEqual([]);
+  });
+
+  it('inside the scan set, the shape modules are imported only through the two pinned edges, with exactly the pinned names', () => {
+    const seen = {};
+    const violations = [];
+    for (const rel of CLOSURE) {
+      for (const e of edgesOf(rel)) {
+        if (!SHAPE_MODULES.includes(e.target)) continue;
+        const key = `${rel} -> ${e.target}`;
+        const names = namedOnly(e.clause);
+        const allowed = SHAPE_EDGES[key];
+        if (!allowed || !names || names.some((n) => !allowed.includes(n))) violations.push(`${key}: ${e.kind} ${e.clause}`);
+        else seen[key] = [...new Set([...(seen[key] || []), ...names])].sort();
+      }
+    }
+    expect(violations, 'a new path into a shape module from a prompt assembler\'s graph — a formatter or reader must not ride the exemption').toEqual([]);
+    expect(seen).toEqual(SHAPE_EDGES); // both edges exist, exactly as pinned (the parser is not vacuous)
   });
 
   it('the shape modules stay pure: their own import closure is I/O-free config and hashing', () => {
@@ -120,7 +191,7 @@ describe('T0b no reader: prompt assemblers under api/ never read the stored reas
       for (const rel of own) {
         expect(SHAPE_CLOSURE_ALLOWED, `${shape} reaches ${rel} — the shape modules sit in a prompt's graph and must stay pure`).toContain(rel);
       }
-      expect(DECISIONS_STORE.test(read(shape)), `${shape} touches the decisions store`).toBe(false);
+      expect(mentions(read(shape)), `${shape} mentions the decisions store`).toBe(0);
       expect(/firebase|getFirestore|runTransaction/.test(read(shape)), `${shape} references Firestore`).toBe(false);
     }
   });
@@ -130,29 +201,21 @@ describe('T0b no reader: prompt assemblers under api/ never read the stored reas
     expect(reached, `a prompt assembler's graph reaches a decision writer: ${reached.join(', ')}`).toEqual([]);
   });
 
-  it('the patterns are not vacuous, and the store pattern is not over-broad', () => {
-    expect(DECISIONS_STORE.test(read('api/_utils/mandateExecution.js'))).toBe(true);
-    expect(DECISIONS_STORE.test("collection(db, 'mandates', id, 'decisions')")).toBe(true);
-    expect(DECISIONS_STORE.test("doc(db, 'mandates', id, 'decisions', d)")).toBe(true);
-    expect(DECISIONS_STORE.test('db.doc(`mandates/${id}/decisions/${d}`)')).toBe(true);
-    expect(DECISIONS_STORE.test("db.collectionGroup('decisions')")).toBe(true);
-    expect(read('api/_utils/shadowLogger.js')).toContain("appendToStream('decisions'");
-    expect(DECISIONS_STORE.test(read('api/_utils/shadowLogger.js'))).toBe(false); // a GCS log stream, not the store
-    expect(T0B_FIELD.test(read('api/_utils/mandateSchema.js'))).toBe(true);
+  it('the patterns are not vacuous', () => {
+    expect(mentions("db.collection('mandates').doc(id).collection('decisions')")).toBe(1);
+    expect(mentions("collection(db, 'mandates', id, 'decisions')")).toBe(1);
+    expect(mentions("getDoc(doc(db, 'mandates', String(id), 'decisions', d))")).toBe(1);
+    expect(mentions("const DECISIONS = 'decisions'; collection(db, 'mandates', id, DECISIONS)")).toBe(1);
+    expect(mentions('db.doc(`mandates/${id}/decisions/${d}`)')).toBe(1);
+    expect(mentions('// decisions/{decisionId} is written here')).toBe(0); // prose is not a mention
     expect(T0B_FIELD.test('const s = dec.rationaleStatus;')).toBe(true);
     expect(T0B_FIELD.test('MANDATE_RATIONALE_MAX_CHARS')).toBe(false); // the bound may sit on the prompt path (mandateConfig.js)
+    expect(edgesOf('api/_utils/mandateCorporateActions.js').some((e) => e.target === 'api/_utils/mandateSchema.js')).toBe(true);
   });
 });
 
 // ── Scan 2: repo-wide (api/ and src/) ────────────────────────────────────────
 
-// Decision-store access: the record writers, nothing else.
-const STORE_SANCTIONED = [
-  'api/_utils/mandateClosePass.js',   // close-pass expiry + corporate-action forced exits
-  'api/_utils/mandateEscape.js',      // escape-hatch cancel
-  'api/_utils/mandateExecution.js',   // the §3.5 terminals (direct and batch)
-  'api/_utils/mandateRollover.js',    // rollover cancel
-];
 // T0b field names: the writers of the reason, nothing else.
 const FIELD_SANCTIONED = [
   'api/_utils/mandateRationale.js',      // the bound, the diagnostic, the attribution
@@ -162,7 +225,7 @@ const FIELD_SANCTIONED = [
   'api/cron/mandate-evaluate.js',        // direct-transport attribution
 ];
 
-describe('T0b no reader: decisions-store access and the record field names stay in the writer set (api/ and src/)', () => {
+describe('T0b no reader: decisions-store mentions and the record field names are pinned (api/ and src/)', () => {
   const sources = [...API_SOURCES, ...listSources('src')];
 
   it('scans real source trees (self-check)', () => {
@@ -171,9 +234,14 @@ describe('T0b no reader: decisions-store access and the record field names stay 
     expect(sources).toContain('api/cron/mandate-evaluate.js');
   });
 
-  it('only the record writers touch the decisions store', () => {
-    const touching = sources.filter((rel) => DECISIONS_STORE.test(read(rel))).sort();
-    expect(touching, 'decisions-store access outside the writer set — a reader needs review against concept V6.1 §9').toEqual([...STORE_SANCTIONED].sort());
+  it('every decisions-store mention is pinned at its reviewed per-file count', () => {
+    const found = {};
+    for (const rel of sources) {
+      const n = mentions(read(rel));
+      if (n > 0) found[rel] = n;
+    }
+    const pinned = Object.fromEntries(Object.entries(STORE_BASELINE).map(([f, v]) => [f, v.count]));
+    expect(found, 'a decisions-store mention moved — a new reader (or writer) needs review against concept V6.1 §9, then a re-pin with a note').toEqual(pinned);
   });
 
   it('only the writers of the reason name a T0b field', () => {

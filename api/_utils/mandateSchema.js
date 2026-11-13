@@ -18,8 +18,10 @@ import {
   MANDATE_SCHEMA_VERSION,
   MANDATE_STARTING_CAPITAL,
   MANDATE_DECISION_VERBS,
+  MANDATE_DECISION_TICKER_MAX_CHARS,
+  MANDATE_DECISION_FAIL_CONDITION_MAX_CHARS,
 } from './mandateConfig.js';
-import { boundRationale, convictionDiagnosticOf, RATIONALE_AT_BASES } from './mandateRationale.js';
+import { boundRationale, convictionDiagnosticOf, capStoredString, RATIONALE_AT_BASES } from './mandateRationale.js';
 
 // ── Enums / contracts ────────────────────────────────────────────────────────
 
@@ -275,7 +277,9 @@ export function buildDailyRow({ date, quarterIndex, ...rest } = {}) {
  * store an unbounded or unlabeled reason (mandateRationale.js). Every record
  * without a model reason (lifecycle disposals, result-less terminals) defaults
  * to rationale null / rationaleStatus 'absent' with null attribution; its
- * failCondition says why.
+ * failCondition says why. The size bound holds by construction: the two other
+ * strings a model or provider can lengthen, `ticker` and `failCondition`, are
+ * capped here too (real values never reach the caps; mandateConfig.js).
  */
 export function buildDecision({ decisionId, verb, ticker, ...rest } = {}) {
   const reason = boundRationale(rest.rationale);
@@ -283,7 +287,7 @@ export function buildDecision({ decisionId, verb, ticker, ...rest } = {}) {
     schemaVersion: MANDATE_SCHEMA_VERSION,
     decisionId: decisionId ?? null,
     verb: verb ?? null, // one of DECISION_VERBS
-    ticker: ticker ?? null,
+    ticker: capStoredString(ticker, MANDATE_DECISION_TICKER_MAX_CHARS), // T0b size guard: the model names it
     requestedSizeUsd: rest.requestedSizeUsd ?? null,
     executedSizeUsd: rest.executedSizeUsd ?? null,
     executedShares: rest.executedShares ?? null, // §4.1 — the derived share quantity filled
@@ -305,7 +309,7 @@ export function buildDecision({ decisionId, verb, ticker, ...rest } = {}) {
     // return values only; P5 makes it DURABLE on the doc, because under batch
     // transport the submit context is gone by harvest time and the receipt is
     // the only record. Additive at schemaVersion 1 (the P3/P4 row precedent).
-    failCondition: rest.failCondition ?? null,
+    failCondition: capStoredString(rest.failCondition, MANDATE_DECISION_FAIL_CONDITION_MAX_CHARS), // T0b size guard
     vintageRef: rest.vintageRef ?? null,
     baseRevision: rest.baseRevision ?? null,
     submitTickKey: rest.submitTickKey ?? null, // I3
@@ -321,9 +325,9 @@ export function buildDecision({ decisionId, verb, ticker, ...rest } = {}) {
     rationale: reason.rationale, // the model's text, ≤ MANDATE_RATIONALE_MAX_CHARS, or null
     rationaleStatus: reason.rationaleStatus, // 'present' | 'truncated' | 'absent'
     convictionDiagnostic: convictionDiagnosticOf(rest.convictionDiagnostic), // self-reported 0–100; diagnostic, never a probability
-    modelId: rest.modelId ?? null, // the pinned seat's model id; null = no model response behind this record
+    modelId: rest.modelId ?? null, // the pinned seat's model id; null = no model response stood behind this record when it was written
     generationConfigVersion: rest.generationConfigVersion ?? null, // content address of the pinned model seat
-    rationaleAt: rest.rationaleAt ?? null, // when the response arrived (see rationaleAtBasis)
+    rationaleAt: rest.rationaleAt ?? null, // the response time; rationaleAtBasis says which clock
     rationaleAtBasis: RATIONALE_AT_BASES.includes(rest.rationaleAtBasis) ? rest.rationaleAtBasis : null,
     status: rest.status ?? null, // one of DECISION_STATUSES
   };
