@@ -7,7 +7,7 @@
 // Firestore's 1 MiB limit. Path-level cases (direct and batch) live with
 // their transports: mandate-evaluate.test.js and mandateBatchTransport.test.js.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   boundRationale,
   convictionDiagnosticOf,
@@ -113,10 +113,21 @@ describe('boundRationale — present / absent / truncated', () => {
   });
 
   it('the cut costs the same on a huge input: only a prefix is segmented, with the same boundaries', () => {
+    // Whole-string ICU segmentation took 3.5 s on Node 20 (2M units, inside the
+    // execution transaction). Pinned by WHAT is segmented, not by a clock, so
+    // the row holds on every Node version and on a stalled runner.
     const big = `${'Reason with é and 👨‍👩‍👧 inside. '.repeat(60_000)}`; // ~2.4M units
-    const started = performance.now();
-    const out = boundRationale(big);
-    expect(performance.now() - started).toBeLessThan(500); // whole-string ICU segmentation took 3.5 s on Node 20
+    const spy = vi.spyOn(Intl.Segmenter.prototype, 'segment');
+    let out;
+    let segmented;
+    try {
+      out = boundRationale(big);
+      segmented = spy.mock.calls.map(([text]) => text.length);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(segmented.length).toBeGreaterThan(0); // the grapheme path ran
+    for (const n of segmented) expect(n).toBeLessThanOrEqual(MANDATE_RATIONALE_MAX_CHARS + 2);
     const kept = graphemes(out.rationale);
     expect(kept).toEqual(graphemes(big.slice(0, MANDATE_RATIONALE_MAX_CHARS + 40)).slice(0, kept.length));
     expect(out.rationale.length).toBeLessThanOrEqual(MANDATE_RATIONALE_MAX_CHARS);
