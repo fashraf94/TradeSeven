@@ -76,7 +76,7 @@ import cardHandler from '../../../api/film-room/card.js';
 import { setPracticeFieldSeam, resetPracticeFieldSeam } from '../../../api/_utils/filmRoom/practiceFieldSeam.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
-import { ledgerOf, latestOf } from './filmRoomCards';
+import { ledgerOf, latestOf, chainOf } from './filmRoomCards';
 import { setRuleOf, setStateOf, YourCall, Receipt } from './FilmRoomCardRegions';
 import { FILM_ROOM_COPY } from './filmRoomCopy';
 const COPY_CARDS = FILM_ROOM_COPY.cards;
@@ -2072,5 +2072,64 @@ describe('C1 review — the mutating lens\'s survivors on the screen', () => {
     m.click(m.buttons('Park this card')[0]);
     await m.flush(2);
     expect(m.q('[data-card-refusal]').textContent).toBe('The card could not be parked.');
+  });
+});
+
+// ── C1 fix round, Astra F3 — an unknown first history row draws no "Filed" line (criteria 3 and 11) ────────────────
+describe('C1 fix round F3 — the chain recognises a create row by its shape, never by its index alone', () => {
+  const at = (hm) => `${D2}T${hm}:00.000Z`;
+  const card = (stageHistory, over = {}) => ({ entryId: 'e1', route: 'watch', stage: 'card', stageHistory, ...over });
+  const kindsOf = (c) => chainOf(c).map((l) => l.kind);
+
+  it("Astra's repro, through the real handler and counter: a card filed at 16:00Z (12:00 PM ET), its first row replaced by an unknown event at 17:00Z — the receipt draws no \"Filed · 1:00 PM\", no chain line at all, while the note credit still says 12:00 PM (the mutant: an unknown first row drawn as Filed)", async () => {
+    await atClock('2026-09-25T16:00:00.000Z', async () => {
+      await open();
+      m.click(m.buttons('Take this home')[0]);
+      await m.flush();
+      await fileCard({ note: 'Let it go sooner.' });
+    });
+    // the control: as filed, the receipt says Filed at 12:00 PM, and the note's credit the same
+    const filed = m.q('[data-card-receipt]');
+    expect(filed.querySelector('[data-chain-line="filed"]').textContent).toBe('Filed · 12:00 PM');
+    expect(filed.querySelector('[data-quotation="you"] [data-quote-attribution]').textContent).toContain('12:00 PM');
+    const path = `agents/${AGENT}/plays/op_1`;
+    t.store.set(path, { ...t.store.get(path), stageHistory: [{ event: 'unknown', at: '2026-09-25T17:00:00.000Z', by: 'server', writer: 'practice_field' }] });
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+    const r = m.q('[data-card-receipt]');
+    expect(r.textContent).not.toContain('Filed · 1:00 PM');
+    expect(r.querySelector('[data-chain-line]')).toBeNull();
+    expect(r.querySelector('[data-quotation="you"] [data-quote-attribution]').textContent).toContain('12:00 PM');
+    // and no entry in "Since last time" for a card whose history the chain does not know
+    expect(m.q(`[data-latest-line="op_1"]`)).toBeNull();
+  });
+
+  it('chainOf (pure): an unknown event at index zero gives no line and no latest entry; a server row at index zero is no create', () => {
+    expect(chainOf(card([{ event: 'unknown', at: at('17:00'), by: 'server', writer: 'practice_field' }]))).toEqual([]);
+    expect(chainOf(card([{ stage: 'card', event: 'unknown', at: at('17:00'), by: 'player' }]))).toEqual([]);
+    expect(chainOf(card([{ stage: 'card', at: at('17:00'), by: 'server', writer: 'practice_field' }]))).toEqual([]);
+    expect(chainOf(card([{ stage: 'retired', at: at('17:00'), by: 'player' }]))).toEqual([{ kind: 'retired', at: at('17:00'), k: 0, by: 'player' }]);
+    expect(latestOf([card([{ event: 'unknown', at: at('17:00'), by: 'server' }], { stage: 'nominated', route: 'offer' })])).toEqual([]);
+  });
+
+  it('kept: the valid Watch, Set and Offer first rows, the v1 drill first row, and "time not recorded" for a recognisable row with no time', () => {
+    expect(kindsOf(card([{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }]))).toEqual(['filed']);
+    expect(kindsOf(card([{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }], { route: 'set' }))).toEqual(['filed']);
+    expect(kindsOf(card([{ stage: 'nominated', at: at('20:00'), by: 'player', opId: 'e1' }], { route: 'offer', stage: 'nominated' }))).toEqual(['offered', 'filed']);
+    expect(kindsOf(card([{ stage: 'nominated', at: at('20:00'), by: 'player', opId: 'e1' }], { route: 'drill', stage: 'nominated' }))).toEqual(['stage', 'filed']);
+    expect(chainOf(card([{ stage: 'card', by: 'player', opId: 'e1' }]))).toEqual([{ kind: 'filed', at: undefined, k: 0 }]);
+    // a `card` row past the first is no create and no line
+    expect(kindsOf(card([{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }, { stage: 'card', at: at('20:10'), by: 'player', opId: 'e2' }]))).toEqual(['filed']);
+  });
+
+  it('a recognisable create row with no time renders "Filed · time not recorded", never an instant', async () => {
+    const c = { ...card([{ stage: 'card', by: 'player', opId: 'e1' }]), ownerId: OWNER, agentId: AGENT, createdAt: at('20:00'), situationId: 'stalled', source: { battleId: B, etDate: D2, symbol: 'ACN' }, questionId: 'stalled.want', note: 'A note.', version: 1 };
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [c] } }} card={c} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} />);
+    await m.flush(2);
+    const line = m.q('[data-chain-line="filed"]');
+    expect(line.textContent).toBe('Filed · time not recorded');
+    expect(line.querySelector('[data-time]')).toBeNull();
   });
 });

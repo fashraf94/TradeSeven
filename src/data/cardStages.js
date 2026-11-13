@@ -63,3 +63,9 @@ export const routeOf = (route) => (Object.prototype.hasOwnProperty.call(STORED_R
 
 /** The route that files its card at `nominated`, its nomination record written in the same transaction (spec §4). */
 export const NOMINATING_ROUTE = 'offer';
+
+/**
+ * C1 fix round, Astra F3 — the stages a CREATE writes its first history row at: `card` (Watch, Set) or `nominated` (the
+ * Offer route; a v1 Practice entry). The chain recognises a create row by this shape, never by its index alone.
+ */
+export const CREATE_ROW_STAGES = Object.freeze(['card', 'nominated']);

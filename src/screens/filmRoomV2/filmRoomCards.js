@@ -28,7 +28,7 @@ import { getAuth } from 'firebase/auth';
 import { readFilmRoomVerdict, resolveFilmRoomCardsForBattle, filmRoomBattleId } from '../../utils/filmRoomGate';
 import { momentsOf, momentAnchor } from '../../utils/filmRoomMoments';
 // Build C §3: the stage vocabulary v2, from its one export (the store reads the same module)
-import { CARD_STAGES, STORED_ROUTE_ALIASES, isOpenStage, isFollowedWatch } from '../../data/cardStages';
+import { CARD_STAGES, CREATE_ROW_STAGES, STORED_ROUTE_ALIASES, isOpenStage, isFollowedWatch } from '../../data/cardStages';
 import { numberAt } from './filmRoomModel';
 
 export const FILM_ROOM_CARD_PATH = '/api/film-room/card';
@@ -179,7 +179,10 @@ export function groupCards(cards) {
 /**
  * Build C §5 — THE CHAIN of one card, newest first: one line per row of the entry's own `stageHistory` (what the
  * ledger holds, and nothing it does not — exit criterion 11), each `{ kind, at, k }` (k: the row's index):
- *   filed      the first row (the create) — and `offered` beside it when the create was the Offer route's (`nominated`)
+ *   filed      the create's row, recognised by its SHAPE (C1 fix round, Astra F3 — isCreateRow), never by its index
+ *              alone: the first row, no event, not a server's, at a stage a create writes (CREATE_ROW_STAGES) — and
+ *              `offered` beside it when the create was the Offer route's (`nominated`). A first row that is not one
+ *              (an unknown event, a server's row) is judged as any other row, so it never becomes a "Filed" line
  *   offered    a player row at `nominated` (the nominate op)
  *   stage      on a v1 Practice entry (stored route `drill`, never written in production), its `nominated` row: it was
  *              kept for the Practice Field, never offered to the agent, so it says the stage's own word (C1 review A-7)
@@ -190,6 +193,9 @@ export function groupCards(cards) {
  *   stage      a row at a stage the vocabulary does not know (its own word, `stage`)
  * A row that is not an object, or that names nothing the chain knows, gives no line — the chain never invents a state.
  */
+/** Astra F3: a create's row, by its shape — the first row, no event, not a server's, at a stage a create writes. */
+export const isCreateRow = (h, k) => k === 0 && isObj(h) && h.event === undefined && h.by !== 'server' && CREATE_ROW_STAGES.includes(h.stage);
+
 export function chainOf(card) {
   const history = Array.isArray(card?.stageHistory) ? card.stageHistory : [];
   const lines = [];
@@ -198,7 +204,7 @@ export function chainOf(card) {
   const nominatedLine = (h, k) => (v1Practice ? { kind: 'stage', stage: 'nominated', at: h.at, k } : { kind: 'offered', at: h.at, k });
   history.forEach((h, k) => {
     if (!isObj(h)) return;
-    if (k === 0) {
+    if (isCreateRow(h, k)) {
       lines.push({ kind: 'filed', at: h.at, k });
       if (h.stage === 'nominated') lines.push(nominatedLine(h, k));
       return;
@@ -211,7 +217,9 @@ export function chainOf(card) {
     if (h.event !== undefined) return;   // an event the chain does not know: no line (C1 review B-7)
     if (h.stage === 'nominated') { lines.push(nominatedLine(h, k)); return; }
     if (CARD_STAGES.includes(h.stage) && h.stage !== 'card') { lines.push({ kind: h.stage, at: h.at, k, by: h.by }); return; }
-    if (typeof h.stage === 'string' && h.stage) lines.push({ kind: 'stage', stage: h.stage, at: h.at, k });
+    // a stage the vocabulary does not know: its own word. A `card` row that is not the create's (above) gives no line —
+    // only a create writes `card`, so nothing is invented from one (Astra F3)
+    if (typeof h.stage === 'string' && h.stage && !CARD_STAGES.includes(h.stage)) lines.push({ kind: 'stage', stage: h.stage, at: h.at, k });
   });
   if (lastNomination >= 0) lines[lastNomination] = { ...lines[lastNomination], latest: true };
   return lines.reverse();
