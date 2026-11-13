@@ -133,7 +133,14 @@ export function computeBasketEntry({ idea, snapshot, sessionDate }) {
   });
 
   const vendorTimes = [...ideaReceipts, ...comparison.receipts, ...spy.receipts].map((r) => r.markVendorTimeIso).sort();
+  // A stock whose market cap the entry snapshot did not carry paid the friction model's WIDEST tier (the engine's
+  // fail-conservative rule). That is the letter of "the snapshot's friction for that name", but it is a cost the
+  // matched comparison may not share (review L3-2), so every such leg is named on the idea and its rows.
+  const unknownCostTierLegs = [
+    ...ideaReceipts.map((r) => ['idea', r]), ...comparison.receipts.map((r) => ['comparison', r]), ...spy.receipts.map((r) => ['spy', r]),
+  ].filter(([, r]) => r.friction.capTier === 'unknown').map(([ledger, r]) => ({ ledger, symbol: r.symbol }));
   return {
+    unknownCostTierLegs,
     ledger, comparisonLedger: comparison.ledger, spyLedger: spy.ledger,
     receipts: { idea: ideaReceipts, comparison: comparison.receipts, spy: spy.receipts },
     lines, startMarkAt: vendorTimes[0] ?? null,
@@ -148,6 +155,8 @@ export function computeBasketEntry({ idea, snapshot, sessionDate }) {
 export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso }) {
   // 'off': no Practice Field code path runs, whoever calls. Before any read.
   if (!practiceFieldLive()) return { outcome: 'practice_field_off' };
+  // The snapshot must be THIS slot's own (review L3-6): never a close snapshot or another slot's handed in beside the tick.
+  if (!snapshot || snapshot.tickKey !== tick.tickKey) throw new PracticeFieldError('entry_snapshot_mismatch', { tickKey: tick.tickKey, snapshotKey: snapshot?.tickKey ?? null });
   const ideaRef = bookRef.collection('ideas').doc(ideaId);
   const coverageDocRef = coverageRefOf(db);
 
@@ -190,15 +199,25 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
       const mark = eligibleMark(snapshot, symbol, { notBeforeIso: idea.admittedAt, sessionDate: tick.date });
       if (!mark.ok) refusals.push({ symbol, refusal: mark.refusal });
     }
-    if (refusals.length > 0) {
-      const attempt = { tickKey: snapshot?.tickKey ?? tick.tickKey, slot: tick.slot, at: nowIso, refusals };
-      if (isLastIdeaEntrySlot(tick.slot)) return { ...cancel(attempt), refusals };
+    // A slot that cannot fill: the attempt is recorded and the idea waits — or, at the session's last entry slot, times out.
+    const deferOrCancel = (why) => {
+      const attempt = { tickKey: snapshot?.tickKey ?? tick.tickKey, slot: tick.slot, at: nowIso, refusals: why };
+      if (isLastIdeaEntrySlot(tick.slot)) return { ...cancel(attempt), refusals: why };
       tx.update(ideaRef, { lastEntryAttempt: attempt });
-      return { outcome: 'waiting', refusals };
-    }
+      return { outcome: 'waiting', refusals: why };
+    };
+    if (refusals.length > 0) return deferOrCancel(refusals);
 
-    // Every leg has an eligible mark: fill both sides (a failure in here aborts the transaction).
-    const entry = computeBasketEntry({ idea, snapshot, sessionDate: tick.date });
+    // Every leg has an eligible mark: fill both sides. Nothing has been written yet, so a leg the engine itself
+    // cannot fill (review L1-1) is one more failed attempt, all-or-nothing like a missing mark; any other failure
+    // aborts the transaction.
+    let entry;
+    try {
+      entry = computeBasketEntry({ idea, snapshot, sessionDate: tick.date });
+    } catch (err) {
+      if (!isPracticeFieldError(err, 'fill_refused')) throw err;
+      return deferOrCancel([{ symbol: err.detail.symbol, refusal: `fill_refused:${err.detail.reason}` }]);
+    }
 
     // The book's side, booked from the fills' own receipts.
     const positions = { ...(book.portfolio.positions || {}) };
@@ -251,6 +270,7 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
       entry: {
         sessionDate: tick.date, slot: tick.slot, snapshotKey: snapshot.tickKey ?? tick.tickKey,
         filledAt: nowIso, startMarkAt: entry.startMarkAt,
+        unknownCostTierLegs: entry.unknownCostTierLegs,
       },
       lastEntryAttempt: null,
       revision: (idea.revision || 0) + 1,
@@ -282,6 +302,7 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
         spy: openingMarkedValue(entry.spyLedger, snapshot),
       },
       origin: idea.contract.origin,
+      unknownCostTierLegs: entry.unknownCostTierLegs,
       lines: entry.lines.map(({ symbol, level, distancePct, fillPrice }) => ({ symbol, level, distancePct, fillPrice })),
       writtenAt: nowIso,
     };

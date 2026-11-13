@@ -4,10 +4,12 @@
 // reached ONLY when the mode is not 'off' and an idea book is in play:
 //
 //   practiceFieldBuildInputs   what the shared snapshot build must cover for idea books: every reserved coverage
-//                              symbol beside the held tickers (the builder treats both as held — never dropped
-//                              for the cap or the size budget), the funds' static classifications (no fundamentals
-//                              lookup for a fund), and — when no quarterly book is active — NO default candidate
-//                              universe and no candidate floor (a small idea-book universe is not "degraded").
+//                              symbol and every symbol an idea book holds, handed to the builder as COVERAGE
+//                              (never dropped for the cap or the size budget, and never a quarterly candidate
+//                              or a quarterly holding — review L2-1, L2-3), the funds' static classifications
+//                              (no fundamentals lookup for a fund), and — when no quarterly book is active — NO
+//                              default candidate universe and no candidate floor (a small idea-book universe is
+//                              not "degraded").
 //
 //   runIdeaBookEvalPass        the eval handler's idea-book pass: basket entry by code at the entry slots
 //                              (windows.js). Its own equality query (`status == 'active'`, `kind == 'idea_book'` —
@@ -30,17 +32,17 @@ const LOG_PREFIX = '[PracticeFieldSweep]';
 /**
  * The snapshot builders' inputs when at least one idea book is active.
  *
- * @param {{ heldTickers: string[], quarterlyActive: boolean }} args
- * @returns {Promise<{ heldTickers: string[], daily: object, tick: object, coverageCount: number }>}
+ * @param {{ ideaHeldTickers: string[], quarterlyActive: boolean }} args  what the active idea books hold
+ * @returns {Promise<{ daily: object, tick: object, coverageCount: number }>}
  */
-export async function practiceFieldBuildInputs(db, { heldTickers, quarterlyActive }) {
+export async function practiceFieldBuildInputs(db, { ideaHeldTickers = [], quarterlyActive }) {
   const snap = await coverageRefOf(db).get();
   const reserved = coverageSymbols(snap.exists ? snap.data() : null);
+  const coverageTickers = [...new Set([...ideaHeldTickers, ...reserved])];
   const withoutDefault = quarterlyActive ? {} : { candidateUniverse: [] };
   return {
-    heldTickers: [...new Set([...(heldTickers || []), ...reserved])],
-    daily: { ...withoutDefault, staticClassifications: fundStaticClassifications() },
-    tick: quarterlyActive ? {} : { ...withoutDefault, minCandidateCapacity: 0 },
+    daily: { ...withoutDefault, coverageTickers, staticClassifications: fundStaticClassifications() },
+    tick: { ...withoutDefault, coverageTickers, ...(quarterlyActive ? {} : { minCandidateCapacity: 0 }) },
     coverageCount: reserved.length,
   };
 }
@@ -78,8 +80,10 @@ export async function runIdeaBookEvalPass(db, { tick, snapshot, now = new Date()
       out.waiting += res.waiting;
       out.cancelled += res.cancelled;
       out.errors += res.errors;
+      // The within-slot stamp — ONLY for a pass with no error (review L3-1): the pass bills nothing, so a
+      // transient failure is retried by the slot's next fire instead of costing the idea its last entry slot.
       // Bookkeeping, not money: no revision bump (the engine's own stamps are written the same way).
-      await bookRef.set({ execState: { lastIdeaTickKey: tick.tickKey } }, { merge: true });
+      if (res.errors === 0) await bookRef.set({ execState: { lastIdeaTickKey: tick.tickKey } }, { merge: true });
     } catch (err) {
       out.errors += 1;
       console.error(`${LOG_PREFIX} idea book ${bookRef.id} pass failed at ${tick.tickKey}: ${err.message}`);

@@ -28,7 +28,7 @@
 // over-budget prompt.
 
 import { markBook } from './mandateValuation.js';
-import { classifyHeldFreshness } from './mandateUniverseSnapshot.js';
+import { classifyHeldFreshness, isCoverageOnly } from './mandateUniverseSnapshot.js';
 import { buildContextBlock } from './mandateContextBlock.js';
 import { buildMandateDecisionTool } from './mandateDecisionTool.js';
 import {
@@ -105,6 +105,7 @@ function buildCandidateSlate(snapshot, heldSet, limit) {
   for (const [sym, e] of Object.entries(snapshot?.symbols || {})) {
     if (heldSet.has(sym)) continue;
     if (!e.complete) continue;
+    if (isCoverageOnly(snapshot, sym)) continue; // another product's coverage is never a candidate (Practice Field T1a-1)
     out.push({ ticker: sym, price: e.price, sector: e.sector || 'unknown' });
     if (out.length >= limit) break;
   }

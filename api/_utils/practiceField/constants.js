@@ -30,6 +30,14 @@ export const COMPARISON_TYPES = Object.freeze(['same_stock_held', 'sector_fund',
 /** A frozen basket lists 2–8 universe stocks, fixed at admission. */
 export const FROZEN_BASKET_SIZE = Object.freeze({ min: 2, max: 8 });
 
+/**
+ * The smallest planned leg, USD (review L1-1). The engine fills in millionths of a share, so a leg must be able to
+ * buy at least one millionth at any price the universe can show: $1 does up to $1,000,000 a share. A smaller leg
+ * could never fill (the all-or-nothing entry would time out) or would leave a holding a later reverse split
+ * rounds to nothing. A builder's guard, not a founder slot.
+ */
+export const MIN_LEG_USD = 1;
+
 /** The fixed phrase naming the question each comparison answers (contract §4.1). */
 export const COMPARISON_QUESTIONS = Object.freeze({
   same_stock_held: 'Did managing these stocks beat simply holding the same shares?',

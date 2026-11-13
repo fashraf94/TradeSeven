@@ -68,6 +68,19 @@ describe('eligibleMark — the only source of a fill price for an idea book', ()
     expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(10, 21) } }), 'AAPL', opts(decision)).ok).toBe(true);
   });
 
+  it('a price that is not a real positive number is no quote; a vendor time that is not epoch seconds is no vendor time (review L3-5)', () => {
+    for (const bad of ['231.47', true, Infinity, -1, NaN]) {
+      const s = snap({ AAPL: 231.47 }); s.symbols.AAPL.price = bad;
+      expect(eligibleMark(s, 'AAPL', opts()).refusal, String(bad)).toBe('no_quote');
+      expect(closeMarkQuality(s.symbols.AAPL, D).quality, String(bad)).toBe('carried_forward');
+    }
+    for (const bad of [0, -5, Date.parse(at(12, 30)), 1e13, Infinity, '1794849000']) { // zero, negative, MILLISECONDS, absurd, a string
+      const s = snap({ AAPL: 231.47 }); s.symbols.AAPL.quoteTs = bad;
+      expect(eligibleMark(s, 'AAPL', opts()).refusal, String(bad)).toBe('receipt_time_only');
+      expect(closeMarkQuality(s.symbols.AAPL, D).quality, String(bad)).toBe('receipt_time_fallback');
+    }
+  });
+
   it('refuses to run without a decision instant or off the maintained calendar (never a guess)', () => {
     expect(() => eligibleMark(snap({ AAPL: 231.47 }), 'AAPL', { sessionDate: D })).toThrow(/notBeforeIso/);
     expect(() => eligibleMark(snap({ AAPL: 231.47 }), 'AAPL', { notBeforeIso: at(10, 0), sessionDate: '2026-11-15' })).toThrow(/not a trading session/); // Sunday

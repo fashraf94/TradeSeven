@@ -126,9 +126,12 @@ export function buildIdeaBookDoc({
     throw new Error('buildIdeaBookDoc: bookId, userId, attributionAgentId, archetypeCodeId and epochId are required');
   }
   const { archetypeIdentityVersion } = buildIdeaBookGateConfig(archetypeCodeId);
-  // The engine's portfolio block, without its quarter lens (absent, not zero).
-  // eslint-disable-next-line no-unused-vars
-  const { quarterHighWaterMark, quarterDrawdownFromPeak, ...portfolio } = buildPortfolioBlock(startingCapital);
+  // The engine's portfolio block, without its quarter lens and without the fields no idea-book pass maintains (the
+  // lifetime high-water lens, the sector weights): absent, never zero and never stale (review L1-10).
+  const {
+    quarterHighWaterMark: _qh, quarterDrawdownFromPeak: _qd, lifetimeHighWaterMark: _lh, lifetimeDrawdownFromPeak: _ld, sectorWeights: _sw,
+    ...portfolio
+  } = buildPortfolioBlock(startingCapital);
   return {
     schemaVersion: MANDATE_SCHEMA_VERSION,
     kind: IDEA_BOOK_KIND,
@@ -229,7 +232,11 @@ export async function createIdeaBook(db, { uid, attributionAgentId, archetypeCod
     const claim = claimSnap.exists ? claimSnap.data() : null;
     if (claim && typeof claim.bookId === 'string' && claim.bookId.length > 0) {
       // A replay of THIS creation returns the book it already made; anything else meets the one-open-book rule.
-      if (claim.createOpId === opId && claim.bookId === bookId) return { ok: true, bookId, epochId: claim.epochId ?? epochId, idempotentReplay: true };
+      if (claim.createOpId === opId && claim.bookId === bookId) {
+        // The same operation asking for a different book (another archetype or agent) is a conflict, not a replay.
+        if (claim.attributionAgentId !== attributionAgentId || claim.archetypeCodeId !== archetypeCodeId) return { ok: false, code: 'op_id_conflict', bookId };
+        return { ok: true, bookId, epochId: claim.epochId ?? epochId, idempotentReplay: true };
+      }
       return { ok: false, code: 'open_book_exists', bookId: claim.bookId };
     }
     // The same owner and operation once made a book that has since closed: never a second book under one id.

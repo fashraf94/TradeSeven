@@ -381,7 +381,7 @@ export async function disposeSubmission(db, {
       // terminals are non-owning and never stamp. Repair it here, under the
       // same revision discipline.
       const bookHeal = await tx.get(mandateRef);
-      if (bookHeal.exists && (bookHeal.data().execState?.openBatchId ?? null) === requestId) {
+      if (bookHeal.exists && !isIdeaBook(bookHeal.data()) && (bookHeal.data().execState?.openBatchId ?? null) === requestId) {
         tx.update(mandateRef, {
           revision: (bookHeal.data().revision || 0) + 1,
           ...clearedOpenSubmissionPatch(),

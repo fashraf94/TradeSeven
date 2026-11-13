@@ -148,8 +148,9 @@ describe('the idea book document and its epoch', () => {
     for (const f of ['quarterIndex', 'quarterKey', 'nextRolloverAt', 'escapeHatchEligibleUntil', 'cadenceTier', 'vintageRef', 'quarterStartAt', 'managerAgentId', 'scoring']) {
       expect(Object.hasOwn(b, f), f).toBe(false);
     }
-    expect(Object.hasOwn(b.portfolio, 'quarterHighWaterMark')).toBe(false);
-    expect(Object.hasOwn(b.portfolio, 'quarterDrawdownFromPeak')).toBe(false);
+    // The portfolio keeps what the idea book maintains, and nothing it does not (review L1-10): no quarter lens, no
+    // lifetime lens, no sector weights.
+    expect(Object.keys(b.portfolio).sort()).toEqual(['cash', 'initialValue', 'positions', 'totalValue']);
   });
 
   it('the epoch freezes the gate limits through T0a\'s corrected translation, with the cash floor replaced by B2', () => {
@@ -207,6 +208,14 @@ describe('createIdeaBook', () => {
     const replay = await createIdeaBook(db, args({ nowIso: etIso(DAYS.d1, 9, 0) }));
     expect(replay).toEqual({ ok: true, bookId: first.bookId, epochId: 'epoch-0001', idempotentReplay: true });
     expect([...db._store.keys()].map((p) => [p, db._versionOf(p)])).toEqual(versions);
+  });
+
+  it('the same opId asking for a different book — another archetype, another agent — is a conflict, not a replay (review L1-3)', async () => {
+    const db = makeMandateFakeDb();
+    const first = await createIdeaBook(db, args());
+    expect(await createIdeaBook(db, args({ archetypeCodeId: 'degen' }))).toEqual({ ok: false, code: 'op_id_conflict', bookId: first.bookId });
+    expect(await createIdeaBook(db, args({ attributionAgentId: 'agent-other' }))).toEqual({ ok: false, code: 'op_id_conflict', bookId: first.bookId });
+    expect(db._get(`mandates/${first.bookId}`)).toMatchObject({ archetypeCodeId: 'momentum_chaser', attributionAgentId: 'agent-ranked-1' });
   });
 
   it('refuses a second open book for the owner, an unknown archetype and a casual clone as the attribution agent', async () => {

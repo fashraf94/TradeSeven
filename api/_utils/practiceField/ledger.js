@@ -112,6 +112,9 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
     if (!APPLICABLE_TYPES.has(action.type)) { unresolved.add(action.ticker); continue; }
     const out = applyCorporateAction({ positions: next.holdings, cash: next.cash }, action);
     if (!out.ok) { unresolved.add(action.ticker); continue; }
+    // A share-basis action that would round a holding to nothing is not applied (review L1-1): the symbol is held at
+    // its carried mark, not full quality, until T1a-2's policy decides it — never a holding of zero shares with a basis.
+    if (SHARE_BASIS_TYPES.has(action.type) && !(Number(out.positions[action.ticker]?.shares) > 0)) { unresolved.add(action.ticker); continue; }
     next.holdings = out.positions;
     next.cash = out.cash;
     next.dividendsUsd = addUsd(next.dividendsUsd, out.incomeUsd);

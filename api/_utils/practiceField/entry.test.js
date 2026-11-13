@@ -68,7 +68,7 @@ describe('B-ENTER — a four-name idea fills its basket by code at the first eli
     const idea = getIdea(db, bookId, r.ideaId);
     expect(idea.status).toBe('holding');
     expect(idea.statusHistory.map((h) => h.status)).toEqual(['accepted', 'entering', 'holding']);
-    expect(idea.entry).toEqual({ sessionDate: DAYS.d1, slot: 'open30', snapshotKey: `${DAYS.d1}_open30`, filledAt: nowAt(DAYS.d1, 'open30'), startMarkAt: etIso(DAYS.d1, 9, 45) });
+    expect(idea.entry).toEqual({ sessionDate: DAYS.d1, slot: 'open30', snapshotKey: `${DAYS.d1}_open30`, filledAt: nowAt(DAYS.d1, 'open30'), startMarkAt: etIso(DAYS.d1, 9, 45), unknownCostTierLegs: [] });
 
     // Each leg: $5,000.00 planned, shares floored to 6 dp at mark + friction, cost in whole cents, never above the plan.
     let costCents = 0;
@@ -205,6 +205,25 @@ describe('the comparison and SPY: same capital, same snapshot, same cost policy'
     const row = db._get(`mandates/${bookId}/ideas/${r.ideaId}/rows/inception`);
     expect(row.legs.idea[0].friction).toMatchObject({ slippageBps: 5, spreadProxyBps: 15, capTier: 'unknown' });
     expect(row.legs.spy[0].friction.capTier).toBe('fund:liquid_fund');
+    // …and that leg is NAMED, on the idea and on its inception row: the matched comparison did not pay that cost (review L3-2).
+    expect(idea.entry.unknownCostTierLegs).toEqual([{ ledger: 'idea', symbol: 'AAPL' }, { ledger: 'comparison', symbol: 'AAPL' }]);
+    expect(row.unknownCostTierLegs).toEqual(idea.entry.unknownCostTierLegs);
+  });
+
+  it('a missing market cap on ONE side shows on every later row: `entryCostTiersKnown` is false, and `fullQuality` keeps its own meaning', async () => {
+    const { db, bookId } = await seedBook();
+    // The idea's name has no market cap on the entry snapshot (20 bps); its sector fund pays the fund tier (3 bps).
+    const r = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'], comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: { AAPL: PX.AAPL, SPY: PX.SPY, XLK: PX.XLK } });
+    expect(getIdea(db, bookId, r.ideaId).entry.unknownCostTierLegs).toEqual([{ ledger: 'idea', symbol: 'AAPL' }]);
+    await closeIdeaBook(db, db.collection('mandates').doc(bookId), { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, { AAPL: PX.AAPL, SPY: PX.SPY, XLK: PX.XLK }), now: new Date(etIso(DAYS.d1, 16, 25)) });
+    const row = db._get(`mandates/${bookId}/ideas/${r.ideaId}/rows/${DAYS.d1}`);
+    expect(row.markedGapUsd).toBeLessThan(-30); // closed at the entry prices: the whole gap is the cost difference
+    expect(row).toMatchObject({ entryCostTiersKnown: false, fullQuality: true });
+    // With the market cap present the same idea shows no gap and says so.
+    const ok = await seedBook({ uid: 'owner-2' });
+    const r2 = await admitAndEnter(ok.db, ok.bookId, { contract: contractOf({ names: ['AAPL'], comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: q('AAPL', 'SPY', 'XLK') });
+    await closeIdeaBook(ok.db, ok.bookRef, { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, { AAPL: PX.AAPL, SPY: PX.SPY, XLK: PX.XLK }), now: new Date(etIso(DAYS.d1, 16, 25)) });
+    expect(ok.db._get(`mandates/${ok.bookId}/ideas/${r2.ideaId}/rows/${DAYS.d1}`)).toMatchObject({ entryCostTiersKnown: true, markedGapUsd: 0 });
   });
 });
 
@@ -280,11 +299,39 @@ describe('B-FILL and all-or-nothing', () => {
     expect(getBook(ctx.db, ctx.bookId).treasury.unreservedCash).toBe(100000);
   });
 
-  it('an invariant failure inside the fill aborts the whole transaction: no ledger, no position, no decision', async () => {
+  it('a leg the engine itself cannot fill is a failed attempt like a missing mark: neither side buys, the attempt is recorded, and at the last slot it is the timeout (review L1-1)', async () => {
     const ctx = await admitOne(contractOf({ names: ['AAPL', 'MSFT'] }));
     // A price so high that a $10,000 leg cannot buy one millionth of a share: the engine gates the leg.
+    const unfillable = { ...q('AAPL', 'SPY'), MSFT: { price: 2e10, marketCap: CAP.MSFT } };
+    const bookBefore = JSON.stringify(getBook(ctx.db, ctx.bookId));
+    expect(await enter(ctx, DAYS.d1, 'open30', unfillable)).toEqual({ outcome: 'waiting', refusals: [{ symbol: 'MSFT', refusal: 'fill_refused:size_too_small' }] });
+    expect(JSON.stringify(getBook(ctx.db, ctx.bookId))).toBe(bookBefore);
+    const idea = getIdea(ctx.db, ctx.bookId, ctx.ideaId);
+    expect(idea).toMatchObject({ status: 'accepted', comparisonLedger: null, spyLedger: null, ledger: { cash: 20000, holdings: {} } });
+    expect(idea.lastEntryAttempt).toMatchObject({ slot: 'open30', refusals: [{ symbol: 'MSFT', refusal: 'fill_refused:size_too_small' }] });
+    expect(countDocs(ctx.db, `mandates/${ctx.bookId}/decisions/`)).toBe(0);
+    expect((await enter(ctx, DAYS.d1, 'midday', unfillable)).outcome).toBe('waiting');
+    expect(await enter(ctx, DAYS.d1, 'preClose', unfillable)).toEqual({ outcome: 'cancelled', reason: 'entry_timeout', refusals: [{ symbol: 'MSFT', refusal: 'fill_refused:size_too_small' }] });
+    expect(getBook(ctx.db, ctx.bookId)).toMatchObject({ treasury: { unreservedCash: 100000 }, slots: { short: null }, openIdeaIds: [] });
+  });
+
+  it('a failure that is NOT a refused fill still aborts the whole transaction: no ledger, no position, no decision', async () => {
+    const ctx = await admitOne(contractOf({ names: ['AAPL', 'MSFT'] }));
+    // A stored contract whose line names a symbol the idea does not hold: the fill has no receipt to freeze it at.
+    const ideaRef = ctx.bookRef.collection('ideas').doc(ctx.ideaId);
+    const idea = (await ideaRef.get()).data();
+    await ideaRef.set({ ...idea, contract: { ...idea.contract, lines: [{ symbol: 'NVDA', distancePct: 0.05 }] } });
     const before = JSON.stringify([...ctx.db._store.entries()]);
-    await expect(enter(ctx, DAYS.d1, 'open30', { ...q('AAPL', 'SPY'), MSFT: { price: 2e10, marketCap: CAP.MSFT } })).rejects.toThrow(/fill_refused/);
+    await expect(enter(ctx, DAYS.d1, 'open30', q('AAPL', 'MSFT', 'SPY'))).rejects.toThrow(TypeError);
+    expect(JSON.stringify([...ctx.db._store.entries()])).toBe(before);
+  });
+
+  it('the snapshot must be THIS slot\'s own: a close snapshot, or another slot\'s, handed in beside the tick is refused before any read (review L3-6)', async () => {
+    const ctx = await admitOne(contractOf());
+    const before = JSON.stringify([...ctx.db._store.entries()]);
+    for (const snapshot of [closeSnapshot(DAYS.d1, q('AAPL', 'SPY')), tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), null]) {
+      await expect(enterIdea(ctx.db, { bookRef: ctx.bookRef, ideaId: ctx.ideaId, tick: tickOf(DAYS.d1, 'preClose'), snapshot, nowIso: nowAt(DAYS.d1, 'preClose') })).rejects.toThrow(/entry_snapshot_mismatch/);
+    }
     expect(JSON.stringify([...ctx.db._store.entries()])).toBe(before);
   });
 
@@ -313,10 +360,10 @@ describe('runIdeaBookEntryPass — one book, one slot', () => {
     const tick = tickOf(DAYS.d1, 'open30');
     const now = new Date(nowAt(DAYS.d1, 'open30'));
     expect(await runIdeaBookEntryPass(db, { bookRef, tick: { ...tick, slot: 'lunch' }, snapshot: null, now })).toEqual({ served: false, entered: 0, waiting: 0, cancelled: 0, errors: 0 });
-    // LLY has no quote (waits); XOM's price makes its leg unfillable (an error, isolated); AAPL enters.
+    // LLY has no quote (waits); XOM's price makes its leg unfillable (waits, the attempt recorded); AAPL enters.
     const snapshot = tickSnapshot(DAYS.d1, 'open30', { ...q('AAPL', 'JPM', 'SPY'), XOM: { price: 3e10, marketCap: CAP.XOM } });
     const out = await runIdeaBookEntryPass(db, { bookRef, tick, snapshot, now });
-    expect(out).toEqual({ served: true, entered: 1, waiting: 1, cancelled: 0, errors: 1 });
+    expect(out).toEqual({ served: true, entered: 1, waiting: 2, cancelled: 0, errors: 0 });
     const book = getBook(db, bookId);
     expect(Object.keys(book.portfolio.positions)).toEqual(['AAPL']);
     expect(() => assertReconciled(book, openIdeas(db, bookId))).not.toThrow();
@@ -389,6 +436,26 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     expect(problems(b, ideas)).toEqual(['slot_names_unknown_idea']);
     const neg = clone(book); neg.treasury.unreservedCash = -1;
     expect(problems(neg, ideas)).toContain('treasury_negative_or_missing');
+  });
+
+  it('an open idea must be live, in its own slot, holding exactly what its contract reserved — and every amount a real number (review L1-8)', async () => {
+    const { book, ideas } = await state();
+    let i = clone(ideas); i[1].status = 'cancelled';
+    expect(problems(book, i)).toEqual(['open_idea_not_live']);
+    let b = clone(book); b.slots.medium = null;
+    expect(problems(b, ideas)).toEqual(['idea_not_in_its_slot']);
+    b = clone(book); b.slots.medium = ideas[0].ideaId; // another idea's id in this idea's slot
+    expect(problems(b, ideas)).toEqual(['idea_not_in_its_slot']);
+    i = clone(ideas); i[1].ledger.reservedCapitalUsd = 28999.99; i[1].ledger.cash = 28999.99;
+    expect(problems(book, i)).toEqual(['cash_mismatch', 'reserved_capital_mismatch']);
+    b = clone(book); b.treasury.unreservedCash = NaN;
+    expect(problems(b, ideas)).toContain('treasury_negative_or_missing');
+    b = clone(book); b.portfolio.cash = NaN;
+    expect(problems(b, ideas)).toContain('not_a_number');
+    i = clone(ideas); i[0].ledger.cash = NaN;
+    expect(problems(book, i)).toContain('not_a_number');
+    i = clone(ideas); i[0].ledger.holdings.AAPL.shares = NaN;
+    expect(problems(book, i)).toContain('not_a_number');
   });
 
   it('B-OWNED — a fill for a ticker the book already holds is refused inside the entry transaction', async () => {

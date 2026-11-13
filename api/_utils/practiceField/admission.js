@@ -56,6 +56,18 @@ import {
 const isInstant = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v)) && /T/.test(v);
 const idOk = (v) => typeof v === 'string' && v.length > 0 && v.length <= 200;
 
+/**
+ * What a request's fingerprint covers: what the draft SAID — never a constant this code derives from it (the
+ * comparison's fixed phrase, the slot's length), so a copy edit between a call and its retry is not a conflict.
+ */
+function contractFingerprintInput(contract) {
+  return {
+    thesis: contract.thesis, slot: contract.slot, names: contract.names, weights: contract.weights,
+    comparison: { type: contract.comparison.type, symbols: contract.comparison.symbols },
+    lines: contract.lines, capitalUsd: contract.capitalUsd, origin: contract.origin, sources: contract.sources,
+  };
+}
+
 /** The deterministic idea id for (book, operation). */
 export function ideaIdFor(bookId, opId) {
   return `idea_${createHash('sha256').update(`${bookId}::${opId}`, 'utf8').digest('hex').slice(0, 24)}`;
@@ -171,6 +183,13 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
       limits.push({ constraint: 'position_count', code: 'position_count_exceeded', limitCents: 0, positionsAfter, maxPositions: gate.maxPositions });
     }
 
+    // FAIL CLOSED on a limit that is not a whole number of cents (review L1-7): a missing or malformed number in the
+    // epoch would otherwise compare as NaN and bind nothing.
+    const malformed = limits.filter((l) => !Number.isInteger(l.limitCents));
+    if (malformed.length > 0 || !Number.isInteger(equityCents) || !Number.isInteger(unreservedCents)) {
+      refuse('epoch_config_invalid', { constraints: malformed.map((l) => l.constraint) });
+      for (const l of malformed) l.limitCents = 0;
+    }
     permittedMaxCents = Math.max(0, Math.min(...limits.map((l) => l.limitCents)));
     for (const l of limits) {
       if (capitalCents > l.limitCents) refuse(l.code, { ...publicLimit(l), requestedUsd: contract.capitalUsd });
@@ -263,7 +282,7 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
   const ideaRef = bookRef.collection('ideas').doc(ideaId);
   const coverageDocRef = coverageRefOf(db);
   const ideaRefKey = coverageRef(bookId, ideaId);
-  const opFingerprint = canonicalContentHash({ bookId, contract: shape.contract ?? rawContract ?? null });
+  const opFingerprint = canonicalContentHash({ bookId, contract: shape.contract ? contractFingerprintInput(shape.contract) : (rawContract ?? null) });
 
   return db.runTransaction(async (tx) => {
     const bookSnap = await tx.get(bookRef);
@@ -275,7 +294,7 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
       const prior = existing.data();
       if (prior.opFingerprint !== opFingerprint) return refused([{ code: 'op_id_conflict', ideaId }]);
       return {
-        ok: true, ideaId, idempotentReplay: true,
+        ok: true, ideaId, idempotentReplay: true, status: prior.status, // the idea as it stands NOW: a replay after a timeout says `cancelled`
         startSession: prior.contract.schedule.startSession, dueSession: prior.contract.schedule.dueSession,
         entryNotBefore: prior.contract.schedule.entryNotBefore, permittedMaxUsd: null, binding: [],
       };
@@ -322,7 +341,7 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
     });
     tx.set(coverageDocRef, coverageWithRef(coverageData, ideaRefKey, verdict.coveragePlan, nowIso));
     return {
-      ok: true, ideaId, idempotentReplay: false,
+      ok: true, ideaId, idempotentReplay: false, status: IDEA_STATUS.ACCEPTED,
       startSession: verdict.schedule.startSession, dueSession: verdict.schedule.dueSession,
       entryNotBefore: verdict.schedule.entryNotBefore, permittedMaxUsd: verdict.permittedMaxUsd, binding: verdict.binding,
     };

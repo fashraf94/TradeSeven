@@ -13,7 +13,7 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, getRow, closeSnapshot, tickSnapshot, tickOf, slotOpenIso, etIso, DAYS, ADMIT_ISO,
-  countDocs, makeMandateFakeDb,
+  countDocs, makeMandateFakeDb, takeSeededDbs, saleWordsOnMarkRows, SALE_WORD_KEYS,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, LLY: 7.5e11, AMD: 2.6e11, AVGO: 8.2e11 };
@@ -32,8 +32,13 @@ const keysDeep = (v, out = []) => {
 };
 
 let restoreMode;
-beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); });
-afterEach(() => restoreMode());
+beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); takeSeededDbs(); });
+afterEach(() => {
+  restoreMode();
+  // B-MARK, on EVERY valuation row EVERY test in this file wrote — splits, dividends, carried marks, timeouts,
+  // every comparison type: no row carries a sale's word, and every one says `basis: mark` (review L3-7).
+  for (const db of takeSeededDbs()) expect(saleWordsOnMarkRows(db)).toEqual([]);
+});
 
 describe('a valuation: every ledger marked from the one close snapshot', () => {
   it('writes the idea\'s row and the book\'s row, both `basis: mark`, labelled post_close_snapshot, carrying the snapshot\'s key and build time', async () => {
@@ -80,6 +85,7 @@ describe('a valuation: every ledger marked from the one close snapshot', () => {
       markedPositionsValue: roundUsd(rawHoldings), costsToDateUsd: idea.ledger.costsPaidUsd, positionCount: 2, openIdeaIds: [r.ideaId], fullQuality: true,
     });
     expect(cents(bookRow.markedEquity)).toBe(cents(bookRow.treasuryCash) + cents(bookRow.reservedCash) + cents(bookRow.markedPositionsValue));
+    expect(cents(bookRow.markedEquity)).toBe(cents(bookRow.treasuryCash) + cents(row.markedValue)); // the book's row is the sum of its ideas' rows
     expect(book.portfolio.totalValue).toBe(bookRow.markedEquity);
     // No quarter lens, no scoring stream.
     for (const f of ['quarterIndex', 'quarterDrawdown', 'agencyState', 'regime', 'dayReturnPct']) expect(Object.hasOwn(bookRow, f), f).toBe(false);
@@ -291,6 +297,27 @@ describe('corporate actions: once per ledger', () => {
     expect(countDocs(db, `mandates/${bookId}/decisions/`)).toBe(1); // the entry's own; no CORPORATE_CLOSE
   });
 
+  it('a reverse split that would round a holding to nothing is NOT applied: the book still closes, the symbol is held at its carried mark, and the row is not full quality (review L1-1)', async () => {
+    const { db, bookId } = await seedBook();
+    const lines = [{ symbol: 'AAPL', distancePct: 0.05 }, { symbol: 'MSFT', distancePct: 0.05 }];
+    // The smallest leg admission allows: $1.00 of MSFT is 0.002391 shares; a 1-for-5000 reverse split leaves less than a millionth.
+    const r = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL', 'MSFT'], weights: { AAPL: 0.9999, MSFT: 0.0001 }, capitalUsd: 10000, lines }), quotes: entryQuotes('AAPL', 'MSFT', 'SPY') });
+    expect(r.entry.outcome).toBe('entered');
+    await closeOn(db, bookId, DAYS.d1, { AAPL: 233.11, MSFT: 420.77, SPY: 599.02 });
+    const before = getIdea(db, bookId, r.ideaId);
+    const reverse = { type: 'reverse_split', ticker: 'MSFT', effectiveDate: DAYS.d2, ratio: 1 / 5000, source: 'eodhd_splits' };
+    const out = await closeOn(db, bookId, DAYS.d2, { AAPL: 234.5, MSFT: { price: 2103850, corporateActions: [reverse] }, SPY: 600.1 });
+    expect(out.closed).toBe(true); // the whole book is not held hostage by two cents
+    const idea = getIdea(db, bookId, r.ideaId);
+    expect(idea.ledger.holdings.MSFT.shares).toBe(before.ledger.holdings.MSFT.shares);
+    expect(idea.ledger.appliedActionIds).toEqual([]);
+    const row = getRow(db, bookId, r.ideaId, DAYS.d2);
+    expect(row.marks.MSFT).toMatchObject({ mark: 420.77, quality: 'carried_forward' });
+    expect(row.fullQuality).toBe(false);
+    expect(out.alerts.some((a) => /PRACTICE_FIELD_MARK_HELD_BACK .* MSFT/.test(a))).toBe(true);
+    expect(() => assertReconciled(getBook(db, bookId), [idea])).not.toThrow();
+  });
+
   it('a gap with a split\'s signature and NO feed entry is not trusted: the symbol is valued at its carried mark, not halved', async () => {
     const { db, bookId } = await seedBook();
     const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: entryQuotes('AAPL', 'SPY') });
@@ -360,6 +387,12 @@ describe('B-MARK — an account mark is never reported as a liquidation fill', (
     }
     expect(JSON.stringify(db._get(`mandates/${bookId}/ideas/${a.ideaId}/rows/inception`))).toBe(inceptionBefore); // the fill's own record never changes
     expect(getBook(db, bookId).execState).toMatchObject({ submitted: 0, executed: 0 });
+    // The scan is not vacuous: it sees this run's rows, and it catches a sale's word as a key or as a value.
+    expect([...db._store.values()].filter((e) => e.data?.rowKind === 'valuation').length).toBe(24);
+    expect(saleWordsOnMarkRows(db)).toEqual([]);
+    const planted = makeMandateFakeDb({ 'x/1': { rowKind: 'valuation', basis: 'mark', raw: { exitValueUsd: 1 } }, 'x/2': { rowKind: 'valuation', basis: 'mark', note: 'sold at the close' }, 'x/3': { rowKind: 'valuation', basis: 'fill' } });
+    expect(saleWordsOnMarkRows(planted)).toEqual(['x/1: key exitValueUsd', 'x/2: value', 'x/3: basis fill']);
+    for (const word of ['proceedsUsd', 'realizedGapUsd', 'soldShares', 'liquidationValue', 'saleValue', 'cashedOut', 'exitPrice']) expect(SALE_WORD_KEYS.test(word), word).toBe(true);
   });
 });
 
@@ -408,6 +441,18 @@ describe('B-STAMP — every book is valued from the same snapshot', () => {
     expect(rowA.marks.AAPL).toEqual(rowB.marks.AAPL);
     expect(rowA.spyMarks.SPY).toEqual(rowB.spyMarks.SPY);
     expect(rowA.marks.AAPL.vendorTimeIso).toBe(etIso(DAYS.d1, 16, 0));
+  });
+
+  it('never backwards: a close for a date BEFORE the book\'s last close writes nothing (review L1-9)', async () => {
+    const { db, bookId } = await seedBook();
+    await admitAndEnter(db, bookId, { contract: contractOf(), quotes: entryQuotes('AAPL', 'SPY') });
+    await closeOn(db, bookId, DAYS.d1, { AAPL: 233.11, SPY: 599.02 });
+    await closeOn(db, bookId, DAYS.d2, { AAPL: 234.5, SPY: 600.1 });
+    const versions = [...db._store.keys()].map((p) => [p, db._versionOf(p)]);
+    expect(await closeOn(db, bookId, DAYS.d1, { AAPL: 229.03, SPY: 590.0 })).toEqual({ closed: false, skipped: 'out_of_order', alerts: [] });
+    expect([...db._store.keys()].map((p) => [p, db._versionOf(p)])).toEqual(versions);
+    expect(getBook(db, bookId).execState.lastCloseKey).toBe(DAYS.d2);
+    expect(getBook(db, bookId).portfolio.positions.AAPL.lastMark).toBe(234.5);
   });
 
   it('a close for a book that is not an idea book, or is closed, does nothing', async () => {

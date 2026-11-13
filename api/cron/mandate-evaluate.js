@@ -112,17 +112,23 @@ export async function idleAcquisitionCheck(db, activeSnap) {
  * With NO idea book in play (every fire today, and every fire while
  * PRACTICE_FIELD_MODE is 'off') this is exactly the old computation: the held
  * tickers of the active books, no builder option, no extra read. With an idea
- * book in play it adds the reserved coverage symbols (one read), the funds'
- * static classifications, and drops the default candidate universe (and its
- * health floor) unless a quarterly book is also active.
+ * book in play, `heldTickers` is what the QUARTERLY books hold (as before) and
+ * the idea books' symbols — what they hold and what they have reserved (one
+ * read) — travel as the builder's `coverageTickers`: covered for marks, never
+ * a quarterly candidate. It also adds the funds' static classifications, and
+ * drops the default candidate universe (and its health floor) unless a
+ * quarterly book is also active.
  *
  * @returns {Promise<{ heldTickers: string[], daily: object, tick: object }>}
  */
 export async function snapshotBuildInputs(db, view) {
-  const heldTickers = unionHeldTickers(view.visibleDocs.map((d) => d.data()));
-  if (view.ideaCount === 0) return { heldTickers, daily: {}, tick: {} };
-  const pf = await practiceFieldBuildInputs(db, { heldTickers, quarterlyActive: view.quarterlyCount > 0 });
-  return { heldTickers: pf.heldTickers, daily: pf.daily, tick: pf.tick };
+  const books = view.visibleDocs.map((d) => d.data());
+  if (view.ideaCount === 0) return { heldTickers: unionHeldTickers(books), daily: {}, tick: {} };
+  const pf = await practiceFieldBuildInputs(db, {
+    ideaHeldTickers: unionHeldTickers(books.filter((b) => isIdeaBook(b))),
+    quarterlyActive: view.quarterlyCount > 0,
+  });
+  return { heldTickers: unionHeldTickers(books.filter((b) => !isIdeaBook(b))), daily: pf.daily, tick: pf.tick };
 }
 
 /** The one structured line an idle skip writes (and nothing else). */
@@ -428,9 +434,21 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     // idea's start session has three entry slots under either transport), and
     // not at all while PRACTICE_FIELD_MODE is 'off'. Its counts join the
     // response only when it met a book.
+    // The pass is FENCED from the quarterly sweep (review L2-4): a failure
+    // in it is logged and counted, never thrown into the fire, and a pass
+    // that left an idea book unserved (an error, a lease held) keeps the fire
+    // from claiming `complete`.
+    let ideaPassClean = true;
     if (practiceFieldLive()) {
-      const ideaPass = await runIdeaBookEvalPass(db, { tick, snapshot, now, ownerToken });
-      if (ideaPass.books > 0) summary.ideaBooks = ideaPass;
+      try {
+        const ideaPass = await runIdeaBookEvalPass(db, { tick, snapshot, now, ownerToken });
+        if (ideaPass.books > 0) summary.ideaBooks = ideaPass;
+        ideaPassClean = ideaPass.errors === 0 && ideaPass.leaseSkips === 0;
+      } catch (ideaErr) {
+        ideaPassClean = false;
+        summary.ideaBooks = { failed: true };
+        console.error(`${LOG_PREFIX} PRACTICE_FIELD_PASS_FAILED at ${tick.tickKey} — the quarterly sweep continues: ${ideaErr.message}`);
+      }
     }
 
     // LAST-TICK RULE (§3.3 / F3): the session's final eval tick does not
@@ -440,7 +458,7 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     // transport is untouched: its submit and harvest share the tick, so the
     // "later same-session harvest opportunity" is the tick itself.)
     if (transport === 'batch' && isFinalSessionSlot(tick.slot)) {
-      summary.complete = true;
+      summary.complete = ideaPassClean;
       summary.reason = 'last_tick_no_submit';
       console.log(`${LOG_PREFIX} ${tick.tickKey} is the session's final tick — harvest-only under batch transport (F3)`);
       return res.status(200).json({ ok: true, ...summary });
@@ -747,7 +765,7 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     //    newly-evaluated books means the frontier reached books already served
     //    this slot → complete.
     const harvestClean = !summary.harvest || (summary.harvest.errors === 0 && summary.harvest.leaseSkips === 0);
-    if (newlyEvaluated === 0 && summary.errors === 0 && leaseSkips === 0 && !deferred && harvestClean) {
+    if (newlyEvaluated === 0 && summary.errors === 0 && leaseSkips === 0 && !deferred && harvestClean && ideaPassClean) {
       summary.complete = true;
       console.log(`${LOG_PREFIX} sweep complete for slot ${tick.tickKey} — all active books served`);
     }

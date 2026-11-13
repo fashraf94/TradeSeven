@@ -25,7 +25,7 @@ import {
   PRACTICE_FIELD_ORIGIN_KINDS, PRACTICE_FIELD_INITIATED_BY, PRACTICE_FIELD_SOURCELESS_ORIGIN,
 } from '../../../src/data/practiceFieldSlots.js';
 import {
-  THESIS_MAX_CODE_POINTS, THESIS_AUTHORS, COMPARISON_TYPES, FROZEN_BASKET_SIZE, COMPARISON_QUESTIONS,
+  THESIS_MAX_CODE_POINTS, THESIS_AUTHORS, COMPARISON_TYPES, FROZEN_BASKET_SIZE, COMPARISON_QUESTIONS, MIN_LEG_USD,
 } from './constants.js';
 import { normSymbol, isUniverseStock, isFundSymbol, fundOf, mandateSectorOf } from './symbols.js';
 import { slotSessions } from './windows.js';
@@ -202,6 +202,21 @@ export function normalizeIdeaContract(raw) {
   const capitalUsd = input.capitalUsd;
   const capitalOk = typeof capitalUsd === 'number' && Number.isFinite(capitalUsd) && capitalUsd > 0 && toCents(capitalUsd) / 100 === capitalUsd;
   if (!capitalOk) refuse('capital_invalid');
+
+  // Every planned leg — each name's, and each member's of a frozen basket — must be big enough to fill.
+  if (capitalOk && namesOk && weights) {
+    const minCents = toCents(MIN_LEG_USD);
+    const capitalCents = toCents(capitalUsd);
+    for (const [symbol, cents] of Object.entries(planLegCents({ names, weights }, capitalCents))) {
+      if (cents < minCents) refuse('leg_too_small', { symbol, ledger: 'idea', plannedUsd: cents / 100, minUsd: MIN_LEG_USD });
+    }
+    if (comparison?.type === 'frozen_basket') {
+      for (const [symbol, cents] of Object.entries(planBasketCents(comparison.symbols, capitalCents))) {
+        if (cents < minCents) refuse('leg_too_small', { symbol, ledger: 'comparison', plannedUsd: cents / 100, minUsd: MIN_LEG_USD });
+      }
+    }
+    if (capitalCents < minCents) refuse('leg_too_small', { symbol: null, ledger: 'benchmark', plannedUsd: capitalCents / 100, minUsd: MIN_LEG_USD });
+  }
 
   if (refusals.length > 0) return { contract: null, refusals };
   return {

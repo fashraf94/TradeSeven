@@ -139,7 +139,7 @@ describe('admitIdea — reserving capital and coverage', () => {
     const { db, bookId } = await seedBook();
     const res = await admit(db, bookId, contractOf({ names: ['AAPL', 'MSFT'], comparison: { type: 'sector_fund', symbols: ['XLK'] }, lines: [{ symbol: 'AAPL', distancePct: 0.05 }, { symbol: 'MSFT', distancePct: 0.04 }] }));
     expect(res).toEqual({
-      ok: true, ideaId: ideaIdFor(bookId, 'idea-1'), idempotentReplay: false, startSession: DAYS.d1, dueSession: '2026-12-01',
+      ok: true, ideaId: ideaIdFor(bookId, 'idea-1'), idempotentReplay: false, status: 'accepted', startSession: DAYS.d1, dueSession: '2026-12-01',
       entryNotBefore: { sessionDate: DAYS.d1, slot: 'open30', iso: etIso(DAYS.d1, 10, 0) },
       permittedMaxUsd: 20000, binding: [{ constraint: 'slot_cap', slot: 'short', limitUsd: 20000 }],
     });
@@ -339,6 +339,52 @@ describe('check 7 — capital, with the permitted maximum and every binding cons
     const { sectorCapConversionVersion: _stamp, ...unstamped } = epoch.gateConfig;
     await epochRef.set({ ...epoch, gateConfig: { ...unstamped, sectorConcentrationCap: 2 } });
     expect(codes(await admit(db, bookId, contractOf()))).toEqual(['vintage_uncorrected']);
+  });
+
+  it('a leg too small to fill is refused at admission — a name\'s, a basket member\'s — and a weight that rounds to nothing is no weight (review L1-1)', async () => {
+    const { db, bookId } = await seedBook({ archetypeCodeId: 'degen' });
+    const two = [{ symbol: 'AAPL', distancePct: 0.05 }, { symbol: 'MSFT', distancePct: 0.05 }];
+    // 1 ppm of $5,000 is half a cent: a zero-cent leg.
+    const dust = await admit(db, bookId, contractOf({ names: ['AAPL', 'MSFT'], weights: { AAPL: 0.999999, MSFT: 0.000001 }, capitalUsd: 5000, lines: two }));
+    expect(dust.refusals).toEqual([{ code: 'leg_too_small', symbol: 'MSFT', ledger: 'idea', plannedUsd: 0, minUsd: 1 }]);
+    // A weight below one millionth is not a weight at all.
+    expect(codes(await admit(db, bookId, contractOf({ names: ['AAPL', 'MSFT'], weights: { AAPL: 1, MSFT: 1e-13 }, lines: two })))).toEqual(['weights_invalid']);
+    // Three equal names on two cents; a basket of eight on seven dollars.
+    expect(codes(await admit(db, bookId, contractOf({ names: ['AAPL', 'MSFT', 'NVDA'], capitalUsd: 0.02 }))).filter((c) => c === 'leg_too_small').length).toBe(4); // three names and the benchmark
+    const basket = await admit(db, bookId, contractOf({ names: ['AAPL'], capitalUsd: 7, comparison: { type: 'frozen_basket', symbols: ['NVDA', 'AMD', 'AVGO', 'MSFT', 'ORCL', 'CRM', 'ADBE', 'CSCO'] } }));
+    expect(basket.refusals.map((r) => `${r.code}:${r.ledger}`)).toEqual(Array(8).fill('leg_too_small:comparison'));
+    // The boundary: a $1.00 leg is admitted; $0.99 is not.
+    expect(codes(await admit(db, bookId, contractOf({ names: ['AAPL', 'MSFT'], capitalUsd: 1.98, lines: two }), 'x'))).toEqual(['leg_too_small', 'leg_too_small']);
+    expect((await admit(db, bookId, contractOf({ names: ['AAPL', 'MSFT'], capitalUsd: 2, lines: two }), 'y')).ok).toBe(true);
+    expect(getBook(db, bookId).openIdeaIds).toHaveLength(1);
+  });
+
+  it('a replay answers with the idea as it stands NOW: after a timeout it says cancelled (review L1-2)', async () => {
+    const { db, bookId } = await seedBook();
+    const first = await admit(db, bookId, contractOf());
+    expect(first.status).toBe('accepted');
+    await releaseIdea(db, { bookId, ideaId: first.ideaId, reason: 'entry_timeout', nowIso: etIso(DAYS.d1, 16, 30) });
+    const replay = await admit(db, bookId, contractOf());
+    expect(replay).toMatchObject({ ok: true, idempotentReplay: true, ideaId: first.ideaId, status: 'cancelled' });
+    expect(getBook(db, bookId)).toMatchObject({ treasury: { unreservedCash: 100000 }, slots: { short: null } }); // nothing re-reserved
+  });
+
+  it('an epoch with a missing limit admits NOTHING — it never compares against not-a-number (review L1-7)', async () => {
+    const { db, bookId, bookRef } = await seedBook();
+    const epochRef = bookRef.collection('epochs').doc('epoch-0001');
+    const epoch = (await epochRef.get()).data();
+    for (const strip of [
+      (e) => { const { cashFloorPct: _x, ...g } = e.gateConfig; return { ...e, gateConfig: g }; },
+      (e) => { const { maxSinglePositionWeightPct: _x, ...g } = e.gateConfig; return { ...e, gateConfig: g }; },
+      (e) => ({ ...e, rails: { ...e.rails, slotCapShare: { medium: 0.3, long: 0.4 } } }),
+    ]) {
+      await epochRef.set(strip(epoch));
+      const res = await admit(db, bookId, contractOf({ capitalUsd: 99999.99 }));
+      expect(res.ok).toBe(false);
+      expect(codes(res)).toContain('epoch_config_invalid');
+      expect(res.permittedMaxUsd).toBe(0);
+    }
+    expect(getBook(db, bookId).treasury.unreservedCash).toBe(100000);
   });
 
   it('several failures at once are ALL returned, each typed', async () => {

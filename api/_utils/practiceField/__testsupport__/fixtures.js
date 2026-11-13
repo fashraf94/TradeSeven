@@ -107,10 +107,35 @@ export const DAYS = Object.freeze({
 });
 export const ADMIT_ISO = etIso(DAYS.admit, 11, 0);
 
+/** Every db a test seeded a book into since the last `takeSeededDbs()` — so a suite can scan everything its tests wrote. */
+const SEEDED_DBS = [];
+export function takeSeededDbs() { return SEEDED_DBS.splice(0, SEEDED_DBS.length); }
+
+/** A sale's words. On a valuation row no KEY may carry one (the wider list); no key or value may carry the four the build prompt names. */
+export const SALE_WORD_KEYS = /proceeds|realized|realised|sold|liquidat|sale|cashed|exit/i;
+export const SALE_WORDS = /proceeds|realized|realised|sold|liquidat/i;
+const keysDeep = (v, out = []) => {
+  if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { out.push(k); keysDeep(x, out); }
+  return out;
+};
+/** Every valuation row in a db that carries a sale's word, as `path: word` strings (B-MARK). */
+export function saleWordsOnMarkRows(db) {
+  const out = [];
+  for (const [path, entry] of db._store.entries()) {
+    const d = entry.data;
+    if (!d || d.rowKind !== 'valuation') continue;
+    if (d.basis !== 'mark') out.push(`${path}: basis ${d.basis}`);
+    for (const k of keysDeep(d)) if (SALE_WORD_KEYS.test(k)) out.push(`${path}: key ${k}`);
+    if (SALE_WORDS.test(JSON.stringify(d))) out.push(`${path}: value`);
+  }
+  return out;
+}
+
 /** A fresh in-memory db with one idea book. Returns `{ db, bookId, bookRef }`. */
 export async function seedBook({ uid = 'owner-1', attributionAgentId = 'agent-ranked-1', archetypeCodeId = 'momentum_chaser', opId = 'create-1', nowIso = etIso(DAYS.admit, 9, 0), db = makeMandateFakeDb() } = {}) {
   const res = await createIdeaBook(db, { uid, attributionAgentId, archetypeCodeId, opId, nowIso });
   if (!res.ok) throw new Error(`seedBook: ${res.code}`);
+  if (!SEEDED_DBS.includes(db)) SEEDED_DBS.push(db);
   return { db, bookId: res.bookId, bookRef: db.collection('mandates').doc(res.bookId), uid };
 }
 

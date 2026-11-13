@@ -39,6 +39,11 @@ export const MARK_REFUSAL = Object.freeze({
 
 const refuse = (symbol, refusal) => ({ ok: false, symbol, refusal });
 
+/** A quote's price, only when it is a real positive number (never a string, a boolean or Infinity). */
+const priceOf = (entry) => (entry && typeof entry.price === 'number' && Number.isFinite(entry.price) && entry.price > 0 ? entry.price : NaN);
+/** A vendor observation time in epoch SECONDS, only when it is one (not zero, negative, or milliseconds). */
+const vendorSecondsOf = (entry) => (entry && typeof entry.quoteTs === 'number' && Number.isFinite(entry.quoteTs) && entry.quoteTs > 0 && entry.quoteTs < 1e11 ? entry.quoteTs : null);
+
 /**
  * The eligible mark for `symbol` in `snapshot`, or a typed refusal.
  *
@@ -56,11 +61,12 @@ export function eligibleMark(snapshot, symbol, { notBeforeIso, sessionDate } = {
   if (!session || !session.isTradingDay) throw new TypeError(`eligibleMark: ${String(sessionDate)} is not a trading session on the maintained calendar`);
 
   const entry = sym === null ? null : (snapshot?.symbols?.[sym] ?? null);
-  const price = entry ? Number(entry.price) : NaN;
+  const price = priceOf(entry);
   if (!entry || entry.complete !== true || !(price > 0)) return refuse(sym, MARK_REFUSAL.NO_QUOTE);
 
-  if (typeof entry.quoteTs !== 'number' || !Number.isFinite(entry.quoteTs)) return refuse(sym, MARK_REFUSAL.RECEIPT_TIME_ONLY);
-  const vendorMs = entry.quoteTs * 1000;
+  const vendorSeconds = vendorSecondsOf(entry);
+  if (vendorSeconds === null) return refuse(sym, MARK_REFUSAL.RECEIPT_TIME_ONLY);
+  const vendorMs = vendorSeconds * 1000;
 
   if (entry.carriedForward === true || snapshot?.sessionDate !== sessionDate || etDateOfMs(vendorMs) < sessionDate) {
     return refuse(sym, MARK_REFUSAL.CARRIED_FORWARD);
@@ -68,7 +74,7 @@ export function eligibleMark(snapshot, symbol, { notBeforeIso, sessionDate } = {
   if (vendorMs < session.openMs || vendorMs > session.closeMs) return refuse(sym, MARK_REFUSAL.OUTSIDE_SESSION);
   if (vendorMs <= notBeforeMs) return refuse(sym, MARK_REFUSAL.BEFORE_DECISION);
 
-  return { ok: true, symbol: sym, price, quoteTs: entry.quoteTs, vendorTimeIso: new Date(vendorMs).toISOString() };
+  return { ok: true, symbol: sym, price, quoteTs: vendorSeconds, vendorTimeIso: new Date(vendorMs).toISOString() };
 }
 
 /**
@@ -80,10 +86,11 @@ export function eligibleMark(snapshot, symbol, { notBeforeIso, sessionDate } = {
  * @returns {{ quality: string, vendorTimeIso: string|null }}
  */
 export function closeMarkQuality(entry, sessionDate) {
-  const price = entry ? Number(entry.price) : NaN;
+  const price = priceOf(entry);
   if (!entry || entry.complete !== true || !(price > 0)) return { quality: MARK_QUALITY.CARRIED_FORWARD, vendorTimeIso: null };
-  if (typeof entry.quoteTs !== 'number' || !Number.isFinite(entry.quoteTs)) return { quality: MARK_QUALITY.RECEIPT_TIME_FALLBACK, vendorTimeIso: null };
-  const vendorMs = entry.quoteTs * 1000;
+  const vendorSeconds = vendorSecondsOf(entry);
+  if (vendorSeconds === null) return { quality: MARK_QUALITY.RECEIPT_TIME_FALLBACK, vendorTimeIso: null };
+  const vendorMs = vendorSeconds * 1000;
   const vendorTimeIso = new Date(vendorMs).toISOString();
   if (entry.carriedForward === true || etDateOfMs(vendorMs) !== sessionDate) return { quality: MARK_QUALITY.CARRIED_FORWARD, vendorTimeIso };
   return { quality: MARK_QUALITY.VENDOR_TIME, vendorTimeIso };

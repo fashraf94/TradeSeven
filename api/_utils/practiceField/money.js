@@ -59,7 +59,8 @@ export function equalSplitCents(totalCents, parts) {
 export function weightPpm(weight) {
   if (typeof weight !== 'number' || !Number.isFinite(weight) || weight <= 0 || weight > 1) return null;
   const ppm = Math.round(weight * PPM);
-  return Math.abs(weight * PPM - ppm) < 1e-6 ? ppm : null;
+  // A weight that rounds to zero millionths is no weight: a name must carry a share of the idea.
+  return ppm >= 1 && Math.abs(weight * PPM - ppm) < 1e-6 ? ppm : null;
 }
 
 /** The whole-cent share of `totalCents` for a weight given in millionths, rounded down. */

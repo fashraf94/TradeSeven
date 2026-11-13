@@ -22,7 +22,7 @@ import {
 
 // The pinned evidence. A change here is a change to what the idea book records: re-pin it only with a reviewed
 // change, and carry the new figures into the build report.
-const EXPECTED_DUMP = { sha256: '36720cc926ed7a6831d318a630edd554cf5919a28bbdf4bc62a5c5fe791a5e47', bytes: 145979 };
+const EXPECTED_DUMP = { sha256: '10049196e823efdc82d6ae26dacc99505cb0794106927e94beeb41e541b10df1', bytes: 147178 };
 
 const SESSIONS = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02'];
 const BASE = {
@@ -133,7 +133,7 @@ describe('the end-to-end synthetic run', () => {
       }
       // The book's equity is its parts, and its parts are the ideas'.
       const ideaValueCents = ['short', 'medium', 'long'].reduce((s, slot) => s + cents(getRow(db, bookId, ideas[slot], date).markedValue), 0);
-      expect(Math.abs(cents(bookRow.markedEquity) - (cents(bookRow.treasuryCash) + ideaValueCents)), date).toBeLessThanOrEqual(3); // three ideas, each rounded once
+      expect(cents(bookRow.markedEquity), date).toBe(cents(bookRow.treasuryCash) + ideaValueCents); // exactly: the book's row is the sum of its ideas' rows
       expect(cents(bookRow.markedEquity)).toBe(cents(bookRow.treasuryCash) + cents(bookRow.reservedCash) + cents(bookRow.markedPositionsValue));
     }
 

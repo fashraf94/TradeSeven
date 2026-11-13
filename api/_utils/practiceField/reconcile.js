@@ -14,7 +14,9 @@
 //                no ticker is held by two ideas (B-SAME's standing form);
 //   4. CONSERVED each idea ledger's cash + cost basis = its reserved capital + dividends received + realised
 //                profit and loss — nothing enters or leaves a ledger except by a recorded action;
-//   5. INDEXED   the set handed in is exactly the book's `openIdeaIds`, and each occupied slot names one of them.
+//   5. INDEXED   the set handed in is exactly the book's `openIdeaIds`, and each occupied slot names one of them;
+//   6. LIVE      each open idea is `accepted`, `entering` or `holding`, sits in its own slot, holds exactly the
+//                capital its contract reserved, and every amount is a real number.
 //
 // A failure throws PracticeFieldError `recon_failed` naming every broken rule. Thrown inside a transaction callback
 // it aborts the transaction, so a book that does not reconcile is never written. Integer comparisons only (money
@@ -24,6 +26,9 @@
 
 import { PracticeFieldError } from './errors.js';
 import { toCents, toMicroShares } from './money.js';
+
+/** The statuses an idea in the book's open set may have (contract §4.3, as far as this build writes them). */
+const OPEN_STATUSES = Object.freeze(['accepted', 'entering', 'holding']);
 
 /**
  * @param {object} book   the book document as it will be written
@@ -37,7 +42,8 @@ export function assertReconciled(book, ideas) {
   const positions = portfolio.positions || {};
   const treasuryCents = toCents(book?.treasury?.unreservedCash);
   const portfolioCashCents = toCents(portfolio.cash);
-  if (!(typeof book?.treasury?.unreservedCash === 'number') || treasuryCents < 0) problems.push({ rule: 'treasury_negative_or_missing', treasuryCents });
+  if (!Number.isFinite(book?.treasury?.unreservedCash) || treasuryCents < 0) problems.push({ rule: 'treasury_negative_or_missing', treasuryCents });
+  if (!Number.isFinite(portfolio.cash)) problems.push({ rule: 'not_a_number', field: 'portfolio.cash' });
   if (portfolioCashCents < 0) problems.push({ rule: 'portfolio_cash_negative', portfolioCashCents });
 
   // 5. the open set
@@ -56,6 +62,13 @@ export function assertReconciled(book, ideas) {
   for (const idea of ideas || []) {
     const ledger = idea?.ledger || {};
     const cashCents = toCents(ledger.cash);
+    // 6. An open idea is a live one, in its own slot, holding exactly what its contract reserved.
+    if (!OPEN_STATUSES.includes(idea?.status)) problems.push({ rule: 'open_idea_not_live', ideaId: idea?.ideaId, status: idea?.status ?? null });
+    if (book?.slots?.[idea?.contract?.slot] !== idea?.ideaId) problems.push({ rule: 'idea_not_in_its_slot', ideaId: idea?.ideaId, slot: idea?.contract?.slot ?? null });
+    if (toCents(ledger.reservedCapitalUsd) !== toCents(idea?.contract?.capitalUsd)) problems.push({ rule: 'reserved_capital_mismatch', ideaId: idea?.ideaId });
+    for (const field of ['cash', 'reservedCapitalUsd', 'dividendsUsd', 'realizedPnlUsd']) {
+      if (!Number.isFinite(ledger[field])) problems.push({ rule: 'not_a_number', ideaId: idea?.ideaId, field });
+    }
     if (cashCents < 0) problems.push({ rule: 'idea_cash_negative', ideaId: idea.ideaId, cashCents });
     ideaCashCents += cashCents;
     let basisCents = 0;
@@ -63,6 +76,7 @@ export function assertReconciled(book, ideas) {
       const microShares = toMicroShares(h.shares);
       const hBasis = toCents(h.costBasisTotal);
       basisCents += hBasis;
+      if (!Number.isFinite(h.shares) || !Number.isFinite(h.costBasisTotal)) problems.push({ rule: 'not_a_number', ideaId: idea.ideaId, ticker });
       if (microShares <= 0) problems.push({ rule: 'idea_holding_not_positive', ideaId: idea.ideaId, ticker });
       if (holder.has(ticker)) problems.push({ rule: 'ticker_in_two_ideas', ticker, ideas: [holder.get(ticker).ideaId, idea.ideaId] });
       else holder.set(ticker, { ideaId: idea.ideaId, microShares, basisCents: hBasis });

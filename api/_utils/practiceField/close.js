@@ -147,6 +147,9 @@ function closeHoldingIdea(idea, { date, closeSnapshot, actionsBySymbol, sinceDat
       idea: own.applied.map((a) => a.actionId), comparison: cmp.applied.map((a) => a.actionId), spy: spy.applied.map((a) => a.actionId),
     },
     fullQuality: ownV.valuation.fullQuality && cmpV.valuation.fullQuality && spyV.valuation.fullQuality,
+    // False when a leg entered at the friction model's widest tier for want of a market cap (review L3-2): the gap then
+    // carries a cost difference that is not the idea's doing. `fullQuality` keeps its own meaning (marks only).
+    entryCostTiersKnown: (idea.entry?.unknownCostTierLegs || []).length === 0,
   };
 
   const alerts = [];
@@ -184,6 +187,8 @@ export async function closeIdeaBook(db, bookRef, { date, closeSnapshot, now = ne
     const book = bookSnap.data();
     if (!isIdeaBook(book)) return { closed: false, skipped: 'not_idea_book', alerts };
     if (book.execState?.lastCloseKey === date) return { closed: false, skipped: 'already_closed', alerts };
+    // Never backwards (review L1-9): a close for a date before the last one would rewind the marks and the key.
+    if (typeof book.execState?.lastCloseKey === 'string' && date < book.execState.lastCloseKey) return { closed: false, skipped: 'out_of_order', alerts };
     if (book.status !== 'active' && book.status !== 'draining') return { closed: false, skipped: 'not_open', alerts };
 
     const ideas = [];
@@ -267,7 +272,14 @@ export async function closeIdeaBook(db, bookRef, { date, closeSnapshot, now = ne
     const openIdeas = (working.openIdeaIds || []).map((id) => nextIdeas.get(id));
     const treasuryCash = roundUsd(working.treasury.unreservedCash);
     const reservedCash = fromCents(openIdeas.reduce((sum, i) => sum + toCents(i.ledger.cash), 0));
-    const markedPositionsValue = roundUsd(bookMark.positionsValue);
+    // BUILD_RULES §9 (review L1-6): the book's positions value is the SUM of its ideas' displayed holdings values, so
+    // the book's row and its ideas' rows can never disagree by a cent. The raw mark of the book's own positions —
+    // an independent valuation of the same shares from the same snapshot — sits beside it and must agree to within
+    // one rounding per idea.
+    const markedPositionsValue = fromCents(Object.values(ideaRows).reduce((sum, r) => sum + toCents(r.markedHoldingsValue), 0));
+    if (Math.abs(toCents(markedPositionsValue) - toCents(roundUsd(bookMark.positionsValue))) > Object.keys(ideaRows).length) {
+      throw new PracticeFieldError('book_marks_disagree_with_ideas', { ideas: toCents(markedPositionsValue), book: toCents(roundUsd(bookMark.positionsValue)) });
+    }
     const markedEquity = addUsd(treasuryCash, reservedCash, markedPositionsValue);
     const costsToDateUsd = roundUsd(working.portfolio.frictionPaidCum || 0);
 
