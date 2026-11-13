@@ -156,7 +156,7 @@ describe('BS-4 — a non-held stock in a measured battle previews its rungs at t
     await open(asset, agentBombContext(BATTLE, 'ZZZZ', Date.parse(NOW), { battleId: 'stock-battle' }));
     expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_unavailable');
     expect(q('[data-bomb-view="state"]').textContent).toContain('No ladder yet');
-    expect(q('[data-bomb-view="state"]').textContent).toContain("This stock has no ATR reading in today's rankings, so no rung size is shown.");
+    expect(q('[data-bomb-view="state"]').textContent).toContain('This stock has no usable ATR reading from a recent rankings run, so no rung size is shown.');
     expect(q('[data-fuse-rung-label]')).toBeNull();
     expect(document.body.textContent).not.toContain('$307.50'); // 300 × 1.025
     expect(reads()).toEqual(['stockTechnicalScores/ZZZZ']);
@@ -170,8 +170,49 @@ describe('BS-4 — a non-held stock in a measured battle previews its rungs at t
     act(() => root.unmount()); container.remove(); container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
     net.failRead = true;
     await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
-    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('preview_unavailable');
+    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_failed');
+    expect(q('[data-bomb-view="state"]').textContent).toContain("The ATR reading couldn't be read. It's asked again when you reopen 💣.");
     expect(document.body.textContent).not.toContain('$319.44');
+  });
+
+  it.each([
+    ['15 days old (a name the runs stopped scoring keeps its last document)', at('2026-09-29T20:05:00.000Z')],
+    ['with no time on it', undefined],
+  ])('review A1 / B2: a reading %s is no reading — "No ladder yet", never the stale number', async (_, updatedAt) => {
+    seed('ACN'); net.docs['stockTechnicalScores/ACN'] = { symbol: 'ACN', atrPercent: 4.05, ...(updatedAt ? { updatedAt } : {}) };
+    await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
+    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_unavailable');
+    expect(q('[data-bomb-view="state"]').textContent).toContain('This stock has no usable ATR reading from a recent rankings run, so no rung size is shown.');
+    expect(document.body.textContent).not.toMatch(/\$312\.15|\$319\.44|ATR reading \d/);
+  });
+
+  it('review A2: a reading no ladder can be drawn from (55 % on a $40 close puts Meltdown below $0) is "No ladder yet", never "$undefined"', async () => {
+    seed('ACN', 40); scores('ACN', 55);
+    await open(nonHeld('ACN', { threshold: 6.48, price: 41 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
+    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_unavailable');
+    expect(document.body.textContent).not.toMatch(/undefined|NaN/);
+  });
+
+  it('review A5 / B1: a failed read is asked again when 💣 reopens (under the shell), and then draws', async () => {
+    flag.sheet = 'on'; seed('ACN'); scores('ACN', 4.05); net.failRead = true;
+    const sheetContext = { battleId: 'stock-battle', agentId: 'agent', archetype: 'momentum_chaser', agentName: 'Juno', row: { held: false }, battle: BATTLE, calls: [], standing: null, directive: null };
+    await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }), { sheetContext });
+    const pill = async (v) => { await act(async () => { q(`[data-shell-pill="${v}"]`).dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush(); };
+    await pill('bomb');
+    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_failed');
+    net.failRead = false;
+    await pill('analysis');
+    await pill('bomb');
+    expect(q('[data-fuse-rung-label="bagger"]').textContent).toContain('$312.15');
+    expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual(['stockTechnicalScores/ACN', 'stockTechnicalScores/ACN']);
+  });
+
+  it('review B3: a stock left and returned to is not read again (one read per stock for the modal\'s life)', async () => {
+    seed('ACN'); seed('MSFT'); scores('ACN', 4.05); scores('MSFT', 2.2);
+    const show = (sym) => render(<AssetResearchModal key="one" asset={nonHeld(sym, { threshold: 6.48 })} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" wsPrice={301} bombContext={agentBombContext(BATTLE, sym, Date.parse(NOW), { battleId: 'stock-battle' })} />);
+    await show('ACN'); await show('MSFT'); await show('ACN');
+    expect(reads()).toEqual(['stockTechnicalScores/ACN', 'stockTechnicalScores/MSFT']);
+    expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$312.15');
   });
 
   it("a reading from an earlier session names its day: 'as of Tue 4:05 PM'", async () => {

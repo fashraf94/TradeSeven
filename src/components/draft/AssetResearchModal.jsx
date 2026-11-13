@@ -442,8 +442,11 @@ const AssetResearchModal = ({
   // or with Bomb mode off (no bombContext).
   const atrArm = bombOn && bombContext.kind === 'agent' && bombContext.stockModel === 'corrected' && !isCrypto
     && !(isOriginalAsset && bombContext.record != null && bombContext.record.symbol === currentAsset?.symbol);
-  const [atrRead, setAtrRead] = useState(null); // { symbol, status, pct, asOfMs }
-  const haveAtr = !!atrRead && atrRead.symbol === currentAsset?.symbol;
+  // Kept per symbol for the modal's life (review B3: a stock left and returned to is not read again);
+  // a FAILED read is not kept as an answer, so the next time 💣 opens it is asked again (review A5, B1).
+  const [atrReads, setAtrReads] = useState({}); // symbol → { status, pct, asOfMs }
+  const atrRead = atrReads[currentAsset?.symbol] ?? null;
+  const haveAtr = !!atrRead && atrRead.status !== 'failed';
   const bombSeries = researchData.timeframe === 'bomb' || researchData.timeframe === 'spectate';
   const askAtr = atrArm && !haveAtr && (shellOn ? bombSeries : (activeTab === 'baggerbomb' || bombSeries));
   useEffect(() => {
@@ -451,10 +454,10 @@ const AssetResearchModal = ({
     const symbol = currentAsset?.symbol;
     if (!symbol) return undefined;
     let cancelled = false;
-    readAtrReading(symbol).then((r) => { if (!cancelled) setAtrRead({ symbol, ...r }); });
+    readAtrReading(symbol).then((r) => { if (!cancelled) setAtrReads((m) => ({ ...m, [symbol]: r })); });
     return () => { cancelled = true; };
   }, [askAtr, currentAsset?.symbol]);
-  const atrReading = atrArm ? (haveAtr ? { status: atrRead.status, pct: atrRead.pct, asOfMs: atrRead.asOfMs } : { status: 'loading', pct: null, asOfMs: null }) : null;
+  const atrReading = atrArm ? (atrRead ? { status: atrRead.status, pct: atrRead.pct, asOfMs: atrRead.asOfMs } : { status: 'loading', pct: null, asOfMs: null }) : null;
   const bombView = useBombView({
     on: bombOn,
     context: bombContext,

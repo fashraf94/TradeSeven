@@ -160,6 +160,9 @@ export function legacyLadder({ record, previousClose, nowMs } = {}) {
 export function previewLadder({ previousClose, threshold } = {}) {
   if (!positive(previousClose) || !positive(threshold)) return unavailable('preview_unavailable', { kind: 'preview', model: 'preview' });
   const rungs = TIERS.map((t) => rungOf(t, previousClose * (1 + (t.k * threshold) / 100), false));
+  // Review A2 (BS-4): a threshold of 50 % or more puts Meltdown (−2×) at or below $0 — no ladder,
+  // as measuredLadder and v4Ladder already refuse a non-positive rung. (Today's thresholds stop at 8 %.)
+  if (rungs.some((r) => !positive(r.price))) return unavailable('preview_unavailable', { kind: 'preview', model: 'preview' });
   return finish({ status: 'ok', kind: 'preview', model: 'preview', baseline: { price: previousClose, source: 'previous_close', atMs: null }, threshold, rungs });
 }
 

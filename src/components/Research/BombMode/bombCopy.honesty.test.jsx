@@ -110,7 +110,7 @@ function computeRenderedStates() {
     states.push(renderToStaticMarkup(<FuseChart ladder={allHit} live={96.4} decimals={2} go={go} goDown={goDown} lead={lead} hitTimes={{ meltdown: Date.parse('2026-10-14T17:15:00.000Z') }} />));
     states.push(renderToStaticMarkup(<BombSheet view={{ ladder: allHit, go, goDown, lead, live: 96.4, decimals: 2, marketOpen: true, bankedTimes: {}, hitTimes: { meltdown: Date.parse('2026-10-14T17:15:00.000Z') }, sheetScored: null, sheetLine: sheetLine({ ladder: allHit, lead, decimals: 2 }) }} />));
   }
-  for (const status of ['entry_unavailable', 'measured_unavailable', 'preview_unavailable', 'atr_unavailable', 'short_unsupported']) {
+  for (const status of ['entry_unavailable', 'measured_unavailable', 'preview_unavailable', 'atr_unavailable', 'atr_loading', 'atr_failed', 'short_unsupported']) {
     states.push(renderToStaticMarkup(<BombPlot view={{ ladder: { status } }} height={300} />));
     states.push(renderToStaticMarkup(<BombSheet view={{ ladder: { status } }} />));
   }

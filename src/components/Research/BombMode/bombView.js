@@ -43,15 +43,19 @@ export function buildLadder({ context, record, bombData, previousClose, threshol
   // shows — never the screen's threshold (atrPercentile × 8, or the 2.5 default). The
   // modal hands `atrReading` ONLY on that arm (a non-held, non-crypto stock in such a
   // battle); a held ladder above, a legacy-scored battle, a bench or V4 context never
-  // reach here. With no reading: "No ladder yet" — still loading, the read failed, or
-  // (atr_unavailable) the name has none.
+  // reach here. With no ladder: "No ladder yet", with the arm's own why — atr_loading
+  // (the reading or yesterday's close still coming), atr_failed (the read failed; asked
+  // again when 💣 reopens), atr_unavailable (no current reading, or one no ladder can be
+  // drawn from: a rung at or below $0 — review A2).
   if (context?.kind === 'agent' && atrReading) {
     const pct = positive(atrReading.pct) ? atrReading.pct : null;
+    const none = { ...previewLadder({ previousClose, threshold: null }) };
     if (pct === null) {
-      return { ...previewLadder({ previousClose, threshold: null }), status: atrReading.status === 'none' ? 'atr_unavailable' : 'preview_unavailable' };
+      return { ...none, status: atrReading.status === 'none' ? 'atr_unavailable' : atrReading.status === 'failed' ? 'atr_failed' : 'atr_loading' };
     }
     const ladder = previewLadder({ previousClose, threshold: pct });
-    return ladder.status === 'ok' ? { ...ladder, atrReading: { pct, asOfMs: finite(atrReading.asOfMs) ? atrReading.asOfMs : null } } : ladder;
+    if (ladder.status !== 'ok') return { ...none, status: positive(previousClose) ? 'atr_unavailable' : 'atr_loading' };
+    return { ...ladder, atrReading: { pct, asOfMs: finite(atrReading.asOfMs) ? atrReading.asOfMs : null } };
   }
   if (context?.kind === 'v4') {
     const levels = v4LevelsFor(context.dailyLevels, symbol, nowMs);
