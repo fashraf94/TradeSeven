@@ -365,6 +365,9 @@ describe('B-RESERVE — two admissions racing for the same cash', () => {
     await closeOn(db, bookId, DAYS.d1, { JPM: 362.11, XOM: 177.83, SPY: 598.02 }); // +50%
     const before = getBook(db, bookId);
     const equityCents = Math.round(before.portfolio.totalValue * 100);
+    // The floor is a tenth of the equity, rounded UP to a cent: this book's equity is not a multiple of ten cents,
+    // so a floor rounded down would leave one cent too much room.
+    expect(equityCents % 10).not.toBe(0);
     const roomCents = Math.round(before.treasury.unreservedCash * 100) - Math.ceil(equityCents / 10);
     const shortCapital = Math.floor(equityCents * 0.2) / 100;
     const mediumCapital = Math.floor(equityCents * 0.3) / 100;

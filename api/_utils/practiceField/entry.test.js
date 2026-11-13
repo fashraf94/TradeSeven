@@ -5,14 +5,15 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { enterIdea, runIdeaBookEntryPass, computeBasketEntry, entrySymbols, entryDecisionId } from './entry.js';
-import { admitIdea } from './admission.js';
+import { admitIdea, releaseIdea } from './admission.js';
+import { closeIdeaBook } from './close.js';
 import { assertReconciled } from './reconcile.js';
 import { isPracticeFieldError } from './errors.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { ideaEntrySlots, isLastIdeaEntrySlot, ideaEntryNotBefore, ideaSchedule, nextSessionDate, sessionAfter } from './windows.js';
 import { SLOT_NAMES } from '../mandateSessionSlots.js';
 import {
-  seedBook, admitAndEnter, contractOf, getBook, getIdea, tickOf, tickSnapshot, slotOpenIso, etIso, DAYS, ADMIT_ISO, countDocs,
+  seedBook, admitAndEnter, contractOf, getBook, getIdea, tickOf, tickSnapshot, closeSnapshot, slotOpenIso, etIso, DAYS, ADMIT_ISO, countDocs,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, AMD: 2.6e11, LLY: 7.5e11, JPM: 6.8e11, XOM: 5.2e11, AVGO: 8.2e11 };
@@ -398,7 +399,54 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     await bookRef.update({ 'portfolio.positions': { AAPL: { shares: 1, costBasisTotal: 231.47, lastMark: 231.47 } }, 'portfolio.cash': book.portfolio.cash - 231.47 });
     const before = JSON.stringify([...db._store.entries()]);
     await expect(enterIdea(db, { bookRef, ideaId: a.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }))
-      .rejects.toThrow(/ticker_held_by_other_idea|recon_failed/);
+      .rejects.toThrow(/ticker_held_by_other_idea/);
+    expect(JSON.stringify([...db._store.entries()])).toBe(before);
+  });
+
+  it('EVERY mutating transaction reconciles the state it is about to write, and writes nothing when it does not: admission, release, entry, the entry timeout and the close', async () => {
+    // A book one cent out: the treasury says a cent more than the portfolio's cash can account for.
+    const corrupt = async (bookRef) => {
+      const book = (await bookRef.get()).data();
+      await bookRef.update({ treasury: { unreservedCash: Math.round((book.treasury.unreservedCash + 0.01) * 100) / 100 } });
+    };
+    const refused = async (db, run) => {
+      const before = JSON.stringify([...db._store.entries()]);
+      let err = null;
+      try { await run(); } catch (e) { err = e; }
+      expect(isPracticeFieldError(err, 'recon_failed'), String(err)).toBe(true);
+      expect(err.detail.problems.map((p) => p.rule)).toContain('cash_mismatch');
+      expect(JSON.stringify([...db._store.entries()])).toBe(before);
+    };
+
+    // Admission and release, on a book with one accepted idea.
+    const one = await seedBook({ archetypeCodeId: 'degen' });
+    const pending = await admitIdea(one.db, { bookId: one.bookId, contract: contractOf({ slot: 'short', names: ['AAPL'] }), opId: 'a', nowIso: ADMIT_ISO });
+    await corrupt(one.bookRef);
+    await refused(one.db, () => admitIdea(one.db, { bookId: one.bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: ADMIT_ISO }));
+    await refused(one.db, () => releaseIdea(one.db, { bookId: one.bookId, ideaId: pending.ideaId, nowIso: ADMIT_ISO }));
+    // Entry, and the entry timeout (the pass of a later session).
+    await refused(one.db, () => enterIdea(one.db, { bookRef: one.bookRef, ideaId: pending.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }));
+    await refused(one.db, () => enterIdea(one.db, { bookRef: one.bookRef, ideaId: pending.ideaId, tick: tickOf(DAYS.d2, 'open30'), snapshot: tickSnapshot(DAYS.d2, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d2, 'open30') }));
+    // The close, with a timed-out idea (D1) …
+    await refused(one.db, () => closeIdeaBook(one.db, one.bookRef, { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, q('AAPL', 'SPY')), now: new Date(etIso(DAYS.d1, 16, 25)) }));
+    // … and with a holding idea.
+    const two = await seedBook({ archetypeCodeId: 'degen', uid: 'owner-2' });
+    await admitAndEnter(two.db, two.bookId, { contract: contractOf({ names: ['AAPL', 'MSFT'] }), quotes: q('AAPL', 'MSFT', 'SPY') });
+    await corrupt(two.bookRef);
+    await refused(two.db, () => closeIdeaBook(two.db, two.bookRef, { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, q('AAPL', 'MSFT', 'SPY')), now: new Date(etIso(DAYS.d1, 16, 25)) }));
+  });
+
+  it('B-OWNED — a book that already holds a position with no idea cannot be built on: the next entry is refused whole', async () => {
+    const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
+    const a = await admitIdea(db, { bookId, contract: contractOf({ slot: 'short', names: ['AAPL'] }), opId: 'a', nowIso: ADMIT_ISO });
+    const book = getBook(db, bookId);
+    // An unowned NVDA position, with the cash it would have cost taken out so the cash still balances.
+    await bookRef.update({ 'portfolio.positions': { NVDA: { shares: 1, costBasisTotal: 141.29, lastMark: 141.29 } }, 'portfolio.cash': Math.round((book.portfolio.cash - 141.29) * 100) / 100, treasury: { unreservedCash: Math.round((book.treasury.unreservedCash - 141.29) * 100) / 100 } });
+    const before = JSON.stringify([...db._store.entries()]);
+    let err = null;
+    try { await enterIdea(db, { bookRef, ideaId: a.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }); } catch (e) { err = e; }
+    expect(isPracticeFieldError(err, 'recon_failed')).toBe(true);
+    expect(err.detail.problems.map((p) => p.rule)).toEqual(['position_without_idea']);
     expect(JSON.stringify([...db._store.entries()])).toBe(before);
   });
 });

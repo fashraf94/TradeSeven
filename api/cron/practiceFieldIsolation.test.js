@@ -47,7 +47,7 @@ import { closeBook } from '../_utils/mandateClosePass.js';
 import { rollOneBoundary, catchUpBook } from '../_utils/mandateRollover.js';
 import { escapeMandate } from '../_utils/mandateEscape.js';
 import { createMandate } from '../_utils/mandateCreationService.js';
-import { drainOpenBatches, buildBatchDoc, MANDATE_BATCH_COLLECTION } from '../_utils/mandateBatchTransport.js';
+import { drainOpenBatches, submitMandateBatch, buildBatchDoc, MANDATE_BATCH_COLLECTION } from '../_utils/mandateBatchTransport.js';
 import { simulateFullRollover } from '../_utils/mandateAcceleratedClock.js';
 import { CANDIDATE_UNIVERSE } from '../_utils/mandateCandidateUniverse.js';
 import { splitActiveBooks } from '../_utils/mandateBookKind.js';
@@ -118,6 +118,8 @@ let fetchCalls;
 beforeEach(() => {
   restoreMode = setPracticeFieldModeForTests('on');
   modelSpy.mockClear(); quotesSpy.mockClear(); fundamentalsSpy.mockClear();
+  for (const f of Object.values(batchApi)) f.mockReset();
+  batchApi.cancel.mockResolvedValue({});
   quoteBook = { ...PRICES };
   for (const s of CANDIDATE_UNIVERSE) if (quoteBook[s] === undefined) quoteBook[s] = 100.01;
   quoteTs = Math.floor(etMs(DAYS.d1, 9, 45) / 1000);
@@ -174,6 +176,7 @@ describe('kind isolation on every quarterly core — unconditional (run at mode 
       const { bookRef, bookId } = await populatedIdeaBook(db);
       setPracticeFieldModeForTests(mode);
       const before = snapshotOfStore(db, `mandates/${bookId}`);
+      const versionBefore = db._versionOf(`mandates/${bookId}`);
       const vintagesBefore = countDocs(db, 'archetypeVintages/');
       expect(await rollOneBoundary(db, bookRef, { now: new Date('2027-06-01T12:00:00Z') })).toEqual({ rolled: false, skipped: 'not_quarterly' });
       expect(await catchUpBook(db, bookRef, { now: new Date('2027-06-01T12:00:00Z') })).toEqual({ processed: [], boundaries: 0, cappedOut: false });
@@ -185,7 +188,8 @@ describe('kind isolation on every quarterly core — unconditional (run at mode 
       await runRolloverSweep(req, res, { now: new Date('2026-11-17T12:00:00Z'), rolloverTick: { date: DAYS.d2, rolloverKey: `${DAYS.d2}_rollover` }, db });
       expect(captured.body).toMatchObject({ ok: true, rolledBooks: 1 }); // the due quarterly book rolled
       expect(db._get('mandates/q-due').quarterIndex).toBe(2);
-      expect(snapshotOfStore(db, `mandates/${bookId}`).replace(/"lease[^}]*}/g, '')).toBe(before.replace(/"lease[^}]*}/g, ''));
+      expect(snapshotOfStore(db, `mandates/${bookId}`)).toBe(before);
+      expect(db._versionOf(`mandates/${bookId}`)).toBe(versionBefore); // not even leased: stepped over before the lease
       expect(getBook(db, bookId)).not.toHaveProperty('quarterIndex');
       expect(getBook(db, bookId)).not.toHaveProperty('vintageRef');
     });
@@ -199,6 +203,48 @@ describe('kind isolation on every quarterly core — unconditional (run at mode 
       expect(await escapeMandate(db, { userId: 'owner-1', archetype: 'analyst', now: new Date(etIso(DAYS.d2, 12, 0)) })).toEqual({ ok: false, code: 'not_quarterly' });
       expect(snapshotOfStore(db, 'mandates/')).toBe(before);
       expect(db._get('userMeta/owner-1')).toEqual({ activeMandateId: bookId, mandateEscapeHatchUsed: false });
+    });
+
+    it(`${label}: the batch submit gate is never written on an idea book — its request rides as a zombie with no gate`, async () => {
+      const db = makeMandateFakeDb();
+      const { bookId, bookRef } = await populatedIdeaBook(db);
+      setPracticeFieldModeForTests(mode);
+      const book = getBook(db, bookId);
+      batchApi.create.mockResolvedValueOnce({ id: 'msgbatch_gate', created_at: etIso(DAYS.d1, 10, 2) });
+      const before = snapshotOfStore(db, 'mandates/');
+      // An envelope that matches the idea book on every field the gate compares (it has no quarterKey).
+      const out = await submitMandateBatch(db, [{
+        mandateRef: bookRef, envelope: { requestId: 'req-gate', baseRevision: book.revision, quarterKey: book.quarterKey }, verbs: ['HOLD'],
+        modelSeat: { model: 'm', params: {} }, content: { system: 's', messages: [], tools: [] },
+      }], { tickKey: `${DAYS.d1}_open30`, sessionDate: DAYS.d1, now: new Date(etIso(DAYS.d1, 10, 2)) });
+      expect(out).toMatchObject({ providerBatchId: 'msgbatch_gate', gated: 0, zombies: ['req-gate'] });
+      expect(snapshotOfStore(db, 'mandates/')).toBe(before);
+      expect(getBook(db, bookId).execState.openBatchId).toBeNull();
+    });
+
+    it(`${label}: a harvested batch result that named an idea book is never billed to it, applied to it or disposed against it`, async () => {
+      const db = makeMandateFakeDb({ 'archetypeVintages/analyst_x': { gateConfig: { sectorCapConversionVersion: 1 }, modelSeat: { model: 'claude-haiku-4-5-20251001' } } });
+      const { bookId } = await populatedIdeaBook(db);
+      await db.collection(MANDATE_BATCH_COLLECTION).doc('batch-h').set(buildBatchDoc({
+        providerBatchId: 'batch-h', tickKey: `${DAYS.d2}_open30`, sessionDate: DAYS.d2, submittedAt: new Date(etIso(DAYS.d2, 10, 1)),
+        entries: { 'req-h': { mandateId: bookId, model: 'claude-haiku-4-5-20251001', verbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'], envelope: { requestId: 'req-h', baseRevision: 2, sessionDate: DAYS.d2, submittedAt: etIso(DAYS.d2, 10, 1), submitTickKey: `${DAYS.d2}_open30`, vintageRef: 'archetypeVintages/analyst_x' } } },
+      }));
+      setPracticeFieldModeForTests(mode);
+      batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: etIso(DAYS.d2, 12, 40) });
+      batchApi.results.mockResolvedValue({ async* [Symbol.asyncIterator]() { yield { custom_id: 'req-h', result: { type: 'succeeded', message: { content: [{ type: 'tool_use', name: 'submit_mandate_decision', input: { verb: 'SELL', ticker: 'AAPL', rationale: 'out' } }], usage: { input_tokens: 1000, output_tokens: 50 } } } }; } });
+      const before = snapshotOfStore(db, `mandates/${bookId}`);
+      quoteTs = Math.floor(etMs(DAYS.d2, 12, 30) / 1000);
+      const { req, res, captured } = fakeReqRes();
+      await runEvalSweep(req, res, { now: evalNow(DAYS.d2, 'midday'), tick: tickOf(DAYS.d2, 'midday'), db, transport: 'batch' });
+      expect(captured.body.harvest).toMatchObject({ polled: 1, leaseSkips: 1 });
+      // The book: no decision, no telemetry, no failure counter, its positions as they were (its own pass may stamp it at mode on).
+      const after = getBook(db, bookId);
+      expect(countDocs(db, `mandates/${bookId}/decisions/req-h`)).toBe(0);
+      expect(after.costTelemetry).toEqual(JSON.parse(before)[0][1].costTelemetry);
+      expect(after.portfolio).toEqual(JSON.parse(before)[0][1].portfolio);
+      expect(after.health.consecutiveEvalFailures).toBe(0);
+      expect(after.revision).toBe(2);
+      expect(db._get(`${MANDATE_BATCH_COLLECTION}/batch-h`).status).toBe('open'); // loud: it never finalises against an idea book
     });
 
     it(`${label}: a batch entry that named an idea book is never disposed against it (drain) — the book is untouched and the batch stays open`, async () => {
