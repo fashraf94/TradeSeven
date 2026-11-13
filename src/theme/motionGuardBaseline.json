@@ -221,6 +221,10 @@
       "count": 0,
       "authority": "Cockpit Build 2b (spec \u00a76, D-2, V5-6; flag on) \u2014 the answer flow the three surfaces share: the replace confirmation first, the 409 replace_unconfirmed prompt, the card held after Confirm exit. Client state only: no element, no colour, no motion; zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
     },
+    "src/screens/battleView/agentName.js": {
+      "count": 0,
+      "authority": "Research modal QF-8 (build prompt of Nov 13, 2026) — agentNameOf moved, unchanged, into its own import-free module so the research sheet takes the cockpit’s name rule without the cockpit’s graph; cockpit2bModel.js re-exports it. A pure string function: no element, no colour, no motion; zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
     "src/screens/battleView/useServerClock.js": {
       "count": 0,
       "authority": "Cockpit Build 2b (spec \u00a78, from merge) \u2014 the server's clock for deadlines: pure helpers and one hook that keeps a single timer at the next open deadline on server time. No element, no colour, no motion; zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."

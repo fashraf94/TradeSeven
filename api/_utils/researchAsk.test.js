@@ -22,10 +22,17 @@ describe('parseResearchAsk — the closed request (BC-7)', () => {
     expect(parseResearchAsk(undefined)).toEqual({ ok: true, ask: null });
     expect(parseResearchAsk(null)).toEqual({ ok: true, ask: null });
   });
-  it('the question comes from a closed list of three', () => {
+  it('the question comes from a closed list of five (QF-6: weakest_spot and take_profit added; the stored better_than_stalled kept — QF-5)', () => {
     for (const q of QUESTION_IDS) expect(parseResearchAsk(ask({ questionId: q })).ok).toBe(true);
-    expect(parseResearchAsk(ask({ questionId: 'what_now' }))).toEqual({ ok: false, reason: 'question' });
-    expect(QUESTION_IDS).toHaveLength(3);
+    expect(QUESTION_IDS).toEqual(['catch_up', 'protect_lead', 'better_than_stalled', 'weakest_spot', 'take_profit']);
+    expect(parseResearchAsk(ask({ questionId: 'take_profit' }))).toMatchObject({ ok: true, ask: { questionId: 'take_profit' } });
+    expect(parseResearchAsk(ask({ questionId: 'weakest_spot' }))).toMatchObject({ ok: true, ask: { questionId: 'weakest_spot' } });
+    // An unknown id is still refused — the retired text's would-be id included.
+    for (const q of ['what_now', 'better_than_weakest', 'Take_profit', '']) expect(parseResearchAsk(ask({ questionId: q }))).toEqual({ ok: false, reason: 'question' });
+  });
+  it('the new item kinds are accepted (QF-6), an unknown kind still refused', () => {
+    for (const kind of ['book_rank', 'quiet_ticks', 'bench_alternative', 'lock_now', 'rung_down']) expect(parseResearchAsk(ask({ items: [item({ kind })] })).ok, kind).toBe(true);
+    expect(parseResearchAsk(ask({ items: [item({ kind: 'weakest' })] }))).toEqual({ ok: false, reason: 'item_kind' });
   });
   it('one to five items, never more', () => {
     expect(RESEARCH_ASK_MAX_ITEMS).toBe(5);
@@ -160,7 +167,13 @@ describe('verifyResearchItems — the server re-reads the battle (BC-7)', () => 
     const catchUp = verifyResearchItems({ battle, ask: sent(packs.catch_up.items), nowMs: SHEET_NOW });
     for (const i of catchUp) if (CLIENT_REASON[i.kind]) expect([i.status, i.statusReason]).toEqual(['unverified', CLIENT_REASON[i.kind]]);
     const stalled = verifyResearchItems({ battle, ask: sent(packs.better_than_stalled.items), nowMs: SHEET_NOW });
-    expect(stalled.map((i) => [i.kind, i.status, i.statusReason])).toEqual([['incumbent', 'unverified', 'from_cockpit'], ['stalled', 'verified', null], ['rank_scores', 'unverified', 'rankings_doc'], ['idea', 'verified', null], ['told_it', 'verified', null]]);
+    expect(stalled.map((i) => [i.kind, i.status, i.statusReason])).toEqual([['incumbent', 'unverified', 'from_cockpit'], ['stalled', 'verified', null], ['book_rank', 'verified', null], ['idea', 'verified', null], ['told_it', 'verified', null]]);
+    // QF-6: the take-profit and weakest-spot packs — the lock, the place in the book and the quiet count
+    // re-read from the battle; the downside and the bench alternative are the screen's.
+    const tp = verifyResearchItems({ battle, ask: sent(packs.take_profit.items), nowMs: SHEET_NOW });
+    expect(tp.map((i) => [i.kind, i.status, i.statusReason])).toEqual([['lock_now', 'verified', null], ['rung_distance', 'unverified', 'live_quote'], ['rung_down', 'unverified', 'live_quote'], ['idea', 'verified', null], ['told_it', 'verified', null]]);
+    const ws = verifyResearchItems({ battle, ask: sent(packs.weakest_spot.items), nowMs: SHEET_NOW });
+    expect(ws.map((i) => [i.kind, i.status, i.statusReason])).toEqual([['move_since_entry', 'unverified', 'live_quote'], ['bench_alternative', 'unverified', 'rankings_doc'], ['book_rank', 'verified', null], ['idea', 'verified', null], ['told_it', 'verified', null]]);
   });
   it('a rebuild that throws leaves everything unverified, never a 500', () => {
     const out = verifyResearchItems({ battle: { get portfolio() { throw new Error('boom'); } }, ask: sent([item()]), nowMs: SHEET_NOW });

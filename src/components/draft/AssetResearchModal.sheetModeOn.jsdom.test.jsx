@@ -158,7 +158,8 @@ describe('BC-1 — the mount opens on the Analysis view: 1D, no chart, the arche
     expect($('[data-sheet-voice-line]').textContent).toBe('“AAPL is still printing higher lows above VWAP, so the trend is intact and the position stays.”');
     // R-23: the voice label is the player's agent name, then the archetype, then the quote's time.
     expect($('[data-shell-voice-label]').textContent).toBe('Juno · Trend Follower · Wed 12:45');
-    expect($$('[data-sheet-question]').map((b) => b.dataset.sheetQuestion)).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
+    // QF-1: AAPL is held and up from entry at the last check — Should we take profit? first.
+    expect($$('[data-sheet-question]').map((b) => b.dataset.sheetQuestion)).toEqual(['take_profit', 'catch_up', 'protect_lead']);
     expect($('[data-sheet-tucked]').textContent).toContain('Wall St Buy · 41 analysts');
     expect($('[data-sheet-ask]').dataset.sheetAsk).toBe('disabled');
     // R-29: the Ask is addressed to the player's agent by name.
@@ -287,11 +288,11 @@ describe('FQ-6 (2026-11-08), kept by the shell (SB-10) — on a phone, the modal
 describe('BC-13 — the questions in the standing the header shows', () => {
   it('leading → protect the lead first', async () => {
     await open({ context: ctx({ standing: { player: 70, opponent: 64, digits: 0 } }) });
-    expect($$('[data-sheet-question]').map((b) => b.dataset.sheetQuestion)).toEqual(['protect_lead', 'catch_up', 'better_than_stalled']);
+    expect($$('[data-sheet-question]').map((b) => b.dataset.sheetQuestion)).toEqual(['take_profit', 'protect_lead', 'catch_up']);
   });
   it('unavailable (the gated header shows no pair) → the design\'s order', async () => {
     await open({ context: ctx({ standing: null }) });
-    expect($$('[data-sheet-question]').map((b) => b.dataset.sheetQuestion)).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
+    expect($$('[data-sheet-question]').map((b) => b.dataset.sheetQuestion)).toEqual(['take_profit', 'catch_up', 'protect_lead']);
   });
 });
 
@@ -625,7 +626,7 @@ describe('BC-7 — the Ask', () => {
 });
 
 describe('BC-11, BC-12 — the cockpit door', () => {
-  it('with an incumbent the view opens on "Is this better than what\'s stalled?" with it side by side', async () => {
+  it('with an incumbent the view opens on "Is this better than our weakest holding?" with it side by side', async () => {
     await open({ context: ctx({ incumbent: 'ETH', row: { held: false, positionId: null } }), symbol: 'NVDA' });
     expect(view()).toBe('analysis');
     expect($('[data-sheet-root]').dataset.sheetLayer).toBe('1');
@@ -725,8 +726,8 @@ describe('§3: no new price request — the shell reads what the modal already l
     expect(on).toEqual(off);
     expect(on.fetchWithAuth).toBe(0);
     expect(on.getDoc).toBe(0);
-    // Opening the stalled question: ONE document read (the rankings), no price request.
-    await click($('[data-sheet-question="better_than_stalled"]'));
+    // Opening the take-profit question (its bench alternative is the rankings'): ONE document read, no price request.
+    await click($('[data-sheet-question="take_profit"]'));
     expect(tally()).toEqual({ ...on, getDoc: 1 });
     // The Ask: ONE POST, no price request.
     await click($('[data-sheet-ask]'));
@@ -735,18 +736,18 @@ describe('§3: no new price request — the shell reads what the modal already l
 });
 
 describe('the rankings: one read for the modal\'s life (review N2)', () => {
-  it('leaving the stalled question before the read lands keeps it; coming back reads nothing more', async () => {
+  it('leaving a rankings question before the read lands keeps it; coming back reads nothing more', async () => {
     let land;
     net.rankings = () => new Promise((r) => { land = r; });
     await open({ context: ctx({ rankings: undefined }) });
-    await click($('[data-sheet-question="better_than_stalled"]'));
+    await click($('[data-sheet-question="take_profit"]'));
     expect(net.calls.filter((c) => c[0] === 'getDoc')).toEqual([['getDoc', 'indexIntelligence/stockRankings']]);
     await click($('[data-sheet-back]'));
     await act(async () => { land({ exists: () => true, data: () => RANKINGS }); });
     await flush();
-    await click($('[data-sheet-question="better_than_stalled"]'));
+    await click($('[data-sheet-question="take_profit"]'));
     expect(net.calls.filter((c) => c[0] === 'getDoc')).toHaveLength(1);
-    expect($('[data-pack-item="rank_scores"]')).toBeTruthy();
+    expect($('[data-sheet-pack]').dataset.sheetPack).toBe('take_profit');
   });
 });
 

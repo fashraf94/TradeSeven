@@ -33,6 +33,7 @@ import BombPlot, { RedZoneChip } from '../Research/BombMode/BombPlot';
 import BombSheet from '../Research/BombMode/BombSheet';
 import { isZoneMode } from '../Research/BombMode/redZone';
 import useSheetView from '../Research/Sheet/useSheetView';
+import useBattleSeries from '../Research/Sheet/useBattleSeries';
 import { SheetActionRow, AnalysisBlocks, battleBlocks, browseBlocks, WallStLine, BrowseAsk } from '../Research/Sheet/AnalysisSheet';
 import ShellTabs from '../Research/Sheet/ShellTabs';
 import { ST, MONO as SHEET_MONO } from '../Research/Sheet/sheetTheme';
@@ -243,6 +244,8 @@ const AssetResearchModal = ({
   const [shellView, setShellView] = useState(() => openingView({ opensOnBomb: sheetOpensOnBomb }));
   const [shellTab, setShellTab] = useState('moving');
   const [chartTf, setChartTf] = useState('1D');
+  // BC2-1: the Chart view's Battle pill (the battle's sessions in intraday bars) — never on open.
+  const [battleOn, setBattleOn] = useState(false);
   const reducedMotion = useReducedMotion() === true;
   const openTab = sheetOpensOnBomb ? 'baggerbomb' : sheetOn ? 'fundamental' : defaultTab;
 
@@ -276,6 +279,7 @@ const AssetResearchModal = ({
     setChartSymbol(currentAsset?.symbol);
     setHighlightedLevel(null);
     setSrOn(false);
+    setBattleOn(false); // BC2-4: a new stock's Chart view starts on its 1D / 1W pill, never on Battle
   }
   // BA-5: a hidden Bomb tab is never the open one.
   if (bombHidden && activeTab === 'baggerbomb') {
@@ -526,10 +530,17 @@ const AssetResearchModal = ({
     isOriginal: isOriginalAsset,
     live: shownAsset?.price,
     rawData: researchData.rawData,
-    timeframe: researchData.timeframe,
+    // 'battle' only while Battle SHOWS (PR 2 review B7): off the Chart view the sheet keeps reading the 1D series.
+    timeframe: battleOn && shellView === 'chart' ? 'battle' : researchData.timeframe,
     isCrypto,
     analysisActive: sheetActive,
   });
+  // BC2-1 / BC2-2: the Battle bars load only while the Battle pill shows on the Chart view.
+  const battleSpec = sheetView?.battle ?? null;
+  const battleShown = battleOn && !!battleSpec && shellView === 'chart';
+  const battleSeries = useBattleSeries({ symbol: currentAsset?.symbol, spec: battleSpec, active: battleShown });
+  // The chart unmounts while Battle's bars load: its S/R pill goes with it (§3; PR 2 review B4).
+  if (srOn && battleShown && battleSeries.status !== 'ready') setSrOn(false);
   // (Build C's drawer geometry — the shorter chart above the drawer, its mid snap and
   // footer — is replaced by the shell, R-28: the sheet now lives only in the shell.)
 
@@ -585,14 +596,30 @@ const AssetResearchModal = ({
     const next = switchView({ to, timeframe: researchData.timeframe, lastChartTf: chartTf });
     if (next.timeframe) researchData.setTimeframe(next.timeframe);
     if (shownView === 'chart' && to !== 'chart') setSrOn(false); // the chart unmounts with its S/R pill
+    // BC2-4: the Chart view opened on its own starts on its 1D / 1W pill (§3), never on Battle.
+    if (to === 'chart' && shownView !== 'chart') setBattleOn(false);
     setShellView(next.view);
   };
+  // The chart's own pills: Battle is the modal's (its bars are not the research hook's); 1D and 1W the hook's.
+  const onChartTimeframe = (tf) => {
+    if (tf === 'battle') { if (battleSpec) setBattleOn(true); return; }
+    setBattleOn(false);
+    researchData.setTimeframe(tf);
+  };
+  // BC2-3: a day's counted marker (or its chip) opens Battle.
+  const onRecordDay = () => { if (battleSpec) setBattleOn(true); };
   // "See on chart ›" (Amendment C §3 item 4): that item's pin open, on the Chart view.
   const onSeeOnChart = (i, item) => {
     if (!sheetView) return;
     if (sheetView.activeItem !== i) sheetView.tapItem(i); // tapItem toggles: never close the pin being opened
-    const tf = seeOnChartTimeframe({ pin: item?.pin, timeframe: researchData.timeframe });
-    if (tf) researchData.setTimeframe(tf);
+    if (item?.pin?.type === 'time' && battleSpec) {
+      // BC2-4: a timed item (a call, an answer, a check) opens Battle, its caption open.
+      setBattleOn(true);
+    } else if (!(item?.pin?.type === 'price' && battleOn)) {
+      // A price item opens on the current pill (Battle stays Battle); with no Battle pill, as before.
+      const tf = seeOnChartTimeframe({ pin: item?.pin, timeframe: researchData.timeframe });
+      if (tf) researchData.setTimeframe(tf);
+    }
     setShellView('chart');
   };
   // The Ask is pinned under every view, but its answer (and a failed turn's warning) is a card in
@@ -850,12 +877,33 @@ const AssetResearchModal = ({
         </div>
         {shownView === 'chart' && (
           <motion.div key="chart" data-shell-scroll="chart" {...fadeIn} style={viewScroll}>
-            {researchData.loading && !researchData.ohlcvData && (
+            {battleShown && battleSeries.status !== 'ready' && (
+              // BC2-1: the Battle bars' own states — loading, a refused or failed request (Retry is a tap), none yet.
+              <div data-shell-chart-state={`battle-${battleSeries.status}`} style={{ height: `${shellChartH + 44}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: ST.bg }}>
+                {battleSeries.status === 'loading' || battleSeries.status === 'idle'
+                  ? <div style={{ width: '90%', height: `${Math.max(60, shellChartH - 24)}px`, borderRadius: '8px', background: ST.surface }} />
+                  : <span style={{ color: ST.ink2, fontSize: '14px', textAlign: 'center', padding: '0 16px' }}>{battleSeries.status === 'empty' ? SHELL_COPY.battleEmpty : SHELL_COPY.battleUnavailable}</span>}
+                {(
+                  // Always a way back to the 1D / 1W pill, loading included (PR 2 review B2).
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {(battleSeries.status === 'error' || battleSeries.status === 'empty') && (
+                      <button type="button" data-battle-retry onClick={battleSeries.retry} style={{ padding: '6px 16px', borderRadius: '6px', border: `1px solid ${ST.hair}`, background: ST.surface, color: ST.teal, fontWeight: 600, cursor: 'pointer' }}>
+                        <span style={{ fontSize: '12px' }}>{SHELL_COPY.chartRetry}</span>
+                      </button>
+                    )}
+                    <button type="button" data-battle-back onClick={() => onChartTimeframe(chartTf)} style={{ padding: '6px 16px', borderRadius: '6px', border: `1px solid ${ST.hair}`, background: ST.surface, color: ST.ink2, fontWeight: 600, cursor: 'pointer' }}>
+                      <span style={{ fontSize: '12px' }}>{chartTf}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {!battleShown && researchData.loading && !researchData.ohlcvData && (
               <div data-shell-chart-state="loading" style={{ height: `${shellChartH + 44}px`, display: 'flex', alignItems: 'center', justifyContent: 'center', background: ST.bg }}>
                 <div style={{ width: '90%', height: `${Math.max(60, shellChartH - 24)}px`, borderRadius: '8px', background: ST.surface }} />
               </div>
             )}
-            {researchData.error && !researchData.ohlcvData && (
+            {!battleShown && researchData.error && !researchData.ohlcvData && (
               <div data-shell-chart-state="error" style={{ height: `${shellChartH + 44}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: ST.bg }}>
                 <span style={{ color: ST.ink2, fontSize: '14px' }}>{SHELL_COPY.chartUnavailable}</span>
                 <button type="button" onClick={researchData.retry} style={{ padding: '6px 16px', borderRadius: '6px', border: `1px solid ${ST.hair}`, background: ST.surface, color: ST.teal, fontWeight: 600, cursor: 'pointer' }}>
@@ -863,15 +911,16 @@ const AssetResearchModal = ({
                 </button>
               </div>
             )}
-            {chartShown && (
+            {(battleShown ? battleSeries.status === 'ready' : chartShown) && (
               <StockChart
                 key={currentAsset?.symbol}
-                ohlcvData={researchData.ohlcvData}
-                rawData={researchData.rawData}
-                timeframe={researchData.timeframe}
-                onTimeframeChange={researchData.setTimeframe}
+                ohlcvData={battleShown ? battleSeries.candles : researchData.ohlcvData}
+                // Battle draws intraday bars: no daily SMA over them (the 1D series' own).
+                rawData={battleShown ? null : researchData.rawData}
+                timeframe={battleShown ? 'battle' : researchData.timeframe}
+                onTimeframeChange={battleSpec ? onChartTimeframe : researchData.setTimeframe}
                 levels={chartLevels}
-                smaData={researchData.smaData}
+                smaData={battleShown ? null : researchData.smaData}
                 activeHighlight={chartHighlight}
                 height={shellChartH}
                 // 💣 is a view of its own here (the header's pill), never a pill inside the chart;
@@ -883,7 +932,20 @@ const AssetResearchModal = ({
                 controlledSession={controlledMode ? { crypto: !!isCrypto } : undefined}
                 onToggleSR={setSrOn}
                 {...(sheetView?.chart ? { markers: sheetView.chart.markers, priceLines: sheetView.chart.priceLines } : {})}
+                {...(battleSpec ? { battlePill: { label: SHELL_COPY.timeBattle }, onMarkerTap: (id) => { if (typeof id === 'string' && id.startsWith('day:')) onRecordDay(); } } : {})}
               />
+            )}
+            {/* BC2-3: on 1D and 1W, each day of the record with its count — a tap opens Battle (a phone's tap
+                target; the counted marker itself also takes a tap). */}
+            {battleSpec && !battleShown && chartShown && sheetView?.chart?.days?.length > 0 && (
+              <div data-shell-record-days aria-label={SHELL_COPY.dayChipsLabel} style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '8px 12px 0' }}>
+                {sheetView.chart.days.map((g) => (
+                  <button key={g.day} type="button" data-record-day={g.day} onClick={onRecordDay}
+                    style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 36, padding: '0 12px', borderRadius: 999, border: `1px solid ${ST.hair}`, color: ST.teal, display: 'inline-flex', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>{g.label}</span>
+                  </button>
+                ))}
+              </div>
             )}
             {/* SQ-1: today's Technical tab, below the chart in the same scroll; a level tapped here still lights on the chart */}
             <div data-shell-technical style={{ padding: '16px 16px 28px' }}>

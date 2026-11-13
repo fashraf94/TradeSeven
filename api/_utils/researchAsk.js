@@ -134,7 +134,12 @@ export function verifyResearchItems({ battle, battleId = null, ask, nowMs }) {
     const pos = agentPositionOf(battle, ask.symbol);
     const own = pos?.asset?.positionId ?? null;
     const row = own ? { positionId: own } : pos ? { posKey: `player:${pos.tier}:${pos.slot}` } : {};
-    server = candidateItems({ battle, symbol: ask.symbol, nowMs, row, battleId, directive: battle?.directive ?? null, incumbent }).items;
+    const base = { battle, symbol: ask.symbol, nowMs, battleId, directive: battle?.directive ?? null, incumbent };
+    server = candidateItems({ ...base, row }).items;
+    // The same ticker opened on the CPU's row (review C2): the sheet builds the row it was opened on — not
+    // the agent's position — so its QF-2 / QF-5 items (the weakest holding it is compared with) are re-read as
+    // that row too. Both are genuine re-readings of this battle; a forged item matches neither.
+    if (pos) server = [...server, ...candidateItems({ ...base, row: { posKey: 'cpu' } }).items];
   } catch {
     reread = false;
   }
