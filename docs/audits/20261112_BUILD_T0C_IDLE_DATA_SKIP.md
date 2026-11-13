@@ -284,3 +284,39 @@ All CONFIRMED test and docstring findings are fixed in `17bfd824`. No finding to
    - `src/screens/PitStopScreen.jsx:614` calls that endpoint, and `src/App.jsx:9954` routes to PitStop when a Season entry is active.
    - This build did not check whether any Season is active (a Firestore fact). If one is, that debrief now finds the cache less often warmed by the Mandate, and it fetches on a miss. Latency and cost move there; its data source is unchanged. This is Astra's B6 consequence, not a correctness issue.
 4. **No cron can clear an open batch doc under direct transport.** The harvest is batch-only and the close path never harvests, so only the founder drain endpoint does. Combined with A3, a stuck doc would force daily builds until someone drains it. `MANDATE_BATCH_STUCK_OPEN` alerts at 30 days.
+
+## Merge prep, 13 Nov 2026
+
+Astra reviewed T0a, T0b and T0c as a set (`docs/audits/20261112_ASTRA_REVIEW_T0_SET.md`): T0a and T0b MERGE; T0c DO NOT MERGE for one reason only, **T0-01**. T0b and T0c each added their build-report row at the same place in `docs/README.md`, so T0c no longer merged cleanly once T0b was in. This pass brings T0c up to date with `main` and resolves that conflict. It changes no code.
+
+| Question | Answer |
+|---|---|
+| `main` HEAD merged | `34f9c6f9` (after `git fetch origin`). It holds T0a (#1046, merge `9ca96ff2`, head `eb4d9b56`) and T0b (#1051, head `bc4d797e`). #1050 had merged into the T0a branch instead of `main`; #1051 re-landed the same head onto `main`. |
+| Merge commit | `c86d49a2` (parents `fd92739a`, T0c's head, and `34f9c6f9`). A merge, not a rebase; nothing force-pushed. |
+| Conflicts | One, `docs/README.md`, as Astra found. The two `.js` files both builds touch merged automatically. |
+| Resolution | Both report rows kept, T0b's then T0c's, directly after T0a's report row (`docs/README.md:121–123`), as in Astra's local resolution. |
+| What the merge leaves | The merged tree differs from `main` in exactly T0c's six files, with the same line counts as T0c alone against `eb4d9b56` (759 added, 42 removed). |
+| Checks | All green on Linux: Astra's command, the full suite, `lint:gate` and `vite build` (below). |
+
+### Both builds' code is present after the merge
+
+Read at `c86d49a2`. The lines are unchanged at the pushed head, since the commits after the merge touch only `docs/`.
+
+1. **T0b's response clock and attribution, `api/cron/mandate-evaluate.js`.** The import is at `:46`. The injectable `clock = () => new Date()` is at `:132`. `responseAttribution({ modelSeat, rationaleAt: clock(), rationaleAtBasis: 'direct_response' })` is at `:241–243`, and `attribution` is passed into execution at `:266`.
+2. **T0c's idle check, `api/cron/mandate-evaluate.js`.** `hasOpenBatch` is imported at `:50`. `idleAcquisitionCheck` is at `:90–99`. It is called on the eval path at `:337–338` and on the close path at `:739–740`.
+3. **T0b's reason attribution, `api/_utils/mandateBatchTransport.js`.** The import is at `:89`. `responseAttribution` takes the provider's batch end, or else the harvest clock, at `:342–346`. The reason in hand and the attribution ride the `book_missing`, `no_vintage` and `bad_decision` terminals at `:353`, `:377` and `:395`, and execution at `:437`.
+4. **T0a's vintage gating, `api/_utils/mandateBatchTransport.js`.** `isSectorCapCorrected` is imported at `:87`, and `vintageUncorrected: !isSectorCapCorrected(vintage.gateConfig)` is at `:417`.
+5. **T0c's `openBatchQuery`, `api/_utils/mandateBatchTransport.js`.** The selector is at `:117–118`, and `hasOpenBatch` (limit 1) at `:126–127`. The harvest uses it at `:548` and the drain at `:813`.
+
+### Checks (Linux, the record)
+
+WSL Ubuntu, Node 20.20.2 / npm 10.8.2, `TZ=UTC`. The run used a clean worktree of `~/pd-ci` at the commit, linked to an install of the same lockfile (`40382e64edb6`).
+
+| Check | Commit | Result |
+|---|---|---|
+| Astra's command: `npx vitest run api/_utils/mandate api/_utils/__testsupport__/mandate api/cron/mandate api/mandate src/config/mandateFlags.test.js src/config/flagPinGuard.test.js` | `c86d49a2` | exit 0. `Test Files  42 passed (42)`; `Tests  692 passed (692)` |
+| Full suite: `flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | `c86d49a2` | exit 0. `Test Files  1411 passed \| 9 skipped (1420)`; `Tests  31213 passed \| 99 skipped (31312)`. Duration 316.53 s. |
+| `npm run lint:gate` | `1404692f` | exit 0 |
+| `npx vite build` | `1404692f` | exit 0. It prints four `css-syntax-error` warnings, the same four `main` prints. The CSS and the full set of JS chunks are byte-identical to `main`'s build at `34f9c6f9`: T0c's changes are server-only. |
+
+The `Test Files` and `Tests` lines are copied from the log file itself. No test reads `docs/README.md` or `docs/audits/`, so the suite result at the merge commit also holds for the docs-only commits after it. `lint:gate` and `vite build` ran at `1404692f`, whose code matches the pushed head; this section is the only change after it. No Firestore writes, model calls or EODHD calls were made, no flag changed, and no fenced file was touched.
