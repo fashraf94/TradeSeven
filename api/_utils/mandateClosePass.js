@@ -49,6 +49,7 @@ import { computeMandateScoring, isDegradedRow } from './mandateRiskMetrics.js';
 import { logMandateScoring } from './shadowLogger.js';
 import { roundUsd } from './mandateRounding.js';
 import { resolveSessionSlots } from './mandateSessionSlots.js';
+import { isIdeaBook, NOT_QUARTERLY } from './mandateBookKind.js';
 import {
   MANDATE_SCHEMA_VERSION,
   MANDATE_FRICTION_BASIS,
@@ -175,6 +176,10 @@ export async function closeBook(db, mandateRef, {
     // Idempotency (§3.6): a repeat run for the same date no-ops.
     if (book.execState?.lastCloseKey === date) return { closed: false, skipped: 'already_closed', alerts };
     if (book.status !== 'active') return { closed: false, skipped: 'not_active', alerts };
+    // Kind isolation (Practice Field T1a-1, unconditional): the quarterly close never acts on an idea book. It
+    // would move the book's positions and leave every idea's own ledger behind. The sweep dispatches an idea
+    // book to its own close (practiceField/close.js); this is the guard at the core.
+    if (isIdeaBook(book)) return { closed: false, skipped: NOT_QUARTERLY, alerts };
 
     let positions = { ...(book.portfolio?.positions || {}) };
     let cash = Number(book.portfolio?.cash) || 0;

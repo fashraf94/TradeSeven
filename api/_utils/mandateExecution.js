@@ -48,6 +48,7 @@ import {
   MANDATE_VALUE_CONSERVE_TOLERANCE_USD,
 } from './mandateConfig.js';
 import { EXIT_VERBS, ENTRY_VERBS } from './mandateDecisionTool.js';
+import { isIdeaBook } from './mandateBookKind.js';
 
 // ── Rounding (§4.1) ──────────────────────────────────────────────────────────
 
@@ -390,6 +391,9 @@ export async function disposeSubmission(db, {
       return { status: existing.data().status, applied: false, idempotent: true };
     }
     const bookSnap = await tx.get(mandateRef);
+    // Kind isolation (Practice Field T1a-1, unconditional): a quarterly submission is never disposed against an
+    // idea book — no decision record, no revision bump. Thrown before any write.
+    if (bookSnap.exists && isIdeaBook(bookSnap.data())) throw new Error('disposeSubmission: an idea book is not a quarterly book (not_quarterly)');
 
     tx.set(decRef, buildDecision({
       decisionId: requestId,
@@ -507,6 +511,10 @@ export async function executeDecision(db, {
     const bookSnap = await tx.get(mandateRef);
     if (!bookSnap.exists) throw new Error('executeDecision: book missing');
     const book = bookSnap.data();
+    // Kind isolation (Practice Field T1a-1, unconditional): the quarterly execution boundary never trades an
+    // idea book. Its fills go through practiceField/fills.js (the eligible-mark rule) and nothing else. Thrown
+    // before any write: no decision record, no portfolio change.
+    if (isIdeaBook(book)) throw new Error('executeDecision: an idea book is not a quarterly book (not_quarterly)');
 
     // Book value BEFORE the mutation, at THIS snapshot — the independent baseline
     // the post-mutation conservation invariant checks against (money-review M2).

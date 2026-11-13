@@ -358,6 +358,10 @@ export async function ensureDailySnapshot(db, {
   getFundamentals = (sym) => getStockAnalysisData(sym, { fields: ['fundamentals'] }),
   fetchCorporateActions = fetchCorporateActionsEODHD,
   concurrency = 8,
+  // Practice Field T1a-1: symbols whose classification is KNOWN STATICALLY (the idea book's funds —
+  // `{ SYM: { sector, industry, marketCap } }`). Such a symbol skips the fundamentals lookup and takes these
+  // fields as given; its corporate actions are still fetched. Null (the default) is today's behaviour.
+  staticClassifications = null,
 } = {}) {
   if (!db) throw new Error('ensureDailySnapshot: db required');
   if (!date) throw new Error('ensureDailySnapshot: date required');
@@ -388,15 +392,22 @@ export async function ensureDailySnapshot(db, {
   for (const group of chunk(symbols, concurrency)) {
     const results = await Promise.all(group.map(async (sym) => {
       let sector = null; let industry = null; let marketCap = null; let upstream = 0;
-      try {
-        const res = await getFundamentals(sym);
-        const f = res?.fundamentals || {};
-        upstream = res?.cacheStatus?.fundamentals === 'fresh' ? 1 : 0;
-        sector = f.sector ?? null;
-        industry = f.industry ?? null;
-        marketCap = f.marketCap ?? null;
-      } catch (err) {
-        console.error(`${LOG_PREFIX} fundamentals fetch failed for ${sym}: ${err.message}`);
+      const known = staticClassifications && Object.hasOwn(staticClassifications, sym) ? staticClassifications[sym] : null;
+      if (known) {
+        sector = known.sector ?? null;
+        industry = known.industry ?? null;
+        marketCap = known.marketCap ?? null;
+      } else {
+        try {
+          const res = await getFundamentals(sym);
+          const f = res?.fundamentals || {};
+          upstream = res?.cacheStatus?.fundamentals === 'fresh' ? 1 : 0;
+          sector = f.sector ?? null;
+          industry = f.industry ?? null;
+          marketCap = f.marketCap ?? null;
+        } catch (err) {
+          console.error(`${LOG_PREFIX} fundamentals fetch failed for ${sym}: ${err.message}`);
+        }
       }
       let ca = { actions: [], calls: 0, failed: false };
       try {
@@ -477,6 +488,10 @@ export async function ensureUniverseSnapshot(db, {
   candidateUniverse = CANDIDATE_UNIVERSE,
   fetchQuotes = fetchBatchQuotes,
   batchSize = MANDATE_QUOTE_BATCH_SIZE,
+  // Practice Field T1a-1: the candidate-capacity floor (I11) guards a build that INCLUDES the default candidate
+  // universe. A build without it (idea books only) has no candidates by design and passes 0, so a small idea-book
+  // universe never reads as degraded. The default is today's floor.
+  minCandidateCapacity = MANDATE_MIN_CANDIDATE_CAPACITY,
 } = {}) {
   if (!db) throw new Error('ensureUniverseSnapshot: db required');
   if (!tickKey) throw new Error('ensureUniverseSnapshot: tickKey required');
@@ -534,11 +549,11 @@ export async function ensureUniverseSnapshot(db, {
   for (const e of Object.values(finalEntries)) if (e.complete) finalComplete++;
 
   const completeCandidates = countCompleteCandidates(finalEntries, heldSet);
-  const degraded = completeCandidates < MANDATE_MIN_CANDIDATE_CAPACITY;
+  const degraded = completeCandidates < minCandidateCapacity;
   if (degraded) {
     console.error(
       `${LOG_PREFIX} MANDATE_UNIVERSE_DEGRADED — only ${completeCandidates} complete candidate `
-      + `symbols (< floor ${MANDATE_MIN_CANDIDATE_CAPACITY}) at tick ${tickKey} `
+      + `symbols (< floor ${minCandidateCapacity}) at tick ${tickKey} `
       + `(${fitted.dropped} dropped for size); snapshot risks sell-only`,
     );
   }
