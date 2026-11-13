@@ -29,8 +29,9 @@ const CONSUMER = 'shared_research.observation';
 const METHOD_SHA256 = 'b0688fb33cdd5b16835a5a70f7fcef7ca79d00facced233d1529d26b4e77854e';
 const ACCEPTANCE_SHA256 = 'ec709781b80d2deeb325702faccb7a90abaa0c244c96103f0e956f81d26a08ee';
 const DRIVE_PATH = /[A-Za-z]:\\/;
-// Any local path form: a drive letter (either slash), a UNC share, a POSIX home.
-const LOCAL_PATH = /[A-Za-z]:[\\/]|\\\\[^\\]|(^|[\s"'(])\/(home|Users)\//;
+// Any local path form: a drive letter (either slash, not a URL scheme), a UNC
+// share, a POSIX or WSL home, a tilde home.
+const LOCAL_PATH = /(?<![A-Za-z])[A-Za-z]:[\\/]|\\\\[^\\]|(^|[\s"'(=])(\/(home|Users|root)\/|\/mnt\/[a-z]\/|~\/)/;
 
 const sha = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
 const REAL = KB_PACKAGES.find((p) => p.id === ID && p.version === VERSION);
@@ -626,6 +627,8 @@ describe('the answer', () => {
       const list = [entry({ id: p.id, version: p.version, sha256: sha(e.method_text), acceptanceSha256: sha(p.acceptance.text) })];
       for (const r of [load(list, { id: p.id, version: p.version }), offer(list), verifyPackage({ id: p.id, version: p.version })]) {
         expect(r.ok).toBe(true);
+        // Every value is exactly the package's own field: nothing, not even a fragment, rides along.
+        expect(r.method).toMatchObject({ id: p.id, version: p.version, sha256: sha(e.method_text), title: e.title, text: e.method_text, acceptedAt: e.acceptance.date });
         for (const value of Object.values(r.method)) {
           // Strings only: no block (source, review, acceptance, exporter, the record, the register) can ride along.
           expect(typeof value).toBe('string');
@@ -637,8 +640,9 @@ describe('the answer', () => {
   });
 
   it('the local-path pattern catches the forms a package could carry', () => {
-    for (const s of ['C:\\Users\\someone\\kb', 'c:/Users/someone/kb', '/home/someone/kb', '/Users/someone/kb', '\\\\server\\share']) expect(s).toMatch(LOCAL_PATH);
-    expect('methods/KB-IDEA-EVALUATION-001/v0.1/ACCEPTANCE.json').not.toMatch(LOCAL_PATH);
+    for (const s of ['C:\\Users\\someone\\kb', 'c:/Users/someone/kb', '/home/someone/kb', '/Users/someone/kb', '\\\\server\\share',
+      '/mnt/c/Users/someone/kb', '~/kb/x', '/root/kb', 'at "C:/x"']) expect(s).toMatch(LOCAL_PATH);
+    for (const s of ['methods/KB-IDEA-EVALUATION-001/v0.1/ACCEPTANCE.json', 'https://example.com/a', 'file:///x', 'see http://x.y']) expect(s).not.toMatch(LOCAL_PATH);
   });
 });
 

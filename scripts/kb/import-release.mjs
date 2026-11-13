@@ -40,7 +40,7 @@
 // directly.
 
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyParts } from '../../api/_utils/kb/loader.js';
@@ -56,6 +56,11 @@ const isSafeRelativePath = (p) => typeof p === 'string' && p.length > 0
   && p.split('/').every((seg) => SAFE_SEGMENT.test(seg) && seg !== '.' && seg !== '..');
 
 const refuse = (reason, detail) => ({ ok: false, reason, detail });
+
+/** An error whose message names only release-relative paths (written by this script). */
+const SAFE = Symbol('kb-import-safe-message');
+const safeError = (message) => Object.assign(new Error(message), { [SAFE]: true });
+const isSafeError = (err) => err instanceof Error && err[SAFE] === true;
 
 /** The part's { path, sha256 } from the method's row, or null. */
 function partOf(row, key) {
@@ -104,7 +109,9 @@ export function packageFilesOf(args) {
       try {
         b = read(part.path);
       } catch (err) {
-        return refuse('unreadable', `${key}: ${err instanceof Error ? err.message : 'read failed'}`);
+        // Only a message this script wrote (a release-relative path) is passed on; a
+        // system error's message can hold a local path (review KL3-5).
+        return refuse('unreadable', isSafeError(err) ? `${key}: ${err.message}` : key);
       }
       if (!(b instanceof Uint8Array)) return refuse('unreadable', key);
       bytes[key] = Buffer.from(b);
@@ -144,7 +151,7 @@ export function packageFilesOf(args) {
       },
     };
   } catch (err) {
-    return refuse('error', err instanceof Error ? err.message : String(err));
+    return refuse('error', isSafeError(err) ? err.message : 'unexpected exception');
   }
 }
 
@@ -178,7 +185,7 @@ function main(argv) {
   }
   const read = (releasePath) => {
     const abs = path.resolve(root, ...releasePath.split('/'));
-    if (!abs.startsWith(root + path.sep)) throw new Error(`path outside the release: ${releasePath}`);
+    if (!abs.startsWith(root + path.sep)) throw safeError(`path outside the release: ${releasePath}`);
     let real;
     try {
       real = realpathSync(abs);
@@ -186,7 +193,7 @@ function main(argv) {
       return undefined;
     }
     // A link inside the release must not lead out of it.
-    if (!real.startsWith(root + path.sep)) throw new Error(`path leaves the release through a link: ${releasePath}`);
+    if (!real.startsWith(root + path.sep)) throw safeError(`path leaves the release through a link: ${releasePath}`);
     try {
       return readFileSync(real);
     } catch {
@@ -195,9 +202,10 @@ function main(argv) {
   };
   let index;
   try {
-    index = JSON.parse(readFileSync(path.join(root, 'RELEASE-INDEX.json'), 'utf8'));
-  } catch {
-    console.error('REFUSED: index (RELEASE-INDEX.json unreadable or not JSON)');
+    // Through `read`, so the index cannot be a link out of the release either.
+    index = JSON.parse(Buffer.from(read('RELEASE-INDEX.json')).toString('utf8'));
+  } catch (err) {
+    console.error(`REFUSED: index (${isSafeError(err) ? err.message : 'RELEASE-INDEX.json unreadable or not JSON'})`);
     return 1;
   }
 
@@ -233,21 +241,31 @@ function main(argv) {
   // writing the release's register wrapper with its own path): remove it
   // deliberately first. Checked for all three before anything is written.
   for (const f of result.files) {
-    let onDisk = null;
+    let st = null;
     try {
-      onDisk = readFileSync(path.join(out, f.name));
+      st = statSync(path.join(out, f.name));
     } catch {
-      onDisk = null;
+      st = null;
     }
+    if (st !== null && !st.isFile()) {
+      console.error(`REFUSED: overwrite (${f.name} exists and is not a file; nothing written)`);
+      return 1;
+    }
+    const onDisk = st !== null ? readFileSync(path.join(out, f.name)) : null;
     if (onDisk !== null && !onDisk.equals(f.bytes)) {
       console.error(`REFUSED: overwrite (${f.name} exists with other bytes; nothing written)`);
       return 1;
     }
   }
-  mkdirSync(out, { recursive: true });
-  for (const f of result.files) {
-    writeFileSync(path.join(out, f.name), f.bytes);
-    console.log(`  wrote ${f.name} (${f.bytes.length} bytes, sha256 ${sha256Hex(f.bytes)})`);
+  try {
+    mkdirSync(out, { recursive: true });
+    for (const f of result.files) {
+      writeFileSync(path.join(out, f.name), f.bytes);
+      console.log(`  wrote ${f.name} (${f.bytes.length} bytes, sha256 ${sha256Hex(f.bytes)})`);
+    }
+  } catch {
+    console.error('REFUSED: write (--out is not a writable directory)');
+    return 1;
   }
   return 0;
 }

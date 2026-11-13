@@ -240,6 +240,13 @@ describe('the import script — packageFilesOf', () => {
     expect(r.files).toBeUndefined();
   });
 
+  it("a reader's system error never carries its message (it can hold a local path) into the refusal (refuter KLV3, KL3-5)", () => {
+    const rel = memoryRelease();
+    const leaky = () => { throw new Error("ENOENT: no such file or directory, open 'C:\\Users\\someone\\release\\x'"); };
+    const r = packageFilesOf({ index: rel.index, read: leaky, id: ID, version: VERSION });
+    expect(r).toEqual({ ok: false, reason: 'unreadable', detail: 'export' });
+  });
+
   it('never throws (garbage arguments, a throwing reader)', () => {
     for (const args of [undefined, null, 42, {}, { index: 'x' }, { index: memoryRelease().index, read: () => { throw new Error('boom'); }, id: ID, version: VERSION }]) {
       const r = packageFilesOf(args);
@@ -321,6 +328,48 @@ describe('the import script — the command line (writes nothing on a refusal; -
       expect(cli(['--release', release, '--id', ID, '--version', VERSION, '--out', out]).status).toBe(0);
     } finally {
       rmSync(release, { recursive: true, force: true });
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('an --out that is a file, or an output name that is a directory, is refused before anything is written (refuter KLV3)', () => {
+    const release = onDisk(memoryRelease());
+    const holder = mkdtempSync(path.join(os.tmpdir(), 'kb0-holder-'));
+    try {
+      const outFile = path.join(holder, 'not-a-dir');
+      writeFileSync(outFile, 'x');
+      const r1 = cli(['--release', release, '--id', ID, '--version', VERSION, '--out', outFile]);
+      expect(r1.status).toBe(1);
+      expect(r1.stderr.trim()).toBe('REFUSED: write (--out is not a writable directory)');
+      const out = path.join(holder, 'out');
+      mkdirSync(path.join(out, FILES.register), { recursive: true });
+      const r2 = cli(['--release', release, '--id', ID, '--version', VERSION, '--out', out]);
+      expect(r2.status).toBe(1);
+      expect(r2.stderr).toContain(`REFUSED: overwrite (${FILES.register} exists and is not a file`);
+      expect(readdirSync(out)).toEqual([FILES.register]);
+      for (const r of [r1, r2]) expect(r.stderr).not.toContain(os.tmpdir());
+    } finally {
+      rmSync(release, { recursive: true, force: true });
+      rmSync(holder, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it.skipIf(process.platform === 'win32')('the index itself cannot be a link out of the release (refuter KLV3, KL3-4 residual; a file symlink, Linux)', () => {
+    const release = onDisk(memoryRelease());
+    const outside = mkdtempSync(path.join(os.tmpdir(), 'kb0-outside-'));
+    const out = mkdtempSync(path.join(os.tmpdir(), 'kb0-out-'));
+    try {
+      const idx = path.join(release, 'RELEASE-INDEX.json');
+      cpSync(idx, path.join(outside, 'RELEASE-INDEX.json'));
+      rmSync(idx);
+      symlinkSync(path.join(outside, 'RELEASE-INDEX.json'), idx);
+      const r = cli(['--release', release, '--id', ID, '--version', VERSION, '--out', out]);
+      expect(r.status).toBe(1);
+      expect(r.stderr.trim()).toBe('REFUSED: index (path leaves the release through a link: RELEASE-INDEX.json)');
+      expect(readdirSync(out)).toEqual([]);
+    } finally {
+      rmSync(release, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
       rmSync(out, { recursive: true, force: true });
     }
   }, 30_000);
