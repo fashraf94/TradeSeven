@@ -304,6 +304,38 @@ describe('the order — with two defects, the EARLIER check answers (review KL4-
   });
 });
 
+describe('each export field is read once, by the check that needs it (refuter KLV2 NEW-2, KL2-4)', () => {
+  const throwing = (obj, key) => Object.defineProperty(obj, key, { get() { throw new Error('boom'); } });
+
+  it("a later check's hostile field never pre-empts an earlier check's refusal", () => {
+    const a = copyRow();
+    a.exportJson.schema = 'x';
+    throwing(a.exportJson, 'method_text');
+    expect(verifyRow(a)).toEqual({ ok: false, reason: 'schema' });
+    const b = copyRow();
+    b.exportJson.id = 'KB-OTHER-001';
+    throwing(b.exportJson, 'method_text');
+    throwing(b.exportJson, 'content_hash');
+    expect(verifyRow(b)).toEqual({ ok: false, reason: 'identity' });
+    const c = copyRow();
+    c.exportJson.status = 'reviewed_candidate';
+    throwing(c.exportJson, 'method_text');
+    expect(verifyRow(c)).toEqual({ ok: false, reason: 'not_accepted' });
+  });
+
+  it('acceptance and content_hash are each read once', () => {
+    const row = copyRow();
+    const counts = {};
+    for (const key of ['acceptance', 'content_hash', 'title', 'schema', 'status']) {
+      const value = row.exportJson[key];
+      counts[key] = 0;
+      Object.defineProperty(row.exportJson, key, { get() { counts[key] += 1; return value; } });
+    }
+    expect(verifyRow(row).ok).toBe(true);
+    expect(counts).toEqual({ acceptance: 1, content_hash: 1, title: 1, schema: 1, status: 1 });
+  });
+});
+
 describe('checks 1–7 — an unexpected exception is corrupt', () => {
   it('a throwing getter in the export, in a package row, and in the request', () => {
     const row = copyRow();
@@ -487,6 +519,16 @@ describe('the two entry points', () => {
     expect(load([stale, stayOnly], { inAudience: onlyAll })).toMatchObject({ ok: true, method: { audience: 'all' } });
   });
 
+  it('both entry points agree on an ambiguous list: two entries for one version and consumer, one stay-only (refuter KLV2 NEW-1)', () => {
+    for (const list of [
+      [entry({ audience: 'allowlist' }), entry({ audience: 'all', newSessions: false })],
+      [entry(), entry({ audience: 'everyone', newSessions: false })],
+    ]) {
+      expect(offer(list)).toEqual({ ok: false, reason: 'not_authorized' });
+      expect(load(list)).toEqual({ ok: false, reason: 'not_authorized' });
+    }
+  });
+
   it('a missing or empty consumer is never matched, whatever the entry holds (review KL2-2)', () => {
     const holey = { ...entry(), consumers: [, CONSUMER] }; // eslint-disable-line no-sparse-arrays
     for (const consumer of [undefined, '']) {
@@ -519,6 +561,13 @@ describe('the two entry points', () => {
 });
 
 describe('check 10 — an asynchronous audience function (review KL2-9)', () => {
+  it("a foreign thenable is refused and its `then` is never called (refuter KLV2 NEW-3)", () => {
+    let calls = 0;
+    const thenable = { then() { calls += 1; return Promise.reject(new Error('later')); } };
+    expect(load([entry()], { inAudience: () => thenable })).toEqual({ ok: false, reason: 'audience' });
+    expect(calls).toBe(0);
+  });
+
   it('a promise is not true; a rejected one is handled, so no unhandled rejection follows', async () => {
     expect(load([entry()], { inAudience: () => Promise.resolve(true) })).toEqual({ ok: false, reason: 'audience' });
     expect(load([entry()], { inAudience: () => Promise.reject(new Error('later')) })).toEqual({ ok: false, reason: 'audience' });
