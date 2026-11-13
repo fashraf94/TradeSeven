@@ -9,8 +9,8 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 vi.mock('../../../firebase/config', () => ({ db: {}, auth: { currentUser: null }, default: {} }));
-const fsLog = vi.hoisted(() => ({ reads: [] }));
-vi.mock('firebase/firestore', () => ({ doc: (_db, ...p) => p.join('/'), getDoc: async (path) => { fsLog.reads.push(path); return { exists: () => false, data: () => null }; } }));
+const fsLog = vi.hoisted(() => ({ reads: [], doc: null }));
+vi.mock('firebase/firestore', () => ({ doc: (_db, ...p) => p.join('/'), getDoc: async (path) => { fsLog.reads.push(path); return { exists: () => !!fsLog.doc, data: () => fsLog.doc }; } }));
 
 import useSheetView from './useSheetView.js';
 import AnalysisSheet, { SheetActionRow } from './AnalysisSheet.jsx';
@@ -125,5 +125,30 @@ describe('the review round (B1, B3)', () => {
     act(() => seen.pickQuestion('take_profit'));
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     expect(fsLog.reads).toEqual(['indexIntelligence/stockRankings']);
+  });
+});
+
+describe('lens D (M6, M7) — the production path: no rankings in the context, one read when a question that reads them opens', () => {
+  const settle = async () => { await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); };
+  it('a held stock that is down: Is this our weakest spot? reads the rankings once and shows the bench alternative', async () => {
+    fsLog.reads = []; fsLog.doc = BOOK_RANKINGS;
+    show(UP, 'EQIX', 809, { rankings: undefined });
+    expect(fsLog.reads).toEqual([]);
+    act(() => seen.pickQuestion('weakest_spot'));
+    await settle();
+    show(UP, 'EQIX', 809, { rankings: undefined });
+    expect(fsLog.reads).toEqual(['indexIntelligence/stockRankings']);
+    expect(seen.pack.items.map((i) => i.kind)).toContain('bench_alternative');
+    fsLog.doc = null;
+  });
+  it('a bench name: Is this better than our weakest holding? reads them once and compares the rankings', async () => {
+    fsLog.reads = []; fsLog.doc = BOOK_RANKINGS;
+    show(UP, 'MSFT', 420, { rankings: undefined, row: { held: false } });
+    act(() => seen.pickQuestion('better_than_stalled'));
+    await settle();
+    show(UP, 'MSFT', 420, { rankings: undefined, row: { held: false } });
+    expect(fsLog.reads).toEqual(['indexIntelligence/stockRankings']);
+    expect(seen.pack.items.map((i) => i.kind)).toContain('rank_scores');
+    fsLog.doc = null;
   });
 });
