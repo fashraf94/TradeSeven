@@ -119,4 +119,5 @@ export const RESEARCH_MODAL_SHEET_MODES = Object.freeze(['off', 'allowlist', 'on
  * sees or trades changes at any value.
  */
 // Pinned by: researchModalSheetFlag.test.js (the pin and this value move together — BUILD_RULES §2).
-export const RESEARCH_MODAL_SHEET_MODE = 'allowlist';
+// SMOKE ONLY, NEVER MERGE — the shell spec §8: the mode forced 'on' on the smoke branch.
+export const RESEARCH_MODAL_SHEET_MODE = 'on';
