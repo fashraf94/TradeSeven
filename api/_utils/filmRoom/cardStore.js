@@ -64,6 +64,7 @@ import { loadoutArchetypesOf } from '../../../src/constants/perGameLoadout.js';
 import { CARD_STAGE_VOCAB_VERSION, CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_STATES, NOMINATION_EXPIRY_SESSIONS, isOpenStage } from '../../../src/data/cardStages.js';
 // Build C §4 (refinement R-C1-3): the nomination record's shape is the Practice Field's builder, reached through the seam
 import { buildNominationDoc } from './practiceFieldSeam.js';
+import { isValidForgeId } from '../idValidation.js';
 
 export * from '../../../src/data/cardStages.js';
 
@@ -79,6 +80,15 @@ export const BY_SERVER = 'server';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
+
+/**
+ * Build C §3 (C1 review A-5): a replay is looked up among its own writer's rows. A player op (retire, nominate, park)
+ * answers only to a player row under its op id, and a server transition only to a server row, so a client-chosen op
+ * id can never pre-empt the Practice Field's own transition (its nomination id IS the player's nominate op id), nor
+ * the reverse.
+ */
+const playerReplayOf = (history, opId) => history.find((h) => h?.opId === opId && h?.by !== BY_SERVER) ?? null;
+const serverReplayOf = (history, opId) => history.find((h) => h?.opId === opId && h?.by === BY_SERVER) ?? null;
 
 /** A typed route failure: the route answers `status` with `{ error: code, message, ...extra }`. */
 export class CardRouteError extends Error {
@@ -367,7 +377,7 @@ export async function nominateCard(db, { uid, agentId, entryId, opId, expectedVe
     const entry = typeof snap.data === 'function' ? snap.data() : snap.data;
     if (!isObj(entry) || entry.ownerId !== uid) throw fail(403, 'forbidden');
     const history = Array.isArray(entry.stageHistory) ? entry.stageHistory : [];
-    const replay = history.find((h) => h?.opId === opId);
+    const replay = playerReplayOf(history, opId);
     if (replay) {
       if (replay.opFingerprint === opFingerprint) return { idempotent: true, card: entry };
       throw fail(409, 'op_conflict', { entryId });
@@ -405,7 +415,7 @@ export async function retireCard(db, { uid, agentId, entryId, opId, expectedVers
     if (!snap?.exists) throw fail(404, 'not_found');
     const entry = typeof snap.data === 'function' ? snap.data() : snap.data;
     if (!isObj(entry) || entry.ownerId !== uid) throw fail(403, 'forbidden');
-    const replay = (Array.isArray(entry.stageHistory) ? entry.stageHistory : []).find((h) => h?.opId === opId);
+    const replay = playerReplayOf(Array.isArray(entry.stageHistory) ? entry.stageHistory : [], opId);
     if (replay) {
       if (replay.opFingerprint === opFingerprint) return { idempotent: true, card: entry };
       throw fail(409, 'op_conflict', { entryId });
@@ -447,7 +457,7 @@ export async function parkCard(db, { uid, agentId, entryId, opId, expectedVersio
     const entry = typeof snap.data === 'function' ? snap.data() : snap.data;
     if (!isObj(entry) || entry.ownerId !== uid) throw fail(403, 'forbidden');
     const history = Array.isArray(entry.stageHistory) ? entry.stageHistory : [];
-    const replay = history.find((h) => h?.opId === opId);
+    const replay = playerReplayOf(history, opId);
     if (replay) {
       if (replay.opFingerprint === opFingerprint) return { idempotent: true, card: entry };
       throw fail(409, 'op_conflict', { entryId });
@@ -486,6 +496,7 @@ export const NOMINATION_REASON_MAX = 2000;
 const idOk = (v) => typeof v === 'string' && v.length > 0 && v.length <= 200;
 const wordOk = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
 const isoOk = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));
+const pathIdOk = (v) => isValidForgeId(v) && !/^__.*__$/.test(v);
 const invalid = (why) => fail(400, 'invalid_transition', { why });
 
 /**
@@ -552,10 +563,15 @@ function boundOf(to, entry, field) {
  * @returns {Promise<{ idempotent: boolean, entry: object }>}
  */
 export async function applyServerTransition(db, { entryId, ownerId, agentId, to, by, payload, opId, nowIso = new Date().toISOString() }) {
-  const step = Object.prototype.hasOwnProperty.call(SERVER_TRANSITIONS, to) ? SERVER_TRANSITIONS[to] : null;
+  // C1 review A-1: `to` must be a STRING key of the table — an array or a String object would coerce to a key and then
+  // miss every branch that compares `to` with ===
+  const step = typeof to === 'string' && Object.prototype.hasOwnProperty.call(SERVER_TRANSITIONS, to) ? SERVER_TRANSITIONS[to] : null;
   if (!step) throw invalid('to');
   if (typeof by !== 'string' || !WRITER_NAME.test(by)) throw invalid('by');
-  if (!idOk(entryId) || !idOk(ownerId) || !idOk(agentId) || !idOk(opId)) throw invalid('ids');
+  // C1 review A-10: the ids that build the document path are held to the forge-id class (no `/`, never a reserved
+  // `__id__`), as the endpoint holds the player's; the instant must be one
+  if (!pathIdOk(entryId) || !pathIdOk(agentId) || !idOk(ownerId) || !idOk(opId)) throw invalid('ids');
+  if (!isoOk(nowIso)) throw invalid('nowIso');
   const field = fieldOfTransition(to, payload);
   const opFingerprint = canonicalContentHash({ kind: 'server', to, agentId, entryId, by, field });
   return db.runTransaction(async (tx) => {
@@ -565,7 +581,7 @@ export async function applyServerTransition(db, { entryId, ownerId, agentId, to,
     const entry = typeof snap.data === 'function' ? snap.data() : snap.data;
     if (!isObj(entry) || entry.ownerId !== ownerId || entry.agentId !== agentId) throw fail(403, 'forbidden');
     const history = Array.isArray(entry.stageHistory) ? entry.stageHistory : [];
-    const replay = history.find((h) => h?.opId === opId);
+    const replay = serverReplayOf(history, opId);
     if (replay) {
       if (replay.opFingerprint === opFingerprint) return { idempotent: true, entry };
       throw fail(409, 'op_conflict', { entryId });

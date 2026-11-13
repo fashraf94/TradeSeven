@@ -38,6 +38,8 @@ const STAGE = CARD_STAGES.join('|');
 const OWN_LIST = [
   new RegExp(`\\[\\s*(['"])(${STAGE})\\1\\s*,\\s*(['"])(${STAGE})\\3`),
   new RegExp(`stage\\s*[!=]==?\\s*(['"])(${STAGE})\\1\\s*(&&|\\|\\|)\\s*[\\w.?]*stage\\s*[!=]==?\\s*(['"])(${STAGE})\\4`),
+  // C1 review A-12: a switch whose cases fall through two stage words is a list too
+  new RegExp(`case\\s*(['"])(${STAGE})\\1\\s*:\\s*case\\s*(['"])(${STAGE})\\3`),
 ];
 export const ownStageListsIn = (src) => OWN_LIST.map((re) => re.exec(stripComments(src))?.[0] ?? null).filter(Boolean);
 
@@ -60,11 +62,16 @@ describe('C-VOCAB — every reader reads the stages from the one export', () => 
       expect(ownStageListsIn(`${src}\nconst OWN = ['card', 'nominated'];\n`).length, `${file} array`).toBe(1);
       expect(ownStageListsIn(`${src}\nconst open = (c) => c.stage === 'card' || c.stage === 'testing';\n`).length, `${file} chain`).toBe(1);
       expect(ownStageListsIn(`${src}\nconst open = (c) => c.stage !== 'tested' && c?.stage !== "installed";\n`).length, `${file} chain, other quotes`).toBe(1);
+      expect(ownStageListsIn(`${src}\nswitch (c.stage) { case 'card':\n  case 'nominated': return true; default: return false; }\n`).length, `${file} switch`).toBe(1);
     }
     // a list in a comment is not code
     expect(ownStageListsIn("// the stages ['card', 'nominated'] were v1's\nconst x = 1;")).toEqual([]);
     // a single stage word is the vocabulary's word, not a list
     expect(ownStageListsIn("if (c.stage === 'retired') x();")).toEqual([]);
+  });
+
+  it('DOCUMENTED LIMIT, stated on purpose: an object keyed by stage words is not read as a list — the copy\'s stageWords and the store\'s SERVER_TRANSITIONS are such maps by design; the copy\'s keys are pinned equal to the vocabulary below instead', () => {
+    expect(ownStageListsIn("const open = { card: true, nominated: true };")).toEqual([]);
   });
 
   it('the export itself is the one place the lists live — and the store\'s are the same objects', () => {

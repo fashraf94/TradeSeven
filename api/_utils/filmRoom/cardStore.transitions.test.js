@@ -166,16 +166,20 @@ describe('Build C §3 — applyServerTransition, the Practice Field\'s one way i
     // from `card`: no server transition (the player's nominate moves it, item 3)
     expect(await code(move(t, { to: 'nomination', opId: 'x1', payload: NOMINATION }))).toMatchObject({ status: 409, code: 'illegal_transition', extra: { stage: 'card' } });
     expect(await code(move(t, { to: 'testing', opId: 'x2', payload: IDEA }))).toMatchObject({ code: 'illegal_transition' });
+    expect(playWrites(t).length).toBe(writes);
     const u = fresh();
     await nominated(u);
+    const uWrites = playWrites(u).length;
     expect(await code(move(u, { to: 'tested', opId: 'x3', payload: RESULT }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'nominated' } });
     expect(await code(move(u, { to: 'installed', opId: 'x4', payload: { offerId: 'o', state: 'accepted' } }))).toMatchObject({ code: 'illegal_transition' });
     expect(await code(move(u, { to: 'retired', opId: 'x5', payload: { state: 'no_offer' } }))).toMatchObject({ code: 'illegal_transition' });
+    expect(playWrites(u).length).toBe(uWrites);
     await move(u, { to: 'testing', opId: 's2', payload: IDEA });
+    const afterTesting = playWrites(u).length;
     expect(await code(move(u, { to: 'installed', opId: 'x6', payload: { offerId: 'o', state: 'accepted' } }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'testing' } });
     expect(await code(move(u, { to: 'retired', opId: 'x7', payload: { state: 'no_offer' } }))).toMatchObject({ code: 'illegal_transition' });
     expect(await code(move(u, { to: 'nomination', opId: 'x8', payload: NOMINATION }))).toMatchObject({ code: 'illegal_transition' });
-    expect(playWrites(t).length).toBe(writes);
+    expect(playWrites(u).length).toBe(afterTesting);
   });
 
   it('THE OWNER (the mutant: skipping the owner check): another owner, another agent on the entry, or a missing entry → refused; nothing written', async () => {
@@ -334,15 +338,17 @@ describe('C1 item 7 — park (refinement R-C1-2; acceptance C-PARK)', () => {
     const t = fresh();
     await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c1', payload: payload(), nowIso: NOW, battleArchetype: 'momentum_chaser' });
     expect(await code(park(t, { expectedVersion: 1 }))).toMatchObject({ status: 409, code: 'illegal_transition', extra: { stage: 'card' } });
+    expect(t.writeLog.filter((w) => w.op === 'tx.update')).toEqual([]);
     const u = fresh();
     const at = await nominated(u);
     expect(await code(park(u, { expectedVersion: at.version }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'nominated' } });
     await move(u, { to: 'nomination', opId: 's1', payload: NOMINATION });
     const { entry } = await move(u, { to: 'testing', opId: 's2', payload: IDEA });
+    const uUpdates = u.writeLog.filter((w) => w.op === 'tx.update').length;
     expect(await code(park(u, { expectedVersion: entry.version }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'testing' } });
     expect(await code(park(u, { expectedVersion: 1 }))).toMatchObject({ code: 'version_conflict' });
     expect(await code(park(u, { uid: 'intruder', expectedVersion: entry.version }))).toMatchObject({ status: 403, code: 'forbidden' });
-    expect(t.writeLog.filter((w) => w.op === 'tx.update')).toEqual([]);
+    expect(u.writeLog.filter((w) => w.op === 'tx.update').length).toBe(uUpdates);
   });
 
   it('a shelved tested card parks (parking moves no stage); it stays shelved', async () => {
@@ -352,5 +358,46 @@ describe('C1 item 7 — park (refinement R-C1-2; acceptance C-PARK)', () => {
     await park(t, { expectedVersion: entry.version });
     const read = await readCards(t.db, { uid: UID, agentId: AGENT });
     expect(read.cards[0]).toMatchObject({ entryId: 'c1', shelved: true, parkedAt: LATEST });
+  });
+});
+
+// ── the C1 review's fixes (docs/audits/20261112_BUILD_FILM_ROOM_C1_CHAIN.md §6) ─────────────────────────────────────
+describe('C1 review — the helper\'s guards and the replay namespaces', () => {
+  it('A-1: a `to` that is not a string — an array, a String object — is refused 400 invalid_transition, nothing read (it would coerce to a key and miss every branch)', async () => {
+    const t = fresh();
+    await nominated(t);
+    const reads = t.readLog.length;
+    for (const to of [['nomination'], ['testing'], new String('tested')]) {
+      expect(await code(move(t, { to, opId: 'z1', payload: { state: 'x' } })), String(to)).toMatchObject({ status: 400, code: 'invalid_transition', extra: { why: 'to' } });
+    }
+    expect(t.readLog.length).toBe(reads);
+    expect(t.store.get(playPath('c1')).nomination).toEqual({ bookId: BOOK, nominationId: 'nom_c1', state: 'queued' });
+  });
+
+  it('A-10: the ids that build the path are held to the forge-id class (no slash, no reserved __id__); the instant must be one', async () => {
+    const t = fresh();
+    await nominated(t);
+    for (const over of [{ entryId: 'c1/deeper' }, { entryId: '__c1__' }, { agentId: 'agent-1/x' }]) {
+      expect(await code(move(t, { ...over, to: 'nomination', opId: 'z2', payload: NOMINATION })), JSON.stringify(over)).toMatchObject({ status: 400, code: 'invalid_transition', extra: { why: 'ids' } });
+    }
+    for (const nowIso of [12345, 'later', null]) expect(await code(move(t, { nowIso, to: 'nomination', opId: 'z3', payload: NOMINATION })), String(nowIso)).toMatchObject({ status: 400, code: 'invalid_transition', extra: { why: 'nowIso' } });
+  });
+
+  it('A-5: a replay is its own writer\'s — a server op id equal to the player\'s nominate op id (the nomination id) is no replay and transitions; a player park under a server row\'s op id is no replay either', async () => {
+    const t = fresh();
+    const at = await nominated(t);
+    const playerOp = at.stageHistory.at(-1).opId;   // the player's nominate op id
+    const r = await move(t, { to: 'nomination', opId: playerOp, payload: NOMINATION });
+    expect(r.idempotent).toBe(false);
+    expect(r.entry.nomination.state).toBe('accepted');
+    await move(t, { to: 'testing', opId: 's2', payload: IDEA });
+    const done = await move(t, { to: 'tested', opId: 'srv-4', payload: RESULT });
+    // the player's park under the op id a server row holds: parks, a player row of its own
+    const parked = await parkCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'srv-4', expectedVersion: done.entry.version, nowIso: LATEST });
+    expect(parked.idempotent).toBe(false);
+    expect(parked.card.parkedAt).toBe(LATEST);
+    // and each replays as its own writer's
+    expect((await parkCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'srv-4', expectedVersion: done.entry.version, nowIso: LATEST })).idempotent).toBe(true);
+    expect((await move(t, { to: 'tested', opId: 'srv-4', payload: RESULT })).idempotent).toBe(true);
   });
 });

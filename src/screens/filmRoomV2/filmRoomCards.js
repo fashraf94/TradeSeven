@@ -28,7 +28,7 @@ import { getAuth } from 'firebase/auth';
 import { readFilmRoomVerdict, resolveFilmRoomCardsForBattle, filmRoomBattleId } from '../../utils/filmRoomGate';
 import { momentsOf, momentAnchor } from '../../utils/filmRoomMoments';
 // Build C §3: the stage vocabulary v2, from its one export (the store reads the same module)
-import { CARD_STAGES, isOpenStage, isFollowedWatch } from '../../data/cardStages';
+import { CARD_STAGES, STORED_ROUTE_ALIASES, isOpenStage, isFollowedWatch } from '../../data/cardStages';
 import { numberAt } from './filmRoomModel';
 
 export const FILM_ROOM_CARD_PATH = '/api/film-room/card';
@@ -181,6 +181,8 @@ export function groupCards(cards) {
  * ledger holds, and nothing it does not — exit criterion 11), each `{ kind, at, k }` (k: the row's index):
  *   filed      the first row (the create) — and `offered` beside it when the create was the Offer route's (`nominated`)
  *   offered    a player row at `nominated` (the nominate op)
+ *   stage      on a v1 Practice entry (stored route `drill`, never written in production), its `nominated` row: it was
+ *              kept for the Practice Field, never offered to the agent, so it says the stage's own word (C1 review A-7)
  *   nomination a server row copying the book's nomination state (`event: 'nomination'`, its `state`); `latest` marks
  *              the last such row — the one whose state the entry's `nomination` copy holds, and whose reason it keeps
  *   testing · tested · installed · retired   a row at that stage (`by` kept: a server retire carries the offer's state)
@@ -192,16 +194,22 @@ export function chainOf(card) {
   const history = Array.isArray(card?.stageHistory) ? card.stageHistory : [];
   const lines = [];
   let lastNomination = -1;
+  const v1Practice = Object.prototype.hasOwnProperty.call(STORED_ROUTE_ALIASES, card?.route);
+  const nominatedLine = (h, k) => (v1Practice ? { kind: 'stage', stage: 'nominated', at: h.at, k } : { kind: 'offered', at: h.at, k });
   history.forEach((h, k) => {
     if (!isObj(h)) return;
     if (k === 0) {
       lines.push({ kind: 'filed', at: h.at, k });
-      if (h.stage === 'nominated') lines.push({ kind: 'offered', at: h.at, k });
+      if (h.stage === 'nominated') lines.push(nominatedLine(h, k));
       return;
     }
     if (h.event === 'parked') { lines.push({ kind: 'parked', at: h.at, k }); return; }
-    if (h.event === 'nomination') { lastNomination = lines.length; lines.push({ kind: 'nomination', state: h.state, at: h.at, k }); return; }
-    if (h.stage === 'nominated') { lines.push({ kind: 'offered', at: h.at, k }); return; }
+    if (h.event === 'nomination') {
+      if (typeof h.state === 'string' && h.state) { lastNomination = lines.length; lines.push({ kind: 'nomination', state: h.state, at: h.at, k }); }
+      return;
+    }
+    if (h.event !== undefined) return;   // an event the chain does not know: no line (C1 review B-7)
+    if (h.stage === 'nominated') { lines.push(nominatedLine(h, k)); return; }
     if (CARD_STAGES.includes(h.stage) && h.stage !== 'card') { lines.push({ kind: h.stage, at: h.at, k, by: h.by }); return; }
     if (typeof h.stage === 'string' && h.stage) lines.push({ kind: 'stage', stage: h.stage, at: h.at, k });
   });

@@ -295,7 +295,7 @@ function CardFacts({ card }) {
 function nextOf(card) {
   if (card.stage === 'retired') return T.stateNotes.retired;
   if (card.shelved) return T.stateNotes.shelved;
-  if (card.parkedAt) return T.stateNotes.parked;
+  if (card.stage === 'tested' && card.parkedAt) return T.stateNotes.parked;
   const route = routeOf(card.route);
   if (card.stage === 'card') return Object.prototype.hasOwnProperty.call(T.routeNotes, route) ? T.routeNotes[route] : null;
   // Build C §5: a QUEUED nomination is what the Offer route said would happen; once the agent has answered, the chain
@@ -315,7 +315,8 @@ const has = (table, id) => Object.prototype.hasOwnProperty.call(table, id);
  */
 export function ChainLine({ card, line, day = null }) {
   const W = T.chain;
-  const when = <When>{etWhen(line.at, day) ?? W.timeNotRecorded}</When>;
+  const clock = etWhen(line.at, day);
+  const when = clock ? <When>{clock}</When> : W.timeNotRecorded;
   if (line.kind === 'filed') return <>{W.filed} · {when}</>;
   if (line.kind === 'offered') return <>{W.offered} · {when}</>;
   if (line.kind === 'nomination') {
@@ -340,7 +341,10 @@ export function ChainLine({ card, line, day = null }) {
     const offer = line.by === 'server' && isObjLike(card?.offer) && typeof card.offer.state === 'string' ? card.offer : null;
     return <>{W.retired} · {when}{offer ? <> · {W.forgeOffer} <Rec><span data-offer-state="">{offer.state}</span></Rec></> : null}</>;
   }
-  return <><Rec>{String(line.stage ?? line.kind)}</Rec> · {when}</>;
+  // a stage row the chain names no line for: the screen's own stage word where it has one (a v1 Practice entry's
+  // `nominated`), the record's own word otherwise
+  const stage = String(line.stage ?? line.kind);
+  return <>{has(T.stageWords, stage) ? T.stageWords[stage] : <Rec>{stage}</Rec>} · {when}</>;
 }
 const isObjLike = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -363,10 +367,10 @@ function Chain({ card, ledger, day, onOpenBook }) {
       {lines.map((line) => (
         <div key={`${line.k}:${line.kind}`} data-chain-line={line.kind} data-chain-state={line.state ?? undefined} data-chain-row={line.k} style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '4px 0', borderTop: `1px solid ${C.hair}` }}>
           <span style={mono(11, C.ink2)}><ChainLine card={card} line={line} day={day} /></span>
-          {line.kind === 'nomination' && line.state === 'accepted' && nomination ? link(W.openIdea, { bookId: nomination.bookId, nominationId: nomination.nominationId }) : null}
+          {line.kind === 'nomination' && line.state === 'accepted' && line.latest && nomination ? link(W.openIdea, { bookId: nomination.bookId, nominationId: nomination.nominationId }) : null}
           {line.kind === 'testing' && isObjLike(card.idea) ? link(W.openIdea, { bookId: card.idea.bookId, ideaId: card.idea.ideaId }) : null}
           {line.kind === 'tested' && isObjLike(card.result) ? link(W.openResult, { ideaId: card.result.ideaId, resultRef: card.result.resultRef }) : null}
-          {line.kind === 'nomination' && line.latest && nomination && nomination.state === line.state ? (
+          {line.kind === 'nomination' && line.latest && has(W.answers, line.state) && nomination && nomination.state === line.state ? (
             <Quotation doc={ledger} path={['cards', card.entryId, 'nomination', 'reason']} by="yourAgent" at={['cards', card.entryId, 'nomination', 'consideredAt']} docLabel="ledger" />
           ) : null}
         </div>
@@ -425,7 +429,7 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark 
   // it — judged from the tape on screen, only when that is the card's own day (battle and date); otherwise RG-5's
   // sentence alone, which is true of every day
   const ownDay = tape && live.source && tape.battleId === live.source.battleId && tape.etDate === live.source.etDate ? tape : null;
-  const set = live.route === 'set' && canRetire ? (ownDay ? setStateOf(ownDay) : { say: null, link: false }) : null;
+  const set = live.route === 'set' && live.stage === 'card' && canRetire ? (ownDay ? setStateOf(ownDay) : { say: null, link: false }) : null;
   const setSay = set ? setSayOf(set.say) : null;
   // Amendment L RL-5: the link renders only here, beside a Forge door — and wherever it renders, Set's sentence ends
   // with when a change applies; one condition for both, so the sentence never stands without the link or the reverse

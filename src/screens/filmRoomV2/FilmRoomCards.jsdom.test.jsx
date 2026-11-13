@@ -1955,3 +1955,79 @@ describe('C1 item 12 — §8 ruling 4: an open at a real date that is not one of
     expect(battleReviewAtOf({ etDate: '2026-09-26', moment: moment() }, ELSE)).toMatchObject({ battleId: ELSE, etDate: '2026-09-26' });
   });
 });
+
+// ── the C1 review's fixes (docs/audits/20261112_BUILD_FILM_ROOM_C1_CHAIN.md §6) ─────────────────────────────────────
+describe('C1 review — the chain and the receipt say only what the ledger holds', () => {
+  const at = (hm) => `${D2}T${hm}:00.000Z`;
+  const base = (over = {}) => ({
+    entryId: 'e1', ownerId: OWNER, agentId: AGENT, createdAt: at('20:00'), archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: 2,
+    source: { battleId: B, etDate: D2, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 }, questionId: 'stalled.want', questionVersion: 1, note: 'A note.', route: 'watch',
+    stage: 'card', stageAt: at('20:00'), stageHistory: [{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }], version: 1, ...over,
+  });
+  const receiptOf = async (card, extra = {}) => {
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [card] } }} card={card} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} onPark={async () => ({ ok: true })} {...extra} />);
+    await m.flush(2);
+    return m.q('[data-card-receipt]');
+  };
+  const kinds = (r) => [...r.querySelectorAll('[data-chain-line]')].map((l) => l.getAttribute('data-chain-line'));
+
+  it('A-7 / B-1: a v1 Practice entry (stored route drill, filed at nominated, no record) says its stage\'s own word — never "Offered to your agent" — on the receipt and in the latest list', async () => {
+    const v1 = base({ route: 'drill', stage: 'nominated', stageHistory: [{ stage: 'nominated', at: at('20:00'), by: 'player', opId: 'e1' }] });
+    const r = await receiptOf(v1);
+    expect(kinds(r)).toEqual(['stage', 'filed']);
+    expect(r.querySelector('[data-chain-line="stage"]').textContent).toBe('nominated for the Practice Field · 4:00 PM');
+    expect(r.textContent).not.toContain('Offered to your agent');
+    expect(latestOf([v1])[0].line.kind).toBe('stage');
+    // an Offer-route card's same row IS an offer
+    expect(latestOf([{ ...v1, route: 'offer' }])[0].line.kind).toBe('offered');
+  });
+
+  it('B-2: a parked card the idea later equipped is equipped — no parked note; the note stays on a parked TESTED card', async () => {
+    const history = [{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }, { stage: 'tested', event: 'parked', at: at('20:30'), by: 'player', opId: 'p1' }, { stage: 'installed', at: at('20:40'), by: 'server', writer: 'practice_field', opId: 's9' }];
+    let r = await receiptOf(base({ stage: 'installed', parkedAt: at('20:30'), stageHistory: history, offer: { offerId: 'o1', state: 'accepted' } }));
+    expect(r.querySelector('[data-card-next]')).toBeNull();
+    expect(r.textContent).toContain('Stage · equipped');
+    expect(m.buttons('Park this card')).toHaveLength(0);   // B-12: no Park on an equipped card
+    r = await receiptOf(base({ stage: 'tested', parkedAt: at('20:30'), stageHistory: history.slice(0, 2) }));
+    expect(r.querySelector('[data-card-next]').textContent).toBe('Parked: kept with its result, no longer counted as open.');
+  });
+
+  it('B-3: an expiry carries no quotation — even with a reason stored, it is the book\'s, not the agent\'s words; an answer still quotes its reason', async () => {
+    const nominated = [{ stage: 'nominated', at: at('20:00'), by: 'player', opId: 'e1' }];
+    const expired = base({ route: 'offer', stage: 'nominated', nomination: { bookId: 'b', nominationId: 'e1', state: 'expired', reason: 'Expired unread.', consideredAt: at('20:10') }, stageHistory: [...nominated, { stage: 'nominated', event: 'nomination', state: 'expired', at: at('20:15'), by: 'server', writer: 'practice_field', opId: 's1' }] });
+    let r = await receiptOf(expired);
+    expect(r.querySelector('[data-quotation="yourAgent"]')).toBeNull();
+    const declined = { ...expired, nomination: { ...expired.nomination, state: 'declined', reason: 'Not for this book.' }, stageHistory: [...nominated, { ...expired.stageHistory[1], state: 'declined' }] };
+    r = await receiptOf(declined);
+    expect(r.querySelector('[data-quotation="yourAgent"] [data-quote-path]').textContent).toBe('Not for this book.');
+  });
+
+  it('B-4: Set\'s sentence and its tempo link belong to the filed Set card at card — a Set card offered later and now testing, or queued, shows neither (RL-5\'s sentence and link stay together)', async () => {
+    expect(fx.tape2.tags.inputs.forcedRotation.enabled).toBe(true);
+    const asFiled = base({ route: 'set' });
+    let r = await receiptOf(asFiled, { tape: fx.tape2, onOpenForge: () => {} });
+    expect(r.querySelector('[data-set-link]')).toBeTruthy();   // the control: a filed Set card links
+    const testing = base({ route: 'set', stage: 'testing', idea: { bookId: 'b', ideaId: 'i' }, stageHistory: [...asFiled.stageHistory, { stage: 'nominated', at: at('20:05'), by: 'player', opId: 'n1' }, { stage: 'testing', at: at('20:20'), by: 'server', writer: 'practice_field', opId: 's2' }] });
+    r = await receiptOf(testing, { tape: fx.tape2, onOpenForge: () => {} });
+    expect(r.querySelector('[data-set-link]')).toBeNull();
+    expect(r.textContent).not.toContain('A change applies from your next battle.');
+    const queued = base({ route: 'set', stage: 'nominated', nomination: { bookId: 'b', nominationId: 'n1', state: 'queued' }, stageHistory: testing.stageHistory.slice(0, 2) });
+    r = await receiptOf(queued, { tape: fx.tape2, onOpenForge: () => {} });
+    expect(r.querySelector('[data-set-link]')).toBeNull();
+    expect(r.querySelector('[data-card-next]').textContent).toBe(RG5.offer);
+  });
+
+  it('B-6 / B-7 / B-8: a nomination row with no state, and a row with an event the chain does not know, give no line; a row with no instant says so in words, never as an instant', async () => {
+    const r = await receiptOf(base({ stage: 'tested', result: { ideaId: 'i', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' }, stageHistory: [
+      { stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' },
+      { stage: 'nominated', event: 'nomination', at: at('20:05'), by: 'server', opId: 's0' },
+      { stage: 'tested', at: null, by: 'server', opId: 's1' },
+      { stage: 'tested', event: 'unparked', at: at('20:30'), by: 'player', opId: 'u1' },
+    ] }));
+    expect(kinds(r)).toEqual(['tested', 'filed']);
+    expect(r.textContent).not.toContain('undefined');
+    const tested = r.querySelector('[data-chain-line="tested"]');
+    expect(tested.textContent).toContain('Tested · time not recorded');
+    expect(tested.querySelector('[data-time]')).toBeNull();
+  });
+});
