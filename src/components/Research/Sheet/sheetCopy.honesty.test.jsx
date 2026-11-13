@@ -33,10 +33,12 @@ const STOP_PRICE = /\b(stop|target|stop-loss|stoploss)\b[^.]{0,20}\$\s?\d/i;
 const ARG = { arch: 'Trend Follower', sym: 'EOG', time: 'Fri 1:15', when: 'Tue 10/13', date: 'Tue 10/13', price: 154.76, d: 2, movePct: 4.3, points: 15, q: 'Does this protect the lead?', left: 7, question: 'Does this protect the lead?', text: 'Hold EOG.', label: 'next check 1:15', words: 'hold', preset: 'Aggressive', bust: '0.9', ticks: 3, trail: '1.5', next: 'next check 1:15', offPct: 1.2, high: 161.55, n: 6, rows: ['EOG 78'], gap: 1.64, gapPct: 1.0, asOf: 'Thu 10/15', score: 78.4, summary: 'Volume 2× on a break.', statement: 'An idea.', you: '62', them: '68', parts: ['an uptrend'], chg: 2.6, atrX: 1.05, entry: 154.76, f1: 'technicalScore', w1: 0.4, f2: 'baggerBombFit', w2: 0.3, side: 'above', huddle: true, names: ['XOM (6)'], band: '0.5', since: 'Tue 10/13', live: 162.1, word: 'next rung',
   // QF-2 – QF-4 (Nov 13): the book, the bench alternative, the lock, the downside.
   rungs: '−0.4', rank: 2, pending: ['CAT'], lowSym: 'EQIX', lowRungs: '−0.4', others: ['ETH'], atr: '2.8%', total: 68, gain: 53, banked: 15, hit: -10, entryGap: 2.45, entryPct: 2.37,
-  down: { label: 'Bust', points: -10, price: 98.73, gap: 4.47, pct: 4.33 } };
+  down: { label: 'Bust', points: -10, price: 98.73, gap: 4.47, pct: 4.33 },
+  // Ruling 2 (2026-11-13): the next check's time on the not-yet-ranked line.
+  checkTime: '1:15' };
 // Each QF-2 – QF-4 argument's other branch (the weakest itself, the only stock, nothing off the ladder, below entry,
 // at the downside rung, no downside rung, nothing hit, no ATR reading).
-const VARIANTS = { rank: [1, 6], pending: [[]], n: [1], others: [[]], entryGap: [-0.5, 0], down: [null, { label: 'Bust', points: -10, price: 98.73, gap: 0, pct: 0 }], hit: [0], atr: [null] };
+const VARIANTS = { rank: [1, 6], pending: [[]], n: [1], others: [[]], entryGap: [-0.5, 0], down: [null, { label: 'Bust', points: -10, price: 98.73, gap: 0, pct: 0 }], hit: [0], atr: [null], checkTime: [null], atrX: [-0.45] };
 const paramsOf = (fn) => fn.toString().slice(fn.toString().indexOf('(') + 1, fn.toString().indexOf(')')).split(',').map((p) => p.trim()).filter(Boolean);
 // The two-view shell's templates (SHELL_COPY, SB-13): their own arguments. The agent's name is
 // always handed in — a sample one here, never a literal in the copy.
