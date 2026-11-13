@@ -451,7 +451,7 @@ describe('receipt — the filed card (spec §6; R7)', () => {
     expect(m.q('[data-open-count] [data-num-aggregate="count(plays[] open)"]').getAttribute('data-agg-value')).toBe('5');
     await fileCard({ note: 'One more.' });
     expect(m.q('[data-card-form]')).toBeTruthy();
-    expect(m.q('[data-card-refusal]').textContent).toBe('The open-card cap for this agent is reached. Retire a card first.');
+    expect(m.q('[data-card-refusal]').textContent).toBe('The open-card cap is reached. A card stops counting once it is retired, parked, equipped or not taken.');   // Amendment A CA-23
     await sweepAll(fx.tape2, 'cap');
   });
 });

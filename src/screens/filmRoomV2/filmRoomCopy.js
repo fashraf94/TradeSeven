@@ -330,9 +330,6 @@ export const FILM_ROOM_COPY = Object.freeze({
     // reaches this situation — the tempo dial, in the Forge workshop; with it off, it says no setting changes it
     setTempoLink: 'Tempo dial · Forge workshop',
     setRuleOff: 'No setting changes this situation for this archetype.',
-    // Build B Amendment K RK-2's no-tempo sentence. Unread since the founder's ruling FQ-1 on PR #1019 (every battle
-    // links); the Film Room chat decides whether to retire the key
-    setNoTempo: 'No tempo setting was recorded for this battle.',
     // Build B Amendment L RL-5: wherever Set links the dial, its sentence ends with when a change takes effect — a
     // battle snapshots its setting when it is created, so a change applies to the next one, never the one reviewed
     setNextBattle: 'A change applies from your next battle.',
@@ -344,7 +341,8 @@ export const FILM_ROOM_COPY = Object.freeze({
     cancel: 'Cancel',
     filing: 'Filing…',
     refusals: {
-      cap_reached: 'The open-card cap for this agent is reached. Retire a card first.',
+      // Amendment A CA-23: what stops a card counting — never "Retire a card first", which a full set may not allow
+      cap_reached: 'The open-card cap is reached. A card stops counting once it is retired, parked, equipped or not taken.',
       moment_not_found: "That moment is not on this day's tape.",
       // B2.1 review SPR-C-2: the day was re-tagged while the card was being filed (nothing was filed)
       source_changed: "This day's tape changed while the card was being filed. Try again.",

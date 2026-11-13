@@ -1186,3 +1186,33 @@ describe('Amendment A CA-12 — the book re-read in the transaction, through the
     expect(t.store.get('mandates/book-1/nominations/nom_1')).toMatchObject({ state: 'queued', source: { entryId: 'op_1' } });
   });
 });
+
+// ── Amendment A CA-23 — the S9 refusal tells the truth ────────────────────────────────────────────────────────────
+describe('Amendment A CA-23 — at the cap with NOTHING the player can retire, the refusal says what stops a card counting', () => {
+  afterEach(() => resetPracticeFieldSeam());
+  it('a full mix — two accepted nominations, a testing card, a result with an offer waiting, a second testing card: every retire is refused; the sixth card → 409 cap_reached with CA-23\'s words, never "Retire a card first" (the mutant: "Retire a card first" back)', async () => {
+    setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: 'book-1', status: 'active' }) });
+    seedBook();
+    const by = { ownerId: OWNER, agentId: AGENT, by: 'practice_field' };
+    const move = (entryId, to, payload, opId) => applyServerTransition(t.db, { ...by, entryId, to, payload, opId });
+    for (let i = 0; i < 5; i += 1) {
+      const id = `o_${i}`;
+      expect((await post(create({ opId: id, route: 'offer', note: `Offer ${i}.` }))).statusCode).toBe(200);
+      await move(id, 'nomination', { bookId: 'book-1', nominationId: id, state: 'accepted', ideaId: `i${i}` }, `s1_${i}`);
+      if (i >= 2) await move(id, 'testing', { bookId: 'book-1', ideaId: `i${i}` }, `s2_${i}`);
+      if (i === 3) {
+        await move(id, 'tested', { ideaId: `i${i}`, resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' }, `s3_${i}`);
+        await move(id, 'offered', { ideaId: `i${i}`, offerId: `of${i}`, state: 'offered' }, `s4_${i}`);
+      }
+    }
+    for (let i = 0; i < 5; i += 1) {
+      const e = t.store.get(`agents/${AGENT}/plays/o_${i}`);
+      expect(await post({ op: 'retire', opId: `r_${i}`, agentId: AGENT, entryId: `o_${i}`, expectedVersion: e.version }), `o_${i}`).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition' } });
+    }
+    const res = await post(create({ opId: 'w_6', note: 'One more.' }));
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ error: 'cap_reached', cap: 5, open: 5 });
+    expect(res.body.message).toBe('The open-card cap for this agent is reached. A card stops counting once it is retired, parked, equipped or not taken.');
+    expect(res.body.message).not.toContain('Retire a card first');
+  });
+});
