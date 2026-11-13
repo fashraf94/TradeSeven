@@ -338,5 +338,18 @@ export function useFilmRoomCards({ battle, agentId, api = defaultCardsApi }) {
     return { ok: false, code };
   }, [api, agentId, refresh, keepResult]);
 
-  return { on, counter, refresh, create, retire, park, mintOpId };
+  /**
+   * Amendment A CA-7: offer a card at `card` to the agent, from its receipt — the park's pattern, its OWN op id per
+   * receipt; a successful result is kept (RI-2) and every refusal re-reads the counter, so the receipt shows the
+   * ledger's row beside the reason.
+   */
+  const nominate = useCallback(async (card, opId = null) => {
+    const r = await api.postCard({ op: 'nominate', opId: opId || api.newOpId(), agentId, entryId: card.entryId, expectedVersion: card.version });
+    if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); keepResult(r.body.card); return { ok: true, card: r.body.card }; }
+    const code = r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'nominateDefault');
+    await refresh();
+    return { ok: false, code };
+  }, [api, agentId, refresh, keepResult]);
+
+  return { on, counter, refresh, create, retire, park, nominate, mintOpId };
 }

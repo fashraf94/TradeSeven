@@ -50,8 +50,9 @@
 // line per row of the entry's own stageHistory, newest first, with the agent's
 // reason as a quotation and a result's words as stored, its idea and result
 // links only beside a book door (none in C1); "Park this card" on a tested
-// receipt is the one new button; since-last-time lists every card past the
-// card stage with its newest chain line (refinement R-C1-1).
+// receipt, and (Amendment A CA-7) "Offer to your agent" on a card-stage
+// receipt while the owner's book is open; since-last-time lists every card
+// past the card stage with its newest chain line (refinement R-C1-1).
 // Every number carries its marker (BA-42, R4(a): the screen's aggregates are
 // declared in SCREEN_AGGREGATE_CLASSES); every instant is marked as one, with
 // its date when it is not the shown day's (review L3-7); the note reaches the
@@ -308,6 +309,20 @@ function nextOf(card) {
 
 const has = (table, id) => Object.prototype.hasOwnProperty.call(table, id);
 
+/** Amendment A CA-7: the route's refusals that judge the card's SOURCE — one sentence for all of them (F1). */
+const OFFER_SOURCE_REFUSALS = Object.freeze(['moment_not_found', 'source_changed', 'tags_unavailable', 'tape_not_found', 'archetype_changed', 'archetype_unknown']);
+/**
+ * CA-7 — what a refused "Offer to your agent" says: the amendment's own words for a changed source, an unreadable tape,
+ * an unresolved agent, a closed book and the calendar; the receipt's existing words for any other code; and the offer's
+ * own default. Never "Nothing was filed" — nothing was being filed.
+ */
+const offerRefusalOf = (code) => {
+  const O = T.offerRefusals;
+  if (OFFER_SOURCE_REFUSALS.includes(code)) return O.source;
+  if (has(O, code)) return O[code];
+  return has(T.refusals, code) && code !== 'default' ? T.refusals[code] : O.default;
+};
+
 /**
  * Build C §5 — ONE LINE of a card's chain (chainOf), in the Film Room's own voice: the state's words and its time (an
  * instant, with its date when it is not the shown day's). The record's own words stand where the copy has none — an
@@ -420,10 +435,12 @@ function Chain({ card, ledger, day, onOpenBook }) {
  * @param {Function}    [props.onOpenForge] App's Forge door (hub S5), `({ area })` — Set's link to the tempo dial
  * @param {Function}    [props.onOpenBook]  Build C §5: the book's door — the chain's idea and result links render only
  *                                     beside it; C1 hands none (no book screen exists yet)
- * @param {Function}    [props.onPark]  Build C (refinement R-C1-2): park a tested card — "Park this card", the receipt's one
- *                                     new button, on a tested card's receipt only
+ * @param {Function}    [props.onPark]  Build C (refinement R-C1-2): park a tested card — "Park this card", on a tested card's
+ *                                     receipt only
+ * @param {Function}    [props.onNominate] Amendment A CA-7: offer a card at `card` to the agent — "Offer to your agent",
+ *                                     shown only while the counter reports the owner's book open (strictly `=== true`)
  */
-export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark = null, tape = null, onOpenForge = null, onOpenBook = null }) {
+export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark = null, onNominate = null, tape = null, onOpenForge = null, onOpenBook = null }) {
   const data = counter?.status === 'ready' || counter?.data ? counter.data : null;
   const cards = ledgerOf(data, card);
   const live = cards.find((c) => c.entryId === card.entryId) ?? card;
@@ -452,6 +469,21 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark 
     if (!r?.ok) setRefusal(T.refusals[r?.code] ?? T.refusals.parkDefault);
   };
   const canPark = typeof onPark === 'function' && live.stage === 'tested' && !live.parkedAt;
+  // Amendment A CA-7 — "Offer to your agent": a card at `card` (any route, v1 or v2), not shelved, and ONLY while the
+  // counter reports the owner's book open, strictly (never while it first loads, after a failed first read, with the
+  // field missing or false — the server judges again in any case). Its op id is its own, minted ONCE per receipt at the
+  // first tap (as park's), never shared with retire or park, so a lost answer re-tapped sends the same id
+  const nominateOp = useRef(null);
+  const [offering, setOffering] = useState(false);
+  const canOffer = typeof onNominate === 'function' && live.stage === 'card' && !live.shelved && counter?.data?.book?.open === true;
+  const offer = async () => {
+    if (!nominateOp.current) nominateOp.current = mintOpId();
+    setOffering(true);
+    setRefusal(null);
+    const r = await onNominate(live, nominateOp.current);
+    setOffering(false);
+    if (!r?.ok) setRefusal(offerRefusalOf(r?.code));
+  };
   const next = nextOf(live);
   // the store retires what the player may retire (Amendment A CA-1, CA-2, CA-5: the one export's isRetirableByPlayer —
   // never a testing card, an accepted nomination or a result with an offer waiting), never a shelved one
@@ -479,10 +511,13 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark 
           <TextButton onClick={() => onOpenForge({ area: FORGE_CHARACTER_AREA })}>{T.setTempoLink}</TextButton>
         </span>
       ) : null}
-      {canPark || canRetire ? (
+      {/* CA-7: Offer's route note sits above its button */}
+      {canOffer ? <span data-offer-note="" style={foot}>{T.routeNotes[NOMINATING_ROUTE]}</span> : null}
+      {canOffer || canPark || canRetire ? (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {canPark ? <PrimaryButton onClick={park} disabled={parking || busy}>{parking ? T.parking : T.park}</PrimaryButton> : null}
-          {canRetire ? <PrimaryButton onClick={retire} disabled={busy || parking}>{busy ? T.retiring : T.retire}</PrimaryButton> : null}
+          {canOffer ? <PrimaryButton onClick={offer} disabled={offering || busy || parking}>{offering ? T.offering : T.offerToAgent}</PrimaryButton> : null}
+          {canPark ? <PrimaryButton onClick={park} disabled={parking || busy || offering}>{parking ? T.parking : T.park}</PrimaryButton> : null}
+          {canRetire ? <PrimaryButton onClick={retire} disabled={busy || parking || offering}>{busy ? T.retiring : T.retire}</PrimaryButton> : null}
         </div>
       ) : null}
       {refusal ? <span data-card-refusal="" role="alert" style={{ ...foot, color: C.copper }}>{refusal}</span> : null}

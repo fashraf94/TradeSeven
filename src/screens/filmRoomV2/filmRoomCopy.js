@@ -396,9 +396,21 @@ export const FILM_ROOM_COPY = Object.freeze({
       // Amendment A CA-3: a nominated card the agent declined, or that expired unconsidered, is closed — kept, not open
       notTaken: 'Not taken: kept, no longer counted as open.',
     },
-    // Build C §5: the receipt's one new button, on a tested card's receipt only
+    // Build C §5: "Park this card", on a tested card's receipt only
     park: 'Park this card',
     parking: 'Parking…',
+    // Amendment A CA-7: the receipt's "Offer to your agent" — a card at `card`, only while the owner's book is open
+    offerToAgent: 'Offer to your agent',
+    offering: 'Offering…',
+    // CA-7: what a refused offer says — every source refusal one sentence (F1); the rest each its own; never "filed"
+    offerRefusals: {
+      source: "This card's moment has changed on the tape since it was filed, so it can't be offered. The card stays as it is.",
+      tape_unreadable: 'The tape for this day could not be read. Nothing was offered. Try again.',
+      attribution_unavailable: 'The agent this card belongs to could not be resolved. Nothing was offered. Try again.',
+      book_not_open: 'This card cannot be offered to your agent now. Nothing was offered.',
+      calendar_unavailable: "The offer's expiry could not be placed on the market calendar. Nothing was offered.",
+      default: 'The card could not be offered.',
+    },
     // Build C §5 — THE CHAIN: the receipt's view of one card, newest state first, each state one line with its time, in
     // the Film Room's own voice (facts only, BC-1); the agent's words beside them are quotations. A result's words and
     // an offer's state are the record's own (Rec), never rewritten; an answer or a stage the copy has no line for is

@@ -2477,3 +2477,164 @@ describe('Amendment A CA-9 / CA-17 — the words: "Your agent considered this", 
     expect(m.q('[data-card-receipt]').textContent).toContain('Stage · tested');
   });
 });
+
+// ── Amendment A CA-7 — the receipt's "Offer to your agent" ────────────────────────────────────────────────────────
+describe('Amendment A CA-7 — "Offer to your agent" on a card-stage receipt, only while the owner\'s book is open', () => {
+  const at = (hm) => `${D2}T${hm}:00.000Z`;
+  const base = (over = {}) => ({
+    entryId: 'e1', ownerId: OWNER, agentId: AGENT, createdAt: at('20:00'), archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: 2, stageVocabVersion: 2,
+    source: { battleId: B, etDate: D2, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 }, questionId: 'stalled.want', questionVersion: 1, note: 'A note.', route: 'watch',
+    stage: 'card', stageAt: at('20:00'), stageHistory: [{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }], version: 1, ...over,
+  });
+  const shown = async (card, counter) => {
+    m.teardown(); m.setup();
+    // the card as the counter holds it (its computed shelving with it), where the counter has answered
+    const held = counter.data ? { ...counter, data: { ...counter.data, cards: [card] } } : counter;
+    m.render(<Receipt day={D2} counter={held} card={card} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} onPark={async () => ({ ok: true })} onNominate={async () => ({ ok: true })} />);
+    await m.flush(2);
+    return m.buttons('Offer to your agent').length === 1;
+  };
+
+  it('THE MATRIX: shown only for a card at card, not shelved, while the counter says book.open === true — never while it loads, after a failed first read, with the field missing, false, or a truthy non-true (the mutant: the Offer button shown with book missing or still loading)', async () => {
+    const ready = (book) => ({ status: 'ready', data: { cards: [], open: 0, cap: 5, ...(book === undefined ? {} : { book }) } });
+    const counters = [
+      ['loading', { status: 'loading', data: null }, false], ['idle', { status: 'idle', data: null }, false], ['failed first read', { status: 'error', data: null }, false],
+      ['no book field', ready(undefined), false], ['book {}', ready({}), false], ['open false', ready({ open: false }), false], ['open "true"', ready({ open: 'true' }), false],
+      ['open true', ready({ open: true }), true], ['open true kept through a failed re-read', { status: 'error', data: ready({ open: true }).data }, true],
+    ];
+    for (const [name, counter, want] of counters) expect(await shown(base(), counter), name).toBe(want);
+    const open = ready({ open: true });
+    const v1 = base();
+    delete v1.stageVocabVersion;
+    for (const [name, card, want] of [
+      ['a v2 Watch card', base(), true], ['a v1 Watch card', v1, true], ['a Set card', base({ route: 'set' }), true],
+      ['a shelved card', base({ shelved: true }), false], ['a nominated card', base({ stage: 'nominated', route: 'offer', nomination: { bookId: 'b', nominationId: 'e1', state: 'queued' } }), false],
+      ['a tested card', base({ stage: 'tested', result: { ideaId: 'i', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' } }), false], ['a retired card', base({ stage: 'retired' }), false],
+    ]) expect(await shown(card, open), name).toBe(want);
+    // with it, Offer's route note sits above the button
+    await shown(base(), open);
+    const note = m.q('[data-offer-note]');
+    expect(note.textContent).toBe(RG5.offer);
+    expect(note.compareDocumentPosition(m.buttons('Offer to your agent')[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('through the real handler: one tap sends ONE nominate under the receipt\'s own op id (never the retire\'s), the card moves to nominated — "Offered to your agent" — and the button goes', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const receipt = m.q('[data-card-receipt="op_1"]');
+    const retireOp = receipt.getAttribute('data-card-op');
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(10);
+    const bodies = cardBodies().filter((b) => b.op === 'nominate');
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toEqual({ op: 'nominate', opId: expect.any(String), agentId: AGENT, entryId: 'op_1', expectedVersion: 1 });
+    expect(bodies[0].opId).not.toBe(retireOp);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ stage: 'nominated', nomination: { state: 'queued' } });
+    const r = m.q('[data-card-receipt="op_1"]');
+    expect(r.querySelector('[data-chain-line]').getAttribute('data-chain-line')).toBe('offered');
+    expect(r.textContent).toContain('Stage · offered to your agent');
+    expect(m.buttons('Offer to your agent')).toHaveLength(0);
+    await sweepAll(fx.tape2, 'offered from the receipt');
+  });
+
+  it('a lost answer re-tapped sends the SAME op id, and the store answers once (the mutant: two taps minting two ids)', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const real = api.postCard;
+    let lose = true;
+    api.postCard = async (body) => { if (body.op === 'nominate' && lose) { lose = false; await real(body); return { ok: false, status: 0, body: null }; } return real(body); };
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(10);
+    expect(m.q('[data-card-refusal]').textContent).toBe('The card could not be offered.');
+    // the answer was lost after the store committed: the re-read shows the card nominated, so the button is gone; the
+    // receipt kept its op id — a re-tap from a receipt still showing the card (as before the refresh) would send it
+    const sent = api.calls.filter((c) => c[0] === 'card' && c[1].op === 'nominate').map((c) => c[1].opId);
+    expect(sent).toHaveLength(1);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('nominated');
+    // a receipt over a stale counter that still shows the card: two taps, one id, one nomination
+    const card = { ...t.store.get(`agents/${AGENT}/plays/op_1`), stage: 'card', version: 1, stageHistory: t.store.get(`agents/${AGENT}/plays/op_1`).stageHistory.slice(0, 1) };
+    delete card.nomination;
+    const ids = [];
+    m.teardown(); m.setup();
+    let n = 0;
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [card], book: { open: true } } }} card={card} mintOpId={() => `op_m${(n += 1)}`} onRetire={async () => ({ ok: true })} onNominate={async (_c, opId) => { ids.push(opId); return { ok: false, code: 'nominateDefault' }; }} />);
+    await m.flush(2);
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(2);
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(2);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
+    expect(ids[0]).not.toBe(m.q('[data-card-receipt]').getAttribute('data-card-op'));
+  });
+
+  it('a refusal re-reads the counter and says why: the book closed since the counter answered → its words, never "filed"; the re-read hides the button', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    t.store.set(`mandates/${BOOK_ID}`, { ...t.store.get(`mandates/${BOOK_ID}`), status: 'closed' });
+    setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: BOOK_ID, status: 'closed' }) });
+    const reads = counterCalls();
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(10);
+    expect(m.q('[data-card-refusal]').textContent).toBe('This card cannot be offered to your agent now. Nothing was offered.');
+    expect(counterCalls()).toBe(reads + 1);
+    expect(m.buttons('Offer to your agent')).toHaveLength(0);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('card');
+  });
+
+  it('every refusal\'s words: each source refusal one sentence; tape, attribution, book, calendar their own; any other code the receipt\'s existing words; the default its own — and none says "Nothing was filed" or "could not be filed"', async () => {
+    const said = async (code) => {
+      m.teardown(); m.setup();
+      const card = base();
+      m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [card], book: { open: true } } }} card={card} mintOpId={() => 'op_x'} onRetire={async () => ({ ok: true })} onNominate={async () => ({ ok: false, code })} />);
+      await m.flush(2);
+      m.click(m.buttons('Offer to your agent')[0]);
+      await m.flush(2);
+      return m.q('[data-card-refusal]').textContent;
+    };
+    const SOURCE = "This card's moment has changed on the tape since it was filed, so it can't be offered. The card stays as it is.";
+    for (const code of ['moment_not_found', 'source_changed', 'tags_unavailable', 'tape_not_found', 'archetype_changed', 'archetype_unknown']) expect(await said(code), code).toBe(SOURCE);
+    expect(await said('tape_unreadable')).toBe('The tape for this day could not be read. Nothing was offered. Try again.');
+    expect(await said('attribution_unavailable')).toBe('The agent this card belongs to could not be resolved. Nothing was offered. Try again.');
+    expect(await said('book_not_open')).toBe('This card cannot be offered to your agent now. Nothing was offered.');
+    expect(await said('calendar_unavailable')).toBe("The offer's expiry could not be placed on the market calendar. Nothing was offered.");
+    expect(await said('version_conflict')).toBe(COPY_CARDS.refusals.version_conflict);
+    expect(await said('illegal_transition')).toBe(COPY_CARDS.refusals.illegal_transition);
+    for (const code of ['server_error', 'nominateDefault', 'default', undefined]) expect(await said(code), String(code)).toBe('The card could not be offered.');
+    const all = [...Object.values(COPY_CARDS.offerRefusals)];
+    expect(all.filter((w) => /Nothing was filed|could not be filed|cannot be filed/.test(w))).toEqual([]);
+  });
+
+  it('a successful offer whose counter refresh then fails keeps the nominated card on the receipt (RI-2), the read error said beside it', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const realRead = api.readCounter;
+    api.readCounter = async () => ({ ok: false, status: 503, body: null });
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(10);
+    expect(m.q('[data-card-receipt="op_1"]').textContent).toContain('Stage · offered to your agent');
+    expect(m.q('[data-cards-read-error]')).toBeTruthy();
+    api.readCounter = realRead;
+  });
+
+  it('cards off: no receipt, no Offer button, no request', async () => {
+    state.cards = 'off';
+    openBook();
+    await open();
+    expect(m.buttons('Offer to your agent')).toHaveLength(0);
+    expect(m.q('[data-offer-note]')).toBeNull();
+    expect(api.calls).toEqual([]);
+  });
+});
