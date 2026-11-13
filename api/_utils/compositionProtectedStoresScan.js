@@ -76,6 +76,10 @@ export const PROTECTED_COLLECTIONS = new Set([
   // Huddle S1 (spec V1.1 §3; build report docs/audits/20261107_BUILD_HUDDLE_S1.md): the four new
   // server-written collections, listed so every write site to them is counted against the allowlist.
   'huddles', 'huddleQueue', 'symbolDayEvidence', 'huddleRuns',
+  // Practice Field T1a-1 (build report docs/audits/20261113_BUILD_T1A1_T1C_IDEA_BOOK_ACCOUNTING.md §7): the two new
+  // server-only collections — the owner's one-open-book claim with the founder-cap registry, and reserved data
+  // coverage — listed so every write site to them is counted against the allowlist. Founder sign-off required.
+  'practiceFieldBooks', 'practiceFieldCoverage',
 ]);
 export const WRITE_METHODS = new Set(['set', 'update', 'create', 'delete', 'add']);
 const HANDLE_RE = /^(tx|txn|transaction|batch|writeBatch)$/;

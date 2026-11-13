@@ -25,7 +25,9 @@
 //
 // SCOPE BOUNDARY (stated, reviewed): the scan covers MANDATE-OWNED modules on
 // the closure (api/_utils/mandate*, api/cron/mandate*, api/mandate/*, plus the
-// mandate-family modelPriceTable.js). Shared platform modules the closure also
+// mandate-family modelPriceTable.js) and — since Practice Field T1a-1 — every
+// module under api/_utils/practiceField/, which writes idea-book money on the
+// same engine (the eval handler imports its passes, so they are on the closure). Shared platform modules the closure also
 // reaches (technicalCalculations, marketDataCache, marketSchedule, rateLimit,
 // serverCache, fenced archetype config read-only) round THEIR OWN domain
 // values — indicators, cache TTLs, HTTP limits — which the mandate ledger
@@ -96,6 +98,10 @@ const BASELINE = {
     count: 1,
     note: 'display: Math.round on the gate AGE (minutes) in the MANDATE_GATE_EXPIRED log line (P5 review C21-P5-2 fix) — latency formatting, not money',
   },
+  'api/_utils/practiceField/money.js': {
+    count: 11,
+    note: 'Practice Field T1a-1 — the ONE home of the idea book's raw rounding, every site read and classified. UNIT CONVERSION (3): toCents and toMicroShares apply Math.round to a value the engine's own rounder (roundUsd / roundShares) has just produced, recovering the integer that 2-dp / 6-dp double stands for — never a second rounding regime, it cannot move a cent; weightPpm reads a weight constant as whole millionths (not money). DIRECTIONAL FLOORS (6, the floorShares precedent): shareLimitCents (Math.round of the share constant to millionths + Math.floor), ratioLimitCents, equalSplitCents, weightedCents and floorMulDiv round a LIMIT or an ALLOCATION down to a whole cent so a permitted amount can never exceed its limit and a leg can never outspend its ledger. DIRECTIONAL CEILING (2): shareCeilCents (Math.round of the share constant + Math.ceil) rounds the cash FLOOR up, so what the treasury must keep is never understated. All comparisons made with them are exact integer comparisons, no tolerance',
+  },
 };
 
 const RAW_ROUNDING = /Math\.round\s*\(|Math\.floor\s*\(|Math\.ceil\s*\(|\.toFixed\s*\(/g;
@@ -112,9 +118,13 @@ describe('P5 — money-path rounding scan (the MONEY-7 / MONEY-P4-3 class killer
     expect(closure.has('api/_utils/mandateBatchTransport.js')).toBe(true);
     expect(closure.has(ROUNDING_HOME)).toBe(true);
     expect(closure.size).toBeGreaterThan(15);
+    // Practice Field T1a-1: the idea book's money modules are ON the closure (so the scope widening below is not vacuous).
+    for (const rel of ['money.js', 'fills.js', 'entry.js', 'close.js', 'admission.js', 'ledger.js', 'reconcile.js']) {
+      expect(closure.has(`api/_utils/practiceField/${rel}`), rel).toBe(true);
+    }
   });
 
-  const MANDATE_OWNED = /^api\/(_utils\/(mandate|modelPriceTable)|cron\/mandate|mandate\/)/;
+  const MANDATE_OWNED = /^api\/(_utils\/(mandate|modelPriceTable|practiceField\/)|cron\/mandate|mandate\/)/;
 
   it('every raw-rounding occurrence on the money path is either mandateRounding.js or baseline-pinned at its reviewed count', () => {
     const found = {};
