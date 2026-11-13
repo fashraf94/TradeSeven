@@ -101,6 +101,9 @@ describe('SH-6 / SH-7 / SH-8 — dates excuse only dates, and only real ones', (
     expect(strayNumberOf('Shipments declined 5,500 units.', dec5)).toBe('5500');
     const mar12 = [{ ...dec5[0], at: '2026-03-12T00:00:00.000Z', asOf: '2026-03-12T00:00:00.000Z' }];
     expect(strayNumberOf('Its operating margin 12% held.', mar12)).toBe('12');
+    // a plain number after the word (no % or decimal for the date rule's own lookahead to reject) — the month test alone
+    expect(strayNumberOf('Shipments declined 5 units in the quarter.', dec5)).toBe('5');
+    expect(strayNumberOf('Its margin 12 points held.', mar12)).toBe('12');
     expect(strayNumberOf('Eaton reported on Dec 5.', dec5)).toBeUndefined();
   });
   it('SH-7: an undated fact\'s read day dates nothing: a summary that names it is withheld', () => {
