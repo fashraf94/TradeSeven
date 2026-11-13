@@ -13,7 +13,7 @@
 | **Tests** | 4 new files, 265 rows, all passing on Linux. The Linux full suite (1,440 files, 32,132 tests), `lint:gate` and `vite build` all exit 0 (§5). |
 | **Mutants** | The 14 required: **14 of 14 killed**. The whole battery: **90 of 90 killed** (§6). |
 | **Review** | §2 multi-lens and adversarial: 4 lenses, then 4 refuters. 38 findings: **31 CONFIRMED · 6 PARTLY · 1 REFUTED**. Every confirmed or partly finding with a code or test remedy is fixed; 17 more items the refuters found in the fixes are fixed or recorded. |
-| **Open for the founder** | 6 questions, none blocking; each reading fails closed (review record §6). FQ-1, one pin for activation. FQ-2, the title's binding (and reading R7). FQ-3, the register wrapper's name before a second package. FQ-4, readings R1–R8. FQ-5, keeping `deps`. FQ-6, deep-freezing the JSON imports. Plus one activation note (§9). |
+| **Open for the founder** | 6 questions, none blocking; each reading fails closed (review record §6). FQ-1, whether the "shipped list" row may follow the pin (activation would move one row instead of two). FQ-2, the title's binding (and reading R7). FQ-3, the register wrapper's name before a second package. FQ-4, readings R1–R8. FQ-5, keeping `deps`. FQ-6, deep-freezing the JSON imports. Plus one activation note (§9). |
 
 ## 2. In plain terms
 
@@ -23,7 +23,7 @@
   - the source register must be the exact register that record names.
   
   If any one of these fails, the answer is a named refusal, never an error. A caller then falls back to the baseline method and records why. Nothing is read from the founder's PC or from the Hermes queue: the bytes travel with the code.
-- **What ships empty.** Accepting a method's content and allowing the app to use it are two separate acts. The second act is one entry in an authorization list, and that list ships empty. So even a method that passes every check is answered "not authorized", for every player. The list's emptiness is pinned by one test, which the founder's activation PR moves together with the first entry.
+- **What ships empty.** Accepting a method's content and allowing the app to use it are two separate acts. The second act is one entry in an authorization list, and that list ships empty. So even a method that passes every check is answered "not authorized", for every player. The list's emptiness is pinned by two rows: the list's own pin, and the loader's "with the shipped list" row. The founder's activation PR moves both, together with the first entry.
 - **What nothing can do yet.** No route, no prompt and no screen imports the loader. A set of permanent tests proves that nothing outside its own folder (and its import script) uses it, and that nothing the browser loads can reach it, directly or through a chain of imports. The method's local file paths (its provenance) never leave the loader: an answer carries exactly eight plain fields.
 - **What comes next.** KB-1 connects the loader to Shared Research's own-words investigation. A separate founder PR then adds the one authorization entry.
 
@@ -130,7 +130,7 @@ All runs are at `24d3f04d`, the code head `bf449d2c` plus the review record (doc
 | KM-A1 | `inAudienceFor`: `'allowlist'` true for everyone | audience.test "'allowlist' true only for a uid on the test list" (2) |
 | KM-A2 | `inAudienceFor`: an unknown audience true | audience.test "any other audience … never true" (11) |
 | KM-P1 | the authorized answer also returns the export's `source` block | "the answer — exactly the eight fields" (3) |
-| KM-L1 | `KB_APP_USE` holds a well-formed entry | **exactly one row**: packages.test "KB_APP_USE is [] — THE PIN" (1). This proves the activation PR moves one pin (FQ-1). |
+| KM-L1 | `KB_APP_USE` holds a well-formed entry | packages.test "KB_APP_USE is [] — THE PIN" and loader.test "the shipped list (empty)", the two rows the activation PR moves (FQ-1) — KILLED_L1 |
 
 **The other 76 mutants, by group (all killed):**
 
@@ -177,9 +177,11 @@ The first battery, at `664ddb79`, before the review: 34 of 34 killed. It also ex
 ## 9. Next
 
 - **KB-1** (Amendment A Part 2, branch `claude/shared-research-kb1`) builds after this PR is reviewed and merged. B1 is already on `main`.
+- **A repo-wide rule, beyond KB.** The permanent row "no glob or URL pattern in a production file under `src/` reaches into `api/`" binds every future PR, not only KB work. Today no production file does this. A legitimate need later is a deliberate change to that row.
 - **KB-1 moves exactly one row:** `boundary.test.js`'s "nothing outside api/_utils/kb/ and scripts/kb/ imports it, or names it in any form", to admit its Shared Research consumer.
   - It must import only the named authorized entry points: `authorizedMethodFor`, `loadAuthorizedMethod`, `inAudienceFor` (and `KB_REFUSALS` if needed).
   - It must call them directly, with one argument.
   - The permanent rows stay: no import of the packages or the list; no `src/` reach, directly or transitively; no `deps` argument.
 - **Activation** (§A6 step 5) is a separate founder PR: one entry in `KB_APP_USE`, its pin, and its `docs/approvals/` record.
+  - **The activation PR moves two rows:** `packages.test.js`'s pin, and `loader.test.js`'s "the shipped list (empty)" row, which Part 4 words unconditionally. FQ-1 asks whether the second may follow the pin instead.
   - **Note for that record (KL3-8):** the `'allowlist'` audience is `COCKPIT_ALLOWLIST_UIDS`, the same list about nine other gates read (Film Room cards, research ask, the Shared Research gate, the Huddle, the hypothesis gates, cockpit status, call records). Adding a uid to it for any of those features also gives that player the method, once an `'allowlist'` entry ships.

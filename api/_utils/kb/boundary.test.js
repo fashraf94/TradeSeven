@@ -131,7 +131,7 @@ function callArgCounts(code, names) {
 }
 
 /** Text naming the module's packages or its authorization list, in any form. */
-const NAMES_KB_DATA = /kb(?:\/|\\{1,2})(?:packages|authorizations)(?![A-Za-z0-9_-])/;
+const NAMES_KB_DATA = /(?<![A-Za-z0-9_-])kb(?:\/|\\{1,2})(?:packages|authorizations)(?![A-Za-z0-9_-])/;
 
 /** The entry points used other than by a direct call: `.call/.apply/.bind`, `?.(`, or a renamed import. */
 const INDIRECT_ENTRY = /\b(?:loadAuthorizedMethod|authorizedMethodFor)\s*(?:\?\.\s*\(|\.\s*(?:call|apply|bind)\b)|\b(?:loadAuthorizedMethod|authorizedMethodFor)\s+as\s+[A-Za-z_$]/;
@@ -266,6 +266,7 @@ describe('the scanners, proven on planted text', () => {
     expect("const p = '../api/_utils/kb/packages/x.json';").toMatch(NAMES_KB_DATA);
     expect('fs.readFileSync(new URL("./_utils/kb/authorizations.js", import.meta.url))').toMatch(NAMES_KB_DATA);
     expect("import { loader } from '../kb/loader.js'").not.toMatch(NAMES_KB_DATA);
+    expect("import.meta.glob('../../../dkb/packages/*.json')").not.toMatch(NAMES_KB_DATA); // the repo's dkb/ tree is not the module
     for (const s of ['authorizedMethodFor.call(null, r, d)', 'loadAuthorizedMethod.apply(null, [r, d])', 'authorizedMethodFor?.(r, d)',
       "import { loadAuthorizedMethod as lam } from '../kb/loader.js'"]) expect(s).toMatch(INDIRECT_ENTRY);
     expect('authorizedMethodFor({ consumer })').not.toMatch(INDIRECT_ENTRY);
@@ -334,7 +335,8 @@ describe('the KB modules', () => {
   });
 });
 
-describe('dark by construction', () => {
+// Repo-scale reads inside each row (about 1 s each on a laptop): an explicit timeout for CI's 2 workers.
+describe('dark by construction', { timeout: 30_000 }, () => {
   const files = walk(REPO).map((file) => ({ file, text: read(file) }));
   const hits = kbImportersIn(files, REPO);
   const rel = (f) => path.relative(REPO, f).split(path.sep).join('/');

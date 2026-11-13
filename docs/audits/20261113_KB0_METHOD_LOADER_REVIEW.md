@@ -21,7 +21,7 @@ The mutating lens ran last, on its own WSL tree: the coordinator's battery (§5)
 | Left as founder questions | 6 (§6) |
 | Accepted as notes | 4 (§7) |
 
-No finding showed a way, with the shipped (empty) authorization list and no `deps` argument, to make any entry point answer `ok: true`, throw, or let provenance leave the module.
+No finding showed a way, with the shipped (empty) authorization list and no `deps` argument, to make an authorized entry point answer `ok: true`, to make any entry point throw, or to let provenance leave the module. (`verifyPackage` and `verifyParts` answer `ok` for the committed package by design: they need no authorization, and permanent rows keep every importer outside the module away from them.)
 
 The fail-opens the lenses found need one of the following:
 - an authorization list that CI's shipped-list rules reject;
@@ -99,7 +99,7 @@ The fail-opens the lenses found need one of the following:
 |---|---|---|---|---|
 | KL4-1 | **must-fix** | The register assertion could never fire; the top-level keys of `verifyPackage`/`verifyParts` were unpinned | CONFIRMED | **Fixed** (`eabd6c3a`, `c24df95b`) |
 | KL4-2 | **must-fix** | The dark walk missed a quote in a comment inside a multi-line import, `import.meta.glob` and `new URL` | CONFIRMED. The first fix was incomplete. | **Fixed** (`c24df95b`, `e04f9d11`, `bf449d2c`): raw plus stripped scans everywhere; text belts; template imports; the graph walk. |
-| KL4-3 | should-fix / ruling | Part 4's "with the shipped list…" row follows the one pin | CONFIRMED as a description | **→ FQ-1** |
+| KL4-3 | should-fix / ruling | Part 4's "with the shipped list…" row followed the pin (made conditional at `75ae40b1`) | CONFIRMED as a description | **Built to the letter** (unconditional) before the push; **whether it may follow the pin → FQ-1** |
 | KL4-4 | should-fix | Check order unpinned for checks 2–5 | CONFIRMED. The first fix left the "1 before 2" text half. | **Fixed** (`c24df95b`, `bf449d2c`): a two-defect row per adjacent pair. |
 | KL4-5 | should-fix | Single-consumer entries only | CONFIRMED. The first fix left the last-consumer variant. | **Fixed** (`c24df95b`, `bf449d2c`) |
 | KL4-6 | should-fix | `--check` proven only against missing files | CONFIRMED | **Fixed** (`c24df95b`) |
@@ -117,7 +117,7 @@ The fail-opens the lenses found need one of the following:
 
 ## 6. Founder questions (none blocks the merge: each reading fails closed)
 
-- **FQ-1. One pin for activation (KL4-3).** Today the founder's activation PR moves exactly one pin: `packages.test.js`'s `KB_APP_USE` equals `[]`. `loader.test.js`'s "with the shipped list" row follows that pin. While the list is empty it asserts `not_authorized`; from the first entry it asserts that each entry loads for its own consumers only. Keep this, or make the row unconditional, so that activation moves two rows?
+- **FQ-1. One row or two for activation (KL4-3).** Part 4 words `loader.test.js`'s "with the shipped list, both entry points answer `not_authorized`" row without a condition, and it is built that way. So the founder's activation PR moves two rows: that one, and `packages.test.js`'s pin (`KB_APP_USE` equals `[]`). The alternative was built and then reverted. While the list is empty, the row asserts `not_authorized`; from the first entry, it asserts that each entry loads for its own consumers only. That way activation moves only the pin. May the row follow the pin?
 - **FQ-2. The title's binding (KL1-1, KL2-10, KL3-6).**
   - Reading **R7**, added here: check 6 binds the acceptance record's `date` to `acceptedAt`, so the date is now covered by the entry's `acceptanceSha256`.
   - The `title` has no run-time binding. The record has no title field, and the export's byte pin (build time) is its only guard.
@@ -145,3 +145,14 @@ The fail-opens the lenses found need one of the following:
 - A write that fails part-way, after the pre-checks pass (a full disk, say), can leave some files written. It is refused with `REFUSED: write`.
 - Static scans cannot see a specifier built at run time. The known limits are listed in `boundary.test.js`.
 - Not verified: whether Vercel's file tracer bundles the three JSON imports. No route imports the loader yet; KB-1's preview covers it (build report §8).
+
+## 8. What no refuter saw
+
+Each refuter judged the reviewed tree (`75ae40b1`) and one fixed tree: KLV1–KLV3 saw `eabd6c3a`; KLV4 saw `c24df95b`. The changes after those trees were **not re-refuted**:
+- `loader.js` at `3c0e18a0` (KLV2's NEW-1 to NEW-3);
+- the import script at `e04f9d11` (KLV3's residuals);
+- the test changes at `54c8d39e`, `e04f9d11`, `bf449d2c` and the final head. The final head made the "shipped list" row unconditional, added a left boundary to `NAMES_KB_DATA` so the repo's `dkb/` tree cannot trip it, and set a 30 s timeout on the repo-scale rows.
+
+What covers them instead:
+- **The final battery,** with a mutant for every fix (90 of 90 killed, build report §6). It was re-run on the final head.
+- **KLV2's fuzz,** re-run on the final `loader.js` (unchanged since `3c0e18a0`): 1,517 hostile calls, 0 throws, 0 badly shaped answers.

@@ -648,24 +648,15 @@ describe('the answer', () => {
   });
 });
 
-describe('the shipped list', () => {
-  // The ONE pin the founder's activation PR moves is packages.test.js's
-  // `KB_APP_USE` deep-equals `[]`. This row follows that pin, so the first
-  // entry does not red it: while the list is empty, nothing is authorized; from
-  // the first entry, each shipped entry loads for its own consumers and nothing else.
-  it('both entry points answer not_authorized for the real package, whatever the audience, while the list is empty', () => {
+describe('the shipped list (empty)', () => {
+  // As Part 4 words it: unconditional. The founder's activation PR moves this
+  // row together with packages.test.js's pin (`KB_APP_USE` deep-equals `[]`);
+  // whether it may instead follow the pin is founder question FQ-1.
+  it('both entry points answer not_authorized for the real package, whatever the audience', () => {
+    expect(KB_APP_USE).toEqual([]);
     expect(verifyPackage({ id: ID, version: VERSION }).ok).toBe(true);
-    if (KB_APP_USE.length === 0) {
-      expect(loadAuthorizedMethod({ id: ID, version: VERSION, consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
-      expect(authorizedMethodFor({ consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
-      return;
-    }
-    for (const e of KB_APP_USE) {
-      for (const consumer of e.consumers) {
-        expect(loadAuthorizedMethod({ id: e.id, version: e.version, consumer, inAudience: yes }).ok).toBe(true);
-      }
-      expect(loadAuthorizedMethod({ id: e.id, version: e.version, consumer: 'kb0.unlisted.consumer', inAudience: yes })).toEqual({ ok: false, reason: 'scope' });
-    }
+    expect(loadAuthorizedMethod({ id: ID, version: VERSION, consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
+    expect(authorizedMethodFor({ consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
   });
 });
 
