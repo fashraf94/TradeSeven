@@ -51,3 +51,37 @@
 | §2.8 false outage (E3 a) | `FORBIDDEN_SCRIPT_PATTERNS.source_outage`: *down*, *unavailable*, *outage*, *not checked* in a sentence that names a source |
 | §2.4 on the hub | `hubCopy.guard.test.js`'s no-learning list, numeral rule and pairing fence over the `huddle` block (C14), unloosened |
 | §1.6 unverified | the gather step marks every evidence item's status; a beat citing an `unverified` item without the word fails validation |
+
+## 4. Written openings (Shared Research)
+
+Shared Research's partner writes; it does not speak. These rules bind what an investigation writes: its answer, its findings, its proposed claims and its next step (spec `docs/specs/20261109_SHARED_RESEARCH_B1_B2_BUILD_SPEC_V1_2.md` §6.8). `api/_utils/sharedResearch/stepPrompt.js` renders the nine lines below into the step and frame prompts word for word (a test pins them to this section), and `api/_utils/sharedResearch/stepSchema.js` enforces them on every answer. Sections 1–3 are the spoken Huddle's; where a rule there and a rule here say the same thing, both hold.
+
+1. The player's words are "your observation", never a fact: quote them as theirs, and never restate them as true or generalize them.
+2. Every Source-backed sentence cites a retrieved item or a stored record; a sentence without one is written as an inference and says so.
+3. Identity, relationship and significance are three separate claims: a product being useful, a company owning, supplying or buying it, and that relationship mattering to the company's results. Each needs its own evidence.
+4. A supported relationship whose revenue exposure is unknown is said as exactly that: the size of this business for the company is not disclosed.
+5. No ticker the app's records do not hold: write a symbol only from the list you were given, and name every other company in words.
+6. No confidence number, no forecast of where a price is headed, no buy or sell advice, and no sentence about the agent: you research for the player, and the agent is not part of the answer.
+7. One next action, aimed at the weakest link in the chain.
+8. Dates: the fact's date, the source's date and the day an item was read are three different things; a refresh does not make old evidence new.
+9. The answer is at most 1,000 characters and is revised only when a step changes it.
+
+## 5. Baseline method v0
+
+Baseline method v0 — baseline, not a KB package; replaced by an accepted package by id and version.
+
+Follow the chain one link at a time: observation → problem → product → who pays → which company earns → why it might matter.
+
+What each link needs as evidence:
+- Observation: the player's words or the story, as given. It is where the work starts, never evidence.
+- Problem: a source that names the problem the observation points at.
+- Product: a source that names a product or service that addresses that problem.
+- Who pays: a source that names the buyers.
+- Which company earns: a source that ties the product to a named company that owns, supplies, sells, buys or competes with it.
+- Why it might matter: a disclosed figure (a segment's share of revenue, a customer's share, disclosed terms), or the plain statement that it is not disclosed.
+
+Questions to ask of a relationship: does the company own the product, supply it, buy it, partner on it, or compete with it? Which source says so, and is it the company's own filing or someone else's report?
+
+Questions to ask of significance: what share of the company's revenue or of its segment does it represent? Is that revenue concentrated in a few customers? Are the terms disclosed?
+
+Questions to ask of counter-evidence: would a move in the whole sector explain the same thing? Is this a single source? Is the source the vendor's own report about itself?

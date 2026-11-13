@@ -1336,6 +1336,25 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Shared Research "Work an idea" (spec docs/specs/
+    // 20261109_SHARED_RESEARCH_B1_B2_BUILD_SPEC_V1_2.md §5.1, §6.10): the
+    // investigation's host session, written only by /api/forge/shared-research
+    // through the Admin SDK; read by its owner on the session's own userId
+    // (the analysisSessions block's shape). Its daily counts —
+    // sharedResearchQuota/{uid} and the app's sharedResearchQuota/_global —
+    // are server-only: no client reads or writes them. Proven by
+    // test/rules/sharedResearchSessions.rules.mjs (npm run test:rules).
+    // Deployed by the founder before the allowlist step (spec §11.1 step 4).
+    match /sharedResearchSessions/{sessionId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    match /sharedResearchQuota/{uid} {
+      allow read, write: if false;  // Admin SDK only
+    }
+
     // ═══════════════════════════════════════════
     // AGENT LEARNING SYSTEM — L1 Foundation (DARK-INERT)
     // Architecture V1.3 (FROZEN), T13: learning evidence is a

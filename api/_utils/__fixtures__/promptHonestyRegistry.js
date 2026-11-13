@@ -58,6 +58,7 @@ export const PROMPT_CONTRIBUTING_MODULES = [
   'evalCryptoSlotBlock.js',  // Crypto Slot paragraph: the tiered eval prompt's YOUR CRYPTO SLOT block (registered in the same commit as the fenced splice)
   'evalStockRewardBlock.js', // BaggerBomb stock thresholds v2 Ruling 10: the tiered reward prose per game, measured or legacy (registered in the same commit as the fenced splice)
   'huddle/planTemplates.js', // Huddle S1: the game plan's rendered slot text (renderPlan) — model-visible through the directive block, as callRecords/callActions.js is; on for the HUDDLE_PLAYER_UIDS cohort since S1.1 (Amendment E §E7; BUILD_RULES §2 review, L1-4)
+  'sharedResearch/stepPrompt.js', // Shared Research B1: the step and frame prompts (spec 20261109_SHARED_RESEARCH_B1_B2_BUILD_SPEC_V1_2 §6.8, K-5) — registered in the commit that created the module; dark behind SHARED_RESEARCH_MODE
 ];
 
 // Every OTHER same-directory module the two fenced assemblers import,
