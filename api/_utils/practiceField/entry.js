@@ -30,7 +30,8 @@
 //                       vendor times, each leg's fill, costs paid, and every ledger's opening value;
 //   decisions           one `decisions/{id}` receipt per name, `origin: 'basket_entry'`, no reason (code decided);
 //   coverage            the names move from `pending` to `held`.
-// The book is reconciled before anything is written; any invariant failure aborts the whole transaction.
+// The book is reconciled as read, before anything is decided, and again before anything is written (Astra T1A-02:
+// reject, never repair); any invariant failure aborts the whole transaction.
 
 import { buildDecision } from '../mandateSchema.js';
 import { markBook } from '../mandateValuation.js';
@@ -45,13 +46,12 @@ import { PracticeFieldError, isPracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
 import { eligibleMark } from './marks.js';
 import { executeIdeaFill } from './fills.js';
-import { newLedger, mirrorLedger, LEDGER_KIND } from './ledger.js';
+import { newLedger, mirrorLedger, LEDGER_KIND, markedEquityCents } from './ledger.js';
 import { planLegCents, planBasketCents } from './contract.js';
 import { mandateSectorOf, classificationOf } from './symbols.js';
 import { ideaEntrySlots, isLastIdeaEntrySlot } from './windows.js';
 import { planRelease } from './admission.js';
 import { coverageRefOf, coverageRef, ideaCoveragePlan, coverageWithRef } from './coverage.js';
-import { recordedEquityUsd } from './ideaBook.js';
 import { assertReconciled } from './reconcile.js';
 import { toCents, fromCents, addUsd } from './money.js';
 
@@ -180,6 +180,9 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
     }
     const coverageSnap = await tx.get(coverageDocRef);
     const coverageData = coverageSnap.exists ? coverageSnap.data() : null;
+    // Reject, never repair (Astra T1A-02): the book as READ must reconcile before anything is decided. This entry
+    // rewrites the book's equity, so a check of the next state alone would overwrite an inconsistent one and pass.
+    assertReconciled(book, [...others, idea]);
 
     const cancel = (detail) => {
       const { nextBook, nextIdea, nextCoverage } = planRelease({ book, idea, coverageData, reason: CANCEL_REASON.ENTRY_TIMEOUT, nowIso });
@@ -272,12 +275,16 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
         filledAt: nowIso, startMarkAt: entry.startMarkAt,
         unknownCostTierLegs: entry.unknownCostTierLegs,
       },
+      // Fills after the basket entry: none yet. The same-stock tie (reconcile.js rule 9) holds while this is 0;
+      // T1a-2's first later fill (a trim, a line exit) increments it.
+      postEntryFillCount: 0,
       lastEntryAttempt: null,
       revision: (idea.revision || 0) + 1,
     };
     const nextPortfolio = { ...book.portfolio, positions, cash: fromCents(bookCashCents), frictionPaidCum: fromCents(frictionCents) };
     const nextBook = { ...book, portfolio: nextPortfolio, revision: (book.revision || 0) + 1 };
-    nextBook.portfolio.totalValue = recordedEquityUsd(nextBook);
+    // The book's marked equity on the one R-19 basis (ledger.js), the same the close writes and rule 7 checks.
+    nextBook.portfolio.totalValue = fromCents(markedEquityCents(book.treasury?.unreservedCash, [...others, nextIdea]).equityCents);
     assertReconciled(nextBook, [...others, nextIdea]);
 
     const inception = {

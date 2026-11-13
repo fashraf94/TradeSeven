@@ -12,13 +12,14 @@ import {
 } from './mode.js';
 import {
   buildIdeaBookDoc, buildIdeaBookEpochDoc, buildIdeaBookGateConfig, createIdeaBook, ideaBookIdFor,
-  bookConfigSource, recordedEquityUsd,
+  bookConfigSource,
 } from './ideaBook.js';
 import { bookForOwner, bookIsForAgent } from './bookStore.js';
 import {
   bookForOwner as seamBookForOwner, bookIsForAgent as seamBookIsForAgent, PRACTICE_FIELD_SEAM_DEFAULTS,
 } from '../filmRoom/practiceFieldSeam.js';
 import { assertReconciled } from './reconcile.js';
+import { markedEquityCents } from './ledger.js';
 import { isSectorCapCorrected } from '../mandateSectorCap.js';
 import { buildNewMandateDoc } from '../mandateSchema.js';
 import { listArchetypeIds } from '../archetypeRegistry.js';
@@ -139,7 +140,7 @@ describe('the idea book document and its epoch', () => {
     expect(Object.keys(b.health)).toContain('lastEvalSweepAt'); // the sweeps order by these: present, never missing
     expect(Object.keys(b.health)).toContain('lastCloseAttemptAt');
     expect(b.execState.lastCloseKey).toBeNull();
-    expect(recordedEquityUsd(b)).toBe(100000);
+    expect(markedEquityCents(b.treasury.unreservedCash, []).equityCents).toBe(10000000); // the one R-19 basis (ledger.js)
     expect(() => assertReconciled(b, [])).not.toThrow();
   });
 

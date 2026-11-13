@@ -26,7 +26,8 @@
 //      whichever ledger holds the shares;
 //   2. MARKS from the close snapshot for every ledger, each with its quality;
 //   3. ROWS: the book's `dailyRows/{date}` and each holding idea's `ideas/{ideaId}/rows/{date}`;
-//   4. RECONCILIATION before anything is written.
+//   4. RECONCILIATION of the book as read, before step 0 (reject, never repair — Astra T1A-02), and of the book as it
+//      will be written, before anything is written.
 // Line exits, settlement, results, cutoffs and recovery are T1a-2. Nothing exits here.
 
 import { buildCorporateAction } from '../mandateSchema.js';
@@ -41,12 +42,12 @@ import {
 } from './constants.js';
 import { PracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
-import { applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols } from './ledger.js';
+import { applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents } from './ledger.js';
 import { closeMarkQuality } from './marks.js';
 import { planRelease } from './admission.js';
 import { coverageRefOf } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
-import { toCents, fromCents, addUsd } from './money.js';
+import { toCents, fromCents } from './money.js';
 
 /** The key of THE close snapshot for a date. */
 export const closeSnapshotKeyFor = (date) => `${date}_close`;
@@ -200,6 +201,9 @@ export async function closeIdeaBook(db, bookRef, { date, closeSnapshot, now = ne
       if (!snap.exists) throw new PracticeFieldError('open_idea_missing', { ideaId: id });
       ideas.push(snap.data());
     }
+    // Reject, never repair (Astra T1A-02): the close re-marks every position and recomputes the equity, so a book
+    // that is inconsistent AS READ would otherwise be overwritten into one that passes. It is refused here instead.
+    assertReconciled(book, ideas);
     const timedOut = ideas.filter((i) => i.status === IDEA_STATUS.ACCEPTED && i.contract.schedule.startSession <= date);
     let coverageData = null;
     if (timedOut.length > 0) {
@@ -274,17 +278,19 @@ export async function closeIdeaBook(db, bookRef, { date, closeSnapshot, now = ne
     }
 
     const openIdeas = (working.openIdeaIds || []).map((id) => nextIdeas.get(id));
-    const treasuryCash = roundUsd(working.treasury.unreservedCash);
-    const reservedCash = fromCents(openIdeas.reduce((sum, i) => sum + toCents(i.ledger.cash), 0));
-    // BUILD_RULES §9 (review L1-6): the book's positions value is the SUM of its ideas' displayed holdings values, so
-    // the book's row and its ideas' rows can never disagree by a cent. The raw mark of the book's own positions —
-    // an independent valuation of the same shares from the same snapshot — sits beside it and must agree to within
-    // one rounding per idea.
-    const markedPositionsValue = fromCents(Object.values(ideaRows).reduce((sum, r) => sum + toCents(r.markedHoldingsValue), 0));
-    if (Math.abs(toCents(markedPositionsValue) - toCents(roundUsd(bookMark.positionsValue))) > Object.keys(ideaRows).length) {
-      throw new PracticeFieldError('book_marks_disagree_with_ideas', { ideas: toCents(markedPositionsValue), book: toCents(roundUsd(bookMark.positionsValue)) });
+    // BUILD_RULES §9 (review L1-6) on the ONE basis (ledger.js markedEquityCents, Astra T1A-02): the book's positions
+    // value is the SUM of its ideas' holdings at the marks this close just wrote on them — each idea's row's
+    // `markedHoldingsValue` — so the book's row and its ideas' rows can never disagree by a cent. The raw mark of the
+    // book's own positions — an independent valuation of the same shares from the same snapshot — sits beside it and
+    // must agree to within one rounding per idea.
+    const equity = markedEquityCents(working.treasury.unreservedCash, openIdeas);
+    const treasuryCash = fromCents(equity.treasuryCents);
+    const reservedCash = fromCents(equity.cashCents);
+    const markedPositionsValue = fromCents(equity.holdingsCents);
+    if (Math.abs(equity.holdingsCents - toCents(roundUsd(bookMark.positionsValue))) > Object.keys(ideaRows).length) {
+      throw new PracticeFieldError('book_marks_disagree_with_ideas', { ideas: equity.holdingsCents, book: toCents(roundUsd(bookMark.positionsValue)) });
     }
-    const markedEquity = addUsd(treasuryCash, reservedCash, markedPositionsValue);
+    const markedEquity = fromCents(equity.equityCents);
     const costsToDateUsd = roundUsd(working.portfolio.frictionPaidCum || 0);
 
     const nextBook = {

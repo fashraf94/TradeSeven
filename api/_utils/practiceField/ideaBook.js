@@ -33,7 +33,6 @@ import { translateSectorCapSlots, isSectorCapCorrected, VINTAGE_UNCORRECTED } fr
 import {
   buildPortfolioBlock, buildHealthBlock, buildCostTelemetryBlock, buildExecStateBlock,
 } from '../mandateSchema.js';
-import { markBook } from '../mandateValuation.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   MANDATE_SCHEMA_VERSION, MANDATE_MAX_POSITIONS, MANDATE_MAX_SINGLE_POSITION_WEIGHT_PCT,
@@ -179,15 +178,6 @@ export function bookConfigSource(bookId, book) {
 /** The epoch reference of an idea book. */
 export function epochRefOf(bookRef, book) {
   return bookRef.collection('epochs').doc(book.currentEpochId);
-}
-
-/**
- * The book's RECORDED marked equity: its cash plus every position at the mark last written onto it (the last close
- * or the fill that opened it). Deterministic from the book document alone, so admission needs no snapshot and the
- * exposure it sums and the equity it divides by always share one basis.
- */
-export function recordedEquityUsd(book) {
-  return roundUsd(markBook(book?.portfolio?.positions || {}, book?.portfolio?.cash || 0, null).totalValue);
 }
 
 /**

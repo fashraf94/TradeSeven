@@ -8,6 +8,7 @@ import { enterIdea, runIdeaBookEntryPass, computeBasketEntry, entrySymbols, entr
 import { admitIdea, releaseIdea } from './admission.js';
 import { closeIdeaBook } from './close.js';
 import { assertReconciled } from './reconcile.js';
+import { markedEquityCents } from './ledger.js';
 import { isPracticeFieldError } from './errors.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { ideaEntrySlots, isLastIdeaEntrySlot, ideaEntryNotBefore, ideaSchedule, nextSessionDate, sessionAfter } from './windows.js';
@@ -426,10 +427,12 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     const { book, ideas } = await state();
     let b = clone(book); b.portfolio.cash = Math.round((b.portfolio.cash + 0.01) * 100) / 100;
     expect(problems(b, ideas)).toEqual(['cash_mismatch']);
+    // Since Astra T1A-02 the treasury and an idea's cash are also parts of the book's marked equity (rule 7), and an
+    // idea's cash is half of its same-stock tie (rule 9): one cent there breaks those rules too.
     b = clone(book); b.treasury.unreservedCash -= 0.01;
-    expect(problems(b, ideas)).toEqual(['cash_mismatch']);
+    expect(problems(b, ideas)).toEqual(['cash_mismatch', 'equity_mismatch']);
     let i = clone(ideas); i[0].ledger.cash = Math.round((i[0].ledger.cash + 0.01) * 100) / 100;
-    expect(problems(book, i)).toEqual(['cash_mismatch', 'ledger_not_conserved']);
+    expect(problems(book, i)).toEqual(['cash_mismatch', 'comparison_not_tied', 'equity_mismatch', 'ledger_not_conserved']);
     b = clone(book); b.portfolio.positions.AAPL.costBasisTotal = Math.round((b.portfolio.positions.AAPL.costBasisTotal + 0.01) * 100) / 100;
     expect(problems(b, ideas)).toEqual(['basis_mismatch']);
     b = clone(book); b.portfolio.positions.AAPL.shares += 0.000001;
@@ -472,7 +475,7 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     b = clone(book); b.slots.medium = ideas[0].ideaId; // another idea's id in this idea's slot
     expect(problems(b, ideas)).toEqual(['idea_not_in_its_slot']);
     i = clone(ideas); i[1].ledger.reservedCapitalUsd = 28999.99; i[1].ledger.cash = 28999.99;
-    expect(problems(book, i)).toEqual(['cash_mismatch', 'reserved_capital_mismatch']);
+    expect(problems(book, i)).toEqual(['cash_mismatch', 'equity_mismatch', 'reserved_capital_mismatch']);
     b = clone(book); b.treasury.unreservedCash = NaN;
     expect(problems(b, ideas)).toContain('treasury_negative_or_missing');
     b = clone(book); b.portfolio.cash = NaN;
@@ -490,8 +493,11 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     const book = getBook(db, bookId);
     await bookRef.update({ 'portfolio.positions': { AAPL: { shares: 1, costBasisTotal: 231.47, lastMark: 231.47 } }, 'portfolio.cash': book.portfolio.cash - 231.47 });
     const before = JSON.stringify([...db._store.entries()]);
+    // Since Astra T1A-02 the book is reconciled as read, so the planted position is refused there (an unowned
+    // position, and cash the treasury and ideas cannot account for) before any leg is priced. The entry's own
+    // `ticker_held_by_other_idea` check stays behind it.
     await expect(enterIdea(db, { bookRef, ideaId: a.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }))
-      .rejects.toThrow(/ticker_held_by_other_idea/);
+      .rejects.toThrow(/recon_failed.*cash_mismatch.*position_without_idea/);
     expect(JSON.stringify([...db._store.entries()])).toBe(before);
   });
 
@@ -538,7 +544,153 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     let err = null;
     try { await enterIdea(db, { bookRef, ideaId: a.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }); } catch (e) { err = e; }
     expect(isPracticeFieldError(err, 'recon_failed')).toBe(true);
-    expect(err.detail.problems.map((p) => p.rule)).toEqual(['position_without_idea']);
+    // The equity rule (Astra T1A-02, rule 7) sees it too: the treasury paid for a position no idea holds.
+    expect(err.detail.problems.map((p) => p.rule)).toEqual(['position_without_idea', 'equity_mismatch']);
     expect(JSON.stringify([...db._store.entries()])).toBe(before);
+  });
+});
+
+describe('Astra T1A-02 — the reconciliation covers the marked book and all three ledgers, and rejects rather than repairs', () => {
+  // Astra's fixture: a $20,000 AAPL idea at a $100 mark, normal cost policy.
+  const QUOTES = { AAPL: { price: 100, marketCap: 3e12 }, SPY: 500 };
+  const problems = (book, ideas) => {
+    try { assertReconciled(book, ideas); return []; } catch (err) {
+      if (!isPracticeFieldError(err, 'recon_failed')) throw err;
+      return err.detail.problems.map((p) => p.rule).sort();
+    }
+  };
+  const clone = (v) => structuredClone(v);
+  const refusedWritingNothing = async (db, run, rules) => {
+    const before = JSON.stringify([...db._store.entries()]);
+    const err = await run().then(() => null, (e) => e);
+    expect(isPracticeFieldError(err, 'recon_failed'), String(err)).toBe(true);
+    expect(err.detail.problems.map((p) => p.rule).sort()).toEqual([...rules].sort());
+    expect(JSON.stringify([...db._store.entries()])).toBe(before);
+  };
+  const holding = async (comparison = { type: 'same_stock_held' }, extraQuotes = {}) => {
+    const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
+    const r = await admitAndEnter(db, bookId, { contract: contractOf({ comparison }), quotes: { ...QUOTES, ...extraQuotes } });
+    expect(r.entry.outcome).toBe('entered');
+    return { db, bookId, bookRef, ideaId: r.ideaId, book: getBook(db, bookId), idea: getIdea(db, bookId, r.ideaId) };
+  };
+  const ideaRefOf = (db, bookId, ideaId) => db.collection('mandates').doc(bookId).collection('ideas').doc(ideaId);
+
+  it('Astra\'s fault A — the book\'s AAPL mark changed from $100 to $200 and its equity set to $120,000: a $30,000 admission is refused recon_failed and writes nothing', async () => {
+    const s = await holding();
+    expect(s.book.portfolio.positions.AAPL.lastMark).toBe(100);
+    await s.bookRef.set({ portfolio: { positions: { AAPL: { lastMark: 200 } }, totalValue: 120000 } }, { merge: true });
+    await refusedWritingNothing(s.db, () => admitIdea(s.db, { bookId: s.bookId, contract: contractOf({ slot: 'long', names: ['LLY'], capitalUsd: 30000 }), opId: 'lly', nowIso: etIso(DAYS.d1, 13, 0) }), ['mark_mismatch', 'equity_mismatch']);
+  });
+
+  it('reject, never repair — the same fault met by a CLOSE (which re-marks every position and recomputes the equity) is refused as read, not overwritten into a book that passes', async () => {
+    const s = await holding();
+    await s.bookRef.set({ portfolio: { positions: { AAPL: { lastMark: 200 } }, totalValue: 120000 } }, { merge: true });
+    await refusedWritingNothing(s.db, () => closeIdeaBook(s.db, s.bookRef, { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, { AAPL: 100.13, SPY: 500 }), now: new Date(etIso(DAYS.d1, 16, 25)) }), ['mark_mismatch', 'equity_mismatch']);
+    expect(s.db._get(`mandates/${s.bookId}/dailyRows/${DAYS.d1}`)).toBeUndefined();
+    expect(getBook(s.db, s.bookId).portfolio.positions.AAPL.lastMark).toBe(200); // left as found, for a person to look at
+  });
+
+  it('reject, never repair — an equity a cent off is refused by ANOTHER idea\'s entry (which rewrites the equity), by its release and by its entry timeout', async () => {
+    const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
+    await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: QUOTES });
+    const b = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: ADMIT_ISO });
+    expect(b.ok).toBe(true);
+    const book = getBook(db, bookId);
+    await bookRef.update({ 'portfolio.totalValue': Math.round((book.portfolio.totalValue + 0.01) * 100) / 100 });
+    await refusedWritingNothing(db, () => enterIdea(db, { bookRef, ideaId: b.ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', q('LLY', 'SPY')), nowIso: nowAt(DAYS.d1, 'midday') }), ['equity_mismatch']);
+    await refusedWritingNothing(db, () => releaseIdea(db, { bookId, ideaId: b.ideaId, nowIso: etIso(DAYS.d1, 13, 0) }), ['equity_mismatch']);
+    await refusedWritingNothing(db, () => enterIdea(db, { bookRef, ideaId: b.ideaId, tick: tickOf(DAYS.d2, 'open30'), snapshot: tickSnapshot(DAYS.d2, 'open30', q('LLY', 'SPY')), nowIso: nowAt(DAYS.d2, 'open30') }), ['equity_mismatch']);
+  });
+
+  it('Astra\'s fault B — $123.45 added to the comparison\'s cash alone: the close is refused and writes no row (it would have written a −$123.45 gap at full quality)', async () => {
+    const s = await holding();
+    const idea = clone(s.idea);
+    idea.comparisonLedger.cash = Math.round((idea.comparisonLedger.cash + 123.45) * 100) / 100;
+    await ideaRefOf(s.db, s.bookId, s.ideaId).set(idea);
+    await refusedWritingNothing(s.db, () => closeIdeaBook(s.db, s.bookRef, { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, { AAPL: 100, SPY: 500 }), now: new Date(etIso(DAYS.d1, 16, 25)) }), ['comparison_ledger_not_conserved', 'comparison_not_tied']);
+    expect(s.db._get(`mandates/${s.bookId}/ideas/${s.ideaId}/rows/${DAYS.d1}`)).toBeUndefined();
+    expect(s.db._get(`mandates/${s.bookId}/dailyRows/${DAYS.d1}`)).toBeUndefined();
+  });
+
+  it('rule 7 MARKED — a book mark a millionth of a dollar from its idea\'s is `mark_mismatch` alone; an equity a cent off is `equity_mismatch` alone; a missing equity is both not-a-number and a mismatch', async () => {
+    const { book, idea } = await holding();
+    let b = clone(book); b.portfolio.positions.AAPL.lastMark += 0.000001;
+    expect(problems(b, [idea])).toEqual(['mark_mismatch']);
+    b = clone(book); delete b.portfolio.positions.AAPL.lastMark;
+    expect(problems(b, [idea])).toEqual(['mark_mismatch']);
+    let i = clone(idea); i.ledger.holdings.AAPL.lastMark = 100.01; // the idea's mark moves the equity too
+    expect(problems(book, [i])).toEqual(['equity_mismatch', 'mark_mismatch']);
+    b = clone(book); b.portfolio.totalValue = Math.round((b.portfolio.totalValue + 0.01) * 100) / 100;
+    expect(problems(b, [idea])).toEqual(['equity_mismatch']);
+    b = clone(book); delete b.portfolio.totalValue;
+    expect(problems(b, [idea])).toEqual(['equity_mismatch', 'not_a_number']);
+    // The basis is the one ledger.js states: treasury + Σ ideas' (cash + holdings at their recorded marks, rounded once).
+    const holdingsCents = Math.round(idea.ledger.holdings.AAPL.shares * 100 * 100);
+    expect(cents(book.portfolio.totalValue)).toBe(cents(book.treasury.unreservedCash) + cents(idea.ledger.cash) + holdingsCents);
+    expect(cents(book.portfolio.totalValue)).toBe(markedEquityCents(book.treasury.unreservedCash, [idea]).equityCents);
+    expect(problems(book, [idea])).toEqual([]);
+  });
+
+  it('rule 8 CONSERVED — the comparison ledger and the SPY ledger each conserve, on their own, with the idea\'s capital and real amounts', async () => {
+    const fund = await holding({ type: 'sector_fund', symbols: ['XLK'] }, { XLK: 233.59 });
+    let i = clone(fund.idea); i.comparisonLedger.cash = Math.round((i.comparisonLedger.cash + 0.01) * 100) / 100;
+    expect(problems(fund.book, [i])).toEqual(['comparison_ledger_not_conserved']);
+    i = clone(fund.idea); i.spyLedger.cash = Math.round((i.spyLedger.cash + 0.01) * 100) / 100;
+    expect(problems(fund.book, [i])).toEqual(['spy_ledger_not_conserved']);
+    i = clone(fund.idea); i.spyLedger.holdings.SPY.costBasisTotal = Math.round((i.spyLedger.holdings.SPY.costBasisTotal - 0.01) * 100) / 100;
+    expect(problems(fund.book, [i])).toEqual(['spy_ledger_not_conserved']);
+    i = clone(fund.idea); i.spyLedger.reservedCapitalUsd = 19999.99; i.spyLedger.holdings.SPY.costBasisTotal = Math.round((i.spyLedger.holdings.SPY.costBasisTotal - 0.01) * 100) / 100;
+    expect(problems(fund.book, [i])).toEqual(['spy_capital_mismatch']); // conserved, but not the idea's capital
+    i = clone(fund.idea); i.comparisonLedger.dividendsUsd = NaN;
+    expect(problems(fund.book, [i])).toContain('not_a_number');
+    i = clone(fund.idea); i.comparisonLedger.realizedPnlUsd = '0';
+    expect(problems(fund.book, [i])).toContain('not_a_number');
+    i = clone(fund.idea); i.comparisonLedger.holdings.XLK.shares = NaN;
+    expect(problems(fund.book, [i])).toContain('not_a_number');
+    i = clone(fund.idea); i.comparisonLedger.holdings.XLK.shares = 0;
+    expect(problems(fund.book, [i])).toEqual(['comparison_holding_not_positive']);
+    i = clone(fund.idea); i.spyLedger = null;
+    expect(problems(fund.book, [i])).toEqual(['spy_ledger_missing']);
+    i = clone(fund.idea); delete i.comparisonLedger;
+    expect(problems(fund.book, [i])).toEqual(['comparison_ledger_missing']);
+    // A same-stock comparison's dividends alone: the tie (cash, names, quantities, basis) holds; conservation does not.
+    const same = await holding();
+    i = clone(same.idea); i.comparisonLedger.dividendsUsd = 0.01;
+    expect(problems(same.book, [i])).toEqual(['comparison_ledger_not_conserved']);
+    // An accepted idea has neither paper ledger yet, and needs none.
+    const { db, bookId } = await seedBook();
+    const a = await admitIdea(db, { bookId, contract: contractOf(), opId: 'p', nowIso: ADMIT_ISO });
+    expect(getIdea(db, bookId, a.ideaId)).toMatchObject({ status: 'accepted', comparisonLedger: null, spyLedger: null });
+    expect(problems(getBook(db, bookId), [getIdea(db, bookId, a.ideaId)])).toEqual([]);
+  });
+
+  it('rule 9 TIED — a same-stock comparison equals its idea in cash, names, quantities and basis while the idea has made no fill after entry; the count is written at entry and fails closed', async () => {
+    const s = await holding();
+    expect(s.idea.postEntryFillCount).toBe(0);
+    // Cash and dividends moved together: conserved, but no longer tied.
+    let i = clone(s.idea);
+    i.comparisonLedger.cash = Math.round((i.comparisonLedger.cash + 0.01) * 100) / 100; i.comparisonLedger.dividendsUsd = 0.01;
+    expect(problems(s.book, [i])).toEqual(['comparison_not_tied']);
+    // A millionth of a share more on the comparison: conserved (basis unchanged); not tied.
+    i = clone(s.idea); i.comparisonLedger.holdings.AAPL.shares += 0.000001;
+    expect(problems(s.book, [i])).toEqual(['comparison_not_tied']);
+    // A cent more basis on the comparison, with a cent of dividends to account for it: conserved; not tied.
+    i = clone(s.idea);
+    i.comparisonLedger.holdings.AAPL.costBasisTotal = Math.round((i.comparisonLedger.holdings.AAPL.costBasisTotal + 0.01) * 100) / 100;
+    i.comparisonLedger.dividendsUsd = 0.01;
+    expect(problems(s.book, [i])).toEqual(['comparison_not_tied']);
+    // After a later fill (T1a-2), the tie is no longer owed.
+    i = clone(s.idea); i.postEntryFillCount = 1;
+    i.comparisonLedger.cash = Math.round((i.comparisonLedger.cash + 0.01) * 100) / 100; i.comparisonLedger.dividendsUsd = 0.01;
+    expect(problems(s.book, [i])).toEqual([]);
+    // A count that is not a whole number ≥ 0 never switches the tie off.
+    for (const bad of [undefined, null, -1, 0.5, '0', NaN]) {
+      i = clone(s.idea); i.postEntryFillCount = bad;
+      expect(problems(s.book, [i]), String(bad)).toEqual(['post_entry_fill_count_invalid']);
+    }
+    // A sector-fund comparison is not tied to anything, and its count is still written.
+    const fund = await holding({ type: 'sector_fund', symbols: ['XLK'] }, { XLK: 233.59 });
+    expect(fund.idea.postEntryFillCount).toBe(0);
+    expect(problems(fund.book, [fund.idea])).toEqual([]);
   });
 });

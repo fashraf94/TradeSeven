@@ -23,7 +23,9 @@ import {
 
 // The pinned evidence. A change here is a change to what the idea book records: re-pin it only with a reviewed
 // change, and carry the new figures into the build report.
-const EXPECTED_DUMP = { sha256: '10049196e823efdc82d6ae26dacc99505cb0794106927e94beeb41e541b10df1', bytes: 147178 };
+// Astra T1A-02 (fix round, 13 Nov 2026): +81 bytes, one field — `postEntryFillCount: 0` on each of the three ideas,
+// written at entry for the same-stock tie (reconcile.js rule 9). Every other byte is unchanged (was 10049196…, 147,178).
+const EXPECTED_DUMP = { sha256: 'ea5d0d4cd19c3852cd98447629d0dddfc7253dac54890b6a058874bbfe2191fe', bytes: 147259 };
 
 const SESSIONS = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02'];
 const BASE = {

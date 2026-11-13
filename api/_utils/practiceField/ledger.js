@@ -34,6 +34,8 @@
 // valued at its carried mark, not full quality, exactly as R-9 holds an unsupported action. A conflict is not
 // settled (its id goes to neither list), so a feed that later presents one consistent row still applies it once.
 //
+// THE BOOK'S MARKED EQUITY has one rounding basis, stated below (`markedEquityCents`).
+//
 // Pure: no store, no clock.
 
 import { markBook } from '../mandateValuation.js';
@@ -42,7 +44,7 @@ import { pendingActionsFor, applyCorporateAction, classifyOvernightGaps, deriveA
 import { roundUsd } from '../mandateRounding.js';
 import { MARK_QUALITY } from './constants.js';
 import { closeMarkQuality } from './marks.js';
-import { addUsd } from './money.js';
+import { addUsd, toCents } from './money.js';
 
 export const LEDGER_KIND = Object.freeze({ IDEA: 'idea', COMPARISON: 'comparison', SPY: 'spy' });
 
@@ -226,6 +228,39 @@ export function valueLedger(ledger, closeSnapshot, { sessionDate, frozen = null 
     marks,
     fullQuality,
   };
+}
+
+// ── THE ROUNDING BASIS OF A BOOK'S MARKED EQUITY (R-19; Astra T1A-02) ─────────────────────────────────────────
+// Stated ONCE, here. The entry (the equity it writes), the close (the equity and the book row it writes) and the
+// reconciliation (rule 7, which checks the equity a book carries) all use it, so they cannot drift apart:
+//
+//   each open idea's holdings at the marks RECORDED on them (`lastMark`; average cost only for a holding that has
+//   none), Σ shares × mark, rounded ONCE to a cent per idea — exactly the `markedHoldingsValue` of that idea's row;
+//   the book's marked equity = the treasury's unreserved cash + Σ open ideas' (cash + that value), in whole cents.
+//
+// The book's figure is the sum of its ideas' figures: a book row, its idea rows and the permitted maximum agree to
+// the cent. `portfolio.totalValue` is that number, as the last entry or close wrote it; admission reads it.
+
+/** A ledger's holdings valued at the marks recorded on them, in whole cents (rounded once). */
+export function recordedHoldingsCents(ledger) {
+  return toCents(markBook(ledger?.holdings || {}, 0, null).positionsValue);
+}
+
+/**
+ * The book's marked equity on the R-19 basis, in whole cents, with its parts.
+ * @param {number} treasuryUnreservedCash  the book's `treasury.unreservedCash`
+ * @param {Array<object>} ideas           the book's open ideas (their own ledgers; never a comparison or SPY)
+ * @returns {{ treasuryCents: number, cashCents: number, holdingsCents: number, equityCents: number }}
+ */
+export function markedEquityCents(treasuryUnreservedCash, ideas) {
+  const treasuryCents = toCents(treasuryUnreservedCash);
+  let cashCents = 0;
+  let holdingsCents = 0;
+  for (const idea of ideas || []) {
+    cashCents += toCents(idea?.ledger?.cash);
+    holdingsCents += recordedHoldingsCents(idea?.ledger);
+  }
+  return { treasuryCents, cashCents, holdingsCents, equityCents: treasuryCents + cashCents + holdingsCents };
 }
 
 /**

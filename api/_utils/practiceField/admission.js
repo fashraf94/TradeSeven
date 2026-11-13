@@ -332,6 +332,9 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
     }
     const coverageSnap = await tx.get(coverageDocRef);
     const coverageData = coverageSnap.exists ? coverageSnap.data() : null;
+    // Reject, never repair (Astra T1A-02): a book that does not reconcile AS READ — its marks, its equity, any of its
+    // ideas' three ledgers — admits nothing. The limits below are shares of that equity.
+    assertReconciled(book, ideas);
 
     const admitsOwner = practiceFieldAdmits(book.userId);
     if (shape.contract === null) {
@@ -433,6 +436,8 @@ export async function releaseIdea(db, { bookId, ideaId, reason = CANCEL_REASON.R
       if (snap.exists) others.push(snap.data());
     }
     const coverageSnap = await tx.get(coverageDocRef);
+    // Reject, never repair (Astra T1A-02): the book as read must reconcile before its reservation moves.
+    assertReconciled(book, [...others, idea]);
     const { nextBook, nextIdea, nextCoverage } = planRelease({
       book, idea, coverageData: coverageSnap.exists ? coverageSnap.data() : null, reason, nowIso,
     });

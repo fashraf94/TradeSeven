@@ -5,7 +5,7 @@
 // binding constraint).
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { admitIdea, releaseIdea, ideaIdFor, admissionFingerprint } from './admission.js';
+import { admitIdea, releaseIdea, ideaIdFor, admissionFingerprint, evaluateAdmission } from './admission.js';
 import { normalizeIdeaContract, planLegCents } from './contract.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../callRecords/allowlist.js';
@@ -393,10 +393,23 @@ describe('check 7 — capital, with the permitted maximum and every binding cons
       expect(res.permittedMaxUsd).toBe(0);
     }
     expect(getBook(db, bookId).treasury.unreservedCash).toBe(100000);
-    // The same for the book's own equity: a book whose displayed equity is not a number admits nothing.
+    // The same for the book's own equity: a book whose displayed equity is not a number admits nothing. Since
+    // Astra T1A-02 such a book does not even reconcile as read (rule 7), so the admission is refused `recon_failed`
+    // before any limit is computed, and writes nothing …
     await epochRef.set(epoch);
+    const good = getBook(db, bookId);
     await bookRef.set({ portfolio: { totalValue: null } }, { merge: true });
-    const noEquity = await admit(db, bookId, contractOf({ capitalUsd: 1000 }));
+    const before = JSON.stringify([...db._store.entries()]);
+    const err = await admit(db, bookId, contractOf({ capitalUsd: 1000 })).catch((e) => e);
+    expect(err?.code).toBe('recon_failed');
+    expect(err.detail.problems.map((p) => p.rule)).toEqual(['not_a_number', 'equity_mismatch']);
+    expect(JSON.stringify([...db._store.entries()])).toBe(before);
+    // … and the limit computation's own fail-closed check stays, behind it.
+    const epochNow = (await epochRef.get()).data();
+    const noEquity = evaluateAdmission({
+      book: { ...good, portfolio: { ...good.portfolio, totalValue: null } }, epoch: epochNow, ideas: [], coverageData: null,
+      contract: normalizeIdeaContract(contractOf({ capitalUsd: 1000 })).contract, ideaRefKey: `${bookId}/x`, nowIso: ADMIT_ISO, admitsOwner: true,
+    });
     expect(codes(noEquity)).toContain('epoch_config_invalid');
     expect(noEquity.refusals.find((r) => r.code === 'epoch_config_invalid').constraints).toContain('book_equity');
     expect(noEquity.permittedMaxUsd).toBe(0);
@@ -404,12 +417,14 @@ describe('check 7 — capital, with the permitted maximum and every binding cons
 
   it('the limits are shares of the equity the book DISPLAYS — `portfolio.totalValue` — never a second valuation a cent away (refuter RF1-2)', async () => {
     const { db, bookId, bookRef } = await seedBook();
-    // The displayed equity after a close, to the cent; the long slot may take 40% of exactly that.
-    await bookRef.set({ portfolio: { totalValue: 99684.40 } }, { merge: true });
+    // The displayed equity after a close, to the cent; the long slot may take 40% of exactly that. (The book's cash
+    // and treasury move with it, so the book reconciles as read — Astra T1A-02's rule 7.)
+    const at = { portfolio: { totalValue: 99684.40, cash: 99684.40 }, treasury: { unreservedCash: 99684.40 } };
+    await bookRef.set(at, { merge: true });
     const atMax = await admit(db, bookId, contractOf({ slot: 'long', names: ['AAPL', 'JPM', 'LLY'], capitalUsd: 39873.76 }), 'a');
     expect(atMax).toMatchObject({ ok: true, permittedMaxUsd: 39873.76 });
     const { db: db2, bookId: book2, bookRef: ref2 } = await seedBook({ uid: 'owner-2' });
-    await ref2.set({ portfolio: { totalValue: 99684.40 } }, { merge: true });
+    await ref2.set(at, { merge: true });
     const over = await admit(db2, book2, contractOf({ slot: 'long', names: ['AAPL', 'JPM', 'LLY'], capitalUsd: 39873.77 }), 'b');
     expect(codes(over)).toContain('capital_exceeds_slot_cap');
     expect(over.permittedMaxUsd).toBe(39873.76);

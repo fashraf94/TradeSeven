@@ -101,7 +101,9 @@ describe('a valuation: every ledger marked from the one close snapshot', () => {
     await admitAndEnter(db, bookId, { contract: contractOf(), quotes: { AAPL: { price: 231.47, marketCap: 3.4e12 }, SPY: 597.31 } });
     const held = getBook(db, bookId).portfolio.positions.AAPL.shares;
     await bookRef.set({ portfolio: { positions: { AAPL: { shares: held * 2 } } } }, { merge: true });
-    await expect(closeOn(db, bookId, DAYS.d1, { AAPL: 231.47, SPY: 597.31 })).rejects.toThrow(/book_marks_disagree_with_ideas/);
+    // Since Astra T1A-02 the drift is refused by the reconciliation of the book AS READ, before the close values
+    // anything (the later `book_marks_disagree_with_ideas` check stays behind it).
+    await expect(closeOn(db, bookId, DAYS.d1, { AAPL: 231.47, SPY: 597.31 })).rejects.toThrow(/recon_failed.*shares_mismatch/);
     expect(getBook(db, bookId).execState.lastCloseKey ?? null).toBe(null);
     await bookRef.set({ portfolio: { positions: { AAPL: { shares: held } } } }, { merge: true }); // restored, so the suite's row scan sees a sound db
   });
