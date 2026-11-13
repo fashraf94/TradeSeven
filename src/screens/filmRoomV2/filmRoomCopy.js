@@ -208,8 +208,9 @@ export const FILM_ROOM_COPY = Object.freeze({
   // R7: who a quotation's words are, as the tape records it; a stored record with no recorded author is named as
   // the record ("the stored plan"), never given a guessed one
   // B2: the player's own note on a filed card is credited "you" (spec §6; the ledger's `note`, bound by path)
-  // Build C §5 (BC-1): the agent's reason when it considered a card's nomination, credited "your agent" (the ledger's
-  // `nomination.reason`, bound by path, at its `consideredAt`)
+  // Build C §5 (BC-1), Amendment A CA-4 / CA-11: the agent's words on a card's chain, credited "your agent" — a deferral's
+  // or a decline's reason and an acceptance's thesis from their own history row, at that row's `consideredAt`; a
+  // result's closing note at its `closingNoteAt` (each bound by path)
   quoteBy: { agent: 'the agent', player: 'the player', platform: 'the platform', plan: 'the stored plan', directive: 'the stored directive', you: 'you', yourAgent: 'your agent' },
   plans: 'Plans',
   plansNone: 'No plan entries were recorded this day.',

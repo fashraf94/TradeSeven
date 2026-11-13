@@ -61,7 +61,7 @@ import { CARD_SLOTS, CARD_SLOTS_VERSION } from '../../../src/data/cardSlots.js';
 import { PER_GAME_LOADOUT_ENABLED } from '../../../src/config/perGameLoadoutFlags.js';
 import { loadoutArchetypesOf } from '../../../src/constants/perGameLoadout.js';
 // Build C §3: the stage vocabulary v2, from its one export — re-exported whole, so every server reader takes it from here
-import { CARD_STAGE_VOCAB_VERSION, CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_STATES, NOMINATION_EXPIRY_SESSIONS, WITHDRAWABLE_STATES, isOpenStage, isRetirableByPlayer } from '../../../src/data/cardStages.js';
+import { CARD_STAGE_VOCAB_VERSION, CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_STATES, NOMINATION_EXPIRY_SESSIONS, WITHDRAWABLE_STATES, isOpenStage, isRetirableByPlayer, nominationMayMove } from '../../../src/data/cardStages.js';
 // Build C §4 (refinement R-C1-3): the nomination record's shape is the Practice Field's builder, reached through the seam;
 // Amendment A CA-2: so is its withdrawal's
 import { buildNominationDoc, buildWithdrawal, NOMINATION_SOURCE_KIND, NOMINATION_QUEUED } from './practiceFieldSeam.js';
@@ -635,6 +635,13 @@ export const SERVER_TRANSITIONS = Object.freeze({
 const WRITER_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 /** The longest agent reason the ledger keeps a copy of, in code points (the book bounds its own; this is the copy's guard). */
 export const NOMINATION_REASON_MAX = 2000;
+/** Amendment A CA-4: the longest thesis an accepted copy carries, and the longest closing note a result carries — code points. */
+export const THESIS_MAX = 400;
+export const CLOSING_NOTE_MAX = 600;
+/** Code points, astral characters counted once — the text itself is kept exactly. */
+const codePoints = (s) => [...s].length;
+/** A bounded text, present: a non-empty string of at most `max` code points. */
+const textOk = (v, max) => typeof v === 'string' && v.length > 0 && codePoints(v) <= max;
 const idOk = (v) => typeof v === 'string' && v.length > 0 && v.length <= 200;
 const wordOk = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
 const isoOk = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));
@@ -651,9 +658,18 @@ function fieldOfTransition(to, payload) {
     // `queued` is the filing's, and `withdrawn` the player retire's alone (Amendment A CA-2): never a copied state
     if (!NOMINATION_STATES.includes(p.state) || p.state === 'queued' || p.state === 'withdrawn') throw invalid('state');
     if (!idOk(p.bookId) || !idOk(p.nominationId)) throw invalid('ids');
-    if (p.reason != null && (typeof p.reason !== 'string' || [...p.reason].length > NOMINATION_REASON_MAX)) throw invalid('reason');
+    if (p.reason != null && (typeof p.reason !== 'string' || codePoints(p.reason) > NOMINATION_REASON_MAX)) throw invalid('reason');
     if (p.consideredAt != null && !isoOk(p.consideredAt)) throw invalid('consideredAt');
-    return { bookId: p.bookId, nominationId: p.nominationId, state: p.state, reason: p.reason ?? null, consideredAt: p.consideredAt ?? null };
+    const copy = { bookId: p.bookId, nominationId: p.nominationId, state: p.state, reason: p.reason ?? null, consideredAt: p.consideredAt ?? null };
+    // Amendment A CA-4: an ACCEPTED copy carries the idea it became (required — `testing` is bound to it, CA-11) and,
+    // optionally, the idea's thesis (at most THESIS_MAX code points, kept exactly), which needs its own instant
+    if (p.state === 'accepted') {
+      if (!idOk(p.ideaId)) throw invalid('ideaId');
+      if (p.thesis != null && !textOk(p.thesis, THESIS_MAX)) throw invalid('thesis');
+      if (p.thesis != null && p.consideredAt == null) throw invalid('consideredAt');
+      Object.assign(copy, { ideaId: p.ideaId, thesis: p.thesis ?? null });
+    }
+    return copy;
   }
   if (to === 'testing') {
     if (!idOk(p.bookId) || !idOk(p.ideaId)) throw invalid('ids');
@@ -662,7 +678,14 @@ function fieldOfTransition(to, payload) {
   if (to === 'tested') {
     if (!idOk(p.ideaId) || !idOk(p.resultRef)) throw invalid('ids');
     if (!wordOk(p.contractCondition) || !wordOk(p.economicResult)) throw invalid('result');
-    return { ideaId: p.ideaId, resultRef: p.resultRef, contractCondition: p.contractCondition, economicResult: p.economicResult };
+    const result = { ideaId: p.ideaId, resultRef: p.resultRef, contractCondition: p.contractCondition, economicResult: p.economicResult };
+    // Amendment A CA-4: the agent's closing note (at most CLOSING_NOTE_MAX code points, kept exactly) with its own instant
+    if (p.closingNote != null) {
+      if (!textOk(p.closingNote, CLOSING_NOTE_MAX)) throw invalid('closingNote');
+      if (!isoOk(p.closingNoteAt)) throw invalid('closingNoteAt');
+      Object.assign(result, { closingNote: p.closingNote, closingNoteAt: p.closingNoteAt });
+    }
+    return result;
   }
   if (to === 'installed') {
     if (!idOk(p.offerId) || !wordOk(p.state)) throw invalid('offer');
@@ -676,11 +699,15 @@ function fieldOfTransition(to, payload) {
 
 /**
  * The record a transition must be BOUND to (spec §3: bound to the idea's original run and the entry's owner): a
- * nomination copy names the entry's own nomination; `testing` the entry's own book; `tested` the entry's own idea.
+ * nomination copy names the entry's own nomination; `testing` the entry's own book AND the idea its ACCEPTED copy names
+ * (Amendment A CA-11: the copy must be `accepted`, and `payload.ideaId` its `ideaId`); `tested` the entry's own idea.
  */
 function boundOf(to, entry, field) {
   if (to === 'nomination') return entry.nomination?.bookId === field.bookId && entry.nomination?.nominationId === field.nominationId;
-  if (to === 'testing') return entry.nomination?.bookId === field.bookId;
+  if (to === 'testing') {
+    const copy = isObj(entry.nomination) ? entry.nomination : null;
+    return Boolean(copy) && copy.bookId === field.bookId && copy.state === 'accepted' && idOk(copy.ideaId) && copy.ideaId === field.ideaId;
+  }
   if (to === 'tested') return entry.idea?.ideaId === field.ideaId;
   return true;
 }
@@ -689,9 +716,12 @@ function boundOf(to, entry, field) {
  * Build C §3 — THE LEDGER'S TRANSITION HELPER, server-only, for the Practice Field: one transaction that moves an entry
  * along the server's legal order, or copies the book's nomination state onto it.
  *
- *   to          `nomination` (copies `{ state, reason, consideredAt, bookId, nominationId }` onto `entry.nomination`;
- *               the stage stays `nominated`), `testing` (sets `idea`), `tested` (sets `result`), `installed` (sets
- *               `offer`) or `retired` (the server's retire, with `offer.state`).
+ *   to          `nomination` (copies `{ state, reason, consideredAt, bookId, nominationId }` onto `entry.nomination` —
+ *               an `accepted` copy also `ideaId` and an optional `thesis`, CA-4; the stage stays `nominated`; the move
+ *               judged against the copy's current state by the nomination order, CA-11), `testing` (sets `idea`; only
+ *               from an accepted copy, bound to its `ideaId`), `tested` (sets `result`, an optional `closingNote` with
+ *               its `closingNoteAt`, CA-4), `installed` (sets `offer`) or `retired` (the server's retire, with
+ *               `offer.state`).
  *   checks      the entry exists (404 not_found); it is `ownerId`'s and `agentId`'s (403 forbidden); its op id has not
  *               been used (a replay of the same transition is the IDEMPOTENT answer; another under that op id → 409
  *               op_conflict); it is at the transition's FROM stage (409 illegal_transition); the payload names the
@@ -731,8 +761,13 @@ export async function applyServerTransition(db, { entryId, ownerId, agentId, to,
     }
     if (entry.stage !== step.from) throw fail(409, 'illegal_transition', { stage: entry.stage });
     if (!boundOf(to, entry, field)) throw fail(409, 'nomination_mismatch', { entryId });
+    // Amendment A CA-11: THE NOMINATION ORDER, judged against the entry's current copy (after the replay, before any
+    // write) — a late copy, or one out of order, is refused; a lost one does not block the next (queued answers directly)
+    if (to === 'nomination' && !nominationMayMove(entry.nomination?.state, field.state)) throw fail(409, 'illegal_transition', { nominationState: entry.nomination?.state ?? null });
     const row = { stage: step.to, at: nowIso, by: BY_SERVER, writer: by, opId, opFingerprint };
-    if (to === 'nomination') Object.assign(row, { event: 'nomination', state: field.state });
+    // CA-11 / CA-4: a nomination row keeps the copy's own state, reason and consideredAt (and an accepted copy's idea and
+    // thesis), so each answer is quoted from its own row at its own time — a later copy never overwrites an earlier answer
+    if (to === 'nomination') Object.assign(row, { event: 'nomination', state: field.state, reason: field.reason, consideredAt: field.consideredAt, ...(field.state === 'accepted' ? { ideaId: field.ideaId, thesis: field.thesis } : {}) });
     const patch = {
       [step.field]: field,
       ...(step.to !== entry.stage ? { stage: step.to, stageAt: nowIso } : {}),

@@ -51,7 +51,8 @@ async function nominated(t, id = 'c1') {
   return at;
 }
 const move = (t, over) => applyServerTransition(t.db, { entryId: 'c1', ownerId: UID, agentId: AGENT, by: 'practice_field', nowIso: LATER, ...over });
-const NOMINATION = { bookId: BOOK, nominationId: 'nom_c1', state: 'accepted', reason: 'The exit came early; I will test holding through one more check.', consideredAt: '2026-11-12T14:58:00.000Z' };
+// Amendment A CA-4: an accepted copy names the idea it became (required); `testing` is bound to it (CA-11)
+const NOMINATION = { bookId: BOOK, nominationId: 'nom_c1', state: 'accepted', ideaId: 'idea-9', reason: 'The exit came early; I will test holding through one more check.', consideredAt: '2026-11-12T14:58:00.000Z' };
 const IDEA = { bookId: BOOK, ideaId: 'idea-9' };
 const RESULT = { ideaId: 'idea-9', resultRef: 'mandates/book-1/ideas/idea-9/results/r1', contractCondition: 'met', economicResult: 'within band' };
 /** The entry carried to `tested` through the helper. */
@@ -138,7 +139,7 @@ describe('Build C §3 — applyServerTransition, the Practice Field\'s one way i
     expect(r.idempotent).toBe(false);
     const after = t.store.get(playPath('c1'));
     expect(after).toEqual(r.entry);
-    expect(after.nomination).toEqual({ bookId: BOOK, nominationId: 'nom_c1', state: 'accepted', reason: NOMINATION.reason, consideredAt: NOMINATION.consideredAt });
+    expect(after.nomination).toEqual({ bookId: BOOK, nominationId: 'nom_c1', state: 'accepted', reason: NOMINATION.reason, consideredAt: NOMINATION.consideredAt, ideaId: 'idea-9', thesis: null });
     expect(after.stage).toBe('nominated');
     expect(after.stageAt).toBe(before.stageAt);
     expect(after.version).toBe(before.version + 1);
@@ -192,6 +193,7 @@ describe('Build C §3 — applyServerTransition, the Practice Field\'s one way i
     expect(await code(move(u, { to: 'installed', opId: 'x4', payload: { offerId: 'o', state: 'accepted' } }))).toMatchObject({ code: 'illegal_transition' });
     expect(await code(move(u, { to: 'retired', opId: 'x5', payload: { state: 'no_offer' } }))).toMatchObject({ code: 'illegal_transition' });
     expect(playWrites(u).length).toBe(uWrites);
+    await move(u, { to: 'nomination', opId: 's1', payload: NOMINATION });   // CA-11: testing needs the accepted copy
     await move(u, { to: 'testing', opId: 's2', payload: IDEA });
     const afterTesting = playWrites(u).length;
     expect(await code(move(u, { to: 'installed', opId: 'x6', payload: { offerId: 'o', state: 'accepted' } }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'testing' } });
@@ -229,6 +231,8 @@ describe('Build C §3 — applyServerTransition, the Practice Field\'s one way i
     await nominated(t);
     expect(await code(move(t, { to: 'nomination', opId: 'x1', payload: { ...NOMINATION, nominationId: 'nom_other' } }))).toMatchObject({ status: 409, code: 'nomination_mismatch' });
     expect(await code(move(t, { to: 'testing', opId: 'x2', payload: { ...IDEA, bookId: 'book-other' } }))).toMatchObject({ code: 'nomination_mismatch' });
+    await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION });   // CA-11: testing needs the accepted copy
+    expect(await code(move(t, { to: 'testing', opId: 'x4', payload: { ...IDEA, bookId: 'book-other' } }))).toMatchObject({ code: 'nomination_mismatch' });
     await move(t, { to: 'testing', opId: 's2', payload: IDEA });
     expect(await code(move(t, { to: 'tested', opId: 'x3', payload: { ...RESULT, ideaId: 'idea-other' } }))).toMatchObject({ code: 'nomination_mismatch' });
     expect(t.store.get(playPath('c1')).stage).toBe('testing');
@@ -780,5 +784,154 @@ describe('Amendment A CA-1 / CA-2 / CA-5 — what the player may retire, and the
     expect(await code(move(t, { to: 'nomination', opId: 'x', payload: { ...NOMINATION, state: 'withdrawn' } }))).toMatchObject({ status: 400, code: 'invalid_transition', extra: { why: 'state' } });
     expect(t.readLog.length).toBe(reads);
     expect(stages.NOMINATION_STATES).toContain('withdrawn');
+  });
+});
+
+// ── Amendment A CA-11 and CA-4 — the nomination order, the accepted idea, and the agent's words with their own times ─
+describe('Amendment A CA-11 — the nomination order, judged against the entry\'s copy', () => {
+  const COPYABLE = ['considered', 'accepted', 'deferred', 'declined', 'expired'];
+  const ORDER = { queued: ['considered', 'accepted', 'deferred', 'declined', 'expired'], considered: ['accepted', 'deferred', 'declined'], deferred: ['considered', 'accepted', 'declined'] };
+  /** The planted nominated entry with its copy at `from`. */
+  const at = async (t, from) => {
+    const e = await nominated(t);
+    t.store.set(playPath('c1'), { ...e, nomination: { ...e.nomination, state: from } });
+    return t.store.get(playPath('c1'));
+  };
+  const copyOf = (state, over = {}) => ({ bookId: BOOK, nominationId: 'nom_c1', state, reason: `Reason ${state}.`, consideredAt: '2026-11-12T14:58:00.000Z', ...(state === 'accepted' ? { ideaId: 'idea-9' } : {}), ...over });
+
+  it('the table is the one export\'s, exactly as ruled', () => {
+    expect(JSON.parse(JSON.stringify(stages.NOMINATION_ORDER))).toEqual(ORDER);
+  });
+
+  it('EXHAUSTIVE from × to: every copy state × every copyable state — allowed exactly where the table says; anything else 409 illegal_transition { nominationState }, nothing written (the mutants: "declined, then testing"; "deferred, then expired")', async () => {
+    for (const from of stages.NOMINATION_STATES) {
+      for (const to of COPYABLE) {
+        const t = fresh();
+        const e = await at(t, from);
+        const writes = playWrites(t).length;
+        const r = await code(move(t, { to: 'nomination', opId: `x_${from}_${to}`, payload: copyOf(to) }));
+        if ((ORDER[from] ?? []).includes(to)) {
+          expect(r, `${from} → ${to}`).toBeNull();
+          expect(t.store.get(playPath('c1')).nomination.state, `${from} → ${to}`).toBe(to);
+          expect(t.store.get(playPath('c1')).version).toBe(e.version + 1);
+        } else {
+          expect(r, `${from} → ${to}`).toEqual({ status: 409, code: 'illegal_transition', extra: { nominationState: from } });
+          expect(playWrites(t).length, `${from} → ${to}`).toBe(writes);
+        }
+      }
+    }
+  });
+
+  it('a replay is judged before the order: an accepted copy\'s own op again is the idempotent answer, though accepted moves nowhere', async () => {
+    const t = fresh();
+    await nominated(t);
+    const a = await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION });
+    expect(await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION })).toEqual({ idempotent: true, entry: a.entry });
+    expect(await code(move(t, { to: 'nomination', opId: 's9', payload: { ...NOMINATION, state: 'declined' } }))).toMatchObject({ code: 'illegal_transition', extra: { nominationState: 'accepted' } });
+  });
+
+  it('a copy delivered late, after a later state, is refused; a lost copy does not block the next (queued answers directly)', async () => {
+    const t = fresh();
+    await nominated(t);
+    await move(t, { to: 'nomination', opId: 's2', payload: copyOf('accepted') });   // considered never arrived
+    expect(await code(move(t, { to: 'nomination', opId: 's1', payload: copyOf('considered') }))).toMatchObject({ status: 409, code: 'illegal_transition', extra: { nominationState: 'accepted' } });
+    expect(t.store.get(playPath('c1')).nomination.state).toBe('accepted');
+  });
+
+  it('testing needs the ACCEPTED copy, bound to its ideaId and its book: from queued, considered, deferred, declined → 409 nomination_mismatch; another idea → 409 nomination_mismatch; the copy\'s own idea → testing', async () => {
+    for (const from of ['queued', 'considered', 'deferred', 'declined']) {
+      const t = fresh();
+      if (from === 'queued') await nominated(t);
+      else { await nominated(t); await move(t, { to: 'nomination', opId: 's1', payload: copyOf(from) }); }
+      expect(await code(move(t, { to: 'testing', opId: 's2', payload: IDEA })), from).toMatchObject({ status: 409, code: 'nomination_mismatch' });
+      expect(t.store.get(playPath('c1')).stage, from).toBe('nominated');
+    }
+    const t = fresh();
+    await nominated(t);
+    await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION });
+    expect(await code(move(t, { to: 'testing', opId: 's2', payload: { ...IDEA, ideaId: 'idea-other' } }))).toMatchObject({ code: 'nomination_mismatch' });
+    expect(await code(move(t, { to: 'testing', opId: 's3', payload: { ...IDEA, bookId: 'book-other' } }))).toMatchObject({ code: 'nomination_mismatch' });
+    expect((await move(t, { to: 'testing', opId: 's4', payload: IDEA })).entry).toMatchObject({ stage: 'testing', idea: IDEA });
+    // the state itself is judged, not the idea's presence alone: a copy that names the idea but says declined (planted —
+    // no writer leaves one) is no acceptance
+    for (const from of ['declined', 'deferred', 'expired', 'withdrawn']) {
+      const u = fresh();
+      const e = await nominated(u);
+      u.store.set(playPath('c1'), { ...e, nomination: { ...e.nomination, state: from, ideaId: 'idea-9' } });
+      expect(await code(move(u, { to: 'testing', opId: 's2', payload: IDEA })), from).toMatchObject({ status: 409, code: 'nomination_mismatch' });
+    }
+  });
+
+  it('history keeps every answer: deferred → considered → accepted, each row with its own state, reason and consideredAt; the copy holds the last; an accepted row keeps its idea and thesis', async () => {
+    const t = fresh();
+    await nominated(t);
+    await move(t, { to: 'nomination', opId: 's1', payload: copyOf('deferred', { reason: 'Not this week.', consideredAt: '2026-11-12T15:01:00.000Z' }), nowIso: '2026-11-12T15:02:00.000Z' });
+    await move(t, { to: 'nomination', opId: 's2', payload: copyOf('considered', { reason: null, consideredAt: '2026-11-12T15:03:00.000Z' }), nowIso: '2026-11-12T15:04:00.000Z' });
+    await move(t, { to: 'nomination', opId: 's3', payload: copyOf('accepted', { reason: 'Taking it now.', thesis: 'One more check pays.', consideredAt: '2026-11-12T15:05:00.000Z' }), nowIso: '2026-11-12T15:06:00.000Z' });
+    const e = t.store.get(playPath('c1'));
+    expect(e.stageHistory.filter((h) => h.event === 'nomination').map((h) => [h.state, h.reason, h.consideredAt, h.at, h.thesis ?? null])).toEqual([
+      ['deferred', 'Not this week.', '2026-11-12T15:01:00.000Z', '2026-11-12T15:02:00.000Z', null],
+      ['considered', null, '2026-11-12T15:03:00.000Z', '2026-11-12T15:04:00.000Z', null],
+      ['accepted', 'Taking it now.', '2026-11-12T15:05:00.000Z', '2026-11-12T15:06:00.000Z', 'One more check pays.'],
+    ]);
+    expect(e.stageHistory.at(-1).ideaId).toBe('idea-9');
+    expect(e.nomination).toEqual({ bookId: BOOK, nominationId: 'nom_c1', state: 'accepted', reason: 'Taking it now.', consideredAt: '2026-11-12T15:05:00.000Z', ideaId: 'idea-9', thesis: 'One more check pays.' });
+  });
+});
+
+describe('Amendment A CA-4 — the thesis and the closing note: their fields, their bounds, their own times', () => {
+  const astral = (n) => '😀'.repeat(n);
+  it('an accepted copy without ideaId → 400 invalid_transition (ideaId); a non-accepted copy carries neither idea nor thesis', async () => {
+    const t = fresh();
+    await nominated(t);
+    const reads = t.readLog.length;
+    const { ideaId: _gone, ...noIdea } = NOMINATION;
+    expect(await code(move(t, { to: 'nomination', opId: 'x', payload: noIdea }))).toMatchObject({ status: 400, code: 'invalid_transition', extra: { why: 'ideaId' } });
+    expect(t.readLog.length).toBe(reads);
+    const { entry } = await move(t, { to: 'nomination', opId: 's1', payload: { ...NOMINATION, state: 'deferred', thesis: 'never copied' } });
+    expect(entry.nomination).not.toHaveProperty('ideaId');
+    expect(entry.nomination).not.toHaveProperty('thesis');
+  });
+
+  it('the thesis: 400 code points kept exactly (astral characters counted once); 401 refused (the mutant: a 401-code-point thesis stored); a thesis needs consideredAt, an instant', async () => {
+    const t = fresh();
+    await nominated(t);
+    const { entry } = await move(t, { to: 'nomination', opId: 's1', payload: { ...NOMINATION, thesis: astral(400) } });
+    expect(entry.nomination.thesis).toBe(astral(400));
+    for (const [over, why] of [
+      [{ thesis: astral(401) }, 'thesis'],
+      [{ thesis: 'x'.repeat(401) }, 'thesis'],
+      [{ thesis: '' }, 'thesis'],
+      [{ thesis: 7 }, 'thesis'],
+      [{ thesis: 'A thesis.', consideredAt: null }, 'consideredAt'],
+      [{ thesis: 'A thesis.', consideredAt: 'later' }, 'consideredAt'],
+    ]) {
+      const u = fresh();
+      await nominated(u);
+      const writes = playWrites(u).length;
+      expect(await code(move(u, { to: 'nomination', opId: 'x', payload: { ...NOMINATION, ...over } })), JSON.stringify(over).slice(0, 40)).toMatchObject({ status: 400, code: 'invalid_transition', extra: { why } });
+      expect(playWrites(u).length).toBe(writes);
+    }
+  });
+
+  it('the closing note: 600 code points kept exactly; 601 refused; a note needs its closingNoteAt, an instant; the note never truncated', async () => {
+    const t = fresh();
+    await nominated(t);
+    await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION });
+    await move(t, { to: 'testing', opId: 's2', payload: IDEA });
+    for (const [over, why] of [
+      [{ closingNote: astral(601), closingNoteAt: LATER }, 'closingNote'],
+      [{ closingNote: '', closingNoteAt: LATER }, 'closingNote'],
+      [{ closingNote: 'Held one check too long.' }, 'closingNoteAt'],
+      [{ closingNote: 'Held one check too long.', closingNoteAt: 'yesterday' }, 'closingNoteAt'],
+    ]) expect(await code(move(t, { to: 'tested', opId: 'x', payload: { ...RESULT, ...over } })), JSON.stringify(over).slice(0, 40)).toMatchObject({ status: 400, code: 'invalid_transition', extra: { why } });
+    expect(t.store.get(playPath('c1')).stage).toBe('testing');
+    const { entry } = await move(t, { to: 'tested', opId: 's3', payload: { ...RESULT, closingNote: astral(600), closingNoteAt: '2026-11-12T15:07:00.000Z' }, nowIso: LATEST });
+    expect(entry.result).toEqual({ ...RESULT, closingNote: astral(600), closingNoteAt: '2026-11-12T15:07:00.000Z' });
+  });
+
+  it('with no note, the result carries no closing-note fields (nothing quoted)', async () => {
+    const { entry } = await tested(fresh());
+    expect(entry.result).toEqual(RESULT);
   });
 });

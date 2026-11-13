@@ -841,7 +841,7 @@ describe('C1 item 7 — park, through the handler', () => {
     setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: 'book-1', status: 'active' }) });
     expect((await post(create({ route: 'offer' }))).statusCode).toBe(200);
     const by = { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, by: 'practice_field' };
-    await applyServerTransition(t.db, { ...by, to: 'nomination', opId: 's1', payload: { bookId: 'book-1', nominationId: 'op_1', state: 'accepted', reason: 'Testing it.', consideredAt: '2026-09-25T20:00:00.000Z' } });
+    await applyServerTransition(t.db, { ...by, to: 'nomination', opId: 's1', payload: { bookId: 'book-1', nominationId: 'op_1', state: 'accepted', ideaId: 'i1', reason: 'Testing it.', consideredAt: '2026-09-25T20:00:00.000Z' } });
     await applyServerTransition(t.db, { ...by, to: 'testing', opId: 's2', payload: { bookId: 'book-1', ideaId: 'i1' } });
     const { entry } = await applyServerTransition(t.db, { ...by, to: 'tested', opId: 's3', payload: { ideaId: 'i1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' } });
     const { buildCounter } = await import('../_utils/filmRoom/cardCounter.js');

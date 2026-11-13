@@ -574,9 +574,11 @@ export const SPEC_QUOTE_CHANNELS = Object.freeze([
   // B2 (spec §6): the player's note on a filed card — the LEDGER document (`docs.ledger`: `{ etDate, cards }`, each card
   // under its OWN entry id, never a position in a list — review L3-9a), credited "you"
   { re: /^cards\.[A-Za-z0-9_-]+\.note$/, by: 'you', at: (p) => within(p, 'createdAt') },
-  // Build C §5 (BC-1): the agent's reason when it considered the card's nomination — the ledger's copy, credited "your
-  // agent" at the copy's own consideredAt
-  { re: /^cards\.[A-Za-z0-9_-]+\.nomination\.reason$/, by: 'your agent', at: (p) => [...p.slice(0, 3), 'consideredAt'] },
+  // Build C §5 (BC-1), Amendment A CA-4 / CA-11: the agent's words on a card's chain, each from ITS OWN history row at
+  // that row's consideredAt — a deferral's or a decline's reason, an acceptance's thesis — credited "your agent"
+  { re: /^cards\.[A-Za-z0-9_-]+\.stageHistory\[\d+\]\.(reason|thesis)$/, by: 'your agent', at: (p) => [...p.slice(0, 4), 'consideredAt'] },
+  // CA-4: the agent's closing note on a result, at the note's own closingNoteAt
+  { re: /^cards\.[A-Za-z0-9_-]+\.result\.closingNote$/, by: 'your agent', at: (p) => [...p.slice(0, 3), 'closingNoteAt'] },
 ]);
 
 /**

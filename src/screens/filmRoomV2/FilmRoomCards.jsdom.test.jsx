@@ -1620,7 +1620,8 @@ describe('C1 item 5 — the form: Watch, Offer and Set; Offer only with the owne
 describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), every state from the ledger\'s own writes', () => {
   /** A server transition through the REAL helper (the Practice Field's one way in), at an instant on the shown day. */
   const move = (entryId, to, payload, clock) => applyServerTransition(state.db, { entryId, ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${to}_${clock.replace(/\D/g, '')}`, nowIso: `${D2}T${clock}:00.000Z` });
-  const NOM = (state, reason, consideredAt) => ({ bookId: BOOK_ID, nominationId: 'op_1', state, reason, consideredAt });
+  // Amendment A CA-4: an accepted copy names its idea (`idea-1`, the one `testing` names below) and may carry a thesis
+  const NOM = (state, reason, consideredAt, thesis = null) => ({ bookId: BOOK_ID, nominationId: 'op_1', state, reason, consideredAt, ...(state === 'accepted' ? { ideaId: 'idea-1', thesis } : {}) });
   const reopen = async (id) => {
     m.teardown(); m.setup(); globalThis.localStorage.clear();
     await open();
@@ -1651,7 +1652,7 @@ describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), 
     await sweepAll(fx.tape2, 'offered');
   });
 
-  it('deferred, then accepted: each answer a line; the agent\'s reason quoted beside the LATEST answer only, "— your agent · {time}", bound to the ledger\'s copy; no Offer sentence once answered', async () => {
+  it('deferred, then accepted (Amendment A CA-4, CA-11): each answer a line, each quoting from ITS OWN row at ITS OWN consideredAt — the deferral its reason, the acceptance its thesis (never its reason), "— your agent · {time}"; no Offer sentence once answered (the mutants: a later copy overwriting an earlier answer\'s quotation; a quotation dated with the delivery time)', async () => {
     await offerCard();
     await move('op_1', 'nomination', NOM('deferred', 'Not this week: the book is full.', `${D2}T20:10:00.000Z`), '20:15');
     let receipt = await reopen('op_1');
@@ -1659,18 +1660,21 @@ describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), 
     expect(lineText(receipt, 0)).toBe('Deferred · 4:15 PM');
     const q1 = receipt.querySelector('[data-quotation="yourAgent"]');
     expect(q1.querySelector('[data-quote-path]').textContent).toBe('Not this week: the book is full.');
-    expect(q1.querySelector('[data-quote-path]').getAttribute('data-quote-path')).toBe('cards.op_1.nomination.reason');
+    expect(q1.querySelector('[data-quote-path]').getAttribute('data-quote-path')).toBe('cards.op_1.stageHistory[1].reason');
+    // the reason's own time (4:10), never the copy's delivery (4:15)
     expect(q1.querySelector('[data-quote-attribution]').textContent).toBe('— your agent · 4:10 PM');
     expect(receipt.querySelector('[data-card-next]')).toBeNull();
     await sweepAll(fx.tape2, 'deferred');
-    await move('op_1', 'nomination', NOM('accepted', 'I will test holding one more check after the stall.', `${D2}T20:40:00.000Z`), '20:45');
+    await move('op_1', 'nomination', NOM('accepted', 'I will test holding one more check after the stall.', `${D2}T20:40:00.000Z`, 'Holding one more check after a stall pays more than it costs.'), '20:45');
     receipt = await reopen('op_1');
     expect(lines(receipt)).toEqual([['nomination', 'accepted'], ['nomination', 'deferred'], ['offered', null], ['filed', null]]);
     expect(lineText(receipt, 0)).toBe('Taken into an idea · 4:45 PM');
-    const quotes = [...receipt.querySelectorAll('[data-quotation="yourAgent"]')];
-    expect(quotes).toHaveLength(1);
-    expect(quotes[0].closest('[data-chain-line]').getAttribute('data-chain-state')).toBe('accepted');
-    expect(quotes[0].querySelector('[data-quote-path]').textContent).toBe('I will test holding one more check after the stall.');
+    const quotes = [...receipt.querySelectorAll('[data-quotation="yourAgent"]')].map((q) => [q.closest('[data-chain-line]').getAttribute('data-chain-state'), q.querySelector('[data-quote-path]').getAttribute('data-quote-path'), q.querySelector('[data-quote-path]').textContent, q.querySelector('[data-quote-attribution]').textContent]);
+    expect(quotes).toEqual([
+      ['accepted', 'cards.op_1.stageHistory[2].thesis', 'Holding one more check after a stall pays more than it costs.', '— your agent · 4:40 PM'],
+      ['deferred', 'cards.op_1.stageHistory[1].reason', 'Not this week: the book is full.', '— your agent · 4:10 PM'],
+    ]);
+    expect(receipt.textContent).not.toContain('I will test holding one more check after the stall.');
     // no book door is handed in: "Open the idea" renders nowhere (the mutant: a book link with no door)
     expect(m.buttons('Open the idea')).toHaveLength(0);
     await sweepAll(fx.tape2, 'accepted');
@@ -1774,7 +1778,7 @@ describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), 
 describe('C1 item 7 — "Park this card", on a tested receipt only (refinement R-C1-2; acceptance C-PARK)', () => {
   const move = (to, payload, clock) => applyServerTransition(state.db, { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${to}`, nowIso: `${D2}T${clock}:00.000Z` });
   const toTested = async () => {
-    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', reason: 'I will test it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', ideaId: 'idea-1', reason: 'I will test it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
     await move('testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
     await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' }, '20:55');
   };
@@ -1875,7 +1879,7 @@ describe('C1 item 8 — since last time: every card past the card stage, its lat
     await m.flush();
     expect(m.q(`[data-card-receipt="${a}"]`)).toBeTruthy();
     // b moves on: its newer line puts it first
-    await move(b, 'nomination', { bookId: BOOK_ID, nominationId: b, state: 'accepted', reason: 'Taking it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
+    await move(b, 'nomination', { bookId: BOOK_ID, nominationId: b, state: 'accepted', ideaId: 'idea-b', reason: 'Taking it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
     m.teardown(); m.setup(); globalThis.localStorage.clear();
     await open();
     expect(latestRows().map((r) => r[0])).toEqual([b, a]);
@@ -1994,10 +1998,11 @@ describe('C1 review — the chain and the receipt say only what the ledger holds
 
   it('B-3: an expiry carries no quotation — even with a reason stored, it is the book\'s, not the agent\'s words; an answer still quotes its reason', async () => {
     const nominated = [{ stage: 'nominated', at: at('20:00'), by: 'player', opId: 'e1' }];
-    const expired = base({ route: 'offer', stage: 'nominated', nomination: { bookId: 'b', nominationId: 'e1', state: 'expired', reason: 'Expired unread.', consideredAt: at('20:10') }, stageHistory: [...nominated, { stage: 'nominated', event: 'nomination', state: 'expired', at: at('20:15'), by: 'server', writer: 'practice_field', opId: 's1' }] });
+    const expired = base({ route: 'offer', stage: 'nominated', nomination: { bookId: 'b', nominationId: 'e1', state: 'expired', reason: 'Expired unread.', consideredAt: at('20:10') }, stageHistory: [...nominated, { stage: 'nominated', event: 'nomination', state: 'expired', reason: 'Expired unread.', consideredAt: at('20:10'), at: at('20:15'), by: 'server', writer: 'practice_field', opId: 's1' }] });
     let r = await receiptOf(expired);
     expect(r.querySelector('[data-quotation="yourAgent"]')).toBeNull();
-    const declined = { ...expired, nomination: { ...expired.nomination, state: 'declined', reason: 'Not for this book.' }, stageHistory: [...nominated, { ...expired.stageHistory[1], state: 'declined' }] };
+    // the decline's reason sits on its own row (Amendment A CA-11), quoted at the row's consideredAt
+    const declined = { ...expired, nomination: { ...expired.nomination, state: 'declined', reason: 'Not for this book.' }, stageHistory: [...nominated, { ...expired.stageHistory[1], state: 'declined', reason: 'Not for this book.', consideredAt: at('20:10') }] };
     r = await receiptOf(declined);
     expect(r.querySelector('[data-quotation="yourAgent"] [data-quote-path]').textContent).toBe('Not for this book.');
   });
@@ -2049,7 +2054,7 @@ describe('C1 review — the mutating lens\'s survivors on the screen', () => {
     await m.flush();
     await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
     const by = { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, by: 'practice_field' };
-    await applyServerTransition(state.db, { ...by, to: 'nomination', opId: 'r1', payload: { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', reason: 'Testing it.', consideredAt: `${D2}T20:40:00.000Z` }, nowIso: `${D2}T20:45:00.000Z` });
+    await applyServerTransition(state.db, { ...by, to: 'nomination', opId: 'r1', payload: { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', ideaId: 'i1', reason: 'Testing it.', consideredAt: `${D2}T20:40:00.000Z` }, nowIso: `${D2}T20:45:00.000Z` });
     await applyServerTransition(state.db, { ...by, to: 'testing', opId: 'r2', payload: { bookId: BOOK_ID, ideaId: 'i1' }, nowIso: `${D2}T20:50:00.000Z` });
     await applyServerTransition(state.db, { ...by, to: 'tested', opId: 'r3', payload: { ideaId: 'i1', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' }, nowIso: `${D2}T20:55:00.000Z` });
     m.teardown(); m.setup(); globalThis.localStorage.clear();
@@ -2264,5 +2269,49 @@ describe('Amendment A CA-1 / CA-2 / CA-5 — Retire shows where the player may r
     m.click(m.buttons('Retire')[0]);
     await m.flush(2);
     expect(m.q('[data-card-refusal]').textContent).toBe("This card's offer could not be checked. Nothing was changed. Try again.");
+  });
+});
+
+// ── Amendment A CA-4 / CA-11 — the agent's words on the chain, each from its own source at its own time ───────────
+describe('Amendment A CA-4 / CA-11 — the chain quotes each answer from its own row, and the closing note at its own time', () => {
+  const move = (to, payload, clock, opId = `s_${to}_${clock.replace(/\D/g, '')}`) => applyServerTransition(state.db, { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId, nowIso: `${D2}T${clock}:00.000Z` });
+  const offerCard = async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+  };
+  const reopen = async () => {
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+    return m.q('[data-card-receipt="op_1"]');
+  };
+  const quotesOf = (r) => [...r.querySelectorAll('[data-quotation="yourAgent"]')].map((q) => [q.closest('[data-chain-line]').getAttribute('data-chain-line'), q.querySelector('[data-quote-path]').textContent, q.querySelector('[data-quote-attribution]').textContent]);
+
+  it('the tested line quotes the agent\'s closing note at closingNoteAt (4:52), never the delivery time (4:55); an accepted line with no thesis quotes nothing — never its reason', async () => {
+    await offerCard();
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', ideaId: 'idea-1', reason: 'Taking it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
+    await move('testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead', closingNote: 'The stall resolved upward; holding paid this once.', closingNoteAt: `${D2}T20:52:00.000Z` }, '20:55');
+    const r = await reopen();
+    expect(quotesOf(r)).toEqual([['tested', 'The stall resolved upward; holding paid this once.', '— your agent · 4:52 PM']]);
+    expect(r.querySelector('[data-quotation="yourAgent"] [data-quote-path]').getAttribute('data-quote-path')).toBe('cards.op_1.result.closingNote');
+    expect(r.textContent).not.toContain('Taking it.');
+    await sweepAll(fx.tape2, 'closing note');
+  });
+
+  it('a deferral, then a decline: each line quotes its OWN reason at its own consideredAt — the later answer never rewrites the earlier one', async () => {
+    await offerCard();
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'deferred', reason: 'Later, the book is full.', consideredAt: `${D2}T20:05:00.000Z` }, '20:10');
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'declined', reason: 'Not a fit for this archetype.', consideredAt: `${D2}T20:25:00.000Z` }, '20:30');
+    const r = await reopen();
+    expect(quotesOf(r)).toEqual([
+      ['nomination', 'Not a fit for this archetype.', '— your agent · 4:25 PM'],
+      ['nomination', 'Later, the book is full.', '— your agent · 4:05 PM'],
+    ]);
+    await sweepAll(fx.tape2, 'two answers');
   });
 });

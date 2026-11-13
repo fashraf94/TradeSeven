@@ -351,11 +351,16 @@ export function ChainLine({ card, line, day = null }) {
   return <>{has(T.stageWords, stage) ? T.stageWords[stage] : <Rec>{stage}</Rec>} · {when}</>;
 }
 const isObjLike = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** Amendment A CA-4 / CA-11: the row field an answer's line quotes — a deferral's or a decline's reason, an acceptance's thesis. */
+const QUOTED_ANSWER = Object.freeze({ deferred: 'reason', declined: 'reason', accepted: 'thesis' });
 
 /**
- * Build C §5 — the receipt's chain: every line chainOf gives, newest first. Beside a line, where the ledger holds it:
- * the agent's reason for the LATEST nomination answer, the one the entry's `nomination` copy holds — a quotation bound
- * to `nomination.reason`, credited "your agent" at `nomination.consideredAt` (BC-1); and a link slot — "Open the idea"
+ * Build C §5 — the receipt's chain: every line chainOf gives, newest first. Beside a line, where the ledger holds it,
+ * the agent's words as a quotation credited "your agent" (BC-1), each from ITS OWN row at ITS OWN source time — never
+ * the copy's delivery time (Amendment A CA-4, CA-11): a deferral's or a decline's reason (`stageHistory[k].reason` at
+ * `stageHistory[k].consideredAt`), so a later copy never overwrites an earlier answer; an acceptance's thesis
+ * (`stageHistory[k].thesis`, never its reason); a result's closing note (`result.closingNote` at `result.closingNoteAt`).
+ * `considered` and an expiry quote nothing. And a link slot — "Open the idea"
  * (taken into an idea; testing), "Open the result" (tested) — that renders ONLY when the screen is handed the book's
  * door (`onOpenBook`). C1 hands none: no book screen exists yet, so no slot renders (no new door).
  */
@@ -374,8 +379,11 @@ function Chain({ card, ledger, day, onOpenBook }) {
           {line.kind === 'nomination' && line.state === 'accepted' && line.latest && nomination ? link(W.openIdea, { bookId: nomination.bookId, nominationId: nomination.nominationId }) : null}
           {line.kind === 'testing' && isObjLike(card.idea) ? link(W.openIdea, { bookId: card.idea.bookId, ideaId: card.idea.ideaId }) : null}
           {line.kind === 'tested' && isObjLike(card.result) ? link(W.openResult, { ideaId: card.result.ideaId, resultRef: card.result.resultRef }) : null}
-          {line.kind === 'nomination' && line.latest && has(W.answers, line.state) && nomination && nomination.state === line.state ? (
-            <Quotation doc={ledger} path={['cards', card.entryId, 'nomination', 'reason']} by="yourAgent" at={['cards', card.entryId, 'nomination', 'consideredAt']} docLabel="ledger" />
+          {line.kind === 'nomination' && QUOTED_ANSWER[line.state] ? (
+            <Quotation doc={ledger} path={['cards', card.entryId, 'stageHistory', line.k, QUOTED_ANSWER[line.state]]} by="yourAgent" at={['cards', card.entryId, 'stageHistory', line.k, 'consideredAt']} docLabel="ledger" />
+          ) : null}
+          {line.kind === 'tested' && isObjLike(card.result) ? (
+            <Quotation doc={ledger} path={['cards', card.entryId, 'result', 'closingNote']} by="yourAgent" at={['cards', card.entryId, 'result', 'closingNoteAt']} docLabel="ledger" />
           ) : null}
         </div>
       ))}

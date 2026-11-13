@@ -66,6 +66,21 @@ export const isFollowedWatch = (entry) => entry?.route === 'watch' && entry?.sta
  */
 export const NOMINATION_STATES = Object.freeze(['queued', 'considered', 'accepted', 'deferred', 'declined', 'expired', 'withdrawn']);
 
+/**
+ * Amendment A CA-11 — THE NOMINATION ORDER: from each copy state, the states the Practice Field may copy next. `queued`
+ * (the player's own copy) may move straight to any answer or to `expired`, so a lost copy never blocks the next;
+ * `expired` comes only from `queued` (so "not considered within 10 sessions" is always true when shown); `accepted`,
+ * `declined`, `expired` and `withdrawn` move no further. The Practice Field is asked to adopt this table exactly (CA-21).
+ */
+export const NOMINATION_ORDER = Object.freeze({
+  queued: Object.freeze(['considered', 'accepted', 'deferred', 'declined', 'expired']),
+  considered: Object.freeze(['accepted', 'deferred', 'declined']),
+  deferred: Object.freeze(['considered', 'accepted', 'declined']),
+});
+
+/** CA-11: may a copy at `from` move to `to`? Anything the table does not list is refused. */
+export const nominationMayMove = (from, to) => Object.prototype.hasOwnProperty.call(NOMINATION_ORDER, from) && NOMINATION_ORDER[from].includes(to);
+
 /** CA-2: the record states a player retire may still withdraw — the agent has not taken the card. */
 export const WITHDRAWABLE_STATES = Object.freeze(['queued', 'considered', 'deferred']);
 
