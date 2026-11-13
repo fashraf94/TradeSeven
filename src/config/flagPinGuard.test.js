@@ -306,6 +306,21 @@ const DARK_BY_DESIGN = {
   //   each their own one-line founder PR after merge, never a build PR; each
   //   step moves the pin row in researchModalSheetFlag.test.js in the same
   //   commit (BUILD_RULES §2). Rollback: one step back with its pin row.
+  // SHARED_RESEARCH_MODE intentionally ABSENT, and it must stay absent: Shared
+  // Research "Work an idea" (spec docs/specs/
+  // 20261109_SHARED_RESEARCH_B1_B2_BUILD_SPEC_V1_2.md §6.1, §6.2) is a STRING
+  // TRI-STATE ('off' | 'allowlist' | 'on') in its own module,
+  // src/config/sharedResearchFlags.js, so buildFlagMap never sees it and the
+  // integrity test below would fail the key outright. Noted HERE so a flip is
+  // loud in the place a reader looks for the dark runway;
+  // sharedResearchFlags.test.js asserts both halves.
+  //   Runway: 'off' ships with B1 (the server, dark): every action and read
+  //   answers 404 disabled before auth. 'allowlist' (the founder and FT_QA, the
+  //   cockpit allowlist AND idea-record admission) after B1, B2 and the rules
+  //   deployment; then 'on' after one clean allowlist week and the framework's
+  //   idea-record admission. Each step is its own one-line founder PR, never a
+  //   build PR, and moves the pin row in sharedResearchFlags.test.js in the same
+  //   commit (BUILD_RULES §2). Rollback: one step back with its pin row.
   // ACTIVATION_EVIDENCE_ENABLED intentionally ABSENT: the ID-1 activation observer
   // flipped true on 2026-11-06 in the founder's own flip PR (flip checklist:
   // docs/audits/20261106_BUILD_ACTIVATION_OBSERVER_REVIEW_FIXES.md §11) — the
