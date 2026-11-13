@@ -425,6 +425,8 @@ export const FILM_ROOM_COPY = Object.freeze({
     otherBattle: 'in another battle',
     otherBattleUnreadable: 'That battle could not be read, so it was not opened.',
     noWatchCards: 'No open Watch card.',
+    // the C1 refinement R-C1-1: every card past the card stage, its latest chain line and time, newest first
+    latestTitle: 'Your cards, latest first',
     myCards: 'My cards',
     groups: { active: 'Active', shelved: 'Shelved', parked: 'Parked', equipped: 'Equipped', retired: 'Retired', other: 'Other' },
     noCards: 'No cards yet.',

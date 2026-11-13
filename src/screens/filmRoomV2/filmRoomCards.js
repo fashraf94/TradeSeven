@@ -209,6 +209,20 @@ export function chainOf(card) {
   return lines.reverse();
 }
 
+/**
+ * The C1 refinement R-C1-1 — the "since last time" list: every card PAST the `card` stage, each with its newest chain
+ * line (chainOf's first), newest state first (ties by entry id). No "last visit" mark is stored: the list is the
+ * ledger's state, read whole each time. A card with no chain line (no history the chain knows) is left out.
+ */
+export function latestOf(cards) {
+  const msOf = (v) => { const ms = typeof v === 'string' ? Date.parse(v) : NaN; return Number.isFinite(ms) ? ms : -Infinity; };
+  return (Array.isArray(cards) ? cards : [])
+    .filter((c) => isObj(c) && c.stage !== 'card')
+    .map((c) => ({ card: c, line: chainOf(c)[0] ?? null }))
+    .filter((x) => x.line)
+    .sort((a, b) => (msOf(b.line.at) - msOf(a.line.at)) || (a.card.entryId < b.card.entryId ? -1 : 1));
+}
+
 /** The open Watch cards the header follows (RG-4; the one export's isFollowedWatch), with their recurrences from the counter. */
 export function watchCardsOf(counter, cards) {
   return cards.filter((c) => isFollowedWatch(c) && !c.shelved).map((c) => ({ card: c, recurrences: Array.isArray(counter?.recurrences?.[c.entryId]) ? counter.recurrences[c.entryId] : [] }));

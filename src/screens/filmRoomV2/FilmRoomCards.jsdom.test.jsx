@@ -76,7 +76,7 @@ import cardHandler from '../../../api/film-room/card.js';
 import { setPracticeFieldSeam, resetPracticeFieldSeam } from '../../../api/_utils/filmRoom/practiceFieldSeam.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
-import { ledgerOf } from './filmRoomCards';
+import { ledgerOf, latestOf } from './filmRoomCards';
 import { setRuleOf, setStateOf, YourCall, Receipt } from './FilmRoomCardRegions';
 import { FILM_ROOM_COPY } from './filmRoomCopy';
 const COPY_CARDS = FILM_ROOM_COPY.cards;
@@ -1833,5 +1833,65 @@ describe('C1 item 7 — "Park this card", on a tested receipt only (refinement R
     expect(ledgerOf({ cards: [row] }, { entryId: 'e1', version: 5, stage: 'tested', parkedAt: 'x' })[0]).toMatchObject({ version: 5, parkedAt: 'x', shelved: true });
     expect(ledgerOf({ cards: [{ ...row, shelved: false }] }, { entryId: 'e1', version: 5 })[0].shelved).toBe(false);
     expect(ledgerOf({ cards: [] }, { entryId: 'e2', version: 1 })[0].shelved).toBe(false);
+  });
+});
+
+describe('C1 item 8 — since last time: every card past the card stage, its latest state line and time, newest first (refinement R-C1-1)', () => {
+  const move = (entryId, to, payload, clock) => applyServerTransition(state.db, { entryId, ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${entryId}_${to}_${clock.replace(/D/g, "")}`, nowIso: `${D2}T${clock}:00.000Z` });
+  const latestRows = () => m.qa('[data-latest-line]').map((b) => [b.getAttribute('data-latest-line'), b.getAttribute('data-latest-kind')]);
+
+  it('a Watch card at card is not listed; two Offer cards answered at different times list newest state first, each with the situation, symbol, day and the receipt\'s state line; a tap opens the receipt', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'A watch card.' });   // op_1, at card: never listed
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'An offer.', route: 'offer' });   // op_3 (the receipt minted op_2)
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Another offer.', route: 'offer', question: 'stalled.ready' });
+    const ids = [...t.store.keys()].filter((k) => k.startsWith(`agents/${AGENT}/plays/`)).map((k) => k.split('/').pop()).filter((id) => t.store.get(`agents/${AGENT}/plays/${id}`).route === 'offer').sort();
+    expect(ids).toHaveLength(2);
+    const [a, b] = ids;
+    await move(a, 'nomination', { bookId: BOOK_ID, nominationId: a, state: 'declined', reason: 'Not for this book.', consideredAt: `${D2}T20:30:00.000Z` }, '20:30');
+    await move(b, 'nomination', { bookId: BOOK_ID, nominationId: b, state: 'deferred', reason: 'Later.', consideredAt: `${D2}T20:20:00.000Z` }, '20:20');
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    expect(latestRows()).toEqual([[a, 'nomination'], [b, 'nomination']]);
+    const first = m.q(`[data-latest-line="${a}"]`);
+    expect(first.textContent).toContain('Our stocks are not moving');
+    expect(first.querySelector('[data-record-text]').textContent).toBe('ACN');
+    expect(first.textContent).toContain('Declined · 4:30 PM');
+    expect(m.q(`[data-latest-line="${b}"]`).textContent).toContain('Deferred · 4:20 PM');
+    expect(m.q('[data-latest-line="op_1"]')).toBeNull();
+    // the latest list sits after the Watch cards and before My cards
+    const region = m.q('[data-cards-region="since-last-time"]');
+    const order = [...region.querySelectorAll('[data-watch-card], [data-latest-states], [data-my-cards]')].map((e) => (e.hasAttribute('data-watch-card') ? 'watch' : e.hasAttribute('data-latest-states') ? 'latest' : 'mine'));
+    expect(order).toEqual(['watch', 'latest', 'mine']);
+    await sweepAll(fx.tape2, 'latest');
+    m.click(first);
+    await m.flush();
+    expect(m.q(`[data-card-receipt="${a}"]`)).toBeTruthy();
+    // b moves on: its newer line puts it first
+    await move(b, 'nomination', { bookId: BOOK_ID, nominationId: b, state: 'accepted', reason: 'Taking it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    expect(latestRows().map((r) => r[0])).toEqual([b, a]);
+    expect(m.q(`[data-latest-line="${b}"]`).textContent).toContain('Taken into an idea · 4:45 PM');
+  });
+
+  it('latestOf (pure): cards past card only, each with chainOf\'s newest line, newest first, ties by entry id; a retired Watch card is listed', () => {
+    const at = (h) => `${D2}T${h}:00.000Z`;
+    const card = (entryId, stage, history) => ({ entryId, stage, stageHistory: history });
+    const cards = [
+      card('w', 'card', [{ stage: 'card', at: at('14:00') }]),
+      card('r', 'retired', [{ stage: 'card', at: at('14:00') }, { stage: 'retired', at: at('15:00'), by: 'player' }]),
+      card('n', 'nominated', [{ stage: 'nominated', at: at('16:00'), by: 'player' }]),
+      card('m', 'nominated', [{ stage: 'nominated', at: at('16:00'), by: 'player' }]),
+    ];
+    expect(latestOf(cards).map((x) => [x.card.entryId, x.line.kind])).toEqual([['m', 'offered'], ['n', 'offered'], ['r', 'retired']]);
+    expect(latestOf(null)).toEqual([]);
   });
 });

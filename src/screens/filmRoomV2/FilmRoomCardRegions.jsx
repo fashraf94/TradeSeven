@@ -62,7 +62,7 @@ import { RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED } from '../../config
 import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, eyebrow, foot, mono, plain, tint, AggNum, TapeNum, When, Rec, Coverage, Quotation, TextButton, PrimaryButton, Label } from './FilmRoomKit';
-import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf, chainOf } from './filmRoomCards';
+import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf, chainOf, latestOf } from './filmRoomCards';
 
 const T = COPY.cards;
 /**
@@ -518,6 +518,7 @@ export function SinceLastTime({ day = null, battleId = null, counter, onOpenMome
   const cards = ledgerOf(data);
   const watching = watchCardsOf(data, cards);
   const groups = groupCards(cards);
+  const latest = latestOf(cards);
   const loading = !data && (counter?.status === 'loading' || counter?.status === 'idle');
   // B2.1 B3 (Amendment H RH-6; RJ-7's style): the days in the counter's window whose situations could not be read —
   // neither counted nor listed as recurrences — said as one line with their count (derived), under the agent the
@@ -539,6 +540,21 @@ export function SinceLastTime({ day = null, battleId = null, counter, onOpenMome
           {recurrences.length ? recurrences.map((r) => <Recurrence key={recurrenceKey(r)} r={r} own={battleId !== null && r.battleId === battleId} onOpenMoment={onOpenMoment} onOpenBattle={onOpenBattle} />) : <span style={foot}>{T.noRecurrence}</span>}
         </div>
       ))}
+      {/* the C1 refinement R-C1-1: after the Watch cards, one line per card past the card stage — its situation, symbol and
+          day, and the receipt's newest state line with its time — newest state first; a tap opens the receipt */}
+      {latest.length ? (
+        <div data-latest-states="" style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingTop: 4 }}>
+          <span style={{ ...eyebrow, color: C.ink3 }}>{T.latestTitle}</span>
+          {latest.map(({ card: c, line }) => (
+            <button key={c.entryId} type="button" data-latest-line={c.entryId} data-latest-kind={line.kind} onClick={() => onShowCard(c)} style={{ ...plain, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '5px 0', width: '100%', borderTop: `1px solid ${C.hair}`, textAlign: 'left' }}>
+              <span style={mono(11, C.ink2)}>{titleOf(c.situationId)}</span>
+              <span style={mono(11.5, C.ink, { fontWeight: 700 })}><Rec>{c.source?.symbol ?? ''}</Rec></span>
+              <When style={mono(10.5, C.ink2)}>{etDateLabel(c.source?.etDate, { short: true }) ?? ''}</When>
+              <span style={mono(10.5, C.ink2)}><ChainLine card={c} line={line} day={day} /></span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {data ? (
         <div data-my-cards="" style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
           <span style={{ ...eyebrow, color: C.ink2 }}>{T.myCards}</span>

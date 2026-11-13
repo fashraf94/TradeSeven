@@ -94,7 +94,7 @@ const COPY_KEYS = [
   'cards.chain.expired.before', 'cards.chain.expired.after', 'cards.chain.testing', 'cards.chain.tested', 'cards.chain.contractCondition', 'cards.chain.economicResult', 'cards.chain.installed',
   'cards.chain.parked', 'cards.chain.retired', 'cards.chain.forgeOffer', 'cards.chain.openIdea', 'cards.chain.openResult', 'cards.chain.timeNotRecorded',
   'cards.retire', 'cards.retiring', 'cards.recurrences',
-  'cards.noRecurrence', 'cards.recurrencesWord', 'cards.unavailableDays()', 'cards.otherBattle', 'cards.otherBattleUnreadable', 'cards.noWatchCards', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.parked', 'cards.groups.equipped', 'cards.groups.retired', 'cards.groups.other', 'cards.noCards', 'cards.shelvedExplainer',
+  'cards.noRecurrence', 'cards.recurrencesWord', 'cards.unavailableDays()', 'cards.otherBattle', 'cards.otherBattleUnreadable', 'cards.noWatchCards', 'cards.latestTitle', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.parked', 'cards.groups.equipped', 'cards.groups.retired', 'cards.groups.other', 'cards.noCards', 'cards.shelvedExplainer',
   'cards.loading', 'cards.readError', 'cards.openCard',
 ];
 
@@ -227,9 +227,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 396 copy keys, 543 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(396);   // C1 item 7: stateNotes.parked, park, parking, refusals.parkDefault (392 before); C1 item 6: quoteBy.yourAgent and the chain's 20 keys (371 before); C1 item 5: routes/routeNotes drill → offer, refusals book_not_open and calendar_unavailable (369 before); Film Room C1 item 1: stageWords testing/tested/installed, groups parked/equipped (364 before); Amendment L RL-5: cards.setNextBattle (363 before); review KRV1-1: cards.refusals.attribution_unavailable (362 before); Amendment K RK-11: chartRecordedFor (361 before); RK-2: cards.setNoTempo (360 before); Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(543);   // C1 item 7: four entries (539 before); C1 item 6: 21 entries (518 before); C1 item 5: two entries (516 before); C1 item 1: five entries (511 before); RL-5: one entry (510 before); KRV1-1: one entry (509 before); RK-11: one entry (508 before); RK-2: one entry (507 before); B2: 76 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 397 copy keys, 544 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(397);   // C1 item 8: cards.latestTitle (396 before); C1 item 7: stateNotes.parked, park, parking, refusals.parkDefault (392 before); C1 item 6: quoteBy.yourAgent and the chain's 20 keys (371 before); C1 item 5: routes/routeNotes drill → offer, refusals book_not_open and calendar_unavailable (369 before); Film Room C1 item 1: stageWords testing/tested/installed, groups parked/equipped (364 before); Amendment L RL-5: cards.setNextBattle (363 before); review KRV1-1: cards.refusals.attribution_unavailable (362 before); Amendment K RK-11: chartRecordedFor (361 before); RK-2: cards.setNoTempo (360 before); Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(544);   // C1 item 8: one entry (543 before); C1 item 7: four entries (539 before); C1 item 6: 21 entries (518 before); C1 item 5: two entries (516 before); C1 item 1: five entries (511 before); RL-5: one entry (510 before); KRV1-1: one entry (509 before); RK-11: one entry (508 before); RK-2: one entry (507 before); B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('B2.1 A8 (A2F1-7): every fixed-digit exemption is bound to its copy key — the harness\x27s pinned text is production\x27s at that key, and every entry of the inventory that spells a digit is pinned', () => {
