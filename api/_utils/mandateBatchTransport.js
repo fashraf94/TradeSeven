@@ -86,6 +86,7 @@ import { executeDecision, disposeSubmission } from './mandateExecution.js';
 import { evaluateGate } from './mandateGate.js';
 import { isSectorCapCorrected } from './mandateSectorCap.js';
 import { normalizeDecisionInput } from './mandateDecisionTool.js';
+import { responseAttribution } from './mandateRationale.js';
 import { markFor, classifyBookTick, SNAPSHOT_COLLECTION } from './mandateUniverseSnapshot.js';
 import { frictionForDecision } from './mandateFrictionModel.js';
 import { acquireLease, releaseLease, mintOwnerToken } from './mandateLease.js';
@@ -104,6 +105,28 @@ const LOG_PREFIX = '[MandateBatch]';
 export const MANDATE_BATCH_COLLECTION = 'mandateBatches';
 export const MANDATE_BATCH_STATS_COLLECTION = 'mandateBatchStats';
 export const MANDATE_BATCH_STATUSES = Object.freeze(['open', 'harvested', 'expired', 'cancelled']);
+
+// ── Open-submission selectors (§3.3 / I1) ────────────────────────────────────
+
+/**
+ * The query for outstanding batch docs. A doc stays 'open' while any entry
+ * awaits harvest or disposition, and after an age-out while it waits for the
+ * provider to end so pre-cancel usage is billed (finalisation). The harvest,
+ * the drain and the T0c idle check all query through this one selector.
+ */
+export function openBatchQuery(db) {
+  return db.collection(MANDATE_BATCH_COLLECTION).where('status', '==', 'open');
+}
+
+/**
+ * T0c: is any batch doc still open? One bounded read (limit 1). True while any
+ * submission still needs harvest, disposition or finalisation. Throws on a
+ * failed read; the caller decides what a failure means.
+ */
+export async function hasOpenBatch(db) {
+  const snap = await openBatchQuery(db).limit(1).get();
+  return (snap.docs || []).length > 0;
+}
 
 // ── Batch bookkeeping doc (§3.3 / §3.7) ──────────────────────────────────────
 
@@ -292,24 +315,48 @@ async function bookkeepHealth(mandateRef, book, outcome, { now }) {
  * mark — INCLUDING when the terminal was already claimed by another path
  * (close-pass expiry / lifecycle cancel): the spend was real either way.
  *
+ * T0b: every terminal written here stands on a model RESPONSE, so each carries
+ * its attribution — the pinned seat (the vintage is content-addressed and
+ * immutable, so the harvest re-read IS the seat the request was built from;
+ * `entry.model` is the submit-time copy when the vintage is unreadable) and
+ * the response time (`providerEndedAt`, the provider's batch end; the harvest
+ * clock when that is unreadable). The decision tool input is read ONCE, up
+ * front (extractDecisionInput is pure and needs neither book nor vintage), so
+ * its reason rides every terminal that has one: book_missing, no_vintage,
+ * bad_decision and every execution terminal. Only a response with no readable
+ * tool input (no_decision_tool_use, unexpected_block:*) records 'absent', and
+ * its failCondition explains why. The disposition order is unchanged.
+ *
  * @returns {{ …terminal | skipped:'lease', billedUsage?: true }}
  */
 async function processSucceededResult(db, {
   entry, result, mandateRef, vintage, currentSnapshot, submitSnapshot, ownerToken, now, sessionDate, alreadyBilled = false,
+  providerEndedAt = null,
 }) {
   const requestId = entry.envelope.requestId;
+  const extracted = extractDecisionInput(result.message);
+  const reasonInHand = extracted.ok
+    ? { rationale: extracted.input?.rationale ?? null, conviction: extracted.input?.conviction ?? null }
+    : {};
+  const endedMs = toMs(providerEndedAt);
+  const attribution = responseAttribution({
+    modelSeat: vintage?.modelSeat ?? null,
+    modelId: entry.model ?? null,
+    rationaleAt: endedMs != null ? new Date(endedMs) : now,
+    rationaleAtBasis: endedMs != null ? 'batch_ended' : 'batch_harvested',
+  });
   const lease = await acquireLease(db, mandateRef, ownerToken, { now });
   if (!lease.acquired) {
     if (lease.reason !== 'no_such_book') return { skipped: 'lease' };
     // Book gone (out-of-band delete): no state to serialize or bill against —
     // still claim the terminal so the batch doc converges (I1).
-    const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'book_missing', envelope: entry.envelope });
+    const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'book_missing', envelope: entry.envelope, ...reasonInHand, attribution });
     return { ...out, billedUsage: true };
   }
   try {
     const freshSnap = await mandateRef.get();
     if (!freshSnap.exists) {
-      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'book_missing', envelope: entry.envelope });
+      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'book_missing', envelope: entry.envelope, ...reasonInHand, attribution });
       return { ...out, billedUsage: true };
     }
     const book = freshSnap.data();
@@ -327,22 +374,26 @@ async function processSucceededResult(db, {
     // the eval loop's no_vintage) — but under batch the submission EXISTS
     // durably, so it must still reach a terminal decision (I1), not a soft skip.
     if (!vintage) {
-      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'no_vintage', envelope: entry.envelope });
+      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'no_vintage', envelope: entry.envelope, ...reasonInHand, attribution });
       const billedNow = await billUnderLease(book);
       if (!out.idempotent) await bookkeepHealth(mandateRef, book, out, { now });
       return { ...out, ...(billedNow ? { billedUsage: true } : {}) };
     }
 
-    const extracted = extractDecisionInput(result.message);
     if (!extracted.ok) {
-      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: extracted.reason || 'model_no_tool_use', envelope: entry.envelope });
+      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: extracted.reason || 'model_no_tool_use', envelope: entry.envelope, attribution });
       const billedNow = await billUnderLease(book);
       if (!out.idempotent) await bookkeepHealth(mandateRef, book, out, { now });
       return { ...out, ...(billedNow ? { billedUsage: true } : {}) };
     }
     const norm = normalizeDecisionInput(extracted.input, { verbs: entry.verbs });
     if (!norm.ok) {
-      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: `bad_decision:${norm.reason}`, envelope: entry.envelope });
+      // T0b: the tool input is in hand, so its reason is kept even though the
+      // decision never normalized (bounded and attributed like any other).
+      const out = await disposeSubmission(db, {
+        mandateRef, requestId, status: 'failed', failCondition: `bad_decision:${norm.reason}`, envelope: entry.envelope,
+        ...reasonInHand, attribution,
+      });
       const billedNow = await billUnderLease(book);
       if (!out.idempotent) await bookkeepHealth(mandateRef, book, out, { now });
       return { ...out, ...(billedNow ? { billedUsage: true } : {}) };
@@ -383,7 +434,7 @@ async function processSucceededResult(db, {
 
     const out = await executeDecision(db, {
       mandateRef, decisionId: requestId, decision, gateResult, envelope: entry.envelope,
-      snapshot: currentSnapshot, submitMark, currentSessionDate: sessionDate, now, caFrozen, friction,
+      snapshot: currentSnapshot, submitMark, currentSessionDate: sessionDate, now, caFrozen, friction, attribution,
     });
     const billedNow = await billUnderLease(book);
     if (!out.idempotent) {
@@ -494,8 +545,7 @@ export async function harvestOpenBatches(db, {
   const summary = { polled: 0, harvested: 0, expired: 0, disposed: 0, billedEntries: 0, leaseSkips: 0, errors: 0 };
   let openSnap;
   try {
-    openSnap = await db.collection(MANDATE_BATCH_COLLECTION)
-      .where('status', '==', 'open')
+    openSnap = await openBatchQuery(db)
       .limit(MANDATE_BATCH_POLL_PAGE)
       .get();
   } catch (err) {
@@ -648,6 +698,7 @@ export async function harvestOneBatch(db, batchDocFromQuery, {
         }
         out = await processSucceededResult(db, {
           entry, result, mandateRef, vintage, currentSnapshot, submitSnapshot, ownerToken, now, sessionDate, alreadyBilled,
+          providerEndedAt: provider?.ended_at ?? null,
         });
       } else if (alreadyDisposed) {
         // Disposed elsewhere and the row carries no billable usage — settle
@@ -759,8 +810,7 @@ async function disposeResultlessEntry(db, entry, requestId, { now, sessionDate, 
  */
 export async function drainOpenBatches(db, { now = new Date(), ownerToken = mintOwnerToken() } = {}) {
   const summary = { batches: 0, disposed: 0, leaseSkips: 0, errors: 0, incomplete: 0 };
-  const openSnap = await db.collection(MANDATE_BATCH_COLLECTION)
-    .where('status', '==', 'open')
+  const openSnap = await openBatchQuery(db)
     .limit(MANDATE_BATCH_POLL_PAGE)
     .get();
 

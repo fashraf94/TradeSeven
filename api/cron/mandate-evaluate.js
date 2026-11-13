@@ -43,10 +43,11 @@ import { normalizeDecisionInput, effectiveVerbs } from '../_utils/mandateDecisio
 import { evaluateGate } from '../_utils/mandateGate.js';
 import { isSectorCapCorrected, VINTAGE_UNCORRECTED } from '../_utils/mandateSectorCap.js';
 import { executeDecision, disposeSubmission } from '../_utils/mandateExecution.js';
+import { responseAttribution } from '../_utils/mandateRationale.js';
 import { markFor } from '../_utils/mandateUniverseSnapshot.js';
 import { resolveRegime } from '../_utils/mandateRegime.js';
 import { priceUsage, telemetryPatch } from '../_utils/modelPriceTable.js';
-import { harvestOpenBatches, submitMandateBatch } from '../_utils/mandateBatchTransport.js';
+import { harvestOpenBatches, submitMandateBatch, hasOpenBatch } from '../_utils/mandateBatchTransport.js';
 
 // §6.2 telemetryPatch moved to modelPriceTable.js in P5 (the batch harvest
 // bills without importing a cron entrypoint); re-exported here so existing
@@ -73,6 +74,44 @@ export function unionHeldTickers(bookDocs) {
   return [...held];
 }
 
+// ── T0c: the qualified idle skip (concept V6.1 ruling 3; Astra V6 C6-12) ─────
+/**
+ * Decide, on a window's first fire (no snapshot doc yet), whether to skip new
+ * market-data acquisition (the daily layer and the tick snapshot). Skip ONLY
+ * when no active book exists AND no outstanding execution or settlement duty
+ * needs a snapshot: no batch doc still 'open' (awaiting harvest, disposition
+ * or finalisation). `activeSnap` is the active-book query the caller already
+ * ran; the duty read happens only when it is empty, so a fire with books does
+ * exactly today's I/O. A failed duty read falls back to acquisition (today's
+ * behaviour), never to a skip. Nothing here writes, so every fire rechecks.
+ *
+ * @returns {Promise<{ skip:boolean, activeBooks:number, outstandingDuty:boolean|null }>}
+ */
+export async function idleAcquisitionCheck(db, activeSnap) {
+  const activeBooks = (activeSnap?.docs || []).length;
+  if (activeBooks > 0) return { skip: false, activeBooks, outstandingDuty: null };
+  let outstandingDuty;
+  try {
+    outstandingDuty = await hasOpenBatch(db);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} idle check: open-batch read failed, acquiring as usual: ${err.message}`);
+    return { skip: false, activeBooks, outstandingDuty: null };
+  }
+  return { skip: !outstandingDuty, activeBooks, outstandingDuty };
+}
+
+/** The one structured line an idle skip writes (and nothing else). */
+function logIdleSkip({ window, tickKey, date, check }) {
+  console.log(JSON.stringify({
+    event: 'mandate_idle_skip',
+    window,
+    tickKey,
+    date,
+    activeBooks: check.activeBooks,
+    outstandingDuty: check.outstandingDuty,
+  }));
+}
+
 // ── Per-book eval (exported + model-call injected for testability) ───────────
 /**
  * Run one book's tick. DIRECT transport (P2, unchanged): assemble prompt from
@@ -83,13 +122,14 @@ export function unionHeldTickers(bookDocs) {
  * at provider batch creation) and normalize/gate/execute happen at HARVEST
  * against the then-current book. A book with an open submission never
  * double-submits (`skipped_open_batch`). `callModel` is injected so tests
- * drive the full pipeline without the network.
+ * drive the full pipeline without the network; `clock` (T0b) reads the time
+ * the direct response arrived, injected for the same reason.
  *
  * @returns {Promise<{ outcome:string, status?:string, reason?:string, pending?:object }>}
  */
 export async function runBookEval(db, {
   book, mandateRef, vintage, snapshot, sessionDate, slot, now = new Date(),
-  callModel = callMandateModelDirect, regime = null, transport = 'direct',
+  callModel = callMandateModelDirect, regime = null, transport = 'direct', clock = () => new Date(),
 }) {
   // Tier gating (§3.1): cadence tiers map to session-relative slots.
   if (!tierEligibleAt(book.cadenceTier, slot)) return { outcome: 'skipped_tier' };
@@ -196,6 +236,11 @@ export async function runBookEval(db, {
   const { decision: extracted, usage } = await callModel(modelSeat, {
     system: prompt.system, messages: prompt.messages, tools: prompt.tools,
   });
+  // T0b: the reason's attribution — the pinned seat that built the request,
+  // and the time its response reached the engine.
+  const attribution = responseAttribution({
+    modelSeat, rationaleAt: clock(), rationaleAtBasis: 'direct_response',
+  });
   if (!extracted?.ok) return { outcome: 'no_decision', reason: extracted?.reason || 'model_no_tool_use', usage: usage ?? extracted?.usage ?? null };
 
   const norm = normalizeDecisionInput(extracted.input, { verbs });
@@ -218,7 +263,7 @@ export async function runBookEval(db, {
 
   const res = await executeDecision(db, {
     mandateRef, decisionId: envelope.requestId, decision, gateResult, envelope,
-    snapshot, submitMark, currentSessionDate: sessionDate, now, caFrozen,
+    snapshot, submitMark, currentSessionDate: sessionDate, now, caFrozen, attribution,
   });
   return {
     outcome: 'terminal', status: res.status, decisionId: envelope.requestId,
@@ -284,10 +329,24 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     // the daily slow layer (idempotent) and the fast layer. On later fires in the
     // same slot the snapshot already exists — skip the full scan + build entirely
     // (arch/spec review S3a: no redundant O(active-books) read every fire).
+    // T0c: with no active book and no open batch doc, nothing is acquired.
     const snapRef = db.collection(SNAPSHOT_COLLECTION).doc(tick.tickKey);
     let snapshot = (await snapRef.get()).data() || null;
     if (!snapshot) {
       const activeSnap = await db.collection(MANDATES_COLLECTION).where('status', '==', 'active').get();
+      const idle = await idleAcquisitionCheck(db, activeSnap);
+      if (idle.skip) {
+        logIdleSkip({ window: tick.slot, tickKey: tick.tickKey, date: tick.date, check: idle });
+        // Everything after this point is keyed to an active book or an open
+        // batch doc, and the check just found neither: the harvest polls open
+        // batch docs; the last-tick rule, the sweep page and the batch
+        // submission serve active books; the regime read feeds only their
+        // prompts; book-level gate expiry runs inside a book's eval. So the
+        // fire ends here having written nothing. A book or batch that appears
+        // after the check finds no snapshot doc on the next fire, which
+        // rechecks and builds normally.
+        return res.status(200).json({ ok: true, noop: true, reason: 'mandate_idle_skip', ...summary });
+      }
       const heldTickers = unionHeldTickers(activeSnap.docs.map((d) => d.data()));
       const daily = await ensureDailySnapshot(db, { date: tick.date, heldTickers, now });
       const dailyDoc = (await daily.ref.get()).data();
@@ -667,27 +726,39 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
     // 1. The CLOSE SNAPSHOT: built once per date at `${date}_close`, AFTER the
     // session close, so its quotes carry the official close print — never the
     // preClose tick's intraday marks (§3.6 "the session's official close").
+    //
+    // T0c: with no active book and no open batch doc, the close snapshot is
+    // not acquired — but the fire CONTINUES: the sweep below finds no book,
+    // so completion, retention cleanup and the calendar-horizon probe run as
+    // they do today. closeSnapshot stays null; the loop guard defers any book
+    // that appears after the check to the next fire, which rechecks.
     const snapRef = db.collection(SNAPSHOT_COLLECTION).doc(closeTick.closeKey);
     let closeSnapshot = (await snapRef.get()).data() || null;
     if (!closeSnapshot) {
       const activeSnap = await db.collection(MANDATES_COLLECTION).where('status', '==', 'active').get();
-      const heldTickers = unionHeldTickers(activeSnap.docs.map((d) => d.data()));
-      // Idempotent daily slow layer — normally already built by the day's first
-      // eval fire; a zero-eval day (all books slow-tier + missed slots) builds
-      // it here so the close still has sector/cap/CA context.
-      const daily = await ensureDailySnapshot(db, { date, heldTickers, now });
-      const dailyDoc = (await daily.ref.get()).data();
-      try {
-        const built = await ensureUniverseSnapshot(db, {
-          tickKey: closeTick.closeKey, sessionDate: date, heldTickers, now, dailyDoc,
-        });
-        closeSnapshot = built.snapshot;
-      } catch (snapErr) {
-        // No close snapshot → no marks; better to defer to the next generous
-        // fire in the window than to mark from nothing. Books stay unclosed and
-        // the missed-marks alert fires if the whole window passes.
-        console.error(`${LOG_PREFIX} close snapshot build failed — deferring: ${snapErr.message}`);
-        return res.status(200).json({ ok: true, noop: true, reason: 'close_snapshot_failed', ...summary });
+      const idle = await idleAcquisitionCheck(db, activeSnap);
+      if (idle.skip) {
+        logIdleSkip({ window: 'close', tickKey: closeTick.closeKey, date, check: idle });
+        summary.reason = 'mandate_idle_skip';
+      } else {
+        const heldTickers = unionHeldTickers(activeSnap.docs.map((d) => d.data()));
+        // Idempotent daily slow layer — normally already built by the day's first
+        // eval fire; a zero-eval day (all books slow-tier + missed slots) builds
+        // it here so the close still has sector/cap/CA context.
+        const daily = await ensureDailySnapshot(db, { date, heldTickers, now });
+        const dailyDoc = (await daily.ref.get()).data();
+        try {
+          const built = await ensureUniverseSnapshot(db, {
+            tickKey: closeTick.closeKey, sessionDate: date, heldTickers, now, dailyDoc,
+          });
+          closeSnapshot = built.snapshot;
+        } catch (snapErr) {
+          // No close snapshot → no marks; better to defer to the next generous
+          // fire in the window than to mark from nothing. Books stay unclosed and
+          // the missed-marks alert fires if the whole window passes.
+          console.error(`${LOG_PREFIX} close snapshot build failed — deferring: ${snapErr.message}`);
+          return res.status(200).json({ ok: true, noop: true, reason: 'close_snapshot_failed', ...summary });
+        }
       }
     }
 
@@ -720,6 +791,15 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
       const mandateRef = docSnap.ref;
       const book = { _id: docSnap.id, ...docSnap.data() };
       if (book.execState?.lastCloseKey === date) { summary.skipped++; continue; }
+      // T0c: no close snapshot here means this fire took the idle skip and the
+      // book appeared after the check. Never close from nothing, never stamp a
+      // failure on it: leave it untouched for the next fire in the window, and
+      // do not claim completion (so no retention this fire).
+      if (!closeSnapshot) {
+        console.log(`${LOG_PREFIX} ${book._id} appeared after the idle check — deferred to the next close fire`);
+        deferred = true;
+        break;
+      }
 
       const lease = await acquireLease(db, mandateRef, ownerToken, { now });
       if (!lease.acquired) { summary.skipped++; leaseSkips++; continue; }
