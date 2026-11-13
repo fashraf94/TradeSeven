@@ -93,13 +93,19 @@ function parseObject(text) {
   }
 }
 
-/** The dependencies, defaulted. A non-object `deps` reads as none given. */
-function depsOf(deps) {
-  const d = isObject(deps) ? deps : {};
-  return {
-    packages: d.packages === undefined ? KB_PACKAGES : d.packages,
-    authorizations: d.authorizations === undefined ? KB_APP_USE : d.authorizations,
-  };
+/**
+ * The dependencies, defaulted, each read only by the check that needs it (so
+ * a throwing `authorizations` is check 8's refusal, never check 1's). A
+ * non-object `deps` reads as none given.
+ */
+function packagesOf(deps) {
+  const given = isObject(deps) ? deps.packages : undefined;
+  return given === undefined ? KB_PACKAGES : given;
+}
+function authorizationsOf(deps) {
+  const given = isObject(deps) ? deps.authorizations : undefined;
+  const list = given === undefined ? KB_APP_USE : given;
+  return Array.isArray(list) ? list : [];
 }
 
 /**
@@ -169,7 +175,7 @@ export function verifyParts(parts) {
 export function verifyPackage(request, deps) {
   try {
     const { id, version } = isObject(request) ? request : {};
-    const { packages } = depsOf(deps);
+    const packages = packagesOf(deps);
 
     // Check 1 — the package is committed, with all three of its parts.
     const row = Array.isArray(packages) ? packages.find((p) => isObject(p) && p.id === id && p.version === version) : undefined;
@@ -218,11 +224,6 @@ export function isAuthorizationEntry(entry) {
   }
 }
 
-/** The authorization list, or none when it is not a list. */
-function listOf(authorizations) {
-  return Array.isArray(authorizations) ? authorizations : [];
-}
-
 /**
  * Checks 1–10, for a method a session already holds. An entry with
  * `newSessions: false` still serves here: a session that holds that version
@@ -240,7 +241,7 @@ export function loadAuthorizedMethod(request, deps) {
   // Check 8 — an entry authorizes exactly these verified bytes.
   let matches;
   try {
-    matches = listOf(depsOf(deps).authorizations).filter((e) => isEntryShape(e)
+    matches = authorizationsOf(deps).filter((e) => isEntryShape(e)
       && e.id === v.id && e.version === v.version && e.sha256 === v.sha256 && e.acceptanceSha256 === v.acceptanceSha256);
     if (matches.length === 0) return refuse('not_authorized');
   } catch {
@@ -295,7 +296,7 @@ export function loadAuthorizedMethod(request, deps) {
 export function authorizedMethodFor(request, deps) {
   try {
     const { consumer, inAudience } = isObject(request) ? request : {};
-    const offered = listOf(depsOf(deps).authorizations).filter((e) => isEntryShape(e)
+    const offered = authorizationsOf(deps).filter((e) => isEntryShape(e)
       && e.consumers.includes(consumer) && e.newSessions !== false);
     if (offered.length !== 1) return refuse('not_authorized');
     return loadAuthorizedMethod({ id: offered[0].id, version: offered[0].version, consumer, inAudience }, deps);

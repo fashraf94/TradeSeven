@@ -76,8 +76,9 @@ const wrapperOf = (partPath, text) => Buffer.from(`${JSON.stringify({ path: part
  * @param {{ index: object, read: (releasePath: string) => Uint8Array, id: string, version: string }} args
  * @returns {{ ok: true, files: { name: string, bytes: Buffer }[], verified: object } | { ok: false, reason: string, detail?: string }}
  */
-export function packageFilesOf({ index, read, id, version } = {}) {
+export function packageFilesOf(args) {
   try {
+    const { index, read, id, version } = isObject(args) ? args : {};
     if (!isObject(index) || typeof index.schema !== 'string') return refuse('index', 'no schema');
     const releaseId = index.schema.split('/')[0];
     if (!isSafeName(releaseId)) return refuse('index', 'release id');
