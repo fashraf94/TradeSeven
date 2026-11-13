@@ -536,3 +536,31 @@ The B1 session re-verified §1 at `main` `c37baa0d` and stopped on six points wh
 | **S-6** | K-3 named `ANTHROPIC_API_KEY`; the app's variable is `CLAUDE_API_KEY`. | **`modelTurn.js` reads `CLAUDE_API_KEY`.** The one probe runs with `CLAUDE_API_KEY` from the parent checkout's `.env.local`, loaded into the probe process only (`node --env-file=<parent>/.env.local scripts/sharedResearch/probe.mjs`). The key is never printed, `.env.local` is never copied into the worktree and never committed; the fixture holds the response, `usage` and `costUsd` only. One call. If it is refused for the model id or the output format, B1 stops and reports — the id is not changed. |
 
 **The non-blocking items are approved as the stop report listed them:** the voice rulebook's §4–5 are appended to the merged `docs/design/SHADOW_VOICE_RULES_V1.md` (Huddle S1 #1032 and S1.1 #1040 are merged); `stepSchema.js` keeps its own `ACRONYMS` copy, pinned equal to the Huddle list; no SDK bump (0.71.2 — the Huddle script's `output_config` call on `main` is the evidence); `isCockpitOwnerAllowlisted` from `api/_utils/callRecords/mode.js`; company names from `peerRankings/{ticker}.name`; the flag's note in `flagPinGuard.test.js` is the "intentionally ABSENT" form; the list marker is written only through the imported `SHARED_RESEARCH_LIST_MARKER`; story Timestamps are converted to instants on read; the shadow log follows `api/agent/chat.js`'s awaited pattern; the store tests run on an atomic in-memory double and the rules on the emulator.
+
+---
+
+## 16. B1 report rulings (Nov 12)
+
+The B1 build report (`docs/audits/20261112_BUILD_SHARED_RESEARCH_B1.md` §11) asked eight founder questions; the founder ruled them, and one more point (NS-1), on Nov 12, 2026, to be applied on the B1 branch before merge. The rulings below are the founder's words. Where a ruling and an earlier section (§15 included) disagree, the ruling wins; B2 builds against them.
+
+| # | Ruling |
+|---|---|
+| **FQ-1** | A new investigation of the same story or drop is allowed once the earlier one has ended (concluded, saved or abandoned); only an open one answers `existing`. When an ended one exists, the open answer and the GET carry `previous: { sessionId, endedAt, terminalReason }` for the newest, so the sheet can offer "Open the earlier one". |
+| **FQ-2** | A publishedDate later than the read time is treated as absent (the read time, " · undated"). |
+| **FQ-3** | "considered" is forbidden only with the agent, the partner's name, "I" or "we" as its subject. |
+| **FQ-4** | A verified finding may be superseded only by another verified finding or an unavailable one; an inference never supersedes it. |
+| **FQ-5** | A number in the summary or in the idea's statement must appear in a verified finding; inferences, the player's words and drop claims cannot back a number. Proposed claims follow the same rule (routine 13 becomes the letter). A summary that breaks it is withheld — the answer keeps its last revision and the step's findings still land — rather than failing the paid step. |
+| **FQ-6** | Drop claims (dataPoints) run through the forbidden patterns; a claim that breaks one is not written (the drop's own text still stands as "Your drop"). |
+| **FQ-7** | The preview revision covers the carried set: previewRev becomes an opaque token over summary.rev, findings.length and the carried ids in order; the client echoes it; any change → preview_stale. |
+| **FQ-8** | Add a per-uid, per-method limiter after auth (10 POST, 30 GET a minute); keep the IP limiter in front as the pre-auth guard. |
+| **NS-1** | The no-next-step finding reads exactly "No next step proposed." The server never claims the question is answered. |
+
+**What B2 reads, as B1 built these** (the build report's §16 has the detail):
+
+- **`previous`** is on every `open` answer for a story or drop and on `GET ?sessionId=`. It is `{ sessionId, endedAt, terminalReason }` or `null`.
+  - It is the newest ended investigation of the same owner and item that was created before the one answered, and never that one itself.
+  - `terminalReason` is the record's: `concluded`, `saved_to_list` or `user_close` (abandoned).
+  - An observation entry has no item, so its `previous` is always `null`.
+- **`previewRev`** is a string, `pr1.` followed by 32 hex characters. B2 echoes it as received. It covers each supported company's carried ids, not only their union.
+- **A withheld summary.** The step answers 200 with `changed.summaryWithheld: true`; the answer and its revisions are unchanged.
+- **`429 rate_limited`** comes from the per-uid limiter, with a `Retry-After` header and the server's line. It is per function instance, like the IP limiter.
