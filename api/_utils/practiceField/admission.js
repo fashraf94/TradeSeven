@@ -44,7 +44,7 @@ import { normalizeIdeaContract, weightOf, planLegCents } from './contract.js';
 import { mandateSectorOf } from './symbols.js';
 import { ideaSchedule } from './windows.js';
 import { newLedger, LEDGER_KIND } from './ledger.js';
-import { epochRefOf, recordedEquityUsd } from './ideaBook.js';
+import { epochRefOf } from './ideaBook.js';
 import {
   coverageRefOf, coverageRef, ideaCoveragePlan, coverageFits, coverageWithRef, coverageWithoutRef,
 } from './coverage.js';
@@ -66,6 +66,11 @@ function contractFingerprintInput(contract) {
     comparison: { type: contract.comparison.type, symbols: contract.comparison.symbols },
     lines: contract.lines, capitalUsd: contract.capitalUsd, origin: contract.origin, sources: contract.sources,
   };
+}
+
+/** The fingerprint an admission request is replayed against: the book and what the (normalised) draft said. */
+export function admissionFingerprint({ bookId, contract, rawContract = null }) {
+  return canonicalContentHash({ bookId, contract: contract ? contractFingerprintInput(contract) : (rawContract ?? null) });
 }
 
 /** The deterministic idea id for (book, operation). */
@@ -129,11 +134,29 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
   const limits = [];
   let permittedMaxCents = null;
   if (gate && rails && isSectorCapCorrected(gate)) {
-    const equityCents = toCents(recordedEquityUsd(book));
+    // The equity every share is taken of is the book's DISPLAYED equity — `portfolio.totalValue`, the number the
+    // last close (or the last fill) wrote — never a second valuation of the same positions that could differ from
+    // it by a cent (BUILD_RULES §9; refuter RF1-2). Admission and release do not change it.
+    const displayedEquity = book.portfolio?.totalValue;
+    const equityOk = typeof displayedEquity === 'number' && Number.isFinite(displayedEquity) && displayedEquity >= 0;
+    const equityCents = equityOk ? toCents(displayedEquity) : NaN;
     const unreservedCents = toCents(book.treasury?.unreservedCash);
     const capitalCents = toCents(contract.capitalUsd);
 
-    limits.push({ constraint: 'slot_cap', code: 'capital_exceeds_slot_cap', limitCents: shareLimitCents(equityCents, rails.slotCapShare[contract.slot]), slot: contract.slot });
+    // FAIL CLOSED on the epoch's own numbers (review L1-7, refuter RF1-1): each must be a real number of its own
+    // kind. A missing one would compare as not-a-number and bind nothing; a `null`, `false` or `''` would read as
+    // ZERO and bind nothing either.
+    const isShare = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+    const isCount = (v) => Number.isInteger(v) && v > 0;
+    const invalid = new Set();
+    if (!equityOk) invalid.add('book_equity');
+    if (!isShare(rails.slotCapShare?.[contract.slot])) invalid.add('slot_cap');
+    if (!isShare(gate.cashFloorPct)) invalid.add('cash_floor');
+    if (!isShare(gate.maxSinglePositionWeightPct)) invalid.add('single_position_cap');
+    if (gate.sectorConcentrationCap !== null && !(isCount(gate.sectorCapSlots) && isCount(gate.sectorCapDenominator))) invalid.add('sector_cap');
+    if (!isCount(gate.maxPositions)) invalid.add('position_count');
+
+    limits.push({ constraint: 'slot_cap', code: 'capital_exceeds_slot_cap', limitCents: shareLimitCents(equityCents, rails.slotCapShare?.[contract.slot]), slot: contract.slot });
     limits.push({ constraint: 'cash_floor', code: 'cash_floor_breached', limitCents: unreservedCents - shareCeilCents(equityCents, gate.cashFloorPct) });
 
     // Single position: w × capital ≤ cap × equity for every name (no other idea holds the name — check 3).
@@ -179,16 +202,16 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
     // Position count: positions + other ideas' pending names + this idea's names ≤ the cap.
     const pendingNames = ideas.filter((i) => i.status === IDEA_STATUS.ACCEPTED).reduce((n, i) => n + i.contract.names.length, 0);
     const positionsAfter = Object.keys(book.portfolio?.positions || {}).length + pendingNames + contract.names.length;
-    if (positionsAfter > gate.maxPositions) {
+    if (invalid.has('position_count') || positionsAfter > gate.maxPositions) {
       limits.push({ constraint: 'position_count', code: 'position_count_exceeded', limitCents: 0, positionsAfter, maxPositions: gate.maxPositions });
     }
 
-    // FAIL CLOSED on a limit that is not a whole number of cents (review L1-7): a missing or malformed number in the
-    // epoch would otherwise compare as NaN and bind nothing.
-    const malformed = limits.filter((l) => !Number.isInteger(l.limitCents));
-    if (malformed.length > 0 || !Number.isInteger(equityCents) || !Number.isInteger(unreservedCents)) {
-      refuse('epoch_config_invalid', { constraints: malformed.map((l) => l.constraint) });
-      for (const l of malformed) l.limitCents = 0;
+    // …and on any limit that still is not a whole number of cents. An invalid limit permits nothing.
+    for (const l of limits) if (!Number.isInteger(l.limitCents)) invalid.add(l.constraint);
+    if (!Number.isInteger(unreservedCents)) invalid.add('treasury');
+    if (invalid.size > 0) {
+      refuse('epoch_config_invalid', { constraints: [...invalid].sort() });
+      for (const l of limits) if (invalid.has(l.constraint) || invalid.has('book_equity') || invalid.has('treasury')) l.limitCents = 0;
     }
     permittedMaxCents = Math.max(0, Math.min(...limits.map((l) => l.limitCents)));
     for (const l of limits) {
@@ -282,7 +305,7 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
   const ideaRef = bookRef.collection('ideas').doc(ideaId);
   const coverageDocRef = coverageRefOf(db);
   const ideaRefKey = coverageRef(bookId, ideaId);
-  const opFingerprint = canonicalContentHash({ bookId, contract: shape.contract ? contractFingerprintInput(shape.contract) : (rawContract ?? null) });
+  const opFingerprint = admissionFingerprint({ bookId, contract: shape.contract, rawContract });
 
   return db.runTransaction(async (tx) => {
     const bookSnap = await tx.get(bookRef);

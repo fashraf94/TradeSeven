@@ -5,7 +5,7 @@
 // binding constraint).
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { admitIdea, releaseIdea, ideaIdFor } from './admission.js';
+import { admitIdea, releaseIdea, ideaIdFor, admissionFingerprint } from './admission.js';
 import { normalizeIdeaContract, planLegCents } from './contract.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { COCKPIT_ALLOWLIST_ENV } from '../callRecords/allowlist.js';
@@ -377,6 +377,14 @@ describe('check 7 — capital, with the permitted maximum and every binding cons
       (e) => { const { cashFloorPct: _x, ...g } = e.gateConfig; return { ...e, gateConfig: g }; },
       (e) => { const { maxSinglePositionWeightPct: _x, ...g } = e.gateConfig; return { ...e, gateConfig: g }; },
       (e) => ({ ...e, rails: { ...e.rails, slotCapShare: { medium: 0.3, long: 0.4 } } }),
+      // …nor against a value that would read as ZERO (refuter RF1-1): null, false, an empty string, a string number.
+      (e) => ({ ...e, gateConfig: { ...e.gateConfig, cashFloorPct: null } }),
+      (e) => ({ ...e, gateConfig: { ...e.gateConfig, cashFloorPct: false } }),
+      (e) => ({ ...e, gateConfig: { ...e.gateConfig, cashFloorPct: '' } }),
+      (e) => ({ ...e, gateConfig: { ...e.gateConfig, maxSinglePositionWeightPct: '0.2' } }),
+      (e) => ({ ...e, gateConfig: { ...e.gateConfig, maxPositions: null } }),
+      (e) => ({ ...e, gateConfig: { ...e.gateConfig, sectorCapDenominator: 0 } }),
+      (e) => { const { slotCapShare: _x, ...r } = e.rails; return { ...e, rails: r }; }, // a typed refusal, never a TypeError
     ]) {
       await epochRef.set(strip(epoch));
       const res = await admit(db, bookId, contractOf({ capitalUsd: 99999.99 }));
@@ -385,6 +393,44 @@ describe('check 7 — capital, with the permitted maximum and every binding cons
       expect(res.permittedMaxUsd).toBe(0);
     }
     expect(getBook(db, bookId).treasury.unreservedCash).toBe(100000);
+    // The same for the book's own equity: a book whose displayed equity is not a number admits nothing.
+    await epochRef.set(epoch);
+    await bookRef.set({ portfolio: { totalValue: null } }, { merge: true });
+    const noEquity = await admit(db, bookId, contractOf({ capitalUsd: 1000 }));
+    expect(codes(noEquity)).toContain('epoch_config_invalid');
+    expect(noEquity.refusals.find((r) => r.code === 'epoch_config_invalid').constraints).toContain('book_equity');
+    expect(noEquity.permittedMaxUsd).toBe(0);
+  });
+
+  it('the limits are shares of the equity the book DISPLAYS — `portfolio.totalValue` — never a second valuation a cent away (refuter RF1-2)', async () => {
+    const { db, bookId, bookRef } = await seedBook();
+    // The displayed equity after a close, to the cent; the long slot may take 40% of exactly that.
+    await bookRef.set({ portfolio: { totalValue: 99684.40 } }, { merge: true });
+    const atMax = await admit(db, bookId, contractOf({ slot: 'long', names: ['AAPL', 'JPM', 'LLY'], capitalUsd: 39873.76 }), 'a');
+    expect(atMax).toMatchObject({ ok: true, permittedMaxUsd: 39873.76 });
+    const { db: db2, bookId: book2, bookRef: ref2 } = await seedBook({ uid: 'owner-2' });
+    await ref2.set({ portfolio: { totalValue: 99684.40 } }, { merge: true });
+    const over = await admit(db2, book2, contractOf({ slot: 'long', names: ['AAPL', 'JPM', 'LLY'], capitalUsd: 39873.77 }), 'b');
+    expect(codes(over)).toContain('capital_exceeds_slot_cap');
+    expect(over.permittedMaxUsd).toBe(39873.76);
+  });
+
+  it('the request fingerprint covers what the draft SAID, not what this code derives from it: a copy edit between a call and its retry is not a conflict (review L1-4)', () => {
+    const shape = normalizeIdeaContract(contractOf({ comparison: { type: 'sector_fund', symbols: ['XLK'] } }));
+    expect(shape.refusals).toEqual([]);
+    const c = shape.contract;
+    const base = admissionFingerprint({ bookId: 'b1', contract: c });
+    // Every field the normaliser DERIVES may change without changing the request.
+    const derived = Object.keys(c).filter((k) => !['thesis', 'slot', 'names', 'weights', 'comparison', 'lines', 'capitalUsd', 'origin', 'sources'].includes(k));
+    expect(derived.length).toBeGreaterThan(0);
+    const edited = { ...c, comparison: { ...c.comparison, question: 'An edited phrase.' } };
+    for (const k of derived) edited[k] = 'changed';
+    expect(admissionFingerprint({ bookId: 'b1', contract: edited })).toBe(base);
+    // What the draft said still counts — each part of it.
+    expect(admissionFingerprint({ bookId: 'b2', contract: c })).not.toBe(base);
+    expect(admissionFingerprint({ bookId: 'b1', contract: { ...c, capitalUsd: c.capitalUsd + 0.01 } })).not.toBe(base);
+    expect(admissionFingerprint({ bookId: 'b1', contract: { ...c, thesis: { ...c.thesis, text: `${c.thesis.text} More.` } } })).not.toBe(base);
+    expect(admissionFingerprint({ bookId: 'b1', contract: { ...c, comparison: { ...c.comparison, symbols: ['XLF'] } } })).not.toBe(base);
   });
 
   it('several failures at once are ALL returned, each typed', async () => {
