@@ -4,8 +4,9 @@
 // B-MARK and B-STAMP; shared contract V2 §14 case B-RECON): valuation every session, corporate actions once per
 // ledger, comparisons that stay matched, and rows that are marks — never sales.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { closeIdeaBook, closeSnapshotKeyFor } from './close.js';
+import { ensureDailySnapshot, ensureUniverseSnapshot, fetchCorporateActionsEODHD } from '../mandateUniverseSnapshot.js';
 import { admitIdea } from './admission.js';
 import { enterIdea } from './entry.js';
 import { assertReconciled } from './reconcile.js';
@@ -341,6 +342,195 @@ describe('corporate actions: once per ledger', () => {
     // A news-sized move is trusted.
     await closeOn(db, bookId, DAYS.d3, { AAPL: 209.8, SPY: 599.4 });
     expect(getRow(db, bookId, r.ideaId, DAYS.d3).marks.AAPL).toMatchObject({ mark: 209.8, quality: 'vendor_time' });
+  });
+});
+
+describe('Astra T1A-01 — an action the feed lists twice is applied once per ledger', () => {
+  // Astra's reproducer: a $20,000 AAPL idea at a $100 mark with the normal cost policy is 199.940017 shares.
+  const QUOTES = { AAPL: { price: 100, marketCap: 3e12 }, SPY: 500 };
+  const DIV_ID = `cash_dividend_AAPL_${DAYS.d2}`;
+  const div = { type: 'cash_dividend', ticker: 'AAPL', effectiveDate: DAYS.d2, amount: 1, source: 'eodhd_dividends' };
+  const split = { type: 'split', ticker: 'AAPL', effectiveDate: DAYS.d2, ratio: 2, source: 'eodhd_splits' };
+  const receiptsFor = (ledger, id) => ledger.corporateActionReceipts.filter((x) => x.actionId === id);
+
+  it('two identical $1 dividend rows pay $199.94 — not $399.88 — on the idea, its same-stock comparison and the book', async () => {
+    const { db, bookId } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
+    const before = getIdea(db, bookId, r.ideaId);
+    const bookBefore = getBook(db, bookId);
+    expect(before.ledger.holdings.AAPL.shares).toBe(199.940017);
+    const out = await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 99, corporateActions: [div, { ...div }] }, SPY: 500 });
+    expect(out.closed).toBe(true);
+    expect(out.alerts).toEqual([]);
+    const idea = getIdea(db, bookId, r.ideaId);
+    const book = getBook(db, bookId);
+    for (const ledger of [idea.ledger, idea.comparisonLedger]) {
+      expect(ledger.dividendsUsd, ledger.kind).toBe(199.94);
+      expect(cents(ledger.cash), ledger.kind).toBe(cents(before.ledger.cash) + 19994);
+      expect(ledger.appliedActionIds).toEqual([DIV_ID]);
+      expect(receiptsFor(ledger, DIV_ID)).toHaveLength(1);
+    }
+    expect(cents(book.portfolio.cash)).toBe(cents(bookBefore.portfolio.cash) + 19994);
+    expect(book.portfolio.cash).toBe(roundUsd(80000 + idea.ledger.cash));
+    expect(countDocs(db, `mandates/${bookId}/corporateActions/`)).toBe(1);
+    expect(getRow(db, bookId, r.ideaId, DAYS.d2).corporateActionsApplied).toEqual({ idea: [DIV_ID], comparison: [DIV_ID], spy: [] });
+    expect(() => assertReconciled(book, [idea])).not.toThrow();
+  });
+
+  it('two identical 2-for-1 split rows give 399.880034 shares — not 799.760068 — on the idea, the comparison and the book; the line moves once', async () => {
+    const { db, bookId } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
+    const before = getIdea(db, bookId, r.ideaId);
+    const out = await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 50.02, corporateActions: [split, { ...split }] }, SPY: 500 });
+    expect(out.alerts).toEqual([]);
+    const idea = getIdea(db, bookId, r.ideaId);
+    expect(idea.ledger.holdings.AAPL.shares).toBe(399.880034);
+    expect(idea.comparisonLedger.holdings.AAPL.shares).toBe(399.880034);
+    expect(getBook(db, bookId).portfolio.positions.AAPL.shares).toBe(399.880034);
+    expect(idea.ledger.holdings.AAPL.costBasisTotal).toBe(before.ledger.holdings.AAPL.costBasisTotal);
+    const line = idea.lines.find((l) => l.symbol === 'AAPL');
+    expect(line.level).toBe(before.lines[0].level / 2);
+    expect(line.adjustments).toEqual([{ actionId: `split_AAPL_${DAYS.d2}`, ratio: 2, appliedOn: DAYS.d2 }]);
+    expect(idea.ledger.appliedActionIds).toEqual([`split_AAPL_${DAYS.d2}`]);
+    expect(countDocs(db, `mandates/${bookId}/corporateActions/`)).toBe(1);
+    expect(() => assertReconciled(getBook(db, bookId), [idea])).not.toThrow();
+  });
+
+  it('a duplicated action stays applied once across closes: the next close, with both rows still in the feed window, applies nothing', async () => {
+    const { db, bookId } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
+    await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 99, corporateActions: [div, { ...div }] }, SPY: 500 });
+    const once = getIdea(db, bookId, r.ideaId);
+    const bookOnce = getBook(db, bookId);
+    for (const date of [DAYS.d3, DAYS.d4]) {
+      await closeOn(db, bookId, date, { AAPL: { price: 99.13, corporateActions: [div, { ...div }] }, SPY: 500 });
+      const idea = getIdea(db, bookId, r.ideaId);
+      expect(idea.ledger.dividendsUsd, date).toBe(199.94);
+      expect(idea.ledger.cash).toBe(once.ledger.cash);
+      expect(idea.comparisonLedger.cash).toBe(once.comparisonLedger.cash);
+      expect(idea.ledger.appliedActionIds).toEqual([DIV_ID]);
+      expect(receiptsFor(idea.ledger, DIV_ID)).toHaveLength(1);
+      expect(getBook(db, bookId).portfolio.cash).toBe(bookOnce.portfolio.cash);
+      expect(getRow(db, bookId, r.ideaId, date).corporateActionsApplied).toEqual({ idea: [], comparison: [], spy: [] });
+    }
+  });
+
+  it('two rows with ONE id and DIFFERENT payloads are a conflict: neither is applied on any ledger, each ledger records one `conflicting_action` receipt, the symbol is a carried mark, and a corrected feed later applies it once', async () => {
+    const { db, bookId } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
+    await closeOn(db, bookId, DAYS.d1, { AAPL: 100.13, SPY: 500 });
+    const before = getIdea(db, bookId, r.ideaId);
+    const bookBefore = getBook(db, bookId);
+    const rival = { ...div, amount: 1.5, source: 'founder' };
+    for (const date of [DAYS.d2, DAYS.d3]) {
+      const out = await closeOn(db, bookId, date, { AAPL: { price: 99.41, corporateActions: [div, rival] }, SPY: 500 });
+      expect(out.closed, date).toBe(true);
+      const idea = getIdea(db, bookId, r.ideaId);
+      for (const ledger of [idea.ledger, idea.comparisonLedger]) {
+        expect(ledger.dividendsUsd, `${date} ${ledger.kind}`).toBe(0);
+        expect(ledger.cash).toBe(before.ledger.cash);
+        expect(ledger.appliedActionIds).toEqual([]);
+        expect(ledger.declinedActionIds).toEqual([]); // a conflict is not settled
+        // One receipt per ledger, however many closes see the conflict.
+        expect(receiptsFor(ledger, DIV_ID)).toEqual([{
+          actionId: DIV_ID, type: 'cash_dividend', ticker: 'AAPL', effectiveDate: DAYS.d2, applied: false, reason: 'conflicting_action',
+          rows: [{ ratio: null, amount: 1, source: 'eodhd_dividends' }, { ratio: null, amount: 1.5, source: 'founder' }], seenOn: DAYS.d2,
+        }]);
+      }
+      expect(idea.spyLedger.corporateActionReceipts).toEqual([]); // SPY's ledger does not hold AAPL
+      const row = getRow(db, bookId, r.ideaId, date);
+      expect(row.marks.AAPL).toMatchObject({ mark: 100.13, quality: 'carried_forward', markSource: 'carry_over' });
+      expect(row.comparisonMarks.AAPL).toMatchObject({ mark: 100.13, quality: 'carried_forward' });
+      expect(row.fullQuality).toBe(false);
+      expect(row.corporateActionsApplied).toEqual({ idea: [], comparison: [], spy: [] });
+      expect(out.alerts.filter((a) => a.startsWith('PRACTICE_FIELD_CORPORATE_ACTION_CONFLICT')).length).toBe(2); // the idea's and the comparison's
+      expect(out.alerts.some((a) => /PRACTICE_FIELD_MARK_HELD_BACK .* idea AAPL/.test(a))).toBe(true);
+      expect(getBook(db, bookId).portfolio.cash).toBe(bookBefore.portfolio.cash);
+      expect(getBook(db, bookId).portfolio.positions.AAPL).toMatchObject({ lastMark: 100.13, lastMarkSource: 'carry_over' });
+      expect(countDocs(db, `mandates/${bookId}/corporateActions/`)).toBe(0);
+    }
+    // The vendor corrects its feed: one consistent row. Applied once, on both ledgers and the book.
+    await closeOn(db, bookId, DAYS.d4, { AAPL: { price: 99.41, corporateActions: [div] }, SPY: 500 });
+    const idea = getIdea(db, bookId, r.ideaId);
+    expect(idea.ledger.dividendsUsd).toBe(199.94);
+    expect(idea.comparisonLedger.dividendsUsd).toBe(199.94);
+    expect(idea.ledger.appliedActionIds).toEqual([DIV_ID]);
+    expect(cents(getBook(db, bookId).portfolio.cash)).toBe(cents(bookBefore.portfolio.cash) + 19994);
+    expect(getRow(db, bookId, r.ideaId, DAYS.d4).fullQuality).toBe(true);
+    expect(() => assertReconciled(getBook(db, bookId), [idea])).not.toThrow();
+  });
+
+  it('a split ratio that disagrees with itself is a conflict too: no quantity moves', async () => {
+    const { db, bookId } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
+    const before = getIdea(db, bookId, r.ideaId);
+    await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 50.02, corporateActions: [split, { ...split, ratio: 3 }] }, SPY: 500 });
+    const idea = getIdea(db, bookId, r.ideaId);
+    expect(idea.ledger.holdings.AAPL.shares).toBe(before.ledger.holdings.AAPL.shares);
+    expect(idea.comparisonLedger.holdings.AAPL.shares).toBe(before.ledger.holdings.AAPL.shares);
+    expect(getBook(db, bookId).portfolio.positions.AAPL.shares).toBe(before.ledger.holdings.AAPL.shares);
+    expect(idea.lines).toEqual(before.lines);
+    expect(receiptsFor(idea.ledger, `split_AAPL_${DAYS.d2}`).map((x) => x.reason)).toEqual(['conflicting_action']);
+    expect(getRow(db, bookId, r.ideaId, DAYS.d2).marks.AAPL).toMatchObject({ mark: 100, quality: 'carried_forward' });
+  });
+
+  it('the SPY ledger and a sector_fund comparison: a duplicated fund dividend is credited once on each', async () => {
+    const { db, bookId } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf({ comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: { ...QUOTES, XLK: 233.59 } });
+    const before = getIdea(db, bookId, r.ideaId);
+    const bookBefore = getBook(db, bookId);
+    const spyDiv = { type: 'cash_dividend', ticker: 'SPY', effectiveDate: DAYS.d2, amount: 1.83, source: 'eodhd_dividends' };
+    const xlkDiv = { type: 'cash_dividend', ticker: 'XLK', effectiveDate: DAYS.d2, amount: 0.42, source: 'eodhd_dividends' };
+    await closeOn(db, bookId, DAYS.d2, {
+      AAPL: 100.13, SPY: { price: 498.6, corporateActions: [spyDiv, { ...spyDiv }] }, XLK: { price: 233.2, corporateActions: [xlkDiv, { ...xlkDiv }, { ...xlkDiv }] },
+    });
+    const idea = getIdea(db, bookId, r.ideaId);
+    const spyIncome = roundUsd(before.spyLedger.holdings.SPY.shares * 1.83);
+    const xlkIncome = roundUsd(before.comparisonLedger.holdings.XLK.shares * 0.42);
+    expect(spyIncome).toBeGreaterThan(0);
+    expect(xlkIncome).toBeGreaterThan(0);
+    expect(idea.spyLedger).toMatchObject({ dividendsUsd: spyIncome, cash: roundUsd(before.spyLedger.cash + spyIncome), appliedActionIds: [`cash_dividend_SPY_${DAYS.d2}`] });
+    expect(idea.comparisonLedger).toMatchObject({ dividendsUsd: xlkIncome, cash: roundUsd(before.comparisonLedger.cash + xlkIncome), appliedActionIds: [`cash_dividend_XLK_${DAYS.d2}`] });
+    expect(receiptsFor(idea.spyLedger, `cash_dividend_SPY_${DAYS.d2}`)).toHaveLength(1);
+    expect(receiptsFor(idea.comparisonLedger, `cash_dividend_XLK_${DAYS.d2}`)).toHaveLength(1);
+    expect(idea.ledger.dividendsUsd).toBe(0);
+    expect(getBook(db, bookId).portfolio.cash).toBe(bookBefore.portfolio.cash); // the funds are paper beside the book
+  });
+
+  it('Astra\'s regression, through the REAL feed parser, daily layer and close-snapshot builder: one vendor dividend listed twice is credited once', async () => {
+    vi.stubGlobal('fetch', () => { throw new Error('NETWORK FORBIDDEN'); });
+    try {
+      const { db, bookId, bookRef } = await seedBook();
+      const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
+      const shares = getIdea(db, bookId, r.ideaId).ledger.holdings.AAPL.shares;
+      const date = DAYS.d2;
+      const raw = { date, unadjustedValue: 1 };
+      const fetchCorporateActions = async (sym) => fetchCorporateActionsEODHD(sym, {
+        from: DAYS.d1, to: DAYS.d3, apiKey: 'synthetic',
+        fetchImpl: async (url) => ({ ok: true, json: async () => (url.includes('/div/AAPL.') ? [raw, raw] : []) }),
+      });
+      const daily = await ensureDailySnapshot(db, {
+        date, candidateUniverse: [], coverageTickers: ['AAPL', 'SPY'], now: new Date('2026-11-17T15:00:00Z'),
+        getFundamentals: async () => ({ fundamentals: { sector: 'Technology', marketCap: 3e12 } }), fetchCorporateActions,
+      });
+      const dailyDoc = (await daily.ref.get()).data();
+      expect(dailyDoc.symbols.AAPL.corporateActions).toHaveLength(2); // the parser keeps the vendor's duplicate row
+      const built = await ensureUniverseSnapshot(db, {
+        tickKey: `${date}_close`, sessionDate: date, candidateUniverse: [], coverageTickers: ['AAPL', 'SPY'], minCandidateCapacity: 0, dailyDoc,
+        now: new Date('2026-11-17T21:20:00Z'),
+        fetchQuotes: async (syms) => Object.fromEntries(syms.map((s) => [s, { close: s === 'AAPL' ? 99 : 500, timestamp: Date.parse('2026-11-17T21:00:00Z') / 1000 }])),
+      });
+      const out = await closeIdeaBook(db, bookRef, { date, closeSnapshot: built.snapshot, now: new Date('2026-11-17T21:25:00Z') });
+      expect(out.closed).toBe(true);
+      const idea = getIdea(db, bookId, r.ideaId);
+      expect(idea.ledger.appliedActionIds).toEqual([DIV_ID]);
+      expect(idea.ledger.dividendsUsd).toBe(roundUsd(shares * 1));
+      expect(idea.ledger.dividendsUsd).toBe(199.94);
+      expect(idea.comparisonLedger.dividendsUsd).toBe(199.94);
+      expect(() => assertReconciled(getBook(db, bookId), [idea])).not.toThrow();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

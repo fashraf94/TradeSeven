@@ -156,6 +156,9 @@ function closeHoldingIdea(idea, { date, closeSnapshot, actionsBySymbol, sinceDat
   for (const [name, set] of [['idea', ownV.frozen], ['comparison', cmpV.frozen], ['spy', spyV.frozen]]) {
     for (const sym of set) alerts.push(`PRACTICE_FIELD_MARK_HELD_BACK ${idea.ideaId} ${name} ${sym} — unresolved or suspected corporate action; valued at its carried mark`);
   }
+  for (const [name, out] of [['idea', own], ['comparison', cmp], ['spy', spy]]) {
+    for (const c of out.conflicts) alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_CONFLICT ${idea.ideaId} ${name} ${c.actionId} — the feed lists it ${c.rows.length} times with different payloads; applied to no ledger`);
+  }
   return { nextIdea, row, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts };
 }
 
@@ -233,7 +236,8 @@ export async function closeIdeaBook(db, bookRef, { date, closeSnapshot, now = ne
       if (!out.row.fullQuality) allFullQuality = false;
       for (const sym of out.ownFrozen) frozenBookSymbols.add(sym);
       // Mirror the idea's OWN applied actions onto the book's positions and cash — an independent application of
-      // the same action, which the reconciliation below then compares with the idea's ledger.
+      // the same action, which the reconciliation below then compares with the idea's ledger. The list is the
+      // ledger's deduplicated one (Astra T1A-01): one application per action id, never one per feed row.
       for (const action of out.ownApplied) {
         const applied = applyCorporateAction({ positions, cash: bookCash }, action);
         if (!applied.ok) throw new PracticeFieldError('book_action_not_applied', { ideaId: idea.ideaId, actionId: action.actionId, reason: applied.reason });

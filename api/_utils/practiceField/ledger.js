@@ -25,11 +25,20 @@
 // at a carried mark, which an idea book never does — B-NOFILL); such a symbol is reported `unresolved`, valued at
 // its carried mark and marked not-full-quality until T1a-2's policy decides it.
 //
+// ONE ACTION, ONE APPLICATION, EVEN WHEN THE FEED LISTS IT TWICE (Astra T1A-01). The feed parser keeps duplicate
+// vendor rows and the engine's selector checks only the ids settled BEFORE the call, so two identical rows in one
+// window would both pay, or both multiply. Within one call every row is keyed by the engine's `deriveActionId`
+// (type, ticker, effective date): the first row of an id is processed and every later row of that id is skipped.
+// Two rows with one id and DIFFERENT payloads (an amount or a ratio — the id already fixes the rest) are a
+// conflict: neither is applied, the ledger records one `conflicting_action` receipt for the id, and the symbol is
+// valued at its carried mark, not full quality, exactly as R-9 holds an unsupported action. A conflict is not
+// settled (its id goes to neither list), so a feed that later presents one consistent row still applies it once.
+//
 // Pure: no store, no clock.
 
 import { markBook } from '../mandateValuation.js';
 import { snapshotExcluding } from '../mandateUniverseSnapshot.js';
-import { pendingActionsFor, applyCorporateAction, classifyOvernightGaps } from '../mandateCorporateActions.js';
+import { pendingActionsFor, applyCorporateAction, classifyOvernightGaps, deriveActionId } from '../mandateCorporateActions.js';
 import { roundUsd } from '../mandateRounding.js';
 import { MARK_QUALITY } from './constants.js';
 import { closeMarkQuality } from './marks.js';
@@ -79,13 +88,37 @@ export function mirrorLedger(kind, source) {
 const SHARE_BASIS_TYPES = new Set(['split', 'reverse_split', 'stock_distribution']);
 const APPLICABLE_TYPES = new Set([...SHARE_BASIS_TYPES, 'cash_dividend']);
 
+/** The receipt reason of an action id the feed listed twice with different payloads (Astra T1A-01). */
+export const CONFLICTING_ACTION = 'conflicting_action';
+
+/** What makes two feed rows of one id the same action. The id already fixes the type, ticker and effective date. */
+const actionPayloadOf = (row) => JSON.stringify([row.ratio ?? null, row.amount ?? null]);
+
 /**
- * Apply every corporate action this ledger is due on or before `date`, once.
+ * The ids, among this call's due rows, that the feed lists more than once with different payloads.
+ * @returns {Map<string, Array<object>>}  id → every row of it (in feed order)
+ */
+function conflictingActionIds(rows) {
+  const byId = new Map();
+  for (const row of rows) {
+    const id = deriveActionId(row);
+    if (!byId.has(id)) byId.set(id, []);
+    byId.get(id).push(row);
+  }
+  const conflicts = new Map();
+  for (const [id, group] of byId) if (new Set(group.map(actionPayloadOf)).size > 1) conflicts.set(id, group);
+  return conflicts;
+}
+
+/**
+ * Apply every corporate action this ledger is due on or before `date`, once — and once per id within this call
+ * (Astra T1A-01), however many rows of it the feed carries.
  *
  * @param {object} ledger
  * @param {object} actionsBySymbol  `{ SYM: [normalized actions] }` from the close snapshot (caActionsBySymbol)
  * @param {{ date: string }} opts   the session date being closed
  * @returns {{ ledger: object, applied: Array<object>, declined: Array<object>, unresolved: Set<string>,
+ *             conflicts: Array<object>,
  *             shareBasisChanges: Array<{ ticker: string, ratio: number, actionId: string }> }}
  */
 export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
@@ -98,8 +131,32 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
   const declined = [];
   const unresolved = new Set();
   const shareBasisChanges = [];
+  const conflicts = [];
+
+  // A conflict is applied to nobody and settled by nobody: one receipt per id per ledger, a carried mark.
+  const conflicting = conflictingActionIds([...pending, ...notEntitled, ...noEntitlementData, ...unrecognized]);
+  for (const [id, group] of conflicting) {
+    const first = group[0];
+    unresolved.add(first.ticker);
+    const receipt = {
+      actionId: id, type: first.type, ticker: first.ticker, effectiveDate: first.effectiveDate, applied: false, reason: CONFLICTING_ACTION,
+      rows: group.map((row) => ({ ratio: row.ratio ?? null, amount: row.amount ?? null, source: row.source ?? null })), seenOn: date,
+    };
+    conflicts.push(receipt);
+    if (!next.corporateActionReceipts.some((r) => r.actionId === id && r.reason === CONFLICTING_ACTION)) next.corporateActionReceipts.push(receipt);
+  }
+
+  // Every other id is processed at its FIRST row in this call; a repeated row of it is skipped.
+  const seen = new Set(conflicting.keys());
+  const firstOf = (row) => {
+    const id = deriveActionId(row);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  };
 
   for (const decl of notEntitled) {
+    if (!firstOf(decl)) continue;
     // Bought on or after the effective date: the price paid already reflects the action. Declined, durably.
     next.declinedActionIds.push(decl.actionId);
     const receipt = { actionId: decl.actionId, type: decl.type, ticker: decl.ticker, effectiveDate: decl.effectiveDate, applied: false, reason: 'not_entitled', seenOn: date };
@@ -109,6 +166,7 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
   for (const bad of [...noEntitlementData, ...unrecognized]) unresolved.add(bad.ticker);
 
   for (const action of pending) {
+    if (!firstOf(action)) continue;
     if (!APPLICABLE_TYPES.has(action.type)) { unresolved.add(action.ticker); continue; }
     const out = applyCorporateAction({ positions: next.holdings, cash: next.cash }, action);
     if (!out.ok) { unresolved.add(action.ticker); continue; }
@@ -128,7 +186,7 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
     applied.push({ ...action, receipt });
     if (SHARE_BASIS_TYPES.has(action.type)) shareBasisChanges.push({ ticker: action.ticker, ratio: Number(action.ratio), actionId: action.actionId });
   }
-  return { ledger: next, applied, declined, unresolved, shareBasisChanges };
+  return { ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges };
 }
 
 /**
