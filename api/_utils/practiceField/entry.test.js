@@ -438,8 +438,9 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     expect(problems(b, ideas)).toEqual(['basis_mismatch']);
     b = clone(book); b.portfolio.positions.AAPL.shares += 0.000001;
     expect(problems(b, ideas)).toEqual(['shares_mismatch']);
+    // A cent of dividends with no receipt for it: not conserved, and (refuter RF-A3) not receipted either.
     i = clone(ideas); i[0].ledger.dividendsUsd = 0.01;
-    expect(problems(book, i)).toEqual(['ledger_not_conserved']);
+    expect(problems(book, i)).toEqual(['dividends_not_receipted', 'ledger_not_conserved']);
   });
 
   it('B-OWNED — a position with no idea, with an unknown idea, or that its idea\'s ledger does not hold, is caught', async () => {
@@ -577,6 +578,8 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     return { db, bookId, bookRef, ideaId: r.ideaId, book: getBook(db, bookId), idea: getIdea(db, bookId, r.ideaId) };
   };
   const ideaRefOf = (db, bookId, ideaId) => db.collection('mandates').doc(bookId).collection('ideas').doc(ideaId);
+  /** A planted applied receipt carrying `usd` of income — so a planted dividend is receipted and another rule is isolated. */
+  const plantedIncome = (usd) => ({ actionId: 'cash_dividend_AAPL_2026-11-17', type: 'cash_dividend', ticker: 'AAPL', effectiveDate: '2026-11-17', applied: true, incomeUsd: usd, appliedOn: '2026-11-17' });
 
   it('Astra\'s fault A — the book\'s AAPL mark changed from $100 to $200 and its equity set to $120,000: a $30,000 admission is refused recon_failed and writes nothing', async () => {
     const s = await holding();
@@ -610,7 +613,7 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     const { db, bookId } = await seedBook();
     const a = await admitIdea(db, { bookId, contract: contractOf(), opId: 'a', nowIso: ADMIT_ISO });
     await db.collection('mandates').doc(bookId).collection('ideas').doc(a.ideaId).update({ 'ledger.dividendsUsd': 0.01 });
-    await refusedWritingNothing(db, () => releaseIdea(db, { bookId, ideaId: a.ideaId, nowIso: etIso(DAYS.d1, 13, 0) }), ['ledger_not_conserved']);
+    await refusedWritingNothing(db, () => releaseIdea(db, { bookId, ideaId: a.ideaId, nowIso: etIso(DAYS.d1, 13, 0) }), ['dividends_not_receipted', 'ledger_not_conserved']);
   });
 
   it('the entry\'s own one-name-one-idea check is reached by a stored accepted idea whose contract names a ticker another idea holds (no as-read rule reads an accepted idea\'s names): refused, nothing written (review FR-A6)', async () => {
@@ -703,8 +706,21 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     expect(problems(fund.book, [i])).toEqual(['comparison_ledger_missing']);
     // A same-stock comparison's dividends alone: the tie (cash, names, quantities, basis) holds; conservation does not.
     const same = await holding();
-    i = clone(same.idea); i.comparisonLedger.dividendsUsd = 0.01;
+    // (The cent comes with a receipt for it, so that conservation alone is what breaks.)
+    i = clone(same.idea); i.comparisonLedger.dividendsUsd = 0.01; i.comparisonLedger.corporateActionReceipts = [plantedIncome(0.01)];
     expect(problems(same.book, [i])).toEqual(['comparison_ledger_not_conserved']);
+    // Refuter RF-A3 — the two amounts conservation adds are accounted for, on every ledger: a cent in cash AND in
+    // dividends conserves, but no receipt carries that income; a cent in cash AND in realised P&L conserves, but this
+    // build has no sale.
+    for (const [ledgerOf, prefix] of [[(x) => x.ledger, ''], [(x) => x.comparisonLedger, 'comparison_'], [(x) => x.spyLedger, 'spy_']]) {
+      i = clone(fund.idea); let l = ledgerOf(i);
+      l.cash = Math.round((l.cash + 123.45) * 100) / 100; l.dividendsUsd = 123.45;
+      const extra = prefix === '' ? ['cash_mismatch', 'equity_mismatch'] : []; // the idea's own cash is also the book's
+      expect(problems(fund.book, [i]), `${prefix}dividends`).toEqual([...extra, `${prefix}dividends_not_receipted`].sort());
+      i = clone(fund.idea); l = ledgerOf(i);
+      l.cash = Math.round((l.cash + 123.45) * 100) / 100; l.realizedPnlUsd = 123.45;
+      expect(problems(fund.book, [i]), `${prefix}realized`).toEqual([...extra, `${prefix}realized_pnl_before_any_sale`].sort());
+    }
     // An accepted idea has neither paper ledger yet, and needs none.
     const { db, bookId } = await seedBook();
     const a = await admitIdea(db, { bookId, contract: contractOf(), opId: 'p', nowIso: ADMIT_ISO });
@@ -716,8 +732,9 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     const s = await holding();
     expect(s.idea.postEntryFillCount).toBe(0);
     // Cash and dividends moved together: conserved, but no longer tied.
+    // (Each fault below that moves the comparison's dividends carries a receipt for them, so the tie alone breaks.)
     let i = clone(s.idea);
-    i.comparisonLedger.cash = Math.round((i.comparisonLedger.cash + 0.01) * 100) / 100; i.comparisonLedger.dividendsUsd = 0.01;
+    i.comparisonLedger.cash = Math.round((i.comparisonLedger.cash + 0.01) * 100) / 100; i.comparisonLedger.dividendsUsd = 0.01; i.comparisonLedger.corporateActionReceipts = [plantedIncome(0.01)];
     expect(problems(s.book, [i])).toEqual(['comparison_not_tied']);
     // A millionth of a share more on the comparison: conserved (basis unchanged); not tied.
     i = clone(s.idea); i.comparisonLedger.holdings.AAPL.shares += 0.000001;
@@ -725,7 +742,7 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     // A cent more basis on the comparison, with a cent of dividends to account for it: conserved; not tied.
     i = clone(s.idea);
     i.comparisonLedger.holdings.AAPL.costBasisTotal = Math.round((i.comparisonLedger.holdings.AAPL.costBasisTotal + 0.01) * 100) / 100;
-    i.comparisonLedger.dividendsUsd = 0.01;
+    i.comparisonLedger.dividendsUsd = 0.01; i.comparisonLedger.corporateActionReceipts = [plantedIncome(0.01)];
     expect(problems(s.book, [i])).toEqual(['comparison_not_tied']);
     // The recorded mark is part of the tie (review FR-A3): a comparison mark of $200 against the idea's $100.
     i = clone(s.idea); i.comparisonLedger.holdings.AAPL.lastMark = 200;
@@ -733,7 +750,7 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     // This build has no fill after entry, so no count but 0 is possible: a count of 1 cannot switch the tie off
     // (review FR-A3 — Astra's fault B, with the count raised, would otherwise pass in silence).
     i = clone(s.idea); i.postEntryFillCount = 1;
-    i.comparisonLedger.cash = Math.round((i.comparisonLedger.cash + 123.45) * 100) / 100; i.comparisonLedger.dividendsUsd = 123.45;
+    i.comparisonLedger.cash = Math.round((i.comparisonLedger.cash + 123.45) * 100) / 100; i.comparisonLedger.dividendsUsd = 123.45; i.comparisonLedger.corporateActionReceipts = [plantedIncome(123.45)];
     expect(problems(s.book, [i])).toEqual(['post_entry_fill_count_invalid']);
     // A count that is not 0 never switches the tie off.
     for (const bad of [undefined, null, -1, 0.5, '0', NaN, 1, 2]) {

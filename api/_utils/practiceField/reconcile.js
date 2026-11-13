@@ -24,7 +24,9 @@
 //   8. CONSERVED, ALL THREE LEDGERS (Astra T1A-02) rule 4's identity holds for each idea's comparison ledger and
 //                its SPY ledger too — cash + cost basis = reserved capital + dividends + realised profit and loss —
 //                each with the idea's own reserved capital, positive holdings and every amount a real number. A
-//                holding idea has both; an `accepted` one has neither yet;
+//                holding idea has both; an `accepted` one has neither yet. On all three ledgers the two added terms
+//                are accounted for: dividends equal the income on the ledger's applied receipts, and realised P&L
+//                is 0 while this build has no sale (refuter RF-A3);
 //   9. TIED      (Astra T1A-02) a `same_stock_held` comparison, while its idea has made no fill after the basket
 //                entry (`postEntryFillCount === 0`, written at entry; T1a-2's first later fill increments it), has
 //                exactly the idea's cash, the same names, quantities, cost basis and recorded marks. This build has
@@ -50,6 +52,22 @@ import { markedEquityCents } from './ledger.js';
 const PAPER_LEDGERS = Object.freeze([['comparison', 'comparisonLedger'], ['spy', 'spyLedger']]);
 const LEDGER_AMOUNTS = Object.freeze(['cash', 'reservedCapitalUsd', 'dividendsUsd', 'realizedPnlUsd']);
 
+/**
+ * The two amounts conservation adds to a ledger's capital must themselves be accounted for (refuter RF-A3), or a
+ * cent planted in a ledger's cash together with the same cent in its dividends — or in its realised profit — would
+ * conserve and pass:
+ *   dividends    equal the sum of the income on the ledger's own APPLIED corporate-action receipts;
+ *   realised P&L is 0: this build has no sale (T1a-2's first sale lifts it, with its own receipt).
+ * `prefix` names the ledger in the rule ('' for the idea's own, 'comparison_' or 'spy_').
+ */
+function recordedAmountProblems(ledger, ideaId, prefix) {
+  const problems = [];
+  const receiptedCents = (ledger?.corporateActionReceipts || []).filter((r) => r?.applied === true).reduce((sum, r) => sum + toCents(r.incomeUsd || 0), 0);
+  if (toCents(ledger?.dividendsUsd) !== receiptedCents) problems.push({ rule: `${prefix}dividends_not_receipted`, ideaId, dividendsCents: toCents(ledger?.dividendsUsd), receiptedCents });
+  if (toCents(ledger?.realizedPnlUsd) !== 0) problems.push({ rule: `${prefix}realized_pnl_before_any_sale`, ideaId, realizedCents: toCents(ledger?.realizedPnlUsd) });
+  return problems;
+}
+
 /** Rule 8 for one paper ledger: real amounts, the idea's capital, positive holdings, conservation. */
 function paperLedgerProblems(idea, name, paper) {
   const problems = [];
@@ -69,6 +87,7 @@ function paperLedgerProblems(idea, name, paper) {
   }
   const expected = toCents(paper.reservedCapitalUsd) + toCents(paper.dividendsUsd) + toCents(paper.realizedPnlUsd);
   if (cashCents + basisCents !== expected) problems.push({ rule: `${name}_ledger_not_conserved`, ideaId, cashCents, basisCents, expected });
+  problems.push(...recordedAmountProblems(paper, ideaId, `${name}_`));
   return problems;
 }
 
@@ -155,6 +174,7 @@ export function assertReconciled(book, ideas) {
     if (cashCents + basisCents !== expected) {
       problems.push({ rule: 'ledger_not_conserved', ideaId: idea.ideaId, cashCents, basisCents, expected });
     }
+    problems.push(...recordedAmountProblems(ledger, idea.ideaId, ''));
     // 8. the comparison and SPY ledgers conserve too. A holding idea has both; an accepted one has neither yet.
     for (const [name, field] of PAPER_LEDGERS) {
       const paper = idea?.[field] ?? null;

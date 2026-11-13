@@ -94,12 +94,14 @@ const APPLICABLE_TYPES = new Set([...SHARE_BASIS_TYPES, 'cash_dividend']);
 export const CONFLICTING_ACTION = 'conflicting_action';
 
 /**
- * The `conflicting_action` receipts on a ledger whose action is not settled since — neither applied nor declined.
- * A row of the idea stays not full quality while any is open (close.js; review FR-A1).
+ * The `conflicting_action` receipts on a ledger whose action is not settled since — neither applied nor declined —
+ * and that the holding was entitled to. A row of the idea stays not full quality while any is open (close.js; review
+ * FR-A1). A conflict on an action the holding is NOT entitled to (bought on or after its effective date) owed
+ * nothing whatever its payload, so it is held back only while the feed presents it, never afterwards (refuter RF-A1).
  */
 export function unsettledConflicts(ledger) {
   const settled = new Set([...(ledger?.appliedActionIds || []), ...(ledger?.declinedActionIds || [])]);
-  return (ledger?.corporateActionReceipts || []).filter((r) => r?.reason === CONFLICTING_ACTION && !settled.has(r.actionId));
+  return (ledger?.corporateActionReceipts || []).filter((r) => r?.reason === CONFLICTING_ACTION && r.entitled !== false && !settled.has(r.actionId));
 }
 
 /** What makes two feed rows of one id the same action. The id already fixes the type, ticker and effective date. */
@@ -146,12 +148,15 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
 
   // A conflict is applied to nobody and settled by nobody: one receipt per id per ledger, a carried mark.
   const conflicting = conflictingActionIds([...pending, ...notEntitled, ...noEntitlementData, ...unrecognized]);
+  // The rows of one id share a type and an effective date, so they share an entitlement: one list holds them all.
+  const notEntitledIds = new Set(notEntitled.map((row) => deriveActionId(row)));
   for (const [id, group] of conflicting) {
     const first = group[0];
     // The holding's own key (upper case), whatever case a feed row carries — the id is normalised the same way.
     unresolved.add(String(first.ticker || '').trim().toUpperCase());
     const receipt = {
       actionId: id, type: first.type, ticker: first.ticker, effectiveDate: first.effectiveDate, applied: false, reason: CONFLICTING_ACTION,
+      entitled: !notEntitledIds.has(id),
       rows: group.map((row) => ({ ratio: row.ratio ?? null, amount: row.amount ?? null, source: row.source ?? null })), seenOn: date,
     };
     conflicts.push(receipt);
