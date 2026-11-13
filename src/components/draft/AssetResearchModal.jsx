@@ -279,6 +279,7 @@ const AssetResearchModal = ({
     setChartSymbol(currentAsset?.symbol);
     setHighlightedLevel(null);
     setSrOn(false);
+    setBattleOn(false); // BC2-4: a new stock's Chart view starts on its 1D / 1W pill, never on Battle
   }
   // BA-5: a hidden Bomb tab is never the open one.
   if (bombHidden && activeTab === 'baggerbomb') {
@@ -529,7 +530,8 @@ const AssetResearchModal = ({
     isOriginal: isOriginalAsset,
     live: shownAsset?.price,
     rawData: researchData.rawData,
-    timeframe: battleOn ? 'battle' : researchData.timeframe,
+    // 'battle' only while Battle SHOWS (PR 2 review B7): off the Chart view the sheet keeps reading the 1D series.
+    timeframe: battleOn && shellView === 'chart' ? 'battle' : researchData.timeframe,
     isCrypto,
     analysisActive: sheetActive,
   });
@@ -537,9 +539,8 @@ const AssetResearchModal = ({
   const battleSpec = sheetView?.battle ?? null;
   const battleShown = battleOn && !!battleSpec && shellView === 'chart';
   const battleSeries = useBattleSeries({ symbol: currentAsset?.symbol, spec: battleSpec, active: battleShown });
-  // A new stock starts its Chart view on its 1D / 1W pill, never on Battle.
-  const battleSymbolRef = useRef(currentAsset?.symbol);
-  if (battleSymbolRef.current !== currentAsset?.symbol) { battleSymbolRef.current = currentAsset?.symbol; if (battleOn) setBattleOn(false); }
+  // The chart unmounts while Battle's bars load: its S/R pill goes with it (§3; PR 2 review B4).
+  if (srOn && battleShown && battleSeries.status !== 'ready') setSrOn(false);
   // (Build C's drawer geometry — the shorter chart above the drawer, its mid snap and
   // footer — is replaced by the shell, R-28: the sheet now lives only in the shell.)
 
@@ -882,7 +883,8 @@ const AssetResearchModal = ({
                 {battleSeries.status === 'loading' || battleSeries.status === 'idle'
                   ? <div style={{ width: '90%', height: `${Math.max(60, shellChartH - 24)}px`, borderRadius: '8px', background: ST.surface }} />
                   : <span style={{ color: ST.ink2, fontSize: '14px', textAlign: 'center', padding: '0 16px' }}>{battleSeries.status === 'empty' ? SHELL_COPY.battleEmpty : SHELL_COPY.battleUnavailable}</span>}
-                {battleSeries.status !== 'loading' && battleSeries.status !== 'idle' && (
+                {(
+                  // Always a way back to the 1D / 1W pill, loading included (PR 2 review B2).
                   <div style={{ display: 'flex', gap: '8px' }}>
                     {battleSeries.status === 'error' && (
                       <button type="button" data-battle-retry onClick={battleSeries.retry} style={{ padding: '6px 16px', borderRadius: '6px', border: `1px solid ${ST.hair}`, background: ST.surface, color: ST.teal, fontWeight: 600, cursor: 'pointer' }}>

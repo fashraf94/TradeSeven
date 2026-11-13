@@ -331,8 +331,9 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     chart: analysisActive ? chart : null,
     // Which pins the chart draws on this timeframe (StockChart: dots and lines on 1D, 1W and Battle; none on 💣) — D12, BC2-3.
     pinsShown: { time: timeframe === '1D' || timeframe === '1W' || onBattle, price: timeframe === '1D' || timeframe === '1W' || onBattle },
-    // BC2-1: the Battle pill (null: the battle names no sessions — no pill).
-    battle: battleSpec,
+    // BC2-1: the Battle pill — on the stock the battle opened only (a name reached by navigation inside the
+    // modal has no record on the battle's sessions — PR 2 review B3); null: no pill.
+    battle: isOriginal ? battleSpec : null,
     budget: { left, limit: BATTLE_CHAT_BUDGET.limit },
     canAsk,
     answering,

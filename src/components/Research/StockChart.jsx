@@ -959,6 +959,22 @@ const StockChart = ({
     }
     sheetLinesRef.current = { series, lines: [] };
     if (!series || isBombView || !Array.isArray(priceLines) || priceLines.length === 0) return;
+    // Battle (BC2-1 / BC2-5): an intraday day's range can sit inside a rung step, so the entry line and
+    // the next rung each way would fall off the scale — Battle's scale takes them in (record and rung lines).
+    if (isBattleView) {
+      const inScale = priceLines.filter((l) => (l?.group === 'record' || l?.group === 'rung') && Number.isFinite(l.price) && l.price > 0).map((l) => l.price);
+      if (inScale.length) {
+        try {
+          series.applyOptions({
+            autoscaleInfoProvider: (base) => {
+              const r = base();
+              if (!r || !r.priceRange) return r;
+              return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, ...inScale), maxValue: Math.max(r.priceRange.maxValue, ...inScale) } };
+            },
+          });
+        } catch { /* the series is gone */ }
+      }
+    }
     for (const l of priceLines) {
       if (!l || typeof l.price !== 'number' || !Number.isFinite(l.price) || l.price <= 0) continue;
       if (l.group === 'idea' && !showIdea) continue;
@@ -968,7 +984,8 @@ const StockChart = ({
           ...(l.color ? { color: l.color } : {}),
           lineWidth: l.emphasis ? 2 : 1,
           lineStyle: l.group === 'record' ? 0 : 2, // record solid, idea / pin dashed
-          axisLabelVisible: l.emphasis === true,
+          // The open line's price tag (D8) — and Battle's rung lines always (their price is 💣's string, BC2-5).
+          axisLabelVisible: l.emphasis === true || l.group === 'rung',
           title: l.title || '',
         }));
       } catch (e) {

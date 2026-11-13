@@ -10,6 +10,11 @@
 // fell back to daily bars for (`_meta.actualTimeframe` not the bar size asked,
 // or bars with no time of day) is refused — daily bars would stack the record
 // on one candle again. A failed request is asked again only by a tap (retry).
+//
+// Each answer is kept BY ITS KEY (symbol|bar size) for the modal's life (PR 2
+// review B1): a stock reached again after another stock's Battle finds its own
+// bars, never a slot another request overwrote, and a late answer lands under
+// its own key only.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchHistoricalOHLCV } from '../../../services/eodhdAPI';
@@ -26,7 +31,7 @@ const intraday = (rows) => Array.isArray(rows) && rows.length > 0 && rows.every(
  */
 export default function useBattleSeries({ symbol, spec, active }) {
   const key = spec && typeof symbol === 'string' && symbol ? `${symbol}|${spec.barSize}` : null;
-  const [state, setState] = useState({ key: null, status: 'idle', raw: null, atMs: null });
+  const [answers, setAnswers] = useState({}); // key → { status: 'loading'|'ready'|'error', raw, atMs }
   const asked = useRef(new Set());
   const [attempt, setAttempt] = useState(0);
   const liveRef = useRef(true);
@@ -35,19 +40,21 @@ export default function useBattleSeries({ symbol, spec, active }) {
   useEffect(() => {
     if (!active || !key || asked.current.has(key)) return;
     asked.current.add(key);
-    setState({ key, status: 'loading', raw: null, atMs: null });
+    const settle = (a) => { if (liveRef.current) setAnswers((all) => ({ ...all, [key]: a })); };
+    settle({ status: 'loading', raw: null, atMs: null });
     fetchHistoricalOHLCV(symbol, spec.bars.timeframe, { days: spec.bars.days })
       .then((rows) => {
         const actual = rows?._meta?.actualTimeframe;
         if ((typeof actual === 'string' && actual !== spec.bars.timeframe) || !intraday(rows)) throw new Error('not_intraday');
-        if (liveRef.current) setState({ key, status: 'ready', raw: rows, atMs: Date.now() });
+        settle({ status: 'ready', raw: rows, atMs: Date.now() });
       })
-      .catch(() => { if (liveRef.current) setState({ key, status: 'error', raw: null, atMs: null }); });
+      .catch(() => settle({ status: 'error', raw: null, atMs: null }));
   }, [active, key, attempt]); // eslint-disable-line react-hooks/exhaustive-deps -- the key names the symbol and the bar size
 
+  const own = key ? answers[key] ?? null : null;
   const candles = useMemo(
-    () => (state.key === key && state.status === 'ready' ? battleCandlesOf(state.raw, { days: spec?.days ?? [], nowMs: state.atMs }) : []),
-    [state, key, spec?.days],
+    () => (own?.status === 'ready' ? battleCandlesOf(own.raw, { days: spec?.days ?? [], nowMs: own.atMs }) : []),
+    [own, spec?.days],
   );
   const retry = useCallback(() => {
     if (!key) return;
@@ -55,7 +62,7 @@ export default function useBattleSeries({ symbol, spec, active }) {
     setAttempt((n) => n + 1);
   }, [key]);
 
-  const status = state.key !== key ? (active && key ? 'loading' : 'idle')
-    : state.status === 'ready' && candles.length === 0 ? 'empty' : state.status;
+  const status = !own ? (active && key ? 'loading' : 'idle')
+    : own.status === 'ready' && candles.length === 0 ? 'empty' : own.status;
   return { status, candles, retry };
 }
