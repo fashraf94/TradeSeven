@@ -93,11 +93,11 @@ describe('the pins (Amendment A §A2)', () => {
     expect(REAL[key]).toEqual(wrapper);
   });
 
-  it.each([
-    ['method_text', () => REAL.exportJson.method_text],
-    ['the acceptance text', () => REAL.acceptance.text],
-    ['the register text', () => REAL.register.text],
-  ])('%s itself is LF with no byte-order mark (the files escape a CR as \\r; review KL1-6)', (_label, textOf) => {
+  it.each(KB_PACKAGES.flatMap((p) => [
+    [`${p.id} v${p.version}: method_text`, () => p.exportJson.method_text],
+    [`${p.id} v${p.version}: the acceptance text`, () => p.acceptance.text],
+    [`${p.id} v${p.version}: the register text`, () => p.register.text],
+  ]))('%s is LF with no byte-order mark (the files escape a CR as \\r; review KL1-6, every package)', (_label, textOf) => {
     const text = textOf();
     expect(text.includes('\r')).toBe(false);
     expect(text.includes('﻿')).toBe(false);
