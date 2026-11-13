@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardRequest.js imports src/data/situationQuestions.js, src/data/cardSlots.js,
 // src/utils/filmRoomMoments.js and src/utils/tapeSchedule.js; this import is the runtime guard that they stay Node-clean — never mocked.
-import { parseCreateBody, parseRetireBody, parseNominateBody, normalizeNote, noteLength, questionFor, momentOfDay, NOTE_MAX_CHARS, CONTROL_CHAR } from './cardRequest.js';
+import { parseCreateBody, parseRetireBody, parseNominateBody, parseParkBody, normalizeNote, noteLength, questionFor, momentOfDay, NOTE_MAX_CHARS, CONTROL_CHAR } from './cardRequest.js';
 import { CARD_SLOTS } from '../../../src/data/cardSlots.js';
 import { SITUATION_QUESTIONS } from '../../../src/data/situationQuestions.js';
 
@@ -78,6 +78,9 @@ describe('parseCreateBody / parseRetireBody — typed, every field checked', () 
     expect(code(() => parseNominateBody({ opId: 'n1', agentId: 'agent-1', entryId: 'op_1', expectedVersion: 0 }))).toBe('invalid_expected_version');
     expect(code(() => parseNominateBody({ opId: '__n__', agentId: 'agent-1', entryId: 'op_1', expectedVersion: 1 }))).toBe('invalid_op_id');
     expect(code(() => parseNominateBody({ opId: 'n1', agentId: 'agent-1', entryId: 'a/b', expectedVersion: 1 }))).toBe('invalid_entry_id');
+    // refinement R-C1-2: a park body, typed the same way
+    expect(parseParkBody({ opId: 'p1', agentId: 'agent-1', entryId: 'op_1', expectedVersion: 3 })).toEqual({ opId: 'p1', agentId: 'agent-1', entryId: 'op_1', expectedVersion: 3 });
+    expect(code(() => parseParkBody({ opId: 'p1', agentId: 'agent-1', entryId: 'op_1' }))).toBe('invalid_expected_version');
   });
 });
 

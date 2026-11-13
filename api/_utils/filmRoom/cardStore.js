@@ -429,6 +429,44 @@ export async function retireCard(db, { uid, agentId, entryId, opId, expectedVers
   });
 }
 
+const parkFingerprint = (agentId, entryId, expectedVersion) => canonicalContentHash({ kind: 'park', agentId, entryId, expectedVersion });
+
+/**
+ * Build C §3 (refinement R-C1-2) — PARK a tested card: the player's, from the receipt, once a result is shown. A
+ * compare-and-set on the version the caller saw: the entry must be `tested` with no `parkedAt` (409 illegal_transition
+ * otherwise — an open card, a parked one); its replay is the idempotent answer. Writes `parkedAt` and nothing else of
+ * the card: `version + 1` and a `stageHistory` row (`event: 'parked'`, the stage unchanged). A parked card counts open
+ * no more (isOpenStage). Shelving is not judged: parking moves no stage.
+ *
+ * @returns {Promise<{ idempotent: boolean, card: object }>}
+ */
+export async function parkCard(db, { uid, agentId, entryId, opId, expectedVersion, nowIso }) {
+  const opFingerprint = parkFingerprint(agentId, entryId, expectedVersion);
+  return db.runTransaction(async (tx) => {
+    ownedAgent(await tx.get(agentRefOf(db, agentId)), uid);
+    const ref = playRefOf(db, agentId, entryId);
+    const snap = await tx.get(ref);
+    if (!snap?.exists) throw fail(404, 'not_found');
+    const entry = typeof snap.data === 'function' ? snap.data() : snap.data;
+    if (!isObj(entry) || entry.ownerId !== uid) throw fail(403, 'forbidden');
+    const history = Array.isArray(entry.stageHistory) ? entry.stageHistory : [];
+    const replay = history.find((h) => h?.opId === opId);
+    if (replay) {
+      if (replay.opFingerprint === opFingerprint) return { idempotent: true, card: entry };
+      throw fail(409, 'op_conflict', { entryId });
+    }
+    if (expectedVersion !== entry.version) throw fail(409, 'version_conflict', { currentVersion: entry.version });
+    if (entry.stage !== 'tested' || entry.parkedAt) throw fail(409, 'illegal_transition', { stage: entry.stage });
+    const patch = {
+      parkedAt: nowIso,
+      stageHistory: [...history, { stage: entry.stage, event: 'parked', at: nowIso, by: BY_PLAYER, opId, opFingerprint }],
+      version: entry.version + 1,
+    };
+    tx.update(ref, patch);
+    return { idempotent: false, card: { ...entry, ...patch } };
+  });
+}
+
 // ── the server's transitions (Build C §3, §4): the Practice Field's one way in ──────────────────────────────────
 
 /**

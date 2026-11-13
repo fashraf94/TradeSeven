@@ -123,6 +123,9 @@ export const parseRetireBody = (body) => parseEntryOpBody(body);
 /** Build C §4 — a nominate request, typed: `{ opId, agentId, entryId, expectedVersion }` (the op id is the nomination's id). */
 export const parseNominateBody = (body) => parseEntryOpBody(body);
 
+/** Build C (refinement R-C1-2) — a park request, typed: `{ opId, agentId, entryId, expectedVersion }`. */
+export const parseParkBody = (body) => parseEntryOpBody(body);
+
 /**
  * The menu entry for a question of `situationId` — null when the id is not on
  * the menu for that situation, or when a sent `questionVersion` is not the

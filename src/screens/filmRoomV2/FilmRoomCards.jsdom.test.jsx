@@ -1770,3 +1770,68 @@ describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), 
     expect(m.buttons('Open the result')).toHaveLength(0);
   });
 });
+
+describe('C1 item 7 — "Park this card", on a tested receipt only (refinement R-C1-2; acceptance C-PARK)', () => {
+  const move = (to, payload, clock) => applyServerTransition(state.db, { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${to}`, nowIso: `${D2}T${clock}:00.000Z` });
+  const toTested = async () => {
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', reason: 'I will test it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
+    await move('testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' }, '20:55');
+  };
+  const reopen = async () => {
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+  };
+
+  it('a tested receipt holds "Park this card" (and Retire); parking writes parkedAt through the endpoint: the Parked line, the parked note, no buttons, under Parked, the open count down', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    // an Offer card at nominated, testing: no Park
+    expect(m.buttons('Park this card')).toHaveLength(0);
+    await toTested();
+    await reopen();
+    expect(m.buttons('Park this card')).toHaveLength(1);
+    expect(m.buttons('Retire')).toHaveLength(1);
+    expect(m.qa('[data-my-cards-group="active"] [data-my-card]').map((b) => b.getAttribute('data-my-card'))).toEqual(['op_1']);
+    m.click(m.buttons('Park this card')[0]);
+    await m.flush(10);
+    const bodies = cardBodies().filter((b) => b.op === 'park');
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({ op: 'park', agentId: AGENT, entryId: 'op_1' });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).parkedAt).toEqual(expect.any(String));
+    const receipt = m.q('[data-card-receipt="op_1"]');
+    expect(receipt.querySelector('[data-chain-line]').getAttribute('data-chain-line')).toBe('parked');
+    expect(receipt.querySelector('[data-card-next]').textContent).toBe('Parked: kept with its result, no longer counted as open.');
+    expect(m.buttons('Park this card')).toHaveLength(0);
+    expect(m.buttons('Retire')).toHaveLength(0);
+    expect(m.qa('[data-my-cards-group="parked"] [data-my-card]').map((b) => b.getAttribute('data-my-card'))).toEqual(['op_1']);
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(Number(m.q('[data-open-count] [data-num-aggregate="count(plays[] open)"]').getAttribute('data-agg-value'))).toBe(0);
+    await sweepAll(fx.tape2, 'parked');
+  });
+
+  it('no Park on any receipt but a tested one: a card, an equipped card, a retired one', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    expect(m.buttons('Park this card')).toHaveLength(0);
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(10);
+    expect(m.buttons('Park this card')).toHaveLength(0);
+  });
+
+  it('ledgerOf keeps the counter row\'s shelving when a newer write result replaces it (a shelved tested card parks), and a new entry reads unshelved', () => {
+    const row = { entryId: 'e1', version: 4, stage: 'tested', shelved: true };
+    expect(ledgerOf({ cards: [row] }, { entryId: 'e1', version: 5, stage: 'tested', parkedAt: 'x' })[0]).toMatchObject({ version: 5, parkedAt: 'x', shelved: true });
+    expect(ledgerOf({ cards: [{ ...row, shelved: false }] }, { entryId: 'e1', version: 5 })[0].shelved).toBe(false);
+    expect(ledgerOf({ cards: [] }, { entryId: 'e2', version: 1 })[0].shelved).toBe(false);
+  });
+});

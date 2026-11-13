@@ -822,3 +822,35 @@ describe('C1 item 3 — nominate and the Offer route, through the handler', () =
     expect(t.writeLog.filter((w) => w.path.startsWith(`agents/${CLONE}`))).toEqual([]);
   });
 });
+
+// ── Film Room C1 item 7 — park, through the handler (refinement R-C1-2) ─────────────────────────────────────────────
+const { applyServerTransition } = await import('../_utils/filmRoom/cardStore.js');
+describe('C1 item 7 — park, through the handler', () => {
+  afterEach(() => resetPracticeFieldSeam());
+  const park = (over = {}) => ({ op: 'park', opId: 'pk_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
+
+  it('an open card cannot be parked: 409 illegal_transition, nothing written (the mutant: park on an open card); a malformed body → 400', async () => {
+    expect((await post(create())).statusCode).toBe(200);
+    const before = t.writeLog.length;
+    expect(await post(park())).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition', stage: 'card' } });
+    expect(await post(park({ expectedVersion: 0 }))).toMatchObject({ statusCode: 400, body: { error: 'invalid_expected_version' } });
+    expect(t.writeLog.length).toBe(before);
+  });
+
+  it('a tested card parks: 200, parkedAt set, the counter\'s open count drops; a replay is idempotent; parked twice → 409', async () => {
+    setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: 'book-1', status: 'active' }) });
+    expect((await post(create({ route: 'offer' }))).statusCode).toBe(200);
+    const by = { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, by: 'practice_field' };
+    await applyServerTransition(t.db, { ...by, to: 'nomination', opId: 's1', payload: { bookId: 'book-1', nominationId: 'op_1', state: 'accepted', reason: 'Testing it.', consideredAt: '2026-09-25T20:00:00.000Z' } });
+    await applyServerTransition(t.db, { ...by, to: 'testing', opId: 's2', payload: { bookId: 'book-1', ideaId: 'i1' } });
+    const { entry } = await applyServerTransition(t.db, { ...by, to: 'tested', opId: 's3', payload: { ideaId: 'i1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' } });
+    const { buildCounter } = await import('../_utils/filmRoom/cardCounter.js');
+    expect((await buildCounter(t.db, { uid: OWNER, agentId: AGENT, nowMs: NIGHT })).open).toBe(1);
+    const res = await post(park({ expectedVersion: entry.version }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card).toMatchObject({ stage: 'tested', parkedAt: expect.any(String), version: entry.version + 1 });
+    expect((await buildCounter(t.db, { uid: OWNER, agentId: AGENT, nowMs: NIGHT })).open).toBe(0);
+    expect(await post(park({ expectedVersion: entry.version }))).toMatchObject({ statusCode: 200, body: { idempotent: true } });
+    expect(await post(park({ opId: 'pk_2', expectedVersion: entry.version + 1 }))).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition' } });
+  });
+});

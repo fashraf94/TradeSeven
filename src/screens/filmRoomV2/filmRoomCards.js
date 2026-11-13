@@ -152,7 +152,9 @@ export function ledgerOf(counter, extra = null) {
   if (!isObj(extra) || !extra.entryId) return cards;
   const at = cards.findIndex((c) => c.entryId === extra.entryId);
   if (at < 0) cards.unshift({ ...extra, shelved: false });
-  else if (newerThan(extra, cards[at])) cards[at] = { ...extra, shelved: false };
+  // Build C (park): a write on a card the counter already holds keeps the row's computed shelving — the store parks a
+  // shelved tested card (parking moves no stage), and no write ever changes an archetype
+  else if (newerThan(extra, cards[at])) cards[at] = { ...extra, shelved: cards[at].shelved === true };
   return cards;
 }
 
@@ -286,5 +288,14 @@ export function useFilmRoomCards({ battle, agentId, api = defaultCardsApi }) {
     return { ok: false, code };
   }, [api, agentId, refresh, keepResult]);
 
-  return { on, counter, refresh, create, retire, mintOpId };
+  /** Build C (refinement R-C1-2): park a tested card, from its receipt — the retire's pattern, one op id per receipt. */
+  const park = useCallback(async (card, opId = null) => {
+    const r = await api.postCard({ op: 'park', opId: opId || api.newOpId(), agentId, entryId: card.entryId, expectedVersion: card.version });
+    if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); keepResult(r.body.card); return { ok: true, card: r.body.card }; }
+    const code = r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'parkDefault');
+    if (code === 'version_conflict' || code === 'illegal_transition') await refresh();
+    return { ok: false, code };
+  }, [api, agentId, refresh, keepResult]);
+
+  return { on, counter, refresh, create, retire, park, mintOpId };
 }

@@ -11,6 +11,8 @@
 //     → 200 { idempotent, card }
 //   { op: 'nominate', opId, agentId, entryId, expectedVersion }      (Build C §4)
 //     → 200 { idempotent, card }
+//   { op: 'park', opId, agentId, entryId, expectedVersion }          (Build C §3; refinement R-C1-2)
+//     → 200 { idempotent, card }
 //
 // BUILD C (spec docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md §4): the
 // routes are Watch, Offer, Set; `drill` is refused 400 invalid_route. An Offer
@@ -64,8 +66,8 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { gateFilmRoomCardsRoute, sendCardError } from '../_utils/filmRoom/cardsGate.js';
-import { parseCreateBody, parseRetireBody, parseNominateBody, questionFor, momentOfDay } from '../_utils/filmRoom/cardRequest.js';
-import { createCard, replayCreate, retireCard, nominateCard, attributionAgentOf, CardRouteError, CARD_ROUTE_COPY, NOMINATING_ROUTE } from '../_utils/filmRoom/cardStore.js';
+import { parseCreateBody, parseRetireBody, parseNominateBody, parseParkBody, questionFor, momentOfDay } from '../_utils/filmRoom/cardRequest.js';
+import { createCard, replayCreate, retireCard, nominateCard, parkCard, attributionAgentOf, CardRouteError, CARD_ROUTE_COPY, NOMINATING_ROUTE } from '../_utils/filmRoom/cardStore.js';
 // Build C §4 (refinement R-C1-3): the owner's book, read once through the Practice Field's seam (no book until T1a)
 import { bookForOwner } from '../_utils/filmRoom/practiceFieldSeam.js';
 import { readBattle, tapeRef } from '../_utils/filmTape/tapeSources.js';
@@ -88,7 +90,7 @@ const COPY = Object.freeze({
   source_changed: 'This day\'s tape changed while the card was being filed. Nothing was filed; try again.',
   archetype_unknown: 'This day records no archetype, so no card can be filed from it.',
   question_not_on_menu: 'That question is not on the menu for this situation.',
-  invalid_op: 'op must be create, retire or nominate.',
+  invalid_op: 'op must be create, retire, nominate or park.',
 });
 
 /**
@@ -261,6 +263,17 @@ export default async function handler(req, res) {
       return res.status(200).json({ idempotent: out.idempotent, card: out.card });
     } catch (err) {
       return sendCardError(res, err, 'nominate');
+    }
+  }
+  if (body.op === 'park') {
+    try {
+      const parsed = parseParkBody(body);
+      // RK-1: parked under the named agent's attribution agent, where the card was filed
+      const agentId = await attributionAgentOf(db, parsed.agentId);
+      const out = await parkCard(db, { uid: user.uid, agentId, entryId: parsed.entryId, opId: parsed.opId, expectedVersion: parsed.expectedVersion, nowIso });
+      return res.status(200).json({ idempotent: out.idempotent, card: out.card });
+    } catch (err) {
+      return sendCardError(res, err, 'park');
     }
   }
   return res.status(400).json({ error: 'invalid_op', message: COPY.invalid_op });

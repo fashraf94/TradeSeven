@@ -15,7 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import { makeTapeDb } from '../filmTape/__fixtures__/tapeFirestore.js';
 import {
-  createCard, retireCard, readCards, applyServerTransition, isOpen, SERVER_TRANSITIONS, PLAYS_SUBCOLLECTION,
+  createCard, retireCard, readCards, applyServerTransition, parkCard, isOpen, SERVER_TRANSITIONS, PLAYS_SUBCOLLECTION,
   CARD_STAGE_VOCAB_VERSION, CARD_STAGES, OPEN_STAGES, isOpenStage,
 } from './cardStore.js';
 import * as stages from '../../../src/data/cardStages.js';
@@ -294,5 +294,63 @@ describe('Build C §4 — the store refuses an Offer card without an open book, 
     const t = fresh();
     expect(await code(createCard(t.db, { uid: UID, agentId: AGENT, opId: 'd1', payload: payload({ route: 'drill' }), nowIso: NOW, battleArchetype: 'momentum_chaser', book: { bookId: BOOK, status: 'active' } }))).toMatchObject({ status: 400, code: 'invalid_route' });
     expect(t.writeLog).toEqual([]);
+  });
+});
+
+describe('C1 item 7 — park (refinement R-C1-2; acceptance C-PARK)', () => {
+  const park = (t, over = {}) => parkCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'p1', nowIso: LATEST, ...over });
+
+  it('a tested card parks: parkedAt set, version + 1, a player row (event parked, the stage unchanged) — and nothing else of the card; it counts open no more', async () => {
+    const t = fresh();
+    const { entry } = await tested(t);
+    expect((await readCards(t.db, { uid: UID, agentId: AGENT })).open).toBe(1);
+    const r = await park(t, { expectedVersion: entry.version });
+    expect(r.idempotent).toBe(false);
+    const after = t.store.get(playPath('c1'));
+    expect(after).toEqual(r.card);
+    expect(after.parkedAt).toBe(LATEST);
+    expect(after.stage).toBe('tested');
+    expect(after.stageAt).toBe(entry.stageAt);
+    expect(after.version).toBe(entry.version + 1);
+    expect(after.stageHistory.at(-1)).toEqual({ stage: 'tested', event: 'parked', at: LATEST, by: 'player', opId: 'p1', opFingerprint: expect.any(String) });
+    const changed = Object.keys(after).filter((k) => JSON.stringify(after[k]) !== JSON.stringify(entry[k])).sort();
+    expect(changed).toEqual(['parkedAt', 'stageHistory', 'version']);
+    expect((await readCards(t.db, { uid: UID, agentId: AGENT })).open).toBe(0);
+  });
+
+  it('idempotent by op id; another request under it → op_conflict; it cannot be parked twice (409 illegal_transition)', async () => {
+    const t = fresh();
+    const { entry } = await tested(t);
+    const a = await park(t, { expectedVersion: entry.version });
+    const writes = playWrites(t).length;
+    expect(await park(t, { expectedVersion: entry.version })).toEqual({ idempotent: true, card: a.card });
+    expect(playWrites(t).length).toBe(writes);
+    expect(await code(park(t, { expectedVersion: entry.version + 1 }))).toMatchObject({ status: 409, code: 'op_conflict' });
+    expect(await code(park(t, { opId: 'p2', expectedVersion: entry.version + 1 }))).toMatchObject({ status: 409, code: 'illegal_transition', extra: { stage: 'tested' } });
+    expect(playWrites(t).length).toBe(writes);
+  });
+
+  it('an open card cannot be parked (the mutant: park on an open card) — card, nominated, testing → 409 illegal_transition; a stale version → version_conflict; another owner → 403; nothing written', async () => {
+    const t = fresh();
+    await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c1', payload: payload(), nowIso: NOW, battleArchetype: 'momentum_chaser' });
+    expect(await code(park(t, { expectedVersion: 1 }))).toMatchObject({ status: 409, code: 'illegal_transition', extra: { stage: 'card' } });
+    const u = fresh();
+    const at = await nominated(u);
+    expect(await code(park(u, { expectedVersion: at.version }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'nominated' } });
+    await move(u, { to: 'nomination', opId: 's1', payload: NOMINATION });
+    const { entry } = await move(u, { to: 'testing', opId: 's2', payload: IDEA });
+    expect(await code(park(u, { expectedVersion: entry.version }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'testing' } });
+    expect(await code(park(u, { expectedVersion: 1 }))).toMatchObject({ code: 'version_conflict' });
+    expect(await code(park(u, { uid: 'intruder', expectedVersion: entry.version }))).toMatchObject({ status: 403, code: 'forbidden' });
+    expect(t.writeLog.filter((w) => w.op === 'tx.update')).toEqual([]);
+  });
+
+  it('a shelved tested card parks (parking moves no stage); it stays shelved', async () => {
+    const t = fresh();
+    const { entry } = await tested(t);
+    t.store.set(`agents/${AGENT}`, agentDoc({ archetype: 'guardian' }));
+    await park(t, { expectedVersion: entry.version });
+    const read = await readCards(t.db, { uid: UID, agentId: AGENT });
+    expect(read.cards[0]).toMatchObject({ entryId: 'c1', shelved: true, parkedAt: LATEST });
   });
 });

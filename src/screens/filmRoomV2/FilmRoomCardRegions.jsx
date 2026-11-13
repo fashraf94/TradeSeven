@@ -52,7 +52,7 @@
 // (review L3-10). Nothing here says or implies that the agent learns from,
 // reads or follows a card (RG-5).
 
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { SITUATIONS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { CARD_SLOTS } from '../../data/cardSlots';
@@ -287,6 +287,7 @@ function CardFacts({ card }) {
 function nextOf(card) {
   if (card.stage === 'retired') return T.stateNotes.retired;
   if (card.shelved) return T.stateNotes.shelved;
+  if (card.parkedAt) return T.stateNotes.parked;
   const route = routeOf(card.route);
   if (card.stage === 'card') return Object.prototype.hasOwnProperty.call(T.routeNotes, route) ? T.routeNotes[route] : null;
   // Build C §5: a QUEUED nomination is what the Offer route said would happen; once the agent has answered, the chain
@@ -377,8 +378,10 @@ function Chain({ card, ledger, day, onOpenBook }) {
  * @param {Function}    [props.onOpenForge] App's Forge door (hub S5), `({ area })` — Set's link to the tempo dial
  * @param {Function}    [props.onOpenBook]  Build C §5: the book's door — the chain's idea and result links render only
  *                                     beside it; C1 hands none (no book screen exists yet)
+ * @param {Function}    [props.onPark]  Build C (refinement R-C1-2): park a tested card — "Park this card", the receipt's one
+ *                                     new button, on a tested card's receipt only
  */
-export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = null, onOpenForge = null, onOpenBook = null }) {
+export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark = null, tape = null, onOpenForge = null, onOpenBook = null }) {
   const data = counter?.status === 'ready' || counter?.data ? counter.data : null;
   const cards = ledgerOf(data, card);
   const live = cards.find((c) => c.entryId === card.entryId) ?? card;
@@ -394,6 +397,19 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = 
     setBusy(false);
     if (!r?.ok) setRefusal(T.refusals[r?.code] ?? T.refusals.retireDefault);
   };
+  // Build C (R-C1-2): the park's op id is minted ONCE per receipt, at the first tap (review L4-9's rule; minted late so
+  // a receipt that never parks mints nothing)
+  const parkOp = useRef(null);
+  const [parking, setParking] = useState(false);
+  const park = async () => {
+    if (!parkOp.current) parkOp.current = mintOpId();
+    setParking(true);
+    setRefusal(null);
+    const r = await onPark(live, parkOp.current);
+    setParking(false);
+    if (!r?.ok) setRefusal(T.refusals[r?.code] ?? T.refusals.parkDefault);
+  };
+  const canPark = typeof onPark === 'function' && live.stage === 'tested' && !live.parkedAt;
   const next = nextOf(live);
   // the store retires an OPEN card (Build C §3: the one export's predicate), never a shelved one
   const canRetire = isOpenStage(live) && !live.shelved;
@@ -420,7 +436,12 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = 
           <TextButton onClick={() => onOpenForge({ area: FORGE_CHARACTER_AREA })}>{T.setTempoLink}</TextButton>
         </span>
       ) : null}
-      {canRetire ? <div style={{ display: 'flex' }}><PrimaryButton onClick={retire} disabled={busy}>{busy ? T.retiring : T.retire}</PrimaryButton></div> : null}
+      {canPark || canRetire ? (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {canPark ? <PrimaryButton onClick={park} disabled={parking || busy}>{parking ? T.parking : T.park}</PrimaryButton> : null}
+          {canRetire ? <PrimaryButton onClick={retire} disabled={busy || parking}>{busy ? T.retiring : T.retire}</PrimaryButton> : null}
+        </div>
+      ) : null}
       {refusal ? <span data-card-refusal="" role="alert" style={{ ...foot, color: C.copper }}>{refusal}</span> : null}
     </section>
   );

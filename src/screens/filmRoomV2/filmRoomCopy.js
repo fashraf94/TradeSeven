@@ -370,6 +370,7 @@ export const FILM_ROOM_COPY = Object.freeze({
       calendar_unavailable: "The offer's expiry could not be placed on the market calendar. Nothing was filed.",
       default: 'The card could not be filed.',
       retireDefault: 'The card could not be retired.',
+      parkDefault: 'The card could not be parked.',
     },
     filedCard: 'The filed card',
     situation: 'Situation',
@@ -382,7 +383,12 @@ export const FILM_ROOM_COPY = Object.freeze({
     stateNotes: {
       retired: 'Retired: nothing happens next.',
       shelved: 'Shelved: nothing happens while the agent is on another archetype.',
+      // Build C §3: a tested card the player parked — kept with its result, no longer counted as open
+      parked: 'Parked: kept with its result, no longer counted as open.',
     },
+    // Build C §5: the receipt's one new button, on a tested card's receipt only
+    park: 'Park this card',
+    parking: 'Parking…',
     // Build C §5 — THE CHAIN: the receipt's view of one card, newest state first, each state one line with its time, in
     // the Film Room's own voice (facts only, BC-1); the agent's words beside them are quotations. A result's words and
     // an offer's state are the record's own (Rec), never rewritten; an answer or a stage the copy has no line for is
