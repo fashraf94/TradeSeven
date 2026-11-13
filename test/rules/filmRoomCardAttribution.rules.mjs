@@ -27,7 +27,7 @@
 // Only the Admin handle (the emulator's), the security and auth middleware and
 // the three flags are doubled.
 
-import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
+import { beforeAll, afterAll, beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 
 // The armory flip (Nov 7, 2026). The per-game flag is held here, not read live, so a rollback reddens only its pin (the
 // default suite's api/film-room/card.test.js pattern). The row in KILL_SWITCH_ROWS runs with it held OFF and keeps
@@ -55,6 +55,7 @@ const { getFirestore } = await import('firebase-admin/firestore');
 const { default: handler } = await import('../../api/film-room/card.js');
 const { buildCounter } = await import('../../api/_utils/filmRoom/cardCounter.js');
 const { createCard, CARD_ROUTE_COPY } = await import('../../api/_utils/filmRoom/cardStore.js');
+const { setPracticeFieldSeam, resetPracticeFieldSeam } = await import('../../api/_utils/filmRoom/practiceFieldSeam.js');
 const { writeTapeDay } = await import('../../api/_utils/filmTape/writeTapeDay.js');
 const { makeTapeDb } = await import('../../api/_utils/filmTape/__fixtures__/tapeFirestore.js');
 const { seedDay } = await import('../../api/_utils/filmTape/__fixtures__/tapeFixtures.js');
@@ -300,5 +301,72 @@ describe('RK-1 on the real emulator — the counter answers for the attribution 
       await agentDoc(CLONE, clone);
       await expect(buildCounter(db, { uid: UID, agentId: CLONE, nowMs: COUNTER_NOW })).rejects.toMatchObject({ cardRoute: true, status: 503, code: 'attribution_unavailable', extra: { agentId: CLONE } });
     }
+  });
+});
+
+// ── Film Room C1 (Build C spec V1 §4; acceptance C-NOMINATE, C-NOBOOK, C-OWNER) — nominate on the real emulator ──────
+// The Practice Field's bookForOwner is injected through the seam (T1a's helper does not exist yet): a REAL read of a
+// synthetic book document — `mandates/{bookId}` with the owner's `userId`, `kind: 'idea_book'`, the manager agent
+// and its status — so the card endpoint's one transaction writes the nomination record into a real book path.
+describe('C1 on the real emulator — nominate and the Offer route, through an injected seam against a synthetic book', () => {
+  const BOOK_ID = `c1-book-${RUN}`;
+  const book = (over = {}) => ({ userId: UID, kind: 'idea_book', managerAgentId: PARENT, status: 'active', ...over });
+  const asked = [];
+  beforeEach(async () => {
+    asked.length = 0;
+    await db.doc(`mandates/${BOOK_ID}`).set(book());
+    setPracticeFieldSeam({
+      bookForOwner: async (handle, { uid, attributionAgentId }) => {
+        asked.push(attributionAgentId);
+        const snap = await handle.collection('mandates').where('userId', '==', uid).where('kind', '==', 'idea_book').where('managerAgentId', '==', attributionAgentId).limit(1).get();
+        const d = snap.docs[0];
+        return d ? { bookId: d.id, status: d.data().status } : null;
+      },
+    });
+  });
+  afterEach(() => resetPracticeFieldSeam());
+  afterAll(async () => { if (db) await db.recursiveDelete(db.doc(`mandates/${BOOK_ID}`)); });
+  const nominationAt = async (id) => (await db.doc(`mandates/${BOOK_ID}/nominations/${id}`).get());
+
+  it('C-OWNER: a casual clone\'s battle files an Offer card under the PARENT, in the parent\'s book — the entry at nominated and its record, one transaction; the seam asked for the parent, never the clone', async () => {
+    const b = await battleFor('c1-offer', CLONE);
+    const res = await post(create(b, CLONE, { route: 'offer' }));
+    expect(res.statusCode).toBe(200);
+    const id = res.body.card.entryId;
+    expect(res.body.card).toMatchObject({ agentId: PARENT, stage: 'nominated', nomination: { bookId: BOOK_ID, nominationId: id, state: 'queued' }, stageVocabVersion: 2 });
+    const rec = await nominationAt(id);
+    expect(rec.exists).toBe(true);
+    expect(rec.data()).toMatchObject({ state: 'queued', source: { kind: 'film_room_card', entryId: id, situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1 } });
+    expect(asked).toEqual([PARENT]);
+    expect(await plays(CLONE)).toEqual([]);
+  });
+
+  it('C-NOMINATE: a card-stage entry nominates — the record and the entry together; a replay answers the same; a second nominate → 409 illegal_transition', async () => {
+    const b = await battleFor('c1-nominate', PARENT);
+    const filed = await post(create(b, PARENT));
+    const id = filed.body.card.entryId;
+    const body = { op: 'nominate', opId: `nom_${RUN}`, agentId: PARENT, entryId: id, expectedVersion: 1 };
+    const res = await post(body);
+    expect(res.statusCode).toBe(200);
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'nominated', version: 2, nomination: { bookId: BOOK_ID, nominationId: `nom_${RUN}`, state: 'queued' } });
+    expect((await nominationAt(`nom_${RUN}`)).data()).toMatchObject({ state: 'queued', source: { entryId: id } });
+    expect(await post(body)).toMatchObject({ statusCode: 200, body: { idempotent: true } });
+    expect(await post({ ...body, opId: `nom2_${RUN}`, expectedVersion: 2 })).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition' } });
+    expect((await nominationAt(`nom2_${RUN}`)).exists).toBe(false);
+  });
+
+  it('C-NOBOOK: a book not active, and no book at all (the seam\'s default) → 409 book_not_open, the body naming no book; nothing written under plays or the book', async () => {
+    const b = await battleFor('c1-nobook', PARENT);
+    // the book's nominations as the rows above left them: this row adds none
+    const records = (await db.collection(`mandates/${BOOK_ID}/nominations`).get()).size;
+    await db.doc(`mandates/${BOOK_ID}`).set(book({ status: 'paused' }));
+    const offer = await post(create(b, PARENT, { route: 'offer' }));
+    expect(offer.statusCode).toBe(409);
+    expect(offer.body).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+    resetPracticeFieldSeam();
+    const again = await post(create(b, PARENT, { route: 'offer' }));
+    expect(again.body.error).toBe('book_not_open');
+    expect(await plays(PARENT)).toEqual([]);
+    expect((await db.collection(`mandates/${BOOK_ID}/nominations`).get()).size).toBe(records);
   });
 });
