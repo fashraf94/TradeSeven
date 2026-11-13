@@ -26,6 +26,10 @@
 // that dropped out of the rankings keeps its last document. A reading older
 // than ATR_READING_MAX_AGE_MS, or with no time on it, is NO reading.
 //
+// The firebase import carries its .js extension: packs.js (the research sheet, which the server
+// re-runs in api/_utils/researchAsk.js) reads atrReadingOf, so this module is in the api/ graph,
+// where Node ESM needs the extension (archetypeRegistry.test.js guard).
+//
 // Never throws: anything but a fresh, finite, positive atrPercent is NO
 // reading, and the preview then says "No ladder yet" — never the 2.5 default.
 
@@ -67,7 +71,7 @@ export function atrReadingOf(data, nowMs = Date.now()) {
  */
 export async function readAtrReading(symbol, nowMs = Date.now()) {
   try {
-    const [{ db }, fs] = await Promise.all([import('../../../firebase/config'), import('firebase/firestore')]);
+    const [{ db }, fs] = await Promise.all([import('../../../firebase/config.js'), import('firebase/firestore')]);
     const snap = await fs.getDoc(fs.doc(db, 'stockTechnicalScores', symbol));
     const r = atrReadingOf(snap.exists() ? snap.data() : null, nowMs);
     return { status: r.pct === null ? 'none' : 'ready', ...r };

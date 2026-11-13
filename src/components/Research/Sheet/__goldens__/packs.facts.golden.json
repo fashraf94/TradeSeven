@@ -93,6 +93,41 @@
     "rankings_doc"
    ],
    [
+    "book_rank",
+    "AAPL is +1.3 rungs from entry, your only stock on the ladder · at the Wed 12:45 check · not on the ladder: ETH",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "quiet_ticks",
+    "AAPL: 1 quiet check in a row; Trend Follower counts a name stalled at 5",
+    "its stall counter",
+    "verified",
+    null
+   ],
+   [
+    "bench_alternative",
+    "Best on the bench by Trend Follower’s ranking: MSFT 72 (#3 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "lock_now",
+    "Swapped out at the Wed 12:45 check’s $103.40, it would lock +68: +53 from the gain, +15 banked",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rung_down",
+    "$2.45 (2.37%) down to entry at $100.75 · $4.47 (4.33%) down to the next downside rung, Bust (−10) at $98.73",
+    "live price vs entry and the next downside rung",
+    "unverified",
+    "live_quote"
+   ],
+   [
     "idea",
     "This game’s idea: “Big caps with clean balance sheets keep leading while rates hold; buy the leaders on quiet pullbacks.”",
     "this game’s idea",
@@ -125,7 +160,21 @@
    "better_than_stalled": [
     "incumbent",
     "stalled",
-    "rank_scores",
+    "book_rank",
+    "idea",
+    "told_it"
+   ],
+   "weakest_spot": [
+    "move_since_entry",
+    "bench_alternative",
+    "book_rank",
+    "idea",
+    "told_it"
+   ],
+   "take_profit": [
+    "lock_now",
+    "rung_distance",
+    "rung_down",
     "idea",
     "told_it"
    ]
@@ -225,6 +274,41 @@
     "rankings_doc"
    ],
    [
+    "book_rank",
+    "AAPL is +1.3 rungs from entry, your only stock on the ladder · at the Wed 12:45 check · not on the ladder: ETH",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "quiet_ticks",
+    "AAPL: 1 quiet check in a row; Contrarian counts a name stalled at 6",
+    "its stall counter",
+    "verified",
+    null
+   ],
+   [
+    "bench_alternative",
+    "Best on the bench by Contrarian’s ranking: MSFT 45 (#2 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "lock_now",
+    "Swapped out at the Wed 12:45 check’s $103.40, it would lock +68: +53 from the gain, +15 banked",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rung_down",
+    "$2.45 (2.37%) down to entry at $100.75 · $4.47 (4.33%) down to the next downside rung, Bust (−10) at $98.73",
+    "live price vs entry and the next downside rung",
+    "unverified",
+    "live_quote"
+   ],
+   [
     "idea",
     "This game’s idea: “Big caps with clean balance sheets keep leading while rates hold; buy the leaders on quiet pullbacks.”",
     "this game’s idea",
@@ -256,8 +340,22 @@
    ],
    "better_than_stalled": [
     "rank_scores",
-    "rung_compare",
+    "book_rank",
     "incumbent",
+    "idea",
+    "told_it"
+   ],
+   "weakest_spot": [
+    "bench_alternative",
+    "check_read",
+    "book_rank",
+    "idea",
+    "told_it"
+   ],
+   "take_profit": [
+    "rung_down",
+    "lock_now",
+    "rung_distance",
     "idea",
     "told_it"
    ]
@@ -357,6 +455,41 @@
     "rankings_doc"
    ],
    [
+    "book_rank",
+    "AAPL is +1.3 rungs from entry, your only stock on the ladder · at the Wed 12:45 check · not on the ladder: ETH",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "quiet_ticks",
+    "AAPL: 1 quiet check in a row; Speculator counts a name stalled at 3",
+    "its stall counter",
+    "verified",
+    null
+   ],
+   [
+    "bench_alternative",
+    "Best on the bench by Speculator’s ranking: MSFT 58 (#3 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "lock_now",
+    "Swapped out at the Wed 12:45 check’s $103.40, it would lock +68: +53 from the gain, +15 banked",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rung_down",
+    "$2.45 (2.37%) down to entry at $100.75 · $4.47 (4.33%) down to the next downside rung, Bust (−10) at $98.73",
+    "live price vs entry and the next downside rung",
+    "unverified",
+    "live_quote"
+   ],
+   [
     "idea",
     "This game’s idea: “Big caps with clean balance sheets keep leading while rates hold; buy the leaders on quiet pullbacks.”",
     "this game’s idea",
@@ -388,8 +521,22 @@
    ],
    "better_than_stalled": [
     "rank_scores",
-    "rung_compare",
+    "book_rank",
     "incumbent",
+    "idea",
+    "told_it"
+   ],
+   "weakest_spot": [
+    "check_read",
+    "bench_alternative",
+    "book_rank",
+    "idea",
+    "told_it"
+   ],
+   "take_profit": [
+    "lock_now",
+    "rung_distance",
+    "rung_down",
     "idea",
     "told_it"
    ]
@@ -468,13 +615,6 @@
     "from_cockpit"
    ],
    [
-    "stalled",
-    "Capital Preserver doesn’t rotate out of quiet names",
-    "Capital Preserver’s config",
-    "verified",
-    null
-   ],
-   [
     "rung_compare",
     "At the last check: AAPL $0.38 from +30",
     "the battle record",
@@ -487,6 +627,41 @@
     "the platform rankings",
     "unverified",
     "rankings_doc"
+   ],
+   [
+    "book_rank",
+    "AAPL is +1.3 rungs from entry, your only stock on the ladder · at the Wed 12:45 check · not on the ladder: ETH",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "quiet_ticks",
+    "Capital Preserver doesn’t rotate out of quiet names",
+    "Capital Preserver’s config",
+    "verified",
+    null
+   ],
+   [
+    "bench_alternative",
+    "Best on the bench by Capital Preserver’s ranking: MSFT 74 (#1 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "lock_now",
+    "Swapped out at the Wed 12:45 check’s $103.40, it would lock +68: +53 from the gain, +15 banked",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rung_down",
+    "$2.45 (2.37%) down to entry at $100.75 · $4.47 (4.33%) down to the next downside rung, Bust (−10) at $98.73",
+    "live price vs entry and the next downside rung",
+    "unverified",
+    "live_quote"
    ],
    [
     "idea",
@@ -521,7 +696,21 @@
    "better_than_stalled": [
     "rank_scores",
     "incumbent",
-    "stalled",
+    "book_rank",
+    "idea",
+    "told_it"
+   ],
+   "weakest_spot": [
+    "bench_alternative",
+    "move_since_entry",
+    "book_rank",
+    "idea",
+    "told_it"
+   ],
+   "take_profit": [
+    "rung_down",
+    "lock_now",
+    "rung_distance",
     "idea",
     "told_it"
    ]
@@ -621,6 +810,41 @@
     "rankings_doc"
    ],
    [
+    "book_rank",
+    "AAPL is +1.3 rungs from entry, your only stock on the ladder · at the Wed 12:45 check · not on the ladder: ETH",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "quiet_ticks",
+    "AAPL: 1 quiet check in a row; Diversifier counts a name stalled at 6",
+    "its stall counter",
+    "verified",
+    null
+   ],
+   [
+    "bench_alternative",
+    "Best on the bench by Diversifier’s ranking: MSFT 68 (#2 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "lock_now",
+    "Swapped out at the Wed 12:45 check’s $103.40, it would lock +68: +53 from the gain, +15 banked",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rung_down",
+    "$2.45 (2.37%) down to entry at $100.75 · $4.47 (4.33%) down to the next downside rung, Bust (−10) at $98.73",
+    "live price vs entry and the next downside rung",
+    "unverified",
+    "live_quote"
+   ],
+   [
     "idea",
     "This game’s idea: “Big caps with clean balance sheets keep leading while rates hold; buy the leaders on quiet pullbacks.”",
     "this game’s idea",
@@ -652,8 +876,22 @@
    ],
    "better_than_stalled": [
     "rank_scores",
+    "book_rank",
     "incumbent",
-    "stalled",
+    "idea",
+    "told_it"
+   ],
+   "weakest_spot": [
+    "bench_alternative",
+    "book_rank",
+    "move_since_entry",
+    "idea",
+    "told_it"
+   ],
+   "take_profit": [
+    "rung_down",
+    "lock_now",
+    "rung_distance",
     "idea",
     "told_it"
    ]
@@ -753,6 +991,41 @@
     "rankings_doc"
    ],
    [
+    "book_rank",
+    "AAPL is +1.3 rungs from entry, your only stock on the ladder · at the Wed 12:45 check · not on the ladder: ETH",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "quiet_ticks",
+    "AAPL: 1 quiet check in a row; Fundamental Investor counts a name stalled at 6",
+    "its stall counter",
+    "verified",
+    null
+   ],
+   [
+    "bench_alternative",
+    "Best on the bench by Fundamental Investor’s ranking: MSFT 81 (#1 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
+    "the platform rankings",
+    "unverified",
+    "rankings_doc"
+   ],
+   [
+    "lock_now",
+    "Swapped out at the Wed 12:45 check’s $103.40, it would lock +68: +53 from the gain, +15 banked",
+    "the Wed 12:45 check",
+    "verified",
+    null
+   ],
+   [
+    "rung_down",
+    "$2.45 (2.37%) down to entry at $100.75 · $4.47 (4.33%) down to the next downside rung, Bust (−10) at $98.73",
+    "live price vs entry and the next downside rung",
+    "unverified",
+    "live_quote"
+   ],
+   [
     "idea",
     "This game’s idea: “Big caps with clean balance sheets keep leading while rates hold; buy the leaders on quiet pullbacks.”",
     "this game’s idea",
@@ -785,7 +1058,21 @@
    "better_than_stalled": [
     "rank_scores",
     "incumbent",
-    "stalled",
+    "book_rank",
+    "idea",
+    "told_it"
+   ],
+   "weakest_spot": [
+    "bench_alternative",
+    "move_since_entry",
+    "book_rank",
+    "idea",
+    "told_it"
+   ],
+   "take_profit": [
+    "rung_down",
+    "lock_now",
+    "rung_distance",
     "idea",
     "told_it"
    ]

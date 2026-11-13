@@ -6,6 +6,9 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
 import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
 
+/** The cache tier of the research sheet's Battle chart 5-minute bars (memory, CDN): five minutes. */
+const BATTLE_BARS_TIER = Object.freeze({ sMaxAge: 300, staleWhileRevalidate: 60, memoryTTL: 300 });
+
 // Timeframe configuration
 const TIMEFRAME_CONFIG = {
   '1m': {
@@ -13,6 +16,14 @@ const TIMEFRAME_CONFIG = {
     interval: '1m',
     days: 1,          // Full day of 1-minute data; frontend slices to last 60 candles
     description: '1-minute intraday'
+  },
+  // The research sheet's Battle chart (build prompt of Nov 13, 2026, BC2-2): a one-day battle's
+  // 5-minute bars. The client asks a fixed 5 days (the cache key is symbol|timeframe|days).
+  '5m': {
+    endpoint: 'intraday',
+    interval: '5m',
+    days: 5,
+    description: '5-day 5-minute'
   },
   '30m': {
     endpoint: 'intraday',
@@ -170,7 +181,9 @@ export default async function handler(req, res) {
 
     // Check server-side cache
     const cacheKey = `historical_${upperSymbol}_${timeframe}_${numDays}`;
-    const tier = CACHE_TIERS.TECHNICAL;
+    // The Battle chart's 5-minute bars are read during a live session (BC2-2; PR 2 review A1/C2): five
+    // minutes, not TECHNICAL's hour, or every record item after the cached last bar would sit on it.
+    const tier = timeframe === '5m' ? BATTLE_BARS_TIER : CACHE_TIERS.TECHNICAL;
     if (!noCache) {
       const cached = getFromCache(cacheKey);
       if (cached) {

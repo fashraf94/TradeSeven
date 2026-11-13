@@ -502,7 +502,10 @@ describe('SB-8 — the Chart view: the full-canvas chart with its trend lines an
     });
     const stops = () => shown().filter((t) => STOP.test(t));
     let checked = 0;
-    for (const q of ['catch_up', 'protect_lead', 'better_than_stalled']) {
+    // Every question the row shows (QF-1: decided at open).
+    const asked = $$('[data-sheet-questions] [data-sheet-question]').map((b) => b.dataset.sheetQuestion);
+    expect(asked).toHaveLength(3);
+    for (const q of asked) {
       if (view() !== 'analysis') await click(pill('analysis'));
       await click($(`[data-sheet-question="${q}"]`));
       for (let i = 0; i < $$('[data-pack-see]').length; i++) {

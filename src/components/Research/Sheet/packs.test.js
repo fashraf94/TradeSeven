@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { measuredSheetBattle, SHEET_NOW, ARCHETYPES, AAPL_DAILY, RANKINGS } from './__fixtures__/sheetBattles.js';
 import {
-  buildPacks, candidateItems, packFor, orderItems, lensOf, defensivenessOf, weightOf, stanceOf, questionOrder, recordPinsOf, ideaOf,
+  buildPacks, candidateItems, packFor, orderItems, lensOf, defensivenessOf, weightOf, stanceOf, standingOrder, recordPinsOf, ideaOf,
   directiveFor, incumbentOfCall, itemKeyOf, QUESTION_IDS, ITEM_KINDS, RECORD_KINDS, KIND_FACTOR, SERVER_KINDS, CLIENT_REASON, PACK_MAX, FACT_MAX, LOOP_KINDS,
 } from './packs.js';
 
@@ -19,41 +19,53 @@ beforeAll(async () => {
   for (const a of ARCHETYPES) BATTLES[a] = await measuredSheetBattle({ archetype: a });
 });
 
-// ── The six-archetype snapshot (spec §6 "all three questions for all six archetypes on one fixture") ──
+// ── The six-archetype snapshot (spec §6 "all three questions for all six archetypes on one fixture"; QF-3 – QF-5 added two) ──
 const SNAPSHOT = {
   momentum_chaser: {
     catch_up: ['move_since_entry', 'rule_trend', 'rung_distance', 'idea', 'told_it'],
     protect_lead: ['banked', 'drawdown', 'risk_lever', 'idea', 'told_it'],
-    better_than_stalled: ['incumbent', 'stalled', 'rank_scores', 'idea', 'told_it'],
+    better_than_stalled: ['incumbent', 'stalled', 'book_rank', 'idea', 'told_it'],
+    weakest_spot: ['move_since_entry', 'bench_alternative', 'book_rank', 'idea', 'told_it'],
+    take_profit: ['lock_now', 'rung_distance', 'rung_down', 'idea', 'told_it'],
   },
   contrarian: {
     catch_up: ['rule_contrarian', 'check_read', 'rung_distance', 'idea', 'told_it'],
     protect_lead: ['risk_lever', 'risk_verdict', 'drawdown', 'idea', 'told_it'],
-    better_than_stalled: ['rank_scores', 'rung_compare', 'incumbent', 'idea', 'told_it'],
+    better_than_stalled: ['rank_scores', 'book_rank', 'incumbent', 'idea', 'told_it'],
+    weakest_spot: ['bench_alternative', 'check_read', 'book_rank', 'idea', 'told_it'],
+    take_profit: ['rung_down', 'lock_now', 'rung_distance', 'idea', 'told_it'],
   },
   degen: {
     catch_up: ['check_read', 'rule_volatility', 'rung_distance', 'idea', 'told_it'],
     protect_lead: ['drawdown', 'banked', 'risk_lever', 'idea', 'told_it'],
-    better_than_stalled: ['rank_scores', 'rung_compare', 'incumbent', 'idea', 'told_it'],
+    better_than_stalled: ['rank_scores', 'book_rank', 'incumbent', 'idea', 'told_it'],
+    weakest_spot: ['check_read', 'bench_alternative', 'book_rank', 'idea', 'told_it'],
+    take_profit: ['lock_now', 'rung_distance', 'rung_down', 'idea', 'told_it'],
   },
   guardian: {
     catch_up: ['rule_sectors', 'move_since_entry', 'rung_distance', 'idea', 'told_it'],
     protect_lead: ['risk_lever', 'risk_verdict', 'banked', 'idea', 'told_it'],
-    better_than_stalled: ['rank_scores', 'incumbent', 'stalled', 'idea', 'told_it'],
+    better_than_stalled: ['rank_scores', 'incumbent', 'book_rank', 'idea', 'told_it'],
+    weakest_spot: ['bench_alternative', 'move_since_entry', 'book_rank', 'idea', 'told_it'],
+    take_profit: ['rung_down', 'lock_now', 'rung_distance', 'idea', 'told_it'],
   },
   diversifier: {
     catch_up: ['rule_sectors', 'rung_distance', 'move_since_entry', 'idea', 'told_it'],
     protect_lead: ['risk_lever', 'risk_verdict', 'banked', 'idea', 'told_it'],
-    better_than_stalled: ['rank_scores', 'incumbent', 'stalled', 'idea', 'told_it'],
+    better_than_stalled: ['rank_scores', 'book_rank', 'incumbent', 'idea', 'told_it'],
+    weakest_spot: ['bench_alternative', 'book_rank', 'move_since_entry', 'idea', 'told_it'],
+    take_profit: ['rung_down', 'lock_now', 'rung_distance', 'idea', 'told_it'],
   },
   analyst: {
     catch_up: ['rule_fundamentals', 'move_since_entry', 'rung_distance', 'idea', 'told_it'],
     protect_lead: ['risk_lever', 'risk_verdict', 'banked', 'idea', 'told_it'],
-    better_than_stalled: ['rank_scores', 'incumbent', 'stalled', 'idea', 'told_it'],
+    better_than_stalled: ['rank_scores', 'incumbent', 'book_rank', 'idea', 'told_it'],
+    weakest_spot: ['bench_alternative', 'move_since_entry', 'book_rank', 'idea', 'told_it'],
+    take_profit: ['rung_down', 'lock_now', 'rung_distance', 'idea', 'told_it'],
   },
 };
 
-describe('the six-archetype snapshot — one fixture stock, all three questions', () => {
+describe('the six-archetype snapshot — one fixture stock, every question', () => {
   it.each(ARCHETYPES)('%s: each pack\'s kinds in order, labelled "What {Archetype} weighs"', (a) => {
     const { packs, lens } = buildPacks(full(BATTLES[a]));
     for (const q of QUESTION_IDS) {
@@ -189,10 +201,10 @@ describe("BC-6 — stalled is the agent's own counter", () => {
     const under = candidateItems(full({ ...BATTLES.momentum_chaser, cronState: { stagnationTicks: { ETH: 4 } } })).items.find((i) => i.kind === 'stalled');
     expect(under.fact).toBe('None of its names has reached 5 quiet checks');
   });
-  it("Capital Preserver has forced rotation off: it says so and lists none", () => {
-    const s = candidateItems(full(BATTLES.guardian)).items.find((i) => i.kind === 'stalled');
-    expect(s.fact).toBe('Capital Preserver doesn’t rotate out of quiet names');
-    expect(s.fact).not.toMatch(/ETH/);
+  it("Capital Preserver has forced rotation off: no stalled list (QF-5 — it joins only when the archetype rotates); the quiet count says it doesn't rotate (QF-3)", () => {
+    const list = candidateItems(full(BATTLES.guardian)).items;
+    expect(list.find((i) => i.kind === 'stalled')).toBeUndefined();
+    expect(list.find((i) => i.kind === 'quiet_ticks').fact).toBe('Capital Preserver doesn’t rotate out of quiet names');
   });
   it('the threshold is the archetype\'s own (resolveHftConfig): Speculator counts 3, Fundamental Investor 6', () => {
     expect(candidateItems(full(BATTLES.degen)).items.find((i) => i.kind === 'stalled').fact).toMatch(/\(3 quiet checks\)/);
@@ -233,7 +245,7 @@ describe('BC-11 — the incumbent', () => {
     const inc = packs.better_than_stalled.items.find((i) => i.kind === 'incumbent');
     expect(inc.symbol).toBe('ETH');
     expect(inc.fact).toBe('ETH is the name it would replace · 6 quiet checks in a row; Trend Follower counts a name stalled at 5');
-    expect(packs.better_than_stalled.items.find((i) => i.kind === 'rank_scores').fact).toBe('Trend Follower’s ranking: AAPL 78 · ETH 52 (rankings as of Wed 10/14)');
+    expect(candidateItems(full(BATTLES.momentum_chaser)).items.find((i) => i.kind === 'rank_scores').fact).toBe('Trend Follower’s ranking: AAPL 78 · ETH 52 (rankings as of Wed 10/14)');
   });
   it('without one (every other door), or one the agent does not hold: no incumbent item', () => {
     expect(candidateItems(full(BATTLES.momentum_chaser, { incumbent: null })).items.map((i) => i.kind)).not.toContain('incumbent');
@@ -317,18 +329,18 @@ describe('BC-9 — the idea layer, by omission', () => {
 
 describe('BC-13 — the questions in standing order', () => {
   it('trailing → catch up first; leading → protect the lead first; tied or unknown → the design\'s order', () => {
-    expect(questionOrder({ player: 62, opponent: 68 })).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
-    expect(questionOrder({ player: 70, opponent: 68 })).toEqual(['protect_lead', 'catch_up', 'better_than_stalled']);
-    expect(questionOrder({ player: 68, opponent: 68 })).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
-    expect(questionOrder(null)).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
+    expect(standingOrder({ player: 62, opponent: 68 })).toEqual(['catch_up', 'protect_lead']);
+    expect(standingOrder({ player: 70, opponent: 68 })).toEqual(['protect_lead', 'catch_up']);
+    expect(standingOrder({ player: 68, opponent: 68 })).toEqual(['catch_up', 'protect_lead']);
+    expect(standingOrder(null)).toEqual(['catch_up', 'protect_lead']);
   });
   it('the HEADER\'s lead decides, never the rounded digits: 1234.4 vs 1234.1 shows +1234 / +1234 and "You lead by less than 1" — protect the lead first (review A6)', () => {
     const shown = { player: 1234.4, opponent: 1234.1, digits: 0, you: '+1234', them: '+1234', lead: 'player' };
-    expect(questionOrder(shown)).toEqual(['protect_lead', 'catch_up', 'better_than_stalled']);
-    expect(questionOrder({ ...shown, lead: 'tie' })).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
-    expect(questionOrder({ ...shown, lead: 'cpu' })).toEqual(['catch_up', 'protect_lead', 'better_than_stalled']);
+    expect(standingOrder(shown)).toEqual(['protect_lead', 'catch_up']);
+    expect(standingOrder({ ...shown, lead: 'tie' })).toEqual(['catch_up', 'protect_lead']);
+    expect(standingOrder({ ...shown, lead: 'cpu' })).toEqual(['catch_up', 'protect_lead']);
     // A caller with numbers only: the precise pair's lead.
-    expect(questionOrder({ player: 68.4, opponent: 68.2, digits: 0 })).toEqual(['protect_lead', 'catch_up', 'better_than_stalled']);
+    expect(standingOrder({ player: 68.4, opponent: 68.2, digits: 0 })).toEqual(['protect_lead', 'catch_up']);
   });
   it('the standing item prints the header\'s own text and words its lead (review A6): "-2" / "+12", never toFixed\'s "-3" / "12"', () => {
     const item = (standing) => candidateItems({ ...full(BATTLES.momentum_chaser), standing }).items.find((i) => i.kind === 'standing');

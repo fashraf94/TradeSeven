@@ -23,12 +23,31 @@ const abs1 = (v) => `${Math.abs(v).toFixed(1)}%`;
 const share = (w) => `${Math.round(w * 100)}%`;
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-/** The three playbook questions (R-10), in the design's order. The ids are packs.js QUESTION_IDS. */
+/**
+ * The playbook questions (R-10; QF-1, QF-5). The ids are packs.js QUESTION_IDS. QF-5 kept the
+ * stored id `better_than_stalled` (chat.js writes it on every exchange) and changed only its words.
+ * "Take profit" is the player's question — the sheet never says the agent takes it (QF-9).
+ */
 export const QUESTION_TEXT = Object.freeze({
   catch_up: 'Does this help us catch up?',
   protect_lead: 'Does this protect the lead?',
-  better_than_stalled: 'Is this better than what’s stalled?',
+  better_than_stalled: 'Is this better than our weakest holding?',
+  weakest_spot: 'Is this our weakest spot?',
+  take_profit: 'Should we take profit?',
 });
+
+/** A rungs-from-entry reading as printed (QF-2): one decimal, a sign, never "−0.0". The rank is decided on this number. */
+export const rungsShownOf = (v) => {
+  const r = Number(Number(v).toFixed(1));
+  return r === 0 ? 0 : r;
+};
+export const rungsText = (shown) => (shown === 0 ? '0.0' : `${shown > 0 ? '+' : '−'}${Math.abs(shown).toFixed(1)}`);
+const signed = (n) => `${n >= 0 ? '+' : '−'}${Math.abs(n)}`;
+const ordinal = (n) => {
+  const t = n % 100;
+  const s = t >= 11 && t <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] ?? 'th');
+  return `${n}${s}`;
+};
 
 /** An archetype factor in plain words (archetypeScoring.js ARCHETYPE_WEIGHTS keys). */
 export const FACTOR_WORDS = Object.freeze({
@@ -174,6 +193,29 @@ export const SHEET_COPY = Object.freeze({
   rankScores: (arch, rows, asOf) => `${arch}’s ranking: ${rows.join(' · ')}${asOf ? ` (rankings as of ${asOf})` : ''}`,
   rankRow: (sym, score) => `${sym} ${Math.round(score)}`,
   benchSignal: (time, summary) => `Flagged at ${time}: ${summary}`,
+  // QF-2 — a held measured stock's place in the book, in rungs from entry at the last check.
+  // `rows` are rungsText strings; `others` the held names not on the measured ladder (never ranked).
+  // `pending`: held measured stocks the check could not score (review A3) — named, so the count is never short.
+  bookRank: (sym, rungs, rank, n, lowSym, lowRungs, time, others, pending) => `${rank === 1
+    ? (n === 1 ? `${sym} is ${rungs} rungs from entry, your only stock on the ladder` : `${sym} is ${rungs} rungs from entry, the lowest of your ${n} stocks`)
+    : `${sym} is ${rungs} rungs from entry, the ${rank === n ? 'highest' : `${ordinal(rank)} lowest`} of your ${n} stocks; the lowest is ${lowSym} at ${lowRungs}`}${time ? ` · at the ${time} check` : ''}${pending.length ? ` · no check yet: ${pending.join(', ')}` : ''}${others.length ? ` · not on the ladder: ${others.join(', ')}` : ''}`,
+  // QF-3 — how long the opened name has been quiet, against the archetype's rotation rule.
+  quietTicks: (sym, n, arch, ticks) => `${sym}: ${plural(n, 'quiet check', 'quiet checks')} in a row; ${arch} counts a name stalled at ${ticks}`,
+  // QF-3 / QF-4 — the best available bench name by the archetype's ranking, with its rung size (BS-4's ATR reading).
+  benchAlternative: (arch, sym, score, rank, n, atr, asOf) => `Best on the bench by ${arch}’s ranking: ${sym} ${Math.round(score)} (#${rank} of ${n})${atr ? ` · estimated rung size: ATR reading ${atr}` : ''}${asOf ? ` (rankings as of ${asOf})` : ''}`,
+  // QF-4 — what a swap-out at the last check's price would have locked (QF-0: the gain part and every
+  // crossed rung, at the exit price). The real lock uses the swap's own later quote, so the item names the check.
+  lockNow: (time, price, d, total, gain, banked, hit) => `Swapped out at the ${time} check’s ${money(price, d)}, it would lock ${signed(total)}: ${signed(gain)} from the gain, ${signed(banked)} banked${hit ? `, ${signed(hit)} from downside rungs` : ''}`,
+  // QF-4 — what holding risks: the way back to entry and to the next downside rung (ladder.js toGoDown), displayed values.
+  rungDown: (entry, d, entryGap, entryPct, down) => `${entryGap > 0
+    ? `${money(entryGap, d)} (${entryPct.toFixed(2)}%) down to entry at ${money(entry, d)}`
+    : `At or below entry (${money(entry, d)})`}${down
+    ? (down.gap > 0
+      ? ` · ${money(down.gap, d)} (${down.pct.toFixed(2)}%) down to the next downside rung, ${down.label} (${signed(down.points)}) at ${money(down.price, d)}`
+      : ` · at or under the next downside rung, ${down.label} (${signed(down.points)}) at ${money(down.price, d)}`)
+    : ''}`,
+  // QF-1 — a held position the measured ladder does not score (a legacy stock, crypto).
+  notOnLadder: (sym) => `${sym} isn’t on the measured ladder, so only the standing questions apply.`,
   // loop items
   idea: (statement) => `This game’s idea: “${statement}”`,
   toldIt: (text) => `“${text}”`,
@@ -183,6 +225,7 @@ export const SHEET_COPY = Object.freeze({
   srcPosition: 'the battle record',
   srcLive: 'live price vs entry',
   srcLiveRung: 'live price vs the next rung',
+  srcLiveDown: 'live price vs entry and the next downside rung',
   srcCall: 'its call in the cockpit',
   srcChart: (date) => `from the chart, as of ${date}`,
   srcConfig: (arch) => `${arch}’s config`,
@@ -202,6 +245,9 @@ export const SHEET_COPY = Object.freeze({
   lineEntry: (price, d) => `entry ${money(price, d)}`,
   lineIdeaLive: (side, price, d) => `live ${side} ${money(price, d)}`,
   lineIdeaWrong: (side, price, d) => `wrong ${side} ${money(price, d)}`,
+  // BC2-5 — the next rung each way on Battle, at 💣's displayed price (ladder.rungShown).
+  lineRungUp: (points, price, d) => `next rung +${points} · ${money(price, d)}`,
+  lineRungDown: (label, points, price, d) => `${label} ${signed(points)} · ${money(price, d)}`,
   // A tapped item's own pin, when no record pin sits at its instant or price (review D5).
   pinAt: (when) => `This item · ${when}`,
   pinLine: (word, price, d) => (word ? `${word} · ${money(price, d)}` : money(price, d)),
@@ -233,6 +279,14 @@ export const SHELL_COPY = Object.freeze({
   // ── The Chart view's own states (today's chart box, in the shell's skin) ──
   chartUnavailable: 'Chart data unavailable',
   chartRetry: 'Retry',
+  // ── The Battle pill (BC2-1 – BC2-4): the battle's own sessions in intraday bars ──
+  timeBattle: 'Battle',
+  battleUnavailable: 'The battle’s intraday bars are unavailable',
+  battleEmpty: 'No battle bars yet: its first session hasn’t traded',
+  // 1D and 1W: a day's record merged into one marker, with its count; its chip opens Battle.
+  dayCount: (weekday, count) => `${weekday} · ${count}`,
+  dayChip: (count, weekday) => `${count} on ${weekday} · Battle ›`,
+  dayChipsLabel: 'The record by day',
   // ── The Wall St · About line (R-27's quiet line; the analyst consensus, labelled) ──
   wallSt: (rating, n) => `Wall St ${rating} · ${n} ${n === 1 ? 'analyst' : 'analysts'}`,
   wallStNone: 'Wall St · no coverage',
@@ -264,6 +318,7 @@ export const SHELL_COPY = Object.freeze({
 export const PIN_LINE_WORDS = Object.freeze({
   rung_distance: 'next rung',
   banked: 'top banked rung',
+  rung_down: 'next downside rung',
   drawdown: 'the high',
   idea: 'the idea’s level',
 });

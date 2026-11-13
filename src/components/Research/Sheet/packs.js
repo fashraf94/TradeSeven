@@ -52,16 +52,25 @@ import { PRESET_CONFIGS, getPresetConfig } from '../../../../api/_utils/agentPre
 import { presetKeyOf } from '../../../../api/_utils/playerFieldReaders.js';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay.js';
 import { agentBombContext, agentPositionOf, recordMs, selectBombRecord } from '../BombMode/selectBombRecord.js';
-import { measuredLadder, toGo } from '../BombMode/ladder.js';
+import { measuredLadder, toGo, toGoDown } from '../BombMode/ladder.js';
+import { atrReadingOf } from '../BombMode/atrReading.js';
+import { atrReadingText } from '../BombMode/bombCopy.js';
 import { checkClock, etClock, etDate, etWeekday } from '../BombMode/checkClock.js';
-import { priceDecimals } from '../priceFormat.js';
-import { SHEET_COPY, RISK_WORDS, RISK_REASON_WORDS, REGIME_WORDS } from './sheetCopy.js';
+import { priceDecimals, priceText } from '../priceFormat.js';
+import { swappableNames } from '../../../../api/_utils/callRecords/swappable.js';
+import { SHEET_COPY, RISK_WORDS, RISK_REASON_WORDS, REGIME_WORDS, rungsText } from './sheetCopy.js';
 import { benchCandidateOf, latestCheckOn, latestVoicedCheckOn, namesSymbol } from './latestLine.js';
+import { bookOf, rankedBook, offLadderOf, unscoredOf, bookCheckMs, lockNowOf } from './book.js';
 
 // ── The closed vocabularies (the server validates an Ask against them) ──────
 
-/** The three questions, in the design's order (R-10). */
-export const QUESTION_IDS = Object.freeze(['catch_up', 'protect_lead', 'better_than_stalled']);
+/**
+ * Every question (R-10; QF-1). Which ones a row shows is questionSetOf's, decided once at open.
+ * `better_than_stalled` is the stored id of "Is this better than our weakest holding?" (QF-5).
+ */
+export const QUESTION_IDS = Object.freeze(['catch_up', 'protect_lead', 'better_than_stalled', 'weakest_spot', 'take_profit']);
+/** The two standing questions (BC-13). */
+export const STANDING_IDS = Object.freeze(['catch_up', 'protect_lead']);
 
 /** Every item kind a pack can hold. */
 export const ITEM_KINDS = Object.freeze([
@@ -70,6 +79,7 @@ export const ITEM_KINDS = Object.freeze([
   'standing',
   'risk_lever', 'risk_verdict', 'banked', 'drawdown',
   'incumbent', 'stalled', 'rung_compare', 'rank_scores', 'bench_signal',
+  'book_rank', 'quiet_ticks', 'bench_alternative', 'lock_now', 'rung_down',
   'idea', 'told_it',
 ]);
 
@@ -83,11 +93,29 @@ export const RECORD_KINDS = Object.freeze([
   'hypothesisVersion', 'stockRankings', 'archetypeConfig', 'presetConfig', 'chart',
 ]);
 
-/** The item kinds each question draws on (§3.4); the loop items join every pack. */
+/** The item kinds each question draws on (§3.4; QF-3, QF-4, QF-5); the loop items join every pack. */
 export const PACK_CANDIDATES = Object.freeze({
   catch_up: Object.freeze(['rung_distance', 'move_since_entry', 'check_read', 'rule', 'standing']),
   protect_lead: Object.freeze(['risk_lever', 'risk_verdict', 'banked', 'drawdown', 'standing']),
-  better_than_stalled: Object.freeze(['incumbent', 'stalled', 'rung_compare', 'rank_scores', 'bench_signal']),
+  // QF-5: the compare is the bench door's incumbent, else QF-2's weakest (book_rank); the stalled list
+  // only when the archetype rotates (stalledItem omits itself otherwise).
+  better_than_stalled: Object.freeze(['incumbent', 'book_rank', 'stalled', 'rung_compare', 'rank_scores', 'bench_signal']),
+  weakest_spot: Object.freeze(['book_rank', 'move_since_entry', 'quiet_ticks', 'check_read', 'bench_alternative']),
+  take_profit: Object.freeze(['lock_now', 'rung_distance', 'rung_down', 'risk_lever', 'risk_verdict', 'bench_alternative']),
+});
+/**
+ * The items that ANSWER a question, never cut (the loop items' rule, applied to them): the founder's
+ * live checklist reads them in the pack (take profit: what a swap-out would lock and what holding risks;
+ * weakest: where it ranks and the best bench alternative; better than our weakest: the name it is
+ * compared with). They are still placed by the archetype's weights among the ranked items (§3.3).
+ */
+export const ANCHOR_KINDS = Object.freeze({
+  catch_up: Object.freeze([]),
+  protect_lead: Object.freeze([]),
+  better_than_stalled: Object.freeze(['incumbent', 'book_rank']),
+  weakest_spot: Object.freeze(['book_rank', 'bench_alternative']),
+  // rung_distance too: QF-7's instruction weighs the lock against the next rung (review C3).
+  take_profit: Object.freeze(['lock_now', 'rung_distance', 'rung_down']),
 });
 export const LOOP_KINDS = Object.freeze(['idea', 'told_it']);
 export const PACK_MAX = 5;
@@ -113,15 +141,23 @@ export const KIND_FACTOR = Object.freeze({
   rung_compare: 'baggerBombFit',
   rank_scores: 'archetypeTop',
   bench_signal: 'atrPercentile',
+  // QF-2 / QF-3 / QF-4: the rung reading and the lock are the ladder's (BaggerBomb fit); the quiet
+  // count is the trend's (as the stalled items); the bench alternative is the archetype's own ranking
+  // (as rank_scores); what holding risks is a protect-the-lead risk item (the preset's defensiveness).
+  book_rank: 'baggerBombFit',
+  quiet_ticks: 'technicalScore',
+  bench_alternative: 'archetypeTop',
+  lock_now: 'baggerBombFit',
+  rung_down: 'defensiveness',
   idea: 'loop',
   told_it: 'loop',
 });
 
 /** Ties: the stock's facts first, then the archetype's own rule, then the standing. */
 export const TIE_ORDER = Object.freeze([
-  'rung_distance', 'move_since_entry', 'check_read',
+  'lock_now', 'book_rank', 'rung_distance', 'rung_down', 'move_since_entry', 'quiet_ticks', 'check_read',
   'risk_lever', 'risk_verdict', 'banked', 'drawdown',
-  'incumbent', 'stalled', 'rung_compare', 'bench_signal', 'rank_scores',
+  'incumbent', 'stalled', 'rung_compare', 'bench_signal', 'bench_alternative', 'rank_scores',
   'rule_trend', 'rule_fit', 'rule_volatility', 'rule_fundamentals', 'rule_contrarian', 'rule_sectors',
   'standing', 'idea', 'told_it',
 ]);
@@ -145,13 +181,17 @@ const FACTOR_ORDER = Object.freeze(['technicalScore', 'baggerBombFit', 'atrPerce
 export const SERVER_KINDS = Object.freeze([
   'check_read', 'rule_trend', 'rule_fit', 'rule_volatility', 'rule_fundamentals', 'rule_contrarian', 'rule_sectors',
   'risk_lever', 'risk_verdict', 'banked', 'stalled', 'rung_compare', 'bench_signal', 'idea', 'told_it',
+  // QF-6: the committed contexts and the stall counter are on the battle document.
+  'book_rank', 'quiet_ticks', 'lock_now',
 ]);
 /** Why a client-only kind is unverified. */
 export const CLIENT_REASON = Object.freeze({
   rung_distance: 'live_quote',
   move_since_entry: 'live_quote',
+  rung_down: 'live_quote',
   drawdown: 'from_chart',
   rank_scores: 'rankings_doc',
+  bench_alternative: 'rankings_doc',
   standing: 'as_shown',
   // "{SYM} is the name it would replace" comes from the cockpit's open call, which is not
   // on the battle document the server re-reads (review A7/B3): never verified.
@@ -270,8 +310,12 @@ export function weightOf(kind, lens) {
   return finite(w) ? w : 0;
 }
 
-/** Order a pack's items (§3.3) and cut it to PACK_MAX: the loop items are never cut. */
-export function orderItems(items, lens) {
+/**
+ * Order a pack's items (§3.3) and cut it to PACK_MAX: the loop items are never cut, nor are the
+ * question's anchors (ANCHOR_KINDS) — the rest of the room goes to the best-weighted others, and the
+ * kept items are shown in the archetype's order.
+ */
+export function orderItems(items, lens, anchors = []) {
   const loop = items.filter((it) => KIND_FACTOR[it.kind] === 'loop');
   const ranked = items
     .filter((it) => KIND_FACTOR[it.kind] !== 'loop')
@@ -279,7 +323,10 @@ export function orderItems(items, lens) {
     .sort((a, b) => (b.w - a.w) || (a.t - b.t))
     .map((x) => x.it);
   const room = Math.max(0, PACK_MAX - loop.length);
-  return [...ranked.slice(0, room), ...loop.sort((a, b) => TIE_ORDER.indexOf(a.kind) - TIE_ORDER.indexOf(b.kind))];
+  const anchored = ranked.filter((it) => anchors.includes(it.kind));
+  const others = ranked.filter((it) => !anchors.includes(it.kind)).slice(0, Math.max(0, room - anchored.length));
+  const kept = new Set([...anchored, ...others]);
+  return [...ranked.filter((it) => kept.has(it)), ...loop.sort((a, b) => TIE_ORDER.indexOf(a.kind) - TIE_ORDER.indexOf(b.kind))];
 }
 
 // ── What the record holds for one symbol ────────────────────────────────────
@@ -501,13 +548,13 @@ const agentSymbols = (battle) => {
 };
 const ticksOf = (battle, sym) => { const n = battle?.cronState?.stagnationTicks?.[sym]; return finite(n) ? n : 0; };
 
+const rotates = (lens) => lens.known && lens.forcedRotation?.enabled === true && finite(lens.forcedRotation.ticksThreshold);
+
 function stalledItem({ battle, lens, symbol }) {
-  if (!lens.known) return null;
+  // QF-5: the stalled list joins the pack only when the archetype rotates out of quiet names.
+  if (!rotates(lens)) return null;
   const fr = lens.forcedRotation;
   const asOfMs = recordMs(battle?.scoreState?.lastScoredAt);
-  if (!fr || fr.enabled !== true || !finite(fr.ticksThreshold)) {
-    return makeItem({ kind: 'stalled', symbol, fact: SHEET_COPY.noRotation(lens.label), recordKind: 'archetypeConfig', recordId: lens.archetype, label: SHEET_COPY.srcConfig(lens.label) });
-  }
   const names = agentSymbols(battle)
     .filter((s) => ticksOf(battle, s) >= fr.ticksThreshold)
     .map((s) => `${s} (${ticksOf(battle, s)})`);
@@ -538,12 +585,22 @@ function scoredGapOf(battle, sym, nowMs) {
   return { sym, positionId: rec.positionId, gap: Math.max(0, go.distance), points: ladder.next.points, decimals: go.decimals, atMs: rec.scored.atMs };
 }
 
-function rungCompareItem({ battle, lens, symbol, incumbent, nowMs }) {
+/** QF-5: the name a stock you don't hold is compared with — the bench door's incumbent, else QF-2's weakest. */
+function compareOf({ holding, incumbent, book, symbol }) {
+  if (incumbent) return incumbent;
+  if (holding.held) return null;
+  return weakestOtherThan(book, symbol)?.symbol ?? null;
+}
+/** QF-2's weakest held stock other than the opened one (the CPU's row of a ticker the agent also holds — review C2). */
+function weakestOtherThan(book, symbol) {
+  return rankedBook(book).find((e) => e.symbol !== symbol) ?? null;
+}
+
+function rungCompareItem({ battle, lens, symbol, nowMs, ...rest }) {
   const fr = lens.forcedRotation;
-  const stalled = fr?.enabled === true && finite(fr.ticksThreshold)
-    ? agentSymbols(battle).filter((s) => s !== symbol && ticksOf(battle, s) >= fr.ticksThreshold)
-    : [];
-  const names = [symbol, ...(incumbent && incumbent !== symbol ? [incumbent] : []), ...stalled.filter((s) => s !== incumbent)];
+  const stalled = rotates(lens) ? agentSymbols(battle).filter((s) => s !== symbol && ticksOf(battle, s) >= fr.ticksThreshold) : [];
+  const compare = compareOf({ ...rest, symbol });
+  const names = [symbol, ...(compare && compare !== symbol ? [compare] : []), ...stalled.filter((s) => s !== compare)];
   const rows = names.map((s) => scoredGapOf(battle, s, nowMs)).filter(Boolean);
   if (!rows.length) return null;
   const atMs = Math.max(...rows.map((r) => r.atMs).filter(finite));
@@ -557,11 +614,12 @@ function rungCompareItem({ battle, lens, symbol, incumbent, nowMs }) {
 /** The rankings doc's computedAt as epoch ms (a Firestore Timestamp, `{ seconds }`, or ms). */
 const rankingsMs = (doc) => recordMs(doc?.computedAt) ?? (finite(doc?.computedAt?.seconds) ? doc.computedAt.seconds * 1000 : null);
 
-function rankScoresItem({ battle, lens, symbol, incumbent, rankings }) {
+function rankScoresItem({ battle, lens, symbol, rankings, ...rest }) {
   if (!lens.known || !rankings || !Array.isArray(rankings.stocks)) return null;
   const fr = lens.forcedRotation;
-  const stalled = fr?.enabled === true && finite(fr.ticksThreshold) ? agentSymbols(battle).filter((s) => s !== symbol && ticksOf(battle, s) >= fr.ticksThreshold) : [];
-  const names = [symbol, ...(incumbent && incumbent !== symbol ? [incumbent] : []), ...stalled.filter((s) => s !== incumbent)];
+  const stalled = rotates(lens) ? agentSymbols(battle).filter((s) => s !== symbol && ticksOf(battle, s) >= fr.ticksThreshold) : [];
+  const compare = compareOf({ ...rest, symbol });
+  const names = [symbol, ...(compare && compare !== symbol ? [compare] : []), ...stalled.filter((s) => s !== compare)];
   const scoreOf = (s) => { const row = rankings.stocks.find((r) => r?.symbol === s); const v = row?.arch_scores?.[lens.archetype]; return finite(v) ? v : null; };
   if (scoreOf(symbol) === null) return null;
   const rows = names.filter((s) => scoreOf(s) !== null).map((s) => SHEET_COPY.rankRow(s, scoreOf(s)));
@@ -582,6 +640,109 @@ function benchSignalItem({ battle, symbol, holding }) {
   return makeItem({
     kind: 'bench_signal', symbol, fact: SHEET_COPY.benchSignal(time, clampText(summary, FACT_MAX - 24)),
     recordKind: 'evaluation', recordId: bench.entry.evalId ?? atMs, label: SHEET_COPY.srcCheck(time), atMs, pin: timePin(atMs),
+  });
+}
+
+// ── QF-2 – QF-5: the book, the quiet count, the bench alternative, the lock, the downside ──
+
+const isMeasuredHeld = (holding) => holding.held && holding.record?.model === 'measured';
+const ownEntry = (book, holding) => (holding.record?.positionId ? book.find((e) => e.positionId === holding.record.positionId) ?? null : null);
+
+/**
+ * QF-2 / QF-3 / QF-5 — a place in the book. On a held measured stock: its own place. On a stock you
+ * don't hold, with no incumbent from the bench door: the weakest held stock (the name it is compared
+ * with). The item's symbol is the stock it ranks.
+ */
+function bookRankItem({ holding, book, incumbent, symbol }) {
+  const ranked = rankedBook(book);
+  if (!ranked.length) return null;
+  let subject = null;
+  if (isMeasuredHeld(holding)) subject = ranked.find((e) => e === ownEntry(book, holding)) ?? null;
+  else if (!holding.held && !incumbent) subject = weakestOtherThan(book, symbol);
+  if (!subject) return null;
+  const rank = ranked.indexOf(subject) + 1;
+  const atMs = bookCheckMs(ranked);
+  const time = whenLabel(atMs);
+  const own = subject.symbol === symbol;
+  return makeItem({
+    kind: 'book_rank', symbol: subject.symbol,
+    fact: SHEET_COPY.bookRank(subject.symbol, rungsText(subject.rungsShown), rank, ranked.length, ranked[0].symbol, rungsText(ranked[0].rungsShown), time, offLadderOf(book), unscoredOf(book)),
+    recordKind: 'scoreState', recordId: `book:${subject.positionId ?? subject.symbol}`, label: time ? SHEET_COPY.srcCheck(time) : SHEET_COPY.srcPosition,
+    atMs, pin: own ? timePin(atMs) : null,
+  });
+}
+
+/** QF-3 — how long the opened (held) name has been quiet, against the archetype's rotation rule. */
+function quietTicksItem({ battle, lens, symbol, holding }) {
+  if (!holding.held || !lens.known) return null;
+  if (!rotates(lens)) {
+    return makeItem({ kind: 'quiet_ticks', symbol, fact: SHEET_COPY.noRotation(lens.label), recordKind: 'archetypeConfig', recordId: lens.archetype, label: SHEET_COPY.srcConfig(lens.label) });
+  }
+  return makeItem({
+    kind: 'quiet_ticks', symbol, fact: SHEET_COPY.quietTicks(symbol, ticksOf(battle, symbol), lens.label, lens.forcedRotation.ticksThreshold),
+    recordKind: 'cronState', recordId: `stagnationTicks.${symbol}`, label: SHEET_COPY.srcCounter, asOfMs: recordMs(battle?.scoreState?.lastScoredAt),
+  });
+}
+
+/**
+ * QF-3 / QF-4 — the best AVAILABLE bench name for the opened (held) stock's slot by the archetype's
+ * ranking (`arch_scores`): the names that could come in for it now (callRecords/swappable.js — the bench
+ * door's own test: on the bench or the hot bench, not held, not cooling down, the same class), the
+ * highest score first, ties in roster order. Its rank is its place among every ranked stock by that
+ * score; its rung size is the rankings' ATR reading (BS-4: the same row's `techRaw.atrPercent`, which the
+ * cron writes from the one value it writes to stockTechnicalScores — atrReading.js — at the bench
+ * sheet's one decimal), dropped when the rankings are older than BS-4's freshness window.
+ */
+function benchAlternativeItem({ battle, lens, symbol, holding, rankings, nowMs }) {
+  if (!holding.held || !lens.known || !rankings || !Array.isArray(rankings.stocks)) return null;
+  const scoreOf = (row) => { const v = row?.arch_scores?.[lens.archetype]; return finite(v) ? v : null; };
+  const rowOf = (s) => rankings.stocks.find((r) => r?.symbol === s) ?? null;
+  let best = null;
+  for (const s of swappableNames({ battle, out: symbol, atMs: nowMs })) {
+    const row = rowOf(s);
+    const score = scoreOf(row);
+    if (score !== null && (!best || score > best.score)) best = { symbol: s, row, score };
+  }
+  if (!best) return null;
+  const scores = rankings.stocks.map(scoreOf).filter((v) => v !== null);
+  // The rank of the score AS PRINTED (review A6): names that print the same score share a rank.
+  const rank = 1 + scores.filter((v) => Math.round(v) > Math.round(best.score)).length;
+  const ms = rankingsMs(rankings);
+  const atr = atrReadingOf({ atrPercent: best.row?.techRaw?.atrPercent, updatedAt: ms }, nowMs).pct;
+  return makeItem({
+    kind: 'bench_alternative', symbol: best.symbol,
+    fact: SHEET_COPY.benchAlternative(lens.label, best.symbol, best.score, rank, scores.length, atr === null ? null : atrReadingText(atr), dayLabel(ms)),
+    recordKind: 'stockRankings', recordId: 'stockRankings', label: SHEET_COPY.srcRankings, asOfMs: ms,
+  });
+}
+
+/** QF-4 — what a swap-out at the last check's price would lock (QF-0; book.js lockNowOf). */
+function lockNowItem({ holding, book, symbol }) {
+  if (!isMeasuredHeld(holding)) return null;
+  const lock = lockNowOf(ownEntry(book, holding));
+  if (!lock) return null;
+  const time = whenLabel(lock.atMs);
+  return makeItem({
+    kind: 'lock_now', symbol, fact: SHEET_COPY.lockNow(time ?? '', lock.price, priceDecimals(lock.price), lock.total, lock.gain, lock.banked, lock.hit),
+    recordKind: 'scoreState', recordId: `lock:${holding.record.positionId}`, label: time ? SHEET_COPY.srcCheck(time) : SHEET_COPY.srcPosition,
+    atMs: lock.atMs, pin: timePin(lock.atMs),
+  });
+}
+
+/** QF-4 — what holding risks: the way back to entry and to the next downside rung, in displayed values (§9). */
+function rungDownItem({ holding, symbol, live }) {
+  if (!holding.ladder || !positive(live) || !positive(holding.entryPrice)) return null;
+  const d = priceDecimals(live);
+  const liveShown = Number(priceText(live, d));
+  const entryShown = Number(priceText(holding.entryPrice, d));
+  const entryGap = Number((liveShown - entryShown).toFixed(d));
+  const go = toGoDown(holding.ladder, live, { decimals: d });
+  const down = go ? { label: go.rung.label, points: go.rung.points, price: go.rungShown, gap: go.distance, pct: go.pctShown } : null;
+  return makeItem({
+    kind: 'rung_down', symbol, fact: SHEET_COPY.rungDown(entryShown, d, entryGap, Number(((entryGap / liveShown) * 100).toFixed(2)), down),
+    recordKind: 'position', recordId: holding.record.positionId ?? symbol, label: SHEET_COPY.srcLiveDown,
+    // The pin is the displayed downside rung (BC2-5's line in 💣's string), else the entry line.
+    pin: pricePin(down ? down.price : entryShown),
   });
 }
 
@@ -626,14 +787,19 @@ export function candidateItems(p) {
   const { battle, symbol, nowMs } = p;
   const lens = lensOf(battle);
   const holding = holdingOf(battle, symbol, nowMs, p.row);
-  const args = { ...p, lens, holding, battleId: p.battleId ?? null };
+  const book = bookOf(battle);
+  // An incumbent the agent no longer holds (a stale call) is no incumbent: the compare falls back to the
+  // weakest holding, as with none (review A2 / C5; incumbentItem already drops it).
+  const incumbent = typeof p.incumbent === 'string' && p.incumbent && agentPositionOf(battle, p.incumbent) ? p.incumbent : null;
+  const args = { ...p, incumbent, lens, holding, book, battleId: p.battleId ?? null };
   const list = [
     rungDistanceItem(args), moveItem(args), checkReadItem(args), ruleItem(args), standingItem(args),
     riskLeverItem(args), riskVerdictItem(args), bankedItem(args), drawdownItem(args),
     incumbentItem(args), stalledItem(args), rungCompareItem(args), rankScoresItem(args), benchSignalItem(args),
+    bookRankItem(args), quietTicksItem(args), benchAlternativeItem(args), lockNowItem(args), rungDownItem(args),
     ideaItem(args), toldItItem(args),
   ].filter(Boolean);
-  return { lens, holding, items: list };
+  return { lens, holding, book, items: list };
 }
 
 /** One question's pack: { questionId, label, items } (three to five where the record has them). */
@@ -641,10 +807,10 @@ export function packFor(questionId, built) {
   if (!QUESTION_IDS.includes(questionId)) return null;
   const allowed = new Set(PACK_CANDIDATES[questionId].flatMap((k) => (k === 'rule' ? Object.values(RULE_KIND_OF) : [k])));
   const items = built.items.filter((it) => allowed.has(it.kind) || LOOP_KINDS.includes(it.kind));
-  return { questionId, label: SHEET_COPY.weighs(built.lens.label), items: orderItems(items, built.lens) };
+  return { questionId, label: SHEET_COPY.weighs(built.lens.label), items: orderItems(items, built.lens, ANCHOR_KINDS[questionId]) };
 }
 
-/** All three packs. */
+/** Every question's pack (the row shows the ones its question set names). */
 export function buildPacks(p) {
   const built = candidateItems(p);
   return { lens: built.lens, holding: built.holding, packs: Object.fromEntries(QUESTION_IDS.map((q) => [q, packFor(q, built)])) };
@@ -705,13 +871,35 @@ export function stanceOf({ battle, symbol, nowMs, row, live }) {
   return { kind, chips, holding, idea: idea ? { statement: idea.statement, conditions: idea.conditions } : null };
 }
 
-/** BC-13: the questions in standing order (trailing → catch up first; leading → protect the lead first). */
-export function questionOrder(standing) {
+/** BC-13: the two standing questions in standing order (trailing or tied → catch up first; leading → protect the lead first). */
+export function standingOrder(standing) {
   // The header's own lead (shownStanding) — never a re-derivation from rounded digits (review A6).
   const shown = shownStanding(standing);
-  if (shown?.lead === 'cpu') return ['catch_up', 'protect_lead', 'better_than_stalled'];
-  if (shown?.lead === 'player') return ['protect_lead', 'catch_up', 'better_than_stalled'];
-  return [...QUESTION_IDS];
+  return shown?.lead === 'player' ? ['protect_lead', 'catch_up'] : [...STANDING_IDS];
+}
+
+/**
+ * QF-1 — THE QUESTION SET FOLLOWS THE ROW. The caller decides it ONCE when the row opens and keeps it
+ * (the FQ-9 rule: never switched while the modal is open — useSheetView freezes it per opening).
+ *   held, measured        the state question, then the standing two: `take_profit` when the last
+ *                         check's committed context has the position up from entry (its exact rungs
+ *                         from entry > 0, i.e. gain > 0), else `weakest_spot` (down, flat, or no
+ *                         committed context yet)
+ *   held, not measured    the standing two only, and the line that it isn't on the measured ladder
+ *   not held              `better_than_stalled` ("…than our weakest holding?"), then the standing two
+ * @returns {{ questions: string[], notOnLadder: boolean }}
+ */
+export function questionSetOf({ battle, symbol, nowMs, row, standing }) {
+  const standingTwo = standingOrder(standing);
+  const holding = holdingOf(battle, symbol, nowMs, row);
+  if (!holding.held) return { questions: ['better_than_stalled', ...standingTwo], notOnLadder: false };
+  if (holding.record?.model !== 'measured') return { questions: standingTwo, notOnLadder: true };
+  const own = ownEntry(bookOf(battle), holding);
+  // The prompt's letter: up from entry at the last check — gain > 0 on the committed context, the exact
+  // reading (review A1 was refuted on this letter; a position printing 0.0 rungs but above its fill is up —
+  // its pack prints a positive gain and no rungs figure). QF-2's RANK is on the printed number.
+  const up = !!own?.scored && own.rungs > 0;
+  return { questions: [up ? 'take_profit' : 'weakest_spot', ...standingTwo], notOnLadder: false };
 }
 
 // ── BC-8: the record's pins ─────────────────────────────────────────────────
