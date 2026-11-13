@@ -32,9 +32,9 @@ const docstringOf = (name) => {
 const ROLLBACK = "a kill switch: roll back one step at a time ('on' → 'allowlist' → 'off') by moving the literal and its pin together; every mode-off arm stays in the code until the cleanup PR, after 'on' has run in production";
 
 describe('RESEARCH_MODAL_SHEET_MODE — the pin (BUILD_RULES §2; Build C spec §4.1)', () => {
-  it("is 'off' — a kill switch: roll back one step at a time ('on' → 'allowlist' → 'off') by moving the literal and its pin together; every mode-off arm stays in the code until the cleanup PR, after 'on' has run in production", () => {
+  it("is 'allowlist' — a kill switch: roll back one step at a time ('on' → 'allowlist' → 'off') by moving the literal and its pin together; every mode-off arm stays in the code until the cleanup PR, after 'on' has run in production", () => {
     // THE ROW THAT MOVES WITH A FLIP ('off' → 'allowlist' → 'on'), in the flip PR's own commit; a rollback moves it back.
-    expect(RESEARCH_MODAL_SHEET_MODE).toBe('off');
+    expect(RESEARCH_MODAL_SHEET_MODE).toBe('allowlist');
   });
 
   it('the allowed values: exactly off · allowlist · on, frozen, in walk order, and the shipped value is one of them', () => {
@@ -57,6 +57,8 @@ describe('RESEARCH_MODAL_SHEET_MODE — the pin (BUILD_RULES §2; Build C spec �
     expect(doc).toContain('ROLLBACK');
     expect(doc).toContain('byte for byte');
     expect(doc.replace(/\n \* ?/g, ' ')).toContain(ROLLBACK);
+    // The docstring names the live value (a flip or a rollback moves this line with the literal).
+    expect(doc.replace(/\n \* ?/g, ' ')).toContain(`CURRENT: '${RESEARCH_MODAL_SHEET_MODE}'`);
     expect(SELF).toContain(`"is '${RESEARCH_MODAL_SHEET_MODE}' — ${ROLLBACK}"`);
   });
 

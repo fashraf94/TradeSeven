@@ -103,11 +103,12 @@ export const RESEARCH_MODAL_SHEET_MODES = Object.freeze(['off', 'allowlist', 'on
  *                through them) with the archetype's Analysis view, every other
  *                mount with the stock's facts.
  *
- * RUNWAY: 'off' ships with the shell build (dark; Build C shipped 'off' and
- * never left it). 'allowlist' (the founder and FT_QA) is its own one-line
- * founder PR after merge and the phone check; 'on' is another, after one clean
- * live session on the allowlist. Never a build PR; each step moves the first
- * row of researchModalSheetFlag.test.js in the same commit (BUILD_RULES §2).
+ * RUNWAY: 'off' shipped with the shell build (PR #1045, dark; Build C shipped
+ * 'off' and never left it). CURRENT: 'allowlist' (the founder's flip PR,
+ * 2026-11-13), the shell for the cockpit allowlist's owners in their agent
+ * battles. 'on' is another one-line founder PR, after one clean live session
+ * on the allowlist. Never a build PR; each step moves the first row of
+ * researchModalSheetFlag.test.js in the same commit (BUILD_RULES §2).
  * ROLLBACK: a kill switch: roll back one step at a time ('on' → 'allowlist'
  * → 'off') by moving the literal and its pin together; every mode-off arm
  * stays in the code until the cleanup PR, after 'on' has run in production.
@@ -118,4 +119,4 @@ export const RESEARCH_MODAL_SHEET_MODES = Object.freeze(['off', 'allowlist', 'on
  * sees or trades changes at any value.
  */
 // Pinned by: researchModalSheetFlag.test.js (the pin and this value move together — BUILD_RULES §2).
-export const RESEARCH_MODAL_SHEET_MODE = 'off';
+export const RESEARCH_MODAL_SHEET_MODE = 'allowlist';
