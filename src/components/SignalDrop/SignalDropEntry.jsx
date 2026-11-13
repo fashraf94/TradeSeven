@@ -28,6 +28,14 @@
 // props and hands off to WatchlistChat — this component stays
 // agent-agnostic so it can be repurposed for non-dialogue flows
 // (e.g. a future "log a signal without dialogue" CTA).
+//
+// Shared Research B2 (build prompt K-4; founder ruling P-1, Nov 13, 2026):
+// two ADDITIVE props, so the Shared Research sheet can mount this same
+// modal. `ctaLabel` is the confirm step's CTA text (default 'Start
+// dialogue'); `zIndex` is the overlay's layer (default 250) — the sheet
+// opens the modal over the hub's sheet (layer 1000), which would otherwise
+// paint above it. With both absent the modal renders and behaves exactly as
+// before (Discover passes neither); SignalDropEntry.jsdom.test.jsx pins it.
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -137,7 +145,7 @@ function titleCase(s) {
 
 // ── Main component ────────────────────────────────────────────────────
 
-export default function SignalDropEntry({ open, onClose, onStartDialogue }) {
+export default function SignalDropEntry({ open, onClose, onStartDialogue, ctaLabel = 'Start dialogue', zIndex = 250 }) {
   const { tokens } = useTheme();
   const { isDesktop } = useIsMobile();
 
@@ -391,7 +399,7 @@ export default function SignalDropEntry({ open, onClose, onStartDialogue }) {
             style={{
               position: 'fixed',
               inset: 0,
-              zIndex: 250,
+              zIndex,
               background: isDesktop ? 'rgba(0,0,0,0.75)' : tokens.bgApp,
               backdropFilter: isDesktop ? 'blur(8px)' : 'none',
               WebkitBackdropFilter: isDesktop ? 'blur(8px)' : 'none',
@@ -485,6 +493,7 @@ export default function SignalDropEntry({ open, onClose, onStartDialogue }) {
                 onSubmit={handleSubmit}
                 onTryAgain={handleTryAgain}
                 onStartDialogue={handleStartDialogue}
+                ctaLabel={ctaLabel}
               />
             </motion.div>
           </motion.div>
@@ -1229,6 +1238,7 @@ function ModalFooter({
   onSubmit,
   onTryAgain,
   onStartDialogue,
+  ctaLabel,
 }) {
   const isBailout = Boolean(parseResult?.shouldBailout);
 
@@ -1250,7 +1260,7 @@ function ModalFooter({
         </SecondaryButton>
         <PrimaryButton tokens={tokens} onClick={onStartDialogue}>
           <Sparkles size={14} />
-          Start dialogue
+          {ctaLabel}
           <ArrowRight size={14} />
         </PrimaryButton>
       </FooterShell>

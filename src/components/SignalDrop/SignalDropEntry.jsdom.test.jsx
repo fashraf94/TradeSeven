@@ -152,3 +152,32 @@ describe("SignalDropEntry with no ctaLabel and no zIndex: today's modal, exactly
     expect(onStartDialogue).not.toHaveBeenCalled();
   });
 });
+
+describe('the two additive props (Shared Research B2: K-4, P-1)', () => {
+  it('ctaLabel="Investigate this" replaces only the confirm CTA\'s text; the steps and onStartDialogue\'s argument are the same', async () => {
+    const { onStartDialogue } = open({ ctaLabel: 'Investigate this' });
+    expect(footerTexts()).toEqual(['Read this signal']);
+    await readSignal();
+    expect(footerTexts()).toEqual(['Try again', 'Investigate this']);
+    expect(buttonNamed('Start dialogue')).toBeNull();
+    // Only the label differs from the pinned confirm render.
+    expect(sha(cardOf().innerHTML.replace('Investigate this', 'Start dialogue'))).toBe(PINNED.confirming);
+    click(buttonNamed('Investigate this'));
+    expect(onStartDialogue).toHaveBeenCalledTimes(1);
+    expect(Object.keys(onStartDialogue.mock.calls[0][0]).sort()).toEqual(['dropId', 'parseResult']);
+    expect(onStartDialogue.mock.calls[0][0].parseResult).toEqual(PARSE);
+  });
+
+  it('ctaLabel leaves the bailout footer unchanged: still only "Try a different signal" (ruling P-3)', async () => {
+    open({ ctaLabel: 'Investigate this' });
+    await readSignal(BAILOUT);
+    expect(footerTexts()).toEqual(['Try a different signal']);
+    expect(sha(cardOf().innerHTML)).toBe(PINNED.bailout);
+  });
+
+  it('zIndex sets the overlay\'s layer and nothing else', () => {
+    open({ zIndex: 1001 });
+    expect(overlayOf().style.zIndex).toBe('1001');
+    expect(sha(cardOf().innerHTML)).toBe(PINNED.input);
+  });
+});
