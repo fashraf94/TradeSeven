@@ -321,6 +321,23 @@ const DARK_BY_DESIGN = {
   //   idea-record admission. Each step is its own one-line founder PR, never a
   //   build PR, and moves the pin row in sharedResearchFlags.test.js in the same
   //   commit (BUILD_RULES §2). Rollback: one step back with its pin row.
+  // PRACTICE_FIELD_MODE intentionally ABSENT, and it must stay absent: the
+  // Practice Field's idea book (build T1a-1 + T1c, report
+  // docs/audits/20261113_BUILD_T1A1_T1C_IDEA_BOOK_ACCOUNTING.md) is a STRING
+  // TRI-STATE ('off' | 'allowlist' | 'on') in its own module,
+  // src/config/practiceFieldFlags.js, so buildFlagMap never sees it and the
+  // integrity test below would fail the key outright. Noted HERE so a flip is
+  // loud in the place a reader looks for the dark runway;
+  // practiceFieldFlags.test.js asserts both halves.
+  //   Runway: 'off' ships with T1a-1 (dark): no Practice Field code path runs
+  //   in any cron, no book can be created, no idea admitted, and the Film
+  //   Room's seam answers "no book" without a read. 'allowlist' (the cockpit's
+  //   server-side allowlist) and then 'on' are each their own one-line founder
+  //   PR, never a build PR, after T1a-2's owner rules and index exemption are
+  //   deployed; each step moves the pin row in practiceFieldFlags.test.js in
+  //   the same commit (BUILD_RULES §2). Rollback: one step back with its pin
+  //   row. Whatever the value, a book of kind 'idea_book' is never touched by
+  //   a quarterly Mandate path (api/_utils/mandateBookKind.js).
   // ACTIVATION_EVIDENCE_ENABLED intentionally ABSENT: the ID-1 activation observer
   // flipped true on 2026-11-06 in the founder's own flip PR (flip checklist:
   // docs/audits/20261106_BUILD_ACTIVATION_OBSERVER_REVIEW_FIXES.md §11) — the
