@@ -873,3 +873,154 @@ describe('C1 review — the mutating lens\'s survivor D-M16: a book read that fa
     expect(errors.mock.calls.some((c) => String(c[0]).includes('book read failed'))).toBe(true);
   });
 });
+
+// ── C1 fix round, Astra F1 — a NEW nomination re-checks its filed source inside its transaction (exit criterion 8) ──
+describe('C1 fix round F1 — a new nomination judges its source again, in its transaction', () => {
+  const BOOK_ID = 'book-1';
+  const TAPE = `agentBattles/${BATTLE}/tape/${D}`;
+  afterEach(() => resetPracticeFieldSeam());
+  const withBook = () => setPracticeFieldSeam({ bookForOwner: async (_db, { uid, attributionAgentId }) => (uid === OWNER && attributionAgentId === AGENT ? { bookId: BOOK_ID, status: 'active' } : null) });
+  const nominate = (over = {}) => ({ op: 'nominate', opId: 'nom_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
+  const bookWrites = () => t.writeLog.filter((w) => w.path.startsWith('mandates/'));
+  const entry = () => t.store.get(`agents/${AGENT}/plays/op_1`);
+  const tape = () => t.store.get(TAPE);
+  /** Neither half: no record, the entry still the filed card at version 1. */
+  const neitherHalf = (where) => {
+    expect(bookWrites(), where).toEqual([]);
+    expect(entry(), where).toMatchObject({ stage: 'card', version: 1 });
+    expect(entry(), where).not.toHaveProperty('nomination');
+  };
+  const shift = (items) => items.map((i) => (i.symbol === 'ACN' ? { ...i, tickSeq: i.tickSeq + 1 } : i));
+
+  // each change to the source after the card was filed, and the route's existing source error it must answer
+  const CHANGES = [
+    ['the moment removed (its items gone)', () => t.store.set(TAPE, { ...tape(), tags: { ...tape().tags, items: tape().tags.items.filter((i) => i.symbol !== 'ACN') } }), 409, 'moment_not_found'],
+    ['the moment moved (4–5 now 5–6)', () => t.store.set(TAPE, { ...tape(), tags: { ...tape().tags, items: shift(tape().tags.items) } }), 409, 'moment_not_found'],
+    ["the stored items field removed (Astra's repro)", () => { const { items: _gone, ...tags } = tape().tags; t.store.set(TAPE, { ...tape(), tags }); }, 409, 'tags_unavailable'],
+    ['the day marked unavailable', () => t.store.set(TAPE, { ...tape(), coverage: { ...tape().coverage, tags: { ...tape().coverage.tags, status: 'unavailable' } } }), 409, 'tags_unavailable'],
+    ['the tape deleted', () => t.store.delete(TAPE), 404, 'tape_not_found'],
+    ["the tape another owner's", () => t.store.set(TAPE, { ...tape(), ownerId: 'someone-else' }), 404, 'tape_not_found'],
+    ['the situation re-tagged under another version', () => t.store.set(TAPE, { ...tape(), tags: { ...tape().tags, items: tape().tags.items.map((i) => ({ ...i, version: (i.version ?? 1) + 1 })) } }), 409, 'source_changed'],
+    ["the day's archetype changed", () => t.store.set(TAPE, { ...tape(), tags: { ...tape().tags, inputs: { ...tape().tags.inputs, archetypeCodeId: 'guardian' } } }), 409, 'archetype_changed'],
+    ['a foreign battle (its owner another player)', () => t.store.set(`agentBattles/${BATTLE}`, { ...t.store.get(`agentBattles/${BATTLE}`), ownerId: 'someone-else' }), 403, 'forbidden'],
+    ["the battle's agent another agent", () => t.store.set(`agentBattles/${BATTLE}`, { ...t.store.get(`agentBattles/${BATTLE}`), agentId: 'agent-9' }), 403, 'forbidden'],
+    ['the battle deleted', () => t.store.delete(`agentBattles/${BATTLE}`), 404, 'not_found'],
+    ['the battle a mode the tape does not cover', () => t.store.set(`agentBattles/${BATTLE}`, { ...t.store.get(`agentBattles/${BATTLE}`), gameMode: 'baggerbomb_tournament' }), 409, 'untaped'],
+  ];
+  for (const [name, change, status, error] of CHANGES) {
+    it(`${name} → ${status} ${error}; neither half written (the mutant: a new nominate that skips the source check)`, async () => {
+      withBook();
+      expect((await post(create())).statusCode).toBe(200);
+      change();
+      const res = await post(nominate());
+      expect(res.statusCode, name).toBe(status);
+      expect(res.body.error, name).toBe(error);
+      neitherHalf(name);
+    });
+  }
+
+  it('the control: an unchanged source nominates (200), both halves written', async () => {
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    expect((await post(nominate())).statusCode).toBe(200);
+    expect(entry()).toMatchObject({ stage: 'nominated', version: 2 });
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/nom_1`)).toBeTruthy();
+  });
+
+  it("the tape is in the transaction's read set: the moment removed BETWEEN the transaction's read of the tape and its commit conflicts, is judged again on the retry, and refuses moment_not_found — neither half written", async () => {
+    const seed = Object.fromEntries([...t.store.entries()]);
+    let strike = false;
+    t = makeTapeDb(seed, {
+      hooks: {
+        afterTxRead: async (label, db) => {
+          if (!strike || label !== TAPE) return;
+          strike = false;   // once: the retry reads the changed tape
+          const now = t.store.get(TAPE);
+          await db.collection('agentBattles').doc(BATTLE).collection('tape').doc(D).set({ ...now, tags: { ...now.tags, items: now.tags.items.filter((i) => i.symbol !== 'ACN') } });
+        },
+      },
+    });
+    state.db = t.db;
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    const retries = t.db.txRetries;
+    strike = true;
+    const res = await post(nominate());
+    expect(res).toMatchObject({ statusCode: 409, body: { error: 'moment_not_found' } });
+    expect(t.db.txRetries).toBeGreaterThan(retries);
+    neitherHalf('race');
+  });
+
+  it("the race's control: the tape rewritten unchanged between the read and the commit conflicts, is judged again, and nominates — the retry judges, it does not refuse on any conflict", async () => {
+    const seed = Object.fromEntries([...t.store.entries()]);
+    let strike = false;
+    t = makeTapeDb(seed, { hooks: { afterTxRead: async (label, db) => { if (!strike || label !== TAPE) return; strike = false; await db.collection('agentBattles').doc(BATTLE).collection('tape').doc(D).set(t.store.get(TAPE)); } } });
+    state.db = t.db;
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    const retries = t.db.txRetries;
+    strike = true;
+    expect((await post(nominate())).statusCode).toBe(200);
+    expect(t.db.txRetries).toBeGreaterThan(retries);
+    expect(entry()).toMatchObject({ stage: 'nominated', version: 2 });
+  });
+
+  it('a successful lost-answer replay still answers after the source changed (the replay is judged before the source)', async () => {
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    const first = await post(nominate());
+    expect(first.statusCode).toBe(200);
+    t.store.delete(TAPE);
+    const writes = t.writeLog.length;
+    expect(await post(nominate())).toMatchObject({ statusCode: 200, body: { idempotent: true, card: first.body.card } });
+    expect(t.writeLog.length).toBe(writes);
+  });
+
+  it("a casual clone's battle: the clone repointed at another parent, or its document gone, after the card was filed → 403 forbidden / 503 attribution_unavailable; neither half", async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    t.store.set('agentBattles/b-clone', { ...fixture.battle, id: 'b-clone', agentId: CLONE });
+    t.store.set(`agentBattles/b-clone/tape/${D}`, { ...t.store.get(TAPE), battleId: 'b-clone', agentId: CLONE });
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    withBook();
+    expect((await post(create({ battleId: 'b-clone', agentId: CLONE }))).statusCode).toBe(200);
+    t.store.set('agents/agent-x', { ownerId: OWNER, name: 'Other', archetype: 'momentum_chaser' });
+    t.store.set(`agents/${CLONE}`, { ...t.store.get(`agents/${CLONE}`), rankedAgentId: 'agent-x' });
+    expect(await post(nominate())).toMatchObject({ statusCode: 403, body: { error: 'forbidden' } });
+    neitherHalf('repointed');
+    t.store.delete(`agents/${CLONE}`);
+    expect(await post(nominate())).toMatchObject({ statusCode: 503, body: { error: 'attribution_unavailable' } });
+    neitherHalf('clone gone');
+    // another owner's clone document under that id resolves to no parent of this owner's
+    t.store.set(`agents/${CLONE}`, { ownerId: 'someone-else', name: 'Squat', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    expect(await post(nominate())).toMatchObject({ statusCode: 503, body: { error: 'attribution_unavailable' } });
+    neitherHalf('clone not the owner\'s');
+    // the control: the clone back as it was → nominates
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    expect((await post(nominate())).statusCode).toBe(200);
+  });
+
+  it('THE ORDER, pinned (a reading of the fix round): owner → replay → version → stage → SOURCE → book — a stale version, another owner and a card past card answer their own refusals before the source; a changed source answers before the book', async () => {
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    t.store.delete(TAPE);
+    expect(await post(nominate({ expectedVersion: 2 }))).toMatchObject({ statusCode: 409, body: { error: 'version_conflict' } });
+    state.uid = 'intruder';
+    expect(await post(nominate())).toMatchObject({ statusCode: 403, body: { error: 'forbidden' } });
+    state.uid = OWNER;
+    resetPracticeFieldSeam();   // no book: the changed source is still what is said
+    expect(await post(nominate())).toMatchObject({ statusCode: 404, body: { error: 'tape_not_found' } });
+    neitherHalf('order');
+    // an entry already moved past card answers illegal_transition before its source is read
+    t.store.set(`agents/${AGENT}/plays/op_1`, { ...entry(), stage: 'retired', version: 2 });
+    const reads = t.readLog.length;
+    expect(await post(nominate({ expectedVersion: 2 }))).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition' } });
+    expect(t.readLog.slice(reads).some((r) => r.includes('/tape/') || r.startsWith('tx:agentBattles'))).toBe(false);
+  });
+
+  it('the store refuses a nominate with no source verifier, before any read (a caller cannot skip the check by omission)', async () => {
+    const { nominateCard } = await import('../_utils/filmRoom/cardStore.js');
+    const reads = t.readLog.length;
+    await expect(nominateCard(t.db, { uid: OWNER, agentId: AGENT, entryId: 'op_1', opId: 'n', expectedVersion: 1, nowIso: '2026-09-25T16:00:00.000Z', book: { bookId: BOOK_ID, status: 'active' } })).rejects.toThrow(/verifySource is required/);
+    expect(t.readLog.length).toBe(reads);
+  });
+});

@@ -358,6 +358,13 @@ const nominateFingerprint = (agentId, entryId, expectedVersion) => canonicalCont
  *   a replay of the same op id is the IDEMPOTENT answer (another request under it → 409 op_conflict);
  *   the version the caller saw (409 version_conflict);
  *   the entry is at `card` and not shelved (409 illegal_transition — the spec's one refusal for both);
+ *   THE SOURCE the card was filed from (C1 fix round, Astra F1; exit criterion 8 covers a nomination as it covers a
+ *   create): `verifySource(tx, entry, agentId)`, the route's own source checks handed in as create's are (api/film-room/
+ *   card.js verifyEntrySourceIn), so this store imports no tape module — the battle's owner and attribution, the tape's
+ *   coverage, the exact stored moment, its situation version and its archetype, each read THROUGH THE TRANSACTION, so a
+ *   change between that read and the commit conflicts and is judged again; a changed or unavailable source refuses with
+ *   the route's existing source error and neither half is written. Judged after the stage and before the book, as a
+ *   create judges its source before its book; a successful replay above answers before it, whatever the tape says now;
  *   the owner's book is open — `book`, read by the route through the seam BEFORE this transaction and judged here,
  *   in its place in the order (409 book_not_open, the body naming nothing of any book).
  * Then ONE transaction writes both halves: the nomination record at `mandates/{bookId}/nominations/{opId}` (the
@@ -367,7 +374,10 @@ const nominateFingerprint = (agentId, entryId, expectedVersion) => canonicalCont
  *
  * @returns {Promise<{ idempotent: boolean, card: object }>}
  */
-export async function nominateCard(db, { uid, agentId, entryId, opId, expectedVersion, nowIso, book = null }) {
+export async function nominateCard(db, { uid, agentId, entryId, opId, expectedVersion, nowIso, book = null, verifySource = null }) {
+  // F1: a new nomination never commits without its source judged — a caller that hands no verifier is a bug, refused
+  // before any read
+  if (typeof verifySource !== 'function') throw new Error('nominateCard: verifySource is required');
   const opFingerprint = nominateFingerprint(agentId, entryId, expectedVersion);
   return db.runTransaction(async (tx) => {
     const agent = ownedAgent(await tx.get(agentRefOf(db, agentId)), uid);
@@ -384,6 +394,8 @@ export async function nominateCard(db, { uid, agentId, entryId, opId, expectedVe
     }
     if (expectedVersion !== entry.version) throw fail(409, 'version_conflict', { currentVersion: entry.version });
     if (entry.stage !== 'card' || isShelved(entry, agent.shelf)) throw fail(409, 'illegal_transition', { stage: entry.stage });
+    // F1: the filed source, judged again inside this transaction (reads only, so before every write)
+    await verifySource(tx, entry, agentId);
     if (!isBookOpen(book)) throw fail(409, 'book_not_open');
     const nominationRef = nominationRefOf(db, book.bookId, opId);
     if ((await tx.get(nominationRef))?.exists) throw fail(409, 'op_conflict', { entryId });

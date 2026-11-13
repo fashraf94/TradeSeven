@@ -369,4 +369,90 @@ describe('C1 on the real emulator — nominate and the Offer route, through an i
     expect(await plays(PARENT)).toEqual([]);
     expect((await db.collection(`mandates/${BOOK_ID}/nominations`).get()).size).toBe(records);
   });
+
+  // ── C1 fix round, Astra F1 — a NEW nomination re-checks its filed source, on the real emulator ──────────────────
+  const tapePathOf = (b) => `agentBattles/${b}/tape/${D}`;
+  const nominateBody = (id, opId) => ({ op: 'nominate', opId, agentId: PARENT, entryId: id, expectedVersion: 1 });
+  /** Neither half: no record under the op id, the entry still the filed card at version 1. */
+  const neitherHalf = async (id, opId, where) => {
+    expect((await nominationAt(opId)).exists, where).toBe(false);
+    const e = (await db.doc(`agents/${PARENT}/plays/${id}`).get()).data();
+    expect(e, where).toMatchObject({ stage: 'card', version: 1 });
+    expect(e, where).not.toHaveProperty('nomination');
+  };
+  const withoutAcn = (tape) => ({ ...tape, tags: { ...tape.tags, items: tape.tags.items.filter((i) => i.symbol !== 'ACN') } });
+
+  it('F1: each change to the filed source refuses a NEW nomination with the route\'s source error — the moment removed, the moment moved, the day unavailable, the tape deleted, a foreign battle — and neither half is written', async () => {
+    const changes = [
+      ['moment removed', async (b) => { const tp = (await db.doc(tapePathOf(b)).get()).data(); await db.doc(tapePathOf(b)).set(withoutAcn(tp)); }, 409, 'moment_not_found'],
+      ['moment moved', async (b) => { const tp = (await db.doc(tapePathOf(b)).get()).data(); await db.doc(tapePathOf(b)).set({ ...tp, tags: { ...tp.tags, items: tp.tags.items.map((i) => (i.symbol === 'ACN' ? { ...i, tickSeq: i.tickSeq + 1 } : i)) } }); }, 409, 'moment_not_found'],
+      ['day unavailable', async (b) => { await db.doc(tapePathOf(b)).update({ 'coverage.tags.status': 'unavailable' }); }, 409, 'tags_unavailable'],
+      ['tape deleted', async (b) => { await db.doc(tapePathOf(b)).delete(); }, 404, 'tape_not_found'],
+      ['foreign battle', async (b) => { await db.doc(`agentBattles/${b}`).update({ ownerId: OTHER }); }, 403, 'forbidden'],
+    ];
+    for (const [name, change, status, error] of changes) {
+      const b = await battleFor(`f1-${name.replace(/\s+/g, '-')}`, PARENT);
+      const filed = await post(create(b, PARENT));
+      expect(filed.statusCode, name).toBe(200);
+      const id = filed.body.card.entryId;
+      await change(b);
+      const opId = `f1n_${(n += 1)}_${RUN}`;
+      const res = await post(nominateBody(id, opId));
+      expect(res.statusCode, name).toBe(status);
+      expect(res.body.error, name).toBe(error);
+      await neitherHalf(id, opId, name);
+    }
+  });
+
+  it('F1: the replay after a change — a nomination that committed answers its lost-answer replay after the tape is deleted (200 idempotent), nothing more written', async () => {
+    const b = await battleFor('f1-replay', PARENT);
+    const id = (await post(create(b, PARENT))).body.card.entryId;
+    const opId = `f1r_${RUN}`;
+    const first = await post(nominateBody(id, opId));
+    expect(first.statusCode).toBe(200);
+    await db.doc(tapePathOf(b)).delete();
+    const again = await post(nominateBody(id, opId));
+    expect(again).toMatchObject({ statusCode: 200, body: { idempotent: true } });
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'nominated', version: 2 });
+  });
+
+  it("F1: the tape is in the nominate transaction's read set — a write to it begun after the transaction has read it (the moment then removed) is held until the transaction ends, never landed under it: the nomination commits over the moment as it stood, and the removal lands after (the emulator locks what a transaction reads; the in-memory suite's retry row judges the changed tape again)", async () => {
+    const b = await battleFor('f1-race', PARENT);
+    const id = (await post(create(b, PARENT))).body.card.entryId;
+    const real = state.db;
+    let strike = true;
+    const at = {};
+    // the handle the route uses: the real one, whose transaction begins the tape change after its callback has done
+    // every read, then holds the callback open for a while before it returns (and so before the commit)
+    state.db = new Proxy(real, {
+      get(target, prop) {
+        if (prop !== 'runTransaction') { const v = Reflect.get(target, prop); return typeof v === 'function' ? v.bind(target) : v; }
+        return (fn, opts) => target.runTransaction(async (tx) => {
+          const out = await fn(tx);
+          if (strike) {
+            strike = false;
+            const tp = (await real.doc(tapePathOf(b)).get()).data();
+            at.write = real.doc(tapePathOf(b)).set(withoutAcn(tp)).then(() => { at.written = Date.now(); });
+            await new Promise((r) => { setTimeout(r, 1500); });
+            at.callbackEnd = Date.now();
+          }
+          return out;
+        }, opts);
+      },
+    });
+    try {
+      const opId = `f1x_${RUN}`;
+      const res = await post(nominateBody(id, opId));
+      at.answered = Date.now();
+      await at.write;
+      expect(res.statusCode).toBe(200);
+      // the write waited for the transaction: it landed after the callback was done, not inside its 1.5 s window
+      expect(at.written).toBeGreaterThanOrEqual(at.callbackEnd);
+      expect((await nominationAt(opId)).exists).toBe(true);
+      // and it did land, after: the moment is gone now, so a NEW nomination of another card from that day is refused
+      expect((await db.doc(tapePathOf(b)).get()).data().tags.items.filter((i) => i.symbol === 'ACN')).toEqual([]);
+    } finally {
+      state.db = real;
+    }
+  });
 });

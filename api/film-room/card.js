@@ -67,11 +67,15 @@
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { gateFilmRoomCardsRoute, sendCardError } from '../_utils/filmRoom/cardsGate.js';
 import { parseCreateBody, parseRetireBody, parseNominateBody, parseParkBody, questionFor, momentOfDay } from '../_utils/filmRoom/cardRequest.js';
-import { createCard, replayCreate, retireCard, nominateCard, parkCard, attributionAgentOf, CardRouteError, CARD_ROUTE_COPY, NOMINATING_ROUTE } from '../_utils/filmRoom/cardStore.js';
+import { createCard, replayCreate, retireCard, nominateCard, parkCard, attributionAgentOf, agentRefOf, CardRouteError, CARD_ROUTE_COPY, NOMINATING_ROUTE } from '../_utils/filmRoom/cardStore.js';
 // Build C §4 (refinement R-C1-3): the owner's book, read once through the Practice Field's seam (no book until T1a)
 import { bookForOwner } from '../_utils/filmRoom/practiceFieldSeam.js';
-import { readBattle, tapeRef } from '../_utils/filmTape/tapeSources.js';
+import { readBattle, battleRef, tapeRef } from '../_utils/filmTape/tapeSources.js';
 import { isTieredBattle } from '../_utils/filmTape/writeTapeDay.js';
+// C1 fix round F1: a nomination's battle attribution, judged in its transaction — the platform's PURE resolver over the
+// clone document read there (called, never copied; casualClone.js is not edited)
+import { resolveRecordTargetId } from '../_utils/casualClone.js';
+import { isCasualCloneId } from '../../src/constants/leagueTournament.js';
 
 export const config = { maxDuration: 10 };
 
@@ -143,19 +147,66 @@ const GRPC_ABORTED = 10;
  * refusal for a day taped under another archetype than the agent's; its situation version → 409 source_changed.
  */
 export function verifySourceIn(db, uid, req, payload) {
-  return async (tx) => {
-    let tape;
-    try {
-      const snap = await tx.get(tapeRef(db, req.battleId, req.etDate));
-      tape = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
-    } catch (err) {
-      if (err?.cardRoute || err?.code === GRPC_ABORTED) throw err;
-      console.error('[film-room/card] tape re-read failed:', err?.message ?? err);
-      throw refuse(503, 'tape_unreadable');
+  return (tx) => checkDayIn(tx, db, uid, { battleId: req.battleId, etDate: req.etDate, moment: req.moment, archetypeCodeId: payload.archetypeCodeId, situationVersion: payload.situationVersion });
+}
+
+/** The day's checks inside a transaction — the one rule both verifiers apply (RI-3; C1 fix round F1). */
+async function checkDayIn(tx, db, uid, { battleId, etDate, moment, archetypeCodeId, situationVersion }) {
+  let tape;
+  try {
+    const snap = await tx.get(tapeRef(db, battleId, etDate));
+    tape = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
+  } catch (err) {
+    if (err?.cardRoute || err?.code === GRPC_ABORTED) throw err;
+    console.error('[film-room/card] tape re-read failed:', err?.message ?? err);
+    throw refuse(503, 'tape_unreadable');
+  }
+  const again = sourceOfDay(tape, uid, moment);
+  if (again.archetypeCodeId !== archetypeCodeId) throw refuse(409, 'archetype_changed', { archetypeCodeId: again.archetypeCodeId });
+  if (again.situationVersion !== situationVersion) throw refuse(409, 'source_changed');
+}
+
+const dataOf = (snap) => (snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null);
+
+/**
+ * C1 fix round, Astra F1 (exit criterion 8 covers a nomination as it covers a create) — a NEW nomination's source,
+ * judged inside the nominate transaction, with the create path's own checks: the store hands in the entry it read and
+ * the attribution agent it is filed under, and this re-reads, THROUGH THE TRANSACTION, so a change between these reads
+ * and the commit conflicts and is judged again —
+ *   the battle the card was filed from: missing → 404 not_found; not the caller's → 403 forbidden; a mode the tape does
+ *   not cover → 409 untaped; its ATTRIBUTION agent (RK-1: a casual clone's parent, by the platform's pure resolver over
+ *   the clone document read in the transaction, the settlement transaction's precedent) not the agent the entry is filed
+ *   under → 403 forbidden; a clone that resolves to no parent → 503 attribution_unavailable;
+ *   the tape day: sourceOfDay and the stored situation version and archetype, exactly as the create's re-read
+ *   (checkDayIn) — the moment gone or moved → 409 moment_not_found, the day unavailable → 409 tags_unavailable, the
+ *   tape gone or not the caller's → 404 tape_not_found, the archetype → 409 archetype_changed, the version → 409
+ *   source_changed, a failed read → 503 tape_unreadable.
+ * A contention abort is rethrown as it came, so the SDK retries the transaction.
+ */
+export function verifyEntrySourceIn(db, uid) {
+  return async (tx, entry, attributionAgentId) => {
+    const src = entry?.source && typeof entry.source === 'object' ? entry.source : null;
+    if (!src || typeof src.battleId !== 'string' || !src.battleId || typeof src.etDate !== 'string' || !src.etDate) throw refuse(404, 'tape_not_found');
+    const battle = dataOf(await tx.get(battleRef(db, src.battleId)));
+    if (!battle) throw refuse(404, 'not_found');
+    if (battle.ownerId !== uid) throw refuse(403, 'forbidden');
+    if (!isTieredBattle(battle)) throw refuse(409, 'untaped');
+    let target = battle.agentId;
+    if (isCasualCloneId(battle.agentId)) {
+      let clone;
+      try {
+        clone = dataOf(await tx.get(agentRefOf(db, battle.agentId)));
+      } catch (err) {
+        if (err?.cardRoute || err?.code === GRPC_ABORTED) throw err;
+        console.error('[film-room/card] clone read failed:', err?.message ?? err);
+        throw refuse(503, 'attribution_unavailable');
+      }
+      target = resolveRecordTargetId(battle.agentId, clone && clone.ownerId === uid ? clone : null);
+      if (isCasualCloneId(target)) throw refuse(503, 'attribution_unavailable');
     }
-    const again = sourceOfDay(tape, uid, req.moment);
-    if (again.archetypeCodeId !== payload.archetypeCodeId) throw refuse(409, 'archetype_changed', { archetypeCodeId: again.archetypeCodeId });
-    if (again.situationVersion !== payload.situationVersion) throw refuse(409, 'source_changed');
+    if (target !== attributionAgentId) throw refuse(403, 'forbidden');
+    const moment = { situationId: entry.situationId, symbol: src.symbol, fromTickSeq: src.fromTickSeq, toTickSeq: src.toTickSeq };
+    await checkDayIn(tx, db, uid, { battleId: src.battleId, etDate: src.etDate, moment, archetypeCodeId: entry.archetypeCodeId, situationVersion: entry.situationVersion });
   };
 }
 
@@ -259,7 +310,8 @@ export default async function handler(req, res) {
       // RK-1: the entry and the book are the named agent's ATTRIBUTION agent's — a casual clone's parent, never the clone
       const agentId = await attributionAgentOf(db, parsed.agentId);
       const book = await bookOf(db, user.uid, agentId);
-      const out = await nominateCard(db, { uid: user.uid, agentId, entryId: parsed.entryId, opId: parsed.opId, expectedVersion: parsed.expectedVersion, nowIso, book });
+      // C1 fix round F1: the card's own source, judged again inside the nominate transaction
+      const out = await nominateCard(db, { uid: user.uid, agentId, entryId: parsed.entryId, opId: parsed.opId, expectedVersion: parsed.expectedVersion, nowIso, book, verifySource: verifyEntrySourceIn(db, user.uid) });
       return res.status(200).json({ idempotent: out.idempotent, card: out.card });
     } catch (err) {
       return sendCardError(res, err, 'nominate');

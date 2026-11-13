@@ -39,6 +39,8 @@ const fresh = (agent = agentDoc()) => makeTapeDb({ [`agents/${AGENT}`]: agent })
 const playPath = (id) => `agents/${AGENT}/${PLAYS_SUBCOLLECTION}/${id}`;
 const playWrites = (t) => t.writeLog.filter((w) => w.path.includes(`/${PLAYS_SUBCOLLECTION}/`));
 const code = async (p) => { try { await p; return null; } catch (e) { return e.cardRoute ? { status: e.status, code: e.code, extra: e.extra } : { thrown: String(e) }; } };
+/** C1 fix round F1: nominate's source verifier — the route's (api/film-room/card.js) is exercised through the handler; here, a pass. */
+const SOURCE_OK = async () => {};
 
 /** A card filed, then put at `nominated` with its nomination beside it (as the C1 nominate op leaves it) — planted here, the op is item 3's. */
 async function nominated(t, id = 'c1') {
@@ -99,7 +101,7 @@ describe('Build C §3 — the stage vocabulary v2, one export', () => {
     const v1 = { ...card };
     delete v1.stageVocabVersion;
     t.store.set(playPath('c1'), v1);
-    const r = await nominateCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'n1', expectedVersion: 1, nowIso: LATER, book: { bookId: BOOK, status: 'active' } });
+    const r = await nominateCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'n1', expectedVersion: 1, nowIso: LATER, book: { bookId: BOOK, status: 'active' }, verifySource: SOURCE_OK });
     expect(r.card.stage).toBe('nominated');
     expect('stageVocabVersion' in t.store.get(playPath('c1'))).toBe(false);
   });
