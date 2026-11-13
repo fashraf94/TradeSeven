@@ -162,7 +162,8 @@ export const SHEET_COPY = Object.freeze({
   // tickStamps.js: `chg` is the position's change FROM ENTRY (not the session's),
   // and `atrX` is that change in the scorer's own unit — the first rung is 1.00×.
   checkReadFromEntry: (chg) => `${pct1(chg)} from entry`,
-  checkReadAtr: (atrX) => `${atrX.toFixed(2)}× a rung step (the first rung is 1.00×)`,
+  // "−" (U+2212) as the rest of the sheet prints it, the sign taken from the printed value (never "−0.00").
+  checkReadAtr: (atrX) => `${atrX < 0 && Number(Math.abs(atrX).toFixed(2)) > 0 ? '−' : ''}${Math.abs(atrX).toFixed(2)}× a rung step (the first rung is 1.00×)`,
   checkReadNr7: 'its tightest range in 7 days',
   rule: (arch, f1, w1, f2, w2) => (f2
     ? `${arch} ranks names by ${FACTOR_WORDS[f1]} first (${share(w1)} of its ranking), then ${FACTOR_WORDS[f2]} (${share(w2)})`
@@ -216,6 +217,9 @@ export const SHEET_COPY = Object.freeze({
     : ''}`,
   // QF-1 — a held position the measured ladder does not score (a legacy stock, crypto).
   notOnLadder: (sym) => `${sym} isn’t on the measured ladder, so only the standing questions apply.`,
+  // QF-1, ruling 2 (2026-11-13) — a held measured stock with no committed context yet (just after a swap):
+  // the next check's time from Build A's clock; none (no slot left) → the line without it.
+  bookPending: (checkTime) => (checkTime ? `Your book is ranked at the next check (${checkTime})` : 'Your book is ranked at the next check'),
   // loop items
   idea: (statement) => `This game’s idea: “${statement}”`,
   toldIt: (text) => `“${text}”`,

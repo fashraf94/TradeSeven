@@ -43,10 +43,28 @@ describe('QF-1 — the question set follows the row', () => {
     delete legacy.scoring.stockThresholdModel;
     expect(questionSetOf(args(legacy, 'AAPL'))).toEqual({ questions: ['catch_up', 'protect_lead'], notOnLadder: true });
   });
-  it('exactly at entry, or no committed context yet: not up — weakest_spot (the rule\'s "else")', () => {
-    const flat = JSON.parse(JSON.stringify(BOOK));
-    delete flat.scoring.stockRewardContexts.agent[posOf(BOOK, 'AAPL').positionId];
-    expect(questionSetOf(args(flat, 'AAPL', { row: { positionId: posOf(BOOK, 'AAPL').positionId } })).questions[0]).toBe('weakest_spot');
+  it('no committed context yet (ruling 2, 2026-11-13): the standing two only and the line with the next check\'s time — no state question, no ranking', () => {
+    const fresh = JSON.parse(JSON.stringify(BOOK));
+    delete fresh.scoring.stockRewardContexts.agent[posOf(BOOK, 'AAPL').positionId];
+    // The precondition: nothing on the book is ranked (one missing context breaks the commit for all).
+    expect(rankedBook(bookOf(fresh))).toEqual([]);
+    const row = { row: { positionId: posOf(BOOK, 'AAPL').positionId } };
+    // 13:07 ET, the 1:15 slot 8 minutes off: its time, never the clock's ticking "1:15 · 08:00".
+    expect(questionSetOf(args(fresh, 'AAPL', row))).toEqual({ questions: ['catch_up', 'protect_lead'], notOnLadder: false, bookPending: { time: '1:15' } });
+    expect(SHEET_COPY.bookPending('1:15')).toBe('Your book is ranked at the next check (1:15)');
+    // Every held measured stock on that book, leading or trailing: the standing two in standing order.
+    const lead = { player: 70, opponent: 60, digits: 0, you: '+70', them: '+60', lead: 'player' };
+    expect(questionSetOf(args(fresh, 'EQIX', { row: { positionId: posOf(BOOK, 'EQIX').positionId }, standing: lead })).questions).toEqual(['protect_lead', 'catch_up']);
+  });
+  it('ruling 2, the clock\'s other states: a slot running in the queue names its own time; after the close the next day\'s; past the battle\'s end no time', () => {
+    const fresh = JSON.parse(JSON.stringify(BOOK));
+    delete fresh.scoring.stockRewardContexts.agent[posOf(BOOK, 'AAPL').positionId];
+    const row = { row: { positionId: posOf(BOOK, 'AAPL').positionId } };
+    const at = (iso) => questionSetOf(args(fresh, 'AAPL', { ...row, nowMs: Date.parse(iso) })).bookPending;
+    expect(at('2026-10-14T17:17:00.000Z')).toEqual({ time: '1:15' }); // 1:17 PM ET: the 1:15 check in the queue
+    expect(at('2026-10-14T21:30:00.000Z')).toEqual({ time: 'Thu 9:30 AM' }); // 5:30 PM ET: tomorrow's first
+    expect(at('2026-10-21T15:00:00.000Z')).toEqual({ time: null }); // past expiresAt
+    expect(SHEET_COPY.bookPending(null)).toBe('Your book is ranked at the next check');
   });
 });
 
@@ -164,13 +182,23 @@ function BOOK_STOCKS_WITH(moves) {
 }
 
 describe('the review round (PR 1 §2 review: A1, A2, A3, A6, A9, C2)', () => {
-  it('A1 (refuted, the letter kept) — up means gain > 0: +0.03 rungs (prints 0.0) is up; −0.03 is not', async () => {
+  it('A1, ruled 2026-11-13 (ruling 1) — up is decided on the printed number: +0.03 rungs (a few cents above the fill, prints 0.0) is weakest_spot; +0.1 is take_profit', async () => {
     const flat = await measuredBookBattle({ stocks: BOOK_STOCKS_WITH({ AAPL: 0.03 }) });
     expect(posOf(flat, 'AAPL').rungsShown).toBe(0);
     expect(posOf(flat, 'AAPL').rungs).toBeGreaterThan(0);
-    expect(questionSetOf(args(flat, 'AAPL')).questions[0]).toBe('take_profit');
+    expect(questionSetOf(args(flat, 'AAPL')).questions[0]).toBe('weakest_spot');
+    // The same number the place in the book prints: "AAPL is 0.0 rungs from entry".
+    expect(factOf(flat, 'AAPL', 'book_rank')).toMatch(/^AAPL is 0\.0 rungs from entry/);
+    const tenth = await measuredBookBattle({ stocks: BOOK_STOCKS_WITH({ AAPL: 0.12 }) });
+    expect(posOf(tenth, 'AAPL').rungsShown).toBe(0.1);
+    expect(questionSetOf(args(tenth, 'AAPL')).questions[0]).toBe('take_profit');
     const down = await measuredBookBattle({ stocks: BOOK_STOCKS_WITH({ AAPL: -0.03 }) });
     expect(questionSetOf(args(down, 'AAPL')).questions[0]).toBe('weakest_spot');
+  });
+  it('the check\'s ATR reading prints "−" (U+2212) like the rest of the sheet, never an ASCII hyphen or "−0.00"', () => {
+    expect(SHEET_COPY.checkReadAtr(-0.45)).toBe('−0.45× a rung step (the first rung is 1.00×)');
+    expect(SHEET_COPY.checkReadAtr(-0.001)).toBe('0.00× a rung step (the first rung is 1.00×)');
+    expect(SHEET_COPY.checkReadAtr(1.05)).toBe('1.05× a rung step (the first rung is 1.00×)');
   });
   it('A2 — an incumbent the agent no longer holds is no incumbent: the compare is the weakest holding', () => {
     const items = candidateItems(args(BOOK, 'MSFT', { incumbent: 'TSLA' })).items;
