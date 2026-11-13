@@ -4,6 +4,7 @@
 **Design of record:** `docs/design/research-modal/RESEARCH_MODAL_DIRECTION_V2_AMENDMENT_C_20261112.md` (Amendment C, R-23–R-35), round 5 (screens A, A2, D, H) and round 4 (screen B) beside it.
 **Flag:** `RESEARCH_MODAL_SHEET_MODE` (`src/config/researchModalFlags.js`), shipping `'off'`. No third flag (R-28).
 **Build report:** `docs/audits/20261112_BUILD_RESEARCH_MODAL_SHELL.md`.
+**Rulings and the pre-'on' fixes (2026-11-12):** §10 below; report `docs/audits/20261112_FLIP_AND_FIX_RESEARCH_MODAL_SHELL.md`. They override any section above where they differ. The flag's `'allowlist'` step is its own founder PR (`claude/research-modal-sheet-allowlist`).
 
 ## 0. In plain terms
 
@@ -50,7 +51,7 @@ With the flag `'off'` the modal is today's, byte for byte (the mode-off goldens)
 
 | From | Action | View | Timeframe set |
 |---|---|---|---|
-| open | — | `analysis`; `bomb` when FQ-9 (`opensInRedZone`) or BD-7 (`opensOnBomb`) decided so at open | initial `'1D'`; `'bomb'` when opening on 💣 |
+| open | — | `analysis`; `bomb` when FQ-9 (`opensInRedZone`) or BD-7 (`opensOnBomb`) decided so at open, or (BS-1, §10) on a mount with a `bombContext` and no `sheetContext` whose `defaultTab` / `defaultTimeframe` asks for the bomb | initial `'1D'`; `'bomb'` when opening on 💣 |
 | analysis ↔ chart | pill | the other | none (the hook refetches nothing it holds) |
 | analysis / chart | 💣 pill | `bomb` | `'bomb'` (Bomb mode's zone logic then moves it to `'spectate'` and back, as today) |
 | bomb | Analysis / Chart pill | that view | the Chart view's last timeframe (`1D` or `1W`; `1D` if none) — in the pill's handler, never an effect |
@@ -70,8 +71,8 @@ Off = today's modal. Shell (battle) = the archetype's Analysis view + Build C's 
 | # | Mount | `'off'` | `'allowlist'` | `'on'` |
 |---|---|---|---|---|
 | 1–3 | `AgentBattleScreen.jsx` — held (gated), non-held (gated), legacy (+ the cockpit bench door through them) | Off | Shell (battle), 3 pills — allowlisted owner's battle; else Off | Shell (battle), 3 pills |
-| 4 | `BaggerBombBattleView.jsx` (`bombContext` v4 / bench) | Off | Off | Shell (browse), 3 pills — opens on Analysis (not its `defaultTab` 💣) |
-| 5 | `BaggerBomb/FreeAgentBar.jsx` (`bombContext` bench) | Off | Off | Shell (browse), 3 pills |
+| 4 | `BaggerBombBattleView.jsx` (`bombContext` v4 / bench) | Off | Off | Shell (browse), 3 pills — opens on 💣 (its `defaultTimeframe` is the bomb; BS-1) |
+| 5 | `BaggerBomb/FreeAgentBar.jsx` (`bombContext` bench) | Off | Off | Shell (browse), 3 pills — opens on 💣 (its `defaultTab` and `defaultTimeframe`; BS-1) |
 | 6 | `FilmRoomScreen.jsx` (`isGameContext`, no `bombContext`) | Off | Off | Shell (browse), 2 pills |
 | 7 | `BaggerBomb/AssetPickerModal.jsx` (`actionConfig`) | Off | Off | Shell (browse), its action |
 | 8 | `Dashboard/Watchlist/WatchlistContainer.jsx` (*Add to Watchlist*) | Off | Off | Shell (browse), its action |
@@ -105,7 +106,7 @@ Off = today's modal. Shell (battle) = the archetype's Analysis view + Build C's 
 3. **Pills of equal width** (R-27's letter) — round 5 H1's drawing gives 💣 a fixed 64 px.
 4. **The Ask's label** is *Ask {Agent}: {question}* (R-29), with Build C's cost line *· 1 message · N left* kept as built (SB-10), not round 5's *Ask · 1 msg*. The reply card's sending and failure lines (`AskReply.jsx`, unchanged) are handed the same name, so *Juno is answering…* / *Juno didn't answer* match the row (review A2); the answered card keeps *Its answer · {Archetype}* beside the agent's tag. The archetype when the battle names no agent. An Ask sent from Chart or 💣, or answered while the player looks there, brings the player to its card on the Analysis view (review A1).
 5. **Build C's crypto sheet (BC-15) is not reachable** under R-35: a crypto holding in battle gets today's modal at every value until the crypto shell.
-6. **Mounts with a `bombContext` but no `sheetContext`** (BaggerBomb battle view, free agent bar) get three pills over the browse content at `'on'` and open on Analysis, not their `defaultTab` 💣.
+6. **Mounts with a `bombContext` but no `sheetContext`** (BaggerBomb battle view, free agent bar) get three pills over the browse content at `'on'`. *As first built they opened on Analysis, not their `defaultTab` 💣; the founder changed this on 2026-11-12 (BS-1, §10): they open on 💣 when their `defaultTab` or `defaultTimeframe` asks for the bomb.*
 7. **The smoke's tabs read public market data** (§8).
 8. **R-27's "warms … in the red zone or the Danger Zone"** is read as the LIVE zones (approaching, the banked moment, danger): after the bell the zone is frozen (Bomb mode greys its own chip, "never live"), and the pill stays cool (review A3). At first build the pill followed `isZoneMode`, which includes the frozen views.
 
@@ -123,3 +124,31 @@ Off = today's modal. Shell (battle) = the archetype's Analysis view + Build C's 
 ## 9. State 2, recorded for the later build (Amendment C §6)
 
 The order on open: the header and pills; the context strip (the question, each refinement, the group, the active conditions, the readings' time, *‹ Back to ranking*, *{Agent} · {Archetype}*); *For this question*; the finding with *Use across my bench*; *Compare with a holding*; the prepared answers; the game line; the Wall St · About line; the four tabs; the action row with a free-text Ask and *→ Cockpit*. The later build prepends its blocks to `battleBlocks`' list (R-34) and adds the free-text Ask to the action row.
+
+## 10. The founder's rulings (2026-11-12) and the pre-'on' fixes (BS-1–BS-4), as built
+
+The founder's flip-and-fix prompt of Nov 12 ruled on the build report's ten readings (report §3) and named the fixes that land before `'on'`. Its `'allowlist'` flip is a separate founder PR (`claude/research-modal-sheet-allowlist`). Report: `docs/audits/20261112_FLIP_AND_FIX_RESEARCH_MODAL_SHELL.md`.
+
+### 10.1 The ten readings (build report §3)
+
+| # | Reading | Ruling |
+|---|---|---|
+| 1 | What's moving loads on a tap | **Kept as built** |
+| 2 | What's moving's number is the header's (§9) | **Kept as built** |
+| 3 | The holding line is Build C's stance for every kind | **Kept as built** |
+| 4 | Pills of equal width (R-27's letter) | **Kept as built** |
+| 5 | The Ask's label and its card's lines | **Kept as built** |
+| 6 | Build C's crypto sheet is not reachable (R-35) | **Kept as built** |
+| 7 | Mounts with Bomb mode but no sheet open on Analysis | **Changed:** BS-1 below |
+| 8 | The smoke's tabs read public market data | **Kept as built** |
+| 9 | The 💣 pill warms in the LIVE zones only | **Kept as built** |
+| 10 | The shell appearing mid-modal re-decides the view | **Kept as built** |
+
+### 10.2 The pre-'on' fixes, as built
+
+| ID | As built |
+|---|---|
+| **BS-1** | **A Bomb-only mount opens on 💣.** `shellView.bombOnlyOpensOnBomb({ defaultTab, defaultTimeframe })`: true when `defaultTab` is `'baggerbomb'` or `defaultTimeframe` is `'bomb'` or `'spectate'`. The modal adds it to the open-on-💣 decision only for a mount with a `bombContext` and **no** `sheetContext` (the BaggerBomb battle view, which always passes `defaultTimeframe="bomb"`; the free-agent bar, `defaultTab="baggerbomb"` and `defaultTimeframe="bomb"`), so both open on 💣 at `'on'` on the 30-minute series, as they do off the shell; a Bomb-mode mount that asks for neither opens on Analysis. The agent Battle View's mounts hand a `sheetContext` and keep FQ-9 and BD-7 unchanged. Review C5's row, which pinned reading 7 as first built, is rewritten to this. |
+| **BS-2** | **See on chart holds the item, not its slot** (build report §12 A8). `useSheetView` keeps the open pack item by its key, `packs.itemKeyOf(item)` = its `kind` and `symbol` (fields every item already carries: the items are the Ask's `researchAsk.items` and the facts golden's, so no field is added). `candidateItems` builds at most one item per kind, so the key is unique within a pack (a row checks every archetype at three prices, with and without an incumbent). The open item is found by its key in the pack of the moment; one that has left the pack closes (its caption and its line go, the Chart view shows the record's latest pin as with nothing tapped) and stays closed if it comes back — reopening it is a new tap. `tapItem(i)` still takes the slot a tap lands on and stores that item's key. The refuter's repro is the row: `rung_distance` drops at $103.83 and `check_read` takes its slot; `check_read` is never opened. |
+| **BS-3** | **The stock row at 320 px** (build report §12.7). The price and the day's change size by `clamp()`, as the tabs' labels do: `SHELL_PRICE_FONT = clamp(12px, 3.6vw, 14px)`, `SHELL_CHANGE_FONT = clamp(10px, 2.95vw, 11.5px)` — 12 / 10 px at 320, 13.5 / 11.06 px at 375, the old 14 / 11.5 px from 390 up. The name keeps its ellipsis. Measured in headless Edge on the real header inside the phone modal's box (100vw, border-box, a 1 px border; `shellHeader.browser.test.js`, run with `SHELL_HEADER_BROWSER=1`): at 320 and 375, GOOGL and BRK.A, with and without the back arrow, ✕'s 44 px box is inside the screen, and the name keeps at least 8 px. **The app prints a price with no thousands separator** (`priceText`: `$712345.67`); the build report's 2.2 px clip came from a measurement that substituted `$712,345.67`, 7.7 px wider. The rows draw both; the comma form with the refuter's ▼ 12.34% and a back arrow leaves the name 9.2 px at 320. Segoe UI and Consolas drew here; SF Pro and SF Mono on an iPhone are unmeasured. |
+| **BS-4** | The 💣 preview's rung size for a stock the agent does not hold, in a battle scored by the measured ATR model: the rankings' ATR reading. Built in Bomb mode; recorded in `RESEARCH_MODAL_BUILD_A_BOMB_MODE_SPEC_V1.md`, "BS-4". It applies under the shell and off it alike. |

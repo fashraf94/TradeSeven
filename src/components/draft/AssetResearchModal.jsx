@@ -28,6 +28,7 @@ import SmartMoneyTab from '../Research/SmartMoneyTab';
 import { getVolatilityThresholds } from '../../services/volatilityService';
 import { resolveBombMode } from '../Research/BombMode/bombModeGate';
 import useBombView from '../Research/BombMode/useBombView';
+import { readAtrReading } from '../Research/BombMode/atrReading';
 import BombPlot, { RedZoneChip } from '../Research/BombMode/BombPlot';
 import BombSheet from '../Research/BombMode/BombSheet';
 import { isZoneMode } from '../Research/BombMode/redZone';
@@ -39,7 +40,7 @@ import { SHELL_COPY } from '../Research/Sheet/sheetCopy';
 import { visibleViewportHeight } from '../Research/Sheet/sheetViewport';
 import { opensInRedZone } from '../Research/Sheet/sheetOpen';
 import { resolveSheetMode, sheetModeOn } from '../Research/Sheet/sheetMode';
-import { shellViewsFor, openingView, switchView, seeOnChartTimeframe, isChartTimeframe, isLiveZoneMode, viewOnShellAppear, shellChartHeight } from '../Research/Sheet/shellView';
+import { shellViewsFor, openingView, bombOnlyOpensOnBomb, switchView, seeOnChartTimeframe, isChartTimeframe, isLiveZoneMode, viewOnShellAppear, shellChartHeight } from '../Research/Sheet/shellView';
 import { motionToken } from '../../theme/motion';
 
 /**
@@ -234,9 +235,10 @@ const AssetResearchModal = ({
   // (none yet → Analysis); never switched after open (this state is never set again).
   // Bomb mode refinement (BD-7, 2026-11-10): the Battle View's "See all levels ›"
   // door asks for 💣 by name (`opensOnBomb`), so it lands on the levels table.
-  // Off the shell the mount's own defaultTab decides.
+  // BS-1 (2026-11-12): a mount with Bomb mode but no sheet opens on 💣 when its own
+  // defaultTab / defaultTimeframe asks for the bomb. Off the shell the mount's own defaultTab decides.
   const [sheetOpensOnBomb] = useState(() => shellOn && version >= 2 && bombContext != null && typeof bombContext === 'object'
-    && (opensOnBomb === true || opensInRedZone({ bombContext, symbol: asset?.symbol, live: controlledMode ? controlledPrice : (wsPrice || asset?.price || asset?.currentPrice || null), nowMs: Date.now(), isCrypto })));
+    && (opensOnBomb === true || (!battleSheet && bombOnlyOpensOnBomb({ defaultTab, defaultTimeframe })) || opensInRedZone({ bombContext, symbol: asset?.symbol, live: controlledMode ? controlledPrice : (wsPrice || asset?.price || asset?.currentPrice || null), nowMs: Date.now(), isCrypto })));
   // The shell's state (SB-4): the view on screen, the Analysis view's tab, the Chart view's last timeframe.
   const [shellView, setShellView] = useState(() => openingView({ opensOnBomb: sheetOpensOnBomb }));
   const [shellTab, setShellTab] = useState('moving');
@@ -432,6 +434,49 @@ const AssetResearchModal = ({
   // sheet alike (BA-1), never the fallback chain above (which stays the
   // mode-off chart's, byte for byte).
   const [bombThreshold, setBombThreshold] = useState(null); // { symbol, threshold } — the sheet's thresholds answer
+  // BS-4 (founder ruling Q3, 2026-11-12): a stock the agent does not hold, in a battle scored by the
+  // measured ATR model, previews its rungs at the rankings' ATR reading — ONE read of
+  // stockTechnicalScores/{SYM} per stock (atrReading.js), only while its 💣 view or Bomb tab shows —
+  // never the screen's threshold (atrPercentile × 8, or the 2.5 default) and never the thresholds
+  // request below. Never for a held name, a crypto, a legacy-scored battle, a bench or V4 context,
+  // or with Bomb mode off (no bombContext).
+  const atrArm = bombOn && bombContext.kind === 'agent' && bombContext.stockModel === 'corrected' && !isCrypto
+    && !(isOriginalAsset && bombContext.record != null && bombContext.record.symbol === currentAsset?.symbol)
+    // Refuter NEW-1: a held MEASURED row the agent's record does not name — the CPU's position, or the
+    // agent's own after the battle ends — carries its committed reward route; it is not a candidate,
+    // so it keeps what it showed before ("No ladder yet"), never an "if it entered" preview.
+    && !currentAsset?.stockRewardRoute;
+  // Kept per symbol for the modal's life (review B3: a stock left and returned to is not read again);
+  // a FAILED read is not kept as an answer, so the next time 💣 opens it is asked again (review A5, B1).
+  const [atrReads, setAtrReads] = useState({}); // symbol → { status, pct, asOfMs }
+  const atrRead = atrReads[currentAsset?.symbol] ?? null;
+  // Refuter NEW-2: a failed read is the answer only until the view, the tab or the timeframe next
+  // changes — off the shell the battle mounts sit on the Bomb tab AND the bomb series, so leaving
+  // and reopening 💣 never dropped the ask there. The change is counted (viewN) and the failure
+  // remembers the count it failed at; viewN is NOT in the read's deps, so a view change never cancels
+  // and re-sends a read in flight (refuter NEW-R2-1). One read per change, never an immediate re-ask.
+  const viewToken = `${shellView}|${activeTab}|${researchData.timeframe}`;
+  const [viewSeen, setViewSeen] = useState({ token: viewToken, n: 0 });
+  if (viewSeen.token !== viewToken) setViewSeen({ token: viewToken, n: viewSeen.n + 1 });
+  const viewN = viewSeen.token === viewToken ? viewSeen.n : viewSeen.n + 1;
+  const haveAtr = !!atrRead && (atrRead.status !== 'failed' || atrRead.failedAtView === viewN);
+  // The count at the moment a failure LANDS, not when it was asked: a view change while a read is in
+  // flight would otherwise stamp a count that never comes back, and the preview would sit on "loading".
+  const viewNRef = useRef(viewN);
+  useEffect(() => { viewNRef.current = viewN; });
+  const bombSeries = researchData.timeframe === 'bomb' || researchData.timeframe === 'spectate';
+  const askAtr = atrArm && !haveAtr && (shellOn ? bombSeries : (activeTab === 'baggerbomb' || bombSeries));
+  useEffect(() => {
+    if (!askAtr) return undefined;
+    const symbol = currentAsset?.symbol;
+    if (!symbol) return undefined;
+    let cancelled = false;
+    readAtrReading(symbol).then((r) => { if (!cancelled) setAtrReads((m) => ({ ...m, [symbol]: r.status === 'failed' ? { ...r, failedAtView: viewNRef.current } : r })); });
+    return () => { cancelled = true; };
+  }, [askAtr, currentAsset?.symbol]); // a view change is never a reason to re-send a read in flight (NEW-R2-1)
+  // While a retry after a failure is in flight the preview says the reading is loading, not that it failed (NEW-R2-2).
+  const atrShown = atrRead && !(atrRead.status === 'failed' && askAtr) ? atrRead : null;
+  const atrReading = atrArm ? (atrShown ? { status: atrShown.status, pct: atrShown.pct, asOfMs: atrShown.asOfMs } : { status: 'loading', pct: null, asOfMs: null }) : null;
   const bombView = useBombView({
     on: bombOn,
     context: bombContext,
@@ -446,6 +491,7 @@ const AssetResearchModal = ({
     timeframe: researchData.timeframe,
     setTimeframe: researchData.setTimeframe,
     bars: researchData.ohlcvData,
+    atrReading,
   });
   // The sheet asks for a threshold exactly when BaggerBombTab does today (the
   // tab is showing, the asset carries none, it is not a measured position) —
@@ -455,7 +501,8 @@ const AssetResearchModal = ({
   const bombViewOpen = researchData.timeframe === 'bomb' || researchData.timeframe === 'spectate';
   const haveBombThreshold = !!bombThreshold && bombThreshold.symbol === currentAsset?.symbol;
   // Under the shell the sheet IS the 💣 view: asked only when that view is open without one.
-  const askBombThreshold = bombOn && (shellOn ? bombViewOpen && !haveBombThreshold : (activeTab === 'baggerbomb' || (bombViewOpen && !haveBombThreshold)));
+  // (BS-4: never on the ATR arm, whose rungs take the ATR reading instead — that request can reach a provider.)
+  const askBombThreshold = bombOn && !atrArm && (shellOn ? bombViewOpen && !haveBombThreshold : (activeTab === 'baggerbomb' || (bombViewOpen && !haveBombThreshold)));
   useEffect(() => {
     if (!askBombThreshold) return undefined;
     if (currentAsset?.stockRewardRoute || currentAsset?.threshold) return undefined;

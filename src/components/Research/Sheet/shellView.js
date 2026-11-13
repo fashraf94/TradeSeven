@@ -8,7 +8,8 @@
 //   views     Analysis · Chart, and 💣 when the mount has Bomb mode (a bombContext).
 //   open      'analysis' — except FQ-9: a measured held stock inside a zone's band at
 //             open (opensInRedZone, decided once) or the Battle View's "See all levels ›"
-//             door (BD-7, opensOnBomb) opens on 'bomb'.
+//             door (BD-7, opensOnBomb) opens on 'bomb'; so does a mount with Bomb mode but
+//             no sheet whose own defaultTab / defaultTimeframe asks for the bomb (BS-1).
 //   💣        entering sets the research hook's timeframe to 'bomb' (its zone logic then
 //             moves it to 'spectate' and back, as today); leaving restores the Chart view's
 //             LAST timeframe (1D or 1W). Analysis ↔ Chart touches no timeframe, so the hook
@@ -29,6 +30,17 @@ export function openingView({ opensOnBomb }) {
 /** The Chart view's own timeframes (the 💣 view's are 'bomb' and 'spectate'). */
 export const isChartTimeframe = (tf) => tf === '1D' || tf === '1W';
 export const isBombTimeframe = (tf) => tf === 'bomb' || tf === 'spectate';
+
+/**
+ * BS-1 (the founder's ruling on reading 7, 2026-11-12): a mount with Bomb mode but no
+ * sheet (the BaggerBomb battle view, the free-agent bar) opens on 💣 when its own
+ * defaultTab or defaultTimeframe asks for the bomb, as it does off the shell; otherwise
+ * on Analysis. The agent Battle View's mounts (they hand a sheetContext) are not asked
+ * this: they keep FQ-9 and BD-7.
+ */
+export function bombOnlyOpensOnBomb({ defaultTab, defaultTimeframe }) {
+  return defaultTab === 'baggerbomb' || isBombTimeframe(defaultTimeframe);
+}
 
 /**
  * R-27: the 💣 pill warms while a held stock is IN a zone — the live red zone (its

@@ -83,7 +83,10 @@ export function agentBombContext(battle, symbol, nowMs, { battleId = null, posKe
     const cpu = battle?.opponent?.portfolio;
     if (TIERS.some((t) => (Array.isArray(cpu?.[t]) ? cpu[t] : []).some((a) => a?.symbol === symbol))) record = null;
   }
-  return { kind: 'agent', battleId, held: record !== null, record };
+  // BS-4: the battle's stock model ('corrected' = scored by the measured ATR model; 'legacy';
+  // 'unavailable'), so the modal can tell a measured battle's non-held preview (the ATR reading)
+  // from a legacy one's (the screen's own threshold, which is that scorer's number).
+  return { kind: 'agent', battleId, held: record !== null, record, stockModel: stockModelRoute(battle).status };
 }
 
 /** An instant the record may hold as an ISO string, epoch ms or a Timestamp-like; null otherwise. */
