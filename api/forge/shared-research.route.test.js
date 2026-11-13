@@ -78,6 +78,7 @@ const seed = () => makeSrFirestore({
   'peerRankings/GEV': { ticker: 'GEV', name: 'GE Vernova Inc.', sector: 'Industrials' },
   'estimatesCache/latest': { computedAt: '2026-11-12T06:00:00.000Z', stocks: { ETN: { forwardEstimates: { currentYear: { growth: '0.12' }, nextYear: { growth: '0.15', numAnalysts: '20' } } } } },
   [`users/${UID}/signalDrops/drop-1`]: { dropId: 'drop-1', userId: UID, input: { type: 'text', text: 'ETN is the switchgear winner', note: null }, parse: { topic: 'switchgear backlog', dataPoints: ['ETN orders up 20%', 'lead times past a year'], extractedText: 'OCR', impliedTickers: ['GEV'] }, validation: { validated: [{ symbol: 'ETN', sectorId: 'XLI' }], unsupported: [] }, shouldBailout: false, droppedAt: '2026-11-12T12:00:00.000Z' },
+  [`users/${UID}/signalDrops/drop-rook`]: { dropId: 'drop-rook', userId: UID, input: { type: 'text', text: 'Rook picks switchgear', note: null }, parse: { topic: 'switchgear', dataPoints: ['Rook will buy more of it', 'orders up 20%'] }, validation: { validated: [{ symbol: 'ETN', sectorId: 'XLI' }], unsupported: [] }, shouldBailout: false, droppedAt: '2026-11-12T12:00:00.000Z' },
   [`users/${UID}/signalDrops/drop-bail`]: { dropId: 'drop-bail', userId: UID, input: { type: 'text', text: 'just vibes', note: null }, parse: { topic: '', dataPoints: [] }, validation: { validated: [], unsupported: [] }, shouldBailout: true, droppedAt: '2026-11-12T12:00:00.000Z' },
   'users/u2/signalDrops/drop-2': { dropId: 'drop-2', userId: 'u2', input: { type: 'text', text: 'theirs', note: null }, parse: {}, validation: { validated: [] } },
 });
@@ -194,6 +195,13 @@ describe('§15 S-1 — open from the player\'s own SignalDrop', () => {
     expect(fs.filter((f) => f.statusReason === 'from_drop').map((f) => [f.fact, f.symbol])).toEqual([['ETN orders up 20%', 'ETN'], ['lead times past a year', null]]);
     expect(JSON.stringify(r.body.record)).not.toContain('GEV');
     expect(r.body.session.exchanges[0]).toMatchObject({ who: 'player', kind: 'observation', text: 'ETN is the switchgear winner' });
+  });
+  it('spec §16 FQ-6: a drop claim that breaks a forbidden pattern — the partner\'s own name as its subject included — is not written; "Your drop" stands', async () => {
+    const r = await openDrop('drop-rook', 'd-rook');
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    const fs = r.body.record.findings;
+    expect(fs.filter((f) => f.statusReason === 'from_drop').map((f) => f.fact)).toEqual(['orders up 20%']);
+    expect(fs.find((f) => f.statusReason === 'player_drop').fact).toBe('Rook picks switchgear');
   });
   it("another owner's drop is item_not_found; a bailout parse still opens", async () => {
     expect((await openDrop('drop-2')).body.error).toBe('item_not_found');

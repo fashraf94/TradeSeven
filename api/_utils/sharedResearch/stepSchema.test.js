@@ -157,6 +157,16 @@ describe('rule 4 — a claim only for a supported company', () => {
     expect(out.findings.some((f) => f.kind === 'idea')).toBe(false);
     expect(out.notes).toContain('claim_unsupported_number:ETN');
   });
+  it('spec §16 FQ-5 (routine 13 the letter): a claim number held only by its company\'s unverified finding is not written; by a verified one, it is', () => {
+    const open = finding({ tempId: 'o1', fact: "The size of Eaton's data-center sales, perhaps 40% of orders, is not disclosed.", support: { kind: 'unresolved', index: null, from: [], reason: 'not_disclosed' } });
+    const withOpen = validateStepTurn(turn({ findings: [finding(), open], companies: [{ companyName: 'Eaton', symbolCandidate: 'ETN', role: 'Supplier', relationshipRef: 't1', openRef: 'o1', claim: { ...claim, effect: 'Eaton gains 40% of its orders from data centers' } }] }), ctx());
+    expect(withOpen.ok).toBe(true);
+    expect(withOpen.findings.some((f) => f.kind === 'idea')).toBe(false);
+    expect(withOpen.notes).toContain('claim_unsupported_number:ETN');
+    const sourced = finding({ tempId: 'v1', kind: 'earnings_fact', fact: 'Data centers were 40% of Eaton orders last quarter.' });
+    const withSourced = validateStepTurn(turn({ findings: [finding(), sourced], companies: [{ companyName: 'Eaton', symbolCandidate: 'ETN', role: 'Supplier', relationshipRef: 't1', openRef: null, claim: { ...claim, effect: 'Eaton gains 40% of its orders from data centers' } }] }), ctx());
+    expect(withSourced.findings.some((f) => f.kind === 'idea')).toBe(true);
+  });
   it('a company citing a relationship the step did not write is refused invalid_source', () => {
     expect(validateStepTurn(turn({ companies: [{ companyName: 'Eaton', symbolCandidate: 'ETN', role: 'Supplier', relationshipRef: 't9', openRef: null, claim: null }] }), ctx()))
       .toMatchObject({ ok: false, rule: 'invalid_source' });
