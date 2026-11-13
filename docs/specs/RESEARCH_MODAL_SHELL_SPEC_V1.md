@@ -179,4 +179,19 @@ The founder's live battle test of Nov 13 found the questions the same for every 
 
 ### 11.3 The pack cut (a reading)
 
-The loop items (the idea, what you told it) are never cut, so with both present a pack has three places left. The items that answer a question are never cut either (`ANCHOR_KINDS`: take profit — `lock_now`, `rung_down`; weakest — `book_rank`, `bench_alternative`; better than our weakest — the incumbent or `book_rank`), and the room left goes to the best-weighted others. The kept items are still shown in the archetype's order (§3.3), so an anchor can sit last.
+The loop items (the idea, what you told it) are never cut, so with both present a pack has three places left. The items that answer a question are never cut either (`ANCHOR_KINDS`: take profit — `lock_now`, `rung_distance` (QF-7's instruction weighs the lock against it), `rung_down`; weakest — `book_rank`, `bench_alternative`; better than our weakest — the incumbent or `book_rank`), and the room left goes to the best-weighted others. The kept items are still shown in the archetype's order (§3.3), so an anchor can sit last.
+
+### 11.4 The §2 review round (2026-11-13), as built
+
+Four lenses with refuters (report §5). Built from the confirmed findings:
+
+- **The set is kept per opening, one entry per `sheetKey`:** a row left by in-modal navigation and reached again keeps the set decided at its first opening.
+- **The rankings read fires only for a question the row shows** (never for a pre-set question its set lacks).
+- **`agentNameOf` lives in `src/screens/battleView/agentName.js`** (import-free; `cockpit2bModel.js` re-exports it; on the tokens and motion guards' battleView list), so the sheet takes the cockpit's rule without its module graph.
+- **An incumbent the agent no longer holds is no incumbent:** the compare falls back to the weakest holding.
+- **A held measured stock the check could not score is named** (*· no check yet: CAT*), so the count is never short; the top of the book reads *the highest*.
+- **The bench alternative's rung size is labelled an estimate** (*estimated rung size: ATR reading 2.8%*), as 💣's preview labels the same number; its rank is the printed score's.
+- **The CPU's row of a ticker the agent also holds** is never compared with itself (the next weakest), and the server re-reads its items as that row too (`researchAsk.verifyResearchItems`: both genuine readings; a forged item matches neither).
+- **`take_profit` keeps `rung_distance`** (above).
+- **Reading (A1, refuted):** `take_profit` is decided on the exact gain (the committed context's rungs from entry > 0), the prompt's letter; a position that prints *0.0 rungs* but sits above its fill is up (its pack prints a positive gain and no rungs figure). Deciding on the printed number would be a looser reading — put to the founder.
+- **`atrReading.js`'s firebase import carries its `.js` extension** (packs.js puts it in the api/ graph; the archetypeRegistry guard).
