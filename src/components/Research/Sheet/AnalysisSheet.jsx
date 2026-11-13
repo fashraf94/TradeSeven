@@ -143,7 +143,7 @@ function Decided({ view, collapsed }) {
   );
 }
 
-/** The three questions as rows (hairlines, one chevron), in the archetype's order (BC-13). */
+/** The row's questions as rows (hairlines, one chevron): the set decided at open (QF-1), the standing two in standing order (BC-13). */
 function Questions({ view }) {
   return (
     <section data-sheet-questions style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -165,6 +165,10 @@ function Questions({ view }) {
           </button>
         ))}
       </div>
+      {/* QF-1: a held position the measured ladder does not score gets the standing questions only, and says why. */}
+      {view.notOnLadder && (
+        <div data-sheet-not-on-ladder style={{ fontSize: 12.5, color: ST.ink2, lineHeight: 1.4, paddingTop: 6 }}>{SHEET_COPY.notOnLadder(view.symbol)}</div>
+      )}
     </section>
   );
 }
