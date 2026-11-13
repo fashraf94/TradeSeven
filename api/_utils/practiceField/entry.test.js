@@ -15,7 +15,7 @@ import { ideaEntrySlots, isLastIdeaEntrySlot, ideaEntryNotBefore, ideaSchedule, 
 import { SLOT_NAMES } from '../mandateSessionSlots.js';
 import {
   seedBook, admitAndEnter, contractOf, getBook, getIdea, tickOf, tickSnapshot, closeSnapshot, slotOpenIso, etIso, DAYS, ADMIT_ISO, countDocs,
-  takeSeededDbs, saleWordsOnMarkRows,
+  takeSeededDbs, saleWordsOnMarkRows, closeOn, storeCloseSnapshot,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, AMD: 2.6e11, LLY: 7.5e11, JPM: 6.8e11, XOM: 5.2e11, AVGO: 8.2e11 };
@@ -220,14 +220,14 @@ describe('the comparison and SPY: same capital, same snapshot, same cost policy'
     // The idea's name has no market cap on the entry snapshot (20 bps); its sector fund pays the fund tier (3 bps).
     const r = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'], comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: { AAPL: PX.AAPL, SPY: PX.SPY, XLK: PX.XLK } });
     expect(getIdea(db, bookId, r.ideaId).entry.unknownCostTierLegs).toEqual([{ ledger: 'idea', symbol: 'AAPL' }]);
-    await closeIdeaBook(db, db.collection('mandates').doc(bookId), { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, { AAPL: PX.AAPL, SPY: PX.SPY, XLK: PX.XLK }), now: new Date(etIso(DAYS.d1, 16, 25)) });
+    await closeOn(db, bookId, DAYS.d1, { AAPL: PX.AAPL, SPY: PX.SPY, XLK: PX.XLK });
     const row = db._get(`mandates/${bookId}/ideas/${r.ideaId}/rows/${DAYS.d1}`);
     expect(row.markedGapUsd).toBeLessThan(-30); // closed at the entry prices: the whole gap is the cost difference
     expect(row).toMatchObject({ entryCostTiersKnown: false, fullQuality: true });
     // With the market cap present the same idea shows no gap and says so.
     const ok = await seedBook({ uid: 'owner-2' });
     const r2 = await admitAndEnter(ok.db, ok.bookId, { contract: contractOf({ names: ['AAPL'], comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: q('AAPL', 'SPY', 'XLK') });
-    await closeIdeaBook(ok.db, ok.bookRef, { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, { AAPL: PX.AAPL, SPY: PX.SPY, XLK: PX.XLK }), now: new Date(etIso(DAYS.d1, 16, 25)) });
+    await closeOn(ok.db, ok.bookId, DAYS.d1, { AAPL: PX.AAPL, SPY: PX.SPY, XLK: PX.XLK });
     expect(ok.db._get(`mandates/${ok.bookId}/ideas/${r2.ideaId}/rows/${DAYS.d1}`)).toMatchObject({ entryCostTiersKnown: true, markedGapUsd: 0 });
   });
 });
@@ -526,12 +526,14 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     await refused(one.db, () => enterIdea(one.db, { bookRef: one.bookRef, ideaId: pending.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }));
     await refused(one.db, () => enterIdea(one.db, { bookRef: one.bookRef, ideaId: pending.ideaId, tick: tickOf(DAYS.d2, 'open30'), snapshot: tickSnapshot(DAYS.d2, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d2, 'open30') }));
     // The close, with a timed-out idea (D1) …
-    await refused(one.db, () => closeIdeaBook(one.db, one.bookRef, { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, q('AAPL', 'SPY')), now: new Date(etIso(DAYS.d1, 16, 25)) }));
+    await storeCloseSnapshot(one.db, DAYS.d1, q('AAPL', 'SPY'));
+    await refused(one.db, () => closeIdeaBook(one.db, one.bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 25)) }));
     // … and with a holding idea.
     const two = await seedBook({ archetypeCodeId: 'degen', uid: 'owner-2' });
     await admitAndEnter(two.db, two.bookId, { contract: contractOf({ names: ['AAPL', 'MSFT'] }), quotes: q('AAPL', 'MSFT', 'SPY') });
     await corrupt(two.bookRef);
-    await refused(two.db, () => closeIdeaBook(two.db, two.bookRef, { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, q('AAPL', 'MSFT', 'SPY')), now: new Date(etIso(DAYS.d1, 16, 25)) }));
+    await storeCloseSnapshot(two.db, DAYS.d1, q('AAPL', 'MSFT', 'SPY'));
+    await refused(two.db, () => closeIdeaBook(two.db, two.bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 25)) }));
   });
 
   it('B-OWNED — a book that already holds a position with no idea cannot be built on: the next entry is refused whole', async () => {
@@ -585,7 +587,8 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
   it('reject, never repair — the same fault met by a CLOSE (which re-marks every position and recomputes the equity) is refused as read, not overwritten into a book that passes', async () => {
     const s = await holding();
     await s.bookRef.set({ portfolio: { positions: { AAPL: { lastMark: 200 } }, totalValue: 120000 } }, { merge: true });
-    await refusedWritingNothing(s.db, () => closeIdeaBook(s.db, s.bookRef, { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, { AAPL: 100.13, SPY: 500 }), now: new Date(etIso(DAYS.d1, 16, 25)) }), ['mark_mismatch', 'equity_mismatch']);
+    await storeCloseSnapshot(s.db, DAYS.d1, { AAPL: 100.13, SPY: 500 });
+    await refusedWritingNothing(s.db, () => closeIdeaBook(s.db, s.bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 25)) }), ['mark_mismatch', 'equity_mismatch']);
     expect(s.db._get(`mandates/${s.bookId}/dailyRows/${DAYS.d1}`)).toBeUndefined();
     expect(getBook(s.db, s.bookId).portfolio.positions.AAPL.lastMark).toBe(200); // left as found, for a person to look at
   });
@@ -607,7 +610,8 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     const idea = clone(s.idea);
     idea.comparisonLedger.cash = Math.round((idea.comparisonLedger.cash + 123.45) * 100) / 100;
     await ideaRefOf(s.db, s.bookId, s.ideaId).set(idea);
-    await refusedWritingNothing(s.db, () => closeIdeaBook(s.db, s.bookRef, { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, { AAPL: 100, SPY: 500 }), now: new Date(etIso(DAYS.d1, 16, 25)) }), ['comparison_ledger_not_conserved', 'comparison_not_tied']);
+    await storeCloseSnapshot(s.db, DAYS.d1, { AAPL: 100, SPY: 500 });
+    await refusedWritingNothing(s.db, () => closeIdeaBook(s.db, s.bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 25)) }), ['comparison_ledger_not_conserved', 'comparison_not_tied']);
     expect(s.db._get(`mandates/${s.bookId}/ideas/${s.ideaId}/rows/${DAYS.d1}`)).toBeUndefined();
     expect(s.db._get(`mandates/${s.bookId}/dailyRows/${DAYS.d1}`)).toBeUndefined();
   });

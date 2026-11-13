@@ -14,7 +14,7 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, getRow, closeSnapshot, tickSnapshot, tickOf, slotOpenIso, etIso, DAYS, ADMIT_ISO,
-  countDocs, makeMandateFakeDb, takeSeededDbs, saleWordsOnMarkRows, SALE_WORD_KEYS,
+  countDocs, makeMandateFakeDb, takeSeededDbs, saleWordsOnMarkRows, SALE_WORD_KEYS, storeCloseSnapshot,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, LLY: 7.5e11, AMD: 2.6e11, AVGO: 8.2e11 };
@@ -113,7 +113,8 @@ describe('a valuation: every ledger marked from the one close snapshot', () => {
     await admitAndEnter(db, bookId, { contract: contractOf(), quotes: entryQuotes('AAPL', 'SPY') });
     await closeOn(db, bookId, DAYS.d1, { AAPL: 233.11, SPY: 599.02 });
     const versions = [...db._store.keys()].map((p) => [p, db._versionOf(p)]);
-    const replay = await closeOn(db, bookId, DAYS.d1, { AAPL: 199.99, SPY: 512.34 }); // even with other prices in hand
+    // Even with other prices in hand: the close takes no snapshot from its caller (Astra T1A-03), and a stray one is ignored.
+    const replay = await closeIdeaBook(db, db.collection('mandates').doc(bookId), { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, { AAPL: 199.99, SPY: 512.34 }) });
     expect(replay).toEqual({ closed: false, skipped: 'already_closed', alerts: [] });
     expect([...db._store.keys()].map((p) => [p, db._versionOf(p)])).toEqual(versions);
   });
@@ -517,12 +518,13 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
       });
       const dailyDoc = (await daily.ref.get()).data();
       expect(dailyDoc.symbols.AAPL.corporateActions).toHaveLength(2); // the parser keeps the vendor's duplicate row
-      const built = await ensureUniverseSnapshot(db, {
+      await ensureUniverseSnapshot(db, {
         tickKey: `${date}_close`, sessionDate: date, candidateUniverse: [], coverageTickers: ['AAPL', 'SPY'], minCandidateCapacity: 0, dailyDoc,
         now: new Date('2026-11-17T21:20:00Z'),
         fetchQuotes: async (syms) => Object.fromEntries(syms.map((s) => [s, { close: s === 'AAPL' ? 99 : 500, timestamp: Date.parse('2026-11-17T21:00:00Z') / 1000 }])),
       });
-      const out = await closeIdeaBook(db, bookRef, { date, closeSnapshot: built.snapshot, now: new Date('2026-11-17T21:25:00Z') });
+      expect(db._get(`mandateUniverseSnapshots/${date}_close`)).toBeTruthy(); // the builder stored it; the close reads it
+      const out = await closeIdeaBook(db, bookRef, { date, now: new Date('2026-11-17T21:25:00Z') });
       expect(out.closed).toBe(true);
       const idea = getIdea(db, bookId, r.ideaId);
       expect(idea.ledger.appliedActionIds).toEqual([DIV_ID]);
@@ -600,41 +602,70 @@ describe('B-MARK — an account mark is never reported as a liquidation fill', (
 });
 
 describe('B-STAMP — every book is valued from the same snapshot', () => {
-  it('no snapshot: no row, nothing fetched, valuation_missed', async () => {
+  it('no stored snapshot: no row, nothing built or fetched, valuation_missed — the only write-free answer', async () => {
     const { db, bookId, bookRef } = await seedBook();
     await admitAndEnter(db, bookId, { contract: contractOf(), quotes: entryQuotes('AAPL', 'SPY') });
     const before = JSON.stringify([...db._store.entries()]);
-    expect(await closeIdeaBook(db, bookRef, { date: DAYS.d1, closeSnapshot: null })).toEqual({ closed: false, skipped: 'valuation_missed', alerts: [] });
+    // A caller holding a snapshot object changes nothing: the close reads the stored document or nothing (Astra T1A-03).
+    expect(await closeIdeaBook(db, bookRef, { date: DAYS.d1, closeSnapshot: closeSnapshot(DAYS.d1, { AAPL: 233.11, SPY: 599.02 }) })).toEqual({ closed: false, skipped: 'valuation_missed', alerts: [] });
+    expect(await closeIdeaBook(db, bookRef, { date: DAYS.d1 })).toEqual({ closed: false, skipped: 'valuation_missed', alerts: [] });
     expect(JSON.stringify([...db._store.entries()])).toBe(before);
+    expect(db._get(`mandateUniverseSnapshots/${DAYS.d1}_close`)).toBeUndefined();
+    expect(db._get(`mandates/${bookId}/dailyRows/${DAYS.d1}`)).toBeUndefined();
   });
 
-  it('a snapshot that is not exactly `${date}_close` is refused — a slot snapshot, another date\'s close, a planted second snapshot', async () => {
+  it('the stored document at `${date}_close` must say so itself — a slot snapshot, another date\'s close, a wrong date, stored under the key, are refused', async () => {
     const { db, bookId, bookRef } = await seedBook();
     await admitAndEnter(db, bookId, { contract: contractOf(), quotes: entryQuotes('AAPL', 'SPY') });
     const good = closeSnapshot(DAYS.d1, { AAPL: 233.11, SPY: 599.02 });
     expect(closeSnapshotKeyFor(DAYS.d1)).toBe(`${DAYS.d1}_close`);
-    const before = JSON.stringify([...db._store.entries()]);
+    const stored = db.collection('mandateUniverseSnapshots').doc(`${DAYS.d1}_close`);
     for (const bad of [
       { ...good, tickKey: `${DAYS.d1}_preClose` },
       { ...good, tickKey: `${DAYS.d1}_close_v2` },
       closeSnapshot(DAYS.d2, { AAPL: 233.11, SPY: 599.02 }),
       { ...good, sessionDate: DAYS.d2 },
     ]) {
-      await expect(closeIdeaBook(db, bookRef, { date: DAYS.d1, closeSnapshot: bad })).rejects.toThrow(/close_snapshot_key_mismatch/);
+      await stored.set(bad);
+      const before = JSON.stringify([...db._store.entries()]);
+      await expect(closeIdeaBook(db, bookRef, { date: DAYS.d1 })).rejects.toThrow(/close_snapshot_key_mismatch/);
+      expect(JSON.stringify([...db._store.entries()])).toBe(before);
     }
-    expect(JSON.stringify([...db._store.entries()])).toBe(before);
-    expect((await closeIdeaBook(db, bookRef, { date: DAYS.d1, closeSnapshot: good, now: new Date(etIso(DAYS.d1, 16, 25)) })).closed).toBe(true);
+    await stored.set(good);
+    expect((await closeIdeaBook(db, bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 25)) })).closed).toBe(true);
   });
 
-  it('two idea books closed at two different times for one date carry the same key, the same build time and the same mark per shared symbol', async () => {
+  it('Astra T1A-03 — the stored $100 document wins over a caller holding a $110 object with the same key: every row is valued at $100', async () => {
+    const { db, bookId, bookRef } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: { AAPL: { price: 100, marketCap: 3e12 }, SPY: 500 } });
+    await storeCloseSnapshot(db, DAYS.d1, { AAPL: 100, SPY: 500 });
+    const rival = closeSnapshot(DAYS.d1, { AAPL: 110, SPY: 550 }); // same key, same date, same build time — different content
+    expect(rival.tickKey).toBe(`${DAYS.d1}_close`);
+    // A second document planted beside it under another name is never read either.
+    await db.collection('mandateUniverseSnapshots').doc(`${DAYS.d1}_close_v2`).set(rival);
+    const out = await closeIdeaBook(db, bookRef, { date: DAYS.d1, closeSnapshot: rival, now: new Date(etIso(DAYS.d1, 16, 25)) });
+    expect(out.closed).toBe(true);
+    const row = getRow(db, bookId, r.ideaId, DAYS.d1);
+    expect(row.marks.AAPL.mark).toBe(100);
+    expect(row.comparisonMarks.AAPL.mark).toBe(100);
+    expect(row.spyMarks.SPY.mark).toBe(500);
+    expect(row.markedGapUsd).toBe(0);
+    const idea = getIdea(db, bookId, r.ideaId);
+    expect(idea.ledger.holdings.AAPL.lastMark).toBe(100);
+    expect(idea.spyLedger.holdings.SPY.lastMark).toBe(500);
+    expect(getBook(db, bookId).portfolio.positions.AAPL.lastMark).toBe(100);
+    expect(db._get(`mandates/${bookId}/dailyRows/${DAYS.d1}`).closeSnapshotKey).toBe(`${DAYS.d1}_close`);
+  });
+
+  it('two idea books closed in separate fires for one date carry the same key, the same build time and the same mark per shared symbol', async () => {
     const db = makeMandateFakeDb();
     const one = await seedBook({ db, uid: 'owner-1', opId: 'c1' });
     const two = await seedBook({ db, uid: 'owner-2', opId: 'c2', archetypeCodeId: 'degen' });
     const a = await admitAndEnter(db, one.bookId, { contract: contractOf({ names: ['AAPL', 'MSFT'] }), quotes: entryQuotes('AAPL', 'MSFT', 'SPY') });
     const b = await admitAndEnter(db, two.bookId, { contract: contractOf({ slot: 'long', names: ['AAPL', 'LLY'], capitalUsd: 40000 }), quotes: entryQuotes('AAPL', 'LLY', 'SPY') });
-    const snapshot = closeSnapshot(DAYS.d1, { AAPL: 233.11, MSFT: 420.77, LLY: 805.2, SPY: 599.02 });
-    await closeIdeaBook(db, one.bookRef, { date: DAYS.d1, closeSnapshot: snapshot, now: new Date(etIso(DAYS.d1, 16, 22)) });
-    await closeIdeaBook(db, two.bookRef, { date: DAYS.d1, closeSnapshot: snapshot, now: new Date(etIso(DAYS.d1, 17, 40)) }); // a later fire
+    await storeCloseSnapshot(db, DAYS.d1, { AAPL: 233.11, MSFT: 420.77, LLY: 805.2, SPY: 599.02 });
+    await closeIdeaBook(db, one.bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 22)) });
+    await closeIdeaBook(db, two.bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 17, 40)) }); // a later fire
     const rowA = getRow(db, one.bookId, a.ideaId, DAYS.d1);
     const rowB = getRow(db, two.bookId, b.ideaId, DAYS.d1);
     for (const r of [rowA, rowB, db._get(`mandates/${one.bookId}/dailyRows/${DAYS.d1}`), db._get(`mandates/${two.bookId}/dailyRows/${DAYS.d1}`)]) {
@@ -652,7 +683,7 @@ describe('B-STAMP — every book is valued from the same snapshot', () => {
     await closeOn(db, bookId, DAYS.d1, { AAPL: 233.11, SPY: 599.02 });
     await closeOn(db, bookId, DAYS.d2, { AAPL: 234.5, SPY: 600.1 });
     const versions = [...db._store.keys()].map((p) => [p, db._versionOf(p)]);
-    expect(await closeOn(db, bookId, DAYS.d1, { AAPL: 229.03, SPY: 590.0 })).toEqual({ closed: false, skipped: 'out_of_order', alerts: [] });
+    expect(await closeIdeaBook(db, db.collection('mandates').doc(bookId), { date: DAYS.d1 })).toEqual({ closed: false, skipped: 'out_of_order', alerts: [] });
     expect([...db._store.keys()].map((p) => [p, db._versionOf(p)])).toEqual(versions);
     expect(getBook(db, bookId).execState.lastCloseKey).toBe(DAYS.d2);
     expect(getBook(db, bookId).portfolio.positions.AAPL.lastMark).toBe(234.5);
@@ -660,12 +691,12 @@ describe('B-STAMP — every book is valued from the same snapshot', () => {
 
   it('a close for a book that is not an idea book, or is closed, does nothing', async () => {
     const db = makeMandateFakeDb({ 'mandates/q1': { userId: 'u', status: 'active', portfolio: { cash: 1e7, positions: {} }, execState: {} } });
-    const snapshot = closeSnapshot(DAYS.d1, { SPY: 599.02 });
-    expect(await closeIdeaBook(db, db.collection('mandates').doc('q1'), { date: DAYS.d1, closeSnapshot: snapshot })).toEqual({ closed: false, skipped: 'not_idea_book', alerts: [] });
-    expect(await closeIdeaBook(db, db.collection('mandates').doc('nope'), { date: DAYS.d1, closeSnapshot: snapshot })).toEqual({ closed: false, skipped: 'book_missing', alerts: [] });
+    await storeCloseSnapshot(db, DAYS.d1, { SPY: 599.02 });
+    expect(await closeIdeaBook(db, db.collection('mandates').doc('q1'), { date: DAYS.d1 })).toEqual({ closed: false, skipped: 'not_idea_book', alerts: [] });
+    expect(await closeIdeaBook(db, db.collection('mandates').doc('nope'), { date: DAYS.d1 })).toEqual({ closed: false, skipped: 'book_missing', alerts: [] });
     const { bookId, bookRef } = await seedBook({ db });
     await bookRef.update({ status: 'closed' });
-    expect(await closeIdeaBook(db, bookRef, { date: DAYS.d1, closeSnapshot: snapshot })).toEqual({ closed: false, skipped: 'not_open', alerts: [] });
+    expect(await closeIdeaBook(db, bookRef, { date: DAYS.d1 })).toEqual({ closed: false, skipped: 'not_open', alerts: [] });
     expect(db._get(`mandates/${bookId}/dailyRows/${DAYS.d1}`)).toBeUndefined();
   });
 });

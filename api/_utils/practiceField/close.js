@@ -12,11 +12,13 @@
 //
 // ONE SNAPSHOT PER DATE (B-STAMP). The engine builds one close snapshot per date at `${date}_close` and every fire
 // and page reads that stored document before building (api/cron/mandate-evaluate.js runCloseSweep;
-// mandateUniverseSnapshot.js createOrAdopt — the first commit wins and a loser adopts it). This pass REFUSES any
-// snapshot whose key is not exactly `${date}_close`, marks every ledger of the book from that one document, and
-// stores its key and build time on every row. It fetches nothing of its own: a held symbol the snapshot lacks is a
-// carried mark (`fullQuality: false`), and a missing snapshot writes no row and answers `valuation_missed`
-// (recovery is T1a-2).
+// mandateUniverseSnapshot.js createOrAdopt — the first commit wins and a loser adopts it). This pass READS THAT
+// STORED DOCUMENT ITSELF, inside its own transaction (Astra T1A-03): it takes no snapshot from its caller, so two
+// payloads that merely carry the same key can never produce two different rows. It refuses a stored document whose
+// own key or date is not this close's, marks every ledger of the book from that one document, and stores its key
+// and build time on every row. It builds and fetches nothing: a held symbol the snapshot lacks is a carried mark
+// (`fullQuality: false`), and a missing document writes no row and answers `valuation_missed` (recovery is T1a-2).
+// The read costs one document read per book per close, inside the book's transaction.
 //
 // IN ONE TRANSACTION, idempotent per date (`execState.lastCloseKey`):
 //   0. an `accepted` idea whose start session has passed without a fill is cancelled `entry_timeout`;
@@ -32,7 +34,7 @@
 
 import { buildCorporateAction } from '../mandateSchema.js';
 import { applyCorporateAction } from '../mandateCorporateActions.js';
-import { caActionsBySymbol, snapshotExcluding } from '../mandateUniverseSnapshot.js';
+import { caActionsBySymbol, snapshotExcluding, SNAPSHOT_COLLECTION } from '../mandateUniverseSnapshot.js';
 import { markBook } from '../mandateValuation.js';
 import { roundUsd } from '../mandateRounding.js';
 import { MANDATE_SCHEMA_VERSION } from '../mandateConfig.js';
@@ -164,24 +166,19 @@ function closeHoldingIdea(idea, { date, closeSnapshot, actionsBySymbol, sinceDat
 }
 
 /**
- * Close one idea book for `date`.
+ * Close one idea book for `date`, valued from THE stored close snapshot of that date (`mandateUniverseSnapshots/
+ * {date}_close`), which this function reads itself. It takes no snapshot argument (Astra T1A-03).
  *
  * @returns {Promise<{ closed: boolean, skipped?: string, row?: object, ideaRows?: object, cancelled?: string[], alerts: string[] }>}
  */
-export async function closeIdeaBook(db, bookRef, { date, closeSnapshot, now = new Date() } = {}) {
+export async function closeIdeaBook(db, bookRef, { date, now = new Date() } = {}) {
   if (!db || !bookRef) throw new Error('closeIdeaBook: db and bookRef required');
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('closeIdeaBook: date required');
   // 'off': no Practice Field code path runs, whoever calls. Before any read.
   if (!practiceFieldLive()) return { closed: false, skipped: 'practice_field_off', alerts: [] };
-  // B-STAMP: no snapshot, no row — and nothing fetched to make one.
-  if (!closeSnapshot) return { closed: false, skipped: 'valuation_missed', alerts: [] };
   const key = closeSnapshotKeyFor(date);
-  if (closeSnapshot.tickKey !== key || closeSnapshot.sessionDate !== date) {
-    throw new PracticeFieldError('close_snapshot_key_mismatch', { expected: key, got: closeSnapshot.tickKey ?? null });
-  }
+  const snapshotRef = db.collection(SNAPSHOT_COLLECTION).doc(key);
   const nowIso = now.toISOString();
-  const snapshotMeta = { key, builtAt: toIso(closeSnapshot.builtAt) };
-  const actionsBySymbol = caActionsBySymbol(closeSnapshot);
   const coverageDocRef = coverageRefOf(db);
 
   return db.runTransaction(async (tx) => {
@@ -194,6 +191,17 @@ export async function closeIdeaBook(db, bookRef, { date, closeSnapshot, now = ne
     // Never backwards (review L1-9): a close for a date before the last one would rewind the marks and the key.
     if (typeof book.execState?.lastCloseKey === 'string' && date < book.execState.lastCloseKey) return { closed: false, skipped: 'out_of_order', alerts };
     if (book.status !== 'active' && book.status !== 'draining') return { closed: false, skipped: 'not_open', alerts };
+
+    // B-STAMP (Astra T1A-03): THE stored close snapshot of this date, read here, after the book's own cheap guards so a
+    // book already closed costs no second read. No document, no row — and nothing built or fetched to make one.
+    const snapshotSnap = await tx.get(snapshotRef);
+    if (!snapshotSnap.exists) return { closed: false, skipped: 'valuation_missed', alerts };
+    const closeSnapshot = snapshotSnap.data();
+    if (closeSnapshot?.tickKey !== key || closeSnapshot?.sessionDate !== date) {
+      throw new PracticeFieldError('close_snapshot_key_mismatch', { expected: key, got: closeSnapshot?.tickKey ?? null, sessionDate: closeSnapshot?.sessionDate ?? null });
+    }
+    const snapshotMeta = { key, builtAt: toIso(closeSnapshot.builtAt) };
+    const actionsBySymbol = caActionsBySymbol(closeSnapshot);
 
     const ideas = [];
     for (const id of book.openIdeaIds || []) {

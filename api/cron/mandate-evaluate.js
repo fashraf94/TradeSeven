@@ -930,7 +930,9 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
         if (ideaBook) {
           // The idea-book close: a valuation of every ledger from THIS date's
           // one close snapshot. No scoring stream, no quarterly health alerts.
-          const ideaResult = await closeIdeaBook(db, mandateRef, { date, closeSnapshot, now });
+          // It reads the STORED `${date}_close` document itself, inside its own
+          // transaction (Astra T1A-03), so it is handed the date only.
+          const ideaResult = await closeIdeaBook(db, mandateRef, { date, now });
           for (const alert of ideaResult.alerts || []) console.error(`${LOG_PREFIX} ${book._id} ${alert}`);
           if (!ideaResult.closed) { summary.skipped++; continue; }
           newlyClosed++;

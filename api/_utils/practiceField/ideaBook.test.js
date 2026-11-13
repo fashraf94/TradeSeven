@@ -100,7 +100,7 @@ describe("mode 'off' makes every Practice Field path a no-op, before any read", 
     expect(await enterIdea(untouchable, { bookRef: ref, ideaId: 'i', tick, snapshot: {}, nowIso: NOW })).toEqual({ outcome: 'practice_field_off' });
     expect(await runIdeaBookEntryPass(untouchable, { bookRef: ref, tick, snapshot: {} })).toEqual({ served: false, entered: 0, waiting: 0, cancelled: 0, errors: 0 });
     expect(await runIdeaBookEvalPass(untouchable, { tick, snapshot: {}, ownerToken: 't' })).toEqual({ books: 0, served: 0, entered: 0, waiting: 0, cancelled: 0, errors: 0, leaseSkips: 0 });
-    expect(await closeIdeaBook(untouchable, ref, { date: DAYS.d1, closeSnapshot: { tickKey: `${DAYS.d1}_close`, sessionDate: DAYS.d1, symbols: {} } })).toEqual({ closed: false, skipped: 'practice_field_off', alerts: [] });
+    expect(await closeIdeaBook(untouchable, ref, { date: DAYS.d1 })).toEqual({ closed: false, skipped: 'practice_field_off', alerts: [] });
   });
 });
 

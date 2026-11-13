@@ -25,7 +25,10 @@ import {
 // change, and carry the new figures into the build report.
 // Astra T1A-02 (fix round, 13 Nov 2026): +81 bytes, one field — `postEntryFillCount: 0` on each of the three ideas,
 // written at entry for the same-stock tie (reconcile.js rule 9). Every other byte is unchanged (was 10049196…, 147,178).
-const EXPECTED_DUMP = { sha256: 'ea5d0d4cd19c3852cd98447629d0dddfc7253dac54890b6a058874bbfe2191fe', bytes: 147259 };
+// Astra T1A-03 (same round): +12 documents, +39,587 bytes — the twelve stored close snapshots
+// (`mandateUniverseSnapshots/{date}_close`) that the close now reads itself, which the fixture stores first as the
+// builder would. The 69 documents before are byte-identical (was ea5d0d4c…, 147,259, 69 docs).
+const EXPECTED_DUMP = { sha256: '69691024ca598cb5cd9280d5dcb21d4b0cd15a3ee126154c300f85b060f084a4', bytes: 186846 };
 
 const SESSIONS = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02'];
 const BASE = {

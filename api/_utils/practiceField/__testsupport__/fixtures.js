@@ -9,6 +9,7 @@
 import { makeMandateFakeDb } from '../../__testsupport__/mandateFakeFirestore.js';
 import { etWallClockToMs } from '../../../../src/utils/marketCalendar.js';
 import { resolveSessionSlots } from '../../mandateSessionSlots.js';
+import { SNAPSHOT_COLLECTION } from '../../mandateUniverseSnapshot.js';
 import { createIdeaBook } from '../ideaBook.js';
 import { admitIdea } from '../admission.js';
 import { enterIdea } from '../entry.js';
@@ -150,13 +151,36 @@ export async function admitAndEnter(db, bookId, { contract, opId = 'idea-1', adm
   return { ideaId: admission.ideaId, admission, entry, snapshot };
 }
 
-/** Close an idea book for a date from the given quotes. */
+/**
+ * Store THE close snapshot of a date (`mandateUniverseSnapshots/{date}_close`) as the engine's builder would:
+ * first writer wins. Storing the same content again is a no-op; storing DIFFERENT content under a key that is
+ * already taken throws — a test that wants two payloads for one date is asking for what B-STAMP forbids (Astra
+ * T1A-03). Returns the snapshot.
+ */
+export async function storeCloseSnapshot(db, date, quotes) {
+  const snap = closeSnapshot(date, quotes);
+  const ref = db.collection(SNAPSHOT_COLLECTION).doc(snap.tickKey);
+  const existing = await ref.get();
+  if (existing.exists) {
+    const same = JSON.stringify(existing.data()) === JSON.stringify(snap);
+    if (!same) throw new Error(`storeCloseSnapshot: a different close snapshot is already stored at ${snap.tickKey}`);
+    return snap;
+  }
+  await ref.set(snap);
+  return snap;
+}
+
+/** The instant a fixture close runs: 25 minutes after the session's close. */
+export function closeNowOf(date) {
+  const s = resolveSessionSlots(date);
+  return new Date(etMs(date, 9, 30) + (s.closeMin - s.openMin + 25) * 60_000);
+}
+
+/** Close an idea book for a date from the given quotes: the close snapshot is stored first, then the close reads it. */
 export async function closeOn(db, bookId, date, quotes) {
   const bookRef = db.collection('mandates').doc(bookId);
-  const snap = closeSnapshot(date, quotes);
-  const s = resolveSessionSlots(date);
-  const now = new Date(etMs(date, 9, 30) + (s.closeMin - s.openMin + 25) * 60_000);
-  return closeIdeaBook(db, bookRef, { date, closeSnapshot: snap, now });
+  await storeCloseSnapshot(db, date, quotes);
+  return closeIdeaBook(db, bookRef, { date, now: closeNowOf(date) });
 }
 
 /** Read helpers. */
