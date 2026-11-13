@@ -277,3 +277,216 @@ All checks ran on the code head `0ff13830`. `origin/main` was `c37baa0d` at the 
 | Mutant battery | an LF archive of `0ff13830`, judged by exit code and a fresh JSON report | **40 of 40 KILLED, 0 SURVIVED, 0 BROKEN** |
 
 **Windows-side targeted runs.** These ran in the worktree during the build. One full-directory run on Windows saw `FilmRoomScreenV2.focus.jsdom.test.jsx` time out under load, and it passed alone. The Linux run is the record.
+
+## 9. The fix round (13 Nov 2026): Astra's findings and Build C Amendment A
+
+**Executor:** Claude Code (Opus), a fresh session in its own worktree, Windows + WSL · **Prompt:** the Film Room chat's fix prompt of 13 Nov 2026 · **Governs:** Astra's C1 review (`docs/audits/20261113_ASTRA_REVIEW_FILM_ROOM_C1_CHAIN.md`) and Build C Amendment A (`docs/specs/FILM_ROOM_BUILD_C_SPEC_V1_AMENDMENT_A_20261113.md`), both committed verbatim in B0; the Practice Field's shared contract V2 (`docs/design/20261112_PRACTICE_FIELD_SHARED_CONTRACT_V2.md` on `main`) §4.3, §4.4, §5.2, §7, §8.
+**Start:** `git fetch origin`; PR #1049's head was `b4f9e4e5` as the prompt required; the session's worktree branch was moved to it and every push goes back by refspec to `claude/film-room-c1-chain`. `main` had moved past the prompt's `9ca96ff2` to **`29e8f4de`** (#1051 T0b and #1047 T0c landed after T0a #1046). `main` was not merged into the branch (CI tests the PR's merge result; the guard's base `c37baa0d` stays an ancestor). Every check below ran on a local merge of the branch with `29e8f4de`; the lockfile is unchanged since `c37baa0d`.
+
+### 9.0 Verdict
+
+| Question | Answer |
+|---|---|
+| Astra's three findings | **Fixed.** F1: a new nomination re-checks its filed source inside its transaction (`035c9f7d`). F2: the builder's output is checked before either write (`4c6ff974`). F3: a create row is recognised by its shape, now tied to the stored route (`0573f577`, `64f17c58`). |
+| Amendment A | **Built as written**: CA-1, CA-2, CA-3, CA-4, CA-5, CA-7, CA-9, CA-11, CA-12, CA-14, CA-17, CA-18, CA-22, CA-23 in code; CA-13 as a script never run against production; the rest are record-only rulings (CA-0, CA-6, CA-8, CA-10, CA-15, CA-16, CA-19; CA-20 in §9.3; CA-21 in §9.10). |
+| Backlog §5 | The helper's instant guard takes only a full ISO 8601 instant (`2c4c7ecd`). |
+| The flag | `FILM_ROOM_CARDS_MODE` is still `'allowlist'`. No QA pass, no flip. |
+| Does anything reach a player today? | No cards-off change (the twelve goldens are byte-identical, §9.4). With cards on, the receipt's chain, labels, groups and words change; "Offer to your agent" shows for no one until a book exists (the seam still answers no book). |
+| §2 review | Three static lenses, one refuter for every finding, then a mutating lens, each on its own LF snapshot. **One BLOCKER, of F2's class, found and fixed** (the withdrawal builder could pass by editing its input). The refuter refuted none and narrowed four. See §9.7. |
+| Needs a ruling | §9.11. None blocks the merge. |
+
+### 9.1 The fixes, one row each
+
+Every fix is one commit with its tests in the same commit; the review's fixes follow in §9.7. The mutants named here are the prompt's, run in the final battery (§9.8).
+
+| # | Item | Commit | What changed (code head) | Tests | Mutants |
+|---|---|---|---|---|---|
+| B0 | Astra's review and Amendment A, verbatim; two index rows | `11bc02f0` | Both extracted by script between the prompt's markers, LF; the staged blobs byte-compared with the extraction | — | — |
+| 1 | **F1**, a new nomination re-checks its source | `035c9f7d` | `nominateCard` takes a required `verifySource(tx, entry, agentId)`, called after the stage check and before the book (`cardStore.js`); the route's `verifyEntrySourceIn` (`card.js`) re-reads **through the transaction** the battle (owner, mode, attribution by the platform's pure resolver over the clone read in the transaction) and the tape day (the create path's own `checkDayIn`: coverage, exact moment, situation version, archetype). A missing verifier is refused before any read | `card.test.js` 8 new blocks (one loops over 12 source changes; the race and its control, the replay, a repointed or missing clone, the order, no verifier); emulator 3 (five changes in one row, the replay, the tape locked by the transaction) | M01 |
+| 2 | **F2**, the builder's output checked | `4c6ff974` | `nominationRecordDefectOf` before either write, both paths; a malformed record is a server fault (the route's 500), nothing written; `calendar_unavailable` stays 503 | `card.test.js` 3 blocks (one loops over the malformed outputs, now 22, on both paths; the extra-field control; the calendar) | M02, M03 |
+| 3 | **F3**, no invented "Filed" | `0573f577` | `isCreateRow`: the first row, no event, not a server's, at the create's stage; any other first row is judged as any other row | screen suite 4 blocks (Astra's repro through the real handler and counter; the pure cases) | M04 |
+| 4 | **CA-3**, the open predicate and "Not taken" | `1298d5ee` | `OPEN_STAGES` = `card`, `testing`; `isOpenStage` decides `nominated` (closed by a declined, expired or withdrawn copy) and `tested`; `groupCards` gains `notTaken` before the parked fallback; the renderer and its state note | store 4 blocks (two over declined and expired), screen 3 (two over declined and expired) | M05, M06 |
+| 5 | **CA-1, CA-2, CA-5's retire side** | `677d5815` | `isRetirableByPlayer` (store and receipt); the withdrawal transaction; `buildWithdrawal` in the seam; 503 `nomination_unavailable`; "Withdrawn and retired"; the sixth write site (CA-20) | store 19 blocks (loops over record states and seven malformed builders), handler 3, emulator 4, screen 4 | M07–M11 |
+| 6 | **CA-11, CA-4** | `e0781fb4` | `NOMINATION_ORDER` judged against the copy; `testing` bound to the accepted copy's `ideaId`; rows keep `state`, `reason`, `consideredAt` (and an acceptance's `ideaId`, `thesis`); thesis ≤ 400 and closing note ≤ 600 code points with their own instants; the chain quotes each row at its own time | store 10 blocks (one exhaustive from × to), screen 3 | M12–M17 |
+| 7 | **CA-5, CA-14, CA-22** | `9c159e2d` | `offered` (one per card, bound to the idea, `event: 'offered'`); `installed` and the server `retired` bound to the idea and the offer; `tested` from `nominated` with `noFill: true`, setting `idea` from the copy | store 10 blocks, screen 3 | M18–M24 |
+| 8 | **CA-12**, the book re-read | `e79354c6` | `requireOpenBookIn` at the precondition's place on both paths; `bookIsForAgent` in the seam; contention rethrown; book fixtures gain their document | store 6 blocks (one over ten book defects), handler 2, emulator 1 | M25–M27 |
+| 9 | **CA-9, CA-17** | `84abd0e5` | "Your agent considered this"; `stageLabelOf`, the one stage-word reader, by the stored route | screen 3 blocks | M31, M34, M35 |
+| 10 | **CA-7**, "Offer to your agent" | `f2cedf99` | the hook's `nominate`, the parent's `onNominate`, the receipt's button (strict `book.open === true`), its own op id, its refusal words | screen 7 blocks | M28–M30 |
+| 11 | **CA-23, CA-18** | `b2eafc8d` | the `cap_reached` words, server and screen; `setNoTempo` and its inventory row retired (413 keys, 560 entries) | handler 1 block (a full mix with nothing retirable) | M32, M33 |
+| 12 | **Backlog §5**, the instant guard | `2c4c7ecd` | `isInstant`: a date-time with a time and an offset (or `Z`) on a real calendar date and clock that `Date.parse` also reads | store 3 blocks | M36 |
+| 13 | **CA-13**, the census script | `d0e60f6f` | `scripts/census-film-room-v1-plays.mjs`: one read, `plays` collection group, `select('route', 'stage')`, no filter; counts only, under fixed buckets; the write-grep gate; the credential from the environment or a hidden prompt | `census-film-room-v1-plays.test.js` 5 blocks | M37, M38 |
+
+### 9.2 Readings this round took (stated, built, pinned)
+
+1. **F1's place in the order.** Nominate judges the source after the owner, replay, version and stage, and **before the book**, as a create judges its source before its book. With no book (everyone today), a nominate whose source changed answers the source error, not `book_not_open`. Pinned by "THE ORDER, pinned". The alternative (book first) is a ruling (§9.11).
+2. **F1's battle checks** are the create path's, judged through the transaction: missing → 404 `not_found` ("Battle not found."), not the caller's or not attributed to the entry's agent → 403 `forbidden`, a mode the tape does not cover → 409 `untaped`, a clone that resolves to no parent → 503 `attribution_unavailable`. A failed battle read is the route's 500, as create's `readBattle` is.
+3. **F1 on the emulator.** A write to a document an Admin SDK transaction has read waits for that transaction (the emulator locks what a transaction reads; awaiting such a write inside the callback deadlocked until the 60 s timeout). So the emulator row proves the tape is in the read set by the lock: a removal begun after the read lands only after the commit. The in-memory suite proves the retry judges the changed tape again.
+4. **F2's refusal** is the route's 500 (a server fault: the Practice Field's builder broke its contract), with nothing written. No player copy was invented for it.
+5. **CA-2's malformed record** (an unknown state, a record naming another entry, a failed read, a builder that throws or returns a malformed record) is 503 `nomination_unavailable`, as ruled; the record's source is copied before the builder runs.
+6. **CA-3's group order** on My cards: Active, Shelved, Not taken, Parked, Equipped, Retired, Other.
+7. **CA-5's waiting-offer line after the offer is answered.** "An offer waits in the Forge" is drawn only while the card is `tested` and that same offer still waits (parked or not). Once installed or retired by the server, the offered row draws no line; the stage's own line ("Equipped", "Retired · Forge offer {state}") says what became of it.
+8. **CA-7's words.** The refusal table is built verbatim. Its first sentence says "since it was filed", while the amendment also says the words "never say 'filed'"; the build reads that as never "Nothing was filed" / "could not be filed" (pinned). A code the table does not name uses the receipt's existing words for it; a code with none says "The card could not be offered." (one new key, the offer's own default). The battle-level F1 refusals (`not_found`, `forbidden`, `untaped`) are such codes.
+9. **CA-7's agent.** The receipt's offer names the agent the card is filed under (its own `agentId`, a casual clone's parent), so a lost answer re-tapped after the clone document changed is still its own replay (§9.7, A2).
+10. **CA-9's time.** "Your agent considered this · {date}" carries the row's own time, like every other answer line; `consideredAt` is a quotation's time and `considered` quotes nothing.
+11. **CA-13's credential.** The script takes the service-account JSON from `FIREBASE_ADMIN_CREDENTIALS` when the process holds it, else from its own hidden prompt (nothing echoed; the input ends when it parses, so a multi-line paste is taken whole). It never reads an `.env` file. The drill line names how many drill entries are not yet retired.
+12. **CA-17's chain words.** The chain's state lines (Offered, Tested, Equipped …) name events in their own words; every chain line that names a *stage* (a v1 `drill` row, an unknown stage) goes through `stageLabelOf`, as the route line and My cards do.
+13. **CA-22's one fact.** The chain's "Ended before its first trade" and the stage word both read `result.noFill` (`endedBeforeFirstFill`); the history row's `noFill` is stored beside it as provenance. They are written together in one patch, so they agree; split data shows "tested" everywhere rather than two words.
+14. **The instant guard** accepts a time without seconds (`2026-11-12T15:00Z`): it is a full date-time with an offset.
+
+### 9.3 The protected-store change
+
+`api/_utils/compositionProtectedStoresAllowlist.json` gains **one key**: `api/_utils/filmRoom/cardStore.js::retireCard::set::unresolved` at **count 1** — the withdrawal of the record, `mandates/{bookId}/nominations/{nominationId}` at the entry's own ids, a `tx.set` beside the retire's one `tx.update` (whose key stays at count 1). The human note under `_notes_film_room_c1` names it in its title and body, and now also names `offered` and CA-22's direct `tested` in the transition helper's line and the nomination copy the retire's update carries (the review's F-C3). The full suite's deny-by-default scan is green with it. **The founder reviews it with this PR.**
+
+### 9.4 The goldens
+
+**Re-captured; all twelve byte-identical to `main`'s.** The capture harness (`src/screens/__golden__/captureFilmRoomV2Golden.jsdom.test.jsx`, `FILM_ROOM_V2_GOLDEN_OUT_DIR` set, `TZ=UTC`) ran twice in the WSL worktree holding the local merge of the final code head `9f08deb4` with `main` `29e8f4de` (tree `96859446`; also at `5f8e19ad`, tree `89462e32`, with the same result). Both runs wrote twelve files, and every file equals the other run's, the committed golden and `main`'s own blob byte for byte (SHA-256 prefixes: empty deep desktop `39b82e03`, phone `b9e9bbe3`; empty glance `a180e9c2` / `5d61ab17`; empty study `2dc16ebe` / `5f5e7dbe`; sep23 deep `ffadf417` / `e502efb6`; sep23 glance `46395190` / `d59c474a`; sep23 study `093131f5` / `7cb13597`). No golden moved, so there is no difference to map, and criterion 10's declared cards-off changes are still only §8's rulings 1 and 2. CA-18 removed a key no screen read. The comparison suite (`FilmRoomScreenV2.cardsOff.golden.jsdom.test.jsx`) is green in the full suite.
+
+### 9.5 Fence statement
+
+- **BUILD_RULES §1: zero edits**; `api/cron/agent-evaluate.js` untouched. No fenced function is called by the new code.
+- **Not in the diff:** `api/_utils/casualClone.js` (its `resolveRecordTargetId` is *called* by `card.js`, never edited), `firestore.rules`, `firestore.indexes.json`, `src/config/featureFlags.js`, `src/components/CommandCenter/**`, every `api/_utils/mandate*.js`, the setup evaluator, `activationEvidence/**`, the workflow and the CI guard, `api/_utils/filmRoom/oneDoor.census.test.js`. Checked by grep over `git diff --name-only c37baa0d..HEAD`, and independently by lens C.
+- **The book.** Nothing in the Film Room writes a book document except the nomination record (the card endpoint's transaction: the Offer create, `nominateCard`) and CA-2's withdrawal (the retire transaction), both through the seam's builders, both checked. `mandates/{bookId}` itself is only read.
+- **`FILM_ROOM_CARDS_MODE` is `'allowlist'`** (`src/config/featureFlags.js:3526`, untouched).
+- **Nothing outside the branch:** no merge into the branch, no production read or write, no backfill, refresh, deploy or flip. The CA-13 script was never run against production.
+- **BUILD_RULES §4.** `card.js` now imports `resolveRecordTargetId` (`casualClone.js`) and `isCasualCloneId` (`src/constants/leagueTournament.js`); both were already in the graph through `cardStore.js`, and `card.test.js`'s unmocked import of the route is their guard. The census script imports `src/data/cardStages.js` (zero-import) and `api/_utils/filmTape/errorClass.js` (zero-import); its test's import is its guard.
+
+### 9.6 The checks, on the merged tree
+
+`origin/main` was `29e8f4de` at the last fetch. The branch was merged locally (a throwaway merge in a git worktree of `~/pd-ci`, never pushed): final code head **`9f08deb4`**, merged tree **`96859446`**, identical to `git merge-tree` on Windows (the report commit after it changes only `docs/`; the pushed head's own merge was built once more before the push, exit 0). The lockfile equals `c37baa0d`'s (`40382e64edb6`), and the run linked a real install of it. The run used Node 20.20.2 and `TZ=UTC`.
+
+| Check | Result |
+|---|---|
+| Full vitest suite (8 workers, under the shared flock) | exit 0, 248 s: **1,415 files passed, 9 skipped (1,424); 31,612 rows: 31,513 passed, 0 failed, 99 skipped** |
+| Earlier full runs on the same kind of merge | `d0e60f6f` (before the review's fixes): 31,469 passed, 0 failed; `5f8e19ad` (before the Astra §4 rows): 31,493 passed, 0 failed |
+| Rules suite (the Firestore emulator, Temurin JDK 21) | **41 files, 768 / 768** — `filmRoomCardAttribution.rules.mjs` 21 (13 before: F1's three, CA-2's four, CA-12's one), `filmRoomPlaysDenials.rules.mjs` 22, `filmRoomCardReplayOwner.rules.mjs` 3 |
+| `lint:gate` | exit 0 |
+| `vite build` | exit 0 (built in 14.7 s; two CSS-syntax warnings from files this round does not touch) |
+| One-door census, acceptance C | green in the full suite. Acceptance C's populated handle now also holds a live, active idea book (`mandates/book-c`, CA-12), and the assembled prompts stay byte-identical with T0a's, T0b's and T0c's Mandate files merged in. |
+| The stage census, the protected-store scan | green (the scan with the new `retireCard::set` key at count 1) |
+| Cards-off goldens | 12 / 12 byte-identical (§9.4) |
+
+**Windows-side runs** during the build ran each touched suite in the worktree. One whole-directory run saw `FilmRoomScreenV2.focus.jsdom.test.jsx` time out under load and pass alone (the known Windows load case of §8). The Linux run is the record.
+
+### 9.7 The §2 review
+
+The round's diff passes BUILD_RULES §2's threshold (23 files, +3,827 / −174 against `b4f9e4e5`, docs included; the branch is 35 files against `c37baa0d`), so the review was multi-lens and adversarial. Every reviewer worked on its own LF `git archive` snapshot, path-distinct, read-only on git and the working tree, probes inside its snapshot only.
+
+**Who ran.**
+- Three static lenses on `d0e60f6f`: A (server correctness), B (screen honesty and the rulings' words), C (fences, cards-off, test integrity, the census script).
+- One refuter for every finding, on a fresh snapshot of `d0e60f6f`, told to refute each with a concrete repro.
+- The mutating lens D, last, on its own snapshot of `5e511f3c` (after the first fixes): 53 mutants of its own choosing, judged by exit code and a fresh JSON report.
+
+**Result: one BLOCKER, found and fixed.** The refuter refuted none outright and narrowed four (A1, A2, A5, C5). Every finding has a row or a written disposition.
+
+| Id | Severity (refuter) | Finding | Disposition |
+|---|---|---|---|
+| A1 | BLOCKER, narrowed to F2's class | `withdrawalOf` handed the stored record to `buildWithdrawal` and compared the output's source with that same object, so a builder that **edits its input in place** to name another entry passed and the retire committed it | **Fixed** `80ee61e6`: the source reference is copied before the builder runs and the output compared with the copy. Row + mutant R01 |
+| A5 / C2 | MINOR, narrowed (needs planted data or an injected builder) | the retire never checked that the record at the copy's ids names this entry (`source: {}` passed through `undefined === undefined`) | **Fixed** `80ee61e6`: a film_room_card record naming the retired entry, or 503. Rows + R02 |
+| A2 | SHOULD-FIX, narrowed (RK-1's route order predates the round; CA-7 newly sends clone-named nominates from the screen) | a lost answer re-tapped from a casual clone's battle after the clone document changed could no longer be replayed (503 / 404) | **Fixed** `7d8a93d9`: the receipt's offer names the agent the card is filed under (its parent); the replay answers. Retire and park keep RK-1's order (§9.11). Row + R16 |
+| A3 | MINOR | a withdrawal builder throwing a contention-shaped code was rethrown raw | **Fixed** `80ee61e6`: any builder throw is 503. Row + R03 |
+| A4 | MINOR | F2's check passed an `expiresAt` before `queuedAt`, an empty `stateHistory`, a `queuedAt` that is not the instant handed in | **Fixed** `80ee61e6`. Rows + R04–R06 |
+| A6 | QUESTION | a server retire with `offerId` omitted passed as null | **Fixed** to the letter (`offerId` must be sent; `null` with no offer). Row + R07 |
+| C1 | MINOR | the battle and clone reads of F1 had no race row (moving either outside the transaction survived) | **Rows** `80ee61e6` (a change between read and commit retries and refuses 403). R08, R09 |
+| B1 | SHOULD-FIX | a Watch or Set card's player `nominated` row at index 0 still drew "Filed" — F3's contradiction through another first row | **Fixed** `64f17c58`: the create row is the stored route's (`createStageOf`). Rows + R10 |
+| B2 | MINOR | a server row at `nominated` with no event drew the player's "Offered to your agent" | **Fixed** `64f17c58`. Row + R11 |
+| B3 | MINOR (BUILD_RULES §9) | "Ended before its first trade" was read from two sources (the row's flag, the result's) | **Fixed** `64f17c58`: one reader, `endedBeforeFirstFill` (`result.noFill`). Row + R12 |
+| C3 | MINOR | the census's route × stage table and rendered lines were barely pinned | **Rows** `5e511f3c`, `7d8a93d9`. R15, R17, R18 |
+| C4 | MINOR | the census's drill line counted retired drill entries as needing retirement | **Fixed** `5e511f3c`: "not yet retired: n". Row + R13 |
+| C5 | MINOR, narrowed (the shell half unverified: no terminal) | the hidden prompt ended at the first newline, so a multi-line service account was refused | **Fixed** `5e511f3c`: the input ends when it parses (or at Ctrl-D / the end of a pipe). Rows + R14 |
+| F-C3 | MINOR | the allowlist's human notes were stale (counts exact) | **Fixed** `5e511f3c` (§9.3) |
+| F-C7 | QUESTION | with no book, a nominate does source reads and answers a source refusal before `book_not_open` | Reading 1 (§9.2); ruling asked (§9.11) |
+| B4 | MINOR | a nominate refused because the card became shelved says "This card has already moved." (the receipt's existing words for `illegal_transition`) | Recorded; the Offer button never shows on a shelved card (row) |
+| B5 | QUESTION | which F1 refusals count as "source" for CA-7's one sentence | Reading 8 (§9.2); ruling asked |
+| B6 | QUESTION | CA-7's sentence says "since it was filed" while the amendment says the words never say "filed" | Reading 8 (§9.2); ruling asked |
+| B7 | QUESTION | CA-9's line shows the row's time, not `consideredAt` | Reading 10 (§9.2) |
+| B8 | QUESTION | a no-fill card later parked shows "Parked" as its latest line (R-C1-1), "ended before its first trade" in My cards | Recorded (R-C1-1's rule) |
+| PA-3 | MINOR (predates the round) | `createCard` on the Offer route without a source verifier writes both halves; the route always passes one | Recorded |
+| PA-7 | QUESTION | with an offer waiting, an `offered` naming another idea answers `nomination_mismatch` before `illegal_transition {offerState}` | Recorded (CA-5 orders neither) |
+
+**Astra's §4 pinning tests, walked.** The prompt asks for Astra's §4 rows; each ruling's "Pinning test" column was checked against the suite. Three gaps had no row and now have one (`9f08deb4`):
+- CA-2's **full cross-product**: a copy queued, considered or deferred × a record in every state and none. The record decides.
+- CA-2's **write abort points**: the record's write or the entry's write refused. Neither half commits.
+- CA-12's **book changed between the re-read and the commit**, field by field (status, owner, kind, agent), on both the nominate and the Offer create.
+
+The same commit adds CA-4's "no closing note, no quotation" assertion, and the census row that CA-3's "the census pins the new predicate" asks for: no listed reader names `OPEN_STAGES` or holds its own list of closing nomination states, with a planted bite in every reader. Four mutants confirm the new rows bite: the withdrawal written outside the transaction; a declined record's state not copied; the book's agent field unchecked; a reader reading `OPEN_STAGES`. Two of Astra's rows belong to the Practice Field's own side and are not built here: its admission re-reading the record, and its conformance to CA-11's table (CA-21 items 5 and 10).
+
+**The mutating lens (D).** 53 mutants on `5e511f3c`: **47 KILLED, 6 SURVIVED, 0 BROKEN**, no equivalent survivor. The six were three test gaps, each now pinned (`5f8e19ad`; the first by `7d8a93d9`) and re-run in the final battery:
+
+| Gap | The survivors | The row that kills them |
+|---|---|---|
+| LD-1 | the census's by-route and by-stage lines printing a total | the rendered lines pinned line for line (LD1-C08, LD1-C09) |
+| LD-2 | the hidden prompt's erase keys deleted or half-deleted | DEL and backspace each correct a typed character (LD2-C07, LD2-C02) |
+| LD-3 | Offer and Retire both enabled while the other is in flight | each disabled while the other runs, enabled when it settles (LD3-V08, LD3-V10) |
+
+### 9.8 The mutant battery
+
+Run at the final code head `9f08deb4` in an LF `git archive` of it (never the working tree), `node_modules` junctioned, each mutant judged by its exit code **and** a fresh JSON report. Every `from` had to match exactly once; the file's bytes were copied first and restored after, verified by byte comparison; the ids run were compared with the ids defined. **66 of 66 KILLED, 0 SURVIVED, 0 BROKEN** (the same 62 had also all been killed at `5f8e19ad`). The failed / total rows follow each id.
+
+| Group | Mutants (failed / total rows) |
+|---|---|
+| F1 – F3 | M01 a new nominate that skips the source check (18/108) · M02 a builder output with a wrong `entryId` committed (4/108) · M03 one with `state: 'accepted'` (2/108) · M04 an unknown first row drawn as Filed (3/133) |
+| CA-3 | M05 a declined or expired card counted open (7/248) · M06 a not-taken card listed under Parked (3/133) |
+| CA-1, CA-2 | M07 a `testing` retire accepted (5/248) · M08 an accepted record with a queued copy retired (4/223) · M09 a withdrawal that leaves the record `queued` (8/223) · M10 a failed record read that retires anyway (1/115) · M11 ABORTED swallowed (1/115) |
+| CA-11 | M12 "declined, then `testing`" (1/115) · M13 "deferred, then `expired`" (2/115) · M14 `testing` with another `ideaId` (1/115) · M15 a later copy overwriting an earlier answer's quotation (2/133) |
+| CA-4 | M16 a 401-code-point thesis stored (1/115) · M17 a quotation dated with the delivery time (2/133) |
+| CA-5, CA-14 | M18 `offered` drawn as a second "Tested" (1/133) · M19 `installed` with no offer (1/115) · M20 `installed` with no idea passing (1/115) · M21 the server `retired` with no idea passing (1/115) · M22 a second offer replacing a waiting one (1/115) |
+| CA-22 | M23 `tested` from `nominated` without `noFill` (1/115) · M24 "Ended before its first trade" drawn from a missing `testing` row (1/133) · M35 the stage word without the fact (1/133) |
+| CA-12 | M25 the book re-read skipped (22/223) · M26 a closed book accepted (7/223) · M27 a successful replay refused after the book closed (6/115) |
+| CA-7 | M28 the Offer button with `book` missing (1/133) · M29 with the counter still loading (1/133) · M30 two taps minting two ids (1/133) |
+| CA-17, CA-9 | M31 a v1 Watch card's nomination drawn as "nominated for the Practice Field" (1/133) · M34 considered drawn as a generic answer (1/133) |
+| CA-23 | M32 "Retire a card first" back on the server (1/108) · M33 on the screen (1/133) |
+| Backlog §5, CA-13 | M36 the instant guard as `Date.parse` alone (2/115) · M37 a filter on the census's read (2/12) · M38 a raw unknown value printed (5/12) |
+| The review's fixes | R01–R18 (A1's in-place builder, a record of another entry, an ABORTED-coded builder, F2's clock and history ×3, an omitted `offerId`, the battle and the clone read outside the transaction, any create stage, a server row's Offered line, the row's no-fill flag, the drill line, the first newline, the table and render misfiles ×3, the offer naming the clone): each 1–3 failed |
+| The mutating lens's survivors | LD1 ×2, LD2 ×2, LD3 ×2: each 1–2 failed |
+| Astra §4's rows | the withdrawal written outside the transaction · a declined record's state not copied · the book's agent field unchecked · a reader reading `OPEN_STAGES`: each killed |
+
+### 9.9 The Tests run
+
+BUILD_RULES §2: not watched, polled or fixed. Astra read the Tests run of the previous head `b4f9e4e5` once: success, both jobs, the golden guard not tripped. This head's run is read once after the push, and its state is reported on the PR. The branch still has `c37baa0d` as an ancestor, so the guard's base relation is unchanged.
+
+### 9.10 What CA-21 asks of the Practice Field: the seam's contract
+
+`api/_utils/filmRoom/practiceFieldSeam.js` now holds **four** Practice Field helpers. Each has a default the Film Room ships with, and each is the Practice Field's to replace.
+
+| Helper | Contract the Film Room relies on | Default until replaced | Owner |
+|---|---|---|---|
+| `bookForOwner(db, { uid, attributionAgentId })` | One server-side read, before the transaction. Returns `{ bookId, status }` for the owner's **idea book** managed by that attribution agent (the ranked parent for a casual clone), or `null`. CA-12: it returns idea books only. The Film Room sends a client nothing of it but the counter's `book: { open }`. A throw is treated as no open book. | `null` for everyone; reads nothing | T1a |
+| `bookIsForAgent(bookDoc, attributionAgentId)` (CA-12, new) | **Pure.** Runs inside the nominate and Offer transactions, over `mandates/{bookId}` as the transaction re-read it. Answers `true` only when the book is that attribution agent's. A throw, or any answer but `true`, refuses `book_not_open`. | Compares a field named `attributionAgentId` | T1a, which names the book's real attribution field |
+| `buildNominationDoc({ entryId, situationId, questionId, questionVersion, nowIso, expiresAfterSessions })` | **Pure.** Returns the record written at `mandates/{bookId}/nominations/{nominationId}` in the same transaction as the entry's move to `nominated`. F2: before either write the Film Room checks a plain object, `state: 'queued'`, `source` a plain object of kind `film_room_card` naming exactly the entry, situation, question and question version it was given, `queuedAt` a full ISO instant **equal to the `nowIso` handed in** (any offset), `expiresAt` a full ISO instant **after `queuedAt`**, and a **non-empty** `stateHistory` array of plain objects (the review's A4; §9.11 item 7). Extra fields pass through untouched; anything else refuses (the route's 500), nothing written. Throw `{ code: 'calendar_unavailable' }` to refuse 503. | Contract V2 §5.2's record, `expiresAt` the close of the 10th session after the anchor | T2 |
+| `buildWithdrawal(record, { nowIso })` (CA-2, new) | **Pure.** Runs inside the player's retire transaction, over the record as the transaction read it, when that record is `queued`, `considered` or `deferred`. Before calling it the Film Room requires the record to be **this card's** (a `film_room_card` source naming the retired entry) and copies that source reference; after, it checks a plain object, `state: 'withdrawn'`, and the copied source reference unchanged (so editing the input in place cannot pass). Anything else, or **any** throw, refuses 503 `nomination_unavailable`, nothing written, the card not retired. | The record with `state: 'withdrawn'`, `withdrawnAt`, and a `stateHistory` row `{ state: 'withdrawn', at, by: 'player' }` | The Practice Field (the shape's owner, as for `buildNominationDoc`) |
+
+**Writing back onto the entry.** Later states go through `cardStore.js` `applyServerTransition(db, { entryId, ownerId, agentId, to, by, payload, opId, nowIso })`, server-only. `by` is the writer's name, kept on the row (`by: 'server', writer`). The helper is idempotent by `opId` (its own writer's rows only), checks the entry's owner and agent, and a shelved entry still transitions.
+
+| `to` | Payload | From → to | Bound to | Refused |
+|---|---|---|---|---|
+| `nomination` | `{ bookId, nominationId, state, reason?, consideredAt? }`; on `accepted` also `ideaId` (required) and `thesis?` (≤ 400 code points; needs `consideredAt`) | `nominated` → `nominated` (copies onto `entry.nomination`; the row keeps `state`, `reason`, `consideredAt`, and on `accepted` `ideaId` and `thesis`) | the entry's own `bookId` / `nominationId` | `state` `queued` or `withdrawn` (400); out of CA-11's order (409 `illegal_transition { nominationState }`) |
+| `testing` | `{ bookId, ideaId }` | `nominated` → `testing` (sets `idea`) | the copy's book, the copy `accepted`, and its `ideaId` | anything else 409 `nomination_mismatch` |
+| `tested` | `{ ideaId, resultRef, contractCondition, economicResult, closingNote?, closingNoteAt?, noFill? }`; `closingNote` ≤ 600 code points with its instant | `testing` → `tested` (sets `result`); or (CA-22) `nominated` → `tested` with `noFill: true` and an accepted copy, which also sets `idea` from the copy | the entry's `idea.ideaId` (from `testing`) or the copy's `ideaId` (from `nominated`) | from `nominated` without `noFill: true` or with a copy not accepted: 409 `illegal_transition`; `noFill: true` from `testing`: 409 `illegal_transition` |
+| `offered` (CA-5, new) | `{ ideaId, offerId, state: 'offered' }` | `tested` → `tested` (sets `offer`; the row carries `event: 'offered'`; `stageAt` and the result do not move) | `entry.idea.ideaId` (present) | an offer already held: 409 `illegal_transition { offerState }` |
+| `installed` | `{ ideaId, offerId, state }` | `tested` → `installed` (sets `offer`) | `entry.idea.ideaId` and the waiting offer's `offerId` | 409 `nomination_mismatch` |
+| `retired` (server) | `{ ideaId, offerId \| null, state }` | `tested` → `retired` (sets `offer`) | `entry.idea.ideaId`; the offer's `offerId` when one exists, `null` only when none does | 409 `nomination_mismatch` |
+
+Every instant the helper takes (`nowIso`, `consideredAt`, `closingNoteAt`) must be a full ISO 8601 instant with a time and an offset (or `Z`) on a real date; a date alone or a zone-less time is refused 400.
+
+**The relay's ten items (CA-21), restated against the code:**
+
+1. `withdrawn` is written only by the Film Room's player retire, through `buildWithdrawal`; the helper refuses it as a copied state.
+2. On `accepted` the copy carries `ideaId`, `thesis` (≤ 400) and `consideredAt`.
+3. On `tested` the copy carries `closingNote` (≤ 600) and `closingNoteAt`.
+4. `offered` when T3 creates an offer; `installed` and the server's `retired` carry `ideaId` and the offer's id (`null` only with no offer).
+5. CA-11's table exactly (above), with its delivery and replay rules: a late copy is refused, a lost one does not block the next; a `considered` or `deferred` nomination always reaches `accepted` or `declined`, or the Practice Field names the state that closes it.
+6. `bookForOwner` returns idea books only; T1a names the book's attribution-agent field for `bookIsForAgent`.
+7. The calendar's horizon (CA-15): the maintained years are 2026 and 2027; from about mid-December 2027 `nominate` and the Offer create refuse 503 `calendar_unavailable` until 2028 is maintained.
+8. B6: the B-slot module's path when it lands (CA-8), so a test pins `NOMINATION_EXPIRY_SESSIONS` to it.
+9. Every taken card closes: `testing` then `tested` for a filled idea; `tested` directly with `noFill: true` when it ended before its first fill. A filled idea always sends `testing` first.
+10. Withdrawal and acceptance: the Practice Field's acceptance and admission read the nomination record inside the transaction that writes them, and write only while it is `queued`, `considered` or `deferred`; a withdrawal is never undone on a retry; both commit orders tested on each side. The Film Room's side is pinned: a copy after the retire is refused (the entry is retired), and an acceptance landing between the retire's read and its commit makes the retire's commit conflict, retry and refuse.
+
+### 9.11 Needs a ruling (none blocks the merge)
+
+1. **F1's order against the book** (lens C, F-C7). Built: owner → replay → version → stage → **source** → book, as a create judges its source before its book (reading 1). With no book, a nominate whose source changed says the source error, after a few extra reads. Keep, or judge the book first?
+2. **CA-7's words** (lens B, B5 and B6). Built verbatim: the one source sentence covers the six tape and archetype refusals; the battle's own refusals (`not_found`, `forbidden`, `untaped`) keep the receipt's existing words. The sentence says "since it was filed", read as allowed (only "Nothing was filed" / "could not be filed" are excluded). Confirm both readings.
+3. **Retire and park from a casual clone's battle** (lens A, A2). The offer now names the card's own agent, so its lost answer survives a clone change. Retire and park still name the battle's agent and resolve it first (RK-1's order since B2.1), so a clone document deleted between a lost answer and its re-tap refuses 503. Extend the offer's choice to them?
+4. **CA-9's time** (lens B, B7): the considered line carries the row's time; `consideredAt` shows only in a quotation, and considered has none. Keep?
+5. **CA-11 still needs the Practice Field's agreement** on its exact edges (CA-21 item 5), and **CA-22 on its delivery order** (item 9): the Film Room side refuses anything else, as ruled.
+6. **The CA-13 count before `'on'`**: the founder runs `node scripts/census-film-room-v1-plays.mjs` once (usage in its header); a `drill` entry not yet retired is retired from its receipt.
+7. **F2 beyond its letter** (lens A, A4; it binds the Practice Field's T2 builder). The prompt's F2 list asks for valid `queuedAt` and `expiresAt` instants and a `stateHistory` array. Astra's §1 also asks for "valid required clock/history fields", so the review added three checks: `queuedAt` is the instant handed to the builder, `expiresAt` is after it, and the history is a non-empty array of plain rows. Keep them, or relax to the letter? Also confirm that a malformed output is the route's 500 (a server fault, nothing written, no player words; reading 4).
