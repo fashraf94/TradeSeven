@@ -63,7 +63,7 @@ import { loadoutArchetypesOf } from '../../../src/constants/perGameLoadout.js';
 // Build C §3: the stage vocabulary v2, from its one export — re-exported whole, so every server reader takes it from here
 import { CARD_STAGE_VOCAB_VERSION, CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_STATES, NOMINATION_EXPIRY_SESSIONS, isOpenStage } from '../../../src/data/cardStages.js';
 // Build C §4 (refinement R-C1-3): the nomination record's shape is the Practice Field's builder, reached through the seam
-import { buildNominationDoc } from './practiceFieldSeam.js';
+import { buildNominationDoc, NOMINATION_SOURCE_KIND, NOMINATION_QUEUED } from './practiceFieldSeam.js';
 import { isValidForgeId } from '../idValidation.js';
 
 export * from '../../../src/data/cardStages.js';
@@ -340,14 +340,49 @@ export async function createCard(db, { uid, agentId, opId, payload, nowIso, requ
   });
 }
 
-/** The nomination record for an entry, by the Practice Field's builder (the seam); a walk off the calendar → 503. */
+/** A plain object: an object literal's prototype (or none) — never an array, a class instance, a boxed value. */
+const isPlainObject = (v) => v !== null && typeof v === 'object' && [Object.prototype, null].includes(Object.getPrototypeOf(v));
+
+/**
+ * C1 fix round, Astra F2 (exit criterion 12: the record is ITS entry's) — what is wrong with the builder's output, or
+ * null when nothing is: the shared invariants the Film Room relies on, never the Practice Field's whole schema. A plain
+ * object; `state: 'queued'`; `source` a plain object of kind `film_room_card` naming EXACTLY the entry, situation,
+ * question and question version it was given; `queuedAt` and `expiresAt` instants; `stateHistory` an array. Any other
+ * field the Practice Field adds passes through untouched.
+ */
+export function nominationRecordDefectOf(record, { entryId, situationId, questionId, questionVersion }) {
+  if (!isPlainObject(record)) return 'record';
+  if (record.state !== NOMINATION_QUEUED) return 'state';
+  const s = record.source;
+  if (!isPlainObject(s) || s.kind !== NOMINATION_SOURCE_KIND) return 'source.kind';
+  if (s.entryId !== entryId || s.situationId !== situationId || s.questionId !== questionId || s.questionVersion !== questionVersion) return 'source';
+  if (!isoOk(record.queuedAt)) return 'queuedAt';
+  if (!isoOk(record.expiresAt)) return 'expiresAt';
+  if (!Array.isArray(record.stateHistory)) return 'stateHistory';
+  return null;
+}
+
+/**
+ * The nomination record for an entry, by the Practice Field's builder (the seam); a walk off the calendar → 503. The
+ * output is checked before either half is written (Astra F2): a malformed record is a server fault — thrown as such
+ * (the route's 500, with its trace), so nothing of either half is committed.
+ */
 function nominationDocOf({ entryId, card, nowIso }) {
+  const given = { entryId, situationId: card.situationId, questionId: card.questionId, questionVersion: card.questionVersion };
+  let record;
   try {
-    return buildNominationDoc({ entryId, situationId: card.situationId, questionId: card.questionId, questionVersion: card.questionVersion, nowIso, expiresAfterSessions: NOMINATION_EXPIRY_SESSIONS });
+    record = buildNominationDoc({ ...given, nowIso, expiresAfterSessions: NOMINATION_EXPIRY_SESSIONS });
   } catch (err) {
     if (err?.code === 'calendar_unavailable') throw fail(503, 'calendar_unavailable');
     throw err;
   }
+  const defect = nominationRecordDefectOf(record, given);
+  if (defect) {
+    const err = new Error(`the nomination builder's record is malformed (${defect}); nothing was written`);
+    err.code = 'nomination_malformed';
+    throw err;
+  }
+  return record;
 }
 
 const nominateFingerprint = (agentId, entryId, expectedVersion) => canonicalContentHash({ kind: 'nominate', agentId, entryId, expectedVersion });

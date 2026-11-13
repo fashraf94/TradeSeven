@@ -1024,3 +1024,75 @@ describe('C1 fix round F1 — a new nomination judges its source again, in its t
     expect(t.readLog.length).toBe(reads);
   });
 });
+
+// ── C1 fix round, Astra F2 — the builder's output is checked before either half is written (exit criterion 12) ──────
+const { PRACTICE_FIELD_SEAM_DEFAULTS } = await import('../_utils/filmRoom/practiceFieldSeam.js');
+describe('C1 fix round F2 — a malformed nomination record from the builder writes neither half', () => {
+  const BOOK_ID = 'book-1';
+  afterEach(() => resetPracticeFieldSeam());
+  /** The book open, and the builder replaced by the default's output passed through `mangle`. */
+  const withBuilder = (mangle) => setPracticeFieldSeam({
+    bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }),
+    buildNominationDoc: (args) => mangle(PRACTICE_FIELD_SEAM_DEFAULTS.buildNominationDoc(args)),
+  });
+  const without = (key) => (r) => { const out = { ...r }; delete out[key]; return out; };
+  const MALFORMED = [
+    ['the source naming another entry (Astra\'s repro)', (r) => ({ ...r, source: { ...r.source, entryId: 'absent-entry' } })],
+    ['the source naming another situation', (r) => ({ ...r, source: { ...r.source, situationId: 'other' } })],
+    ['the source naming another question', (r) => ({ ...r, source: { ...r.source, questionId: 'stalled.other' } })],
+    ['the source naming another question version', (r) => ({ ...r, source: { ...r.source, questionVersion: 9 } })],
+    ['the source of another kind', (r) => ({ ...r, source: { ...r.source, kind: 'signal_drop' } })],
+    ['no source', without('source')],
+    ['the state accepted (Astra\'s second repro)', (r) => ({ ...r, state: 'accepted' })],
+    ['no state', without('state')],
+    ['no queuedAt', without('queuedAt')],
+    ['an invalid queuedAt', (r) => ({ ...r, queuedAt: 'yesterday' })],
+    ['no expiresAt', without('expiresAt')],
+    ['an invalid expiresAt', (r) => ({ ...r, expiresAt: 'not-a-date' })],
+    ['no stateHistory', without('stateHistory')],
+    ['a stateHistory that is not an array', (r) => ({ ...r, stateHistory: { 0: r.stateHistory[0] } })],
+    ['null', () => null],
+    ['an array', (r) => [r]],
+    ['a class instance', (r) => Object.assign(new (class Rec {})(), r)],
+    ['a string', () => 'queued'],
+  ];
+  const nominate = { op: 'nominate', opId: 'nom_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1 };
+  const bookWrites = () => t.writeLog.filter((w) => w.path.startsWith('mandates/'));
+
+  for (const [name, mangle] of MALFORMED) {
+    it(`${name}: the Offer create and the nominate both refuse (the route's 500), and neither half is written (the mutant: the builder's output committed unchecked)`, async () => {
+      withBuilder(mangle);
+      const offer = await post(create({ opId: 'op_o', route: 'offer' }));
+      expect(offer.statusCode, name).toBe(500);
+      expect(t.store.has(`agents/${AGENT}/plays/op_o`), name).toBe(false);
+      expect(bookWrites(), name).toEqual([]);
+      expect((await post(create())).statusCode).toBe(200);   // a Watch card writes no record: the builder is never called
+      const res = await post(nominate);
+      expect(res.statusCode, name).toBe(500);
+      expect(t.store.get(`agents/${AGENT}/plays/op_1`), name).toMatchObject({ stage: 'card', version: 1 });
+      expect(t.store.get(`agents/${AGENT}/plays/op_1`), name).not.toHaveProperty('nomination');
+      expect(bookWrites(), name).toEqual([]);
+    });
+  }
+
+  it('the valid control: a record with a field the Practice Field adds passes through untouched, on both paths', async () => {
+    withBuilder((r) => ({ ...r, drafting: { priority: 2, note: 'kept as built' } }));
+    const offer = await post(create({ opId: 'op_o', route: 'offer' }));
+    expect(offer.statusCode).toBe(200);
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/op_o`)).toMatchObject({ state: 'queued', drafting: { priority: 2, note: 'kept as built' } });
+    expect((await post(create())).statusCode).toBe(200);
+    expect((await post(nominate)).statusCode).toBe(200);
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/nom_1`)).toMatchObject({ state: 'queued', source: { entryId: 'op_1' }, drafting: { priority: 2 } });
+  });
+
+  it('calendar_unavailable stays 503 on both paths, nothing written', async () => {
+    setPracticeFieldSeam({
+      bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }),
+      buildNominationDoc: () => { const e = new Error('off the calendar'); e.code = 'calendar_unavailable'; throw e; },
+    });
+    expect(await post(create({ opId: 'op_o', route: 'offer' }))).toMatchObject({ statusCode: 503, body: { error: 'calendar_unavailable' } });
+    expect((await post(create())).statusCode).toBe(200);
+    expect(await post(nominate)).toMatchObject({ statusCode: 503, body: { error: 'calendar_unavailable' } });
+    expect(bookWrites()).toEqual([]);
+  });
+});
