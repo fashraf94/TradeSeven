@@ -28,8 +28,20 @@ const RULES = {
 const count = (src, re) => (src.match(re) || []).length;
 
 describe('the sheet\'s modules carry no colour literal and no inline motion', () => {
-  it('the scan covers the sheet\'s modules', () => {
-    expect(SOURCES).toEqual(expect.arrayContaining(['AnalysisSheet.jsx', 'AskReply.jsx', 'packs.js', 'sheetTheme.js', 'useSheetView.js']));
+  it('the scan covers the sheet\'s modules (the two-view shell\'s header, tabs and What\'s moving among them)', () => {
+    expect(SOURCES).toEqual(expect.arrayContaining(['AnalysisSheet.jsx', 'AskReply.jsx', 'packs.js', 'sheetTheme.js', 'useSheetView.js', 'ShellHeader.jsx', 'ShellTabs.jsx', 'WhatsMoving.jsx', 'shellView.js', 'ranksLabel.js']));
+  });
+  // The two-view shell's body lives in the modal (review D9): its block, between its two markers,
+  // held to the same rules — the rest of AssetResearchModal.jsx is today's code and not scanned.
+  it('AssetResearchModal.jsx — the shell\'s body block: zero hex, zero rgb()/rgba(), zero transition={{', () => {
+    const src = readFileSync(path.join(HERE, '..', '..', 'draft', 'AssetResearchModal.jsx'), 'utf8');
+    const from = src.indexOf("// ── The two-view shell's body");
+    const to = src.indexOf('// Use Portal to render', from);
+    expect(from).toBeGreaterThan(0);
+    expect(to).toBeGreaterThan(from);
+    const block = src.slice(from, to);
+    expect(block).toContain('shellBody = (');
+    for (const [rule, re] of Object.entries(RULES)) expect(count(block, re), `shell body: ${rule}`).toBe(0);
   });
   for (const f of SOURCES) {
     it(`${f}: zero hex, zero rgb()/rgba(), zero transition={{`, () => {

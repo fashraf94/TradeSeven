@@ -280,10 +280,21 @@ const V1Content = ({ data }) => (
 );
 
 // =============================================================================
-// COMPONENT
+// THE EXPLANATION'S STATE — one hook for the popup and the research modal's
+// two-view shell (its "What's moving" tab, Amendment C SB-7). The request goes
+// out only while `active` is true: the popup's isOpen, the tab's tap.
 // =============================================================================
 
-const WhyMovingPopup = ({ symbol, name, change, price, isOpen, onClose, open, high, low, close, peerMoves }) => {
+/** The header's change text: "+2.2%", "-1.4%", or '' with no finite change. */
+export const whyMovingChangeText = (change) => (typeof change === 'number'
+  ? `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`
+  : '');
+
+/**
+ * `attempt` (optional; the popup passes none): a new value asks again while active — the shell's
+ * What's moving uses it for a Retry that carries the numbers on screen at that tap.
+ */
+export function useWhyMoving({ symbol, name, change, price, open, high, low, close, peerMoves, active, attempt }) {
   const [state, setState] = useState('idle'); // 'idle' | 'loading' | 'success' | 'error'
   const [data, setData] = useState(null);
   const cacheRef = useRef({});
@@ -341,13 +352,69 @@ const WhyMovingPopup = ({ symbol, name, change, price, isOpen, onClose, open, hi
 
   // Fetch when popup opens with a valid symbol
   useEffect(() => {
-    if (isOpen && symbol) {
+    if (active && symbol) {
       fetchExplanation(symbol);
     }
-    if (!isOpen) {
+    if (!active) {
       setState('idle');
     }
-  }, [isOpen, symbol, fetchExplanation]);
+  }, [active, symbol, fetchExplanation, attempt]);
+
+  // Cleanup abort controller on unmount
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+    };
+  }, []);
+
+  return { state, data, retry: () => fetchExplanation(symbol) };
+}
+
+/** The explanation's body in each state: the thinking dots, the retry, the v2 / v1 content. */
+export const WhyMovingBody = ({ state, data, onRetry }) => {
+  // Detect v2 response (has catalyst field)
+  const isV2 = data?.catalyst !== undefined;
+  return (
+    <>
+      {/* Loading State */}
+      {state === 'loading' && <ThinkingDots />}
+
+      {/* Error State */}
+      {state === 'error' && (
+        <div style={{ padding: '16px', textAlign: 'center' }}>
+          <p style={{ color: HOLO_COLORS.textSecondary, fontSize: '13px', margin: '0 0 12px' }}>
+            Couldn't fetch explanation right now.
+          </p>
+          <button
+            onClick={onRetry}
+            style={{
+              background: 'rgba(0, 217, 255, 0.1)',
+              border: '1px solid rgba(0, 217, 255, 0.3)',
+              borderRadius: '8px',
+              color: HOLO_COLORS.primary,
+              fontSize: '13px', fontWeight: '600',
+              padding: '8px 16px', cursor: 'pointer',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Success State */}
+      {state === 'success' && data && (
+        isV2 ? <V2Content data={data} /> : <V1Content data={data} />
+      )}
+    </>
+  );
+};
+
+// =============================================================================
+// COMPONENT
+// =============================================================================
+
+const WhyMovingPopup = ({ symbol, name, change, price, isOpen, onClose, open, high, low, close, peerMoves }) => {
+  const { state, data, retry } = useWhyMoving({ symbol, name, change, price, open, high, low, close, peerMoves, active: isOpen });
 
   // Escape key dismisses
   useEffect(() => {
@@ -357,20 +424,8 @@ const WhyMovingPopup = ({ symbol, name, change, price, isOpen, onClose, open, hi
     return () => document.removeEventListener('keydown', handleEsc);
   }, [isOpen, onClose]);
 
-  // Cleanup abort controller on unmount
-  useEffect(() => {
-    return () => {
-      if (abortRef.current) abortRef.current.abort();
-    };
-  }, []);
-
-  const changeStr = typeof change === 'number'
-    ? `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`
-    : '';
+  const changeStr = whyMovingChangeText(change);
   const displayName = name || symbol;
-
-  // Detect v2 response (has catalyst field)
-  const isV2 = data?.catalyst !== undefined;
 
   return (
     <>
@@ -448,35 +503,7 @@ const WhyMovingPopup = ({ symbol, name, change, price, isOpen, onClose, open, hi
                 )}
               </div>
 
-              {/* Loading State */}
-              {state === 'loading' && <ThinkingDots />}
-
-              {/* Error State */}
-              {state === 'error' && (
-                <div style={{ padding: '16px', textAlign: 'center' }}>
-                  <p style={{ color: HOLO_COLORS.textSecondary, fontSize: '13px', margin: '0 0 12px' }}>
-                    Couldn't fetch explanation right now.
-                  </p>
-                  <button
-                    onClick={() => fetchExplanation(symbol)}
-                    style={{
-                      background: 'rgba(0, 217, 255, 0.1)',
-                      border: '1px solid rgba(0, 217, 255, 0.3)',
-                      borderRadius: '8px',
-                      color: HOLO_COLORS.primary,
-                      fontSize: '13px', fontWeight: '600',
-                      padding: '8px 16px', cursor: 'pointer',
-                    }}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-
-              {/* Success State */}
-              {state === 'success' && data && (
-                isV2 ? <V2Content data={data} /> : <V1Content data={data} />
-              )}
+              <WhyMovingBody state={state} data={data} onRetry={retry} />
 
               {/* Dismiss Button */}
               <button

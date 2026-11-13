@@ -2,13 +2,20 @@ import React from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor } from '../../constants/holoTheme';
 import { INDEX_REGISTRY } from '../../constants/indexRegistry';
 import { priceText } from './priceFormat';
+// The two-view shell's header (SB-3) lives in Sheet/ShellHeader.jsx, where the sheet's guard scans it.
+import ShellHeader from './Sheet/ShellHeader';
 
 /**
  * ChartHeader - Compact 56px header bar for the redesigned research modal.
  * Replaces the giant hero block with a space-efficient layout.
+ *
+ * `shell` (the two-view shell, SB-3): { views, active, onView, warm, change } —
+ * the header becomes the stock row and the view pills (ShellHeader), with no
+ * Why? door. Absent (the shell off), the header below renders as it always has.
  */
-const ChartHeader = ({ asset, sector, category, isIndex, onClose, onWhyMoving, onBack }) => {
+const ChartHeader = ({ asset, sector, category, isIndex, onClose, onWhyMoving, onBack, shell = null }) => {
   if (!asset) return null;
+  if (shell) return <ShellHeader asset={asset} onClose={onClose} onBack={onBack} shell={shell} />;
 
   const sectorColor = getSectorColor(sector);
   const priceChange = asset.percentChange || asset.change || 0;
