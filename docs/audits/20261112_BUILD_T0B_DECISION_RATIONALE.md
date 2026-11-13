@@ -3,12 +3,12 @@
 **Date:** 12 Nov 2026 (the session ran past midnight UTC into 13 Nov) · **Built by:** Claude Code (Opus) · **For:** the founder, and Astra's review of T0a, T0b and T0c as a set
 **Base:** stacked on T0a. Branch cut from `origin/claude/practice-field-t0a-sector-cap` at `eb4d9b56` (draft PR #1046); `origin/main` at `c37baa0d`. Both fetched at session start and again before the push; unchanged throughout.
 **Branch:** `claude/practice-field-t0b-decision-rationale`. **Draft PR:** against the T0a branch, so its diff shows only this build; it retargets to `main` once #1046 merges. Not merged; CI not watched.
-**Commits:** `71f20b00` the build · `e309fe26` the tripwire on the full Linux closure · `e1aea3fd` the review fixes · `f530604a` the bounded-prefix cut · `2de10f9c` one test row · `d18f5dc3` the tripwire calibrated by the refuters (code head) · the report commit that carries this text.
+**Commits:** `71f20b00` the build · `e309fe26` the tripwire on the full Linux closure · `e1aea3fd` the review fixes · `f530604a` the bounded-prefix cut · `2de10f9c` one test row · `d18f5dc3` the tripwire calibrated by the refuters · `0b66bf64` the first report · `c76acd5d` the prefix row pinned without a clock (code head) · the report commit that carries this text.
 **Inputs:** the T0b build prompt; concept V6.1 §2, §8, §9 and rulings 16–17; Astra's V5 review B7 (rationale, permissions and conviction) and V6 review C6-10 (about nominations; its "store the reason" applies there, and was read for consistency). Fenced files were not touched; no flag, Firestore, model or EODHD call was made.
 
 | Question | Verdict |
 |---|---|
-| Is the reason kept on every decision the model answered? | Yes, on both paths, including refused decisions; bounded and labelled |
+| Is the reason kept on every decision record written from a model answer? | Yes, on both paths, including refused decisions; bounded and labelled. On the live direct path a malformed or missing answer still writes no record at all (question 1) |
 | Can a record grow past Firestore's limit? | No: every long string is capped where the record is built; worst case 5,484 bytes |
 | Does anything read the stored reason? | No: a tripwire, per-file pins and canary rows guard it; the honesty registry is unchanged |
 | Tests | Full Linux suite exit 0 (1,406 files); lint gate exit 0; 49 / 49 mutants killed |
@@ -43,7 +43,7 @@
 
 ## 2. Changes by `file:line`
 
-All anchors are at `d18f5dc3`, the code head.
+All anchors are at `c76acd5d`, the code head (the product files are unchanged since `d18f5dc3`).
 
 **The limits** — `api/_utils/mandateConfig.js:68` `MANDATE_RATIONALE_MAX_CHARS = 1200` (UTF-16 units, the JavaScript string length; at most 3,600 bytes once stored); `:74` `MANDATE_DECISION_TICKER_MAX_CHARS = 32`; `:75` `MANDATE_DECISION_FAIL_CONDITION_MAX_CHARS = 200`. The file sits on the Mandate prompt path; the new lines are constants and a comment and reach no prompt.
 
@@ -61,30 +61,36 @@ All anchors are at `d18f5dc3`, the code head.
 
 **The batch path** — `api/_utils/mandateBatchTransport.js` `processSucceededResult`: the model's decision input is read once, up front (`:315–319`; the read is pure and needs neither book nor rules), and its reason rides the book-missing (`:331`, `:337`), missing-rules (`:355`), malformed-answer (`:373`) and execution (`:415`) outcomes; the attribution uses the re-read frozen seat and the provider's batch finish time, threaded in at `:680`. The order of outcomes, billing, leases and health bookkeeping are unchanged.
 
-**Fenced files read, none edited.** `git diff eb4d9b56 d18f5dc3` touches no BUILD_RULES §1 file and no flag. No fenced function is called by the new code; no legacy archetype table is newly imported (`archetypeImportBoundaryBaseline.json` unchanged). The protected-store write-site census is unchanged: no write call was added or moved.
+**Fenced files read, none edited.** `git diff eb4d9b56 c76acd5d` touches no BUILD_RULES §1 file and no flag. No fenced function is called by the new code; no legacy archetype table is newly imported (`archetypeImportBoundaryBaseline.json` unchanged). The protected-store write-site census is unchanged: no write call was added or moved.
 
 **Tests changed or added**
-- New: `api/_utils/mandateRationale.test.js` (the bound, the cut, conviction, attribution, the builder, the size bound at `:255–288`, answer-less records) and `api/_utils/mandateRationale.imports.test.js` (the tripwire, §4).
+- New: `api/_utils/mandateRationale.test.js` (the bound, the cut, conviction, attribution, the builder, the size bound at `:266–299`, answer-less records) and `api/_utils/mandateRationale.imports.test.js` (the tripwire, §4).
 - `api/cron/mandate-evaluate.test.js:385–470`: the direct path — present, absent, truncated, conviction clamped and empty, gated and refused keep the reason, the clock read after the answer, and a canary row.
 - `api/_utils/mandateBatchTransport.test.js:702–826`: the batch path — present, truncated, absent, gated, refused and expired keep the reason; a malformed answer, missing rules and a deleted book keep the reason in hand; no tool use, a provider error and a missing row are `absent` with empty attribution; a 6,000-character ticker is stored capped at 32; the time-basis fallback; a canary row.
 - `api/_utils/mandateMoneyRounding.scan.test.js:75`: the conviction clamp's one `Math.round` joins the money-path rounding baseline under the existing "clamp — not money" classification (the same rule's site in `mandateDecisionTool.js` is already listed).
 
 ## 3. Tests
 
-**The record run** — Linux (WSL Ubuntu), a private worktree of the shared CI clone at `d18f5dc3`, Node 20.20.2 (CI's version), the install matching the lockfile (`40382e64edb6`), under the shared suite lock:
+**The record run** — Linux (WSL Ubuntu), a private worktree of the shared CI clone at `c76acd5d`, Node 20.20.2 (CI's version), the install matching the lockfile (`40382e64edb6`), under the shared suite lock:
 
 ```bash
 TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8
 ```
 
-Exit code **0**, 255 s. Read directly from the log:
+Exit code **0**, 265 s. Read directly from the log:
 
 ```
  Test Files  1406 passed | 9 skipped (1415)
       Tests  31095 passed | 107 skipped (31202)
 ```
 
-Earlier runs: the same command at `e309fe26` (before the review fixes) exited 0 with `Test Files  1406 passed | 9 skipped (1415)`; the 39 Mandate test files alone pass at every commit (673 tests at `d18f5dc3`). The lint gate (`npm run lint:gate`, `eslint . --config eslint.gate.config.js --max-warnings 0`) exited 0 at `d18f5dc3`. The production build (`npx vite build`) and a second full suite run on the pushed head, which adds only this report and its index row; their results are in the PR description.
+Earlier full runs, same command: `e309fe26` (before the review fixes) and `d18f5dc3` both exited 0 with `Test Files  1406 passed | 9 skipped (1415)`, and so did `0b66bf64` (`d18f5dc3` plus the first report).
+
+The 39 Mandate test files, run alone on Linux, pass at `e309fe26`, `f530604a`, `d18f5dc3` and `c76acd5d` (673 tests at the last two). They did not pass at two commits, both fixed before the next:
+- `71f20b00`: two files red. The first tripwire, on the full Linux import graph, met the pure record modules and an unrelated log stream named "decisions" (§4 explains the edges and the pin); the money-path rounding scan needed the conviction clamp in its baseline. Fixed at `e309fe26`.
+- `e1aea3fd`: two rows timed out under load: the whole-input character segmentation, which cost about 3 s on Node 20 (fixed at `f530604a`), and a file scan that read every file twice (fixed at `d18f5dc3`).
+
+The lint gate (`npm run lint:gate`, `eslint . --config eslint.gate.config.js --max-warnings 0`) exited 0 at `d18f5dc3` and at `c76acd5d`. The production build (`npx vite build`) exited 0 at `0b66bf64`. The build, the lint gate and a full suite run on the pushed head, which adds only this report and its index row; their results are in the PR description.
 
 **Windows note.** On this Windows checkout, five Mandate test files fail for reasons that predate T0b and are path-related: four closure scans (the walker issue in §6, now including the new tripwire's three-hop self-check, which fails loudly as intended) and `mandateNativeEsm.smoke.test.js` (it imports a `C:\` path). CI runs Linux, where all pass.
 
@@ -94,7 +100,9 @@ Earlier runs: the same command at `e309fe26` (before the review fixes) exited 0 
 
 1. **Every prompt assembler under `api/`** — each module in the battle registry and the Mandate registry, plus every `api/` module with "prompt" in its path — and everything they import, followed through the whole import graph. None may name the decisions store, none may name a field only this build writes, and none may reach a module that writes decision records. Two pure modules are reached legitimately, through a pre-T0b chain (the Mandate prompt → the price snapshot → corporate actions → the record shapes → the new rules module). They may be imported there only through those two pinned import lines, with exactly the pinned names, and their own imports must stay free of any database access.
 2. **All of `api/` and `src/`** — every mention of the decisions store is pinned per file at its reviewed count (four writers, plus one unrelated Cloud Storage log stream that happens to be called "decisions"), and the new field names appear only in the five writer files. A future reader — a screen, a memory pass, a helper inside a writer whose result feeds a prompt — moves a pinned count, which is a deliberate review event.
-3. **Canary rows** (`mandate-evaluate.test.js:443`, `mandateBatchTransport.test.js:793`): a unique reason, sent through executed and gated decisions, is found in exactly one stored place — its decision record — not in what the handler or the harvest returns, and not in the next Mandate prompt built from the stored book.
+3. **Canary rows** (`mandate-evaluate.test.js:443`, `mandateBatchTransport.test.js:793`): a unique reason, sent through an executed and a gated decision on the direct path and an executed one on the batch path, is found in exactly one stored place — its decision record — not in what the handler or the harvest returns, and not in the next Mandate prompt built from the stored book.
+
+**The pins against other branches.** Scan 2's per-file counts would turn red after a merge if another branch added a decisions-store mention. All 1,157 local and remote branch heads were checked before the push: only the five pinned files ever contain one, and `main`, T0a and T0c hold exactly the pinned counts. Fifteen stale branches carry an older `mandateExecution.js` with one mention.
 
 **Stated blind spots** (in the file's header): "rationale" is an ordinary word and cannot be banned by name; prompts built inline outside the prompt-named modules are covered by scan 2 and the canaries, not scan 1; the import walk follows static `import … from` and `export … from` lines only; a store name built at run time evades the pin; scan 2 covers `api/` and `src/`, not `scripts/`.
 
@@ -110,17 +118,18 @@ The cumulative diff crosses the review threshold (11 files), so the BUILD_RULES 
 
 No must-fix was found. No fenced file, flag, prompt input or tool text changed. Each lens's own canary or path walk found no reader at `e309fe26`.
 
-**What the fixes changed** (`e1aea3fd`, `f530604a`, `2de10f9c`, `d18f5dc3`):
+**What the fixes changed** (`e1aea3fd`, `f530604a`, `2de10f9c`, `d18f5dc3`, `c76acd5d`):
 - *Reasons in hand kept (A1/B1).* The batch harvest now reads the model's decision input before anything else, so a book-missing or missing-rules outcome keeps the reason instead of labelling it `absent`.
 - *Size by construction (A3).* The ticker and failure reason are capped where the record is built; the size test feeds all three long strings past their caps.
 - *Tripwire (C1–C5).* Canary rows; store mentions pinned per file (catches a store name held in a constant, a nested call, and a new reader inside a writer); the exemption became two pinned import lines (catches a formatter routed through another module); the self-check reaches three hops (a shallow walk now fails loudly).
 - *Found in the fix pass.* On Node 20 (CI's runtime) the character-boundary engine took 3.5 s on a 2-million-character input, and the record is built inside the execution transaction. The cut now looks at the first limit + 2 units only (2 ms), with the same result; a row pins the look-ahead.
 - *Calibrated by the refuters.* The field-name check became "only the writers" (one writer names the fields in comments only); prompt roots match "prompt" anywhere in the path; `.cjs` files are scanned; the scan rows read each file once and carry a 30-second limit (a loaded run crossed 5 s).
 - *Wording.* What `absent` covers; the batch time bases (the fallback is the fire's start time, not an upper bound); conviction as uncalibrated self-reported confidence; the two stated non-verbatim edits.
+- *A final check before the push.* The look-ahead row first pinned the cut's cost with a wall clock, which caught whole-input segmentation only on Node 20 (22 ms on Node 22) and could fail on a stalled runner; it now spies on what is segmented (`c76acd5d`). The same check corrected three over-statements in the first report (`0b66bf64`): a verdict row that left out the direct path's record-less answers, a claim that the Mandate tests passed at every commit, and the batch canary's scope.
 
 **Refuted, with the reason.** A3's "the failure reason is model-controlled": every suffix is a fixed string or a provider error type. A4(b): the time basis already said `batch_ended` is a batch-level time. A6's empty-model-id case: unreachable, because the request builder refuses an empty model; the one-line consistency edit stays. B2's "cannot be told apart": status, failure reason and model id never collide. C10's scope half: the header already stated `api/` and `src/`. A7's "not stated": the trimming and U+FFFD were in the function's doc; only the status line was loose (now fixed).
 
-**Mutation.** 49 mutants, run on their own WSL worktree at `d18f5dc3`, each judged by the test run's exit code and its JSON report (a crashed worker cannot read as a kill), each file restored from `git show HEAD:` and the tree checked clean after every one: **49 / 49 killed**. They cover the bound and the cut (10, including no look-ahead and half a character of look-ahead), conviction (1), the seat fingerprint and model id (2), the builder's bounds and defaults (4), each path's reason and attribution (17: execution boundary 3, direct 3, batch 11), the caps (3), and the tripwire (12: eleven planted readers, the review's C1–C4 exploits among them, and the walk cut to one level, C5). One mutant was first reported BROKEN, not survived: its anchor predated the `||` edit; with the anchor corrected it was killed. 35 of the same mutants were also all killed at `e309fe26`, before the fixes.
+**Mutation.** 49 mutants, run at `c76acd5d` on their own WSL worktree, each judged by the test run's exit code and its JSON report (a crashed worker cannot read as a kill), each file restored from `git show HEAD:` and the tree checked clean after every one: **49 / 49 killed** in one run. They cover the bound and the cut (10, including no look-ahead and half a character of look-ahead), conviction (1), the seat fingerprint and model id (2), the builder's bounds and defaults (4), each path's reason and attribution (17: execution boundary 3, direct 3, batch 11), the caps (3), and the tripwire (12: eleven planted readers, the review's C1–C4 exploits among them, and the walk cut to one level, C5). At `d18f5dc3` one mutant was first reported BROKEN, not survived (its anchor predated the `||` edit); with the anchor corrected it was killed there too. The first 35 were also all killed at `e309fe26`, before the fixes.
 
 **Not covered.** The fix pass had no fresh review lens of its own; it was checked by the suite, the mutants and the refuters' calibration. The reason's behaviour against the live provider is untested (no model calls by rule).
 
