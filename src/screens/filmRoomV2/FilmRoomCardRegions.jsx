@@ -44,6 +44,15 @@
 //                   says it could not be read; and My cards: active, shelved,
 //                   retired, with shelving explained in plain words. The
 //                   moment a recurrence opened is marked in the prepared case.
+// FILM ROOM C1 (Build C spec docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md
+// §3, §5): the form's routes are Watch, Offer and Set — Offer only when the
+// counter reports the owner's book open (BC-3); the receipt is the CHAIN, one
+// line per row of the entry's own stageHistory, newest first, with the agent's
+// reason as a quotation and a result's words as stored, its idea and result
+// links only beside a book door (none in C1); "Park this card" on a tested
+// receipt, and (Amendment A CA-7) "Offer to your agent" on a card-stage
+// receipt while the owner's book is open; since-last-time lists every card
+// past the card stage with its newest chain line (refinement R-C1-1).
 // Every number carries its marker (BA-42, R4(a): the screen's aggregates are
 // declared in SCREEN_AGGREGATE_CLASSES); every instant is marked as one, with
 // its date when it is not the shown day's (review L3-7); the note reaches the
@@ -52,15 +61,17 @@
 // (review L3-10). Nothing here says or implies that the agent learns from,
 // reads or follows a card (RG-5).
 
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { SITUATIONS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { CARD_SLOTS } from '../../data/cardSlots';
+// Build C §3: the stage vocabulary v2, from its one export
+import { CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_EXPIRY_SESSIONS, STORED_ROUTE_ALIASES, endedBeforeFirstFill, isNotTaken, isRetirableByPlayer, routeOf } from '../../data/cardStages';
 import { RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED } from '../../config/featureFlags';
 import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, eyebrow, foot, mono, plain, tint, AggNum, TapeNum, When, Rec, Coverage, Quotation, TextButton, PrimaryButton, Label } from './FilmRoomKit';
-import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf } from './filmRoomCards';
+import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf, chainOf, latestOf } from './filmRoomCards';
 
 const T = COPY.cards;
 /**
@@ -77,7 +88,6 @@ const S10 = CARD_SLOTS.S10.noteMaxChars;
 const CONTROL_CHAR = /\p{Cc}/u;
 /** A stage or route word: the copy's, or the record's own value where the copy has none (never the screen's voice for an unknown id). */
 const wordOf = (table, id) => (Object.prototype.hasOwnProperty.call(table, id) ? table[id] : <Rec>{String(id)}</Rec>);
-const OPEN_STAGES = ['card', 'nominated'];
 
 /**
  * B2.1 B1 (Amendment H RH-1; RJ-8) — the day's stagnation rule, as the tagger stored what it used
@@ -190,6 +200,12 @@ export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel }) 
   // the op id is minted once the form is up for a moment (the same effect that resets the form for a new moment), never per attempt
   const [opId, setOpId] = useState(null);
   useEffect(() => { setQuestionId(questions[0]?.id ?? null); setRoute('watch'); setNote(''); setRefusal(null); setOpId(mintOpId()); }, [moment]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // Build C §5 (BC-3): the routes are Watch, Offer and Set — Offer only when the counter reports the owner's book open;
+  // with no book the form holds Watch and Set and says nothing of the book. A route the form no longer shows (the book
+  // closed on a re-read) is never sent: the choice falls back to Watch
+  const bookOpen = counter?.data?.book?.open === true;
+  const routes = bookOpen ? CARD_ROUTES : CARD_ROUTES.filter((r) => r !== NOMINATING_ROUTE);
+  const chosen = routes.includes(route) ? route : 'watch';
   const length = noteLength(note);
   const data = counter?.status === 'ready' ? counter.data : null;
   const open = Number.isInteger(data?.open) ? data.open : null;
@@ -202,7 +218,7 @@ export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel }) 
     setBusy(true);
     setRefusal(null);
     const q = questions.find((x) => x.id === questionId);
-    const r = await onFile({ opId, battleId: tape.battleId, etDate: tape.etDate, moment, questionId, questionVersion: q?.version ?? null, note: note.trim(), route });
+    const r = await onFile({ opId, battleId: tape.battleId, etDate: tape.etDate, moment, questionId, questionVersion: q?.version ?? null, note: note.trim(), route: chosen });
     setBusy(false);
     if (!r?.ok) setRefusal(T.refusals[r?.code] ?? T.refusals.default);
   };
@@ -232,9 +248,9 @@ export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel }) 
       </span>
       <fieldset style={{ border: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <legend style={{ ...eyebrow, color: C.ink3, padding: 0, marginBottom: 4 }}>{T.routeTitle}</legend>
-        {['watch', 'drill', 'set'].map((r) => (
+        {routes.map((r) => (
           <label key={r} data-route={r} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-            <input type="radio" name={`${id}-route`} value={r} checked={route === r} onChange={() => setRoute(r)} />
+            <input type="radio" name={`${id}-route`} value={r} checked={chosen === r} onChange={() => setRoute(r)} />
             <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span style={mono(11.5, C.ink, { fontWeight: 700 })}>{T.routes[r]}</span>
               <span data-route-note={r} style={foot}>{T.routeNotes[r]}{r === 'set' && setSay ? <> {setSay}</> : null}</span>
@@ -272,11 +288,142 @@ function CardFacts({ card }) {
   );
 }
 
-/** RG-5 — what happens next, as true for the card's state: the route's sentence while it is open; nothing, said so, once retired or while shelved. */
+/**
+ * RG-5 — what happens next, as true for the card's state: the route's sentence while the card sits where its route
+ * filed it; nothing, said so, once retired or while shelved. Build C §3: a card the Practice Field has moved on
+ * (`testing`, `tested`, `installed`) gets no route sentence — its chain says what happened.
+ */
 function nextOf(card) {
   if (card.stage === 'retired') return T.stateNotes.retired;
   if (card.shelved) return T.stateNotes.shelved;
-  return OPEN_STAGES.includes(card.stage) && Object.prototype.hasOwnProperty.call(T.routeNotes, card.route) ? T.routeNotes[card.route] : null;
+  if (card.stage === 'tested' && card.parkedAt) return T.stateNotes.parked;
+  // Amendment A CA-3: a nominated card the agent did not take is closed — kept, no longer counted as open
+  if (isNotTaken(card)) return T.stateNotes.notTaken;
+  const route = routeOf(card.route);
+  if (card.stage === 'card') return Object.prototype.hasOwnProperty.call(T.routeNotes, route) ? T.routeNotes[route] : null;
+  // Build C §5: a QUEUED nomination is what the Offer route said would happen; once the agent has answered, the chain
+  // says what happened. A v1 Practice card holds no nomination, so nothing is said to come
+  if (card.stage === 'nominated' && card.nomination?.state === 'queued') return T.routeNotes[NOMINATING_ROUTE];
+  return null;
+}
+
+const has = (table, id) => Object.prototype.hasOwnProperty.call(table, id);
+
+/** Amendment A CA-7: the route's refusals that judge the card's SOURCE — one sentence for all of them (F1). */
+const OFFER_SOURCE_REFUSALS = Object.freeze(['moment_not_found', 'source_changed', 'tags_unavailable', 'tape_not_found', 'archetype_changed', 'archetype_unknown']);
+/**
+ * CA-7 — what a refused "Offer to your agent" says: the amendment's own words for a changed source, an unreadable tape,
+ * an unresolved agent, a closed book and the calendar; the receipt's existing words for any other code; and the offer's
+ * own default. Never "Nothing was filed" — nothing was being filed.
+ */
+const offerRefusalOf = (code) => {
+  const O = T.offerRefusals;
+  if (OFFER_SOURCE_REFUSALS.includes(code)) return O.source;
+  if (has(O, code)) return O[code];
+  return has(T.refusals, code) && code !== 'default' ? T.refusals[code] : O.default;
+};
+
+/**
+ * Build C §5 — ONE LINE of a card's chain (chainOf), in the Film Room's own voice: the state's words and its time (an
+ * instant, with its date when it is not the shown day's). The record's own words stand where the copy has none — an
+ * answer or a stage the copy does not know — and always for a result's words and an offer's state, exactly as the
+ * ledger stores them (exit criterion 11). No link and no quotation here: the receipt sets them beside the line, and
+ * "since last time" shows the line alone.
+ */
+export function ChainLine({ card, line, day = null }) {
+  const W = T.chain;
+  const clock = etWhen(line.at, day);
+  const when = clock ? <When>{clock}</When> : W.timeNotRecorded;
+  if (line.kind === 'filed') return <>{W.filed} · {when}</>;
+  if (line.kind === 'offered') return <>{W.offered} · {when}</>;
+  if (line.kind === 'nomination') {
+    // Amendment A CA-9: considered is a state of its own — the agent looked and has not answered; no quotation
+    if (line.state === 'considered') return <>{W.considered} · {when}</>;
+    if (has(W.answers, line.state)) return <>{W.answers[line.state]} · {when}</>;
+    if (line.state === 'expired') return <>{W.expired.before} <AggNum value={NOMINATION_EXPIRY_SESSIONS} aggregate="count(sessions a queued nomination waits, B6)" size={10.5} /> {W.expired.after} · {when}</>;
+    return <>{W.answer} · <Rec>{String(line.state)}</Rec> · {when}</>;
+  }
+  if (line.kind === 'testing') return <>{W.testing} {when}</>;
+  // Amendment A CA-5: an offer made from this card's idea waits in the Forge (its link waits for a door: C1 passes none)
+  if (line.kind === 'offerWaits') return <>{W.offerWaits} · {when}</>;
+  if (line.kind === 'tested') {
+    const r = isObjLike(card?.result) ? card.result : null;
+    // CA-22: the idea ended before its first trade — the row's stored no-fill fact; it never says "Tested"
+    return (
+      <>
+        {line.noFill ? W.endedBeforeFirstTrade : W.tested} · {when}
+        {r && typeof r.contractCondition === 'string' ? <> · {W.contractCondition} <Rec><span data-result-field="contractCondition">{r.contractCondition}</span></Rec></> : null}
+        {r && typeof r.economicResult === 'string' ? <> · {W.economicResult} <Rec><span data-result-field="economicResult">{r.economicResult}</span></Rec></> : null}
+      </>
+    );
+  }
+  if (line.kind === 'installed') return <>{W.installed} · {when}</>;
+  if (line.kind === 'parked') return <>{W.parked} · {when}</>;
+  if (line.kind === 'retired') {
+    const offer = line.by === 'server' && isObjLike(card?.offer) && typeof card.offer.state === 'string' ? card.offer : null;
+    // Amendment A CA-2: the player's retire of a nominated card withdrew its offer — the copy the retire wrote says so
+    if (line.by !== 'server' && card?.nomination?.state === 'withdrawn') return <>{W.withdrawnRetired} · {when}</>;
+    return <>{W.retired} · {when}{offer ? <> · {W.forgeOffer} <Rec><span data-offer-state="">{offer.state}</span></Rec></> : null}</>;
+  }
+  // a stage row the chain names no line for: the card's stage word by the one label reader (a v1 Practice entry's
+  // `nominated`), the record's own word otherwise
+  return <>{stageLabelOf(card, String(line.stage ?? line.kind))} · {when}</>;
+}
+
+/**
+ * Amendment A CA-17 — THE ONE LABEL READER for a card's stage word: the receipt's route line and My cards name a stage
+ * through it, and so does every chain line that names a stage (a v1 `drill` row, a stage the copy does not know) —
+ * on the receipt and in "since last time", which draws the same ChainLine. The chain's state lines keep their own words
+ * (Offered, Tested, Equipped …), which name events, not the stage. At `nominated`: "offered to your agent" — except an entry whose STORED
+ * route is `drill` (v1 Practice), which keeps "nominated for the Practice Field" (reading 16). The stored route decides,
+ * never the vocabulary version: a v1 Watch or Set card offered after C1 was offered to the agent. CA-22: a `tested`
+ * card whose result carries the stored no-fill fact reads "ended before its first trade", never "tested". Any other
+ * stage the copy names, its word; one it does not, the record's own (Rec).
+ */
+export function stageLabelOf(card, stage = card?.stage) {
+  if (stage === 'nominated' && Object.prototype.hasOwnProperty.call(STORED_ROUTE_ALIASES, card?.route)) return T.stageWordsOf.drillNominated;
+  if (stage === 'tested' && endedBeforeFirstFill(card)) return T.stageWordsOf.noFill;
+  return wordOf(T.stageWords, stage);
+}
+const isObjLike = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** Amendment A CA-4 / CA-11: the row field an answer's line quotes — a deferral's or a decline's reason, an acceptance's thesis. */
+const QUOTED_ANSWER = Object.freeze({ deferred: 'reason', declined: 'reason', accepted: 'thesis' });
+
+/**
+ * Build C §5 — the receipt's chain: every line chainOf gives, newest first. Beside a line, where the ledger holds it,
+ * the agent's words as a quotation credited "your agent" (BC-1), each from ITS OWN row at ITS OWN source time — never
+ * the copy's delivery time (Amendment A CA-4, CA-11): a deferral's or a decline's reason (`stageHistory[k].reason` at
+ * `stageHistory[k].consideredAt`), so a later copy never overwrites an earlier answer; an acceptance's thesis
+ * (`stageHistory[k].thesis`, never its reason); a result's closing note (`result.closingNote` at `result.closingNoteAt`).
+ * `considered` and an expiry quote nothing. And a link slot — "Open the idea"
+ * (taken into an idea; testing), "Open the result" (tested) — that renders ONLY when the screen is handed the book's
+ * door (`onOpenBook`). C1 hands none: no book screen exists yet, so no slot renders (no new door).
+ */
+function Chain({ card, ledger, day, onOpenBook }) {
+  const W = T.chain;
+  const lines = chainOf(card);
+  if (!lines.length) return null;
+  const nomination = isObjLike(card.nomination) ? card.nomination : null;
+  const link = (label, target) => (typeof onOpenBook === 'function' ? <TextButton onClick={() => onOpenBook(target)}>{label}</TextButton> : null);
+  return (
+    <div data-card-chain="" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ ...eyebrow, color: C.ink3 }}>{W.title}</span>
+      {lines.map((line) => (
+        <div key={`${line.k}:${line.kind}`} data-chain-line={line.kind} data-chain-state={line.state ?? undefined} data-chain-row={line.k} style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '4px 0', borderTop: `1px solid ${C.hair}` }}>
+          <span style={mono(11, C.ink2)}><ChainLine card={card} line={line} day={day} /></span>
+          {line.kind === 'nomination' && line.state === 'accepted' && line.latest && nomination ? link(W.openIdea, { bookId: nomination.bookId, nominationId: nomination.nominationId }) : null}
+          {line.kind === 'testing' && isObjLike(card.idea) ? link(W.openIdea, { bookId: card.idea.bookId, ideaId: card.idea.ideaId }) : null}
+          {line.kind === 'tested' && isObjLike(card.result) ? link(W.openResult, { ideaId: card.result.ideaId, resultRef: card.result.resultRef }) : null}
+          {line.kind === 'nomination' && QUOTED_ANSWER[line.state] ? (
+            <Quotation doc={ledger} path={['cards', card.entryId, 'stageHistory', line.k, QUOTED_ANSWER[line.state]]} by="yourAgent" at={['cards', card.entryId, 'stageHistory', line.k, 'consideredAt']} docLabel="ledger" />
+          ) : null}
+          {line.kind === 'tested' && isObjLike(card.result) ? (
+            <Quotation doc={ledger} path={['cards', card.entryId, 'result', 'closingNote']} by="yourAgent" at={['cards', card.entryId, 'result', 'closingNoteAt']} docLabel="ledger" />
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -288,8 +435,14 @@ function nextOf(card) {
  *                                     judged from it only when it is the card's own source day; a card from any other
  *                                     day says RG-5's sentence alone, with no link
  * @param {Function}    [props.onOpenForge] App's Forge door (hub S5), `({ area })` — Set's link to the tempo dial
+ * @param {Function}    [props.onOpenBook]  Build C §5: the book's door — the chain's idea and result links render only
+ *                                     beside it; C1 hands none (no book screen exists yet)
+ * @param {Function}    [props.onPark]  Build C (refinement R-C1-2): park a tested card — "Park this card", on a tested card's
+ *                                     receipt only
+ * @param {Function}    [props.onNominate] Amendment A CA-7: offer a card at `card` to the agent — "Offer to your agent",
+ *                                     shown only while the counter reports the owner's book open (strictly `=== true`)
  */
-export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = null, onOpenForge = null }) {
+export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark = null, onNominate = null, tape = null, onOpenForge = null, onOpenBook = null }) {
   const data = counter?.status === 'ready' || counter?.data ? counter.data : null;
   const cards = ledgerOf(data, card);
   const live = cards.find((c) => c.entryId === card.entryId) ?? card;
@@ -305,13 +458,43 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = 
     setBusy(false);
     if (!r?.ok) setRefusal(T.refusals[r?.code] ?? T.refusals.retireDefault);
   };
+  // Build C (R-C1-2): the park's op id is minted ONCE per receipt, at the first tap (review L4-9's rule; minted late so
+  // a receipt that never parks mints nothing)
+  const parkOp = useRef(null);
+  const [parking, setParking] = useState(false);
+  const park = async () => {
+    if (!parkOp.current) parkOp.current = mintOpId();
+    setParking(true);
+    setRefusal(null);
+    const r = await onPark(live, parkOp.current);
+    setParking(false);
+    if (!r?.ok) setRefusal(T.refusals[r?.code] ?? T.refusals.parkDefault);
+  };
+  const canPark = typeof onPark === 'function' && live.stage === 'tested' && !live.parkedAt;
+  // Amendment A CA-7 — "Offer to your agent": a card at `card` (any route, v1 or v2), not shelved, and ONLY while the
+  // counter reports the owner's book open, strictly (never while it first loads, after a failed first read, with the
+  // field missing or false — the server judges again in any case). Its op id is its own, minted ONCE per receipt at the
+  // first tap (as park's), never shared with retire or park, so a lost answer re-tapped sends the same id
+  const nominateOp = useRef(null);
+  const [offering, setOffering] = useState(false);
+  const canOffer = typeof onNominate === 'function' && live.stage === 'card' && !live.shelved && counter?.data?.book?.open === true;
+  const offer = async () => {
+    if (!nominateOp.current) nominateOp.current = mintOpId();
+    setOffering(true);
+    setRefusal(null);
+    const r = await onNominate(live, nominateOp.current);
+    setOffering(false);
+    if (!r?.ok) setRefusal(offerRefusalOf(r?.code));
+  };
   const next = nextOf(live);
-  const canRetire = OPEN_STAGES.includes(live.stage) && !live.shelved;
+  // the store retires what the player may retire (Amendment A CA-1, CA-2, CA-5: the one export's isRetirableByPlayer —
+  // never a testing card, an accepted nomination or a result with an offer waiting), never a shelved one
+  const canRetire = isRetirableByPlayer(live) && !live.shelved;
   // RK-2 / RK-3: an OPEN Set card's receipt says Set's words for its source day and holds the link where RK-2 allows
   // it — judged from the tape on screen, only when that is the card's own day (battle and date); otherwise RG-5's
   // sentence alone, which is true of every day
   const ownDay = tape && live.source && tape.battleId === live.source.battleId && tape.etDate === live.source.etDate ? tape : null;
-  const set = live.route === 'set' && canRetire ? (ownDay ? setStateOf(ownDay) : { say: null, link: false }) : null;
+  const set = live.route === 'set' && live.stage === 'card' && canRetire ? (ownDay ? setStateOf(ownDay) : { say: null, link: false }) : null;
   const setSay = set ? setSayOf(set.say) : null;
   // Amendment L RL-5: the link renders only here, beside a Forge door — and wherever it renders, Set's sentence ends
   // with when a change applies; one condition for both, so the sentence never stands without the link or the reverse
@@ -321,7 +504,8 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = 
       <span style={{ ...eyebrow, color: C.teal }}>{T.receipt} · {T.filedCard}</span>
       <CardFacts card={live} />
       <Quotation doc={ledger} path={['cards', live.entryId, 'note']} by="you" at={['cards', live.entryId, 'createdAt']} docLabel="ledger" />
-      <span style={mono(11, C.ink2)}>{T.route} · {wordOf(T.routes, live.route)} · {T.stage} · {wordOf(T.stageWords, live.stage)}{live.shelved ? ` · ${T.groups.shelved}` : ''}</span>
+      <span style={mono(11, C.ink2)}>{T.route} · {wordOf(T.routes, routeOf(live.route))} · {T.stage} · {stageLabelOf(live)}{live.shelved ? ` · ${T.groups.shelved}` : ''}</span>
+      <Chain card={live} ledger={ledger} day={day} onOpenBook={onOpenBook} />
       {next ? <span data-card-next="" style={foot}>{next}{setSay ? <> {setSay}</> : null}{linked ? <> {T.setNextBattle}</> : null}</span> : null}
       {/* RH-1 / RJ-8 / RK-2: the one setting that reaches `stalled` is the tempo dial — linked on every battle where the day's rule is on */}
       {linked ? (
@@ -329,7 +513,15 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = 
           <TextButton onClick={() => onOpenForge({ area: FORGE_CHARACTER_AREA })}>{T.setTempoLink}</TextButton>
         </span>
       ) : null}
-      {canRetire ? <div style={{ display: 'flex' }}><PrimaryButton onClick={retire} disabled={busy}>{busy ? T.retiring : T.retire}</PrimaryButton></div> : null}
+      {/* CA-7: Offer's route note sits above its button */}
+      {canOffer ? <span data-offer-note="" style={foot}>{T.routeNotes[NOMINATING_ROUTE]}</span> : null}
+      {canOffer || canPark || canRetire ? (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {canOffer ? <PrimaryButton onClick={offer} disabled={offering || busy || parking}>{offering ? T.offering : T.offerToAgent}</PrimaryButton> : null}
+          {canPark ? <PrimaryButton onClick={park} disabled={parking || busy || offering}>{parking ? T.parking : T.park}</PrimaryButton> : null}
+          {canRetire ? <PrimaryButton onClick={retire} disabled={busy || parking || offering}>{busy ? T.retiring : T.retire}</PrimaryButton> : null}
+        </div>
+      ) : null}
       {refusal ? <span data-card-refusal="" role="alert" style={{ ...foot, color: C.copper }}>{refusal}</span> : null}
     </section>
   );
@@ -388,7 +580,7 @@ function CardRow({ card, onShow }) {
       <span style={mono(11, C.ink2)}>{titleOf(card.situationId)}</span>
       <span style={mono(11.5, C.ink, { fontWeight: 700 })}><Rec>{card.source?.symbol ?? ''}</Rec></span>
       <When style={mono(10.5, C.ink2)}>{etDateLabel(card.source?.etDate, { short: true }) ?? ''}</When>
-      <span style={mono(10.5, C.ink2)}>{wordOf(T.routes, card.route)} · {wordOf(T.stageWords, card.stage)}</span>
+      <span style={mono(10.5, C.ink2)}>{wordOf(T.routes, routeOf(card.route))} · {stageLabelOf(card)}</span>
       <Label style={{ color: C.teal }}>{T.openCard}</Label>
     </button>
   );
@@ -406,6 +598,7 @@ export function SinceLastTime({ day = null, battleId = null, counter, onOpenMome
   const cards = ledgerOf(data);
   const watching = watchCardsOf(data, cards);
   const groups = groupCards(cards);
+  const latest = latestOf(cards);
   const loading = !data && (counter?.status === 'loading' || counter?.status === 'idle');
   // B2.1 B3 (Amendment H RH-6; RJ-7's style): the days in the counter's window whose situations could not be read —
   // neither counted nor listed as recurrences — said as one line with their count (derived), under the agent the
@@ -427,11 +620,26 @@ export function SinceLastTime({ day = null, battleId = null, counter, onOpenMome
           {recurrences.length ? recurrences.map((r) => <Recurrence key={recurrenceKey(r)} r={r} own={battleId !== null && r.battleId === battleId} onOpenMoment={onOpenMoment} onOpenBattle={onOpenBattle} />) : <span style={foot}>{T.noRecurrence}</span>}
         </div>
       ))}
+      {/* the C1 refinement R-C1-1: after the Watch cards, one line per card past the card stage — its situation, symbol and
+          day, and the receipt's newest state line with its time — newest state first; a tap opens the receipt */}
+      {latest.length ? (
+        <div data-latest-states="" style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingTop: 4 }}>
+          <span style={{ ...eyebrow, color: C.ink3 }}>{T.latestTitle}</span>
+          {latest.map(({ card: c, line }) => (
+            <button key={c.entryId} type="button" data-latest-line={c.entryId} data-latest-kind={line.kind} onClick={() => onShowCard(c)} style={{ ...plain, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '5px 0', width: '100%', borderTop: `1px solid ${C.hair}`, textAlign: 'left' }}>
+              <span style={mono(11, C.ink2)}>{titleOf(c.situationId)}</span>
+              <span style={mono(11.5, C.ink, { fontWeight: 700 })}><Rec>{c.source?.symbol ?? ''}</Rec></span>
+              <When style={mono(10.5, C.ink2)}>{etDateLabel(c.source?.etDate, { short: true }) ?? ''}</When>
+              <span style={mono(10.5, C.ink2)}><ChainLine card={c} line={line} day={day} /></span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {data ? (
         <div data-my-cards="" style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
           <span style={{ ...eyebrow, color: C.ink2 }}>{T.myCards}</span>
           {!cards.length ? <span style={foot}>{T.noCards}</span> : null}
-          {['active', 'shelved', 'retired', 'other'].map((g) => (groups[g].length ? (
+          {['active', 'shelved', 'notTaken', 'parked', 'equipped', 'retired', 'other'].map((g) => (groups[g].length ? (
             <div key={g} data-my-cards-group={g} style={{ display: 'flex', flexDirection: 'column' }}>
               <span style={mono(10, C.ink3, { letterSpacing: '0.12em', textTransform: 'uppercase' })}>{T.groups[g]}</span>
               {groups[g].map((c) => <CardRow key={c.entryId} card={c} onShow={onShowCard} />)}

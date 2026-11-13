@@ -28,6 +28,7 @@ import { createRoot } from 'react-dom/client';
 import { classOfNumber } from '../../../constants/filmTape';
 import { COMPANY_NAMES } from '../../../config/stockData';
 import { valueAt, etClock, tradingTimeline } from '../filmRoomModel';
+import { isOpenStage } from '../../../data/cardStages';
 import sep23Tape from './sep23.tape.json';
 import sep23Series from './sep23.series.json';
 import emptyTape from './empty.tape.json';
@@ -264,9 +265,14 @@ export const SPEC_AGGREGATE_CLASSES = Object.freeze({
   'count(coverage.series.notCharted[])': 'derived',
   // B2.1 B3 (Amendment H RH-6, PINNED HERE): the counter's unavailable days in its window — a count of tape days, derived
   'count(tape days with situations unavailable)': 'derived',
+  // Build C §5 (PINNED HERE from the C1 build prompt): an expired nomination's "not considered within n sessions" — n is
+  // B6, said as a derived number
+  'count(sessions a queued nomination waits, B6)': 'derived',
 });
 /** The founder slots as the rulings fix them (RG-8) — the oracle for the two slot aggregates, never read from production. */
 export const SPEC_CARD_SLOTS = Object.freeze({ S9: 5, S10: 280 });
+/** B6 as Build C spec §4 restates the shared contract (ten sessions) — the oracle for the expired line, never read from production. */
+export const SPEC_NOMINATION_EXPIRY_SESSIONS = 10;
 
 /**
  * Where each computed number may sit (review A2P2-1): a declared aggregate anywhere else would be a recorded number
@@ -293,6 +299,8 @@ export const SPEC_AGGREGATE_SITES = Object.freeze({
   'slot(S10 note characters)': '[data-card-form] [data-note-count]',
   'count(coverage.series.notCharted[])': '[data-coverage-summary] [data-coverage-section="series"]',
   'count(tape days with situations unavailable)': '[data-cards-region="since-last-time"] [data-unavailable-days]',
+  // Build C §5: B6 sits on an expired nomination's chain line — on the receipt, or on its line under Since last time
+  'count(sessions a queued nomination waits, B6)': '[data-card-chain] [data-chain-line="nomination"], [data-latest-line]',
 });
 
 /** What a computed number's text says, and how far its format may round it: a count exactly, "+0.53%" to 0.005 %, "604K" to 500, "1.2M" to 50,000. */
@@ -331,11 +339,17 @@ function aggregateOracle(name, el, docs) {
   // L3-9b), when that day is this battle's; another battle's day is not among these documents, so it has no oracle.
   if (name === 'slot(S9 open cards per agent)') return SPEC_CARD_SLOTS.S9;
   if (name === 'slot(S10 note characters)') return SPEC_CARD_SLOTS.S10;
+  if (name === 'count(sessions a queued nomination waits, B6)') return SPEC_NOMINATION_EXPIRY_SESSIONS;
   if (name === 'count(plays[] open)') {
     const held = docs.ledger?.cards;
     const cards = Array.isArray(held) ? held : (held && typeof held === 'object' ? Object.values(held) : null);
     if (!cards || typeof docs.agentArchetype !== 'string') return undefined;
-    return cards.filter((c) => ['card', 'nominated'].includes(c.stage) && c.archetypeCodeId === docs.agentArchetype).length;
+    // Build C §3: WHICH STAGES are open is the vocabulary's one export (isOpenStage — `card` or `testing`; `nominated`
+    // unless not taken, Amendment A CA-3; `tested` unparked), read here by the build prompt's instruction ("every reader … the harness … reads the stage
+    // list and the open set from the one export"): a stated departure from this harness's "never read production" rule,
+    // as the tradingTimeline oracle above is. The export is pinned by its own rows (cardStages.census.test.js) and the
+    // shelving beside it stays recomputed here.
+    return cards.filter((c) => isOpenStage(c) && c.archetypeCodeId === docs.agentArchetype).length;
   }
   if (name === 'count(characters in the note)') return undefined;   // the typed text's own length: its rows bind it
   // B2.1 A7: the series section's not-charted list, counted HERE from the tape
@@ -538,7 +552,8 @@ export function sweepNumbers(container, docs) {
  * The build prompt's forbidden words, PINNED HERE — never read from the production copy, so the oracle
  * cannot drift with the thing it checks (review A2L4-7). filmRoomCopy's list is pinned equal to it.
  */
-export const SPEC_FORBIDDEN_WORDS = Object.freeze(['biggest', 'best', 'worst', 'mistake', 'should have', 'missed', 'good trade', 'bad trade', 'lesson', 'grade']);
+// Build C §5: the chain never judges a result — "validated", "proven", "supported" join the list (the C1 build prompt)
+export const SPEC_FORBIDDEN_WORDS = Object.freeze(['biggest', 'best', 'worst', 'mistake', 'should have', 'missed', 'good trade', 'bad trade', 'lesson', 'grade', 'validated', 'proven', 'supported']);
 
 /**
  * Amendment E addendum 2, R7 — the recorded-words channels, PINNED HERE from the ruling (never read from the
@@ -559,6 +574,11 @@ export const SPEC_QUOTE_CHANNELS = Object.freeze([
   // B2 (spec §6): the player's note on a filed card — the LEDGER document (`docs.ledger`: `{ etDate, cards }`, each card
   // under its OWN entry id, never a position in a list — review L3-9a), credited "you"
   { re: /^cards\.[A-Za-z0-9_-]+\.note$/, by: 'you', at: (p) => within(p, 'createdAt') },
+  // Build C §5 (BC-1), Amendment A CA-4 / CA-11: the agent's words on a card's chain, each from ITS OWN history row at
+  // that row's consideredAt — a deferral's or a decline's reason, an acceptance's thesis — credited "your agent"
+  { re: /^cards\.[A-Za-z0-9_-]+\.stageHistory\[\d+\]\.(reason|thesis)$/, by: 'your agent', at: (p) => [...p.slice(0, 4), 'consideredAt'] },
+  // CA-4: the agent's closing note on a result, at the note's own closingNoteAt
+  { re: /^cards\.[A-Za-z0-9_-]+\.result\.closingNote$/, by: 'your agent', at: (p) => [...p.slice(0, 3), 'closingNoteAt'] },
 ]);
 
 /**

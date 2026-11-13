@@ -150,3 +150,34 @@ describe('the posture is written down', () => {
     expect(agentsBlock.join('\n')).toContain('match /plays/{entryId} {');
   });
 });
+
+// ── Film Room C1 (Build C spec V1 §4, §9; exit criterion 13) — the nomination path is the server's alone ─────────────
+describe('C1 — no client writes a stage, a nomination or parkedAt; no client writes a book\'s nominations', () => {
+  const BOOK = 'mandates/book-c1';
+  const NOMINATION = `${BOOK}/nominations/card_s1`;
+  const record = { state: 'queued', source: { kind: 'film_room_card', entryId: 'card_s1', situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1 }, queuedAt: '2026-11-12T15:00:00.000Z', expiresAt: '2026-11-25T21:00:00.000Z', stateHistory: [{ state: 'queued', at: '2026-11-12T15:00:00.000Z' }] };
+  beforeEach(async () => {
+    // a synthetic idea book, the owner's: userId and kind as the Practice Field's book records them
+    await seed(BOOK, { userId: OWNER_UID, kind: 'idea_book', managerAgentId: 'agent-plays-1', status: 'active' });
+  });
+  for (const [who, ctx] of EVERYONE) {
+    it(`${who} cannot move a stage, write a nomination or park — on the entry (the owner's own included)`, async () => {
+      await assertFails(updateDoc(doc(ctx(), ENTRY), { stage: 'nominated', nomination: { bookId: 'book-c1', nominationId: 'card_s1', state: 'queued' } }));
+      await assertFails(updateDoc(doc(ctx(), ENTRY), { nomination: { bookId: 'book-c1', nominationId: 'card_s1', state: 'accepted', reason: 'planted' } }));
+      await assertFails(updateDoc(doc(ctx(), ENTRY), { parkedAt: '2026-11-12T15:00:00.000Z' }));
+      await assertFails(updateDoc(doc(ctx(), ENTRY), { stage: 'testing' }));
+      await assertFails(setDoc(doc(ctx(), ENTRY), { parkedAt: '2026-11-12T15:00:00.000Z' }, { merge: true }));
+    });
+    it(`${who} cannot create, update or delete a nomination record in a book (the book's owner included)`, async () => {
+      await assertFails(setDoc(doc(ctx(), NOMINATION), record));
+      await seed(NOMINATION, record);
+      await assertFails(updateDoc(doc(ctx(), NOMINATION), { state: 'accepted' }));
+      await assertFails(deleteDoc(doc(ctx(), NOMINATION)));
+    });
+  }
+  it('the positive control: the server\'s write (rules disabled) lands, and the entry the owner reads back holds it', async () => {
+    await seed(ENTRY, { ...entry('agent-plays-1', OWNER_UID), stage: 'nominated', nomination: { bookId: 'book-c1', nominationId: 'card_s1', state: 'queued' } });
+    const snap = await assertSucceeds(getDoc(doc(asOwner(), ENTRY)));
+    expect(snap.data()).toMatchObject({ stage: 'nominated', nomination: { state: 'queued' } });
+  });
+});

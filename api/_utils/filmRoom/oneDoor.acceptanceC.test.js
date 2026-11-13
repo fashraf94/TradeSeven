@@ -58,7 +58,12 @@ async function handleOf(seeded) {
   const t = makeTapeDb({ [`agents/${AGENT}`]: { ownerId: UID, name: 'Aurora', archetype: 'momentum_chaser' } });
   if (seeded) {
     await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c_card', payload: payload(), nowIso: NOW });
-    await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c_nominated', payload: payload({ route: 'drill', note: 'Practice the exit.' }), nowIso: '2026-09-09T02:01:00.000Z' });
+    // Build C §4 (C1): a `nominated` entry is born of the Offer route with its nomination record beside it, in the book
+    // the store is handed (the Practice Field's seam answers no book for anyone until T1a) — so the populated handle
+    // holds a nomination record too, under mandates/, and the prompts must still be byte-identical
+    // Amendment A CA-12: the Offer transaction re-reads the book itself — a live, active idea book in the populated handle
+    t.store.set('mandates/book-c', { userId: UID, kind: 'idea_book', status: 'active', attributionAgentId: AGENT });
+    await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c_nominated', payload: payload({ route: 'offer', note: 'Practice the exit.' }), nowIso: '2026-09-09T02:01:00.000Z', book: { bookId: 'book-c', status: 'active' } });
     await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'c_retired', payload: payload({ route: 'set', note: 'A setting to change.' }), nowIso: '2026-09-09T02:02:00.000Z' });
     await retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c_retired', opId: 'r_1', expectedVersion: 1, nowIso: '2026-09-09T02:03:00.000Z' });
     t.readLog.length = 0;
@@ -100,6 +105,8 @@ describe('acceptance C — the assembled trading prompt with a ledger is byte-id
     const r = await readCards(t.db, { uid: UID, agentId: AGENT });
     expect(r.cards.map((c) => [c.entryId, c.stage])).toEqual([['c_retired', 'retired'], ['c_nominated', 'nominated'], ['c_card', 'card']]);
     expect(r.open).toBe(2);
+    // Build C §4: the nominated entry's record is in the book on the same handle (C1 review C-5)
+    expect(t.store.get('mandates/book-c/nominations/c_nominated')).toMatchObject({ state: 'queued', source: { kind: 'film_room_card', entryId: 'c_nominated' } });
   });
 
   it('every assembler: the same bytes with and without the ledger, a LIVE read log in both runs (the institutional reads are in it), and no read of plays in either', async () => {

@@ -105,6 +105,12 @@ afterEach(() => {
   if (ENV_BEFORE === undefined) delete process.env.COCKPIT_ALLOWLIST_UIDS; else process.env.COCKPIT_ALLOWLIST_UIDS = ENV_BEFORE;
 });
 const playWrites = () => t.writeLog.filter((w) => w.path.includes('/plays/'));
+/**
+ * Amendment A CA-12: the book document behind an injected `bookForOwner` — the nominate and Offer transactions re-read
+ * `mandates/{bookId}` and require the owner's idea book, active, for the attribution agent (the seam's default
+ * bookIsForAgent reads `attributionAgentId`).
+ */
+const seedBook = (status = 'active', over = {}, bookId = 'book-1') => t.store.set(`mandates/${bookId}`, { userId: OWNER, kind: 'idea_book', status, attributionAgentId: AGENT, ...over });
 
 describe('the gate (Build B spec §7)', () => {
   it("mode 'off': 404 { error: 'disabled' } with no read and no write — before auth", async () => {
@@ -144,12 +150,14 @@ describe('create — the happy path over the real tape day', () => {
     });
     expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toEqual(res.body.card);
     expect(res.headers['cache-control']).toBe('no-store');
-    // Practice nominates; Set files a card; a replay is idempotent
-    expect((await post(create({ opId: 'op_2', route: 'drill' }))).body.card.stage).toBe('nominated');
+    // Build C §4: Offer with no book (the seam's default until T1a) is refused book_not_open; `drill` is no route any
+    // more (400 invalid_route); Set files a card; a replay is idempotent
+    expect(await post(create({ opId: 'op_2', route: 'offer' }))).toMatchObject({ statusCode: 409, body: { error: 'book_not_open' } });
+    expect(await post(create({ opId: 'op_2', route: 'drill' }))).toMatchObject({ statusCode: 400, body: { error: 'invalid_route' } });
     expect((await post(create({ opId: 'op_3', route: 'set' }))).body.card.stage).toBe('card');
     const again = await post(create());
     expect(again.body).toMatchObject({ idempotent: true, card: res.body.card });
-    expect(playWrites()).toHaveLength(3);
+    expect(playWrites()).toHaveLength(2);
   });
   it('the moment the client sends is the one the screen lists: the helper\'s own moment of the stored items, no more and no less', async () => {
     const tape = t.store.get(`agentBattles/${BATTLE}/tape/${D}`);
@@ -661,5 +669,592 @@ describe('RK-1 — through the handler: a casual clone\'s battle files under the
     expect(sixth.statusCode).toBe(409);
     expect(sixth.body).toMatchObject({ error: 'cap_reached', cap: 5, open: 5 });
     expect([...t.store.keys()].filter((k) => k.startsWith(`agents/${AGENT}/plays/`))).toHaveLength(5);
+  });
+});
+
+// ── Film Room C1 item 3 — nominate and the Offer route (Build C spec V1 §4; acceptance C-NOMINATE, C-NOBOOK, C-OWNER) ──
+const { setPracticeFieldSeam, resetPracticeFieldSeam } = await import('../_utils/filmRoom/practiceFieldSeam.js');
+describe('C1 item 3 — nominate and the Offer route, through the handler', () => {
+  const BOOK_ID = 'book-1';
+  /** The owner's open book for the ranked agent, injected through the seam (T1a's helper, stubbed); every call logged. */
+  let bookCalls;
+  const withBook = (status = 'active') => {
+    bookCalls = [];
+    setPracticeFieldSeam({ bookForOwner: async (_db, { uid, attributionAgentId }) => { bookCalls.push([uid, attributionAgentId]); return uid === OWNER && attributionAgentId === AGENT ? { bookId: BOOK_ID, status } : null; } });
+    seedBook(status);
+  };
+  afterEach(() => resetPracticeFieldSeam());
+  const nominate = (over = {}) => ({ op: 'nominate', opId: 'nom_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
+  const bookWrites = () => t.writeLog.filter((w) => w.path.startsWith('mandates/'));
+  const nominationAt = (id) => t.store.get(`mandates/${BOOK_ID}/nominations/${id}`);
+  const filed = async () => { const r = await post(create()); expect(r.statusCode).toBe(200); return r.body.card; };
+
+  it('C-NOBOOK: with no book (the seam\'s default), an Offer create and a nominate are refused 409 book_not_open — the body only the code and its sentence, naming no book — and NOTHING is written (the mutants: nominate with no book writing anything; an Offer create with no book writing the entry)', async () => {
+    const offer = await post(create({ route: 'offer' }));
+    expect(offer.statusCode).toBe(409);
+    expect(offer.body).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+    expect(playWrites()).toEqual([]);
+    expect(bookWrites()).toEqual([]);
+    await filed();
+    const before = t.writeLog.length;
+    const res = await post(nominate());
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+    expect(JSON.stringify(res.body)).not.toMatch(/bookId|status|mandates|active/);
+    expect(t.writeLog.length).toBe(before);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ stage: 'card', version: 1 });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).not.toHaveProperty('nomination');
+    // a book that exists but is not active is no open book
+    withBook('closed');
+    expect((await post(nominate())).body.error).toBe('book_not_open');
+    expect(bookWrites()).toEqual([]);
+  });
+
+  it('C-NOMINATE: a card-stage entry is nominated in ONE transaction — the record at mandates/{book}/nominations/{op id} in the contract\'s shape, and the entry at nominated with its nomination, version + 1, a player row; a replay answers the same; a second nominate is illegal_transition', async () => {
+    withBook();
+    const card = await filed();
+    const res = await post(nominate());
+    expect(res.statusCode).toBe(200);
+    expect(res.body.idempotent).toBe(false);
+    const entry = t.store.get(`agents/${AGENT}/plays/op_1`);
+    expect(res.body.card).toEqual(entry);
+    expect(entry).toMatchObject({ stage: 'nominated', version: 2, nomination: { bookId: BOOK_ID, nominationId: 'nom_1', state: 'queued' }, note: card.note, route: 'watch', source: card.source, questionId: card.questionId });
+    expect(entry.stageHistory.at(-1)).toMatchObject({ stage: 'nominated', by: 'player', opId: 'nom_1' });
+    expect(nominationAt('nom_1')).toEqual({
+      state: 'queued',
+      source: { kind: 'film_room_card', entryId: 'op_1', situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1 },
+      queuedAt: entry.stageAt, expiresAt: expect.any(String),
+      stateHistory: [{ state: 'queued', at: entry.stageAt }],
+    });
+    expect(Date.parse(nominationAt('nom_1').expiresAt)).toBeGreaterThan(Date.parse(entry.stageAt));
+    // both halves in the one commit: the record's set and the entry's update are adjacent writes of one transaction
+    expect(t.writeLog.slice(-2).map((w) => [w.op, w.path])).toEqual([['tx.set', `mandates/${BOOK_ID}/nominations/nom_1`], ['tx.update', `agents/${AGENT}/plays/op_1`]]);
+    expect(bookCalls).toEqual([[OWNER, AGENT]]);
+    // the replay: the same op and body → the same answer, nothing written
+    const writes = t.writeLog.length;
+    const again = await post(nominate());
+    expect(again.body).toEqual({ idempotent: true, card: entry });
+    expect(t.writeLog.length).toBe(writes);
+    // the same op id with another body → op_conflict
+    expect((await post(nominate({ expectedVersion: 2 }))).body.error).toBe('op_conflict');
+    // a second nominate (a new op id, the right version) on the nominated entry → illegal_transition (the mutant: nominate on a nominated entry succeeding)
+    expect(await post(nominate({ opId: 'nom_2', expectedVersion: 2 }))).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition', stage: 'nominated' } });
+    expect(nominationAt('nom_2')).toBeUndefined();
+    expect(t.writeLog.length).toBe(writes);
+  });
+
+  it('the spec\'s order: a replay after the book closed → 200 idempotent; a nominated entry with no book → 409 illegal_transition; a stale version → 409 version_conflict; another owner with no book → 403 forbidden; a missing entry → 404', async () => {
+    withBook();
+    await filed();
+    expect((await post(nominate())).statusCode).toBe(200);
+    resetPracticeFieldSeam();   // the book is gone
+    expect(await post(nominate())).toMatchObject({ statusCode: 200, body: { idempotent: true } });
+    expect(await post(nominate({ opId: 'nom_2', expectedVersion: 2 }))).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition' } });
+    expect(await post(nominate({ opId: 'nom_3', expectedVersion: 1 }))).toMatchObject({ statusCode: 409, body: { error: 'version_conflict', currentVersion: 2 } });
+    state.uid = 'intruder';
+    expect(await post(nominate({ opId: 'nom_4', expectedVersion: 2 }))).toMatchObject({ statusCode: 403, body: { error: 'forbidden' } });
+    state.uid = OWNER;
+    expect(await post(nominate({ opId: 'nom_5', entryId: 'nope' }))).toMatchObject({ statusCode: 404, body: { error: 'not_found' } });
+  });
+
+  it('a shelved card is no transition: 409 illegal_transition (the spec\'s one refusal for "at card, not shelved"), nothing written', async () => {
+    withBook();
+    await filed();
+    t.store.set(`agents/${AGENT}`, { ...t.store.get(`agents/${AGENT}`), archetype: 'guardian' });
+    const before = t.writeLog.length;
+    expect(await post(nominate())).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition', stage: 'card' } });
+    expect(t.writeLog.length).toBe(before);
+  });
+
+  it('exit criterion 12: the two halves land together or not at all — the record\'s write refused, the entry stays at card; the entry\'s write refused, no record (the mutants: one half without the other)', async () => {
+    const seed = Object.fromEntries([...t.store.entries()]);
+    let refuse = null;
+    t = makeTapeDb(seed, { hooks: { beforeWrite: (op, path) => { if (refuse && path.startsWith(refuse)) throw new Error(`refused ${path}`); } } });
+    state.db = t.db;
+    withBook();
+    await filed();
+    refuse = 'mandates/';
+    expect((await post(nominate())).statusCode).toBe(500);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ stage: 'card', version: 1 });
+    expect(nominationAt('nom_1')).toBeUndefined();
+    refuse = `agents/${AGENT}/plays/`;
+    expect((await post(nominate())).statusCode).toBe(500);
+    expect(nominationAt('nom_1')).toBeUndefined();
+    refuse = null;
+    expect((await post(nominate())).statusCode).toBe(200);
+    expect(nominationAt('nom_1')).toBeTruthy();
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('nominated');
+  });
+
+  it('an Offer create with an open book: the entry born nominated with its nomination, the record beside it, in one transaction; a replay after the book closed is the idempotent 200; an op id the book already holds → op_conflict, nothing written', async () => {
+    withBook();
+    const res = await post(create({ route: 'offer' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card).toMatchObject({ route: 'offer', stage: 'nominated', nomination: { bookId: BOOK_ID, nominationId: 'op_1', state: 'queued' }, stageVocabVersion: 2 });
+    expect(res.body.card.stageHistory).toEqual([{ stage: 'nominated', at: res.body.card.createdAt, by: 'player', opId: 'op_1' }]);
+    expect(nominationAt('op_1')).toMatchObject({ state: 'queued', source: { kind: 'film_room_card', entryId: 'op_1' } });
+    expect(t.writeLog.slice(-2).map((w) => w.op)).toEqual(['tx.create', 'tx.set']);
+    resetPracticeFieldSeam();
+    expect(await post(create({ route: 'offer' }))).toMatchObject({ statusCode: 200, body: { idempotent: true, card: res.body.card } });
+    // a planted record under the next op id: refused, nothing of either half written
+    withBook();
+    t.store.set(`mandates/${BOOK_ID}/nominations/op_9`, { state: 'queued', source: { kind: 'film_room_card', entryId: 'someone-else' } });
+    const before = t.writeLog.length;
+    expect(await post(create({ opId: 'op_9', route: 'offer' }))).toMatchObject({ statusCode: 409, body: { error: 'op_conflict' } });
+    expect(t.writeLog.length).toBe(before);
+    expect(t.store.has(`agents/${AGENT}/plays/op_9`)).toBe(false);
+  });
+
+  it('a nominated card counts against the cap like an open card (S9): the sixth Offer is refused at 5, its record never written', async () => {
+    withBook();
+    for (let i = 0; i < 5; i += 1) expect((await post(create({ opId: `o_${i}`, route: 'offer', note: `Offer ${i}.` }))).statusCode).toBe(200);
+    expect(await post(create({ opId: 'o_5', route: 'offer' }))).toMatchObject({ statusCode: 409, body: { error: 'cap_reached', cap: 5, open: 5 } });
+    expect(nominationAt('o_5')).toBeUndefined();
+  });
+
+  it('C-OWNER: a casual clone\'s battle — the card files under the parent and nominates into the PARENT\'s book; the seam is asked for the parent, never the clone; nothing under the clone', async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    t.store.set(`agentBattles/b-clone`, { ...fixture.battle, id: 'b-clone', agentId: CLONE });
+    t.store.set(`agentBattles/b-clone/tape/${D}`, { ...t.store.get(`agentBattles/${BATTLE}/tape/${D}`), battleId: 'b-clone', agentId: CLONE });
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    withBook();
+    const res = await post(create({ battleId: 'b-clone', agentId: CLONE, route: 'offer' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card).toMatchObject({ agentId: AGENT, stage: 'nominated', nomination: { bookId: BOOK_ID } });
+    expect(bookCalls).toEqual([[OWNER, AGENT]]);
+    // and a nominate named by the clone keys the parent's entry and book
+    expect((await post(create({ opId: 'op_w', battleId: 'b-clone', agentId: CLONE }))).statusCode).toBe(200);
+    expect((await post(nominate({ agentId: CLONE, entryId: 'op_w' }))).statusCode).toBe(200);
+    expect(bookCalls).toEqual([[OWNER, AGENT], [OWNER, AGENT]]);
+    expect(t.writeLog.filter((w) => w.path.startsWith(`agents/${CLONE}`))).toEqual([]);
+  });
+});
+
+// ── Film Room C1 item 7 — park, through the handler (refinement R-C1-2) ─────────────────────────────────────────────
+const { applyServerTransition } = await import('../_utils/filmRoom/cardStore.js');
+describe('C1 item 7 — park, through the handler', () => {
+  afterEach(() => resetPracticeFieldSeam());
+  const park = (over = {}) => ({ op: 'park', opId: 'pk_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
+
+  it('an open card cannot be parked: 409 illegal_transition, nothing written (the mutant: park on an open card); a malformed body → 400', async () => {
+    expect((await post(create())).statusCode).toBe(200);
+    const before = t.writeLog.length;
+    expect(await post(park())).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition', stage: 'card' } });
+    expect(await post(park({ expectedVersion: 0 }))).toMatchObject({ statusCode: 400, body: { error: 'invalid_expected_version' } });
+    expect(t.writeLog.length).toBe(before);
+  });
+
+  it('a tested card parks: 200, parkedAt set, the counter\'s open count drops; a replay is idempotent; parked twice → 409', async () => {
+    setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: 'book-1', status: 'active' }) });
+    seedBook();
+    expect((await post(create({ route: 'offer' }))).statusCode).toBe(200);
+    const by = { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, by: 'practice_field' };
+    await applyServerTransition(t.db, { ...by, to: 'nomination', opId: 's1', payload: { bookId: 'book-1', nominationId: 'op_1', state: 'accepted', ideaId: 'i1', reason: 'Testing it.', consideredAt: '2026-09-25T20:00:00.000Z' } });
+    await applyServerTransition(t.db, { ...by, to: 'testing', opId: 's2', payload: { bookId: 'book-1', ideaId: 'i1' } });
+    const { entry } = await applyServerTransition(t.db, { ...by, to: 'tested', opId: 's3', payload: { ideaId: 'i1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' } });
+    const { buildCounter } = await import('../_utils/filmRoom/cardCounter.js');
+    expect((await buildCounter(t.db, { uid: OWNER, agentId: AGENT, nowMs: NIGHT })).open).toBe(1);
+    const res = await post(park({ expectedVersion: entry.version }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card).toMatchObject({ stage: 'tested', parkedAt: expect.any(String), version: entry.version + 1 });
+    expect((await buildCounter(t.db, { uid: OWNER, agentId: AGENT, nowMs: NIGHT })).open).toBe(0);
+    expect(await post(park({ expectedVersion: entry.version }))).toMatchObject({ statusCode: 200, body: { idempotent: true } });
+    expect(await post(park({ opId: 'pk_2', expectedVersion: entry.version + 1 }))).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition' } });
+  });
+});
+
+describe('C1 review — the mutating lens\'s survivor D-M16: a book read that fails is no open book at the endpoint', () => {
+  afterEach(() => resetPracticeFieldSeam());
+  it('the seam\'s bookForOwner rejects → nominate and an Offer create answer 409 book_not_open (the body only the code and its sentence), nothing written, a server trace — never a 500', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    setPracticeFieldSeam({ bookForOwner: async () => { throw new Error('book read failed'); } });
+    const offer = await post(create({ route: 'offer' }));
+    expect(offer.statusCode).toBe(409);
+    expect(offer.body).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+    expect(t.writeLog).toEqual([]);
+    expect((await post(create())).statusCode).toBe(200);
+    const before = t.writeLog.length;
+    const res = await post({ op: 'nominate', opId: 'nom_x', agentId: AGENT, entryId: 'op_1', expectedVersion: 1 });
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+    expect(t.writeLog.length).toBe(before);
+    expect(errors.mock.calls.some((c) => String(c[0]).includes('book read failed'))).toBe(true);
+  });
+});
+
+// ── C1 fix round, Astra F1 — a NEW nomination re-checks its filed source inside its transaction (exit criterion 8) ──
+describe('C1 fix round F1 — a new nomination judges its source again, in its transaction', () => {
+  const BOOK_ID = 'book-1';
+  const TAPE = `agentBattles/${BATTLE}/tape/${D}`;
+  afterEach(() => resetPracticeFieldSeam());
+  const withBook = () => { setPracticeFieldSeam({ bookForOwner: async (_db, { uid, attributionAgentId }) => (uid === OWNER && attributionAgentId === AGENT ? { bookId: BOOK_ID, status: 'active' } : null) }); seedBook(); };
+  const nominate = (over = {}) => ({ op: 'nominate', opId: 'nom_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
+  const bookWrites = () => t.writeLog.filter((w) => w.path.startsWith('mandates/'));
+  const entry = () => t.store.get(`agents/${AGENT}/plays/op_1`);
+  const tape = () => t.store.get(TAPE);
+  /** Neither half: no record, the entry still the filed card at version 1. */
+  const neitherHalf = (where) => {
+    expect(bookWrites(), where).toEqual([]);
+    expect(entry(), where).toMatchObject({ stage: 'card', version: 1 });
+    expect(entry(), where).not.toHaveProperty('nomination');
+  };
+  const shift = (items) => items.map((i) => (i.symbol === 'ACN' ? { ...i, tickSeq: i.tickSeq + 1 } : i));
+
+  // each change to the source after the card was filed, and the route's existing source error it must answer
+  const CHANGES = [
+    ['the moment removed (its items gone)', () => t.store.set(TAPE, { ...tape(), tags: { ...tape().tags, items: tape().tags.items.filter((i) => i.symbol !== 'ACN') } }), 409, 'moment_not_found'],
+    ['the moment moved (4–5 now 5–6)', () => t.store.set(TAPE, { ...tape(), tags: { ...tape().tags, items: shift(tape().tags.items) } }), 409, 'moment_not_found'],
+    ["the stored items field removed (Astra's repro)", () => { const { items: _gone, ...tags } = tape().tags; t.store.set(TAPE, { ...tape(), tags }); }, 409, 'tags_unavailable'],
+    ['the day marked unavailable', () => t.store.set(TAPE, { ...tape(), coverage: { ...tape().coverage, tags: { ...tape().coverage.tags, status: 'unavailable' } } }), 409, 'tags_unavailable'],
+    ['the tape deleted', () => t.store.delete(TAPE), 404, 'tape_not_found'],
+    ["the tape another owner's", () => t.store.set(TAPE, { ...tape(), ownerId: 'someone-else' }), 404, 'tape_not_found'],
+    ['the situation re-tagged under another version', () => t.store.set(TAPE, { ...tape(), tags: { ...tape().tags, items: tape().tags.items.map((i) => ({ ...i, version: (i.version ?? 1) + 1 })) } }), 409, 'source_changed'],
+    ["the day's archetype changed", () => t.store.set(TAPE, { ...tape(), tags: { ...tape().tags, inputs: { ...tape().tags.inputs, archetypeCodeId: 'guardian' } } }), 409, 'archetype_changed'],
+    ['a foreign battle (its owner another player)', () => t.store.set(`agentBattles/${BATTLE}`, { ...t.store.get(`agentBattles/${BATTLE}`), ownerId: 'someone-else' }), 403, 'forbidden'],
+    ["the battle's agent another agent", () => t.store.set(`agentBattles/${BATTLE}`, { ...t.store.get(`agentBattles/${BATTLE}`), agentId: 'agent-9' }), 403, 'forbidden'],
+    ['the battle deleted', () => t.store.delete(`agentBattles/${BATTLE}`), 404, 'not_found'],
+    ['the battle a mode the tape does not cover', () => t.store.set(`agentBattles/${BATTLE}`, { ...t.store.get(`agentBattles/${BATTLE}`), gameMode: 'baggerbomb_tournament' }), 409, 'untaped'],
+  ];
+  for (const [name, change, status, error] of CHANGES) {
+    it(`${name} → ${status} ${error}; neither half written (the mutant: a new nominate that skips the source check)`, async () => {
+      withBook();
+      expect((await post(create())).statusCode).toBe(200);
+      change();
+      const res = await post(nominate());
+      expect(res.statusCode, name).toBe(status);
+      expect(res.body.error, name).toBe(error);
+      neitherHalf(name);
+    });
+  }
+
+  it('the control: an unchanged source nominates (200), both halves written', async () => {
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    expect((await post(nominate())).statusCode).toBe(200);
+    expect(entry()).toMatchObject({ stage: 'nominated', version: 2 });
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/nom_1`)).toBeTruthy();
+  });
+
+  it("the tape is in the transaction's read set: the moment removed BETWEEN the transaction's read of the tape and its commit conflicts, is judged again on the retry, and refuses moment_not_found — neither half written", async () => {
+    const seed = Object.fromEntries([...t.store.entries()]);
+    let strike = false;
+    t = makeTapeDb(seed, {
+      hooks: {
+        afterTxRead: async (label, db) => {
+          if (!strike || label !== TAPE) return;
+          strike = false;   // once: the retry reads the changed tape
+          const now = t.store.get(TAPE);
+          await db.collection('agentBattles').doc(BATTLE).collection('tape').doc(D).set({ ...now, tags: { ...now.tags, items: now.tags.items.filter((i) => i.symbol !== 'ACN') } });
+        },
+      },
+    });
+    state.db = t.db;
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    const retries = t.db.txRetries;
+    strike = true;
+    const res = await post(nominate());
+    expect(res).toMatchObject({ statusCode: 409, body: { error: 'moment_not_found' } });
+    expect(t.db.txRetries).toBeGreaterThan(retries);
+    neitherHalf('race');
+  });
+
+  // the fix round's §2 review (C1): the BATTLE and the CLONE are read through the transaction too — a change to either
+  // between its read and the commit conflicts and is judged again
+  it('the battle\'s owner changed BETWEEN the transaction\'s read of the battle and its commit: retried, judged again → 403 forbidden; neither half', async () => {
+    const BATTLE_PATH = `agentBattles/${BATTLE}`;
+    const seed = Object.fromEntries([...t.store.entries()]);
+    let strike = false;
+    t = makeTapeDb(seed, { hooks: { afterTxRead: async (label, db) => { if (!strike || label !== BATTLE_PATH) return; strike = false; await db.collection('agentBattles').doc(BATTLE).set({ ...t.store.get(BATTLE_PATH), ownerId: 'someone-else' }); } } });
+    state.db = t.db;
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    const retries = t.db.txRetries;
+    strike = true;
+    expect(await post(nominate())).toMatchObject({ statusCode: 403, body: { error: 'forbidden' } });
+    expect(t.db.txRetries).toBeGreaterThan(retries);
+    neitherHalf('battle race');
+  });
+
+  it('a casual clone repointed BETWEEN the transaction\'s read of the clone and its commit: retried, judged again → 403 forbidden; neither half', async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    const CLONE_PATH = `agents/${CLONE}`;
+    t.store.set('agentBattles/b-clone', { ...fixture.battle, id: 'b-clone', agentId: CLONE });
+    t.store.set(`agentBattles/b-clone/tape/${D}`, { ...t.store.get(TAPE), battleId: 'b-clone', agentId: CLONE });
+    t.store.set(CLONE_PATH, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    t.store.set('agents/agent-x', { ownerId: OWNER, name: 'Other', archetype: 'momentum_chaser' });
+    const seed = Object.fromEntries([...t.store.entries()]);
+    let strike = false;
+    t = makeTapeDb(seed, { hooks: { afterTxRead: async (label, db) => { if (!strike || label !== CLONE_PATH) return; strike = false; await db.collection('agents').doc(CLONE).set({ ...t.store.get(CLONE_PATH), rankedAgentId: 'agent-x' }); } } });
+    state.db = t.db;
+    withBook();
+    expect((await post(create({ battleId: 'b-clone', agentId: CLONE }))).statusCode).toBe(200);
+    const retries = t.db.txRetries;
+    strike = true;
+    expect(await post(nominate())).toMatchObject({ statusCode: 403, body: { error: 'forbidden' } });
+    expect(t.db.txRetries).toBeGreaterThan(retries);
+    neitherHalf('clone race');
+  });
+
+  it("the race's control: the tape rewritten unchanged between the read and the commit conflicts, is judged again, and nominates — the retry judges, it does not refuse on any conflict", async () => {
+    const seed = Object.fromEntries([...t.store.entries()]);
+    let strike = false;
+    t = makeTapeDb(seed, { hooks: { afterTxRead: async (label, db) => { if (!strike || label !== TAPE) return; strike = false; await db.collection('agentBattles').doc(BATTLE).collection('tape').doc(D).set(t.store.get(TAPE)); } } });
+    state.db = t.db;
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    const retries = t.db.txRetries;
+    strike = true;
+    expect((await post(nominate())).statusCode).toBe(200);
+    expect(t.db.txRetries).toBeGreaterThan(retries);
+    expect(entry()).toMatchObject({ stage: 'nominated', version: 2 });
+  });
+
+  it('a successful lost-answer replay still answers after the source changed (the replay is judged before the source)', async () => {
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    const first = await post(nominate());
+    expect(first.statusCode).toBe(200);
+    t.store.delete(TAPE);
+    const writes = t.writeLog.length;
+    expect(await post(nominate())).toMatchObject({ statusCode: 200, body: { idempotent: true, card: first.body.card } });
+    expect(t.writeLog.length).toBe(writes);
+  });
+
+  it("a casual clone's battle: the clone repointed at another parent, or its document gone, after the card was filed → 403 forbidden / 503 attribution_unavailable; neither half", async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    t.store.set('agentBattles/b-clone', { ...fixture.battle, id: 'b-clone', agentId: CLONE });
+    t.store.set(`agentBattles/b-clone/tape/${D}`, { ...t.store.get(TAPE), battleId: 'b-clone', agentId: CLONE });
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    withBook();
+    expect((await post(create({ battleId: 'b-clone', agentId: CLONE }))).statusCode).toBe(200);
+    t.store.set('agents/agent-x', { ownerId: OWNER, name: 'Other', archetype: 'momentum_chaser' });
+    t.store.set(`agents/${CLONE}`, { ...t.store.get(`agents/${CLONE}`), rankedAgentId: 'agent-x' });
+    expect(await post(nominate())).toMatchObject({ statusCode: 403, body: { error: 'forbidden' } });
+    neitherHalf('repointed');
+    t.store.delete(`agents/${CLONE}`);
+    expect(await post(nominate())).toMatchObject({ statusCode: 503, body: { error: 'attribution_unavailable' } });
+    neitherHalf('clone gone');
+    // another owner's clone document under that id resolves to no parent of this owner's
+    t.store.set(`agents/${CLONE}`, { ownerId: 'someone-else', name: 'Squat', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    expect(await post(nominate())).toMatchObject({ statusCode: 503, body: { error: 'attribution_unavailable' } });
+    neitherHalf('clone not the owner\'s');
+    // the control: the clone back as it was → nominates
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    expect((await post(nominate())).statusCode).toBe(200);
+  });
+
+  it('THE ORDER, pinned (a reading of the fix round): owner → replay → version → stage → SOURCE → book — a stale version, another owner and a card past card answer their own refusals before the source; a changed source answers before the book', async () => {
+    withBook();
+    expect((await post(create())).statusCode).toBe(200);
+    t.store.delete(TAPE);
+    expect(await post(nominate({ expectedVersion: 2 }))).toMatchObject({ statusCode: 409, body: { error: 'version_conflict' } });
+    state.uid = 'intruder';
+    expect(await post(nominate())).toMatchObject({ statusCode: 403, body: { error: 'forbidden' } });
+    state.uid = OWNER;
+    resetPracticeFieldSeam();   // no book: the changed source is still what is said
+    expect(await post(nominate())).toMatchObject({ statusCode: 404, body: { error: 'tape_not_found' } });
+    neitherHalf('order');
+    // an entry already moved past card answers illegal_transition before its source is read
+    t.store.set(`agents/${AGENT}/plays/op_1`, { ...entry(), stage: 'retired', version: 2 });
+    const reads = t.readLog.length;
+    expect(await post(nominate({ expectedVersion: 2 }))).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition' } });
+    expect(t.readLog.slice(reads).some((r) => r.includes('/tape/') || r.startsWith('tx:agentBattles'))).toBe(false);
+  });
+
+  it('the store refuses a nominate with no source verifier, before any read (a caller cannot skip the check by omission)', async () => {
+    const { nominateCard } = await import('../_utils/filmRoom/cardStore.js');
+    const reads = t.readLog.length;
+    await expect(nominateCard(t.db, { uid: OWNER, agentId: AGENT, entryId: 'op_1', opId: 'n', expectedVersion: 1, nowIso: '2026-09-25T16:00:00.000Z', book: { bookId: BOOK_ID, status: 'active' } })).rejects.toThrow(/verifySource is required/);
+    expect(t.readLog.length).toBe(reads);
+  });
+});
+
+// ── C1 fix round, Astra F2 — the builder's output is checked before either half is written (exit criterion 12) ──────
+const { PRACTICE_FIELD_SEAM_DEFAULTS } = await import('../_utils/filmRoom/practiceFieldSeam.js');
+describe('C1 fix round F2 — a malformed nomination record from the builder writes neither half', () => {
+  const BOOK_ID = 'book-1';
+  afterEach(() => resetPracticeFieldSeam());
+  /** The book open, and the builder replaced by the default's output passed through `mangle`. */
+  const withBuilder = (mangle) => {
+    setPracticeFieldSeam({
+      bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }),
+      buildNominationDoc: (args) => mangle(PRACTICE_FIELD_SEAM_DEFAULTS.buildNominationDoc(args)),
+    });
+    seedBook();
+  };
+  const without = (key) => (r) => { const out = { ...r }; delete out[key]; return out; };
+  const MALFORMED = [
+    ['the source naming another entry (Astra\'s repro)', (r) => ({ ...r, source: { ...r.source, entryId: 'absent-entry' } })],
+    ['the source naming another situation', (r) => ({ ...r, source: { ...r.source, situationId: 'other' } })],
+    ['the source naming another question', (r) => ({ ...r, source: { ...r.source, questionId: 'stalled.other' } })],
+    ['the source naming another question version', (r) => ({ ...r, source: { ...r.source, questionVersion: 9 } })],
+    ['the source of another kind', (r) => ({ ...r, source: { ...r.source, kind: 'signal_drop' } })],
+    ['no source', without('source')],
+    ['the state accepted (Astra\'s second repro)', (r) => ({ ...r, state: 'accepted' })],
+    ['no state', without('state')],
+    ['no queuedAt', without('queuedAt')],
+    ['an invalid queuedAt', (r) => ({ ...r, queuedAt: 'yesterday' })],
+    ['no expiresAt', without('expiresAt')],
+    ['an invalid expiresAt', (r) => ({ ...r, expiresAt: 'not-a-date' })],
+    ['no stateHistory', without('stateHistory')],
+    ['a stateHistory that is not an array', (r) => ({ ...r, stateHistory: { 0: r.stateHistory[0] } })],
+    ['null', () => null],
+    ['an array', (r) => [r]],
+    ['a class instance', (r) => Object.assign(new (class Rec {})(), r)],
+    // the fix round's §2 review (A4): the clock it was given, and a history of plain rows
+    ['an expiresAt before its queuedAt', (r) => ({ ...r, expiresAt: '2000-01-01T00:00:00.000Z' })],
+    ['a queuedAt that is not the instant handed in', (r) => ({ ...r, queuedAt: '2026-01-01T00:00:00.000Z' })],
+    ['an empty stateHistory', (r) => ({ ...r, stateHistory: [] })],
+    ['a stateHistory row that is not an object', (r) => ({ ...r, stateHistory: ['queued'] })],
+    ['a string', () => 'queued'],
+  ];
+  const nominate = { op: 'nominate', opId: 'nom_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1 };
+  const bookWrites = () => t.writeLog.filter((w) => w.path.startsWith('mandates/'));
+
+  for (const [name, mangle] of MALFORMED) {
+    it(`${name}: the Offer create and the nominate both refuse (the route's 500), and neither half is written (the mutant: the builder's output committed unchecked)`, async () => {
+      withBuilder(mangle);
+      const offer = await post(create({ opId: 'op_o', route: 'offer' }));
+      expect(offer.statusCode, name).toBe(500);
+      expect(t.store.has(`agents/${AGENT}/plays/op_o`), name).toBe(false);
+      expect(bookWrites(), name).toEqual([]);
+      expect((await post(create())).statusCode).toBe(200);   // a Watch card writes no record: the builder is never called
+      const res = await post(nominate);
+      expect(res.statusCode, name).toBe(500);
+      expect(t.store.get(`agents/${AGENT}/plays/op_1`), name).toMatchObject({ stage: 'card', version: 1 });
+      expect(t.store.get(`agents/${AGENT}/plays/op_1`), name).not.toHaveProperty('nomination');
+      expect(bookWrites(), name).toEqual([]);
+    });
+  }
+
+  it('the valid control: a record with a field the Practice Field adds passes through untouched, on both paths', async () => {
+    withBuilder((r) => ({ ...r, drafting: { priority: 2, note: 'kept as built' } }));
+    const offer = await post(create({ opId: 'op_o', route: 'offer' }));
+    expect(offer.statusCode).toBe(200);
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/op_o`)).toMatchObject({ state: 'queued', drafting: { priority: 2, note: 'kept as built' } });
+    expect((await post(create())).statusCode).toBe(200);
+    expect((await post(nominate)).statusCode).toBe(200);
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/nom_1`)).toMatchObject({ state: 'queued', source: { entryId: 'op_1' }, drafting: { priority: 2 } });
+  });
+
+  it('calendar_unavailable stays 503 on both paths, nothing written', async () => {
+    setPracticeFieldSeam({
+      bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }),
+      buildNominationDoc: () => { const e = new Error('off the calendar'); e.code = 'calendar_unavailable'; throw e; },
+    });
+    seedBook();
+    expect(await post(create({ opId: 'op_o', route: 'offer' }))).toMatchObject({ statusCode: 503, body: { error: 'calendar_unavailable' } });
+    expect((await post(create())).statusCode).toBe(200);
+    expect(await post(nominate)).toMatchObject({ statusCode: 503, body: { error: 'calendar_unavailable' } });
+    expect(bookWrites()).toEqual([]);
+  });
+});
+
+// ── Amendment A CA-2 — retiring a nominated card withdraws it, through the handler ─────────────────────────────────
+describe('Amendment A CA-2 — the retire op withdraws an untaken nomination, through the handler', () => {
+  const BOOK_ID = 'book-1';
+  afterEach(() => resetPracticeFieldSeam());
+  const offer = async () => {
+    setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }) });
+    seedBook();
+    const r = await post(create({ route: 'offer' }));
+    expect(r.statusCode).toBe(200);
+    resetPracticeFieldSeam();   // the withdrawal never reads the book: none is needed
+    return r.body.card;
+  };
+  const retire = (over = {}) => post({ op: 'retire', opId: 'rt_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
+  const RECORD = `mandates/${BOOK_ID}/nominations/op_1`;
+
+  it('a queued record: 200, the record withdrawn and the entry retired with its copy withdrawn — with no book read', async () => {
+    await offer();
+    const res = await retire();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card).toMatchObject({ stage: 'retired', version: 2, nomination: { bookId: BOOK_ID, nominationId: 'op_1', state: 'withdrawn' } });
+    expect(t.store.get(RECORD)).toMatchObject({ state: 'withdrawn', withdrawnAt: res.body.card.stageAt });
+    expect(t.store.get(RECORD).stateHistory.at(-1)).toEqual({ state: 'withdrawn', at: res.body.card.stageAt, by: 'player' });
+  });
+
+  it('an accepted record → 409 illegal_transition naming the stage and the nomination state; nothing written', async () => {
+    await offer();
+    t.store.set(RECORD, { ...t.store.get(RECORD), state: 'accepted' });
+    const before = t.writeLog.length;
+    expect(await retire()).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition', stage: 'nominated', nominationState: 'accepted' } });
+    expect(t.writeLog.length).toBe(before);
+  });
+
+  it('a record the store cannot judge → 503 nomination_unavailable with its sentence; nothing written, the card not retired', async () => {
+    await offer();
+    t.store.set(RECORD, { ...t.store.get(RECORD), state: 'misfiled' });
+    const before = t.writeLog.length;
+    const res = await retire();
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toEqual({ error: 'nomination_unavailable', message: CARD_ROUTE_COPY.nomination_unavailable });
+    expect(t.writeLog.length).toBe(before);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('nominated');
+  });
+});
+
+// ── Amendment A CA-12 — the book re-read, through the handler ──────────────────────────────────────────────────────
+describe('Amendment A CA-12 — the book re-read in the transaction, through the handler', () => {
+  afterEach(() => resetPracticeFieldSeam());
+  const openSeam = () => setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: 'book-1', status: 'active' }) });
+  const nominate = (over = {}) => ({ op: 'nominate', opId: 'nom_1', agentId: AGENT, entryId: 'op_1', expectedVersion: 1, ...over });
+
+  it('the pre-read says open, the book itself does not (closed, another owner, a portfolio book, the CLONE\'s rather than the ranked parent\'s): 409 book_not_open, the body only the code and its sentence; nothing written', async () => {
+    openSeam();
+    expect((await post(create())).statusCode).toBe(200);
+    for (const over of [{ status: 'closed' }, { userId: 'someone-else' }, { kind: 'portfolio' }, { attributionAgentId: `casual-agent-${OWNER}` }]) {
+      seedBook('active', over);
+      const before = t.writeLog.length;
+      const res = await post(nominate());
+      expect(res.statusCode, JSON.stringify(over)).toBe(409);
+      expect(res.body, JSON.stringify(over)).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+      expect(t.writeLog.length).toBe(before);
+    }
+    seedBook();
+    expect((await post(nominate())).statusCode).toBe(200);
+  });
+
+  it('a casual clone\'s battle: the book is the ranked PARENT\'s — the nominate named by the clone lands in it', async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    t.store.set('agentBattles/b-clone', { ...fixture.battle, id: 'b-clone', agentId: CLONE });
+    t.store.set(`agentBattles/b-clone/tape/${D}`, { ...t.store.get(`agentBattles/${BATTLE}/tape/${D}`), battleId: 'b-clone', agentId: CLONE });
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    openSeam();
+    seedBook();
+    expect((await post(create({ battleId: 'b-clone', agentId: CLONE }))).statusCode).toBe(200);
+    expect((await post(nominate({ agentId: CLONE }))).statusCode).toBe(200);
+    expect(t.store.get('mandates/book-1/nominations/nom_1')).toMatchObject({ state: 'queued', source: { entryId: 'op_1' } });
+  });
+});
+
+// ── Amendment A CA-23 — the S9 refusal tells the truth ────────────────────────────────────────────────────────────
+describe('Amendment A CA-23 — at the cap with NOTHING the player can retire, the refusal says what stops a card counting', () => {
+  afterEach(() => resetPracticeFieldSeam());
+  it('a full mix — two accepted nominations, a testing card, a result with an offer waiting, a second testing card: every retire is refused; the sixth card → 409 cap_reached with CA-23\'s words, never "Retire a card first" (the mutant: "Retire a card first" back)', async () => {
+    setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: 'book-1', status: 'active' }) });
+    seedBook();
+    const by = { ownerId: OWNER, agentId: AGENT, by: 'practice_field' };
+    const move = (entryId, to, payload, opId) => applyServerTransition(t.db, { ...by, entryId, to, payload, opId });
+    for (let i = 0; i < 5; i += 1) {
+      const id = `o_${i}`;
+      expect((await post(create({ opId: id, route: 'offer', note: `Offer ${i}.` }))).statusCode).toBe(200);
+      await move(id, 'nomination', { bookId: 'book-1', nominationId: id, state: 'accepted', ideaId: `i${i}` }, `s1_${i}`);
+      if (i >= 2) await move(id, 'testing', { bookId: 'book-1', ideaId: `i${i}` }, `s2_${i}`);
+      if (i === 3) {
+        await move(id, 'tested', { ideaId: `i${i}`, resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' }, `s3_${i}`);
+        await move(id, 'offered', { ideaId: `i${i}`, offerId: `of${i}`, state: 'offered' }, `s4_${i}`);
+      }
+    }
+    for (let i = 0; i < 5; i += 1) {
+      const e = t.store.get(`agents/${AGENT}/plays/o_${i}`);
+      expect(await post({ op: 'retire', opId: `r_${i}`, agentId: AGENT, entryId: `o_${i}`, expectedVersion: e.version }), `o_${i}`).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition' } });
+    }
+    const res = await post(create({ opId: 'w_6', note: 'One more.' }));
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toMatchObject({ error: 'cap_reached', cap: 5, open: 5 });
+    expect(res.body.message).toBe('The open-card cap for this agent is reached. A card stops counting once it is retired, parked, equipped or not taken.');
+    expect(res.body.message).not.toContain('Retire a card first');
   });
 });

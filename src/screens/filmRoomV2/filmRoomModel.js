@@ -89,6 +89,9 @@ export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
   // B2.1 B3 (Amendment H RH-6): the counter's count of the days in its window whose situations could not be read —
   // a count of tape days, derived
   'count(tape days with situations unavailable)': 'derived',
+  // Build C §5: an expired nomination's "not considered within n sessions" — n is B6 (src/data/cardStages.js), said as
+  // a derived number, as the build prompt rules
+  'count(sessions a queued nomination waits, B6)': 'derived',
 });
 
 /**
@@ -459,7 +462,10 @@ export function exitMakerOf(action) {
   const withReason = (exit) => (reason ? `${exit} · ${reason}` : exit);
   if (m === 'agent_decision') return { by: 'agent', label: W.agent.exit };
   if (PLATFORM_MECHANISMS.includes(m)) return { by: 'platform', label: `${W.platform.exit} · ${reason ?? W.platform.noReason}` };
-  if (m === 'gameplan_meeting') return { by: 'gameplan', label: withReason(W.gameplan.exit) };
+  // Build C §8 ruling 2: wherever the screen says a maker in words, no code follows — the meeting's maker reads "Exit by
+  // the gameplan meeting" (every real meeting swap records `gameplan_rotation`); a platform rule keeps its reason
+  // (RJ-4) and a maker not recorded keeps any it stored
+  if (m === 'gameplan_meeting') return { by: 'gameplan', label: W.gameplan.exit };
   return { by: 'unrecorded', label: withReason(W.unrecorded.exit) };
 }
 

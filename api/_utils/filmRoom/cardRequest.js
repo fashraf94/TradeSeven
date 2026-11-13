@@ -77,7 +77,7 @@ const seqOrNull = (v, name) => {
   return v;
 };
 
-/** The route: one of the three, as sent. */
+/** The route: one of the three (Build C §4: Watch, Offer, Set — the one export's CARD_ROUTES), as sent; `drill` is refused. */
 export function requireRoute(raw) {
   if (!CARD_ROUTES.includes(raw)) throw bad('invalid_route', `route must be one of ${CARD_ROUTES.join(', ')}.`);
   return raw;
@@ -107,8 +107,8 @@ export function parseCreateBody(body) {
   return { opId, battleId, etDate: b.etDate, agentId, moment, questionId: b.questionId, questionVersion, note, route };
 }
 
-/** A retire request, typed: `{ opId, agentId, entryId, expectedVersion }`. */
-export function parseRetireBody(body) {
+/** A request on a filed entry, typed: `{ opId, agentId, entryId, expectedVersion }` — retire, and (Build C) nominate and park. */
+function parseEntryOpBody(body) {
   const b = isObj(body) ? body : {};
   const opId = requireOpId(b.opId);
   const agentId = requireId(b.agentId, 'invalid_agent_id', 'agentId');
@@ -116,6 +116,15 @@ export function parseRetireBody(body) {
   if (!Number.isInteger(b.expectedVersion) || b.expectedVersion < 1) throw bad('invalid_expected_version', 'expectedVersion must be a positive integer.');
   return { opId, agentId, entryId, expectedVersion: b.expectedVersion };
 }
+
+/** A retire request, typed: `{ opId, agentId, entryId, expectedVersion }`. */
+export const parseRetireBody = (body) => parseEntryOpBody(body);
+
+/** Build C §4 — a nominate request, typed: `{ opId, agentId, entryId, expectedVersion }` (the op id is the nomination's id). */
+export const parseNominateBody = (body) => parseEntryOpBody(body);
+
+/** Build C (refinement R-C1-2) — a park request, typed: `{ opId, agentId, entryId, expectedVersion }`. */
+export const parseParkBody = (body) => parseEntryOpBody(body);
 
 /**
  * The menu entry for a question of `situationId` — null when the id is not on

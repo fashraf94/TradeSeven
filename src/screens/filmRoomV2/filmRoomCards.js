@@ -27,6 +27,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getAuth } from 'firebase/auth';
 import { readFilmRoomVerdict, resolveFilmRoomCardsForBattle, filmRoomBattleId } from '../../utils/filmRoomGate';
 import { momentsOf, momentAnchor } from '../../utils/filmRoomMoments';
+// Build C §3: the stage vocabulary v2, from its one export (the store reads the same module)
+import { CARD_STAGES, STORED_ROUTE_ALIASES, createStageOf, endedBeforeFirstFill, isOpenStage, isNotTaken, isFollowedWatch } from '../../data/cardStages';
 import { numberAt } from './filmRoomModel';
 
 export const FILM_ROOM_CARD_PATH = '/api/film-room/card';
@@ -150,25 +152,108 @@ export function ledgerOf(counter, extra = null) {
   if (!isObj(extra) || !extra.entryId) return cards;
   const at = cards.findIndex((c) => c.entryId === extra.entryId);
   if (at < 0) cards.unshift({ ...extra, shelved: false });
-  else if (newerThan(extra, cards[at])) cards[at] = { ...extra, shelved: false };
+  // Build C (park): a write on a card the counter already holds keeps the row's computed shelving — the store parks a
+  // shelved tested card (parking moves no stage), and no write ever changes an archetype
+  else if (newerThan(extra, cards[at])) cards[at] = { ...extra, shelved: cards[at].shelved === true };
   return cards;
 }
 
-/** The lists of My cards: active (open), shelved, retired — and 'other' for a stage this release does not know (never counted as active; review L3-10). */
+/**
+ * The lists of My cards (Build C §3, the one export's stages and open predicate): active (open), shelved, not taken (a
+ * nominated card its copy closes — Amendment A CA-3, judged before the parked fallback; shelving keeps its precedence),
+ * parked (a tested card the player parked), equipped (`installed`), retired — and 'other' for a stage the vocabulary
+ * does not know (never counted as active; review L3-10).
+ */
 export function groupCards(cards) {
-  const active = []; const shelved = []; const retired = []; const other = [];
+  const active = []; const shelved = []; const notTaken = []; const parked = []; const equipped = []; const retired = []; const other = [];
   for (const c of cards) {
     if (c.stage === 'retired') retired.push(c);
-    else if (c.stage !== 'card' && c.stage !== 'nominated') other.push(c);
+    else if (!CARD_STAGES.includes(c.stage)) other.push(c);
     else if (c.shelved) shelved.push(c);
-    else active.push(c);
+    else if (isOpenStage(c)) active.push(c);
+    else if (c.stage === 'installed') equipped.push(c);
+    else if (isNotTaken(c)) notTaken.push(c);
+    else parked.push(c);   // the one stage left that is neither open, installed nor not taken: `tested`, parked
   }
-  return { active, shelved, retired, other };
+  return { active, shelved, notTaken, parked, equipped, retired, other };
 }
 
-/** The open Watch cards the header follows (RG-4), with their recurrences from the counter. */
+/**
+ * Build C §5 — THE CHAIN of one card, newest first: one line per row of the entry's own `stageHistory` (what the
+ * ledger holds, and nothing it does not — exit criterion 11), each `{ kind, at, k }` (k: the row's index):
+ *   filed      the create's row, recognised by its SHAPE (C1 fix round, Astra F3 — isCreateRow), never by its index
+ *              alone: the first row, no event, not a server's, at the stage the card's STORED ROUTE files at
+ *              (createStageOf: `nominated` for Offer and v1 `drill`, `card` for Watch and Set) — and `offered` beside it
+ *              when the create was the Offer route's. A first row that is not one (an unknown event, a server's row, a
+ *              Watch card's `nominated` row) is judged as any other row, so it never becomes a "Filed" line
+ *   offered    a PLAYER row at `nominated` (the nominate op); a server row at `nominated` with no event gives no line
+ *   stage      on a v1 Practice entry (stored route `drill`, never written in production), its `nominated` row: it was
+ *              kept for the Practice Field, never offered to the agent, so it says the stage's own word (C1 review A-7)
+ *   nomination a server row copying the book's nomination state (`event: 'nomination'`, its `state`); `latest` marks
+ *              the last such row — the one whose state the entry's `nomination` copy holds, and whose reason it keeps
+ *   testing · tested · installed · retired   a row at that stage (`by` kept: a server retire carries the offer's state)
+ *   parked     a player row `event: 'parked'`
+ *   offerWaits a server row `event: 'offered'` (Amendment A CA-5) — ONLY while the card is `tested` and that offer still
+ *              waits (`offer.state` 'offered', the same offer id): once installed or retired, the line it was is gone, and
+ *              the stage's own line says what became of it. Never a second "Tested"
+ *   tested     carries `noFill` when the card's result records the Practice Field's no-fill fact (CA-22) — the one
+ *              reader the stage word reads too (endedBeforeFirstFill), never a missing `testing` row
+ *   stage      a row at a stage the vocabulary does not know (its own word, `stage`)
+ * A row that is not an object, or that names nothing the chain knows, gives no line — the chain never invents a state.
+ */
+/** Astra F3: a create's row, by its shape — the first row, no event, not a server's, at a stage a create writes. */
+export const isCreateRow = (h, k, card) => k === 0 && isObj(h) && h.event === undefined && h.by !== 'server' && typeof h.stage === 'string' && h.stage === createStageOf(card?.route);
+
+export function chainOf(card) {
+  const history = Array.isArray(card?.stageHistory) ? card.stageHistory : [];
+  const lines = [];
+  let lastNomination = -1;
+  const v1Practice = Object.prototype.hasOwnProperty.call(STORED_ROUTE_ALIASES, card?.route);
+  const nominatedLine = (h, k) => (v1Practice ? { kind: 'stage', stage: 'nominated', at: h.at, k } : { kind: 'offered', at: h.at, k });
+  history.forEach((h, k) => {
+    if (!isObj(h)) return;
+    if (isCreateRow(h, k, card)) {
+      lines.push({ kind: 'filed', at: h.at, k });
+      if (h.stage === 'nominated') lines.push(nominatedLine(h, k));
+      return;
+    }
+    if (h.event === 'parked') { lines.push({ kind: 'parked', at: h.at, k }); return; }
+    if (h.event === 'offered') {
+      if (card.stage === 'tested' && isObj(card.offer) && card.offer.state === 'offered' && card.offer.offerId === h.offerId) lines.push({ kind: 'offerWaits', at: h.at, k });
+      return;
+    }
+    if (h.event === 'nomination') {
+      if (typeof h.state === 'string' && h.state) { lastNomination = lines.length; lines.push({ kind: 'nomination', state: h.state, at: h.at, k }); }
+      return;
+    }
+    if (h.event !== undefined) return;   // an event the chain does not know: no line (C1 review B-7)
+    if (h.stage === 'nominated') { if (h.by !== 'server') lines.push(nominatedLine(h, k)); return; }
+    if (CARD_STAGES.includes(h.stage) && h.stage !== 'card') { lines.push({ kind: h.stage, at: h.at, k, by: h.by, ...(h.stage === 'tested' && endedBeforeFirstFill(card) ? { noFill: true } : {}) }); return; }
+    // a stage the vocabulary does not know: its own word. A `card` row that is not the create's (above) gives no line —
+    // only a create writes `card`, so nothing is invented from one (Astra F3)
+    if (typeof h.stage === 'string' && h.stage && !CARD_STAGES.includes(h.stage)) lines.push({ kind: 'stage', stage: h.stage, at: h.at, k });
+  });
+  if (lastNomination >= 0) lines[lastNomination] = { ...lines[lastNomination], latest: true };
+  return lines.reverse();
+}
+
+/**
+ * The C1 refinement R-C1-1 — the "since last time" list: every card PAST the `card` stage, each with its newest chain
+ * line (chainOf's first), newest state first (ties by entry id). No "last visit" mark is stored: the list is the
+ * ledger's state, read whole each time. A card with no chain line (no history the chain knows) is left out.
+ */
+export function latestOf(cards) {
+  const msOf = (v) => { const ms = typeof v === 'string' ? Date.parse(v) : NaN; return Number.isFinite(ms) ? ms : -Infinity; };
+  return (Array.isArray(cards) ? cards : [])
+    .filter((c) => isObj(c) && c.stage !== 'card')
+    .map((c) => ({ card: c, line: chainOf(c)[0] ?? null }))
+    .filter((x) => x.line)
+    .sort((a, b) => (msOf(b.line.at) - msOf(a.line.at)) || (a.card.entryId < b.card.entryId ? -1 : 1));
+}
+
+/** The open Watch cards the header follows (RG-4; the one export's isFollowedWatch), with their recurrences from the counter. */
 export function watchCardsOf(counter, cards) {
-  return cards.filter((c) => c.route === 'watch' && c.stage === 'card' && !c.shelved).map((c) => ({ card: c, recurrences: Array.isArray(counter?.recurrences?.[c.entryId]) ? counter.recurrences[c.entryId] : [] }));
+  return cards.filter((c) => isFollowedWatch(c) && !c.shelved).map((c) => ({ card: c, recurrences: Array.isArray(counter?.recurrences?.[c.entryId]) ? counter.recurrences[c.entryId] : [] }));
 }
 
 // ── the hook ────────────────────────────────────────────────────────────────
@@ -245,5 +330,32 @@ export function useFilmRoomCards({ battle, agentId, api = defaultCardsApi }) {
     return { ok: false, code };
   }, [api, agentId, refresh, keepResult]);
 
-  return { on, counter, refresh, create, retire, mintOpId };
+  /** Build C (refinement R-C1-2): park a tested card, from its receipt — the retire's pattern, one op id per receipt. */
+  const park = useCallback(async (card, opId = null) => {
+    const r = await api.postCard({ op: 'park', opId: opId || api.newOpId(), agentId, entryId: card.entryId, expectedVersion: card.version });
+    if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); keepResult(r.body.card); return { ok: true, card: r.body.card }; }
+    const code = r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'parkDefault');
+    if (code === 'version_conflict' || code === 'illegal_transition') await refresh();
+    return { ok: false, code };
+  }, [api, agentId, refresh, keepResult]);
+
+  /**
+   * Amendment A CA-7: offer a card at `card` to the agent, from its receipt — the park's pattern, its OWN op id per
+   * receipt; a successful result is kept (RI-2) and every refusal re-reads the counter, so the receipt shows the
+   * ledger's row beside the reason.
+   */
+  const nominate = useCallback(async (card, opId = null) => {
+    // §2 review A2: the offer names the agent the card is FILED under (its own `agentId`, the attribution agent — a
+    // casual clone's parent), never the battle's clone, so a lost answer re-tapped after the clone's document changed
+    // is still its own replay. The server resolves attribution as before (the parent resolves to itself) and judges
+    // the battle's attribution again in the transaction (F1)
+    const named = typeof card?.agentId === 'string' && card.agentId ? card.agentId : agentId;
+    const r = await api.postCard({ op: 'nominate', opId: opId || api.newOpId(), agentId: named, entryId: card.entryId, expectedVersion: card.version });
+    if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); keepResult(r.body.card); return { ok: true, card: r.body.card }; }
+    const code = r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'nominateDefault');
+    await refresh();
+    return { ok: false, code };
+  }, [api, agentId, refresh, keepResult]);
+
+  return { on, counter, refresh, create, retire, park, nominate, mintOpId };
 }

@@ -658,3 +658,17 @@ describe('the sweeps (BA-42, BA-41)', () => {
     expect(sweepNumbers(m.container, { tape: t })).toEqual([]);
   });
 });
+
+// ── Film Room C1 item 10 — Build C spec V1 §8 ruling 2 ────────────────────────────────────────────────────────────────
+describe('C1 item 10 — §8 ruling 2 on Study: the swap card says the meeting maker in words, with no code after it', () => {
+  it('a meeting swap (gameplan_rotation, as every real one records it): "Exit by the gameplan meeting", no code anywhere on Study; a platform rule keeps its reason; a maker not recorded keeps any it stored', () => {
+    const t = clone(sep23Tape);
+    t.actions[0] = { ...t.actions[0], mechanism: 'gameplan_meeting', exitReason: 'gameplan_rotation' };
+    t.actions[1] = { ...t.actions[1], mechanism: 'unrecorded', exitReason: 'manual_sell' };
+    m.render(<Harness tape={t} />);
+    expect(card(0).querySelector('[data-exit-maker]').textContent).toBe('Exit by the gameplan meeting');
+    expect(m.container.textContent).not.toContain('gameplan_rotation');
+    expect(card(1).querySelector('[data-exit-maker]').textContent).toBe('Exit maker not recorded · manual_sell');
+    expect(card(2).querySelector('[data-exit-maker]').textContent).toBe('Exit by platform rule · stagnation');
+  });
+});

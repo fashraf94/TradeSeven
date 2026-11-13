@@ -44,7 +44,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 const flip = vi.hoisted(() => ({ on: true }));
 vi.mock('../../config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
 const KILL_SWITCH_ROWS = new Set([
-  "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > Amendment K RK-10 — no open Watch card: no line, however many days could not be read — none filed, a Practice card, a retired Watch card (the mutant: the unavailable-day line with no open Watch card)",
+  "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > Amendment K RK-10 — no open Watch card: no line, however many days could not be read — none filed, an Offer card, a retired Watch card (the mutant: the unavailable-day line with no open Watch card)",
   "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > RK-10 — one open Watch card: the line as built, beside its list",
   "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > review SPR-C-4 — another agent's unavailable days are that agent's: the line counts the battle's own agent alone",
   "B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7's style > review SPR-T-8 — two of its own: RJ-7's plural (the mutant: the line always singular)",
@@ -71,12 +71,15 @@ import { makeTapeDb } from '../../../api/_utils/filmTape/__fixtures__/tapeFirest
 import { seedDay, OWNER, AGENT } from '../../../api/_utils/filmTape/__fixtures__/tapeFixtures.js';
 import { stalledDay } from '../../../api/_utils/filmTape/__fixtures__/tagFixtures.js';
 import { buildCounter } from '../../../api/_utils/filmRoom/cardCounter.js';
-import { retireCard, createCard } from '../../../api/_utils/filmRoom/cardStore.js';
+import { retireCard, createCard, applyServerTransition } from '../../../api/_utils/filmRoom/cardStore.js';
 import cardHandler from '../../../api/film-room/card.js';
+import { setPracticeFieldSeam, resetPracticeFieldSeam } from '../../../api/_utils/filmRoom/practiceFieldSeam.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
-import { ledgerOf } from './filmRoomCards';
-import { setRuleOf, setStateOf } from './FilmRoomCardRegions';
+import { ledgerOf, latestOf, chainOf, groupCards } from './filmRoomCards';
+import { setRuleOf, setStateOf, YourCall, Receipt } from './FilmRoomCardRegions';
+import { FILM_ROOM_COPY } from './filmRoomCopy';
+const COPY_CARDS = FILM_ROOM_COPY.cards;
 import { FORGE_AREAS, forgeAreaOf } from '../../components/CommandCenter/hubChrome';
 import { OPEN_BATTLE_REVIEW_EVENT } from '../../components/Forge/Watchlist/ideaNavigation';
 import {
@@ -91,7 +94,8 @@ const D2 = '2026-09-25';
 const NIGHT = (d) => Date.parse(`${d}T22:15:30.000-04:00`) + 60_000;
 const RG5 = {
   watch: 'The Film Room counts each time this comes back.',
-  drill: 'The Practice Field opens later; this keeps the moment for it.',
+  // Build C §5 (BC-3): Offer replaces Practice, and its note is the spec's sentence
+  offer: 'Your agent considers this moment at its next chance. It may take it, defer it or decline it, and says why.',
   set: 'You change the setting yourself; this card changes nothing.',
 };
 
@@ -160,7 +164,12 @@ beforeEach(() => {
   globalThis.localStorage.clear();
   m.setup();
 });
-afterEach(() => { m.teardown(); vi.restoreAllMocks(); });
+afterEach(() => { m.teardown(); vi.restoreAllMocks(); resetPracticeFieldSeam(); });
+/** Build C §4: the owner's book open, through the Practice Field's seam (T1a's helper, stubbed) — the counter and the card handler both read it. */
+const BOOK_ID = 'book-1';
+/** Amendment A CA-12: the book document the nominate and Offer transactions re-read — the owner's idea book, for the agent. */
+const seedBookDoc = (status = 'active') => t.store.set(`mandates/${BOOK_ID}`, { userId: OWNER, kind: 'idea_book', status, attributionAgentId: AGENT });
+const openBook = (status = 'active') => { setPracticeFieldSeam({ bookForOwner: async (_db, { uid, attributionAgentId }) => (uid === OWNER && attributionAgentId === AGENT ? { bookId: BOOK_ID, status } : null) }); seedBookDoc(status); };
 
 let lastReaders = null;
 /** `readBattle` (B2.1 B2): the readers' read of another battle's document; `openAt`: what App hands the screen it opens. */
@@ -337,7 +346,10 @@ describe('your-call — the form (spec §6; RG-5, RG-8, RG-9)', () => {
     expect(form.id).toBe('your-call');
     expect(form.querySelector('[data-moment-facts]')).toBeTruthy();
     expect(m.qa('[data-question]').map((l) => l.textContent)).toEqual(SITUATION_QUESTIONS.map((q) => q.text));
-    for (const r of ['watch', 'drill', 'set']) expect(m.q(`[data-route="${r}"]`).textContent).toContain(RG5[r]);
+    // Build C §5: no book (the seam's default) → Watch and Set only, and not a word of the book
+    expect(m.qa('[data-route]').map((l) => l.getAttribute('data-route'))).toEqual(['watch', 'set']);
+    for (const r of ['watch', 'set']) expect(m.q(`[data-route="${r}"]`).textContent).toContain(RG5[r]);
+    expect(form.textContent).not.toMatch(/Offer|Practice|book/);
     expect(m.q('[data-route="set"]').querySelector('a')).toBeNull();
     // B2.1 B1: this mount hands the screen no Forge door, so Set shows no link even with the day's rule on
     expect(fx.tape1.tags.inputs.forcedRotation.enabled).toBe(true);
@@ -393,13 +405,15 @@ describe('receipt — the filed card (spec §6; R7)', () => {
     expect(m.qa('[data-my-cards-group="active"] [data-my-card]')).toHaveLength(1);
     await sweepAll(fx.tape2, 'receipt');
   });
-  it('Practice nominates (the stage says so); Set files a card with its words', async () => {
+  it('Offer nominates, the owner\'s book open (the stage says so, the Offer sentence says what happens next); Set files a card with its words', async () => {
+    openBook();
     await open();
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
-    await fileCard({ note: 'Practice the exit.', route: 'drill', question: 'stalled.ready' });
-    expect(m.q('[data-card-receipt]').textContent).toContain('Stage · nominated for the Practice Field');
-    expect(m.q('[data-card-receipt]').textContent).toContain(RG5.drill);
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    expect(m.q('[data-card-receipt]').textContent).toContain('Route · Offer · Stage · offered to your agent');   // Amendment A CA-17
+    expect(m.q('[data-card-receipt]').textContent).toContain(RG5.offer);
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/op_1`)).toMatchObject({ state: 'queued' });
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
     await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
@@ -437,7 +451,7 @@ describe('receipt — the filed card (spec §6; R7)', () => {
     expect(m.q('[data-open-count] [data-num-aggregate="count(plays[] open)"]').getAttribute('data-agg-value')).toBe('5');
     await fileCard({ note: 'One more.' });
     expect(m.q('[data-card-form]')).toBeTruthy();
-    expect(m.q('[data-card-refusal]').textContent).toBe('The open-card cap for this agent is reached. Retire a card first.');
+    expect(m.q('[data-card-refusal]').textContent).toBe('The open-card cap is reached. A card stops counting once it is retired, parked, equipped or not taken.');   // Amendment A CA-23
     await sweepAll(fx.tape2, 'cap');
   });
 });
@@ -492,12 +506,13 @@ describe('since-last-time — open Watch cards, their recurrences (RG-4), My car
     await m.flush(8);
     expect(m.q('[data-moment-opened]')).toBeNull();
   });
-  it('no open Watch card: says so; a Practice card is not followed', async () => {
+  it('no open Watch card: says so; an Offer card is not followed', async () => {
+    openBook();
     await open();
     expect(region('since-last-time').textContent).toContain('No open Watch card.');
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
-    await fileCard({ route: 'drill', note: 'Practice it.' });
+    await fileCard({ route: 'offer', note: 'Practice it.' });
     expect(region('since-last-time').textContent).toContain('No open Watch card.');
     expect(m.qa('[data-watch-card]')).toEqual([]);
   });
@@ -678,17 +693,18 @@ describe('review round — the screen (findings L3-1 … L3-11, L4-2 … L4-10, 
     await m.flush();
     await fileCard();
     const doc = t.store.get(`agents/${AGENT}/plays/op_1`);
-    t.store.set(`agents/${AGENT}/plays/op_camp`, { ...doc, entryId: 'op_camp', opId: 'op_camp', stage: 'installed', note: 'A camp card.' });
+    // Build C §3: `installed` is vocabulary v2's own word now; `drafted` was dropped before anything wrote it, so it is a stage this release does not know
+    t.store.set(`agents/${AGENT}/plays/op_camp`, { ...doc, entryId: 'op_camp', opId: 'op_camp', stage: 'drafted', note: 'A camp card.' });
     m.teardown(); m.setup(); globalThis.localStorage.clear();
     await open();
     expect(m.qa('[data-my-cards-group="active"] [data-my-card]').map((b) => b.getAttribute('data-my-card'))).toEqual(['op_1']);
     const other = m.q('[data-my-cards-group="other"] [data-my-card="op_camp"]');
     expect(other).toBeTruthy();
-    expect([...other.querySelectorAll('[data-record-text]')].map((r) => r.textContent)).toContain('installed');
+    expect([...other.querySelectorAll('[data-record-text]')].map((r) => r.textContent)).toContain('drafted');
     m.click(other);
     await m.flush();
     const receipt = m.q('[data-card-receipt="op_camp"]');
-    expect([...receipt.querySelectorAll('[data-record-text]')].map((r) => r.textContent)).toContain('installed');
+    expect([...receipt.querySelectorAll('[data-record-text]')].map((r) => r.textContent)).toContain('drafted');
     expect(receipt.querySelector('[data-card-next]')).toBeNull();
     expect(m.buttons('Retire')).toHaveLength(0);
     await sweepAll(fx.tape2, 'other stage');
@@ -766,16 +782,17 @@ describe('review round — the screen (findings L3-1 … L3-11, L4-2 … L4-10, 
     await m.flush(10);
     expect(m.q('[data-card-receipt]').textContent).toContain('Stage · retired');
   });
-  it('R3-1 — a retired Practice card: nothing happens next, not the Practice Field sentence', async () => {
+  it('R3-1 — a retired Offer card: nothing happens next, not the Offer sentence', async () => {
+    openBook();
     await open();
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
-    await fileCard({ route: 'drill', note: 'Practice the exit.', question: 'stalled.ready' });
-    expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe(RG5.drill);
+    await fileCard({ route: 'offer', note: 'Practice the exit.', question: 'stalled.ready' });
+    expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe(RG5.offer);
     m.click(m.buttons('Retire')[0]);
     await m.flush(10);
     expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe('Retired: nothing happens next.');
-    expect(m.q('[data-card-receipt]').textContent).not.toContain(RG5.drill);
+    expect(m.q('[data-card-receipt]').textContent).not.toContain(RG5.offer);
   });
 });
 
@@ -840,22 +857,22 @@ describe('Amendment I RI-2 (Astra B1) — a successful write wins on screen when
 
 describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7\'s style', () => {
   /** A card filed straight into the ledger (the real store) from day 1's moment, before day 2 — a Watch card's list is what the line explains (Amendment K RK-10). */
-  const seedCard = (route) => createCard(state.db, {
-    uid: OWNER, agentId: AGENT, opId: `seed_${route}`, nowIso: `${D1}T23:00:00.000Z`,
+  const seedCard = (route) => { seedBookDoc(); /* Amendment A CA-12: the Offer transaction re-reads the book document */ return createCard(state.db, {
+    uid: OWNER, agentId: AGENT, opId: `seed_${route}`, nowIso: `${D1}T23:00:00.000Z`, book: { bookId: BOOK_ID, status: 'active' },
     payload: { archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: fx.tape1.tags.items[0].version, battleId: B, etDate: D1, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5, questionId: 'stalled.want', questionVersion: 1, note: 'Watch this.', route },
-  });
+  }); };
   const unreadable = (tape) => ({ ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
 
-  it('Amendment K RK-10 — no open Watch card: no line, however many days could not be read — none filed, a Practice card, a retired Watch card (the mutant: the unavailable-day line with no open Watch card)', async () => {
+  it('Amendment K RK-10 — no open Watch card: no line, however many days could not be read — none filed, an Offer card, a retired Watch card (the mutant: the unavailable-day line with no open Watch card)', async () => {
     for (const [d, tape] of [[D1, fx.tape1], [D2, fx.tape2]]) t.store.set(`agentBattles/${B}/tape/${d}`, unreadable(tape));
     expect((await buildCounter(state.db, { uid: state.uid, agentId: AGENT, nowMs: COUNTER_NOW })).unavailableDays[AGENT]).toBe(2);
     await open();
     expect(region('since-last-time').textContent).toContain('No open Watch card.');
     expect(m.q('[data-unavailable-days]')).toBeNull();
-    await seedCard('drill');
+    await seedCard('offer');
     m.teardown(); m.setup();
     await open();
-    expect(m.q('[data-my-card="seed_drill"]')).toBeTruthy();
+    expect(m.q('[data-my-card="seed_offer"]')).toBeTruthy();
     expect(m.q('[data-unavailable-days]')).toBeNull();
     await seedCard('watch');
     await retireCard(state.db, { uid: OWNER, agentId: AGENT, entryId: 'seed_watch', opId: 'r_seed', expectedVersion: 1, nowIso: `${D2}T23:00:00.000Z` });
@@ -1069,9 +1086,9 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
   it('FQ-1 — a casual clone\'s battle with no tempo recorded links like the ranked one, and the card files under the RANKED parent (the mutant: the link withheld from a clone, RL-1\'s condition left in)', async () => {
     await setOnClone(fx.tape2, () => {}, { file: false });
     expect(formSet()).toBe(RG5.set);
-    // review KRT-3: Set's words are Set's alone — Watch and Practice keep RG-5's sentences
+    // review KRT-3: Set's words are Set's alone — Watch keeps RG-5's sentence; with no book there is no Offer route (Build C §5)
     expect(m.q('[data-route-note="watch"]').textContent).toBe(RG5.watch);
-    expect(m.q('[data-route-note="drill"]').textContent).toBe(RG5.drill);
+    expect(m.q('[data-route-note="offer"]')).toBeNull();
     expect(m.q('[data-set-link]')).toBeNull();
     await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
     // the parent the card is filed under is the ranked agent (RK-1)
@@ -1485,5 +1502,1240 @@ describe('B2.1 B2 (Amendment H RH-2) — a recurrence in another battle opens th
     release();
     await m.flush(8);
     expect(events).toHaveLength(1);
+  });
+});
+
+// ── Film Room C1 (Build C spec V1, docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md) ──────────────────────────
+describe('C1 item 1 — My cards under the stage vocabulary v2 (spec §3)', () => {
+  it('testing and an unparked tested card are active and count open; a parked tested card lists under Parked; installed under Equipped, its stage word "equipped"; a v1 entry (no stageVocabVersion) reads and counts as before', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const doc = t.store.get(`agents/${AGENT}/plays/op_1`);
+    expect(doc.stageVocabVersion).toBe(2);
+    const plant = (id, minute, over) => t.store.set(`agents/${AGENT}/plays/${id}`, { ...doc, entryId: id, opId: id, note: `The card ${id}.`, createdAt: `2026-09-25T2${minute}:00:00.000Z`, ...over });
+    plant('c_testing', 1, { stage: 'testing' });
+    plant('c_tested', 2, { stage: 'tested' });
+    plant('c_parked', 3, { stage: 'tested', parkedAt: '2026-09-25T23:30:00.000Z' });
+    plant('c_installed', 0, { stage: 'installed' });
+    const v1 = { ...doc, entryId: 'c_v1', opId: 'c_v1', note: 'A v1 card.', createdAt: '2026-09-25T19:00:00.000Z' };
+    delete v1.stageVocabVersion;
+    t.store.set(`agents/${AGENT}/plays/c_v1`, v1);
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    const group = (g) => m.qa(`[data-my-cards-group="${g}"] [data-my-card]`).map((b) => b.getAttribute('data-my-card'));
+    expect(group('active').sort()).toEqual(['c_tested', 'c_testing', 'c_v1', 'op_1']);
+    expect(group('parked')).toEqual(['c_parked']);
+    expect(group('equipped')).toEqual(['c_installed']);
+    expect(m.q('[data-my-cards-group="equipped"]').textContent).toContain('Equipped');
+    expect(m.q('[data-my-card="c_installed"]').textContent).toContain('equipped');
+    expect(m.q('[data-my-card="c_testing"]').textContent).toContain('testing');
+    expect(m.q('[data-my-cards-group="other"]')).toBeNull();
+    // the form's open count: four open (card, testing, tested unparked, the v1 card) — the oracle recounts it by the one export
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(Number(m.q('[data-open-count] [data-num-aggregate="count(plays[] open)"]').getAttribute('data-agg-value'))).toBe(4);
+    await sweepAll(fx.tape2, 'v2 groups');
+  });
+});
+
+describe('C1 item 5 — the form: Watch, Offer and Set; Offer only with the owner\'s book open (spec §5; BC-3)', () => {
+  it('the book open (the counter says so): the routes Watch, Offer, Set in that order, Offer with the spec\'s sentence; the counter answered `book: { open: true }` and nothing else of the book', async () => {
+    openBook();
+    await open();
+    expect((await buildCounter(state.db, { uid: state.uid, agentId: AGENT, nowMs: COUNTER_NOW })).book).toEqual({ open: true });
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(m.qa('[data-route]').map((l) => l.getAttribute('data-route'))).toEqual(['watch', 'offer', 'set']);
+    expect(m.q('[data-route="offer"]').textContent).toBe(`Offer${RG5.offer}`);
+    expect(m.q('[data-route-note="offer"]').textContent).toBe(RG5.offer);
+    await sweepAll(fx.tape2, 'offer form');
+  });
+
+  it('no book, and a book not active: no Offer route and no word of the book (the mutant: the Offer route shown with no book)', async () => {
+    for (const status of [null, 'closed']) {
+      if (status) openBook(status); else resetPracticeFieldSeam();
+      await open();
+      m.click(m.buttons('Take this home')[0]);
+      await m.flush();
+      expect(m.qa('[data-route]').map((l) => l.getAttribute('data-route')), String(status)).toEqual(['watch', 'set']);
+      expect(m.q('[data-card-form]').textContent).not.toMatch(/Offer|book|Practice/);
+      m.teardown(); m.setup();
+    }
+  });
+
+  it('the Practice route and its sentence are gone (the mutant: the Practice sentence back): not in the copy, not on any form', async () => {
+    expect(Object.keys(COPY_CARDS.routes)).toEqual(['watch', 'offer', 'set']);
+    expect(Object.keys(COPY_CARDS.routeNotes)).toEqual(['watch', 'offer', 'set']);
+    expect(JSON.stringify(COPY_CARDS)).not.toContain('The Practice Field opens later');
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(m.q('[data-route="drill"]')).toBeNull();
+    expect(text()).not.toContain('The Practice Field opens later');
+  });
+
+  it('Offer picked, then the counter re-reads the book closed: the Offer route goes, the choice falls back to Watch, and Watch is what is sent (no Offer to a closed book)', async () => {
+    const moment = momentsOf(fx.tape2.tags.items)[0];
+    const sent = [];
+    const form = (bookOpen) => <YourCall tape={fx.tape2} moment={moment} counter={{ status: 'ready', data: { open: 0, cap: 5, book: { open: bookOpen } } }} mintOpId={() => 'op_form'} onFile={async (b) => { sent.push(b); return { ok: true }; }} onCancel={() => {}} />;
+    m.render(form(true));
+    await m.flush(2);
+    m.click(m.q('[data-route="offer"] input'));
+    await m.flush(1);
+    expect(m.q('[data-route="offer"] input').checked).toBe(true);
+    m.render(form(false));
+    await m.flush(1);
+    expect(m.q('[data-route="offer"]')).toBeNull();
+    expect(m.q('[data-route="watch"] input').checked).toBe(true);
+    await (async () => { const ta = m.q('[data-note]'); await import('react').then(({ act }) => act(() => setValue(ta, 'Watch it.'))); })();
+    await m.flush(1);
+    m.click(m.q('[data-card-form] button[type="submit"]'));
+    await m.flush(2);
+    expect(sent.map((x) => x.route)).toEqual(['watch']);
+  });
+
+  it('a stored `drill` entry (v1, never written in production) reads as Offer on My cards and its receipt', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const doc = t.store.get(`agents/${AGENT}/plays/op_1`);
+    const v1 = { ...doc, entryId: 'c_drill', opId: 'c_drill', route: 'drill', stage: 'nominated', note: 'A v1 Practice card.' };
+    delete v1.stageVocabVersion;
+    t.store.set(`agents/${AGENT}/plays/c_drill`, v1);
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    expect(m.q('[data-my-card="c_drill"]').textContent).toContain('Offer · nominated for the Practice Field');
+    m.click(m.q('[data-my-card="c_drill"]'));
+    await m.flush();
+    const receipt = m.q('[data-card-receipt="c_drill"]');
+    expect(receipt.textContent).toContain('Route · Offer');
+    // a v1 Practice card holds no nomination record: nothing is said to come next
+    expect(receipt.querySelector('[data-card-next]')).toBeNull();
+    await sweepAll(fx.tape2, 'v1 drill');
+  });
+});
+
+describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), every state from the ledger\'s own writes', () => {
+  /** A server transition through the REAL helper (the Practice Field's one way in), at an instant on the shown day. */
+  const move = (entryId, to, payload, clock) => applyServerTransition(state.db, { entryId, ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${to}_${clock.replace(/\D/g, '')}`, nowIso: `${D2}T${clock}:00.000Z` });
+  // Amendment A CA-4: an accepted copy names its idea (`idea-1`, the one `testing` names below) and may carry a thesis
+  const NOM = (state, reason, consideredAt, thesis = null) => ({ bookId: BOOK_ID, nominationId: 'op_1', state, reason, consideredAt, ...(state === 'accepted' ? { ideaId: 'idea-1', thesis } : {}) });
+  const reopen = async (id) => {
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q(`[data-my-card="${id}"]`));
+    await m.flush();
+    return m.q(`[data-card-receipt="${id}"]`);
+  };
+  const lines = (receipt) => [...receipt.querySelectorAll('[data-chain-line]')].map((l) => [l.getAttribute('data-chain-line'), l.getAttribute('data-chain-state')]);
+  const lineText = (receipt, i) => receipt.querySelectorAll('[data-chain-line]')[i].querySelector('span').textContent;
+  const offerCard = async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+  };
+
+  it('filed by the Offer route: "Offered to your agent" and "Filed", newest first, each with its time; the note "— you" stays; what comes next is the Offer sentence', async () => {
+    await offerCard();
+    const receipt = m.q('[data-card-receipt="op_1"]');
+    expect(lines(receipt)).toEqual([['offered', null], ['filed', null]]);
+    // the card was filed now, not on the shown day: its instant carries its date (review L3-7)
+    expect(lineText(receipt, 0)).toMatch(/^Offered to your agent · ([A-Z][a-z]{2} \d{1,2}, )?\d{1,2}:\d{2} [AP]M$/);
+    expect(lineText(receipt, 1)).toMatch(/^Filed · /);
+    expect(receipt.querySelectorAll('[data-chain-line] [data-time]')).toHaveLength(2);
+    expect(receipt.querySelector('[data-quotation="you"]')).toBeTruthy();
+    expect(receipt.querySelector('[data-card-next]').textContent).toBe(RG5.offer);
+    await sweepAll(fx.tape2, 'offered');
+  });
+
+  it('deferred, then accepted (Amendment A CA-4, CA-11): each answer a line, each quoting from ITS OWN row at ITS OWN consideredAt — the deferral its reason, the acceptance its thesis (never its reason), "— your agent · {time}"; no Offer sentence once answered (the mutants: a later copy overwriting an earlier answer\'s quotation; a quotation dated with the delivery time)', async () => {
+    await offerCard();
+    await move('op_1', 'nomination', NOM('deferred', 'Not this week: the book is full.', `${D2}T20:10:00.000Z`), '20:15');
+    let receipt = await reopen('op_1');
+    expect(lines(receipt)).toEqual([['nomination', 'deferred'], ['offered', null], ['filed', null]]);
+    expect(lineText(receipt, 0)).toBe('Deferred · 4:15 PM');
+    const q1 = receipt.querySelector('[data-quotation="yourAgent"]');
+    expect(q1.querySelector('[data-quote-path]').textContent).toBe('Not this week: the book is full.');
+    expect(q1.querySelector('[data-quote-path]').getAttribute('data-quote-path')).toBe('cards.op_1.stageHistory[1].reason');
+    // the reason's own time (4:10), never the copy's delivery (4:15)
+    expect(q1.querySelector('[data-quote-attribution]').textContent).toBe('— your agent · 4:10 PM');
+    expect(receipt.querySelector('[data-card-next]')).toBeNull();
+    await sweepAll(fx.tape2, 'deferred');
+    await move('op_1', 'nomination', NOM('accepted', 'I will test holding one more check after the stall.', `${D2}T20:40:00.000Z`, 'Holding one more check after a stall pays more than it costs.'), '20:45');
+    receipt = await reopen('op_1');
+    expect(lines(receipt)).toEqual([['nomination', 'accepted'], ['nomination', 'deferred'], ['offered', null], ['filed', null]]);
+    expect(lineText(receipt, 0)).toBe('Taken into an idea · 4:45 PM');
+    const quotes = [...receipt.querySelectorAll('[data-quotation="yourAgent"]')].map((q) => [q.closest('[data-chain-line]').getAttribute('data-chain-state'), q.querySelector('[data-quote-path]').getAttribute('data-quote-path'), q.querySelector('[data-quote-path]').textContent, q.querySelector('[data-quote-attribution]').textContent]);
+    expect(quotes).toEqual([
+      ['accepted', 'cards.op_1.stageHistory[2].thesis', 'Holding one more check after a stall pays more than it costs.', '— your agent · 4:40 PM'],
+      ['deferred', 'cards.op_1.stageHistory[1].reason', 'Not this week: the book is full.', '— your agent · 4:10 PM'],
+    ]);
+    expect(receipt.textContent).not.toContain('I will test holding one more check after the stall.');
+    // no book door is handed in: "Open the idea" renders nowhere (the mutant: a book link with no door)
+    expect(m.buttons('Open the idea')).toHaveLength(0);
+    await sweepAll(fx.tape2, 'accepted');
+  });
+
+  it('testing, tested, installed: the lines in the ledger\'s order; the result\'s words EXACTLY as stored (the mutant: the result in other words); no idea or result link without the door; never "validated", "proven" or "supported"', async () => {
+    await offerCard();
+    await move('op_1', 'nomination', NOM('accepted', 'I will test it.', `${D2}T20:40:00.000Z`), '20:45');
+    await move('op_1', 'testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    let receipt = await reopen('op_1');
+    expect(lineText(receipt, 0)).toBe('Testing · from 4:50 PM');
+    expect(receipt.querySelector('[data-card-next]')).toBeNull();
+    await move('op_1', 'tested', { ideaId: 'idea-1', resultRef: 'mandates/book-1/ideas/idea-1/results/r1', contractCondition: 'breached', economicResult: 'within band' }, '20:55');
+    receipt = await reopen('op_1');
+    expect(lines(receipt).map((l) => l[0])).toEqual(['tested', 'testing', 'nomination', 'offered', 'filed']);
+    expect(lineText(receipt, 0)).toBe('Tested · 4:55 PM · contract condition breached · economic result within band');
+    // Astra §4, CA-4: no closing note stored, no quotation; the acceptance had no thesis, so none there either
+    expect(receipt.querySelector('[data-quotation="yourAgent"]')).toBeNull();
+    expect([...receipt.querySelectorAll('[data-result-field]')].map((e) => [e.getAttribute('data-result-field'), e.textContent])).toEqual([['contractCondition', 'breached'], ['economicResult', 'within band']]);
+    expect(receipt.querySelector('[data-result-field]').closest('[data-record-text]')).toBeTruthy();
+    expect(m.buttons('Open the result')).toHaveLength(0);
+    expect(m.buttons('Open the idea')).toHaveLength(0);
+    expect(receipt.textContent).not.toMatch(/validated|proven|supported|\bright\b|\bwrong\b/i);
+    expect(receipt.textContent).toContain('Stage · tested');
+    await sweepAll(fx.tape2, 'tested');
+    await move('op_1', 'offered', { ideaId: 'idea-1', offerId: 'offer-1', state: 'offered' }, '20:58');
+    await move('op_1', 'installed', { ideaId: 'idea-1', offerId: 'offer-1', state: 'accepted' }, '21:00');
+    receipt = await reopen('op_1');
+    expect(lineText(receipt, 0)).toBe('Equipped · 5:00 PM');
+    expect(receipt.textContent).toContain('Stage · equipped');
+    expect(m.buttons('Retire')).toHaveLength(0);
+    await sweepAll(fx.tape2, 'installed');
+  });
+
+  it('expired: "Not considered within 10 sessions", ten a derived number (B6); retired by the server: the Forge offer\'s state as stored', async () => {
+    await offerCard();
+    await move('op_1', 'nomination', NOM('expired', null, null), '20:15');
+    let receipt = await reopen('op_1');
+    // the ten carries its class mark (D) beside it
+    expect(lineText(receipt, 0)).toBe('Not considered within 10D sessions · 4:15 PM');
+    const n = receipt.querySelector('[data-num-aggregate="count(sessions a queued nomination waits, B6)"]');
+    expect(n.getAttribute('data-num-class')).toBe('derived');
+    expect(Number(n.getAttribute('data-agg-value'))).toBe(10);
+    expect(receipt.querySelector('[data-quotation="yourAgent"]')).toBeNull();   // no reason stored, no quotation
+    await sweepAll(fx.tape2, 'expired');
+  });
+
+  it('retired by the server from tested, with the Forge offer\'s state: "Retired · {time} · Forge offer {state}", the state the record\'s own word', async () => {
+    await offerCard();
+    await move('op_1', 'nomination', NOM('accepted', 'I will test it.', `${D2}T20:40:00.000Z`), '20:45');
+    await move('op_1', 'testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('op_1', 'tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'unmeasurable' }, '20:55');
+    await move('op_1', 'retired', { ideaId: 'idea-1', offerId: null, state: 'no_offer' }, '21:05');
+    const receipt = await reopen('op_1');
+    expect(lineText(receipt, 0)).toBe('Retired · 5:05 PM · Forge offer no_offer');
+    expect(receipt.querySelector('[data-offer-state]').closest('[data-record-text]')).toBeTruthy();
+    expect(receipt.querySelector('[data-card-next]').textContent).toBe('Retired: nothing happens next.');
+    await sweepAll(fx.tape2, 'server retired');
+  });
+
+  it('the chain says only what the ledger holds (exit criterion 11): a result planted on a card-stage entry shows no tested line; an answer the copy has no line for is the record\'s own word', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const doc = t.store.get(`agents/${AGENT}/plays/op_1`);
+    t.store.set(`agents/${AGENT}/plays/op_1`, { ...doc, result: { ideaId: 'x', resultRef: 'x', contractCondition: 'met', economicResult: 'ahead' } });
+    let receipt = await reopen('op_1');
+    expect(lines(receipt)).toEqual([['filed', null]]);
+    expect(receipt.textContent).not.toContain('Tested');
+    expect(receipt.textContent).not.toContain('ahead');
+    // a nominated entry whose copied answer is one the copy names no line for (a state no writer sends today, planted — Amendment A CA-9 gave considered its own line)
+    t.store.set(`agents/${AGENT}/plays/op_1`, { ...doc, stage: 'nominated', nomination: { bookId: BOOK_ID, nominationId: 'op_1', state: 'reviewing', reason: null, consideredAt: null }, stageHistory: [...doc.stageHistory, { stage: 'nominated', at: `${D2}T20:00:00.000Z`, by: 'player', opId: 'n1' }, { stage: 'nominated', event: 'nomination', state: 'reviewing', at: `${D2}T20:05:00.000Z`, by: 'server', writer: 'practice_field', opId: 's1' }] });
+    receipt = await reopen('op_1');
+    expect(lineText(receipt, 0)).toBe("Your agent's answer · reviewing · 4:05 PM");
+    expect(receipt.querySelectorAll('[data-chain-line]')[0].querySelector('[data-record-text]').textContent).toBe('reviewing');
+    await sweepAll(fx.tape2, 'unknown answer');
+  });
+
+  it('the link slots render only beside the book\'s door (onOpenBook): handed one, "Open the idea" and "Open the result" open the entry\'s own idea and result; handed none (C1, everywhere), no slot', async () => {
+    await offerCard();
+    await move('op_1', 'nomination', NOM('accepted', 'I will test it.', `${D2}T20:40:00.000Z`), '20:45');
+    await move('op_1', 'testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('op_1', 'tested', { ideaId: 'idea-1', resultRef: 'r-1', contractCondition: 'met', economicResult: 'ahead' }, '20:55');
+    const entry = t.store.get(`agents/${AGENT}/plays/op_1`);
+    const opened = [];
+    m.teardown(); m.setup();
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [entry] } }} card={entry} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} onOpenBook={(target) => opened.push(target)} />);
+    await m.flush(2);
+    expect(m.buttons('Open the idea')).toHaveLength(2);   // taken into an idea; testing
+    expect(m.buttons('Open the result')).toHaveLength(1);
+    // newest first: the tested line's result, the testing line's idea, then the accepted line's
+    m.click(m.buttons('Open the result')[0]);
+    m.click(m.buttons('Open the idea')[0]);
+    m.click(m.buttons('Open the idea')[1]);
+    expect(opened).toEqual([{ ideaId: 'idea-1', resultRef: 'r-1' }, { bookId: BOOK_ID, ideaId: 'idea-1' }, { bookId: BOOK_ID, nominationId: 'op_1' }]);
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [entry] } }} card={entry} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} />);
+    await m.flush(2);
+    expect(m.buttons('Open the idea')).toHaveLength(0);
+    expect(m.buttons('Open the result')).toHaveLength(0);
+  });
+});
+
+describe('C1 item 7 — "Park this card", on a tested receipt only (refinement R-C1-2; acceptance C-PARK)', () => {
+  const move = (to, payload, clock) => applyServerTransition(state.db, { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${to}`, nowIso: `${D2}T${clock}:00.000Z` });
+  const toTested = async () => {
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', ideaId: 'idea-1', reason: 'I will test it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
+    await move('testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' }, '20:55');
+  };
+  const reopen = async () => {
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+  };
+
+  it('a tested receipt holds "Park this card" (and Retire); parking writes parkedAt through the endpoint: the Parked line, the parked note, no buttons, under Parked, the open count down', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    // an Offer card at nominated, testing: no Park
+    expect(m.buttons('Park this card')).toHaveLength(0);
+    await toTested();
+    await reopen();
+    expect(m.buttons('Park this card')).toHaveLength(1);
+    expect(m.buttons('Retire')).toHaveLength(1);
+    expect(m.qa('[data-my-cards-group="active"] [data-my-card]').map((b) => b.getAttribute('data-my-card'))).toEqual(['op_1']);
+    m.click(m.buttons('Park this card')[0]);
+    await m.flush(10);
+    const bodies = cardBodies().filter((b) => b.op === 'park');
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({ op: 'park', agentId: AGENT, entryId: 'op_1' });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).parkedAt).toEqual(expect.any(String));
+    const receipt = m.q('[data-card-receipt="op_1"]');
+    expect(receipt.querySelector('[data-chain-line]').getAttribute('data-chain-line')).toBe('parked');
+    expect(receipt.querySelector('[data-card-next]').textContent).toBe('Parked: kept with its result, no longer counted as open.');
+    expect(m.buttons('Park this card')).toHaveLength(0);
+    expect(m.buttons('Retire')).toHaveLength(0);
+    expect(m.qa('[data-my-cards-group="parked"] [data-my-card]').map((b) => b.getAttribute('data-my-card'))).toEqual(['op_1']);
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(Number(m.q('[data-open-count] [data-num-aggregate="count(plays[] open)"]').getAttribute('data-agg-value'))).toBe(0);
+    await sweepAll(fx.tape2, 'parked');
+  });
+
+  it('no Park on any receipt but a tested one: a card, an equipped card, a retired one', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    expect(m.buttons('Park this card')).toHaveLength(0);
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(10);
+    expect(m.buttons('Park this card')).toHaveLength(0);
+  });
+
+  it('ledgerOf keeps the counter row\'s shelving when a newer write result replaces it (a shelved tested card parks), and a new entry reads unshelved', () => {
+    const row = { entryId: 'e1', version: 4, stage: 'tested', shelved: true };
+    expect(ledgerOf({ cards: [row] }, { entryId: 'e1', version: 5, stage: 'tested', parkedAt: 'x' })[0]).toMatchObject({ version: 5, parkedAt: 'x', shelved: true });
+    expect(ledgerOf({ cards: [{ ...row, shelved: false }] }, { entryId: 'e1', version: 5 })[0].shelved).toBe(false);
+    expect(ledgerOf({ cards: [] }, { entryId: 'e2', version: 1 })[0].shelved).toBe(false);
+  });
+});
+
+describe('C1 item 8 — since last time: every card past the card stage, its latest state line and time, newest first (refinement R-C1-1)', () => {
+  const move = (entryId, to, payload, clock) => applyServerTransition(state.db, { entryId, ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${entryId}_${to}_${clock.replace(':', '')}`, nowIso: `${D2}T${clock}:00.000Z` });
+  const latestRows = () => m.qa('[data-latest-line]').map((b) => [b.getAttribute('data-latest-line'), b.getAttribute('data-latest-kind')]);
+
+  it('a Watch card at card is not listed; two Offer cards answered at different times list newest state first, each with the situation, symbol, day and the receipt\'s state line; a tap opens the receipt', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'A watch card.' });   // op_1, at card: never listed
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'An offer.', route: 'offer' });   // op_3 (the receipt minted op_2)
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Another offer.', route: 'offer', question: 'stalled.ready' });
+    const ids = [...t.store.keys()].filter((k) => k.startsWith(`agents/${AGENT}/plays/`)).map((k) => k.split('/').pop()).filter((id) => t.store.get(`agents/${AGENT}/plays/${id}`).route === 'offer').sort();
+    expect(ids).toHaveLength(2);
+    const [a, b] = ids;
+    await move(a, 'nomination', { bookId: BOOK_ID, nominationId: a, state: 'declined', reason: 'Not for this book.', consideredAt: `${D2}T20:30:00.000Z` }, '20:30');
+    await move(b, 'nomination', { bookId: BOOK_ID, nominationId: b, state: 'deferred', reason: 'Later.', consideredAt: `${D2}T20:20:00.000Z` }, '20:20');
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    expect(latestRows()).toEqual([[a, 'nomination'], [b, 'nomination']]);
+    const first = m.q(`[data-latest-line="${a}"]`);
+    expect(first.textContent).toContain('Our stocks are not moving');
+    expect(first.querySelector('[data-record-text]').textContent).toBe('ACN');
+    expect(first.textContent).toContain('Declined · 4:30 PM');
+    expect(m.q(`[data-latest-line="${b}"]`).textContent).toContain('Deferred · 4:20 PM');
+    expect(m.q('[data-latest-line="op_1"]')).toBeNull();
+    // the latest list sits after the Watch cards and before My cards
+    const region = m.q('[data-cards-region="since-last-time"]');
+    const order = [...region.querySelectorAll('[data-watch-card], [data-latest-states], [data-my-cards]')].map((e) => (e.hasAttribute('data-watch-card') ? 'watch' : e.hasAttribute('data-latest-states') ? 'latest' : 'mine'));
+    expect(order).toEqual(['watch', 'latest', 'mine']);
+    await sweepAll(fx.tape2, 'latest');
+    m.click(first);
+    await m.flush();
+    expect(m.q(`[data-card-receipt="${a}"]`)).toBeTruthy();
+    // b moves on: its newer line puts it first
+    await move(b, 'nomination', { bookId: BOOK_ID, nominationId: b, state: 'accepted', ideaId: 'idea-b', reason: 'Taking it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    expect(latestRows().map((r) => r[0])).toEqual([b, a]);
+    expect(m.q(`[data-latest-line="${b}"]`).textContent).toContain('Taken into an idea · 4:45 PM');
+  });
+
+  it('latestOf (pure): cards past card only, each with chainOf\'s newest line, newest first, ties by entry id; a retired Watch card is listed', () => {
+    const at = (h) => `${D2}T${h}:00.000Z`;
+    const card = (entryId, stage, history) => ({ entryId, stage, stageHistory: history });
+    const cards = [
+      card('w', 'card', [{ stage: 'card', at: at('14:00') }]),
+      card('r', 'retired', [{ stage: 'card', at: at('14:00') }, { stage: 'retired', at: at('15:00'), by: 'player' }]),
+      card('n', 'nominated', [{ stage: 'nominated', at: at('16:00'), by: 'player' }]),
+      card('m', 'nominated', [{ stage: 'nominated', at: at('16:00'), by: 'player' }]),
+    ];
+    expect(latestOf(cards).map((x) => [x.card.entryId, x.line.kind])).toEqual([['m', 'offered'], ['n', 'offered'], ['r', 'retired']]);
+    expect(latestOf(null)).toEqual([]);
+  });
+});
+
+// ── Film Room C1 items 11 and 12 — Build C spec V1 §8 rulings 3 and 4 (the B2.1 report §14.10 items 3 and 4) ─────────
+describe('C1 item 11 — §8 ruling 3: a battle with no agent recorded links nothing (the cautious reading stands)', () => {
+  it('the battle document and its tape days name no agent, with the Forge door handed in and the day\'s rule on: the form says RG-5\'s sentence alone, the counter is never asked, a card cannot be filed, and no link to the tempo dial renders anywhere', async () => {
+    const forge = [];
+    const tapes = { [D1]: { ...fx.tape1, agentId: null }, [D2]: { ...fx.tape2, agentId: null } };
+    lastBattle = battleOf({ agentId: null });
+    expect(fx.tape2.tags.inputs.forcedRotation.enabled).toBe(true);
+    m.render(<FilmRoomScreenV2 battle={lastBattle} onBack={() => {}} viewerId="viewer-1" readers={readersOf(tapes, [])} nowMs={NOW} cardsApi={api} onOpenForge={(a) => forge.push(a)} />);
+    await m.flush(8);
+    expect(counterCalls()).toBe(0);
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(m.q('[data-route-note="set"]').textContent).toBe(RG5.set);
+    expect(m.q('[data-set-link]')).toBeNull();
+    await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
+    expect(m.q('[data-card-receipt]')).toBeNull();
+    expect(m.q('[data-card-refusal]')).toBeTruthy();
+    expect(m.q('[data-set-link]')).toBeNull();
+    expect(forge).toEqual([]);
+    expect(t.writeLog.filter((w) => w.path.includes('/plays/'))).toEqual([]);
+  });
+});
+
+describe('C1 item 12 — §8 ruling 4: an open at a real date that is not one of the battle\'s days opens the default view, nothing marked; the clear still fires once', () => {
+  const ELSE = 'b-elsewhere';
+  const D3 = '2026-09-28';
+  const elseBattle = () => battleOf({ id: ELSE, agentBattleId: ELSE, timing: { tradingDays: [D2, D3] }, completedAt: `${D3}T20:05:00.000Z` });
+  const elseTape = () => ({ ...fx.tape2, battleId: ELSE });
+  const moment = () => { const w = momentsOf(fx.tape2.tags.items)[0]; return { situationId: w.situationId, symbol: w.symbol, fromTickSeq: w.fromTickSeq, toTickSeq: w.toTickSeq }; };
+  const mountAt = async (etDate) => {
+    let used = 0;
+    lastBattle = elseBattle();
+    lastReaders = readersOf({ [D2]: elseTape(), [D3]: { ...elseTape(), etDate: D3 } }, []);
+    m.render(<FilmRoomScreenV2 battle={lastBattle} onBack={() => {}} viewerId="viewer-1" readers={lastReaders} nowMs={NOW} cardsApi={api} openAt={{ battleId: ELSE, etDate, moment: moment() }} onOpenAtUsed={() => { used += 1; }} />);
+    await m.flush(8);
+    return () => used;
+  };
+  const pressed = () => m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent;
+
+  it('a Saturday between the battle\'s days (a real date, battleReviewAtOf accepts it): the default day (the completed battle\'s last), no moment marked, no read of the foreign day; onOpenAtUsed once (the mutant: a foreign day\'s openAt marking a moment)', async () => {
+    const used = await mountAt('2026-09-26');
+    expect(pressed()).toContain('Sep 28');
+    expect(m.q('[data-moment-opened]')).toBeNull();
+    expect(lastReaders.calls.filter((c) => c[0] === 'tape').map((c) => c[2])).not.toContain('2026-09-26');
+    expect(used()).toBe(1);
+  });
+
+  it('the control: one of the battle\'s days opens there, the moment marked; onOpenAtUsed once', async () => {
+    const used = await mountAt(D2);
+    expect(pressed()).toContain('Sep 25');
+    expect(m.q('[data-moment-opened]')).toBeTruthy();
+    expect(used()).toBe(1);
+  });
+
+  it('battleReviewAtOf itself is unchanged: the Saturday is a real date it accepts — the bound is the screen\'s', async () => {
+    const { battleReviewAtOf } = await import('../../components/Forge/Watchlist/ideaNavigation');
+    expect(battleReviewAtOf({ etDate: '2026-09-26', moment: moment() }, ELSE)).toMatchObject({ battleId: ELSE, etDate: '2026-09-26' });
+  });
+});
+
+// ── the C1 review's fixes (docs/audits/20261112_BUILD_FILM_ROOM_C1_CHAIN.md §6) ─────────────────────────────────────
+describe('C1 review — the chain and the receipt say only what the ledger holds', () => {
+  const at = (hm) => `${D2}T${hm}:00.000Z`;
+  const base = (over = {}) => ({
+    entryId: 'e1', ownerId: OWNER, agentId: AGENT, createdAt: at('20:00'), archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: 2,
+    source: { battleId: B, etDate: D2, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 }, questionId: 'stalled.want', questionVersion: 1, note: 'A note.', route: 'watch',
+    stage: 'card', stageAt: at('20:00'), stageHistory: [{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }], version: 1, ...over,
+  });
+  const receiptOf = async (card, extra = {}) => {
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [card] } }} card={card} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} onPark={async () => ({ ok: true })} {...extra} />);
+    await m.flush(2);
+    return m.q('[data-card-receipt]');
+  };
+  const kinds = (r) => [...r.querySelectorAll('[data-chain-line]')].map((l) => l.getAttribute('data-chain-line'));
+
+  it('A-7 / B-1: a v1 Practice entry (stored route drill, filed at nominated, no record) says its stage\'s own word — never "Offered to your agent" — on the receipt and in the latest list', async () => {
+    const v1 = base({ route: 'drill', stage: 'nominated', stageHistory: [{ stage: 'nominated', at: at('20:00'), by: 'player', opId: 'e1' }] });
+    const r = await receiptOf(v1);
+    expect(kinds(r)).toEqual(['stage', 'filed']);
+    expect(r.querySelector('[data-chain-line="stage"]').textContent).toBe('nominated for the Practice Field · 4:00 PM');
+    expect(r.textContent).not.toContain('Offered to your agent');
+    expect(latestOf([v1])[0].line.kind).toBe('stage');
+    // an Offer-route card's same row IS an offer
+    expect(latestOf([{ ...v1, route: 'offer' }])[0].line.kind).toBe('offered');
+  });
+
+  it('B-2: a parked card the idea later equipped is equipped — no parked note; the note stays on a parked TESTED card', async () => {
+    const history = [{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }, { stage: 'tested', event: 'parked', at: at('20:30'), by: 'player', opId: 'p1' }, { stage: 'installed', at: at('20:40'), by: 'server', writer: 'practice_field', opId: 's9' }];
+    let r = await receiptOf(base({ stage: 'installed', parkedAt: at('20:30'), stageHistory: history, offer: { offerId: 'o1', state: 'accepted' } }));
+    expect(r.querySelector('[data-card-next]')).toBeNull();
+    expect(r.textContent).toContain('Stage · equipped');
+    expect(m.buttons('Park this card')).toHaveLength(0);   // B-12: no Park on an equipped card
+    r = await receiptOf(base({ stage: 'tested', parkedAt: at('20:30'), stageHistory: history.slice(0, 2) }));
+    expect(r.querySelector('[data-card-next]').textContent).toBe('Parked: kept with its result, no longer counted as open.');
+  });
+
+  it('B-3: an expiry carries no quotation — even with a reason stored, it is the book\'s, not the agent\'s words; an answer still quotes its reason', async () => {
+    const nominated = [{ stage: 'nominated', at: at('20:00'), by: 'player', opId: 'e1' }];
+    const expired = base({ route: 'offer', stage: 'nominated', nomination: { bookId: 'b', nominationId: 'e1', state: 'expired', reason: 'Expired unread.', consideredAt: at('20:10') }, stageHistory: [...nominated, { stage: 'nominated', event: 'nomination', state: 'expired', reason: 'Expired unread.', consideredAt: at('20:10'), at: at('20:15'), by: 'server', writer: 'practice_field', opId: 's1' }] });
+    let r = await receiptOf(expired);
+    expect(r.querySelector('[data-quotation="yourAgent"]')).toBeNull();
+    // the decline's reason sits on its own row (Amendment A CA-11), quoted at the row's consideredAt
+    const declined = { ...expired, nomination: { ...expired.nomination, state: 'declined', reason: 'Not for this book.' }, stageHistory: [...nominated, { ...expired.stageHistory[1], state: 'declined', reason: 'Not for this book.', consideredAt: at('20:10') }] };
+    r = await receiptOf(declined);
+    expect(r.querySelector('[data-quotation="yourAgent"] [data-quote-path]').textContent).toBe('Not for this book.');
+  });
+
+  it('B-4: Set\'s sentence and its tempo link belong to the filed Set card at card — a Set card offered later and now testing, or queued, shows neither (RL-5\'s sentence and link stay together)', async () => {
+    expect(fx.tape2.tags.inputs.forcedRotation.enabled).toBe(true);
+    const asFiled = base({ route: 'set' });
+    let r = await receiptOf(asFiled, { tape: fx.tape2, onOpenForge: () => {} });
+    expect(r.querySelector('[data-set-link]')).toBeTruthy();   // the control: a filed Set card links
+    const testing = base({ route: 'set', stage: 'testing', idea: { bookId: 'b', ideaId: 'i' }, stageHistory: [...asFiled.stageHistory, { stage: 'nominated', at: at('20:05'), by: 'player', opId: 'n1' }, { stage: 'testing', at: at('20:20'), by: 'server', writer: 'practice_field', opId: 's2' }] });
+    r = await receiptOf(testing, { tape: fx.tape2, onOpenForge: () => {} });
+    expect(r.querySelector('[data-set-link]')).toBeNull();
+    expect(r.textContent).not.toContain('A change applies from your next battle.');
+    const queued = base({ route: 'set', stage: 'nominated', nomination: { bookId: 'b', nominationId: 'n1', state: 'queued' }, stageHistory: testing.stageHistory.slice(0, 2) });
+    r = await receiptOf(queued, { tape: fx.tape2, onOpenForge: () => {} });
+    expect(r.querySelector('[data-set-link]')).toBeNull();
+    expect(r.querySelector('[data-card-next]').textContent).toBe(RG5.offer);
+  });
+
+  it('B-6 / B-7 / B-8: a nomination row with no state, and a row with an event the chain does not know, give no line; a row with no instant says so in words, never as an instant', async () => {
+    const r = await receiptOf(base({ stage: 'tested', result: { ideaId: 'i', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' }, stageHistory: [
+      { stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' },
+      { stage: 'nominated', event: 'nomination', at: at('20:05'), by: 'server', opId: 's0' },
+      { stage: 'tested', at: null, by: 'server', opId: 's1' },
+      { stage: 'tested', event: 'unparked', at: at('20:30'), by: 'player', opId: 'u1' },
+    ] }));
+    expect(kinds(r)).toEqual(['tested', 'filed']);
+    expect(r.textContent).not.toContain('undefined');
+    const tested = r.querySelector('[data-chain-line="tested"]');
+    expect(tested.textContent).toContain('Tested · time not recorded');
+    expect(tested.querySelector('[data-time]')).toBeNull();
+  });
+});
+
+describe('C1 review — the mutating lens\'s survivors on the screen', () => {
+  it('D-M21: Offer shows ONLY when the counter reports the book open — never while it loads, after a failed first read, or when it answered with no book field', async () => {
+    const moment = momentsOf(fx.tape2.tags.items)[0];
+    for (const counter of [{ status: 'loading', data: null }, { status: 'idle', data: null }, { status: 'error', data: null }, { status: 'ready', data: { open: 0, cap: 5 } }, { status: 'ready', data: { open: 0, cap: 5, book: {} } }]) {
+      m.render(<YourCall key={JSON.stringify(counter)} tape={fx.tape2} moment={moment} counter={counter} mintOpId={() => 'op_f'} onFile={async () => ({ ok: true })} onCancel={() => {}} />);
+      await m.flush(1);
+      expect(m.qa('[data-route]').map((l) => l.getAttribute('data-route')), JSON.stringify(counter)).toEqual(['watch', 'set']);
+    }
+  });
+
+  it('D-M20: a park the server refuses as stale re-reads the counter, says why, and shows the counter\'s row; an unknown refusal says the park sentence', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    const by = { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, by: 'practice_field' };
+    await applyServerTransition(state.db, { ...by, to: 'nomination', opId: 'r1', payload: { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', ideaId: 'i1', reason: 'Testing it.', consideredAt: `${D2}T20:40:00.000Z` }, nowIso: `${D2}T20:45:00.000Z` });
+    await applyServerTransition(state.db, { ...by, to: 'testing', opId: 'r2', payload: { bookId: BOOK_ID, ideaId: 'i1' }, nowIso: `${D2}T20:50:00.000Z` });
+    await applyServerTransition(state.db, { ...by, to: 'tested', opId: 'r3', payload: { ideaId: 'i1', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' }, nowIso: `${D2}T20:55:00.000Z` });
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+    // the card moves on elsewhere (another tab parks it): the receipt still holds the old version
+    const stored = t.store.get(`agents/${AGENT}/plays/op_1`);
+    t.store.set(`agents/${AGENT}/plays/op_1`, { ...stored, version: stored.version + 1 });
+    const reads = counterCalls();
+    m.click(m.buttons('Park this card')[0]);
+    await m.flush(10);
+    expect(cardBodies().filter((b) => b.op === 'park')).toHaveLength(1);
+    expect(m.q('[data-card-receipt] [data-card-refusal]').textContent).toBe('This card changed since it was loaded. Reload and try again.');
+    expect(counterCalls()).toBe(reads + 1);
+    // an unknown refusal: the park's own sentence
+    m.teardown(); m.setup();
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [stored] } }} card={stored} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} onPark={async () => ({ ok: false, code: 'server_error' })} />);
+    await m.flush(2);
+    m.click(m.buttons('Park this card')[0]);
+    await m.flush(2);
+    expect(m.q('[data-card-refusal]').textContent).toBe('The card could not be parked.');
+  });
+});
+
+// ── C1 fix round, Astra F3 — an unknown first history row draws no "Filed" line (criteria 3 and 11) ────────────────
+describe('C1 fix round F3 — the chain recognises a create row by its shape, never by its index alone', () => {
+  const at = (hm) => `${D2}T${hm}:00.000Z`;
+  const card = (stageHistory, over = {}) => ({ entryId: 'e1', route: 'watch', stage: 'card', stageHistory, ...over });
+  const kindsOf = (c) => chainOf(c).map((l) => l.kind);
+
+  it("Astra's repro, through the real handler and counter: a card filed at 16:00Z (12:00 PM ET), its first row replaced by an unknown event at 17:00Z — the receipt draws no \"Filed · 1:00 PM\", no chain line at all, while the note credit still says 12:00 PM (the mutant: an unknown first row drawn as Filed)", async () => {
+    await atClock('2026-09-25T16:00:00.000Z', async () => {
+      await open();
+      m.click(m.buttons('Take this home')[0]);
+      await m.flush();
+      await fileCard({ note: 'Let it go sooner.' });
+    });
+    // the control: as filed, the receipt says Filed at 12:00 PM, and the note's credit the same
+    const filed = m.q('[data-card-receipt]');
+    expect(filed.querySelector('[data-chain-line="filed"]').textContent).toBe('Filed · 12:00 PM');
+    expect(filed.querySelector('[data-quotation="you"] [data-quote-attribution]').textContent).toContain('12:00 PM');
+    const path = `agents/${AGENT}/plays/op_1`;
+    t.store.set(path, { ...t.store.get(path), stageHistory: [{ event: 'unknown', at: '2026-09-25T17:00:00.000Z', by: 'server', writer: 'practice_field' }] });
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+    const r = m.q('[data-card-receipt]');
+    expect(r.textContent).not.toContain('Filed · 1:00 PM');
+    expect(r.querySelector('[data-chain-line]')).toBeNull();
+    expect(r.querySelector('[data-quotation="you"] [data-quote-attribution]').textContent).toContain('12:00 PM');
+    // and no entry in "Since last time" for a card whose history the chain does not know
+    expect(m.q(`[data-latest-line="op_1"]`)).toBeNull();
+  });
+
+  it('chainOf (pure): an unknown event at index zero gives no line and no latest entry; a server row at index zero is no create', () => {
+    expect(chainOf(card([{ event: 'unknown', at: at('17:00'), by: 'server', writer: 'practice_field' }]))).toEqual([]);
+    expect(chainOf(card([{ stage: 'card', event: 'unknown', at: at('17:00'), by: 'player' }]))).toEqual([]);
+    expect(chainOf(card([{ stage: 'card', at: at('17:00'), by: 'server', writer: 'practice_field' }]))).toEqual([]);
+    expect(chainOf(card([{ stage: 'retired', at: at('17:00'), by: 'player' }]))).toEqual([{ kind: 'retired', at: at('17:00'), k: 0, by: 'player' }]);
+    expect(latestOf([card([{ event: 'unknown', at: at('17:00'), by: 'server' }], { stage: 'nominated', route: 'offer' })])).toEqual([]);
+  });
+
+  it('kept: the valid Watch, Set and Offer first rows, the v1 drill first row, and "time not recorded" for a recognisable row with no time', () => {
+    expect(kindsOf(card([{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }]))).toEqual(['filed']);
+    expect(kindsOf(card([{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }], { route: 'set' }))).toEqual(['filed']);
+    expect(kindsOf(card([{ stage: 'nominated', at: at('20:00'), by: 'player', opId: 'e1' }], { route: 'offer', stage: 'nominated' }))).toEqual(['offered', 'filed']);
+    expect(kindsOf(card([{ stage: 'nominated', at: at('20:00'), by: 'player', opId: 'e1' }], { route: 'drill', stage: 'nominated' }))).toEqual(['stage', 'filed']);
+    expect(chainOf(card([{ stage: 'card', by: 'player', opId: 'e1' }]))).toEqual([{ kind: 'filed', at: undefined, k: 0 }]);
+    // a `card` row past the first is no create and no line
+    expect(kindsOf(card([{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }, { stage: 'card', at: at('20:10'), by: 'player', opId: 'e2' }]))).toEqual(['filed']);
+  });
+
+  it('a recognisable create row with no time renders "Filed · time not recorded", never an instant', async () => {
+    const c = { ...card([{ stage: 'card', by: 'player', opId: 'e1' }]), ownerId: OWNER, agentId: AGENT, createdAt: at('20:00'), situationId: 'stalled', source: { battleId: B, etDate: D2, symbol: 'ACN' }, questionId: 'stalled.want', note: 'A note.', version: 1 };
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [c] } }} card={c} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} />);
+    await m.flush(2);
+    const line = m.q('[data-chain-line="filed"]');
+    expect(line.textContent).toBe('Filed · time not recorded');
+    expect(line.querySelector('[data-time]')).toBeNull();
+  });
+});
+
+// ── Amendment A CA-3 — a declined or expired nomination closes the card: "Not taken" ───────────────────────────────
+describe('Amendment A CA-3 — My cards: a nominated card the agent did not take is listed under "Not taken", once', () => {
+  const move = (entryId, to, payload, clock) => applyServerTransition(state.db, { entryId, ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${to}_${clock.replace(/\D/g, '')}`, nowIso: `${D2}T${clock}:00.000Z` });
+  const group = (g) => m.qa(`[data-my-cards-group="${g}"] [data-my-card]`).map((b) => b.getAttribute('data-my-card'));
+
+  for (const state of ['declined', 'expired']) {
+    it(`a ${state} Offer card: under Not taken alone (never Active, never Parked), its receipt says it is kept and no longer open, no Retire; the open count drops (the mutant: a not-taken card listed under Parked)`, async () => {
+      openBook();
+      await open();
+      m.click(m.buttons('Take this home')[0]);
+      await m.flush();
+      await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+      await move('op_1', 'nomination', { bookId: BOOK_ID, nominationId: 'op_1', state, reason: state === 'declined' ? 'Not for this book.' : null, consideredAt: `${D2}T20:10:00.000Z` }, '20:15');
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      await open();
+      expect(group('notTaken')).toEqual(['op_1']);
+      expect(m.q('[data-my-cards-group="notTaken"]').textContent).toContain('Not taken');
+      for (const g of ['active', 'parked', 'equipped', 'retired', 'other', 'shelved']) expect(group(g), g).toEqual([]);
+      expect(m.qa('[data-my-card="op_1"]')).toHaveLength(1);
+      m.click(m.q('[data-my-card="op_1"]'));
+      await m.flush();
+      const r = m.q('[data-card-receipt="op_1"]');
+      expect(r.querySelector('[data-card-next]').textContent).toBe('Not taken: kept, no longer counted as open.');
+      expect(m.buttons('Retire')).toHaveLength(0);
+      // the form's open count, from the counter: nothing open
+      m.click(m.buttons('Take this home')[0]);
+      await m.flush();
+      expect(Number(m.q('[data-open-count] [data-num-aggregate="count(plays[] open)"]').getAttribute('data-agg-value'))).toBe(0);
+      await sweepAll(fx.tape2, `not taken ${state}`);
+    });
+  }
+
+  it('shelving keeps its precedence: a not-taken card under another archetype is Shelved, not Not taken', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    await move('op_1', 'nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'declined', reason: 'No.', consideredAt: `${D2}T20:10:00.000Z` }, '20:15');
+    t.store.set(`agents/${AGENT}`, { ...t.store.get(`agents/${AGENT}`), archetype: 'guardian' });
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    expect(group('shelved')).toEqual(['op_1']);
+    expect(group('notTaken')).toEqual([]);
+  });
+
+  it('groupCards (pure): every stage × parked × shelved, and nominated × every copy state — each card in exactly one list', () => {
+    const cards = [];
+    for (const stage of ['card', 'nominated', 'testing', 'tested', 'installed', 'retired', 'drilled']) {
+      for (const parkedAt of [undefined, '2026-09-25T21:00:00.000Z']) {
+        for (const shelved of [false, true]) {
+          const states = stage === 'nominated' ? [undefined, 'queued', 'considered', 'accepted', 'deferred', 'declined', 'expired', 'withdrawn'] : [undefined];
+          for (const s of states) cards.push({ entryId: `${stage}:${parkedAt ? 'p' : 'u'}:${shelved ? 's' : 'a'}:${s ?? '-'}`, stage, parkedAt, shelved, ...(s ? { nomination: { state: s } } : {}) });
+        }
+      }
+    }
+    const g = groupCards(cards);
+    const all = Object.values(g).flat();
+    expect(all).toHaveLength(cards.length);
+    expect(new Set(all.map((c) => c.entryId)).size).toBe(cards.length);
+    expect(g.notTaken.map((c) => c.entryId).sort()).toEqual([
+      'nominated:p:a:declined', 'nominated:p:a:expired', 'nominated:p:a:withdrawn', 'nominated:u:a:declined', 'nominated:u:a:expired', 'nominated:u:a:withdrawn',
+    ]);
+    expect(g.parked.map((c) => c.entryId)).toEqual(['tested:p:a:-']);
+    expect(g.active.every((c) => !c.shelved)).toBe(true);
+    expect(g.active.some((c) => c.stage === 'nominated' && ['declined', 'expired', 'withdrawn'].includes(c.nomination?.state))).toBe(false);
+    expect(g.shelved.every((c) => c.stage !== 'retired')).toBe(true);
+  });
+});
+
+// ── Amendment A CA-1, CA-2, CA-5 — the receipt's Retire, and a withdrawn card's line ───────────────────────────────
+describe('Amendment A CA-1 / CA-2 / CA-5 — Retire shows where the player may retire; a withdrawal says so', () => {
+  const at = (hm) => `${D2}T${hm}:00.000Z`;
+  const base = (over = {}) => ({
+    entryId: 'e1', ownerId: OWNER, agentId: AGENT, createdAt: at('20:00'), archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: 2,
+    source: { battleId: B, etDate: D2, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 }, questionId: 'stalled.want', questionVersion: 1, note: 'A note.', route: 'offer',
+    stage: 'card', stageAt: at('20:00'), stageHistory: [{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }], version: 1, ...over,
+  });
+  const retireShown = async (card) => {
+    m.teardown(); m.setup();
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [card] } }} card={card} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} onPark={async () => ({ ok: true })} />);
+    await m.flush(2);
+    return m.buttons('Retire').length === 1;
+  };
+
+  it('the receipt reads isRetirableByPlayer: Retire on a card, a nominated card queued / considered / deferred or with no copy (v1); never on testing (CA-1), an accepted nomination (CA-2), a not-taken one, or a result with an offer waiting (CA-5) — Park still shows there', async () => {
+    const nom = (state) => base({ stage: 'nominated', nomination: { bookId: 'b', nominationId: 'e1', state } });
+    expect(await retireShown(base())).toBe(true);
+    for (const state of ['queued', 'considered', 'deferred']) expect(await retireShown(nom(state)), state).toBe(true);
+    expect(await retireShown(base({ route: 'drill', stage: 'nominated' }))).toBe(true);
+    for (const state of ['accepted', 'declined', 'expired']) expect(await retireShown(nom(state)), state).toBe(false);
+    expect(await retireShown(base({ stage: 'testing', idea: { bookId: 'b', ideaId: 'i' } }))).toBe(false);
+    expect(await retireShown(base({ stage: 'tested', result: { ideaId: 'i', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' } }))).toBe(true);
+    expect(await retireShown(base({ stage: 'tested', result: { ideaId: 'i', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' }, offer: { ideaId: 'i', offerId: 'o', state: 'offered' } }))).toBe(false);
+    expect(m.buttons('Park this card')).toHaveLength(1);
+  });
+
+  it('through the real handler: an Offer card retired while its record is queued — the record withdrawn, the chain\'s newest line "Withdrawn and retired · {time}", the card under Retired', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/op_1`).state).toBe('queued');
+    await atClock(`${D2}T20:30:00.000Z`, async () => {
+      m.click(m.buttons('Retire')[0]);
+      await m.flush(10);
+    });
+    expect(t.store.get(`mandates/${BOOK_ID}/nominations/op_1`)).toMatchObject({ state: 'withdrawn', withdrawnAt: `${D2}T20:30:00.000Z` });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ stage: 'retired', nomination: { state: 'withdrawn' } });
+    const r = m.q('[data-card-receipt="op_1"]');
+    expect(r.querySelector('[data-chain-line]').textContent).toBe('Withdrawn and retired · 4:30 PM');
+    expect(r.querySelector('[data-card-next]').textContent).toBe('Retired: nothing happens next.');
+    expect(m.qa('[data-my-cards-group="retired"] [data-my-card]').map((b) => b.getAttribute('data-my-card'))).toEqual(['op_1']);
+    await sweepAll(fx.tape2, 'withdrawn');
+  });
+
+  it('a Watch card retired (no nomination) still says "Retired", never "Withdrawn"; a server retire keeps its Forge offer line', () => {
+    const watch = base({ route: 'watch', stage: 'retired', stageHistory: [{ stage: 'card', at: at('20:00'), by: 'player' }, { stage: 'retired', at: at('20:30'), by: 'player' }] });
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [watch] } }} card={watch} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} />);
+    expect(m.q('[data-chain-line="retired"]').textContent).toBe('Retired · 4:30 PM');
+  });
+
+  it('the refusal nomination_unavailable says its own words: nothing changed, try again', async () => {
+    const card = base({ stage: 'nominated', nomination: { bookId: 'b', nominationId: 'e1', state: 'queued' } });
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [card] } }} card={card} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: false, code: 'nomination_unavailable' })} />);
+    await m.flush(2);
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(2);
+    expect(m.q('[data-card-refusal]').textContent).toBe("This card's offer could not be checked. Nothing was changed. Try again.");
+  });
+});
+
+// ── Amendment A CA-4 / CA-11 — the agent's words on the chain, each from its own source at its own time ───────────
+describe('Amendment A CA-4 / CA-11 — the chain quotes each answer from its own row, and the closing note at its own time', () => {
+  const move = (to, payload, clock, opId = `s_${to}_${clock.replace(/\D/g, '')}`) => applyServerTransition(state.db, { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId, nowIso: `${D2}T${clock}:00.000Z` });
+  const offerCard = async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+  };
+  const reopen = async () => {
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+    return m.q('[data-card-receipt="op_1"]');
+  };
+  const quotesOf = (r) => [...r.querySelectorAll('[data-quotation="yourAgent"]')].map((q) => [q.closest('[data-chain-line]').getAttribute('data-chain-line'), q.querySelector('[data-quote-path]').textContent, q.querySelector('[data-quote-attribution]').textContent]);
+
+  it('the tested line quotes the agent\'s closing note at closingNoteAt (4:52), never the delivery time (4:55); an accepted line with no thesis quotes nothing — never its reason', async () => {
+    await offerCard();
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', ideaId: 'idea-1', reason: 'Taking it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
+    await move('testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead', closingNote: 'The stall resolved upward; holding paid this once.', closingNoteAt: `${D2}T20:52:00.000Z` }, '20:55');
+    const r = await reopen();
+    expect(quotesOf(r)).toEqual([['tested', 'The stall resolved upward; holding paid this once.', '— your agent · 4:52 PM']]);
+    expect(r.querySelector('[data-quotation="yourAgent"] [data-quote-path]').getAttribute('data-quote-path')).toBe('cards.op_1.result.closingNote');
+    expect(r.textContent).not.toContain('Taking it.');
+    await sweepAll(fx.tape2, 'closing note');
+  });
+
+  it('a deferral, then a decline: each line quotes its OWN reason at its own consideredAt — the later answer never rewrites the earlier one', async () => {
+    await offerCard();
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'deferred', reason: 'Later, the book is full.', consideredAt: `${D2}T20:05:00.000Z` }, '20:10');
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'declined', reason: 'Not a fit for this archetype.', consideredAt: `${D2}T20:25:00.000Z` }, '20:30');
+    const r = await reopen();
+    expect(quotesOf(r)).toEqual([
+      ['nomination', 'Not a fit for this archetype.', '— your agent · 4:25 PM'],
+      ['nomination', 'Later, the book is full.', '— your agent · 4:05 PM'],
+    ]);
+    await sweepAll(fx.tape2, 'two answers');
+  });
+});
+
+// ── Amendment A CA-5 and CA-22 — the chain's offer line and the no-fill line, from the ledger's own writes ───────────
+describe('Amendment A CA-5 / CA-22 — "An offer waits in the Forge" and "Ended before its first trade", through the real helper', () => {
+  const move = (to, payload, clock, opId = `s_${to}_${clock.replace(/\D/g, '')}`) => applyServerTransition(state.db, { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId, nowIso: `${D2}T${clock}:00.000Z` });
+  const offerCard = async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', ideaId: 'idea-1', consideredAt: `${D2}T20:40:00.000Z`, thesis: 'One more check pays.' }, '20:45');
+  };
+  const reopen = async () => {
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+    return m.q('[data-card-receipt="op_1"]');
+  };
+  const kinds = (r) => [...r.querySelectorAll('[data-chain-line]')].map((l) => l.getAttribute('data-chain-line'));
+  const firstLine = (r) => r.querySelector('[data-chain-line]').querySelector('span').textContent;
+
+  it('tested → offered → parked → installed: one Tested line; the waiting offer dated at its own row, parked or not, never a second "Tested"; no Retire while it waits, Park still there; once installed, "Equipped" and no waiting line (the mutant: offered drawn as a second Tested)', async () => {
+    await offerCard();
+    await move('testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' }, '20:55');
+    await move('offered', { ideaId: 'idea-1', offerId: 'offer-1', state: 'offered' }, '21:00');
+    let r = await reopen();
+    expect(kinds(r)).toEqual(['offerWaits', 'tested', 'testing', 'nomination', 'offered', 'filed']);
+    expect(firstLine(r)).toBe('An offer waits in the Forge · 5:00 PM');
+    expect([...r.querySelectorAll('[data-chain-line="tested"]')]).toHaveLength(1);
+    expect(r.querySelector('[data-chain-line="tested"] span').textContent).toBe('Tested · 4:55 PM · contract condition met · economic result ahead');
+    expect(m.buttons('Retire')).toHaveLength(0);
+    expect(m.buttons('Park this card')).toHaveLength(1);
+    await sweepAll(fx.tape2, 'offer waits');
+    m.click(m.buttons('Park this card')[0]);
+    await m.flush(10);
+    r = m.q('[data-card-receipt="op_1"]');
+    expect(kinds(r)).toEqual(['parked', 'offerWaits', 'tested', 'testing', 'nomination', 'offered', 'filed']);
+    await move('installed', { ideaId: 'idea-1', offerId: 'offer-1', state: 'accepted' }, '21:10');
+    r = await reopen();
+    expect(kinds(r)).toEqual(['installed', 'parked', 'tested', 'testing', 'nomination', 'offered', 'filed']);
+    expect(firstLine(r)).toBe('Equipped · 5:10 PM');
+    expect(r.textContent).not.toContain('An offer waits');
+    await sweepAll(fx.tape2, 'installed after offer');
+  });
+
+  it('an accepted idea that ended before any fill: "Ended before its first trade · {time}" with the result\'s own words and the closing note quoted at its time — no Testing line, never "Tested"; Since last time says the same', async () => {
+    await offerCard();
+    await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'unobserved', economicResult: 'unmeasurable', noFill: true, closingNote: 'Never reached an entry price.', closingNoteAt: `${D2}T20:52:00.000Z` }, '20:55');
+    const r = await reopen();
+    expect(kinds(r)).toEqual(['tested', 'nomination', 'offered', 'filed']);
+    expect(firstLine(r)).toBe('Ended before its first trade · 4:55 PM · contract condition unobserved · economic result unmeasurable');
+    expect(r.textContent).not.toMatch(/Tested ·|Testing ·/);
+    const quote = r.querySelector('[data-chain-line="tested"] [data-quotation="yourAgent"]');
+    expect(quote.querySelector('[data-quote-path]').textContent).toBe('Never reached an entry price.');
+    expect(quote.querySelector('[data-quote-attribution]').textContent).toBe('— your agent · 4:52 PM');
+    expect(m.q('[data-latest-line="op_1"]').textContent).toContain('Ended before its first trade · 4:55 PM');
+    await sweepAll(fx.tape2, 'ended before first trade');
+  });
+
+  it('read from the ONE stored fact (the result\'s noFill), never from a missing testing row (the mutant): a tested row with no testing row before it but no flag says "Tested"; the chain line and the stage word agree whichever flag a split record carries (§2 review B3)', async () => {
+    const at = (hm) => `${D2}T${hm}:00.000Z`;
+    const card = {
+      entryId: 'e1', route: 'offer', stage: 'tested', result: { ideaId: 'i', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' },
+      stageHistory: [{ stage: 'nominated', at: at('20:00'), by: 'player' }, { stage: 'nominated', event: 'nomination', state: 'accepted', at: at('20:10'), by: 'server' }, { stage: 'tested', at: at('20:30'), by: 'server' }],
+    };
+    expect(chainOf(card)[0]).toEqual({ kind: 'tested', at: at('20:30'), k: 2, by: 'server' });
+    // the result's stored fact draws it, on the chain and the stage word alike
+    expect(chainOf({ ...card, result: { ...card.result, noFill: true } })[0]).toMatchObject({ kind: 'tested', noFill: true });
+    // a row flag alone (a split record no writer leaves) draws nothing different from the stage word: both say tested
+    const rowOnly = { ...card, stageHistory: [...card.stageHistory.slice(0, 2), { stage: 'tested', at: at('20:30'), by: 'server', noFill: true }] };
+    expect(chainOf(rowOnly)[0]).not.toHaveProperty('noFill');
+    const said = async (c) => {
+      m.teardown(); m.setup();
+      const full = { ...c, ownerId: OWNER, agentId: AGENT, createdAt: at('20:00'), situationId: 'stalled', source: { battleId: B, etDate: D2, symbol: 'ACN' }, questionId: 'stalled.want', note: 'A note.', version: 3 };
+      m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [full] } }} card={full} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} />);
+      await m.flush(2);
+      const r = m.q('[data-card-receipt]');
+      return [r.querySelector('[data-chain-line="tested"] span').textContent.split(' · ')[0], /Stage · ([a-z ]+)/.exec(r.textContent)[1]];
+    };
+    expect(await said({ ...card, result: { ...card.result, noFill: true } })).toEqual(['Ended before its first trade', 'ended before its first trade']);
+    expect(await said(rowOnly)).toEqual(['Tested', 'tested']);
+  });
+});
+
+// ── Amendment A CA-9 and CA-17 — `considered` in its own words; one label reader for the stage word ───────────────
+describe('Amendment A CA-9 / CA-17 — the words: "Your agent considered this", and one stage word wherever a stage is named', () => {
+  const move = (entryId, to, payload, clock) => applyServerTransition(state.db, { entryId, ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${to}_${clock.replace(/\D/g, '')}`, nowIso: `${D2}T${clock}:00.000Z` });
+  const reopen = async (id) => {
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q(`[data-my-card="${id}"]`));
+    await m.flush();
+    return m.q(`[data-card-receipt="${id}"]`);
+  };
+
+  it('CA-9: a real considered copy with a reason reads "Your agent considered this · {time}" with no quotation, on the receipt and in Since last time; a deferral after it still quotes its reason', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    await move('op_1', 'nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'considered', reason: 'Looking at the book first.', consideredAt: `${D2}T20:05:00.000Z` }, '20:10');
+    let r = await reopen('op_1');
+    expect(r.querySelector('[data-chain-line="nomination"] span').textContent).toBe('Your agent considered this · 4:10 PM');
+    expect(r.querySelector('[data-quotation="yourAgent"]')).toBeNull();
+    expect(r.textContent).not.toContain('Looking at the book first.');
+    expect(m.q('[data-latest-line="op_1"]').textContent).toContain('Your agent considered this · 4:10 PM');
+    await sweepAll(fx.tape2, 'considered');
+    await move('op_1', 'nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'deferred', reason: 'Next week.', consideredAt: `${D2}T20:20:00.000Z` }, '20:25');
+    r = await reopen('op_1');
+    expect([...r.querySelectorAll('[data-quotation="yourAgent"] [data-quote-path]')].map((q) => q.textContent)).toEqual(['Next week.']);
+  });
+
+  it('CA-17: a v1 WATCH card and a v1 SET card nominated through the real writer stay v1 and read "offered to your agent" on the route line and in My cards (the mutant: a v1 Watch card\'s nomination drawn as "nominated for the Practice Field"); a v1 drill entry keeps "nominated for the Practice Field" everywhere', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const doc = t.store.get(`agents/${AGENT}/plays/op_1`);
+    const v1 = (id, route) => { const e = { ...doc, entryId: id, opId: id, route, note: `A v1 ${route} card.`, createdAt: `${D2}T19:0${id.length % 10}:00.000Z`, stageHistory: [{ ...doc.stageHistory[0], opId: id }] }; delete e.stageVocabVersion; t.store.set(`agents/${AGENT}/plays/${id}`, e); };
+    v1('v1w', 'watch');
+    v1('v1set', 'set');
+    v1('v1drill', 'drill');
+    t.store.set(`agents/${AGENT}/plays/v1drill`, { ...t.store.get(`agents/${AGENT}/plays/v1drill`), stage: 'nominated', stageHistory: [{ stage: 'nominated', at: `${D2}T19:00:00.000Z`, by: 'player', opId: 'v1drill' }] });
+    for (const id of ['v1w', 'v1set']) {
+      const res = await api.postCard({ op: 'nominate', opId: `n_${id}`, agentId: AGENT, entryId: id, expectedVersion: 1 });
+      expect(res.status, id).toBe(200);
+      expect('stageVocabVersion' in t.store.get(`agents/${AGENT}/plays/${id}`), id).toBe(false);
+    }
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    expect(m.q('[data-my-card="v1w"]').textContent).toContain('Watch · offered to your agent');
+    expect(m.q('[data-my-card="v1set"]').textContent).toContain('Set · offered to your agent');
+    expect(m.q('[data-my-card="v1drill"]').textContent).toContain('Offer · nominated for the Practice Field');
+    m.click(m.q('[data-my-card="v1w"]'));
+    await m.flush();
+    expect(m.q('[data-card-receipt="v1w"]').textContent).toContain('Route · Watch · Stage · offered to your agent');
+    expect(m.q('[data-card-receipt="v1w"] [data-chain-line]').getAttribute('data-chain-line')).toBe('offered');
+    expect(m.q('[data-card-receipt="v1w"]').textContent).not.toContain('Practice Field');
+    m.click(m.q('[data-my-card="v1drill"]'));
+    await m.flush();
+    const drill = m.q('[data-card-receipt="v1drill"]');
+    expect(drill.textContent).toContain('Route · Offer · Stage · nominated for the Practice Field');
+    expect(drill.querySelector('[data-chain-line="stage"]').textContent).toBe('nominated for the Practice Field · 3:00 PM');
+    expect(m.q('[data-latest-line="v1drill"]').textContent).toContain('nominated for the Practice Field');
+    await sweepAll(fx.tape2, 'v1 labels');
+  });
+
+  it('CA-17 / CA-22: one reader everywhere — a tested card whose idea ended before any fill reads "ended before its first trade" on the route line and in My cards (and its chain line says so); a normal tested card reads "tested"', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    await move('op_1', 'nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', ideaId: 'idea-1', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
+    await move('op_1', 'tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'unobserved', economicResult: 'unmeasurable', noFill: true }, '20:55');
+    const r = await reopen('op_1');
+    expect(r.textContent).toContain('Route · Offer · Stage · ended before its first trade');
+    expect(m.q('[data-my-card="op_1"]').textContent).toContain('Offer · ended before its first trade');
+    expect(r.textContent).not.toMatch(/Stage · tested|Tested ·/);
+    const card = t.store.get(`agents/${AGENT}/plays/op_1`);
+    m.teardown(); m.setup();
+    const normal = { ...card, result: { ...card.result, noFill: undefined } };
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [normal] } }} card={normal} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} />);
+    await m.flush(2);
+    expect(m.q('[data-card-receipt]').textContent).toContain('Stage · tested');
+  });
+});
+
+// ── Amendment A CA-7 — the receipt's "Offer to your agent" ────────────────────────────────────────────────────────
+describe('Amendment A CA-7 — "Offer to your agent" on a card-stage receipt, only while the owner\'s book is open', () => {
+  const at = (hm) => `${D2}T${hm}:00.000Z`;
+  const base = (over = {}) => ({
+    entryId: 'e1', ownerId: OWNER, agentId: AGENT, createdAt: at('20:00'), archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: 2, stageVocabVersion: 2,
+    source: { battleId: B, etDate: D2, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 }, questionId: 'stalled.want', questionVersion: 1, note: 'A note.', route: 'watch',
+    stage: 'card', stageAt: at('20:00'), stageHistory: [{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }], version: 1, ...over,
+  });
+  const shown = async (card, counter) => {
+    m.teardown(); m.setup();
+    // the card as the counter holds it (its computed shelving with it), where the counter has answered
+    const held = counter.data ? { ...counter, data: { ...counter.data, cards: [card] } } : counter;
+    m.render(<Receipt day={D2} counter={held} card={card} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} onPark={async () => ({ ok: true })} onNominate={async () => ({ ok: true })} />);
+    await m.flush(2);
+    return m.buttons('Offer to your agent').length === 1;
+  };
+
+  it('THE MATRIX: shown only for a card at card, not shelved, while the counter says book.open === true — never while it loads, after a failed first read, with the field missing, false, or a truthy non-true (the mutant: the Offer button shown with book missing or still loading)', async () => {
+    const ready = (book) => ({ status: 'ready', data: { cards: [], open: 0, cap: 5, ...(book === undefined ? {} : { book }) } });
+    const counters = [
+      ['loading', { status: 'loading', data: null }, false], ['idle', { status: 'idle', data: null }, false], ['failed first read', { status: 'error', data: null }, false],
+      ['no book field', ready(undefined), false], ['book {}', ready({}), false], ['open false', ready({ open: false }), false], ['open "true"', ready({ open: 'true' }), false],
+      ['open true', ready({ open: true }), true], ['open true kept through a failed re-read', { status: 'error', data: ready({ open: true }).data }, true],
+    ];
+    for (const [name, counter, want] of counters) expect(await shown(base(), counter), name).toBe(want);
+    const open = ready({ open: true });
+    const v1 = base();
+    delete v1.stageVocabVersion;
+    for (const [name, card, want] of [
+      ['a v2 Watch card', base(), true], ['a v1 Watch card', v1, true], ['a Set card', base({ route: 'set' }), true],
+      ['a shelved card', base({ shelved: true }), false], ['a nominated card', base({ stage: 'nominated', route: 'offer', nomination: { bookId: 'b', nominationId: 'e1', state: 'queued' } }), false],
+      ['a tested card', base({ stage: 'tested', result: { ideaId: 'i', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' } }), false], ['a retired card', base({ stage: 'retired' }), false],
+    ]) expect(await shown(card, open), name).toBe(want);
+    // with it, Offer's route note sits above the button
+    await shown(base(), open);
+    const note = m.q('[data-offer-note]');
+    expect(note.textContent).toBe(RG5.offer);
+    expect(note.compareDocumentPosition(m.buttons('Offer to your agent')[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('through the real handler: one tap sends ONE nominate under the receipt\'s own op id (never the retire\'s), the card moves to nominated — "Offered to your agent" — and the button goes', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const receipt = m.q('[data-card-receipt="op_1"]');
+    const retireOp = receipt.getAttribute('data-card-op');
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(10);
+    const bodies = cardBodies().filter((b) => b.op === 'nominate');
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toEqual({ op: 'nominate', opId: expect.any(String), agentId: AGENT, entryId: 'op_1', expectedVersion: 1 });
+    expect(bodies[0].opId).not.toBe(retireOp);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ stage: 'nominated', nomination: { state: 'queued' } });
+    const r = m.q('[data-card-receipt="op_1"]');
+    expect(r.querySelector('[data-chain-line]').getAttribute('data-chain-line')).toBe('offered');
+    expect(r.textContent).toContain('Stage · offered to your agent');
+    expect(m.buttons('Offer to your agent')).toHaveLength(0);
+    await sweepAll(fx.tape2, 'offered from the receipt');
+  });
+
+  it('a lost answer re-tapped sends the SAME op id, and the store answers once (the mutant: two taps minting two ids)', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const real = api.postCard;
+    let lose = true;
+    api.postCard = async (body) => { if (body.op === 'nominate' && lose) { lose = false; await real(body); return { ok: false, status: 0, body: null }; } return real(body); };
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(10);
+    expect(m.q('[data-card-refusal]').textContent).toBe('The card could not be offered.');
+    // the answer was lost after the store committed: the re-read shows the card nominated, so the button is gone; the
+    // receipt kept its op id — a re-tap from a receipt still showing the card (as before the refresh) would send it
+    const sent = api.calls.filter((c) => c[0] === 'card' && c[1].op === 'nominate').map((c) => c[1].opId);
+    expect(sent).toHaveLength(1);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('nominated');
+    // a receipt over a stale counter that still shows the card: two taps, one id, one nomination
+    const card = { ...t.store.get(`agents/${AGENT}/plays/op_1`), stage: 'card', version: 1, stageHistory: t.store.get(`agents/${AGENT}/plays/op_1`).stageHistory.slice(0, 1) };
+    delete card.nomination;
+    const ids = [];
+    m.teardown(); m.setup();
+    let n = 0;
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [card], book: { open: true } } }} card={card} mintOpId={() => `op_m${(n += 1)}`} onRetire={async () => ({ ok: true })} onNominate={async (_c, opId) => { ids.push(opId); return { ok: false, code: 'nominateDefault' }; }} />);
+    await m.flush(2);
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(2);
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(2);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
+    expect(ids[0]).not.toBe(m.q('[data-card-receipt]').getAttribute('data-card-op'));
+  });
+
+  it('a refusal re-reads the counter and says why: the book closed since the counter answered → its words, never "filed"; the re-read hides the button', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    t.store.set(`mandates/${BOOK_ID}`, { ...t.store.get(`mandates/${BOOK_ID}`), status: 'closed' });
+    setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: BOOK_ID, status: 'closed' }) });
+    const reads = counterCalls();
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(10);
+    expect(m.q('[data-card-refusal]').textContent).toBe('This card cannot be offered to your agent now. Nothing was offered.');
+    expect(counterCalls()).toBe(reads + 1);
+    expect(m.buttons('Offer to your agent')).toHaveLength(0);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('card');
+  });
+
+  it('every refusal\'s words: each source refusal one sentence; tape, attribution, book, calendar their own; any other code the receipt\'s existing words; the default its own — and none says "Nothing was filed" or "could not be filed"', async () => {
+    const said = async (code) => {
+      m.teardown(); m.setup();
+      const card = base();
+      m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [card], book: { open: true } } }} card={card} mintOpId={() => 'op_x'} onRetire={async () => ({ ok: true })} onNominate={async () => ({ ok: false, code })} />);
+      await m.flush(2);
+      m.click(m.buttons('Offer to your agent')[0]);
+      await m.flush(2);
+      return m.q('[data-card-refusal]').textContent;
+    };
+    const SOURCE = "This card's moment has changed on the tape since it was filed, so it can't be offered. The card stays as it is.";
+    for (const code of ['moment_not_found', 'source_changed', 'tags_unavailable', 'tape_not_found', 'archetype_changed', 'archetype_unknown']) expect(await said(code), code).toBe(SOURCE);
+    expect(await said('tape_unreadable')).toBe('The tape for this day could not be read. Nothing was offered. Try again.');
+    expect(await said('attribution_unavailable')).toBe('The agent this card belongs to could not be resolved. Nothing was offered. Try again.');
+    expect(await said('book_not_open')).toBe('This card cannot be offered to your agent now. Nothing was offered.');
+    expect(await said('calendar_unavailable')).toBe("The offer's expiry could not be placed on the market calendar. Nothing was offered.");
+    expect(await said('version_conflict')).toBe(COPY_CARDS.refusals.version_conflict);
+    expect(await said('illegal_transition')).toBe(COPY_CARDS.refusals.illegal_transition);
+    for (const code of ['server_error', 'nominateDefault', 'default', undefined]) expect(await said(code), String(code)).toBe('The card could not be offered.');
+    const all = [...Object.values(COPY_CARDS.offerRefusals)];
+    expect(all.filter((w) => /Nothing was filed|could not be filed|cannot be filed/.test(w))).toEqual([]);
+  });
+
+  it('a successful offer whose counter refresh then fails keeps the nominated card on the receipt (RI-2), the read error said beside it', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const realRead = api.readCounter;
+    api.readCounter = async () => ({ ok: false, status: 503, body: null });
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(10);
+    expect(m.q('[data-card-receipt="op_1"]').textContent).toContain('Stage · offered to your agent');
+    expect(m.q('[data-cards-read-error]')).toBeTruthy();
+    api.readCounter = realRead;
+  });
+
+  it('cards off: no receipt, no Offer button, no request', async () => {
+    state.cards = 'off';
+    openBook();
+    await open();
+    expect(m.buttons('Offer to your agent')).toHaveLength(0);
+    expect(m.q('[data-offer-note]')).toBeNull();
+    expect(api.calls).toEqual([]);
+  });
+});
+
+// ── the fix round's §2 review (report §9.7): the create row by the stored route; no player line from a server row ──
+describe('C1 fix round §2 review — the chain\'s create row is the stored route\'s; a server row never draws the player\'s line', () => {
+  const at = (hm) => `${D2}T${hm}:00.000Z`;
+  const card = (stageHistory, over = {}) => ({ entryId: 'e1', route: 'watch', stage: 'nominated', stageHistory, ...over });
+
+  it('B1: a WATCH or SET card\'s player `nominated` row at index zero is its nominate op, never its filing — no "Filed" line (Astra\'s F3 contradiction through another first row)', () => {
+    for (const route of ['watch', 'set']) {
+      expect(chainOf(card([{ stage: 'nominated', by: 'player', at: at('17:00'), opId: 'n1' }], { route })).map((l) => l.kind), route).toEqual(['offered']);
+    }
+    // kept: the Offer route and a v1 drill entry are filed at nominated; Watch and Set at card
+    expect(chainOf(card([{ stage: 'nominated', by: 'player', at: at('17:00'), opId: 'e1' }], { route: 'offer' })).map((l) => l.kind)).toEqual(['offered', 'filed']);
+    expect(chainOf(card([{ stage: 'nominated', by: 'player', at: at('17:00'), opId: 'e1' }], { route: 'drill' })).map((l) => l.kind)).toEqual(['stage', 'filed']);
+    expect(chainOf(card([{ stage: 'card', by: 'player', at: at('17:00'), opId: 'e1' }], { route: 'set', stage: 'card' })).map((l) => l.kind)).toEqual(['filed']);
+    // an Offer card's first row at `card` is no create (an Offer is filed at nominated), and an unknown route files nothing
+    expect(chainOf(card([{ stage: 'card', by: 'player', at: at('17:00'), opId: 'e1' }], { route: 'offer', stage: 'card' }))).toEqual([]);
+    expect(chainOf(card([{ stage: 'card', by: 'player', at: at('17:00'), opId: 'e1' }], { route: 'practice', stage: 'card' }))).toEqual([]);
+  });
+
+  it('B1 on the receipt: a Watch card filed at 16:00Z whose first row became its nominate row at 17:00Z draws no "Filed · 1:00 PM" beside a note credited 12:00 PM', async () => {
+    const c = { ...card([{ stage: 'nominated', by: 'player', at: '2026-09-25T17:00:00.000Z', opId: 'n1' }]), ownerId: OWNER, agentId: AGENT, createdAt: '2026-09-25T16:00:00.000Z', situationId: 'stalled', source: { battleId: B, etDate: D2, symbol: 'ACN' }, questionId: 'stalled.want', note: 'A note.', nomination: { bookId: 'b', nominationId: 'n1', state: 'queued' }, version: 2 };
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [c] } }} card={c} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} />);
+    await m.flush(2);
+    const r = m.q('[data-card-receipt]');
+    expect(r.textContent).not.toContain('Filed');
+    expect(r.querySelector('[data-quotation="you"] [data-quote-attribution]').textContent).toContain('12:00 PM');
+  });
+
+  it('B2: a SERVER row at nominated with no event draws no "Offered to your agent" — that line is the player\'s nominate alone; nor does it reach the latest list', () => {
+    const c = card([{ stage: 'nominated', by: 'server', writer: 'practice_field', at: at('17:00') }], { route: 'offer' });
+    expect(chainOf(c)).toEqual([]);
+    expect(latestOf([c])).toEqual([]);
+    expect(chainOf(card([{ stage: 'card', by: 'player', at: at('16:00') }, { stage: 'nominated', by: 'server', at: at('17:00') }])).map((l) => l.kind)).toEqual(['filed']);
+  });
+});
+
+describe('C1 fix round §2 review A2 — a casual clone\'s offer names the parent the card is filed under', () => {
+  it('on a clone\'s battle the receipt\'s offer sends the card\'s own agent (the ranked parent), so its lost answer re-tapped after the clone\'s document is gone is still its own replay (the 200), where a clone-named re-tap could no longer be resolved', async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    t.store.set(`agentBattles/${B}`, { ...fx.battle, agentId: CLONE });
+    t.store.set(`agentBattles/${B}/tape/${D2}`, { ...fx.tape2, agentId: CLONE });
+    openBook();
+    await open({ battle: battleOf({ agentId: CLONE }), tapes: { [D1]: { ...fx.tape1, agentId: CLONE }, [D2]: { ...fx.tape2, agentId: CLONE } } });
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ agentId: AGENT, stage: 'card' });
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(10);
+    const sent = cardBodies().filter((b) => b.op === 'nominate');
+    expect(sent).toHaveLength(1);
+    expect(sent[0].agentId).toBe(AGENT);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('nominated');
+    // the clone's document gone: the same request (a lost answer re-tapped) is still the idempotent answer
+    t.store.delete(`agents/${CLONE}`);
+    const again = await api.postCard(sent[0]);
+    expect(again).toMatchObject({ ok: true, status: 200, body: { idempotent: true } });
+    // where the clone-named request could no longer be resolved
+    expect(await api.postCard({ ...sent[0], agentId: CLONE })).toMatchObject({ ok: false, status: 503, body: { error: 'attribution_unavailable' } });
+  });
+});
+
+describe('C1 fix round §2 review (the mutating lens, LD-3) — Offer and Retire never run at once from one receipt', () => {
+  const card = { entryId: 'e1', ownerId: OWNER, agentId: AGENT, createdAt: `${D2}T20:00:00.000Z`, situationId: 'stalled', source: { battleId: B, etDate: D2, symbol: 'ACN' }, questionId: 'stalled.want', note: 'A note.', route: 'watch', stage: 'card', stageHistory: [{ stage: 'card', at: `${D2}T20:00:00.000Z`, by: 'player', opId: 'e1' }], version: 1, stageVocabVersion: 2 };
+  const counter = { status: 'ready', data: { cards: [card], book: { open: true } } };
+
+  it('while an offer is in flight Retire is disabled, and while a retire is in flight Offer is disabled; each enabled again when it settles', async () => {
+    let settle;
+    m.render(<Receipt day={D2} counter={counter} card={card} mintOpId={() => 'op_r'} onRetire={() => new Promise((r) => { settle = r; })} onNominate={() => new Promise((r) => { settle = r; })} />);
+    await m.flush(2);
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(1);
+    expect(m.buttons('Offering…')).toHaveLength(1);
+    expect(m.buttons('Retire')[0].disabled).toBe(true);
+    settle({ ok: false, code: 'book_not_open' });
+    await m.flush(2);
+    expect(m.buttons('Retire')[0].disabled).toBe(false);
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(1);
+    expect(m.buttons('Retiring…')).toHaveLength(1);
+    expect(m.buttons('Offer to your agent')[0].disabled).toBe(true);
+    settle({ ok: false, code: 'version_conflict' });
+    await m.flush(2);
+    expect(m.buttons('Offer to your agent')[0].disabled).toBe(false);
   });
 });

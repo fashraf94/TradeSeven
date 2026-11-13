@@ -413,7 +413,13 @@ function SymbolFacts({ tape, doc, sym, holdings, sectorEtf }) {
  * session domain as the Deep dive's chart (seriesDomain, from the shared calendar) — never spaced by index — and
  * breaks where a bucket is missing, as the chart does (review A2A2-4, A2A2-3).
  */
-function SmallMultiples({ tape, series, symbols, sym, onSym }) {
+function SmallMultiples({ tape, series, symbols, sym, onSym, status = 'ready' }) {
+  // Build C §8 ruling 1: a tile with no line says what is true of the READ — the loading line while the series is read,
+  // the failure sentence after a failed read, and NoChart's sentence ("No chart was recorded …") only after a read that
+  // succeeded with no chart for the symbol. The grid's section line is unchanged.
+  const noLine = (s) => (status === 'loading' || status === 'idle'
+    ? <span data-tile-state="loading">{COPY.loading}</span>
+    : status === 'error' ? <span data-tile-state="error">{COPY.seriesReadError}</span> : <NoChart tape={tape} sym={s} />);
   return (
     <div data-region="all-symbols" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0,1fr))', gap: 10 }}>
       {symbols.map((s) => {
@@ -431,7 +437,7 @@ function SmallMultiples({ tape, series, symbols, sym, onSym }) {
               <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}><Rec>{s}</Rec></span>
               {bars.length ? <TapeNum doc={doc} docLabel={`series:${s}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={10.5} weight={500} color={C.ink2} /> : null}
             </span>
-            {cs.length ? <svg viewBox="0 0 100 40" preserveAspectRatio="none" data-mini-domain-start={timed ? new Date(startMs).toISOString() : undefined} data-mini-domain-end={timed ? new Date(endMs).toISOString() : undefined} style={{ width: '100%', height: 40, display: 'block' }} aria-hidden="true"><path data-mini-line={s} d={d} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.3 }} vectorEffect="non-scaling-stroke" /></svg> : <span style={mono(9, C.ink3)}><NoChart tape={tape} sym={s} /></span>}
+            {cs.length ? <svg viewBox="0 0 100 40" preserveAspectRatio="none" data-mini-domain-start={timed ? new Date(startMs).toISOString() : undefined} data-mini-domain-end={timed ? new Date(endMs).toISOString() : undefined} style={{ width: '100%', height: 40, display: 'block' }} aria-hidden="true"><path data-mini-line={s} d={d} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.3 }} vectorEffect="non-scaling-stroke" /></svg> : <span style={mono(9, C.ink3)}>{noLine(s)}</span>}
           </button>
         );
       })}
@@ -475,8 +481,8 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
   // FR-02 / RJ-2, for the all-symbols grid, once the series is READ (status ready): the series section's "complete"
   // never stands beside a symbol shown with no series — that symbol says its own state instead (NoChart). A section
   // that is NOT complete keeps its line and its stored reason. While the read is pending or after it failed, the grid
-  // keeps the section's line and each tile says NoChart's sentence, as before this round (review AL2-4; asked in the
-  // build report §14). The one-symbol section never shows the section's line at all — Amendment L RL-3, below.
+  // keeps the section's line (review AL2-4) and each tile says the loading line or the failure sentence (Build C §8
+  // ruling 1 — SmallMultiples). The one-symbol section never shows the section's line at all — Amendment L RL-3, below.
   const sectionLine = (uncharted) => (uncharted && seriesState?.status === 'ready' && tape.coverage?.series?.status === 'complete' ? null : ['coverage', 'series']);
   // Build B Amendment K RK-11: a CHARTED symbol speaks for itself — "Chart recorded for {symbol}" in the coverage line's
   // place, never the series section's status beside one symbol's chart (Glance's coverage line keeps the status and
@@ -526,7 +532,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
           <div style={{ paddingTop: 22 }}>{doc ? <SymbolFacts tape={tape} doc={doc} sym={current} holdings={holdings} sectorEtf={sectorEtf} /> : null}</div>
         </div>
         <Section id="deep-all" title={COPY.allSymbols} doc={tape} coverageAt={sectionLine(symbols.some((s) => !seriesOf(series, s)))}>
-          <SmallMultiples tape={tape} series={series} symbols={symbols} sym={current} onSym={(s) => { setMark(null); onSym(s); }} />
+          <SmallMultiples tape={tape} series={series} symbols={symbols} sym={current} onSym={(s) => { setMark(null); onSym(s); }} status={seriesState?.status ?? 'idle'} />
         </Section>
       </div>
     );

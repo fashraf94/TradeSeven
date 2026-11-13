@@ -208,7 +208,10 @@ export const FILM_ROOM_COPY = Object.freeze({
   // R7: who a quotation's words are, as the tape records it; a stored record with no recorded author is named as
   // the record ("the stored plan"), never given a guessed one
   // B2: the player's own note on a filed card is credited "you" (spec §6; the ledger's `note`, bound by path)
-  quoteBy: { agent: 'the agent', player: 'the player', platform: 'the platform', plan: 'the stored plan', directive: 'the stored directive', you: 'you' },
+  // Build C §5 (BC-1), Amendment A CA-4 / CA-11: the agent's words on a card's chain, credited "your agent" — a deferral's
+  // or a decline's reason and an acceptance's thesis from their own history row, at that row's `consideredAt`; a
+  // result's closing note at its `closingNoteAt` (each bound by path)
+  quoteBy: { agent: 'the agent', player: 'the player', platform: 'the platform', plan: 'the stored plan', directive: 'the stored directive', you: 'you', yourAgent: 'your agent' },
   plans: 'Plans',
   plansNone: 'No plan entries were recorded this day.',
   plansAll: 'All',
@@ -314,20 +317,19 @@ export const FILM_ROOM_COPY = Object.freeze({
     note: 'Your note',
     noteLimit: 'characters',
     routeTitle: 'What happens next',
-    routes: { watch: 'Watch', drill: 'Practice', set: 'Set' },
-    // RG-5: each route says only what will happen
+    // Build C §4, §5 (BC-3): Offer replaces Practice; a stored `drill` entry reads as Offer (the one export's routeOf)
+    routes: { watch: 'Watch', offer: 'Offer', set: 'Set' },
+    // RG-5: each route says only what will happen. Build C §5: Offer's note is the spec's sentence; the form shows Offer
+    // only when the counter reports the owner's book open, and with no book says nothing of it
     routeNotes: {
       watch: 'The Film Room counts each time this comes back.',
-      drill: 'The Practice Field opens later; this keeps the moment for it.',
+      offer: 'Your agent considers this moment at its next chance. It may take it, defer it or decline it, and says why.',
       set: 'You change the setting yourself; this card changes nothing.',
     },
     // B2.1 B1 (Amendment H RH-1; Amendment J RJ-8): with the day's stagnation rule on, Set links the one setting that
     // reaches this situation — the tempo dial, in the Forge workshop; with it off, it says no setting changes it
     setTempoLink: 'Tempo dial · Forge workshop',
     setRuleOff: 'No setting changes this situation for this archetype.',
-    // Build B Amendment K RK-2's no-tempo sentence. Unread since the founder's ruling FQ-1 on PR #1019 (every battle
-    // links); the Film Room chat decides whether to retire the key
-    setNoTempo: 'No tempo setting was recorded for this battle.',
     // Build B Amendment L RL-5: wherever Set links the dial, its sentence ends with when a change takes effect — a
     // battle snapshots its setting when it is created, so a change applies to the next one, never the one reviewed
     setNextBattle: 'A change applies from your next battle.',
@@ -339,7 +341,8 @@ export const FILM_ROOM_COPY = Object.freeze({
     cancel: 'Cancel',
     filing: 'Filing…',
     refusals: {
-      cap_reached: 'The open-card cap for this agent is reached. Retire a card first.',
+      // Amendment A CA-23: what stops a card counting — never "Retire a card first", which a full set may not allow
+      cap_reached: 'The open-card cap is reached. A card stops counting once it is retired, parked, equipped or not taken.',
       moment_not_found: "That moment is not on this day's tape.",
       // B2.1 review SPR-C-2: the day was re-tagged while the card was being filed (nothing was filed)
       source_changed: "This day's tape changed while the card was being filed. Try again.",
@@ -361,19 +364,84 @@ export const FILM_ROOM_COPY = Object.freeze({
       illegal_transition: 'This card has already moved.',
       forbidden: 'Not authorized for this battle.',
       not_found: 'This battle was not found.',
+      // Build C §4: the book closed between the counter's read and the filing (the form offers Offer only when it was open)
+      book_not_open: 'This moment cannot be offered to your agent now. Nothing was filed.',
+      calendar_unavailable: "The offer's expiry could not be placed on the market calendar. Nothing was filed.",
       default: 'The card could not be filed.',
       retireDefault: 'The card could not be retired.',
+      parkDefault: 'The card could not be parked.',
+      // Amendment A CA-2: a nominated card's record could not be read or withdrawn — nothing changed, the card not retired
+      nomination_unavailable: "This card's offer could not be checked. Nothing was changed. Try again.",
     },
     filedCard: 'The filed card',
     situation: 'Situation',
     on: 'on',
     route: 'Route',
     stage: 'Stage',
-    stageWords: { card: 'card', nominated: 'nominated for the Practice Field', retired: 'retired' },
+    // Build C §3: one word per stage of the vocabulary v2 (src/data/cardStages.js) — `installed` reads "equipped"
+    // Amendment A CA-17: `nominated` reads "offered to your agent" — it was; one label reader (stageLabelOf) names a card's
+    // stage for the route line, My cards, the chain and "since last time"
+    stageWords: { card: 'card', nominated: 'offered to your agent', testing: 'testing', tested: 'tested', installed: 'equipped', retired: 'retired' },
+    // CA-17: an entry whose STORED route is `drill` (v1 Practice) keeps the old word for its `nominated` stage (reading 16);
+    // CA-22: a `tested` card whose idea ended before any fill says so, from the stored flag — never "tested"
+    stageWordsOf: { drillNominated: 'nominated for the Practice Field', noFill: 'ended before its first trade' },
     // RG-5 for a card that is no longer open: what happens next is nothing, said so
     stateNotes: {
       retired: 'Retired: nothing happens next.',
       shelved: 'Shelved: nothing happens while the agent is on another archetype.',
+      // Build C §3: a tested card the player parked — kept with its result, no longer counted as open
+      parked: 'Parked: kept with its result, no longer counted as open.',
+      // Amendment A CA-3: a nominated card the agent declined, or that expired unconsidered, is closed — kept, not open
+      notTaken: 'Not taken: kept, no longer counted as open.',
+    },
+    // Build C §5: "Park this card", on a tested card's receipt only
+    park: 'Park this card',
+    parking: 'Parking…',
+    // Amendment A CA-7: the receipt's "Offer to your agent" — a card at `card`, only while the owner's book is open
+    offerToAgent: 'Offer to your agent',
+    offering: 'Offering…',
+    // CA-7: what a refused offer says — every source refusal one sentence (F1); the rest each its own. Never "Nothing was
+    // filed" or "could not be filed" (nothing was being filed); the ruled source sentence's "since it was filed" names when
+    // the card was filed, as CA-7's table gives it
+    offerRefusals: {
+      source: "This card's moment has changed on the tape since it was filed, so it can't be offered. The card stays as it is.",
+      tape_unreadable: 'The tape for this day could not be read. Nothing was offered. Try again.',
+      attribution_unavailable: 'The agent this card belongs to could not be resolved. Nothing was offered. Try again.',
+      book_not_open: 'This card cannot be offered to your agent now. Nothing was offered.',
+      calendar_unavailable: "The offer's expiry could not be placed on the market calendar. Nothing was offered.",
+      default: 'The card could not be offered.',
+    },
+    // Build C §5 — THE CHAIN: the receipt's view of one card, newest state first, each state one line with its time, in
+    // the Film Room's own voice (facts only, BC-1); the agent's words beside them are quotations. A result's words and
+    // an offer's state are the record's own (Rec), never rewritten; an answer or a stage the copy has no line for is
+    // the record's own word too.
+    chain: {
+      title: 'Since it was filed',
+      filed: 'Filed',
+      offered: 'Offered to your agent',
+      answers: { accepted: 'Taken into an idea', deferred: 'Deferred', declined: 'Declined' },
+      answer: "Your agent's answer",
+      // Amendment A CA-9: the agent has looked at the nomination and not answered yet — its own line, no quotation
+      considered: 'Your agent considered this',
+      // "Not considered within {n} sessions" — n is B6, a marked number
+      expired: { before: 'Not considered within', after: 'sessions' },
+      testing: 'Testing · from',
+      tested: 'Tested',
+      // Amendment A CA-22: an accepted idea that ended before any fill — the Practice Field's stored no-fill fact
+      endedBeforeFirstTrade: 'Ended before its first trade',
+      // Amendment A CA-5: an offer made from the card's tested idea, waiting in the Forge
+      offerWaits: 'An offer waits in the Forge',
+      contractCondition: 'contract condition',
+      economicResult: 'economic result',
+      installed: 'Equipped',
+      parked: 'Parked',
+      retired: 'Retired',
+      // Amendment A CA-2: the player retired a nominated card the agent had not taken, withdrawing its offer
+      withdrawnRetired: 'Withdrawn and retired',
+      forgeOffer: 'Forge offer',
+      openIdea: 'Open the idea',
+      openResult: 'Open the result',
+      timeNotRecorded: 'time not recorded',
     },
     retire: 'Retire',
     retiring: 'Retiring…',
@@ -387,8 +455,10 @@ export const FILM_ROOM_COPY = Object.freeze({
     otherBattle: 'in another battle',
     otherBattleUnreadable: 'That battle could not be read, so it was not opened.',
     noWatchCards: 'No open Watch card.',
+    // the C1 refinement R-C1-1: every card past the card stage, its latest chain line and time, newest first
+    latestTitle: 'Your cards, latest first',
     myCards: 'My cards',
-    groups: { active: 'Active', shelved: 'Shelved', retired: 'Retired', other: 'Other' },
+    groups: { active: 'Active', shelved: 'Shelved', notTaken: 'Not taken', parked: 'Parked', equipped: 'Equipped', retired: 'Retired', other: 'Other' },
     noCards: 'No cards yet.',
     shelvedExplainer: 'A card made under another archetype is shelved: kept, not counted as open, and back by itself when the agent returns to that archetype.',
     loading: 'Loading the cards…',
@@ -408,4 +478,6 @@ export const DIRECTIVE_EXPLAINER = Object.freeze([
 ]);
 
 /** BA-41 / the sweep: words the screen's own copy never uses (recorded quotations are the record's). */
-export const FORBIDDEN_WORDS = Object.freeze(['biggest', 'best', 'worst', 'mistake', 'should have', 'missed', 'good trade', 'bad trade', 'lesson', 'grade']);
+// Build C §5: the chain renders a result's words exactly as stored and never judges them — "validated", "proven",
+// "supported" join the list
+export const FORBIDDEN_WORDS = Object.freeze(['biggest', 'best', 'worst', 'mistake', 'should have', 'missed', 'good trade', 'bad trade', 'lesson', 'grade', 'validated', 'proven', 'supported']);

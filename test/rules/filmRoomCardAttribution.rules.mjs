@@ -27,7 +27,7 @@
 // Only the Admin handle (the emulator's), the security and auth middleware and
 // the three flags are doubled.
 
-import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
+import { beforeAll, afterAll, beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 
 // The armory flip (Nov 7, 2026). The per-game flag is held here, not read live, so a rollback reddens only its pin (the
 // default suite's api/film-room/card.test.js pattern). The row in KILL_SWITCH_ROWS runs with it held OFF and keeps
@@ -55,6 +55,7 @@ const { getFirestore } = await import('firebase-admin/firestore');
 const { default: handler } = await import('../../api/film-room/card.js');
 const { buildCounter } = await import('../../api/_utils/filmRoom/cardCounter.js');
 const { createCard, CARD_ROUTE_COPY } = await import('../../api/_utils/filmRoom/cardStore.js');
+const { setPracticeFieldSeam, resetPracticeFieldSeam } = await import('../../api/_utils/filmRoom/practiceFieldSeam.js');
 const { writeTapeDay } = await import('../../api/_utils/filmTape/writeTapeDay.js');
 const { makeTapeDb } = await import('../../api/_utils/filmTape/__fixtures__/tapeFirestore.js');
 const { seedDay } = await import('../../api/_utils/filmTape/__fixtures__/tapeFixtures.js');
@@ -300,5 +301,228 @@ describe('RK-1 on the real emulator — the counter answers for the attribution 
       await agentDoc(CLONE, clone);
       await expect(buildCounter(db, { uid: UID, agentId: CLONE, nowMs: COUNTER_NOW })).rejects.toMatchObject({ cardRoute: true, status: 503, code: 'attribution_unavailable', extra: { agentId: CLONE } });
     }
+  });
+});
+
+// ── Film Room C1 (Build C spec V1 §4; acceptance C-NOMINATE, C-NOBOOK, C-OWNER) — nominate on the real emulator ──────
+// The Practice Field's bookForOwner is injected through the seam (T1a's helper does not exist yet): a REAL read of a
+// synthetic book document — `mandates/{bookId}` with the owner's `userId`, `kind: 'idea_book'`, the manager agent
+// and its status — so the card endpoint's one transaction writes the nomination record into a real book path.
+describe('C1 on the real emulator — nominate and the Offer route, through an injected seam against a synthetic book', () => {
+  const BOOK_ID = `c1-book-${RUN}`;
+  // Amendment A CA-12: the store re-reads the book in its transaction and asks the seam's bookIsForAgent, whose default
+  // reads `attributionAgentId` (T1a names the real field)
+  const book = (over = {}) => ({ userId: UID, kind: 'idea_book', managerAgentId: PARENT, attributionAgentId: PARENT, status: 'active', ...over });
+  const asked = [];
+  beforeEach(async () => {
+    asked.length = 0;
+    await db.doc(`mandates/${BOOK_ID}`).set(book());
+    setPracticeFieldSeam({
+      bookForOwner: async (handle, { uid, attributionAgentId }) => {
+        asked.push(attributionAgentId);
+        const snap = await handle.collection('mandates').where('userId', '==', uid).where('kind', '==', 'idea_book').where('managerAgentId', '==', attributionAgentId).limit(1).get();
+        const d = snap.docs[0];
+        return d ? { bookId: d.id, status: d.data().status } : null;
+      },
+    });
+  });
+  afterEach(() => resetPracticeFieldSeam());
+  afterAll(async () => { if (db) await db.recursiveDelete(db.doc(`mandates/${BOOK_ID}`)); });
+  const nominationAt = async (id) => (await db.doc(`mandates/${BOOK_ID}/nominations/${id}`).get());
+
+  it('C-OWNER: a casual clone\'s battle files an Offer card under the PARENT, in the parent\'s book — the entry at nominated and its record, one transaction; the seam asked for the parent, never the clone', async () => {
+    const b = await battleFor('c1-offer', CLONE);
+    const res = await post(create(b, CLONE, { route: 'offer' }));
+    expect(res.statusCode).toBe(200);
+    const id = res.body.card.entryId;
+    expect(res.body.card).toMatchObject({ agentId: PARENT, stage: 'nominated', nomination: { bookId: BOOK_ID, nominationId: id, state: 'queued' }, stageVocabVersion: 2 });
+    const rec = await nominationAt(id);
+    expect(rec.exists).toBe(true);
+    expect(rec.data()).toMatchObject({ state: 'queued', source: { kind: 'film_room_card', entryId: id, situationId: 'stalled', questionId: 'stalled.want', questionVersion: 1 } });
+    expect(asked).toEqual([PARENT]);
+    expect(await plays(CLONE)).toEqual([]);
+  });
+
+  it('C-NOMINATE: a card-stage entry nominates — the record and the entry together; a replay answers the same; a second nominate → 409 illegal_transition', async () => {
+    const b = await battleFor('c1-nominate', PARENT);
+    const filed = await post(create(b, PARENT));
+    const id = filed.body.card.entryId;
+    const body = { op: 'nominate', opId: `nom_${RUN}`, agentId: PARENT, entryId: id, expectedVersion: 1 };
+    const res = await post(body);
+    expect(res.statusCode).toBe(200);
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'nominated', version: 2, nomination: { bookId: BOOK_ID, nominationId: `nom_${RUN}`, state: 'queued' } });
+    expect((await nominationAt(`nom_${RUN}`)).data()).toMatchObject({ state: 'queued', source: { entryId: id } });
+    expect(await post(body)).toMatchObject({ statusCode: 200, body: { idempotent: true } });
+    expect(await post({ ...body, opId: `nom2_${RUN}`, expectedVersion: 2 })).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition' } });
+    expect((await nominationAt(`nom2_${RUN}`)).exists).toBe(false);
+  });
+
+  it('C-NOBOOK: a book not active, and no book at all (the seam\'s default) → 409 book_not_open, the body naming no book; nothing written under plays or the book', async () => {
+    const b = await battleFor('c1-nobook', PARENT);
+    // the book's nominations as the rows above left them: this row adds none
+    const records = (await db.collection(`mandates/${BOOK_ID}/nominations`).get()).size;
+    await db.doc(`mandates/${BOOK_ID}`).set(book({ status: 'paused' }));
+    const offer = await post(create(b, PARENT, { route: 'offer' }));
+    expect(offer.statusCode).toBe(409);
+    expect(offer.body).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+    resetPracticeFieldSeam();
+    const again = await post(create(b, PARENT, { route: 'offer' }));
+    expect(again.body.error).toBe('book_not_open');
+    expect(await plays(PARENT)).toEqual([]);
+    expect((await db.collection(`mandates/${BOOK_ID}/nominations`).get()).size).toBe(records);
+  });
+
+  // ── C1 fix round, Astra F1 — a NEW nomination re-checks its filed source, on the real emulator ──────────────────
+  const tapePathOf = (b) => `agentBattles/${b}/tape/${D}`;
+  const nominateBody = (id, opId) => ({ op: 'nominate', opId, agentId: PARENT, entryId: id, expectedVersion: 1 });
+  /** Neither half: no record under the op id, the entry still the filed card at version 1. */
+  const neitherHalf = async (id, opId, where) => {
+    expect((await nominationAt(opId)).exists, where).toBe(false);
+    const e = (await db.doc(`agents/${PARENT}/plays/${id}`).get()).data();
+    expect(e, where).toMatchObject({ stage: 'card', version: 1 });
+    expect(e, where).not.toHaveProperty('nomination');
+  };
+  const withoutAcn = (tape) => ({ ...tape, tags: { ...tape.tags, items: tape.tags.items.filter((i) => i.symbol !== 'ACN') } });
+
+  it('F1: each change to the filed source refuses a NEW nomination with the route\'s source error — the moment removed, the moment moved, the day unavailable, the tape deleted, a foreign battle — and neither half is written', async () => {
+    const changes = [
+      ['moment removed', async (b) => { const tp = (await db.doc(tapePathOf(b)).get()).data(); await db.doc(tapePathOf(b)).set(withoutAcn(tp)); }, 409, 'moment_not_found'],
+      ['moment moved', async (b) => { const tp = (await db.doc(tapePathOf(b)).get()).data(); await db.doc(tapePathOf(b)).set({ ...tp, tags: { ...tp.tags, items: tp.tags.items.map((i) => (i.symbol === 'ACN' ? { ...i, tickSeq: i.tickSeq + 1 } : i)) } }); }, 409, 'moment_not_found'],
+      ['day unavailable', async (b) => { await db.doc(tapePathOf(b)).update({ 'coverage.tags.status': 'unavailable' }); }, 409, 'tags_unavailable'],
+      ['tape deleted', async (b) => { await db.doc(tapePathOf(b)).delete(); }, 404, 'tape_not_found'],
+      ['foreign battle', async (b) => { await db.doc(`agentBattles/${b}`).update({ ownerId: OTHER }); }, 403, 'forbidden'],
+    ];
+    for (const [name, change, status, error] of changes) {
+      const b = await battleFor(`f1-${name.replace(/\s+/g, '-')}`, PARENT);
+      const filed = await post(create(b, PARENT));
+      expect(filed.statusCode, name).toBe(200);
+      const id = filed.body.card.entryId;
+      await change(b);
+      const opId = `f1n_${(n += 1)}_${RUN}`;
+      const res = await post(nominateBody(id, opId));
+      expect(res.statusCode, name).toBe(status);
+      expect(res.body.error, name).toBe(error);
+      await neitherHalf(id, opId, name);
+    }
+  });
+
+  it('F1: the replay after a change — a nomination that committed answers its lost-answer replay after the tape is deleted (200 idempotent), nothing more written', async () => {
+    const b = await battleFor('f1-replay', PARENT);
+    const id = (await post(create(b, PARENT))).body.card.entryId;
+    const opId = `f1r_${RUN}`;
+    const first = await post(nominateBody(id, opId));
+    expect(first.statusCode).toBe(200);
+    await db.doc(tapePathOf(b)).delete();
+    const again = await post(nominateBody(id, opId));
+    expect(again).toMatchObject({ statusCode: 200, body: { idempotent: true } });
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'nominated', version: 2 });
+  });
+
+  it("F1: the tape is in the nominate transaction's read set — a write to it begun after the transaction has read it (the moment then removed) is held until the transaction ends, never landed under it: the nomination commits over the moment as it stood, and the removal lands after (the emulator locks what a transaction reads; the in-memory suite's retry row judges the changed tape again)", async () => {
+    const b = await battleFor('f1-race', PARENT);
+    const id = (await post(create(b, PARENT))).body.card.entryId;
+    const real = state.db;
+    let strike = true;
+    const at = {};
+    // the handle the route uses: the real one, whose transaction begins the tape change after its callback has done
+    // every read, then holds the callback open for a while before it returns (and so before the commit)
+    state.db = new Proxy(real, {
+      get(target, prop) {
+        if (prop !== 'runTransaction') { const v = Reflect.get(target, prop); return typeof v === 'function' ? v.bind(target) : v; }
+        return (fn, opts) => target.runTransaction(async (tx) => {
+          const out = await fn(tx);
+          if (strike) {
+            strike = false;
+            const tp = (await real.doc(tapePathOf(b)).get()).data();
+            at.write = real.doc(tapePathOf(b)).set(withoutAcn(tp)).then(() => { at.written = Date.now(); });
+            await new Promise((r) => { setTimeout(r, 1500); });
+            at.callbackEnd = Date.now();
+          }
+          return out;
+        }, opts);
+      },
+    });
+    try {
+      const opId = `f1x_${RUN}`;
+      const res = await post(nominateBody(id, opId));
+      at.answered = Date.now();
+      await at.write;
+      expect(res.statusCode).toBe(200);
+      // the write waited for the transaction: it landed after the callback was done, not inside its 1.5 s window
+      expect(at.written).toBeGreaterThanOrEqual(at.callbackEnd);
+      expect((await nominationAt(opId)).exists).toBe(true);
+      // and it did land, after: the moment is gone now, so a NEW nomination of another card from that day is refused
+      expect((await db.doc(tapePathOf(b)).get()).data().tags.items.filter((i) => i.symbol === 'ACN')).toEqual([]);
+    } finally {
+      state.db = real;
+    }
+  });
+
+  // ── Amendment A CA-2 — retiring a nominated card withdraws it, on the real emulator ────────────────────────────
+  const retireBody = (id, opId, expectedVersion = 1) => ({ op: 'retire', opId, agentId: PARENT, entryId: id, expectedVersion });
+  const offerCard = async (row) => {
+    const b = await battleFor(row, PARENT);
+    const res = await post(create(b, PARENT, { route: 'offer' }));
+    expect(res.statusCode).toBe(200);
+    return res.body.card.entryId;
+  };
+
+  it('CA-2: a queued record — the retire withdraws it and retires the entry in ONE transaction: the record withdrawn (its history row by the player), the entry retired with its copy withdrawn, version 2', async () => {
+    const id = await offerCard('ca2-queued');
+    const res = await post(retireBody(id, `ca2r_${(n += 1)}_${RUN}`));
+    expect(res.statusCode).toBe(200);
+    const rec = (await nominationAt(id)).data();
+    expect(rec).toMatchObject({ state: 'withdrawn', withdrawnAt: res.body.card.stageAt, source: { kind: 'film_room_card', entryId: id } });
+    expect(rec.stateHistory.at(-1)).toEqual({ state: 'withdrawn', at: res.body.card.stageAt, by: 'player' });
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'retired', version: 2, nomination: { state: 'withdrawn' } });
+  });
+
+  it('CA-2: an accepted record → 409 illegal_transition { stage: nominated, nominationState: accepted }; neither the record nor the entry is written', async () => {
+    const id = await offerCard('ca2-accepted');
+    await db.doc(`mandates/${BOOK_ID}/nominations/${id}`).update({ state: 'accepted' });
+    const res = await post(retireBody(id, `ca2a_${(n += 1)}_${RUN}`));
+    expect(res).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition', stage: 'nominated', nominationState: 'accepted' } });
+    expect((await nominationAt(id)).data().state).toBe('accepted');
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'nominated', version: 1, nomination: { state: 'queued' } });
+  });
+
+  it('CA-2: a declined record behind a copy still queued → the entry retires, its copy declined; the record untouched. No record at all → the entry retires, nothing written to the book', async () => {
+    const id = await offerCard('ca2-declined');
+    await db.doc(`mandates/${BOOK_ID}/nominations/${id}`).update({ state: 'declined', reason: 'Not for this book.' });
+    const before = (await nominationAt(id)).data();
+    expect((await post(retireBody(id, `ca2d_${(n += 1)}_${RUN}`))).statusCode).toBe(200);
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'retired', nomination: { state: 'declined' } });
+    expect((await nominationAt(id)).data()).toEqual(before);
+    const gone = await offerCard('ca2-gone');
+    await db.doc(`mandates/${BOOK_ID}/nominations/${gone}`).delete();
+    expect((await post(retireBody(gone, `ca2g_${(n += 1)}_${RUN}`))).statusCode).toBe(200);
+    expect((await nominationAt(gone)).exists).toBe(false);
+    expect((await db.doc(`agents/${PARENT}/plays/${gone}`).get()).data()).toMatchObject({ stage: 'retired', nomination: { state: 'queued' } });
+  });
+
+  it('CA-2: a record whose state the store does not know → 503 nomination_unavailable; nothing written, the card not retired', async () => {
+    const id = await offerCard('ca2-unknown');
+    await db.doc(`mandates/${BOOK_ID}/nominations/${id}`).update({ state: 'misfiled' });
+    expect(await post(retireBody(id, `ca2u_${(n += 1)}_${RUN}`))).toMatchObject({ statusCode: 503, body: { error: 'nomination_unavailable' } });
+    expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'nominated', version: 1 });
+    expect((await nominationAt(id)).data().state).toBe('misfiled');
+  });
+
+  // ── Amendment A CA-12 — the book re-read in the transaction, on the real emulator ───────────────────────────────
+  it('CA-12: the seam\'s pre-read says open but the book document itself is closed (or another owner\'s) → 409 book_not_open, nothing written; open again → the nomination lands', async () => {
+    const b = await battleFor('ca12', PARENT);
+    const id = (await post(create(b, PARENT))).body.card.entryId;
+    setPracticeFieldSeam({ bookForOwner: async () => ({ bookId: BOOK_ID, status: 'active' }) });
+    const opId = `ca12n_${RUN}`;
+    for (const over of [{ status: 'closed' }, { userId: OTHER }]) {
+      await db.doc(`mandates/${BOOK_ID}`).set(book(over));
+      const res = await post({ op: 'nominate', opId, agentId: PARENT, entryId: id, expectedVersion: 1 });
+      expect(res, JSON.stringify(over)).toMatchObject({ statusCode: 409, body: { error: 'book_not_open' } });
+      expect((await nominationAt(opId)).exists).toBe(false);
+      expect((await db.doc(`agents/${PARENT}/plays/${id}`).get()).data()).toMatchObject({ stage: 'card', version: 1 });
+    }
+    await db.doc(`mandates/${BOOK_ID}`).set(book());
+    expect((await post({ op: 'nominate', opId, agentId: PARENT, entryId: id, expectedVersion: 1 })).statusCode).toBe(200);
+    expect((await nominationAt(opId)).exists).toBe(true);
   });
 });

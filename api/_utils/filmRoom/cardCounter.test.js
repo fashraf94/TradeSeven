@@ -6,7 +6,7 @@
 // mutant: counting another agent's days), the field mask, and the whole
 // answer over the tape suites' in-memory Firestore.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // The armory flip (Nov 7, 2026). The per-game flag is held here, not read live, so a rollback reddens only its pin. The
 // rows in KILL_SWITCH_ROWS run with it held OFF, and keep guarding the path a rollback restores: each files its cards
@@ -16,7 +16,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const flip = vi.hoisted(() => ({ on: true }));
 vi.mock('../../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT_ENABLED() { return flip.on; } }));
 const KILL_SWITCH_ROWS = new Set([
-  "buildCounter — the whole answer: the window, the weekly counts, the cards with their shelving, each open Watch card's recurrences > an open Watch card gets its recurrences on its own agent's later days; a Practice card and a Set card get none; the counts cover every day",
+  "buildCounter — the whole answer: the window, the weekly counts, the cards with their shelving, each open Watch card's recurrences > an open Watch card gets its recurrences on its own agent's later days; an Offer card and a Set card get none; the counts cover every day",
   "buildCounter — the whole answer: the window, the weekly counts, the cards with their shelving, each open Watch card's recurrences > a shelved Watch card (the agent changed archetype) gets no recurrences and is not open; a retired one neither",
   "buildCounter — the whole answer: the window, the weekly counts, the cards with their shelving, each open Watch card's recurrences > the mutant: the counter never counts another agent's days as a card's recurrences even when they fall in the window after the card",
   "B2.1 B3 (Amendment H RH-6) — an unavailable day gives one answer: neither counted nor a recurrence, only counted as unavailable > buildCounter: the unavailable day's moment is no recurrence and no weekly count; the answer reports the unavailable days per agent (the mutant: the counter counting an unavailable day)",
@@ -30,6 +30,7 @@ beforeEach(() => { flip.on = !KILL_SWITCH_ROWS.has(expect.getState().currentTest
 import { makeTapeDb } from '../filmTape/__fixtures__/tapeFirestore.js';
 import { tradingWeekOf, windowOf, weeklyCounts, recurrencesOf, readOwnerTapeDays, readOwnerTapeWindow, unavailableDaysOf, buildCounter, isOpenWatchCard, COUNTER_FIELD_MASK, COUNTER_WINDOW_DAYS } from './cardCounter.js';
 import { createCard } from './cardStore.js';
+import { setPracticeFieldSeam, resetPracticeFieldSeam } from './practiceFieldSeam.js';
 import { MOMENT_KEYS } from '../../../src/utils/filmRoomMoments.js';
 
 const UID = 'owner-1';
@@ -166,10 +167,11 @@ describe('buildCounter — the whole answer: the window, the weekly counts, the 
     'agentBattles/b-1/tape/2026-10-21': tapeDoc({ battleId: 'b-1', etDate: '2026-10-21', items: [item('2026-10-21', 'MSFT', 2)] }),
     'agentBattles/b-2/tape/2026-10-27': tapeDoc({ battleId: 'b-2', etDate: '2026-10-27', agentId: A2, items: [item('2026-10-27', 'NVDA', 3), item('2026-10-27', 'NVDA', 4)] }),
   });
-  it('an open Watch card gets its recurrences on its own agent\'s later days; a Practice card and a Set card get none; the counts cover every day', async () => {
+  it('an open Watch card gets its recurrences on its own agent\'s later days; an Offer card and a Set card get none; the counts cover every day', async () => {
     const t = seed();
     await createCard(t.db, { uid: UID, agentId: A1, opId: 'w1', payload: payload(), nowIso: '2026-10-20T02:00:00.000Z' });
-    await createCard(t.db, { uid: UID, agentId: A1, opId: 'p1', payload: payload({ route: 'drill' }), nowIso: '2026-10-20T02:01:00.000Z' });
+    t.store.set('mandates/book-1', { userId: UID, kind: 'idea_book', status: 'active', attributionAgentId: A1 });   // CA-12: the book the transaction re-reads
+    await createCard(t.db, { uid: UID, agentId: A1, opId: 'p1', payload: payload({ route: 'offer' }), nowIso: '2026-10-20T02:01:00.000Z', book: { bookId: 'book-1', status: 'active' } });
     await createCard(t.db, { uid: UID, agentId: A1, opId: 's1', payload: payload({ route: 'set' }), nowIso: '2026-10-20T02:02:00.000Z' });
     const out = await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW });
     expect(out.window).toEqual({ from: '2026-06-30', to: '2026-10-28' });
@@ -178,7 +180,7 @@ describe('buildCounter — the whole answer: the window, the weekly counts, the 
       [A2]: { stalled: { '2026-10-26': { tags: 2, moments: 1 } } },
     });
     expect(out).toMatchObject({ agentId: A1, archetypeCodeId: 'momentum_chaser', open: 3, cap: 5 });
-    expect(out.cards.map((c) => [c.entryId, c.route, c.stage, c.shelved])).toEqual([['s1', 'set', 'card', false], ['p1', 'drill', 'nominated', false], ['w1', 'watch', 'card', false]]);
+    expect(out.cards.map((c) => [c.entryId, c.route, c.stage, c.shelved])).toEqual([['s1', 'set', 'card', false], ['p1', 'offer', 'nominated', false], ['w1', 'watch', 'card', false]]);
     expect(Object.keys(out.recurrences)).toEqual(['w1']);
     expect(out.recurrences.w1.map((x) => [x.battleId, x.etDate, x.symbol, x.checks])).toEqual([['b-1', '2026-10-21', 'MSFT', 1]]);
     // nothing but the masked fields reaches the answer: no score, price or result from any tape day
@@ -389,5 +391,56 @@ describe('RK-1 — the counter answers for the attribution agent (the casual clo
     const shelved = await buildCounter(t.db, { uid: UID, agentId: CLONE, nowMs: NOW });
     expect(shelved.cards.map((c) => [c.entryId, c.shelved])).toEqual([['w1', true]]);
     expect(shelved).toMatchObject({ archetypeCodeId: 'guardian', open: 0, recurrences: {} });
+  });
+});
+
+// ── Film Room C1 item 4 — the counter's book and its v2 open count (Build C spec V1 §4, §5) ──────────────────────────
+describe('C1 item 4 — book: { open } from the seam, and the open count by vocabulary v2', () => {
+  const NOW = Date.parse('2026-10-28T23:00:00.000Z');
+  const CLONE = `casual-agent-${UID}`;
+  const payload = (over = {}) => ({ archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: 2, battleId: 'b-1', etDate: '2026-10-19', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5, questionId: 'stalled.want', questionVersion: 1, note: 'Let it go.', route: 'watch', ...over });
+  const seed = () => makeTapeDb({
+    [`agents/${A1}`]: { ownerId: UID, archetype: 'momentum_chaser' },
+    [`agents/${CLONE}`]: { ownerId: UID, archetype: 'momentum_chaser', rankedAgentId: A1 },
+    'agentBattles/b-1/tape/2026-10-19': tapeDoc({ battleId: 'b-1', etDate: '2026-10-19', items: [item('2026-10-19', 'ACN', 4), item('2026-10-19', 'ACN', 5)] }),
+  });
+  let calls;
+  const book = (answer) => { calls = []; setPracticeFieldSeam({ bookForOwner: async (_db, args) => { calls.push(args); if (answer instanceof Error) throw answer; return answer; } }); };
+  afterEach(() => resetPracticeFieldSeam());
+
+  it('no book (the seam\'s default) → book: { open: false }; the answer carries the boolean alone', async () => {
+    const out = await buildCounter(seed().db, { uid: UID, agentId: A1, nowMs: NOW });
+    expect(out.book).toEqual({ open: false });
+  });
+
+  it('an active book → open: true; any other status, a missing id or a failed read → open: false; nothing of the book but the boolean leaves (the counter is asked for the ATTRIBUTION agent — the parent for a clone)', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    book({ bookId: 'book-1', status: 'active' });
+    const out = await buildCounter(seed().db, { uid: UID, agentId: CLONE, nowMs: NOW });
+    expect(out.book).toEqual({ open: true });
+    expect(calls).toEqual([{ uid: UID, attributionAgentId: A1 }]);
+    expect(JSON.stringify(out)).not.toMatch(/book-1/);
+    for (const answer of [{ bookId: 'book-1', status: 'paused' }, { bookId: '', status: 'active' }, null, new Error('read failed')]) {
+      book(answer);
+      expect((await buildCounter(seed().db, { uid: UID, agentId: A1, nowMs: NOW })).book, String(answer?.status ?? answer)).toEqual({ open: false });
+    }
+    vi.restoreAllMocks();
+  });
+
+  it('the open count follows v2: card, nominated, testing and an unparked tested card count; a parked one, an installed one and a retired one do not (the mutant: a parked card counted open)', async () => {
+    const t = seed();
+    const { card } = await createCard(t.db, { uid: UID, agentId: A1, opId: 'c0', payload: payload(), nowIso: '2026-10-20T02:00:00.000Z', battleArchetype: 'momentum_chaser' });
+    const plant = (id, over) => t.store.set(`agents/${A1}/plays/${id}`, { ...card, entryId: id, opId: id, ...over });
+    plant('c1', { stage: 'nominated', nomination: { bookId: 'b', nominationId: 'c1', state: 'queued' } });
+    plant('c2', { stage: 'testing' });
+    plant('c3', { stage: 'tested' });
+    plant('c4', { stage: 'tested', parkedAt: '2026-10-21T00:00:00.000Z' });
+    plant('c5', { stage: 'installed' });
+    plant('c6', { stage: 'retired' });
+    const out = await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW });
+    expect(out.open).toBe(4);
+    expect(out.cap).toBe(5);
+    // a Watch card offered later (at nominated) is followed for recurrences no more — the one export's isFollowedWatch
+    expect(Object.keys(out.recurrences)).toEqual(['c0']);
   });
 });
