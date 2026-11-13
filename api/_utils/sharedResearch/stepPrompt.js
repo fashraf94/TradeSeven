@@ -60,7 +60,7 @@ export function buildStepSystemPrompt({ partnerName } = {}) {
     '- A correction names the record finding it corrects in supersedes; correct one finding at most once.',
     `- companies: at most 6. role is one of ${RELATIONSHIP_ROLES.join(', ')}. relationshipRef names the relationship finding about that company. A company is supported only when a retrieved item verifies the relationship and its symbol is in the game universe; give a claim only then, and put no number in a claim that its verified findings do not state. openRef names its open significance question (an unresolved finding), if any.`,
     `- Unresolved reasons: ${UNRESOLVED_REASONS.join(', ')}.`,
-    '- summary: null when this step does not change the answer. Otherwise at most 1,000 characters resting on 1 to 25 current findings (basedOn), and every number in it appears in one of those findings that is Source-backed (verified); a date may be the date of a fact it rests on.',
+    '- summary: null when this step does not change the answer. Otherwise at most 1,000 characters resting on 1 to 25 current findings (basedOn), and every number in it appears in one of those findings; a date may be the date of a fact it rests on.',
     '- lines: the finding that most supports the answer, the one that most complicates it, the most important missing link.',
     '- nextAction: the one next step, aimed at the weakest link; null only when the question is answered.',
     '- reply: what this step found, plain sentences, at most 1,200 characters.',

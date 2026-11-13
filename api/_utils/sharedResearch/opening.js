@@ -24,7 +24,7 @@
 
 import { FINDING_FACT_MAX_LEN, SOURCE_LABEL_MAX_LEN, isInstant } from '../researchRecords/model.js';
 import { gameUniverse, resolveSymbol } from './companies.js';
-import { instantOf, strayTickersOf, forbiddenIn, LABELS } from './stepSchema.js';
+import { instantOf, strayTickersOf, LABELS } from './stepSchema.js';
 import { METHOD_SOURCE } from './method.js';
 
 /** At most this many names in scope, and drop claims, are written at open (the record holds 100 findings). */
@@ -133,10 +133,10 @@ export function openingFindingsOf({ entryKind, story = null, drop = null, player
       source: { recordKind: 'exchange', recordId: playerExchange.exchangeId, label: `Your drop · ${dropTypeOf(drop)}` },
       at, asOf: null, status: 'unverified', statusReason: 'player_drop',
     });
-    // The parser's claims are its reading, not the player's words: one that names a ticker the universe does not hold or
-    // breaks a forbidden pattern is not written (review B8).
+    // A parser claim that names a ticker the universe does not hold is not written (the STOP list: no such ticker
+    // anywhere — review B8). Its other wording is the drop's, quoted "From your drop" (scanning it is founder question FQ-6).
     const claims = (Array.isArray(drop?.parse?.dataPoints) ? drop.parse.dataPoints : []).map(clean).filter(Boolean)
-      .filter((c) => strayTickersOf(c, universe).length === 0 && forbiddenIn(c).length === 0).slice(0, DROP_CLAIMS_MAX);
+      .filter((c) => strayTickersOf(c, universe).length === 0).slice(0, DROP_CLAIMS_MAX);
     for (const c of claims) {
       out.push({
         kind: 'inference', symbol: names.find((s) => new RegExp(`(^|[^A-Z0-9-])${s}([^A-Z0-9-]|$)`).test(c)) ?? null,

@@ -13,8 +13,9 @@
 // larger is shown as not adoptable, with the reason (review A4).
 //
 // assertAssertionsSupported(statement, …): every number in the statement is in
-// a carried SOURCE-BACKED fact (a proposed claim, an inference or an open
-// question cannot back a number; a fact's own date mention is excused) — else
+// a carried fact (spec §6.6's letter: any status; a proposed claim cannot back
+// itself; a mention of a carried fact's own date is excused; verified-only is
+// founder question FQ-5) — else
 // `unsupported_assertion` with the token; every selected company is named, and
 // no deselected supported company is — else `names_not_supported`.
 
@@ -106,7 +107,7 @@ export class AssertionError extends Error {
  */
 export function assertAssertionsSupported(statement, { record, carried, selected, deselected }) {
   const byId = new Map((Array.isArray(record?.findings) ? record.findings : []).map((f) => [f.findingId, f]));
-  const held = carried.map((id) => byId.get(id)).filter((f) => f && f.kind !== 'idea' && f.status === 'verified');
+  const held = carried.map((id) => byId.get(id)).filter((f) => f && f.kind !== 'idea');
   const stray = strayNumberOf(statement, held);
   if (stray !== undefined) throw new AssertionError('unsupported_assertion', stray);
   const unnamed = selected.find((c) => !namesCompany(statement, c));

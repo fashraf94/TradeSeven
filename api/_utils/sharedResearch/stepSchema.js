@@ -183,6 +183,8 @@ function subjectsOf(partnerName) {
 export const FORBIDDEN_PATTERNS = Object.freeze({
   guarantee: /\bguarantee/i,
   will_do: /\bwill do\b/i,
+  // Spec §6.4 rule 7 names the bare word; "widely considered the leader" fails too (founder question FQ-3).
+  considered: /\bconsidered\b/i,
   confidence_number: /\d+(?:\.\d+)?\s*(?:%|percent|per\s*cent|pct)[^.!?]{0,40}\bconfiden|\bconfiden\w*[^.!?]{0,40}\d+(?:\.\d+)?\s*(?:%|percent|per\s*cent|pct)/i,
   price_target: /\bprice\s+targets?\b|\btarget\s+price\b/i,
   price_forecast: /\b(?:shares?|stock|price)\b[^.!?]{0,40}\b(?:could|will|may|might|should|to)\s+(?:climb|rise|fall|drop|reach|hit|trade|head|go)\w*\s+(?:to|toward|towards|above|below|past|near)\s+\$\s?\d/i,
@@ -205,8 +207,6 @@ export function forbiddenIn(text, { partnerName = null } = {}) {
     for (const [name, re] of Object.entries(FORBIDDEN_PATTERNS)) if (re.test(s)) hits.add(name);
     if (subj.willDo.test(s)) hits.add('will_do');
     if (IMPERATIVE.test(s)) hits.add('buy_sell_advice');
-    // "considered" said of the agent, the partner, I or we (rulebook §4 (6)); "widely considered the leader" is prose.
-    if (/\bconsidered\b/i.test(s) && subj.us.test(s)) hits.add('considered');
     if ((LEARNING_STRONG.test(s) && subj.us.test(s)) || (LEARNING_SOFT.test(s) && subj.agent.test(s))) hits.add('learning_claim');
   }
   return [...hits];
@@ -304,8 +304,7 @@ export function retrievalDatesOf({ modelAt, publishedDate, readAt, writeAt }) {
   const published = instantOf(publishedDate);
   const asOf = published && Date.parse(published) < Date.parse(writeAt) ? published : null;
   if (model && Date.parse(model) <= readMs) return { at: model, asOf, undated: false };
-  // A published date later than the read is bad data: it dates nothing.
-  if (published && Date.parse(published) <= readMs) return { at: published, asOf, undated: false };
+  if (published) return { at: published, asOf, undated: false };
   return { at: readAt, asOf, undated: true };
 }
 
@@ -476,15 +475,14 @@ export function validateStepTurn(output, ctx) {
       return fail('invalid_support', tempId);
     }
     // rule 5: a correction names a current finding, and never forks a chain. It may not retire the player's own
-    // material or the story (they are what the investigation started from), nor overturn a Source-backed fact with an
-    // inference — only with another sourced fact, or by saying the evidence is unresolved (review B5).
+    // material or the story — rule 3 and rulebook §4 (1): they are the player's (review B5). Rule 5 lets an inference
+    // supersede a verified fact (the old fact stays readable as superseded; founder question FQ-4).
     let supersedes = null;
     if (rf.supersedes !== null && rf.supersedes !== undefined) {
       const s = typeof rf.supersedes === 'string' ? rf.supersedes.trim() : '';
       const target = currentById.get(s);
       if (!target) return fail('invalid_supersedes', `${tempId}:${s}`);
       if (!MODEL_FINDING_KINDS.includes(target.kind) || PROTECTED_REASONS.includes(target.statusReason)) return fail('invalid_supersedes', `${tempId}:protected`);
-      if (target.status === 'verified' && status === 'unverified') return fail('invalid_supersedes', `${tempId}:weaker`);
       if (supersededHere.has(s)) return fail('forked_chain', s);
       supersededHere.add(s);
       supersedes = s;
@@ -573,8 +571,8 @@ export function validateStepTurn(output, ctx) {
   const stored = Array.isArray(record?.findings) ? record.findings.length : 0;
   if (stored + built.length > FINDINGS_MAX) return fail('findings_full', stored + built.length);
 
-  // The summary (rule 6): 1–25 current findings; every number it states is in one of them that is Source-backed (an
-  // inference or a player's words cannot back a number in the answer — review B3), its own date mentions excused.
+  // The summary (rule 6): 1–25 current findings; every number it states is in one of them (any status — rule 6's letter;
+  // verified-only is founder question FQ-5), a mention of a cited fact's own date excused (review B2).
   let summary = null;
   if (output.summary && typeof output.summary === 'object') {
     const text = clean(output.summary.text);
@@ -591,7 +589,7 @@ export function validateStepTurn(output, ctx) {
       if (!basedOn.includes(id)) basedOn.push(id);
     }
     if (basedOn.length === 0 || basedOn.length > BASED_ON_MAX) return fail('invalid_based_on', basedOn.length);
-    const held = basedOn.map((id) => afterById.get(id)).filter((f) => f.status === 'verified');
+    const held = basedOn.map((id) => afterById.get(id));
     for (const sentence of sentencesOf(text)) {
       const missing = strayNumberOf(sentence, held);
       if (missing !== undefined) return fail('unsupported_number', missing);

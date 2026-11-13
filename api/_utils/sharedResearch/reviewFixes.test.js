@@ -69,21 +69,20 @@ describe('B2 — a date part is not a held number', () => {
   });
 });
 
-describe('B3 — only a Source-backed finding backs a number', () => {
-  it('a summary number held only by an inference is refused', () => {
-    const out = validateStepTurn(turn({
-      findings: [f({ tempId: 'i1', kind: 'inference', fact: 'Data centers are likely about 40% of orders.', symbolCandidate: null, companyName: null, support: { kind: 'inference', index: null, from: [], reason: null } })],
-      summary: { text: 'About 40% of orders come from data centers.', basedOn: ['i1'] },
-    }), ctx());
-    expect(out).toMatchObject({ ok: false, rule: 'unsupported_number', detail: '40' });
+describe('B3 — as built, the spec\'s letter (rule 6, §6.6): any cited or carried finding backs a number (founder question FQ-5)', () => {
+  it('a summary number held only by a cited inference passes; one held by no cited finding fails', () => {
+    const inferred = f({ tempId: 'i1', kind: 'inference', fact: 'Data centers are likely about 40% of orders.', symbolCandidate: null, companyName: null, support: { kind: 'inference', index: null, from: [], reason: null } });
+    expect(validateStepTurn(turn({ findings: [inferred], summary: { text: 'About 40% of orders come from data centers.', basedOn: ['i1'] } }), ctx()).ok).toBe(true);
+    expect(validateStepTurn(turn({ findings: [inferred], summary: { text: 'About 45% of orders come from data centers.', basedOn: ['i1'] } }), ctx())).toMatchObject({ ok: false, rule: 'unsupported_number', detail: '45' });
   });
-  it('an adoption number held only by the open (unavailable) question is refused', () => {
+  it('an adoption number held by the carried open question passes; one no carried finding holds fails', () => {
     let r = dataCenterRecord('d4');
     r = withFindings(r, [['oq', { kind: 'relationship', symbol: 'ETN', fact: "Supplier · Eaton's data-center share, perhaps 40% of orders, is not disclosed.", source: { recordKind: 'exchange', recordId: PARTNER, label: 'Not yet checked' }, at: NOW, asOf: null, status: 'unavailable', statusReason: 'not_disclosed' }]], NOW);
     const supported = companiesOf(r, { names: NAMES }).supported;
     const carried = carriedFor(r, { supported, lines: null, symbols: ['ETN'] });
     expect(carried).toContain(fid('oq'));
-    expect(() => assertAssertionsSupported('Eaton earns 40% of its orders from data centers.', { record: r, carried, selected: [{ symbol: 'ETN', name: NAMES.ETN }], deselected: [] })).toThrow('unsupported_assertion');
+    expect(() => assertAssertionsSupported('Eaton earns 40% of its orders from data centers.', { record: r, carried, selected: [{ symbol: 'ETN', name: NAMES.ETN }], deselected: [] })).not.toThrow();
+    expect(() => assertAssertionsSupported('Eaton earns 45% of its orders from data centers.', { record: r, carried, selected: [{ symbol: 'ETN', name: NAMES.ETN }], deselected: [] })).toThrow('unsupported_assertion');
   });
 });
 
@@ -94,8 +93,8 @@ describe('B4 — the model\'s date is a strict calendar day', () => {
     expect(retrievalDatesOf({ modelAt: 'Nov 5', publishedDate: null, readAt: READ, writeAt: NOW })).toEqual({ at: READ, asOf: null, undated: true });
     expect(retrievalDatesOf({ modelAt: '2026-02-30', publishedDate: '2026-11-06T00:00:00.000Z', readAt: READ, writeAt: NOW }).at).toBe('2026-11-06T00:00:00.000Z');
   });
-  it('a published date later than the read dates nothing (B11)', () => {
-    expect(retrievalDatesOf({ modelAt: null, publishedDate: '2026-12-01T00:00:00.000Z', readAt: READ, writeAt: NOW })).toMatchObject({ at: READ, undated: true });
+  it('a published date later than the read is still the published date (§15 S-2\'s letter); asOf never the write time', () => {
+    expect(retrievalDatesOf({ modelAt: null, publishedDate: '2026-12-01T00:00:00.000Z', readAt: READ, writeAt: NOW })).toEqual({ at: '2026-12-01T00:00:00.000Z', asOf: null, undated: false });
   });
 });
 
@@ -106,8 +105,8 @@ describe('B5 — what a step may supersede', () => {
   it('never the player\'s words', () => {
     expect(validateStepTurn(turn({ findings: [inf({ fact: 'Security reviews slow deals across the industry.', supersedes: fid('ob') })] }), ctx({ record: withObservation() }))).toMatchObject({ ok: false, rule: 'invalid_supersedes' });
   });
-  it('never a Source-backed fact by an inference; an unavailable correction may say the evidence is unresolved', () => {
-    expect(validateStepTurn(turn({ findings: [inf({ fact: 'Growth is probably near 25%.', supersedes: fid('vf') })] }), ctx({ record: withObservation() }))).toMatchObject({ ok: false, rule: 'invalid_supersedes' });
+  it('rule 5\'s letter: an inference may supersede a verified fact (founder question FQ-4); so may an unavailable correction', () => {
+    expect(validateStepTurn(turn({ findings: [inf({ fact: 'Growth is probably near 25%.', supersedes: fid('vf') })] }), ctx({ record: withObservation() })).ok).toBe(true);
     const unresolved = f({ kind: 'earnings_fact', fact: 'The consensus figure could not be confirmed.', support: { kind: 'unresolved', index: null, from: [], reason: 'single_source' }, supersedes: fid('vf') });
     expect(validateStepTurn(turn({ findings: [unresolved] }), ctx({ record: withObservation() })).ok).toBe(true);
   });
@@ -126,9 +125,11 @@ describe('B6 — the forbidden patterns: misses closed, honest prose passes', ()
     expect(forbiddenIn('I have 80％ confidence.')).toContain('confidence_number');
     expect(forbiddenIn('This guar​antees orders.')).toContain('guarantee');
     expect(forbiddenIn('The agent considered Eaton.')).toContain('considered');
+    // rule 7 names the bare word: honest prose using it fails too (founder question FQ-3)
+    expect(forbiddenIn('Eaton is widely considered the largest switchgear supplier.')).toEqual(['considered']);
   });
   it('honest business prose', () => {
-    for (const s of ['Eaton is widely considered the largest switchgear supplier.', 'The deal unlocks new orders for Eaton, a partner of the builder.',
+    for (const s of ['The deal unlocks new orders for Eaton, a partner of the builder.',
       'Customers can learn more through the partner portal.', 'Sell-side analysts raised estimates.', 'Short interest rose last month.', 'Margins improved and revenue grew.']) {
       expect(forbiddenIn(s), s).toEqual([]);
     }
@@ -152,9 +153,9 @@ describe('B7 — company names', () => {
 describe('B8 / B11 — the opening writes no stray ticker and dates honestly', () => {
   const drop = { input: { type: 'text', text: 'my words', note: null }, parse: { dataPoints: ['VRT has a price target of 200 and you should buy it now', 'orders up 20%'] }, droppedAt: READ };
   const EX = { exchangeId: PARTNER, text: 'my words', at: READ };
-  it('a parser claim with a stray ticker or a forbidden pattern is not written; a headline\'s stray ticker is masked', () => {
-    const fs = openingFindingsOf({ entryKind: 'signaldrop', drop, playerExchange: EX, names: [], stored: {}, nowIso: NOW });
-    expect(fs.filter((x) => x.statusReason === 'from_drop').map((x) => x.fact)).toEqual(['orders up 20%']);
+  it('a parser claim naming a stray ticker is not written (other wording is quoted as the drop\'s — FQ-6); a headline\'s stray ticker is masked', () => {
+    const fs = openingFindingsOf({ entryKind: 'signaldrop', drop: { ...drop, parse: { dataPoints: [...drop.parse.dataPoints, 'you should buy it now'] } }, playerExchange: EX, names: [], stored: {}, nowIso: NOW });
+    expect(fs.filter((x) => x.statusReason === 'from_drop').map((x) => x.fact)).toEqual(['orders up 20%', 'you should buy it now']);
     expect(maskStrayTickers('VRT and ETN race to add capacity')).toBe(`${STRAY_TICKER_MASK} and ETN race to add capacity`);
   });
   it('a story with no publication time is labeled " · undated"; a blank text drop is not called an image', () => {
