@@ -66,10 +66,47 @@ function kbImportersIn(files, repoRoot) {
       else if (spec.startsWith('/')) target = path.join(repoRoot, ...spec.split('/'));
       else if (spec.startsWith('@/')) target = path.join(repoRoot, 'src', ...spec.slice(2).split('/'));
       const named = /(^|\/)api\/_utils\/kb(\/|$)/.test(spec);
-      if (named || (target && isInside(target, kbDir))) hits.push({ file, spec });
+      if (named || (target && isInside(target, kbDir))) hits.push({ file, spec, target });
     }
   }
   return hits;
+}
+
+/** Text naming the module's directory in any form (a glob, a URL, a script src, a path string). */
+const NAMES_KB = /_utils(?:\/|\\{1,2})kb(?![A-Za-z0-9_-])/;
+
+/**
+ * The argument count of every call to one of `names` in the code (strings,
+ * template literals and nested brackets skipped). Not seen: a call through an
+ * alias (`const f = loadAuthorizedMethod; f(a, b)`) or a spread.
+ */
+function callArgCounts(code, names) {
+  const out = [];
+  const re = new RegExp(`\\b(${names.join('|')})\\s*\\(`, 'g');
+  for (const m of code.matchAll(re)) {
+    let depth = 0;
+    let commas = 0;
+    let sawArg = false;
+    let quote = null;
+    for (let i = m.index + m[0].length; i < code.length; i += 1) {
+      const c = code[i];
+      if (quote) {
+        if (c === '\\') i += 1;
+        else if (c === quote) quote = null;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === '`') { quote = c; sawArg = true; continue; }
+      if (c === '(' || c === '[' || c === '{') { depth += 1; sawArg = true; continue; }
+      if (c === ')' || c === ']' || c === '}') {
+        if (depth === 0) { out.push({ name: m[1], args: sawArg ? commas + 1 : 0 }); break; }
+        depth -= 1;
+        continue;
+      }
+      if (c === ',' && depth === 0) { commas += 1; continue; }
+      if (!/\s/.test(c)) sawArg = true;
+    }
+  }
+  return out;
 }
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.claude', 'dist', 'coverage', '.vercel', '.vite', '.firebase']);
@@ -136,6 +173,28 @@ describe('the scanners, proven on planted text', () => {
     const hits = kbImportersIn(planted, REPO).map((h) => path.relative(REPO, h.file).split(path.sep).join('/'));
     expect(hits).toEqual(['src/screens/X.jsx', 'api/forge/route.js', 'scripts/other.mjs', 'api/cron/job.cjs', 'src/y.js', 'api/_utils/kb/loader.test.js']);
   });
+
+  it('NAMES_KB catches the client forms no import statement shows (review KL3-3)', () => {
+    for (const planted of [
+      "const all = import.meta.glob('../api/_utils/kb/packages/*.json', { eager: true });",
+      "const g = import.meta.glob('/api/_utils/kb/**');",
+      "const u = new URL('../api/_utils/kb/packages/x.json', import.meta.url);",
+      '<script type="module" src="/api/_utils/kb/loader.js"></script>',
+      'const p = "..\\\\api\\\\_utils\\\\kb\\\\loader.js";',
+    ]) expect(planted).toMatch(NAMES_KB);
+    expect("import x from './_utils/kbx/y.js'; const kb = 'kb-notes';").not.toMatch(NAMES_KB);
+  });
+
+  it('callArgCounts counts top-level arguments (review KL3-1)', () => {
+    const code = [
+      'authorizedMethodFor({ consumer: c, inAudience: f });',
+      'loadAuthorizedMethod({ id, version, consumer, inAudience }, { authorizations: [e] });',
+      "authorizedMethodFor(req, deps)",
+      "loadAuthorizedMethod(make('a, b'), [1, 2].length)",
+      'authorizedMethodFor()',
+    ].join('\n');
+    expect(callArgCounts(code, ['loadAuthorizedMethod', 'authorizedMethodFor']).map((c) => c.args)).toEqual([1, 2, 2, 2, 0]);
+  });
 });
 
 describe('the KB modules', () => {
@@ -185,8 +244,48 @@ describe('dark by construction', () => {
     expect(hits.filter((h) => isInside(h.file, path.join(REPO, 'src'))).map((h) => `${rel(h.file)} → ${h.spec}`)).toEqual([]);
   });
 
+  // KB-1 moves THIS row only, and admits named imports of the authorized entry
+  // points only (authorizedMethodFor, loadAuthorizedMethod, inAudienceFor, and
+  // KB_REFUSALS if needed) — never verifyPackage, verifyParts, KB_PACKAGES or
+  // KB_APP_USE, which answer the method text or the package without an
+  // authorization. The two rows below it are permanent.
   it('nothing outside api/_utils/kb/ and scripts/kb/ imports it (KB-1 moves this row)', () => {
     const outside = hits.filter((h) => !isInside(h.file, KB_DIR) && !isInside(h.file, SCRIPTS_KB));
     expect(outside.map((h) => `${rel(h.file)} → ${h.spec}`)).toEqual([]);
+  });
+
+  it('PERMANENT: nothing outside api/_utils/kb/ imports its packages or its authorization list (review KL3-2)', () => {
+    const PACKAGES_DIR = path.join(KB_DIR, 'packages');
+    const AUTH = path.join(KB_DIR, 'authorizations.js');
+    const reached = hits.filter((h) => !isInside(h.file, KB_DIR)
+      && (h.target === null || isInside(h.target, PACKAGES_DIR) || h.target === AUTH || h.target === KB_DIR));
+    expect(reached.map((h) => `${rel(h.file)} → ${h.spec}`)).toEqual([]);
+    // Proven on planted importers.
+    const planted = [
+      { file: path.join(REPO, 'api', 'x.js'), text: "import { KB_PACKAGES } from './_utils/kb/packages/index.js';" },
+      { file: path.join(REPO, 'api', 'y.js'), text: "import { KB_APP_USE } from './_utils/kb/authorizations.js';" },
+    ];
+    expect(kbImportersIn(planted, REPO).filter((h) => isInside(h.target, PACKAGES_DIR) || h.target === AUTH)).toHaveLength(2);
+  });
+
+  it('PERMANENT: no file under src/ (any type) and not index.html names api/_utils/kb (review KL3-3)', () => {
+    const clientFiles = [];
+    const all = (dir) => {
+      for (const d of readdirSync(dir, { withFileTypes: true })) {
+        if (d.isDirectory()) { if (!SKIP_DIRS.has(d.name)) all(path.join(dir, d.name)); } else if (d.isFile()) clientFiles.push(path.join(dir, d.name));
+      }
+    };
+    all(path.join(REPO, 'src'));
+    clientFiles.push(path.join(REPO, 'index.html'));
+    expect(clientFiles.length).toBeGreaterThan(500);
+    const naming = clientFiles.filter((f) => NAMES_KB.test(readFileSync(f, 'latin1')));
+    expect(naming.map(rel)).toEqual([]);
+  });
+
+  it('PERMANENT: every call to an authorized entry point outside api/_utils/kb/ passes no deps — one argument (review KL3-1)', () => {
+    const calls = files
+      .filter((f) => !isInside(f.file, KB_DIR) && !/\.test\.[cm]?jsx?$/.test(f.file))
+      .flatMap((f) => callArgCounts(stripComments(f.text), ['loadAuthorizedMethod', 'authorizedMethodFor']).map((c) => ({ ...c, file: rel(f.file) })));
+    expect(calls.filter((c) => c.args !== 1)).toEqual([]);
   });
 });

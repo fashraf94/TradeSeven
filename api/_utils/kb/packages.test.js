@@ -16,7 +16,7 @@
 //                  is proven against a planted list here.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync, cpSync, symlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
@@ -93,6 +93,16 @@ describe('the pins (Amendment A §A2)', () => {
     expect(REAL[key]).toEqual(wrapper);
   });
 
+  it.each([
+    ['method_text', () => REAL.exportJson.method_text],
+    ['the acceptance text', () => REAL.acceptance.text],
+    ['the register text', () => REAL.register.text],
+  ])('%s itself is LF with no byte-order mark (the files escape a CR as \\r; review KL1-6)', (_label, textOf) => {
+    const text = textOf();
+    expect(text.includes('\r')).toBe(false);
+    expect(text.includes('﻿')).toBe(false);
+  });
+
   it('the imported export is the committed file', () => {
     expect(REAL.exportJson).toEqual(JSON.parse(raw(FILES.export).toString('utf8')));
   });
@@ -135,6 +145,7 @@ function memoryRelease() {
         id: ID,
         version: VERSION,
         status: 'accepted',
+        content_sha256: PINS.methodText,
         export: part(RELEASE_PATHS.export),
         acceptance: part(RELEASE_PATHS.acceptance),
         source_register: part(RELEASE_PATHS.register),
@@ -207,6 +218,8 @@ describe('the import script — packageFilesOf', () => {
     ['a path leaving the release', (rel) => { row(rel).export.path = '../outside.json'; }, 'index'],
     ['an absolute path', (rel) => { row(rel).export.path = '/etc/passwd'; }, 'index'],
     ['a release id that is not a plain name', (rel) => { rel.index.schema = '../x/accepted-release/1'; }, 'index'],
+    ['an index of another schema (review KL1-7)', (rel) => { rel.index.schema = 'KB-CONTENT-001/accepted-release/2'; }, 'index'],
+    ["the row's content_sha256 is not the verified method hash (review KL1-7)", (rel) => { row(rel).content_sha256 = '0'.repeat(64); }, 'index'],
     ['a file the release does not have', (rel) => { rel.files.delete(RELEASE_PATHS.register); }, 'unreadable'],
   ])('refuses, with no files: %s', (_label, damage, reason) => {
     const rel = memoryRelease();
@@ -266,6 +279,61 @@ describe('the import script — the command line (writes nothing on a refusal; -
       expect(cli(['--release', release]).status).toBe(2);
     } finally {
       rmSync(release, { recursive: true, force: true });
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('never replaces a file with other bytes: all three checked before anything is written (review KL1-2)', () => {
+    const release = onDisk(memoryRelease());
+    const out = mkdtempSync(path.join(os.tmpdir(), 'kb0-out-'));
+    try {
+      const other = Buffer.from('{ "path": "methods/KB-OTHER-001/v0.1/SOURCE-REGISTER.txt", "text": "x" }\n');
+      writeFileSync(path.join(out, FILES.register), other);
+      const r = cli(['--release', release, '--id', ID, '--version', VERSION, '--out', out]);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(`REFUSED: overwrite (${FILES.register}`);
+      expect(readdirSync(out)).toEqual([FILES.register]);
+      expect(readFileSync(path.join(out, FILES.register)).equals(other)).toBe(true);
+      // The same bytes are no overwrite: a re-import of identical files succeeds.
+      writeFileSync(path.join(out, FILES.register), raw(FILES.register));
+      expect(cli(['--release', release, '--id', ID, '--version', VERSION, '--out', out]).status).toBe(0);
+    } finally {
+      rmSync(release, { recursive: true, force: true });
+      rmSync(out, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('a link inside the release cannot lead out of it, and no refusal prints a local path (reviews KL3-4, KL3-5)', () => {
+    const rel = memoryRelease();
+    const release = onDisk(rel);
+    const outside = mkdtempSync(path.join(os.tmpdir(), 'kb0-outside-'));
+    const out = mkdtempSync(path.join(os.tmpdir(), 'kb0-out-'));
+    try {
+      // Move `methods/` out of the release and leave a directory link in its place.
+      const methods = path.join(release, 'methods');
+      cpSync(methods, path.join(outside, 'methods'), { recursive: true });
+      rmSync(methods, { recursive: true, force: true });
+      symlinkSync(path.join(outside, 'methods'), methods, 'junction');
+      const linked = cli(['--release', release, '--id', ID, '--version', VERSION, '--out', out]);
+      expect(linked.status).toBe(1);
+      expect(linked.stderr).toContain('REFUSED: unreadable');
+      expect(linked.stderr).toContain('leaves the release through a link');
+      expect(readdirSync(out)).toEqual([]);
+
+      const missingRelease = cli(['--release', path.join(outside, 'nope'), '--id', ID, '--version', VERSION, '--out', out]);
+      expect(missingRelease.status).toBe(1);
+      expect(missingRelease.stderr.trim()).toBe('REFUSED: release (not a readable directory)');
+      const noIndex = cli(['--release', outside, '--id', ID, '--version', VERSION, '--out', out]);
+      expect(noIndex.status).toBe(1);
+      expect(noIndex.stderr.trim()).toBe('REFUSED: index (RELEASE-INDEX.json unreadable or not JSON)');
+      for (const r of [linked, missingRelease, noIndex]) {
+        expect(r.stderr).not.toContain(os.tmpdir());
+        expect(r.stderr).not.toContain(path.basename(outside));
+      }
+    } finally {
+      rmSync(path.join(release, 'methods'), { recursive: true, force: true });
+      rmSync(release, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
       rmSync(out, { recursive: true, force: true });
     }
   }, 30_000);

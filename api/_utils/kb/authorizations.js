@@ -13,9 +13,12 @@
 // entry: a session holding the method falls back to the baseline on its next
 // turn and records the change.
 //
-// THE ENTRY'S SHAPE (loader.js isAuthorizationEntry checks it; a malformed
-// entry is ignored at run time, and packages.test.js fails the build if this
-// list holds one):
+// THE ENTRY'S SHAPE (loader.js isAuthorizationEntry checks it, on a copy of
+// the entry's own plain-data fields: no getters, no inherited fields, no holes
+// in `consumers`). A malformed entry is ignored at run time — except one whose
+// only fault is an unknown audience, which answers `audience` (check 10) and
+// counts toward ambiguity. packages.test.js fails the build if this list holds
+// any malformed entry:
 //
 //   { id,                 the method's id, e.g. 'KB-IDEA-EVALUATION-001'
 //     version,            its version, e.g. '0.1'

@@ -10,18 +10,20 @@
 //
 // THE TEN CHECKS run in this order; the first failure is the answer:
 //
-//    1 missing               a package with this id and version, with its export,
-//                            acceptance wrapper and register wrapper
-//    2 schema                the export's schema is fantasytrades.kb-method-package/1
-//                            (and it carries the title and acceptance date the
-//                            answer reports)
+//    1 missing               a package with this id and version (both non-empty
+//                            strings), with its export, acceptance wrapper and
+//                            register wrapper
+//    2 schema                the export's schema is fantasytrades.kb-method-package/1,
+//                            with the title the answer reports
 //    3 identity              the export's id and version equal the request
-//    4 not_accepted          status 'accepted', acceptance.decision 'accept', no test_only
+//    4 not_accepted          status 'accepted', acceptance.decision 'accept' with
+//                            its date, no test_only
 //    5 corrupt               SHA-256 of method_text equals content_hash.value and
 //                            acceptance.content_sha256 (algorithm sha256)
 //    6 acceptance_mismatch   SHA-256 of the acceptance text equals the export's
 //                            acceptance.evidence_sha256; the parsed record's id,
-//                            version, decision 'accept' and content_sha256 agree
+//                            version, decision 'accept', content_sha256 and date
+//                            agree with the export
 //    7 register_mismatch     SHA-256 of the register text equals the verified
 //                            record's source_register.sha256
 //    8 not_authorized        an authorization entry for this id and version whose
@@ -30,9 +32,10 @@
 //   10 audience              the entry's audience is known and inAudience says true
 //
 // Every hash is recomputed here; no file's claim about its own hash is
-// trusted. The release's own `production_app_use_authorized: false` is content
-// status, neither permission nor refusal: app use is the authorization entry
-// (authorizations.js), and that list ships empty.
+// trusted. Every field is read ONCE: what is checked or hashed is what is
+// answered. The release's own `production_app_use_authorized: false` is
+// content status, neither permission nor refusal: app use is the
+// authorization entry (authorizations.js), and that list ships empty.
 //
 // NEVER THROWS. An unexpected exception inside checks 1–7 answers `corrupt`;
 // inside checks 8–10 it answers the refusal of the check that raised it (a
@@ -74,15 +77,27 @@ export const KB_REFUSALS = Object.freeze([
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{1,9})?(Z|[+-](\d{2}):(\d{2}))$/;
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 const ENTRY_KEYS = new Set([
   'id', 'version', 'sha256', 'acceptanceSha256', 'consumers', 'audience',
   'newSessions', 'authorizedAt', 'authorizedBy', 'evidenceRef',
 ]);
 
 const refuse = (reason) => Object.freeze({ ok: false, reason });
-const sha256Hex = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNonEmptyString = (v) => typeof v === 'string' && v.length > 0;
+
+/**
+ * SHA-256 of a well-formed string's UTF-8 bytes, else null. (UTF-8 encodes a
+ * lone surrogate as U+FFFD, so two different strings would share one hash.)
+ */
+function sha256Hex(text) {
+  if (typeof text !== 'string' || LONE_SURROGATE.test(text)) return null;
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+/** Both are the same hash (null, or anything that is not a string, never matches). */
+const sameHash = (a, b) => typeof a === 'string' && a === b;
 
 /**
  * An ISO instant naming a real calendar time (Date.parse alone takes
@@ -127,37 +142,54 @@ function authorizationsOf(deps) {
  * callers turn that into `corrupt`.
  */
 function checkParts(id, version, exp, acceptanceText, registerText) {
-  // Check 2 — the schema, and the two fields the answer reports.
-  if (exp.schema !== KB_PACKAGE_SCHEMA || !isNonEmptyString(exp.title) || !isNonEmptyString(exp.acceptance?.date)) return refuse('schema');
+  // Each export field is read once, here.
+  const schema = exp.schema;
+  const expId = exp.id;
+  const expVersion = exp.version;
+  const status = exp.status;
+  const testOnly = exp.test_only;
+  const title = exp.title;
+  const text = exp.method_text;
+  const ch = isObject(exp.content_hash) ? exp.content_hash : {};
+  const algorithm = ch.algorithm;
+  const contentValue = ch.value;
+  const acc = isObject(exp.acceptance) ? exp.acceptance : {};
+  const decision = acc.decision;
+  const acceptedAt = acc.date;
+  const accContentSha256 = acc.content_sha256;
+  const evidenceSha256 = acc.evidence_sha256;
+
+  // Check 2 — the schema, with the title the answer reports.
+  if (schema !== KB_PACKAGE_SCHEMA || !isNonEmptyString(title)) return refuse('schema');
 
   // Check 3 — the export is the method that was asked for.
-  if (exp.id !== id || exp.version !== version) return refuse('identity');
+  if (expId !== id || expVersion !== version) return refuse('identity');
 
-  // Check 4 — accepted content, not a test fixture.
-  if (exp.status !== 'accepted' || exp.acceptance.decision !== 'accept' || (exp.test_only !== undefined && exp.test_only !== false)) return refuse('not_accepted');
+  // Check 4 — accepted content, with its acceptance date, not a test fixture.
+  if (status !== 'accepted' || decision !== 'accept' || !isNonEmptyString(acceptedAt) || (testOnly !== undefined && testOnly !== false)) return refuse('not_accepted');
 
   // Check 5 — the method text is the text the export and its acceptance name.
-  const methodSha256 = sha256Hex(exp.method_text);
-  if (exp.content_hash?.algorithm !== 'sha256' || methodSha256 !== exp.content_hash.value || methodSha256 !== exp.acceptance.content_sha256) return refuse('corrupt');
+  const methodSha256 = sha256Hex(text);
+  if (algorithm !== 'sha256' || !sameHash(methodSha256, contentValue) || !sameHash(methodSha256, accContentSha256)) return refuse('corrupt');
 
   // Check 6 — the acceptance record is the one the export binds, and agrees with it.
   const acceptanceSha256 = sha256Hex(acceptanceText);
   const record = parseObject(acceptanceText);
-  if (acceptanceSha256 !== exp.acceptance.evidence_sha256 || record === null || record.id !== exp.id || record.version !== exp.version || record.decision !== 'accept' || record.content_sha256 !== methodSha256) return refuse('acceptance_mismatch');
+  if (!sameHash(acceptanceSha256, evidenceSha256) || record === null || record.id !== expId || record.version !== expVersion || record.decision !== 'accept' || record.content_sha256 !== methodSha256 || record.date !== acceptedAt) return refuse('acceptance_mismatch');
 
   // Check 7 — the source register is the one the verified record binds.
-  if (sha256Hex(registerText) !== record?.source_register?.sha256) return refuse('register_mismatch');
+  if (!sameHash(sha256Hex(registerText), record?.source_register?.sha256)) return refuse('register_mismatch');
 
   return Object.freeze({
     ok: true,
     method: Object.freeze({
-      id: exp.id,
-      version: exp.version,
+      id: expId,
+      version: expVersion,
       sha256: methodSha256,
       acceptanceSha256,
-      title: exp.title,
-      text: exp.method_text,
-      acceptedAt: exp.acceptance.date,
+      title,
+      text,
+      acceptedAt,
     }),
   });
 }
@@ -172,7 +204,7 @@ function checkParts(id, version, exp, acceptanceText, registerText) {
 export function verifyParts(parts) {
   try {
     const { id, version, exportJson, acceptanceText, registerText } = isObject(parts) ? parts : {};
-    if (!isObject(exportJson) || typeof acceptanceText !== 'string' || typeof registerText !== 'string') return refuse('missing');
+    if (!isNonEmptyString(id) || !isNonEmptyString(version) || !isObject(exportJson) || typeof acceptanceText !== 'string' || typeof registerText !== 'string') return refuse('missing');
     return checkParts(id, version, exportJson, acceptanceText, registerText);
   } catch {
     return refuse('corrupt');
@@ -192,32 +224,70 @@ export function verifyPackage(request, deps) {
     const packages = packagesOf(deps);
 
     // Check 1 — the package is committed, with all three of its parts.
-    const row = Array.isArray(packages) ? packages.find((p) => isObject(p) && p.id === id && p.version === version) : undefined;
-    if (!row || !isObject(row.exportJson) || typeof row.acceptance?.text !== 'string' || typeof row.register?.text !== 'string') return refuse('missing');
+    const row = isNonEmptyString(id) && isNonEmptyString(version) && Array.isArray(packages) ? packages.find((p) => isObject(p) && p.id === id && p.version === version) : undefined;
+    const exportJson = row?.exportJson;
+    const acceptanceText = row?.acceptance?.text;
+    const registerText = row?.register?.text;
+    if (!row || !isObject(exportJson) || typeof acceptanceText !== 'string' || typeof registerText !== 'string') return refuse('missing');
 
-    return checkParts(id, version, row.exportJson, row.acceptance.text, row.register.text);
+    return checkParts(id, version, exportJson, acceptanceText, registerText);
   } catch {
     return refuse('corrupt');
   }
 }
 
 /**
- * The entry's shape apart from its audience, which check 10 judges (so an
- * unknown audience answers `audience`, not `not_authorized`). Never throws.
+ * A one-time copy of an authorization entry's OWN DATA fields, or null when
+ * it is not a plain object made only of known keys held as plain data (no
+ * getter, no inherited field, no symbol key, no hole in `consumers`). Checks
+ * 8–10 judge and use the copy, so nothing can change between two reads.
+ * Never throws.
  */
-function isEntryShape(entry) {
+function entrySnapshot(entry) {
   try {
-    return isObject(entry)
-      && Object.keys(entry).every((k) => ENTRY_KEYS.has(k))
-      && isNonEmptyString(entry.id)
-      && isNonEmptyString(entry.version)
-      && typeof entry.sha256 === 'string' && HEX64.test(entry.sha256)
-      && typeof entry.acceptanceSha256 === 'string' && HEX64.test(entry.acceptanceSha256)
-      && Array.isArray(entry.consumers) && entry.consumers.length > 0 && entry.consumers.every(isNonEmptyString)
-      && (entry.newSessions === undefined || typeof entry.newSessions === 'boolean')
-      && isIsoInstant(entry.authorizedAt)
-      && isNonEmptyString(entry.authorizedBy)
-      && isNonEmptyString(entry.evidenceRef);
+    if (!isObject(entry)) return null;
+    const proto = Object.getPrototypeOf(entry);
+    if (proto !== Object.prototype && proto !== null) return null;
+    const copy = Object.create(null); // the copy inherits nothing either
+    for (const key of Reflect.ownKeys(entry)) {
+      if (typeof key !== 'string' || !ENTRY_KEYS.has(key)) return null;
+      const d = Object.getOwnPropertyDescriptor(entry, key);
+      if (!d || !('value' in d)) return null;
+      copy[key] = d.value;
+    }
+    if (Array.isArray(copy.consumers)) {
+      const consumers = [];
+      const length = copy.consumers.length;
+      for (let i = 0; i < length; i += 1) {
+        const d = Object.getOwnPropertyDescriptor(copy.consumers, i);
+        if (!d || !('value' in d)) return null;
+        consumers.push(d.value);
+      }
+      copy.consumers = Object.freeze(consumers);
+    }
+    return Object.freeze(copy);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The entry's shape (on a snapshot) apart from its audience, which check 10
+ * judges: an entry whose one fault is an unknown audience is not ignored, it
+ * answers `audience`. Never throws.
+ */
+function isEntryShape(snap) {
+  try {
+    return snap !== null
+      && isNonEmptyString(snap.id)
+      && isNonEmptyString(snap.version)
+      && typeof snap.sha256 === 'string' && HEX64.test(snap.sha256)
+      && typeof snap.acceptanceSha256 === 'string' && HEX64.test(snap.acceptanceSha256)
+      && Array.isArray(snap.consumers) && snap.consumers.length > 0 && snap.consumers.every(isNonEmptyString)
+      && (snap.newSessions === undefined || typeof snap.newSessions === 'boolean')
+      && isIsoInstant(snap.authorizedAt)
+      && isNonEmptyString(snap.authorizedBy)
+      && isNonEmptyString(snap.evidenceRef);
   } catch {
     return false;
   }
@@ -232,31 +302,27 @@ function isEntryShape(entry) {
  */
 export function isAuthorizationEntry(entry) {
   try {
-    return isEntryShape(entry) && KB_AUDIENCES.includes(entry.audience);
+    const snap = entrySnapshot(entry);
+    return isEntryShape(snap) && KB_AUDIENCES.includes(snap.audience);
   } catch {
     return false;
   }
 }
 
-/**
- * Checks 1–10, for a method a session already holds. An entry with
- * `newSessions: false` still serves here: a session that holds that version
- * keeps it.
- *
- * @param {{ id: string, version: string, consumer: string, inAudience: (audience: string) => boolean }} request
- * @param {{ packages?: object[], authorizations?: object[] }} [deps]  for tests
- * @returns {{ ok: true, method: { id, version, sha256, title, text, acceptedAt, consumer, audience } } | { ok: false, reason: string }}
- */
-export function loadAuthorizedMethod(request, deps) {
-  const verified = verifyPackage(request, deps);
-  if (!verified.ok) return verified;
-  const v = verified.method;
+/** The well-formed (audience apart) snapshots of a list's entries. */
+const shapedSnapshots = (list) => list.map(entrySnapshot).filter(isEntryShape);
 
+/**
+ * Checks 8–10 on a package that passed checks 1–7. `candidates` are entry
+ * snapshots: every shaped entry of the list (loadAuthorizedMethod), or the one
+ * entry authorizedMethodFor offered. `readConsumer` and `readInAudience` read
+ * the request inside the check that needs each.
+ */
+function authorize(v, candidatesOf, readConsumer, readInAudience) {
   // Check 8 — an entry authorizes exactly these verified bytes.
   let matches;
   try {
-    matches = authorizationsOf(deps).filter((e) => isEntryShape(e)
-      && e.id === v.id && e.version === v.version && e.sha256 === v.sha256 && e.acceptanceSha256 === v.acceptanceSha256);
+    matches = candidatesOf().filter((e) => e.id === v.id && e.version === v.version && e.sha256 === v.sha256 && e.acceptanceSha256 === v.acceptanceSha256);
     if (matches.length === 0) return refuse('not_authorized');
   } catch {
     return refuse('not_authorized');
@@ -266,20 +332,21 @@ export function loadAuthorizedMethod(request, deps) {
   let entry;
   let consumer;
   try {
-    consumer = request.consumer;
-    const forConsumer = matches.filter((e) => e.consumers.includes(consumer));
+    consumer = readConsumer();
+    const forConsumer = isNonEmptyString(consumer) ? matches.filter((e) => e.consumers.includes(consumer)) : [];
     if (forConsumer.length !== 1) return refuse(forConsumer.length === 0 ? 'scope' : 'not_authorized');
     entry = forConsumer[0];
   } catch {
     return refuse('scope');
   }
 
-  // Check 10 — a known audience, and this player is in it.
-  let audience;
+  // Check 10 — a known audience, and this player is in it (only a synchronous `true` admits).
+  const audience = entry.audience;
   try {
-    audience = entry.audience;
-    const inAudience = request.inAudience;
-    if (!KB_AUDIENCES.includes(audience) || typeof inAudience !== 'function' || inAudience(audience) !== true) return refuse('audience');
+    const inAudience = readInAudience();
+    const answer = typeof inAudience === 'function' && KB_AUDIENCES.includes(audience) ? inAudience(audience) : false;
+    if (answer !== null && (typeof answer === 'object' || typeof answer === 'function') && typeof answer.then === 'function') answer.then(undefined, () => {});
+    if (!KB_AUDIENCES.includes(audience) || answer !== true) return refuse('audience');
   } catch {
     return refuse('audience');
   }
@@ -300,21 +367,47 @@ export function loadAuthorizedMethod(request, deps) {
 }
 
 /**
- * The one entry for this consumer that takes new sessions, then checks 1–10.
- * None, or more than one, answers `not_authorized`.
+ * Checks 1–10, for a method a session already holds. An entry with
+ * `newSessions: false` still serves here: a session that holds that version
+ * keeps it.
+ *
+ * @param {{ id: string, version: string, consumer: string, inAudience: (audience: string) => boolean }} request
+ * @param {{ packages?: object[], authorizations?: object[] }} [deps]  for tests
+ * @returns {{ ok: true, method: { id, version, sha256, title, text, acceptedAt, consumer, audience } } | { ok: false, reason: string }}
+ */
+export function loadAuthorizedMethod(request, deps) {
+  const verified = verifyPackage(request, deps);
+  if (!verified.ok) return verified;
+  return authorize(
+    verified.method,
+    () => shapedSnapshots(authorizationsOf(deps)),
+    () => request.consumer,
+    () => request.inAudience,
+  );
+}
+
+/**
+ * The one entry for this consumer that takes new sessions, then checks 1–10
+ * ON THAT ENTRY (never on another entry for the same version). None, or more
+ * than one, answers `not_authorized`.
  *
  * @param {{ consumer: string, inAudience: (audience: string) => boolean }} request
  * @param {{ packages?: object[], authorizations?: object[] }} [deps]  for tests
  * @returns {{ ok: true, method: { id, version, sha256, title, text, acceptedAt, consumer, audience } } | { ok: false, reason: string }}
  */
 export function authorizedMethodFor(request, deps) {
+  let offered;
+  let consumer;
   try {
-    const { consumer, inAudience } = isObject(request) ? request : {};
-    const offered = authorizationsOf(deps).filter((e) => isEntryShape(e)
-      && e.consumers.includes(consumer) && e.newSessions !== false);
-    if (offered.length !== 1) return refuse('not_authorized');
-    return loadAuthorizedMethod({ id: offered[0].id, version: offered[0].version, consumer, inAudience }, deps);
+    consumer = isObject(request) ? request.consumer : undefined;
+    if (!isNonEmptyString(consumer)) return refuse('not_authorized');
+    const forNewSessions = shapedSnapshots(authorizationsOf(deps)).filter((e) => e.consumers.includes(consumer) && e.newSessions !== false);
+    if (forNewSessions.length !== 1) return refuse('not_authorized');
+    offered = forNewSessions[0];
   } catch {
     return refuse('not_authorized');
   }
+  const verified = verifyPackage({ id: offered.id, version: offered.version }, deps);
+  if (!verified.ok) return verified;
+  return authorize(verified.method, () => [offered], () => consumer, () => request.inAudience);
 }

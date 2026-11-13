@@ -29,6 +29,8 @@ const CONSUMER = 'shared_research.observation';
 const METHOD_SHA256 = 'b0688fb33cdd5b16835a5a70f7fcef7ca79d00facced233d1529d26b4e77854e';
 const ACCEPTANCE_SHA256 = 'ec709781b80d2deeb325702faccb7a90abaa0c244c96103f0e956f81d26a08ee';
 const DRIVE_PATH = /[A-Za-z]:\\/;
+// Any local path form: a drive letter (either slash), a UNC share, a POSIX home.
+const LOCAL_PATH = /[A-Za-z]:[\\/]|\\\\[^\\]|(^|[\s"'(])\/(home|Users)\//;
 
 const sha = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
 const REAL = KB_PACKAGES.find((p) => p.id === ID && p.version === VERSION);
@@ -104,6 +106,16 @@ describe('check 1 — missing', () => {
     expect(verifyRow(row)).toEqual({ ok: false, reason: 'missing' });
   });
 
+  it('a request without a non-empty id and version is missing, even when a row and an export lack them too (review KL2-8)', () => {
+    const row = copyRow();
+    delete row.id;
+    delete row.version;
+    expect(verifyPackage({}, { packages: [row] })).toEqual({ ok: false, reason: 'missing' });
+    expect(verifyPackage({ id: '', version: '' }, { packages: [{ ...row, id: '', version: '' }] })).toEqual({ ok: false, reason: 'missing' });
+    const p = copyRow();
+    expect(verifyParts({ exportJson: p.exportJson, acceptanceText: p.acceptance.text, registerText: p.register.text })).toEqual({ ok: false, reason: 'missing' });
+  });
+
   it('no package list, an empty one, and verifyParts without a part', () => {
     expect(verifyPackage({ id: ID, version: VERSION }, { packages: 'nope' })).toEqual({ ok: false, reason: 'missing' });
     expect(verifyPackage({ id: ID, version: VERSION }, { packages: [] })).toEqual({ ok: false, reason: 'missing' });
@@ -117,7 +129,7 @@ describe('check 2 — schema', () => {
     ['another schema', (e) => { e.schema = 'fantasytrades.kb-method-package/2'; }],
     ['no schema', (e) => { delete e.schema; }],
     ['no title', (e) => { delete e.title; }],
-    ['no acceptance date', (e) => { delete e.acceptance.date; }],
+    ['an empty title', (e) => { e.title = ''; }],
   ])('%s', (_label, damage) => {
     const row = copyRow();
     damage(row.exportJson);
@@ -147,6 +159,8 @@ describe('check 4 — not_accepted', () => {
     ['test_only: true', (e) => { e.test_only = true; }],
     ['test_only: "true" (any value but false)', (e) => { e.test_only = 'true'; }],
     ['decision reject', (e) => { e.acceptance.decision = 'reject'; }],
+    ['no acceptance date (an accepted export carries its date)', (e) => { delete e.acceptance.date; }],
+    ['no acceptance block at all (a candidate export, review KL2-7)', (e) => { e.status = 'reviewed_candidate'; delete e.acceptance; }],
   ])('%s', (_label, damage) => {
     const row = copyRow();
     damage(row.exportJson);
@@ -171,6 +185,29 @@ describe('check 5 — corrupt', () => {
     const row = copyRow();
     damage(row.exportJson);
     expect(verifyRow(row)).toEqual({ ok: false, reason: 'corrupt' });
+  });
+
+  it('a lone surrogate in method_text is corrupt, though its UTF-8 bytes hash like U+FFFD (review KL1-4)', () => {
+    const row = copyRow();
+    const e = row.exportJson;
+    e.method_text = `${e.method_text}\uD800`;
+    const lookalike = sha(`${REAL.exportJson.method_text}�`);
+    expect(sha(e.method_text)).toBe(lookalike); // the collision this row guards against
+    e.content_hash.value = lookalike;
+    e.acceptance.content_sha256 = lookalike;
+    expect(verifyRow(row)).toEqual({ ok: false, reason: 'corrupt' });
+  });
+
+  it('every field is read once: a method_text getter cannot serve other text than it hashed (review KL2-4)', () => {
+    const row = copyRow();
+    const good = row.exportJson.method_text;
+    let reads = 0;
+    Object.defineProperty(row.exportJson, 'method_text', { get() { reads += 1; return reads === 1 ? good : 'OTHER TEXT'; } });
+    const r = verifyRow(row);
+    expect(r.ok).toBe(true);
+    expect(r.method.text).toBe(good);
+    expect(r.method.sha256).toBe(METHOD_SHA256);
+    expect(reads).toBe(1);
   });
 });
 
@@ -202,6 +239,7 @@ describe('check 6 — acceptance_mismatch', () => {
     ['version', (r) => { r.version = '0.2'; }],
     ['decision', (r) => { r.decision = 'reject'; }],
     ['content_sha256', (r) => { r.content_sha256 = otherHex(r.content_sha256); }],
+    ['date (the acceptedAt the answer reports, reading R7)', (r) => { r.date = '1999-01-01T00:00:00Z'; }],
   ])("the record's %s disagrees (hash re-bound)", (_label, mutate) => {
     expect(verifyRow(reRecorded(mutate))).toEqual({ ok: false, reason: 'acceptance_mismatch' });
   });
@@ -278,8 +316,20 @@ describe('isAuthorizationEntry — the shape (§A3.4)', () => {
     ['an unknown key (a misspelt newSessions)', entry({ newSession: false })],
     ['null', null],
     ['an array', [entry()]],
+    // Review KL2-2 and KL2-5: the shape is judged on the entry's OWN PLAIN DATA.
+    ['consumers with a hole before the consumer', entry({ consumers: [, CONSUMER] })], // eslint-disable-line no-sparse-arrays
+    ['consumers that are only a hole', entry({ consumers: [,] })], // eslint-disable-line no-sparse-arrays
+    ['every field inherited (Object.create of a good entry)', Object.create(entry())],
+    ['a field behind a getter', (() => { const e = entry(); delete e.audience; Object.defineProperty(e, 'audience', { get: () => 'allowlist', enumerable: true }); return e; })()],
+    ['a symbol key', (() => { const e = entry(); e[Symbol('x')] = 1; return e; })()],
+    ['a non-enumerable unknown key', (() => { const e = entry(); Object.defineProperty(e, 'newSession', { value: false }); return e; })()],
+    ['a class instance', new (class Entry { constructor() { Object.assign(this, entry()); } })()],
   ])('malformed: %s', (_label, e) => {
     expect(isAuthorizationEntry(e)).toBe(false);
+  });
+
+  it('a null-prototype entry with plain data is well-formed', () => {
+    expect(isAuthorizationEntry(Object.assign(Object.create(null), entry()))).toBe(true);
   });
 });
 
@@ -381,6 +431,55 @@ describe('the two entry points', () => {
   it("an entry for another consumer is not offered to this one", () => {
     expect(offer([entry({ consumers: ['research_modal.analysis'] })])).toEqual({ ok: false, reason: 'not_authorized' });
   });
+
+  it('checks 8–10 run on THE OFFERED ENTRY: a stale offered entry is never served through a stay-only entry with a wider audience (review KL1-3 / KL2-1)', () => {
+    const stale = entry({ sha256: otherHex(METHOD_SHA256), audience: 'allowlist' });
+    const stayOnly = entry({ newSessions: false, audience: 'all' });
+    const onlyAll = (a) => a === 'all';
+    expect(offer([stale, stayOnly], { inAudience: onlyAll })).toEqual({ ok: false, reason: 'not_authorized' });
+    expect(offer([entry({ acceptanceSha256: otherHex(ACCEPTANCE_SHA256) }), stayOnly], { inAudience: onlyAll })).toEqual({ ok: false, reason: 'not_authorized' });
+    // A session that already holds the version keeps it through the stay-only entry.
+    expect(load([stale, stayOnly], { inAudience: onlyAll })).toMatchObject({ ok: true, method: { audience: 'all' } });
+  });
+
+  it('a missing or empty consumer is never matched, whatever the entry holds (review KL2-2)', () => {
+    const holey = { ...entry(), consumers: [, CONSUMER] }; // eslint-disable-line no-sparse-arrays
+    for (const consumer of [undefined, '']) {
+      expect(load([entry()], { consumer })).toEqual({ ok: false, reason: 'scope' });
+      expect(load([holey], { consumer })).toEqual({ ok: false, reason: 'not_authorized' });
+      expect(offer([entry()], { consumer })).toEqual({ ok: false, reason: 'not_authorized' });
+      expect(offer([holey], { consumer })).toEqual({ ok: false, reason: 'not_authorized' });
+    }
+  });
+
+  it('authorizedMethodFor reads the audience function only in check 10 (review KL2-3)', () => {
+    const throwing = { consumer: CONSUMER, get inAudience() { throw new Error('boom'); } };
+    expect(authorizedMethodFor(throwing, { authorizations: [entry()] })).toEqual({ ok: false, reason: 'audience' });
+    const row = copyRow();
+    row.exportJson.method_text = oneCharChanged(row.exportJson.method_text);
+    expect(authorizedMethodFor(throwing, { packages: [row], authorizations: [entry()] })).toEqual({ ok: false, reason: 'corrupt' });
+  });
+
+  it('an entry polluted through Object.prototype is not given an audience (review KL2-5)', () => {
+    const e = entry();
+    delete e.audience;
+    try {
+      Object.prototype.audience = 'all'; // eslint-disable-line no-extend-native
+      expect(load([e])).toEqual({ ok: false, reason: 'audience' });
+      expect(isAuthorizationEntry(e)).toBe(false);
+    } finally {
+      delete Object.prototype.audience;
+    }
+  });
+});
+
+describe('check 10 — an asynchronous audience function (review KL2-9)', () => {
+  it('a promise is not true; a rejected one is handled, so no unhandled rejection follows', async () => {
+    expect(load([entry()], { inAudience: () => Promise.resolve(true) })).toEqual({ ok: false, reason: 'audience' });
+    expect(load([entry()], { inAudience: () => Promise.reject(new Error('later')) })).toEqual({ ok: false, reason: 'audience' });
+    // Give a rejection a turn to surface: vitest fails the run on an unhandled one.
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+  });
 });
 
 describe('the answer', () => {
@@ -417,17 +516,32 @@ describe('the answer', () => {
     expect(q.method).toEqual(p.method);
   });
 
-  it('no value is a local path, and no provenance block leaves (the package itself does hold local paths)', () => {
-    expect(JSON.stringify(REAL.exportJson.source)).toMatch(DRIVE_PATH);
-    for (const r of [load([entry()]), offer([entry()]), verifyPackage({ id: ID, version: VERSION })]) {
-      for (const value of Object.values(r.method)) {
-        // Strings only: no block (source, review, acceptance, exporter, the record, the register) can ride along.
-        expect(typeof value).toBe('string');
-        expect(value).not.toMatch(DRIVE_PATH);
+  it('no value is a local path, and no provenance leaves, for every committed package (review KL3-7)', () => {
+    expect(JSON.stringify(REAL.exportJson.source)).toMatch(DRIVE_PATH); // the package itself does hold local paths
+    for (const p of KB_PACKAGES) {
+      const e = p.exportJson;
+      // Every string leaf the provenance blocks hold (paths, ids, the exporter) and the two texts that
+      // stay inside — apart from the hashes and the date the answer legitimately shares.
+      const leaves = (v) => (typeof v === 'string' ? [v] : v && typeof v === 'object' ? Object.values(v).flatMap(leaves) : []);
+      const provenance = [...leaves([e.source, e.review, e.acceptance, e.exporter]), p.register.text, p.acceptance.text]
+        .filter((s) => s.length > 12 && !/^[0-9a-f]{64}$/.test(s) && s !== e.acceptance.date);
+      expect(provenance.some((s) => LOCAL_PATH.test(s))).toBe(true);
+      const list = [entry({ id: p.id, version: p.version, sha256: sha(e.method_text), acceptanceSha256: sha(p.acceptance.text) })];
+      for (const r of [load(list, { id: p.id, version: p.version }), offer(list), verifyPackage({ id: p.id, version: p.version })]) {
+        expect(r.ok).toBe(true);
+        for (const value of Object.values(r.method)) {
+          // Strings only: no block (source, review, acceptance, exporter, the record, the register) can ride along.
+          expect(typeof value).toBe('string');
+          expect(value).not.toMatch(LOCAL_PATH);
+          for (const s of provenance) expect(value.includes(s)).toBe(false);
+        }
       }
-      expect(JSON.stringify(r)).not.toContain(REAL.exportJson.exporter);
-      expect(JSON.stringify(r)).not.toContain(REAL.register.text.slice(0, 200));
     }
+  });
+
+  it('the local-path pattern catches the forms a package could carry', () => {
+    for (const s of ['C:\\Users\\someone\\kb', 'c:/Users/someone/kb', '/home/someone/kb', '/Users/someone/kb', '\\\\server\\share']) expect(s).toMatch(LOCAL_PATH);
+    expect('methods/KB-IDEA-EVALUATION-001/v0.1/ACCEPTANCE.json').not.toMatch(LOCAL_PATH);
   });
 });
 

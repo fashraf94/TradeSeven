@@ -11,8 +11,11 @@
 // from it (export.path, acceptance.path, source_register.path). It WRITES
 // NOTHING unless all of these hold: the row's status is `accepted`; each
 // file's SHA-256 equals the hash the index lists for it; each file decodes as
-// UTF-8 and re-encodes to the same bytes; and the loader's verifyParts passes
-// on the three parts (the hash chain, Amendment A §A2). Then it writes:
+// UTF-8 and re-encodes to the same bytes; the loader's verifyParts passes on
+// the three parts (the hash chain, Amendment A §A2); and the row's
+// content_sha256 is the verified method hash (the index's schema must be
+// `<release>/accepted-release/1`). It never replaces an existing file with
+// other bytes. Then it writes:
 //
 //   <id>-v<version>.export.json        the export's bytes, unchanged
 //   <id>-v<version>.acceptance.json    JSON.stringify({ path, text }, null, 2) + one newline
@@ -24,7 +27,8 @@
 // verified and exits non-zero on any refusal (1) or a usage error (2).
 //
 // The release is data: nothing in it is executed or imported, and every path
-// it names is checked to stay inside the release directory.
+// it names is checked to stay inside the release directory, through links
+// too. Refusals name paths inside the release only, never a local path.
 //
 // A NEW PACKAGE: run this first, then add the package's row to
 // api/_utils/kb/packages/index.js. The script imports the loader, which
@@ -82,6 +86,7 @@ export function packageFilesOf(args) {
     if (!isObject(index) || typeof index.schema !== 'string') return refuse('index', 'no schema');
     const releaseId = index.schema.split('/')[0];
     if (!isSafeName(releaseId)) return refuse('index', 'release id');
+    if (index.schema !== `${releaseId}/accepted-release/1`) return refuse('index', 'schema is not <release>/accepted-release/1');
     if (!isSafeName(id) || !isSafeName(version)) return refuse('request', 'id or version');
     if (typeof read !== 'function') return refuse('request', 'read');
 
@@ -95,7 +100,12 @@ export function packageFilesOf(args) {
 
     const bytes = {};
     for (const [key, part] of Object.entries(parts)) {
-      const b = read(part.path);
+      let b;
+      try {
+        b = read(part.path);
+      } catch (err) {
+        return refuse('unreadable', `${key}: ${err instanceof Error ? err.message : 'read failed'}`);
+      }
       if (!(b instanceof Uint8Array)) return refuse('unreadable', key);
       bytes[key] = Buffer.from(b);
     }
@@ -116,6 +126,7 @@ export function packageFilesOf(args) {
     }
     const verified = verifyParts({ id, version, exportJson, acceptanceText: text.acceptance, registerText: text.register });
     if (!verified.ok) return refuse('verify', verified.reason);
+    if (row.content_sha256 !== verified.method.sha256) return refuse('index', 'content_sha256 is not the verified method hash');
 
     return {
       ok: true,
@@ -156,17 +167,37 @@ function main(argv) {
     console.error(USAGE);
     return 2;
   }
-  const root = realpathSync(path.resolve(args.release));
+  // Refusals name paths INSIDE the release only, never a local absolute path
+  // (script output is pasted into reports).
+  let root;
+  try {
+    root = realpathSync(path.resolve(args.release));
+  } catch {
+    console.error('REFUSED: release (not a readable directory)');
+    return 1;
+  }
   const read = (releasePath) => {
     const abs = path.resolve(root, ...releasePath.split('/'));
     if (!abs.startsWith(root + path.sep)) throw new Error(`path outside the release: ${releasePath}`);
-    return readFileSync(abs);
+    let real;
+    try {
+      real = realpathSync(abs);
+    } catch {
+      return undefined;
+    }
+    // A link inside the release must not lead out of it.
+    if (!real.startsWith(root + path.sep)) throw new Error(`path leaves the release through a link: ${releasePath}`);
+    try {
+      return readFileSync(real);
+    } catch {
+      return undefined;
+    }
   };
   let index;
   try {
     index = JSON.parse(readFileSync(path.join(root, 'RELEASE-INDEX.json'), 'utf8'));
-  } catch (err) {
-    console.error(`REFUSED: index (${err instanceof Error ? err.message : String(err)})`);
+  } catch {
+    console.error('REFUSED: index (RELEASE-INDEX.json unreadable or not JSON)');
     return 1;
   }
 
@@ -197,6 +228,21 @@ function main(argv) {
       console.log(`  ${same ? 'same   ' : 'DIFFERS'} ${f.name}`);
     }
     return differs === 0 ? 0 : 1;
+  }
+  // Never replace a file with other bytes (e.g. a second method of one release
+  // writing the release's register wrapper with its own path): remove it
+  // deliberately first. Checked for all three before anything is written.
+  for (const f of result.files) {
+    let onDisk = null;
+    try {
+      onDisk = readFileSync(path.join(out, f.name));
+    } catch {
+      onDisk = null;
+    }
+    if (onDisk !== null && !onDisk.equals(f.bytes)) {
+      console.error(`REFUSED: overwrite (${f.name} exists with other bytes; nothing written)`);
+      return 1;
+    }
   }
   mkdirSync(out, { recursive: true });
   for (const f of result.files) {
