@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { makeSrFirestore } from '../_utils/sharedResearch/__fixtures__/srFirestore.js';
 
 const state = vi.hoisted(() => ({
-  mode: 'on', user: { uid: 'u1' }, db: null, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [],
+  mode: 'on', user: { uid: 'u1' }, db: null, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [], tooLarge: false,
 }));
 vi.mock('../../src/config/sharedResearchFlags.js', () => ({
   SHARED_RESEARCH_MODES: Object.freeze(['off', 'allowlist', 'on']),
@@ -40,6 +40,10 @@ vi.mock('../_utils/sharedResearch/modelTurn.js', async (importOriginal) => {
       return typeof next === 'function' ? next(args) : next;
     },
   };
+});
+vi.mock('../_utils/sharedResearch/promptBudget.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, fitPrompt: (args) => (state.tooLarge ? { ok: false, error: 'prompt_too_large', tokens: 99_999 } : real.fitPrompt(args)) };
 });
 vi.mock('../_utils/sharedResearch/retrieval.js', async (importOriginal) => {
   const real = await importOriginal();
@@ -88,7 +92,7 @@ let seedEnv;
 
 beforeEach(() => {
   seedEnv = seed();
-  Object.assign(state, { mode: 'on', user: { uid: UID }, db: seedEnv.db, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [] });
+  Object.assign(state, { mode: 'on', user: { uid: UID }, db: seedEnv.db, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [], tooLarge: false });
 });
 
 async function openStory(over = {}) {
@@ -191,6 +195,22 @@ describe('§15 S-1 — open from the player\'s own SignalDrop', () => {
     const bail = await openDrop('drop-bail', 'd2');
     expect(bail.statusCode).toBe(200);
     expect(bail.body.record.findings.map((f) => f.kind)).toEqual(['observation', 'next_action']);
+  });
+});
+
+describe('the provenance stamp cannot come from a client (spec §5.5; mutation 7)', () => {
+  const FORGED = { agentId: 'forged-agent', archetypeCodeId: 'forged', baggerbombArchetypeCodeId: 'forged', identityVersion: 99, at: '2000-01-01T00:00:00.000Z' };
+  it('an item open, a drop open and a framed-observation open each stamp the ranked agent, whatever the body plants', async () => {
+    const item = await post({ action: 'open', requestId: 'p1', attribution: FORGED, entry: { kind: 'item', itemRef: { recordKind: 'fantasyTimesStories', recordId: 'story-1' }, question: QUESTION, attribution: FORGED } });
+    const drop = await post({ action: 'open', requestId: 'p2', attribution: FORGED, entry: { kind: 'signaldrop', itemRef: { recordKind: 'signalDrops', recordId: 'drop-1' }, question: QUESTION, attribution: FORGED } });
+    state.turnQueue.push({ ...turnOk({ question: 'Q?', check: 'c', notEstablished: 'n' }), model: 'claude-haiku-5-5' });
+    const f = await post({ action: 'frame', observation: 'Reviews delay deals.', requestId: 'p3', attribution: FORGED });
+    const obs = await post({ action: 'open', sessionId: f.body.sessionId, question: 'Who earns from slow reviews?', attribution: FORGED });
+    for (const r of [item, drop, obs]) {
+      expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+      expect(sessionDoc(r.body.session.sessionId).attribution).toMatchObject(STAMP);
+    }
+    expect(JSON.stringify([...seedEnv.store.values()])).not.toContain('forged-agent');
   });
 });
 
@@ -320,6 +340,14 @@ describe('steps', () => {
     seedEnv.store.get(`sharedResearchSessions/${session.sessionId}`).lastStep = { stepId: uuid(9), status: 'running', startedAt: new Date().toISOString() };
     expect((await stepWith(session.sessionId, 1, 'next', null)).body.error).toBe('step_in_flight');
     expect((await post({ action: 'nope' })).body.error).toBe('invalid_request');
+  });
+  it('a prompt over the hard cap: 400 prompt_too_large, the step marked failed, no model call', async () => {
+    const { session } = await openStory();
+    state.tooLarge = true;
+    const r = await stepWith(session.sessionId, 1, 'next', null);
+    expect([r.statusCode, r.body.error]).toEqual([400, 'prompt_too_large']);
+    expect(state.turns).toHaveLength(0);
+    expect(sessionDoc(session.sessionId).lastStep).toMatchObject({ status: 'failed', error: 'prompt_too_large' });
   });
   it('every completed model call is logged with its usage, attempts and cost', async () => {
     const { session } = await openStory();

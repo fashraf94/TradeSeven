@@ -49,6 +49,13 @@ describe('Correction A — support is the record and the universe, never a step 
     expect(leads.find((l) => l.symbol === 'ETN')).toMatchObject({ name: 'Eaton Corporation plc', status: 'unavailable', statusReason: 'single_source' });
   });
 
+  it('a resolved company whose relationship is only unavailable is never supported, however many steps were used', () => {
+    const corrected = dataCenterRecord('d4x'); // ETN's relationship corrected to unavailable
+    for (const stepsUsed of [0, 1, 3, 9, 10]) {
+      expect(companiesOf({ ...corrected, stepsUsed, stepBudget: 10 }, { names: NAMES }).supported).toEqual([]);
+    }
+  });
+
   it('a verified relationship whose symbol is NOT the company\'s supports nothing for another symbol; an unverified one supports nothing', () => {
     const r = dataCenterRecord('d4');
     const inferred = { ...r, findings: r.findings.map((f) => (f.findingId === fid('d4') ? { ...f, status: 'unverified', statusReason: 'inference' } : f)) };

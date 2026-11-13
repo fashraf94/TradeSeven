@@ -80,6 +80,14 @@ describe('open — item / drop (spec §6.3)', () => {
     expect(writesCount()).toBe(before);
   });
 
+  it('as built (spec §6.3; founder question FQ-1 in the report): a COMPLETED investigation of the item answers `existing`; an ABANDONED one allows a new one', async () => {
+    await open('req-1');
+    env.store.set('sharedResearchSessions/s-req-1', { ...env.doc('sharedResearchSessions/s-req-1'), status: 'completed' });
+    expect(await open('req-2')).toMatchObject({ existing: true });
+    env.store.set('sharedResearchSessions/s-req-1', { ...env.doc('sharedResearchSessions/s-req-1'), status: 'abandoned' });
+    expect(await open('req-3')).toMatchObject({ existing: false, replay: false, session: { sessionId: 's-req-3' } });
+  });
+
   it('daily_limit at 3: the fourth open is refused and writes nothing', async () => {
     env.store.set(`sharedResearchQuota/${OWNER}`, { etDate: TODAY, investigationsOpened: 3, framingsRun: 0 });
     expect(await codeOf(open())).toBe('daily_limit');
@@ -309,6 +317,26 @@ describe('adopt (spec §6.6)', () => {
     expect([err.status, err.code]).toEqual([409, 'preview_stale']);
     expect(err.extra.adoptPreview.previewRev).toEqual(previewRevOf(shopPayRecord()));
     expect(writesCount()).toBe(before);
+  });
+
+  it('preview_stale when ONLY the summary revision moved (the findings count unchanged)', async () => {
+    seedOpen({ record: shopPayRecord(), lines: SP_LINES });
+    const rev = previewRevOf(shopPayRecord());
+    const err = await adopt({ previewRev: { summaryRev: rev.summaryRev + 1, findingsCount: rev.findingsCount } }).catch((e) => e);
+    expect([err.status, err.code]).toEqual([409, 'preview_stale']);
+  });
+
+  it('the transaction re-checks the revision: a record that moves after the pre-check is refused preview_stale, nothing written', async () => {
+    seedOpen({ record: shopPayRecord(), lines: SP_LINES });
+    env.hooks.atTxStart = (store) => {
+      const r = store.get(`researchWork/${RECORD_ID}`);
+      store.set(`researchWork/${RECORD_ID}`, { ...r, findings: [...r.findings, { ...r.findings[0], findingId: 'f_60000000-0000-4000-8000-000000000001', supersedes: null }] });
+    };
+    const before = writesCount();
+    const err = await adopt().catch((e) => e);
+    expect([err.status, err.code]).toEqual([409, 'preview_stale']);
+    expect(writesCount()).toBe(before);
+    expect([...env.store.keys()].some((k) => k.startsWith('watchlists/'))).toBe(false);
   });
 
   it('the builder\'s refusal is the player\'s answer: 29 kept findings → too_many_evidence_refs, nothing written', async () => {

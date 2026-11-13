@@ -6,8 +6,9 @@
 // nothing (the shared inMemoryFirestore.js applies transaction writes at once,
 // which would hide a partial write). Supports doc get/set/update (dot paths)/
 // create/delete, sub-collections, auto ids, chainable where('=='), orderBy,
-// limit, tx.get(ref | query). `writes` logs every committed write; `hooks.beforeCommit`
-// lets a test change the store between a transaction's reads and its commit.
+// limit, tx.get(ref | query). `writes` logs every committed write; `hooks.atTxStart`
+// lets a test change the store just before a transaction's reads (after any
+// pre-check outside it), `hooks.beforeCommit` between its reads and its commit.
 
 const clone = (v) => (v === undefined ? undefined : structuredClone(v));
 
@@ -27,7 +28,7 @@ export function makeSrFirestore(initial = {}) {
   const store = new Map(Object.entries(initial).map(([k, v]) => [k, clone(v)]));
   const writes = [];
   const reads = [];
-  const hooks = { beforeCommit: null };
+  const hooks = { beforeCommit: null, atTxStart: null };
   let auto = 0;
 
   const snapOf = (path) => {
@@ -96,6 +97,7 @@ export function makeSrFirestore(initial = {}) {
   const db = {
     collection: (name) => collectionRef(name),
     runTransaction: async (fn) => {
+      if (hooks.atTxStart) { const h = hooks.atTxStart; hooks.atTxStart = null; await h(store); }
       const ops = [];
       const tx = {
         get: async (refOrQuery) => { reads.push(['tx.get', refOrQuery.path]); return refOrQuery._read(); },

@@ -332,7 +332,10 @@ async function handleStep(body, res, { db, uid }) {
       firstStep: (session.stepsUsed ?? 0) === 0,
     }),
   });
-  if (!fit.ok) return failed(400, 'prompt_too_large');
+  if (!fit.ok) {
+    await failStep(db, { uid, sessionId, stepId, reason: 'prompt_too_large', nowIso: new Date().toISOString() });
+    throw refuse(400, 'prompt_too_large'); // the typed refusal (spec §6.3); no model call was made
+  }
 
   // One model turn.
   const elapsed = Date.now() - t0;
