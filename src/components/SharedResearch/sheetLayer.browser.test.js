@@ -48,7 +48,7 @@ describe.skipIf(!BASE)('the SignalDrop modal over the hub sheet, in a real brows
     const { chromium } = await import('playwright-core');
     browser = await chromium.launch({ headless: true, ...(CHANNEL ? { channel: CHANNEL } : {}) });
   }, ROW_TIMEOUT);
-  afterAll(async () => { await browser?.close(); });
+  afterAll(async () => { await browser?.close(); browser = null; });
 
   for (const [w, h] of [[320, 700], [390, 844], [1280, 800]]) {
     it(`${w}×${h}: "Read this signal" and then "Investigate this" are the elements under a tap — the modal paints above the sheet`, async () => {
@@ -93,6 +93,59 @@ describe.skipIf(!BASE)('the SignalDrop modal over the hub sheet, in a real brows
         await page.waitForSelector('[data-screen-label="Drop preview"]', { timeout: ROW_TIMEOUT });
         expect(await page.evaluate(() => document.querySelector('[data-hub-sheet-overlay]')?.hasAttribute('inert'))).toBe(false);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(w + 1);
+      } finally { await ctx.close(); }
+    }, ROW_TIMEOUT * 2);
+  }
+});
+
+// Focus, in a real browser (review c1, c2): jsdom lets an inert element take focus, Chromium does not — so these two
+// rows can only be measured here.
+describe.skipIf(!BASE)('focus stays in the sheet, in a real browser (review c1, c2)', () => {
+  beforeAll(async () => {
+    const { chromium } = await import('playwright-core');
+    browser = browser ?? await chromium.launch({ headless: true, ...(CHANNEL ? { channel: CHANNEL } : {}) });
+  }, ROW_TIMEOUT);
+  afterAll(async () => { await browser?.close(); browser = null; });
+  const where = (page) => page.evaluate(() => ({
+    body: document.activeElement === document.body,
+    inSheet: Boolean(document.activeElement?.closest('[data-hub-sheet-overlay]')),
+    sheetOpen: Boolean(document.querySelector('[data-hub-sheet-overlay]')),
+  }));
+  for (const [w, h] of [[390, 844], [1280, 800]]) {
+    it(`${w}×${h}: the modal opened at once (mode signaldrop), Escape: focus is in the sheet, and a second Escape closes the sheet (c2)`, async () => {
+      const ctx = await browser.newContext({ viewport: { width: w, height: h } });
+      const page = await ctx.newPage();
+      try {
+        await page.goto(`${BASE.replace(/\/$/, '')}/?srFixture=drop-now&delay=0`, { waitUntil: 'domcontentloaded', timeout: ROW_TIMEOUT });
+        await page.waitForSelector('[aria-labelledby="signal-drop-title"] textarea', { timeout: ROW_TIMEOUT });
+        await page.waitForTimeout(500);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(500);
+        const after = await where(page);
+        expect(after, JSON.stringify(after)).toMatchObject({ body: false, inSheet: true, sheetOpen: true });
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(500);
+        expect((await where(page)).sheetOpen).toBe(false);
+      } finally { await ctx.close(); }
+    }, ROW_TIMEOUT * 2);
+    it(`${w}×${h}: Investigate replaces the preview; focus stays in the sheet, and Escape still closes it (c1)`, async () => {
+      const ctx = await browser.newContext({ viewport: { width: w, height: h } });
+      const page = await ctx.newPage();
+      try {
+        await page.goto(`${BASE.replace(/\/$/, '')}/?srFixture=story&delay=300`, { waitUntil: 'domcontentloaded', timeout: ROW_TIMEOUT });
+        await page.waitForSelector('[data-sr-investigate]', { timeout: ROW_TIMEOUT });
+        await page.focus('[data-sr-investigate]');
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(100);
+        const pending = await where(page);
+        expect(pending, `while the open is in flight: ${JSON.stringify(pending)}`).toMatchObject({ body: false, inSheet: true });
+        await page.waitForSelector('[data-screen-label="Opening · no answer yet"]', { timeout: ROW_TIMEOUT });
+        await page.waitForTimeout(200);
+        const opened = await where(page);
+        expect(opened, JSON.stringify(opened)).toMatchObject({ body: false, inSheet: true });
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(500);
+        expect((await where(page)).sheetOpen).toBe(false);
       } finally { await ctx.close(); }
     }, ROW_TIMEOUT * 2);
   }

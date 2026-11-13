@@ -113,12 +113,18 @@ export default function SharedResearchSheetBody({
   useEffect(() => {
     if (sr.epoch > 0 && view !== 'adopt' && view !== 'discard') setView('work');
   }, [sr.epoch]);
-  // Focus never falls out of the sheet (review c1): a control that disables while its request runs, or a screen that
-  // replaces the one the player was on, would drop focus to <body> — where Escape no longer reaches the sheet. After any
-  // render that leaves focus on <body>, the body's root takes it (it is inside the dialog, so its keys still work).
-  useEffect(() => {
-    if (document.activeElement === document.body && rootRef.current?.isConnected && !rootRef.current.closest('[inert]')) rootRef.current.focus({ preventScroll: true });
-  });
+  // Focus never falls out of the sheet (review c1): a screen that replaces the one the player was on, or a control that
+  // disables while its request runs, would drop focus to <body> — where Escape no longer reaches the sheet. The body's
+  // root takes it instead (it is inside the dialog, so its keys still work). Two moments: after any render that leaves
+  // focus on <body> (a control unmounted), and on a focusout that goes nowhere — Chromium moves focus off a control that
+  // became disabled on a timer of its own, after the render, with relatedTarget null (measured in Edge, Nov 13, 2026).
+  // The microtask lets the event finish first; a window losing focus leaves activeElement where it was, so it is untouched.
+  const keepFocus = () => {
+    const root = rootRef.current;
+    if (live.current && document.activeElement === document.body && root?.isConnected && !root.closest('[inert]')) root.focus({ preventScroll: true });
+  };
+  useEffect(() => { keepFocus(); });
+  const onFocusOut = (e) => { if (!e.relatedTarget) Promise.resolve().then(keepFocus); };
   // The drop preview takes focus when it replaces the modal.
   useEffect(() => {
     if (view === 'drop') rootRef.current?.querySelector('#sr-drop-q')?.focus();
@@ -199,7 +205,7 @@ export default function SharedResearchSheetBody({
   }
 
   return (
-    <div ref={rootRef} tabIndex={-1} data-shared-research-body="" style={{ minWidth: 0, outline: 'none' }}>
+    <div ref={rootRef} tabIndex={-1} data-shared-research-body="" onBlur={onFocusOut} style={{ minWidth: 0, outline: 'none' }}>
       {body}
       {!sr.gated && (
         <SignalDropEntry open={dropOpen} onClose={closeDropModal} onStartDialogue={onDropResult} ctaLabel={COPY.investigateCta} zIndex={SR_DROP_LAYER} />
