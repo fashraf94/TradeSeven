@@ -56,11 +56,11 @@ export function buildStepSystemPrompt({ partnerName } = {}) {
     '',
     'Output (the schema you are given):',
     '- findings: at most 12, each one fact in your own words. support.kind "retrieval" with the item number only when that item states the fact; "inference" with support.from naming the finding ids or tempIds it rests on; "unresolved" with a reason when a link could not be checked. Never cite an item number you were not given; with no items, write no retrieval support. Never write the word "item" or an item number in a fact or the reply: cite through support.',
-    "- at: the fact's own date as YYYY-MM-DD when the item states one; null otherwise. Never today's date for an old fact.",
+    "- at: the fact's own date, written as year-month-day digits (for example 2026-11-05), when the item states one; null otherwise. Never today's date for an old fact.",
     '- A correction names the record finding it corrects in supersedes; correct one finding at most once.',
     `- companies: at most 6. role is one of ${RELATIONSHIP_ROLES.join(', ')}. relationshipRef names the relationship finding about that company. A company is supported only when a retrieved item verifies the relationship and its symbol is in the game universe; give a claim only then, and put no number in a claim that its verified findings do not state. openRef names its open significance question (an unresolved finding), if any.`,
     `- Unresolved reasons: ${UNRESOLVED_REASONS.join(', ')}.`,
-    '- summary: null when this step does not change the answer. Otherwise at most 1,000 characters resting on 1 to 25 current findings (basedOn), and every number in it appears in one of those findings.',
+    '- summary: null when this step does not change the answer. Otherwise at most 1,000 characters resting on 1 to 25 current findings (basedOn), and every number in it appears in one of those findings that is Source-backed (verified); a date may be the date of a fact it rests on.',
     '- lines: the finding that most supports the answer, the one that most complicates it, the most important missing link.',
     '- nextAction: the one next step, aimed at the weakest link; null only when the question is answered.',
     '- reply: what this step found, plain sentences, at most 1,200 characters.',
@@ -106,7 +106,7 @@ export function targetBlockOf({ symbol, relationshipFact, openFact, question }) 
  */
 export function renderStepUser({
   question, entryKind, intent, direction = null, nextAction = null, target = null, summary = null, stepsLeft,
-  findings, items, retrieval, firstStep = false,
+  findings, items, retrieval, firstStep = false, room = null,
 }) {
   const out = [`Question (fixed; never change it): ${line(question)}`, `Started from: ${STARTED[entryKind] ?? 'the player'}`];
   if (intent === 'next') out.push(`This step: run the current next action${nextAction ? `: ${line(nextAction)}` : '.'}`);
@@ -116,6 +116,7 @@ export function renderStepUser({
   if (direction) out.push(`The player's direction (their words): ${line(direction)}`);
   if (firstStep && entryKind === 'item') out.push('First task: find the primary source of what this story reports.');
   out.push(`Steps left after this one: ${stepsLeft}`);
+  if (Number.isInteger(room)) out.push(`Room on the record: at most ${room} more findings this step, claims and the next action included.`);
   out.push(summary ? `Current answer (rev ${summary.rev}): ${line(summary.text)}` : 'Current answer: none yet.');
   out.push('Record findings (id | kind | symbol | status | fact):');
   for (const f of findings) out.push(`  ${f.findingId} | ${f.kind} | ${f.symbol ?? '-'} | ${f.status}${f.statusReason ? `/${f.statusReason}` : ''} | ${line(f.fact)}`);

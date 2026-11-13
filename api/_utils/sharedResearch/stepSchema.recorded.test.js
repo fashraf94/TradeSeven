@@ -27,6 +27,7 @@ function validate() {
   return validateStepTurn(REC.output, {
     record: dataCenterRecord('step1'), items: PROBE_ITEMS, readAt: PROBE_READ_AT, partnerExchangeId: '2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d',
     partnerAt: NOW, nowIso: NOW, mintFindingId: () => `f_50000000-0000-4000-8000-${String(++n).padStart(12, '0')}`,
+    names: { ETN: 'Eaton Corporation plc' }, // what peerRankings/ETN.name holds — the route reads it for the identity check
   });
 }
 

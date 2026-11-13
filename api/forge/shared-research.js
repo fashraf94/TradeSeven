@@ -22,7 +22,7 @@ import { waitUntil } from '@vercel/functions';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { logConversation } from '../_utils/shadowLogger.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
-import { buildFinding, FINDING_ID_PREFIX, isHostId, isUuid, currentFindingsOf, normalizeQuestion } from '../_utils/researchRecords/model.js';
+import { buildFinding, FINDING_ID_PREFIX, FINDINGS_MAX, isHostId, isUuid, currentFindingsOf, normalizeQuestion } from '../_utils/researchRecords/model.js';
 import { recordTurnOutcome } from '../_utils/researchRecords/store.js';
 import { ENTRY_ITEM_RECORD_KINDS, STEP_INTENTS, CLOSE_REASONS } from '../../src/constants/sharedResearch.js';
 import { gateSharedResearchRoute, sendSharedResearchError } from '../_utils/sharedResearch/gate.js';
@@ -52,6 +52,8 @@ export const MODEL_MS = 25_000;
 export const MODEL_AFTER_RETRIEVAL_MS = 16_000;
 /** The shadow log's in-request settle cap where the runtime has no keep-alive (api/agent/chat.js SHADOW_LOG_CAP_MS). */
 export const SHADOW_LOG_CAP_MS = 2_000;
+/** …clamped to this absolute point from the request's start (chat.js SHADOW_SETTLE_DEADLINE_MS; review C3). */
+export const SETTLE_DEADLINE_MS = 29_000;
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const newFindingId = () => `${FINDING_ID_PREFIX}${randomUUID()}`;
@@ -76,11 +78,12 @@ export function captureLog(record) {
   }
   return write;
 }
-/** Settle a capture the runtime did not take, under the cap (after the answer is composed). */
-async function settle(pending) {
+/** Settle a capture the runtime did not take, under the cap and never past `deadlineAt` (after the answer is composed). */
+async function settle(pending, deadlineAt = null) {
   if (!pending) return;
+  const wait = Math.max(0, Math.min(SHADOW_LOG_CAP_MS, deadlineAt === null ? SHADOW_LOG_CAP_MS : deadlineAt - Date.now()));
   let timer = null;
-  await Promise.race([pending, new Promise((r) => { timer = setTimeout(r, SHADOW_LOG_CAP_MS); })]);
+  await Promise.race([pending, new Promise((r) => { timer = setTimeout(r, wait); })]);
   if (timer) clearTimeout(timer);
 }
 /** The shadow record for one model call (§6.9's fields, inside the record logConversation already takes). */
@@ -97,6 +100,15 @@ function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval 
 
 // ── shared answer parts ──────────────────────────────────────────────────────
 
+/** The symbols a model answer resolves (candidates, and company names written as tickers) — their names are read for the identity check. */
+function candidateSymbolsOf(output) {
+  const raw = [
+    ...(Array.isArray(output?.findings) ? output.findings : []).flatMap((f) => [f?.symbolCandidate, f?.companyName]),
+    ...(Array.isArray(output?.companies) ? output.companies : []).flatMap((c) => [c?.symbolCandidate, c?.companyName]),
+  ];
+  return [...new Set(raw.map((s) => resolveSymbol(s)).filter(Boolean))];
+}
+
 /** The names a record's companies need: the symbols of its current relationship and product findings. */
 const companySymbolsOf = (record) => [...new Set(currentFindingsOf(record).filter((f) => (f.kind === 'relationship' || f.kind === 'product') && f.symbol).map((f) => f.symbol))];
 async function companiesFor(db, record) {
@@ -107,8 +119,8 @@ async function storedRowsFor(db, session) {
   const names = Array.isArray(session?.entry?.names) ? session.entry.names : [];
   return names.length ? storedRowsOf(names, await readRankingRows(db, names)) : [];
 }
-const answer = async (res, status, body, pending = null) => {
-  await settle(pending);
+const answer = async (res, status, body, pending = null, deadlineAt = null) => {
+  await settle(pending, deadlineAt);
   return res.status(status).json(body);
 };
 
@@ -136,6 +148,8 @@ async function handleGet(req, res, { db, uid }) {
 // ── frame (spec §6.3) ─────────────────────────────────────────────────────────
 
 async function handleFrame(body, res, { db, uid }) {
+  const t0 = Date.now();
+  const settleBy = t0 + SETTLE_DEADLINE_MS;
   const observation = cleanPlayerText(body.observation, OBSERVATION_MAX);
   if (!observation) throw refuse(400, 'invalid_observation');
   if (!isValidForgeId(body.requestId)) throw refuse(400, 'invalid_request');
@@ -149,14 +163,15 @@ async function handleFrame(body, res, { db, uid }) {
   if (!begun.run) {
     return res.status(200).json({ sessionId: session.sessionId, status: session.status, frame: sessionViewOf(session).frame, quota });
   }
+  const budgetMs = Math.min(MODEL_MS, DEADLINE_MS - (Date.now() - t0)); // the frame's model inside the same deadline (review C3)
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), MODEL_MS);
+  const timer = setTimeout(() => controller.abort(), Math.max(0, budgetMs));
   let turn;
   try {
     turn = await runTurn({
       kind: 'frame', system: buildFrameSystemPrompt({ partnerName: partnerNameOf(agent) }),
       user: renderFrameUser({ observation: session.entry?.observation ?? observation }), schema: FRAME_SCHEMA,
-      signal: controller.signal, deadlineAt: Date.now() + MODEL_MS,
+      signal: controller.signal, deadlineAt: Date.now() + budgetMs,
     });
   } finally {
     clearTimeout(timer);
@@ -167,12 +182,19 @@ async function handleFrame(body, res, { db, uid }) {
     const reason = turn.ok ? `invalid_${checked.rule}` : turn.reason;
     await noteFrameFailure(db, { uid, sessionId: session.sessionId, reason, nowIso: doneIso });
     const pending = captureLog(modelCallRecord({ uid, session, intent: 'frame', turn, outcome: 'failure', failureReason: reason }));
-    return answer(res, turn.reason === 'aborted' ? 504 : 200, { sessionId: session.sessionId, status: 'framing', error: 'frame_failed', reason, quota }, pending);
+    return answer(res, turn.reason === 'aborted' ? 504 : 200, { sessionId: session.sessionId, status: 'framing', error: 'frame_failed', reason, quota }, pending, settleBy);
   }
   const partnerExchange = exchangeOf({ who: 'partner', kind: 'frame', text: checked.frame.question, at: doneIso });
-  const stored = await recordFrame(db, { uid, sessionId: session.sessionId, frame: checked.frame, partnerExchange, attempts: turn.attempts, nowIso: doneIso });
+  let stored;
+  try {
+    stored = await recordFrame(db, { uid, sessionId: session.sessionId, frame: checked.frame, partnerExchange, attempts: turn.attempts, nowIso: doneIso });
+  } catch (err) {
+    // The call was paid: its record is written even when the frame's write is not (review C4).
+    await settle(captureLog(modelCallRecord({ uid, session, intent: 'frame', turn, outcome: 'failure', failureReason: 'persist_failed' })), settleBy);
+    throw err;
+  }
   const pending = captureLog(modelCallRecord({ uid, session, intent: 'frame', turn, outcome: 'completion' }));
-  return answer(res, 200, { sessionId: stored.sessionId, status: stored.status, frame: sessionViewOf(stored).frame, quota }, pending);
+  return answer(res, 200, { sessionId: stored.sessionId, status: stored.status, frame: sessionViewOf(stored).frame, quota }, pending, settleBy);
 }
 
 // ── open (spec §4.2, §6.3) ───────────────────────────────────────────────────
@@ -267,6 +289,7 @@ function targetOf(raw, record) {
 
 async function handleStep(body, res, { db, uid }) {
   const t0 = Date.now();
+  const settleBy = t0 + SETTLE_DEADLINE_MS;
   if (!isHostId(body.sessionId) || !isUuid(body.stepId) || !STEP_INTENTS.includes(body.intent)) throw refuse(400, 'invalid_request');
   const { sessionId, stepId, intent } = body;
   const direction = intent === 'direction' ? cleanPlayerText(body.direction, DIRECTION_MAX) : null;
@@ -290,9 +313,10 @@ async function handleStep(body, res, { db, uid }) {
     if (turn) {
       await recordTurnOutcome(db, { researchWorkId: session.researchWorkId, uid, kind: cancellation ? 'cancellation' : 'failure', elapsedMs: turn.elapsedMs, usage: turn.usage, atIso, label: 'shared-research' });
     }
-    const pending = turn ? captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: cancellation ? 'cancellation' : 'failure', failureReason: reason })) : null;
+    // Logged whenever money was spent: a model call, or a search (review C1).
+    const pending = turn || retrievalTally?.calls ? captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: cancellation ? 'cancellation' : 'failure', failureReason: reason })) : null;
     const after = await readOwnedSession(db, { uid, sessionId }).catch(() => session);
-    return answer(res, status, { error: 'step_failed', reason, session: sessionViewOf(after), quota: quotaViewOf(day) }, pending);
+    return answer(res, status, { error: 'step_failed', reason, session: sessionViewOf(after), quota: quotaViewOf(day) }, pending, settleBy);
   };
 
   let target = null;
@@ -320,7 +344,9 @@ async function handleStep(body, res, { db, uid }) {
 
   // The prompt, sized before any call (§6.12 control 2).
   const agentSnap = session.attribution?.agentId ? await db.collection(AGENTS_COLLECTION).doc(session.attribution.agentId).get() : null;
-  const system = buildStepSystemPrompt({ partnerName: partnerNameOf(agentSnap?.exists ? agentSnap.data() : null) });
+  const partnerName = partnerNameOf(agentSnap?.exists ? agentSnap.data() : null);
+  const system = buildStepSystemPrompt({ partnerName });
+  const room = Math.max(0, FINDINGS_MAX - (Array.isArray(record.findings) ? record.findings.length : 0));
   const protectedIds = new Set([...(record.summary?.basedOn ?? []), ...(target ? [target.relationshipFindingId, target.openFindingId].filter(Boolean) : [])]);
   const stepsLeft = Math.max(0, (session.stepBudget ?? 0) - (session.stepsUsed ?? 0) - 1);
   const fit = fitPrompt({
@@ -329,11 +355,12 @@ async function handleStep(body, res, { db, uid }) {
       question: record.question, entryKind: session.entry?.kind, intent, direction,
       nextAction: nextAction?.fact ?? null, target: target ? targetBlockOf({ ...target, question: record.question }) : null,
       summary: record.summary ?? null, stepsLeft, findings: parts.findings, items: parts.items, retrieval: retrievalState,
-      firstStep: (session.stepsUsed ?? 0) === 0,
+      firstStep: (session.stepsUsed ?? 0) === 0, room,
     }),
   });
   if (!fit.ok) {
     await failStep(db, { uid, sessionId, stepId, reason: 'prompt_too_large', nowIso: new Date().toISOString() });
+    if (retrievalTally.calls) await settle(captureLog(modelCallRecord({ uid, session, stepId, intent, turn: null, retrieval: retrievalTally, outcome: 'failure', failureReason: 'prompt_too_large' })), settleBy);
     throw refuse(400, 'prompt_too_large'); // the typed refusal (spec §6.3); no model call was made
   }
 
@@ -353,15 +380,18 @@ async function handleStep(body, res, { db, uid }) {
   if (Date.now() - t0 > DEADLINE_MS) return failed(504, 'deadline', { turn, retrievalTally });
 
   // Validate (one turn: a failed validation is never re-asked).
+  // The names of every company the answer resolves a symbol for: the validator checks the named company IS that
+  // symbol's (review B1).
+  const names = await readNames(db, candidateSymbolsOf(turn.output));
   const persistIso = new Date().toISOString();
   const partnerExchangeId = randomUUID();
   const checked = validateStepTurn(turn.output, {
     record, items: fit.items, readAt: r && !r.error ? r.readAt : null, partnerExchangeId, partnerAt: persistIso, nowIso: persistIso,
-    mintFindingId: newFindingId,
+    mintFindingId: newFindingId, names, partnerName,
   });
   if (!checked.ok) return failed(200, `invalid_${checked.rule}`, { turn, retrievalTally });
   const partnerExchange = exchangeOf({
-    who: 'partner', kind: 'step', text: checked.reply || 'This step added findings to the record.', at: persistIso, stepId, intent,
+    who: 'partner', kind: 'step', text: checked.reply || (checked.findings.length ? 'This step added findings to the record.' : 'This step found nothing new.'), at: persistIso, stepId, intent,
     target: target ? { symbol: target.symbol, relationshipFindingId: target.relationshipFindingId, openFindingId: target.openFindingId } : null,
     lines: checked.lines,
   }, { mintId: () => partnerExchangeId });
@@ -380,13 +410,20 @@ async function handleStep(body, res, { db, uid }) {
   }
   const pending = captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: 'completion' }));
   const lines = latestLinesOf(saved.session);
+  let companies;
+  try {
+    companies = await companiesFor(db, saved.record);
+  } catch (err) {
+    await settle(pending, settleBy); // the completed call's record is never left unsettled (review C4)
+    throw err;
+  }
   return answer(res, 200, {
     session: sessionViewOf(saved.session),
     record: projectionOf(saved.record, { lines, nowIso: persistIso }),
-    companies: await companiesFor(db, saved.record),
+    companies,
     changed: { summary: Boolean(checked.summary), findings: checked.findings.length },
     quota: quotaViewOf(day),
-  }, pending);
+  }, pending, settleBy);
 }
 
 // ── close (spec §4.5) ────────────────────────────────────────────────────────

@@ -8,16 +8,24 @@
 // its open `unavailable` finding, then the latest step's complication and
 // missing-link findings — each resolved through `supersedes` to the finding
 // that stands now (a corrected fact travels as its correction). Never a static
-// list, never the client's.
+// list, never the client's. At most KEPT_FINDINGS_MAX (the builder's 30 refs
+// less the record and the confirming exchange): a company whose own set is
+// larger is shown as not adoptable, with the reason (review A4).
 //
 // assertAssertionsSupported(statement, …): every number in the statement is in
-// a carried fact (a company's own proposed claim cannot support itself, so
-// `idea` facts do not count) — else `unsupported_assertion` with the token;
-// every selected company is named, and no deselected supported company is —
-// else `names_not_supported`.
+// a carried SOURCE-BACKED fact (a proposed claim, an inference or an open
+// question cannot back a number; a fact's own date mention is excused) — else
+// `unsupported_assertion` with the token; every selected company is named, and
+// no deselected supported company is — else `names_not_supported`.
 
 import { currentFindingsOf } from '../researchRecords/model.js';
-import { numberTokensOf, heldNumbersOf } from './stepSchema.js';
+import { SERVER_EVIDENCE_REFS_MAX } from '../hypothesisRecords/model.js';
+import { strayNumberOf } from './stepSchema.js';
+import { coreNameOf, namesCompany } from './companies.js';
+
+export { coreNameOf, namesCompany };
+/** The most findings one idea carries: the builder's 30 server refs less the record ref and the confirming exchange. */
+export const KEPT_FINDINGS_MAX = SERVER_EVIDENCE_REFS_MAX - 2;
 
 /** The preview's revision: what Save re-checks (spec §6.6). */
 export const previewRevOf = (record) => ({
@@ -53,22 +61,6 @@ export function carriedFor(record, { supported, lines, symbols }) {
   return out;
 }
 
-/** The core of a company's name for matching ("Shopify Inc." → "Shopify"; "The Coca-Cola Company" → "Coca-Cola"). */
-export function coreNameOf(name) {
-  let s = String(name ?? '').trim().replace(/^the\s+/i, '');
-  const SUFFIX = /[\s,]+(?:inc\.?|incorporated|corp\.?|corporation|co\.?|company|ltd\.?|limited|plc|holdings?|group|n\.?v\.?|s\.?a\.?|ag|se|class\s+[a-c]|\(the\))$/i;
-  for (let i = 0; i < 4 && SUFFIX.test(s); i++) s = s.replace(SUFFIX, '').trim();
-  return s;
-}
-const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-/** Does the text name the company — its symbol as a word, or its core name? */
-export function namesCompany(text, { symbol, name }) {
-  const t = String(text ?? '');
-  if (symbol && new RegExp(`(^|[^A-Za-z0-9-])${escape(symbol)}([^A-Za-z0-9-]|$)`).test(t)) return true;
-  const core = coreNameOf(name);
-  return core.length >= 2 && core !== symbol && new RegExp(`(^|[^A-Za-z0-9])${escape(core)}([^A-Za-z0-9]|$)`, 'i').test(t);
-}
-
 /** One company's draft sentence: its proposed claim, else its relationship — always naming it. */
 export function fragmentOf(c) {
   const body = c.claim?.fact || `${c.role}: ${c.relationship}`;
@@ -77,22 +69,27 @@ export function fragmentOf(c) {
 
 /**
  * The preview the sheet opens with (spec §4.6): per supported company, its
- * fragment and carried ids; the draft for all of them; the revision. Null when
- * no company is supported (no "Turn this into an idea").
+ * fragment, its carried ids and whether it can be saved (`adoptable`, with the
+ * `reason` when not); the draft for all of them; the revision. Null when no
+ * company is supported (no "Turn this into an idea").
  */
 export function adoptPreviewOf(record, { companies, lines }) {
   const supported = companies?.supported ?? [];
   if (record?.state !== 'open' || supported.length === 0) return null;
-  const list = supported.map((c) => ({
-    symbol: c.symbol, name: c.name, role: c.role, relationship: c.relationship, eligibility: c.eligibility,
-    fragment: fragmentOf(c),
-    carried: carriedFor(record, { supported, lines, symbols: [c.symbol] }),
-  }));
+  const list = supported.map((c) => {
+    const carried = carriedFor(record, { supported, lines, symbols: [c.symbol] });
+    const adoptable = carried.length <= KEPT_FINDINGS_MAX;
+    return {
+      symbol: c.symbol, name: c.name, role: c.role, relationship: c.relationship, eligibility: c.eligibility,
+      fragment: fragmentOf(c), carried, adoptable, reason: adoptable ? null : 'too_many_evidence_refs',
+    };
+  });
   return {
     previewRev: previewRevOf(record),
     companies: list,
     draft: list.map((c) => c.fragment).join(' '),
     carried: carriedFor(record, { supported, lines, symbols: supported.map((c) => c.symbol) }),
+    keptMax: KEPT_FINDINGS_MAX,
   };
 }
 
@@ -109,8 +106,8 @@ export class AssertionError extends Error {
  */
 export function assertAssertionsSupported(statement, { record, carried, selected, deselected }) {
   const byId = new Map((Array.isArray(record?.findings) ? record.findings : []).map((f) => [f.findingId, f]));
-  const held = new Set(carried.map((id) => byId.get(id)).filter((f) => f && f.kind !== 'idea').flatMap(heldNumbersOf));
-  const stray = numberTokensOf(statement).find((n) => !held.has(n));
+  const held = carried.map((id) => byId.get(id)).filter((f) => f && f.kind !== 'idea' && f.status === 'verified');
+  const stray = strayNumberOf(statement, held);
   if (stray !== undefined) throw new AssertionError('unsupported_assertion', stray);
   const unnamed = selected.find((c) => !namesCompany(statement, c));
   if (unnamed) throw new AssertionError('names_not_supported', { missing: unnamed.symbol });

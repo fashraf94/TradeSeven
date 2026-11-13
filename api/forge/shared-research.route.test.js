@@ -150,7 +150,7 @@ describe('open from a story (spec §4.2, §6.3)', () => {
     expect(out.record.nextAction).toMatchObject({ kind: 'next_action', statusReason: 'proposed' });
     expect(out.record.summary).toBeNull();
     expect(out.opening.storedRows.map((r) => [r.symbol, r.name])).toEqual([['ETN', 'Eaton Corporation plc'], ['GEV', 'GE Vernova Inc.']]);
-    expect(out.quota).toEqual({ investigationsToday: 1, perDay: 3, framingsToday: 0, framingsPerDay: 10 });
+    expect(out.quota).toEqual({ investigationsToday: 1, perDay: 3, framingsToday: 0, framingsPerDay: 10, stepsToday: 0, stepsPerDay: 30 });
     expect(sessionDoc(out.session.sessionId).attribution).toMatchObject(STAMP);
   });
   it('refusals: an unsupported kind, a mismatched entry, a missing or deep-dive story, a bad question, a bad request id', async () => {
@@ -232,6 +232,15 @@ describe('frame → open (an observation)', () => {
     expect(state.logs.find((l) => l.intent === 'frame')).toMatchObject({ gameMode: 'shared_research', model: 'claude-haiku-5-5', outcome: 'completion', methodId: 'baseline', methodVersion: 'v0' });
     expect((await post({ action: 'frame', observation: '', requestId: 'x' })).body.error).toBe('invalid_observation');
     expect((await post({ action: 'frame', observation: 'ok', requestId: '' })).body.error).toBe('invalid_request');
+  });
+  it('review C4: a paid framing whose write then fails still leaves its shadow record (failure, persist_failed)', async () => {
+    state.turnQueue.push(() => {
+      seedEnv.hooks.beforeCommit = () => { throw new Error('contention'); }; // the NEXT transaction (recordFrame) fails at commit
+      return { ...turnOk({ question: 'Q?', check: 'c', notEstablished: 'n' }), model: 'claude-haiku-5-5' };
+    });
+    const f = await post({ action: 'frame', observation: 'Reviews delay deals.', requestId: 'fr-c4' });
+    expect(f.statusCode).toBe(500);
+    expect(state.logs.filter((l) => l.intent === 'frame')).toMatchObject([{ outcome: 'failure', failureReason: 'persist_failed', model: 'claude-haiku-5-5' }]);
   });
   it('a failed framing leaves the session framing with its error, the call counted', async () => {
     state.turnQueue.push({ ok: false, reason: 'model_error_500', usage: null, model: 'claude-haiku-5-5', attempts: 1, elapsedMs: 10, costUsd: null, stopReason: null });

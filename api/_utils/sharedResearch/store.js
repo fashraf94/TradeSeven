@@ -22,9 +22,9 @@
 
 import {
   RESEARCH_WORK_COLLECTION, researchWorkIdFor, buildRecord, findingAppendPatch, summaryRevisionPatch, turnPatch,
-  closePatch, manualFunnel, emptyTelemetry, isOwnedRecord, TERMINAL_REASONS,
+  closePatch, manualFunnel, emptyTelemetry, isOwnedRecord, TERMINAL_REASONS, FINDINGS_MAX,
 } from '../researchRecords/model.js';
-import { researchWorkRefOf } from '../researchRecords/store.js';
+import { researchWorkRefOf, TURN_OUTCOME_DEADLINE_MS } from '../researchRecords/store.js';
 import {
   WATCHLISTS_COLLECTION, VERSIONS_SUBCOLLECTION, versionDocId, normalizeStatement, normalizeConditions, HORIZON_ENUMS,
   SHARED_RESEARCH_LIST_MARKER, buildSharedResearchVersion,
@@ -34,10 +34,11 @@ import { ARCHETYPE_IDENTITY_VERSION } from '../archetypeVersionConstants.js';
 import { baggerbombLoadoutOf } from '../../../src/constants/perGameLoadout.js';
 import {
   PER_DAY, FRAMINGS_PER_DAY, GLOBAL_STEPS_PER_DAY_DEFAULT, GLOBAL_FRAMINGS_PER_DAY_DEFAULT, ADOPTABLE_HORIZONS,
+  STEP_CALLS_PER_DAY, GLOBAL_STEP_CALLS_FACTOR,
 } from '../../../src/constants/sharedResearch.js';
 import {
   SESSIONS_COLLECTION, QUOTA_COLLECTION, GLOBAL_QUOTA_ID, etDateOf, framingSessionOf, openSessionOf, isOwnedSession,
-  stepAdmissionOf, playerDayOf, globalDayOf, itemKeyOf, refuse, latestLinesOf,
+  stepAdmissionOf, playerDayOf, globalDayOf, itemKeyOf, refuse, latestLinesOf, isFramingInFlight,
 } from './session.js';
 import { previewRevOf, sameRev, carriedFor, adoptPreviewOf, assertAssertionsSupported, AssertionError } from './adoptPreview.js';
 import { CLAIMS_READ_LIMIT } from './opening.js';
@@ -53,12 +54,12 @@ export const sessionRefOf = (db, sessionId) => db.collection(SESSIONS_COLLECTION
 export const quotaRefOf = (db, id) => db.collection(QUOTA_COLLECTION).doc(id);
 const dataOf = (snap) => (snap?.exists ? snap.data() : null);
 
-/** The app's daily step ceiling, NOW: the environment's positive whole number, else the default. Never cached. */
+/** The app's daily step ceiling, NOW: the environment's whole number (0 pauses steps), else the default. Never cached. */
 export function globalStepCeiling() {
   try {
     const raw = typeof process !== 'undefined' ? process.env?.[GLOBAL_STEPS_ENV] : undefined;
     const n = typeof raw === 'string' && /^\s*\d+\s*$/.test(raw) ? Number(raw) : NaN;
-    return Number.isSafeInteger(n) && n > 0 ? n : GLOBAL_STEPS_PER_DAY_DEFAULT;
+    return Number.isSafeInteger(n) && n >= 0 ? n : GLOBAL_STEPS_PER_DAY_DEFAULT;
   } catch {
     return GLOBAL_STEPS_PER_DAY_DEFAULT;
   }
@@ -181,23 +182,24 @@ export async function readStoredFacts(db, names) {
 export async function readRankingRows(db, symbols) {
   const peers = {};
   const rankings = {};
-  for (const symbol of symbols) {
-    const [p, r] = await Promise.all([db.collection('peerRankings').doc(symbol).get(), db.collection('stockRankings').doc(symbol).get()]);
-    const pd = dataOf(p);
-    const rd = dataOf(r);
+  const rows = await Promise.all(symbols.map((s) => Promise.all([db.collection('peerRankings').doc(s).get(), db.collection('stockRankings').doc(s).get()])));
+  symbols.forEach((symbol, i) => {
+    const pd = dataOf(rows[i][0]);
+    const rd = dataOf(rows[i][1]);
     if (pd) peers[symbol] = { name: typeof pd.name === 'string' ? pd.name : null, sector: pd.sector ?? null, metrics: pd.metrics ?? null, updatedAt: isoOf(pd.updatedAt ?? pd.computedAt) };
     if (rd) rankings[symbol] = { compositeScore: rd.compositeScore ?? null, percentile: rd.percentile ?? null, tier: rd.tier ?? null, updatedAt: isoOf(rd.updatedAt ?? rd.computedAt) };
-  }
+  });
   return { peers, rankings };
 }
 
 /** Company names for symbols: `peerRankings/{symbol}.name` (spec F13); a symbol with no row keeps its symbol. */
 export async function readNames(db, symbols) {
   const names = {};
-  for (const s of symbols) {
-    const d = dataOf(await db.collection('peerRankings').doc(s).get());
+  const snaps = await Promise.all(symbols.map((s) => db.collection('peerRankings').doc(s).get()));
+  symbols.forEach((s, i) => {
+    const d = dataOf(snaps[i]);
     if (typeof d?.name === 'string' && d.name.trim()) names[s] = d.name.trim();
-  }
+  });
   return names;
 }
 
@@ -211,9 +213,11 @@ async function byRequestIn(tx, db, uid, requestId) {
 
 /**
  * Start (or re-run) a framing (spec §6.3 frame). A repeated requestId on a
- * framed session returns it with no second call; on one whose framing failed it
- * re-runs. The framing counts — the player's day and the app's — here, when the
- * model call is about to be made (D-1 e).
+ * framed session returns it with no second call; so does one whose call is
+ * still in flight (review A2: no frame, no failure, started within 35 s); on
+ * one whose framing failed (or went stale) it re-runs. The framing counts —
+ * the player's day and the app's — here, when the model call is about to be
+ * made (D-1 e).
  * @returns {Promise<{ session: object, run: boolean, day: object }>}
  */
 export async function beginFraming(db, { uid, requestId, observation, playerExchange, sessionId, nowIso }) {
@@ -223,12 +227,13 @@ export async function beginFraming(db, { uid, requestId, observation, playerExch
     const quotaSnap = await tx.get(quotaRefOf(db, uid));
     const globalSnap = await tx.get(quotaRefOf(db, GLOBAL_QUOTA_ID));
     const day = playerDayOf(dataOf(quotaSnap), etDate);
-    if (prior && (prior.status !== 'framing' || prior.frame)) return { session: prior, run: false, day };
+    if (prior && (prior.status !== 'framing' || prior.frame || isFramingInFlight(prior, Date.parse(nowIso)))) return { session: prior, run: false, day };
     if (day.framingsRun >= FRAMINGS_PER_DAY) throw refuse(429, 'framing_limit');
     const g = globalDayOf(dataOf(globalSnap), etDate);
     if (g.framings >= globalFramingCeiling()) throw refuse(503, 'budget_paused');
-    const session = prior ?? framingSessionOf({ sessionId, userId: uid, requestId, observation, playerExchange, nowIso });
-    if (!prior) tx.set(sessionRefOf(db, session.sessionId), session);
+    const session = prior ? { ...prior, lastError: null, framingStartedAt: nowIso, updatedAt: nowIso } : framingSessionOf({ sessionId, userId: uid, requestId, observation, playerExchange, nowIso });
+    if (prior) tx.update(sessionRefOf(db, session.sessionId), { lastError: null, framingStartedAt: nowIso, updatedAt: nowIso });
+    else tx.set(sessionRefOf(db, session.sessionId), session);
     const after = { ...day, framingsRun: day.framingsRun + 1 };
     tx.set(quotaRefOf(db, uid), { ...after, updatedAt: nowIso });
     tx.set(quotaRefOf(db, GLOBAL_QUOTA_ID), { ...g, framings: g.framings + 1, updatedAt: nowIso });
@@ -258,7 +263,8 @@ export async function noteFrameFailure(db, { uid, sessionId, reason, nowIso }) {
     const ref = sessionRefOf(db, sessionId);
     await db.runTransaction(async (tx) => {
       const s = dataOf(await tx.get(ref));
-      if (!isOwnedSession(s, uid) || s.status !== 'framing') return;
+      // A sibling call may have framed it meanwhile: a good frame is never shadowed by a failure line (review A2).
+      if (!isOwnedSession(s, uid) || s.status !== 'framing' || s.frame) return;
       tx.update(ref, { lastError: { code: 'frame_failed', reason, at: nowIso }, updatedAt: nowIso });
     }, { maxAttempts: 1 });
     return true;
@@ -305,6 +311,7 @@ export async function openFromItem(db, { uid, requestId, sessionId, entry, excha
     const quotaSnap = await tx.get(quotaRefOf(db, uid));
     const day = playerDayOf(dataOf(quotaSnap), etDate);
     const recordOf = async (s) => (s?.researchWorkId ? dataOf(await tx.get(researchWorkRefOf(db, s.researchWorkId))) : null);
+    if (prior && prior.itemKey !== key) throw refuse(400, 'invalid_request'); // a requestId names one request (review A5)
     if (prior) return { session: prior, record: await recordOf(prior), day, existing: false, replay: true };
     const live = sameItem.docs.map((d) => d.data()).filter((s) => s.status === 'open' || s.status === 'completed')
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0];
@@ -358,7 +365,14 @@ export async function openFromFraming(db, { uid, sessionId, question, direction,
 /**
  * Admit a step and mark it running (spec §6.3 step): owner, open, budget, the
  * app's daily ceiling (503 budget_paused BEFORE any model call), not another
- * step in flight. A `direction` step appends the player's exchange here, once.
+ * step in flight, room on the record (review A1: a full record is refused here,
+ * before a paid call that could only fail). The step's model CALL counts here,
+ * on the player's day and the app's (review C1/C2): a player makes at most
+ * STEP_CALLS_PER_DAY a day (429 step_limit), the app at most
+ * GLOBAL_STEP_CALLS_FACTOR × its step ceiling (503 budget_paused) — so failed
+ * steps are bounded too; the persisted `steps` count (the spec's letter) is
+ * still added by recordStep. A `direction` step appends the player's exchange
+ * here, once.
  * @returns {Promise<{ replay: boolean, session, record, prior }>}  prior: the lastStep before this one
  */
 export async function beginStep(db, { uid, sessionId, stepId, intent, directionExchange = null, nowIso, nowMs = Date.parse(nowIso) }) {
@@ -369,11 +383,17 @@ export async function beginStep(db, { uid, sessionId, stepId, intent, directionE
     if (!isOwnedSession(s, uid)) throw refuse(404, 'session_not_found');
     const record = s.researchWorkId ? dataOf(await tx.get(researchWorkRefOf(db, s.researchWorkId))) : null;
     const globalSnap = await tx.get(quotaRefOf(db, GLOBAL_QUOTA_ID));
+    const quotaSnap = await tx.get(quotaRefOf(db, uid));
     const adm = stepAdmissionOf(s, { stepId, nowMs });
     if (adm.replay) return { replay: true, session: s, record, prior: s.lastStep ?? null };
     if (adm.refuse) throw refuse(409, adm.refuse);
     if (!isOwnedRecord(record, uid) || record.state !== 'open') throw refuse(409, 'session_not_open');
-    if (globalDayOf(dataOf(globalSnap), etDate).steps >= globalStepCeiling()) throw refuse(503, 'budget_paused');
+    if ((Array.isArray(record.findings) ? record.findings.length : 0) >= FINDINGS_MAX - 1) throw refuse(409, 'findings_full');
+    const g = globalDayOf(dataOf(globalSnap), etDate);
+    const ceiling = globalStepCeiling();
+    if (g.steps >= ceiling || g.stepCalls >= ceiling * GLOBAL_STEP_CALLS_FACTOR) throw refuse(503, 'budget_paused');
+    const day = playerDayOf(dataOf(quotaSnap), etDate);
+    if (day.stepCalls >= STEP_CALLS_PER_DAY) throw refuse(429, 'step_limit');
     const exchanges = Array.isArray(s.exchanges) ? s.exchanges : [];
     const already = exchanges.some((e) => e.stepId === stepId && e.kind === 'direction');
     const patch = {
@@ -381,6 +401,8 @@ export async function beginStep(db, { uid, sessionId, stepId, intent, directionE
       updatedAt: nowIso,
       ...(directionExchange && !already ? { exchanges: [...exchanges, directionExchange] } : {}),
     };
+    tx.set(quotaRefOf(db, uid), { ...day, stepCalls: day.stepCalls + 1, updatedAt: nowIso });
+    tx.set(quotaRefOf(db, GLOBAL_QUOTA_ID), { ...g, stepCalls: g.stepCalls + 1, updatedAt: nowIso });
     tx.update(ref, patch);
     return { replay: false, session: { ...s, ...patch }, record, prior: s.lastStep ?? null };
   });
@@ -435,20 +457,32 @@ export async function recordStep(db, { uid, sessionId, stepId, findings, summary
 
 /**
  * A step that ends before persistence: `lastStep: failed` on the host, nothing
- * appended (spec §6.3). Awaited, one attempt, never throws (BUILD_RULES §5).
+ * appended (spec §6.3). Awaited but BOUNDED (review C3: it runs at the tail of a
+ * 30 s function): one attempt, at most TURN_OUTCOME_DEADLINE_MS — past it the
+ * write is unconfirmed (logged; a running step older than 35 s is treated as
+ * failed anyway). Never throws (BUILD_RULES §5).
  */
-export async function failStep(db, { uid, sessionId, stepId, reason, nowIso }) {
+export async function failStep(db, { uid, sessionId, stepId, reason, nowIso, deadlineMs = TURN_OUTCOME_DEADLINE_MS }) {
+  let timer = null;
   try {
     const ref = sessionRefOf(db, sessionId);
-    await db.runTransaction(async (tx) => {
+    const write = db.runTransaction(async (tx) => {
       const s = dataOf(await tx.get(ref));
-      if (!isOwnedSession(s, uid) || s.lastStep?.stepId !== stepId || s.lastStep?.status !== 'running') return;
+      if (!isOwnedSession(s, uid) || s.lastStep?.stepId !== stepId || s.lastStep?.status !== 'running') return 'skipped';
       tx.update(ref, { lastStep: { ...s.lastStep, status: 'failed', endedAt: nowIso, error: reason }, updatedAt: nowIso });
+      return 'recorded';
     }, { maxAttempts: 1 });
-    return true;
+    const out = await Promise.race([write, new Promise((r) => { timer = setTimeout(() => r('unconfirmed'), deadlineMs); })]);
+    if (out === 'unconfirmed') {
+      write.catch((err) => console.error('[shared-research] late step-failure write failed:', err?.message || err));
+      console.error(`[shared-research] step failure unconfirmed after ${deadlineMs} ms`);
+    }
+    return out !== 'unconfirmed';
   } catch (err) {
     console.error('[shared-research] step failure not noted:', err?.message || err);
     return false;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

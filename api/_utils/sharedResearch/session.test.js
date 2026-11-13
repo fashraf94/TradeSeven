@@ -64,10 +64,10 @@ describe('the step admission (spec §6.3)', () => {
 describe('the daily counts (spec §5.3)', () => {
   it('reset when the ET date changes', () => {
     const stored = { etDate: '2026-11-11', investigationsOpened: 3, framingsRun: 9 };
-    expect(playerDayOf(stored, '2026-11-12')).toEqual({ etDate: '2026-11-12', investigationsOpened: 0, framingsRun: 0 });
-    expect(playerDayOf(stored, '2026-11-11')).toEqual({ etDate: '2026-11-11', investigationsOpened: 3, framingsRun: 9 });
-    expect(globalDayOf({ etDate: '2026-11-11', steps: 150, framings: 2 }, '2026-11-12')).toEqual({ etDate: '2026-11-12', steps: 0, framings: 0 });
-    expect(quotaViewOf({ investigationsOpened: 2, framingsRun: 1 })).toEqual({ investigationsToday: 2, perDay: 3, framingsToday: 1, framingsPerDay: 10 });
+    expect(playerDayOf(stored, '2026-11-12')).toEqual({ etDate: '2026-11-12', investigationsOpened: 0, framingsRun: 0, stepCalls: 0 });
+    expect(playerDayOf({ ...stored, stepCalls: 7 }, '2026-11-11')).toEqual({ etDate: '2026-11-11', investigationsOpened: 3, framingsRun: 9, stepCalls: 7 });
+    expect(globalDayOf({ etDate: '2026-11-11', steps: 150, framings: 2, stepCalls: 300 }, '2026-11-12')).toEqual({ etDate: '2026-11-12', steps: 0, framings: 0, stepCalls: 0 });
+    expect(quotaViewOf({ investigationsOpened: 2, framingsRun: 1, stepCalls: 4 })).toEqual({ investigationsToday: 2, perDay: 3, framingsToday: 1, framingsPerDay: 10, stepsToday: 4, stepsPerDay: 30 });
   });
   it('the ET date is the mandate close pass\'s rule (spec §5.3), from the import-free helper', () => {
     for (const iso of ['2026-11-12T04:59:59.000Z', '2026-11-12T05:00:00.000Z', '2026-03-08T07:30:00.000Z', '2026-11-01T05:30:00.000Z', NOW]) {

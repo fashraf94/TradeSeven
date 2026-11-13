@@ -40,7 +40,7 @@ import {
   FINDINGS_MAX, FINDING_ID_PREFIX, currentFindingsOf, isInstant, buildFinding, isSourceUrl,
 } from '../researchRecords/model.js';
 import { RELATIONSHIP_ROLES, ROLE_SEPARATOR, UNRESOLVED_REASONS } from '../../../src/constants/sharedResearch.js';
-import { gameUniverse, resolveSymbol } from './companies.js';
+import { gameUniverse, resolveSymbol, namesCompany } from './companies.js';
 import { METHOD_SOURCE } from './method.js';
 
 /**
@@ -75,6 +75,8 @@ export const LABELS = Object.freeze({
   undated: ' · undated',
 });
 export const NO_NEXT_STEP_FACT = 'No next step proposed: the question looks answered by the current findings.';
+/** Findings a step may never supersede: the player's own material and the story the investigation started from. */
+export const PROTECTED_REASONS = Object.freeze(['player_words', 'player_drop', 'from_drop', 'reporter_content']);
 
 // ── the schemas (structured outputs) ────────────────────────────────────────
 
@@ -157,51 +159,105 @@ export function strayTickersOf(text, universe = gameUniverse) {
   return out;
 }
 
-/** Learning words count only in a sentence about the partner, the agent, "I" or "we" (rulebook §2.4, §4 (6)). */
-const LEARNING = /\b(?:learn\w*|smarter|remember\w*|level(?:s|ed)?\s+up|unlock\w*|getting\s+better|got\s+better)\b/i;
-const ABOUT_US = /\b(?:agent|partner|I|I'm|I've|we|we're|we've|me|my|our)\b/i;
-/** The forbidden patterns (spec §6.4 rule 7; rulebook §2 and §4 (6)). Tested per sentence. */
+/**
+ * Learning claims (rulebook §2.4, §4 (6)). The strong words count in a sentence
+ * about the agent, the partner (by name too), "I" or "we"; the softer ones —
+ * business prose uses them ("margins improved", "the deal unlocks orders") —
+ * only in a sentence about the agent or the partner.
+ */
+const LEARNING_STRONG = /\b(?:learn(?:s|ed|t|ing)?|smarter|remember(?:s|ed|ing)?|level(?:s|ed)?\s+up|getting\s+better|got\s+better)\b/i;
+const LEARNING_SOFT = /\b(?:improv\w*|evolv\w*|intelligen\w*|unlock\w*|grow(?:s|n|ing)?|grew)\b/i;
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// "the partner" is business prose ("the partner portal"); the agent is "your partner", "my partner" or its own name.
+const PARTNER_WORDS = String.raw`agents?|(?:your|my|our|research)\s+partner`;
+/** The subjects a sentence is "about us" by: the agent, the partner (and the partner's own name), I, we. */
+function subjectsOf(partnerName) {
+  const name = typeof partnerName === 'string' && partnerName.trim().length >= 2 ? `|${escapeRe(partnerName.trim())}` : '';
+  return {
+    us: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|I|I'm|I've|we|we're|we've|me|my|our${name})\b`, 'i'),
+    agent: new RegExp(String.raw`\b(?:${PARTNER_WORDS}${name})\b`, 'i'),
+    willDo: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|it|I|we${name})\s+will\s+(?:buy|sell|trade|swap|act|execute|hold|short|equip|deploy)\b`, 'i'),
+  };
+}
+/** The forbidden patterns (spec §6.4 rule 7; rulebook §2 and §4 (6)) that need no subject. Tested per sentence. */
 export const FORBIDDEN_PATTERNS = Object.freeze({
   guarantee: /\bguarantee/i,
-  will_do: /\bwill do\b|\b(?:agent|partner|it|I|we)\s+will\s+(?:buy|sell|trade|swap|act|execute|hold|short|equip|deploy)\b/i,
-  considered: /\bconsidered\b/i,
-  confidence_number: /\d+(?:\.\d+)?\s*(?:%|percent)[^.!?]{0,40}\bconfiden|\bconfiden\w*[^.!?]{0,40}\d+(?:\.\d+)?\s*(?:%|percent)/i,
+  will_do: /\bwill do\b/i,
+  confidence_number: /\d+(?:\.\d+)?\s*(?:%|percent|per\s*cent|pct)[^.!?]{0,40}\bconfiden|\bconfiden\w*[^.!?]{0,40}\d+(?:\.\d+)?\s*(?:%|percent|per\s*cent|pct)/i,
   price_target: /\bprice\s+targets?\b|\btarget\s+price\b/i,
-  buy_sell_advice: /\b(?:you|we|I|investors|players?)\s+should\s+(?:buy|sell|short|add|trim|own)\b|\b(?:buy|sell|short)\s+(?:now|the\s+(?:stock|shares|dip))\b|\b(?:good\s+)?time\s+to\s+(?:buy|sell)\b|\bstrong\s+(?:buy|sell)\b/i,
+  price_forecast: /\b(?:shares?|stock|price)\b[^.!?]{0,40}\b(?:could|will|may|might|should|to)\s+(?:climb|rise|fall|drop|reach|hit|trade|head|go)\w*\s+(?:to|toward|towards|above|below|past|near)\s+\$\s?\d/i,
+  buy_sell_advice: /\b(?:you|we|I|investors|players?)\s+should\s+(?:buy|sell|short|add|trim|own)\b|\b(?:buy|sell|short)\s+(?:now|the\s+(?:stock|shares|dip))\b|\b(?:good\s+)?time\s+to\s+(?:buy|sell)\b|\bstrong\s+(?:buy|sell)\b|\bis\s+an?\s+(?:strong\s+)?(?:buy|sell)\b/i,
 });
+/** An imperative "Buy ETN …" / "Sell Eaton …" at a sentence's start (case-sensitive: "Sell-side" and "Short interest" are not advice). */
+const IMPERATIVE = /^\s*(?:Buy|Sell|buy|sell)\s+(?:shares\b|the\s+stock\b|[A-Z][\w.&-]*)/;
 export const sentencesOf = (text) => String(text ?? '').split(/(?<=[.!?])\s+/).filter(Boolean);
 
-/** The forbidden pattern names a text breaks (each sentence on its own), learning claims included. */
-export function forbiddenIn(text) {
+/**
+ * The forbidden pattern names a text breaks (each sentence on its own, after
+ * Unicode normalization), learning claims included.
+ * @param {string} text
+ * @param {{ partnerName?: string|null }} [opts]  the partner's own name counts as a subject
+ */
+export function forbiddenIn(text, { partnerName = null } = {}) {
+  const subj = subjectsOf(partnerName);
   const hits = new Set();
-  for (const s of sentencesOf(text)) {
+  for (const s of sentencesOf(normalizeText(text))) {
     for (const [name, re] of Object.entries(FORBIDDEN_PATTERNS)) if (re.test(s)) hits.add(name);
-    if (LEARNING.test(s) && ABOUT_US.test(s)) hits.add('learning_claim');
+    if (subj.willDo.test(s)) hits.add('will_do');
+    if (IMPERATIVE.test(s)) hits.add('buy_sell_advice');
+    // "considered" said of the agent, the partner, I or we (rulebook §4 (6)); "widely considered the leader" is prose.
+    if (/\bconsidered\b/i.test(s) && subj.us.test(s)) hits.add('considered');
+    if ((LEARNING_STRONG.test(s) && subj.us.test(s)) || (LEARNING_SOFT.test(s) && subj.agent.test(s))) hits.add('learning_claim');
   }
   return [...hits];
 }
 
-/** The numbers a text states, normalized ("1,200" → "1200", "1.90" → "1.9"). */
+/**
+ * The numbers a text states, normalized ("1,200" → "1200", "1.90" → "1.9"). A
+ * digit run glued to a letter or an underscore is an id or a label ("t1",
+ * "f_0000…", "Q3"), not a stated quantity.
+ */
 export function numberTokensOf(text) {
-  return (String(text ?? '').match(/\d+(?:,\d{3})*(?:\.\d+)?/g) || []).map((t) => String(Number(t.replace(/,/g, ''))));
+  return (String(text ?? '').match(/(?<![A-Za-z_\d.,])\d+(?:,\d{3})*(?:\.\d+)?/g) || []).map((t) => String(Number(t.replace(/,/g, ''))));
 }
 
-/** A stored instant's calendar parts as numbers ("2026-11-05T…" → 2026, 11, 5). */
-const dateTokensOf = (iso) => (typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10).split('-').map((p) => String(Number(p))) : []);
+/** The numbers a finding's fact states — never its dates (a date part is not a held quantity). */
+export const heldNumbersOf = (f) => (f ? numberTokensOf(f.fact) : []);
+
+const MONTH_INDEX = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+/** The calendar days ("YYYY-MM-DD") findings are dated by: their `at` and `asOf`. */
+export const heldDaysOf = (findings) => new Set(findings.flatMap((f) => [f?.at, f?.asOf]).filter((v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)).map((v) => v.slice(0, 10)));
 /**
- * The numbers a finding holds: those its fact states, and its own dates (`at`,
- * `asOf`) — a sentence that dates a fact by the fact's own date asserts nothing
- * the finding does not hold. Used by the summary, the claim and the adoption checks.
+ * The text with every date mention that names one of `days` taken out — an ISO
+ * day ("2026-11-05"), or a month name and day with or without the year
+ * ("November 5, 2026", "Nov 5"). A sentence that dates a fact by the fact's own
+ * date asserts nothing new; any other date's numbers stay and must be held.
  */
-export const heldNumbersOf = (f) => (f ? [...numberTokensOf(f.fact), ...dateTokensOf(f.at), ...dateTokensOf(f.asOf)] : []);
+export function withoutHeldDates(text, days) {
+  if (!days || days.size === 0) return String(text ?? '');
+  const parts = [...days].map((d) => d.split('-').map(Number));
+  return String(text ?? '')
+    .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (m, y, mo, d) => (days.has(`${y}-${mo}-${d}`) ? ' ' : m))
+    .replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})(?:,?\s+(\d{4}))?\b/gi, (m, mon, d, y) => {
+      const mo = MONTH_INDEX[mon.slice(0, 3).toLowerCase()];
+      return parts.some(([py, pm, pd]) => pm === mo && pd === Number(d) && (y === undefined || py === Number(y))) ? ' ' : m;
+    });
+}
+/** The first number a text states that no held finding states (its held dates excused), or undefined. */
+export function strayNumberOf(text, held) {
+  const nums = new Set(held.flatMap(heldNumbersOf));
+  return numberTokensOf(withoutHeldDates(text, heldDaysOf(held))).find((n) => !nums.has(n));
+}
 
 // ── small normalizers ───────────────────────────────────────────────────────
 
 // eslint-disable-next-line no-control-regex -- control characters never reach a record
 const CONTROL = /[\u0000-\u001f\u007f]/g;
-const clean = (v) => (typeof v === 'string' ? v.replace(CONTROL, ' ').replace(/\s+/g, ' ').trim() : '');
+/** NFKC (a fullwidth ％ is a %) and no invisible format characters (a zero-width space inside a word). */
+const normalizeText = (v) => String(v ?? '').normalize('NFKC').replace(/\p{Cf}/gu, '');
+const clean = (v) => (typeof v === 'string' ? normalizeText(v).replace(CONTROL, ' ').replace(/\s+/g, ' ').trim() : '');
 const cut = (s, max) => (s.length <= max ? s : s.slice(0, max).trimEnd());
-/** A date the model or a source gave, as an instant; null when it is not a real date. */
+/** A date a SOURCE gave (Exa's publishedDate, a stored instant), as an instant; null when it is not a real date. */
 export function instantOf(v) {
   if (typeof v !== 'string' || !v.trim()) return null;
   const s = v.trim();
@@ -209,6 +265,17 @@ export function instantOf(v) {
   if (!Number.isFinite(ms)) return null;
   const iso = new Date(ms).toISOString();
   return isInstant(iso) ? iso : null;
+}
+/**
+ * A date the MODEL gave, strictly: "YYYY-MM-DD" naming a real calendar day
+ * (2026-02-30 is refused, not rolled to March); anything looser — "2026",
+ * "Nov 5", "11/05" — is no date (§15 S-2: the next rule applies).
+ */
+export function modelDayOf(v) {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return null;
+  const iso = `${v.trim()}T00:00:00.000Z`;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) && new Date(ms).toISOString() === iso ? iso : null;
 }
 
 /** A retrieval source's record id (§15 S-3): the url when it fits, else its SHA-256. */
@@ -233,11 +300,12 @@ export function retrievalLabelOf({ host, title }, { undated = false } = {}) {
  */
 export function retrievalDatesOf({ modelAt, publishedDate, readAt, writeAt }) {
   const readMs = Date.parse(readAt);
-  const model = instantOf(modelAt);
+  const model = modelDayOf(modelAt);
   const published = instantOf(publishedDate);
   const asOf = published && Date.parse(published) < Date.parse(writeAt) ? published : null;
   if (model && Date.parse(model) <= readMs) return { at: model, asOf, undated: false };
-  if (published) return { at: published, asOf, undated: false };
+  // A published date later than the read is bad data: it dates nothing.
+  if (published && Date.parse(published) <= readMs) return { at: published, asOf, undated: false };
   return { at: readAt, asOf, undated: true };
 }
 
@@ -276,7 +344,7 @@ const fail = (rule, detail = null) => ({ ok: false, rule, detail });
  * @returns {{ ok: true, findings: object[], summary: object|null, lines: object, reply: string, notes: string[] } | { ok: false, rule: string, detail: any }}
  */
 export function validateStepTurn(output, ctx) {
-  const { record, items = [], readAt = null, partnerExchangeId, nowIso, mintFindingId, universe = gameUniverse } = ctx;
+  const { record, items = [], readAt = null, partnerExchangeId, nowIso, mintFindingId, universe = gameUniverse, names = {}, partnerName = null } = ctx;
   const notes = [];
   if (!output || typeof output !== 'object') return fail('unparseable');
   const rawFindings = Array.isArray(output.findings) ? output.findings : [];
@@ -288,11 +356,27 @@ export function validateStepTurn(output, ctx) {
 
   // Every text the model wrote: no forbidden pattern, no stray ticker (rules 2 and 7).
   const textFail = (text, where) => {
-    const f = forbiddenIn(text);
+    const f = forbiddenIn(text, { partnerName });
     if (f.length) return fail('forbidden', `${where}:${f[0]}`);
     const s = strayTickersOf(text, universe);
     if (s.length) return fail('stray_ticker', `${where}:${s[0]}`);
     return null;
+  };
+  /**
+   * Identity (rule 2, and review B1): a symbol resolves inside the universe —
+   * from the candidate, or from a company name written as its ticker — and,
+   * when the model names the company, the name must BE that symbol's company
+   * (`names`: symbol → the company's stored name). A mismatch keeps no symbol:
+   * another company's fact never supports a universe company.
+   */
+  const identityOf = (candidate, companyName) => {
+    let symbol = resolveSymbol(candidate, universe);
+    if (symbol === null && companyName) symbol = resolveSymbol(companyName, universe);
+    if (symbol !== null && companyName && !namesCompany(companyName, { symbol, name: names[symbol] })) {
+      notes.push(`identity_mismatch:${symbol}`);
+      return null;
+    }
+    return symbol;
   };
 
   // tempIds → minted ids (minted once, in order).
@@ -310,14 +394,19 @@ export function validateStepTurn(output, ctx) {
     return currentById.has(r) ? r : undefined;
   };
 
-  // Roles: a relationship fact takes the role of the company that cites it (rule 4's "{Role} · {fact}").
+  // Each finding's identity, resolved once (the roles below and the build both read it).
+  const symbolByTemp = new Map(rawFindings.map((rf) => [rf.tempId.trim(), identityOf(rf.symbolCandidate, clean(rf.companyName) || null)]));
+
+  // Roles: a relationship fact takes the role of the company that cites it AND is the same company (same resolved
+  // symbol, or both unresolved) — rule 4's "{Role} · {fact}"; review B10.
   const companies = (Array.isArray(output.companies) ? output.companies : []).slice(0, COMPANIES_MAX);
   if (Array.isArray(output.companies) && output.companies.length > COMPANIES_MAX) notes.push('companies_cut');
   const roleByTemp = new Map();
   for (const c of companies) {
+    const cSymbol = identityOf(c?.symbolCandidate, clean(c?.companyName) || null);
     for (const key of ['relationshipRef', 'openRef']) {
       const ref = typeof c?.[key] === 'string' ? c[key].trim() : null;
-      if (ref && temp.has(ref) && !roleByTemp.has(ref)) roleByTemp.set(ref, RELATIONSHIP_ROLES.includes(c.role) ? c.role : 'Other');
+      if (ref && temp.has(ref) && !roleByTemp.has(ref) && symbolByTemp.get(ref) === cSymbol) roleByTemp.set(ref, RELATIONSHIP_ROLES.includes(c.role) ? c.role : 'Other');
     }
   }
 
@@ -349,7 +438,7 @@ export function validateStepTurn(output, ctx) {
       const cf = textFail(companyName, `company:${tempId}`);
       if (cf) return cf;
     }
-    const symbol = resolveSymbol(rf.symbolCandidate, universe); // rule 2: inside the universe or null
+    const symbol = symbolByTemp.get(tempId); // rule 2: inside the universe, and the named company's own — or null
     const support = rf.support && typeof rf.support === 'object' ? rf.support : {};
     let source;
     let status;
@@ -386,18 +475,27 @@ export function validateStepTurn(output, ctx) {
     } else {
       return fail('invalid_support', tempId);
     }
-    // rule 5: a correction names a current finding, and never forks a chain.
+    // rule 5: a correction names a current finding, and never forks a chain. It may not retire the player's own
+    // material or the story (they are what the investigation started from), nor overturn a Source-backed fact with an
+    // inference — only with another sourced fact, or by saying the evidence is unresolved (review B5).
     let supersedes = null;
     if (rf.supersedes !== null && rf.supersedes !== undefined) {
       const s = typeof rf.supersedes === 'string' ? rf.supersedes.trim() : '';
-      if (!currentById.has(s)) return fail('invalid_supersedes', `${tempId}:${s}`);
+      const target = currentById.get(s);
+      if (!target) return fail('invalid_supersedes', `${tempId}:${s}`);
+      if (!MODEL_FINDING_KINDS.includes(target.kind) || PROTECTED_REASONS.includes(target.statusReason)) return fail('invalid_supersedes', `${tempId}:protected`);
+      if (target.status === 'verified' && status === 'unverified') return fail('invalid_supersedes', `${tempId}:weaker`);
       if (supersededHere.has(s)) return fail('forked_chain', s);
       supersededHere.add(s);
       supersedes = s;
     }
-    // The stored fact: a relationship carries its role; a company with no resolved symbol is named first.
+    // The stored fact: a relationship carries its role; a named company the fact does not name (or one with no
+    // resolved symbol) is named first; a colon the server did not write never reads as a company (review B9).
     let fact = factText;
-    if (companyName && symbol === null && (kind === 'relationship' || kind === 'product')) fact = `${companyName}: ${fact}`;
+    if (kind === 'relationship' || kind === 'product') {
+      if (companyName && (symbol === null || !namesCompany(fact, { symbol, name: companyName }))) fact = `${companyName}: ${fact}`;
+      else if (!companyName && symbol === null) fact = fact.replace(/^([^:]{1,80}):\s/, '$1 — ');
+    }
     if (kind === 'relationship') fact = `${roleByTemp.get(tempId) ?? 'Other'}${ROLE_SEPARATOR}${fact}`;
     fact = cut(fact, FINDING_FACT_MAX_LEN); // cut BEFORE buildFinding, never after (spec §5.2)
     const err = build({ kind, symbol, fact, source, at, asOf, status, statusReason, supersedes }, findingId);
@@ -419,7 +517,7 @@ export function validateStepTurn(output, ctx) {
     const openId = c.openRef === null || c.openRef === undefined ? null : resolveRef(c.openRef);
     if (openId === undefined) return fail('invalid_source', `company:${name}:openRef`);
     if (!c.claim) continue;
-    const symbol = resolveSymbol(c.symbolCandidate, universe);
+    const symbol = identityOf(c.symbolCandidate, name);
     const rel = relId ? afterById.get(relId) : null;
     const supported = symbol !== null && rel && rel.kind === 'relationship' && rel.status === 'verified' && rel.symbol === symbol;
     if (!supported) { notes.push(`claim_unsupported:${name}`); continue; }
@@ -429,8 +527,10 @@ export function validateStepTurn(output, ctx) {
     const cf = textFail(claimText, `claim:${symbol}`);
     if (cf) return cf;
     // A claim states no number its company's verified facts do not hold (the evidence discipline; downgrade, not ✗).
-    const held = new Set([...afterById.values()].filter((f) => f.symbol === symbol && f.status === 'verified').flatMap(heldNumbersOf));
-    if (numberTokensOf(claimText).some((n) => !held.has(n))) { notes.push(`claim_unsupported_number:${symbol}`); continue; }
+    if (strayNumberOf(claimText, [...afterById.values()].filter((f) => f.symbol === symbol && f.status === 'verified')) !== undefined) {
+      notes.push(`claim_unsupported_number:${symbol}`);
+      continue;
+    }
     const prior = [...afterById.values()].filter((f) => f.kind === 'idea' && f.symbol === symbol).at(-1) ?? null;
     if (prior && supersededHere.has(prior.findingId)) return fail('forked_chain', prior.findingId);
     const priorId = prior && currentById.has(prior.findingId) ? prior.findingId : null;
@@ -473,7 +573,8 @@ export function validateStepTurn(output, ctx) {
   const stored = Array.isArray(record?.findings) ? record.findings.length : 0;
   if (stored + built.length > FINDINGS_MAX) return fail('findings_full', stored + built.length);
 
-  // The summary (rule 6): 1–25 current findings; every number it states is in one of them.
+  // The summary (rule 6): 1–25 current findings; every number it states is in one of them that is Source-backed (an
+  // inference or a player's words cannot back a number in the answer — review B3), its own date mentions excused.
   let summary = null;
   if (output.summary && typeof output.summary === 'object') {
     const text = clean(output.summary.text);
@@ -490,9 +591,9 @@ export function validateStepTurn(output, ctx) {
       if (!basedOn.includes(id)) basedOn.push(id);
     }
     if (basedOn.length === 0 || basedOn.length > BASED_ON_MAX) return fail('invalid_based_on', basedOn.length);
-    const held = new Set(basedOn.flatMap((id) => heldNumbersOf(afterById.get(id))));
+    const held = basedOn.map((id) => afterById.get(id)).filter((f) => f.status === 'verified');
     for (const sentence of sentencesOf(text)) {
-      const missing = numberTokensOf(sentence).find((n) => !held.has(n));
+      const missing = strayNumberOf(sentence, held);
       if (missing !== undefined) return fail('unsupported_number', missing);
     }
     summary = { text, basedOn };

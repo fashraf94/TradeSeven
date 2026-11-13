@@ -40,6 +40,40 @@ export function resolveSymbol(raw, universe = gameUniverse) {
   return universe.has(s) && !universe.retired(s) ? s : null;
 }
 
+/** Words too common in company names to identify one ("Meta Platforms" is named by "Meta", not "Platforms"). */
+const GENERIC_NAME_WORDS = new Set([
+  'international', 'holdings', 'holding', 'group', 'systems', 'technologies', 'technology', 'platforms', 'financial', 'corporation',
+  'company', 'energy', 'services', 'global', 'american', 'general', 'bank', 'industries', 'capital', 'partners', 'brands',
+  'therapeutics', 'pharmaceuticals', 'communications', 'resources', 'solutions', 'networks', 'motors', 'entertainment', 'chase',
+]);
+/**
+ * The core of a company's name for matching ("Shopify Inc." → "Shopify";
+ * "Amazon.com, Inc." → "Amazon"; "JPMorgan Chase & Co." → "JPMorgan Chase";
+ * "The Coca-Cola Company" → "Coca-Cola").
+ */
+export function coreNameOf(name) {
+  let s = String(name ?? '').trim().replace(/^the\s+/i, '');
+  const SUFFIX = /(?:[\s,]+(?:inc\.?|incorporated|corp\.?|corporation|co\.?|company|ltd\.?|limited|plc|holdings?|group|n\.?v\.?|s\.?a\.?|ag|se|class\s+[a-c]|\(the\))|\s*&|\s+and|\.com)$/i;
+  for (let i = 0; i < 6 && SUFFIX.test(s); i++) s = s.replace(SUFFIX, '').trim();
+  return s;
+}
+const escapeName = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const wordIn = (t, w, flags = 'i') => new RegExp(`(^|[^A-Za-z0-9])${escapeName(w)}([^A-Za-z0-9]|$)`, flags).test(t);
+/**
+ * Does the text name the company? Its symbol as a word (symbols of three or
+ * more letters only: "C" and "V" are ordinary letters, "Series C" names no
+ * bank), its core name, or a distinctive word of it (four or more letters, not
+ * a generic one: "Disney" names "The Walt Disney Company").
+ */
+export function namesCompany(text, { symbol, name }) {
+  const t = String(text ?? '');
+  if (typeof symbol === 'string' && symbol.length >= 3 && new RegExp(`(^|[^A-Za-z0-9-])${escapeName(symbol)}([^A-Za-z0-9-]|$)`).test(t)) return true;
+  const core = coreNameOf(name);
+  if (core.length < 2 || core === symbol) return false;
+  if (wordIn(t, core)) return true;
+  return core.split(/[\s,]+/).filter((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w.toLowerCase())).some((w) => wordIn(t, w));
+}
+
 /** "{Role} · {rest}" → { role, rest }; a fact without a known role prefix reads role null. */
 export function splitRole(fact) {
   const f = typeof fact === 'string' ? fact : '';

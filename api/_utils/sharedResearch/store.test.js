@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeSrFirestore } from './__fixtures__/srFirestore.js';
 import { makeInMemoryDb } from '../__fixtures__/inMemoryFirestore.js';
 import {
-  beginFraming, recordFrame, openFromItem, openFromFraming, beginStep, recordStep, failStep, closeInvestigation, adoptIdea,
+  beginFraming, recordFrame, noteFrameFailure, openFromItem, openFromFraming, beginStep, recordStep, failStep, closeInvestigation, adoptIdea,
   normalizeAdoption, rankedAgentOfDocs, attributionOf, globalStepCeiling, GLOBAL_STEPS_ENV, SHARED_RESEARCH_ADAPTER, listOpen,
 } from './store.js';
 import { exchangeOf, openSessionOf, framingSessionOf, etDateOf } from './session.js';
@@ -136,10 +136,15 @@ describe('frame (spec §6.3)', () => {
     expect(env.doc('sharedResearchSessions/fs1')).toMatchObject({ status: 'framing', researchWorkId: null, frame: null });
     expect(env.doc('sharedResearchQuota/_global')).toMatchObject({ framings: 1, steps: 0 });
   });
-  it('the same requestId on a framed session returns it with no second call; on a failed one it re-runs (and counts)', async () => {
+  it('the same requestId: in flight → no second call; failed → re-runs (and counts); framed → no second call (review A2)', async () => {
     await beginFraming(env.db, { uid: OWNER, requestId: 'f1', observation: 'o', playerExchange: ex(), sessionId: 'fs1', nowIso: NOW });
+    const inFlight = await beginFraming(env.db, { uid: OWNER, requestId: 'f1', observation: 'o', playerExchange: ex(), sessionId: 'fs-other', nowIso: NOW });
+    expect(inFlight).toMatchObject({ run: false, session: { sessionId: 'fs1' } });
+    expect(env.doc(`sharedResearchQuota/${OWNER}`).framingsRun).toBe(1);
+    await noteFrameFailure(env.db, { uid: OWNER, sessionId: 'fs1', reason: 'model_error_500', nowIso: NOW });
     const again = await beginFraming(env.db, { uid: OWNER, requestId: 'f1', observation: 'o', playerExchange: ex(), sessionId: 'fs-other', nowIso: NOW });
-    expect(again).toMatchObject({ run: true, session: { sessionId: 'fs1' } }); // failed (no frame yet) → re-run
+    expect(again).toMatchObject({ run: true, session: { sessionId: 'fs1' } }); // failed → re-run
+    expect(env.doc('sharedResearchSessions/fs1').lastError).toBeNull();
     await recordFrame(env.db, { uid: OWNER, sessionId: 'fs1', frame: { question: 'Q?', check: 'c', notEstablished: 'n' }, partnerExchange: exchangeOf({ who: 'partner', kind: 'frame', text: 'Q?', at: NOW }), attempts: 1, nowIso: NOW });
     const framed = await beginFraming(env.db, { uid: OWNER, requestId: 'f1', observation: 'o', playerExchange: ex(), sessionId: 'fs-x', nowIso: NOW });
     expect(framed.run).toBe(false);

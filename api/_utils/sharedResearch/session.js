@@ -16,7 +16,7 @@
 // unwritten ranking rows read them).
 
 import { randomUUID } from 'node:crypto';
-import { STEP_BUDGET, PER_DAY, FRAMINGS_PER_DAY, STEP_INTENTS } from '../../../src/constants/sharedResearch.js';
+import { STEP_BUDGET, PER_DAY, FRAMINGS_PER_DAY, STEP_INTENTS, STEP_CALLS_PER_DAY } from '../../../src/constants/sharedResearch.js';
 // The ET calendar date by Intl (America/New_York) — the same rule as mandateClosePass.js etDateOf (spec §5.3 names
 // it), from the import-free intraday helper so the route does not load the mandate graph (parity pinned by test).
 import { etDateOf as etDateOfMs } from '../intraday/etTime.js';
@@ -92,7 +92,7 @@ export function framingSessionOf({ sessionId, userId, requestId, observation, pl
     status: 'framing',
     entry: { kind: 'observation', itemRef: null, observation, direction: null, topic: null, names: [] },
     itemKey: null,
-    frame: null, lastError: null,
+    frame: null, lastError: null, framingStartedAt: nowIso,
     exchanges: [playerExchange],
     stepsUsed: 0, stepBudget: STEP_BUDGET, lastStep: null,
     researchWorkId: null,
@@ -145,6 +145,10 @@ export function isStaleRunning(lastStep, nowMs) {
 export function stepAdmissionOf(session, { stepId, nowMs }) {
   const last = session?.lastStep ?? null;
   if (last && last.stepId === stepId && last.status === 'completed') return { replay: true };
+  // Any earlier step that completed under this stepId — its partner exchange is on the session — is a replay too
+  // (review A3). A failed step left at most the player's direction exchange, so it stays retryable.
+  const exchanges = Array.isArray(session?.exchanges) ? session.exchanges : [];
+  if (exchanges.some((e) => e?.who === 'partner' && e.kind === 'step' && e.stepId === stepId)) return { replay: true };
   if (session?.status !== 'open') return { refuse: 'session_not_open' };
   if (last && last.status === 'running' && !isStaleRunning(last, nowMs)) return { refuse: 'step_in_flight' };
   const used = Number.isSafeInteger(session.stepsUsed) ? session.stepsUsed : 0;
@@ -159,23 +163,37 @@ export const isStepIntent = (v) => STEP_INTENTS.includes(v);
 
 const count = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : 0);
 
-/** A player's counts for `etDate` — reset when the stored day is another day. */
+/** A player's counts for `etDate` — reset when the stored day is another day. `stepCalls`: step model calls made today. */
 export function playerDayOf(doc, etDate) {
   const same = doc && doc.etDate === etDate;
-  return { etDate, investigationsOpened: same ? count(doc.investigationsOpened) : 0, framingsRun: same ? count(doc.framingsRun) : 0 };
+  return {
+    etDate, investigationsOpened: same ? count(doc.investigationsOpened) : 0, framingsRun: same ? count(doc.framingsRun) : 0,
+    stepCalls: same ? count(doc.stepCalls) : 0,
+  };
 }
 
-/** The app's counts for `etDate` — reset when the stored day is another day. */
+/** The app's counts for `etDate` — reset when the stored day is another day. `steps` persisted, `stepCalls` made. */
 export function globalDayOf(doc, etDate) {
   const same = doc && doc.etDate === etDate;
-  return { etDate, steps: same ? count(doc.steps) : 0, framings: same ? count(doc.framings) : 0 };
+  return { etDate, steps: same ? count(doc.steps) : 0, framings: same ? count(doc.framings) : 0, stepCalls: same ? count(doc.stepCalls) : 0 };
 }
 
-/** The daily-limit line's numbers, as every answer carries them (spec §5.3). */
+/** The daily-limit line's numbers, as every answer carries them (spec §5.3; the step calls added by the review, C2). */
 export const quotaViewOf = (day) => ({
   investigationsToday: count(day?.investigationsOpened), perDay: PER_DAY,
   framingsToday: count(day?.framingsRun), framingsPerDay: FRAMINGS_PER_DAY,
+  stepsToday: count(day?.stepCalls), stepsPerDay: STEP_CALLS_PER_DAY,
 });
+
+/**
+ * A framing whose model call may still be running (review A2): no frame yet, no recorded failure, and started within
+ * RUNNING_STALE_MS. A repeated requestId waits on it instead of paying for a second call.
+ */
+export function isFramingInFlight(session, nowMs) {
+  if (session?.status !== 'framing' || session.frame || session.lastError) return false;
+  const started = Date.parse(session.framingStartedAt ?? session.createdAt);
+  return Number.isFinite(started) && nowMs - started <= RUNNING_STALE_MS;
+}
 
 // ── what the client is shown ────────────────────────────────────────────────
 

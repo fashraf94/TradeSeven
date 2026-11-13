@@ -47,6 +47,13 @@ export const STEP_BUDGET = 10;
 export const PER_DAY = 3;
 /** Framings per player per ET day (counted when the model call is made). */
 export const FRAMINGS_PER_DAY = 10;
+/**
+ * A player's step CALLS per ET day — the spec's "30 Sonnet steps a day" (§6.12 control 3: 3 investigations × 10
+ * steps), counted when the model call is made, so failed steps count too and saved-up investigations cannot exceed it.
+ */
+export const STEP_CALLS_PER_DAY = PER_DAY * STEP_BUDGET;
+/** The app's step CALLS per ET day, as a multiple of its persisted-step ceiling (failed steps are calls too). */
+export const GLOBAL_STEP_CALLS_FACTOR = 2;
 /** The whole app's research steps per ET day; SHARED_RESEARCH_GLOBAL_STEPS_PER_DAY overrides it at call time. */
 export const GLOBAL_STEPS_PER_DAY_DEFAULT = 150;
 /** The whole app's framings per ET day. */

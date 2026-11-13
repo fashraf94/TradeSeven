@@ -21,6 +21,8 @@ export const SR_SERVER_COPY = Object.freeze({
   daily_limit: 'You have opened today\'s investigations. You can open another tomorrow.',
   framing_limit: 'You have framed today\'s questions. You can frame another tomorrow, or start from a story.',
   budget_paused: 'Research steps are paused for today — the daily research budget is used. Your investigation is kept; reading, saving an idea and closing still work.',
+  step_limit: "You have used today's research steps. You can take another tomorrow; reading, saving an idea and closing still work.",
+  findings_full: 'This investigation holds all the findings it can. Save what it found as an idea, or close it.',
   prompt_too_large: 'This investigation holds more than one step can read. Close it, or save what it found as an idea.',
   invalid_target: 'That connection is not one this investigation holds now.',
   invalid_adoption: 'That idea could not be saved. Nothing was created.',

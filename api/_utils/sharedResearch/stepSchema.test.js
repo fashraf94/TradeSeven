@@ -26,7 +26,8 @@ const ITEMS = [
 ];
 let n = 0;
 const mint = () => `f_10000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
-const ctx = (over = {}) => ({ record: dataCenterRecord('refresh'), items: ITEMS, readAt: READ, partnerExchangeId: PARTNER, partnerAt: NOW, nowIso: NOW, mintFindingId: mint, ...over });
+const NAMES = { ETN: 'Eaton Corporation plc', GEV: 'GE Vernova Inc.' };
+const ctx = (over = {}) => ({ record: dataCenterRecord('refresh'), items: ITEMS, readAt: READ, partnerExchangeId: PARTNER, partnerAt: NOW, nowIso: NOW, mintFindingId: mint, names: NAMES, ...over });
 const finding = (over = {}) => ({
   tempId: 't1', kind: 'relationship', fact: 'Eaton sells switchgear to data-center builders.', symbolCandidate: 'ETN', companyName: 'Eaton',
   support: { kind: 'retrieval', index: 0, from: [], reason: null }, at: null, supersedes: null, ...over,
@@ -182,10 +183,10 @@ describe('rule 6 — the summary', () => {
     expect(out.ok).toBe(true);
     expect(out.summary.basedOn).toEqual([out.findings[0].findingId, fid('d1')]);
   });
-  it('a finding holds its own date: a sentence dating a fact by it passes; a different date fails', () => {
+  it('a sentence may date a fact by the fact\'s own date; any other date\'s numbers must be held (review B2)', () => {
     const dated = validateStepTurn(turn({ summary: { text: 'Eaton sells switchgear to data-center builders (reported 2026-11-06).', basedOn: ['t1'] } }), ctx());
     expect(dated.ok).toBe(true);
-    expect(validateStepTurn(turn({ summary: { text: 'Eaton sells switchgear (reported 2026-11-09).', basedOn: ['t1'] } }), ctx())).toMatchObject({ ok: false, rule: 'unsupported_number', detail: '9' });
+    expect(validateStepTurn(turn({ summary: { text: 'Eaton sells switchgear (reported 2026-11-09).', basedOn: ['t1'] } }), ctx())).toMatchObject({ ok: false, rule: 'unsupported_number', detail: '2026' });
   });
   it('a sentence with a number no basedOn fact holds fails unsupported_number', () => {
     expect(validateStepTurn(turn({ summary: { text: 'Lead times stretched to 18 months.', basedOn: [fid('d1')] } }), ctx())).toMatchObject({ ok: false, rule: 'unsupported_number', detail: '18' });
