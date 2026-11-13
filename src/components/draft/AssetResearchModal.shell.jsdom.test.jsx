@@ -788,6 +788,21 @@ describe('refuter (lens D) — the layout fixes, pinned on every run (the browse
     expect([$('[data-sheet-about]').style.minWidth, $('[data-sheet-about]').style.maxWidth]).toEqual(['0px', '100%']);
     expect($('[data-shell-about-group]').style.maxWidth).toBe('100%');
   });
+  it('BS-3: the price and the change narrow with the screen — clamp(12px, 3.6vw, 14px) and clamp(10px, 2.95vw, 11.5px) — while the name keeps its ellipsis (shellHeader.browser.test.js measures 320 and 375 px)', async () => {
+    await act(async () => { root.render(<AssetResearchModal asset={{ symbol: 'BRK.A', name: 'Berkshire Hathaway Inc', price: 712345.67 }} onClose={() => {}} version={2} />); });
+    await flush();
+    expect($('[data-shell-price]').textContent).toBe('$712345.67');
+    // jsdom drops clamp() from a serialized style: the source holds the rule on the two spans.
+    const { readFileSync } = await import('node:fs');
+    const path = await import('node:path');
+    const src = readFileSync(path.resolve(process.cwd(), 'src/components/Research/Sheet/ShellHeader.jsx'), 'utf8');
+    expect(src).toContain("export const SHELL_PRICE_FONT = 'clamp(12px, 3.6vw, 14px)';");
+    expect(src).toContain("export const SHELL_CHANGE_FONT = 'clamp(10px, 2.95vw, 11.5px)';");
+    expect(src).toMatch(/<span data-shell-price style=\{\{ fontFamily: MONO, fontSize: SHELL_PRICE_FONT,/);
+    expect(src).toMatch(/<span data-shell-change style=\{\{ fontFamily: MONO, fontSize: SHELL_CHANGE_FONT,/);
+    const name = $('[data-shell-stock-row]').children[1];
+    expect([name.style.flex, name.style.minWidth, name.style.overflow, name.style.textOverflow]).toEqual(['1 1 0%', '0px', 'hidden', 'ellipsis']);
+  });
 });
 
 describe('SB-10 — the action row: in browse, the mount\'s own action, unchanged', () => {
