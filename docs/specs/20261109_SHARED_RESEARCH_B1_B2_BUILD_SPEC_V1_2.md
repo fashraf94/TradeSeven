@@ -564,3 +564,23 @@ The B1 build report (`docs/audits/20261112_BUILD_SHARED_RESEARCH_B1.md` §11) as
 - **`previewRev`** is a string, `pr1.` followed by 32 hex characters. B2 echoes it as received. It covers each supported company's carried ids, not only their union.
 - **A withheld summary.** The step answers 200 with `changed.summaryWithheld: true`; the answer and its revisions are unchanged.
 - **`429 rate_limited`** comes from the per-uid limiter, with a `Retry-After` header and the server's line. It is per function instance, like the IP limiter.
+
+---
+
+## 17. B1 rulings, round 2 (Nov 13)
+
+The B1 build report (§17.3) asked seven more founder questions, FQ-9 to FQ-15. The founder ruled them on Nov 13, 2026: the last round before merge, applied on the B1 branch. The rulings below are the founder's words. Where a ruling and an earlier section (§15 and §16 included) disagree, the ruling wins; B2 builds against them.
+
+| # | Ruling |
+|---|---|
+| **FQ-9** | Narrow the subject: "the agent", "your/my/our agent", the partner's own name, "I" and "we" count as the agent. Plural "agents" in business prose passes. |
+| **FQ-10** | Forbid it: within a supersedes chain that began with a verified finding, the current head may only be verified or unavailable. An inference (by kind or by status) never supersedes any link of such a chain, at any depth. |
+| **FQ-11** | The read projection flags `answerStale: true` when any summary.basedOn id is no longer current; the next step's prompt states the answer must be revised. Adoption is unaffected. B2 renders the flag. |
+| **FQ-12** | Keep as built (the token covers everything that is saved). |
+| **FQ-13** | Keep as built. |
+| **FQ-14** | The player's words stay verbatim in the record and the exchange (rulebook §4 (1)). A ticker in them that the universe does not hold is masked in what the model sees, so the partner cannot echo it into a fact. Write the scope into §17: nothing the server or the model writes carries such a ticker; the player's quoted words are the one exception. |
+| **FQ-15** | The reply gets the summary's number check against the facts on the record. A reply that fails is replaced with "This step added {n} findings. The answer was not updated." ("finding" for one). The step's findings still land; the step does not fail. |
+
+**The scope of the STOP list's ticker rule (FQ-14):** nothing the server or the model writes carries a ticker the universe does not hold; the player's quoted words (the observation, a drop's own text) are the one exception, kept verbatim in the record and the exchange and masked in everything the model sees.
+
+**What B2 reads, as B1 built these** (the build report's §20 has the detail): the read projection's `record.answerStale` (`true` when the answer rests on a finding that is no longer current — B2 renders the flag); and a step's partner exchange whose text may be the replaced reply ("This step added {n} findings. The answer was not updated.", "finding" for one — or "…The answer was updated." when that same step did revise the answer, so the line is never false).
