@@ -317,17 +317,14 @@ export async function createCard(db, { uid, agentId, opId, payload, nowIso, requ
     if (offer && !isBookOpen(book)) throw fail(409, 'book_not_open');
     if (open >= OPEN_CARD_CAP) throw fail(409, 'cap_reached', { cap: OPEN_CARD_CAP, open });
     const card = buildCardDoc({ entryId: opId, uid, agentId, opId, opFingerprint, nowIso, payload, book: offer ? book : null });
-    if (offer) {
-      // one transaction, both halves (exit criterion 12): the record under the op id — refused if that id was already
-      // used for another nomination in the book — and the entry at `nominated` beside it
-      const nominationRef = nominationRefOf(db, book.bookId, opId);
-      if ((await tx.get(nominationRef))?.exists) throw fail(409, 'op_conflict', { entryId: opId });
-      const nomination = nominationDocOf({ entryId: opId, card, nowIso });
-      tx.create(ref, card);
-      tx.set(nominationRef, nomination);
-    } else {
-      tx.create(ref, card);
-    }
+    // one transaction, both halves (exit criterion 12): for an Offer card, the record under the op id — refused if that
+    // id was already used for another nomination in the book (a read, so before any write) — and the entry at
+    // `nominated` beside it
+    const nominationRef = offer ? nominationRefOf(db, book.bookId, opId) : null;
+    if (nominationRef && (await tx.get(nominationRef))?.exists) throw fail(409, 'op_conflict', { entryId: opId });
+    const nomination = nominationRef ? nominationDocOf({ entryId: opId, card, nowIso }) : null;
+    tx.create(ref, card);
+    if (nominationRef) tx.set(nominationRef, nomination);
     // the count the predicate gives (flag off a new card is always open, so +1; A2's R4 can file one shelved)
     return { idempotent: false, card, open: open + (isOpen(card, agent.shelf) ? 1 : 0), cap: OPEN_CARD_CAP };
   });
