@@ -57,6 +57,15 @@ export const MANDATE_MAX_POSITIONS = 15;                    // hard position cap
 export const MANDATE_MAX_SINGLE_POSITION_WEIGHT_PCT = 0.35;
 // The decision-tool verb set (§3.4). One action per decision; sized in dollars.
 export const MANDATE_DECISION_VERBS = Object.freeze(['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD']);
+// T0b (Practice Field concept V6.1 ruling 16; Astra V5 review B7): the
+// manager's written reason is kept on its decision record, cut at a grapheme
+// boundary to at most this many UTF-16 code units (JavaScript string length).
+// 1,200 units is at most 3,600 UTF-8 bytes, so a decision record stays far
+// inside Firestore's 1 MiB document limit by construction (asserted by test).
+// The tool asks for 2–5 sentences; the bound cuts only an over-long answer.
+// Storage only: this file is prompt-path infra, and the bound never reaches a
+// prompt.
+export const MANDATE_RATIONALE_MAX_CHARS = 1200;
 
 // ── Cadence tiers (D-19: cadence is an archetype property) ───────────────────
 // The tier VALUES are pinned in the vintage (recomputed from the new vintage at

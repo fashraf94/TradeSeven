@@ -19,6 +19,7 @@ import {
   MANDATE_STARTING_CAPITAL,
   MANDATE_DECISION_VERBS,
 } from './mandateConfig.js';
+import { boundRationale, convictionDiagnosticOf, RATIONALE_AT_BASES } from './mandateRationale.js';
 
 // ── Enums / contracts ────────────────────────────────────────────────────────
 
@@ -267,8 +268,17 @@ export function buildDailyRow({ date, quarterIndex, ...rest } = {}) {
  * decisions/{decisionId} — deterministic id (§3.3). One terminal `status` per
  * submission (I1). `priceBasis:'harvest_tick'` (I3). `influenceStateRef` is
  * PROVABLY NULL in V1 (FR-7 / I8). Friction breakdown carries its model version.
+ *
+ * T0b (concept V6.1 ruling 16) adds the manager's written reason, additive at
+ * schemaVersion 1 (the P3/P4 row and P5 failCondition precedent). `rationale`
+ * and `convictionDiagnostic` arrive RAW and are bounded HERE, so no writer can
+ * store an unbounded or unlabeled reason (mandateRationale.js). Every record
+ * without a model reason (lifecycle disposals, result-less terminals) defaults
+ * to rationale null / rationaleStatus 'absent' with null attribution; its
+ * failCondition says why.
  */
 export function buildDecision({ decisionId, verb, ticker, ...rest } = {}) {
+  const reason = boundRationale(rest.rationale);
   return {
     schemaVersion: MANDATE_SCHEMA_VERSION,
     decisionId: decisionId ?? null,
@@ -307,6 +317,14 @@ export function buildDecision({ decisionId, verb, ticker, ...rest } = {}) {
     harvestSnapshotDegraded: rest.harvestSnapshotDegraded ?? false,
     mandatePromptTemplateVersion: rest.mandatePromptTemplateVersion ?? null,
     influenceStateRef: null, // FR-7 / I8 — provably null in V1
+    // T0b — the manager's reason: quoted, unverified, storage only (no reader).
+    rationale: reason.rationale, // the model's text, ≤ MANDATE_RATIONALE_MAX_CHARS, or null
+    rationaleStatus: reason.rationaleStatus, // 'present' | 'truncated' | 'absent'
+    convictionDiagnostic: convictionDiagnosticOf(rest.convictionDiagnostic), // self-reported 0–100; diagnostic, never a probability
+    modelId: rest.modelId ?? null, // the pinned seat's model id; null = no model response behind this record
+    generationConfigVersion: rest.generationConfigVersion ?? null, // content address of the pinned model seat
+    rationaleAt: rest.rationaleAt ?? null, // when the response arrived (see rationaleAtBasis)
+    rationaleAtBasis: RATIONALE_AT_BASES.includes(rest.rationaleAtBasis) ? rest.rationaleAtBasis : null,
     status: rest.status ?? null, // one of DECISION_STATUSES
   };
 }

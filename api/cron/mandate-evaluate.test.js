@@ -5,6 +5,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { unionHeldTickers, runBookEval, telemetryPatch } from './mandate-evaluate.js';
 import { buildVintagePayload } from '../_utils/mandateVintage.js';
+import { generationConfigVersionOf } from '../_utils/mandateRationale.js';
+import { MANDATE_RATIONALE_MAX_CHARS } from '../_utils/mandateConfig.js';
 
 // Fake Firestore with subcollections, transactions, and ref.id.
 function makeFakeDb(seed = {}) {
@@ -376,5 +378,74 @@ describe('T0a — a real buildVintagePayload vintage binds the sector cap throug
       callModel: fakeModel({ verb: 'BUY', ticker: 'MSFT', sizeUsd: 3000, rationale: 'x' }), // 33% after
     });
     expect(r2.status).toBe('executed');
+  });
+});
+
+// ── T0b — the manager's reason on the DIRECT path ────────────────────────────
+describe('T0b — direct transport keeps the reason on every terminal, bounded and attributed', () => {
+  const RESPONDED = new Date('2026-08-12T14:05:04Z'); // the response arrives after the fire's NOW
+  const SEAT_VERSION = generationConfigVersionOf(VINTAGE.modelSeat);
+
+  async function evalWith(input, { book = bookFixture(), dbBook = book } = {}) {
+    const db = makeFakeDb({ 'mandates/m1': dbBook });
+    let modelReturned = false;
+    const callModel = vi.fn(async () => { modelReturned = true; return { decision: { ok: true, input }, usage: null }; });
+    const clock = vi.fn(() => { expect(modelReturned).toBe(true); return RESPONDED; }); // read AFTER the response
+    const r = await runBookEval(db, {
+      book: { _id: 'm1', ...book }, mandateRef: db.collection('mandates').doc('m1'), vintage: VINTAGE, snapshot: SNAP,
+      sessionDate: '2026-08-12', slot: 'open30', now: NOW, callModel, clock,
+    });
+    expect(clock).toHaveBeenCalledTimes(1);
+    return { r, dec: db._store.get(`mandates/m1/decisions/${r.decisionId}`) };
+  }
+
+  it('present: an executed BUY stores the text, the diagnostic, the seat and the response time', async () => {
+    const { r, dec } = await evalWith({ verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, conviction: 72, rationale: 'Quality at a fair price. One sentence is enough.' });
+    expect(r.status).toBe('executed');
+    expect(dec).toMatchObject({
+      rationale: 'Quality at a fair price. One sentence is enough.',
+      rationaleStatus: 'present',
+      convictionDiagnostic: 72,
+      modelId: 'claude-haiku-4-5-20251001',
+      generationConfigVersion: SEAT_VERSION,
+      rationaleAt: RESPONDED,
+      rationaleAtBasis: 'direct_response',
+    });
+    expect(SEAT_VERSION).toMatch(/^seat_[0-9a-f]{16}$/);
+  });
+
+  it('absent: a reason-less HOLD stores null text, never an empty string; the model is still attributed', async () => {
+    const { r, dec } = await evalWith({ verb: 'HOLD' });
+    expect(r.status).toBe('executed');
+    expect(dec).toMatchObject({
+      rationale: null, rationaleStatus: 'absent', convictionDiagnostic: null,
+      modelId: 'claude-haiku-4-5-20251001', generationConfigVersion: SEAT_VERSION, rationaleAt: RESPONDED, rationaleAtBasis: 'direct_response',
+    });
+  });
+
+  it('truncated: an over-long reason is cut to the bound and labeled', async () => {
+    const long = `${'Margins are expanding. '.repeat(80)}End.`;
+    const { dec } = await evalWith({ verb: 'HOLD', rationale: long, conviction: 150 });
+    expect(dec.rationaleStatus).toBe('truncated');
+    expect(dec.rationale.length).toBeLessThanOrEqual(MANDATE_RATIONALE_MAX_CHARS);
+    expect(long.startsWith(dec.rationale)).toBe(true);
+    expect(dec.convictionDiagnostic).toBe(100); // clamped, still only a diagnostic
+  });
+
+  it('a GATED decision keeps its reason (the record shows why the agent wanted to act and why the engine said no)', async () => {
+    const { r, dec } = await evalWith({ verb: 'BUY', ticker: 'TSLA', sizeUsd: 5000, conviction: 0, rationale: 'Momentum is strong.' });
+    expect(r.status).toBe('gated');
+    expect(dec).toMatchObject({ status: 'gated', rationale: 'Momentum is strong.', rationaleStatus: 'present', convictionDiagnostic: 0, rationaleAt: RESPONDED });
+    expect(dec.failCondition).toBeTruthy();
+  });
+
+  it('a REFUSED (rejected_stale) decision keeps its reason', async () => {
+    // The book moved under the eval: the record says base_revision AND keeps the reason.
+    const { r, dec } = await evalWith(
+      { verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, rationale: 'Adding on weakness.' },
+      { book: bookFixture(), dbBook: bookFixture({ revision: 6 }) },
+    );
+    expect(r.status).toBe('rejected_stale');
+    expect(dec).toMatchObject({ failCondition: 'base_revision', rationale: 'Adding on weakness.', rationaleStatus: 'present', modelId: 'claude-haiku-4-5-20251001' });
   });
 });
