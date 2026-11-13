@@ -56,6 +56,21 @@ vi.mock('./admission.js', async (importOriginal) => {
     },
   };
 });
+vi.mock('../mandateValuation.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return {
+    ...real,
+    // The close values the BOOK's own positions with this (they carry an `ideaId`; an idea's ledger holdings do not):
+    // a book-side valuation a dollar per position away from its ideas' rows.
+    markBook: (positions, cash, snapshot) => {
+      const out = real.markBook(positions, cash, snapshot);
+      const bookSide = Object.values(positions || {}).some((p) => typeof p?.ideaId === 'string');
+      if (fault.on !== 'bookMark' || !bookSide) return out;
+      const n = Object.keys(out.marked).length;
+      return { ...out, positionsValue: out.positionsValue + n, totalValue: out.totalValue + n };
+    },
+  };
+});
 vi.mock('./money.js', async (importOriginal) => {
   const real = await importOriginal();
   return {
@@ -137,5 +152,18 @@ describe('the next-state reconciliation of each money path, with the book as rea
     expect(out.closed).toBe(true);
     expect(out.cancelled).toHaveLength(1);
     expect(getBook(db, bookId).execState.lastCloseKey).toBe(DAYS.d1);
+  });
+
+  it('the close: its own valuation of the book\'s positions, a dollar away from its ideas\' rows, is refused `book_marks_disagree_with_ideas` (review L1-6) — the as-read check cannot see a fault made during the close', async () => {
+    const { db, bookId, bookRef } = await seedBook();
+    await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: QUOTES });
+    await storeCloseSnapshot(db, DAYS.d1, { AAPL: 100.13, SPY: 500 });
+    const before = JSON.stringify([...db._store.entries()]);
+    fault.on = 'bookMark';
+    let err = null;
+    try { await closeIdeaBook(db, bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 25)) }); } catch (e) { err = e; } finally { fault.on = null; }
+    expect(isPracticeFieldError(err, 'book_marks_disagree_with_ideas'), String(err)).toBe(true);
+    expect(JSON.stringify([...db._store.entries()])).toBe(before);
+    expect((await closeIdeaBook(db, bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 25)) })).closed).toBe(true);
   });
 });
