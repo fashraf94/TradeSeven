@@ -18,7 +18,7 @@ import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S, wash } from '../sharedResearchStyle';
 import {
   evidenceOf, findingsById, formatDay, formatWhen, isAged, linesOf, partnerReplyOf, quotaStateOf,
-  remainingOf, splitNext, startingPointOf, stateOf, directionOfStep,
+  remainingOf, splitNext, startingPointOf, stateOf, directionOfStep, labelOf,
 } from '../sharedResearchView';
 import { Button, CompanyCard, Disclosure, Eyebrow, Finding, Lead, LinkButton, Notice, Running, StatusTag, Tag } from '../parts';
 
@@ -161,7 +161,7 @@ export default function Work({ sr, agentName, phone, viewingEarlier = false, onB
         </div>
       )}
 
-      <section style={S.section} aria-label={start.story ? COPY.fromStory : start.words?.statusReason === 'player_drop' ? COPY.dropTopic : COPY.yourObs}>
+      <section style={S.section} aria-label={start.story ? COPY.fromStory : start.words ? labelOf(start.words) : COPY.yourObs}>
         {start.story && <Finding finding={start.story} />}
         {start.words && <Finding finding={start.words} />}
         {start.claims.map((f) => <Finding key={f.findingId} finding={f} />)}

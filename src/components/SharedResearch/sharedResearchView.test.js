@@ -8,11 +8,12 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  namesCompanyView, coreNameView, GENERIC_NAME_WORDS, labelOf, dateLineOf, splitNext, quotaStateOf, staleStoriesAt,
+  namesCompanyView, coreNameView, GENERIC_NAME_WORDS, STATEMENT_MAX, labelOf, dateLineOf, splitNext, quotaStateOf, staleStoriesAt,
   draftOf, strayNamesOf, linesOf, isUndated, sourceLabelOf, safeUrlOf, stateOf, carriedByCompanyOf, adoptableOf,
 } from './sharedResearchView';
 import { namesCompany, coreNameOf } from '../../../api/_utils/sharedResearch/companies.js';
 import { findingLabelOf } from '../../constants/sharedResearch';
+import { STATEMENT_MAX_LEN } from '../../../api/_utils/hypothesisRecords/model.js';
 import answers from './__fixtures__/answers.json';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -97,6 +98,9 @@ describe('the rest of the view', () => {
     const out = carriedByCompanyOf(p, ['AAPL', 'SHOP']);
     expect(out.map((c) => c.carried)).toEqual(p.companies.filter((c) => ['AAPL', 'SHOP'].includes(c.symbol)).map((c) => c.carried));
     expect(adoptableOf(p).every((c) => c.adoptable)).toBe(true);
+  });
+  it('the statement limit is the record model\'s', () => {
+    expect(STATEMENT_MAX).toBe(STATEMENT_MAX_LEN);
   });
   it('linesOf resolves the refs to the findings they name, current or superseded', () => {
     const r = answers.getShopPay.body.record;

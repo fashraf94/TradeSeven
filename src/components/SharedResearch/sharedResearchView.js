@@ -183,6 +183,9 @@ export function staleStoriesAt(stories, nowMs) {
 
 // ── adoption (Correction C) ─────────────────────────────────────────────────────
 
+/** The idea's statement, at most — the record model's STATEMENT_MAX_LEN (api/_utils/hypothesisRecords/model.js), pinned equal by test. */
+export const STATEMENT_MAX = 1000;
+
 /** The adoptable companies of the server's preview, in its order. */
 export const adoptableOf = (preview) => (preview?.companies ?? []).filter((c) => c.adoptable);
 

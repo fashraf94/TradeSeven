@@ -22,11 +22,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S, wash } from '../sharedResearchStyle';
-import { adoptableOf, carriedByCompanyOf, draftOf, findingsById, strayNamesOf } from '../sharedResearchView';
+import { adoptableOf, carriedByCompanyOf, draftOf, findingsById, strayNamesOf, STATEMENT_MAX } from '../sharedResearchView';
 import { Button, Eyebrow, Field, Finding, LinkButton, Notice, Running, Tag } from '../parts';
 import { ADOPTABLE_HORIZONS, HORIZON_HELPER, HORIZON_LABELS } from '../../../constants/sharedResearch';
-
-const STATEMENT_MAX = 1000;
 
 function SavedIdea({ sr, agentName, agentId, equippedListLabel, phone, onClose }) {
   const input = sr.save.input ?? {};
