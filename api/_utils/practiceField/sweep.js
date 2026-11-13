@@ -23,6 +23,7 @@ import { IDEA_BOOK_KIND, isIdeaBook } from '../mandateBookKind.js';
 import { coverageRefOf, coverageSymbols } from './coverage.js';
 import { fundStaticClassifications } from './symbols.js';
 import { runIdeaBookEntryPass } from './entry.js';
+import { practiceFieldLive } from './mode.js';
 
 const LOG_PREFIX = '[PracticeFieldSweep]';
 
@@ -52,6 +53,7 @@ export async function practiceFieldBuildInputs(db, { heldTickers, quarterlyActiv
  */
 export async function runIdeaBookEvalPass(db, { tick, snapshot, now = new Date(), ownerToken }) {
   const out = { books: 0, served: 0, entered: 0, waiting: 0, cancelled: 0, errors: 0, leaseSkips: 0 };
+  if (!practiceFieldLive()) return out; // 'off': not even the query
   const page = await db.collection('mandates')
     .where('status', '==', 'active')
     .where('kind', '==', IDEA_BOOK_KIND)

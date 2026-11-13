@@ -40,6 +40,7 @@ import {
   IDEA_SCHEMA_VERSION, IDEA_STATUS, CANCEL_REASON, VALUATION_LABEL, MARK_QUALITY,
 } from './constants.js';
 import { PracticeFieldError } from './errors.js';
+import { practiceFieldLive } from './mode.js';
 import { applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols } from './ledger.js';
 import { closeMarkQuality } from './marks.js';
 import { planRelease } from './admission.js';
@@ -163,6 +164,8 @@ function closeHoldingIdea(idea, { date, closeSnapshot, actionsBySymbol, sinceDat
 export async function closeIdeaBook(db, bookRef, { date, closeSnapshot, now = new Date() } = {}) {
   if (!db || !bookRef) throw new Error('closeIdeaBook: db and bookRef required');
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('closeIdeaBook: date required');
+  // 'off': no Practice Field code path runs, whoever calls. Before any read.
+  if (!practiceFieldLive()) return { closed: false, skipped: 'practice_field_off', alerts: [] };
   // B-STAMP: no snapshot, no row — and nothing fetched to make one.
   if (!closeSnapshot) return { closed: false, skipped: 'valuation_missed', alerts: [] };
   const key = closeSnapshotKeyFor(date);

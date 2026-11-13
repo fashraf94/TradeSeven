@@ -83,6 +83,26 @@ describe('the mode gate (rule 5)', () => {
   });
 });
 
+describe("mode 'off' makes every Practice Field path a no-op, before any read", () => {
+  it('creation, admission, release, the seam, the entry pass, one entry, the eval pass and the close all answer without touching the database', async () => {
+    setPracticeFieldModeForTests(null); // the shipped value
+    const { admitIdea, releaseIdea } = await import('./admission.js');
+    const { enterIdea, runIdeaBookEntryPass } = await import('./entry.js');
+    const { closeIdeaBook } = await import('./close.js');
+    const { runIdeaBookEvalPass } = await import('./sweep.js');
+    const ref = new Proxy({ id: 'b' }, { get(t, k) { if (k === 'id') return 'b'; throw new Error('the book reference was touched'); } });
+    const tick = { date: DAYS.d1, slot: 'open30', tickKey: `${DAYS.d1}_open30` };
+    expect(await createIdeaBook(untouchable, args())).toEqual({ ok: false, code: 'mode_not_admitted' });
+    expect((await admitIdea(untouchable, { bookId: 'b', contract: {}, opId: 'o', nowIso: NOW })).refusals.map((r) => r.code)).toContain('mode_not_admitted');
+    expect(await releaseIdea(untouchable, { bookId: 'b', ideaId: 'i', nowIso: NOW })).toEqual({ ok: false, code: 'mode_not_admitted' });
+    expect(await bookForOwner(untouchable, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).toBeNull();
+    expect(await enterIdea(untouchable, { bookRef: ref, ideaId: 'i', tick, snapshot: {}, nowIso: NOW })).toEqual({ outcome: 'practice_field_off' });
+    expect(await runIdeaBookEntryPass(untouchable, { bookRef: ref, tick, snapshot: {} })).toEqual({ served: false, entered: 0, waiting: 0, cancelled: 0, errors: 0 });
+    expect(await runIdeaBookEvalPass(untouchable, { tick, snapshot: {}, ownerToken: 't' })).toEqual({ books: 0, served: 0, entered: 0, waiting: 0, cancelled: 0, errors: 0, leaseSkips: 0 });
+    expect(await closeIdeaBook(untouchable, ref, { date: DAYS.d1, closeSnapshot: { tickKey: `${DAYS.d1}_close`, sessionDate: DAYS.d1, symbols: {} } })).toEqual({ closed: false, skipped: 'practice_field_off', alerts: [] });
+  });
+});
+
 describe('the book-kind discriminant', () => {
   it('only `kind: idea_book` is an idea book; a legacy book with no kind, or kind quarterly, is quarterly', () => {
     expect(isIdeaBook({ kind: 'idea_book' })).toBe(true);

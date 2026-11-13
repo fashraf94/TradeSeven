@@ -42,6 +42,7 @@ import {
   IDEA_SCHEMA_VERSION, IDEA_STATUS, CANCEL_REASON, DECISION_ORIGIN_BASKET_ENTRY, PRACTICE_FIELD_CONTRACT_VERSION,
 } from './constants.js';
 import { PracticeFieldError, isPracticeFieldError } from './errors.js';
+import { practiceFieldLive } from './mode.js';
 import { eligibleMark } from './marks.js';
 import { executeIdeaFill } from './fills.js';
 import { newLedger, mirrorLedger, LEDGER_KIND } from './ledger.js';
@@ -145,6 +146,8 @@ export function computeBasketEntry({ idea, snapshot, sessionDate }) {
  * @returns {Promise<{ outcome: 'entered'|'waiting'|'cancelled'|'not_yet'|'not_pending'|'not_found', refusals?: Array<object> }>}
  */
 export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso }) {
+  // 'off': no Practice Field code path runs, whoever calls. Before any read.
+  if (!practiceFieldLive()) return { outcome: 'practice_field_off' };
   const ideaRef = bookRef.collection('ideas').doc(ideaId);
   const coverageDocRef = coverageRefOf(db);
 
@@ -299,6 +302,7 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
  */
 export async function runIdeaBookEntryPass(db, { bookRef, tick, snapshot, now = new Date() }) {
   const out = { served: false, entered: 0, waiting: 0, cancelled: 0, errors: 0 };
+  if (!practiceFieldLive()) return out;
   if (!ideaEntrySlots().includes(tick.slot)) return out;
   const bookSnap = await bookRef.get();
   if (!bookSnap.exists) return out;
