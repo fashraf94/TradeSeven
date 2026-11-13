@@ -108,11 +108,10 @@ export const MANDATE_BATCH_STATUSES = Object.freeze(['open', 'harvested', 'expir
 // ── Open-submission selectors (§3.3 / I1) ────────────────────────────────────
 
 /**
- * The ONE definition of an outstanding batch doc. A doc stays 'open' while
- * any entry awaits harvest or disposition, and after an age-out while it
- * waits for the provider to end so pre-cancel usage is billed (finalisation).
- * The harvest, the drain and the T0c idle check all select through this, so
- * they cannot drift apart.
+ * The query for outstanding batch docs. A doc stays 'open' while any entry
+ * awaits harvest or disposition, and after an age-out while it waits for the
+ * provider to end so pre-cancel usage is billed (finalisation). The harvest,
+ * the drain and the T0c idle check all query through this one selector.
  */
 export function openBatchQuery(db) {
   return db.collection(MANDATE_BATCH_COLLECTION).where('status', '==', 'open');

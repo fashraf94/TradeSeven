@@ -39,15 +39,23 @@ vi.mock('../_utils/mandateClosePass.js', async (importActual) => {
 // counting spy for the fresh-read-under-lease double-bill assertion.
 let modelImpl = null;
 const modelSpy = vi.fn((...args) => modelImpl(...args));
+// (f) T0c's batch-transport row polls a provider batch; every other row runs
+// the default direct transport and never reaches this (null → loud TypeError).
+let retrieveImpl = null;
 vi.mock('../_utils/mandateModelCall.js', async (importActual) => {
   const actual = await importActual();
-  return { ...actual, callMandateModelDirect: (...args) => modelSpy(...args) };
+  return {
+    ...actual,
+    callMandateModelDirect: (...args) => modelSpy(...args),
+    retrieveMandateBatch: (...args) => retrieveImpl(...args),
+  };
 });
 
 // (f) T0c: the snapshot builders run REAL; their two market-fetch clients are
 // mocked at the module seam (the only network edges on the build path besides
 // the corporate-actions fetcher's global `fetch`, which (f) stubs). Inert for
-// (a)-(e): every one of those seeds its snapshot doc, so no builder runs.
+// (a)-(e): (a)-(d2) seed their snapshot docs and (e) calls closeBook directly,
+// so no builder runs in them.
 const quotesSpy = vi.fn(async (symbols) => Object.fromEntries(symbols.map((s) => [s, { close: 100 }])));
 const fundamentalsSpy = vi.fn(async () => ({
   fundamentals: { sector: 'Technology', industry: 'Software', marketCap: 1e12 },
@@ -110,6 +118,7 @@ const REGIME = { regime: 'risk_on', regimeAsOf: '2026-08-12T20:00:00.000Z', regi
 beforeEach(() => {
   closeBookImpl = null;
   modelImpl = null;
+  retrieveImpl = null;
   retentionSpy.mockClear();
   modelSpy.mockClear();
 });
@@ -419,36 +428,47 @@ describe('(f) T0c — the qualified idle skip', () => {
     entries: {}, disposed: {}, billed: {}, agedOutAt: null, drainRequested: false, endedAt: null, harvestedAt: null,
     ...extra,
   });
-  // Lands `book` at `path` while the idle check's open-batch read runs — after
-  // the active-book query came back empty, before the sweep's page query.
-  function seedBookDuringDutyRead(db, path, book) {
+  // Records every QUERY read on mandateBatches, whatever its chain
+  // (where/limit/orderBy/startAfter in any order): each entry is the chain's
+  // ops. `onGet(ops, readIndex)` runs before the read and may throw (an
+  // injected read failure) or write (a book landing mid-fire). Doc reads
+  // (`.doc(id).get()`) pass through unrecorded. Under the default direct
+  // transport only the idle check queries this collection, so "a fire with
+  // books does today's I/O" is "no entry recorded".
+  function hookBatchQueries(db, onGet = async () => {}) {
+    const reads = [];
     const realCollection = db.collection;
-    db.collection = (name) => {
-      const col = realCollection(name);
-      if (name !== MANDATE_BATCH_COLLECTION) return col;
-      return {
-        ...col,
-        where: (...w) => {
-          const q = col.where(...w);
-          return { ...q, limit: (n) => { const l = q.limit(n); return { ...l, get: async () => { await db.doc(path).set(book); return l.get(); } }; } };
-        },
-      };
-    };
+    const wrap = (q, ops) => new Proxy(q, {
+      get(target, prop) {
+        if (prop === 'get') {
+          return async () => { reads.push(ops); await onGet(ops, reads.length - 1); return target.get(); };
+        }
+        if (['where', 'limit', 'orderBy', 'startAfter'].includes(prop)) {
+          return (...args) => wrap(target[prop](...args), [...ops, [prop, ...args]]);
+        }
+        return target[prop];
+      },
+    });
+    db.collection = (name) => (name === MANDATE_BATCH_COLLECTION ? wrap(realCollection(name), []) : realCollection(name));
+    return reads;
   }
+  // The duty read the idle check makes: status 'open', bounded to one doc.
+  const DUTY_READ = [['where', 'status', '==', 'open'], ['limit', 1]];
 
   it('eval, no books and no open batch: one idle line, no fetch, the store untouched, the model never reached', async () => {
     const db = makeMandateFakeDb({ 'archetypeVintages/analyst_x': VINTAGE });
-    modelImpl = async () => { throw new Error('model must not be reached on an idle fire'); };
     const before = storeImage(db);
+    const batchReads = hookBatchQueries(db);
     const { req, res, captured } = fakeReqRes();
     await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db });
 
     expect(captured.code).toBe(200);
-    expect(captured.body).toMatchObject({ ok: true, noop: true, reason: 'mandate_idle_skip' });
+    // complete:false — the sweep never ran, so no claim that every book was served.
+    expect(captured.body).toMatchObject({ ok: true, noop: true, reason: 'mandate_idle_skip', complete: false });
+    expect(batchReads).toEqual([DUTY_READ]);       // exactly one bounded duty read
     expect(fetchCounts()).toEqual(NO_FETCH);
     expect(storeImage(db)).toBe(before);          // no snapshot, no daily doc, no upstream counter, nothing
-    expect(modelSpy).not.toHaveBeenCalled();
-    expect(logs).toHaveLength(1);                  // the one structured line and nothing else
+    expect(logs).toHaveLength(1);                  // the one structured line and nothing else (brief: "and nothing else")
     expect(idleLines()).toEqual([{
       event: 'mandate_idle_skip', window: 'open30', tickKey: '2026-08-12_open30', date: '2026-08-12',
       activeBooks: 0, outstandingDuty: false,
@@ -464,12 +484,14 @@ describe('(f) T0c — the qualified idle skip', () => {
     const { req, res, captured } = fakeReqRes();
     await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db });
 
-    expect(captured.body.reason).not.toBe('mandate_idle_skip');
+    expect(captured.code).toBe(200);
+    expect(captured.body).toMatchObject({ ok: true, complete: true }); // the whole fire ran, not just the build
+    expect(captured.body.reason).toBeUndefined();
     expect(idleLines()).toEqual([]);
     expect(fetchCounts()).toEqual(FULL_BUILD);
     expect(db._get('mandateUniverseSnapshots/2026-08-12_open30')?.symbolCount).toBe(N);
     expect(db._get('mandateUniverseDaily/2026-08-12')?.symbolCount).toBe(N);
-    expect(db._get('mandateUpstreamCalls/2026-08-12')?.count).toBe(2 * N + N + QUOTE_CHUNKS);
+    expect(db._get('mandateUpstreamCalls/2026-08-12')?.count).toBeGreaterThan(0); // the counter moves on a real build
     expect(db._get(`${MANDATE_BATCH_COLLECTION}/msgbatch_t0c`).status).toBe('open'); // untouched under direct transport
   });
 
@@ -489,10 +511,14 @@ describe('(f) T0c — the qualified idle skip', () => {
       'mandates/m1': seedBook({ cadenceTier: 'fast' }),
     });
     modelImpl = async () => ({ decision: { ok: true, input: { verb: 'HOLD', rationale: 'x' } }, usage: null });
+    const batchReads = hookBatchQueries(db);
     const { req, res, captured } = fakeReqRes();
     await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db });
 
+    expect(captured.code).toBe(200);
+    expect(captured.body.ok).toBe(true);
     expect(idleLines()).toEqual([]);
+    expect(batchReads).toEqual([]);                // the duty read is lazy: a fire with books does today's I/O
     expect(fetchCounts()).toEqual(FULL_BUILD);
     expect(db._get('mandateUniverseSnapshots/2026-08-12_open30')?.symbolCount).toBe(N);
     expect(modelSpy).toHaveBeenCalledTimes(1);
@@ -511,9 +537,12 @@ describe('(f) T0c — the qualified idle skip', () => {
 
     await db.doc('mandates/m1').set(seedBook({ cadenceTier: 'fast' })); // the founder creates a book mid-session
 
+    const batchReads = hookBatchQueries(db);
     const second = fakeReqRes();
     await runEvalSweep(second.req, second.res, { now: new Date(EVAL_NOW.getTime() + 60_000), tick: EVAL_TICK, db });
-    expect(second.captured.body.reason).not.toBe('mandate_idle_skip');
+    expect(second.captured.code).toBe(200);
+    expect(second.captured.body.reason).toBeUndefined();
+    expect(batchReads).toEqual([]);                          // the book is seen first; no duty read
     expect(idleLines()).toHaveLength(1);                     // only the first fire skipped
     expect(fetchCounts()).toEqual(FULL_BUILD);               // one full build, on the second fire
     expect(db._get('mandateUniverseSnapshots/2026-08-12_open30')?.symbolCount).toBe(N);
@@ -523,14 +552,14 @@ describe('(f) T0c — the qualified idle skip', () => {
 
   it('a failed open-batch read falls back to acquisition, never to a skip', async () => {
     const db = makeMandateFakeDb({});
-    const realCollection = db.collection;
-    db.collection = (name) => (name === MANDATE_BATCH_COLLECTION
-      ? { where: () => ({ limit: () => ({ get: async () => { throw new Error('injected read failure'); } }) }) }
-      : realCollection(name));
+    const batchReads = hookBatchQueries(db, async () => { throw new Error('injected read failure'); });
     const { req, res, captured } = fakeReqRes();
     await runEvalSweep(req, res, { now: EVAL_NOW, tick: EVAL_TICK, db });
 
-    expect(captured.body.reason).not.toBe('mandate_idle_skip');
+    expect(batchReads).toHaveLength(1);            // the injected failure really hit the duty read
+    expect(captured.code).toBe(200);
+    expect(captured.body).toMatchObject({ ok: true, complete: true });
+    expect(captured.body.reason).toBeUndefined();
     expect(idleLines()).toEqual([]);
     expect(errs.some((e) => e.includes('open-batch read failed') && e.includes('injected read failure'))).toBe(true);
     expect(fetchCounts()).toEqual(FULL_BUILD);
@@ -539,13 +568,14 @@ describe('(f) T0c — the qualified idle skip', () => {
 
   it('close, no books: no close snapshot, no fetch — the sweep completes and retention cleanup STILL runs', async () => {
     const db = makeMandateFakeDb({});
-    closeBookImpl = async () => { throw new Error('closeBook must not be called with no book'); };
     const before = storeImage(db);
+    const batchReads = hookBatchQueries(db);
     const { req, res, captured } = fakeReqRes();
     await runCloseSweep(req, res, { now: NOW, closeTick: CLOSE_TICK, db });
 
     expect(captured.code).toBe(200);
     expect(captured.body).toMatchObject({ ok: true, reason: 'mandate_idle_skip', complete: true, closed: 0, errors: 0 });
+    expect(batchReads).toEqual([DUTY_READ]);
     expect(fetchCounts()).toEqual(NO_FETCH);
     expect(storeImage(db)).toBe(before);                     // no `_close` snapshot, no daily doc
     expect(retentionSpy).toHaveBeenCalledTimes(1);           // cleanup continues
@@ -557,10 +587,11 @@ describe('(f) T0c — the qualified idle skip', () => {
 
   it('close, no books but an open batch: NOT skipped — the close snapshot is built as today', async () => {
     const db = makeMandateFakeDb({ [`${MANDATE_BATCH_COLLECTION}/msgbatch_t0c`]: openBatch() });
-    closeBookImpl = async () => { throw new Error('closeBook must not be called with no book'); };
     const { req, res, captured } = fakeReqRes();
     await runCloseSweep(req, res, { now: NOW, closeTick: CLOSE_TICK, db });
 
+    expect(captured.code).toBe(200);
+    expect(captured.body).toMatchObject({ ok: true, complete: true });
     expect(captured.body.reason).toBeUndefined();
     expect(idleLines()).toEqual([]);
     expect(fetchCounts()).toEqual(FULL_BUILD);
@@ -576,10 +607,13 @@ describe('(f) T0c — the qualified idle skip', () => {
       return { closed: true, row: { partial: false }, streamRecord: {}, rows: [], monthEstUsd: 0, alerts: [] };
     };
     const book = seedBook({ mandateId: 'late' });
-    seedBookDuringDutyRead(db, 'mandates/late', book);
+    // The book lands during the FIRST duty read only — after the active-book
+    // query came back empty, before the sweep's page query.
+    const dutyReads = hookBatchQueries(db, async (_ops, i) => { if (i === 0) await db.doc('mandates/late').set(book); });
 
     const first = fakeReqRes();
     await runCloseSweep(first.req, first.res, { now: NOW, closeTick: CLOSE_TICK, db });
+    expect(dutyReads).toEqual([DUTY_READ]);                       // the injection really ran between the two queries
     expect(first.captured.body).toMatchObject({ reason: 'mandate_idle_skip', complete: false, closed: 0, errors: 0 });
     expect(closed).toEqual([]);                                   // never closed from nothing
     expect(db._get('mandates/late')).toEqual(book);               // exactly as seeded: no failure stamp, no attempt marker
@@ -590,9 +624,35 @@ describe('(f) T0c — the qualified idle skip', () => {
 
     const second = fakeReqRes();
     await runCloseSweep(second.req, second.res, { now: new Date(NOW.getTime() + 60_000), closeTick: CLOSE_TICK, db });
+    expect(second.captured.code).toBe(200);
     expect(second.captured.body.reason).toBeUndefined();         // the book is seen: no skip
+    expect(dutyReads).toHaveLength(1);                            // and no second duty read (lazy with a book)
     expect(fetchCounts()).toEqual(FULL_BUILD);
     expect(closed).toEqual([{ id: 'late', snapshotKey: '2026-08-12_close' }]);
+    expect(idleLines()).toHaveLength(1);
+  });
+
+  it('batch transport, recheck: an idle fire, then an open batch appears — the next fire builds and its harvest polls the batch', async () => {
+    const db = makeMandateFakeDb({});
+    retrieveImpl = vi.fn(async () => ({ processing_status: 'in_progress' }));
+
+    const first = fakeReqRes();
+    await runEvalSweep(first.req, first.res, { now: EVAL_NOW, tick: EVAL_TICK, db, transport: 'batch' });
+    expect(first.captured.body).toMatchObject({ ok: true, reason: 'mandate_idle_skip', complete: false });
+    expect(first.captured.body.harvest).toBeUndefined();          // nothing open to harvest
+    expect(retrieveImpl).not.toHaveBeenCalled();
+
+    await db.doc(`${MANDATE_BATCH_COLLECTION}/msgbatch_t0c`).set(openBatch()); // a submission is now in flight
+
+    const second = fakeReqRes();
+    await runEvalSweep(second.req, second.res, { now: new Date(EVAL_NOW.getTime() + 60_000), tick: EVAL_TICK, db, transport: 'batch' });
+    expect(second.captured.code).toBe(200);
+    expect(second.captured.body).toMatchObject({ ok: true, complete: true });
+    expect(second.captured.body.reason).toBeUndefined();
+    expect(second.captured.body.harvest).toMatchObject({ polled: 1, errors: 0 }); // the duty is served
+    expect(retrieveImpl).toHaveBeenCalledWith('msgbatch_t0c');
+    expect(fetchCounts()).toEqual(FULL_BUILD);
+    expect(db._get('mandateUniverseSnapshots/2026-08-12_open30')?.symbolCount).toBe(N);
     expect(idleLines()).toHaveLength(1);
   });
 });

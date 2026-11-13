@@ -1923,19 +1923,23 @@ export const COMPOSITION_DISPLAY_ENABLED = false;
 /**
  * MASTER gate for The Mandate. TRUE (lit) since PR #759, merged 14 Aug 2026
  * (activation flip #1, which lit this flag with eval, close and founder-create):
- * the substrate is live, so the eval and close crons run and the founder
- * create endpoint is open to allowlisted founders. Setting it false makes
- * nothing mandate-related run: the eval/close/rollover crons no-op and the
- * founder create endpoint is closed regardless of the sub-flags below.
+ * the mandate-evaluate cron runs its eval and close duties and the escape
+ * endpoint is open. Setting it false no-ops the mandate-evaluate and
+ * mandate-rollover crons and hides the escape endpoint (404), whatever the
+ * sub-flags below say. It does NOT gate the founder endpoints (create,
+ * accelerate, drain): those read MANDATE_FOUNDER_CREATE_ENABLED and the
+ * allowlist only.
  */
 // Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const MANAGED_MANDATE_ENABLED = true;
 
 /**
  * The scheduled evaluation loop (§3.1). TRUE (lit) since PR #759, merged
- * 14 Aug 2026: the mandate-evaluate handler runs at each eval slot (snapshot,
- * harvest, submit). Setting it false makes the handler no-op — no snapshot,
- * no harvest, no submit. Built P2; registered P6.
+ * 14 Aug 2026: at each eval slot the mandate-evaluate handler evaluates the
+ * active books, building the slot's snapshot first unless no book and no open
+ * batch doc needs one. Setting it false no-ops the eval slots only — no
+ * snapshot, no harvest, no submit; the close duty in the same handler is
+ * gated by MANDATE_CLOSE_ENABLED. Built P2; registered P6.
  */
 // Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const MANDATE_EVAL_ENABLED = true;
