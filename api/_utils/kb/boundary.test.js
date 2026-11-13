@@ -60,7 +60,10 @@ function kbImportersIn(files, repoRoot) {
   const kbDir = path.join(repoRoot, 'api', '_utils', 'kb');
   const hits = [];
   for (const { file, text } of files) {
-    for (const spec of specifiersOf(text)) {
+    // Raw AND comment-stripped: a quote or `;` in a comment inside a multi-line
+    // import list hides the specifier from the raw scan (review KL4-2).
+    const specs = new Set([...specifiersOf(text), ...specifiersOf(stripComments(text))]);
+    for (const spec of specs) {
       let target = null;
       if (spec.startsWith('.')) target = path.resolve(path.dirname(file), spec);
       else if (spec.startsWith('/')) target = path.join(repoRoot, ...spec.split('/'));
@@ -123,7 +126,8 @@ function walk(dir, out = []) {
   return out;
 }
 
-const KB_MODULES = ['loader.js', 'authorizations.js', 'audience.js', path.join('packages', 'index.js')].map((f) => path.join(KB_DIR, f));
+// Every non-test code module under api/_utils/kb/, found, not listed (review KL4-8).
+const KB_MODULES = walk(KB_DIR).filter((f) => !/\.test\.[cm]?jsx?$/.test(f));
 
 describe('the scanners, proven on planted text', () => {
   it('specifiersOf finds every import form', () => {
@@ -169,9 +173,11 @@ describe('the scanners, proven on planted text', () => {
       { file: at('src', 'y.js'), text: "import x from '/api/_utils/kb/packages/index.js';" },
       { file: at('api', '_utils', 'near.js'), text: "import k from './kbx/loader.js'; import j from './kb-notes.js';" },
       { file: at('api', '_utils', 'kb', 'loader.test.js'), text: "import { a } from './loader.js';" },
+      { file: at('src', 'z.js'), text: "import {\n  KB_REFUSALS, // don't render these\n} from '../api/_utils/kb/loader.js';" },
+      { file: at('src', 'w.js'), text: "import {\n  KB_REFUSALS, // the ten; in order\n} from '../api/_utils/kb/loader.js';" },
     ];
     const hits = kbImportersIn(planted, REPO).map((h) => path.relative(REPO, h.file).split(path.sep).join('/'));
-    expect(hits).toEqual(['src/screens/X.jsx', 'api/forge/route.js', 'scripts/other.mjs', 'api/cron/job.cjs', 'src/y.js', 'api/_utils/kb/loader.test.js']);
+    expect(hits).toEqual(['src/screens/X.jsx', 'api/forge/route.js', 'scripts/other.mjs', 'api/cron/job.cjs', 'src/y.js', 'api/_utils/kb/loader.test.js', 'src/z.js', 'src/w.js']);
   });
 
   it('NAMES_KB catches the client forms no import statement shows (review KL3-3)', () => {
@@ -218,6 +224,7 @@ describe('the KB modules', () => {
   });
 
   it('no KB module imports a Shared Research module or names its mode flag', () => {
+    expect(KB_MODULES.map((f) => path.relative(KB_DIR, f).split(path.sep).join('/')).sort()).toEqual(expect.arrayContaining(['audience.js', 'authorizations.js', 'loader.js', 'packages/index.js']));
     const flag = ['SHARED', 'RESEARCH', 'MODE'].join('_');
     for (const file of KB_MODULES) {
       const text = read(file);
@@ -249,9 +256,13 @@ describe('dark by construction', () => {
   // KB_REFUSALS if needed) — never verifyPackage, verifyParts, KB_PACKAGES or
   // KB_APP_USE, which answer the method text or the package without an
   // authorization. The two rows below it are permanent.
-  it('nothing outside api/_utils/kb/ and scripts/kb/ imports it (KB-1 moves this row)', () => {
+  it('nothing outside api/_utils/kb/ and scripts/kb/ imports it, or names it in any form (KB-1 moves this row)', () => {
     const outside = hits.filter((h) => !isInside(h.file, KB_DIR) && !isInside(h.file, SCRIPTS_KB));
     expect(outside.map((h) => `${rel(h.file)} → ${h.spec}`)).toEqual([]);
+    // The belt: no code file outside names the directory at all — a glob, a URL,
+    // a template, a ?raw import (review KL4-2).
+    const naming = files.filter((f) => !isInside(f.file, KB_DIR) && !isInside(f.file, SCRIPTS_KB) && NAMES_KB.test(f.text));
+    expect(naming.map((f) => rel(f.file))).toEqual([]);
   });
 
   it('PERMANENT: nothing outside api/_utils/kb/ imports its packages or its authorization list (review KL3-2)', () => {

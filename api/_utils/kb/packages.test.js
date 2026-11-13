@@ -229,6 +229,17 @@ describe('the import script — packageFilesOf', () => {
     expect(r.files).toBeUndefined();
   });
 
+  it.each([
+    ['an id that is a path', { id: '../x' }],
+    ['a version that is a path', { version: '0.1/../../x' }],
+    ['an id with a separator', { id: 'a\\b' }],
+  ])('refuses, with no files, %s — output names stay plain (review KL4-9)', (_label, over) => {
+    const rel = memoryRelease();
+    const r = packageFilesOf({ index: rel.index, read: rel.read, id: ID, version: VERSION, ...over });
+    expect(r).toMatchObject({ ok: false, reason: 'request' });
+    expect(r.files).toBeUndefined();
+  });
+
   it('never throws (garbage arguments, a throwing reader)', () => {
     for (const args of [undefined, null, 42, {}, { index: 'x' }, { index: memoryRelease().index, read: () => { throw new Error('boom'); }, id: ID, version: VERSION }]) {
       const r = packageFilesOf(args);
@@ -249,7 +260,7 @@ describe('the import script — the command line (writes nothing on a refusal; -
     }
     return dir;
   }
-  const cli = (args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' });
+  const cli = (args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', timeout: 20_000 });
 
   it('--check against the committed files exits 0; a run writes the same three files; a refusal writes nothing', () => {
     const release = onDisk(memoryRelease());
@@ -258,10 +269,21 @@ describe('the import script — the command line (writes nothing on a refusal; -
       const base = ['--release', release, '--id', ID, '--version', VERSION];
       expect(cli([...base, '--out', PKG_DIR, '--check']).status).toBe(0);
       expect(cli([...base, '--out', out, '--check']).status).toBe(1);
+      expect(readdirSync(out)).toEqual([]); // --check writes nothing
 
       const wrote = cli([...base, '--out', out]);
       expect(wrote.status).toBe(0);
       for (const name of Object.values(FILES)) expect(readFileSync(path.join(out, name)).equals(raw(name))).toBe(true);
+
+      // --check compares bytes, not existence, and still writes nothing (review KL4-6).
+      expect(cli([...base, '--out', out, '--check']).status).toBe(0);
+      const flipped = Buffer.from(raw(FILES.acceptance));
+      flipped[flipped.length - 3] ^= 0x01;
+      writeFileSync(path.join(out, FILES.acceptance), flipped);
+      const differs = cli([...base, '--out', out, '--check']);
+      expect(differs.status).toBe(1);
+      expect(differs.stdout).toContain(`DIFFERS ${FILES.acceptance}`);
+      expect(readFileSync(path.join(out, FILES.acceptance)).equals(flipped)).toBe(true);
 
       const bad = memoryRelease();
       row(bad).status = 'reviewed_candidate';

@@ -167,6 +167,17 @@ describe('check 4 — not_accepted', () => {
     expect(verifyRow(row)).toEqual({ ok: false, reason: 'not_accepted' });
   });
 
+  it.each([
+    ['test_only: 0', (e) => { e.test_only = 0; }],
+    ['test_only: null', (e) => { e.test_only = null; }],
+    ["test_only: ''", (e) => { e.test_only = ''; }],
+    ["acceptance.date: ''", (e) => { e.acceptance.date = ''; }],
+  ])('%s — falsy is not false (readings R2, R3; review KL4-7)', (_label, damage) => {
+    const row = copyRow();
+    damage(row.exportJson);
+    expect(verifyRow(row)).toEqual({ ok: false, reason: 'not_accepted' });
+  });
+
   it('test_only: false is no refusal', () => {
     const row = copyRow();
     row.exportJson.test_only = false;
@@ -271,6 +282,28 @@ describe('check 7 — register_mismatch', () => {
   });
 });
 
+describe('the order — with two defects, the EARLIER check answers (review KL4-4)', () => {
+  const methodChar = (r) => { r.exportJson.method_text = oneCharChanged(r.exportJson.method_text); };
+  const acceptanceChar = (r) => { r.acceptance.text = oneCharChanged(r.acceptance.text); };
+  const registerChar = (r) => { r.register.text = oneCharChanged(r.register.text); };
+  it.each([
+    ['1 before 2', { id: 'KB-UNKNOWN-001' }, (r) => { r.exportJson.schema = 'x'; }, [entry()], {}, 'missing'],
+    ['2 before 3', {}, (r) => { r.exportJson.schema = 'x'; r.exportJson.id = 'KB-OTHER-001'; }, [entry()], {}, 'schema'],
+    ['3 before 4', {}, (r) => { r.exportJson.id = 'KB-OTHER-001'; r.exportJson.status = 'reviewed_candidate'; }, [entry()], {}, 'identity'],
+    ['4 before 5', {}, (r) => { r.exportJson.status = 'reviewed_candidate'; methodChar(r); }, [entry()], {}, 'not_accepted'],
+    ['5 before 6', {}, (r) => { methodChar(r); acceptanceChar(r); }, [entry()], {}, 'corrupt'],
+    ['6 before 7', {}, (r) => { acceptanceChar(r); registerChar(r); }, [entry()], {}, 'acceptance_mismatch'],
+    ['7 before 8', {}, registerChar, [], {}, 'register_mismatch'],
+    ['8 before 9', {}, () => {}, [entry({ sha256: otherHex(METHOD_SHA256), consumers: ['research_modal.analysis'] })], {}, 'not_authorized'],
+    ['9 before 10', {}, () => {}, [entry({ consumers: ['research_modal.analysis'] })], { inAudience: () => false }, 'scope'],
+  ])('%s', (_label, reqOver, damage, list, extra, reason) => {
+    const row = copyRow();
+    damage(row);
+    const req = { id: ID, version: VERSION, consumer: CONSUMER, inAudience: yes, ...reqOver, ...extra };
+    expect(loadAuthorizedMethod(req, { packages: [row], authorizations: list })).toEqual({ ok: false, reason });
+  });
+});
+
 describe('checks 1–7 — an unexpected exception is corrupt', () => {
   it('a throwing getter in the export, in a package row, and in the request', () => {
     const row = copyRow();
@@ -345,6 +378,10 @@ describe('check 8 — not_authorized', () => {
     expect(load(list)).toEqual({ ok: false, reason: 'not_authorized' });
   });
 
+  it('an entry for another id, with this package\'s hashes, does not authorize it (review KL4-10)', () => {
+    expect(load([entry({ id: 'KB-OTHER-001' })])).toEqual({ ok: false, reason: 'not_authorized' });
+  });
+
   it('authorizedMethodFor: no entry, wrong hashes, a malformed entry', () => {
     expect(offer([])).toEqual({ ok: false, reason: 'not_authorized' });
     expect(offer([entry({ sha256: otherHex(METHOD_SHA256) })])).toEqual({ ok: false, reason: 'not_authorized' });
@@ -370,6 +407,14 @@ describe('check 9 — scope', () => {
     expect(load([entry({ consumers: ['research_modal.analysis'] })])).toEqual({ ok: false, reason: 'scope' });
     expect(load([entry()], { consumer: 'research_modal.analysis' })).toEqual({ ok: false, reason: 'scope' });
     expect(load([entry()], { consumer: undefined })).toEqual({ ok: false, reason: 'scope' });
+  });
+
+  it('an entry with several consumers serves each, answering the CALLER\'s consumer (review KL4-5)', () => {
+    const multi = [entry({ consumers: ['research_modal.analysis', CONSUMER] })];
+    expect(load(multi)).toMatchObject({ ok: true, method: { consumer: CONSUMER } });
+    expect(offer(multi)).toMatchObject({ ok: true, method: { consumer: CONSUMER } });
+    expect(load(multi, { consumer: 'research_modal.analysis' })).toMatchObject({ ok: true, method: { consumer: 'research_modal.analysis' } });
+    expect(load(multi, { consumer: 'battle_research.panel' })).toEqual({ ok: false, reason: 'scope' });
   });
 
   it('two entries for this version and consumer are ambiguous: not_authorized', () => {
@@ -514,6 +559,9 @@ describe('the answer', () => {
     const q = verifyParts({ id: ID, version: VERSION, exportJson: row.exportJson, acceptanceText: row.acceptance.text, registerText: row.register.text });
     expect(Object.keys(q.method).sort()).toEqual(SEVEN);
     expect(q.method).toEqual(p.method);
+    // Nothing rides beside `method` either (review KL4-1).
+    expect(Object.keys(p)).toEqual(['ok', 'method']);
+    expect(Object.keys(q)).toEqual(['ok', 'method']);
   });
 
   it('no value is a local path, and no provenance leaves, for every committed package (review KL3-7)', () => {
