@@ -140,10 +140,10 @@ export async function listOpen(db, { uid }) {
   for (const r of records) {
     const s = dataOf(await sessionRefOf(db, r.host.id).get());
     if (!isOwnedSession(s, uid) || s.status !== 'open') continue;
-    rows.push({ sessionId: s.sessionId, question: r.question ?? null, state: r.state, lastTurnAt: r.telemetry?.lastTurnAt ?? null, findingsCount: Array.isArray(r.findings) ? r.findings.length : 0, updatedAt: s.updatedAt });
+    rows.push({ at: s.updatedAt, row: { sessionId: s.sessionId, question: r.question ?? null, state: r.state, lastTurnAt: r.telemetry?.lastTurnAt ?? null, findingsCount: Array.isArray(r.findings) ? r.findings.length : 0 } });
   }
-  rows.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
-  return rows.slice(0, LIST_OPEN_MAX).map(({ updatedAt, ...row }) => row);
+  rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return rows.slice(0, LIST_OPEN_MAX).map((x) => x.row);
 }
 
 /** A FantasyTimes story as `open` reads it, or null (missing, or a deep dive — spec §6.3). */
