@@ -100,7 +100,10 @@ export const BOMB_COPY = Object.freeze({
   // BS-4 (2026-11-12): in a battle scored by the measured ATR model, a stock the agent does
   // not hold previews its rungs at the rankings' ATR reading — an estimate of the rung size a
   // swap would measure, shown as the bench sheet prints it (one decimal), with its run's time.
-  previewNeedsAtr: (price, d, pct, asOf) => `Preview · rungs if it entered at yesterday's close (${money(price, d)}) · estimated rung size · ATR reading ${atrReadingText(pct)}${asOf ? ` · as of ${asOf}` : ''}`,
+  // Review D2: each added " · " is bound to the word before it, and "ATR reading", "as of" and the time
+  // to their own words (no-break spaces, as the to-go line binds its separators), so no line starts
+  // with "·" and "PM" never sits alone.
+  previewNeedsAtr: (price, d, pct, asOf) => `Preview · rungs if it entered at yesterday's close (${money(price, d)})\u00a0· estimated rung size\u00a0· ATR\u00a0reading\u00a0${atrReadingText(pct)}${asOf ? `\u00a0· as\u00a0of\u00a0${String(asOf).replace(/ /g, '\u00a0')}` : ''}`,
   // Ruling 2026-11-07 (§0.4(a), rule (i)): a position the agent holds whose
   // score is the legacy model's (legacy stocks, every crypto) draws the
   // preview's rungs, said plainly as held — never "entry price", never "will

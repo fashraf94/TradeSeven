@@ -158,7 +158,7 @@ describe('a preview never says "entry" (BA-1)', () => {
   it('the only "entered" a preview carries is the conditional of its own label', () => {
     expect(BOMB_COPY.previewNeeds(99, 2)).toBe("Preview · rungs if it entered at yesterday's close ($99.00)");
     // BS-4: the ATR preview's line is the same line, then an estimate named as one, at the bench sheet's precision.
-    expect(BOMB_COPY.previewNeedsAtr(99, 2, 4.05, '12:05 PM')).toBe("Preview · rungs if it entered at yesterday's close ($99.00) · estimated rung size · ATR reading 4.0% · as of 12:05 PM");
+    expect(BOMB_COPY.previewNeedsAtr(99, 2, 4.05, '12:05 PM').replace(/\u00a0/g, ' ')).toBe("Preview · rungs if it entered at yesterday's close ($99.00) · estimated rung size · ATR reading 4.0% · as of 12:05 PM");
     expect(sheetLine({ ladder: atrPreview, decimals: 2, nowMs: Date.parse('2026-10-14T17:06:00.000Z') })).toBe(BOMB_COPY.previewNeedsAtr(99, 2, 4.05, '12:05 PM'));
   });
 });

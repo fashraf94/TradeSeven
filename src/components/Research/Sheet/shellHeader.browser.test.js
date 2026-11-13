@@ -11,8 +11,9 @@
 //   npx vitest run src/components/Research/Sheet/shellHeader.browser.test.js
 //
 // The font that draws is the machine's: Segoe UI and Consolas on Windows, SF Pro
-// and SF Mono on an iPhone (unmeasured here). The always-run rows that hold the
-// clamps themselves are in sheet.guards.test.js.
+// and SF Mono on an iPhone (unmeasured here). The always-run row that holds the
+// clamps themselves is in src/components/draft/AssetResearchModal.shell.jsdom.test.jsx
+// ("BS-3: the price and the change narrow …").
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import React from 'react';
@@ -35,6 +36,8 @@ export const STOCKS = Object.freeze({
   'BRK.A': { symbol: 'BRK.A', name: 'Berkshire Hathaway Inc', price: 712345.67, change: 1.23 },
   'BRK.A,': { symbol: 'BRK.A', name: 'Berkshire Hathaway Inc', price: 712345.67, change: 1.23, comma: true },
   'BRK.B*,': { symbol: 'BRK.B', name: 'Berkshire Hathaway Inc', price: 712345.67, change: -12.34, comma: true },
+  // Review D1: a W-heavy five-letter symbol (89.5 px in Segoe UI Black) — the symbol ellipsizes after the name.
+  'WWWWW': { symbol: 'WWWWW', name: 'Wide Symbol Corp', price: 712345.67, change: -12.34, comma: true },
 });
 
 const html = (stock, back) => {
@@ -69,6 +72,9 @@ export async function measureRow(stock, back, width) {
       return {
         vw: innerWidth,
         close: r('[data-shell-close]'),
+        rowRight: row.getBoundingClientRect().right,
+        rowPadRight: parseFloat(getComputedStyle(row).paddingRight),
+        symbolText: row.querySelector('[data-shell-symbol]').textContent,
         back: r('[data-shell-back]'),
         nameWidth: name.getBoundingClientRect().width,
         nameCut: name.scrollWidth > name.clientWidth,
@@ -97,10 +103,11 @@ describe.skipIf(!RUN)('BS-3 — the stock row at phone widths, measured in a rea
           const m = await measureRow(STOCKS[key], back, width);
           process.stdout.write(`[BS-3] ${width} ${key} back=${back} closeRight=${m.close.right.toFixed(2)} spare=${(m.vw - m.close.right).toFixed(2)} name=${m.nameWidth.toFixed(1)} priceFont=${m.priceFont} changeFont=${m.changeFont} | ${m.kids}\n`);
           expect(m.close.width).toBeCloseTo(44, 1);
-          expect(m.close.right).toBeLessThanOrEqual(m.vw);
-          expect(m.scrollWidth).toBeLessThanOrEqual(m.vw);
+          // Review D3: the row's own content edge (the modal's 1 px border and the row's 2 px padding inside the screen), not the screen.
+          expect(m.close.right).toBeLessThanOrEqual(m.rowRight - m.rowPadRight + 0.01);
           expect(m.priceOneLine).toBe(true);
           expect(m.nameEllipsis).toBe('ellipsis');
+          if (key === 'WWWWW') return; // the symbol, not the name, gives way here (D1); ✕ is held above
           // Margin: the name still holds 8 px, so the row has room left before ✕ is pushed (the 2.2 px
           // the shell report measured needs margin, and SF Pro / SF Mono on an iPhone are unmeasured here).
           expect(m.nameWidth).toBeGreaterThanOrEqual(8);

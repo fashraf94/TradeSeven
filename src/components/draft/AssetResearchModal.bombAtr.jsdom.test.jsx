@@ -91,6 +91,10 @@ afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMo
 const flush = async (n = 8) => { for (let i = 0; i < n; i++) await act(async () => { await vi.advanceTimersByTimeAsync(0); }); };
 const render = async (el) => { await act(async () => { root.render(el); }); await flush(); };
 const q = (sel) => document.body.querySelector(sel);
+// The ATR line binds its separators with no-break spaces (review D2): rows read text with them as spaces.
+const plain = (t) => t.replace(/\u00a0/g, ' ');
+const what = () => plain(q('[data-bomb-what]').textContent);
+const bodyText = () => plain(document.body.textContent);
 const reads = () => net.calls.filter((c) => c[0] === 'getDoc').map((c) => c[1]);
 const thresholdAsks = () => net.calls.filter((c) => c[0] === 'thresholds');
 
@@ -133,8 +137,8 @@ describe('BS-4 — a non-held stock in a measured battle previews its rungs at t
     // 300 × (1 + 4.05 %) = 312.15 — never 300 × 1.0648 = 319.44.
     expect(q('[data-fuse-rung-label="bagger"]').textContent).toContain('$312.15');
     expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$312.15');
-    expect(document.body.textContent).not.toContain('$319.44');
-    expect(q('[data-bomb-what]').textContent).toContain("Preview · rungs if it entered at yesterday's close ($300.00) · estimated rung size · ATR reading 4.0% · as of 12:05 PM");
+    expect(bodyText()).not.toContain('$319.44');
+    expect(what()).toContain("Preview · rungs if it entered at yesterday's close ($300.00) · estimated rung size · ATR reading 4.0% · as of 12:05 PM");
     expect(reads()).toEqual(['stockTechnicalScores/ACN']);
     expect(thresholdAsks()).toEqual([]);
   });
@@ -145,7 +149,7 @@ describe('BS-4 — a non-held stock in a measured battle previews its rungs at t
     const bench = benchSheetOf({ status: 'ready', data: { asOf: null, rows: [{ symbol: 'ACN', status: 'available', rank: 12, atrPct: 4.05 }] } }).rows[0].atr;
     // (4.05).toFixed(1) is "4.0": 4.05 is stored as 4.0499…, and both surfaces print it through the same rule.
     expect(bench).toBe('ATR 4.0%');
-    const preview = q('[data-bomb-what]').textContent.match(/ATR reading (\d+\.\d)%/)[1];
+    const preview = what().match(/ATR reading (\d+\.\d)%/)[1];
     expect(`ATR ${preview}%`).toBe(bench);
   });
 
@@ -158,7 +162,7 @@ describe('BS-4 — a non-held stock in a measured battle previews its rungs at t
     expect(q('[data-bomb-view="state"]').textContent).toContain('No ladder yet');
     expect(q('[data-bomb-view="state"]').textContent).toContain('This stock has no usable ATR reading from a recent rankings run, so no rung size is shown.');
     expect(q('[data-fuse-rung-label]')).toBeNull();
-    expect(document.body.textContent).not.toContain('$307.50'); // 300 × 1.025
+    expect(bodyText()).not.toContain('$307.50'); // 300 × 1.025
     expect(reads()).toEqual(['stockTechnicalScores/ZZZZ']);
     expect(thresholdAsks()).toEqual([]);
   });
@@ -172,7 +176,7 @@ describe('BS-4 — a non-held stock in a measured battle previews its rungs at t
     await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
     expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_failed');
     expect(q('[data-bomb-view="state"]').textContent).toContain("The ATR reading couldn't be read. It's asked again when you change view or tab.");
-    expect(document.body.textContent).not.toContain('$319.44');
+    expect(bodyText()).not.toContain('$319.44');
   });
 
   it.each([
@@ -183,14 +187,14 @@ describe('BS-4 — a non-held stock in a measured battle previews its rungs at t
     await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
     expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_unavailable');
     expect(q('[data-bomb-view="state"]').textContent).toContain('This stock has no usable ATR reading from a recent rankings run, so no rung size is shown.');
-    expect(document.body.textContent).not.toMatch(/\$312\.15|\$319\.44|ATR reading \d/);
+    expect(bodyText()).not.toMatch(/\$312\.15|\$319\.44|ATR reading \d/);
   });
 
   it('review A2: a reading no ladder can be drawn from (55 % on a $40 close puts Meltdown below $0) is "No ladder yet", never "$undefined"', async () => {
     seed('ACN', 40); scores('ACN', 55);
     await open(nonHeld('ACN', { threshold: 6.48, price: 41 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
     expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_unavailable');
-    expect(document.body.textContent).not.toMatch(/undefined|NaN/);
+    expect(bodyText()).not.toMatch(/undefined|NaN/);
   });
 
   it('review A5 / B1: a failed read is asked again when 💣 reopens (under the shell), and then draws', async () => {
@@ -232,7 +236,7 @@ describe('BS-4 — a non-held stock in a measured battle previews its rungs at t
   it("a reading from an earlier session names its day: 'as of Tue 4:05 PM'", async () => {
     seed('ACN'); scores('ACN', 4.05, at('2026-10-13T20:05:00.000Z'));
     await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
-    expect(q('[data-bomb-what]').textContent).toContain('ATR reading 4.0% · as of Tue 4:05 PM');
+    expect(what()).toContain('ATR reading 4.0% · as of Tue 4:05 PM');
   });
 
   it('one read per stock: live ticks re-render the modal, and nothing is read again', async () => {
@@ -274,7 +278,7 @@ describe('BS-4 — unchanged: every other ladder', () => {
     await open(asset, ctx);
     const bagger = ctx.record.measured.targets.find((t) => t.key === 'bagger').price;
     expect(q('[data-sheet-rung="bagger"]').textContent).toContain(`$${(Math.ceil(bagger * 100 - 1e-6) / 100).toFixed(2)}`);
-    expect(q('[data-bomb-what]').textContent).not.toMatch(/ATR reading|Preview/);
+    expect(what()).not.toMatch(/ATR reading|Preview/);
     expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual([]);
   });
 
@@ -292,7 +296,7 @@ describe('BS-4 — unchanged: every other ladder', () => {
     expect([ctx.record, ctx.stockModel]).toEqual([null, 'corrected']);
     await open(asset, ctx);
     expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('preview_unavailable');
-    expect(document.body.textContent).not.toMatch(/ATR reading \d|if it entered/);
+    expect(bodyText()).not.toMatch(/ATR reading \d|if it entered/);
     expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual([]);
   });
 
@@ -303,7 +307,7 @@ describe('BS-4 — unchanged: every other ladder', () => {
     expect([ctx.held, ctx.stockModel]).toEqual([false, 'legacy']);
     await open(nonHeld('NVDA', { threshold: 6.48 }), ctx);
     expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$319.44');
-    expect(q('[data-bomb-what]').textContent).not.toContain('ATR reading');
+    expect(what()).not.toContain('ATR reading');
     expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual([]);
   });
 

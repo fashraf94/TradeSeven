@@ -17,7 +17,9 @@ describe('buildLadder — BS-4: the ATR arm (a non-held stock in a measured batt
     const l = buildLadder({ context: { kind: 'agent' }, record: null, previousClose: 300, threshold: 6.48, symbol: 'ACN', nowMs: WED_1PM, atrReading: ready });
     expect(l).toMatchObject({ status: 'ok', kind: 'preview', model: 'preview', threshold: 4.05, atrReading: { pct: 4.05, asOfMs: ready.asOfMs } });
     expect(l.rungs.find((r) => r.key === 'bagger').price).toBeCloseTo(312.15, 9);
-    expect(sheetLine({ ladder: l, decimals: 2, nowMs: WED_1PM })).toBe("Preview · rungs if it entered at yesterday's close ($300.00) · estimated rung size · ATR reading 4.0% · as of 12:05 PM");
+    // Review D2: the added separators, "ATR reading", "as of" and the time are bound by no-break spaces.
+    expect(sheetLine({ ladder: l, decimals: 2, nowMs: WED_1PM })).toContain('(\u00a0· estimated rung size\u00a0· ATR\u00a0reading\u00a04.0%\u00a0· as\u00a0of\u00a012:05\u00a0PM'.slice(1));
+    expect(sheetLine({ ladder: l, decimals: 2, nowMs: WED_1PM }).replace(/\u00a0/g, ' ')).toBe("Preview · rungs if it entered at yesterday's close ($300.00) · estimated rung size · ATR reading 4.0% · as of 12:05 PM");
   });
   it('no reading → "No ladder yet" with the arm\'s own why: atr_unavailable (no current reading), atr_loading, atr_failed — never the 2.5 default', () => {
     for (const [status, want] of [['none', 'atr_unavailable'], ['loading', 'atr_loading'], ['failed', 'atr_failed']]) {

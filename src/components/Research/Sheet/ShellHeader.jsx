@@ -78,7 +78,9 @@ export default function ShellHeader({ asset, onClose, onBack, shell }) {
             <span style={{ fontSize: 18, lineHeight: 1 }}>{'←'}</span>
           </button>
         )}
-        <span style={{ fontSize: 17, fontWeight: 800, color: ST.ink, whiteSpace: 'nowrap' }}>{asset.symbol}</span>
+        {/* Review D1: the symbol may ellipsize too — only once the name is gone (a tiny shrink weight) —
+            so ✕ stays on screen whatever the font, not by measured margin alone. */}
+        <span data-shell-symbol style={{ fontSize: 17, fontWeight: 800, color: ST.ink, whiteSpace: 'nowrap', minWidth: 0, flexShrink: 0.001, overflow: 'hidden', textOverflow: 'ellipsis' }}>{asset.symbol}</span>
         <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: ST.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{asset.name}</span>
         {/* BS-3: the price and the change narrow with the screen (as the tabs' labels do) — 14 and 11.5 px
             from 390 px up, 12 and 10 px at 320 — so a six-figure price and a back arrow keep ✕'s box inside. */}

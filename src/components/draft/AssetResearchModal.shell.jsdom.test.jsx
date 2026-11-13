@@ -802,6 +802,9 @@ describe('refuter (lens D) — the layout fixes, pinned on every run (the browse
     expect(src).toMatch(/<span data-shell-change style=\{\{ fontFamily: MONO, fontSize: SHELL_CHANGE_FONT,/);
     const name = $('[data-shell-stock-row]').children[1];
     expect([name.style.flex, name.style.minWidth, name.style.overflow, name.style.textOverflow]).toEqual(['1 1 0%', '0px', 'hidden', 'ellipsis']);
+    // Review D1: the symbol gives way only after the name (a tiny shrink weight), so ✕ stays on screen in any font.
+    const sym = $('[data-shell-symbol]');
+    expect([sym.textContent, sym.style.minWidth, sym.style.flexShrink, sym.style.overflow, sym.style.textOverflow]).toEqual(['BRK.A', '0px', '0.001', 'hidden', 'ellipsis']);
   });
 });
 
