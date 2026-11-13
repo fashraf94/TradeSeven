@@ -328,6 +328,8 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     latestTime: model.latest.atMs ? whenLabel(model.latest.atMs) : null,
     order: set.questions,
     notOnLadder: set.notOnLadder,
+    // QF-1, ruling 2: no committed context at open — the time the book is ranked, decided with the set.
+    bookPending: set.bookPending ?? null,
     question: shownQuestion,
     pack,
     activeItem,

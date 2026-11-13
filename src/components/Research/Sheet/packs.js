@@ -879,15 +879,28 @@ export function standingOrder(standing) {
 }
 
 /**
+ * The next check's time as the sheet prints it (Build A's clock, bankedItem's mapping): a slot today
+ * (counting down, or running in the cron's queue) its time — never the ticking mm:ss — a later day its
+ * day and time; no slot (past the battle's end) null.
+ */
+function nextCheckTimeOf(holding, nowMs) {
+  const clock = checkClock(nowMs, { battleExpiresAtMs: holding.record?.battleExpiresAtMs ?? null, lastScoredAtMs: holding.record?.lastScoredAtMs ?? null });
+  return clock.state === 'countdown' || clock.state === 'checking' ? etClock(clock.slotMs) : clock.state === 'later' ? clock.label : null;
+}
+
+/**
  * QF-1 — THE QUESTION SET FOLLOWS THE ROW. The caller decides it ONCE when the row opens and keeps it
  * (the FQ-9 rule: never switched while the modal is open — useSheetView freezes it per opening).
- *   held, measured        the state question, then the standing two: `take_profit` when the last
- *                         check's committed context has the position up from entry (its exact rungs
- *                         from entry > 0, i.e. gain > 0), else `weakest_spot` (down, flat, or no
- *                         committed context yet)
- *   held, not measured    the standing two only, and the line that it isn't on the measured ladder
- *   not held              `better_than_stalled` ("…than our weakest holding?"), then the standing two
- * @returns {{ questions: string[], notOnLadder: boolean }}
+ *   held, measured, scored  the state question, then the standing two: `take_profit` when its rungs
+ *                           from entry AS PRINTED (one decimal, rungsShownOf — the number book.js ranks
+ *                           on) are above 0.0, else `weakest_spot` (0.0 or below)
+ *   held, measured, no committed context yet (just after a swap, before the next check scores the book)
+ *                           the standing two only, and the line that the book is ranked at the next
+ *                           check (`bookPending.time`, decided with the set)
+ *   held, not measured      the standing two only, and the line that it isn't on the measured ladder
+ *   not held                `better_than_stalled` ("…than our weakest holding?"), then the standing two
+ * (The founder's rulings of 2026-11-13 on the build's readings 1 and 2 — spec §11.5.)
+ * @returns {{ questions: string[], notOnLadder: boolean, bookPending?: { time: string|null } }}
  */
 export function questionSetOf({ battle, symbol, nowMs, row, standing }) {
   const standingTwo = standingOrder(standing);
@@ -895,10 +908,10 @@ export function questionSetOf({ battle, symbol, nowMs, row, standing }) {
   if (!holding.held) return { questions: ['better_than_stalled', ...standingTwo], notOnLadder: false };
   if (holding.record?.model !== 'measured') return { questions: standingTwo, notOnLadder: true };
   const own = ownEntry(bookOf(battle), holding);
-  // The prompt's letter: up from entry at the last check — gain > 0 on the committed context, the exact
-  // reading (review A1 was refuted on this letter; a position printing 0.0 rungs but above its fill is up —
-  // its pack prints a positive gain and no rungs figure). QF-2's RANK is on the printed number.
-  const up = !!own?.scored && own.rungs > 0;
+  // Ruling 2: no committed context — no state question and no ranking, only when the book is ranked.
+  if (!own?.scored) return { questions: standingTwo, notOnLadder: false, bookPending: { time: nextCheckTimeOf(holding, nowMs) } };
+  // Ruling 1: up is decided on the printed number (BUILD_RULES §9): +0.0 a few cents above the fill is not up.
+  const up = own.rungsShown > 0;
   return { questions: [up ? 'take_profit' : 'weakest_spot', ...standingTwo], notOnLadder: false };
 }
 

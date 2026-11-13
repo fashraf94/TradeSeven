@@ -169,6 +169,10 @@ function Questions({ view }) {
       {view.notOnLadder && (
         <div data-sheet-not-on-ladder style={{ fontSize: 12.5, color: ST.ink2, lineHeight: 1.4, paddingTop: 6 }}>{SHEET_COPY.notOnLadder(view.symbol)}</div>
       )}
+      {/* QF-1, ruling 2: a held measured stock with no committed context yet — the standing two, and when the book is ranked. */}
+      {view.bookPending && (
+        <div data-sheet-book-pending style={{ fontSize: 12.5, color: ST.ink2, lineHeight: 1.4, paddingTop: 6 }}>{SHEET_COPY.bookPending(view.bookPending.time)}</div>
+      )}
     </section>
   );
 }

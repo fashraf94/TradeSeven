@@ -66,6 +66,25 @@ describe('QF-1 — the rows a row shows', () => {
     expect(rows()).toEqual(['catch_up', 'protect_lead']);
     expect(container.querySelector('[data-sheet-not-on-ladder]').textContent).toBe('ETH isn’t on the measured ladder, so only the standing questions apply.');
   });
+  it('ruling 2 (2026-11-13) — no committed context at open (just after a swap): the standing two and "ranked at the next check", kept while the clock runs', () => {
+    const fresh = JSON.parse(JSON.stringify(UP));
+    delete fresh.scoring.stockRewardContexts.agent[POS.AAPL];
+    show(fresh, 'AAPL', 103.4);
+    expect(rows()).toEqual(['catch_up', 'protect_lead']);
+    expect(container.querySelector('[data-sheet-book-pending]').textContent).toBe('Your book is ranked at the next check (1:15)');
+    expect(container.querySelector('[data-sheet-not-on-ladder]')).toBeNull();
+    expect(container.textContent).not.toMatch(/weakest spot|take profit|rungs from entry/);
+    act(() => seen.pickQuestion('weakest_spot'));
+    expect(seen.question).toBeNull();
+    // Decided with the set: twenty minutes on, the line still names the check it was opened before.
+    act(() => { vi.advanceTimersByTime(20 * 60_000); });
+    show(fresh, 'AAPL', 103.4);
+    expect(container.querySelector('[data-sheet-book-pending]').textContent).toBe('Your book is ranked at the next check (1:15)');
+  });
+  it('a scored held stock shows no "ranked at the next check" line', () => {
+    show(UP, 'AAPL', 103.4);
+    expect(container.querySelector('[data-sheet-book-pending]')).toBeNull();
+  });
 });
 
 describe('QF-1 — decided once at open, never switched while the modal is open', () => {
