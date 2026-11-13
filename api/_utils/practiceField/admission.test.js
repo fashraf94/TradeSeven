@@ -517,6 +517,19 @@ describe('B-RESERVE — two admissions racing for the same cash', () => {
     expect(() => assertReconciled(after, openIdeas(db, bookId))).not.toThrow();
   });
 
+  it('the BOOK ITSELF is in the admission\'s read set: a change to the book alone, between the admission\'s read and its commit, is seen — the admission is run again and decided on the changed book', async () => {
+    // The two races above also touch a document the admission reads besides the book (the coverage doc, an open
+    // idea), so they would be retried even if the book were read outside the transaction. This one is not.
+    const { db, bookId, bookRef } = await seedBook();
+    db.setBarrier(async () => { await bookRef.set({ drafting: 'paused' }, { merge: true }); });
+    const attempts = db._txAttempts();
+    const res = await admit(db, bookId, contractOf(), 'late');
+    expect(codes(res)).toEqual(['drafting_paused']);
+    expect(db._txAttempts() - attempts).toBe(2); // read, changed underneath, read again
+    expect(getBook(db, bookId)).toMatchObject({ drafting: 'paused', slots: { short: null }, treasury: { unreservedCash: 100000 }, openIdeaIds: [] });
+    expect(getIdea(db, bookId, ideaIdFor(bookId, 'late'))).toBeUndefined();
+  });
+
   it('two admissions racing for one slot: one wins, the other is slot_occupied', async () => {
     const { db, bookId } = await seedBook();
     let second = null;
