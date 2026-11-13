@@ -10,8 +10,8 @@
 //
 //   1. Prompt assemblers under api/ — every module in the battle C-20 registry
 //      (PROMPT_CONTRIBUTING_MODULES) and the Mandate registry
-//      (MANDATE_PROMPT_CONTRIBUTING_MODULES), plus every api/ module whose file
-//      name says "prompt" (the consolidation prompt among them) — and the
+//      (MANDATE_PROMPT_CONTRIBUTING_MODULES), plus every api/ module whose path
+//      says "prompt" (agentConsolidationPrompt.js, seasonPrompts/*) — and the
 //      TRANSITIVE local-import closure of each: none names the decisions
 //      store, none names a T0b record field, none reaches a decision writer.
 //      Two pure SHAPE modules are reached: mandatePromptAssembly →
@@ -31,9 +31,13 @@
 //     prompts use it), so it cannot be banned by name. A reader is caught by
 //     its store mention, a T0b-only field name, or the canary rows — not by
 //     `.rationale`.
-//   • "Prompt assembler" means the two registries plus a file-name heuristic.
-//     Prompt text built inside a handler is not a scan-1 root; for the Mandate
-//     path the canary rows cover it, for others scan 2's pins do.
+//   • "Prompt assembler" means the two registries plus a path heuristic.
+//     Prompt text built inline elsewhere (api/agent/reflect.js and
+//     agentConsolidationApply.js build their requests in place; a grep finds
+//     some 34 such api/ modules) is not a scan-1 root: for the Mandate path
+//     the canary rows cover it, for the rest scan 2's pins do.
+//   • executeDecision returns the record in-process (its callers drop it);
+//     the canary rows check what leaves the handler and the harvest.
 //   • The closure walker follows static `import … from` / `export … from`
 //     with relative specifiers only: not a side-effect `import './x.js'`, a
 //     `require()`, a dynamic `import()` or a bare-package import.
@@ -52,7 +56,12 @@ import { PROMPT_CONTRIBUTING_MODULES } from './__fixtures__/promptHonestyRegistr
 import { MANDATE_PROMPT_CONTRIBUTING_MODULES } from './__fixtures__/mandatePromptRegistry.js';
 
 const posix = (p) => p.split(sep).join('/');
-const read = (rel) => readFileSync(resolve(REPO_ROOT, rel), 'utf-8');
+const SOURCE_CACHE = new Map(); // each file is read once (scan 2 reads ~2,000 files; rows stay well inside their timeout)
+const read = (rel) => {
+  if (!SOURCE_CACHE.has(rel)) SOURCE_CACHE.set(rel, readFileSync(resolve(REPO_ROOT, rel), 'utf-8'));
+  return SOURCE_CACHE.get(rel);
+};
+const SCAN_TIMEOUT_MS = 30_000;
 
 function listSources(dirRel) {
   const out = [];
@@ -61,7 +70,7 @@ function listSources(dirRel) {
       const p = join(abs, name);
       if (statSync(p).isDirectory()) {
         if (!['node_modules', '__fixtures__', '__testsupport__', '__mocks__'].includes(name)) walk(p);
-      } else if (/\.(js|jsx|ts|tsx|mjs)$/.test(name) && !/\.test\.(js|jsx|ts|tsx|mjs)$/.test(name)) {
+      } else if (/\.(js|jsx|ts|tsx|mjs|cjs)$/.test(name) && !/\.test\.(js|jsx|ts|tsx|mjs|cjs)$/.test(name)) {
         out.push(posix(relative(REPO_ROOT, p)));
       }
     }
@@ -132,7 +141,8 @@ function namedOnly(clause) {
 // ── Scan 1: prompt assemblers and their import closures ──────────────────────
 
 const API_SOURCES = listSources('api');
-const NAMED_ASSEMBLERS = API_SOURCES.filter((rel) => /prompt/i.test(rel.split('/').pop()));
+// "prompt" anywhere in the path: file names (agentConsolidationPrompt.js) and folders (seasonPrompts/).
+const NAMED_ASSEMBLERS = API_SOURCES.filter((rel) => /prompt/i.test(rel));
 const REGISTERED = [...PROMPT_CONTRIBUTING_MODULES, ...MANDATE_PROMPT_CONTRIBUTING_MODULES].map((m) => `api/_utils/${m}`);
 const ROOTS = [...new Set([...NAMED_ASSEMBLERS, ...REGISTERED])].sort();
 const CLOSURE = [...new Set(ROOTS.flatMap((root) => evalPathClosure(root, []).map(posix)))]
@@ -149,6 +159,7 @@ describe('T0b no reader: prompt assemblers under api/ never read the stored reas
       'api/_utils/agentPromptAssembly.js',
       'api/_utils/agentEvalPromptAssembly.js',
       'api/_utils/agentConsolidationPrompt.js',
+      'api/_utils/seasonPrompts/pitStopDebrief.js', // a root by its folder name
       'api/_utils/mandateUniverseSnapshot.js',  // one hop: imported by mandatePromptAssembly
       'api/_utils/mandateCorporateActions.js',  // two hops
       'api/_utils/mandateSchema.js',            // three hops — a truncated walk fails here
@@ -242,10 +253,15 @@ describe('T0b no reader: decisions-store mentions and the record field names are
     }
     const pinned = Object.fromEntries(Object.entries(STORE_BASELINE).map(([f, v]) => [f, v.count]));
     expect(found, 'a decisions-store mention moved — a new reader (or writer) needs review against concept V6.1 §9, then a re-pin with a note').toEqual(pinned);
-  });
+  }, SCAN_TIMEOUT_MS);
 
   it('only the writers of the reason name a T0b field', () => {
     const naming = sources.filter((rel) => T0B_FIELD.test(read(rel))).sort();
-    expect(naming, 'T0b record field named outside the writer set — a reader needs review against concept V6.1 §9').toEqual([...FIELD_SANCTIONED].sort());
-  });
+    const unsanctioned = naming.filter((rel) => !FIELD_SANCTIONED.includes(rel));
+    expect(unsanctioned, 'T0b record field named outside the writer set — a reader needs review against concept V6.1 §9').toEqual([]);
+    // Subset, not equality: a writer may name the fields in comments only
+    // (mandateExecution.js does), and a comment edit must not red this row.
+    // Non-vacuous: the builder and the bound name them.
+    expect(naming).toEqual(expect.arrayContaining(['api/_utils/mandateRationale.js', 'api/_utils/mandateSchema.js']));
+  }, SCAN_TIMEOUT_MS);
 });
