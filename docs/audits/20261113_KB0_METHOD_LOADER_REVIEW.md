@@ -1,6 +1,6 @@
 # KB-0 — the KB method loader: the BUILD_RULES §2 review record
 
-**Date:** 2026-11-13 · **Branch:** `claude/kb-loader` · **Base:** `main` `d9b4e3c1` · **Reviewed head:** `75ae40b1` · **Fixed head:** `bf449d2c` · **By:** Claude Code (Opus 5.5), with eight subagents
+**Date:** 2026-11-13 · **Branch:** `claude/kb-loader` · **Base:** `main` `d9b4e3c1` · **Reviewed head:** `75ae40b1` · **Fixed head:** `9c2b6b86` · **By:** Claude Code (Opus 5.5), with eight subagents
 **Spec:** `docs/specs/20261113_SHARED_RESEARCH_SPEC_V1_2_AMENDMENT_A_KB_METHOD.md` §A2, §A3, §A5 · **Build report:** `docs/audits/20261113_BUILD_KB0_METHOD_LOADER.md`
 
 The diff crosses the §2 threshold (more than 10 files), so the review was mandatory. It ran in two waves:
@@ -17,7 +17,7 @@ The mutating lens ran last, on its own WSL tree: the coordinator's battery (§5)
 | Must-fix (as rated by the lens) | 2, both KL4 (test integrity) |
 | Refuter verdicts | **31 CONFIRMED · 6 PARTLY · 1 REFUTED** |
 | New items the refuters found in the fixes | 17 (KLV1 N1–N5, KLV2 NEW-1–NEW-4, KLV3 N1–N6 plus residuals, KLV4 survivors), all fixed or recorded below |
-| Fixed | every CONFIRMED and PARTLY finding with a code or test remedy; commits `eabd6c3a`, `c24df95b`, `3c0e18a0`, `54c8d39e`, `e04f9d11`, `bf449d2c` |
+| Fixed | every CONFIRMED and PARTLY finding with a code or test remedy; commits `eabd6c3a`, `c24df95b`, `3c0e18a0`, `54c8d39e`, `e04f9d11`, `bf449d2c`, `9c2b6b86` |
 | Left as founder questions | 6 (§6) |
 | Accepted as notes | 4 (§7) |
 
@@ -113,7 +113,7 @@ The fail-opens the lenses found need one of the following:
 
 **KLV4's survivors against `c24df95b`** were each re-run as a mutant in the final battery: `KM-D11`, `KM-D14`–`KM-D17`, `KM-U1`, `KM-X23`–`KM-X27`.
 
-**The battery, at `bf449d2c`:** 90 mutants, each from one exact anchor, run in a WSL worktree. A mutant is KILLED only when vitest exits non-zero with failed rows (or a load error). Each file is restored from its saved bytes, and the defined ids are diffed against the ids actually run. The result is in the build report §6.
+**The battery, at `9c2b6b86`:** 90 mutants, each from one exact anchor, run in a WSL worktree. A mutant is KILLED only when vitest exits non-zero with failed rows (or a load error). Each file is restored from its saved bytes, and the defined ids are diffed against the ids actually run. The result is in the build report §6.
 
 ## 6. Founder questions (none blocks the merge: each reading fails closed)
 

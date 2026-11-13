@@ -1,6 +1,6 @@
 # Build KB-0 — the KB method loader (dark: an empty authorization list)
 
-**Date:** 2026-11-13 · **Branch:** `claude/kb-loader` (cut from `origin/main` `d9b4e3c1` after `git fetch origin`; the harness's `claude/kb-loader-f552b8` was renamed before the first commit) · **Code head:** `bf449d2c` · **By:** Claude Code (Opus 5.5)
+**Date:** 2026-11-13 · **Branch:** `claude/kb-loader` (cut from `origin/main` `d9b4e3c1` after `git fetch origin`; the harness's `claude/kb-loader-f552b8` was renamed before the first commit) · **Code head:** `9c2b6b86` (the loader is unchanged since `3c0e18a0`; the import script since `e04f9d11`) · **By:** Claude Code (Opus 5.5)
 **Spec:** Shared Research spec V1.2 — Amendment A, §A2, §A3, §A5 (`docs/specs/20261113_SHARED_RESEARCH_SPEC_V1_2_AMENDMENT_A_KB_METHOD.md`, this branch's first commit) · **Review record:** `docs/audits/20261113_KB0_METHOD_LOADER_REVIEW.md`
 
 ## 1. Verdict
@@ -87,7 +87,7 @@ The import script also requires the following, each failing closed:
 
 ## 5. Tests (Linux, WSL worktree, Node 20.20.2, `TZ=UTC`; each exit code asserted, the `Test Files` line read directly)
 
-All runs are at `24d3f04d`, the code head `bf449d2c` plus the review record (docs only) and a test-title fix, unless a row says otherwise. `main` was re-fetched before the final runs and had not moved from `d9b4e3c1`, so this tree is also the PR merged with `main`.
+All runs are at the code head `9c2b6b86`, unless a row says otherwise. The pushed head adds this report only (docs), and `lint:gate` and `vite build` were re-run on it (identical `dist/`). `main` was re-fetched before the final runs and had not moved from `d9b4e3c1`, so this tree is also the PR merged with `main`.
 
 | # | Command | Exit | Result line |
 |---|---|---|---|
@@ -98,6 +98,7 @@ All runs are at `24d3f04d`, the code head `bf449d2c` plus the review record (doc
 | 4 | `node scripts/kb/import-release.mjs --release <extracted> --id KB-IDEA-EVALUATION-001 --version 0.1 --out api/_utils/kb/packages --check` | 0 | three `same`, and the four pinned hashes printed |
 
 **Earlier runs, kept for the record:**
+- At `24d3f04d` (before the "shipped list" row was made unconditional): the same suite numbers, `lint:gate` clean, and an identical `dist/`.
 - At `64959516` (the first code head): suite `1440 passed | 10 skipped (1450)` / `32064 passed | 120 skipped`.
 - At `75ae40b1`: `lint:gate` exit 0, and `vite build` with a `dist/` identical to `main`'s.
 - The Tailwind pre-check: `main` built with and without the three package files gives an identical `dist/`.
@@ -107,7 +108,7 @@ All runs are at `24d3f04d`, the code head `bf449d2c` plus the review record (doc
 ## 6. Mutation check and the review's split
 
 **How the battery runs** (BUILD_RULES §2, reviewer isolation):
-- It runs at the code head `bf449d2c`, in its own WSL worktree (`pd-ci-kb0-mut`), never in the working tree.
+- It runs at the code head `9c2b6b86`, in its own WSL worktree (`pd-ci-kb0-mut`), never in the working tree. An identical run at `bf449d2c` had the same result, apart from KM-L1, whose killer count rose from 1 to 2 when the row was made unconditional.
 - Each mutant is one exact anchor, which must match exactly once; a stale anchor prints `BROKEN` and is not run.
 - Each mutant runs the four KB test files.
 - KILLED means vitest exits non-zero with at least one failed row (or with a load or unhandled error).
@@ -130,7 +131,7 @@ All runs are at `24d3f04d`, the code head `bf449d2c` plus the review record (doc
 | KM-A1 | `inAudienceFor`: `'allowlist'` true for everyone | audience.test "'allowlist' true only for a uid on the test list" (2) |
 | KM-A2 | `inAudienceFor`: an unknown audience true | audience.test "any other audience … never true" (11) |
 | KM-P1 | the authorized answer also returns the export's `source` block | "the answer — exactly the eight fields" (3) |
-| KM-L1 | `KB_APP_USE` holds a well-formed entry | packages.test "KB_APP_USE is [] — THE PIN" and loader.test "the shipped list (empty)", the two rows the activation PR moves (FQ-1) — KILLED_L1 |
+| KM-L1 | `KB_APP_USE` holds a well-formed entry | packages.test "KB_APP_USE is [] — THE PIN" and loader.test "the shipped list (empty)", the two rows the activation PR moves (FQ-1) (2) |
 
 **The other 76 mutants, by group (all killed):**
 
