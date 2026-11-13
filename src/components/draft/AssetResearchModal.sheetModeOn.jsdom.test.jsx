@@ -321,9 +321,7 @@ describe('BC-8 — the record on the Chart view, one label open; "see on chart �
     expect(last.length).toBeGreaterThan(0);
     // Dots on the canvas; the one open label is the caption over the chart (review D6).
     expect(last.filter((m) => m.text)).toEqual([]);
-    // BC2-3 (Nov 13): on 1D a day's markers merge into one, with its count — the entry and the check on Wed.
-    expect($('[data-pin-caption]').textContent.trim()).toBe('● Wed · 2');
-    expect(last.map((m) => m.id)).toEqual(['day:2026-10-14']);
+    expect($('[data-pin-caption]').textContent.trim()).toBe('● What it decided · Wed 12:45');
     await click(pill('analysis'));
     await click($('[data-sheet-question="protect_lead"]'));
     rec.lines.length = 0;
@@ -344,8 +342,7 @@ describe('BC-8 — the record on the Chart view, one label open; "see on chart �
     await click($('[data-sheet-question="catch_up"]'));
     await click(see('move_since_entry'));
     expect(view()).toBe('chart');
-    // BC2-3: on 1D the day's markers are one (day:…); its caption is the tapped item's own marker.
-    expect($('[data-pin-caption]').dataset.pinCaption).toBe('day:2026-10-14');
+    expect($('[data-pin-caption]').dataset.pinCaption).toBe('entry');
     expect($('[data-pin-caption]').textContent.trim()).toMatch(/^● Entry · Wed /);
   });
   it('a rung item draws its own line "next rung · $…" at the DISPLAYED rung price, the fact\'s own cent (B1, pre-flip audit §10)', async () => {
@@ -398,7 +395,7 @@ describe('BC-8 — the record on the Chart view, one label open; "see on chart �
     await click($('[data-sheet-question="catch_up"]'));
     await click(see('move_since_entry'));
     expect(view()).toBe('chart');
-    expect($('[data-pin-caption]').textContent.trim()).toMatch(/^● Entry · Wed /);
+    expect($('[data-pin-caption]').dataset.pinCaption).toBe('entry');
   });
 });
 

@@ -193,6 +193,8 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
   // ── BC2-1 / BC2-2: the Battle pill's spec — the battle's sessions up to today and the bar size ──
   const onBattle = timeframe === 'battle';
   const battleSpec = useMemo(() => (ctx && battle ? battleSpecOf(battle, nowMs) : null), [!!ctx, battle, nowMs ? Math.floor(nowMs / 3_600_000) : 0]); // eslint-disable-line react-hooks/exhaustive-deps -- the sessions move by the day
+  // BC2-3's day merge (and its chips) come with the Battle pill: the stock the battle opened, a battle naming its sessions.
+  const dayMerge = !!battleSpec && isOriginal && !isCrypto;
   const chart = useMemo(() => {
     if (!model) return null;
     const markers = model.pins.markers.map((m) => ({ ...m, day: sessionDay(m.atMs, isCrypto), token: PIN_TOKEN[m.kind] }));
@@ -230,8 +232,9 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
       return { id: `day:${g.day}`, day: g.day, color: color(latest?.token), ...(text ? { text } : {}) };
     });
     return {
-      markers: onBattle
-        ? markers.map((m) => ({ id: m.id, day: m.day, atMs: m.atMs, color: color(m.token), ...(isOpen(m) ? { text: m.label } : {}) }))
+      // With no Battle pill (a battle that names no sessions) 1D keeps Build C's one dot per record item.
+      markers: onBattle || !dayMerge
+        ? markers.map((m) => ({ id: m.id, day: m.day, ...(onBattle ? { atMs: m.atMs } : {}), color: color(m.token), ...(isOpen(m) ? { text: m.label } : {}) }))
         : dayMarkers,
       // The chips under the 1D / 1W chart: a day's count, a tap opens Battle (BC2-3).
       days: byDay.map((g) => ({ day: g.day, count: g.count, label: SHELL_COPY.dayChip(g.count, weekdayOfDay(g.day) ?? g.day) })),
@@ -242,7 +245,7 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
       })),
       open,
     };
-  }, [model, tapped, isCrypto, onBattle, live]);
+  }, [model, tapped, isCrypto, onBattle, live, dayMerge]);
 
   // ── The budget (BC-7): the per-battle chat 10, from the battle's own counter ──
   const used = Number.isFinite(battle?.chatBudgetUsed) ? battle.chatBudgetUsed : 0;
@@ -330,10 +333,10 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     activeItem,
     chart: analysisActive ? chart : null,
     // Which pins the chart draws on this timeframe (StockChart: dots and lines on 1D, 1W and Battle; none on 💣) — D12, BC2-3.
-    pinsShown: { time: timeframe === '1D' || timeframe === '1W' || onBattle, price: timeframe === '1D' || timeframe === '1W' || onBattle },
+    pinsShown: { time: timeframe === '1D' || onBattle || (timeframe === '1W' && dayMerge), price: timeframe === '1D' || timeframe === '1W' || onBattle },
     // BC2-1: the Battle pill — on the stock the battle opened only (a name reached by navigation inside the
     // modal has no record on the battle's sessions — PR 2 review B3); null: no pill.
-    battle: isOriginal ? battleSpec : null,
+    battle: isOriginal && !isCrypto ? battleSpec : null,
     budget: { left, limit: BATTLE_CHAT_BUDGET.limit },
     canAsk,
     answering,

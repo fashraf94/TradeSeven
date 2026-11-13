@@ -90,3 +90,11 @@ describe('rungLinesOf — the next rung each way at 💣\'s displayed prices (BU
     expect(rungLinesOf(ladder, null)).toEqual([]);
   });
 });
+
+describe('the PR 2 review round (A3) — each day\'s own session', () => {
+  it('an early close (Fri Nov 27 2026, 1:00 PM ET): the post-market bars are not the session', () => {
+    const bar = (iso) => ({ date: iso, open: 100, high: 101, low: 99, close: 100, volume: 1 });
+    const raw = [bar('2026-11-27T18:05:00.000Z'), bar('2026-11-27T18:00:00.000Z'), bar('2026-11-27T17:55:00.000Z'), bar('2026-11-27T14:30:00.000Z')];
+    expect(battleCandlesOf(raw, { days: ['2026-11-27'], nowMs: Date.parse('2026-11-27T21:00:00.000Z') }).map((c) => c.date)).toEqual(['2026-11-27T14:30:00.000Z', '2026-11-27T17:55:00.000Z']);
+  });
+});

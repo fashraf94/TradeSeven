@@ -1027,7 +1027,7 @@ const StockChart = ({
     } catch (e) {
       console.warn('[StockChart] Markers error:', e);
     }
-  }, [markers, chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]); // eslint-disable-line react-hooks/exhaustive-deps -- markerBarTime reads chartData and timeframe, both listed
+  }, [markers, chartData, height, timeframe, isBombView, isBattleView, battlePill, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]); // eslint-disable-line react-hooks/exhaustive-deps -- markerBarTime reads chartData, timeframe and isBattleView, all listed
 
   // A tap on a marker (BC2-3: the 1D / 1W counted marker opens Battle): the library's own hit test.
   useEffect(() => {

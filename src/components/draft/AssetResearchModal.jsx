@@ -886,7 +886,7 @@ const AssetResearchModal = ({
                 {(
                   // Always a way back to the 1D / 1W pill, loading included (PR 2 review B2).
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    {battleSeries.status === 'error' && (
+                    {(battleSeries.status === 'error' || battleSeries.status === 'empty') && (
                       <button type="button" data-battle-retry onClick={battleSeries.retry} style={{ padding: '6px 16px', borderRadius: '6px', border: `1px solid ${ST.hair}`, background: ST.surface, color: ST.teal, fontWeight: 600, cursor: 'pointer' }}>
                         <span style={{ fontSize: '12px' }}>{SHELL_COPY.chartRetry}</span>
                       </button>

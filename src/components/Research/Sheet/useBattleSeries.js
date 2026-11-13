@@ -20,6 +20,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchHistoricalOHLCV } from '../../../services/eodhdAPI';
 import { battleCandlesOf } from './battleChart.js';
 
+/** Bars older than this are asked for again the next time Battle is shown (the client and the server cache 5-minute bars this long). */
+export const REFRESH_MS = 5 * 60 * 1000;
 const intraday = (rows) => Array.isArray(rows) && rows.length > 0 && rows.every((r) => Number.isFinite(r?.timestamp) || (typeof r?.date === 'string' && r.date.includes('T')));
 
 /**
@@ -38,17 +40,23 @@ export default function useBattleSeries({ symbol, spec, active }) {
   useEffect(() => { liveRef.current = true; return () => { liveRef.current = false; }; }, []);
 
   useEffect(() => {
-    if (!active || !key || asked.current.has(key)) return;
+    if (!active || !key) return;
+    // One request per stock and bar size — asked again only when Battle is shown after the bars are
+    // REFRESH_MS old (PR 2 review A1/B5/C2: a live session's later record must not sit on a stale last bar).
+    const had = answers[key];
+    const stale = had?.status === 'ready' && Number.isFinite(had.atMs) && Date.now() - had.atMs >= REFRESH_MS;
+    if (asked.current.has(key) && !stale) return;
     asked.current.add(key);
     const settle = (a) => { if (liveRef.current) setAnswers((all) => ({ ...all, [key]: a })); };
-    settle({ status: 'loading', raw: null, atMs: null });
+    // A refresh keeps the bars on screen while it asks (never a blank chart for a reload).
+    if (!stale) settle({ status: 'loading', raw: null, atMs: null });
     fetchHistoricalOHLCV(symbol, spec.bars.timeframe, { days: spec.bars.days })
       .then((rows) => {
         const actual = rows?._meta?.actualTimeframe;
         if ((typeof actual === 'string' && actual !== spec.bars.timeframe) || !intraday(rows)) throw new Error('not_intraday');
         settle({ status: 'ready', raw: rows, atMs: Date.now() });
       })
-      .catch(() => settle({ status: 'error', raw: null, atMs: null }));
+      .catch(() => { if (stale) settle({ ...had, atMs: Date.now() }); else settle({ status: 'error', raw: null, atMs: null }); });
   }, [active, key, attempt]); // eslint-disable-line react-hooks/exhaustive-deps -- the key names the symbol and the bar size
 
   const own = key ? answers[key] ?? null : null;

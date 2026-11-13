@@ -52,7 +52,7 @@ vi.mock('lightweight-charts', () => {
     CandlestickSeries: 'Candlestick', HistogramSeries: 'Histogram', LineSeries: 'Line', AreaSeries: 'Area',
   };
 });
-vi.mock('./CompeteTab', () => ({ default: () => null }));
+vi.mock('./CompeteTab', () => ({ default: (p) => <button type="button" data-nav-msft onClick={() => p.onNavigateToStock('MSFT', 'Microsoft')}>nav</button> }));
 vi.mock('./SectorTab', () => ({ default: () => null }));
 vi.mock('../Research/SmartMoneyTab', () => ({ default: () => null }));
 vi.mock('../Research/TechnicalTabV2', () => ({ default: () => <div data-stub="technical" /> }));
@@ -244,5 +244,49 @@ describe('BC2-5 — the next rung each way on Battle, at 💣\'s strings', () =>
     expect(drawn.find((l) => l.title === `Bust −10 · ${down.priceText}`)?.price).toBe(down.shown);
     expect(up.priceText).toBe('$103.78');
     expect(down.priceText).toBe('$98.73');
+  });
+});
+
+describe('the PR 2 review round (B1–B3, A1)', () => {
+  it('B3 — a stock reached by navigation inside the modal has no Battle pill (no record on the battle\'s sessions); back on the battle\'s stock its bars are its own, not asked again (B1)', async () => {
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    expect(intradayAsks()).toHaveLength(1);
+    await click(shellPill('analysis'));
+    await click($('[data-shell-tab="ranks"]'));
+    await click($('[data-nav-msft]'));
+    await click(shellPill('chart'));
+    expect($('[data-chart-pill]')).toBeNull();
+    await click($('[data-shell-back]'));
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    expect(activePill()).toBe('battle');
+    expect($('[data-shell-chart-state]')).toBeNull();
+    expect(intradayAsks()).toHaveLength(1);
+  });
+  it('B2 — while Battle\'s bars load there is a way back to the 1D / 1W pill', async () => {
+    net.intraday = () => new Promise(() => {});
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    expect($('[data-shell-chart-state]').dataset.shellChartState).toBe('battle-loading');
+    await click($('[data-battle-back]'));
+    expect(activePill()).toBe('1D');
+  });
+  it('A1 — Battle shown again after the bars are five minutes old asks again (a live session\'s later record); sooner, nothing', async () => {
+    await open();
+    await click(shellPill('chart'));
+    await click(chartPill('battle'));
+    await click(chartPill('1D'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4 * 60_000); });
+    await click(chartPill('battle'));
+    expect(intradayAsks()).toHaveLength(1);
+    await click(chartPill('1D'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    await click(chartPill('battle'));
+    expect(intradayAsks()).toHaveLength(2);
+    // The refresh keeps the bars drawn while it asks.
+    expect($('[data-shell-chart-state]')).toBeNull();
   });
 });

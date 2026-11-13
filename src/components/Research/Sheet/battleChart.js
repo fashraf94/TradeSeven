@@ -20,6 +20,7 @@
 //   dayMarkersOf     1D / 1W: one marker per day, with its count
 
 import { etDate, etWeekday } from '../BombMode/checkClock.js';
+import { getSessionForDate } from '../../../utils/marketCalendar.js';
 import { rungShown } from '../BombMode/ladder.js';
 import { priceDecimals } from '../priceFormat.js';
 import { SHEET_COPY } from './sheetCopy.js';
@@ -81,14 +82,22 @@ function barMs(c) {
  */
 export function battleCandlesOf(raw, { days, nowMs }) {
   if (!Array.isArray(raw) || !Array.isArray(days) || !days.length || !finite(nowMs)) return [];
-  const want = new Set(days);
+  // Each day's own session from the market calendar (an early close ends at 1:00 PM ET — PR 2 review A3);
+  // the fixed 9:30–16:00 where the calendar does not cover the year.
+  const sessions = new Map(days.map((d) => [d, getSessionForDate(d)]));
   const out = [];
   for (const c of raw) {
     const ms = barMs(c);
     if (ms === null || ms > nowMs) continue;
-    if (!want.has(etDate(ms))) continue;
-    const min = etMinutesOf(ms);
-    if (min === null || min < SESSION_OPEN_MIN || min >= SESSION_CLOSE_MIN) continue;
+    const day = etDate(ms);
+    if (!sessions.has(day)) continue;
+    const s = sessions.get(day);
+    if (s && s.isTradingDay && finite(s.openMs) && finite(s.closeMs)) {
+      if (ms < s.openMs || ms >= s.closeMs) continue;
+    } else {
+      const min = etMinutesOf(ms);
+      if (min === null || min < SESSION_OPEN_MIN || min >= SESSION_CLOSE_MIN) continue;
+    }
     const [open, high, low, close] = [c.open, c.high, c.low, c.close].map(Number);
     if (![open, high, low, close].every(positive)) continue;
     out.push({ date: new Date(ms).toISOString(), timestamp: Math.floor(ms / 1000), open, high, low, close, volume: Number(c.volume) || 0 });

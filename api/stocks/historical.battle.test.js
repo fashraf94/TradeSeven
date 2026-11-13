@@ -8,7 +8,7 @@ vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => false }
 const cache = vi.hoisted(() => new Map());
 vi.mock('../_utils/serverCache.js', () => ({
   getFromCache: (k) => cache.get(k) ?? null,
-  setInCache: (k, v) => cache.set(k, v),
+  setInCache: (k, v, ttl) => { cache.set(k, v); cache.set(`ttl:${k}`, ttl); },
   setCacheHeaders: () => {},
   CACHE_TIERS: { TECHNICAL: { sMaxAge: 60, staleWhileRevalidate: 60 } },
 }));
@@ -55,5 +55,11 @@ describe("BC2-2 — the '5m' timeframe", () => {
     await handler({ query: { symbol: 'AAPL', timeframe: '5m', days: '5' } }, res());
     await handler({ query: { symbol: 'AAPL', timeframe: '5m', days: '5' } }, res());
     expect(urls).toHaveLength(1);
+  });
+  it("cached five minutes, not TECHNICAL's hour (a live session's bars — PR 2 review A1/C2); 30m keeps its tier", async () => {
+    await handler({ query: { symbol: 'AAPL', timeframe: '5m', days: '5' } }, res());
+    await handler({ query: { symbol: 'AAPL', timeframe: '30m', days: '20' } }, res());
+    expect(cache.get('ttl:historical_AAPL_5m_5')).toBe(300);
+    expect(cache.get('ttl:historical_AAPL_30m_20')).toBe(3600);
   });
 });
