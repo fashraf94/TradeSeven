@@ -10,7 +10,7 @@ vi.mock('../_utils/serverCache.js', () => ({
   getFromCache: (k) => cache.get(k) ?? null,
   setInCache: (k, v, ttl) => { cache.set(k, v); cache.set(`ttl:${k}`, ttl); },
   setCacheHeaders: () => {},
-  CACHE_TIERS: { TECHNICAL: { sMaxAge: 60, staleWhileRevalidate: 60 } },
+  CACHE_TIERS: { TECHNICAL: { sMaxAge: 3600, staleWhileRevalidate: 600, memoryTTL: 3600 } },
 }));
 
 import handler from './historical.js';
