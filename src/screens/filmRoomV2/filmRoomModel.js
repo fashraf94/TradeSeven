@@ -462,7 +462,10 @@ export function exitMakerOf(action) {
   const withReason = (exit) => (reason ? `${exit} · ${reason}` : exit);
   if (m === 'agent_decision') return { by: 'agent', label: W.agent.exit };
   if (PLATFORM_MECHANISMS.includes(m)) return { by: 'platform', label: `${W.platform.exit} · ${reason ?? W.platform.noReason}` };
-  if (m === 'gameplan_meeting') return { by: 'gameplan', label: withReason(W.gameplan.exit) };
+  // Build C §8 ruling 2: wherever the screen says a maker in words, no code follows — the meeting's maker reads "Exit by
+  // the gameplan meeting" (every real meeting swap records `gameplan_rotation`); a platform rule keeps its reason
+  // (RJ-4) and a maker not recorded keeps any it stored
+  if (m === 'gameplan_meeting') return { by: 'gameplan', label: W.gameplan.exit };
   return { by: 'unrecorded', label: withReason(W.unrecorded.exit) };
 }
 

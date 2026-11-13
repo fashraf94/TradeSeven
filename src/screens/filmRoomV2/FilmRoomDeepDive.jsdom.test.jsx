@@ -86,7 +86,7 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     }
   });
 
-  it('Amendment L RL-4 — a real meeting swap (the writer\'s mapping: gameplan_rotation → the meeting): both names read "by the gameplan meeting" with no code after it; a platform rule keeps its reason on both names; the symbol\'s facts keep the recorded reason (the mutants: the raw code back after the meeting maker; a platform rule\'s reason dropped)', () => {
+  it('Amendment L RL-4 — a real meeting swap (the writer\'s mapping: gameplan_rotation → the meeting): both names read "by the gameplan meeting" with no code after it; a platform rule keeps its reason on both names; Build C §8 ruling 2: the symbol\'s facts say the meeting maker with no code either, and keep a platform rule\'s reason (the mutants: the raw code back after the meeting maker; a platform rule\'s reason dropped)', () => {
     expect(EXIT_MECHANISMS.gameplan_rotation).toBe('gameplan_meeting');
     const meeting = clone(sep23Tape);
     meeting.actions[0] = { ...meeting.actions[0], exitReason: 'gameplan_rotation', mechanism: EXIT_MECHANISMS.gameplan_rotation };
@@ -94,8 +94,10 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     expect([symbolOut, symbolIn]).toEqual(['MSFT', 'CRWD']);
     m.render(<Harness key="meeting" tape={meeting} series={sep23Series} start={symbolOut} />);
     expect(m.q('[data-swap-label="0"]').textContent).toBe('Exit · 12:45 PM · by the gameplan meeting');
-    // RL-4 is the chart's: the symbol's facts keep exitMakerOf's words, the recorded reason after them
-    expect(m.q('[data-region="symbol-facts"]').textContent).toContain('Exit by the gameplan meeting · gameplan_rotation');
+    // Build C §8 ruling 2 (B2.1 report §14.10 item 2): wherever the screen says a maker in words, no code follows — the
+    // symbol's facts too
+    expect(m.q('[data-region="symbol-facts"]').textContent).toContain('Exit by the gameplan meeting');
+    expect(m.q('[data-region="symbol-facts"]').textContent).not.toContain('gameplan_rotation');
     m.click(chip(symbolIn));
     expect(m.q('[data-swap-label="0"]').textContent).toBe('Entry · 12:45 PM · in for MSFT · by the gameplan meeting');
     expect(m.q('[data-region="price-chart"]').textContent).not.toContain('gameplan_rotation');
@@ -583,5 +585,19 @@ describe('C1 item 9 — §8 ruling 1: the desktop grid\'s tiles while the series
     const msft = tiles().find((t) => t.getAttribute('data-mini') === 'MSFT');
     expect(msft.querySelector('[data-mini-line="MSFT"]')).toBeTruthy();
     expect(tiles().every((t) => !t.textContent.includes('Loading the tape'))).toBe(true);
+  });
+});
+
+describe('C1 item 10 — §8 ruling 2: wherever the screen says a maker in words, no code follows; a platform rule keeps its reason', () => {
+  it('the meeting maker, as every real meeting swap records it (gameplan_rotation): the facts panel and the chart say "by the gameplan meeting" and no code; a platform rule\'s reason stays on both (the mutant: the code back after a maker in prose)', () => {
+    const meeting = clone(sep23Tape);
+    meeting.actions[0] = { ...meeting.actions[0], exitReason: 'gameplan_rotation', mechanism: EXIT_MECHANISMS.gameplan_rotation };
+    m.render(<Harness key="meeting" tape={meeting} series={sep23Series} start="MSFT" desktop />);
+    expect(m.q('[data-region="symbol-facts"]').textContent).toContain('Exit by the gameplan meeting');
+    expect(m.container.textContent).not.toContain('gameplan_rotation');
+    const rule = clone(sep23Tape);
+    rule.actions[0] = { ...rule.actions[0], exitReason: 'stagnation', mechanism: EXIT_MECHANISMS.stagnation };
+    m.render(<Harness key="rule" tape={rule} series={sep23Series} start="MSFT" desktop />);
+    expect(m.q('[data-region="symbol-facts"]').textContent).toContain('Exit by platform rule · stagnation');
   });
 });
