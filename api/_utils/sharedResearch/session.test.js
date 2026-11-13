@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   exchangeOf, framingSessionOf, stepAdmissionOf, isStaleRunning, playerDayOf, globalDayOf, quotaViewOf, sessionViewOf,
-  cleanPlayerText, etDateOf, latestLinesOf, RUNNING_STALE_MS,
+  cleanPlayerText, etDateOf, latestLinesOf, RUNNING_STALE_MS, previousSessionOf,
 } from './session.js';
 import { etDateOf as mandateEtDateOf } from '../mandateClosePass.js';
 import { isUuid } from '../researchRecords/model.js';
@@ -91,5 +91,25 @@ describe('what the client is shown', () => {
   it('the latest lines are the last partner exchange\'s', () => {
     expect(latestLinesOf({ exchanges: [{ who: 'partner', lines: { support: 'a' } }, { who: 'player' }, { who: 'partner', lines: { support: 'b' } }] })).toEqual({ support: 'b' });
     expect(latestLinesOf({ exchanges: [] })).toEqual({ support: null, complication: null, missing: null });
+  });
+});
+
+describe('spec §16 FQ-1 — the earlier investigation, when two creations share a millisecond', () => {
+  it('an ended session created in the same millisecond as current counts as earlier; current, a later one and an open one never do; the newest created wins', () => {
+    const T0 = '2026-11-12T14:00:00.000Z';
+    const ended = (sessionId, createdAt, status = 'completed') => ({ sessionId, createdAt, updatedAt: createdAt, status });
+    const current = { sessionId: 'cur', createdAt: NOW };
+    // the same millisecond, a different id: previous (the CI flake on PR #1054)
+    expect(previousSessionOf([ended('tie', NOW)], current)?.sessionId).toBe('tie');
+    // current itself is never previous, even when ended
+    expect(previousSessionOf([ended('cur', NOW)], current)).toBeNull();
+    expect(previousSessionOf([ended('cur', NOW, 'abandoned')], current)).toBeNull();
+    // created after current, or still open: not previous
+    expect(previousSessionOf([ended('later', '2026-11-12T15:00:00.001Z')], current)).toBeNull();
+    expect(previousSessionOf([{ ...ended('open', NOW), status: 'open' }], current)).toBeNull();
+    // two ended sessions: the newest created wins, whichever order they come in
+    expect(previousSessionOf([ended('old', T0), ended('tie', NOW)], current)?.sessionId).toBe('tie');
+    expect(previousSessionOf([ended('tie', NOW), ended('old', T0)], current)?.sessionId).toBe('tie');
+    expect(previousSessionOf([ended('old', T0), ended('mid', '2026-11-12T14:30:00.000Z', 'abandoned'), ended('cur', NOW)], current)?.sessionId).toBe('mid');
   });
 });

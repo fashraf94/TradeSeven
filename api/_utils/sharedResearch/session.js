@@ -211,8 +211,11 @@ export const liveSessionOf = (sessions) => (Array.isArray(sessions) ? sessions :
 
 /**
  * The newest ENDED investigation among the owner's sessions on one item that
- * came before `current` — never `current` itself (created strictly earlier).
- * "Newest" is the last created: an item's investigations run one after another
+ * came before `current` — never `current` itself (excluded by its sessionId).
+ * "Before" is created at or before `current`'s createdAt: a session created in
+ * the same millisecond as `current`, other than `current` itself, counts as
+ * earlier (a strict `<` lost the earlier one when two creations shared a
+ * millisecond). "Newest" is the last created: an item's investigations run one after another
  * (only an open one answers `existing`), so the last created is the last to
  * end — and a late write to an ended session (a step failure landing after its
  * close) cannot reorder them (refuter SI-1). Null when there is none. Sorted in
@@ -222,7 +225,7 @@ export const liveSessionOf = (sessions) => (Array.isArray(sessions) ? sessions :
  */
 export function previousSessionOf(sessions, { sessionId, createdAt }) {
   return (Array.isArray(sessions) ? sessions : [])
-    .filter((s) => s && ENDED_STATUSES.includes(s.status) && s.sessionId !== sessionId && typeof s.createdAt === 'string' && s.createdAt < createdAt)
+    .filter((s) => s && ENDED_STATUSES.includes(s.status) && s.sessionId !== sessionId && typeof s.createdAt === 'string' && s.createdAt <= createdAt)
     .sort(newestCreatedFirst)[0] ?? null;
 }
 
