@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { createChart, createSeriesMarkers, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+import { barTimeOf } from './Sheet/battleChart.js';
 import { prepareChartData, formatTime, calculateBombLevels, measuredBombLevels, detectBombCrossings, calculateNearestLevel } from './chartUtils';
 import { detectTrendlines } from './trendlineDetection';
 import OHLCDisplay from '../shared/OHLCDisplay';
@@ -74,6 +75,15 @@ const StockChart = ({
   //               (on by default, a clone of the S/R pill and effect).
   markers = null,
   priceLines = null,
+  // The research sheet's Battle chart (build prompt of Nov 13, 2026, BC2-1 – BC2-5; spec
+  // RESEARCH_MODAL_SHELL_SPEC_V1.md §12). Absent (every caller but the sheet in battle), nothing
+  // below changes.
+  //   battlePill   { label } — a third timeframe pill, key 'battle': the caller then hands
+  //                timeframe 'battle' with the battle's intraday bars; markers carry `atMs` and
+  //                sit on the bar that holds their instant; price lines are drawn; no trend lines.
+  //   onMarkerTap  (id) => void — a tap on a marker (the library's hit test, hoveredObjectId).
+  battlePill = null,
+  onMarkerTap = null,
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -102,6 +112,7 @@ const StockChart = ({
 
   const isBombView = timeframe === 'bomb' || timeframe === 'spectate';
   const isSpectateView = timeframe === 'spectate';
+  const isBattleView = timeframe === 'battle' && battlePill != null;
   // Bomb mode owns the plot area on the bomb and spectate views (the red zone
   // IS the spectate view there): the chart container is not rendered, so the
   // chart effect below finds no container and creates nothing.
@@ -196,6 +207,22 @@ const StockChart = ({
     if (!ohlcvData || ohlcvData.length === 0) return [];
     return prepareChartData(ohlcvData);
   }, [ohlcvData]);
+
+  // The bar a record marker sits on (Build C BC-8; BC2-3): 1D — its day's own bar (a day with no bar
+  // draws nothing); 1W — the week bar holding its day (with the sheet's Battle pill only); Battle — the
+  // bar holding its instant (battleChart.barTimeOf: an instant before the first bar sits on the first).
+  const markerBarTime = (m) => {
+    if (!m) return null;
+    const bars = chartData || [];
+    if (isBattleView) return barTimeOf(m.atMs, bars.map((b) => b.time));
+    if (timeframe === '1W') {
+      const wk = typeof m.day === 'string' ? weekStartOf(m.day) : null;
+      const bar = wk ? bars.find((b) => weekStartOf(calendarDateOf(b.time)) === wk) : null;
+      return bar ? bar.time : null;
+    }
+    const bar = bars.find((b) => calendarDateOf(b.time) === m.day);
+    return bar ? bar.time : null;
+  };
 
   // Auto-trendlines (1D and 1W only)
   const trendlines = useMemo(() => {
@@ -295,6 +322,8 @@ const StockChart = ({
     if (isHoveringCandleRef.current) {
       return ohlcData;
     }
+    // Battle: the bar's own values — never today's daily high and low merged into a 5- or 30-minute bar.
+    if (isBattleView) return ohlcData;
 
     if (controlled) {
       if (isBombView) return bombDailyOhlc;
@@ -351,7 +380,7 @@ const StockChart = ({
     }
 
     return ohlcData;
-  }, [ohlcData, isBombView, bombDailyOhlc, todayDailyCandle, controlled, controlledCrypto, chartData, timeframe, scaffoldTime]);
+  }, [ohlcData, isBombView, isBattleView, bombDailyOhlc, todayDailyCandle, controlled, controlledCrypto, chartData, timeframe, scaffoldTime]);
 
   // Main chart setup
   useEffect(() => {
@@ -361,8 +390,8 @@ const StockChart = ({
 
     const accentColor = isBombView ? 'rgba(245, 158, 11, ' : 'rgba(0, 255, 255, ';
 
-    // For intraday bomb/spectate views, format times in ET
-    const useETTimezone = isBombView;
+    // For intraday bomb/spectate views (and Battle's bars), format times in ET
+    const useETTimezone = isBombView || isBattleView;
     const etTimeFormatter = (timestamp) => {
       const date = new Date(timestamp * 1000);
       return date.toLocaleTimeString('en-US', {
@@ -394,7 +423,7 @@ const StockChart = ({
       } : {}),
       timeScale: {
         borderColor: accentColor + '0.15)',
-        timeVisible: timeframe === '1D' || isBombView,
+        timeVisible: timeframe === '1D' || isBombView || isBattleView,
         secondsVisible: false,
         ...(useETTimezone ? {
           tickMarkFormatter: (time, tickMarkType) => {
@@ -958,16 +987,16 @@ const StockChart = ({
   useEffect(() => {
     const series = candleSeriesRef.current;
     const plugin = markersPluginRef.current;
-    const want = !!series && !isBombView && timeframe === '1D' && Array.isArray(markers) && markers.length > 0;
+    const want = !!series && !isBombView && (timeframe === '1D' || (battlePill != null && (timeframe === '1W' || isBattleView))) && Array.isArray(markers) && markers.length > 0;
     if (!want) {
       if (plugin && plugin.series === series && series) { try { plugin.api.setMarkers([]); } catch { /* ok */ } }
       return;
     }
-    const barOfDay = new Map((chartData || []).map((b) => [calendarDateOf(b.time), b.time]));
     const list = markers
-      .filter((m) => m && barOfDay.has(m.day))
-      .map((m) => ({
-        time: barOfDay.get(m.day),
+      .map((m) => ({ m, time: markerBarTime(m) }))
+      .filter(({ m, time }) => m && time != null)
+      .map(({ m, time }) => ({
+        time,
         position: m.position || 'aboveBar',
         shape: m.shape || 'circle',
         ...(m.color ? { color: m.color } : {}),
@@ -981,13 +1010,23 @@ const StockChart = ({
     } catch (e) {
       console.warn('[StockChart] Markers error:', e);
     }
-  }, [markers, chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]);
+  }, [markers, chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]); // eslint-disable-line react-hooks/exhaustive-deps -- markerBarTime reads chartData and timeframe, both listed
 
-  // The open marker's label (BC-8: one open label), when its day has a bar on the 1D chart.
+  // A tap on a marker (BC2-3: the 1D / 1W counted marker opens Battle): the library's own hit test.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || typeof onMarkerTap !== 'function' || typeof chart.subscribeClick !== 'function') return undefined;
+    const onClick = (param) => { if (typeof param?.hoveredObjectId === 'string') onMarkerTap(param.hoveredObjectId); };
+    chart.subscribeClick(onClick);
+    return () => { try { chart.unsubscribeClick(onClick); } catch { /* the chart is gone */ } };
+  }, [onMarkerTap, chartData, height, timeframe, isBombView, isSpectateView, bombLevels, triggeredLevels, spectateLevel, bombDailyOhlc, symbol, controlled, scaffoldTime]);
+
+  // The open marker's label (BC-8: one open label), when its marker has a bar on the chart.
   const openPin = (() => {
-    if (isBombView || timeframe !== '1D' || !Array.isArray(markers)) return null;
+    if (isBombView || !Array.isArray(markers)) return null;
+    if (timeframe !== '1D' && !(battlePill != null && (timeframe === '1W' || isBattleView))) return null;
     const m = markers.find((x) => x && typeof x.text === 'string' && x.text);
-    if (!m || !(chartData || []).some((b) => calendarDateOf(b.time) === m.day)) return null;
+    if (!m || markerBarTime(m) == null) return null;
     return m;
   })();
 
@@ -1023,9 +1062,10 @@ const StockChart = ({
       }}>
         {/* Timeframe pills */}
         <div style={{ display: 'flex', gap: '4px' }}>
-          {TIMEFRAMES.map(tf => (
+          {(battlePill ? [...TIMEFRAMES, { key: 'battle', label: battlePill.label }] : TIMEFRAMES).map(tf => (
             <button
               key={tf.key}
+              {...(battlePill ? { 'data-chart-pill': tf.key } : {})}
               onClick={() => { setIsSpectateMode(false); setSpectateLevel(null); onTimeframeChange(tf.key); }}
               style={pillStyle(timeframe === tf.key)}
             >

@@ -802,7 +802,7 @@ export function clearEarningsCache() {
 export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days, from, to, type } = {}) {
   const upperSymbol = symbol.toUpperCase();
   const cacheKey = `ohlcv_${upperSymbol}_${timeframe}${days ? `_${days}d` : ''}`;
-  const isIntraday = ['30m', '1h', '1m'].includes(timeframe);
+  const isIntraday = ['5m', '30m', '1h', '1m'].includes(timeframe);
   const cacheDataType = isIntraday ? 'intraday' : 'historical';
 
   // Check cache (intraday: 5 min TTL, daily/weekly: 24h TTL)

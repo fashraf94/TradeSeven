@@ -14,6 +14,14 @@ const TIMEFRAME_CONFIG = {
     days: 1,          // Full day of 1-minute data; frontend slices to last 60 candles
     description: '1-minute intraday'
   },
+  // The research sheet's Battle chart (build prompt of Nov 13, 2026, BC2-2): a one-day battle's
+  // 5-minute bars. The client asks a fixed 5 days (the cache key is symbol|timeframe|days).
+  '5m': {
+    endpoint: 'intraday',
+    interval: '5m',
+    days: 5,
+    description: '5-day 5-minute'
+  },
   '30m': {
     endpoint: 'intraday',
     interval: '30m',
