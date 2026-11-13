@@ -349,6 +349,10 @@ describe('the shared snapshot\'s build set, by book kind (build prompt §5)', ()
     expect(Object.keys(snap.symbols).sort()).toEqual(expected);
     expect(snap.degraded).toBe(false);
     expect(snap.completeCandidateCount).toBeGreaterThanOrEqual(100);
+    // The DAILY layer too: every default candidate is enriched (sector and market cap for the quarterly gate), as today.
+    const daily = db._get(`mandateUniverseDaily/${DAYS.d2}`);
+    expect(Object.keys(daily.symbols).sort()).toEqual(expected);
+    expect(new Set(fundamentalsSpy.mock.calls.map((c) => c[0]))).toEqual(new Set(expected.filter((s) => s !== 'SPY' && s !== 'XLK')));
     // The quote outage that degrades a build WITH the default universe still does: the floor is read as today.
     for (const s of CANDIDATE_UNIVERSE) delete quoteBook[s];
     await evalOnce(db, DAYS.d2, 'midday');

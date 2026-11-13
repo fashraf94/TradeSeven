@@ -400,6 +400,31 @@ describe('B-RESERVE — two admissions racing for the same cash', () => {
     expect((await admit(db, bookId, contractOf({ slot: 'short', names: ['AAPL'], capitalUsd: shortRes.permittedMaxUsd }), 'short-2', now)).ok).toBe(true);
   });
 
+  it('an admission racing the book\'s own close is retried against the closed book: neither write is lost', async () => {
+    const { db, bookId } = await seedBook({ archetypeCodeId: 'degen' });
+    const quotes = { JPM: { price: 241.37, marketCap: 6.8e11 }, XOM: { price: 118.53, marketCap: 5.2e11 }, SPY: 597.31 };
+    await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'long', names: ['JPM', 'XOM'], capitalUsd: 40000 }), opId: 'held', quotes });
+    const before = getBook(db, bookId);
+    // The admission reads the book; the close commits (new marks, a new revision, a new equity); the admission must
+    // be re-run against THAT book. Its capital is the short slot's cap AFTER the close's +50% — more than the cap
+    // on the book it first read, so an admission decided on the stale book would have been refused.
+    let closed = null;
+    db.setBarrier(async () => { closed = await closeOn(db, bookId, DAYS.d1, { JPM: 362.11, XOM: 177.83, SPY: 598.02 }); });
+    const staleCapCents = Math.floor(Math.round(before.portfolio.totalValue * 100) * 0.2);
+    const capital = Math.round((staleCapCents + 250000) / 100 * 100) / 100; // 2,500.00 above the stale cap
+    const attempts = db._txAttempts();
+    const res = await admit(db, bookId, contractOf({ slot: 'short', names: ['AAPL'], capitalUsd: capital }), 'racer', etIso(DAYS.d1, 16, 26));
+    expect(closed.closed).toBe(true);
+    expect(res.ok).toBe(true);
+    expect(db._txAttempts() - attempts).toBe(3); // the admission, the close, the admission again
+    const after = getBook(db, bookId);
+    expect(after.revision).toBe(before.revision + 2); // the close's increment AND the admission's
+    expect(after.execState.lastCloseKey).toBe(DAYS.d1);
+    expect(after.portfolio.positions.JPM.lastMark).toBe(362.11); // the close's marks survived the admission's write
+    expect(Math.round(after.treasury.unreservedCash * 100)).toBe(Math.round(before.treasury.unreservedCash * 100) - Math.round(capital * 100));
+    expect(() => assertReconciled(after, openIdeas(db, bookId))).not.toThrow();
+  });
+
   it('two admissions racing for one slot: one wins, the other is slot_occupied', async () => {
     const { db, bookId } = await seedBook();
     let second = null;

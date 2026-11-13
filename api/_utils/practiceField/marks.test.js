@@ -31,6 +31,9 @@ describe('eligibleMark — the only source of a fill price for an idea book', ()
   it('no_quote: an absent symbol, an incomplete quote, a zero price', () => {
     expect(eligibleMark(snap({ MSFT: 418.13 }), 'AAPL', opts())).toEqual({ ok: false, symbol: 'AAPL', refusal: MARK_REFUSAL.NO_QUOTE });
     expect(eligibleMark(snap({ AAPL: { price: null } }), 'AAPL', opts()).refusal).toBe('no_quote');
+    // An entry the builder marked incomplete is refused even if a positive price sits on it.
+    const incomplete = snap({ AAPL: 231.47 }); incomplete.symbols.AAPL.complete = false;
+    expect(eligibleMark(incomplete, 'AAPL', opts()).refusal).toBe('no_quote');
     const zero = snap({ AAPL: 231.47 }); zero.symbols.AAPL.price = 0;
     expect(eligibleMark(zero, 'AAPL', opts()).refusal).toBe('no_quote');
     expect(eligibleMark(null, 'AAPL', opts()).refusal).toBe('no_quote');
