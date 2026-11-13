@@ -33,6 +33,7 @@
 // ratified C-21 path.
 
 import { buildDecision, clearedOpenSubmissionPatch } from './mandateSchema.js';
+import { rationaleRecordInputs } from './mandateRationale.js';
 import { markBook, avgCostOf } from './mandateValuation.js';
 import { markFor, snapshotExcluding } from './mandateUniverseSnapshot.js';
 import { frictionForDecision, zeroFriction } from './mandateFrictionModel.js';
@@ -354,10 +355,17 @@ export function execStateTerminalPatch(book, decisionId, status, { submitTickKey
  * bump revision, apply the shared execState terminal patch (counters, streak,
  * ownership-conditional gate clear).
  *
+ * T0b: `attribution` is passed when a model RESPONSE stands behind the
+ * disposal (a harvested result that never reached execution), and
+ * `rationale`/`conviction` only when its tool input was in hand. Without them
+ * the record says rationaleStatus 'absent' and its failCondition explains why.
+ * A replay never backfills an already-claimed record (the claim is exactly-once).
+ *
  * @returns {Promise<{ status, applied:false, idempotent?:true, staleRejectStreak?:number }>}
  */
 export async function disposeSubmission(db, {
   mandateRef, requestId, status, failCondition = null, envelope = null, verb = null, ticker = null,
+  rationale = null, conviction = null, attribution = null,
 }) {
   const decRef = mandateRef.collection('decisions').doc(requestId);
   return db.runTransaction(async (tx) => {
@@ -393,6 +401,7 @@ export async function disposeSubmission(db, {
       baseRevision: envelope?.baseRevision ?? null,
       submitTickKey: envelope?.submitTickKey ?? null,
       mandatePromptTemplateVersion: envelope?.mandatePromptTemplateVersion ?? null,
+      ...rationaleRecordInputs({ rationale, conviction, attribution }), // T0b
       ...(failCondition != null ? { failCondition } : {}),
     }));
     // A MISSING book (deleted out-of-band) still gets its terminal decision —
@@ -430,14 +439,21 @@ export async function disposeSubmission(db, {
  * @param {Date}   [args.now]
  * @param {object} [args.friction]   override; defaults through the §4.1 cap-tier model
  * @param {Set<string>} [args.caFrozen]  gap-detector frozen symbols this tick (§4.3/I7)
+ * @param {object} [args.attribution]  T0b: { modelId, generationConfigVersion, rationaleAt, rationaleAtBasis } of the response
  * @returns {Promise<{ status, applied:boolean, idempotent?:boolean, decision, failCondition?, reason? }>}
  */
 export async function executeDecision(db, {
   mandateRef, decisionId, decision, gateResult, envelope, snapshot, submitMark,
-  currentSessionDate, now = new Date(), friction = null, caFrozen = null,
+  currentSessionDate, now = new Date(), friction = null, caFrozen = null, attribution = null,
 }) {
   const decRef = mandateRef.collection('decisions').doc(decisionId);
   const harvestTickKey = snapshot?.tickKey ?? null;
+  // T0b: the manager's reason rides EVERY terminal this transaction writes —
+  // executed, gated, rejected_stale, expired and failed alike — so the record
+  // shows why the agent wanted to act even where the engine said no.
+  const reasonInputs = rationaleRecordInputs({
+    rationale: decision.rationale, conviction: decision.conviction, attribution,
+  });
   // §3.5 "one consistent valuation" must be consistent WITH THE FILL BASIS:
   // a CA-frozen symbol fills (and is valued) at its last-good carry-over mark,
   // never the already-adjusted fresh mark — so the valuation snapshot excludes
@@ -464,6 +480,7 @@ export async function executeDecision(db, {
       gateOutcome: gateResult?.gateOutcome ?? null,
       frictionModelVersion: MANDATE_FRICTION_MODEL_VERSION,
       harvestSnapshotDegraded: !!snapshot?.degraded, // P5 provenance (refuter, MONEY-P5-7)
+      ...reasonInputs, // T0b
       status,
       ...extra,
     });
@@ -607,6 +624,7 @@ export async function executeDecision(db, {
       harvestTickKey,
       mandatePromptTemplateVersion: envelope.mandatePromptTemplateVersion ?? null,
       harvestSnapshotDegraded: !!snapshot?.degraded, // P5 provenance (refuter, MONEY-P5-7)
+      ...reasonInputs, // T0b
       status: 'executed',
     });
     tx.set(decRef, doc);
