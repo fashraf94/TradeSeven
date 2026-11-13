@@ -119,6 +119,19 @@ describe('the SignalDrop door, inside a real HubSheet (spec §4.1; K-4; P-1)', (
     expect(document.activeElement).toBe($('[data-sr-use-drop]'));
   });
 
+  it('closed and opened again at once (its DOM still leaving): the modal is usable, the sheet inert — `within`, never "every body child"', async () => {
+    await inSheet();
+    click($('[data-sr-use-drop]'));
+    await flush();
+    press(dropCard(), 'Escape');
+    // no wait: the exit animation keeps the modal's node in <body>, and the same node comes back on the re-open
+    click($('[data-sr-use-drop]'));
+    await flush();
+    expect(dropCard()).not.toBeNull();
+    expect(dropOverlay().closest('[inert]')).toBeNull();
+    expect(sheetOverlay().hasAttribute('inert')).toBe(true);
+  });
+
   it('mode signaldrop opens the modal at once (the later hub shortcut)', async () => {
     await inSheet({ mode: 'signaldrop' });
     expect(dropCard()).not.toBeNull();

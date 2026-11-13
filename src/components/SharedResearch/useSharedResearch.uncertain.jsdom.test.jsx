@@ -26,6 +26,23 @@ function Probe({ onHook }) {
   return null;
 }
 
+describe('one request at a time, in the hook itself', () => {
+  it('two step() calls in the same tick send ONE request (the disabled button is not the only guard)', async () => {
+    let release;
+    const held = new Promise((r) => { release = r; });
+    const server = fakeServer({ get: A.getStepped, step: () => held.then(() => A.stepNext) });
+    fetchWithAuth.mockImplementation(server.fetch);
+    let sr;
+    mounted.push(mount(<Probe onHook={(h) => { sr = h; }} />));
+    await act(async () => { await sr.loadSession(IDS.dcSid); });
+    let both;
+    await act(async () => { both = Promise.all([sr.step({ intent: 'next' }), sr.step({ intent: 'next' })]); await Promise.resolve(); });
+    expect(server.sent('step')).toHaveLength(1);
+    await act(async () => { release(); await both; });
+    expect(server.sent('step')).toHaveLength(1);
+  });
+});
+
 describe('adopt() while the save is uncertain', () => {
   it('sends nothing until checkSave has read the record; after "nothing was created" it may send again', async () => {
     const server = fakeServer({ get: [A.getShopPay, A.getShopPay], adopt: [NETWORK, A.adoptSaved] });
