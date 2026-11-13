@@ -12,3 +12,6 @@ api/_utils/__fixtures__/stagnationLiveGolden.json text eol=lf
 # Film Room B2: the v2 goldens (the build's base, cards off), pinned by SHA-256 of their checked-out bytes
 # (src/screens/filmRoomV2/FilmRoomScreenV2.cardsOff.golden.jsdom.test.jsx) — LF on every platform.
 src/screens/__golden__/filmRoomV2.*.html text eol=lf
+# KB-0: the committed KB method packages, pinned by the SHA-256 of their checked-out bytes
+# (api/_utils/kb/packages.test.js) and re-hashed by the loader on every read — LF on every platform.
+api/_utils/kb/packages/*.json text eol=lf
