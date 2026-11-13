@@ -315,7 +315,7 @@ describe('the KB modules', () => {
     expect(specsOfCode(read(path.join(KB_DIR, 'authorizations.js')))).toEqual([]);
   });
 
-  it.each(['loader.js', 'authorizations.js', path.join('packages', 'index.js')])('%s: no fs, no network client, no database, no process.env (code only)', (f) => {
+  it.each(['loader.js', 'authorizations.js', path.join('packages', 'index.js')])('%s: no fs, no network client, no database, no process (raw and comment-stripped text)', (f) => {
     expect(forbiddenUses(read(path.join(KB_DIR, f)))).toEqual([]);
   });
 
