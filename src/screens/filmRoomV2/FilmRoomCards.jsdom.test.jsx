@@ -1895,3 +1895,26 @@ describe('C1 item 8 — since last time: every card past the card stage, its lat
     expect(latestOf(null)).toEqual([]);
   });
 });
+
+// ── Film Room C1 items 11 and 12 — Build C spec V1 §8 rulings 3 and 4 (the B2.1 report §14.10 items 3 and 4) ─────────
+describe('C1 item 11 — §8 ruling 3: a battle with no agent recorded links nothing (the cautious reading stands)', () => {
+  it('the battle document and its tape days name no agent, with the Forge door handed in and the day\'s rule on: the form says RG-5\'s sentence alone, the counter is never asked, a card cannot be filed, and no link to the tempo dial renders anywhere', async () => {
+    const forge = [];
+    const tapes = { [D1]: { ...fx.tape1, agentId: null }, [D2]: { ...fx.tape2, agentId: null } };
+    lastBattle = battleOf({ agentId: null });
+    expect(fx.tape2.tags.inputs.forcedRotation.enabled).toBe(true);
+    m.render(<FilmRoomScreenV2 battle={lastBattle} onBack={() => {}} viewerId="viewer-1" readers={readersOf(tapes, [])} nowMs={NOW} cardsApi={api} onOpenForge={(a) => forge.push(a)} />);
+    await m.flush(8);
+    expect(counterCalls()).toBe(0);
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(m.q('[data-route-note="set"]').textContent).toBe(RG5.set);
+    expect(m.q('[data-set-link]')).toBeNull();
+    await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
+    expect(m.q('[data-card-receipt]')).toBeNull();
+    expect(m.q('[data-card-refusal]')).toBeTruthy();
+    expect(m.q('[data-set-link]')).toBeNull();
+    expect(forge).toEqual([]);
+    expect(t.writeLog.filter((w) => w.path.includes('/plays/'))).toEqual([]);
+  });
+});
