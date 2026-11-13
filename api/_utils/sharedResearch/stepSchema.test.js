@@ -183,13 +183,19 @@ describe('rule 6 — the summary', () => {
     expect(out.ok).toBe(true);
     expect(out.summary.basedOn).toEqual([out.findings[0].findingId, fid('d1')]);
   });
-  it('a sentence may date a fact by the fact\'s own date; any other date\'s numbers must be held (review B2)', () => {
+  it('a sentence may date a fact by the fact\'s own date; any other date\'s numbers must be held (review B2) — else the summary is withheld (§16 FQ-5)', () => {
     const dated = validateStepTurn(turn({ summary: { text: 'Eaton sells switchgear to data-center builders (reported 2026-11-06).', basedOn: ['t1'] } }), ctx());
     expect(dated.ok).toBe(true);
-    expect(validateStepTurn(turn({ summary: { text: 'Eaton sells switchgear (reported 2026-11-09).', basedOn: ['t1'] } }), ctx())).toMatchObject({ ok: false, rule: 'unsupported_number', detail: '2026' });
+    expect(dated.summary).not.toBeNull();
+    const other = validateStepTurn(turn({ summary: { text: 'Eaton sells switchgear (reported 2026-11-09).', basedOn: ['t1'] } }), ctx());
+    expect(other).toMatchObject({ ok: true, summary: null });
+    expect(other.notes).toContain('summary_withheld:unsupported_number:2026');
   });
-  it('a sentence with a number no basedOn fact holds fails unsupported_number', () => {
-    expect(validateStepTurn(turn({ summary: { text: 'Lead times stretched to 18 months.', basedOn: [fid('d1')] } }), ctx())).toMatchObject({ ok: false, rule: 'unsupported_number', detail: '18' });
+  it('a sentence with a number no Source-backed basedOn fact holds is withheld, not a failed step (spec §16 FQ-5): the findings still land', () => {
+    const out = validateStepTurn(turn({ summary: { text: 'Lead times stretched to 18 months.', basedOn: [fid('d1')] } }), ctx());
+    expect(out).toMatchObject({ ok: true, summary: null });
+    expect(out.notes).toContain('summary_withheld:unsupported_number:18');
+    expect(out.findings.length).toBeGreaterThan(0);
   });
   it('an empty basedOn, or one naming a finding the step corrected, fails', () => {
     expect(validateStepTurn(turn({ summary: { text: 'Eaton sells switchgear.', basedOn: [] } }), ctx())).toMatchObject({ ok: false, rule: 'invalid_based_on' });
@@ -205,7 +211,7 @@ describe('rule 7 — the forbidden patterns', () => {
   const cases = [
     ['guarantee', 'This guarantees Eaton more orders.'],
     ['will_do', 'The agent will buy Eaton.'],
-    ['considered', 'The agent considered Eaton.'],
+    ['considered', 'The agent considered Eaton.'], // §16 FQ-3: with the agent as its subject
     ['confidence_number', 'I have 80% confidence in this link.'],
     ['price_target', 'The price target is higher.'],
     ['buy_sell_advice', 'You should buy Eaton.'],
@@ -247,6 +253,13 @@ describe('the next action', () => {
     r = { ...r, findings: [prior] };
     const out = validateStepTurn(turn({ nextAction: null }), ctx({ record: r }));
     expect(out.findings.at(-1)).toMatchObject({ kind: 'next_action', fact: NO_NEXT_STEP_FACT, statusReason: 'no_next_step', supersedes: fid('na') });
+  });
+  it('spec §16 NS-1: the marker reads exactly "No next step proposed." — the server never claims the question is answered', () => {
+    expect(NO_NEXT_STEP_FACT).toBe('No next step proposed.');
+    const r = { ...baseRecord({ question: DC_QUESTION }), findings: [{ findingId: fid('na'), kind: 'next_action', symbol: null, fact: 'Find the source.', source: { recordKind: 'kb', recordId: 'baseline@v0', label: 'Baseline method v0' }, at: READ, asOf: null, status: 'unverified', statusReason: 'proposed', pin: null, supersedes: null }] };
+    const fact = validateStepTurn(turn({ nextAction: null }), ctx({ record: r })).findings.at(-1).fact;
+    expect(fact).toBe('No next step proposed.');
+    expect(fact).not.toMatch(/answer/i);
   });
 });
 

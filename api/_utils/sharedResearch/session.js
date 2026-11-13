@@ -195,6 +195,42 @@ export function isFramingInFlight(session, nowMs) {
   return Number.isFinite(started) && nowMs - started <= RUNNING_STALE_MS;
 }
 
+// ── an earlier investigation of the same item (spec §16 FQ-1) ──────────────────
+
+/** The statuses an investigation has ENDED in: concluded or saved as an idea (`completed`), or `abandoned`. */
+export const ENDED_STATUSES = Object.freeze(['completed', 'abandoned']);
+/** Only an OPEN investigation of the same item answers `existing`; an ended one allows a new one (spec §16 FQ-1). */
+export const LIVE_STATUSES = Object.freeze(['open']);
+
+const newestFirst = (a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0);
+
+/** The newest OPEN investigation among the owner's sessions on one item, or null. */
+export const liveSessionOf = (sessions) => (Array.isArray(sessions) ? sessions : []).filter((s) => s && LIVE_STATUSES.includes(s.status)).sort(newestFirst)[0] ?? null;
+
+/**
+ * The newest ENDED investigation among the owner's sessions on one item that
+ * came before `current` — never `current` itself (created strictly earlier;
+ * "newest" by its last update, which is its close). Null when there is none.
+ * Sorted in memory: the read is an equality-only query (no index).
+ * @param {object[]} sessions   the owner's sessions with this itemKey
+ * @param {{ sessionId: string, createdAt: string }} current
+ */
+export function previousSessionOf(sessions, { sessionId, createdAt }) {
+  return (Array.isArray(sessions) ? sessions : [])
+    .filter((s) => s && ENDED_STATUSES.includes(s.status) && s.sessionId !== sessionId && typeof s.createdAt === 'string' && s.createdAt < createdAt)
+    .sort(newestFirst)[0] ?? null;
+}
+
+/** What the sheet needs to offer "Open the earlier one": `{ sessionId, endedAt, terminalReason }`, from its record. */
+export function previousViewOf(session, record) {
+  if (!session) return null;
+  return {
+    sessionId: session.sessionId,
+    endedAt: typeof record?.endedAt === 'string' ? record.endedAt : (session.updatedAt ?? null),
+    terminalReason: typeof record?.terminalReason === 'string' ? record.terminalReason : null,
+  };
+}
+
 // ── what the client is shown ────────────────────────────────────────────────
 
 /**

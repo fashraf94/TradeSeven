@@ -74,7 +74,8 @@ export const LABELS = Object.freeze({
   claim: 'Proposed claim',
   undated: ' · undated',
 });
-export const NO_NEXT_STEP_FACT = 'No next step proposed: the question looks answered by the current findings.';
+/** The marker when a step proposes no next action — exactly this (spec §16 NS-1): the server never claims the question is answered. */
+export const NO_NEXT_STEP_FACT = 'No next step proposed.';
 /** Findings a step may never supersede: the player's own material and the story the investigation started from. */
 export const PROTECTED_REASONS = Object.freeze(['player_words', 'player_drop', 'from_drop', 'reporter_content']);
 
@@ -170,6 +171,8 @@ const LEARNING_SOFT = /\b(?:improv\w*|evolv\w*|intelligen\w*|unlock\w*|grow(?:s|
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // "the partner" is business prose ("the partner portal"); the agent is "your partner", "my partner" or its own name.
 const PARTNER_WORDS = String.raw`agents?|(?:your|my|our|research)\s+partner`;
+/** The words that may stand between "considered" and its subject (auxiliaries and adverbs only — never another noun). */
+const CONSIDER_BETWEEN = String.raw`(?:\s+(?:have|has|had|also|already|carefully|briefly|then|just|first|now|not|never|did|do|does|was|were|is|are|been|being|be|will|would|could|might|may|should|shall|must|really|actually|previously|initially))*`;
 /** The subjects a sentence is "about us" by: the agent, the partner (and the partner's own name), I, we. */
 function subjectsOf(partnerName) {
   const name = typeof partnerName === 'string' && partnerName.trim().length >= 2 ? `|${escapeRe(partnerName.trim())}` : '';
@@ -177,14 +180,16 @@ function subjectsOf(partnerName) {
     us: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|I|I'm|I've|we|we're|we've|me|my|our${name})\b`, 'i'),
     agent: new RegExp(String.raw`\b(?:${PARTNER_WORDS}${name})\b`, 'i'),
     willDo: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|it|I|we${name})\s+will\s+(?:buy|sell|trade|swap|act|execute|hold|short|equip|deploy)\b`, 'i'),
+    // spec §16 FQ-3: "considered" with the agent, the partner (by name too), "I" or "we" as its subject — directly, through
+    // auxiliaries and adverbs ("we have carefully considered"), or as the passive's agent ("considered by the agent");
+    // "Eaton is widely considered the leader" is business prose and passes.
+    considered: new RegExp(String.raw`\b(?:${PARTNER_WORDS}|I|we${name})(?:'ve|'d|'re|'m)?${CONSIDER_BETWEEN}\s+considered\b|\bconsidered\s+by\s+(?:the\s+)?(?:${PARTNER_WORDS}|me|us${name})\b`, 'i'),
   };
 }
 /** The forbidden patterns (spec §6.4 rule 7; rulebook §2 and §4 (6)) that need no subject. Tested per sentence. */
 export const FORBIDDEN_PATTERNS = Object.freeze({
   guarantee: /\bguarantee/i,
   will_do: /\bwill do\b/i,
-  // Spec §6.4 rule 7 names the bare word; "widely considered the leader" fails too (founder question FQ-3).
-  considered: /\bconsidered\b/i,
   confidence_number: /\d+(?:\.\d+)?\s*(?:%|percent|per\s*cent|pct)[^.!?]{0,40}\bconfiden|\bconfiden\w*[^.!?]{0,40}\d+(?:\.\d+)?\s*(?:%|percent|per\s*cent|pct)/i,
   price_target: /\bprice\s+targets?\b|\btarget\s+price\b/i,
   price_forecast: /\b(?:shares?|stock|price)\b[^.!?]{0,40}\b(?:could|will|may|might|should|to)\s+(?:climb|rise|fall|drop|reach|hit|trade|head|go)\w*\s+(?:to|toward|towards|above|below|past|near)\s+\$\s?\d/i,
@@ -206,6 +211,7 @@ export function forbiddenIn(text, { partnerName = null } = {}) {
   for (const s of sentencesOf(normalizeText(text))) {
     for (const [name, re] of Object.entries(FORBIDDEN_PATTERNS)) if (re.test(s)) hits.add(name);
     if (subj.willDo.test(s)) hits.add('will_do');
+    if (subj.considered.test(s)) hits.add('considered');
     if (IMPERATIVE.test(s)) hits.add('buy_sell_advice');
     if ((LEARNING_STRONG.test(s) && subj.us.test(s)) || (LEARNING_SOFT.test(s) && subj.agent.test(s))) hits.add('learning_claim');
   }
@@ -297,11 +303,14 @@ export function retrievalLabelOf({ host, title }, { undated = false } = {}) {
  * is a real instant no later than the read; else the item's publishedDate; else
  * the read time itself (and the label says " · undated"). `asOf` is the
  * publishedDate when strictly before the write, else null — never the write time.
+ * A publishedDate later than the read is no date at all (spec §16 FQ-2): it is
+ * treated as absent for both `at` and `asOf`.
  */
 export function retrievalDatesOf({ modelAt, publishedDate, readAt, writeAt }) {
   const readMs = Date.parse(readAt);
   const model = modelDayOf(modelAt);
-  const published = instantOf(publishedDate);
+  const given = instantOf(publishedDate);
+  const published = given && Date.parse(given) <= readMs ? given : null;
   const asOf = published && Date.parse(published) < Date.parse(writeAt) ? published : null;
   if (model && Date.parse(model) <= readMs) return { at: model, asOf, undated: false };
   if (published) return { at: published, asOf, undated: false };
@@ -310,14 +319,14 @@ export function retrievalDatesOf({ modelAt, publishedDate, readAt, writeAt }) {
 
 // ── the frame ───────────────────────────────────────────────────────────────
 
-/** The framing turn: three bounded texts, no forbidden pattern, no stray ticker. */
-export function validateFrame(output, { universe = gameUniverse } = {}) {
+/** The framing turn: three bounded texts, no forbidden pattern (the partner's own name counts as a subject), no stray ticker. */
+export function validateFrame(output, { universe = gameUniverse, partnerName = null } = {}) {
   const q = cut(clean(output?.question), FRAME_QUESTION_MAX);
   const check = cut(clean(output?.check), FRAME_CHECK_MAX);
   const notEstablished = cut(clean(output?.notEstablished), FRAME_CHECK_MAX);
   if (!q || !check || !notEstablished) return { ok: false, rule: 'frame_incomplete' };
   for (const t of [q, check, notEstablished]) {
-    const f = forbiddenIn(t);
+    const f = forbiddenIn(t, { partnerName });
     if (f.length) return { ok: false, rule: 'forbidden', detail: f[0] };
     const s = strayTickersOf(t, universe);
     if (s.length) return { ok: false, rule: 'stray_ticker', detail: s[0] };
@@ -475,14 +484,16 @@ export function validateStepTurn(output, ctx) {
       return fail('invalid_support', tempId);
     }
     // rule 5: a correction names a current finding, and never forks a chain. It may not retire the player's own
-    // material or the story — rule 3 and rulebook §4 (1): they are the player's (review B5). Rule 5 lets an inference
-    // supersede a verified fact (the old fact stays readable as superseded; founder question FQ-4).
+    // material or the story — rule 3 and rulebook §4 (1): they are the player's (review B5). A Source-backed finding is
+    // superseded only by another Source-backed finding or an unavailable one; an inference never supersedes it — an
+    // uncited fact the server reads as an inference included (spec §16 FQ-4).
     let supersedes = null;
     if (rf.supersedes !== null && rf.supersedes !== undefined) {
       const s = typeof rf.supersedes === 'string' ? rf.supersedes.trim() : '';
       const target = currentById.get(s);
       if (!target) return fail('invalid_supersedes', `${tempId}:${s}`);
       if (!MODEL_FINDING_KINDS.includes(target.kind) || PROTECTED_REASONS.includes(target.statusReason)) return fail('invalid_supersedes', `${tempId}:protected`);
+      if (target.status === 'verified' && status !== 'verified' && status !== 'unavailable') return fail('invalid_supersedes', `${tempId}:weaker`);
       if (supersededHere.has(s)) return fail('forked_chain', s);
       supersededHere.add(s);
       supersedes = s;
@@ -524,7 +535,7 @@ export function validateStepTurn(output, ctx) {
     if (!claimText) continue;
     const cf = textFail(claimText, `claim:${symbol}`);
     if (cf) return cf;
-    // A claim states no number its company's verified facts do not hold (the evidence discipline; downgrade, not ✗).
+    // A claim states no number its company's verified facts do not hold (spec §16 FQ-5; a downgrade, not ✗).
     if (strayNumberOf(claimText, [...afterById.values()].filter((f) => f.symbol === symbol && f.status === 'verified')) !== undefined) {
       notes.push(`claim_unsupported_number:${symbol}`);
       continue;
@@ -571,8 +582,10 @@ export function validateStepTurn(output, ctx) {
   const stored = Array.isArray(record?.findings) ? record.findings.length : 0;
   if (stored + built.length > FINDINGS_MAX) return fail('findings_full', stored + built.length);
 
-  // The summary (rule 6): 1–25 current findings; every number it states is in one of them (any status — rule 6's letter;
-  // verified-only is founder question FQ-5), a mention of a cited fact's own date excused (review B2).
+  // The summary (rule 6): 1–25 current findings; every number it states is in one of them that is Source-backed
+  // (spec §16 FQ-5: an inference, the player's words or a drop claim never backs a number), a mention of such a fact's
+  // own date excused (review B2). A summary whose number no verified cited finding holds is WITHHELD, not a failed
+  // step: the answer keeps its last revision and the step's findings still land. Its other faults still fail the turn.
   let summary = null;
   if (output.summary && typeof output.summary === 'object') {
     const text = clean(output.summary.text);
@@ -589,12 +602,10 @@ export function validateStepTurn(output, ctx) {
       if (!basedOn.includes(id)) basedOn.push(id);
     }
     if (basedOn.length === 0 || basedOn.length > BASED_ON_MAX) return fail('invalid_based_on', basedOn.length);
-    const held = basedOn.map((id) => afterById.get(id));
-    for (const sentence of sentencesOf(text)) {
-      const missing = strayNumberOf(sentence, held);
-      if (missing !== undefined) return fail('unsupported_number', missing);
-    }
-    summary = { text, basedOn };
+    const held = basedOn.map((id) => afterById.get(id)).filter((f) => f.status === 'verified');
+    const missing = sentencesOf(text).map((sentence) => strayNumberOf(sentence, held)).find((n) => n !== undefined);
+    if (missing !== undefined) notes.push(`summary_withheld:unsupported_number:${missing}`);
+    else summary = { text, basedOn };
   }
 
   // The lines: refs to findings that will be current; anything else is dropped.

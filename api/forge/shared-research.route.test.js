@@ -58,6 +58,7 @@ vi.mock('../_utils/sharedResearch/retrieval.js', async (importOriginal) => {
 
 const { default: handler } = await import('./shared-research.js');
 const { SHARED_RESEARCH_LIST_MARKER } = await import('../_utils/hypothesisRecords/model.js');
+const { resetUidRateLimits } = await import('../_utils/sharedResearch/gate.js');
 
 const UID = 'u1';
 const AGENT = { ownerId: UID, name: 'Rook', archetype: 'contrarian', loadouts: { baggerbomb: { archetype: 'momentum_chaser', book: null } } };
@@ -82,8 +83,12 @@ const seed = () => makeSrFirestore({
 });
 
 const res = () => { const r = { statusCode: null, body: null, headers: {} }; r.status = (c) => { r.statusCode = c; return r; }; r.json = (b) => { r.body = b; return r; }; r.setHeader = (k, v) => { r.headers[k] = v; return r; }; return r; };
-const post = async (body) => { const r = res(); await handler({ method: 'POST', headers: {}, query: {}, body }, r); return r; };
-const get = async (query) => { const r = res(); await handler({ method: 'GET', headers: {}, query, body: undefined }, r); return r; };
+const rawPost = async (body) => { const r = res(); await handler({ method: 'POST', headers: {}, query: {}, body }, r); return r; };
+const rawGet = async (query) => { const r = res(); await handler({ method: 'GET', headers: {}, query, body: undefined }, r); return r; };
+// The action rows send many requests as one player: each starts from a fresh per-uid window. The §16 FQ-8 rows below
+// use rawPost / rawGet, which keep the windows.
+const post = async (body) => { resetUidRateLimits(); return rawPost(body); };
+const get = async (query) => { resetUidRateLimits(); return rawGet(query); };
 const turnOk = (output) => ({ ok: true, output, usage: { input: 9000, output: 700 }, model: 'claude-sonnet-5-5', attempts: 1, elapsedMs: 900, costUsd: 0.025, stopReason: 'end_turn' });
 const uuid = (n) => `9a8b7c6d-5e4f-4a3b-8c2d-${String(n).padStart(12, '0')}`;
 const sessionDoc = (id) => state.db && seedEnv.doc(`sharedResearchSessions/${id}`);
@@ -391,7 +396,21 @@ describe('adopt (spec §6.6, Correction C at the route)', () => {
     const etn = preview.companies.find((c) => c.symbol === 'ETN');
     const r = await post({ action: 'adopt', sessionId, statement: etn.fragment, horizonEnum: 'positional', symbols: ['ETN'], previewRev: preview.previewRev });
     expect([r.statusCode, r.body.error]).toEqual([409, 'preview_stale']);
-    expect(r.body.adoptPreview.previewRev.findingsCount).toBeGreaterThan(preview.previewRev.findingsCount);
+    expect(r.body.adoptPreview.previewRev).toMatch(/^pr1\.[0-9a-f]{32}$/);
+    expect(r.body.adoptPreview.previewRev).not.toBe(preview.previewRev);
+  });
+  it('spec §16 FQ-7: the preview revision is an opaque token the client echoes; the old object shape is an invalid request', async () => {
+    const { sessionId, preview } = await ready();
+    expect(preview.previewRev).toMatch(/^pr1\.[0-9a-f]{32}$/);
+    const etn = preview.companies.find((c) => c.symbol === 'ETN');
+    const base = { action: 'adopt', sessionId, statement: etn.fragment, horizonEnum: 'positional', symbols: ['ETN'] };
+    for (const previewRev of [{ summaryRev: 0, findingsCount: 9 }, undefined, 'pr1.not-a-token']) {
+      const r = await post({ ...base, previewRev });
+      expect([r.statusCode, r.body.error]).toEqual([400, 'invalid_request']);
+    }
+    expect([...seedEnv.store.keys()].some((k) => k.startsWith('watchlists/'))).toBe(false);
+    const ok = await post({ ...base, previewRev: preview.previewRev });
+    expect(ok.statusCode, JSON.stringify(ok.body)).toBe(200);
   });
   it('the saved v1 cites the carried set in order; planted client fields (refs, kept findings, origin, marker, attribution) change nothing', async () => {
     const { sessionId, preview } = await ready();
@@ -427,8 +446,63 @@ describe('GET', () => {
     const l = await get({ list: 'open' });
     expect(l.body.open.map((o) => o.sessionId)).toEqual([session.sessionId]);
     const g = await get({ sessionId: session.sessionId });
-    expect(Object.keys(g.body).sort()).toEqual(['adoptPreview', 'companies', 'quota', 'record', 'session', 'storedRows']);
+    expect(Object.keys(g.body).sort()).toEqual(['adoptPreview', 'companies', 'previous', 'quota', 'record', 'session', 'storedRows']);
+    expect(g.body.previous).toBeNull();
     expect(g.body.record).not.toHaveProperty('symbolKeys');
     expect((await get({ sessionId: 'bad id!' })).body.error).toBe('invalid_request');
+  });
+});
+
+describe('spec §16 FQ-1 — a new investigation of the same story once the earlier one has ended', () => {
+  it('while the first is open: `existing`; once concluded: a new one opens, and both the open answer and the GET carry `previous`', async () => {
+    const first = await openStory({ requestId: 'req-1' });
+    const again = await openStory({ requestId: 'req-2' });
+    expect(again).toMatchObject({ existing: true, session: { sessionId: first.session.sessionId }, previous: null });
+    expect((await post({ action: 'close', sessionId: first.session.sessionId, reason: 'concluded' })).statusCode).toBe(200);
+    const second = await openStory({ requestId: 'req-3' });
+    expect(second.existing).toBeUndefined();
+    expect(second.session.sessionId).not.toBe(first.session.sessionId);
+    expect(second.previous).toMatchObject({ sessionId: first.session.sessionId, terminalReason: 'concluded' });
+    expect(typeof second.previous.endedAt).toBe('string');
+    const g = await get({ sessionId: second.session.sessionId });
+    expect(g.body.previous).toEqual(second.previous);
+    // the earlier one's own GET has no earlier one
+    expect((await get({ sessionId: first.session.sessionId })).body.previous).toBeNull();
+  });
+});
+
+describe('spec §16 FQ-5 — a summary whose number no Source-backed finding holds is withheld; the paid step still lands', () => {
+  it('the findings land, the answer keeps its last revision, `changed.summaryWithheld` says so, and the shadow record notes it', async () => {
+    const { session } = await openStory();
+    const sessionId = session.sessionId;
+    expect((await stepWith(sessionId, 1, 'next', twoCompanies())).statusCode).toBe(200);
+    const before = recordDoc(sessionId);
+    const withheld = turnOk({
+      reply: 'Eaton probably earns about 40% of its orders from data centers.',
+      findings: [{ tempId: 'i', kind: 'inference', fact: 'Data centers are likely about 40% of Eaton orders.', symbolCandidate: null, companyName: null, support: { kind: 'inference', index: null, from: [], reason: null }, at: null, supersedes: null }],
+      summary: { text: 'Eaton earns about 40% of its orders from data centers.', basedOn: ['i'] },
+      lines: { support: null, complication: null, missing: null }, nextAction: { label: 'Find a filing', purpose: 'Primary source.' }, companies: [],
+    });
+    const r = await stepWith(sessionId, 2, 'next', withheld);
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.changed).toEqual({ summary: false, findings: 2, summaryWithheld: true });
+    const after = recordDoc(sessionId);
+    expect(after.findings.length).toBe(before.findings.length + 2);
+    expect(after.summary).toEqual(before.summary);
+    expect(after.summaryRevisions).toEqual(before.summaryRevisions);
+    expect(state.logs.at(-1)).toMatchObject({ outcome: 'completion', validationNotes: expect.arrayContaining(['summary_withheld:unsupported_number:40']) });
+  });
+});
+
+describe('spec §16 FQ-8 — one player\'s requests are limited after auth, per method', () => {
+  it('the 11th POST in a minute answers 429 rate_limited; that player\'s GETs are still served', async () => {
+    resetUidRateLimits();
+    for (let i = 0; i < 10; i++) expect((await rawPost({ action: 'close', sessionId: 'bad id!' })).statusCode).toBe(400);
+    const limited = await rawPost({ action: 'close', sessionId: 'bad id!' });
+    expect([limited.statusCode, limited.body.error]).toEqual([429, 'rate_limited']);
+    expect(limited.headers['Retry-After']).toBeDefined();
+    expect((await rawGet({ list: 'open' })).statusCode).toBe(200);
+    state.user = { uid: 'u2' };
+    expect((await rawPost({ action: 'close', sessionId: 'bad id!' })).statusCode).toBe(400);
   });
 });

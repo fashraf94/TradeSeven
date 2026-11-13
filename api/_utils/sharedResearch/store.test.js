@@ -14,9 +14,9 @@ import { makeSrFirestore } from './__fixtures__/srFirestore.js';
 import { makeInMemoryDb } from '../__fixtures__/inMemoryFirestore.js';
 import {
   beginFraming, recordFrame, noteFrameFailure, openFromItem, openFromFraming, beginStep, recordStep, failStep, closeInvestigation, adoptIdea,
-  normalizeAdoption, rankedAgentOfDocs, attributionOf, globalStepCeiling, GLOBAL_STEPS_ENV, SHARED_RESEARCH_ADAPTER, listOpen,
+  normalizeAdoption, rankedAgentOfDocs, attributionOf, globalStepCeiling, GLOBAL_STEPS_ENV, SHARED_RESEARCH_ADAPTER, listOpen, readPrevious,
 } from './store.js';
-import { exchangeOf, openSessionOf, framingSessionOf, etDateOf } from './session.js';
+import { exchangeOf, openSessionOf, framingSessionOf, etDateOf, latestLinesOf } from './session.js';
 import { companiesOf } from './companies.js';
 import { carriedFor, previewRevOf, adoptPreviewOf } from './adoptPreview.js';
 import { buildFinding, ResearchRecordError } from '../researchRecords/model.js';
@@ -48,9 +48,11 @@ beforeEach(() => {
 afterEach(() => { delete process.env[GLOBAL_STEPS_ENV]; });
 
 describe('open — item / drop (spec §6.3)', () => {
-  const open = (requestId = 'req-1', itemRef = ITEM.itemRef) => openFromItem(env.db, {
-    uid: OWNER, requestId, sessionId: `s-${requestId}`, entry: { ...ITEM, itemRef }, exchanges: [], findings: opening(), nowIso: NOW,
+  const open = (requestId = 'req-1', itemRef = ITEM.itemRef, nowIso = NOW) => openFromItem(env.db, {
+    uid: OWNER, requestId, sessionId: `s-${requestId}`, entry: { ...ITEM, itemRef }, exchanges: [], findings: opening(), nowIso,
   });
+  const closeAs = (sessionId, reason, at) => closeInvestigation(env.db, { uid: OWNER, sessionId, reason, closeExchange: exchangeOf({ who: 'player', kind: 'close', text: 'Closed.', at }), nowIso: at });
+  const at = (h) => `2026-11-12T${String(h).padStart(2, '0')}:00:00.000Z`;
 
   it('one transaction: the host open with its stamp, the record minted with the question and the opening, the quota +1', async () => {
     const out = await open();
@@ -80,12 +82,46 @@ describe('open — item / drop (spec §6.3)', () => {
     expect(writesCount()).toBe(before);
   });
 
-  it('as built (spec §6.3; founder question FQ-1 in the report): a COMPLETED investigation of the item answers `existing`; an ABANDONED one allows a new one', async () => {
-    await open('req-1');
-    env.store.set('sharedResearchSessions/s-req-1', { ...env.doc('sharedResearchSessions/s-req-1'), status: 'completed' });
-    expect(await open('req-2')).toMatchObject({ existing: true });
-    env.store.set('sharedResearchSessions/s-req-1', { ...env.doc('sharedResearchSessions/s-req-1'), status: 'abandoned' });
-    expect(await open('req-3')).toMatchObject({ existing: false, replay: false, session: { sessionId: 's-req-3' } });
+  it('spec §16 FQ-1: only an OPEN investigation answers `existing`; once it ended, a new one opens and carries `previous`', async () => {
+    const first = await open('req-1', ITEM.itemRef, at(10));
+    expect(first.previous).toBeNull();
+    await closeAs('s-req-1', 'concluded', at(11));
+    const second = await open('req-2', ITEM.itemRef, at(12));
+    expect(second).toMatchObject({ existing: false, replay: false, session: { sessionId: 's-req-2' } });
+    expect(second.previous).toEqual({ sessionId: 's-req-1', endedAt: at(11), terminalReason: 'concluded' });
+    // while the second is open it is the `existing` one; its own previous is the first
+    expect(await open('req-3', ITEM.itemRef, at(13))).toMatchObject({ existing: true, session: { sessionId: 's-req-2' }, previous: { sessionId: 's-req-1' } });
+    // abandoned ends it too; the newest ended one is the previous
+    await closeAs('s-req-2', 'abandoned', at(14));
+    env.store.set(`sharedResearchQuota/${OWNER}`, { etDate: TODAY, investigationsOpened: 0, framingsRun: 0 });
+    const fourth = await open('req-4', ITEM.itemRef, at(15));
+    expect(fourth).toMatchObject({ existing: false, session: { sessionId: 's-req-4' } });
+    expect(fourth.previous).toEqual({ sessionId: 's-req-2', endedAt: at(14), terminalReason: 'user_close' });
+    // a replay answers its own session; `previous` is never itself
+    expect(await open('req-4', ITEM.itemRef, at(16))).toMatchObject({ replay: true, session: { sessionId: 's-req-4' }, previous: { sessionId: 's-req-2' } });
+  });
+
+  it('spec §16 FQ-1: an investigation saved as an idea has ended too (terminalReason saved_to_list)', async () => {
+    await open('req-1', ITEM.itemRef, at(10));
+    const rw = env.doc('researchWork/sr_s-req-1');
+    env.store.set('researchWork/sr_s-req-1', { ...rw, state: 'completed', terminalReason: 'saved_to_list', endedAt: at(11), watchlistId: 'w1' });
+    env.store.set('sharedResearchSessions/s-req-1', { ...env.doc('sharedResearchSessions/s-req-1'), status: 'completed', updatedAt: at(11) });
+    const out = await open('req-2', ITEM.itemRef, at(12));
+    expect(out).toMatchObject({ existing: false, session: { sessionId: 's-req-2' }, previous: { sessionId: 's-req-1', endedAt: at(11), terminalReason: 'saved_to_list' } });
+  });
+
+  it('spec §16 FQ-1, the GET: readPrevious is the newest ended one created before this one — never itself, never a later one; none for an observation', async () => {
+    await open('req-1', ITEM.itemRef, at(10));
+    await closeAs('s-req-1', 'concluded', at(11));
+    await open('req-2', ITEM.itemRef, at(12));
+    await closeAs('s-req-2', 'abandoned', at(13));
+    await open('req-3', ITEM.itemRef, at(14));
+    const prev = (sid) => readPrevious(env.db, { uid: OWNER, session: env.doc(`sharedResearchSessions/${sid}`) });
+    expect(await prev('s-req-3')).toEqual({ sessionId: 's-req-2', endedAt: at(13), terminalReason: 'user_close' });
+    expect(await prev('s-req-2')).toEqual({ sessionId: 's-req-1', endedAt: at(11), terminalReason: 'concluded' });
+    expect(await prev('s-req-1')).toBeNull();
+    env.store.set('sharedResearchSessions/fs1', framingSessionOf({ sessionId: 'fs1', userId: OWNER, requestId: 'f', observation: 'o', playerExchange: exchangeOf({ who: 'player', kind: 'observation', text: 'o', at: NOW }), nowIso: NOW }));
+    expect(await prev('fs1')).toBeNull();
   });
 
   it('daily_limit at 3: the fourth open is refused and writes nothing', async () => {
@@ -272,11 +308,13 @@ describe('close (spec §4.5)', () => {
 
 describe('adopt (spec §6.6)', () => {
   const companiesFor = (rec) => companiesOf(rec, { names: SP_NAMES });
+  /** The token the GET's preview gave for `rec` with the session's stored lines (spec §16 FQ-7). */
+  const revOf = (rec, lines = latestLinesOf(env.doc(`sharedResearchSessions/${SESSION_ID}`))) => previewRevOf(rec, { companies: companiesFor(rec), lines });
   const adopt = (over = {}) => {
     const record = env.doc(`researchWork/${RECORD_ID}`);
     const draft = adoptPreviewOf(record, { companies: companiesFor(record), lines: SP_LINES }).companies.find((c) => c.symbol === 'SHOP').fragment;
     return adoptIdea(env.db, {
-      uid: OWNER, sessionId: SESSION_ID, previewRev: previewRevOf(record), companiesFor, adapter: SHARED_RESEARCH_ADAPTER, mintId: () => '7a6b5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d', exchangeOf, nowIso: NOW,
+      uid: OWNER, sessionId: SESSION_ID, previewRev: revOf(record), companiesFor, adapter: SHARED_RESEARCH_ADAPTER, mintId: () => '7a6b5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d', exchangeOf, nowIso: NOW,
       input: normalizeAdoption({ statement: draft, horizonEnum: 'positional', symbols: ['SHOP'] }), ...over,
     });
   };
@@ -310,25 +348,49 @@ describe('adopt (spec §6.6)', () => {
     const first = await adopt();
     const before = writesCount();
     const record = shopPayRecord();
-    const again = await adoptIdea(env.db, { uid: OWNER, sessionId: SESSION_ID, previewRev: previewRevOf(record), companiesFor, adapter: SHARED_RESEARCH_ADAPTER, mintId: () => 'x', exchangeOf, nowIso: NOW, input: normalizeAdoption({ statement: 'Shopify.', horizonEnum: 'swing', symbols: ['SHOP'] }) });
+    const again = await adoptIdea(env.db, { uid: OWNER, sessionId: SESSION_ID, previewRev: revOf(record, SP_LINES), companiesFor, adapter: SHARED_RESEARCH_ADAPTER, mintId: () => 'x', exchangeOf, nowIso: NOW, input: normalizeAdoption({ statement: 'Shopify.', horizonEnum: 'swing', symbols: ['SHOP'] }) });
     expect(again).toEqual({ watchlistId: first.watchlistId, version: 1, researchWorkId: RECORD_ID, idempotent: true });
     expect(writesCount()).toBe(before);
   });
 
-  it('preview_stale: a different summary rev or findings count is refused 409 with the new preview, nothing written', async () => {
+  it('preview_stale: a token for another state of the record is refused 409 with the new preview, nothing written', async () => {
     seedOpen({ record: shopPayRecord(), lines: SP_LINES });
     const before = writesCount();
-    const err = await adopt({ previewRev: { summaryRev: 0, findingsCount: 3 } }).catch((e) => e);
+    const p4 = shopPayRecord().findings.find((f) => f.findingId === fid('p4'));
+    const grown = { ...shopPayRecord(), findings: [...shopPayRecord().findings, { ...p4, findingId: fid('zz') }] };
+    const err = await adopt({ previewRev: revOf(grown, SP_LINES) }).catch((e) => e);
     expect([err.status, err.code]).toEqual([409, 'preview_stale']);
-    expect(err.extra.adoptPreview.previewRev).toEqual(previewRevOf(shopPayRecord()));
+    expect(err.extra.adoptPreview.previewRev).toBe(revOf(shopPayRecord(), SP_LINES));
     expect(writesCount()).toBe(before);
+    // the old object shape, and a made-up token, are never the preview
+    for (const echo of [{ summaryRev: 0, findingsCount: shopPayRecord().findings.length }, `pr1.${'0'.repeat(32)}`]) {
+      expect(await codeOf(adopt({ previewRev: echo }))).toBe('preview_stale');
+    }
   });
 
   it('preview_stale when ONLY the summary revision moved (the findings count unchanged)', async () => {
     seedOpen({ record: shopPayRecord(), lines: SP_LINES });
-    const rev = previewRevOf(shopPayRecord());
-    const err = await adopt({ previewRev: { summaryRev: rev.summaryRev + 1, findingsCount: rev.findingsCount } }).catch((e) => e);
+    const revised = { ...shopPayRecord(), summary: { text: 'Shopify earns from faster checkout.', basedOn: [fid('p1')], rev: 1 } };
+    const err = await adopt({ previewRev: revOf(revised, SP_LINES) }).catch((e) => e);
     expect([err.status, err.code]).toEqual([409, 'preview_stale']);
+  });
+
+  it('spec §16 FQ-7: preview_stale when ONLY the carried set moved — a step that added no finding moved a line', async () => {
+    seedOpen({ record: shopPayRecord(), lines: SP_LINES });
+    const token = revOf(shopPayRecord(), SP_LINES); // what the GET's preview gave
+    // a quiet step: no finding, no summary revision — only its lines (the complication now Apple's relationship)
+    const s = env.doc(`sharedResearchSessions/${SESSION_ID}`);
+    const moved = { ...SP_LINES, complication: fid('a1') };
+    env.store.set(`sharedResearchSessions/${SESSION_ID}`, { ...s, exchanges: [...s.exchanges, { exchangeId: 'y', who: 'partner', kind: 'step', text: 'Nothing new.', at: NOW, lines: moved }] });
+    expect(revOf(shopPayRecord())).not.toBe(token);
+    const before = writesCount();
+    const err = await adopt({ previewRev: token }).catch((e) => e);
+    expect([err.status, err.code]).toEqual([409, 'preview_stale']);
+    expect(err.extra.adoptPreview.previewRev).toBe(revOf(shopPayRecord(), moved));
+    expect(writesCount()).toBe(before);
+    // with the new token, Save goes through and carries Apple's relationship as the complication
+    const out = await adopt({ previewRev: err.extra.adoptPreview.previewRev });
+    expect(out).toMatchObject({ version: 1, idempotent: false });
   });
 
   it('the transaction re-checks the revision: a record that moves after the pre-check is refused preview_stale, nothing written', async () => {
@@ -349,7 +411,7 @@ describe('adopt (spec §6.6)', () => {
     r = withFindings(r, Array.from({ length: 28 }, (_, i) => [`e${String(i).padStart(2, '0')}`, { kind: 'earnings_fact', symbol: 'SHOP', fact: `Fact number ${i}.`, source: { recordKind: 'retrieval', recordId: `https://x.example/${i}`, label: 'x', url: `https://x.example/${i}` }, at: NOW, asOf: null, status: 'verified', statusReason: null }]), NOW);
     seedOpen({ record: r });
     const before = writesCount();
-    const err = await adoptIdea(env.db, { uid: OWNER, sessionId: SESSION_ID, previewRev: previewRevOf(r), companiesFor, adapter: SHARED_RESEARCH_ADAPTER, mintId: () => '7a6b5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d', exchangeOf, nowIso: NOW, input: normalizeAdoption({ statement: 'Shopify owns Shop Pay.', horizonEnum: 'longterm', symbols: ['SHOP'] }) }).catch((e) => e);
+    const err = await adoptIdea(env.db, { uid: OWNER, sessionId: SESSION_ID, previewRev: revOf(r), companiesFor, adapter: SHARED_RESEARCH_ADAPTER, mintId: () => '7a6b5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d', exchangeOf, nowIso: NOW, input: normalizeAdoption({ statement: 'Shopify owns Shop Pay.', horizonEnum: 'longterm', symbols: ['SHOP'] }) }).catch((e) => e);
     expect(err).toBeInstanceOf(HypothesisInputError);
     expect(err.code).toBe('too_many_evidence_refs');
     expect(writesCount()).toBe(before);

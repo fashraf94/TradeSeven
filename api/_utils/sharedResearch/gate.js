@@ -13,10 +13,13 @@
 // throws.
 //
 // THE GATE ORDER (hypothesisRecords/http.js, filmRoom/cardsGate.js): security
-// middleware (headers, CORS, preflight, the rate limiter — 10 POST / 30 GET a
-// minute per caller) → Cache-Control: no-store → the MODE (off → 404 before
-// auth) → auth (no verified token → 401) → the owner's admission (off for this
-// caller → the same 404, whatever the method) → the method.
+// middleware (headers, CORS, preflight, the per-IP rate limiter — 10 POST / 30
+// GET a minute, the pre-auth guard) → Cache-Control: no-store → the MODE (off →
+// 404 before auth) → auth (no verified token → 401) → the owner's admission (off
+// for this caller → the same 404, whatever the method) → the method → the
+// PER-UID, PER-METHOD limiter (spec §16 FQ-8: 10 POST and 30 GET a minute for
+// one player, each method its own window → 429 `rate_limited`). Like the IP
+// limiter it is in memory, per function instance.
 
 import { SHARED_RESEARCH_MODE, SHARED_RESEARCH_MODES } from '../../../src/config/sharedResearchFlags.js';
 import { isCockpitOwnerAllowlisted } from '../callRecords/mode.js';
@@ -32,6 +35,35 @@ export const RATE_LIMITS = Object.freeze({
   GET: Object.freeze({ limit: 30, windowMs: 60_000 }),
 });
 export const DISABLED_BODY = Object.freeze({ error: 'disabled' });
+
+// ── the per-uid, per-method limiter (spec §16 FQ-8) ──────────────────────────
+
+/** One fixed window per (uid, method): `{ start, count }`. In memory, per instance — the IP limiter's model. */
+const uidWindows = new Map();
+/** Past this many windows, the expired ones are dropped on the next call (bounded memory). */
+export const UID_WINDOWS_SWEEP_AT = 5_000;
+const methodOf = (method) => (method === 'GET' ? 'GET' : 'POST');
+
+/**
+ * Count one request of `uid` with `method`; `{ limited: true, retryAfterS }` once
+ * the method's limit for the minute is passed. GETs never spend the POST
+ * allowance, and one player never spends another's.
+ */
+export function uidRateLimitHit(uid, method, nowMs = Date.now()) {
+  const m = methodOf(method);
+  const { limit, windowMs } = RATE_LIMITS[m];
+  const key = `${uid}\u0000${m}`;
+  let w = uidWindows.get(key);
+  if (!w || nowMs - w.start >= windowMs) w = { start: nowMs, count: 0 };
+  w.count += 1;
+  uidWindows.set(key, w);
+  if (uidWindows.size > UID_WINDOWS_SWEEP_AT) {
+    for (const [k, v] of uidWindows) if (nowMs - v.start >= RATE_LIMITS[k.endsWith('GET') ? 'GET' : 'POST'].windowMs) uidWindows.delete(k);
+  }
+  return w.count > limit ? { limited: true, retryAfterS: Math.max(1, Math.ceil((w.start + windowMs - nowMs) / 1000)) } : { limited: false };
+}
+/** Tests only: forget every window. */
+export const resetUidRateLimits = () => uidWindows.clear();
 
 /** The mode as the server reads it NOW: one of the walked states, else 'off'. Never throws. */
 export function sharedResearchMode() {
@@ -75,6 +107,12 @@ export async function gateSharedResearchRoute(req, res, { methods = ['GET', 'POS
   }
   if (!methods.includes(req.method)) {
     res.status(405).json({ error: 'Method not allowed' });
+    return null;
+  }
+  const hit = uidRateLimitHit(user.uid, req.method);
+  if (hit.limited) {
+    res.setHeader('Retry-After', String(hit.retryAfterS));
+    res.status(429).json({ error: 'rate_limited', message: copyFor('rate_limited') });
     return null;
   }
   return { user };

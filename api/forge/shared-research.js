@@ -32,11 +32,11 @@ import {
 import {
   readRankedAgent, partnerNameOf, beginFraming, recordFrame, noteFrameFailure, readOwnedSession, readInvestigation,
   readStory, readDrop, readStoredFacts, readRankingRows, readNames, openFromItem, openFromFraming, beginStep, recordStep,
-  failStep, closeInvestigation, normalizeAdoption, adoptIdea, readQuota, listOpen, AGENTS_COLLECTION, SHARED_RESEARCH_ADAPTER,
+  failStep, closeInvestigation, normalizeAdoption, adoptIdea, readQuota, listOpen, readPrevious, AGENTS_COLLECTION, SHARED_RESEARCH_ADAPTER,
 } from '../_utils/sharedResearch/store.js';
 import { namesInScopeOf, openingFindingsOf, dropTextOf, storedRowsOf } from '../_utils/sharedResearch/opening.js';
 import { companiesOf, projectionOf, resolveSymbol, splitRole } from '../_utils/sharedResearch/companies.js';
-import { adoptPreviewOf } from '../_utils/sharedResearch/adoptPreview.js';
+import { adoptPreviewOf, isPreviewRev } from '../_utils/sharedResearch/adoptPreview.js';
 import { buildFrameSystemPrompt, renderFrameUser, buildStepSystemPrompt, renderStepUser, targetBlockOf } from '../_utils/sharedResearch/stepPrompt.js';
 import { STEP_SCHEMA, FRAME_SCHEMA, validateFrame, validateStepTurn } from '../_utils/sharedResearch/stepSchema.js';
 import { fitPrompt } from '../_utils/sharedResearch/promptBudget.js';
@@ -87,7 +87,7 @@ async function settle(pending, deadlineAt = null) {
   if (timer) clearTimeout(timer);
 }
 /** The shadow record for one model call (§6.9's fields, inside the record logConversation already takes). */
-function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval = null, outcome, failureReason = null }) {
+function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval = null, outcome, failureReason = null, notes = [] }) {
   return {
     userId: uid, agentId: session?.attribution?.agentId ?? null, battleId: null, archetype: null,
     gameMode: 'shared_research', sessionId: session?.sessionId ?? null, researchWorkId: session?.researchWorkId ?? null,
@@ -95,6 +95,7 @@ function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval 
     tokenUsage: turn?.usage ?? null, costUsd: turn?.costUsd ?? null, elapsedMs: turn?.elapsedMs ?? null,
     retrieval: retrieval ?? { calls: 0, costDollars: 0, elapsedMs: 0 },
     methodId: METHOD.id, methodVersion: METHOD.version, outcome, failureReason,
+    validationNotes: Array.isArray(notes) ? notes.slice(0, 40) : [], // e.g. a withheld summary (spec §16 FQ-5; §11.4 measures)
   };
 }
 
@@ -141,6 +142,7 @@ async function handleGet(req, res, { db, uid }) {
     companies,
     adoptPreview: record ? adoptPreviewOf(record, { companies, lines }) : null,
     storedRows: await storedRowsFor(db, session),
+    previous: await readPrevious(db, { uid, session }), // spec §16 FQ-1: "Open the earlier one"
     quota: quotaViewOf(day),
   });
 }
@@ -176,7 +178,7 @@ async function handleFrame(body, res, { db, uid }) {
   } finally {
     clearTimeout(timer);
   }
-  const checked = turn.ok ? validateFrame(turn.output) : null;
+  const checked = turn.ok ? validateFrame(turn.output, { partnerName: partnerNameOf(agent) }) : null;
   const doneIso = new Date().toISOString();
   if (!turn.ok || !checked.ok) {
     const reason = turn.ok ? `invalid_${checked.rule}` : turn.reason;
@@ -222,6 +224,7 @@ async function openAnswer(res, db, uid, opened, nowIso) {
     opening: { storedRows: await storedRowsFor(db, opened.session) },
     quota: quotaViewOf(opened.day),
     ...(opened.existing ? { existing: true } : {}),
+    previous: opened.previous ?? null, // spec §16 FQ-1: the newest ended investigation of this item, or null
   });
 }
 
@@ -256,7 +259,9 @@ async function handleOpen(body, res, { db, uid }) {
   const names = namesInScopeOf({ entryKind: entry.kind, story, drop });
   const stored = await readStoredFacts(db, names);
   const dropExchange = drop ? exchangeOf({ who: 'player', kind: 'observation', text: dropTextOf(drop), at: nowIso }) : null;
-  const findings = built(openingFindingsOf({ entryKind: entry.kind, story, drop, playerExchange: dropExchange, names, stored, nowIso }), nowIso);
+  // A drop's parsed claims run through the forbidden patterns, the partner's own name as a subject included (spec §16 FQ-6).
+  const partnerName = drop ? partnerNameOf(await readRankedAgent(db, uid)) : null;
+  const findings = built(openingFindingsOf({ entryKind: entry.kind, story, drop, playerExchange: dropExchange, names, stored, nowIso, partnerName }), nowIso);
   const opened = await openFromItem(db, {
     uid, requestId: body.requestId, sessionId: randomUUID(),
     entry: {
@@ -408,7 +413,7 @@ async function handleStep(body, res, { db, uid }) {
     if (cancellation || err?.researchRecord) return failed(409, code, { turn, retrievalTally, cancellation });
     return failed(500, 'persist_failed', { turn, retrievalTally });
   }
-  const pending = captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: 'completion' }));
+  const pending = captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: 'completion', notes: checked.notes }));
   const lines = latestLinesOf(saved.session);
   let companies;
   try {
@@ -421,7 +426,11 @@ async function handleStep(body, res, { db, uid }) {
     session: sessionViewOf(saved.session),
     record: projectionOf(saved.record, { lines, nowIso: persistIso }),
     companies,
-    changed: { summary: Boolean(checked.summary), findings: checked.findings.length },
+    changed: {
+      summary: Boolean(checked.summary), findings: checked.findings.length,
+      // spec §16 FQ-5: the step wrote an answer that stated a number no Source-backed finding holds — the answer kept its last revision
+      summaryWithheld: checked.notes.some((n) => n.startsWith('summary_withheld:')),
+    },
     quota: quotaViewOf(day),
   }, pending, settleBy);
 }
@@ -440,8 +449,8 @@ async function handleClose(body, res, { db, uid }) {
 
 async function handleAdopt(body, res, { db, uid }) {
   if (!isHostId(body.sessionId)) throw refuse(400, 'invalid_request');
-  const rev = body.previewRev;
-  if (!isPlainObject(rev) || !Number.isSafeInteger(rev.summaryRev) || !Number.isSafeInteger(rev.findingsCount)) throw refuse(400, 'invalid_request');
+  const rev = body.previewRev; // the preview's opaque token, echoed (spec §16 FQ-7)
+  if (!isPreviewRev(rev)) throw refuse(400, 'invalid_request');
   const input = normalizeAdoption({
     statement: body.statement, horizonEnum: body.horizonEnum, symbols: body.symbols, activation: body.activation ?? [], invalidation: body.invalidation ?? [],
   });
@@ -450,7 +459,7 @@ async function handleAdopt(body, res, { db, uid }) {
   const { record } = await readInvestigation(db, { uid, sessionId: body.sessionId });
   const names = record ? await readNames(db, companySymbolsOf(record)) : {};
   const out = await adoptIdea(db, {
-    uid, sessionId: body.sessionId, input, previewRev: { summaryRev: rev.summaryRev, findingsCount: rev.findingsCount },
+    uid, sessionId: body.sessionId, input, previewRev: rev,
     companiesFor: (rec) => companiesOf(rec, { names }), adapter: SHARED_RESEARCH_ADAPTER, mintId: randomUUID, exchangeOf, nowIso,
   });
   return res.status(200).json(out);

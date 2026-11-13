@@ -39,6 +39,7 @@ import {
 import {
   SESSIONS_COLLECTION, QUOTA_COLLECTION, GLOBAL_QUOTA_ID, etDateOf, framingSessionOf, openSessionOf, isOwnedSession,
   stepAdmissionOf, playerDayOf, globalDayOf, itemKeyOf, refuse, latestLinesOf, isFramingInFlight,
+  liveSessionOf, previousSessionOf, previousViewOf,
 } from './session.js';
 import { previewRevOf, sameRev, carriedFor, adoptPreviewOf, assertAssertionsSupported, AssertionError } from './adoptPreview.js';
 import { CLAIMS_READ_LIMIT } from './opening.js';
@@ -298,9 +299,12 @@ async function attributionIn(tx, db, uid, nowIso) {
  * Open an investigation from an item or a drop: one transaction — the quota +1,
  * the host created `open` with its attribution, the record minted with the
  * question and the opening's findings. Idempotent on requestId (a retry finds
- * the session it made and writes nothing); an open or completed investigation
- * of this owner on this item answers `existing`.
- * @returns {Promise<{ session, record, day, existing: boolean, replay: boolean }>}
+ * the session it made and writes nothing). Only an OPEN investigation of this
+ * owner on this item answers `existing`; once the earlier one has ended
+ * (concluded, saved or abandoned) a new one opens (spec §16 FQ-1). Every answer
+ * carries `previous` — the newest ended one before the answer's own session,
+ * `{ sessionId, endedAt, terminalReason }`, or null — read before any write.
+ * @returns {Promise<{ session, record, day, existing: boolean, replay: boolean, previous: object|null }>}
  */
 export async function openFromItem(db, { uid, requestId, sessionId, entry, exchanges, findings, nowIso }) {
   const etDate = etDateOf(nowIso);
@@ -311,12 +315,19 @@ export async function openFromItem(db, { uid, requestId, sessionId, entry, excha
     const quotaSnap = await tx.get(quotaRefOf(db, uid));
     const day = playerDayOf(dataOf(quotaSnap), etDate);
     const recordOf = async (s) => (s?.researchWorkId ? dataOf(await tx.get(researchWorkRefOf(db, s.researchWorkId))) : null);
+    const sessions = sameItem.docs.map((d) => d.data()).filter((s) => isOwnedSession(s, uid));
+    const previousFor = async (current) => {
+      const p = previousSessionOf(sessions, current);
+      if (!p) return null;
+      const r = await recordOf(p);
+      return previousViewOf(p, isOwnedRecord(r, uid) ? r : null);
+    };
     if (prior && prior.itemKey !== key) throw refuse(400, 'invalid_request'); // a requestId names one request (review A5)
-    if (prior) return { session: prior, record: await recordOf(prior), day, existing: false, replay: true };
-    const live = sameItem.docs.map((d) => d.data()).filter((s) => s.status === 'open' || s.status === 'completed')
-      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0];
-    if (live) return { session: live, record: await recordOf(live), day, existing: true, replay: false };
+    if (prior) return { session: prior, record: await recordOf(prior), day, existing: false, replay: true, previous: await previousFor(prior) };
+    const live = liveSessionOf(sessions);
+    if (live) return { session: live, record: await recordOf(live), day, existing: true, replay: false, previous: await previousFor(live) };
     if (day.investigationsOpened >= PER_DAY) throw refuse(429, 'daily_limit');
+    const previous = await previousFor({ sessionId, createdAt: nowIso });
     const attribution = await attributionIn(tx, db, uid, nowIso);
     const record = mintRecord({ sessionId, uid, question: entry.question, findings, nowIso });
     const session = openSessionOf({ sessionId, userId: uid, requestId, entry, exchanges, attribution, researchWorkId: record.researchWorkId, nowIso });
@@ -324,8 +335,22 @@ export async function openFromItem(db, { uid, requestId, sessionId, entry, excha
     tx.create(researchWorkRefOf(db, record.researchWorkId), record);
     const after = { ...day, investigationsOpened: day.investigationsOpened + 1 };
     tx.set(quotaRefOf(db, uid), { ...after, updatedAt: nowIso });
-    return { session, record, day: after, existing: false, replay: false };
+    return { session, record, day: after, existing: false, replay: false, previous };
   });
+}
+
+/**
+ * The GET's `previous` (spec §16 FQ-1): the newest ended investigation of the
+ * same owner and item created before this one — never this one — or null (an
+ * observation has no item). An equality-only query, sorted in memory: no index.
+ */
+export async function readPrevious(db, { uid, session }) {
+  if (!session?.itemKey) return null;
+  const snap = await db.collection(SESSIONS_COLLECTION).where('userId', '==', uid).where('itemKey', '==', session.itemKey).get();
+  const p = previousSessionOf(snap.docs.map((d) => d.data()).filter((s) => isOwnedSession(s, uid)), session);
+  if (!p) return null;
+  const record = p.researchWorkId ? dataOf(await researchWorkRefOf(db, p.researchWorkId).get()) : null;
+  return previousViewOf(p, isOwnedRecord(record, uid) ? record : null);
 }
 
 /**
@@ -563,7 +588,8 @@ const savedAs = (record) => (record?.state === 'completed' && record.terminalRea
  * invalid_adoption), never a skipped record: `safely()` is not used here.
  *
  * @param {object} p
- * @param {object} p.input       the normalized adoption (normalizeAdoption) + previewRev
+ * @param {object} p.input       the normalized adoption (normalizeAdoption)
+ * @param {string} p.previewRev  the preview's opaque token, echoed by the client (spec §16 FQ-7)
  * @param {(record) => object} p.companiesFor   companies for a record (companiesOf with names)
  * @param {object} p.adapter
  * @param {() => string} p.mintId
@@ -576,7 +602,7 @@ export async function adoptIdea(db, { uid, sessionId, input, previewRev, compani
   if (!record || record.state !== 'open') throw refuse(409, 'session_not_open');
   const lines = latestLinesOf(session);
   const companies = companiesFor(record);
-  if (!sameRev(previewRevOf(record), previewRev)) throw refuse(409, 'preview_stale', { adoptPreview: adoptPreviewOf(record, { companies, lines }) });
+  if (!sameRev(previewRevOf(record, { companies, lines }), previewRev)) throw refuse(409, 'preview_stale', { adoptPreview: adoptPreviewOf(record, { companies, lines }) });
   const supported = companies.supported;
   const selected = input.symbols.map((s) => supported.find((c) => c.symbol === s));
   const missing = input.symbols.find((s, i) => !selected[i]);
@@ -610,11 +636,12 @@ export async function adoptIdea(db, { uid, sessionId, input, previewRev, compani
     if (fresh.state !== 'open' || s.status !== 'open') throw refuse(409, 'session_not_open');
     if (listSnap.exists) throw refuse(409, 'preview_stale');
     const freshCompanies = companiesFor(fresh);
-    if (!sameRev(previewRevOf(fresh), previewRev)) {
-      throw refuse(409, 'preview_stale', { adoptPreview: adoptPreviewOf(fresh, { companies: freshCompanies, lines: latestLinesOf(s) }) });
+    const freshLines = latestLinesOf(s);
+    if (!sameRev(previewRevOf(fresh, { companies: freshCompanies, lines: freshLines }), previewRev)) {
+      throw refuse(409, 'preview_stale', { adoptPreview: adoptPreviewOf(fresh, { companies: freshCompanies, lines: freshLines }) });
     }
     // The kept findings: the server's carried set for the selected names, never the client's.
-    const keptFindingIds = adapter.evidence(fresh, carriedFor(fresh, { supported: freshCompanies.supported, lines: latestLinesOf(s), symbols: input.symbols }));
+    const keptFindingIds = adapter.evidence(fresh, carriedFor(fresh, { supported: freshCompanies.supported, lines: freshLines, symbols: input.symbols }));
     const attribution = s.attribution ?? null;
     const listDoc = {
       watchlistId, userId: uid, agentId: null, sourceSessionId: null, sourceDropId: null,

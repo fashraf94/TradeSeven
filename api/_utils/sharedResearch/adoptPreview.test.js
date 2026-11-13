@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  adoptPreviewOf, carriedFor, assertAssertionsSupported, AssertionError, previewRevOf, sameRev, coreNameOf, namesCompany, currentIdOf,
+  adoptPreviewOf, carriedFor, assertAssertionsSupported, AssertionError, previewRevOf, sameRev, isPreviewRev, coreNameOf, namesCompany, currentIdOf,
 } from './adoptPreview.js';
 import { companiesOf } from './companies.js';
 import { shopPayRecord, SP_LINES, SP_NAMES, fid } from './__fixtures__/records.js';
@@ -43,12 +43,27 @@ describe('Correction C — the carried set', () => {
     expect(carried).toEqual([fid('a1'), fid('p4'), fid('p5r')]);
   });
 
-  it('the preview revision is the summary rev and the findings count; a stale one does not match', () => {
-    const rev = previewRevOf(record);
-    expect(rev).toEqual({ summaryRev: 0, findingsCount: record.findings.length });
-    expect(sameRev(rev, { ...rev })).toBe(true);
-    expect(sameRev(rev, { summaryRev: 0, findingsCount: rev.findingsCount - 1 })).toBe(false);
-    expect(sameRev(rev, null)).toBe(false);
+  it('the preview revision (spec §16 FQ-7) is an opaque token over summary.rev, findings.length and each company\'s carried ids', () => {
+    const rev = previewRevOf(record, { companies, lines: SP_LINES });
+    expect(rev).toMatch(/^pr1\.[0-9a-f]{32}$/);
+    expect(isPreviewRev(rev)).toBe(true);
+    expect(previewRevOf(record, { companies, lines: { ...SP_LINES } })).toBe(rev);
+    expect(adoptPreviewOf(record, { companies, lines: SP_LINES }).previewRev).toBe(rev);
+    expect(sameRev(rev, rev)).toBe(true);
+    // the summary revision alone moved
+    expect(previewRevOf({ ...record, summary: { text: 'Shopify earns from faster checkout.', basedOn: [fid('p1')], rev: 1 } }, { companies, lines: SP_LINES })).not.toBe(rev);
+    // the findings count alone moved (a finding no company carries)
+    const p4 = record.findings.find((f) => f.findingId === fid('p4'));
+    expect(previewRevOf({ ...record, findings: [...record.findings, { ...p4, findingId: fid('zz') }] }, { companies, lines: SP_LINES })).not.toBe(rev);
+    // a line moving between two facts the union already holds: the union is unchanged, Shopify's own set is not
+    const linesA = { support: null, complication: fid('p1'), missing: fid('p5') };
+    const linesB = { support: null, complication: fid('a1'), missing: fid('p5') };
+    const all = companies.supported.map((c) => c.symbol);
+    expect(carriedFor(record, { supported: companies.supported, lines: linesA, symbols: all }))
+      .toEqual(carriedFor(record, { supported: companies.supported, lines: linesB, symbols: all }));
+    expect(previewRevOf(record, { companies, lines: linesA })).not.toBe(previewRevOf(record, { companies, lines: linesB }));
+    // an echoed object (the old shape), null, a made-up token or a recased one is never the same
+    for (const echo of [{ summaryRev: 0, findingsCount: record.findings.length }, null, `pr1.${'0'.repeat(32)}`, rev.toUpperCase()]) expect(sameRev(rev, echo)).toBe(false);
   });
 
   it('no preview without a supported company, nor on a closed record', () => {
@@ -72,6 +87,14 @@ describe('the assertion check (spec §6.6)', () => {
     const claimOnly = { ...record, findings: record.findings.map((f) => (f.findingId === fid('p3') ? { ...f, fact: "Shop Pay's volume grew strongly." } : f)) };
     expect(refusal(() => assertAssertionsSupported('Shopify: Shop Pay volume grew 62%.', { record: claimOnly, carried, selected: [shop], deselected: [] })))
       .toEqual({ code: 'unsupported_assertion', detail: '62' });
+  });
+  it('spec §16 FQ-5: a number only a carried inference (the complication line) states is refused; the verified 62% passes', () => {
+    const inferred = { ...record, findings: record.findings.map((f) => (f.findingId === fid('p4') ? { ...f, fact: 'A rival wallet may take 30% of those checkouts.' } : f)) };
+    const c = carriedFor(inferred, { supported: companies.supported, lines: SP_LINES, symbols: ['SHOP'] });
+    expect(c).toContain(fid('p4'));
+    const check = (statement) => refusal(() => assertAssertionsSupported(statement, { record: inferred, carried: c, selected: [shop], deselected: [] }));
+    expect(check('Shopify: Shop Pay volume grew 62%, and a rival wallet may take 30% of those checkouts.')).toEqual({ code: 'unsupported_assertion', detail: '30' });
+    expect(check('Shopify: Shop Pay volume grew 62% from a year earlier.')).toBeNull();
   });
   it('a deselected name still in the statement is refused names_not_supported', () => {
     expect(ok('Shopify and Apple both earn from faster checkout; Shop Pay volume grew 62%.')).toEqual({ code: 'names_not_supported', detail: { deselected: 'AAPL' } });

@@ -30,6 +30,7 @@ export const SR_SERVER_COPY = Object.freeze({
   names_not_supported: 'The idea must name exactly the companies you picked.',
   preview_stale: 'The investigation changed since you opened the preview. Check the new draft and save again.',
   no_valid_tickers: 'None of the picked companies can be saved to a list.',
+  rate_limited: 'Too many requests in the last minute. Wait a moment and try again.',
   attribution_unavailable: 'Your agent could not be found, so nothing was started. Try again.',
   step_failed: 'That step did not complete, and nothing was added. Try again.',
   frame_failed: 'That question could not be framed. Try again, or edit your words.',

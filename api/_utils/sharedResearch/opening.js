@@ -24,7 +24,7 @@
 
 import { FINDING_FACT_MAX_LEN, SOURCE_LABEL_MAX_LEN, isInstant } from '../researchRecords/model.js';
 import { gameUniverse, resolveSymbol } from './companies.js';
-import { instantOf, strayTickersOf, LABELS } from './stepSchema.js';
+import { instantOf, strayTickersOf, forbiddenIn, LABELS } from './stepSchema.js';
 import { METHOD_SOURCE } from './method.js';
 
 /** At most this many names in scope, and drop claims, are written at open (the record holds 100 findings). */
@@ -103,9 +103,10 @@ const writtenDate = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); ret
  * @param {string[]} p.names   the names in scope
  * @param {object} p.stored    { estimates: { computedAt, stocks } | null, claims: { [symbol]: { count, newest } } }
  * @param {string} p.nowIso    the open instant
+ * @param {string|null} [p.partnerName]  the partner's given name (a forbidden-pattern subject for the drop's claims)
  * @returns {object[]} raw finding inputs (buildFinding's shape, no id)
  */
-export function openingFindingsOf({ entryKind, story = null, drop = null, playerExchange = null, frame = null, names, stored, nowIso, universe = gameUniverse }) {
+export function openingFindingsOf({ entryKind, story = null, drop = null, playerExchange = null, frame = null, names, stored, nowIso, universe = gameUniverse, partnerName = null }) {
   const out = [];
   if (entryKind === 'item') {
     const published = instantOf(story.publishedAt);
@@ -134,9 +135,10 @@ export function openingFindingsOf({ entryKind, story = null, drop = null, player
       at, asOf: null, status: 'unverified', statusReason: 'player_drop',
     });
     // A parser claim that names a ticker the universe does not hold is not written (the STOP list: no such ticker
-    // anywhere — review B8). Its other wording is the drop's, quoted "From your drop" (scanning it is founder question FQ-6).
+    // anywhere — review B8), nor one that breaks a forbidden pattern (spec §16 FQ-6; the partner's own name counts as a
+    // subject). The drop's own text still stands above as "Your drop".
     const claims = (Array.isArray(drop?.parse?.dataPoints) ? drop.parse.dataPoints : []).map(clean).filter(Boolean)
-      .filter((c) => strayTickersOf(c, universe).length === 0).slice(0, DROP_CLAIMS_MAX);
+      .filter((c) => strayTickersOf(c, universe).length === 0 && forbiddenIn(c, { partnerName }).length === 0).slice(0, DROP_CLAIMS_MAX);
     for (const c of claims) {
       out.push({
         kind: 'inference', symbol: names.find((s) => new RegExp(`(^|[^A-Z0-9-])${s}([^A-Z0-9-]|$)`).test(c)) ?? null,
