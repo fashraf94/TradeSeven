@@ -84,6 +84,7 @@ import {
 } from './mandateModelCall.js';
 import { executeDecision, disposeSubmission } from './mandateExecution.js';
 import { evaluateGate } from './mandateGate.js';
+import { isSectorCapCorrected } from './mandateSectorCap.js';
 import { normalizeDecisionInput } from './mandateDecisionTool.js';
 import { markFor, classifyBookTick, SNAPSHOT_COLLECTION } from './mandateUniverseSnapshot.js';
 import { frictionForDecision } from './mandateFrictionModel.js';
@@ -360,6 +361,9 @@ async function processSucceededResult(db, {
       actionableHeld: actionable,
       quarantined,
       caFrozen,
+      // T0a (founder ruling, exit-only): an unstamped vintage refuses entries
+      // (vintage_uncorrected) at the gate; exits take the exit lane.
+      vintageUncorrected: !isSectorCapCorrected(vintage.gateConfig),
     });
 
     // I3 drift-guard basis: the mark the model reasoned over, from the SUBMIT

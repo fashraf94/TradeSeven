@@ -1,4 +1,5 @@
 # Spec 1 — The Mandate — Acceptance Report V1 (§9 Founder Bar)
+> Supersession note (12 Nov 2026): docs/20261112_MANDATE_SPEC1_SUPERSESSION_NOTE.md — the quarterly product is retired; the engine stays as the Practice Field's substrate. This document's text is kept as recorded.
 
 **Status:** ACCUMULATING. This report is the §9 acceptance checklist. It is filled in two waves: the **harness wave** (the machinery that produces every acceptance outcome, proven green now, in-repo, dev/emulator — Phase 6 Part E) and the **live wave** (the ≥10-market-day founder-observed dark run — Phase 6 Parts C/D, which cannot occur in a build session: crons don't run on preview, and the batch window is calendar-bound to include Fri Sep 4, 2026 pre-Labor-Day).
 **Rule (spec §9):** *Red anywhere = not done. The bar is the bar.* A criterion is GREEN only when its evidence is recorded here.

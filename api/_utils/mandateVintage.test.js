@@ -72,9 +72,15 @@ describe('mandateVintage — payload completeness (§5.1 / FR-6 / rider 2)', () 
     expect(payload.gateConfig.minPositions).toBe(MANDATE_MIN_POSITIONS);
     expect(payload.gateConfig.maxPositions).toBe(MANDATE_MAX_POSITIONS);
     expect(payload.gateConfig.decisionVerbs).toEqual(['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD']);
-    // sector cap is the per-archetype registry value (physics.sectorConcentrationCap)
-    expect(payload.gateConfig.sectorConcentrationCap)
-      .toBe(payload.archetypeContent.physics.sectorConcentrationCap);
+    // sector cap is the per-archetype registry COUNT (physics.sectorConcentrationCap,
+    // N of the six battle picks) TRANSLATED to a share of book value (T0a); the
+    // embedded physics keeps the count. Units tests: mandateSectorCapUnits.test.js.
+    const slots = payload.archetypeContent.physics.sectorConcentrationCap;
+    expect(payload.gateConfig.sectorCapSlots).toBe(slots);
+    expect(payload.gateConfig.sectorCapDenominator).toBe(6);
+    expect(payload.gateConfig.sectorConcentrationCap).toBe(slots / 6);
+    expect(payload.gateConfig.sectorConcentrationCap).toBeLessThanOrEqual(1);
+    expect(payload.gateConfig.sectorCapConversionVersion).toBe(1);
   });
 
   it('carries cadenceTier and a displayVintage that names the identity version', () => {

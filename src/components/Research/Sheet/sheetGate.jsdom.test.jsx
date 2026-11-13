@@ -38,15 +38,36 @@ describe('resolveSheetMode — the walked states, unknown → off', () => {
   });
 });
 
-describe('sheetModeOn — pure', () => {
-  it('on needs an agent battle; allowlist needs the battle AND a true verdict; off is off', () => {
+describe('sheetModeOn — pure (the shell\'s gate for one mount, SB-2)', () => {
+  it('on is on for every mount (browse included); allowlist needs an agent battle AND a true verdict; off is off', () => {
     expect(sheetModeOn('on', { agentBattle: true })).toBe(true);
-    expect(sheetModeOn('on', { agentBattle: false })).toBe(false);
+    // SB-2 (the shell, 2026-11-12): a mount with no agent battle resolves on at 'on' …
+    expect(sheetModeOn('on', { agentBattle: false })).toBe(true);
+    expect(sheetModeOn('on')).toBe(true);
     expect(sheetModeOn('allowlist', { agentBattle: true, verdict: true })).toBe(true);
     expect(sheetModeOn('allowlist', { agentBattle: true, verdict: undefined })).toBe(false);
     expect(sheetModeOn('allowlist', { agentBattle: true, verdict: false })).toBe(false);
+    // … and off at 'allowlist' (browse never has a verdict).
     expect(sheetModeOn('allowlist', { agentBattle: false, verdict: true })).toBe(false);
+    expect(sheetModeOn('allowlist', { agentBattle: false })).toBe(false);
     expect(sheetModeOn('off', { agentBattle: true, verdict: true })).toBe(false);
+    expect(sheetModeOn('off', { agentBattle: false })).toBe(false);
+  });
+  // Every (mode × mount kind × asset kind): a stock follows the mode; a crypto, an index or a
+  // sector ETF is off at every value (R-35), an allowlisted battle included.
+  const MOUNTS = { battle: { agentBattle: true, verdict: true }, battleNoVerdict: { agentBattle: true, verdict: false }, browse: { agentBattle: false } };
+  const WANT = { off: { battle: false, battleNoVerdict: false, browse: false }, allowlist: { battle: true, battleNoVerdict: false, browse: false }, on: { battle: true, battleNoVerdict: true, browse: true } };
+  for (const mode of ['off', 'allowlist', 'on']) {
+    for (const [mount, opts] of Object.entries(MOUNTS)) {
+      it(`${mode} × ${mount}: stock → ${WANT[mode][mount]}; crypto, index, sector ETF → false`, () => {
+        expect(sheetModeOn(mode, { ...opts, asset: 'stock' })).toBe(WANT[mode][mount]);
+        for (const asset of ['crypto', 'index', 'sectorEtf']) expect(sheetModeOn(mode, { ...opts, asset })).toBe(false);
+      });
+    }
+  }
+  it('an asset kind the gate does not know is off, never on', () => {
+    expect(sheetModeOn('on', { asset: 'bond' })).toBe(false);
+    expect(sheetModeOn('on', { asset: null })).toBe(false);
   });
 });
 
@@ -57,6 +78,8 @@ describe('useSheetModeForBattle', () => {
     expect(out.value).toBe(false);
     expect(VERDICT.calls).toEqual([]);
   });
+  // Since the shell, sheetModeOn('on') is on for any mount; the battle screen's own answer still
+  // needs a battle id (a screen with no battle yet passes no hollow sheetContext).
   it("'on' answers on for an agent battle and asks nothing; no battle id → off", async () => {
     FLAG.mode = 'on';
     expect((await mount('b1', 'u1')).value).toBe(true);

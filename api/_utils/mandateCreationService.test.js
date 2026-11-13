@@ -9,6 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { createMandate } from './mandateCreationService.js';
+import { resolveVintage } from './mandateVintage.js';
 import { deriveManagerAgentId } from './mandateSchema.js';
 import { listArchetypeIds } from './archetypeRegistry.js';
 import { MANDATE_STARTING_CAPITAL, MANDATE_ESCAPE_HATCH_WINDOW_DAYS } from './mandateConfig.js';
@@ -143,5 +144,38 @@ describe('createMandate — validation', () => {
     const { db } = makeFakeDb();
     await expect(createMandate(null, { userId: 'u1', archetype: CODE })).rejects.toThrow();
     await expect(createMandate(db, { userId: '', archetype: CODE })).rejects.toThrow();
+  });
+});
+
+// ── T0a: admission refuses an uncorrected vintage ──────────────────────────
+// The book pins what the store HOLDS at the content address. A doc there
+// without the sector-cap translation stamp (the pre-T0a gate config: the raw
+// slot count, no metadata) is refused before any book or claim is written.
+function uncorrectedVintageAt(code) {
+  const { payload, vintageRef } = resolveVintage(code);
+  const gateConfig = { ...payload.gateConfig, sectorConcentrationCap: payload.gateConfig.sectorCapSlots };
+  delete gateConfig.sectorCapSlots;
+  delete gateConfig.sectorCapDenominator;
+  delete gateConfig.sectorCapConversionVersion;
+  return { [vintageRef]: { ...payload, gateConfig } };
+}
+
+describe('createMandate — T0a admission (vintage_uncorrected)', () => {
+  it('refuses a pinned vintage without the sector-cap stamp: no book, no claim, the stored doc untouched', async () => {
+    const seed = uncorrectedVintageAt(CODE);
+    const [ref] = Object.keys(seed);
+    const { db, store } = makeFakeDb(seed);
+    const res = await createMandate(db, { userId: 'u1', archetype: CODE, now: NOW });
+    expect(res).toEqual({ ok: false, code: 'vintage_uncorrected' });
+    expect([...store.keys()].filter((k) => k.startsWith('mandates/'))).toEqual([]);
+    expect(store.has('userMeta/u1')).toBe(false);
+    expect(store.get(ref).gateConfig.sectorCapConversionVersion).toBeUndefined(); // immutable: never repaired in place
+  });
+
+  it('CONTROL: a fresh publish carries the stamp and the book is created against it', async () => {
+    const { db, store } = makeFakeDb();
+    const res = await createMandate(db, { userId: 'u1', archetype: CODE, now: NOW });
+    expect(res.ok).toBe(true);
+    expect(store.get(res.vintageRef).gateConfig.sectorCapConversionVersion).toBe(1);
   });
 });

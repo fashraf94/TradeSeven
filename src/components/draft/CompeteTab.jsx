@@ -5,6 +5,9 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import useTechnicalScore from '../Research/useTechnicalScore';
 import RanksLeaderboard from '../Research/RanksLeaderboard';
+// The two-view shell (R-32): the Ranks tab's label, from the fields the badges print.
+import { ranksLabelOf } from '../Research/Sheet/ranksLabel.js';
+import { ST, MONO as SHEET_MONO } from '../Research/Sheet/sheetTheme.js';
 
 // ---------------------------------------------------------------------------
 // Constants & Design Tokens
@@ -908,7 +911,10 @@ function DualBadgeHeader({ data, techData, techLoading, selectedView, onSelectVi
 // Main Component
 // ---------------------------------------------------------------------------
 
-const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
+// rankLabel (the two-view shell, R-32; spec docs/specs/RESEARCH_MODAL_SHELL_SPEC_V1.md SB-7):
+// true adds one line above the badges naming the shown rank's group and day. Absent — every
+// caller but the shell's Ranks tab — nothing below changes.
+const CompeteTab = ({ symbol, isMobile, onNavigateToStock, rankLabel = false }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -990,8 +996,15 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
   if (loading) return <SkeletonLoader />;
   if (error || !data) return <NotAvailableCard error={error} statusCode={errorStatus} />;
 
+  const shownRankLabel = rankLabel ? ranksLabelOf({ data, rankingsData, currentStockRanking, techData, selectedView: selectedRankView }) : null;
+
   return (
     <div>
+      {shownRankLabel && (
+        <div data-ranks-label style={{ fontFamily: SHEET_MONO, fontSize: '11px', fontWeight: 700, color: ST.ink, lineHeight: 1.45, marginBottom: '10px' }}>
+          {shownRankLabel}
+        </div>
+      )}
       <StalenessNote computedAt={data.computedAt} />
 
       {/* Dual Badge Header — Fundamental + Technical (tappable toggle) */}

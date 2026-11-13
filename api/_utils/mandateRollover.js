@@ -22,6 +22,7 @@
 // wrote (I4), never the book doc at processing time.
 
 import { publishVintage, VINTAGE_COLLECTION, resolveVintage } from './mandateVintage.js';
+import { isSectorCapCorrected, VINTAGE_UNCORRECTED } from './mandateSectorCap.js';
 import { deriveQuarterSummary } from './mandateQuarterSummary.js';
 import { buildQuarterKey, deriveManagerAgentId, buildDecision, clearedOpenSubmissionPatch } from './mandateSchema.js';
 import { getCadenceTier } from './mandateGenerationConfig.js';
@@ -127,6 +128,15 @@ export async function rollOneBoundary(db, mandateRef, { now = new Date(), archet
   const vintageDoc = await db.collection(VINTAGE_COLLECTION).doc(docId).get();
   if (!vintageDoc.exists) {
     throw new Error(`MANDATE_ROLLOVER_VINTAGE_MISSING ${vintageRef} — publish resolved no doc; aborting (Risk-3)`);
+  }
+  // Admission (T0a): never re-pin a vintage without the sector-cap translation
+  // stamp. Thrown (typed via err.code), not skipped: a silent skip would leave
+  // the boundary unprocessed with no trace, while a throw reaches the cron's
+  // durable failure counter and its streak alert.
+  if (!isSectorCapCorrected(vintageDoc.data()?.gateConfig)) {
+    const err = new Error(`MANDATE_ROLLOVER_VINTAGE_UNCORRECTED ${vintageRef} — no sector-cap conversion stamp; aborting (${VINTAGE_UNCORRECTED})`);
+    err.code = VINTAGE_UNCORRECTED;
+    throw err;
   }
   const newManagerAgentId = deriveManagerAgentId(pre.userId, targetArchetype); // FR-7: stable per user×archetype
 

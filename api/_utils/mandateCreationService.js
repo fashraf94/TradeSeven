@@ -17,7 +17,8 @@
 // uniqueness).
 
 import { listArchetypeIds } from './archetypeRegistry.js';
-import { publishVintage } from './mandateVintage.js';
+import { publishVintage, VINTAGE_COLLECTION } from './mandateVintage.js';
+import { isSectorCapCorrected, VINTAGE_UNCORRECTED } from './mandateSectorCap.js';
 import { deriveManagerAgentId, buildNewMandateDoc } from './mandateSchema.js';
 import { getCadenceTier } from './mandateGenerationConfig.js';
 import { computeNextRolloverAt } from './mandateCalendar.js';
@@ -41,7 +42,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * @returns {Promise<
  *   | { ok: true, mandateId, vintageRef, managerAgentId, cadenceTier, quarterKey,
  *       createdAt, nextRolloverAt, escapeHatchEligibleUntil, vintagePublished, idempotentReplay?: boolean }
- *   | { ok: false, code: 'unknown_archetype' | 'active_book_exists', activeMandateId?: string }
+ *   | { ok: false, code: 'unknown_archetype' | 'active_book_exists' | 'vintage_uncorrected', activeMandateId?: string }
  * >}
  */
 export async function createMandate(db, { userId, archetype, now = new Date(), requestKey = null }) {
@@ -54,7 +55,16 @@ export async function createMandate(db, { userId, archetype, now = new Date(), r
   // 1) Resolve + publish the vintage (idempotent, content-addressed). Pinning a
   //    PUBLISHED vintage is the risk-#3 mitigation: the pinned hash always
   //    resolves to an existing doc.
-  const { vintageRef, created: vintagePublished } = await publishVintage(db, archetype);
+  const { vintageRef, docId, created: vintagePublished } = await publishVintage(db, archetype);
+
+  // 1b) Admission (T0a): the book pins what the store HOLDS at that address, so
+  //     read it back and refuse a vintage without the sector-cap translation
+  //     stamp — no book, no claim. A missing doc after publish is Risk-3.
+  const vintageSnap = await db.collection(VINTAGE_COLLECTION).doc(docId).get();
+  if (!vintageSnap.exists) throw new Error(`MANDATE_CREATE_VINTAGE_MISSING ${vintageRef} (Risk-3)`);
+  if (!isSectorCapCorrected(vintageSnap.data()?.gateConfig)) {
+    return { ok: false, code: VINTAGE_UNCORRECTED };
+  }
 
   // 2) Deterministic identity + cadence (both stable per user × archetype).
   const managerAgentId = deriveManagerAgentId(userId, archetype);

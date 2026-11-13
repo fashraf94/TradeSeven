@@ -54,7 +54,7 @@ const VINTAGE = {
   codeId: 'analyst',
   displayVintage: 'Fundamental Investor v2',
   archetypeContent: { displayName: 'Fundamental Investor', identity: { reveal: 'r', voice: 'v' }, character: { factors: {} } },
-  gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 0.30, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
+  gateConfig: { cashFloorPct: 0.02, minPositions: 5, maxPositions: 15, maxSinglePositionWeightPct: 0.35, sectorConcentrationCap: 0.30, sectorCapConversionVersion: 1, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] },
   modelSeat: { model: 'claude-haiku-4-5-20251001', params: { temperature: 0.7, maxTokens: 600 } },
 };
 const VERBS = ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'];
@@ -447,6 +447,47 @@ describe('harvestOpenBatches — the §3.3 validation → §3.5 execution path',
     expect(dec.failCondition).toBe('exit_only_mode'); // harvest gates against the book as it IS
     // I1 set-completeness (SPEC-P5-7): the gated terminal ALSO releases the gate.
     expect(db._get('mandates/m1').execState.openBatchId).toBe(null);
+  });
+
+  // T0a (founder ruling, 12 Nov 2026: exit-only). An unstamped vintage at harvest:
+  // the gate refuses an entry (vintage_uncorrected) and lets an exit through.
+  it('T0a: an UNCORRECTED vintage at harvest gates a BUY (vintage_uncorrected): no trade, no failure counted, still billed, gate cleared', async () => {
+    const legacyGate = { ...VINTAGE.gateConfig, sectorConcentrationCap: 3 };
+    delete legacyGate.sectorCapConversionVersion;
+    const { db, env } = seedSubmitted({ 'archetypeVintages/analyst_x': { ...VINTAGE, gateConfig: legacyGate } });
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'x' });
+    batchApi.results.mockResolvedValue(asAsyncIterable([
+      { custom_id: env.requestId, result: succeededResult({ verb: 'BUY', ticker: 'AAPL', sizeUsd: 10000, rationale: 'q' }) },
+    ]));
+    await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: H_NOW });
+    const dec = db._get(`mandates/m1/decisions/${env.requestId}`);
+    expect(dec.status).toBe('gated');
+    expect(dec.failCondition).toBe('vintage_uncorrected');
+    const book = db._get('mandates/m1');
+    expect(book.portfolio.positions?.AAPL).toBeUndefined(); // no trade
+    expect(book.health.consecutiveEvalFailures || 0).toBe(0);
+    expect(book.costTelemetry.tokensIn).toBe(1200); // the real spend is still billed
+    expect(book.execState.openBatchId).toBe(null);   // the gate clears (I1)
+  });
+
+  it('T0a: an UNCORRECTED vintage at harvest lets a SELL through the exit lane (exit-only)', async () => {
+    const legacyGate = { ...VINTAGE.gateConfig, sectorConcentrationCap: 3 };
+    delete legacyGate.sectorCapConversionVersion;
+    const env = envelopeFor(seedBook());
+    const holding = seedBook({
+      execState: { openBatchId: env.requestId, openBatchSubmittedAt: NOW, openProviderBatchId: 'msgbatch_h', lastEvalTickKey: TICK.tickKey },
+      portfolio: { cash: 9800000, positions: { AAPL: { shares: 1000, costBasisTotal: 200000, avgCost: 200, lastMark: 200, sector: 'Technology', openedAt: '2026-08-03' } } },
+    });
+    const { db } = seedSubmitted({ 'archetypeVintages/analyst_x': { ...VINTAGE, gateConfig: legacyGate }, 'mandates/m1': holding });
+    batchApi.retrieve.mockResolvedValue({ processing_status: 'ended', ended_at: 'x' });
+    batchApi.results.mockResolvedValue(asAsyncIterable([
+      { custom_id: env.requestId, result: succeededResult({ verb: 'SELL', ticker: 'AAPL', rationale: 'q' }) },
+    ]));
+    await harvestOpenBatches(db, { currentSnapshot: HARVEST_SNAP, sessionDate: TICK.date, ownerToken: 'tok_h', now: H_NOW });
+    const dec = db._get(`mandates/m1/decisions/${env.requestId}`);
+    expect(dec.status).toBe('executed');
+    expect(dec.gateOutcome).toEqual({ rule: 'exit_lane', passed: true });
+    expect(db._get('mandates/m1').portfolio.positions?.AAPL).toBeUndefined();
   });
 
   it('a result with NO tool_use reaches terminal failed (I1 — never the direct path soft-skip)', async () => {
