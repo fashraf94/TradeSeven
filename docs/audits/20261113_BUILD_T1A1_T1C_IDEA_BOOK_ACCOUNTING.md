@@ -5,6 +5,7 @@
 **Base:** `origin/main` @ `d9b4e3c1` (read after `git fetch origin` at session start and again before the push; unchanged). `api/_utils/filmRoom/practiceFieldSeam.js` was present at the base.
 **Code head:** `ab57faf4` (17 commits on the base) · 54 files, +7,540 / −52. The commit that adds this report and its `docs/README.md` row follows it and changes no code.
 **Flag:** `PRACTICE_FIELD_MODE = 'off'` (`src/config/practiceFieldFlags.js:33`). Nothing in this build runs in production.
+**Fix round:** §9 (13 Nov 2026, after Astra's review, DO NOT MERGE on T1A-01 to T1A-04): all four fixed, `origin/main` merged in, code head `b13fa2da`.
 **This session made no model call, no Firestore write and no EODHD call.** Every test runs on the engine's in-memory store (`api/_utils/__testsupport__/mandateFakeFirestore.js`) with the network edges mocked.
 **Rules:** concept V6.1, shared contract V2 with Amendments A and B, the Film Room C1 reply, the direction note and Amendment C (the five attachments this build commits, §2.4), and `docs/BUILD_RULES.md`.
 
@@ -440,7 +441,7 @@ Each mutant re-breaks one rule in a `git archive` copy of the code head (never t
 
 ## 7. New stores — founder sign-off required
 
-All are server-only. No rule and no index changes. Each write site is on the protected-store allowlist with a note (`api/_utils/compositionProtectedStoresAllowlist.json`, the `PRACTICE FIELD T1a-1 + T1c` block).
+*(Corrected in §9.8: four of these are owner-readable under the existing rules; the rest are server-only.)* All are server-only. No rule and no index changes. Each write site is on the protected-store allowlist with a note (`api/_utils/compositionProtectedStoresAllowlist.json`, the `PRACTICE FIELD T1a-1 + T1c` block).
 
 | Store | What it holds | Written by | Readable by a client today? |
 |---|---|---|---|
@@ -480,3 +481,271 @@ One write is not on the allowlist: the best-effort `lastEntryAttempt` note on an
 ---
 
 *A copy of this report is written outside the repository at the path named in the session's closing message (BUILD_RULES §3).*
+---
+
+## 9. Fix round, 13 Nov 2026 — Astra T1A-01 to T1A-04
+
+**Fix round** · Claude Code (Opus 5.5) · 13 Nov 2026, after Astra's review of this PR at `2fe788d8` (`docs/audits/20261113_ASTRA_REVIEW_T1A1_T1C.md`, verdict DO NOT MERGE).
+**Branch:** pushed to `claude/practice-field-t1a1-accounting-31758b` (PR #1058, still a draft). The session ran in the worktree branch `claude/t1a1-astra-blockers-ci-5125f3`, set to the PR head `2fe788d8` before the first change, and pushed with an explicit refspec; no rebase, no force.
+**Recorded at the start, after `git fetch origin`:** PR head `2fe788d8fbbd6333f2b7aa6ddb15d449700ef929`; `origin/main` `c3ed2cfd177a2ac50250bb7a9fc7617d2c2edd9e`.
+**Merge:** `origin/main` merged in at `34ddc863`, clean (no conflict).
+**Code head of this round:** `b13fa2da27f2ca028362434fdb88696ea50aa010`; the commit that adds this section follows it and changes no code. **Flag:** `PRACTICE_FIELD_MODE = 'off'`, unchanged. No fenced file, flag value or pin changed. No model call, Firestore write or EODHD call was made. The engine's `pendingActionsFor` and `applyCorporateAction` are not edited. The only Film Room file touched is `api/_utils/filmRoom/practiceFieldSeam.js`, its header comment only.
+
+Every `file:line` below was read at the code head in this session (VERIFIED).
+
+### 9.1 In plain terms
+
+Astra found four ways the bookkeeping could be wrong. All four are fixed, each with tests that fail without the fix.
+
+1. **A dividend or a split the data feed lists twice is now counted once.** Before, two identical dividend rows paid twice ($399.88 instead of $199.94 on Astra's example), and two identical split rows doubled the shares twice. Now each corporate action is applied once per account, however many times the feed repeats it. If the feed lists one action twice with *different* amounts, neither is applied: the stock is valued at its last good price, the day is marked not full quality, and the account keeps a note saying why. If the vendor later corrects the feed, the action is applied once.
+2. **The book's own check now covers everything that can be wrong.** It already checked cash and shares. It now also checks that the book's prices match its ideas' prices, that the book's total value is the sum of its parts on one fixed rounding rule, that the two shadow accounts (the comparison and the S&P 500 fund) balance on their own, and that a "same stock simply held" comparison stays an exact copy of its idea until the idea trades again. And it now runs on the book **as it was read**, before anything is decided, as well as on what is about to be written. That matters because the evening close recalculates prices and totals: before, a damaged book could have been quietly overwritten into one that passed. Now a damaged book is refused and left as found, for a person to look at.
+3. **The evening valuation reads the one stored price snapshot itself.** Before, it trusted whatever snapshot its caller handed it, so two different sets of prices carrying the same name could both be used. Now it reads the stored document for that date inside its own transaction; if there is none, it writes nothing.
+4. **The Film Room's lookup checks the actual book.** Before, it trusted a pointer record that could name a quarterly book or a closed one. Now it reads the book the pointer names and answers only for a real, open idea book of that player and that agent, with the book's own status.
+
+**The independent review of these fixes found no blocker, and its points are fixed too** (§9.5). The main ones:
+
+- A conflicting dividend that the vendor never corrects now keeps the day marked not full quality, instead of quietly reading as clean once the feed drops it.
+- The same-stock comparison must also match its idea's prices.
+- Every account's dividends must be backed by a dividend record. Before, one number planted in an account's cash and the same number in its dividends would have balanced, and passed.
+
+**The quarterly product is still unchanged**: the seventeen-scenario comparison against `main` is byte-identical, and its control still differs (§9.4). CI's one failure was a Shared Research test that `main` fixed after this branch was cut; the merge brings that fix in, and the test passed 20 runs out of 20 here (§9.3). CI itself has not yet run on the new head.
+
+**Carried to T1a-2, not touched here:** T1A-05 to T1A-08 (§9.7).
+
+### 9.2 The four fixes
+
+| Commit | What |
+|---|---|
+| `34ddc863` | The merge of `origin/main` (`c3ed2cfd`), clean |
+| `50e1f50b` | Fix 1 — T1A-01, with its tests |
+| `a839aff2` | Fix 2 — T1A-02, with its tests |
+| `065b64ee` | Fix 3 — T1A-03, with its tests |
+| `583176c7` | Fix 4 — T1A-04, with its tests |
+| `e5404262` | Rows that keep each new guard observable on its own (the transition rows, a release that would launder, the R-19 basis at entry, a declined duplicate) |
+| `ebbeac4b` | The three attachments and their `docs/README.md` rows |
+| `300fb4b0` | The fixture's close-snapshot write names its collection literally (the protected-store scan; §9.4) |
+| `b7f60073` | The close's book-vs-ideas check kept observable (the trial battery's survivor; §9.4) |
+| `bd490458` | The review's findings FR-A1, FR-A3, FR-A4, FR-A6 (§9.5) |
+| `b13fa2da` | The refuter's points RF-A1, RF-A3, RF-A5 (§9.5). **The code head** |
+
+Line numbers below are at `b13fa2da`.
+
+**Fix 1 — T1A-01: a corporate action is applied once per ledger, even when the feed lists it twice.**
+
+- `api/_utils/practiceField/ledger.js:137` `applyLedgerActions`. The engine is still handed the ids settled before the call (`:139`). New: `:114` `conflictingActionIds` groups this call's due rows (pending, not entitled, without entitlement data, unrecognised; `:150`) by the engine's `deriveActionId`; two rows of one id whose payloads differ (`:108`: ratio and amount — the id already fixes type, ticker and effective date) are a conflict. Every other id is processed at its FIRST row in the call and a later row of it is skipped (`:167`), in the declined loop (`:176`) and in the applied loop (`:186`).
+- **A conflict** (`:150–165`) is applied to no ledger and settled by none (its id goes to neither `appliedActionIds` nor `declinedActionIds`). Each ledger that holds the symbol records one `conflicting_action` receipt per id, naming every row's ratio, amount and source and whether the holding was entitled (`:159`); a later close never repeats it. The symbol is held back (upper-cased, `:156`), so it is valued at its carried mark and the row is not full quality, as R-9 holds an unsupported action. The close alerts `PRACTICE_FIELD_CORPORATE_ACTION_CONFLICT` (`close.js:171`). A feed that later presents one consistent row applies it once.
+- **The book's mirror** (`close.js:265`) applies the idea ledger's `applied` list, now one entry per id. The engine's `pendingActionsFor` and `applyCorporateAction` (`api/_utils/mandateCorporateActions.js`) are not edited.
+- **Readings.** **R-21** — a conflict is unsettled, not declined, so a corrected feed can still apply it once. **R-22** — two rows of an action the holding is not entitled to (bought on or after its effective date) are a conflict too, held back while the feed presents them: the letter of "apply neither … value the symbol at a carried mark", although the payload cannot matter to such a holding. **R-23** (review FR-A1, refuter RF-A1) — while any ledger of an idea holds an unsettled conflict on an action the holding WAS entitled to, the idea's row and the book's row stay not full quality, with `PRACTICE_FIELD_CORPORATE_ACTION_UNSETTLED` on each close that no longer presents it (`close.js:96`, `:157`, `:175`; `ledger.js:102` `unsettledConflicts`). Without it, a conflicting dividend that left the feed window was simply lost, and against a sector-fund comparison the missing income read as a clean, full-quality gap. A not-entitled conflict owed nothing, so it stops affecting the rows once the feed drops it.
+- **Tests** (`close.test.js`, block "Astra T1A-01"). Astra's reproducer: a $20,000 AAPL idea at $100 is 199.940017 shares, and two identical $1 dividend rows pay **$199.94** (not $399.88) on the idea, on its same-stock comparison and on the book. A repeated 2-for-1 split gives **399.880034** shares (not 799.760068) on all three, and moves the line once. The rest:
+  - the duplicate stays applied once across two more closes;
+  - a conflicting dividend pair is applied on no ledger: one receipt per ledger over two closes, a carried mark, then the corrected feed applies it once;
+  - a conflicting split ratio moves nothing;
+  - SPY and a `sector_fund` comparison are each credited once;
+  - a not-entitled duplicate is declined once;
+  - a never-corrected conflict keeps its rows not full quality;
+  - a not-entitled conflict is held only while it is presented;
+  - a lower-case ticker in a conflict is still held back;
+  - **Astra's dividend regression**, committed as a test, runs through the real feed parser (`fetchCorporateActionsEODHD`), the daily layer (`ensureDailySnapshot`, which keeps both vendor rows) and the close-snapshot builder (`ensureUniverseSnapshot`).
+
+**Fix 2 — T1A-02: reconciliation covers the marked book and all three ledgers, and rejects rather than repairs.**
+
+- `api/_utils/practiceField/reconcile.js:127` `assertReconciled` gains three rules. Each is a typed problem in the same `recon_failed` error, with integer comparisons only:
+  - **7. MARKED.**
+    - `:213` `mark_mismatch`: every book position's `lastMark` is its idea holding's, exactly. These are two copies of one number, so there is no tolerance.
+    - `:221–223` `equity_mismatch` (with `not_a_number` for a missing equity): `portfolio.totalValue` equals the book's marked equity on the one R-19 basis.
+  - **The basis, stated once** (`ledger.js:260` `recordedHoldingsCents`, `:270` `markedEquityCents`): the treasury plus each open idea's cash and holdings, the holdings at their recorded marks and rounded once per idea, in whole cents.
+    - Three places use it: the entry (`entry.js:287`), the close (`close.js:306`) and rule 7. Before this round the entry wrote a whole-book rounding through `ideaBook.js` `recordedEquityUsd`, now removed.
+    - In the end-to-end fixture the two bases agree. A test with two holding ideas ($20,000 AAPL and $24,995.23 LLY) shows them a cent apart, $99,986.50 per idea against $99,986.51 rounded once, and the entry writes $99,986.50.
+  - **8. CONSERVED, all three ledgers.** `:72` `paperLedgerProblems` runs for the comparison and SPY ledgers (`:179`). It checks:
+    - every amount is a real number;
+    - the paper ledger's reserved capital is the idea's own (`:78`);
+    - every holding is positive and carries a real `lastMark` (`:84`);
+    - rule 4's identity holds (`:89`);
+    - a holding idea has both ledgers; an accepted one has neither yet (`:182`).
+    - On all three ledgers (refuter RF-A3; `:63` `recordedAmountProblems`, `:90`, `:177`), the two amounts conservation adds are accounted for. Dividends equal the income on the ledger's applied receipts (`*dividends_not_receipted`). Realised P&L is 0 while this build has no sale (`*realized_pnl_before_any_sale`).
+  - **9. TIED.** `:95` `tieBreaks` applies to a `same_stock_held` comparison while `postEntryFillCount === 0` (`:194` `comparison_not_tied`).
+    - The comparison must match the idea in cash, names, quantities, cost basis and, since review FR-A3, recorded marks (`:106`).
+    - The entry writes `postEntryFillCount: 0` (`entry.js:280`).
+    - This build has no fill after entry, so a holding idea's count must be exactly 0 (`:116` `MAX_POST_ENTRY_FILLS`, `:190`). A raised count can no longer switch the tie off in silence. T1a-2's first later fill both increments the count and lifts the bound.
+- **Reject, never repair.** Every money path now reconciles the book **as read**, before it decides anything, and again checks the state it is about to write:
+
+  | Path | As read | State it writes |
+  |---|---|---|
+  | Admission | `admission.js:337` | `:362` |
+  | Release | `admission.js:440` | `:444` |
+  | Entry, and its timeout | `entry.js:185` | `:189`, `:288` |
+  | Close | `close.js:226` | `:322` |
+
+  The close re-marks every position and recomputes the equity; the entry rewrites the equity. A check of the next state alone would have overwritten an inconsistent book with one that passes. A refused book is left exactly as found.
+- **Tests** (`entry.test.js` block "Astra T1A-02", `admission.test.js`, `reconcile.transitions.test.js`):
+  - **Astra's fault A:** the book's AAPL mark moved from $100 to $200 with equity set to $120,000, then a $30,000 admission. Refused `recon_failed` [`mark_mismatch`, `equity_mismatch`]; nothing written.
+  - The same fault met by a close: refused as read, the $200 left as found.
+  - An equity a cent off: refused by another idea's entry, by its release and by its timeout.
+  - **Astra's fault B:** $123.45 on the comparison's cash alone. Refused by the close [`comparison_ledger_not_conserved`, `comparison_not_tied`]; no row written.
+  - A release that would launder an idea whose own ledger does not conserve.
+  - A cent planted in cash together with dividends, or with realised P&L, on each of the three ledgers.
+  - One isolated row per new rule.
+  - `reconcile.transitions.test.js` plants each fault in the transition: the function a path builds its next state with returns a state a cent out. This keeps every path's next-state check observable behind the as-read gate.
+- **Existing rows updated, each with its reason written beside it.** In each, the planted fault now also breaks a new rule, or the as-read check now refuses it earlier.
+  - Three rows of "one cent off anywhere" and "an open idea must be live". The treasury and an idea's cash are now parts of the equity, an idea's cash is half of its tie, and a planted dividend needs a receipt.
+  - The two B-OWNED entry rows: now refused as read. An unowned position also breaks the equity, so `ticker_held_by_other_idea` is no longer the first refusal there; a new row reaches it instead (review FR-A6).
+  - The close's L1-6 drift row: refused as read, `shares_mismatch`.
+  - Admission's missing-equity row: refused `recon_failed` as read. The limit computation's own `book_equity` check is shown directly on `evaluateAdmission`.
+  - The RF1-2 row: its seeded book now has its cash and treasury moved with its equity, so that it reconciles.
+
+**Fix 3 — T1A-03: the close values from the stored snapshot, not from an argument.**
+
+- `api/_utils/practiceField/close.js:186` `closeIdeaBook(db, bookRef, { date, now })` takes no snapshot. Inside its transaction it first runs the book's cheap guards: missing, not an idea book, already closed, out of order, not open. An already-closed book therefore costs no second read.
+  - It then reads `mandateUniverseSnapshots/{date}_close` itself (`:209`) and values every ledger from that stored document.
+  - A missing document writes nothing and answers `valuation_missed` (`:210`). Nothing is built or fetched.
+  - The key and date check now applies to the stored document (`:212`).
+- `api/cron/mandate-evaluate.js:935` passes the date only. Three things are unchanged: the sweep's own read of the snapshot, its deferral when there is none (`:921`), and the builder's create-or-adopt (`api/_utils/mandateUniverseSnapshot.js:260`).
+- **Cost:** one more document read per idea book per close, inside that book's transaction. The sweep already reads the same document once per fire. At the founder cap of four books that is four reads a close. Paging and cost at scale are T5's.
+- **Tests.**
+  - Fixtures store the close snapshot first, and the first writer wins (`__testsupport__/fixtures.js:162` `storeCloseSnapshot`). Storing different content under a key that is already taken throws.
+  - Astra's two-books reproducer can no longer be expressed. In its place:
+    - a stored $100 document beside a caller holding a $110 object with the same key, plus a second document planted under another name, values every row at $100;
+    - a missing document writes nothing;
+    - a stored document whose own key or date is wrong is refused;
+    - two books closed in separate fires carry identical marks per shared symbol;
+    - (review FR-A6) a change to the stored document between the close's read and its commit makes the close run again and value from what is stored.
+
+**Fix 4 — T1A-04: the Film Room lookup returns only a real, open idea book.**
+
+- `api/_utils/practiceField/bookStore.js` `bookForOwner`. The mode gate is unchanged: `'off'` answers null with no read.
+  - It reads the claim, then the book the claim names (`:44`).
+  - It answers `{ bookId, status }` only when the book exists, is `kind: 'idea_book'` (`:47`), belongs to the caller (`:48`), is the attribution agent's (`bookIsForAgent`) and is open (`:50`: `active` or `draining`).
+  - The status answered is the book's own (`:51`).
+  - Another agent's claim is still refused at the first read.
+  - The module stays import-light: the mode gate and the zero-import `mandateBookKind.js`.
+- `api/_utils/filmRoom/practiceFieldSeam.js:9`: the header comment now says "at most two reads". No other Film Room change.
+- **Reading R-24.** The prompt says both "the status returned is the book's own" and "a closed book returns null"; this build reads them together. A book that is `active` or `draining` is answered with its own status; `closed` and anything else answer null. The Film Room requires `active`, so it refuses a `draining` answer as `book_not_open`.
+- **Tests** (`ideaBook.test.js`):
+  - the reads are the claim, then the book;
+  - a claim naming a quarterly book (or a kind-less legacy one), another owner's book, a missing book or a closed one answers null, as do four other non-open statuses;
+  - a book whose own agent differs answers null;
+  - a draining book answers `draining`, whatever the claim says;
+  - a failed read of the book throws;
+  - the `'off'` zero-read row still passes.
+- Every Film Room test passes (§9.4).
+
+### 9.3 The CI failure
+
+CI's one failure was `api/forge/shared-research.route.test.js:473` (two investigations created in the same millisecond). `main` fixed it at `ac57f81b` ("an earlier investigation created in the same millisecond still counts as previous", PR #1057) after this branch was cut. The merge at `34ddc863` brings it in: `git merge-base --is-ancestor ac57f81b HEAD` succeeds. No Shared Research file was edited.
+
+`main` moved after the merge, to `979b030c` (PR #1060, a Research modal follow-up). It changes 8 files and none of them is on this branch; a scratch merge is clean (`git merge-tree`). It is not merged here: this round's merge was the one of the `origin/main` recorded at the start. CI tests the branch merged with `main` as it then stands.
+
+The test file run 20 times in a loop on Linux (WSL, Node 20.20.2, `TZ=UTC`), passes counted by vitest's exit code: **20 passes, 0 failures** (`Tests 43 passed (43)` each run).
+
+### 9.4 Checks (Linux, the record)
+
+All on Linux (WSL Ubuntu, Node 20.20.2, `TZ=UTC`), on a worktree of `~/pd-ci` at the code head `b13fa2da`, unless a row says otherwise.
+
+| Check | Command | Exit | Result line |
+|---|---|---|---|
+| The build's nine files plus this round's rows (10 files: `reconcile.transitions.test.js` is new) | `npx vitest run api/_utils/practiceField api/cron/practiceFieldIsolation.test.js src/config/practiceFieldFlags.test.js src/data/practiceFieldSlots.test.js` | 0 | `Test Files  10 passed (10)` · `Tests  236 passed (236)` (the build had 9 files, 200 tests) |
+| Astra's seventeen-file command, from its review | as written there (the nine + the protected-store, money-rounding and rationale scans, four Film Room files, the flag-pin guard) | 0 | `Test Files  17 passed (17)` · `Tests  333 passed (333)` (Astra had 303) |
+| Astra's dividend regression, committed | `close.test.js` › "Astra's regression, through the REAL feed parser, daily layer and close-snapshot builder…" | 0 | passes (with the two files above). Astra recorded its regression failing on `2fe788d8`; with the applied-loop dedupe removed (mutant `FX1-03`) it fails here too, checked directly |
+| Full suite | `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | **0** (written to a file by the run script, read back) | `Test Files  1456 passed \| 10 skipped (1466)` · `Tests  32493 passed \| 120 skipped (32613)` · `Duration  255.77s` |
+| Lint gate | `npm run lint:gate` | 0 | `eslint . --config eslint.gate.config.js --max-warnings 0`, no findings |
+| Build | `npx vite build` | 0 | `✓ built in 15.78s` (only the standing chunk-size notice) |
+| The Shared Research route test, 20 times | §9.3 | 20 × 0 | 20 passes, 0 failures, counted by exit code |
+
+The suite ran twice on the code head: the first run's log gave the same two result lines, but its exit code was cut from the captured output, so it was run again with the exit code written beside the log. Nothing else ran beside either run.
+
+**One check failed on the way and was fixed.** At `ebbeac4b` the deny-by-default protected-store scan (`api/_utils/compositionProtectedStores.scan.test.js`) listed one new write site as unresolved: `fixtures.js` `storeCloseSnapshot`'s `ref.set`, whose collection name came from an imported constant. With the literal `'mandateUniverseSnapshots'` the scan resolves the write to a collection that is not protected, so nothing was added to the allowlist; a module-scope check keeps the literal equal to the engine's `SNAPSHOT_COLLECTION` (`300fb4b0`). On Windows the money-rounding scan's two path-closure rows fail at the base too — the separator limitation the scan documents (`mandateRationale.imports.test.js:45`); they pass on Linux.
+
+**The quarterly differential** (the build's scratch test, unchanged, byte-identical on both sides: test SHA-256 prefix `dd287de5`; the control `d86c7268`), base `origin/main` as merged (`c3ed2cfd`) against the code head, no idea book present:
+
+| Run | Base `c3ed2cfd` | Head `b13fa2da` | Verdict |
+|---|---|---|---|
+| 17 quarterly scenarios | 1,118,594 bytes, `92a1be2080b4e0d6ccb32e26a2ec95ec5fac0bd4c262e0f2de73f1f1e2f27f43` | the same bytes, the same hash | **Byte-identical**, and the same hash as the build's own differential against `d9b4e3c1` (§4.3) |
+| Control: the 17 plus one with an idea book in the store | 1,225,417 bytes, `0c8c575f…` | 1,221,140 bytes, `5f44c4a9…` | **Differs, in scenario 18 only** (per-scenario hashes 01–17 equal); the same figures as §4.3 |
+
+Both sides: vitest exit 0, 18 and 19 tests passed.
+
+**The mutation battery.** The build's 159 mutants, re-checked against this round's code, plus new mutants for every new rule, fix and guard. Each mutant re-breaks one rule in a `git archive` copy of the code head (never the working tree) and runs the test files named for it. KILLED means vitest exited non-zero with at least one failed test. BROKEN means an anchor was not found exactly once, or no test ran. The runner prints the ids it defined against the ids it ran.
+
+- **Re-cut, none skipped silently.** Five of the 159 anchors moved:
+  - `STAMP-01` (the key check, now on the stored document);
+  - `STAMP-02` (the missing-snapshot answer, now inside the transaction);
+  - `STAMP-05` (the row's quality now also requires no unsettled conflict);
+  - `R1-09` (the book row's positions value, now the R-19 helper);
+  - `FX2-11` (re-cut twice in this round).
+  Six call-site mutants now point at the rows that can still see their gate: `RECON-05` to `RECON-09`, and `RF1-03`.
+- **New, 53:**
+  - `FX1-01` to `FX1-16` — fix 1 and its review follow-ups: dedupe removed, per loop; a conflict applied; the conflict not held back; its receipt repeated; it settled; its payload compared on one field only; the unsettled flag; its alert; the ticker's case; not-entitled detection; the entitlement record; a double alert;
+  - `FX2-01` to `FX2-27` — fix 2: MARKED (mark, equity, equity not a number); CONSERVED-comparison; CONSERVED-SPY; paper capital, missing, positive, amounts and marks; TIED with each of its four fields, its count closed, its count written and the count bound; the R-19 basis at entry; the four as-read checks (admission as a pair); dividends receipted and realised P&L zero, on the idea and on paper;
+  - `FX3-01` to `FX3-03` — fix 3: the close reading its argument again; reading another key; reading outside the transaction;
+  - `FX4-01` to `FX4-07` — fix 4: the seam skipping the book read; kind; owner; agent; open; its own status; the `'off'` gate.
+- **The runner had a bug, and it was fixed.** A mutant held in two places of the SAME file had its first part overwritten by its second: the runner read every part's file before writing the first. The build's battery had no such mutant; its only two-part mutant, `KIND-16`, spans two files. In this round `FX2-20` (a pair) and `FX3-01` were affected. The trial run reported `FX2-20` as a survivor and `FX3-01` as killed, but `FX3-01` died by a ReferenceError (28 of 30 rows failing), not by the guard. The runner now applies parts in sequence per file. On re-runs, `FX2-20` fails 3 admission rows and `FX3-01` fails exactly the $100-against-$110 row.
+- **Trial run** at `e5404262` (197 mutants): 195 killed, 2 survived.
+  - `RF1-03`, the close's `book_marks_disagree_with_ideas`, was masked by the as-read gate. It got a transition row (`b7f60073`).
+  - `FX2-20` survived because of the runner bug above.
+
+**Final run, tree at `b13fa2da`: defined 212, ran 212, missing 0, broken 0 — killed 212, survived 0.** The baseline before the run was 255 tests in the named files, all passing. Every new mutant fails a targeted row. Two fail widely by design: `FX3-02` (a wrong snapshot key leaves every close `valuation_missed`) and `FX2-12` (an entry that writes no count fails rule 9 closed on every holding idea).
+
+**Masking, stated.** Admission changes neither marks nor equity. For a fault planted in the stored book, its as-read check is therefore masked by its own next-state check, and the pair (`FX2-20`) is the observable unit. Every other single gate is killed on its own. The as-read checks of the entry, the release and the close each have a row only they can see. The next-state checks of admission, release, entry, the entry timeout and the close are reached by the transition rows. The close's book-vs-ideas check is reached by a book-side valuation fault.
+
+### 9.5 The review and the refuter
+
+BUILD_RULES §2 applies: the money path changed. One independent lens (accounting, fixes 1 to 3 together) reviewed a read-only `git archive` snapshot of `583176c7`; every finding then went to a refuter with two trees — the reviewed snapshot, to attack the finding, and a snapshot of the fixed head `bd490458`, to attack the fix. Both were subagents, read-only on git and on the working tree, each writing only inside its own snapshot (their probe files and logs stay there, under the session scratchpad). The refuter reports one slip: a manifest written to `/tmp` and deleted in the same command.
+
+**The lens (FR-A):** no blocker; 3 should-fix, 4 notes. **The refuter:** all 7 CONFIRMED (FR-A1 a little broader than stated, FR-A7 narrower), 0 refuted; every fix HOLDS, one introduced a defect (RF-A1, fixed); a 24-close soak with all three comparison types, splits of 3:2, 2:1 and 7:3, a 1:7 reverse split, dividends, a missing quote, an unexplained gap, a delisting, a ticker change, a release, a timeout, two books and four conflicts gave zero `recon_failed` and the idea's and its same-stock comparison's marks identical on every day.
+
+| Finding | What it was | Refuter on the finding | Disposition | Refuter on the fix |
+|---|---|---|---|---|
+| FR-A1 | A conflicting dividend never corrected and then out of the feed window was silently lost: the row went back to full quality with no alert, and with a sector-fund comparison the missing income showed as a clean −$199.94 gap | CONFIRMED (broader: the value is short whatever the comparison type) | **Fixed** (`bd490458`, R-23): an unsettled conflict keeps the idea's and the book's rows not full quality, with `PRACTICE_FIELD_CORPORATE_ACTION_UNSETTLED` | HOLDS for entitled conflicts; **introduced RF-A1** (fixed) |
+| FR-A2 | The release's as-read check had no row that fails without it | CONFIRMED | **Fixed** before the report arrived (`e5404262`): a release that would launder an idea whose own ledger does not conserve | HOLDS (the mutant is killed) |
+| FR-A3 | (a) A raised `postEntryFillCount` switched the same-stock tie off though nothing in T1a-1 raises it — Astra's fault B, with the count set to 1, passed in silence; (b) comparison and SPY marks were never reconciled | CONFIRMED | **Fixed** (`bd490458`): the count must be exactly 0 in this build (`MAX_POST_ENTRY_FILLS`); the tie compares recorded marks; every paper mark must be a real number. A finite but wrong mark on a sector-fund or SPY ledger has no counterpart to compare with and is not detected (stated) | HOLDS; no false positive in the soak |
+| FR-A4 | (P3) A conflict on an action the holding is not entitled to holds the mark for the window and is never declined; (R2) a conflict whose first row has a lower-case ticker was not held back although its alert said it was | CONFIRMED | (R2) **Fixed**: upper-cased. (P3) Kept as the letter of the ruling inside the window (R-22) and pinned by a row | HOLDS; P3's permanence after the window became RF-A1 |
+| FR-A5 | One economic action under two ids (a dividend re-dated from one day to the next) is applied twice | CONFIRMED, broader (each close seeing only its own row is enough) | Not changed: outside T1A-01's id scope; the engine's id scheme has the same limit. Carried to T1a-2 (§9.7) | — |
+| FR-A6 | Guards no row reached: the snapshot read inside the transaction; the entry's R-19 basis; the entry's `ticker_held_by_other_idea`; the close's `book_marks_disagree_with_ideas` | CONFIRMED | **Rows added** (`e5404262`, `b7f60073`, `bd490458`) | HOLDS (each mutant killed by its intended row) |
+| FR-A7 | `enterIdea` still fills from a caller's snapshot, checked by its key only — T1A-03's class on the fill path | CONFIRMED-NARROWER: the one production caller passes the stored document or the create-or-adopt winner, so there is no live two-payload path | Not changed; carried to T1a-2 (§9.7) | — |
+
+**Found by the refuter while attacking the fixes:**
+
+| Id | What | Disposition |
+|---|---|---|
+| RF-A1 | The FR-A1 fix made a conflict on an action the holding is not entitled to taint the idea's rows, and the book's, forever, with an alert every close — for an action that could never pay | **Fixed** (`b13fa2da`): the conflict receipt records `entitled`; a not-entitled conflict is held back only while the feed presents it |
+| RF-A2 | If the vendor settles a conflict under a moved ex-date (a new id), the money arrives but the old id stays unsettled and the rows stay not full quality | Note: the FR-A5 class; a stuck, visible flag rather than a silent loss. Carried to T1a-2 |
+| RF-A3 | Rule 8 never tied a ledger's dividends to its receipts: a cent planted in cash and in dividends together (or in realised P&L) conserved and passed, on a sector-fund comparison, an SPY ledger, or a same-stock idea whose stored comparison type was flipped | **Fixed** (`b13fa2da`) for the first two on all three ledgers: dividends must equal the income on the ledger's applied receipts, and realised P&L must be 0 while this build has no sale. A flipped stored contract is not detected (stated) |
+| RF-A4 | Outside the conflict branch, `applyLedgerActions` still adds a feed row's raw ticker to `unresolved` (and a lower-case split is never applied) | Note: pre-existing; the feed parsers upper-case every ticker, so only a hand-written row could carry one. Not changed |
+| RF-A5 | No row asserted that a presented conflict is not also announced as unsettled | **Row added** (`b13fa2da`) |
+
+**What was not re-refuted.** The fixes made after the refuter reported (`b13fa2da`) were not sent to a second refuter pass. They are covered by new rows and by mutants in the final battery (§9.4), and by the full suite, all run on the final code.
+
+### 9.6 The end-to-end store hash, before and after
+
+| Commit | SHA-256 | Bytes | Documents | Why it moved |
+|---|---|---|---|---|
+| Before the round (`2fe788d8`, and after fix 1) | `10049196e823efdc82d6ae26dacc99505cb0794106927e94beeb41e541b10df1` | 147,178 | 69 | — (fix 1 moved nothing) |
+| After fix 2 (`a839aff2`) | `ea5d0d4cd19c3852cd98447629d0dddfc7253dac54890b6a058874bbfe2191fe` | 147,259 | 69 | One field: `postEntryFillCount: 0` on each of the three ideas (+81 bytes). A field-by-field diff of the two dumps shows nothing else; every equity figure the entry writes is unchanged in this fixture |
+| After fix 3 (`065b64ee`) and to the code head | `69691024ca598cb5cd9280d5dcb21d4b0cd15a3ee126154c300f85b060f084a4` | 186,846 | 81 | Twelve documents added: the stored close snapshots `mandateUniverseSnapshots/{date}_close`, which the fixture now writes first because the close reads them itself (+39,587 bytes). The 69 documents before are byte-identical |
+
+Fix 4, the test commits and the review commits moved nothing.
+
+### 9.7 Carried to T1a-2 (listed, not fixed)
+
+| Astra id | What | Astra's home | Carried to |
+|---|---|---|---|
+| T1A-05 | Admission uses the last recorded equity and sector exposure, not a fresh admission mark; the dollar limits can be too permissive after a move | T1a-2 | T1a-2 |
+| T1A-06 | The daily top-up race keeps old entries but can lose newly fetched corporate-action data | T1a-2 | T1a-2 |
+| T1A-07 | The protected-store scan protects these money writes partly by accident: it does not see writes under `mandates` (M06 survives) | T5 | **T1a-2**, earlier than Astra's suggested T5, because T1a-2 adds the first sale |
+| T1A-08 | Off-mode recovery must keep the original clock and recover missed dates separately | T1a-2 | T1a-2 |
+
+Also carried to T1a-2, from this round's review (§9.5), not fixed here:
+
+| Id | What |
+|---|---|
+| FR-A5, RF-A2 | One economic action under two ids (a dividend re-dated by the vendor) is applied twice; and a conflict the vendor settles under a moved ex-date leaves the old id unsettled, the rows flagged. Both need a policy for re-dated actions, which the engine's id scheme does not have either |
+| FR-A7 | `enterIdea` fills from a caller's snapshot checked by its key only (`entry.js:159`); no live two-payload path today, defence in depth for T1a-2's fills |
+| FR-A3, RF-A3 (residue) | A finite but wrong mark on a sector-fund or SPY ledger, and a flipped stored `contract.comparison.type`, are not detected: nothing to compare them with |
+| RF-A4 | Outside the conflict branch, a hand-written feed row with a lower-case ticker is not held back (pre-existing; the parsers upper-case every ticker) |
+
+### 9.8 Corrections to this report
+
+- **§7, the stores' access.** §7 opens "All are server-only". That is wrong for four of them: **the book document `mandates/{bookId}` and its `dailyRows`, `decisions` and `corporateActions` sub-collections are owner-readable** under the existing rules (`firestore.rules:1465`, `:1471`, `:1476`, `:1486`), as §7's own table and §2.3 row 18 already say. **The rest are server-only**: the epochs, the ideas and their rows, `practiceFieldBooks` and `practiceFieldCoverage` fall to the catch-all deny (`firestore.rules:1516`). No client reader exists (Astra: "no unauthorized client reader was found"; source inspection, not emulator verification).
+- **§2.3 row 16** says the Film Room's lookup "reads `practiceFieldBooks/{uid}`, never `mandates`". Since fix 4 it reads the claim and then `mandates/{bookId}`: at most two reads, none at `'off'`.
+- **§5.3** says `closeIdeaBook` "refuses any snapshot whose key is not exactly `${date}_close`" and marks "from that one object". Since fix 3 it takes no snapshot object: it reads the stored `${date}_close` document itself (§9.2, fix 3).
+- **The seam's inner doc comment** at `api/_utils/filmRoom/practiceFieldSeam.js:128–134` (the `PRACTICE_FIELD_SEAM_DEFAULTS` JSDoc) still says "one read of the owner's idea-book claim". This round's rule allowed only the file's header comment to change; the header now says "at most two reads". The inner comment is stale and is left for the next Film Room change.
