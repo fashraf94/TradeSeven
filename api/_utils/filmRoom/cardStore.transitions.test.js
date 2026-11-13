@@ -415,3 +415,24 @@ describe('C1 review — the helper\'s guards and the replay namespaces', () => {
     expect((await move(t, { to: 'tested', opId: 'srv-4', payload: RESULT })).idempotent).toBe(true);
   });
 });
+
+// ── the mutating lens's survivors (report §6), each with the row that kills it ─────────────────────────────────────
+describe('C1 review — the mutating lens\'s survivors', () => {
+  it('D-M09: a reason of exactly NOMINATION_REASON_MAX code points is kept (2000 emoji — code points, not UTF-16 units); one more is refused', async () => {
+    const t = fresh();
+    await nominated(t);
+    const r = await move(t, { to: 'nomination', opId: 's1', payload: { ...NOMINATION, reason: '😀'.repeat(2000) } });
+    expect([...r.entry.nomination.reason]).toHaveLength(2000);
+    const u = fresh();
+    await nominated(u);
+    expect(await code(move(u, { to: 'nomination', opId: 's1', payload: { ...NOMINATION, reason: 'x'.repeat(2001) } }))).toMatchObject({ status: 400, extra: { why: 'reason' } });
+  });
+
+  it('D-M08: the writer is part of the request — the same transition under the same op id from ANOTHER writer is 409 op_conflict, not a replay', async () => {
+    const t = fresh();
+    await nominated(t);
+    await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION });
+    expect(await code(move(t, { by: 'practice_field.t2', to: 'nomination', opId: 's1', payload: NOMINATION }))).toMatchObject({ status: 409, code: 'op_conflict' });
+    expect((await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION })).idempotent).toBe(true);
+  });
+});

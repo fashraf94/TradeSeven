@@ -854,3 +854,22 @@ describe('C1 item 7 — park, through the handler', () => {
     expect(await post(park({ opId: 'pk_2', expectedVersion: entry.version + 1 }))).toMatchObject({ statusCode: 409, body: { error: 'illegal_transition' } });
   });
 });
+
+describe('C1 review — the mutating lens\'s survivor D-M16: a book read that fails is no open book at the endpoint', () => {
+  afterEach(() => resetPracticeFieldSeam());
+  it('the seam\'s bookForOwner rejects → nominate and an Offer create answer 409 book_not_open (the body only the code and its sentence), nothing written, a server trace — never a 500', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    setPracticeFieldSeam({ bookForOwner: async () => { throw new Error('book read failed'); } });
+    const offer = await post(create({ route: 'offer' }));
+    expect(offer.statusCode).toBe(409);
+    expect(offer.body).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+    expect(t.writeLog).toEqual([]);
+    expect((await post(create())).statusCode).toBe(200);
+    const before = t.writeLog.length;
+    const res = await post({ op: 'nominate', opId: 'nom_x', agentId: AGENT, entryId: 'op_1', expectedVersion: 1 });
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'book_not_open', message: CARD_ROUTE_COPY.book_not_open });
+    expect(t.writeLog.length).toBe(before);
+    expect(errors.mock.calls.some((c) => String(c[0]).includes('book read failed'))).toBe(true);
+  });
+});

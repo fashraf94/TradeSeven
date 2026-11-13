@@ -2031,3 +2031,46 @@ describe('C1 review — the chain and the receipt say only what the ledger holds
     expect(tested.querySelector('[data-time]')).toBeNull();
   });
 });
+
+describe('C1 review — the mutating lens\'s survivors on the screen', () => {
+  it('D-M21: Offer shows ONLY when the counter reports the book open — never while it loads, after a failed first read, or when it answered with no book field', async () => {
+    const moment = momentsOf(fx.tape2.tags.items)[0];
+    for (const counter of [{ status: 'loading', data: null }, { status: 'idle', data: null }, { status: 'error', data: null }, { status: 'ready', data: { open: 0, cap: 5 } }, { status: 'ready', data: { open: 0, cap: 5, book: {} } }]) {
+      m.render(<YourCall key={JSON.stringify(counter)} tape={fx.tape2} moment={moment} counter={counter} mintOpId={() => 'op_f'} onFile={async () => ({ ok: true })} onCancel={() => {}} />);
+      await m.flush(1);
+      expect(m.qa('[data-route]').map((l) => l.getAttribute('data-route')), JSON.stringify(counter)).toEqual(['watch', 'set']);
+    }
+  });
+
+  it('D-M20: a park the server refuses as stale re-reads the counter, says why, and shows the counter\'s row; an unknown refusal says the park sentence', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    const by = { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, by: 'practice_field' };
+    await applyServerTransition(state.db, { ...by, to: 'nomination', opId: 'r1', payload: { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', reason: 'Testing it.', consideredAt: `${D2}T20:40:00.000Z` }, nowIso: `${D2}T20:45:00.000Z` });
+    await applyServerTransition(state.db, { ...by, to: 'testing', opId: 'r2', payload: { bookId: BOOK_ID, ideaId: 'i1' }, nowIso: `${D2}T20:50:00.000Z` });
+    await applyServerTransition(state.db, { ...by, to: 'tested', opId: 'r3', payload: { ideaId: 'i1', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' }, nowIso: `${D2}T20:55:00.000Z` });
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+    // the card moves on elsewhere (another tab parks it): the receipt still holds the old version
+    const stored = t.store.get(`agents/${AGENT}/plays/op_1`);
+    t.store.set(`agents/${AGENT}/plays/op_1`, { ...stored, version: stored.version + 1 });
+    const reads = counterCalls();
+    m.click(m.buttons('Park this card')[0]);
+    await m.flush(10);
+    expect(cardBodies().filter((b) => b.op === 'park')).toHaveLength(1);
+    expect(m.q('[data-card-receipt] [data-card-refusal]').textContent).toBe('This card changed since it was loaded. Reload and try again.');
+    expect(counterCalls()).toBe(reads + 1);
+    // an unknown refusal: the park's own sentence
+    m.teardown(); m.setup();
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [stored] } }} card={stored} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} onPark={async () => ({ ok: false, code: 'server_error' })} />);
+    await m.flush(2);
+    m.click(m.buttons('Park this card')[0]);
+    await m.flush(2);
+    expect(m.q('[data-card-refusal]').textContent).toBe('The card could not be parked.');
+  });
+});

@@ -101,3 +101,12 @@ describe('C1 item 2 — setPracticeFieldSeam: tests only', () => {
     }
   });
 });
+
+describe('C1 review — the mutating lens\'s survivor D-M11', () => {
+  it('the walk is half-open: an instant exactly AT a session\'s close belongs to the next session (the hypothesis review clock\'s anchor rule)', () => {
+    // Wed Nov 11's close, 16:00 EST = 21:00Z: the anchor is Thu Nov 12, so one session after it closes Fri Nov 13
+    expect(new Date(closeOfSessionsAfter(Date.parse('2026-11-11T21:00:00.000Z'), 1)).toISOString()).toBe('2026-11-13T21:00:00.000Z');
+    // one millisecond before the close is still inside Nov 11's session
+    expect(new Date(closeOfSessionsAfter(Date.parse('2026-11-11T20:59:59.999Z'), 1)).toISOString()).toBe('2026-11-12T21:00:00.000Z');
+  });
+});
