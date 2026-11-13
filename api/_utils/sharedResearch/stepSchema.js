@@ -26,7 +26,8 @@
 //      relationship finding with that symbol; only then is its claim written.
 //   5. ✗ a `supersedes` that names no current finding, or a forked chain.
 //   6. ✗ a summary resting on anything but 1–25 current findings, or a summary
-//      sentence with a number no basedOn fact holds (`unsupported_number`).
+//      sentence with a number no basedOn finding holds (`unsupported_number`;
+//      a finding holds its fact's numbers and its own dates — heldNumbersOf).
 //   7. ✗ the forbidden patterns in the reply, the summary, any fact, a claim or
 //      the next action.
 //   8. ✗ more than 12 findings, or a step that would take the record past 100.
@@ -185,6 +186,15 @@ export function numberTokensOf(text) {
   return (String(text ?? '').match(/\d+(?:,\d{3})*(?:\.\d+)?/g) || []).map((t) => String(Number(t.replace(/,/g, ''))));
 }
 
+/** A stored instant's calendar parts as numbers ("2026-11-05T…" → 2026, 11, 5). */
+const dateTokensOf = (iso) => (typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10).split('-').map((p) => String(Number(p))) : []);
+/**
+ * The numbers a finding holds: those its fact states, and its own dates (`at`,
+ * `asOf`) — a sentence that dates a fact by the fact's own date asserts nothing
+ * the finding does not hold. Used by the summary, the claim and the adoption checks.
+ */
+export const heldNumbersOf = (f) => (f ? [...numberTokensOf(f.fact), ...dateTokensOf(f.at), ...dateTokensOf(f.asOf)] : []);
+
 // ── small normalizers ───────────────────────────────────────────────────────
 
 // eslint-disable-next-line no-control-regex -- control characters never reach a record
@@ -305,8 +315,10 @@ export function validateStepTurn(output, ctx) {
   if (Array.isArray(output.companies) && output.companies.length > COMPANIES_MAX) notes.push('companies_cut');
   const roleByTemp = new Map();
   for (const c of companies) {
-    const ref = typeof c?.relationshipRef === 'string' ? c.relationshipRef.trim() : null;
-    if (ref && temp.has(ref) && !roleByTemp.has(ref)) roleByTemp.set(ref, RELATIONSHIP_ROLES.includes(c.role) ? c.role : 'Other');
+    for (const key of ['relationshipRef', 'openRef']) {
+      const ref = typeof c?.[key] === 'string' ? c[key].trim() : null;
+      if (ref && temp.has(ref) && !roleByTemp.has(ref)) roleByTemp.set(ref, RELATIONSHIP_ROLES.includes(c.role) ? c.role : 'Other');
+    }
   }
 
   const built = [];
@@ -367,7 +379,7 @@ export function validateStepTurn(output, ctx) {
       status = 'unverified';
       statusReason = 'inference';
     } else if (support.kind === 'unresolved') {
-      if (kind === 'inference') return fail('invalid_kind', 'unresolved_inference');
+      // Any of the model's kinds may be a link that could not be checked (an inference included): it is `unavailable`.
       source = exchangeSource(LABELS.unresolved);
       status = 'unavailable';
       statusReason = UNRESOLVED_REASONS.includes(support.reason) ? support.reason : 'not_checked';
@@ -417,7 +429,7 @@ export function validateStepTurn(output, ctx) {
     const cf = textFail(claimText, `claim:${symbol}`);
     if (cf) return cf;
     // A claim states no number its company's verified facts do not hold (the evidence discipline; downgrade, not ✗).
-    const held = new Set([...afterById.values()].filter((f) => f.symbol === symbol && f.status === 'verified').flatMap((f) => numberTokensOf(f.fact)));
+    const held = new Set([...afterById.values()].filter((f) => f.symbol === symbol && f.status === 'verified').flatMap(heldNumbersOf));
     if (numberTokensOf(claimText).some((n) => !held.has(n))) { notes.push(`claim_unsupported_number:${symbol}`); continue; }
     const prior = [...afterById.values()].filter((f) => f.kind === 'idea' && f.symbol === symbol).at(-1) ?? null;
     if (prior && supersededHere.has(prior.findingId)) return fail('forked_chain', prior.findingId);
@@ -478,7 +490,7 @@ export function validateStepTurn(output, ctx) {
       if (!basedOn.includes(id)) basedOn.push(id);
     }
     if (basedOn.length === 0 || basedOn.length > BASED_ON_MAX) return fail('invalid_based_on', basedOn.length);
-    const held = new Set(basedOn.flatMap((id) => numberTokensOf(afterById.get(id).fact)));
+    const held = new Set(basedOn.flatMap((id) => heldNumbersOf(afterById.get(id))));
     for (const sentence of sentencesOf(text)) {
       const missing = numberTokensOf(sentence).find((n) => !held.has(n));
       if (missing !== undefined) return fail('unsupported_number', missing);

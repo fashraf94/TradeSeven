@@ -73,6 +73,11 @@ describe('rule 1 — a retrieval support must name a real item', () => {
     const out = validateStepTurn(turn({ findings: [finding({ support: { kind: 'unresolved', index: null, from: [], reason: 'not_disclosed' } })] }), ctx());
     expect(out.findings[0]).toMatchObject({ status: 'unavailable', statusReason: 'not_disclosed', source: { recordKind: 'exchange', label: 'Not yet checked' } });
   });
+  it('an inference that could not be checked is an unavailable inference, not a failed step (the recorded probe wrote one)', () => {
+    const out = validateStepTurn(turn({ findings: [finding({ kind: 'inference', support: { kind: 'unresolved', index: null, from: [], reason: 'not_disclosed' } })], companies: [] }), ctx());
+    expect(out.ok).toBe(true);
+    expect(out.findings[0]).toMatchObject({ kind: 'inference', status: 'unavailable', statusReason: 'not_disclosed' });
+  });
 });
 
 describe('§15 S-2 — a retrieved fact\'s dates', () => {
@@ -176,6 +181,11 @@ describe('rule 6 — the summary', () => {
     const out = validateStepTurn(turn({ summary: { text: 'Lead times stretched past a year in 2026, and Eaton sells switchgear.', basedOn: ['t1', fid('d1')] } }), ctx());
     expect(out.ok).toBe(true);
     expect(out.summary.basedOn).toEqual([out.findings[0].findingId, fid('d1')]);
+  });
+  it('a finding holds its own date: a sentence dating a fact by it passes; a different date fails', () => {
+    const dated = validateStepTurn(turn({ summary: { text: 'Eaton sells switchgear to data-center builders (reported 2026-11-06).', basedOn: ['t1'] } }), ctx());
+    expect(dated.ok).toBe(true);
+    expect(validateStepTurn(turn({ summary: { text: 'Eaton sells switchgear (reported 2026-11-09).', basedOn: ['t1'] } }), ctx())).toMatchObject({ ok: false, rule: 'unsupported_number', detail: '9' });
   });
   it('a sentence with a number no basedOn fact holds fails unsupported_number', () => {
     expect(validateStepTurn(turn({ summary: { text: 'Lead times stretched to 18 months.', basedOn: [fid('d1')] } }), ctx())).toMatchObject({ ok: false, rule: 'unsupported_number', detail: '18' });

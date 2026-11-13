@@ -17,7 +17,8 @@
 // server wrote, never parsed out of prose.
 //
 // projectionOf(record, …) is what the route returns instead of the raw record
-// (spec §6.7), without `symbolKeys` (S-5) and without exchange ids (contract §4).
+// (spec §6.7), without the record's symbol keys (§15 S-5) and without exchange
+// ids (contract §4).
 
 import { ALL_TICKERS, isRetiredStock } from '../rankingConfig.js';
 import { currentFindingsOf } from '../researchRecords/model.js';
@@ -125,7 +126,7 @@ export function etDaysBetween(fromIso, nowIso) {
 }
 
 /**
- * The read projection (spec §6.7, as amended by §15 S-5: no symbolKeys).
+ * The read projection (spec §6.7, as amended by §15 S-5: no symbol keys).
  * @param {object} record  the stored research record
  * @param {{ lines?: object, nowIso: string }} ctx  lines: the latest step's refs (session.latestLinesOf)
  */

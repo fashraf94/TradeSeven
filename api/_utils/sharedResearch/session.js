@@ -7,11 +7,13 @@
 // session's refusals, shapes the daily counts and the client's view. No I/O
 // (the id minter is injectable for tests).
 //
-// Two fields beyond spec §5.1, both routine (build report "Routine choices"):
+// Three fields beyond spec §5.1, all routine (build report "Routine choices"):
 // `requestId` (the forge id a `frame` or item/drop `open` was sent with — the
 // key that makes a retry find the session it made) and `itemKey`
 // (`{recordKind}/{recordId}` of the entry's itemRef — the one equality the
-// `existing` check queries). Neither reaches the client.
+// `existing` check queries), neither of which reaches the client; and
+// `entry.names` (the names in scope the opening wrote facts for — the GET's
+// unwritten ranking rows read them).
 
 import { randomUUID } from 'node:crypto';
 import { STEP_BUDGET, PER_DAY, FRAMINGS_PER_DAY, STEP_INTENTS } from '../../../src/constants/sharedResearch.js';
@@ -88,7 +90,7 @@ export function framingSessionOf({ sessionId, userId, requestId, observation, pl
   return {
     schemaVersion: SESSION_SCHEMA_VERSION, sessionId, userId, requestId, createdAt: nowIso, updatedAt: nowIso,
     status: 'framing',
-    entry: { kind: 'observation', itemRef: null, observation, direction: null, topic: null },
+    entry: { kind: 'observation', itemRef: null, observation, direction: null, topic: null, names: [] },
     itemKey: null,
     frame: null, lastError: null,
     exchanges: [playerExchange],
@@ -109,6 +111,7 @@ export function openSessionOf({ sessionId, userId, requestId, entry, exchanges, 
     entry: {
       kind: entry.kind, itemRef: entry.itemRef ?? null, observation: entry.observation ?? null,
       direction: entry.direction ?? null, topic: entry.topic ?? null,
+      names: Array.isArray(entry.names) ? entry.names : [],
     },
     itemKey: itemKeyOf(entry.itemRef),
     frame: null, lastError: null,

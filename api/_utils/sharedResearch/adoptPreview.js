@@ -17,7 +17,7 @@
 // else `names_not_supported`.
 
 import { currentFindingsOf } from '../researchRecords/model.js';
-import { numberTokensOf } from './stepSchema.js';
+import { numberTokensOf, heldNumbersOf } from './stepSchema.js';
 
 /** The preview's revision: what Save re-checks (spec §6.6). */
 export const previewRevOf = (record) => ({
@@ -109,7 +109,7 @@ export class AssertionError extends Error {
  */
 export function assertAssertionsSupported(statement, { record, carried, selected, deselected }) {
   const byId = new Map((Array.isArray(record?.findings) ? record.findings : []).map((f) => [f.findingId, f]));
-  const held = new Set(carried.map((id) => byId.get(id)).filter((f) => f && f.kind !== 'idea').flatMap((f) => numberTokensOf(f.fact)));
+  const held = new Set(carried.map((id) => byId.get(id)).filter((f) => f && f.kind !== 'idea').flatMap(heldNumbersOf));
   const stray = numberTokensOf(statement).find((n) => !held.has(n));
   if (stray !== undefined) throw new AssertionError('unsupported_assertion', stray);
   const unnamed = selected.find((c) => !namesCompany(statement, c));
