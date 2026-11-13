@@ -1921,26 +1921,35 @@ export const COMPOSITION_DISPLAY_ENABLED = false;
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * MASTER gate for The Mandate. When FALSE (DEFAULT, merge-dark) nothing
- * mandate-related runs: the eval/close/rollover crons no-op and the founder
- * create endpoint is closed regardless of the sub-flags below. The one switch
- * that keeps the whole substrate inert while it is built dark across Phases 1–6.
+ * MASTER gate for The Mandate. TRUE (lit) since PR #759, merged 14 Aug 2026
+ * (activation flip #1, which lit this flag with eval, close and founder-create):
+ * the mandate-evaluate cron runs its eval and close duties and the escape
+ * endpoint is open. Setting it false no-ops the mandate-evaluate and
+ * mandate-rollover crons and hides the escape endpoint (404), whatever the
+ * sub-flags below say. It does NOT gate the founder endpoints (create,
+ * accelerate, drain): those read MANDATE_FOUNDER_CREATE_ENABLED and the
+ * allowlist only.
  */
 // Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const MANAGED_MANDATE_ENABLED = true;
 
 /**
- * The scheduled evaluation loop (§3.1). When FALSE (DEFAULT), the
- * mandate-evaluate handler no-ops — no snapshot, no harvest, no submit. Built
- * P2; registered P6.
+ * The scheduled evaluation loop (§3.1). TRUE (lit) since PR #759, merged
+ * 14 Aug 2026: at each eval slot the mandate-evaluate handler evaluates the
+ * active books, building the slot's snapshot first unless no book and no open
+ * batch doc needs one. Setting it false no-ops the eval slots only — no
+ * snapshot, no harvest, no submit; the close duty in the same handler is
+ * gated by MANDATE_CLOSE_ENABLED. Built P2; registered P6.
  */
 // Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const MANDATE_EVAL_ENABLED = true;
 
 /**
- * The authoritative daily close pass (§3.6). When FALSE (DEFAULT), no book is
- * marked and no dailyRow is written by the close duty. Built P3. Close is the
- * sole writer of high-water marks / drawdown peaks (I6).
+ * The authoritative daily close pass (§3.6). TRUE (lit) since PR #759, merged
+ * 14 Aug 2026: the close duty marks every active book and writes its dailyRow.
+ * Setting it false means no book is marked and no dailyRow is written by the
+ * close duty. Built P3. Close is the sole writer of high-water marks /
+ * drawdown peaks (I6).
  */
 // Pinned by: mandateFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const MANDATE_CLOSE_ENABLED = true;
@@ -1962,13 +1971,14 @@ export const MANDATE_ROLLOVER_ENABLED = false;
 export const MANDATE_DORMANCY_DOWNSHIFT_ENABLED = false;
 
 /**
- * The founder-gated creation endpoint (api/mandate/create.js, §7). When FALSE
- * (DEFAULT), the endpoint returns 403 for everyone — even an allowlisted
- * founder uid — because a flag alone is not authorization AND authorization
- * alone is not the flag: creation requires BOTH this flag true AND the caller's
- * uid in MANDATE_FOUNDER_UIDS. This is the Phase 1 dark-testing switch. Also
- * gates the P4 accelerate and P5 drain founder-ops endpoints (the ambiguity-4
- * precedent: founder machinery, no new flag).
+ * The founder-gated creation endpoint (api/mandate/create.js, §7). TRUE (lit)
+ * since PR #759, merged 14 Aug 2026: a caller whose uid is in
+ * MANDATE_FOUNDER_UIDS can create a book. Setting it false makes the endpoint
+ * return 403 for everyone — even an allowlisted founder uid — because a flag
+ * alone is not authorization AND authorization alone is not the flag:
+ * creation requires BOTH this flag true AND the caller's uid in
+ * MANDATE_FOUNDER_UIDS. Also gates the P4 accelerate and P5 drain founder-ops
+ * endpoints (the ambiguity-4 precedent: founder machinery, no new flag).
  */
 // Pinned by: mandateFlags.test.js, drain.test.js (flagPinGuard: this value and the pins move together — BUILD_RULES §2).
 export const MANDATE_FOUNDER_CREATE_ENABLED = true;

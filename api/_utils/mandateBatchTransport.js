@@ -106,6 +106,28 @@ export const MANDATE_BATCH_COLLECTION = 'mandateBatches';
 export const MANDATE_BATCH_STATS_COLLECTION = 'mandateBatchStats';
 export const MANDATE_BATCH_STATUSES = Object.freeze(['open', 'harvested', 'expired', 'cancelled']);
 
+// ── Open-submission selectors (§3.3 / I1) ────────────────────────────────────
+
+/**
+ * The query for outstanding batch docs. A doc stays 'open' while any entry
+ * awaits harvest or disposition, and after an age-out while it waits for the
+ * provider to end so pre-cancel usage is billed (finalisation). The harvest,
+ * the drain and the T0c idle check all query through this one selector.
+ */
+export function openBatchQuery(db) {
+  return db.collection(MANDATE_BATCH_COLLECTION).where('status', '==', 'open');
+}
+
+/**
+ * T0c: is any batch doc still open? One bounded read (limit 1). True while any
+ * submission still needs harvest, disposition or finalisation. Throws on a
+ * failed read; the caller decides what a failure means.
+ */
+export async function hasOpenBatch(db) {
+  const snap = await openBatchQuery(db).limit(1).get();
+  return (snap.docs || []).length > 0;
+}
+
 // ── Batch bookkeeping doc (§3.3 / §3.7) ──────────────────────────────────────
 
 /**
@@ -523,8 +545,7 @@ export async function harvestOpenBatches(db, {
   const summary = { polled: 0, harvested: 0, expired: 0, disposed: 0, billedEntries: 0, leaseSkips: 0, errors: 0 };
   let openSnap;
   try {
-    openSnap = await db.collection(MANDATE_BATCH_COLLECTION)
-      .where('status', '==', 'open')
+    openSnap = await openBatchQuery(db)
       .limit(MANDATE_BATCH_POLL_PAGE)
       .get();
   } catch (err) {
@@ -789,8 +810,7 @@ async function disposeResultlessEntry(db, entry, requestId, { now, sessionDate, 
  */
 export async function drainOpenBatches(db, { now = new Date(), ownerToken = mintOwnerToken() } = {}) {
   const summary = { batches: 0, disposed: 0, leaseSkips: 0, errors: 0, incomplete: 0 };
-  const openSnap = await db.collection(MANDATE_BATCH_COLLECTION)
-    .where('status', '==', 'open')
+  const openSnap = await openBatchQuery(db)
     .limit(MANDATE_BATCH_POLL_PAGE)
     .get();
 
