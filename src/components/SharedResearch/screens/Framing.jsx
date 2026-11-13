@@ -10,7 +10,7 @@
 import React, { useEffect, useState } from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { S, wash } from '../sharedResearchStyle';
-import { Button, Eyebrow, Field, LinkButton, Notice, Running, StatusTag } from '../parts';
+import { Button, Eyebrow, Field, LinkButton, Notice, QuestionBox, Running, StatusTag } from '../parts';
 
 export default function Framing({ sr, phone, onEditWords, onClose }) {
   const fs = sr.frameState;
@@ -42,7 +42,7 @@ export default function Framing({ sr, phone, onEditWords, onClose }) {
       {!running && fs.status === 'framed' && fs.frame && (
         <>
           <Field id="sr-frame-q" label={COPY.proposed} help={COPY.proposedHelp}>
-            <textarea id="sr-frame-q" value={question} onChange={(e) => setQuestion(e.target.value)} rows={2} maxLength={500} style={{ ...S.input, minHeight: 70, fontWeight: 600, resize: 'vertical' }} />
+            <QuestionBox id="sr-frame-q" value={question} onChange={(e) => setQuestion(e.target.value)} />
           </Field>
           <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
             <div style={S.box}><Eyebrow>{COPY.willCheck}</Eyebrow><p style={S.body}>{fs.frame.check}</p></div>

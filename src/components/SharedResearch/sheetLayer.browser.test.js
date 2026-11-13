@@ -167,3 +167,41 @@ describe.skipIf(!BASE)('focus stays in the sheet, in a real browser (review c1, 
     }, ROW_TIMEOUT * 2);
   }
 });
+
+// The proposed question is shown whole on the smallest phone (the B2 renders): two fixed rows cut a beat's question
+// off mid-line at 320 px. Each question box must show all of its text, with nothing hidden behind its own scroll.
+describe.skipIf(!BASE)('the proposed question is shown whole at 320 px, in a real browser (the renders)', () => {
+  beforeAll(async () => {
+    const { chromium } = await import('playwright-core');
+    browser = browser ?? await chromium.launch({ headless: true, ...(CHANNEL ? { channel: CHANNEL } : {}) });
+  }, ROW_TIMEOUT);
+  afterAll(async () => { await browser?.close(); browser = null; });
+  const hidden = (page, sel) => page.evaluate((s) => { const el = document.querySelector(s); return el ? { scroll: el.scrollHeight, client: el.clientHeight } : null; }, sel);
+  for (const [name, fixture, box, drive] of [
+    ['a story preview', 'story', '#sr-item-q', async () => {}],
+    ['the framing', 'own-words', '#sr-frame-q', async (page) => {
+      await page.fill('#sr-own', 'Security reviews and integration requirements often delay approvals.');
+      await page.click('[data-sr-frame]');
+      await page.waitForSelector('#sr-frame-q', { timeout: ROW_TIMEOUT });
+    }],
+  ]) {
+    it(`320×700: ${name}'s question box shows all of its question`, async () => {
+      const ctx = await browser.newContext({ viewport: { width: 320, height: 700 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+      const page = await ctx.newPage();
+      try {
+        await page.goto(`${BASE.replace(/\/$/, '')}/?srFixture=${fixture}&delay=0`, { waitUntil: 'domcontentloaded', timeout: ROW_TIMEOUT });
+        await page.waitForSelector('[data-shared-research-body]', { timeout: ROW_TIMEOUT });
+        await drive(page);
+        await page.waitForSelector(box, { timeout: ROW_TIMEOUT });
+        await page.waitForTimeout(300);
+        const m = await hidden(page, box);
+        expect(m, JSON.stringify(m)).not.toBeNull();
+        expect(m.scroll, JSON.stringify(m)).toBeLessThanOrEqual(m.client + 1);
+        await page.fill(box, `${await page.inputValue(box)} And how directly does it reach the suppliers?`);
+        await page.waitForTimeout(100);
+        const grown = await hidden(page, box);
+        expect(grown.scroll, `after typing: ${JSON.stringify(grown)}`).toBeLessThanOrEqual(grown.client + 1);
+      } finally { await ctx.close(); }
+    }, ROW_TIMEOUT * 2);
+  }
+});

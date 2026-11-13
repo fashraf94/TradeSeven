@@ -17,15 +17,14 @@ import React, { useState } from 'react';
 import { SR_COPY as COPY } from '../sharedResearchCopy';
 import { T, S, wash } from '../sharedResearchStyle';
 import { formatWhen, quotaStateOf } from '../sharedResearchView';
-import { Button, Eyebrow, Field, LinkButton, Notice, Running, Tag } from '../parts';
+import { Button, Eyebrow, Field, LinkButton, Notice, QuestionBox, Running, Tag } from '../parts';
 import { questionForBeat } from '../../../constants/sharedResearch';
 
 function QuestionAndDirection({ idPrefix, question, setQuestion, direction, setDirection, disabled }) {
   return (
     <>
       <Field id={`${idPrefix}-q`} label={COPY.proposed} help={COPY.proposedHelp}>
-        <textarea id={`${idPrefix}-q`} value={question} onChange={(e) => setQuestion(e.target.value)} rows={2} maxLength={500} disabled={disabled}
-          style={{ ...S.input, minHeight: 70, fontWeight: 600, resize: 'vertical' }} />
+        <QuestionBox id={`${idPrefix}-q`} value={question} onChange={(e) => setQuestion(e.target.value)} disabled={disabled} />
       </Field>
       <Field id={`${idPrefix}-dir`} label={COPY.direction} help={COPY.directionHelp}>
         <input id={`${idPrefix}-dir`} value={direction} onChange={(e) => setDirection(e.target.value)} maxLength={500} disabled={disabled}

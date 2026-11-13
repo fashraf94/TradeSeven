@@ -6,7 +6,7 @@
 // Accessibility (K-10): role="status" on running lines, role="alert" on
 // failures, aria-expanded on disclosures, 44 px targets.
 
-import React, { useId, useState } from 'react';
+import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { SR_COPY as COPY } from './sharedResearchCopy';
 import { T, S, wash, buttonStyle, linkStyle } from './sharedResearchStyle';
 import { labelOf, toneOf, dateLineOf, sourceLabelOf, safeUrlOf, formatDay, withoutRole } from './sharedResearchView';
@@ -94,6 +94,23 @@ export function Field({ id, label, help = null, children }) {
       {help && <p id={helpId} style={{ ...S.small, marginTop: 6 }}>{help}</p>}
     </div>
   );
+}
+
+/**
+ * The proposed question's box. It grows to show the whole question: two fixed rows cut a beat's question off
+ * mid-line on a 320 px phone (the B2 renders). The input is border-box, so its height is the content's scrollHeight
+ * plus its two 1 px borders. jsdom measures 0, and the rows stand there. Other props (Field's aria-describedby)
+ * pass through.
+ */
+export function QuestionBox({ value, ...rest }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    if (el.scrollHeight > 0) el.style.height = `${el.scrollHeight + 2}px`;
+  }, [value]);
+  return <textarea ref={ref} value={value} rows={2} maxLength={500} {...rest} style={{ ...S.input, minHeight: 70, fontWeight: 600, resize: 'vertical' }} />;
 }
 
 /** A finding's date line (K-6 g): its own date (and "published"), or "Undated · read {date}" — never the read as the fact's date. */
