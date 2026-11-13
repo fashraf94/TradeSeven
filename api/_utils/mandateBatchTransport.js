@@ -86,6 +86,7 @@ import { executeDecision, disposeSubmission } from './mandateExecution.js';
 import { evaluateGate } from './mandateGate.js';
 import { isSectorCapCorrected } from './mandateSectorCap.js';
 import { normalizeDecisionInput } from './mandateDecisionTool.js';
+import { responseAttribution } from './mandateRationale.js';
 import { markFor, classifyBookTick, SNAPSHOT_COLLECTION } from './mandateUniverseSnapshot.js';
 import { frictionForDecision } from './mandateFrictionModel.js';
 import { acquireLease, releaseLease, mintOwnerToken } from './mandateLease.js';
@@ -314,24 +315,48 @@ async function bookkeepHealth(mandateRef, book, outcome, { now }) {
  * mark — INCLUDING when the terminal was already claimed by another path
  * (close-pass expiry / lifecycle cancel): the spend was real either way.
  *
+ * T0b: every terminal written here stands on a model RESPONSE, so each carries
+ * its attribution — the pinned seat (the vintage is content-addressed and
+ * immutable, so the harvest re-read IS the seat the request was built from;
+ * `entry.model` is the submit-time copy when the vintage is unreadable) and
+ * the response time (`providerEndedAt`, the provider's batch end; the harvest
+ * clock when that is unreadable). The decision tool input is read ONCE, up
+ * front (extractDecisionInput is pure and needs neither book nor vintage), so
+ * its reason rides every terminal that has one: book_missing, no_vintage,
+ * bad_decision and every execution terminal. Only a response with no readable
+ * tool input (no_decision_tool_use, unexpected_block:*) records 'absent', and
+ * its failCondition explains why. The disposition order is unchanged.
+ *
  * @returns {{ …terminal | skipped:'lease', billedUsage?: true }}
  */
 async function processSucceededResult(db, {
   entry, result, mandateRef, vintage, currentSnapshot, submitSnapshot, ownerToken, now, sessionDate, alreadyBilled = false,
+  providerEndedAt = null,
 }) {
   const requestId = entry.envelope.requestId;
+  const extracted = extractDecisionInput(result.message);
+  const reasonInHand = extracted.ok
+    ? { rationale: extracted.input?.rationale ?? null, conviction: extracted.input?.conviction ?? null }
+    : {};
+  const endedMs = toMs(providerEndedAt);
+  const attribution = responseAttribution({
+    modelSeat: vintage?.modelSeat ?? null,
+    modelId: entry.model ?? null,
+    rationaleAt: endedMs != null ? new Date(endedMs) : now,
+    rationaleAtBasis: endedMs != null ? 'batch_ended' : 'batch_harvested',
+  });
   const lease = await acquireLease(db, mandateRef, ownerToken, { now });
   if (!lease.acquired) {
     if (lease.reason !== 'no_such_book') return { skipped: 'lease' };
     // Book gone (out-of-band delete): no state to serialize or bill against —
     // still claim the terminal so the batch doc converges (I1).
-    const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'book_missing', envelope: entry.envelope });
+    const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'book_missing', envelope: entry.envelope, ...reasonInHand, attribution });
     return { ...out, billedUsage: true };
   }
   try {
     const freshSnap = await mandateRef.get();
     if (!freshSnap.exists) {
-      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'book_missing', envelope: entry.envelope });
+      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'book_missing', envelope: entry.envelope, ...reasonInHand, attribution });
       return { ...out, billedUsage: true };
     }
     const book = freshSnap.data();
@@ -349,22 +374,26 @@ async function processSucceededResult(db, {
     // the eval loop's no_vintage) — but under batch the submission EXISTS
     // durably, so it must still reach a terminal decision (I1), not a soft skip.
     if (!vintage) {
-      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'no_vintage', envelope: entry.envelope });
+      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: 'no_vintage', envelope: entry.envelope, ...reasonInHand, attribution });
       const billedNow = await billUnderLease(book);
       if (!out.idempotent) await bookkeepHealth(mandateRef, book, out, { now });
       return { ...out, ...(billedNow ? { billedUsage: true } : {}) };
     }
 
-    const extracted = extractDecisionInput(result.message);
     if (!extracted.ok) {
-      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: extracted.reason || 'model_no_tool_use', envelope: entry.envelope });
+      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: extracted.reason || 'model_no_tool_use', envelope: entry.envelope, attribution });
       const billedNow = await billUnderLease(book);
       if (!out.idempotent) await bookkeepHealth(mandateRef, book, out, { now });
       return { ...out, ...(billedNow ? { billedUsage: true } : {}) };
     }
     const norm = normalizeDecisionInput(extracted.input, { verbs: entry.verbs });
     if (!norm.ok) {
-      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: `bad_decision:${norm.reason}`, envelope: entry.envelope });
+      // T0b: the tool input is in hand, so its reason is kept even though the
+      // decision never normalized (bounded and attributed like any other).
+      const out = await disposeSubmission(db, {
+        mandateRef, requestId, status: 'failed', failCondition: `bad_decision:${norm.reason}`, envelope: entry.envelope,
+        ...reasonInHand, attribution,
+      });
       const billedNow = await billUnderLease(book);
       if (!out.idempotent) await bookkeepHealth(mandateRef, book, out, { now });
       return { ...out, ...(billedNow ? { billedUsage: true } : {}) };
@@ -405,7 +434,7 @@ async function processSucceededResult(db, {
 
     const out = await executeDecision(db, {
       mandateRef, decisionId: requestId, decision, gateResult, envelope: entry.envelope,
-      snapshot: currentSnapshot, submitMark, currentSessionDate: sessionDate, now, caFrozen, friction,
+      snapshot: currentSnapshot, submitMark, currentSessionDate: sessionDate, now, caFrozen, friction, attribution,
     });
     const billedNow = await billUnderLease(book);
     if (!out.idempotent) {
@@ -669,6 +698,7 @@ export async function harvestOneBatch(db, batchDocFromQuery, {
         }
         out = await processSucceededResult(db, {
           entry, result, mandateRef, vintage, currentSnapshot, submitSnapshot, ownerToken, now, sessionDate, alreadyBilled,
+          providerEndedAt: provider?.ended_at ?? null,
         });
       } else if (alreadyDisposed) {
         // Disposed elsewhere and the row carries no billable usage — settle
