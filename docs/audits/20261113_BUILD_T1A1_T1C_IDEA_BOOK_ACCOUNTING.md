@@ -45,6 +45,7 @@ Every `file:line` below was read at the code head in this session (VERIFIED) unl
 **What needs you.**
 
 - **Sign-off on the new stores** (§7). They are server-only; no rule or index changes.
+- **A blessing for edits to shared engine code beyond what the prompt named.** The prompt asked for the snapshot's build set to change at the cron call sites. The review showed that is not enough to keep a quarterly book's view unchanged once both kinds are active, so this PR also edits the shared snapshot builder, the test of whether a symbol may be bought, the quarterly prompt's candidate list, and one skip in the quarterly evaluation loop (§2.2; §3.1 R-12, R-13). Each is inert unless an idea book is in play: the seventeen-scenario comparison is byte-identical, and so is a refuter's 40,000-case comparison of the builder against the old one.
 - **Nine questions** (§3.2). None blocks a dark merge. The first one (a stock with no market cap pays a higher modelled cost than its comparison) should be ruled before the flag leaves `'off'`.
 - The crons were not preview-tested: crons do not run on Vercel preview (BUILD_RULES §6). Verification is the tests below.
 
@@ -101,7 +102,7 @@ None of these is on the fence list.
 | `api/_utils/mandateBatchTransport.js` | The submit gate, the harvest and the drain never act on an idea book, and say so | `:226`, `:365–372`, `:788–791` |
 | `api/_utils/filmRoom/practiceFieldSeam.js` | The two default helpers now come from `practiceField/bookStore.js` | `:11–14`, `:30–31`, `:128–135` |
 
-Guards and ratchets updated in the same commits: `api/_utils/compositionProtectedStoresScan.js` (two collections added to the protected list), `api/_utils/compositionProtectedStoresAllowlist.json` (15 keys and their notes), `api/_utils/mandateMoneyRounding.scan.test.js` (the scan now covers `practiceField/`; `money.js` pinned at 11 sites), `api/_utils/mandateRationale.imports.test.js` (one pinned mention of the decisions store, `entry.js`), `src/config/flagPinGuard.test.js` (the flag's note in the dark-by-design block).
+Guards and ratchets updated in the same commits: `api/_utils/compositionProtectedStoresScan.js` (two collections added to the protected list), `api/_utils/compositionProtectedStoresAllowlist.json` (14 keys and their notes), `api/_utils/mandateMoneyRounding.scan.test.js` (the scan now covers `practiceField/`; `money.js` pinned at 11 sites), `api/_utils/mandateRationale.imports.test.js` (one pinned mention of the decisions store, `entry.js`), `src/config/flagPinGuard.test.js` (the flag's note in the dark-by-design block).
 
 ### 2.3 Every reader and writer of `mandates`
 
@@ -223,7 +224,7 @@ All on a WSL worktree at `ab57faf4`.
 | Lint gate | `npm run lint:gate` | 0 | `eslint . --config eslint.gate.config.js --max-warnings 0`, no findings |
 | Build | `npx vite build` | 0 | `✓ built in 46.91s` (only the standing chunk-size notice) |
 
-The base's own suite at `b9775361` earlier in the session was `1445 passed \| 10 skipped`, `32033 passed \| 120 skipped`. An intermediate full run at `2cde3ca6` had four failures: one was mine (the protected-store scan wanted a moved write site registered, fixed at `8475f14a`) and three were load-sensitive rows in unrelated files (O-3). The run above, on a quiet machine, has none.
+An earlier full run on this branch at `b9775361`, before the review, was `1445 passed \| 10 skipped`, `32033 passed \| 120 skipped`. An intermediate full run at `2cde3ca6` had four failures: one was mine (the protected-store scan wanted a moved write site registered, fixed at `8475f14a`) and three were load-sensitive rows in unrelated files (O-3). The run above, on a quiet machine, has none.
 
 After the report commit, the lint gate and the build were run again on the pushed head (the closing message gives the lines); a docs-only commit cannot change a test's result, and the suite was not run a third time.
 
@@ -275,6 +276,8 @@ PF_E2E_EVIDENCE {"sha256":"10049196e823efdc82d6ae26dacc99505cb0794106927e94beeb4
 - `enterIdea` (`entry.js:155`) checks every name, every comparison symbol and SPY before any leg, inside one transaction. A leg the engine itself cannot fill is one more failed attempt for the whole basket.
 - The engine's other caller, `executeDecision`, throws for an idea book before any write (`mandateExecution.js:517`).
 
+**What remains for T1a-2.** No exit exists yet. Line exits, trims and settlement sales must go through `executeIdeaFill`; it already refuses a SELL or TRIM at a carried mark or at average cost (tested), so the engine's exit fallback cannot be reached through it. T1a-2 must decide what an idea does when a name has no eligible mark at its due session, and Q-2 (a maximum age).
+
 **Checked adversarially.** Refuter 3 drove 44 distinct cases through `enterIdea` (four kinds of leg × eleven kinds of bad price): every one waited, wrote nothing but the attempt, and cancelled cleanly at the last slot. It also called `executeIdeaFill` 48 times for SELL, TRIM, ADD and BUY on snapshots where the bare engine fills a SELL: all refused.
 
 ### 5.2 B-MARK — a mark is never reported as a sale
@@ -283,6 +286,8 @@ PF_E2E_EVIDENCE {"sha256":"10049196e823efdc82d6ae26dacc99505cb0794106927e94beeb4
 
 **What the build does.** `closeIdeaBook` (`close.js:167`) writes no decision and no receipt. A ledger's cash changes only by a dividend. Delistings are not applied (R-9). Every row carries `basis: 'mark'`, and values are named as marks (`markedGapUsd`, `markedHoldingsValue`). A test hook scans every valuation row that the close, entry, end-to-end and sweep tests write for a sale's word, as a key or a value (`fixtures.js` `saleWordsOnMarkRows`). A word list cannot be complete; the end-to-end store hash (§4.4) catches any new field. One wording point is put to the founder (Q-4).
 
+**What remains for T1a-2.** Settlement is the first real sale. It must write its own decision and receipt, apart from the valuation rows, and settle the comparison and SPY ledgers on the same terms. The delisting and ticker-change policy (R-9, Q-8) is T1a-2's.
+
 ### 5.3 B-STAMP — every book is valued at the same timestamp
 
 **What the engine does.** The close sweep reads the snapshot `${date}_close` before anything else and builds it only when it is absent (`mandate-evaluate.js:837–838`, `:857`); the eval sweep does the same per slot (`:375–376`). The first writer wins and a loser adopts the winner's document (`mandateUniverseSnapshot.js:260`). The `force` option (`:373`, `:528`) has no production caller.
@@ -290,6 +295,8 @@ PF_E2E_EVIDENCE {"sha256":"10049196e823efdc82d6ae26dacc99505cb0794106927e94beeb4
 **What the build does.** `closeIdeaBook` refuses any snapshot whose key is not exactly `${date}_close` (`close.js:52`, `:167`) and imports no fetcher. Every ledger of every idea is marked from that one object. Each row stores `closeSnapshotKey` and the snapshot's own build time. A close for a date before the last closed date is refused (`close.js:191`). The entry snapshot must be the slot's own (`entry.js:159`).
 
 **The one document this build can rewrite** is the day document (R-13), never a slot or close snapshot. Refuter 3 ran the rebuild between an entry and two closes, with the vendor answering the same, differently, with nothing and with an error: every stored slot and close snapshot was byte-identical afterwards, and each corporate action was applied exactly once per ledger. After its report the rebuild was changed to keep what the first build holds (§6.2, RF3-2).
+
+**What remains for T1a-2.** Recovery of a missed close: `closeIdeaBook` refuses a date before the last closed one, so a missed date needs its own path that reads the stored snapshot (O-8). Settlement must mark from the same `${date}_close` snapshot. A book that is draining is not dispatched by either sweep today (both query active books only).
 
 ---
 
@@ -399,6 +406,27 @@ Each mutant re-breaks one rule in a `git archive` copy of the code head (never t
 | R1, R2, R3 | One per guard added in review round 1 | 32 | 32 |
 | RF1, RF2, RF3 | One per guard added in the refuter round | 14 | 14 |
 
+**The prompt's list, item by item.**
+
+| The prompt asked to re-break | Mutants |
+|---|---|
+| Reconciliation | RECON-01 … 10, R1-05 … 07 |
+| The all-or-nothing rule | AON-01, 02, R1-10 |
+| The eligible-mark rule | MARK-01 … 07, R3-02, R3-03 |
+| The same-ticker refusal | SAME-01, 02 |
+| The reservation race | RESERVE-01 … 03 |
+| The cash floor | CAP-01, CAP-02, RF1-01 |
+| The exit fallback to a carried mark and to average cost | NOFILL-01 … 04 |
+| A close that moves a marked value into cash | BMARK-01 … 04 |
+| A second snapshot on one date | STAMP-01 … 04 |
+| A position with no idea | OWNED-01 … 03 |
+| An idea with no origin | ORIGIN-01, 02 |
+| Each comparison type's cost policy | CMP-01 … 06 |
+| Corporate-action double application | CA-01 … 03, CA-06 |
+| Kind isolation on each quarterly path | KIND-01 … 15 |
+| The snapshot union rule | UNION-01 … 07, R2-01 … 07 |
+| The gap's rounding basis | GAP-01, 02 |
+
 **How it got there.**
 
 - A trial run of 112 mutants before the review killed 109. The three survivors got rows: an incomplete quote with a positive price, an admission racing the close, the daily layer beside a quarterly book.
@@ -427,7 +455,7 @@ All are server-only. No rule and no index changes. Each write site is on the pro
 
 Two fields were added to documents the quarterly engine already writes, and only when an idea book is in play: `coverageOnlySymbols` on `mandateUniverseSnapshots/{tickKey}`, and `candidateUniverseOmitted` on that document and on `mandateUniverseDaily/{date}`.
 
-One write is not on the allowlist because the scan resolves its collection as unprotected: the best-effort `lastEntryAttempt` note on an idea when its entry fails (`entry.js:348`, R-20). It moves no money and never creates a document.
+One write is not on the allowlist: the best-effort `lastEntryAttempt` note on an idea when its entry fails (`entry.js:348`, R-20). The scan did not flag it (I did not establish why; the write names the `ideas` sub-collection literally). It moves no money and never creates a document. Listed here so the sign-off covers it.
 
 ---
 
