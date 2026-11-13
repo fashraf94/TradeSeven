@@ -80,6 +80,11 @@ export function weakestOf(book) {
   return rankedBook(book)[0] ?? null;
 }
 
+/** The held measured stocks with no valid committed context yet (named, never ranked — review A3). */
+export function unscoredOf(book) {
+  return book.filter((e) => e.onLadder && !e.scored).map((e) => e.symbol);
+}
+
 /** The held names not on the measured ladder (named, never ranked). */
 export function offLadderOf(book) {
   return book.filter((e) => !e.onLadder).map((e) => e.symbol);

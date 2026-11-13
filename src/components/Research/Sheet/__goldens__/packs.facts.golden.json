@@ -108,7 +108,7 @@
    ],
    [
     "bench_alternative",
-    "Best on the bench by Trend Follower’s ranking: MSFT 72 (#3 of 4) · rung size ATR 1.9% (rankings as of Wed 10/14)",
+    "Best on the bench by Trend Follower’s ranking: MSFT 72 (#3 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
     "the platform rankings",
     "unverified",
     "rankings_doc"
@@ -172,8 +172,8 @@
     "told_it"
    ],
    "take_profit": [
-    "bench_alternative",
     "lock_now",
+    "rung_distance",
     "rung_down",
     "idea",
     "told_it"
@@ -289,7 +289,7 @@
    ],
    [
     "bench_alternative",
-    "Best on the bench by Contrarian’s ranking: MSFT 45 (#2 of 4) · rung size ATR 1.9% (rankings as of Wed 10/14)",
+    "Best on the bench by Contrarian’s ranking: MSFT 45 (#2 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
     "the platform rankings",
     "unverified",
     "rankings_doc"
@@ -353,9 +353,9 @@
     "told_it"
    ],
    "take_profit": [
-    "bench_alternative",
     "rung_down",
     "lock_now",
+    "rung_distance",
     "idea",
     "told_it"
    ]
@@ -470,7 +470,7 @@
    ],
    [
     "bench_alternative",
-    "Best on the bench by Speculator’s ranking: MSFT 58 (#3 of 4) · rung size ATR 1.9% (rankings as of Wed 10/14)",
+    "Best on the bench by Speculator’s ranking: MSFT 58 (#3 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
     "the platform rankings",
     "unverified",
     "rankings_doc"
@@ -534,8 +534,8 @@
     "told_it"
    ],
    "take_profit": [
-    "bench_alternative",
     "lock_now",
+    "rung_distance",
     "rung_down",
     "idea",
     "told_it"
@@ -644,7 +644,7 @@
    ],
    [
     "bench_alternative",
-    "Best on the bench by Capital Preserver’s ranking: MSFT 74 (#1 of 4) · rung size ATR 1.9% (rankings as of Wed 10/14)",
+    "Best on the bench by Capital Preserver’s ranking: MSFT 74 (#1 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
     "the platform rankings",
     "unverified",
     "rankings_doc"
@@ -709,8 +709,8 @@
    ],
    "take_profit": [
     "rung_down",
-    "risk_lever",
     "lock_now",
+    "rung_distance",
     "idea",
     "told_it"
    ]
@@ -825,7 +825,7 @@
    ],
    [
     "bench_alternative",
-    "Best on the bench by Diversifier’s ranking: MSFT 68 (#2 of 4) · rung size ATR 1.9% (rankings as of Wed 10/14)",
+    "Best on the bench by Diversifier’s ranking: MSFT 68 (#2 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
     "the platform rankings",
     "unverified",
     "rankings_doc"
@@ -890,8 +890,8 @@
    ],
    "take_profit": [
     "rung_down",
-    "risk_lever",
     "lock_now",
+    "rung_distance",
     "idea",
     "told_it"
    ]
@@ -1006,7 +1006,7 @@
    ],
    [
     "bench_alternative",
-    "Best on the bench by Fundamental Investor’s ranking: MSFT 81 (#1 of 4) · rung size ATR 1.9% (rankings as of Wed 10/14)",
+    "Best on the bench by Fundamental Investor’s ranking: MSFT 81 (#1 of 4) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)",
     "the platform rankings",
     "unverified",
     "rankings_doc"
@@ -1070,9 +1070,9 @@
     "told_it"
    ],
    "take_profit": [
-    "bench_alternative",
     "rung_down",
     "lock_now",
+    "rung_distance",
     "idea",
     "told_it"
    ]

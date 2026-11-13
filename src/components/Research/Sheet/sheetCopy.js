@@ -195,13 +195,14 @@ export const SHEET_COPY = Object.freeze({
   benchSignal: (time, summary) => `Flagged at ${time}: ${summary}`,
   // QF-2 — a held measured stock's place in the book, in rungs from entry at the last check.
   // `rows` are rungsText strings; `others` the held names not on the measured ladder (never ranked).
-  bookRank: (sym, rungs, rank, n, lowSym, lowRungs, time, others) => `${rank === 1
+  // `pending`: held measured stocks the check could not score (review A3) — named, so the count is never short.
+  bookRank: (sym, rungs, rank, n, lowSym, lowRungs, time, others, pending) => `${rank === 1
     ? (n === 1 ? `${sym} is ${rungs} rungs from entry, your only stock on the ladder` : `${sym} is ${rungs} rungs from entry, the lowest of your ${n} stocks`)
-    : `${sym} is ${rungs} rungs from entry, the ${ordinal(rank)} lowest of your ${n} stocks; the lowest is ${lowSym} at ${lowRungs}`}${time ? ` · at the ${time} check` : ''}${others.length ? ` · not on the ladder: ${others.join(', ')}` : ''}`,
+    : `${sym} is ${rungs} rungs from entry, the ${rank === n ? 'highest' : `${ordinal(rank)} lowest`} of your ${n} stocks; the lowest is ${lowSym} at ${lowRungs}`}${time ? ` · at the ${time} check` : ''}${pending.length ? ` · no check yet: ${pending.join(', ')}` : ''}${others.length ? ` · not on the ladder: ${others.join(', ')}` : ''}`,
   // QF-3 — how long the opened name has been quiet, against the archetype's rotation rule.
   quietTicks: (sym, n, arch, ticks) => `${sym}: ${plural(n, 'quiet check', 'quiet checks')} in a row; ${arch} counts a name stalled at ${ticks}`,
   // QF-3 / QF-4 — the best available bench name by the archetype's ranking, with its rung size (BS-4's ATR reading).
-  benchAlternative: (arch, sym, score, rank, n, atr, asOf) => `Best on the bench by ${arch}’s ranking: ${sym} ${Math.round(score)} (#${rank} of ${n})${atr ? ` · rung size ATR ${atr}` : ''}${asOf ? ` (rankings as of ${asOf})` : ''}`,
+  benchAlternative: (arch, sym, score, rank, n, atr, asOf) => `Best on the bench by ${arch}’s ranking: ${sym} ${Math.round(score)} (#${rank} of ${n})${atr ? ` · estimated rung size: ATR reading ${atr}` : ''}${asOf ? ` (rankings as of ${asOf})` : ''}`,
   // QF-4 — what a swap-out at the last check's price would have locked (QF-0: the gain part and every
   // crossed rung, at the exit price). The real lock uses the swap's own later quote, so the item names the check.
   lockNow: (time, price, d, total, gain, banked, hit) => `Swapped out at the ${time} check’s ${money(price, d)}, it would lock ${signed(total)}: ${signed(gain)} from the gain, ${signed(banked)} banked${hit ? `, ${signed(hit)} from downside rungs` : ''}`,

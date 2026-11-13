@@ -171,7 +171,7 @@ describe('verifyResearchItems — the server re-reads the battle (BC-7)', () => 
     // QF-6: the take-profit and weakest-spot packs — the lock, the place in the book and the quiet count
     // re-read from the battle; the downside and the bench alternative are the screen's.
     const tp = verifyResearchItems({ battle, ask: sent(packs.take_profit.items), nowMs: SHEET_NOW });
-    expect(tp.map((i) => [i.kind, i.status, i.statusReason])).toEqual([['bench_alternative', 'unverified', 'rankings_doc'], ['lock_now', 'verified', null], ['rung_down', 'unverified', 'live_quote'], ['idea', 'verified', null], ['told_it', 'verified', null]]);
+    expect(tp.map((i) => [i.kind, i.status, i.statusReason])).toEqual([['lock_now', 'verified', null], ['rung_distance', 'unverified', 'live_quote'], ['rung_down', 'unverified', 'live_quote'], ['idea', 'verified', null], ['told_it', 'verified', null]]);
     const ws = verifyResearchItems({ battle, ask: sent(packs.weakest_spot.items), nowMs: SHEET_NOW });
     expect(ws.map((i) => [i.kind, i.status, i.statusReason])).toEqual([['move_since_entry', 'unverified', 'live_quote'], ['bench_alternative', 'unverified', 'rankings_doc'], ['book_rank', 'verified', null], ['idea', 'verified', null], ['told_it', 'verified', null]]);
   });

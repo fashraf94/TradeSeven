@@ -5,7 +5,9 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { measuredBookBattle, measuredSheetBattle, BOOK_RANKINGS, BOOK_CHECK_AT, BOOK_STOCKS, SHEET_NOW, ARCHETYPES } from './__fixtures__/sheetBattles.js';
 import { buildPacks, candidateItems, questionSetOf, ANCHOR_KINDS, PACK_MAX } from './packs.js';
-import { bookOf, rankedBook, weakestOf, offLadderOf, lockNowOf } from './book.js';
+import { bookOf, rankedBook, weakestOf, offLadderOf, unscoredOf, lockNowOf } from './book.js';
+import { SHEET_COPY } from './sheetCopy.js';
+import { verifyResearchItems } from '../../../../api/_utils/researchAsk.js';
 
 const NOW = Date.parse('2026-10-14T17:07:00.000Z');
 let BOOK;
@@ -91,12 +93,12 @@ describe('QF-3 — Is this our weakest spot?', () => {
     expect(pack.items.map((i) => i.kind).sort()).toEqual(['bench_alternative', 'book_rank', 'move_since_entry', 'quiet_ticks']);
     expect(factOf(BOOK, 'EQIX', 'quiet_ticks')).toBe('EQIX: 4 quiet checks in a row; Trend Follower counts a name stalled at 5');
     // NVDA ranks higher (91) but is cooling down until tomorrow: ORCL is the best that can come in.
-    expect(factOf(BOOK, 'EQIX', 'bench_alternative')).toBe('Best on the bench by Trend Follower’s ranking: ORCL 85 (#2 of 5) · rung size ATR 2.8% (rankings as of Wed 10/14)');
+    expect(factOf(BOOK, 'EQIX', 'bench_alternative')).toBe('Best on the bench by Trend Follower’s ranking: ORCL 85 (#2 of 5) · estimated rung size: ATR reading 2.8% (rankings as of Wed 10/14)');
   });
   it('Capital Preserver: "doesn\'t rotate out of quiet names"; its own ranking picks the bench name', async () => {
     const g = await measuredBookBattle({ archetype: 'guardian' });
     expect(factOf(g, 'EQIX', 'quiet_ticks')).toBe('Capital Preserver doesn’t rotate out of quiet names');
-    expect(factOf(g, 'EQIX', 'bench_alternative')).toBe('Best on the bench by Capital Preserver’s ranking: MSFT 72 (#1 of 5) · rung size ATR 1.9% (rankings as of Wed 10/14)');
+    expect(factOf(g, 'EQIX', 'bench_alternative')).toBe('Best on the bench by Capital Preserver’s ranking: MSFT 72 (#1 of 5) · estimated rung size: ATR reading 1.9% (rankings as of Wed 10/14)');
   });
   it('rankings older than BS-4\'s 96-hour window: the bench name keeps its rank, the rung size is dropped', () => {
     const old = { ...BOOK_RANKINGS, computedAt: { seconds: (NOW - 97 * 3600 * 1000) / 1000 } };
@@ -160,3 +162,44 @@ describe('QF-5 — Is this better than our weakest holding?', () => {
 function BOOK_STOCKS_WITH(moves) {
   return BOOK_STOCKS.map((s) => (Object.hasOwn(moves, s.symbol) ? { ...s, rungs: moves[s.symbol] } : s));
 }
+
+describe('the review round (PR 1 §2 review: A1, A2, A3, A6, A9, C2)', () => {
+  it('A1 (refuted, the letter kept) — up means gain > 0: +0.03 rungs (prints 0.0) is up; −0.03 is not', async () => {
+    const flat = await measuredBookBattle({ stocks: BOOK_STOCKS_WITH({ AAPL: 0.03 }) });
+    expect(posOf(flat, 'AAPL').rungsShown).toBe(0);
+    expect(posOf(flat, 'AAPL').rungs).toBeGreaterThan(0);
+    expect(questionSetOf(args(flat, 'AAPL')).questions[0]).toBe('take_profit');
+    const down = await measuredBookBattle({ stocks: BOOK_STOCKS_WITH({ AAPL: -0.03 }) });
+    expect(questionSetOf(args(down, 'AAPL')).questions[0]).toBe('weakest_spot');
+  });
+  it('A2 — an incumbent the agent no longer holds is no incumbent: the compare is the weakest holding', () => {
+    const items = candidateItems(args(BOOK, 'MSFT', { incumbent: 'TSLA' })).items;
+    expect(items.find((i) => i.kind === 'incumbent')).toBeUndefined();
+    expect(items.find((i) => i.kind === 'book_rank').symbol).toBe('EQIX');
+    expect(items.find((i) => i.kind === 'rank_scores').fact).toBe('Trend Follower’s ranking: MSFT 72 · EQIX 42 (rankings as of Wed 10/14)');
+  });
+  it('A3 — a held measured stock the check could not score is named, so the count is never short', () => {
+    // (Deleting one context breaks the committed content for all, so the case is built on the pure book.)
+    const book = bookOf(BOOK).map((e) => (e.symbol === 'CAT' ? { ...e, scored: false } : e));
+    expect(rankedBook(book).map((e) => e.symbol)).not.toContain('CAT');
+    expect(SHEET_COPY.bookRank('EQIX', '−0.4', 1, 5, 'EQIX', '−0.4', 'Wed 12:45', ['ETH'], ['CAT'])).toBe('EQIX is −0.4 rungs from entry, the lowest of your 5 stocks · at the Wed 12:45 check · no check yet: CAT · not on the ladder: ETH');
+    expect(unscoredOf(book)).toEqual(['CAT']);
+  });
+  it('A6 — the bench rank is the printed score\'s: 84.6 and 84.9 both print 85 and share #2', () => {
+    const tie = { ...BOOK_RANKINGS, stocks: [...BOOK_RANKINGS.stocks, { symbol: 'IBM', arch_scores: { momentum_chaser: 84.9 } }] };
+    expect(factOf(BOOK, 'EQIX', 'bench_alternative', { rankings: tie })).toMatch(/ORCL 85 \(#2 of 6\)/);
+  });
+  it('A9 — the top of the book reads "the highest", never "the 6th lowest of your 6"', () => {
+    expect(factOf(BOOK, 'AAPL', 'book_rank')).toBe('AAPL is +1.3 rungs from entry, the highest of your 6 stocks; the lowest is EQIX at −0.4 · at the Wed 12:45 check · not on the ladder: ETH');
+  });
+  it('C2 — the CPU\'s row of a ticker the agent holds: never compared with itself; the server verifies its true items', async () => {
+    // EQIX is the agent's weakest; the CPU's row of EQIX (not the agent's position) compares with the NEXT weakest.
+    const items = candidateItems(args(BOOK, 'EQIX', { row: { posKey: 'cpu:star:0' } })).items;
+    expect(items.find((i) => i.kind === 'book_rank').symbol).toBe('KO');
+    const sent = items.filter((i) => i.kind === 'book_rank' || i.kind === 'rung_compare');
+    expect(sent.map((i) => i.kind).sort()).toEqual(['book_rank', 'rung_compare']);
+    const out = verifyResearchItems({ battle: BOOK, ask: { symbol: 'EQIX', questionId: 'better_than_stalled', items: sent }, nowMs: NOW });
+    expect(out.map((i) => i.status)).toEqual(['verified', 'verified']);
+  });
+});
+
