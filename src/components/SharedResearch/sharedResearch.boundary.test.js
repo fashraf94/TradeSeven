@@ -17,6 +17,8 @@ import { dirname, join, posix, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SR_DROP_LAYER } from './sharedResearchStyle';
 import { HUB_LAYERS } from '../CommandCenter/hub/hubStyle';
+// Comments out; strings, templates and regex literals kept whole (review d3: a '/*' inside a string swallowed code).
+import { stripComments } from './__fixtures__/sourceText';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../../..');
@@ -29,7 +31,6 @@ const walk = (dir, out = []) => {
   return out;
 };
 const isTest = (p) => /\.test\./.test(p);
-const stripComments = (code) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
 /**
  * Every module specifier a file names — static imports and re-exports (spaced or not), bare imports, dynamic import()
  * (quotes or backticks, with or without options), import.meta.glob() and require() (review d2). The rows below back it
@@ -103,10 +104,17 @@ describe('dark by construction (K-3)', () => {
       'const B = () => import(`../SharedResearch/SharedResearchSheetBody`);',
       "import B from '/src/components/SharedResearch/SharedResearchSheetBody';",
       "const all = import.meta.glob('../SharedResearch/*.jsx');",
+      // review d3: a '/*' in the glob's own string, or in a line comment, before a later real block comment
+      "const all = import.meta.glob('../SharedResearch/*.jsx');\n/** a later doc comment */\nexport default all;",
+      "// see ParamControls/* below\nimport B from '../SharedResearch/SharedResearchSheetBody';\n/* end */",
     ]) {
       expect(specifiersOf(planted).map((s) => resolveFrom(discover, s)).some((t) => t.startsWith('src/components/SharedResearch')), planted).toBe(true);
       expect(namesInStrings(planted, 'SharedResearch/').length, planted).toBeGreaterThan(0);
     }
+  });
+  it('the comment strip keeps strings, templates and regex literals whole (review d3)', () => {
+    expect(stripComments("a('x/*y'); /* gone */ b(`p//q`); // gone\nc(/[/*]+/g, 1 / 2); /* gone */")).toBe("a('x/*y');   b(`p//q`); \nc(/[/*]+/g, 1 / 2);  ");
+    expect(stripComments("return /'/.test(s) ? 'a' : 'b'; // gone")).toBe("return /'/.test(s) ? 'a' : 'b'; ");
   });
   it('nothing outside the directory reaches the service either (the body is its one importer)', () => {
     const files = walk(resolve(REPO, 'src')).filter((p) => !isTest(p));

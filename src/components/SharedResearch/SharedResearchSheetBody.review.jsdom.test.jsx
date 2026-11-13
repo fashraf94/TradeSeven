@@ -374,6 +374,15 @@ describe('lens c: focus, roles and names', () => {
     const ids = $('#sr-statement').getAttribute('aria-describedby').split(' ');
     expect(ids.map((id) => document.getElementById(id)?.textContent ?? null)).toEqual([COPY.thesisHelp, expect.stringContaining('/ 1,000')]);
   });
+  it('c10 (refuter): going over the limit is announced in a polite live region present before it fills', async () => {
+    await toAdopt();
+    const live = $('[data-sr-over]');
+    expect(live.getAttribute('aria-live')).toBe('polite');
+    expect(live.textContent).toBe('');
+    typeInto($('#sr-statement'), 'Shopify '.repeat(130));
+    expect($('[data-sr-over]')).toBe(live);
+    expect(live.textContent).toBe(COPY.over);
+  });
   it('c10: the own-words box is described by its help', async () => {
     await open({});
     expect(document.getElementById($('#sr-own').getAttribute('aria-describedby')).textContent).toBe(COPY.ownHelp);

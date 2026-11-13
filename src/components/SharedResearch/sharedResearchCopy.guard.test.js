@@ -15,6 +15,8 @@ import { SR_COPY } from './sharedResearchCopy';
 import { SR_SERVER_COPY } from '../../../api/_utils/sharedResearch/copy.js';
 import { HUB_COPY } from '../CommandCenter/hub/hubCopy';
 import { REVIEW_HONEST_LINE } from '../../constants/hypothesisRecords';
+// Comments out; strings, templates and regex literals kept whole (review d3: a '/*' inside a string swallowed code).
+import { stripComments } from './__fixtures__/sourceText';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../../..');
@@ -87,7 +89,6 @@ const sourceFiles = (dir, out = []) => {
   }
   return out;
 };
-const stripComments = (code) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
 /** Literal words in JSX: text between tags, and the accessible-name attributes written as plain strings. */
 export function literalWordsOf(code) {
   const c = stripComments(code);

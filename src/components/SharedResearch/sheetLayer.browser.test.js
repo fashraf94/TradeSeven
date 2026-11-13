@@ -148,5 +148,22 @@ describe.skipIf(!BASE)('focus stays in the sheet, in a real browser (review c1, 
         expect((await where(page)).sheetOpen).toBe(false);
       } finally { await ctx.close(); }
     }, ROW_TIMEOUT * 2);
+    it(`${w}×${h}: the next step runs on the same screen (no view change); focus stays in the sheet, and Escape closes it (c1)`, async () => {
+      const ctx = await browser.newContext({ viewport: { width: w, height: h } });
+      const page = await ctx.newPage();
+      try {
+        await page.goto(`${BASE.replace(/\/$/, '')}/?srFixture=work-running&delay=200`, { waitUntil: 'domcontentloaded', timeout: ROW_TIMEOUT });
+        await page.waitForSelector('[data-sr-next]', { timeout: ROW_TIMEOUT });
+        await page.focus('[data-sr-next]');
+        await page.keyboard.press('Enter');
+        await page.waitForSelector('[data-sr-running]', { timeout: ROW_TIMEOUT });
+        await page.waitForTimeout(300); // past Chromium's own blur of the disabled control
+        const running = await where(page);
+        expect(running, `while the step runs: ${JSON.stringify(running)}`).toMatchObject({ body: false, inSheet: true });
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(500);
+        expect((await where(page)).sheetOpen).toBe(false);
+      } finally { await ctx.close(); }
+    }, ROW_TIMEOUT * 2);
   }
 });

@@ -194,7 +194,7 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
           <textarea id="sr-statement" aria-describedby="sr-statement-help sr-statement-count" value={statement} disabled={busy} onChange={(e) => { setStatement(e.target.value); setEdited(true); }} rows={7} style={{ ...S.input, minHeight: 170, resize: 'vertical' }} />
         </Field>
         <div style={S.row}>
-          <span style={{ ...S.small, color: over ? T.neg : T.ink3 }} data-sr-count="" id="sr-statement-count">{COPY.count(statement.length)}{over ? COPY.over : ''}</span>
+          <span style={{ ...S.small, color: over ? T.neg : T.ink3 }} data-sr-count="" id="sr-statement-count">{COPY.count(statement.length)}<span aria-live="polite" data-sr-over="">{over ? COPY.over : ''}</span></span>
           {edited && <LinkButton onClick={() => { setStatement(draftOf(preview, picked)); setEdited(false); }}>{COPY.resetDraft}</LinkButton>}
         </div>
         {stray.length > 0 && <Notice role="alert" attrs={{ 'data-sr-stray': '' }}>{COPY.stray(stray)}</Notice>}
