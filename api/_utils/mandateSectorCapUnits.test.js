@@ -14,9 +14,11 @@
 // zero book value, the null policy, valid fractions, "null prints none") are
 // CONTROLS that pass either way; they pin that the fix did not over-tighten.
 //
-// Resolution-point refusals (vintage_uncorrected) live beside each harness:
-// mandateCreationService / mandateEscape / mandateRollover / mandateBatchTransport
-// tests, api/cron/mandate-evaluate.test.js and mandateIntegrationHarness.test.js.
+// An unstamped vintage (vintage_uncorrected): creation, escape and rollover
+// refuse to pin one (their own test files); a book already pinned to one is
+// EXIT-ONLY (founder ruling, 12 Nov 2026) — the gate rows below, plus the eval
+// (api/cron/mandate-evaluate.test.js), the sweep (mandateIntegrationHarness)
+// and the harvest (mandateBatchTransport) rows.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -245,6 +247,33 @@ describe.each(IDS)('T0a — %s: unequal positions through evaluateGate', (id) =>
       gateConfig: { ...gateConfig, sectorConcentrationCap: EXPECTED[id].slots },
     });
     expect(r).toMatchObject({ passed: false, rule: 'sector_cap', reason: 'malformed_cap' });
+  });
+});
+
+// ── Exit-only for an unstamped vintage (founder ruling, 12 Nov 2026) ─────────
+describe('T0a — evaluateGate vintageUncorrected: entries refused, exits through the exit lane', () => {
+  const gateConfig = buildVintagePayload('analyst').gateConfig;
+  const gate = (decision, vintageUncorrected) => evaluateGate({
+    decision, positions: HEAVY.positions, cash: HEAVY.cash, snapshot: SNAP, gateConfig, vintageUncorrected,
+  });
+
+  it.each([
+    ['BUY', { verb: 'BUY', ticker: 'XOM', sizeUsd: 100 }],
+    ['ADD', { verb: 'ADD', ticker: 'XOM', sizeUsd: 100 }],
+  ])('%s is refused with sector_cap / vintage_uncorrected', (_v, decision) => {
+    expect(gate(decision, true)).toMatchObject({ passed: false, rule: 'sector_cap', reason: 'vintage_uncorrected' });
+    expect(gate(decision, false).passed).toBe(true); // control: the same entry passes on a stamped vintage
+  });
+
+  it.each([
+    ['SELL', { verb: 'SELL', ticker: 'AAPL' }],
+    ['TRIM', { verb: 'TRIM', ticker: 'MSFT', sizeUsd: 1000 }],
+  ])('%s of a held name passes the exit lane (never suppressed)', (_v, decision) => {
+    expect(gate(decision, true)).toMatchObject({ passed: true, rule: 'exit_lane' });
+  });
+
+  it('HOLD passes', () => {
+    expect(gate({ verb: 'HOLD' }, true)).toMatchObject({ passed: true, rule: 'hold' });
   });
 });
 

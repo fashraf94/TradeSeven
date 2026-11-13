@@ -1,7 +1,7 @@
 # Agent Learning Charter V1 — Scope Addendum A: the idea book
 
 **Date:** 12 Nov 2026 · **Author:** the Practice Field chat (Fable) · **Status:** awaiting the founder's adoption; derived from concept V6.1 (rulings approved 12 Nov 2026) and Astra's review C6-11 · **Amends:** `docs/AGENT_LEARNING_CHARTER_V1.md` by addition only. No existing clause is loosened.
-**Destination:** `docs/AGENT_LEARNING_CHARTER_V1_SCOPE_ADDENDUM_A.md`, carried by the T0a build's commit, with a one-line pointer added under the Charter's title. No docs-only PR.
+**Destination:** `docs/20261112_AGENT_LEARNING_CHARTER_SCOPE_ADDENDUM_A.md`, carried by the T0a build's commit, with a one-line pointer added under the Charter's title. No docs-only PR.
 
 ## 1. What the idea book is, under the Charter
 

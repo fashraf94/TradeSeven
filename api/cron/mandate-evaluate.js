@@ -94,10 +94,6 @@ export async function runBookEval(db, {
   // Tier gating (§3.1): cadence tiers map to session-relative slots.
   if (!tierEligibleAt(book.cadenceTier, slot)) return { outcome: 'skipped_tier' };
   if (!vintage) return { outcome: 'skipped', reason: 'no_vintage' };
-  // Admission (T0a): a vintage without the sector-cap translation stamp carries
-  // the raw slot count as its cap. Refused before the prompt, the model call and
-  // any enqueue — no trade, no spend. Counted as an eval failure like no_vintage.
-  if (!isSectorCapCorrected(vintage.gateConfig)) return { outcome: 'skipped', reason: VINTAGE_UNCORRECTED };
 
   // Double-submit gate (§3.3) — TRANSPORT-INDEPENDENT by design (F26): "a
   // mid-drain mandate cannot submit under the NEW mode until its old batch
@@ -208,10 +204,12 @@ export async function runBookEval(db, {
 
   // Deterministic gate (§3.4) — quarantine blocks entries (never exits); a
   // CA-frozen symbol blocks entries and defers pricing to last-good on exits.
+  // T0a (founder ruling, exit-only): a vintage without the sector-cap
+  // conversion stamp blocks entries (vintage_uncorrected), never exits.
   const gateResult = evaluateGate({
     decision, positions, cash: book.portfolio?.cash || 0, snapshot: evalSnapshot,
     gateConfig: vintage.gateConfig || {}, actionableHeld: actionable,
-    quarantined, caFrozen,
+    quarantined, caFrozen, vintageUncorrected: !isSectorCapCorrected(vintage.gateConfig),
   });
 
   // Direct transport (P2): submit mark == harvest mark (same tick), so the drift
@@ -423,6 +421,12 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
           vintage = vSnap.exists ? vSnap.data() : null;
           vintageCache.set(book.vintageRef, vintage);
         }
+        // T0a (founder ruling, exit-only): a book pinned to a vintage without
+        // the sector-cap conversion stamp still evaluates — the gate refuses its
+        // entries and lets its exits through. Not an eval failure; loud each fire.
+        if (vintage && !isSectorCapCorrected(vintage.gateConfig)) {
+          console.error(`${LOG_PREFIX} MANDATE_VINTAGE_UNCORRECTED ${book._id} — vintage ${book.vintageRef} has no sector-cap conversion stamp; exits allowed, entries refused (${VINTAGE_UNCORRECTED})`);
+        }
 
         const result = await runBookEval(db, {
           book, mandateRef, vintage, snapshot, sessionDate: tick.date, slot: tick.slot, now, regime, transport,
@@ -510,15 +514,10 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
           // eval failure of the infrastructure kind (§6.4), not a quiet skip.
           // The P3 review found these books wrote NOTHING: they pinned the
           // page frontier forever, were re-processed every fire, and could
-          // never alert or quarantine. An UNCORRECTED vintage (T0a) is the
-          // same class: the book cannot trade until a migration or stop policy.
+          // never alert or quarantine.
           summary.skipped++;
           const failures = (book.health?.consecutiveEvalFailures || 0) + 1;
-          if (result.reason === VINTAGE_UNCORRECTED) {
-            console.error(`${LOG_PREFIX} MANDATE_VINTAGE_UNCORRECTED ${book._id} — vintage ${book.vintageRef} has no sector-cap conversion stamp; refused, no trade (${failures} consecutive)`);
-          } else {
-            console.error(`${LOG_PREFIX} MANDATE_NO_VINTAGE ${book._id} — vintage ${book.vintageRef} unreadable (${failures} consecutive)`);
-          }
+          console.error(`${LOG_PREFIX} MANDATE_NO_VINTAGE ${book._id} — vintage ${book.vintageRef} unreadable (${failures} consecutive)`);
           await persistOutcome({
             health: { lastEvalSweepAt: now, consecutiveEvalFailures: failures, ...quarantinePatchFor(failures) },
             execState: { lastSweepTickKey: tick.tickKey },

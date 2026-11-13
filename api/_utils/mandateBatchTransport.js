@@ -84,7 +84,7 @@ import {
 } from './mandateModelCall.js';
 import { executeDecision, disposeSubmission } from './mandateExecution.js';
 import { evaluateGate } from './mandateGate.js';
-import { isSectorCapCorrected, VINTAGE_UNCORRECTED } from './mandateSectorCap.js';
+import { isSectorCapCorrected } from './mandateSectorCap.js';
 import { normalizeDecisionInput } from './mandateDecisionTool.js';
 import { markFor, classifyBookTick, SNAPSHOT_COLLECTION } from './mandateUniverseSnapshot.js';
 import { frictionForDecision } from './mandateFrictionModel.js';
@@ -333,16 +333,6 @@ async function processSucceededResult(db, {
       return { ...out, ...(billedNow ? { billedUsage: true } : {}) };
     }
 
-    // Admission at harvest (T0a): a vintage without the sector-cap translation
-    // stamp never reaches the gate. Same terminal shape as no_vintage: the
-    // submission is disposed failed (I1) and its real spend is still billed.
-    if (!isSectorCapCorrected(vintage.gateConfig)) {
-      const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: VINTAGE_UNCORRECTED, envelope: entry.envelope });
-      const billedNow = await billUnderLease(book);
-      if (!out.idempotent) await bookkeepHealth(mandateRef, book, out, { now });
-      return { ...out, ...(billedNow ? { billedUsage: true } : {}) };
-    }
-
     const extracted = extractDecisionInput(result.message);
     if (!extracted.ok) {
       const out = await disposeSubmission(db, { mandateRef, requestId, status: 'failed', failCondition: extracted.reason || 'model_no_tool_use', envelope: entry.envelope });
@@ -371,6 +361,9 @@ async function processSucceededResult(db, {
       actionableHeld: actionable,
       quarantined,
       caFrozen,
+      // T0a (founder ruling, exit-only): an unstamped vintage refuses entries
+      // (vintage_uncorrected) at the gate; exits take the exit lane.
+      vintageUncorrected: !isSectorCapCorrected(vintage.gateConfig),
     });
 
     // I3 drift-guard basis: the mark the model reasoned over, from the SUBMIT

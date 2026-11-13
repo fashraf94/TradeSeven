@@ -81,9 +81,11 @@ export function isValidSectorCapFraction(cap) {
 
 /**
  * Admission check for a pinned vintage's gate config: true only when it carries
- * the current translation stamp. A vintage built before T0a lacks it and is
- * refused (VINTAGE_UNCORRECTED) wherever a book resolves its vintage. Published
- * vintages are immutable; a corrected vintage is a new one with a new hash.
+ * the current translation stamp. A vintage built before T0a lacks it: creation,
+ * escape and rollover refuse to pin one (VINTAGE_UNCORRECTED), and a book
+ * already pinned to one is exit-only (founder ruling, 12 Nov 2026) — the gate
+ * refuses its entries with that reason and its exits take the exit lane.
+ * Published vintages are immutable; a corrected vintage is a new one.
  */
 export function isSectorCapCorrected(gateConfig) {
   return !!gateConfig && gateConfig.sectorCapConversionVersion === SECTOR_CAP_CONVERSION_VERSION;
