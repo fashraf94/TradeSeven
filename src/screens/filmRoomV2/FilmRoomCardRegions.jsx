@@ -65,7 +65,7 @@ import { SITUATIONS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { CARD_SLOTS } from '../../data/cardSlots';
 // Build C §3: the stage vocabulary v2, from its one export
-import { CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_EXPIRY_SESSIONS, isOpenStage, routeOf } from '../../data/cardStages';
+import { CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_EXPIRY_SESSIONS, isOpenStage, isNotTaken, routeOf } from '../../data/cardStages';
 import { RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED } from '../../config/featureFlags';
 import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
@@ -296,6 +296,8 @@ function nextOf(card) {
   if (card.stage === 'retired') return T.stateNotes.retired;
   if (card.shelved) return T.stateNotes.shelved;
   if (card.stage === 'tested' && card.parkedAt) return T.stateNotes.parked;
+  // Amendment A CA-3: a nominated card the agent did not take is closed — kept, no longer counted as open
+  if (isNotTaken(card)) return T.stateNotes.notTaken;
   const route = routeOf(card.route);
   if (card.stage === 'card') return Object.prototype.hasOwnProperty.call(T.routeNotes, route) ? T.routeNotes[route] : null;
   // Build C §5: a QUEUED nomination is what the Offer route said would happen; once the agent has answered, the chain
@@ -571,7 +573,7 @@ export function SinceLastTime({ day = null, battleId = null, counter, onOpenMome
         <div data-my-cards="" style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
           <span style={{ ...eyebrow, color: C.ink2 }}>{T.myCards}</span>
           {!cards.length ? <span style={foot}>{T.noCards}</span> : null}
-          {['active', 'shelved', 'parked', 'equipped', 'retired', 'other'].map((g) => (groups[g].length ? (
+          {['active', 'shelved', 'notTaken', 'parked', 'equipped', 'retired', 'other'].map((g) => (groups[g].length ? (
             <div key={g} data-my-cards-group={g} style={{ display: 'flex', flexDirection: 'column' }}>
               <span style={mono(10, C.ink3, { letterSpacing: '0.12em', textTransform: 'uppercase' })}>{T.groups[g]}</span>
               {groups[g].map((c) => <CardRow key={c.entryId} card={c} onShow={onShowCard} />)}

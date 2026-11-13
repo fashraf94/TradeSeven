@@ -22,14 +22,33 @@ export const CARD_STAGE_VOCAB_VERSION = 2;
 /** The six stages, in order (spec §3). */
 export const CARD_STAGES = Object.freeze(['card', 'nominated', 'testing', 'tested', 'installed', 'retired']);
 
-/** The stages an entry is open at outright (S9 counts it when it is not shelved). `tested` is open until parked: isOpenStage. */
-export const OPEN_STAGES = Object.freeze(['card', 'nominated', 'testing']);
+/**
+ * The stages an entry is open at OUTRIGHT (S9 counts it when it is not shelved): `card` and `testing` (Amendment A CA-3
+ * narrowed it — `nominated` and `tested` are decided by isOpenStage). Never read to mean "open": every reader asks
+ * isOpenStage.
+ */
+export const OPEN_STAGES = Object.freeze(['card', 'testing']);
 
 /**
- * Open by its stage (spec §3, "Counting"): at `card`, `nominated` or `testing`; or `tested` with no `parkedAt`. Shelving is
- * the archetype's, judged beside this by the store (cardStore.js isOpen) — never here.
+ * Amendment A CA-3: the nomination states that CLOSE a nominated card — the agent declined it, it expired unconsidered,
+ * or the player withdrew it (CA-2). The stage stays `nominated` (contract V2, B-STAGE); `deferred` stays open.
  */
-export const isOpenStage = (entry) => OPEN_STAGES.includes(entry?.stage) || (entry?.stage === 'tested' && !entry?.parkedAt);
+export const NOT_TAKEN_STATES = Object.freeze(['declined', 'expired', 'withdrawn']);
+
+/** CA-3: a nominated card the agent did not take — its copy's state closes it ("Not taken"). A v1 entry (no copy) is not one. */
+export const isNotTaken = (entry) => entry?.stage === 'nominated' && NOT_TAKEN_STATES.includes(entry?.nomination?.state);
+
+/**
+ * Open by its stage (spec §3, "Counting", as Amendment A CA-3 rules it): at `card` or `testing`; at `nominated` unless
+ * the copy's state is declined, expired or withdrawn (no copy — a v1 entry — stays open); `tested` with no `parkedAt`.
+ * Shelving is the archetype's, judged beside this by the store (cardStore.js isOpen) — never here.
+ */
+export function isOpenStage(entry) {
+  const stage = entry?.stage;
+  if (OPEN_STAGES.includes(stage)) return true;
+  if (stage === 'nominated') return !isNotTaken(entry);
+  return stage === 'tested' && !entry?.parkedAt;
+}
 
 /**
  * A Watch card the counter follows for recurrences (RG-4), by its stage: route `watch`, still at `card`. A Watch card

@@ -24,9 +24,9 @@
 //            success; the same op id with a different request, or on an entry
 //            whose own ownerId is missing or another user's (Amendment I
 //            RI-1) → 409 op_conflict, with nothing of the entry. Then the
-//            open-card cap (S9: the caller's own cards at `card` or
-//            `nominated` that are not shelved) → 409 cap_reached, naming the
-//            cap. Then `tx.create` — never an overwrite.
+//            open-card cap (S9: the caller's own OPEN cards — the one
+//            export's isOpenStage — that are not shelved) → 409 cap_reached,
+//            naming the cap. Then `tx.create` — never an overwrite.
 //   retire   a compare-and-set on `version`: `expectedVersion` ≠ the stored
 //            version → 409 version_conflict; a shelved entry cannot move stage
 //            (409 shelved); `retired` → `retired` is no transition (409
@@ -187,8 +187,9 @@ const docsOf = (snap) => (snap?.docs || []).map((d) => (typeof d.data === 'funct
 /** Ruling 5: an entry made under another archetype than the agent's current one is shelved. Computed at read. */
 export const isShelved = (entry, currentArchetype) => (Array.isArray(currentArchetype) ? !currentArchetype.includes(entry?.archetypeCodeId) : entry?.archetypeCodeId !== currentArchetype);
 /**
- * Open: open by its stage (Build C §3 — `card`, `nominated`, `testing`, or `tested` with no `parkedAt`: the one export's
- * isOpenStage), and not shelved — what S9 counts (RG-8).
+ * Open: open by its stage (the one export's isOpenStage, as Amendment A CA-3 rules it — `card` or `testing`; `nominated`
+ * unless its copy says declined, expired or withdrawn; `tested` with no `parkedAt`), and not shelved — what S9 counts
+ * (RG-8).
  */
 export const isOpen = (entry, currentArchetype) => isOpenStage(entry) && !isShelved(entry, currentArchetype);
 /** The entries with their computed `shelved` beside them (a read-time field, never stored). */
@@ -469,8 +470,8 @@ export async function retireCard(db, { uid, agentId, entryId, opId, expectedVers
     }
     if (expectedVersion !== entry.version) throw fail(409, 'version_conflict', { currentVersion: entry.version });
     if (isShelved(entry, agent.shelf)) throw fail(409, 'shelved', { archetypeCodeId: entry.archetypeCodeId });
-    // Build C §3: the player retires an OPEN card, as before — open by the one export's predicate (`card`, `nominated`,
-    // `testing`, or `tested` unparked); `retired`, `installed` and a parked card are no transition
+    // Build C §3: the player retires an OPEN card, as before — open by the one export's predicate (isOpenStage, Amendment
+    // A CA-3); `retired`, `installed`, a parked card and a nominated card the agent did not take are no transition
     if (!isOpenStage(entry)) throw fail(409, 'illegal_transition', { stage: entry.stage });
     const patch = {
       stage: 'retired',

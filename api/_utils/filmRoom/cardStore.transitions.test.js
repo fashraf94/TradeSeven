@@ -67,7 +67,8 @@ describe('Build C §3 — the stage vocabulary v2, one export', () => {
   it('the six stages and the open set, and the store re-exports the one module whole', () => {
     expect(CARD_STAGE_VOCAB_VERSION).toBe(2);
     expect(CARD_STAGES).toEqual(['card', 'nominated', 'testing', 'tested', 'installed', 'retired']);
-    expect(OPEN_STAGES).toEqual(['card', 'nominated', 'testing']);
+    // Amendment A CA-3: open OUTRIGHT at card and testing; nominated and tested are decided by isOpenStage
+    expect(OPEN_STAGES).toEqual(['card', 'testing']);
     // the same objects, not copies: one export
     expect(CARD_STAGES).toBe(stages.CARD_STAGES);
     expect(OPEN_STAGES).toBe(stages.OPEN_STAGES);
@@ -436,5 +437,65 @@ describe('C1 review — the mutating lens\'s survivors', () => {
     await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION });
     expect(await code(move(t, { by: 'practice_field.t2', to: 'nomination', opId: 's1', payload: NOMINATION }))).toMatchObject({ status: 409, code: 'op_conflict' });
     expect((await move(t, { to: 'nomination', opId: 's1', payload: NOMINATION })).idempotent).toBe(true);
+  });
+});
+
+// ── Amendment A CA-3 — a declined or expired nomination closes the card ─────────────────────────────────────────────
+describe('Amendment A CA-3 — the open predicate: a nominated card closes when the agent did not take it', () => {
+  const STATES = ['queued', 'considered', 'accepted', 'deferred', 'declined', 'expired', 'withdrawn'];
+  it('THE PREDICATE, exhaustively: every stage × parked/unparked, and nominated × every copy state and none (v1) — open outright at card and testing; nominated unless declined/expired/withdrawn; tested until parked (the mutants: a declined or expired card counted open)', () => {
+    const open = (e) => isOpenStage(e);
+    expect(CARD_STAGES.map((stage) => [stage, open({ stage }), open({ stage, parkedAt: NOW })])).toEqual([
+      ['card', true, true], ['nominated', true, true], ['testing', true, true], ['tested', true, false], ['installed', false, false], ['retired', false, false],
+    ]);
+    expect(STATES.map((state) => [state, open({ stage: 'nominated', nomination: { state } })])).toEqual([
+      ['queued', true], ['considered', true], ['accepted', true], ['deferred', true], ['declined', false], ['expired', false], ['withdrawn', false],
+    ]);
+    // a v1 entry at nominated (no copy) stays open; the copy's state closes only `nominated` — never another stage
+    expect(open({ stage: 'nominated' })).toBe(true);
+    expect(open({ stage: 'card', nomination: { state: 'declined' } })).toBe(true);
+    expect(open({ stage: 'testing', nomination: { state: 'expired' } })).toBe(true);
+    expect(stages.NOT_TAKEN_STATES).toEqual(['declined', 'expired', 'withdrawn']);
+    expect(STATES.map((state) => stages.isNotTaken({ stage: 'nominated', nomination: { state } }))).toEqual([false, false, false, false, true, true, true]);
+    expect(stages.isNotTaken({ stage: 'retired', nomination: { state: 'withdrawn' } })).toBe(false);
+  });
+
+  it('shelving is judged beside it: a shelved card is never open; an unshelved not-taken card is not open either', () => {
+    const e = (over) => ({ stage: 'nominated', archetypeCodeId: 'momentum_chaser', nomination: { state: 'queued' }, ...over });
+    expect(isOpen(e(), 'momentum_chaser')).toBe(true);
+    expect(isOpen(e(), 'guardian')).toBe(false);
+    expect(isOpen(e({ nomination: { state: 'declined' } }), 'momentum_chaser')).toBe(false);
+    expect(isOpen(e({ nomination: { state: 'expired' } }), ['guardian', 'momentum_chaser'])).toBe(false);
+  });
+
+  for (const state of ['declined', 'expired']) {
+    it(`through the real writers: a copy ${state} closes the card — the open count drops, the cap admits a new card WITHOUT retiring it, and the player cannot retire it (it is not open)`, async () => {
+      const t = fresh();
+      await nominated(t);
+      for (let i = 0; i < 4; i += 1) await createCard(t.db, { uid: UID, agentId: AGENT, opId: `w${i}`, payload: payload({ note: `Watch ${i}.` }), nowIso: NOW, battleArchetype: 'momentum_chaser' });
+      expect((await readCards(t.db, { uid: UID, agentId: AGENT })).open).toBe(5);
+      expect(await code(createCard(t.db, { uid: UID, agentId: AGENT, opId: 'w9', payload: payload({ note: 'One more.' }), nowIso: NOW, battleArchetype: 'momentum_chaser' }))).toMatchObject({ status: 409, code: 'cap_reached' });
+      const { entry } = await move(t, { to: 'nomination', opId: 's1', payload: { ...NOMINATION, state, reason: state === 'declined' ? 'Not for this book.' : null } });
+      expect(entry).toMatchObject({ stage: 'nominated', nomination: { state } });
+      expect((await readCards(t.db, { uid: UID, agentId: AGENT })).open).toBe(4);
+      expect((await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'w9', payload: payload({ note: 'One more.' }), nowIso: NOW, battleArchetype: 'momentum_chaser' })).open).toBe(5);
+      // the not-taken card itself was never retired, and cannot be
+      expect(t.store.get(playPath('c1')).stage).toBe('nominated');
+      expect(await code(retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: entry.version, nowIso: LATEST }))).toMatchObject({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated' } });
+    });
+  }
+
+  it('deferred stays open; a v1 drill entry with no copy stays open and retirable', async () => {
+    const t = fresh();
+    await nominated(t);
+    await move(t, { to: 'nomination', opId: 's1', payload: { ...NOMINATION, state: 'deferred', reason: 'Later.' } });
+    expect((await readCards(t.db, { uid: UID, agentId: AGENT })).open).toBe(1);
+    const u = fresh();
+    const { card } = await createCard(u.db, { uid: UID, agentId: AGENT, opId: 'c1', payload: payload(), nowIso: NOW, battleArchetype: 'momentum_chaser' });
+    const v1 = { ...card, route: 'drill', stage: 'nominated' };
+    delete v1.stageVocabVersion;
+    u.store.set(playPath('c1'), v1);
+    expect((await readCards(u.db, { uid: UID, agentId: AGENT })).open).toBe(1);
+    expect((await retireCard(u.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: 1, nowIso: LATEST })).card.stage).toBe('retired');
   });
 });

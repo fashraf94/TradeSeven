@@ -76,7 +76,7 @@ import cardHandler from '../../../api/film-room/card.js';
 import { setPracticeFieldSeam, resetPracticeFieldSeam } from '../../../api/_utils/filmRoom/practiceFieldSeam.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
-import { ledgerOf, latestOf, chainOf } from './filmRoomCards';
+import { ledgerOf, latestOf, chainOf, groupCards } from './filmRoomCards';
 import { setRuleOf, setStateOf, YourCall, Receipt } from './FilmRoomCardRegions';
 import { FILM_ROOM_COPY } from './filmRoomCopy';
 const COPY_CARDS = FILM_ROOM_COPY.cards;
@@ -2131,5 +2131,75 @@ describe('C1 fix round F3 — the chain recognises a create row by its shape, ne
     const line = m.q('[data-chain-line="filed"]');
     expect(line.textContent).toBe('Filed · time not recorded');
     expect(line.querySelector('[data-time]')).toBeNull();
+  });
+});
+
+// ── Amendment A CA-3 — a declined or expired nomination closes the card: "Not taken" ───────────────────────────────
+describe('Amendment A CA-3 — My cards: a nominated card the agent did not take is listed under "Not taken", once', () => {
+  const move = (entryId, to, payload, clock) => applyServerTransition(state.db, { entryId, ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${to}_${clock.replace(/\D/g, '')}`, nowIso: `${D2}T${clock}:00.000Z` });
+  const group = (g) => m.qa(`[data-my-cards-group="${g}"] [data-my-card]`).map((b) => b.getAttribute('data-my-card'));
+
+  for (const state of ['declined', 'expired']) {
+    it(`a ${state} Offer card: under Not taken alone (never Active, never Parked), its receipt says it is kept and no longer open, no Retire; the open count drops (the mutant: a not-taken card listed under Parked)`, async () => {
+      openBook();
+      await open();
+      m.click(m.buttons('Take this home')[0]);
+      await m.flush();
+      await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+      await move('op_1', 'nomination', { bookId: BOOK_ID, nominationId: 'op_1', state, reason: state === 'declined' ? 'Not for this book.' : null, consideredAt: `${D2}T20:10:00.000Z` }, '20:15');
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      await open();
+      expect(group('notTaken')).toEqual(['op_1']);
+      expect(m.q('[data-my-cards-group="notTaken"]').textContent).toContain('Not taken');
+      for (const g of ['active', 'parked', 'equipped', 'retired', 'other', 'shelved']) expect(group(g), g).toEqual([]);
+      expect(m.qa('[data-my-card="op_1"]')).toHaveLength(1);
+      m.click(m.q('[data-my-card="op_1"]'));
+      await m.flush();
+      const r = m.q('[data-card-receipt="op_1"]');
+      expect(r.querySelector('[data-card-next]').textContent).toBe('Not taken: kept, no longer counted as open.');
+      expect(m.buttons('Retire')).toHaveLength(0);
+      // the form's open count, from the counter: nothing open
+      m.click(m.buttons('Take this home')[0]);
+      await m.flush();
+      expect(Number(m.q('[data-open-count] [data-num-aggregate="count(plays[] open)"]').getAttribute('data-agg-value'))).toBe(0);
+      await sweepAll(fx.tape2, `not taken ${state}`);
+    });
+  }
+
+  it('shelving keeps its precedence: a not-taken card under another archetype is Shelved, not Not taken', async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    await move('op_1', 'nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'declined', reason: 'No.', consideredAt: `${D2}T20:10:00.000Z` }, '20:15');
+    t.store.set(`agents/${AGENT}`, { ...t.store.get(`agents/${AGENT}`), archetype: 'guardian' });
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    expect(group('shelved')).toEqual(['op_1']);
+    expect(group('notTaken')).toEqual([]);
+  });
+
+  it('groupCards (pure): every stage × parked × shelved, and nominated × every copy state — each card in exactly one list', () => {
+    const cards = [];
+    for (const stage of ['card', 'nominated', 'testing', 'tested', 'installed', 'retired', 'drilled']) {
+      for (const parkedAt of [undefined, '2026-09-25T21:00:00.000Z']) {
+        for (const shelved of [false, true]) {
+          const states = stage === 'nominated' ? [undefined, 'queued', 'considered', 'accepted', 'deferred', 'declined', 'expired', 'withdrawn'] : [undefined];
+          for (const s of states) cards.push({ entryId: `${stage}:${parkedAt ? 'p' : 'u'}:${shelved ? 's' : 'a'}:${s ?? '-'}`, stage, parkedAt, shelved, ...(s ? { nomination: { state: s } } : {}) });
+        }
+      }
+    }
+    const g = groupCards(cards);
+    const all = Object.values(g).flat();
+    expect(all).toHaveLength(cards.length);
+    expect(new Set(all.map((c) => c.entryId)).size).toBe(cards.length);
+    expect(g.notTaken.map((c) => c.entryId).sort()).toEqual([
+      'nominated:p:a:declined', 'nominated:p:a:expired', 'nominated:p:a:withdrawn', 'nominated:u:a:declined', 'nominated:u:a:expired', 'nominated:u:a:withdrawn',
+    ]);
+    expect(g.parked.map((c) => c.entryId)).toEqual(['tested:p:a:-']);
+    expect(g.active.every((c) => !c.shelved)).toBe(true);
+    expect(g.active.some((c) => c.stage === 'nominated' && ['declined', 'expired', 'withdrawn'].includes(c.nomination?.state))).toBe(false);
+    expect(g.shelved.every((c) => c.stage !== 'retired')).toBe(true);
   });
 });

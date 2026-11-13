@@ -344,8 +344,8 @@ function aggregateOracle(name, el, docs) {
     const held = docs.ledger?.cards;
     const cards = Array.isArray(held) ? held : (held && typeof held === 'object' ? Object.values(held) : null);
     if (!cards || typeof docs.agentArchetype !== 'string') return undefined;
-    // Build C §3: WHICH STAGES are open is the vocabulary's one export (isOpenStage — `card`, `nominated`, `testing`, or
-    // `tested` unparked), read here by the build prompt's instruction ("every reader … the harness … reads the stage
+    // Build C §3: WHICH STAGES are open is the vocabulary's one export (isOpenStage — `card` or `testing`; `nominated`
+    // unless not taken, Amendment A CA-3; `tested` unparked), read here by the build prompt's instruction ("every reader … the harness … reads the stage
     // list and the open set from the one export"): a stated departure from this harness's "never read production" rule,
     // as the tradingTimeline oracle above is. The export is pinned by its own rows (cardStages.census.test.js) and the
     // shelving beside it stays recomputed here.

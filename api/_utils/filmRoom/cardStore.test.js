@@ -89,7 +89,7 @@ describe('createCard — written once, as spec §4 lists it', () => {
   it('the stage by route: Watch and Set file a `card`; Offer files a `nominated` entry with its nomination beside it; `drill` is refused', async () => {
     expect(CARD_ROUTES).toEqual(['watch', 'offer', 'set']);
     expect(CARD_STAGES).toEqual(['card', 'nominated', 'testing', 'tested', 'installed', 'retired']);
-    expect(OPEN_STAGES).toEqual(['card', 'nominated', 'testing']);
+    expect(OPEN_STAGES).toEqual(['card', 'testing']);   // Amendment A CA-3: nominated and tested are decided by isOpenStage
     expect(['watch', 'offer', 'set'].map(stageForRoute)).toEqual(['card', 'nominated', 'card']);
     const t = fresh();
     for (const [i, route] of CARD_ROUTES.entries()) {

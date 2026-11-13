@@ -385,6 +385,8 @@ export const FILM_ROOM_COPY = Object.freeze({
       shelved: 'Shelved: nothing happens while the agent is on another archetype.',
       // Build C §3: a tested card the player parked — kept with its result, no longer counted as open
       parked: 'Parked: kept with its result, no longer counted as open.',
+      // Amendment A CA-3: a nominated card the agent declined, or that expired unconsidered, is closed — kept, not open
+      notTaken: 'Not taken: kept, no longer counted as open.',
     },
     // Build C §5: the receipt's one new button, on a tested card's receipt only
     park: 'Park this card',
@@ -428,7 +430,7 @@ export const FILM_ROOM_COPY = Object.freeze({
     // the C1 refinement R-C1-1: every card past the card stage, its latest chain line and time, newest first
     latestTitle: 'Your cards, latest first',
     myCards: 'My cards',
-    groups: { active: 'Active', shelved: 'Shelved', parked: 'Parked', equipped: 'Equipped', retired: 'Retired', other: 'Other' },
+    groups: { active: 'Active', shelved: 'Shelved', notTaken: 'Not taken', parked: 'Parked', equipped: 'Equipped', retired: 'Retired', other: 'Other' },
     noCards: 'No cards yet.',
     shelvedExplainer: 'A card made under another archetype is shelved: kept, not counted as open, and back by itself when the agent returns to that archetype.',
     loading: 'Loading the cards…',
