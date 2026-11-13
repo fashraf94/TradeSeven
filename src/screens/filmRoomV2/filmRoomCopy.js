@@ -381,7 +381,12 @@ export const FILM_ROOM_COPY = Object.freeze({
     route: 'Route',
     stage: 'Stage',
     // Build C §3: one word per stage of the vocabulary v2 (src/data/cardStages.js) — `installed` reads "equipped"
-    stageWords: { card: 'card', nominated: 'nominated for the Practice Field', testing: 'testing', tested: 'tested', installed: 'equipped', retired: 'retired' },
+    // Amendment A CA-17: `nominated` reads "offered to your agent" — it was; one label reader (stageLabelOf) names a card's
+    // stage for the route line, My cards, the chain and "since last time"
+    stageWords: { card: 'card', nominated: 'offered to your agent', testing: 'testing', tested: 'tested', installed: 'equipped', retired: 'retired' },
+    // CA-17: an entry whose STORED route is `drill` (v1 Practice) keeps the old word for its `nominated` stage (reading 16);
+    // CA-22: a `tested` card whose idea ended before any fill says so, from the stored flag — never "tested"
+    stageWordsOf: { drillNominated: 'nominated for the Practice Field', noFill: 'ended before its first trade' },
     // RG-5 for a card that is no longer open: what happens next is nothing, said so
     stateNotes: {
       retired: 'Retired: nothing happens next.',
@@ -404,6 +409,8 @@ export const FILM_ROOM_COPY = Object.freeze({
       offered: 'Offered to your agent',
       answers: { accepted: 'Taken into an idea', deferred: 'Deferred', declined: 'Declined' },
       answer: "Your agent's answer",
+      // Amendment A CA-9: the agent has looked at the nomination and not answered yet — its own line, no quotation
+      considered: 'Your agent considered this',
       // "Not considered within {n} sessions" — n is B6, a marked number
       expired: { before: 'Not considered within', after: 'sessions' },
       testing: 'Testing · from',

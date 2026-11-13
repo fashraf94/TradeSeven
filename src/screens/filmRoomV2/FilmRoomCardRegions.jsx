@@ -65,7 +65,7 @@ import { SITUATIONS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { CARD_SLOTS } from '../../data/cardSlots';
 // Build C §3: the stage vocabulary v2, from its one export
-import { CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_EXPIRY_SESSIONS, isNotTaken, isRetirableByPlayer, routeOf } from '../../data/cardStages';
+import { CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_EXPIRY_SESSIONS, STORED_ROUTE_ALIASES, isNotTaken, isRetirableByPlayer, routeOf } from '../../data/cardStages';
 import { RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED } from '../../config/featureFlags';
 import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
@@ -322,6 +322,8 @@ export function ChainLine({ card, line, day = null }) {
   if (line.kind === 'filed') return <>{W.filed} · {when}</>;
   if (line.kind === 'offered') return <>{W.offered} · {when}</>;
   if (line.kind === 'nomination') {
+    // Amendment A CA-9: considered is a state of its own — the agent looked and has not answered; no quotation
+    if (line.state === 'considered') return <>{W.considered} · {when}</>;
     if (has(W.answers, line.state)) return <>{W.answers[line.state]} · {when}</>;
     if (line.state === 'expired') return <>{W.expired.before} <AggNum value={NOMINATION_EXPIRY_SESSIONS} aggregate="count(sessions a queued nomination waits, B6)" size={10.5} /> {W.expired.after} · {when}</>;
     return <>{W.answer} · <Rec>{String(line.state)}</Rec> · {when}</>;
@@ -348,10 +350,23 @@ export function ChainLine({ card, line, day = null }) {
     if (line.by !== 'server' && card?.nomination?.state === 'withdrawn') return <>{W.withdrawnRetired} · {when}</>;
     return <>{W.retired} · {when}{offer ? <> · {W.forgeOffer} <Rec><span data-offer-state="">{offer.state}</span></Rec></> : null}</>;
   }
-  // a stage row the chain names no line for: the screen's own stage word where it has one (a v1 Practice entry's
+  // a stage row the chain names no line for: the card's stage word by the one label reader (a v1 Practice entry's
   // `nominated`), the record's own word otherwise
-  const stage = String(line.stage ?? line.kind);
-  return <>{has(T.stageWords, stage) ? T.stageWords[stage] : <Rec>{stage}</Rec>} · {when}</>;
+  return <>{stageLabelOf(card, String(line.stage ?? line.kind))} · {when}</>;
+}
+
+/**
+ * Amendment A CA-17 — THE ONE LABEL READER for a card's stage word: the receipt's route line, My cards, the chain and
+ * "since last time" all name a stage through it. At `nominated`: "offered to your agent" — except an entry whose STORED
+ * route is `drill` (v1 Practice), which keeps "nominated for the Practice Field" (reading 16). The stored route decides,
+ * never the vocabulary version: a v1 Watch or Set card offered after C1 was offered to the agent. CA-22: a `tested`
+ * card whose result carries the stored no-fill fact reads "ended before its first trade", never "tested". Any other
+ * stage the copy names, its word; one it does not, the record's own (Rec).
+ */
+export function stageLabelOf(card, stage = card?.stage) {
+  if (stage === 'nominated' && Object.prototype.hasOwnProperty.call(STORED_ROUTE_ALIASES, card?.route)) return T.stageWordsOf.drillNominated;
+  if (stage === 'tested' && isObjLike(card?.result) && card.result.noFill === true) return T.stageWordsOf.noFill;
+  return wordOf(T.stageWords, stage);
 }
 const isObjLike = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 /** Amendment A CA-4 / CA-11: the row field an answer's line quotes — a deferral's or a decline's reason, an acceptance's thesis. */
@@ -455,7 +470,7 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark 
       <span style={{ ...eyebrow, color: C.teal }}>{T.receipt} · {T.filedCard}</span>
       <CardFacts card={live} />
       <Quotation doc={ledger} path={['cards', live.entryId, 'note']} by="you" at={['cards', live.entryId, 'createdAt']} docLabel="ledger" />
-      <span style={mono(11, C.ink2)}>{T.route} · {wordOf(T.routes, routeOf(live.route))} · {T.stage} · {wordOf(T.stageWords, live.stage)}{live.shelved ? ` · ${T.groups.shelved}` : ''}</span>
+      <span style={mono(11, C.ink2)}>{T.route} · {wordOf(T.routes, routeOf(live.route))} · {T.stage} · {stageLabelOf(live)}{live.shelved ? ` · ${T.groups.shelved}` : ''}</span>
       <Chain card={live} ledger={ledger} day={day} onOpenBook={onOpenBook} />
       {next ? <span data-card-next="" style={foot}>{next}{setSay ? <> {setSay}</> : null}{linked ? <> {T.setNextBattle}</> : null}</span> : null}
       {/* RH-1 / RJ-8 / RK-2: the one setting that reaches `stalled` is the tempo dial — linked on every battle where the day's rule is on */}
@@ -528,7 +543,7 @@ function CardRow({ card, onShow }) {
       <span style={mono(11, C.ink2)}>{titleOf(card.situationId)}</span>
       <span style={mono(11.5, C.ink, { fontWeight: 700 })}><Rec>{card.source?.symbol ?? ''}</Rec></span>
       <When style={mono(10.5, C.ink2)}>{etDateLabel(card.source?.etDate, { short: true }) ?? ''}</When>
-      <span style={mono(10.5, C.ink2)}>{wordOf(T.routes, routeOf(card.route))} · {wordOf(T.stageWords, card.stage)}</span>
+      <span style={mono(10.5, C.ink2)}>{wordOf(T.routes, routeOf(card.route))} · {stageLabelOf(card)}</span>
       <Label style={{ color: C.teal }}>{T.openCard}</Label>
     </button>
   );
