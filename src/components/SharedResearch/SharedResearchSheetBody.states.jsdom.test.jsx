@@ -304,9 +304,14 @@ describe('Companies (spec §7.2)', () => {
   it('leads: labelled, "Not an adoption choice until the connection has a source", no Examine', async () => {
     await open({ mode: 'session', sessionId: IDS.dcSid }, { get: A.getStepped });
     const lead = $('[data-sr-lead="Northfield Thermal"]');
-    // its own label: the server could not identify it; the sourced fact about it keeps its own label
-    expect(lead.firstElementChild.lastElementChild.textContent).toBe("Unresolved · Symbol · not in the app's records");
-    expect(lead.textContent).toContain('Source-backed');
+    // a lead wears no status of its own (review a5): "Lead", and the server could not identify it; its best finding
+    // keeps its own label, source and date below (review a16)
+    const head = lead.firstElementChild;
+    expect(head.textContent).toBe(`Northfield Thermal${COPY.lead}Symbol · not in the app's records`);
+    expect(head.textContent).not.toMatch(/Source-backed|Inferred|Unresolved/);
+    const best = lead.querySelector('[data-sr-finding]');
+    expect(best.textContent).toContain('Source-backed');
+    expect(best.querySelector('[data-sr-date]').textContent).toBe(COPY.undated('Nov 12, 2026'));
     expect(lead.textContent).toContain(COPY.leadNote);
     expect(lead.querySelector('button')).toBeNull();
   });
@@ -374,14 +379,15 @@ describe('K-6: what §15–§17 add to the screens', () => {
     click(buttonNamed(COPY.evidence, $('[data-sr-evidence]')) ?? $('[data-sr-evidence] button'));
     const findings = A.getStepped.body.record.findings;
     const undated = findings.find((f) => f.source.label.endsWith(' · undated'));
-    const dated = findings.find((f) => f.status === 'verified' && f.asOf && !f.source.label.endsWith(' · undated') && f.at !== f.asOf) ?? findings.find((f) => f.status === 'verified' && f.asOf);
+    const published = findings.find((f) => f.status === 'verified' && f.symbol === 'ETN' && f.asOf && f.at === f.asOf);
     const u = $(`[data-sr-finding="${undated.findingId}"]`);
     expect(u.querySelector('[data-sr-date]').dataset.srDate).toBe('undated');
     expect(u.querySelector('[data-sr-date]').textContent).toBe(COPY.undated('Nov 12, 2026'));
     expect(u.textContent).not.toContain(' · undated');
-    const d = $(`[data-sr-finding="${dated.findingId}"]`);
-    expect(d.querySelector('[data-sr-date]').dataset.srDate).toBe('dated');
-    expect(d.querySelector('[data-sr-date]').textContent).toMatch(/^Nov \d+, 2026/);
+    // dated by its publication (the server's at = asOf): "published Nov 5, 2026" — the UTC day, not Nov 4 (review a1, a2)
+    const d = $(`[data-sr-finding="${published.findingId}"]`);
+    expect(d.querySelector('[data-sr-date]').dataset.srDate).toBe('published');
+    expect(d.querySelector('[data-sr-date]').textContent).toBe(COPY.published('Nov 5, 2026'));
   });
 
   it('(h) drop labels: player_drop → "Your drop"; from_drop → "From your drop"', async () => {

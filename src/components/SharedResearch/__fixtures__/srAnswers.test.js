@@ -86,12 +86,14 @@ function build() {
   };
   const OPEN_AT = '2026-11-12T14:00:00.000Z';
   const storySid = '1a1a1a1a-0000-4000-8000-000000000001';
+  // The route mints the record with the entry's question (shared-research.js:254, :268); openSessionOf keeps none.
+  const STORY_Q = 'What changed in this company\'s business, and does it reach its suppliers, customers or competitors?';
   const storySession = openSessionOf({
     sessionId: storySid, userId: UID, requestId: 'req-story-1',
-    entry: { kind: 'item', itemRef: { recordKind: 'fantasyTimesStories', recordId: STORY.id }, question: 'What changed in this company\'s business, and does it reach its suppliers, customers or competitors?', direction: null, observation: null, topic: null, names: storyNames },
+    entry: { kind: 'item', itemRef: { recordKind: 'fantasyTimesStories', recordId: STORY.id }, question: STORY_Q, direction: null, observation: null, topic: null, names: storyNames },
     exchanges: [], attribution: ATTRIBUTION, researchWorkId: `sr_${storySid}`, nowIso: OPEN_AT,
   });
-  const storyRecord = append(baseRecord({ question: storySession.entry.question, sessionId: storySid, createdAt: OPEN_AT }),
+  const storyRecord = append(baseRecord({ question: STORY_Q, sessionId: storySid, createdAt: OPEN_AT }),
     built(openingFindingsOf({ entryKind: 'item', story: STORY, names: storyNames, stored: STORED, nowIso: OPEN_AT }), OPEN_AT), OPEN_AT);
   const storyRows = storedRowsOf(storyNames, { peers: { ETN: { name: 'Eaton Corporation plc', sector: 'Industrials', updatedAt: '2026-11-11T06:00:00.000Z' } }, rankings: { ETN: { compositeScore: 71, updatedAt: '2026-11-11T06:00:00.000Z' } } });
   A.openStory = { status: 200, body: openAnswer({ session: storySession, record: storyRecord, names: ETN_NAMES, storedRows: storyRows }) };
@@ -121,12 +123,13 @@ function build() {
   };
   const dropNames = namesInScopeOf({ entryKind: 'signaldrop', drop: DROP });
   const dropPlayer = exchangeOf({ who: 'player', kind: 'observation', text: DROP.input.text, at: '2026-11-12T14:21:00.000Z' }, { mintId: mint });
+  const DROP_Q = 'What is behind Gas turbines for data centers, and which company earns from it?';
   const dropSession = openSessionOf({
     sessionId: dropSid, userId: UID, requestId: 'req-drop-1',
-    entry: { kind: 'signaldrop', itemRef: { recordKind: 'signalDrops', recordId: DROP_ID }, question: 'What is behind Gas turbines for data centers, and which company earns from it?', direction: null, observation: null, topic: DROP.parse.topic, names: dropNames },
+    entry: { kind: 'signaldrop', itemRef: { recordKind: 'signalDrops', recordId: DROP_ID }, question: DROP_Q, direction: null, observation: null, topic: DROP.parse.topic, names: dropNames },
     exchanges: [dropPlayer], attribution: ATTRIBUTION, researchWorkId: `sr_${dropSid}`, nowIso: dropPlayer.at,
   });
-  const dropRecord = append(baseRecord({ question: dropSession.entry.question, sessionId: dropSid, createdAt: dropPlayer.at }),
+  const dropRecord = append(baseRecord({ question: DROP_Q, sessionId: dropSid, createdAt: dropPlayer.at }),
     built(openingFindingsOf({ entryKind: 'signaldrop', drop: DROP, playerExchange: dropPlayer, names: dropNames, stored: STORED, nowIso: dropPlayer.at, partnerName: 'Atlas' }), dropPlayer.at), dropPlayer.at);
   A.openDrop = { status: 200, body: openAnswer({ session: dropSession, record: dropRecord, names: ETN_NAMES, storedRows: storyRows }) };
   A.openDropExisting = { status: 200, body: openAnswer({ session: dropSession, record: dropRecord, names: ETN_NAMES, storedRows: storyRows, existing: true }) };
@@ -171,6 +174,7 @@ function build() {
   // the step budget spent; a failed last step; a step that was running when the sheet closed
   A.getSpent = { status: 200, body: getAnswer({ session: stepped({ stepsUsed: 10 }), record: dc2, names: ETN_NAMES }) };
   A.getStepFailed = { status: 200, body: getAnswer({ session: stepped({ lastStep: { stepId: '5e5e5e5e-0000-4000-8000-000000000002', intent: 'next', status: 'failed', startedAt: NOW, endedAt: NOW, error: 'invalid_unsupported_number' } }), record: dc2, names: ETN_NAMES }) };
+  A.getStepFailedExamine = { status: 200, body: getAnswer({ session: stepped({ lastStep: { stepId: '5e5e5e5e-0000-4000-8000-000000000004', intent: 'examine', status: 'failed', startedAt: NOW, endedAt: NOW, error: 'invalid_unsupported_number' } }), record: dc2, names: ETN_NAMES }) };
   A.getWasRunning = { status: 200, body: getAnswer({ session: stepped({ lastStep: { stepId: '5e5e5e5e-0000-4000-8000-000000000003', intent: 'refresh', status: 'running', startedAt: NOW, endedAt: null, error: null } }), record: dc2, names: ETN_NAMES }) };
   // no next step proposed (spec §16 NS-1)
   const nextNow = dc2.findings.filter((f) => f.kind === 'next_action').at(-1);
@@ -196,6 +200,8 @@ function build() {
   const movedCompanies = companiesOf(spMoved, { names: SP_NAMES });
   A.adoptStale = { status: 409, body: { error: 'preview_stale', message: copyFor('preview_stale'), adoptPreview: adoptPreviewOf(spMoved, { companies: movedCompanies, lines: latestLinesOf(spSession) }) } };
   A.adoptStaleBare = { status: 409, body: { error: 'preview_stale', message: copyFor('preview_stale') } };
+  // the GET after that step: the record the stale preview was computed from (the sheet re-reads it — review a4/b2)
+  A.getShopPayMoved = { status: 200, body: getAnswer({ session: spSession, record: spMoved, names: SP_NAMES }) };
   const spSaved = { ...sp, ...closePatch(sp, { state: 'completed', terminalReason: 'saved_to_list', atIso: NOW, funnel: manualFunnel(), subject: { watchlistId: 'wl-fixture-1', hypothesisVersion: 1 } }) };
   A.getShopPaySaved = { status: 200, body: getAnswer({ session: { ...spSession, status: 'completed', adoption: { watchlistId: 'wl-fixture-1', version: 1, at: NOW } }, record: spSaved, names: SP_NAMES }) };
   A.list = { status: 200, body: { open: [{ sessionId: spSid, question: sp.question, state: 'open', lastTurnAt: T2, findingsCount: sp.findings.length }], quota: QUOTA() } };
@@ -232,11 +238,14 @@ describe('the client fixtures are the server\'s answers (B2 Tests)', () => {
     expect(A.getStepped.body.record.answerStale).toBe(false);
     expect(A.getShopPay.body.companies.supported.map((c) => c.symbol).sort()).toEqual(['AAPL', 'SHOP']);
     expect(A.adoptStale.body.adoptPreview.previewRev).not.toBe(A.getShopPay.body.adoptPreview.previewRev);
+    expect(A.getShopPayMoved.body.adoptPreview.previewRev).toBe(A.adoptStale.body.adoptPreview.previewRev);
     expect(A.getShopPaySaved.body.record.terminalReason).toBe('saved_to_list');
     expect(A.getAged.body.record.age).toBeGreaterThan(2);
     expect(A.getStepped.body.record.findings.some((f) => f.source.label.endsWith(' · undated'))).toBe(true);
     expect(A.openDrop.body.record.findings.map((f) => f.statusReason)).toEqual(expect.arrayContaining(['player_drop', 'from_drop']));
     expect(A.openStory.body.record.findings.map((f) => f.statusReason)).toContain('reporter_content');
+    // every opened record holds its question, as the route mints it (review lens b's fixture note)
+    for (const k of ['openStory', 'openStoryPrevious', 'getStory', 'openDrop', 'openFramed', 'getStepped', 'getShopPay']) expect(typeof A[k].body.record.question, k).toBe('string');
     expect(A.stepReplaced.body.session.exchanges.at(-1).text).toBe('This step added 3 findings. The answer was not updated.');
     expect(fid('p3')).toBe(A.getShopPay.body.record.lines.support);
   });

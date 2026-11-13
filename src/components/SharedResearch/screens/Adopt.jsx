@@ -33,6 +33,7 @@ function SavedIdea({ sr, agentName, agentId, equippedListLabel, phone, onClose }
   const conditions = (input.activation?.length ?? 0) + (input.invalidation?.length ?? 0);
   const eq = sr.equip;
   const canEquip = typeof agentId === 'string' && agentId.length > 0 && typeof outcome.watchlistId === 'string';
+  const alreadySaved = sr.save.status === 'saved' && outcome.idempotent === true;
   return (
     <section data-screen-label={`Idea saved · equip ${canEquip ? eq.status : 'not offered'}`} style={{ ...S.box, background: wash('pos', 0.06), border: `1px solid ${wash('pos', 0.35)}` }}>
       <div style={S.row}>
@@ -40,8 +41,10 @@ function SavedIdea({ sr, agentName, agentId, equippedListLabel, phone, onClose }
         <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{COPY.saved}</span>
       </div>
       {sr.save.status === 'recovered' && <Notice role="status" tone="teal" attrs={{ 'data-sr-recovered': '' }}>{COPY.recovered}</Notice>}
-      {input.statement && <p style={S.body}>{input.statement}</p>}
-      {input.horizonEnum && <p style={S.meta}>{COPY.savedLine((names.length ? names : input.symbols ?? []).join(' · '), HORIZON_LABELS[input.horizonEnum] ?? input.horizonEnum, conditions)}</p>}
+      {/* Saved before (another tab or device): the server kept THAT idea, not this screen's words (review a6). */}
+      {alreadySaved && <p style={S.body} data-sr-saved-already="">{COPY.savedAlready}</p>}
+      {!alreadySaved && input.statement && <p style={S.body}>{input.statement}</p>}
+      {!alreadySaved && input.horizonEnum && <p style={S.meta}>{COPY.savedLine((names.length ? names : input.symbols ?? []).join(' · '), HORIZON_LABELS[input.horizonEnum] ?? input.horizonEnum, conditions)}</p>}
       <div style={{ borderTop: `1px solid ${T.hair}`, paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
         {canEquip && eq.status === 'none' && (
           <>
@@ -104,10 +107,26 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
   const saved = sr.save.status === 'saved' || sr.save.status === 'recovered';
   if (saved) return <SavedIdea sr={sr} agentName={agentName} agentId={agentId} equippedListLabel={equippedListLabel} phone={phone} onClose={onClose} />;
   if (!preview) {
+    // No preview to save from — say which of the four truths it is (review b7): the read is running or failed, a save
+    // is unconfirmed (only the check may speak), the investigation is closed, or no company is supported.
+    const readFailed = sr.failure?.action === 'read' ? sr.failure : null;
+    const record = sr.inv?.record ?? null;
+    let why;
+    if (sr.pending?.kind === 'read') why = <Running>{COPY.opening}</Running>;
+    else if (['uncertain', 'checking', 'closed'].includes(sr.save.status)) why = <SaveStates sr={sr} phone={phone} />;
+    else if (readFailed) {
+      why = (
+        <>
+          <Notice role="alert" attrs={{ 'data-sr-read-failed': readFailed.code }}>{readFailed.code === 'network' ? COPY.loadFailed : readFailed.message}</Notice>
+          {readFailed.code !== 'disabled' && <div><LinkButton disabled={sr.pending !== null || sr.waiting} onClick={() => sr.loadSession(readFailed.sessionId)}>{COPY.retry}</LinkButton></div>}
+        </>
+      );
+    } else if (record && record.state !== 'open') why = <Notice role="status" tone="gold" attrs={{ 'data-sr-adopt-closed': '' }}>{record.terminalReason === 'saved_to_list' ? COPY.savedNotice : COPY.investigationClosed}</Notice>;
+    else why = <Notice role="status" tone="gold">{COPY.adoptBlocked}</Notice>;
     return (
       <div data-screen-label="Adopt · unavailable" style={S.col}>
         <div><LinkButton onClick={onBack}>{COPY.back}</LinkButton></div>
-        {sr.pending?.kind === 'read' ? <Running>{COPY.opening}</Running> : <Notice role="status" tone="gold">{COPY.adoptBlocked}</Notice>}
+        {why}
       </div>
     );
   }
@@ -207,7 +226,6 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
             ))}
           </div>
         )) : <p style={S.small}>{COPY.pickFirst}</p>}
-        <p style={S.small}>{COPY.noPriceNote}</p>
       </div>
 
       <div style={S.box} data-sr-carried="">
@@ -228,23 +246,40 @@ export default function Adopt({ sr, agentName, agentId, equippedListLabel, prese
           <li>{COPY.createsEvidence}</li>
           <li>{COPY.createsClose}</li>
         </ul>
-        <p style={S.small}>{COPY.honest(agentName)}</p>
+        <p style={S.small}>{COPY.previewHonest}</p>
       </div>
 
       {status === 'failed' && <Notice role="alert" attrs={{ 'data-sr-save': 'failed' }}>{sr.save.message}</Notice>}
       {status === 'stale' && <Notice role="alert" tone="gold" attrs={{ 'data-sr-save': 'stale' }}>{sr.save.message}</Notice>}
-      {status === 'closed' && <Notice role="status" tone="gold" attrs={{ 'data-sr-save': 'closed' }}>{sr.save.message}</Notice>}
-      {uncertain && <Notice role="alert" tone="gold" attrs={{ 'data-sr-save': 'uncertain' }}>{sr.save.checkFailed ? COPY.checkFailed : COPY.saveUncertain}</Notice>}
       {status === 'notsaved' && <Notice role="status" tone="teal" attrs={{ 'data-sr-save': 'notsaved' }}>{COPY.notSaved}</Notice>}
+      <SaveStates sr={sr} phone={phone} />
       <div style={S.actions}>
         {status === 'saving' && <Running>{COPY.saving}</Running>}
-        {status === 'checking' && <Running>{COPY.checking}</Running>}
-        {status === 'uncertain' && <Button kind="primary" full={phone} onClick={sr.checkSave} attrs={{ 'data-sr-check': '' }}>{COPY.checkRecord}</Button>}
         {!uncertain && status !== 'saving' && status !== 'closed' && (
           <Button kind="primary" full={phone} disabled={!canSave} onClick={submit} attrs={{ 'data-sr-save-button': '' }}>{status === 'failed' || status === 'notsaved' ? COPY.retry : COPY.saveIdea}</Button>
         )}
         <Button kind="ghost" disabled={busy} onClick={onBack}>{COPY.cancel}</Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * An unconfirmed save's states (K-8), wherever the adoption view stands: the uncertain line with ONLY "Check the
+ * record" (held during a 429's wait), the check running, and the "closed elsewhere" answer.
+ */
+function SaveStates({ sr, phone }) {
+  const status = sr.save.status;
+  if (!['uncertain', 'checking', 'closed'].includes(status)) return null;
+  const line = sr.save.checkFailed ? (sr.save.message ?? COPY.checkFailed) : COPY.saveUncertain;
+  return (
+    <>
+      {status === 'closed' && <Notice role="status" tone="gold" attrs={{ 'data-sr-save': 'closed' }}>{sr.save.message}</Notice>}
+      {(status === 'uncertain' || status === 'checking') && <Notice role="alert" tone="gold" attrs={{ 'data-sr-save': 'uncertain' }}>{line}</Notice>}
+      <div style={S.actions}>
+        {status === 'checking' && <Running>{COPY.checking}</Running>}
+        {status === 'uncertain' && <Button kind="primary" full={phone} disabled={sr.waiting || sr.pending !== null} onClick={sr.checkSave} attrs={{ 'data-sr-check': '' }}>{COPY.checkRecord}</Button>}
+      </div>
+    </>
   );
 }

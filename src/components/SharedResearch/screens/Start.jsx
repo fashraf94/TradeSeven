@@ -44,10 +44,13 @@ export default function Start({ sr, stories, gated, phone, prefill, onPickStory,
   const busy = sr.pending !== null;
   const framing = sr.pending?.kind === 'frame';
   const frameRefusal = sr.failure?.action === 'frame' && !sr.frameState ? sr.failure : null;
+  // A Continue row that did not open: the server's line, or ours when no answer came (review b5).
+  const readFailure = sr.failure?.action === 'read' ? sr.failure : null;
   const canFrame = Boolean(text.trim()) && !gated && !quota.framingLimit && !busy && !sr.waiting;
 
   return (
     <div data-screen-label="Start" style={S.col}>
+      {readFailure && readFailure.code !== 'disabled' && <Notice role="alert" attrs={{ 'data-sr-read-failed': readFailure.code }}>{readFailure.code === 'network' ? COPY.loadFailed : readFailure.message}</Notice>}
       {!gated && sr.list.open.length > 0 && (
         <section aria-label={COPY.continueHead} data-screen-label="Continue your research" style={S.section}>
           <Eyebrow tone="teal" as="h3">{COPY.continueHead}</Eyebrow>

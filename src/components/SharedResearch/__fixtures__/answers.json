@@ -31,7 +31,7 @@
       },
       "record": {
         "researchWorkId": "sr_1a1a1a1a-0000-4000-8000-000000000001",
-        "question": null,
+        "question": "What changed in this company's business, and does it reach its suppliers, customers or competitors?",
         "state": "open",
         "terminalReason": null,
         "endedAt": null,
@@ -196,7 +196,7 @@
       },
       "record": {
         "researchWorkId": "sr_1a1a1a1a-0000-4000-8000-000000000001",
-        "question": null,
+        "question": "What changed in this company's business, and does it reach its suppliers, customers or competitors?",
         "state": "open",
         "terminalReason": null,
         "endedAt": null,
@@ -365,7 +365,7 @@
       },
       "record": {
         "researchWorkId": "sr_1a1a1a1a-0000-4000-8000-000000000001",
-        "question": null,
+        "question": "What changed in this company's business, and does it reach its suppliers, customers or competitors?",
         "state": "open",
         "terminalReason": null,
         "endedAt": null,
@@ -696,7 +696,7 @@
       },
       "record": {
         "researchWorkId": "sr_3c3c3c3c-0000-4000-8000-000000000001",
-        "question": null,
+        "question": "What is behind Gas turbines for data centers, and which company earns from it?",
         "state": "open",
         "terminalReason": null,
         "endedAt": null,
@@ -884,7 +884,7 @@
       },
       "record": {
         "researchWorkId": "sr_3c3c3c3c-0000-4000-8000-000000000001",
-        "question": null,
+        "question": "What is behind Gas turbines for data centers, and which company earns from it?",
         "state": "open",
         "terminalReason": null,
         "endedAt": null,
@@ -3832,6 +3832,366 @@
       }
     }
   },
+  "getStepFailedExamine": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "0b6f3c1e-1d2a-4e5f-8a9b-1c2d3e4f5a6b",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "Data-center builders say power and cooling equipment, not chips, now sets the pace of new capacity.",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "Data-center builders say power and cooling equipment, not chips, now sets the pace of new capacity.",
+            "at": "2026-11-10T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "One listed supplier is now tied to the problem: a news report on 2026-11-05 says Eaton sells switchgear and power distribution equipment to data-center builders and that its orders rose in the third quarter. Eaton is on our list as ETN. The size of this business for Eaton is not disclosed, because it does not report data-center revenue as a segment. Switchgear lead times past 52 weeks come from a single news source. The cooling supplier in our record, Northfield Thermal, is described as privately held, so it is not a listed company to work with. The weakest link is now significance: how much of Eaton's results this represents.",
+            "at": "2026-11-12T15:00:05.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000001",
+            "intent": "next"
+          }
+        ],
+        "stepsUsed": 1,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000004",
+          "intent": "examine",
+          "status": "failed",
+          "startedAt": "2026-11-12T15:00:05.000Z",
+          "endedAt": "2026-11-12T15:00:05.000Z",
+          "error": "invalid_unsupported_number"
+        },
+        "researchWorkId": "sr_0b6f3c1e-1d2a-4e5f-8a9b-1c2d3e4f5a6b",
+        "adoption": null,
+        "createdAt": "2026-11-10T14:00:00.000Z",
+        "updatedAt": "2026-11-12T15:00:05.000Z"
+      },
+      "record": {
+        "researchWorkId": "sr_0b6f3c1e-1d2a-4e5f-8a9b-1c2d3e4f5a6b",
+        "question": "Data-center builders say power and cooling equipment, not chips, now sets the pace of new capacity. Which company earns from it?",
+        "state": "open",
+        "terminalReason": null,
+        "endedAt": null,
+        "createdAt": "2026-11-10T14:00:00.000Z",
+        "lastTurnAt": null,
+        "summary": {
+          "rev": 1,
+          "text": "A listed company that earns from the equipment bottleneck is Eaton (ETN), which sells switchgear and power distribution equipment to data-center builders and reported higher orders in the third quarter. How much this matters to Eaton is not disclosed, since it reports no data-center segment. The switchgear delay rests on a single news report.",
+          "at": "2026-11-12T15:00:05.000Z",
+          "basedOn": [
+            "f_50000000-0000-4000-8000-000000000001",
+            "f_50000000-0000-4000-8000-000000000002",
+            "f_50000000-0000-4000-8000-000000000003"
+          ]
+        },
+        "answerStale": false,
+        "summaryRevisions": [
+          {
+            "rev": 1,
+            "text": "A listed company that earns from the equipment bottleneck is Eaton (ETN), which sells switchgear and power distribution equipment to data-center builders and reported higher orders in the third quarter. How much this matters to Eaton is not disclosed, since it reports no data-center segment. The switchgear delay rests on a single news report.",
+            "at": "2026-11-12T15:00:05.000Z"
+          }
+        ],
+        "findings": [
+          {
+            "findingId": "f_00000000-0000-4000-8000-643100000000",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Lead times for data-center switchgear and transformers stretched past a year in 2026.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://example.com/dc-power",
+              "label": "example.com · Power gear lead times stretch",
+              "url": "https://example.com/dc-power"
+            },
+            "at": "2026-11-03T00:00:00.000Z",
+            "asOf": "2026-11-03T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_00000000-0000-4000-8000-643200000000",
+            "kind": "product",
+            "symbol": null,
+            "fact": "Coolant distribution units are sold by several equipment makers.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://example.com/cdu",
+              "label": "example.com · Coolant distribution units",
+              "url": "https://example.com/cdu"
+            },
+            "at": "2026-11-02T00:00:00.000Z",
+            "asOf": "2026-11-02T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_00000000-0000-4000-8000-643300000000",
+            "kind": "inference",
+            "symbol": null,
+            "fact": "Equipment makers with power and cooling lines may earn from the delay.",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Inferred in this step"
+            },
+            "at": "2026-11-10T15:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "inference",
+            "supersedes": null
+          },
+          {
+            "findingId": "f_00000000-0000-4000-8000-646d31000000",
+            "kind": "relationship",
+            "symbol": null,
+            "fact": "Supplier · Northfield Thermal: supplies coolant distribution units to hyperscale builders.",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Not yet checked"
+            },
+            "at": "2026-11-10T15:00:00.000Z",
+            "asOf": null,
+            "status": "unavailable",
+            "statusReason": "not_checked",
+            "supersedes": null
+          },
+          {
+            "findingId": "f_50000000-0000-4000-8000-000000000001",
+            "kind": "relationship",
+            "symbol": "ETN",
+            "fact": "Supplier · Eaton sells switchgear and power distribution equipment to data-center builders, and said orders for it rose in the third quarter.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/eaton-orders",
+              "label": "news.example.com · Eaton cites data-center demand for its electrical equipment",
+              "url": "https://news.example.com/eaton-orders"
+            },
+            "at": "2026-11-05T00:00:00.000Z",
+            "asOf": "2026-11-05T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_50000000-0000-4000-8000-000000000002",
+            "kind": "earnings_fact",
+            "symbol": "ETN",
+            "fact": "Eaton does not report data-center revenue as a separate segment, so the size of this business for the company is not disclosed.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/eaton-orders",
+              "label": "news.example.com · Eaton cites data-center demand for its electrical equipment",
+              "url": "https://news.example.com/eaton-orders"
+            },
+            "at": "2026-11-05T00:00:00.000Z",
+            "asOf": "2026-11-05T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_50000000-0000-4000-8000-000000000003",
+            "kind": "coverage",
+            "symbol": null,
+            "fact": "Medium-voltage switchgear and large transformer lead times stretched past 52 weeks, developers said, and several hyperscale projects were re-sequenced around equipment delivery dates; this is one news report.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://news.example.com/switchgear-wait",
+              "label": "news.example.com · Data-center builders wait a year for switchgear",
+              "url": "https://news.example.com/switchgear-wait"
+            },
+            "at": "2026-11-03T00:00:00.000Z",
+            "asOf": "2026-11-03T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_50000000-0000-4000-8000-000000000004",
+            "kind": "product",
+            "symbol": null,
+            "fact": "Northfield Thermal: Northfield Thermal, a coolant distribution unit maker, is privately held, so it is not a listed company with a symbol here.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://industry.example.org/cdu-makers",
+              "label": "industry.example.org · Coolant distribution units: who makes them · undated",
+              "url": "https://industry.example.org/cdu-makers"
+            },
+            "at": "2026-11-12T15:00:00.000Z",
+            "asOf": null,
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_50000000-0000-4000-8000-000000000005",
+            "kind": "inference",
+            "symbol": "ETN",
+            "fact": "Eaton's disclosed order growth is not shown to be large enough to matter to its results; its revenue exposure to data centers is unresolved.",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Not yet checked"
+            },
+            "at": "2026-11-12T15:00:05.000Z",
+            "asOf": null,
+            "status": "unavailable",
+            "statusReason": "not_disclosed",
+            "supersedes": null
+          },
+          {
+            "findingId": "f_50000000-0000-4000-8000-000000000006",
+            "kind": "idea",
+            "symbol": "ETN",
+            "fact": "Sells the switchgear and power distribution equipment data-center builders are waiting for, and reported higher orders for it. Supplier of electrical equipment to data-center builders. Reported orders rose in the third quarter (news report, 2026-11-05). Data-center revenue is not reported separately, so the size of this business for Eaton is not disclosed.",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Proposed claim"
+            },
+            "at": "2026-11-12T15:00:05.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "proposed_claim",
+            "supersedes": null
+          },
+          {
+            "findingId": "f_50000000-0000-4000-8000-000000000007",
+            "kind": "next_action",
+            "symbol": null,
+            "fact": "Look for Eaton's filing disclosures on data-center share of orders or electrical segment revenue. — Significance is the weakest link: the relationship is supported but its size for Eaton is unknown.",
+            "source": {
+              "recordKind": "kb",
+              "recordId": "baseline@v0",
+              "label": "Baseline method v0"
+            },
+            "at": "2026-11-12T15:00:05.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "proposed",
+            "supersedes": null
+          }
+        ],
+        "superseded": [],
+        "lines": {
+          "support": "f_50000000-0000-4000-8000-000000000001",
+          "complication": "f_50000000-0000-4000-8000-000000000002",
+          "missing": "f_50000000-0000-4000-8000-000000000005"
+        },
+        "nextAction": {
+          "findingId": "f_50000000-0000-4000-8000-000000000007",
+          "kind": "next_action",
+          "symbol": null,
+          "fact": "Look for Eaton's filing disclosures on data-center share of orders or electrical segment revenue. — Significance is the weakest link: the relationship is supported but its size for Eaton is unknown.",
+          "source": {
+            "recordKind": "kb",
+            "recordId": "baseline@v0",
+            "label": "Baseline method v0"
+          },
+          "at": "2026-11-12T15:00:05.000Z",
+          "asOf": null,
+          "status": "unverified",
+          "statusReason": "proposed",
+          "supersedes": null
+        },
+        "age": 0
+      },
+      "companies": {
+        "supported": [
+          {
+            "symbol": "ETN",
+            "name": "Eaton Corporation plc",
+            "role": "Supplier",
+            "relationship": "Eaton sells switchgear and power distribution equipment to data-center builders, and said orders for it rose in the third quarter.",
+            "relationshipFindingId": "f_50000000-0000-4000-8000-000000000001",
+            "evidence": [
+              "f_50000000-0000-4000-8000-000000000001",
+              "f_50000000-0000-4000-8000-000000000002"
+            ],
+            "openQuestion": {
+              "findingId": "f_50000000-0000-4000-8000-000000000005",
+              "fact": "Eaton's disclosed order growth is not shown to be large enough to matter to its results; its revenue exposure to data centers is unresolved.",
+              "statusReason": "not_disclosed"
+            },
+            "claim": {
+              "findingId": "f_50000000-0000-4000-8000-000000000006",
+              "fact": "Sells the switchgear and power distribution equipment data-center builders are waiting for, and reported higher orders for it. Supplier of electrical equipment to data-center builders. Reported orders rose in the third quarter (news report, 2026-11-05). Data-center revenue is not reported separately, so the size of this business for Eaton is not disclosed."
+            },
+            "eligibility": "eligible"
+          }
+        ],
+        "leads": [
+          {
+            "name": "Northfield Thermal",
+            "symbol": null,
+            "findingIds": [
+              "f_00000000-0000-4000-8000-646d31000000",
+              "f_50000000-0000-4000-8000-000000000004"
+            ],
+            "status": "verified",
+            "statusReason": null,
+            "unresolved": "identity_unresolved"
+          }
+        ]
+      },
+      "adoptPreview": {
+        "previewRev": "pr1.ebbd1955f2ccb040a0cd0ba2b9051685",
+        "companies": [
+          {
+            "symbol": "ETN",
+            "name": "Eaton Corporation plc",
+            "role": "Supplier",
+            "relationship": "Eaton sells switchgear and power distribution equipment to data-center builders, and said orders for it rose in the third quarter.",
+            "eligibility": "eligible",
+            "fragment": "Sells the switchgear and power distribution equipment data-center builders are waiting for, and reported higher orders for it. Supplier of electrical equipment to data-center builders. Reported orders rose in the third quarter (news report, 2026-11-05). Data-center revenue is not reported separately, so the size of this business for Eaton is not disclosed.",
+            "carried": [
+              "f_50000000-0000-4000-8000-000000000006",
+              "f_50000000-0000-4000-8000-000000000001",
+              "f_50000000-0000-4000-8000-000000000002",
+              "f_50000000-0000-4000-8000-000000000005"
+            ],
+            "adoptable": true,
+            "reason": null
+          }
+        ],
+        "draft": "Sells the switchgear and power distribution equipment data-center builders are waiting for, and reported higher orders for it. Supplier of electrical equipment to data-center builders. Reported orders rose in the third quarter (news report, 2026-11-05). Data-center revenue is not reported separately, so the size of this business for Eaton is not disclosed.",
+        "carried": [
+          "f_50000000-0000-4000-8000-000000000006",
+          "f_50000000-0000-4000-8000-000000000001",
+          "f_50000000-0000-4000-8000-000000000002",
+          "f_50000000-0000-4000-8000-000000000005"
+        ],
+        "keptMax": 28
+      },
+      "storedRows": [],
+      "previous": null,
+      "quota": {
+        "investigationsToday": 1,
+        "perDay": 3,
+        "framingsToday": 1,
+        "framingsPerDay": 10,
+        "stepsToday": 1,
+        "stepsPerDay": 30
+      }
+    }
+  },
   "getWasRunning": {
     "status": 200,
     "body": {
@@ -6064,6 +6424,346 @@
     "body": {
       "error": "preview_stale",
       "message": "The investigation changed since you opened the preview. Check the new draft and save again."
+    }
+  },
+  "getShopPayMoved": {
+    "status": 200,
+    "body": {
+      "session": {
+        "sessionId": "0b6f3c1e-1d2a-4e5f-8a9b-1c2d3e4f5a6b",
+        "status": "open",
+        "entry": {
+          "kind": "observation",
+          "itemRef": null,
+          "observation": "Data-center builders say power and cooling equipment, not chips, now sets the pace of new capacity.",
+          "direction": null,
+          "topic": null,
+          "names": []
+        },
+        "frame": null,
+        "lastError": null,
+        "exchanges": [
+          {
+            "who": "player",
+            "kind": "observation",
+            "text": "Data-center builders say power and cooling equipment, not chips, now sets the pace of new capacity.",
+            "at": "2026-11-10T14:00:00.000Z"
+          },
+          {
+            "who": "partner",
+            "kind": "step",
+            "text": "Shopify owns Shop Pay; Apple Pay competes at the same checkouts.",
+            "at": "2026-11-11T15:00:00.000Z",
+            "stepId": "5e5e5e5e-0000-4000-8000-000000000001",
+            "intent": "next"
+          }
+        ],
+        "stepsUsed": 3,
+        "stepBudget": 10,
+        "lastStep": {
+          "stepId": "5e5e5e5e-0000-4000-8000-000000000001",
+          "intent": "next",
+          "status": "completed",
+          "startedAt": "2026-11-11T15:00:00.000Z",
+          "endedAt": "2026-11-11T15:00:00.000Z",
+          "error": null
+        },
+        "researchWorkId": "sr_0b6f3c1e-1d2a-4e5f-8a9b-1c2d3e4f5a6b",
+        "adoption": null,
+        "createdAt": "2026-11-10T14:00:00.000Z",
+        "updatedAt": "2026-11-10T14:00:00.000Z"
+      },
+      "record": {
+        "researchWorkId": "sr_0b6f3c1e-1d2a-4e5f-8a9b-1c2d3e4f5a6b",
+        "question": "Faster checkout is spreading across online stores; which company earns from it?",
+        "state": "open",
+        "terminalReason": null,
+        "endedAt": null,
+        "createdAt": "2026-11-10T14:00:00.000Z",
+        "lastTurnAt": null,
+        "summary": null,
+        "answerStale": false,
+        "summaryRevisions": [],
+        "findings": [
+          {
+            "findingId": "f_00000000-0000-4000-8000-703100000000",
+            "kind": "relationship",
+            "symbol": "SHOP",
+            "fact": "Product owner · Shopify owns Shop Pay, its accelerated checkout.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://example.com/shop-pay",
+              "label": "example.com · Shop Pay",
+              "url": "https://example.com/shop-pay"
+            },
+            "at": "2026-11-01T00:00:00.000Z",
+            "asOf": "2026-11-01T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_00000000-0000-4000-8000-703300000000",
+            "kind": "earnings_fact",
+            "symbol": "SHOP",
+            "fact": "Shop Pay's volume grew 62% from a year earlier.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://example.com/q3-letter",
+              "label": "example.com · Shopify letter",
+              "url": "https://example.com/q3-letter"
+            },
+            "at": "2026-10-30T00:00:00.000Z",
+            "asOf": "2026-10-30T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_00000000-0000-4000-8000-703400000000",
+            "kind": "inference",
+            "symbol": null,
+            "fact": "A rival wallet may take share at the same checkouts.",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Inferred in this step"
+            },
+            "at": "2026-11-10T15:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "inference",
+            "supersedes": null
+          },
+          {
+            "findingId": "f_00000000-0000-4000-8000-613100000000",
+            "kind": "relationship",
+            "symbol": "AAPL",
+            "fact": "Competitor · Apple Pay competes with Shop Pay at online checkout.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://example.com/apple-pay",
+              "label": "example.com · Apple Pay",
+              "url": "https://example.com/apple-pay"
+            },
+            "at": "2026-10-28T00:00:00.000Z",
+            "asOf": "2026-10-28T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_00000000-0000-4000-8000-703272000000",
+            "kind": "earnings_fact",
+            "symbol": "SHOP",
+            "fact": "Shop Pay processed $21 billion of gross merchandise volume in the quarter.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://example.com/q3-corrected",
+              "label": "example.com · Shopify Q3, corrected",
+              "url": "https://example.com/q3-corrected"
+            },
+            "at": "2026-10-30T00:00:00.000Z",
+            "asOf": "2026-10-30T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": "f_00000000-0000-4000-8000-703200000000"
+          },
+          {
+            "findingId": "f_00000000-0000-4000-8000-703572000000",
+            "kind": "relationship",
+            "symbol": "SHOP",
+            "fact": "Product owner · The size of Shop Pay's fee revenue for Shopify is not disclosed.",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Not yet checked"
+            },
+            "at": "2026-11-11T15:00:00.000Z",
+            "asOf": null,
+            "status": "unavailable",
+            "statusReason": "not_disclosed",
+            "supersedes": "f_00000000-0000-4000-8000-703500000000"
+          },
+          {
+            "findingId": "f_00000000-0000-4000-8000-696300000000",
+            "kind": "idea",
+            "symbol": "SHOP",
+            "fact": "Shopify earns from faster checkout through Shop Pay, whose volume grew 62% from a year earlier. The size of its fee revenue is not disclosed.",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Proposed claim"
+            },
+            "at": "2026-11-11T15:00:00.000Z",
+            "asOf": null,
+            "status": "unverified",
+            "statusReason": "proposed_claim",
+            "supersedes": null
+          },
+          {
+            "findingId": "f_0f0f0f0f-0000-4000-8000-000000000018",
+            "kind": "earnings_fact",
+            "symbol": "SHOP",
+            "fact": "Shop Pay was used by 200 million buyers in the year.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://example.com/shop-pay-buyers",
+              "label": "example.com · Shop Pay buyers",
+              "url": "https://example.com/shop-pay-buyers"
+            },
+            "at": "2026-11-01T00:00:00.000Z",
+            "asOf": "2026-11-01T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          }
+        ],
+        "superseded": [
+          {
+            "findingId": "f_00000000-0000-4000-8000-703200000000",
+            "kind": "earnings_fact",
+            "symbol": "SHOP",
+            "fact": "Shop Pay processed $20 billion of gross merchandise volume in the quarter.",
+            "source": {
+              "recordKind": "retrieval",
+              "recordId": "https://example.com/q3",
+              "label": "example.com · Shopify Q3",
+              "url": "https://example.com/q3"
+            },
+            "at": "2026-10-30T00:00:00.000Z",
+            "asOf": "2026-10-30T00:00:00.000Z",
+            "status": "verified",
+            "statusReason": null,
+            "supersedes": null
+          },
+          {
+            "findingId": "f_00000000-0000-4000-8000-703500000000",
+            "kind": "relationship",
+            "symbol": "SHOP",
+            "fact": "Product owner · Shop Pay's fee revenue for Shopify is not broken out.",
+            "source": {
+              "recordKind": "exchange",
+              "recordId": null,
+              "label": "Not yet checked"
+            },
+            "at": "2026-11-10T15:00:00.000Z",
+            "asOf": null,
+            "status": "unavailable",
+            "statusReason": "not_disclosed",
+            "supersedes": null
+          }
+        ],
+        "lines": {
+          "support": "f_00000000-0000-4000-8000-703300000000",
+          "complication": "f_00000000-0000-4000-8000-703400000000",
+          "missing": "f_00000000-0000-4000-8000-703500000000"
+        },
+        "nextAction": null,
+        "age": null
+      },
+      "companies": {
+        "supported": [
+          {
+            "symbol": "SHOP",
+            "name": "Shopify Inc.",
+            "role": "Product owner",
+            "relationship": "Shopify owns Shop Pay, its accelerated checkout.",
+            "relationshipFindingId": "f_00000000-0000-4000-8000-703100000000",
+            "evidence": [
+              "f_00000000-0000-4000-8000-703100000000",
+              "f_00000000-0000-4000-8000-703300000000",
+              "f_00000000-0000-4000-8000-703272000000",
+              "f_0f0f0f0f-0000-4000-8000-000000000018"
+            ],
+            "openQuestion": {
+              "findingId": "f_00000000-0000-4000-8000-703572000000",
+              "fact": "Product owner · The size of Shop Pay's fee revenue for Shopify is not disclosed.",
+              "statusReason": "not_disclosed"
+            },
+            "claim": {
+              "findingId": "f_00000000-0000-4000-8000-696300000000",
+              "fact": "Shopify earns from faster checkout through Shop Pay, whose volume grew 62% from a year earlier. The size of its fee revenue is not disclosed."
+            },
+            "eligibility": "eligible"
+          },
+          {
+            "symbol": "AAPL",
+            "name": "Apple Inc.",
+            "role": "Competitor",
+            "relationship": "Apple Pay competes with Shop Pay at online checkout.",
+            "relationshipFindingId": "f_00000000-0000-4000-8000-613100000000",
+            "evidence": [
+              "f_00000000-0000-4000-8000-613100000000"
+            ],
+            "openQuestion": null,
+            "claim": null,
+            "eligibility": "eligible"
+          }
+        ],
+        "leads": []
+      },
+      "adoptPreview": {
+        "previewRev": "pr1.819f395018aa5336798d6bc4191e956a",
+        "companies": [
+          {
+            "symbol": "SHOP",
+            "name": "Shopify Inc.",
+            "role": "Product owner",
+            "relationship": "Shopify owns Shop Pay, its accelerated checkout.",
+            "eligibility": "eligible",
+            "fragment": "Shopify earns from faster checkout through Shop Pay, whose volume grew 62% from a year earlier. The size of its fee revenue is not disclosed.",
+            "carried": [
+              "f_00000000-0000-4000-8000-696300000000",
+              "f_00000000-0000-4000-8000-703100000000",
+              "f_00000000-0000-4000-8000-703300000000",
+              "f_00000000-0000-4000-8000-703272000000",
+              "f_0f0f0f0f-0000-4000-8000-000000000018",
+              "f_00000000-0000-4000-8000-703572000000",
+              "f_00000000-0000-4000-8000-703400000000"
+            ],
+            "adoptable": true,
+            "reason": null
+          },
+          {
+            "symbol": "AAPL",
+            "name": "Apple Inc.",
+            "role": "Competitor",
+            "relationship": "Apple Pay competes with Shop Pay at online checkout.",
+            "eligibility": "eligible",
+            "fragment": "Competitor: Apple Pay competes with Shop Pay at online checkout.",
+            "carried": [
+              "f_00000000-0000-4000-8000-613100000000",
+              "f_00000000-0000-4000-8000-703400000000",
+              "f_00000000-0000-4000-8000-703572000000"
+            ],
+            "adoptable": true,
+            "reason": null
+          }
+        ],
+        "draft": "Shopify earns from faster checkout through Shop Pay, whose volume grew 62% from a year earlier. The size of its fee revenue is not disclosed. Competitor: Apple Pay competes with Shop Pay at online checkout.",
+        "carried": [
+          "f_00000000-0000-4000-8000-696300000000",
+          "f_00000000-0000-4000-8000-703100000000",
+          "f_00000000-0000-4000-8000-703300000000",
+          "f_00000000-0000-4000-8000-703272000000",
+          "f_0f0f0f0f-0000-4000-8000-000000000018",
+          "f_00000000-0000-4000-8000-703572000000",
+          "f_00000000-0000-4000-8000-613100000000",
+          "f_00000000-0000-4000-8000-703400000000"
+        ],
+        "keptMax": 28
+      },
+      "storedRows": [],
+      "previous": null,
+      "quota": {
+        "investigationsToday": 1,
+        "perDay": 3,
+        "framingsToday": 1,
+        "framingsPerDay": 10,
+        "stepsToday": 1,
+        "stepsPerDay": 30
+      }
     }
   },
   "getShopPaySaved": {

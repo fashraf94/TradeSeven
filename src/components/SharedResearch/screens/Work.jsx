@@ -128,7 +128,12 @@ export default function Work({ sr, agentName, phone, viewingEarlier = false, onB
   const failure = seen ?? recorded;
   const staleRunning = !running && last?.status === 'running';
   const staleAttempt = staleRunning ? { stepId: last.stepId, intent: last.intent, direction: directionOfStep(session, last.stepId), target: null, label: null } : null;
-  const retryOf = (attempt) => () => sr.step(attempt);
+  const runStep = async (attempt) => {
+    const answer = await sr.step(attempt);
+    if (attempt.intent === 'direction' && answer?.ok && !answer.body?.error) setDirection('');
+    return answer;
+  };
+  const retryOf = (attempt) => () => runStep(attempt);
   const withheld = (sr.stepOutcome?.summaryWithheld === true && sr.stepOutcome.stepId === last?.stepId) || (last?.status === 'completed' && last.summaryWithheld === true);
   const runningLabel = (() => {
     const p = sr.pending;
@@ -137,17 +142,21 @@ export default function Work({ sr, agentName, phone, viewingEarlier = false, onB
     return COPY.running[p.intent] ?? COPY.running.next;
   })();
   const closeRefusal = sr.failure?.action === 'close' ? sr.failure : null;
+  const readFailure = sr.failure?.action === 'read' ? sr.failure : null; // the earlier one, or back, did not load (review b6)
   const examineTarget = (c) => ({ symbol: c.symbol, relationshipFindingId: c.relationshipFindingId, openFindingId: c.openQuestion?.findingId ?? null });
-  const findingsCount = record.findings?.length ?? 0;
+  // One count everywhere (review a7): every finding the record holds, current and corrected — the server's own
+  // findingsCount on the Continue row (store.js listOpen). The Evidence disclosure splits it: current · Earlier.
+  const findingsCount = (record.findings?.length ?? 0) + (record.superseded?.length ?? 0);
 
   return (
     <div data-screen-label={`Work · ${running ? 'running' : state}`} style={S.col}>
       {viewingEarlier && (
         <>
-          <div><LinkButton onClick={onBackToCurrent}>{COPY.backToCurrent}</LinkButton></div>
+          <div><LinkButton disabled={sr.pending !== null || sr.waiting} onClick={onBackToCurrent}>{COPY.backToCurrent}</LinkButton></div>
           <Notice role="status" tone="teal">{COPY.earlierNote}</Notice>
         </>
       )}
+      {readFailure && <Notice role="alert" attrs={{ 'data-sr-read-failed': readFailure.code }}>{readFailure.code === 'network' ? COPY.loadFailed : readFailure.message}</Notice>}
       <div style={{ ...S.row, justifyContent: 'space-between' }}>
         <span style={S.meta} data-sr-state={state}>{COPY.stateLine(COPY.states[state] ?? COPY.states.open, formatWhen(record.lastTurnAt), findingsCount)}</span>
       </div>
@@ -157,7 +166,7 @@ export default function Work({ sr, agentName, phone, viewingEarlier = false, onB
         <div style={S.row} data-sr-previous={previous.sessionId}>
           <span style={S.meta}>{COPY.previous(formatDay(previous.endedAt) ?? '')}</span>
           <span aria-hidden="true" style={S.small}>·</span>
-          <LinkButton onClick={() => onOpenEarlier(previous.sessionId)}>{COPY.openEarlier}</LinkButton>
+          <LinkButton disabled={sr.pending !== null || sr.waiting} onClick={() => onOpenEarlier(previous.sessionId)}>{COPY.openEarlier}</LinkButton>
         </div>
       )}
 
@@ -186,6 +195,7 @@ export default function Work({ sr, agentName, phone, viewingEarlier = false, onB
                 <CompanyCard key={c.symbol} company={c} findings={byId}
                   canExamine={open && !spent && !quota.stepLimit}
                   disabled={blocked}
+                  adoptDisabled={running || sr.pending !== null}
                   onExamine={() => sr.step({ intent: 'examine', target: examineTarget(c), label: c.name })}
                   onAdopt={open ? () => onAdopt(c.symbol) : null} />
               ))}
@@ -227,7 +237,7 @@ export default function Work({ sr, agentName, phone, viewingEarlier = false, onB
           )}
           {!running && spent && <Notice role="status" tone="gold" attrs={{ 'data-sr-limit': 'budget_spent' }}>{COPY.server.budget_spent}</Notice>}
           {!running && !spent && quota.stepLimit && <Notice role="status" tone="gold" attrs={{ 'data-sr-limit': 'step_limit' }}>{COPY.server.step_limit}</Notice>}
-          {!running && !spent && !failure && next && (
+          {!running && !spent && next && (
             <div style={S.section}>
               <Button kind="primary" full={phone} disabled={blocked} onClick={() => sr.step({ intent: 'next', label: null })} label={`${splitNext(next.fact).label}. ${COPY.remaining(remaining)}`} attrs={{ 'data-sr-next': '' }}>
                 {splitNext(next.fact).label}
@@ -247,7 +257,7 @@ export default function Work({ sr, agentName, phone, viewingEarlier = false, onB
           <label htmlFor="sr-direction" style={S.label}>{COPY.examineHead}</label>
           <div style={{ display: 'flex', gap: 8, flexWrap: phone ? 'wrap' : 'nowrap' }}>
             <input id="sr-direction" value={direction} onChange={(e) => setDirection(e.target.value)} maxLength={500} disabled={blocked} placeholder={COPY.examinePlaceholder} style={{ ...S.input, flex: '1 1 200px' }} />
-            <Button kind="primary" full={phone} disabled={blocked || !direction.trim()} onClick={async () => { const answer = await sr.step({ intent: 'direction', direction: direction.trim(), label: null }); if (answer?.ok && !answer.body?.error) setDirection(''); }} attrs={{ 'data-sr-send': '' }}>{COPY.send}</Button>
+            <Button kind="primary" full={phone} disabled={blocked || !direction.trim()} onClick={() => runStep({ intent: 'direction', direction: direction.trim(), label: null })} attrs={{ 'data-sr-send': '' }}>{COPY.send}</Button>
           </div>
           <p style={S.small}>{COPY.examineHelp}</p>
         </section>

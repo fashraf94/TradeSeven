@@ -31,6 +31,8 @@ import { SR_COPY } from './sharedResearchCopy';
 /** The words for an answer that is not a success: the server's message, else its line for the code, else ours. */
 export function failureOf(answer) {
   if (!answer || answer.network) return { code: 'network', message: SR_COPY.network };
+  // 404 disabled carries no message: the gate is off for this player — the gated line, never "did not complete" (P-5).
+  if (answer.gated) return { code: 'disabled', message: `${SR_COPY.gated}. ${SR_COPY.gatedSub}` };
   const body = answer.body ?? {};
   if (body.error === 'step_failed') {
     return { code: 'step_failed', reason: body.reason ?? null, message: body.reason === 'findings_full' ? SR_COPY.server.findings_full : SR_COPY.server.step_failed };
@@ -74,7 +76,13 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
   const timerRef = useRef(null);
   const openIdRef = useRef(null); // the requestId of the open being attempted (re-sent on a retry)
   const targetsRef = useRef(new Map()); // stepId → the examine target sent with it (a Try again re-sends it)
-  useEffect(() => () => { live.current = false; if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  // sessionId → the input of a save whose outcome is not known (K-8): it stays until "Check the record" answers, through
+  // any navigation, so no Save can be sent for that investigation before the check.
+  const uncertainRef = useRef(new Map());
+  useEffect(() => {
+    live.current = true; // StrictMode replays effects in development: the replay must not leave the sheet deaf (review b8)
+    return () => { live.current = false; if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
 
   const gated = gatedProp || serverGated;
   const waiting = retryAt !== null;
@@ -131,7 +139,9 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
       setInv(investigationOf(answer.body, null));
       setExisting(false);
       setStepOutcome(null);
-      setSave({ status: 'idle' });
+      // A save still unconfirmed for THIS investigation stays unconfirmed: only the check decides it (K-8; review b1).
+      const unsure = uncertainRef.current.get(sessionId);
+      setSave(unsure ? { status: 'uncertain', input: unsure, sessionId } : { status: 'idle' });
       setEquip({ status: 'none' });
       setEpoch((n) => n + 1);
     } else setFailure({ ...failureOf(answer), action: 'read', sessionId });
@@ -149,9 +159,9 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
     if (answer.ok && body.frame) {
       setFrameState({ requestId: id, observation, status: 'framed', sessionId: body.sessionId, frame: body.frame });
     } else if (answer.ok && body.error !== 'frame_failed' && body.sessionId && !body.frame) {
-      // A repeated request whose first framing is still running: nothing to show yet; Try again asks once more.
+      // A repeated request whose first framing is still running: not a failure (review a12); Try again asks once more.
       setFrameState({ requestId: id, observation, status: 'failed', sessionId: body.sessionId, frame: null });
-      setFailure({ ...failureOf({ body: { error: 'frame_failed' } }), action: 'frame' });
+      setFailure({ code: 'frame_pending', message: SR_COPY.framingStill, action: 'frame' });
     } else if (body.error === 'frame_failed' || answer.network) {
       setFrameState({ requestId: id, observation, status: 'failed', sessionId: body.sessionId ?? null, frame: null });
       setFailure({ ...failureOf(answer), action: 'frame' });
@@ -261,63 +271,81 @@ export default function useSharedResearch({ gated: gatedProp = false } = {}) {
 
   // ── adoption (spec §4.6; K-7, K-8) ───────────────────────────────────────────
 
-  const resetSave = useCallback(() => setSave({ status: 'idle' }), []);
+  /** Back to idle — unless this investigation's save is still unconfirmed, which only the check may clear (K-8). */
+  const resetSave = useCallback(() => {
+    const sessionId = inv?.session?.sessionId;
+    const unsure = sessionId ? uncertainRef.current.get(sessionId) : undefined;
+    setSave(unsure ? { status: 'uncertain', input: unsure, sessionId } : { status: 'idle' });
+  }, [inv]);
+
+  /** A read outside `run` (after a save, after a stale preview): absorbed like any answer, and put on screen. */
+  const reread = useCallback(async (sessionId) => {
+    const fresh = await service.readInvestigation(sessionId);
+    absorb(fresh);
+    if (live.current && fresh.ok) setInv(investigationOf(fresh.body, null));
+    return fresh;
+  }, [absorb]);
 
   const adopt = useCallback(async (input) => {
     const sessionId = inv?.session?.sessionId;
     const previewRev = inv?.adoptPreview?.previewRev;
     if (!sessionId || typeof previewRev !== 'string') return null;
-    if (saveRef.current.status === 'uncertain' || saveRef.current.status === 'checking') return null; // check first (K-8)
+    // Check first (K-8): never a Save for an investigation whose last save is unconfirmed, whatever the screen shows.
+    if (uncertainRef.current.has(sessionId) || saveRef.current.status === 'uncertain' || saveRef.current.status === 'checking') return null;
     const body = {
       sessionId, statement: input.statement, horizonEnum: input.horizonEnum, symbols: input.symbols,
       activation: input.activation, invalidation: input.invalidation,
       previewRev, // echoed exactly as the server sent it (spec §16 FQ-7)
     };
-    setSave({ status: 'saving', input });
+    setSave({ status: 'saving', input, sessionId });
     const answer = await run({ kind: 'adopt', sessionId }, () => service.adoptIdea(body));
     if (!answer) { setSave({ status: 'idle' }); return null; }
     const b = answer.body ?? {};
     if (answer.ok && typeof b.watchlistId === 'string') {
-      setSave({ status: 'saved', input, outcome: { watchlistId: b.watchlistId, idempotent: b.idempotent === true } });
-      const fresh = await service.readInvestigation(sessionId);
-      if (live.current && fresh.ok) setInv(investigationOf(fresh.body, null));
+      setSave({ status: 'saved', input, sessionId, outcome: { watchlistId: b.watchlistId, idempotent: b.idempotent === true } });
+      await reread(sessionId);
       return answer;
     }
     if (answer.network || answer.status >= 500) {
-      setSave({ status: 'uncertain', input });
+      uncertainRef.current.set(sessionId, input);
+      setSave({ status: 'uncertain', input, sessionId });
       return answer;
     }
     if (b.error === 'preview_stale') {
-      if (b.adoptPreview) setInv((prior) => ({ ...prior, adoptPreview: b.adoptPreview }));
-      else {
-        const fresh = await service.readInvestigation(sessionId);
-        if (live.current && fresh.ok) setInv(investigationOf(fresh.body, null));
-      }
-      setSave({ status: 'stale', input, message: b.message ?? SR_COPY.previewChanged });
+      // The new preview's carried ids name findings the held record may not have: read the record with it (review a4/b2).
+      const fresh = await reread(sessionId);
+      if (!fresh.ok && b.adoptPreview) setInv((prior) => ({ ...prior, adoptPreview: b.adoptPreview }));
+      setSave({ status: 'stale', input, sessionId, message: b.message ?? SR_COPY.previewChanged });
       return answer;
     }
-    setSave({ status: 'failed', input, message: failureOf(answer).message, code: b.error ?? null });
+    setSave({ status: 'failed', input, sessionId, message: failureOf(answer).message, code: b.error ?? null });
     return answer;
-  }, [inv, run]);
+  }, [inv, run, reread]);
 
   /** "Check the record" (K-8): the one read that decides an uncertain save. Never a POST. */
   const checkSave = useCallback(async () => {
     const sessionId = inv?.session?.sessionId;
     if (!sessionId) return null;
-    const input = saveRef.current.input;
-    setSave({ status: 'checking', input });
+    const before = saveRef.current;
+    const input = uncertainRef.current.get(sessionId) ?? before.input;
+    setSave({ status: 'checking', input, sessionId });
     const answer = await run({ kind: 'check', sessionId }, () => service.readInvestigation(sessionId));
-    if (!answer) { setSave({ status: 'uncertain', input }); return null; }
-    if (!answer.ok) { setSave({ status: 'uncertain', input, checkFailed: true }); return answer; }
+    if (!answer) { setSave(before); return null; } // not sent (a 429's wait): nothing changed
+    if (!answer.ok) {
+      // No answer: "Couldn't reach the record"; a refusal (a 429) says why in the server's words (review a10).
+      setSave({ status: 'uncertain', input, sessionId, checkFailed: true, message: answer.network ? null : failureOf(answer).message });
+      return answer;
+    }
     const b = answer.body;
     setInv(investigationOf(b, null));
+    uncertainRef.current.delete(sessionId);
     if (b.record?.terminalReason === 'saved_to_list') {
-      setSave({ status: 'recovered', input, outcome: { watchlistId: b.session?.adoption?.watchlistId ?? null, idempotent: true } });
+      setSave({ status: 'recovered', input, sessionId, outcome: { watchlistId: b.session?.adoption?.watchlistId ?? null, idempotent: true } });
     } else if (b.record?.state === 'open') {
-      setSave({ status: 'notsaved', input });
+      setSave({ status: 'notsaved', input, sessionId });
     } else {
       // Closed some other way (concluded or discarded elsewhere): nothing was saved, and Save cannot run again.
-      setSave({ status: 'closed', input, message: SR_COPY.closedElsewhere });
+      setSave({ status: 'closed', input, sessionId, message: SR_COPY.closedElsewhere });
     }
     return answer;
   }, [inv, run]);

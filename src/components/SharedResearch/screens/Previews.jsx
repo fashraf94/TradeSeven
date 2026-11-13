@@ -79,8 +79,6 @@ export function ItemPreview({ sr, story, direction: given, gated, phone, onBack,
   );
 }
 
-const typeWords = (t) => (typeof t === 'string' && t ? (t.charAt(0).toUpperCase() + t.slice(1)).replace(/_/g, ' ') : null);
-
 export function DropPreview({ sr, drop, gated, phone, onBack, onClose }) {
   const parse = drop.parseResult?.parse ?? {};
   const topic = typeof parse.topic === 'string' ? parse.topic.trim() : '';
@@ -92,7 +90,7 @@ export function DropPreview({ sr, drop, gated, phone, onBack, onClose }) {
     <div data-screen-label="Drop preview" style={S.col}>
       {onBack && <div><LinkButton onClick={onBack}>{COPY.backStart}</LinkButton></div>}
       <div style={{ ...S.box, background: wash('purple', 0.06), border: `1px solid ${wash('purple', 0.3)}` }}>
-        <Eyebrow tone="purple">{COPY.yourDrop(typeWords(parse.contentType), formatWhen(drop.at) ?? '')}</Eyebrow>
+        <Eyebrow tone="purple">{COPY.yourDrop(null, formatWhen(drop.at) ?? '')}</Eyebrow>
         <Eyebrow>{COPY.dropTopic}</Eyebrow>
         <p style={{ ...S.body, fontSize: 16, fontWeight: 700 }}>{topic}</p>
         <Eyebrow>{COPY.dropNames}</Eyebrow>

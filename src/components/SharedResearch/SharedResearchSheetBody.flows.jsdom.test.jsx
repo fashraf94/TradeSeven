@@ -253,7 +253,8 @@ describe('Correction C: adoption from the server\'s preview (spec §9; K-7)', ()
   });
 
   it('preview_stale: the new preview, the player\'s edits kept where the companies still exist, and confirm again with the new rev', async () => {
-    await toAdopt({ adopt: [A.adoptStale, A.adoptSaved] });
+    // the record moved under the preview: the sheet reads it again with the new preview (review a4/b2)
+    await toAdopt({ get: [A.getShopPay, A.getShopPay, A.getShopPayMoved], adopt: [A.adoptStale, A.adoptSaved] });
     click(pick('AAPL'));
     typeInto(statement(), `${fragment('SHOP')} My own words.`);
     click($('[data-sr-horizon="longterm"]'));
@@ -263,6 +264,9 @@ describe('Correction C: adoption from the server\'s preview (spec §9; K-7)', ()
     expect(statement().value).toBe(`${fragment('SHOP')} My own words.`);
     expect(pick('SHOP').checked).toBe(true);
     expect(pick('AAPL').checked).toBe(false);
+    // every id the new preview carries for SHOP is shown, the new finding included — none silently dropped
+    const shopCarried = A.adoptStale.body.adoptPreview.companies.find((c) => c.symbol === 'SHOP').carried;
+    expect($$('[data-sr-carried-for="SHOP"] [data-sr-finding]').map((e) => e.dataset.srFinding)).toEqual(shopCarried);
     click($('[data-sr-save-button]'));
     await flush();
     const [first, second] = server.sent('adopt').map((c) => c.body.previewRev);

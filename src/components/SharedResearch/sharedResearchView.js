@@ -21,12 +21,16 @@ export const UNDATED_SUFFIX = ' · undated';
 const ET = 'America/New_York';
 const DAY_FMT = new Intl.DateTimeFormat('en-US', { timeZone: ET, month: 'short', day: 'numeric', year: 'numeric' });
 const WHEN_FMT = new Intl.DateTimeFormat('en-US', { timeZone: ET, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+/** A FACT's day is a calendar day the server holds as midnight UTC (stepSchema modelDayOf, opening's claim dates) and reads as the UTC day (heldDatesOf): shown in UTC, never shifted into the evening before (review a1). */
+const FACT_DAY_FMT = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
 
 const ms = (iso) => (typeof iso === 'string' ? Date.parse(iso) : NaN);
 /** "Nov 12, 2026" (Eastern), or null for a value that is not an instant. */
 export const formatDay = (iso) => (Number.isFinite(ms(iso)) ? DAY_FMT.format(new Date(ms(iso))) : null);
-/** "Nov 12, 3:00 PM" (Eastern), or null. */
-export const formatWhen = (iso) => (Number.isFinite(ms(iso)) ? WHEN_FMT.format(new Date(ms(iso))) : null);
+/** "Nov 12, 3:00 PM ET" (Eastern, marked as the hub marks it), or null. */
+export const formatWhen = (iso) => (Number.isFinite(ms(iso)) ? `${WHEN_FMT.format(new Date(ms(iso)))} ET` : null);
+/** A finding's own day (its `at`, its `asOf`): the server's UTC calendar day. */
+export const formatFactDay = (iso) => (Number.isFinite(ms(iso)) ? FACT_DAY_FMT.format(new Date(ms(iso))) : null);
 
 /** The agent's name as the sheet says it: the prop, else "your agent" (R6). */
 export const agentNameOf = (agentName, fallback) => (typeof agentName === 'string' && agentName.trim() ? agentName.trim() : fallback);
@@ -70,19 +74,23 @@ export function safeUrlOf(f) {
 
 /**
  * The date line of a finding (K-6 g). A Source-backed fact shows its own date and, when the source gives one,
- * "published {asOf}". A fact the server dated by the read (" · undated") shows "Undated · read {date}" — never that
- * date as the fact's own. Other findings carry no date line.
- * @returns {{ kind: 'undated'|'dated', text: string, published: string|null } | null}
+ * "published {asOf}". When the server had no date for the fact itself it dated it by the publication (`at` = `asOf`,
+ * stepSchema retrievalDatesOf): that day is shown as "published {date}" alone, never as the fact's own (review a2).
+ * A fact the server dated by the read (" · undated") shows "Undated · read {date}". Other findings carry no date line.
+ * Days are the server's UTC calendar days (formatFactDay).
+ * @returns {{ kind: 'undated'|'dated'|'published', text: string, published: string|null } | null}
  */
 export function dateLineOf(f) {
   if (isUndated(f)) {
-    const read = formatDay(f.at);
+    const read = formatFactDay(f.at);
     return read ? { kind: 'undated', text: read, published: null } : null;
   }
   if (f?.status !== 'verified') return null;
-  const day = formatDay(f.at);
+  const day = formatFactDay(f.at);
   if (!day) return null;
-  return { kind: 'dated', text: day, published: formatDay(f.asOf) };
+  const published = formatFactDay(f.asOf);
+  if (published && f.asOf === f.at) return { kind: 'published', text: published, published };
+  return { kind: 'dated', text: day, published };
 }
 
 /** A next action's fact, "{label} — {purpose}", split; a fact without the dash is all label. */

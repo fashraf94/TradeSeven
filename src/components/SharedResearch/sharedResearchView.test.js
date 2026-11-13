@@ -53,10 +53,21 @@ describe('labels and dates come from the server\'s fields only (BUILD_RULES §9;
     expect(dateLineOf(u)).toEqual({ kind: 'undated', text: 'Nov 12, 2026', published: null });
     expect(sourceLabelOf(u).endsWith(' · undated')).toBe(false);
   });
-  it('a dated Source-backed fact: its own date and the published date', () => {
-    const d = findings.find((f) => f.status === 'verified' && f.asOf && !isUndated(f));
-    expect(dateLineOf(d).kind).toBe('dated');
-    expect(dateLineOf(d).published).toMatch(/2026/);
+  it('a fact the server dated by its publication (at = asOf): "published {date}" alone, never as the fact\'s own (review a2)', () => {
+    const d = findings.find((f) => f.status === 'verified' && f.symbol === 'ETN' && f.at === f.asOf && !isUndated(f));
+    expect(d.asOf).toBe('2026-11-05T00:00:00.000Z');
+    expect(dateLineOf(d)).toEqual({ kind: 'published', text: 'Nov 5, 2026', published: 'Nov 5, 2026' });
+  });
+  it('a fact with its own day and a publication day: both, "{day} · published {day}"', () => {
+    const f = { status: 'verified', at: '2026-11-04T00:00:00.000Z', asOf: '2026-11-06T00:00:00.000Z', source: { label: 'x' } };
+    expect(dateLineOf(f)).toEqual({ kind: 'dated', text: 'Nov 4, 2026', published: 'Nov 6, 2026' });
+  });
+  it('a fact\'s day is the server\'s UTC calendar day, never the evening before in Eastern time (review a1)', () => {
+    // the stored-claims fact says "the newest is dated November 5, 2026" and the server dates it 2026-11-05T00:00Z
+    const claims = answers.getStory.body.record.findings.find((f) => f.source.recordKind === 'ingestedClaims');
+    expect(claims.fact).toContain('November 5, 2026');
+    expect(dateLineOf(claims).text).toBe('Nov 5, 2026');
+    expect(dateLineOf({ status: 'verified', at: '2026-11-05T00:00:00.000Z', asOf: null, source: { label: 'x' } }).text).toBe('Nov 5, 2026');
   });
   it('an inference carries no date line (its `at` is when it was said, not a fact\'s date)', () => {
     expect(dateLineOf(findings.find((f) => f.kind === 'inference'))).toBeNull();

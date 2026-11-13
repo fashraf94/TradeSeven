@@ -135,8 +135,10 @@ export default function SharedResearchSheetBody({
     if (again) { pickStory(again); return; }
     toStart(kind === 'observation' ? observationTextOf(sr.inv?.session) : '');
   };
-  const openEarlier = (id) => { setEarlier({ returnTo: current }); sr.loadSession(id); };
-  const backToCurrent = () => { const to = earlier?.returnTo; setEarlier(null); if (to) sr.loadSession(to); };
+  // The earlier investigation is marked as such only once its read has answered; a read that fails or is not sent
+  // leaves the screen as it was, with the failure said (review b6).
+  const openEarlier = async (id) => { const returnTo = current; const answer = await sr.loadSession(id); if (answer?.ok) setEarlier({ returnTo }); };
+  const backToCurrent = async () => { const to = earlier?.returnTo; if (!to) return; const answer = await sr.loadSession(to); if (answer?.ok) setEarlier(null); };
 
   let body;
   if (view === 'item' && story) {
@@ -172,7 +174,10 @@ export default function SharedResearchSheetBody({
       ? (
         <div style={S.col}>
           <Notice role="alert">{sr.failure.code === 'network' ? COPY.loadFailed : sr.failure.message}</Notice>
-          <div style={S.actions}><LinkButton onClick={() => sr.loadSession(sr.failure.sessionId)}>{COPY.retry}</LinkButton><LinkButton onClick={() => toStart()}>{COPY.backStart}</LinkButton></div>
+          <div style={S.actions}>
+            {sr.failure.code !== 'disabled' && <LinkButton disabled={sr.pending !== null || sr.waiting} onClick={() => sr.loadSession(sr.failure.sessionId)}>{COPY.retry}</LinkButton>}
+            <LinkButton onClick={() => toStart()}>{COPY.backStart}</LinkButton>
+          </div>
         </div>
       )
       : <Running>{COPY.opening}</Running>;

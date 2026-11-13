@@ -95,7 +95,8 @@ export function DateLine({ finding }) {
   const d = dateLineOf(finding);
   if (!d) return null;
   if (d.kind === 'undated') return <span data-sr-date="undated">{COPY.undated(d.text)}</span>;
-  return <span data-sr-date="dated">{d.published && d.published !== d.text ? `${d.text} · ${COPY.published(d.published)}` : d.text}</span>;
+  if (d.kind === 'published') return <span data-sr-date="published">{COPY.published(d.published)}</span>;
+  return <span data-sr-date="dated">{d.published ? `${d.text} · ${COPY.published(d.published)}` : d.text}</span>;
 }
 
 /** One finding: its label, its fact, its source and dates, its reason when unresolved. */
@@ -121,7 +122,7 @@ export function Finding({ finding, superseded = false }) {
 }
 
 /** A supported company (spec §4.4): the server's card, its evidence, its open question, its eligibility, its two actions. */
-export function CompanyCard({ company, findings, canExamine, onExamine, onAdopt, disabled = false }) {
+export function CompanyCard({ company, findings, canExamine, onExamine, onAdopt, disabled = false, adoptDisabled = disabled }) {
   const [open, setOpen] = useState(false);
   const id = `sr-company${useId()}`;
   const evidence = company.evidence.map((fid) => findings.get(fid)).filter(Boolean);
@@ -143,7 +144,7 @@ export function CompanyCard({ company, findings, canExamine, onExamine, onAdopt,
       {open && <div id={id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{evidence.map((f) => <Finding key={f.findingId} finding={f} />)}</div>}
       <div style={S.actions}>
         {canExamine && <Button kind="primary" disabled={disabled} onClick={onExamine} label={COPY.examineLabel(company.name)} attrs={{ 'data-sr-examine': company.symbol }}>{COPY.examine}</Button>}
-        {onAdopt && <Button kind="secondary" disabled={disabled} onClick={onAdopt} label={COPY.toIdeaLabel(company.name)} attrs={{ 'data-sr-adopt-from': company.symbol }}>{COPY.toIdea}</Button>}
+        {onAdopt && <Button kind="secondary" disabled={adoptDisabled} onClick={onAdopt} label={COPY.toIdeaLabel(company.name)} attrs={{ 'data-sr-adopt-from': company.symbol }}>{COPY.toIdea}</Button>}
       </div>
     </div>
   );
@@ -157,21 +158,14 @@ export function CompanyCard({ company, findings, canExamine, onExamine, onAdopt,
  */
 export function Lead({ lead, findings }) {
   const best = lead.findingIds.map((fid) => findings.get(fid)).filter(Boolean).find((f) => f.status === lead.status) ?? null;
-  const own = lead.unresolved
-    ? { kind: 'relationship', status: 'unavailable', statusReason: lead.unresolved }
-    : { kind: best?.kind ?? 'relationship', status: lead.status, statusReason: lead.statusReason };
   return (
     <div data-sr-lead={lead.name} style={{ ...S.card, border: `1px dashed ${T.hair}` }}>
       <div style={S.row}>
         <span style={{ fontSize: 14.5, fontWeight: 600, color: T.ink, overflowWrap: 'anywhere' }}>{lead.name}</span>
-        <StatusTag finding={own} />
+        <Tag dim>{COPY.lead}</Tag>
+        {lead.symbol ? <span style={{ fontSize: 12.5, color: T.ink3 }}>{lead.symbol}</span> : <span style={S.small}>{ELIGIBILITY_LABELS.unresolved}</span>}
       </div>
-      {best && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <StatusTag finding={best} />
-          <p style={{ ...S.meta, flex: '1 1 200px' }}>{best.fact}</p>
-        </div>
-      )}
+      {best && <Finding finding={best} />}
       <p style={S.small}>{COPY.leadNote}</p>
     </div>
   );

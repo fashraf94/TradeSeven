@@ -58,7 +58,7 @@ export const SR_COPY = Object.freeze({
 
   // ── Start ───────────────────────────────────────────────────────────────────
   continueHead: 'Continue your research',
-  continueRow: (when, n) => `Open · last update ${when} · ${n} ${plural(n, 'finding', 'findings')}`,
+  continueRow: (when, n) => (when ? `Open · last update ${when} · ${n} ${plural(n, 'finding', 'findings')}` : `Open · ${n} ${plural(n, 'finding', 'findings')}`),
   continueLabel: (question) => `Continue: ${question}`,
   stories: 'Recent stories',
   storiesSub: 'From FantasyTimes. Pick one; its question is ready to go.',
@@ -115,11 +115,12 @@ export const SR_COPY = Object.freeze({
   editWords: 'Edit my words',
   later: 'Continue later',
   framingUnfinished: 'Framing did not finish. Edit your words to start again.',
+  framingStill: 'Your question is still being framed. Try again in a moment.',
 
   // ── work ───────────────────────────────────────────────────────────────────
   stateLine: (state, when, n) => (when ? `${state} · last update ${when} · ${n} ${plural(n, 'finding', 'findings')}` : `${state} · ${n} ${plural(n, 'finding', 'findings')}`),
   states: Object.freeze({ open: 'Open', completed: 'Concluded', saved: 'Saved as an idea', abandoned: 'Discarded' }),
-  previous: (date) => `You investigated this on ${date}`,
+  previous: (date) => (date ? `You investigated this on ${date}` : 'You investigated this before'),
   openEarlier: 'Open the earlier one',
   backToCurrent: '← Back to your new investigation',
   earlierNote: 'This is your earlier investigation. It is closed; you can read it.',
@@ -178,6 +179,7 @@ export const SR_COPY = Object.freeze({
   conclude: 'This answered my question',
   adopt: 'Turn this into an idea',
   adoptBlocked: 'No supported public-company connection, so this can’t become an idea. Its answer stays in the record.',
+  investigationClosed: 'This investigation is closed, so it can’t become an idea now.',
   discard: 'Discard',
   concluded: 'Concluded',
   concludedBody: 'A finished investigation. The answer and its evidence stay here.',
@@ -209,6 +211,7 @@ export const SR_COPY = Object.freeze({
   pickHelp: 'At least one supported name. Leads stay out until their connection has a source.',
   doubt: (q) => `Doubt · ${q}`,
   leadPick: 'Lead · not adoptable yet',
+  lead: 'Lead',
   tooMuch: 'Too much evidence to carry in one idea.',
   thesisLabel: 'Proposed investment claim',
   thesisHelp: 'My proposed claim, built from the companies you select and the findings behind them. Edit it; it is your statement.',
@@ -226,7 +229,6 @@ export const SR_COPY = Object.freeze({
   wrongBelow: 'Wrong below $',
   conditionLabel: (name, side) => `${name}: ${side} on a daily close`,
   pickFirst: 'Choose a company first.',
-  noPriceNote: 'No finding here carries a price, so there is no sourced suggestion.',
   carried: 'Evidence carried into this idea',
   carriedNote: 'Only this evidence, including the complication and the open link, is carried. References stay traceable to their sources.',
   carriedNone: 'Select a company to see what travels with the idea.',
@@ -248,6 +250,7 @@ export const SR_COPY = Object.freeze({
 
   // ── the saved idea ──────────────────────────────────────────────────────────
   saved: 'Idea saved',
+  savedAlready: 'This investigation was already saved as an idea. The idea saved first is the one kept; open it in the Forge to read it.',
   savedLine: (names, horizon, n) => `${names} · ${horizon} · ${n === 0 ? 'no conditions' : `${n} ${plural(n, 'condition', 'conditions')}`}`,
   replaces: (list) => `Replaces ${list} as your equipped list.`,
   noList: 'You have no equipped list; this would become it for your next game.',
@@ -259,5 +262,7 @@ export const SR_COPY = Object.freeze({
   replaced: (list) => `· replaced ${list}`,
   equipFailed: 'Saved, not equipped.',
   leaveSaved: 'Leave it saved',
+  /** The preview's line (the V2 design's): no review line before anything is saved (review a8). */
+  previewHonest: 'Research interest does not grant permission to trade. A link between research and a game is shown only once the game records it.',
   honest: (name) => `${honestOf(name)} A link between research and a game is shown only once the game records it.`,
 });
