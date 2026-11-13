@@ -20,17 +20,29 @@
 | 1 | **PR A** `claude/research-modal-sheet-allowlist` | **Ready for the founder's merge.** One flip commit `a2debb0b` (2 files, +11 / −8): the literal `'off'` → `'allowlist'`, its pin row, the docstring's CURRENT line, and a pin assertion that holds the CURRENT line to the live value. Then `origin/main` merged twice (`a7bc2da3`, final tree `4839d0a3`). |
 | 2 | **FA-2: who it reaches** | **The founder and FT_QA, in their own agent battles.** The shell turns on only for an agent Battle View mount whose owner the cockpit-status `allowlisted` verdict admits (the server-only `COCKPIT_ALLOWLIST_UIDS`); every browse, draft and search mount stays today's modal; the server's sheet Ask admits only those owners. No STOP (§1). |
 | 3 | **PR A red rows** | **0 in both suites** with `'allowlist'`: full suite 31,223 rows exit 0, rules 748 rows exit 0 — and again on the final merged tree `4839d0a3` (31,312 / 748), with `lint:gate` and the minified build exit 0. The four mode-off goldens stay as kill-switch rows. Why nothing went red: §2. |
-| 4 | **PR A builds** | Kill switch (head with the literal back to `'off'`) against `main`: **0 of 57 non-map files differ.** Value only (head against `main` with only the literal set): **0 of 57 differ**; against `main` unchanged, one line of the entry chunk differs (`"off"` → `"allowlist"`). |
+| 4 | **PR A builds** | Kill switch (head with the literal back to `'off'`) against `main`: **0 of 57 non-map files differ** — on the flip commit against `9ca96ff2` and again on the final tree `4839d0a3` against `29e8f4de`. Value only (head against `main` with only the literal set): **0 of 57 differ**; against `main` unchanged, one line of the entry chunk differs (`"off"` → `"allowlist"`). |
 | 5 | **PR A mutation** | **7 of 7 killed**, every file restored (SHA-256). |
-| 6 | **PR B** `claude/research-modal-shell-preon` | **Ready for the founder's merge.** BS-1 to BS-5 built; the §2 review ran (four lenses, two refuters) and its fixes are in. Code final at `e30c0b08` (the build, the review fixes, `main` merged); the head adds this report. |
+| 6 | **PR B** `claude/research-modal-shell-preon` | **Ready for the founder's merge.** BS-1 to BS-5 built; the §2 review ran (four lenses, two refuters) and its fixes are in. Code final at `b341a638` (the build, the review fixes, the pre-push fix, `main` `29e8f4de` merged); the head adds this report's numbers. |
 | 7 | **BS-1** | Bomb-only mounts (BaggerBomb battle view, free-agent bar) open on 💣 under the shell, as off it. |
 | 8 | **BS-2** | *See on chart* holds the item, not its slot; an item that leaves the pack closes. The refuter's $103.83 repro is the row. |
 | 9 | **BS-3** | The price and change narrow at 320 px; ✕ stays on screen. **Found:** the app prints `$712345.67` (no thousands separator); the shell report's 2.2 px clip came from a measurement that substituted `$712,345.67`. |
 | 10 | **BS-4** | In a measured battle a non-held stock's 💣 preview takes the rankings' ATR reading (ACN: 4.05 %, not 6.48 %), labelled *estimated rung size · ATR reading 4.0% · as of 12:05 PM*; no reading → *No ladder yet*, never 2.5. **Note:** 4.05 prints **4.0%** on both the bench sheet and the preview (`(4.05).toFixed(1)` is "4.0"). |
 | 11 | **PR B off path** | The four mode-off goldens: test files and golden data untouched by this branch, all passing — byte-identical to main. |
-| 12 | **PR B mutation** | **36 of 36 killed**, every file restored (SHA-256): the brief's six, every review fix, and the nine survivors lens C found (each now killed by a row added for it). |
-| 13 | **Both together** | **Green.** PR B's final head with PR A's flip applied: full suite `Test Files 1412 passed \| 10 skipped (1422)`, `Tests 31260 passed \| 120 skipped (31380)`, exit 0; rules 41 files, 748 rows, exit 0. No STOP. |
+| 12 | **PR B mutation** | **37 of 37 killed** on the final code, every file restored (SHA-256): the brief's six, every review fix, the nine survivors lens C found (each now killed by a row added for it) and the pre-push fix. |
+| 13 | **Both together** | **Green.** PR B's final head with PR A's flip applied: full suite `Test Files 1412 passed \| 10 skipped (1422)`, `Tests 31261 passed \| 120 skipped (31381)`, exit 0; rules 41 files, 748 rows, exit 0. No STOP. |
 | 14 | **Review threshold** | **PR A: under** (2 files, 19 lines; the report rides on PR B). **PR B: met** — 26 files (24 + this report + its README row); before this report, +1,039 / −37 across 24 files. The review ran: §7. |
+
+## Readings — built one way, put to the founder
+
+Choices this build made past the rulings' letter. Each is built and pinned; each can be changed in a line or two.
+
+1. **A 96-hour freshness gate on the ATR reading** (BS-4, review LA-1/LB-2). The cron never deletes a `stockTechnicalScores` document, so a name the rankings dropped keeps its last reading. A reading older than 96 hours, or with no time, is no reading (*No ladder yet*). A current name's longest gap is 62.5 hours.
+2. **Three new why lines under *No ladder yet*** (BS-4 asked for "the existing state"): the title is unchanged; the why says what is missing — no usable reading, still loading, or the read failed. The existing why ("…this stock's threshold hasn't loaded") is false on this arm.
+3. **The symbol ellipsizes in the stock row** (BS-3, review D1), but only after the name is gone. No real ticker is cut at 320–430 px; a W-heavy five-letter symbol would have pushed ✕ 19.5 px off.
+4. **Reward-route rows are excluded from the ATR arm** (BS-4, refuter NEW-1): the CPU's held stock, and the agent's own after the battle ends, keep *No ladder yet*, as before this PR, instead of an "if it entered" preview.
+5. **A $0 guard in the shared `previewLadder`** (review LA-2): a rung at or below $0 means no ladder. No existing preview reaches it (thresholds stop at 15 % for a stock).
+6. **Left unchanged:** a non-held crypto and an `'unavailable'`-model battle keep the screen's threshold; a held stock reached by in-modal navigation shows a preview, as before (now the ATR one).
+7. **A failed read is asked again on the next change of view, tab or timeframe** (refuter NEW-2): off the shell the battle mounts sit on the Bomb tab and the bomb series together, so "reopen 💣" alone could never retry there.
 
 ---
 
@@ -70,6 +82,8 @@
 | Kill switch (`a2debb0b` with the literal back to `'off'`) vs `main` `9ca96ff2` | 57 / 57 | **0** |
 | Head `a2debb0b` vs `main` with only the literal set to `'allowlist'` | 57 / 57 | **0** |
 | Head vs `main` unchanged | 57 / 57 | 103 (renamed chunks); masked, the entry chunk differs by one line: `const RESEARCH_MODAL_SHEET_MODE = "off";` → `"allowlist";` and `index.html` by the entry's name |
+| **Final tree:** kill switch (`4839d0a3` with the literal back to `'off'`) vs `main` `29e8f4de` | 57 / 57 | **0** |
+| **Final tree:** head `4839d0a3` vs `main` `29e8f4de` with only the literal set | 57 / 57 | **0** |
 
 **PR A's final tree** `4839d0a3` (`main` `29e8f4de` merged): `npm run lint:gate` **exit 0** (`--max-warnings 0`); minified build **exit 0** (built in 14.95 s; two CSS-minify warnings from existing stylesheets); full suite **exit 0** · `Test Files 1411 passed | 9 skipped (1420)` · `Tests 31213 passed | 99 skipped (31312)`; `npm run test:rules` **exit 0** · 41 files, 748 rows. `main` moved twice during the build (`34f9c6f9`, `29e8f4de`, both Practice Field mandate work, nothing in the research modal); the flip commit is unchanged by either merge.
 
@@ -106,7 +120,9 @@ PR B cut from `origin/main` `9ca96ff2`; `34f9c6f9` (#1051) and `29e8f4de` (#1047
 | `33e8b459` | a retry simplification, superseded by the next commit (§7, NEW-R2-1) |
 | `f21f4ff9` | refuter R2 fixes (NEW-R2-1, NEW-R2-2, NEW-R2-3) |
 | `e30c0b08` | merge `origin/main` `29e8f4de` |
-| *this report* | `docs/audits/20261112_FLIP_AND_FIX_RESEARCH_MODAL_SHELL.md` |
+| `a12cf560`, `addd70b5` | this report and its README row |
+| `b341a638` | the pre-push check's fix (NEW-F1): a failure that lands after a view change is never stuck on *loading* |
+| *the report's final numbers* | this file |
 
 ### BS-1 — Bomb-only mounts open on 💣 (reading 7, changed)
 
@@ -147,7 +163,7 @@ Segoe UI and Consolas drew here (CDP `getPlatformFontsForNode`); **SF Pro and SF
 - **No ladder**: *No ladder yet* with the arm's own why — `atr_unavailable` *"This stock has no usable ATR reading from a recent rankings run, so no rung size is shown."*; `atr_loading` *"The ATR reading or yesterday's close hasn't loaded."*; `atr_failed` *"The ATR reading couldn't be read. It's asked again when you change view or tab."* Never the 2.5 default.
 - **Unchanged**: held measured ladders; the held-preview line (legacy stocks, crypto); V4 and bench contexts; a non-held crypto; legacy-scored and `'unavailable'`-model battles; reward-route rows; Bomb mode off (no `bombContext`).
 
-Rows: `AssetResearchModal.bombAtr.jsdom.test.jsx` (new, 30 rows on the corrected-battle harness, both flags held by mock) and `bombView.test.js` (ATR-arm unit rows), `bombCopy.honesty.test.jsx` (the ATR preview and the three new states rendered and scanned), `selectBombRecord.test.js` and `AgentBattleScreen.bombModeOn.jsdom.test.jsx` (three equality rows that pinned the context's exact shape now name `stockModel` — rewritten, not loosened). The brief's four:
+Rows: `AssetResearchModal.bombAtr.jsdom.test.jsx` (new, 31 rows on the corrected-battle harness, both flags held by mock) and `bombView.test.js` (ATR-arm unit rows), `bombCopy.honesty.test.jsx` (the ATR preview and the three new states rendered and scanned), `selectBombRecord.test.js` and `AgentBattleScreen.bombModeOn.jsdom.test.jsx` (three equality rows that pinned the context's exact shape now name `stockModel` — rewritten, not loosened). The brief's four:
 
 | Brief row | As built |
 |---|---|
@@ -156,7 +172,7 @@ Rows: `AssetResearchModal.bombAtr.jsdom.test.jsx` (new, 30 rows on the corrected
 | An unranked name shows *No ladder yet* | `atr_unavailable`, its why, no rung drawn, no $307.50 (300 × 1.025) |
 | A held measured stock unchanged | its frozen receipt ladder; its reading never read |
 
-Plus: a stale (15 days) or untimed reading; a 55 % reading on a $40 close; a failed read (`atr_failed`) asked again on a tab change off the shell and on reopening 💣 under it; loading while in flight; one read per stock (ticks, A→B→A, an unranked name across reopens); a stock changed mid-read; a view change mid-read; the off-shell tab gate; held → in-modal navigation to a non-held peer; the CPU's held stock and a finished battle's (NEW-1); legacy, `'unavailable'`, crypto, bench, V4 and no-context mounts read nothing.
+Plus: a stale (15 days) or untimed reading; a 55 % reading on a $40 close; a failed read (`atr_failed`) asked again on a tab change off the shell and on reopening 💣 under it; loading while in flight; one read per stock (ticks, A→B→A, an unranked name across reopens); a stock changed mid-read; a view change mid-read; a read that fails after the view changed under it (never stuck on loading); the off-shell tab gate; held → in-modal navigation to a non-held peer; the CPU's held stock and a finished battle's (NEW-1); legacy, `'unavailable'`, crypto, bench, V4 and no-context mounts read nothing.
 
 ### BS-5 — the specs
 
@@ -171,29 +187,30 @@ Plus: a stale (15 days) or untimed reading; a 55 % reading on a $40 close; a fai
 
 ## §5 Checks — PR B, and both together
 
-PR B's final head `e30c0b08` with PR A's flip commit `a2debb0b` applied (`git cherry-pick --no-commit`) in `~/pd-ci-sheetflipk`, the literal reading `'allowlist'`:
+PR B's final code `b341a638` with PR A's flip commit `a2debb0b` applied (`git cherry-pick --no-commit`) in `~/pd-ci-sheetflipk`, the literal reading `'allowlist'`:
 
 | Check | Result |
 |---|---|
-| PR B alone — full suite, `flock /tmp/pd-suite.lock`, 8 workers, `TZ=UTC` (`e30c0b08`) | **exit 0** · `Test Files 1412 passed \| 10 skipped (1422)` · `Tests 31260 passed \| 120 skipped (31380)` · 267 s |
+| PR B alone — full suite, `flock /tmp/pd-suite.lock`, 8 workers, `TZ=UTC` (final code `b341a638`) | **exit 0** · `Test Files 1412 passed \| 10 skipped (1422)` · `Tests 31261 passed \| 120 skipped (31381)` |
 | PR B alone — `npm run test:rules` | **exit 0** · `Test Files 41 passed (41)` · `Tests 748 passed (748)` |
 | PR B — `npm run lint:gate` | **exit 0** (`--max-warnings 0`) |
-| PR B — `npm run build` (minified) | **exit 0** · built in 14.69 s · two CSS-minify warnings from existing stylesheets |
+| PR B — `npm run build` (minified) | **exit 0** · built in 24.38 s · two CSS-minify warnings from existing stylesheets |
 | PR B — the four mode-off goldens | test files and golden data **untouched** by the branch (`git diff origin/main...HEAD` lists none of them), all passing in both suites — byte-identical to `main` |
 | PR B — `shellHeader.browser.test.js` (headless Edge, Windows) | **21 of 21** |
-| **Both together** — full suite (`e30c0b08` + `a2debb0b`, literal `'allowlist'`) | **exit 0** · `Test Files 1412 passed \| 10 skipped (1422)` · `Tests 31260 passed \| 120 skipped (31380)` · 308 s |
+| **Both together** — full suite (`b341a638` + `a2debb0b`, literal `'allowlist'`) | **exit 0** · `Test Files 1412 passed \| 10 skipped (1422)` · `Tests 31261 passed \| 120 skipped (31381)` |
 | **Both together** — `npm run test:rules` | **exit 0** · `Test Files 41 passed (41)` · `Tests 748 passed (748)` |
 
-An earlier run on the pre-review head `d0a2da22` + `a2debb0b` was also green (`Test Files 1412 passed | 10 skipped (1422)`, `Tests 31227 passed | 116 skipped (31343)`; rules 748, exit 0).
+Earlier runs were green too: `e30c0b08` + `a2debb0b` (31,380 rows; rules 748) and the pre-review head `d0a2da22` + `a2debb0b` (`Test Files 1412 passed | 10 skipped (1422)`, `Tests 31227 passed | 116 skipped (31343)`; rules 748, exit 0).
 
 ## §6 Mutation (PR B)
 
-**36 mutants, 36 killed, 0 survived**, judged by each run's **exit code**, on PR B's final code `e30c0b08` (an LF WSL worktree, `~/pd-ci-preon`). One mutant at a time: every edit's anchor must match exactly once (else BROKEN); a baseline of every listed file ran first on the unmutated tree (**260 rows, exit 0**); each file was restored from `git show HEAD:<file>` and proved by SHA-256 — 36 of 36 restored; the tree clean after the last.
+**37 mutants, 37 killed, 0 survived**, judged by each run's **exit code**, on PR B's final code `b341a638` (an LF WSL worktree, `~/pd-ci-preon`). One mutant at a time: every edit's anchor must match exactly once (else BROKEN); a baseline of every listed file ran first on the unmutated tree (**261 rows, exit 0**); each file was restored from `git show HEAD:<file>` and proved by SHA-256 — 37 of 37 restored; the tree clean after the last.
 
 - **The brief's six** are B1 (and B1b, the pure rule), B2, B3, B4, B5 and B6r.
-- **B6** went BROKEN in the second battery: refuter NEW-1's fix extended the line its anchor ended on. Re-cut as **B6r**, which drops both held exclusions from the arm and puts the reading ahead of the held ladder.
-- **B22** survived the second battery as an equivalent mutant: the NEW-2 fix had put the view counter in the read's deps, so the failed-at-view bookkeeping was redundant. Simplifying to that form (`33e8b459`) let a view change re-send a read in flight (refuter NEW-R2-1); the final form (`f21f4ff9`) keeps the bookkeeping and takes the counter out of the deps, and B22 is now killed by the NEW-2 row.
-- **B25–B33** are lens C's survivors, each killed by the row added for it; **B34–B35** pin refuter R2's fixes.
+- **Re-cuts.** B6 went BROKEN when refuter NEW-1's fix extended the line its anchor ended on (re-cut B6r: both held exclusions dropped, the reading ahead of the held ladder). B31 and B34 went BROKEN in the final battery when the pre-push fix replaced a lint comment their anchor carried (re-cut B31r, B34r; run on the same tree, both killed).
+- **B22** survived one battery as an equivalent mutant: refuter R1's retry fix had put the view counter in the read's deps, making the failed-at-view bookkeeping redundant. Simplifying to that form (`33e8b459`) let a view change re-send a read in flight (refuter NEW-R2-1); `f21f4ff9` kept the bookkeeping and took the counter out of the deps, and the pre-push check then found that bookkeeping stamped at the ask (NEW-F1, fixed `b341a638`). B22 and B36 are killed by their rows.
+- **B25–B33** are lens C's survivors, each killed by the row added for it; **B34r–B36** pin refuter R2's fixes and the pre-push fix.
+- Earlier batteries: 21 of 21 on `4ea7b3c0`; 32 of 34 on `5fdd469a` (B6 broken, B22 equivalent); 36 of 36 on `e30c0b08`.
 
 | id | brief | the defect planted | file | verdict | first failing row (truncated) | restored (SHA-256) |
 |---|---|---|---|---|---|---|
@@ -201,47 +218,47 @@ An earlier run on the pre-review head `d0a2da22` + `a2debb0b` was also green (`T
 | B1b | 1 | brief 1: a bomb-only mount opens on Analysis (the pure rule answers no) | `Research/Sheet/shellView.js` | **KILLED** (exit 1, 4 of 70) | review C — the promises the first rows did not pin BS-1: the free-agent bar (defaultTab 💣, defaultTimeframe b | yes |
 | B2 | 2 | brief 2: the caption follows the index again (the slot is stored and read back) | `Research/Sheet/useSheetView.js` | **KILLED** (exit 1, 1 of 52) | BC-8 — the record on the Chart view, one label open; "see on chart ›" opens an item's pin there BS-2 (shell re | yes |
 | B3 | 3 | brief 3: the price font stops clamping | `Research/Sheet/ShellHeader.jsx` | **KILLED** (exit 1, 1 of 52) | refuter (lens D) — the layout fixes, pinned on every run (the browser rows measure them) BS-3: the price and t | yes |
-| B4 | 4 | brief 4: the preview draws from atrPercentile × 8 again (the screen's threshold wins on the ATR arm) | `Research/BombMode/bombView.js` | **KILLED** (exit 1, 13 of 62) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading ACN-like: the scr | yes |
-| B5 | 5 | brief 5: an unranked name draws the 2.5 default (no reading falls back to the screen's threshold) | `Research/BombMode/bombView.js` | **KILLED** (exit 1, 10 of 62) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading an unranked name  | yes |
-| B6r | 6 | brief 6: a held measured ladder takes the ATR reading (both held exclusions dropped from the arm, the reading ahead of the held ladder) — re-cut: the NEW-1 fix moved its anchor | `draft/AssetResearchModal.jsx, Research/BombMode/bombView.js` | **KILLED** (exit 1, 6 of 62) | BS-4 — unchanged: every other ladder a held measured stock keeps its frozen receipt ladder, and its reading is | yes |
-| B7 |  | a legacy-scored battle takes the ATR arm (the measured-battle condition dropped) | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 2 of 30) | BS-4 — unchanged: every other ladder a legacy-scored battle's non-held stock keeps the screen's threshold (tha | yes |
-| B8 |  | a non-held crypto takes the ATR arm | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 30) | BS-4 — unchanged: every other ladder a non-held crypto in a measured battle keeps the screen's threshold (its  | yes |
-| B9 |  | the thresholds request (a possible provider call) still goes out on the ATR arm | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 2 of 30) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading a stock with no t | yes |
-| B10 |  | the label prints two decimals, not the bench sheet's one | `Research/BombMode/bombCopy.js` | **KILLED** (exit 1, 7 of 127) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading ACN-like: the scr | yes |
-| B11 |  | an earlier session's reading loses its day ('as of 4:05 PM') | `Research/BombMode/bombView.js` | **KILLED** (exit 1, 2 of 62) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading a reading from an | yes |
+| B4 | 4 | brief 4: the preview draws from atrPercentile × 8 again (the screen's threshold wins on the ATR arm) | `Research/BombMode/bombView.js` | **KILLED** (exit 1, 14 of 63) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading ACN-like: the scr | yes |
+| B5 | 5 | brief 5: an unranked name draws the 2.5 default (no reading falls back to the screen's threshold) | `Research/BombMode/bombView.js` | **KILLED** (exit 1, 11 of 63) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading an unranked name  | yes |
+| B6r | 6 | brief 6: a held measured ladder takes the ATR reading (both held exclusions dropped from the arm, the reading ahead of the held ladder) — re-cut: the NEW-1 fix moved its anchor | `draft/AssetResearchModal.jsx, Research/BombMode/bombView.js` | **KILLED** (exit 1, 6 of 63) | BS-4 — unchanged: every other ladder a held measured stock keeps its frozen receipt ladder, and its reading is | yes |
+| B7 |  | a legacy-scored battle takes the ATR arm (the measured-battle condition dropped) | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 2 of 31) | BS-4 — unchanged: every other ladder a legacy-scored battle's non-held stock keeps the screen's threshold (tha | yes |
+| B8 |  | a non-held crypto takes the ATR arm | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 31) | BS-4 — unchanged: every other ladder a non-held crypto in a measured battle keeps the screen's threshold (its  | yes |
+| B9 |  | the thresholds request (a possible provider call) still goes out on the ATR arm | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 2 of 31) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading a stock with no t | yes |
+| B10 |  | the label prints two decimals, not the bench sheet's one | `Research/BombMode/bombCopy.js` | **KILLED** (exit 1, 7 of 128) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading ACN-like: the scr | yes |
+| B11 |  | an earlier session's reading loses its day ('as of 4:05 PM') | `Research/BombMode/bombView.js` | **KILLED** (exit 1, 2 of 63) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading a reading from an | yes |
 | B12 |  | an item that left the pack reopens when it returns (the close-on-leave dropped) | `Research/Sheet/useSheetView.js` | **KILLED** (exit 1, 1 of 52) | BC-8 — the record on the Chart view, one label open; "see on chart ›" opens an item's pin there BS-2 (shell re | yes |
 | B13 |  | BS-1 reaches the battle mounts too (a sheetContext mount opens on 💣 by its defaultTab) | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 8 of 52) | SB-2 — every v2 mount resolves the shell through sheetModeOn, on its displayed asset an agent battle mount who | yes |
 | B14 |  | the change font stops clamping | `Research/Sheet/ShellHeader.jsx` | **KILLED** (exit 1, 1 of 52) | refuter (lens D) — the layout fixes, pinned on every run (the browser rows measure them) BS-3: the price and t | yes |
-| B15 |  | the context never names a measured battle (stockModel lost) | `Research/BombMode/selectBombRecord.js` | **KILLED** (exit 1, 25 of 41) | mode 'on' — the in-battle contract the CPU's row of a shared ticker: a preview, never the agent's ladder | yes |
-| B16 |  | a failed read says the name is unranked (the two no-reading states collapse) | `Research/BombMode/bombView.js` | **KILLED** (exit 1, 5 of 62) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading a document with n | yes |
-| B17 |  | review A1/B2 fix: the freshness gate dropped (a stale or untimed reading is taken) | `Research/BombMode/atrReading.js` | **KILLED** (exit 1, 3 of 62) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading review A1 / B2: a | yes |
-| B18 |  | review A2 fix: previewLadder draws a rung at or below $0 again | `Research/BombMode/ladder.js` | **KILLED** (exit 1, 2 of 62) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading review A2: a read | yes |
-| B19 |  | review A5/B1 fix: a failed read is kept as the answer (never asked again) | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 3 of 30) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading review A5 / B1: a | yes |
-| B20 |  | review B3 fix: one slot, not one per stock (a stock returned to is read again) | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 30) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading review B3: a stoc | yes |
-| B21 |  | refuter NEW-1 fix: a row with its own reward route (the CPU's held stock, a finished battle's) takes the ATR arm again | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 2 of 30) | BS-4 — unchanged: every other ladder refuter NEW-1: the CPU's own held measured stock keeps what it showed bef | yes |
-| B22 |  | refuter NEW-2 fix: a failed read is never the answer for a view (failedAtView dropped) — off the shell it is never asked again | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 4 of 30) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading a document with n | yes |
+| B15 |  | the context never names a measured battle (stockModel lost) | `Research/BombMode/selectBombRecord.js` | **KILLED** (exit 1, 26 of 42) | mode 'on' — the in-battle contract the CPU's row of a shared ticker: a preview, never the agent's ladder | yes |
+| B16 |  | a failed read says the name is unranked (the two no-reading states collapse) | `Research/BombMode/bombView.js` | **KILLED** (exit 1, 6 of 63) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading a document with n | yes |
+| B17 |  | review A1/B2 fix: the freshness gate dropped (a stale or untimed reading is taken) | `Research/BombMode/atrReading.js` | **KILLED** (exit 1, 3 of 63) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading review A1 / B2: a | yes |
+| B18 |  | review A2 fix: previewLadder draws a rung at or below $0 again | `Research/BombMode/ladder.js` | **KILLED** (exit 1, 2 of 63) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading review A2: a read | yes |
+| B19 |  | review A5/B1 fix: a failed read is kept as the answer (never asked again) | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 4 of 31) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading review A5 / B1: a | yes |
+| B20 |  | review B3 fix: one slot, not one per stock (a stock returned to is read again) | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 31) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading review B3: a stoc | yes |
+| B21 |  | refuter NEW-1 fix: a row with its own reward route (the CPU's held stock, a finished battle's) takes the ATR arm again | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 2 of 31) | BS-4 — unchanged: every other ladder refuter NEW-1: the CPU's own held measured stock keeps what it showed bef | yes |
+| B22 |  | refuter NEW-2 fix: a failed read is never the answer for a view (failedAtView dropped) — off the shell it is never asked again | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 5 of 31) | BS-4 — a non-held stock in a measured battle previews its rungs at the rankings' ATR reading a document with n | yes |
 | B23 |  | review D1 fix: the symbol cannot shrink again | `Research/Sheet/ShellHeader.jsx` | **KILLED** (exit 1, 1 of 52) | refuter (lens D) — the layout fixes, pinned on every run (the browser rows measure them) BS-3: the price and t | yes |
 | B24 |  | review D2 fix: the ATR line goes back to breakable separators | `Research/BombMode/bombCopy.js` | **KILLED** (exit 1, 1 of 32) | buildLadder — BS-4: the ATR arm (a non-held stock in a measured battle; the modal hands atrReading only there) | yes |
-| B25 |  | review C1: off the shell the read fires on any tab | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 30) | BS-4 — the read's wiring in the modal (review C) C1: off the shell the read waits for the Bomb tab — a mount o | yes |
-| B26 |  | review C2: any record on the context (a held stock left by navigation) blocks the arm | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 30) | BS-4 — the read's wiring in the modal (review C) C2: from the agent's held measured stock, a navigation inside | yes |
-| B27 |  | review C3: an 'unavailable' model counts as measured | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 30) | BS-4 — unchanged: every other ladder review C3: a battle whose stock model cannot be read ('unavailable') is n | yes |
-| B28 |  | review C5: a read in flight says the name has no reading | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 2 of 30) | BS-4 — the read's wiring in the modal (review C) C5: while the read is in flight the preview says the reading  | yes |
-| B29 |  | review C23: the loading state's why falls back to the threshold copy | `Research/BombMode/BombPlot.jsx` | **KILLED** (exit 1, 1 of 30) | BS-4 — the read's wiring in the modal (review C) C5: while the read is in flight the preview says the reading  | yes |
-| B30 |  | review C6: an unranked name is read again on every 💣 reopen | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 30) | BS-4 — the read's wiring in the modal (review C) C6: an unranked name is read once for the modal's life, not o | yes |
-| B31 |  | review C26: the read effect ignores a symbol change mid-read | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 30) | BS-4 — the read's wiring in the modal (review C) C26: a stock changed while its read is in flight — the new st | yes |
+| B25 |  | review C1: off the shell the read fires on any tab | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 31) | BS-4 — the read's wiring in the modal (review C) C1: off the shell the read waits for the Bomb tab — a mount o | yes |
+| B26 |  | review C2: any record on the context (a held stock left by navigation) blocks the arm | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 31) | BS-4 — the read's wiring in the modal (review C) C2: from the agent's held measured stock, a navigation inside | yes |
+| B27 |  | review C3: an 'unavailable' model counts as measured | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 31) | BS-4 — unchanged: every other ladder review C3: a battle whose stock model cannot be read ('unavailable') is n | yes |
+| B28 |  | review C5: a read in flight says the name has no reading | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 2 of 31) | BS-4 — the read's wiring in the modal (review C) C5: while the read is in flight the preview says the reading  | yes |
+| B29 |  | review C23: the loading state's why falls back to the threshold copy | `Research/BombMode/BombPlot.jsx` | **KILLED** (exit 1, 1 of 31) | BS-4 — the read's wiring in the modal (review C) C5: while the read is in flight the preview says the reading  | yes |
+| B30 |  | review C6: an unranked name is read again on every 💣 reopen | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 31) | BS-4 — the read's wiring in the modal (review C) C6: an unranked name is read once for the modal's life, not o | yes |
+| B31r |  | review C26: the read effect ignores a symbol change mid-read | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 31) | BS-4 — the read's wiring in the modal (review C) C26: a stock changed while its read is in flight — the new st | yes |
 | B32 |  | review C28: "as of" compares days in UTC, not ET | `Research/BombMode/bombView.js` | **KILLED** (exit 1, 1 of 32) | buildLadder — BS-4: the ATR arm (a non-held stock in a measured battle; the modal hands atrReading only there) | yes |
 | B33 |  | review C15: "as of" printed with no time | `Research/BombMode/bombCopy.js` | **KILLED** (exit 1, 1 of 32) | buildLadder — BS-4: the ATR arm (a non-held stock in a measured battle; the modal hands atrReading only there) | yes |
-| B34 |  | refuter NEW-R2-1: the view counter back in the read deps (a view change re-sends a read in flight) | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 2 of 30) | BS-4 — the read's wiring in the modal (review C) refuter NEW-R2-1: a view change while a read is in flight nev | yes |
-| B35 |  | refuter NEW-R2-2: a retry in flight shows the failure, not loading | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 30) | BS-4 — the read's wiring in the modal (review C) refuter NEW-R2-2: while the retry after a failure is in fligh | yes |
-
+| B34r |  | refuter NEW-R2-1: the view counter back in the read deps (a view change re-sends a read in flight) | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 3 of 31) | BS-4 — the read's wiring in the modal (review C) refuter NEW-R2-1: a view change while a read is in flight nev | yes |
+| B35 |  | refuter NEW-R2-2: a retry in flight shows the failure, not loading | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 31) | BS-4 — the read's wiring in the modal (review C) refuter NEW-R2-2: while the retry after a failure is in fligh | yes |
+| B36 |  | pre-push check: a failure is stamped with the view count from when it was asked (a view change mid-read leaves it stuck on loading) | `draft/AssetResearchModal.jsx` | **KILLED** (exit 1, 1 of 31) | BS-4 — the read's wiring in the modal (review C) a read that fails after the view changed under it says it fai | yes |
 
 ## §7 The review (BUILD_RULES §2)
 
 **Threshold: met** — 26 files (24 + this report and its README row; before it, +1,039 / −37 = 1,076 lines) against ≥ 10 files or ≥ 1,500 lines.
 
-**How it ran.** Four lenses, each on its own `git archive` snapshot under the session scratchpad (read-only on git and on this tree): **A** display honesty and correctness, **B** wiring, lifecycle and the flag-off path (both on `d0a2da22`); **C** test integrity — the mutating lens, its own tree, 33 mutants — and **D** phone layout, tokens and motion (headless Edge against the smoke preview and a static harness) (both on `4ea7b3c0`). Then two refuters on fresh snapshots, each told to refute every finding with a repro and to re-check every fix: **R1** for A and B (on `4ea7b3c0`), **R2** for C and D (on `5fdd469a`). Every fix carries a row and every row a mutant (§6).
+**How it ran.** Four lenses, each on its own `git archive` snapshot under the session scratchpad (read-only on git and on this tree): **A** display honesty and correctness, **B** wiring, lifecycle and the flag-off path (both on `d0a2da22`); **C** test integrity — the mutating lens, its own tree, 33 mutants — and **D** phone layout, tokens and motion (headless Edge against the smoke preview and a static harness) (both on `4ea7b3c0`). Then two refuters on fresh snapshots, each told to refute every finding with a repro and to re-check every fix: **R1** for A and B (on `4ea7b3c0`), **R2** for C and D (on `5fdd469a`). Every fix carries a row and every row a mutant (§6). **Stated plainly:** lens C ran at the same time as lens D, each on its own tree (not strictly last); the fixes after R2 (`f21f4ff9`, and `b341a638` for the defect a final advisory check found in them) were checked by rows and mutants only, not by a further refuter.
 
-**Split:** 37 items — **33 CONFIRMED** (3 in part), **1 REFUTED in part**, 3 notes recorded only; the refuters found **5 new defects** in the fixes, all fixed. Lens B's flag-off check: the four kill-switch goldens pass byte-identical, no golden data changed; with no `bombContext` nothing reads.
+**Split:** the table holds **32 items**. **31 CONFIRMED** (lens C's C19 confirmed and left open as a note; LA-7, LA-9 and LB-5 confirmed and recorded only); **LA-6 REFUTED in part** — the author's rebuttal held for a navigated held stock and was refuted for reward-route rows, which became NEW-1. **0 refuted whole.** The refuters and the final check found **6 new defects** in the fixes (NEW-1, NEW-2, NEW-3, NEW-R2-1, NEW-R2-2, NEW-F1), all fixed with rows and mutants. Lens B's flag-off check: the four kill-switch goldens pass byte-identical, no golden data changed; with no `bombContext` nothing reads.
 
 | # | Lens · severity | Finding | Refuter | Disposition | Pinned by |
 |---|---|---|---|---|---|
@@ -276,6 +293,7 @@ An earlier run on the pre-review head `d0a2da22` + `a2debb0b` was also green (`T
 | NEW-R2-1 | R2 · low | The NEW-2 fix put the view counter in the read's deps: a view change re-sent a read in flight (3 reads for 1) | — | Fixed `f21f4ff9`: the counter is read at the ask only; `33e8b459`'s simplification (B22 survived as equivalent there) is replaced | B34; row |
 | NEW-R2-2 | R2 · low | A retry in flight showed *failed*, not *loading* | — | Fixed | B35; row |
 | NEW-R2-3 | R2 · nit | A stale comment | — | Fixed | — |
+| NEW-F1 | pre-push check · should-fix | The NEW-R2-1 fix stamped a failure with the view count from when it was **asked**: off the shell, a view change while a read was in flight, then a failure, left the preview on *loading* for good (the ask never flipped; the stamp never matched). Reproduced by a row before the fix (`atr_loading` ≠ `atr_failed`) | — (found by an advisory check of the final code, not by a refuter) | Fixed `b341a638`: the failure takes the count when it lands | B36; row |
 
 R2's other notes (unpinned, low): the off-shell bomb series on a non-Bomb tab (X11), the view token without the timeframe (X7) or the shell view (X8), the `cancelled` guard (X9, harmless — answers are keyed by symbol); D3's tighter bound fires only for a WWWWW-sized overflow now that the symbol gives way, and the WWWWW rows do not assert the symbol is cut.
 
