@@ -78,12 +78,18 @@ function segmenter() {
  * `maxUnits`. A first cluster longer than the bound on its own (a pathological
  * combining run), or a runtime without Intl.Segmenter, falls back to a
  * code-point cut: never half a surrogate pair, and never empty.
+ *
+ * Only the first maxUnits + 2 units are segmented: every grapheme-break rule
+ * (UAX #29) needs left context plus ONE code point to the right, so the
+ * boundaries up to the bound are the same as on the whole text, and the cost
+ * stays fixed (ICU on Node 20 took 3.5 s on a 2-million-character input,
+ * inside the execution transaction; the prefix takes 2 ms).
  */
 function cutAtGrapheme(text, maxUnits) {
   const seg = segmenter();
   if (seg) {
     let end = 0;
-    for (const { segment, index } of seg.segment(text)) {
+    for (const { segment, index } of seg.segment(text.slice(0, maxUnits + 2))) {
       const next = index + segment.length;
       if (next > maxUnits) break;
       end = next;

@@ -105,6 +105,16 @@ describe('boundRationale — present / absent / truncated', () => {
     expect(cut).toEqual({ rationale: marks.slice(0, 10), rationaleStatus: 'truncated' });
   });
 
+  it('the cut costs the same on a huge input: only a prefix is segmented, with the same boundaries', () => {
+    const big = `${'Reason with é and 👨‍👩‍👧 inside. '.repeat(60_000)}`; // ~2.4M units
+    const started = performance.now();
+    const out = boundRationale(big);
+    expect(performance.now() - started).toBeLessThan(500); // whole-string ICU segmentation took 3.5 s on Node 20
+    const kept = graphemes(out.rationale);
+    expect(kept).toEqual(graphemes(big.slice(0, MANDATE_RATIONALE_MAX_CHARS + 40)).slice(0, kept.length));
+    expect(out.rationale.length).toBeLessThanOrEqual(MANDATE_RATIONALE_MAX_CHARS);
+  });
+
   it('a lone surrogate is made well-formed (every stored unit costs at most 3 UTF-8 bytes)', () => {
     const out = boundRationale('reason \ud800 here');
     expect(out.rationaleStatus).toBe('present');
