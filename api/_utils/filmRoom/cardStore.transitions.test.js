@@ -19,7 +19,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 // mocked, is the runtime guard that they stay Node-clean.
 import { makeTapeDb } from '../filmTape/__fixtures__/tapeFirestore.js';
 import {
-  createCard, retireCard, readCards, applyServerTransition, parkCard, nominateCard, isOpen, SERVER_TRANSITIONS, PLAYS_SUBCOLLECTION,
+  createCard, retireCard, readCards, applyServerTransition, parkCard, nominateCard, isOpen, isInstant, nominationRecordDefectOf, SERVER_TRANSITIONS, PLAYS_SUBCOLLECTION,
   CARD_STAGE_VOCAB_VERSION, CARD_STAGES, OPEN_STAGES, isOpenStage,
 } from './cardStore.js';
 import * as stages from '../../../src/data/cardStages.js';
@@ -1231,5 +1231,36 @@ describe('Amendment A CA-12 — the book is re-read in the transaction: the owne
     const r = await retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: 2, nowIso: LATEST });
     expect(r.card).toMatchObject({ stage: 'retired', nomination: { state: 'withdrawn' } });
     expect(t.readLog.slice(reads).filter((l) => l === `tx:${BOOK_PATH}`)).toEqual([]);
+  });
+});
+
+// ── C1 fix round, backlog §5 (Astra) — the helper's instant guard ───────────────────────────────────────────────────
+describe('C1 fix round — the helper\'s instant check takes only a full ISO 8601 instant with a time and an offset', () => {
+  const ACCEPTED = ['2026-11-12T15:00:00.000Z', '2026-11-12T15:00:00Z', '2026-11-12T15:00Z', '2026-11-12T10:00:00-05:00', '2026-11-12T20:30:00.123456+05:30', '2028-02-29T00:00:00Z'];
+  const REFUSED = ['2026-11-12', '2026-11-12T15:00:00', '2026-11-12T15:00:00.000', '2026-02-30T00:00:00Z', '2027-02-29T00:00:00Z', '2026-11-12T24:00:00Z', '2026-11-12T15:60:00Z', '2026-11-12T15:00:60Z', '2026-13-01T00:00:00Z', '2026-11-12T15:00:00+24:00', 'Nov 12 2026 15:00 GMT', '2026-11-12 15:00:00Z', ' 2026-11-12T15:00:00Z', 12345, null, undefined, ''];
+
+  it('isInstant: the accepted and refused forms (the mutant: Date.parse alone — a date-only string accepted)', () => {
+    for (const v of ACCEPTED) expect(isInstant(v), String(v)).toBe(true);
+    for (const v of REFUSED) expect(isInstant(v), String(v)).toBe(false);
+    // the cases Astra reproduced: Date.parse reads them, the guard does not
+    for (const v of ['2026-11-12', '2026-11-12T15:00:00', '2026-02-30T00:00:00Z']) expect(Number.isFinite(Date.parse(v))).toBe(true);
+  });
+
+  it('every instant the helper takes is held to it: nowIso, consideredAt, closingNoteAt — a date-only or zone-less one refused 400 invalid_transition before any read', async () => {
+    const t = fresh();
+    await nominated(t);
+    const reads = t.readLog.length;
+    for (const nowIso of ['2026-11-12', '2026-11-12T15:05:00']) expect(await code(move(t, { nowIso, to: 'nomination', opId: 'z1', payload: NOMINATION })), nowIso).toMatchObject({ status: 400, extra: { why: 'nowIso' } });
+    for (const consideredAt of ['2026-11-12', '2026-11-12T14:58:00']) expect(await code(move(t, { to: 'nomination', opId: 'z2', payload: { ...NOMINATION, consideredAt } })), consideredAt).toMatchObject({ status: 400, extra: { why: 'consideredAt' } });
+    expect(await code(move(t, { to: 'tested', opId: 'z3', payload: { ...RESULT, closingNote: 'A note.', closingNoteAt: '2026-11-12' } }))).toMatchObject({ status: 400, extra: { why: 'closingNoteAt' } });
+    expect(t.readLog.length).toBe(reads);
+  });
+
+  it('the builder\'s record (F2) is held to it too: a date-only queuedAt or a zone-less expiresAt is malformed — nothing written', () => {
+    const given = { entryId: 'e', situationId: 's', questionId: 'q', questionVersion: 1 };
+    const record = { state: 'queued', source: { kind: 'film_room_card', ...given }, queuedAt: '2026-11-12T15:00:00.000Z', expiresAt: '2026-11-26T21:00:00.000Z', stateHistory: [] };
+    expect(nominationRecordDefectOf(record, given)).toBeNull();
+    expect(nominationRecordDefectOf({ ...record, queuedAt: '2026-11-12' }, given)).toBe('queuedAt');
+    expect(nominationRecordDefectOf({ ...record, expiresAt: '2026-11-26T21:00:00' }, given)).toBe('expiresAt');
   });
 });

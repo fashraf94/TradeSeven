@@ -690,7 +690,24 @@ const codePoints = (s) => [...s].length;
 const textOk = (v, max) => typeof v === 'string' && v.length > 0 && codePoints(v) <= max;
 const idOk = (v) => typeof v === 'string' && v.length > 0 && v.length <= 200;
 const wordOk = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
-const isoOk = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));
+/**
+ * C1 fix round (Astra's backlog §5): an INSTANT — a full ISO 8601 date-time with a time and an offset (or `Z`), on a
+ * real calendar date and clock, that Date.parse also reads. A date alone, a zone-less time, or a date Date.parse would
+ * normalise (Feb 30, hour 24) is refused: Date.parse alone accepted all three.
+ */
+const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-](\d{2}):(\d{2}))$/;
+export function isInstant(v) {
+  if (typeof v !== 'string') return false;
+  const m = ISO_INSTANT.exec(v);
+  if (!m) return false;
+  const [y, mo, d, h, mi, s = '0'] = m.slice(1, 7).map((x) => (x === undefined ? undefined : Number(x)));
+  const real = new Date(Date.UTC(y, mo - 1, d));
+  if (real.getUTCFullYear() !== y || real.getUTCMonth() !== mo - 1 || real.getUTCDate() !== d) return false;
+  if (h > 23 || mi > 59 || Number(s) > 59) return false;
+  if (m[8] !== undefined && (Number(m[8]) > 23 || Number(m[9]) > 59)) return false;
+  return Number.isFinite(Date.parse(v));
+}
+const isoOk = isInstant;
 const pathIdOk = (v) => isValidForgeId(v) && !/^__.*__$/.test(v);
 const invalid = (why) => fail(400, 'invalid_transition', { why });
 
