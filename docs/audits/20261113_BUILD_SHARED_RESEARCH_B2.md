@@ -1,8 +1,8 @@
 # Build report — Shared Research "Work an idea" B2, the client (dark)
 
-**Smoke preview:** https://trade-seven-3u96vqpcy-fais-projects-bc179554.vercel.app
+**Smoke preview:** https://trade-seven-hobprw3dz-fais-projects-bc179554.vercel.app
 - `?srFixture=index` lists every scenario.
-- Branch `claude/shared-research-b2-smoke`, cut from the final tree `b0a20018` (the code head plus `main`; this report's docs-only commit is not on it). It is never merged.
+- Branch `claude/shared-research-b2-smoke`, cut from the final tree `7c80e99f` (the code head plus `main`, with the report's first commit; its follow-up commit is not on it). It is never merged.
 - Every answer comes from the committed fixtures, with no production read and no model call.
 
 **Date:** Nov 13, 2026 · **Session:** local Claude Code (Opus 5.5), own worktree · **Branch:** `claude/shared-research-b2` · **PR:** #1059 (draft)
@@ -11,14 +11,15 @@
 
 **Base:**
 - Cut from `origin/main` @ `d9b4e3c1c8183cf1917ef8d0bd5ad6f4110e7ab6` (#1048, B1, merged as `0027a9ba`, is an ancestor).
-- `origin/main` was merged in twice:
+- `origin/main` was merged in three times:
   - `050123cf` (#1057: `previousSessionOf` counts a same-millisecond earlier session), at `bb34515e`;
-  - `c3ed2cfd` (#1054 the KB-0 loader, #1055 and #1056 the research modal), at `b0a20018c9a5e1cd1185b057a88491f27c41edf2`.
+  - `c3ed2cfd` (#1054 the KB-0 loader, #1055 and #1056 the research modal), at `b0a20018`;
+  - `979b030c` (#1060, the research modal sheet's follow-up), at `7c80e99f550b35da6bfeacfd50f315d7b0d31a51`.
 - Only `docs/README.md` overlapped: both sides add rows to the Shared Research table, and all are kept.
 - The fixtures, composed by the server's own functions, still match under #1057 (`srAnswers.test.js`).
-- #1054–#1056 touch none of the sheet's files or dependencies: HubSheet, the overlay stack, SignalDrop and the server's Shared Research modules are all unchanged.
+- #1054–#1056 and #1060 touch none of the sheet's files or dependencies: HubSheet, the overlay stack, SignalDrop and the server's Shared Research modules are all unchanged.
 
-**Code head:** `7ac8367be1a9adb73baf2ff970ccaf4e3f85e1ea`. The final tree is `b0a20018`: the code head plus `main` at `c3ed2cfd` (#1054–#1057). None of main's changes touches a file of this branch except the README's table. Every final check ran on it. This report's commit is the one on top (docs only).
+**Code head:** `7ac8367be1a9adb73baf2ff970ccaf4e3f85e1ea`. The final tree is `7c80e99f`: the code head plus `main` at `979b030c` (#1054–#1057, #1060). None of main's changes touches a file of this branch except the README's table. Every final check ran on it. The report's first commit (`15949d67`) sits under the last merge, and its follow-up commit is on top: the review rows' mutants, the browser rerun at the pushed head, and checklist item 7 as written. Both are docs only, and each was built before its push.
 
 **Spec:** `docs/specs/20261109_SHARED_RESEARCH_B1_B2_BUILD_SPEC_V1_2.md` §7 and §15–§17; the build prompt's K-1 to K-11; the founder's preamble rulings P-1 to P-5 (Nov 13).
 
@@ -27,12 +28,12 @@
 | | |
 |---|---|
 | What was built | The sheet's body, `src/components/SharedResearch/SharedResearchSheetBody.jsx` (default export), with its hook, service, screens, parts, view, copy and style. It covers every state of spec §7.2 and K-6, plus the states the review added. `SignalDropEntry` gets two additive props: `ctaLabel` (K-4) and `zIndex` (P-1). |
-| Is it dark? | Yes. Nothing in the app imports the body (the boundary test's dark rows). In the minified client bundle only the entry chunk that holds `SignalDropEntry` differs from `main`'s (5,009,790 → 5,009,840 bytes, +50); the CSS is byte-identical. |
+| Is it dark? | Yes. Nothing in the app imports the body (the boundary test's dark rows). In the minified client bundle only the entry chunk that holds `SignalDropEntry` differs from `main`'s (5,010,440 → 5,010,490 bytes, +50); the CSS is byte-identical. |
 | Founder rulings | P-1 to P-5 built as ruled (§1). The non-blocking notes approved; the parse's uncounted model call is Watch 1. |
-| Tests (final, on `b0a20018`) | Full Linux suite: **exit 0**. Test Files 1,455 passed, 11 skipped (1,466); Tests 32,460 passed, 131 skipped (32,591). This branch's 10 files: 203 rows passed, and the 11 browser rows skipped by design. Rules suite: **exit 0**, 42 files, 784 tests. `lint:gate`: **exit 0**. |
+| Tests (final, on `7c80e99f`) | Full Linux suite: **exit 0**. Test Files 1,455 passed, 11 skipped (1,466); Tests 32,464 passed, 131 skipped (32,595). This branch's 10 files: 203 rows passed, and the 11 browser rows skipped by design. Rules suite: **exit 0**, 42 files, 784 tests. `lint:gate`: **exit 0**. |
 | Real browser | 11 rows in headless Edge, all passed on the harness and 11 of 11 on the smoke preview: the modal over the sheet at 320, 390 and 1280 (P-1); focus at 390 and 1280 (c1, c2); the question box at 320. |
-| Mutations | **jsdom: 44 of 44 killed**: the brief's 1–10 and every review fix, with every file restored byte for byte (SHA-256 checked). **Browser: 5 of 5 killed** (L1, R8, R8b, R9, Q1). |
-| Review (K-11) | Four lenses, each with a refuter, one round. 43 distinct finding lines: **30 CONFIRMED, 9 PARTLY, 2 REFUTED**, 2 new. 3 must-fix and 16 should-fix, all fixed with a row each (§8). The diff is 30 files and 13,425 lines (13,422 added, 3 removed), measured on the cumulative branch diff with this report included, above BUILD_RULES §2's threshold. |
+| Mutations | **jsdom: 62 of 62 killed**: the brief's 1–10, plus one for every row the review added. Every file was restored byte for byte (SHA-256 checked). **Browser: 5 of 5 killed** at the pushed head (L1, R8, R8b, R9, Q1). |
+| Review (K-11) | Four lenses, each with a refuter, one round. 43 distinct finding lines: **30 CONFIRMED, 9 PARTLY, 2 REFUTED**, 2 new. 3 must-fix and 16 should-fix, all fixed. Every behavioural fix has a row and a mutant; the six style-only fixes were checked by measurement, render or inspection (§8). The diff is 30 files and 13,469 lines (13,466 added, 3 removed), measured on the cumulative branch diff with this report included, above BUILD_RULES §2's threshold. |
 | Open for the founder | **No questions.** The phone checklist is §12; what to watch once the allowlist is on is §9. |
 | STOP list | Nothing on it was done:<br>- nothing under `src/components/CommandCenter/` edited;<br>- no `api/` file, rule, index or flag value changed;<br>- `SignalDropEntry` unchanged with the props absent;<br>- support, status and the carried set never computed on the client;<br>- no "running" without a request in flight, no confidence number, no composed percentage, no "Shadow";<br>- no network call in a test, no model or provider call anywhere. |
 
@@ -174,20 +175,20 @@ jsdom paints nothing, and it lets an inert element take focus, so these are meas
 
 Each keeper has its own browser rows. The browser mutants (L1, R8, R8b, R9, Q1) are §7; the runs against the smoke preview are §5.
 
-## 5. Tests and checks (on the final tree `b0a20018`)
+## 5. Tests and checks (on the final tree `7c80e99f`)
 
-Every final check ran on the merged tree `b0a20018`, the code head `7ac8367b` plus `main` `c3ed2cfd`. The WSL trees were `~/pd-ci-srb2` (the branch) and `~/pd-ci-srb2m` (`main`, for the bundle), with runs under `~/pd-srb2-runs`. The exit codes and the `Test Files` lines were read directly, never through a pipe.
+Every final check ran on the merged tree `7c80e99f`, the code head `7ac8367b` plus `main` `979b030c`. The WSL trees were `~/pd-ci-srb2` (the branch) and `~/pd-ci-srb2m` (`main`, for the bundle), with runs under `~/pd-srb2-runs`. The exit codes and the `Test Files` lines were read directly, never through a pipe.
 
 | Check | Result |
 |---|---|
-| Full Linux suite (`flock /tmp/pd-suite.lock`, `TZ=UTC`, `--maxWorkers=8`) | **exit 0**: Test Files 1,455 passed, 11 skipped (1,466); Tests 32,460 passed, 131 skipped (32,591); 329 s. (The same run on the first merge, `bb34515e`, was also exit 0: 1,445 files and 32,072 tests.) |
+| Full Linux suite (`flock /tmp/pd-suite.lock`, `TZ=UTC`, `--maxWorkers=8`) | **exit 0**: Test Files 1,455 passed, 11 skipped (1,466); Tests 32,464 passed, 131 skipped (32,595); 310 s. The same run was also exit 0 on the two earlier merges: `bb34515e` (1,445 files, 32,072 tests) and `b0a20018` (1,455 files, 32,460 tests). The rules suite, `lint:gate` and the bundle diff matched on each. |
 | This branch's rows in that run | 10 files: 203 rows passed, 0 failed; the 11 real-browser rows skipped by design (no `SR_LAYER_URL` in CI) |
 | `npm run test:rules` (emulator, Java 21) | **exit 0**: 42 files, 784 tests |
 | `npm run lint:gate` (`eslint . --config eslint.gate.config.js --max-warnings 0`) | **exit 0** |
 | `vite build`, minified and unminified (branch and `main`) | **exit 0** each; 111 files each side (§6) |
-| `vite build` of the pushed head (this report's commit, docs only, on top of `b0a20018`), before the push, in a WSL tree recreated for it and removed after | **exit 0**; with hashed names masked, its `dist` equals `b0a20018`'s file for file (111 files, 0 differ). Windows could not build either commit, because the main checkout's `node_modules` lacks `three` (an install gap there, left untouched). |
-| Real browser, the local harness (`SR_LAYER_URL=http://127.0.0.1:5200`, headless Edge) | **11 of 11 passed**: 3 layer rows, 2 c2, 2 c1 Investigate, 2 c1 next step, 2 question box |
-| Real browser, the smoke preview (`SR_LAYER_URL=https://trade-seven-3u96vqpcy-fais-projects-bc179554.vercel.app`) | **11 of 11 passed**; the checklist script there too, 14 of 14 |
+| `vite build` of each pushed docs-only head before its push, in a WSL tree | **exit 0** each. With hashed names masked, the report's first commit `15949d67` equals `b0a20018` file for file, and the follow-up commit equals `7c80e99f` (111 files, 0 differ). Windows could not build either commit, because the main checkout's `node_modules` lacks `three` (an install gap there, left untouched). |
+| Real browser, the local harness (`SR_LAYER_URL=http://127.0.0.1:5200`, headless Edge) | **11 of 11 passed**, at the code head and again at the pushed head `15949d67`: 3 layer rows, 2 c2, 2 c1 Investigate, 2 c1 next step, 2 question box |
+| Real browser, the smoke preview (`SR_LAYER_URL=https://trade-seven-hobprw3dz-fais-projects-bc179554.vercel.app`) | **11 of 11 passed**; the checklist script there too, 14 of 14. Item 7 was also done exactly as written: Apple unticked, a time frame picked, Save. The saved view names Shopify Inc. alone ("Shopify Inc. · positional · about 30 sessions · no conditions"). |
 | The founder's checklist, by script on the harness at 390×844 | **14 of 14**: every quoted string present at the state its item names (§12) |
 | Windows, the directory's own files (`src/components/SharedResearch`, `src/components/SignalDrop`) | 10 files passed and 1 skipped; 229 rows passed and 11 skipped. This run includes SignalDrop's other test files. |
 
@@ -195,11 +196,11 @@ Every final check ran on the merged tree `b0a20018`, the code head `7ac8367b` pl
 
 ## 6. The bundle diff (K-3)
 
-**How it was compared.** The minified `vite build` of the merged tree `b0a20018` was compared with that of `main` `c3ed2cfd`, every hashed asset name masked (`name-HASH.ext` → `name-H.ext`, in file names and inside every file). Files sharing a masked name were compared as a group.
+**How it was compared.** The minified `vite build` of the merged tree `7c80e99f` was compared with that of `main` `979b030c`, every hashed asset name masked (`name-HASH.ext` → `name-H.ext`, in file names and inside every file). Files sharing a masked name were compared as a group.
 
 | | Files | Differ | What differs |
 |---|---|---|---|
-| Minified, masked | 111 each side | **2** | `assets/index-*.js` (5,009,790 → 5,009,840 bytes, +50) and its `.map` (17,922,718 → 17,923,415) |
+| Minified, masked | 111 each side | **2** | `assets/index-*.js` (5,010,440 → 5,010,490 bytes, +50) and its `.map` (17,925,395 → 17,926,092) |
 | Unminified, masked | 57 each side | **1** | `assets/index-*.js`: 5 windows, exactly `SignalDropEntry`'s additive hunks |
 | CSS | 1 each side | **0** | `index-Bt3Ms9P_.css`, 36,828 bytes, byte-identical |
 
@@ -217,7 +218,7 @@ With both props absent, Discover's modal renders the same values; K-4's pin prov
 ## 7. The mutation tables
 
 **How each mutant ran.**
-- The jsdom battery ran in the WSL tree `~/pd-ci-srb2`, at the code head `7ac8367b`. That is the code the final tree carries; main's #1054–#1057 touched none of it.
+- The jsdom battery ran in the WSL tree `~/pd-ci-srb2`, at the code head `7ac8367b`. That is the code the final tree carries; main's #1054–#1057 and #1060 touched none of it.
 - For each mutant, the runner (`run.mjs`) checks that the `from` text occurs exactly once (an anchor that drifted reads BROKEN and is never skipped silently). It then writes the mutant and runs the named test files with `TZ=UTC`, deleting the JSON report first so a crashed worker cannot read as a pass.
 - The file is then restored from `git show HEAD:<file>` and its SHA-256 compared with the original; a mismatch aborts the battery.
 - KILLED means a non-zero exit **and** at least one failed row.
@@ -227,7 +228,9 @@ With both props absent, Discover's modal renders the same values; K-4's pin prov
 - R9+ is retired: its second anchor sat on the keeper's old one-line form.
 - R9, the at-once modal registering first (c2), is in the browser table only. jsdom lets an inert element take focus, so no jsdom row can see it.
 
-**Totals.** 44 of 44 killed here, after 44 of 44 at `0b1ea575` before the question-box change.
+**A second battery for the review's rows.** The first battery did not reach 18 rows of the review file (a7, a9, a12, a13, the second b3 row, b5, the second b6 row, b7, b9, b10, N1, c3, c5, c7, c9 and two c10 rows). Each got a one-line reversion mutant, and all 18 ran at the pushed head `15949d67` in a fresh WSL tree. That is the same code and tests as `7ac8367b`.
+
+**Totals.** **62 of 62 killed**: 44 at `7ac8367b` (after 44 of 44 at `0b1ea575`, before the question-box change) and 18 at `15949d67`.
 
 ### jsdom
 
@@ -281,9 +284,35 @@ With both props absent, Discover's modal renders the same values; K-4's pin prov
 **44 of 44 killed.**
 Run at `7ac8367be1a9adb73baf2ff970ccaf4e3f85e1ea`; the tree clean after the battery (0 changed files).
 
+### jsdom, the review's rows (the second battery)
+
+| Id | The defect planted | File | Result | Rows failed |
+|---|---|---|---|---|
+| V-a7 | the work view counts only current findings (two counts for one investigation) — a7 | `screens/Work.jsx` | KILLED | 1 of 34 |
+| V-a9 | the unchecked "no finding here carries a price" claim is back on the preview — a9 | `screens/Adopt.jsx` | KILLED | 1 of 34 |
+| V-a12 | a framing still running reads as failed — a12 | `useSharedResearch.js` | KILLED | 1 of 34 |
+| V-a13 | a Continue row with no step yet says "last update " with nothing after — a13 | `sharedResearchCopy.js` | KILLED | 1 of 34 |
+| V-b3b | a stored failed examine with no target hides Next behind a Try again it cannot offer — b3 | `screens/Work.jsx` | KILLED | 1 of 34 |
+| V-b5 | a Continue read that fails shows nothing on Start — b5 | `screens/Start.jsx` | KILLED | 2 of 34 |
+| V-b6b | "Back to your new investigation" unmarks the screen before its read answers — b6 | `SharedResearchSheetBody.jsx` | KILLED | 1 of 34 |
+| V-b7a | a failed adoption read says "no supported company" — b7 | `screens/Adopt.jsx` | KILLED | 1 of 34 |
+| V-b7b | an investigation closed elsewhere says "no supported company" — b7 | `screens/Adopt.jsx` | KILLED | 1 of 34 |
+| V-b9 | the card's "Turn this into an idea" is held once the steps are spent — b9 | `screens/Work.jsx` | KILLED | 1 of 34 |
+| V-b10 | a direction step that lands leaves its words in the box — b10 | `screens/Work.jsx` | KILLED | 1 of 34 |
+| V-N1 | a story with no reporter reads "From FantasyTimes ·" without the server's word — refuter N1 | `sharedResearchCopy.js` | KILLED | 1 of 34 |
+| V-c3 | the open-research list that did not load is not announced — c3 | `screens/Start.jsx` | KILLED | 1 of 34 |
+| V-c5 | a condition input's name hides what the screen shows beside it (WCAG 2.5.3) — c5 | `sharedResearchCopy.js` | KILLED | 1 of 34 |
+| V-c7 | the time frame is radios with no arrow keys again — c7 | `screens/Adopt.jsx` | KILLED | 1 of 34 |
+| V-c9 | a story card's aria-label hides what the card shows — c9 | `screens/Start.jsx` | KILLED | 1 of 34 |
+| V-c10a | the statement is not described by its count — c10 | `screens/Adopt.jsx` | KILLED | 1 of 34 |
+| V-c10c | a field's help is not tied to its input — c10 | `parts.jsx` | KILLED | 1 of 34 |
+
+**18 of 18 killed.**
+Run at `15949d67d7188c3ef04ccf26b986717db97552a0`; the tree clean after the battery (0 changed files).
+
 ### Real browser
 
-These run on the local harness: vite dev on the LF archive of the code head, plus the smoke files. Each mutant was applied to the harness tree, then `sheetLayer.browser.test.js` ran against it (`SR_LAYER_URL=http://127.0.0.1:5200`), and the file was restored from the worktree's bytes and SHA-256 checked. Vite serves the file fresh on each page load.
+These ran on the local harness at the pushed head `15949d67`: vite dev on its LF archive, plus the smoke commit's two files, byte-checked against the smoke branch. Before them, all 11 rows ran clean on the same harness. Each mutant was applied to the harness tree, then `sheetLayer.browser.test.js` ran against it (`SR_LAYER_URL=http://127.0.0.1:5200`), and the file was restored from the worktree's bytes and SHA-256 checked. Vite serves the file fresh on each page load.
 
 | Id | The defect planted | File | Result | Rows failed |
 |---|---|---|---|---|
@@ -297,7 +326,7 @@ These run on the local harness: vite dev on the LF archive of the code head, plu
 
 ## 8. The review (K-11, BUILD_RULES §2)
 
-**The threshold.** The cumulative diff against `main` is 30 files and 13,425 lines (13,422 added, 3 removed), measured on the cumulative branch diff with this report included, past BUILD_RULES §2's threshold (10 files or 1,500 lines).
+**The threshold.** The cumulative diff against `main` is 30 files and 13,469 lines (13,466 added, 3 removed), measured on the cumulative branch diff with this report included, past BUILD_RULES §2's threshold (10 files or 1,500 lines).
 
 **The four lenses.** Each lens ran on its own read-only `git archive` tree under the scratchpad (`node_modules` junctioned):
 - (a) display honesty;
@@ -307,7 +336,13 @@ These run on the local harness: vite dev on the LF archive of the code head, plu
 
 **The refuters.** Each lens's findings went to a refuter on a separate tree, told to refute each one with a concrete repro: one refuter for (a), one for (b), and one for (c) and (d) together. The refuter for (c) and (d) also drove the harness in headless Edge. One round (K-11): what a reviewer noted that is not a defect is in Watch (§9), not a founder question.
 
-**The fixes.** Every fix has a row in `SharedResearchSheetBody.review.jsdom.test.jsx` (or a browser row) and a mutant (§7).
+**The fixes.**
+- Every fix that changes behaviour has a row in `SharedResearchSheetBody.review.jsdom.test.jsx` (or a browser row), and every such row has a mutant that fails it (§7).
+- The six style-only fixes have no row; each was checked by measurement, render or inspection instead:
+  - c6: every text link measured 44 px tall at 390 and at 1280, in headless Edge at the final code.
+  - c4: the contrast ratios were computed by the refuter.
+  - c8: the superseded finding was viewed in an element shot.
+  - c11, c12 and c13: checked by inspection of the code and the renders.
 
 ### Lens (a): display honesty, and its refuter
 
@@ -485,13 +520,22 @@ The three strings are the hub's to add (the body's own are `SR_COPY.title` "Work
 
 **Measured on every render.** The page never scrolls sideways (`scrollWidth` equals the viewport), no element of the body passes the dialog's right edge, and no button is under 32 px tall. **57 of 57 clean.**
 
-**Looked at.** The drop modal (390), Start (320), companies (320), the drop preview (390), the framing (320), the story preview (320), the adoption preview (390, full), the stray name (390), the uncertain save (its foot: "Check the record" and Cancel only), saved and equipped (1280), the lead card, and a superseded finding.
+**Looked at, at the final code** (these renders):
+- the story preview and the framing at 320, each now showing its whole question;
+- the uncertain save's foot ("Check the record" and Cancel only);
+- the companies view's foot (390) and the stray name (390);
+- the lead card and a superseded finding.
+
+**Looked at before the question-box fix**, on states the fix does not change:
+- the drop modal (390), Start (320) and companies (320);
+- the drop preview (390), whose question already fit its box;
+- the adoption preview (390, full), and saved and equipped (1280).
 
 **What the looking found.** At 320 px the proposed question was cut off mid-line by its two fixed rows. Fixed with `QuestionBox`, proven by two real-browser rows and mutant Q1 (routine choice 18). The yellow SMOKE ONLY mark sits over the bottom-left of the page; it is smoke-only.
 
 ## 12. The founder's phone checklist (on the smoke preview, iPhone)
 
-Open `<smoke URL>/?srFixture=index` for the list; each item names its scenario. Every answer comes from the committed fixtures, so the dates are fixture dates (Nov 9–12). The yellow "SMOKE ONLY" mark sits bottom-left. Small section headings ("Your drop", "Names it mentions", "Continue your research") show in capitals on screen. Every quoted string below was checked on the page by script at 390×844 (14 of 14).
+Open `<smoke URL>/?srFixture=index` for the list; each item names its scenario. Every answer comes from the committed fixtures, so the dates are fixture dates (Nov 9–12). The yellow "SMOKE ONLY" mark sits bottom-left. Small section headings ("Your drop", "Names it mentions", "Continue your research") show in capitals on screen. Every quoted string below was checked on the page by script at 390×844 (14 of 14, on the harness and on this preview). Item 7 was also done exactly as written, Apple left unticked: the saved view names Shopify Inc. alone.
 
 1. **Start** (`?srFixture=start`). Three stories with "Show more stories · 2", "Bring your own starting point" with its three prompts, and "Use a SignalDrop" at the bottom. At the top, "Continue your research" with one row: "Faster checkout is spreading…".
 2. **A story** (`?srFixture=story`). The preview shows the headline and "From FantasyTimes · Doug · {time}", the beat's question (editable) and a direction box. **Reworded by ruling P-2:** on `?srFixture=story-previous`, tap *Investigate this*. The new investigation shows "You investigated this on Nov 9, 2026 · Open the earlier one". *Open the earlier one* shows the earlier, concluded investigation, with "← Back to your new investigation".
@@ -513,7 +557,7 @@ Open `<smoke URL>/?srFixture=index` for the list; each item names its scenario. 
 - **WSL.** This session's trees and runs were removed under `flock /tmp/pd-suite.lock`, `node_modules` unlinked first. The removal ran twice, because `main` moved after the first round of final checks (§5):
   - First: `~/pd-ci-srb2` (184 MiB), `~/pd-ci-srb2m` (180 MiB) and `~/pd-srb2-runs` (232 MiB), **595 MiB** freed.
   - Second, after re-checking on `b0a20018`: 185, 180 and 114 MiB, **479 MiB** freed.
-  - **1,074 MiB freed by the two removals.** The pushed head's build afterwards used one more short-lived `~/pd-ci-srb2`, removed the same way. None of the three remains, and `~/pd-ci`'s worktree list holds no `srb2` entry. The shared install the trees linked to (`~/pd-af0/node_modules`) is untouched. No other session's tree was touched.
+  - **1,074 MiB freed by those two removals.** Both trees were recreated afterwards, for the review's second mutant battery, the third merge's checks and the pushed heads' builds, and were removed the same way. None of the three remains, and `~/pd-ci`'s worktree list holds no `srb2` entry. The shared install the trees linked to (`~/pd-af0/node_modules`) is untouched. No other session's tree was touched.
 - **Windows scratch.** Both vite harnesses (ports 5199 and 5200) are stopped. Nine `node_modules` junctions were removed as junctions before their trees were deleted: the two harness trees, the four lens trees and the three refuter trees. The trees held no other link, and 1,234 MiB of scratch went with them.
 - **Kept.** The smoke branch `claude/shared-research-b2-smoke` stays on the remote for the phone check; delete it after the merge. The renders and this report are in `C:/Users/fashr/Documents/FantasyTrades/SharedResearch/B2/`.
 
@@ -523,9 +567,9 @@ This is the sheet the player will see. You start from a FantasyTimes story, a Si
 
 **Nothing in the app opens it yet.** The door and the wrapper are the Command Center chat's hub amendment. With this merged, players see nothing new.
 
-**Smoke preview:** https://trade-seven-3u96vqpcy-fais-projects-bc179554.vercel.app
+**Smoke preview:** https://trade-seven-hobprw3dz-fais-projects-bc179554.vercel.app
 - `?srFixture=index` lists the scenarios.
-- It runs on the branch `claude/shared-research-b2-smoke`, which is cut from the final tree `b0a20018` (this PR's head minus the docs-only report commit) and never merged.
+- It runs on the branch `claude/shared-research-b2-smoke`, which is cut from the final tree `7c80e99f` (this PR's head minus the docs-only follow-up commit) and never merged.
 
 **Report:** `docs/audits/20261113_BUILD_SHARED_RESEARCH_B2.md`. It holds every state, the review, the mutation tables, the hub's needs and the founder's phone checklist.
 
@@ -596,21 +640,21 @@ Together they cover every state of spec §7.2 and K-6.
 None called, none edited. No `api/` file, Firestore rule, index or flag value changed.
 
 ### Bundle (K-3)
-The minified build of the final tree `b0a20018` was compared with `main` `c3ed2cfd`, every hashed name masked, 111 files each side. **2 files differ: the entry chunk `assets/index-*.js` (5,009,790 → 5,009,840 bytes, +50) and its source map.** That is the chunk holding `SignalDropEntry`. An unminified build shows its five additive hunks and nothing else (57 files, 1 differs). The CSS (`index-Bt3Ms9P_.css`, 36,828 bytes) is byte-identical. "Investigate this" is not in the bundle, because nothing imports the body.
+The minified build of the final tree `7c80e99f` was compared with `main` `979b030c`, every hashed name masked, 111 files each side. **2 files differ: the entry chunk `assets/index-*.js` (5,010,440 → 5,010,490 bytes, +50) and its source map.** That is the chunk holding `SignalDropEntry`. An unminified build shows its five additive hunks and nothing else (57 files, 1 differs). The CSS (`index-Bt3Ms9P_.css`, 36,828 bytes) is byte-identical. "Investigate this" is not in the bundle, because nothing imports the body.
 
 ### Checks (on the tree merged with `origin/main`)
-- Full Linux suite (WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, 8 workers): **exit 0**. Test Files 1,455 passed, 11 skipped (1,466); Tests 32,460 passed, 131 skipped (32,591). This branch's 10 files: 203 rows passed; the 11 browser rows skipped by design.
+- Full Linux suite (WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, 8 workers): **exit 0**. Test Files 1,455 passed, 11 skipped (1,466); Tests 32,464 passed, 131 skipped (32,595). This branch's 10 files: 203 rows passed; the 11 browser rows skipped by design.
 - `npm run test:rules`: **exit 0**, 42 files, 784 tests.
 - `npm run lint:gate`: **exit 0**.
-- `vite build`: **exit 0**; the pushed head is built too (docs-only on top of `b0a20018`).
+- `vite build`: **exit 0**; the pushed head is built too (docs-only on top of `7c80e99f`).
 - Real browser (headless Edge): 11 of 11 on the local harness and 11 of 11 on the smoke preview. The founder's checklist strings, by script: 14 of 14 on both.
 
 ### Review (BUILD_RULES §2)
-- The cumulative diff is 30 files and 13,425 lines (13,422 added, 3 removed), measured on the cumulative branch diff with this report included, above the threshold.
+- The cumulative diff is 30 files and 13,469 lines (13,466 added, 3 removed), measured on the cumulative branch diff with this report included, above the threshold.
 - Four lenses (display honesty, state and wiring, accessibility and phone layout, compatibility), each with a refuter, one round.
 - 43 distinct finding lines: **30 CONFIRMED, 9 PARTLY, 2 REFUTED**, 2 new.
-- 3 must-fix and 16 should-fix, all fixed with rows.
-- Mutations: 44 of 44 killed in jsdom and 5 of 5 in a real browser, with every file restored byte for byte.
+- 3 must-fix and 16 should-fix, all fixed. Every behavioural fix has a row and a mutant; the six style-only fixes were checked by measurement, render or inspection.
+- Mutations: 62 of 62 killed in jsdom (the brief's 1–10, plus one for every review row) and 5 of 5 in a real browser, with every file restored byte for byte.
 
 ### The founder's phone checklist
 It is in the report, under "The founder's phone checklist". Every quoted string was checked on the page by script.
