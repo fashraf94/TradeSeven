@@ -73,7 +73,7 @@ export const KB_REFUSALS = Object.freeze([
 ]);
 
 const HEX64 = /^[0-9a-f]{64}$/;
-const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
+const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{1,9})?(Z|[+-](\d{2}):(\d{2}))$/;
 const ENTRY_KEYS = new Set([
   'id', 'version', 'sha256', 'acceptanceSha256', 'consumers', 'audience',
   'newSessions', 'authorizedAt', 'authorizedBy', 'evidenceRef',
@@ -83,6 +83,20 @@ const refuse = (reason) => Object.freeze({ ok: false, reason });
 const sha256Hex = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNonEmptyString = (v) => typeof v === 'string' && v.length > 0;
+
+/**
+ * An ISO instant naming a real calendar time (Date.parse alone takes
+ * February 30 and 24:00). Never throws.
+ */
+function isIsoInstant(s) {
+  const m = typeof s === 'string' ? ISO_INSTANT.exec(s) : null;
+  if (!m) return false;
+  const [y, mo, d, h, mi, se] = m.slice(1, 7).map(Number);
+  const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  if (mo < 1 || mo > 12 || d < 1 || d > daysInMonth || h > 23 || mi > 59 || se > 59) return false;
+  if (m[9] !== undefined && (Number(m[9]) > 23 || Number(m[10]) > 59)) return false;
+  return Number.isFinite(Date.parse(s));
+}
 
 function parseObject(text) {
   try {
@@ -201,7 +215,7 @@ function isEntryShape(entry) {
       && typeof entry.acceptanceSha256 === 'string' && HEX64.test(entry.acceptanceSha256)
       && Array.isArray(entry.consumers) && entry.consumers.length > 0 && entry.consumers.every(isNonEmptyString)
       && (entry.newSessions === undefined || typeof entry.newSessions === 'boolean')
-      && typeof entry.authorizedAt === 'string' && ISO_INSTANT.test(entry.authorizedAt) && Number.isFinite(Date.parse(entry.authorizedAt))
+      && isIsoInstant(entry.authorizedAt)
       && isNonEmptyString(entry.authorizedBy)
       && isNonEmptyString(entry.evidenceRef);
   } catch {

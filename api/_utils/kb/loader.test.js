@@ -250,6 +250,7 @@ describe('isAuthorizationEntry — the shape (§A3.4)', () => {
     expect(isAuthorizationEntry(entry({ newSessions: false }))).toBe(true);
     expect(isAuthorizationEntry(entry({ newSessions: true, audience: 'all' }))).toBe(true);
     expect(isAuthorizationEntry(entry({ authorizedAt: '2026-11-13T11:00:00.123-06:00' }))).toBe(true);
+    expect(isAuthorizationEntry(entry({ authorizedAt: '2028-02-29T23:59:59Z' }))).toBe(true);
   });
 
   const without = (key) => { const e = entry(); delete e[key]; return e; };
@@ -267,6 +268,10 @@ describe('isAuthorizationEntry — the shape (§A3.4)', () => {
     ['authorizedAt not an instant', entry({ authorizedAt: 'yesterday' })],
     ['authorizedAt a date only', entry({ authorizedAt: '2026-11-13' })],
     ['authorizedAt month 13', entry({ authorizedAt: '2026-13-01T00:00:00Z' })],
+    ['authorizedAt February 30 (Date.parse takes it)', entry({ authorizedAt: '2026-02-30T00:00:00Z' })],
+    ['authorizedAt April 31', entry({ authorizedAt: '2026-04-31T12:00:00Z' })],
+    ['authorizedAt 24:00 (Date.parse takes it)', entry({ authorizedAt: '2026-11-13T24:00:00Z' })],
+    ['authorizedAt offset +25:00', entry({ authorizedAt: '2026-11-13T17:00:00+25:00' })],
     ['no authorizedBy', without('authorizedBy')],
     ['an empty evidenceRef', entry({ evidenceRef: '' })],
     ['an unknown key (a misspelt newSessions)', entry({ newSession: false })],
