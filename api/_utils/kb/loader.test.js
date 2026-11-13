@@ -289,6 +289,7 @@ describe('the order — with two defects, the EARLIER check answers (review KL4-
   const registerChar = (r) => { r.register.text = oneCharChanged(r.register.text); };
   it.each([
     ['1 before 2', { id: 'KB-UNKNOWN-001' }, (r) => { r.exportJson.schema = 'x'; }, [entry()], {}, 'missing'],
+    ['1 (a part absent) before 2', {}, (r) => { delete r.acceptance; r.exportJson.schema = 'x'; }, [entry()], {}, 'missing'],
     ['2 before 3', {}, (r) => { r.exportJson.schema = 'x'; r.exportJson.id = 'KB-OTHER-001'; }, [entry()], {}, 'schema'],
     ['3 before 4', {}, (r) => { r.exportJson.id = 'KB-OTHER-001'; r.exportJson.status = 'reviewed_candidate'; }, [entry()], {}, 'identity'],
     ['4 before 5', {}, (r) => { r.exportJson.status = 'reviewed_candidate'; methodChar(r); }, [entry()], {}, 'not_accepted'],
@@ -447,6 +448,7 @@ describe('check 9 — scope', () => {
     expect(load(multi)).toMatchObject({ ok: true, method: { consumer: CONSUMER } });
     expect(offer(multi)).toMatchObject({ ok: true, method: { consumer: CONSUMER } });
     expect(load(multi, { consumer: 'research_modal.analysis' })).toMatchObject({ ok: true, method: { consumer: 'research_modal.analysis' } });
+    expect(offer(multi, { consumer: 'research_modal.analysis' })).toMatchObject({ ok: true, method: { consumer: 'research_modal.analysis' } });
     expect(load(multi, { consumer: 'battle_research.panel' })).toEqual({ ok: false, reason: 'scope' });
   });
 

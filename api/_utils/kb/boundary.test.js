@@ -8,7 +8,16 @@
 // the last row, to admit its Shared Research consumer.
 //
 // Each scanner is a function over (path, text), proven here against planted
-// files before it is trusted on the real tree.
+// files before it is trusted on the real tree. Every scan reads the raw text
+// AND the comment-stripped text (each misses something the other sees).
+//
+// KNOWN LIMITS, stated on purpose (refuter KLV4, KL4-11): no static scan sees a
+// specifier built at run time (`import(p)` with a variable, a computed
+// `require`, `eval`), an entry point reached through an assignment alias
+// (`const f = loadAuthorizedMethod; f(a, b)`), or a glob whose pattern names
+// neither `api/` nor the module's directories. The text belts (NAMES_KB,
+// NAMES_KB_DATA, the src/ glob row) and the import-graph walk narrow these;
+// review covers the rest.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -40,17 +49,25 @@ function specifiersOf(text) {
   return out;
 }
 
-/** Code-level uses the pure KB modules must not make. */
-function forbiddenUses(code) {
+/** The specifiers of a file's code: raw and comment-stripped, de-duplicated, in order. */
+const specsOfCode = (text) => [...new Set([...specifiersOf(text), ...specifiersOf(stripComments(text))])];
+
+/**
+ * Uses the pure KB modules must not make, in the raw or the comment-stripped
+ * text. `process` and `fetch` are refused at any mention (destructuring,
+ * `.call`), not only as `process.env` or `fetch(` (refuter KLV4).
+ */
+function forbiddenUses(text) {
   const rules = [
     ['fs', /['"](?:node:)?fs(?:\/promises)?['"]/],
-    ['network client', /\bfetch\s*\(|['"](?:node:)?(?:https?|http2|net|tls|dgram)['"]|\baxios\b|\bundici\b|\bXMLHttpRequest\b|\bWebSocket\b/],
+    ['network client', /\bfetch\b|['"](?:node:)?(?:https?|http2|net|tls|dgram)['"]|\baxios\b|\bundici\b|\bXMLHttpRequest\b|\bWebSocket\b/],
     ['database', /firebase|firestore|@google-cloud|\bgetDb\b|\bmongo/i],
-    ['process.env', /\bprocess\s*(?:\.\s*env\b|\[)/],
+    ['process', /\bprocess\b/],
     ['dynamic import', /\bimport\s*\(/],
     ['require', /\brequire\s*\(/],
   ];
-  return rules.filter(([, re]) => re.test(code)).map(([name]) => name);
+  const code = stripComments(text);
+  return rules.filter(([, re]) => re.test(code) || re.test(text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, ''))).map(([name]) => name);
 }
 
 const isInside = (file, dir) => file === dir || file.startsWith(dir + path.sep);
@@ -124,6 +141,8 @@ function globAndUrlPatternsOf(text) {
   const out = [];
   for (const m of text.matchAll(/import\.meta\.glob\s*\(\s*(\[[^\]]*\]|'[^']*'|"[^"]*"|`[^`]*`)/g)) out.push(m[1]);
   for (const m of text.matchAll(/new\s+URL\s*\(\s*('[^']*'|"[^"]*"|`[^`]*`)/g)) out.push(m[1]);
+  // A template dynamic import (Vite's dynamic-import-vars) is a pattern too (refuter KLV4).
+  for (const m of text.matchAll(/\bimport\s*\(\s*(`[^`]*\$\{[^`]*`)/g)) out.push(m[1]);
   return out;
 }
 
@@ -200,8 +219,11 @@ describe('the scanners, proven on planted text', () => {
     ['network client', 'const r = await fetch(url);'],
     ['network client', "import https from 'node:https';"],
     ['database', "import { getFirestore } from 'firebase-admin/firestore';"],
-    ['process.env', 'const k = process.env.KEY;'],
-    ['process.env', "const k = process['env'];"],
+    ['process', 'const k = process.env.KEY;'],
+    ['process', "const k = process['env'];"],
+    ['process', 'const { env } = process;'],
+    ['network client', 'export const ping = (u) => fetch.call(globalThis, u);'],
+    ['fs', "const SEP = 'a//b'; import { readFileSync } from 'node:fs';"],
     ['dynamic import', "await import('./x.js')"],
     ['require', "require('./x.cjs')"],
   ])('forbiddenUses finds %s in a planted line', (name, line) => {
@@ -261,6 +283,12 @@ describe('the scanners, proven on planted text', () => {
     expect(reachableFrom([at('src', 'clean.js')], planted, REPO).has(at('api', '_utils', 'kb', 'loader.js'))).toBe(false);
     // A backslash specifier is an importer too.
     expect(kbImportersIn([{ file: at('api', 'forge', 'r.js'), text: "import x from './..\\\\_utils\\\\kb\\\\loader.js';" }], REPO)).toHaveLength(1);
+    // The RAW half of the union: a '//' inside a string makes the stripper eat the rest of the line.
+    expect(stripComments("const SEP = 'a//b'; import x from '../kb/loader.js';")).not.toContain('import');
+    expect(kbImportersIn([{ file: at('api', '_utils', 'near.js'), text: "const SEP = 'a//b'; import x from './kb/loader.js';" }], REPO)).toHaveLength(1);
+    expect(specsOfCode("const SEP = 'a//b'; import x from './kb/loader.js';\nimport {\n  y, // don't\n} from './z.js';")).toEqual(['./kb/loader.js', './z.js']);
+    // A template dynamic import is a pattern the src/ belt reads.
+    expect(globAndUrlPatternsOf('const m = (d) => import(`../api/_utils/${d}/loader.js`);')).toEqual(['`../api/_utils/${d}/loader.js`']);
   });
 
   it('callArgCounts counts top-level arguments (review KL3-1)', () => {
@@ -277,22 +305,22 @@ describe('the scanners, proven on planted text', () => {
 
 describe('the KB modules', () => {
   it("loader.js imports exactly node:crypto, ./packages/index.js and ./authorizations.js", () => {
-    expect(specifiersOf(stripComments(read(path.join(KB_DIR, 'loader.js')))).sort()).toEqual(['./authorizations.js', './packages/index.js', 'node:crypto']);
+    expect(specsOfCode(read(path.join(KB_DIR, 'loader.js'))).sort()).toEqual(['./authorizations.js', './packages/index.js', 'node:crypto']);
   });
 
   it('packages/index.js imports only its JSON files; authorizations.js imports nothing', () => {
-    const specs = specifiersOf(stripComments(read(path.join(KB_DIR, 'packages', 'index.js'))));
+    const specs = specsOfCode(read(path.join(KB_DIR, 'packages', 'index.js')));
     expect(specs.length).toBeGreaterThan(0);
     for (const s of specs) expect(s).toMatch(/^\.\/[A-Za-z0-9.-]+\.json$/);
-    expect(specifiersOf(stripComments(read(path.join(KB_DIR, 'authorizations.js'))))).toEqual([]);
+    expect(specsOfCode(read(path.join(KB_DIR, 'authorizations.js')))).toEqual([]);
   });
 
   it.each(['loader.js', 'authorizations.js', path.join('packages', 'index.js')])('%s: no fs, no network client, no database, no process.env (code only)', (f) => {
-    expect(forbiddenUses(stripComments(read(path.join(KB_DIR, f))))).toEqual([]);
+    expect(forbiddenUses(read(path.join(KB_DIR, f)))).toEqual([]);
   });
 
   it("audience.js's only import is ../callRecords/mode.js", () => {
-    expect(specifiersOf(stripComments(read(path.join(KB_DIR, 'audience.js'))))).toEqual(['../callRecords/mode.js']);
+    expect(specsOfCode(read(path.join(KB_DIR, 'audience.js')))).toEqual(['../callRecords/mode.js']);
   });
 
   it('no KB module imports a Shared Research module or names its mode flag', () => {
@@ -301,7 +329,7 @@ describe('the KB modules', () => {
     for (const file of KB_MODULES) {
       const text = read(file);
       expect(text).not.toContain(flag);
-      for (const spec of specifiersOf(text)) expect(spec).not.toMatch(/shared-?research|forge/i);
+      for (const spec of specsOfCode(text)) expect(spec).not.toMatch(/shared-?research|forge/i);
     }
   });
 });
