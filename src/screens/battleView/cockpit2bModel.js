@@ -55,15 +55,11 @@ const checkOf = (instant) => checkLabel(instant, CLOCK);
 /** The strip's chip budget per shell (§5.4). */
 export const STRIP_SHOWN = Object.freeze({ phone: 4, desktop: 6 });
 
-/**
- * The agent's name as the 2b cockpit's copy shows it: the first letter capitalized, the rest as recorded (a name
- * can be stored lowercase, e.g. "shadow"). The view, the bench sheet and the replace line take it from here; the
- * 2a feed's copy and every model-visible text are unchanged.
- */
-export function agentNameOf(name) {
-  const s = typeof name === 'string' ? name.trim() : '';
-  return s ? s.charAt(0).toLocaleUpperCase('en-US') + s.slice(1) : 'Your Agent';
-}
+// The agent's name as the 2b cockpit shows it — one rule, in its own import-free module so the research
+// sheet can take it without this module's graph (research modal QF-8, review B9). Re-exported here unchanged.
+import { agentNameOf } from './agentName.js';
+
+export { agentNameOf };
 
 /** The commands meter (§5.1), from the RAW battle document's exchanges; none in a league battle (chat's budget is its own there). */
 export function meterOf(rawExchanges, { league = false } = {}) {

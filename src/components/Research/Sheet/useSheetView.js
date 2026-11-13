@@ -16,11 +16,16 @@
 //                           symbol is kept, so a 1W switch does not drop a fact);
 //   the rankings            indexIntelligence/stockRankings — the doc in
 //                           sheetContext.rankings when the screen holds one, else
-//                           ONE read for the modal's life, only when the stalled
-//                           question first opens (the doc is the platform's, the
+//                           ONE read for the modal's life, only when a question
+//                           that reads it first opens (the doc is the platform's, the
 //                           same for every stock; a read in flight is never thrown
 //                           away by leaving the question).
 // The Ask is the only request it makes: one POST /api/agent/chat, one message.
+//
+// THE QUESTION SET (QF-1, Nov 13, 2026) is packs.questionSetOf's, decided once per
+// opening (sheetKey) from the record at open and kept for that opening: a tick, a
+// check landing or the price crossing entry never switches it (the FQ-9 rule).
+// QF-8: the agent's name goes through the cockpit's agentNameOf (Shadow, never shadow).
 //
 // THE ASK'S STATE is kept PER STOCK (sheetKey) and shown only under the
 // question it answered: a late response for one stock never touches another's
@@ -36,12 +41,15 @@ import { BATTLE_CHAT_BUDGET } from '../../../../api/_utils/directiveFiling.js';
 import { readToken } from '../../../theme/cssTokens.js';
 import { etDate } from '../BombMode/checkClock.js';
 import { priceDecimals } from '../priceFormat.js';
-import { buildPacks, stanceOf, recordPinsOf, questionOrder, QUESTION_IDS, whenLabel, itemKeyOf } from './packs.js';
+import { buildPacks, stanceOf, recordPinsOf, questionSetOf, whenLabel, itemKeyOf } from './packs.js';
+import { agentNameOf } from '../../../screens/battleView/agentName.js';
 import { latestLineOf } from './latestLine.js';
 import { SHEET_COPY, QUESTION_TEXT, PIN_LINE_WORDS } from './sheetCopy.js';
 
 const TICK_MS = 30_000;
 const NO_CALLS = Object.freeze([]);
+/** The questions whose packs read the rankings doc (the stalled compare's scores; QF-3 / QF-4's bench alternative). */
+export const RANKINGS_QUESTIONS = Object.freeze(['better_than_stalled', 'weakest_spot', 'take_profit']);
 /** Statuses chat.js returns BEFORE its one write (the exchange and the charge, one update): nothing was charged. */
 export const NOT_CHARGED_STATUSES = Object.freeze([400, 401, 403, 404, 405, 429, 502, 504]);
 
@@ -125,18 +133,11 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
   const question = ui.key === sheetKey ? ui.question : (incumbent ? 'better_than_stalled' : null);
   const activeKey = ui.key === sheetKey ? ui.activeItem : null;
 
-  // ── The rankings: the doc the screen hands over when it holds one, else one read when the stalled question first opens ──
+  // ── The rankings: the doc the screen hands over when it holds one, else one read when a question whose pack
+  // reads it (RANKINGS_QUESTIONS: the stalled compare; QF-3 / QF-4's bench alternative) first opens ──
   const screenRankings = ctx?.rankings && typeof ctx.rankings === 'object' ? ctx.rankings : null;
   const [rankings, setRankings] = useState({ done: false, doc: null });
   const rankingsAsked = useRef(false);
-  const wantRankings = !!ctx && !screenRankings && question === 'better_than_stalled';
-  useEffect(() => {
-    if (!wantRankings || rankingsAsked.current) return;
-    rankingsAsked.current = true; // one read for the modal's life; leaving the question never discards it (review N2)
-    readRankings()
-      .then((doc) => { if (liveRef.current) setRankings({ done: true, doc }); })
-      .catch(() => { if (liveRef.current) setRankings({ done: true, doc: null }); });
-  }, [wantRankings]);
 
   // ── The model ──
   const model = useMemo(() => {
@@ -153,12 +154,34 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     const stance = stanceOf(args);
     const latest = latestLineOf({ battle, symbol, held: stance.holding.held, calls });
     const pins = recordPinsOf({ battle, symbol, nowMs, row, calls });
-    return { ...built, stance, latest, pins, order: questionOrder(standing) };
+    return { ...built, stance, latest, pins, args };
     // standing reaches it through standingKey; ctx itself is new every render.
   }, [!!ctx, battle, symbol, nowMs, rowPosKey, rowPositionId, live, dailyBars, battleId, rankings, screenRankings, sheetKey, incumbent, calls, standingKey, directive]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── QF-1: the question set, decided ONCE per opening (sheetKey) from the record at open, then kept —
+  // a tick, a check landing or a lead change never switches it while the modal is open (the FQ-9 rule).
+  // One entry PER sheetKey (review B1): navigating away inside the modal and back finds the set decided
+  // at that row's first opening, never a re-decision from the record of the moment.
+  const [frozen, setFrozen] = useState({});
+  const kept = sheetKey ? frozen[sheetKey] ?? null : null;
+  const set = kept ?? (model ? questionSetOf(model.args) : null);
+  if (model && set && sheetKey && !kept) setFrozen((all) => (all[sheetKey] ? all : { ...all, [sheetKey]: set }));
+  // A question the set does not hold is never shown (a stale pick across an opening).
+  const shownQuestion = question && set?.questions.includes(question) ? question : null;
+
+  // The rankings read: when a question that reads it is SHOWN (review B3 — never for a pre-set question
+  // the row's set does not hold).
+  const wantRankings = !!ctx && !screenRankings && RANKINGS_QUESTIONS.includes(shownQuestion);
+  useEffect(() => {
+    if (!wantRankings || rankingsAsked.current) return;
+    rankingsAsked.current = true; // one read for the modal's life; leaving the question never discards it (review N2)
+    readRankings()
+      .then((doc) => { if (liveRef.current) setRankings({ done: true, doc }); })
+      .catch(() => { if (liveRef.current) setRankings({ done: true, doc: null }); });
+  }, [wantRankings]);
+
   // ── The chart's pins (BC-8): one label open — the tapped item's pin, else the latest marker ──
-  const pack = model && question ? model.packs[question] : null;
+  const pack = model && shownQuestion ? model.packs[shownQuestion] : null;
   // BS-2 (shell report §12 A8): the open item is found by its key in TODAY's pack. One that has left
   // the pack (a tick reshuffled it out) closes — the caption never moves to the item now in its slot —
   // and it stays closed if it comes back: reopening it is a new tap.
@@ -202,12 +225,12 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
   const own = sheetKey ? asks[sheetKey] ?? null : null;
   const answering = own?.status === 'sending';
   // This question already asked on this opening (its answer is below): not offered again (D1).
-  const askedThis = !!own && own.questionId === question && (own.status === 'sending' || own.status === 'answered');
-  const canAsk = !!model && !!question && left > 0 && battle?.status === 'active' && !answering && !askedThis && typeof ctx?.agentId === 'string' && !!battleId;
+  const askedThis = !!own && own.questionId === shownQuestion && (own.status === 'sending' || own.status === 'answered');
+  const canAsk = !!model && !!shownQuestion && left > 0 && battle?.status === 'active' && !answering && !askedThis && typeof ctx?.agentId === 'string' && !!battleId;
 
   const ask = useCallback(async () => {
     if (!canAsk || !pack || !sheetKey || inFlightRef.current.has(sheetKey)) return;
-    const q = question;
+    const q = shownQuestion;
     const key = sheetKey;
     inFlightRef.current.add(key);
     const settle = (state) => setAsks((all) => ({ ...all, [key]: state }));
@@ -244,12 +267,13 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     const why = status === 403 && body?.error === 'chat_budget_exceeded' ? 'out'
       : ((status === 400 && (body?.error === 'battle_not_active' || body?.error === 'research_ask_battle_only')) || (status === 403 && body?.error === 'research_ask_off')) ? 'closed' : 'error';
     settle({ status: 'failed', questionId: q, charged: chargedOf(status, body), why });
-  }, [canAsk, pack, question, sheetKey, ctx, battleId, symbol]);
+  }, [canAsk, pack, shownQuestion, sheetKey, ctx, battleId, symbol]);
 
+  const setQuestions = set?.questions ?? null;
   const pickQuestion = useCallback((q) => {
-    if (!QUESTION_IDS.includes(q)) return;
+    if (!Array.isArray(setQuestions) || !setQuestions.includes(q)) return;
     setUi({ key: sheetKey, question: q, activeItem: null });
-  }, [sheetKey]);
+  }, [sheetKey, setQuestions]);
   const backToQuestions = useCallback(() => setUi({ key: sheetKey, question: null, activeItem: null }), [sheetKey]);
   // A tap on slot i opens (or closes) the item IN that slot now, held by its key.
   const tapItem = useCallback((i) => {
@@ -259,21 +283,24 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     setUi((u) => ({ ...u, key: sheetKey, activeItem: u.activeItem === k ? null : k }));
   }, [sheetKey, pack]);
 
-  if (!ctx || !model) return null;
+  if (!ctx || !model || !set) return null;
   // The reply shows only under the question it answered (review B5).
-  const reply = own && own.questionId === question ? own : { status: 'idle' };
+  const reply = own && own.questionId === shownQuestion ? own : { status: 'idle' };
   const filed = reply.status === 'answered' && !!reply.exchangeId
     && (Array.isArray(battle?.chatExchanges) ? battle.chatExchanges : []).some((e) => e?.exchangeId === reply.exchangeId);
   return {
     symbol,
     archetype: model.lens.label,
-    agentName: typeof ctx.agentName === 'string' && ctx.agentName ? ctx.agentName : null,
+    // QF-8: the cockpit's rule (cockpit2bModel.agentNameOf) — *Shadow*, never *shadow*. No name → null,
+    // and the sheet names the archetype (R-23), never agentNameOf's "Your Agent".
+    agentName: typeof ctx.agentName === 'string' && ctx.agentName.trim() ? agentNameOf(ctx.agentName) : null,
     stance: model.stance,
     latest: model.latest,
     latestWho: model.latest.atMs ? SHEET_COPY.voiceWho(model.lens.label, whenLabel(model.latest.atMs)) : null,
     latestTime: model.latest.atMs ? whenLabel(model.latest.atMs) : null,
-    order: model.order,
-    question,
+    order: set.questions,
+    notOnLadder: set.notOnLadder,
+    question: shownQuestion,
     pack,
     activeItem,
     chart: analysisActive ? chart : null,
