@@ -27,8 +27,9 @@
 //                holding idea has both; an `accepted` one has neither yet;
 //   9. TIED      (Astra T1A-02) a `same_stock_held` comparison, while its idea has made no fill after the basket
 //                entry (`postEntryFillCount === 0`, written at entry; T1a-2's first later fill increments it), has
-//                exactly the idea's cash, the same names, quantities and cost basis. A holding idea whose count is
-//                not a whole number ≥ 0 fails closed.
+//                exactly the idea's cash, the same names, quantities, cost basis and recorded marks. This build has
+//                no later fill, so a holding idea whose count is anything but 0 fails closed (`MAX_POST_ENTRY_FILLS`;
+//                T1a-2 lifts it with its writer). Every paper holding's mark is a real number (rule 8).
 //
 // A failure throws PracticeFieldError `recon_failed` naming every broken rule. Thrown inside a transaction callback
 // it aborts the transaction, so a book that does not reconcile is never written. Integer comparisons only (money
@@ -62,6 +63,7 @@ function paperLedgerProblems(idea, name, paper) {
   let basisCents = 0;
   for (const [ticker, h] of Object.entries(paper.holdings || {})) {
     if (!Number.isFinite(h?.shares) || !Number.isFinite(h?.costBasisTotal)) problems.push({ rule: 'not_a_number', ideaId, ledger: name, ticker });
+    if (!Number.isFinite(h?.lastMark)) problems.push({ rule: 'not_a_number', ideaId, ledger: name, ticker, field: 'lastMark' });
     if (!(toMicroShares(h?.shares) > 0)) problems.push({ rule: `${name}_holding_not_positive`, ideaId, ticker });
     basisCents += toCents(h?.costBasisTotal);
   }
@@ -81,9 +83,18 @@ function tieBreaks(ledger, comparison) {
     if (!Object.hasOwn(own, t) || !Object.hasOwn(cmp, t)) { out.push(`held:${t}`); continue; }
     if (toMicroShares(own[t].shares) !== toMicroShares(cmp[t].shares)) out.push(`shares:${t}`);
     if (toCents(own[t].costBasisTotal) !== toCents(cmp[t].costBasisTotal)) out.push(`basis:${t}`);
+    // The recorded mark too (review FR-A3): one snapshot, one action set, one frozen set — the same number, exactly.
+    if (!Number.isFinite(own[t].lastMark) || own[t].lastMark !== cmp[t].lastMark) out.push(`mark:${t}`);
   }
   return out;
 }
+
+/**
+ * The largest post-entry fill count this build can produce. T1a-1 has no fill after the basket entry — no writer
+ * can raise the count — so any other value is corruption, and would otherwise switch the same-stock tie off (review
+ * FR-A3). T1a-2's first later fill both increments the count and lifts this bound.
+ */
+const MAX_POST_ENTRY_FILLS = 0;
 
 /** The statuses an idea in the book's open set may have (contract §4.3, as far as this build writes them). */
 const OPEN_STATUSES = Object.freeze(['accepted', 'entering', 'holding']);
@@ -156,7 +167,7 @@ export function assertReconciled(book, ideas) {
     // 9. a same-stock comparison is tied to its idea until the idea's first fill after entry.
     if (idea?.status === 'holding') {
       const fills = idea.postEntryFillCount;
-      if (!Number.isInteger(fills) || fills < 0) {
+      if (!Number.isInteger(fills) || fills < 0 || fills > MAX_POST_ENTRY_FILLS) {
         problems.push({ rule: 'post_entry_fill_count_invalid', ideaId: idea.ideaId, value: fills ?? null });
       } else if (fills === 0 && idea.contract?.comparison?.type === 'same_stock_held' && idea.comparisonLedger) {
         const breaks = tieBreaks(ledger, idea.comparisonLedger);

@@ -44,7 +44,7 @@ import {
 } from './constants.js';
 import { PracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
-import { applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents } from './ledger.js';
+import { applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, unsettledConflicts } from './ledger.js';
 import { closeMarkQuality } from './marks.js';
 import { planRelease } from './admission.js';
 import { coverageRefOf } from './coverage.js';
@@ -92,6 +92,8 @@ function closeHoldingIdea(idea, { date, closeSnapshot, actionsBySymbol, sinceDat
   const ownV = value(own.ledger, own.unresolved);
   const cmpV = value(cmp.ledger, cmp.unresolved);
   const spyV = value(spy.ledger, spy.unresolved);
+  // Conflicts recorded on a ledger and not settled since (neither applied nor declined), this close's included.
+  const openConflicts = [['idea', own.ledger], ['comparison', cmp.ledger], ['spy', spy.ledger]].flatMap(([name, ledger]) => unsettledConflicts(ledger).map((r) => ({ name, actionId: r.actionId })));
 
   const nextIdea = {
     ...idea,
@@ -149,7 +151,10 @@ function closeHoldingIdea(idea, { date, closeSnapshot, actionsBySymbol, sinceDat
     corporateActionsApplied: {
       idea: own.applied.map((a) => a.actionId), comparison: cmp.applied.map((a) => a.actionId), spy: spy.applied.map((a) => a.actionId),
     },
-    fullQuality: ownV.valuation.fullQuality && cmpV.valuation.fullQuality && spyV.valuation.fullQuality,
+    // Not full quality while any ledger of the idea holds an UNSETTLED conflicting action (review FR-A1): after the
+    // feed stops presenting a conflict, its symbol is marked fresh again, but the action — a dividend's income, say —
+    // was never applied, so the row must not read as clean until a consistent row settles it.
+    fullQuality: ownV.valuation.fullQuality && cmpV.valuation.fullQuality && spyV.valuation.fullQuality && openConflicts.length === 0,
     // False when a leg entered at the friction model's widest tier for want of a market cap (review L3-2): the gap then
     // carries a cost difference that is not the idea's doing. `fullQuality` keeps its own meaning (marks only).
     entryCostTiersKnown: (idea.entry?.unknownCostTierLegs || []).length === 0,
@@ -159,8 +164,15 @@ function closeHoldingIdea(idea, { date, closeSnapshot, actionsBySymbol, sinceDat
   for (const [name, set] of [['idea', ownV.frozen], ['comparison', cmpV.frozen], ['spy', spyV.frozen]]) {
     for (const sym of set) alerts.push(`PRACTICE_FIELD_MARK_HELD_BACK ${idea.ideaId} ${name} ${sym} — unresolved or suspected corporate action; valued at its carried mark`);
   }
+  const seenToday = new Set();
   for (const [name, out] of [['idea', own], ['comparison', cmp], ['spy', spy]]) {
-    for (const c of out.conflicts) alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_CONFLICT ${idea.ideaId} ${name} ${c.actionId} — the feed lists it ${c.rows.length} times with different payloads; applied to no ledger`);
+    for (const c of out.conflicts) {
+      seenToday.add(`${name} ${c.actionId}`);
+      alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_CONFLICT ${idea.ideaId} ${name} ${c.actionId} — the feed lists it ${c.rows.length} times with different payloads; applied to no ledger`);
+    }
+  }
+  for (const c of openConflicts) {
+    if (!seenToday.has(`${c.name} ${c.actionId}`)) alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_UNSETTLED ${idea.ideaId} ${c.name} ${c.actionId} — a conflicting action the feed no longer presents was never applied; the row is not full quality`);
   }
   return { nextIdea, row, ownApplied: own.applied, ownFrozen: ownV.frozen, alerts };
 }

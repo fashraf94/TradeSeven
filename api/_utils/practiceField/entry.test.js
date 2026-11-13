@@ -613,6 +613,20 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     await refusedWritingNothing(db, () => releaseIdea(db, { bookId, ideaId: a.ideaId, nowIso: etIso(DAYS.d1, 13, 0) }), ['ledger_not_conserved']);
   });
 
+  it('the entry\'s own one-name-one-idea check is reached by a stored accepted idea whose contract names a ticker another idea holds (no as-read rule reads an accepted idea\'s names): refused, nothing written (review FR-A6)', async () => {
+    const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
+    await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: QUOTES }); // holds AAPL
+    const b = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: ADMIT_ISO });
+    const ref = db.collection('mandates').doc(bookId).collection('ideas').doc(b.ideaId);
+    const stored = getIdea(db, bookId, b.ideaId);
+    await ref.set({ ...stored, contract: { ...stored.contract, names: ['AAPL'], lines: [{ symbol: 'AAPL', distancePct: 0.1 }], comparison: { ...stored.contract.comparison, symbols: ['AAPL'] } } });
+    expect(problems(getBook(db, bookId), getBook(db, bookId).openIdeaIds.map((id) => getIdea(db, bookId, id)))).toEqual([]); // the book as read reconciles
+    const before = JSON.stringify([...db._store.entries()]);
+    await expect(enterIdea(db, { bookRef, ideaId: b.ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', { ...QUOTES, LLY: { price: 803.17, marketCap: 7.5e11 } }), nowIso: nowAt(DAYS.d1, 'midday') }))
+      .rejects.toThrow(/ticker_held_by_other_idea/);
+    expect(JSON.stringify([...db._store.entries()])).toBe(before);
+  });
+
   it('the R-19 basis at ENTRY: with two ideas holding, the entry writes the per-idea sum ($99,986.50) — not the whole book rounded once ($99,986.51)', async () => {
     const { db, bookId } = await seedBook({ archetypeCodeId: 'degen' });
     const quotes = { AAPL: { price: 231.47, marketCap: 3e12 }, LLY: { price: 803.17, marketCap: 7.5e11 }, SPY: 597.31 };
@@ -646,8 +660,9 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     expect(problems(b, [idea])).toEqual(['mark_mismatch']);
     b = clone(book); delete b.portfolio.positions.AAPL.lastMark;
     expect(problems(b, [idea])).toEqual(['mark_mismatch']);
-    let i = clone(idea); i.ledger.holdings.AAPL.lastMark = 100.01; // the idea's mark moves the equity too
-    expect(problems(book, [i])).toEqual(['equity_mismatch', 'mark_mismatch']);
+    // The idea's own mark moves the equity too, and (review FR-A3) breaks its same-stock comparison's tie.
+    let i = clone(idea); i.ledger.holdings.AAPL.lastMark = 100.01;
+    expect(problems(book, [i])).toEqual(['comparison_not_tied', 'equity_mismatch', 'mark_mismatch']);
     b = clone(book); b.portfolio.totalValue = Math.round((b.portfolio.totalValue + 0.01) * 100) / 100;
     expect(problems(b, [idea])).toEqual(['equity_mismatch']);
     b = clone(book); delete b.portfolio.totalValue;
@@ -677,6 +692,11 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     expect(problems(fund.book, [i])).toContain('not_a_number');
     i = clone(fund.idea); i.comparisonLedger.holdings.XLK.shares = 0;
     expect(problems(fund.book, [i])).toEqual(['comparison_holding_not_positive']);
+    // Every paper holding's mark is a real number (review FR-A3).
+    for (const bad of [NaN, null, undefined, '233.59']) {
+      i = clone(fund.idea); i.spyLedger.holdings.SPY.lastMark = bad;
+      expect(problems(fund.book, [i]), String(bad)).toEqual(['not_a_number']);
+    }
     i = clone(fund.idea); i.spyLedger = null;
     expect(problems(fund.book, [i])).toEqual(['spy_ledger_missing']);
     i = clone(fund.idea); delete i.comparisonLedger;
@@ -707,12 +727,16 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     i.comparisonLedger.holdings.AAPL.costBasisTotal = Math.round((i.comparisonLedger.holdings.AAPL.costBasisTotal + 0.01) * 100) / 100;
     i.comparisonLedger.dividendsUsd = 0.01;
     expect(problems(s.book, [i])).toEqual(['comparison_not_tied']);
-    // After a later fill (T1a-2), the tie is no longer owed.
+    // The recorded mark is part of the tie (review FR-A3): a comparison mark of $200 against the idea's $100.
+    i = clone(s.idea); i.comparisonLedger.holdings.AAPL.lastMark = 200;
+    expect(problems(s.book, [i])).toEqual(['comparison_not_tied']);
+    // This build has no fill after entry, so no count but 0 is possible: a count of 1 cannot switch the tie off
+    // (review FR-A3 — Astra's fault B, with the count raised, would otherwise pass in silence).
     i = clone(s.idea); i.postEntryFillCount = 1;
-    i.comparisonLedger.cash = Math.round((i.comparisonLedger.cash + 0.01) * 100) / 100; i.comparisonLedger.dividendsUsd = 0.01;
-    expect(problems(s.book, [i])).toEqual([]);
-    // A count that is not a whole number ≥ 0 never switches the tie off.
-    for (const bad of [undefined, null, -1, 0.5, '0', NaN]) {
+    i.comparisonLedger.cash = Math.round((i.comparisonLedger.cash + 123.45) * 100) / 100; i.comparisonLedger.dividendsUsd = 123.45;
+    expect(problems(s.book, [i])).toEqual(['post_entry_fill_count_invalid']);
+    // A count that is not 0 never switches the tie off.
+    for (const bad of [undefined, null, -1, 0.5, '0', NaN, 1, 2]) {
       i = clone(s.idea); i.postEntryFillCount = bad;
       expect(problems(s.book, [i]), String(bad)).toEqual(['post_entry_fill_count_invalid']);
     }

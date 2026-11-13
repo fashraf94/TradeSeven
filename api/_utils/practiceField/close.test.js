@@ -476,6 +476,48 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
     }
   });
 
+  it('a conflict the vendor never corrects keeps the idea\'s rows not full quality, with an alert, after the feed stops presenting it — the dividend it held back is never silently a clean gap (review FR-A1)', async () => {
+    const { db, bookId } = await seedBook();
+    // A sector-fund comparison, so a missing dividend would show as a gap.
+    const r = await admitAndEnter(db, bookId, { contract: contractOf({ comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: { ...QUOTES, XLK: 233.59 } });
+    const rival = { ...div, amount: 1.5, source: 'founder' };
+    for (const date of [DAYS.d2, DAYS.d3]) await closeOn(db, bookId, date, { AAPL: { price: 99, corporateActions: [div, rival] }, SPY: 500, XLK: 233.59 });
+    for (const date of [DAYS.d4, DAYS.d5]) {
+      const out = await closeOn(db, bookId, date, { AAPL: 99, SPY: 500, XLK: 233.59 }); // the rows have left the feed window
+      const row = getRow(db, bookId, r.ideaId, date);
+      expect(row.marks.AAPL).toMatchObject({ mark: 99, quality: 'vendor_time' }); // marked fresh again…
+      expect(row.fullQuality, date).toBe(false); // …but not clean: the action was never applied
+      expect(db._get(`mandates/${bookId}/dailyRows/${date}`).fullQuality).toBe(false);
+      expect(out.alerts.filter((a) => a.startsWith(`PRACTICE_FIELD_CORPORATE_ACTION_UNSETTLED ${r.ideaId} idea ${DIV_ID}`))).toHaveLength(1);
+      expect(out.alerts.some((a) => a.startsWith('PRACTICE_FIELD_CORPORATE_ACTION_CONFLICT'))).toBe(false);
+    }
+    expect(getIdea(db, bookId, r.ideaId).ledger.dividendsUsd).toBe(0);
+  });
+
+  it('a conflict on an action the holding is NOT entitled to is held the same way — no decline, one receipt, a carried mark (the letter of the ruling; a reading)', async () => {
+    const { db, bookId } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
+    const sameDay = { ...div, effectiveDate: DAYS.d1 };
+    const out = await closeOn(db, bookId, DAYS.d1, { AAPL: { price: 100.13, corporateActions: [sameDay, { ...sameDay, amount: 1.5 }] }, SPY: 500 });
+    const idea = getIdea(db, bookId, r.ideaId);
+    for (const ledger of [idea.ledger, idea.comparisonLedger]) {
+      expect(ledger.declinedActionIds, ledger.kind).toEqual([]);
+      expect(receiptsFor(ledger, `cash_dividend_AAPL_${DAYS.d1}`).map((x) => x.reason)).toEqual(['conflicting_action']);
+    }
+    expect(getRow(db, bookId, r.ideaId, DAYS.d1)).toMatchObject({ fullQuality: false, marks: { AAPL: { mark: 100, quality: 'carried_forward' } } });
+    expect(out.alerts.some((a) => a.startsWith('PRACTICE_FIELD_CORPORATE_ACTION_CONFLICT'))).toBe(true);
+  });
+
+  it('a conflict whose first row writes the ticker in lower case still holds the holding\'s mark back (review FR-A4)', async () => {
+    const { db, bookId } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
+    await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 99.13, corporateActions: [{ ...div, ticker: 'aapl' }, { ...div, amount: 1.5 }] }, SPY: 500 });
+    const row = getRow(db, bookId, r.ideaId, DAYS.d2);
+    expect(row.marks.AAPL).toMatchObject({ mark: 100, quality: 'carried_forward' });
+    expect(row.fullQuality).toBe(false);
+    expect(getIdea(db, bookId, r.ideaId).ledger.dividendsUsd).toBe(0);
+  });
+
   it('a split ratio that disagrees with itself is a conflict too: no quantity moves', async () => {
     const { db, bookId } = await seedBook();
     const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
@@ -668,6 +710,18 @@ describe('B-STAMP — every book is valued from the same snapshot', () => {
     expect(idea.spyLedger.holdings.SPY.lastMark).toBe(500);
     expect(getBook(db, bookId).portfolio.positions.AAPL.lastMark).toBe(100);
     expect(db._get(`mandates/${bookId}/dailyRows/${DAYS.d1}`).closeSnapshotKey).toBe(`${DAYS.d1}_close`);
+  });
+
+  it('the stored snapshot is read INSIDE the close\'s transaction: a change to it between the read and the commit is seen, and the close is decided again on what is stored (review FR-A6)', async () => {
+    const { db, bookId, bookRef } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: { AAPL: { price: 100, marketCap: 3e12 }, SPY: 500 } });
+    await storeCloseSnapshot(db, DAYS.d1, { AAPL: 100, SPY: 500 });
+    // Only the snapshot changes underneath, so only a transactional read of IT can cause the retry.
+    db.setBarrier(async () => { await db.collection('mandateUniverseSnapshots').doc(`${DAYS.d1}_close`).set(closeSnapshot(DAYS.d1, { AAPL: 101.17, SPY: 500 })); });
+    const attempts = db._txAttempts();
+    expect((await closeIdeaBook(db, bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 25)) })).closed).toBe(true);
+    expect(db._txAttempts() - attempts).toBe(2);
+    expect(getRow(db, bookId, r.ideaId, DAYS.d1).marks.AAPL.mark).toBe(101.17);
   });
 
   it('two idea books closed in separate fires for one date carry the same key, the same build time and the same mark per shared symbol', async () => {
