@@ -61,6 +61,14 @@ export function ideaIdFor(bookId, opId) {
   return `idea_${createHash('sha256').update(`${bookId}::${opId}`, 'utf8').digest('hex').slice(0, 24)}`;
 }
 
+/** A limit as the caller sees it: its dollars (never negative), without the internal cents and refusal code. */
+function publicLimit(limit) {
+  const out = { ...limit, limitUsd: fromCents(Math.max(0, limit.limitCents)) };
+  delete out.limitCents;
+  delete out.code;
+  return out;
+}
+
 /** The names another idea of the book holds or has pending: symbol → ideaId. */
 function namesTakenBy(ideas) {
   const taken = new Map();
@@ -165,10 +173,7 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
 
     permittedMaxCents = Math.max(0, Math.min(...limits.map((l) => l.limitCents)));
     for (const l of limits) {
-      if (capitalCents > l.limitCents) {
-        const { limitCents, code, ...rest } = l;
-        refuse(code, { ...rest, limitUsd: fromCents(Math.max(0, limitCents)), requestedUsd: contract.capitalUsd });
-      }
+      if (capitalCents > l.limitCents) refuse(l.code, { ...publicLimit(l), requestedUsd: contract.capitalUsd });
     }
   }
 
@@ -177,14 +182,12 @@ export function evaluateAdmission({ book, epoch, ideas, coverageData, contract, 
   const fit = coverageFits(coverageWithoutRef(coverageData, ideaRefKey, nowIso), coveragePlan);
   if (!fit.fits) refuse('coverage_unavailable', { needed: fit.needed, cap: fit.cap });
 
-  const binding = permittedMaxCents === null ? [] : limits
-    .filter((l) => Math.max(0, l.limitCents) === permittedMaxCents)
-    .map(({ limitCents, code, ...rest }) => ({ ...rest, limitUsd: fromCents(Math.max(0, limitCents)) }));
+  const binding = permittedMaxCents === null ? [] : limits.filter((l) => Math.max(0, l.limitCents) === permittedMaxCents).map(publicLimit);
   return {
     refusals,
     permittedMaxUsd: permittedMaxCents === null ? null : fromCents(permittedMaxCents),
     binding,
-    limits: limits.map(({ limitCents, code, ...rest }) => ({ ...rest, limitUsd: fromCents(Math.max(0, limitCents)) })),
+    limits: limits.map(publicLimit),
     schedule,
     coveragePlan,
   };

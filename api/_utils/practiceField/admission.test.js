@@ -336,7 +336,7 @@ describe('check 7 — capital, with the permitted maximum and every binding cons
     const { db, bookId, bookRef } = await seedBook();
     const epochRef = bookRef.collection('epochs').doc('epoch-0001');
     const epoch = (await epochRef.get()).data();
-    const { sectorCapConversionVersion: _stamp, ...unstamped } = epoch.gateConfig; // eslint-disable-line no-unused-vars
+    const { sectorCapConversionVersion: _stamp, ...unstamped } = epoch.gateConfig;
     await epochRef.set({ ...epoch, gateConfig: { ...unstamped, sectorConcentrationCap: 2 } });
     expect(codes(await admit(db, bookId, contractOf()))).toEqual(['vintage_uncorrected']);
   });

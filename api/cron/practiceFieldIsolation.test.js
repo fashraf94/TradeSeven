@@ -104,7 +104,7 @@ async function populatedIdeaBook(db, { uid = 'owner-1', opId = 'c1' } = {}) {
 
 /** The stored documents under a prefix, without the engine's lease field (a lease is taken and released around every served book; it is not the book's state). */
 const snapshotOfStore = (db, prefix) => JSON.stringify([...db._store.entries()].filter(([p]) => p.startsWith(prefix)).map(([p, e]) => {
-  const { lease: _lease, ...data } = e.data; // eslint-disable-line no-unused-vars
+  const { lease: _lease, ...data } = e.data;
   return [p, data];
 }));
 const closeTickOf = (date) => ({ date, closeKey: `${date}_close` });
