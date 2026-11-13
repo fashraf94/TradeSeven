@@ -98,3 +98,11 @@ describe('the PR 2 review round (A3) — each day\'s own session', () => {
     expect(battleCandlesOf(raw, { days: ['2026-11-27'], nowMs: Date.parse('2026-11-27T21:00:00.000Z') }).map((c) => c.date)).toEqual(['2026-11-27T14:30:00.000Z', '2026-11-27T17:55:00.000Z']);
   });
 });
+
+describe('a year the market calendar does not cover: the fixed 9:30–16:00 session', () => {
+  it('drops pre-market and after-hours bars (Thu Oct 14 2032)', () => {
+    const bar = (iso) => ({ date: iso, open: 100, high: 101, low: 99, close: 100, volume: 1 });
+    const raw = [bar('2032-10-14T20:00:00.000Z'), bar('2032-10-14T19:55:00.000Z'), bar('2032-10-14T13:30:00.000Z'), bar('2032-10-14T13:25:00.000Z')];
+    expect(battleCandlesOf(raw, { days: ['2032-10-14'], nowMs: Date.parse('2032-10-15T00:00:00.000Z') }).map((c) => c.date)).toEqual(['2032-10-14T13:30:00.000Z', '2032-10-14T19:55:00.000Z']);
+  });
+});
