@@ -72,6 +72,10 @@ const BASELINE = {
     count: 1,
     note: 'clamp: conviction Math.round to an integer 0–100 score — not money',
   },
+  'api/_utils/mandateRationale.js': {
+    count: 1,
+    note: 'clamp: convictionDiagnosticOf Math.round — the same integer 0–100 conviction clamp as mandateDecisionTool.js, re-applied by buildDecision so every stored diagnostic is sanitized by construction (T0b) — not money',
+  },
   'api/_utils/mandateExecution.js': {
     count: 1,
     note: 'DELIBERATE money rounding (§4.1): floorShares — shares are FLOORED to 6dp so a BUY can never overspend its sized dollars; directional by design, documented at the site; banker\'s rounding would defeat the guarantee',

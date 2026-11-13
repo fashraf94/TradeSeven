@@ -43,6 +43,7 @@ import { normalizeDecisionInput, effectiveVerbs } from '../_utils/mandateDecisio
 import { evaluateGate } from '../_utils/mandateGate.js';
 import { isSectorCapCorrected, VINTAGE_UNCORRECTED } from '../_utils/mandateSectorCap.js';
 import { executeDecision, disposeSubmission } from '../_utils/mandateExecution.js';
+import { responseAttribution } from '../_utils/mandateRationale.js';
 import { markFor } from '../_utils/mandateUniverseSnapshot.js';
 import { resolveRegime } from '../_utils/mandateRegime.js';
 import { priceUsage, telemetryPatch } from '../_utils/modelPriceTable.js';
@@ -83,13 +84,14 @@ export function unionHeldTickers(bookDocs) {
  * at provider batch creation) and normalize/gate/execute happen at HARVEST
  * against the then-current book. A book with an open submission never
  * double-submits (`skipped_open_batch`). `callModel` is injected so tests
- * drive the full pipeline without the network.
+ * drive the full pipeline without the network; `clock` (T0b) reads the time
+ * the direct response arrived, injected for the same reason.
  *
  * @returns {Promise<{ outcome:string, status?:string, reason?:string, pending?:object }>}
  */
 export async function runBookEval(db, {
   book, mandateRef, vintage, snapshot, sessionDate, slot, now = new Date(),
-  callModel = callMandateModelDirect, regime = null, transport = 'direct',
+  callModel = callMandateModelDirect, regime = null, transport = 'direct', clock = () => new Date(),
 }) {
   // Tier gating (§3.1): cadence tiers map to session-relative slots.
   if (!tierEligibleAt(book.cadenceTier, slot)) return { outcome: 'skipped_tier' };
@@ -196,6 +198,11 @@ export async function runBookEval(db, {
   const { decision: extracted, usage } = await callModel(modelSeat, {
     system: prompt.system, messages: prompt.messages, tools: prompt.tools,
   });
+  // T0b: the reason's attribution — the pinned seat that built the request,
+  // and the time its response reached the engine.
+  const attribution = responseAttribution({
+    modelSeat, rationaleAt: clock(), rationaleAtBasis: 'direct_response',
+  });
   if (!extracted?.ok) return { outcome: 'no_decision', reason: extracted?.reason || 'model_no_tool_use', usage: usage ?? extracted?.usage ?? null };
 
   const norm = normalizeDecisionInput(extracted.input, { verbs });
@@ -218,7 +225,7 @@ export async function runBookEval(db, {
 
   const res = await executeDecision(db, {
     mandateRef, decisionId: envelope.requestId, decision, gateResult, envelope,
-    snapshot, submitMark, currentSessionDate: sessionDate, now, caFrozen,
+    snapshot, submitMark, currentSessionDate: sessionDate, now, caFrozen, attribution,
   });
   return {
     outcome: 'terminal', status: res.status, decisionId: envelope.requestId,
