@@ -160,6 +160,14 @@ describe('kind isolation on every quarterly core — unconditional (run at mode 
       })).rejects.toThrow(/not_quarterly/);
       await expect(disposeSubmission(db, { mandateRef: bookRef, requestId: 'req-2', status: 'expired', failCondition: 'result_age' })).rejects.toThrow(/not_quarterly/);
       expect(snapshotOfStore(db, 'mandates/')).toBe(before);
+      // The replay branch too (review L2-7): a terminal decision whose id an idea book's gate field happened to hold
+      // is never "healed" on the idea book — no revision bump, no field cleared.
+      await bookRef.collection('decisions').doc('req-heal').set({ decisionId: 'req-heal', status: 'expired' });
+      await bookRef.set({ execState: { openBatchId: 'req-heal' } }, { merge: true });
+      const planted = snapshotOfStore(db, 'mandates/');
+      const replay = await disposeSubmission(db, { mandateRef: bookRef, requestId: 'req-heal', status: 'expired', failCondition: 'result_age' });
+      expect(replay).toEqual({ status: 'expired', applied: false, idempotent: true });
+      expect(snapshotOfStore(db, 'mandates/')).toBe(planted);
     });
 
     it(`${label}: closeBook (the quarterly close) skips an idea book: not_quarterly, nothing written`, async () => {
@@ -245,7 +253,8 @@ describe('kind isolation on every quarterly core — unconditional (run at mode 
       expect(after.portfolio).toEqual(JSON.parse(before)[0][1].portfolio);
       expect(after.health.consecutiveEvalFailures).toBe(0);
       expect(after.revision).toBe(2);
-      expect(db._get(`${MANDATE_BATCH_COLLECTION}/batch-h`).status).toBe('open'); // loud: it never finalises against an idea book
+      expect(db._get(`${MANDATE_BATCH_COLLECTION}/batch-h`).status).toBe('open'); // it never finalises against an idea book…
+      expect(errors.filter((e) => /MANDATE_BATCH_ENTRY_NOT_QUARTERLY/.test(e))).toHaveLength(1); // …and it says so (review L2-5)
     });
 
     it(`${label}: a batch entry that named an idea book is never disposed against it (drain) — the book is untouched and the batch stays open`, async () => {
@@ -259,6 +268,7 @@ describe('kind isolation on every quarterly core — unconditional (run at mode 
       const before = snapshotOfStore(db, 'mandates/').replace(/"lease[^}]*}/g, '');
       const out = await drainOpenBatches(db, { now: new Date(etIso(DAYS.d1, 11, 0)) });
       expect(out).toMatchObject({ batches: 1, disposed: 0, leaseSkips: 1, incomplete: 1 });
+      expect(errors.filter((e) => /MANDATE_BATCH_ENTRY_NOT_QUARTERLY/.test(e))).toHaveLength(1);
       expect(snapshotOfStore(db, 'mandates/').replace(/"lease[^}]*}/g, '')).toBe(before);
       expect(countDocs(db, `mandates/${bookId}/decisions/req-1`)).toBe(0);
       expect(db._get(`${MANDATE_BATCH_COLLECTION}/batch-1`).status).toBe('open');
@@ -416,6 +426,27 @@ describe('the shared snapshot\'s build set, by book kind (build prompt §5)', ()
     // The same counts on both snapshots: coverage is not a holding and not a lost candidate.
     expect(beside.snap).toMatchObject({ heldCount: alone.snap.heldCount, completeCandidateCount: alone.snap.completeCandidateCount, degraded: false });
     expect(Object.keys(beside.snap.symbols).slice(0, CANDIDATE_UNIVERSE.length)).toEqual(Object.keys(alone.snap.symbols));
+  });
+
+  it('…in whatever order a stored snapshot returns its symbols: a coverage-only symbol at the HEAD of the map is still not on the quarterly slate', async () => {
+    const tickKey = `${DAYS.d2}_open30`;
+    quoteTs = Math.floor(etMs(DAYS.d2, 9, 45) / 1000);
+    const fetchQuotes = async (symbols) => Object.fromEntries(symbols.map((s) => [s, { close: 100.01, timestamp: quoteTs }]));
+    const built = await ensureUniverseSnapshot(makeMandateFakeDb(), { tickKey, sessionDate: DAYS.d2, heldTickers: [], coverageTickers: ['SPY', 'XLK'], fetchQuotes, now: evalNow(DAYS.d2, 'open30') });
+    const { XLK, SPY, ...rest } = built.snapshot.symbols;
+    const run = async (snapshot) => {
+      const db = makeMandateFakeDb({ 'mandates/q1': quarterlyBook(), 'archetypeVintages/analyst_x': { gateConfig: { sectorCapConversionVersion: 1, decisionVerbs: ['BUY', 'SELL', 'TRIM', 'ADD', 'HOLD'] }, modelSeat: { model: 'm' } } });
+      await db.doc(`mandateUniverseSnapshots/${tickKey}`).set(snapshot);
+      modelSpy.mockClear();
+      modelSpy.mockImplementationOnce(async () => ({ decision: { ok: true, input: { verb: 'HOLD', rationale: 'Holding. Nothing to do.', conviction: 50 } }, usage: null }));
+      await evalOnce(db);
+      return JSON.stringify(modelSpy.mock.calls[0]);
+    };
+    const headFirst = await run({ ...built.snapshot, symbols: { XLK, SPY, ...rest } });
+    expect(headFirst).not.toContain('XLK');
+    // …and it is the prompt of a snapshot that never had them.
+    const { coverageOnlySymbols: _c, ...plain } = built.snapshot;
+    expect(headFirst).toBe(await run({ ...plain, symbols: rest }));
   });
 
   it('reserved names that are ALSO default candidates still count as candidates: no false MANDATE_UNIVERSE_DEGRADED, however many are reserved (review L2-3)', async () => {
