@@ -477,6 +477,23 @@ describe('spec §16 FQ-1 — a new investigation of the same story once the earl
     // the earlier one's own GET has no earlier one
     expect((await get({ sessionId: first.session.sessionId })).body.previous).toBeNull();
   });
+  it('under one frozen clock — every timestamp the same millisecond — the new open still names the earlier one as `previous`', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-11-12T15:00:00.000Z'));
+      const first = await openStory({ requestId: 'req-1' });
+      const again = await openStory({ requestId: 'req-2' });
+      expect(again).toMatchObject({ existing: true, session: { sessionId: first.session.sessionId }, previous: null });
+      expect((await post({ action: 'close', sessionId: first.session.sessionId, reason: 'concluded' })).statusCode).toBe(200);
+      const second = await openStory({ requestId: 'req-3' });
+      expect(second.session.sessionId).not.toBe(first.session.sessionId);
+      expect(sessionDoc(second.session.sessionId).createdAt).toBe(sessionDoc(first.session.sessionId).createdAt);
+      expect(second.previous).toMatchObject({ sessionId: first.session.sessionId, terminalReason: 'concluded' });
+      expect((await get({ sessionId: second.session.sessionId })).body.previous).toEqual(second.previous);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('spec §16 FQ-5 — a summary whose number no Source-backed finding holds is withheld; the paid step still lands', () => {
