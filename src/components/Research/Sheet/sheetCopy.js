@@ -245,6 +245,9 @@ export const SHEET_COPY = Object.freeze({
   lineEntry: (price, d) => `entry ${money(price, d)}`,
   lineIdeaLive: (side, price, d) => `live ${side} ${money(price, d)}`,
   lineIdeaWrong: (side, price, d) => `wrong ${side} ${money(price, d)}`,
+  // BC2-5 — the next rung each way on Battle, at 💣's displayed price (ladder.rungShown).
+  lineRungUp: (points, price, d) => `next rung +${points} · ${money(price, d)}`,
+  lineRungDown: (label, points, price, d) => `${label} ${signed(points)} · ${money(price, d)}`,
   // A tapped item's own pin, when no record pin sits at its instant or price (review D5).
   pinAt: (when) => `This item · ${when}`,
   pinLine: (word, price, d) => (word ? `${word} · ${money(price, d)}` : money(price, d)),
@@ -276,6 +279,14 @@ export const SHELL_COPY = Object.freeze({
   // ── The Chart view's own states (today's chart box, in the shell's skin) ──
   chartUnavailable: 'Chart data unavailable',
   chartRetry: 'Retry',
+  // ── The Battle pill (BC2-1 – BC2-4): the battle's own sessions in intraday bars ──
+  timeBattle: 'Battle',
+  battleUnavailable: 'The battle’s intraday bars are unavailable',
+  battleEmpty: 'No battle bars yet: its first session hasn’t traded',
+  // 1D and 1W: a day's record merged into one marker, with its count; its chip opens Battle.
+  dayCount: (weekday, count) => `${weekday} · ${count}`,
+  dayChip: (count, weekday) => `${count} on ${weekday} · Battle ›`,
+  dayChipsLabel: 'The record by day',
   // ── The Wall St · About line (R-27's quiet line; the analyst consensus, labelled) ──
   wallSt: (rating, n) => `Wall St ${rating} · ${n} ${n === 1 ? 'analyst' : 'analysts'}`,
   wallStNone: 'Wall St · no coverage',

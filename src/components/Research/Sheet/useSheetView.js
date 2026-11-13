@@ -44,7 +44,8 @@ import { priceDecimals } from '../priceFormat.js';
 import { buildPacks, stanceOf, recordPinsOf, questionSetOf, whenLabel, itemKeyOf } from './packs.js';
 import { agentNameOf } from '../../../screens/battleView/agentName.js';
 import { latestLineOf } from './latestLine.js';
-import { SHEET_COPY, QUESTION_TEXT, PIN_LINE_WORDS } from './sheetCopy.js';
+import { SHEET_COPY, SHELL_COPY, QUESTION_TEXT, PIN_LINE_WORDS } from './sheetCopy.js';
+import { battleSpecOf, dayMarkersOf, rungLinesOf, weekdayOfDay } from './battleChart.js';
 
 const TICK_MS = 30_000;
 const NO_CALLS = Object.freeze([]);
@@ -72,7 +73,7 @@ async function readRankings() {
 
 const sessionDay = (ms, crypto) => (crypto ? new Date(ms).toISOString().slice(0, 10) : etDate(ms));
 const PIN_TOKEN = Object.freeze({ entry: 'ink-2', call: 'gold', answer: 'purple', check: 'teal', pin: 'amber' });
-const LINE_TOKEN = Object.freeze({ entry: 'ink-2', idea_live: 'pos', idea_wrong: 'neg', pin: 'amber' });
+const LINE_TOKEN = Object.freeze({ entry: 'ink-2', idea_live: 'pos', idea_wrong: 'neg', pin: 'amber', rung_up: 'gold', rung_down: 'neg' });
 
 /**
  * @param {object} p
@@ -189,10 +190,17 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
   if (pack && typeof activeKey === 'string' && activeIndex < 0) setUi((u) => (u.key === sheetKey && u.activeItem === activeKey ? { ...u, activeItem: null } : u));
   const activeItem = activeIndex >= 0 ? activeIndex : null;
   const tapped = activeIndex >= 0 ? pack.items[activeIndex] : null;
+  // ── BC2-1 / BC2-2: the Battle pill's spec — the battle's sessions up to today and the bar size ──
+  const onBattle = timeframe === 'battle';
+  const battleSpec = useMemo(() => (ctx && battle ? battleSpecOf(battle, nowMs) : null), [!!ctx, battle, nowMs ? Math.floor(nowMs / 3_600_000) : 0]); // eslint-disable-line react-hooks/exhaustive-deps -- the sessions move by the day
+  // BC2-3's day merge (and its chips) come with the Battle pill: the stock the battle opened, a battle naming its sessions.
+  const dayMerge = !!battleSpec && isOriginal && !isCrypto;
   const chart = useMemo(() => {
     if (!model) return null;
     const markers = model.pins.markers.map((m) => ({ ...m, day: sessionDay(m.atMs, isCrypto), token: PIN_TOKEN[m.kind] }));
-    const lines = model.pins.lines.map((l) => ({ ...l, token: LINE_TOKEN[l.kind] }));
+    // BC2-5: Battle draws the next rung each way (a held measured stock's ladder only).
+    const rungs = onBattle ? rungLinesOf(model.holding?.ladder ?? null, live) : [];
+    const lines = [...model.pins.lines, ...rungs].map((l) => ({ ...l, token: LINE_TOKEN[l.kind] }));
     let open = markers.length ? { type: 'marker', id: markers[markers.length - 1].id } : null;
     if (tapped?.pin?.type === 'time') {
       // The record marker AT that instant (the entry, the check, the call), never another on
@@ -212,12 +220,32 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
       }
     }
     const color = (token) => { try { return readToken(token) || undefined; } catch { return undefined; } };
+    const isOpen = (m) => open?.type === 'marker' && open.id === m.id;
+    // BC2-3: on Battle every marker by its INSTANT (StockChart puts it on the bar holding it); on 1D and
+    // 1W a day's markers merge into one, with its count — the open marker's day carries the caption.
+    const byDay = dayMarkersOf(markers);
+    const openDay = markers.find(isOpen)?.day ?? null;
+    const dayMarkers = byDay.map((g) => {
+      const latest = markers.find((m) => m.id === g.latestId);
+      // A tapped item's pin captions ITS marker (review D5a, never another on that day); otherwise the day's count.
+      const text = g.day === openDay ? (g.count > 1 && tapped?.pin?.type !== 'time' ? SHELL_COPY.dayCount(weekdayOfDay(g.day) ?? g.day, g.count) : markers.find(isOpen).label) : null;
+      return { id: `day:${g.day}`, day: g.day, color: color(latest?.token), ...(text ? { text } : {}) };
+    });
     return {
-      markers: markers.map((m) => ({ id: m.id, day: m.day, color: color(m.token), ...(open?.type === 'marker' && open.id === m.id ? { text: m.label } : {}) })),
-      priceLines: lines.map((l) => ({ id: l.id, price: l.price, group: l.group, color: color(l.token), emphasis: open?.type === 'line' && open.id === l.id, title: open?.type === 'line' && open.id === l.id ? l.label : '' })),
+      // With no Battle pill (a battle that names no sessions) 1D keeps Build C's one dot per record item.
+      markers: onBattle || !dayMerge
+        ? markers.map((m) => ({ id: m.id, day: m.day, ...(onBattle ? { atMs: m.atMs } : {}), color: color(m.token), ...(isOpen(m) ? { text: m.label } : {}) }))
+        : dayMarkers,
+      // The chips under the 1D / 1W chart: a day's count, a tap opens Battle (BC2-3).
+      days: byDay.map((g) => ({ day: g.day, count: g.count, label: SHELL_COPY.dayChip(g.count, weekdayOfDay(g.day) ?? g.day) })),
+      priceLines: lines.map((l) => ({
+        id: l.id, price: l.price, group: l.group, color: color(l.token), emphasis: open?.type === 'line' && open.id === l.id,
+        // The rung lines always name their rung (the line is the point of BC2-5); the others only when open (D8).
+        title: open?.type === 'line' && open.id === l.id ? l.label : l.group === 'rung' ? l.label : '',
+      })),
       open,
     };
-  }, [model, tapped, isCrypto]);
+  }, [model, tapped, isCrypto, onBattle, live, dayMerge]);
 
   // ── The budget (BC-7): the per-battle chat 10, from the battle's own counter ──
   const used = Number.isFinite(battle?.chatBudgetUsed) ? battle.chatBudgetUsed : 0;
@@ -304,8 +332,11 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     pack,
     activeItem,
     chart: analysisActive ? chart : null,
-    // Which pins the chart draws on this timeframe (StockChart: dots on 1D only; lines on 1D and 1W; none on 💣) — D12.
-    pinsShown: { time: timeframe === '1D', price: timeframe === '1D' || timeframe === '1W' },
+    // Which pins the chart draws on this timeframe (StockChart: dots and lines on 1D, 1W and Battle; none on 💣) — D12, BC2-3.
+    pinsShown: { time: timeframe === '1D' || onBattle || (timeframe === '1W' && dayMerge), price: timeframe === '1D' || timeframe === '1W' || onBattle },
+    // BC2-1: the Battle pill — on the stock the battle opened only (a name reached by navigation inside the
+    // modal has no record on the battle's sessions — PR 2 review B3); null: no pill.
+    battle: isOriginal && !isCrypto ? battleSpec : null,
     budget: { left, limit: BATTLE_CHAT_BUDGET.limit },
     canAsk,
     answering,
