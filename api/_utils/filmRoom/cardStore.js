@@ -621,12 +621,17 @@ export async function parkCard(db, { uid, agentId, entryId, opId, expectedVersio
 /**
  * The server's transitions and the order they keep (spec §3: `nominated → testing → tested → installed`, `tested →
  * retired`): the stage each moves FROM, the stage it moves TO, and the ONE field of the entry it sets. `nomination`
- * moves no stage: it copies the book's nomination state onto the entry, which stays `nominated`.
+ * moves no stage: it copies the book's nomination state onto the entry, which stays `nominated`. Amendment A:
+ *   CA-5   `offered` moves no stage either: a Forge offer made from the card's tested idea, waiting at `tested`;
+ *   CA-22  `tested` may also come straight from `nominated` (`directFrom`) — only with the Practice Field's own fact
+ *          `noFill: true` that the accepted idea ended before its first fill — and then also sets the entry's `idea`
+ *          from the accepted copy, the one named exception to the one-field patch.
  */
 export const SERVER_TRANSITIONS = Object.freeze({
   nomination: Object.freeze({ from: 'nominated', to: 'nominated', field: 'nomination' }),
   testing: Object.freeze({ from: 'nominated', to: 'testing', field: 'idea' }),
-  tested: Object.freeze({ from: 'testing', to: 'tested', field: 'result' }),
+  tested: Object.freeze({ from: 'testing', to: 'tested', field: 'result', directFrom: 'nominated' }),
+  offered: Object.freeze({ from: 'tested', to: 'tested', field: 'offer' }),
   installed: Object.freeze({ from: 'tested', to: 'installed', field: 'offer' }),
   retired: Object.freeze({ from: 'tested', to: 'retired', field: 'offer' }),
 });
@@ -678,7 +683,9 @@ function fieldOfTransition(to, payload) {
   if (to === 'tested') {
     if (!idOk(p.ideaId) || !idOk(p.resultRef)) throw invalid('ids');
     if (!wordOk(p.contractCondition) || !wordOk(p.economicResult)) throw invalid('result');
-    const result = { ideaId: p.ideaId, resultRef: p.resultRef, contractCondition: p.contractCondition, economicResult: p.economicResult };
+    // Amendment A CA-22: `noFill` is the Practice Field's own fact that nothing was filled — true, or absent (false)
+    if (p.noFill != null && typeof p.noFill !== 'boolean') throw invalid('noFill');
+    const result = { ideaId: p.ideaId, resultRef: p.resultRef, contractCondition: p.contractCondition, economicResult: p.economicResult, ...(p.noFill === true ? { noFill: true } : {}) };
     // Amendment A CA-4: the agent's closing note (at most CLOSING_NOTE_MAX code points, kept exactly) with its own instant
     if (p.closingNote != null) {
       if (!textOk(p.closingNote, CLOSING_NOTE_MAX)) throw invalid('closingNote');
@@ -687,14 +694,21 @@ function fieldOfTransition(to, payload) {
     }
     return result;
   }
+  // Amendment A CA-5 / CA-14: `offered`, `installed` and the server's `retired` each name the idea they come from
+  if (to === 'offered') {
+    if (!idOk(p.ideaId) || !idOk(p.offerId) || p.state !== 'offered') throw invalid('offer');
+    return { ideaId: p.ideaId, offerId: p.offerId, state: 'offered' };
+  }
   if (to === 'installed') {
+    if (!idOk(p.ideaId)) throw invalid('ideaId');
     if (!idOk(p.offerId) || !wordOk(p.state)) throw invalid('offer');
-    return { offerId: p.offerId, state: p.state };
+    return { ideaId: p.ideaId, offerId: p.offerId, state: p.state };
   }
   // retired — the server's retire: the idea retired, with the Forge offer's state (or none, its id null)
+  if (!idOk(p.ideaId)) throw invalid('ideaId');
   if (p.offerId != null && !idOk(p.offerId)) throw invalid('offer');
   if (!wordOk(p.state)) throw invalid('offer');
-  return { offerId: p.offerId ?? null, state: p.state };
+  return { ideaId: p.ideaId, offerId: p.offerId ?? null, state: p.state };
 }
 
 /**
@@ -708,8 +722,15 @@ function boundOf(to, entry, field) {
     const copy = isObj(entry.nomination) ? entry.nomination : null;
     return Boolean(copy) && copy.bookId === field.bookId && copy.state === 'accepted' && idOk(copy.ideaId) && copy.ideaId === field.ideaId;
   }
-  if (to === 'tested') return entry.idea?.ideaId === field.ideaId;
-  return true;
+  // `tested` names the entry's own idea — or, straight from `nominated` (CA-22), the idea its accepted copy names
+  if (to === 'tested') return entry.stage === SERVER_TRANSITIONS.tested.directFrom ? idOk(entry.nomination?.ideaId) && entry.nomination.ideaId === field.ideaId : idOk(entry.idea?.ideaId) && entry.idea.ideaId === field.ideaId;
+  // CA-5 / CA-14: the idea must be present and the payload's (a missing idea never passes as undefined === undefined)
+  const ideaBound = idOk(entry.idea?.ideaId) && entry.idea.ideaId === field.ideaId;
+  if (to === 'offered') return ideaBound;
+  // `installed` needs the waiting offer, by its id; the server's retire the offer's id when one exists, and null when none does
+  const offerId = isObj(entry.offer) ? entry.offer.offerId : null;
+  if (to === 'installed') return ideaBound && isObj(entry.offer) && idOk(offerId) && offerId === field.offerId;
+  return ideaBound && (isObj(entry.offer) ? idOk(offerId) && offerId === field.offerId : field.offerId === null);
 }
 
 /**
@@ -720,8 +741,11 @@ function boundOf(to, entry, field) {
  *               an `accepted` copy also `ideaId` and an optional `thesis`, CA-4; the stage stays `nominated`; the move
  *               judged against the copy's current state by the nomination order, CA-11), `testing` (sets `idea`; only
  *               from an accepted copy, bound to its `ideaId`), `tested` (sets `result`, an optional `closingNote` with
- *               its `closingNoteAt`, CA-4), `installed` (sets `offer`) or `retired` (the server's retire, with
- *               `offer.state`).
+ *               its `closingNoteAt`, CA-4; from `testing`, or straight from `nominated` with `noFill: true` and an
+ *               accepted copy, setting `idea` from it too, CA-22), `offered` (sets `offer` at `tested`, the stage
+ *               unchanged; one offer per card, bound to the idea, CA-5), `installed` (sets `offer`; needs the waiting
+ *               offer by its id and the idea, CA-14) or `retired` (the server's retire, with `offer.state`; bound to the
+ *               idea, and to the offer's id when one exists — `offerId: null` only when none does, CA-14).
  *   checks      the entry exists (404 not_found); it is `ownerId`'s and `agentId`'s (403 forbidden); its op id has not
  *               been used (a replay of the same transition is the IDEMPOTENT answer; another under that op id → 409
  *               op_conflict); it is at the transition's FROM stage (409 illegal_transition); the payload names the
@@ -759,8 +783,16 @@ export async function applyServerTransition(db, { entryId, ownerId, agentId, to,
       if (replay.opFingerprint === opFingerprint) return { idempotent: true, entry };
       throw fail(409, 'op_conflict', { entryId });
     }
-    if (entry.stage !== step.from) throw fail(409, 'illegal_transition', { stage: entry.stage });
+    // CA-22: `tested` straight from `nominated` only with the Practice Field's noFill fact and an accepted copy; noFill
+    // from `testing` is no such move (a filled idea always sends testing first)
+    const direct = Boolean(step.directFrom) && entry.stage === step.directFrom;
+    if (entry.stage !== step.from && !direct) throw fail(409, 'illegal_transition', { stage: entry.stage });
+    if (direct && field.noFill !== true) throw fail(409, 'illegal_transition', { stage: entry.stage });
+    if (direct && entry.nomination?.state !== 'accepted') throw fail(409, 'illegal_transition', { stage: entry.stage, nominationState: entry.nomination?.state ?? null });
+    if (to === 'tested' && !direct && field.noFill === true) throw fail(409, 'illegal_transition', { stage: entry.stage });
     if (!boundOf(to, entry, field)) throw fail(409, 'nomination_mismatch', { entryId });
+    // CA-5: one offer per card — while the entry holds one, another `offered` is refused (its own replay answered above)
+    if (to === 'offered' && entry.offer != null) throw fail(409, 'illegal_transition', { offerState: isObj(entry.offer) ? entry.offer.state ?? null : null });
     // Amendment A CA-11: THE NOMINATION ORDER, judged against the entry's current copy (after the replay, before any
     // write) — a late copy, or one out of order, is refused; a lost one does not block the next (queued answers directly)
     if (to === 'nomination' && !nominationMayMove(entry.nomination?.state, field.state)) throw fail(409, 'illegal_transition', { nominationState: entry.nomination?.state ?? null });
@@ -768,7 +800,13 @@ export async function applyServerTransition(db, { entryId, ownerId, agentId, to,
     // CA-11 / CA-4: a nomination row keeps the copy's own state, reason and consideredAt (and an accepted copy's idea and
     // thesis), so each answer is quoted from its own row at its own time — a later copy never overwrites an earlier answer
     if (to === 'nomination') Object.assign(row, { event: 'nomination', state: field.state, reason: field.reason, consideredAt: field.consideredAt, ...(field.state === 'accepted' ? { ideaId: field.ideaId, thesis: field.thesis } : {}) });
+    // CA-5: the offer's own row, so the chain never draws a second "Tested"; the stage's instant does not move
+    if (to === 'offered') Object.assign(row, { event: 'offered', ideaId: field.ideaId, offerId: field.offerId });
+    // CA-22: the stored fact on the row itself — the chain reads it, never a missing `testing` row
+    if (to === 'tested' && field.noFill === true) row.noFill = true;
     const patch = {
+      // CA-22, the named exception: straight from `nominated`, the idea the accepted copy names, in this one write
+      ...(direct ? { idea: { bookId: entry.nomination.bookId, ideaId: entry.nomination.ideaId } } : {}),
       [step.field]: field,
       ...(step.to !== entry.stage ? { stage: step.to, stageAt: nowIso } : {}),
       stageHistory: [...history, row],

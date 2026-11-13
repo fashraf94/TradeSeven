@@ -408,6 +408,10 @@ export const FILM_ROOM_COPY = Object.freeze({
       expired: { before: 'Not considered within', after: 'sessions' },
       testing: 'Testing · from',
       tested: 'Tested',
+      // Amendment A CA-22: an accepted idea that ended before any fill — the Practice Field's stored no-fill fact
+      endedBeforeFirstTrade: 'Ended before its first trade',
+      // Amendment A CA-5: an offer made from the card's tested idea, waiting in the Forge
+      offerWaits: 'An offer waits in the Forge',
       contractCondition: 'contract condition',
       economicResult: 'economic result',
       installed: 'Equipped',

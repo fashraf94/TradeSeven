@@ -192,6 +192,11 @@ export function groupCards(cards) {
  *              the last such row — the one whose state the entry's `nomination` copy holds, and whose reason it keeps
  *   testing · tested · installed · retired   a row at that stage (`by` kept: a server retire carries the offer's state)
  *   parked     a player row `event: 'parked'`
+ *   offerWaits a server row `event: 'offered'` (Amendment A CA-5) — ONLY while the card is `tested` and that offer still
+ *              waits (`offer.state` 'offered', the same offer id): once installed or retired, the line it was is gone, and
+ *              the stage's own line says what became of it. Never a second "Tested"
+ *   tested     carries `noFill` when its row records the Practice Field's no-fill fact (CA-22) — read from the row's
+ *              stored flag, never from a missing `testing` row
  *   stage      a row at a stage the vocabulary does not know (its own word, `stage`)
  * A row that is not an object, or that names nothing the chain knows, gives no line — the chain never invents a state.
  */
@@ -212,13 +217,17 @@ export function chainOf(card) {
       return;
     }
     if (h.event === 'parked') { lines.push({ kind: 'parked', at: h.at, k }); return; }
+    if (h.event === 'offered') {
+      if (card.stage === 'tested' && isObj(card.offer) && card.offer.state === 'offered' && card.offer.offerId === h.offerId) lines.push({ kind: 'offerWaits', at: h.at, k });
+      return;
+    }
     if (h.event === 'nomination') {
       if (typeof h.state === 'string' && h.state) { lastNomination = lines.length; lines.push({ kind: 'nomination', state: h.state, at: h.at, k }); }
       return;
     }
     if (h.event !== undefined) return;   // an event the chain does not know: no line (C1 review B-7)
     if (h.stage === 'nominated') { lines.push(nominatedLine(h, k)); return; }
-    if (CARD_STAGES.includes(h.stage) && h.stage !== 'card') { lines.push({ kind: h.stage, at: h.at, k, by: h.by }); return; }
+    if (CARD_STAGES.includes(h.stage) && h.stage !== 'card') { lines.push({ kind: h.stage, at: h.at, k, by: h.by, ...(h.noFill === true ? { noFill: true } : {}) }); return; }
     // a stage the vocabulary does not know: its own word. A `card` row that is not the create's (above) gives no line —
     // only a create writes `card`, so nothing is invented from one (Astra F3)
     if (typeof h.stage === 'string' && h.stage && !CARD_STAGES.includes(h.stage)) lines.push({ kind: 'stage', stage: h.stage, at: h.at, k });

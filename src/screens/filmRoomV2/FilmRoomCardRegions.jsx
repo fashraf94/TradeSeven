@@ -327,11 +327,14 @@ export function ChainLine({ card, line, day = null }) {
     return <>{W.answer} · <Rec>{String(line.state)}</Rec> · {when}</>;
   }
   if (line.kind === 'testing') return <>{W.testing} {when}</>;
+  // Amendment A CA-5: an offer made from this card's idea waits in the Forge (its link waits for a door: C1 passes none)
+  if (line.kind === 'offerWaits') return <>{W.offerWaits} · {when}</>;
   if (line.kind === 'tested') {
     const r = isObjLike(card?.result) ? card.result : null;
+    // CA-22: the idea ended before its first trade — the row's stored no-fill fact; it never says "Tested"
     return (
       <>
-        {W.tested} · {when}
+        {line.noFill ? W.endedBeforeFirstTrade : W.tested} · {when}
         {r && typeof r.contractCondition === 'string' ? <> · {W.contractCondition} <Rec><span data-result-field="contractCondition">{r.contractCondition}</span></Rec></> : null}
         {r && typeof r.economicResult === 'string' ? <> · {W.economicResult} <Rec><span data-result-field="economicResult">{r.economicResult}</span></Rec></> : null}
       </>

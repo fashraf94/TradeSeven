@@ -127,9 +127,12 @@ describe('Build C §3 — applyServerTransition, the Practice Field\'s one way i
       nomination: ['nominated', 'nominated', 'nomination'],
       testing: ['nominated', 'testing', 'idea'],
       tested: ['testing', 'tested', 'result'],
+      offered: ['tested', 'tested', 'offer'],   // Amendment A CA-5: no stage move
       installed: ['tested', 'installed', 'offer'],
       retired: ['tested', 'retired', 'offer'],
     });
+    // CA-22: tested alone may also come straight from nominated (with the Practice Field's noFill fact)
+    expect(Object.entries(SERVER_TRANSITIONS).filter(([, v]) => v.directFrom).map(([k, v]) => [k, v.directFrom])).toEqual([['tested', 'nominated']]);
   });
 
   it('nomination: copies { state, reason, consideredAt, bookId, nominationId } onto the entry, the stage stays nominated, a server row names the writer, the version moves — and nothing else changes', async () => {
@@ -159,14 +162,16 @@ describe('Build C §3 — applyServerTransition, the Practice Field\'s one way i
     expect(a.entry).toMatchObject({ stage: 'testing', stageAt: LATER, idea: IDEA });
     const b = await move(t, { to: 'tested', opId: 's3', payload: RESULT, nowIso: LATEST });
     expect(b.entry).toMatchObject({ stage: 'tested', stageAt: LATEST, result: RESULT });
-    const c = await move(t, { to: 'installed', opId: 's4', payload: { offerId: 'offer-1', state: 'accepted' }, nowIso: LATEST });
-    expect(c.entry).toMatchObject({ stage: 'installed', offer: { offerId: 'offer-1', state: 'accepted' } });
+    // Amendment A CA-5 / CA-14: the offer is made first (`offered`), and `installed` names the idea and that offer
+    await move(t, { to: 'offered', opId: 's3b', payload: { ideaId: 'idea-9', offerId: 'offer-1', state: 'offered' }, nowIso: LATEST });
+    const c = await move(t, { to: 'installed', opId: 's4', payload: { ideaId: 'idea-9', offerId: 'offer-1', state: 'accepted' }, nowIso: LATEST });
+    expect(c.entry).toMatchObject({ stage: 'installed', offer: { ideaId: 'idea-9', offerId: 'offer-1', state: 'accepted' } });
     const stored = t.store.get(playPath('c1'));
     expect(stored.stageHistory.map((h) => [h.stage, h.by, h.writer ?? null, h.event ?? null])).toEqual([
       ['card', 'player', null, null], ['nominated', 'player', null, null], ['nominated', 'server', 'practice_field', 'nomination'],
-      ['testing', 'server', 'practice_field', null], ['tested', 'server', 'practice_field', null], ['installed', 'server', 'practice_field', null],
+      ['testing', 'server', 'practice_field', null], ['tested', 'server', 'practice_field', null], ['tested', 'server', 'practice_field', 'offered'], ['installed', 'server', 'practice_field', null],
     ]);
-    expect(stored.version).toBe(before.version + 4);
+    expect(stored.version).toBe(before.version + 5);
     expect(untouched(stored)).toEqual(untouched(before));
     expect('stageVocabVersion' in stored && stored.stageVocabVersion).toBe(2);   // written once at create, never again
   });
@@ -174,8 +179,8 @@ describe('Build C §3 — applyServerTransition, the Practice Field\'s one way i
   it('retired by the server from tested, with the offer\'s state (or none)', async () => {
     const t = fresh();
     await tested(t);
-    const r = await move(t, { to: 'retired', opId: 's4', payload: { offerId: null, state: 'no_offer' } });
-    expect(r.entry).toMatchObject({ stage: 'retired', offer: { offerId: null, state: 'no_offer' } });
+    const r = await move(t, { to: 'retired', opId: 's4', payload: { ideaId: 'idea-9', offerId: null, state: 'no_offer' } });
+    expect(r.entry).toMatchObject({ stage: 'retired', offer: { ideaId: 'idea-9', offerId: null, state: 'no_offer' } });
   });
 
   it('THE ORDER (the mutant: skipping the order check): every out-of-order move → 409 illegal_transition naming the stage; nothing written', async () => {
@@ -190,14 +195,15 @@ describe('Build C §3 — applyServerTransition, the Practice Field\'s one way i
     await nominated(u);
     const uWrites = playWrites(u).length;
     expect(await code(move(u, { to: 'tested', opId: 'x3', payload: RESULT }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'nominated' } });
-    expect(await code(move(u, { to: 'installed', opId: 'x4', payload: { offerId: 'o', state: 'accepted' } }))).toMatchObject({ code: 'illegal_transition' });
-    expect(await code(move(u, { to: 'retired', opId: 'x5', payload: { state: 'no_offer' } }))).toMatchObject({ code: 'illegal_transition' });
+    expect(await code(move(u, { to: 'installed', opId: 'x4', payload: { ideaId: 'idea-9', offerId: 'o', state: 'accepted' } }))).toMatchObject({ code: 'illegal_transition' });
+    expect(await code(move(u, { to: 'retired', opId: 'x5', payload: { ideaId: 'idea-9', state: 'no_offer' } }))).toMatchObject({ code: 'illegal_transition' });
+    expect(await code(move(u, { to: 'offered', opId: 'x5b', payload: { ideaId: 'idea-9', offerId: 'o', state: 'offered' } }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'nominated' } });
     expect(playWrites(u).length).toBe(uWrites);
     await move(u, { to: 'nomination', opId: 's1', payload: NOMINATION });   // CA-11: testing needs the accepted copy
     await move(u, { to: 'testing', opId: 's2', payload: IDEA });
     const afterTesting = playWrites(u).length;
-    expect(await code(move(u, { to: 'installed', opId: 'x6', payload: { offerId: 'o', state: 'accepted' } }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'testing' } });
-    expect(await code(move(u, { to: 'retired', opId: 'x7', payload: { state: 'no_offer' } }))).toMatchObject({ code: 'illegal_transition' });
+    expect(await code(move(u, { to: 'installed', opId: 'x6', payload: { ideaId: 'idea-9', offerId: 'o', state: 'accepted' } }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'testing' } });
+    expect(await code(move(u, { to: 'retired', opId: 'x7', payload: { ideaId: 'idea-9', state: 'no_offer' } }))).toMatchObject({ code: 'illegal_transition' });
     expect(await code(move(u, { to: 'nomination', opId: 'x8', payload: NOMINATION }))).toMatchObject({ code: 'illegal_transition' });
     expect(playWrites(u).length).toBe(afterTesting);
   });
@@ -250,7 +256,11 @@ describe('Build C §3 — applyServerTransition, the Practice Field\'s one way i
       [{ to: 'nomination', payload: { ...NOMINATION, reason: 'x'.repeat(2001) } }, 'reason'],
       [{ to: 'nomination', payload: { ...NOMINATION, consideredAt: 'yesterday' } }, 'consideredAt'],
       [{ to: 'tested', payload: { ...RESULT, contractCondition: '' } }, 'result'],
-      [{ to: 'installed', payload: { offerId: 'o' } }, 'offer'],
+      [{ to: 'installed', payload: { ideaId: 'i', offerId: 'o' } }, 'offer'],
+      [{ to: 'installed', payload: { offerId: 'o', state: 'accepted' } }, 'ideaId'],
+      [{ to: 'retired', payload: { offerId: null, state: 'no_offer' } }, 'ideaId'],
+      [{ to: 'offered', payload: { ideaId: 'i', offerId: 'o', state: 'accepted' } }, 'offer'],
+      [{ to: 'tested', payload: { ...RESULT, noFill: 'yes' } }, 'noFill'],
       [{ to: 'nomination', payload: NOMINATION, by: '' }, 'by'],
       [{ to: 'nomination', payload: NOMINATION, by: 'two words' }, 'by'],
     ]) expect(await code(move(t, { opId: 'x', ...over })), JSON.stringify(over).slice(0, 60)).toMatchObject({ status: 400, code: 'invalid_transition', extra: { why } });
@@ -300,7 +310,8 @@ describe('Build C §3 — the player\'s retire reads the one open predicate', ()
     expect(await code(retireCard(p.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: parked.entry.version, nowIso: LATEST }))).toMatchObject({ status: 409, code: 'illegal_transition', extra: { stage: 'tested' } });
     const q = fresh();
     await tested(q);
-    const { entry: installed } = await applyServerTransition(q.db, { entryId: 'c1', ownerId: UID, agentId: AGENT, by: 'practice_field', to: 'installed', opId: 's4', payload: { offerId: 'o', state: 'accepted' }, nowIso: LATEST });
+    await applyServerTransition(q.db, { entryId: 'c1', ownerId: UID, agentId: AGENT, by: 'practice_field', to: 'offered', opId: 's3b', payload: { ideaId: 'idea-9', offerId: 'o', state: 'offered' }, nowIso: LATEST });
+    const { entry: installed } = await applyServerTransition(q.db, { entryId: 'c1', ownerId: UID, agentId: AGENT, by: 'practice_field', to: 'installed', opId: 's4', payload: { ideaId: 'idea-9', offerId: 'o', state: 'accepted' }, nowIso: LATEST });
     expect(await code(retireCard(q.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: installed.version, nowIso: LATEST }))).toMatchObject({ code: 'illegal_transition', extra: { stage: 'installed' } });
   });
 });
@@ -933,5 +944,174 @@ describe('Amendment A CA-4 — the thesis and the closing note: their fields, th
   it('with no note, the result carries no closing-note fields (nothing quoted)', async () => {
     const { entry } = await tested(fresh());
     expect(entry.result).toEqual(RESULT);
+  });
+});
+
+// ── Amendment A CA-5, CA-14, CA-22 — the server's later moves, bound to the idea and the offer ───────────────────────
+describe('Amendment A CA-5 — the `offered` move: an offer waits at tested, bound to the idea, one per card', () => {
+  const OFFER = { ideaId: 'idea-9', offerId: 'offer-1', state: 'offered' };
+  it('from tested: sets `offer` { ideaId, offerId, state: offered }, the stage and its instant unchanged, the result unchanged, one `event: offered` row, version + 1', async () => {
+    const t = fresh();
+    const { entry } = await tested(t);
+    const r = await move(t, { to: 'offered', opId: 's4', payload: OFFER, nowIso: '2026-11-12T15:20:00.000Z' });
+    expect(r.entry).toMatchObject({ stage: 'tested', stageAt: entry.stageAt, result: entry.result, offer: OFFER, version: entry.version + 1 });
+    expect(r.entry.stageHistory.at(-1)).toMatchObject({ stage: 'tested', event: 'offered', ideaId: 'idea-9', offerId: 'offer-1', at: '2026-11-12T15:20:00.000Z', by: 'server', writer: 'practice_field', opId: 's4' });
+    expect(r.entry.stageHistory.filter((h) => h.stage === 'tested' && h.event === undefined)).toHaveLength(1);
+    const changed = Object.keys(r.entry).filter((k) => JSON.stringify(r.entry[k]) !== JSON.stringify(entry[k])).sort();
+    expect(changed).toEqual(['offer', 'stageHistory', 'version']);
+  });
+
+  it('bound to the idea: another idea → 409 nomination_mismatch; an entry holding no idea never passes (undefined === undefined)', async () => {
+    const t = fresh();
+    const { entry } = await tested(t);
+    expect(await code(move(t, { to: 'offered', opId: 'x', payload: { ...OFFER, ideaId: 'idea-other' } }))).toMatchObject({ status: 409, code: 'nomination_mismatch' });
+    const noIdea = { ...entry };
+    delete noIdea.idea;
+    t.store.set(playPath('c1'), noIdea);
+    expect(await code(move(t, { to: 'offered', opId: 'y', payload: OFFER }))).toMatchObject({ status: 409, code: 'nomination_mismatch' });
+  });
+
+  it('one offer per card: a replay is idempotent; the same op with another offer → op_conflict; ANOTHER op while one waits → 409 illegal_transition { offerState } (the mutant: a second offer replacing a waiting one)', async () => {
+    const t = fresh();
+    await tested(t);
+    const a = await move(t, { to: 'offered', opId: 's4', payload: OFFER });
+    const writes = playWrites(t).length;
+    expect(await move(t, { to: 'offered', opId: 's4', payload: OFFER })).toEqual({ idempotent: true, entry: a.entry });
+    expect(await code(move(t, { to: 'offered', opId: 's4', payload: { ...OFFER, offerId: 'offer-2' } }))).toMatchObject({ status: 409, code: 'op_conflict' });
+    expect(await code(move(t, { to: 'offered', opId: 's5', payload: { ...OFFER, offerId: 'offer-2' } }))).toEqual({ status: 409, code: 'illegal_transition', extra: { offerState: 'offered' } });
+    expect(await code(move(t, { to: 'offered', opId: 's6', payload: OFFER }))).toMatchObject({ status: 409, code: 'illegal_transition', extra: { offerState: 'offered' } });
+    expect(playWrites(t).length).toBe(writes);
+    expect(t.store.get(playPath('c1')).offer.offerId).toBe('offer-1');
+  });
+
+  it('while an offer waits the player cannot retire (CA-5), and parking is unaffected — before the offer or after it', async () => {
+    const t = fresh();
+    await tested(t);
+    const { entry } = await move(t, { to: 'offered', opId: 's4', payload: OFFER });
+    expect(await code(retireCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: entry.version, nowIso: LATEST }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'tested', offerState: 'offered' } });
+    expect((await parkCard(t.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'p1', expectedVersion: entry.version, nowIso: LATEST })).card).toMatchObject({ parkedAt: LATEST, offer: OFFER });
+    const u = fresh();
+    const done = await tested(u);
+    await parkCard(u.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'p1', expectedVersion: done.entry.version, nowIso: LATEST });
+    expect((await move(u, { to: 'offered', opId: 's4', payload: OFFER })).entry).toMatchObject({ parkedAt: LATEST, offer: OFFER });
+  });
+});
+
+describe('Amendment A CA-14 — `installed` and the server\'s `retired` are bound to the idea and the offer', () => {
+  const OFFER = { ideaId: 'idea-9', offerId: 'offer-1', state: 'offered' };
+  const offered = async (t) => { await tested(t); return move(t, { to: 'offered', opId: 's4', payload: OFFER }); };
+
+  it('installed: needs the waiting offer by its id and the entry\'s own idea — no offer, another offer, another idea, no idea → 409 nomination_mismatch, nothing written (the mutants: installed with no offer; installed with no idea passing)', async () => {
+    const t = fresh();
+    await tested(t);
+    const w0 = playWrites(t).length;
+    expect(await code(move(t, { to: 'installed', opId: 'x1', payload: { ideaId: 'idea-9', offerId: 'offer-1', state: 'accepted' } }))).toMatchObject({ status: 409, code: 'nomination_mismatch' });
+    expect(playWrites(t).length).toBe(w0);
+    const u = fresh();
+    const { entry } = await offered(u);
+    expect(await code(move(u, { to: 'installed', opId: 'x2', payload: { ideaId: 'idea-9', offerId: 'offer-2', state: 'accepted' } }))).toMatchObject({ code: 'nomination_mismatch' });
+    expect(await code(move(u, { to: 'installed', opId: 'x3', payload: { ideaId: 'idea-other', offerId: 'offer-1', state: 'accepted' } }))).toMatchObject({ code: 'nomination_mismatch' });
+    const noIdea = { ...entry };
+    delete noIdea.idea;
+    u.store.set(playPath('c1'), noIdea);
+    expect(await code(move(u, { to: 'installed', opId: 'x4', payload: { ideaId: 'idea-9', offerId: 'offer-1', state: 'accepted' } }))).toMatchObject({ code: 'nomination_mismatch' });
+  });
+
+  it('installed after offered: the stage moves once, the offer becomes the installed one, version + 1 exactly; its replay is idempotent, another request under its op id op_conflict', async () => {
+    const t = fresh();
+    const { entry } = await offered(t);
+    const payload = { ideaId: 'idea-9', offerId: 'offer-1', state: 'accepted' };
+    const r = await move(t, { to: 'installed', opId: 's5', payload });
+    expect(r.entry).toMatchObject({ stage: 'installed', offer: payload, version: entry.version + 1 });
+    expect(await move(t, { to: 'installed', opId: 's5', payload })).toEqual({ idempotent: true, entry: r.entry });
+    expect(await code(move(t, { to: 'installed', opId: 's5', payload: { ...payload, state: 'adopted' } }))).toMatchObject({ code: 'op_conflict' });
+  });
+
+  it('the server\'s retire: with no offer, offerId null (and only null); with an offer, its own id (never null, never another); always the entry\'s own idea (the mutant: the server retired with no idea passing)', async () => {
+    const cases = [
+      ['no offer, null id', false, { offerId: null }, null],
+      ['no offer, an id', false, { offerId: 'offer-1' }, 'nomination_mismatch'],
+      ['an offer, null id', true, { offerId: null }, 'nomination_mismatch'],
+      ['an offer, another id', true, { offerId: 'offer-2' }, 'nomination_mismatch'],
+      ['an offer, its id', true, { offerId: 'offer-1' }, null],
+      ['another idea', false, { offerId: null, ideaId: 'idea-other' }, 'nomination_mismatch'],
+    ];
+    for (const [name, withOffer, over, error] of cases) {
+      const t = fresh();
+      if (withOffer) await offered(t); else await tested(t);
+      const r = await code(move(t, { to: 'retired', opId: 'x', payload: { ideaId: 'idea-9', state: 'declined', ...over } }));
+      if (error) expect(r, name).toMatchObject({ status: 409, code: error });
+      else { expect(r, name).toBeNull(); expect(t.store.get(playPath('c1')).stage, name).toBe('retired'); }
+    }
+    const u = fresh();
+    const { entry } = await tested(u);
+    const noIdea = { ...entry };
+    delete noIdea.idea;
+    u.store.set(playPath('c1'), noIdea);
+    expect(await code(move(u, { to: 'retired', opId: 'x', payload: { ideaId: 'idea-9', offerId: null, state: 'no_offer' } }))).toMatchObject({ code: 'nomination_mismatch' });
+  });
+});
+
+describe('Amendment A CA-22 — an idea that ends before its first fill: `tested` straight from `nominated`, with the no-fill fact', () => {
+  const ENDED = { ideaId: 'idea-9', resultRef: 'mandates/book-1/ideas/idea-9/results/r1', contractCondition: 'unobserved', economicResult: 'unmeasurable', noFill: true };
+  const accepted = async (t) => { await nominated(t); return move(t, { to: 'nomination', opId: 's1', payload: NOMINATION }); };
+
+  for (const terminal of [{ contractCondition: 'unobserved', economicResult: 'unmeasurable' }, { contractCondition: 'abandoned', economicResult: 'inconclusive' }]) {
+    it(`accepted → tested directly (${terminal.contractCondition} / ${terminal.economicResult}): one transaction sets the idea from the accepted copy and the result with noFill, one row (noFill), version + 1 once; identity untouched; the stage at tested`, async () => {
+      const t = fresh();
+      const { entry } = await accepted(t);
+      const r = await move(t, { to: 'tested', opId: 's3', payload: { ...ENDED, ...terminal }, nowIso: LATEST });
+      expect(r.entry).toMatchObject({ stage: 'tested', stageAt: LATEST, idea: { bookId: BOOK, ideaId: 'idea-9' }, result: { ...ENDED, ...terminal }, version: entry.version + 1 });
+      expect(r.entry.stageHistory.length).toBe(entry.stageHistory.length + 1);
+      expect(r.entry.stageHistory.at(-1)).toMatchObject({ stage: 'tested', noFill: true, by: 'server', opId: 's3' });
+      expect(r.entry.stageHistory.some((h) => h.stage === 'testing')).toBe(false);
+      expect(untouched(r.entry)).toEqual(untouched(entry));
+      const changed = Object.keys(r.entry).filter((k) => JSON.stringify(r.entry[k]) !== JSON.stringify(entry[k])).sort();
+      expect(changed).toEqual(['idea', 'result', 'stage', 'stageAt', 'stageHistory', 'version']);
+      // its replay
+      expect(await move(t, { to: 'tested', opId: 's3', payload: { ...ENDED, ...terminal }, nowIso: LATEST })).toEqual({ idempotent: true, entry: r.entry });
+    });
+  }
+
+  it('refused: from nominated WITHOUT noFill → 409 illegal_transition (the mutant: tested from nominated without noFill); noFill FROM TESTING → 409 illegal_transition; from nominated with a copy not accepted → 409 illegal_transition naming it; another idea → 409 nomination_mismatch; nothing written', async () => {
+    const t = fresh();
+    await accepted(t);
+    const w = playWrites(t).length;
+    const { noFill: _n, ...plain } = ENDED;
+    expect(await code(move(t, { to: 'tested', opId: 'x1', payload: plain }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated' } });
+    expect(await code(move(t, { to: 'tested', opId: 'x1b', payload: { ...ENDED, noFill: false } }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated' } });
+    expect(await code(move(t, { to: 'tested', opId: 'x2', payload: { ...ENDED, ideaId: 'idea-other' } }))).toMatchObject({ status: 409, code: 'nomination_mismatch' });
+    expect(playWrites(t).length).toBe(w);
+    for (const from of ['queued', 'deferred', 'declined']) {
+      const u = fresh();
+      if (from === 'queued') await nominated(u); else { await nominated(u); await move(u, { to: 'nomination', opId: 's1', payload: { ...NOMINATION, state: from } }); }
+      expect(await code(move(u, { to: 'tested', opId: 'x3', payload: ENDED })), from).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated', nominationState: from } });
+    }
+    const v = fresh();
+    await accepted(v);
+    await move(v, { to: 'testing', opId: 's2', payload: IDEA });
+    expect(await code(move(v, { to: 'tested', opId: 'x4', payload: ENDED }))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'testing' } });
+    expect((await move(v, { to: 'tested', opId: 's3', payload: plain })).entry.result).not.toHaveProperty('noFill');
+  });
+
+  it('after it, the card is tested like any other: open until parked, parkable, retirable (no offer), and the offer moves bind to the idea it set; a shelved entry receives it too', async () => {
+    const t = fresh();
+    await accepted(t);
+    const { entry } = await move(t, { to: 'tested', opId: 's3', payload: ENDED });
+    expect((await readCards(t.db, { uid: UID, agentId: AGENT })).open).toBe(1);
+    expect((await move(t, { to: 'offered', opId: 's4', payload: { ideaId: 'idea-9', offerId: 'o1', state: 'offered' } })).entry.offer.offerId).toBe('o1');
+    const p = fresh();
+    await accepted(p);
+    const pe = (await move(p, { to: 'tested', opId: 's3', payload: ENDED })).entry;
+    expect((await parkCard(p.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'p1', expectedVersion: pe.version, nowIso: LATEST })).card.parkedAt).toBe(LATEST);
+    const r = fresh();
+    await accepted(r);
+    const re = (await move(r, { to: 'tested', opId: 's3', payload: ENDED })).entry;
+    expect((await retireCard(r.db, { uid: UID, agentId: AGENT, entryId: 'c1', opId: 'r1', expectedVersion: re.version, nowIso: LATEST })).card.stage).toBe('retired');
+    const s = fresh();
+    await accepted(s);
+    s.store.set(`agents/${AGENT}`, agentDoc({ archetype: 'guardian' }));
+    expect((await move(s, { to: 'tested', opId: 's3', payload: ENDED })).entry.stage).toBe('tested');
+    expect(entry.idea).toEqual({ bookId: BOOK, ideaId: 'idea-9' });
   });
 });

@@ -1698,7 +1698,8 @@ describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), 
     expect(receipt.textContent).not.toMatch(/validated|proven|supported|\bright\b|\bwrong\b/i);
     expect(receipt.textContent).toContain('Stage · tested');
     await sweepAll(fx.tape2, 'tested');
-    await move('op_1', 'installed', { offerId: 'offer-1', state: 'accepted' }, '21:00');
+    await move('op_1', 'offered', { ideaId: 'idea-1', offerId: 'offer-1', state: 'offered' }, '20:58');
+    await move('op_1', 'installed', { ideaId: 'idea-1', offerId: 'offer-1', state: 'accepted' }, '21:00');
     receipt = await reopen('op_1');
     expect(lineText(receipt, 0)).toBe('Equipped · 5:00 PM');
     expect(receipt.textContent).toContain('Stage · equipped');
@@ -1724,7 +1725,7 @@ describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), 
     await move('op_1', 'nomination', NOM('accepted', 'I will test it.', `${D2}T20:40:00.000Z`), '20:45');
     await move('op_1', 'testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
     await move('op_1', 'tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'unmeasurable' }, '20:55');
-    await move('op_1', 'retired', { offerId: null, state: 'no_offer' }, '21:05');
+    await move('op_1', 'retired', { ideaId: 'idea-1', offerId: null, state: 'no_offer' }, '21:05');
     const receipt = await reopen('op_1');
     expect(lineText(receipt, 0)).toBe('Retired · 5:05 PM · Forge offer no_offer');
     expect(receipt.querySelector('[data-offer-state]').closest('[data-record-text]')).toBeTruthy();
@@ -2313,5 +2314,78 @@ describe('Amendment A CA-4 / CA-11 — the chain quotes each answer from its own
       ['nomination', 'Later, the book is full.', '— your agent · 4:05 PM'],
     ]);
     await sweepAll(fx.tape2, 'two answers');
+  });
+});
+
+// ── Amendment A CA-5 and CA-22 — the chain's offer line and the no-fill line, from the ledger's own writes ───────────
+describe('Amendment A CA-5 / CA-22 — "An offer waits in the Forge" and "Ended before its first trade", through the real helper', () => {
+  const move = (to, payload, clock, opId = `s_${to}_${clock.replace(/\D/g, '')}`) => applyServerTransition(state.db, { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId, nowIso: `${D2}T${clock}:00.000Z` });
+  const offerCard = async () => {
+    openBook();
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', ideaId: 'idea-1', consideredAt: `${D2}T20:40:00.000Z`, thesis: 'One more check pays.' }, '20:45');
+  };
+  const reopen = async () => {
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+    return m.q('[data-card-receipt="op_1"]');
+  };
+  const kinds = (r) => [...r.querySelectorAll('[data-chain-line]')].map((l) => l.getAttribute('data-chain-line'));
+  const firstLine = (r) => r.querySelector('[data-chain-line]').querySelector('span').textContent;
+
+  it('tested → offered → parked → installed: one Tested line; the waiting offer dated at its own row, parked or not, never a second "Tested"; no Retire while it waits, Park still there; once installed, "Equipped" and no waiting line (the mutant: offered drawn as a second Tested)', async () => {
+    await offerCard();
+    await move('testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' }, '20:55');
+    await move('offered', { ideaId: 'idea-1', offerId: 'offer-1', state: 'offered' }, '21:00');
+    let r = await reopen();
+    expect(kinds(r)).toEqual(['offerWaits', 'tested', 'testing', 'nomination', 'offered', 'filed']);
+    expect(firstLine(r)).toBe('An offer waits in the Forge · 5:00 PM');
+    expect([...r.querySelectorAll('[data-chain-line="tested"]')]).toHaveLength(1);
+    expect(r.querySelector('[data-chain-line="tested"] span').textContent).toBe('Tested · 4:55 PM · contract condition met · economic result ahead');
+    expect(m.buttons('Retire')).toHaveLength(0);
+    expect(m.buttons('Park this card')).toHaveLength(1);
+    await sweepAll(fx.tape2, 'offer waits');
+    m.click(m.buttons('Park this card')[0]);
+    await m.flush(10);
+    r = m.q('[data-card-receipt="op_1"]');
+    expect(kinds(r)).toEqual(['parked', 'offerWaits', 'tested', 'testing', 'nomination', 'offered', 'filed']);
+    await move('installed', { ideaId: 'idea-1', offerId: 'offer-1', state: 'accepted' }, '21:10');
+    r = await reopen();
+    expect(kinds(r)).toEqual(['installed', 'parked', 'tested', 'testing', 'nomination', 'offered', 'filed']);
+    expect(firstLine(r)).toBe('Equipped · 5:10 PM');
+    expect(r.textContent).not.toContain('An offer waits');
+    await sweepAll(fx.tape2, 'installed after offer');
+  });
+
+  it('an accepted idea that ended before any fill: "Ended before its first trade · {time}" with the result\'s own words and the closing note quoted at its time — no Testing line, never "Tested"; Since last time says the same', async () => {
+    await offerCard();
+    await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'unobserved', economicResult: 'unmeasurable', noFill: true, closingNote: 'Never reached an entry price.', closingNoteAt: `${D2}T20:52:00.000Z` }, '20:55');
+    const r = await reopen();
+    expect(kinds(r)).toEqual(['tested', 'nomination', 'offered', 'filed']);
+    expect(firstLine(r)).toBe('Ended before its first trade · 4:55 PM · contract condition unobserved · economic result unmeasurable');
+    expect(r.textContent).not.toMatch(/Tested ·|Testing ·/);
+    const quote = r.querySelector('[data-chain-line="tested"] [data-quotation="yourAgent"]');
+    expect(quote.querySelector('[data-quote-path]').textContent).toBe('Never reached an entry price.');
+    expect(quote.querySelector('[data-quote-attribution]').textContent).toBe('— your agent · 4:52 PM');
+    expect(m.q('[data-latest-line="op_1"]').textContent).toContain('Ended before its first trade · 4:55 PM');
+    await sweepAll(fx.tape2, 'ended before first trade');
+  });
+
+  it('read from the stored flag, never from a missing testing row (the mutant): a tested row with no testing row before it but no noFill says "Tested"; a normal testing → tested says "Tested"', () => {
+    const at = (hm) => `${D2}T${hm}:00.000Z`;
+    const card = {
+      entryId: 'e1', route: 'offer', stage: 'tested', result: { ideaId: 'i', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' },
+      stageHistory: [{ stage: 'nominated', at: at('20:00'), by: 'player' }, { stage: 'nominated', event: 'nomination', state: 'accepted', at: at('20:10'), by: 'server' }, { stage: 'tested', at: at('20:30'), by: 'server' }],
+    };
+    expect(chainOf(card)[0]).toEqual({ kind: 'tested', at: at('20:30'), k: 2, by: 'server' });
+    expect(chainOf({ ...card, stageHistory: [...card.stageHistory.slice(0, 2), { stage: 'tested', at: at('20:30'), by: 'server', noFill: true }] })[0]).toMatchObject({ kind: 'tested', noFill: true });
+    // the result's own flag alone does not draw it either: the row's is the chain's source
+    expect(chainOf({ ...card, result: { ...card.result, noFill: true } })[0]).not.toHaveProperty('noFill');
   });
 });
