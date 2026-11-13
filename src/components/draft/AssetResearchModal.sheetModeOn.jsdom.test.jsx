@@ -626,7 +626,7 @@ describe('BC-7 — the Ask', () => {
 });
 
 describe('BC-11, BC-12 — the cockpit door', () => {
-  it('with an incumbent the view opens on "Is this better than what\'s stalled?" with it side by side', async () => {
+  it('with an incumbent the view opens on "Is this better than our weakest holding?" with it side by side', async () => {
     await open({ context: ctx({ incumbent: 'ETH', row: { held: false, positionId: null } }), symbol: 'NVDA' });
     expect(view()).toBe('analysis');
     expect($('[data-sheet-root]').dataset.sheetLayer).toBe('1');

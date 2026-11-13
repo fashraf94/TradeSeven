@@ -3,7 +3,7 @@
 // size (BOOK_STOCKS), and a crypto holding.
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { measuredBookBattle, measuredSheetBattle, BOOK_RANKINGS, BOOK_CHECK_AT, BOOK_STOCKS, SHEET_NOW, ARCHETYPES } from './__fixtures__/sheetBattles.js';
+import { measuredBookBattle, measuredSheetBattle, BOOK_RANKINGS, BOOK_CHECK_AT, BOOK_STOCKS, SHEET_NOW, ARCHETYPES, RANKINGS } from './__fixtures__/sheetBattles.js';
 import { buildPacks, candidateItems, questionSetOf, ANCHOR_KINDS, PACK_MAX } from './packs.js';
 import { bookOf, rankedBook, weakestOf, offLadderOf, unscoredOf, lockNowOf } from './book.js';
 import { SHEET_COPY } from './sheetCopy.js';
@@ -130,10 +130,10 @@ describe('QF-4 — Should we take profit?', () => {
     const base = await measuredSheetBattle();
     for (const a of ARCHETYPES) {
       const battle = { ...base, agentContext: { ...base.agentContext, archetype: a } };
-      const p = buildPacks({ battle, symbol: 'AAPL', nowMs: SHEET_NOW, row: { positionId: 'position-agent' }, live: 103.2, rankings: BOOK_RANKINGS, directive: battle.directive, battleId: 'stock-battle' }).packs;
+      const p = buildPacks({ battle, symbol: 'AAPL', nowMs: SHEET_NOW, row: { positionId: 'position-agent' }, live: 103.2, rankings: RANKINGS, directive: battle.directive, battleId: 'stock-battle' }).packs;
       for (const q of ['take_profit', 'weakest_spot']) {
         expect(p[q].items.length).toBeLessThanOrEqual(PACK_MAX);
-        for (const k of ANCHOR_KINDS[q]) if (k !== 'bench_alternative') expect(p[q].items.map((i) => i.kind), `${a} ${q} ${k}`).toContain(k);
+        for (const k of ANCHOR_KINDS[q]) expect(p[q].items.map((i) => i.kind), `${a} ${q} ${k}`).toContain(k);
       }
     }
   });
@@ -203,3 +203,54 @@ describe('the review round (PR 1 §2 review: A1, A2, A3, A6, A9, C2)', () => {
   });
 });
 
+
+/** BOOK_STOCKS with one stock's fill moved (an off-cent fill, review D §9). */
+function BOOK_STOCKS_FILL(sym, fill) {
+  return BOOK_STOCKS.map((s) => (s.symbol === sym ? { ...s, fill } : s));
+}
+
+describe('the review round (lens D — rows that pin what had no row)', () => {
+  it('M1 — exactly at entry (scored at its fill): not up, weakest_spot', async () => {
+    const b = await measuredBookBattle({ quotes: { AAPL: 100.75 } });
+    expect(posOf(b, 'AAPL').rungs).toBe(0);
+    expect(questionSetOf(args(b, 'AAPL')).questions[0]).toBe('weakest_spot');
+  });
+  it('M26 — the rank is the PRINTED number, then the nearer downside rung: KO −0.44 (raw lower, but 1.06 rungs above Crash after crossing Bust) ranks after EQIX −0.42 (0.58 above Bust)', async () => {
+    const b = await measuredBookBattle({ checks: [
+      { at: '2026-10-14T15:15:40.000Z', quoteAt: Date.parse('2026-10-14T15:15:31.000Z') / 1000, quotes: { KO: 58.5 } },
+      { at: BOOK_CHECK_AT, quoteAt: Date.parse('2026-10-14T16:45:31.000Z') / 1000, quotes: { KO: 60.12 } },
+    ] });
+    const ranked = rankedBook(bookOf(b));
+    expect(ranked.slice(0, 2).map((e) => [e.symbol, e.rungsShown])).toEqual([['EQIX', -0.4], ['KO', -0.4]]);
+    expect(posOf(b, 'KO').rungs).toBeLessThan(posOf(b, 'EQIX').rungs);
+  });
+  it('§9 — what holding risks is in DISPLAYED values: fill $100.746, live $103.204 → $2.45 (not $2.458) to $100.75; Bust shown at $98.73, the pin its shown price', async () => {
+    const b = await measuredBookBattle({ stocks: BOOK_STOCKS_FILL('AAPL', 100.746) });
+    const item = candidateItems(args(b, 'AAPL', { live: 103.204 })).items.find((i) => i.kind === 'rung_down');
+    expect(item.fact).toBe('$2.45 (2.37%) down to entry at $100.75 · $4.47 (4.33%) down to the next downside rung, Bust (−10) at $98.73');
+    expect(item.pin).toEqual({ type: 'price', value: 98.73 });
+  });
+  it('M3 / M18 — the lock pins its check; the place in the book pins only the opened stock\'s own place', () => {
+    const at = { type: 'time', value: BOOK_CHECK_AT };
+    expect(candidateItems(args(BOOK, 'AAPL')).items.find((i) => i.kind === 'lock_now').pin).toEqual(at);
+    expect(candidateItems(args(BOOK, 'EQIX')).items.find((i) => i.kind === 'book_rank').pin).toEqual(at);
+    expect(candidateItems(args(BOOK, 'MSFT')).items.find((i) => i.kind === 'book_rank').pin).toBeNull();
+  });
+  it('M20 — a measured stock with no committed context is never named "not on the ladder"', () => {
+    const book = bookOf(BOOK).map((e) => (e.symbol === 'CAT' ? { ...e, scored: false } : e));
+    expect(offLadderOf(book)).toEqual(['ETH']);
+  });
+  it('M12 — two bench names on one score: the bench roster\'s first (MSFT before ORCL)', () => {
+    const tie = { ...BOOK_RANKINGS, stocks: BOOK_RANKINGS.stocks.map((r) => (r.symbol === 'MSFT' ? { ...r, arch_scores: { ...r.arch_scores, momentum_chaser: 84.6 } } : r)) };
+    expect(factOf(BOOK, 'EQIX', 'bench_alternative', { rankings: tie })).toMatch(/^Best on the bench by Trend Follower’s ranking: MSFT 85 \(#2 of 5\)/);
+  });
+  it('QF-5 — the reachable "better than our weakest holding" (a bench name, no incumbent) keeps its compare in the cut for every archetype', async () => {
+    const base = await measuredSheetBattle();
+    for (const a of ARCHETYPES) {
+      const battle = { ...base, agentContext: { ...base.agentContext, archetype: a } };
+      const p = buildPacks({ battle, symbol: 'MSFT', nowMs: SHEET_NOW, row: {}, live: 420, rankings: RANKINGS, directive: battle.directive, battleId: 'stock-battle' }).packs.better_than_stalled;
+      expect(p.items.length, a).toBeLessThanOrEqual(PACK_MAX);
+      expect(p.items.find((i) => i.kind === 'book_rank')?.symbol, a).toBe('AAPL');
+    }
+  });
+});
