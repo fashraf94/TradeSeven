@@ -171,3 +171,25 @@ describe('CA-13 §2 review — the whole table pinned, the drill line, and the c
     expect(code).not.toMatch(/\.env\.local|['"`]\.env['"`]|dotenv|loadEnv|existsSync/);
   });
 });
+
+describe('CA-13 §2 review — the rendered table, line for line', () => {
+  it('the refuter\'s render mutants: every route row prints its OWN counts, in the stage columns\' order', () => {
+    const text = renderCensus(countPlays(DOCS.map((d) => d.data)));
+    const lines = text.split('\n');
+    const at = lines.indexOf(`## route x stage (${STAGE_BUCKETS.join(' · ')})`);
+    expect(at).toBeGreaterThan(0);
+    expect(STAGE_BUCKETS).toEqual(['card', 'nominated', 'testing', 'tested', 'installed', 'retired', 'missing', 'unknown']);
+    expect(lines.slice(at + 1, at + 1 + ROUTE_BUCKETS.length)).toEqual([
+      '- watch: 1 · 0 · 0 · 0 · 0 · 0 · 0 · 0',
+      '- offer: 0 · 1 · 0 · 0 · 0 · 0 · 0 · 0',
+      '- set: 0 · 0 · 0 · 1 · 0 · 0 · 0 · 0',
+      '- drill: 0 · 1 · 0 · 0 · 0 · 1 · 0 · 0',
+      '- missing: 1 · 0 · 0 · 0 · 0 · 0 · 1 · 0',
+      '- unknown: 0 · 0 · 0 · 0 · 0 · 0 · 0 · 3',
+    ]);
+    const byRoute = lines.slice(lines.indexOf('## by route') + 1, lines.indexOf('## by route') + 1 + ROUTE_BUCKETS.length);
+    expect(byRoute).toEqual(['- watch: 1', '- offer: 1', '- set: 1', '- drill: 2', '- missing: 2', '- unknown: 3']);
+    const byStage = lines.slice(lines.indexOf('## by stage') + 1, lines.indexOf('## by stage') + 1 + STAGE_BUCKETS.length);
+    expect(byStage).toEqual(['- card: 2', '- nominated: 2', '- testing: 0', '- tested: 1', '- installed: 0', '- retired: 1', '- missing: 1', '- unknown: 3']);
+  });
+});

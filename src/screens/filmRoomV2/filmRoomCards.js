@@ -345,7 +345,12 @@ export function useFilmRoomCards({ battle, agentId, api = defaultCardsApi }) {
    * ledger's row beside the reason.
    */
   const nominate = useCallback(async (card, opId = null) => {
-    const r = await api.postCard({ op: 'nominate', opId: opId || api.newOpId(), agentId, entryId: card.entryId, expectedVersion: card.version });
+    // §2 review A2: the offer names the agent the card is FILED under (its own `agentId`, the attribution agent — a
+    // casual clone's parent), never the battle's clone, so a lost answer re-tapped after the clone's document changed
+    // is still its own replay. The server resolves attribution as before (the parent resolves to itself) and judges
+    // the battle's attribution again in the transaction (F1)
+    const named = typeof card?.agentId === 'string' && card.agentId ? card.agentId : agentId;
+    const r = await api.postCard({ op: 'nominate', opId: opId || api.newOpId(), agentId: named, entryId: card.entryId, expectedVersion: card.version });
     if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); keepResult(r.body.card); return { ok: true, card: r.body.card }; }
     const code = r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'nominateDefault');
     await refresh();

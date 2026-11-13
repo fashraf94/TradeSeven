@@ -2685,3 +2685,30 @@ describe('C1 fix round §2 review — the chain\'s create row is the stored rout
     expect(chainOf(card([{ stage: 'card', by: 'player', at: at('16:00') }, { stage: 'nominated', by: 'server', at: at('17:00') }])).map((l) => l.kind)).toEqual(['filed']);
   });
 });
+
+describe('C1 fix round §2 review A2 — a casual clone\'s offer names the parent the card is filed under', () => {
+  it('on a clone\'s battle the receipt\'s offer sends the card\'s own agent (the ranked parent), so its lost answer re-tapped after the clone\'s document is gone is still its own replay (the 200), where a clone-named re-tap could no longer be resolved', async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    t.store.set(`agentBattles/${B}`, { ...fx.battle, agentId: CLONE });
+    t.store.set(`agentBattles/${B}/tape/${D2}`, { ...fx.tape2, agentId: CLONE });
+    openBook();
+    await open({ battle: battleOf({ agentId: CLONE }), tapes: { [D1]: { ...fx.tape1, agentId: CLONE }, [D2]: { ...fx.tape2, agentId: CLONE } } });
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ agentId: AGENT, stage: 'card' });
+    m.click(m.buttons('Offer to your agent')[0]);
+    await m.flush(10);
+    const sent = cardBodies().filter((b) => b.op === 'nominate');
+    expect(sent).toHaveLength(1);
+    expect(sent[0].agentId).toBe(AGENT);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('nominated');
+    // the clone's document gone: the same request (a lost answer re-tapped) is still the idempotent answer
+    t.store.delete(`agents/${CLONE}`);
+    const again = await api.postCard(sent[0]);
+    expect(again).toMatchObject({ ok: true, status: 200, body: { idempotent: true } });
+    // where the clone-named request could no longer be resolved
+    expect(await api.postCard({ ...sent[0], agentId: CLONE })).toMatchObject({ ok: false, status: 503, body: { error: 'attribution_unavailable' } });
+  });
+});
