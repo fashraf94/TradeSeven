@@ -463,6 +463,19 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
     expect(() => assertReconciled(getBook(db, bookId), [idea])).not.toThrow();
   });
 
+  it('a holding opened ON the effective date, with the action listed twice: declined once — one id in the declined list, one receipt', async () => {
+    const { db, bookId } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
+    const sameDay = { ...div, effectiveDate: DAYS.d1 };
+    await closeOn(db, bookId, DAYS.d1, { AAPL: { price: 100.13, corporateActions: [sameDay, { ...sameDay }] }, SPY: 500 });
+    const idea = getIdea(db, bookId, r.ideaId);
+    for (const ledger of [idea.ledger, idea.comparisonLedger]) {
+      expect(ledger.declinedActionIds, ledger.kind).toEqual([`cash_dividend_AAPL_${DAYS.d1}`]);
+      expect(receiptsFor(ledger, `cash_dividend_AAPL_${DAYS.d1}`).map((x) => x.reason)).toEqual(['not_entitled']);
+      expect(ledger.dividendsUsd).toBe(0);
+    }
+  });
+
   it('a split ratio that disagrees with itself is a conflict too: no quantity moves', async () => {
     const { db, bookId } = await seedBook();
     const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });

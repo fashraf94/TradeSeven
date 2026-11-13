@@ -9,6 +9,7 @@ import { admitIdea, releaseIdea } from './admission.js';
 import { closeIdeaBook } from './close.js';
 import { assertReconciled } from './reconcile.js';
 import { markedEquityCents } from './ledger.js';
+import { roundUsd } from '../mandateRounding.js';
 import { isPracticeFieldError } from './errors.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { ideaEntrySlots, isLastIdeaEntrySlot, ideaEntryNotBefore, ideaSchedule, nextSessionDate, sessionAfter } from './windows.js';
@@ -603,6 +604,29 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     await refusedWritingNothing(db, () => enterIdea(db, { bookRef, ideaId: b.ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', q('LLY', 'SPY')), nowIso: nowAt(DAYS.d1, 'midday') }), ['equity_mismatch']);
     await refusedWritingNothing(db, () => releaseIdea(db, { bookId, ideaId: b.ideaId, nowIso: etIso(DAYS.d1, 13, 0) }), ['equity_mismatch']);
     await refusedWritingNothing(db, () => enterIdea(db, { bookRef, ideaId: b.ideaId, tick: tickOf(DAYS.d2, 'open30'), snapshot: tickSnapshot(DAYS.d2, 'open30', q('LLY', 'SPY')), nowIso: nowAt(DAYS.d2, 'open30') }), ['equity_mismatch']);
+  });
+
+  it('reject, never repair — a release would launder an idea whose own ledger does not conserve (the idea leaves the open set, so only the as-read check sees it): refused', async () => {
+    const { db, bookId } = await seedBook();
+    const a = await admitIdea(db, { bookId, contract: contractOf(), opId: 'a', nowIso: ADMIT_ISO });
+    await db.collection('mandates').doc(bookId).collection('ideas').doc(a.ideaId).update({ 'ledger.dividendsUsd': 0.01 });
+    await refusedWritingNothing(db, () => releaseIdea(db, { bookId, ideaId: a.ideaId, nowIso: etIso(DAYS.d1, 13, 0) }), ['ledger_not_conserved']);
+  });
+
+  it('the R-19 basis at ENTRY: with two ideas holding, the entry writes the per-idea sum ($99,986.50) — not the whole book rounded once ($99,986.51)', async () => {
+    const { db, bookId } = await seedBook({ archetypeCodeId: 'degen' });
+    const quotes = { AAPL: { price: 231.47, marketCap: 3e12 }, LLY: { price: 803.17, marketCap: 7.5e11 }, SPY: 597.31 };
+    await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'short', names: ['AAPL'], capitalUsd: 20000 }), opId: 'a', quotes });
+    await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 24995.23 }), opId: 'b', slot: 'midday', quotes });
+    const book = getBook(db, bookId);
+    const ideas = book.openIdeaIds.map((id) => getIdea(db, bookId, id));
+    expect(ideas.map((i) => i.status)).toEqual(['holding', 'holding']);
+    // The fixture really separates the two bases.
+    const wholeBookCents = Math.round(roundUsd(Object.values(book.portfolio.positions).reduce((s, p) => s + p.shares * p.lastMark, 0) + book.portfolio.cash) * 100);
+    expect(wholeBookCents).toBe(9998651);
+    expect(markedEquityCents(book.treasury.unreservedCash, ideas).equityCents).toBe(9998650);
+    expect(book.portfolio.totalValue).toBe(99986.5);
+    expect(problems(book, ideas)).toEqual([]);
   });
 
   it('Astra\'s fault B — $123.45 added to the comparison\'s cash alone: the close is refused and writes no row (it would have written a −$123.45 gap at full quality)', async () => {
