@@ -63,7 +63,7 @@ export const BOMB_COPY = Object.freeze({
   // BS-4: no rung size without a usable ATR reading — never a default (review A1, A2, A5).
   atrUnavailableWhy: 'This stock has no usable ATR reading from a recent rankings run, so no rung size is shown.',
   atrLoadingWhy: "The ATR reading or yesterday's close hasn't loaded.",
-  atrFailedWhy: "The ATR reading couldn't be read. It's asked again when you reopen 💣.",
+  atrFailedWhy: "The ATR reading couldn't be read. It's asked again when you change view or tab.",
   shortUnsupported: 'No upside ladder for a short position',
   modelUnavailable: 'Scoring model unavailable',
   modelUnavailableWhy: "This battle's scoring model can't be read here, so no rung is drawn.",

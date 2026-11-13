@@ -441,12 +441,23 @@ const AssetResearchModal = ({
   // request below. Never for a held name, a crypto, a legacy-scored battle, a bench or V4 context,
   // or with Bomb mode off (no bombContext).
   const atrArm = bombOn && bombContext.kind === 'agent' && bombContext.stockModel === 'corrected' && !isCrypto
-    && !(isOriginalAsset && bombContext.record != null && bombContext.record.symbol === currentAsset?.symbol);
+    && !(isOriginalAsset && bombContext.record != null && bombContext.record.symbol === currentAsset?.symbol)
+    // Refuter NEW-1: a held MEASURED row the agent's record does not name — the CPU's position, or the
+    // agent's own after the battle ends — carries its committed reward route; it is not a candidate,
+    // so it keeps what it showed before ("No ladder yet"), never an "if it entered" preview.
+    && !currentAsset?.stockRewardRoute;
   // Kept per symbol for the modal's life (review B3: a stock left and returned to is not read again);
   // a FAILED read is not kept as an answer, so the next time 💣 opens it is asked again (review A5, B1).
   const [atrReads, setAtrReads] = useState({}); // symbol → { status, pct, asOfMs }
   const atrRead = atrReads[currentAsset?.symbol] ?? null;
-  const haveAtr = !!atrRead && atrRead.status !== 'failed';
+  // Refuter NEW-2: a failed read is the answer only until the view, the tab or the timeframe next
+  // changes — off the shell the battle mounts sit on the Bomb tab AND the bomb series, so leaving
+  // and reopening 💣 never dropped the ask there. One read per change; never an immediate re-ask.
+  const viewToken = `${shellView}|${activeTab}|${researchData.timeframe}`;
+  const [viewSeen, setViewSeen] = useState({ token: viewToken, n: 0 });
+  if (viewSeen.token !== viewToken) setViewSeen({ token: viewToken, n: viewSeen.n + 1 });
+  const viewN = viewSeen.token === viewToken ? viewSeen.n : viewSeen.n + 1;
+  const haveAtr = !!atrRead && (atrRead.status !== 'failed' || atrRead.failedAtView === viewN);
   const bombSeries = researchData.timeframe === 'bomb' || researchData.timeframe === 'spectate';
   const askAtr = atrArm && !haveAtr && (shellOn ? bombSeries : (activeTab === 'baggerbomb' || bombSeries));
   useEffect(() => {
@@ -454,9 +465,10 @@ const AssetResearchModal = ({
     const symbol = currentAsset?.symbol;
     if (!symbol) return undefined;
     let cancelled = false;
-    readAtrReading(symbol).then((r) => { if (!cancelled) setAtrReads((m) => ({ ...m, [symbol]: r })); });
+    const atView = viewN;
+    readAtrReading(symbol).then((r) => { if (!cancelled) setAtrReads((m) => ({ ...m, [symbol]: r.status === 'failed' ? { ...r, failedAtView: atView } : r })); });
     return () => { cancelled = true; };
-  }, [askAtr, currentAsset?.symbol]);
+  }, [askAtr, currentAsset?.symbol, viewN]);
   const atrReading = atrArm ? (atrRead ? { status: atrRead.status, pct: atrRead.pct, asOfMs: atrRead.asOfMs } : { status: 'loading', pct: null, asOfMs: null }) : null;
   const bombView = useBombView({
     on: bombOn,

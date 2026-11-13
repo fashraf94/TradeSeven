@@ -171,7 +171,7 @@ describe('BS-4 — a non-held stock in a measured battle previews its rungs at t
     net.failRead = true;
     await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
     expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_failed');
-    expect(q('[data-bomb-view="state"]').textContent).toContain("The ATR reading couldn't be read. It's asked again when you reopen 💣.");
+    expect(q('[data-bomb-view="state"]').textContent).toContain("The ATR reading couldn't be read. It's asked again when you change view or tab.");
     expect(document.body.textContent).not.toContain('$319.44');
   });
 
@@ -205,6 +205,20 @@ describe('BS-4 — a non-held stock in a measured battle previews its rungs at t
     await pill('bomb');
     expect(q('[data-fuse-rung-label="bagger"]').textContent).toContain('$312.15');
     expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual(['stockTechnicalScores/ACN', 'stockTechnicalScores/ACN']);
+  });
+
+  it('refuter NEW-2: off the shell (the battle mounts sit on the Bomb tab and the bomb series) a failed read is asked again when the tab changes — once per change, never in a loop', async () => {
+    seed('ACN'); scores('ACN', 4.05); net.failRead = true;
+    await open(nonHeld('ACN', { threshold: 6.48 }), agentBombContext(BATTLE, 'ACN', Date.parse(NOW), { battleId: 'stock-battle' }));
+    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('atr_failed');
+    for (let i = 0; i < 3; i += 1) await flush();
+    expect(reads()).toEqual(['stockTechnicalScores/ACN']);
+    net.failRead = false;
+    const tab = (label) => [...document.body.querySelectorAll('button')].find((b) => b.textContent.trim() === label);
+    await act(async () => { tab('Technical').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    await act(async () => { tab('💣 Bomb').dispatchEvent(new MouseEvent('click', { bubbles: true })); }); await flush();
+    expect(q('[data-sheet-rung="bagger"]').textContent).toContain('$312.15');
+    expect(reads()).toEqual(['stockTechnicalScores/ACN', 'stockTechnicalScores/ACN']);
   });
 
   it('review B3: a stock left and returned to is not read again (one read per stock for the modal\'s life)', async () => {
@@ -261,6 +275,24 @@ describe('BS-4 — unchanged: every other ladder', () => {
     const bagger = ctx.record.measured.targets.find((t) => t.key === 'bagger').price;
     expect(q('[data-sheet-rung="bagger"]').textContent).toContain(`$${(Math.ceil(bagger * 100 - 1e-6) / 100).toFixed(2)}`);
     expect(q('[data-bomb-what]').textContent).not.toMatch(/ATR reading|Preview/);
+    expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual([]);
+  });
+
+  it.each([
+    ["the CPU's own held measured stock", (b) => b, 'cpu'],
+    ["the agent's own measured stock after the battle ends", (b) => ({ ...b, status: 'completed' }), 'agent'],
+  ])('refuter NEW-1: %s keeps what it showed before ("No ladder yet"), never an "if it entered" preview, and reads nothing', async (_, battleOf, side) => {
+    seed('AAPL', 99); scores('AAPL', 4.05);
+    const battle = battleOf(BATTLE);
+    const pos = (side === 'cpu' ? battle.opponent.portfolio : battle.portfolio).star[0];
+    const left = enrichHeldPosition(pos, 'star', { stockBattle: battle, stockSide: side, stockSlot: 0 });
+    expect(left.stockRewardRoute).toBeTruthy();
+    const asset = buildResearchAsset(left, { livePrices: { AAPL: 101.2 }, thresholds: {}, startingPrices: {}, useDefaultThreshold: true });
+    const ctx = agentBombContext(battle, 'AAPL', Date.parse(NOW), { battleId: 'stock-battle', posKey: `${side === 'cpu' ? 'cpu' : 'player'}:star:0` });
+    expect([ctx.record, ctx.stockModel]).toEqual([null, 'corrected']);
+    await open(asset, ctx);
+    expect(q('[data-bomb-view="state"]').dataset.bombState).toBe('preview_unavailable');
+    expect(document.body.textContent).not.toMatch(/ATR reading \d|if it entered/);
     expect(reads().filter((p) => p.startsWith('stockTechnicalScores/'))).toEqual([]);
   });
 
