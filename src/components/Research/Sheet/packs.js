@@ -197,6 +197,13 @@ function makeItem({ kind, symbol, fact, recordKind, recordId, label, atMs = null
     pin,
   };
 }
+/**
+ * BS-2 — a pack item's identity across ticks, from the fields it already carries
+ * (its kind and its symbol; no field is added — the items are the Ask's payload and
+ * the facts golden's). candidateItems builds at most one item per kind, so the key
+ * is unique within a pack (packs.test.js holds it).
+ */
+export const itemKeyOf = (it) => `${it?.kind}|${it?.symbol}`;
 const pricePin = (v) => (positive(v) ? { type: 'price', value: v } : null);
 const timePin = (ms) => (finite(ms) ? { type: 'time', value: iso(ms) } : null);
 
