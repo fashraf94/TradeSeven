@@ -219,7 +219,12 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const now = useMemo(() => (Number.isFinite(nowMs) ? nowMs : Date.now()), [nowMs]);
   const battleId = filmRoomBattleId(battle);
   const days = useMemo(() => battleDays(battle), [battle]);
-  const [at] = useState(() => (openAt && openAt.battleId === battleId ? battleReviewAtOf(openAt, battleId) : null));
+  // Build C §8 ruling 4: a real date that is not one of the battle's days is ignored — the default view, nothing marked
+  // (the navigation check, battleReviewAtOf, stays as built); the open is still cleared once (RK-4, below)
+  const [at] = useState(() => {
+    const asked = openAt && openAt.battleId === battleId ? battleReviewAtOf(openAt, battleId) : null;
+    return asked && days.includes(asked.etDate) ? asked : null;
+  });
   // RK-4: the open is used — read into `at` above — so where App holds it, it is cleared now
   useEffect(() => { if (openAt && typeof onOpenAtUsed === 'function') onOpenAtUsed(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const [day, setDay] = useState(() => at?.etDate ?? defaultDay(battle, days, now));

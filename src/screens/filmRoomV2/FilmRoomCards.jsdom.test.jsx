@@ -1837,7 +1837,7 @@ describe('C1 item 7 — "Park this card", on a tested receipt only (refinement R
 });
 
 describe('C1 item 8 — since last time: every card past the card stage, its latest state line and time, newest first (refinement R-C1-1)', () => {
-  const move = (entryId, to, payload, clock) => applyServerTransition(state.db, { entryId, ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${entryId}_${to}_${clock.replace(/D/g, "")}`, nowIso: `${D2}T${clock}:00.000Z` });
+  const move = (entryId, to, payload, clock) => applyServerTransition(state.db, { entryId, ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${entryId}_${to}_${clock.replace(':', '')}`, nowIso: `${D2}T${clock}:00.000Z` });
   const latestRows = () => m.qa('[data-latest-line]').map((b) => [b.getAttribute('data-latest-line'), b.getAttribute('data-latest-kind')]);
 
   it('a Watch card at card is not listed; two Offer cards answered at different times list newest state first, each with the situation, symbol, day and the receipt\'s state line; a tap opens the receipt', async () => {
@@ -1916,5 +1916,42 @@ describe('C1 item 11 — §8 ruling 3: a battle with no agent recorded links not
     expect(m.q('[data-set-link]')).toBeNull();
     expect(forge).toEqual([]);
     expect(t.writeLog.filter((w) => w.path.includes('/plays/'))).toEqual([]);
+  });
+});
+
+describe('C1 item 12 — §8 ruling 4: an open at a real date that is not one of the battle\'s days opens the default view, nothing marked; the clear still fires once', () => {
+  const ELSE = 'b-elsewhere';
+  const D3 = '2026-09-28';
+  const elseBattle = () => battleOf({ id: ELSE, agentBattleId: ELSE, timing: { tradingDays: [D2, D3] }, completedAt: `${D3}T20:05:00.000Z` });
+  const elseTape = () => ({ ...fx.tape2, battleId: ELSE });
+  const moment = () => { const w = momentsOf(fx.tape2.tags.items)[0]; return { situationId: w.situationId, symbol: w.symbol, fromTickSeq: w.fromTickSeq, toTickSeq: w.toTickSeq }; };
+  const mountAt = async (etDate) => {
+    let used = 0;
+    lastBattle = elseBattle();
+    lastReaders = readersOf({ [D2]: elseTape(), [D3]: { ...elseTape(), etDate: D3 } }, []);
+    m.render(<FilmRoomScreenV2 battle={lastBattle} onBack={() => {}} viewerId="viewer-1" readers={lastReaders} nowMs={NOW} cardsApi={api} openAt={{ battleId: ELSE, etDate, moment: moment() }} onOpenAtUsed={() => { used += 1; }} />);
+    await m.flush(8);
+    return () => used;
+  };
+  const pressed = () => m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent;
+
+  it('a Saturday between the battle\'s days (a real date, battleReviewAtOf accepts it): the default day (the completed battle\'s last), no moment marked, no read of the foreign day; onOpenAtUsed once (the mutant: a foreign day\'s openAt marking a moment)', async () => {
+    const used = await mountAt('2026-09-26');
+    expect(pressed()).toContain('Sep 28');
+    expect(m.q('[data-moment-opened]')).toBeNull();
+    expect(lastReaders.calls.filter((c) => c[0] === 'tape').map((c) => c[2])).not.toContain('2026-09-26');
+    expect(used()).toBe(1);
+  });
+
+  it('the control: one of the battle\'s days opens there, the moment marked; onOpenAtUsed once', async () => {
+    const used = await mountAt(D2);
+    expect(pressed()).toContain('Sep 25');
+    expect(m.q('[data-moment-opened]')).toBeTruthy();
+    expect(used()).toBe(1);
+  });
+
+  it('battleReviewAtOf itself is unchanged: the Saturday is a real date it accepts — the bound is the screen\'s', async () => {
+    const { battleReviewAtOf } = await import('../../components/Forge/Watchlist/ideaNavigation');
+    expect(battleReviewAtOf({ etDate: '2026-09-26', moment: moment() }, ELSE)).toMatchObject({ battleId: ELSE, etDate: '2026-09-26' });
   });
 });
