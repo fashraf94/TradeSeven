@@ -2,9 +2,9 @@
 
 **Date:** Nov 12, 2026; the follow-up on the founder's report rulings Nov 12–13 (§16–§18); round 2, Nov 13 (§20–§22) · **Session:** local Claude Code (Opus 5.5), own worktree · **Branch:** `claude/shared-research-b1` · **PR:** #1048 (draft)
 **Spec:** `docs/specs/20261109_SHARED_RESEARCH_B1_B2_BUILD_SPEC_V1_2.md` (V1.2), committed verbatim as the branch's first commit, plus §15 (the founder's B1 preamble rulings, Nov 12), §16 (the founder's B1 report rulings, Nov 12) and §17 (the founder's round-2 rulings, Nov 13)
-**Base:** cut from `origin/main` @ `c37baa0d1cad220d37a41dae312e3d212ff27d4c` (`ba22a52f` is an ancestor); `origin/main` merged in three times — `9ca96ff2` (#1045, #1046) at `7845d79e`, `29e8f4de` (#1051, #1047) at `890cf292`, and `577f17eb` (#1052) at `a6a14275` (only `docs/README.md` ever overlapped, auto-merged)
+**Base:** cut from `origin/main` @ `c37baa0d1cad220d37a41dae312e3d212ff27d4c` (`ba22a52f` is an ancestor); `origin/main` merged in four times — `9ca96ff2` (#1045, #1046) at `7845d79e`, `29e8f4de` (#1051, #1047) at `890cf292`, `577f17eb` (#1052) at `a6a14275` and `66781ae2` (#1053) at `ae9b28da` (only `docs/README.md` ever overlapped, auto-merged)
 **Spec commit:** `78fa99409417f0b679e521538cb26c77067e14e8` (the spec byte for byte, SHA-256 `19da9b97d3f6092e9630a11ae36537edd7d33686f4ef17e97f700d0e7cea3a9a`, LF, plus its `docs/README.md` row) · **§15:** `b335cbd5` · **§16:** `3114fc33` · **§17:** `aab75da7`
-**Code heads:** the first pass `6af8196a`; the follow-up `ed069990` (checked on `9e487165`, §18); round 2 `310af3b1`, merged with `main` `577f17eb` (the tree every final check ran on, §22) · this report's commit is the one on top (docs only)
+**Code heads:** the first pass `6af8196a`; the follow-up `ed069990` (checked on `9e487165`, §18); round 2 `310af3b1`, merged with `main` `66781ae2` at `ae9b28da` (the tree every final check ran on, §22) · this report's commit is the one on top (docs only)
 
 ## Verdict
 
@@ -13,8 +13,8 @@
 | What was built | Spec §6 entire: one route `api/forge/shared-research.js` (GET reads; POST `frame`, `open`, `step`, `close`, `adopt`), the `api/_utils/sharedResearch/` modules, the dark flag and the shared vocabulary in `src/`, the rulebook §4–5, the `firestore.rules` blocks and their emulator test, the §6.11 tests and the §6.12 cost controls. |
 | Is it dark? | Yes. `SHARED_RESEARCH_MODE = 'off'`; every action and read answers `404 disabled` before auth. Nothing in the app imports the two new `src/` modules: the minified client bundle equals `main`'s, file for file (§22). |
 | Founder rulings | §15 S-1 to S-6 built as ruled; the one probe ran (one call, `claude-sonnet-5-5`, structured output accepted). **§16 FQ-1 to FQ-8 and NS-1 built as ruled (§16 below); §17 FQ-9 to FQ-15 (round 2): five built, two kept as built (§20).** The recorded probe still validates unchanged under them. |
-| Tests (final, round 2, on the merged tree `310af3b1`) | Full Linux suite: exit 0 — **1,431 files passed, 9 skipped (1,440); 31,519 tests passed, 99 skipped (31,618)**. The 20 Shared Research test files: 306 rows, all passed (Linux and Windows). Rules suite (emulator): exit 0 — 42 files, 764 tests passed (the new `sharedResearchSessions.rules.mjs`: 16). `lint:gate` (full repo): exit 0. |
-| Mutations (final) | **69 of 69 killed** at `310af3b1`: the earlier 64 (F4 and F4b re-cut to round 2's chain rule) and one for each round-2 change (FQ-9, 10, 11, 14, 15); every file restored byte for byte (SHA-256 checked). |
+| Tests (final, round 2, on the merged tree `ae9b28da`) | Full Linux suite: exit 0 — **1,432 files passed, 10 skipped (1,442); 31,567 tests passed, 120 skipped (31,687)**. The 20 Shared Research test files: 306 rows, all passed (Linux and Windows). Rules suite (emulator): exit 0 — 42 files, 764 tests passed (the new `sharedResearchSessions.rules.mjs`: 16). `lint:gate` (full repo): exit 0. |
+| Mutations (final) | **69 of 69 killed** at `310af3b1` (the code the final tree carries; #1053 touched none of it): the earlier 64 (F4 and F4b re-cut to round 2's chain rule) and one for each round-2 change (FQ-9, 10, 11, 14, 15); every file restored byte for byte (SHA-256 checked). |
 | Review | First pass: four lenses and a refuter — 27 finding lines, **12 CONFIRMED (11 distinct), 15 PARTLY, 0 refuted** (§10). Follow-up: the second refuter pass (honesty and record integrity) over everything after `dd792e4e` — **18 CONFIRMED (13 honesty, 5 integrity), all fixed**, 16 letter notes (§17). Round 2: no third refuter pass, by the founder's instruction. |
 | Open for the founder | **No questions.** FQ-1 to FQ-8 are ruled (§16) and FQ-9 to FQ-15 (§20). What to watch once the allowlist is on is §21. Before the allowlist flip: deploy the rules and the `researchWork` index (§13). |
 | STOP list | Nothing on it was done: no fence contact, no `src/components/**` edit, no golden or idea-version hash moved, no client-supplied origin/ref/finding/summary/kept ids/attribution accepted, nothing the server or the model writes carries a ticker the universe does not hold (spec §17 FQ-14: the player's quoted words are the one exception, kept verbatim and masked in everything the model sees), emulator only, one provider call (the probe), no legacy model id, no new index, no module-scope flag read. |
@@ -505,8 +505,8 @@ A turn that ignores the room line still fails `findings_full` after its call; th
 >
 > **Smoke branch:** none (K-11).
 >
-> **Checks** (on the tree merged with `main` `577f17eb`):
-> - Full Linux suite: exit 0, 1,431 files passed, 9 skipped; 31,519 tests passed, 99 skipped.
+> **Checks** (on the tree merged with `main` `66781ae2`):
+> - Full Linux suite: exit 0, 1,432 files passed, 10 skipped; 31,567 tests passed, 120 skipped.
 > - Rules suite: exit 0, 42 files, 764 tests.
 > - `lint:gate`: exit 0.
 > - Bundle identical to `main`'s.
@@ -528,7 +528,7 @@ A turn that ignores the room line still fails `findings_full` after its call; th
 1. `origin/main` `577f17eb` (#1052) merged at `a6a14275`; no file overlapped.
 2. Spec §17 appended in the founder's words, with the scope line and what B2 reads (`aab75da7`).
 3. The rulings in code, with rows (`310af3b1`), on the merged tree.
-4. The final checks on that tree (§22); this report. No third refuter pass, by the founder's instruction.
+4. The checks on that tree; then `origin/main` `66781ae2` (#1053) merged at `ae9b28da` just before the push, no file overlapping but `docs/README.md`, and the final checks ran again there (§22); this report. No third refuter pass, by the founder's instruction.
 
 ### 20.2 Each ruling
 
@@ -580,11 +580,11 @@ Things noticed in round 2. They are not founder questions; they are signals to r
 7. **The limiters are per instance** (FQ-13, kept). Bursts spread across Vercel instances are not bounded by them; the Firestore step-call counters are the hard daily bound.
 8. **The chain walk** (FQ-10) follows `supersedes` through at most the record's 100 findings, and a seen-set stops a cycle.
 
-## 22. The final checks (round 2, on the merged tree `310af3b1`)
+## 22. The final checks (round 2, on the merged tree `ae9b28da`)
 
 | Check | Result |
 |---|---|
-| Full suite, Linux (WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, `--maxWorkers=8`, Node 20.20.2) | **exit 0 · Test Files 1,431 passed, 9 skipped (1,440) · Tests 31,519 passed, 99 skipped (31,618)** · 298 s, at `310af3b1` (the JSON report agrees: 0 failed). The 9 skipped files are the usual emulator, browser-bounds and golden-capture files. |
+| Full suite, Linux (WSL, `flock /tmp/pd-suite.lock`, `TZ=UTC`, `--maxWorkers=8`, Node 20.20.2) | **exit 0 · Test Files 1,432 passed, 10 skipped (1,442) · Tests 31,567 passed, 120 skipped (31,687)** · 314 s, at `ae9b28da` (the JSON report agrees: 0 failed). The 10 skipped files are the usual emulator, browser-bounds and golden-capture files (#1053 added one browser file). Before the last merge, at `310af3b1`: exit 0, 1,431 files and 31,519 tests passed. |
 | The Shared Research test files (20 with `rulingsRound2.test.js`) | 306 rows, all passed: route 42, `stepSchema` 49, `reviewFixes` 34, `store` 34, `refuterPass` 24, `gate` 18, `adoptPreview` 14, `modelTurn` 12, `companies` 11, `session` 11, `rulingsRound2` 10, `prompt.honesty` 9, `opening` 7, `retrieval` 6, flags 6, `stepSchema.recorded` 5, constants 5, `promptBudget` 4, `copy.guard` 3, `gate.surface` 2 |
 | `npm run test:rules` (emulator, WSL, JDK 21) | exit 0 — 42 files, 764 tests passed (the new `sharedResearchSessions.rules.mjs`: 16) |
 | `npm run lint:gate` (WSL, full repo) | exit 0 (`eslint . --config eslint.gate.config.js --max-warnings 0`, full repo) |
@@ -592,12 +592,12 @@ Things noticed in round 2. They are not founder questions; they are signals to r
 | The recorded probe | validates unchanged: `ok`, no notes (its reply passes the new number check) |
 | Review threshold | 50 files, +8,585 / −1 against `main` `577f17eb` at `310af3b1` (BUILD_RULES §2: at least 10 files or 1,500 lines) |
 
-**Client bundle identity (K-2).** `npx vite build` in WSL, at `main` `577f17eb` and at this report's head (the pushed head), each in its own worktree. The tree hash is the SHA-256 of the sorted per-file SHA-256 list of `dist/`.
+**Client bundle identity (K-2).** `npx vite build` in WSL, at `main` `66781ae2` and at this report's head (the pushed head), each in its own worktree. The tree hash is the SHA-256 of the sorted per-file SHA-256 list of `dist/`.
 
 | Build | Files | Tree hash |
 |---|---|---|
-| `main` @ `577f17eb` | 111 | `704ae916839a3da8` |
-| pushed head (this report's commit) | 111 | `704ae916839a3da8` — identical to `main`, file for file |
+| `main` @ `66781ae2` | 111 | `300a15d1158f2a24` |
+| pushed head (this report's commit) | 111 | `300a15d1158f2a24` — identical to `main`, file for file |
 
 **The mutation battery** ran at `310af3b1` on a snapshot tree. Each mutant was applied, the Shared Research test files were run (`TZ=UTC`) and judged by exit code, and every file was restored from its saved bytes with SHA-256 compared. The baseline exited 0 before the battery and after it. F4 and F4b were re-cut to the round-2 chain rule; R2-FQ9 to R2-FQ15 are new.
 
