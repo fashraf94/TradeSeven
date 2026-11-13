@@ -225,7 +225,8 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     const openDay = markers.find(isOpen)?.day ?? null;
     const dayMarkers = byDay.map((g) => {
       const latest = markers.find((m) => m.id === g.latestId);
-      const text = g.day === openDay ? (g.count > 1 ? SHELL_COPY.dayCount(weekdayOfDay(g.day) ?? g.day, g.count) : markers.find(isOpen).label) : null;
+      // A tapped item's pin captions ITS marker (review D5a, never another on that day); otherwise the day's count.
+      const text = g.day === openDay ? (g.count > 1 && tapped?.pin?.type !== 'time' ? SHELL_COPY.dayCount(weekdayOfDay(g.day) ?? g.day, g.count) : markers.find(isOpen).label) : null;
       return { id: `day:${g.day}`, day: g.day, color: color(latest?.token), ...(text ? { text } : {}) };
     });
     return {
