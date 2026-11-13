@@ -122,7 +122,21 @@ export const routeOf = (route) => (Object.prototype.hasOwnProperty.call(STORED_R
 export const NOMINATING_ROUTE = 'offer';
 
 /**
- * C1 fix round, Astra F3 — the stages a CREATE writes its first history row at: `card` (Watch, Set) or `nominated` (the
- * Offer route; a v1 Practice entry). The chain recognises a create row by this shape, never by its index alone.
+ * C1 fix round, Astra F3 (and its §2 review, B1) — the stage a CREATE writes its first history row at, BY THE CARD'S
+ * STORED ROUTE: `nominated` for the Offer route and the stored alias `drill` (v1 Practice), `card` for Watch and Set;
+ * null for a route the vocabulary does not know. The chain recognises a create row by this shape, never by its index
+ * alone — so a Watch or Set card's `nominated` row is its nominate op, never its filing.
  */
-export const CREATE_ROW_STAGES = Object.freeze(['card', 'nominated']);
+export const createStageOf = (route) => {
+  const r = routeOf(route);
+  if (!CARD_ROUTES.includes(r)) return null;
+  return r === NOMINATING_ROUTE ? 'nominated' : 'card';
+};
+
+/**
+ * Amendment A CA-22 (and the §2 review's B3) — the ONE reader of the stored no-fill fact: the card's result says its
+ * accepted idea ended before its first fill (`result.noFill: true`, written by the transition helper with the row's own
+ * flag in the same patch). The chain's line and the stage word both read it, so they never disagree; it is never
+ * inferred from a missing `testing` row.
+ */
+export const endedBeforeFirstFill = (entry) => entry?.result !== null && typeof entry?.result === 'object' && entry.result.noFill === true;

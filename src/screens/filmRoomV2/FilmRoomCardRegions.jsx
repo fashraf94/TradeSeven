@@ -66,7 +66,7 @@ import { SITUATIONS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { CARD_SLOTS } from '../../data/cardSlots';
 // Build C §3: the stage vocabulary v2, from its one export
-import { CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_EXPIRY_SESSIONS, STORED_ROUTE_ALIASES, isNotTaken, isRetirableByPlayer, routeOf } from '../../data/cardStages';
+import { CARD_ROUTES, NOMINATING_ROUTE, NOMINATION_EXPIRY_SESSIONS, STORED_ROUTE_ALIASES, endedBeforeFirstFill, isNotTaken, isRetirableByPlayer, routeOf } from '../../data/cardStages';
 import { RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED } from '../../config/featureFlags';
 import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
@@ -371,8 +371,10 @@ export function ChainLine({ card, line, day = null }) {
 }
 
 /**
- * Amendment A CA-17 — THE ONE LABEL READER for a card's stage word: the receipt's route line, My cards, the chain and
- * "since last time" all name a stage through it. At `nominated`: "offered to your agent" — except an entry whose STORED
+ * Amendment A CA-17 — THE ONE LABEL READER for a card's stage word: the receipt's route line and My cards name a stage
+ * through it, and so does every chain line that names a stage (a v1 `drill` row, a stage the copy does not know) —
+ * on the receipt and in "since last time", which draws the same ChainLine. The chain's state lines keep their own words
+ * (Offered, Tested, Equipped …), which name events, not the stage. At `nominated`: "offered to your agent" — except an entry whose STORED
  * route is `drill` (v1 Practice), which keeps "nominated for the Practice Field" (reading 16). The stored route decides,
  * never the vocabulary version: a v1 Watch or Set card offered after C1 was offered to the agent. CA-22: a `tested`
  * card whose result carries the stored no-fill fact reads "ended before its first trade", never "tested". Any other
@@ -380,7 +382,7 @@ export function ChainLine({ card, line, day = null }) {
  */
 export function stageLabelOf(card, stage = card?.stage) {
   if (stage === 'nominated' && Object.prototype.hasOwnProperty.call(STORED_ROUTE_ALIASES, card?.route)) return T.stageWordsOf.drillNominated;
-  if (stage === 'tested' && isObjLike(card?.result) && card.result.noFill === true) return T.stageWordsOf.noFill;
+  if (stage === 'tested' && endedBeforeFirstFill(card)) return T.stageWordsOf.noFill;
   return wordOf(T.stageWords, stage);
 }
 const isObjLike = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);

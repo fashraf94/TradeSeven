@@ -400,7 +400,9 @@ export const FILM_ROOM_COPY = Object.freeze({
     // Amendment A CA-7: the receipt's "Offer to your agent" — a card at `card`, only while the owner's book is open
     offerToAgent: 'Offer to your agent',
     offering: 'Offering…',
-    // CA-7: what a refused offer says — every source refusal one sentence (F1); the rest each its own; never "filed"
+    // CA-7: what a refused offer says — every source refusal one sentence (F1); the rest each its own. Never "Nothing was
+    // filed" or "could not be filed" (nothing was being filed); the ruled source sentence's "since it was filed" names when
+    // the card was filed, as CA-7's table gives it
     offerRefusals: {
       source: "This card's moment has changed on the tape since it was filed, so it can't be offered. The card stays as it is.",
       tape_unreadable: 'The tape for this day could not be read. Nothing was offered. Try again.',

@@ -2379,16 +2379,28 @@ describe('Amendment A CA-5 / CA-22 — "An offer waits in the Forge" and "Ended 
     await sweepAll(fx.tape2, 'ended before first trade');
   });
 
-  it('read from the stored flag, never from a missing testing row (the mutant): a tested row with no testing row before it but no noFill says "Tested"; a normal testing → tested says "Tested"', () => {
+  it('read from the ONE stored fact (the result\'s noFill), never from a missing testing row (the mutant): a tested row with no testing row before it but no flag says "Tested"; the chain line and the stage word agree whichever flag a split record carries (§2 review B3)', async () => {
     const at = (hm) => `${D2}T${hm}:00.000Z`;
     const card = {
       entryId: 'e1', route: 'offer', stage: 'tested', result: { ideaId: 'i', resultRef: 'r', contractCondition: 'met', economicResult: 'ahead' },
       stageHistory: [{ stage: 'nominated', at: at('20:00'), by: 'player' }, { stage: 'nominated', event: 'nomination', state: 'accepted', at: at('20:10'), by: 'server' }, { stage: 'tested', at: at('20:30'), by: 'server' }],
     };
     expect(chainOf(card)[0]).toEqual({ kind: 'tested', at: at('20:30'), k: 2, by: 'server' });
-    expect(chainOf({ ...card, stageHistory: [...card.stageHistory.slice(0, 2), { stage: 'tested', at: at('20:30'), by: 'server', noFill: true }] })[0]).toMatchObject({ kind: 'tested', noFill: true });
-    // the result's own flag alone does not draw it either: the row's is the chain's source
-    expect(chainOf({ ...card, result: { ...card.result, noFill: true } })[0]).not.toHaveProperty('noFill');
+    // the result's stored fact draws it, on the chain and the stage word alike
+    expect(chainOf({ ...card, result: { ...card.result, noFill: true } })[0]).toMatchObject({ kind: 'tested', noFill: true });
+    // a row flag alone (a split record no writer leaves) draws nothing different from the stage word: both say tested
+    const rowOnly = { ...card, stageHistory: [...card.stageHistory.slice(0, 2), { stage: 'tested', at: at('20:30'), by: 'server', noFill: true }] };
+    expect(chainOf(rowOnly)[0]).not.toHaveProperty('noFill');
+    const said = async (c) => {
+      m.teardown(); m.setup();
+      const full = { ...c, ownerId: OWNER, agentId: AGENT, createdAt: at('20:00'), situationId: 'stalled', source: { battleId: B, etDate: D2, symbol: 'ACN' }, questionId: 'stalled.want', note: 'A note.', version: 3 };
+      m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [full] } }} card={full} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} />);
+      await m.flush(2);
+      const r = m.q('[data-card-receipt]');
+      return [r.querySelector('[data-chain-line="tested"] span').textContent.split(' · ')[0], /Stage · ([a-z ]+)/.exec(r.textContent)[1]];
+    };
+    expect(await said({ ...card, result: { ...card.result, noFill: true } })).toEqual(['Ended before its first trade', 'ended before its first trade']);
+    expect(await said(rowOnly)).toEqual(['Tested', 'tested']);
   });
 });
 
@@ -2636,5 +2648,40 @@ describe('Amendment A CA-7 — "Offer to your agent" on a card-stage receipt, on
     expect(m.buttons('Offer to your agent')).toHaveLength(0);
     expect(m.q('[data-offer-note]')).toBeNull();
     expect(api.calls).toEqual([]);
+  });
+});
+
+// ── the fix round's §2 review (report §9.7): the create row by the stored route; no player line from a server row ──
+describe('C1 fix round §2 review — the chain\'s create row is the stored route\'s; a server row never draws the player\'s line', () => {
+  const at = (hm) => `${D2}T${hm}:00.000Z`;
+  const card = (stageHistory, over = {}) => ({ entryId: 'e1', route: 'watch', stage: 'nominated', stageHistory, ...over });
+
+  it('B1: a WATCH or SET card\'s player `nominated` row at index zero is its nominate op, never its filing — no "Filed" line (Astra\'s F3 contradiction through another first row)', () => {
+    for (const route of ['watch', 'set']) {
+      expect(chainOf(card([{ stage: 'nominated', by: 'player', at: at('17:00'), opId: 'n1' }], { route })).map((l) => l.kind), route).toEqual(['offered']);
+    }
+    // kept: the Offer route and a v1 drill entry are filed at nominated; Watch and Set at card
+    expect(chainOf(card([{ stage: 'nominated', by: 'player', at: at('17:00'), opId: 'e1' }], { route: 'offer' })).map((l) => l.kind)).toEqual(['offered', 'filed']);
+    expect(chainOf(card([{ stage: 'nominated', by: 'player', at: at('17:00'), opId: 'e1' }], { route: 'drill' })).map((l) => l.kind)).toEqual(['stage', 'filed']);
+    expect(chainOf(card([{ stage: 'card', by: 'player', at: at('17:00'), opId: 'e1' }], { route: 'set', stage: 'card' })).map((l) => l.kind)).toEqual(['filed']);
+    // an Offer card's first row at `card` is no create (an Offer is filed at nominated), and an unknown route files nothing
+    expect(chainOf(card([{ stage: 'card', by: 'player', at: at('17:00'), opId: 'e1' }], { route: 'offer', stage: 'card' }))).toEqual([]);
+    expect(chainOf(card([{ stage: 'card', by: 'player', at: at('17:00'), opId: 'e1' }], { route: 'practice', stage: 'card' }))).toEqual([]);
+  });
+
+  it('B1 on the receipt: a Watch card filed at 16:00Z whose first row became its nominate row at 17:00Z draws no "Filed · 1:00 PM" beside a note credited 12:00 PM', async () => {
+    const c = { ...card([{ stage: 'nominated', by: 'player', at: '2026-09-25T17:00:00.000Z', opId: 'n1' }]), ownerId: OWNER, agentId: AGENT, createdAt: '2026-09-25T16:00:00.000Z', situationId: 'stalled', source: { battleId: B, etDate: D2, symbol: 'ACN' }, questionId: 'stalled.want', note: 'A note.', nomination: { bookId: 'b', nominationId: 'n1', state: 'queued' }, version: 2 };
+    m.render(<Receipt day={D2} counter={{ status: 'ready', data: { cards: [c] } }} card={c} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} />);
+    await m.flush(2);
+    const r = m.q('[data-card-receipt]');
+    expect(r.textContent).not.toContain('Filed');
+    expect(r.querySelector('[data-quotation="you"] [data-quote-attribution]').textContent).toContain('12:00 PM');
+  });
+
+  it('B2: a SERVER row at nominated with no event draws no "Offered to your agent" — that line is the player\'s nominate alone; nor does it reach the latest list', () => {
+    const c = card([{ stage: 'nominated', by: 'server', writer: 'practice_field', at: at('17:00') }], { route: 'offer' });
+    expect(chainOf(c)).toEqual([]);
+    expect(latestOf([c])).toEqual([]);
+    expect(chainOf(card([{ stage: 'card', by: 'player', at: at('16:00') }, { stage: 'nominated', by: 'server', at: at('17:00') }])).map((l) => l.kind)).toEqual(['filed']);
   });
 });
