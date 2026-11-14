@@ -11,7 +11,7 @@ import { formatHubDayTime } from './activityDates';
 import { bookViewOf } from './perGameLoadoutModel';
 import { LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
 import {
-  RESEARCH_DOOR_STATUS, admissionBattleIdOf, equippedBookLabelOf, equippedWatchlistLabelOf, researchDoorOf, researchRecordsOf, sessionIdOf,
+  RESEARCH_DOOR_STATUS, admissionBattleIdOf, equippedBookLabelOf, equippedListLabelOf, equippedWatchlistLabelOf, researchDoorOf, researchRecordsOf, sessionIdOf,
 } from './researchDoorView';
 
 const AUTH = Object.freeze({ signedIn: true, uid: 'uid-A', authEpoch: 2 });
@@ -128,6 +128,18 @@ describe('equippedListLabel — the list as the Loadout card shows it', () => {
     expect(equippedBookLabelOf({ baggerbomb: { book: bookViewOf(null, []) } })).toBeNull();
     expect(equippedBookLabelOf(null)).toBeNull();
   });
+  it('equippedListLabelOf: inside a per-game scope, the BaggerBomb card\'s book (with the shell\'s lists); with no scope, the watchlist card\'s list', () => {
+    const scope = { agent: { id: 'agent-a', archetype: 'degen', loadouts: { baggerbomb: { archetype: 'degen', book: { ref: { watchlistId: 'wl-1' }, name: 'Stored name', pin: null } } } }, lock: null, lockFailed: false, activeBattles: [] };
+    const lists = { committed: [{ watchlistId: 'wl-1', name: 'Grid builders', tickers: [] }] };
+    expect(equippedListLabelOf(scope, lists, null)).toBe('Grid builders');
+    // the lists not answered yet: the book's stored name, as the card shows it
+    expect(equippedListLabelOf(scope, null, null)).toBe('Stored name');
+    const loadout = { status: LOADOUT_STATUS.READY, watchlist: { state: WATCHLIST_STATE.READY, id: 'wl-9', name: 'Tech Leaders' } };
+    expect(equippedListLabelOf(null, lists, loadout)).toBe('Tech Leaders');
+    // a scope before the agent is read: no cards, no label
+    expect(equippedListLabelOf({ agent: null }, lists, loadout)).toBeNull();
+  });
+
   it('per-game loadouts off: the equipped watchlist the card resolved, else null', () => {
     const loadout = { status: LOADOUT_STATUS.READY, watchlist: { state: WATCHLIST_STATE.READY, id: 'wl-1', name: 'Tech Leaders' } };
     expect(equippedWatchlistLabelOf(loadout)).toBe('Tech Leaders');

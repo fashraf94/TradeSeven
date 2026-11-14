@@ -23,12 +23,12 @@ const { userState } = vi.hoisted(() => ({ userState: { user: { displayName: 'Fla
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 vi.mock('firebase/auth', () => ({ getAuth: () => ({ currentUser: { getIdToken: async () => 'token' } }) }));
-const r = vi.hoisted(() => ({ identity: null, agent: null, window: null, market: null }));
+const r = vi.hoisted(() => ({ identity: null, agent: null, window: null, market: null, lists: [] }));
 vi.mock('../../services/authIdentity', () => ({ useAuthIdentity: () => r.identity }));
 vi.mock('../../hooks/useAgent', () => ({ default: () => r.agent }));
 vi.mock('./hub/useHubCompletedBattles', () => ({ default: () => r.window }));
 vi.mock('../../utils/marketSchedule', () => ({ getMarketState: () => r.market }));
-vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists: async () => [] }));
+vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists: async () => r.lists }));
 vi.mock('../../services/leagueLockService', () => ({ subscribeLeagueLock: (uid, onLock) => { onLock({ locked: false, groupId: null, status: null, endsAtMs: null }); return () => {}; } }));
 vi.mock('../../services/hypothesisVersionService', () => ({ listHypothesisVersions: vi.fn(async () => ({ watchlistId: 'wl-1', currentVersion: 0, versions: [], research: [] })) }));
 vi.mock('../../hooks/useDailyRegimeBrief', () => ({ default: function useDailyRegimeBrief() { return { dailyBrief: null, keyEvents: [], themes: [], forDate: null, generatedAt: null, isStale: false, loading: true, error: null, refetch: () => {} }; } }));
@@ -92,6 +92,7 @@ beforeEach(() => {
   r.agent = agentReady();
   r.window = windowOf([DONE]);
   r.market = { state: 'OPEN', isOpen: true };
+  r.lists = [];
   body.props = null;
   svc.fetchFeed.mockReset().mockResolvedValue(STORIES);
   svc.fetchSharedResearchRecords.mockReset().mockResolvedValue([]);
@@ -435,5 +436,32 @@ describe('the sheet: each opener, its mode, focus, one overlay (amendment §3.2)
     click(workButton());
     await flush();
     expect(body.props.stories).toEqual([]);
+  });
+});
+
+describe('equippedListLabel: the list as the Loadout card shows it (amendment §3.2, the props table)', () => {
+  beforeEach(() => { m.mode = 'on'; });
+
+  it('per-game loadouts on (main): the name of the BaggerBomb book, the same words the Loadout card shows', async () => {
+    r.agent = { ...agentReady(), agent: { ...agentReady().agent, loadouts: { baggerbomb: { archetype: 'degen', book: { ref: { watchlistId: 'wl-1' }, name: 'Stored name', pin: null } } } } };
+    r.lists = [{ watchlistId: 'wl-1', name: 'Grid builders', status: 'committed', tickers: [{ symbol: 'NVDA' }, { symbol: 'ETN' }] }];
+    await render('mobile');
+    click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+    await flush();
+    const card = document.querySelector('[data-loadout-card="baggerbomb"]');
+    expect(card.textContent).toContain('Grid builders');
+    await openResearchArea('mobile');
+    click(workButton());
+    await flush();
+    expect(body.props.equippedListLabel).toBe('Grid builders');
+  });
+
+  it('no book equipped: null (the body then names no list to replace)', async () => {
+    r.agent = { ...agentReady(), agent: { ...agentReady().agent, loadouts: { baggerbomb: { archetype: 'degen', book: { ref: null, name: null, pin: null } } } } };
+    await render('mobile');
+    await openResearchArea('mobile');
+    click(workButton());
+    await flush();
+    expect(body.props.equippedListLabel).toBeNull();
   });
 });

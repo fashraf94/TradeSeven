@@ -16,11 +16,13 @@
 //                         Loadout card shows it (hub/perGameLoadoutModel.js bookViewOf), or null without a book.
 //   equippedWatchlistLabelOf  the same with per-game loadouts off: the equipped watchlist's name as the watchlist card has
 //                         resolved it, or null.
+//   equippedListLabelOf   the two joined, by whether the shell sits in a per-game loadout scope (no flag read).
 
 import { formatHubDayTime } from './activityDates';
 import { HUB_COPY as COPY } from './hubCopy';
 import { hubMs } from './hubDate';
 import { LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
+import { cardsOf } from './perGameLoadoutContext';
 
 /** The door's three states (amendment §3.1). */
 export const RESEARCH_DOOR_STATUS = Object.freeze({ LOADING: 'loading', READY: 'ready', ERROR: 'error' });
@@ -89,4 +91,13 @@ export function equippedBookLabelOf(cards) {
 export function equippedWatchlistLabelOf(loadout) {
   if (loadout?.status !== LOADOUT_STATUS.READY || loadout.watchlist?.state !== WATCHLIST_STATE.READY) return null;
   return nonEmpty(loadout.watchlist.name) || COPY.loadout.watchlistFallback;
+}
+
+/**
+ * The sheet's `equippedListLabel`, as the Loadout shows the equipped list: inside a per-game loadout scope (the shells sit in
+ * PerGameLoadoutScope exactly when per-game loadouts are on) the BaggerBomb card's book, from the scope's own cards with the
+ * shell's committed lists; with no scope, the watchlist card's list. Decided by the scope's presence, so no flag is read here.
+ */
+export function equippedListLabelOf(scope, lists, loadout) {
+  return scope ? equippedBookLabelOf(cardsOf({ ...scope, lists })) : equippedWatchlistLabelOf(loadout);
 }

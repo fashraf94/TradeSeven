@@ -180,8 +180,7 @@ import useHubResearchAdmission from '../../hooks/useHubResearchAdmission';
 import useHubStories from '../../hooks/useHubStories';
 import useHubSharedResearch from '../../hooks/useHubSharedResearch';
 import { selectStories } from '../../selectors/storySelection';
-import { admissionBattleIdOf, equippedBookLabelOf, equippedWatchlistLabelOf, researchDoorOf, researchRecordsOf } from './hub/researchDoorView';
-import { cardsOf } from './hub/perGameLoadoutContext';
+import { admissionBattleIdOf, equippedListLabelOf, researchDoorOf, researchRecordsOf } from './hub/researchDoorView';
 import SharedResearchSheet from './SharedResearchSheet';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
@@ -543,7 +542,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
           stories={researchDoor.stories}
           agentName={researchDoor.agentName}
           agentId={researchDoor.agentId}
-          equippedListLabel={PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? equippedBookLabelOf(cardsOf({ ...use(PerGameLoadoutContext), lists: runtime.lists })) : equippedWatchlistLabelOf(sections.loadout)}
+          equippedListLabel={equippedListLabelOf(use(PerGameLoadoutContext), runtime.lists, sections.loadout)}
           gated={researchDoor.gated}
           phone
           onClose={runtime.closeSheet}
@@ -739,7 +738,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
           stories={researchDoor.stories}
           agentName={researchDoor.agentName}
           agentId={researchDoor.agentId}
-          equippedListLabel={PER_GAME_LOADOUT_ENABLED && AGENT_FORM_ARMORY_ENABLED ? equippedBookLabelOf(cardsOf({ ...use(PerGameLoadoutContext), lists: runtime.lists })) : equippedWatchlistLabelOf(sections.loadout)}
+          equippedListLabel={equippedListLabelOf(use(PerGameLoadoutContext), runtime.lists, sections.loadout)}
           gated={researchDoor.gated}
           onClose={runtime.closeSheet}
           opener={sheet.opener}
