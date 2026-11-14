@@ -20,10 +20,17 @@
 // CORPORATE ACTIONS ARE APPLIED ONCE PER LEDGER. The daily layer presents the same action on several consecutive
 // closes (its window reaches five days back), and one action (a SPY dividend) can belong to several ledgers at
 // once. Each ledger therefore keeps its OWN record of the action ids it has applied or declined, and an action is
-// applied to a ledger only when its id is in neither list. Only splits, reverse splits, stock distributions and
-// cash dividends are applied here: a ticker change or a delisting is NOT (the engine's delisting is a forced sale
-// at a carried mark, which an idea book never does — B-NOFILL); such a symbol is reported `unresolved`, valued at
-// its carried mark and marked not-full-quality until T1a-2's policy decides it.
+// applied to a ledger only when its id is in neither list. Splits, reverse splits, stock distributions and cash
+// dividends are applied as T1a-1 built them. T1a-2a (Amendment E11) adds the two identity events:
+//   ticker change   the holding's key migrates to the new symbol on every ledger that holds the name; no cash moves;
+//                   one receipt per ledger. The caller renames the line, the book's position and the coverage entry.
+//   delisting       NEVER A SALE. With a cash amount per share on the action it is credited as a receipted corporate
+//                   action on every ledger that holds the name and the holding closes: the cash, less the holding's
+//                   cost basis, is the ledger's realised profit or loss, recorded on the action's receipt (the
+//                   reconciliation checks the sum, as it checks dividends). WITHOUT one, nothing is applied: the
+//                   engine's forced close at a carried mark never reaches an idea book (B-NOFILL). The symbol is
+//                   reported `delistedWaiting` and `unresolved` (carried mark, not full quality), and the idea's own
+//                   holding becomes a waiting sale (close.js; Amendment E9).
 //
 // ONE ACTION, ONE APPLICATION, EVEN WHEN THE FEED LISTS IT TWICE (Astra T1A-01). The feed parser keeps duplicate
 // vendor rows and the engine's selector checks only the ids settled BEFORE the call, so two identical rows in one
@@ -39,7 +46,7 @@
 // Pure: no store, no clock.
 
 import { markBook } from '../mandateValuation.js';
-import { snapshotExcluding } from '../mandateUniverseSnapshot.js';
+import { snapshotExcluding, caActionsBySymbol } from '../mandateUniverseSnapshot.js';
 import { pendingActionsFor, applyCorporateAction, classifyOvernightGaps, deriveActionId } from '../mandateCorporateActions.js';
 import { roundUsd } from '../mandateRounding.js';
 import { MARK_QUALITY } from './constants.js';
@@ -61,7 +68,10 @@ export function newLedger(kind, reservedCapitalUsd) {
     realizedPnlUsd: 0,
     appliedActionIds: [],
     declinedActionIds: [],
+    // Kept for the life of the ledger (Astra's condition on the receipt rule): the reconciliation ties the ledger's
+    // dividends and its realised profit and loss to these two lists, so nothing may prune them.
     corporateActionReceipts: [],
+    saleReceipts: [],
   };
 }
 
@@ -75,6 +85,7 @@ export function cloneLedger(ledger) {
     appliedActionIds: [...(ledger.appliedActionIds || [])],
     declinedActionIds: [...(ledger.declinedActionIds || [])],
     corporateActionReceipts: [...(ledger.corporateActionReceipts || [])],
+    saleReceipts: [...(ledger.saleReceipts || [])],
   };
 }
 
@@ -88,7 +99,11 @@ export function mirrorLedger(kind, source) {
 }
 
 const SHARE_BASIS_TYPES = new Set(['split', 'reverse_split', 'stock_distribution']);
-const APPLICABLE_TYPES = new Set([...SHARE_BASIS_TYPES, 'cash_dividend']);
+const APPLICABLE_TYPES = new Set([...SHARE_BASIS_TYPES, 'cash_dividend', 'ticker_change', 'delisting']);
+
+/** A delisting's cash per share, only when it is a real positive amount. */
+const delistingCashOf = (action) => (typeof action?.cashPerShare === 'number' && Number.isFinite(action.cashPerShare) && action.cashPerShare > 0 ? action.cashPerShare : null);
+const upper = (s) => String(s || '').trim().toUpperCase();
 
 /** The receipt reason of an action id the feed listed twice with different payloads (Astra T1A-01). */
 export const CONFLICTING_ACTION = 'conflicting_action';
@@ -105,7 +120,7 @@ export function unsettledConflicts(ledger) {
 }
 
 /** What makes two feed rows of one id the same action. The id already fixes the type, ticker and effective date. */
-const actionPayloadOf = (row) => JSON.stringify([row.ratio ?? null, row.amount ?? null]);
+const actionPayloadOf = (row) => JSON.stringify([row.ratio ?? null, row.amount ?? null, row.renamedTo ?? null, row.cashPerShare ?? null]);
 
 /**
  * The ids, among this call's due rows, that the feed lists more than once with different payloads.
@@ -132,7 +147,10 @@ function conflictingActionIds(rows) {
  * @param {{ date: string }} opts   the session date being closed
  * @returns {{ ledger: object, applied: Array<object>, declined: Array<object>, unresolved: Set<string>,
  *             conflicts: Array<object>,
- *             shareBasisChanges: Array<{ ticker: string, ratio: number, actionId: string }> }}
+ *             shareBasisChanges: Array<{ ticker: string, ratio: number, actionId: string }>,
+ *             renames: Array<{ from: string, to: string, actionId: string }>,
+ *             closedByCash: Array<{ ticker: string, actionId: string, cashUsd: number, realizedPnlUsd: number }>,
+ *             delistedWaiting: Array<{ ticker: string, actionId: string, effectiveDate: string }> }}
  */
 export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
   const next = cloneLedger(ledger);
@@ -145,6 +163,9 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
   const unresolved = new Set();
   const shareBasisChanges = [];
   const conflicts = [];
+  const renames = [];
+  const closedByCash = [];
+  const delistedWaiting = [];
 
   // A conflict is applied to nobody and settled by nobody: one receipt per id per ledger, a carried mark.
   const conflicting = conflictingActionIds([...pending, ...notEntitled, ...noEntitlementData, ...unrecognized]);
@@ -185,8 +206,47 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
   for (const action of pending) {
     if (!firstOf(action)) continue;
     if (!APPLICABLE_TYPES.has(action.type)) { unresolved.add(action.ticker); continue; }
+    // A delisting with no cash amount is NOT applied (E11): the engine's applier would force a sale at the carried
+    // mark. It is settled by nobody, so a later row that does carry the cash still applies, once.
+    if (action.type === 'delisting' && delistingCashOf(action) === null) {
+      unresolved.add(action.ticker);
+      delistedWaiting.push({ ticker: upper(action.ticker), actionId: action.actionId, effectiveDate: action.effectiveDate });
+      continue;
+    }
+    const heldBefore = next.holdings[upper(action.ticker)] || null;
     const out = applyCorporateAction({ positions: next.holdings, cash: next.cash }, action);
     if (!out.ok) { unresolved.add(action.ticker); continue; }
+    if (action.type === 'delisting') {
+      // The engine credited shares × the deal's cash and dropped the holding. It must have priced at the cash amount
+      // itself — never at a mark — or nothing is applied.
+      if (!out.forcedClose || out.forcedClose.mark !== delistingCashOf(action)) { unresolved.add(action.ticker); continue; }
+      next.holdings = out.positions;
+      next.cash = out.cash;
+      next.realizedPnlUsd = addUsd(next.realizedPnlUsd, out.forcedClose.realizedPnl);
+      next.appliedActionIds.push(action.actionId);
+      const receipt = {
+        actionId: action.actionId, type: action.type, ticker: action.ticker, effectiveDate: action.effectiveDate,
+        cashPerShare: delistingCashOf(action), shares: out.forcedClose.shares, cashUsd: out.forcedClose.proceeds,
+        costBasisUsd: roundUsd(Number(heldBefore?.costBasisTotal) || 0), realizedPnlUsd: out.forcedClose.realizedPnl, incomeUsd: 0,
+        applied: true, appliedOn: date, source: action.source ?? null, note: out.note,
+      };
+      next.corporateActionReceipts.push(receipt);
+      applied.push({ ...action, receipt });
+      closedByCash.push({ ticker: upper(action.ticker), actionId: action.actionId, cashUsd: receipt.cashUsd, realizedPnlUsd: receipt.realizedPnlUsd });
+      continue;
+    }
+    if (action.type === 'ticker_change') {
+      next.holdings = out.positions;
+      next.appliedActionIds.push(action.actionId);
+      const receipt = {
+        actionId: action.actionId, type: action.type, ticker: action.ticker, effectiveDate: action.effectiveDate,
+        renamedTo: upper(action.renamedTo), incomeUsd: 0, applied: true, appliedOn: date, source: action.source ?? null, note: out.note,
+      };
+      next.corporateActionReceipts.push(receipt);
+      applied.push({ ...action, receipt });
+      renames.push({ from: upper(action.ticker), to: upper(action.renamedTo), actionId: action.actionId });
+      continue;
+    }
     // A share-basis action that would round a holding to nothing is not applied (review L1-1): the symbol is held at
     // its carried mark, not full quality, until T1a-2's policy decides it — never a holding of zero shares with a basis.
     if (SHARE_BASIS_TYPES.has(action.type) && !(Number(out.positions[action.ticker]?.shares) > 0)) { unresolved.add(action.ticker); continue; }
@@ -203,7 +263,7 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
     applied.push({ ...action, receipt });
     if (SHARE_BASIS_TYPES.has(action.type)) shareBasisChanges.push({ ticker: action.ticker, ratio: Number(action.ratio), actionId: action.actionId });
   }
-  return { ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges };
+  return { ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges, renames, closedByCash, delistedWaiting };
 }
 
 /**
@@ -296,6 +356,46 @@ export function withCloseMarks(ledger, valuation) {
     };
   }
   return next;
+}
+
+/**
+ * Why a SALE of `symbol` on this ledger must not fill from `snapshot` on `date`, or null (review SX-1). Corporate
+ * actions are applied at the close, so a window on the day one takes effect shows the already-adjusted price beside
+ * a holding that is not yet adjusted: selling there sells the old share count at the new price, or sells ex-dividend
+ * a holding that is owed the dividend. The sale waits (Amendment E9) when:
+ *   corporate_action_pending    the feed lists an action for the symbol, effective on or before `date`, that this
+ *                               ledger has neither applied nor declined and the holding is entitled to — or one it
+ *                               cannot classify. A DELISTING WITH NO CASH AMOUNT does not count: it is never settled,
+ *                               and it is the very reason such a holding is waiting to be sold (E11);
+ *   corporate_action_unsettled  the ledger holds an unsettled conflicting action on the symbol;
+ *   suspected_corporate_action  the engine's gap screen: an overnight move with a split's signature, or one a feed
+ *                               action explains, that the ledger has not applied.
+ * The same screen the close uses to hold a MARK back, asked before a fill — with one exception: a holding a delisting
+ * left waiting (E11) is not put through the gap screen. Its mark has been carried since the delisting, and a delisted
+ * name's price falling to a half or a third of that is the delisting, not a split; held back on that signature its
+ * sale could wait for ever (review, lens 1 refuter). Listed actions and unsettled conflicts still hold it back.
+ */
+export function saleHeldBackBy(ledger, symbol, snapshot, { sinceDate, date }) {
+  const holding = ledger?.holdings?.[symbol];
+  if (!holding) return null;
+  const actionsBySymbol = caActionsBySymbol(snapshot);
+  const one = { [symbol]: holding };
+  const settled = new Set([...(ledger.appliedActionIds || []), ...(ledger.declinedActionIds || [])]);
+  const due = pendingActionsFor(one, actionsBySymbol, { onOrBefore: date, appliedIds: settled });
+  // A conflicting CASH DIVIDEND holds the sale only WHILE THE FEED STILL LISTS A ROW OF IT (the pending rule above
+  // covers that: the feed may yet settle on one row, and the close then credits the idea what its comparison gets —
+  // third refuter pass). Once the feed lists none it can never settle, and it puts no share count in doubt: holding
+  // the sale then would hold the capital for good and protect nothing (second refuter pass, 2b). The feed's window
+  // is a few days, so that wait is bounded. A conflict of ANY other kind, or of none it can name, still holds.
+  const conflicts = unsettledConflicts(ledger).filter((r) => upper(r.ticker) === symbol);
+  const waitingFor = [...due.pending, ...due.noEntitlementData, ...due.unrecognized]
+    .filter((a) => !(a.type === 'delisting' && delistingCashOf(a) === null));
+  if (waitingFor.length > 0) return 'corporate_action_pending';
+  if (conflicts.some((r) => r.type !== 'cash_dividend')) return 'corporate_action_unsettled';
+  const delistedWaiting = holding.exitPending?.reason === 'delisting' || holding.settlementPending?.replacedExit?.reason === 'delisting';
+  if (delistedWaiting) return null;
+  const gaps = classifyOvernightGaps(one, snapshot, actionsBySymbol, { sinceDate: sinceDate ?? null, asOfDate: date, excludeActionIds: settled });
+  return gaps.frozen.has(symbol) ? 'suspected_corporate_action' : null;
 }
 
 /**

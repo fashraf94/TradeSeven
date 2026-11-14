@@ -4,7 +4,7 @@
 // cases B-ENTER, B-FILL, B-RECON; Amendment C §7 cases B-NOFILL, B-OWNED), and the reconciliation itself.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { enterIdea, runIdeaBookEntryPass, computeBasketEntry, entrySymbols, entryDecisionId } from './entry.js';
+import { enterIdea, computeBasketEntry, entrySymbols, entryDecisionId } from './entry.js';
 import { admitIdea, releaseIdea } from './admission.js';
 import { closeIdeaBook } from './close.js';
 import { assertReconciled } from './reconcile.js';
@@ -16,7 +16,7 @@ import { ideaEntrySlots, isLastIdeaEntrySlot, ideaEntryNotBefore, ideaSchedule, 
 import { SLOT_NAMES } from '../mandateSessionSlots.js';
 import {
   seedBook, admitAndEnter, contractOf, getBook, getIdea, tickOf, tickSnapshot, closeSnapshot, slotOpenIso, etIso, DAYS, ADMIT_ISO, countDocs,
-  takeSeededDbs, saleWordsOnMarkRows, closeOn, storeCloseSnapshot,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, closeOn, storeCloseSnapshot, enterIdeaWith, entryPassWith, placeSnapshot, moneyStoreBytes,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, AMD: 2.6e11, LLY: 7.5e11, JPM: 6.8e11, XOM: 5.2e11, AVGO: 8.2e11 };
@@ -30,7 +30,10 @@ let restoreMode;
 beforeEach(() => { restoreMode = setPracticeFieldModeForTests('on'); takeSeededDbs(); });
 afterEach(() => {
   restoreMode();
-  for (const db of takeSeededDbs()) expect(saleWordsOnMarkRows(db)).toEqual([]); // B-MARK on every valuation row this file's tests wrote
+  for (const db of takeSeededDbs()) {
+    expect(saleWordsOnMarkRows(db)).toEqual([]); // B-MARK on every valuation row this file's tests wrote
+    expect(bannedWordsOnResults(db)).toEqual([]); // …and the three banned words on every result (review RH-11)
+  }
 });
 
 describe('windows.js — when the idea book\'s code acts, in one place', () => {
@@ -74,7 +77,19 @@ describe('B-ENTER — a four-name idea fills its basket by code at the first eli
     const idea = getIdea(db, bookId, r.ideaId);
     expect(idea.status).toBe('holding');
     expect(idea.statusHistory.map((h) => h.status)).toEqual(['accepted', 'entering', 'holding']);
-    expect(idea.entry).toEqual({ sessionDate: DAYS.d1, slot: 'open30', snapshotKey: `${DAYS.d1}_open30`, filledAt: nowAt(DAYS.d1, 'open30'), startMarkAt: etIso(DAYS.d1, 9, 45), unknownCostTierLegs: [] });
+    expect(idea.entry).toEqual({
+      sessionDate: DAYS.d1, slot: 'open30', snapshotKey: `${DAYS.d1}_open30`, filledAt: nowAt(DAYS.d1, 'open30'), startMarkAt: etIso(DAYS.d1, 9, 45), unknownCostTierLegs: [],
+      legCount: 4, costsPaidUsd: idea.ledger.costsPaidUsd,
+    });
+    // What T1a-2a's lines, sales and result start from.
+    expect(idea).toMatchObject({ postEntryFillCount: 0, unobservedLineSessions: {}, processQuality: 'followed_plan', blockedBy: [], waitedSessions: [], result: null });
+    expect(idea.ledger.saleReceipts).toEqual([]);
+    // E5: every holding, on every ledger, stores the cost tier it entered with.
+    for (const name of names) {
+      expect(idea.ledger.holdings[name].costTier, name).toEqual({ capTier: 'mega', slippageBps: 1, spreadProxyBps: 2 });
+      expect(idea.comparisonLedger.holdings[name].costTier, name).toEqual({ capTier: 'mega', slippageBps: 1, spreadProxyBps: 2 });
+    }
+    expect(idea.spyLedger.holdings.SPY.costTier).toEqual({ capTier: 'fund:liquid_fund', slippageBps: 1, spreadProxyBps: 2 });
 
     // Each leg: $5,000.00 planned, shares floored to 6 dp at mark + friction, cost in whole cents, never above the plan.
     let costCents = 0;
@@ -202,29 +217,75 @@ describe('the comparison and SPY: same capital, same snapshot, same cost policy'
     expect(Object.keys(getBook(db, bookId).portfolio.positions)).toEqual(['AAPL']);
   });
 
-  it('SPY is a third ledger built the same way; an unknown market cap prices a STOCK at the widest tier', async () => {
+  it('SPY is a third ledger built the same way; a small-cap STOCK pays its own tier, by name', async () => {
     const { db, bookId } = await seedBook();
-    const r = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: { AAPL: PX.AAPL, SPY: PX.SPY } }); // no market cap on AAPL
+    const r = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: { AAPL: PX.AAPL, SPY: PX.SPY } }); // the fixture's small-cap market cap on AAPL
     const idea = getIdea(db, bookId, r.ideaId);
     const execPrice = PX.SPY * (1 + 3 / 10000);
     expect(idea.spyLedger.holdings.SPY).toMatchObject({ shares: Math.floor((20000 / execPrice) * 1e6) / 1e6, sector: 'broad_market' });
     const row = db._get(`mandates/${bookId}/ideas/${r.ideaId}/rows/inception`);
-    expect(row.legs.idea[0].friction).toMatchObject({ slippageBps: 5, spreadProxyBps: 15, capTier: 'unknown' });
+    expect(row.legs.idea[0].friction).toMatchObject({ slippageBps: 5, spreadProxyBps: 15, capTier: 'small' });
     expect(row.legs.spy[0].friction.capTier).toBe('fund:liquid_fund');
-    // …and that leg is NAMED, on the idea and on its inception row: the matched comparison did not pay that cost (review L3-2).
-    expect(idea.entry.unknownCostTierLegs).toEqual([{ ledger: 'idea', symbol: 'AAPL' }, { ledger: 'comparison', symbol: 'AAPL' }]);
-    expect(row.unknownCostTierLegs).toEqual(idea.entry.unknownCostTierLegs);
+    // Since Amendment D's Q-1 no leg enters at an unresolved tier, so none is ever named.
+    expect(idea.entry.unknownCostTierLegs).toEqual([]);
+    expect(row.unknownCostTierLegs).toEqual([]);
   });
 
-  it('a missing market cap on ONE side shows on every later row: `entryCostTiersKnown` is false, and `fullQuality` keeps its own meaning', async () => {
+  it('Q-1 — a leg whose cost tier cannot be resolved (a stock with NO market cap on the snapshot) is not eligible: the basket waits, neither side buys, and the timeout names the leg `cost_tier_unknown`', async () => {
+    // The idea's own name, with a same-stock comparison.
+    const one = await seedBook();
+    const a = await admitIdea(one.db, { bookId: one.bookId, contract: contractOf({ names: ['AAPL'] }), opId: 'idea-1', nowIso: ADMIT_ISO });
+    const noCap = { AAPL: { price: PX.AAPL, marketCap: null }, SPY: PX.SPY };
+    const tryAt = (ctx, ideaId, slot, quotes) => enterIdeaWith(ctx.db, { bookRef: ctx.bookRef, ideaId, tick: tickOf(DAYS.d1, slot), snapshot: tickSnapshot(DAYS.d1, slot, quotes), nowIso: nowAt(DAYS.d1, slot) });
+    expect(await tryAt(one, a.ideaId, 'open30', noCap)).toEqual({ outcome: 'waiting', refusals: [{ symbol: 'AAPL', refusal: 'cost_tier_unknown' }] });
+    expect(getIdea(one.db, one.bookId, a.ideaId)).toMatchObject({ status: 'accepted', ledger: { cash: 20000, holdings: {} }, comparisonLedger: null, spyLedger: null });
+    expect(getBook(one.db, one.bookId).portfolio.positions).toEqual({});
+    expect(countDocs(one.db, `mandates/${one.bookId}/decisions/`)).toBe(0);
+    // A zero, a negative or a non-number market cap resolves no tier either.
+    for (const marketCap of [0, -5, 'big']) {
+      expect((await tryAt(one, a.ideaId, 'midday', { AAPL: { price: PX.AAPL, marketCap }, SPY: PX.SPY })).refusals, String(marketCap)).toEqual([{ symbol: 'AAPL', refusal: 'cost_tier_unknown' }]);
+    }
+    // At the session's last entry slot the failed attempt is the timeout, and it names the leg.
+    expect(await tryAt(one, a.ideaId, 'preClose', noCap)).toEqual({ outcome: 'cancelled', reason: 'entry_timeout', refusals: [{ symbol: 'AAPL', refusal: 'cost_tier_unknown' }] });
+    const cancelled = getIdea(one.db, one.bookId, a.ideaId);
+    expect(cancelled).toMatchObject({ status: 'cancelled', cancelled: { reason: 'entry_timeout', returnedToTreasuryUsd: 20000 } });
+    expect(cancelled.lastEntryAttempt.refusals).toEqual([{ symbol: 'AAPL', refusal: 'cost_tier_unknown' }]);
+    expect(getBook(one.db, one.bookId).treasury.unreservedCash).toBe(100000);
+
+    // A frozen-basket MEMBER with no market cap holds the whole basket back too (the comparison pays the same policy).
+    const two = await seedBook({ uid: 'owner-2' });
+    const b = await admitIdea(two.db, { bookId: two.bookId, contract: contractOf({ names: ['AAPL'], comparison: { type: 'frozen_basket', symbols: ['NVDA', 'AMD'] } }), opId: 'idea-1', nowIso: ADMIT_ISO });
+    expect(await tryAt(two, b.ideaId, 'open30', { ...q('AAPL', 'NVDA', 'SPY'), AMD: { price: PX.AMD, marketCap: null } }))
+      .toEqual({ outcome: 'waiting', refusals: [{ symbol: 'AMD', refusal: 'cost_tier_unknown' }] });
+    // EVERY leg with no tier is named, not only the first.
+    expect((await tryAt(two, b.ideaId, 'open30', { AAPL: { price: PX.AAPL, marketCap: null }, NVDA: { price: PX.NVDA, marketCap: null }, AMD: { price: PX.AMD, marketCap: CAP.AMD }, SPY: PX.SPY })).refusals)
+      .toEqual([{ symbol: 'AAPL', refusal: 'cost_tier_unknown' }, { symbol: 'NVDA', refusal: 'cost_tier_unknown' }]);
+    // A fund never has a market cap and never needs one: its tier is explicit. With every stock's cap present, it fills.
+    expect((await tryAt(two, b.ideaId, 'midday', q('AAPL', 'NVDA', 'AMD', 'SPY'))).outcome).toBe('entered');
+  });
+
+  it('a record written before Q-1 that names a leg at the unknown tier still says so on every later row: `entryCostTiersKnown` is false', async () => {
+    const { db, bookId, bookRef } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: q('AAPL', 'SPY') });
+    await closeOn(db, bookId, DAYS.d1, { AAPL: PX.AAPL, SPY: PX.SPY });
+    expect(db._get(`mandates/${bookId}/ideas/${r.ideaId}/rows/${DAYS.d1}`).entryCostTiersKnown).toBe(true);
+    // A T1a-1 idea: its entry recorded a leg that paid the widest tier for want of a market cap.
+    const ideaRef = bookRef.collection('ideas').doc(r.ideaId);
+    const idea = (await ideaRef.get()).data();
+    await ideaRef.set({ ...idea, entry: { ...idea.entry, unknownCostTierLegs: [{ ledger: 'idea', symbol: 'AAPL' }] } });
+    await closeOn(db, bookId, DAYS.d2, { AAPL: PX.AAPL, SPY: PX.SPY });
+    expect(db._get(`mandates/${bookId}/ideas/${r.ideaId}/rows/${DAYS.d2}`)).toMatchObject({ entryCostTiersKnown: false, fullQuality: true });
+  });
+
+  it('each side pays its OWN tier and every row says the tiers are known: a small-cap name against its sector fund shows the cost difference as a gap', async () => {
     const { db, bookId } = await seedBook();
-    // The idea's name has no market cap on the entry snapshot (20 bps); its sector fund pays the fund tier (3 bps).
+    // The idea's name is a small cap on the entry snapshot (20 bps); its sector fund pays the fund tier (3 bps).
     const r = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'], comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: { AAPL: PX.AAPL, SPY: PX.SPY, XLK: PX.XLK } });
-    expect(getIdea(db, bookId, r.ideaId).entry.unknownCostTierLegs).toEqual([{ ledger: 'idea', symbol: 'AAPL' }]);
+    expect(getIdea(db, bookId, r.ideaId).entry.unknownCostTierLegs).toEqual([]);
     await closeOn(db, bookId, DAYS.d1, { AAPL: PX.AAPL, SPY: PX.SPY, XLK: PX.XLK });
     const row = db._get(`mandates/${bookId}/ideas/${r.ideaId}/rows/${DAYS.d1}`);
     expect(row.markedGapUsd).toBeLessThan(-30); // closed at the entry prices: the whole gap is the cost difference
-    expect(row).toMatchObject({ entryCostTiersKnown: false, fullQuality: true });
+    expect(row).toMatchObject({ entryCostTiersKnown: true, fullQuality: true });
     // With the market cap present the same idea shows no gap and says so.
     const ok = await seedBook({ uid: 'owner-2' });
     const r2 = await admitAndEnter(ok.db, ok.bookId, { contract: contractOf({ names: ['AAPL'], comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: q('AAPL', 'SPY', 'XLK') });
@@ -239,7 +300,7 @@ describe('B-FILL and all-or-nothing', () => {
     const a = await admitIdea(db, { bookId, contract, opId: 'idea-1', nowIso: ADMIT_ISO });
     return { db, bookId, bookRef, ideaId: a.ideaId };
   };
-  const enter = (ctx, date, slot, quotes) => enterIdea(ctx.db, { bookRef: ctx.bookRef, ideaId: ctx.ideaId, tick: tickOf(date, slot), snapshot: tickSnapshot(date, slot, quotes), nowIso: nowAt(date, slot) });
+  const enter = (ctx, date, slot, quotes) => enterIdeaWith(ctx.db, { bookRef: ctx.bookRef, ideaId: ctx.ideaId, tick: tickOf(date, slot), snapshot: tickSnapshot(date, slot, quotes), nowIso: nowAt(date, slot) });
 
   it('one leg without an eligible mark — idea, comparison or SPY — and NEITHER side buys; the idea waits for the next slot', async () => {
     const ctx = await admitOne(contractOf({ names: ['AAPL', 'MSFT'], comparison: { type: 'sector_fund', symbols: ['XLK'] } }));
@@ -270,9 +331,9 @@ describe('B-FILL and all-or-nothing', () => {
     const a = await admitIdea(db, { bookId, contract: contractOf(), opId: 'idea-1', nowIso: ADMIT_ISO });
     const ideaRef = bookRef.collection('ideas').doc(a.ideaId);
     await ideaRef.update({ admittedAt: etIso(DAYS.d1, 10, 20) });
-    const res = await enterIdea(db, {
+    const res = await enterIdeaWith(db, {
       bookRef, ideaId: a.ideaId, tick: tickOf(DAYS.d1, 'midday'), nowIso: nowAt(DAYS.d1, 'midday'),
-      snapshot: tickSnapshot(DAYS.d1, 'midday', { AAPL: { price: PX.AAPL, at: etIso(DAYS.d1, 10, 19) }, SPY: { price: PX.SPY, at: etIso(DAYS.d1, 10, 21) } }),
+      snapshot: tickSnapshot(DAYS.d1, 'midday', { AAPL: { price: PX.AAPL, at: etIso(DAYS.d1, 10, 19) }, SPY: PX.SPY }),
     });
     expect(res).toEqual({ outcome: 'waiting', refusals: [{ symbol: 'AAPL', refusal: 'before_decision' }] });
   });
@@ -327,9 +388,9 @@ describe('B-FILL and all-or-nothing', () => {
     const ideaRef = ctx.bookRef.collection('ideas').doc(ctx.ideaId);
     const idea = (await ideaRef.get()).data();
     await ideaRef.set({ ...idea, contract: { ...idea.contract, lines: [{ symbol: 'NVDA', distancePct: 0.05 }] } });
-    const before = JSON.stringify([...ctx.db._store.entries()]);
+    const before = moneyStoreBytes(ctx.db);
     await expect(enter(ctx, DAYS.d1, 'open30', q('AAPL', 'MSFT', 'SPY'))).rejects.toThrow(TypeError);
-    expect(JSON.stringify([...ctx.db._store.entries()])).toBe(before);
+    expect(moneyStoreBytes(ctx.db)).toBe(before);
   });
 
   it('an entry that keeps FAILING leaves its reason on the idea, so a timeout at the close is explained (refuter RF3-1); a tick with no key is never "the slot\'s own" (RF3-5)', async () => {
@@ -338,7 +399,7 @@ describe('B-FILL and all-or-nothing', () => {
     const revisionBefore = getIdea(ctx.db, ctx.bookId, ctx.ideaId).revision;
     // Every leg has an eligible mark; the entry transaction itself fails, every fire.
     const failing = { ...ctx.db, runTransaction: async () => { throw Object.assign(new Error('UNAVAILABLE: injected'), { code: 14 }); } };
-    const out = await runIdeaBookEntryPass(failing, { bookRef: ctx.bookRef, tick: tickOf(DAYS.d1, 'preClose'), snapshot, now: new Date(nowAt(DAYS.d1, 'preClose')) });
+    const out = await entryPassWith(failing, { bookRef: ctx.bookRef, tick: tickOf(DAYS.d1, 'preClose'), snapshot, now: new Date(nowAt(DAYS.d1, 'preClose')) });
     expect(out).toMatchObject({ served: true, entered: 0, errors: 1 });
     const idea = getIdea(ctx.db, ctx.bookId, ctx.ideaId);
     expect(idea.status).toBe('accepted');
@@ -346,20 +407,43 @@ describe('B-FILL and all-or-nothing', () => {
     expect(idea.revision).toBe(revisionBefore); // bookkeeping: no revision, no money
     // The record never creates an idea that is not there.
     await ctx.bookRef.set({ openIdeaIds: [ctx.ideaId, 'ghost'] }, { merge: true });
-    await runIdeaBookEntryPass(failing, { bookRef: ctx.bookRef, tick: tickOf(DAYS.d1, 'preClose'), snapshot, now: new Date(nowAt(DAYS.d1, 'preClose')) });
+    await entryPassWith(failing, { bookRef: ctx.bookRef, tick: tickOf(DAYS.d1, 'preClose'), snapshot, now: new Date(nowAt(DAYS.d1, 'preClose')) });
     expect(getIdea(ctx.db, ctx.bookId, 'ghost')).toBeUndefined();
     // RF3-5: neither side carrying a key is a mismatch, not a match.
     const { tickKey: _k, ...keyless } = snapshot;
-    await expect(enterIdea(ctx.db, { bookRef: ctx.bookRef, ideaId: ctx.ideaId, tick: { date: DAYS.d1, slot: 'preClose' }, snapshot: keyless, nowIso: nowAt(DAYS.d1, 'preClose') })).rejects.toThrow(/entry_snapshot_mismatch/);
+    await expect(enterIdeaWith(ctx.db, { bookRef: ctx.bookRef, ideaId: ctx.ideaId, tick: { date: DAYS.d1, slot: 'preClose' }, snapshot: keyless, nowIso: nowAt(DAYS.d1, 'preClose') })).rejects.toThrow(/entry_snapshot_mismatch/);
   });
 
-  it('the snapshot must be THIS slot\'s own: a close snapshot, or another slot\'s, handed in beside the tick is refused before any read (review L3-6)', async () => {
+  it('FR-A7 — the fill reads THE STORED slot snapshot, by key, inside its transaction: a caller\'s object never reaches a fill; a stored document that is not this slot\'s own is refused (review L3-6)', async () => {
     const ctx = await admitOne(contractOf());
-    const before = JSON.stringify([...ctx.db._store.entries()]);
-    for (const snapshot of [closeSnapshot(DAYS.d1, q('AAPL', 'SPY')), tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), null]) {
-      await expect(enterIdea(ctx.db, { bookRef: ctx.bookRef, ideaId: ctx.ideaId, tick: tickOf(DAYS.d1, 'preClose'), snapshot, nowIso: nowAt(DAYS.d1, 'preClose') })).rejects.toThrow(/entry_snapshot_mismatch/);
+    const call = (slot, snapshot) => enterIdea(ctx.db, { bookRef: ctx.bookRef, ideaId: ctx.ideaId, tick: tickOf(DAYS.d1, slot), snapshot, nowIso: nowAt(DAYS.d1, slot) });
+    // (a) NOTHING is stored for the slot. A caller hands a perfectly good snapshot object anyway: it is never read.
+    expect(await call('open30', tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')))).toEqual({
+      outcome: 'waiting', refusals: [{ symbol: 'AAPL', refusal: 'no_stored_snapshot' }, { symbol: 'SPY', refusal: 'no_stored_snapshot' }],
+    });
+    expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId)).toMatchObject({ status: 'accepted', ledger: { cash: 20000, holdings: {} } });
+    // (b) The stored document and the caller's object DIFFER: the stored prices fill, the caller's never do.
+    placeSnapshot(ctx.db, tickSnapshot(DAYS.d1, 'midday', q('AAPL', 'SPY')));
+    const callers = tickSnapshot(DAYS.d1, 'midday', { AAPL: { price: 9.99, marketCap: CAP.AAPL }, SPY: 1.23 });
+    expect((await call('midday', callers)).outcome).toBe('entered');
+    const idea = getIdea(ctx.db, ctx.bookId, ctx.ideaId);
+    expect(idea.ledger.holdings.AAPL.lastMark).toBe(PX.AAPL);
+    expect(idea.spyLedger.holdings.SPY.lastMark).toBe(PX.SPY);
+    expect(ctx.db._get(`mandates/${ctx.bookId}/ideas/${ctx.ideaId}/rows/inception`).legs.idea[0].mark).toBe(PX.AAPL);
+
+    // (c) A document stored under the slot's key that is not the slot's own — a close snapshot, another slot's,
+    //     another session's — is refused, and nothing is written.
+    const other = await admitOne(contractOf());
+    const wrongDocs = [
+      closeSnapshot(DAYS.d1, q('AAPL', 'SPY')), tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')),
+      { ...tickSnapshot(DAYS.d1, 'preClose', q('AAPL', 'SPY')), sessionDate: DAYS.d2 },
+    ];
+    for (const wrong of wrongDocs) {
+      other.db._store.set(`mandateUniverseSnapshots/${DAYS.d1}_preClose`, { data: wrong, version: 1 });
+      const before = moneyStoreBytes(other.db);
+      await expect(enterIdea(other.db, { bookRef: other.bookRef, ideaId: other.ideaId, tick: tickOf(DAYS.d1, 'preClose'), nowIso: nowAt(DAYS.d1, 'preClose') })).rejects.toThrow(/entry_snapshot_mismatch/);
+      expect(moneyStoreBytes(other.db)).toBe(before);
     }
-    expect(JSON.stringify([...ctx.db._store.entries()])).toBe(before);
   });
 
   it('entrySymbols: the names, the comparison\'s symbols and SPY, once each', () => {
@@ -386,16 +470,16 @@ describe('runIdeaBookEntryPass — one book, one slot', () => {
     await admitIdea(db, { bookId, contract: contractOf({ slot: 'long', names: ['JPM', 'XOM'], capitalUsd: 40000 }), opId: 'l', nowIso: ADMIT_ISO });
     const tick = tickOf(DAYS.d1, 'open30');
     const now = new Date(nowAt(DAYS.d1, 'open30'));
-    expect(await runIdeaBookEntryPass(db, { bookRef, tick: { ...tick, slot: 'lunch' }, snapshot: null, now })).toEqual({ served: false, entered: 0, waiting: 0, cancelled: 0, errors: 0 });
+    expect(await entryPassWith(db, { bookRef, tick: { ...tick, slot: 'lunch' }, snapshot: null, now })).toEqual({ served: false, entered: 0, waiting: 0, cancelled: 0, errors: 0 });
     // LLY has no quote (waits); XOM's price makes its leg unfillable (waits, the attempt recorded); AAPL enters.
     const snapshot = tickSnapshot(DAYS.d1, 'open30', { ...q('AAPL', 'JPM', 'SPY'), XOM: { price: 3e10, marketCap: CAP.XOM } });
-    const out = await runIdeaBookEntryPass(db, { bookRef, tick, snapshot, now });
+    const out = await entryPassWith(db, { bookRef, tick, snapshot, now });
     expect(out).toEqual({ served: true, entered: 1, waiting: 2, cancelled: 0, errors: 0 });
     const book = getBook(db, bookId);
     expect(Object.keys(book.portfolio.positions)).toEqual(['AAPL']);
     expect(() => assertReconciled(book, openIdeas(db, bookId))).not.toThrow();
     await bookRef.update({ status: 'draining' });
-    expect((await runIdeaBookEntryPass(db, { bookRef, tick: tickOf(DAYS.d1, 'midday'), snapshot, now })).served).toBe(false);
+    expect((await entryPassWith(db, { bookRef, tick: tickOf(DAYS.d1, 'midday'), snapshot, now })).served).toBe(false);
   });
 });
 
@@ -494,13 +578,13 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     // A position planted with no owner — the state B-OWNED forbids. The entry must not build on it.
     const book = getBook(db, bookId);
     await bookRef.update({ 'portfolio.positions': { AAPL: { shares: 1, costBasisTotal: 231.47, lastMark: 231.47 } }, 'portfolio.cash': book.portfolio.cash - 231.47 });
-    const before = JSON.stringify([...db._store.entries()]);
+    const before = moneyStoreBytes(db);
     // Since Astra T1A-02 the book is reconciled as read, so the planted position is refused there (an unowned
     // position, and cash the treasury and ideas cannot account for) before any leg is priced. The entry's own
     // `ticker_held_by_other_idea` check stays behind it.
-    await expect(enterIdea(db, { bookRef, ideaId: a.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }))
+    await expect(enterIdeaWith(db, { bookRef, ideaId: a.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }))
       .rejects.toThrow(/recon_failed.*cash_mismatch.*position_without_idea/);
-    expect(JSON.stringify([...db._store.entries()])).toBe(before);
+    expect(moneyStoreBytes(db)).toBe(before);
   });
 
   it('EVERY mutating transaction reconciles the state it is about to write, and writes nothing when it does not: admission, release, entry, the entry timeout and the close', async () => {
@@ -510,12 +594,12 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
       await bookRef.update({ treasury: { unreservedCash: Math.round((book.treasury.unreservedCash + 0.01) * 100) / 100 } });
     };
     const refused = async (db, run) => {
-      const before = JSON.stringify([...db._store.entries()]);
+      const before = moneyStoreBytes(db);
       let err = null;
       try { await run(); } catch (e) { err = e; }
       expect(isPracticeFieldError(err, 'recon_failed'), String(err)).toBe(true);
       expect(err.detail.problems.map((p) => p.rule)).toContain('cash_mismatch');
-      expect(JSON.stringify([...db._store.entries()])).toBe(before);
+      expect(moneyStoreBytes(db)).toBe(before);
     };
 
     // Admission and release, on a book with one accepted idea.
@@ -525,8 +609,8 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     await refused(one.db, () => admitIdea(one.db, { bookId: one.bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: ADMIT_ISO }));
     await refused(one.db, () => releaseIdea(one.db, { bookId: one.bookId, ideaId: pending.ideaId, nowIso: ADMIT_ISO }));
     // Entry, and the entry timeout (the pass of a later session).
-    await refused(one.db, () => enterIdea(one.db, { bookRef: one.bookRef, ideaId: pending.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }));
-    await refused(one.db, () => enterIdea(one.db, { bookRef: one.bookRef, ideaId: pending.ideaId, tick: tickOf(DAYS.d2, 'open30'), snapshot: tickSnapshot(DAYS.d2, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d2, 'open30') }));
+    await refused(one.db, () => enterIdeaWith(one.db, { bookRef: one.bookRef, ideaId: pending.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }));
+    await refused(one.db, () => enterIdeaWith(one.db, { bookRef: one.bookRef, ideaId: pending.ideaId, tick: tickOf(DAYS.d2, 'open30'), snapshot: tickSnapshot(DAYS.d2, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d2, 'open30') }));
     // The close, with a timed-out idea (D1) …
     await storeCloseSnapshot(one.db, DAYS.d1, q('AAPL', 'SPY'));
     await refused(one.db, () => closeIdeaBook(one.db, one.bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 25)) }));
@@ -544,13 +628,13 @@ describe('B-RECON and B-OWNED — the reconciliation that guards every mutation'
     const book = getBook(db, bookId);
     // An unowned NVDA position, with the cash it would have cost taken out so the cash still balances.
     await bookRef.update({ 'portfolio.positions': { NVDA: { shares: 1, costBasisTotal: 141.29, lastMark: 141.29 } }, 'portfolio.cash': Math.round((book.portfolio.cash - 141.29) * 100) / 100, treasury: { unreservedCash: Math.round((book.treasury.unreservedCash - 141.29) * 100) / 100 } });
-    const before = JSON.stringify([...db._store.entries()]);
+    const before = moneyStoreBytes(db);
     let err = null;
-    try { await enterIdea(db, { bookRef, ideaId: a.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }); } catch (e) { err = e; }
+    try { await enterIdeaWith(db, { bookRef, ideaId: a.ideaId, tick: tickOf(DAYS.d1, 'open30'), snapshot: tickSnapshot(DAYS.d1, 'open30', q('AAPL', 'SPY')), nowIso: nowAt(DAYS.d1, 'open30') }); } catch (e) { err = e; }
     expect(isPracticeFieldError(err, 'recon_failed')).toBe(true);
     // The equity rule (Astra T1A-02, rule 7) sees it too: the treasury paid for a position no idea holds.
     expect(err.detail.problems.map((p) => p.rule)).toEqual(['position_without_idea', 'equity_mismatch']);
-    expect(JSON.stringify([...db._store.entries()])).toBe(before);
+    expect(moneyStoreBytes(db)).toBe(before);
   });
 });
 
@@ -565,11 +649,11 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
   };
   const clone = (v) => structuredClone(v);
   const refusedWritingNothing = async (db, run, rules) => {
-    const before = JSON.stringify([...db._store.entries()]);
+    const before = moneyStoreBytes(db);
     const err = await run().then(() => null, (e) => e);
     expect(isPracticeFieldError(err, 'recon_failed'), String(err)).toBe(true);
     expect(err.detail.problems.map((p) => p.rule).sort()).toEqual([...rules].sort());
-    expect(JSON.stringify([...db._store.entries()])).toBe(before);
+    expect(moneyStoreBytes(db)).toBe(before);
   };
   const holding = async (comparison = { type: 'same_stock_held' }, extraQuotes = {}) => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
@@ -604,9 +688,40 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     expect(b.ok).toBe(true);
     const book = getBook(db, bookId);
     await bookRef.update({ 'portfolio.totalValue': Math.round((book.portfolio.totalValue + 0.01) * 100) / 100 });
-    await refusedWritingNothing(db, () => enterIdea(db, { bookRef, ideaId: b.ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', q('LLY', 'SPY')), nowIso: nowAt(DAYS.d1, 'midday') }), ['equity_mismatch']);
+    await refusedWritingNothing(db, () => enterIdeaWith(db, { bookRef, ideaId: b.ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', q('LLY', 'SPY')), nowIso: nowAt(DAYS.d1, 'midday') }), ['equity_mismatch']);
     await refusedWritingNothing(db, () => releaseIdea(db, { bookId, ideaId: b.ideaId, nowIso: etIso(DAYS.d1, 13, 0) }), ['equity_mismatch']);
-    await refusedWritingNothing(db, () => enterIdea(db, { bookRef, ideaId: b.ideaId, tick: tickOf(DAYS.d2, 'open30'), snapshot: tickSnapshot(DAYS.d2, 'open30', q('LLY', 'SPY')), nowIso: nowAt(DAYS.d2, 'open30') }), ['equity_mismatch']);
+    // The entry timeout, by the entry itself, on a book with nothing filled (with a filled idea and an unclosed session
+    // the entry is refused `not_this_session` before anything — see sessions.js — and the close times the idea out).
+    const other = await seedBook({ uid: 'owner-2', archetypeCodeId: 'degen' });
+    const c = await admitIdea(other.db, { bookId: other.bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'c', nowIso: ADMIT_ISO });
+    await other.bookRef.update({ 'portfolio.totalValue': 100000.01 });
+    await refusedWritingNothing(other.db, () => enterIdeaWith(other.db, { bookRef: other.bookRef, ideaId: c.ideaId, tick: tickOf(DAYS.d2, 'open30'), snapshot: tickSnapshot(DAYS.d2, 'open30', q('LLY', 'SPY')), nowIso: nowAt(DAYS.d2, 'open30') }), ['equity_mismatch']);
+  });
+
+  it('nothing moves past an unclosed session (review RH-1): an entry is refused while an earlier session of the book is unclosed, and in a session whose close is already written', async () => {
+    const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
+    await admitAndEnter(db, bookId, { contract: contractOf(), opId: 'a', quotes: QUOTES }); // filled on D1; D1 is never closed
+    const b = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: etIso(DAYS.d1, 11, 0) });
+    expect(b).toMatchObject({ ok: true, startSession: DAYS.d2 });
+    const enterB = (date, slot) => enterIdeaWith(db, { bookRef, ideaId: b.ideaId, tick: tickOf(date, slot), snapshot: tickSnapshot(date, slot, { ...QUOTES, LLY: { price: 803.17, marketCap: 7.5e11 } }), nowIso: nowAt(date, slot) });
+    // D2's window with D1 unclosed: no entry, nothing recorded on the idea.
+    const before = moneyStoreBytes(db);
+    expect(await enterB(DAYS.d2, 'open30')).toEqual({ outcome: 'not_this_session', reason: 'earlier_session_unclosed' });
+    expect(moneyStoreBytes(db)).toBe(before);
+    // D1 closed: the same window enters.
+    await closeOn(db, bookId, DAYS.d1, QUOTES);
+    expect((await enterB(DAYS.d2, 'open30')).outcome).toBe('entered');
+    // …and once D2's own close is written, nothing more is dated in D2.
+    const c = await admitIdea(db, { bookId, contract: contractOf({ slot: 'long', names: ['JPM'], capitalUsd: 15000 }), opId: 'c', nowIso: etIso(DAYS.d1, 12, 0) });
+    expect(c.ok).toBe(true);
+    await storeCloseSnapshot(db, DAYS.d2, { ...QUOTES, LLY: 803.17 });
+    // (the close of D2 times the still-pending idea out; a late D2 window can do nothing for it)
+    await closeIdeaBook(db, bookRef, { date: DAYS.d2, now: new Date(etIso(DAYS.d2, 16, 25)) });
+    expect(getIdea(db, bookId, c.ideaId).status).toBe('cancelled');
+    const d = await admitIdea(db, { bookId, contract: contractOf({ slot: 'long', names: ['JPM'], capitalUsd: 15000 }), opId: 'd', nowIso: etIso(DAYS.d1, 12, 30) });
+    expect(d.ok).toBe(true);
+    expect(await enterIdeaWith(db, { bookRef, ideaId: d.ideaId, tick: tickOf(DAYS.d2, 'preClose'), snapshot: tickSnapshot(DAYS.d2, 'preClose', { ...QUOTES, JPM: { price: 241.37, marketCap: 6.8e11 } }), nowIso: nowAt(DAYS.d2, 'preClose') }))
+      .toEqual({ outcome: 'not_this_session', reason: 'session_already_closed' });
   });
 
   it('reject, never repair — a release would launder an idea whose own ledger does not conserve (the idea leaves the open set, so only the as-read check sees it): refused', async () => {
@@ -624,10 +739,10 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
     const stored = getIdea(db, bookId, b.ideaId);
     await ref.set({ ...stored, contract: { ...stored.contract, names: ['AAPL'], lines: [{ symbol: 'AAPL', distancePct: 0.1 }], comparison: { ...stored.contract.comparison, symbols: ['AAPL'] } } });
     expect(problems(getBook(db, bookId), getBook(db, bookId).openIdeaIds.map((id) => getIdea(db, bookId, id)))).toEqual([]); // the book as read reconciles
-    const before = JSON.stringify([...db._store.entries()]);
-    await expect(enterIdea(db, { bookRef, ideaId: b.ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', { ...QUOTES, LLY: { price: 803.17, marketCap: 7.5e11 } }), nowIso: nowAt(DAYS.d1, 'midday') }))
+    const before = moneyStoreBytes(db);
+    await expect(enterIdeaWith(db, { bookRef, ideaId: b.ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', { ...QUOTES, LLY: { price: 803.17, marketCap: 7.5e11 } }), nowIso: nowAt(DAYS.d1, 'midday') }))
       .rejects.toThrow(/ticker_held_by_other_idea/);
-    expect(JSON.stringify([...db._store.entries()])).toBe(before);
+    expect(moneyStoreBytes(db)).toBe(before);
   });
 
   it('the R-19 basis at ENTRY: with two ideas holding, the entry writes the per-idea sum ($99,986.50) — not the whole book rounded once ($99,986.51)', async () => {
@@ -719,7 +834,7 @@ describe('Astra T1A-02 — the reconciliation covers the marked book and all thr
       expect(problems(fund.book, [i]), `${prefix}dividends`).toEqual([...extra, `${prefix}dividends_not_receipted`].sort());
       i = clone(fund.idea); l = ledgerOf(i);
       l.cash = Math.round((l.cash + 123.45) * 100) / 100; l.realizedPnlUsd = 123.45;
-      expect(problems(fund.book, [i]), `${prefix}realized`).toEqual([...extra, `${prefix}realized_pnl_before_any_sale`].sort());
+      expect(problems(fund.book, [i]), `${prefix}realized`).toEqual([...extra, `${prefix}realized_pnl_not_receipted`].sort());
     }
     // An accepted idea has neither paper ledger yet, and needs none.
     const { db, bookId } = await seedBook();

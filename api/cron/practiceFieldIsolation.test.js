@@ -55,10 +55,11 @@ import { assembleBuildSet, ensureUniverseSnapshot, isSymbolActionable, isCoverag
 import { splitActiveBooks } from '../_utils/mandateBookKind.js';
 import { setPracticeFieldModeForTests } from '../_utils/practiceField/mode.js';
 import { admitIdea } from '../_utils/practiceField/admission.js';
+import { nextSessionDate } from '../_utils/practiceField/windows.js';
 import { PRACTICE_FIELD_FUNDS } from '../../src/data/practiceFieldFunds.js';
 import {
   seedBook as seedIdeaBook, admitAndEnter, contractOf, getBook, getIdea, getRow, etIso, etMs, tickOf, DAYS, ADMIT_ISO, countDocs,
-  takeSeededDbs, saleWordsOnMarkRows,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults,
 } from '../_utils/practiceField/__testsupport__/fixtures.js';
 
 const PRICES = { AAPL: 231.47, MSFT: 418.13, LLY: 803.17, SPY: 597.31, XLK: 233.59, JPM: 241.37 };
@@ -134,7 +135,10 @@ beforeEach(() => {
 });
 afterEach(() => {
   restoreMode(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete process.env.EODHD_API_KEY;
-  for (const db of takeSeededDbs()) expect(saleWordsOnMarkRows(db)).toEqual([]); // B-MARK on every valuation row the sweeps wrote
+  for (const db of takeSeededDbs()) {
+    expect(saleWordsOnMarkRows(db)).toEqual([]); // B-MARK on every valuation row the sweeps wrote
+    expect(bannedWordsOnResults(db)).toEqual([]); // …and the three banned words on every result they wrote (review RH-11)
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -257,7 +261,10 @@ describe('kind isolation on every quarterly core — unconditional (run at mode 
       expect(after.costTelemetry).toEqual(JSON.parse(before)[0][1].costTelemetry);
       expect(after.portfolio).toEqual(JSON.parse(before)[0][1].portfolio);
       expect(after.health.consecutiveEvalFailures).toBe(0);
-      expect(after.revision).toBe(2);
+      // At mode on the idea-book pass of this fire first writes D1's missed close (its own duty; one book write) — the
+      // harvest itself moves nothing at either mode.
+      expect(after.revision).toBe(mode === 'on' ? 3 : 2);
+      expect(after.execState.lastCloseKey ?? null).toBe(mode === 'on' ? DAYS.d1 : null);
       expect(db._get(`${MANDATE_BATCH_COLLECTION}/batch-h`).status).toBe('open'); // it never finalises against an idea book…
       expect(errors.filter((e) => /MANDATE_BATCH_ENTRY_NOT_QUARTERLY/.test(e))).toHaveLength(1); // …and it says so (review L2-5)
     });
@@ -546,7 +553,8 @@ describe('the shared snapshot\'s build set, by book kind (build prompt §5)', ()
   it('quarterly books only: exactly today\'s build — no builder option, and the coverage document is never read', async () => {
     const seeded = makeMandateFakeDb({ 'mandates/q1': quarterlyBook({ execState: { lastEvalTickKey: `${DAYS.d2}_open30` } }) });
     const { db, reads } = withReadLog(seeded);
-    await evalOnce(db);
+    const quarterlyOnly = await evalOnce(db);
+    expect(quarterlyOnly).not.toHaveProperty('ideaBooks'); // the pass listed no book and no query failed: the body is the engine's own
     expect(reads.filter((r) => /practiceField/.test(r))).toEqual([]);
     expect(Object.keys(seeded._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`).symbols).sort()).toEqual([...CANDIDATE_UNIVERSE].sort());
     const view = splitActiveBooks([{ data: () => quarterlyBook() }], { ideaBooksLive: true });
@@ -628,7 +636,7 @@ describe('the eval sweep: the idea-book pass beside the quarterly loop', () => {
     quoteTs = Math.floor(etMs(DAYS.d1, 9, 45) / 1000);
     const fire = async (slot = 'open30') => { const { req, res, captured } = fakeReqRes(); await runEvalSweep(req, res, { now: evalNow(DAYS.d1, slot), tick: tickOf(DAYS.d1, slot), db }); return captured.body; };
     const first = await fire();
-    expect(first.ideaBooks).toEqual({ books: 1, served: 1, entered: 1, waiting: 0, cancelled: 0, errors: 0, leaseSkips: 0 });
+    expect(first.ideaBooks).toEqual({ books: 1, served: 1, caughtUp: 0, sold: 0, saleWaiting: 0, resulted: 0, entered: 1, waiting: 0, cancelled: 0, errors: 0, leaseSkips: 0 });
     expect(first).toMatchObject({ ok: true, evaluated: 0, executed: 0, skipped: 1 }); // the quarterly loop stepped over it
     expect(modelSpy).not.toHaveBeenCalled();
     const book = getBook(db, bookId);
@@ -841,5 +849,255 @@ describe('the close sweep: dispatch by kind, and one snapshot per date (B-STAMP)
     expect(quotesSpy).not.toHaveBeenCalled();
     expect(db._get(`mandateUniverseSnapshots/${DAYS.d1}_close`)).toBeUndefined();
     expect(countDocs(db, `mandates/${bookId}/dailyRows/`)).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('T1a-2a — the real sweeps: sales at the window, the lines at the close, and a DRAINING idea book (Amendment E8, E13)', () => {
+  const closeOnce = async (db, date) => {
+    quoteTs = Math.floor(etMs(date, 16, 0) / 1000);
+    const { req, res, captured } = fakeReqRes();
+    await runCloseSweep(req, res, { now: closeNow(date), closeTick: closeTickOf(date), db });
+    return captured.body;
+  };
+  const evalOnce = async (db, date, slot = 'open30') => {
+    quoteTs = Math.floor(etMs(date, 9, 45) / 1000);
+    const { req, res, captured } = fakeReqRes();
+    await runEvalSweep(req, res, { now: evalNow(date, slot), tick: tickOf(date, slot), db });
+    return captured.body;
+  };
+  const lineOf = (db, bookId, ideaId, sym) => getIdea(db, bookId, ideaId).lines.find((l) => l.symbol === sym);
+
+  it('an ACTIVE idea book through the engine\'s own sweeps: the close recognises a line, the next window sells that holding from the slot\'s stored snapshot, and the quarterly counters never move', async () => {
+    const db = makeMandateFakeDb();
+    const { bookId, ideaId } = await populatedIdeaBook(db);
+    quoteBook.AAPL = Math.round((lineOf(db, bookId, ideaId, 'AAPL').level - 0.02) * 100) / 100;
+    expect(await closeOnce(db, DAYS.d1)).toMatchObject({ ok: true, closed: 1, ideaBooksClosed: 1, errors: 0 });
+    expect(getIdea(db, bookId, ideaId)).toMatchObject({ status: 'line_hit_exit_pending', ledger: { holdings: { AAPL: { exitPending: { reason: 'line', session: DAYS.d1 } } } } });
+    quoteBook.AAPL = 215.43;
+    const body = await evalOnce(db, DAYS.d2);
+    expect(body.ideaBooks).toEqual({ books: 1, served: 1, caughtUp: 0, sold: 1, saleWaiting: 0, resulted: 0, entered: 0, waiting: 0, cancelled: 0, errors: 0, leaseSkips: 0 });
+    expect(modelSpy).not.toHaveBeenCalled();
+    const idea = getIdea(db, bookId, ideaId);
+    expect(idea.status).toBe('holding');
+    expect(idea.ledger.saleReceipts).toEqual([expect.objectContaining({ kind: 'line_exit', symbol: 'AAPL', mark: 215.43, tickKey: `${DAYS.d2}_open30` })]);
+    // The price the sale filled at is the STORED slot snapshot's.
+    expect(db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`).symbols.AAPL.price).toBe(215.43);
+    expect(Object.keys(getBook(db, bookId).portfolio.positions)).toEqual(['MSFT']);
+    expect(getBook(db, bookId).execState).toMatchObject({ submitted: 0, executed: 0, lastIdeaTickKey: `${DAYS.d2}_open30` });
+    expect(countDocs(db, `mandates/${bookId}/decisions/`)).toBe(3);
+  });
+
+  it('a DRAINING idea book — which the engine\'s active-book query cannot see — still gets its slot snapshot, its line exit, its close and its rows; it takes no entry; a second close fire finds nothing left and completes', async () => {
+    const db = makeMandateFakeDb();
+    const { bookId, bookRef, ideaId } = await populatedIdeaBook(db);
+    // A second idea is pending for D2, and AAPL's line is hit at D1's close.
+    const pending = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['JPM'], capitalUsd: 25000 }), opId: 'idea-2', nowIso: etIso(DAYS.d1, 11, 0) });
+    expect(pending).toMatchObject({ ok: true, startSession: DAYS.d2 });
+    quoteBook.AAPL = Math.round((lineOf(db, bookId, ideaId, 'AAPL').level - 0.02) * 100) / 100;
+    await closeOnce(db, DAYS.d1);
+    await bookRef.update({ status: 'draining' }); // nothing sets the status yet (T1a-2b): a fixture stands in
+    expect((await db.collection('mandates').where('status', '==', 'active').get()).docs).toHaveLength(0);
+
+    // The eval fire: NOT an idle skip — the draining book's symbols are built — and the sale fills. No entry.
+    quotesSpy.mockClear();
+    quoteBook.AAPL = 215.43;
+    const evalBody = await evalOnce(db, DAYS.d2);
+    expect(evalBody).not.toHaveProperty('reason');
+    expect(evalBody.ideaBooks).toMatchObject({ books: 1, served: 1, sold: 1, entered: 0, waiting: 0, errors: 0 });
+    expect(quotesSpy).toHaveBeenCalled();
+    const slotDoc = db._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`);
+    for (const sym of ['AAPL', 'MSFT', 'XLK', 'SPY', 'JPM']) expect(Object.keys(slotDoc.symbols), sym).toContain(sym);
+    expect(getIdea(db, bookId, ideaId).ledger.saleReceipts).toHaveLength(1);
+    expect(getIdea(db, bookId, pending.ideaId)).toMatchObject({ status: 'accepted', lastEntryAttempt: null });
+
+    // The close fire: the engine's page holds no book; the draining book is closed by the Practice Field's own query.
+    const first = await closeOnce(db, DAYS.d2);
+    expect(first).toMatchObject({ ok: true, closed: 1, ideaBooksClosed: 1, errors: 0, complete: false, drainingIdeaBooks: { books: 1, closed: 1, skipped: 0, errors: 0 } });
+    expect(first).not.toHaveProperty('reason');
+    expect(getBook(db, bookId)).toMatchObject({ status: 'draining', execState: { lastCloseKey: DAYS.d2 } });
+    expect(getRow(db, bookId, ideaId, DAYS.d2)).toMatchObject({ basis: 'mark', closeSnapshotKey: `${DAYS.d2}_close`, fullQuality: true });
+    expect(db._get(`mandates/${bookId}/dailyRows/${DAYS.d2}`)).toMatchObject({ kind: 'idea_book', observed: true });
+    expect(getIdea(db, bookId, pending.ideaId)).toMatchObject({ status: 'cancelled', cancelled: { reason: 'entry_timeout' } }); // its start session passed: never entered
+    const second = await closeOnce(db, DAYS.d2);
+    expect(second).toMatchObject({ ok: true, closed: 0, complete: true, drainingIdeaBooks: { books: 1, closed: 0, skipped: 1 } });
+    expect(modelSpy).not.toHaveBeenCalled();
+  });
+
+  it("mode 'off' with a draining idea book: no Practice Field query, no build, no pass — both sweeps are exactly the engine's own idle fires", async () => {
+    const seeded = makeMandateFakeDb();
+    const { bookId, bookRef } = await populatedIdeaBook(seeded);
+    await bookRef.update({ status: 'draining' });
+    setPracticeFieldModeForTests(null);
+    const before = snapshotOfStore(seeded, `mandates/${bookId}`);
+    const { db, reads } = withReadLog(seeded);
+    const evalBody = await evalOnce(db, DAYS.d2);
+    expect(evalBody).toMatchObject({ ok: true, noop: true, reason: 'mandate_idle_skip' });
+    expect(evalBody).not.toHaveProperty('ideaBooks');
+    const closeBody = await closeOnce(db, DAYS.d2);
+    expect(closeBody).toMatchObject({ ok: true, reason: 'mandate_idle_skip', closed: 0, complete: true });
+    expect(closeBody).not.toHaveProperty('drainingIdeaBooks');
+    expect(reads.filter((r) => /kind/.test(r))).toEqual([]); // the Practice Field's own queries were never made
+    expect(quotesSpy).not.toHaveBeenCalled();
+    expect(snapshotOfStore(seeded, `mandates/${bookId}`)).toBe(before);
+  });
+
+  it('the draining-book close is fenced from the engine\'s sweep: its failure is logged and counted, a quarterly book still closes, and the fire does not claim complete', async () => {
+    const db = makeMandateFakeDb({ 'mandates/q1': quarterlyBook({ portfolio: { positions: { JPM: { shares: 10, costBasisTotal: 2400, lastMark: 240, openedAt: '2026-09-02' } } } }) });
+    const { bookRef } = await populatedIdeaBook(db);
+    await bookRef.update({ status: 'draining' });
+    // The Practice Field's own query fails AFTER the snapshot is built (the build's query is the second `kind` query of the fire).
+    let kindQueries = 0;
+    const failing = { ...db, collection: (c) => {
+      const col = db.collection(c);
+      if (c !== 'mandates') return col;
+      return { ...col, where: (...a) => { const q = col.where(...a); return { ...q, where: (f, ...rest) => { if (f === 'kind') { kindQueries += 1; if (kindQueries > 1) throw new Error('UNAVAILABLE: injected (the draining query)'); } return q.where(f, ...rest); } }; } };
+    } };
+    const body = await closeOnce(failing, DAYS.d2);
+    expect(body).toMatchObject({ ok: true, closed: 1, complete: false, drainingIdeaBooks: { failed: true } });
+    expect(body.errors).toBe(1);
+    expect(errors.some((e) => /PRACTICE_FIELD_DRAINING_CLOSE_FAILED/.test(e))).toBe(true);
+    expect(db._get('mandates/q1').execState.lastCloseKey).toBe(DAYS.d2); // the quarterly book closed
+  });
+
+  // ── Review lens 3 (IS-2, IS-3, IS-6, IS-8) ─────────────────────────────────────────────────────────────────────────
+  const sessionsAfter = (date, n) => { let d = date; for (let i = 0; i < n; i += 1) d = nextSessionDate(d); return d; };
+  /** A handle whose Practice Field (`kind`) queries on `mandates` throw when `fails(n, status)` says so (n counts them). */
+  const withFailingKindQueries = (db, fails) => {
+    let n = 0;
+    return { ...db, collection: (c) => {
+      const col = db.collection(c);
+      if (c !== 'mandates') return col;
+      return { ...col, where: (field, op, status) => { const q = col.where(field, op, status); return { ...q, where: (f, ...rest) => { if (f === 'kind') { n += 1; if (fails(n, status)) throw new Error(`UNAVAILABLE: injected (kind query ${n}, ${status})`); } return q.where(f, ...rest); } }; } };
+    } };
+  };
+
+  it('IS-3 — an ACTIVE idea book the close fire served and left unclosed for the date (the catch-up ran out of its bound) keeps the fire from claiming complete; so does a DRAINING one', async () => {
+    for (const status of ['active', 'draining']) {
+      const db = makeMandateFakeDb();
+      const { bookId, bookRef } = await populatedIdeaBook(db);
+      await closeOnce(db, DAYS.d1);
+      if (status === 'draining') await bookRef.update({ status });
+      const far = sessionsAfter(DAYS.d1, 24); // 23 missed sessions before it: more than one call catches up
+      logs.length = 0;
+      const first = await closeOnce(db, far);
+      expect(first, status).toMatchObject({ ok: true, closed: 0, errors: 0, complete: false, ideaBooksUnclosed: 1 });
+      if (status === 'draining') expect(first.drainingIdeaBooks).toEqual({ books: 1, closed: 0, skipped: 1, errors: 0 });
+      expect(logs.filter((l) => /close sweep complete/.test(l)), status).toEqual([]);
+      expect(getBook(db, bookId).execState.lastCloseKey, status).toBe(sessionsAfter(DAYS.d1, 20));
+      // The next fire finishes the catch-up and closes the date; the one after finds nothing left and may say complete.
+      const second = await closeOnce(db, far);
+      expect(second, status).toMatchObject({ closed: 1, complete: false });
+      expect(second).not.toHaveProperty('ideaBooksUnclosed');
+      expect(getBook(db, bookId).execState.lastCloseKey).toBe(far);
+      const third = await closeOnce(db, far);
+      expect(third, status).toMatchObject({ closed: 0, complete: true });
+      expect(third).not.toHaveProperty('ideaBooksUnclosed');
+    }
+  });
+
+  it('IS-2 — the draining query fails at the snapshot build: the build falls back to the coverage document, so the draining book\'s symbols are in the ONE snapshot of that close and its row is full quality', async () => {
+    const db = makeMandateFakeDb();
+    const { bookId, bookRef, ideaId } = await populatedIdeaBook(db);
+    await closeOnce(db, DAYS.d1);
+    await bookRef.update({ status: 'draining' });
+    // The first `kind` query of the fire is the build's; the second is the draining close's own, and it works.
+    const body = await closeOnce(withFailingKindQueries(db, (n) => n === 1), DAYS.d2);
+    expect(errors.some((e) => /PRACTICE_FIELD_DRAINING_QUERY_FAILED — the snapshot build falls back to the coverage document/.test(e))).toBe(true);
+    expect(body).not.toHaveProperty('reason'); // not an idle skip: the coverage document says an idea is open
+    const closeDoc = db._get(`mandateUniverseSnapshots/${DAYS.d2}_close`);
+    for (const sym of ['AAPL', 'MSFT', 'XLK', 'SPY']) expect(Object.keys(closeDoc.symbols), sym).toContain(sym);
+    expect(body).toMatchObject({ ok: true, closed: 1, drainingIdeaBooks: { books: 1, closed: 1, skipped: 0, errors: 0 } });
+    expect(getRow(db, bookId, ideaId, DAYS.d2)).toMatchObject({ fullQuality: true, closeSnapshotKey: `${DAYS.d2}_close` });
+    expect(db._get('practiceFieldCoverage/current')).toBeDefined();
+    expect(Object.keys(db._get('practiceFieldCoverage/current').symbols).sort()).toEqual(['AAPL', 'MSFT', 'SPY', 'XLK']); // read, not changed
+  });
+
+  it('IS-2, continued — on that fallback fire the build makes NO second read of the coverage document: with every later read of it failing, the fire still answers 200 and closes the quarterly book and the draining idea book', async () => {
+    const db = makeMandateFakeDb({ 'mandates/q1': quarterlyBook({ portfolio: { positions: { JPM: { shares: 10, costBasisTotal: 2400, lastMark: 240, openedAt: '2026-09-02' } } } }) });
+    const { bookId, bookRef, ideaId } = await populatedIdeaBook(db);
+    await closeOnce(db, DAYS.d1);
+    await bookRef.update({ status: 'draining' });
+    // The build's draining query fails; the coverage document can be read ONCE outside a transaction (the fallback).
+    const queriesDown = withFailingKindQueries(db, (n) => n === 1);
+    let coverageReads = 0;
+    const handle = { ...queriesDown, collection: (c) => {
+      const col = queriesDown.collection(c);
+      if (c !== 'practiceFieldCoverage') return col;
+      return { ...col, doc: (id) => { const ref = col.doc(id); return { ...ref, get: async () => { coverageReads += 1; if (coverageReads > 1) throw new Error('UNAVAILABLE: injected (coverage read #2)'); return ref.get(); } }; } };
+    } };
+    const { req, res, captured } = fakeReqRes();
+    quoteTs = Math.floor(etMs(DAYS.d2, 16, 0) / 1000);
+    await runCloseSweep(req, res, { now: closeNow(DAYS.d2), closeTick: closeTickOf(DAYS.d2), db: handle });
+    expect(captured.code).toBe(200);
+    expect(coverageReads).toBe(1);
+    expect(captured.body).toMatchObject({ ok: true, closed: 2, errors: 0, drainingIdeaBooks: { books: 1, closed: 1 } });
+    expect(db._get('mandates/q1').execState.lastCloseKey).toBe(DAYS.d2);
+    const closeDoc = db._get(`mandateUniverseSnapshots/${DAYS.d2}_close`);
+    for (const sym of ['AAPL', 'MSFT', 'XLK', 'SPY']) expect(Object.keys(closeDoc.symbols), sym).toContain(sym);
+    expect(getRow(db, bookId, ideaId, DAYS.d2)).toMatchObject({ fullQuality: true });
+  });
+
+  it('IS-6 — a draining book whose close FAILS, or whose lease is held elsewhere, keeps the fire from claiming complete', async () => {
+    const db = makeMandateFakeDb();
+    const { bookId, bookRef } = await populatedIdeaBook(db);
+    await closeOnce(db, DAYS.d1);
+    const equity = getBook(db, bookId).portfolio.totalValue;
+    // (a) its close throws (the book does not reconcile): counted, not thrown.
+    await bookRef.update({ status: 'draining', 'portfolio.totalValue': Math.round((equity + 0.01) * 100) / 100 });
+    const failed = await closeOnce(db, DAYS.d2);
+    expect(failed).toMatchObject({ ok: true, closed: 0, errors: 1, complete: false, drainingIdeaBooks: { books: 1, closed: 0, skipped: 0, errors: 1 } });
+    expect(getBook(db, bookId).execState.lastCloseKey).toBe(DAYS.d1);
+    // (b) repaired, but its lease is held by another fire: not served, and the fire does not claim complete.
+    await bookRef.update({ 'portfolio.totalValue': equity });
+    await bookRef.set({ lease: { ownerToken: 'another-fire', acquiredAt: closeNow(DAYS.d2), expiresAt: new Date(closeNow(DAYS.d2).getTime() + 10 * 60_000) } }, { merge: true });
+    logs.length = 0;
+    const held = await closeOnce(db, DAYS.d2);
+    expect(held).toMatchObject({ ok: true, closed: 0, errors: 0, complete: false, drainingIdeaBooks: { books: 1, closed: 0, skipped: 0, errors: 0 } });
+    expect(logs.filter((l) => /close sweep complete/.test(l))).toEqual([]);
+    // (c) the lease gone: it closes, and the fire after that completes.
+    await bookRef.set({ lease: null }, { merge: true });
+    expect(await closeOnce(db, DAYS.d2)).toMatchObject({ closed: 1, complete: false });
+    expect(await closeOnce(db, DAYS.d2)).toMatchObject({ closed: 0, complete: true });
+  });
+
+  it('IS-6 — on a fire whose page loop deferred (the time budget ran out), the draining closes do not run and the fire does not claim complete', async () => {
+    const db = makeMandateFakeDb({ 'mandates/q1': quarterlyBook({ portfolio: { positions: { JPM: { shares: 10, costBasisTotal: 2400, lastMark: 240, openedAt: '2026-09-02' } } } }) });
+    const { bookId, bookRef } = await populatedIdeaBook(db);
+    await closeOnce(db, DAYS.d1);
+    await bookRef.update({ status: 'draining' });
+    // The fire's clock: its first reading is the start; every later one is past the budget.
+    const real = Date.now.bind(Date);
+    let started = null;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => { if (started === null) { started = real(); return started; } return started + 300_000; });
+    let body;
+    try { body = await closeOnce(db, DAYS.d2); } finally { clock.mockRestore(); }
+    expect(body).toMatchObject({ ok: true, closed: 0, complete: false });
+    expect(body).not.toHaveProperty('drainingIdeaBooks'); // not run on a deferred fire: the next fire serves it
+    expect(getBook(db, bookId).execState.lastCloseKey).toBe(DAYS.d1);
+    expect(db._get('mandates/q1').execState.lastCloseKey).not.toBe(DAYS.d2);
+    // The next fire, with its budget: both close.
+    expect(await closeOnce(db, DAYS.d2)).toMatchObject({ closed: 2, drainingIdeaBooks: { books: 1, closed: 1 } });
+  });
+
+  it('IS-8 — in the eval pass one status\'s query failing does not cost the other status\'s books that fire: the active book is served, the failure is counted, and the fire is not complete', async () => {
+    const db = makeMandateFakeDb();
+    const { bookId, ideaId } = await populatedIdeaBook(db);
+    quoteBook.AAPL = Math.round((lineOf(db, bookId, ideaId, 'AAPL').level - 0.02) * 100) / 100;
+    await closeOnce(db, DAYS.d1);
+    quoteBook.AAPL = 215.43;
+    const body = await evalOnce(withFailingKindQueries(db, (n, status) => status === 'draining'), DAYS.d2);
+    expect(errors.some((e) => /PRACTICE_FIELD_PASS_QUERY_FAILED — draining idea books/.test(e))).toBe(true);
+    expect(body.ideaBooks).toMatchObject({ books: 1, served: 1, sold: 1, errors: 1 });
+    expect(body.complete).toBe(false);
+    expect(getIdea(db, bookId, ideaId).ledger.saleReceipts).toHaveLength(1);
+    // The ACTIVE query failing with no draining book: the pass listed nobody — and the body still says a query failed.
+    const db2 = makeMandateFakeDb();
+    const two = await populatedIdeaBook(db2);
+    await closeOnce(db2, DAYS.d1);
+    const body2 = await evalOnce(withFailingKindQueries(db2, (n, status) => status === 'active' && n > 1), DAYS.d2);
+    expect(body2.ideaBooks).toMatchObject({ books: 0, served: 0, errors: 1 });
+    expect(body2.complete).toBe(false);
+    expect(getBook(db2, two.bookId).execState.lastIdeaTickKey ?? null).not.toBe(`${DAYS.d2}_open30`);
   });
 });

@@ -48,13 +48,37 @@ export const COMPARISON_QUESTIONS = Object.freeze({
 /** Contract §4.1's risk assumption, frozen with the contract. */
 export const RISK_ASSUMPTION = 'exit_at_line_next_eligible_fill';
 
-/** The idea's run statuses this build writes (contract §4.3; the rest are T1a-2's). */
+/**
+ * The idea's run statuses (contract §4.3; Amendment E14):
+ *   accepted → entering → holding ⇄ line_hit_exit_pending → settled → resulted     (or accepted → cancelled)
+ * `settled` is written at the endpoint, with the endpoint row and the result; `resulted` when the liquidation has
+ * filled, the cash is back in the treasury and the slot is free. `retired` and `abandoned` are later builds'.
+ */
 export const IDEA_STATUS = Object.freeze({
   ACCEPTED: 'accepted',
   ENTERING: 'entering',
   HOLDING: 'holding',
+  LINE_HIT_EXIT_PENDING: 'line_hit_exit_pending',
+  SETTLED: 'settled',
+  RESULTED: 'resulted',
   CANCELLED: 'cancelled',
 });
+
+/**
+ * The statuses that still own cash or shares — the book's open set (Astra T1A-C01). A `resulted` or `cancelled` idea
+ * owns nothing and is out of it.
+ */
+export const OPEN_IDEA_STATUSES = Object.freeze([
+  IDEA_STATUS.ACCEPTED, IDEA_STATUS.ENTERING, IDEA_STATUS.HOLDING, IDEA_STATUS.LINE_HIT_EXIT_PENDING, IDEA_STATUS.SETTLED,
+]);
+
+/** The open statuses of an idea whose basket has filled: three ledgers, a fill count, the same-stock tie. */
+export const FILLED_IDEA_STATUSES = Object.freeze([
+  IDEA_STATUS.HOLDING, IDEA_STATUS.LINE_HIT_EXIT_PENDING, IDEA_STATUS.SETTLED,
+]);
+
+/** The filled statuses that have not reached their endpoint: code still reads their lines each close. */
+export const RUNNING_IDEA_STATUSES = Object.freeze([IDEA_STATUS.HOLDING, IDEA_STATUS.LINE_HIT_EXIT_PENDING]);
 
 /** Why an idea that never filled was cancelled. */
 export const CANCEL_REASON = Object.freeze({ ENTRY_TIMEOUT: 'entry_timeout', RELEASED: 'released' });
@@ -62,15 +86,65 @@ export const CANCEL_REASON = Object.freeze({ ENTRY_TIMEOUT: 'entry_timeout', REL
 /** The label every valuation carries until an official-close source is verified (concept ruling 21). */
 export const VALUATION_LABEL = 'post_close_snapshot';
 
-/** Mark qualities on a valuation row (build prompt §7). Only `vendor_time` supports a full-quality row. */
+/** The label of a row of a session that has NO stored close snapshot (Amendment E12; review RH-8): nothing was observed. */
+export const VALUATION_LABEL_UNOBSERVED = 'unobserved';
+
+/**
+ * Mark qualities on a valuation row (build prompt §7). Only `vendor_time` supports a full-quality row.
+ * `pre_open_print` (Amendment D Q-3): the vendor's own time is on the session's date but before its open — a print
+ * from before the session is not that session's close. `unobserved` (Amendment E12): the session has no stored close
+ * snapshot at all; the mark is the one carried from the last close.
+ */
 export const MARK_QUALITY = Object.freeze({
   VENDOR_TIME: 'vendor_time',
   RECEIPT_TIME_FALLBACK: 'receipt_time_fallback',
   CARRIED_FORWARD: 'carried_forward',
+  PRE_OPEN_PRINT: 'pre_open_print',
+  UNOBSERVED: 'unobserved',
 });
 
 /** The origin every code-made basket entry decision carries. */
 export const DECISION_ORIGIN_BASKET_ENTRY = 'basket_entry';
+
+/** The origins of the two sales code makes (Amendment E1, E4): a line's own holding, and what is left at settlement. */
+export const DECISION_ORIGIN_LINE_EXIT = 'line_exit';
+export const DECISION_ORIGIN_SETTLEMENT = 'settlement';
+/**
+ * NOT a third origin (the build prompt names two: every decision record and sale receipt carries one of them). It is
+ * the CAUSE of a sale whose origin is `line_exit` but whose holding was left waiting by a delisting with no cash
+ * amount (Amendment E11): no line was recognised, so the result counts it apart from the line exits and the process
+ * column names it (review RH-3). Read from the receipt's `queuedBy.reason`, never from the origin.
+ */
+export const SALE_CAUSE_DELISTING = 'delisting_exit';
+
+/** Why a holding is waiting to be sold before the idea's endpoint (Amendment E1, E11). */
+export const EXIT_REASON = Object.freeze({ LINE: 'line', DELISTING: 'delisting' });
+
+/** The result's five columns (contract §4.4; Amendment E6, E10, E15, E16). */
+export const CONTRACT_CONDITION = Object.freeze({ MET: 'met', BREACHED: 'breached', UNOBSERVED: 'unobserved' });
+export const ECONOMIC_RESULT = Object.freeze({
+  AHEAD: 'ahead', BEHIND: 'behind', WITHIN_BAND: 'within_band', UNMEASURABLE: 'unmeasurable',
+});
+/** `deviated` is reserved for the manager's own actions (T1b); this build never writes it. */
+export const PROCESS_QUALITY = Object.freeze({ FOLLOWED_PLAN: 'followed_plan', BLOCKED: 'blocked' });
+export const EVIDENCE_SCOPE_SINGLE = 'single_forward_observation';
+export const ADOPTION_NO_OFFER = 'no_offer';
+
+/** The result document's own version (its own family; starts at 1). */
+export const RESULT_VERSION = 1;
+
+/** Amendment E9: a sale that has waited this many sessions alerts, once per session, until it fills. */
+export const SALE_WAITING_ALERT_SESSIONS = 5;
+
+/** How many of a waiting sale's most recent refusals its holding keeps (the count and the sessions are kept whole). */
+export const SALE_WAITING_REFUSALS_KEPT = 12;
+
+/**
+ * The most missed sessions one close call catches up (Amendment E12) before it stops and leaves the rest to the
+ * next fire. A bound on one call's work, never on the catch-up: nothing is skipped, and the requested date is not
+ * closed until every session before it is.
+ */
+export const CATCH_UP_MAX_SESSIONS_PER_CALL = 20;
 
 /** Stores (the collection literals are restated at each write site for the protected-store scan). */
 export const PRACTICE_FIELD_BOOKS_COLLECTION = 'practiceFieldBooks';

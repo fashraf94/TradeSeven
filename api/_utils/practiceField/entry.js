@@ -11,8 +11,14 @@
 //     decision is by SESSION DATE, never by "a pass ran": a missed fire can never turn into a late entry (concept
 //     §8 "an outage never extends an idea");
 //   • in its start session — ALL-OR-NOTHING: every name, every comparison symbol and SPY must have an ELIGIBLE
-//     mark (marks.js) in this slot's snapshot, or NEITHER SIDE BUYS and the idea waits for the next slot. At the
-//     session's last entry slot a failed attempt is the timeout.
+//     mark (marks.js) in this slot's snapshot AND a cost tier that can be resolved (Amendment D Q-1: a stock with
+//     no market cap on the snapshot is missing data, refused `cost_tier_unknown` — never bought at the widest tier),
+//     or NEITHER SIDE BUYS and the idea waits for the next slot. At the session's last entry slot a failed attempt
+//     is the timeout, and the timeout names every leg that refused.
+//
+// THE STORED SNAPSHOT, READ HERE (review FR-A7; T1a-2a §2). The fill reads THE stored slot snapshot,
+// `mandateUniverseSnapshots/{tickKey}`, itself, by key, inside its transaction. It takes no snapshot from its caller:
+// an object that merely carries the right key can never price a fill. A missing document is no fill this window.
 //
 // WHEN IT FILLS, one snapshot prices everything:
 //   the idea's side     each name's planned dollars (whole cents, contract.js) bought through executeIdeaFill on
@@ -40,12 +46,13 @@ import { MANDATE_FRICTION_MODEL_VERSION } from '../mandateConfig.js';
 import { isIdeaBook } from '../mandateBookKind.js';
 import { PRACTICE_FIELD_BENCHMARK_SYMBOL } from '../../../src/data/practiceFieldFunds.js';
 import {
-  IDEA_SCHEMA_VERSION, IDEA_STATUS, CANCEL_REASON, DECISION_ORIGIN_BASKET_ENTRY, PRACTICE_FIELD_CONTRACT_VERSION,
+  IDEA_SCHEMA_VERSION, IDEA_STATUS, CANCEL_REASON, DECISION_ORIGIN_BASKET_ENTRY, PRACTICE_FIELD_CONTRACT_VERSION, PROCESS_QUALITY,
 } from './constants.js';
 import { PracticeFieldError, isPracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
 import { eligibleMark } from './marks.js';
-import { executeIdeaFill } from './fills.js';
+import { executeIdeaFill, resolvedCostTier } from './fills.js';
+import { newTrack } from './settlement.js';
 import { newLedger, mirrorLedger, LEDGER_KIND, markedEquityCents } from './ledger.js';
 import { planLegCents, planBasketCents } from './contract.js';
 import { mandateSectorOf, classificationOf } from './symbols.js';
@@ -53,6 +60,7 @@ import { ideaEntrySlots, isLastIdeaEntrySlot } from './windows.js';
 import { planRelease } from './admission.js';
 import { coverageRefOf, coverageRef, ideaCoveragePlan, coverageWithRef } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
+import { fillSessionRefusal } from './sessions.js';
 import { toCents, fromCents, addUsd } from './money.js';
 
 const LOG_PREFIX = '[PracticeFieldEntry]';
@@ -133,12 +141,11 @@ export function computeBasketEntry({ idea, snapshot, sessionDate }) {
   });
 
   const vendorTimes = [...ideaReceipts, ...comparison.receipts, ...spy.receipts].map((r) => r.markVendorTimeIso).sort();
-  // A stock whose market cap the entry snapshot did not carry paid the friction model's WIDEST tier (the engine's
-  // fail-conservative rule). That is the letter of "the snapshot's friction for that name", but it is a cost the
-  // matched comparison may not share (review L3-2), so every such leg is named on the idea and its rows.
-  const unknownCostTierLegs = [
-    ...ideaReceipts.map((r) => ['idea', r]), ...comparison.receipts.map((r) => ['comparison', r]), ...spy.receipts.map((r) => ['spy', r]),
-  ].filter(([, r]) => r.friction.capTier === 'unknown').map(([ledger, r]) => ({ ledger, symbol: r.symbol }));
+  // Since Amendment D's Q-1 this list is ALWAYS EMPTY: a leg with no resolvable tier does not fill (fills.js refuses
+  // it), so no receipt can carry the `unknown` tier. The field stays, empty, because T1a-1's records and rows carry
+  // it (a stock with no market cap used to pay the widest tier, and every such leg was named — review L3-2); the
+  // close still reads a stored list when it writes `entryCostTiersKnown`.
+  const unknownCostTierLegs = [];
   return {
     unknownCostTierLegs,
     ledger, comparisonLedger: comparison.ledger, spyLedger: spy.ledger,
@@ -150,15 +157,16 @@ export function computeBasketEntry({ idea, snapshot, sessionDate }) {
 /**
  * One idea, one slot, one transaction.
  *
- * @returns {Promise<{ outcome: 'entered'|'waiting'|'cancelled'|'not_yet'|'not_pending'|'not_found', refusals?: Array<object> }>}
+ * @returns {Promise<{ outcome: 'entered'|'waiting'|'cancelled'|'not_yet'|'not_this_session'|'not_pending'|'not_found', refusals?: Array<object> }>}
  */
-export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso }) {
+export async function enterIdea(db, { bookRef, ideaId, tick, nowIso }) {
   // 'off': no Practice Field code path runs, whoever calls. Before any read.
   if (!practiceFieldLive()) return { outcome: 'practice_field_off' };
-  // The snapshot must be THIS slot's own (review L3-6): never a close snapshot or another slot's handed in beside the tick.
-  if (!snapshot || typeof tick?.tickKey !== 'string' || snapshot.tickKey !== tick.tickKey) throw new PracticeFieldError('entry_snapshot_mismatch', { tickKey: tick.tickKey, snapshotKey: snapshot?.tickKey ?? null });
+  if (typeof tick?.tickKey !== 'string' || typeof tick?.date !== 'string') throw new PracticeFieldError('entry_snapshot_mismatch', { tickKey: tick?.tickKey ?? null, snapshotKey: null });
   const ideaRef = bookRef.collection('ideas').doc(ideaId);
   const coverageDocRef = coverageRefOf(db);
+  // THE stored slot snapshot of this window (FR-A7). The collection by its literal name, for the protected-store scan.
+  const snapshotRef = db.collection('mandateUniverseSnapshots').doc(tick.tickKey);
 
   return db.runTransaction(async (tx) => {
     const bookSnap = await tx.get(bookRef);
@@ -178,8 +186,20 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
       const snap = await tx.get(bookRef.collection('ideas').doc(id));
       if (snap.exists) others.push(snap.data());
     }
+    // Nothing moves past an unclosed session (sessions.js; review RH-1): an entry is refused while a session before
+    // its window is unclosed, or when its own session's close is already written. The catch-up — which also times an
+    // overdue idea out — runs first in the idea-book pass; this is the guard behind it.
+    const sessionRefusal = fillSessionRefusal(book, [...others, idea], tick.date);
+    if (sessionRefusal !== null) return { outcome: 'not_this_session', reason: sessionRefusal };
     const coverageSnap = await tx.get(coverageDocRef);
     const coverageData = coverageSnap.exists ? coverageSnap.data() : null;
+    // The slot's own stored document, read inside the transaction. It must be THIS slot's (review L3-6): a stored
+    // document whose own key or session is another's is refused, never a close snapshot or another slot's.
+    const snapshotSnap = await tx.get(snapshotRef);
+    const snapshot = snapshotSnap.exists ? snapshotSnap.data() : null;
+    if (snapshot && (snapshot.tickKey !== tick.tickKey || snapshot.sessionDate !== tick.date)) {
+      throw new PracticeFieldError('entry_snapshot_mismatch', { tickKey: tick.tickKey, snapshotKey: snapshot.tickKey ?? null, sessionDate: snapshot.sessionDate ?? null });
+    }
     // Reject, never repair (Astra T1A-02): the book as READ must reconcile before anything is decided. This entry
     // rewrites the book's equity, so a check of the next state alone would overwrite an inconsistent one and pass.
     assertReconciled(book, [...others, idea]);
@@ -196,15 +216,18 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
     // Past the start session: never a late entry.
     if (tick.date > startSession) return cancel(null);
 
-    // ALL-OR-NOTHING: every symbol must have an eligible mark in THIS snapshot.
+    // ALL-OR-NOTHING: every symbol must have an eligible mark in THIS snapshot — and (Q-1) a cost tier that can be
+    // resolved. A stock with no market cap on the snapshot is missing data: the basket waits, as for a missing price.
     const refusals = [];
     for (const symbol of entrySymbols(idea.contract)) {
+      if (snapshot === null) { refusals.push({ symbol, refusal: 'no_stored_snapshot' }); continue; }
       const mark = eligibleMark(snapshot, symbol, { notBeforeIso: idea.admittedAt, sessionDate: tick.date });
-      if (!mark.ok) refusals.push({ symbol, refusal: mark.refusal });
+      if (!mark.ok) { refusals.push({ symbol, refusal: mark.refusal }); continue; }
+      if (!resolvedCostTier(symbol, snapshot).known) refusals.push({ symbol, refusal: 'cost_tier_unknown' });
     }
     // A slot that cannot fill: the attempt is recorded and the idea waits — or, at the session's last entry slot, times out.
     const deferOrCancel = (why) => {
-      const attempt = { tickKey: snapshot?.tickKey ?? tick.tickKey, slot: tick.slot, at: nowIso, refusals: why };
+      const attempt = { tickKey: tick.tickKey, slot: tick.slot, at: nowIso, refusals: why };
       if (isLastIdeaEntrySlot(tick.slot)) return { ...cancel(attempt), refusals: why };
       tx.update(ideaRef, { lastEntryAttempt: attempt });
       return { outcome: 'waiting', refusals: why };
@@ -218,6 +241,7 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
     try {
       entry = computeBasketEntry({ idea, snapshot, sessionDate: tick.date });
     } catch (err) {
+      if (isPracticeFieldError(err, 'cost_tier_unknown')) return deferOrCancel([{ symbol: err.detail.symbol, refusal: 'cost_tier_unknown' }]);
       if (!isPracticeFieldError(err, 'fill_refused')) throw err;
       return deferOrCancel([{ symbol: err.detail.symbol, refusal: `fill_refused:${err.detail.reason}` }]);
     }
@@ -274,10 +298,18 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
         sessionDate: tick.date, slot: tick.slot, snapshotKey: snapshot.tickKey ?? tick.tickKey,
         filledAt: nowIso, startMarkAt: entry.startMarkAt,
         unknownCostTierLegs: entry.unknownCostTierLegs,
+        // What the result's trades line reads (contract §4.4): the entry's legs and what they cost.
+        legCount: entry.receipts.idea.length, costsPaidUsd: entry.ledger.costsPaidUsd,
       },
       // Fills after the basket entry: none yet. The same-stock tie (reconcile.js rule 9) holds while this is 0;
-      // T1a-2's first later fill (a trim, a line exit) increments it.
+      // every later fill (a line exit, a settlement sale) increments it.
       postEntryFillCount: 0,
+      // What T1a-2a's lines, sales and result keep on the idea (settlement.js, exits.js).
+      unobservedLineSessions: {},
+      track: newTrack(),
+      processQuality: PROCESS_QUALITY.FOLLOWED_PLAN,
+      blockedBy: [],
+      waitedSessions: [],
       lastEntryAttempt: null,
       revision: (idea.revision || 0) + 1,
     };
@@ -328,19 +360,20 @@ export async function enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso })
  *
  * @returns {Promise<{ served: boolean, entered: number, waiting: number, cancelled: number, errors: number }>}
  */
-export async function runIdeaBookEntryPass(db, { bookRef, tick, snapshot, now = new Date() }) {
+export async function runIdeaBookEntryPass(db, { bookRef, tick, now = new Date() }) {
   const out = { served: false, entered: 0, waiting: 0, cancelled: 0, errors: 0 };
   if (!practiceFieldLive()) return out;
   if (!ideaEntrySlots().includes(tick.slot)) return out;
   const bookSnap = await bookRef.get();
   if (!bookSnap.exists) return out;
   const book = bookSnap.data();
+  // E13: a draining book takes NO entry (its sales, settlement and valuation are served by their own passes).
   if (!isIdeaBook(book) || book.status !== 'active') return out;
   out.served = true;
   const nowIso = now.toISOString();
   for (const ideaId of book.openIdeaIds || []) {
     try {
-      const res = await enterIdea(db, { bookRef, ideaId, tick, snapshot, nowIso });
+      const res = await enterIdea(db, { bookRef, ideaId, tick, nowIso });
       if (res.outcome === 'entered') out.entered += 1;
       else if (res.outcome === 'waiting') out.waiting += 1;
       else if (res.outcome === 'cancelled') out.cancelled += 1;
