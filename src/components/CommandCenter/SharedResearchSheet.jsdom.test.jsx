@@ -134,6 +134,25 @@ describe('a failed load, and Try again (the gate\'s retry pattern)', () => {
     expect(document.querySelector('[role="alert"]')).toBeNull();
   });
 
+  // The fix round's review (F3): a failed Try again is announced too — the alert is inserted afresh, with the same words.
+  it('a failed Try again announces the line again: a new alert, the same words (review F3)', async () => {
+    const load = vi.fn().mockRejectedValueOnce(new Error('one')).mockRejectedValueOnce(new Error('two'));
+    const Sheet = createSharedResearchSheet(load);
+    render(Sheet);
+    await flush();
+    const first = dialog().querySelector('[role="alert"]');
+    expect(first.textContent).toBe(COPY.research.door.loadFailed);
+    click(tryAgain());
+    await flush();
+    expect(load).toHaveBeenCalledTimes(2);
+    const second = dialog().querySelector('[role="alert"]');
+    expect(second).not.toBeNull();
+    expect(second).not.toBe(first);
+    expect(first.isConnected).toBe(false);
+    expect(second.textContent).toBe(COPY.research.door.loadFailed);
+    expect(dialog().querySelectorAll('[role="alert"]')).toHaveLength(1);
+  });
+
   it('Try again starts a FRESH load and swaps the body in once it has loaded', async () => {
     const d = deferred();
     const load = vi.fn().mockRejectedValueOnce(new Error('chunk failed')).mockReturnValueOnce(d.promise);

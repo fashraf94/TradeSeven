@@ -21,7 +21,8 @@
 // One ask per owner and epoch for a mounted hub: the key is the owner and epoch, and the battle id is read when the ask
 // starts. The verdict is the owner's, so a later id of the same owner changes nothing. A cached verdict answers at once
 // (cachedFilmRoomVerdict) and readFilmRoomVerdict returns it with no request. An answer for a former owner is never used:
-// it is judged against the current key in render. No timer, no listener.
+// it is judged against the current key in render. An answer still out when the battle id leaves is not cancelled (review F2,
+// fix round): it lands, re-renders, and with no id held the owner's cached verdict decides (R-D6). No timer, no listener.
 
 import { useEffect, useState } from 'react';
 import { cachedFilmRoomVerdict, readFilmRoomVerdict } from '../utils/filmRoomGate';
@@ -44,12 +45,13 @@ export default function useHubResearchAdmission({ mode, auth, battleId }) {
 
   useEffect(() => {
     if (!key) return undefined;
-    let live = true;
+    // Not cancelled when the battle id leaves (review F2): the answer lands, re-renders, and with no id held the owner's
+    // cached verdict decides (R-D6). It is tagged with its key, so render never uses it for another owner or epoch.
     readFilmRoomVerdict(id, { ownerId: uid }).then(
-      (verdict) => { if (live) setAnswer({ key, verdict: verdict === true }); },
-      () => { if (live) setAnswer({ key, verdict: false }); },
+      (verdict) => { setAnswer({ key, verdict: verdict === true }); },
+      () => { setAnswer({ key, verdict: false }); },
     );
-    return () => { live = false; };
+    return undefined;
     // Keyed on the owner and epoch alone: the battle id is read at the ask (the verdict is the owner's, cached per owner).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);

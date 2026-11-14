@@ -69,11 +69,13 @@ class BodyBoundary extends Component {
  * hub gate's notice does, and the loading line shows beside it (review C6); a failed retry leaves the line as it was.
  * The line itself is announced (role="alert", ruling R-D8, Q4), as the body's own failures are inside the sheet: the hub's
  * status-line rule governs the hub page, not a dialog's content. Only the words are the alert, not Try again. No Reload.
+ * The alert is keyed on the count of failed retries, so each failed Try again inserts it afresh and is announced too (the
+ * fix round's review, F3); the words do not change.
  */
-function LoadFailed({ onTryAgain, retrying }) {
+function LoadFailed({ onTryAgain, retrying, failures = 0 }) {
   return (
     <div data-hub-research-load-failed={retrying ? 'retrying' : ''} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, color: C.ink2, lineHeight: 1.45 }}>
-      <span role="alert">{COPY.research.door.loadFailed}</span>
+      <span key={failures} role="alert">{COPY.research.door.loadFailed}</span>
       <HubLink onPress={onTryAgain} ariaDisabled={retrying}>{COPY.research.door.tryAgain}</HubLink>
       {retrying && <LoadingLine>{COPY.research.loading}</LoadingLine>}
     </div>
@@ -98,6 +100,7 @@ export function createSharedResearchSheet(load) {
     const overlayStack = useHubOverlays();
     const [loads, setLoads] = useState(0);
     const [retrying, setRetrying] = useState(false);
+    const [failures, setFailures] = useState(0);
     const Body = loader.current();
     const mode = entry?.mode === 'session' ? 'session' : 'start';
     const tryAgain = () => {
@@ -105,13 +108,13 @@ export function createSharedResearchSheet(load) {
       setRetrying(true);
       loader.retry().then(
         () => { setRetrying(false); setLoads((n) => n + 1); },
-        // The line simply stays: a failed retry leaves the sheet as it was.
-        () => { setRetrying(false); },
+        // The line stays, and is said again: a failed retry leaves the sheet as it was (review F3).
+        () => { setRetrying(false); setFailures((n) => n + 1); },
       );
     };
     return (
       <HubSheet title={COPY.research.workTitle} eyebrow={COPY.research.workEyebrow} label={COPY.research.workLabel} phone={phone} width={720} onClose={onClose} opener={opener} fallbackFocus={fallbackFocus} reducedMotion={reducedMotion}>
-        <BodyBoundary key={loads} fallback={<LoadFailed onTryAgain={tryAgain} retrying={retrying} />}>
+        <BodyBoundary key={loads} fallback={<LoadFailed onTryAgain={tryAgain} retrying={retrying} failures={failures} />}>
           <Suspense fallback={<LoadingLine>{COPY.research.loading}</LoadingLine>}>
             <Body
               open

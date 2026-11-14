@@ -454,6 +454,24 @@ describe("the door's Retry: S6's pattern (ruling R-D7)", () => {
     expect(svc.fetchSharedResearchRecords).toHaveBeenCalledTimes(4);
     expect(waitLine()).toBeNull();
   });
+
+  // The fix round's review (F1): the wait said is this owner and epoch's, not only the wait judged at the press.
+  it('a wait said for one owner and epoch is not said for the next (review F1)', async () => {
+    svc.fetchSharedResearchRecords.mockRejectedValue(new Error('offline'));
+    const x = await render('mobile');
+    await openResearchArea('mobile');
+    click(retryButton());
+    await flush();
+    vi.setSystemTime(NOW + 5_000);
+    click(retryButton());
+    await flush();
+    expect(waitLine()).not.toBeNull();
+    r.identity = { resolved: true, uid: UID, authEpoch: 3 };
+    x.rerender(<CommandCenterHub site="mobile" hub={hubOf()} />);
+    await flush();
+    expect(errorRow()).not.toBeNull();
+    expect(waitLine()).toBeNull();
+  });
 });
 
 describe('the sheet: each opener, its mode, focus, one overlay (amendment §3.2)', () => {

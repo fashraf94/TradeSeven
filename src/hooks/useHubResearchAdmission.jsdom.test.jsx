@@ -147,6 +147,23 @@ describe("'allowlist': the cached cockpit-status verdict for an owned agent batt
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  // The fix round's review (F2): an answer still out when the battle id leaves still lands for this owner and re-renders.
+  it('a verdict still out when the battle id leaves: when it lands this owner is admitted, with no second request (review F2)', async () => {
+    let release = null;
+    fetchSpy.mockImplementation(() => new Promise((resolve) => { release = () => resolve({ ok: true, status: 200, json: async () => answer.body }); }));
+    const m = mount({ mode: 'allowlist', auth: A, battleId: 'ab_live_1' });
+    await flush();
+    expect(release).not.toBeNull();
+    expect(m.admitted()).toBe(false);
+    m.rerender({ mode: 'allowlist', auth: A, battleId: null });
+    await flush();
+    expect(m.admitted()).toBe(false);
+    await act(async () => { release(); });
+    await flush();
+    expect(m.admitted()).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('no battle id held: another owner\'s held yes admits nobody else (R-D6)', async () => {
     const m = mount({ mode: 'allowlist', auth: A, battleId: 'ab_live_1' });
     await flush();
