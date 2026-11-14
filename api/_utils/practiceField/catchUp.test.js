@@ -10,7 +10,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { admitIdea } from './admission.js';
 import { closeIdeaBook, firstUnclosedSessionBefore } from './close.js';
-import { runIdeaBookEntryPass } from './entry.js';
+import { runIdeaBookEntryPass, enterIdea } from './entry.js';
+import { sellPendingHoldings } from './exits.js';
 import { runIdeaBookEvalPass, runDrainingIdeaBookCloses, withDrainingIdeaBooks, ideaCloseLeftUnclosed, coverageFromStandIn, practiceFieldBuildInputs } from './sweep.js';
 import { assertReconciled } from './reconcile.js';
 import { nextSessionDate } from './windows.js';
@@ -19,7 +20,7 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, storeTickSnapshot, storeCloseSnapshot, contractOf, getBook, getIdea, getRow, tickOf,
-  slotNowOf, closeNowOf, etIso, countDocs, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, moneyStoreBytes, makeMandateFakeDb,
+  slotNowOf, closeNowOf, etIso, countDocs, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, moneyStoreBytes, makeMandateFakeDb, dumpStore,
 } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02', '2026-12-03', '2026-12-04'];
@@ -332,6 +333,35 @@ describe('B-CATCHUP (E12) — missed closes are caught up before the next close,
     expect(await fire()).toEqual({ books: 1, served: 0, caughtUp: 0, errors: 0, ...none }); // served this slot
     recon(ctx);
     errors.mockRestore();
+  });
+
+  it('Astra T2M01 — an entry and a sale CALLED DIRECTLY past an unclosed session are each refused `earlier_session_unclosed`, writing nothing; the window then catches the session up first, with the holdings it had', async () => {
+    const ctx = await setup({ names: ['AAPL'] });
+    await closeDay(ctx, S[0], { AAPL: roundUsd(BASE.AAPL * 0.9) }); // below its line: a line exit waits for a window
+    expect(ideaOf(ctx).ledger.holdings.AAPL.exitPending).toMatchObject({ reason: 'line', session: S[0] });
+    // A second idea, admitted on S[1], starts on S[2].
+    const admitted = await admitIdea(ctx.db, { bookId: ctx.bookId, opId: 'later', contract: contractOf({ names: ['MSFT'], slot: 'medium', capitalUsd: 5000 }), nowIso: etIso(S[1], 11, 0) });
+    expect(admitted).toMatchObject({ ok: true, startSession: S[2] });
+    // S[1] is never closed. A window snapshot for S[2] is stored; each fill is then called DIRECTLY — no window pass,
+    // so no catch-up in front of it: each transaction must refuse on its own.
+    await storeTickSnapshot(ctx.db, S[2], 'open30', quotes({ AAPL: roundUsd(BASE.AAPL * 0.89) }));
+    const before = dumpStore(ctx.db);
+    const nowIso = slotNowOf(S[2]).toISOString();
+    expect(await sellPendingHoldings(ctx.db, { bookRef: ctx.bookRef, ideaId: ctx.ideaId, tick: tickOf(S[2]), nowIso }))
+      .toMatchObject({ outcome: 'not_this_session', reason: 'earlier_session_unclosed' });
+    expect(await enterIdea(ctx.db, { bookRef: ctx.bookRef, ideaId: admitted.ideaId, tick: tickOf(S[2]), nowIso }))
+      .toMatchObject({ outcome: 'not_this_session', reason: 'earlier_session_unclosed' });
+    expect(dumpStore(ctx.db)).toBe(before); // nothing written by either
+    // With S[1]'s close snapshot stored, the window catches S[1] up FIRST — at the holdings it had — then sells and enters.
+    await storeCloseSnapshot(ctx.db, S[1], quotes({ AAPL: roundUsd(BASE.AAPL * 0.91) }));
+    const oldShares = ideaOf(ctx).ledger.holdings.AAPL.shares;
+    const w = await windowAt(ctx.db, ctx.bookId, { date: S[2] });
+    recon(ctx);
+    expect(w.caughtUp).toEqual([{ date: S[1], observed: true }]);
+    expect(w.sales.sold).toBe(1);
+    expect(w.entries.entered).toBe(1);
+    expect(rowOf(ctx, S[1]).quantities.AAPL).toBe(oldShares);
+    expect(rowOf(ctx, S[1], admitted.ideaId)).toBeUndefined();
   });
 });
 
