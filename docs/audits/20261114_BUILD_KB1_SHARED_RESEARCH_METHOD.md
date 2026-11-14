@@ -29,7 +29,7 @@
 
 No fenced file (BUILD_RULES §1) was read, called or edited. **No file under `src/` changed.** No KB-0 file changed except the two rows Part 6 names.
 
-The branch diff against `main` `c85f7b41`: 15 code, test and fixture files, +2,256 / −76 lines, all under `api/`; plus this report, the review record and two `docs/README.md` rows.
+The branch diff against `main` `c85f7b41`: 15 code, test and fixture files, +2,257 / −76 lines, all under `api/`; plus this report, the review record and two `docs/README.md` rows.
 
 | File | What |
 |---|---|
