@@ -14,7 +14,7 @@
 | R-D1 (the bundle) | **Met, with one reading (Q1).** The entry chunk changes only in its export list (`SignalDropEntry`, `REVIEW_HONEST_LINE` and `fetchFeed` added, later aliases re-lettered) and in the gate reading `.then(e=>e.C)`. Everything else is identical with hashes masked, and the CSS is byte-identical. Of 52 lazy chunks, 8 changed; 2 of those carry minifier-renamed locals (Q1). |
 | Full Linux suite | **Exit 1, from one row that fails on `main` too.**<br>On `adb194c3` (`flock`, `TZ=UTC`, 8 workers): 1,486 files, 33,050 tests; 32,914 passed, 135 skipped, 1 failed, no load errors.<br>The failure is `CompeteTab.rankLabel.jsdom.test.jsx` "absent (every caller but the shell)…". It fails identically on `main` `c85f7b41` the same day (1,476 files, 32,831 tests, that one row failed), so the head's failed set equals `main`'s. Cause: a golden captured on the real clock (§4.5, "found outside this task").<br>This build's 15 test files: 387 rows passed, 0 failed, 4 skipped (the browser rows). The two theme guards it registers files in (`src/theme/motion.guard.test.js`, `tokens.guard.test.js`): 694 rows, all passed.<br>The run on `4e878335` gave the same result, with one row fewer (the door file's 44).<br>The commits after `adb194c3` are docs only (`docs/README.md` and this report), and no test reads either file. |
 | Rules suite, `lint:gate`, build | **Rules:** 42 files, 784 tests, exit 0, on `4e878335`. `adb194c3` changes only two jsdom/unit test files, which the rules suite does not run.<br>**`lint:gate`:** exit 0 on `adb194c3`.<br>**`vite build`:** exit 0; the pushed head's build is checked in §4.4. |
-| Mutation battery | **135 mutants: 133 killed. Every behavioural row but one fails under at least one mutant**; §4.2 names the one row and says why. The 2 survivors are equivalent, and each has a stronger twin that is killed. The first run (77 mutants) recorded no row names. Rerun with names, it showed 59 rows no mutant reached, and two of them could not fail; `adb194c3` fixes those two. |
+| Mutation battery | **136 mutants: 134 killed. Every behavioural row fails under at least one mutant** (§4.2). The 2 survivors are equivalent, and each has a stronger twin that is killed. The first run (77 mutants) recorded no row names. Rerun with names, it showed 59 rows no mutant reached, and two of them could not fail; `adb194c3` fixes those two. |
 | Real browser | **4 of 4 rows pass** at 390×844 and 1280×800 on the local smoke page; on the smoke preview: **4 of 4 pass** too, and the three browser mutants are killed. |
 | Review (BUILD_RULES §2) | **3 lenses, each with a refuter; 29 findings, no must-fix.** The should-fix items that survived are fixed, each with rows and mutants. 6 questions remain for the founder (§7). |
 | Founder action | The phone checklist (§5), the questions (§7), then §6 before the allowlist flip. |
@@ -162,13 +162,13 @@ The hub end-to-end rows cover:
 - the lapse and the owner change;
 - the list label.
 
-### 4.2 The mutation battery (135 mutants, 133 killed; every behavioural row but one fails under a mutant)
+### 4.2 The mutation battery (136 mutants, 134 killed; every behavioural row fails under at least one)
 
 **Method:**
 - **Why it ran twice.** The first run (77 mutants, on `2210ab0e`) recorded only how many rows each mutant failed, not which ones, so it could not show that every behavioural row has a mutant. The battery was run again with every failed row's name recorded.
 - **Trees:**
   - M01–M81 ran on an LF `git archive` tree of `4e878335`.
-  - M76 (a second time) and M82–M132 ran on the same tree with `adb194c3`'s door test copied in. M95–M99 also had its selector test.
+  - M76 (a second time) and M82–M133 ran on the same tree with `adb194c3`'s door test copied in. M95–M99 and M133 also had its selector test.
   - `adb194c3` changes only those two test files, so that tree is `adb194c3`'s.
 - Each mutant ran only its named rows' files. Every anchor resolved exactly once.
 - A kill means vitest exited non-zero **and** reported a failed assertion; a crash is never a kill.
@@ -176,18 +176,13 @@ The hub end-to-end rows cover:
 - Spec, runner, and the map from each row to the mutants that fail it are in the session scratchpad: `mut/spec.json`, `mut/run-mutants.mjs`, `mut/row-killers-final.json`.
 
 **What the row names showed, and what changed:**
-- Of the nine behaviour files' 181 rows, 59 failed under no mutant. M82–M132 aim one at each of them.
+- Of the nine behaviour files' 181 rows, 59 failed under no mutant. M82–M133 aim one at each of them.
 - Two of those rows could not fail, so the tests changed in `adb194c3`:
   - **"Nothing announces"** checked only the door's descendants, because `querySelector` never matches the element it is called on. A live role on the door itself survived (M76). The row now checks the element too, once with the line and once with the error; M76 and M132 are killed.
   - **"%s is offered"** was generated from `ELIGIBLE_STORY_TYPES`, so dropping a type removed its row instead of failing it. The row now names the five types; M95–M99 are each killed by their own type's row.
 - M107 and M109 mutate `src/constants/sharedResearch.js`: B1's `questionForBeat`, where the selector's question comes from. The rows they fail are the selector's.
-- **One row has no mutant:** `CommandCenterHub.researchDoor`, "the stories read failing: the sheet opens with no stories ([])". Three guards each turn a missing list into `[]`:
-  - the hub hands the selector `[]` unless the read is ready;
-  - the selector reads a non-list as none (M80 kills its row);
-  - the wrapper does the same (M130 kills its row).
-
-  So no single-point mutant can hand the sheet a list the reader never had. The row's title no longer says "stale", because it never tested a kept answer.
-- After `adb194c3` the nine files hold 182 rows; 181 fail under at least one mutant.
+- **The stories-failing row** (`CommandCenterHub.researchDoor`, "the stories read failing: the sheet opens with no stories ([])") is failed by M133, which makes the hub fall back to a made-up story instead of `[]`. Its title no longer says "stale", because it never tested a kept answer.
+- After `adb194c3` the nine files hold 182 rows, and every one fails under at least one mutant.
 
 | Id | The row it targets | File mutated | Result |
 |---|---|---|---|
@@ -326,6 +321,7 @@ The hub end-to-end rows cover:
 | M130 | wrapper: stories that are not a list are [] | `CC/SharedResearchSheet.jsx` | killed (1/13 red) |
 | M131 | hub at 'on' (desktop): the door shows | `CC/CommandCenterHub.jsx` | killed (7/45 red) |
 | M132 | panel: nothing announces — the error row is no live region | `CC/panels/ResearchPanel.jsx` | killed (1/45 red) |
+| M133 | hub: the stories read failing hands the sheet no stories, never an invented list | `CC/CommandCenterHub.jsx` | killed (1/45 red) |
 
 **The two survivors are equivalent:**
 - **M36** (an open keeps a held entry): close clears the entry, so `prev` is always `null`. Its twin **M36b** (close keeps it too) is killed by the "Work an idea → close → Continue" row.
