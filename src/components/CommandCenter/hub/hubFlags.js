@@ -46,7 +46,8 @@ export function hubFlags() {
 export function sharedResearchMode() {
   const modes = SHARED_RESEARCH_MODES;
   const mode = SHARED_RESEARCH_MODE;
-  return Array.isArray(modes) && modes.includes(mode) ? mode : 'off';
+  // SMOKE ONLY, NEVER MERGE: the client's mode is forced 'on'; the server's SHARED_RESEARCH_MODE stays 'off'.
+  return Array.isArray(modes) && modes.includes(mode) ? 'on' : 'on';
 }
 
 /** Slice S2b: the Scouting Board's flag, as the shells read it (anything but exactly `true` reads false). */
