@@ -1,6 +1,6 @@
 # Build KB-1 — Shared Research uses and records the KB method (dark: the list stays empty)
 
-**Date:** 2026-11-14 (started 2026-11-13) · **Branch:** `claude/shared-research-kb1` (cut from `origin/main` `c85f7b41` after `git fetch origin`; the harness's `claude/shared-research-kb1-d455e3` was renamed before the first commit; `main` re-fetched before the final runs, unmoved) · **Code head:** `589325a2` (the last code change); the rows end at `186b069e`; the pushed head adds this report, the review record and two `docs/README.md` rows · **By:** Claude Code (Opus 5.5)
+**Date:** 2026-11-14 (started 2026-11-13) · **Branch:** `claude/shared-research-kb1` (cut from `origin/main` `c85f7b41` after `git fetch origin`; the harness's `claude/shared-research-kb1-d455e3` was renamed before the first commit; `main` re-fetched before the final runs, unmoved) · **Code head:** `15f0aae5` (the last code and test change); the pushed head adds this report, the review record and two `docs/README.md` rows · **By:** Claude Code (Opus 5.5)
 **Spec:** Shared Research spec V1.2 — Amendment A, Part 2 (§A4, §A5 KB-1 rows), with the KB-1 build prompt of 13 Nov 2026 governing where it makes the amendment precise · **Review record:** `docs/audits/20261114_KB1_SHARED_RESEARCH_METHOD_REVIEW.md`
 
 ## 1. Verdict
@@ -9,10 +9,10 @@
 |---|---|
 | **What was built** | Amendment A Part 2. An own-words investigation selects its method once, through the KB loader's authorized entry points, called from one file (`method.js`) with one argument each. Every model turn (the frame and each step) re-checks the session's stamp for the gate's uid, runs on the method that answers, and records it on its partner exchange and in the shadow log. Each step that retrieved keeps the title and highlights its partner was shown, with a hash and the findings that cite each item. Adoption records the methods behind the kept findings. On a KB turn only, the step prompt carries the §A4.6 method block and three more validator checks run. |
 | **Dark?** | **Yes.** `KB_APP_USE` is still `[]`, so every selection is refused (`not_authorized`) and every investigation runs on `baseline@v0`. A baseline turn's two system prompts equal `main`'s byte for byte (a fixture captured from `main` before the change). The validator applies exactly B1's rules on a baseline turn. No file under `src/` changed, and the client `dist/` is identical to `main`'s (111 of 111 files). No route answer gains a key. No flag, rule, index, environment variable or collection was added. |
-| **Tests** | Four new test files, one row in B1's route test, KB-0's two moved rows, and the review's rows. On Linux the Shared Research, KB and idea-record files pass: **40 files, 1,167 tests, exit 0**. The full suite: **1,468 files and 32,890 tests pass; 1 fails** — a `src/` test that fails identically on `main` `c85f7b41` (§8), so the suite exits 1, as it does on `main`. The rules suite 784/784, `lint:gate` clean, `vite build` with `dist/` identical to `main`'s, 111 of 111 files (§6). |
+| **Tests** | Four new test files, one row in B1's route test, KB-0's two moved rows, and the review's rows. On Linux the Shared Research, KB and idea-record files pass: **40 files, 1,171 tests, exit 0**. The full suite: **1,468 files and 32,894 tests pass; 1 fails** — a `src/` test this build does not touch, which fails the same way run alone at `main` `c85f7b41` in the same setup and may be time-dependent (§8); so the suite exits 1. The rules suite 784/784, `lint:gate` clean, `vite build` with `dist/` identical to `main`'s, 111 of 111 files (§6). |
 | **Mutants** | The 16 the prompt names (as 18 mutants: the body uid at frame and at step; the stamp and an exchange through `sessionViewOf`): **all killed**. The whole battery — with 11 more of the build's own and 20 for the review's fixes and rows: **49 of 49 killed** (§6). |
 | **Review** | BUILD_RULES §2, multi-lens and adversarial: 5 lenses, then 5 refuters, each on its own snapshot. **54 findings: 35 CONFIRMED · 14 PARTLY · 5 REFUTED.** Every must-fix is fixed (a partner named "Will" switched the promise check off; rows that could not fail). Every confirmed finding with a remedy inside the prompt's letter is fixed, with a row and a mutant; where a fix went beyond the letter, the refuter held it so and it was reverted to the letter and asked. Record: `docs/audits/20261114_KB1_SHARED_RESEARCH_METHOD_REVIEW.md`. |
-| **Open for the founder** | **10 founder questions, none blocking** — the list is empty, so no KB turn runs until the activation PR, and each can be ruled before it (each moves a pinned row). The two that matter most before activation: **FQ-1**, whether a KB frame turn runs the citation and promise checks (its `check` becomes the opening next action); **FQ-7**, whether the worked-example check exempts the player's own words (own words is the only KB consumer). The rest: FQ-2 the first turn's refusal reason, FQ-3 other bytes under the stamp's name, FQ-4 the readings R1–R16, FQ-5 the 400 KB pin's unit, FQ-6 "as shown", FQ-8 the promise's object, FQ-9 the service names, FQ-10 the citation and date forms (review record §4). **One finding outside the task to task separately:** a `src/` test failing on `main` (§8). |
+| **Open for the founder** | **11 founder questions, none blocking** — the list is empty, so no KB turn runs until the activation PR, and each can be ruled before it (each moves a pinned row). The two that matter most before activation: **FQ-1**, whether a KB frame turn runs the citation and promise checks (its `check` becomes the opening next action); **FQ-7**, whether the worked-example check exempts the player's own words (own words is the only KB consumer). The rest: FQ-2 the first turn's refusal reason, FQ-3 other bytes under the stamp's name, FQ-4 the readings R1–R17, FQ-5 the 400 KB pin's unit, FQ-6 "as shown", FQ-8 the promise's object, FQ-9 the service names, FQ-10 the citation and date forms, FQ-11 the method check on the summary (review record §4). **One finding outside the task to task separately:** a `src/` test failing on `main` (§8). |
 
 ## 2. In plain terms
 
@@ -29,7 +29,7 @@
 
 No fenced file (BUILD_RULES §1) was read, called or edited. **No file under `src/` changed.** No KB-0 file changed except the two rows Part 6 names.
 
-The branch diff against `main` `c85f7b41`: 15 code, test and fixture files, +2,248 / −76 lines, all under `api/`; plus this report, the review record and two `docs/README.md` rows.
+The branch diff against `main` `c85f7b41`: 15 code, test and fixture files, +2,256 / −76 lines, all under `api/`; plus this report, the review record and two `docs/README.md` rows.
 
 | File | What |
 |---|---|
@@ -47,7 +47,7 @@ The branch diff against `main` `c85f7b41`: 15 code, test and fixture files, +2,2
 | `api/_utils/sharedResearch/stepPrompt.js:49` `KB_METHOD_RULES`; `:64` `methodBlockOf`; `:82`, `:109` | The method block: `METHOD.text` for the baseline (byte-identical), the §A4.6 wrapper for a KB method |
 | `api/_utils/sharedResearch/opening.js:121`, `:193` | The opening's next action cites the `sourceRef` it is given (the baseline's when omitted) |
 | `api/_utils/sharedResearch/stepSchema.js:433`, `:669`–`:673` | `ctx.method`; the next action cites `method.sourceRef` (its id minted at the same point as before: the mint order is unchanged) |
-| `stepSchema.js:739`; `:781`–`:864` | The three checks (`kbTurnFailOf`), after every B1 rule, on KB turns only |
+| `stepSchema.js:739`; `:781`–`:871` | The three checks (`kbTurnFailOf`), after every B1 rule, on KB turns only |
 | `api/forge/shared-research.js:101` | `modelCallRecord`: `methodId`, `methodVersion`, `methodSha256`, `methodSource` of the turn's method, on all six call-record sites |
 | `shared-research.js:176`, `:185`, `:207` | Frame: selection before `beginFraming`; the turn's method from the SESSION's stamp; the frame exchange's `method` |
 | `shared-research.js:265`; `:289` | Open: an own-words opening cites its frame exchange's method; a story or a drop selects the baseline |
@@ -89,8 +89,9 @@ No flag, rule, index, environment variable, collection or Vercel entry was added
 | R12 | **The frame turn and the three checks.** The checks run on step turns; the frame's three texts (question, check, not-established) are validated by B1's `validateFrame` only. | The prompt words every check over step outputs ("the step", findings, summary, reply). **FQ-1** asks whether the frame should run the citation and service checks too: its `check` becomes the opening next action's fact. |
 | R13 | **The partner's name in the promise.** The name, read like the text (NFKC, no format characters, straight apostrophes), is one more subject, matched whole-word and case-insensitively in place — never swapped into the sentence first (review CHK-1: B1's swap let a partner named "Will" switch the check off). The subjects otherwise are B1's partner words (spec §17 FQ-9), "we", "I" and "this/the/your idea". | "the partner's name"; the founder's FQ-9 ruling on who the agent and the partner are. |
 | R14 | **A sentence, for the worked example.** It ends at `.`, `!` or `?` before a capital, a digit or a quote — never at an abbreviation ("U.S.", "p.m.", "vs.", "Inc.", "approx.", "Oct."). | "a sentence naming NVDA together with October 30" (review CHK-3). |
-| R15 | **The forms.** A citation group's ids may be separated by `,` `;` `/` `&`, a dash or hyphen (a range: "T1–T6"), "and", "or", "to". "October 30" is not the date when "%" or "-day" follows it. The words between "will" and the verb may be "be", "closely", "continue", "start to", "keep on", ", of course,", "both" and the like (at most six). | "a bracketed group of one or more of them"; "will … test, trial, track, monitor or adopt" (review CHK-4, CHK-5, CHK-11). |
+| R15 | **The forms.** A citation group's ids may be separated by `,` `;` `/` `&`, a dash or hyphen (a range: "T1–T6"), "and", "or", "to". "October 30" is not the date when "%" or "-day" follows it. Between "will" and the verb only whole filler units may stand, at most six: "also", "then", "both", "all", "be", "and", "of course", "continue (to)", "keep (on)", "start (to)", "begin (to)", an adverb in -ly (never a verb in -ply: "supply", "apply") — so "we will be on track", "I will be on trial" and "we will supply monitoring equipment" are no promise. | "a bracketed group of one or more of them"; "will … test, trial, track, monitor or adopt" (review CHK-4, CHK-5, CHK-11; the advisor's check of the fix round). |
 | R16 | **`methodsUsed`'s order.** First seen walking the partner turns in the order they ran. | "the distinct method values of the partner exchanges … in first-seen order" (review REC-4). |
+| R17 | **The tests' "fixture method" is the real v0.1 method.** Each Shared Research test that needs the KB path mocks the loader with a factory that keeps the real module and answers, per row, the method the REAL loader verifies from the committed package under a test-only authorization list (a second, `deps` argument — in test files only; production code calls each entry point with one argument, from `method.js` only, as the PERMANENT row pins). | Part 7: "a factory answering a fixture method". The real bytes make the size pins, the markers' hash key and the header's date the accepted package's own, not a copy's; no test imports the loader (the moved row refuses an import, `vi.importActual` included). |
 
 ## 5. The baseline's pins (for the KB chat's comparison)
 
@@ -136,19 +137,19 @@ The letter's "every field at its maximum" holds under 400 KB in length units; in
 
 | # | Command | At | Exit | Result line |
 |---|---|---|---|---|
-| 1 | `npx vitest run api/_utils/sharedResearch api/forge/shared-research.route.test.js api/forge/shared-research.kb1.route.test.js api/_utils/kb api/_utils/hypothesisRecords` | `186b069e` | 0 | `Test Files  40 passed (40)` · `Tests  1167 passed (1167)` |
-| 1 | `flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` (the full suite) | `186b069e` | **1** | `Test Files  1 failed \| 1468 passed \| 11 skipped (1480)` · `Tests  1 failed \| 32890 passed \| 131 skipped (33022)` — the one failure is `CompeteTab.rankLabel.jsdom.test.jsx`, which fails identically on `main` `c85f7b41` (§8) |
-| 2 | `npm run test:rules` (the emulator, Java 21) | `589325a2` (`186b069e` adds rows to one route test, outside the rules config) | 0 | `Test Files  42 passed (42)` · `Tests  784 passed (784)` |
-| 3 | `npm run lint:gate` | `589325a2`, and again at the pushed head | 0 | clean |
-| 4 | `npx vite build`; `dist/` compared file by file (SHA-256) with a build of `main` `c85f7b41` in its own worktree with its own install | `589325a2`, and again at the pushed head | 0 | **111 of 111 files byte-identical**, the CSS included (so no Tailwind class was minted from the new server files) |
+| 1 | `npx vitest run api/_utils/sharedResearch api/forge/shared-research.route.test.js api/forge/shared-research.kb1.route.test.js api/_utils/kb api/_utils/hypothesisRecords` | `15f0aae5` | 0 | `Test Files  40 passed (40)` · `Tests  1171 passed (1171)` |
+| 1 | `flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` (the full suite) | `15f0aae5` | **1** | `Test Files  1 failed \| 1468 passed \| 11 skipped (1480)` · `Tests  1 failed \| 32894 passed \| 131 skipped (33026)` — the one failure is `CompeteTab.rankLabel.jsdom.test.jsx`, which fails the same way run alone at `main` `c85f7b41` (§8) |
+| 2 | `npm run test:rules` (the emulator, Java 21) | `589325a2` (the later commits change only the KB promise check and test files outside the rules config) | 0 | `Test Files  42 passed (42)` · `Tests  784 passed (784)` |
+| 3 | `npm run lint:gate` | `15f0aae5`, and again at the pushed head | 0 | clean |
+| 4 | `npx vite build`; `dist/` compared file by file (SHA-256) with a build of `main` `c85f7b41` in its own worktree with its own install | `15f0aae5`, and again at the pushed head | 0 | **111 of 111 files byte-identical**, the CSS included (so no Tailwind class was minted from the new server files) |
 
-Earlier runs, kept for the record: at `b78519ec` (before the review) the full suite had the same single `main` failure (`1468 passed`, 32,828 tests); at `11e080a7`, `lint:gate` 0, the rules suite 784/784 and `dist/` 111/111 identical; the battery 29 of 29 there, 46 of 46 at `8598c2d7` and at `589325a2`.
+Earlier runs, kept for the record: at `b78519ec` (before the review) the full suite had the same single `main` failure (`1468 passed`, 32,828 tests); at `11e080a7`, `lint:gate` 0, the rules suite 784/784 and `dist/` 111/111 identical; the battery 29 of 29 there, 46 of 46 at `8598c2d7` and at `589325a2`, 49 of 49 at `186b069e`, where the full suite had `1468 passed` (32,890 tests) with the same single failure.
 
 ### The mutation battery
 
 It runs in its own WSL worktree (`pd-kb1-mut`), never in the working tree. Each mutant is one or more exact anchors that must match once (a stale anchor prints `BROKEN` and is not run). Each runs its named test files with a JSON report; KILLED means a non-zero exit with failed rows. Each file is restored from `git show HEAD:<path>` and the tree checked clean after every mutant. The defined ids are diffed against the ids run.
 
-**Result at `186b069e`: 49 defined, 49 run, 49 killed, every file restored** (the control run of the same files: exit 0, 223 tests, 0 failed).
+**Result at `15f0aae5`: 49 defined, 49 run, 49 killed, every file restored** (the control run of the same files: exit 0, 227 tests, 0 failed).
 
 | Mutant | What it does | Verdict | Killed by (first failing row; failed rows) |
 |---|---|---|---|
@@ -202,10 +203,9 @@ It runs in its own WSL worktree (`pd-kb1-mut`), never in the working tree. Each 
 | X33 | the step's prompt_too_large call record drops its method (review TST-8) | KILLED | shared-research.kb1.route.test.js › a KB frame whose write fails (persist_failed), and a KB step whose prompt is over the cap (prompt_too_large): each record names the KB method (1) |
 | X34 | the frame's model-failure call record drops its method (review TST-8) | KILLED | shared-research.kb1.route.test.js › the letter: a KB stamp whose FIRST turn falls back (a retried framing after the entry is removed) records the baseline it ran on, with no methodChange — there is no previous partner turn (review SEL-1: founder question FQ-2) (1) |
 
-
 ### The review (BUILD_RULES §2)
 
-Five lenses, five refuters, each on its own `git archive` snapshot: `docs/audits/20261114_KB1_SHARED_RESEARCH_METHOD_REVIEW.md`. 54 findings: **35 CONFIRMED · 14 PARTLY · 5 REFUTED**. Three were must-fix before refutation (CHK-1, TST-1, TST-3; TST-9 and TST-10's close half raised to must-fix by the refuter): all fixed. Every confirmed finding with a remedy inside the letter is fixed, with a row and a mutant; where a fix went beyond the letter (SEL-1, SEL-3, REC-6, and three check tightenings) it was built, refuted as beyond the letter, reverted, and asked (§1, FQ-1 to FQ-10).
+Five lenses, five refuters, each on its own `git archive` snapshot: `docs/audits/20261114_KB1_SHARED_RESEARCH_METHOD_REVIEW.md`. 54 findings: **35 CONFIRMED · 14 PARTLY · 5 REFUTED**. Three were must-fix before refutation (CHK-1, TST-1, TST-3; TST-9 and TST-10's close half raised to must-fix by the refuter): all fixed. Every confirmed finding with a remedy inside the letter is fixed, with a row and a mutant; where a fix went beyond the letter (SEL-1, SEL-3, REC-6, and three check tightenings) it was built, refuted as beyond the letter, reverted, and asked (§1, FQ-1 to FQ-11).
 
 ## 7. The founder's smoke step
 
@@ -219,7 +219,7 @@ must answer **`404 {"error":"disabled"}`**, not a 500. The route now loads `meth
 
 ## 8. Found outside the task (reported, not fixed)
 
-- **A test failing on `main`.** `src/components/draft/CompeteTab.rankLabel.jsdom.test.jsx` › "absent (every caller but the shell)…" fails on this branch and identically on `main` `c85f7b41` in the same WSL setup (3 of 3 and 2 of 2 runs alone), so the full suite exits 1 on both. This build changes no file under `src/`. It compares rendered markup with a golden written from `main`'s CompeteTab; worth a separate task (it may read today's date).
+- **A `src/` test failing here, on `main` too.** `src/components/draft/CompeteTab.rankLabel.jsdom.test.jsx` › "absent (every caller but the shell)…" fails on this branch in every Linux full-suite run, and fails the same way when run alone at `main` `c85f7b41` in the same WSL setup (3 of 3 here, 2 of 2 on `main`); the full suite was not run at `main`. This build changes no file under `src/`. The GitHub Tests workflow passed on two recent PR heads that carry this test (2026-11-13 22:46 UTC and 2026-11-14 00:01 UTC), so the failure may depend on the date or time it runs (the row compares rendered markup with a golden written from `main`'s CompeteTab) — and if it does, this PR's CI may show it red for that reason alone. Worth a separate task.
 - **B1: a partner named "Will" switches off the forbidden-pattern subjects.** B1's `forbiddenIn` swaps the partner's name into the sentence case-insensitively (`withPartnerToken`), so with a partner named "Will" "We will buy NVDA." passes `will_do`; the name is also not normalized like the text. Agent names are free text. KB-1's own check no longer uses the swap (R13); B1's is untouched (Rule 4 keeps baseline turns exactly B1's).
 - **B1: failed direction steps grow the session.** `beginStep` appends a direction step's player exchange before the call and a failed step keeps it; `stepsUsed` moves only on success and nothing expires a session, so up to 30 failed calls a day can each leave a 500-character exchange, every day. The 400 KB case is 10 steps by the prompt's letter.
 - **B1: a title-less item takes its host as its title with no 300 cap** (`retrieval.js` `itemsOf`); an IDN host's punycode can exceed 253 characters.
@@ -230,5 +230,5 @@ must answer **`404 {"error":"disabled"}`**, not a 500. The route now loads `meth
 
 1. The founder's review and merge of this PR (dark: nothing changes for anyone).
 2. The smoke step (§7) on the preview.
-3. Rulings on FQ-1 to FQ-10 — best before activation, since each moves a pinned row.
+3. Rulings on FQ-1 to FQ-11 — best before activation, since each moves a pinned row.
 4. Amendment A §A6 step 4 (B1's own: rules and index deployed, `SHARED_RESEARCH_MODE` to `allowlist`), then **step 5, the founder's activation PR**: one entry in `KB_APP_USE`, its pin in `packages.test.js` (the one KB-0 row that moves with it — `loader.test.js`'s row now follows the list), and its `docs/approvals/` record, after the allowlist run.

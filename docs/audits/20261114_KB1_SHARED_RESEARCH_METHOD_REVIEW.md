@@ -7,7 +7,7 @@
 - **Five independent lenses**, each a subagent on its own `git archive` extraction of the reviewed head (under the session scratchpad, `node_modules` junctioned; read-only on git and on the working tree — BUILD_RULES §2 reviewer isolation): (1) the method's selection, per-turn re-check and audience; (2) the records — stamp, exchanges, retention, adoption, shadow log; (3) the dark guarantee and baseline byte-identity; (4) the three checks' false positives; (5) test integrity (the mutating lens, on its own tree).
 - Each lens was given the code, the diff, the build prompt and the spec — and the builder's interpretive choices as points to challenge, not as conclusions.
 - **Every finding went to a refuter**: one refuter per lens, on a fresh extraction of its own, told to refute each finding with a concrete repro or a precise reading. The verdicts below are the refuters'.
-- Fixes were made in the working tree after the verdicts and re-tested; the fixed tree went through the final checks (the build report §5) and the mutation battery (§6 there).
+- Some fixes were drafted while the refuters ran; each was kept or reverted on its refuter's verdict (six fixes the refuters held beyond the prompt's letter were reverted to the letter and asked). The fixed tree went through the final checks and the mutation battery (build report §6). The fix round itself was checked once more by the advisor, which found the widened promise filler over-matching ("we will be on track"); fixed with rows (build report R15).
 
 ## 2. The split
 
@@ -16,7 +16,7 @@
 | 1 Selection, re-check, audience (SEL) | 7 | 2 | 3 | 2 | 2 (SEL-4, SEL-7) | 3 (SEL-1, SEL-3, SEL-5 → FQ-2, FQ-3, FQ-1) |
 | 2 The records (REC) | 8 | 3 | 3 | 2 | 4 (REC-1 rows and wording, REC-2 rows and wording, REC-4, REC-5) | REC-1, REC-2, REC-3 → FQ-6, FQ-5, FQ-2; REC-8 a note |
 | 3 Dark and byte-identity (DARK) | 5 | 3 | 2 | 0 | 1 (DARK-4, with REC-2) | none is a defect; DARK-2, DARK-3 recorded |
-| 4 The three checks (CHK) | 16 | 12 | 3 | 1 | 8 (CHK-1 to CHK-5, CHK-6's numerals, CHK-11's "30%", CHK-12's exemption) | CHK-7 to CHK-10, CHK-13, CHK-14, CHK-16 → FQ-1, FQ-7 to FQ-10 |
+| 4 The three checks (CHK) | 16 | 12 | 3 | 1 | 8 (CHK-1 to CHK-5, CHK-6's numerals, CHK-11's "30%", CHK-12's exemption) | CHK-7 to CHK-10, CHK-13, CHK-14 → FQ-1, FQ-7 to FQ-11; CHK-6 (partner words), CHK-16 confirmed and left (§4) |
 | 5 Test integrity (TST) | 18 | 15 | 3 (one sub-point refuted) | 0 | 14 (every surviving mutant now has a killing row) | TST-2 (B1, FQ-5), TST-14, TST-15, TST-16 notes |
 
 Severity before refutation: 3 must-fix (CHK-1, TST-1, TST-3); after refutation, no must-fix survived unfixed. Every CONFIRMED or PARTLY finding with a remedy inside the build prompt's letter is fixed; every one whose remedy needs a reading beyond the letter is a founder question (§4) and its row pins the letter, so a ruling moves that row.
@@ -77,7 +77,7 @@ The lens found **no must-fix or should-fix**: all 310 baseline prompt comparison
 | CHK-11 | The date ignores the year; "2026-10-30", "30 October" pass; "October 30%" failed | CONFIRMED (b)/(c) | "30%" and "30-day" no longer read as the date; the rest → FQ-10 |
 | CHK-12 | The exemption's breadth; the pass row depended on `symbolCandidate` | PARTLY (c) | the company's own name ("Nvidia") counts on the exemption side only (reading R9); mutants X22–X24 prove the exemption's three conditions; the refusal side's "Nvidia" → FQ-10 |
 | CHK-13 | = SEL-5 | CONFIRMED (c) | FQ-1 |
-| CHK-14 | `method_as_source` is findings-only (a summary resting on a kb-sourced marker passes) | CONFIRMED (c) — the prompt narrows the spec to findings, and governs; the "compares id, not kind" point REFUTED | note |
+| CHK-14 | `method_as_source` is findings-only (a summary resting on a kb-sourced marker passes) | CONFIRMED (c) — the prompt narrows the spec to findings, and governs; the "compares id, not kind" point REFUTED | **Founder question FQ-11** |
 | CHK-15 | A next action discarded by NS-1 and unsupported claims are not checked | REFUTED — never built, stored or shown | none |
 | CHK-16 | A partner's name colliding with a company's ("Company", "Apple") | CONFIRMED (b) — B1 has the same collision | note (FQ-8) |
 
@@ -115,10 +115,24 @@ These appear in the build report §4 too; none blocks this PR — the list is em
 | FQ-1 | Should a KB **frame** turn run the citation and service-promise checks on its question, check and not-established texts (its `check` becomes the opening next action's fact)? | No: the checks run on step turns |
 | FQ-2 | Should a KB stamp whose **first** partner turn falls back record the reason — e.g. a `methodChange` against the stamp? | No: `methodChange` only against a previous partner turn |
 | FQ-3 | Should an ok answer whose bytes differ from the stamp's hash be refused? | No: "ok → that method"; recorded by hash |
-| FQ-4 | Confirm the build's readings R1–R16 (build report §4) | As listed there |
+| FQ-4 | Confirm the build's readings R1–R17 (build report §4) | As listed there |
 | FQ-5 | Is the 400 KB pin in characters or UTF-8 bytes? The byte worst case (3-byte text and url path) is about 480 KB, under 1 MiB | Pinned: the length-max case and the 3-byte-text case under 400,000 bytes; the byte worst case under 1 MiB |
 | FQ-6 | "As shown": the item's text before rendering (built), or the masked rendering? | Before rendering |
 | FQ-7 | Exempt the worked-example check when the player's own words name NVDA and October 30? | No exemption |
 | FQ-8 | Should the promise need "it"/the idea as its object (research narration "Next I will test whether…" and quoted management fail today)? | Any object |
 | FQ-9 | The service names: any case (built, the letter), or only as names; add "the Forge" (§A4.6's own list)? | Any case; the prompt's three |
 | FQ-10 | The citation and date forms beyond the letter's ("(cf. M1)", "2026-10-30"), a year condition, "Nvidia" on the refusal side | The letter's forms |
+| FQ-11 | `method_as_source` on the SUMMARY: §A4.6 names "a summary sentence citing the method as its source"; the prompt defines the check over findings, so a summary resting on a kb-sourced finding (a next action) passes (CHK-14) | Findings only (the prompt governs) |
+
+**Confirmed, left as they are — the founder's call** (each confirmed by its refuter; none is a defect under the prompt's letter, and none has a remedy this build may make; say so if one should become a task):
+
+| # | What | Why it stays |
+|---|---|---|
+| CHK-6 | B1's partner words ("research partner", "our partner") make a company's "research partner will trial…" a promise | The founder's ruling on who the agent and partner are (spec §17 FQ-9) |
+| CHK-16 | A partner's name equal to a company's ("Company", "Oracle") turns that company's prose into a promise | The letter names the partner's name; B1 has the same collision |
+| DARK-2 | The retained titles and highlights are readable to their owner through the client SDK | §A4.4: the session is "owner-readable and server-written, as today" |
+| DARK-3 | Two `src/` tests and `scripts/sharedResearch/probe.mjs` reach the loader through `stepSchema.js` → `method.js` | Rule 5 governs use; no production `src/` file reaches it (PERMANENT row) |
+| REC-8 | The session document carries the retained text and is read whole | "No new store" (§A4.3) |
+| TST-14 | A `new URL('../kb/…')` or `import.meta.glob('../kb/*')` in a Shared Research module escapes the `_utils/kb` text belt | KB-0's belt, not a row this build may move |
+| TST-15 | A mock factory could expose the real `verifyPackage` | Test-only; the moved row refuses imports, not factory bodies |
+| TST-16 | Retaining the pre-fit capped items instead of `fit.items` is equivalent today | The soft cap never drops an item (worst 10,191 tokens < 12,000) |
