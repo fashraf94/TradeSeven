@@ -118,8 +118,10 @@ describe('P5 — money-path rounding scan (the MONEY-7 / MONEY-P4-3 class killer
     expect(closure.has('api/_utils/mandateBatchTransport.js')).toBe(true);
     expect(closure.has(ROUNDING_HOME)).toBe(true);
     expect(closure.size).toBeGreaterThan(15);
-    // Practice Field T1a-1: the idea book's money modules are ON the closure (so the scope widening below is not vacuous).
-    for (const rel of ['money.js', 'fills.js', 'entry.js', 'close.js', 'admission.js', 'ledger.js', 'reconcile.js']) {
+    // Practice Field T1a-1, T1a-2a: the idea book's money modules are ON the closure (so the scope widening below is not
+    // vacuous) — exits.js and settlement.js are T1a-2a's: the sales and the endpoint. Neither adds a raw rounding site;
+    // every figure they round goes through money.js or the engine's roundUsd.
+    for (const rel of ['money.js', 'fills.js', 'entry.js', 'close.js', 'admission.js', 'ledger.js', 'reconcile.js', 'exits.js', 'settlement.js']) {
       expect(closure.has(`api/_utils/practiceField/${rel}`), rel).toBe(true);
     }
   });

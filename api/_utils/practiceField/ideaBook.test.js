@@ -85,22 +85,35 @@ describe('the mode gate (rule 5)', () => {
 });
 
 describe("mode 'off' makes every Practice Field path a no-op, before any read", () => {
-  it('creation, admission, release, the seam, the entry pass, one entry, the eval pass and the close all answer without touching the database', async () => {
+  it('creation, admission, release, the seam, the entry pass, one entry, the sales pass, one sale, the eval pass, the close and the draining-book passes all answer without touching the database', async () => {
     setPracticeFieldModeForTests(null); // the shipped value
     const { admitIdea, releaseIdea } = await import('./admission.js');
     const { enterIdea, runIdeaBookEntryPass } = await import('./entry.js');
-    const { closeIdeaBook } = await import('./close.js');
-    const { runIdeaBookEvalPass } = await import('./sweep.js');
+    const { closeIdeaBook, catchUpIdeaBook } = await import('./close.js');
+    const { runIdeaBookEvalPass, runIdeaBookWindow, runDrainingIdeaBookCloses, withDrainingIdeaBooks } = await import('./sweep.js');
+    const { runIdeaBookSalesPass, sellPendingHoldings } = await import('./exits.js');
     const ref = new Proxy({ id: 'b' }, { get(t, k) { if (k === 'id') return 'b'; throw new Error('the book reference was touched'); } });
     const tick = { date: DAYS.d1, slot: 'open30', tickKey: `${DAYS.d1}_open30` };
     expect(await createIdeaBook(untouchable, args())).toEqual({ ok: false, code: 'mode_not_admitted' });
     expect((await admitIdea(untouchable, { bookId: 'b', contract: {}, opId: 'o', nowIso: NOW })).refusals.map((r) => r.code)).toContain('mode_not_admitted');
     expect(await releaseIdea(untouchable, { bookId: 'b', ideaId: 'i', nowIso: NOW })).toEqual({ ok: false, code: 'mode_not_admitted' });
     expect(await bookForOwner(untouchable, { uid: 'owner-1', attributionAgentId: 'agent-ranked-1' })).toBeNull();
-    expect(await enterIdea(untouchable, { bookRef: ref, ideaId: 'i', tick, snapshot: {}, nowIso: NOW })).toEqual({ outcome: 'practice_field_off' });
-    expect(await runIdeaBookEntryPass(untouchable, { bookRef: ref, tick, snapshot: {} })).toEqual({ served: false, entered: 0, waiting: 0, cancelled: 0, errors: 0 });
-    expect(await runIdeaBookEvalPass(untouchable, { tick, snapshot: {}, ownerToken: 't' })).toEqual({ books: 0, served: 0, entered: 0, waiting: 0, cancelled: 0, errors: 0, leaseSkips: 0 });
+    expect(await enterIdea(untouchable, { bookRef: ref, ideaId: 'i', tick, nowIso: NOW })).toEqual({ outcome: 'practice_field_off' });
+    expect(await runIdeaBookEntryPass(untouchable, { bookRef: ref, tick })).toEqual({ served: false, entered: 0, waiting: 0, cancelled: 0, errors: 0 });
+    expect(await sellPendingHoldings(untouchable, { bookRef: ref, ideaId: 'i', tick, nowIso: NOW })).toEqual({ outcome: 'practice_field_off' });
+    expect(await runIdeaBookSalesPass(untouchable, { bookRef: ref, tick })).toEqual({ served: false, sold: 0, waiting: 0, resulted: 0, errors: 0, alerts: [] });
+    expect(await runIdeaBookEvalPass(untouchable, { tick, ownerToken: 't' })).toEqual({ books: 0, served: 0, caughtUp: 0, sold: 0, saleWaiting: 0, resulted: 0, entered: 0, waiting: 0, cancelled: 0, errors: 0, leaseSkips: 0 });
     expect(await closeIdeaBook(untouchable, ref, { date: DAYS.d1 })).toEqual({ closed: false, skipped: 'practice_field_off', alerts: [] });
+    // The window pass and its catch-up (review RH-1): the same.
+    expect(await catchUpIdeaBook(untouchable, ref, { before: DAYS.d2 })).toEqual({ complete: false, skipped: 'practice_field_off', caughtUp: [], cancelled: [], resulted: [], alerts: [] });
+    expect(await runIdeaBookWindow(untouchable, { bookRef: ref, tick })).toEqual({
+      served: false, complete: true, caughtUp: [], errors: 0,
+      sales: { served: false, sold: 0, waiting: 0, resulted: 0, errors: 0, alerts: [] }, entries: { served: false, entered: 0, waiting: 0, cancelled: 0, errors: 0 },
+    });
+    // T1a-2a's draining-book passes: no query at 'off', and the snapshot build is handed back its own documents.
+    expect(await runDrainingIdeaBookCloses(untouchable, { date: DAYS.d1, ownerToken: 't' })).toEqual({ books: 0, closed: 0, skipped: 0, unclosed: 0, errors: 0, leaseSkips: 0, alerts: [] });
+    const activeDocs = [{ id: 'q1' }];
+    expect(await withDrainingIdeaBooks(untouchable, activeDocs)).toBe(activeDocs);
   });
 });
 

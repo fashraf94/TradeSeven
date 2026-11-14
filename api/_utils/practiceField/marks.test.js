@@ -10,7 +10,7 @@
 //             (mandateExecution.js computeExecution's exit lane) never applies to an idea book.
 
 import { describe, it, expect } from 'vitest';
-import { eligibleMark, closeMarkQuality, MARK_REFUSAL } from './marks.js';
+import { eligibleMark, closeMarkQuality, quotePastMaxAge, MARK_REFUSAL } from './marks.js';
 import { executeIdeaFill } from './fills.js';
 import { newLedger, LEDGER_KIND } from './ledger.js';
 import { computeExecution } from '../mandateExecution.js';
@@ -21,6 +21,43 @@ const D = DAYS.d1; // Monday 16 Nov 2026
 const at = (h, m) => etIso(D, h, m);
 const snap = (quotes, extra = {}) => ({ ...snapshotOf({ tickKey: `${D}_midday`, sessionDate: D, builtAt: at(12, 46), quoteAt: at(12, 30), quotes }), ...extra });
 const opts = (notBefore = etIso(DAYS.admit, 11, 0)) => ({ notBeforeIso: notBefore, sessionDate: D });
+
+describe('Q-1 and E5 — the cost tier of a fill', () => {
+  const ledger = () => newLedger(LEDGER_KIND.IDEA, 20000);
+  const fill = (quote, extra = {}) => executeIdeaFill({ ledger: ledger(), verb: 'BUY', symbol: 'AAPL', sizeUsd: 5000, snapshot: snap({ AAPL: quote }), ...opts(), ...extra });
+
+  it('a BUY whose tier cannot be resolved is refused `cost_tier_unknown` by the wrapper itself — never bought at the widest tier', () => {
+    for (const marketCap of [null, 0, -1, 'big']) {
+      let err = null;
+      try { fill({ price: 231.47, marketCap }); } catch (e) { err = e; }
+      expect(isPracticeFieldError(err, 'cost_tier_unknown'), String(marketCap)).toBe(true);
+      expect(err.detail).toMatchObject({ symbol: 'AAPL', verb: 'BUY', capTier: 'unknown' });
+    }
+    // A fund has no market cap and needs none.
+    const spy = executeIdeaFill({ ledger: ledger(), verb: 'BUY', symbol: 'SPY', sizeUsd: 5000, snapshot: snap({ SPY: 597.31 }), ...opts() });
+    expect(spy.receipt.costTier).toEqual({ capTier: 'fund:liquid_fund', slippageBps: 1, spreadProxyBps: 2 });
+  });
+
+  it('a new holding stores the tier it entered with, on the holding and on the receipt; a sale handed a stored tier prices at it, whatever the snapshot says', () => {
+    const bought = fill({ price: 231.47, marketCap: 5e9 }); // a mid cap: 10 bps
+    const tier = { capTier: 'mid', slippageBps: 3, spreadProxyBps: 7 };
+    expect(bought.ledger.holdings.AAPL.costTier).toEqual(tier);
+    expect(bought.receipt.costTier).toEqual(tier);
+    expect(bought.receipt.executedPrice).toBe(231.47 * (1 + 10 / 10000));
+    // Sold later from a snapshot that calls it a mega cap (3 bps): the stored tier decides.
+    const megaNow = snap({ AAPL: { price: 240.5, marketCap: 3e12 } });
+    const sold = executeIdeaFill({ ledger: bought.ledger, verb: 'SELL', symbol: 'AAPL', snapshot: megaNow, ...opts(), friction: bought.ledger.holdings.AAPL.costTier });
+    expect(sold.receipt.executedPrice).toBe(240.5 * (1 - 10 / 10000));
+    expect(sold.receipt.costTier).toEqual(tier);
+    // With no stored tier handed in, the snapshot's applies (the wrapper's default).
+    const unstored = executeIdeaFill({ ledger: bought.ledger, verb: 'SELL', symbol: 'AAPL', snapshot: megaNow, ...opts() });
+    expect(unstored.receipt.executedPrice).toBe(240.5 * (1 - 3 / 10000));
+    // A stored tier that is not one — an `unknown` name, a missing figure — is refused, never used.
+    for (const bad of [{ capTier: 'unknown', slippageBps: 5, spreadProxyBps: 15 }, { capTier: 'mid', slippageBps: 3 }, { capTier: '', slippageBps: 3, spreadProxyBps: 7 }]) {
+      expect(() => executeIdeaFill({ ledger: bought.ledger, verb: 'SELL', symbol: 'AAPL', snapshot: megaNow, ...opts(), friction: bad })).toThrow(/cost_tier_unknown/);
+    }
+  });
+});
 
 describe('eligibleMark — the only source of a fill price for an idea book', () => {
   it('a complete quote with the vendor\'s own time, observed in the session and after the decision, qualifies', () => {
@@ -56,16 +93,67 @@ describe('eligibleMark — the only source of a fill price for an idea book', ()
   it('outside_session: a pre-market or an after-hours print of the same day', () => {
     expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(9, 29) } }), 'AAPL', opts()).refusal).toBe('outside_session');
     expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(16, 1) } }), 'AAPL', opts()).refusal).toBe('outside_session');
-    // The session's own bounds are inside.
-    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(9, 30) } }), 'AAPL', opts()).ok).toBe(true);
-    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(16, 0) } }), 'AAPL', opts()).ok).toBe(true);
+    // The session's own bounds are inside (each in a snapshot built a minute after the print: Q-2's age is another row's).
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(9, 30) } }, { builtAt: new Date(at(9, 31)) }), 'AAPL', opts()).ok).toBe(true);
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(16, 0) } }, { builtAt: new Date(at(16, 1)) }), 'AAPL', opts()).ok).toBe(true);
   });
 
   it('B-FILL — before_decision: a decision at 10:20 never receives a mark observed before, or AT, 10:20', () => {
     const decision = at(10, 20);
     expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(10, 19) } }), 'AAPL', opts(decision)).refusal).toBe('before_decision');
     expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(10, 20) } }), 'AAPL', opts(decision)).refusal).toBe('before_decision');
-    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(10, 21) } }), 'AAPL', opts(decision)).ok).toBe(true);
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(10, 21) } }, { builtAt: new Date(at(10, 22)) }), 'AAPL', opts(decision)).ok).toBe(true);
+  });
+
+  it('Q-2 — stale_quote: a quote more than 20 minutes old at the window\'s tick (the stored snapshot\'s own build time) is refused; exactly 20 minutes is not', () => {
+    // The tick is 12:46 (snap's build time). 12:26 is exactly twenty minutes before it; 12:25 is twenty-one.
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 26) } }), 'AAPL', opts()).ok).toBe(true);
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 25) } }), 'AAPL', opts())).toEqual({ ok: false, symbol: 'AAPL', refusal: MARK_REFUSAL.STALE_QUOTE });
+    expect(MARK_REFUSAL.STALE_QUOTE).toBe('stale_quote');
+    // The tick is the DOCUMENT's: a build time as a Firestore Timestamp or an ISO string reads the same…
+    const stamp = { toDate: () => new Date(at(12, 46)) };
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 25) } }, { builtAt: stamp }), 'AAPL', opts()).refusal).toBe('stale_quote');
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(12, 26) } }, { builtAt: at(12, 46) }), 'AAPL', opts()).ok).toBe(true);
+    // …and a snapshot with no readable build time certifies no age.
+    for (const builtAt of [undefined, null, 'soon', 1794849000]) {
+      expect(eligibleMark(snap({ AAPL: 231.47 }, { builtAt }), 'AAPL', opts()).refusal, String(builtAt)).toBe('stale_quote');
+    }
+    // The earlier refusals are tested first: a stale quote from before the decision is `before_decision`.
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: at(10, 19) } }), 'AAPL', opts(at(10, 20))).refusal).toBe('before_decision');
+  });
+
+  it('quotePastMaxAge asks the SAME question as the age test above, alone — so a sale can tell a quote that merely predates its decision from one that has not printed for more than twenty minutes', () => {
+    // The tick is 12:46. Exactly twenty minutes is not past the age; one second more is — as eligibleMark judges.
+    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(12, 26) } }), 'AAPL')).toBe(false);
+    const oneSecondMore = new Date(Date.parse(at(12, 26)) - 1000).toISOString();
+    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: oneSecondMore } }), 'AAPL')).toBe(true);
+    expect(eligibleMark(snap({ AAPL: { price: 231.47, at: oneSecondMore } }), 'AAPL', opts()).refusal).toBe('stale_quote');
+    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(12, 45) } }), 'AAPL')).toBe(false);
+    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(11, 0) } }), 'AAPL')).toBe(true);
+    // A fractional vendor time is judged by the same arithmetic as eligibleMark's (no truncation between the two):
+    // a quote at 12:26:00.5 against a build at 12:46:00.5 is EXACTLY twenty minutes old — not past the age. Truncated
+    // to the whole second it would read twenty minutes and half a second (fourth refuter pass).
+    const fractional = snap({ AAPL: { price: 231.47, at: at(12, 26) } }, { builtAt: new Date(Date.parse(at(12, 46)) + 500) });
+    fractional.symbols.AAPL.quoteTs += 0.5;
+    expect(quotePastMaxAge(fractional, 'AAPL')).toBe(false);
+    expect(eligibleMark(fractional, 'AAPL', opts()).ok).toBe(true);
+    // The build time as a Timestamp or an ISO string reads the same; one that cannot be read certifies no age.
+    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(12, 26) } }, { builtAt: { toDate: () => new Date(at(12, 46)) } }), 'AAPL')).toBe(false);
+    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: at(12, 26) } }, { builtAt: at(12, 46) }), 'AAPL')).toBe(false);
+    for (const builtAt of [undefined, null, 'soon', 1794849000]) expect(quotePastMaxAge(snap({ AAPL: 231.47 }, { builtAt }), 'AAPL'), String(builtAt)).toBe(true);
+    // No vendor time, no quote, no symbol: nothing certifies an age.
+    expect(quotePastMaxAge(snap({ AAPL: { price: 231.47, at: null } }), 'AAPL')).toBe(true);
+    expect(quotePastMaxAge(snap({ AAPL: 231.47 }), 'MSFT')).toBe(true);
+    expect(quotePastMaxAge(snap({ AAPL: 231.47 }), null)).toBe(true);
+  });
+
+  it('Q-3 — closeMarkQuality: a print the vendor timed before that session\'s open is not full quality; one at the open is', () => {
+    const entry = (h, m) => snap({ AAPL: { price: 231.47, at: at(h, m) } }).symbols.AAPL;
+    expect(closeMarkQuality(entry(9, 29), D)).toEqual({ quality: 'pre_open_print', vendorTimeIso: at(9, 29) });
+    expect(closeMarkQuality(entry(4, 0), D).quality).toBe('pre_open_print');
+    expect(closeMarkQuality(entry(9, 30), D).quality).toBe('vendor_time');
+    expect(closeMarkQuality(entry(16, 0), D).quality).toBe('vendor_time');
+    expect(closeMarkQuality(entry(19, 55), D).quality).toBe('vendor_time'); // after the close, on the session's date: the post-close snapshot value
   });
 
   it('a price that is not a real positive number is no quote; a vendor time that is not epoch seconds is no vendor time (review L3-5)', () => {

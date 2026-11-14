@@ -9,7 +9,8 @@
 //   1  the mode admits the owner; the book is active and its drafting is not paused;
 //   2  the slot is open (one idea per slot per book);
 //   3  no name is held or pending in another idea of the book (`ticker_held_by_other_idea`);
-//   6  the start session and the due session are both on the maintained calendar (`calendar_unsupported`);
+//   6  the start session, the due session and the session after it — where the settlement sale fills (Amendment
+//      E17) — are all on the maintained calendar (`calendar_unsupported`);
 //   7  capital, on the book's recorded marked equity: the slot cap (B1), the cash floor (B2) on what the treasury
 //      keeps unreserved, and — for each name's planned dollars — the single-position cap, the sector cap (the
 //      archetype's, translated; sectors through the one bridge; other ideas' PENDING plans count beside what is
@@ -256,6 +257,7 @@ export function buildIdeaDoc({ ideaId, bookId, book, contract, schedule, opId, o
       schedule: {
         startSession: schedule.startSession,
         dueSession: schedule.dueSession,
+        liquidationSession: schedule.liquidationSession,
         sessions: schedule.sessions,
         entryNotBefore: schedule.entryNotBefore,
       },
@@ -277,6 +279,8 @@ export function buildIdeaDoc({ ideaId, bookId, book, contract, schedule, opId, o
     lines: null,
     entry: null,
     lastEntryAttempt: null,
+    // Written once, at the idea's endpoint (close.js); never rewritten.
+    result: null,
   };
 }
 
@@ -405,7 +409,7 @@ export function planRelease({ book, idea, coverageData, reason, nowIso }) {
 /**
  * Reverse the reservation of an idea that never filled (the entry timeout, build prompt §6). Idempotent: an idea
  * already cancelled answers as released. An idea that has filled is refused — its capital leaves only through
- * fills, each with its own receipt (T1a-2).
+ * fills, each with its own receipt (exits.js), and returns to the treasury only when it is `resulted`.
  *
  * @returns {Promise<{ ok: true, released: boolean, idempotentReplay?: boolean } | { ok: false, code: string }>}
  */
