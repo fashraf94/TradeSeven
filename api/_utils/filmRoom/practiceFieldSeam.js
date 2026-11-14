@@ -6,11 +6,13 @@
 // this one module so the path is complete and tested before the book exists:
 //
 //   bookForOwner(db, { uid, attributionAgentId })  → { bookId, status } | null
-//       The owner's idea book for that attribution agent: ONE read, server-side. The Film Room offers a nomination only
-//       to a book whose `status` is 'active' (spec §4 precondition 4); anything else is `book_not_open`.
-//       DEFAULT: null — no book exists for anyone until the Practice Field's T1a lands, so every nomination is refused
-//       and the form never offers the Offer route. The default reads nothing.
-//       OWNER: the Practice Field's T1a replaces it (spec §13 item 1 asks T1a to add it and name its path).
+//       The owner's idea book for that attribution agent: AT MOST TWO reads, server-side. The Film Room offers a
+//       nomination only to a book whose `status` is 'active' (spec §4 precondition 4); anything else is `book_not_open`.
+//       THE PRACTICE FIELD'S, since T1a-1: api/_utils/practiceField/bookStore.js bookForOwner — the owner's idea-book
+//       claim (`practiceFieldBooks/{uid}`), then the book it names (`mandates/{bookId}`, Astra T1A-04): an answer only
+//       for an existing, open idea book of that owner and agent, with the book's own status. While
+//       PRACTICE_FIELD_MODE does not admit the owner (the shipped 'off' admits nobody) it answers null and reads
+//       NOTHING, so every nomination is refused and the form never offers the Offer route — exactly the old default.
 //
 //   buildNominationDoc({ entryId, situationId, questionId, questionVersion, nowIso, expiresAfterSessions })
 //       → the nomination record, shared contract V2 §5.2's shape, written by the card endpoint's ONE transaction at
@@ -26,8 +28,8 @@
 //
 //   bookIsForAgent(bookDoc, attributionAgentId) → boolean   (Amendment A CA-12)
 //       Pure: is the book document (re-read inside the nominate and Offer transactions) the attribution agent's?
-//       DEFAULT: compares a field named `attributionAgentId`. A throw, or any answer but `true`, refuses book_not_open.
-//       OWNER: the Practice Field's T1a, which names the book's real attribution field.
+//       THE PRACTICE FIELD'S, since T1a-1 (bookStore.js bookIsForAgent): the book's field is `attributionAgentId`,
+//       written once at its creation (Amendment B item 1). A throw, or any answer but `true`, refuses book_not_open.
 //
 //   buildWithdrawal(record, { nowIso })   (Amendment A CA-2)
 //       → the record withdrawn by the player's retire of a nominated card the agent has not taken (`queued`,
@@ -40,6 +42,9 @@
 // throws outside the vitest runner, so production can never call it.
 
 import { getSessionForDate } from '../marketSchedule.js';
+// Practice Field T1a-1 (Amendment B item 1): the book helpers are the Practice Field's own from here on. The module
+// is import-light by design (the mode gate only), so the card routes' cold start gains nothing else.
+import { bookForOwner as practiceFieldBookForOwner, bookIsForAgent as practiceFieldBookIsForAgent } from '../practiceField/bookStore.js';
 
 /** The nomination record's source kind for a Film Room card (contract V2 §5.2). */
 export const NOMINATION_SOURCE_KIND = 'film_room_card';
@@ -121,28 +126,28 @@ function defaultBuildWithdrawal(record, { nowIso }) {
 }
 
 /**
- * Amendment A CA-12 — the default: the book names the attribution agent in a field called `attributionAgentId`. Pure
- * (it runs inside the nominate and Offer transactions). T1a names the real field and replaces it.
+ * The defaults. `bookForOwner` and `bookIsForAgent` are THE PRACTICE FIELD'S (T1a-1,
+ * api/_utils/practiceField/bookStore.js): one read of the owner's idea-book claim — and no read at all, answering
+ * null, while PRACTICE_FIELD_MODE does not admit the owner (so with the mode 'off' the Film Room behaves exactly as
+ * it did with the old "no book for anyone" default) — and the book's `attributionAgentId`, written once at its
+ * creation. `buildNominationDoc` and `buildWithdrawal` stay the Film Room's defaults until T2.
  */
-const defaultBookIsForAgent = (bookDoc, attributionAgentId) => bookDoc !== null && typeof bookDoc === 'object' && typeof bookDoc.attributionAgentId === 'string' && bookDoc.attributionAgentId.length > 0 && bookDoc.attributionAgentId === attributionAgentId;
-
-/** The defaults: no book for anyone (no read at all), the contract's record, its withdrawal, and the book's agent. */
 export const PRACTICE_FIELD_SEAM_DEFAULTS = Object.freeze({
-  bookForOwner: async () => null,
-  bookIsForAgent: defaultBookIsForAgent,
+  bookForOwner: practiceFieldBookForOwner,
+  bookIsForAgent: practiceFieldBookIsForAgent,
   buildNominationDoc: defaultBuildNominationDoc,
   buildWithdrawal: defaultBuildWithdrawal,
 });
 
 let live = { ...PRACTICE_FIELD_SEAM_DEFAULTS };
 
-/** The owner's book for the attribution agent, `{ bookId, status }`, or null (the default until T1a). */
+/** The owner's idea book for the attribution agent, `{ bookId, status }`, or null (the Practice Field's, since T1a-1). */
 export const bookForOwner = (db, { uid, attributionAgentId }) => live.bookForOwner(db, { uid, attributionAgentId });
 
 /** The nomination record, contract V2 §5.2's shape (the default until T2). */
 export const buildNominationDoc = (args) => live.buildNominationDoc(args);
 
-/** Amendment A CA-12: is this book document the attribution agent's? (the default until T1a replaces it) */
+/** Amendment A CA-12: is this book document the attribution agent's? (the Practice Field's, since T1a-1) */
 export const bookIsForAgent = (bookDoc, attributionAgentId) => live.bookIsForAgent(bookDoc, attributionAgentId);
 
 /** Amendment A CA-2: the record withdrawn by the player's retire (the default until the Practice Field replaces it). */

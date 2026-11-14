@@ -80,6 +80,13 @@ function uniqUpper(list) {
 export function assembleBuildSet(heldTickers, {
   candidateUniverse = CANDIDATE_UNIVERSE,
   cap = MANDATE_UNIVERSE_MAX_SYMBOLS,
+  // Practice Field T1a-1: symbols the build must COVER for another product (an idea book's reserved names,
+  // comparisons and funds). Like held symbols they are never dropped for the cap or the size budget. Unlike held
+  // symbols they change nothing a quarterly book sees: a covered symbol that is also a candidate keeps its
+  // candidate position and still counts as one; a covered symbol that is NOT a candidate goes to the end of the
+  // build and is returned in `coverageOnly`, which the gate and the slate step over. Empty (the default) is the
+  // old computation exactly.
+  coverageTickers = [],
 } = {}) {
   const held = uniqUpper(heldTickers);
   const heldSet = new Set(held);
@@ -87,17 +94,25 @@ export function assembleBuildSet(heldTickers, {
   const candidateSet = new Set(candidates);
   // Carry-overs = held but not a curated candidate (delisted/removed but still held).
   const carryOverHeld = held.filter((s) => !candidateSet.has(s));
+  const coverage = uniqUpper(coverageTickers).filter((s) => !heldSet.has(s));
+  const coverageSet = new Set(coverage);
+  const coverageOnly = coverage.filter((s) => !candidateSet.has(s));
 
-  // Held first (all of them), then candidates up to the cap.
+  // Held first (all of them), then candidates up to the cap (a covered candidate always), then coverage-only.
   const symbols = [...held];
   let droppedCandidates = 0;
+  let room = cap - held.length - coverage.length; // what is left for candidates nothing covers
   for (const c of candidates) {
     if (heldSet.has(c)) continue; // already counted as held
-    if (symbols.length >= cap) { droppedCandidates++; continue; }
+    if (coverageSet.has(c)) { symbols.push(c); continue; }
+    if (room <= 0) { droppedCandidates++; continue; }
     symbols.push(c);
+    room -= 1;
   }
+  symbols.push(...coverageOnly);
   // Non-held candidate capacity actually retained (drives the I11 floor check).
-  const candidateCapacity = symbols.filter((s) => !heldSet.has(s)).length;
+  const coverageOnlySet = new Set(coverageOnly);
+  const candidateCapacity = symbols.filter((s) => !heldSet.has(s) && !coverageOnlySet.has(s)).length;
 
   return {
     symbols,
@@ -106,6 +121,8 @@ export function assembleBuildSet(heldTickers, {
     carryOverHeld,
     droppedCandidates,
     candidateCapacity,
+    coverageOnly,
+    prioritySet: new Set([...held, ...coverage]),
   };
 }
 
@@ -358,6 +375,12 @@ export async function ensureDailySnapshot(db, {
   getFundamentals = (sym) => getStockAnalysisData(sym, { fields: ['fundamentals'] }),
   fetchCorporateActions = fetchCorporateActionsEODHD,
   concurrency = 8,
+  // Practice Field T1a-1: symbols whose classification is KNOWN STATICALLY (the idea book's funds —
+  // `{ SYM: { sector, industry, marketCap } }`). Such a symbol skips the fundamentals lookup and takes these
+  // fields as given; its corporate actions are still fetched. Null (the default) is today's behaviour.
+  staticClassifications = null,
+  // Practice Field T1a-1: see assembleBuildSet. Empty (the default) is today's behaviour.
+  coverageTickers = [],
 } = {}) {
   if (!db) throw new Error('ensureDailySnapshot: db required');
   if (!date) throw new Error('ensureDailySnapshot: date required');
@@ -365,15 +388,27 @@ export async function ensureDailySnapshot(db, {
   // Literal collection (see bumpUpstreamCounter) — keeps this write resolvable to
   // the non-protected mandateUniverseDaily store for the protected-store scan.
   const ref = db.collection('mandateUniverseDaily').doc(date);
+  // Practice Field T1a-1: a build asked for NO candidate universe (only idea books were active) says so on the
+  // doc. A later build that needs the universe — a quarterly book created that day — finds a day doc that cannot
+  // classify its candidates, and rebuilds it once, in place (the rebuilt doc carries no mark). No doc carries
+  // the mark today, so the create-once rule is unchanged for every existing caller.
+  const omitsCandidates = uniqUpper(candidateUniverse).length === 0;
+  let overwrite = force;
+  let carried = null; // on such a rebuild: the entries the first build already holds
   if (!force) {
     const existing = await ref.get();
     if (existing.exists) {
       const d = existing.data();
-      return { ref, date, built: false, symbolCount: d.symbolCount ?? 0, completeCount: d.completeCount ?? 0, upstreamCalls: 0, caFailedCount: d.caFailedCount ?? 0 };
+      if (!(d.candidateUniverseOmitted === true && !omitsCandidates)) {
+        return { ref, date, built: false, symbolCount: d.symbolCount ?? 0, completeCount: d.completeCount ?? 0, upstreamCalls: 0, caFailedCount: d.caFailedCount ?? 0 };
+      }
+      console.log(`${LOG_PREFIX} day doc ${date} was built without the candidate universe — rebuilding it with the universe`);
+      overwrite = true;
+      carried = d.symbols || {};
     }
   }
 
-  const { symbols, heldSet } = assembleBuildSet(heldTickers, { candidateUniverse });
+  const { symbols, heldSet } = assembleBuildSet(heldTickers, { candidateUniverse, coverageTickers });
   const caFrom = shiftDateStr(date, -MANDATE_CA_FETCH_LOOKBACK_DAYS);
   const caTo = shiftDateStr(date, MANDATE_CA_FETCH_LOOKAHEAD_DAYS);
 
@@ -387,16 +422,26 @@ export async function ensureDailySnapshot(db, {
   // fundamentals are cache hits after the first build; CA is fetched fresh).
   for (const group of chunk(symbols, concurrency)) {
     const results = await Promise.all(group.map(async (sym) => {
+      // The rebuild TOPS UP: a symbol the first build holds keeps its entry exactly (classification and corporate
+      // actions), with no second fetch — a failed re-fetch can lose nothing an idea book's close depends on.
+      if (carried && Object.hasOwn(carried, sym)) return { sym, carriedEntry: carried[sym], upstream: 0 };
       let sector = null; let industry = null; let marketCap = null; let upstream = 0;
-      try {
-        const res = await getFundamentals(sym);
-        const f = res?.fundamentals || {};
-        upstream = res?.cacheStatus?.fundamentals === 'fresh' ? 1 : 0;
-        sector = f.sector ?? null;
-        industry = f.industry ?? null;
-        marketCap = f.marketCap ?? null;
-      } catch (err) {
-        console.error(`${LOG_PREFIX} fundamentals fetch failed for ${sym}: ${err.message}`);
+      const known = staticClassifications && Object.hasOwn(staticClassifications, sym) ? staticClassifications[sym] : null;
+      if (known) {
+        sector = known.sector ?? null;
+        industry = known.industry ?? null;
+        marketCap = known.marketCap ?? null;
+      } else {
+        try {
+          const res = await getFundamentals(sym);
+          const f = res?.fundamentals || {};
+          upstream = res?.cacheStatus?.fundamentals === 'fresh' ? 1 : 0;
+          sector = f.sector ?? null;
+          industry = f.industry ?? null;
+          marketCap = f.marketCap ?? null;
+        } catch (err) {
+          console.error(`${LOG_PREFIX} fundamentals fetch failed for ${sym}: ${err.message}`);
+        }
       }
       let ca = { actions: [], calls: 0, failed: false };
       try {
@@ -409,6 +454,13 @@ export async function ensureDailySnapshot(db, {
     }));
     for (const r of results) {
       upstreamCalls += r.upstream;
+      if (r.carriedEntry) {
+        if (r.carriedEntry.caFetchFailed) caFailedCount++;
+        if (r.carriedEntry.complete) completeCount++;
+        else missing.push(r.sym);
+        entries[r.sym] = r.carriedEntry;
+        continue;
+      }
       if (r.caFailed) caFailedCount++;
       const complete = r.sector != null; // sector is the field the gate depends on
       if (complete) completeCount++;
@@ -442,9 +494,10 @@ export async function ensureDailySnapshot(db, {
     missing,
     caWindow: { from: caFrom, to: caTo },
     caFailedCount,
+    ...(omitsCandidates ? { candidateUniverseOmitted: true } : {}),
     symbols: entries,
   };
-  const settled = await createOrAdopt(ref, doc, { force });
+  const settled = await createOrAdopt(ref, doc, { force: overwrite });
   if (upstreamCalls > 0) await bumpUpstreamCounter(db, date, upstreamCalls); // the fetches happened — count them even when the build lost the race
   if (!settled.won) {
     const w = settled.winner;
@@ -477,6 +530,13 @@ export async function ensureUniverseSnapshot(db, {
   candidateUniverse = CANDIDATE_UNIVERSE,
   fetchQuotes = fetchBatchQuotes,
   batchSize = MANDATE_QUOTE_BATCH_SIZE,
+  // Practice Field T1a-1: the candidate-capacity floor (I11) guards a build that INCLUDES the default candidate
+  // universe. A build without it (idea books only) has no candidates by design and passes 0, so a small idea-book
+  // universe never reads as degraded. The default is today's floor.
+  minCandidateCapacity = MANDATE_MIN_CANDIDATE_CAPACITY,
+  // Practice Field T1a-1: see assembleBuildSet. A coverage-only symbol is listed on the doc as
+  // `coverageOnlySymbols` (the field exists only when there is one): present for marks, never a candidate.
+  coverageTickers = [],
 } = {}) {
   if (!db) throw new Error('ensureUniverseSnapshot: db required');
   if (!tickKey) throw new Error('ensureUniverseSnapshot: tickKey required');
@@ -495,8 +555,9 @@ export async function ensureUniverseSnapshot(db, {
     }
   }
 
-  const build = assembleBuildSet(heldTickers, { candidateUniverse });
+  const build = assembleBuildSet(heldTickers, { candidateUniverse, coverageTickers });
   const { symbols, heldSet } = build;
+  const coverageOnlyField = build.coverageOnly.length > 0 ? { coverageOnlySymbols: build.coverageOnly } : {};
 
   // Chunked batch fetch — one chunk is one counted upstream call.
   const groups = chunk(symbols, batchSize);
@@ -522,7 +583,7 @@ export async function ensureUniverseSnapshot(db, {
   };
 
   // Size budget: trim candidates (never held); fail loud if held-only exceeds.
-  const fitted = fitToByteBudget({ ...baseDoc, symbolCount, completeCount, missing }, entries, heldSet);
+  const fitted = fitToByteBudget({ ...baseDoc, symbolCount, completeCount, missing, ...coverageOnlyField }, entries, build.prioritySet);
   const finalEntries = fitted.entries;
   // Recompute counts on the FINAL (trimmed) entries — the I11 candidate-capacity
   // floor MUST be measured after the size-budget trim, else the byte budget could
@@ -533,12 +594,14 @@ export async function ensureUniverseSnapshot(db, {
   let finalComplete = 0;
   for (const e of Object.values(finalEntries)) if (e.complete) finalComplete++;
 
-  const completeCandidates = countCompleteCandidates(finalEntries, heldSet);
-  const degraded = completeCandidates < MANDATE_MIN_CANDIDATE_CAPACITY;
+  // A coverage-only symbol is not a candidate; a covered candidate still is (it is not in `heldSet`).
+  const notCandidates = build.coverageOnly.length > 0 ? new Set([...heldSet, ...build.coverageOnly]) : heldSet;
+  const completeCandidates = countCompleteCandidates(finalEntries, notCandidates);
+  const degraded = completeCandidates < minCandidateCapacity;
   if (degraded) {
     console.error(
       `${LOG_PREFIX} MANDATE_UNIVERSE_DEGRADED — only ${completeCandidates} complete candidate `
-      + `symbols (< floor ${MANDATE_MIN_CANDIDATE_CAPACITY}) at tick ${tickKey} `
+      + `symbols (< floor ${minCandidateCapacity}) at tick ${tickKey} `
       + `(${fitted.dropped} dropped for size); snapshot risks sell-only`,
     );
   }
@@ -551,6 +614,9 @@ export async function ensureUniverseSnapshot(db, {
     completeCandidateCount: completeCandidates,
     degraded,
     droppedForSize: fitted.dropped,
+    ...coverageOnlyField,
+    // Practice Field T1a-1: a snapshot built with NO candidate universe says so (as its day doc does).
+    ...(uniqUpper(candidateUniverse).length === 0 ? { candidateUniverseOmitted: true } : {}),
     symbols: finalEntries,
   };
 
@@ -591,8 +657,18 @@ export function classifyHeldFreshness(snapshot, heldTickers, {
 
 /** A symbol is eligible for BUY/ADD iff present-and-complete in the tick snapshot (F16). */
 export function isSymbolActionable(snapshot, symbol) {
-  const e = snapshot?.symbols?.[norm(symbol)];
-  return !!(e && e.complete);
+  const sym = norm(symbol);
+  const e = snapshot?.symbols?.[sym];
+  if (!(e && e.complete)) return false;
+  // Practice Field T1a-1: a symbol the snapshot carries only as another product's coverage is not in a quarterly
+  // book's universe (the field exists only on a snapshot built with coverage).
+  return !isCoverageOnly(snapshot, sym);
+}
+
+/** Is `symbol` in this snapshot ONLY as coverage (never a candidate, never held when it was built)? */
+export function isCoverageOnly(snapshot, symbol) {
+  const list = snapshot?.coverageOnlySymbols;
+  return Array.isArray(list) && list.includes(norm(symbol));
 }
 
 /** The harvest-tick mark for a symbol (I3): the price fills execute at. Null if not markable. */

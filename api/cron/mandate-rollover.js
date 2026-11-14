@@ -29,6 +29,7 @@ import { MANAGED_MANDATE_ENABLED, MANDATE_ROLLOVER_ENABLED } from '../../src/con
 import { activeRolloverTick } from '../_utils/mandateSessionSlots.js';
 import { mintOwnerToken, acquireLease, releaseLease } from '../_utils/mandateLease.js';
 import { catchUpBook } from '../_utils/mandateRollover.js';
+import { isIdeaBook } from '../_utils/mandateBookKind.js';
 import {
   MANDATE_SWEEP_PAGE_SIZE,
   MANDATE_ROLLOVER_MAX_BOOKS_PER_FIRE,
@@ -106,6 +107,10 @@ export async function runRolloverSweep(req, res, { now, rolloverTick, db = getFi
         const book = docSnap.data();
         cursor = [book.nextRolloverAt, docSnap.id]; // advance the walk past this book regardless of outcome
         const mandateRef = docSnap.ref;
+        // Kind isolation (Practice Field T1a-1, unconditional): an idea book has no `nextRolloverAt`, so the
+        // inequality above should never return one — but that is the query's convenience, not a rule (Astra V5
+        // B2: "do not rely on a convenient null date alone"). Stepped over here, after the query, untouched.
+        if (isIdeaBook(book)) { summary.skipped++; continue; }
 
         const lease = await acquireLease(db, mandateRef, ownerToken, { now });
         if (!lease.acquired) { summary.skipped++; leaseSkips++; continue; }

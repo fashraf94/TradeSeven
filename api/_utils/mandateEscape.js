@@ -20,6 +20,7 @@ import {
 import { getCadenceTier } from './mandateGenerationConfig.js';
 import { listArchetypeIds } from './archetypeRegistry.js';
 import { computeNextRolloverAt } from './mandateCalendar.js';
+import { isIdeaBook, NOT_QUARTERLY } from './mandateBookKind.js';
 import { MANDATE_STARTING_CAPITAL, MANDATE_FRICTION_MODEL_VERSION } from './mandateConfig.js';
 
 function toDate(v) {
@@ -110,6 +111,10 @@ export async function escapeMandate(db, { userId, archetype, now = new Date(), r
     const book = bookSnap.data();
     if (book.userId !== userId) return { ok: false, code: 'not_owner' };
     if (book.status !== 'active') return { ok: false, code: 'not_active' };
+    // Kind isolation (Practice Field T1a-1, unconditional): the escape hatch replaces a QUARTERLY book. An idea
+    // book is never claimed at userMeta.activeMandateId, so this cannot be reached by the pointer; the guard
+    // holds even if a pointer were ever mis-set. Nothing is written.
+    if (isIdeaBook(book)) return { ok: false, code: NOT_QUARTERLY };
     // "First book, within 14 days" (§5.4). A rolled book (>3mo) has no live window;
     // the replacement's window is null. Absent/expired → refuse the ACTION (not a
     // plumbing refusal — this is the eligibility rule D-3 is scoped by).

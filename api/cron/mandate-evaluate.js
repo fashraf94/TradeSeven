@@ -48,6 +48,12 @@ import { markFor } from '../_utils/mandateUniverseSnapshot.js';
 import { resolveRegime } from '../_utils/mandateRegime.js';
 import { priceUsage, telemetryPatch } from '../_utils/modelPriceTable.js';
 import { harvestOpenBatches, submitMandateBatch, hasOpenBatch } from '../_utils/mandateBatchTransport.js';
+// Practice Field T1a-1: the book-kind discriminant (unconditional isolation) and the idea book's own passes
+// (reached only when PRACTICE_FIELD_MODE is not 'off').
+import { isIdeaBook, splitActiveBooks } from '../_utils/mandateBookKind.js';
+import { practiceFieldLive } from '../_utils/practiceField/mode.js';
+import { practiceFieldBuildInputs, runIdeaBookEvalPass } from '../_utils/practiceField/sweep.js';
+import { closeIdeaBook } from '../_utils/practiceField/close.js';
 
 // §6.2 telemetryPatch moved to modelPriceTable.js in P5 (the batch harvest
 // bills without importing a cron entrypoint); re-exported here so existing
@@ -100,6 +106,38 @@ export async function idleAcquisitionCheck(db, activeSnap) {
   return { skip: !outstandingDuty, activeBooks, outstandingDuty };
 }
 
+// ── Practice Field T1a-1: the shared snapshot's build set, by book kind ───────
+/**
+ * What one snapshot build covers, from the active-book view the caller made.
+ * With NO idea book in play (every fire today, and every fire while
+ * PRACTICE_FIELD_MODE is 'off') this is exactly the old computation: the held
+ * tickers of the active books, no builder option, no extra read. With an idea
+ * book in play, `heldTickers` is what the QUARTERLY books hold (as before) and
+ * the idea books' symbols — what they hold and what they have reserved (one
+ * read) — travel as the builder's `coverageTickers`: covered for marks, never
+ * a quarterly candidate. It also adds the funds' static classifications, and
+ * drops the default candidate universe (and its health floor) unless a
+ * quarterly book is also active.
+ *
+ * @returns {Promise<{ heldTickers: string[], daily: object, tick: object }>}
+ */
+export async function snapshotBuildInputs(db, view) {
+  const books = view.visibleDocs.map((d) => d.data());
+  if (view.ideaCount === 0) return { heldTickers: unionHeldTickers(books), daily: {}, tick: {} };
+  // The candidate universe is wanted when a quarterly book is active — or when a quarterly batch is still open
+  // with no active quarterly book (its harvest validates against this snapshot; refuter RF2-2). That second case
+  // costs one read, made only then; a failed read keeps the universe.
+  let quarterlyActive = view.quarterlyCount > 0;
+  if (!quarterlyActive) {
+    try { quarterlyActive = await hasOpenBatch(db); } catch { quarterlyActive = true; }
+  }
+  const pf = await practiceFieldBuildInputs(db, {
+    ideaHeldTickers: unionHeldTickers(books.filter((b) => isIdeaBook(b))),
+    quarterlyActive,
+  });
+  return { heldTickers: unionHeldTickers(books.filter((b) => !isIdeaBook(b))), daily: pf.daily, tick: pf.tick };
+}
+
 /** The one structured line an idle skip writes (and nothing else). */
 function logIdleSkip({ window, tickKey, date, check }) {
   console.log(JSON.stringify({
@@ -131,6 +169,10 @@ export async function runBookEval(db, {
   book, mandateRef, vintage, snapshot, sessionDate, slot, now = new Date(),
   callModel = callMandateModelDirect, regime = null, transport = 'direct', clock = () => new Date(),
 }) {
+  // Kind isolation (Practice Field T1a-1, unconditional): the quarterly model
+  // eval never acts on an idea book. Before the tier check on purpose: an idea
+  // book has no cadence tier, and must not be read as an ineligible one.
+  if (isIdeaBook(book)) return { outcome: 'skipped_kind' };
   // Tier gating (§3.1): cadence tiers map to session-relative slots.
   if (!tierEligibleAt(book.cadenceTier, slot)) return { outcome: 'skipped_tier' };
   if (!vintage) return { outcome: 'skipped', reason: 'no_vintage' };
@@ -334,7 +376,9 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     let snapshot = (await snapRef.get()).data() || null;
     if (!snapshot) {
       const activeSnap = await db.collection(MANDATES_COLLECTION).where('status', '==', 'active').get();
-      const idle = await idleAcquisitionCheck(db, activeSnap);
+      // Practice Field T1a-1: an idea book counts only while its own passes run.
+      const view = splitActiveBooks(activeSnap.docs, { ideaBooksLive: practiceFieldLive() });
+      const idle = await idleAcquisitionCheck(db, { docs: view.visibleDocs });
       if (idle.skip) {
         logIdleSkip({ window: tick.slot, tickKey: tick.tickKey, date: tick.date, check: idle });
         // Everything after this point is keyed to an active book or an open
@@ -347,12 +391,13 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
         // rechecks and builds normally.
         return res.status(200).json({ ok: true, noop: true, reason: 'mandate_idle_skip', ...summary });
       }
-      const heldTickers = unionHeldTickers(activeSnap.docs.map((d) => d.data()));
-      const daily = await ensureDailySnapshot(db, { date: tick.date, heldTickers, now });
+      const build = await snapshotBuildInputs(db, view);
+      const heldTickers = build.heldTickers;
+      const daily = await ensureDailySnapshot(db, { date: tick.date, heldTickers, now, ...build.daily });
       const dailyDoc = (await daily.ref.get()).data();
       try {
         const built = await ensureUniverseSnapshot(db, {
-          tickKey: tick.tickKey, sessionDate: tick.date, heldTickers, now, dailyDoc,
+          tickKey: tick.tickKey, sessionDate: tick.date, heldTickers, now, dailyDoc, ...build.tick,
         });
         snapshot = built.snapshot;
       } catch (snapErr) {
@@ -390,6 +435,29 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
       });
     }
 
+    // Practice Field T1a-1 — THE IDEA-BOOK PASS: basket entry by code at this
+    // slot, from this slot's snapshot. No model call. It runs BEFORE the
+    // last-tick return below (that rule is about batch submissions, and an
+    // idea's start session has three entry slots under either transport), and
+    // not at all while PRACTICE_FIELD_MODE is 'off'. Its counts join the
+    // response only when it met a book.
+    // The pass is FENCED from the quarterly sweep (review L2-4): a failure
+    // in it is logged and counted, never thrown into the fire, and a pass
+    // that left an idea book unserved (an error, a lease held) keeps the fire
+    // from claiming `complete`.
+    let ideaPassClean = true;
+    if (practiceFieldLive()) {
+      try {
+        const ideaPass = await runIdeaBookEvalPass(db, { tick, snapshot, now, ownerToken });
+        if (ideaPass.books > 0) summary.ideaBooks = ideaPass;
+        ideaPassClean = ideaPass.errors === 0 && ideaPass.leaseSkips === 0;
+      } catch (ideaErr) {
+        ideaPassClean = false;
+        summary.ideaBooks = { failed: true };
+        console.error(`${LOG_PREFIX} PRACTICE_FIELD_PASS_FAILED at ${tick.tickKey} — the quarterly sweep continues: ${ideaErr.message}`);
+      }
+    }
+
     // LAST-TICK RULE (§3.3 / F3): the session's final eval tick does not
     // submit — a batch submitted here could only be harvested after the close,
     // where every safety mechanism would discard it. Harvest-only tick; the
@@ -397,7 +465,7 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     // transport is untouched: its submit and harvest share the tick, so the
     // "later same-session harvest opportunity" is the tick itself.)
     if (transport === 'batch' && isFinalSessionSlot(tick.slot)) {
-      summary.complete = true;
+      summary.complete = ideaPassClean;
       summary.reason = 'last_tick_no_submit';
       console.log(`${LOG_PREFIX} ${tick.tickKey} is the session's final tick — harvest-only under batch transport (F3)`);
       return res.status(200).json({ ok: true, ...summary });
@@ -456,6 +524,35 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
       const pageCopy = docSnap.data();
       if (pageCopy.execState?.lastEvalTickKey === tick.tickKey
         || pageCopy.execState?.lastSweepTickKey === tick.tickKey) { summary.skipped++; continue; }
+
+      // Kind isolation (Practice Field T1a-1, unconditional — it does not read
+      // the Practice Field's flag): the quarterly eval never acts on an idea
+      // book. The page query cannot exclude one (a legacy quarterly book has no
+      // `kind` field to filter on), so it is stepped over HERE, after the query,
+      // and stamped like any unbilled skip so it rotates behind the frontier
+      // instead of pinning the page. Its own pass ran above.
+      if (isIdeaBook(pageCopy)) {
+        summary.skipped++;
+        try {
+          await mandateRef.set({ health: { lastEvalSweepAt: now }, execState: { lastSweepTickKey: tick.tickKey } }, { merge: true });
+        } catch (writeErr) {
+          summary.errors++;
+          console.error(`${LOG_PREFIX} ${docSnap.id} idea-book sweep stamp FAILED: ${writeErr.message}`);
+        }
+        continue;
+      }
+
+      // A slot snapshot built with NO candidate universe (only idea books were
+      // active when it was built) holds nothing a quarterly book could enter.
+      // A quarterly book that appeared since holds nothing either, so it is
+      // not evaluated on it: no model call on an empty slate (Practice Field
+      // T1a-1, refuter RF2-1). Unstamped — the next slot's snapshot, built
+      // with the universe, serves it. No snapshot carries the mark unless an
+      // idea book was the only active book when it was built.
+      if (snapshot?.candidateUniverseOmitted === true && Object.keys(pageCopy.portfolio?.positions || {}).length === 0) {
+        summary.skipped++;
+        continue;
+      }
 
       const lease = await acquireLease(db, mandateRef, ownerToken, { now });
       if (!lease.acquired) { summary.skipped++; leaseSkips++; continue; }
@@ -526,7 +623,12 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
           }
         };
 
-        if (result.outcome === 'skipped_tier') {
+        if (result.outcome === 'skipped_kind') {
+          // An idea book (unreachable from this loop, which steps over one
+          // before the lease; kept so the guard inside runBookEval has an
+          // honest landing): counted, nothing written.
+          summary.skipped++;
+        } else if (result.outcome === 'skipped_tier') {
           // Ineligible tier this slot — routine cadence, not a failure; the
           // sweep stamp rotates the book behind the frontier without billing.
           summary.skipped++;
@@ -682,7 +784,7 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     //    newly-evaluated books means the frontier reached books already served
     //    this slot → complete.
     const harvestClean = !summary.harvest || (summary.harvest.errors === 0 && summary.harvest.leaseSkips === 0);
-    if (newlyEvaluated === 0 && summary.errors === 0 && leaseSkips === 0 && !deferred && harvestClean) {
+    if (newlyEvaluated === 0 && summary.errors === 0 && leaseSkips === 0 && !deferred && harvestClean && ideaPassClean) {
       summary.complete = true;
       console.log(`${LOG_PREFIX} sweep complete for slot ${tick.tickKey} — all active books served`);
     }
@@ -736,20 +838,23 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
     let closeSnapshot = (await snapRef.get()).data() || null;
     if (!closeSnapshot) {
       const activeSnap = await db.collection(MANDATES_COLLECTION).where('status', '==', 'active').get();
-      const idle = await idleAcquisitionCheck(db, activeSnap);
+      // Practice Field T1a-1: an idea book counts only while its own passes run.
+      const view = splitActiveBooks(activeSnap.docs, { ideaBooksLive: practiceFieldLive() });
+      const idle = await idleAcquisitionCheck(db, { docs: view.visibleDocs });
       if (idle.skip) {
         logIdleSkip({ window: 'close', tickKey: closeTick.closeKey, date, check: idle });
         summary.reason = 'mandate_idle_skip';
       } else {
-        const heldTickers = unionHeldTickers(activeSnap.docs.map((d) => d.data()));
+        const build = await snapshotBuildInputs(db, view);
+        const heldTickers = build.heldTickers;
         // Idempotent daily slow layer — normally already built by the day's first
         // eval fire; a zero-eval day (all books slow-tier + missed slots) builds
         // it here so the close still has sector/cap/CA context.
-        const daily = await ensureDailySnapshot(db, { date, heldTickers, now });
+        const daily = await ensureDailySnapshot(db, { date, heldTickers, now, ...build.daily });
         const dailyDoc = (await daily.ref.get()).data();
         try {
           const built = await ensureUniverseSnapshot(db, {
-            tickKey: closeTick.closeKey, sessionDate: date, heldTickers, now, dailyDoc,
+            tickKey: closeTick.closeKey, sessionDate: date, heldTickers, now, dailyDoc, ...build.tick,
           });
           closeSnapshot = built.snapshot;
         } catch (snapErr) {
@@ -791,6 +896,24 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
       const mandateRef = docSnap.ref;
       const book = { _id: docSnap.id, ...docSnap.data() };
       if (book.execState?.lastCloseKey === date) { summary.skipped++; continue; }
+      // Kind isolation (Practice Field T1a-1, unconditional): an idea book NEVER
+      // reaches closeBook — the quarterly close would move the book's positions
+      // and leave every idea's own ledger behind. With the Practice Field's passes
+      // off it is stepped over (the attempt marker rotates it behind the
+      // frontier); with them on it goes to its own close, below. Before the
+      // idle-skip guard on purpose: a hidden idea book is not a book that
+      // "appeared after the check".
+      const ideaBook = isIdeaBook(book);
+      if (ideaBook && !practiceFieldLive()) {
+        summary.skipped++;
+        try {
+          await mandateRef.set({ health: { lastCloseAttemptAt: now } }, { merge: true });
+        } catch (writeErr) {
+          summary.errors++;
+          console.error(`${LOG_PREFIX} ${book._id} idea-book close stamp FAILED: ${writeErr.message}`);
+        }
+        continue;
+      }
       // T0c: no close snapshot here means this fire took the idle skip and the
       // book appeared after the check. Never close from nothing, never stamp a
       // failure on it: leave it untouched for the next fire in the window, and
@@ -804,6 +927,19 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
       const lease = await acquireLease(db, mandateRef, ownerToken, { now });
       if (!lease.acquired) { summary.skipped++; leaseSkips++; continue; }
       try {
+        if (ideaBook) {
+          // The idea-book close: a valuation of every ledger from THIS date's
+          // one close snapshot. No scoring stream, no quarterly health alerts.
+          // It reads the STORED `${date}_close` document itself, inside its own
+          // transaction (Astra T1A-03), so it is handed the date only.
+          const ideaResult = await closeIdeaBook(db, mandateRef, { date, now });
+          for (const alert of ideaResult.alerts || []) console.error(`${LOG_PREFIX} ${book._id} ${alert}`);
+          if (!ideaResult.closed) { summary.skipped++; continue; }
+          newlyClosed++;
+          summary.closed++;
+          summary.ideaBooksClosed = (summary.ideaBooksClosed || 0) + 1;
+          continue;
+        }
         const result = await closeBook(db, mandateRef, { date, closeSnapshot, now, regime });
         for (const alert of result.alerts || []) console.error(`${LOG_PREFIX} ${book._id} ${alert}`);
         if (!result.closed) { summary.skipped++; continue; }

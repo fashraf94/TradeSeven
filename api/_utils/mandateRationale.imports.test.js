@@ -94,6 +94,7 @@ const STORE_BASELINE = {
   'api/_utils/mandateEscape.js': { count: 1, note: 'writer: escape-hatch cancel record' },
   'api/_utils/mandateExecution.js': { count: 2, note: 'writer: disposeSubmission + executeDecision claims (direct and batch)' },
   'api/_utils/mandateRollover.js': { count: 1, note: 'writer: rollover cancel record' },
+  'api/_utils/practiceField/entry.js': { count: 1, note: 'writer (Practice Field T1a-1): one basket-entry fill receipt per filled name, built by buildDecision with no reason — code decided, so the record says rationale null / rationaleStatus absent by the defaults of the builder. It reads no decision record and names no T0b field' },
   'api/_utils/shadowLogger.js': { count: 1, note: 'NOT the store: the Cloud Storage training-log stream name (logDecision); reached by battle prompt modules through injectionGuard.js' },
 };
 // Mentions a prompt assembler's closure may hold: the non-store entries only.

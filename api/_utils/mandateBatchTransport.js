@@ -91,6 +91,7 @@ import { markFor, classifyBookTick, SNAPSHOT_COLLECTION } from './mandateUnivers
 import { frictionForDecision } from './mandateFrictionModel.js';
 import { acquireLease, releaseLease, mintOwnerToken } from './mandateLease.js';
 import { priceUsage, telemetryPatch } from './modelPriceTable.js';
+import { isIdeaBook } from './mandateBookKind.js';
 import {
   MANDATE_SCHEMA_VERSION,
   MANDATE_RESULT_MAX_AGE_MS,
@@ -222,6 +223,7 @@ export async function submitMandateBatch(db, pending, { tickKey, sessionDate, no
           || (book.execState?.openBatchId ?? null) !== null
           || book.status !== 'active'
           || book.quarterKey !== p.envelope.quarterKey
+          || isIdeaBook(book) // kind isolation (Practice Field T1a-1, unconditional): never gate an idea book
         ) return false;
         tx.update(p.mandateRef, {
           'execState.openBatchId': p.envelope.requestId,
@@ -360,6 +362,14 @@ async function processSucceededResult(db, {
       return { ...out, billedUsage: true };
     }
     const book = freshSnap.data();
+    // Kind isolation (Practice Field T1a-1, unconditional): a harvested result is never applied to, billed to or
+    // disposed against an idea book. No batch entry can name one (only the quarterly eval enqueues); if one ever
+    // did, it is left untouched and counted like lease contention, so the batch doc stays open — and it says so
+    // on every fire (review L2-5): such an entry needs a person.
+    if (isIdeaBook(book)) {
+      console.error(`${LOG_PREFIX} MANDATE_BATCH_ENTRY_NOT_QUARTERLY — batch entry ${requestId} names idea book ${mandateRef.id}; left untouched, its batch stays open`);
+      return { skipped: 'lease', notQuarterly: true };
+    }
     const usage = result?.message?.usage ?? null;
     const priced = usage ? priceUsage(entry.model, usage, { batch: true }) : null;
 
@@ -775,6 +785,10 @@ async function disposeResultlessEntry(db, entry, requestId, { now, sessionDate, 
   try {
     const freshSnap = await mandateRef.get();
     const book = freshSnap.exists ? freshSnap.data() : null;
+    if (isIdeaBook(book)) { // kind isolation, as in the harvest above
+      console.error(`${LOG_PREFIX} MANDATE_BATCH_ENTRY_NOT_QUARTERLY — batch entry ${requestId} names idea book ${mandateRef.id}; left untouched, its batch stays open`);
+      return { skipped: 'lease', notQuarterly: true };
+    }
     const out = await disposeSubmission(db, {
       mandateRef, requestId, status, failCondition, envelope: entry.envelope,
     });

@@ -27,6 +27,7 @@ import { deriveQuarterSummary } from './mandateQuarterSummary.js';
 import { buildQuarterKey, deriveManagerAgentId, buildDecision, clearedOpenSubmissionPatch } from './mandateSchema.js';
 import { getCadenceTier } from './mandateGenerationConfig.js';
 import { computeNextRolloverAt } from './mandateCalendar.js';
+import { isIdeaBook, NOT_QUARTERLY } from './mandateBookKind.js';
 import {
   MANDATE_ROLLOVER_CATCHUP_CAP,
   MANDATE_VALUE_CONSERVE_TOLERANCE_USD,
@@ -112,6 +113,9 @@ export async function rollOneBoundary(db, mandateRef, { now = new Date(), archet
   const preSnap = await mandateRef.get();
   if (!preSnap.exists) return { rolled: false, skipped: 'no_book' };
   const pre = preSnap.data();
+  // Kind isolation (Practice Field T1a-1, unconditional): an idea book has no quarter and is never rolled or
+  // repinned. Answered before the vintage publish, so nothing at all is written for it.
+  if (isIdeaBook(pre)) return { rolled: false, skipped: NOT_QUARTERLY };
   const expectedQuarterIndex = pre.quarterIndex;
   const targetArchetype = archetype || pre.archetype;
 
@@ -152,6 +156,7 @@ export async function rollOneBoundary(db, mandateRef, { now = new Date(), archet
     const book = bookSnap.data();
 
     if (book.status !== 'active') return { rolled: false, skipped: 'not_active' };
+    if (isIdeaBook(book)) return { rolled: false, skipped: NOT_QUARTERLY }; // kind isolation, on the authoritative read
     // Bind to the specific boundary: a concurrent winner (or a replay) advanced
     // quarterIndex → skip; the catch-up loop re-invokes fresh for the next one.
     if (book.quarterIndex !== expectedQuarterIndex) return { rolled: false, skipped: 'already_rolled' };
