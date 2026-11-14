@@ -302,7 +302,9 @@ describe('row 8 — the three checks, on a KB turn', () => {
     it.each([
       ['Phase-I will be tested.'], ['Fund I will track the index.'], ['Basel I will be adopted.'], ['We will not test it.'], ["We're tracking this idea."],
       ['NVDA fell 30% from its October high.'], ['The window was an October 30-day one.'],
-    ])('passes — a numeral "I", a negation, the present tense, no date (CHK-6, CHK-11): %s', (reply) => {
+      // the filler is whole units, and a verb in -ply is no adverb (the advisor's check of the fix round)
+      ['We will be on track to meet guidance.'], ['I will be on trial in March.'], ['We will supply monitoring equipment.'], ['We will apply test procedures.'],
+    ])('passes — a numeral "I", a negation, the present tense, no date, no promise (CHK-6, CHK-11): %s', (reply) => {
       expect(rule(run(KB_METHOD, { reply }))).toBe('passes');
     });
     // The letter as built, both ways (founder questions in the report): B1's partner words (spec §17 FQ-9) and the three

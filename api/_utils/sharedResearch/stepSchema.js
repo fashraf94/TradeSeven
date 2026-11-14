@@ -827,9 +827,16 @@ const SERVICE_NAMES = /\bpractice\s+field\b|\bfilm\s+room\b|\bidea\s+book\b/i;
 const NOT_A_NUMERAL = String.raw`(?<!\b(?:Phase|Subphase|Series|Class|Tier|Type|Part|Stage|Level|Grade|Title|Chapter|Section|Article|Schedule|Form|Item|Exhibit|Volume|War|Fund|Basel|Train|Mark|Unit|Tranche|Gen|Generation|Block|Lot|Round|Wave|Cohort|Track|Line|Plant|Reactor|Group|Team|Division|Model)[\s-])(?<!-)`;
 /** The subjects: the agent and the partner (B1's words, spec §17 FQ-9), we, I, or this/the/your idea. */
 const PROMISE_SUBJECTS = String.raw`\b(?:${PARTNER_WORDS}|we|(?:this|the|your)\s+idea)|${NOT_A_NUMERAL}\bI`;
-/** will / 'll / is going to; then words that only fill ("be", "closely", "continue", ", of course,"); then the verb. */
+/**
+ * will / 'll / is going to; then units that only fill ("be", "closely", "continue to", "keep on", ", of course,") —
+ * whole units, so "be on track" or "be on trial" is no promise — and an adverb is never a verb in -ply ("supply",
+ * "apply"); then the verb.
+ */
+const PROMISE_FILLER = String.raw`(?:also|then|now|just|first|soon|still|both|all|be|being|been|and|of\s+course|go\s+on\s+to`
+  + String.raw`|continu(?:e|ing)(?:\s+to)?|keep(?:ing)?(?:\s+on)?|start(?:ing)?(?:\s+to)?|begin(?:ning)?(?:\s+to)?`
+  + String.raw`|(?!(?:ap|sup|com|re|im|multi)ply\b|rely\b|July\b)\w+ly)`;
 const PROMISE_REST = String.raw`(?:\s+will|'ll|\s+(?:is|are|am)\s+going\s+to|'(?:s|re|m)\s+going\s+to)`
-  + String.raw`(?:,?\s+(?:also|then|now|just|first|soon|still|both|all|be|being|been|continue|continuing|keep|keeping|start|starting|begin|beginning|on|to|and|of|course|\w+ly),?){0,6}`
+  + String.raw`(?:,?\s+${PROMISE_FILLER},?){0,6}`
   + String.raw`\s+(?:test|trial|track|monitor|adopt)(?:s|ed|ing|led|ling)?\b`;
 const PROMISE = new RegExp(`(?:${PROMISE_SUBJECTS})${PROMISE_REST}`, 'i');
 /**
