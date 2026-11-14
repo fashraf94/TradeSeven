@@ -323,3 +323,16 @@ Later keys: `openGame:{id}`, `huddle:{etDate}`, `review:{id}`, `deploy:first`. R
 2. `firebase deploy --only firestore:indexes` (the `researchWork` indexes).
 3. Part 2 merged.
 4. The flip: a one-line founder PR that moves `SHARED_RESEARCH_MODE` to `'allowlist'` and its pin row (`sharedResearchFlags.test.js`). Then the spec §12 allowlist cases on the founder's and FT_QA's accounts.
+
+## 12. Rulings on the door build's preamble STOP (Nov 14, 2026)
+
+The build measured that any build reaching the body changes the entry chunk. The body imports `SignalDropEntry` (`SharedResearchSheetBody.jsx:35`) and `REVIEW_HONEST_LINE` (`sharedResearchCopy.js:21`), both already in the entry chunk, so the entry must export them, whether the body loads lazily or statically. §3.2's "the entry chunk stays byte-identical" and §8's bundle row were written without measuring the edge. This section supersedes both.
+
+- **R-D1 (bundle).** The entry chunk may change in two ways only:
+  1. its export list: names added for `SignalDropEntry`, `REVIEW_HONEST_LINE` and `fetchFeed`, with the later aliases re-lettered;
+  2. the gate's hub import reading the hub's default export by name (`.then(e=>e.<alias>)`).
+
+  With hashed names masked, every other byte of the entry is identical, and the CSS is byte-identical. Each existing lazy chunk may differ only in hashed names and re-lettered aliases, and the report lists every one that changed. The hub chunk grows only by this build's hub-side modules. The body's chunk is new. The report gives the minified sizes; the preamble measured +43 B on the entry.
+- **R-D2 (stories).** `fetchFeed()`, as E-6 says: a reader in `src/hooks/`, once per load, for an admitted player only. Not the root FantasyTimes context, which re-reads every 120 s and throws without its provider. To be revisited when O3 widens the read to every player.
+- **R-D3 (lazy).** E-2's lazy edge stays. A static body would put about 80 kB into the hub chunk for every visitor.
+- **R-D4 (the admission hook's mode).** A file in `src/hooks/` may not import into the hub directory. So `ConnectedHub` reads `sharedResearchMode()` through `hub/hubFlags.js` and hands the hook `mode`, the way it hands the Huddle readers `enabled`.
