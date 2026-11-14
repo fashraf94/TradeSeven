@@ -320,11 +320,18 @@ describe('the Research panel\'s door (amendment §3.1)', () => {
     expect(workButton()).not.toBeNull();
   });
 
-  it('nothing announces: the door holds no live region', async () => {
-    svc.fetchSharedResearchRecords.mockResolvedValue([recordOf('sess-1')]);
+  // The door element itself is checked too, not only what it holds (`querySelector` never matches its own element).
+  it.each([
+    ['its line', () => svc.fetchSharedResearchRecords.mockResolvedValue([recordOf('sess-1')]), '[data-hub-research-progress]'],
+    ['its error', () => svc.fetchSharedResearchRecords.mockRejectedValue(new Error('offline')), '[data-hub-research-door-error]'],
+  ])('nothing announces: the door holds no live region, itself included (with %s)', async (_what, arrange, shown) => {
+    const LIVE = '[aria-live], [role="status"], [role="alert"], [role="log"]';
+    arrange();
     await render('mobile');
     await openResearchArea('mobile');
-    expect(door().querySelector('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+    expect(document.querySelector(shown)).not.toBeNull();
+    expect(door().matches(LIVE)).toBe(false);
+    expect(door().querySelector(LIVE)).toBeNull();
   });
 });
 
@@ -429,7 +436,7 @@ describe('the sheet: each opener, its mode, focus, one overlay (amendment §3.2)
     expect(doorElements()).toEqual([]);
   });
 
-  it('the stories read failing: the sheet opens with no stories ([]), never a stale or invented list', async () => {
+  it('the stories read failing: the sheet opens with no stories ([]), never an invented list', async () => {
     svc.fetchFeed.mockRejectedValue(new Error('feed down'));
     await render('mobile');
     await openResearchArea('mobile');

@@ -40,7 +40,8 @@ describe('eligible types (Level 0; ruling F-4)', () => {
     expect(Object.isFrozen(ELIGIBLE_STORY_TYPES)).toBe(true);
   });
 
-  it.each(ELIGIBLE_STORY_TYPES)('%s is offered', (type) => {
+  // A literal list, not ELIGIBLE_STORY_TYPES: a type dropped from the constant must fail its row, not remove it.
+  it.each(['market_mover', 'macro_alert', 'earnings_recap', 'sector_column', 'econ_recap'])('%s is offered', (type) => {
     expect(ids(selectStories({ stories: [story('a', { type })], nowMs: NOW }))).toEqual(['a']);
   });
 
