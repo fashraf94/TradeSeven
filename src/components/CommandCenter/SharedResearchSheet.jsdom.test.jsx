@@ -113,6 +113,27 @@ describe('a failed load, and Try again (the gate\'s retry pattern)', () => {
     expect(document.querySelector('[data-stub-body]')).toBeNull();
   });
 
+  // Ruling R-D8 (Q4): the failed-load line is announced, as the body's own failures are inside the sheet. Only the words.
+  it('the failed-load line is announced (role="alert"): there on a failed load, not while loading, gone once the body renders (R-D8)', async () => {
+    const first = deferred();
+    const load = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValueOnce(BODY_MODULE);
+    const Sheet = createSharedResearchSheet(load);
+    render(Sheet);
+    expect(dialog().querySelector('[data-hub-loading]')).not.toBeNull();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => { first.reject(new Error('chunk failed')); });
+    await flush();
+    const alert = dialog().querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert.textContent).toBe(COPY.research.door.loadFailed);
+    expect(failedLine().contains(alert)).toBe(true);
+    expect(alert.contains(tryAgain())).toBe(false);
+    click(tryAgain());
+    await flush();
+    expect(document.querySelector('[data-stub-body]')).not.toBeNull();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it('Try again starts a FRESH load and swaps the body in once it has loaded', async () => {
     const d = deferred();
     const load = vi.fn().mockRejectedValueOnce(new Error('chunk failed')).mockReturnValueOnce(d.promise);

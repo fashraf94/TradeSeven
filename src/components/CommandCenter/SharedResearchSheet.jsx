@@ -67,11 +67,13 @@ class BodyBoundary extends Component {
 /**
  * The failed load's line and Try again. While a retry is out the button stays (so it keeps focus) with `aria-disabled`, as the
  * hub gate's notice does, and the loading line shows beside it (review C6); a failed retry leaves the line as it was.
+ * The line itself is announced (role="alert", ruling R-D8, Q4), as the body's own failures are inside the sheet: the hub's
+ * status-line rule governs the hub page, not a dialog's content. Only the words are the alert, not Try again. No Reload.
  */
 function LoadFailed({ onTryAgain, retrying }) {
   return (
     <div data-hub-research-load-failed={retrying ? 'retrying' : ''} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, color: C.ink2, lineHeight: 1.45 }}>
-      <span>{COPY.research.door.loadFailed}</span>
+      <span role="alert">{COPY.research.door.loadFailed}</span>
       <HubLink onPress={onTryAgain} ariaDisabled={retrying}>{COPY.research.door.tryAgain}</HubLink>
       {retrying && <LoadingLine>{COPY.research.loading}</LoadingLine>}
     </div>
