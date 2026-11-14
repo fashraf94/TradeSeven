@@ -98,15 +98,25 @@ export function exchangeOf({
 // ── the method on every turn (Amendment A §A4.3, KB-1) ────────────────────────
 
 const isPartnerTurn = (e) => e?.who === 'partner' && (e.kind === 'frame' || e.kind === 'step');
-/** The method an exchange records; an exchange written before KB-1 (no `method`, or no `source`) reads as the baseline. */
-export const exchangeMethodOf = (ex) => (ex?.method?.source === 'kb' ? methodRefOf(ex.method) : methodRefOf(BASELINE));
+const isText = (v) => typeof v === 'string' && v.length > 0;
+/** A recorded method (an exchange's `method`, or a stamp) as written, when it is whole: id, version, sha256, a known source. */
+const recordedMethodOf = (m) => (m && typeof m === 'object' && isText(m.id) && isText(m.version) && isText(m.sha256) && (m.source === 'kb' || m.source === 'baseline')
+  ? methodRefOf(m) : null);
+/**
+ * The method an exchange records, as recorded. An exchange written before KB-1
+ * (no `method`, or no `source`) — or one whose record is not whole — reads as
+ * the baseline.
+ */
+export const exchangeMethodOf = (ex) => recordedMethodOf(ex?.method) ?? methodRefOf(BASELINE);
 const sameMethod = (a, b) => a.id === b.id && a.version === b.version && a.sha256 === b.sha256 && a.source === b.source;
 
 /**
  * `{ from, to, reason }` when this turn's method differs from the previous
  * partner turn's (a frame or a step), else null — and null when there is no
- * previous partner turn. `reason` is the refusal that put this turn on the
- * baseline; a turn back on its KB method has none (null).
+ * previous partner turn (the letter of the build prompt; a KB stamp whose FIRST
+ * turn falls back records its baseline `method` but no reason — founder
+ * question FQ-2). `reason` is the refusal that put this turn on the baseline; a
+ * turn back on its KB method has none (null).
  */
 export function methodChangeOf(exchanges, method, refusal = null) {
   const prior = (Array.isArray(exchanges) ? exchanges : []).filter(isPartnerTurn).at(-1);
@@ -118,20 +128,18 @@ export function methodChangeOf(exchanges, method, refusal = null) {
 
 /**
  * The confirming exchange's `methodsUsed`: the distinct methods of the partner
- * turns whose `findingIds` hold a kept finding, in first-seen order over the
- * kept findings. A kept finding written by code at `open` belongs to no turn
- * and contributes none.
+ * turns whose `findingIds` hold a kept finding, first seen walking those turns
+ * in order (the order the investigation ran — never the player's symbol order).
+ * A kept finding written by code at `open` belongs to no turn and contributes
+ * none.
  */
 export function methodsUsedOf(exchanges, keptFindingIds) {
-  const byFinding = new Map();
-  for (const ex of Array.isArray(exchanges) ? exchanges : []) {
-    if (!isPartnerTurn(ex) || !Array.isArray(ex.findingIds)) continue;
-    for (const id of ex.findingIds) if (!byFinding.has(id)) byFinding.set(id, exchangeMethodOf(ex));
-  }
+  const kept = new Set(Array.isArray(keptFindingIds) ? keptFindingIds : []);
   const out = [];
-  for (const id of Array.isArray(keptFindingIds) ? keptFindingIds : []) {
-    const m = byFinding.get(id);
-    if (m && !out.some((o) => sameMethod(o, m))) out.push(m);
+  for (const ex of Array.isArray(exchanges) ? exchanges : []) {
+    if (!isPartnerTurn(ex) || !Array.isArray(ex.findingIds) || !ex.findingIds.some((id) => kept.has(id))) continue;
+    const m = exchangeMethodOf(ex);
+    if (!out.some((o) => sameMethod(o, m))) out.push(m);
   }
   return out;
 }
@@ -143,14 +151,18 @@ export const seenSha256Of = (title, highlights) => createHash('sha256').update(`
  * What a step that retrieved keeps (Amendment A §A4.4, R-KB-4): every item the
  * partner was shown (`items`: the prompt budget's kept items, in the order
  * shown), each with its title and highlights as given to the prompt (B1's
- * bounds: 300 characters; 2 highlights of 600), the provider's publishedDate
- * (null when none — a date later than the read is none, spec §16 FQ-2), the
- * hash of that text, and the findings of this step that cite it. The retained
- * text is the record.
+ * bounds: 300 characters; 2 highlights of 600 — the prompt renders them with
+ * whitespace collapsed and tickers outside the game universe masked — the
+ * record keeps the text before that rendering), the provider's publishedDate as
+ * the step was given it (null when it gave none; a date later than the read is
+ * treated as absent, spec §16 FQ-2, and the prompt showed "no date"), the hash
+ * of that text, and the findings of this step that cite it. The retained text
+ * is the record.
  */
 export function retainedRetrievalOf({ readAt, items, findings }) {
   const list = Array.isArray(findings) ? findings : [];
   const citing = (url) => list.filter((f) => f?.source?.recordKind === 'retrieval' && f.source.url === url).map((f) => f.findingId);
+  const dateOf = (it) => (typeof it.publishedDate === 'string' && it.publishedDate ? it.publishedDate : null);
   return {
     readAt,
     items: (Array.isArray(items) ? items : []).map((it) => {
@@ -158,8 +170,7 @@ export function retainedRetrievalOf({ readAt, items, findings }) {
       const highlights = (Array.isArray(it.highlights) ? it.highlights : []).filter((h) => typeof h === 'string');
       return {
         index: it.index, url: it.url, host: typeof it.host === 'string' ? it.host : null, title, highlights,
-        publishedDate: typeof it.publishedDate === 'string' && it.publishedDate ? it.publishedDate : null,
-        seenSha256: seenSha256Of(title, highlights), findingIds: citing(it.url),
+        publishedDate: dateOf(it), seenSha256: seenSha256Of(title, highlights), findingIds: citing(it.url),
       };
     }),
   };

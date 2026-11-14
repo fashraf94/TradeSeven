@@ -15,7 +15,7 @@ import {
 import { BASELINE, methodStampOf, methodRefOf } from './method.js';
 import { REPLY_MAX, FRAME_QUESTION_MAX, FRAME_CHECK_MAX, STEP_FINDINGS_MAX, COMPANIES_MAX } from './stepSchema.js';
 import { STEP_BUDGET } from '../../../src/constants/sharedResearch.js';
-import { SOURCE_URL_MAX_LEN } from '../researchRecords/model.js';
+import { SOURCE_URL_MAX_LEN, isSourceUrl } from '../researchRecords/model.js';
 import { ITEMS_MAX, HIGHLIGHTS_PER_ITEM } from './promptBudget.js';
 import { QUERY_MAX } from './retrieval.js';
 
@@ -60,13 +60,16 @@ describe('exchangeOf — the five new fields (Part 3)', () => {
 describe('methodChangeOf (row 3)', () => {
   const frameBaseline = partner('frame', BASELINE);
   const stepKb = partner('step', KB);
+  // The letter: only against the previous partner turn. A KB stamp whose FIRST turn falls back records that turn's
+  // baseline `method` but no reason (review SEL-1 / REC-3: founder question FQ-2 — this row moves with a ruling).
   it('no previous partner turn → null (a story\'s first step; a frame)', () => {
     expect(methodChangeOf([], KB, null)).toBeNull();
     expect(methodChangeOf([exchangeOf({ who: 'player', kind: 'observation', text: 'o', at: NOW })], BASELINE, 'audience')).toBeNull();
   });
-  it('the same method as the previous partner turn → null', () => {
+  it('the same method as the previous partner turn → null — a refusal on an unchanged method too (two revoked steps in a row: review TST-6)', () => {
     expect(methodChangeOf([frameBaseline], BASELINE, null)).toBeNull();
     expect(methodChangeOf([frameBaseline, stepKb], KB, null)).toBeNull();
+    expect(methodChangeOf([partner('step', BASELINE)], BASELINE, 'not_authorized')).toBeNull();
   });
   it('a revocation: the previous turn on the KB method, this one on the baseline → the change, with the refusal', () => {
     expect(methodChangeOf([stepKb], BASELINE, 'not_authorized')).toEqual({ from: 'KB-IDEA-EVALUATION-001@0.1', to: 'baseline@v0', reason: 'not_authorized' });
@@ -88,17 +91,27 @@ describe('methodChangeOf (row 3)', () => {
   it('other bytes under the same id and version are a change too (compared by hash)', () => {
     expect(methodChangeOf([stepKb], { ...KB, sha256: '0'.repeat(64) }, null)).toEqual({ from: 'KB-IDEA-EVALUATION-001@0.1', to: 'KB-IDEA-EVALUATION-001@0.1', reason: null });
   });
+  it('a recorded baseline is read as recorded, its hash included (review SEL-4)', () => {
+    const olderBaseline = { ...methodRefOf(BASELINE), sha256: '0'.repeat(64) };
+    const ex = exchangeOf({ who: 'partner', kind: 'step', text: 'x', at: NOW, method: olderBaseline, findingIds: [fid(1)] });
+    expect(exchangeMethodOf(ex)).toEqual(olderBaseline);
+    expect(methodChangeOf([ex], BASELINE, null)).toEqual({ from: 'baseline@v0', to: 'baseline@v0', reason: null });
+    expect(methodsUsedOf([ex], [fid(1)])).toEqual([olderBaseline]);
+    // a record that is not whole (no hash) reads as the baseline, never with an undefined field
+    expect(exchangeMethodOf({ ...ex, method: { id: KB.id, version: KB.version, source: 'kb' } })).toEqual(methodRefOf(BASELINE));
+  });
 });
 
 describe('methodsUsedOf (row 4)', () => {
-  it('the distinct methods of the turns whose findingIds hold a kept finding, first seen over the kept findings; open\'s findings contribute none', () => {
+  it('the distinct methods of the turns whose findingIds hold a kept finding, first seen in the order the turns ran (never the kept findings\' order — review REC-4); open\'s findings contribute none', () => {
     const exchanges = [
       partner('frame', KB),
       partner('step', KB, { findingIds: [fid(1), fid(2)] }),
       partner('step', BASELINE, { findingIds: [fid(3)] }),
       partner('step', KB, { findingIds: [fid(4)] }),
     ];
-    expect(methodsUsedOf(exchanges, [fid(3), fid(1), fid(4)])).toEqual([methodRefOf(BASELINE), methodRefOf(KB)]);
+    expect(methodsUsedOf(exchanges, [fid(3), fid(1), fid(4)])).toEqual([methodRefOf(KB), methodRefOf(BASELINE)]);
+    expect(methodsUsedOf(exchanges, [fid(4), fid(3)])).toEqual([methodRefOf(BASELINE), methodRefOf(KB)]);
     expect(methodsUsedOf(exchanges, [fid(2), fid(4)])).toEqual([methodRefOf(KB)]);
     expect(methodsUsedOf(exchanges, [fid(99)])).toEqual([]); // a finding written at open: no turn
     expect(methodsUsedOf(exchanges, [])).toEqual([]);
@@ -142,7 +155,7 @@ describe('the worst-case session (row 5: Amendment A §A4.4)', () => {
    * 500; a step's reply 1,200; at most 12 + 6 + 1 findings a step; its 12 retrieval findings citing one item), the frame
    * at its bounds, a confirm with two methods and a close — serialized, in UTF-8 bytes (Firestore's unit).
    */
-  function worstCase(ch) {
+  function worstCase(ch, { urlCh = 'p', host = 'h'.repeat(253) } = {}) {
     const fill = (n) => ch.repeat(n);
     const stamp = methodStampOf(KB, { consumer: 'shared_research.observation', selectedAt: NOW, fallbackReason: 'acceptance_mismatch' });
     const s = framingSessionOf({
@@ -156,11 +169,10 @@ describe('the worst-case session (row 5: Amendment A §A4.4)', () => {
     s.adoption = { watchlistId: 'w'.repeat(20), version: 1, at: NOW };
     s.exchanges.push(exchangeOf({ who: 'partner', kind: 'frame', text: fill(FRAME_QUESTION_MAX), at: NOW, method: methodRefOf(KB) }));
     let n = 1;
-    const host = 'h'.repeat(253);
     for (let step = 0; step < STEP_BUDGET; step++) {
       s.exchanges.push(exchangeOf({ who: 'player', kind: 'direction', text: fill(DIRECTION_MAX), at: NOW, stepId: uuid(step) }));
       const items = Array.from({ length: ITEMS_MAX }, (_, i) => {
-        const url = `https://${host}/${'p'.repeat(SOURCE_URL_MAX_LEN - host.length - 9)}`;
+        const url = `https://${host}/${urlCh.repeat(SOURCE_URL_MAX_LEN - host.length - 9)}`;
         return { index: i, url: `${url.slice(0, -1)}${i}`, host, title: fill(300), highlights: Array.from({ length: HIGHLIGHTS_PER_ITEM }, () => fill(600)), publishedDate: NOW };
       });
       const retrievalFindings = Array.from({ length: STEP_FINDINGS_MAX }, () => ({ findingId: fid(n++), source: { recordKind: 'retrieval', url: items[0].url } }));
@@ -182,9 +194,15 @@ describe('the worst-case session (row 5: Amendment A §A4.4)', () => {
     expect(bytes).toBeLessThan(400_000);
     expect(bytes).toBeGreaterThan(190_000); // the builder is not vacuous: 50 retained items of ~2.8 KB
   });
-  it('with every text character a 3-byte one (UTF-8\'s widest per UTF-16 unit): still under 400 KB — the margin is thin (report §6)', () => {
+  it('with every text character a 3-byte one (UTF-8\'s widest per UTF-16 unit) but ASCII urls: still under 400 KB — the margin is thin', () => {
     const bytes = worstCase('€');
     expect(bytes).toBeLessThan(400_000);
     expect(bytes).toBeGreaterThan(380_000);
+  });
+  it('the byte worst case — 3-byte text AND a 3-byte url path behind a short host (isSourceUrl takes a raw non-ASCII path — review REC-2, TST-1): OVER 400 KB, under the database\'s 1 MiB limit (report §5, founder question FQ-5)', () => {
+    expect(isSourceUrl(`https://a.example.com/${'€'.repeat(40)}`)).toBe(true);
+    const bytes = worstCase('€', { urlCh: '€', host: 'a.example.com' });
+    expect(bytes).toBeGreaterThan(400_000);
+    expect(bytes).toBeLessThan(1_048_576);
   });
 });

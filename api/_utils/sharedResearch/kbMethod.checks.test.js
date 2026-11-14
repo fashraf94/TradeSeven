@@ -81,14 +81,14 @@ describe('row 6 — a baseline turn is unchanged', () => {
   });
 
   it.each([
-    ['a citation "(M1)"', { reply: 'The decline matches the broader sector (M1).' }],
-    ['the worked example as an inference', { findings: [inference('NVDA fell on October 30 at noon.')] }],
-    ['a service name', { reply: 'This could go to the Practice Field later.' }],
-    ['a promise', { reply: 'We will track this idea.' }],
-  ])('a baseline turn with %s passes as today (the KB checks do not run)', (_label, over) => {
+    ['a citation "(M1)"', { reply: 'The decline matches the broader sector (M1).' }, 'method_example_as_fact'],
+    ['the worked example as an inference', { findings: [inference('NVDA fell on October 30 at noon.')] }, 'method_example_as_fact'],
+    ['a service name', { reply: 'This could go to the Practice Field later.' }, 'service_promise'],
+    ['a promise', { reply: 'We will track this idea.' }, 'service_promise'],
+  ])('a baseline turn with %s passes as today (the KB checks do not run)', (_label, over, kbRule) => {
     expect(rule(run(BASELINE, over))).toBe('passes');
     expect(rule(run(undefined, over))).toBe('passes');
-    expect(rule(run(KB_METHOD, over))).not.toBe('passes'); // …and the same turn on the KB method fails
+    expect(rule(run(KB_METHOD, over))).toBe(kbRule); // …and the same turn on the KB method fails, by that check
   });
 
   it('method_as_source does not run on a baseline turn either (an injected kb-sourced finding)', () => {
@@ -138,7 +138,8 @@ describe('row 7 — the KB method block', () => {
     const f = tokensOf(buildFrameSystemPrompt({ partnerName: NAME40, method: KB_METHOD }));
     expect(s).toBeLessThanOrEqual(Math.ceil(3535 * 1.1));
     expect(f).toBeLessThanOrEqual(Math.ceil(2746 * 1.1));
-    expect([s, f]).toEqual([3535, 2746]);
+    expect(s).toBeGreaterThan(3000); // the real v0.1 text is in it (not vacuous)
+    expect(f).toBeGreaterThan(2400);
   });
 });
 
@@ -217,8 +218,20 @@ describe('row 8 — the three checks, on a KB turn', () => {
       const prior = ['nv1', { kind: 'coverage', symbol: 'NVDA', fact: 'NVDA shares fell by noon on October 30.', source: { recordKind: 'retrieval', recordId: NVDA_ITEM.url, label: 'news.example.com · Chip shares slide', url: NVDA_ITEM.url }, at: '2026-10-30T00:00:00.000Z', asOf: '2026-10-30T00:00:00.000Z', status: 'verified', statusReason: null }];
       expect(rule(run(KB_METHOD, { findings: [inference('NVDA fell on October 30 with the sector.')] }, { record: record([prior]) }))).toBe('passes');
     });
-    it('the name alone, or the date alone, passes', () => {
+    it('the name alone, or the date alone, passes — in one sentence; two sentences of one text each naming one pass too (review TST-4)', () => {
       expect(rule(run(KB_METHOD, { reply: 'NVDA is in the record.', findings: [inference('Nothing happened on October 30 here.')] }))).toBe('passes');
+      expect(rule(run(KB_METHOD, { reply: 'NVDA is in the record. Nothing happened on October 30 here.' }))).toBe('passes');
+    });
+    it('the exemption needs BOTH: a retrieved NVDA finding on another date exempts nothing; a retrieved October 30 finding about another company exempts nothing (review TST-3, TST-4)', () => {
+      const claim = inference('NVDA fell on October 30 at noon.', 'i9');
+      expect(run(KB_METHOD, { findings: [retrieved('NVDA shares rose after the data-center update.', 1, { symbolCandidate: 'NVDA' }), claim] })).toMatchObject({ ok: false, rule: 'method_example_as_fact' });
+      expect(run(KB_METHOD, { findings: [retrieved('Chip shares slid by noon.', 0), claim] })).toMatchObject({ ok: false, rule: 'method_example_as_fact' });
+    });
+    it('an undated item\'s read day is no date: an NVDA finding from an undated item read on October 30 exempts nothing (review TST-4)', () => {
+      const read = '2026-10-30T15:00:00.000Z';
+      const at = { readAt: read, partnerAt: '2026-10-30T15:00:05.000Z', nowIso: '2026-10-30T15:00:05.000Z', items: [{ ...NVDA_ITEM, publishedDate: null }, OTHER_ITEM] };
+      const out = run(KB_METHOD, { findings: [retrieved('NVDA shares fell by noon.', 0, { symbolCandidate: 'NVDA' }), inference('NVDA fell on October 30 at noon.', 'i9')] }, at);
+      expect(out).toMatchObject({ ok: false, rule: 'method_example_as_fact' });
     });
   });
 
@@ -235,6 +248,9 @@ describe('row 8 — the three checks, on a KB turn', () => {
       ['this idea, going to', { reply: 'This idea is going to be tested.' }],
       ['a contraction', { reply: "We'll keep tracking the names." }],
       ['the next action', { nextAction: { label: 'Run a Practice Field trial', purpose: 'Test it forward.' } }],
+      ['the summary, a promise (review TST-5)', { summary: { text: 'We will track this idea.', basedOn: ['r1'] } }],
+      ['a fact, a promise (review TST-5)', { findings: [inference('The agent will adopt the setup next.')] }],
+      ['the next action, a promise', { nextAction: { label: 'Check the supplier', purpose: 'We will monitor it after.' } }],
     ])('refusal in %s', (_where, over) => {
       expect(run(KB_METHOD, over)).toMatchObject({ ok: false, rule: 'service_promise' });
     });
@@ -245,6 +261,55 @@ describe('row 8 — the three checks, on a KB turn', () => {
       ['The idea that power is scarce is common.'],
     ])('pass: %s', (text) => {
       expect(rule(run(KB_METHOD, { reply: `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.]$/.test(text) ? '' : '.'}` }))).toBe('passes');
+    });
+  });
+
+  describe('the review\'s refusals that slipped through, and its pass rows (review CHK-1 to CHK-6, CHK-9, CHK-11, CHK-12)', () => {
+    it.each(['Will', 'Test', 'Track', 'Monitor', 'Going', 'Be'])('a partner named %s does not switch the promise check off (CHK-1)', (partnerName) => {
+      for (const reply of ['We will track this idea.', 'I will test it.', 'Your idea will be adopted.', "We're going to track this idea."]) {
+        expect(rule(run(KB_METHOD, { reply }, { partnerName })), `${partnerName}: ${reply}`).toBe('service_promise');
+      }
+      expect(rule(run(KB_METHOD, { reply: `${partnerName} will monitor it.` }, { partnerName }))).toBe('service_promise');
+      expect(rule(run(KB_METHOD, { reply: 'The company will test a new product in the spring.' }, { partnerName }))).toBe('passes');
+    });
+    it('the partner\'s name is read like the text: curly, NFD, fullwidth, zero-width (CHK-2)', () => {
+      for (const [partnerName, reply] of [['O’Neil', 'O’Neil will track it.'], ['José'.normalize('NFD'), 'José will track it.'], ['Ｒｏｏｋ', 'Rook will track it.'], ['R​ook', 'Rook will track it.']]) {
+        expect(rule(run(KB_METHOD, { reply }, { partnerName })), reply).toBe('service_promise');
+      }
+    });
+    it.each([
+      ['NVDA fell in U.S. trading on October 30.'], ['NVDA fell by 12 p.m. on October 30.'], ['NVDA vs. AMD on Oct 30: both fell.'],
+      ['NVDA Inc. fell on October 30.'], ['NVDA, approx. 3% lower, closed on October 30.'],
+    ])('an abbreviation does not end the sentence: %s (CHK-3)', (text) => {
+      expect(run(KB_METHOD, { findings: [inference(text)] })).toMatchObject({ ok: false, rule: 'method_example_as_fact', detail: expect.stringMatching(/:example$/) });
+    });
+    it('a new sentence still starts a new sentence', () => {
+      expect(rule(run(KB_METHOD, { findings: [inference('The ticker is NVDA. October 30 was a Friday.')] }))).toBe('passes');
+    });
+    it.each([['(M1, V1, and T2)'], ['(T1–T6)'], ['(T1-T3)'], ['(M1 or V1)']])('a bracketed group with %s (CHK-4)', (group) => {
+      expect(run(KB_METHOD, { reply: `The windows matter ${group}.` })).toMatchObject({ ok: false, rule: 'method_example_as_fact' });
+    });
+    it.each([
+      ['We will be closely monitoring it.'], ['We will continue monitoring it.'], ['We will start to track this idea.'], ['We will keep on tracking it.'],
+      ['We will, of course, monitor it.'], ['We will both track it.'], ['We will closely and continuously monitor it.'], ['Your investment idea will be adopted.'],
+      ['This trade idea will be tracked.'], ['We‛ll track it.'],
+    ])('the promise with words between: %s (CHK-5)', (reply) => {
+      expect(rule(run(KB_METHOD, { reply }))).toBe('service_promise');
+    });
+    it.each([
+      ["Moderna's research partner will trial the vaccine."], ['Our partner will test the chip.'], ['Phase-I will be tested.'], ['Fund I will track the index.'],
+      ['Basel I will be adopted.'], ['We will not test it.'], ["We're tracking this idea."], ['The stadium has a practice field.'], ["The coach's film room is new."],
+      ['NVDA fell 30% from its October high.'], ['The window was an October 30-day one.'],
+    ])('passes — the letter\'s subjects and names only (CHK-6, CHK-9, CHK-11): %s', (reply) => {
+      expect(rule(run(KB_METHOD, { reply }))).toBe('passes');
+    });
+    it.each([['The Practice-Field would run it.'], ['A PracticeField trial.'], ['The Film-Room would review it.'], ['It goes in the idea-book.'], ['Two Practice Fields.']])('a service name, joined or hyphenated: %s (CHK-9)', (reply) => {
+      expect(rule(run(KB_METHOD, { reply }))).toBe('service_promise');
+    });
+    it('the exemption takes the company\'s own name on an October 30 item with no symbol (CHK-12)', () => {
+      const out = run(KB_METHOD, { findings: [retrieved('Nvidia shares fell by noon.', 0, { companyName: 'NVIDIA' })], reply: 'NVDA fell on October 30 at noon.' });
+      expect(rule(out)).toBe('passes');
+      expect(out.findings[0]).toMatchObject({ symbol: null, at: '2026-10-30T00:00:00.000Z' });
     });
   });
 

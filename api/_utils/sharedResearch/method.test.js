@@ -173,6 +173,26 @@ describe('effectiveMethodFor (row 3)', () => {
     expect(effectiveMethodFor({ stamp: stampedKb, uid: 'u-listed' })).toEqual({ method: BASELINE, refusal: 'corrupt' });
     expect(() => effectiveMethodFor()).not.toThrow();
   });
+
+  it('the letter: an ok answer is that method — other bytes under the stamp\'s id and version run, carrying their own hash (review SEL-3: founder question FQ-3)', () => {
+    kb.load = () => ({ ok: true, method: { ...kb.real.method, sha256: 'f'.repeat(64) } });
+    expect(effectiveMethodFor({ stamp: stampedKb, uid: 'u-listed' })).toMatchObject({ method: { source: 'kb', sha256: 'f'.repeat(64) }, refusal: null });
+  });
+});
+
+describe('never throws, whatever it is given (review SEL-7)', () => {
+  const hostile = new Proxy({}, { get() { throw new Error('boom'); } });
+  it.each([['null', null], ['undefined', undefined], ['a number', 42], ['a string', 'x'], ['a hostile proxy', hostile]])('selectMethod, effectiveMethodFor, citedSourceOf given %s answer the baseline', (_label, g) => {
+    expect(selectMethod(g).method).toBe(BASELINE);
+    expect(effectiveMethodFor(g).method).toBe(BASELINE);
+    expect(citedSourceOf(g)).toEqual(METHOD_SOURCE);
+  });
+  it('a hostile stamp or frame method inside a request', () => {
+    const hostile = new Proxy({}, { get() { throw new Error('boom'); } });
+    expect(effectiveMethodFor({ stamp: hostile, uid: 'u-listed' })).toEqual({ method: BASELINE, refusal: 'corrupt' });
+    expect(citedSourceOf({ ran: hostile, uid: 'u-listed' })).toEqual(METHOD_SOURCE);
+    expect(selectMethod(hostile).stamp).toMatchObject({ source: 'baseline', fallbackReason: 'corrupt' });
+  });
 });
 
 describe('provenance (row 10): a loader answer carrying more than its eight fields leaves none of the rest behind', () => {
@@ -233,8 +253,8 @@ describe('the markers (method_example_as_fact)', () => {
     const m = methodMarkersFor(method);
     expect(m.sha256).toBe(REAL_ENTRY.sha256);
     expect(m.citations).toEqual(['A0', 'C1', 'E1', 'M1', 'V1', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'I1', 'I2', 'I3', 'I4', 'I5', 'I6']);
-    expect(m.example).toEqual({ names: ['NVDA'], dates: ['October 30', 'Oct. 30', 'Oct 30'] });
-    // every register id the markers name is in the method's own text (they are its ids, not guesses)
+    expect(m.example).toEqual({ names: ['NVDA'], dates: ['October 30', 'Oct. 30', 'Oct 30'], aliases: ['Nvidia'] });
+    // the ids the method's text itself cites are among the markers (T1–T6 and I3 are the register's, not cited in the text)
     for (const id of ['A0', 'C1', 'E1', 'M1', 'V1', 'I1', 'I2', 'I4', 'I5', 'I6']) expect(method.text).toMatch(new RegExp(`\\b${id}\\b`));
     expect(method.text).toContain("C1's October 30, 2026 noon observation");
     expect(method.text).toContain('NVDA');

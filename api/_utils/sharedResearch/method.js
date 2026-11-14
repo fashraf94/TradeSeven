@@ -124,38 +124,53 @@ export function methodStampOf(method, { consumer = null, selectedAt, fallbackRea
  *                              this player; a refusal → the baseline, the
  *                              refusal as `fallbackReason`
  *   any other entry            the baseline, by rule (no `fallbackReason`)
- * Never throws.
+ * Never throws (a request that is not an object, or throws when read, is the
+ * baseline: `corrupt` when it could not be read).
  * @returns {{ method: object, stamp: object }}
  */
-export function selectMethod({ entryKind, uid, nowIso = new Date().toISOString() } = {}) {
-  if (entryKind !== 'observation') return { method: BASELINE, stamp: methodStampOf(BASELINE, { selectedAt: nowIso }) };
+export function selectMethod(request) {
+  let entryKind;
+  let uid;
+  let nowIso;
+  try {
+    ({ entryKind, uid, nowIso } = request ?? {});
+  } catch {
+    return { method: BASELINE, stamp: methodStampOf(BASELINE, { selectedAt: new Date().toISOString(), fallbackReason: 'corrupt' }) };
+  }
+  const selectedAt = typeof nowIso === 'string' ? nowIso : new Date().toISOString();
+  if (entryKind !== 'observation') return { method: BASELINE, stamp: methodStampOf(BASELINE, { selectedAt }) };
   let reason;
   try {
     const r = authorizedMethodFor({ consumer: OBSERVATION_CONSUMER, inAudience: inAudienceFor(uid) });
     if (isOkAnswer(r)) {
       const method = kbMethodOf(r.method);
-      return { method, stamp: methodStampOf(method, { consumer: OBSERVATION_CONSUMER, selectedAt: nowIso }) };
+      return { method, stamp: methodStampOf(method, { consumer: OBSERVATION_CONSUMER, selectedAt }) };
     }
     reason = refusalOf(r);
   } catch {
     reason = 'corrupt';
   }
-  return { method: BASELINE, stamp: methodStampOf(BASELINE, { consumer: OBSERVATION_CONSUMER, selectedAt: nowIso, fallbackReason: reason }) };
+  return { method: BASELINE, stamp: methodStampOf(BASELINE, { consumer: OBSERVATION_CONSUMER, selectedAt, fallbackReason: reason }) };
 }
 
 /**
  * The method THIS turn runs on (Amendment A §A4.1).
- *   a `kb` stamp                    re-loaded for this player: ok → that method;
- *                                   a refusal → the baseline, `refusal` set
+ *   a `kb` stamp                    re-loaded for this player: ok → that method
+ *                                   (the loader pins its id and version; other
+ *                                   bytes under that name run and are recorded
+ *                                   by hash — founder question FQ-3); a refusal
+ *                                   → the baseline, `refusal` set
  *   a `baseline` stamp, or none,    the baseline, `refusal: null` — never
  *   or one with no `source`         upgraded (R-KB-7)
- * Never throws.
+ * Never throws (a stamp that throws when read is the baseline, `corrupt`).
  * @returns {{ method: object, refusal: string|null }}
  */
-export function effectiveMethodFor({ stamp, uid } = {}) {
-  if (stamp?.source !== 'kb') return { method: BASELINE, refusal: null };
+export function effectiveMethodFor(request) {
   try {
-    const r = loadAuthorizedMethod({ id: stamp.id, version: stamp.version, consumer: stamp.consumer, inAudience: inAudienceFor(uid) });
+    const { stamp, uid } = request ?? {};
+    if (stamp?.source !== 'kb') return { method: BASELINE, refusal: null };
+    const { id, version, consumer } = stamp;
+    const r = loadAuthorizedMethod({ id, version, consumer, inAudience: inAudienceFor(uid) });
     return isOkAnswer(r) ? { method: kbMethodOf(r.method), refusal: null } : { method: BASELINE, refusal: refusalOf(r) };
   } catch {
     return { method: BASELINE, refusal: 'corrupt' };
@@ -170,13 +185,19 @@ export function effectiveMethodFor({ stamp, uid } = {}) {
  * method; its title — the label's — is re-read through the loader, and when
  * the loader no longer answers with those bytes (revoked between the frame and
  * the open) the label names the method's id instead. It never cites the
- * baseline for a frame that ran on a KB method. Never throws.
+ * baseline for a frame that ran on a KB method. Never throws (a frame method or
+ * a stamp that throws when read cites the baseline: nothing readable says KB).
  */
-export function citedSourceOf({ ran, stamp = null, uid } = {}) {
-  if (ran?.source !== 'kb' || !isText(ran.id) || !isText(ran.version)) return BASELINE.sourceRef;
-  const { method } = effectiveMethodFor({ stamp: { id: ran.id, version: ran.version, source: 'kb', consumer: stamp?.consumer ?? OBSERVATION_CONSUMER }, uid });
-  if (method.source === 'kb' && method.id === ran.id && method.version === ran.version && method.sha256 === ran.sha256) return method.sourceRef;
-  return kbSourceRefOf({ id: ran.id, version: ran.version });
+export function citedSourceOf(request) {
+  try {
+    const { ran, stamp = null, uid } = request ?? {};
+    if (ran?.source !== 'kb' || !isText(ran.id) || !isText(ran.version)) return BASELINE.sourceRef;
+    const { id, version, sha256 } = ran;
+    const { method } = effectiveMethodFor({ stamp: { id, version, source: 'kb', consumer: stamp?.consumer ?? OBSERVATION_CONSUMER }, uid });
+    return method.source === 'kb' && method.id === id && method.version === version && method.sha256 === sha256 ? method.sourceRef : kbSourceRefOf({ id, version });
+  } catch {
+    return BASELINE.sourceRef;
+  }
 }
 
 /** What an exchange records of the method its turn ran on. */
@@ -194,7 +215,8 @@ const MARKERS = Object.freeze({
   'KB-IDEA-EVALUATION-001@0.1': Object.freeze({
     sha256: 'b0688fb33cdd5b16835a5a70f7fcef7ca79d00facced233d1529d26b4e77854e',
     citations: Object.freeze(['A0', 'C1', 'E1', 'M1', 'V1', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'I1', 'I2', 'I3', 'I4', 'I5', 'I6']),
-    example: Object.freeze({ names: Object.freeze(['NVDA']), dates: Object.freeze(['October 30', 'Oct. 30', 'Oct 30']) }),
+    // `aliases`: the company's own name, which a retrieval-backed finding may use for the example's exemption only.
+    example: Object.freeze({ names: Object.freeze(['NVDA']), dates: Object.freeze(['October 30', 'Oct. 30', 'Oct 30']), aliases: Object.freeze(['Nvidia']) }),
   }),
 });
 

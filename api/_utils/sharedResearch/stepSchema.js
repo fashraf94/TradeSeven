@@ -767,46 +767,93 @@ export function validateStepTurn(output, ctx) {
 // The texts are read as the model wrote them (the summary even when withheld,
 // the reply before any replacement), after Unicode normalization.
 
+/** The text as the three checks read it: NFKC, no invisible format characters, apostrophe-likes straight. */
+const readable = (v) => normalizeText(v).replace(/[‘’ʼ‛′]/g, "'");
+
 /** An id of the register as a token: not glued to a letter or a digit on either side. */
 const idAlternation = (ids) => `(?<![A-Za-z0-9])(?:${[...ids].sort((a, b) => b.length - a.length).map(escapeRe).join('|')})(?![A-Za-z0-9])`;
-/** The citation forms: a bracketed group of one or more ids ("(M1)", "[C1, I4]", "(I1/I2)"); an id after per/see/under/from. */
+/** Between two ids of one group: a comma, a semicolon, a slash, an ampersand, a dash or hyphen (a range), "and", "or". */
+const ID_SEPARATOR = String.raw`\s*(?:,\s*(?:and|or)\b|[,;/&–—-]|\b(?:and|or)\b)\s*`;
+/**
+ * The citation forms: a bracketed group of one or more ids ("(M1)", "[C1, I4]", "(I1/I2)", "(M1, V1, and T2)",
+ * "(T1–T6)"); an id right after per/see/under/from.
+ */
 function citationResOf(ids) {
   const id = idAlternation(ids);
   return [
-    new RegExp(String.raw`[(\[]\s*${id}(?:\s*(?:[,;/&]|\band\b)\s*${id})*\s*[)\]]`),
+    new RegExp(String.raw`[(\[]\s*${id}(?:${ID_SEPARATOR}${id})*\s*[)\]]`),
     new RegExp(String.raw`\b(?:[Pp]er|[Ss]ee|[Uu]nder|[Ff]rom)\s+${id}`),
   ];
 }
-/** Sentences for the worked-example check: a month's abbreviation ("Oct. 30") does not end one. */
-const exampleSentencesOf = (text) => String(text ?? '').split(/(?<=[.!?])(?<!\b(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.)\s+/).filter(Boolean);
+/** A period that ends an abbreviation, not a sentence: a single letter ("U.S."), a month, "vs.", "Inc.", "p.m."… */
+const ABBREVIATION_END = /(?:^|[\s(])(?:[A-Za-z]|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|vs|Inc|Corp|Co|Ltd|Bros|approx|est|etc|Mr|Mrs|Ms|Dr|St|No|Jr|Sr|U\.S|U\.K|a\.m|p\.m|e\.g|i\.e)\.$/i;
+/** Sentences for the worked-example check: a sentence ends at . ! ? before a capital, a digit or a quote — never at an abbreviation. */
+function exampleSentencesOf(text) {
+  const s = String(text ?? '');
+  const out = [];
+  let start = 0;
+  for (const m of s.matchAll(/[.!?]+(?=\s+[A-Z0-9"'“(\[])/g)) {
+    const end = m.index + m[0].length;
+    if (m[0] === '.' && ABBREVIATION_END.test(s.slice(start, end))) continue;
+    out.push(s.slice(start, end));
+    start = end;
+  }
+  out.push(s.slice(start));
+  return out.map((x) => x.trim()).filter(Boolean);
+}
 function exampleResOf(example) {
   const words = (s) => escapeRe(s).replace(/\s+/g, String.raw`\s+`);
   return {
     name: new RegExp(`(?<![A-Za-z0-9])(?:${example.names.map(words).join('|')})(?![A-Za-z0-9])`),
-    date: new RegExp(String.raw`(?<![A-Za-z0-9])(?:${example.dates.map(words).join('|')})(?!\d)`, 'i'),
+    // the day not followed by a digit, a percent or a hyphenated word ("October 30%", "an October 30-day window")
+    date: new RegExp(String.raw`(?<![A-Za-z0-9])(?:${example.dates.map(words).join('|')})(?![\d%]|-[A-Za-z])`, 'i'),
+    alias: Array.isArray(example.aliases) && example.aliases.length ? new RegExp(`(?<![\\p{L}\\p{N}])(?:${example.aliases.map(words).join('|')})(?![\\p{L}\\p{N}])`, 'iu') : null,
     day: dateMentionsOf(example.dates[0])[0] ?? null,
   };
 }
 const isOnDay = (iso, day) => typeof iso === 'string' && day !== null && Number(iso.slice(5, 7)) === day.m && Number(iso.slice(8, 10)) === day.d;
 /**
- * A current retrieval-backed finding that names the example: its name (in the fact, or its symbol) and its date (in
- * the fact, or its own date — never the read day of an undated item).
+ * A current retrieval-backed finding that names the example: its name (in the fact — the company's own name counts,
+ * "Nvidia" — or its symbol) and its date (in the fact, or its own date — never the read day of an undated item).
  */
 const namesExample = (f, re, example) => f?.source?.recordKind === 'retrieval'
-  && (re.name.test(f.fact) || example.names.includes(f.symbol))
+  && (re.name.test(f.fact) || (re.alias !== null && re.alias.test(f.fact)) || example.names.includes(f.symbol))
   && (re.date.test(f.fact) || (!isUndated(f) && isOnDay(f.at, re.day)) || isOnDay(f.asOf, re.day));
-const statesExample = (text, re) => exampleSentencesOf(normalizeText(text)).some((s) => re.name.test(s) && re.date.test(s));
+const statesExample = (text, re) => exampleSentencesOf(readable(text)).some((s) => re.name.test(s) && re.date.test(s));
 
-const SERVICE_NAMES = /\bpractice\s+field\b|\bfilm\s+room\b|\bidea\s+book\b/i;
-/** "I" as a numeral ("Phase I", "Series I") is no one. */
-const NOT_A_NUMERAL = String.raw`(?<!\b(?:Phase|Series|Class|Tier|Type|Part|Stage|Level|Grade|Title|Chapter|Section|Article|Schedule|Form|Item|Exhibit|Volume|War)\s)`;
-/** The agent, the partner (by name too), I, we or this/the/your idea, then will / 'll / is going to, then the verb. */
-const PROMISE = new RegExp(String.raw`(?:\b(?:${PARTNER_WORDS}|${PARTNER_TOKEN}|we|(?:this|the|your)\s+idea)|${NOT_A_NUMERAL}\bI)`
-  + String.raw`(?:\s+will|'ll|\s+(?:is|are|am)\s+going\s+to|'(?:s|re|m)\s+going\s+to)`
-  + String.raw`(?:\s+(?:also|then|now|just|first|soon|still|\w+ly))*(?:\s+(?:continue\s+to|keep|start|begin))?(?:\s+be)?`
-  + String.raw`\s+(?:test|trial|track|monitor|adopt)(?:s|ed|ing|led|ling)?\b`, 'i');
-const promisesService = (text, partnerName) => SERVICE_NAMES.test(normalizeText(text))
-  || sentencesOf(normalizeText(text)).some((s) => PROMISE.test(withPartnerToken(straightApostrophes(s), partnerName)));
+/**
+ * The app's services by name: "Practice Field" and "Film Room" as names (capitalized; joined or hyphenated too), the
+ * "idea book" in any case. A stadium's practice field or a studio's film room is not the app's.
+ */
+const SERVICE_NAMES = [/\bPractice[\s-]*[Ff]ields?\b|\bPRACTICE[\s-]*FIELDS?\b/, /\bFilm[\s-]*[Rr]ooms?\b|\bFILM[\s-]*ROOMS?\b/, /\bidea[\s-]*books?\b/i];
+/** "I" as a numeral ("Phase I", "Phase-I", "Fund I") is no one. */
+const NOT_A_NUMERAL = String.raw`(?<!\b(?:Phase|Subphase|Series|Class|Tier|Type|Part|Stage|Level|Grade|Title|Chapter|Section|Article|Schedule|Form|Item|Exhibit|Volume|War|Fund|Basel|Train|Mark|Unit|Tranche|Gen|Generation|Block|Lot|Round|Wave|Cohort|Track|Line|Plant|Reactor|Group|Team|Division|Model)[\s-])(?<!-)`;
+/** The letter's subjects: the agent (the player's), the player's partner, we, I, or this/the/your idea. */
+const PROMISE_SUBJECT = String.raw`(?:\b(?:the\s+agent|(?:your|my|our)\s+agents?|your\s+(?:research\s+)?partner|we|(?:this|the|your)\s+(?:\w+\s+)?idea)|${NOT_A_NUMERAL}\bI)`;
+/** will / 'll / is going to; then words that only fill ("be", "closely", "continue", ", of course,"); then the verb. */
+const PROMISE_REST = String.raw`(?:\s+will|'ll|\s+(?:is|are|am)\s+going\s+to|'(?:s|re|m)\s+going\s+to)`
+  + String.raw`(?:,?\s+(?:also|then|now|just|first|soon|still|both|all|be|being|been|continue|continuing|keep|keeping|start|starting|begin|beginning|on|to|and|of|course|\w+ly),?){0,6}`
+  + String.raw`\s+(?:test|trial|track|monitor|adopt)(?:s|ed|ing|led|ling)?\b`;
+const PROMISE = new RegExp(PROMISE_SUBJECT + PROMISE_REST, 'i');
+const PROMISE_BY_NAME = new RegExp(String.raw`\b${PARTNER_TOKEN}` + PROMISE_REST, 'i');
+/**
+ * The partner's own name, read like the text (NFKC, no format characters, apostrophes straight), stands as the token —
+ * matched CASE-SENSITIVELY, so a partner named "Will", "Test" or "Track" never swallows the words the promise needs.
+ */
+function byName(sentence, partnerName) {
+  const n = typeof partnerName === 'string' ? readable(partnerName).trim() : '';
+  if (n.length < 2) return null;
+  return sentence.replace(new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRe(n)}(?![\\p{L}\\p{N}_])`, 'gu'), PARTNER_TOKEN);
+}
+function promisesService(text, partnerName) {
+  const t = readable(text);
+  if (SERVICE_NAMES.some((re) => re.test(t))) return true;
+  return sentencesOf(t).some((s) => {
+    if (PROMISE.test(s)) return true;
+    const named = byName(s, partnerName);
+    return named !== null && PROMISE_BY_NAME.test(named);
+  });
+}
 
 /**
  * The KB method's three checks on one validated step turn (KB-1): null when the
@@ -827,7 +874,7 @@ export function kbTurnFailOf({ method, findings = [], nextActionId = null, curre
   const markers = methodMarkersFor(method);
   if (markers) {
     const cites = citationResOf(markers.citations);
-    for (const [where, text] of texts) if (cites.some((re) => re.test(normalizeText(text)))) return fail('method_example_as_fact', `${where}:citation`);
+    for (const [where, text] of texts) if (cites.some((re) => re.test(readable(text)))) return fail('method_example_as_fact', `${where}:citation`);
     const re = exampleResOf(markers.example);
     if (!current.some((f) => namesExample(f, re, markers.example))) {
       const unbacked = [['reply', replyText], ['summary', summaryText], ...findings.filter((f) => f.source?.recordKind !== 'retrieval').map((f) => [`fact:${f.findingId}`, f.fact])];

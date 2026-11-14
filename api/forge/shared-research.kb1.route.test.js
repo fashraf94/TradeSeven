@@ -94,6 +94,10 @@ const { METHOD, METHOD_SOURCE, BASELINE } = await import('../_utils/sharedResear
 const { seenSha256Of } = await import('../_utils/sharedResearch/session.js');
 const { contentHashOf } = await import('../_utils/hypothesisRecords/model.js');
 
+/** main's baseline system prompts (c85f7b41), captured before the change — what a baseline turn must send, byte for byte. */
+const MAIN = JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '_utils', 'sharedResearch', '__fixtures__', 'baselinePrompts.main.json'), 'utf8'));
+/** Every path in a document holding `undefined` — Firestore refuses one; the in-memory double keeps it. */
+const undefinedPaths = (v, at = '') => (v === undefined ? [at] : v && typeof v === 'object' ? Object.entries(v).flatMap(([k, x]) => undefinedPaths(x, `${at}.${k}`)) : []);
 const KB_REF = Object.freeze({ id: 'KB-IDEA-EVALUATION-001', version: '0.1', sha256: 'b0688fb33cdd5b16835a5a70f7fcef7ca79d00facced233d1529d26b4e77854e', source: 'kb' });
 const BASE_REF = Object.freeze({ id: 'baseline', version: 'v0', sha256: BASELINE.sha256, source: 'baseline' });
 const KB_SOURCE = Object.freeze({ recordKind: 'kb', recordId: 'KB-IDEA-EVALUATION-001@0.1', label: 'Method · Evaluating an Idea v0.1' });
@@ -201,11 +205,20 @@ describe('row 1 — selection at the route', () => {
     expect(recordDoc(sessionId).findings.at(-1)).toMatchObject({ kind: 'next_action', source: METHOD_SOURCE });
     await step(sessionId, 1, twoCompanies());
     expect(partnerTurns(sessionId).at(-1)).toMatchObject({ kind: 'step', method: BASE_REF });
-    expect(state.turns.at(-1).system).toContain(METHOD.text);
-    expect(state.turns.at(-1).system).not.toContain(KB_HEADER);
+    expect(state.turns.at(-1).system).toBe(MAIN.step.Rook); // what the route SENT, byte for byte main's (review TST-9)
     expect(recordDoc(sessionId).findings.filter((f) => f.kind === 'next_action').at(-1).source).toEqual(METHOD_SOURCE);
     expect(state.offerCalls).toEqual([]);
     expect(state.loadCalls).toEqual([]);
+  });
+});
+
+describe('row 6 at the route — a baseline turn sends main\'s prompts byte for byte (review TST-9)', () => {
+  it('own words refused (the shipped case): the frame and the step the route sends equal main\'s, for the partner Rook', async () => {
+    state.offer = () => ({ ok: false, reason: 'not_authorized' });
+    const { sessionId } = await ownWords();
+    await step(sessionId, 1, twoCompanies());
+    expect(state.turns.map((t) => [t.kind, t.system])).toEqual([['frame', MAIN.frame.Rook], ['step', MAIN.step.Rook]]);
+    expect(partnerTurns(sessionId).map((t) => t.method)).toEqual([BASE_REF, BASE_REF]);
   });
 });
 
@@ -304,6 +317,23 @@ describe('row 3 — the method on every turn', () => {
     expect(partnerTurns(first.body.sessionId)).toMatchObject([{ kind: 'frame', method: BASE_REF }]);
   });
 
+  it('the letter: a KB stamp whose FIRST turn falls back (a retried framing after the entry is removed) records the baseline it ran on, with no methodChange — there is no previous partner turn (review SEL-1: founder question FQ-2)', async () => {
+    state.turnQueue.push({ ok: false, reason: 'model_error_500', usage: null, model: 'claude-haiku-5-5', attempts: 1, elapsedMs: 10, costUsd: null, stopReason: null });
+    const first = await post({ action: 'frame', observation: OBSERVATION, requestId: 'fr-sel1' });
+    expect(sessionDoc(first.body.sessionId).method.source).toBe('kb');
+    state.load = () => ({ ok: false, reason: 'not_authorized' }); // the founder removes the entry
+    state.turnQueue.push(frameOk());
+    await post({ action: 'frame', observation: OBSERVATION, requestId: 'fr-sel1' });
+    const [frame] = partnerTurns(first.body.sessionId);
+    expect(frame).toMatchObject({ kind: 'frame', method: BASE_REF });
+    expect('methodChange' in frame).toBe(false);
+    expect(sessionDoc(first.body.sessionId).method.source).toBe('kb'); // the stamp is never rewritten
+    // Each call record names the method its turn ran on — the failed first framing's too (review TST-8).
+    expect(state.logs.map((l) => [l.intent, l.outcome, l.methodSource, l.methodId])).toEqual([
+      ['frame', 'failure', 'kb', 'KB-IDEA-EVALUATION-001'], ['frame', 'completion', 'baseline', 'baseline'],
+    ]);
+  });
+
   it('revoked between the frame and the open: the opening\'s next action still cites the KB method the frame ran on (labelled by its id)', async () => {
     state.turnQueue.push(frameOk());
     const f = await post({ action: 'frame', observation: OBSERVATION, requestId: 'fr-rev' });
@@ -338,8 +368,8 @@ describe('row 4 — finding → turn, and adoption', () => {
     const version = seedEnv.doc(`watchlists/${r.body.watchlistId}/hypothesisVersions/v1`);
     const kept = version.evidenceRefs.filter((ref) => ref.kind === 'evidenceItem').map((ref) => ref.itemId);
     expect(kept.length).toBeGreaterThan(0);
-    const turnOf = (id) => partnerTurns(sessionId).find((t) => (t.findingIds ?? []).includes(id));
-    const distinct = [...new Map(kept.map(turnOf).filter(Boolean).map((t) => [JSON.stringify(t.method), t.method])).values()];
+    const turns = partnerTurns(sessionId).filter((t) => (t.findingIds ?? []).some((id) => kept.includes(id))); // in the order they ran
+    const distinct = [...new Map(turns.map((t) => [JSON.stringify(t.method), t.method])).values()];
     expect(confirm.methodsUsed).toEqual(distinct);
     // The version is byte for byte the builder's output for its input, its exchange ref the confirm's unchanged id;
     // the builder's input is the same shape it always took (nothing method-shaped added).
@@ -355,6 +385,44 @@ describe('row 4 — finding → turn, and adoption', () => {
   });
 });
 
+describe('row 4 — methodsUsed across two methods (review TST-7)', () => {
+  const eatonOnly = () => turnOk({
+    reply: 'Eaton sells switchgear to data-center builders.',
+    findings: [
+      { tempId: 'e', kind: 'relationship', fact: 'Eaton sells switchgear to data-center builders.', symbolCandidate: 'ETN', companyName: 'Eaton', support: { kind: 'retrieval', index: 0, from: [], reason: null }, at: null, supersedes: null },
+    ],
+    summary: { text: 'Eaton sells switchgear to data-center builders.', basedOn: ['e'] },
+    lines: { support: 'e', complication: null, missing: null },
+    nextAction: { label: 'Find who else supplies the builders', purpose: 'One supplier is a narrow answer.' },
+    companies: [{ companyName: 'Eaton', symbolCandidate: 'ETN', role: 'Supplier', relationshipRef: 'e', openRef: null, claim: null }],
+  });
+  const vernovaOnly = () => turnOk({
+    reply: 'GE Vernova sells turbines to data centers.',
+    findings: [
+      { tempId: 'g', kind: 'relationship', fact: 'GE Vernova sells turbines to data centers.', symbolCandidate: 'GEV', companyName: 'GE Vernova', support: { kind: 'retrieval', index: 1, from: [], reason: null }, at: null, supersedes: null },
+    ],
+    summary: null,
+    lines: { support: 'g', complication: null, missing: null },
+    nextAction: { label: "Size GE Vernova's data-center sales", purpose: 'Significance is the weakest link.' },
+    companies: [{ companyName: 'GE Vernova', symbolCandidate: 'GEV', role: 'Supplier', relationshipRef: 'g', openRef: null, claim: null }],
+  });
+  it('a KB step writes Eaton, a revoked (baseline) step writes GE Vernova; adopting GE Vernova records the baseline only — the kept findings\' turns, never the stamp or the whole record', async () => {
+    const { sessionId } = await ownWords();
+    await step(sessionId, 1, eatonOnly());
+    state.load = () => ({ ok: false, reason: 'not_authorized' });
+    await step(sessionId, 2, vernovaOnly());
+    expect(partnerTurns(sessionId).slice(1).map((t) => t.method.source)).toEqual(['kb', 'baseline']);
+    const preview = (await get({ sessionId })).body.adoptPreview;
+    const gev = preview.companies.find((c) => c.symbol === 'GEV');
+    expect(gev, JSON.stringify(preview.companies.map((c) => c.symbol))).toBeTruthy();
+    const r = await post({ action: 'adopt', sessionId, statement: gev.fragment, horizonEnum: 'positional', symbols: ['GEV'], previewRev: preview.previewRev });
+    expect(r.statusCode, JSON.stringify(r.body)).toBe(200);
+    const confirm = sessionDoc(sessionId).exchanges.at(-1);
+    expect(confirm.methodsUsed).toEqual([BASE_REF]);
+    expect(sessionDoc(sessionId).method.source).toBe('kb'); // the stamp says KB; the kept evidence came from a baseline turn
+  });
+});
+
 describe('row 5 — what each step keeps', () => {
   it('every item shown, as shown, in order; the hash recomputes; trimmed items absent; an undated item null with its finding " · undated"', async () => {
     const sessionId = await openStory();
@@ -363,7 +431,7 @@ describe('row 5 — what each step keeps', () => {
     const items = [
       { ...ITEMS[0], highlights: ['First.', 'Second.', 'Third — the budget keeps two.'] },
       { ...ITEMS[1], publishedDate: null },
-      { index: 2, url: 'https://news.example.com/later', title: 'A date after the read', host: 'news.example.com', publishedDate: future, highlights: ['Later.'] },
+      { index: 2, url: 'https://news.example.com/later', title: 'ZZZQ  wins a\nswitchgear order', host: 'news.example.com', publishedDate: future, highlights: ['ZZZQ said  orders rose.'] },
       ...[3, 4, 5, 6].map((i) => ({ index: i, url: `https://news.example.com/p${i}`, title: `Piece ${i}`, host: 'news.example.com', publishedDate: '2026-11-01T00:00:00.000Z', highlights: [`Text ${i}.`] })),
     ];
     const r = await step(sessionId, 1, twoCompanies(), { retrieval: { items, costDollars: 0.005, elapsedMs: 300, readAt } });
@@ -374,14 +442,22 @@ describe('row 5 — what each step keeps', () => {
     expect(kept.items[0]).toMatchObject({ url: ITEMS[0].url, host: 'news.example.com', title: ITEMS[0].title, highlights: ['First.', 'Second.'], publishedDate: '2026-11-06T00:00:00.000Z' });
     for (const it of kept.items) expect(it.seenSha256).toBe(createHash('sha256').update(`${it.title}\n${it.highlights.join('\n')}`, 'utf8').digest('hex'));
     for (const it of kept.items) expect(seenSha256Of(it.title, it.highlights)).toBe(it.seenSha256);
-    // The text retained is the text the prompt rendered.
-    for (const it of kept.items) {
-      expect(state.turns.at(-1).user).toContain(it.title);
-      for (const h of it.highlights) expect(state.turns.at(-1).user).toContain(h);
+    // The text retained is the item's bounded text as given to the prompt (reading R1): the prompt renders it with
+    // whitespace collapsed and tickers outside the game universe masked; the record keeps the text before that rendering.
+    const user = state.turns.at(-1).user;
+    expect(kept.items.map((it) => [it.title, it.highlights])).toEqual(items.slice(0, 5).map((it) => [it.title, it.highlights.slice(0, 2)]));
+    expect(kept.items[2].title).toBe('ZZZQ  wins a\nswitchgear order'); // the raw text, not the rendered line (reading R1; review REC-1)
+    expect(user).toContain("item 2 | news.example.com | no date | (symbol not in the app's records) wins a switchgear order");
+    expect(user).toContain("    - (symbol not in the app's records) said orders rose.");
+    expect(user).not.toContain('ZZZQ');
+    for (const it of kept.items.filter((x) => x.index !== 2)) {
+      expect(user).toContain(it.title);
+      for (const h of it.highlights) expect(user).toContain(h);
     }
-    expect(state.turns.at(-1).user).not.toContain('Third — the budget keeps two.');
-    expect(state.turns.at(-1).user).not.toContain('Piece 5');
-    // Unknown stays unknown: no date, and a date after the read (spec §16 FQ-2), are null.
+    expect(user).not.toContain('Third — the budget keeps two.');
+    expect(user).not.toContain('Piece 5');
+    // Unknown stays unknown: no date, and a date after the read (treated as absent, spec §16 FQ-2 — the prompt showed
+    // "no date"), are null (reading R2; review REC-6, refuted).
     expect(kept.items[1].publishedDate).toBeNull();
     expect(kept.items[2].publishedDate).toBeNull();
     // Each item names the findings that cite it; the undated item's finding is labelled so.
@@ -392,7 +468,7 @@ describe('row 5 — what each step keeps', () => {
     expect(kept.items[1].findingIds).toHaveLength(1);
     expect(byId.get(kept.items[1].findingIds[0]).source.label.endsWith(' · undated')).toBe(true);
     for (const it of kept.items.slice(2)) expect(it.findingIds).toEqual([]);
-    expect(JSON.stringify(sessionDoc(sessionId))).not.toContain('"undefined"');
+    expect(undefinedPaths(sessionDoc(sessionId))).toEqual([]); // no field Firestore would refuse (review TST-17)
   });
 
   it('no retrieval block on a step that did not retrieve, or whose retrieval failed', async () => {
@@ -417,6 +493,10 @@ describe('row 9 — the client answer is unchanged', () => {
     await step(sessionId, 1, null); // a replay
     await step(sessionId, 2, turnOk({ ...quiet().output, reply: 'We will track this idea.' })); // fails service_promise on the KB turn
     expect(answers.at(-1)).toMatchObject({ error: 'step_failed', reason: 'invalid_service_promise' });
+    // the failed KB step's call record names the KB method it ran on (review TST-8)
+    expect(state.logs.at(-1)).toMatchObject({ intent: 'next', outcome: 'failure', failureReason: 'invalid_service_promise', methodId: 'KB-IDEA-EVALUATION-001', methodVersion: '0.1', methodSha256: KB_REF.sha256, methodSource: 'kb' });
+    expect(sessionDoc(sessionId).lastStep).toMatchObject({ status: 'failed', error: 'invalid_service_promise' });
+    expect(partnerTurns(sessionId)).toHaveLength(2); // nothing appended: the frame and step 1 only
     await get({ sessionId });
     await get({ list: 'open' });
     const preview = (await get({ sessionId })).body.adoptPreview;
@@ -428,6 +508,35 @@ describe('row 9 — the client answer is unchanged', () => {
       for (const k of FORBIDDEN_KEYS) expect(keys.has(k), `${k} in ${JSON.stringify(body).slice(0, 120)}`).toBe(false);
       for (const ex of body?.session?.exchanges ?? []) expect(Object.keys(ex).every((k) => ['who', 'kind', 'text', 'at', 'stepId', 'intent', 'target'].includes(k))).toBe(true);
     }
+  });
+
+  it('every answer\'s keys equal main\'s — frame, open, step, replay, a failed step, the list, GET, adopt, close (review TST-10)', async () => {
+    const SESSION_KEYS = ['sessionId', 'status', 'entry', 'frame', 'lastError', 'exchanges', 'stepsUsed', 'stepBudget', 'lastStep', 'researchWorkId', 'adoption', 'createdAt', 'updatedAt'];
+    state.turnQueue.push(frameOk());
+    const f = await post({ action: 'frame', observation: OBSERVATION, requestId: 'fr-keys' });
+    expect(Object.keys(f.body)).toEqual(['sessionId', 'status', 'frame', 'quota']);
+    const o = await post({ action: 'open', sessionId: f.body.sessionId, question: QUESTION });
+    expect(Object.keys(o.body)).toEqual(['session', 'record', 'companies', 'opening', 'quota', 'previous']);
+    const sessionId = f.body.sessionId;
+    const s1 = await step(sessionId, 1, twoCompanies());
+    expect(Object.keys(s1.body)).toEqual(['session', 'record', 'companies', 'changed', 'quota']);
+    expect(Object.keys(s1.body.changed)).toEqual(['summary', 'findings', 'summaryWithheld']);
+    const again = await step(sessionId, 1, null);
+    expect(Object.keys(again.body)).toEqual(['session', 'record', 'companies', 'quota', 'replay', 'changed']);
+    const bad = await step(sessionId, 2, turnOk({ ...quiet().output, reply: 'We will track this idea.' }));
+    expect(Object.keys(bad.body)).toEqual(['error', 'reason', 'session', 'quota']);
+    expect(Object.keys((await get({ list: 'open' })).body)).toEqual(['open', 'quota']);
+    for (const body of [o.body, s1.body, again.body, bad.body]) expect(Object.keys(body.session)).toEqual(SESSION_KEYS);
+    const closed = await post({ action: 'close', sessionId, reason: 'abandoned' });
+    expect(Object.keys(closed.body)).toEqual(['session', 'record']);
+    expect(Object.keys(closed.body.session)).toEqual(SESSION_KEYS);
+    // adopt, on a second investigation
+    const { sessionId: other } = await ownWords({ requestId: 'fr-keys-2' });
+    await step(other, 3, twoCompanies());
+    const preview = (await get({ sessionId: other })).body.adoptPreview;
+    const etn = preview.companies.find((c) => c.symbol === 'ETN');
+    const adopted = await post({ action: 'adopt', sessionId: other, statement: etn.fragment, horizonEnum: 'positional', symbols: ['ETN'], previewRev: preview.previewRev });
+    expect(Object.keys(adopted.body)).toEqual(['watchlistId', 'version', 'researchWorkId', 'idempotent']);
   });
 
   it('the GET answer\'s keys equal main\'s', async () => {
@@ -505,7 +614,8 @@ describe('row 11 — ownership and the archetype boundary', () => {
       return seen;
     };
     const readReal = (f) => { try { return /\.(?:m?js|json)$/.test(f) ? readFileSync(f, 'utf8') : null; } catch { return null; } };
-    const roots = readdirSync(SR).filter((n) => /\.js$/.test(n) && !/\.test\.js$/.test(n)).map((n) => path.join(SR, n));
+    // Every Shared Research module, and the route that serves them (review TST-11).
+    const roots = [...readdirSync(SR).filter((n) => /\.js$/.test(n) && !/\.test\.js$/.test(n)).map((n) => path.join(SR, n)), path.join(REPO, 'api', 'forge', 'shared-research.js')];
     expect(roots).toContain(path.join(SR, 'method.js'));
     const reached = [...reach(roots, readReal)];
     expect(reached.length).toBeGreaterThan(30); // not vacuous: the graph reaches the record models, the KB loader, src/ constants
