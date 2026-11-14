@@ -171,6 +171,17 @@ import PerGameLoadoutScope from './PerGameLoadoutScope';
 import { PerGameLoadoutContext, scopeDeployLine } from './hub/perGameLoadoutContext';
 import { ArmorySheetContext } from './Armory';
 import { takeLoadoutEntry } from '../../utils/hubEntryIntent';
+// Amendment E V1.1 Part 2 (§1, §3; rulings R-D1 to R-D4): the research door. The mode through hub/hubFlags.js (handed to the
+// admission hook, which may not import into this directory); the admission hook and the two readers (outside this directory,
+// permitted terminals, each called once in ConnectedHub); the story selector (pure, outside it too); the pure door view; and
+// the sheet, whose body loads lazily (hub/loadSharedResearch.js). At 'off' none of them reads or renders anything.
+import { sharedResearchMode } from './hub/hubFlags';
+import useHubResearchAdmission from '../../hooks/useHubResearchAdmission';
+import useHubStories from '../../hooks/useHubStories';
+import useHubSharedResearch from '../../hooks/useHubSharedResearch';
+import { selectStories } from '../../selectors/storySelection';
+import { admissionBattleIdOf, equippedListLabelOf, researchDoorOf, researchRecordsOf, researchSheetHeldBy } from './hub/researchDoorView';
+import SharedResearchSheet from './SharedResearchSheet';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
 export function shadowSizeFor(composition, width) {
@@ -343,6 +354,28 @@ export function huddleActionsOf(huddle, sheet, nextAction, base = NO_ACTIONS) {
 }
 
 /**
+ * Amendment E V1.1 §3.1–§3.3: the shell actions the research door adds — "Work an idea" (the sheet's start view), Continue
+ * (the newest open investigation, mode 'session'), the research read's Retry, and Activity's research rows (each opens the sheet
+ * on its investigation; a game row opens its game as before). None without a door (outside admission, or at 'off').
+ */
+export function researchActionsOf(researchDoor, sheet, door, base = NO_ACTIONS) {
+  if (!researchDoor) return null;
+  // Each entry names the owner and epoch it was opened for (review B3): the sheet is shown only while the door is that owner's.
+  const ownerKey = researchDoor.ownerKey ?? null;
+  const openSession = (sessionId) => sheet.open(HUB_SHEETS.RESEARCH, { mode: 'session', sessionId, ownerKey });
+  const sessionId = door?.progress?.sessionId ?? null;
+  return {
+    openResearch: sheet.open(HUB_SHEETS.RESEARCH, { mode: 'start', ownerKey }),
+    continueResearch: sessionId ? openSession(sessionId) : undefined,
+    retryResearchDoor: researchDoor.retry,
+    openActivity: (row, event) => {
+      if (row?.sessionId) openSession(row.sessionId)(event);
+      else if (typeof base.openActivity === 'function') base.openActivity(row);
+    },
+  };
+}
+
+/**
  * Slice S2b (ruling R-S2b-7): the shipped Scouting Board, registered `within` the hub's stack by useHubSheets. Its
  * footer deploy is a tap through the provider's admission, inside its own modal and nowhere else.
  */
@@ -363,7 +396,7 @@ function ScoutingBoard({ open, onClose, dock, agent, deploy, board, sections, pr
 }
 
 /** The mobile site: header → compact stage → sticky tabs → section, and the strip above BottomNav. */
-function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null, attemptId = null, coverOpen = false, huddle = null }) {
+function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null, attemptId = null, coverOpen = false, huddle = null, researchDoor = null }) {
   const rootRef = useRef(null);
   const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef, researchRead });
   const { sections, sheets: sheet } = runtime;
@@ -381,6 +414,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
     openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
     openAllActivity: sheet.open(HUB_SHEETS.ACTIVITY),
     ...(DRB_HUDDLE_ENABLED ? huddleActionsOf(huddle, sheet, sections.nextAction, wired) : null),
+    ...researchActionsOf(researchDoor, sheet, sections.researchDoor, wired),
   };
   // Changing area before commitment cancels the charge (spec §5.5); the panels stay mounted while it charges.
   // Agent form build A1 follow-up (founder ruling N2(d)): the phone armory is part of the page, so the page stays usable,
@@ -398,6 +432,9 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
   // Amendment E §E7 (review HU-4): membership lapsing while the Huddle sheet is open (a 404 refresh, an owner change) frees
   // the sheet slot too, so a later 200 never reopens the sheet without a tap. This component's own state, set in its own render.
   if (DRB_HUDDLE_ENABLED && !huddle && sheet.sheet === HUB_SHEETS.HUDDLE) runtime.closeSheet();
+  // Amendment E V1.1 §3.2: admission ending while the research sheet is open closes it, as the Huddle's lapse does — and so does an
+  // owner or epoch change (review B3: the open investigation is the former owner's).
+  if (sheet.sheet === HUB_SHEETS.RESEARCH && !researchSheetHeldBy(researchDoor, sheet.entry)) runtime.closeSheet();
   return (
     <HubLayoutContext.Provider value={composition}>
       <style data-hub-css="">{HUB_SCOPED_CSS}</style>
@@ -502,6 +539,21 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
       {DRB_HUDDLE_ENABLED && huddle && sheet.sheet === HUB_SHEETS.HUDDLE ? (
         <HuddleSheet huddle={huddle} phone onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} ceremonyActive={coverOpen} />
       ) : null}
+      {sheet.sheet === HUB_SHEETS.RESEARCH && researchSheetHeldBy(researchDoor, sheet.entry) ? (
+        <SharedResearchSheet
+          entry={sheet.entry}
+          stories={researchDoor.stories}
+          agentName={researchDoor.agentName}
+          agentId={researchDoor.agentId}
+          equippedListLabel={equippedListLabelOf(use(PerGameLoadoutContext), runtime.lists, sections.loadout)}
+          gated={researchDoor.gated}
+          phone
+          onClose={runtime.closeSheet}
+          opener={sheet.opener}
+          fallbackFocus={sheet.fallback}
+          reducedMotion={shared.reducedMotion}
+        />
+      ) : null}
       {runtime.live && (AGENT_FORM_ARMORY_ENABLED ? (
         <ArmorySheetContext.Provider value={{ opener: sheet.opener, fallbackFocus: sheet.fallback }}>
           <LoadoutSheets
@@ -532,7 +584,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
 }
 
 /** The desktop site: Desktop, Tablet or Stacked by the hub's own width. */
-function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null, attemptId = null, coverOpen = false, huddle = null }) {
+function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null, attemptId = null, coverOpen = false, huddle = null, researchDoor = null }) {
   const rootRef = useRef(null);
   const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef, researchRead });
   const { sections, sheets: sheet } = runtime;
@@ -550,6 +602,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
     openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
     openAllActivity: sheet.open(HUB_SHEETS.ACTIVITY),
     ...(DRB_HUDDLE_ENABLED ? huddleActionsOf(huddle, sheet, sections.nextAction, wired) : null),
+    ...researchActionsOf(researchDoor, sheet, sections.researchDoor, wired),
   };
   // Changing area before commitment cancels the charge (spec §5.5).
   const selectArea = (next) => { deploy?.cancelCharging(); if (next !== area) setAreaEvent((n) => n + 1); setArea(next); };
@@ -560,6 +613,9 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
   // Amendment E §E7 (review HU-4): membership lapsing while the Huddle sheet is open (a 404 refresh, an owner change) frees
   // the sheet slot too, so a later 200 never reopens the sheet without a tap. This component's own state, set in its own render.
   if (DRB_HUDDLE_ENABLED && !huddle && sheet.sheet === HUB_SHEETS.HUDDLE) runtime.closeSheet();
+  // Amendment E V1.1 §3.2: admission ending while the research sheet is open closes it, as the Huddle's lapse does — and so does an
+  // owner or epoch change (review B3: the open investigation is the former owner's).
+  if (sheet.sheet === HUB_SHEETS.RESEARCH && !researchSheetHeldBy(researchDoor, sheet.entry)) runtime.closeSheet();
   const stage = (
     <ShadowStage
       composition={composition}
@@ -680,6 +736,20 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
       {DRB_HUDDLE_ENABLED && huddle && sheet.sheet === HUB_SHEETS.HUDDLE ? (
         <HuddleSheet huddle={huddle} onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} ceremonyActive={coverOpen} />
       ) : null}
+      {sheet.sheet === HUB_SHEETS.RESEARCH && researchSheetHeldBy(researchDoor, sheet.entry) ? (
+        <SharedResearchSheet
+          entry={sheet.entry}
+          stories={researchDoor.stories}
+          agentName={researchDoor.agentName}
+          agentId={researchDoor.agentId}
+          equippedListLabel={equippedListLabelOf(use(PerGameLoadoutContext), runtime.lists, sections.loadout)}
+          gated={researchDoor.gated}
+          onClose={runtime.closeSheet}
+          opener={sheet.opener}
+          fallbackFocus={sheet.fallback}
+          reducedMotion={shared.reducedMotion}
+        />
+      ) : null}
       {runtime.live && (AGENT_FORM_ARMORY_ENABLED ? (
         // A1 carry AR-5: the dialog's HubSheet returns focus to the control that opened it, as the History sheet's does.
         <ArmorySheetContext.Provider value={{ opener: sheet.opener, fallbackFocus: sheet.fallback }}>
@@ -763,6 +833,19 @@ function ConnectedHub({ site, hub, sections }) {
   // Amendment E §E7 (review HC-5): the history is read only once today's status read has answered 200 — a player outside the
   // cohort gets the status route's 404 ('outside') and so never pays the history query, whose answer could not admit them.
   const huddleHistory = useHuddleHistory({ auth: readers.inputs?.auth ?? null, enabled: DRB_HUDDLE_ENABLED && huddleToday.read.status === 'ready' });
+  // Amendment E V1.1 Part 2 (§1; rulings R-D2, R-D4): the research door's admission and its two readers, called here beside the
+  // Huddle readers for the same reason (their services load the Firebase configuration the readers' suites render without). The
+  // mode is read through hub/hubFlags.js and handed in; at 'allowlist' the verdict is asked with an owned agentBattles id the hub
+  // already holds (hub/researchDoorView.js admissionBattleIdOf). At 'off' all three are idle (no request, no read) and
+  // `researchDoor` below stays null, so the hub is today's hub.
+  const researchAuth = readers.inputs?.auth ?? null;
+  const researchAdmission = useHubResearchAdmission({
+    mode: sharedResearchMode(),
+    auth: researchAuth,
+    battleId: admissionBattleIdOf({ live: readers.liveBattles, completed: readers.inputs?.completed ?? null, auth: researchAuth }),
+  });
+  const hubStories = useHubStories({ auth: researchAuth, enabled: researchAdmission.admitted });
+  const sharedResearch = useHubSharedResearch({ auth: researchAuth, enabled: researchAdmission.admitted });
   const deploy = useHubDeploy({ deployAttempt, readers, hub });
   const live = { ...sections, ...readers.sections };
   // Huddle S1: the section, the next action's rule (C6), Partnership (C8), Activity's rows (C8) and the reconfirm line (E1: from
@@ -788,6 +871,26 @@ function ConnectedHub({ site, hub, sections }) {
       needsReconfirm: reconfirm,
       focusPlan: reconfirm,
       laterFor: readers.next ? readers.next.laterFor : () => undefined,
+    };
+  }
+  // Amendment E V1.1 §3: for an admitted player only: the Research panel's door (the open investigation's line, the read's
+  // error), Activity's research rows, and what the sheet is handed (the selector's stories, [] until the stories read answers;
+  // the ranked agent's given name and id, the one the Loadout card reads and the server stamps). Outside admission none of it
+  // exists, and `live` is untouched.
+  let researchDoor = null;
+  if (researchAdmission.admitted) {
+    live.researchDoor = researchDoorOf({ read: sharedResearch.read, nowMs: Date.now() });
+    const records = researchRecordsOf(sharedResearch.read);
+    if (live.activityInputs && records) live.activityInputs = { ...live.activityInputs, research: records };
+    const rankedAgent = readers.agent?.status === 'ready' ? readers.agent.agent : null;
+    researchDoor = {
+      // The owner and epoch the door is this render's (review B3): a sheet opened for another is closed.
+      ownerKey: researchAuth?.signedIn === true ? `${researchAuth.uid}:${researchAuth.authEpoch ?? ''}` : null,
+      retry: sharedResearch.refresh,
+      stories: selectStories({ stories: hubStories.read.status === 'ready' ? hubStories.read.stories : [], nowMs: Date.now() }).items,
+      agentName: typeof rankedAgent?.name === 'string' && rankedAgent.name.trim() ? rankedAgent.name.trim() : null,
+      agentId: typeof rankedAgent?.id === 'string' && rankedAgent.id ? rankedAgent.id : null,
+      gated: !researchAdmission.admitted,
     };
   }
   let actions = readers.actions;
@@ -818,20 +921,20 @@ function ConnectedHub({ site, hub, sections }) {
     <PerGameLoadoutScope agentRead={readers.agent} activeBattles={hub?.activeBattles ?? null}>
       <HubAgentFormContext.Provider value={armoryHeroRead(readers.agent)}>
         {site === HUB_SITES.MOBILE
-          ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />
-          : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />}
+          ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} researchDoor={researchDoor} />
+          : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} researchDoor={researchDoor} />}
       </HubAgentFormContext.Provider>
     </PerGameLoadoutScope>
   ) : (
     <HubAgentFormContext.Provider value={AGENT_FORM_ARMORY_ENABLED ? armoryHeroRead(readers.agent) : readers.agent}>
       {site === HUB_SITES.MOBILE
-        ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />
-        : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />}
+        ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} researchDoor={researchDoor} />
+        : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} researchDoor={researchDoor} />}
     </HubAgentFormContext.Provider>
     )
   ) : site === HUB_SITES.MOBILE
-    ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />
-    : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} />;
+    ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} researchDoor={researchDoor} />
+    : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} huddle={huddle} researchDoor={researchDoor} />;
 }
 
 /**

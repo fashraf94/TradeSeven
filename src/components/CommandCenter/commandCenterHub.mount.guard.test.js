@@ -615,6 +615,9 @@ const PERMITTED_TERMINALS = Object.freeze({
   // and the Forge's own words for it — status and time-frame labels, the blessed review-due line, the research lines. Both are
   // Node-clean, already in the main graph (the deploy station reads the same service), and recorded here, not entered.
   'src/services/hypothesisVersionService.js': 'listHypothesisVersions — the existing idea list reader; no writer is imported (ruling R-S6-2)',
+  // R-S6-2's "no writer is imported" covers the hub's OWN imports. The Shared Research sheet's service
+  // (src/services/sharedResearchService.js, the body's alone, behind the second load-time edge) imports a writer outside this
+  // directory, transitionHypothesis, for "Use it in my next game" (B2 K-9; Amendment E V1.1 §3.2's terminal note).
   'src/components/Forge/Watchlist/ideaCopy.js': "the Forge's idea words: STATUS_LABELS, HORIZON_LABELS, windowTextOf, formatIdeaDate, lifecycleLineFor, researchLinesOf (ruling R-S6-3)",
   // S6 (review H-3): the deploy's OWN ticker filter, called not copied — how many of a list's names the agent is handed. The honest line
   // and "Deploying with" are said only for a list the agent is handed. Pure and import-free; not fenced (BUILD_RULES §1).
@@ -646,6 +649,17 @@ const PERMITTED_TERMINALS = Object.freeze({
   // App marks it (App reaches here only through the gate, the picker and the chrome predicates); it imports nothing and
   // reads no flag, so the walk stopping here hides nothing.
   'src/utils/hubEntryIntent.js': 'takeLoadoutEntry — the League door\'s one-shot intent, taken by each shell\'s first render on the flag-on arm (LD-1)',
+  // Command Center Amendment E V1.1 Part 2 (§1, §2.2, §3; rulings R-D1 to R-D4): the research door. The flag module (its own, for
+  // the entry chunk's sake; read at call time through hub/hubFlags.js sharedResearchMode(); it imports nothing: the row below reads
+  // inside it); the admission hook and the two readers, one per record, keyed by uid and auth epoch, each with a SINGLE import
+  // (the verdict reader, fetchFeed, the researchWork query) and each called once in ConnectedHub; and the story selector, pure.
+  // Their activity is pinned call by call in commandCenterHub.activity.guard.test.js. The sheet's BODY is not a terminal: it is
+  // behind the second load-time edge (RESEARCH_EDGE below), which the static walk does not follow.
+  'src/config/sharedResearchFlags.js': 'SHARED_RESEARCH_MODE and SHARED_RESEARCH_MODES — the research door\'s mode, read at call time through hub/hubFlags.js (Amendment E §1; R-D4)',
+  'src/hooks/useHubResearchAdmission.js': 'who the research door admits: the mode handed in; at allowlist the cached cockpit-status verdict for an owned agentBattles id the hub already holds (Amendment E §1)',
+  'src/hooks/useHubStories.js': 'the stories reader: fetchFeed() once per owner and epoch, for an admitted player only, Retry, no poll (Amendment E §1; R-D2)',
+  'src/hooks/useHubSharedResearch.js': 'the research reader: the owner\'s newest 20 researchWork records, kept to shared_research, once per owner and epoch, Retry, no poll (Amendment E §1)',
+  'src/selectors/storySelection.js': 'selectStories — the story selector, pure: five eligible types, the required fields, newest first, five at most, the beat\'s question (Amendment E §2.2)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -718,6 +732,13 @@ const AGENT_FORM_WRAPPER = Object.freeze([
 ]);
 /** R6a: the one load-time edge the hub graph may hold — the wrapper's loader into the engine's lazy entry. */
 const ENGINE_EDGE = `${AGENT_FORM_DIR}/loadEngine.js -> lazy ${AGENT_FORM_DIR}/engine/index.js`;
+/**
+ * Command Center Amendment E V1.1 §3.2 (E-2; ruling R-D3): the SECOND load-time edge — the research loader's one import() of the
+ * Shared Research sheet's body. The body, its screens and its service load as their own chunk, when the sheet first opens.
+ */
+const RESEARCH_EDGE = `${HUB_DIR}/hub/loadSharedResearch.js -> lazy src/components/SharedResearch/SharedResearchSheetBody.jsx`;
+/** The two load-time edges the hub graph holds, by path, sorted as lazyEdgesOf sorts them. */
+const LOAD_TIME_EDGES = Object.freeze([ENGINE_EDGE, RESEARCH_EDGE].sort());
 /**
  * R6d (S1 review SR-1): what a device reports, which the hub view and the wrapper never name, so no rate is chosen
  * from it — ShadowCanvas.contract.jsdom.test.jsx's ban for the canvas, less the frame tokens FRAME_READ holds.
@@ -851,14 +872,36 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     expect(users).toEqual([HUB_FILE('CommandCenterHub.jsx')]);
   });
 
-  it('the hub side loads exactly one module later: the agent form wrapper\'s one import() of the engine (ruling R6a)', () => {
+  it('the hub side loads exactly two modules later: the agent form wrapper\'s one import() of the engine (ruling R6a) and the research loader\'s one import() of the Shared Research body (Amendment E §3.2, R-D3)', () => {
     // A dynamic import is an edge the static walk cannot follow (firebase/auth loaded at render, say), so the hub side
-    // had none. Agent form build S1 (ruling R6a): exactly one, pinned by path — loadEngine.js's import() of the
-    // engine's lazy entry, which is where three.js lives. Any other import() or require() anywhere in the graph fails.
+    // had none. Agent form build S1 (ruling R6a): one, loadEngine.js's import() of the engine's lazy entry, which is where
+    // three.js lives. Amendment E V1.1 (E-2): a second, hub/loadSharedResearch.js's import() of the sheet's body. Exactly these
+    // two files and these two edges, by path; any other import() or require() anywhere in the graph fails.
     const { seen } = graph(HUB_FILE('CommandCenterHub.jsx'));
     const lazy = seen.filter((rel) => /\b(?:import|require)\s*\(/.test(stripComments(read(rel))));
-    expect(lazy).toEqual([`${AGENT_FORM_DIR}/loadEngine.js`]);
-    expect(lazyEdgesOf(seen)).toEqual([ENGINE_EDGE]);
+    expect(lazy.sort()).toEqual([`${AGENT_FORM_DIR}/loadEngine.js`, HUB_FILE('hub/loadSharedResearch.js')].sort());
+    expect(lazyEdgesOf(seen)).toEqual(LOAD_TIME_EDGES);
+    expect(LOAD_TIME_EDGES).toHaveLength(2);
+  });
+
+  it('Amendment E §3.2: each loader makes exactly one import() — the wrapper and the loader hold no read, effect, timer or listener, and the body is reached only through its loader', () => {
+    const loader = stripComments(read(HUB_FILE('hub/loadSharedResearch.js')));
+    expect(lazyImportsOfCode(loader)).toEqual(['../../SharedResearch/SharedResearchSheetBody.jsx']);
+    expect(importsOf(HUB_FILE('hub/loadSharedResearch.js'))).toEqual([]);
+    // the promise is kept and reset on failure, as the engine's loader does
+    expect(loader).toMatch(/if \(!pending\) pending = import\('\.\.\/\.\.\/SharedResearch\/SharedResearchSheetBody\.jsx'\)\.catch\(\(error\) => \{ pending = null; throw error; \}\);/);
+    expect(activityIn(HUB_FILE('hub/loadSharedResearch.js'))).toEqual([]);
+    expect(activityIn(HUB_FILE('SharedResearchSheet.jsx'))).toEqual([]);
+    expect(Object.keys(ALLOWED_ACTIVITY)).not.toContain(HUB_FILE('SharedResearchSheet.jsx'));
+    expect(Object.keys(ALLOWED_ACTIVITY)).not.toContain(HUB_FILE('hub/loadSharedResearch.js'));
+    // the wrapper reaches the body only through the loader: no static import, no import() of its own
+    const wrapper = stripComments(read(HUB_FILE('SharedResearchSheet.jsx')));
+    expect(importsOf(HUB_FILE('SharedResearchSheet.jsx')).filter((spec) => /SharedResearch\//.test(spec))).toEqual([]);
+    expect(lazyImportsOfCode(wrapper)).toEqual([]);
+    expect(importsOf(HUB_FILE('SharedResearchSheet.jsx'))).toContain('./hub/loadSharedResearch');
+    // the body is not a terminal of the static walk: it sits behind the edge
+    expect(Object.keys(PERMITTED_TERMINALS).filter((rel) => rel.startsWith('src/components/SharedResearch/'))).toEqual([]);
+    expect(graph(HUB_FILE('CommandCenterHub.jsx')).seen.filter((rel) => rel.startsWith('src/components/SharedResearch/'))).toEqual([]);
   });
 
   it('three.js is reached only through that edge: the engine imports it, the static hub graph does not, and PERMITTED_PACKAGES is unchanged (ruling R6b)', () => {
@@ -896,9 +939,19 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     const { seen } = graph(HUB_FILE('CommandCenterHub.jsx'));
     const code = (extra) => (rel) => stripComments(read(rel)) + (extra[rel] ? `\n${extra[rel]}\n` : '');
     const wrapper = `${AGENT_FORM_DIR}/AgentForm.jsx`;
-    expect(lazyEdgesOf(seen, code({ [wrapper]: "const x = () => import('three');" }))).not.toEqual([ENGINE_EDGE]);
-    expect(lazyEdgesOf(seen, code({ [HUB_FILE('HubAgentForm.jsx')]: "const m = () => import('../AgentForm/engine/index.js');" }))).not.toEqual([ENGINE_EDGE]);
-    expect(lazyEdgesOf(seen, code({ [`${AGENT_FORM_DIR}/loadEngine.js`]: "require('./engine/form.js');" }))).not.toEqual([ENGINE_EDGE]);
+    expect(lazyEdgesOf(seen, code({ [wrapper]: "const x = () => import('three');" }))).not.toEqual(LOAD_TIME_EDGES);
+    expect(lazyEdgesOf(seen, code({ [HUB_FILE('HubAgentForm.jsx')]: "const m = () => import('../AgentForm/engine/index.js');" }))).not.toEqual(LOAD_TIME_EDGES);
+    expect(lazyEdgesOf(seen, code({ [`${AGENT_FORM_DIR}/loadEngine.js`]: "require('./engine/form.js');" }))).not.toEqual(LOAD_TIME_EDGES);
+    // Amendment E §3.2: a second import() in the research wrapper, an import() of the body from another hub file, a require in
+    // the research loader each change what the row sees.
+    expect(lazyEdgesOf(seen, code({ [HUB_FILE('SharedResearchSheet.jsx')]: "const B = () => import('../SharedResearch/SharedResearchSheetBody.jsx');" }))).not.toEqual(LOAD_TIME_EDGES);
+    expect(lazyEdgesOf(seen, code({ [HUB_FILE('CommandCenterHub.jsx')]: "const B = () => import('../SharedResearch/screens/Start.jsx');" }))).not.toEqual(LOAD_TIME_EDGES);
+    expect(lazyEdgesOf(seen, code({ [HUB_FILE('hub/loadSharedResearch.js')]: "require('../../SharedResearch/useSharedResearch.js');" }))).not.toEqual(LOAD_TIME_EDGES);
+    // ...and a STATIC import of the body anywhere in the hub graph puts it in the walk, which the walk then fails on (it is no
+    // permitted terminal, and a module outside the directory the walk enters is the agent form wrapper's alone).
+    expect(importsOfCode("import SharedResearchSheetBody from '../SharedResearch/SharedResearchSheetBody';")).toEqual(['../SharedResearch/SharedResearchSheetBody']);
+    expect(Object.hasOwn(PERMITTED_TERMINALS, 'src/components/SharedResearch/SharedResearchSheetBody.jsx')).toBe(false);
+    expect(AGENT_FORM_WRAPPER).not.toContain('src/components/SharedResearch/SharedResearchSheetBody.jsx');
     expect(importsOfCode("import * as THREE from 'three';")).toEqual(['three']);
     expect(activityInCode(wrapper, 'requestAnimationFrame(f);')).not.toEqual([]);
     expect(activityInCode(wrapper, 'new IntersectionObserver(cb);')).not.toEqual([]);
@@ -987,6 +1040,48 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     }
     expect(seen.size, 'the provider walk found nothing').toBeGreaterThan(3);
     expect([...seen].filter((rel) => /huddle/i.test(rel))).toEqual([]);
+  });
+
+  it('Amendment E §1: the Shared Research flag module imports nothing; the admission hook and each reader make ONE import (the verdict reader, fetchFeed, the researchWork query) and no load-time import; none imports into the hub directory', () => {
+    expect(importsOf('src/config/sharedResearchFlags.js')).toEqual([]);
+    expect(lazyImportsOfCode(stripComments(read('src/config/sharedResearchFlags.js')))).toEqual([]);
+    const ONE = {
+      'src/hooks/useHubResearchAdmission.js': '../utils/filmRoomGate',
+      'src/hooks/useHubStories.js': '../services/fantasyTimesClient',
+      'src/hooks/useHubSharedResearch.js': '../services/sharedResearchRecords',
+    };
+    for (const [rel, only] of Object.entries(ONE)) {
+      expect(importsOf(rel).filter((spec) => spec !== 'react'), rel).toEqual([only]);
+      expect(lazyImportsOfCode(stripComments(read(rel))), rel).toEqual([]);
+    }
+    // the selector is pure: the beat questions, and nothing else
+    expect(importsOf('src/selectors/storySelection.js')).toEqual(['../constants/sharedResearch']);
+    expect(activityIn('src/selectors/storySelection.js')).toEqual([]);
+    // the research reader's one service makes one query, through firebase/firestore and the app's db
+    expect(importsOf('src/services/sharedResearchRecords.js').sort()).toEqual(['../firebase/config', 'firebase/firestore']);
+    // none of the five imports into the hub directory (the main-graph row below holds every src/ file to that)
+    for (const rel of [...Object.keys(ONE), 'src/selectors/storySelection.js', 'src/services/sharedResearchRecords.js']) {
+      expect(importsOf(rel).filter((spec) => /CommandCenter/.test(spec)), rel).toEqual([]);
+    }
+  });
+
+  it('Amendment E §1: each reader and the admission hook is called once, in ConnectedHub only; the body\'s directory makes ONE import of src/services/sharedResearchService.js and no hub file imports it', () => {
+    const callers = (name) => hubDirFiles().filter((rel) => new RegExp(`\\b${name}\\(`).test(stripComments(read(rel))));
+    const hubCode = stripComments(read(HUB_FILE('CommandCenterHub.jsx')));
+    for (const name of ['useHubResearchAdmission', 'useHubStories', 'useHubSharedResearch']) {
+      expect(callers(name), name).toEqual([HUB_FILE('CommandCenterHub.jsx')]);
+      expect(hubCode.match(new RegExp(`\\b${name}\\(`, 'g')), name).toHaveLength(1);
+    }
+    const connected = hubCode.slice(hubCode.indexOf('function ConnectedHub('), hubCode.indexOf('export default function CommandCenterHub('));
+    for (const name of ['useHubResearchAdmission', 'useHubStories', 'useHubSharedResearch']) expect(connected, name).toMatch(new RegExp(`\\b${name}\\(`));
+    // the mode reaches the admission hook from hub/hubFlags.js, read in ConnectedHub (R-D4)
+    expect(connected).toMatch(/mode: sharedResearchMode\(\),/);
+    // the body's own service: one import, in the body's hook, and none from this directory
+    const bodyDir = sourceFiles().filter((rel) => rel.startsWith('src/components/SharedResearch/'));
+    const importers = bodyDir.filter((rel) => importsOf(rel).some((spec) => /\/services\/sharedResearchService$/.test(spec)));
+    expect(importers).toEqual(['src/components/SharedResearch/useSharedResearch.js']);
+    expect(importsOf('src/components/SharedResearch/useSharedResearch.js').filter((spec) => /\/services\/sharedResearchService$/.test(spec))).toHaveLength(1);
+    expect(hubDirFiles().filter((rel) => /sharedResearchService/.test(stripComments(read(rel))))).toEqual([]);
   });
 
   it('the agent form flag module imports nothing: the walk stops at it as a terminal, so this row reads inside it (agent form S1 review SR-2)', () => {
@@ -1325,6 +1420,13 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     '/services/leagueLockService': ['subscribeLeagueLock'],
     // The armory flip's LD-1: ONE name, the take (App alone marks the intent).
     '/utils/hubEntryIntent': ['takeLoadoutEntry'],
+    // Amendment E V1.1 Part 2: the research door's flag, its admission hook and two readers (default exports, called once each in
+    // ConnectedHub), and the story selector.
+    '/config/sharedResearchFlags': ['SHARED_RESEARCH_MODE', 'SHARED_RESEARCH_MODES'],
+    '/hooks/useHubResearchAdmission': ['default'],
+    '/hooks/useHubStories': ['default'],
+    '/hooks/useHubSharedResearch': ['default'],
+    '/selectors/storySelection': ['selectStories'],
   });
 
   it('across every file of the directory, exactly these names and no others', () => {

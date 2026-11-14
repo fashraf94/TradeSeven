@@ -113,3 +113,68 @@ describe('AGENT_FORM_PHONE — the phone rate of the armored agent is one consta
     expect(hub).not.toMatch(/\bAGENT_FORM_PHONE\b/);
   });
 });
+
+// ── Command Center Amendment E V1.1 §1 (ruling R-D4): the research door's mode, read through this module ──────────────
+const SHARED_RESEARCH_FLAGS = '../../../config/sharedResearchFlags';
+
+/** sharedResearchMode() read against a flag module with exactly these exports. */
+async function researchModeOver(exports) {
+  vi.resetModules();
+  vi.doMock(SHARED_RESEARCH_FLAGS, () => exports);
+  const { sharedResearchMode } = await import('./hubFlags');
+  return sharedResearchMode;
+}
+
+describe('sharedResearchMode — SHARED_RESEARCH_MODE read at call time; any other value reads off', () => {
+  afterEach(() => { vi.doUnmock(SHARED_RESEARCH_FLAGS); });
+
+  it.each(['off', 'allowlist', 'on'])('the walked value %s reads as itself', async (mode) => {
+    const sharedResearchMode = await researchModeOver({ SHARED_RESEARCH_MODE: mode, SHARED_RESEARCH_MODES: ['off', 'allowlist', 'on'] });
+    expect(sharedResearchMode()).toBe(mode);
+  });
+
+  it('anything outside SHARED_RESEARCH_MODES reads off: a typo, a boolean, a case change, nothing', async () => {
+    for (const value of ['onn', 'ON', 'Allowlist', true, 1, null, undefined, '']) {
+      const sharedResearchMode = await researchModeOver({ SHARED_RESEARCH_MODE: value, SHARED_RESEARCH_MODES: ['off', 'allowlist', 'on'] });
+      expect(sharedResearchMode(), String(value)).toBe('off');
+    }
+  });
+
+  it('a value outside a malformed mode list reads off (the list itself is checked)', async () => {
+    const sharedResearchMode = await researchModeOver({ SHARED_RESEARCH_MODE: 'on', SHARED_RESEARCH_MODES: 'on' });
+    expect(sharedResearchMode()).toBe('off');
+  });
+
+  it('is read at each call, never held at module scope: a live binding that moves is followed', async () => {
+    const state = { mode: 'off' };
+    vi.resetModules();
+    vi.doMock(SHARED_RESEARCH_FLAGS, () => ({
+      get SHARED_RESEARCH_MODE() { return state.mode; },
+      SHARED_RESEARCH_MODES: ['off', 'allowlist', 'on'],
+    }));
+    const { sharedResearchMode } = await import('./hubFlags');
+    expect(sharedResearchMode()).toBe('off');
+    state.mode = 'allowlist';
+    expect(sharedResearchMode()).toBe('allowlist');
+  });
+
+  it('against the shipped flag module: the shipped value, which is off (the pin is sharedResearchFlags.test.js)', async () => {
+    vi.doUnmock(SHARED_RESEARCH_FLAGS);
+    vi.resetModules();
+    const shipped = await vi.importActual(SHARED_RESEARCH_FLAGS);
+    const { sharedResearchMode } = await import('./hubFlags');
+    expect(sharedResearchMode()).toBe(shipped.SHARED_RESEARCH_MODE);
+    expect(shipped.SHARED_RESEARCH_MODES).toContain(sharedResearchMode());
+  });
+
+  it('the source reads both exports inside the function, not at module scope', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('./hubFlags.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+    const body = /export function sharedResearchMode\(\) \{\n([\s\S]*?)\n\}/.exec(src)?.[1] ?? '';
+    expect(body).toContain('const mode = SHARED_RESEARCH_MODE;');
+    expect(body).toContain('const modes = SHARED_RESEARCH_MODES;');
+    // comments aside, the name appears twice: its import and its one read inside the function
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code.match(/\bSHARED_RESEARCH_MODE\b/g)).toHaveLength(2);
+  });
+});
