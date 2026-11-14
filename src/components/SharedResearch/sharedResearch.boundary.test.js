@@ -3,8 +3,10 @@
 //   - no non-test file under src/components/SharedResearch/ imports from
 //     src/components/CommandCenter/ (the hub's mount guard walks every such file; the
 //     wrapper, HUB_SHEETS and the guard rows are the hub amendment's);
-//   - nothing in the app imports the sheet (dark): no src/ file outside this
-//     directory names it, test files aside;
+//   - the sheet has ONE door (Command Center Amendment E V1.1 §3.2, E-2; ruling R-D3): the
+//     one src/ file outside this directory that imports it, and the one whose strings name
+//     the directory, is src/components/CommandCenter/hub/loadSharedResearch.js, a
+//     load-time import() (the hub graph's second load-time edge), test files aside;
 //   - the body reaches the network only through src/services/sharedResearchService.js,
 //     and that service only through fetchWithAuth and the two existing equip calls —
 //     no model or provider anywhere here;
@@ -85,18 +87,26 @@ describe('the boundary (K-2)', () => {
   });
 });
 
-describe('dark by construction (K-3)', () => {
-  it('no src/ file outside this directory imports it, test files aside', () => {
+/** The sheet's one door: the hub's research loader (Amendment E V1.1 §3.2). */
+const THE_DOOR = 'src/components/CommandCenter/hub/loadSharedResearch.js';
+
+describe('one door (K-3; Command Center Amendment E V1.1 §3.2)', () => {
+  it('the one src/ file outside this directory that imports it is the hub\'s research loader, a load-time import, test files aside', () => {
     const outside = walk(resolve(REPO, 'src')).filter((p) => !isTest(p) && !rel(p).startsWith('src/components/SharedResearch/'));
     expect(outside.length).toBeGreaterThan(500);
     // A cheap text filter first: a file that never writes the directory's name cannot import it (the src walk is slow).
     const importers = outside.map((p) => [p, readFileSync(p, 'utf8')]).filter(([, c]) => c.includes('SharedResearch'))
       .filter(([p, c]) => specifiersOf(c).map((s) => resolveFrom(p, s)).some((t) => t.startsWith('src/components/SharedResearch')));
-    expect(importers.map(([p]) => rel(p))).toEqual([]);
-    // …and no string outside names the directory, whatever form would load it (review d2: backticks, globs, '/src/…')
+    expect(importers.map(([p]) => rel(p))).toEqual([THE_DOOR]);
+    // ...and that import is the loader's one import() of the body: no static import, nothing else of the directory
+    const door = readFileSync(resolve(REPO, THE_DOOR), 'utf8');
+    expect(specifiersOf(door)).toEqual(['../../SharedResearch/SharedResearchSheetBody.jsx']);
+    expect(stripComments(door)).toMatch(/\bimport\('\.\.\/\.\.\/SharedResearch\/SharedResearchSheetBody\.jsx'\)/);
+    // ...and the one file whose strings name the directory, whatever form would load it (review d2: backticks, globs, '/src/…'), is that loader
     const naming = outside.map((p) => [p, readFileSync(p, 'utf8')]).filter(([, c]) => c.includes('SharedResearch/'))
       .filter(([, c]) => namesInStrings(c, 'SharedResearch/').length > 0);
-    expect(naming.map(([p]) => rel(p))).toEqual([]);
+    expect(naming.map(([p]) => rel(p))).toEqual([THE_DOOR]);
+    expect(namesInStrings(door, 'SharedResearch/')).toEqual(["'../../SharedResearch/SharedResearchSheetBody.jsx'"]);
   }, 30_000);
   it('the dark scans bite (planted: a backtick lazy import, a root-absolute import, a glob)', () => {
     const discover = resolve(REPO, 'src/components/discover/DiscoverPanel.jsx');

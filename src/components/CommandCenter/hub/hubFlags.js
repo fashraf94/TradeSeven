@@ -25,6 +25,9 @@ import {
   SCOUTING_BOARD_ENABLED,
   isHypothesisRecordsOn,
 } from '../../../config/featureFlags';
+// Shared Research (Command Center Amendment E V1.1 §1; ruling R-D4): the research door's mode, from its own flag module
+// (not featureFlags.js, for the entry chunk's sake), on its own import line.
+import { SHARED_RESEARCH_MODE, SHARED_RESEARCH_MODES } from '../../../config/sharedResearchFlags';
 
 export function hubFlags() {
   return {
@@ -32,6 +35,18 @@ export function hubFlags() {
     hypothesisRecordsOn: isHypothesisRecordsOn() === true,
     characterTab: RELEASE3_CHARACTER_TAB_ENABLED === true,
   };
+}
+
+/**
+ * Amendment E V1.1 §1 (ruling R-D4): SHARED_RESEARCH_MODE, read at CALL time — never held at module scope — so a mock of
+ * the flag module reaches every read. Any value outside SHARED_RESEARCH_MODES reads 'off' (the server's own
+ * sharedResearchMode() rule, api/_utils/sharedResearch/gate.js). ConnectedHub hands the result to the admission hook
+ * (src/hooks/useHubResearchAdmission.js), which may not import from this directory.
+ */
+export function sharedResearchMode() {
+  const modes = SHARED_RESEARCH_MODES;
+  const mode = SHARED_RESEARCH_MODE;
+  return Array.isArray(modes) && modes.includes(mode) ? mode : 'off';
 }
 
 /** Slice S2b: the Scouting Board's flag, as the shells read it (anything but exactly `true` reads false). */

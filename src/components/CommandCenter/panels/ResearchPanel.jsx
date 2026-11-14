@@ -9,13 +9,20 @@
 //
 // The hub writes nothing here: the only action is the Forge's Lists area, where the idea is kept and reviewed, and a Retry
 // of the read. A review-due idea says so in the Forge's own words and points at the same door.
+//
+// Amendment E V1.1 §3.1: for a player the research door admits, a block at the top, above the Ideas eyebrow — "Research in
+// progress" with Continue, the research read's error line with Retry, and "Work an idea", each opening the Shared Research
+// sheet (SharedResearchSheet.jsx). Outside admission (and at SHARED_RESEARCH_MODE 'off') the block does not exist. The phone's
+// Research tab draws this same panel.
 
 import React from 'react';
 import { HUB_COPY as COPY } from '../hub/hubCopy';
 import { formatHubTime } from '../hub/hubDate';
 import { HONEST_LINE, RESEARCH_STATE } from '../hub/researchView';
+import { RESEARCH_DOOR_STATUS } from '../hub/researchDoorView';
+import { HUB_COMPOSITIONS } from '../hub/composition';
 import { C, HAIR, MONO } from '../hub/hubStyle';
-import { Card, EmptyNote, Eyebrow, HubButton, HubLink, LoadingLine, Mono, Tag } from '../HubParts';
+import { Card, EmptyNote, Eyebrow, HubButton, HubLink, LoadingLine, Mono, Tag, useHubComposition } from '../HubParts';
 
 const wrap = { overflowWrap: 'anywhere', minWidth: 0 };
 
@@ -128,18 +135,48 @@ function Body({ research, onRetry }) {
   }
 }
 
-export default function ResearchPanel({ research, onOpenForge, onRetry }) {
+/**
+ * Amendment E V1.1 §3.1: the research door, at the top of the panel, for an admitted player only (`door` is null otherwise, so
+ * nothing of it exists — no inactive control). The newest open investigation's line with Continue, read once per load and never
+ * announced; the research read's error line with Retry; and "Work an idea", which stays in every state (while the read is out
+ * there is no line, and the door shows).
+ */
+function ResearchDoor({ door, onWork, onContinue, onRetry }) {
+  const phone = useHubComposition() === HUB_COMPOSITIONS.PHONE;
+  return (
+    <Card data-hub-research-door={door.status} style={{ background: C.bg, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+      {door.progress && (
+        <div data-hub-research-progress={door.progress.sessionId} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', ...wrap }}>
+          <span style={{ fontSize: 13, color: C.ink, lineHeight: 1.45, ...wrap }}>{door.progress.line}</span>
+          <span data-hub-research-continue=""><HubLink onPress={onContinue}>{COPY.research.door.continue}</HubLink></span>
+        </div>
+      )}
+      {door.status === RESEARCH_DOOR_STATUS.ERROR && (
+        <div data-hub-research-door-error="" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, color: C.ink2, lineHeight: 1.45 }}>
+          <span>{COPY.research.door.error}</span>
+          <HubLink onPress={onRetry}>{COPY.research.retry}</HubLink>
+        </div>
+      )}
+      <div>
+        <HubButton kind="primary" icon="search" full={phone} onPress={onWork} data-hub-research-work="">{COPY.research.door.work}</HubButton>
+      </div>
+    </Card>
+  );
+}
+
+export default function ResearchPanel({ research, onOpenForge, onRetry, door = null, onWork, onContinue, onRetryDoor }) {
   const status = research?.status || RESEARCH_STATE.LOADING;
   // Where there is nothing to open (a release or an account without records), the Forge action is not drawn.
-  const door = status !== RESEARCH_STATE.GATE_OFF && status !== RESEARCH_STATE.DISABLED;
+  const forgeDoor = status !== RESEARCH_STATE.GATE_OFF && status !== RESEARCH_STATE.DISABLED;
   // A review-due idea points at the Forge's review whether or not the route gave the frozen list its sentence is filled from.
   const due = status === RESEARCH_STATE.READY && research.idea?.status === 'review_due';
   return (
     <div data-hub-panel="research" data-hub-status-of={status} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {door && <ResearchDoor door={door} onWork={onWork} onContinue={onContinue} onRetry={onRetryDoor} />}
       {/* The design's header row: the eyebrow, and the action on the right (ff-stage.jsx ResearchPanel). */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <Eyebrow>{COPY.research.ideas}</Eyebrow>
-        {door && <HubButton kind="accent" small icon="hammer" onPress={onOpenForge}>{due ? COPY.research.reviewInForge : COPY.research.openForge}</HubButton>}
+        {forgeDoor && <HubButton kind="accent" small icon="hammer" onPress={onOpenForge}>{due ? COPY.research.reviewInForge : COPY.research.openForge}</HubButton>}
       </div>
       <Body research={research} onRetry={onRetry} />
     </div>

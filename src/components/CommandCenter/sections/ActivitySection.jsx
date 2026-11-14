@@ -14,11 +14,12 @@ import { formatHubTime } from '../hub/hubDate';
 import { C, HAIR, tint } from '../hub/hubStyle';
 import { HubLink, Icon, LoadingLine, Mono, Row, Section } from '../HubParts';
 
-const KIND_ICON = { completed: 'sword', deployed: 'bolt', loadout: 'pencil', idea: 'search' };
+const KIND_ICON = { completed: 'sword', deployed: 'bolt', loadout: 'pencil', idea: 'search', research: 'search' };
 
 /**
  * The list itself, as the section and the activity sheet both draw it. A row opens something only when it names a game
- * (`battleId`): a loadout row is a fact, not a destination.
+ * (`battleId`) or, since Amendment E V1.1 §3.3, an investigation (`sessionId`, which opens the Shared Research sheet on it):
+ * a loadout row is a fact, not a destination. The press hands on its event, so the sheet a row opens returns focus to it.
  */
 export function ActivityRows({ items, onOpen }) {
   return (
@@ -26,7 +27,7 @@ export function ActivityRows({ items, onOpen }) {
       {items.map((e, i) => (
         <Row
           key={e.id}
-          onPress={onOpen && e.battleId ? () => onOpen(e) : undefined}
+          onPress={onOpen && (e.battleId || e.sessionId) ? (event) => onOpen(e, event) : undefined}
           ariaLabel={COPY.activity.rowLabel(e.text, e.sub, e.at)}
           style={{ minHeight: 52, padding: '9px 12px', borderTop: i ? `1px solid ${HAIR}` : 'none', borderRadius: 0 }}
           right={<Mono style={{ fontSize: 10, color: C.ink3, whiteSpace: 'nowrap', flexShrink: 0 }}>{e.at}</Mono>}

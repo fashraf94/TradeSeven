@@ -23,6 +23,11 @@
 // button), with the hub root as the fallback if that control is gone by then
 // (S1 review L3-3).
 //
+// `open(kind, entry)` (Amendment E V1.1 §3.2): a sheet opened with an entry —
+// the Shared Research sheet's `{ mode, sessionId }` — holds it beside the open
+// sheet as `entry`, and every open replaces it and every close clears it, so an
+// entry never outlives its sheet.
+//
 // The traits sheet is mounted fresh on every open: `traitsEpoch` is bumped at
 // each open and used as its React key, exactly as EquipStation and
 // desktop/EquipBench do. LOAD-BEARING there — half of TraitsSheet's
@@ -44,6 +49,8 @@ export const HUB_SHEETS = Object.freeze({
   SCOUTING: 'scouting',
   // Huddle S1 (Huddle C §C8; Command Center Amendment D §D3): the Huddle sheet, a HubSheet, which registers itself.
   HUDDLE: 'huddle',
+  // Amendment E V1.1 §3.2: the Shared Research sheet (SharedResearchSheet.jsx), a HubSheet, which registers itself — not LEGACY.
+  RESEARCH: 'research',
 });
 
 const LEGACY = new Set([HUB_SHEETS.RECORD, HUB_SHEETS.ARCHETYPE, HUB_SHEETS.WATCHLIST, HUB_SHEETS.TRAITS, HUB_SHEETS.SCOUTING]);
@@ -51,6 +58,7 @@ const LEGACY = new Set([HUB_SHEETS.RECORD, HUB_SHEETS.ARCHETYPE, HUB_SHEETS.WATC
 export function useHubSheets(rootRef) {
   const stack = useHubOverlays();
   const [sheet, setSheet] = useState(null);
+  const [entry, setEntry] = useState(null);
   const [traitsEpoch, setTraitsEpoch] = useState(0);
   const openerRef = useRef(null);
   const heldRef = useRef(null);
@@ -67,8 +75,9 @@ export function useHubSheets(rootRef) {
 
   return {
     sheet,
+    entry,
     traitsEpoch,
-    open: (kind) => (event) => {
+    open: (kind, opened = null) => (event) => {
       const opener = event?.currentTarget ?? null;
       openerRef.current = opener;
       release(false);
@@ -79,10 +88,12 @@ export function useHubSheets(rootRef) {
         stack.open(heldRef.current, { opener, within: rootRef.current });
       }
       if (kind === HUB_SHEETS.TRAITS) setTraitsEpoch((epoch) => epoch + 1);
+      setEntry(opened);
       setSheet(kind);
     },
     close: () => {
       release(true);
+      setEntry(null);
       setSheet(null);
     },
     opener: openerRef.current,

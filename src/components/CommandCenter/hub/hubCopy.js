@@ -308,6 +308,24 @@ export const HUB_COPY = Object.freeze({
       thesisCut: "Your agent gives this list's names priority and reads only the start of the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.",
       noThesis: "Your agent gives this list's names priority. It doesn't read or learn from your ideas yet.",
     }),
+
+    // ── Amendment E V1.1 §5, Part 2: the research door and the Shared Research sheet (the hub's three sheet strings) ──
+    workTitle: 'Work an idea',
+    workEyebrow: 'Shared Research',
+    workLabel: 'Shared Research · work an idea',
+    door: Object.freeze({
+      work: 'Work an idea',
+      /** The open investigation, read once per load and never announced; "finding" for one, as the sheet's own line says it. */
+      inProgress: (time, n) => `Research in progress · last update ${time} · ${n} ${n === 1 ? 'finding' : 'findings'}`,
+      /** Opened, not yet stepped: no `telemetry.lastTurnAt`. */
+      inProgressCount: (n) => `Research in progress · ${n} ${n === 1 ? 'finding' : 'findings'}`,
+      continue: 'Continue',
+      /** The research read failed: this line and the Retry beside it; the door stays. */
+      error: "Couldn't check your research",
+      /** The sheet's body failed to load: this line and Try again, which starts a fresh import. */
+      loadFailed: "Couldn't open Shared Research",
+      tryAgain: 'Try again',
+    }),
   }),
 
   loadout: Object.freeze({
@@ -604,6 +622,10 @@ export const HUB_COPY = Object.freeze({
     /** Slice S6 (spec §8.2): the current idea's two events; a revision is never a new idea. */
     ideaSaved: 'Idea saved',
     ideaState: (label) => `Idea · ${label}`,
+    /** Amendment E V1.1 §3.3: the research rows, from the research reader's records only; each opens that investigation. */
+    researchOpened: 'Research opened',
+    researchConcluded: 'Research concluded',
+    ideaFromResearch: 'Idea saved from research',
     /** The activity sheet: the same list in full. */
     sheetLabel: 'Recent activity',
     sheetTitle: 'Recent activity',

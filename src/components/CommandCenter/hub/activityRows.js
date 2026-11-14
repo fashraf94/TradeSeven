@@ -31,8 +31,11 @@
 //             when it is not this year's. A record with no readable time yields NO
 //             row, and a loadout row exists only where an equip time is recorded:
 //             nothing is invented.
+//             research.opened:{sessionId} at a Shared Research record's `createdAt`, research.concluded:{sessionId} and
+//             research.saved:{sessionId} at its `endedAt` (Amendment E V1.1 §3.3), from the research reader's records
+//             (src/hooks/useHubSharedResearch.js); each carries `sessionId` and opens the sheet on that investigation
 //   order     newest first, then the kind order completed, deployed, loadout,
-//             idea, then id; kind-specific ids, each once.
+//             idea, huddle, research, then id; kind-specific ids, each once.
 //   cutoff    nothing older than the oldest completed record of the window (so a
 //             list never reaches past what its heading says). With no completed
 //             record at all the current-state rows stay, with their "since"
@@ -55,8 +58,45 @@ import { formatHubDayTime, formatHubDayYear } from './activityDates';
 import { hubMs } from './hubDate';
 import { LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
 
-export const ACTIVITY_KINDS = Object.freeze({ COMPLETED: 'completed', DEPLOYED: 'deployed', LOADOUT: 'loadout', IDEA: 'idea', HUDDLE: 'huddle' });
-const KIND_ORDER = Object.freeze([ACTIVITY_KINDS.COMPLETED, ACTIVITY_KINDS.DEPLOYED, ACTIVITY_KINDS.LOADOUT, ACTIVITY_KINDS.IDEA, ACTIVITY_KINDS.HUDDLE]);
+export const ACTIVITY_KINDS = Object.freeze({ COMPLETED: 'completed', DEPLOYED: 'deployed', LOADOUT: 'loadout', IDEA: 'idea', HUDDLE: 'huddle', RESEARCH: 'research' });
+const KIND_ORDER = Object.freeze([ACTIVITY_KINDS.COMPLETED, ACTIVITY_KINDS.DEPLOYED, ACTIVITY_KINDS.LOADOUT, ACTIVITY_KINDS.IDEA, ACTIVITY_KINDS.HUDDLE, ACTIVITY_KINDS.RESEARCH]);
+
+/** The research row's sub: the investigation's question, clipped to this many characters (an ellipsis marks a cut). */
+export const RESEARCH_QUESTION_CLIP = 90;
+/** The origin the research rows are built from (src/services/sharedResearchRecords.js SHARED_RESEARCH_ORIGIN; pinned equal by test). */
+const SHARED_RESEARCH_ORIGIN = 'shared_research';
+
+const clip = (text, max) => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
+
+/**
+ * Amendment E V1.1 §3.3: the research rows, from the research reader's records only (src/hooks/useHubSharedResearch.js) —
+ * "Research opened" for every Shared Research record at its `createdAt`, with the question clipped as its sub;
+ * "Research concluded" (`terminalReason` 'concluded') and "Idea saved from research" ('saved_to_list') at its `endedAt`. An
+ * abandoned investigation has its opened row only. Ids `research.opened:{sessionId}`, `research.concluded:{sessionId}`,
+ * `research.saved:{sessionId}`; each row carries `sessionId`, so it opens the sheet on that investigation. A record of another
+ * origin, with no session id or no readable time yields no row: nothing is invented.
+ */
+function researchEvents(research) {
+  const events = [];
+  for (const record of Array.isArray(research) ? research : []) {
+    if (!record || typeof record !== 'object' || record.origin !== SHARED_RESEARCH_ORIGIN) continue;
+    const sessionId = nonEmpty(record.host?.id);
+    if (!sessionId) continue;
+    const createdMs = hubMs(record.createdAt);
+    if (createdMs !== null) {
+      const question = nonEmpty(record.question);
+      events.push({ ms: createdMs, kind: ACTIVITY_KINDS.RESEARCH, id: `research.opened:${sessionId}`, sessionId, text: COPY.activity.researchOpened, sub: question ? clip(question.trim(), RESEARCH_QUESTION_CLIP) : '' });
+    }
+    const endedMs = hubMs(record.endedAt);
+    if (endedMs === null) continue;
+    if (record.terminalReason === 'concluded') {
+      events.push({ ms: endedMs, kind: ACTIVITY_KINDS.RESEARCH, id: `research.concluded:${sessionId}`, sessionId, text: COPY.activity.researchConcluded, sub: '' });
+    } else if (record.terminalReason === 'saved_to_list') {
+      events.push({ ms: endedMs, kind: ACTIVITY_KINDS.RESEARCH, id: `research.saved:${sessionId}`, sessionId, text: COPY.activity.ideaFromResearch, sub: '' });
+    }
+  }
+  return events;
+}
 
 /**
  * Huddle S1 (Huddle spec Amendment C V1.2 §C8; Command Center spec V1.2 Amendment D §D7): the plan rows, from
@@ -168,10 +208,12 @@ function loadoutEvents(agent, { archetypeName, characterTab, watchlist, nowMs })
  * @param {string|null} [p.archetypeName]
  * @param {boolean}  [p.characterTab] RELEASE3_CHARACTER_TAB_ENABLED
  * @param {object|null} [p.idea]      the current idea's descriptor (hub/researchView.js ideaActivityOf), once the idea reader holds it
+ * @param {object[]|null} [p.huddle] the plan rows (hub/huddleView.js huddleActivityOf), Huddle S1
+ * @param {object[]|null} [p.research] the research reader's Shared Research records (Amendment E V1.1 §3.3), once it holds them
  * @param {number}   [p.nowMs]        the clock, for the year of a time from another year
  * @returns {{ status: 'ready', rows: object[] }}
  */
-export function deriveActivity({ battles, live, rowsById, agent = null, watchlist = null, archetypeName = null, characterTab = false, idea = null, huddle = null, nowMs }) {
+export function deriveActivity({ battles, live, rowsById, agent = null, watchlist = null, archetypeName = null, characterTab = false, idea = null, huddle = null, research = null, nowMs }) {
   const windowDocs = (Array.isArray(battles) ? battles : []).filter((doc) => doc && typeof doc.id === 'string');
   const liveDocs = (Array.isArray(live) ? live : []).filter((doc) => doc && typeof doc.id === 'string');
   const liveIds = new Set(liveDocs.map((doc) => doc.id));
@@ -216,6 +258,7 @@ export function deriveActivity({ battles, live, rowsById, agent = null, watchlis
   if (agent && typeof agent === 'object') events.push(...loadoutEvents(agent, { archetypeName, characterTab, watchlist, nowMs }));
   events.push(...ideaEvents(idea, { nowMs }));
   events.push(...huddleEvents(huddle));
+  events.push(...researchEvents(research));
 
   const ordered = events
     .filter((event) => event.ms >= cutoff)
@@ -235,6 +278,7 @@ export function deriveActivity({ battles, live, rowsById, agent = null, watchlis
       at: COPY.time.et(formatHubDayTime(event.ms, nowMs)),
       ms: event.ms,
       ...(event.battleId ? { battleId: event.battleId } : {}),
+      ...(event.sessionId ? { sessionId: event.sessionId } : {}),
     }));
   }
   return Object.freeze({ status: 'ready', rows: Object.freeze(list) });
@@ -283,12 +327,12 @@ export function ideaKnowledgeOf(research) {
  * so a list built from a kept or a failed-to-refresh window says so as Games does.
  */
 export function activitySectionOf({
-  battles, failed = false, live, rowsById, agent, watchlist, archetypeName, characterTab, idea = null, huddle = null, nowMs, knowledge = LOADOUT_KNOWLEDGE.SETTLED, windowAge = null,
+  battles, failed = false, live, rowsById, agent, watchlist, archetypeName, characterTab, idea = null, huddle = null, research = null, nowMs, knowledge = LOADOUT_KNOWLEDGE.SETTLED, windowAge = null,
 }) {
   if (battles === null || battles === undefined) {
     return Object.freeze({ status: failed ? 'error' : 'loading', rows: Object.freeze([]) });
   }
-  const section = deriveActivity({ battles, live, rowsById, agent, watchlist, archetypeName, characterTab, idea, huddle, nowMs });
+  const section = deriveActivity({ battles, live, rowsById, agent, watchlist, archetypeName, characterTab, idea, huddle, research, nowMs });
   if (section.rows.length === 0 && knowledge !== LOADOUT_KNOWLEDGE.SETTLED) {
     return Object.freeze({ status: knowledge === LOADOUT_KNOWLEDGE.FAILED ? 'error' : 'loading', rows: section.rows });
   }
