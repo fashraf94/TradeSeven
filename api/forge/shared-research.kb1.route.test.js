@@ -231,6 +231,18 @@ describe('row 2 — the method\'s audience, whatever the mode', () => {
     expect(sessionDoc(sessionId).method.source).toBe('kb');
     expect(new Set(state.audience.mock.calls.map((c) => c[0]))).toEqual(new Set(['u-listed']));
   });
+
+  it('every step re-checks the audience for the gate\'s uid: the player taken off the list, a listed uid planted in the step\'s body → the baseline, audience', async () => {
+    const { sessionId } = await ownWords({ uid: 'u-listed', requestId: 'fr-step' });
+    await step(sessionId, 1, quiet());
+    state.listed = ['u-vip']; // the founder narrows the method's list
+    state.audience.mockClear();
+    await step(sessionId, 2, quiet(), { extra: { uid: 'u-vip', userId: 'u-vip', user: { uid: 'u-vip' } } });
+    expect(partnerTurns(sessionId).slice(1).map((t) => [t.method.source, t.methodChange ?? null])).toEqual([
+      ['kb', null], ['baseline', { from: 'KB-IDEA-EVALUATION-001@0.1', to: 'baseline@v0', reason: 'audience' }],
+    ]);
+    expect(new Set(state.audience.mock.calls.map((c) => c[0]))).toEqual(new Set(['u-listed']));
+  });
 });
 
 describe('row 3 — the method on every turn', () => {
