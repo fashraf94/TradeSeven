@@ -585,8 +585,12 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     await conflictAndRename(ctx, 'split', 1.5, 1.6, price);
     expect(tied().ledger.holdings.AAPL.deferredRename).toEqual(record);
     expect(rowOf(ctx, S[1]).markedGapUsd).toBe(0);
-    await closeDay(ctx, S[2], { AAPL: undefined, AAPLX: price });
+    // The snapshot still quotes the old symbol, unmoved: a holding whose rename waits is valued at its CARRIED mark, as
+    // R-36's blocked rename is (its share basis is unresolved) — never the snapshot's price against an unadjusted count.
+    await closeDay(ctx, S[2], { AAPL: BASE.AAPL, AAPLX: price });
     expect(tied().ledger.holdings.AAPL.deferredRename).toEqual(record);
+    expect(rowOf(ctx, S[2]).marks.AAPL.quality).toBe('carried_forward');
+    expect(rowOf(ctx, S[2]).comparisonMarks.AAPL.quality).toBe('carried_forward');
     expect(rowOf(ctx, S[2]).markedGapUsd).toBe(0);
     await closeDay(ctx, S[3], { AAPL: { price, corporateActions: [basisRow('split', 1.5)] }, AAPLX: price });
     expect(Object.keys(tied().ledger.holdings)).toEqual(['AAPLX']);
