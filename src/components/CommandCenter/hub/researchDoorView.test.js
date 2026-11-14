@@ -11,7 +11,7 @@ import { formatHubDayTime } from './activityDates';
 import { bookViewOf } from './perGameLoadoutModel';
 import { LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
 import {
-  RESEARCH_DOOR_STATUS, admissionBattleIdOf, equippedBookLabelOf, equippedListLabelOf, equippedWatchlistLabelOf, researchDoorOf, researchRecordsOf, researchSheetHeldBy, sessionIdOf,
+  RESEARCH_DOOR_STATUS, admissionBattleIdOf, doorRetryOf, equippedBookLabelOf, equippedListLabelOf, equippedWatchlistLabelOf, researchDoorOf, researchRecordsOf, researchSheetHeldBy, sessionIdOf,
 } from './researchDoorView';
 
 const AUTH = Object.freeze({ signedIn: true, uid: 'uid-A', authEpoch: 2 });
@@ -65,7 +65,18 @@ describe('researchDoorOf — the door\'s three states (amendment §3.1)', () => 
   });
 
   it('error: the error state, no line', () => {
-    expect(researchDoorOf({ read: { status: 'error', records: null }, nowMs: NOW })).toEqual({ status: RESEARCH_DOOR_STATUS.ERROR, progress: null });
+    expect(researchDoorOf({ read: { status: 'error', records: null }, nowMs: NOW })).toEqual({ status: RESEARCH_DOOR_STATUS.ERROR, progress: null, refreshing: false, retryNotBefore: null });
+  });
+
+  it("error with a Retry out: refreshing, so the door shows its loading line in the error line's place (R-D7)", () => {
+    expect(researchDoorOf({ read: { status: 'error', records: null, refreshing: true }, nowMs: NOW })).toMatchObject({ status: RESEARCH_DOOR_STATUS.ERROR, refreshing: true });
+  });
+
+  it('error after a press inside the wait: when the next may be pressed, said only while that wait still stands (R-D7)', () => {
+    const read = { status: 'error', records: null };
+    expect(researchDoorOf({ read, nowMs: NOW, retryNotBefore: NOW + 12000 }).retryNotBefore).toBe(NOW + 12000);
+    expect(researchDoorOf({ read, nowMs: NOW, retryNotBefore: NOW }).retryNotBefore).toBeNull();
+    expect(researchDoorOf({ read, nowMs: NOW, retryNotBefore: NOW - 1 }).retryNotBefore).toBeNull();
   });
 
   it('ready, nothing open: no line — never "no research" (the read is bounded)', () => {
@@ -101,6 +112,23 @@ describe('researchDoorOf — the door\'s three states (amendment §3.1)', () => 
 
   it('a kept answer through a failed refresh (ready, stale) still shows its line', () => {
     expect(researchDoorOf({ read: { ...ready([record('s1')]), stale: true }, nowMs: NOW }).progress.sessionId).toBe('s1');
+  });
+});
+
+describe("doorRetryOf — the door's Retry, S6's wait judged at the press (ruling R-D7)", () => {
+  const WAIT = 30000;
+  it('no Retry yet for this owner and epoch: the press reads', () => {
+    expect(doorRetryOf({ last: undefined, nowMs: NOW, cooldownMs: WAIT })).toEqual({ read: true, notBefore: null });
+  });
+
+  it('a press inside the wait reads nothing and says when the next may be pressed', () => {
+    expect(doorRetryOf({ last: NOW - 10000, nowMs: NOW, cooldownMs: WAIT })).toEqual({ read: false, notBefore: NOW + 20000 });
+    expect(doorRetryOf({ last: NOW - 29999, nowMs: NOW, cooldownMs: WAIT })).toEqual({ read: false, notBefore: NOW + 1 });
+  });
+
+  it('a press once the wait has passed reads: exactly the wait after the last counts as passed', () => {
+    expect(doorRetryOf({ last: NOW - WAIT, nowMs: NOW, cooldownMs: WAIT })).toEqual({ read: true, notBefore: null });
+    expect(doorRetryOf({ last: NOW - 5 * WAIT, nowMs: NOW, cooldownMs: WAIT })).toEqual({ read: true, notBefore: null });
   });
 });
 

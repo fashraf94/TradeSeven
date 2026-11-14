@@ -263,3 +263,45 @@ describe.each(READERS)('$name', ({ useHook, service, payloadKey, answerFor, call
     expect(service()).toHaveBeenCalledTimes(1);
   });
 });
+
+// Ruling R-D7 (Q3): the research reader says while a Retry is out, so the door can show its loading line. The stories reader
+// has no Retry surface in Part 2 and is left as it was.
+describe('useHubSharedResearch: a Retry that is out says so (ruling R-D7)', () => {
+  it('the first read is loading, never refreshing; a Retry after a failed read is refreshing until it answers, then not', async () => {
+    const first = deferred();
+    const second = deferred();
+    svc.fetchSharedResearchRecords.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const h = mount(useHubSharedResearch, { auth: A, enabled: true });
+    await flush();
+    expect(h.last().read.status).toBe('loading');
+    expect(h.last().read.refreshing).not.toBe(true);
+    await act(async () => { first.reject(new Error('offline')); });
+    await flush();
+    expect(h.last().read.status).toBe('error');
+    expect(h.last().read.refreshing).not.toBe(true);
+    act(() => { h.last().refresh(); });
+    expect(h.last().read).toMatchObject({ status: 'error', refreshing: true });
+    await act(async () => { second.resolve([{ id: 'sr_1', origin: 'shared_research' }]); });
+    await flush();
+    expect(h.last().read.status).toBe('ready');
+    expect(h.last().read.refreshing).not.toBe(true);
+  });
+
+  it('a Retry that fails ends too: the error state again, or a kept answer marked stale', async () => {
+    svc.fetchSharedResearchRecords.mockRejectedValueOnce(new Error('offline')).mockRejectedValueOnce(new Error('offline'));
+    const h = mount(useHubSharedResearch, { auth: A, enabled: true });
+    await flush();
+    await act(async () => { await h.last().refresh(); });
+    await flush();
+    expect(h.last().read.status).toBe('error');
+    expect(h.last().read.refreshing).not.toBe(true);
+
+    svc.fetchSharedResearchRecords.mockResolvedValueOnce([{ id: 'sr_1', origin: 'shared_research' }]).mockRejectedValueOnce(new Error('offline'));
+    const k = mount(useHubSharedResearch, { auth: B, enabled: true });
+    await flush();
+    await act(async () => { await k.last().refresh(); });
+    await flush();
+    expect(k.last().read).toMatchObject({ status: 'ready', stale: true });
+    expect(k.last().read.refreshing).not.toBe(true);
+  });
+});

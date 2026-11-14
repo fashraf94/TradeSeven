@@ -134,7 +134,7 @@ import { shadowTierFor } from './hub/shadowGeometry';
 import { liveReadKnown, shadowStatusWords } from './hub/shadowStatus';
 import { useHubWidth } from './hub/useHubWidth';
 import useHubReaders from './hub/useHubReaders';
-import useHubResearch from './hub/useHubResearch';
+import useHubResearch, { RETRY_COOLDOWN_MS } from './hub/useHubResearch';
 import { useNavClearance } from './hub/useNavClearance';
 import ActivitySheet from './ActivitySheet';
 import { areaPanelId, areaTabId } from './AreaControls';
@@ -180,7 +180,7 @@ import useHubResearchAdmission from '../../hooks/useHubResearchAdmission';
 import useHubStories from '../../hooks/useHubStories';
 import useHubSharedResearch from '../../hooks/useHubSharedResearch';
 import { selectStories } from '../../selectors/storySelection';
-import { admissionBattleIdOf, equippedListLabelOf, researchDoorOf, researchRecordsOf, researchSheetHeldBy } from './hub/researchDoorView';
+import { admissionBattleIdOf, doorRetryOf, equippedListLabelOf, researchDoorOf, researchRecordsOf, researchSheetHeldBy } from './hub/researchDoorView';
 import SharedResearchSheet from './SharedResearchSheet';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
@@ -846,6 +846,11 @@ function ConnectedHub({ site, hub, sections }) {
   });
   const hubStories = useHubStories({ auth: researchAuth, enabled: researchAdmission.admitted });
   const sharedResearch = useHubSharedResearch({ auth: researchAuth, enabled: researchAdmission.admitted });
+  // Ruling R-D7 (Q3): the door's Retry waits S6's 30 s (RETRY_COOLDOWN_MS) per owner and epoch, judged at the press
+  // (hub/researchDoorView.js doorRetryOf). `doorRetries` holds each owner and epoch's last Retry that read; `doorWait` the next
+  // allowed press after one pressed inside the wait, for the door to say. No timer: a wait that has passed stops being said.
+  const doorRetries = useRef(new Map());
+  const [doorWait, setDoorWait] = useState(null);
   const deploy = useHubDeploy({ deployAttempt, readers, hub });
   const live = { ...sections, ...readers.sections };
   // Huddle S1: the section, the next action's rule (C6), Partnership (C8), Activity's rows (C8) and the reconfirm line (E1: from
@@ -879,14 +884,25 @@ function ConnectedHub({ site, hub, sections }) {
   // exists, and `live` is untouched.
   let researchDoor = null;
   if (researchAdmission.admitted) {
-    live.researchDoor = researchDoorOf({ read: sharedResearch.read, nowMs: Date.now() });
+    // The owner and epoch the door is this render's (review B3): a sheet opened for another is closed, and a wait is this owner's.
+    const ownerKey = researchAuth?.signedIn === true ? `${researchAuth.uid}:${researchAuth.authEpoch ?? ''}` : null;
+    live.researchDoor = researchDoorOf({ read: sharedResearch.read, nowMs: Date.now(), retryNotBefore: doorWait && doorWait.ownerKey === ownerKey ? doorWait.notBefore : null });
     const records = researchRecordsOf(sharedResearch.read);
     if (live.activityInputs && records) live.activityInputs = { ...live.activityInputs, research: records };
     const rankedAgent = readers.agent?.status === 'ready' ? readers.agent.agent : null;
     researchDoor = {
-      // The owner and epoch the door is this render's (review B3): a sheet opened for another is closed.
-      ownerKey: researchAuth?.signedIn === true ? `${researchAuth.uid}:${researchAuth.authEpoch ?? ''}` : null,
-      retry: sharedResearch.refresh,
+      ownerKey,
+      // R-D7: a press inside the wait reads nothing and says when the next may be pressed. It answers whether it read, so the
+      // door knows whether its error row is leaving (focus, review C3).
+      retry: () => {
+        const nowMs = Date.now();
+        const press = doorRetryOf({ last: doorRetries.current.get(ownerKey), nowMs, cooldownMs: RETRY_COOLDOWN_MS });
+        if (!press.read) { setDoorWait({ ownerKey, notBefore: press.notBefore }); return false; }
+        doorRetries.current.set(ownerKey, nowMs);
+        setDoorWait(null);
+        sharedResearch.refresh();
+        return true;
+      },
       stories: selectStories({ stories: hubStories.read.status === 'ready' ? hubStories.read.stories : [], nowMs: Date.now() }).items,
       agentName: typeof rankedAgent?.name === 'string' && rankedAgent.name.trim() ? rankedAgent.name.trim() : null,
       agentId: typeof rankedAgent?.id === 'string' && rankedAgent.id ? rankedAgent.id : null,

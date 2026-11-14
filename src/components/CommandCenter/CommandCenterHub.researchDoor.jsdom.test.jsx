@@ -42,6 +42,8 @@ import CommandCenterHub from './CommandCenterHub';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { selectStories } from '../../selectors/storySelection';
 import { FILM_ROOM_VERDICT_PATH, resetFilmRoomVerdicts } from '../../utils/filmRoomGate';
+import { formatHubTime } from './hub/hubDate';
+import { RETRY_COOLDOWN_MS } from './hub/useHubResearch';
 import { byRole, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav, press } from './__fixtures__/hubTestKit';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -132,7 +134,7 @@ const verdictCalls = () => fetchSpy.mock.calls.filter(([url]) => String(url).sta
 /** Every request but the Huddle's own status read, which today's hub makes at every mode (DRB_HUDDLE_ENABLED; not this build's). */
 const newRequests = () => fetchSpy.mock.calls.map(([url]) => String(url)).filter((url) => !url.startsWith('/api/huddle/'));
 /** Every element this build adds (the S6 idea card's own data-hub-research-retry / -stale / -wait are S6's, not the door's). */
-const DOOR_SELECTORS = ['[data-hub-research-door]', '[data-hub-research-progress]', '[data-hub-research-continue]', '[data-hub-research-door-error]', '[data-hub-research-work]', '[data-hub-research-load-failed]'];
+const DOOR_SELECTORS = ['[data-hub-research-door]', '[data-hub-research-progress]', '[data-hub-research-continue]', '[data-hub-research-door-error]', '[data-hub-research-door-wait]', '[data-hub-research-work]', '[data-hub-research-load-failed]'];
 const doorElements = () => DOOR_SELECTORS.flatMap((s) => [...document.querySelectorAll(s)]);
 const door = () => document.querySelector('[data-hub-research-door]');
 const workButton = () => document.querySelector('[data-hub-research-work]');
@@ -350,6 +352,107 @@ describe('the Research panel\'s door (amendment §3.1)', () => {
     expect(document.querySelector(shown)).not.toBeNull();
     expect(door().matches(LIVE)).toBe(false);
     expect(door().querySelector(LIVE)).toBeNull();
+  });
+});
+
+// Ruling R-D7 (Q3): the door's Retry follows S6's pattern. While it is out, the loading line stands in the error line's place;
+// at most one Retry per 30 s per owner and epoch (RETRY_COOLDOWN_MS, S6's constant), judged at the press; a press inside the
+// wait reads nothing and says "You can try again at {time}". There is no timer.
+describe("the door's Retry: S6's pattern (ruling R-D7)", () => {
+  beforeEach(() => { m.mode = 'on'; });
+  const errorRow = () => document.querySelector('[data-hub-research-door-error]');
+  const retryButton = () => byRole(errorRow(), 'button', COPY.research.retry)[0];
+  const waitLine = () => document.querySelector('[data-hub-research-door-wait]');
+  const waitWords = (ms) => COPY.research.retryAt(COPY.time.et(formatHubTime(ms, { roundUp: true })));
+
+  it('while a Retry is out: the loading line in the error line\'s place, and "Work an idea" stays', async () => {
+    svc.fetchSharedResearchRecords.mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(() => new Promise(() => {}));
+    await render('mobile');
+    await openResearchArea('mobile');
+    expect(errorRow()).not.toBeNull();
+    click(retryButton());
+    await flush();
+    expect(svc.fetchSharedResearchRecords).toHaveBeenCalledTimes(2);
+    expect(errorRow()).toBeNull();
+    const loading = door().querySelector('[data-hub-loading]');
+    expect(loading).not.toBeNull();
+    expect(loading.textContent).toBe(COPY.research.loading);
+    expect(workButton()).not.toBeNull();
+  });
+
+  it.each(['mobile', 'desktop'])('%s: a press inside the 30 s wait reads nothing, says when the next may be pressed, and focus stays on Retry', async (site) => {
+    svc.fetchSharedResearchRecords.mockRejectedValue(new Error('offline'));
+    await render(site);
+    await openResearchArea(site);
+    click(retryButton());
+    await flush();
+    expect(svc.fetchSharedResearchRecords).toHaveBeenCalledTimes(2);
+    expect(waitLine()).toBeNull();
+    vi.setSystemTime(NOW + 10_000);
+    retryButton().focus();
+    click(retryButton());
+    await flush();
+    expect(svc.fetchSharedResearchRecords).toHaveBeenCalledTimes(2);
+    expect(RETRY_COOLDOWN_MS).toBe(30_000);
+    expect(waitLine().textContent).toBe(waitWords(NOW + RETRY_COOLDOWN_MS));
+    expect(document.activeElement).toBe(retryButton());
+    expect(door().contains(document.activeElement)).toBe(true);
+  });
+
+  it('a press once the wait has passed reads once; the wait is no longer said, and focus is on "Work an idea" (review C3)', async () => {
+    svc.fetchSharedResearchRecords.mockRejectedValue(new Error('offline'));
+    await render('mobile');
+    await openResearchArea('mobile');
+    click(retryButton());
+    await flush();
+    vi.setSystemTime(NOW + 10_000);
+    click(retryButton());
+    await flush();
+    expect(waitLine()).not.toBeNull();
+    vi.setSystemTime(NOW + RETRY_COOLDOWN_MS);
+    retryButton().focus();
+    click(retryButton());
+    expect(document.activeElement).toBe(workButton());
+    await flush();
+    expect(svc.fetchSharedResearchRecords).toHaveBeenCalledTimes(3);
+    expect(errorRow()).not.toBeNull();
+    expect(waitLine()).toBeNull();
+    expect(door().contains(document.activeElement)).toBe(true);
+  });
+
+  it('a wait that has passed is no longer said, with no press and no timer', async () => {
+    svc.fetchSharedResearchRecords.mockRejectedValue(new Error('offline'));
+    const x = await render('mobile');
+    await openResearchArea('mobile');
+    click(retryButton());
+    await flush();
+    vi.setSystemTime(NOW + 10_000);
+    click(retryButton());
+    await flush();
+    expect(waitLine()).not.toBeNull();
+    vi.setSystemTime(NOW + RETRY_COOLDOWN_MS + 1);
+    x.rerender(<CommandCenterHub site="mobile" hub={hubOf()} />);
+    await flush();
+    expect(waitLine()).toBeNull();
+    expect(svc.fetchSharedResearchRecords).toHaveBeenCalledTimes(2);
+  });
+
+  it('the wait is per owner and epoch: a new epoch\'s first Retry reads at once', async () => {
+    svc.fetchSharedResearchRecords.mockRejectedValue(new Error('offline'));
+    const x = await render('mobile');
+    await openResearchArea('mobile');
+    click(retryButton());
+    await flush();
+    expect(svc.fetchSharedResearchRecords).toHaveBeenCalledTimes(2);
+    vi.setSystemTime(NOW + 5_000);
+    r.identity = { resolved: true, uid: UID, authEpoch: 3 };
+    x.rerender(<CommandCenterHub site="mobile" hub={hubOf()} />);
+    await flush();
+    expect(svc.fetchSharedResearchRecords).toHaveBeenCalledTimes(3);
+    click(retryButton());
+    await flush();
+    expect(svc.fetchSharedResearchRecords).toHaveBeenCalledTimes(4);
+    expect(waitLine()).toBeNull();
   });
 });
 

@@ -11,6 +11,10 @@
 //                         shows), error (the line and Retry, the door stays) or ready, with the newest open investigation's
 //                         line and its session id for Continue — or no line. Finding nothing open is never "no research":
 //                         the read is bounded (src/services/sharedResearchRecords.js).
+//                         In the error state it also carries its Retry's state (ruling R-D7, Q3): whether a Retry is out, and
+//                         when the next may be pressed after one pressed inside the wait.
+//   doorRetryOf           whether a press of the door's Retry reads (S6's pattern, hub/useHubResearch.js retry): at most one
+//                         per wait per owner and epoch, judged at the press. No timer.
 //   researchRecordsOf     the records Activity's research rows are built from, once the reader holds them.
 //   equippedBookLabelOf   the sheet's equippedListLabel with per-game loadouts on: the BaggerBomb book's name exactly as the
 //                         Loadout card shows it (hub/perGameLoadoutModel.js bookViewOf), or null without a book.
@@ -62,14 +66,17 @@ export function researchRecordsOf(read) {
 /**
  * @param {object} p
  * @param {object} p.read   the research reader's `read` ({ status, records })
- * @param {number} p.nowMs  the clock, for the year of a last update from another year
- * @returns {{ status: string, progress: ({ sessionId: string, findings: number, line: string })|null }}
+ * @param {number} p.nowMs  the clock, for the year of a last update from another year, and for whether a wait still stands
+ * @param {number|null} [p.retryNotBefore]  when the next Retry may be pressed, after one pressed inside the wait (R-D7)
+ * @returns {{ status: string, progress: ({ sessionId: string, findings: number, line: string })|null, refreshing?: boolean, retryNotBefore?: number|null }}
  */
-export function researchDoorOf({ read, nowMs }) {
+export function researchDoorOf({ read, nowMs, retryNotBefore = null }) {
   const records = researchRecordsOf(read);
   if (!records) {
-    const status = read?.status === 'error' ? RESEARCH_DOOR_STATUS.ERROR : RESEARCH_DOOR_STATUS.LOADING;
-    return Object.freeze({ status, progress: null });
+    if (read?.status !== 'error') return Object.freeze({ status: RESEARCH_DOOR_STATUS.LOADING, progress: null });
+    // R-D7: while a Retry is out the door shows the loading line in the error line's place; a wait is said only while it stands.
+    const notBefore = typeof retryNotBefore === 'number' && retryNotBefore > nowMs ? retryNotBefore : null;
+    return Object.freeze({ status: RESEARCH_DOOR_STATUS.ERROR, progress: null, refreshing: read.refreshing === true, retryNotBefore: notBefore });
   }
   // The query answers newest first: the first open record is the newest open investigation.
   const open = records.find((record) => record?.state === 'open' && sessionIdOf(record));
@@ -79,6 +86,22 @@ export function researchDoorOf({ read, nowMs }) {
   const time = lastMs === null ? '' : formatHubDayTime(lastMs, nowMs);
   const line = time ? COPY.research.door.inProgress(COPY.time.et(time), findings) : COPY.research.door.inProgressCount(findings);
   return Object.freeze({ status: RESEARCH_DOOR_STATUS.READY, progress: Object.freeze({ sessionId: sessionIdOf(open), findings, line }) });
+}
+
+/**
+ * Ruling R-D7 (Q3): does a press of the door's Retry read? S6's pattern (hub/useHubResearch.js retry): a press within
+ * `cooldownMs` of this owner and epoch's last Retry that read reads nothing, and says when the next may be pressed. The hub keeps
+ * `last` per owner and epoch and judges it at the press; nothing runs between presses.
+ *
+ * @param {object} p
+ * @param {number|undefined} p.last   this owner and epoch's last Retry that read (ms), if any
+ * @param {number} p.nowMs            the press
+ * @param {number} p.cooldownMs       the wait (RETRY_COOLDOWN_MS, handed in by the hub)
+ * @returns {{ read: boolean, notBefore: number|null }}
+ */
+export function doorRetryOf({ last, nowMs, cooldownMs }) {
+  if (typeof last === 'number' && nowMs - last < cooldownMs) return Object.freeze({ read: false, notBefore: last + cooldownMs });
+  return Object.freeze({ read: true, notBefore: null });
 }
 
 /**

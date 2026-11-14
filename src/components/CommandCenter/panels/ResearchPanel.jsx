@@ -140,17 +140,22 @@ function Body({ research, onRetry }) {
  * nothing of it exists — no inactive control). The newest open investigation's line with Continue, read once per load and never
  * announced; the research read's error line with Retry; and "Work an idea", which stays in every state (while the read is out
  * there is no line, and the door shows).
+ *
+ * The Retry follows S6's pattern (ruling R-D7, Q3): while it is out, the loading line in the error line's place; a press inside
+ * the 30 s wait reads nothing, and the line says when the next may be pressed (said at the press; no timer).
  */
 function ResearchDoor({ door, onWork, onContinue, onRetry }) {
   const phone = useHubComposition() === HUB_COMPOSITIONS.PHONE;
-  // The error row (and the Retry pressed in it) leaves once the read answers: focus moves to "Work an idea", which every state
-  // keeps, at the press, so it never falls to <body> when the row goes (review C3). No effect: the move is the press's own.
+  // A press that reads takes the error row away (the loading line replaces it): focus moves to "Work an idea", which every
+  // state keeps, at the press, so it never falls to <body> when the row goes (review C3). A press inside the wait reads nothing
+  // (onRetry answers false): focus stays on Retry, beside the time it now shows. No effect: the move is the press's own.
   const retry = typeof onRetry === 'function'
     ? (event) => {
-      event?.currentTarget?.closest?.('[data-hub-research-door]')?.querySelector?.('[data-hub-research-work]')?.focus?.();
-      onRetry();
+      const work = event?.currentTarget?.closest?.('[data-hub-research-door]')?.querySelector?.('[data-hub-research-work]');
+      if (onRetry() !== false) work?.focus?.();
     }
     : undefined;
+  const waitAt = typeof door.retryNotBefore === 'number' ? COPY.time.et(formatHubTime(door.retryNotBefore, { roundUp: true })) : null;
   return (
     <Card data-hub-research-door={door.status} style={{ background: C.bg, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
       {door.progress && (
@@ -159,12 +164,13 @@ function ResearchDoor({ door, onWork, onContinue, onRetry }) {
           <span data-hub-research-continue=""><HubLink onPress={onContinue}>{COPY.research.door.continue}</HubLink></span>
         </div>
       )}
-      {door.status === RESEARCH_DOOR_STATUS.ERROR && (
+      {door.status === RESEARCH_DOOR_STATUS.ERROR && (door.refreshing ? <LoadingLine>{COPY.research.loading}</LoadingLine> : (
         <div data-hub-research-door-error="" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, color: C.ink2, lineHeight: 1.45 }}>
           <span>{COPY.research.door.error}</span>
           <HubLink onPress={retry}>{COPY.research.retry}</HubLink>
+          {waitAt && <span data-hub-research-door-wait="" style={{ fontSize: 12.5, color: C.ink3 }}>{COPY.research.retryAt(waitAt)}</span>}
         </div>
-      )}
+      ))}
       <div>
         <HubButton kind="primary" icon="search" full={phone} onPress={onWork} data-hub-research-work="">{COPY.research.door.work}</HubButton>
       </div>

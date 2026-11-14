@@ -12,6 +12,10 @@
 // for another owner or epoch is never shown: the read is judged against the current key in render, before any effect runs.
 //
 // The read is bounded on purpose (the service says why): finding nothing open is never said as "no research".
+//
+// While a refresh of this owner's read is out, the read says so (`refreshing: true`), so the door can show its loading line in
+// the error line's place (ruling R-D7, Q3). That is all this hook says about a Retry: its 30 s wait is the hub's, at the press
+// (CommandCenterHub.jsx; a file here may not import into the hub directory).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchSharedResearchRecords } from '../services/sharedResearchRecords';
@@ -30,7 +34,7 @@ export default function useHubSharedResearch({ auth, enabled }) {
   const load = useCallback(async () => {
     if (!key) return;
     const seq = ++seqRef.current;
-    setRead((prev) => (prev.key === key ? prev : { ...IDLE, key, status: 'loading' }));
+    setRead((prev) => (prev.key === key ? { ...prev, refreshing: true } : { ...IDLE, key, status: 'loading' }));
     try {
       const records = await fetchSharedResearchRecords({ uid: key.slice(0, key.lastIndexOf(':')) });
       if (keyRef.current !== key || seq !== seqRef.current) return;
@@ -38,7 +42,7 @@ export default function useHubSharedResearch({ auth, enabled }) {
     } catch (err) {
       if (keyRef.current !== key || seq !== seqRef.current) return;
       setRead((prev) => (prev.key === key && prev.status === 'ready'
-        ? { ...prev, error: err?.message || 'read_failed', stale: true }
+        ? { ...prev, error: err?.message || 'read_failed', stale: true, refreshing: false }
         : { ...IDLE, key, status: 'error', error: err?.message || 'read_failed' }));
     }
   }, [key]);
