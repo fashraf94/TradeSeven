@@ -39,7 +39,7 @@ import {
 import {
   SESSIONS_COLLECTION, QUOTA_COLLECTION, GLOBAL_QUOTA_ID, etDateOf, framingSessionOf, openSessionOf, isOwnedSession,
   stepAdmissionOf, playerDayOf, globalDayOf, itemKeyOf, refuse, latestLinesOf, isFramingInFlight,
-  liveSessionOf, previousSessionOf, previousViewOf,
+  liveSessionOf, previousSessionOf, previousViewOf, methodsUsedOf,
 } from './session.js';
 import { previewRevOf, sameRev, carriedFor, adoptPreviewOf, assertAssertionsSupported, AssertionError } from './adoptPreview.js';
 import { CLAIMS_READ_LIMIT } from './opening.js';
@@ -218,10 +218,11 @@ async function byRequestIn(tx, db, uid, requestId) {
  * still in flight (review A2: no frame, no failure, started within 35 s); on
  * one whose framing failed (or went stale) it re-runs. The framing counts —
  * the player's day and the app's — here, when the model call is about to be
- * made (D-1 e).
+ * made (D-1 e). `method`: the stamp the route selected (KB-1); a prior session keeps
+ * its own — a stamp is written once, never rewritten.
  * @returns {Promise<{ session: object, run: boolean, day: object }>}
  */
-export async function beginFraming(db, { uid, requestId, observation, playerExchange, sessionId, nowIso }) {
+export async function beginFraming(db, { uid, requestId, observation, playerExchange, sessionId, nowIso, method = null }) {
   const etDate = etDateOf(nowIso);
   return db.runTransaction(async (tx) => {
     const prior = await byRequestIn(tx, db, uid, requestId);
@@ -234,7 +235,7 @@ export async function beginFraming(db, { uid, requestId, observation, playerExch
     if (day.framingsRun >= FRAMINGS_PER_DAY) throw refuse(429, 'framing_limit');
     const g = globalDayOf(dataOf(globalSnap), etDate);
     if (g.framings >= globalFramingCeiling()) throw refuse(503, 'budget_paused');
-    const session = prior ? { ...prior, lastError: null, framingStartedAt: nowIso, updatedAt: nowIso } : framingSessionOf({ sessionId, userId: uid, requestId, observation, playerExchange, nowIso });
+    const session = prior ? { ...prior, lastError: null, framingStartedAt: nowIso, updatedAt: nowIso } : framingSessionOf({ sessionId, userId: uid, requestId, observation, playerExchange, nowIso, method });
     if (prior) tx.update(sessionRefOf(db, session.sessionId), { lastError: null, framingStartedAt: nowIso, updatedAt: nowIso });
     else tx.set(sessionRefOf(db, session.sessionId), session);
     const after = { ...day, framingsRun: day.framingsRun + 1 };
@@ -306,9 +307,10 @@ async function attributionIn(tx, db, uid, nowIso) {
  * (concluded, saved or abandoned) a new one opens (spec §16 FQ-1). Every answer
  * carries `previous` — the newest ended one before the answer's own session,
  * `{ sessionId, endedAt, terminalReason }`, or null — read before any write.
+ * `method`: the stamp the route selected (KB-1: the baseline, for a story or a drop).
  * @returns {Promise<{ session, record, day, existing: boolean, replay: boolean, previous: object|null }>}
  */
-export async function openFromItem(db, { uid, requestId, sessionId, entry, exchanges, findings, nowIso }) {
+export async function openFromItem(db, { uid, requestId, sessionId, entry, exchanges, findings, nowIso, method = null }) {
   const etDate = etDateOf(nowIso);
   const key = itemKeyOf(entry.itemRef);
   return db.runTransaction(async (tx) => {
@@ -332,7 +334,7 @@ export async function openFromItem(db, { uid, requestId, sessionId, entry, excha
     const previous = await previousFor({ sessionId, createdAt: nowIso });
     const attribution = await attributionIn(tx, db, uid, nowIso);
     const record = mintRecord({ sessionId, uid, question: entry.question, findings, nowIso });
-    const session = openSessionOf({ sessionId, userId: uid, requestId, entry, exchanges, attribution, researchWorkId: record.researchWorkId, nowIso });
+    const session = openSessionOf({ sessionId, userId: uid, requestId, entry, exchanges, attribution, researchWorkId: record.researchWorkId, nowIso, method });
     tx.set(sessionRefOf(db, sessionId), session);
     tx.create(researchWorkRefOf(db, record.researchWorkId), record);
     const after = { ...day, investigationsOpened: day.investigationsOpened + 1 };
@@ -663,6 +665,9 @@ export async function adoptIdea(db, { uid, sessionId, input, previewRev, compani
     }
     // The kept findings: the server's carried set for the selected names, never the client's.
     const keptFindingIds = adapter.evidence(fresh, carriedFor(fresh, { supported: freshCompanies.supported, lines: freshLines, symbols: input.symbols }));
+    // KB-1 (Amendment A §A4.3): the confirming exchange records the distinct methods behind the kept findings. Its
+    // exchangeId — the one the version's evidence names — is the id minted before the transaction, unchanged.
+    const confirmed = { ...confirm, methodsUsed: methodsUsedOf(s.exchanges, keptFindingIds) };
     const attribution = s.attribution ?? null;
     const listDoc = {
       watchlistId, userId: uid, agentId: null, sourceSessionId: null, sourceDropId: null,
@@ -687,7 +692,7 @@ export async function adoptIdea(db, { uid, sessionId, input, previewRev, compani
     tx.update(recordRef, close);
     tx.update(sessionRef, {
       status: 'completed', adoption: { watchlistId, version: 1, at: nowIso },
-      exchanges: [...(s.exchanges ?? []), confirm], updatedAt: nowIso,
+      exchanges: [...(s.exchanges ?? []), confirmed], updatedAt: nowIso,
     });
     return { watchlistId, version: 1, researchWorkId: fresh.researchWorkId, idempotent: false };
   });

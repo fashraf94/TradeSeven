@@ -246,6 +246,17 @@ describe('frame → open (an observation)', () => {
     expect((await post({ action: 'frame', observation: '', requestId: 'x' })).body.error).toBe('invalid_observation');
     expect((await post({ action: 'frame', observation: 'ok', requestId: '' })).body.error).toBe('invalid_request');
   });
+  it('KB-1, the real loader and the shipped (empty) list: an own-words frame stamps the baseline, not_authorized, and runs and records it', async () => {
+    state.turnQueue.push({ ...turnOk({ question: 'Which companies sell tools that shorten security reviews?', check: 'Find who sells review-automation tools.', notEstablished: 'That reviews delay deals at all.' }), model: 'claude-haiku-5-5' });
+    const f = await post({ action: 'frame', observation: 'Security reviews often delay approvals.', requestId: 'fr-kb1' });
+    expect(f.statusCode).toBe(200);
+    const s = sessionDoc(f.body.sessionId);
+    expect(s.method).toMatchObject({ id: 'baseline', version: 'v0', source: 'baseline', consumer: 'shared_research.observation', fallbackReason: 'not_authorized' });
+    expect(s.method.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(s.exchanges.find((e) => e.who === 'partner' && e.kind === 'frame').method).toEqual({ id: 'baseline', version: 'v0', sha256: s.method.sha256, source: 'baseline' });
+    expect(state.logs.find((l) => l.intent === 'frame')).toMatchObject({ methodId: 'baseline', methodVersion: 'v0', methodSha256: s.method.sha256, methodSource: 'baseline' });
+    expect(f.body).not.toHaveProperty('method');
+  });
   it('review C4: a paid framing whose write then fails still leaves its shadow record (failure, persist_failed)', async () => {
     state.turnQueue.push(() => {
       seedEnv.hooks.beforeCommit = () => { throw new Error('contention'); }; // the NEXT transaction (recordFrame) fails at commit
