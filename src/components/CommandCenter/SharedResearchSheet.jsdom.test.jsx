@@ -158,6 +158,26 @@ describe('a failed load, and Try again (the gate\'s retry pattern)', () => {
     expect(document.querySelector('[data-stub-body]')).not.toBeNull();
   });
 
+  it('while a retry is out, Try again stays (so it keeps focus) with aria-disabled and the loading line beside it; a failed retry clears both (review C6)', async () => {
+    const d = deferred();
+    const load = vi.fn().mockRejectedValueOnce(new Error('chunk failed')).mockReturnValueOnce(d.promise);
+    const Sheet = createSharedResearchSheet(load);
+    render(Sheet);
+    await flush();
+    expect(tryAgain().getAttribute('aria-disabled')).toBeNull();
+    tryAgain().focus();
+    click(tryAgain());
+    expect(failedLine().getAttribute('data-hub-research-load-failed')).toBe('retrying');
+    expect(tryAgain().getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(tryAgain());
+    expect(failedLine().querySelector('[data-hub-loading]').textContent).toContain(COPY.research.loading);
+    await act(async () => { d.reject(new Error('still failing')); });
+    await flush();
+    expect(tryAgain().getAttribute('aria-disabled')).toBeNull();
+    expect(failedLine().querySelector('[data-hub-loading]')).toBeNull();
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
   it('a body that throws while rendering shows the same line, inside the sheet', async () => {
     const Sheet = createSharedResearchSheet(async () => ({ default: Thrower }));
     render(Sheet);

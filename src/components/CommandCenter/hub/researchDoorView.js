@@ -81,6 +81,14 @@ export function researchDoorOf({ read, nowMs }) {
   return Object.freeze({ status: RESEARCH_DOOR_STATUS.READY, progress: Object.freeze({ sessionId: sessionIdOf(open), findings, line }) });
 }
 
+/**
+ * Whether the open research sheet may stay: a door is held (the player is admitted) and the sheet was opened for this door's owner
+ * and epoch (review B3). An owner change at 'on' keeps the door but not a sheet opened on the former owner's investigation.
+ */
+export function researchSheetHeldBy(door, entry) {
+  return Boolean(door) && (entry?.ownerKey ?? null) === (door.ownerKey ?? null);
+}
+
 /** Per-game loadouts on: the BaggerBomb card's book name (hub/perGameLoadoutContext.js cardsOf), or null with no book. */
 export function equippedBookLabelOf(cards) {
   const book = cards?.baggerbomb?.book;

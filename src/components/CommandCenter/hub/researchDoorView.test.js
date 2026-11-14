@@ -11,7 +11,7 @@ import { formatHubDayTime } from './activityDates';
 import { bookViewOf } from './perGameLoadoutModel';
 import { LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
 import {
-  RESEARCH_DOOR_STATUS, admissionBattleIdOf, equippedBookLabelOf, equippedListLabelOf, equippedWatchlistLabelOf, researchDoorOf, researchRecordsOf, sessionIdOf,
+  RESEARCH_DOOR_STATUS, admissionBattleIdOf, equippedBookLabelOf, equippedListLabelOf, equippedWatchlistLabelOf, researchDoorOf, researchRecordsOf, researchSheetHeldBy, sessionIdOf,
 } from './researchDoorView';
 
 const AUTH = Object.freeze({ signedIn: true, uid: 'uid-A', authEpoch: 2 });
@@ -101,6 +101,17 @@ describe('researchDoorOf — the door\'s three states (amendment §3.1)', () => 
 
   it('a kept answer through a failed refresh (ready, stale) still shows its line', () => {
     expect(researchDoorOf({ read: { ...ready([record('s1')]), stale: true }, nowMs: NOW }).progress.sessionId).toBe('s1');
+  });
+});
+
+describe('researchSheetHeldBy — the sheet stays only for the door\'s own owner and epoch (review B3)', () => {
+  it('held: a door, and an entry opened for its owner key; not held: no door, or another owner or epoch', () => {
+    const door = { ownerKey: 'uid-A:2' };
+    expect(researchSheetHeldBy(door, { mode: 'start', ownerKey: 'uid-A:2' })).toBe(true);
+    expect(researchSheetHeldBy(null, { mode: 'start', ownerKey: 'uid-A:2' })).toBe(false);
+    expect(researchSheetHeldBy(door, { mode: 'session', sessionId: 's', ownerKey: 'uid-B:3' })).toBe(false);
+    expect(researchSheetHeldBy(door, { mode: 'start', ownerKey: 'uid-A:3' })).toBe(false);
+    expect(researchSheetHeldBy(door, null)).toBe(false);
   });
 });
 

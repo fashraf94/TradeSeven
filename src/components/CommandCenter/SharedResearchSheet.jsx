@@ -64,11 +64,16 @@ class BodyBoundary extends Component {
   }
 }
 
-function LoadFailed({ onTryAgain }) {
+/**
+ * The failed load's line and Try again. While a retry is out the button stays (so it keeps focus) with `aria-disabled`, as the
+ * hub gate's notice does, and the loading line shows beside it (review C6); a failed retry leaves the line as it was.
+ */
+function LoadFailed({ onTryAgain, retrying }) {
   return (
-    <div data-hub-research-load-failed="" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, color: C.ink2, lineHeight: 1.45 }}>
+    <div data-hub-research-load-failed={retrying ? 'retrying' : ''} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, color: C.ink2, lineHeight: 1.45 }}>
       <span>{COPY.research.door.loadFailed}</span>
-      <HubLink onPress={onTryAgain}>{COPY.research.door.tryAgain}</HubLink>
+      <HubLink onPress={onTryAgain} ariaDisabled={retrying}>{COPY.research.door.tryAgain}</HubLink>
+      {retrying && <LoadingLine>{COPY.research.loading}</LoadingLine>}
     </div>
   );
 }
@@ -90,18 +95,21 @@ export function createSharedResearchSheet(load) {
   function SharedResearchSheet({ entry = null, stories = [], agentName = null, agentId = null, equippedListLabel = null, gated = false, phone = false, onClose, opener = null, fallbackFocus = null, reducedMotion = false }) {
     const overlayStack = useHubOverlays();
     const [loads, setLoads] = useState(0);
+    const [retrying, setRetrying] = useState(false);
     const Body = loader.current();
     const mode = entry?.mode === 'session' ? 'session' : 'start';
     const tryAgain = () => {
+      if (retrying) return;
+      setRetrying(true);
       loader.retry().then(
-        () => { setLoads((n) => n + 1); },
+        () => { setRetrying(false); setLoads((n) => n + 1); },
         // The line simply stays: a failed retry leaves the sheet as it was.
-        () => {},
+        () => { setRetrying(false); },
       );
     };
     return (
       <HubSheet title={COPY.research.workTitle} eyebrow={COPY.research.workEyebrow} label={COPY.research.workLabel} phone={phone} width={720} onClose={onClose} opener={opener} fallbackFocus={fallbackFocus} reducedMotion={reducedMotion}>
-        <BodyBoundary key={loads} fallback={<LoadFailed onTryAgain={tryAgain} />}>
+        <BodyBoundary key={loads} fallback={<LoadFailed onTryAgain={tryAgain} retrying={retrying} />}>
           <Suspense fallback={<LoadingLine>{COPY.research.loading}</LoadingLine>}>
             <Body
               open

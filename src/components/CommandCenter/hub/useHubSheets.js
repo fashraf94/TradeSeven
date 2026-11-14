@@ -78,7 +78,10 @@ export function useHubSheets(rootRef) {
     entry,
     traitsEpoch,
     open: (kind, opened = null) => (event) => {
-      const opener = event?.currentTarget ?? null;
+      // A sheet opened from a control INSIDE the open hub sheet replaces it, and that control unmounts with it: focus goes back to
+      // what opened the sheet it replaces (Amendment E V1.1 §3.2; review C1 — a research row in the activity sheet).
+      const target = event?.currentTarget ?? null;
+      const opener = sheet !== null && target?.closest?.('[data-hub-sheet-overlay]') ? openerRef.current : target;
       openerRef.current = opener;
       release(false);
       // Agent form build A1: with the armory on, the archetype sheet is not a shipped sheet. The wide dialog is a HubSheet,

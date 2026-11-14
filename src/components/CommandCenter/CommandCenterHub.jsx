@@ -180,7 +180,7 @@ import useHubResearchAdmission from '../../hooks/useHubResearchAdmission';
 import useHubStories from '../../hooks/useHubStories';
 import useHubSharedResearch from '../../hooks/useHubSharedResearch';
 import { selectStories } from '../../selectors/storySelection';
-import { admissionBattleIdOf, equippedListLabelOf, researchDoorOf, researchRecordsOf } from './hub/researchDoorView';
+import { admissionBattleIdOf, equippedListLabelOf, researchDoorOf, researchRecordsOf, researchSheetHeldBy } from './hub/researchDoorView';
 import SharedResearchSheet from './SharedResearchSheet';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
@@ -360,10 +360,12 @@ export function huddleActionsOf(huddle, sheet, nextAction, base = NO_ACTIONS) {
  */
 export function researchActionsOf(researchDoor, sheet, door, base = NO_ACTIONS) {
   if (!researchDoor) return null;
-  const openSession = (sessionId) => sheet.open(HUB_SHEETS.RESEARCH, { mode: 'session', sessionId });
+  // Each entry names the owner and epoch it was opened for (review B3): the sheet is shown only while the door is that owner's.
+  const ownerKey = researchDoor.ownerKey ?? null;
+  const openSession = (sessionId) => sheet.open(HUB_SHEETS.RESEARCH, { mode: 'session', sessionId, ownerKey });
   const sessionId = door?.progress?.sessionId ?? null;
   return {
-    openResearch: sheet.open(HUB_SHEETS.RESEARCH, { mode: 'start' }),
+    openResearch: sheet.open(HUB_SHEETS.RESEARCH, { mode: 'start', ownerKey }),
     continueResearch: sessionId ? openSession(sessionId) : undefined,
     retryResearchDoor: researchDoor.retry,
     openActivity: (row, event) => {
@@ -430,8 +432,9 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
   // Amendment E §E7 (review HU-4): membership lapsing while the Huddle sheet is open (a 404 refresh, an owner change) frees
   // the sheet slot too, so a later 200 never reopens the sheet without a tap. This component's own state, set in its own render.
   if (DRB_HUDDLE_ENABLED && !huddle && sheet.sheet === HUB_SHEETS.HUDDLE) runtime.closeSheet();
-  // Amendment E V1.1 §3.2: admission ending while the research sheet is open closes it, as the Huddle's lapse does.
-  if (!researchDoor && sheet.sheet === HUB_SHEETS.RESEARCH) runtime.closeSheet();
+  // Amendment E V1.1 §3.2: admission ending while the research sheet is open closes it, as the Huddle's lapse does — and so does an
+  // owner or epoch change (review B3: the open investigation is the former owner's).
+  if (sheet.sheet === HUB_SHEETS.RESEARCH && !researchSheetHeldBy(researchDoor, sheet.entry)) runtime.closeSheet();
   return (
     <HubLayoutContext.Provider value={composition}>
       <style data-hub-css="">{HUB_SCOPED_CSS}</style>
@@ -536,7 +539,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
       {DRB_HUDDLE_ENABLED && huddle && sheet.sheet === HUB_SHEETS.HUDDLE ? (
         <HuddleSheet huddle={huddle} phone onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} ceremonyActive={coverOpen} />
       ) : null}
-      {researchDoor && sheet.sheet === HUB_SHEETS.RESEARCH ? (
+      {sheet.sheet === HUB_SHEETS.RESEARCH && researchSheetHeldBy(researchDoor, sheet.entry) ? (
         <SharedResearchSheet
           entry={sheet.entry}
           stories={researchDoor.stories}
@@ -610,8 +613,9 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
   // Amendment E §E7 (review HU-4): membership lapsing while the Huddle sheet is open (a 404 refresh, an owner change) frees
   // the sheet slot too, so a later 200 never reopens the sheet without a tap. This component's own state, set in its own render.
   if (DRB_HUDDLE_ENABLED && !huddle && sheet.sheet === HUB_SHEETS.HUDDLE) runtime.closeSheet();
-  // Amendment E V1.1 §3.2: admission ending while the research sheet is open closes it, as the Huddle's lapse does.
-  if (!researchDoor && sheet.sheet === HUB_SHEETS.RESEARCH) runtime.closeSheet();
+  // Amendment E V1.1 §3.2: admission ending while the research sheet is open closes it, as the Huddle's lapse does — and so does an
+  // owner or epoch change (review B3: the open investigation is the former owner's).
+  if (sheet.sheet === HUB_SHEETS.RESEARCH && !researchSheetHeldBy(researchDoor, sheet.entry)) runtime.closeSheet();
   const stage = (
     <ShadowStage
       composition={composition}
@@ -732,7 +736,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
       {DRB_HUDDLE_ENABLED && huddle && sheet.sheet === HUB_SHEETS.HUDDLE ? (
         <HuddleSheet huddle={huddle} onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} ceremonyActive={coverOpen} />
       ) : null}
-      {researchDoor && sheet.sheet === HUB_SHEETS.RESEARCH ? (
+      {sheet.sheet === HUB_SHEETS.RESEARCH && researchSheetHeldBy(researchDoor, sheet.entry) ? (
         <SharedResearchSheet
           entry={sheet.entry}
           stories={researchDoor.stories}
@@ -880,6 +884,8 @@ function ConnectedHub({ site, hub, sections }) {
     if (live.activityInputs && records) live.activityInputs = { ...live.activityInputs, research: records };
     const rankedAgent = readers.agent?.status === 'ready' ? readers.agent.agent : null;
     researchDoor = {
+      // The owner and epoch the door is this render's (review B3): a sheet opened for another is closed.
+      ownerKey: researchAuth?.signedIn === true ? `${researchAuth.uid}:${researchAuth.authEpoch ?? ''}` : null,
       retry: sharedResearch.refresh,
       stories: selectStories({ stories: hubStories.read.status === 'ready' ? hubStories.read.stories : [], nowMs: Date.now() }).items,
       agentName: typeof rankedAgent?.name === 'string' && rankedAgent.name.trim() ? rankedAgent.name.trim() : null,

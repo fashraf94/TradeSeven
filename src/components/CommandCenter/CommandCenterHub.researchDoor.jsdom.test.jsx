@@ -465,3 +465,111 @@ describe('equippedListLabel: the list as the Loadout card shows it (amendment §
     expect(body.props.equippedListLabel).toBeNull();
   });
 });
+
+// ── The review's rows (docs/audits build report §8): each pins a fix or closes a gap the refuters confirmed ──────────────────
+const allActivityLink = () => [...document.querySelectorAll('[data-hub-section="activity"] button')].find((el) => el.textContent.startsWith(COPY.activity.all(0).replace(/\d+$/, '')));
+const concluded = (n) => Array.from({ length: n }, (_, i) => recordOf(`sess-${i}`, { state: 'completed', terminalReason: 'concluded', createdAt: iso(NOW - (i + 2) * HOUR), endedAt: iso(NOW - (i + 1) * HOUR) }));
+
+describe('review rows: the lapse, the owner change, every opener at both sites, focus', () => {
+  beforeEach(() => { m.mode = 'on'; });
+
+  it.each(['mobile', 'desktop'])('%s (A3, B1): admission ending frees the sheet slot — when admission returns the sheet does NOT reopen without a tap', async (site) => {
+    const x = await render(site);
+    await openResearchArea(site);
+    click(workButton());
+    await flush();
+    expect(dialogs()).toHaveLength(1);
+    m.mode = 'off';
+    x.rerender(<CommandCenterHub site={site} hub={hubOf()} />);
+    await flush();
+    expect(dialogs()).toHaveLength(0);
+    m.mode = 'on';
+    x.rerender(<CommandCenterHub site={site} hub={hubOf()} />);
+    await flush();
+    expect(dialogs()).toHaveLength(0);
+  });
+
+  it.each(['mobile', 'desktop'])('%s (B3): an owner change closes a sheet opened on the former owner\'s investigation, and it stays closed', async (site) => {
+    svc.fetchSharedResearchRecords.mockResolvedValue([recordOf('sess-A')]);
+    const x = await render(site);
+    await openResearchArea(site);
+    click(continueButton());
+    await flush();
+    expect(body.props).toMatchObject({ mode: 'session', sessionId: 'sess-A' });
+    r.identity = { resolved: true, uid: 'uid-B', authEpoch: 3 };
+    x.rerender(<CommandCenterHub site={site} hub={hubOf()} />);
+    await flush();
+    expect(dialogs()).toHaveLength(0);
+    // the door is still there for the new owner (mode 'on'), and nothing reopened on its own
+    x.rerender(<CommandCenterHub site={site} hub={hubOf()} />);
+    await flush();
+    expect(dialogs()).toHaveLength(0);
+  });
+
+  it.each(['mobile', 'desktop'])('%s (B5): with an investigation open, "Work an idea" still opens the start view, never the open investigation', async (site) => {
+    svc.fetchSharedResearchRecords.mockResolvedValue([recordOf('sess-1')]);
+    await render(site);
+    await openResearchArea(site);
+    expect(continueButton()).not.toBeNull();
+    click(workButton());
+    await flush();
+    expect(body.props).toMatchObject({ mode: 'start', sessionId: null });
+  });
+
+  it.each(['mobile', 'desktop'])('%s (B6): Continue opens its investigation and focus returns to it', async (site) => {
+    svc.fetchSharedResearchRecords.mockResolvedValue([recordOf('sess-1')]);
+    await render(site);
+    await openResearchArea(site);
+    const opener = continueButton();
+    click(opener);
+    await flush();
+    expect(body.props).toMatchObject({ mode: 'session', sessionId: 'sess-1' });
+    press(dialogs()[0], 'Escape');
+    await flush();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it.each(['mobile', 'desktop'])('%s (B6, C3): the door\'s Retry reads again; while it is out focus is on "Work an idea", so the row leaving drops nothing', async (site) => {
+    let answer;
+    svc.fetchSharedResearchRecords.mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    await render(site);
+    await openResearchArea(site);
+    const retry = byRole(document.querySelector('[data-hub-research-door-error]'), 'button', COPY.research.retry)[0];
+    retry.focus();
+    click(retry);
+    expect(document.activeElement).toBe(workButton());
+    await act(async () => { answer([recordOf('sess-1')]); });
+    await flush();
+    expect(svc.fetchSharedResearchRecords).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('[data-hub-research-door-error]')).toBeNull();
+    expect(document.activeElement).toBe(workButton());
+  });
+
+  it.each(['mobile', 'desktop'])('%s (B6): a research Activity row opens its investigation, and focus returns to the row', async (site) => {
+    svc.fetchSharedResearchRecords.mockResolvedValue([recordOf('sess-7', { createdAt: iso(NOW - 10 * 60000) })]);
+    await render(site);
+    const row = activityRows()[0].closest('button');
+    click(row);
+    await flush();
+    expect(body.props).toMatchObject({ mode: 'session', sessionId: 'sess-7' });
+    press(dialogs()[0], 'Escape');
+    await flush();
+    expect(document.activeElement).toBe(row);
+  });
+
+  it.each(['mobile', 'desktop'])('%s (C1): a research row pressed inside the open activity sheet: on close focus returns to "All activity", which opened that sheet', async (site) => {
+    svc.fetchSharedResearchRecords.mockResolvedValue(concluded(6));
+    await render(site);
+    const all = allActivityLink();
+    expect(all).toBeTruthy();
+    click(all);
+    await flush();
+    click(dialogs()[0].querySelector('[data-hub-activity-row="research"]').closest('button'));
+    await flush();
+    expect(dialogs()[0].getAttribute('aria-label')).toBe(COPY.research.workLabel);
+    press(dialogs()[0], 'Escape');
+    await flush();
+    expect(dialogs()).toHaveLength(0);
+    expect(document.activeElement).toBe(all);
+  });
+});

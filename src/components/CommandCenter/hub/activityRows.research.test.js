@@ -69,6 +69,15 @@ describe('the three rows (amendment §3.3)', () => {
     expect(rows([record('s2', { question: undefined })])[0].sub).toBe('');
   });
 
+  it('the clip counts code points, never splitting a surrogate pair, and a kept newline reads as one space (review C8)', () => {
+    const emojiAtCut = `${'a'.repeat(RESEARCH_QUESTION_CLIP - 2)}😀tail of the question`;
+    const [row] = rows([record('s1', { question: emojiAtCut })]);
+    expect(row.sub).toBe(`${'a'.repeat(RESEARCH_QUESTION_CLIP - 2)}😀…`);
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(row.sub)).toBe(false);
+    const [nl] = rows([record('s2', { question: 'Which grid\nsuppliers   earn?' })]);
+    expect(nl.sub).toBe('Which grid suppliers earn?');
+  });
+
   it('no research input (null, the reader not admitted or still out) is no rows, and changes nothing else', () => {
     expect(rows(null)).toEqual([]);
     expect(rows(undefined)).toEqual([]);
@@ -88,6 +97,17 @@ describe('the same cutoff and order as every other kind', () => {
     const list = rows([record('s1', { createdAt: iso(at) })], { battles: [done('g1', at)] });
     // the game's deploy (an hour earlier) is older than the window's oldest completion, so the cutoff leaves it out
     expect(ids(list)).toEqual(['completed:g1', 'research.opened:s1']);
+  });
+
+  it('at one time, the kind order is completed, deployed, loadout, idea, huddle, research — research after the idea and plan rows (review B11)', () => {
+    const at = NOW - 3 * HOUR;
+    const list = deriveActivity({
+      battles: [], live: [], rowsById: new Map(), nowMs: NOW,
+      research: [record('s1', { createdAt: iso(at) })],
+      idea: { listId: 'wl-1', listName: 'Grid builders', version: 1, createdAt: iso(at), stateChangedAt: null, status: null, statusLabel: null },
+      huddle: [{ id: 'huddle-plan:uid-A:2026-11-14', ms: at, kind: 'confirmed', etDate: '2026-11-14' }],
+    }).rows;
+    expect(ids(list)).toEqual(['idea.created:wl-1:v1', 'huddle-plan:uid-A:2026-11-14', 'research.opened:s1']);
   });
 
   it('each id once, through the section builder too (the hub\'s path)', () => {

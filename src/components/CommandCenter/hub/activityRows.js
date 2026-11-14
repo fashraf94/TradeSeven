@@ -66,7 +66,11 @@ export const RESEARCH_QUESTION_CLIP = 90;
 /** The origin the research rows are built from (src/services/sharedResearchRecords.js SHARED_RESEARCH_ORIGIN; pinned equal by test). */
 const SHARED_RESEARCH_ORIGIN = 'shared_research';
 
-const clip = (text, max) => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
+/** Clipped by code point, never inside a surrogate pair (review C8); runs of white space (a kept newline) read as one space. */
+const clip = (text, max) => {
+  const chars = Array.from(text.replace(/\s+/g, ' '));
+  return chars.length > max ? `${chars.slice(0, max - 1).join('').trimEnd()}…` : chars.join('');
+};
 
 /**
  * Amendment E V1.1 §3.3: the research rows, from the research reader's records only (src/hooks/useHubSharedResearch.js) —

@@ -143,6 +143,14 @@ function Body({ research, onRetry }) {
  */
 function ResearchDoor({ door, onWork, onContinue, onRetry }) {
   const phone = useHubComposition() === HUB_COMPOSITIONS.PHONE;
+  // The error row (and the Retry pressed in it) leaves once the read answers: focus moves to "Work an idea", which every state
+  // keeps, at the press, so it never falls to <body> when the row goes (review C3). No effect: the move is the press's own.
+  const retry = typeof onRetry === 'function'
+    ? (event) => {
+      event?.currentTarget?.closest?.('[data-hub-research-door]')?.querySelector?.('[data-hub-research-work]')?.focus?.();
+      onRetry();
+    }
+    : undefined;
   return (
     <Card data-hub-research-door={door.status} style={{ background: C.bg, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
       {door.progress && (
@@ -154,7 +162,7 @@ function ResearchDoor({ door, onWork, onContinue, onRetry }) {
       {door.status === RESEARCH_DOOR_STATUS.ERROR && (
         <div data-hub-research-door-error="" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, color: C.ink2, lineHeight: 1.45 }}>
           <span>{COPY.research.door.error}</span>
-          <HubLink onPress={onRetry}>{COPY.research.retry}</HubLink>
+          <HubLink onPress={retry}>{COPY.research.retry}</HubLink>
         </div>
       )}
       <div>

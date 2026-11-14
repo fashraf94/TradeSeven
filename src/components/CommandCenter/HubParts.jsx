@@ -150,7 +150,7 @@ export function HubButton({ kind = 'secondary', icon, children, onPress, small =
  * The design's inline link (.ff-link). On the phone it is a 44 px target; on
  * wider compositions it sits in the line of text, as designed.
  */
-export function HubLink({ children, onPress, ariaExpanded, ariaLabel, size = 12.5, style }) {
+export function HubLink({ children, onPress, ariaExpanded, ariaLabel, ariaDisabled, size = 12.5, style }) {
   const phone = usePhone();
   const disabled = typeof onPress !== 'function';
   return (
@@ -160,6 +160,7 @@ export function HubLink({ children, onPress, ariaExpanded, ariaLabel, size = 12.
       disabled={disabled}
       aria-expanded={ariaExpanded}
       aria-label={ariaLabel}
+      aria-disabled={ariaDisabled === true ? true : undefined}
       style={{
         appearance: 'none', font: 'inherit', background: 'transparent', border: 'none', padding: 0,
         cursor: disabled ? 'not-allowed' : 'pointer',

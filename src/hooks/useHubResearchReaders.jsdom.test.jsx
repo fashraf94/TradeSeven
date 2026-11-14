@@ -173,6 +173,37 @@ describe.each(READERS)('$name', ({ useHook, service, payloadKey, answerFor, call
     expect(h.last().read[payloadKey]).toEqual(answerFor('uid-B'));
   });
 
+  it('a former owner\'s read that FAILS after the change is dropped too: the new owner\'s answer stays (review B4)', async () => {
+    const late = deferred();
+    service().mockReturnValueOnce(late.promise).mockResolvedValueOnce(answerFor('uid-B'));
+    const h = mount(useHook, { auth: A, enabled: true });
+    await flush();
+    h.rerender({ auth: B, enabled: true });
+    await flush();
+    expect(h.last().read.status).toBe('ready');
+    await act(async () => { late.reject(new Error('A went offline')); });
+    await flush();
+    expect(h.last().read.status).toBe('ready');
+    expect(h.last().read[payloadKey]).toEqual(answerFor('uid-B'));
+  });
+
+  it('an older Retry that FAILS after a newer one answered is dropped (review B4)', async () => {
+    const first = deferred();
+    const second = deferred();
+    service().mockResolvedValueOnce([]).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const h = mount(useHook, { auth: A, enabled: true });
+    await flush();
+    act(() => { h.last().refresh(); });
+    act(() => { h.last().refresh(); });
+    await act(async () => { second.resolve(answerFor('uid-A')); });
+    await flush();
+    await act(async () => { first.reject(new Error('older read failed')); });
+    await flush();
+    expect(h.last().read.status).toBe('ready');
+    expect(h.last().read.stale).toBeUndefined();
+    expect(h.last().read[payloadKey]).toEqual(answerFor('uid-A'));
+  });
+
   it('admission ending: idle again, with nothing of the answer kept on screen', async () => {
     service().mockResolvedValue(answerFor('uid-A'));
     const h = mount(useHook, { auth: A, enabled: true });
