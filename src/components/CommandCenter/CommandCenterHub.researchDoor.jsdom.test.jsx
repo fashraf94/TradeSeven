@@ -573,3 +573,21 @@ describe('review rows: the lapse, the owner change, every opener at both sites, 
     expect(document.activeElement).toBe(all);
   });
 });
+
+describe('the sheet entry is the opener\'s own, every time (amendment §3.2: held with the open sheet, cleared on close)', () => {
+  beforeEach(() => { m.mode = 'on'; });
+
+  it('Work an idea, close, then Continue: the second open carries Continue\'s session, not the first open\'s start view', async () => {
+    svc.fetchSharedResearchRecords.mockResolvedValue([recordOf('sess-1')]);
+    await render('mobile');
+    await openResearchArea('mobile');
+    click(workButton());
+    await flush();
+    expect(body.props).toMatchObject({ mode: 'start', sessionId: null });
+    press(dialogs()[0], 'Escape');
+    await flush();
+    click(continueButton());
+    await flush();
+    expect(body.props).toMatchObject({ mode: 'session', sessionId: 'sess-1' });
+  });
+});
