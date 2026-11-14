@@ -767,13 +767,13 @@ export function validateStepTurn(output, ctx) {
 // The texts are read as the model wrote them (the summary even when withheld,
 // the reply before any replacement), after Unicode normalization.
 
-/** The text as the three checks read it: NFKC, no invisible format characters, apostrophe-likes straight. */
-const readable = (v) => normalizeText(v).replace(/[‘’ʼ‛′]/g, "'");
+/** The text — and the partner's name — as the three checks read it: NFKC, no invisible format characters, curly apostrophes straight. */
+const readable = (v) => straightApostrophes(normalizeText(v));
 
 /** An id of the register as a token: not glued to a letter or a digit on either side. */
 const idAlternation = (ids) => `(?<![A-Za-z0-9])(?:${[...ids].sort((a, b) => b.length - a.length).map(escapeRe).join('|')})(?![A-Za-z0-9])`;
-/** Between two ids of one group: a comma, a semicolon, a slash, an ampersand, a dash or hyphen (a range), "and", "or". */
-const ID_SEPARATOR = String.raw`\s*(?:,\s*(?:and|or)\b|[,;/&–—-]|\b(?:and|or)\b)\s*`;
+/** Between two ids of one group: a comma, a semicolon, a slash, an ampersand, a dash or hyphen (a range), "and", "or", "to". */
+const ID_SEPARATOR = String.raw`\s*(?:,\s*(?:and|or)\b|[,;/&–—-]|\b(?:and|or|to)\b)\s*`;
 /**
  * The citation forms: a bracketed group of one or more ids ("(M1)", "[C1, I4]", "(I1/I2)", "(M1, V1, and T2)",
  * "(T1–T6)"); an id right after per/see/under/from.
@@ -821,38 +821,32 @@ const namesExample = (f, re, example) => f?.source?.recordKind === 'retrieval'
   && (re.date.test(f.fact) || (!isUndated(f) && isOnDay(f.at, re.day)) || isOnDay(f.asOf, re.day));
 const statesExample = (text, re) => exampleSentencesOf(readable(text)).some((s) => re.name.test(s) && re.date.test(s));
 
-/**
- * The app's services by name: "Practice Field" and "Film Room" as names (capitalized; joined or hyphenated too), the
- * "idea book" in any case. A stadium's practice field or a studio's film room is not the app's.
- */
-const SERVICE_NAMES = [/\bPractice[\s-]*[Ff]ields?\b|\bPRACTICE[\s-]*FIELDS?\b/, /\bFilm[\s-]*[Rr]ooms?\b|\bFILM[\s-]*ROOMS?\b/, /\bidea[\s-]*books?\b/i];
+/** The app's services by name, as the letter names them (any case). */
+const SERVICE_NAMES = /\bpractice\s+field\b|\bfilm\s+room\b|\bidea\s+book\b/i;
 /** "I" as a numeral ("Phase I", "Phase-I", "Fund I") is no one. */
 const NOT_A_NUMERAL = String.raw`(?<!\b(?:Phase|Subphase|Series|Class|Tier|Type|Part|Stage|Level|Grade|Title|Chapter|Section|Article|Schedule|Form|Item|Exhibit|Volume|War|Fund|Basel|Train|Mark|Unit|Tranche|Gen|Generation|Block|Lot|Round|Wave|Cohort|Track|Line|Plant|Reactor|Group|Team|Division|Model)[\s-])(?<!-)`;
-/** The letter's subjects: the agent (the player's), the player's partner, we, I, or this/the/your idea. */
-const PROMISE_SUBJECT = String.raw`(?:\b(?:the\s+agent|(?:your|my|our)\s+agents?|your\s+(?:research\s+)?partner|we|(?:this|the|your)\s+(?:\w+\s+)?idea)|${NOT_A_NUMERAL}\bI)`;
+/** The subjects: the agent and the partner (B1's words, spec §17 FQ-9), we, I, or this/the/your idea. */
+const PROMISE_SUBJECTS = String.raw`\b(?:${PARTNER_WORDS}|we|(?:this|the|your)\s+idea)|${NOT_A_NUMERAL}\bI`;
 /** will / 'll / is going to; then words that only fill ("be", "closely", "continue", ", of course,"); then the verb. */
 const PROMISE_REST = String.raw`(?:\s+will|'ll|\s+(?:is|are|am)\s+going\s+to|'(?:s|re|m)\s+going\s+to)`
   + String.raw`(?:,?\s+(?:also|then|now|just|first|soon|still|both|all|be|being|been|continue|continuing|keep|keeping|start|starting|begin|beginning|on|to|and|of|course|\w+ly),?){0,6}`
   + String.raw`\s+(?:test|trial|track|monitor|adopt)(?:s|ed|ing|led|ling)?\b`;
-const PROMISE = new RegExp(PROMISE_SUBJECT + PROMISE_REST, 'i');
-const PROMISE_BY_NAME = new RegExp(String.raw`\b${PARTNER_TOKEN}` + PROMISE_REST, 'i');
+const PROMISE = new RegExp(`(?:${PROMISE_SUBJECTS})${PROMISE_REST}`, 'i');
 /**
- * The partner's own name, read like the text (NFKC, no format characters, apostrophes straight), stands as the token —
- * matched CASE-SENSITIVELY, so a partner named "Will", "Test" or "Track" never swallows the words the promise needs.
+ * The promise for a partner with a name: the name, read like the text, is one more subject — matched as a whole word,
+ * in place, never swapped into the sentence (so a partner named "Will", "Test" or "Track" cannot swallow the words the
+ * promise needs — review CHK-1, CHK-2).
  */
-function byName(sentence, partnerName) {
+function promiseReOf(partnerName) {
   const n = typeof partnerName === 'string' ? readable(partnerName).trim() : '';
-  if (n.length < 2) return null;
-  return sentence.replace(new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRe(n)}(?![\\p{L}\\p{N}_])`, 'gu'), PARTNER_TOKEN);
+  if (n.length < 2) return PROMISE;
+  return new RegExp(`(?:${PROMISE_SUBJECTS}|(?<![\\p{L}\\p{N}_])${escapeRe(n)}(?![\\p{L}\\p{N}_]))${PROMISE_REST}`, 'iu');
 }
 function promisesService(text, partnerName) {
   const t = readable(text);
-  if (SERVICE_NAMES.some((re) => re.test(t))) return true;
-  return sentencesOf(t).some((s) => {
-    if (PROMISE.test(s)) return true;
-    const named = byName(s, partnerName);
-    return named !== null && PROMISE_BY_NAME.test(named);
-  });
+  if (SERVICE_NAMES.test(t)) return true;
+  const re = promiseReOf(partnerName);
+  return sentencesOf(t).some((s) => re.test(s));
 }
 
 /**

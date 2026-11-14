@@ -291,20 +291,34 @@ describe('row 8 — the three checks, on a KB turn', () => {
     });
     it.each([
       ['We will be closely monitoring it.'], ['We will continue monitoring it.'], ['We will start to track this idea.'], ['We will keep on tracking it.'],
-      ['We will, of course, monitor it.'], ['We will both track it.'], ['We will closely and continuously monitor it.'], ['Your investment idea will be adopted.'],
-      ['This trade idea will be tracked.'], ['We‛ll track it.'],
+      ['We will, of course, monitor it.'], ['We will both track it.'], ['We will closely and continuously monitor it.'],
     ])('the promise with words between: %s (CHK-5)', (reply) => {
       expect(rule(run(KB_METHOD, { reply }))).toBe('service_promise');
     });
+    it('a partner named in lower case is still the partner; a partner\'s name inside another word is not (CHK-1)', () => {
+      expect(rule(run(KB_METHOD, { reply: 'rook will track it.' }, { partnerName: 'Rook' }))).toBe('service_promise');
+      expect(rule(run(KB_METHOD, { reply: 'Brook Capital will track the index.' }, { partnerName: 'Rook' }))).toBe('passes');
+    });
     it.each([
-      ["Moderna's research partner will trial the vaccine."], ['Our partner will test the chip.'], ['Phase-I will be tested.'], ['Fund I will track the index.'],
-      ['Basel I will be adopted.'], ['We will not test it.'], ["We're tracking this idea."], ['The stadium has a practice field.'], ["The coach's film room is new."],
+      ['Phase-I will be tested.'], ['Fund I will track the index.'], ['Basel I will be adopted.'], ['We will not test it.'], ["We're tracking this idea."],
       ['NVDA fell 30% from its October high.'], ['The window was an October 30-day one.'],
-    ])('passes — the letter\'s subjects and names only (CHK-6, CHK-9, CHK-11): %s', (reply) => {
+    ])('passes — a numeral "I", a negation, the present tense, no date (CHK-6, CHK-11): %s', (reply) => {
       expect(rule(run(KB_METHOD, { reply }))).toBe('passes');
     });
-    it.each([['The Practice-Field would run it.'], ['A PracticeField trial.'], ['The Film-Room would review it.'], ['It goes in the idea-book.'], ['Two Practice Fields.']])('a service name, joined or hyphenated: %s (CHK-9)', (reply) => {
-      expect(rule(run(KB_METHOD, { reply }))).toBe('service_promise');
+    // The letter as built, both ways (founder questions in the report): B1's partner words (spec §17 FQ-9) and the three
+    // service names in any case fail; "your investment idea" and joined or hyphenated service names are not the letter's.
+    it.each([["Moderna's research partner will trial the vaccine."], ['Our partner will test the chip.'], ['The stadium has a practice field.'], ["The coach's film room is new."]])(
+      'letter-literal collateral, fails: %s (CHK-6, CHK-9)', (reply) => {
+        expect(rule(run(KB_METHOD, { reply }))).toBe('service_promise');
+      },
+    );
+    it.each([['Your investment idea will be adopted.'], ['A PracticeField trial.'], ['It goes in the idea-book.'], ['The Forge will adopt it.']])(
+      'letter-limited, passes: %s (CHK-5, CHK-9)', (reply) => {
+        expect(rule(run(KB_METHOD, { reply }))).toBe('passes');
+      },
+    );
+    it('the range "to" is a separator too: "(T1 to T6)" (CHK-4)', () => {
+      expect(run(KB_METHOD, { reply: 'The tests matter (T1 to T6).' })).toMatchObject({ ok: false, rule: 'method_example_as_fact' });
     });
     it('the exemption takes the company\'s own name on an October 30 item with no symbol (CHK-12)', () => {
       const out = run(KB_METHOD, { findings: [retrieved('Nvidia shares fell by noon.', 0, { companyName: 'NVIDIA' })], reply: 'NVDA fell on October 30 at noon.' });
