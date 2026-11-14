@@ -231,6 +231,24 @@ describe("'allowlist': the cached cockpit-status verdict for an owned agent batt
     expect(svc.fetchSharedResearchRecords).not.toHaveBeenCalled();
   });
 
+  // Ruling R-D6 (Q2), review A1 end to end: the owner's held yes keeps admission when no battle id is held any more.
+  it('the only live game leaves the poll before the completed window lands: still admitted, the sheet stays open, nothing is read again (R-D6)', async () => {
+    m.mode = 'allowlist';
+    r.window = { ...windowOf([]), status: 'loading', lastSuccessfulAt: null };
+    const x = await render('mobile', hubOf({ activeBattles: [LIVE] }));
+    await openResearchArea('mobile');
+    click(workButton());
+    await flush();
+    expect(dialogs()).toHaveLength(1);
+    x.rerender(<CommandCenterHub site="mobile" hub={hubOf({ activeBattles: [] })} />);
+    await flush();
+    expect(dialogs()).toHaveLength(1);
+    expect(door()).not.toBeNull();
+    expect(verdictCalls()).toHaveLength(1);
+    expect(svc.fetchFeed).toHaveBeenCalledTimes(1);
+    expect(svc.fetchSharedResearchRecords).toHaveBeenCalledTimes(1);
+  });
+
   it('a false verdict: nothing renders and nothing is read', async () => {
     m.mode = 'allowlist';
     verdict = { status: 200, body: { on: false, allowlisted: false, serverNowMs: 0 } };

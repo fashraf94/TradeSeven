@@ -10,8 +10,11 @@
 //                (src/utils/filmRoomGate.js), cached per owner per page life and shared with Bomb mode and the research
 //                sheet. The route answers only for an agentBattles document the caller owns, so the hub hands it an owned
 //                battle id it ALREADY holds (hub/researchDoorView.js admissionBattleIdOf: the owned live list first, then
-//                the completed window). It never reads anything to find one: no battle, no request, not admitted. Until the
-//                verdict comes in, not admitted; a failed ask is not admitted either.
+//                the completed window). It never reads anything to find one, and never asks without one. Until the verdict
+//                comes in, not admitted; a failed ask is not admitted either.
+//                With no battle id held (ruling R-D6, Q2), this owner's answer already held decides: the cache is keyed by
+//                owner (filmRoomGate cacheKey), so it is read with no id. A held yes admits; no answer held, or a no, does
+//                not. So a player whose only live game leaves the poll before the completed window lands stays admitted.
 //
 // The server is final: the sheet's own route answers 404 `disabled` to anyone it does not admit.
 //
@@ -52,7 +55,9 @@ export default function useHubResearchAdmission({ mode, auth, battleId }) {
   }, [key]);
 
   if (mode === 'on') return { admitted: uid !== null };
-  if (!ask) return { admitted: false };
+  if (mode !== 'allowlist' || uid === null) return { admitted: false };
+  // R-D6: no battle id held — this owner's held answer (by owner, so no id), and no ask.
+  if (!ask) return { admitted: cachedFilmRoomVerdict(null, { ownerId: uid }) === true };
   const verdict = answer.key === key ? answer.verdict : cachedFilmRoomVerdict(id, { ownerId: uid });
   return { admitted: verdict === true };
 }

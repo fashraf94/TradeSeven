@@ -119,11 +119,41 @@ describe("'allowlist': the cached cockpit-status verdict for an owned agent batt
     expect(m.admitted()).toBe(true);
   });
 
-  it('no owned battle: not admitted, and no request', async () => {
+  it('no owned battle and no answer held for this owner: not admitted, and no request (R-D6)', async () => {
     const m = mount({ mode: 'allowlist', auth: A, battleId: null });
     await flush();
     expect(m.admitted()).toBe(false);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // Ruling R-D6 (Q2): with no battle id held, this owner's held answer decides; the cache is keyed by owner, so no id is needed.
+  it('no battle id held, a held yes for this owner: admitted, and no request (R-D6)', async () => {
+    const m = mount({ mode: 'allowlist', auth: A, battleId: 'ab_live_1' });
+    await flush();
+    expect(m.admitted()).toBe(true);
+    m.rerender({ mode: 'allowlist', auth: A, battleId: null });
+    await flush();
+    expect(m.admitted()).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('no battle id held, a held no for this owner: not admitted, and no request (R-D6)', async () => {
+    answer = { status: 200, body: { on: false, allowlisted: false, serverNowMs: 0 } };
+    const m = mount({ mode: 'allowlist', auth: A, battleId: 'ab_live_1' });
+    await flush();
+    m.rerender({ mode: 'allowlist', auth: A, battleId: null });
+    await flush();
+    expect(m.admitted()).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('no battle id held: another owner\'s held yes admits nobody else (R-D6)', async () => {
+    const m = mount({ mode: 'allowlist', auth: A, battleId: 'ab_live_1' });
+    await flush();
+    m.rerender({ mode: 'allowlist', auth: B, battleId: null });
+    await flush();
+    expect(m.admitted()).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it('a battle that arrives later (the window answers after the first render) is asked about then, once', async () => {
