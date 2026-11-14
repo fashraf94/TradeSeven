@@ -2,7 +2,7 @@
 
 **Build:** Command Center core spec V1.2, Amendment E V1.1, Part 2, with its §12 rulings (R-D1 to R-D4).
 **Branch:** `claude/hub-research-door`, cut from `origin/main` @ `c85f7b41` (#1059) after `git fetch origin`. `origin/main` was refetched before the final checks and had not moved.
-**Code head:** `4e878335`. The report commit follows it. The tree was clean at the start; the preamble STOP report is outside the repo.
+**Code head:** `adb194c3`. Its two test files were strengthened after the row-named mutation battery (§4.2). This report was first committed as `7549e11b`, before `adb194c3`, and this revision follows `adb194c3`. The tree was clean at the start; the preamble STOP report is outside the repo.
 **Mode:** `SHARED_RESEARCH_MODE` is `'off'`, and its pin row in `src/config/sharedResearchFlags.test.js` is unmoved.
 
 ## Verdict
@@ -11,10 +11,10 @@
 |---|---|
 | Does the hub change at `'off'`? | **No.** Nothing new renders, is read or is requested. jsdom rows at both sites prove it, and mutant M07 (the mode forced on) turns 12 of them red. |
 | What is built | **All of Part 2:** the admission read, the wrapper with its lazy body, `HUB_SHEETS.RESEARCH`, the Research panel's door with the in-progress line and Continue, the story selector, both readers, three research Activity rows, the §5 copy, and the guard rows. |
-| R-D1 (the bundle) | **Met.** The entry chunk changes only in its export list (`SignalDropEntry`, `REVIEW_HONEST_LINE` and `fetchFeed` added, later aliases re-lettered) and in the gate reading `.then(e=>e.C)`. Everything else is identical with hashes masked, and the CSS is byte-identical. Of 52 lazy chunks, 8 changed; 2 of those carry minifier-renamed locals (Q1). |
-| Full Linux suite | **Exit 1, from one row that fails on `main` too.** On `4e878335` (`flock`, `TZ=UTC`, 8 workers): 1,486 files, 33,049 tests; 32,913 passed, 135 skipped, 1 failed. The failure is `CompeteTab.rankLabel.jsdom.test.jsx` "absent (every caller but the shell)…". It fails identically on `main` `c85f7b41` the same day (1,476 files, 32,831 tests, that one row failed). The head's failed set equals `main`'s. Cause: a golden captured on the real clock (§4.5, "found outside this task"). This build's 15 files: 389 rows passed, 0 failed, 4 skipped (the browser rows). |
-| Rules suite, `lint:gate`, build | Rules: 42 files, 784 tests, exit 0. `lint:gate` exit 0. `vite build` exit 0. |
-| Mutation battery | **77 mutants: 75 killed.** The 2 survivors are equivalent, and each has a stronger twin that is killed (§4.2). |
+| R-D1 (the bundle) | **Met, with one reading (Q1).** The entry chunk changes only in its export list (`SignalDropEntry`, `REVIEW_HONEST_LINE` and `fetchFeed` added, later aliases re-lettered) and in the gate reading `.then(e=>e.C)`. Everything else is identical with hashes masked, and the CSS is byte-identical. Of 52 lazy chunks, 8 changed; 2 of those carry minifier-renamed locals (Q1). |
+| Full Linux suite | **Exit 1, from one row that fails on `main` too.**<br>On `adb194c3` (`flock`, `TZ=UTC`, 8 workers): 1,486 files, 33,050 tests; 32,914 passed, 135 skipped, 1 failed, no load errors.<br>The failure is `CompeteTab.rankLabel.jsdom.test.jsx` "absent (every caller but the shell)…". It fails identically on `main` `c85f7b41` the same day (1,476 files, 32,831 tests, that one row failed), so the head's failed set equals `main`'s. Cause: a golden captured on the real clock (§4.5, "found outside this task").<br>This build's 15 test files: 387 rows passed, 0 failed, 4 skipped (the browser rows). The two theme guards it registers files in (`src/theme/motion.guard.test.js`, `tokens.guard.test.js`): 694 rows, all passed.<br>The run on `4e878335` gave the same result, with one row fewer (the door file's 44).<br>The commits after `adb194c3` are docs only (`docs/README.md` and this report), and no test reads either file. |
+| Rules suite, `lint:gate`, build | **Rules:** 42 files, 784 tests, exit 0, on `4e878335`. `adb194c3` changes only two jsdom/unit test files, which the rules suite does not run.<br>**`lint:gate`:** exit 0 on `adb194c3`.<br>**`vite build`:** exit 0; the pushed head's build is checked in §4.4. |
+| Mutation battery | **135 mutants: 133 killed. Every behavioural row but one fails under at least one mutant**; §4.2 names the one row and says why. The 2 survivors are equivalent, and each has a stronger twin that is killed. The first run (77 mutants) recorded no row names. Rerun with names, it showed 59 rows no mutant reached, and two of them could not fail; `adb194c3` fixes those two. |
 | Real browser | **4 of 4 rows pass** at 390×844 and 1280×800 on the local smoke page; on the smoke preview: **4 of 4 pass** too, and the three browser mutants are killed. |
 | Review (BUILD_RULES §2) | **3 lenses, each with a refuter; 29 findings, no must-fix.** The should-fix items that survived are fixed, each with rows and mutants. 6 questions remain for the founder (§7). |
 | Founder action | The phone checklist (§5), the questions (§7), then §6 before the allowlist flip. |
@@ -33,6 +33,8 @@
 | `457f8b2c` | the real-browser rows, gated on `HUB_DOOR_URL` |
 | `2210ab0e` | the review round's fixes and rows |
 | `4e878335` | one more row (mutant M36b) |
+| `7549e11b` | this report (first version) and its README row |
+| `adb194c3` | two rows that could not fail, strengthened (§4.2): the door's own element is checked, and the offered types are named |
 
 **Where the prompt or the amendment was made precise or found wrong**, with evidence:
 
@@ -57,6 +59,9 @@
     - The constants module is shared with the body's chunk, so the body imports 10 bindings from the hub chunk.
     - That is why the gate now reads the hub's default export by name (R-D1, item 2).
 12. **Prompt Part 7: "no `data-hub-research-*` element" at `'off'`.** S6's idea card already ships `data-hub-research-retry`, `-stale` and `-wait`. The rows check the six attributes this build adds.
+13. **Changes beyond the files the prompt names:**
+    - **The theme guards.** Part 6 names the mount, activity, boundary and `hubFlags` rows only. The full suite showed that `src/theme/motion.guard.test.js` and `tokens.guard.test.js` (hazard 34) require every new hub file to be registered. So `9776a559` adds the three new hub files to both guards and to `motionGuardBaseline.json` and `tokenGuardBaseline.json`. No existing entry moved.
+    - **`HubLink`'s `ariaDisabled`** (`HubParts.jsx:153`, `:163`). Review C6 wanted Try again to say it is busy while the retry is out. `HubLink` had no disabled state, so it gained an optional `ariaDisabled`. It is off unless passed, so every existing `HubLink` renders as before.
 
 ## 2. Where admission and each prop come from
 
@@ -91,7 +96,7 @@
 
 ## 3. The changes
 
-38 files, +3,444/−40 before this report. **No file under `api/` changed, and no rule, index, environment variable or flag value. Under `src/components/SharedResearch/` only `sharedResearch.boundary.test.js` changed. `SignalDropEntry` and `src/services/sharedResearchService.js` are untouched. No fenced file (BUILD_RULES §1) was read for editing or edited.**
+38 files, +3,471/−40 at `adb194c3`, not counting this report. **No file under `api/` changed, and no rule, index, environment variable or flag value. Under `src/components/SharedResearch/` only `sharedResearch.boundary.test.js` changed. `SignalDropEntry` and `src/services/sharedResearchService.js` are untouched. No fenced file (BUILD_RULES §1) was read for editing or edited.**
 
 **New, outside the hub directory** (each a permitted terminal of the hub's walk):
 
@@ -146,7 +151,7 @@
 | `hub/activityRows.research.test.js` | 14 | The three rows; abandoned; other origins; nothing invented; the clip; cutoff and kind order. |
 | `hub/loadSharedResearch.test.js` | 2 | The kept promise; the reset after failure. |
 | `SharedResearchSheet.jsdom.test.jsx` | 13 | Loading then body; failed load and Try again; `aria-disabled` while retrying; a throwing body; the HubSheet; the props table. |
-| `CommandCenterHub.researchDoor.jsdom.test.jsx` | 44 | The hub end to end at both sites (detail below). |
+| `CommandCenterHub.researchDoor.jsdom.test.jsx` | 45 (44 before `adb194c3`) | The hub end to end at both sites (detail below). |
 | Guards | — | Mount, activity, boundary, `hubFlags`, copy and theme guards (§3). |
 
 The hub end-to-end rows cover:
@@ -157,14 +162,32 @@ The hub end-to-end rows cover:
 - the lapse and the owner change;
 - the list label.
 
-### 4.2 The mutation battery (77 mutants, 75 killed)
+### 4.2 The mutation battery (135 mutants, 133 killed; every behavioural row but one fails under a mutant)
 
 **Method:**
-- Each mutant ran in an LF `git archive` tree of `2210ab0e`, where every anchor resolved exactly once; `4e878335` adds one test row.
-- It ran only its named rows' files.
+- **Why it ran twice.** The first run (77 mutants, on `2210ab0e`) recorded only how many rows each mutant failed, not which ones, so it could not show that every behavioural row has a mutant. The battery was run again with every failed row's name recorded.
+- **Trees:**
+  - M01–M81 ran on an LF `git archive` tree of `4e878335`.
+  - M76 (a second time) and M82–M132 ran on the same tree with `adb194c3`'s door test copied in. M95–M99 also had its selector test.
+  - `adb194c3` changes only those two test files, so that tree is `adb194c3`'s.
+- Each mutant ran only its named rows' files. Every anchor resolved exactly once.
 - A kill means vitest exited non-zero **and** reported a failed assertion; a crash is never a kill.
 - Each file was restored byte for byte, proved by SHA-256 (all `restored=true`).
-- Spec and runner: the session scratchpad `mut/spec.json` and `mut/run-mutants.mjs`.
+- Spec, runner, and the map from each row to the mutants that fail it are in the session scratchpad: `mut/spec.json`, `mut/run-mutants.mjs`, `mut/row-killers-final.json`.
+
+**What the row names showed, and what changed:**
+- Of the nine behaviour files' 181 rows, 59 failed under no mutant. M82–M132 aim one at each of them.
+- Two of those rows could not fail, so the tests changed in `adb194c3`:
+  - **"Nothing announces"** checked only the door's descendants, because `querySelector` never matches the element it is called on. A live role on the door itself survived (M76). The row now checks the element too, once with the line and once with the error; M76 and M132 are killed.
+  - **"%s is offered"** was generated from `ELIGIBLE_STORY_TYPES`, so dropping a type removed its row instead of failing it. The row now names the five types; M95–M99 are each killed by their own type's row.
+- M107 and M109 mutate `src/constants/sharedResearch.js`: B1's `questionForBeat`, where the selector's question comes from. The rows they fail are the selector's.
+- **One row has no mutant:** `CommandCenterHub.researchDoor`, "the stories read failing: the sheet opens with no stories ([])". Three guards each turn a missing list into `[]`:
+  - the hub hands the selector `[]` unless the read is ready;
+  - the selector reads a non-list as none (M80 kills its row);
+  - the wrapper does the same (M130 kills its row).
+
+  So no single-point mutant can hand the sheet a list the reader never had. The row's title no longer says "stale", because it never tested a kept answer.
+- After `adb194c3` the nine files hold 182 rows; 181 fail under at least one mutant.
 
 | Id | The row it targets | File mutated | Result |
 |---|---|---|---|
@@ -174,8 +197,8 @@ The hub end-to-end rows cover:
 | M04 | admission: a false verdict is not admitted | `hooks/useHubResearchAdmission.js` | killed (3/13 red) |
 | M05 | admission: cached for a second mount (admitted from the first render) | `hooks/useHubResearchAdmission.js` | killed (1/13 red) |
 | M06 | admission: a former owner's yes is never the new owner's | `hooks/useHubResearchAdmission.js` | killed (1/13 red) |
-| M07 | hub at 'off': nothing renders, is read or requested | `CC/CommandCenterHub.jsx` | killed (12/43 red) |
-| M08 | hub at 'allowlist': the owned LIVE battle first | `CC/hub/researchDoorView.js` | killed (3/64 red) |
+| M07 | hub at 'off': nothing renders, is read or requested | `CC/CommandCenterHub.jsx` | killed (12/44 red) |
+| M08 | hub at 'allowlist': the owned LIVE battle first | `CC/hub/researchDoorView.js` | killed (3/65 red) |
 | M09 | sharedResearchMode: any other value reads off | `CC/hub/hubFlags.js` | killed (2/19 red) |
 | M10 | stories reader: no read unless admitted | `hooks/useHubStories.js` | killed (3/28 red) |
 | M11 | research reader: no read unless admitted | `hooks/useHubSharedResearch.js` | killed (3/28 red) |
@@ -193,17 +216,17 @@ The hub end-to-end rows cover:
 | M23 | selector: reason null and general with no interests | `selectors/storySelection.js` | killed (3/42 red) |
 | M24 | selector: the item's exact shape (context = subheadline) | `selectors/storySelection.js` | killed (1/42 red) |
 | M25 | selector: a blank headline is left out | `selectors/storySelection.js` | killed (1/42 red) |
-| M26 | panel: the in-progress line uses lastTurnAt | `CC/hub/researchDoorView.js` | killed (5/64 red) |
-| M27 | panel: the newest OPEN investigation | `CC/hub/researchDoorView.js` | killed (3/64 red) |
-| M28 | panel: the error line with Retry, the door stays | `CC/panels/ResearchPanel.jsx` | killed (3/43 red) |
-| M29 | panel: Work an idea stays in every state | `CC/panels/ResearchPanel.jsx` | killed (3/43 red) |
-| M30 | panel: the door only for an admitted player | `CC/CommandCenterHub.jsx` | killed (9/43 red) |
-| M31 | sheet: Work an idea opens the start view | `CC/CommandCenterHub.jsx` | killed (4/43 red) |
-| M32 | sheet: Continue opens its investigation | `CC/CommandCenterHub.jsx` | killed (5/43 red) |
-| M33 | sheet: an Activity row opens its investigation | `CC/CommandCenterHub.jsx` | killed (7/43 red) |
-| M34 | sheet: focus returns to the opener | `CC/hub/useHubSheets.js` | killed (10/43 red) |
-| M35a | sheet: admission ending frees the slot (phone) | `CC/CommandCenterHub.jsx` | killed (1/43 red) |
-| M35b | sheet: admission ending frees the slot (wide) | `CC/CommandCenterHub.jsx` | killed (1/43 red) |
+| M26 | panel: the in-progress line uses lastTurnAt | `CC/hub/researchDoorView.js` | killed (5/65 red) |
+| M27 | panel: the newest OPEN investigation | `CC/hub/researchDoorView.js` | killed (3/65 red) |
+| M28 | panel: the error line with Retry, the door stays | `CC/panels/ResearchPanel.jsx` | killed (3/44 red) |
+| M29 | panel: Work an idea stays in every state | `CC/panels/ResearchPanel.jsx` | killed (3/44 red) |
+| M30 | panel: the door only for an admitted player | `CC/CommandCenterHub.jsx` | killed (9/44 red) |
+| M31 | sheet: Work an idea opens the start view | `CC/CommandCenterHub.jsx` | killed (5/44 red) |
+| M32 | sheet: Continue opens its investigation | `CC/CommandCenterHub.jsx` | killed (6/44 red) |
+| M33 | sheet: an Activity row opens its investigation | `CC/CommandCenterHub.jsx` | killed (7/44 red) |
+| M34 | sheet: focus returns to the opener | `CC/hub/useHubSheets.js` | killed (10/44 red) |
+| M35a | sheet: admission ending frees the slot (phone) | `CC/CommandCenterHub.jsx` | killed (1/44 red) |
+| M35b | sheet: admission ending frees the slot (wide) | `CC/CommandCenterHub.jsx` | killed (1/44 red) |
 | M36 | sheet: the entry is held with the open sheet and cleared on close | `CC/hub/useHubSheets.js` | survived (equivalent; twin killed) |
 | M37 | wrapper: Try again loads with a fresh import | `CC/SharedResearchSheet.jsx` | killed (4/13 red) |
 | M38 | wrapper: the line stays until the fresh import has loaded | `CC/SharedResearchSheet.jsx` | survived (equivalent; twin killed) |
@@ -216,11 +239,11 @@ The hub end-to-end rows cover:
 | M45 | activity: a record of another origin yields no row | `CC/hub/activityRows.js` | killed (1/14 red) |
 | M46 | activity: the same cutoff as every kind | `CC/hub/activityRows.js` | killed (1/14 red) |
 | M47 | activity: the kind order puts research last | `CC/hub/activityRows.js` | killed (2/14 red) |
-| M48 | activity: each row carries its session id (it opens its investigation) | `CC/hub/activityRows.js` | killed (11/57 red) |
+| M48 | activity: each row carries its session id (it opens its investigation) | `CC/hub/activityRows.js` | killed (11/58 red) |
 | M49 | activity: the saved row at endedAt | `CC/hub/activityRows.js` | killed (1/14 red) |
-| M50 | activity: a session row is pressable (ActivityRows) | `CC/sections/ActivitySection.jsx` | killed (7/43 red) |
+| M50 | activity: a session row is pressable (ActivityRows) | `CC/sections/ActivitySection.jsx` | killed (7/44 red) |
 | M51 | copy: "finding" for one | `CC/hub/hubCopy.js` | killed (2/71 red) |
-| M52 | equippedListLabel: the BaggerBomb book inside a per-game scope | `CC/hub/researchDoorView.js` | killed (2/64 red) |
+| M52 | equippedListLabel: the BaggerBomb book inside a per-game scope | `CC/hub/researchDoorView.js` | killed (2/65 red) |
 | M53 | service: the one query (userId, createdAt desc, limit 20) | `services/sharedResearchRecords.js` | killed (1/4 red) |
 | M54 | service: kept to shared_research | `services/sharedResearchRecords.js` | killed (2/4 red) |
 | M55 | guard: a second import() in the wrapper | `CC/SharedResearchSheet.jsx` | killed (3/111 red) |
@@ -229,22 +252,80 @@ The hub end-to-end rows cover:
 | M58 | guard: a reader with a focus listener | `hooks/useHubSharedResearch.js` | killed (2/53 red) |
 | M59 | guard: a hub file importing the body's service | `CC/hub/researchDoorView.js` | killed (4/73 red) |
 | M60 | guard: the readers called once, in ConnectedHub | `CC/CommandCenterHub.jsx` | killed (1/73 red) |
-| M61 | B3: an owner change closes the former owner's sheet | `CC/hub/researchDoorView.js` | killed (3/64 red) |
-| M62 | C1: a sheet opened from inside a sheet returns focus to that sheet's opener | `CC/hub/useHubSheets.js` | killed (2/43 red) |
-| M63 | C3: the door Retry keeps focus on "Work an idea" | `CC/panels/ResearchPanel.jsx` | killed (2/43 red) |
+| M61 | B3: an owner change closes the former owner's sheet | `CC/hub/researchDoorView.js` | killed (3/65 red) |
+| M62 | C1: a sheet opened from inside a sheet returns focus to that sheet's opener | `CC/hub/useHubSheets.js` | killed (2/44 red) |
+| M63 | C3: the door Retry keeps focus on "Work an idea" | `CC/panels/ResearchPanel.jsx` | killed (2/44 red) |
 | M64 | C6: Try again is aria-disabled while the retry is out | `CC/SharedResearchSheet.jsx` | killed (1/13 red) |
 | M65 | C6: the loading line while the retry is out | `CC/SharedResearchSheet.jsx` | killed (1/13 red) |
 | M66 | C8: the clip counts code points | `CC/hub/activityRows.js` | killed (1/14 red) |
 | M67 | B4: the stories reader drops a former owner's late failure | `hooks/useHubStories.js` | killed (2/28 red) |
 | M68 | B4: the research reader drops a former owner's late failure | `hooks/useHubSharedResearch.js` | killed (2/28 red) |
-| M69 | B5: "Work an idea" opens the start view even with an investigation open | `CC/CommandCenterHub.jsx` | killed (2/43 red) |
-| M70 | B6: desktop Continue is wired | `CC/CommandCenterHub.jsx` | killed (2/43 red) |
-| M71 | B6: phone Continue is wired | `CC/CommandCenterHub.jsx` | killed (3/43 red) |
-| M72 | B6: desktop door Retry is wired | `CC/CommandCenterHub.jsx` | killed (1/43 red) |
-| M73 | B6: phone research Activity rows hand on their event (focus returns to the row) | `CC/PhoneTabs.jsx` | killed (1/43 red) |
+| M69 | B5: "Work an idea" opens the start view even with an investigation open | `CC/CommandCenterHub.jsx` | killed (3/44 red) |
+| M70 | B6: desktop Continue is wired | `CC/CommandCenterHub.jsx` | killed (2/44 red) |
+| M71 | B6: phone Continue is wired | `CC/CommandCenterHub.jsx` | killed (4/44 red) |
+| M72 | B6: desktop door Retry is wired | `CC/CommandCenterHub.jsx` | killed (1/44 red) |
+| M73 | B6: phone research Activity rows hand on their event (focus returns to the row) | `CC/PhoneTabs.jsx` | killed (1/44 red) |
 | M74 | B11: research after the idea and plan rows at one time | `CC/hub/activityRows.js` | killed (1/14 red) |
 | M38b | wrapper: the line stays until the fresh import has loaded (a new lazy swapped in and mounted at the press) | `CC/SharedResearchSheet.jsx` | killed (4/13 red) |
 | M36b | sheet: the entry is cleared on close and replaced on every open | `CC/hub/useHubSheets.js` | killed (1/44 red) |
+| M75 | panel: the door sits above the Ideas eyebrow | `CC/panels/ResearchPanel.jsx` | killed (1/44 red) |
+| M76 | panel: the door holds no live region | `CC/panels/ResearchPanel.jsx` | killed (2/45 red) |
+| M77 | hub: a tab switch reads nothing more | `CC/CommandCenterHub.jsx` | killed (4/44 red) |
+| M78 | wrapper: a HubSheet 720 wide | `CC/SharedResearchSheet.jsx` | killed (1/13 red) |
+| M79 | wrapper: the hub's title, eyebrow and label | `CC/SharedResearchSheet.jsx` | killed (1/13 red) |
+| M80 | selector: anything that is not a story is skipped | `selectors/storySelection.js` | killed (1/42 red) |
+| M81 | selector: the stories it was given are never changed | `selectors/storySelection.js` | killed (1/42 red) |
+| M82 | view: then the completed window, while it is this owner's | `CC/hub/researchDoorView.js` | killed (1/21 red) |
+| M83 | view: a battle another owner holds is never handed over | `CC/hub/researchDoorView.js` | killed (1/21 red) |
+| M84 | view: no signed-in player → null (no battle handed over) | `CC/hub/researchDoorView.js` | killed (1/21 red) |
+| M85 | view: a row without a usable id is skipped | `CC/hub/researchDoorView.js` | killed (1/21 red) |
+| M86 | view + hub: while the read is out, no line and the door shows (loading) | `CC/hub/researchDoorView.js` | killed (2/66 red) |
+| M87 | view: error is the error state, no line | `CC/hub/researchDoorView.js` | killed (1/21 red) |
+| M88 | view: an open record with no session id is skipped | `CC/hub/researchDoorView.js` | killed (1/21 red) |
+| M89 | view: a kept answer through a failed refresh (stale) still shows its line | `CC/hub/researchDoorView.js` | killed (1/21 red) |
+| M90 | view: the session id is host.id (a blank one is none) | `CC/hub/researchDoorView.js` | killed (1/21 red) |
+| M91 | view: records only from a ready read | `CC/hub/researchDoorView.js` | killed (3/21 red) |
+| M92 | view: per-game loadouts, the BaggerBomb card's book name | `CC/hub/researchDoorView.js` | killed (3/21 red) |
+| M93 | view + hub: no book equipped → null (not the fallback name) | `CC/hub/researchDoorView.js` | killed (2/66 red) |
+| M94 | view: per-game loadouts off, the watchlist the card resolved, else null | `CC/hub/researchDoorView.js` | killed (1/21 red) |
+| M95 | selector: market_mover is offered | `selectors/storySelection.js` | killed (22/42 red) |
+| M96 | selector: macro_alert is offered | `selectors/storySelection.js` | killed (2/42 red) |
+| M97 | selector: earnings_recap is offered | `selectors/storySelection.js` | killed (2/42 red) |
+| M98 | selector: sector_column is offered | `selectors/storySelection.js` | killed (2/42 red) |
+| M99 | selector: econ_recap is offered | `selectors/storySelection.js` | killed (2/42 red) |
+| M100 | selector: deepdive is left out | `selectors/storySelection.js` | killed (1/42 red) |
+| M101 | selector: an unknown type and no type are left out (an allowlist, not a denylist) | `selectors/storySelection.js` | killed (2/42 red) |
+| M102 | selector: an empty or missing headline is left out (none is invented) | `selectors/storySelection.js` | killed (3/42 red) |
+| M103 | selector: an unreadable or missing publishedAt is left out | `selectors/storySelection.js` | killed (2/42 red) |
+| M104 | selector: an unreadable or missing expiresAt is left out (never "never expires") | `selectors/storySelection.js` | killed (2/42 red) |
+| M105 | selector: no id or a blank id is left out | `selectors/storySelection.js` | killed (2/42 red) |
+| M106 | selector: equal times are ordered by id | `selectors/storySelection.js` | killed (1/42 red) |
+| M107 | selector: an unknown beat takes the default question (questionForBeat, B1's) | `constants/sharedResearch.js` | killed (2/42 red) |
+| M108 | selector: no beat takes the default question | `selectors/storySelection.js` | killed (1/42 red) |
+| M109 | selector: a beat that names an Object key takes the default question | `constants/sharedResearch.js` | killed (1/42 red) |
+| M110 | selector: the same keys as the body's fixture story (srKit storyOf) | `selectors/storySelection.js` | killed (2/42 red) |
+| M111 | service: the origin and the collection are the model's | `services/sharedResearchRecords.js` | killed (2/4 red) |
+| M112 | activity: the rows use the record model's own origin word | `CC/hub/activityRows.js` | killed (12/14 red) |
+| M113 | activity: nothing invented — no session id, no row | `CC/hub/activityRows.js` | killed (1/14 red) |
+| M114 | activity: a missing question leaves no sub | `CC/hub/activityRows.js` | killed (1/14 red) |
+| M115 | activity: no research input is no rows | `CC/hub/activityRows.js` | killed (1/14 red) |
+| M116 | admission: 'on' admits at once, with no request | `hooks/useHubResearchAdmission.js` | killed (1/13 red) |
+| M117 | admission: 'on' with no signed-in player is not admitted | `hooks/useHubResearchAdmission.js` | killed (1/13 red) |
+| M118 | admission: admitted on a definite yes, not before the answer | `hooks/useHubResearchAdmission.js` | killed (2/13 red) |
+| M119 | admission: the verdict is the owner's (another battle id asks nothing new) | `hooks/useHubResearchAdmission.js` | killed (1/13 red) |
+| M120 | admission: a battle that arrives later is asked about then, once | `hooks/useHubResearchAdmission.js` | killed (2/13 red) |
+| M121 | stories reader: admitted, loading then ready | `hooks/useHubStories.js` | killed (2/28 red) |
+| M122 | stories reader: re-renders and a new props object read nothing more | `hooks/useHubStories.js` | killed (1/28 red) |
+| M123 | stories reader: a failed read is the error state; Retry answers | `hooks/useHubStories.js` | killed (1/28 red) |
+| M124 | stories reader: a failed refresh keeps the last good answer, marked stale | `hooks/useHubStories.js` | killed (1/28 red) |
+| M125 | stories reader: an older Retry landing after a newer one is dropped | `hooks/useHubStories.js` | killed (1/28 red) |
+| M126 | stories reader: no timer and no listener | `hooks/useHubStories.js` | killed (1/28 red) |
+| M127 | wrapper: nothing is loaded until the sheet renders | `CC/SharedResearchSheet.jsx` | killed (6/13 red) |
+| M128 | wrapper: a second open renders the loaded body at once, no second load | `CC/SharedResearchSheet.jsx` | killed (4/13 red) |
+| M129 | wrapper: the phone is handed on to the body | `CC/SharedResearchSheet.jsx` | killed (1/13 red) |
+| M130 | wrapper: stories that are not a list are [] | `CC/SharedResearchSheet.jsx` | killed (1/13 red) |
+| M131 | hub at 'on' (desktop): the door shows | `CC/CommandCenterHub.jsx` | killed (7/45 red) |
+| M132 | panel: nothing announces — the error row is no live region | `CC/panels/ResearchPanel.jsx` | killed (1/45 red) |
 
 **The two survivors are equivalent:**
 - **M36** (an open keeps a held entry): close clears the entry, so `prev` is always `null`. Its twin **M36b** (close keeps it too) is killed by the "Work an idea → close → Continue" row.
@@ -294,6 +375,8 @@ The file is `src/components/CommandCenter/researchDoor.browser.test.js`, gated o
 | CSS | 36,828 | 36,828 (byte-identical) |
 
 The check ran on `4e878335` against `c85f7b41` (SHAs recorded in its JSON) and exited 0. The unminified entry went from 9,287,377 to 9,287,466 B.
+
+**The pushed head.** Everything after `4e878335` is test files and docs, which are not in the bundle. The pushed head was built, and every output file except source maps was compared with `4e878335`'s build: none differs.
 
 ### 4.5 The review (BUILD_RULES §2)
 
@@ -346,11 +429,13 @@ What the smoke changes:
 - **The data:** the research reader answers two fixture records, one open and one concluded. Every Shared Research request is answered from the body's fixtures.
 - **What stays real:** the stories come from the real feed. Nothing is written, and no model is called.
 
+**Not exercised by this build:** the signed-in path (steps 1 to 6 below). The real-browser rows drove only the no-sign-in page `?hubResearchDoor=1` (§4.3), locally and on the preview. `ConnectedHub`'s own wiring is proven in jsdom only: admission, both readers and the door's data. This checklist is the first time the signed-in smoke hub is driven.
+
 1. **Sign in.** On the **Research** tab, the door shows at the top: "Research in progress · last update {about an hour ago} · 9 findings", Continue, and "Work an idea", above the Ideas eyebrow.
 2. **"Work an idea":** the sheet rises from the bottom, titled "Work an idea". After a moment the body shows the open investigation and Recent stories (real FantasyTimes stories).
 3. **Tap a story:** its preview, with the beat's question. Go **back**, then close the sheet. You are on the Research tab, on "Work an idea".
 4. **Continue:** the sheet opens on "Faster checkout is spreading across online stores; which company earns from it?". Close it.
-5. **Overview tab:** Recent activity shows "Research opened", "Research concluded" and "Research opened" with their times. Tap "Research concluded"; the sheet opens on that investigation. Close it.
+5. **Overview tab:** the research rows are "Research opened" (3 hours ago), "Research concluded" (5 hours ago) and "Research opened" (7 hours ago), mixed by time with your own rows. On the phone, Overview shows only three rows (`PHONE_ACTIVITY_LIMIT`). If your newer real rows fill them, tap "All activity · N" to find the research rows. Tap "Research concluded"; the sheet opens on that investigation. Close it.
 6. **With VoiceOver on, steps 2 and 4:** after closing, the cursor is back on the button you tapped.
 7. **The live app at `'off'`** (production, or any preview of `main`): the Research tab is today's, with no door and no "Work an idea".
 
