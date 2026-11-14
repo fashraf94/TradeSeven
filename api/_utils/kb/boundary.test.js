@@ -353,18 +353,144 @@ describe('dark by construction', { timeout: 30_000 }, () => {
     expect(hits.filter((h) => isInside(h.file, path.join(REPO, 'src'))).map((h) => `${rel(h.file)} → ${h.spec}`)).toEqual([]);
   });
 
-  // KB-1 moves THIS row only, and admits named imports of the authorized entry
-  // points only (authorizedMethodFor, loadAuthorizedMethod, inAudienceFor, and
-  // KB_REFUSALS if needed) — never verifyPackage, verifyParts, KB_PACKAGES or
-  // KB_APP_USE, which answer the method text or the package without an
-  // authorization. The two rows below it are permanent.
-  it('nothing outside api/_utils/kb/ and scripts/kb/ imports it, or names it in any form (KB-1 moves this row)', () => {
+  // KB-1 MOVED THIS ROW (Shared Research spec V1.2, Amendment A §A4; the KB-1
+  // build prompt, Part 6). It admits exactly two things outside api/_utils/kb/
+  // and scripts/kb/:
+  //   · api/_utils/sharedResearch/method.js, importing — by plain named static
+  //     imports, nothing renamed — only the authorized entry points:
+  //     authorizedMethodFor, loadAuthorizedMethod and KB_REFUSALS from
+  //     ../kb/loader.js, inAudienceFor from ../kb/audience.js. Never
+  //     verifyPackage, verifyParts, KB_PACKAGES or KB_APP_USE, which answer the
+  //     method text or the package without an authorization;
+  //   · test files under api/_utils/sharedResearch/ and api/forge/ that mock
+  //     those two modules (vi.mock and its kin), naming no other part of it.
+  // Everything else outside stays refused, proven on planted files below. The
+  // rows below it are permanent and unchanged.
+  it('outside api/_utils/kb/ and scripts/kb/: only Shared Research method.js imports it, the authorized entry points only, and only Shared Research and forge tests mock its loader or audience (KB-1 moved this row)', () => {
+    const METHOD_JS = path.join(REPO, 'api', '_utils', 'sharedResearch', 'method.js');
+    const SR_DIR = path.join(REPO, 'api', '_utils', 'sharedResearch');
+    const FORGE_DIR = path.join(REPO, 'api', 'forge');
+    const LOADER = path.join(KB_DIR, 'loader.js');
+    const AUDIENCE = path.join(KB_DIR, 'audience.js');
+    const ADMITTED_NAMES = new Map([[LOADER, ['authorizedMethodFor', 'loadAuthorizedMethod', 'KB_REFUSALS']], [AUDIENCE, ['inAudienceFor']]]);
+    const isTest = (f) => /\.test\.[cm]?jsx?$/.test(f);
+    const mayMock = (f) => isTest(f) && (isInside(f, SR_DIR) || isInside(f, FORGE_DIR));
+    const resolveIn = (from, spec) => {
+      const s = spec.replace(/\\/g, '/');
+      if (s.startsWith('.')) return path.resolve(path.dirname(from), s);
+      if (s.startsWith('/')) return path.join(REPO, ...s.split('/'));
+      return null;
+    };
+    /** The mock targets of a text: vi.mock, vi.doMock, vi.unmock, vi.doUnmock. */
+    const mockTargetsOf = (text) => [...text.matchAll(/\bvi\s*\.\s*(?:mock|doMock|unmock|doUnmock)\s*\(\s*(['"`])([^'"`]+)\1/g)].map((m) => m[2]);
+    /** vi.importActual / vi.importMock: an IMPORT of the module (the real one, or its automock) — never admitted. */
+    const actualTargetsOf = (text) => [...text.matchAll(/\bvi\s*\.\s*(?:importActual|importMock)\s*(?:<[^>]*>)?\s*\(\s*(['"`])([^'"`]+)\1/g)].map((m) => m[2]);
+    /** Rule 5, "from one file only": no other production file names an entry point, and method.js hands none on. */
+    const ENTRY_NAMES = /\b(?:authorizedMethodFor|loadAuthorizedMethod|inAudienceFor)\b/;
+    const HANDS_ON = /\bexport\s*\{[^}]*\b(?:authorizedMethodFor|loadAuthorizedMethod|inAudienceFor|KB_REFUSALS)\b|\bexport\s+(?:const|let|var)\s+[\w$]+\s*=\s*(?:authorizedMethodFor|loadAuthorizedMethod|inAudienceFor|KB_REFUSALS)\b|\bexport\s+default\s+(?:authorizedMethodFor|loadAuthorizedMethod|inAudienceFor)\b/;
+    /** The static named imports of `spec` in a text: each statement's clause. */
+    const clausesOf = (text, spec) => [...text.matchAll(/\bimport\s+([^'"`;]*?)\s*\bfrom\s*['"]([^'"]+)['"]/g)].filter((m) => m[2] === spec).map((m) => m[1].trim());
+
+    /** Every way `list` (files) reaches outside the admitted set; [] when none. */
+    function violations(list) {
+      const out = [];
+      // 1 — importers: method.js only, from the two modules only, named entry points only, each by a plain static import.
+      for (const h of kbImportersIn(list, REPO)) {
+        if (isInside(h.file, KB_DIR) || isInside(h.file, SCRIPTS_KB)) continue;
+        const admitted = ADMITTED_NAMES.get(h.target);
+        if (h.file !== METHOD_JS || !admitted) { out.push(`${rel(h.file)} imports ${h.spec}`); continue; }
+        const code = stripComments(list.find((f) => f.file === h.file).text);
+        const clauses = clausesOf(code, h.spec);
+        const forms = specifiersOf(code).filter((s) => s === h.spec).length;
+        if (clauses.length === 0 || forms !== clauses.length) { out.push(`${rel(h.file)} reaches ${h.spec} other than by a named static import`); continue; }
+        for (const clause of clauses) {
+          const m = /^\{([^}]*)\}$/.exec(clause);
+          const names = m ? m[1].split(',').map((n) => n.trim()).filter(Boolean) : null;
+          if (!names || names.some((n) => !admitted.includes(n))) out.push(`${rel(h.file)} imports { ${m ? m[1].trim() : clause} } from ${h.spec}`);
+        }
+      }
+      for (const { file, text } of list) {
+        if (isInside(file, KB_DIR) || isInside(file, SCRIPTS_KB)) continue;
+        // 2 — mocks: only a Shared Research or forge test, and only the loader or the audience module.
+        const intoKb = (spec) => {
+          const target = resolveIn(file, spec);
+          return /(^|\/)api\/_utils\/kb(\/|$)/.test(spec.replace(/\\/g, '/')) || Boolean(target && isInside(target, KB_DIR)) ? target : undefined;
+        };
+        for (const spec of new Set([...mockTargetsOf(text), ...mockTargetsOf(stripComments(text))])) {
+          const target = intoKb(spec);
+          if (target === undefined) continue;
+          const t = target ? target.replace(/\.js$/, '') + '.js' : null;
+          if (!mayMock(file) || (t !== LOADER && t !== AUDIENCE)) out.push(`${rel(file)} mocks ${spec}`);
+        }
+        // …and never imports it through vi.importActual / vi.importMock (review TST-12).
+        for (const spec of new Set([...actualTargetsOf(text), ...actualTargetsOf(stripComments(text))])) {
+          if (intoKb(spec) !== undefined) out.push(`${rel(file)} imports ${spec} through vi`);
+        }
+        // Rule 5 — the entry points are used from method.js only: named nowhere else in production code, handed on by
+        // no export of method.js (review TST-13).
+        if (!/\.test\.[cm]?jsx?$/.test(file)) {
+          const code = stripComments(text);
+          if (file !== METHOD_JS && ENTRY_NAMES.test(code)) out.push(`${rel(file)} names a KB entry point`);
+          if (file === METHOD_JS && HANDS_ON.test(code)) out.push(`${rel(file)} hands a KB entry point on`);
+        }
+        // 3 — the belt (review KL4-2): no code file outside names the directory in any other form — a glob, a URL, a
+        // template, a ?raw import. A Shared Research or forge test's own mock path to the two modules is not such a form.
+        const rest = mayMock(file)
+          ? text.replace(/\bvi\s*\.\s*(?:mock|doMock|unmock|doUnmock|importActual|importMock)\s*\(\s*(['"`])[./]*(?:api\/)?_utils\/kb\/(?:loader|audience)\.js\1/g, '')
+          : text;
+        if (NAMES_KB.test(rest)) out.push(`${rel(file)} names api/_utils/kb`);
+      }
+      return out;
+    }
+
+    // The real tree: the admitted set only — and it is there (not vacuous).
+    expect(violations(files)).toEqual([]);
     const outside = hits.filter((h) => !isInside(h.file, KB_DIR) && !isInside(h.file, SCRIPTS_KB));
-    expect(outside.map((h) => `${rel(h.file)} → ${h.spec}`)).toEqual([]);
-    // The belt: no code file outside names the directory at all — a glob, a URL,
-    // a template, a ?raw import (review KL4-2).
-    const naming = files.filter((f) => !isInside(f.file, KB_DIR) && !isInside(f.file, SCRIPTS_KB) && NAMES_KB.test(f.text));
-    expect(naming.map((f) => rel(f.file))).toEqual([]);
+    expect(outside.map((h) => `${rel(h.file)} → ${h.spec}`).sort()).toEqual(['api/_utils/sharedResearch/method.js → ../kb/audience.js', 'api/_utils/sharedResearch/method.js → ../kb/loader.js']);
+    expect(files.some((f) => mayMock(f.file) && isInside(f.file, SR_DIR) && mockTargetsOf(f.text).some((s) => /kb\/loader\.js$/.test(s)))).toBe(true);
+    expect(files.some((f) => mayMock(f.file) && isInside(f.file, FORGE_DIR) && mockTargetsOf(f.text).some((s) => /kb\/loader\.js$/.test(s)))).toBe(true);
+
+    // Proven on planted files: each admitted form passes, and every other form is refused.
+    const at = (...p) => path.join(REPO, ...p);
+    const ok = [
+      { file: METHOD_JS, text: "import { authorizedMethodFor, loadAuthorizedMethod, KB_REFUSALS } from '../kb/loader.js';\nimport { inAudienceFor } from '../kb/audience.js';" },
+      { file: at('api', '_utils', 'sharedResearch', 'zz.test.js'), text: "vi.mock('../kb/loader.js', async (importOriginal) => ({ ...(await importOriginal()) }));\nvi.mock('../kb/audience.js');" },
+      { file: at('api', 'forge', 'zz.test.js'), text: "vi.mock('../_utils/kb/loader.js', () => ({}));\nvi.mock(\"../_utils/kb/audience.js\");" },
+    ];
+    expect(violations(ok)).toEqual([]);
+    const refused = [
+      [METHOD_JS, "import { verifyPackage } from '../kb/loader.js';"],
+      [METHOD_JS, "import { authorizedMethodFor, verifyParts } from '../kb/loader.js';"],
+      [METHOD_JS, "import { authorizedMethodFor as pick } from '../kb/loader.js';"],
+      [METHOD_JS, "import * as kb from '../kb/loader.js';"],
+      [METHOD_JS, "import loader from '../kb/loader.js';"],
+      [METHOD_JS, "import { authorizedMethodFor } from '../kb/loader.js';\nconst again = await import('../kb/loader.js');"],
+      [METHOD_JS, "export { authorizedMethodFor } from '../kb/loader.js';"],
+      [METHOD_JS, "import { KB_PACKAGES } from '../kb/packages/index.js';"],
+      [METHOD_JS, "import { KB_APP_USE } from '../kb/authorizations.js';"],
+      [METHOD_JS, "import { inAudienceFor, isCockpitOwnerAllowlisted } from '../kb/audience.js';"],
+      [METHOD_JS, "// the loader lives in api/_utils/kb/loader.js\nexport const x = 1;"],
+      [at('api', '_utils', 'sharedResearch', 'session.js'), "import { authorizedMethodFor } from '../kb/loader.js';"],
+      [at('api', 'forge', 'shared-research.js'), "import { inAudienceFor } from '../_utils/kb/audience.js';"],
+      [at('api', 'forge', 'zz.test.js'), "const { verifyPackage } = await import('../_utils/kb/loader.js');"],
+      [at('api', 'forge', 'zz.test.js'), "vi.mock('../_utils/kb/authorizations.js', () => ({ KB_APP_USE: [] }));"],
+      [at('api', 'forge', 'zz.test.js'), "vi.mock('../_utils/kb/loader.js');\nconst g = import.meta.glob('../_utils/kb/*.js');"],
+      [at('api', '_utils', 'sharedResearch', 'zz.test.js'), "vi.mock('../kb/packages/index.js', () => ({ KB_PACKAGES: [] }));"],
+      [at('api', '_utils', 'sharedResearch', 'zz.js'), "vi.mock('../kb/loader.js');"],
+      [at('api', '_utils', 'other', 'zz.test.js'), "vi.mock('../kb/loader.js', () => ({}));"],
+      [at('api', 'cron', 'zz.test.js'), "vi.mock('../_utils/kb/audience.js', () => ({}));"],
+      [at('src', 'zz.test.js'), "vi.mock('../api/_utils/kb/loader.js');"],
+      [at('scripts', 'zz.mjs'), "const p = 'api/_utils/kb/loader.js';"],
+      // review TST-12: a test may mock the two modules, never import the real one through vi
+      [at('api', 'forge', 'zz.test.js'), "vi.mock('../_utils/kb/loader.js');\nconst { verifyPackage } = await vi.importActual('../_utils/kb/loader.js');"],
+      [at('api', '_utils', 'sharedResearch', 'zz.test.js'), "const { KB_PACKAGES } = await vi.importActual('../kb/loader.js');"],
+      [at('api', '_utils', 'sharedResearch', 'zz.test.js'), "const m = await vi.importMock('../kb/loader.js');"],
+      // review TST-13: method.js is the one file: it hands no entry point on, and no other production file names one
+      [METHOD_JS, "import { authorizedMethodFor } from '../kb/loader.js';\nexport { authorizedMethodFor };"],
+      [METHOD_JS, "import { authorizedMethodFor } from '../kb/loader.js';\nexport const offer = authorizedMethodFor;"],
+      [at('api', '_utils', 'sharedResearch', 'session.js'), "import { authorizedMethodFor } from './method.js';\nexport const pick = (c) => authorizedMethodFor(c);"],
+    ];
+    for (const [file, text] of refused) expect(violations([{ file, text }]), text).not.toEqual([]);
   });
 
   it('PERMANENT: nothing outside api/_utils/kb/ imports its packages or its authorization list (review KL3-2)', () => {

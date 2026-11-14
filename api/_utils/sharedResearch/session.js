@@ -15,12 +15,12 @@
 // `entry.names` (the names in scope the opening wrote facts for — the GET's
 // unwritten ranking rows read them).
 
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { STEP_BUDGET, PER_DAY, FRAMINGS_PER_DAY, STEP_INTENTS, STEP_CALLS_PER_DAY } from '../../../src/constants/sharedResearch.js';
 // The ET calendar date by Intl (America/New_York) — the same rule as mandateClosePass.js etDateOf (spec §5.3 names
 // it), from the import-free intraday helper so the route does not load the mandate graph (parity pinned by test).
 import { etDateOf as etDateOfMs } from '../intraday/etTime.js';
-import { METHOD } from './method.js';
+import { BASELINE, methodStampOf, methodKeyOf, methodRefOf } from './method.js';
 
 export const SESSIONS_COLLECTION = 'sharedResearchSessions';
 export const QUOTA_COLLECTION = 'sharedResearchQuota';
@@ -71,22 +71,120 @@ export const itemKeyOf = (itemRef) => (itemRef && typeof itemRef.recordKind === 
 /**
  * One exchange, its id minted now (contract §4: before the write, so a retried
  * transaction sends the same object). Only the keys given are written — never
- * an undefined field.
+ * an undefined field. KB-1 (Amendment A §A4.3, §A4.4): a partner turn's
+ * `method` (the method it ran on), `methodChange` (only when it differs from
+ * the previous partner turn's), a step's `findingIds` (the findings it
+ * appended, in order) and `retrieval` (what it was shown); a confirming
+ * exchange's `methodsUsed`. None of them reaches the client (sessionViewOf).
  */
-export function exchangeOf({ who, kind, text, at, stepId = null, intent = null, target = null, lines = null }, { mintId = randomUUID } = {}) {
+export function exchangeOf({
+  who, kind, text, at, stepId = null, intent = null, target = null, lines = null,
+  method = null, methodChange = null, findingIds = null, retrieval = null, methodsUsed = null,
+}, { mintId = randomUUID } = {}) {
   if (!['player', 'partner'].includes(who) || !EXCHANGE_KINDS.includes(kind)) throw new Error('sharedResearch: an exchange needs a known speaker and kind');
   const ex = { exchangeId: mintId(), who, kind, text: String(text ?? '').slice(0, EXCHANGE_TEXT_MAX), at };
   if (stepId) ex.stepId = stepId;
   if (intent) ex.intent = intent;
   if (target) ex.target = target;
   if (lines) ex.lines = lines;
+  if (method) ex.method = method;
+  if (methodChange) ex.methodChange = methodChange;
+  if (findingIds) ex.findingIds = findingIds;
+  if (retrieval) ex.retrieval = retrieval;
+  if (methodsUsed) ex.methodsUsed = methodsUsed;
   return ex;
 }
 
-const emptyRetrieval = () => ({ calls: 0, costDollars: 0, elapsedMs: 0 });
+// ── the method on every turn (Amendment A §A4.3, KB-1) ────────────────────────
 
-/** A new session in `framing` (an observation entry before its question is confirmed; spec routine 2). No record yet. */
-export function framingSessionOf({ sessionId, userId, requestId, observation, playerExchange, nowIso }) {
+const isPartnerTurn = (e) => e?.who === 'partner' && (e.kind === 'frame' || e.kind === 'step');
+const isText = (v) => typeof v === 'string' && v.length > 0;
+/** A recorded method (an exchange's `method`, or a stamp) as written, when it is whole: id, version, sha256, a known source. */
+const recordedMethodOf = (m) => (m && typeof m === 'object' && isText(m.id) && isText(m.version) && isText(m.sha256) && (m.source === 'kb' || m.source === 'baseline')
+  ? methodRefOf(m) : null);
+/**
+ * The method an exchange records, as recorded. An exchange written before KB-1
+ * (no `method`, or no `source`) — or one whose record is not whole — reads as
+ * the baseline.
+ */
+export const exchangeMethodOf = (ex) => recordedMethodOf(ex?.method) ?? methodRefOf(BASELINE);
+const sameMethod = (a, b) => a.id === b.id && a.version === b.version && a.sha256 === b.sha256 && a.source === b.source;
+
+/**
+ * `{ from, to, reason }` when this turn's method differs from the previous
+ * partner turn's (a frame or a step), else null — and null when there is no
+ * previous partner turn (the letter of the build prompt; a KB stamp whose FIRST
+ * turn falls back records its baseline `method` but no reason — founder
+ * question FQ-2). `reason` is the refusal that put this turn on the baseline; a
+ * turn back on its KB method has none (null).
+ */
+export function methodChangeOf(exchanges, method, refusal = null) {
+  const prior = (Array.isArray(exchanges) ? exchanges : []).filter(isPartnerTurn).at(-1);
+  if (!prior) return null;
+  const was = exchangeMethodOf(prior);
+  const now = methodRefOf(method);
+  return sameMethod(was, now) ? null : { from: methodKeyOf(was), to: methodKeyOf(now), reason: typeof refusal === 'string' && refusal ? refusal : null };
+}
+
+/**
+ * The confirming exchange's `methodsUsed`: the distinct methods of the partner
+ * turns whose `findingIds` hold a kept finding, first seen walking those turns
+ * in order (the order the investigation ran — never the player's symbol order).
+ * A kept finding written by code at `open` belongs to no turn and contributes
+ * none.
+ */
+export function methodsUsedOf(exchanges, keptFindingIds) {
+  const kept = new Set(Array.isArray(keptFindingIds) ? keptFindingIds : []);
+  const out = [];
+  for (const ex of Array.isArray(exchanges) ? exchanges : []) {
+    if (!isPartnerTurn(ex) || !Array.isArray(ex.findingIds) || !ex.findingIds.some((id) => kept.has(id))) continue;
+    const m = exchangeMethodOf(ex);
+    if (!out.some((o) => sameMethod(o, m))) out.push(m);
+  }
+  return out;
+}
+
+/** SHA-256 (hex) of the retained text: the title, a newline, the highlights joined by newlines. It identifies; it does not preserve. */
+export const seenSha256Of = (title, highlights) => createHash('sha256').update(`${title}\n${highlights.join('\n')}`, 'utf8').digest('hex');
+
+/**
+ * What a step that retrieved keeps (Amendment A §A4.4, R-KB-4): every item the
+ * partner was shown (`items`: the prompt budget's kept items, in the order
+ * shown), each with its title and highlights as given to the prompt (B1's
+ * bounds: 300 characters; 2 highlights of 600 — the prompt renders them with
+ * whitespace collapsed and tickers outside the game universe masked — the
+ * record keeps the text before that rendering), the provider's publishedDate as
+ * the step was given it (null when it gave none; a date later than the read is
+ * treated as absent, spec §16 FQ-2, and the prompt showed "no date"), the hash
+ * of that text, and the findings of this step that cite it. The retained text
+ * is the record.
+ */
+export function retainedRetrievalOf({ readAt, items, findings }) {
+  const list = Array.isArray(findings) ? findings : [];
+  const citing = (url) => list.filter((f) => f?.source?.recordKind === 'retrieval' && f.source.url === url).map((f) => f.findingId);
+  const dateOf = (it) => (typeof it.publishedDate === 'string' && it.publishedDate ? it.publishedDate : null);
+  return {
+    readAt,
+    items: (Array.isArray(items) ? items : []).map((it) => {
+      const title = typeof it.title === 'string' ? it.title : '';
+      const highlights = (Array.isArray(it.highlights) ? it.highlights : []).filter((h) => typeof h === 'string');
+      return {
+        index: it.index, url: it.url, host: typeof it.host === 'string' ? it.host : null, title, highlights,
+        publishedDate: dateOf(it), seenSha256: seenSha256Of(title, highlights), findingIds: citing(it.url),
+      };
+    }),
+  };
+}
+
+const emptyRetrieval = () => ({ calls: 0, costDollars: 0, elapsedMs: 0 });
+/** A session's stamp when none is given: the baseline, selected now (tests; the route always passes one). */
+const baselineStampAt = (nowIso) => methodStampOf(BASELINE, { selectedAt: nowIso });
+
+/**
+ * A new session in `framing` (an observation entry before its question is confirmed; spec routine 2). No record yet.
+ * `method`: the stamp selectMethod chose (KB-1) — written here once, never rewritten.
+ */
+export function framingSessionOf({ sessionId, userId, requestId, observation, playerExchange, nowIso, method = null }) {
   return {
     schemaVersion: SESSION_SCHEMA_VERSION, sessionId, userId, requestId, createdAt: nowIso, updatedAt: nowIso,
     status: 'framing',
@@ -97,14 +195,17 @@ export function framingSessionOf({ sessionId, userId, requestId, observation, pl
     stepsUsed: 0, stepBudget: STEP_BUDGET, lastStep: null,
     researchWorkId: null,
     retrieval: emptyRetrieval(),
-    method: { id: METHOD.id, version: METHOD.version },
+    method: method ?? baselineStampAt(nowIso),
     attribution: null,
     adoption: null,
   };
 }
 
-/** A new session opened from an item or a drop (created at `open`, its record minted in the same transaction). */
-export function openSessionOf({ sessionId, userId, requestId, entry, exchanges, attribution, researchWorkId, nowIso }) {
+/**
+ * A new session opened from an item or a drop (created at `open`, its record minted in the same transaction).
+ * `method`: the baseline stamp selectMethod gives a story or a drop (KB-1).
+ */
+export function openSessionOf({ sessionId, userId, requestId, entry, exchanges, attribution, researchWorkId, nowIso, method = null }) {
   return {
     schemaVersion: SESSION_SCHEMA_VERSION, sessionId, userId, requestId, createdAt: nowIso, updatedAt: nowIso,
     status: 'open',
@@ -119,7 +220,7 @@ export function openSessionOf({ sessionId, userId, requestId, entry, exchanges, 
     stepsUsed: 0, stepBudget: STEP_BUDGET, lastStep: null,
     researchWorkId,
     retrieval: emptyRetrieval(),
-    method: { id: METHOD.id, version: METHOD.version },
+    method: method ?? baselineStampAt(nowIso),
     attribution,
     adoption: null,
   };
