@@ -23,7 +23,7 @@ import { makeSrFirestore } from '../_utils/sharedResearch/__fixtures__/srFiresto
 
 const state = vi.hoisted(() => ({
   mode: 'on', user: { uid: 'u-listed' }, db: null, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [],
-  listed: ['u-listed'], kbAnswer: null, offer: null, load: null, offerCalls: [], loadCalls: [], audience: null, builds: [], realBuild: null,
+  listed: ['u-listed'], kbAnswer: null, offer: null, load: null, offerCalls: [], loadCalls: [], audience: null, builds: [], realBuild: null, tooLarge: false,
 }));
 vi.mock('../../src/config/sharedResearchFlags.js', () => ({
   SHARED_RESEARCH_MODES: Object.freeze(['off', 'allowlist', 'on']),
@@ -49,6 +49,10 @@ vi.mock('../_utils/sharedResearch/modelTurn.js', async (importOriginal) => {
       return typeof next === 'function' ? next(args) : next;
     },
   };
+});
+vi.mock('../_utils/sharedResearch/promptBudget.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, fitPrompt: (args) => (state.tooLarge ? { ok: false, error: 'prompt_too_large', tokens: 99_999 } : real.fitPrompt(args)) };
 });
 vi.mock('../_utils/sharedResearch/retrieval.js', async (importOriginal) => {
   const real = await importOriginal();
@@ -172,7 +176,7 @@ beforeEach(() => {
   answers.length = 0;
   Object.assign(state, {
     mode: 'on', user: { uid: 'u-listed' }, db: seedEnv.db, turns: [], turnQueue: [], retrievals: [], retrievalQueue: [], logs: [],
-    listed: ['u-listed'], offer: null, load: null, offerCalls: [], loadCalls: [], builds: [],
+    listed: ['u-listed'], offer: null, load: null, offerCalls: [], loadCalls: [], builds: [], tooLarge: false,
   });
   state.audience.mockClear();
 });
@@ -382,6 +386,24 @@ describe('row 4 — finding → turn, and adoption', () => {
     expect(version.evidenceRefs.at(-1)).toMatchObject({ kind: 'exchange', exchangeId: confirm.exchangeId });
     expect(JSON.stringify(input)).not.toContain('methodsUsed');
     expect(JSON.stringify(version)).not.toMatch(/methodsUsed|methodChange|findingIds|seenSha256/);
+  });
+});
+
+describe('row 3 — the shadow log names the turn\'s method on every call record, failures included (review TST-8)', () => {
+  it('a KB frame whose write fails (persist_failed), and a KB step whose prompt is over the cap (prompt_too_large): each record names the KB method', async () => {
+    state.turnQueue.push(() => {
+      seedEnv.hooks.beforeCommit = () => { throw new Error('contention'); }; // recordFrame's transaction fails at commit
+      return frameOk();
+    });
+    const f = await post({ action: 'frame', observation: OBSERVATION, requestId: 'fr-persist' });
+    expect(f.statusCode).toBe(500);
+    seedEnv.hooks.beforeCommit = null;
+    expect(state.logs.at(-1)).toMatchObject({ intent: 'frame', outcome: 'failure', failureReason: 'persist_failed', methodSource: 'kb', methodId: 'KB-IDEA-EVALUATION-001', methodSha256: KB_REF.sha256 });
+    const { sessionId } = await ownWords({ requestId: 'fr-big' });
+    state.tooLarge = true;
+    const r = await step(sessionId, 1, null);
+    expect([r.statusCode, r.body.error]).toEqual([400, 'prompt_too_large']);
+    expect(state.logs.at(-1)).toMatchObject({ intent: 'next', outcome: 'failure', failureReason: 'prompt_too_large', methodSource: 'kb', methodId: 'KB-IDEA-EVALUATION-001', methodVersion: '0.1' });
   });
 });
 
