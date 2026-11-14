@@ -34,6 +34,14 @@
 // ITS OWN QUERIES. Every query here is the idea book's own equality pair (`status == …`, `kind == 'idea_book'` — no
 // composite index). The quarterly sweeps' `status == 'active'` queries are not changed.
 //
+// WITH NO IDEA BOOK, NO QUERY (Astra T2A-02; Amendment E §4). At mode 'on' each fire reads the founder-cap registry
+// ONCE (readIdeaBookPresence) and hands that one answer to the snapshot build, the eval pass and the close. A missing
+// registry document, or one whose `openBooks` is empty, means there is no idea book: every discovery query here is
+// skipped, so nothing of the Practice Field reaches the fire's response, error count, completion, retention or logs.
+// The registry is a complete list: it is written in the transaction that creates a book (ideaBook.js createIdeaBook,
+// the ONLY builder of an idea-book document) and nothing removes an entry — pinned by registryPresence.test.js. If
+// the read itself fails the answer is "unknown" and discovery runs as before (its own failures count as before).
+//
 // The founder cap (B8) is four books, so each pass reads them in one bounded page; paging and measured capacity
 // are T5.
 
@@ -47,11 +55,43 @@ import { runIdeaBookSalesPass } from './exits.js';
 import { closeIdeaBook, catchUpIdeaBook } from './close.js';
 import { nextSessionDate } from './windows.js';
 import { practiceFieldLive } from './mode.js';
+import { PRACTICE_FIELD_BOOK_REGISTRY_ID } from './constants.js';
 
 const LOG_PREFIX = '[PracticeFieldSweep]';
 
 /** The book statuses the idea-book passes serve: an active book, and one that is draining (code duties only). */
 const SERVED_STATUSES = Object.freeze(['active', 'draining']);
+
+/**
+ * What one fire knows about whether any idea book exists (T2A-02).
+ *   { known: true,  ideaBooks: false }  the registry is missing or lists no open book: no discovery query this fire;
+ *   { known: true,  ideaBooks: true }   it lists one or more: discovery runs exactly as before;
+ *   { known: false, ideaBooks: true }   it could not be read, or does not have the registry's shape: as before.
+ * A caller that hands no presence gets the last behaviour — discovery runs.
+ */
+const PRESENCE_NONE = Object.freeze({ known: true, ideaBooks: false });
+const PRESENCE_LISTED = Object.freeze({ known: true, ideaBooks: true });
+export const PRESENCE_UNKNOWN = Object.freeze({ known: false, ideaBooks: true });
+const noIdeaBook = (presence) => presence?.known === true && presence.ideaBooks === false;
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * The fire's ONE read of the founder-cap registry, `practiceFieldBooks/_registry` (T2A-02). At 'off' it reads
+ * nothing (every consumer returns before asking). Never throws: a failed read is logged and answers "unknown".
+ */
+export async function readIdeaBookPresence(db) {
+  if (!practiceFieldLive()) return PRESENCE_UNKNOWN;
+  try {
+    const snap = await db.collection('practiceFieldBooks').doc(PRACTICE_FIELD_BOOK_REGISTRY_ID).get();
+    if (!snap.exists) return PRESENCE_NONE;
+    const openBooks = snap.data()?.openBooks;
+    if (!isPlainObject(openBooks)) return PRESENCE_UNKNOWN;
+    return Object.keys(openBooks).length === 0 ? PRESENCE_NONE : PRESENCE_LISTED;
+  } catch (err) {
+    console.error(`${LOG_PREFIX} PRACTICE_FIELD_REGISTRY_READ_FAILED — discovery runs as before: ${err.message}`);
+    return PRESENCE_UNKNOWN;
+  }
+}
 
 /** One bounded page of idea books of one status — the idea book's own equality query. */
 async function ideaBooksOfStatus(db, status) {
@@ -96,11 +136,15 @@ export async function practiceFieldBuildInputs(db, { ideaHeldTickers = [], quart
  * coverage document (one read, made only then — see the catch below); if that reserves nothing, or cannot be read
  * either, the fire goes on with the engine's documents and both failures are logged.
  *
+ * With no idea book listed in the registry (T2A-02) it reads nothing and hands back the same array.
+ *
  * @param {Array<object>} activeDocs  the documents of the engine's `status == 'active'` query
+ * @param {object} [presence]         this fire's readIdeaBookPresence answer
  * @returns {Promise<Array<object>>}
  */
-export async function withDrainingIdeaBooks(db, activeDocs) {
+export async function withDrainingIdeaBooks(db, activeDocs, presence = PRESENCE_UNKNOWN) {
   if (!practiceFieldLive()) return activeDocs;
+  if (noIdeaBook(presence)) return activeDocs;
   try {
     const draining = await ideaBooksOfStatus(db, 'draining');
     return draining.length === 0 ? activeDocs : [...activeDocs, ...draining];
@@ -188,9 +232,10 @@ export async function runIdeaBookWindow(db, { bookRef, tick, now = new Date() })
  * @returns {Promise<{ books: number, served: number, caughtUp: number, sold: number, saleWaiting: number, resulted: number,
  *                     entered: number, waiting: number, cancelled: number, errors: number, leaseSkips: number }>}
  */
-export async function runIdeaBookEvalPass(db, { tick, now = new Date(), ownerToken }) {
+export async function runIdeaBookEvalPass(db, { tick, now = new Date(), ownerToken, presence = PRESENCE_UNKNOWN }) {
   const out = { books: 0, served: 0, caughtUp: 0, sold: 0, saleWaiting: 0, resulted: 0, entered: 0, waiting: 0, cancelled: 0, errors: 0, leaseSkips: 0 };
   if (!practiceFieldLive()) return out; // 'off': not even the query
+  if (noIdeaBook(presence)) return out; // T2A-02: no idea book listed — no query
   const docs = [];
   const queryFailures = [];
   for (const status of SERVED_STATUSES) {
@@ -268,9 +313,10 @@ export function ideaCloseLeftUnclosed(result) {
  *
  * @returns {Promise<{ books: number, closed: number, skipped: number, unclosed: number, errors: number, leaseSkips: number, alerts: string[] }>}
  */
-export async function runDrainingIdeaBookCloses(db, { date, now = new Date(), ownerToken }) {
+export async function runDrainingIdeaBookCloses(db, { date, now = new Date(), ownerToken, presence = PRESENCE_UNKNOWN }) {
   const out = { books: 0, closed: 0, skipped: 0, unclosed: 0, errors: 0, leaseSkips: 0, alerts: [] };
   if (!practiceFieldLive()) return out; // 'off': not even the query
+  if (noIdeaBook(presence)) return out; // T2A-02: no idea book listed — no query
   const docs = await ideaBooksOfStatus(db, 'draining');
   out.books = docs.length;
   for (const docSnap of docs) {

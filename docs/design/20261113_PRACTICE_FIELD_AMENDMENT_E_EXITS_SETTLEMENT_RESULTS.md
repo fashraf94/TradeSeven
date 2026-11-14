@@ -49,3 +49,11 @@
 | **T1a-2b** | Owner read access (rules) and the index deploy with T0b's reason-field exemption; the evidence packet; the spend reservation (B9); the window ledger; founder endpoints to create a book, admit a fixture idea, and pause or wind down; T1A-05 (fresh admission marks); T1A-06 (the top-up race); FR-A5 / RF-A2 (re-dated actions) | Opus, with Astra's review |
 
 T1a-2b starts after T1a-2a merges. T0b's record of a malformed direct answer moves to T1b, where the manager first runs on an idea book.
+
+## 4. The isolation invariant, restated (14 Nov 2026, after Astra's review T2A-02)
+
+The T1a-2a review brief's first exit criterion asked that a cron fire with no idea book show no difference at all. At mode `'on'` that cannot hold without some read that tells the fire whether an idea book exists. The invariant is restated as:
+
+- **At `'off'`:** every fire is identical to the base, including every database operation.
+- **At `'on'` with no idea book** (the founder-cap registry is missing or lists no open book): every fire is identical to the base in its response, stored state, logs, upstream and model calls, completion and retention. The only addition is one read of the registry per fire.
+- **At `'on'` with an idea book:** the Practice Field's duties run, and a fire that leaves an idea book owed reports itself incomplete (T1a-2a R-41).

@@ -554,8 +554,9 @@ describe('the shared snapshot\'s build set, by book kind (build prompt §5)', ()
     const seeded = makeMandateFakeDb({ 'mandates/q1': quarterlyBook({ execState: { lastEvalTickKey: `${DAYS.d2}_open30` } }) });
     const { db, reads } = withReadLog(seeded);
     const quarterlyOnly = await evalOnce(db);
-    expect(quarterlyOnly).not.toHaveProperty('ideaBooks'); // the pass listed no book and no query failed: the body is the engine's own
-    expect(reads.filter((r) => /practiceField/.test(r))).toEqual([]);
+    expect(quarterlyOnly).not.toHaveProperty('ideaBooks'); // no idea book listed: the pass made no query, and the body is the engine's own
+    // The one read the Practice Field makes on a fire with no idea book (Amendment E §4, Astra T2A-02): the registry.
+    expect(reads.filter((r) => /practiceField/.test(r))).toEqual(['get practiceFieldBooks/_registry']);
     expect(Object.keys(seeded._get(`mandateUniverseSnapshots/${DAYS.d2}_open30`).symbols).sort()).toEqual([...CANDIDATE_UNIVERSE].sort());
     const view = splitActiveBooks([{ data: () => quarterlyBook() }], { ideaBooksLive: true });
     expect(await snapshotBuildInputs({ collection: () => { throw new Error('read'); } }, view)).toEqual({ heldTickers: [], daily: {}, tick: {} });

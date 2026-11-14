@@ -54,6 +54,7 @@ import { isIdeaBook, splitActiveBooks } from '../_utils/mandateBookKind.js';
 import { practiceFieldLive } from '../_utils/practiceField/mode.js';
 import {
   practiceFieldBuildInputs, runIdeaBookEvalPass, withDrainingIdeaBooks, runDrainingIdeaBookCloses, ideaCloseLeftUnclosed,
+  readIdeaBookPresence,
   coverageFromStandIn,
 } from '../_utils/practiceField/sweep.js';
 import { closeIdeaBook } from '../_utils/practiceField/close.js';
@@ -371,6 +372,10 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
   const summary = { slot: tick.slot, tickKey: tick.tickKey, transport, evaluated: 0, enqueued: 0, executed: 0, gated: 0, rejected: 0, failed: 0, skipped: 0, errors: 0, complete: false };
 
   try {
+    // Practice Field T1a-2a (Astra T2A-02): at mode 'on', ONE read of the founder-cap
+    // registry per fire, handed to the snapshot build and the idea-book pass. With no
+    // idea book listed, neither makes a query. At 'off' nothing is read; it never throws.
+    const ideaBookPresence = await readIdeaBookPresence(db);
     // 4–5. Ensure the tick snapshot (PRECONDITION, §3.1). The platform-wide
     // snapshot is built ONCE per slot; on the first generous fire it is absent, so
     // we scan active books for the held-ticker union (build-set input, §3.0), build
@@ -386,7 +391,7 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
       // T1a-2a (Amendment E13): a DRAINING idea book still holds shares that need a
       // price, and this query cannot see it — the Practice Field adds them by its
       // own query. At 'off' it reads nothing and hands back these same documents.
-      const view = splitActiveBooks(await withDrainingIdeaBooks(db, activeSnap.docs), { ideaBooksLive: practiceFieldLive() });
+      const view = splitActiveBooks(await withDrainingIdeaBooks(db, activeSnap.docs, ideaBookPresence), { ideaBooksLive: practiceFieldLive() });
       const idle = await idleAcquisitionCheck(db, { docs: view.visibleDocs });
       if (idle.skip) {
         logIdleSkip({ window: tick.slot, tickKey: tick.tickKey, date: tick.date, check: idle });
@@ -459,7 +464,7 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     let ideaPassClean = true;
     if (practiceFieldLive()) {
       try {
-        const ideaPass = await runIdeaBookEvalPass(db, { tick, now, ownerToken });
+        const ideaPass = await runIdeaBookEvalPass(db, { tick, now, ownerToken, presence: ideaBookPresence });
         // …also when it listed no book but one of its queries failed: the body says so (third refuter pass, IS-8).
         if (ideaPass.books > 0 || ideaPass.errors > 0) summary.ideaBooks = ideaPass;
         ideaPassClean = ideaPass.errors === 0 && ideaPass.leaseSkips === 0;
@@ -837,6 +842,10 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
   };
 
   try {
+    // Practice Field T1a-2a (Astra T2A-02): at mode 'on', ONE read of the founder-cap
+    // registry per fire, handed to the snapshot build and the draining-book close. With
+    // no idea book listed, neither makes a query. At 'off' nothing is read; it never throws.
+    const ideaBookPresence = await readIdeaBookPresence(db);
     // 1. The CLOSE SNAPSHOT: built once per date at `${date}_close`, AFTER the
     // session close, so its quotes carry the official close print — never the
     // preClose tick's intraday marks (§3.6 "the session's official close").
@@ -853,7 +862,7 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
       // Practice Field T1a-1: an idea book counts only while its own passes run.
       // T1a-2a (Amendment E13): draining idea books join by the Practice Field's own
       // query, as in the eval sweep; nothing is read at 'off'.
-      const view = splitActiveBooks(await withDrainingIdeaBooks(db, activeSnap.docs), { ideaBooksLive: practiceFieldLive() });
+      const view = splitActiveBooks(await withDrainingIdeaBooks(db, activeSnap.docs, ideaBookPresence), { ideaBooksLive: practiceFieldLive() });
       const idle = await idleAcquisitionCheck(db, { docs: view.visibleDocs });
       if (idle.skip) {
         logIdleSkip({ window: 'close', tickKey: closeTick.closeKey, date, check: idle });
@@ -1013,7 +1022,7 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
     // thrown, and a book left unclosed keeps the fire from claiming `complete`.
     if (practiceFieldLive() && !deferred) {
       try {
-        const drain = await runDrainingIdeaBookCloses(db, { date, now, ownerToken });
+        const drain = await runDrainingIdeaBookCloses(db, { date, now, ownerToken, presence: ideaBookPresence });
         if (drain.books > 0) summary.drainingIdeaBooks = { books: drain.books, closed: drain.closed, skipped: drain.skipped, errors: drain.errors };
         ideaBooksUnclosed += drain.unclosed;
         newlyClosed += drain.closed;
