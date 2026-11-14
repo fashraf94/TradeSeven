@@ -41,6 +41,20 @@
 // valued at its carried mark, not full quality, exactly as R-9 holds an unsupported action. A conflict is not
 // settled (its id goes to neither list), so a feed that later presents one consistent row still applies it once.
 //
+// A TICKER CHANGE WAITS WHILE THE HOLDING'S SHARE BASIS IS UNRESOLVED (Astra T2A-01). A conflict's receipt, and the
+// sale guard that reads it, know the holding by its old ticker: a rename applied over an unresolved split, reverse
+// split or stock distribution would carry the unadjusted share count to a ticker no receipt names, and its sale would
+// sell it. So ticker changes are taken LAST in a call, after every other action, and one for a symbol whose share
+// basis is still unresolved — an unsettled share-basis conflict, or a share-basis action due that the ledger has
+// neither applied nor declined (unsettledShareBasisSymbols) — is NOT applied. The holding keeps its symbol, carries
+// `deferredRename: { from, to, actionId, effectiveDate, deferredOn }` (on the holding, so a basket can wait on two
+// names at once; it survives the feed dropping the rename row), is valued at its carried mark, and its sale stays
+// held under its own name. The close decides this for the WHOLE idea (renameDeferralSymbols): if any of its ledgers
+// has the symbol unresolved, no ledger renames it, so a same-stock comparison stays tied. At the close where the
+// share basis settles, the rename is applied — from the feed's row if it still lists one, else from the record —
+// after the share-basis action and before marks, receipted with `deferred: true` and the session it waited from.
+// Nothing guesses a ratio: a conflict that never settles holds the holding under the founder's alert (C-6).
+//
 // THE BOOK'S MARKED EQUITY has one rounding basis, stated below (`markedEquityCents`).
 //
 // Pure: no store, no clock.
@@ -139,20 +153,64 @@ function conflictingActionIds(rows) {
 }
 
 /**
+ * The symbols whose SHARE BASIS this ledger has not settled on `date` (Astra T2A-01): an unsettled conflicting
+ * split, reverse split or stock distribution it was entitled to (unsettledConflicts), or one due on or before `date`
+ * — listed now — that it has neither applied nor declined (one it could not apply, or one with no entitlement data).
+ * A ticker change for such a symbol waits (applyLedgerActions).
+ */
+export function unsettledShareBasisSymbols(ledger, actionsBySymbol, { date }) {
+  const out = new Set();
+  const settled = new Set([...(ledger?.appliedActionIds || []), ...(ledger?.declinedActionIds || [])]);
+  const due = pendingActionsFor(ledger?.holdings || {}, actionsBySymbol || {}, { onOrBefore: date, appliedIds: settled });
+  for (const a of [...due.pending, ...due.noEntitlementData]) if (SHARE_BASIS_TYPES.has(a.type)) out.add(upper(a.ticker));
+  for (const r of unsettledConflicts(ledger)) if (SHARE_BASIS_TYPES.has(r.type)) out.add(upper(r.ticker));
+  return out;
+}
+
+/**
+ * The symbols whose ticker change must wait on EVERY ledger of an idea at this close (Astra T2A-01): those whose
+ * share basis is unresolved on ANY of them once this close's other actions are applied. Every ledger makes the same
+ * choice, or a same-stock comparison would rename while its idea waits. Pure: each ledger's other actions are
+ * applied to a copy here, only to see what is left unresolved.
+ */
+export function renameDeferralSymbols(ledgers, actionsBySymbol, { date }) {
+  const out = new Set();
+  for (const ledger of ledgers || []) {
+    if (!ledger) continue;
+    const after = applyActions(ledger, actionsBySymbol, { date, renames: false }).ledger;
+    for (const sym of unsettledShareBasisSymbols(after, actionsBySymbol, { date })) out.add(sym);
+  }
+  return out;
+}
+
+/**
  * Apply every corporate action this ledger is due on or before `date`, once — and once per id within this call
- * (Astra T1A-01), however many rows of it the feed carries.
+ * (Astra T1A-01), however many rows of it the feed carries. Ticker changes come last, and wait while the symbol's
+ * share basis is unresolved (Astra T2A-01; see the header).
  *
  * @param {object} ledger
  * @param {object} actionsBySymbol  `{ SYM: [normalized actions] }` from the close snapshot (caActionsBySymbol)
- * @param {{ date: string }} opts   the session date being closed
+ * @param {{ date: string, deferRenames?: Set<string>, renameTargetsTaken?: Set<string> }} opts
+ *   date                the session date being closed
+ *   deferRenames        symbols whose rename waits because ANOTHER ledger of the idea has their share basis
+ *                       unresolved (renameDeferralSymbols); this ledger's own unresolved symbols are added here
+ *   renameTargetsTaken  symbols another idea of the book holds: a rename into one is not applied (R-36). The close
+ *                       screens the feed's rows for it before the call; this screens a rename taken from a
+ *                       holding's `deferredRename` record, which no feed row carries
  * @returns {{ ledger: object, applied: Array<object>, declined: Array<object>, unresolved: Set<string>,
  *             conflicts: Array<object>,
  *             shareBasisChanges: Array<{ ticker: string, ratio: number, actionId: string }>,
- *             renames: Array<{ from: string, to: string, actionId: string }>,
+ *             renames: Array<{ from: string, to: string, actionId: string, deferred?: true, deferredOn?: string }>,
+ *             renamesDeferred: Array<{ from: string, to: string, actionId: string, effectiveDate: string, deferredOn: string }>,
+ *             renamesBlocked: Array<{ from: string, to: string, actionId: string }>,
  *             closedByCash: Array<{ ticker: string, actionId: string, cashUsd: number, realizedPnlUsd: number }>,
  *             delistedWaiting: Array<{ ticker: string, actionId: string, effectiveDate: string }> }}
  */
-export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
+export function applyLedgerActions(ledger, actionsBySymbol, { date, deferRenames = null, renameTargetsTaken = null }) {
+  return applyActions(ledger, actionsBySymbol, { date, renames: true, deferRenames, renameTargetsTaken });
+}
+
+function applyActions(ledger, actionsBySymbol, { date, renames: withRenames, deferRenames = null, renameTargetsTaken = null }) {
   const next = cloneLedger(ledger);
   const settled = new Set([...next.appliedActionIds, ...next.declinedActionIds]);
   const { pending, unrecognized, notEntitled, noEntitlementData } = pendingActionsFor(
@@ -164,6 +222,9 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
   const shareBasisChanges = [];
   const conflicts = [];
   const renames = [];
+  const renamesDeferred = [];
+  const renamesBlocked = [];
+  const renameRows = [];
   const closedByCash = [];
   const delistedWaiting = [];
 
@@ -206,6 +267,8 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
   for (const action of pending) {
     if (!firstOf(action)) continue;
     if (!APPLICABLE_TYPES.has(action.type)) { unresolved.add(action.ticker); continue; }
+    // Ticker changes are taken last, below (T2A-01): after every share-basis action of this call.
+    if (action.type === 'ticker_change') { renameRows.push(action); continue; }
     // A delisting with no cash amount is NOT applied (E11): the engine's applier would force a sale at the carried
     // mark. It is settled by nobody, so a later row that does carry the cash still applies, once.
     if (action.type === 'delisting' && delistingCashOf(action) === null) {
@@ -235,18 +298,6 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
       closedByCash.push({ ticker: upper(action.ticker), actionId: action.actionId, cashUsd: receipt.cashUsd, realizedPnlUsd: receipt.realizedPnlUsd });
       continue;
     }
-    if (action.type === 'ticker_change') {
-      next.holdings = out.positions;
-      next.appliedActionIds.push(action.actionId);
-      const receipt = {
-        actionId: action.actionId, type: action.type, ticker: action.ticker, effectiveDate: action.effectiveDate,
-        renamedTo: upper(action.renamedTo), incomeUsd: 0, applied: true, appliedOn: date, source: action.source ?? null, note: out.note,
-      };
-      next.corporateActionReceipts.push(receipt);
-      applied.push({ ...action, receipt });
-      renames.push({ from: upper(action.ticker), to: upper(action.renamedTo), actionId: action.actionId });
-      continue;
-    }
     // A share-basis action that would round a holding to nothing is not applied (review L1-1): the symbol is held at
     // its carried mark, not full quality, until T1a-2's policy decides it — never a holding of zero shares with a basis.
     if (SHARE_BASIS_TYPES.has(action.type) && !(Number(out.positions[action.ticker]?.shares) > 0)) { unresolved.add(action.ticker); continue; }
@@ -263,7 +314,51 @@ export function applyLedgerActions(ledger, actionsBySymbol, { date }) {
     applied.push({ ...action, receipt });
     if (SHARE_BASIS_TYPES.has(action.type)) shareBasisChanges.push({ ticker: action.ticker, ratio: Number(action.ratio), actionId: action.actionId });
   }
-  return { ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges, renames, closedByCash, delistedWaiting };
+
+  // TICKER CHANGES, LAST (Astra T2A-01). The feed's rows, and any rename an earlier close deferred whose row the feed
+  // no longer lists (the holding's `deferredRename` record). One for a symbol whose share basis is unresolved — on
+  // this ledger after the actions above, or on another ledger of the idea (`deferRenames`) — waits.
+  if (withRenames) {
+    const settledNow = new Set([...next.appliedActionIds, ...next.declinedActionIds]);
+    const candidates = [...renameRows];
+    for (const [sym, h] of Object.entries(next.holdings)) {
+      const record = h?.deferredRename;
+      if (!record || settledNow.has(record.actionId) || conflicting.has(record.actionId) || candidates.some((r) => r.actionId === record.actionId)) continue;
+      candidates.push({ type: 'ticker_change', ticker: sym, renamedTo: record.to, effectiveDate: record.effectiveDate, actionId: record.actionId });
+    }
+    candidates.sort((a, b) => (a.effectiveDate + a.actionId).localeCompare(b.effectiveDate + b.actionId));
+    const wait = new Set([...(deferRenames || []), ...unsettledShareBasisSymbols(next, actionsBySymbol, { date })]);
+    for (const action of candidates) {
+      const from = upper(action.ticker);
+      const to = upper(action.renamedTo);
+      const holding = next.holdings[from];
+      if (!holding) { unresolved.add(action.ticker); continue; }
+      if (wait.has(from)) {
+        // Not applied, not settled: the holding keeps its symbol and its first deferral's record.
+        const record = holding.deferredRename ?? { from, to, actionId: action.actionId, effectiveDate: action.effectiveDate, deferredOn: date };
+        next.holdings = { ...next.holdings, [from]: { ...holding, deferredRename: record } };
+        unresolved.add(from);
+        renamesDeferred.push(record);
+        continue;
+      }
+      // R-36, for a rename the close's own screen of the feed's rows could not see: one taken from a record.
+      if (renameTargetsTaken?.has(to)) { unresolved.add(from); renamesBlocked.push({ from, to, actionId: action.actionId }); continue; }
+      const { deferredRename: waited = null, ...plain } = holding;
+      const out = applyCorporateAction({ positions: { ...next.holdings, [from]: plain }, cash: next.cash }, action);
+      if (!out.ok) { unresolved.add(action.ticker); continue; }
+      next.holdings = out.positions;
+      next.appliedActionIds.push(action.actionId);
+      const deferral = waited && waited.actionId === action.actionId ? { deferred: true, deferredOn: waited.deferredOn } : {};
+      const receipt = {
+        actionId: action.actionId, type: action.type, ticker: action.ticker, effectiveDate: action.effectiveDate,
+        renamedTo: to, incomeUsd: 0, applied: true, appliedOn: date, source: action.source ?? null, note: out.note, ...deferral,
+      };
+      next.corporateActionReceipts.push(receipt);
+      applied.push({ ...action, receipt });
+      renames.push({ from, to, actionId: action.actionId, ...deferral });
+    }
+  }
+  return { ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges, renames, renamesDeferred, renamesBlocked, closedByCash, delistedWaiting };
 }
 
 /**

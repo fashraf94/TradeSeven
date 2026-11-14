@@ -9,14 +9,14 @@
 //                    holding becomes a waiting sale (E9), and nothing is sold at a carried mark.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { applyLedgerActions, newLedger } from './ledger.js';
+import { applyLedgerActions, newLedger, renameDeferralSymbols } from './ledger.js';
 import { ideaCoveragePlanFromLedgers } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, contractOf, getBook, getIdea, getRow, closeNowOf, countDocs,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, etIso as etIsoOf,
 } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02', '2026-12-03'];
@@ -443,5 +443,208 @@ describe('a delisting (E11) — never applied as a sale', () => {
     expect(bookOf(ctx)).toMatchObject({ slots: { short: null }, openIdeaIds: [] });
     expect(bookOf(ctx).treasury.unreservedCash).toBe(bookOf(ctx).portfolio.cash);
     expect(DUE).toBe(S[10]);
+  });
+});
+
+// ── Astra T2A-01: a ticker change waits while the holding's share basis is unresolved ─────────────────────────────
+// A conflict's receipt and the sale guard know the holding by its OLD ticker. Applied over an unresolved split,
+// reverse split or stock distribution, a rename carried the unadjusted share count to a ticker no receipt names, and
+// the next window sold it (Astra's three variants sold 199.940017 unadjusted shares and passed reconciliation). The
+// rename now waits — on every ledger of the idea — until the share basis settles, and is applied at that close.
+describe('Astra T2A-01 — a ticker change waits while the holding\'s share basis is unresolved', () => {
+  const RENAME_ID = `ticker_change_AAPL_${S[1]}`;
+  const VARIANTS = [['stock_distribution', 1.2, 1.3], ['split', 1.5, 1.6], ['reverse_split', 2 / 3, 2 / 3 + 0.1]];
+  const basisRow = (type, ratio, effectiveDate = S[1]) => ({ type, ticker: 'AAPL', ratio, effectiveDate, source: 'eodhd' });
+  const DOWN = roundUsd(BASE.AAPL * 0.9); // below the short slot's 5% line
+  const daily = (ctx, date, syms) => ctx.db.collection('mandateUniverseDaily').doc(date).set({ date, symbols: Object.fromEntries(syms.map((s) => [s, { caFetchFailed: false }])) });
+  const record = { from: 'AAPL', to: 'AAPLX', actionId: RENAME_ID, effectiveDate: S[1], deferredOn: S[1] };
+  /** One name, AAPL, entered on S[0]. With `exit`, it closes S[0] below its line, so a line exit waits for a window. */
+  async function setupOne({ exit = true } = {}) {
+    const { db, bookId, bookRef } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
+    const ctx = { db, bookId, bookRef, ideaId: r.ideaId };
+    recon(ctx);
+    await closeDay(ctx, S[0], exit ? { AAPL: DOWN } : {});
+    if (exit) expect(ideaOf(ctx).ledger.holdings.AAPL.exitPending).toMatchObject({ reason: 'line', session: S[0] });
+    return ctx;
+  }
+  /** S[1]: two contradictory rows of one share-basis action, and AAPL → AAPLX. */
+  const conflictAndRename = (ctx, type, ratio, alt, price) => closeDay(ctx, S[1], {
+    AAPL: { price, corporateActions: [basisRow(type, ratio), basisRow(type, alt), rename('AAPL', 'AAPLX')] },
+  });
+
+  for (const [type, ratio, alt] of VARIANTS) {
+    it(`${type}: the rename waits on every ledger; the holding keeps its symbol and its record; the sale is held, nothing is sold, and the book reconciles`, async () => {
+      const ctx = await setupOne();
+      const before = ideaOf(ctx);
+      const price = roundUsd(DOWN / ratio);
+      const out = await conflictAndRename(ctx, type, ratio, alt, price);
+      const idea = ideaOf(ctx);
+      for (const ledger of [idea.ledger, idea.comparisonLedger]) {
+        expect(Object.keys(ledger.holdings), ledger.kind).toEqual(['AAPL']);
+        expect(ledger.holdings.AAPL.shares).toBe(before.ledger.holdings.AAPL.shares); // nothing adjusted, nothing renamed
+        expect(ledger.holdings.AAPL.deferredRename).toEqual(record);
+        expect(ledger.appliedActionIds).toEqual([]);
+        expect(receiptsOf(ledger, 'ticker_change')).toEqual([]);
+      }
+      expect(idea.spyLedger.holdings.SPY.deferredRename).toBeUndefined();
+      expect(Object.keys(bookOf(ctx).portfolio.positions)).toEqual(['AAPL']);
+      expect(Object.keys(coverageOf(ctx)).sort()).toEqual(['AAPL', 'SPY']);
+      expect(idea.lines.map((l) => l.symbol)).toEqual(['AAPL']);
+      expect(out.alerts.filter((a) => /PRACTICE_FIELD_RENAME_DEFERRED/.test(a))).toEqual([
+        `PRACTICE_FIELD_RENAME_DEFERRED ${ctx.ideaId} idea AAPL→AAPLX ${RENAME_ID} — the holding's share basis is unresolved; the ticker change waits (since ${S[1]}), the holding keeps its symbol and its sale stays held`,
+        `PRACTICE_FIELD_RENAME_DEFERRED ${ctx.ideaId} comparison AAPL→AAPLX ${RENAME_ID} — the holding's share basis is unresolved; the ticker change waits (since ${S[1]}), the holding keeps its symbol and its sale stays held`,
+      ]);
+      expect(rowOf(ctx, S[1])).toMatchObject({ fullQuality: false, marks: { AAPL: { quality: 'carried_forward' } }, corporateActionsApplied: { idea: [], comparison: [], spy: [] } });
+
+      // The next window quotes the new ticker only, and the feed no longer lists the conflict: the sale is HELD
+      // under its own name, because the conflict's receipt still names the symbol the holding is held under.
+      await daily(ctx, S[2], ['AAPL', 'AAPLX', 'SPY']);
+      const w = await win(ctx, S[2], 'open30', { AAPL: undefined, AAPLX: price });
+      expect(w.sales).toMatchObject({ sold: 0, waiting: 1 });
+      const held = ideaOf(ctx);
+      expect(held.ledger.saleReceipts).toEqual([]);
+      expect(held.ledger.holdings.AAPL).toMatchObject({ shares: before.ledger.holdings.AAPL.shares, deferredRename: record });
+      expect(held.ledger.holdings.AAPL.exitPending.waiting.lastRefusal).toBe('corporate_action_unsettled');
+      expect(held.blockedBy).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'line_exit_held_for_corporate_action', symbol: 'AAPL' })]));
+      expect(bookOf(ctx).slots.short).toBe(ctx.ideaId);
+    });
+
+    for (const listed of [true, false]) {
+      it(`${type}: when the feed then presents ONE consistent row, the action applies, then the rename (${listed ? 'its row still listed' : 'from the record, its row dropped'}), and the sale fills on the adjusted share count`, async () => {
+        const ctx = await setupOne();
+        const oldShares = ideaOf(ctx).ledger.holdings.AAPL.shares;
+        const price = roundUsd(DOWN / ratio);
+        await conflictAndRename(ctx, type, ratio, alt, price);
+        const out = await closeDay(ctx, S[2], {
+          AAPL: { price, corporateActions: [basisRow(type, ratio), ...(listed ? [rename('AAPL', 'AAPLX')] : [])] }, AAPLX: price,
+        });
+        const basisId = `${type}_AAPL_${S[1]}`;
+        const adjusted = Math.round(oldShares * ratio * 1e6) / 1e6;
+        const idea = ideaOf(ctx);
+        for (const ledger of [idea.ledger, idea.comparisonLedger]) {
+          expect(Object.keys(ledger.holdings), ledger.kind).toEqual(['AAPLX']);
+          expect(ledger.holdings.AAPLX.shares).toBe(adjusted);
+          expect(ledger.holdings.AAPLX).not.toHaveProperty('deferredRename');
+          expect(ledger.appliedActionIds).toEqual([basisId, RENAME_ID]); // the share basis first, then the rename
+          expect(receiptsOf(ledger, 'ticker_change')).toEqual([expect.objectContaining({
+            actionId: RENAME_ID, ticker: 'AAPL', renamedTo: 'AAPLX', applied: true, appliedOn: S[2], deferred: true, deferredOn: S[1],
+          })]);
+        }
+        expect(idea.ledger.holdings.AAPLX.exitPending).toMatchObject({ reason: 'line', session: S[0] });
+        expect(idea.lines.map((l) => l.symbol)).toEqual(['AAPLX']);
+        expect(idea.lines[0].renamedFrom).toEqual([{ symbol: 'AAPL', actionId: RENAME_ID, appliedOn: S[2] }]);
+        expect(Object.keys(bookOf(ctx).portfolio.positions)).toEqual(['AAPLX']);
+        expect(bookOf(ctx).portfolio.positions.AAPLX).toMatchObject({ ideaId: ctx.ideaId, shares: adjusted });
+        expect(Object.keys(coverageOf(ctx)).sort()).toEqual(['AAPLX', 'SPY']); // coverage follows (R-18)
+        expect(out.alerts.filter((a) => /PRACTICE_FIELD_RENAME_DEFERRED/.test(a))).toEqual([]);
+        expect(rowOf(ctx, S[2]).corporateActionsApplied).toEqual({ idea: [basisId, RENAME_ID], comparison: [basisId, RENAME_ID], spy: [] });
+
+        await daily(ctx, S[3], ['AAPLX', 'SPY']);
+        const w = await win(ctx, S[3], 'open30', { AAPL: undefined, AAPLX: price });
+        expect(w.sales).toMatchObject({ sold: 1 });
+        expect(ideaOf(ctx).ledger.saleReceipts[0]).toMatchObject({ symbol: 'AAPLX', shares: adjusted });
+      });
+    }
+  }
+
+  it('a conflict the feed DROPS never settles: the holding stays held under its old symbol, keeps its record, alerts from the fifth session, and keeps its slot', async () => {
+    const ctx = await setupOne();
+    const price = roundUsd(DOWN / 1.5);
+    await conflictAndRename(ctx, 'split', 1.5, 1.6, price);
+    const shares = ideaOf(ctx).ledger.holdings.AAPL.shares;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (let i = 0; i < 6; i += 1) {
+      const date = S[2 + i];
+      await daily(ctx, date, ['AAPL', 'AAPLX', 'SPY']);
+      const w = await win(ctx, date, 'open30', { AAPL: undefined, AAPLX: price });
+      expect(w.sales.sold, date).toBe(0);
+      expect(w.sales.alerts.filter((a) => /PRACTICE_FIELD_SALE_WAITING/.test(a)).length, date).toBe(i >= 4 ? 1 : 0);
+      const out = await closeDay(ctx, date, { AAPL: undefined, AAPLX: price });
+      expect(out.alerts.filter((a) => /PRACTICE_FIELD_RENAME_DEFERRED .* idea /.test(a)).length, date).toBe(1);
+      const idea = ideaOf(ctx);
+      expect(idea.ledger.holdings.AAPL).toMatchObject({ shares, deferredRename: record });
+      expect(idea.comparisonLedger.holdings.AAPL.deferredRename).toEqual(record);
+      expect(idea.ledger.appliedActionIds).toEqual([]);
+    }
+    expect(bookOf(ctx).slots.short).toBe(ctx.ideaId);
+    errors.mockRestore();
+  });
+
+  it('a same-stock idea and its comparison stay TIED through the wait and the settling close (rule 9: no fill was made)', async () => {
+    const ctx = await setupOne({ exit: false });
+    const tied = () => {
+      const idea = ideaOf(ctx);
+      expect(idea.postEntryFillCount).toBe(0);
+      expect(idea.comparisonLedger.holdings).toEqual(idea.ledger.holdings);
+      expect(idea.comparisonLedger.cash).toBe(idea.ledger.cash);
+      expect(idea.comparisonLedger.appliedActionIds).toEqual(idea.ledger.appliedActionIds);
+      return idea;
+    };
+    const price = roundUsd(BASE.AAPL / 1.5);
+    await conflictAndRename(ctx, 'split', 1.5, 1.6, price);
+    expect(tied().ledger.holdings.AAPL.deferredRename).toEqual(record);
+    expect(rowOf(ctx, S[1]).markedGapUsd).toBe(0);
+    await closeDay(ctx, S[2], { AAPL: undefined, AAPLX: price });
+    expect(tied().ledger.holdings.AAPL.deferredRename).toEqual(record);
+    expect(rowOf(ctx, S[2]).markedGapUsd).toBe(0);
+    await closeDay(ctx, S[3], { AAPL: { price, corporateActions: [basisRow('split', 1.5)] }, AAPLX: price });
+    expect(Object.keys(tied().ledger.holdings)).toEqual(['AAPLX']);
+    expect(rowOf(ctx, S[3]).markedGapUsd).toBe(0);
+  });
+
+  it('the choice is the IDEA\'s: a ledger whose own share basis is settled still waits when another ledger of the idea has the symbol unresolved', () => {
+    const held = { AAPL: { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, lastMarkAsOf: null, lastMarkSource: 'snapshot', sector: 'Technology', openedAt: S[0] } };
+    const clean = { ...newLedger('comparison', 1000), cash: 0, holdings: held };
+    const unsettled = {
+      ...newLedger('idea', 1000), cash: 0, holdings: held,
+      corporateActionReceipts: [{ actionId: `split_AAPL_${S[1]}`, type: 'split', ticker: 'AAPL', effectiveDate: S[1], applied: false, reason: 'conflicting_action', entitled: true, rows: [], seenOn: S[1] }],
+    };
+    const feed = { AAPL: [rename('AAPL', 'AAPLX', S[2])] };
+    expect([...renameDeferralSymbols([clean], feed, { date: S[2] })]).toEqual([]);
+    const deferRenames = renameDeferralSymbols([unsettled, clean], feed, { date: S[2] });
+    expect([...deferRenames]).toEqual(['AAPL']);
+    expect(Object.keys(applyLedgerActions(clean, feed, { date: S[2] }).ledger.holdings)).toEqual(['AAPLX']); // alone, it would rename
+    const waited = applyLedgerActions(clean, feed, { date: S[2], deferRenames });
+    expect(Object.keys(waited.ledger.holdings)).toEqual(['AAPL']);
+    expect(waited.ledger.holdings.AAPL.deferredRename).toEqual({ from: 'AAPL', to: 'AAPLX', actionId: `ticker_change_AAPL_${S[2]}`, effectiveDate: S[2], deferredOn: S[2] });
+    expect(waited.renames).toEqual([]);
+    expect([...waited.unresolved]).toEqual(['AAPL']);
+    // And on the ledger with the conflict, alone, it waits too.
+    expect(Object.keys(applyLedgerActions(unsettled, feed, { date: S[2] }).ledger.holdings)).toEqual(['AAPL']);
+    // A share-basis action DUE that the ledger has neither applied nor declined holds it the same way (here, one
+    // whose ratio the applier refuses).
+    const due = { AAPL: [{ type: 'split', ticker: 'AAPL', ratio: -2, effectiveDate: S[2], source: 'eodhd' }, rename('AAPL', 'AAPLX', S[2])] };
+    expect(Object.keys(applyLedgerActions(clean, due, { date: S[2] }).ledger.holdings)).toEqual(['AAPL']);
+  });
+
+  it('R-36 is checked when a deferred rename is finally applied: into a symbol another idea of the book now holds, it stays unapplied, with an alert', async () => {
+    const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
+    const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
+    const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
+    await closeDay(ctx, S[0]);
+    const price = roundUsd(BASE.AAPL / 1.5);
+    await closeDay(ctx, S[1], { AAPL: { price, corporateActions: [basisRow('split', 1.5), basisRow('split', 1.6), rename('AAPL', 'AMD')] } });
+    expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'AMD', deferredOn: S[1] });
+    // Another idea of the book enters AMD while the rename waits.
+    const b = await admitAndEnter(db, bookId, {
+      contract: contractOf({ slot: 'medium', names: ['AMD'], capitalUsd: 15000 }), opId: 'idea-2', admitIso: etIsoOf(S[1], 11, 0), quotes: quotes({ AAPL: price }), date: S[2], slot: 'midday',
+    });
+    expect(b.entry.outcome).toBe('entered');
+    recon(ctx);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // The share basis settles, and the feed no longer lists the rename: the record would apply it — into AMD.
+    const out = await closeDay(ctx, S[2], { AAPL: { price, corporateActions: [basisRow('split', 1.5)] } });
+    const idea = ideaOf(ctx);
+    expect(Object.keys(idea.ledger.holdings)).toEqual(['AAPL']);
+    expect(idea.ledger.appliedActionIds).toEqual([`split_AAPL_${S[1]}`]);
+    expect(idea.ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'AMD', deferredOn: S[1] });
+    expect(out.alerts.filter((x) => /PRACTICE_FIELD_RENAME_BLOCKED/.test(x))).toEqual([
+      `PRACTICE_FIELD_RENAME_BLOCKED ${ctx.ideaId} idea AAPL — a ticker change into a symbol another idea of the book holds is not applied; the holding is valued at its carried mark`,
+      `PRACTICE_FIELD_RENAME_BLOCKED ${ctx.ideaId} comparison AAPL — a ticker change into a symbol another idea of the book holds is not applied; the holding is valued at its carried mark`,
+    ]);
+    expect(rowOf(ctx, S[2]).marks.AAPL.quality).toBe('carried_forward');
+    expect(Object.keys(getBook(db, bookId).portfolio.positions).sort()).toEqual(['AAPL', 'AMD']);
+    errors.mockRestore();
   });
 });

@@ -34,7 +34,8 @@
 //   1. CORPORATE ACTIONS from the daily layer, through the engine's pure functions, applied ONCE to each ledger — the
 //      idea's, its comparison's, its SPY line's — and, for the idea's own holdings, to the book's positions too. A
 //      split moves quantities and the line's level by the same ratio; a dividend credits the cash of whichever ledger
-//      holds the shares; a ticker change renames the holding, its line, the book's position and the coverage entry;
+//      holds the shares; a ticker change renames the holding, its line, the book's position and the coverage entry —
+//      last, and only once the symbol's share basis is settled on every ledger of the idea (Astra T2A-01);
 //      a delisting with cash is credited and closes the holding; one without leaves the idea's holding a waiting sale;
 //   2. MARKS from the close snapshot for every ledger, each with its quality;
 //   3. THE LINES of every running idea (settlement.js readLines);
@@ -60,6 +61,7 @@ import { PracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
 import {
   applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, unsettledConflicts, cloneLedger,
+  renameDeferralSymbols,
 } from './ledger.js';
 import { closeMarkQuality } from './marks.js';
 import { planRelease } from './admission.js';
@@ -86,7 +88,8 @@ const marksOf = (valuation) => Object.fromEntries(Object.entries(valuation.marks
 
 /** What applyLedgerActions answers when there is nothing to apply: the session has no stored snapshot, so no feed. */
 const noActions = (ledger) => ({
-  ledger, applied: [], declined: [], unresolved: new Set(), conflicts: [], shareBasisChanges: [], renames: [], closedByCash: [], delistedWaiting: [],
+  ledger, applied: [], declined: [], unresolved: new Set(), conflicts: [], shareBasisChanges: [], renames: [], renamesDeferred: [], renamesBlocked: [],
+  closedByCash: [], delistedWaiting: [],
 });
 
 /** A valuation of a session nobody observed: every mark is the carried one, and says so (E12). */
@@ -122,16 +125,23 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
     });
   }
 
-  // 1. Corporate actions, once per ledger.
-  const own = observed ? applyLedgerActions(idea.ledger, actionsBySymbol, { date }) : noActions(idea.ledger);
-  const cmp = observed ? applyLedgerActions(idea.comparisonLedger, actionsBySymbol, { date }) : noActions(idea.comparisonLedger);
-  const spy = observed ? applyLedgerActions(idea.spyLedger, actionsBySymbol, { date }) : noActions(idea.spyLedger);
+  // 1. Corporate actions, once per ledger. A ticker change waits on EVERY ledger of the idea while the symbol's share
+  //    basis is unresolved on ANY of them after this close's other actions (Astra T2A-01; ledger.js).
+  const deferRenames = observed ? renameDeferralSymbols([idea.ledger, idea.comparisonLedger, idea.spyLedger], actionsBySymbol, { date }) : null;
+  const opts = { date, deferRenames, renameTargetsTaken: heldByOthers };
+  const own = observed ? applyLedgerActions(idea.ledger, actionsBySymbol, opts) : noActions(idea.ledger);
+  const cmp = observed ? applyLedgerActions(idea.comparisonLedger, actionsBySymbol, opts) : noActions(idea.comparisonLedger);
+  const spy = observed ? applyLedgerActions(idea.spyLedger, actionsBySymbol, opts) : noActions(idea.spyLedger);
 
   for (const [name, out] of [['idea', own], ['comparison', cmp], ['spy', spy]]) {
-    for (const sym of renameBlocked) {
+    const blocked = new Set([...renameBlocked, ...out.renamesBlocked.map((b) => b.from)]);
+    for (const sym of blocked) {
       if (!Object.hasOwn(out.ledger.holdings || {}, sym)) continue;
       out.unresolved.add(sym);
       alerts.push(`PRACTICE_FIELD_RENAME_BLOCKED ${idea.ideaId} ${name} ${sym} — a ticker change into a symbol another idea of the book holds is not applied; the holding is valued at its carried mark`);
+    }
+    for (const d of out.renamesDeferred) {
+      alerts.push(`PRACTICE_FIELD_RENAME_DEFERRED ${idea.ideaId} ${name} ${d.from}→${d.to} ${d.actionId} — the holding's share basis is unresolved; the ticker change waits (since ${d.deferredOn}), the holding keeps its symbol and its sale stays held`);
     }
   }
 
