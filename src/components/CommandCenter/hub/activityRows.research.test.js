@@ -28,16 +28,34 @@ describe('the three rows (amendment §3.3)', () => {
     expect(row.battleId).toBeUndefined();
   });
 
-  it('a concluded investigation: opened at createdAt and concluded at endedAt', () => {
+  it('a concluded investigation: opened at createdAt and concluded at endedAt, the concluded row with the question as its sub (R-D9)', () => {
     const list = rows([record('s1', { state: 'completed', terminalReason: 'concluded', endedAt: iso(NOW - HOUR) })]);
     expect(ids(list)).toEqual(['research.concluded:s1', 'research.opened:s1']);
-    expect(list[0]).toMatchObject({ text: COPY.activity.researchConcluded, ms: NOW - HOUR, sessionId: 's1', sub: '' });
+    expect(list[0]).toMatchObject({ text: COPY.activity.researchConcluded, ms: NOW - HOUR, sessionId: 's1', sub: 'Which grid suppliers earn from the switchgear backlog?' });
   });
 
-  it('an investigation saved as an idea: opened, and "Idea saved from research" at endedAt', () => {
+  it('an investigation saved as an idea: opened, and "Idea saved from research" at endedAt with the question as its sub (R-D9)', () => {
     const list = rows([record('s1', { state: 'completed', terminalReason: 'saved_to_list', endedAt: iso(NOW - HOUR) })]);
     expect(ids(list)).toEqual(['research.saved:s1', 'research.opened:s1']);
-    expect(list[0]).toMatchObject({ text: COPY.activity.ideaFromResearch, sessionId: 's1' });
+    expect(list[0]).toMatchObject({ text: COPY.activity.ideaFromResearch, ms: NOW - HOUR, sessionId: 's1', sub: 'Which grid suppliers earn from the switchgear backlog?' });
+  });
+
+  // Ruling R-D9 (Q5): the concluded and saved rows carry the opened row's clipped question, and no sub when it has none.
+  it('the concluded and saved rows clip the question as the opened row does; a missing question leaves no sub on either (R-D9)', () => {
+    const long = 'Which '.padEnd(200, 'x');
+    const concluded = rows([record('s1', { question: long, state: 'completed', terminalReason: 'concluded', endedAt: iso(NOW - HOUR) })]);
+    expect(concluded[0].id).toBe('research.concluded:s1');
+    expect(concluded[0].sub).toBe(concluded[1].sub);
+    expect(concluded[0].sub.endsWith('…')).toBe(true);
+    expect(concluded[0].sub.length).toBeLessThanOrEqual(RESEARCH_QUESTION_CLIP);
+    const saved = rows([record('s2', { question: long, state: 'completed', terminalReason: 'saved_to_list', endedAt: iso(NOW - HOUR) })]);
+    expect(saved[0].id).toBe('research.saved:s2');
+    expect(saved[0].sub).toBe(saved[1].sub);
+    for (const terminalReason of ['concluded', 'saved_to_list']) {
+      const [ended] = rows([record('s3', { question: undefined, state: 'completed', terminalReason, endedAt: iso(NOW - HOUR) })]);
+      expect(ended.id).toMatch(/^research\.(concluded|saved):s3$/);
+      expect(ended.sub).toBe('');
+    }
   });
 
   it('an abandoned investigation has its opened row only', () => {

@@ -75,7 +75,8 @@ const clip = (text, max) => {
 /**
  * Amendment E V1.1 §3.3: the research rows, from the research reader's records only (src/hooks/useHubSharedResearch.js) —
  * "Research opened" for every Shared Research record at its `createdAt`, with the question clipped as its sub;
- * "Research concluded" (`terminalReason` 'concluded') and "Idea saved from research" ('saved_to_list') at its `endedAt`. An
+ * "Research concluded" (`terminalReason` 'concluded') and "Idea saved from research" ('saved_to_list') at its `endedAt`, with the
+ * same clipped question as their sub (ruling R-D9, Q5), so rows of different investigations differ by more than their time. An
  * abandoned investigation has its opened row only. Ids `research.opened:{sessionId}`, `research.concluded:{sessionId}`,
  * `research.saved:{sessionId}`; each row carries `sessionId`, so it opens the sheet on that investigation. A record of another
  * origin, with no session id or no readable time yields no row: nothing is invented.
@@ -86,17 +87,19 @@ function researchEvents(research) {
     if (!record || typeof record !== 'object' || record.origin !== SHARED_RESEARCH_ORIGIN) continue;
     const sessionId = nonEmpty(record.host?.id);
     if (!sessionId) continue;
+    // The question, clipped, is every research row's sub (R-D9); a missing question leaves none.
+    const question = nonEmpty(record.question);
+    const sub = question ? clip(question.trim(), RESEARCH_QUESTION_CLIP) : '';
     const createdMs = hubMs(record.createdAt);
     if (createdMs !== null) {
-      const question = nonEmpty(record.question);
-      events.push({ ms: createdMs, kind: ACTIVITY_KINDS.RESEARCH, id: `research.opened:${sessionId}`, sessionId, text: COPY.activity.researchOpened, sub: question ? clip(question.trim(), RESEARCH_QUESTION_CLIP) : '' });
+      events.push({ ms: createdMs, kind: ACTIVITY_KINDS.RESEARCH, id: `research.opened:${sessionId}`, sessionId, text: COPY.activity.researchOpened, sub });
     }
     const endedMs = hubMs(record.endedAt);
     if (endedMs === null) continue;
     if (record.terminalReason === 'concluded') {
-      events.push({ ms: endedMs, kind: ACTIVITY_KINDS.RESEARCH, id: `research.concluded:${sessionId}`, sessionId, text: COPY.activity.researchConcluded, sub: '' });
+      events.push({ ms: endedMs, kind: ACTIVITY_KINDS.RESEARCH, id: `research.concluded:${sessionId}`, sessionId, text: COPY.activity.researchConcluded, sub });
     } else if (record.terminalReason === 'saved_to_list') {
-      events.push({ ms: endedMs, kind: ACTIVITY_KINDS.RESEARCH, id: `research.saved:${sessionId}`, sessionId, text: COPY.activity.ideaFromResearch, sub: '' });
+      events.push({ ms: endedMs, kind: ACTIVITY_KINDS.RESEARCH, id: `research.saved:${sessionId}`, sessionId, text: COPY.activity.ideaFromResearch, sub });
     }
   }
   return events;
