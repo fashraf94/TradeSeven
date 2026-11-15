@@ -1585,6 +1585,39 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
     expect(after.ledger.holdings.AAPL.basisSuspicion.resolvedBy).toBe('founder');
   });
 
+  it('review F1: the founder\'s ruling is SPENT once a fresh mark is written — a later unfed split-shaped move against a fresh mark that happens to equal the old frozen one is a new suspicion: the cash delisting is held, not paid on the current count', async () => {
+    const ctx = await entered();
+    await closeQ(ctx, S[1], { ...Q, AAPL: 50 });
+    await closeQ(ctx, S[2], { ...Q, AAPL: 100 });
+    const idea = ideaOf(ctx);
+    const resolve = (ledger) => ({ ...ledger, holdings: { ...ledger.holdings, AAPL: { ...ledger.holdings.AAPL, basisSuspicion: { ...ledger.holdings.AAPL.basisSuspicion, resolvedBy: 'founder', resolvedAt: '2026-11-18T23:00:00.000Z' } } } });
+    await ctx.bookRef.collection('ideas').doc(ctx.ideaId).set({ ...idea, ledger: resolve(idea.ledger), comparisonLedger: resolve(idea.comparisonLedger) });
+    await closeQ(ctx, S[3], { ...Q, AAPL: 100 });
+    expect(rowOf(ctx, S[3]).marks.AAPL).toMatchObject({ mark: 100, quality: 'vendor_time' });
+    expect(saleHeldBackBy(ideaOf(ctx).ledger, 'AAPL', tickSnapshot(S[4], 'open30', { ...Q, AAPL: 50 }), { sinceDate: S[3], date: S[4] })).toBe('suspected_corporate_action');
+    await closeQ(ctx, S[4], { ...Q, AAPL: { price: 50, corporateActions: [cashAction('delisting', S[4])] } });
+    for (const key of ['ledger', 'comparisonLedger']) {
+      const ledger = ideaOf(ctx)[key];
+      expect(paidOn(ledger, 'delisting'), key).toEqual([]);
+      expect(ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[4], since: S[3], resolvedBy: null, resolvedAt: null });
+      expect(ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: ACTION_ID('delisting', S[4]) })]);
+    }
+    expect(bookOf(ctx).openIdeaIds).toEqual([ctx.ideaId]);
+  });
+
+  it('review F2: a special dividend that explained its own drop and was PAID raises no suspicion at a later close either (the screen is asked again with the paid dividends) — a later ordinary dividend is paid', async () => {
+    const ctx = await entered();
+    await closeQ(ctx, S[1], { ...Q, AAPL: { price: 50, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', amount: 50, effectiveDate: S[1], source: 'eodhd_dividends' }] } });
+    await closeQ(ctx, S[2], { ...Q, AAPL: 50.2 });
+    await closeQ(ctx, S[3], { ...Q, AAPL: { price: 50.2, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', amount: 0.25, effectiveDate: S[3], source: 'eodhd_dividends' }] } });
+    for (const key of ['ledger', 'comparisonLedger']) {
+      const ledger = ideaOf(ctx)[key];
+      expect(ledger.holdings.AAPL.basisSuspicion, key).toBeUndefined();
+      expect(paidOn(ledger, 'cash_dividend').map(cashOf)).toEqual([roundUsd(199.940017 * 50), roundUsd(199.940017 * 0.25)]);
+      expect(ledger.holdings.AAPL.heldActions).toBeUndefined();
+    }
+  });
+
   it('a holding waiting on a DELISTING is not screened (R-32): a delisted name falling to half its carried price is the delisting, not a split', async () => {
     const ctx = await entered();
     await closeQ(ctx, S[1], { ...Q, AAPL: { price: 50, corporateActions: [{ type: 'delisting', ticker: 'AAPL', effectiveDate: S[1], source: 'founder_action' }] } });
@@ -1674,5 +1707,22 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
     const ledger = { ...newLedger('idea', 20000), cash: 0, holdings: { AAPL: { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, openedAt: S[0], basisSuspicion: { symbol: 'AAPL', suspectedOn: S[1], since: S[0], ratio: 0.5, frozenMark: 100, resolvedBy: null, resolvedAt: null } } } };
     const valuation = { marks: { AAPL: { mark: 100, quality: 'carried_forward', vendorTimeIso: null } } };
     expect(ledgerEndpoint(ledger, valuation)).toMatchObject({ unsettledActions: [SUSP], fullQuality: false });
+  });
+});
+
+describe('Fix round 3 — review F3: the R-32 exemption outlives the idea\'s delisting sale', () => {
+  it('after the idea SELLS a holding it waited to sell on a delisting, its comparison\'s copy (which never sells) is still not given a suspicion record; once the price leaves the split shape its mark is fresh again', async () => {
+    const ctx = await setup();
+    const half = roundUsd(BASE.MSFT / 2);
+    await closeDay(ctx, S[1], { MSFT: { price: half, corporateActions: [{ type: 'delisting', ticker: 'MSFT', effectiveDate: S[1], source: 'founder_action' }] } });
+    await closeDay(ctx, S[2], { MSFT: half }); // the delisting row no longer listed
+    await win(ctx, S[3], 'open30', { MSFT: half });
+    expect(ideaOf(ctx).ledger.holdings.MSFT).toBeUndefined();
+    expect(ideaOf(ctx).ledger.saleReceipts.find((r) => r.symbol === 'MSFT')).toMatchObject({ queuedBy: { reason: 'delisting' } });
+    await closeDay(ctx, S[3], { MSFT: half });
+    expect(ideaOf(ctx).comparisonLedger.holdings.MSFT.basisSuspicion).toBeUndefined();
+    await closeDay(ctx, S[4], { MSFT: 190.05 });
+    expect(ideaOf(ctx).comparisonLedger.holdings.MSFT.basisSuspicion).toBeUndefined();
+    expect(rowOf(ctx, S[4]).comparisonMarks.MSFT).toMatchObject({ mark: 190.05, quality: 'vendor_time' });
   });
 });

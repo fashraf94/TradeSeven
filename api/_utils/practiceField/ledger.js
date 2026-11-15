@@ -223,9 +223,12 @@ export function basisSuspicionRecords(ledger) {
   return out;
 }
 
-/** The move the founder has already ruled on: a resolved record whose frozen mark is still the holding's mark. Its
- *  split-shaped signature against that same mark is not a new suspicion (the mark has not been trusted since). */
-const founderRuledMove = (holding) => founderResolved(holding?.basisSuspicion) && Number(holding.basisSuspicion.frozenMark) === Number(holding?.lastMark);
+/** The move the founder has already ruled on: a resolved record whose frozen mark — its price AND the time it was
+ *  observed — is still the holding's mark. Its split-shaped signature against that same mark is not a new suspicion.
+ *  Once any fresh mark is written the ruling is spent, even if a later fresh price equals the old one (review F1). */
+const founderRuledMove = (holding) => founderResolved(holding?.basisSuspicion)
+  && Number(holding.basisSuspicion.frozenMark) === Number(holding?.lastMark)
+  && (holding.basisSuspicion.frozenMarkAsOf ?? null) === (holding?.lastMarkAsOf ?? null);
 
 /**
  * Does a share-basis action EXPLAIN a suspicion's move? Dated inside the gap (after `since`, on or before the session it
@@ -246,10 +249,13 @@ function explainsSuspicion(action, s) {
 /** A holding waiting on a delisting (E11): its fall is the delisting, not a split (R-32). */
 const delistingWaitingHolding = (h) => h?.exitPending?.reason === 'delisting' || h?.settlementPending?.replacedExit?.reason === 'delisting';
 
-/** The symbols of a ledger's holdings that wait on a delisting. Only the idea's own holding carries the waiting sale, so
- *  the close hands this set, read from the idea's ledger, to the screen of every ledger of the idea. */
+/** The symbols of a ledger's holdings that wait on a delisting — and those it has already SOLD on one (review F3: the
+ *  comparison, which never sells, still holds the name at its pre-delisting mark). Only the idea's own ledger carries
+ *  the waiting sale, so the close hands this set, read from the idea's ledger, to the screen of every ledger of the idea. */
 export function delistingWaitingSymbols(ledger) {
-  return new Set(Object.entries(ledger?.holdings || {}).filter(([, h]) => delistingWaitingHolding(h)).map(([sym]) => upper(sym)));
+  const out = new Set(Object.entries(ledger?.holdings || {}).filter(([, h]) => delistingWaitingHolding(h)).map(([sym]) => upper(sym)));
+  for (const r of ledger?.saleReceipts || []) if (r?.queuedBy?.reason === 'delisting') out.add(upper(r.symbol));
+  return out;
 }
 
 /** The move's split shape: forward (`split`, price × 1/n) or `reverse_split` (price × n), n the nearest whole number in
@@ -291,8 +297,17 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
     if (!h || !d || openBasisSuspicion(h) || founderRuledMove(d) || delistingWaitingHolding(h) || delistingWaiting?.has(sym)) continue;
     // A delisting with no cash listed for it today makes it a waiting sale at this close (R-32, as above).
     if ((actionsBySymbol?.[sym] || []).some((a) => a?.type === 'delisting' && delistingCashOf(a) === null && typeof a.effectiveDate === 'string' && a.effectiveDate <= date && !settled.has(deriveActionId(a)))) continue;
+    // A cash dividend this ledger has already PAID inside the gap may explain the move (a special dividend's ex-date drop):
+    // once settled the screen above no longer sees it, so it is asked again — the engine's own test, with those paid
+    // dividends as the only actions (review F2). A dividend never adjusts the count, so nothing here pays anything.
+    const since = markSessionOf(d);
+    const paid = (dry.corporateActionReceipts || [])
+      .filter((r) => r?.type === 'cash_dividend' && r.applied === true && upper(r.ticker) === sym && typeof r.effectiveDate === 'string'
+        && r.effectiveDate <= date && (since === null || r.effectiveDate > since))
+      .map((r) => ({ type: 'cash_dividend', ticker: sym, amount: r.amount, effectiveDate: r.effectiveDate }));
+    if (paid.length > 0 && classifyOvernightGaps({ [sym]: d }, closeSnapshot, { [sym]: paid }, { sinceDate: since, asOfDate: date }).pendingCA.has(sym)) continue;
     const record = {
-      symbol: sym, suspectedOn: date, since: markSessionOf(d), ratio,
+      symbol: sym, suspectedOn: date, since, ratio,
       shape: shapeOf(ratio),
       frozenMark: Number(d.lastMark), frozenMarkAsOf: d.lastMarkAsOf ?? null, resolvedBy: null, resolvedAt: null,
     };
