@@ -832,3 +832,331 @@ A trial run of the new mutants on `706971ad` found 3 gates whose rows were cover
 | C-16 | A dividend dated before a split but **first listed after** the split was applied is paid on the post-split count (refuter 2's note) | A late feed row, not an unresolved basis; the engine's entitlement has no history of counts |
 | C-6 (unchanged) | A doubt that never settles holds the holding (sale, rename, payments) until the founder acts | T5's founder tool |
 | C-10…C-12, C-14, C-15 | As in §8.9 | Unchanged by this round. C-13 is fixed here |
+
+## 10. Fix round 3, 15 Nov 2026 — T2A-D01, T2A-D02
+
+**Fix round 3, Practice Field T1a-2a** · Claude Code (Opus 5.5) · 15 Nov 2026
+**Branch:** `claude/practice-field-t1a2a-exits-settlement` (draft PR #1061). **Before:** `e6400cbeb4022bde2a4a031df5b4a00768ca42f9`, the head Astra confirmed (code `1c4b99af`). `git fetch origin` first. `origin/main` had moved from `0b720acc` to `ea5e0c5b406cf9060c42d32ee8e754998e4fb280` (PR #1068, Shared Research allowlist). That PR changed two files, `src/config/sharedResearchFlags.js` and its test; neither is under `api/`, and it touched neither `firestore.rules` nor the indexes. The branch took it by a merge commit, `16bba5b0`, with no conflict. No rebase, no force-push. The work ran on this session's worktree branch, reset to `e6400cbe`, and was pushed to the PR's branch as a fast-forward.
+**After:** code head `b8d72e10cfe5ab01738952e6fa8d1541fd2ad02b`. One test-only commit follows it: `2e6a605abe7adcf50e03080beba06b0da969c2b3`, a row for the last battery survivor. `2e6a605a` is the head of every check below except the battery, which ran on `b8d72e10` and then for that one mutant on `2e6a605a`. This report's commit follows `2e6a605a` and changes no code. The round is 7 files, +975 / −24 after the merge: 5 under `api/` (+861 / −24), plus the attachment and its `docs/README.md` row.
+**Attached by the founder, committed byte-identical:** `docs/audits/20261115_ASTRA_CONFIRMATION_T1A2A_ROUND2.md`, SHA-256 `b6f9d24c5d5f85876962a68ea4d63ee6cc64f1af16ba5452466b200737b5bcc8`. The hash was taken from the attachment before the copy and from the committed blob after it (LF, no CR byte).
+**Flag:** `PRACTICE_FIELD_MODE = 'off'` (`src/config/practiceFieldFlags.js:33`), unchanged. No fenced file, flag value, pin, rule or index changed. The engine's `computeExecution`, `pendingActionsFor`, `applyCorporateAction`, `deriveActionId` and gap screen (`classifyOvernightGaps`) are called, not edited. The round never pays an estimated adjusted count, never chooses a ratio, and never weakens reconciliation. No record is cleared except by a listed share-basis row that explains its move (see §10.4 for the one field the close adds to a resolved record). This session made no model call, no Firestore write and no EODHD call.
+
+### 10.1 In plain terms
+
+Astra confirmed the last round: the cash-buyout hole is closed in all three of her cases, and her own probe still passes 16 of 16. She found two more ways money could move on a share count that was in doubt. Both were older than the last round; they reproduce on the head before it too.
+
+**The first (T2A-D01, the founder's Q-P).** The system has a price check that notices when a stock's price suddenly halves, or drops to a third, with no split in the data feed — the shape a split leaves when the feed misses it. Until now that check only stopped the *sale* and the *valuation* of the stock, and only while the price kept that shape. A cash buyout or a dividend was still paid on the old share count, and the buyout was paid *before* the check was even asked. In Astra's case the book was paid $11,996.40 where a 2-for-1 split, once known, makes it $23,992.80. **The founder's ruling: hold it.** Now:
+
+- **The check is asked first**, before any cash moves at a close.
+- **When it suspects a split, it writes that down on the holding**: the day it first saw the move, the size of the move, and the last price it trusted. From then on the stock is treated exactly as if the feed had reported a split two contradictory ways, on the idea and on its comparison:
+  - no buyout, no dividend and no further split is applied;
+  - the stock is not sold and not renamed;
+  - the cash waits on the holding, and the idea keeps its slot;
+  - its value stays at the last trusted price, and an alert fires at every close.
+- **The note does not go away because the price recovers.** A real 50% fall followed by a rebound stays held until someone looks.
+- **It is released in one of two ways.**
+  - The feed later lists a split that explains the move: the right size, on a date inside the gap. The split is applied, then the held cash is paid once on the corrected count — Astra's $23,992.80, or $399.88 for her $1 dividend.
+  - Or the founder marks the note resolved. That tool is T5's. This round adds only the two fields it will write and the code that honours them; nothing writes them yet.
+
+**The second (T2A-D02).** The feed can list two share changes for the same day — say, a reverse split it reported two contradictory ways, and a stock distribution. The system waited only behind changes on an *earlier* day, so the distribution went ahead first. Share counts are rounded after each change, so the order matters: Astra's case ended one millionth of a share and one cent short ($19,994.00 instead of $19,994.01). Now a change waits behind any unresolved change that comes before it **in the order changes are applied**, the same day included. Her case now gives exactly the right count (4.795684 shares) and the right cash ($19,994.01), and two clean changes on one day still apply together, in their normal order.
+
+**What the review found.** The review and three refuter passes went after the new note hard and found nine more cases (§10.8). Five were money: a payment on the old count that the first build of the note still let through, each around a founder's resolution or an unusual price record. Four are fixed, and each fix has a row that fails without it. The fifth needs a founder's resolution, which nothing can write until T5; it is put to the founder as the question T5 must answer first (**Q-U**). The rest are cases that now wait for the founder where nothing used to wait, and are put to the founder as questions.
+
+| Check (head `2e6a605a`; code `b8d72e10`) | Result |
+|---|---|
+| Full suite (Linux, `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8`) | **exit code 0** · `Test Files  1501 passed | 12 skipped (1513)` · `Tests  33807 passed | 135 skipped (33942)` · 297.60 s (Node 20.20.2; log SHA-256 `78ea1010…`) |
+| `npm run lint:gate` / `npx vite build` (Linux) | exit 0 / exit 0 (built in 15.66 s) |
+| Practice Field files, the scan tests, the cron isolation and trace tests (Linux) | `Test Files  18 passed (18)` · `Tests  533 passed (533)` |
+| Astra's `probe/astra-routes.test.js`, unmodified (SHA-256 `da70ab2b…`), against this head and her historical R | **16/16** |
+| Astra's `probe/astra-round2.test.js`, unmodified, head and previous | her rows assert the defect, so the three **head** rows now **fail**, each on exactly her unsafe assertion: `:27`, no payment is applied now; `:40`, the distribution is not applied while the reverse split is unresolved. The three **previous** rows and her four other rows (R-55, each ledger holding after the rows disappear) pass |
+| Astra's 17-scenario differential (both modes) and registry probe, `origin/main` `ea5e0c5b` against the head | **36/36**; registry **4/4** |
+| Astra's 40-case traced differential (Amendment E §4) | her raw whole-trace file reports 20 passed / 20 failed, as she recorded. Her classifier (`classify-trace.mjs`) passes all 40: `'off'` 20/20 identical, `'on'` 20/20 allowed, and the base's idea-book query absent in 12 |
+| Quarterly differential (17 scenarios, the earlier rounds' harness), `origin/main` against the head | **byte-identical** on `b8d72e10`: `92a1be2080b4e0d6ccb32e26a2ec95ec5fac0bd4c262e0f2de73f1f1e2f27f43`, 1,118,594 bytes, the same hash as every earlier round. Its control differs in scenario 18 only (`749a9414…`, 1,148,363 B → `2553861a…`, 1,156,115 B, as last round). The two commits after the code head change no code |
+| Mutation battery | 553 defined, 553 ran, **553 killed, 0 survived** (§10.7) |
+| Review | one independent lens on a read-only snapshot and three refuter passes. 13 findings: 7 fixed, each by a row that fails without its fix; the rest stated as residuals or put to the founder (§10.8) |
+
+### 10.2 The inventory, rows 5 and 16 restated (and the rows they touch)
+
+"Unresolved", as §9.2 defines it, gains a fourth arm, and its third arm now has an exact order:
+
+- an unsettled share-basis conflict;
+- a share-basis action due on or before the session that the ledger has neither applied nor declined;
+- a share-basis action the ledger holds, or cannot apply (`refused`);
+- **(new) an open gap-screen suspicion on the holding** (`ledger.js:392`): `{ actionId: 'suspected_split_<SYM>_<suspectedOn>', type: 'suspected_split', effectiveDate: suspectedOn, since }`.
+
+| # | Path | `file:line` (after) | While basis unresolved, before | After this round | Test (`corporateActions.test.js`) |
+|---|---|---|---|---|---|
+| 5 | A later share-basis action | `ledger.js:583` (`byDatePhaseId(i, action) < 0`) | Held behind an unresolved one on a strictly **earlier date** only; one of the **same date** was applied at once, before it (T2A-D02) | **Held** behind any unresolved share-basis action that **precedes it in the order of application** (`ledger.js:476` `byDatePhaseId`: date, then phase, then id) — on an earlier date or the same one. Never behind itself or one after it (no cycle). Held and replayed exactly as across dates. Also held behind an open suspicion when dated after the suspected move | "Astra's case…", "two CLEAN share-basis actions…", "the mirror case…", "…a same-date conflict on the COMPARISON alone…" (`describe` from `:1267`); "a matching split dated AFTER the move…" |
+| 16 | Gap screen (a suspected split with no feed row) | `ledger.js:314` `withBasisSuspicions`, called first at `close.js:151`–`:158` | **Not held** (Q-P). A cash delisting or dividend was paid on the current count, and the delisting deleted the holding before the screen was asked. The sale and the mark were held only while the shape lasted | **Held, idea-wide.** The screen is asked before any cash, on the state the cash would be paid on. A suspected symbol gets a `basisSuspicion` record on the holding. That makes its share basis unresolved: every count-dependent action waits (rows 1–5), the mark is carried (row 8), the endpoint is unmeasurable (row 9), nothing resolves (row 11), and an alert fires at every close. Price recovery does not clear it. It is released only by a listed share-basis row that explains the move, or by the founder (T5 fields; §10.4 R-64) | every row of the `describe` from `:1374`, and `:1810` |
+
+The other rows are unchanged in kind; each now also sees the fourth arm:
+
+| # | Row | What the suspicion adds | Test |
+|---|---|---|---|
+| 1 | Sale | `saleHeldBackBy` returns `suspected_corporate_action` while the holding carries an open record (`ledger.js:917`), before the delisting exception. Another ledger's record reaches the sale through the existing `otherLedgers` arm | "…SURVIVES the price recovering…" (sale held) |
+| 2 | Rename | waits: the symbol is in `unsettledShareBasisSymbols` | (by construction; rename rows unchanged) |
+| 3, 4 | Cash delisting, cash dividend | held (`causesOf`, `ledger.js:579`) if dated after `since` | Astra's two cases, held and released |
+| 6 | Same-date share-basis and cash | unchanged (R-55) | — |
+| 8 | Valuation | carried mark while the record is open, also after the screen stops firing | "…SURVIVES…" (`carried_forward` at 100) |
+| 9 | Endpoint and result | the record is named in `unsettledActions` (`settlement.js:197`): unmeasurable and blocked, by name | "at the ENDPOINT an open suspicion…" |
+| 11 | Resolution, slot | nothing resolves while the holding is held | Astra's held rows (slot, `openIdeaIds`, treasury unchanged) |
+| 12 | Book mirror | unchanged: it mirrors only what was applied, once | the release rows (book cash and positions) |
+
+**R-31's sale holds and this record.** R-31 lists four reasons a sale waits:
+
+1. a listed action due and not applied;
+2. an unsettled share-basis conflict;
+3. the gap screen's suspected split;
+4. a failed or missing corporate-action fetch in the daily layer.
+
+**One of the four — the gap-screen hold — now shares this record.** The sale reads the record first, and the live screen still runs behind it. The other three are unchanged. R-31 named two states that "never clear by themselves": a dropped share-basis conflict, and an unexplained split-shaped move. The second is now this record, cleared only by an explaining row or the founder.
+
+### 10.3 The changes, by file and line (at `b8d72e10`; test lines at `2e6a605a`)
+
+| Where | What |
+|---|---|
+| `api/_utils/practiceField/ledger.js:75` | The header: a suspected move is a share basis in doubt too; how it is raised, what it holds, how it is released |
+| `ledger.js:204`, `:207` | `SUSPECTED_SPLIT`; the item id is `suspected_split_<SYM>_<suspectedOn>`. `founderResolved` requires both `resolvedBy` (a non-empty string) and `resolvedAt` |
+| `ledger.js:210`, `:217` | `openBasisSuspicion` (the record, present and not resolved) and `basisSuspicionRecords` (a ledger's open records, each with its item id) |
+| `ledger.js:227`, `:235` | `sameMove`, two price ratios within twice the engine's tolerance. `founderRuledMove(holding, ratio)`: a resolved record not yet spent (`spentOn`), whose frozen mark is still the holding's mark and whose move is the one the screen now sees |
+| `ledger.js:247` | `explainsSuspicion`: a **share-basis** action dated after `since` and on or before `suspectedOn`, whose ratio matches the move (`1 / r`) within twice the engine's tolerance. This is the engine's own `feedExplainsGap` test, which is not exported, restated |
+| `ledger.js:264` | `paidDividendsExplain`: the dividends this ledger paid **at this close** (`appliedOn`), put again to the engine's screen as the only actions |
+| `ledger.js:282` | `delistingWaitingSymbols`: the idea's holdings that wait on a delisting, plus those it has **sold** on one (`queuedBy.reason`). The close hands this set to the screen of every ledger |
+| `ledger.js:290`, `:299` | `shapeOf` gives forward or reverse, with n the nearest whole number in 2…`MANDATE_CA_RATIO_MAX_N`, found by search (no raw rounding). `markSessionOf` gives the ET session of `lastMarkAsOf` |
+| `ledger.js:314` | `withBasisSuspicions` takes the dry run (this close's share-basis actions only) and runs the engine's screen on it. Each `suspectedCA` symbol (never `pendingCA`) gets a record, unless: it already has an open one; the founder has ruled on this move; or the idea waits to sell it, or has sold it, on a delisting (or a cashless delisting is listed at this close). The record is `{ symbol, suspectedOn, since, ratio, shape, frozenMark, frozenMarkAsOf, resolvedBy: null, resolvedAt: null }` |
+| `ledger.js:392` | `unresolvedShareBasis`: each open record is an item, unless an explaining share-basis row is here to apply at a close after the one that raised it (listed now and not two ways, or held on the holding). That row then stands for the move, in its own place in the order |
+| `ledger.js:579`–`:583` | `causesOf`: a suspicion holds a cash action dated after `since` (all of them when `since` cannot be told) and a share-basis action dated after `suspectedOn`. **T2A-D02:** a share-basis action waits on an item that precedes it under `byDatePhaseId` (`:583`); a cash action, as before, waits on one dated on or before it |
+| `ledger.js:690` | An explaining share-basis row, at a close after the one that raised the record, removes it; the receipt carries `explainedSuspicion: { suspectedOn, ratio, frozenMark }` |
+| `ledger.js:864`, `:877` | `withCloseMarks(…, { date })`: a fresh mark written over a founder-resolved record stamps `spentOn` on it (nothing removed) |
+| `ledger.js:917`, `:939` | `saleHeldBackBy`: an open record holds the sale (`suspected_corporate_action`), before the delisting exception. A founder-ruled move is not suspected again by the live screen |
+| `ledger.js:957`, `:963` | `suspectedActionSymbols`: a founder-ruled move is marked fresh. A dividend paid at this close that explains its own ex-date drop leaves the mark fresh (R-67) |
+| `api/_utils/practiceField/close.js:151`–`:165` | The close screens each ledger first (`withBasisSuspicions`, with the idea's delisting set, `:157`), then computes the idea's hold set from the screened ledgers (`:160`), then applies |
+| `close.js:176` | `PRACTICE_FIELD_BASIS_SUSPECTED <idea> <ledger> <symbol> <id>` at every close a record stands |
+| `close.js:236`–`:238` | `withCloseMarks` gets the session date |
+| `api/_utils/practiceField/settlement.js:197` | The endpoint names each open record in `unsettledActions` |
+| `api/_utils/practiceField/corporateActions.test.js:1267`, `:1374`, `:1810` | The rows (§10.5) |
+| `api/_utils/practiceField/close.test.js:348`, `:362` | One changed expectation, and the row that pins the close's own after-actions screen (§10.5) |
+
+**Commits after the merge, in order:**
+
+| Commit | What |
+|---|---|
+| `8f3c8bd5` | Fix 2, T2A-D02, and its rows |
+| `7483a084` | Fix 1, T2A-D01, and its rows (with the one changed `close.test.js` expectation) |
+| `b4fc8d5a` | Astra's confirmation and its README row |
+| `8de1078b` | The suspicion's `shape` without raw rounding. The money-path rounding scan (Linux) caught two `Math.round` sites in `ledger.js`, which has no baseline entry; nothing was re-pinned |
+| `f38f20a4` | Rows for the two first-battery survivors (FR3-05, CA-07) |
+| `17f545d9` | Review F1–F3 |
+| `af3c9dcb` | Refuter D1–D3 |
+| `fda09203` | Second refuter N1, N2 |
+| `b8d72e10` | The D3 dividend release reverted (only a listed share-basis row or the founder releases); its row now asserts the hold |
+| `2e6a605a` | A row for the last battery survivor, FR3-38 (the close's mark screen asks only dividends paid at this close). Test only |
+
+This report's commit follows them.
+
+### 10.4 Readings stated, and questions
+
+| # | Where the letter stops | Reading |
+|---|---|---|
+| R-61 | "evaluate the gap screen against the holding's pre-payment state and frozen mark before any count-dependent cash action" | The state is the one the cash would be paid on: this close's share-basis actions applied (the dry run `shareBasisHolds` already makes), nothing else. Asking before them would miss a second, unexplained move on the close a listed split arrives. Example: a true 4-for-1 with only a 2-for-1 listed; the residual half is suspected and held (tested). Only the screen's `suspectedCA` raises a record. Its `pendingCA` never does: that is a listed row that explains the gap, a split or a large dividend (tested with a special dividend that explains its own 50% drop) |
+| R-62 | "Every count-dependent action on it then waits … exactly as for a feed conflict" | A conflict has a date; a suspected move has a window. The window runs from after the last trusted mark (`since`, the ET session of `lastMarkAsOf`) to the session the move was first seen. `since` is not the book's last close, which an unobserved session moves without a mark (tested). A **cash** action dated after `since` waits. One dated on or before it is before the move and is paid on the current count, as R-53 pays one dated before a conflict. A receipt-time mark leaves `lastMarkAsOf` behind, which only widens what waits. A **share-basis** action dated after `suspectedOn` waits. One dated inside the window is the feed's own account of the gap and is applied; it releases the record only if it explains it |
+| R-63 | "a listed share-basis row … explains the move" | A row explains the move when all three hold: it is dated inside the window; its ratio is within twice the engine's tolerance of the move (the engine's own test, `feedExplainsGap`, which is not exported, restated in two lines); and it is first listed at a close **after** the one that raised the record. A row already applied when the record was raised is part of the move's residual, not its explanation (tested). The explaining row then takes the suspicion's place in the order: what is dated before it is paid on the count before it, and what is dated after it waits for it. A row that does not match (a 1.2 distribution against a halving) applies and releases nothing. A matching split dated after the move waits behind it. Both are tested. **Only a share-basis row explains**: a cash dividend whose row arrives late does not release the record (**Q-T**) |
+| R-64 | "the founder resolves … write only the record's `resolvedBy` and `resolvedAt` fields and the reader that honours them" | **A provisional reader for T5's tool. Nothing writes either field** (`git grep` over `api/_utils/practiceField`, `api/_utils/mandate*`, `api/cron/mandate*`, `api/mandate/`: the only writer is the record's creation, with both `null`). Both fields must be present; one alone holds (tested). A resolved record holds nothing: the held cash is paid on the current count, once, because the founder judged the move real. The mark is still the frozen one, so the same split-shaped signature would raise a new record at the next close and hold the sale for ever. So **the move the founder ruled on** is not suspected again: it raises no new record, the close marks it fresh, and it does not hold the sale. That covers a resolved record **not yet spent**, whose frozen mark is still the holding's mark and whose ratio is the one the screen now sees. The close stamps **`spentOn`** on the record the first time it writes a fresh mark over it, receipt-time or vendor-time; from then on the ruling covers nothing. This is the one field the close adds to a record, and it removes nothing. A further move against the same frozen mark (×0.25 after a ruled ×0.5) is a new suspicion. What a resolution covers in the remaining cases is put to the founder (**Q-U**) |
+| R-65 | R-32 ("a delisted name falling to half its carried price is the delisting, not a split") | No record is raised for a holding the idea waits to sell on a delisting, or has sold on one, on **any** ledger of the idea; nor for one whose cashless delisting is listed at this close. Only the idea's own holding carries the waiting sale. A record on the comparison's copy would hold that sale idea-wide for ever, or after the sale would hold the comparison's mark; the first draft did both, and rows caught them. A record raised **before** the delisting arrived stays, and holds that sale until the founder resolves it (**Q-Q**) |
+| R-66 | "persist a suspicion record on the holding: symbol, session first suspected, the move's ratio shape, and the frozen mark" | One record per holding per ledger. The first is kept while open, not refreshed. Each ledger is screened on its own marks; the hold is idea-wide through `shareBasisHolds`. `shape` is `{ kind: 'split' \| 'reverse_split', n }`, and `ratio` is the screen's fresh ÷ last |
+| R-67 | (outside the letter; refuter D2) | **A dividend this ledger paid at this close that explains its own ex-date drop leaves the close's mark fresh.** Before, the screen excluded the settled dividend, read the drop as an unfed split, and froze the mark at the pre-ex price beside the dividend's cash. The idea was valued with the dividend counted twice (Astra's numbers: $29,991 against $19,994). That mark, frozen while the shape lasted, then let the new record hold the stock for good. This changes pre-existing behaviour on a path that was not in doubt, as R-55 did (**Q-S**) |
+| R-53 (revised) | "two of one date never wait on each other" | **Replaced.** Of two share-basis actions on one date, the later in the order of application (phase, then id) waits on the earlier while it is unresolved; never the reverse |
+
+**Q-Q (R-65):** a suspicion raised before a cashless delisting arrives holds that delisting's sale until you resolve it. Should a later delisting release the hold on the sale instead? *Built: it holds.*
+
+**Q-R (row 16):** a real fall to a split-shaped level of the last trusted price, with no feed row, now holds the idea's sale, payments and value until a split row explains it or you resolve it. "Split-shaped" means within 1.5% of a half, a third, a quarter and so on. Below about 3% of the price the engine's bands for n up to 50 run together, so almost any fall that deep reads as split-shaped. Before this round the sale and the value were held only while the price kept that shape. This is the ruling's letter; the question is only whether you want T5's tool before the flag is turned on. *Built: held until resolved.*
+
+**Q-S (R-67):** after a dividend that explains its own drop, should the close trust the ex-date price (built), or keep the pre-ex price as before? *Built: trusts it — the old way counted the dividend twice.*
+
+**Q-T (R-63):** should a cash dividend that explains the move release the suspicion? This covers a special dividend about half the price whose row arrives a close late, and a dividend row dated one session off the move. *Built: no — the ruling names only a listed share-basis row or you; the dividend and everything after it wait.*
+
+**Q-U (R-64; gates T5):** what does your resolution cover — a price level, one move, or one close?
+
+The provisional reader treats it as "this move, against this frozen mark, until a fresh price is written". Three cases depend on the answer:
+
+- **Z1 — can pay on a wrong count.** You resolve after the price has already come back while the record was open. The mark is still carried, so the ruling is not spent. A later identical halving then reads as the ruled move, and a $30 cash delisting pays $5,998.20 on the old count. If that halving were an unfed 2-for-1, the payment is short by $5,998.20.
+- **Y4 — held until you rule again.** A listed split applied after your ruling moves the mark off the frozen price, so the ruled move is suspected again.
+- **N3 — held until you rule again.** After a ruled halving, a later 2-for-1 cannot release a record of the combined move.
+
+None of the three can happen until T5 writes the fields.
+
+**Q-V (review F4):** a move explained only by **two** rows together (a 2-for-1 and a 2-for-1 distribution on one date) is never released by the feed, because each row is tested against the whole move. The count is right; the cash waits until you resolve it. *Built: held.*
+
+### 10.5 Tests
+
+All new rows are in `corporateActions.test.js`, in three `describe`s:
+
+- "Fix round 3 — Astra T2A-D02 …" from `:1267`;
+- "Fix round 3 — Astra T2A-D01 …" from `:1374`;
+- "Fix round 3 — review F3 …" from `:1810`.
+
+The file has 115 rows.
+
+- **T2A-D02, Astra's case to the letter, and its consistent-basis control, side by side.**
+  - Setup: a $20,000 AAPL idea at $50.03. Conflicting `reverse_split` rows (0.01 and 0.02) and a same-date `stock_distribution` of 1.2. The reverse split is resolved to 0.01 the next day, with the distribution's row gone. Then a cash delisting at $4,169.166666666667.
+  - While the reverse split is unresolved, the distribution is held on both ledgers. Then both apply in the control's order.
+  - The idea, the comparison and the book's mirror hold **4.795684** shares, and **$19,994.01** returns to the treasury. The delisting receipts are equal to the cent, and the applied receipts are the same list.
+- **The other T2A-D02 rows:**
+  - two clean same-date actions apply at once, in the applier's order;
+  - the **mirror case**: an unresolved action with the larger id holds nothing before it (the cycle guard);
+  - a same-date conflict on the **comparison alone** holds the idea's distribution through the hold set.
+- **T2A-D01, Astra's case to the letter**, for the cash delisting and for the $1 dividend.
+  - Setup: $20,000 of AAPL at $100 (199.940017 shares); $50 the next session with no row; then the cash action.
+  - The record is written on both ledgers, in its exact shape, and the alert fires.
+  - Nothing is paid or credited, and the idea is not resolved.
+  - The slot and `openIdeaIds` are kept; the treasury and the book's cash are unchanged; there is no book corporate-action document.
+  - The held record names the suspicion as its cause on both ledgers. The mark is carried. Reconciliation passes at every close.
+- **Release**, each with the cash row still listed and with it dropped (paid from its record). A later session lists the 2-for-1, dated inside the gap; the split applies, then the held action once.
+  - Delisting: **$23,992.80**. The idea is resulted, the treasury rises by what it returned, and the slot is free.
+  - Dividend: **$399.88**, on 399.880034 shares. The book rises by $399.88 and the mark is fresh at $50.
+  - The split's receipt says what it explained. A later close listing the rows again pays nothing.
+- **Controls:**
+  - with no gap, paid at once: $11,996.40 / $199.94;
+  - with the split settled together with the move, Astra's control: $23,992.80 / $399.88;
+  - no record either way.
+- **The record survives the price recovering** (back to $100): still held, the mark carried, the alert firing, the sale held.
+- **The gap and the cash action at one close**: held on the spot, because the screen is asked before the cash.
+- **Edges:**
+  - a matching split dated after the move waits;
+  - a non-matching 1.2 distribution inside the gap applies and releases nothing;
+  - a direct ledger call with no hold set: a non-explaining row does not stand in for the suspicion;
+  - a special dividend that explains its own drop is paid, with no record;
+  - a true 4-for-1 with only a 2-for-1 listed: the residual is held;
+  - `since` after an unobserved session;
+  - the gap's lower edge (pure): a dividend on `since` is paid and one after it is held; a split on `since` explains nothing; a delisting-waiting holding is not screened, even when called directly;
+  - the endpoint names the record.
+- **The founder's reader (provisional):**
+  - paid once on the current count, the mark fresh, no new record, the sale free, both at once and after the next close;
+  - one field alone holds;
+  - **F1**: a vendor-time fresh mark spends the ruling, and a later halving is held;
+  - **N2**: so does a receipt-time one;
+  - **D1**: a further ×0.25 move is held, and the ruled ×0.5 is paid ($5,998.20).
+- **R-32:**
+  - no record on any ledger, and the idea's sale is free of the comparison;
+  - **F3**: after the idea's delisting sale, the comparison's copy is not recorded, and its mark is fresh again once the shape goes.
+- **Dividends:**
+  - **F2**: a paid special dividend raises nothing later;
+  - **D2**: the ex-date mark is fresh, and a later listed 2-for-1 plus a $0.25 dividend pays 99.97 on the adjusted count;
+  - **N1**: a dividend paid at an earlier close does not explain a later unfed 2-for-1, which is held;
+  - **D3** (as built, Q-T): a late special-dividend row releases nothing, and the dividend waits.
+
+**One changed expectation** is in `close.test.js:348`, "a gap with a split's signature and NO feed entry is not trusted". Its second half asserted that a later news-sized price (209.8, after a halving to 116.56) is trusted. Under the ruling it is not: the record holds the mark at 233.11. The row now asserts the record and the carried mark, and its "a news-sized move is trusted" control moved to a book with no suspicion before it. A new row at `close.test.js:362` pins the close's own after-actions screen for a holding waiting on a delisting, which gets no record (battery survivor CA-07). No other existing row changed. **The end-to-end pin is unchanged:** `endToEnd.test.js` asserts `ed90ebd5…` (267,350 bytes) and passes unmodified.
+
+Every fix row was run against the code before its fix, and fails there:
+
+| Rows | Failed before the fix | The rest |
+|---|---|---|
+| T2A-D02 | 2 of 4 | its controls, which pass on both |
+| T2A-D01 (the first 17) | 13 of 17 | the 4 controls, which pass on both |
+| F1–F3 | 3 of 3 | — |
+| D1–D3 | 3 of 3 | — |
+| N1, N2 | 2 of 2 | — |
+
+The edge rows added after the first battery each kill at least one named mutant (§10.7).
+
+### 10.6 The checks (code head `b8d72e10`)
+
+Linux runs: WSL Ubuntu, a private worktree of `~/pd-ci` at `2e6a605a`, Node 20.20.2, `TZ=UTC`. The full suite ran alone, under `flock`. The quarterly differential ran on `b8d72e10`, and the two commits after it change no code.
+
+| Check | Result |
+|---|---|
+| `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | **exit code 0** · `Test Files  1501 passed | 12 skipped (1513)` · `Tests  33807 passed | 135 skipped (33942)` · `Duration  297.60s` · log SHA-256 `78ea1010e2caa62f6769a7ec00db2ea0d85dcd44bb5163051c57d4e03ae24c6a` |
+| `npm run lint:gate` | exit 0 (log `9f001ed2…`) |
+| `npx vite build` | exit 0, `✓ built in 15.66s` (log `b225dd6d…`) |
+| Practice Field files, `practiceFieldIsolation`, `practiceFieldNoBook.trace`, `compositionProtectedStores.scan`, `mandateMoneyRounding.scan`, `mandateRationale.imports` | `Test Files  18 passed (18)` · `Tests  533 passed (533)` |
+| Astra's probes, her layout rebuilt in this session's scratchpad (head = `2e6a605a`, base = `ea5e0c5b`, historical R = `c4eceba8`, previous = `d4d522ce`); her folder was not written | routes **16/16** (file SHA-256 `da70ab2b…`, unmodified). Round-2: the head rows fail on her unsafe assertions, as above. Differential **36/36**, registry **4/4**, traced 20/40 raw with the classifier passing all 40 |
+| Quarterly differential and control | as in §10.1 |
+| End-to-end pin | `endToEnd.test.js` asserts `ed90ebd5…` (267,350 B), unmodified; passes in the full suite and in the targeted run |
+
+An earlier full suite, on `f38f20a4` before the review fixes, also exited 0. The money-path rounding scan failed once on Linux at `b4fc8d5a` (two `Math.round` sites in the new `shape` field), which `8de1078b` fixed.
+
+### 10.7 The mutation battery
+
+Fix round 2's 518 mutants were carried. Every anchor was checked before each run and none was skipped silently: `anchors.mjs` lists any mutant whose anchor is not found exactly once, and the runner reports such a mutant BROKEN.
+
+**Re-cut (7)**, each under the same id and rule, because this round moved its anchor:
+
+- `CA-06-comparison`, `TICK-01-one-ledger-only`, `TICK-05-spy-ledger`: the close now applies the screened ledgers;
+- `R2-08-dates-ignored`, `R2-09-same-date-cash-not-held`: `causesOf`'s new comparator;
+- `R2-20-endpoint-held-ids`: the endpoint's list;
+- `BMARK-02-ledger-cash`: `withCloseMarks` now takes the date.
+
+**Added: 38 were defined during the round; 35 remain** (`FR3-*`). The three retired with the code they mutated: `FR3-31` (dividends asked in `withBasisSuspicions`, removed in `fda09203`) and `FR3-35` / `FR3-36` (a dividend releasing a suspicion, reverted in `b8d72e10`). The six the brief names:
+
+| Brief | Mutant | Result on `b8d72e10` |
+|---|---|---|
+| the gap screen not consulted before cash | `FR3-01-screen-not-before-cash` | killed, 21 of 149 rows |
+| the suspicion record not persisted | `FR3-02-record-not-persisted` | killed, 21 of 149 |
+| the suspicion cleared on price recovery | `FR3-03-cleared-on-recovery` | killed, 8 of 149 |
+| a held cash action paid on the unadjusted count | `FR3-04-held-cash-unadjusted-count` | killed, 15 of 114 |
+| the same-date comparison reverted to `<` | `FR3-06-same-date-strict` | killed, 2 of 114 |
+| a cycle (an earlier action waiting on a later one) | `FR3-07-cycle` | killed, 4 of 114 |
+
+The rest give at least one mutant to every new gate:
+
+- the suspicion as an unresolved item (`FR3-08`), `since` (`FR3-09`, `FR3-29`), the later share-basis hold (`FR3-10`), same-close release (`FR3-11`);
+- the explanation's ratio (`FR3-12`) and lower edge (`FR3-13`), a non-explaining row standing in (`FR3-05`), the explainer's place in the order (`FR3-26`), the record kept after an explanation (`FR3-27`), the suspicion holding nothing (`FR3-28`);
+- the founder's reader: the record ignored (`FR3-14`), the move re-raised (`FR3-15`), the mark held (`FR3-16`), the sale held (`FR3-18`), the ruling not spent (`FR3-30`, `FR3-37`), its ratio ignored (`FR3-33`);
+- the sale reading the record (`FR3-17`);
+- R-32 idea-wide, own holding, listed today (`FR3-19`, `FR3-20`, `FR3-21`), and sold on a delisting (`FR3-32`);
+- the endpoint's name (`FR3-22`) and the alert (`FR3-23`);
+- raising from `pendingCA` (`FR3-24`), screening before the share-basis actions (`FR3-25`);
+- the stale ex-date mark (`FR3-34`), and an earlier close's dividend asked (`FR3-38`).
+
+**`R2-29-dry-run-pays-cash`, argued equivalent last round, is now killed** (8 of 188 rows): the screen reads the dry run, and a cash delisting paid there hides the holding from the screen. The old equivalence no longer holds, and nothing relies on it.
+
+**Survivors found on the way, each closed by a row (never by an argument):**
+
+| Run | Survivors | What closed each |
+|---|---|---|
+| `7483a084`, 547 ran | `FR3-05`, `CA-07` | `FR3-05` was held by the hold set in the close path, so only a direct ledger call could fail; a direct-call row was added. `CA-07` is the close's own after-actions screen, which the record now covers except for a holding waiting on a delisting; a `close.test.js` row was added. Both killed on `f38f20a4` |
+| `b8d72e10`, 553 ran | `FR3-38` | Same reason as `CA-07`; a row for a delisting-waiting holding was added in `2e6a605a`, and it killed `FR3-38` |
+
+| On `b8d72e10` (and `2e6a605a` for `FR3-38`) | Count |
+|---|---|
+| Defined | **553**: 518 carried, 7 of them re-cut; 35 added; 3 retired this round |
+| Ran | **553** (missing 0, broken 0) |
+| Killed | **553** (552 on `b8d72e10`, then `FR3-38` on `2e6a605a`) |
+| Survived | **0** |
+
+Each mutant ran in a `git archive` copy (LF) of the commit, in 4 shards, with a 30-second row timeout. Every shard's baseline passed before any mutant ran (531 / 528 / 489 / 506 rows), and every file was restored and checked after each mutant.
+
+### 10.8 The review and its refuters (BUILD_RULES §2)
+
+**How it ran.** One independent lens worked on a read-only `git archive` snapshot of `7483a084`. It was told the rule and the four doubt signals, and asked to find any remaining count-dependent payment or share-basis application that can run while any of them is present. Its four findings went to refuter 1. Refuter 1 ran each finding on the reviewed code, on the fixes (`17f545d9`) and on `e6400cbe` (before the round), and attacked the fixes. Refuter 2 did the same for `af3c9dcb`, and refuter 3 for `fda09203`. Every reviewer and refuter wrote only probe folders in its own snapshot, ran no git and never touched the working tree.
+
+| # | Finding | Verdict | Before the round (`e6400cbe`) | Disposition |
+|---|---|---|---|---|
+| F1 | A founder-resolved record whose frozen price a later **fresh** mark equals again lets a new unfed halving through: a cash delisting paid $11,996.40 on the old count | Confirmed, broader (refuter 1: also with a carried mark, D1) | Paid, with no record at all: that is T2A-D01 itself | **Fixed** `17f545d9`, then `fda09203`: any fresh mark spends the ruling (`spentOn`) |
+| F2 | A special dividend that explains its own drop is paid; the next close records the same move; the idea is valued with the dividend counted twice and its sale refused for ever | Confirmed; the record is new; the frozen ex-date mark is older | No record; mark frozen while the shape lasted | **Fixed** `17f545d9`, at the root in `af3c9dcb` (R-67) |
+| F3 | After the idea sells its delisting-waiting holding, the comparison's copy gets a permanent record | Confirmed; new | No record | **Fixed** `17f545d9` (sold-on-a-delisting symbols are exempt) |
+| F4 | A move explained only by two rows together is never released | Confirmed, as stated | Paid the dividend on the pre-split count (T2A-D01) | **Q-V**, held |
+| D1 | (refuter 1) The founder's ruling is not tied to its move: a further halving against the same carried mark pays $5,998.20 | Confirmed | Paid (no record) | **Fixed** `af3c9dcb` (the ratio must match) |
+| D2 | (refuter 1) A dividend paid at the ex-date close left the mark at the pre-ex price; a later listed 2-for-1 then raised a record nothing could release | Confirmed; root pre-existing | Paid 99.97 with no record; the stale mark was there | **Fixed** `af3c9dcb`: R-67, **Q-S** |
+| D3 | (refuter 1) A special dividend whose row arrives late is itself held for ever behind the suspicion it explains | Confirmed | Paid | Built as a release in `af3c9dcb`, **reverted** in `b8d72e10` (the ruling names only a share-basis row or the founder); held, **Q-T** |
+| D4 | (refuter 1) A **settlement** sale that replaced a delisting exit records `queuedBy.reason: null`, so after the endpoint the comparison's copy can still be recorded | Confirmed; after the endpoint only, the result already written; alerts and stale comparison rows until the idea is resulted | No record | **Residual**: fixing it changes the sale receipt, which the end-to-end pin covers |
+| N1 | (refuter 2) A dividend paid at an **earlier** receipt-time close "explained" a real unfed 2-for-1 the next session: $5,998.20 paid on the old count | Confirmed; in `17f545d9` and `af3c9dcb` | Paid (no protection) | **Fixed** `fda09203`: only dividends paid at this close are asked |
+| N2 | (refuter 2) A receipt-time fresh mark (no vendor time) did not spend the ruling; a later halving paid $5,998.20 | Confirmed; in `17f545d9` and `af3c9dcb` | Paid | **Fixed** `fda09203` (`spentOn`) |
+| N3, N5, N6 | (refuter 2) After a ruled halving, a later 2-for-1 cannot release the combined move; a dividend row dated one session off never releases | Confirmed | Paid (on the right count in these cases) | Held: **Q-U**, **Q-T** |
+| X1, C3 | (refuter 3) A special dividend paid at a close where the stock's quote was **incomplete** (mark carried) is not asked at the next close; the stock is held, and the old double count shows | Confirmed; a regression against `af3c9dcb`, which asked dividends by the mark's session — the window N1 showed pays on a wrong count | Paid; the same double count | **Residual**, fail-closed: held until the founder; the double count is pre-existing (§10.9) |
+| Z1, Y4 | (refuter 3) The founder resolves after the price has recovered while the mark is carried: a later identical halving reads as the ruled move and pays $5,998.20 (Z1). A split applied after the ruling makes the ruled move suspected again (Y4) | Confirmed; in `af3c9dcb` too | Paid | **Q-U** (gates T5). Not reachable until T5 writes the fields |
+
+**Not separately refuted:** `b8d72e10`, the revert of D3's dividend release to the ruling's letter. It removes a release path; it adds none. The battery, the D3 row (now asserting the hold) and every check below ran on it. No refuter ran on it.
+
+### 10.9 Not fixed — carried, or found outside the task
+
+| # | Item | Why not here |
+|---|---|---|
+| Q-Q … Q-V | §10.4 | The founder's rulings |
+| T5 | Nothing writes `resolvedBy` / `resolvedAt` yet; the reader is provisional (R-64) | Assigned to T5; Q-U first |
+| D4 | After the endpoint, a settlement sale that replaced a delisting exit leaves the comparison's copy screenable | The receipt shape is pinned end to end; no result figure moves |
+| C-17 (found outside the task) | The close freezes a mark at the pre-ex price after a dividend that explains its own drop, counting the dividend twice in the value. Fixed for a complete quote (R-67), but it remains when the ex-date close carries the mark for another reason (an incomplete quote: X1/C3), as it did before the round | Pre-existing (R-31's mark hold); the residual case is fail-closed |
+| Q-M, Q-O | As in §9.8 | Unchanged |
+| C-16 | A late dividend row listed after the split was applied | Unchanged (§9.8) |
+| C-6 | A doubt that never settles holds the holding until the founder acts | Unchanged; the suspicion record is one more such doubt |
+| C-10…C-12, C-14, C-15 | As in §8.9 | Unchanged |
