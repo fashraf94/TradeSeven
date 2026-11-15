@@ -1628,6 +1628,16 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
     }
   });
 
+  it('a DIRECT call, with no hold set: a listed share-basis row that does not explain the move (dated after it) does not stand in for the suspicion — it waits, and so does the cash', () => {
+    const holding = { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, lastMarkAsOf: etIsoOf(S[1], 16, 0), lastMarkSource: 'snapshot', openedAt: S[0] };
+    const { ledger: suspected } = withBasisSuspicions({ ...newLedger('idea', 1000), cash: 0, holdings: { AAPL: holding } }, closeSnapshotOf(S[2], { AAPL: 50 }), {}, { sinceDate: S[1], date: S[2] });
+    const out = applyLedgerActions(suspected, { AAPL: [split2(S[3]), cashAction('delisting', S[3])] }, { date: S[3] });
+    expect(out.applied).toEqual([]);
+    expect(out.held.map((r) => r.actionId).sort()).toEqual([`delisting_AAPL_${S[3]}`, `split_AAPL_${S[3]}`].sort());
+    expect(out.ledger.cash).toBe(0);
+    expect(out.ledger.holdings.AAPL.shares).toBe(10);
+  });
+
   it('the gap\'s LOWER edge (pure): an action dated on or before `since` — the session of the last trusted mark — is before the move: a dividend of that date is paid now on the current count, a later one waits, and a 2-for-1 of that date applies but explains nothing', () => {
     const holding = { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, lastMarkAsOf: etIsoOf(S[1], 16, 0), lastMarkSource: 'snapshot', openedAt: S[0] };
     const ledger = { ...newLedger('idea', 1000), cash: 0, holdings: { AAPL: holding } };

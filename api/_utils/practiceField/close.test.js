@@ -358,6 +358,19 @@ describe('corporate actions: once per ledger', () => {
     await closeOn(fresh.db, fresh.bookId, DAYS.d2, { AAPL: 209.8, SPY: 599.4 });
     expect(getRow(fresh.db, fresh.bookId, f.ideaId, DAYS.d2).marks.AAPL).toMatchObject({ mark: 209.8, quality: 'vendor_time' });
   });
+
+  it('a holding WAITING ON A DELISTING gets no suspicion record (R-32), but a split-shaped fall after the feed drops the delisting row is still held back by the close\'s own screen after the actions (fix round 3: that screen stays)', async () => {
+    const { db, bookId } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: entryQuotes('AAPL', 'SPY') });
+    await closeOn(db, bookId, DAYS.d1, { AAPL: 233.11, SPY: 599.02 });
+    await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 233.11, corporateActions: [{ type: 'delisting', ticker: 'AAPL', effectiveDate: DAYS.d2, source: 'founder_action' }] }, SPY: 599.4 });
+    await closeOn(db, bookId, DAYS.d3, { AAPL: 116.56, SPY: 599.4 }); // ÷2, the delisting row no longer listed
+    const idea = getIdea(db, bookId, r.ideaId);
+    expect(idea.ledger.holdings.AAPL.exitPending).toMatchObject({ reason: 'delisting' });
+    expect(idea.ledger.holdings.AAPL.basisSuspicion).toBeUndefined();
+    expect(idea.comparisonLedger.holdings.AAPL.basisSuspicion).toBeUndefined();
+    expect(getRow(db, bookId, r.ideaId, DAYS.d3).marks.AAPL).toMatchObject({ mark: 233.11, quality: 'carried_forward' });
+  });
 });
 
 describe('Astra T1A-01 — an action the feed lists twice is applied once per ledger', () => {
