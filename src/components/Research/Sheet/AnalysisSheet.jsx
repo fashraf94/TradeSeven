@@ -29,6 +29,8 @@ import { motionToken } from '../../../theme/motion.js';
 import { SHEET_COPY, SHELL_COPY, QUESTION_TEXT } from './sheetCopy.js';
 import { ST, MONO, tint } from './sheetTheme.js';
 import AskReply from './AskReply.jsx';
+import { researchBlocks } from './ResearchBlocks.jsx';
+import { BR_COPY } from '../BattleResearch/battleResearchCopy.js';
 
 const TONE = { green: ST.green, amber: ST.amber, purple: ST.purple };
 // src/index.css forces every <button>'s own font-size to 16px (!important, iOS zoom): a
@@ -318,10 +320,13 @@ export function AnalysisBlocks({ blocks, layer = null }) {
  * @param {node}   [p.wallSt]       the Wall St · About line (WallStLine)
  * @param {node}   [p.tabs]         the tab strip and its content (ShellTabs)
  * @param {(i: number, item: object) => void} [p.onSeeOnChart]  a pack item's "see on chart ›"
+ * @param {object|null} [p.research]  Battle Research's state 2 (sheetContext.research): its blocks are
+ *   PREPENDED (R-34; spec docs/specs/BATTLE_RESEARCH_SLICE1_SPEC_V1.md BRS-17); none without it.
  */
-export function battleBlocks({ view, wallSt = null, tabs = null, onSeeOnChart = null }) {
+export function battleBlocks({ view, wallSt = null, tabs = null, onSeeOnChart = null, research = null }) {
   const layer = view.question ? 1 : 0;
   return [
+    ...researchBlocks(research),
     { key: 'stance', node: <Stance view={view} /> },
     { key: 'decided', node: <Decided view={view} collapsed={layer > 0} /> },
     { key: 'questions', node: layer === 0 ? <Questions view={view} /> : <Pack view={view} onSeeOnChart={onSeeOnChart} /> },
@@ -381,7 +386,21 @@ export function SheetActionRow({ view, onAnalysis = true }) {
           <span data-sheet-cost style={{ fontFamily: MONO, fontSize: 10, color: view.canAsk ? ST.ink2 : ST.ink3 }}>{SHEET_COPY.askCost(view.budget.left)}</span>
         )}
       </button>
-      {view.cockpit && (
+      {view.research ? (
+        // BRS-19: in state 2 the row's door is Draft it for {Agent} →, in place of → Cockpit. Nothing is sent.
+        <button
+          type="button"
+          data-sheet-draft
+          onClick={() => view.research.onDraft(view.research.draftFor(view.research.incumbent?.symbol ?? view.research.compareDefault))}
+          style={{
+            all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 48, padding: '0 14px', borderRadius: 12,
+            display: 'flex', alignItems: 'center', fontWeight: 700, color: ST.purple,
+            border: `1px solid ${tint(ST.purple, 55)}`, whiteSpace: 'nowrap',
+          }}
+        >
+          <span style={{ fontSize: 13 }}>{BR_COPY.draftDoor(view.research.agentName)}</span>
+        </button>
+      ) : view.cockpit && (
         <button
           type="button"
           data-sheet-cockpit

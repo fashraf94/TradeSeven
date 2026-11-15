@@ -942,7 +942,20 @@ export default function AgentChat({
     // fills the composer only when it is empty or still holds the previous,
     // untouched prefill.
     const untouched = !inputText.trim() || inputText === lastPrefillRef.current;
-    if (text && untouched) {
+    if (composerPrefill.mode === 'append') {
+      // Battle Research Slice 1 (BRS-19, Phase 0 point 8): the research draft never replaces what the
+      // player typed — it goes AFTER it, a blank line between, in the longest of its trimmed variants
+      // that fits the composer's 2000 (the draft builder's trim order: the sector line, then the rung line).
+      const kept = untouched ? '' : inputText;
+      const room = 2000 - (kept ? kept.length + 2 : 0);
+      const variants = (Array.isArray(composerPrefill.variants) && composerPrefill.variants.length ? composerPrefill.variants : [text]).map((v) => String(v ?? ''));
+      const draft = variants.find((v) => v.length <= room) ?? variants[variants.length - 1].slice(0, Math.max(0, room));
+      const next = kept ? (draft ? kept + '\n\n' + draft : kept) : draft;
+      if (next) {
+        setInputText(next);
+        lastPrefillRef.current = next;
+      }
+    } else if (text && untouched) {
       setInputText(text);
       lastPrefillRef.current = text;
     }

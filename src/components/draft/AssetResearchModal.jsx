@@ -36,6 +36,7 @@ import useSheetView from '../Research/Sheet/useSheetView';
 import useBattleSeries from '../Research/Sheet/useBattleSeries';
 import { SheetActionRow, AnalysisBlocks, battleBlocks, browseBlocks, WallStLine, BrowseAsk } from '../Research/Sheet/AnalysisSheet';
 import ShellTabs from '../Research/Sheet/ShellTabs';
+import { BR_COPY } from '../Research/BattleResearch/battleResearchCopy.js';
 import { ST, MONO as SHEET_MONO } from '../Research/Sheet/sheetTheme';
 import { SHELL_COPY } from '../Research/Sheet/sheetCopy';
 import { visibleViewportHeight } from '../Research/Sheet/sheetViewport';
@@ -452,7 +453,13 @@ const AssetResearchModal = ({
     && !currentAsset?.stockRewardRoute;
   // Kept per symbol for the modal's life (review B3: a stock left and returned to is not read again);
   // a FAILED read is not kept as an answer, so the next time 💣 opens it is asked again (review A5, B1).
-  const [atrReads, setAtrReads] = useState({}); // symbol → { status, pct, asOfMs }
+  // Battle Research Slice 1 (BRS-10, LA-3): a stock opened from a research row starts with THAT row's ATR
+  // reading — the result's frozen number and time — so 💣 prints the row's own and makes no second read.
+  const [atrReads, setAtrReads] = useState(() => {
+    const seed = sheetContext?.research?.atrReading;
+    if (!seed || typeof asset?.symbol !== 'string') return {};
+    return { [asset.symbol]: { status: seed.pct === null ? 'none' : 'ready', pct: seed.pct, asOfMs: seed.asOfMs } };
+  }); // symbol → { status, pct, asOfMs }
   const atrRead = atrReads[currentAsset?.symbol] ?? null;
   // Refuter NEW-2: a failed read is the answer only until the view, the tab or the timeframe next
   // changes — off the shell the battle mounts sit on the Bomb tab AND the bomb series, so leaving
@@ -831,6 +838,8 @@ const AssetResearchModal = ({
         onNavigateToStock={handleNavigateToStock}
         // The view's height less the strip's (45 px): a short tab still fills the view (review D3).
         bodyMinHeight={Math.max(0, shellBodyHeight - 45)}
+        // Battle Research's state 2 (BRS-17): the Ranks tab's one line, and the strip under the research strip.
+        {...(sheetView?.research ? { ranksNote: BR_COPY.ranksLine(sheetView.research.times.ranksAt ?? '—'), stickyTop: 'var(--research-strip-h, 0px)' } : {})}
         // What's moving: the Why? popup's own props as the modal hands them below, but for `change`
         // and `price`: the day's change and the price the shell's header shows (BUILD_RULES §9 —
         // the title prints the change beside the header), the change only once known, as the
@@ -855,7 +864,7 @@ const AssetResearchModal = ({
     // no model yet shows the browse blocks without today's preset questions (BC-1: in battle
     // nothing answers for the agent).
     const blocks = sheetView
-      ? battleBlocks({ view: sheetView, wallSt: wallStLine, tabs, onSeeOnChart })
+      ? battleBlocks({ view: sheetView, wallSt: wallStLine, tabs, onSeeOnChart, research: sheetView.research ?? null })
       : browseBlocks({
         ask: sheetOn ? null : (
           <BrowseAsk key={currentAsset?.symbol}>

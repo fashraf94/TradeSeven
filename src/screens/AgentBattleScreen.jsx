@@ -133,7 +133,14 @@ import { agentBombContext } from '../components/Research/BombMode/selectBombReco
 import { BOMB_COPY } from '../components/Research/BombMode/bombCopy';
 import { BT as BOMB_TOKENS, MONO as BOMB_MONO } from '../components/Research/BombMode/bombTheme';
 import { useSheetModeForBattle } from '../components/Research/Sheet/sheetGate';
-import { incumbentOfCall } from '../components/Research/Sheet/packs';
+import { incumbentOfCall, lensOf } from '../components/Research/Sheet/packs';
+import BattleResearchSurface from '../components/Research/BattleResearch/BattleResearchSurface';
+import useBattleResearch from '../components/Research/BattleResearch/useBattleResearch';
+import { useBattleResearchModeForBattle, battleResearchAvailable } from '../components/Research/BattleResearch/battleResearchGate';
+import { researchContextOf } from '../components/Research/BattleResearch/researchContext';
+import { currentStep as brCurrentStep, currentResult as brCurrentResult } from '../components/Research/BattleResearch/investigation';
+import { isLeagueBattle } from './battleViewRouting';
+import { agentNameOf } from './battleView/agentName';
 import TermResearchModal from '../components/shared/TermResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import FilmRoomBanner from '../components/FilmRoom/FilmRoomBanner';
@@ -1249,6 +1256,19 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // dropped when research closes.
   const sheetModeOn = useSheetModeForBattle(agentBattleId, agentBattle?.ownerId ?? null);
   const [sheetIncumbent, setSheetIncumbent] = useState(null);
+  // Battle Research Slice 1 (spec docs/specs/BATTLE_RESEARCH_SLICE1_SPEC_V1.md BRS-1 – BRS-3, BRS-21): the
+  // flag for this battle's owner (the same cached cockpit-status verdict — 'off' asks nothing), the
+  // surface's open state, the row the research modal was opened from ({ symbol, investigationId,
+  // openedStepId } — set only by the surface's rows, dropped when research closes), and the in-memory
+  // store, which survives the surface, the modal, the cockpit and the chat and clears with the battle.
+  const brModeOn = useBattleResearchModeForBattle(agentBattleId, agentBattle?.ownerId ?? null);
+  const [brOpen, setBrOpen] = useState(false);
+  const [brRow, setBrRow] = useState(null);
+  const battleResearch = useBattleResearch({
+    battleId: agentBattleId,
+    battle: agentBattle,
+    agent: { agentId: agentBattle?.agentId ?? null, agentName: agentBattle?.agentContext?.agentName ?? null, archetype: agentBattle?.agentContext?.archetype ?? null },
+  });
 
   // ── Cockpit Build 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md §4) ──────────
   //
@@ -2602,13 +2622,23 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     // On desktop the sheet is a panel within the pane's Cockpit tab: open it there.
     if (isDesktop) pane.openPane(PANE_SECTION.COCKPIT, invoker);
   }, [isDesktop, pane.openPane]);
+  // Battle Research Slice 1 (BRS-1, BRS-2): only on an ACTIVE, non-League agent battle whose cockpit 2b is
+  // on and whose shell resolves on — then the Research pill opens Battle Research in place of the bench
+  // sheet's browse mode (only one of the two is ever open). Off, the pill opens the bench sheet as before.
+  const brOn = battleResearchAvailable({ modeOn: brModeOn, active: agentBattle?.status === 'active', league: isLeagueBattle(agentBattle), cockpit2b, shellOn: sheetModeOn });
+  const openBattleResearch = useCallback(() => {
+    setCockpitBench(null);
+    setCockpitBenchFiled(null);
+    setCockpitBenchRefusal(null);
+    setBrOpen(true);
+  }, []);
   const thisTurnStrip = controllerOn && agentBattle ? (
     <ThisTurnStrip
       directive={thisTurnDirective}
       receipts={receipts}
       battleStatus={agentBattle.status ?? null}
       turn={turnLine}
-      {...(cockpit2b ? { onResearch: openCockpitBenchBrowse } : {})}
+      {...(cockpit2b ? { onResearch: brOn ? openBattleResearch : openCockpitBenchBrowse } : {})}
     />
   ) : null;
 
@@ -2864,6 +2894,21 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   useEffect(() => {
     if (!cockpitResearchOpen && sheetIncumbent) setSheetIncumbent(null);
   }, [cockpitResearchOpen, sheetIncumbent]);
+  // Battle Research: the surface never outlives Battle Research (the flag, the battle's status, the cockpit);
+  // and when the research modal closes, its row clears and focus goes back to that row on the surface, at the
+  // same place in the ranking (§7: Escape closes only the top layer).
+  useEffect(() => {
+    if (brOpen && !brOn) { setBrOpen(false); setBrRow(null); }
+  }, [brOpen, brOn]);
+  useEffect(() => {
+    if (cockpitResearchOpen || !brRow) return;
+    const sym = brRow.symbol;
+    setBrRow(null);
+    if (!brOpen || typeof document === 'undefined') return;
+    const esc = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(sym) : sym;
+    const row = document.querySelector(`[data-br-surface] [data-br-row="${esc}"]`);
+    if (row && row.isConnected) row.focus({ preventScroll: true });
+  }, [cockpitResearchOpen, brRow, brOpen]);
   // Bomb mode refinement (BD-7, 2026-11-10): the Why? panel's "See all levels ›"
   // door. It opens research through the SAME door a tap on the row's symbol uses
   // (the gated admission with the player's side, or the shipped modal), and
@@ -2907,7 +2952,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       flow={cockpitFlow}
       onOpenSheet={openCockpitSheet}
       onSymbolClick={handleCockpitSymbol}
-      onOpenBench={({ callId, step, cardKey }) => { setCockpitBenchFiled(null); setCockpitBenchRefusal(null); setCockpitBenchSort('rank'); setCockpitBench({ callId, step, cardKey }); }}
+      onOpenBench={({ callId, step, cardKey }) => { setBrOpen(false); setCockpitBenchFiled(null); setCockpitBenchRefusal(null); setCockpitBenchSort('rank'); setCockpitBench({ callId, step, cardKey }); }}
       onShowAllEarlier={() => setCockpitShowAllEarlier(true)}
     />
   ) : (
@@ -3049,6 +3094,54 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       else setPhoneScreen(PHONE_SCREEN.COCKPIT);
     }
     : null;
+  // The score pair AS THE HEADER SHOWS IT (BC-13, BUILD_RULES §9): its digits through the header's own
+  // formatter and its lead (the precise pair's) — never re-rounded. The sheet and Battle Research read it.
+  const sheetStanding = comparison !== undefined
+    ? (comparison.available === true ? {
+      player: comparison.pair[0], opponent: comparison.pair[1], digits: comparison.fractionDigits ?? 0,
+      you: comparison.digits?.[0] ?? formatScoreDisplay(comparison.pair[0], { fractionDigits: comparison.fractionDigits ?? 0 }),
+      them: comparison.digits?.[1] ?? formatScoreDisplay(comparison.pair[1], { fractionDigits: comparison.fractionDigits ?? 0 }),
+      lead: comparison.lead,
+    } : null)
+    : {
+      player: displayPlayerScore, opponent: displayOpponentScore, digits: 0,
+      you: formatScoreDisplay(displayPlayerScore), them: formatScoreDisplay(displayOpponentScore),
+      lead: displayPlayerScore > displayOpponentScore ? 'player' : displayPlayerScore < displayOpponentScore ? 'cpu' : 'tie',
+    };
+  // Battle Research Slice 1 — the surface's voice (R-23: *{Agent} · {Archetype}*, the sheet's own lens label),
+  // the row door, the draft handoff (BRS-19: the prefill-not-sent path, the chat opened as the follow-up
+  // door opens it, appended after anything typed) and state 2's context (BRS-17, BRS-10).
+  const brAgentName = agentNameOf(agentBattle?.agentContext?.agentName);
+  const brVoice = brOn && agentBattle ? `${brAgentName} · ${lensOf(agentBattle).label}` : brAgentName;
+  const closeBrSurface = () => { setBrOpen(false); setBrRow(null); };
+  const openBrRow = (symbol) => {
+    const inv = battleResearch.state.view === 'board' ? battleResearch.active : null;
+    setBrRow({ symbol, investigationId: inv?.investigationId ?? null, openedStepId: inv ? brCurrentStep(inv).stepId : null });
+    handleCockpitSymbol(symbol);
+  };
+  const handleBrDraft = (draft) => {
+    if (!draft || typeof draft.text !== 'string' || !draft.text) return;
+    const invoker = typeof document !== 'undefined' ? document.querySelector('[data-this-turn-research]') : null;
+    closeResearchForCockpit();
+    closeBrSurface();
+    setComposerPrefill({ text: draft.text, variants: Array.isArray(draft.variants) ? draft.variants : [draft.text], mode: 'append', nonce: Date.now() });
+    if (paneOn) pane.openPane(PANE_SECTION.CHAT, invoker);
+    else if (!chatOpen) sheet.open(invoker);
+  };
+  const brResearchFor = (symbol) => {
+    const inv = brRow && brRow.symbol === symbol && brRow.investigationId
+      ? battleResearch.state.session.list.find((x) => x.investigationId === brRow.investigationId) ?? null
+      : null;
+    if (!inv || !agentBattle) return {};
+    const result = brCurrentResult(inv);
+    // The reference line's holding opens as itself (state 1): it is the comparison, not a candidate.
+    if (result.incumbent && result.incumbent.symbol === symbol) return {};
+    const research = researchContextOf({
+      inv, symbol, openedStepId: brRow.openedStepId, battle: agentBattle, voice: brVoice, agentName: brAgentName,
+      cb: { onBack: closeResearchForCockpit, onApplyUseAcross: battleResearch.applyAcross, onUndo: battleResearch.undo, onDraft: handleBrDraft },
+    });
+    return { research, rankings: battleResearch.rankingsFor(inv, result.resultId), ...(result.incumbent ? { incumbent: result.incumbent.symbol } : {}) };
+  };
   const sheetContextFor = (symbol, ids = {}, held = false) => ({
     battleId: agentBattleId,
     agentId: agentBattle?.agentId ?? null,
@@ -3056,23 +3149,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     agentName: agentBattle?.agentContext?.agentName ?? null,
     row: { held, ...ids },
     ...(sheetIncumbent && sheetIncumbent.symbol === symbol ? { incumbent: sheetIncumbent.incumbent } : {}),
+    ...(brOn ? brResearchFor(symbol) : {}),
     ...(sheetCockpitDoor ? { onOpenCockpit: sheetCockpitDoor } : {}),
     battle: agentBattle,
     ...(cockpitOn && cockpitCallsRead.status === 'ready' && Array.isArray(cockpitCallsRead.value) ? { calls: cockpitCallsRead.value } : {}),
-    // The standing AS THE HEADER SHOWS IT (BC-13, BUILD_RULES §9): its digits through the
-    // header's own formatter and its lead (the precise pair's) — never re-rounded in the sheet.
-    standing: comparison !== undefined
-      ? (comparison.available === true ? {
-        player: comparison.pair[0], opponent: comparison.pair[1], digits: comparison.fractionDigits ?? 0,
-        you: comparison.digits?.[0] ?? formatScoreDisplay(comparison.pair[0], { fractionDigits: comparison.fractionDigits ?? 0 }),
-        them: comparison.digits?.[1] ?? formatScoreDisplay(comparison.pair[1], { fractionDigits: comparison.fractionDigits ?? 0 }),
-        lead: comparison.lead,
-      } : null)
-      : {
-        player: displayPlayerScore, opponent: displayOpponentScore, digits: 0,
-        you: formatScoreDisplay(displayPlayerScore), them: formatScoreDisplay(displayOpponentScore),
-        lead: displayPlayerScore > displayOpponentScore ? 'player' : displayPlayerScore < displayOpponentScore ? 'cpu' : 'tie',
-      },
+    // The standing AS THE HEADER SHOWS IT (BC-13, BUILD_RULES §9) — sheetStanding above.
+    standing: sheetStanding,
     directive: thisTurnDirective,
   });
   if (gatedPath) {
@@ -4330,6 +4412,28 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       {gatedPath && quoteNotice && (
         <QuoteUnavailableNotice notice={quoteNotice} onDismiss={() => setQuoteNotice(null)} />
       )}
+
+      {/* Battle Research Slice 1 (BRS-2, §7): the surface the Research pill opens, a layer of its own the
+          research modal stacks over (the surface is then inert; Escape closes only the modal). Appended
+          LAST, so no shipped sibling moves; never rendered while Battle Research is off. */}
+      {brOn && brOpen ? (
+        <BattleResearchSurface
+          open
+          store={battleResearch}
+          battle={agentBattle}
+          agentName={brAgentName}
+          voice={brVoice}
+          standing={sheetStanding ? { you: sheetStanding.you, them: sheetStanding.them, opponent: BATTLE_VIEW_COPY.opponentLabel } : null}
+          isDesktop={isDesktop}
+          reducedMotion={reducedMotion}
+          onClose={closeBrSurface}
+          onOpenRow={openBrRow}
+          onAskAbout={handleBrDraft}
+          suspended={cockpitResearchOpen}
+          onSuspendedEscape={closeResearchForCockpit}
+          restoreFocus={() => (typeof document !== 'undefined' ? document.querySelector('[data-this-turn-research]') : null)}
+        />
+      ) : null}
     </div>
   );
 }
