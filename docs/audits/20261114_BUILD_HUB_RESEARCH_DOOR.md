@@ -1,13 +1,13 @@
 # Build report: the hub research door ("Work an idea" opens Shared Research), dark
 
 **Build:** Command Center core spec V1.2, Amendment E V1.1, Part 2, with its §12 rulings (R-D1 to R-D4) and, in the fix round (§8), its §13 rulings (R-D5 to R-D10).
-**Branch:** `claude/hub-research-door`, cut from `origin/main` @ `c85f7b41` (#1059) after `git fetch origin`. `origin/main` was refetched before the final checks and had not moved.
+**Branch:** `claude/hub-research-door`, cut from `origin/main` @ `c85f7b41` (#1059) after `git fetch origin`. `origin/main` was refetched before the build's final checks and had not moved then. It moved during the fix round, and was merged (§8.1).
 **Code head:** `5373c83e`, after the fix round (§8). `main` (`5a8c3620`, #1063) was merged into the branch at `5ccc4fb6`; that merge brought one test file. The build's own code head was `adb194c3`: its two test files were strengthened after the row-named mutation battery (§4.2). This report was first committed as `7549e11b`, before `adb194c3`. The tree was clean at the start; the preamble STOP report is outside the repo.
 **Mode:** `SHARED_RESEARCH_MODE` is `'off'`, and its pin row in `src/config/sharedResearchFlags.test.js` is unmoved.
 
 ## Verdict
 
-**The fix round (§8) built the founder's rulings on §7, moved the code head to `5373c83e`, and merged `main` (#1063). Its own verdict and checks are in §8.1. On the merged head the full suite exits 0. The rows below are the build's, at `adb194c3`.**
+**The fix round (§8) built the founder's rulings on §7, moved the code head to `5373c83e`, and merged `main` (#1063). Its own verdict and checks are in §8.1. On the merged head the full suite exits 0. The rows below are the build's, at `adb194c3`, and so are the line numbers and row counts in §1–§7; §8 cites the final head.**
 
 | Question | Answer |
 |---|---|
@@ -494,7 +494,7 @@ The founder ruled on §7's six questions (the Command Center chat, Nov 14). Q1 a
 | `5373c83e` | the review's three fixes (F1–F3) |
 | `c07b2bfd` | the amendment's §13 (appended verbatim), its README row, this section |
 | `5ccc4fb6` | the merge of `main` `5a8c3620` (#1063, the CompeteTab.rankLabel clock pin); no conflict |
-| the next docs commit | this section's merge lines, and the README row |
+| `b498baff`, `0b724705` and the last docs commit | this section's merge lines, the README row, the rules suite's result, and these notes |
 
 ### 8.3 The changes, by question
 
