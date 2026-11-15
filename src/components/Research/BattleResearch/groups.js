@@ -48,8 +48,21 @@ function cooldownMsOf(battle, symbol) {
  */
 export function eligibilityOf(battle, { out = null, slot = null, symbol, atMs }) {
   const v = canComeIn({ battle, out, slot, inSymbol: symbol, atMs });
-  if (v.ok) return { ok: true, reason: null, lockedUntil: null };
-  return { ok: false, reason: v.reason, lockedUntil: v.reason === 'pick_locked' ? cooldownMsOf(battle, symbol) : null };
+  if (!v.ok) return { ok: false, reason: v.reason, lockedUntil: v.reason === 'pick_locked' ? cooldownMsOf(battle, symbol) : null };
+  // canComeIn reads a hot-bench or equipped-list name as a stock (agentSwapExecution's own rule); Battle
+  // Research names a bare "BTC" crypto (isCryptoName, review BR1-5), so it never says such a name can come in
+  // for a STOCK holding — the class answer canComeIn gives a known crypto (refuter BR1-5).
+  if (out !== null && isCryptoName(battle, symbol) && !heldIsCrypto(battle, out)) return { ok: false, reason: 'pick_wrong_class', lockedUntil: null };
+  return { ok: true, reason: null, lockedUntil: null };
+}
+
+/** Is the held name `symbol` a crypto (its asset's own flag, else isCryptoName's rules)? */
+function heldIsCrypto(battle, symbol) {
+  for (const tier of ['star', 'core', 'support']) {
+    const a = (Array.isArray(battle?.portfolio?.[tier]) ? battle.portfolio[tier] : []).find((x) => x?.symbol === symbol);
+    if (a) return a.isCrypto === true || isCryptoName(battle, symbol);
+  }
+  return isCryptoName(battle, symbol);
 }
 
 /**

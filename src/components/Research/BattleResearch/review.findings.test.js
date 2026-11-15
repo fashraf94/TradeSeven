@@ -101,9 +101,10 @@ describe('BR1 — readings and freezing', () => {
     const c = classifyMove({ quote: q({ sessionEtDate: null }), session: sessionAt(TAKEN_AT), snapshot: { sweepAt: TAKEN_AT }, takenAt: TAKEN_AT });
     expect(c.words).not.toMatch(/'s move · close/);
   });
-  it('BR1-14: a move that prints 0.0 is zero — it fails both up and down today, and prints no sign', () => {
+  it('BR1-14: a move that prints 0.0 is zero — it fails both up and down today; its text is pctText\'s own (refuter RF-5)', () => {
     const r = res({ quotesBody: quotesBody({ PLTR: q({ changePercent: 0.04 }), NVDA: q({ changePercent: -0.04 }) }) });
-    expect(r.quotes.rows.PLTR.words).toMatch(/^0\.0% · /);
+    expect(r.quotes.rows.PLTR.words).toMatch(/^\+0\.0% · /);
+    expect(r.quotes.rows.NVDA.words).toMatch(/^−0\.0% · /);
     expect(placedOf(outcomeOf(r, { group: 'union', order: RANK, conditions: [{ id: 'up_today' }] }))).not.toContain('PLTR');
     expect(placedOf(outcomeOf(r, { group: 'union', order: RANK, conditions: [{ id: 'down_today' }] }))).not.toContain('NVDA');
   });
@@ -127,7 +128,7 @@ describe('BR2 — honesty and display agreement', () => {
   it('BR2-3: the banner counts against the group, and names what was set aside separately from what was removed', () => {
     let i = addCondition(inv(res()), { id: 'up_today' }, 1);
     i = removeCondition(i, 'up_today', 2);
-    expect(bannerOf(i, currentStep(i)).body).toMatch(/^4 of 4 names placed\./);
+    expect(bannerOf(i, currentStep(i)).body).toMatch(/^4 of 6 names placed\./); // the note line's total (refuter RF-7)
     const r = res({ quotesBody: quotesBody({ PLTR: null }) });
     const j = addCondition(inv(r), { id: 'up_today' }, 1);
     expect(bannerOf(j, currentStep(j)).body).toContain('set aside, not assessed');

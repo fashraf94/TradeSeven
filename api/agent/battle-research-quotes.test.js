@@ -398,4 +398,12 @@ describe('BR3-6 — a battleId is one document id', () => {
       expect(state.reads).toEqual([]);
     }
   });
+  it('refuter BR3-6: ".", ".." and a reserved __name__ are not document ids either — 400 before any read, never a 500', async () => {
+    for (const battleId of ['.', '..', '__x__', '__name__']) {
+      state.reads = [];
+      const r = await call({ query: { battleId } });
+      expect(r.statusCode).toBe(400);
+      expect(state.reads).toEqual([]);
+    }
+  });
 });

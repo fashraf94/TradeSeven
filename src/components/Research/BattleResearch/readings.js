@@ -120,18 +120,22 @@ const state = (s, cause, words) => ({ state: s, cause, words });
 
 /**
  * THE MOVE AS PRINTED (BUILD_RULES §9; review BR1-2, BR2-4, BR2-5): the number pctText prints — one
- * decimal, the sign of the printed digits (a move that prints 0.0 is zero, never "+0.0%"). Every move
- * decision in Battle Research — the order and its ties, up and down today (zero belongs to neither), the
- * reference line, the chips, the counts, the words — reads THIS number, so no label can disagree with
- * the digits beside it. Null without a finite move.
+ * decimal — signed by its digits (a move that prints 0.0 is zero, whatever sign pctText puts before it).
+ * Every move DECISION in Battle Research — the order and its ties, up and down today (zero belongs to
+ * neither), the reference line, the chips, the counts, the direction words — reads THIS number, so no
+ * label can disagree with the digits beside it. Null without a finite move.
  */
 export function shownMove(v) {
   if (!finite(v)) return null;
   const digits = Number(Math.abs(v).toFixed(1));
   return digits === 0 ? 0 : (v < 0 ? -digits : digits);
 }
-/** The move's text: pctText of the printed number ("+1.2%", "−0.8%", "0.0%"). */
-export const moveText = (v) => pctText(shownMove(v));
+/**
+ * The move's TEXT is pctText of the quote's own changePercent (BRS-8) — exactly what the cockpit prints for
+ * the same quote ("+1.2%", "−0.8%", and "+0.0%" or "−0.0%" for a move under 0.05%; refuter RF-5). Pass the
+ * RAW value: the digits, and so every decision, are shownMove's.
+ */
+export const moveText = (v) => pctText(v);
 
 /**
  * A time as a line names it against the result's own instant (review BR2-6): the clock on the same ET
@@ -161,8 +165,10 @@ export function preClassify({ quote, isCrypto = false, session, snapshot, takenA
   if (!finite(quote.priceAsOf) || !finite(takenAt) || quote.priceAsOf > takenAt) return state('missing', 'no_time', 'No quote time');
   const today = currentSessionDate(session);
   if (today === null || quote.sessionEtDate !== today) {
-    // A quote with no session date of its own is never named as some day's close (review BR1-11).
-    if (typeof quote.sessionEtDate !== 'string') return state('earlier_session', null, `${moveText(quote.changePercent)} · an earlier session’s move`);
+    // A quote with no session date of its own is not today's by §4's letter (a session date that is not the
+    // current session's), but it is never named as some day's close or "an earlier session" — it may be
+    // today's — and its number keeps its own time (review BR1-11; refuter BR1-11).
+    if (typeof quote.sessionEtDate !== 'string') return state('earlier_session', null, `${moveText(quote.changePercent)} · ${whenText(quote.priceAsOf, takenAt)} · session not recorded`);
     const day = earlierDayLabel(quote.sessionEtDate, session);
     return state('earlier_session', null, `${moveText(quote.changePercent)} · ${day ?? 'earlier'}'s move · close`);
   }

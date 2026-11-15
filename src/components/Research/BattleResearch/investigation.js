@@ -24,9 +24,9 @@
 // session (the oldest goes) — each with a line in the history.
 
 import { selectBookSymbols } from '../../../data/battleUniverse.js';
-import { etClockAmPm } from '../BombMode/checkClock.js';
 import { outcomeOf, incumbentOf, bookCheckOf, msOf, EXCLUSIVE_OF } from './result.js';
 import { membershipOf } from './groups.js';
+import { whenText } from './readings.js';
 import { BR_COPY, STARTER_TEXT, conditionWords } from './battleResearchCopy.js';
 
 export const CAPS = Object.freeze({ investigations: 10, steps: 40 });
@@ -244,7 +244,20 @@ export function refreshIncumbent(inv, battle) {
   if (inv.question.id !== 'weakest_alternatives') return prev ? { ...prev } : null;
   const now = incumbentOf(battle);
   if (now) return now;
-  return prev && selectBookSymbols(battle).has(prev.symbol) ? { ...prev } : null;
+  return prev && positionHeld(battle, prev) ? { ...prev } : null;
+}
+
+/**
+ * Is THIS position still in the book? By its positionId when it has one (refuter BR1-1: a holding swapped out
+ * and back in is a new position — its old reading is never the comparison again), else by its symbol.
+ */
+function positionHeld(battle, entry) {
+  if (typeof entry?.positionId !== 'string') return selectBookSymbols(battle).has(entry?.symbol);
+  for (const tier of ['star', 'core', 'support']) {
+    const list = Array.isArray(battle?.portfolio?.[tier]) ? battle.portfolio[tier] : [];
+    if (list.some((a) => a && a.positionId === entry.positionId)) return true;
+  }
+  return false;
 }
 
 /**
@@ -256,13 +269,17 @@ export function noticeOf(inv, battle) {
   if (!inv || !battle) return null;
   const result = currentResult(inv);
   const inc = result.incumbent;
-  if (inc && !selectBookSymbols(battle).has(inc.symbol)) {
+  if (inc && !positionHeld(battle, inc)) {
     const trade = (Array.isArray(battle.trades) ? battle.trades : []).filter((t) => t?.symbolOut === inc.symbol).map((t) => msOf(t.swappedOutAt)).filter((ms) => finite(ms) && ms > result.takenAt);
-    return { kind: 'left_book', text: BR_COPY.noticeLeftBook(inc.symbol, trade.length ? etClockAmPm(Math.min(...trade)) : null) };
+    // Every time names its day when it is not the result's (refuter BR2-6).
+    const t = trade.length ? whenText(Math.min(...trade), result.takenAt) : null;
+    // Swapped out and back in: the symbol is held again, as a new position (refuter BR1-1).
+    if (selectBookSymbols(battle).has(inc.symbol)) return { kind: 'left_book', text: BR_COPY.noticeReheld(inc.symbol, t) };
+    return { kind: 'left_book', text: BR_COPY.noticeLeftBook(inc.symbol, t) };
   }
   const check = bookCheckOf(battle);
   if (finite(check) && (!finite(result.bookCheckMs) || check > result.bookCheckMs)) {
-    const t = etClockAmPm(check);
+    const t = whenText(check, result.takenAt);
     if (inv.question.id === 'weakest_alternatives' && inc) {
       const now = incumbentOf(battle)?.symbol ?? null;
       if (now && now !== inc.symbol) return { kind: 'new_check', text: BR_COPY.noticeNewCheckWeakest(t, now, inc.symbol) };
@@ -274,21 +291,27 @@ export function noticeOf(inv, battle) {
   const fresh = membershipOf(battle, { out: inc?.symbol ?? null, slot: inc?.tier ?? null, atMs: result.takenAt });
   const wasBy = new Map(result.membership.map((m) => [m.symbol, m]));
   const nowBy = new Map(fresh.membership.map((m) => [m.symbol, m]));
-  const touched = { bench: false, agent_watchlist: false };
-  let inn = 0; let out = 0; let eligibility = 0;
-  for (const [s, m] of nowBy) {
-    const w = wasBy.get(s);
-    if (!w) { inn += 1; m.groups.forEach((g) => { touched[g] = true; }); continue; }
-    if (w.groups.join() !== m.groups.join()) [...w.groups, ...m.groups].forEach((g) => { touched[g] = true; });
-    if (w.eligibility.ok !== m.eligibility.ok) { eligibility += 1; m.groups.forEach((g) => { touched[g] = true; }); }
+  // Counted LIST BY LIST (refuter RF-4): a name that leaves the watchlist but stays on the bench is one out of
+  // the watchlist and no change to the bench — never "the bench and my watchlist changed (0 in, 0 out)".
+  const counts = { bench: { inn: 0, out: 0, eligibility: 0 }, agent_watchlist: { inn: 0, out: 0, eligibility: 0 } };
+  const on = (m, g) => !!m && m.groups.includes(g);
+  for (const g of ['bench', 'agent_watchlist']) {
+    for (const s of new Set([...wasBy.keys(), ...nowBy.keys()])) {
+      const w = wasBy.get(s); const m = nowBy.get(s);
+      if (on(m, g) && !on(w, g)) counts[g].inn += 1;
+      else if (on(w, g) && !on(m, g)) counts[g].out += 1;
+      else if (on(w, g) && on(m, g) && w.eligibility.ok !== m.eligibility.ok) counts[g].eligibility += 1;
+    }
   }
-  for (const [s, w] of wasBy) if (!nowBy.has(s)) { out += 1; w.groups.forEach((g) => { touched[g] = true; }); }
-  if (touched.bench || touched.agent_watchlist) {
-    const which = touched.bench && touched.agent_watchlist ? 'both' : touched.bench ? 'bench' : 'agent_watchlist';
+  const moved = (c) => c.inn + c.out + c.eligibility > 0;
+  const touchedBench = moved(counts.bench);
+  const touchedList = moved(counts.agent_watchlist);
+  if (touchedBench || touchedList) {
+    const which = touchedBench && touchedList ? 'both' : touchedBench ? 'bench' : 'agent_watchlist';
     const at = msOf(battle.watchlist?.lastRefreshed);
     // The watchlist's own rebuild time names the change only when nothing else moved.
-    const t = which === 'agent_watchlist' && finite(at) && at > result.takenAt ? etClockAmPm(at) : null;
-    return { kind: 'lists', text: BR_COPY.noticeLists(which, { inn, out, eligibility }, t) };
+    const t = which === 'agent_watchlist' && finite(at) && at > result.takenAt ? whenText(at, result.takenAt) : null;
+    return { kind: 'lists', text: BR_COPY.noticeLists(which, counts, t) };
   }
   return null;
 }
@@ -301,12 +324,15 @@ export const REFRESH_COOLDOWN_MS = 60_000;
  * minute, counted from the later of the current result's evidence and the last attempt (a failed
  * attempt counts too), both on the CLIENT's clock (the result's receivedAt). The button names the time
  * left (*Refresh in 0:42*), never more than a minute however the clocks sit (review BR1-3).
- * @param {{ inFlight: boolean, takenAt: number|null, lastAttemptAt: number|null, nowMs: number }} p
+ * `since` is the result's CLIENT instant (its receivedAt) — the same clock as `nowMs` and `lastAttemptAt`;
+ * `takenAt` is still read when `since` is absent (refuter BR1-3: the name says which clock).
+ * @param {{ inFlight: boolean, since?: number|null, takenAt?: number|null, lastAttemptAt: number|null, nowMs: number }} p
  * @returns {{ allowed: boolean, reason: 'in_flight'|'cooldown'|null, remainingMs: number, text: string|null }}
  */
-export function refreshGate({ inFlight = false, takenAt = null, lastAttemptAt = null, nowMs }) {
+export function refreshGate({ inFlight = false, since: sinceArg = null, takenAt = null, lastAttemptAt = null, nowMs }) {
   if (inFlight) return { allowed: false, reason: 'in_flight', remainingMs: 0, text: null };
-  const since = Math.max(finite(takenAt) ? takenAt : -Infinity, finite(lastAttemptAt) ? lastAttemptAt : -Infinity);
+  const from = finite(sinceArg) ? sinceArg : takenAt;
+  const since = Math.max(finite(from) ? from : -Infinity, finite(lastAttemptAt) ? lastAttemptAt : -Infinity);
   const left = finite(since) && finite(nowMs) ? Math.min(REFRESH_COOLDOWN_MS, Math.max(0, since + REFRESH_COOLDOWN_MS - nowMs)) : 0;
   if (left <= 0) return { allowed: true, reason: null, remainingMs: 0, text: null };
   const s = Math.ceil(left / 1000);

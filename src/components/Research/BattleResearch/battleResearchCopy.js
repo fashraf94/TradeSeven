@@ -33,7 +33,8 @@ export const signedPts = (n) => `${n >= 0 ? '+' : '−'}${Math.abs(n)}`;
  *   a < 0          "down less today than X"
  */
 export function aheadWords(a, b, other) {
-  if (a > 0) return `up more today than ${other}`;
+  // "More" only against a rise (refuter BR2-5): up against a fall or a flat says what each did.
+  if (a > 0) return b > 0 ? `up more today than ${other}` : b < 0 ? `up today while ${other} is down` : `up today while ${other} is flat`;
   if (a === 0) return `flat today while ${other} is down`;
   return `down less today than ${other}`;
 }
@@ -213,8 +214,18 @@ export const BR_COPY = Object.freeze({
   ].filter(Boolean).join(' and ')}. Its ${measure} is unchanged.`,
   bannerMovedDown: (sym, now, was, back, measure) => `${sym} is now #${now}, was #${was}, because ${back === 1 ? 'a name came back above it' : `${back} names came back above it`}. Its ${measure} is unchanged.`,
   bannerMovedMore: (n) => `${plural(n, 'more name', 'more names')} closed up the same way.`,
-  bannerOrderBody: 'Positions changed because the ordering changed. The names and their readings are the same.',
-  bannerOrderSetAside: (n) => `Positions changed because the ordering changed. ${n === 1 ? 'One name has' : `${n} names have`} no usable move today and ${n === 1 ? 'is' : 'are'} set aside; no reading changed.`,
+  // An order switch says which names came and went, and where (refuter RF-2, BR2-3).
+  bannerOrderChanges: (c) => {
+    const parts = [
+      c.setAside ? `${c.setAside} set aside, not assessed (no usable move today)` : null,
+      c.toUnranked ? `${c.toUnranked} went to Not ranked (not in the rankings)` : null,
+      c.back ? `${c.back} came back` : null,
+      c.fromUnranked ? `${c.fromUnranked} not in the rankings ${c.fromUnranked === 1 ? 'is' : 'are'} now placed by today’s move` : null,
+    ].filter(Boolean);
+    return parts.length
+      ? `Positions changed because the ordering changed: ${parts.join(', ')}. No reading changed.`
+      : 'Positions changed because the ordering changed. The names and their readings are the same.';
+  },
   bannerNoMove: 'No remaining name changed position.',
   bannerEnd: (t) => `Readings are the same ${t} result. Nothing was refreshed.`,
   measureRank: 'rank',
@@ -233,7 +244,14 @@ export const BR_COPY = Object.freeze({
   noticeNewCheckWeakest: (t, now, inc) => `A newer check at ${t}: ${now} is now our weakest. This result still compares with ${inc}.`,
   noticeNewCheck: (t, label) => `A newer check at ${t}. This result is still the ${label} one.`,
   noticeLeftBook: (inc, t) => (t ? `${inc} left the book at ${t}.` : `${inc} left the book after this result.`),
-  noticeLists: (which, c, t) => `${which === 'bench' ? 'The bench' : which === 'agent_watchlist' ? 'My watchlist' : 'The bench and my watchlist'} changed${t ? ` at ${t}` : ' since this result'} (${[`${c.inn} in`, `${c.out} out`, c.eligibility ? `${c.eligibility} can or can’t come in now` : null].filter(Boolean).join(', ')}).`,
+  noticeReheld: (inc, t) => `${inc} was swapped out ${t ? `at ${t}` : 'after this result'} and is held again as a new position; this result compares with the one held then.`,
+  // Counted list by list (refuter RF-4): each list names only what changed on it.
+  noticeLists: (which, c, t) => {
+    const parts = (x) => [x.inn ? `${x.inn} in` : null, x.out ? `${x.out} out` : null, x.eligibility ? `${x.eligibility} can or can’t come in now` : null].filter(Boolean).join(', ');
+    const when = t ? ` at ${t}` : ' since this result';
+    if (which === 'both') return `The bench and my watchlist changed${when} (bench: ${parts(c.bench)}; my watchlist: ${parts(c.agent_watchlist)}).`;
+    return `${which === 'bench' ? 'The bench' : 'My watchlist'} changed${when} (${parts(c[which])}).`;
+  },
 
   // ── The explanation (BRS-16; §9) ──
   explainOutrank: (k, n, inc, ri, N) => (ri !== null
@@ -251,7 +269,9 @@ export const BR_COPY = Object.freeze({
   explainKeep: (inc) => `None of this says how either would score from here. Keeping ${inc} is a fair answer.`,
   explainGroup: (n, group) => `${plural(n, 'name', 'names')} on ${group}.`,
   explainWeakestGone: (line) => line,
-  explainGroupMoves: (u, d, x, t) => `${u} ${u === 1 ? 'is' : 'are'} up today, ${d} down, ${x} without a reading yet${t ? ` (as of ${t})` : ''}.`,
+  // One partition of the group (refuter RF-3): up, down, flat, no reading, crypto — a part shows when it holds a name.
+  explainGroupMoves: (u, d, f, x, c, t) => `${u} ${u === 1 ? 'is' : 'are'} up today, ${d} down${f ? `, ${f} flat` : ''}${x ? `, ${x} without a reading yet` : ''}${c ? `, ${c} crypto not compared` : ''}${t ? ` (as of ${t})` : ''}.`,
+  sectorNotKnown: 'sector not known',
   explainLeftOut: (removed, notAssessed) => join([
     removed ? `${plural(removed, 'name', 'names')} removed by a condition` : null,
     notAssessed ? `${plural(notAssessed, 'name', 'names')} not assessed` : null,

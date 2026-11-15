@@ -21,7 +21,7 @@ import { atrAsOfText } from '../BombMode/bombView.js';
 import { rungsText } from '../Sheet/sheetCopy.js';
 import { COMPANY_NAMES } from '../../../config/stockData.js';
 import { allStaleOf, moveAvailability, moveText, whenText, checkWhen } from './readings.js';
-import { incumbentOf, noWeakestReason, sectorOf, moveOf, rankOf, rungEstimateOf, timesOf, stockStatesOf, sessionOfResult, aboutOf, nextCheckTextOf, holdingEntryOfResult } from './result.js';
+import { incumbentOf, noWeakestReason, sectorOf, moveOf, rankOf, rungEstimateOf, timesOf, stockStatesOf, sessionOfResult, aboutOf, nextCheckTextOf, holdingEntryOfResult, serverNowOf } from './result.js';
 import { BR_COPY, GROUP_LABEL, conditionWords, conditionLabel, orderLabel, eligibilityWhy, ordinal, clockRange, aheadWords } from './battleResearchCopy.js';
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -167,7 +167,7 @@ export function rowFactsOf(battle, result, symbol, { sectorActive = false, nowMs
     symbol,
     name: companyNameOf(battle, symbol),
     groups: member ? member.groups.map((g) => GROUP_LABEL[g]) : [],
-    eligibility: member ? eligibilityLabel(member.eligibility, result.takenAt, nowMs) : null,
+    eligibility: member ? eligibilityLabel(member.eligibility, result.takenAt, serverNowOf(result, nowMs)) : null,
     rank: rankText(result, symbol),
     sectorRank,
     move: q ? q.words : null,
@@ -186,6 +186,15 @@ export function groupLabelOf(view) {
 
 /** All the names one step's group holds: placed, left out, not ranked (the note line's count). */
 const groupCount = (outcome) => outcome.placed.length + outcome.removed.length + outcome.notAssessed.length + outcome.unranked.length;
+
+/**
+ * Why a name was set aside, not assessed: a sector condition on a name with no known sector says so
+ * (refuter RF-6); anything else is its move's own state words (§4).
+ */
+export function notAssessedWords(result, item) {
+  if (item?.conditionId === 'sector') return BR_COPY.sectorNotKnown;
+  return result.quotes.rows[item?.symbol]?.words ?? item?.state ?? BR_COPY.notAssessed;
+}
 
 /** *Bench · 9 names · Ranks as of 1:01 PM ET · moves as of 1:42–1:44 PM ET*. */
 export function noteLineOf(result, view, outcome) {
@@ -319,11 +328,15 @@ export function explainOf(inv, result, step) {
     else first.push(BR_COPY.explainLeader(lead, rankOf(result, lead).technicalRank, N, eligClause(result, lead), ranksAt));
   } else if (outcome.removed.length || outcome.notAssessed.length) first.push(BR_COPY.explainNoneLeft);
   paras.push(first.join(' '));
-  const pool = [...placed.map((p) => p.symbol), ...outcome.removed.map((r) => r.symbol), ...outcome.notAssessed.map((r) => r.symbol)];
+  // ONE partition of the whole group the first line counts (refuter RF-3): every name lands in exactly one of
+  // up, down, flat (prints 0.0), no reading, or crypto — the same counts in rank order and in move order.
+  const crypto = new Set(outcome.unranked.filter((x) => x.reason === 'crypto').map((x) => x.symbol));
+  const pool = [...placed.map((p) => p.symbol), ...outcome.removed.map((r) => r.symbol), ...outcome.notAssessed.map((r) => r.symbol), ...outcome.unranked.map((x) => x.symbol)].filter((s) => !crypto.has(s));
   const u = pool.filter((s) => moveOf(result, s).ok && moveOf(result, s).value > 0).length;
   const d = pool.filter((s) => moveOf(result, s).ok && moveOf(result, s).value < 0).length;
+  const f = pool.filter((s) => moveOf(result, s).ok && moveOf(result, s).value === 0).length;
   const x = pool.filter((s) => !moveOf(result, s).ok).length;
-  if (pool.length) paras.push(BR_COPY.explainGroupMoves(u, d, x, timesOf(result).movesTo));
+  if (pool.length || crypto.size) paras.push(BR_COPY.explainGroupMoves(u, d, f, x, crypto.size, timesOf(result).movesTo));
   if (leftOut) paras.push(leftOut);
   paras.push(...sessLines);
   return paras.filter(Boolean);
@@ -353,13 +366,28 @@ export function bannerOf(inv, step) {
   else if (gone) title = BR_COPY.bannerRemoved(conditionWords(gone));
   else title = BR_COPY.bannerNoMove;
   const o = step.outcome;
-  const assessable = o.placed.length + o.removed.length + o.notAssessed.length;
+  // The note line's total — every name in the group, Not ranked included (refuter RF-7).
+  const total = groupCount(o);
   const parts = [];
   if (step.kind === 'order') {
-    const setAside = o.notAssessed.filter((n) => n.conditionId === 'order').length - parent.outcome.notAssessed.filter((n) => n.conditionId === 'order').length;
-    parts.push(setAside > 0 ? BR_COPY.bannerOrderSetAside(setAside) : BR_COPY.bannerOrderBody);
+    // Which names came and went, and where (refuter RF-2, BR2-3): an order switch moves names between the
+    // placed list, Not assessed (no usable move) and Not ranked (not in the rankings) — it never says
+    // "the names are the same" when they are not.
+    const wasPlaced = new Set(parent.outcome.placed.map((p) => p.symbol));
+    const nowPlaced = new Set(o.placed.map((p) => p.symbol));
+    const wasUnranked = new Set(parent.outcome.unranked.map((x) => x.symbol));
+    const asideNow = new Set(o.notAssessed.map((x) => x.symbol));
+    const unrankedNow = new Set(o.unranked.map((x) => x.symbol));
+    const left = [...wasPlaced].filter((s) => !nowPlaced.has(s));
+    const came = o.placed.map((p) => p.symbol).filter((s) => !wasPlaced.has(s));
+    parts.push(BR_COPY.bannerOrderChanges({
+      setAside: left.filter((s) => asideNow.has(s)).length,
+      toUnranked: left.filter((s) => unrankedNow.has(s)).length,
+      back: came.filter((s) => !wasUnranked.has(s)).length,
+      fromUnranked: came.filter((s) => wasUnranked.has(s)).length,
+    }));
   } else if (step.kind === 'group') {
-    parts.push(BR_COPY.bannerLeft(o.placed.length, assessable));
+    parts.push(BR_COPY.bannerLeft(o.placed.length, total));
   } else {
     const parentPlaced = parent.outcome.placed.map((p) => p.symbol);
     const was = new Map(parent.outcome.placed.map((p) => [p.symbol, p.position]));
@@ -369,7 +397,7 @@ export function bannerOf(inv, step) {
     const removedNow = parentPlaced.filter((s) => !nowPlaced.has(s) && removedSet.has(s));
     const asideNow = parentPlaced.filter((s) => !nowPlaced.has(s) && asideSet.has(s));
     const back = o.placed.filter((p) => !was.has(p.symbol)).map((p) => p.symbol);
-    parts.push(BR_COPY.bannerLeft(o.placed.length, assessable));
+    parts.push(BR_COPY.bannerLeft(o.placed.length, total));
     if (removedNow.length || asideNow.length || back.length) parts.push(BR_COPY.bannerCounts(removedNow.length, asideNow.length, back.length));
     const moved = o.placed.filter((p) => was.has(p.symbol) && was.get(p.symbol) !== p.position);
     if (moved.length) {
@@ -411,7 +439,7 @@ export function researchRowOf(inv, result, step, symbol, { nowMs = null } = {}) 
   const unr = outcome.unranked.find((r) => r.symbol === symbol) ?? null;
   const measureText = measureTextOf(result, view, symbol);
   const where = removed ? `${BR_COPY.removedBy} (${removed.by.map((id) => conditionWords(id === 'sector' ? view.conditions.find((c) => c.id === 'sector') : { id })).join(', ')})`
-    : na ? `${BR_COPY.notAssessed} (${result.quotes.rows[symbol]?.words ?? na.state})`
+    : na ? `${BR_COPY.notAssessed} (${notAssessedWords(result, na)})`
       : unr ? (unr.reason === 'crypto' ? BR_COPY.notRankedCrypto : BR_COPY.notRankedMissing) : null;
   const inc = result.incumbent;
   let support = null;
@@ -429,12 +457,12 @@ export function researchRowOf(inv, result, step, symbol, { nowMs = null } = {}) 
     support = placed.position === 1 ? `Leads this result on ${view.order.measure === 'today_move' ? 'today’s move' : 'technical rank'}.` : null;
   }
   if (inc && m.ok && mi?.ok && m.value !== mi.value) {
-    const line = `Today ${moveText(m.value)} against ${inc.symbol}’s ${moveText(mi.value)} (as of ${quotesWhen(result, [symbol, inc.symbol])}).`;
+    const line = `Today ${moveText(m.raw)} against ${inc.symbol}’s ${moveText(mi.raw)} (as of ${quotesWhen(result, [symbol, inc.symbol])}).`;
     if (m.value > mi.value && !support) support = line;
     else if (m.value < mi.value && !against) against = line;
   }
   const member = result.membership.find((x) => x.symbol === symbol);
-  if (!against && member && !member.eligibility.ok) against = `${eligibilityLabel(member.eligibility, result.takenAt, nowMs).text}.`;
+  if (!against && member && !member.eligibility.ok) against = `${eligibilityLabel(member.eligibility, result.takenAt, serverNowOf(result, nowMs)).text}.`;
   // The finding: today's move, its basis and time; Use across only for up/down and only when not already active.
   const q = result.quotes.rows[symbol];
   let finding = null;
@@ -442,7 +470,7 @@ export function researchRowOf(inv, result, step, symbol, { nowMs = null } = {}) 
     const matches = m.ok ? (m.value > 0 ? 'up_today' : m.value < 0 ? 'down_today' : null) : null;
     const active = view.conditions.some((c) => c.id === matches);
     finding = {
-      text: m.ok ? BR_COPY.findingMove(moveText(m.value), etClockAmPm(q.priceAsOf)) : BR_COPY.findingNoMove(q.words),
+      text: m.ok ? BR_COPY.findingMove(moveText(m.raw), etClockAmPm(q.priceAsOf)) : BR_COPY.findingNoMove(q.words),
       conditionId: matches && !active ? matches : null,
       replaces: matches && !active ? (view.conditions.find((c) => c.id === (matches === 'up_today' ? 'down_today' : 'up_today'))?.id ?? null) : null,
     };
@@ -496,7 +524,7 @@ export function compareOf(result, view, symbol, holding, battle, { nowMs = null 
     { key: 'rung', label: BR_COPY.compareRowRung, cand: rungText(result, symbol), held: holdingRungText(result, holding) },
     {
       key: 'stands', label: BR_COPY.compareRowStands,
-      cand: elig ? eligibilityLabel(elig, result.takenAt, nowMs).text : null,
+      cand: elig ? eligibilityLabel(elig, result.takenAt, serverNowOf(result, nowMs)).text : null,
       held: finite(holding.rungsShown) && finite(holding.checkAtMs) ? BR_COPY.compareHoldingStands(rungsText(holding.rungsShown), checkWhen(holding.checkAtMs, result.takenAt)) : null,
     },
     { key: 'sector', label: BR_COPY.compareRowSector, cand: sectorOf(result, symbol), held: sectorOf(result, holding.symbol) },
@@ -520,7 +548,7 @@ export function compareOf(result, view, symbol, holding, battle, { nowMs = null 
     shared += 1;
     if (m.value > mh.value) { candWins.push(BR_COPY.tradeoffMove(aheadWords(m.value, mh.value, holding.symbol))); measures.push(BR_COPY.measuresMove); } else if (mh.value > m.value) heldWins.push(BR_COPY.tradeoffMove(aheadWords(mh.value, m.value, symbol)));
   }
-  const e = evidenceElig(result, elig, nowMs);
+  const e = evidenceElig(result, elig, serverNowOf(result, nowMs));
   return {
     holding: holding.symbol,
     rows,
@@ -579,7 +607,7 @@ export function draftOf(inv, result, step, symbol, holding = null, { nowMs = nul
     return h ? `${s} ${txt}` : txt;
   }).filter(Boolean);
   const okMoves = names.filter((s) => moveOf(result, s).ok);
-  const moveParts = okMoves.map((s) => (h ? `${s} ${moveText(moveOf(result, s).value)}` : moveText(moveOf(result, s).value)));
+  const moveParts = okMoves.map((s) => (h ? `${s} ${moveText(moveOf(result, s).raw)}` : moveText(moveOf(result, s).raw)));
   const asOf = okMoves.map((s) => result.quotes.rows[s].priceAsOf);
   const rungParts = [];
   const cr = rungEstimateOf(result, symbol);
@@ -593,7 +621,8 @@ export function draftOf(inv, result, step, symbol, holding = null, { nowMs = nul
     if (elig.ok) stands.push(BR_COPY.draftCandNow(symbol));
     else if (elig.reason === 'pick_locked' && finite(elig.lockedUntil)) {
       const t = untilText(elig.lockedUntil, result.takenAt);
-      stands.push(finite(nowMs) && nowMs >= elig.lockedUntil ? `${symbol}: ${BR_COPY.lockedPassed(t).toLowerCase()}.` : BR_COPY.draftCandLocked(symbol, t));
+      const sNow = serverNowOf(result, nowMs);
+      stands.push(finite(sNow) && sNow >= elig.lockedUntil ? `${symbol}: ${BR_COPY.lockedPassed(t).toLowerCase()}.` : BR_COPY.draftCandLocked(symbol, t));
     } else stands.push(BR_COPY.draftCandCant(symbol, eligibilityWhy(elig.reason)));
   }
   if (holding && finite(holding.rungsShown) && finite(holding.checkAtMs)) stands.push(BR_COPY.draftHoldingStands(h, rungsText(holding.rungsShown), checkWhen(holding.checkAtMs, result.takenAt)));
@@ -624,11 +653,12 @@ export function askDraftOf(inv, result, step, { nowMs = null } = {}) {
   const line = (s) => {
     const parts = [s];
     const r = rankOf(result, s)?.technicalRank;
-    if (Number.isInteger(r)) parts.push(`rank ${r}`);
+    // A rank prints only with its time (the time line above names it); none recorded, no rank (refuter BR2-7/14).
+    if (Number.isInteger(r) && t.ranksAt) parts.push(`rank ${r}`);
     const m = moveOf(result, s);
-    if (m.ok) parts.push(moveText(m.value));
+    if (m.ok) parts.push(moveText(m.raw));
     const member = result.membership.find((x) => x.symbol === s);
-    if (member) { const e = eligibilityLabel(member.eligibility, result.takenAt, nowMs).text; parts.push(e.charAt(0).toLowerCase() + e.slice(1)); }
+    if (member) { const e = eligibilityLabel(member.eligibility, result.takenAt, serverNowOf(result, nowMs)).text; parts.push(e.charAt(0).toLowerCase() + e.slice(1)); }
     return BR_COPY.askLine(parts);
   };
   const timeLine = BR_COPY.askTimes(t.ranksAt ? `${t.ranksAt}${t.ranksOlder ? ' (older than usual)' : ''}` : null, t.movesFrom, t.movesTo);

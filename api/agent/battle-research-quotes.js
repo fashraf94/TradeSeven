@@ -157,8 +157,10 @@ export default async function handler(req, res) {
   if (!nonEmpty(battleId)) {
     return res.status(400).json({ error: 'invalid_request', message: 'battleId is required' });
   }
-  // One document id: no path segments, within Firestore's id length (review BR3-6) — a 400, never a 500.
-  if (battleId.includes('/') || Buffer.byteLength(battleId.trim(), 'utf8') > 1500) {
+  // One document id: no path segments, within Firestore's id length, and none of the ids Firestore reserves
+  // ("." and "..", and __…__) (review BR3-6; refuter BR3-6) — a 400, never a 500.
+  const id = battleId.trim();
+  if (battleId.includes('/') || Buffer.byteLength(id, 'utf8') > 1500 || id === '.' || id === '..' || /^__.*__$/.test(id)) {
     return res.status(400).json({ error: 'invalid_request', message: 'battleId must be a battle id' });
   }
   if (userRateLimited(user.uid)) {

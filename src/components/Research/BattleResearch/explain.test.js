@@ -82,7 +82,7 @@ describe('BRS-16 — the explanation, from the frozen result alone', () => {
     const i = inv(r, 'rank_bench');
     expect(explainOf(i, r, currentStep(i))).toEqual([
       '4 names on my bench. NVDA leads at rank 12 of 228, but it’s locked until Thu 10:00 AM (ranks as of 1:01 PM ET).',
-      '2 are up today, 1 down, 0 without a reading yet (as of 1:44 PM).',
+      '2 are up today, 1 down, 1 crypto not compared (as of 1:44 PM).' // one partition of the 4 (refuter RF-3),
     ]);
   });
   it('on a weekend: the market-closed line with the next session, and Friday\'s moves for reference', () => {
@@ -102,14 +102,15 @@ describe('BRS-13 — the banner after a refinement', () => {
     const i = addCondition(inv(r), { id: 'eligible_now' }, 1);
     expect(bannerOf(i, currentStep(i))).toEqual({
       title: 'Condition added: only names that can come in now',
-      body: '3 of 4 names placed. 1 removed. PLTR is now #1, was #2, because a name above it was removed. Its rank is unchanged. 2 more names closed up the same way. Readings are the same 1:45 PM result. Nothing was refreshed.',
+      body: '3 of 6 names placed. 1 removed. PLTR is now #1, was #2, because a name above it was removed. Its rank is unchanged. 2 more names closed up the same way. Readings are the same 1:45 PM result. Nothing was refreshed.',
     });
   });
   it('an ordering change: positions changed because the order did; the names and readings are the same', () => {
     const i = setOrder(inv(), { measure: 'today_move', direction: 'best_first' }, 1);
     expect(bannerOf(i, currentStep(i))).toEqual({
       title: "Ordering changed: today's move, biggest gain first",
-      body: 'Positions changed because the ordering changed. The names and their readings are the same. Readings are the same 1:45 PM result. Nothing was refreshed.',
+      // NOW (not in the rankings, +0.9%) is placed by today's move — the names are not the same (refuter RF-2).
+      body: 'Positions changed because the ordering changed: 1 not in the rankings is now placed by today’s move. No reading changed. Readings are the same 1:45 PM result. Nothing was refreshed.',
     });
   });
   it('a replacement brings names back, and says so', () => {
@@ -130,7 +131,7 @@ describe('§7 — a row\'s facts; the note line; the reference', () => {
     expect(rowFactsOf(BATTLE, res(), 'PLTR')).toEqual({
       symbol: 'PLTR', name: 'Palantir', groups: ['Agent watchlist'], eligibility: { tone: 'ok', text: 'Can come in now' },
       rank: 'Rank 5 of 228 · 1:01 PM ET', sectorRank: null, move: '+0.3% · 1:43 PM', moveState: 'ok',
-      rung: 'Estimated rung size ≈4.1% · ATR reading · 1:01 PM ET', sector: 'Technology', diffs: ['Higher rank than EQIX', 'Up more today than EQIX'],
+      rung: 'Estimated rung size ≈4.1% · ATR reading · 1:01 PM ET', sector: 'Technology', diffs: ['Higher rank than EQIX', 'Up today while EQIX is down'], // EQIX is down: never more (refuter BR2-5)
     });
   });
   it('with a sector condition the sector rank prints first (a label, not a second sort)', () => {
@@ -198,7 +199,7 @@ describe('BRS-17 / BRS-18 — the modal\'s research row and the comparison', () 
     expect(c.rows.map((r) => r.key)).toEqual(['measure', 'move', 'rung', 'stands', 'sector']);
     expect(c.rows.find((r) => r.key === 'rung')).toEqual({ key: 'rung', label: 'One rung', cand: 'Estimated rung size ≈1.9% · ATR reading · 1:01 PM ET', held: 'One rung is 1.0% · fixed at entry' });
     expect(c.lock).toBe('Swapping EQIX out at the 12:45 check’s price locks −6 pts');
-    expect(c.tradeoff).toBe('MSFT out-ranks EQIX and is up more today than EQIX; EQIX leads on nothing here.');
+    expect(c.tradeoff).toBe('MSFT out-ranks EQIX and is up today while EQIX is down; EQIX leads on nothing here.');
     expect(c.evidence).toBe('On technical rank and today’s move, MSFT is ahead of EQIX. It can come in now. None of this says how it would score from here.');
     expect(JSON.stringify(c)).not.toMatch(/overlap|fit/i);
   });

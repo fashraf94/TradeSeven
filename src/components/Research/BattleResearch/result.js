@@ -15,8 +15,9 @@
 // first (Biggest drop first toggles), ties to technical rank then the symbol.
 // Only an `ok` move takes part in move ordering and move conditions; any other
 // state is NOT ASSESSED (set apart, never flat, never "removed"). Up, down and
-// zero are decided on the raw sign — the sign pctText prints — so a move of
-// exactly 0 fails both "up today" and "down today" (a fail, not "not assessed").
+// zero are decided on the PRINTED digits (readings.js shownMove — one decimal),
+// so a move that prints 0.0 fails both "up today" and "down today" (a fail, not
+// "not assessed"), whatever sign pctText puts before the zero.
 // Universe rank is the order across mixed sectors; with a sector condition the
 // rows print the sector rank first (a label, not a second sort). No blended
 // score exists here.
@@ -232,7 +233,21 @@ export function sectorOf(result, symbol) {
 /** A name's frozen move: { ok, value — the move AS PRINTED (readings.shownMove), row }. */
 export function moveOf(result, symbol) {
   const row = result.quotes.rows[symbol] ?? null;
-  return { ok: row?.state === 'ok', value: row?.state === 'ok' ? shownMove(row.changePercent) : null, row };
+  const ok = row?.state === 'ok';
+  // value: the printed digits every decision reads; raw: the quote's own changePercent, which every TEXT prints (pctText).
+  return { ok, value: ok ? shownMove(row.changePercent) : null, raw: ok ? row.changePercent : null, row };
+}
+
+/**
+ * The client's `nowMs` on the SERVER's clock (refuter BR1-3): the result measured the offset when it
+ * arrived (takenAt is the route's servedAt, receivedAt the client's instant), so a lock or a check stamped on
+ * the server's clock is never judged by a client clock that runs fast or slow. Unchanged without both.
+ */
+export function serverNowOf(result, nowMs) {
+  if (!finite(nowMs)) return nowMs;
+  const t = result?.takenAt;
+  const r = result?.receivedAt;
+  return finite(t) && finite(r) ? nowMs + (t - r) : nowMs;
 }
 
 /** A name's frozen rank row, or null. */

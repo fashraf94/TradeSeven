@@ -177,11 +177,11 @@ describe('BRS-14 — notices: one quiet line, never a reorder', () => {
     // A bench change is named as the bench's, with no watchlist time borrowed (BR1-6b).
     const bench = clone(BATTLE);
     bench.portfolio.bench.stocks = bench.portfolio.bench.stocks.filter((s) => s.symbol !== 'ORCL');
-    expect(noticeOf(weakestInv(), bench)).toEqual({ kind: 'lists', text: 'The bench changed since this result (0 in, 1 out).' });
+    expect(noticeOf(weakestInv(), bench)).toEqual({ kind: 'lists', text: 'The bench changed since this result (1 out).' });
     // Same names, an eligibility that changed (an equipped-only name joins the hot bench) is a change too (BR1-6a).
     const elig = clone(BATTLE);
     elig.watchlist.hotBench = ['PLTR', 'MSFT', 'NOW'];
-    expect(noticeOf(weakestInv(), elig)?.text).toBe('My watchlist changed since this result (0 in, 0 out, 1 can or can’t come in now).');
+    expect(noticeOf(weakestInv(), elig)?.text).toBe('My watchlist changed since this result (1 can or can’t come in now).');
   });
 });
 
