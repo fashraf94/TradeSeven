@@ -164,3 +164,36 @@ describe('AgentChat — the append prefill never cuts a draft', () => {
     expect(textarea().value).toBe('z'.repeat(1990));
   });
 });
+
+// Review BL2-1 (lens 2 on PR B): the composer remembered "kept + draft" as an untouched prefill, so the next
+// door treated the player's own words as replaceable. Each row failed on 06520f92.
+describe('review BL2-1 — typed words survive every later door', () => {
+  const type = (text) => act(() => {
+    const ta = textarea();
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(ta, text);
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const ap = (text, nonce) => ({ composerPrefill: { text, nonce, mode: 'append', variants: [text] } });
+  it('a second research draft replaces only the first draft — the typed words stay', () => {
+    renderChat({ composerPrefill: null });
+    type('my own words');
+    renderChat(ap('D1', 11));
+    renderChat(ap('D2', 12));
+    expect(textarea().value).toBe('my own words\n\nD2');
+  });
+  it('a shipped door after a research draft over typed words leaves the composer as it is (F13: typed text wins)', () => {
+    renderChat({ composerPrefill: null });
+    type('my own words');
+    renderChat(ap('D1', 13));
+    renderChat({ composerPrefill: { text: 'About SLB — ', nonce: 14 } });
+    expect(textarea().value).toBe('my own words\n\nD1');
+  });
+  it('a draft that could not fit leaves the typed text, which a shipped door then never replaces', () => {
+    renderChat({ composerPrefill: null });
+    type('z'.repeat(1990));
+    renderChat(ap('Research: "Rank my bench"', 15));
+    renderChat({ composerPrefill: { text: 'About', nonce: 16 } });
+    expect(textarea().value).toBe('z'.repeat(1990));
+  });
+});

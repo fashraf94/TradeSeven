@@ -10,7 +10,7 @@
 // The surface renders this and formats nothing. Node-clean (no React).
 
 import { outcomeOf, sectorsPresent } from './result.js';
-import { currentStep, currentResult, trailOf, titleOf, refreshGate, noticeOf } from './investigation.js';
+import { currentStep, currentResult, trailOf, titleOf, refreshGate, noticeOf, refinementsOf } from './investigation.js';
 import { explainOf, bannerOf, rowFactsOf, referenceOf, noteLineOf, availabilityOf, moveLineOf, proposalOf, askDraftOf, groupLabelOf, notAssessedWords } from './explain.js';
 import { BR_COPY, CONDITION_LABEL, STARTER_TEXT, conditionLabel, conditionWords } from './battleResearchCopy.js';
 import { etClockAmPm } from '../BombMode/checkClock.js';
@@ -109,7 +109,8 @@ export function boardOf({ inv, battle, nowMs, desktop = false, showAll = false, 
     resultId: result.resultId,
     resultLabel: result.label,
     title: titleOf(inv, result),
-    refinements: trailOf(inv).slice(1).map((s) => s.wording),
+    // Every refinement, the folded ones included (review BL2-7).
+    refinements: refinementsOf(inv),
     note: noteLineOf(result, view, outcome),
     paragraphs,
     lead: paragraphs[0] ?? null,

@@ -8,7 +8,8 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { buildResult, incumbentOf } from './result.js';
-import { newInvestigation, addCondition, currentStep } from './investigation.js';
+import { newInvestigation, addCondition, setOrder, currentStep, refinementsOf } from './investigation.js';
+import { BR_COPY } from './battleResearchCopy.js';
 import { researchContextOf } from './researchContext.js';
 import { researchBattle, rankingsDoc, quotesBody, TAKEN_AT, RANKS_AT } from './__fixtures__/researchFixtures.js';
 
@@ -95,5 +96,26 @@ describe('BRS-18a — Use across this result', () => {
     const c = ctxOf(invOf(), 'MSFT', undefined, { onBack: () => got.push('back'), onUndo: () => got.push('undo'), onApplyUseAcross: (id) => got.push(`apply:${id}`), onDraft: (d) => got.push(`draft:${d.text.slice(0, 9)}`) });
     c.onBack(); c.onUndo(); c.onApplyUseAcross('up_today'); c.onDraft(c.draftFor('EQIX'));
     expect(got).toEqual(['back', 'undo', 'apply:up_today', 'draft:Research:']);
+  });
+});
+
+describe('review BL2-6 — the strip\'s times and group print as the row and the note print them', () => {
+  it('ranks past their expiry say "older than usual"; the group says "6 names"; no time, no "— ET"', () => {
+    const doc = { ...rankingsDoc(), expiresAt: { toMillis: () => RANKS_AT + 10 * 60_000 } };
+    const inv = newInvestigation({ battleId: 'stock-battle', questionId: 'weakest_alternatives', at: TAKEN_AT,
+      result: buildResult({ battle: BATTLE, incumbent: incumbentOf(BATTLE), rankingsDoc: doc, quotesBody: quotesBody(), takenAt: TAKEN_AT, receivedAt: TAKEN_AT, resultId: 'r1', index: 1 }) });
+    const c = ctxOf(inv, 'MSFT');
+    expect(c.times.text).toBe('Ranks 1:01 PM ET · older than usual · moves 1:42–1:44 PM ET');
+    expect(c.group.text).toBe('Bench and agent watchlist · 6 names');
+    expect(BR_COPY.ranksLine(null)).toBe('All stocks · technical rank');
+    expect(BR_COPY.ranksLine('1:01 PM', true)).toBe('All stocks · technical rank · 1:01 PM ET · older than usual');
+  });
+});
+
+describe('review BL2-7 — the then-chain holds every refinement, folded ones included', () => {
+  it('past the step cap the strip lists refinementsOf\'s 41, not the trail\'s 39', () => {
+    let inv = addCondition(invOf(), { id: 'eligible_now' }, TAKEN_AT + 1);
+    for (let i = 0; i < 40; i += 1) inv = setOrder(inv, { measure: i % 2 ? 'technical_rank' : 'today_move', direction: 'best_first' }, TAKEN_AT + 2 + i);
+    expect(ctxOf(inv, 'MSFT').refinements).toEqual(refinementsOf(inv));
   });
 });

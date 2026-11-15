@@ -302,3 +302,40 @@ describe('review BL4-10 / BL4-5 — the research links and the Draft door at pho
     expect(door.style.maxWidth).toBe('50%');
   });
 });
+
+describe('review BL2-2 — the two Draft doors are the same door: both draft against the holding picked in Compare', () => {
+  beforeEach(() => { flag.sheet = 'on'; });
+  it('a group question, KO picked: the action row drafts "MSFT vs KO", as the comparison\'s own door does', async () => {
+    const ctx = contextFor('MSFT', { questionId: 'rank_bench' });
+    await openResearch('MSFT', ctx);
+    await clickEl(q('[data-research-pick="KO"]'));
+    await clickEl(q('[data-research-draft]'));
+    await clickEl(q('[data-sheet-draft]'));
+    expect(ctx.cb.drafts).toHaveLength(2);
+    expect(ctx.cb.drafts[0].text).toContain('\nMSFT vs KO:');
+    expect(ctx.cb.drafts[1].text).toContain('\nMSFT vs KO:');
+  });
+});
+
+describe('review BL2-11 — every tap in the research blocks is marked no message cost', () => {
+  beforeEach(() => { flag.sheet = 'on'; });
+  it('the strip says so, under the question', async () => {
+    await openResearch('MSFT', contextFor('MSFT'));
+    expect(q('[data-research-strip] [data-research-no-cost]').textContent).toBe('no message cost');
+  });
+});
+
+describe('review BL2-10 — a row of the opening\'s list hands the modal the opening\'s own ATR reading (BRS-10)', () => {
+  beforeEach(() => { flag.sheet = 'on'; });
+  it('state 1 with the seed: 💣 prints the row\'s number and time, no stockTechnicalScores read', async () => {
+    scores('MSFT', 2.71, at('2026-10-14T17:30:00.000Z'));
+    const { research, rankings, incumbent, ...plain } = contextFor('MSFT').sheetContext; // eslint-disable-line no-unused-vars
+    seed('MSFT');
+    const bombContext = agentBombContext(BATTLE, 'MSFT', Date.parse(NOW), { battleId: 'stock-battle' });
+    await open(nonHeld('MSFT', { threshold: 6.48 }), bombContext, { sheetContext: { ...plain, atrSeed: { pct: 1.94, asOfMs: Date.parse('2026-10-14T17:01:00.000Z') } } });
+    expect(q('[data-shell-block="researchStrip"]')).toBeNull();
+    await clickEl(q('[data-shell-pill="bomb"]'));
+    expect(reads()).not.toContain('stockTechnicalScores/MSFT');
+    expect(bodyText()).toContain('ATR reading 1.9%');
+  });
+});

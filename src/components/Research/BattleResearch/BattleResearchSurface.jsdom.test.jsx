@@ -206,7 +206,7 @@ describe('the phone (BRS-16)', () => {
   it('the explanation\'s first paragraph in the bottom bar, Read more · history opens the sheet; Escape closes the sheet first', async () => {
     await mount({ isDesktop: false });
     await click(q('[data-br-starter="weakest_alternatives"]'));
-    expect(q('[data-br-lead-bar]').textContent).toContain('Shadow:');
+    expect(q('[data-br-lead-bar]').textContent).toContain('Shadow · Trend Follower:');
     // Measured at 390 and 320 in Edge: the clamped two lines drew 39 px — the button holds 44 (§11).
     expect(parseInt(q('[data-br-lead]').style.minHeight, 10)).toBeGreaterThanOrEqual(44);
     expect(q('[data-br-agent-column]')).toBeNull();
@@ -348,5 +348,32 @@ describe('review BL1-5 — the surface open on the proposal across a change of b
     await settle();
     expect(fetches).toBe(2);
     expect(q('[data-br-as-they-stand-toggle]').textContent).not.toMatch(/loading|Loading/);
+  });
+});
+
+describe('review BL2-3 — one clock: the board says a lock has passed when it passes, as the modal does', () => {
+  it('a lock lapsing while the board stands turns to "since passed" without a step (after the Refresh countdown has stopped)', async () => {
+    const soon = JSON.parse(JSON.stringify(BATTLE));
+    soon.portfolio.bench.stocks = soon.portfolio.bench.stocks.map((x) => (x.symbol === 'NVDA' ? { ...x, cooldownUntil: new Date(TAKEN_AT + 62_000).toISOString() } : x));
+    await mount({ isDesktop: true, battle: soon, clock: () => Date.now() });
+    await click(q('[data-br-starter="rank_bench"]'));
+    // Past the Refresh minute: the countdown's tick stops, so only the lock's own timer can turn the clock.
+    vi.setSystemTime(new Date(TAKEN_AT + 61_000));
+    await act(async () => { await new Promise((r) => setTimeout(r, 1200)); });
+    await settle();
+    expect(q('[data-br-refresh]').textContent).not.toMatch(/Refresh in/);
+    expect(q('[data-br-row="NVDA"]').textContent).not.toContain('since passed');
+    vi.setSystemTime(new Date(TAKEN_AT + 63_000));
+    await act(async () => { await new Promise((r) => setTimeout(r, 1300)); });
+    await settle();
+    expect(q('[data-br-row="NVDA"]').textContent).toContain('since passed');
+  }, 15_000);
+});
+
+describe('review BL2-12 — the phone bar speaks in the same voice as the strip', () => {
+  it('"{Agent} · {Archetype}:" before the explanation', async () => {
+    await mount({ isDesktop: false });
+    await click(q('[data-br-starter="weakest_alternatives"]'));
+    expect(q('[data-br-lead-bar] b').textContent).toBe('Shadow · Trend Follower: ');
   });
 });

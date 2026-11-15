@@ -11,9 +11,9 @@
 import { outcomeOf, rungEstimateOf, timesOf, conditionCounts, holdingEntryOfResult, moveOf } from './result.js';
 import { moveText } from './readings.js';
 import { etClockAmPm } from '../BombMode/checkClock.js';
-import { currentStep, currentResult, trailOf, titleOf } from './investigation.js';
+import { currentStep, currentResult, refinementsOf, titleOf } from './investigation.js';
 import { researchRowOf, compareOf, draftOf, groupLabelOf } from './explain.js';
-import { BR_COPY, conditionLabel, conditionWords, clockRange, orderLabel } from './battleResearchCopy.js';
+import { BR_COPY, conditionLabel, conditionWords, orderLabel } from './battleResearchCopy.js';
 
 /**
  * @param {object} p
@@ -60,11 +60,12 @@ export function researchContextOf({ inv, symbol, openedStepId, battle, voice, ag
     stepId: step.stepId,
     openedStepId,
     question: { text: titleOf(inv, result) },
-    refinements: trailOf(inv).slice(1).map((s) => s.wording),
-    group: { label: groupLabelOf(view), count: n },
+    // Every refinement, the ones the step cap folded included (review BL2-7).
+    refinements: refinementsOf(inv),
+    group: { label: groupLabelOf(view), count: n, text: BR_COPY.stripGroup(groupLabelOf(view), n) },
     conditions: view.conditions.map((c) => ({ id: c.id, label: conditionLabel(c) })),
     order: { label: orderLabel(view.order) },
-    times: { ranksAt: t.ranksAt, movesFrom: t.movesFrom, movesTo: t.movesTo, text: [t.ranksAt ? `Ranks ${t.ranksAt} ET` : null, t.movesFrom ? `moves ${clockRange(t.movesFrom, t.movesTo)} ET` : null].filter(Boolean).join(' · ') },
+    times: { ranksAt: t.ranksAt, ranksOlder: !!t.ranksOlder, movesFrom: t.movesFrom, movesTo: t.movesTo, text: BR_COPY.stripTimes(t.ranksAt, !!t.ranksOlder, t.movesFrom, t.movesTo) },
     resultLabel: result.label,
     voice,
     agentName,

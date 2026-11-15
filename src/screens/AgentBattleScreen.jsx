@@ -135,7 +135,9 @@ import { BT as BOMB_TOKENS, MONO as BOMB_MONO } from '../components/Research/Bom
 import { useSheetModeForBattle } from '../components/Research/Sheet/sheetGate';
 import { incumbentOfCall, lensOf } from '../components/Research/Sheet/packs';
 import BattleResearchSurface from '../components/Research/BattleResearch/BattleResearchSurface';
-import useBattleResearch from '../components/Research/BattleResearch/useBattleResearch';
+import useBattleResearch, { subsetDoc as brSubsetDoc } from '../components/Research/BattleResearch/useBattleResearch';
+import { rungEstimateOf } from '../components/Research/BattleResearch/result';
+import { BR_COPY } from '../components/Research/BattleResearch/battleResearchCopy';
 import { useBattleResearchModeForBattle, battleResearchAvailable } from '../components/Research/BattleResearch/battleResearchGate';
 import { researchContextOf } from '../components/Research/BattleResearch/researchContext';
 import { currentStep as brCurrentStep, currentResult as brCurrentResult } from '../components/Research/BattleResearch/investigation';
@@ -867,7 +869,7 @@ function ScoreHeader({
               textTransform: 'uppercase',
               letterSpacing: '0.04em',
             }}>
-              CPU
+              {BATTLE_VIEW_COPY.opponentLabel}
             </span>
           </div>
           {!gated && (
@@ -3112,7 +3114,10 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // the row door, the draft handoff (BRS-19: the prefill-not-sent path, the chat opened as the follow-up
   // door opens it, appended after anything typed) and state 2's context (BRS-17, BRS-10).
   const brAgentName = agentNameOf(agentBattle?.agentContext?.agentName);
-  const brVoice = brOn && agentBattle ? `${brAgentName} · ${lensOf(agentBattle).label}` : brAgentName;
+  // The sheet's own voice rule (useSheetView): *{Agent} · {Archetype}*, the archetype alone with no name — never
+  // "Your Agent · …" (review BL2-12).
+  const brNamed = typeof agentBattle?.agentContext?.agentName === 'string' && agentBattle.agentContext.agentName.trim() ? brAgentName : null;
+  const brVoice = brOn && agentBattle ? BR_COPY.voiceLabel(brNamed, lensOf(agentBattle).label) : brAgentName;
   const closeBrSurface = () => { setBrOpen(false); setBrRow(null); };
   const openBrRow = (symbol) => {
     const inv = battleResearch.state.view === 'board' ? battleResearch.active : null;
@@ -3129,6 +3134,16 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     else if (!chatOpen) sheet.open(invoker);
   };
   const brResearchFor = (symbol) => {
+    // A row of the opening's "as they stand" list: state 1, with the opening's OWN readings — its rankings doc and
+    // the row's ATR reading as the seed — so 💣 and the packs print what the row printed (BRS-10; review BL2-10).
+    if (brRow && brRow.symbol === symbol && !brRow.investigationId && battleResearch.state.opening.result) {
+      const o = battleResearch.state.opening.result;
+      const atr = rungEstimateOf(o, symbol);
+      return {
+        rankings: battleResearch.openingRankings() ?? brSubsetDoc(o),
+        ...(o.measured ? { atrSeed: atr ? { pct: atr.pct, asOfMs: atr.asOfMs } : { pct: null, asOfMs: null } } : {}),
+      };
+    }
     const inv = brRow && brRow.symbol === symbol && brRow.investigationId
       ? battleResearch.state.session.list.find((x) => x.investigationId === brRow.investigationId) ?? null
       : null;

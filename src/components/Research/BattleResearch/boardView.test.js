@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { buildResult, incumbentOf } from './result.js';
-import { newInvestigation, addCondition, setOrder, undo, previous, currentStep } from './investigation.js';
+import { newInvestigation, addCondition, setOrder, undo, previous, currentStep, refinementsOf } from './investigation.js';
 import { boardOf, asTheyStandOf, startersOf, SHOWN, askAboutDraft } from './boardView.js';
 import { BR_COPY } from './battleResearchCopy.js';
 import { researchBattle, rankingsDoc, quotesBody, TAKEN_AT } from './__fixtures__/researchFixtures.js';
@@ -186,5 +186,13 @@ describe('review BL1-4 — a Refresh report or error from another investigation 
     expect(board(inv, { refresh: { report: { ...report, investigationId: inv.investigationId } } }).banner.kind).toBe('refresh');
     expect(board(inv, { refresh: { error: 'Couldn’t refresh: x. Your 1:45 PM result is unchanged.', errorFor: 'another' } }).toolbar.refreshError).toBeNull();
     expect(board(inv, { refresh: { error: 'e', errorFor: inv.investigationId } }).toolbar.refreshError).toBe('e');
+  });
+});
+
+describe('review BL2-7 — the board\'s then-chain is refinementsOf (folded wordings kept)', () => {
+  it('past the cap', () => {
+    let inv = addCondition(invOf(BATTLE), { id: 'eligible_now' }, TAKEN_AT + 1);
+    for (let i = 0; i < 40; i += 1) inv = setOrder(inv, { measure: i % 2 ? 'technical_rank' : 'today_move', direction: 'best_first' }, TAKEN_AT + 2 + i);
+    expect(board(inv).refinements).toEqual(refinementsOf(inv));
   });
 });

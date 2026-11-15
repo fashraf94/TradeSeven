@@ -391,7 +391,7 @@ export function SheetActionRow({ view, onAnalysis = true }) {
         <button
           type="button"
           data-sheet-draft
-          onClick={() => view.research.onDraft(view.research.draftFor(view.research.incumbent?.symbol ?? view.research.compareDefault))}
+          onClick={() => view.research.onDraft(view.research.draftFor(view.research.incumbent?.symbol ?? view.research.compareSelected ?? view.research.compareDefault))}
           style={{
             all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 48, padding: '6px 14px', borderRadius: 12,
             display: 'flex', alignItems: 'center', fontWeight: 700, color: ST.purple,

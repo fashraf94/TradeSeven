@@ -161,6 +161,7 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
       const b = await getBundle();
       if (idRef.current !== b.battleId) return;
       const result = buildResult({ battle: battleRef.current, incumbent: null, rankingsDoc: b.rankingsDoc, quotesBody: b.quotesBody, takenAt: b.takenAt, receivedAt: b.receivedAt, resultId: 'opening' });
+      fullDocRef.current.set('opening', b.rankingsDoc);
       setS((x) => ({ ...x, opening: { status: 'ready', result, why: null } }));
     } catch (e) {
       if (idRef.current !== id) return; // a failure for a battle the screen has left shows nothing (review BL1-5)
@@ -271,6 +272,8 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
 
   /** The rankings the modal gets for one result (§6). */
   const rankingsFor = useCallback((inv, resultId) => fullDocRef.current.get(`${inv.investigationId}|${resultId}`) ?? subsetDoc(inv.results[resultId]), []);
+  /** The whole rankings doc the opening's list was built from (a row opened from that list — review BL2-10). */
+  const openingRankings = useCallback(() => fullDocRef.current.get('opening') ?? null, []);
 
   // The scroll per step: a ref, never state — a scroll frame re-renders nothing (review BL4-3).
   const rememberScroll = useCallback((key, top) => { scrollMemRef.current.set(key, top); }, []);
@@ -282,8 +285,8 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
     state: s,
     active,
     open, ask, setOrder, addCondition, removeCondition, switchGroup, applyAcross, undo, previous, goTo, startOver, reopen, refresh,
-    rankingsFor, rememberScroll, scrollOf, setShowAll,
+    rankingsFor, openingRankings, rememberScroll, scrollOf, setShowAll,
     // The weakest question's own availability (BRS-6): null when there is a weakest.
     noWeakest: battle ? noWeakestReason(battle) : 'no_ladder',
-  }), [s, active, open, ask, setOrder, addCondition, removeCondition, switchGroup, applyAcross, undo, previous, goTo, startOver, reopen, refresh, rankingsFor, rememberScroll, scrollOf, setShowAll, battle]);
+  }), [s, active, open, ask, setOrder, addCondition, removeCondition, switchGroup, applyAcross, undo, previous, goTo, startOver, reopen, refresh, rankingsFor, openingRankings, rememberScroll, scrollOf, setShowAll, battle]);
 }

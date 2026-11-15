@@ -29,7 +29,7 @@ import { useCockpitModal } from '../../../screens/battleView/CockpitSheet.jsx';
 import { ST, MONO, tint } from '../Sheet/sheetTheme.js';
 import { BR_COPY } from './battleResearchCopy.js';
 import { boardOf, startersOf, asTheyStandOf, askAboutDraft, investigationLine } from './boardView.js';
-import { currentStep } from './investigation.js';
+import { currentStep, currentResult } from './investigation.js';
 import { EVIDENCE_REUSE_MS } from './useBattleResearch.js';
 import ResearchOpening from './ResearchOpening.jsx';
 import ResearchBoard from './ResearchBoard.jsx';
@@ -106,6 +106,22 @@ export default function BattleResearchSurface({
     return () => clearInterval(id);
   }, [open, counting]);
   useEffect(() => { if (open) setNowMs(Date.now()); }, [open, inv?.investigationId, board?.stepId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ONE clock with the modal (review BL2-3): a lock that lapses while the board stands turns to *since passed*
+  // when it lapses — a timer for the next lapse, on the server's clock (the result's arrival offset).
+  const nextLapse = useMemo(() => {
+    if (!inv) return null;
+    const r = currentResult(inv);
+    const offset = Number.isFinite(r.takenAt) && Number.isFinite(r.receivedAt) ? r.takenAt - r.receivedAt : 0;
+    const serverNow = nowMs + offset;
+    const lapses = r.membership.flatMap((m) => [m.eligibility, ...Object.values(m.vs ?? {})])
+      .map((e) => e?.lockedUntil).filter((t) => Number.isFinite(t) && t > serverNow);
+    return lapses.length ? Math.min(...lapses) - offset : null;
+  }, [inv, nowMs]);
+  useEffect(() => {
+    if (!open || nextLapse === null) return undefined;
+    const id = setTimeout(() => setNowMs(Date.now()), Math.min(2 ** 31 - 1, Math.max(0, nextLapse - Date.now()) + 50));
+    return () => clearTimeout(id);
+  }, [open, nextLapse, nowMs]); // re-armed whenever the clock moves: a device asleep past the lapse wakes to it
 
   // The scroll position, remembered per step (and for the opening) — restored on reopen and on ‹ Back to ranking,
   // over the list as long as it was (Show all is the step's too).
@@ -221,7 +237,7 @@ export default function BattleResearchSurface({
           <>
             {/* overscroll contained: on iOS a scroll past the end never chains to the battle screen behind (review BL4-12). */}
             <div ref={scrollRef} data-br-scroll onScroll={onScroll} {...(sheetOpen ? { inert: true } : {})} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', padding: phone ? '12px 12px 20px' : '18px 20px 28px' }}>{content}</div>
-            {phone && !opening ? <PhoneLeadBar lead={board.lead} voice={agentName} onMore={() => setSheet(true)} bottomInset={bottomInset} inert={sheetOpen} /> : null}
+            {phone && !opening ? <PhoneLeadBar lead={board.lead} voice={voice} onMore={() => setSheet(true)} bottomInset={bottomInset} inert={sheetOpen} /> : null}
           </>
         )}
         {phone && !opening && sheet ? (

@@ -685,6 +685,9 @@ export default function AgentChat({
   // holds exactly that text is untouched and may be re-prefilled; anything
   // else is the user's draft and is never overwritten.
   const lastPrefillRef = useRef('');
+  // Battle Research's append (BRS-19): the typed words kept and the whole text written — so a later draft
+  // replaces only its own draft, and no door ever counts the player's words as an untouched prefill (review BL2-1).
+  const appendRef = useRef(null); // { kept, full }
 
   // Today's date in ET — matches agent-batch-review.js and is the bucket key
   // for dailyGrades writes. Recomputed each render is fine (cheap).
@@ -946,7 +949,8 @@ export default function AgentChat({
       // Battle Research Slice 1 (BRS-19, Phase 0 point 8): the research draft never replaces what the
       // player typed — it goes AFTER it, a blank line between, in the longest of its trimmed variants
       // that fits the composer's 2000 (the draft builder's trim order: the sector line, then the rung line).
-      const kept = untouched ? '' : inputText;
+      const ours = appendRef.current && inputText === appendRef.current.full ? appendRef.current : null;
+      const kept = ours ? ours.kept : untouched ? '' : inputText;
       const room = 2000 - (kept ? kept.length + 2 : 0);
       const variants = (Array.isArray(composerPrefill.variants) && composerPrefill.variants.length ? composerPrefill.variants : [text]).map((v) => String(v ?? ''));
       // Never cut mid-line (review BR2-8): with no variant that fits, the typed text stays alone.
@@ -954,11 +958,14 @@ export default function AgentChat({
       const next = kept ? (draft ? kept + '\n\n' + draft : kept) : draft;
       if (next) {
         setInputText(next);
-        lastPrefillRef.current = next;
+        // A draft alone is an untouched prefill (a later door may replace it); typed words never are.
+        lastPrefillRef.current = kept ? '' : next;
+        appendRef.current = kept ? { kept, full: next } : null;
       }
     } else if (text && untouched) {
       setInputText(text);
       lastPrefillRef.current = text;
+      appendRef.current = null;
     }
     const el = textareaRef.current;
     if (el && typeof el.focus === 'function') {

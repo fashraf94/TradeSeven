@@ -63,9 +63,11 @@ export function ResearchStrip({ research }) {
         </span>
       </div>
       <span data-research-question style={{ fontSize: 14, fontWeight: 700, color: ST.ink, lineHeight: 1.3 }}>{research.question.text}</span>
+      {/* BRS-20: every tap in the research blocks costs no message, and says so (review BL2-11). */}
+      <span data-research-no-cost style={{ fontFamily: MONO, color: ST.ink3 }}><span style={{ fontSize: 10.5 }}>{BR_COPY.noCost}</span></span>
       {research.refinements.map((w, i) => <span key={`${w}:${i}`} style={{ color: ST.ink2 }}><span style={{ fontSize: 12 }}>{w}</span></span>)}
       <span style={{ fontFamily: MONO, color: ST.ink3, lineHeight: 1.4 }}>
-        <span style={{ fontSize: 10.5 }}>{[`${research.group.label} · ${research.group.count}`, research.resultLabel, research.times.text].filter(Boolean).join(' · ')}</span>
+        <span style={{ fontSize: 10.5 }}>{[research.group.text ?? `${research.group.label} · ${research.group.count}`, research.resultLabel, research.times.text].filter(Boolean).join(' · ')}</span>
       </span>
       {research.conditions.length ? (
         <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -135,7 +137,11 @@ export function Finding({ research }) {
 
 /** Compare with {incumbent} or a held measured stock (BRS-18), and the Draft door (BRS-19). */
 export function Compare({ research }) {
-  const [picked, setPicked] = useState(research.compareDefault);
+  // The modal holds the pick when it hands one (review BL2-2: the action row's Draft follows it); else, local.
+  const [localPick, setLocalPick] = useState(research.compareDefault);
+  const controlled = typeof research.onPickHolding === 'function';
+  const picked = controlled ? (research.compareSelected ?? research.compareDefault) : localPick;
+  const setPicked = controlled ? research.onPickHolding : setLocalPick;
   const holding = research.incumbent ? research.incumbent.symbol : picked;
   const c = holding ? research.compareFor(holding) : null;
   const choices = research.incumbent ? [] : research.holdingsForCompare.filter((h) => h.symbol !== research.row.symbol);

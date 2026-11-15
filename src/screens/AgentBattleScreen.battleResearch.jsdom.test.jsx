@@ -453,3 +453,34 @@ describe('BATTLE_RESEARCH_MODE on — the surface in the screen', () => {
     expect(q('[data-br-surface]')).toBeNull();
   }, ROW_MS);
 });
+
+describe('review round on PR B (lens 2), at the screen', () => {
+  beforeEach(() => {
+    RF.br = 'on';
+    DOC = RESEARCH_DOC;
+    SCREEN = { ...BATTLE, agentBattleId: RESEARCH_DOC.id };
+    FS.docs[`agentBattles/${RESEARCH_DOC.id}/calls`] = [];
+    FS.docs[`agentBattles/${RESEARCH_DOC.id}/declarations`] = [];
+    FS.docs[`agentBattles/${RESEARCH_DOC.id}/callEvents`] = [];
+    FS.docs['indexIntelligence/stockRankings'] = rankingsDoc();
+    QUOTES = { ...quotesBody(), servedAt: TAKEN_AT };
+    vi.setSystemTime(new Date(TAKEN_AT + 20_000));
+  });
+  it('BL2-10: a row of the opening\'s list opens with the opening\'s own readings — its ATR seed and whole rankings doc', async () => {
+    await mount();
+    await click(q('[data-this-turn-research]'));
+    await click(q('[data-br-as-they-stand-toggle]'));
+    await click(q('[data-br-as-they-stand] [data-br-row="PLTR"]'));
+    expect(q('[data-research-modal="PLTR"]')).toBeTruthy();
+    const ctx = MODAL.last.sheetContext;
+    expect(ctx.research).toBeUndefined();
+    expect(ctx.atrSeed).toEqual({ pct: 4.06, asOfMs: Date.parse('2026-10-14T17:01:00.000Z') });
+    expect(ctx.rankings.stocks).toHaveLength(rankingsDoc().stocks.length);
+  }, ROW_MS);
+  it('BL2-12: with no agent name the voice is the archetype alone, as the sheet names it — never "Your Agent · …"', async () => {
+    DOC = { ...RESEARCH_DOC, agentContext: { ...RESEARCH_DOC.agentContext, agentName: '' } };
+    await mount();
+    await click(q('[data-this-turn-research]'));
+    expect(q('[data-br-voice]').textContent).toBe('Trend Follower');
+  }, ROW_MS);
+});

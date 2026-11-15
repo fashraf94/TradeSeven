@@ -102,3 +102,12 @@ describe('BC-11 — the bench door, and only the bench door, carries the incumbe
     expect(SRC).toMatch(/if \(!cockpitResearchOpen && sheetIncumbent\) setSheetIncumbent\(null\);/);
   });
 });
+
+describe('review BL2-13 — the opponent\'s label has one source on every header (BB-15)', () => {
+  it('the legacy ScoreHeader prints BATTLE_VIEW_COPY.opponentLabel, never a literal "CPU"', () => {
+    const start = SRC.indexOf('function ScoreHeader(');
+    const header = SRC.slice(start, SRC.indexOf('\nfunction ', start + 10));
+    expect(header).toContain('{BATTLE_VIEW_COPY.opponentLabel}');
+    expect(header).not.toMatch(/>\s*CPU\s*</);
+  });
+});
