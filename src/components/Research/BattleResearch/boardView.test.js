@@ -204,3 +204,16 @@ describe('refuter RB-3 — another investigation\'s Refresh in flight never show
     expect(board(inv, { refresh: { inFlight: true, inFlightFor: inv.investigationId } }).toolbar.refresh).toMatchObject({ inFlight: true, text: BR_COPY.refreshing });
   });
 });
+
+describe('a name a sector condition cannot assess, on the board (row added after the battery: B7 survived)', () => {
+  it('its Left-out note says why: "sector not known", never its move words', () => {
+    const b = JSON.parse(JSON.stringify(BATTLE));
+    b.watchlist.hotBench = [...b.watchlist.hotBench, 'QQQX'];
+    const quotes = quotesBody({ QQQX: { ...quotesBody().quotes.MSFT, changePercent: 0.7, price: 100.7 } });
+    let inv = invOf(b, { quotesBody: quotes }, 'moving_today');
+    inv = addCondition(inv, { id: 'sector', value: 'Technology' }, TAKEN_AT + 1);
+    const bd = boardOf({ inv, battle: b, nowMs: TAKEN_AT + 30_000, agentName: 'Shadow' });
+    const qqqx = bd.notAssessed.find((x) => x.facts.symbol === 'QQQX');
+    expect(qqqx.note).toBe(`${BR_COPY.notAssessed} · sector not known`);
+  });
+});

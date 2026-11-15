@@ -50,3 +50,25 @@ describe('BC-11: the incumbent stays with the stock the bench door opened', () =
     expect(seen.pack.items.map((i) => i.kind)).not.toContain('incumbent');
   });
 });
+
+// Battle Research Slice 1 (BRS-17, §8): a research opening. Rows added after PR B's mutation battery (M2, M3 survived).
+describe('Battle Research — a research opening of the sheet', () => {
+  const rctx = (openedStepId) => ({ ...ctx(), research: { openedStepId, stepId: openedStepId } });
+  const showR = (symbol, isOriginal, openedStepId) => act(() => {
+    root.render(<Probe on context={rctx(openedStepId)} symbol={symbol} isOriginal={isOriginal} live={103.2} rawData={AAPL_DAILY} timeframe="1D" analysisActive />);
+  });
+  it('only the stock the row opened carries the research context: navigated to another stock, none', () => {
+    showR('NVDA', true, 's1');
+    expect(seen.research?.openedStepId).toBe('s1');
+    showR('MSFT', false, 's1');
+    expect(seen.research ?? null).toBeNull();
+  });
+  it('an opening from another step starts fresh: the sheet keys a research opening by its step', () => {
+    showR('NVDA', true, 's1');
+    const other = seen.order.find((q) => q !== seen.question);
+    act(() => seen.pickQuestion(other));
+    expect(seen.question).toBe(other);
+    showR('NVDA', true, 's2');
+    expect(seen.question).toBe('better_than_stalled');
+  });
+});

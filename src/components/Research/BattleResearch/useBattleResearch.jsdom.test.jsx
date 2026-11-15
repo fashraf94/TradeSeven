@@ -316,3 +316,28 @@ describe('refuter RB-4 — back to a battle while its old read is in flight: a f
     expect(out.store.state.session.list.map((x) => x.question.id)).toEqual(['rank_agent_watchlist']);
   });
 });
+
+// Rows added after PR B's mutation battery (S7, N3 survived).
+describe('the store after the battery', () => {
+  it('a failed refresh after refinements changes nothing — the cursor and every step byte-identical', async () => {
+    await render();
+    await run((s) => s.ask('weakest_alternatives'));
+    await run((s) => s.setOrder({ measure: 'today_move', direction: 'best_first' }));
+    const before = JSON.stringify(out.store.state.session);
+    clockNow += REFRESH_COOLDOWN_MS;
+    failNext = true;
+    await run((s) => s.refresh());
+    expect(JSON.stringify(out.store.state.session)).toBe(before);
+    expect(currentStep(out.store.active).kind).toBe('order');
+  });
+  it('a second tap on a question while the first reads does nothing: one read', async () => {
+    await render();
+    gate = defer();
+    let a; let b;
+    await act(async () => { a = out.store.ask('rank_bench'); b = out.store.ask('rank_bench'); });
+    expect(fetches).toEqual(['stock-battle']);
+    const g = gate; gate = null;
+    await act(async () => { g.resolve(); await Promise.all([a, b]); });
+    expect(out.store.state.session.list).toHaveLength(1);
+  });
+});

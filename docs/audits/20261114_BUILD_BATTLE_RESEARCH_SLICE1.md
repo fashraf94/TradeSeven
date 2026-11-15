@@ -171,7 +171,17 @@ Each lens ran on its own snapshot of `b238431e` and proved every finding with a 
 | BL2-14 | the shipped 💣 names a day against now, the row against the result | reading | not changed (💣 is "the shipped one", BRS-17) |
 | R2, R4 (lens 1) | the Ranks line's time (= BL2-5); after an undone Refresh, Result 1 hands the subset | readings | not changed |
 
-⟪B-REFUTER⟫
+**The refuter, on the fixed head (`7c219801`).** It ran every lens row on the pre-fix tree (all failed for their stated reasons) and on the fixed one (all pass), attacked each fix with variants, measured lens 4's layout in Edge, and found the state-1 modal byte-identical before and after (five hashes). Thirty fixes held; two were incomplete; seven items were new. Fixed in ⟪H:rb⟫, each with a row that failed first:
+
+| Id | Finding | Verdict | Fixed |
+|---|---|---|---|
+| RB-1 (BL4-7 incomplete) | with the history sheet open, the surface's own Tab trap counted the inert board behind it: Shift+Tab left the surface, Tab stuck | confirmed (Edge) | ⟪H:rb⟫ (the sheet traps its own stops) |
+| RB-2 | the now-sticky strip has no height bound: ten refinements leave 8 px of content at 320 × 640 | confirmed (Edge) | ⟪H:rb⟫ (bounded at 38vh, scrolling inside itself; every refinement stays in it) — open question 6 (§9) |
+| RB-3 | a Refresh in flight showed on, and blocked the rows of, another investigation | confirmed | ⟪H:rb⟫ |
+| RB-4 (BL1-5 incomplete) | A → B → A with A's read in flight: the fresh tap was swallowed and the old answer landed | confirmed (hook level; the screen remounts per battle) | ⟪H:rb⟫ (a generation per stay on a battle) |
+| RB-5 | the opening's list never turned a lapsed lock to "since passed" | confirmed (in the pre-fix tree too) | ⟪H:rb⟫ |
+| RB-6 | a 20-letter agent name ran 6 px past the Draft door's border | confirmed (nit) | ⟪H:rb⟫ |
+| RB-7 | the sweep's `stripTimes` sample passed milliseconds, not clock words | confirmed (test nit) | ⟪H:rb⟫ |
 
 ### 4.4 PR B — the phone checks in a real browser (§11)
 
@@ -253,3 +263,4 @@ Phone, an allowlisted agent battle, market open, after C is merged; steps 6 and 
 3. **A lock that has passed, in the explanation** (BL2-9): the explanation is "built from the frozen result alone" (BRS-16) and says *it's locked until Thu 10:00 AM*; the row and the modal follow BRS-15's *Locked until … at this result · since passed*. Should the explanation say *since passed* too?
 4. **💣's time against the row's** (BL2-14): the shipped 💣 names a day against now (*Wed 1:01 PM* when read on Thursday); the row names it against the result (*1:01 PM*). Same number and instant; BRS-17 keeps 💣 as shipped.
 5. **The latent quote notice** (BL4-13): if `SHADOW_CPU_QUOTE_INTEGRITY_ENABLED` is ever turned on, its notice (z 60) must stand above the surface (z 1000).
+6. **How much of the research strip sticks** (RB-2): BRS-17 puts the question and each refinement in the sticky strip. Built: the whole strip sticks, bounded at 38% of the view (it scrolls inside itself past that). The alternative the refuter proposed — stick only *‹ Back to ranking* and the question, and let the chain and chips scroll away — keeps more of the screen for the content on a 320 px phone. Which?

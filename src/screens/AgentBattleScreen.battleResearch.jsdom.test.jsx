@@ -486,3 +486,26 @@ describe('review round on PR B (lens 2), at the screen', () => {
     expect(q('[data-br-voice]').textContent).toBe('Trend Follower');
   }, ROW_MS);
 });
+
+describe('the reference line opens the holding as itself (row added after the battery: H5 survived)', () => {
+  beforeEach(() => {
+    RF.br = 'on';
+    DOC = RESEARCH_DOC;
+    SCREEN = { ...BATTLE, agentBattleId: RESEARCH_DOC.id };
+    FS.docs[`agentBattles/${RESEARCH_DOC.id}/calls`] = [];
+    FS.docs[`agentBattles/${RESEARCH_DOC.id}/declarations`] = [];
+    FS.docs[`agentBattles/${RESEARCH_DOC.id}/callEvents`] = [];
+    FS.docs['indexIntelligence/stockRankings'] = rankingsDoc();
+    QUOTES = { ...quotesBody(), servedAt: TAKEN_AT };
+    vi.setSystemTime(new Date(TAKEN_AT + 20_000));
+  });
+  it('EQIX, the weakest, opens in state 1: no research context (it is the comparison, not a candidate)', async () => {
+    await mount();
+    await click(q('[data-this-turn-research]'));
+    await click(q('[data-br-starter="weakest_alternatives"]'));
+    const ref = q('[data-br-surface] [data-br-reference="EQIX"]');
+    await click(ref.tagName === 'BUTTON' ? ref : ref.querySelector('button'));
+    expect(q('[data-research-modal="EQIX"]')).toBeTruthy();
+    expect(MODAL.last.sheetContext.research).toBeUndefined();
+  }, ROW_MS);
+});
