@@ -48,11 +48,17 @@ describe('the Battle View passes sheetContext only when the sheet resolves on (�
     expect(helper).toContain('battle: agentBattle,');
     expect(helper).toContain('directive: thisTurnDirective,');
     // The header's own digits (its formatter) and its own lead — never re-rounded in the sheet (review A6).
-    expect(helper).toContain('you: comparison.digits?.[0] ?? formatScoreDisplay(comparison.pair[0], { fractionDigits: comparison.fractionDigits ?? 0 }),');
-    expect(helper).toContain('them: comparison.digits?.[1] ?? formatScoreDisplay(comparison.pair[1], { fractionDigits: comparison.fractionDigits ?? 0 }),');
-    expect(helper).toContain('lead: comparison.lead,');
-    expect(helper).toContain('you: formatScoreDisplay(displayPlayerScore), them: formatScoreDisplay(displayOpponentScore),');
-    expect(helper).toContain("lead: displayPlayerScore > displayOpponentScore ? 'player' : displayPlayerScore < displayOpponentScore ? 'cpu' : 'tie',");
+    // Battle Research Slice 1 moved the pair into ONE `sheetStanding` the sheet and the surface both read
+    // (BUILD_RULES §9): the helper hands that, and the pair's formulas are checked where they now live.
+    expect(helper).toContain('standing: sheetStanding,');
+    const standing = SRC.slice(SRC.indexOf('const sheetStanding = '), SRC.indexOf('};', SRC.indexOf('const sheetStanding = ')) + 2);
+    expect(standing).toContain('you: comparison.digits?.[0] ?? formatScoreDisplay(comparison.pair[0], { fractionDigits: comparison.fractionDigits ?? 0 }),');
+    expect(standing).toContain('them: comparison.digits?.[1] ?? formatScoreDisplay(comparison.pair[1], { fractionDigits: comparison.fractionDigits ?? 0 }),');
+    expect(standing).toContain('lead: comparison.lead,');
+    expect(standing).toContain('you: formatScoreDisplay(displayPlayerScore), them: formatScoreDisplay(displayOpponentScore),');
+    expect(standing).toContain("lead: displayPlayerScore > displayOpponentScore ? 'player' : displayPlayerScore < displayOpponentScore ? 'cpu' : 'tie',");
+    // The surface's top strip prints the same pair, with the header's own opponent label.
+    expect(SRC).toContain('standing={sheetStanding ? { you: sheetStanding.you, them: sheetStanding.them, opponent: BATTLE_VIEW_COPY.opponentLabel } : null}');
     expect(helper).toContain("...(sheetCockpitDoor ? { onOpenCockpit: sheetCockpitDoor } : {}),");
     expect(helper).toContain('...(sheetIncumbent && sheetIncumbent.symbol === symbol ? { incumbent: sheetIncumbent.incumbent } : {}),');
     // BC-11: the bench door records WHICH name the call would replace (review C5 — CM1).
