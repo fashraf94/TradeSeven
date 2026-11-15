@@ -1618,6 +1618,61 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
     }
   });
 
+  it('refuter D1: the founder\'s ruling covers the move it ruled on, not a FURTHER one against the same carried mark — a second unfed halving (×0.25 of the frozen mark) is a new suspicion and the cash delisting waits; the ruled move itself (×0.5) is paid on the current count', async () => {
+    for (const [price, held] of [[25, true], [50, false]]) {
+      const ctx = await entered();
+      await closeQ(ctx, S[1], { ...Q, AAPL: 50 });
+      const idea = ideaOf(ctx);
+      const resolve = (ledger) => ({ ...ledger, holdings: { ...ledger.holdings, AAPL: { ...ledger.holdings.AAPL, basisSuspicion: { ...ledger.holdings.AAPL.basisSuspicion, resolvedBy: 'founder', resolvedAt: '2026-11-17T23:00:00.000Z' } } } });
+      await ctx.bookRef.collection('ideas').doc(ctx.ideaId).set({ ...idea, ledger: resolve(idea.ledger), comparisonLedger: resolve(idea.comparisonLedger) });
+      expect(saleHeldBackBy(ideaOf(ctx).ledger, 'AAPL', tickSnapshot(S[2], 'open30', { ...Q, AAPL: price }), { sinceDate: S[1], date: S[2] })).toBe(held ? 'suspected_corporate_action' : null);
+      await closeQ(ctx, S[2], { ...Q, AAPL: { price, corporateActions: [{ type: 'delisting', ticker: 'AAPL', cashPerShare: 30, effectiveDate: S[2], source: 'founder_action' }] } });
+      for (const key of ['ledger', 'comparisonLedger']) {
+        const ledger = ideaOf(ctx)[key];
+        if (held) {
+          expect(paidOn(ledger, 'delisting'), key).toEqual([]);
+          expect(ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[2], ratio: 0.25, resolvedBy: null });
+        } else {
+          expect(paidOn(ledger, 'delisting').map(cashOf), key).toEqual([5998.2]);
+        }
+      }
+      expect(bookOf(ctx).openIdeaIds).toEqual(held ? [ctx.ideaId] : []);
+    }
+  });
+
+  it('refuter D2: after a special dividend that explains its own drop, the mark is FRESH at the ex-date close (not the pre-ex price beside the dividend\'s cash) — so a later listed 2-for-1 reads against it, raises nothing, and the next dividend is paid on the adjusted count', async () => {
+    const ctx = await entered();
+    await closeQ(ctx, S[1], { ...Q, AAPL: { price: 50, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', amount: 50, effectiveDate: S[1], source: 'eodhd_dividends' }] } });
+    expect(rowOf(ctx, S[1]).marks.AAPL).toMatchObject({ mark: 50, quality: 'vendor_time' });
+    expect(rowOf(ctx, S[1]).fullQuality).toBe(true);
+    await closeQ(ctx, S[2], { ...Q, AAPL: 50 });
+    await closeQ(ctx, S[3], { ...Q, AAPL: { price: 25, corporateActions: [split2(S[3]), { type: 'cash_dividend', ticker: 'AAPL', amount: 0.25, effectiveDate: S[3], source: 'eodhd_dividends' }] } });
+    for (const key of ['ledger', 'comparisonLedger']) {
+      const ledger = ideaOf(ctx)[key];
+      expect(ledger.holdings.AAPL.shares, key).toBe(399.880034);
+      expect(ledger.holdings.AAPL.basisSuspicion).toBeUndefined();
+      expect(paidOn(ledger, 'cash_dividend').map(cashOf)).toEqual([roundUsd(199.940017 * 50), 99.97]);
+    }
+    expect(rowOf(ctx, S[3]).marks.AAPL).toMatchObject({ mark: 25, quality: 'vendor_time' });
+  });
+
+  it('refuter D3: a special dividend whose row arrives a close LATE explains the move it caused — the suspicion raised meanwhile is released by it, the dividend is paid once on the current count, and nothing waits after it', async () => {
+    const ctx = await entered();
+    await closeQ(ctx, S[1], { ...Q, AAPL: 50 }); // the drop, no row yet: suspected, rightly
+    expect(ideaOf(ctx).ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[1] });
+    await closeQ(ctx, S[2], { ...Q, AAPL: { price: 50, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', amount: 50, effectiveDate: S[1], source: 'eodhd_dividends' }] } });
+    for (const key of ['ledger', 'comparisonLedger']) {
+      const ledger = ideaOf(ctx)[key];
+      const paid = paidOn(ledger, 'cash_dividend');
+      expect(paid.map(cashOf), key).toEqual([roundUsd(199.940017 * 50)]);
+      expect(paid[0].explainedSuspicion).toEqual({ suspectedOn: S[1], ratio: 0.5, frozenMark: 100 });
+      expect(ledger.holdings.AAPL.basisSuspicion).toBeUndefined();
+      expect(ledger.holdings.AAPL.shares).toBe(199.940017);
+    }
+    await closeQ(ctx, S[3], { ...Q, AAPL: { price: 50, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', amount: 0.25, effectiveDate: S[3], source: 'eodhd_dividends' }] } });
+    expect(paidOn(ideaOf(ctx).ledger, 'cash_dividend').map(cashOf)).toEqual([roundUsd(199.940017 * 50), 49.99]);
+  });
+
   it('a holding waiting on a DELISTING is not screened (R-32): a delisted name falling to half its carried price is the delisting, not a split', async () => {
     const ctx = await entered();
     await closeQ(ctx, S[1], { ...Q, AAPL: { price: 50, corporateActions: [{ type: 'delisting', ticker: 'AAPL', effectiveDate: S[1], source: 'founder_action' }] } });

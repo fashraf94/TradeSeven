@@ -223,27 +223,57 @@ export function basisSuspicionRecords(ledger) {
   return out;
 }
 
+/** Two price ratios are the same move within twice the engine's tolerance (its own `feedExplainsGap` band). */
+const sameMove = (a, b) => Number(a) > 0 && Number(b) > 0 && Math.abs(Number(a) - Number(b)) / Number(b) <= MANDATE_CA_RATIO_TOLERANCE * 2;
+
 /** The move the founder has already ruled on: a resolved record whose frozen mark — its price AND the time it was
- *  observed — is still the holding's mark. Its split-shaped signature against that same mark is not a new suspicion.
- *  Once any fresh mark is written the ruling is spent, even if a later fresh price equals the old one (review F1). */
-const founderRuledMove = (holding) => founderResolved(holding?.basisSuspicion)
+ *  observed — is still the holding's mark, and whose move is the one the screen now sees (`ratio`). That signature
+ *  against that same mark is not a new suspicion. Once any fresh mark is written the ruling is spent, even if a later
+ *  fresh price equals the old one (review F1); and a further move against the same frozen mark — a second unfed split
+ *  on top of the ruled one — is a new suspicion (refuter D1). */
+const founderRuledMove = (holding, ratio) => founderResolved(holding?.basisSuspicion)
   && Number(holding.basisSuspicion.frozenMark) === Number(holding?.lastMark)
-  && (holding.basisSuspicion.frozenMarkAsOf ?? null) === (holding?.lastMarkAsOf ?? null);
+  && (holding.basisSuspicion.frozenMarkAsOf ?? null) === (holding?.lastMarkAsOf ?? null)
+  && sameMove(ratio, holding.basisSuspicion.ratio);
 
 /**
- * Does a share-basis action EXPLAIN a suspicion's move? Dated inside the gap (after `since`, on or before the session it
- * was first suspected), and its ratio matches the move within twice the engine's tolerance — the engine's own test for a
- * feed row that explains a gap (mandateCorporateActions.js feedExplainsGap: shares × r ⇒ price × 1/r).
+ * Does a feed action EXPLAIN a suspicion's move? Dated inside the gap (after `since`, on or before the session it was
+ * first suspected), and matching the move within twice the engine's tolerance — the engine's own test for a feed row
+ * that explains a gap (mandateCorporateActions.js feedExplainsGap): a share-basis action, shares × r ⇒ price × 1/r; a
+ * cash dividend, the ex-date drop 1 − amount ÷ the frozen mark (refuter D3: a special dividend whose row arrives late).
  */
 function explainsSuspicion(action, s) {
-  if (!SHARE_BASIS_TYPES.has(action?.type) || !s) return false;
-  const r = Number(action.ratio);
+  if (!s) return false;
   const move = Number(s.ratio);
-  if (!(r > 0) || !(move > 0) || !Number.isFinite(r) || !Number.isFinite(move)) return false;
-  if (typeof action.effectiveDate !== 'string' || action.effectiveDate > s.suspectedOn) return false;
+  if (!(move > 0) || !Number.isFinite(move)) return false;
+  if (typeof action?.effectiveDate !== 'string' || action.effectiveDate > s.suspectedOn) return false;
   if (typeof s.since === 'string' && action.effectiveDate <= s.since) return false;
-  const expected = 1 / r;
-  return Math.abs(move - expected) / expected <= MANDATE_CA_RATIO_TOLERANCE * 2;
+  let expected = null;
+  if (SHARE_BASIS_TYPES.has(action.type)) {
+    const r = Number(action.ratio);
+    if (r > 0 && Number.isFinite(r)) expected = 1 / r;
+  } else if (action.type === 'cash_dividend') {
+    const amount = Number(action.amount);
+    const frozen = Number(s.frozenMark);
+    if (amount > 0 && frozen > 0 && amount < frozen) expected = 1 - amount / frozen;
+  }
+  return expected !== null && sameMove(move, expected);
+}
+
+/**
+ * Do the cash dividends this ledger has already PAID inside the gap explain the holding's move? Once paid they are
+ * settled, so the engine's screen (asked with `excludeActionIds: settled`) no longer sees them, and an ex-date drop a
+ * special dividend fully explains would read as an unfed split. They are put to the engine's own test again — with
+ * those paid dividends as the only actions (review F2; refuter D2). A dividend never adjusts the count: nothing here
+ * pays or holds anything, it only stops a mark being frozen, or a record being raised, for a move already explained.
+ */
+function paidDividendsExplain(ledger, holding, sym, snapshot, { since, date }) {
+  const paid = (ledger?.corporateActionReceipts || [])
+    .filter((r) => r?.type === 'cash_dividend' && r.applied === true && upper(r.ticker) === sym && typeof r.effectiveDate === 'string'
+      && r.effectiveDate <= date && (since == null || r.effectiveDate > since))
+    .map((r) => ({ type: 'cash_dividend', ticker: sym, amount: r.amount, effectiveDate: r.effectiveDate }));
+  if (paid.length === 0) return false;
+  return classifyOvernightGaps({ [sym]: holding }, snapshot, { [sym]: paid }, { sinceDate: since ?? null, asOfDate: date }).pendingCA.has(sym);
 }
 
 /** A holding waiting on a delisting (E11): its fall is the delisting, not a split (R-32). */
@@ -294,18 +324,12 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
   for (const [sym, { ratio }] of scan.suspectedCA) {
     const h = ledger.holdings?.[sym];
     const d = dry.holdings?.[sym];
-    if (!h || !d || openBasisSuspicion(h) || founderRuledMove(d) || delistingWaitingHolding(h) || delistingWaiting?.has(sym)) continue;
+    if (!h || !d || openBasisSuspicion(h) || founderRuledMove(d, ratio) || delistingWaitingHolding(h) || delistingWaiting?.has(sym)) continue;
     // A delisting with no cash listed for it today makes it a waiting sale at this close (R-32, as above).
     if ((actionsBySymbol?.[sym] || []).some((a) => a?.type === 'delisting' && delistingCashOf(a) === null && typeof a.effectiveDate === 'string' && a.effectiveDate <= date && !settled.has(deriveActionId(a)))) continue;
-    // A cash dividend this ledger has already PAID inside the gap may explain the move (a special dividend's ex-date drop):
-    // once settled the screen above no longer sees it, so it is asked again — the engine's own test, with those paid
-    // dividends as the only actions (review F2). A dividend never adjusts the count, so nothing here pays anything.
+    // A cash dividend this ledger has already PAID inside the gap that explains the move (review F2).
     const since = markSessionOf(d);
-    const paid = (dry.corporateActionReceipts || [])
-      .filter((r) => r?.type === 'cash_dividend' && r.applied === true && upper(r.ticker) === sym && typeof r.effectiveDate === 'string'
-        && r.effectiveDate <= date && (since === null || r.effectiveDate > since))
-      .map((r) => ({ type: 'cash_dividend', ticker: sym, amount: r.amount, effectiveDate: r.effectiveDate }));
-    if (paid.length > 0 && classifyOvernightGaps({ [sym]: d }, closeSnapshot, { [sym]: paid }, { sinceDate: since, asOfDate: date }).pendingCA.has(sym)) continue;
+    if (paidDividendsExplain(dry, d, sym, closeSnapshot, { since, date })) continue;
     const record = {
       symbol: sym, suspectedOn: date, since, ratio,
       shape: shapeOf(ratio),
@@ -665,7 +689,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // A share-basis row that EXPLAINS the holding's open suspicion, at a close after the one that raised it, releases it
     // (fix round 3, T2A-D01): the record is removed and the receipt says what it explained.
     let explained = {};
-    const suspicion = SHARE_BASIS_TYPES.has(action.type) ? openBasisSuspicion(next.holdings[sym]) : null;
+    const suspicion = SHARE_BASIS_TYPES.has(action.type) || action.type === 'cash_dividend' ? openBasisSuspicion(next.holdings[sym]) : null;
     if (suspicion && date > suspicion.suspectedOn && explainsSuspicion(action, suspicion)) {
       const { basisSuspicion, ...rest } = next.holdings[sym];
       next.holdings = { ...next.holdings, [sym]: rest };
@@ -907,7 +931,7 @@ export function saleHeldBackBy(ledger, symbol, snapshot, { sinceDate, date, othe
   if (delistedWaiting) return null;
   const gaps = classifyOvernightGaps(one, snapshot, actionsBySymbol, { sinceDate: sinceDate ?? null, asOfDate: date, excludeActionIds: settled });
   // A move the founder has ruled on (a resolved record, its frozen mark still the holding's) is not suspected again.
-  if (gaps.suspectedCA.has(symbol) && !gaps.pendingCA.has(symbol) && founderRuledMove(holding)) return null;
+  if (gaps.suspectedCA.has(symbol) && !gaps.pendingCA.has(symbol) && founderRuledMove(holding, gaps.suspectedCA.get(symbol).ratio)) return null;
   return gaps.frozen.has(symbol) ? 'suspected_corporate_action' : null;
 }
 
@@ -925,6 +949,13 @@ export function suspectedActionSymbols(ledger, closeSnapshot, actionsBySymbol, {
   // A move the founder has ruled on (fix round 3: a resolved record whose frozen mark is still the holding's) is not held
   // back again: the close marks it fresh, and the next screen compares against that fresh mark.
   const frozen = new Set(scan.frozen);
-  for (const sym of scan.suspectedCA.keys()) if (!scan.pendingCA.has(sym) && founderRuledMove(ledger.holdings?.[sym])) frozen.delete(sym);
+  for (const [sym, { ratio }] of scan.suspectedCA) if (!scan.pendingCA.has(sym) && founderRuledMove(ledger.holdings?.[sym], ratio)) frozen.delete(sym);
+  // A dividend this ledger has just PAID (or paid earlier inside the gap) that explains the ex-date drop: once settled the
+  // screen excludes it, and the mark would be frozen at the pre-ex price beside the dividend's cash — a value counted twice
+  // and a mark later moves are read against (refuter D2; pre-existing, R-31's mark hold). Asked again, the engine's way.
+  for (const sym of scan.suspectedCA.keys()) {
+    const h = ledger.holdings?.[sym];
+    if (h && frozen.has(sym) && !scan.pendingCA.has(sym) && paidDividendsExplain(ledger, h, sym, closeSnapshot, { since: markSessionOf(h) ?? sinceDate ?? null, date })) frozen.delete(sym);
+  }
   return frozen;
 }
