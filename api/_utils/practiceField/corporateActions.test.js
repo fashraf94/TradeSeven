@@ -9,7 +9,7 @@
 //                    holding becomes a waiting sale (E9), and nothing is sold at a carried mark.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { applyLedgerActions, newLedger, renameDeferralSymbols, shareBasisHolds, saleHeldBackBy } from './ledger.js';
+import { applyLedgerActions, newLedger, renameDeferralSymbols, shareBasisHolds, saleHeldBackBy, unsettledShareBasisSymbols } from './ledger.js';
 import { deriveActionId } from '../mandateCorporateActions.js';
 import { ideaCoveragePlanFromLedgers } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
@@ -1070,6 +1070,20 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
       expect(out.shareBasisChanges).toEqual([{ ticker: 'AAPL', ratio: 2, actionId: `split_AAPL_${S[1]}` }]);
       const div = { AAPL: [{ type: 'cash_dividend', ticker: 'AAPL', effectiveDate: S[2], amount: 1 }] };
       expect(applyLedgerActions(out.ledger, div, { date: S[2], holds: shareBasisHolds([out.ledger], div, { date: S[2] }) }).ledger.dividendsUsd).toBe(20);
+    });
+
+    it('THE DEFINITION, on the morning an action is due: a share-basis row listed and due that a ledger has neither applied nor declined is unresolved there — and holds the idea\'s sale when only another ledger is entitled to it', () => {
+      const split = { AAPL: [basis('split', 2, S[1])] };
+      const entitled = ledgerOf('comparison'); // opened S[0], before the split
+      const late = ledgerOf('idea', { openedAt: S[1] }); // opened on the split's date: not entitled
+      expect([...unsettledShareBasisSymbols(entitled, split, { date: S[1] })]).toEqual(['AAPL']);
+      expect([...unsettledShareBasisSymbols(late, split, { date: S[1] })]).toEqual([]);
+      const snap = { date: S[1], symbols: { AAPL: { price: 100, complete: true } } };
+      const listed = { ...snap, symbols: { AAPL: { ...snap.symbols.AAPL, corporateActions: split.AAPL } } };
+      // The idea's own ledger has already declined it (not entitled), so neither its pending rule nor its gap screen holds the sale.
+      const declined = { ...late, declinedActionIds: [`split_AAPL_${S[1]}`] };
+      expect(saleHeldBackBy(declined, 'AAPL', listed, { date: S[1] })).toBe(null);
+      expect(saleHeldBackBy(declined, 'AAPL', listed, { date: S[1], otherLedgers: [entitled] })).toBe('corporate_action_unsettled');
     });
 
     it('COMPARISON-ONLY: when only the comparison has the basis unresolved, the idea\'s own cash delisting waits too (the idea decides), and the idea\'s sale is held (otherLedgers)', () => {

@@ -66,9 +66,10 @@
 // keeps its slot and alerts at every close. An action dated BEFORE the unresolved one is paid on the count before it,
 // which is settled. At the close where the basis settles: the share-basis action, then each held action in date order
 // on the count it leaves — once on each entitled ledger and in the book's mirror, its receipt saying `held: true` and
-// `heldOn` — then any waiting rename, then marks. On one date, share-basis actions come first. A held record is released
-// only when every share-basis action it waits on is settled on the ledger that had it, so a due row the feed drops
-// keeps holding it (never paid on the unadjusted count). If the basis never settles, nothing guesses.
+// `heldOn` — then any waiting rename, then marks. On one date, share-basis actions come first. A share-basis action the
+// ledger CANNOT apply (a refused ratio, one that would round the holding to nothing, no entitlement data) is recorded the
+// same way with `refused` and never replayed, so a row leaving the feed never makes the count read settled (review F2):
+// nothing is ever paid on the unadjusted count. If the basis never settles, nothing guesses.
 //
 // THE BOOK'S MARKED EQUITY has one rounding basis, stated below (`markedEquityCents`).
 //
@@ -203,9 +204,9 @@ const addItem = (map, sym, item) => {
  * THE SHARE-BASIS ACTIONS this ledger has not settled on `date`, by symbol (Astra T2A-01; fix round 2): an unsettled
  * conflicting split, reverse split or stock distribution it was entitled to (unsettledConflicts); one due on or before
  * `date` — listed now — that it has neither applied nor declined (one it could not apply, or one with no entitlement
- * data); one it HOLDS behind an earlier unresolved one; and every share-basis action a held record of this ledger still
- * waits on that the ledger has not settled — so a due row the feed drops while an action waits on it keeps holding it
- * (the fail-closed side of R-46; nothing remembers such a row otherwise).
+ * data); and one it HOLDS — behind an earlier unresolved one, or because it cannot apply it (`refused`). Every one of
+ * these survives the feed dropping its row (a conflict by its receipt, the rest by their held record), so a cash action
+ * held behind one is never released by a row leaving the feed (the fail-closed side of R-46; review F2).
  * @returns {Map<string, Array<{ actionId: string, type: string, effectiveDate: string|null, ledger: string|null }>>}
  */
 export function unresolvedShareBasis(ledger, actionsBySymbol, { date }) {
@@ -218,7 +219,6 @@ export function unresolvedShareBasis(ledger, actionsBySymbol, { date }) {
   for (const r of heldActionRecords(ledger)) {
     if (settled.has(r.actionId)) continue;
     if (SHARE_BASIS_TYPES.has(r.type)) addItem(out, r.symbol, itemOf(r, kind));
-    for (const c of r.heldBecause || []) if (c?.ledger === kind && !settled.has(c.actionId)) addItem(out, r.symbol, { ...c });
   }
   for (const list of out.values()) list.sort(byItem);
   return out;
