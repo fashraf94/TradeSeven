@@ -8,9 +8,9 @@
 
 | PR | Branch | Head | Holds | Flag | Checks |
 |---|---|---|---|---|---|
-| A | `claude/battle-research-s1-engine` | ⟪A-HEAD⟫ | the route, the pure engine, `researchGroupsOf`, the shared rankings read, the flag and its gate | `'off'` | ⟪A-CHECKS⟫ |
-| B | `claude/battle-research-s1-surface` (on A) | ⟪B-HEAD⟫ | the store, the surface, state 2's research blocks, the draft handoff, the screen wiring, the spec, this report | `'off'` | ⟪B-CHECKS⟫ |
-| C | `claude/battle-research-s1-allowlist` (on B) | ⟪C-HEAD⟫ | `BATTLE_RESEARCH_MODE = 'allowlist'` and its pin, one commit | `'allowlist'` | ⟪C-CHECKS⟫ |
+| A | `claude/battle-research-s1-engine` | `d5a5f468` | the route, the pure engine, `researchGroupsOf`, the shared rankings read, the flag and its gate | `'off'` | Linux suite 33,086 / 0 failed; `lint:gate`; `vite build`; three lenses and a refuter |
+| B | `claude/battle-research-s1-surface` (on A) | code `3efc0801`, then this report's final commit | the store, the surface, state 2's research blocks, the draft handoff, the screen wiring, the spec, this report | `'off'` | Linux suite 33,212 / 0 failed; `lint:gate`; `vite build`; three lenses and a refuter; the phone in Edge (390, 320); 74 of 74 mutants killed |
+| C | `claude/battle-research-s1-allowlist` (on B) | the flip, one commit on B | `BATTLE_RESEARCH_MODE = 'allowlist'` and its pin, one commit | `'allowlist'` | Linux suite 33,212 / 0 failed; `lint:gate`; `vite build`; `test:rules` 784 / 0 failed; the old pin fails only its two pin rows (a control) |
 
 - **Merge order:** A, then B, then C, each by hand. B was rebased onto A after A's refuter round (and again after its last fix); its description says so.
 - **With the flag off** (A and B as merged), the Research pill opens the bench sheet **byte for byte as main does**: the sheet hashes to a golden captured on `5a8c3620` (pinned in `AgentBattleScreen.battleResearch.jsdom.test.jsx`, on Windows and on Linux). The whole screen behind it hashed identical to main's too, at `5a8c3620` and again at B's final head (`ceb2584c…`; a League battle `9e735439…`) — measured, not pinned, so a later change to the battle screen never trips the row with an opaque hash.
@@ -131,57 +131,57 @@ Four lenses (BUILD_RULES §2; spec §12), each with a refuter; every confirmed f
 
 ### 4.3 PR B — lenses 1, 2 and 4 on `b238431e` and the refuter
 
-Each lens ran on its own snapshot of `b238431e` and proved every finding with a probe that failed; the fixes are two commits on B (lenses 1 and 4: ⟪H:l14⟫; lens 2: ⟪H:l2⟫) and one on A (`d5a5f468`, BL2-8). Every row named failed before its fix.
+Each lens ran on its own snapshot of `b238431e` and proved every finding with a probe that failed; the fixes are two commits on B (lenses 1 and 4: `06520f92`; lens 2: `7c219801`) and one on A (`d5a5f468`, BL2-8). Every row named failed before its fix.
 
 | Id | Finding | Verdict | Fixed |
 |---|---|---|---|
-| BL1-1 / BL2-4 | Use across lost its "3 remain · Undo" line when the screen rebuilt the context for the step Apply added | confirmed | ⟪H:l14⟫ (the finding is keyed on the step the row was opened from) |
-| BL1-2 | a Refresh landing under an open row moved the modal to Result 2 while 💣 kept Result 1's seed, and its "left the result" line could Undo the refresh | confirmed | ⟪H:l14⟫ (a row never opens while a Refresh is in flight; the surface is inert under the modal, so none can start) |
-| BL1-3 | a question tapped while the opening read made a second read | confirmed | ⟪H:l14⟫ (the read in flight is shared) |
-| BL1-4 | a Refresh banner or error showed on another investigation | confirmed | ⟪H:l14⟫ (stamped with its investigation) |
-| BL1-5 | on a change of battle: the old battle's failure shown, the new battle's first tap swallowed, the opening never re-read | confirmed | ⟪H:l14⟫ |
-| BL1-6 / BL4-2 | *Show all* reset on reopen and on a step undone | confirmed | ⟪H:l14⟫ (kept per step in the store) |
-| BL1-7 | the opening's one-minute reuse judged on the server's clock | confirmed | ⟪H:l14⟫ |
-| R1 (lens 1) | the incumbent read when the evidence landed, not at the tap (BRS-6: "at that moment") | built to the letter | ⟪H:l14⟫ |
-| BL4-1 | the modal's research strip never stuck (its block box held it) | confirmed (code and Edge) | ⟪H:l14⟫; measured after: the strip stays at the scroller's top, a new tab starts clear of both strips |
-| BL4-3 | every scroll frame re-rendered the whole battle screen | confirmed | ⟪H:l14⟫ (the scroll is a ref) |
-| BL4-4 | the phone layer ignored the browser toolbar's inset | confirmed (by precedent) | ⟪H:l14⟫ (the bench sheet's `viewportInset`); an iPhone check is item 1 of §9 |
-| BL4-5 | the action row's Draft door could crowd the Ask at 320 px | confirmed in Edge (20-letter name) | ⟪H:l14⟫ (wraps, at most half the row; Ask keeps 139 px at 320) |
-| BL4-6 | the bar's button under 44 px | confirmed | = PH-1, ⟪H:phone⟫ |
-| BL4-7 | the history sheet was not a layer | confirmed | ⟪H:l14⟫ |
-| BL4-8 / BL4-11 | hidden rows of the collapsed list were focus stops; no expand marker | confirmed | ⟪H:l14⟫ (a button with `aria-expanded`, rows only while open) |
-| BL4-9 | long score digits could squeeze the title at 320 | confirmed in code; no overlap measured after | ⟪H:l14⟫ |
-| BL4-10 | research links narrower than 44 px | confirmed | ⟪H:l14⟫ |
-| BL4-12 | no overscroll containment | confirmed | ⟪H:l14⟫ |
+| BL1-1 / BL2-4 | Use across lost its "3 remain · Undo" line when the screen rebuilt the context for the step Apply added | confirmed | `06520f92` (the finding is keyed on the step the row was opened from) |
+| BL1-2 | a Refresh landing under an open row moved the modal to Result 2 while 💣 kept Result 1's seed, and its "left the result" line could Undo the refresh | confirmed | `06520f92` (a row never opens while a Refresh is in flight; the surface is inert under the modal, so none can start) |
+| BL1-3 | a question tapped while the opening read made a second read | confirmed | `06520f92` (the read in flight is shared) |
+| BL1-4 | a Refresh banner or error showed on another investigation | confirmed | `06520f92` (stamped with its investigation) |
+| BL1-5 | on a change of battle: the old battle's failure shown, the new battle's first tap swallowed, the opening never re-read | confirmed | `06520f92` |
+| BL1-6 / BL4-2 | *Show all* reset on reopen and on a step undone | confirmed | `06520f92` (kept per step in the store) |
+| BL1-7 | the opening's one-minute reuse judged on the server's clock | confirmed | `06520f92` |
+| R1 (lens 1) | the incumbent read when the evidence landed, not at the tap (BRS-6: "at that moment") | built to the letter | `06520f92` |
+| BL4-1 | the modal's research strip never stuck (its block box held it) | confirmed (code and Edge) | `06520f92`; measured after: the strip stays at the scroller's top, a new tab starts clear of both strips |
+| BL4-3 | every scroll frame re-rendered the whole battle screen | confirmed | `06520f92` (the scroll is a ref) |
+| BL4-4 | the phone layer ignored the browser toolbar's inset | confirmed (by precedent) | `06520f92` (the bench sheet's `viewportInset`); an iPhone check is item 1 of §9 |
+| BL4-5 | the action row's Draft door could crowd the Ask at 320 px | confirmed in Edge (20-letter name) | `06520f92` (wraps, at most half the row; Ask keeps 139 px at 320) |
+| BL4-6 | the bar's button under 44 px | confirmed | = PH-1, `487f9719` |
+| BL4-7 | the history sheet was not a layer | confirmed | `06520f92` |
+| BL4-8 / BL4-11 | hidden rows of the collapsed list were focus stops; no expand marker | confirmed | `06520f92` (a button with `aria-expanded`, rows only while open) |
+| BL4-9 | long score digits could squeeze the title at 320 | confirmed in code; no overlap measured after | `06520f92` |
+| BL4-10 | research links narrower than 44 px | confirmed | `06520f92` |
+| BL4-12 | no overscroll containment | confirmed | `06520f92` |
 | BL4-13 | a quote notice (gated path) would paint under the surface | confirmed, **latent** | not fixed: the gated path's flag (`SHADOW_CPU_QUOTE_INTEGRITY_ENABLED`) is false; noted for its flip |
 | BL4-14 | under the research modal, Tab from `<body>` reaches the screen behind | confirmed, **inherited** | not fixed: the shipped research modal has no focus trap (the bench sheet's CB4-9 shape); out of this slice |
-| BL4-15 | the surface test's motion mock remounted the panel every render | confirmed (test fidelity) | ⟪H:l14⟫ |
-| BL2-1 | the chat forgot typed words on a second draft or a shipped door | confirmed (high) | ⟪H:l2⟫ |
-| BL2-2 | the action row's Draft ignored the holding picked in Compare | confirmed | ⟪H:l2⟫ |
-| BL2-3 | the board said a lapsed lock was still locked while the modal said "since passed" | confirmed | ⟪H:l2⟫ (one clock: a timer at the lapse) |
+| BL4-15 | the surface test's motion mock remounted the panel every render | confirmed (test fidelity) | `06520f92` |
+| BL2-1 | the chat forgot typed words on a second draft or a shipped door | confirmed (high) | `7c219801` |
+| BL2-2 | the action row's Draft ignored the holding picked in Compare | confirmed | `7c219801` |
+| BL2-3 | the board said a lapsed lock was still locked while the modal said "since passed" | confirmed | `7c219801` (one clock: a timer at the lapse) |
 | BL2-5 | the Ranks line's frozen time sits over the tab's own live list (whose badge is the sector rank) | reading | not changed — open question 2 (§9) |
-| BL2-6 | the strip's times and group bypassed the copy file and dropped "older than usual"; "— ET" | confirmed | ⟪H:l2⟫ |
-| BL2-7 | the then-chain dropped folded steps | confirmed | ⟪H:l2⟫ |
+| BL2-6 | the strip's times and group bypassed the copy file and dropped "older than usual"; "— ET" | confirmed | `7c219801` |
+| BL2-7 | the then-chain dropped folded steps | confirmed | `7c219801` |
 | BL2-8 | a passed lock's time lowercased ("thu 10:00 am") | confirmed | `d5a5f468` (A) |
 | BL2-9 | the explanation names a lock as at the result; the row adds "since passed" | reading | not changed — open question 3 (§9) |
-| BL2-10 / R3 (lens 1) | a row of the opening's list opened with no frozen readings | confirmed | ⟪H:l2⟫ (the opening's ATR seed and rankings doc) |
-| BL2-11 | the research blocks never said "no message cost" | confirmed (BRS-20's letter) | ⟪H:l2⟫ |
-| BL2-12 | the voice rule differed from the sheet's; the phone bar used the bare name | confirmed | ⟪H:l2⟫ |
-| BL2-13 | the legacy ScoreHeader printed a literal "CPU" | confirmed | ⟪H:l2⟫; the strip's "You" stays the sheet's own label (R-17) |
+| BL2-10 / R3 (lens 1) | a row of the opening's list opened with no frozen readings | confirmed | `7c219801` (the opening's ATR seed and rankings doc) |
+| BL2-11 | the research blocks never said "no message cost" | confirmed (BRS-20's letter) | `7c219801` |
+| BL2-12 | the voice rule differed from the sheet's; the phone bar used the bare name | confirmed | `7c219801` |
+| BL2-13 | the legacy ScoreHeader printed a literal "CPU" | confirmed | `7c219801`; the strip's "You" stays the sheet's own label (R-17) |
 | BL2-14 | the shipped 💣 names a day against now, the row against the result | reading | not changed (💣 is "the shipped one", BRS-17) |
 | R2, R4 (lens 1) | the Ranks line's time (= BL2-5); after an undone Refresh, Result 1 hands the subset | readings | not changed |
 
-**The refuter, on the fixed head (`7c219801`).** It ran every lens row on the pre-fix tree (all failed for their stated reasons) and on the fixed one (all pass), attacked each fix with variants, measured lens 4's layout in Edge, and found the state-1 modal byte-identical before and after (five hashes). Thirty fixes held; two were incomplete; seven items were new. Fixed in ⟪H:rb⟫, each with a row that failed first:
+**The refuter, on the fixed head (`7c219801`).** It ran every lens row on the pre-fix tree (all failed for their stated reasons) and on the fixed one (all pass), attacked each fix with variants, measured lens 4's layout in Edge, and found the state-1 modal byte-identical before and after (five hashes). Thirty fixes held; two were incomplete; seven items were new. Fixed in `df0abee2`, each with a row that failed first:
 
 | Id | Finding | Verdict | Fixed |
 |---|---|---|---|
-| RB-1 (BL4-7 incomplete) | with the history sheet open, the surface's own Tab trap counted the inert board behind it: Shift+Tab left the surface, Tab stuck | confirmed (Edge) | ⟪H:rb⟫ (the sheet traps its own stops) |
-| RB-2 | the now-sticky strip has no height bound: ten refinements leave 8 px of content at 320 × 640 | confirmed (Edge) | ⟪H:rb⟫ (bounded at 38vh, scrolling inside itself; every refinement stays in it) — open question 6 (§9) |
-| RB-3 | a Refresh in flight showed on, and blocked the rows of, another investigation | confirmed | ⟪H:rb⟫ |
-| RB-4 (BL1-5 incomplete) | A → B → A with A's read in flight: the fresh tap was swallowed and the old answer landed | confirmed (hook level; the screen remounts per battle) | ⟪H:rb⟫ (a generation per stay on a battle) |
-| RB-5 | the opening's list never turned a lapsed lock to "since passed" | confirmed (in the pre-fix tree too) | ⟪H:rb⟫ |
-| RB-6 | a 20-letter agent name ran 6 px past the Draft door's border | confirmed (nit) | ⟪H:rb⟫ |
-| RB-7 | the sweep's `stripTimes` sample passed milliseconds, not clock words | confirmed (test nit) | ⟪H:rb⟫ |
+| RB-1 (BL4-7 incomplete) | with the history sheet open, the surface's own Tab trap counted the inert board behind it: Shift+Tab left the surface, Tab stuck | confirmed (Edge) | `df0abee2` (the sheet traps its own stops) |
+| RB-2 | the now-sticky strip has no height bound: ten refinements leave 8 px of content at 320 × 640 | confirmed (Edge) | `df0abee2` (bounded at 38vh, scrolling inside itself; every refinement stays in it). Measured after, ten refinements: the strip 264 px and scrolling, 36% of the view left for content at 320 × 640 (47% at 390 × 844) — open question 6 (§9) |
+| RB-3 | a Refresh in flight showed on, and blocked the rows of, another investigation | confirmed | `df0abee2` |
+| RB-4 (BL1-5 incomplete) | A → B → A with A's read in flight: the fresh tap was swallowed and the old answer landed | confirmed (hook level; the screen remounts per battle) | `df0abee2` (a generation per stay on a battle) |
+| RB-5 | the opening's list never turned a lapsed lock to "since passed" | confirmed (in the pre-fix tree too) | `df0abee2` |
+| RB-6 | a 20-letter agent name ran 6 px past the Draft door's border | confirmed (nit) | `df0abee2` |
+| RB-7 | the sweep's `stripTimes` sample passed milliseconds, not clock words | confirmed (test nit) | `df0abee2` |
 
 ### 4.4 PR B — the phone checks in a real browser (§11)
 
@@ -189,8 +189,8 @@ Headless Edge (playwright-core), 390 × 844 and 320 × 640, deviceScaleFactor 2,
 
 | Id | Finding | Verdict | Fixed |
 |---|---|---|---|
-| PH-1 | the phone's explanation button drew 39.1 px tall (under 44) | confirmed | ⟪H:phone⟫ |
-| PH-2 | closing the surface left focus on `<body>` when the pill's tap took no focus (iOS Safari never focuses a tapped button) | confirmed | ⟪H:phone⟫ |
+| PH-1 | the phone's explanation button drew 39.1 px tall (under 44) | confirmed | `487f9719` |
+| PH-2 | closing the surface left focus on `<body>` when the pill's tap took no focus (iOS Safari never focuses a tapped button) | confirmed | `487f9719` |
 
 After the fixes (and again after the review round, on its final code), at both widths and in a reduced-motion pass: no sideways scroll; nothing past the right edge; every tap target ≥ 44 px (6 on the opening with its list collapsed, 21 on the board, 24 with the history sheet, 4 in the modal's research blocks); the explanation bar inside the viewport and the topmost element over the list, also with the list scrolled to its end; focus in on open; Escape closes the history sheet, then only the modal (focus back on the row), then the surface (focus back on the pill). Screenshots:
 
@@ -214,12 +214,12 @@ All on Linux in WSL (a private worktree of the CI checkout, `TZ=UTC`, 8 workers,
 | Head | Full suite | `lint:gate` | `vite build` | `test:rules` |
 |---|---|---|---|---|
 | A `d5a5f468` | 33,086 tests, 0 failed (8,004 files) | exit 0 | exit 0 | — |
-| B `⟪B-HEAD⟫` | ⟪B-SUITE⟫ | ⟪B-LINT⟫ | ⟪B-BUILD⟫ | — |
-| C `⟪C-HEAD⟫` | ⟪C-SUITE⟫ | ⟪C-LINT⟫ | ⟪C-BUILD⟫ | ⟪C-RULES⟫ |
+| B `3efc0801` (code; the final commit adds only this report's numbers, and is built) | 33,212 tests, 0 failed (8,076 files) | exit 0 | exit 0 | — |
+| C `65e196ca` (the flip on `3efc0801`; rebased onto B's report commit before push, which changes no code) | 33,212 tests, 0 failed (8,076 files) | exit 0 | exit 0 | 42 files, 784 tests, exit 0 |
 
 - **New tests:** PR A — the route (42 rows), the engine (readings, result, investigation, explain), the honesty sweep (over 20,000 outputs, field by field), the review rows (`review.findings.test.js`, 21) and the refuter's (`refuter.findings.test.js`, 19). PR B — the store, the surface, the board and the research context, the modal's research state, the chat's append, and the screen (the golden, the tap flow, Escape layering, the draft, the opening's seed).
 - **The phone, in a real browser:** §4.4.
-- **Mutation checks:** ⟪MUTATION⟫
+- **Mutation checks:** PR A — the review round's rows each failed on `edc9588e` and the refuter's 18 on `23010d10` (every fix reverted is a killed mutant), and the honesty sweep caught all five of the refuter's surviving plants once rebuilt. PR B — a battery of **74 mutants** on the final code, one per behaviour B adds and one per review fix (each file restored and hash-checked; the files run clean, unmutated, first): 68 killed by the rows meant to kill them; the 6 that survived (a failed Refresh after refinements, a sector set-aside on the board, the reference line opening state 1, the sheet keyed by the opened step, research only on the opened stock, a double tap on a question) each got a row, and all 6 then died to it — **74 of 74**.
 - **The honesty sweep's own plants:** the refuter's 17 plants on A, all caught after `b1c51209` (P4–P8 by the rebuilt sweep), each file restored by hash.
 - **Windows-only reds, unrelated:** `StockChart.controlledSession.test.jsx` (5 rows) fails on Windows on main too; green on Linux.
 
@@ -227,7 +227,13 @@ All on Linux in WSL (a private worktree of the CI checkout, `TZ=UTC`, 8 workers,
 
 ## 6. File and line counts
 
-⟪COUNTS⟫
+| PR | Code | Tests | Other |
+|---|---|---|---|
+| A (32 files, +4,894 −13) | 16 files, +2,608 −13 | 14 files, +2,281 | 2 guard baselines (JSON), +5 |
+| B (42 files) | 18 files, +1,769 −39 | 10 files, +2,099 −6 | the spec of record (248 lines) and this report; 12 phone screenshots (1.5 MB) |
+| C (2 files, +4 −4) | the literal and its docstring line | the pin row | — |
+
+No fenced file is among them (BUILD_RULES §1).
 
 ---
 
