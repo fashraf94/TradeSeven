@@ -739,6 +739,23 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     errors.mockRestore();
   });
 
+  it('R-36 comes FIRST: a rename into a symbol another idea holds is blocked, not deferred, even while the share basis is unresolved — no record is made (R-36 unchanged)', async () => {
+    const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
+    const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
+    const b = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), opId: 'idea-2', quotes: quotes(), date: S[0], slot: 'midday' });
+    expect(b.entry.outcome).toBe('entered');
+    const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
+    await closeDay(ctx, S[0]);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const price = roundUsd(BASE.AAPL / 1.5);
+    const out = await closeDay(ctx, S[1], { AAPL: { price, corporateActions: [basisRow('split', 1.5), basisRow('split', 1.6), rename('AAPL', 'NVDA')] } });
+    const idea = ideaOf(ctx);
+    for (const ledger of [idea.ledger, idea.comparisonLedger]) expect(ledger.holdings.AAPL, ledger.kind).not.toHaveProperty('deferredRename');
+    expect(out.alerts.some((x) => x.startsWith(`PRACTICE_FIELD_RENAME_BLOCKED ${ctx.ideaId} idea AAPL`))).toBe(true);
+    expect(out.alerts.some((x) => /PRACTICE_FIELD_RENAME_DEFERRED/.test(x))).toBe(false);
+    errors.mockRestore();
+  });
+
   it('R-36 on the record path: a deferred rename taken from its record into a symbol another idea holds is not applied, keeps its record and is reported blocked (ledger.js)', () => {
     const record = { from: 'AAPL', to: 'AMD', actionId: `ticker_change_AAPL_${S[1]}`, effectiveDate: S[1], deferredOn: S[1] };
     const held = { AAPL: { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, lastMarkAsOf: null, lastMarkSource: 'snapshot', sector: 'Technology', openedAt: S[0], deferredRename: record } };
