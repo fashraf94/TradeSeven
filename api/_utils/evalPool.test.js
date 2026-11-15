@@ -52,6 +52,12 @@ describe('poolStartCutoffMs / poolGroupOf', () => {
     expect(poolStartCutoffMs(2, cfg)).toBe(200_000);
     expect(poolStartCutoffMs(8, cfg)).toBe(200_000);
   });
+  it('review PL-7: a malformed pool cutoff (NaN, 0, negative, past the budget, a string) reads as TIME_BUDGET_MS — never "defer everything"', () => {
+    for (const bad of [NaN, 0, -5, 300_000, '200000', null, undefined, Infinity]) {
+      expect(poolStartCutoffMs(2, { timeBudgetMs: 290_000, poolCutoffMs: bad }), String(bad)).toBe(290_000);
+    }
+    expect(poolStartCutoffMs(2, { timeBudgetMs: 290_000, poolCutoffMs: 290_000 })).toBe(290_000);
+  });
   it('the affinity key is a non-empty string groupId (the field resolveTournamentContext reads), else none', () => {
     expect(poolGroupOf({ gameMode: 'baggerbomb_tournament', groupId: 'grp-7' })).toBe('grp-7');
     expect(poolGroupOf({ groupId: '' })).toBeNull();
@@ -211,6 +217,47 @@ describe('runEvalPool — K > 1', () => {
     const boom = new Error('sync');
     const out = await runEvalPool({ items: [{ id: 'x' }], k: 2, run: () => { throw boom; }, mayStart: () => true }).catch((e) => e);
     expect(out).toBe(boom);
+  });
+
+  it('review PL-2: a run that rejects with a FALSY reason is still a failure — nothing more starts, the pool rejects', async () => {
+    for (const reason of [0, '', false, undefined]) {
+      const w = world(['a', 'b', 'c']);
+      const outcome = runEvalPool({ items: w.items, k: 1, run: w.run, mayStart: () => true }).then(() => 'resolved', (e) => ({ rejected: e }));
+      await flush();
+      await w.fail('a', reason);
+      const out = await outcome;
+      expect(out, `reason ${String(reason)}`).not.toBe('resolved');
+      expect(w.started, `reason ${String(reason)}`).toEqual(['a']);
+    }
+  });
+
+  it('review PL-2: a start rule that THROWS while a battle is in flight stops new starts and rejects once it finishes — never hangs', async () => {
+    const w = world(['a', 'b', 'c']);
+    let asks = 0;
+    const boom = new Error('start rule defect');
+    const outcome = runEvalPool({ items: w.items, k: 2, run: w.run, mayStart: () => { asks += 1; if (asks === 3) throw boom; return true; } })
+      .then(() => 'resolved', (e) => e);
+    await flush();
+    expect(w.started).toEqual(['a', 'b']);
+    await w.release('a'); // the third ask throws while b is in flight
+    expect(w.started).toEqual(['a', 'b']);
+    let settled = false;
+    outcome.then(() => { settled = true; });
+    await flush();
+    expect(settled).toBe(false); // b still runs
+    await w.release('b');
+    expect(await outcome).toBe(boom);
+  });
+
+  it('review PL-2: the helper clamps K itself — 0, NaN or 9 run one at a time', async () => {
+    for (const k of [0, NaN, 9]) {
+      const w = world(['a', 'b']);
+      const done = runEvalPool({ items: w.items, k, run: w.run, mayStart: () => true });
+      await flush();
+      expect(w.inFlightNow.size, `k ${k}`).toBe(1);
+      await w.release('a'); await w.release('b');
+      expect(await done).toMatchObject({ dispatched: 2, maxInFlight: 1 });
+    }
   });
 
   it('an empty list resolves at once without asking the start rule', async () => {

@@ -95,6 +95,10 @@ async function check({ cuts, battle = makeTickBattle(), priceless = [] }) {
   mocks.getStockAnalysisData.mockClear();
   mocks.create.mockClear();
   const db = makeTickDb({ battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() });
+  // Every collection the check opens, so a row can say what it never touched (review DK-2).
+  const collections = [];
+  const baseCollection = db.collection.bind(db);
+  db.collection = (name) => { collections.push(name); return baseCollection(name); };
   const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 };
   if (cuts) await prepareRunMarketShare(db, summary);
   const shareCalls = mocks.getStockAnalysisData.mock.calls.map((c) => c[0]);
@@ -105,6 +109,7 @@ async function check({ cuts, battle = makeTickBattle(), priceless = [] }) {
     request: mocks.create.mock.calls.map((c) => c[0]),
     summary,
     shareCalls,
+    collections,
     tickCalls: mocks.getStockAnalysisData.mock.calls.map(([s, o]) => [s, o]),
   };
 }
@@ -131,9 +136,10 @@ describe('the shared list is the evaluator\'s own list', () => {
 });
 
 describe('flag OFF — the fan-out is today\'s fetch, exactly', () => {
-  it('every fan-out call is (symbol, { forceRefresh: true, fields: [daily, price] }); nothing is shared or stored', async () => {
+  it('every fan-out call is (symbol, { forceRefresh: true, fields: [daily, price] }); the session store is never opened', async () => {
     const off = await check({ cuts: false });
-    expect(off.shareCalls).toEqual([]);
+    expect(off.collections.length).toBeGreaterThan(3); // anti-vacuous: the recorder sees the check's collections
+    expect(off.collections).not.toContain('evalSessionDaily');
     expect(off.tickCalls.length).toBeGreaterThan(10);
     for (const [, opts] of off.tickCalls) expect(opts).toEqual(BOTH);
     for (const m of SHARED_MACRO_SYMBOLS) expect(off.tickCalls.filter(([s]) => s === m)).toHaveLength(1);
@@ -141,11 +147,13 @@ describe('flag OFF — the fan-out is today\'s fetch, exactly', () => {
 });
 
 describe('flag ON — same effects as a per-battle fetch', () => {
-  it('a battle that owns no macro: the macros come from the run (none fetched in the check), and every write and the request are identical', async () => {
+  it('SPY and QQQ come from the run (not fetched in the check); BTC-USD.CC is the battle\'s own (it holds "BTC" — one instrument, review GC-3); every write and the request are identical', async () => {
     const off = await check({ cuts: false });
     const on = await check({ cuts: true });
+    expect(on.collections).toContain('evalSessionDaily'); // the cut path really ran
     expect(on.shareCalls.filter((s) => SHARED_MACRO_SYMBOLS.includes(s)).length).toBeGreaterThanOrEqual(3);
-    for (const m of SHARED_MACRO_SYMBOLS) expect(on.tickCalls.filter(([s]) => s === m)).toEqual([]);
+    for (const m of ['SPY', 'QQQ']) expect(on.tickCalls.filter(([s]) => s === m)).toEqual([]);
+    expect(on.tickCalls.filter(([s]) => s === 'BTC-USD.CC').length).toBeGreaterThan(0);
     expect(off.request).toHaveLength(1); // anti-vacuous: the check reached the model
     expect(on.request).toEqual(off.request);
     expect(on.updates).toEqual(off.updates);

@@ -50,6 +50,7 @@ import { getStockAnalysisData, getCleanSymbol, isCryptoSymbol, formatEODHDSymbol
 import { getETDate, formatDateString, getPreviousSessionDate } from './marketSchedule.js';
 import { selectPriorSessionBar } from './baselineValidation.js';
 import { withTimeout } from './intraday/evaluatorHook.js';
+import { isSettlementQuoteUsable } from './agentQuoteHealth.js';
 
 /** The macro benchmark symbols — the evaluator's own list (agent-evaluate.js `macroSymbols`). */
 export const SHARED_MACRO_SYMBOLS = Object.freeze(['SPY', 'QQQ', 'BTC-USD.CC']);
@@ -70,6 +71,24 @@ export const SESSION_DAILY_IO_TIMEOUT_MS = 1_500;
 
 /** The bound on the run's shared macro fetch, per symbol. */
 export const RUN_SHARE_TIMEOUT_MS = 10_000;
+
+/**
+ * The bound on a check that WAITS for another check's first fetch of the same
+ * symbol (review GC-1). The first fetch is a store read (≤ 1.5 s), one `/eod/`
+ * (unbounded with the guard off; ≤ 10 s with it on) and a write (≤ 1.5 s); a
+ * waiter gives up after 15 s, drops the pending entry so the next check starts
+ * afresh, and makes the daily+price call itself — the fetch as it was.
+ */
+export const SESSION_DAILY_WAIT_TIMEOUT_MS = 15_000;
+
+/** The instrument EODHD prices for a symbol ('BTC' and 'BTC-USD.CC' are one). */
+export function eodSymbolOf(symbol) {
+  return formatEODHDSymbol(getCleanSymbol(String(symbol)), isCryptoSymbol(String(symbol)));
+}
+
+let horizonLogged = false;
+/** Tests only. */
+export function resetHorizonLog() { horizonLogged = false; }
 
 // ── session keys ────────────────────────────────────────────────────────────
 
@@ -99,7 +118,16 @@ export function expectedPriorBarDate({ isCrypto, cutoffDate }) {
 export function isReusableSessionSeries(rows, key) {
   if (!Array.isArray(rows) || rows.length < SESSION_DAILY_MIN_ROWS) return false;
   const expected = expectedPriorBarDate(key);
-  if (!expected) return false;
+  if (!expected) {
+    // Past the calendar's maintained horizon (src/utils/marketCalendar.js
+    // MAINTAINED_HOLIDAY_YEARS) no stock series is reusable: the cut stops
+    // saving and every check fetches as before. Said once per process (GC-7).
+    if (!horizonLogged) {
+      horizonLogged = true;
+      console.warn(`[evalMarketData] no previous session known for ${key.cutoffDate} (calendar horizon): daily bars are fetched every check, as before the cut`);
+    }
+    return false;
+  }
   return selectPriorSessionBar(rows, key.cutoffDate)?.date === expected;
 }
 
@@ -177,8 +205,17 @@ export async function sessionDailySeries(db, symbol, now = new Date()) {
   const memoKey = `${key.docId}|${key.cutoffDate}`;
   const inMemo = memo.get(memoKey);
   if (inMemo) {
-    const rows = await inMemo;
-    return { rows: rows ?? undefined, fetchedHere: false };
+    // Bounded (GC-1): a first fetch that hangs must not hang every later check
+    // of the symbol. On the bound the pending entry is dropped (if it is still
+    // the one waited on) and this check fetches for itself.
+    try {
+      const rows = await withTimeout(inMemo, SESSION_DAILY_WAIT_TIMEOUT_MS, 'session_daily_wait');
+      return { rows: rows ?? undefined, fetchedHere: false };
+    } catch (err) {
+      if (memo.get(memoKey) === inMemo) memo.delete(memoKey);
+      console.warn(`[evalMarketData] waited ${SESSION_DAILY_WAIT_TIMEOUT_MS} ms for ${key.docId}'s first fetch (this check fetches its own): ${err?.message || err}`);
+      return { rows: undefined, fetchedHere: false };
+    }
   }
   let fresh;
   const lookup = (async () => {
@@ -242,7 +279,9 @@ export async function prepareRunMarketShare(db, runKey, now = new Date()) {
     await Promise.all(SHARED_MACRO_SYMBOLS.map(async (symbol) => {
       try {
         const data = await withTimeout(fetchEvalSymbolData(db, symbol, now), RUN_SHARE_TIMEOUT_MS, 'macro_share');
-        if (data?.price) quotes[symbol] = { data, fetchedAtMs: Date.now() };
+        // Only a USABLE quote is shared (GC-2): a `fallback: true` daily close
+        // or an unpriced result stays out, and each battle fetches its own.
+        if (isSettlementQuoteUsable(data?.price)) quotes[symbol] = { data, fetchedAtMs: Date.now() };
       } catch (err) {
         console.warn(`[evalMarketData] shared ${symbol} quote not fetched (each battle fetches its own): ${err?.message || err}`);
       }
@@ -254,13 +293,17 @@ export async function prepareRunMarketShare(db, runKey, now = new Date()) {
 
 /**
  * The run's quote for `symbol`, as THIS battle's own copy — or null when the
- * symbol is not a macro, the battle holds, benches or scores it (`ownSymbols`),
- * or the run has no price for it. The copy is deep: nothing one battle does to
- * its quote can reach another's.
+ * symbol is not a macro, the battle holds, benches or scores THE SAME
+ * INSTRUMENT (`ownSymbols`, compared by the symbol EODHD prices: a held 'BTC'
+ * owns 'BTC-USD.CC' — GC-3), or the run has no price for it. The copy is deep:
+ * nothing one battle does to its quote can reach another's.
  */
 export function sharedMacroQuote(runKey, symbol, ownSymbols) {
   if (!SHARED_MACRO_SYMBOLS.includes(symbol)) return null;
-  if (ownSymbols && typeof ownSymbols.has === 'function' && ownSymbols.has(symbol)) return null;
+  if (ownSymbols && typeof ownSymbols[Symbol.iterator] === 'function') {
+    const instrument = eodSymbolOf(symbol);
+    for (const own of ownSymbols) if (eodSymbolOf(own) === instrument) return null;
+  }
   const entry = runKey && typeof runKey === 'object' ? RUN_SHARES.get(runKey)?.quotes?.[symbol] : null;
   if (!entry?.data?.price) return null;
   return { data: structuredClone(entry.data), fetchedAtMs: entry.fetchedAtMs };

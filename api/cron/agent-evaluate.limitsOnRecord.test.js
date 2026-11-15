@@ -25,7 +25,7 @@ import {
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 
 const flags = vi.hoisted(() => ({ capture: false }));
-const net = vi.hoisted(() => ({ anthropicStatus: 200, anthropicHeaders: {}, eodhd: [], anthropic: 0, eodStatus: {} }));
+const net = vi.hoisted(() => ({ anthropicStatus: 200, anthropicHeaders: {}, eodhd: [], anthropic: 0, eodStatus: {}, marketOpen: true }));
 const world = vi.hoisted(() => ({ db: null, battles: null }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -59,7 +59,7 @@ vi.mock('firebase-admin/firestore', async (importOriginal) => ({
   ...(await importOriginal()),
   getFirestore: () => ({ collection: () => ({ doc: () => ({ set: async () => {}, get: async () => ({ exists: false, data: () => undefined }) }) }) }),
 }));
-vi.mock('../_utils/marketSchedule.js', async (importOriginal) => ({ ...(await importOriginal()), isMarketOpen: () => true }));
+vi.mock('../_utils/marketSchedule.js', async (importOriginal) => ({ ...(await importOriginal()), isMarketOpen: () => net.marketOpen }));
 vi.mock('../_utils/agentBattleService.js', async (importOriginal) => ({
   ...(await importOriginal()),
   findActiveAgentBattles: vi.fn(async () => world.battles.map(deepClone)),
@@ -175,7 +175,7 @@ vi.setConfig({ testTimeout: 30_000 });
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(FROZEN_NOW));
-  net.anthropicStatus = 200; net.anthropicHeaders = { ...LIMITS }; net.eodhd = []; net.anthropic = 0; net.eodStatus = {};
+  net.anthropicStatus = 200; net.anthropicHeaders = { ...LIMITS }; net.eodhd = []; net.anthropic = 0; net.eodStatus = {}; net.marketOpen = true;
   savedKey = process.env.EODHD_API_KEY;
   process.env.EODHD_API_KEY = 'test-key';
   installNetwork();
@@ -225,14 +225,14 @@ describe('the run record\'s `anthropic` block — tick capture on and off', () =
 });
 
 describe('the run record\'s `eodhd` block — this run\'s requests by endpoint', () => {
-  it('eod / realTime / intraday equal the requests the network saw; other 0; no timeouts', async () => {
+  it('eod / realTime / intraday equal the requests the network saw; other 0; timeouts NOT MEASURED (null) with the guard off', async () => {
     const { run } = await runOnce({ capture: false });
     const seen = (e) => net.eodhd.filter((x) => x === e).length;
     expect(seen('eod')).toBeGreaterThan(5); // anti-vacuous
     expect(seen('intraday')).toBeGreaterThan(0);
     expect(run.eodhd).toEqual({
       requests: { eod: seen('eod'), realTime: seen('real-time'), intraday: seen('intraday'), other: 0 },
-      timeouts: 0,
+      timeouts: null, // review OB-1: the guard is off at merge, so no timeout can fire — never a measured 0
       non2xx: { 429: 0, '5xx': 0, other: 0 },
     });
   });
@@ -257,5 +257,22 @@ describe('the run record\'s `eodhd` block — this run\'s requests by endpoint',
     const second = world.db.__runDocs[0];
     expect(second.eodhd.requests.eod).toBe(net.eodhd.filter((x) => x === 'eod').length);
     expect(second.eodhd.requests.eod).toBe(first.run.eodhd.requests.eod);
+  });
+});
+
+describe('review OB-4: no rate-limit window outlives its invocation', () => {
+  it('after an evaluation run AND after a market-closed run, no window is left open', async () => {
+    await runOnce({ capture: false });
+    const { openRateLimitWindowCount } = await import('../_utils/anthropicRateLimits.js'); // the run's own module graph
+    expect(openRateLimitWindowCount()).toBe(0);
+    net.marketOpen = false;
+    const { default: handler } = await import('./agent-evaluate.js');
+    world.battles = [makeTickBattle()];
+    world.db = makeRunDb(world.battles);
+    const res = { status() { return res; }, json(p) { res.payload = p; return res; } };
+    await handler({ headers: { 'x-vercel-cron': '1' } }, res);
+    expect(res.payload).toMatchObject({ skipped: true, reason: 'market_closed' }); // anti-vacuous: the early return ran
+    expect(world.db.__runDocs).toEqual([]); // no record on that path…
+    expect(openRateLimitWindowCount()).toBe(0); // …and still no window left behind
   });
 });

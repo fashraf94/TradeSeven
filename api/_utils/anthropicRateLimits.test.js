@@ -10,10 +10,11 @@
 // raw Response, and that rejects with an error carrying `status` and `headers`
 // on a non-2xx (core/api-promise.mjs, core/error.mjs).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import Anthropic from '@anthropic-ai/sdk';
 import {
   RATE_LIMIT_HEADERS, parseRateLimitHeaders, openRateLimitWindow, closeRateLimitWindow,
-  recordRateLimitObservation, observeRateLimits,
+  recordRateLimitObservation, observeRateLimits, openRateLimitWindowCount,
 } from './anthropicRateLimits.js';
 
 const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
@@ -170,5 +171,93 @@ describe('observeRateLimits — a pass-through of the one call', () => {
   it('a value that is not a promise at all passes straight through', () => {
     const client = { messages: { create: () => 42 } };
     expect(observeRateLimits(client).messages.create({}, {})).toBe(42);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE REAL SDK at the seam (review OB-3 / DK-1): @anthropic-ai/sdk as installed, its own request
+// building, its own APIPromise, its own errors — only the network is a double. Each case runs an
+// OBSERVED client and an UNOBSERVED twin against the same answer and compares everything.
+
+const MESSAGE = {
+  id: 'msg_real', type: 'message', role: 'assistant', model: 'claude-haiku-4-5-20251001', stop_reason: 'tool_use', stop_sequence: null,
+  content: [{ type: 'tool_use', id: 'toolu_1', name: 'submit_trade_decision', input: { decision: 'HOLD' } }],
+  usage: { input_tokens: 10, output_tokens: 5 },
+};
+const BODY = { model: 'claude-haiku-4-5-20251001', max_tokens: 64, temperature: 0.4, system: 'sys', messages: [{ role: 'user', content: 'hi' }] };
+
+function realPair(answer) {
+  const seen = { observed: [], bare: [] };
+  const make = (bucket) => new Anthropic({
+    apiKey: 'sk-test-not-a-key',
+    maxRetries: 0, // as the evaluator's client (agent-evaluate.js getAnthropicClient)
+    fetch: async (url, init) => { seen[bucket].push({ url: String(url), method: init.method, body: init.body }); return answer(); },
+  });
+  return { observed: observeRateLimits(make('observed')), bare: make('bare'), seen };
+}
+const outcome = (p) => p.then((value) => ({ value }), (error) => ({ error }));
+const errShape = (e) => e && { cls: e.constructor.name, status: e.status, message: e.message };
+
+describe('the REAL SDK (0.71.2) at the seam — identical request, identical result, headers read', () => {
+  it('200: one request each, the same bytes, the same parsed message; the headers recorded', async () => {
+    const w = openRateLimitWindow();
+    const { observed, bare, seen } = realPair(() => new Response(JSON.stringify(MESSAGE), { status: 200, headers: { 'content-type': 'application/json', ...LIMIT_HEADERS } }));
+    const a = await outcome(observed.messages.create(BODY, { timeout: 40_000 }));
+    const b = await outcome(bare.messages.create(BODY, { timeout: 40_000 }));
+    await flush();
+    expect(seen.observed).toHaveLength(1);
+    expect(seen.observed).toEqual(seen.bare); // URL, method and body bytes
+    expect(a.value).toEqual(b.value);
+    expect(closeRateLimitWindow(w)).toMatchObject({ requestsLimit: 4000, minRequestsRemaining: 3998, minOutputTokensRemaining: 398000, responses429: 0 });
+  });
+
+  for (const [status, cls] of [[429, 'RateLimitError'], [500, 'InternalServerError']]) {
+    it(`${status}: the same error class, status and message as the bare client; ${status === 429 ? 'counted once, its headers read' : 'not counted as a 429'}`, async () => {
+      const w = openRateLimitWindow();
+      const { observed, bare, seen } = realPair(() => new Response(JSON.stringify({ type: 'error', error: { type: 'x', message: 'nope' } }), { status, headers: { 'content-type': 'application/json', ...LIMIT_HEADERS, 'anthropic-ratelimit-requests-remaining': '0' } }));
+      const a = await outcome(observed.messages.create(BODY));
+      const b = await outcome(bare.messages.create(BODY));
+      await flush();
+      expect(seen.observed).toHaveLength(1);
+      expect(errShape(a.error)).toEqual(errShape(b.error));
+      expect(a.error.constructor.name).toBe(cls);
+      const out = closeRateLimitWindow(w);
+      expect(out.responses429).toBe(status === 429 ? 1 : 0);
+      expect(out.minRequestsRemaining).toBe(0);
+    });
+  }
+
+  it('a network error: the same error from both; nothing recorded; no unhandled rejection', async () => {
+    const unhandled = [];
+    const onUnhandled = (r) => unhandled.push(r);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const w = openRateLimitWindow();
+      const { observed, bare } = realPair(() => { throw new TypeError('fetch failed'); });
+      const a = await outcome(observed.messages.create(BODY));
+      const b = await outcome(bare.messages.create(BODY));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(errShape(a.error)).toEqual(errShape(b.error));
+      expect(closeRateLimitWindow(w)).toMatchObject({ requestsLimit: null, responses429: 0 });
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+});
+
+describe('overlapping windows (review OB-5) and the window count (review OB-4)', () => {
+  it('opening a window while another is open is said in the log; closing both leaves none', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const before = openRateLimitWindowCount();
+    expect(before).toBe(0); // every row above closes its window
+    const a = openRateLimitWindow();
+    expect(warn).not.toHaveBeenCalled();
+    const b = openRateLimitWindow();
+    expect(warn.mock.calls.some(([m]) => String(m).includes('overlapping invocations'))).toBe(true);
+    expect(openRateLimitWindowCount()).toBe(before + 2);
+    closeRateLimitWindow(a); closeRateLimitWindow(b);
+    expect(openRateLimitWindowCount()).toBe(before);
+    warn.mockRestore();
   });
 });

@@ -33,6 +33,12 @@
 // NEVER INTO THE CALL PATH: every read is wrapped; a failure records nothing
 // (the run record shows null). A non-SDK promise (the suites' double) yields
 // no headers; a failed one is still counted when its error carries status 429.
+//
+// COMPLETE BECAUSE maxRetries IS 0. The evaluator's client is built with
+// `maxRetries: 0` (agent-evaluate.js getAnthropicClient; pinned by
+// agent-evaluate.tickCapture.bodies.test.js). With retries the SDK would
+// re-request inside one promise and only the last attempt would be seen here,
+// so retried 429s would go uncounted. Revisit this module if that ever changes.
 
 /** The six headers read, by the run-record field they feed. */
 export const RATE_LIMIT_HEADERS = Object.freeze({
@@ -94,8 +100,17 @@ function emptyWindow() {
 
 export function openRateLimitWindow() {
   const window = emptyWindow();
+  // Two windows open at once = two invocations sharing this process; both
+  // records then count each other's calls (the documented limit). Said in the
+  // log so it can be seen (review OB-5).
+  if (openWindows.size > 0) console.warn(`[anthropicRateLimits] a rate-limit window opened while ${openWindows.size} other(s) are open: overlapping invocations in one process, so their run records share observations`);
   openWindows.add(window);
   return window;
+}
+
+/** How many windows are open (tests: a run leaves none behind). */
+export function openRateLimitWindowCount() {
+  return openWindows.size;
 }
 
 /** The run record's `anthropic` block — a copy; the window stops collecting. Idempotent. Never throws. */

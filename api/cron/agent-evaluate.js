@@ -189,7 +189,7 @@ import { readIntradaySnapshot, writeIntradayView, composeIntradayEntryFields, wi
 // record's `pool`, `anthropic` and `eodhd` blocks — live from merge).
 import { EVAL_POOL_K, EVAL_POOL_START_CUTOFF_MS, EVAL_MARKET_DATA_CUTS_ENABLED } from '../../src/config/featureFlags.js';
 import { clampPoolK, poolStartCutoffMs, poolGroupOf, runEvalPool } from '../_utils/evalPool.js';
-import { readEodhdCounters, eodhdCounterDelta } from '../_utils/eodhdFetchGuard.js';
+import { readEodhdCounters, eodhdRunBlock } from '../_utils/eodhdFetchGuard.js';
 import { openRateLimitWindow, closeRateLimitWindow, observeRateLimits } from '../_utils/anthropicRateLimits.js';
 import { prepareRunMarketShare, sharedMacroQuote, fetchEvalSymbolData } from '../_utils/evalMarketData.js';
 import { buildIntradayView } from '../_utils/intraday/view.js';
@@ -750,10 +750,15 @@ function idlePoolBlock() {
  * `eodhd` is a DIFFERENCE of process-wide counters, taken from this
  * invocation's first statement to here. That is this run's own traffic
  * because the evaluator runs one invocation per process window: a 15-minute
- * cron whose runs end inside 300 s. Its limit: a second invocation sharing the
- * process while this one is open (a manual call during a run, or several
- * invocations in one instance under Fluid Compute) is counted in both. The
- * `anthropic` window has the same limit, for the same reason.
+ * cron whose runs end inside 300 s. Its limits: (1) a second invocation
+ * sharing the process while this one is open (a manual call during a run, or
+ * several invocations in one instance under Fluid Compute) is counted in both;
+ * (2) a request this run left in flight — the GET that loses the cascade
+ * qualification's own race, or a shared macro fetch past its bound — is a
+ * request here, but its status (or, guard on, its timeout) lands in whichever
+ * run the warm process serves next. It counts `marketDataCache.js` traffic
+ * only (the canonical-open sweep's batch quote and the stock-threshold
+ * provider call EODHD directly). The `anthropic` window shares limit (1).
  */
 async function writeEvalRunRecord(db, evalRun, summary, startTime, { eodhdAtStart = null, rateLimitWindow = null } = {}) {
   try {
@@ -766,7 +771,7 @@ async function writeEvalRunRecord(db, evalRun, summary, startTime, { eodhdAtStar
       deferredBattleIds: evalRun.deferredBattleIds,
       pool: { ...(evalRun.pool || idlePoolBlock()) },
       anthropic: closeRateLimitWindow(rateLimitWindow),
-      eodhd: eodhdCounterDelta(eodhdAtStart, readEodhdCounters()),
+      eodhd: eodhdRunBlock(eodhdAtStart),
     });
     await withTimeout(db.collection('agentEvalRuns').doc(evalRun.runId).set(record), EVAL_RUN_WRITE_TIMEOUT_MS, 'eval_run_write');
     return true;

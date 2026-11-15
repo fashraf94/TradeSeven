@@ -37,7 +37,7 @@ vi.mock('firebase-admin/firestore', () => ({
 }));
 
 const guard = await import('./eodhdFetchGuard.js');
-const { eodhdFetch, readEodhdCounters, eodhdCounterDelta, readEodhdGuardState, EODHD_FETCH_TIMEOUT_MS, EODHD_FETCH_CONCURRENCY, EODHD_TIMEOUT_ERROR_NAME } = guard;
+const { eodhdFetch, readEodhdCounters, eodhdCounterDelta, eodhdRunBlock, readEodhdGuardState, EODHD_FETCH_TIMEOUT_MS, EODHD_FETCH_CONCURRENCY, EODHD_TIMEOUT_ERROR_NAME } = guard;
 const { getStockAnalysisData } = await import('./marketDataCache.js');
 
 const realFetch = globalThis.fetch;
@@ -107,6 +107,17 @@ describe('flag OFF — the bare request, counted', () => {
     eodhdFetch('https://eodhd.com/api/eod/X.US', 'eod').then(() => { settled = true; }, () => { settled = true; });
     await vi.advanceTimersByTimeAsync(EODHD_FETCH_TIMEOUT_MS * 3);
     expect(settled).toBe(false);
+  });
+
+  it('review OB-1: the run block\'s `timeouts` is null with the guard off (none can fire), a number with it on', async () => {
+    const before = readEodhdCounters();
+    globalThis.fetch = vi.fn(async () => json({}, 200));
+    await eodhdFetch('https://eodhd.com/api/eod/X.US', 'eod');
+    const off = eodhdRunBlock(before);
+    expect(off.timeouts).toBeNull();
+    expect(off.requests.eod).toBe(1);
+    flags.guard = true;
+    expect(eodhdRunBlock(before).timeouts).toBe(0);
   });
 
   it('eodhdCounterDelta reads a missing "before" as zeros and never throws', () => {

@@ -29,6 +29,7 @@ const mod = await import('./evalMarketData.js');
 const {
   fetchEvalSymbolData, sessionDailySeries, resetSessionDailyMemo, sessionKeyFor, expectedPriorBarDate,
   prepareRunMarketShare, sharedMacroQuote, SESSION_DAILY_COLLECTION, SESSION_DAILY_MIN_ROWS, SESSION_DAILY_IO_TIMEOUT_MS,
+  SESSION_DAILY_WAIT_TIMEOUT_MS, isReusableSessionSeries, resetHorizonLog,
 } = mod;
 const { getStockAnalysisData, DAILY_WINDOW_CALENDAR_DAYS } = await import('./marketDataCache.js');
 const { selectPriorSessionBar } = await import('./baselineValidation.js');
@@ -290,7 +291,50 @@ describe('a FAILED quote takes its fallback from FRESH bars, never the stored se
   });
 });
 
+describe('review GC-1: a check waiting on another check\'s first fetch is bounded', () => {
+  it(`a first /eod/ that hangs: the waiter gives up at ${SESSION_DAILY_WAIT_TIMEOUT_MS} ms and fetches daily+price itself; the next check starts afresh`, async () => {
+    vi.useFakeTimers();
+    let hang = true;
+    const counts = { eod: 0, rt: 0 };
+    globalThis.fetch = vi.fn((url) => {
+      const isEod = String(url).includes('/eod/');
+      counts[isEod ? 'eod' : 'rt'] += 1;
+      if (isEod && hang) return new Promise(() => {}); // the first /eod/ never answers (guard off: no bound)
+      return Promise.resolve(new Response(JSON.stringify(isEod ? eodRows('2026-11-13') : RT()), { status: 200 }));
+    });
+    const db = makeStoreDb();
+    fetchEvalSymbolData(db, 'AAPL', MON); // the first check: stuck on its /eod/, forever
+    await vi.advanceTimersByTimeAsync(SESSION_DAILY_IO_TIMEOUT_MS + 10);
+    hang = false;
+    let waiter = null;
+    fetchEvalSymbolData(db, 'AAPL', MON).then((r) => { waiter = r; });
+    await vi.advanceTimersByTimeAsync(SESSION_DAILY_WAIT_TIMEOUT_MS - 1);
+    expect(waiter).toBeNull();
+    await vi.advanceTimersByTimeAsync(5);
+    expect(waiter?.price?.current).toBe(150); // its own daily+price call
+    expect(waiter?.daily).toHaveLength(62);
+    const later = await fetchEvalSymbolData(db, 'AAPL', MON); // the stuck entry was dropped: a fresh lookup
+    expect(later.daily).toHaveLength(62);
+    expect(db.__writes).toEqual(['AAPL.US_2026-11-16']);
+  });
+});
+
 describe('crypto keys on the UTC day', () => {
+  it('review GC-5: when the ET date and the UTC date differ, crypto keys on the UTC day and expects the UTC day before', async () => {
+    const LATE = new Date('2026-11-17T02:00:00.000Z'); // Mon 21:00 ET (2026-11-16) = Tue in UTC
+    const key = sessionKeyFor('BTC-USD.CC', LATE);
+    expect(key).toMatchObject({ etDate: '2026-11-16', cutoffDate: '2026-11-17', docId: 'BTC-USD.CC_2026-11-16' });
+    expect(expectedPriorBarDate(key)).toBe('2026-11-16');
+    const rows = [];
+    for (let i = 0; i < 90; i++) rows.push({ date: new Date(Date.parse('2026-11-16T12:00:00Z') - i * 86_400_000).toISOString().slice(0, 10), open: 1, high: 2, low: 0.5, close: 1.5, adjusted_close: 1.5, volume: 1 });
+    stubNetwork({ eod: { 'BTC-USD.CC': rows }, rt: { 'BTC-USD.CC': RT(67000) } });
+    const db = makeStoreDb();
+    await fetchEvalSymbolData(db, 'BTC-USD.CC', LATE);
+    expect(db.__docs.get('BTC-USD.CC_2026-11-16')).toMatchObject({ cutoffDate: '2026-11-17', priorBarDate: '2026-11-16' });
+    // a stock at the same instant keys on the ET date
+    expect(sessionKeyFor('AAPL', LATE).cutoffDate).toBe('2026-11-16');
+  });
+
   it('BTC-USD.CC is reused when its series holds yesterday (UTC)', async () => {
     const rows = [];
     for (let i = 0; i < 90; i++) {
@@ -341,6 +385,25 @@ describe('the run\'s shared macro quotes', () => {
     expect(sharedMacroQuote(null, 'SPY', new Set())).toBeNull();
   });
 
+  it('review GC-2: a FALLBACK quote (a failed real-time call priced at the daily close) is never shared', async () => {
+    stubNetwork({ eod: { 'SPY.US': eodRows('2026-11-13') }, rt: { 'SPY.US': 503, 'QQQ.US': RT(480), 'BTC-USD.CC': RT(67000) } });
+    const run = {};
+    const db = makeStoreDb();
+    await prepareRunMarketShare(db, run, MON);
+    const own = await fetchEvalSymbolData(db, 'SPY', MON);
+    expect(own.price).toMatchObject({ fallback: true }); // what the run got for SPY
+    expect(sharedMacroQuote(run, 'SPY', new Set())).toBeNull();
+  });
+
+  it('review GC-3: a battle holding the crypto slot as "BTC" owns "BTC-USD.CC" (one instrument) — no run copy for it', async () => {
+    macroNet();
+    const run = {};
+    await prepareRunMarketShare(makeStoreDb(), run, MON);
+    expect(sharedMacroQuote(run, 'BTC-USD.CC', new Set(['NVDA', 'BTC']))).toBeNull();
+    expect(sharedMacroQuote(run, 'BTC-USD.CC', new Set(['NVDA']))).not.toBeNull();
+    expect(sharedMacroQuote(run, 'SPY', new Set(['NVDA', 'BTC']))).not.toBeNull();
+  });
+
   it('a symbol the run could not price is not shared — each battle fetches its own', async () => {
     const counts = stubNetwork({ eod: {}, rt: { 'SPY.US': 503, 'QQQ.US': RT(480), 'BTC-USD.CC': RT(67000) } });
     const run = {};
@@ -359,6 +422,20 @@ describe('the run\'s shared macro quotes', () => {
     const shared = strip(sharedMacroQuote(run, 'SPY', new Set()).data);
     expect(shared.price).toEqual(own.price);
     expect(shared.daily).toEqual(own.daily);
+  });
+});
+
+describe('review GC-7: past the calendar\'s maintained horizon', () => {
+  it('no stock series is reusable (the fetch as before), and it is said once per process', () => {
+    resetHorizonLog();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const PAST = new Date('2028-03-15T15:00:00.000Z');
+    const key = sessionKeyFor('AAPL', PAST);
+    expect(expectedPriorBarDate(key)).toBeNull();
+    const rows = eodRows('2028-03-14').map((r) => ({ ...r, rawClose: r.close }));
+    expect(isReusableSessionSeries(rows, key)).toBe(false);
+    expect(isReusableSessionSeries(rows, key)).toBe(false);
+    expect(warn.mock.calls.filter(([m]) => String(m).includes('calendar horizon'))).toHaveLength(1);
   });
 });
 

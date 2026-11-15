@@ -343,7 +343,8 @@ describe('D2 — agentEvalRuns/{runId}: one record per evaluation run, always on
         requestsLimit: null, inputTokensLimit: null, outputTokensLimit: null,
         minRequestsRemaining: null, minInputTokensRemaining: null, minOutputTokensRemaining: null, responses429: 0,
       },
-      eodhd: { requests: { eod: 0, realTime: 0, intraday: 0, other: 0 }, timeouts: 0, non2xx: { 429: 0, '5xx': 0, other: 0 } },
+      // `timeouts` is null — not measured — while the EODHD guard is off (review OB-1).
+      eodhd: { requests: { eod: 0, realTime: 0, intraday: 0, other: 0 }, timeouts: null, non2xx: { 429: 0, '5xx': 0, other: 0 } },
     });
     // …and the unreached battles got nothing else: no lock, no tick, no write.
     expect(db.__writes.filter((w) => ['c4', 'c5', 'c6'].includes(w.id))).toEqual([]);

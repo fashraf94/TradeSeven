@@ -112,12 +112,17 @@ function setPath(obj, dotted, value) {
   cur[parts[parts.length - 1]] = value;
 }
 
-/** Battles in one store, run documents in another, every battle write in order; `costs[id]` is charged at its final score write. */
-function makeRunDb({ battles, costs = {}, missing = [] }) {
+/**
+ * Battles in one store, run documents in another, every battle write in order; `costs[id]` is charged at its
+ * final score write; `failFinalWrite` ids throw on that final write (and only on it), so their catch's own
+ * receipt still lands; capture records (written in a batch) are kept in `__captures`.
+ */
+function makeRunDb({ battles, costs = {}, missing = [], failFinalWrite = [] }) {
   const docs = new Map(battles.filter((b) => !missing.includes(b.id)).map((b) => [b.id, deepClone(b)]));
   const writes = [];
   const runDocs = [];
   const locks = [];
+  const captures = [];
   const shared = {
     'indexIntelligence/stockRankings': makeRankingsDoc(),
     ...Object.fromEntries(Object.entries(makeTechDocs()).map(([s, d]) => [`stockTechnicalScores/${s}`, d])),
@@ -126,6 +131,7 @@ function makeRunDb({ battles, costs = {}, missing = [] }) {
   const emptyQuery = { where: () => emptyQuery, orderBy: () => emptyQuery, limit: () => emptyQuery, startAfter: () => emptyQuery, get: async () => ({ docs: [], empty: true, size: 0 }) };
   function writeBattle(id, payload) {
     if (!docs.has(id)) throw new Error(`5 NOT_FOUND: no document to update: agentBattles/${id}`);
+    if (failFinalWrite.includes(id) && Object.hasOwn(payload, 'scoreState.lastScoredAt')) throw new Error(`14 UNAVAILABLE: final write refused for ${id}`);
     writes.push({ id, payload: deepClone(payload) });
     for (const [k, v] of Object.entries(payload)) if (!isSentinel(v)) setPath(docs.get(id), k, deepClone(v));
     if (Object.hasOwn(payload, 'scoreState.lastScoredAt') && costs[id]) advance(costs[id]);
@@ -162,8 +168,16 @@ function makeRunDb({ battles, costs = {}, missing = [] }) {
       update: (ref, payload) => { const [col, id] = ref.path.split('/'); if (col !== 'agentBattles') throw new Error(`unexpected tx update ${ref.path}`); writeBattle(id, payload); },
       set: () => {}, create: () => {},
     }),
-    batch: () => ({ set: () => {}, update: () => {}, create: () => {}, commit: async () => {} }),
-    __writes: writes, __runDocs: runDocs, __locks: locks,
+    batch: () => {
+      const ops = [];
+      const b = {
+        set: (ref, data) => { ops.push({ path: ref.path, data: deepClone(data) }); return b; },
+        update: () => b, create: () => b,
+        commit: async () => { captures.push(...ops); },
+      };
+      return b;
+    },
+    __writes: writes, __runDocs: runDocs, __locks: locks, __captures: captures,
   };
 }
 
@@ -279,6 +293,16 @@ describe('K battles in flight — never more', () => {
     for (const [, opts] of spyCalls) expect(opts).toEqual({ forceRefresh: true, fields: ['daily', 'price'] });
   });
 
+  it('review PL-3: a run with no active battle records the settings in force and nothing dispatched', async () => {
+    const one = await startHandler([]);
+    await one.done;
+    expect(one.db.__runDocs[0].data.pool).toEqual({ k: 1, startCutoffMs: 290_000, maxInFlight: 0, dispatched: 0 });
+    flags.k = 3;
+    const three = await startHandler([]);
+    await three.done;
+    expect(three.db.__runDocs[0].data.pool).toEqual({ k: 3, startCutoffMs: 200_000, maxInFlight: 0, dispatched: 0 });
+  });
+
   it('a malformed setting (K = 9) runs as K = 1', async () => {
     flags.k = 9;
     const gates = makeGates();
@@ -308,6 +332,28 @@ describe('one capture scope per battle, one catch per battle', () => {
     expect(scopes.created).toContain(s2);
     gates.open('c1'); gates.open('c2');
     await done;
+  });
+
+  it('review PL-1: a battle that throws IN FLIGHT beside another gets its OWN receipt and its OWN abandoned capture; the other finishes untouched', async () => {
+    flags.k = 2; flags.capture = true;
+    const gates = makeGates();
+    // e1 starts first, ok1 second; e1's final score write throws while ok1 is still in flight.
+    const { db, done } = await startHandler([cpuBattle('e1'), cpuBattle('ok1')], { failFinalWrite: ['e1'] });
+    await settle();
+    expect(inFlight(gates, db).sort()).toEqual(['e1', 'ok1']);
+    gates.open('e1');
+    await settle();
+    expect(inFlight(gates, db)).toContain('ok1'); // ok1 has not finished when e1's catch runs
+    gates.open('ok1');
+    const res = await done;
+    const receipts = db.__writes.filter((w) => Object.hasOwn(w.payload, 'cronState.cronErrors'));
+    expect(receipts.map((w) => w.id)).toEqual(['e1']);
+    expect(receipts[0].payload['cronState.cronErrors'].at(-1).error).toContain('final write refused for e1');
+    const tickOf = (id) => db.__captures.filter((c) => c.path.startsWith(`agentBattles/${id}/ticks/`)).map((c) => c.data.exitReason);
+    expect(tickOf('e1')).toEqual(['tick_error']);
+    expect(tickOf('ok1')).toEqual(['cpu_passive']);
+    expect(finishedIds(db)).toEqual(['ok1']);
+    expect(res.payload.errors).toBe(1);
   });
 
   it('a battle that throws gets its own receipt; the battle in flight beside it finishes', async () => {

@@ -52,6 +52,19 @@ describe('limitsRead — per session', () => {
   });
 });
 
+describe('timeouts not measured (the guard off) stay null — never a measured zero (review OB-1)', () => {
+  it('a session whose runs all carry timeouts: null prints "—"; one measured run makes it a number', () => {
+    const unmeasured = block({ eodhd: { requests: { eod: 1, realTime: 1, intraday: 0, other: 0 }, timeouts: null, non2xx: { 429: 0, '5xx': 0, other: 0 } } });
+    const rows = [runRow(record('2026-11-16T15:00:00.000Z', 1, unmeasured))];
+    expect(limitsOfRun(record('2026-11-16T15:00:00.000Z', 1, unmeasured)).eodhd.timeouts).toBeNull();
+    const out = limitsRead(rows, ['2026-11-16']);
+    expect(out.perDay[0].eodhdTimeouts).toBeNull();
+    expect(renderLimits(out).join('\n')).toContain('| 2026-11-16 | 2 | 2 | 1 | 1 | 0 | 0 | — |');
+    const measured = limitsRead([...rows, runRow(record('2026-11-16T15:15:00.000Z', 1))], ['2026-11-16']);
+    expect(measured.perDay[0].eodhdTimeouts).toBe(0);
+  });
+});
+
 describe('renderLimits', () => {
   it('says plainly when no record carries the blocks yet', () => {
     expect(renderLimits({ runsWithBlocks: 0, perDay: [] }).join('\n')).toContain('No run record in the window carries the blocks yet');

@@ -191,7 +191,8 @@ export function limitsOfRun(r) {
     } : null,
     eodhd: e ? {
       eod: num(req.eod) ?? 0, realTime: num(req.realTime) ?? 0, intraday: num(req.intraday) ?? 0, other: num(req.other) ?? 0,
-      timeouts: num(e.timeouts) ?? 0, s429: num(bad[429]) ?? 0, s5xx: num(bad['5xx']) ?? 0, sOther: num(bad.other) ?? 0,
+      // null = not measured (the guard was off: no timeout can fire) — never read as a zero.
+      timeouts: num(e.timeouts), s429: num(bad[429]) ?? 0, s5xx: num(bad['5xx']) ?? 0, sOther: num(bad.other) ?? 0,
     } : null,
   };
 }
@@ -231,7 +232,8 @@ export function limitsRead(rows, days) {
       eodhdRequests: requests,
       eodhdByEndpoint: { eod: sumOf(eo.map((x) => x.eod)), realTime: sumOf(eo.map((x) => x.realTime)), intraday: sumOf(eo.map((x) => x.intraday)), other: sumOf(eo.map((x) => x.other)) },
       eodhdPerCheck: checks > 0 ? requests / checks : null,
-      eodhdTimeouts: sumOf(eo.map((x) => x.timeouts)),
+      // null when no run in the session measured timeouts (the guard was off throughout).
+      eodhdTimeouts: eo.some((x) => finite(x.timeouts)) ? sumOf(eo.map((x) => x.timeouts)) : null,
       eodhdNon2xx: { 429: sumOf(eo.map((x) => x.s429)), '5xx': sumOf(eo.map((x) => x.s5xx)), other: sumOf(eo.map((x) => x.sOther)) },
     };
   });
@@ -582,13 +584,13 @@ export function renderLimits(limits) {
     L.push('No run record in the window carries the blocks yet (they are written from the merge of capacity Build 1 on).', '');
     return L;
   }
-  L.push(`${limits.runsWithBlocks} run records carry the blocks. Limits are the lowest any run recorded; "min left" is the session minimum; per check = EODHD requests ÷ battles evaluated.`, '');
+  L.push(`${limits.runsWithBlocks} run records carry the blocks. Limits are the lowest any run recorded; "min left" is the session minimum. EODHD counts are the evaluator's marketDataCache.js requests only; "per battle evaluated" divides them by every battle the runs evaluated (CPU seats and no-trigger checks included), so it is not the discovery's 117 units per agent-mode check. "Timeouts —" = not measured (the guard was off).`, '');
   const days = limits.perDay.filter((d) => d.runs > 0);
   L.push('**Pool and Anthropic**', '');
   L.push(table(['ET day', 'Runs', 'K', 'Max in flight', 'Dispatched', 'Req limit', 'Input tok limit', 'Output tok limit', 'Req min left', 'Input min left', 'Output min left', '429s'],
     days.map((d) => [d.day, d.runs, d.kSeen.join(', ') || '—', n0(d.maxInFlight), n0(d.dispatched), tok(d.requestsLimit), tok(d.inputTokensLimit), tok(d.outputTokensLimit), tok(d.minRequestsRemaining), tok(d.minInputTokensRemaining), tok(d.minOutputTokensRemaining), n0(d.responses429)])), '');
   L.push('**EODHD (this process\'s requests through marketDataCache.js, per run)**', '');
-  L.push(table(['ET day', 'Requests', 'Per check', 'eod', 'real-time', 'intraday', 'other', 'Timeouts', '429', '5xx', 'Other non-2xx'],
+  L.push(table(['ET day', 'Requests', 'Per battle evaluated', 'eod', 'real-time', 'intraday', 'other', 'Timeouts', '429', '5xx', 'Other non-2xx'],
     days.map((d) => [d.day, tok(d.eodhdRequests), n0(d.eodhdPerCheck), tok(d.eodhdByEndpoint.eod), tok(d.eodhdByEndpoint.realTime), tok(d.eodhdByEndpoint.intraday), tok(d.eodhdByEndpoint.other), n0(d.eodhdTimeouts), n0(d.eodhdNon2xx[429]), n0(d.eodhdNon2xx['5xx']), n0(d.eodhdNon2xx.other)])), '');
   return L;
 }

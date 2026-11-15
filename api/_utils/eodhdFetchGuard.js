@@ -8,11 +8,15 @@
 // Every EODHD request in api/_utils/marketDataCache.js goes through
 // `eodhdFetch(url, kind)`. Two halves:
 //
-// COUNTING — always on. The process keeps a running count of requests by kind
-// (eod, realTime, intraday, other), of non-2xx responses (429, 5xx, other) and
-// of timeouts. The evaluator records the difference over its run. Counting only
-// reads `response.status`; it never touches the body, the promise the caller
-// awaits, or a rejection.
+// COUNTING — always on for requests and non-2xx. The process keeps a running
+// count of requests by kind (eod, realTime, intraday, other) and of non-2xx
+// responses (429, 5xx, other). TIMEOUTS exist only with the guard on (it is the
+// guard's timeout that fires), so with the guard off the run record carries
+// `timeouts: null` — "not measured", never a measured zero (review OB-1). A
+// request that fails without a response (a network error, or a caller's own
+// race abandoning it) is counted as a request only. The evaluator records the
+// difference over its run. Counting only reads `response.status`; it never
+// touches the body, the promise the caller awaits, or a rejection.
 //
 // GUARDING — EODHD_FETCH_GUARD_ENABLED (false at merge). Flag off, the request
 // is `fetch(url)` exactly as before: the same URL, one argument, no signal, no
@@ -104,6 +108,15 @@ export function eodhdCounterDelta(before, after) {
       other: num(a.non2xx?.other) - num(b.non2xx?.other),
     },
   };
+}
+
+/**
+ * The run record's `eodhd` block: the difference since `before`, with
+ * `timeouts` null while the guard is off (no timeout can fire). Never throws.
+ */
+export function eodhdRunBlock(before) {
+  const block = eodhdCounterDelta(before, readEodhdCounters());
+  return EODHD_FETCH_GUARD_ENABLED ? block : { ...block, timeouts: null };
 }
 
 // ── the process-wide limiter (flag on) ──────────────────────────────────────

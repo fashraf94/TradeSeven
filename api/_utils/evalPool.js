@@ -12,11 +12,13 @@
 // never wraps several battles in one scope (discovery Part C item 1: one scope
 // around a batch would make the checks share `ctx` and `holder`).
 //
-// At K = 1 it is the loop it replaced, step for step: before each battle the
+// At K = 1 it is the loop it replaced, await for await: before each battle the
 // start rule is asked once; the first "no" stops the dispatcher and the rest
 // are deferred, in rotation order; a battle runs to its end before the next is
-// asked about. The League affinity rule never binds at K = 1, because nothing
-// else is in flight when a battle starts.
+// asked about. (The next battle starts one microtask hop later than in the
+// loop — the pool's own `.then` — which no I/O can observe; the dark proof
+// compares every effect.) The League affinity rule never binds at K = 1,
+// because nothing else is in flight when a battle starts.
 
 /** The largest K the setting may ask for; anything outside 1–8 reads as 1. */
 export const EVAL_POOL_K_MAX = 8;
@@ -32,10 +34,13 @@ export function clampPoolK(value) {
 
 /**
  * The start cutoff in force for a run: TIME_BUDGET_MS at K = 1 (the rule the
- * loop always had), the pool's own cutoff above it.
+ * loop always had), the pool's own cutoff above it. A pool cutoff that is not
+ * a finite number in (0, timeBudgetMs] reads as timeBudgetMs — a malformed
+ * setting can never defer every battle (review PL-7).
  */
 export function poolStartCutoffMs(k, { timeBudgetMs, poolCutoffMs }) {
-  return k === 1 ? timeBudgetMs : poolCutoffMs;
+  if (k === 1) return timeBudgetMs;
+  return Number.isFinite(poolCutoffMs) && poolCutoffMs > 0 && poolCutoffMs <= timeBudgetMs ? poolCutoffMs : timeBudgetMs;
 }
 
 /**
@@ -76,7 +81,9 @@ export function poolGroupOf(battle) {
  * @param {(deferred:Array) => void} [p.onStop]
  * @param {{dispatched:number, maxInFlight:number}} [p.stats]
  */
-export function runEvalPool({ items, k, mayStart, run, groupOf = () => null, onStop = () => {}, stats = { dispatched: 0, maxInFlight: 0 } }) {
+export function runEvalPool({ items, k: requestedK, mayStart, run, groupOf = () => null, onStop = () => {}, stats = { dispatched: 0, maxInFlight: 0 } }) {
+  // The helper clamps too (review PL-2): a K outside 1–8 can only mean one at a time.
+  const k = clampPoolK(requestedK);
   return new Promise((resolve, reject) => {
     const waiting = [...items];
     const busyGroups = new Set();
@@ -93,10 +100,12 @@ export function runEvalPool({ items, k, mayStart, run, groupOf = () => null, onS
       else resolve({ dispatched: stats.dispatched, maxInFlight: stats.maxInFlight, deferred, stopped });
     };
 
-    const finished = (group, error) => {
+    // `failed` is its own argument: a run that rejects with a falsy reason (0,
+    // '', false, undefined) is still a failure (review PL-2).
+    const finished = (group, failed, error) => {
       inFlight -= 1;
       if (group !== null) busyGroups.delete(group);
-      if (error && !failure) failure = { error };
+      if (failed && !failure) failure = { error };
       pump();
     };
 
@@ -127,8 +136,8 @@ export function runEvalPool({ items, k, mayStart, run, groupOf = () => null, onS
             pending = Promise.reject(err);
           }
           pending.then(
-            () => finished(group, null),
-            (err) => finished(group, err ?? new Error('evalPool: a run rejected without a reason')),
+            () => finished(group, false, null),
+            (err) => finished(group, true, err ?? new Error('evalPool: a run rejected without a reason')),
           );
         }
       } catch (err) {
