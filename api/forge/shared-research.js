@@ -16,6 +16,13 @@
 // (stepSchema.js) and persisted in one transaction (store.js recordStep). Every
 // model call is shadow-logged with its usage, attempts and cost, awaited the
 // api/agent/chat.js way (BUILD_RULES §5).
+//
+// THE METHOD (KB-1, Amendment A §A4): an investigation selects its method once
+// (method.js selectMethod: `frame` for own words, `open` for a story or a
+// drop), with the gate's verified uid — never a body field. Every model turn
+// (the frame and each step) re-checks the session's stamp (effectiveMethodFor)
+// before its prompt is built, runs on the method that answers, and records it
+// on its partner exchange; the shadow log carries it on every call record.
 
 import { randomUUID } from 'node:crypto';
 import { waitUntil } from '@vercel/functions';
@@ -28,6 +35,7 @@ import { ENTRY_ITEM_RECORD_KINDS, STEP_INTENTS, CLOSE_REASONS } from '../../src/
 import { gateSharedResearchRoute, sendSharedResearchError } from '../_utils/sharedResearch/gate.js';
 import {
   refuse, cleanPlayerText, exchangeOf, sessionViewOf, quotaViewOf, latestLinesOf, OBSERVATION_MAX, DIRECTION_MAX,
+  methodChangeOf, retainedRetrievalOf,
 } from '../_utils/sharedResearch/session.js';
 import {
   readRankedAgent, partnerNameOf, beginFraming, recordFrame, noteFrameFailure, readOwnedSession, readInvestigation,
@@ -42,7 +50,7 @@ import { STEP_SCHEMA, FRAME_SCHEMA, validateFrame, validateStepTurn } from '../_
 import { fitPrompt } from '../_utils/sharedResearch/promptBudget.js';
 import { runTurn } from '../_utils/sharedResearch/modelTurn.js';
 import { retrieve, queryOf } from '../_utils/sharedResearch/retrieval.js';
-import { METHOD } from '../_utils/sharedResearch/method.js';
+import { BASELINE, selectMethod, effectiveMethodFor, citedSourceOf, methodRefOf } from '../_utils/sharedResearch/method.js';
 
 export const config = { maxDuration: 30 };
 
@@ -86,15 +94,19 @@ async function settle(pending, deadlineAt = null) {
   await Promise.race([pending, new Promise((r) => { timer = setTimeout(r, wait); })]);
   if (timer) clearTimeout(timer);
 }
-/** The shadow record for one model call (§6.9's fields, inside the record logConversation already takes). */
-function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval = null, outcome, failureReason = null, notes = [] }) {
+/**
+ * The shadow record for one model call (§6.9's fields, inside the record logConversation already takes). `method`:
+ * the turn's effective method (KB-1) — its id, version, hash and source, on every record, failures included.
+ */
+function modelCallRecord({ uid, session, stepId = null, intent, turn, retrieval = null, outcome, failureReason = null, notes = [], method = BASELINE }) {
   return {
     userId: uid, agentId: session?.attribution?.agentId ?? null, battleId: null, archetype: null,
     gameMode: 'shared_research', sessionId: session?.sessionId ?? null, researchWorkId: session?.researchWorkId ?? null,
     stepId, intent, model: turn?.model ?? null, attempts: turn?.attempts ?? 0, usage: turn?.usage ?? null,
     tokenUsage: turn?.usage ?? null, costUsd: turn?.costUsd ?? null, elapsedMs: turn?.elapsedMs ?? null,
     retrieval: retrieval ?? { calls: 0, costDollars: 0, elapsedMs: 0 },
-    methodId: METHOD.id, methodVersion: METHOD.version, outcome, failureReason,
+    methodId: method.id, methodVersion: method.version, methodSha256: method.sha256, methodSource: method.source === 'kb' ? 'kb' : 'baseline',
+    outcome, failureReason,
     validationNotes: Array.isArray(notes) ? notes.slice(0, 40) : [], // e.g. a withheld summary (spec §16 FQ-5; §11.4 measures)
   };
 }
@@ -159,19 +171,25 @@ async function handleFrame(body, res, { db, uid }) {
   if (!agent) throw refuse(503, 'attribution_unavailable');
   const nowIso = new Date().toISOString();
   const playerExchange = exchangeOf({ who: 'player', kind: 'observation', text: observation, at: nowIso });
-  const begun = await beginFraming(db, { uid, requestId: body.requestId, observation, playerExchange, sessionId: randomUUID(), nowIso });
+  // The method, selected once for this investigation (own words: the KB consumer's, for the gate's uid). A retried
+  // requestId finds its session, which keeps the stamp it was created with: this selection is then not written.
+  const selected = selectMethod({ entryKind: 'observation', uid, nowIso });
+  const begun = await beginFraming(db, { uid, requestId: body.requestId, observation, playerExchange, sessionId: randomUUID(), nowIso, method: selected.stamp });
   const { session } = begun;
   const quota = quotaViewOf(begun.day);
   if (!begun.run) {
     return res.status(200).json({ sessionId: session.sessionId, status: session.status, frame: sessionViewOf(session).frame, quota });
   }
+  // The framing is a turn too: it runs on the method the SESSION's stamp answers for now — never on the selection
+  // above when the session already held a stamp (a baseline stamp is never upgraded).
+  const { method } = effectiveMethodFor({ stamp: session.method, uid });
   const budgetMs = Math.min(MODEL_MS, DEADLINE_MS - (Date.now() - t0)); // the frame's model inside the same deadline (review C3)
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(0, budgetMs));
   let turn;
   try {
     turn = await runTurn({
-      kind: 'frame', system: buildFrameSystemPrompt({ partnerName: partnerNameOf(agent) }),
+      kind: 'frame', system: buildFrameSystemPrompt({ partnerName: partnerNameOf(agent), method }),
       user: renderFrameUser({ observation: session.entry?.observation ?? observation }), schema: FRAME_SCHEMA,
       signal: controller.signal, deadlineAt: Date.now() + budgetMs,
     });
@@ -183,19 +201,19 @@ async function handleFrame(body, res, { db, uid }) {
   if (!turn.ok || !checked.ok) {
     const reason = turn.ok ? `invalid_${checked.rule}` : turn.reason;
     await noteFrameFailure(db, { uid, sessionId: session.sessionId, reason, nowIso: doneIso });
-    const pending = captureLog(modelCallRecord({ uid, session, intent: 'frame', turn, outcome: 'failure', failureReason: reason }));
+    const pending = captureLog(modelCallRecord({ uid, session, intent: 'frame', turn, outcome: 'failure', failureReason: reason, method }));
     return answer(res, turn.reason === 'aborted' ? 504 : 200, { sessionId: session.sessionId, status: 'framing', error: 'frame_failed', reason, quota }, pending, settleBy);
   }
-  const partnerExchange = exchangeOf({ who: 'partner', kind: 'frame', text: checked.frame.question, at: doneIso });
+  const partnerExchange = exchangeOf({ who: 'partner', kind: 'frame', text: checked.frame.question, at: doneIso, method: methodRefOf(method) });
   let stored;
   try {
     stored = await recordFrame(db, { uid, sessionId: session.sessionId, frame: checked.frame, partnerExchange, attempts: turn.attempts, nowIso: doneIso });
   } catch (err) {
     // The call was paid: its record is written even when the frame's write is not (review C4).
-    await settle(captureLog(modelCallRecord({ uid, session, intent: 'frame', turn, outcome: 'failure', failureReason: 'persist_failed' })), settleBy);
+    await settle(captureLog(modelCallRecord({ uid, session, intent: 'frame', turn, outcome: 'failure', failureReason: 'persist_failed', method })), settleBy);
     throw err;
   }
-  const pending = captureLog(modelCallRecord({ uid, session, intent: 'frame', turn, outcome: 'completion' }));
+  const pending = captureLog(modelCallRecord({ uid, session, intent: 'frame', turn, outcome: 'completion', method }));
   return answer(res, 200, { sessionId: stored.sessionId, status: stored.status, frame: sessionViewOf(stored).frame, quota }, pending, settleBy);
 }
 
@@ -238,8 +256,14 @@ async function handleOpen(body, res, { db, uid }) {
     const session = await readOwnedSession(db, { uid, sessionId: body.sessionId });
     const player = (session.exchanges ?? []).find((e) => e.who === 'player' && e.kind === 'observation');
     if (session.status === 'framing' && !player) throw refuse(409, 'session_not_open');
+    // No new selection: the session keeps its stamp. The opening's next action is written from the frame, so it cites
+    // the method the frame exchange ran on.
+    const frameExchange = (session.exchanges ?? []).find((e) => e.who === 'partner' && e.kind === 'frame');
     const findings = session.status === 'framing'
-      ? built(openingFindingsOf({ entryKind: 'observation', playerExchange: player, frame: session.frame, names: [], stored: {}, nowIso }), nowIso)
+      ? built(openingFindingsOf({
+        entryKind: 'observation', playerExchange: player, frame: session.frame, names: [], stored: {}, nowIso,
+        sourceRef: citedSourceOf({ ran: frameExchange?.method ?? null, stamp: session.method, uid }),
+      }), nowIso)
       : [];
     const opened = await openFromFraming(db, { uid, sessionId: body.sessionId, question, direction, findings, nowIso });
     return openAnswer(res, db, uid, opened, nowIso);
@@ -261,7 +285,11 @@ async function handleOpen(body, res, { db, uid }) {
   const dropExchange = drop ? exchangeOf({ who: 'player', kind: 'observation', text: dropTextOf(drop), at: nowIso }) : null;
   // A drop's parsed claims run through the forbidden patterns, the partner's own name as a subject included (spec §16 FQ-6).
   const partnerName = drop ? partnerNameOf(await readRankedAgent(db, uid)) : null;
-  const findings = built(openingFindingsOf({ entryKind: entry.kind, story, drop, playerExchange: dropExchange, names, stored, nowIso, partnerName }), nowIso);
+  // The method, selected once: a story or a drop is on the baseline by rule (R-KB-1).
+  const selected = selectMethod({ entryKind: entry.kind, uid, nowIso });
+  const findings = built(openingFindingsOf({
+    entryKind: entry.kind, story, drop, playerExchange: dropExchange, names, stored, nowIso, partnerName, sourceRef: selected.method.sourceRef,
+  }), nowIso);
   const opened = await openFromItem(db, {
     uid, requestId: body.requestId, sessionId: randomUUID(),
     entry: {
@@ -270,7 +298,7 @@ async function handleOpen(body, res, { db, uid }) {
       names,
     },
     exchanges: dropExchange ? [dropExchange] : [],
-    findings, nowIso,
+    findings, nowIso, method: selected.stamp,
   });
   return openAnswer(res, db, uid, opened, nowIso);
 }
@@ -314,6 +342,10 @@ async function handleStep(body, res, { db, uid }) {
     });
   }
   const { session, record } = begun;
+  // The method this turn runs on (KB-1): the session's stamp, re-checked for the gate's uid; a refusal runs it on the
+  // baseline. Resolved once, here, so every record of this step — failures included — names it.
+  const effective = effectiveMethodFor({ stamp: session.method, uid });
+  const { method } = effective;
   const failed = async (status, reason, { turn = null, retrievalTally = null, cancellation = false, refundCall = false } = {}) => {
     const atIso = new Date().toISOString();
     await failStep(db, { uid, sessionId, stepId, reason, nowIso: atIso, refundCall });
@@ -321,7 +353,7 @@ async function handleStep(body, res, { db, uid }) {
       await recordTurnOutcome(db, { researchWorkId: session.researchWorkId, uid, kind: cancellation ? 'cancellation' : 'failure', elapsedMs: turn.elapsedMs, usage: turn.usage, atIso, label: 'shared-research' });
     }
     // Logged whenever money was spent: a model call, or a search (review C1).
-    const pending = turn || retrievalTally?.calls ? captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: cancellation ? 'cancellation' : 'failure', failureReason: reason })) : null;
+    const pending = turn || retrievalTally?.calls ? captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: cancellation ? 'cancellation' : 'failure', failureReason: reason, method })) : null;
     const after = await readOwnedSession(db, { uid, sessionId }).catch(() => session);
     return answer(res, status, { error: 'step_failed', reason, session: sessionViewOf(after), quota: quotaViewOf(day) }, pending, settleBy);
   };
@@ -354,7 +386,7 @@ async function handleStep(body, res, { db, uid }) {
   // The prompt, sized before any call (§6.12 control 2).
   const agentSnap = session.attribution?.agentId ? await db.collection(AGENTS_COLLECTION).doc(session.attribution.agentId).get() : null;
   const partnerName = partnerNameOf(agentSnap?.exists ? agentSnap.data() : null);
-  const system = buildStepSystemPrompt({ partnerName });
+  const system = buildStepSystemPrompt({ partnerName, method });
   // One place is kept back for the validator's own "No next step proposed." marker (refuter SI-5).
   const room = Math.max(0, FINDINGS_MAX - (Array.isArray(record.findings) ? record.findings.length : 0) - 1);
   const protectedIds = new Set([...(record.summary?.basedOn ?? []), ...(target ? [target.relationshipFindingId, target.openFindingId].filter(Boolean) : [])]);
@@ -371,7 +403,7 @@ async function handleStep(body, res, { db, uid }) {
   });
   if (!fit.ok) {
     await failStep(db, { uid, sessionId, stepId, reason: 'prompt_too_large', nowIso: new Date().toISOString(), refundCall: true });
-    if (retrievalTally.calls) await settle(captureLog(modelCallRecord({ uid, session, stepId, intent, turn: null, retrieval: retrievalTally, outcome: 'failure', failureReason: 'prompt_too_large' })), settleBy);
+    if (retrievalTally.calls) await settle(captureLog(modelCallRecord({ uid, session, stepId, intent, turn: null, retrieval: retrievalTally, outcome: 'failure', failureReason: 'prompt_too_large', method })), settleBy);
     throw refuse(400, 'prompt_too_large'); // the typed refusal (spec §6.3); no model call was made
   }
 
@@ -398,13 +430,19 @@ async function handleStep(body, res, { db, uid }) {
   const partnerExchangeId = randomUUID();
   const checked = validateStepTurn(turn.output, {
     record, items: fit.items, readAt: r && !r.error ? r.readAt : null, partnerExchangeId, partnerAt: persistIso, nowIso: persistIso,
-    mintFindingId: newFindingId, names, partnerName,
+    mintFindingId: newFindingId, names, partnerName, method,
   });
   if (!checked.ok) return failed(200, `invalid_${checked.rule}`, { turn, retrievalTally });
   const partnerExchange = exchangeOf({
     who: 'partner', kind: 'step', text: checked.reply || (checked.findings.length ? 'This step added findings to the record.' : 'This step found nothing new.'), at: persistIso, stepId, intent,
     target: target ? { symbol: target.symbol, relationshipFindingId: target.relationshipFindingId, openFindingId: target.openFindingId } : null,
     lines: checked.lines,
+    // KB-1 (Amendment A §A4.3, §A4.4): the method this turn ran on; the change from the previous partner turn's, when
+    // there is one; the findings it appended, in order; and — when it retrieved — every item it was shown, as shown.
+    method: methodRefOf(method),
+    methodChange: methodChangeOf(session.exchanges, method, effective.refusal),
+    findingIds: checked.findings.map((f) => f.findingId),
+    retrieval: r && !r.error ? retainedRetrievalOf({ readAt: r.readAt, items: fit.items, findings: checked.findings }) : null,
   }, { mintId: () => partnerExchangeId });
 
   let saved;
@@ -420,7 +458,7 @@ async function handleStep(body, res, { db, uid }) {
     if (cancellation || err?.researchRecord) return failed(409, code, { turn, retrievalTally, cancellation });
     return failed(500, 'persist_failed', { turn, retrievalTally });
   }
-  const pending = captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: 'completion', notes: checked.notes }));
+  const pending = captureLog(modelCallRecord({ uid, session, stepId, intent, turn, retrieval: retrievalTally, outcome: 'completion', notes: checked.notes, method }));
   const lines = latestLinesOf(saved.session);
   let companies;
   try {

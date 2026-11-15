@@ -648,15 +648,41 @@ describe('the answer', () => {
   });
 });
 
-describe('the shipped list (empty)', () => {
-  // As Part 4 words it: unconditional. The founder's activation PR moves this
-  // row together with packages.test.js's pin (`KB_APP_USE` deep-equals `[]`);
-  // whether it may instead follow the pin is founder question FQ-1.
-  it('both entry points answer not_authorized for the real package, whatever the audience', () => {
-    expect(KB_APP_USE).toEqual([]);
-    expect(verifyPackage({ id: ID, version: VERSION }).ok).toBe(true);
-    expect(loadAuthorizedMethod({ id: ID, version: VERSION, consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
-    expect(authorizedMethodFor({ consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
+describe('the shipped list', () => {
+  // KB-1 MOVED THIS ROW (founder ruling on KB-0's FQ-1: it follows the list, not
+  // a fixed []). For every entry in KB_APP_USE, both entry points answer `ok`
+  // for a player in its audience and `audience` for one outside; with the list
+  // empty, both answer `not_authorized` for the real package. packages.test.js's
+  // pin (`KB_APP_USE` deep-equals `[]`) stays the one row the founder's
+  // activation PR moves.
+  const no = () => false;
+  /** Each entry of `list`, through both entry points (`deps` undefined: the shipped list). */
+  function expectFollowed(list, deps) {
+    for (const e of list) {
+      for (const consumer of e.consumers) {
+        const want = { ok: true, method: { id: e.id, version: e.version, sha256: e.sha256, consumer, audience: e.audience } };
+        expect(loadAuthorizedMethod({ id: e.id, version: e.version, consumer, inAudience: yes }, deps)).toMatchObject(want);
+        expect(loadAuthorizedMethod({ id: e.id, version: e.version, consumer, inAudience: no }, deps)).toEqual({ ok: false, reason: 'audience' });
+        if (e.newSessions === false) continue; // a superseded version serves the sessions that hold it, and takes no new one
+        expect(authorizedMethodFor({ consumer, inAudience: yes }, deps)).toMatchObject(want);
+        expect(authorizedMethodFor({ consumer, inAudience: no }, deps)).toEqual({ ok: false, reason: 'audience' });
+      }
+    }
+  }
+
+  it('every shipped entry answers ok in its audience and audience outside it; with the list empty, both entry points answer not_authorized for the real package', () => {
+    expectFollowed(KB_APP_USE, undefined);
+    if (KB_APP_USE.length === 0) {
+      expect(verifyPackage({ id: ID, version: VERSION }).ok).toBe(true);
+      expect(loadAuthorizedMethod({ id: ID, version: VERSION, consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
+      expect(authorizedMethodFor({ consumer: CONSUMER, inAudience: yes })).toEqual({ ok: false, reason: 'not_authorized' });
+    }
+    // The loop is vacuous on today's empty list: proven on a planted one, where it passes for a followed entry and
+    // fails for one the loader does not follow (another method hash: not_authorized, never ok).
+    expectFollowed([entry()], { authorizations: [entry()] });
+    expectFollowed([entry({ newSessions: false })], { authorizations: [entry({ newSessions: false })] });
+    const unfollowed = entry({ sha256: otherHex(METHOD_SHA256) });
+    expect(() => expectFollowed([unfollowed], { authorizations: [unfollowed] })).toThrow();
   });
 });
 
