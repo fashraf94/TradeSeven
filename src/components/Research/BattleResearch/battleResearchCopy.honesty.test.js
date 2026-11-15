@@ -71,7 +71,7 @@ const UI_SAMPLES = {
   acrossConfirm: [['up today', null, 3, 1, 0], ['up today', 'down today', 3, 1, 2]],
   applied: [[3]],
   ranksLine: [['1:01 PM'], ['1:01 PM', true], [null]],
-  stripTimes: [['1:01 PM', false, Date.parse('2026-10-14T17:42:00Z'), Date.parse('2026-10-14T17:44:00Z')], ['1:01 PM', true, null, null]],
+  stripTimes: [['1:01 PM', false, '1:42 PM', '1:44 PM'], ['1:01 PM', true, null, null]], // clock words, as timesOf hands them (refuter RB-7)
   stripGroup: [['Bench', 1], ['Bench and agent watchlist', 6]],
   refreshedTitle: [['Result 2 · 1:47 PM']],
   refreshedBody: [[2, 1, 0], [0, 0, 0]],

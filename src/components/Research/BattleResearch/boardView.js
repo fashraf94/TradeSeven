@@ -20,14 +20,15 @@ export const SHOWN = Object.freeze({ phone: 5, desktop: 6 });
 const RANK = Object.freeze({ measure: 'technical_rank', direction: 'best_first' });
 
 /** The "as they stand" list of the opening (BRS-5): the union by technical rank. */
-export function asTheyStandOf(battle, opening) {
+export function asTheyStandOf(battle, opening, nowMs = null) {
   if (opening.status !== 'ready' || !opening.result) return { status: opening.status === 'failed' ? 'failed' : 'loading', rows: [], unranked: [] };
   const r = opening.result;
   const o = outcomeOf(r, { group: 'union', order: RANK, conditions: [] });
   return {
     status: 'ready',
-    rows: o.placed.map((p) => ({ position: p.position, facts: rowFactsOf(battle, r, p.symbol) })),
-    unranked: o.unranked.map((u) => ({ facts: rowFactsOf(battle, r, u.symbol), note: u.reason === 'crypto' ? BR_COPY.notRankedCrypto : BR_COPY.notRankedMissing })),
+    // With the surface's clock: a lock that has lapsed says so here too (refuter RB-5).
+    rows: o.placed.map((p) => ({ position: p.position, facts: rowFactsOf(battle, r, p.symbol, { nowMs }) })),
+    unranked: o.unranked.map((u) => ({ facts: rowFactsOf(battle, r, u.symbol, { nowMs }), note: u.reason === 'crypto' ? BR_COPY.notRankedCrypto : BR_COPY.notRankedMissing })),
   };
 }
 
@@ -94,7 +95,9 @@ export function boardOf({ inv, battle, nowMs, desktop = false, showAll = false, 
     { id: 'down_today', label: CONDITION_LABEL.down_today, disabled: !avail.on, line: avail.on ? null : moveLine },
     ...sectorsPresent(result, view.group).map((sector) => ({ id: 'sector', value: sector, label: conditionLabel({ id: 'sector', value: sector }), disabled: false, line: null })),
   ].filter((c) => !view.conditions.some((a) => a.id === c.id && (c.id !== 'sector' || a.value === c.value)));
-  const gate = refreshGate({ inFlight: !!refresh.inFlight, since: result.receivedAt ?? result.takenAt, lastAttemptAt: refresh.lastAttemptAt ?? null, nowMs });
+  // A Refresh in flight for ANOTHER investigation is not this one's (refuter RB-3).
+  const inFlight = !!refresh.inFlight && (refresh.inFlightFor ?? inv.investigationId) === inv.investigationId;
+  const gate = refreshGate({ inFlight, since: result.receivedAt ?? result.takenAt, lastAttemptAt: refresh.lastAttemptAt ?? null, nowMs });
   const question = inv.question.id;
   const groupQuestion = question === 'rank_bench' || question === 'rank_agent_watchlist';
   const other = view.group === 'bench' ? 'agent_watchlist' : 'bench';
@@ -123,7 +126,7 @@ export function boardOf({ inv, battle, nowMs, desktop = false, showAll = false, 
       groupSwitch: groupQuestion ? { to: other, label: BR_COPY.sameOnOther(other) } : null,
       canUndo: !!step.parentStepId,
       canPrevious: !!step.parentStepId,
-      refresh: { allowed: gate.allowed, inFlight: !!refresh.inFlight, text: refresh.inFlight ? BR_COPY.refreshing : gate.allowed ? BR_COPY.refresh : BR_COPY.refreshIn(gate.text) },
+      refresh: { allowed: gate.allowed, inFlight, text: inFlight ? BR_COPY.refreshing : gate.allowed ? BR_COPY.refresh : BR_COPY.refreshIn(gate.text) },
       refreshError: refresh.error && mine(refresh.errorFor) ? refresh.error : null,
     },
     conditions: {

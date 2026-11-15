@@ -36,6 +36,9 @@ import ResearchBoard from './ResearchBoard.jsx';
 import AgentColumn, { PhoneLeadBar } from './AgentColumn.jsx';
 import { rowButton } from './ResearchRow.jsx';
 
+/** The stops a keyboard reaches (the surface's own history sheet traps over these). */
+const TABBABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 /**
  * @param {object} p
  * @param {boolean} p.open
@@ -77,6 +80,7 @@ export default function BattleResearchSurface({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const scrollRef = useRef(null);
   const sheetCloseRef = useRef(null);
+  const sheetDialogRef = useRef(null);
   const backToMore = useRef(false);
   const s = store.state;
   const inv = s.view === 'board' ? store.active : null;
@@ -109,14 +113,15 @@ export default function BattleResearchSurface({
   // ONE clock with the modal (review BL2-3): a lock that lapses while the board stands turns to *since passed*
   // when it lapses — a timer for the next lapse, on the server's clock (the result's arrival offset).
   const nextLapse = useMemo(() => {
-    if (!inv) return null;
-    const r = currentResult(inv);
+    // The board's result, or the opening's own (its list names locks too — refuter RB-5).
+    const r = inv ? currentResult(inv) : (s.opening.status === 'ready' ? s.opening.result : null);
+    if (!r) return null;
     const offset = Number.isFinite(r.takenAt) && Number.isFinite(r.receivedAt) ? r.takenAt - r.receivedAt : 0;
     const serverNow = nowMs + offset;
     const lapses = r.membership.flatMap((m) => [m.eligibility, ...Object.values(m.vs ?? {})])
       .map((e) => e?.lockedUntil).filter((t) => Number.isFinite(t) && t > serverNow);
     return lapses.length ? Math.min(...lapses) - offset : null;
-  }, [inv, nowMs]);
+  }, [inv, nowMs, s.opening]);
   useEffect(() => {
     if (!open || nextLapse === null) return undefined;
     let id = null;
@@ -152,7 +157,7 @@ export default function BattleResearchSurface({
     refresh: store.refresh,
     // A row never opens while a Refresh is in flight: a research modal would stand over a result about to
     // change under it (review BL1-2).
-    openRow: (symbol) => { if (!s.refresh.inFlight) onOpenRow(symbol); },
+    openRow: (symbol) => { if (!(s.refresh.inFlight && (s.refresh.inFlightFor ?? inv?.investigationId) === inv?.investigationId)) onOpenRow(symbol); },
     showAll: (on) => store.setShowAll(scrollKey, on),
     askAbout: () => { if (inv) onAskAbout(askAboutDraft(inv, Date.now())); },
     goTo: (id) => { setSheet(false); store.goTo(id); },
@@ -167,6 +172,20 @@ export default function BattleResearchSurface({
   const keyDown = (e) => {
     // The history sheet is the top layer inside the surface: Escape closes it first.
     if (sheet && e.key === 'Escape' && !suspended) { e.preventDefault(); e.stopPropagation(); setSheet(false); return; }
+    // …and Tab stays inside it: the board behind is inert, so the surface's own trap would count dead stops and let
+    // focus leave (refuter RB-1).
+    if (sheetOpen && e.key === 'Tab' && !suspended && sheetDialogRef.current) {
+      const stops = [...sheetDialogRef.current.querySelectorAll(TABBABLE)];
+      if (stops.length) {
+        const first = stops[0]; const last = stops[stops.length - 1];
+        const a = typeof document !== 'undefined' ? document.activeElement : null;
+        const inside = !!a && sheetDialogRef.current.contains(a);
+        e.stopPropagation();
+        if (e.shiftKey && (a === first || !inside)) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (a === last || !inside)) { e.preventDefault(); first.focus(); }
+        return;
+      }
+    }
     onKeyDown(e);
   };
 
@@ -178,7 +197,7 @@ export default function BattleResearchSurface({
       onAsk={store.ask}
       pending={s.pending?.questionId ?? null}
       failure={s.failure}
-      asTheyStand={asTheyStandOf(battle, s.opening)}
+      asTheyStand={asTheyStandOf(battle, s.opening, nowMs)}
       onOpenRow={onOpenRow}
       narrow={phone}
     />
@@ -246,7 +265,7 @@ export default function BattleResearchSurface({
         {phone && !opening && sheet ? (
           <div data-br-history-sheet style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
             <div aria-hidden="true" onClick={() => setSheet(false)} style={{ position: 'absolute', inset: 0, background: `rgba(var(--ft-shadow-rgb), 0.6)` }} />
-            <div role="dialog" aria-modal="true" aria-label={BR_COPY.readMore} style={{ position: 'relative', maxHeight: '85%', overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', background: ST.surface, borderRadius: '16px 16px 0 0', padding: '12px 14px 20px', ...(bottomInset > 0 ? { paddingBottom: `calc(20px + ${bottomInset}px)` } : {}), borderTop: `1px solid ${tint(ST.teal, 35)}` }}>
+            <div ref={sheetDialogRef} role="dialog" aria-modal="true" aria-label={BR_COPY.readMore} style={{ position: 'relative', maxHeight: '85%', overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', background: ST.surface, borderRadius: '16px 16px 0 0', padding: '12px 14px 20px', ...(bottomInset > 0 ? { paddingBottom: `calc(20px + ${bottomInset}px)` } : {}), borderTop: `1px solid ${tint(ST.teal, 35)}` }}>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button ref={sheetCloseRef} type="button" data-br-sheet-close aria-label={BR_COPY.close} onClick={() => setSheet(false)} style={{ ...rowButton, minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: ST.ink2 }}><X size={18} /></button>
               </div>

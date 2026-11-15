@@ -380,3 +380,40 @@ describe('review BL2-12 — the phone bar speaks in the same voice as the strip'
     expect(q('[data-br-lead-bar] b').textContent).toBe('Shadow · Trend Follower: ');
   });
 });
+
+// ── The refuter's round on PR B's fixes (RB-1 – RB-6): each row failed before its fix ──
+const FOCUSABLE_IN = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+describe('refuter RB-1 — Tab stays inside the history sheet (the inert board behind it is no stop)', () => {
+  it('Shift+Tab on its first stop wraps to its last, Tab on its last wraps to its first', async () => {
+    await mount({ isDesktop: false });
+    await click(q('[data-br-starter="weakest_alternatives"]'));
+    await click(q('[data-br-read-more]'));
+    const dialog = q('[data-br-history-sheet] [role="dialog"]');
+    const stops = [...dialog.querySelectorAll(FOCUSABLE_IN)];
+    expect(stops.length).toBeGreaterThan(1);
+    stops[0].focus();
+    const back = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true });
+    await act(async () => { stops[0].dispatchEvent(back); });
+    expect(back.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(stops.at(-1));
+    const fwd = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    await act(async () => { stops.at(-1).dispatchEvent(fwd); });
+    expect(fwd.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(stops[0]);
+  });
+});
+
+describe('refuter RB-5 — the opening\'s list turns a lapsed lock to "since passed" too', () => {
+  it('the opening arms the same lapse timer', async () => {
+    const soon = JSON.parse(JSON.stringify(BATTLE));
+    soon.portfolio.bench.stocks = soon.portfolio.bench.stocks.map((x) => (x.symbol === 'NVDA' ? { ...x, cooldownUntil: new Date(TAKEN_AT + 1000).toISOString() } : x));
+    await mount({ isDesktop: true, battle: soon, clock: () => Date.now() });
+    await click(q('[data-br-as-they-stand-toggle]'));
+    const nvda = () => q('[data-br-as-they-stand] [data-br-row="NVDA"]').textContent;
+    expect(nvda()).not.toContain('since passed');
+    vi.setSystemTime(new Date(TAKEN_AT + 2000));
+    const end = performance.now() + 6000;
+    while (!nvda().includes('since passed') && performance.now() < end) await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
+    expect(nvda()).toContain('since passed');
+  }, 15_000);
+});

@@ -339,3 +339,17 @@ describe('review BL2-10 — a row of the opening\'s list hands the modal the ope
     expect(bodyText()).toContain('ATR reading 1.9%');
   });
 });
+
+describe('refuter RB-2 / RB-6 — the sticky strip is bounded; the Draft door\'s label wraps anywhere', () => {
+  beforeEach(() => { flag.sheet = 'on'; });
+  it('the strip scrolls inside itself past 38% of the view, so a long then-chain never buries the content', async () => {
+    await openResearch('MSFT', contextFor('MSFT'));
+    const strip = q('[data-research-strip]');
+    expect(strip.style.maxHeight).toBe('38vh');
+    expect(strip.style.overflowY).toBe('auto');
+  });
+  it('a 20-letter agent name never pushes the door\'s label past its border', async () => {
+    await openResearch('MSFT', contextFor('MSFT'));
+    expect(q('[data-sheet-draft] span').style.overflowWrap).toBe('anywhere');
+  });
+});

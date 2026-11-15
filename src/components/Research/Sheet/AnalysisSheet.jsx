@@ -400,7 +400,7 @@ export function SheetActionRow({ view, onAnalysis = true }) {
             border: `1px solid ${tint(ST.purple, 55)}`, whiteSpace: 'normal', maxWidth: '50%', flexShrink: 0, textAlign: 'center',
           }}
         >
-          <span style={{ fontSize: 13 }}>{BR_COPY.draftDoor(view.research.agentName)}</span>
+          <span style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{BR_COPY.draftDoor(view.research.agentName)}</span>
         </button>
       ) : view.cockpit && (
         <button

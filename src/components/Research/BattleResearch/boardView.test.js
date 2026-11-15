@@ -196,3 +196,11 @@ describe('review BL2-7 — the board\'s then-chain is refinementsOf (folded word
     expect(board(inv).refinements).toEqual(refinementsOf(inv));
   });
 });
+
+describe('refuter RB-3 — another investigation\'s Refresh in flight never shows as this one\'s', () => {
+  it('no spinner here while the other refreshes; this one\'s own shows', () => {
+    const inv = invOf(BATTLE);
+    expect(board(inv, { refresh: { inFlight: true, inFlightFor: 'another' } }).toolbar.refresh.inFlight).toBe(false);
+    expect(board(inv, { refresh: { inFlight: true, inFlightFor: inv.investigationId } }).toolbar.refresh).toMatchObject({ inFlight: true, text: BR_COPY.refreshing });
+  });
+});

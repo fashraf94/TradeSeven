@@ -53,7 +53,9 @@ export function ResearchStrip({ research }) {
     return () => { ro?.disconnect(); scroller.style.removeProperty('--research-strip-h'); };
   }, []);
   return (
-    <section ref={ref} data-research-strip style={{ position: 'sticky', top: 0, zIndex: 2, margin: '-16px -16px 0', padding: '10px 16px 10px', background: ST.bg, borderBottom: `1px solid ${ST.hair}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+    // Bounded (refuter RB-2): past 38% of the view the strip scrolls inside itself, so a long then-chain never
+    // buries the content under it; every refinement stays in it (BRS-17).
+    <section ref={ref} data-research-strip style={{ position: 'sticky', top: 0, zIndex: 2, maxHeight: '38vh', overflowY: 'auto', overscrollBehavior: 'contain', margin: '-16px -16px 0', padding: '10px 16px 10px', background: ST.bg, borderBottom: `1px solid ${ST.hair}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
         <button type="button" data-research-back onClick={research.onBack} style={{ ...BTN, color: ST.teal, flexShrink: 0 }}>
           <span style={{ fontSize: 13, fontWeight: 700 }}>{BR_COPY.backToRanking}</span>

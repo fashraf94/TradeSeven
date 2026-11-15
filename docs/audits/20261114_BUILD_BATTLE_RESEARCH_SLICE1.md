@@ -13,7 +13,7 @@
 | C | `claude/battle-research-s1-allowlist` (on B) | ⟪C-HEAD⟫ | `BATTLE_RESEARCH_MODE = 'allowlist'` and its pin, one commit | `'allowlist'` | ⟪C-CHECKS⟫ |
 
 - **Merge order:** A, then B, then C, each by hand. B was rebased onto A after A's refuter round (and again after its last fix); its description says so.
-- **With the flag off** (A and B as merged), the Research pill opens the bench sheet **byte for byte as main does**: the sheet and the whole screen behind it hash to goldens captured on `5a8c3620` (`AgentBattleScreen.battleResearch.jsdom.test.jsx`), on Windows and on Linux.
+- **With the flag off** (A and B as merged), the Research pill opens the bench sheet **byte for byte as main does**: the sheet hashes to a golden captured on `5a8c3620` (pinned in `AgentBattleScreen.battleResearch.jsdom.test.jsx`, on Windows and on Linux). The whole screen behind it hashed identical to main's too, at `5a8c3620` and again at B's final head (`ceb2584c…`; a League battle `9e735439…`) — measured, not pinned, so a later change to the battle screen never trips the row with an opaque hash.
 - **Nothing stopped on a ruling.** The readings made where the spec is silent are in §3; none blocks the build.
 - **The live checklist** is §8 below.
 
@@ -199,7 +199,19 @@ Lens 4's own measures, after the review round (both widths; a default pass and a
 
 ## 5. Tests and checks
 
-⟪CHECKS⟫
+All on Linux in WSL (a private worktree of the CI checkout, `TZ=UTC`, 8 workers, the suite lock), each on the exact head pushed:
+
+| Head | Full suite | `lint:gate` | `vite build` | `test:rules` |
+|---|---|---|---|---|
+| A `d5a5f468` | 33,086 tests, 0 failed (8,004 files) | exit 0 | exit 0 | — |
+| B `⟪B-HEAD⟫` | ⟪B-SUITE⟫ | ⟪B-LINT⟫ | ⟪B-BUILD⟫ | — |
+| C `⟪C-HEAD⟫` | ⟪C-SUITE⟫ | ⟪C-LINT⟫ | ⟪C-BUILD⟫ | ⟪C-RULES⟫ |
+
+- **New tests:** PR A — the route (42 rows), the engine (readings, result, investigation, explain), the honesty sweep (over 20,000 outputs, field by field), the review rows (`review.findings.test.js`, 21) and the refuter's (`refuter.findings.test.js`, 19). PR B — the store, the surface, the board and the research context, the modal's research state, the chat's append, and the screen (the golden, the tap flow, Escape layering, the draft, the opening's seed).
+- **The phone, in a real browser:** §4.4.
+- **Mutation checks:** ⟪MUTATION⟫
+- **The honesty sweep's own plants:** the refuter's 17 plants on A, all caught after `b1c51209` (P4–P8 by the rebuilt sweep), each file restored by hash.
+- **Windows-only reds, unrelated:** `StockChart.controlledSession.test.jsx` (5 rows) fails on Windows on main too; green on Linux.
 
 ---
 

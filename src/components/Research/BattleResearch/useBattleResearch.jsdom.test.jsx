@@ -282,3 +282,37 @@ describe('BRS-6 (review R1) — the tap fixes the incumbent at that moment', () 
     expect(currentResult(out.store.active).incumbent.symbol).toBe('EQIX');
   });
 });
+
+// ── The refuter's round (RB-3, RB-4) ──
+describe('refuter RB-3 — a Refresh in flight belongs to its investigation', () => {
+  it('the store names the investigation it is refreshing', async () => {
+    await render();
+    await run((s) => s.ask('weakest_alternatives'));
+    const id = out.store.active.investigationId;
+    clockNow += REFRESH_COOLDOWN_MS;
+    gate = defer();
+    let p;
+    await act(async () => { p = out.store.refresh(); });
+    expect(out.store.state.refresh.inFlightFor).toBe(id);
+    const g = gate; gate = null;
+    await act(async () => { g.resolve(); await p; });
+    expect(out.store.state.refresh.inFlightFor).toBeNull();
+  });
+});
+
+describe('refuter RB-4 — back to a battle while its old read is in flight: a fresh tap reads, the old answer lands nowhere', () => {
+  it('A → B → A: the second tap on A reads, and A\'s session holds only its answer', async () => {
+    await render();
+    gate = defer();
+    let old;
+    await act(async () => { old = out.store.ask('rank_bench'); });
+    await render('another-battle');
+    await render('stock-battle');
+    let fresh;
+    await act(async () => { fresh = out.store.ask('rank_agent_watchlist'); });
+    expect(fetches).toEqual(['stock-battle', 'stock-battle']);
+    const g = gate; gate = null;
+    await act(async () => { g.resolve(); await Promise.all([old, fresh]); });
+    expect(out.store.state.session.list.map((x) => x.question.id)).toEqual(['rank_agent_watchlist']);
+  });
+});
