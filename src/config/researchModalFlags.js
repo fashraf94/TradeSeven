@@ -152,7 +152,7 @@ export const BATTLE_RESEARCH_MODES = Object.freeze(['off', 'allowlist', 'on']);
  *   'on'         every agent battle the four conditions above admit.
  *
  * RUNWAY: 'off' ships with the engine build (PR A, dark) and stays 'off' in
- * the surface build (PR B). CURRENT: 'off'. 'allowlist' is PR C, one line;
+ * the surface build (PR B). CURRENT: 'allowlist'. 'allowlist' is PR C, one line;
  * 'on' is a later one-line founder PR after the live checklist. Never a build
  * PR beyond C; each step moves the first row of battleResearchFlag.test.js in
  * the same commit (BUILD_RULES §2).
@@ -166,4 +166,4 @@ export const BATTLE_RESEARCH_MODES = Object.freeze(['off', 'allowlist', 'on']);
  * through the existing chat path and budget.
  */
 // Pinned by: battleResearchFlag.test.js (the pin and this value move together — BUILD_RULES §2).
-export const BATTLE_RESEARCH_MODE = 'off';
+export const BATTLE_RESEARCH_MODE = 'allowlist';
