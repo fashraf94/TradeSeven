@@ -816,14 +816,14 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
   const closeQ = async (ctx, date, quotesIn) => { const out = await closeOn(ctx.db, ctx.bookId, date, quotesIn); recon(ctx); return out; };
   const daily = (ctx, date, syms) => ctx.db.collection('mandateUniverseDaily').doc(date).set({ date, symbols: Object.fromEntries(syms.map((s) => [s, { caFetchFailed: false }])) });
   const delistReceipts = (ledger) => ledger.corporateActionReceipts.filter((r) => r.type === 'delisting' && r.applied === true);
-  async function conflicted(type, ratio, withRename = true) {
+  async function conflicted(type, ratio, withRename = true, s0Price = 90) {
     const { db, bookId, bookRef } = await seedBook();
     const e = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: Q });
     expect(e.entry.outcome).toBe('entered');
     const ctx = { db, bookId, bookRef, ideaId: e.ideaId };
-    await closeQ(ctx, S[0], { ...Q, AAPL: 90 });
+    await closeQ(ctx, S[0], { ...Q, AAPL: s0Price });
     const a = basis(type, ratio);
-    await closeQ(ctx, S[1], { ...Q, AAPL: { price: 90 / ratio, corporateActions: [a, { ...a, ratio: ratio + 0.1 }, ...(withRename ? [rename('AAPL', 'AAPLX')] : [])] } });
+    await closeQ(ctx, S[1], { ...Q, AAPL: { price: s0Price / ratio, corporateActions: [a, { ...a, ratio: ratio + 0.1 }, ...(withRename ? [rename('AAPL', 'AAPLX')] : [])] } });
     return ctx;
   }
   const causesOf = (type) => [
@@ -1068,6 +1068,79 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     expect(row.marks.AAPL).toMatchObject({ quality: 'carried_forward', mark: before.lastMark });
     expect(row.fullQuality).toBe(false);
     expect(bookOf(ctx).portfolio.positions.AAPL.lastMark).toBe(before.lastMark);
+  });
+
+  it('COMPARISON-ONLY, through the close and the window: a frozen-basket comparison that cannot apply a reverse split holds the IDEA\'s cash delisting and the IDEA\'s sale, and the idea is valued at its carried mark', async () => {
+    const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
+    const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'], comparison: { type: 'frozen_basket', symbols: ['AAPL', 'MSFT'] } }), quotes: quotes(), date: S[0] });
+    const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
+    const down = roundUsd(BASE.AAPL * 0.9);
+    await closeDay(ctx, S[0], { AAPL: down });
+    expect(ideaOf(ctx).ledger.holdings.AAPL.exitPending).toMatchObject({ reason: 'line' });
+    const r = 1e-8;
+    const split = basis('reverse_split', r);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await closeDay(ctx, S[1], { AAPL: { price: roundUsd(down / r), corporateActions: [split] } });
+    expect(ideaOf(ctx).ledger.appliedActionIds).toEqual([`reverse_split_AAPL_${S[1]}`]); // the idea's own ledger applied it…
+    expect(ideaOf(ctx).comparisonLedger.appliedActionIds).toEqual([]); // …its comparison could not
+    // The window: the feed still lists the reverse split. The idea's own count is settled; its comparison's is not.
+    await daily(ctx, S[2], ['AAPL', 'MSFT', 'SPY']);
+    const w = await win(ctx, S[2], 'open30', { AAPL: { price: roundUsd(down / r), corporateActions: [split] } });
+    expect(w.sales).toMatchObject({ sold: 0 });
+    expect(ideaOf(ctx).ledger.holdings.AAPL.exitPending.waiting.lastRefusal).toBe('corporate_action_unsettled');
+    // The close: a cash delisting. Held on the idea's ledger too — the idea decides for all three.
+    const cashBefore = ideaOf(ctx).ledger.cash;
+    await closeDay(ctx, S[2], { AAPL: { price: roundUsd(down / r), corporateActions: [split, cashDelisting()] } });
+    const idea = ideaOf(ctx);
+    expect(idea.ledger.cash).toBe(cashBefore);
+    expect(delistReceipts(idea.ledger)).toEqual([]);
+    expect(idea.ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({
+      actionId: DELIST_ID, heldBecause: [{ actionId: `reverse_split_AAPL_${S[1]}`, type: 'reverse_split', effectiveDate: S[1], ledger: 'comparison' }],
+    })]);
+    expect(idea.status).toBe('line_hit_exit_pending');
+    expect(rowOf(ctx, S[2]).marks.AAPL.quality).toBe('carried_forward');
+    errors.mockRestore();
+  });
+
+  it('a cash action of the SAME date as the unresolved action waits too (on or after it), and is paid on the count it leaves', async () => {
+    const ctx = await conflicted('split', 1.5, false);
+    const oldShares = ideaOf(ctx).ledger.holdings.AAPL.shares;
+    const dividend = { type: 'cash_dividend', ticker: 'AAPL', effectiveDate: S[1], amount: 0.26, source: 'eodhd_dividends' };
+    await closeQ(ctx, S[2], { ...Q, AAPL: { price: 60, corporateActions: [dividend] } });
+    expect(ideaOf(ctx).ledger.dividendsUsd).toBe(0);
+    expect(ideaOf(ctx).ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: `cash_dividend_AAPL_${S[1]}` })]);
+    await closeQ(ctx, S[3], { ...Q, AAPL: { price: 60, corporateActions: [basis('split', 1.5), dividend] } });
+    expect(ideaOf(ctx).ledger.dividendsUsd).toBe(roundUsd(Math.round(oldShares * 1.5 * 1e6) / 1e6 * 0.26));
+  });
+
+  it('at the ENDPOINT a held action leaves the value in doubt: the result is unmeasurable and blocked for it, by name — even when nothing is a conflict (a ratio the applier refuses)', async () => {
+    const { db, bookId, bookRef } = await seedBook();
+    const e = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: Q });
+    const ctx = { db, bookId, bookRef, ideaId: e.ideaId };
+    await closeQ(ctx, S[0], Q);
+    const refused = basis('split', -2, S[1]);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await closeQ(ctx, S[1], { ...Q, AAPL: { price: 100, corporateActions: [refused, cashDelisting(S[1])] } });
+    expect(ideaOf(ctx).ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: `delisting_AAPL_${S[1]}` })]);
+    for (let i = 2; i <= 10; i += 1) await closeQ(ctx, S[i], Q); // the rows leave the feed; the record stays
+    errors.mockRestore();
+    const idea = ideaOf(ctx);
+    expect(idea.contract.schedule.dueSession).toBe(S[10]);
+    expect(idea.status).toBe('settled');
+    expect(idea.ledger.holdings.AAPL.heldActions).toHaveLength(1);
+    expect(idea.result.economicResult).toBe('unmeasurable');
+    expect(idea.result.economic.unmeasurableBecause).toEqual(expect.arrayContaining(['idea_unsettled_corporate_action', 'comparison_unsettled_corporate_action']));
+    expect(idea.result.processDetail.blockedBy).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'endpoint_unsettled_corporate_action', actions: [`delisting_AAPL_${S[1]}`] })]));
+    expect(bookOf(ctx).slots.short).toBe(ctx.ideaId);
+  });
+
+  it('LINES are provably unaffected: a holding whose share basis is unresolved is at its carried mark, so its line is unobserved — a fresh price below it is not a breach', async () => {
+    const ctx = await conflicted('split', 1.5, false, 100);
+    const level = ideaOf(ctx).lines[0].level;
+    await closeQ(ctx, S[2], { ...Q, AAPL: roundUsd(level * 0.5) });
+    expect(rowOf(ctx, S[2]).lineObservations.AAPL).toBe('unobserved');
+    expect(ideaOf(ctx).lines[0].breach).toBeUndefined();
+    expect(ideaOf(ctx).status).toBe('holding');
   });
 
   describe('C-13 — a delisting with no cash amount and a rename of the same stock in ONE close lose nothing', () => {

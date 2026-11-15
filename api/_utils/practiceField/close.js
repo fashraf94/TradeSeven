@@ -216,8 +216,6 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
   const spyV = value(spy.ledger, spy.unresolved);
   // Conflicts recorded on a ledger and not settled since (neither applied nor declined), this close's included.
   const openConflicts = [['idea', ownLedger], ['comparison', cmp.ledger], ['spy', spy.ledger]].flatMap(([name, ledger]) => unsettledConflicts(ledger).map((r) => ({ name, actionId: r.actionId })));
-  // …and the actions a holding is owed that wait on its share basis (fix round 2): the row is not clean while one waits.
-  const openHeld = [ownLedger, cmp.ledger, spy.ledger].reduce((n, ledger) => n + heldActionRecords(ledger).length, 0);
 
   // An unobserved session changes no ledger: there is nothing to write a mark from.
   let next = {
@@ -306,7 +304,7 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
     // Not full quality while any ledger of the idea holds an UNSETTLED conflicting action (review FR-A1): after the
     // feed stops presenting a conflict, its symbol is marked fresh again, but the action — a dividend's income, say —
     // was never applied, so the row must not read as clean until a consistent row settles it.
-    fullQuality: observed && ownV.valuation.fullQuality && cmpV.valuation.fullQuality && spyV.valuation.fullQuality && openConflicts.length === 0 && openHeld === 0,
+    fullQuality: observed && ownV.valuation.fullQuality && cmpV.valuation.fullQuality && spyV.valuation.fullQuality && openConflicts.length === 0,
     // Always true since Amendment D's Q-1 (a leg with no resolvable cost tier does not enter); kept on the row because
     // T1a-1's rows carry it.
     entryCostTiersKnown: (idea.entry?.unknownCostTierLegs || []).length === 0,

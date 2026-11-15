@@ -55,10 +55,7 @@ export const pendingSaleOf = (holding) => holding?.settlementPending ?? holding?
 
 /** The symbols of a ledger that carry an unsettled conflicting corporate action (their price basis is not certain). */
 function unsettledSymbolsOf(ledger) {
-  return new Set([
-    ...unsettledConflicts(ledger).map((r) => String(r.ticker || '').trim().toUpperCase()),
-    ...heldActionRecords(ledger).map((r) => r.symbol), // fix round 2: an action owed that waits on the share basis
-  ]);
+  return new Set(unsettledConflicts(ledger).map((r) => String(r.ticker || '').trim().toUpperCase()));
 }
 
 /**

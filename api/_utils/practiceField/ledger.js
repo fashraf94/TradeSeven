@@ -494,8 +494,8 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
 
   // TICKER CHANGES, LAST (Astra T2A-01). The feed's rows, and any rename an earlier close deferred whose row the feed
   // no longer lists (the holding's `deferredRename` record). One for a symbol whose share basis is unresolved — on
-  // this ledger after the actions above, or on another ledger of the idea (`deferRenames`) — waits; so does one for a
-  // holding that still carries a held action (fix round 2: the action names the old ticker, and is owed first).
+  // this ledger after the actions above, or on another ledger of the idea (`deferRenames`) — waits. (A holding that
+  // still carries a held action is always one of these: a record lives only while what it waits on is unresolved.)
   if (everything) {
     const settledNow = settledIdsOf(next);
     const candidates = [...renameRows];
@@ -515,9 +515,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       candidates.push({ type: 'ticker_change', ticker: sym, renamedTo: record.to, effectiveDate: record.effectiveDate, actionId: record.actionId });
     }
     candidates.sort((a, b) => (a.effectiveDate + a.actionId).localeCompare(b.effectiveDate + b.actionId));
-    const wait = new Set([
-      ...(deferRenames || []), ...unsettledShareBasisSymbols(next, actionsBySymbol, { date }), ...heldActionRecords(next).map((r) => r.symbol),
-    ]);
+    const wait = new Set([...(deferRenames || []), ...unsettledShareBasisSymbols(next, actionsBySymbol, { date })]);
     for (const action of candidates) {
       const from = upper(action.ticker);
       const to = upper(action.renamedTo);
@@ -560,12 +558,11 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       if (unresolved.has(r.from)) unresolved.add(r.to);
     }
     // EVERY SYMBOL WHOSE SHARE BASIS IS UNRESOLVED is valued at its carried mark (R-45, now for the whole class): on
-    // this ledger, on any ledger of the idea (`holds`), or carrying a held action. A fresh price against an unadjusted
-    // count would put a wrong value on the row — and the gap screen alone does not catch a 1.2 or 1.5 ratio once the
-    // feed drops the conflict.
+    // this ledger, or on any ledger of the idea (`holds`) — which covers every holding carrying a held action. A fresh
+    // price against an unadjusted count would put a wrong value on the row — and the gap screen alone does not catch a
+    // 1.2 or 1.5 ratio once the feed drops the conflict.
     for (const sym of unsettledShareBasisSymbols(next, actionsBySymbol, { date })) if (Object.hasOwn(next.holdings, sym)) unresolved.add(sym);
     for (const sym of holds?.keys() || []) if (Object.hasOwn(next.holdings, sym)) unresolved.add(sym);
-    for (const r of heldActionRecords(next)) unresolved.add(r.symbol);
   }
   return { ledger: next, applied, declined, unresolved, conflicts, shareBasisChanges, renames, renamesDeferred, renamesBlocked, held, closedByCash, delistedWaiting };
 }
@@ -702,7 +699,6 @@ export function saleHeldBackBy(ledger, symbol, snapshot, { sinceDate, date, othe
     .filter((a) => !(a.type === 'delisting' && delistingCashOf(a) === null));
   if (waitingFor.length > 0) return 'corporate_action_pending';
   if (conflicts.some((r) => r.type !== 'cash_dividend')) return 'corporate_action_unsettled';
-  if (unsettledShareBasisSymbols(ledger, actionsBySymbol, { date }).has(symbol)) return 'corporate_action_unsettled';
   for (const other of otherLedgers || []) {
     if (other && unsettledShareBasisSymbols(other, actionsBySymbol, { date }).has(symbol)) return 'corporate_action_unsettled';
   }
