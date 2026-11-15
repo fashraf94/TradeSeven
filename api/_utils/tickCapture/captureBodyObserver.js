@@ -22,11 +22,13 @@
 //      absence is recorded and the response is returned regardless.
 //   4. BYTES ARE NEVER RECONSTRUCTED from the parsed object. A copy that did
 //      not happen is `copy_failed`, full stop.
-//   5. REQUEST-LOCAL, never on the cached client. The holder lives in this
-//      module and is begun and ended around the one dispatch; the cached
-//      Anthropic client carries the observing function, never the data.
-//      Battles are processed serially, so exactly one holder is ever active,
-//      and a holder that is not active observes nothing.
+//   5. REQUEST-LOCAL, never on the cached client. The holder lives on the
+//      tick's own capture scope and is begun and ended around the one
+//      dispatch; the cached Anthropic client carries the observing function,
+//      never the data. Under the evaluator's pool (capacity Build 1,
+//      EVAL_POOL_K) several battles may be in flight at once, each in its own
+//      scope, so a dispatch reads only its own tick's holder, and a holder
+//      that is not active observes nothing.
 
 /**
  * The holder lives on the TICK'S OWN SCOPE (Astra round 1, F3), never in a

@@ -183,6 +183,15 @@ import { finalizeCronState } from '../_utils/agentCronState.js';
 // `withTimeout` also bounds the run document and the deferred beat below — the
 // same 2 s race, one helper (never a local copy).
 import { readIntradaySnapshot, writeIntradayView, composeIntradayEntryFields, withTimeout } from '../_utils/intraday/evaluatorHook.js';
+// Evaluator capacity, Build 1 (docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md):
+// the pool (EVAL_POOL_K, 1 at merge = the sequential loop it replaced), the
+// evaluator's market-data cuts (dark) and the limits on record (the run
+// record's `pool`, `anthropic` and `eodhd` blocks — live from merge).
+import { EVAL_POOL_K, EVAL_POOL_START_CUTOFF_MS, EVAL_MARKET_DATA_CUTS_ENABLED } from '../../src/config/featureFlags.js';
+import { clampPoolK, poolStartCutoffMs, poolGroupOf, runEvalPool } from '../_utils/evalPool.js';
+import { readEodhdCounters, eodhdCounterDelta } from '../_utils/eodhdFetchGuard.js';
+import { openRateLimitWindow, closeRateLimitWindow, observeRateLimits } from '../_utils/anthropicRateLimits.js';
+import { prepareRunMarketShare, sharedMacroQuote, fetchEvalSymbolData } from '../_utils/evalMarketData.js';
 import { buildIntradayView } from '../_utils/intraday/view.js';
 import { POLICY_VERSION as INTRADAY_POLICY_VERSION } from '../_utils/intradayConfig.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
@@ -302,6 +311,12 @@ export default async function handler(req, res) {
 
   const db = getFirebaseAdmin();
   const startTime = Date.now();
+  // THE LIMITS ON RECORD (capacity Build 1, Part 4): the EODHD counters are
+  // process-wide, so this run's numbers are the difference between now and the
+  // record's write; the rate-limit window collects the headers of the model
+  // calls made while it is open. Both are reads of in-memory state — no I/O.
+  const eodhdAtStart = readEodhdCounters();
+  const rateLimitWindow = openRateLimitWindow();
   // `lockSkipped` and `deferred` split what `skipped` used to conflate (R2);
   // `skipped` stays their sum (plus F3's `dormant` battles, counted apart in
   // processAgentBattle), so the response only gains keys.
@@ -518,63 +533,100 @@ export default async function handler(req, res) {
       (a.cronState?.lastEvalStartedAt || '').localeCompare(b.cronState?.lastEvalStartedAt || '')
     );
 
-    // ---- 4. Process each battle sequentially (with time budget) ----
+    // ---- 3d. The run's shared macro quotes (dark — EVAL_MARKET_DATA_CUTS_ENABLED,
+    // capacity Build 1 Part 3b): SPY, QQQ and BTC-USD.CC fetched ONCE for the
+    // run, before the first dispatch, and handed to each battle that does not
+    // hold, bench or score them itself. Bounded and never throwing; a symbol
+    // the share could not price is fetched by each battle as before. Flag off,
+    // nothing is fetched here.
+    if (EVAL_MARKET_DATA_CUTS_ENABLED) await prepareRunMarketShare(db, summary);
+
+    // ---- 4. Dispatch the battles: THE POOL (capacity Build 1 Part 1) ----
+    // At most K battles are checked at once (EVAL_POOL_K, clamped to 1–8), and
+    // each starts in the rotation order above. At K = 1 — the merged value —
+    // this is the sequential loop it replaced, step for step: before each
+    // battle the start rule is asked once (elapsed ≤ TIME_BUDGET_MS), the first
+    // "no" defers the rest, and a battle runs to its end before the next is
+    // asked about. Above 1, a battle starts only while elapsed ≤
+    // EVAL_POOL_START_CUTOFF_MS, and two battles of one League group (the same
+    // string `groupId`) are never in flight at once (api/_utils/evalPool.js).
+    // The handler waits for every battle in flight before the deferred beat
+    // and the run record.
+    const poolK = clampPoolK(EVAL_POOL_K);
+    const startCutoffMs = poolStartCutoffMs(poolK, { timeBudgetMs: TIME_BUDGET_MS, poolCutoffMs: EVAL_POOL_START_CUTOFF_MS });
+    evalRun.pool = { k: poolK, startCutoffMs, maxInFlight: 0, dispatched: 0 };
+    // One pool item per battle, in rotation order, with its League group key.
+    const poolItems = [];
     for (const [index, battle] of activeBattles.entries()) {
-      const elapsed = Date.now() - startTime;
-      if (elapsed > TIME_BUDGET_MS) {
-        // THE DEFERRED SET is exactly the battles this loop never reached: the
-        // tail from here, in rotation order. Counted off the list itself (R2)
-        // — the old `length − evaluated − errors` counted every lock-skip twice
-        // and subtracted the expiry completions, which were never in the list.
-        const deferred = activeBattles.slice(index);
+      poolItems.push({ index, battle, group: poolGroupOf(battle) });
+    }
+    let elapsed = 0;
+    await runEvalPool({
+      items: poolItems,
+      k: poolK,
+      groupOf: (item) => item.group,
+      stats: evalRun.pool,
+      mayStart: () => {
+        elapsed = Date.now() - startTime;
+        return elapsed <= startCutoffMs;
+      },
+      onStop: (deferredItems) => {
+        // THE DEFERRED SET is exactly the battles the dispatcher never
+        // started, in rotation order (a battle in flight is never deferred).
+        // Counted off the list itself (R2) — the old `length − evaluated −
+        // errors` counted every lock-skip twice and subtracted the expiry
+        // completions, which were never in the list.
+        const deferred = deferredItems.map((item) => item.battle);
         evalRun.deferredBattleIds = deferred.map((b) => b.id);
         evalRun.deferredAt = new Date().toISOString();
         summary.deferred += deferred.length;
         summary.skipped += deferred.length;
-        console.log(`${LOG_PREFIX} Time budget exceeded (${elapsed}ms). ${deferred.length} agent(s) deferred to next tick.`);
-        break;
-      }
-
-      let captureScope = null;
-      try {
-        // Pass startTime so processAgentBattle can budget-gate the Phase 3
-        // anticipation dispatch in its finally block (anticipations skip
-        // gracefully if <12s of cron budget remain; narrations always fire).
-        // One capture scope per battle (F3): created here so the catch below
-        // holds a reference to THIS tick's scope and can finalize nothing else.
-        // Flag off it is null and `runInTickCaptureScope` calls straight
-        // through, so the loop is exactly today's.
-        captureScope = TICK_CAPTURE_ENABLED ? newTickCaptureScope() : null;
-        await runInTickCaptureScope(captureScope, () => processAgentBattle(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView, intradayContext));
-      } catch (err) {
-        console.error(`${LOG_PREFIX} Error processing battle ${battle.id}:`, err.message);
-        summary.errors++;
-
-        // Log error to cronState
+        console.log(poolK === 1
+          ? `${LOG_PREFIX} Time budget exceeded (${elapsed}ms). ${deferred.length} agent(s) deferred to next tick.`
+          : `${LOG_PREFIX} Start cutoff passed (${elapsed}ms > ${startCutoffMs}ms, K=${poolK}). ${deferred.length} agent(s) deferred to next tick.`);
+      },
+      run: async ({ battle }) => {
+        let captureScope = null;
         try {
-          const battleRef = db.collection('agentBattles').doc(battle.id);
-          const cronErrors = (battle.cronState?.cronErrors || []).slice(-19);
-          cronErrors.push({
-            timestamp: new Date().toISOString(),
-            error: err.message,
-            stack: (err.stack || '').slice(0, 200),
-          });
-          await battleRef.update({
-            'cronState.cronErrors': cronErrors,
-            'cronState.evaluatingAt': null,
-          });
-        } catch (logErr) {
-          console.error(`${LOG_PREFIX} Failed to log error for battle ${battle.id}:`, logErr.message);
-        }
+          // Pass startTime so processAgentBattle can budget-gate the Phase 3
+          // anticipation dispatch in its finally block (anticipations skip
+          // gracefully if <12s of cron budget remain; narrations always fire).
+          // One capture scope per battle (F3): created here so the catch below
+          // holds a reference to THIS tick's scope and can finalize nothing else.
+          // Flag off it is null and `runInTickCaptureScope` calls straight
+          // through. Never one scope around several battles (discovery C1).
+          captureScope = TICK_CAPTURE_ENABLED ? newTickCaptureScope() : null;
+          await runInTickCaptureScope(captureScope, () => processAgentBattle(db, battle, summary, startTime, tournamentGroupCache, masteryFlagView, intradayContext));
+        } catch (err) {
+          console.error(`${LOG_PREFIX} Error processing battle ${battle.id}:`, err.message);
+          summary.errors++;
 
-        // Tick capture (C-9): an admitted tick that THREW skipped its own
-        // finalization so this receipt could be written first. Finalize it
-        // here, AFTER the receipt — a failed tick is the class of tick a
-        // record is most wanted for. Never throws; a flag-off run finds
-        // nothing registered and returns immediately.
-        await finalizeAbandonedTickCapture(db, captureScope, startTime, summary);
-      }
-    }
+          // Log error to cronState
+          try {
+            const battleRef = db.collection('agentBattles').doc(battle.id);
+            const cronErrors = (battle.cronState?.cronErrors || []).slice(-19);
+            cronErrors.push({
+              timestamp: new Date().toISOString(),
+              error: err.message,
+              stack: (err.stack || '').slice(0, 200),
+            });
+            await battleRef.update({
+              'cronState.cronErrors': cronErrors,
+              'cronState.evaluatingAt': null,
+            });
+          } catch (logErr) {
+            console.error(`${LOG_PREFIX} Failed to log error for battle ${battle.id}:`, logErr.message);
+          }
+
+          // Tick capture (C-9): an admitted tick that THREW skipped its own
+          // finalization so this receipt could be written first. Finalize it
+          // here, AFTER the receipt — a failed tick is the class of tick a
+          // record is most wanted for. Never throws; a flag-off run finds
+          // nothing registered and returns immediately.
+          await finalizeAbandonedTickCapture(db, captureScope, startTime, summary);
+        }
+      },
+    });
 
     // ---- 4b. The deferred beat (dark — EVAL_DEFERRED_BEAT_ENABLED) ----
     if (evalRun.deferredBattleIds.length > 0) {
@@ -597,7 +649,10 @@ export default async function handler(req, res) {
   } finally {
     // The run document goes out BEFORE the response (see `evalRun` above),
     // bounded and never throwing, so the response always follows it.
-    if (evalRun) await writeEvalRunRecord(db, evalRun, summary, startTime);
+    if (evalRun) await writeEvalRunRecord(db, evalRun, summary, startTime, { eodhdAtStart, rateLimitWindow });
+    // Closed whether or not a record was written (a market-closed or settle
+    // run keeps none). Never throws.
+    closeRateLimitWindow(rateLimitWindow);
     res.status(reply.status).json(reply.payload);
   }
 }
@@ -637,8 +692,23 @@ const HARD_CEILING_MS = config.maxDuration * 1000;
  * `deferred` — or in none of them when its tick ended in an error or an early
  * return, which the response's own counts carry. `deferredBattleIds` holds the first
  * EVAL_RUN_DEFERRED_ID_CAP ids in loop order; `deferredTruncated` counts the rest.
+ *
+ * THE LIMITS ON RECORD (capacity Build 1, Part 4 — live from merge), three
+ * blocks after the fields above, which keep their names and meanings:
+ *   `pool`      { k, startCutoffMs, maxInFlight, dispatched } — the dispatcher's
+ *               own numbers (startCutoffMs is the rule in force: TIME_BUDGET_MS
+ *               at K = 1).
+ *   `anthropic` { requestsLimit, inputTokensLimit, outputTokensLimit,
+ *               minRequestsRemaining, minInputTokensRemaining,
+ *               minOutputTokensRemaining, responses429 } — read from the
+ *               `anthropic-ratelimit-*` headers of this run's model calls
+ *               (api/_utils/anthropicRateLimits.js); null where no call carried one.
+ *   `eodhd`     { requests: { eod, realTime, intraday, other }, timeouts,
+ *               non2xx: { '429', '5xx', other } } — the process counters of
+ *               api/_utils/eodhdFetchGuard.js as a difference over this run.
+ * A block not handed in (a direct call) is null.
  */
-export function composeEvalRunRecord({ startTime, endTime, battlesTotal, evaluated, summary, deferredBattleIds }) {
+export function composeEvalRunRecord({ startTime, endTime, battlesTotal, evaluated, summary, deferredBattleIds, pool = null, anthropic = null, eodhd = null }) {
   const listed = deferredBattleIds.slice(0, EVAL_RUN_DEFERRED_ID_CAP);
   return {
     startedAt: new Date(startTime).toISOString(),
@@ -657,15 +727,35 @@ export function composeEvalRunRecord({ startTime, endTime, battlesTotal, evaluat
     triggered: summary.triggered || 0,
     modelCalls: summary.modelCalls || 0,
     budgetSkipped: summary.budgetSkipped || 0,
+    pool,
+    anthropic,
+    eodhd,
   };
+}
+
+/**
+ * The run's `pool` block when the dispatcher never ran (no active battle, or a
+ * throw before it): the settings in force and nothing dispatched.
+ */
+function idlePoolBlock() {
+  const k = clampPoolK(EVAL_POOL_K);
+  return { k, startCutoffMs: poolStartCutoffMs(k, { timeBudgetMs: TIME_BUDGET_MS, poolCutoffMs: EVAL_POOL_START_CUTOFF_MS }), maxInFlight: 0, dispatched: 0 };
 }
 
 /**
  * Compose and write the run's record at the end of the run. Bounded (2 s) and
  * never throws — composition included — so a lost record costs the record,
  * never the run or its response.
+ *
+ * `eodhd` is a DIFFERENCE of process-wide counters, taken from this
+ * invocation's first statement to here. That is this run's own traffic
+ * because the evaluator runs one invocation per process window: a 15-minute
+ * cron whose runs end inside 300 s. Its limit: a second invocation sharing the
+ * process while this one is open (a manual call during a run, or several
+ * invocations in one instance under Fluid Compute) is counted in both. The
+ * `anthropic` window has the same limit, for the same reason.
  */
-async function writeEvalRunRecord(db, evalRun, summary, startTime) {
+async function writeEvalRunRecord(db, evalRun, summary, startTime, { eodhdAtStart = null, rateLimitWindow = null } = {}) {
   try {
     const record = composeEvalRunRecord({
       startTime,
@@ -674,6 +764,9 @@ async function writeEvalRunRecord(db, evalRun, summary, startTime) {
       evaluated: summary.evaluated - evalRun.evaluatedBefore,
       summary,
       deferredBattleIds: evalRun.deferredBattleIds,
+      pool: { ...(evalRun.pool || idlePoolBlock()) },
+      anthropic: closeRateLimitWindow(rateLimitWindow),
+      eodhd: eodhdCounterDelta(eodhdAtStart, readEodhdCounters()),
     });
     await withTimeout(db.collection('agentEvalRuns').doc(evalRun.runId).set(record), EVAL_RUN_WRITE_TIMEOUT_MS, 'eval_run_write');
     return true;
@@ -1208,14 +1301,23 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // reference for the prior-session close. In-memory only — never written to
     // the battle doc.
     const dailySeries = {};
+    // Capacity Build 1, Part 3 (dark — EVAL_MARKET_DATA_CUTS_ENABLED;
+    // api/_utils/evalMarketData.js). Flag on: (a) every quote is still fetched
+    // fresh, but the daily bars come from the symbol's series for this ET
+    // session; (b) a macro symbol this battle does NOT hold, bench or score
+    // (its own universe, below) takes the run's shared quote — a per-battle
+    // copy, recorded with the shared fetch's own instant. Flag off: the line
+    // below is today's fetch, exactly.
+    const ownMarketSymbols = EVAL_MARKET_DATA_CUTS_ENABLED ? new Set([...portfolioSymbols, ...benchSymbols, ...hotBenchSymbols, ...cpuSymbols]) : null;
     await Promise.all(
       allSymbols.map(async (symbol) => {
         try {
-          const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
+          const shared = EVAL_MARKET_DATA_CUTS_ENABLED ? sharedMacroQuote(summary, symbol, ownMarketSymbols) : null;
+          const data = shared ? shared.data : EVAL_MARKET_DATA_CUTS_ENABLED ? await fetchEvalSymbolData(db, symbol) : await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
           if (data?.price) {
             prices[symbol] = data.price;
             // Calls (§3.3): the DETACHED fetched quote, before any replacement.
-            callsStep(callsCtx, () => recordFetchedQuote(callsCtx, symbol, data.price, Date.now()));
+            callsStep(callsCtx, () => recordFetchedQuote(callsCtx, symbol, data.price, shared ? shared.fetchedAtMs : Date.now()));
           }
           if (Array.isArray(data?.daily)) {
             dailySeries[symbol] = data.daily;
@@ -3008,7 +3110,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
     // ---- Call Haiku ----
     summary.triggered++;
-    const anthropic = getAnthropicClient();
+    // THE LIMITS ON RECORD (capacity Build 1, Part 4): a pass-through of the
+    // ONE client whose `messages.create` hands the same arguments to the SDK
+    // and returns the SDK's own promise, after attaching a reader of the raw
+    // response's `anthropic-ratelimit-*` headers to it. Request bytes, the
+    // awaited result and any rejection are the SDK's, unchanged; a failed read
+    // is a null in the run record, never a throw here.
+    const anthropic = observeRateLimits(getAnthropicClient());
     const agentName = ctx.agentName || 'Agent';
     const archetype = (ctx.archetype || 'unknown').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 

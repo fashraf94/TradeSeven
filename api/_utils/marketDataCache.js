@@ -19,6 +19,10 @@ import { getFromCache, setInCache } from './serverCache.js';
 import { calculateAllIndicators } from './technicalCalculations.js';
 import { isMarketOpen, isPreMarketWindow, getEffectiveTTLMs, getMarketState, isEarlyCloseDay } from './marketSchedule.js';
 import { VALID_CRYPTO_SYMBOLS } from './agentCryptoAssets.js';
+// Capacity Build 1 (Parts 2 and 4): every EODHD request below goes through the
+// guard — counted always; bounded and limited only with
+// EODHD_FETCH_GUARD_ENABLED on (false at merge: `fetch(url)` exactly as before).
+import { eodhdFetch } from './eodhdFetchGuard.js';
 
 // ============================================
 // CONSTANTS
@@ -354,7 +358,7 @@ export async function fetchDailyOHLCV(eohdSymbol, apiKey) {
   const url = `${API_BASE}/eod/${eohdSymbol}?api_token=${apiKey}&fmt=json&period=d&order=d&from=${from}`;
 
   console.log(`[MarketDataCache] Fetching daily OHLCV for ${eohdSymbol}`);
-  const response = await fetch(url);
+  const response = await eodhdFetch(url, 'eod');
 
   if (!response.ok) {
     throw new Error(`EODHD daily OHLCV responded with ${response.status}`);
@@ -381,7 +385,7 @@ async function fetchFundamentals(eohdSymbol, apiKey) {
   const url = `${API_BASE}/fundamentals/${eohdSymbol}?api_token=${apiKey}&filter=General,Highlights,Valuation,Technicals,AnalystRatings&fmt=json`;
 
   console.log(`[MarketDataCache] Fetching fundamentals for ${eohdSymbol}`);
-  const response = await fetch(url);
+  const response = await eodhdFetch(url, 'other');
 
   if (!response.ok) {
     throw new Error(`EODHD fundamentals responded with ${response.status}`);
@@ -451,7 +455,7 @@ async function fetchHolders(eohdSymbol, apiKey) {
   const url = `${API_BASE}/fundamentals/${eohdSymbol}?api_token=${apiKey}&filter=Holders&fmt=json`;
 
   console.log(`[MarketDataCache] Fetching holders for ${eohdSymbol}`);
-  const response = await fetch(url);
+  const response = await eodhdFetch(url, 'other');
 
   if (!response.ok) {
     console.error(`[MarketDataCache] Holders fetch failed for ${eohdSymbol}: ${response.status}`);
@@ -474,7 +478,7 @@ async function fetchNews(eohdSymbol, apiKey) {
   const url = `${API_BASE}/news?s=${eohdSymbol}&api_token=${apiKey}&limit=10&fmt=json`;
 
   console.log(`[MarketDataCache] Fetching news for ${eohdSymbol}`);
-  const response = await fetch(url);
+  const response = await eodhdFetch(url, 'other');
 
   if (!response.ok) {
     throw new Error(`EODHD news responded with ${response.status}`);
@@ -502,7 +506,7 @@ async function fetchEarnings(eohdSymbol, apiKey) {
   const url = `${API_BASE}/fundamentals/${eohdSymbol}?api_token=${apiKey}&filter=General,Earnings&fmt=json`;
 
   console.log(`[MarketDataCache] Fetching earnings for ${eohdSymbol}`);
-  const response = await fetch(url);
+  const response = await eodhdFetch(url, 'other');
 
   if (!response.ok) {
     throw new Error(`EODHD earnings responded with ${response.status}`);
@@ -555,10 +559,16 @@ async function fetchEarnings(eohdSymbol, apiKey) {
  * @param {boolean} options.forceRefresh - Bypass cache entirely
  * @param {string[]} options.fields - Only fetch specific fields (e.g., ['price', 'technicals'])
  * @param {string} options.type - Explicit 'crypto' or 'stock' type
+ * @param {Function} [options.loadFallbackDaily] - capacity Build 1 Part 3a only
+ *   (api/_utils/evalMarketData.js): when the real-time request FAILS and this
+ *   call fetched no daily bars, the fallback price is taken from the bars this
+ *   loader returns — a fresh `/eod/` fetch — instead of none. It makes a
+ *   price-only call fail exactly as a `['daily', 'price']` call fails today.
+ *   Absent (every other caller), nothing changes.
  * @returns {object} Analysis data with cache status and stale data indicators
  */
 export async function getStockAnalysisData(symbol, options = {}) {
-  const { forceRefresh = false, fields = null, type = null } = options;
+  const { forceRefresh = false, fields = null, type = null, loadFallbackDaily = null } = options;
 
   const clean = getCleanSymbol(symbol);
   const isCrypto = type === 'crypto' || isCryptoSymbol(symbol);
@@ -682,7 +692,7 @@ export async function getStockAnalysisData(symbol, options = {}) {
 
   // Get real-time price if requested
   if (!fields || fields.includes('price')) {
-    await fetchRealTimePrice(eohdSymbol, apiKey, result);
+    await fetchRealTimePrice(eohdSymbol, apiKey, result, loadFallbackDaily);
   }
 
   return result;
@@ -789,10 +799,10 @@ function describeQuoteValue(v) {
  * A failed request (non-200 or a throw) falls back to the latest OHLCV close,
  * marked `fallback: true` — unchanged.
  */
-async function fetchRealTimePrice(eohdSymbol, apiKey, result) {
+async function fetchRealTimePrice(eohdSymbol, apiKey, result, loadFallbackDaily = null) {
   try {
     const url = `${API_BASE}/real-time/${eohdSymbol}?api_token=${apiKey}&fmt=json`;
-    const response = await fetch(url);
+    const response = await eodhdFetch(url, 'realTime');
 
     if (response.ok) {
       const data = await response.json();
@@ -823,6 +833,14 @@ async function fetchRealTimePrice(eohdSymbol, apiKey, result) {
   } catch (err) {
     console.error(`[MarketDataCache] Real-time price fetch failed for ${eohdSymbol}:`, err.message);
     result.errors.price = err.message;
+
+    // Capacity Build 1 Part 3a: a price-only call fetches its fallback bars
+    // now, fresh, so the fallback reads the same newest row a daily+price
+    // call would have read. A loader that fails leaves no bars, as a failed
+    // daily fetch does today. Without a loader this line does nothing.
+    if (!result.daily && typeof loadFallbackDaily === 'function') {
+      try { result.daily = await loadFallbackDaily(); } catch { /* no bars, no fallback — as today */ }
+    }
 
     // Use latest close from OHLCV as fallback
     if (result.daily && result.daily.length > 0) {
@@ -868,7 +886,7 @@ export async function fetchIntradayCandles(symbol, options = {}) {
   }
 
   console.log(`[MarketDataCache] Fetching intraday ${interval} for ${eohdSymbol}`);
-  const response = await fetch(url);
+  const response = await eodhdFetch(url, 'intraday');
 
   if (!response.ok) {
     throw new Error(`EODHD intraday responded with ${response.status} for ${eohdSymbol}`);

@@ -18,6 +18,9 @@
 //               battle-day; the per-tick universe size (held ∪ bench ∪ hot-bench names).
 //   E2 eodhd    the intraday poller's own unit ledger (intradayBudget/{etDate}.unitsRequested, the only per-day
 //               EODHD count any consumer keeps — docs/audits/20261007_EODHD_CALL_CENSUS.md Q-09).
+//   L  limits   (capacity Build 1, docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md) the run records' `pool`,
+//               `anthropic` and `eodhd` blocks, per session: the Anthropic limits seen and the minimum remaining,
+//               the 429s, EODHD requests per check by endpoint with timeouts and non-2xx, K and max in flight.
 //
 // It is the build's before/after instrument: rerun it over the same window before and after any change.
 //
@@ -163,7 +166,76 @@ export function runRow(r) {
     dormant: finite(r?.dormant) ? r.dormant : 0,
     // Battles the loop evaluated without dispatching a model call (no trigger, CPU seat, budget-skipped, failed build).
     nonModelEvaluated: Math.max(0, evaluated - modelCalls),
+    // Capacity Build 1 (docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md Part 4): the three blocks, numbers only.
+    limits: limitsOfRun(r),
   };
+}
+
+const num = (v) => (finite(v) ? v : null);
+
+/**
+ * A run record's `pool`, `anthropic` and `eodhd` blocks reduced to numbers, or null when the record predates them.
+ * Pure; reads no id (the blocks carry none).
+ */
+export function limitsOfRun(r) {
+  const p = r?.pool; const a = r?.anthropic; const e = r?.eodhd;
+  if (!p && !a && !e) return null;
+  const req = e?.requests || {};
+  const bad = e?.non2xx || {};
+  return {
+    pool: p ? { k: num(p.k), startCutoffMs: num(p.startCutoffMs), maxInFlight: num(p.maxInFlight), dispatched: num(p.dispatched) } : null,
+    anthropic: a ? {
+      requestsLimit: num(a.requestsLimit), inputTokensLimit: num(a.inputTokensLimit), outputTokensLimit: num(a.outputTokensLimit),
+      minRequestsRemaining: num(a.minRequestsRemaining), minInputTokensRemaining: num(a.minInputTokensRemaining), minOutputTokensRemaining: num(a.minOutputTokensRemaining),
+      responses429: num(a.responses429) ?? 0,
+    } : null,
+    eodhd: e ? {
+      eod: num(req.eod) ?? 0, realTime: num(req.realTime) ?? 0, intraday: num(req.intraday) ?? 0, other: num(req.other) ?? 0,
+      timeouts: num(e.timeouts) ?? 0, s429: num(bad[429]) ?? 0, s5xx: num(bad['5xx']) ?? 0, sOther: num(bad.other) ?? 0,
+    } : null,
+  };
+}
+
+const minOf = (values) => { const v = values.filter(finite); return v.length ? Math.min(...v) : null; };
+const sumOf = (values) => values.filter(finite).reduce((s, v) => s + v, 0);
+
+/**
+ * L — THE LIMITS ON RECORD, per ET session, over runs that carry the blocks. Pure.
+ *   limits seen: the LOWEST limit any run in the session recorded (the most restrictive in force);
+ *   minimum remaining: the session's minimum; 429s: the sum;
+ *   EODHD requests per check: all EODHD requests ÷ the battles the runs evaluated (each evaluated battle is one check);
+ *   K seen, max in flight, battles dispatched.
+ */
+export function limitsRead(rows, days) {
+  const perDay = days.map((day) => {
+    const dr = rows.filter((r) => r.day === day && r.limits);
+    const L = dr.map((r) => r.limits);
+    const pools = L.map((l) => l.pool).filter(Boolean);
+    const an = L.map((l) => l.anthropic).filter(Boolean);
+    const eo = L.map((l) => l.eodhd).filter(Boolean);
+    const requests = sumOf(eo.map((x) => x.eod + x.realTime + x.intraday + x.other));
+    const checks = sumOf(dr.map((r) => r.evaluated));
+    return {
+      day,
+      runs: dr.length,
+      kSeen: [...new Set(pools.map((p) => p.k).filter(finite))].sort((a, b) => a - b),
+      maxInFlight: pools.length ? Math.max(0, ...pools.map((p) => p.maxInFlight ?? 0)) : null,
+      dispatched: sumOf(pools.map((p) => p.dispatched)),
+      requestsLimit: minOf(an.map((x) => x.requestsLimit)),
+      inputTokensLimit: minOf(an.map((x) => x.inputTokensLimit)),
+      outputTokensLimit: minOf(an.map((x) => x.outputTokensLimit)),
+      minRequestsRemaining: minOf(an.map((x) => x.minRequestsRemaining)),
+      minInputTokensRemaining: minOf(an.map((x) => x.minInputTokensRemaining)),
+      minOutputTokensRemaining: minOf(an.map((x) => x.minOutputTokensRemaining)),
+      responses429: sumOf(an.map((x) => x.responses429)),
+      eodhdRequests: requests,
+      eodhdByEndpoint: { eod: sumOf(eo.map((x) => x.eod)), realTime: sumOf(eo.map((x) => x.realTime)), intraday: sumOf(eo.map((x) => x.intraday)), other: sumOf(eo.map((x) => x.other)) },
+      eodhdPerCheck: checks > 0 ? requests / checks : null,
+      eodhdTimeouts: sumOf(eo.map((x) => x.timeouts)),
+      eodhdNon2xx: { 429: sumOf(eo.map((x) => x.s429)), '5xx': sumOf(eo.map((x) => x.s5xx)), other: sumOf(eo.map((x) => x.sOther)) },
+    };
+  });
+  return { runsWithBlocks: rows.filter((r) => r.limits).length, perDay };
 }
 
 const RUN_FIELDS = ['battlesTotal', 'modelCalls', 'wallMs', 'budgetSkipped', 'deferred', 'lockSkipped', 'triggered', 'evaluated', 'dormant', 'nonModelEvaluated'];
@@ -499,7 +571,26 @@ export function render(read) {
   L.push('### E2. The intraday poller\'s unit ledger (`intradayBudget/{etDate}`)', '');
   L.push(`Sessions with a ledger: ${B.units.n} of ${read.days.length}; units requested per session median ${tok(B.units.median)}, p90 ${tok(B.units.p90)}, max ${tok(B.units.max)}.`, '');
   L.push(table(['ET day', 'Units requested', 'Sweeps', 'By source'], B.perDay.map((r) => [r.day, tok(r.unitsRequested), n0(r.sweeps), r.unitsBySource ? Object.entries(r.unitsBySource).map(([k, v]) => `${k} ${tok(v)}`).join(' · ') : '—'])), '');
+  L.push(...renderLimits(read.limits));
   return L.join('\n');
+}
+
+/** Section L — the limits on record (capacity Build 1). Pure. */
+export function renderLimits(limits) {
+  const L = ['### L. The limits on record (`pool`, `anthropic`, `eodhd` — capacity Build 1)', ''];
+  if (!limits || limits.runsWithBlocks === 0) {
+    L.push('No run record in the window carries the blocks yet (they are written from the merge of capacity Build 1 on).', '');
+    return L;
+  }
+  L.push(`${limits.runsWithBlocks} run records carry the blocks. Limits are the lowest any run recorded; "min left" is the session minimum; per check = EODHD requests ÷ battles evaluated.`, '');
+  const days = limits.perDay.filter((d) => d.runs > 0);
+  L.push('**Pool and Anthropic**', '');
+  L.push(table(['ET day', 'Runs', 'K', 'Max in flight', 'Dispatched', 'Req limit', 'Input tok limit', 'Output tok limit', 'Req min left', 'Input min left', 'Output min left', '429s'],
+    days.map((d) => [d.day, d.runs, d.kSeen.join(', ') || '—', n0(d.maxInFlight), n0(d.dispatched), tok(d.requestsLimit), tok(d.inputTokensLimit), tok(d.outputTokensLimit), tok(d.minRequestsRemaining), tok(d.minInputTokensRemaining), tok(d.minOutputTokensRemaining), n0(d.responses429)])), '');
+  L.push('**EODHD (this process\'s requests through marketDataCache.js, per run)**', '');
+  L.push(table(['ET day', 'Requests', 'Per check', 'eod', 'real-time', 'intraday', 'other', 'Timeouts', '429', '5xx', 'Other non-2xx'],
+    days.map((d) => [d.day, tok(d.eodhdRequests), n0(d.eodhdPerCheck), tok(d.eodhdByEndpoint.eod), tok(d.eodhdByEndpoint.realTime), tok(d.eodhdByEndpoint.intraday), tok(d.eodhdByEndpoint.other), n0(d.eodhdTimeouts), n0(d.eodhdNon2xx[429]), n0(d.eodhdNon2xx['5xx']), n0(d.eodhdNon2xx.other)])), '');
+  return L;
 }
 
 // ---------------------------------------------------------------- the run (reads only)
@@ -546,7 +637,7 @@ export async function gather(db, { days, readAtMs, confirmWindow = null }) {
   // 3. the poller's unit ledger, one document per ET date
   const budgetDocs = await db.getAll(...days.map((d) => db.collection('intradayBudget').doc(d)));
   const docsByDay = Object.fromEntries(budgetDocs.map((d, i) => [days[i], d.exists ? d.data() : null]));
-  return { readAtMs, days, battlesRead: battleDocs.length, runs: runsRead(runs, days, { confirmWindow }), mix: mixRead(runs, ticks), ticks: ticksRead(entries, ticks), budget: budgetRead(docsByDay, days) };
+  return { readAtMs, days, battlesRead: battleDocs.length, runs: runsRead(runs, days, { confirmWindow }), mix: mixRead(runs, ticks), ticks: ticksRead(entries, ticks), budget: budgetRead(docsByDay, days), limits: limitsRead(runs, days) };
 }
 
 async function main() {
