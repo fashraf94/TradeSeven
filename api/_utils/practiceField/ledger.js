@@ -238,27 +238,20 @@ const founderRuledMove = (holding, ratio) => founderResolved(holding?.basisSuspi
   && sameMove(ratio, holding.basisSuspicion.ratio);
 
 /**
- * Does a feed action EXPLAIN a suspicion's move? Dated inside the gap (after `since`, on or before the session it was
- * first suspected), and matching the move within twice the engine's tolerance — the engine's own test for a feed row
- * that explains a gap (mandateCorporateActions.js feedExplainsGap): a share-basis action, shares × r ⇒ price × 1/r; a
- * cash dividend, the ex-date drop 1 − amount ÷ the frozen mark (refuter D3: a special dividend whose row arrives late).
+ * Does a share-basis action EXPLAIN a suspicion's move? Dated inside the gap (after `since`, on or before the session it
+ * was first suspected), and its ratio matches the move within twice the engine's tolerance — the engine's own test for a
+ * feed row that explains a gap (mandateCorporateActions.js feedExplainsGap: shares × r ⇒ price × 1/r). Only a listed
+ * SHARE-BASIS row releases a suspicion (the founder's ruling); a cash dividend whose row arrives after the suspicion was
+ * raised does not, and waits with everything else until the founder rules (refuter D3: put as a question, Q-T).
  */
 function explainsSuspicion(action, s) {
-  if (!s) return false;
+  if (!SHARE_BASIS_TYPES.has(action?.type) || !s) return false;
+  const r = Number(action.ratio);
   const move = Number(s.ratio);
-  if (!(move > 0) || !Number.isFinite(move)) return false;
-  if (typeof action?.effectiveDate !== 'string' || action.effectiveDate > s.suspectedOn) return false;
+  if (!(r > 0) || !(move > 0) || !Number.isFinite(r) || !Number.isFinite(move)) return false;
+  if (typeof action.effectiveDate !== 'string' || action.effectiveDate > s.suspectedOn) return false;
   if (typeof s.since === 'string' && action.effectiveDate <= s.since) return false;
-  let expected = null;
-  if (SHARE_BASIS_TYPES.has(action.type)) {
-    const r = Number(action.ratio);
-    if (r > 0 && Number.isFinite(r)) expected = 1 / r;
-  } else if (action.type === 'cash_dividend') {
-    const amount = Number(action.amount);
-    const frozen = Number(s.frozenMark);
-    if (amount > 0 && frozen > 0 && amount < frozen) expected = 1 - amount / frozen;
-  }
-  return expected !== null && sameMove(move, expected);
+  return sameMove(move, 1 / r);
 }
 
 /**
@@ -693,7 +686,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     // A share-basis row that EXPLAINS the holding's open suspicion, at a close after the one that raised it, releases it
     // (fix round 3, T2A-D01): the record is removed and the receipt says what it explained.
     let explained = {};
-    const suspicion = SHARE_BASIS_TYPES.has(action.type) || action.type === 'cash_dividend' ? openBasisSuspicion(next.holdings[sym]) : null;
+    const suspicion = SHARE_BASIS_TYPES.has(action.type) ? openBasisSuspicion(next.holdings[sym]) : null;
     if (suspicion && date > suspicion.suspectedOn && explainsSuspicion(action, suspicion)) {
       const { basisSuspicion, ...rest } = next.holdings[sym];
       next.holdings = { ...next.holdings, [sym]: rest };

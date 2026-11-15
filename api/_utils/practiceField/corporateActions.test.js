@@ -1688,21 +1688,18 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
     expect(rowOf(ctx, S[3]).marks.AAPL).toMatchObject({ mark: 25, quality: 'vendor_time' });
   });
 
-  it('refuter D3: a special dividend whose row arrives a close LATE explains the move it caused — the suspicion raised meanwhile is released by it, the dividend is paid once on the current count, and nothing waits after it', async () => {
+  it('refuter D3 (as built, a question — Q-T): a special dividend whose row arrives a close LATE does NOT release the suspicion raised meanwhile — only a listed share-basis row or the founder does; the dividend waits on its record, nothing is paid, the record stays', async () => {
     const ctx = await entered();
     await closeQ(ctx, S[1], { ...Q, AAPL: 50 }); // the drop, no row yet: suspected, rightly
     expect(ideaOf(ctx).ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[1] });
     await closeQ(ctx, S[2], { ...Q, AAPL: { price: 50, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', amount: 50, effectiveDate: S[1], source: 'eodhd_dividends' }] } });
     for (const key of ['ledger', 'comparisonLedger']) {
       const ledger = ideaOf(ctx)[key];
-      const paid = paidOn(ledger, 'cash_dividend');
-      expect(paid.map(cashOf), key).toEqual([roundUsd(199.940017 * 50)]);
-      expect(paid[0].explainedSuspicion).toEqual({ suspectedOn: S[1], ratio: 0.5, frozenMark: 100 });
-      expect(ledger.holdings.AAPL.basisSuspicion).toBeUndefined();
+      expect(paidOn(ledger, 'cash_dividend'), key).toEqual([]);
+      expect(ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[1], resolvedBy: null });
+      expect(ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: `cash_dividend_AAPL_${S[1]}`, amount: 50 })]);
       expect(ledger.holdings.AAPL.shares).toBe(199.940017);
     }
-    await closeQ(ctx, S[3], { ...Q, AAPL: { price: 50, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', amount: 0.25, effectiveDate: S[3], source: 'eodhd_dividends' }] } });
-    expect(paidOn(ideaOf(ctx).ledger, 'cash_dividend').map(cashOf)).toEqual([roundUsd(199.940017 * 50), 49.99]);
   });
 
   it('a holding waiting on a DELISTING is not screened (R-32): a delisted name falling to half its carried price is the delisting, not a split', async () => {
