@@ -259,3 +259,46 @@ describe('BRS-18 — a group question: Compare with a holding (a picker, weakest
     expect(ctx.research.compareFor('EQIX').rows.find((r) => r.key === 'stands').cand).toBe('Can’t come in · a crypto can’t replace a stock');
   });
 });
+
+// ── The review round on PR B (lenses 1 and 4): each row failed on cb6fefb1 ──
+describe('review BL1-1 — Use across keeps its applied line when the screen rebuilds the context for the step it added', () => {
+  beforeEach(() => { flag.sheet = 'on'; });
+  it('Apply → the screen re-renders with the new step → "3 remain · Undo" is still there', async () => {
+    await openResearch('MSFT', contextFor('MSFT'));
+    await clickEl(q('[data-research-use-across="up_today"]'));
+    await clickEl(q('[data-research-apply]'));
+    expect(q('[data-research-applied]')).not.toBeNull();
+    // The screen's own re-render: the context now describes the step Apply added, opened from the first one.
+    const next = contextFor('MSFT', { conditions: [{ id: 'up_today' }], openedAtFirst: true });
+    const bombContext = agentBombContext(BATTLE, 'MSFT', Date.parse(NOW), { battleId: 'stock-battle' });
+    await open(nonHeld('MSFT', { threshold: 6.48 }), bombContext, { sheetContext: next.sheetContext });
+    expect(q('[data-research-chip="up_today"]')).not.toBeNull();
+    expect(q('[data-research-applied]')).not.toBeNull();
+  });
+});
+
+describe('review BL4-1 — the research strip can stick: its block box does not hold it', () => {
+  beforeEach(() => { flag.sheet = 'on'; });
+  it('the strip\'s own block box is display: contents (its sticky containing block is the whole analysis column); state 1\'s boxes are untouched', async () => {
+    await openResearch('MSFT', contextFor('MSFT'));
+    expect(q('[data-shell-block="researchStrip"]').style.display).toBe('contents');
+    for (const k of ['researchForQuestion', 'researchFinding', 'researchCompare', 'stance']) expect(q(`[data-shell-block="${k}"]`).getAttribute('style')).toBeNull();
+  });
+});
+
+describe('review BL4-10 / BL4-5 — the research links and the Draft door at phone width', () => {
+  beforeEach(() => { flag.sheet = 'on'; });
+  it('every research link is at least 44 px wide as well as tall', async () => {
+    await openResearch('MSFT', contextFor('MSFT', { conditions: [{ id: 'down_today' }], openedAtFirst: true }));
+    await clickEl(q('[data-research-use-across="up_today"]') ?? q('[data-research-left-undo]'));
+    const links = [...document.body.querySelectorAll('[data-shell-block^="research"] button')];
+    expect(links.length).toBeGreaterThan(0);
+    expect(links.filter((b) => (parseInt(b.style.minWidth, 10) || 0) < 44).map((b) => b.outerHTML.slice(0, 70))).toEqual([]);
+  });
+  it('the Draft door may wrap and never takes more than half the action row (a 20-letter agent name at 320 px)', async () => {
+    await openResearch('MSFT', contextFor('MSFT'));
+    const door = q('[data-sheet-draft]');
+    expect(door.style.whiteSpace).not.toBe('nowrap');
+    expect(door.style.maxWidth).toBe('50%');
+  });
+});

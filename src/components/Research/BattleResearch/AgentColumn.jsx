@@ -73,10 +73,15 @@ export default function AgentColumn({ board, voice, earlier = [], droppedInvesti
 }
 
 /** The phone's bottom bar (BRS-16): the explanation's first paragraph, clamped to two lines, and *Read more · history*. */
-export function PhoneLeadBar({ lead, voice, onMore }) {
+export function PhoneLeadBar({ lead, voice, onMore, bottomInset = 0, inert = false }) {
   if (!lead) return null;
   return (
-    <div data-br-lead-bar style={{ flexShrink: 0, padding: '10px 12px 12px', borderTop: `1px solid ${ST.hair}`, background: ST.surface, display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div
+      data-br-lead-bar
+      {...(inert ? { inert: true } : {})}
+      // Above the phone browser's own toolbar: the bench sheet's viewportInset, padded (review BL4-4).
+      style={{ flexShrink: 0, padding: '10px 12px 12px', ...(bottomInset > 0 ? { paddingBottom: `calc(12px + ${bottomInset}px)` } : {}), borderTop: `1px solid ${ST.hair}`, background: ST.surface, display: 'flex', flexDirection: 'column', gap: 6 }}
+    >
       <button type="button" data-br-lead onClick={onMore} style={{ ...rowButton, display: 'block', width: '100%', minHeight: 44, textAlign: 'left' }}>
         <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 13.5, lineHeight: 1.45, color: ST.ink }}>
           <b style={{ color: ST.teal, fontWeight: 700 }}>{voice}: </b>{lead}

@@ -44,8 +44,10 @@ const INIT = (battleId) => ({
   opening: { status: 'idle', result: null, why: null },
   pending: null, // { questionId } while a question's evidence is read
   failure: null, // { questionId, why } — a failed first fetch (no result)
-  refresh: { inFlight: false, lastAttemptAt: null, error: null, report: null },
-  scroll: {},
+  // The last Refresh's report and error, each stamped with the investigation it was made for (review BL1-4).
+  refresh: { inFlight: false, lastAttemptAt: null, error: null, errorFor: null, report: null },
+  // *Show all* per step, like the scroll (review BL4-2 / BL1-6): a reopen or an undone step keeps the long list.
+  showAll: {},
 });
 
 /** One evidence bundle: the route's quotes and the rankings doc, read together. Rejects with { why }. */
@@ -109,12 +111,21 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
   agentRef.current = agent;
   const evidenceRef = useRef(null); // the latest bundle { battleId, takenAt, quotesBody, rankingsDoc }
   const fullDocRef = useRef(new Map()); // `${invId}|${resultId}` → the whole rankings doc (current results only)
-  const refreshing = useRef(false); // synchronous: a second tap while one is in flight does nothing
-  const asking = useRef(false);
+  // Synchronous, and per battle (review BL1-5): a second tap while one is in flight does nothing, but a read still in
+  // flight for a battle the screen has left never swallows the new battle's first tap.
+  const refreshing = useRef(null); // the battle id a Refresh is in flight for
+  const asking = useRef(null); // the battle id a question is being read for
+  const inFlightRef = useRef(null); // { battleId, promise } — the bundle being read, shared (review BL1-3)
+  // The scroll per step lives in a ref: remembering it re-renders nothing (review BL4-3).
+  const scrollMemRef = useRef(new Map());
   const lastCreatedRef = useRef(0);
   const idRef = useRef(battleId);
   idRef.current = battleId;
-  if (evidenceRef.current && evidenceRef.current.battleId !== battleId) { evidenceRef.current = null; fullDocRef.current = new Map(); }
+  const seenBattleRef = useRef(battleId);
+  if (seenBattleRef.current !== battleId) {
+    seenBattleRef.current = battleId;
+    evidenceRef.current = null; fullDocRef.current = new Map(); scrollMemRef.current = new Map(); inFlightRef.current = null;
+  }
 
   const active = s.session.list.find((x) => x.investigationId === s.session.activeId) ?? null;
 
@@ -122,16 +133,29 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
     const now = clock();
     const kept = evidenceRef.current;
     if (!fresh && kept && kept.battleId === idRef.current && now - kept.receivedAt < EVIDENCE_REUSE_MS) return kept;
+    // A question tapped while the opening (or a Refresh) is reading shares that read: one of each per
+    // open-and-ask, never two (review BL1-3).
+    const flying = inFlightRef.current;
+    if (!fresh && flying && flying.battleId === idRef.current) return flying.promise;
     const id = idRef.current;
-    const b = await fetcher(id);
-    const bundle = { ...b, receivedAt: typeof b.receivedAt === 'number' ? b.receivedAt : now, battleId: id };
-    if (idRef.current === id) evidenceRef.current = bundle;
-    return bundle;
+    const promise = (async () => {
+      const b = await fetcher(id);
+      const bundle = { ...b, receivedAt: typeof b.receivedAt === 'number' ? b.receivedAt : now, battleId: id };
+      if (idRef.current === id) evidenceRef.current = bundle;
+      return bundle;
+    })();
+    inFlightRef.current = { battleId: id, promise };
+    try {
+      return await promise;
+    } finally {
+      if (inFlightRef.current?.promise === promise) inFlightRef.current = null;
+    }
   }, [fetcher, clock]);
 
   /** The opening's evidence (BRS-5): the union as it stands, and the starters' availability. */
   const open = useCallback(async () => {
-    if (!idRef.current) return;
+    const id = idRef.current;
+    if (!id) return;
     setS((x) => (x.opening.status === 'loading' ? x : { ...x, opening: { ...x.opening, status: 'loading', why: null } }));
     try {
       const b = await getBundle();
@@ -139,22 +163,25 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
       const result = buildResult({ battle: battleRef.current, incumbent: null, rankingsDoc: b.rankingsDoc, quotesBody: b.quotesBody, takenAt: b.takenAt, receivedAt: b.receivedAt, resultId: 'opening' });
       setS((x) => ({ ...x, opening: { status: 'ready', result, why: null } }));
     } catch (e) {
+      if (idRef.current !== id) return; // a failure for a battle the screen has left shows nothing (review BL1-5)
       setS((x) => ({ ...x, opening: { status: 'failed', result: x.opening.result, why: e?.why ?? BR_COPY.whyQuotes } }));
     }
   }, [getBundle]);
 
   /** A starter tapped (BRS-5 – BRS-7): its evidence (or the minute-old bundle), one frozen result, a new investigation. */
   const ask = useCallback(async (questionId) => {
-    if (asking.current || !idRef.current) return;
+    const id = idRef.current;
+    if (!id || asking.current === id) return;
+    // BRS-6: the tap fixes the incumbent as weakestOf(bookOf(battle)) AT THAT MOMENT — the battle as tapped, not
+    // as it stands when the read lands (review R1: a check landing mid-read never changes the question's weakest).
     const b0 = battleRef.current;
     if (questionId === 'weakest_alternatives' && noWeakestReason(b0) !== null) return;
-    asking.current = true;
+    asking.current = id;
     setS((x) => ({ ...x, pending: { questionId }, failure: null }));
     try {
       const b = await getBundle();
       if (idRef.current !== b.battleId) return;
-      const battleNow = battleRef.current;
-      // BRS-6: the tap fixes the incumbent as weakestOf(bookOf(battle)) at that moment.
+      const battleNow = b0;
       const incumbent = questionId === 'weakest_alternatives' ? incumbentOf(battleNow) : null;
       const result = buildResult({ battle: battleNow, incumbent, rankingsDoc: b.rankingsDoc, quotesBody: b.quotesBody, takenAt: b.takenAt, receivedAt: b.receivedAt, index: 1, resultId: 'r1' });
       const a = agentRef.current ?? {};
@@ -169,9 +196,10 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
       fullDocRef.current.set(`${inv.investigationId}|r1`, b.rankingsDoc);
       setS((x) => ({ ...x, session: addInvestigation(x.session, inv), view: 'board', pending: null, failure: null, refresh: { ...x.refresh, error: null, report: null } }));
     } catch (e) {
+      if (idRef.current !== id) return; // the old battle's failure never shows in the new one (review BL1-5)
       setS((x) => ({ ...x, pending: null, failure: { questionId, why: e?.why ?? BR_COPY.whyQuotes } }));
     } finally {
-      asking.current = false;
+      if (asking.current === id) asking.current = null;
     }
   }, [getBundle, clock]);
 
@@ -182,7 +210,7 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
       if (!inv) return x;
       const next = fn(inv);
       if (next === inv) return x;
-      return { ...x, session: replaceInvestigation(x.session, next), refresh: { ...x.refresh, report: null, error: null } };
+      return { ...x, session: replaceInvestigation(x.session, next), refresh: { ...x.refresh, report: null, error: null, errorFor: null } };
     });
   }, []);
 
@@ -205,19 +233,21 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
   /** BRS-14 — Refresh: a NEW result, at most once a minute, one at a time; a failure changes nothing. */
   const refresh = useCallback(async () => {
     const inv = active;
-    if (!inv || refreshing.current) return;
+    const id = idRef.current;
+    if (!inv || refreshing.current === id) return;
     const gate = refreshGate({ inFlight: false, since: currentResult(inv).receivedAt, lastAttemptAt: s.refresh.lastAttemptAt, nowMs: clock() });
     if (!gate.allowed) return;
-    refreshing.current = true;
+    refreshing.current = id;
     const startedAt = clock();
-    setS((x) => ({ ...x, refresh: { ...x.refresh, inFlight: true, lastAttemptAt: startedAt, error: null } }));
+    const battleAtTap = battleRef.current; // the battle as the player tapped Refresh (BRS-6's moment, review R1)
+    setS((x) => ({ ...x, refresh: { ...x.refresh, inFlight: true, lastAttemptAt: startedAt, error: null, errorFor: null } }));
     try {
       const b = await getBundle({ fresh: true });
       if (idRef.current !== b.battleId) return;
       setS((x) => {
         const cur = x.session.list.find((y) => y.investigationId === inv.investigationId);
         if (!cur) return { ...x, refresh: { ...x.refresh, inFlight: false } };
-        const battleNow = battleRef.current;
+        const battleNow = battleAtTap;
         const rid = `r${cur.nextResult}`;
         const prevResult = currentResult(cur);
         const prevOutcome = currentStep(cur).outcome;
@@ -226,29 +256,34 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
         // Only the current result keeps the whole doc (§6); the older ones hand the modal their subset.
         for (const k of [...fullDocRef.current.keys()]) if (k.startsWith(`${cur.investigationId}|`)) fullDocRef.current.delete(k);
         fullDocRef.current.set(`${cur.investigationId}|${rid}`, b.rankingsDoc);
-        const report = { ...refreshReport(prevResult, prevOutcome, result, currentStep(next).outcome), label: result.label, stepId: currentStep(next).stepId };
-        return { ...x, session: replaceInvestigation(x.session, next), refresh: { inFlight: false, lastAttemptAt: startedAt, error: null, report } };
+        const report = { ...refreshReport(prevResult, prevOutcome, result, currentStep(next).outcome), label: result.label, stepId: currentStep(next).stepId, investigationId: cur.investigationId };
+        return { ...x, session: replaceInvestigation(x.session, next), refresh: { inFlight: false, lastAttemptAt: startedAt, error: null, errorFor: null, report } };
       });
     } catch (e) {
       // A failed refresh changes nothing: the current result stays exactly as it was.
+      if (idRef.current !== id) return; // review BL1-5
       const t = etClockAmPm(currentResult(inv).takenAt);
-      setS((x) => ({ ...x, refresh: { ...x.refresh, inFlight: false, error: BR_COPY.refreshFailed(e?.why ?? BR_COPY.whyQuotes, t) } }));
+      setS((x) => ({ ...x, refresh: { ...x.refresh, inFlight: false, error: BR_COPY.refreshFailed(e?.why ?? BR_COPY.whyQuotes, t), errorFor: inv.investigationId } }));
     } finally {
-      refreshing.current = false;
+      if (refreshing.current === id) refreshing.current = null;
     }
   }, [active, s.refresh.lastAttemptAt, getBundle, clock]);
 
   /** The rankings the modal gets for one result (§6). */
   const rankingsFor = useCallback((inv, resultId) => fullDocRef.current.get(`${inv.investigationId}|${resultId}`) ?? subsetDoc(inv.results[resultId]), []);
 
-  const rememberScroll = useCallback((key, top) => { setS((x) => (x.scroll[key] === top ? x : { ...x, scroll: { ...x.scroll, [key]: top } })); }, []);
+  // The scroll per step: a ref, never state — a scroll frame re-renders nothing (review BL4-3).
+  const rememberScroll = useCallback((key, top) => { scrollMemRef.current.set(key, top); }, []);
+  const scrollOf = useCallback((key) => scrollMemRef.current.get(key) ?? 0, []);
+  // *Show all* per step (review BL4-2): a tap, so state.
+  const setShowAll = useCallback((key, on) => { setS((x) => (!!x.showAll[key] === !!on ? x : { ...x, showAll: { ...x.showAll, [key]: !!on } })); }, []);
 
   return useMemo(() => ({
     state: s,
     active,
     open, ask, setOrder, addCondition, removeCondition, switchGroup, applyAcross, undo, previous, goTo, startOver, reopen, refresh,
-    rankingsFor, rememberScroll,
+    rankingsFor, rememberScroll, scrollOf, setShowAll,
     // The weakest question's own availability (BRS-6): null when there is a weakest.
     noWeakest: battle ? noWeakestReason(battle) : 'no_ladder',
-  }), [s, active, open, ask, setOrder, addCondition, removeCondition, switchGroup, applyAcross, undo, previous, goTo, startOver, reopen, refresh, rankingsFor, rememberScroll, battle]);
+  }), [s, active, open, ask, setOrder, addCondition, removeCondition, switchGroup, applyAcross, undo, previous, goTo, startOver, reopen, refresh, rankingsFor, rememberScroll, scrollOf, setShowAll, battle]);
 }

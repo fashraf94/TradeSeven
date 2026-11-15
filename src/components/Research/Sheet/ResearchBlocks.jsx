@@ -26,11 +26,12 @@ import { ST, MONO, tint } from './sheetTheme.js';
 import { BR_COPY } from '../BattleResearch/battleResearchCopy.js';
 
 const EYEBROW = { fontFamily: MONO, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700, whiteSpace: 'nowrap' };
-const BTN = { all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 44, display: 'inline-flex', alignItems: 'center' };
+const BTN = { all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 44, minWidth: 44, display: 'inline-flex', alignItems: 'center' };
 
 function Link({ children, onClick, ...rest }) {
+  // 44 px wide as well as tall: "Undo", "Apply", "Cancel" are short words (review BL4-10).
   return (
-    <button type="button" onClick={onClick} style={{ ...BTN, color: ST.teal, padding: '0 2px' }} {...rest}>
+    <button type="button" onClick={onClick} style={{ ...BTN, color: ST.teal, padding: '0 6px', justifyContent: 'center' }} {...rest}>
       <span style={{ fontSize: 12.5, fontWeight: 700 }}>{children}</span>
     </button>
   );
@@ -188,9 +189,13 @@ export function Compare({ research }) {
 export function researchBlocks(research) {
   if (!research || typeof research !== 'object') return [];
   return [
-    { key: 'researchStrip', node: <ResearchStrip research={research} /> },
+    // `contents`: the strip's own block box must not hold it — a sticky box sticks only within its parent, so the
+    // box steps aside and the whole analysis column is its containing block (review BL4-1).
+    { key: 'researchStrip', node: <ResearchStrip research={research} />, contents: true },
     { key: 'researchForQuestion', node: <ForThisQuestion research={research} /> },
-    { key: 'researchFinding', node: <Finding key={`${research.stepId}|${research.row.symbol}`} research={research} /> },
+    // Keyed on the step the row was OPENED from: a step the modal itself adds (Use across) keeps the finding and
+    // its "3 remain · Undo" line; a row opened afresh starts clean (review BL1-1).
+    { key: 'researchFinding', node: <Finding key={`${research.openedStepId}|${research.row.symbol}`} research={research} /> },
     { key: 'researchCompare', node: <Compare key={research.row.symbol} research={research} /> },
   ];
 }

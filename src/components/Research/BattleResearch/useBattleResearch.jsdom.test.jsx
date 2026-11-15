@@ -21,17 +21,20 @@ import useBattleResearch, { subsetDoc, EVIDENCE_REUSE_MS, fetchEvidence } from '
 import { BR_COPY } from './battleResearchCopy.js';
 import { currentResult, currentStep } from './investigation.js';
 import { REFRESH_COOLDOWN_MS } from './investigation.js';
-import { researchBattle, rankingsDoc, quotesBody, TAKEN_AT } from './__fixtures__/researchFixtures.js';
+import { researchBattle, rankingsDoc, quotesBody, TAKEN_AT, KO_WEAKEST_CHECKS } from './__fixtures__/researchFixtures.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const MIN = 60_000;
 let BATTLE;
-beforeAll(async () => { BATTLE = await researchBattle(); });
+let KO_BATTLE; // the same book after a later check that makes KO the weakest
+beforeAll(async () => { BATTLE = await researchBattle(); KO_BATTLE = await researchBattle({}, { checks: KO_WEAKEST_CHECKS }); });
 
-let container; let root; let clockNow; let fetches; let failNext;
+let container; let root; let clockNow; let fetches; let failNext; let gate;
+const defer = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 const clock = () => clockNow;
 const fetcher = async (battleId) => {
   fetches.push(battleId);
+  if (gate) await gate.promise;
   if (failNext) { failNext = false; throw { why: 'the price read didn’t answer' }; }
   // The server stamps its own time; the client's arrives a second later.
   return { quotesBody: { ...quotesBody(), servedAt: clockNow - 1000 }, rankingsDoc: rankingsDoc(), takenAt: clockNow - 1000, receivedAt: clockNow };
@@ -46,7 +49,7 @@ const run = async (fn) => { await act(async () => { await fn(out.store); }); };
 
 beforeEach(() => {
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
-  clockNow = TAKEN_AT; fetches = []; failNext = false;
+  clockNow = TAKEN_AT; fetches = []; failNext = false; gate = null;
   vi.spyOn(Storage.prototype, 'setItem');
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); });
@@ -212,5 +215,70 @@ describe('fetchEvidence — one bundle: the route and the rankings doc, stamped 
     vi.stubGlobal('fetch', answer(200, { ...quotesBody(), servedAt: TAKEN_AT }));
     READS.rankingsFail = true;
     await expect(fetchEvidence('b')).rejects.toEqual({ why: BR_COPY.whyRankings });
+  });
+});
+
+// ── The review round on PR B (lens 1): each row failed on cb6fefb1 ──
+describe('review BL1-3 — one read of each per open-and-ask, even when the question is tapped while the opening reads', () => {
+  it('the question shares the opening\'s read in flight', async () => {
+    await render();
+    await act(async () => { const o = out.store.open(); const a = out.store.ask('rank_bench'); await Promise.all([o, a]); });
+    expect(fetches).toHaveLength(1);
+    expect(out.store.active).not.toBeNull();
+  });
+});
+
+describe('review BL1-4 — a Refresh\'s report and error belong to their investigation', () => {
+  it('both carry the investigation they were made for', async () => {
+    await render();
+    await run((s) => s.ask('weakest_alternatives'));
+    const id = out.store.active.investigationId;
+    clockNow += REFRESH_COOLDOWN_MS;
+    await run((s) => s.refresh());
+    expect(out.store.state.refresh.report.investigationId).toBe(id);
+    clockNow += REFRESH_COOLDOWN_MS;
+    failNext = true;
+    await run((s) => s.refresh());
+    expect(out.store.state.refresh.errorFor).toBe(id);
+  });
+});
+
+describe('review BL1-5 — a change of battle while a read is in flight (BRS-21)', () => {
+  it('the old battle\'s failed question shows nothing in the new one', async () => {
+    await render();
+    gate = defer();
+    failNext = true;
+    let p;
+    await act(async () => { p = out.store.ask('rank_bench'); });
+    await render('another-battle');
+    const g = gate; gate = null;
+    await act(async () => { g.resolve(); await p; });
+    expect(out.store.state.failure).toBeNull();
+    expect(out.store.state.pending).toBeNull();
+  });
+  it('the new battle\'s first question is not swallowed by the old one still in flight', async () => {
+    await render();
+    gate = defer();
+    let p;
+    await act(async () => { p = out.store.ask('rank_bench'); });
+    await render('another-battle');
+    const g = gate; gate = null;
+    await run((s) => s.ask('rank_bench'));
+    expect(fetches).toEqual(['stock-battle', 'another-battle']);
+    await act(async () => { g.resolve(); await p; });
+    expect(out.store.state.session.list.map((x) => x.battleId)).toEqual(['another-battle']);
+  });
+});
+
+describe('BRS-6 (review R1) — the tap fixes the incumbent at that moment', () => {
+  it('a check landing while the evidence is read does not change the question\'s weakest', async () => {
+    await render();
+    gate = defer();
+    let p;
+    await act(async () => { p = out.store.ask('weakest_alternatives'); });
+    await render('stock-battle', KO_BATTLE);
+    const g = gate; gate = null;
+    await act(async () => { g.resolve(); await p; });
+    expect(currentResult(out.store.active).incumbent.symbol).toBe('EQIX');
   });
 });

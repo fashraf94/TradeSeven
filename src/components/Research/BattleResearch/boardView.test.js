@@ -176,3 +176,15 @@ describe('BRS-5 — the opening', () => {
     expect(on.starters.moving_today.disabled).toBe(false);
   });
 });
+
+describe('review BL1-4 — a Refresh report or error from another investigation never shows here', () => {
+  it('the banner and the error match the investigation as well as the step', () => {
+    const inv = invOf(BATTLE);
+    const stepId = currentStep(inv).stepId;
+    const report = { stepId, investigationId: 'another', label: 'Result 2 · 1:47 PM', moved: 0, in: [], out: [], placedIn: [], placedOut: [], incumbentChanged: null };
+    expect(board(inv, { refresh: { report } }).banner?.kind ?? null).not.toBe('refresh');
+    expect(board(inv, { refresh: { report: { ...report, investigationId: inv.investigationId } } }).banner.kind).toBe('refresh');
+    expect(board(inv, { refresh: { error: 'Couldn’t refresh: x. Your 1:45 PM result is unchanged.', errorFor: 'another' } }).toolbar.refreshError).toBeNull();
+    expect(board(inv, { refresh: { error: 'e', errorFor: inv.investigationId } }).toolbar.refreshError).toBe('e');
+  });
+});

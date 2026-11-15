@@ -9,7 +9,7 @@
 // its own line (the weakest: the two no-weakest cases; What's moving: the
 // calendar's line until one usable quote has arrived). Every tap: no message cost.
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ST, MONO, tint } from '../Sheet/sheetTheme.js';
 import { BR_COPY, STARTER_TEXT, QUESTION_IDS } from './battleResearchCopy.js';
 import { rowButton, ResearchRow } from './ResearchRow.jsx';
@@ -28,6 +28,9 @@ const EYEBROW = { fontFamily: MONO, fontSize: 10, letterSpacing: '0.12em', textT
  * @param {(symbol: string) => void} p.onOpenRow
  */
 export default function ResearchOpening({ proposal, agentName, starters, onAsk, pending = null, failure = null, asTheyStand, onOpenRow, narrow = false }) {
+  // The "as they stand" list: a button that says it expands, its rows rendered only while open — so no hidden row
+  // is a stop in the surface's focus trap, and Tab from the toggle wraps (review BL4-8, BL4-11).
+  const [standOpen, setStandOpen] = useState(false);
   return (
     <div data-br-opening style={{ width: '100%', maxWidth: 640, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <section data-br-proposal={proposal.kind} style={{ padding: narrow ? 14 : 18, borderRadius: 14, border: `1px solid ${tint(ST.teal, 45)}`, background: ST.surface, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -69,19 +72,23 @@ export default function ResearchOpening({ proposal, agentName, starters, onAsk, 
           </div>
         ) : null}
       </section>
-      <details data-br-as-they-stand style={{ borderTop: `1px solid ${ST.hair}` }}>
-        <summary style={{ cursor: 'pointer', minHeight: 44, display: 'flex', alignItems: 'center', color: ST.ink2 }}>
+      <div data-br-as-they-stand style={{ borderTop: `1px solid ${ST.hair}` }}>
+        <button
+          type="button" data-br-as-they-stand-toggle aria-expanded={standOpen ? 'true' : 'false'} onClick={() => setStandOpen((v) => !v)}
+          style={{ ...rowButton, width: '100%', minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, color: ST.ink2, textAlign: 'left' }}
+        >
           <span style={{ fontSize: 13, fontWeight: 600 }}>
             {asTheyStand.status === 'ready' ? BR_COPY.asTheyStand(asTheyStand.rows.length) : asTheyStand.status === 'failed' ? BR_COPY.asTheyStandFailed : BR_COPY.asTheyStandLoading}
           </span>
-        </summary>
-        {asTheyStand.status === 'ready' ? (
+          <span aria-hidden="true" style={{ color: ST.ink3, transform: standOpen ? 'rotate(90deg)' : 'none' }}><span style={{ fontSize: 13 }}>›</span></span>
+        </button>
+        {standOpen && asTheyStand.status === 'ready' ? (
           <ol style={{ margin: '4px 0 8px', padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {asTheyStand.rows.map((r) => <ResearchRow key={r.facts.symbol} facts={r.facts} position={r.position} lead={r.position === 1} onOpen={() => onOpenRow(r.facts.symbol)} />)}
             {asTheyStand.unranked.map((r) => <ResearchRow key={r.facts.symbol} facts={r.facts} note={r.note} onOpen={() => onOpenRow(r.facts.symbol)} />)}
           </ol>
         ) : null}
-      </details>
+      </div>
     </div>
   );
 }

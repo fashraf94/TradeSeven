@@ -308,7 +308,7 @@ export function BrowseAsk({ children }) {
 export function AnalysisBlocks({ blocks, layer = null }) {
   return (
     <div data-shell-analysis={layer === null ? 'browse' : 'battle'} {...(layer === null ? {} : { 'data-sheet-root': '', 'data-sheet-layer': layer })} style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-      {blocks.map((b) => <div key={b.key} data-shell-block={b.key}>{b.node}</div>)}
+      {blocks.map((b) => <div key={b.key} data-shell-block={b.key} {...(b.contents ? { style: { display: 'contents' } } : {})}>{b.node}</div>)}
     </div>
   );
 }
@@ -393,9 +393,11 @@ export function SheetActionRow({ view, onAnalysis = true }) {
           data-sheet-draft
           onClick={() => view.research.onDraft(view.research.draftFor(view.research.incumbent?.symbol ?? view.research.compareDefault))}
           style={{
-            all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 48, padding: '0 14px', borderRadius: 12,
+            all: 'unset', boxSizing: 'border-box', cursor: 'pointer', minHeight: 48, padding: '6px 14px', borderRadius: 12,
             display: 'flex', alignItems: 'center', fontWeight: 700, color: ST.purple,
-            border: `1px solid ${tint(ST.purple, 55)}`, whiteSpace: 'nowrap',
+            // It may wrap, and never takes more than half the row: a 20-letter agent name at 320 px must leave the
+            // Ask its room (review BL4-5).
+            border: `1px solid ${tint(ST.purple, 55)}`, whiteSpace: 'normal', maxWidth: '50%', flexShrink: 0, textAlign: 'center',
           }}
         >
           <span style={{ fontSize: 13 }}>{BR_COPY.draftDoor(view.research.agentName)}</span>

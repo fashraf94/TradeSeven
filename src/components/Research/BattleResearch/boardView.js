@@ -98,7 +98,9 @@ export function boardOf({ inv, battle, nowMs, desktop = false, showAll = false, 
   const question = inv.question.id;
   const groupQuestion = question === 'rank_bench' || question === 'rank_agent_watchlist';
   const other = view.group === 'bench' ? 'agent_watchlist' : 'bench';
-  const banner = refresh.report && refresh.report.stepId === step.stepId
+  // A Refresh report or error belongs to ONE investigation (review BL1-4): step ids repeat across investigations.
+  const mine = (forId) => (forId ?? inv.investigationId) === inv.investigationId;
+  const banner = refresh.report && refresh.report.stepId === step.stepId && mine(refresh.report.investigationId)
     ? { kind: 'refresh', title: refresh.report.label, body: [BR_COPY.refreshedBody(refresh.report.moved, refresh.report.in.length, refresh.report.out.length), (refresh.report.placedIn?.length || refresh.report.placedOut?.length) ? BR_COPY.refreshedPlaced(refresh.report.placedIn?.length ?? 0, refresh.report.placedOut?.length ?? 0) : null, refresh.report.incumbentChanged ? BR_COPY.refreshedWeakest(refresh.report.incumbentChanged.to, refresh.report.incumbentChanged.from) : null].filter(Boolean).join(' ') }
     : (() => { const b = bannerOf(inv, step); return b ? { kind: 'refinement', ...b } : null; })();
   const paragraphs = explainOf(inv, result, step);
@@ -121,7 +123,7 @@ export function boardOf({ inv, battle, nowMs, desktop = false, showAll = false, 
       canUndo: !!step.parentStepId,
       canPrevious: !!step.parentStepId,
       refresh: { allowed: gate.allowed, inFlight: !!refresh.inFlight, text: refresh.inFlight ? BR_COPY.refreshing : gate.allowed ? BR_COPY.refresh : BR_COPY.refreshIn(gate.text) },
-      refreshError: refresh.error ?? null,
+      refreshError: refresh.error && mine(refresh.errorFor) ? refresh.error : null,
     },
     conditions: {
       active: view.conditions.map((c) => ({ id: c.id, value: c.value ?? null, label: conditionLabel(c) })),

@@ -29,6 +29,7 @@ import { useCockpitModal } from '../../../screens/battleView/CockpitSheet.jsx';
 import { ST, MONO, tint } from '../Sheet/sheetTheme.js';
 import { BR_COPY } from './battleResearchCopy.js';
 import { boardOf, startersOf, asTheyStandOf, askAboutDraft, investigationLine } from './boardView.js';
+import { currentStep } from './investigation.js';
 import { EVIDENCE_REUSE_MS } from './useBattleResearch.js';
 import ResearchOpening from './ResearchOpening.jsx';
 import ResearchBoard from './ResearchBoard.jsx';
@@ -54,7 +55,7 @@ import { rowButton } from './ResearchRow.jsx';
  */
 export default function BattleResearchSurface({
   open, store, battle, agentName, voice, standing = null, isDesktop = false, reducedMotion = false,
-  onClose, onOpenRow, onAskAbout, suspended = false, onSuspendedEscape = null, restoreFocus = null,
+  onClose, onOpenRow, onAskAbout, suspended = false, onSuspendedEscape = null, restoreFocus = null, bottomInset = 0,
 }) {
   const { panelRef, onKeyDown } = useCockpitModal({ open, onClose, restoreFocus, suspended, onSuspendedEscape });
   // §7: Escape closes, and focus returns to the Research pill. The shared hook hands focus back to whatever held
@@ -73,20 +74,25 @@ export default function BattleResearchSurface({
     };
   }, [open]);
   const [sheet, setSheet] = useState(false);
-  const [showAll, setShowAll] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const scrollRef = useRef(null);
+  const sheetCloseRef = useRef(null);
+  const backToMore = useRef(false);
   const s = store.state;
   const inv = s.view === 'board' ? store.active : null;
+  // The step's own key: its scroll and its *Show all*, kept in the store (review BL4-2, BL4-3).
+  const scrollKey = inv ? `${inv.investigationId}|${currentStep(inv).stepId}` : 'opening';
+  const showAll = !!s.showAll?.[scrollKey];
 
   // The opening's evidence: read once when the surface opens on the proposal (a bundle a minute old is reused).
-  const openingAt = s.opening.result?.takenAt ?? null;
+  // The minute is the CLIENT's (receivedAt), as the store's own reuse (review BL1-7).
+  const openingAt = s.opening.result?.receivedAt ?? s.opening.result?.takenAt ?? null;
   useEffect(() => {
     if (!open || s.view !== 'opening') return;
     if (s.opening.status === 'loading') return;
     if (s.opening.status === 'ready' && openingAt !== null && Date.now() - openingAt < EVIDENCE_REUSE_MS) return;
     store.open();
-  }, [open, s.view]); // eslint-disable-line react-hooks/exhaustive-deps -- read on open / on returning to the proposal only
+  }, [open, s.view, s.battleId]); // eslint-disable-line react-hooks/exhaustive-deps -- read on open, on returning to the proposal, and for a new battle (review BL1-5)
 
   const board = useMemo(
     () => (inv && battle ? boardOf({ inv, battle, nowMs, desktop: isDesktop, showAll, refresh: s.refresh, agentName }) : null),
@@ -101,15 +107,18 @@ export default function BattleResearchSurface({
   }, [open, counting]);
   useEffect(() => { if (open) setNowMs(Date.now()); }, [open, inv?.investigationId, board?.stepId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The scroll position, remembered per step (and for the opening) — restored on reopen and on ‹ Back to ranking.
-  const scrollKey = inv ? `${inv.investigationId}|${board?.stepId}` : 'opening';
+  // The scroll position, remembered per step (and for the opening) — restored on reopen and on ‹ Back to ranking,
+  // over the list as long as it was (Show all is the step's too).
   useLayoutEffect(() => {
     if (!open || !scrollRef.current) return;
-    scrollRef.current.scrollTop = s.scroll[scrollKey] ?? 0;
+    scrollRef.current.scrollTop = store.scrollOf(scrollKey);
   }, [open, scrollKey]); // eslint-disable-line react-hooks/exhaustive-deps -- restore when the step (or the surface) changes
-  const onScroll = (e) => { const top = e.currentTarget.scrollTop; store.rememberScroll(scrollKey, top); };
-  // A new step starts with the short list.
-  useEffect(() => { setShowAll(false); }, [board?.stepId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onScroll = (e) => { store.rememberScroll(scrollKey, e.currentTarget.scrollTop); };
+  // The history sheet is a layer: focus goes in, and back to *Read more* when it closes (review BL4-7).
+  useEffect(() => {
+    if (sheet) { backToMore.current = true; sheetCloseRef.current?.focus?.(); return; }
+    if (backToMore.current) { backToMore.current = false; panelRef.current?.querySelector?.('[data-br-read-more]')?.focus?.(); }
+  }, [sheet]); // eslint-disable-line react-hooks/exhaustive-deps -- panelRef is stable
 
   if (!open) return null;
 
@@ -122,8 +131,10 @@ export default function BattleResearchSurface({
     previous: store.previous,
     startOver: () => { setSheet(false); store.startOver(); },
     refresh: store.refresh,
-    openRow: onOpenRow,
-    showAll: setShowAll,
+    // A row never opens while a Refresh is in flight: a research modal would stand over a result about to
+    // change under it (review BL1-2).
+    openRow: (symbol) => { if (!s.refresh.inFlight) onOpenRow(symbol); },
+    showAll: (on) => store.setShowAll(scrollKey, on),
     askAbout: () => { if (inv) onAskAbout(askAboutDraft(inv, Date.now())); },
     goTo: (id) => { setSheet(false); store.goTo(id); },
     reopen: (id) => { setSheet(false); store.reopen(id); },
@@ -132,6 +143,8 @@ export default function BattleResearchSurface({
   const opening = s.view === 'opening' || !inv;
   const st = opening ? startersOf(battle, s.opening, store.noWeakest, nowMs) : null;
   const phone = !isDesktop;
+  // The phone's history sheet: while it stands, everything under it inside the surface is inert (review BL4-7).
+  const sheetOpen = phone && !opening && sheet;
   const keyDown = (e) => {
     // The history sheet is the top layer inside the surface: Escape closes it first.
     if (sheet && e.key === 'Escape' && !suspended) { e.preventDefault(); e.stopPropagation(); setSheet(false); return; }
@@ -179,16 +192,19 @@ export default function BattleResearchSurface({
             : { width: '100%', height: '100%', maxWidth: '100vw' }),
         }}
       >
-        <header data-br-top style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: `1px solid ${ST.hair}`, minWidth: 0 }}>
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontSize: 16, fontWeight: 800, color: ST.ink }}>{BR_COPY.title}</span>
-            <span data-br-voice style={{ fontFamily: MONO, color: ST.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><span style={{ fontSize: 10.5 }}>{voice}</span></span>
+        <header data-br-top {...(sheetOpen ? { inert: true } : {})} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: `1px solid ${ST.hair}`, minWidth: 0 }}>
+          {/* The title and the score pair wrap onto two lines rather than squeeze the title (review BL4-9). */}
+          <div data-br-top-main style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 10, rowGap: 2 }}>
+            <div style={{ flex: '1 1 140px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontSize: 16, fontWeight: 800, color: ST.ink }}>{BR_COPY.title}</span>
+              <span data-br-voice style={{ fontFamily: MONO, color: ST.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><span style={{ fontSize: 10.5 }}>{voice}</span></span>
+            </div>
+            {standing ? (
+              <span data-br-standing style={{ fontFamily: MONO, color: ST.ink2, whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 11.5 }}>{`You ${standing.you} · ${standing.opponent} ${standing.them}`}</span>
+              </span>
+            ) : null}
           </div>
-          {standing ? (
-            <span data-br-standing style={{ fontFamily: MONO, color: ST.ink2, whiteSpace: 'nowrap' }}>
-              <span style={{ fontSize: 11.5 }}>{`You ${standing.you} · ${standing.opponent} ${standing.them}`}</span>
-            </span>
-          ) : null}
           <button type="button" data-br-close aria-label={BR_COPY.close} onClick={onClose}
             style={{ ...rowButton, minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: ST.ink2 }}>
             <X size={18} />
@@ -196,23 +212,24 @@ export default function BattleResearchSurface({
         </header>
         {isDesktop && !opening ? (
           <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) clamp(300px, 31vw, 400px)' }}>
-            <div ref={scrollRef} data-br-scroll onScroll={onScroll} style={{ minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: '18px 20px 28px' }}>{content}</div>
-            <aside aria-label={voice} style={{ minHeight: 0, overflowY: 'auto', borderLeft: `1px solid ${ST.hair}`, background: ST.surface, padding: 16 }}>
+            <div ref={scrollRef} data-br-scroll onScroll={onScroll} style={{ minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', padding: '18px 20px 28px' }}>{content}</div>
+            <aside aria-label={voice} style={{ minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', borderLeft: `1px solid ${ST.hair}`, background: ST.surface, padding: 16 }}>
               <AgentColumn board={board} voice={voice} earlier={earlier} droppedInvestigations={s.session.dropped} actions={actions} />
             </aside>
           </div>
         ) : (
           <>
-            <div ref={scrollRef} data-br-scroll onScroll={onScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: phone ? '12px 12px 20px' : '18px 20px 28px' }}>{content}</div>
-            {phone && !opening ? <PhoneLeadBar lead={board.lead} voice={agentName} onMore={() => setSheet(true)} /> : null}
+            {/* overscroll contained: on iOS a scroll past the end never chains to the battle screen behind (review BL4-12). */}
+            <div ref={scrollRef} data-br-scroll onScroll={onScroll} {...(sheetOpen ? { inert: true } : {})} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', padding: phone ? '12px 12px 20px' : '18px 20px 28px' }}>{content}</div>
+            {phone && !opening ? <PhoneLeadBar lead={board.lead} voice={agentName} onMore={() => setSheet(true)} bottomInset={bottomInset} inert={sheetOpen} /> : null}
           </>
         )}
         {phone && !opening && sheet ? (
           <div data-br-history-sheet style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
             <div aria-hidden="true" onClick={() => setSheet(false)} style={{ position: 'absolute', inset: 0, background: `rgba(var(--ft-shadow-rgb), 0.6)` }} />
-            <div role="dialog" aria-label={BR_COPY.readMore} style={{ position: 'relative', maxHeight: '85%', overflowY: 'auto', overflowX: 'hidden', background: ST.surface, borderRadius: '16px 16px 0 0', padding: '12px 14px 20px', borderTop: `1px solid ${tint(ST.teal, 35)}` }}>
+            <div role="dialog" aria-modal="true" aria-label={BR_COPY.readMore} style={{ position: 'relative', maxHeight: '85%', overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', background: ST.surface, borderRadius: '16px 16px 0 0', padding: '12px 14px 20px', ...(bottomInset > 0 ? { paddingBottom: `calc(20px + ${bottomInset}px)` } : {}), borderTop: `1px solid ${tint(ST.teal, 35)}` }}>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button type="button" data-br-sheet-close aria-label={BR_COPY.close} onClick={() => setSheet(false)} style={{ ...rowButton, minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: ST.ink2 }}><X size={18} /></button>
+                <button ref={sheetCloseRef} type="button" data-br-sheet-close aria-label={BR_COPY.close} onClick={() => setSheet(false)} style={{ ...rowButton, minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: ST.ink2 }}><X size={18} /></button>
               </div>
               <AgentColumn board={board} voice={voice} earlier={earlier} droppedInvestigations={s.session.dropped} actions={actions} />
             </div>

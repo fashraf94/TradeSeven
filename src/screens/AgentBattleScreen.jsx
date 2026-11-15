@@ -4432,6 +4432,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           suspended={cockpitResearchOpen}
           onSuspendedEscape={closeResearchForCockpit}
           restoreFocus={() => (typeof document !== 'undefined' ? document.querySelector('[data-this-turn-research]') : null)}
+          bottomInset={isDesktop ? 0 : viewportInset}
         />
       ) : null}
     </div>

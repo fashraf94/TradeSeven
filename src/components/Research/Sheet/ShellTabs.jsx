@@ -49,7 +49,9 @@ export default function ShellTabs({ tab, onTab, symbol, isMobile, onNavigateToSt
     const section = sectionRef.current;
     const scroller = section?.closest?.('[data-shell-scroll]');
     if (section && scroller) {
-      const delta = section.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      // In state 2 the research strip stands stuck above this one: the new tab starts under BOTH (review BL4-1).
+      const stuck = stickyTop ? (parseFloat(scroller.style.getPropertyValue('--research-strip-h')) || 0) : 0;
+      const delta = section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - stuck;
       if (delta < 0) scroller.scrollTop += delta;
     }
     onTab(t);
@@ -91,7 +93,7 @@ export default function ShellTabs({ tab, onTab, symbol, isMobile, onNavigateToSt
           );
         })}
       </div>
-      <div data-shell-tab-body={tab} style={{ paddingTop: 16, minHeight: bodyMinHeight > 0 ? bodyMinHeight : undefined }}>
+      <div data-shell-tab-body={tab} style={{ paddingTop: 16, minHeight: bodyMinHeight > 0 ? (stickyTop ? `calc(${bodyMinHeight}px - ${stickyTop})` : bodyMinHeight) : undefined }}>
         {tab === 'moving' && <WhatsMoving key={symbol} {...moving} />}
         {tab === 'ranks' && ranksNote ? <div data-shell-ranks-note style={{ fontFamily: MONO, color: ST.ink3, paddingBottom: 10 }}><span style={{ fontSize: 11 }}>{ranksNote}</span></div> : null}
         {tab === 'ranks' && <CompeteTab symbol={symbol} isMobile={isMobile} onNavigateToStock={onNavigateToStock} rankLabel />}

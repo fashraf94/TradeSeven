@@ -16,7 +16,8 @@ vi.mock('framer-motion', async () => {
   const ReactMod = await import('react');
   const skip = new Set(['initial', 'animate', 'exit', 'transition', 'variants', 'layout']);
   const make = (tag) => ReactMod.forwardRef(function M(props, ref) { const d = {}; for (const [k, v] of Object.entries(props)) if (!skip.has(k)) d[k] = v; return ReactMod.createElement(tag, { ...d, ref }); });
-  return { motion: new Proxy({}, { get: (_, t) => make(String(t)) }), AnimatePresence: ({ children }) => children, useReducedMotion: () => false };
+  const cache = {};
+  return { motion: new Proxy({}, { get: (_, t) => { cache[t] ??= make(String(t)); return cache[t]; } }), AnimatePresence: ({ children }) => children, useReducedMotion: () => false };
 });
 
 import useBattleResearch from './useBattleResearch.js';
@@ -24,18 +25,31 @@ import BattleResearchSurface from './BattleResearchSurface.jsx';
 import { researchBattle, rankingsDoc, quotesBody, TAKEN_AT } from './__fixtures__/researchFixtures.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const MIN = 60_000;
 let BATTLE;
-beforeAll(async () => { BATTLE = await researchBattle(); });
+let WIDE; // seven placed names on the weakest question (AMD, CRM, ADBE added to the agent watchlist)
+const extraRow = (symbol, technicalRank) => ({ symbol, technicalRank, technicalScore: 90, sectorName: 'Technology', sectorTechnicalRank: 1, sectorTechnicalTotal: 21, techRaw: { atrPercent: 2 }, arch_scores: { momentum_chaser: 80 } });
+const WIDE_DOC = () => ({ ...rankingsDoc(), stocks: [...rankingsDoc().stocks, extraRow('AMD', 20), extraRow('CRM', 55), extraRow('ADBE', 95)] });
+beforeAll(async () => {
+  BATTLE = await researchBattle();
+  WIDE = await researchBattle();
+  WIDE.watchlist = { ...WIDE.watchlist, hotBench: ['PLTR', 'MSFT', 'AMD', 'CRM', 'ADBE'] };
+});
 
-let container; let root; let calls; let fetches;
-const fetcher = async () => { fetches += 1; return { quotesBody: { ...quotesBody(), servedAt: TAKEN_AT }, rankingsDoc: rankingsDoc(), takenAt: TAKEN_AT, receivedAt: TAKEN_AT }; };
+let container; let root; let calls; let fetches; let deferred;
+const out = {};
+const renders = { n: 0 };
+const defer = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
+const bundle = (quotes = quotesBody(), doc = rankingsDoc()) => ({ quotesBody: { ...quotes, servedAt: TAKEN_AT }, rankingsDoc: doc, takenAt: TAKEN_AT, receivedAt: TAKEN_AT });
 
-function Harness({ isDesktop = false, suspended = false, battle = BATTLE, quotes = null }) {
+function Harness({ isDesktop = false, suspended = false, battle = BATTLE, quotes = null, doc = null, clock = null, answer = null, bottomInset, battleId = 'stock-battle' }) {
+  renders.n += 1;
   const store = useBattleResearch({
-    battleId: 'stock-battle', battle, agent: { agentName: 'shadow', archetype: 'momentum_chaser' },
-    fetcher: quotes ? async () => { fetches += 1; return { quotesBody: { ...quotes, servedAt: TAKEN_AT }, rankingsDoc: rankingsDoc(), takenAt: TAKEN_AT, receivedAt: TAKEN_AT }; } : fetcher,
-    clock: () => TAKEN_AT,
+    battleId, battle, agent: { agentName: 'shadow', archetype: 'momentum_chaser' },
+    fetcher: async () => { fetches += 1; if (deferred) await deferred.promise; return answer ? answer() : bundle(quotes ?? quotesBody(), doc ?? rankingsDoc()); },
+    clock: clock ?? (() => TAKEN_AT),
   });
+  out.store = store;
   const [open, setOpen] = useState(true);
   return (
     <>
@@ -50,6 +64,7 @@ function Harness({ isDesktop = false, suspended = false, battle = BATTLE, quotes
           suspended={suspended}
           onSuspendedEscape={() => calls.push('suspendedEscape')}
           restoreFocus={() => document.querySelector('[data-this-turn-research]')}
+          {...(bottomInset !== undefined ? { bottomInset } : {})}
         />
       ) : null}
     </>
@@ -73,7 +88,7 @@ const key = async (el, k) => { await act(async () => { el.dispatchEvent(new Keyb
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(TAKEN_AT));
-  container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); calls = []; fetches = 0;
+  container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); calls = []; fetches = 0; deferred = null;
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.useRealTimers(); });
 
@@ -93,7 +108,7 @@ describe('the opening (BRS-5)', () => {
   });
   it('the "as they stand" list (collapsed) holds the union by technical rank', async () => {
     await mount();
-    expect(q('[data-br-as-they-stand] summary').textContent).toBe('Your bench and watchlist as they stand · 4 names by technical rank');
+    expect(q('[data-br-as-they-stand-toggle] span').textContent).toBe('Your bench and watchlist as they stand · 4 names by technical rank');
   });
   it('What\'s moving is off until one usable quote has arrived — with the calendar\'s line', async () => {
     const weekend = { ...quotesBody(), quotes: Object.fromEntries(Object.entries(quotesBody().quotes).map(([k, v]) => [k, { ...v, sessionEtDate: '2026-10-13' }])) };
@@ -200,5 +215,138 @@ describe('the phone (BRS-16)', () => {
     await key(q('[data-br-surface]'), 'Escape');
     expect(q('[data-br-history-sheet]')).toBeNull();
     expect(calls).not.toContain('close');
+  });
+});
+
+// ── The review round on PR B (lenses 1 and 4): each row failed on cb6fefb1 ──
+// The placed rows only (the reference line carries data-br-row too).
+const rowsOnBoard = () => [...container.querySelectorAll('[data-br-board] [data-br-list] [data-br-row]')].filter((r) => !r.closest('[data-br-reference]') && !r.hasAttribute('data-br-reference')).map((r) => r.getAttribute('data-br-row'));
+const scrollBy = async (el, top) => { await act(async () => { el.scrollTop = top; el.dispatchEvent(new Event('scroll')); }); };
+
+describe('review BL4-3 — scrolling re-renders nothing outside the surface', () => {
+  it('30 scroll events, no render of the screen that owns the store', async () => {
+    await mount({ isDesktop: false });
+    await click(q('[data-br-starter="weakest_alternatives"]'));
+    const before = renders.n;
+    for (let i = 1; i <= 30; i += 1) await scrollBy(q('[data-br-scroll]'), i * 10);
+    expect(renders.n - before).toBe(0);
+  });
+});
+
+describe('review BL4-2 / BL1-6 — Show all is kept per step, like the scroll', () => {
+  it('across a close and the pill', async () => {
+    await mount({ isDesktop: false, battle: WIDE, doc: WIDE_DOC() });
+    await click(q('[data-br-starter="weakest_alternatives"]'));
+    expect(rowsOnBoard()).toHaveLength(5);
+    await click(q('[data-br-show-all]'));
+    expect(rowsOnBoard()).toHaveLength(7);
+    await click(q('[data-br-close]'));
+    await click(q('[data-this-turn-research]'));
+    expect(rowsOnBoard()).toHaveLength(7);
+  });
+  it('across a step taken and undone (Use across → Undo from the modal returns to the same step)', async () => {
+    await mount({ isDesktop: false, battle: WIDE, doc: WIDE_DOC() });
+    await click(q('[data-br-starter="weakest_alternatives"]'));
+    await click(q('[data-br-show-all]'));
+    await act(async () => { out.store.applyAcross('eligible_now'); });
+    await settle();
+    await act(async () => { out.store.undo(); });
+    await settle();
+    expect(rowsOnBoard()).toHaveLength(7);
+  });
+});
+
+describe('review BL1-7 — the opening\'s one-minute reuse is the client\'s minute', () => {
+  it('a server clock 5 minutes ahead never stretches it: reopened 61 s later, the opening reads again', async () => {
+    await mount({ isDesktop: true, clock: () => Date.now(), answer: () => ({ ...bundle(), takenAt: TAKEN_AT + 5 * MIN, receivedAt: Date.now() }) });
+    expect(fetches).toBe(1);
+    await click(q('[data-br-close]'));
+    vi.setSystemTime(new Date(TAKEN_AT + 61_000));
+    await click(q('[data-this-turn-research]'));
+    expect(fetches).toBe(2);
+  });
+});
+
+describe('review BL1-2 — a row never opens while a Refresh is in flight', () => {
+  it('the tap waits: no research modal can stand over a result that is about to change', async () => {
+    await mount({ isDesktop: true, clock: () => Date.now() });
+    await click(q('[data-br-starter="weakest_alternatives"]'));
+    vi.setSystemTime(new Date(TAKEN_AT + 61_000));
+    deferred = defer();
+    await act(async () => { out.store.refresh(); });
+    await click(q('[data-br-row="PLTR"]'));
+    expect(calls).not.toContain('row:PLTR');
+    await act(async () => { deferred.resolve(); });
+    await settle();
+    deferred = null;
+    await click(q('[data-br-row="PLTR"]'));
+    expect(calls).toContain('row:PLTR');
+  });
+});
+
+describe('review BL4-7 — the history sheet is a layer: focus in, the rest inert, focus back', () => {
+  it('opens with focus inside, aria-modal, the board behind inert; closing returns focus to Read more', async () => {
+    await mount({ isDesktop: false });
+    await click(q('[data-br-starter="weakest_alternatives"]'));
+    await click(q('[data-br-read-more]'));
+    const dialog = q('[data-br-history-sheet] [role="dialog"]');
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(q('[data-br-scroll]').hasAttribute('inert')).toBe(true);
+    expect(q('[data-br-lead-bar]').hasAttribute('inert')).toBe(true);
+    expect(q('[data-br-top]').hasAttribute('inert')).toBe(true);
+    await click(q('[data-br-sheet-close]'));
+    expect(document.activeElement).toBe(q('[data-br-read-more]'));
+    expect(q('[data-br-scroll]').hasAttribute('inert')).toBe(false);
+  });
+});
+
+describe('review BL4-8 / BL4-11 — the "as they stand" list is a button that says it expands, and its hidden rows are not in the trap', () => {
+  it('collapsed: no rows in the DOM, aria-expanded false; a Tab on the toggle (the last stop) wraps; expanded: the rows', async () => {
+    await mount({ isDesktop: true });
+    const toggle = q('[data-br-as-they-stand-toggle]');
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(q('[data-br-as-they-stand] [data-br-row]')).toBeNull();
+    toggle.focus();
+    const ev = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    await act(async () => { toggle.dispatchEvent(ev); });
+    expect(ev.defaultPrevented).toBe(true);
+    await click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(q('[data-br-as-they-stand] [data-br-row="PLTR"]')).toBeTruthy();
+  });
+});
+
+describe('review BL4-12 / BL4-4 / BL4-9 — the phone layer: no scroll chaining, above the iOS toolbar, a top strip that wraps', () => {
+  it('the scroll boxes contain their overscroll', async () => {
+    await mount({ isDesktop: false });
+    await click(q('[data-br-starter="weakest_alternatives"]'));
+    expect(q('[data-br-scroll]').style.overscrollBehavior).toBe('contain');
+    await click(q('[data-br-read-more]'));
+    expect(q('[data-br-history-sheet] [role="dialog"]').style.overscrollBehavior).toBe('contain');
+  });
+  it('the bottom bar and the history sheet pad the browser toolbar (the bench sheet\'s viewportInset)', async () => {
+    await mount({ isDesktop: false, bottomInset: 34 });
+    await click(q('[data-br-starter="weakest_alternatives"]'));
+    // jsdom (like a browser) folds the sum: calc(12px + 34px) reads calc(46px).
+    expect(['calc(12px + 34px)', 'calc(46px)']).toContain(q('[data-br-lead-bar]').style.paddingBottom);
+    await click(q('[data-br-read-more]'));
+    expect(['calc(20px + 34px)', 'calc(54px)']).toContain(q('[data-br-history-sheet] [role="dialog"]').style.paddingBottom);
+  });
+  it('the top strip wraps rather than squeezing the title under a long score pair', async () => {
+    await mount({ isDesktop: false });
+    expect(q('[data-br-top-main]').style.flexWrap).toBe('wrap');
+  });
+});
+
+describe('review BL1-5 — the surface open on the proposal across a change of battle reads the new battle\'s opening', () => {
+  it('a second opening read, for the new battle', async () => {
+    await mount({ isDesktop: true });
+    expect(fetches).toBe(1);
+    await act(async () => { root.render(<Harness isDesktop battleId="another-battle" />); });
+    await settle();
+    expect(fetches).toBe(2);
+    expect(q('[data-br-as-they-stand-toggle]').textContent).not.toMatch(/loading|Loading/);
   });
 });
