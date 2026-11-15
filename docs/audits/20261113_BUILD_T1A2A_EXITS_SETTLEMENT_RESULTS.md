@@ -635,3 +635,193 @@ Reviewers and refuters worked on `git archive` snapshots under this session's sc
 | C-15 | A rename into a symbol the same idea already holds keeps its record for good; a future-dated rename into a held symbol marks the holding blocked early; only the first refusal is recorded when a reserved name and a missing price coincide | Notes; pre-existing or cosmetic |
 | C-6 (unchanged) | A share-basis conflict the feed drops still holds the sale — and now any rename waiting on it — until the founder acts | T5's founder tool |
 | T2A-03 | The writer review of Appendix A's 85 keys, the six protected operations first | T5 (the notes now say so) |
+
+## 9. Fix round 2, 15 Nov 2026 — the share-basis class (T2A-C01, C-13)
+
+**Fix round 2, Practice Field T1a-2a** · Claude Code (Opus 5.5) · 15 Nov 2026
+**Branch:** `claude/practice-field-t1a2a-exits-settlement` (draft PR #1061). **Before:** `d4d522cef23a6b0dd92ea50a860f0931004e9ce6`, the head Astra confirmed. `git fetch origin` first; `origin/main` had moved from `5a8c3620` to `0670fcd75d371e5cf2b37c2f7dd38defba27f34c` (PRs #1064–#1067; none touches `api/_utils/practiceField/`, `firestore.rules` or the indexes), and the branch took it by a merge commit, `fbf402d3`, with no conflict. No rebase, no force-push. The work ran on this session's worktree branch, reset to `d4d522ce`, and was pushed to the PR's branch as a fast-forward.
+**After:** `1c4b99af7496ea6744c19bceb4cbd5b7f6c9a321`, the code head and the head of every check below. This report's commit follows it and changes no code. The round is 7 files, +839 / −54 after the merge: 5 under `api/` (+735 / −54), plus the attachment and its `docs/README.md` row.
+**Attached by the founder, committed byte-identical:** `docs/audits/20261115_ASTRA_CONFIRMATION_T1A2A_FIX_ROUND.md`, SHA-256 `a61c127a32d03903678148592297bf48809d40c8804a9f79f7ee861f63fcdb61`. The hash was taken from the attachment before the copy and from the committed blob after it (LF, no CR byte).
+**Flag:** `PRACTICE_FIELD_MODE = 'off'` (`src/config/practiceFieldFlags.js:33`), unchanged. No fenced file, flag value, pin, rule or index changed. The engine's `computeExecution`, `pendingActionsFor`, `applyCorporateAction`, `deriveActionId` and gap screen (`classifyOvernightGaps`) are called, not edited. Nothing is repaired by choosing one of two conflicting ratios, by clearing a conflict receipt, or by weakening reconciliation. This session made no model call, no Firestore write and no EODHD call.
+
+### 9.1 In plain terms
+
+Astra found one more way money could move on a share count that was in doubt. When the data feed reported a split two contradictory ways, the idea book already refused to sell the holding, and since the last round it also refused to rename it. But a **cash buyout** of the stock (a "delisting with cash per share") still paid out at once: number of shares × cash per share, using the share count from before the split. That closed the idea, sent the cash back to the book and freed the slot. Depending on which way the split was later settled, the book was paid $11,996.40 where it was owed $14,395.68, $17,994.60 or $7,997.60. This hole was older than the rename fix; the rename fix only exposed it.
+
+It was the third time the same mistake turned up: a sale, then a rename, now a cash payment, each acting on a share count that was not settled. **This round fixes the whole family, not the instance:**
+
+- **While a holding's share count is in doubt, on any of the idea's three ledgers, nothing that depends on that count happens on any of them.** That covers a cash buyout, a cash dividend and a later split, as well as the sale and the rename that already waited. The holding stays. What it is owed is written on the holding, with the session it started waiting, so it survives the feed dropping the row. Nothing is credited, nothing is returned to the book, the idea stays open and keeps its slot, it is valued at its last trusted price, and an alert fires at every close.
+- **When the count is settled**, at that same close: the split is applied first, then each held payment exactly once on the corrected count (on the idea's ledger, its comparison and the book), then any waiting rename, then the prices. Astra's three cases now pay exactly her control figures ($14,395.68, $17,994.60, $7,997.60), each once, and her own probe passes 16 of 16.
+- **If the count is never settled**, nothing guesses: the holding stays held and alerting until the founder acts, as before (C-6).
+- **A payment dated before the doubtful split** depends only on the count before it, which is not in doubt. It is paid at once, exactly as if there were no split, and a test shows that.
+- **C-13 is fixed too.** A cashless delisting and a rename of the same stock in one close used to lose the waiting sale. The sale now follows the holding to its new ticker and fills once that ticker has a price.
+
+The review found two more holes of the same family, both already in the code before this round, and both are fixed (§9.6). A split the system cannot apply (an impossible ratio, or one that would round the holding to nothing) was forgotten once the feed dropped it, and a later buyout then paid on the old count. A feed row written in lower case could slip past the checks. One question the review raised is the founder's: an idea whose own holdings are all sold resolves even while its comparison's share count is in doubt (§9.7, Q-M).
+
+| Check (code head `1c4b99af`) | Result |
+|---|---|
+| Full suite (Linux, `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8`) | **exit code 0** · `Test Files  1497 passed | 12 skipped (1509)` · `Tests  33576 passed | 135 skipped (33711)` · 309.66 s (Node 20.20.2; log SHA-256 `e3c7c6aa…`) |
+| `npm run lint:gate` / `npx vite build` (Linux) | exit 0 / exit 0 (built in 15.83 s) |
+| Practice Field files, the scan test, the cron isolation and trace tests (Windows) | `Test Files  16 passed (16)` · `Tests  484 passed (484)` |
+| Astra's `probe/astra-routes.test.js`, unmodified (SHA-256 `da70ab2b…`), against this head | **16/16**; her day-4 `afterResolution` returns $14,395.68 / $17,994.60 / $7,997.60, equal to her controls |
+| Quarterly differential, 17 scenarios, `origin/main` `0670fcd7` against the head | **byte-identical**: `92a1be2080b4e0d6ccb32e26a2ec95ec5fac0bd4c262e0f2de73f1f1e2f27f43`, 1,118,594 bytes, both sides (the same hash as the build's and the last round's) |
+| …its control (an idea book in play, mode on) | differs in scenario 18 only (`749a9414…`, 1,148,363 B → `2553861a…`, 1,156,115 B); scenarios 1–17 identical |
+| Astra's 40-case traced differential (Amendment E §4), `origin/main` against the head | `'off'` 20/20 identical in every database operation; `'on'` 20/20 identical in observable bytes, with one registry read first and the base's idea-book query absent in 12. Her classifier (`prepare-confirmation.mjs`, trace part) passes. Her raw whole-trace file reports 20 passed / 20 failed: those 20 failures are the R-47 differences, as she recorded |
+| Mutation battery | 518 defined, 518 ran, **517 killed, 1 survived** (`R2-29`, argued equivalent — §9.7) |
+| Review | one independent lens on a read-only snapshot, and two refuter passes: 3 findings, all confirmed narrower and all pre-existing at root; 2 fixed (with a third instance a refuter found), 1 put to the founder (§9.6) |
+
+### 9.2 The inventory: every place that reads a holding's share count
+
+Every place under `api/_utils/practiceField/`, and every engine function it calls, that uses a holding's share count to compute money, or to move, rename or close a holding. "Unresolved" means one of three things on any of the idea's three ledgers:
+
+- an unsettled share-basis conflict;
+- a share-basis action due on or before the session that the ledger has neither applied nor declined;
+- (new) a share-basis action the ledger holds, or cannot apply (`ledger.js:212` `unresolvedShareBasis`, idea-wide through `ledger.js:240` `shareBasisHolds`).
+
+"Before" is `d4d522ce`; "after" is `1c4b99af`. The inventory written before any code is in this session's scratchpad (`inventory-before.md`); this table is that one, completed.
+
+| # | Path | `file:line` (after) | Reads share count for | While basis unresolved, before | After this round | Test (`corporateActions.test.js` unless named) |
+|---|---|---|---|---|---|---|
+| 1 | Sale (line exit, delisting exit, settlement sale) | `exits.js:160` → `ledger.js:694` `saleHeldBackBy` → `executeIdeaFill` | quantity sold × price | Held on the idea's **own** ledger (pending row, unsettled conflict, gap screen). Not held when only another ledger had the basis unresolved. Released once a due row dropped from the feed (R-46) | **Held**, idea-wide: also while the holding carries a held action (`:698`) or another ledger has the symbol unresolved (`:712`, `otherLedgers`). A refused row is recorded, so a dropped row keeps it held | "the feed rows DISAPPEAR…", "COMPARISON-ONLY, through the close and the window", "THE DEFINITION…", the three arms × "DROPPED BEFORE…" |
+| 2 | Ticker change | `ledger.js:528` (`wait`) | moves the holding key | Held (`deferredRename`), idea-wide; released when a refused due row left the feed (R-46) | **Held**; the wait set now includes refused and held share-basis records, so a dropped refused row no longer releases it (R-46 narrowed, R-56) | the T2A-01 rows, unchanged and passing; refuter 2 r5 |
+| 3 | Cash delisting | `ledger.js:453` gate → engine `applyCorporateAction` (`mandateCorporateActions.js:246`) | shares × cashPerShare → cash; the holding closes; the idea may resolve | **Not held** (T2A-C01) | **Held** (`countDependent`, `:145`; `hold`, `:403`): recorded on the holding, no cash, no release, the idea not resolved; paid once on the adjusted count when the basis settles | Astra's three × (rename, no rename) "…is HELD"; × (listed, dropped) "…credited ONCE…"; "the resolved-basis control" |
+| 4 | Cash dividend | `ledger.js:453` → engine `:226` | shares × amount → cash (income) | **Not held**: credited on the unadjusted count | **Held** if dated on or after the unresolved action (R-53); credited once on the adjusted count when it settles. One dated before it is **provably unaffected (test)**: it is paid now on the settled count | "a CASH DIVIDEND dated after… / one dated BEFORE it is provably unaffected"; "a cash action of the SAME date…" |
+| 5 | A later share-basis action | `ledger.js:453` → engine `:207` | shares × ratio, rounded at each step | **Not held**: applied on the unadjusted count, so the result differed from date order by rounding | **Held** behind an unresolved earlier one (strictly later dates); applied after it in date order, matching the control count | "a LATER share-basis action waits…" |
+| 6 | Same-date share-basis and cash action | `ledger.js:293` `phaseRank` (the engine's `pendingActionsFor` sorts by date and id) | order | `cash_dividend_…` and `delisting_…` sorted before `split_…` on one date, so cash was paid on the count before the split | **Share-basis first** on one date (R-55, **Q-N**) | "on ONE date the share-basis action is applied first…" |
+| 7 | Cashless delisting + rename, one close (C-13) | `ledger.js:562` → `close.js:197` | puts `exitPending` on the holding | **Lost**: the lookup used the old ticker | **Kept**: the waiting delisting follows the holding to its new ticker, with its carried mark that close (R-59) | "C-13 — the rename applies, and the waiting sale follows…"; "…with the share basis unresolved, the rename waits instead…" (a control that already passed) |
+| 8 | Valuation (rows, book equity, admission's equity, endpoint marks) | `ledger.js:574`–`:575` → `close.js` `value` → `valueLedger` / `markBook` | shares × mark | Carried mark only while the conflict was **listed**. After the feed dropped it, a fresh price × the old count, unless the gap screen (40%, shapes n=2…10) froze it; a 1.2 or 1.5 ratio passes | **Held**: carried mark whenever the symbol is unresolved on the ledger or anywhere in the idea (R-57) | "VALUATION…"; "COMPARISON-ONLY, through the close…" (S[1] mark); the pure comparison-only row (`unresolved`) |
+| 9 | Endpoint and result | `settlement.js:195` | shares × mark × (1 − cost); `unmeasurable` / `blocked` | Unmeasurable and blocked only for an unsettled **conflict** (R-34); a refused or dropped row was not seen | Also for every held action, by name (`idea_unsettled_corporate_action`, `endpoint_unsettled_corporate_action`) | "at the ENDPOINT a held action leaves the value in doubt…" |
+| 10 | Lines | `settlement.js` `readLines` | mark against level (per share) | Not read while a conflict was unsettled or the mark was not full quality | **Provably unaffected (test)**: an unresolved symbol is at its carried mark (row 8), so its line reads `unobserved` | "LINES are provably unaffected…"; "a row's CASE never matters…" |
+| 11 | Resolution, treasury return, slot release | `close.js` endpoint / `resulted` / release; `settlement.js` `completedLiquidation` | the idea's holdings empty → its cash returns | Reached when row 3 closed the last holding (T2A-C01) | **Held** through rows 1 and 3: a held holding stays, so nothing resolves. A paper ledger's own doubt does not hold the idea's resolution (**Q-M**) | Astra's rows (slot, `openIdeaIds`, treasury unchanged) |
+| 12 | Book mirror of applied actions | `close.js` (the `ownApplied` loop) | replays the idea's applied actions on the book's positions and cash | Mirrored whatever row 3, 4 or 5 applied | A held action is applied, and therefore mirrored, only once it is released; reconciliation passes at every close | "…credited ONCE…" (book corporate-action document, positions, treasury) |
+| 13 | Admission's exposure | `admission.js:181` | shares × `lastMark` | Read `lastMark` from row 8 | **Provably unaffected (test)**: `lastMark` stays the carried one while unresolved | "VALUATION…" (the book position's `lastMark`) |
+| 14 | Entry | `entry.js` | buys a new holding | Reads no existing holding's count (B-SAME keeps one name to one idea) | Unchanged: **provably unaffected** (it reads no count) | B-SAME admission and entry rows (existing) |
+| 15 | Reconciliation | `reconcile.js` | compares counts across book and idea | Consistency only; computes no money | Unchanged; it runs before and after every close in every new row | every row (`recon`) |
+| 16 | Gap screen (a suspected split with no feed row) | `ledger.js` `suspectedActionSymbols`; `saleHeldBackBy` | holds a sale or a mark | Outside this round's definition: there is no row, so nothing can settle it | Unchanged: it holds the sale and the mark while the move has a split's shape (R-31) | existing SX rows |
+
+### 9.3 The changes, by file and line (at `1c4b99af`)
+
+| Where | What |
+|---|---|
+| `api/_utils/practiceField/ledger.js:58`–`:72` | The header: the class rule, in full |
+| `ledger.js:145` | `countDependent`: a split, reverse split or stock distribution; a cash dividend; a delisting with cash. A cashless delisting is never applied (E11) |
+| `ledger.js:169` | `heldActionRecords`: the held actions on a ledger. The record lives on the **holding** (`heldActions`): `{ actionId, type, ticker, effectiveDate, ratio, amount, cashPerShare, source, heldOn, heldBecause, refused? }` |
+| `ledger.js:212`, `:228` | `unresolvedShareBasis`: the unresolved share-basis items by symbol, each with its date and ledger. They are the conflicts, the due rows and the held or refused share-basis records. `unsettledShareBasisSymbols` is its set of symbols, the same function the rename fix used, with the held records added |
+| `ledger.js:240`, `:255` | `shareBasisHolds`: the **idea's** hold set, from a dry run of each ledger with only its share-basis actions applied (cash actions and renames withheld). `renameDeferralSymbols` is its set of symbols |
+| `ledger.js:293` | One call's order: by date; on one date, share-basis actions first, then the rest, then renames; then by id |
+| `ledger.js:351` | A held action whose own id the feed now lists two ways is dropped: the conflict's receipt governs it |
+| `ledger.js:380`–`:396` | `blocked` and `causesOf`. An action is held if an unresolved share-basis item for the same symbol is dated **on or before** it (**strictly before** for a share-basis action), on this ledger or anywhere in the idea's hold set. An item this call has already settled does not count |
+| `ledger.js:403` | `hold`: the action is not applied and not settled. The record is written, refreshed to the payload the feed lists now, and keeps its first `heldOn`. A share-basis action held this way blocks what follows it |
+| `ledger.js:420`, `:461`, `:487` | A share-basis action the ledger cannot apply is recorded with `refused`: no entitlement data, a ratio the applier refuses, or one that rounds the holding to nothing (review F2) |
+| `ledger.js:429`, `:433` | The candidates are the feed's rows plus every held record whose row the feed no longer lists. A listed row of the same id supersedes its record. A `refused` record is never replayed: only a listed row of its id can settle it |
+| `ledger.js:453`–`:455`, `:491` | The gate. On release the receipt carries `held: true` and `heldOn`, and the record is removed. The applied action goes to `applied`, so the close mirrors it on the book |
+| `ledger.js:374`, `:487`, `:502`, `:550` | Every check is made under the holding's own upper-case key, whatever case a row carries (review F3; refuter 2) |
+| `ledger.js:528` | Renames wait for the idea's hold set and this ledger's unresolved symbols, as before, now including held and refused records |
+| `ledger.js:562` | **C-13**: a cashless delisting is handed to the close under the holding's new ticker (`renamedFrom` kept), and its carried mark follows it for that close |
+| `ledger.js:574`–`:575` | Every symbol unresolved on the ledger, or in the idea's hold set, is valued at its carried mark |
+| `ledger.js:694`–`:715` | `saleHeldBackBy(…, { otherLedgers })`: a holding carrying a held action is not sold (`:698`), and neither is one whose symbol another ledger of the idea has unresolved (`:712`) |
+| `api/_utils/practiceField/exits.js:160` | The window hands the guard the idea's comparison and SPY ledgers |
+| `api/_utils/practiceField/close.js:151`–`:153` | The close computes the idea's hold set once and hands the same set to all three ledgers (`holds`); renames defer on its symbols |
+| `close.js:166`–`:168` | `PRACTICE_FIELD_CORPORATE_ACTION_HELD <idea> <ledger> <symbol> <actionId>` at every close a held action waits, naming what it waits on and since when |
+| `api/_utils/practiceField/settlement.js:195` | A held action is an unsettled corporate action at the endpoint: unmeasurable and blocked, by name |
+| `api/_utils/practiceField/corporateActions.test.js:806`–end | The rows (§9.5) |
+
+**Commits after the merge, in order:**
+
+| Commit | What |
+|---|---|
+| `ae3e1726` | The class rule and its tests |
+| `408d7d38` | C-13 (separable: the rows fail without it) |
+| `706971ad` | A row for every gate. Five checks were dropped because each was implied by another, so a mutant of it could never fail |
+| `db151130` | Astra's confirmation and its README row |
+| `91d6ff08` | Review F2 and F3, plus rows isolating three gates the trial battery found shared |
+| `b7f4a258` | Refuter 2's two raw-ticker sites |
+| `1c4b99af` | The held record's cause memory dropped, now implied, and the definition's due-row arm pinned |
+
+This report's commit follows them.
+
+### 9.4 Readings stated, and questions
+
+| # | Where the letter stops | Reading |
+|---|---|---|
+| R-52 | "on any ledger of that idea" | The **idea** decides, as for renames. A count-dependent action waits on all three ledgers when any one of them has the symbol unresolved after this close's share-basis actions. A same-stock comparison therefore stays tied, and a frozen-basket comparison that cannot apply a split holds the idea's own payment and sale too (**Q-O**) |
+| R-53 | "nothing whose amount or effect depends on its share count" | The count a payment uses is the count on its own date. A payment dated **before** the unresolved action is paid now: that count is settled, and the test shows it equals the payment with no split at all. One dated **on or after** it waits. A later share-basis action waits only on one dated **strictly** earlier, so two of one date never wait on each other (the engine's id order decides between them, as before) |
+| R-54 | "recorded durably as pending (like `deferredRename`)" | It lives on the **holding**, as `heldActions`, with the payload the feed last listed. A listed row of the same id supersedes it. A conflict on its own id drops it, and the conflict's receipt governs (no payload the feed contradicted is ever paid) |
+| R-55 | "apply the share-basis action, then the held cash actions on the adjusted count" | On **one date**, share-basis actions come first for every action, not only held ones. A clean same-day dividend and split therefore credits the dividend on the post-split count; before this round it used the pre-split count, because `cash_dividend_…` sorts before `split_…`. Across dates the order is unchanged (**Q-N**) |
+| R-56 | R-46 ("nothing remembers such a row") | Narrowed. A share-basis action the ledger cannot apply (no entitlement data, a refused ratio, or one that rounds to nothing) is recorded with `refused` and never replayed. It is settled only by a listed row of its id that applies, so its holding stays held (sale, rename and payments) until the feed corrects it or the founder acts (C-6). A rename held only by such a row no longer applies when the feed drops it |
+| R-57 | Valuation | A symbol whose share basis is unresolved anywhere in the idea is valued at its **carried mark**, also after the feed drops a share-basis conflict (before, a fresh price × the old count unless the gap screen caught it). Conflicting **cash dividends** are unchanged: their mark is fresh again once dropped (FR-A1) |
+| R-58 | "no sale (already true)" | It was true on the idea's own ledger only. Built to the brief's letter: the sale is held while any ledger of the idea has the symbol unresolved (**Q-O**) |
+| R-59 | C-13: "the sale fills once a price exists under the right identity" | The rename applies (it was not in doubt). The waiting delisting sale follows the holding to the new ticker, its mark carried that close, and fills at the new ticker's price. If the share basis is unresolved, the rename waits instead and the holding keeps all three (sale, record, rename) |
+| R-60 | "alerts" | `PRACTICE_FIELD_CORPORATE_ACTION_HELD` at every close a held action waits; the sale's existing `PRACTICE_FIELD_SALE_WAITING` from the fifth session |
+
+**Q-M (review F1):** an idea whose own holdings are all sold resolves (result written, cash returned, slot freed) even while its comparison or SPY ledger has a share-basis action unresolved and a dividend held. The idea's own money does not depend on that paper count, and the result reads `unmeasurable` when the comparison is in doubt. It does **not** read unmeasurable when only the SPY line is in doubt: the SPY line is outside the economic label by design, and only `result.spy.fullQuality` is false. The paper ledger's held dividend then stays on a resulted idea and is never paid. Before this round it was paid, on the unadjusted count. Should resolution wait for the paper ledgers' share basis, or should the SPY line's doubt be named on the result? *Built: resolution does not wait; nothing in the idea's money changes.*
+**Q-N (R-55):** on one date, should a dividend be credited on the count after a split of the same date (built), or before it (as the engine's id order did)?
+**Q-O (R-52, R-58):** should a comparison-only doubt hold the idea's own cash and sale (built, the letter), or only the comparison's? Refuter 2's case: a frozen-basket comparison whose holding a correct reverse split rounds to nothing holds the idea **for good**, until the founder acts, though the idea's own count is settled.
+
+### 9.5 Tests
+
+All rows are in `corporateActions.test.js`, `describe('Fix round 2 — …')`, from `:806`; the file has 80 rows.
+
+- **Astra's three T2A-C01 rows**, in her own scenario: an AAPL idea of $20,000 at $100, its line breached, contradictory rows for a stock distribution 1.2, a split 1.5 or a reverse split 2/3, then AAPL → AAPLX, then an old-ticker cash delisting at $60 with the conflict rows absent. Each is run with the rename and **without any rename** (Astra's control on the earlier head). In every case: no cash, no receipt and no applied id on any ledger; a record on the idea's and the comparison's holding; the idea `line_hit_exit_pending`; the slot, `openIdeaIds`, treasury and book cash unchanged; no book corporate-action document; the row not full quality and at its carried mark; the alert on both ledgers; reconciliation passing.
+- **The same twelve when one consistent basis row arrives**, with the delisting row still listed or dropped (its record stands in). The basis is applied first, then the cash, once, on the adjusted count. That is Astra's control figure on both ledgers ($14,395.68 / $17,994.60 / $7,997.60), with `held: true, heldOn`. The idea is `resulted` with exactly that returned, the slot free, the book mirror's document written and the treasury up by exactly that. A later close listing it again pays nothing.
+- **Astra's resolved-basis control**, for each type: the consistent row and the delisting in one close pay at once, with no `held`.
+- **Feed rows disappearing**: six sessions with no rows. At each: held, alerting, the sale refused `corporate_action_unsettled`, the mark carried, the slot taken. Then the resolution pays once.
+- **A cash dividend**: held after the unresolved action and credited once on the adjusted count from its record. One dated **before** it is credited now, equal to the run with no split at all. One of the **same date** waits.
+- **A later stock distribution** behind an unresolved split: held, then applied after it, matching the date-order count on both ledgers and the book.
+- **The other arms**: a refused ratio, one that rounds to nothing, and no entitlement data. For each: the cash waits, on the ledger's own state and idea-wide, and stays held after the feed drops both rows. The sale is held. Each arm is also run with its row **dropped before** any cash is listed (review F2): it is remembered, and a later delisting is not paid.
+- **Lower case**: a split row in lower case applies to the holding's key and does not round to nothing (F3). A lower-case row of an unknown type holds the mark, with no line breach, and a refused lower-case rename leaves the holding's key unresolved (refuter 2).
+- **Comparison-only**: through the close and the window, a frozen-basket comparison that cannot apply a reverse split holds the idea's cash delisting and its sale, and the idea is at its carried mark. In pure form: idea-wide holds, the sale with and without `otherLedgers`, and the definition's due-row arm.
+- **Endpoint**: a held action with no conflict anywhere (a refused ratio) reaches the due session. The result is `unmeasurable` for `idea_unsettled_corporate_action` and blocked for `endpoint_unsettled_corporate_action`, naming both actions, and the slot is kept.
+- **Lines** are provably unaffected (unobserved at a carried mark). **Valuation**: a dropped share-basis conflict keeps the carried mark on the row and the book position.
+- **C-13**: a cashless delisting and a rename in one close. The holding is renamed with its `exitPending`, the line, position and coverage move, the alert names AAPLX, and the next window sells once at AAPLX's price. With the basis unresolved instead, the holding keeps its sale, its record and its rename, then renames with its sale once the basis settles.
+- **Controls that did not change**: the ordinary cash delisting, rename, dividend and delisting rows already in this file and in `close.test.js`, and every T2A-01 row (renames), pass unmodified.
+
+Each new fix row was run against the code before its fix and fails there (C-13: 1 of 2, the other being the control; F2/F3: 4 of 4; refuter 2's case row: 1 of 1).
+
+### 9.6 The review and its refuters (BUILD_RULES §2)
+
+There was one independent lens on a read-only `git archive` snapshot of `408d7d38`. It was told the rule and asked to find any remaining path that acts on an unresolved share count. Each finding went to a refuter, who ran it against the new code **and** against `d4d522ce`. The fixes it led to went to a second refuter on a snapshot of `91d6ff08`. Reviewers and refuters wrote only probe folders in their own snapshots, ran no git and never touched the working tree.
+
+| # | Finding (lens) | Refuter 1 (`408d7d38` and `d4d522ce`) | Disposition |
+|---|---|---|---|
+| F1 | An idea resolves while a paper ledger's share basis is unresolved, and its held dividend is never paid | **Confirmed, narrower.** The idea's own money is unaffected: the returned cash and the treasury are identical on both trees. The resolution timing is the same as `d4d522ce`. That tree paid the paper dividend on the unadjusted count; the new code holds it and never pays it. The result is labelled `unmeasurable` when the comparison is in doubt, but not when only SPY is (SPY sits outside the economic label by design) | **Question Q-M**, not fixed |
+| F2 | A share-basis action the ledger cannot apply is forgotten once the feed drops it, and a later cash delisting then pays on the unadjusted count ($5,998.20 on 199.940017 shares end to end) | **Confirmed, narrower, pre-existing:** `d4d522ce` pays the identical $5,998.20, and paid a dividend even while the bad row was listed. Reachable only from founder-written rows (the parser rejects bad ratios, entry always sets `openedAt`, and rounding to nothing needs a ratio below about 2.5e-9) | **Fixed** (`91d6ff08`): R-56 |
+| F3 | A lower-case split row reads as rounding to nothing and holds everything after it | **Confirmed, narrower, pre-existing** at its root (`d4d522ce` paid the dividend on the unadjusted count; the new code fails closed). A corrected upper-case row clears it. Founder rows only | **Fixed** (`91d6ff08`) |
+
+**Refuter 2** (`91d6ff08`):
+
+- **The F2 fix held** in every attempt: a corrected row arriving after both rows dropped, a conflict of the refused id, a correction and a delisting in one close, a later split behind a refused one, a refused split with a deferred rename (corrected in lower case), and a correction after the endpoint followed by the settlement sale on the adjusted count. Each was applied once on all three ledgers and the mirror, with reconciliation passing.
+- **A documented hold that needs a ruling:** a frozen-basket comparison whose holding a correct reverse split rounds to nothing holds the idea for good (**Q-O**).
+- **Two raw-ticker sites remained**, both pre-existing. A lower-case row of a type nobody applies left the holding marked fresh, and caused a real line breach. A refused lower-case rename named the wrong key. Both are **fixed** (`b7f4a258`), each with a row.
+- **Practice Field files:** 353/353 passed on its snapshot.
+
+### 9.7 The mutation battery
+
+The fix round's 483 mutants were carried, and the **11** whose anchors this round moved were re-cut under the same id and rule (`R1-12-zero-share-split`, `FX1-03-dedupe-applied`, `FX1-10-unsettled-quality`, `STAMP-05-quality`, `CA-05-delisting`, `T2A01-03`…`-07`, `T2A01-23`). **35** were added: at least one per inventory row, plus the two the brief names:
+
+- `R2-24` and `R2-25`: held cash credited twice on resolution (delisting, dividend);
+- `R2-26`: held cash credited on the unadjusted count.
+
+Every anchor was checked before each run (0 broken). Each mutant ran in a `git archive` copy of the code head, with a 30-second row timeout. The runner stops if any un-mutated file fails, and it restores and checks every file after each mutant.
+
+A trial run of the new mutants on `706971ad` found 3 gates whose rows were covered only by another gate (R2-18, R2-19, R2-23). Rows that isolate each were added (`91d6ff08`). A full run on `91d6ff08` (517 ran: 514 killed, 3 survived) found two more that review F2's fix had made redundant:
+
+- the held record's cause memory (R2-12), dropped in `1c4b99af` and retired;
+- the definition's due-row arm (T2A01-06), kept because the brief defines "unresolved" with it, and pinned by a direct row.
+
+| On `1c4b99af` | Count |
+|---|---|
+| Defined | **518** (483 carried, 11 of them re-cut; 35 added) |
+| Ran | **518** (missing 0, broken 0) |
+| Killed | **517** |
+| Survived | **1** — `R2-29-dry-run-pays-cash` (the hold set computed with cash actions applied in the dry run). Equivalent, argued: the dry run gates cash actions exactly as the real pass does, so it can pay only a cash action no unresolved share-basis item dated on or before it holds; paying it removes a holding whose remaining items are all dated after it, which hold no cash action of that holding and no rename (the holding is gone on every ledger that paid it). Kept as the advisor's defence, recorded here as equivalent |
+
+### 9.8 Not fixed — carried, or found outside the task
+
+| # | Item | Why not here |
+|---|---|---|
+| Q-M | An idea resolves while a paper ledger's share basis is in doubt; its held paper dividend is never paid, and SPY's doubt is not named on the result | The idea's money is unaffected; the founder's ruling (§9.4) |
+| Q-O | A comparison-only doubt holds the idea; a comparison that a correct split rounds to nothing holds it for good | Built to the letter; the founder's ruling |
+| C-16 | A dividend dated before a split but **first listed after** the split was applied is paid on the post-split count (refuter 2's note) | A late feed row, not an unresolved basis; the engine's entitlement has no history of counts |
+| C-6 (unchanged) | A doubt that never settles holds the holding (sale, rename, payments) until the founder acts | T5's founder tool |
+| C-10…C-12, C-14, C-15 | As in §8.9 | Unchanged by this round. C-13 is fixed here |
