@@ -4,7 +4,8 @@
 // kept in its own module (not the BattleViewScreen component file) so it stays
 // unit-testable and doesn't trip react-refresh/only-export-components.
 
-import { FLAT6_GAME_MODE } from '../constants/agentGameModes';
+// The extension lets api/ import this module under Node ESM (Battle Research's route reads isLeagueBattle).
+import { FLAT6_GAME_MODE } from '../constants/agentGameModes.js';
 
 // A flat-6 LEAGUE battle is an agentBattles doc stamped
 // gameMode:'baggerbomb_tournament' (FLAT6_GAME_MODE) — the ONE field that cleanly

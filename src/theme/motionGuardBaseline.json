@@ -225,6 +225,10 @@
       "count": 0,
       "authority": "Research modal QF-8 (build prompt of Nov 13, 2026) — agentNameOf moved, unchanged, into its own import-free module so the research sheet takes the cockpit’s name rule without the cockpit’s graph; cockpit2bModel.js re-exports it. A pure string function: no element, no colour, no motion; zero raw transition literals from birth. Registered in the commit that introduces it."
     },
+    "src/screens/battleView/pctText.js": {
+      "count": 0,
+      "authority": "Battle Research Slice 1 (build prompt of Nov 13, 2026, V1.1) — pctText moved, unchanged, into its own import-free module so the research engine's Node-clean modules take the cockpit's day-% rule without the cockpit's graph; cockpit2bModel.js re-exports it. A pure string function: no element, no colour, no motion; zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
+    },
     "src/screens/battleView/useServerClock.js": {
       "count": 0,
       "authority": "Cockpit Build 2b (spec \u00a78, from merge) \u2014 the server's clock for deadlines: pure helpers and one hook that keeps a single timer at the next open deadline on server time. No element, no colour, no motion; zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
@@ -620,6 +624,18 @@
     "src/components/Huddle/HuddleSheetBody.jsx": {
       "count": 0,
       "authority": "Huddle S1 (Huddle spec Amendment C V1.2 sections C4, C8; Command Center spec V1.2 Amendment D) - the chip, the sheet, the hub view of the Huddle and the sheet body: colours only through cssVar, motion only through the vocabulary, zero raw transition literals from birth. Registered in the final-check commit after the Linux full suite caught the hub checkpoint without it."
+    },
+    "src/components/CommandCenter/SharedResearchSheet.jsx": {
+      "count": 0,
+      "authority": "Command Center Amendment E V1.1 Part 2 (the hub research door; rulings R-D1 to R-D4) - the Shared Research sheet wrapper, its loader and the door view: colours only through the hub style, motion only through the vocabulary (the HubSheet the wrapper renders), zero raw transition literals from birth. Registered in the final-check commit after the Linux full suite caught the code commit without it."
+    },
+    "src/components/CommandCenter/hub/loadSharedResearch.js": {
+      "count": 0,
+      "authority": "Command Center Amendment E V1.1 Part 2 (the hub research door; rulings R-D1 to R-D4) - the Shared Research sheet wrapper, its loader and the door view: colours only through the hub style, motion only through the vocabulary (the HubSheet the wrapper renders), zero raw transition literals from birth. Registered in the final-check commit after the Linux full suite caught the code commit without it."
+    },
+    "src/components/CommandCenter/hub/researchDoorView.js": {
+      "count": 0,
+      "authority": "Command Center Amendment E V1.1 Part 2 (the hub research door; rulings R-D1 to R-D4) - the Shared Research sheet wrapper, its loader and the door view: colours only through the hub style, motion only through the vocabulary (the HubSheet the wrapper renders), zero raw transition literals from birth. Registered in the final-check commit after the Linux full suite caught the code commit without it."
     }
   }
 }

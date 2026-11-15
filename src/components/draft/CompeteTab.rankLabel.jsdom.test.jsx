@@ -16,6 +16,10 @@ import { fileURLToPath } from 'node:url';
 
 vi.hoisted(() => { process.env.TZ = 'UTC'; });
 const WED_EVENING_ET = Date.UTC(2026, 10, 12, 3, 5); // Wed Nov 11, 22:05 ET
+// The clock every row reads. CompeteTab's StalenessNote adds a "Last updated …" line once
+// Date.now() is 48 h past the rankings' computedAt, so on the real clock the golden row went
+// red from 14 Nov 2026 03:05 UTC. Only Date is faked: flush()'s setTimeout and framer stay real.
+const NOW = WED_EVENING_ET + 17 * 3600000; // Thu Nov 12, 15:05 ET: 17 h after the fixture, inside the 48 h window
 const DOCS = vi.hoisted(() => ({}));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: { currentUser: null }, default: {} }));
 vi.mock('firebase/firestore', async (importOriginal) => ({
@@ -40,8 +44,9 @@ beforeEach(() => {
   DOCS['stockTechnicalScores/CEG'] = { technicalRank: 31, technicalScore: 76, updatedAt: { seconds: Math.floor(Date.UTC(2026, 10, 10, 21, 0) / 1000) } };
   globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ success: true, data: PEER }) }));
   vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(NOW);
 });
-afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); delete globalThis.fetch; });
+afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); delete globalThis.fetch; vi.useRealTimers(); });
 const flush = async () => { for (let i = 0; i < 6; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); };
 const show = async (props) => { await act(async () => { root.render(<CompeteTab symbol="CEG" isMobile onNavigateToStock={() => {}} {...props} />); }); await flush(); };
 const badge = (title) => [...container.querySelectorAll('div')].find((d) => d.textContent === title && d.parentElement?.style.cursor === 'pointer')?.parentElement;

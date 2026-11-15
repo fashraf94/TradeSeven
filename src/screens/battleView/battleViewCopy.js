@@ -316,6 +316,9 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // the user edits and sends through the shipped chat path. Costs a message.
   askFollowUp: 'Ask a follow-up · 1 message',
   followUpPrefill: (symbol) => `About ${symbol} — `,
+  // The opponent as the arena header names it — one source for the header and Battle Research's top strip
+  // (spec docs/specs/BATTLE_RESEARCH_SLICE1_SPEC_V1.md §7: the label comes from the header, never a copy).
+  opponentLabel: 'CPU',
 
   // ── The piece scope (A2.3, D-73) ──────────────────────────────────────────
   // The SECOND door: how much of the conversation is about this piece, and the
