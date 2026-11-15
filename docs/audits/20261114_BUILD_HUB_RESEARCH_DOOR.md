@@ -420,20 +420,22 @@ The check ran on `4e878335` against `c85f7b41` (SHAs recorded in its JSON) and e
 
 ## 5. The founder's phone checklist (the smoke preview, iPhone)
 
-**Smoke branch:** `claude/hub-research-door-smoke` @ `2a9b1753`, one commit on `4e878335` built by git plumbing (never merged). **Preview:** https://trade-seven-knlkzz0hr-fais-projects-bc179554.vercel.app . The bundle was checked to carry the `hubResearchDoor` switch.
+**Smoke branch:** `claude/hub-research-door-smoke-2` @ `cd38f60c`. It is the same one smoke commit, on `dc2630b0` (the fix round's pushed head), built by git plumbing and never merged. **Preview:** https://trade-seven-7nbq36uzz-fais-projects-bc179554.vercel.app . Its hub chunk carries the fix round's code (§8.6).
+
+The first smoke, `claude/hub-research-door-smoke` @ `2a9b1753` on `4e878335`, was left as it was. Its preview is https://trade-seven-knlkzz0hr-fais-projects-bc179554.vercel.app .
 
 What the smoke changes:
 - **The mode:** the client's is forced `'on'`; the server's stays `'off'`.
 - **The data:** the research reader answers two fixture records, one open and one concluded. Every Shared Research request is answered from the body's fixtures.
 - **What stays real:** the stories come from the real feed. Nothing is written, and no model is called.
 
-**Not exercised by this build:** the signed-in path (steps 1 to 6 below). The real-browser rows drove only the no-sign-in page `?hubResearchDoor=1` (§4.3), locally and on the preview. `ConnectedHub`'s own wiring is proven in jsdom only: admission, both readers and the door's data. This checklist is the first time the signed-in smoke hub is driven.
+**Not exercised by this build:** the signed-in path (steps 1 to 6 below). The real-browser rows drove only the no-sign-in page `?hubResearchDoor=1` (§4.3): locally, and on both previews. `ConnectedHub`'s own wiring is proven in jsdom only: admission, both readers and the door's data. This checklist is the first time the signed-in smoke hub is driven.
 
 1. **Sign in.** On the **Research** tab, the door shows at the top: "Research in progress · last update {about an hour ago} · 9 findings", Continue, and "Work an idea", above the Ideas eyebrow.
 2. **"Work an idea":** the sheet rises from the bottom, titled "Work an idea". After a moment the body shows the open investigation and Recent stories (real FantasyTimes stories).
 3. **Tap a story:** its preview, with the beat's question. Go **back**, then close the sheet. You are on the Research tab, on "Work an idea".
 4. **Continue:** the sheet opens on "Faster checkout is spreading across online stores; which company earns from it?". Close it.
-5. **Overview tab:** the research rows are "Research opened" (3 hours ago), "Research concluded" (5 hours ago) and "Research opened" (7 hours ago), mixed by time with your own rows. On the phone, Overview shows only three rows (`PHONE_ACTIVITY_LIMIT`). If your newer real rows fill them, tap "All activity · N" to find the research rows. Tap "Research concluded"; the sheet opens on that investigation. Close it.
+5. **Overview tab:** the research rows are "Research opened" (3 hours ago), "Research concluded" (5 hours ago) and "Research opened" (7 hours ago), mixed by time with your own rows. "Research concluded" now shows its clipped question underneath, "Data-center builders say power and cooling equipment, not chips, now sets the pace of new…" (R-D9). On the phone, Overview shows only three rows (`PHONE_ACTIVITY_LIMIT`). If your newer real rows fill them, tap "All activity · N" to find the research rows. Tap "Research concluded"; the sheet opens on that investigation. Close it.
 6. **With VoiceOver on, steps 2 and 4:** after closing, the cursor is back on the button you tapped.
 7. **The live app at `'off'`** (production, or any preview of `main`): the Research tab is today's, with no door and no "Work an idea".
 
@@ -481,7 +483,7 @@ The founder ruled on §7's six questions (the Command Center chat, Nov 14). Q1 a
 | Bundle (R-D1 rerun against `main`'s build) | **Met.** The check exits 0 with no failures. Compared with `4e878335`'s build, only the hub chunk differs: 207,573 → 208,515 B minified (+942), and 386,326 → 388,236 B unminified. The entry, the CSS, the body chunk and every lazy chunk are identical with hashes masked. That is this round's hub-side lines and nothing else.<br>The merged head's build is identical to `5373c83e`'s (58 files, source maps excluded): `main`'s new commit is a test file. |
 | Mutation battery | **174 mutants: 172 killed, and every one of the 204 behavioural rows fails under at least one** (§8.5). M36 and M38 survive as equivalents, with their twins killed. Six earlier mutants were re-cut for this round's code. |
 | Review | **One lens and one refuter on this round's diff. 3 findings, all CONFIRMED, none must-fix. All 3 are fixed** (`5373c83e`), each with a row and a mutant (§8.4). |
-| Still short of completion condition 4 | **The suite, the rules suite and `lint:gate` exiting 0:** met on the merged head.<br>**"Every mutant is killed":** met except M36 and M38. They survive as equivalents, and each has a stronger twin that is killed.<br>**Outside condition 4:** the signed-in smoke path has still not been driven, and the smoke preview predates this round (§8.6). |
+| Still short of completion condition 4 | **The suite, the rules suite and `lint:gate` exiting 0:** met on the merged head.<br>**"Every mutant is killed":** met except M36 and M38. They survive as equivalents, and each has a stronger twin that is killed.<br>**Outside condition 4:** the signed-in smoke path has still not been driven. The smoke rebuilt on the fix round's head (`claude/hub-research-door-smoke-2`, §8.6) is ready for it. |
 
 ### 8.2 Commits
 
@@ -626,4 +628,11 @@ The lens's own `setDoorWait(null)` survivor is redundant code, not a gap: a pres
 
 ### 8.6 The smoke preview
 
-The smoke branch (`2a9b1753`, on `4e878335`) predates this round, so it does not show the door's new loading line and wait, the alert, or the ended rows' subs. The rows above prove these in jsdom. The §5 checklist still holds on the preview as it stands. A smoke rebuilt on `5373c83e` would also show the question under "Research concluded" in step 5. That rebuild is not done here.
+The first smoke (`2a9b1753`, on `4e878335`) predates this round, and it is left as it was.
+
+**The rebuild (Nov 15):** the same smoke commit was rebuilt on `dc2630b0` as a new branch, `claude/hub-research-door-smoke-2` @ `cd38f60c`. Preview: https://trade-seven-7nbq36uzz-fais-projects-bc179554.vercel.app .
+- **The same smoke:** each of its five files changes exactly as in the first smoke, checked by comparing the two commits' diffs.
+- **It builds,** and the preview's hub chunk carries the fix round's code (the door's wait line).
+- **The four real-browser rows** pass on it at 390×844 and 1280×800.
+- **What it shows:** the door's loading line and wait, the alert, and the ended rows' question. The rows above prove these in jsdom too.
+- **§5's checklist** points to it, and step 5 now names the concluded row's question.
