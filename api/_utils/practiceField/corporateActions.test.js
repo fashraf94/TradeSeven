@@ -693,7 +693,7 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     expect(Object.keys(ideaOf(ctx).ledger.holdings)).toEqual(['NVDA']);
   });
 
-  it('a record does NOT stand in for a row R-36 screened out (refuter F2): with the corrected target held by another idea, the waiting holding keeps its symbol, blocked — never renamed to the stale target', async () => {
+  it('a record does NOT stand in for a row R-36 screened out, and TAKES its target (refuters F2, S1): with the corrected target held by another idea, the waiting holding keeps its symbol, blocked — never renamed to the stale target, even after the feed drops the row', async () => {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
     const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
     const b = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), opId: 'idea-2', quotes: quotes(), date: S[0], slot: 'midday' });
@@ -704,13 +704,37 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     await closeDay(ctx, S[1], { AAPL: { price, corporateActions: [basisRow('split', 1.5), basisRow('split', 1.6), rename('AAPL', 'AMD')] } });
     expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'AMD' });
-    // The corrected row names NVDA, which idea 2 holds: screened out at every close that lists it.
+    // The corrected row names NVDA, which idea 2 holds: screened out — and the record now names NVDA.
     await closeDay(ctx, S[2], { AAPL: { price, corporateActions: [basisRow('split', 1.5), basisRow('split', 1.6), rename('AAPL', 'NVDA')] } });
-    const out = await closeDay(ctx, S[3], { AAPL: { price, corporateActions: [basisRow('split', 1.5), rename('AAPL', 'NVDA')] } });
+    expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'NVDA', deferredOn: S[1] });
+    expect(ideaOf(ctx).comparisonLedger.holdings.AAPL.deferredRename).toMatchObject({ to: 'NVDA' });
+    // The basis settles while the row is still listed (screened): not applied, blocked.
+    const listed = await closeDay(ctx, S[3], { AAPL: { price, corporateActions: [basisRow('split', 1.5), rename('AAPL', 'NVDA')] } });
+    expect(Object.keys(ideaOf(ctx).ledger.holdings)).toEqual(['AAPL']);
+    expect(listed.alerts.some((x) => x.startsWith(`PRACTICE_FIELD_RENAME_BLOCKED ${ctx.ideaId} idea AAPL`))).toBe(true);
+    // The feed drops the row: the record applies nothing to the stale AMD; NVDA is still held, so it stays blocked.
+    const dropped = await closeDay(ctx, S[4], { AAPL: { price }, NVDA: BASE.NVDA });
     const idea = ideaOf(ctx);
     expect(Object.keys(idea.ledger.holdings)).toEqual(['AAPL']);
     expect(idea.ledger.appliedActionIds).toEqual([`split_AAPL_${S[1]}`]);
-    expect(out.alerts.some((x) => x.startsWith(`PRACTICE_FIELD_RENAME_BLOCKED ${ctx.ideaId} idea AAPL`))).toBe(true);
+    expect(dropped.alerts.some((x) => x.startsWith(`PRACTICE_FIELD_RENAME_BLOCKED ${ctx.ideaId} idea AAPL`))).toBe(true);
+    expect(Object.keys(getBook(db, bookId).portfolio.positions).sort()).toEqual(['AAPL', 'NVDA']);
+    errors.mockRestore();
+  });
+
+  it('the R-36 screen does not break up a CONFLICT (refuter S2): two rows of one rename id with different targets, one of them held by another idea, apply neither', async () => {
+    const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
+    const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
+    const b = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'medium', names: ['NVDA'], capitalUsd: 15000 }), opId: 'idea-2', quotes: quotes(), date: S[0], slot: 'midday' });
+    expect(b.entry.outcome).toBe('entered');
+    const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
+    await closeDay(ctx, S[0]);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const out = await closeDay(ctx, S[1], { AAPL: { price: BASE.AAPL, corporateActions: [rename('AAPL', 'NVDA'), rename('AAPL', 'AMD')] } });
+    const idea = ideaOf(ctx);
+    expect(Object.keys(idea.ledger.holdings)).toEqual(['AAPL']);
+    expect(idea.ledger.appliedActionIds).toEqual([]);
+    expect(out.alerts.some((x) => x.startsWith(`PRACTICE_FIELD_CORPORATE_ACTION_CONFLICT ${ctx.ideaId} idea ticker_change_AAPL_${S[1]}`))).toBe(true);
     expect(Object.keys(getBook(db, bookId).portfolio.positions).sort()).toEqual(['AAPL', 'NVDA']);
     errors.mockRestore();
   });

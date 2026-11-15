@@ -117,15 +117,29 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
   // two ideas. It is applied to no ledger of this idea — the symbol is held at its carried mark, not full quality,
   // with an alert — instead of aborting the whole book's close on the book's mirror (review, lens 1).
   const renameBlocked = new Set();
-  // The ids of the rows screened out here: a waiting rename's record of the same id must not stand in for its row
-  // (fix-round refuter, F2) — it would rename to the target the record last saw, past the screen.
-  const renameIdsScreened = new Set();
+  // The rows screened out here, id → the target the feed now names: a waiting rename's record of the same id takes
+  // that target and does not stand in for the row (fix-round refuters, F2 and S1) — it would otherwise rename, later,
+  // to a target the feed has corrected away from.
+  const renameIdsScreened = new Map();
+  // A ticker change the feed lists twice with different targets is a CONFLICT (ledger.js): the screen must not break it
+  // up, or the row it leaves would apply (fix-round refuter, S2). Such an id is left whole for the ledger to refuse.
+  const renameTargetsById = new Map();
+  for (const list of Object.values(feedActions || {})) {
+    for (const a of list || []) {
+      if (a?.type !== 'ticker_change') continue;
+      const id = deriveActionId(a);
+      if (!renameTargetsById.has(id)) renameTargetsById.set(id, new Set());
+      renameTargetsById.get(id).add(a.renamedTo ?? null);
+    }
+  }
   const actionsBySymbol = {};
   for (const [sym, list] of Object.entries(feedActions || {})) {
     actionsBySymbol[sym] = list.filter((a) => {
       if (a?.type !== 'ticker_change' || !heldByOthers.has(String(a.renamedTo || '').trim().toUpperCase())) return true;
+      const id = deriveActionId(a);
+      if (renameTargetsById.get(id).size > 1) return true;
       renameBlocked.add(sym);
-      renameIdsScreened.add(deriveActionId(a));
+      renameIdsScreened.set(id, String(a.renamedTo || '').trim().toUpperCase());
       return false;
     });
   }

@@ -197,6 +197,8 @@ export function renameDeferralSymbols(ledgers, actionsBySymbol, { date }) {
  *   renameTargetsTaken  symbols another idea of the book holds: a rename into one is not applied (R-36). The close
  *                       screens the feed's rows for it before the call; this screens a rename taken from a
  *                       holding's `deferredRename` record, which no feed row carries
+ *   renameIdsScreened   id → target of each ticker-change row the close screened out for R-36: a record of that id
+ *                       takes that target and is not applied this close
  * @returns {{ ledger: object, applied: Array<object>, declined: Array<object>, unresolved: Set<string>,
  *             conflicts: Array<object>,
  *             shareBasisChanges: Array<{ ticker: string, ratio: number, actionId: string }>,
@@ -324,8 +326,16 @@ function applyActions(ledger, actionsBySymbol, { date, renames: withRenames, def
     for (const [sym, h] of Object.entries(next.holdings)) {
       const record = h?.deferredRename;
       if (!record || settledNow.has(record.actionId) || conflicting.has(record.actionId) || candidates.some((r) => r.actionId === record.actionId)) continue;
-      // The close screened this id's row out (R-36): the record does not stand in for it (fix-round refuter, F2).
-      if (renameIdsScreened?.has(record.actionId)) continue;
+      // The close screened this id's row out (R-36): the record does not stand in for it, and takes the target the row
+      // names now, so a later close never falls back to a target the feed corrected away from (fix-round refuters,
+      // F2 and S1). The holding stays unresolved here: the close marks it blocked.
+      if (renameIdsScreened?.has(record.actionId)) {
+        const screenedTo = typeof renameIdsScreened.get === 'function' ? renameIdsScreened.get(record.actionId) : null;
+        if (typeof screenedTo === 'string' && screenedTo.length > 0 && screenedTo !== record.to) {
+          next.holdings = { ...next.holdings, [sym]: { ...h, deferredRename: { ...record, to: screenedTo } } };
+        }
+        continue;
+      }
       candidates.push({ type: 'ticker_change', ticker: sym, renamedTo: record.to, effectiveDate: record.effectiveDate, actionId: record.actionId });
     }
     candidates.sort((a, b) => (a.effectiveDate + a.actionId).localeCompare(b.effectiveDate + b.actionId));
