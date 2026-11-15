@@ -102,7 +102,7 @@
 import { markBook } from '../mandateValuation.js';
 import { snapshotExcluding, caActionsBySymbol } from '../mandateUniverseSnapshot.js';
 import { pendingActionsFor, applyCorporateAction, classifyOvernightGaps, deriveActionId } from '../mandateCorporateActions.js';
-import { MANDATE_CA_RATIO_TOLERANCE } from '../mandateConfig.js';
+import { MANDATE_CA_RATIO_TOLERANCE, MANDATE_CA_RATIO_MAX_N } from '../mandateConfig.js';
 import { roundUsd } from '../mandateRounding.js';
 import { MARK_QUALITY } from './constants.js';
 import { closeMarkQuality } from './marks.js';
@@ -252,6 +252,16 @@ export function delistingWaitingSymbols(ledger) {
   return new Set(Object.entries(ledger?.holdings || {}).filter(([, h]) => delistingWaitingHolding(h)).map(([sym]) => upper(sym)));
 }
 
+/** The move's split shape: forward (`split`, price × 1/n) or `reverse_split` (price × n), n the nearest whole number in
+ *  the engine's own range (2…MANDATE_CA_RATIO_MAX_N) — found by search, so no raw rounding enters the money path. */
+function shapeOf(ratio) {
+  const kind = ratio < 1 ? 'split' : 'reverse_split';
+  const x = ratio < 1 ? 1 / ratio : ratio;
+  let n = 2;
+  for (let k = 3; k <= MANDATE_CA_RATIO_MAX_N; k += 1) if (Math.abs(x - k) < Math.abs(x - n)) n = k;
+  return { kind, n };
+}
+
 /** The session date of a holding's last trusted mark, or null when it cannot be told. */
 function markSessionOf(holding) {
   const ms = typeof holding?.lastMarkAsOf === 'string' ? Date.parse(holding.lastMarkAsOf) : NaN;
@@ -283,7 +293,7 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
     if ((actionsBySymbol?.[sym] || []).some((a) => a?.type === 'delisting' && delistingCashOf(a) === null && typeof a.effectiveDate === 'string' && a.effectiveDate <= date && !settled.has(deriveActionId(a)))) continue;
     const record = {
       symbol: sym, suspectedOn: date, since: markSessionOf(d), ratio,
-      shape: ratio < 1 ? { kind: 'split', n: Math.round(1 / ratio) } : { kind: 'reverse_split', n: Math.round(ratio) },
+      shape: shapeOf(ratio),
       frozenMark: Number(d.lastMark), frozenMarkAsOf: d.lastMarkAsOf ?? null, resolvedBy: null, resolvedAt: null,
     };
     if (next === ledger) next = cloneLedger(ledger);
