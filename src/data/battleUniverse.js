@@ -118,6 +118,55 @@ export function canonicalUniverseSymbol(battle, symbol) {
   return selectBattleUniverse(battle).find((s) => s.toUpperCase() === wanted) ?? null;
 }
 
+/**
+ * Battle Research's two groups (spec docs/specs/BATTLE_RESEARCH_SLICE1_SPEC_V1.md
+ * BRS-4, founder ruling Q1): EXTENDED from the roster above, never re-derived —
+ * the same three lists walked in the same order as selectBenchRoster:
+ *
+ *   bench            the persisted bench stocks, then the bench crypto;
+ *   agentWatchlist   the hot bench, then the equipped-list snapshot
+ *                    (agentContext.equippedWatchlist.tickers) — "Agent watchlist"
+ *                    on screen, never "Watchlist" alone.
+ *
+ * A held name (one with a row on the board) is in neither group and is listed
+ * once in `held`, in the order the lists first carry it. A name on both groups
+ * carries both tags in `membership`, bench first. Each group keeps its list
+ * order, deduped; nothing sorts.
+ *
+ * @param {object|null} battle
+ * @returns {{ bench: string[], agentWatchlist: string[], held: string[],
+ *   membership: { [symbol: string]: Array<'bench'|'agent_watchlist'> } }}
+ */
+export function researchGroupsOf(battle) {
+  const out = { bench: [], agentWatchlist: [], held: [], membership: {} };
+  if (!battle || typeof battle !== 'object') return out;
+  const benchList = [];
+  pushAll(benchList, battle.portfolio?.bench?.stocks);
+  const crypto = symbolOf(battle.portfolio?.bench?.crypto);
+  if (crypto) benchList.push(crypto);
+  const watchList = [];
+  pushAll(watchList, battle.watchlist?.hotBench);
+  pushAll(watchList, battle.agentContext?.equippedWatchlist?.tickers);
+
+  const book = selectBookSymbols(battle);
+  const heldSeen = new Set();
+  const place = (list, tag, into) => {
+    for (const symbol of list) {
+      if (book.has(symbol)) {
+        if (!heldSeen.has(symbol)) { heldSeen.add(symbol); out.held.push(symbol); }
+        continue;
+      }
+      const tags = out.membership[symbol] ?? (out.membership[symbol] = []);
+      if (tags.includes(tag)) continue;
+      tags.push(tag);
+      into.push(symbol);
+    }
+  };
+  place(benchList, 'bench', out.bench);
+  place(watchList, 'agent_watchlist', out.agentWatchlist);
+  return out;
+}
+
 /** Where in the battle a name sits — the card's "standing" section (§3). */
 export const UNIVERSE_PLACE = Object.freeze({
   BOOK: 'book',

@@ -104,6 +104,7 @@
     "src/screens/battleView/CockpitBenchSheet.jsx": {},
     "src/screens/battleView/useCockpit2bAnswer.js": {},
     "src/screens/battleView/agentName.js": {},
+    "src/screens/battleView/pctText.js": {},
     "src/screens/filmRoomV2/filmRoomModel.js": {},
     "src/screens/filmRoomV2/filmRoomCopy.js": {},
     "src/screens/filmRoomV2/filmRoomData.js": {},

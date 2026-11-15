@@ -46,6 +46,7 @@ import { agentNameOf } from '../../../screens/battleView/agentName.js';
 import { latestLineOf } from './latestLine.js';
 import { SHEET_COPY, SHELL_COPY, QUESTION_TEXT, PIN_LINE_WORDS } from './sheetCopy.js';
 import { battleSpecOf, dayMarkersOf, rungLinesOf, weekdayOfDay } from './battleChart.js';
+import { readRankings } from './rankingsRead.js';
 
 const TICK_MS = 30_000;
 const NO_CALLS = Object.freeze([]);
@@ -64,12 +65,7 @@ export function chargedOf(status, body) {
   return status !== null && NOT_CHARGED_STATUSES.includes(status) && typeof body?.error === 'string' ? 'none' : 'unknown';
 }
 
-/** One read of the rankings doc (the Ranks tab's own read, CompeteTab.jsx). */
-async function readRankings() {
-  const [{ db }, fs] = await Promise.all([import('../../../firebase/config'), import('firebase/firestore')]);
-  const snap = await fs.getDoc(fs.doc(db, 'indexIntelligence', 'stockRankings'));
-  return snap.exists() ? snap.data() : null;
-}
+// One read of the rankings doc (the Ranks tab's own read) — the shared function Battle Research reads too.
 
 const sessionDay = (ms, crypto) => (crypto ? new Date(ms).toISOString().slice(0, 10) : etDate(ms));
 const PIN_TOKEN = Object.freeze({ entry: 'ink-2', call: 'gold', answer: 'purple', check: 'teal', pin: 'amber' });

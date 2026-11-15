@@ -120,3 +120,50 @@ export const RESEARCH_MODAL_SHEET_MODES = Object.freeze(['off', 'allowlist', 'on
  */
 // Pinned by: researchModalSheetFlag.test.js (the pin and this value move together — BUILD_RULES §2).
 export const RESEARCH_MODAL_SHEET_MODE = 'allowlist';
+
+/** The walked states of BATTLE_RESEARCH_MODE, in runway order. */
+export const BATTLE_RESEARCH_MODES = Object.freeze(['off', 'allowlist', 'on']);
+
+/**
+ * BATTLE_RESEARCH_MODE — Battle Research, Slice 1 (spec of record
+ * docs/specs/BATTLE_RESEARCH_SLICE1_SPEC_V1.md BRS-1 – BRS-3). The battle's
+ * Research pill opens Battle Research — the player's agent proposes a
+ * question, the player works it by tapping, each result frozen and every
+ * number with its time — in place of the bench sheet's browse mode. Only on an
+ * active, non-League agent battle whose cockpit 2b is on and whose shell
+ * (RESEARCH_MODAL_SHEET_MODE) resolves on: state 2 of the research modal lives
+ * in the shell.
+ *
+ * A STRING TRI-STATE ('off' | 'allowlist' | 'on'), resolved at CALL time by
+ * resolveBattleResearchMode() (src/components/Research/BattleResearch/
+ * battleResearchMode.js — the client gate battleResearchGate.js and the server
+ * route api/agent/battle-research-quotes.js both read it), which maps any value
+ * outside BATTLE_RESEARCH_MODES to 'off'. Never read at module scope.
+ *
+ *   'off'        the Research pill opens the bench sheet byte for byte as
+ *                before; the route answers 404 battle_research_unavailable to
+ *                every owner, before it reads the snapshot.
+ *   'allowlist'  PER AGENT BATTLE: on only when the existing
+ *                GET /api/agent/cockpit-status answers `allowlisted` for the
+ *                caller's own battle, through the Film Room gate's cached
+ *                verdict (the same cache the shell reads). The route admits an
+ *                owner only when isCockpitOwnerAllowlisted names it, read at
+ *                call time.
+ *   'on'         every agent battle the four conditions above admit.
+ *
+ * RUNWAY: 'off' ships with the engine build (PR A, dark) and stays 'off' in
+ * the surface build (PR B). CURRENT: 'off'. 'allowlist' is PR C, one line;
+ * 'on' is a later one-line founder PR after the live checklist. Never a build
+ * PR beyond C; each step moves the first row of battleResearchFlag.test.js in
+ * the same commit (BUILD_RULES §2).
+ * ROLLBACK: a kill switch: roll back one step at a time ('on' → 'allowlist'
+ * → 'off') by moving the literal and its pin together; every mode-off arm
+ * stays in the code until the cleanup PR, after 'on' has run in production.
+ *
+ * NOTHING THE AGENT SEES OR TRADES changes at any value: Battle Research makes
+ * no provider call and no model call and writes nothing. Its one door to the
+ * agent is a draft typed into the chat composer, sent only by the player,
+ * through the existing chat path and budget.
+ */
+// Pinned by: battleResearchFlag.test.js (the pin and this value move together — BUILD_RULES §2).
+export const BATTLE_RESEARCH_MODE = 'off';

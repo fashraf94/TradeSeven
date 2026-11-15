@@ -131,6 +131,7 @@ const GUARDED_FILES = [
   'src/screens/battleView/CockpitBenchSheet.jsx',
   'src/screens/battleView/useCockpit2bAnswer.js',
   'src/screens/battleView/agentName.js', // research modal QF-8 (Nov 13): agentNameOf's own module
+  'src/screens/battleView/pctText.js', // Battle Research Slice 1 (Nov 14): pctText's own import-free module
   // Film Room A2 (Amendment E) — the v2 screen's model, copy, reads, kit and check detail; token-only and motion-token-only from birth, registered in the commit that introduces them (filmRoomData.js came one commit earlier).
   'src/screens/filmRoomV2/filmRoomModel.js',
   'src/screens/filmRoomV2/filmRoomCopy.js',
