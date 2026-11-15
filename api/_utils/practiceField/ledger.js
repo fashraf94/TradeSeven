@@ -282,7 +282,7 @@ export function renameDeferralSymbols(ledgers, actionsBySymbol, { date }) {
  *             renamesBlocked: Array<{ from: string, to: string, actionId: string }>,
  *             held: Array<object>,
  *             closedByCash: Array<{ ticker: string, actionId: string, cashUsd: number, realizedPnlUsd: number }>,
- *             delistedWaiting: Array<{ ticker: string, actionId: string, effectiveDate: string }> }}
+ *             delistedWaiting: Array<{ ticker: string, actionId: string, effectiveDate: string, renamedFrom?: string }> }}
  */
 export function applyLedgerActions(ledger, actionsBySymbol, { date, holds = null, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null }) {
   return applyActions(ledger, actionsBySymbol, { date, phase: 'all', holds, deferRenames, renameTargetsTaken, renameIdsScreened });
@@ -550,6 +550,14 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       next.corporateActionReceipts.push(receipt);
       applied.push({ ...action, receipt });
       renames.push({ from, to, actionId: action.actionId, ...deferral });
+    }
+    // C-13: a delisting with no cash amount and a rename of the same holding in ONE close. The waiting sale belongs to
+    // the HOLDING, which now answers to its new ticker: the close looks it up there, and its mark is carried there.
+    for (const r of renames) {
+      for (let i = 0; i < delistedWaiting.length; i += 1) {
+        if (delistedWaiting[i].ticker === r.from) delistedWaiting[i] = { ...delistedWaiting[i], ticker: r.to, renamedFrom: r.from };
+      }
+      if (unresolved.has(r.from)) unresolved.add(r.to);
     }
     // EVERY SYMBOL WHOSE SHARE BASIS IS UNRESOLVED is valued at its carried mark (R-45, now for the whole class): on
     // this ledger, on any ledger of the idea (`holds`), or carrying a held action. A fresh price against an unadjusted

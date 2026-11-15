@@ -1070,4 +1070,47 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     expect(bookOf(ctx).portfolio.positions.AAPL.lastMark).toBe(before.lastMark);
   });
 
+  describe('C-13 — a delisting with no cash amount and a rename of the same stock in ONE close lose nothing', () => {
+    async function oneName() {
+      const { db, bookId, bookRef } = await seedBook();
+      const e = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: Q });
+      const ctx = { db, bookId, bookRef, ideaId: e.ideaId };
+      await closeQ(ctx, S[0], Q);
+      return ctx;
+    }
+    it('the rename applies, and the waiting sale follows the holding to its new ticker; the sale fills once a price exists under it', async () => {
+      const ctx = await oneName();
+      const shares = ideaOf(ctx).ledger.holdings.AAPL.shares;
+      const out = await closeQ(ctx, S[1], { ...Q, AAPL: { price: 95, corporateActions: [delisting('AAPL', undefined, S[1]), rename('AAPL', 'AAPLX', S[1])] } });
+      const idea = ideaOf(ctx);
+      expect(Object.keys(idea.ledger.holdings)).toEqual(['AAPLX']);
+      expect(idea.ledger.holdings.AAPLX).toMatchObject({ shares, exitPending: { reason: 'delisting', session: S[1], actionId: `delisting_AAPL_${S[1]}` } });
+      expect(idea.status).toBe('line_hit_exit_pending');
+      expect(receiptsOf(idea.ledger, 'ticker_change')).toEqual([expect.objectContaining({ renamedTo: 'AAPLX', applied: true })]);
+      expect(idea.lines.map((l) => l.symbol)).toEqual(['AAPLX']);
+      expect(Object.keys(bookOf(ctx).portfolio.positions)).toEqual(['AAPLX']);
+      expect(Object.keys(coverageOf(ctx)).sort()).toEqual(['AAPLX', 'SPY']);
+      expect(out.alerts.some((a) => a.startsWith(`PRACTICE_FIELD_DELISTING_WAITING ${ctx.ideaId} AAPLX`))).toBe(true);
+      expect(rowOf(ctx, S[1]).marks.AAPLX.quality).toBe('carried_forward');
+      // The next window: no price under the old ticker; one under the new.
+      await daily(ctx, S[2], ['AAPL', 'AAPLX', 'SPY']);
+      const w = await windowAt(ctx.db, ctx.bookId, { date: S[2], quotes: { MSFT: Q.MSFT, SPY: Q.SPY, AAPLX: 40 } });
+      expect(w.sales.sold).toBe(1);
+      expect(ideaOf(ctx).ledger.saleReceipts).toEqual([expect.objectContaining({ symbol: 'AAPLX', shares })]);
+      recon(ctx);
+    });
+    it('with the share basis unresolved, the rename waits instead: the holding keeps its symbol, its waiting sale and its rename record — all three persist', async () => {
+      const ctx = await oneName();
+      const a = basis('split', 1.5);
+      await closeQ(ctx, S[1], { ...Q, AAPL: { price: 66, corporateActions: [a, { ...a, ratio: 1.6 }, delisting('AAPL', undefined, S[1]), rename('AAPL', 'AAPLX', S[1])] } });
+      const h = ideaOf(ctx).ledger.holdings.AAPL;
+      expect(h.exitPending).toMatchObject({ reason: 'delisting', actionId: `delisting_AAPL_${S[1]}` });
+      expect(h.deferredRename).toMatchObject({ from: 'AAPL', to: 'AAPLX' });
+      await closeQ(ctx, S[2], { ...Q, AAPL: { price: 66, corporateActions: [a] }, AAPLX: 66 });
+      const after = ideaOf(ctx).ledger.holdings;
+      expect(Object.keys(after)).toEqual(['AAPLX']);
+      expect(after.AAPLX).toMatchObject({ exitPending: { reason: 'delisting' } });
+      expect(after.AAPLX).not.toHaveProperty('deferredRename');
+    });
+  });
 });
