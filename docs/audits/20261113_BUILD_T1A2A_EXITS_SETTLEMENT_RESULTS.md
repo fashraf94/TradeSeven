@@ -491,3 +491,147 @@ Owner read access (rules) and the index deploy with T0b's reason-field exemption
 6. **A test on `main` that fails by the clock.** `src/components/draft/CompeteTab.rankLabel.jsdom.test.jsx`, row "absent (every caller but the shell)…": its fixture dates the rankings Wed 11 Nov 22:05 ET and the row runs on the real clock, and `CompeteTab` shows a "Last updated…" note once rankings are 48 hours old. From **14 Nov 2026 03:05 UTC** the byte-for-byte golden fails — on `origin/main` (at `5675d305` and at `c85f7b41`) exactly as on this branch (run side by side on Linux; it passed in this build's Friday run). This build touches nothing in `src/`. Until it is fixed, CI is red on that row for every PR.
 7. `api/_utils/mandateMoneyRounding.scan.test.js` and `api/_utils/mandateRationale.imports.test.js` fail on Windows on `origin/main` (path separators) and pass on Linux. Verified on the base commit.
 8. Whether `userMeta` and the `mandateBatches` family belong in a listed inventory is Q-I.
+
+---
+
+## 8. Fix round, 14 Nov 2026 — Astra T2A-01, T2A-02
+
+**Fix round, Practice Field T1a-2a** · Claude Code (Opus 5.5) · 14 Nov 2026
+**Branch:** `claude/practice-field-t1a2a-exits-settlement` (draft PR #1061). **Before:** `c4eceba8f10cdf6a27a09123b196c477ef43e6cc`, the head Astra reviewed. `git fetch origin` first; `origin/main` was `5a8c3620452ef4df633b3da540284daae2f2ab11` (the merge of PR #1063, the CompeteTab clock pin) and the branch took it by a merge commit, `7ff31a67`, with no conflict (one file, `src/components/draft/CompeteTab.rankLabel.jsdom.test.jsx`). No rebase, no force-push. **After:** `743088ed0c9b311b81104b8f52850ef317c0c8e4` (the code head, the head of every check below; this report's commit follows it and changes no code). The round is 15 files, +1,348 / −67, after the merge.
+**Attached by the founder, committed byte-identical:** `docs/audits/20261114_ASTRA_REVIEW_T1A2A.md`, SHA-256 `898b4c89c243f37beeeaf3841e82f473d2927a7e30a4c1762b272dd73d46d846`, taken from the attachment before the copy and from the committed blob after it (LF, no CR byte).
+**Flag:** `PRACTICE_FIELD_MODE = 'off'` (`src/config/practiceFieldFlags.js:33`), unchanged. No fenced file, flag value, pin, rule or index changed. The engine's `computeExecution`, `pendingActionsFor`, `applyCorporateAction`, `deriveActionId` and gap screen (`classifyOvernightGaps`) are called, not edited. This session made no model call, no Firestore write and no EODHD call.
+
+### 8.1 In plain terms
+
+Astra found two things that had to be fixed before merging. Both are fixed.
+
+- **A renamed stock could be sold with the wrong number of shares.** When the data feed reported a split two contradictory ways, the idea book rightly refused to guess and held the holding back. But if the stock was renamed the same day, the rename moved the holding to the new ticker, the hold (filed under the old one) no longer reached it, and the next morning it was sold at the new, split-adjusted price with the old share count. **Now the rename waits.** While a holding's share count is in doubt, the rename is not applied on any of the idea's three ledgers: the holding keeps its old name and a note of the rename it is waiting for, it is valued at its last good price, and its sale stays held, alerting from the fifth session as before. The evening the feed settles the split, the split is applied, then the rename, and the next morning the sale fills on the right share count. If it never settles, the holding stays held until the founder acts. Nothing guesses a ratio. While the rename waits, its new ticker counts as the idea's own: no other idea can take that name.
+- **With no idea book at all, switching the Practice Field on still changed the quarterly cron.** Each fire looked for idea books, and if that lookup failed a quarterly-only close called itself incomplete and skipped its clean-up. **Now each fire reads one small document first** — the list of open idea books, which is written whenever a book is created. If it lists none, the fire makes no other Practice Field query, and its answer, stored data, logs and clean-up are exactly the quarterly product's. If it lists a book, or cannot be read, everything runs as before.
+
+Also done: the test Astra showed missing (a direct sale past an unclosed session) is in; the scan allowlist's notes no longer claim a review of the Mandate and Film Room write sites that never happened (they say *machine-enumerated, not reviewed*, and point to Astra's Appendix A, the list T5 reviews); Amendment E's §4, the restated isolation invariant, is appended verbatim (`docs/design/20261113_PRACTICE_FIELD_AMENDMENT_E_EXITS_SETTLEMENT_RESULTS.md`, SHA-256 now `8760e8174a6aa23720ea2e70c13eb7436f4a44a5e1a1d503c4c3ecbf288ca27e`).
+
+The review of the fixes found that the first form of the rename fix let another idea take the waiting ticker; that, and four smaller gaps the refuters found after it, are fixed (§8.6). Two edge cases that fail safe are left as founder questions (§8.9).
+
+| Check (Linux, `743088ed`, `TZ=UTC`, Node 20.20.2) | Result |
+|---|---|
+| Full suite (`flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8`) | **exit code 0** · `Test Files  1472 passed \| 11 skipped (1483)` · `Tests  32915 passed \| 131 skipped (33046)` · 273.31 s |
+| Practice Field files, the scan test, the two Linux-only guards, the new trace test | exit 0 · `Test Files  18 passed (18)` · `Tests  454 passed (454)` |
+| `npm run lint:gate` / `npx vite build` | exit 0 / exit 0 (built in 16.49 s) |
+| Quarterly differential, 17 scenarios, `origin/main` against the head | **byte-identical**, `92a1be2080b4e0d6ccb32e26a2ec95ec5fac0bd4c262e0f2de73f1f1e2f27f43`, 1,118,594 bytes — the same hash as the build's |
+| …its control (an idea book in play, mode on) | differs in scenario 18 only (`749a9414…` → `ceb104cc…`) |
+| Astra's traced differential (her 20 scenarios, base against head) | `'off'` 20/20 identical, every database operation; `'on'` 20/20 identical in response, stored documents, logs, upstream and model calls, completion and retention, with one registry read added first and, on 12 eval fires, the base's own idea-book query not made (R-47, **Q-K**) |
+| Astra's T2A probe | her 15 unrenamed rows pass unchanged; her 3 renamed variants pass once they look for the holding under the ticker it keeps (18/18) |
+| Mutation battery | 483 defined, 483 ran, 482 killed, 1 survived and then killed by a row added for it (§8.5) |
+| Review | one lens and four refuter passes; 1 regression of the fix found and fixed, 8 further findings fixed, the rest recorded (§8.6) |
+| End-to-end pin | unchanged, `ed90ebd5da97658f7488cf098829f577fe952e00c43c7f9d5830967d4fc80666`, 267,350 bytes (§8.7) |
+
+### 8.2 The fixes, by file and line (at `743088ed`)
+
+**Fix 1 — T2A-01** (`4b7cb394`, `58b2257a`; with the review's fixes `9151d508`, `4fbbbb60`, `af317b03`, `743088ed`):
+
+| Where | What |
+|---|---|
+| `api/_utils/practiceField/ledger.js:161` | `unsettledShareBasisSymbols`: the symbols a ledger has not settled the share basis of — an unsettled share-basis conflict it was entitled to (`unsettledConflicts`), or a split, reverse split or stock distribution due on or before the session that it has neither applied nor declined (the engine's `pendingActionsFor`: `pending` and `noEntitlementData`) |
+| `ledger.js:176` | `renameDeferralSymbols`: the same across the idea's three ledgers, after this close's other actions (applied to a copy, renames withheld) — so a clean split and a rename on one day still rename that day |
+| `ledger.js:211`, `:215` | `applyLedgerActions` takes `deferRenames`, `renameTargetsTaken`, `renameIdsScreened`; its body is `applyActions` |
+| `ledger.js:273` | ticker changes are taken **last** in a call |
+| `ledger.js:323`–`:375` | the rename phase. Candidates are the feed's ticker-change rows and any rename a holding's `deferredRename` record still owes; a record whose row the close screened out for R-36 is not a candidate and takes that row's target (`:332`). A rename whose symbol is unresolved here or on another ledger (`:342`, `:348`) is not applied and not settled: the holding keeps its symbol and gets `deferredRename: { from, to, actionId, effectiveDate, deferredOn }` — the first deferral's session kept, the target following a listed row of the same id (`:352`) — and is valued at its carried mark. Otherwise R-36 is checked (`:361`), the record is taken off, the engine's `applyCorporateAction` moves the holding, and the receipt says `deferred: true` with `deferredOn` (`:367`) |
+| `api/_utils/practiceField/close.js:123`–`:145` | the R-36 screen of the feed's rows: an id whose rows name more than one target is left whole for the ledger to refuse as a conflict (`:140`); each screened id goes to the ledger with its target |
+| `close.js:149` | `renameDeferralSymbols` once per idea, handed with the screen's results to all three ledgers' calls — every ledger makes the same choice |
+| `close.js:156`, `:162` | a rename blocked on the record path alerts as R-36's does; a waiting rename alerts `PRACTICE_FIELD_RENAME_DEFERRED` at every close. When it is applied the book's position, the line, `unobservedLineSessions` and the coverage entry follow through the existing outputs (no new write site) |
+| `close.js:481` | another idea's waiting target counts as held for R-36 |
+| `api/_utils/practiceField/admission.js:99`; `api/_utils/practiceField/entry.js:238`–`:242` | a waiting rename's target is that idea's name: admission refuses it (`ticker_held_by_other_idea`), and an entry naming it waits through `deferOrCancel` — refused by name, cancelled at its last entry slot if the rename still waits |
+
+**Fix 2 — T2A-02** (`3c687ffd`):
+
+| Where | What |
+|---|---|
+| `api/_utils/practiceField/sweep.js:72`–`:96` | `readIdeaBookPresence`: one read of `practiceFieldBooks/_registry`. Missing, or `openBooks` empty → no idea book; one or more listed → as before; `openBooks` not an object, or the read failing → "unknown", as before (a failed read is logged `PRACTICE_FIELD_REGISTRY_READ_FAILED` and is not counted itself). At `'off'` it reads nothing |
+| `sweep.js:147`, `:238`, `:319` | the snapshot build's draining view, the eval pass (its active and draining queries) and the draining close return before any query when the answer is "no idea book" |
+| `api/cron/mandate-evaluate.js:378`, `:848` | each sweep reads it once, first, and hands it to the snapshot build (`:394`, `:865`), the eval pass (`:467`) and the draining close (`:1025`) |
+
+**The registry is a complete list — confirmed by reading every writer before relying on it, and pinned** (`api/_utils/practiceField/registryPresence.test.js`): the only builder of an idea-book document is `buildIdeaBookDoc` (`ideaBook.js:120`), called only by `createIdeaBook` (`ideaBook.js:208`), which writes the book and its registry entry in one transaction (`ideaBook.js:236`–`:246`); no other writer of `mandates` gives a document `kind: 'idea_book'` (`buildNewMandateDoc` carries no kind; `mandate-rollover.js:113` and `mandateEscape.js:117` refuse idea books; `mandateCreationService.js` builds quarterly books; `mandateAcceleratedClock.js` writes rows only); nothing sets an idea book's status yet (T1a-2b's drain will); the registry is written at one site — the allowlist's one `practiceFieldBooks` key, `ideaBook.js::createIdeaBook::set::practiceFieldBooks` at 2 (the claim and the registry) — and that write keeps every listed entry; clients can write neither collection (`firestore.rules`: `mandates` is `allow write: if false`; `practiceFieldBooks` falls to the default deny).
+
+**Fix 3 — T2M01** (`2d27aad1`): `api/_utils/practiceField/catchUp.test.js:338`, Astra's direct-call row: `sellPendingHoldings` and `enterIdea`, called with no window pass before them past an unclosed session, each answer `not_this_session` / `earlier_session_unclosed` and the store is unchanged; the window then catches the session up first at the holdings it had, and sells and enters. With the sale's own refusal removed, **this file alone fails** (1 of 15; battery mutant `T2M01-skip-sale-session-barrier`).
+
+**Fix 4 — T2A-03's honesty part** (`ca5df54f`): `api/_utils/compositionProtectedStoresAllowlist.json`. The sentence in `_notes_t1a07_money_store._not_reviewed_writer_by_writer` that said the Mandate engine's and the Film Room's keys "were read transaction by transaction" is corrected, and each note of a non-Practice-Field key this build added or re-keyed (`_notes_mandate_engine_money_store` and its `_scope`, `_newly_listed_outside_the_money_store`, `_rekeyed_outside_the_money_store`) begins *MACHINE-ENUMERATED, NOT REVIEWED* and names Astra's Appendix A as the review queue. **No key and no count changed:** `allowedWriteSites` is deep-equal to the parent commit's (480 keys, 607 sites); the 28 changed strings are all notes in those two blocks (checked by script). The six writes Astra lists first are existing product code the old scan could not see; nothing about them changed.
+
+**Commits after the merge, in order:** `4b7cb394` (Fix 1), `3c687ffd` (Fix 2 and Amendment E §4), `2d27aad1` (Fix 3), `ca5df54f` (Fix 4), `a838b5dd` (Astra's review and its `docs/README.md` row; Amendment E's row records §4 and its new hash), `58b2257a` (Fix 1: the carried-mark row, found while cutting the battery), `9151d508` (the review's finding 1: the waiting target reserved; finding 2 pinned), `4fbbbb60` (refuter F1–F3), `af317b03` (refuter S1, S2), `743088ed` (the battery's survivor's row), then this report.
+
+### 8.3 Readings stated, and questions
+
+| # | Where the letter stops | Reading |
+|---|---|---|
+| R-44 | "Record it durably on each ledger that holds the symbol as `deferredRename: {…}`" | On the **holding** (`ledger.holdings[from].deferredRename`), not one field per ledger — a basket can wait on two renames at once. On every ledger that holds the symbol, in the shape given, present only while the rename waits |
+| R-45 | How a waiting holding is valued | At its **carried mark**, not full quality, as R-36 values a blocked rename: its share basis is unresolved, so any snapshot price against the unadjusted count would put a wrong value on the row |
+| R-46 | What releases a deferral held only by a share-basis row that was due and never applied, once the feed drops that row | Nothing remembers such a row (only a conflict leaves a receipt), so once it is no longer listed the rename applies from its record. A dropped share-basis **conflict** still holds it (C-6). Such a row is not reachable from the EODHD parser |
+| R-47 | Fix 2's test: 'on' "identical except exactly one registry read per fire" against the base | Against `'off'` exactly that holds (`practiceFieldNoBook.trace.test.js`, 40 rows). Against the base **at 'on'** it cannot hold to the letter: the base's own T1a-1 eval pass already made one idea-book query on every eval fire that reached it, and the brief also says to skip "the idea-book pass's own query" — so on those 12 of Astra's 20 eval fires the head makes the registry read and not that query. Everything else is identical. **Q-K** |
+| R-48 | "A missing document, or an empty `openBooks`" | A registry whose `openBooks` is not an object answers "unknown" — discovery runs (the fail-safe side) |
+| R-49 | "If the registry read itself fails, behave as now" | Discovery runs and its failures count, as now; the failed read is logged and not counted itself |
+| R-50 | The brief does not say what a waiting rename's target is to the rest of the book (the review's finding 1) | The waiting idea's: admission refuses it, an entry naming it waits (and times out at its last slot), another idea's rename into it is blocked by R-36 — as if the rename had applied. **Q-L** |
+| R-51 | R-36 against a waiting rename | R-36 comes first and is unchanged: a rename into a symbol another idea holds is blocked, not deferred, even while the share basis is unresolved, and no record is made |
+
+**Q-K:** at `'on'` with no idea book an eval fire also no longer makes the base's own idea-book query. Acceptable, or should that query stay so the trace against the base at `'on'` differs by the registry read alone? *Built: skipped, as the brief's list says.*
+**Q-L:** an idea admitted **before** a rename began to wait, naming its target, now waits and times out (its slot freed, its cash returned); before this round the waiting rename would have lost instead (blocked by R-36). Which should yield? *Built: the waiting rename keeps its target.*
+
+### 8.4 Fix 2's differential, in detail
+
+`api/cron/practiceFieldNoBook.trace.test.js` (committed) fires the engine's two sweeps on the in-memory store with every database operation recorded in order (gets, queries, writes, transaction steps), beside the response, every stored document, every log line and every upstream and model call — Astra's twenty scenarios, at `'off'` and at `'on'`, with the registry missing and with it present and empty: `'on'` equals `'off'` plus exactly one registry read, first, and no idea-book query (40 rows). Her retention case answers `complete: true, errors: 0` and deletes both expired documents at both modes; her three draining-query-outage cases cannot occur at `'on'` (no query runs). Controls: the registry unreadable (discovery runs; with the draining query failing too, `complete: false, errors: 1`, no retention — as now); a registry not of its shape (discovery runs); a registry listing a draining book (it is closed by the Practice Field's own query); an active and a draining book (the fire differs from `'off'`, as it must).
+
+The base-against-head form is Astra's own harness, run as a scratch probe in this session's scratchpad (`astra-repro/`: `base` = `origin/main` @ `5a8c3620`, `head` = `743088ed`): her evidence file, SHA-256 `1bc7b65b33f6d5190affe723e64ac8f2f57d6b03e62e5684c585f424d679d261`, classified case by case — `'off'` 20/20 identical including every operation; `'on'` 20/20 identical in response, stored documents, logs and calls, with the database operations equal once the one registry read (first in all 20) and the base's own idea-book query (in 12) are set aside. Her assertion is whole-trace equality, so her unmodified file reports 20/40; that is the R-47 difference, case for case.
+
+### 8.5 The mutation battery
+
+The build's 441 mutants, carried; the 5 whose anchors this round moved re-cut under the same id and rule (`CA-06-comparison`, `TICK-01-one-ledger-only`, `TICK-05-spy-ledger`, `KIND-16-pass-off`, `KIND-17-pass-off-inner`); 42 added — 26 for Fix 1 and its review fixes (among them: the rename applied despite an unresolved share basis; the rename applied on the idea's ledger only, and on the comparison's only; the idea-wide choice dropped; a deferred rename never applied after settlement; the record not kept, overwritten, left on the renamed holding, not refreshed, or standing in for a screened row; the waiting target free at admission, at entry or for another rename; the entry refusal thrown; the screen breaking a conflict), 14 for Fix 2 (among them: discovery run with an empty registry — in the eval pass, the snapshot view and the draining close; a missing registry read as "unknown", so a discovery failure counts; an empty registry read as listing books; the registry read twice in one fire, eval and close; the answer not handed on; a failed read read as "none"; a malformed registry read as "none"; the registry read at `'off'`; a failed read thrown), and T2M01 against `catchUp.test.js` alone. Every anchor was checked before the run (0 broken). Each mutant ran in a `git archive` copy of `af317b03` (the code of the final head), with a 30-second row timeout so that load cannot turn a row into a false kill; the runner stops if any un-mutated file fails and restores and checks every file after each mutant.
+
+| | Count |
+|---|---|
+| Defined | **483** (441 carried, 5 of them re-cut; 42 added) |
+| Ran | **483** (missing 0, broken 0) |
+| Killed | **482** |
+| Survived | **1** — `REN-01-blocked` (the close's R-36 screen of feed rows removed): the ledger's own R-36 check now catches feed rows too, so a plain blocked rename reads the same. The one observable difference — a rename into a held symbol while the share basis is unresolved is blocked, not deferred (R-51) — got a row (`743088ed`), and run again against it the mutant is **killed** (1 of 37). Only that test file changed after the run |
+
+### 8.6 The review and its refuters (BUILD_RULES §2: the money path and the cron changed)
+
+One independent lens on a read-only `git archive` snapshot of `a838b5dd` (fixes 1 and 2 as first built), and every finding handed to a refuter told to refute it with a reproduction against the new code **and** the reviewed head `c4eceba8`. Each fix the findings led to was refuted again on its own snapshot — three more passes. Reviewers and refuters wrote only scratch probes in their own snapshot folders, ran no git and never touched the working tree.
+
+**The lens** (`a838b5dd`): no blocker.
+
+| # | Finding | Refuter (against `c4eceba8` and the new code) | Disposition |
+|---|---|---|---|
+| 1 | While a rename waits, nothing reserves its target: another idea can be admitted into it and buy it, and R-36 then blocks the waiting rename (carried marks for as long as the other holds it) | **Confirmed, narrower.** A regression at the admission gate (before the round the rename applied at once and B-SAME refused the other idea); in the same sequence the reviewed head sells a third too few shares; once the other idea sells the target the rename applies and the sale fills on the adjusted count. Not reachable in production today (nothing calls `admitIdea` outside tests; nothing produces `ticker_change` rows; mode `'off'`) | **Fixed** (`9151d508`, completed in `4fbbbb60`, `af317b03`): R-50 |
+| 2 | The idea-wide choice is pinned by no integration row; possibly equivalent | **"Equivalent" refuted**: a frozen-basket comparison holding the idea's name in a different quantity cannot apply a reverse split extreme enough to round its holding to nothing, while the idea's own ledger can | **Pinned** (`9151d508`) |
+| 3 | A conflicting cash dividend plus a same-close rename: the sale fills while the conflict is listed; the dividend reaches neither ledger | **Confirmed, pre-existing** (byte-identical on the reviewed head); outside the brief (share-basis actions); about one dividend | Not fixed (§8.9) |
+| 4 | A share-basis row the applier refuses holds the rename only while listed | **Confirmed, narrower, pre-existing**: the reviewed head never holds it; the new code is the stricter. Not reachable from the EODHD parser | Not fixed (R-46) |
+| 5 | A record keeps the first target it deferred | **Confirmed, narrower, not a regression** (the reviewed head applies the first target at once) | **Fixed** (`4fbbbb60`, `af317b03`) |
+| (a) | An active idea book with a missing or empty registry would be skipped silently | Holds by reading; no writer produces that state (pinned) | Note |
+| (b) | A cashless delisting plus a rename of the same symbol in one close loses the waiting sale | **Confirmed, pre-existing** (run on both trees) | Not fixed (§8.9) |
+
+**Refuter of `9151d508`** (the reservation): confirmed for its case; both halves killed by their rows. Found, all in this round's code: **F1** another idea's own clean rename could take a waiting target (R-36 read positions only) — **fixed**; **F2** the record kept a stale target, and a record could stand in for a row R-36 screened out — **fixed**; **F3** an entry naming a waiting target threw, so every fire counted an error, was not stamped and never claimed `complete` until the idea timed out — **fixed** (it waits). Notes: a comparison-only rename is screened by R-36 too (pre-existing; §8.9); Q-L.
+
+**Refuter of `4fbbbb60`**: F1 correct in both book orders, F3 correct through the last slot. Found: **S1** a corrected row that R-36 screens out never reached the ledger, so the record kept its older target and renamed to it once the feed dropped the row — **fixed**; **S2** (pre-existing) the screen ran before conflict detection, so of two rows of one id with different targets it could strip one and let the other apply — **fixed**, because the record refresh relies on the screen. Notes: F1 is order-dependent within one close (exactly one idea gets the target); a rename into a symbol the same idea holds keeps its record for good (pre-existing); only the first refusal is recorded when a reserved name and a missing price coincide (cosmetic).
+
+**Refuter of `af317b03`**: S2 could not be refuted (identical rows, case differences, a missing target, rows of one id under two symbols); S1's freed-target path renames to the corrected target. Found, **not fixed** (§8.9): if the feed renames two different held stocks into the same new ticker, both waiting ideas block each other for good (both held, both alerting every close; nothing sold on a wrong count); a correction that arrives as a conflict leaves the record on its older target (the existing conflict handling — the control with no held target does the same); a future-dated rename into a held symbol marks the holding blocked early (pre-existing).
+
+Every fix above has its own row, and each row fails with its fix removed (checked by a mutant per fix before commit, and again by the battery).
+
+### 8.7 The end-to-end pin
+
+**Before:** `ed90ebd5da97658f7488cf098829f577fe952e00c43c7f9d5830967d4fc80666`, 267,350 bytes. **After:** the same. It did not move, and it is not stale: `endToEnd.test.js` computes the hash and asserts it, and it ran on the final head (Windows, and Linux in the 454-row run and the full suite). Why it did not move: the run has a split, a dividend, a missing quote and a waiting sale but no ticker change, and runs no cron. The new rename phase runs at every one of its closes and writes nothing when no rename is due; Fix 2 is outside it.
+
+### 8.8 Isolation of the review, disclosed
+
+Reviewers and refuters worked on `git archive` snapshots under this session's scratchpad (`review-snap`, `refute-base`, `refute-head`, `refute2`, `refute3`, `refute4`), `node_modules` a junction to the repository's, and wrote only their own probe folders. The battery ran in four separate `git archive` shard trees. A first battery start stopped at its own baseline check because the shard trees lacked `firestore.rules` (one registry row reads it); a second was stopped by hand when the review's finding 1 meant re-running on new code; a third stopped at its baseline under another session's load (two long rows timed out; both files pass alone, 40/40), after which the row timeout was raised to 30 seconds for the run reported above. Another session was running vitest on this machine during the battery and between Linux runs; the full suite ran under `flock` and finished green.
+
+### 8.9 Not fixed — carried, or found outside the task
+
+| # | Item | Why not here |
+|---|---|---|
+| C-10 | **Two held stocks renamed into one ticker.** If the feed renames two different held stocks to the same new ticker (one idea's corrected row naming another idea's waiting target), each idea reads the other's record as a reservation and both stay blocked, alerting at every close | A ticker names one listing, so a real feed cannot; the failure is closed (held, alerted, nothing sold on a wrong count, no money moves). A ruling on who owns a contested target is the founder's |
+| C-11 | **A correction that arrives as a conflict.** Two targets for a waiting rename's id leave its record on its older target, which applies once the basis settles | The existing conflict handling; a conflicting rename is refused, and nothing says which target to keep |
+| C-12 | **A conflicting cash dividend plus a same-close rename** sells while the conflict is listed and credits the dividend to neither ledger (review finding 3) | Pre-existing; outside the brief's share-basis scope; about one dividend |
+| C-13 | **A cashless delisting plus a rename of the same symbol in one close** loses the waiting sale silently: the close looks the delisting up under the old ticker after the rename (review note (b)) | Pre-existing (run on the reviewed head) — **for separate tasking** |
+| C-14 | **R-36 screens a comparison-only rename too** (the screen passes all three ledgers), so a comparison holding may be held at a carried mark when another idea holds the target | Pre-existing; whether a paper ledger's rename is B-SAME's concern is a ruling |
+| C-15 | A rename into a symbol the same idea already holds keeps its record for good; a future-dated rename into a held symbol marks the holding blocked early; only the first refusal is recorded when a reserved name and a missing price coincide | Notes; pre-existing or cosmetic |
+| C-6 (unchanged) | A share-basis conflict the feed drops still holds the sale — and now any rename waiting on it — until the founder acts | T5's founder tool |
+| T2A-03 | The writer review of Appendix A's 85 keys, the six protected operations first | T5 (the notes now say so) |
