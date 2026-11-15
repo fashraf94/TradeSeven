@@ -91,10 +91,12 @@ describe('BRS-11 — ordering', () => {
     expect(o.placed.map((p) => p.position)).toEqual([1, 2, 3, 4]);
     expect(o.unranked).toEqual([{ symbol: 'SOL-USD.CC', reason: 'crypto' }, { symbol: 'NOW', reason: 'not_in_rankings' }]);
   });
-  it("today's move, biggest gain first; Biggest drop first reverses it", () => {
+  it("today's move, biggest gain first; Biggest drop first reverses it — and an unranked name with a move is placed by it (BR1-4)", () => {
     const r = weakest();
-    expect(syms(outcomeOf(r, { group: 'union', order: MOVE, conditions: [] }).placed)).toEqual(['ORCL', 'MSFT', 'PLTR', 'NVDA']);
-    expect(syms(outcomeOf(r, { group: 'union', order: DROP, conditions: [] }).placed)).toEqual(['NVDA', 'PLTR', 'MSFT', 'ORCL']);
+    const move = outcomeOf(r, { group: 'union', order: MOVE, conditions: [] });
+    expect(syms(move.placed)).toEqual(['ORCL', 'MSFT', 'NOW', 'PLTR', 'NVDA']);
+    expect(move.unranked).toEqual([{ symbol: 'SOL-USD.CC', reason: 'crypto' }]);
+    expect(syms(outcomeOf(r, { group: 'union', order: DROP, conditions: [] }).placed)).toEqual(['NVDA', 'PLTR', 'NOW', 'MSFT', 'ORCL']);
   });
   it('move ties go to technical rank, then the symbol', () => {
     const r = weakest({ quotesBody: quotesBody({ MSFT: { ...quotesBody().quotes.MSFT, changePercent: 2.05 } }) });
@@ -104,7 +106,7 @@ describe('BRS-11 — ordering', () => {
   it('a name without an ok move is NOT ASSESSED under the move order (never flat, never removed); rank still places it', () => {
     const r = weakest({ quotesBody: quotesBody({ PLTR: { ...quotesBody().quotes.PLTR, priceAsOf: TAKEN_AT - 50 * MIN } }) });
     const o = outcomeOf(r, { group: 'union', order: MOVE, conditions: [] });
-    expect(syms(o.placed)).toEqual(['ORCL', 'MSFT', 'NVDA']);
+    expect(syms(o.placed)).toEqual(['ORCL', 'MSFT', 'NOW', 'NVDA']);
     expect(o.notAssessed).toEqual([{ symbol: 'PLTR', conditionId: 'order', state: 'stale' }]);
     expect(o.removed).toEqual([]);
     expect(syms(outcomeOf(r, { group: 'union', order: RANK, conditions: [] }).placed)).toContain('PLTR');

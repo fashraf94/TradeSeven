@@ -43,7 +43,7 @@
 
 import { getSessionForDate } from '../../../utils/marketCalendar.js';
 import { nextSessionDate } from '../../../utils/tapeSchedule.js';
-import { etDate, etClockAmPm } from '../BombMode/checkClock.js';
+import { etDate, etClock, etClockAmPm, etWeekday } from '../BombMode/checkClock.js';
 import { pctText } from '../../../screens/battleView/pctText.js';
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -119,6 +119,35 @@ export function earlierDayLabel(quoteEtDate, session) {
 const state = (s, cause, words) => ({ state: s, cause, words });
 
 /**
+ * THE MOVE AS PRINTED (BUILD_RULES §9; review BR1-2, BR2-4, BR2-5): the number pctText prints — one
+ * decimal, the sign of the printed digits (a move that prints 0.0 is zero, never "+0.0%"). Every move
+ * decision in Battle Research — the order and its ties, up and down today (zero belongs to neither), the
+ * reference line, the chips, the counts, the words — reads THIS number, so no label can disagree with
+ * the digits beside it. Null without a finite move.
+ */
+export function shownMove(v) {
+  if (!finite(v)) return null;
+  const digits = Number(Math.abs(v).toFixed(1));
+  return digits === 0 ? 0 : (v < 0 ? -digits : digits);
+}
+/** The move's text: pctText of the printed number ("+1.2%", "−0.8%", "0.0%"). */
+export const moveText = (v) => pctText(shownMove(v));
+
+/**
+ * A time as a line names it against the result's own instant (review BR2-6): the clock on the same ET
+ * day ("1:01 PM"), else the weekday too ("Wed 1:01 PM") — 💣's atrAsOfText rule, for every time.
+ */
+export function whenText(ms, refMs) {
+  if (!finite(ms)) return null;
+  return finite(refMs) && etDate(ms) === etDate(refMs) ? etClockAmPm(ms) : `${etWeekday(ms)} ${etClockAmPm(ms)}`;
+}
+/** A check's name the same way: "12:45" on the same day, else "Wed 12:45" (bombCopy.checkName's form). */
+export function checkWhen(ms, refMs) {
+  if (!finite(ms)) return null;
+  return finite(refMs) && etDate(ms) === etDate(refMs) ? etClock(ms) : `${etWeekday(ms)} ${etClock(ms)}`;
+}
+
+/**
  * The checks that do not depend on the median or the clock's staleness rules (rows 1–7):
  * a state object, or null for a valid regular-session stock quote (the median's population).
  */
@@ -132,8 +161,10 @@ export function preClassify({ quote, isCrypto = false, session, snapshot, takenA
   if (!finite(quote.priceAsOf) || !finite(takenAt) || quote.priceAsOf > takenAt) return state('missing', 'no_time', 'No quote time');
   const today = currentSessionDate(session);
   if (today === null || quote.sessionEtDate !== today) {
-    const day = earlierDayLabel(typeof quote.sessionEtDate === 'string' ? quote.sessionEtDate : etDate(quote.priceAsOf), session);
-    return state('earlier_session', null, `${pctText(quote.changePercent)} · ${day ?? 'earlier'}'s move · close`);
+    // A quote with no session date of its own is never named as some day's close (review BR1-11).
+    if (typeof quote.sessionEtDate !== 'string') return state('earlier_session', null, `${moveText(quote.changePercent)} · an earlier session’s move`);
+    const day = earlierDayLabel(quote.sessionEtDate, session);
+    return state('earlier_session', null, `${moveText(quote.changePercent)} · ${day ?? 'earlier'}'s move · close`);
   }
   if (quote.priceAsOf < session.openMs) return state('pre_market', null, `Pre-market · ${etClockAmPm(quote.priceAsOf)}`);
   if (quote.priceAsOf > session.closeMs) return state('after_hours', null, `After hours · ${etClockAmPm(quote.priceAsOf)}`);
@@ -181,7 +212,7 @@ export function classifyMove({ quote, isCrypto = false, session, medianAsOf = nu
   if (finite(medianAsOf) && medianAsOf - quote.priceAsOf > READING_LIMITS.behindRestMs) {
     return state('stale', 'behind_rest', `Quote from ${etClockAmPm(quote.priceAsOf)} · older than the rest`);
   }
-  return state('ok', null, `${pctText(quote.changePercent)} · ${etClockAmPm(quote.priceAsOf)}`);
+  return state('ok', null, `${moveText(quote.changePercent)} · ${etClockAmPm(quote.priceAsOf)}`);
 }
 
 /**

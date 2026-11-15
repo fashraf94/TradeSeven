@@ -6,30 +6,36 @@
 // words are battleResearchCopy.js's. Nothing here reads a clock, a store or a
 // live price: a result's numbers are the numbers it froze, so the row, the
 // explanation, the modal's research blocks and the draft print ONE string per
-// reading (BUILD_RULES §9) — pctText for a move, atrReadingText for a rung, the
-// sheet's rungsText for a holding, etClockAmPm for a time.
+// reading (BUILD_RULES §9) — readings.moveText for a move (the printed number,
+// readings.shownMove, decides every comparison too), atrReadingText for a rung,
+// the sheet's rungsText for a holding, readings.whenText for a time (its day
+// named when it is not the result's own).
 //
 // It never predicts, projects points, calls a stock good or bad, or mentions
 // fit, overlap, momentum or SPY. A reading the result doesn't have is left
 // out, never written as zero.
 
-import { etClock, etClockAmPm, etWeekday, etDate, checkClock } from '../BombMode/checkClock.js';
+import { etClockAmPm, etWeekday, etDate } from '../BombMode/checkClock.js';
 import { atrReadingText } from '../BombMode/bombCopy.js';
 import { atrAsOfText } from '../BombMode/bombView.js';
-import { battleExpiryMs } from '../../../../api/_utils/callRecords/horizon.js';
 import { rungsText } from '../Sheet/sheetCopy.js';
 import { COMPANY_NAMES } from '../../../config/stockData.js';
-import { pctText } from '../../../screens/battleView/pctText.js';
-import { allStaleOf, moveAvailability } from './readings.js';
-import { incumbentOf, noWeakestReason, sectorOf, moveOf, rankOf, rungEstimateOf, timesOf, stockStatesOf, sessionOfResult, msOf, aboutOf } from './result.js';
-import { BR_COPY, GROUP_LABEL, conditionWords, conditionLabel, orderLabel, eligibilityWhy, ordinal } from './battleResearchCopy.js';
+import { allStaleOf, moveAvailability, moveText, whenText, checkWhen } from './readings.js';
+import { incumbentOf, noWeakestReason, sectorOf, moveOf, rankOf, rungEstimateOf, timesOf, stockStatesOf, sessionOfResult, aboutOf, nextCheckTextOf, holdingEntryOfResult } from './result.js';
+import { BR_COPY, GROUP_LABEL, conditionWords, conditionLabel, orderLabel, eligibilityWhy, ordinal, clockRange, aheadWords } from './battleResearchCopy.js';
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 /** The chat's length limit, composer and server alike (Phase 0 point 9: AgentChat.jsx:939, chatTextSanitize.js:26). */
 export const CHAT_MAX_LENGTH = 2000;
 
-/** "the 1:45 check" — the check's own clock time (bombView.checkNameAt's form). */
-const checkTimeOf = (ms) => (finite(ms) ? etClock(ms) : null);
+/** The next check's time as a line can name it (result.nextCheckTextOf — one clock for the proposal and a result). */
+export const nextCheckText = nextCheckTextOf;
+
+/** A lock's time as a line names it: the clock on the reference instant's day, else the weekday too ("Thu 10:00 AM"). */
+export function untilText(ms, refMs) {
+  if (!finite(ms)) return null;
+  return finite(refMs) && etDate(ms) === etDate(refMs) ? etClockAmPm(ms) : `${etWeekday(ms)} ${etClockAmPm(ms)}`;
+}
 
 // ── Names ──
 
@@ -48,13 +54,6 @@ export function companyNameOf(battle, symbol) {
 
 // ── The proposal (BRS-5, BRS-6) ──
 
-/** The next check's time as a line can name it: today "3:45 PM", another day "Mon 9:45 AM". */
-export function nextCheckText(battle, nowMs) {
-  const c = checkClock(nowMs, { battleExpiresAtMs: battleExpiryMs(battle), lastScoredAtMs: msOf(battle?.scoreState?.lastScoredAt) });
-  if (!finite(c.slotMs)) return null;
-  return c.state === 'later' ? `${etWeekday(c.slotMs)} ${etClockAmPm(c.slotMs)}` : etClockAmPm(c.slotMs);
-}
-
 /**
  * The agent's proposal on open: the weakest holding with its check time and rungs from entry,
  * or why there is none — two cases that never share wording (BRS-6).
@@ -64,10 +63,10 @@ export function proposalOf(battle, nowMs) {
   const reason = noWeakestReason(battle);
   if (reason === null) {
     const inc = incumbentOf(battle);
-    return { kind: 'weakest', incumbent: inc, weakestLine: null, text: BR_COPY.proposalWeakest(inc.symbol, checkTimeOf(inc.checkAtMs) ?? 'last', rungsText(inc.rungsShown)) };
+    return { kind: 'weakest', incumbent: inc, weakestLine: null, text: BR_COPY.proposalWeakest(inc.symbol, checkWhen(inc.checkAtMs, nowMs) ?? 'last', rungsText(inc.rungsShown)) };
   }
   if (reason === 'awaiting') {
-    const t = nextCheckText(battle, nowMs);
+    const t = nextCheckTextOf(battle, nowMs);
     return { kind: 'awaiting', incumbent: null, text: BR_COPY.proposalAwaiting(t), weakestLine: BR_COPY.weakestUnavailable('awaiting', t) };
   }
   return { kind: reason, incumbent: null, text: reason === 'legacy' ? BR_COPY.proposalLegacy : BR_COPY.proposalNoLadder, weakestLine: BR_COPY.weakestUnavailable(reason) };
@@ -102,6 +101,12 @@ export function eligibilityLabel(elig, refMs = null, nowMs = null) {
   return { tone: 'no', text: BR_COPY.cantComeIn };
 }
 
+/** A member's eligibility against a holding: the frozen answer for THAT holding (review BR2-1), else the result's. */
+export function eligibilityVs(member, holdingSymbol) {
+  if (!member) return null;
+  return holdingSymbol && member.vs && member.vs[holdingSymbol] ? member.vs[holdingSymbol] : member.eligibility;
+}
+
 /** The rank text (BRS-8): *Rank 12 of 228 · 1:01 PM ET*, with *older than usual* past the doc's expiry. */
 export function rankText(result, symbol) {
   const r = rankOf(result, symbol);
@@ -109,6 +114,12 @@ export function rankText(result, symbol) {
   const t = timesOf(result);
   const N = result.rankings.totalTechStocks;
   return t.ranksAt ? BR_COPY.rank(r.technicalRank, N, t.ranksAt, t.ranksOlder) : BR_COPY.rankNoTime(r.technicalRank, N);
+}
+
+/** The ranks' time as a sentence names it: "1:01 PM ET", with "older than usual" when it is (BRS-8). */
+function ranksAtWords(result) {
+  const t = timesOf(result);
+  return t.ranksAt ? `${t.ranksAt} ET${t.ranksOlder ? ', older than usual' : ''}` : null;
 }
 
 /** A candidate's rung (BRS-8): *Estimated rung size ≈4.1% · ATR reading · 1:01 PM ET* — 💣's own number and time formatter. */
@@ -124,8 +135,8 @@ export function holdingRungText(result, holding) {
 
 /**
  * The difference chips against the incumbent (§7 third line): at most two, from the evidence,
- * neutral; none without evidence for it. Moves compare as PRINTED (one decimal), so a chip never
- * contradicts two equal numbers on screen.
+ * neutral; none without evidence for it. Moves compare AS PRINTED (moveOf), and the move chip's
+ * words are true in its direction (readings → aheadWords; review BR2-5).
  */
 export function diffChipsOf(result, symbol) {
   const inc = result.incumbent;
@@ -136,12 +147,7 @@ export function diffChipsOf(result, symbol) {
   if (Number.isInteger(r) && Number.isInteger(ri) && r < ri) chips.push(BR_COPY.diffRank(inc.symbol));
   const m = moveOf(result, symbol);
   const mi = moveOf(result, inc.symbol);
-  if (m.ok && mi.ok) {
-    const a = Number(m.value.toFixed(1));
-    const b = Number(mi.value.toFixed(1));
-    if (a > b && a > 0) chips.push(BR_COPY.diffUp(inc.symbol));
-    else if (a > b && a <= 0) chips.push(BR_COPY.diffDown(inc.symbol));
-  }
+  if (m.ok && mi.ok && m.value > mi.value) chips.push(BR_COPY.diffMove(aheadWords(m.value, mi.value, inc.symbol)));
   return chips.slice(0, 2);
 }
 
@@ -178,11 +184,13 @@ export function groupLabelOf(view) {
   return view.group === 'union' ? BR_COPY.groupUnion : GROUP_LABEL[view.group];
 }
 
+/** All the names one step's group holds: placed, left out, not ranked (the note line's count). */
+const groupCount = (outcome) => outcome.placed.length + outcome.removed.length + outcome.notAssessed.length + outcome.unranked.length;
+
 /** *Bench · 9 names · Ranks as of 1:01 PM ET · moves as of 1:42–1:44 PM ET*. */
 export function noteLineOf(result, view, outcome) {
   const t = timesOf(result);
-  const n = outcome.placed.length + outcome.removed.length + outcome.notAssessed.length + outcome.unranked.length;
-  return BR_COPY.note(groupLabelOf(view), n, t.ranksAt, t.movesFrom, t.movesTo);
+  return BR_COPY.note(groupLabelOf(view), groupCount(outcome), t.ranksAt, t.movesFrom, t.movesTo);
 }
 
 /** The reference line's words, and the hairline label above it when it falls inside the list. */
@@ -197,7 +205,7 @@ export function referenceOf(result, view, outcome) {
   const noReadingWords = order.measure === 'today_move' ? (result.quotes.rows[inc.symbol]?.words ?? BR_COPY.notAssessed) : 'no technical rank';
   return {
     symbol: inc.symbol,
-    text: BR_COPY.reference(inc.symbol, checkTimeOf(inc.checkAtMs), finite(inc.rungsShown) ? rungsText(inc.rungsShown) : null),
+    text: BR_COPY.reference(inc.symbol, checkWhen(inc.checkAtMs, result.takenAt), finite(inc.rungsShown) ? rungsText(inc.rungsShown) : null),
     before: ref.before,
     noReading: ref.noReading ? BR_COPY.referenceNoReading(inc.symbol, noReadingWords) : null,
     // The hairline label only when the line falls INSIDE the list (names above it).
@@ -217,14 +225,15 @@ function eligClause(result, symbol) {
 }
 
 const dirOf = (v) => (v > 0 ? BR_COPY.dirUp : v < 0 ? BR_COPY.dirDown : BR_COPY.dirFlat);
-// The size of a move with its direction said in words ("up 0.3%"): pctText's digits without its sign.
-const absPct = (v) => pctText(Math.abs(v)).replace(/^\+/, '');
-
-/** A lock's time as a line names it: the clock on the result's own day, else the weekday too ("Thu 10:00 AM"). */
-export function untilText(ms, refMs) {
-  if (!finite(ms)) return null;
-  return finite(refMs) && etDate(ms) === etDate(refMs) ? etClockAmPm(ms) : `${etWeekday(ms)} ${etClockAmPm(ms)}`;
-}
+// The size of a printed move with its direction said in words ("up 0.3%"): the printed digits without a sign.
+const absPct = (v) => moveText(Math.abs(v)).replace(/^\+/, '');
+/** "up 2.0%" / "down 0.8%" / "flat at 0.0%" for a printed move. */
+const dirMove = (v) => `${dirOf(v)} ${absPct(v)}`;
+/** The quotes' own times as one range (review BR2-9). */
+const quotesWhen = (result, symbols) => {
+  const ms = symbols.map((s) => result.quotes.rows[s]?.priceAsOf).filter(finite);
+  return ms.length ? clockRange(etClockAmPm(Math.min(...ms)), etClockAmPm(Math.max(...ms))) : null;
+};
 
 /** The session line while today's moves can't be ranked, and the all-stale line (§4, §9). */
 function sessionLines(result) {
@@ -241,6 +250,14 @@ function sessionLines(result) {
   return { avail, lines };
 }
 
+/** The line a result with no weakest says on the weakest question (BRS-6: the two cases, never a shared wording). */
+function weakestGoneLine(result) {
+  const r = result.noWeakest?.reason ?? null;
+  if (r === 'awaiting') return BR_COPY.proposalAwaiting(result.noWeakest.nextCheck ?? null);
+  if (r === 'legacy') return BR_COPY.proposalLegacy;
+  return BR_COPY.proposalNoLadder;
+}
+
 /**
  * The agent's explanation of one step (BRS-16): paragraphs, the first being the lead the phone's
  * bottom bar shows. Built from the frozen result and the step's outcome alone.
@@ -251,40 +268,39 @@ export function explainOf(inv, result, step) {
   const placed = outcome.placed;
   const lead = placed[0]?.symbol ?? null;
   const N = result.rankings.totalTechStocks;
-  const t = timesOf(result);
+  const ranksAt = ranksAtWords(result);
   const { lines: sessLines } = sessionLines(result);
   const leftOut = outcome.removed.length || outcome.notAssessed.length ? BR_COPY.explainLeftOut(outcome.removed.length, outcome.notAssessed.length) : null;
-  const inc = inv.question.id === 'weakest_alternatives' ? result.incumbent : null;
+  const weakestQ = inv.question.id === 'weakest_alternatives';
+  const inc = weakestQ ? result.incumbent : null;
+  const byMove = view.order.measure === 'today_move';
+  const leaderMove = (sym) => BR_COPY.explainLeaderMove(sym, dirMove(moveOf(result, sym).value), etClockAmPm(result.quotes.rows[sym].priceAsOf), eligClause(result, sym));
 
   if (inc) {
     const ri = rankOf(result, inc.symbol)?.technicalRank;
+    const mi = moveOf(result, inc.symbol);
     const first = [];
-    if (view.order.measure === 'today_move' && lead) {
-      first.push(BR_COPY.explainLeaderMove(lead, `${dirOf(moveOf(result, lead).value)} ${absPct(moveOf(result, lead).value)}`, etClockAmPm(result.quotes.rows[lead].priceAsOf), eligClause(result, lead)));
-      const mi = moveOf(result, inc.symbol);
-      if (mi.ok) {
-        const more = placed.filter((p) => Number(moveOf(result, p.symbol).value.toFixed(1)) > Number(mi.value.toFixed(1))).length;
-        first.push(BR_COPY.explainUpMore(more, placed.length, inc.symbol));
-      } else first.push(BR_COPY.explainNoMove(inc.symbol));
+    if (byMove && lead) {
+      first.push(leaderMove(lead));
+      if (mi.ok) first.push(BR_COPY.explainUpMore(placed.filter((p) => moveOf(result, p.symbol).value > mi.value).length, placed.length, inc.symbol));
+      else first.push(BR_COPY.explainNoMove(inc.symbol));
     } else if (lead) {
-      const k = Number.isInteger(ri) ? placed.filter((p) => rankOf(result, p.symbol).technicalRank < ri).length : 0;
+      const ranked = placed.filter((p) => Number.isInteger(rankOf(result, p.symbol)?.technicalRank));
+      const k = Number.isInteger(ri) ? ranked.filter((p) => rankOf(result, p.symbol).technicalRank < ri).length : 0;
       if (Number.isInteger(ri) && k === 0) first.push(BR_COPY.explainNoneOutrank(inc.symbol));
       else first.push(BR_COPY.explainOutrank(k, placed.length, inc.symbol, Number.isInteger(ri) ? ri : null, N));
-      first.push(BR_COPY.explainLeader(lead, rankOf(result, lead).technicalRank, N, eligClause(result, lead), t.ranksAt));
+      first.push(BR_COPY.explainLeader(lead, rankOf(result, lead).technicalRank, N, eligClause(result, lead), ranksAt));
     } else {
       first.push(BR_COPY.explainNoneLeft);
     }
     paras.push(first.join(' '));
-    // Today's moves, the leader against the incumbent — each named, or said to be missing.
+    // Today's moves, the leader against the incumbent — each named, or said to be missing ONCE (review BR2-10).
     if (lead) {
       const ml = moveOf(result, lead);
-      const mi = moveOf(result, inc.symbol);
       if (ml.ok && mi.ok) {
-        const asOf = [result.quotes.rows[lead].priceAsOf, result.quotes.rows[inc.symbol].priceAsOf];
-        paras.push(BR_COPY.explainMoves(lead, dirOf(ml.value), absPct(ml.value), inc.symbol, dirOf(mi.value), absPct(mi.value), etClockAmPm(Math.max(...asOf))));
-      } else {
-        const missing = [!ml.ok ? lead : null, !mi.ok ? inc.symbol : null].filter(Boolean);
-        if (view.order.measure !== 'today_move' || ml.ok) paras.push(missing.map((s) => BR_COPY.explainNoMove(s)).join(' '));
+        paras.push(BR_COPY.explainMoves(lead, dirOf(ml.value), absPct(ml.value), inc.symbol, dirOf(mi.value), absPct(mi.value), quotesWhen(result, [lead, inc.symbol])));
+      } else if (!byMove) {
+        paras.push([!ml.ok ? lead : null, !mi.ok ? inc.symbol : null].filter(Boolean).map((s) => BR_COPY.explainNoMove(s)).join(' '));
       }
     }
     if (leftOut) paras.push(leftOut);
@@ -293,19 +309,21 @@ export function explainOf(inv, result, step) {
     return paras.filter(Boolean);
   }
 
-  // Group questions (and the weakest question's no-incumbent case never reaches here).
+  // Group questions — and the weakest question with no weakest at this result (it says why first).
   const group = groupLabelOf(view);
-  const first = [BR_COPY.explainGroup(placed.length, group === BR_COPY.groupUnion ? 'the bench and my agent watchlist' : `my ${group.toLowerCase()}`)];
+  const first = [];
+  if (weakestQ) first.push(BR_COPY.explainWeakestGone(weakestGoneLine(result)));
+  first.push(BR_COPY.explainGroup(groupCount(outcome), group === BR_COPY.groupUnion ? 'the bench and my agent watchlist' : `my ${group.toLowerCase()}`));
   if (lead) {
-    if (view.order.measure === 'today_move') first.push(BR_COPY.explainLeaderMove(lead, `${dirOf(moveOf(result, lead).value)} ${absPct(moveOf(result, lead).value)}`, etClockAmPm(result.quotes.rows[lead].priceAsOf), eligClause(result, lead)));
-    else first.push(BR_COPY.explainLeader(lead, rankOf(result, lead).technicalRank, N, eligClause(result, lead), t.ranksAt));
+    if (byMove) first.push(leaderMove(lead));
+    else first.push(BR_COPY.explainLeader(lead, rankOf(result, lead).technicalRank, N, eligClause(result, lead), ranksAt));
   } else if (outcome.removed.length || outcome.notAssessed.length) first.push(BR_COPY.explainNoneLeft);
   paras.push(first.join(' '));
   const pool = [...placed.map((p) => p.symbol), ...outcome.removed.map((r) => r.symbol), ...outcome.notAssessed.map((r) => r.symbol)];
   const u = pool.filter((s) => moveOf(result, s).ok && moveOf(result, s).value > 0).length;
   const d = pool.filter((s) => moveOf(result, s).ok && moveOf(result, s).value < 0).length;
   const x = pool.filter((s) => !moveOf(result, s).ok).length;
-  if (pool.length) paras.push(BR_COPY.explainGroupMoves(u, d, x, t.movesTo));
+  if (pool.length) paras.push(BR_COPY.explainGroupMoves(u, d, x, timesOf(result).movesTo));
   if (leftOut) paras.push(leftOut);
   paras.push(...sessLines);
   return paras.filter(Boolean);
@@ -314,9 +332,10 @@ export function explainOf(inv, result, step) {
 // ── The banner after a refinement (BRS-13) ──
 
 /**
- * What a refinement changed: the condition or the order, how many names are left, which name moved
- * and why — ending that the readings are the same result and nothing was refreshed. Null for the
- * question step and for a refresh (the refresh has its own report).
+ * What a refinement changed: the condition or the order, how many names are placed of the group's
+ * assessable names, how many were removed, set aside (not assessed) or came back, which name moved and
+ * WHY — ending that the readings are the same result and nothing was refreshed (review BR2-3). Null for
+ * the question step and for a refresh (the refresh has its own report).
  */
 export function bannerOf(inv, step) {
   if (!step || step.kind === 'question' || step.kind === 'refresh' || !step.parentStepId) return null;
@@ -333,19 +352,37 @@ export function bannerOf(inv, step) {
   else if (added) title = BR_COPY.bannerAdded(conditionWords(added));
   else if (gone) title = BR_COPY.bannerRemoved(conditionWords(gone));
   else title = BR_COPY.bannerNoMove;
-  const total = (o) => o.placed.length;
+  const o = step.outcome;
+  const assessable = o.placed.length + o.removed.length + o.notAssessed.length;
   const parts = [];
-  if (step.kind === 'order') parts.push(BR_COPY.bannerOrderBody);
-  else if (step.kind === 'group') parts.push(BR_COPY.bannerLeft(total(step.outcome), step.outcome.placed.length + step.outcome.removed.length + step.outcome.notAssessed.length));
-  else {
+  if (step.kind === 'order') {
+    const setAside = o.notAssessed.filter((n) => n.conditionId === 'order').length - parent.outcome.notAssessed.filter((n) => n.conditionId === 'order').length;
+    parts.push(setAside > 0 ? BR_COPY.bannerOrderSetAside(setAside) : BR_COPY.bannerOrderBody);
+  } else if (step.kind === 'group') {
+    parts.push(BR_COPY.bannerLeft(o.placed.length, assessable));
+  } else {
+    const parentPlaced = parent.outcome.placed.map((p) => p.symbol);
     const was = new Map(parent.outcome.placed.map((p) => [p.symbol, p.position]));
-    const moved = step.outcome.placed.filter((p) => was.has(p.symbol) && was.get(p.symbol) !== p.position);
-    const returned = step.outcome.placed.filter((p) => !was.has(p.symbol)).length;
-    parts.push(BR_COPY.bannerLeft(total(step.outcome), total(parent.outcome)));
-    if (returned) parts.push(BR_COPY.bannerReturned(returned, moved.length));
-    else if (moved.length) {
+    const nowPlaced = new Set(o.placed.map((p) => p.symbol));
+    const removedSet = new Set(o.removed.map((r) => r.symbol));
+    const asideSet = new Set(o.notAssessed.map((r) => r.symbol));
+    const removedNow = parentPlaced.filter((s) => !nowPlaced.has(s) && removedSet.has(s));
+    const asideNow = parentPlaced.filter((s) => !nowPlaced.has(s) && asideSet.has(s));
+    const back = o.placed.filter((p) => !was.has(p.symbol)).map((p) => p.symbol);
+    parts.push(BR_COPY.bannerLeft(o.placed.length, assessable));
+    if (removedNow.length || asideNow.length || back.length) parts.push(BR_COPY.bannerCounts(removedNow.length, asideNow.length, back.length));
+    const moved = o.placed.filter((p) => was.has(p.symbol) && was.get(p.symbol) !== p.position);
+    if (moved.length) {
       const m = moved[0];
-      parts.push(BR_COPY.bannerMovedUp(m.symbol, m.position, was.get(m.symbol), Math.abs(was.get(m.symbol) - m.position), step.view.order.measure === 'today_move' ? BR_COPY.measureMove : BR_COPY.measureRank));
+      const before = was.get(m.symbol);
+      const measure = step.view.order.measure === 'today_move' ? BR_COPY.measureMove : BR_COPY.measureRank;
+      if (m.position < before) {
+        // Count exactly the names that were above it and are gone, by why they went.
+        const above = parentPlaced.slice(0, before - 1);
+        parts.push(BR_COPY.bannerMovedUp(m.symbol, m.position, before, above.filter((s) => removedNow.includes(s)).length, above.filter((s) => asideNow.includes(s)).length, measure));
+      } else {
+        parts.push(BR_COPY.bannerMovedDown(m.symbol, m.position, before, o.placed.slice(0, m.position - 1).filter((p) => back.includes(p.symbol)).length, measure));
+      }
       if (moved.length > 1) parts.push(BR_COPY.bannerMovedMore(moved.length - 1));
     } else parts.push(BR_COPY.bannerNoMove);
   }
@@ -366,7 +403,7 @@ function measureTextOf(result, view, symbol) {
  * each omitted when the evidence has none. And the finding (item 3): today's move with its basis
  * and time, offering *Use across this result* with the condition its own move matches (BRS-18a).
  */
-export function researchRowOf(inv, result, step, symbol) {
+export function researchRowOf(inv, result, step, symbol, { nowMs = null } = {}) {
   const { view, outcome } = step;
   const placed = outcome.placed.find((p) => p.symbol === symbol) ?? null;
   const removed = outcome.removed.find((r) => r.symbol === symbol) ?? null;
@@ -383,21 +420,21 @@ export function researchRowOf(inv, result, step, symbol) {
   const ri = inc ? rankOf(result, inc.symbol)?.technicalRank : null;
   const m = moveOf(result, symbol);
   const mi = inc ? moveOf(result, inc.symbol) : null;
+  const ranksAt = ranksAtWords(result);
+  const rankWhen = ranksAt ? ` (ranks as of ${ranksAt})` : ' (rank time not recorded)';
   if (inc && Number.isInteger(r) && Number.isInteger(ri)) {
-    if (r < ri) support = `Higher technical rank than ${inc.symbol}: ${r} against ${ri} of ${result.rankings.totalTechStocks}.`;
-    else against = `Lower technical rank than ${inc.symbol}: ${r} against ${ri} of ${result.rankings.totalTechStocks}.`;
+    if (r < ri) support = `Higher technical rank than ${inc.symbol}: ${r} against ${ri} of ${result.rankings.totalTechStocks}${rankWhen}.`;
+    else against = `Lower technical rank than ${inc.symbol}: ${r} against ${ri} of ${result.rankings.totalTechStocks}${rankWhen}.`;
   } else if (!inc && Number.isInteger(r) && placed) {
     support = placed.position === 1 ? `Leads this result on ${view.order.measure === 'today_move' ? 'today’s move' : 'technical rank'}.` : null;
   }
-  if (inc && m.ok && mi?.ok) {
-    const a = Number(m.value.toFixed(1));
-    const b = Number(mi.value.toFixed(1));
-    const line = `Today ${pctText(m.value)} against ${inc.symbol}’s ${pctText(mi.value)} (as of ${etClockAmPm(Math.max(result.quotes.rows[symbol].priceAsOf, result.quotes.rows[inc.symbol].priceAsOf))}).`;
-    if (a > b && !support) support = line;
-    else if (a < b && !against) against = line;
+  if (inc && m.ok && mi?.ok && m.value !== mi.value) {
+    const line = `Today ${moveText(m.value)} against ${inc.symbol}’s ${moveText(mi.value)} (as of ${quotesWhen(result, [symbol, inc.symbol])}).`;
+    if (m.value > mi.value && !support) support = line;
+    else if (m.value < mi.value && !against) against = line;
   }
   const member = result.membership.find((x) => x.symbol === symbol);
-  if (!against && member && !member.eligibility.ok) against = `${eligibilityLabel(member.eligibility, result.takenAt).text}.`;
+  if (!against && member && !member.eligibility.ok) against = `${eligibilityLabel(member.eligibility, result.takenAt, nowMs).text}.`;
   // The finding: today's move, its basis and time; Use across only for up/down and only when not already active.
   const q = result.quotes.rows[symbol];
   let finding = null;
@@ -405,7 +442,7 @@ export function researchRowOf(inv, result, step, symbol) {
     const matches = m.ok ? (m.value > 0 ? 'up_today' : m.value < 0 ? 'down_today' : null) : null;
     const active = view.conditions.some((c) => c.id === matches);
     finding = {
-      text: m.ok ? BR_COPY.findingMove(pctText(m.value), etClockAmPm(q.priceAsOf)) : BR_COPY.findingNoMove(q.words),
+      text: m.ok ? BR_COPY.findingMove(moveText(m.value), etClockAmPm(q.priceAsOf)) : BR_COPY.findingNoMove(q.words),
       conditionId: matches && !active ? matches : null,
       replaces: matches && !active ? (view.conditions.find((c) => c.id === (matches === 'up_today' ? 'down_today' : 'up_today'))?.id ?? null) : null,
     };
@@ -422,12 +459,24 @@ export function researchRowOf(inv, result, step, symbol) {
   };
 }
 
+/** The candidate's standing against ONE holding, for the evidence sentence (a lock names its time — review BR2-2). */
+function evidenceElig(result, elig, nowMs) {
+  if (!elig) return '';
+  if (elig.ok) return BR_COPY.evidenceNow;
+  if (elig.reason === 'pick_locked' && finite(elig.lockedUntil)) {
+    const passed = finite(nowMs) && nowMs >= elig.lockedUntil;
+    return passed ? BR_COPY.evidenceCant(BR_COPY.lockedPassed(untilText(elig.lockedUntil, result.takenAt)).toLowerCase()) : BR_COPY.evidenceLocked(untilText(elig.lockedUntil, result.takenAt));
+  }
+  return BR_COPY.evidenceCant(eligibilityWhy(elig.reason));
+}
+
 /**
  * BRS-18 — the comparison's rows, the candidate against the holding (the incumbent or a held
- * measured stock the player picked), in the spec's order; each cell its reading with its time, or
- * absent. The holding alone gets the lockNow line (the scorer's own number at the last check).
+ * measured stock the player picked — the result's FROZEN holding and the candidate's eligibility
+ * against IT), in the spec's order; each cell its reading with its time, or absent. The holding alone
+ * gets the lock line (the scorer's own number at the last check).
  */
-export function compareOf(result, view, symbol, holding, battle) {
+export function compareOf(result, view, symbol, holding, battle, { nowMs = null } = {}) {
   if (!holding) return null;
   const cell = (s) => ({
     measure: measureTextOf(result, view, s),
@@ -437,6 +486,7 @@ export function compareOf(result, view, symbol, holding, battle) {
   const c = cell(symbol);
   const h = cell(holding.symbol);
   const member = result.membership.find((x) => x.symbol === symbol);
+  const elig = eligibilityVs(member, holding.symbol);
   // Row 1 is the question's own measure; the row it repeats (rank, or today's move) is not printed twice.
   const byMove = view.order.measure === 'today_move';
   const rows = [
@@ -446,13 +496,13 @@ export function compareOf(result, view, symbol, holding, battle) {
     { key: 'rung', label: BR_COPY.compareRowRung, cand: rungText(result, symbol), held: holdingRungText(result, holding) },
     {
       key: 'stands', label: BR_COPY.compareRowStands,
-      cand: member ? eligibilityLabel(member.eligibility, result.takenAt).text : null,
-      held: finite(holding.rungsShown) && finite(holding.checkAtMs) ? BR_COPY.compareHoldingStands(rungsText(holding.rungsShown), checkTimeOf(holding.checkAtMs)) : null,
+      cand: elig ? eligibilityLabel(elig, result.takenAt, nowMs).text : null,
+      held: finite(holding.rungsShown) && finite(holding.checkAtMs) ? BR_COPY.compareHoldingStands(rungsText(holding.rungsShown), checkWhen(holding.checkAtMs, result.takenAt)) : null,
     },
     { key: 'sector', label: BR_COPY.compareRowSector, cand: sectorOf(result, symbol), held: sectorOf(result, holding.symbol) },
   ].filter((r) => !r.repeats && (r.cand || r.held)).map(({ repeats, ...r }) => r); // eslint-disable-line no-unused-vars
   const lock = holding.lockNow && finite(holding.lockNow.total) && finite(holding.lockNow.atMs)
-    ? BR_COPY.compareLock(holding.symbol, checkTimeOf(holding.lockNow.atMs), Math.round(holding.lockNow.total)) : null;
+    ? BR_COPY.compareLock(holding.symbol, checkWhen(holding.lockNow.atMs, result.takenAt), Math.round(holding.lockNow.total)) : null;
   // The tradeoff and what the evidence supports — only from rows where BOTH have a reading.
   const r = rankOf(result, symbol)?.technicalRank;
   const rh = rankOf(result, holding.symbol)?.technicalRank;
@@ -461,21 +511,23 @@ export function compareOf(result, view, symbol, holding, battle) {
   const candWins = [];
   const heldWins = [];
   const measures = [];
+  let shared = 0;
   if (Number.isInteger(r) && Number.isInteger(rh)) {
+    shared += 1;
     if (r < rh) { candWins.push(BR_COPY.tradeoffRank(holding.symbol)); measures.push(BR_COPY.measuresRank); } else heldWins.push(BR_COPY.tradeoffRank(symbol));
   }
   if (m.ok && mh.ok) {
-    const a = Number(m.value.toFixed(1));
-    const b = Number(mh.value.toFixed(1));
-    if (a > b) { candWins.push(BR_COPY.tradeoffUpMore); measures.push(BR_COPY.measuresMove); } else if (b > a) heldWins.push(BR_COPY.tradeoffUpMore);
+    shared += 1;
+    if (m.value > mh.value) { candWins.push(BR_COPY.tradeoffMove(aheadWords(m.value, mh.value, holding.symbol))); measures.push(BR_COPY.measuresMove); } else if (mh.value > m.value) heldWins.push(BR_COPY.tradeoffMove(aheadWords(mh.value, m.value, symbol)));
   }
-  const elig = member ? (member.eligibility.ok ? BR_COPY.evidenceNow : BR_COPY.evidenceCant(eligibilityWhy(member.eligibility.reason))) : '';
+  const e = evidenceElig(result, elig, nowMs);
   return {
     holding: holding.symbol,
     rows,
     lock,
     tradeoff: candWins.length || heldWins.length ? BR_COPY.tradeoff(symbol, holding.symbol, candWins, heldWins) : null,
-    evidence: BR_COPY.evidence(measures, symbol, holding.symbol, elig),
+    // No shared reading: say so, never a verdict from nothing (review BR2-11).
+    evidence: shared ? BR_COPY.evidence(measures, symbol, holding.symbol, e) : BR_COPY.evidenceNone(symbol, holding.symbol, e),
     name: companyNameOf(battle, holding.symbol),
   };
 }
@@ -495,31 +547,39 @@ function draftHead(inv, result, step) {
   return lines;
 }
 
-/** Fit the variants under a length: the first that fits, else the shortest cut at the limit. */
+/**
+ * Fit the variants under a length (review BR2-8): the first that fits; the last variant is the
+ * shortest WHOLE-LINE draft (the head and the closing question). If even that doesn't fit, '' — a
+ * draft is never cut mid-reading, and the caller keeps what the player typed.
+ */
 export function fitDraft(variants, maxLength = CHAT_MAX_LENGTH) {
-  const fit = variants.find((v) => v.length <= maxLength);
-  return fit ?? variants[variants.length - 1].slice(0, Math.max(0, maxLength));
+  return variants.find((v) => v.length <= maxLength) ?? '';
 }
 
 /**
  * BRS-19 — the draft for one candidate against the comparison holding (or none): the question, the
  * refinements and the order, both names' frozen readings WITH their times (rank, today's move, rung,
  * sector, where each stands), the closing question. A reading the result doesn't have is left out.
- * Returns { text, variants } — variants in the trim order (the sector line first, then the rung
- * line), so a caller that knows the room left picks the first that fits (fitDraft).
+ * Returns { text, variants } — variants in the trim order (the sector line first, then the rung line,
+ * then every reading line), so a caller that knows the room left picks the first that fits (fitDraft).
  */
-export function draftOf(inv, result, step, symbol, holding = null) {
+export function draftOf(inv, result, step, symbol, holding = null, { nowMs = null } = {}) {
   const head = draftHead(inv, result, step);
   const h = holding?.symbol ?? null;
   const names = h ? [symbol, h] : [symbol];
-  const t = timesOf(result);
-  const rankParts = names.map((s, i) => {
+  const ranksAt = ranksAtWords(result);
+  const N = result.rankings.totalTechStocks;
+  // The first rank printed carries "of N" (review BR2-15).
+  let ofDone = false;
+  const rankParts = names.map((s) => {
     const r = rankOf(result, s)?.technicalRank;
     if (!Number.isInteger(r)) return null;
-    return h ? (i === 0 ? `${s} ${r} of ${result.rankings.totalTechStocks}` : `${s} ${r}`) : `${r} of ${result.rankings.totalTechStocks}`;
+    const txt = ofDone ? `${r}` : `${r} of ${N}`;
+    ofDone = true;
+    return h ? `${s} ${txt}` : txt;
   }).filter(Boolean);
   const okMoves = names.filter((s) => moveOf(result, s).ok);
-  const moveParts = okMoves.map((s) => (h ? `${s} ${pctText(moveOf(result, s).value)}` : pctText(moveOf(result, s).value)));
+  const moveParts = okMoves.map((s) => (h ? `${s} ${moveText(moveOf(result, s).value)}` : moveText(moveOf(result, s).value)));
   const asOf = okMoves.map((s) => result.quotes.rows[s].priceAsOf);
   const rungParts = [];
   const cr = rungEstimateOf(result, symbol);
@@ -527,25 +587,28 @@ export function draftOf(inv, result, step, symbol, holding = null) {
   if (holding && result.measured && finite(holding.scoringPct)) rungParts.push(`${h} ${BR_COPY.rungFixedShort(atrReadingText(holding.scoringPct))}`);
   const sectorParts = names.map((s) => { const sec = sectorOf(result, s); return sec ? (h ? `${s} ${sec}` : sec) : null; }).filter(Boolean);
   const member = result.membership.find((x) => x.symbol === symbol);
+  const elig = eligibilityVs(member, h);
   const stands = [];
-  if (member) {
-    if (member.eligibility.ok) stands.push(BR_COPY.draftCandNow(symbol));
-    else if (member.eligibility.reason === 'pick_locked' && finite(member.eligibility.lockedUntil)) stands.push(BR_COPY.draftCandLocked(symbol, untilText(member.eligibility.lockedUntil, result.takenAt)));
-    else stands.push(BR_COPY.draftCandCant(symbol, eligibilityWhy(member.eligibility.reason)));
+  if (elig) {
+    if (elig.ok) stands.push(BR_COPY.draftCandNow(symbol));
+    else if (elig.reason === 'pick_locked' && finite(elig.lockedUntil)) {
+      const t = untilText(elig.lockedUntil, result.takenAt);
+      stands.push(finite(nowMs) && nowMs >= elig.lockedUntil ? `${symbol}: ${BR_COPY.lockedPassed(t).toLowerCase()}.` : BR_COPY.draftCandLocked(symbol, t));
+    } else stands.push(BR_COPY.draftCandCant(symbol, eligibilityWhy(elig.reason)));
   }
-  if (holding && finite(holding.rungsShown) && finite(holding.checkAtMs)) stands.push(BR_COPY.draftHoldingStands(h, rungsText(holding.rungsShown), checkTimeOf(holding.checkAtMs)));
-  const rankLine = rankParts.length && t.ranksAt ? BR_COPY.draftRank(rankParts, t.ranksAt) : null;
+  if (holding && finite(holding.rungsShown) && finite(holding.checkAtMs)) stands.push(BR_COPY.draftHoldingStands(h, rungsText(holding.rungsShown), checkWhen(holding.checkAtMs, result.takenAt)));
+  const rankLine = rankParts.length && ranksAt ? BR_COPY.draftRank(rankParts, ranksAt) : null;
   const moveLine = moveParts.length ? BR_COPY.draftMove(moveParts, etClockAmPm(Math.min(...asOf)), etClockAmPm(Math.max(...asOf))) : null;
   const rungLine = rungParts.length ? BR_COPY.draftRung(rungParts) : null;
   const sectorLine = sectorParts.length ? BR_COPY.draftSector(sectorParts) : null;
   const standsLine = stands.length ? BR_COPY.draftStands(stands) : null;
-  const build = ({ sector = true, rung = true } = {}) => [
+  const build = ({ sector = true, rung = true, readings = true } = {}) => [
     ...head,
     BR_COPY.draftVs(symbol, h),
-    rankLine, moveLine, rung ? rungLine : null, sector ? sectorLine : null, standsLine,
+    readings ? rankLine : null, readings ? moveLine : null, readings && rung ? rungLine : null, readings && sector ? sectorLine : null, readings ? standsLine : null,
     BR_COPY.draftClose(symbol, h),
   ].filter(Boolean).join('\n');
-  const variants = [build(), build({ sector: false }), build({ sector: false, rung: false })];
+  const variants = [build(), build({ sector: false }), build({ sector: false, rung: false }), build({ readings: false })];
   return { text: fitDraft(variants), variants };
 }
 
@@ -554,7 +617,7 @@ export function draftOf(inv, result, step, symbol, holding = null) {
  * TOP name — the first three PLACED names of the current refined result (never one left out, not
  * assessed or not ranked) — ending *What do you make of these?*
  */
-export function askDraftOf(inv, result, step) {
+export function askDraftOf(inv, result, step, { nowMs = null } = {}) {
   const head = draftHead(inv, result, step);
   const t = timesOf(result);
   const top = step.outcome.placed.slice(0, 3).map((p) => p.symbol);
@@ -563,14 +626,16 @@ export function askDraftOf(inv, result, step) {
     const r = rankOf(result, s)?.technicalRank;
     if (Number.isInteger(r)) parts.push(`rank ${r}`);
     const m = moveOf(result, s);
-    if (m.ok) parts.push(pctText(m.value));
+    if (m.ok) parts.push(moveText(m.value));
     const member = result.membership.find((x) => x.symbol === s);
-    if (member) { const e = eligibilityLabel(member.eligibility, result.takenAt).text; parts.push(e.charAt(0).toLowerCase() + e.slice(1)); }
+    if (member) { const e = eligibilityLabel(member.eligibility, result.takenAt, nowMs).text; parts.push(e.charAt(0).toLowerCase() + e.slice(1)); }
     return BR_COPY.askLine(parts);
   };
-  const timeLine = BR_COPY.askTimes(t.ranksAt, t.movesFrom, t.movesTo);
-  const text = [...head, timeLine ? `(${timeLine})` : null, top.length ? BR_COPY.askTop : null, ...top.map(line), BR_COPY.askClose].filter(Boolean).join('\n');
-  return { text: fitDraft([text]), variants: [text], top };
+  const timeLine = BR_COPY.askTimes(t.ranksAt ? `${t.ranksAt}${t.ranksOlder ? ' (older than usual)' : ''}` : null, t.movesFrom, t.movesTo);
+  const body = [timeLine ? `(${timeLine})` : null, top.length ? BR_COPY.askTop : null, ...top.map(line)].filter(Boolean);
+  const text = [...head, ...body, BR_COPY.askClose].join('\n');
+  const variants = [text, [...head, BR_COPY.askClose].join('\n')];
+  return { text: fitDraft(variants), variants, top };
 }
 
-export { conditionLabel };
+export { conditionLabel, holdingEntryOfResult };

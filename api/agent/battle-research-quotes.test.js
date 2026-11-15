@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const state = vi.hoisted(() => ({ uid: 'owner-uid-1', authFails: false, mode: 'on', allow: ['owner-uid-1'], middlewareHandles: false, docs: {}, reads: [], writes: [], throwOnRead: false }));
-vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: () => state.middlewareHandles }));
+vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: (_q, _r, opts) => { state.secOpts = opts; return state.middlewareHandles; } }));
 vi.mock('../_utils/authMiddleware.js', () => ({
   requireAuth: async (_req, res) => {
     if (state.authFails) { res.status(401).json({ error: 'Unauthorized' }); return null; }
@@ -286,11 +286,116 @@ describe('the snapshot cache (§5 step 10): at most 30 seconds, keyed by sweepId
 describe('cost: no provider, no model, no write — by construction', () => {
   const SRC = readFileSync(fileURLToPath(new URL('./battle-research-quotes.js', import.meta.url)), 'utf8');
   const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+  it('no Node network module, no undici, no intraday fetch helper either (review BR3-7)', () => {
+    expect(code).not.toMatch(/node:https?|node:net|node:tls|undici|\bhttps?\.(request|get)\(|intradayFetch|fetchQuotes/i);
+  });
   it('imports no provider or model client and calls no fetch', () => {
     expect(code).not.toMatch(/eodhd|anthropic|openrouter|openai|fetch\(|axios|got\(|node-fetch|https?:\/\//i);
   });
   it('names no write verb on the Admin SDK (the per-user limiter\'s in-memory Map.set is the one .set)', () => {
     expect(code.match(/\.set\(/g)).toHaveLength(2); // windows.set(uid, kept) — both in userRateLimited
     expect(code.replace(/windows\.set\(/g, '')).not.toMatch(/\.(set|update|delete|create|add|commit|runTransaction|batch)\(/);
+  });
+});
+
+// ── Review BR3 (lens 3): the rows its mutation battery showed missing (X1–X12), and BR3-6 ──
+
+describe('BR3 — order, limiters, cache, errors', () => {
+  it('X1 a non-owner on an INACTIVE battle is 403, never the battle_research_unavailable answer', async () => {
+    state.docs[`agentBattles/${BATTLE}`] = battleDoc({ status: 'completed' });
+    state.uid = 'someone-else';
+    expect((await call()).body).toEqual({ error: 'forbidden' });
+  });
+  it('X2 a non-owner on a LEAGUE battle is 403', async () => {
+    state.docs[`agentBattles/${BATTLE}`] = battleDoc({ gameMode: 'baggerbomb_tournament' });
+    state.uid = 'someone-else';
+    expect((await call()).body).toEqual({ error: 'forbidden' });
+  });
+  it("X3 under 'allowlist' a non-owner learns nothing about the owner's admission: 403 either way", async () => {
+    state.mode = 'allowlist';
+    state.uid = 'someone-else';
+    state.allow = [];
+    expect((await call()).body).toEqual({ error: 'forbidden' });
+    state.allow = ['owner-uid-1'];
+    expect((await call()).body).toEqual({ error: 'forbidden' });
+  });
+  it('X4 the per-user window is per user: a full window for one uid leaves another uid admitted', async () => {
+    for (let i = 0; i < BATTLE_RESEARCH_USER_RATE_LIMIT.limit; i += 1) await call();
+    expect((await call()).statusCode).toBe(429);
+    state.uid = 'someone-else';
+    expect((await call()).statusCode).toBe(403);
+  });
+  it('X5 the per-user window expires after windowMs', async () => {
+    for (let i = 0; i < BATTLE_RESEARCH_USER_RATE_LIMIT.limit; i += 1) await call();
+    expect((await call()).statusCode).toBe(429);
+    vi.setSystemTime(new Date(NOW + BATTLE_RESEARCH_USER_RATE_LIMIT.windowMs));
+    expect((await call()).statusCode).toBe(200);
+  });
+  it('X6 a same-sweepId re-read restarts the 30 s window (one .get() per 30 s overnight, not one per request)', async () => {
+    await call();
+    vi.setSystemTime(new Date(NOW + SNAPSHOT_CACHE_MS));
+    await call();
+    vi.setSystemTime(new Date(NOW + SNAPSHOT_CACHE_MS + 1));
+    state.reads = [];
+    await call();
+    expect(state.reads).toEqual([`agentBattles/${BATTLE}`]);
+  });
+  it('X7 a missing snapshot is cached like any other answer, and re-read at 30 s', async () => {
+    delete state.docs['intradaySnapshots/latest'];
+    await call();
+    state.reads = [];
+    await call();
+    expect(state.reads).toEqual([`agentBattles/${BATTLE}`]);
+    state.docs['intradaySnapshots/latest'] = snapshotDoc();
+    vi.setSystemTime(new Date(NOW + SNAPSHOT_CACHE_MS));
+    const r = await call();
+    expect(r.body.snapshot.sweepId).toBe('sweep-aaaa');
+  });
+  it('X8 a 500 says only its error (no internal message)', async () => {
+    state.throwOnRead = true;
+    expect((await call()).body).toEqual({ error: 'Could not read the quotes.' });
+  });
+  it('X9 a padded battleId reads the trimmed doc', async () => {
+    expect((await call({ query: { battleId: ` ${BATTLE} ` } })).statusCode).toBe(200);
+  });
+  it('X10 the per-IP limiter is asked for 60 per minute', async () => {
+    await call();
+    expect(state.secOpts).toEqual({ rateLimit: { limit: 60, windowMs: 60_000 } });
+  });
+});
+
+describe('BR3 — allowlist at every call', () => {
+  it("X11 'allowlist' is read at EVERY call: the owner leaves the list between two calls, no reset in between", async () => {
+    state.mode = 'allowlist';
+    expect((await call()).statusCode).toBe(200);
+    state.allow = [];
+    const r = await call();
+    expect(r.statusCode).toBe(404);
+    expect(r.body.error).toBe('battle_research_unavailable');
+  });
+});
+
+describe('BR3 — the battleId', () => {
+  it('X12 an array battleId uses its first element; a non-string first element is 400 with no read', async () => {
+    const a = await call({ query: { battleId: [BATTLE, 'battle-2'] } });
+    expect(a.statusCode).toBe(200);
+    expect(state.reads[0]).toBe(`agentBattles/${BATTLE}`);
+    state.reads = [];
+    const b = await call({ query: { battleId: [{ x: 1 }] } });
+    expect(b.statusCode).toBe(400);
+    const c = await call({ query: { battleId: '   ' } });
+    expect(c.statusCode).toBe(400);
+    expect(state.reads).toEqual([]);
+  });
+});
+
+describe('BR3-6 — a battleId is one document id', () => {
+  it('a path (a slash) or an over-long id is 400 before any read — never a 500 the limiter already charged', async () => {
+    for (const battleId of ['abc/calls', 'a//b', 'B/tape/2026-11-12', 'x'.repeat(1501)]) {
+      state.reads = [];
+      const r = await call({ query: { battleId } });
+      expect(r.statusCode).toBe(400);
+      expect(state.reads).toEqual([]);
+    }
   });
 });

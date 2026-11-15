@@ -31,9 +31,10 @@
 import { bookOf, weakestOf, rankedBook, unscoredOf, bookCheckMs, lockNowOf } from '../Sheet/book.js';
 import { stockModelRoute } from '../../../utils/stockThresholdModel.js';
 import { TICKER_TO_SECTOR, STOCK_UNIVERSE } from '../../../../api/_utils/rankingConfig.js';
-import { etClockAmPm } from '../BombMode/checkClock.js';
+import { etClockAmPm, checkClock, etWeekday } from '../BombMode/checkClock.js';
 import { atrReadingOf } from '../BombMode/atrReading.js';
-import { sessionAt, classifyMove, medianAsOfOf } from './readings.js';
+import { sessionAt, classifyMove, medianAsOfOf, shownMove, whenText } from './readings.js';
+import { battleExpiryMs } from '../../../../api/_utils/callRecords/horizon.js';
 import { membershipOf, inGroup } from './groups.js';
 import { BR_COPY } from './battleResearchCopy.js';
 
@@ -157,17 +158,20 @@ function copyQuote(q) {
  * @param {object|null} p.incumbent the question's incumbent as of this result (incumbentOf), or null
  * @param {object|null} p.rankingsDoc indexIntelligence/stockRankings (Timestamps or ms)
  * @param {object|null} p.quotesBody the route's body ({ servedAt, snapshot, quotes })
- * @param {number} p.takenAt       the instant the evidence arrived
+ * @param {number} p.takenAt       the instant the evidence arrived, ON THE SERVER'S CLOCK (the route's
+ *                                 servedAt): every reading and eligibility is judged against the clock the
+ *                                 quotes, the sweep, the rankings and the locks were stamped on (review BR1-3)
+ * @param {number} [p.receivedAt]  the client's instant at arrival — only the refresh gate and "since passed" read it
  * @param {number} p.index         1-based, for the label (Result 2 · 2:05 PM)
  * @param {string} p.resultId
  */
-export function buildResult({ battle, incumbent = null, rankingsDoc, quotesBody, takenAt, index = 1, resultId }) {
-  const { membership, excluded } = membershipOf(battle, { out: incumbent?.symbol ?? null, slot: incumbent?.tier ?? null, atMs: takenAt });
+export function buildResult({ battle, incumbent = null, rankingsDoc, quotesBody, takenAt, receivedAt = null, index = 1, resultId }) {
+  // BRS-18: the held measured stocks a comparison can pick, frozen with their readings and with each
+  // name's eligibility against each of them (review BR2-1).
+  const holdings = holdingsForCompare(battle);
+  const { membership, excluded } = membershipOf(battle, { out: incumbent?.symbol ?? null, slot: incumbent?.tier ?? null, atMs: takenAt, holdings });
   // The names the result is ABOUT: the membership and the incumbent (the median's population, §4).
   const symbols = [...membership.map((m) => m.symbol), ...(incumbent ? [incumbent.symbol] : [])];
-  // BRS-18: the held measured stocks a comparison can pick, frozen with their readings too (classified
-  // against the same median; they are not part of it — the result is not about them).
-  const holdings = holdingsForCompare(battle);
   const extra = holdings.map((h) => h.symbol).filter((s) => !symbols.includes(s));
   const snapshot = quotesBody?.snapshot && typeof quotesBody.snapshot === 'object'
     ? { sweepId: typeof quotesBody.snapshot.sweepId === 'string' ? quotesBody.snapshot.sweepId : null, sweepAt: msOf(quotesBody.snapshot.sweepAt), lastSuccessfulSweepAt: msOf(quotesBody.snapshot.lastSuccessfulSweepAt) }
@@ -188,6 +192,7 @@ export function buildResult({ battle, incumbent = null, rankingsDoc, quotesBody,
     label: BR_COPY.resultLabel(index, etClockAmPm(takenAt)),
     index,
     takenAt,
+    receivedAt: finite(receivedAt) ? receivedAt : takenAt,
     membership,
     excluded,
     rankings: rankingsSubset(rankingsDoc, [...symbols, ...extra]),
@@ -198,7 +203,17 @@ export function buildResult({ battle, incumbent = null, rankingsDoc, quotesBody,
     bookCheckMs: bookCheckOf(battle),
     // BRS-8: the rung — measured battles only (a legacy-scored battle shows none).
     measured: stockModelRoute(battle).status === 'corrected',
+    // BRS-6: why there is no weakest at takenAt, and the next check's time (the weakest question's own line
+    // when a refresh finds none — review BR1-1).
+    noWeakest: incumbent ? null : { reason: noWeakestReason(battle), nextCheck: nextCheckTextOf(battle, takenAt) },
   };
+}
+
+/** The next check's time as a line names it: today "3:45 PM", another day "Mon 9:45 AM"; null with none. */
+export function nextCheckTextOf(battle, nowMs) {
+  const c = checkClock(nowMs, { battleExpiresAtMs: battleExpiryMs(battle), lastScoredAtMs: msOf(battle?.scoreState?.lastScoredAt) });
+  if (!finite(c.slotMs)) return null;
+  return c.state === 'later' ? `${etWeekday(c.slotMs)} ${etClockAmPm(c.slotMs)}` : etClockAmPm(c.slotMs);
 }
 
 // ── Readings of one frozen result ──
@@ -214,10 +229,10 @@ export function sectorOf(result, symbol) {
   return id && STOCK_UNIVERSE[id]?.name ? STOCK_UNIVERSE[id].name : null;
 }
 
-/** A name's frozen move: { ok, value (raw %), row }. */
+/** A name's frozen move: { ok, value — the move AS PRINTED (readings.shownMove), row }. */
 export function moveOf(result, symbol) {
   const row = result.quotes.rows[symbol] ?? null;
-  return { ok: row?.state === 'ok', value: row?.state === 'ok' ? row.changePercent : null, row };
+  return { ok: row?.state === 'ok', value: row?.state === 'ok' ? shownMove(row.changePercent) : null, row };
 }
 
 /** A name's frozen rank row, or null. */
@@ -244,7 +259,8 @@ export function timesOf(result) {
   const ranksAtMs = result.rankings.computedAt;
   return {
     ranksAtMs,
-    ranksAt: finite(ranksAtMs) ? etClockAmPm(ranksAtMs) : null,
+    // A time names its day when it is not the result's own (review BR2-6: "Wed 1:01 PM").
+    ranksAt: whenText(ranksAtMs, result.takenAt),
     // BRS-8: past the doc's expiresAt the rank label reads "older than usual".
     ranksOlder: finite(result.rankings.expiresAt) && result.takenAt > result.rankings.expiresAt,
     movesFromMs: asOf.length ? Math.min(...asOf) : null,
@@ -292,8 +308,9 @@ export function testCondition(result, member, cond) {
 const DEFAULT_ORDER = Object.freeze({ measure: 'technical_rank', direction: 'best_first' });
 
 /**
- * The comparator for the active order (BRS-11), over members with a reading for it.
- * Move ties go to technical rank, then the symbol.
+ * The comparator for the active order (BRS-11), over members with a reading for it. Moves compare AS
+ * PRINTED (moveOf's value), so two rows printing the same move are a tie, and a tie goes to technical
+ * rank (a name the rankings don't hold after every ranked one), then the symbol.
  */
 function comparatorOf(result, order) {
   const rank = (s) => result.rankings.rows[s]?.technicalRank ?? Number.MAX_SAFE_INTEGER;
@@ -339,6 +356,8 @@ export function placeReference(result, placed, order, incumbent) {
  * @param {{ prev?: object|null }} [opts]  the previous step's outcome on the SAME result (for "was #3")
  */
 export function outcomeOf(result, view, { prev = null } = {}) {
+  // "was #3" only against the step before on the SAME result AND the same group (review BR1-10): a group
+  // switch changes the list, it does not move a row.
   const order = view?.order ?? DEFAULT_ORDER;
   const conditions = Array.isArray(view?.conditions) ? view.conditions : [];
   const unranked = [];
@@ -348,7 +367,10 @@ export function outcomeOf(result, view, { prev = null } = {}) {
   for (const m of result.membership) {
     if (!inGroup(m, view?.group ?? 'union')) continue;
     if (m.isCrypto) { unranked.push({ symbol: m.symbol, reason: 'crypto' }); continue; }
-    if (!result.rankings.rows[m.symbol] || !Number.isInteger(result.rankings.rows[m.symbol].technicalRank)) { unranked.push({ symbol: m.symbol, reason: 'not_in_rankings' }); continue; }
+    // A name the rankings don't hold has no place in the technical-rank order (BRS-11); in today's-move order
+    // its own ok move places it (BRS-7: What's moving orders the union by today's move — review BR1-4).
+    const ranked = !!result.rankings.rows[m.symbol] && Number.isInteger(result.rankings.rows[m.symbol].technicalRank);
+    if (!ranked && !(order.measure === 'today_move' && moveOf(result, m.symbol).ok)) { unranked.push({ symbol: m.symbol, reason: 'not_in_rankings' }); continue; }
     const fails = [];
     let cannot = null;
     for (const c of conditions) {
@@ -378,12 +400,17 @@ export function outcomeOf(result, view, { prev = null } = {}) {
  * conditions: { remain, fail, notAssessed }. `replaces` drops the condition it would replace.
  */
 export function conditionCounts(result, view, cond, { replaces = null } = {}) {
-  const others = (view.conditions ?? []).filter((c) => c.id !== cond.id && c.id !== replaces);
+  // The replacement is the one addCondition makes (up and down are exclusive; one sector) — never left to the caller (review BR1-8).
+  const swapped = replaces ?? (view.conditions ?? []).find((c) => c.id === EXCLUSIVE_OF[cond.id] || (cond.id === 'sector' && c.id === 'sector'))?.id ?? null;
+  const others = (view.conditions ?? []).filter((c) => c.id !== cond.id && c.id !== swapped);
   const out = outcomeOf(result, { ...view, conditions: [...others, cond] });
+  // ONE population: the names the OTHER conditions leave; each lands in exactly one of the three.
   return {
     remain: out.placed.length,
-    // The names THIS condition fails (a name another active condition already removes is not counted twice).
-    fail: out.removed.filter((r) => r.by.includes(cond.id)).length,
+    fail: out.removed.filter((r) => r.by.length === 1 && r.by[0] === cond.id).length,
     notAssessed: out.notAssessed.length,
   };
 }
+
+/** Up and down today exclude each other (BRS-12). */
+export const EXCLUSIVE_OF = Object.freeze({ up_today: 'down_today', down_today: 'up_today' });

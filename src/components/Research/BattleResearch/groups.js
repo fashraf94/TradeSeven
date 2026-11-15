@@ -15,17 +15,22 @@
 
 import { researchGroupsOf } from '../../../data/battleUniverse.js';
 import { canComeIn } from '../../../../api/_utils/callRecords/swappable.js';
+import { VALID_CRYPTO_SYMBOLS } from '../../../../api/_utils/agentCryptoAssets.js';
 
 const CRYPTO_SUFFIX = /\.CC$/i;
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
-/** Is a bench-list name crypto, as the swap reads it: the crypto slot, a bench row's isCrypto, or a .CC suffix. */
+/**
+ * Is a bench-list name crypto: the crypto slot, a bench row's isCrypto, a .CC suffix, or a bare ticker on
+ * the platform's crypto list (review BR1-5: a hot-bench or equipped-list "BTC" is crypto too — the
+ * agentReflectionUtils precedent). A crypto is never a stock quote (BRS-9).
+ */
 export function isCryptoName(battle, symbol) {
   const bench = battle?.portfolio?.bench;
   if (bench?.crypto?.symbol === symbol) return true;
   const row = (Array.isArray(bench?.stocks) ? bench.stocks : []).find((s) => s?.symbol === symbol);
   if (row?.isCrypto === true) return true;
-  return CRYPTO_SUFFIX.test(symbol || '');
+  return CRYPTO_SUFFIX.test(symbol || '') || VALID_CRYPTO_SYMBOLS.includes(symbol);
 }
 
 /** The persisted bench row's cooldown, as epoch ms (a lock names its time). */
@@ -51,18 +56,23 @@ export function eligibilityOf(battle, { out = null, slot = null, symbol, atMs })
  * The result's membership: every name on the bench and the agent watchlist (the union, bench
  * first, in roster order), each with its tags, its class and its eligibility; and the held names
  * the lists carry, left out as `held`.
+ * `holdings` (the held measured stocks a comparison can pick): each name's eligibility against EACH of
+ * them too (`vs`), at the same instant — so a comparison with a picked holding reads the frozen answer for
+ * THAT holding, never the group question's out-less one (review BR2-1). The incumbent (OUT) is never a
+ * member: it is the reference line, not a candidate (review BR1-1).
  * @param {object} battle
- * @param {{ out?: string|null, slot?: string|null, atMs: number }} p
+ * @param {{ out?: string|null, slot?: string|null, atMs: number, holdings?: Array<{ symbol, tier }> }} p
  */
-export function membershipOf(battle, { out = null, slot = null, atMs }) {
+export function membershipOf(battle, { out = null, slot = null, atMs, holdings = [] }) {
   const g = researchGroupsOf(battle);
-  const order = [...g.bench, ...g.agentWatchlist.filter((s) => !g.bench.includes(s))];
+  const order = [...g.bench, ...g.agentWatchlist.filter((s) => !g.bench.includes(s))].filter((s) => s !== out);
   return {
     membership: order.map((symbol) => ({
       symbol,
       groups: [...g.membership[symbol]],
       isCrypto: isCryptoName(battle, symbol),
       eligibility: eligibilityOf(battle, { out, slot, symbol, atMs }),
+      vs: Object.fromEntries(holdings.map((h) => [h.symbol, eligibilityOf(battle, { out: h.symbol, slot: h.tier ?? null, symbol, atMs })])),
     })),
     excluded: g.held.map((symbol) => ({ symbol, reason: 'held' })),
   };

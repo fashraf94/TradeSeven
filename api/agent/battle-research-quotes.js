@@ -25,7 +25,9 @@
 //  11  200 { servedAt, snapshot, quotes } with Cache-Control: private, no-store
 //
 // THE SYMBOLS are selectBattleUniverse(battle) — the battle's own book and
-// roster. NEVER a list from the client: a `symbols` query is ignored.
+// roster. NEVER a list from the client: a `symbols` query is ignored. A crypto
+// name never matches: the collector keys crypto by its base ticker (BTC for
+// BTC-USD.CC), so its quote is null — Battle Research compares no crypto (BRS-9).
 //
 // THE BODY: values COPIED, never derived (no change is computed from the
 // price); times normalized to epoch ms; nothing else from the snapshot leaves
@@ -154,6 +156,10 @@ export default async function handler(req, res) {
   const battleId = first(req.query?.battleId);
   if (!nonEmpty(battleId)) {
     return res.status(400).json({ error: 'invalid_request', message: 'battleId is required' });
+  }
+  // One document id: no path segments, within Firestore's id length (review BR3-6) — a 400, never a 500.
+  if (battleId.includes('/') || Buffer.byteLength(battleId.trim(), 'utf8') > 1500) {
+    return res.status(400).json({ error: 'invalid_request', message: 'battleId must be a battle id' });
   }
   if (userRateLimited(user.uid)) {
     return res.status(429).json({ error: 'rate_limited' });

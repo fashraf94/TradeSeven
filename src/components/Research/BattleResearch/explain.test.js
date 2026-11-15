@@ -81,7 +81,7 @@ describe('BRS-16 — the explanation, from the frozen result alone', () => {
     const r = res({ incumbent: null });
     const i = inv(r, 'rank_bench');
     expect(explainOf(i, r, currentStep(i))).toEqual([
-      '3 names on my bench. NVDA leads at rank 12 of 228, but it’s locked until Thu 10:00 AM (ranks as of 1:01 PM ET).',
+      '4 names on my bench. NVDA leads at rank 12 of 228, but it’s locked until Thu 10:00 AM (ranks as of 1:01 PM ET).',
       '2 are up today, 1 down, 0 without a reading yet (as of 1:44 PM).',
     ]);
   });
@@ -102,7 +102,7 @@ describe('BRS-13 — the banner after a refinement', () => {
     const i = addCondition(inv(r), { id: 'eligible_now' }, 1);
     expect(bannerOf(i, currentStep(i))).toEqual({
       title: 'Condition added: only names that can come in now',
-      body: '3 of 4 names left. PLTR is now #1, was #2, because a name above it was removed. Its rank is unchanged. 2 more names closed up the same way. Readings are the same 1:45 PM result. Nothing was refreshed.',
+      body: '3 of 4 names placed. 1 removed. PLTR is now #1, was #2, because a name above it was removed. Its rank is unchanged. 2 more names closed up the same way. Readings are the same 1:45 PM result. Nothing was refreshed.',
     });
   });
   it('an ordering change: positions changed because the order did; the names and readings are the same', () => {
@@ -117,7 +117,7 @@ describe('BRS-13 — the banner after a refinement', () => {
     i = addCondition(i, { id: 'down_today' }, 2);
     const b = bannerOf(i, currentStep(i));
     expect(b.title).toBe('Condition replaced: down today, in place of up today');
-    expect(b.body).toContain('1 name came back.');
+    expect(b.body).toContain('1 came back');
   });
   it('none for the question itself', () => {
     const i = inv();
@@ -180,7 +180,7 @@ describe('BRS-17 / BRS-18 — the modal\'s research row and the comparison', () 
     expect(researchRowOf(i, r, currentStep(i), 'MSFT')).toEqual({
       symbol: 'MSFT', position: 2, placed: true, of: 3,
       measureText: '#2 of 3 placed · Rank 40 of 228 · 1:01 PM ET',
-      support: 'Higher technical rank than EQIX: 40 against 140 of 228.', against: null,
+      support: 'Higher technical rank than EQIX: 40 against 140 of 228 (ranks as of 1:01 PM ET).', against: null,
       finding: { text: 'Today’s move +1.2% · regular session · as of 1:43 PM', conditionId: 'up_today', replaces: null },
     });
     const removed = researchRowOf(i, r, currentStep(i), 'NVDA');
@@ -198,7 +198,7 @@ describe('BRS-17 / BRS-18 — the modal\'s research row and the comparison', () 
     expect(c.rows.map((r) => r.key)).toEqual(['measure', 'move', 'rung', 'stands', 'sector']);
     expect(c.rows.find((r) => r.key === 'rung')).toEqual({ key: 'rung', label: 'One rung', cand: 'Estimated rung size ≈1.9% · ATR reading · 1:01 PM ET', held: 'One rung is 1.0% · fixed at entry' });
     expect(c.lock).toBe('Swapping EQIX out at the 12:45 check’s price locks −6 pts');
-    expect(c.tradeoff).toBe('MSFT out-ranks EQIX and is up more today; EQIX leads on nothing here.');
+    expect(c.tradeoff).toBe('MSFT out-ranks EQIX and is up more today than EQIX; EQIX leads on nothing here.');
     expect(c.evidence).toBe('On technical rank and today’s move, MSFT is ahead of EQIX. It can come in now. None of this says how it would score from here.');
     expect(JSON.stringify(c)).not.toMatch(/overlap|fit/i);
   });
@@ -248,7 +248,10 @@ describe('BRS-19 — the draft carries the investigation', () => {
     expect(variants[2]).not.toMatch(/• Sector:|• Rung:/);
     expect(fitDraft(variants, variants[1].length)).toBe(variants[1]);
     expect(fitDraft(variants, variants[2].length)).toBe(variants[2]);
-    expect(fitDraft(variants, 10)).toHaveLength(10);
+    // Never cut mid-reading (BR2-8): the shortest variant is whole lines, and nothing fits → '' (the caller keeps the typed text).
+    expect(variants[3]).toBe(['Research: "Compare alternatives to EQIX" (result 1:45 PM ET)', 'MSFT vs EQIX:', 'Should MSFT replace EQIX?'].join('\n'));
+    expect(fitDraft(variants, variants[3].length)).toBe(variants[3]);
+    expect(fitDraft(variants, 10)).toBe('');
     expect(variants[0].length).toBeLessThanOrEqual(CHAT_MAX_LENGTH);
     expect(variants[0]).not.toMatch(/[<>{}]/); // the chat's sanitizer strips these (Phase 0 point 9)
   });
@@ -259,10 +262,10 @@ describe('BRS-20 — Ask about this result: the first three PLACED names', () =>
     const i = setOrder(inv(), { measure: 'today_move', direction: 'best_first' }, 1);
     const r = res();
     const a = askDraftOf(i, r, currentStep(i));
-    expect(a.top).toEqual(['ORCL', 'MSFT', 'PLTR']);
+    expect(a.top).toEqual(['ORCL', 'MSFT', 'NOW']);
     expect(a.text).toBe([
       'Research: "Compare alternatives to EQIX" (result 1:45 PM ET)', "Then: ordered by today's move", '(ranks 1:01 PM ET · quotes 1:42–1:44 PM ET)', 'Top names:',
-      '• ORCL · rank 75 · +2.0% · can come in now', '• MSFT · rank 40 · +1.2% · can come in now', '• PLTR · rank 5 · +0.3% · can come in now', 'What do you make of these?',
+      '• ORCL · rank 75 · +2.0% · can come in now', '• MSFT · rank 40 · +1.2% · can come in now', '• NOW · +0.9% · can’t come in · on the equipped list only', 'What do you make of these?',
     ].join('\n'));
   });
   it('never a name left out, not assessed or not ranked', () => {

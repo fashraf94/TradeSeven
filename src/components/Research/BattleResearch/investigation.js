@@ -23,9 +23,10 @@
 // trail goes first; its children re-parent), 10 investigations a battle
 // session (the oldest goes) — each with a line in the history.
 
-import { selectBookSymbols, researchGroupsOf } from '../../../data/battleUniverse.js';
+import { selectBookSymbols } from '../../../data/battleUniverse.js';
 import { etClockAmPm } from '../BombMode/checkClock.js';
-import { outcomeOf, incumbentOf, bookCheckOf, msOf } from './result.js';
+import { outcomeOf, incumbentOf, bookCheckOf, msOf, EXCLUSIVE_OF } from './result.js';
+import { membershipOf } from './groups.js';
 import { BR_COPY, STARTER_TEXT, conditionWords } from './battleResearchCopy.js';
 
 export const CAPS = Object.freeze({ investigations: 10, steps: 40 });
@@ -92,18 +93,25 @@ export function trailOf(inv) {
   return out;
 }
 
-/** The refinement wordings on the trail (the *then: …* chain under the title). */
-export const refinementsOf = (inv) => trailOf(inv).slice(1).map((s) => s.wording);
+/** The refinement wordings on the trail (the *then: …* chain under the title), a folded step's words included. */
+export const refinementsOf = (inv) => trailOf(inv).slice(1).flatMap((s) => [...(s.folded ?? []), s.wording]);
 
-/** Drop the oldest step that is off the current trail (else the oldest after the question); its children re-parent. */
+/**
+ * Drop the oldest step that is off the current trail. When every step is on it (one long chain), the oldest
+ * refinement is FOLDED into its child instead (review BR1-9): the child keeps its own cumulative view and
+ * carries the dropped step's wording, so the *then: …* chain still accounts for the view on screen.
+ */
 function capSteps(inv) {
   if (inv.steps.length <= CAPS.steps) return inv;
   const onTrail = new Set(trailOf(inv).map((s) => s.stepId));
   let idx = inv.steps.findIndex((s, i) => i > 0 && !onTrail.has(s.stepId));
-  if (idx < 0) idx = 1;
+  const fold = idx < 0;
+  if (fold) idx = 1;
   const gone = inv.steps[idx];
   const cur = currentStep(inv);
-  const steps = inv.steps.filter((_, i) => i !== idx).map((s) => (s.parentStepId === gone.stepId ? { ...s, parentStepId: gone.parentStepId } : s));
+  const steps = inv.steps.filter((_, i) => i !== idx).map((s) => (s.parentStepId === gone.stepId
+    ? { ...s, parentStepId: gone.parentStepId, ...(fold ? { folded: [...(gone.folded ?? []), gone.wording, ...(s.folded ?? [])] } : {}) }
+    : s));
   // A result no step names any more stays in `results`: the history line and Slice 2's record keep it.
   return capSteps({ ...inv, steps, cursor: steps.findIndex((s) => s.stepId === cur.stepId), droppedSteps: inv.droppedSteps + 1 });
 }
@@ -113,7 +121,8 @@ export function addStep(inv, { kind, wording, view, at, resultId = null }) {
   const parent = currentStep(inv);
   const rid = resultId ?? parent.resultId;
   const result = inv.results[rid];
-  const prev = rid === parent.resultId ? parent.outcome : null;
+  // "was #n" only against the parent on the same result AND the same group (review BR1-10).
+  const prev = rid === parent.resultId && parent.view.group === view.group ? parent.outcome : null;
   const step = { stepId: `s${inv.nextStep}`, parentStepId: parent.stepId, kind, wording, at, resultId: rid, view, outcome: outcomeOf(result, view, { prev }) };
   return capSteps({ ...inv, steps: [...inv.steps, step], cursor: inv.steps.length, nextStep: inv.nextStep + 1 });
 }
@@ -128,7 +137,7 @@ export function setOrder(inv, order, at) {
   return addStep(inv, { kind: 'order', wording: BR_COPY.thenOrder(order), view: { ...v, order: { ...order } }, at });
 }
 
-const EXCLUSIVE = Object.freeze({ up_today: 'down_today', down_today: 'up_today' });
+const EXCLUSIVE = EXCLUSIVE_OF;
 
 /**
  * BRS-12 — add a condition. Up and down are exclusive and the sector is one at a time: the
@@ -210,10 +219,14 @@ export function refreshReport(prevResult, prevOutcome, nextResult, nextOutcome) 
   const moved = nextOutcome.placed.filter((p) => before.has(p.symbol) && before.get(p.symbol) !== p.position).length;
   const was = new Set(prevResult.membership.map((m) => m.symbol));
   const now = new Set(nextResult.membership.map((m) => m.symbol));
+  const placedNow = new Set(nextOutcome.placed.map((p) => p.symbol));
   return {
     moved,
     in: [...now].filter((s) => !was.has(s)),
     out: [...was].filter((s) => !now.has(s)),
+    // A member that entered or left the placed list with the lists unchanged (a reading came or went — review BR1-7).
+    placedIn: nextOutcome.placed.filter((p) => !before.has(p.symbol) && was.has(p.symbol)).map((p) => p.symbol),
+    placedOut: [...before.keys()].filter((s) => !placedNow.has(s) && now.has(s)),
     incumbentChanged: prevResult.incumbent?.symbol && nextResult.incumbent?.symbol && prevResult.incumbent.symbol !== nextResult.incumbent.symbol
       ? { from: prevResult.incumbent.symbol, to: nextResult.incumbent.symbol } : null,
   };
@@ -221,12 +234,17 @@ export function refreshReport(prevResult, prevOutcome, nextResult, nextOutcome) 
 
 /**
  * The incumbent a refresh uses (BRS-14): re-selected ONLY on the weakest-holding question (a new
- * one renames the title; none now keeps the frozen one); every other question keeps its own.
+ * one renames the title); every other question keeps its own. With no weakest now (after a swap the
+ * book is unscored until the next check), the frozen one is kept only while it is STILL HELD — a
+ * holding that left the book is never the comparison again (review BR1-1): none, and the result
+ * says why (BRS-6's no-weakest line).
  */
 export function refreshIncumbent(inv, battle) {
   const prev = currentResult(inv).incumbent;
   if (inv.question.id !== 'weakest_alternatives') return prev ? { ...prev } : null;
-  return incumbentOf(battle) ?? (prev ? { ...prev } : null);
+  const now = incumbentOf(battle);
+  if (now) return now;
+  return prev && selectBookSymbols(battle).has(prev.symbol) ? { ...prev } : null;
 }
 
 /**
@@ -251,14 +269,26 @@ export function noticeOf(inv, battle) {
     }
     return { kind: 'new_check', text: BR_COPY.noticeNewCheck(t, result.label) };
   }
-  const g = researchGroupsOf(battle);
-  const now = new Set([...g.bench, ...g.agentWatchlist]);
-  const was = new Set(result.membership.map((m) => m.symbol));
-  const inn = [...now].filter((s) => !was.has(s)).length;
-  const out = [...was].filter((s) => !now.has(s)).length;
-  if (inn || out) {
+  // The lists, name by name, against a fresh membership at the RESULT's instant (review BR1-6): a name in
+  // or out, a name's group tags, and its eligibility — a lock lapsing with time is not a list change.
+  const fresh = membershipOf(battle, { out: inc?.symbol ?? null, slot: inc?.tier ?? null, atMs: result.takenAt });
+  const wasBy = new Map(result.membership.map((m) => [m.symbol, m]));
+  const nowBy = new Map(fresh.membership.map((m) => [m.symbol, m]));
+  const touched = { bench: false, agent_watchlist: false };
+  let inn = 0; let out = 0; let eligibility = 0;
+  for (const [s, m] of nowBy) {
+    const w = wasBy.get(s);
+    if (!w) { inn += 1; m.groups.forEach((g) => { touched[g] = true; }); continue; }
+    if (w.groups.join() !== m.groups.join()) [...w.groups, ...m.groups].forEach((g) => { touched[g] = true; });
+    if (w.eligibility.ok !== m.eligibility.ok) { eligibility += 1; m.groups.forEach((g) => { touched[g] = true; }); }
+  }
+  for (const [s, w] of wasBy) if (!nowBy.has(s)) { out += 1; w.groups.forEach((g) => { touched[g] = true; }); }
+  if (touched.bench || touched.agent_watchlist) {
+    const which = touched.bench && touched.agent_watchlist ? 'both' : touched.bench ? 'bench' : 'agent_watchlist';
     const at = msOf(battle.watchlist?.lastRefreshed);
-    return { kind: 'lists', text: BR_COPY.noticeLists(inn, out, finite(at) && at > result.takenAt ? etClockAmPm(at) : null) };
+    // The watchlist's own rebuild time names the change only when nothing else moved.
+    const t = which === 'agent_watchlist' && finite(at) && at > result.takenAt ? etClockAmPm(at) : null;
+    return { kind: 'lists', text: BR_COPY.noticeLists(which, { inn, out, eligibility }, t) };
   }
   return null;
 }
@@ -269,14 +299,15 @@ export const REFRESH_COOLDOWN_MS = 60_000;
 /**
  * BRS-14 — may Refresh run now? One request in flight (a second tap does nothing), and at most one a
  * minute, counted from the later of the current result's evidence and the last attempt (a failed
- * attempt counts too). The button names the time left (*Refresh in 0:42*).
+ * attempt counts too), both on the CLIENT's clock (the result's receivedAt). The button names the time
+ * left (*Refresh in 0:42*), never more than a minute however the clocks sit (review BR1-3).
  * @param {{ inFlight: boolean, takenAt: number|null, lastAttemptAt: number|null, nowMs: number }} p
  * @returns {{ allowed: boolean, reason: 'in_flight'|'cooldown'|null, remainingMs: number, text: string|null }}
  */
 export function refreshGate({ inFlight = false, takenAt = null, lastAttemptAt = null, nowMs }) {
   if (inFlight) return { allowed: false, reason: 'in_flight', remainingMs: 0, text: null };
   const since = Math.max(finite(takenAt) ? takenAt : -Infinity, finite(lastAttemptAt) ? lastAttemptAt : -Infinity);
-  const left = finite(since) && finite(nowMs) ? Math.max(0, since + REFRESH_COOLDOWN_MS - nowMs) : 0;
+  const left = finite(since) && finite(nowMs) ? Math.min(REFRESH_COOLDOWN_MS, Math.max(0, since + REFRESH_COOLDOWN_MS - nowMs)) : 0;
   if (left <= 0) return { allowed: true, reason: null, remainingMs: 0, text: null };
   const s = Math.ceil(left / 1000);
   return { allowed: false, reason: 'cooldown', remainingMs: left, text: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` };

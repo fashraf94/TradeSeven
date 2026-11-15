@@ -22,8 +22,21 @@ export function clockRange(from, to) {
   const half = (s) => (/ (AM|PM)$/.exec(s) || [])[1] ?? null;
   return half(from) && half(from) === half(to) ? `${from.replace(/ (AM|PM)$/, '')}–${to}` : `${from}–${to}`;
 }
-/** A points figure with its sign, the sheet's way: +50, −6, 0. */
-export const signedPts = (n) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)}`;
+/** A points figure with its sign, the sheet's way (sheetCopy signed): +50, −6, +0. */
+export const signedPts = (n) => `${n >= 0 ? '+' : '−'}${Math.abs(n)}`;
+
+/**
+ * How one name's printed move stands against another's, in words that are true in every direction
+ * (review BR2-5): only for a > b (both the PRINTED numbers, readings.shownMove).
+ *   a > 0          "up more today than X"
+ *   a = 0 > b      "flat today while X is down"
+ *   a < 0          "down less today than X"
+ */
+export function aheadWords(a, b, other) {
+  if (a > 0) return `up more today than ${other}`;
+  if (a === 0) return `flat today while ${other} is down`;
+  return `down less today than ${other}`;
+}
 const join = (parts) => parts.filter(Boolean).join(' · ');
 
 /** The four questions (BRS-5) — stored ids are §6's. */
@@ -116,7 +129,7 @@ export const BR_COPY = Object.freeze({
 
   // ── A row (§7) ──
   rank: (r, n, t, older) => `Rank ${r} of ${n} · ${t} ET${older ? ' · older than usual' : ''}`,
-  rankNoTime: (r, n) => `Rank ${r} of ${n}`,
+  rankNoTime: (r, n) => `Rank ${r} of ${n} · time not recorded`,
   sectorRank: (ordinal, n, sector) => `${ordinal} of ${n} in ${sector}`,
   rungEstimate: (pctText, t) => `Estimated rung size ≈${pctText} · ATR reading · ${t} ET`,
   rungHolding: (pctText) => `One rung is ${pctText} · fixed at entry`,
@@ -124,8 +137,7 @@ export const BR_COPY = Object.freeze({
   was: (p) => `was #${p}`,
   held: 'held',
   diffRank: (inc) => `Higher rank than ${inc}`,
-  diffUp: (inc) => `Up more today than ${inc}`,
-  diffDown: (inc) => `Down less today than ${inc}`,
+  diffMove: (words) => words.charAt(0).toUpperCase() + words.slice(1),
 
   // ── Eligibility (BRS-15) ──
   canComeIn: 'Can come in now',
@@ -140,8 +152,8 @@ export const BR_COPY = Object.freeze({
   reference: (inc, checkTime, rungs) => join([`${inc} · held`, checkTime ? `our weakest at the ${checkTime} check` : 'our weakest', rungs !== null && rungs !== undefined ? `${rungs} rungs from entry` : null, 'reference, not ranked']),
   referenceNoReading: (inc, words) => `${inc} has no reading for this order (${words}), so it isn’t placed in the list.`,
   aboveLineRank: (inc) => `Names above this line out-rank ${inc} on technical rank`,
-  aboveLineUp: (inc) => `Names above this line are up more today than ${inc}`,
-  aboveLineDown: (inc) => `Names above this line are down more today than ${inc}`,
+  aboveLineUp: (inc) => `Names above this line are ahead of ${inc} on today’s move`,
+  aboveLineDown: (inc) => `Names above this line are behind ${inc} on today’s move`,
 
   // ── The board's sections (§7) ──
   showAll: (n) => `Show all ${n}`,
@@ -189,11 +201,20 @@ export const BR_COPY = Object.freeze({
   bannerRemoved: (words) => `Condition removed: ${words}`,
   bannerOrder: (order) => `Ordering changed: ${orderLabel(order).toLowerCase()}`,
   bannerGroup: (group) => `Group switched: ${GROUP_LABEL[group] ?? group}`,
-  bannerLeft: (n, of) => `${n} of ${plural(of, 'name', 'names')} left.`,
-  bannerMovedUp: (sym, now, was, k, measure) => `${sym} is now #${now}, was #${was}, because ${k === 1 ? 'a name above it was' : `${k} names above it were`} removed. Its ${measure} is unchanged.`,
+  bannerLeft: (n, of) => `${n} of ${plural(of, 'name', 'names')} placed.`,
+  bannerCounts: (removed, setAside, back) => join([
+    removed ? `${removed} removed` : null,
+    setAside ? `${setAside} set aside, not assessed` : null,
+    back ? `${back} came back` : null,
+  ]) + '.',
+  bannerMovedUp: (sym, now, was, removed, setAside, measure) => `${sym} is now #${now}, was #${was}, because ${[
+    removed ? (removed === 1 ? 'a name above it was removed' : `${removed} names above it were removed`) : null,
+    setAside ? (setAside === 1 ? 'a name above it was set aside, not assessed' : `${setAside} names above it were set aside, not assessed`) : null,
+  ].filter(Boolean).join(' and ')}. Its ${measure} is unchanged.`,
+  bannerMovedDown: (sym, now, was, back, measure) => `${sym} is now #${now}, was #${was}, because ${back === 1 ? 'a name came back above it' : `${back} names came back above it`}. Its ${measure} is unchanged.`,
   bannerMovedMore: (n) => `${plural(n, 'more name', 'more names')} closed up the same way.`,
-  bannerReturned: (n, moved) => `${plural(n, 'name', 'names')} came back.${moved ? ` ${plural(moved, 'name', 'names')} changed position.` : ''} No reading changed.`,
   bannerOrderBody: 'Positions changed because the ordering changed. The names and their readings are the same.',
+  bannerOrderSetAside: (n) => `Positions changed because the ordering changed. ${n === 1 ? 'One name has' : `${n} names have`} no usable move today and ${n === 1 ? 'is' : 'are'} set aside; no reading changed.`,
   bannerNoMove: 'No remaining name changed position.',
   bannerEnd: (t) => `Readings are the same ${t} result. Nothing was refreshed.`,
   measureRank: 'rank',
@@ -212,23 +233,24 @@ export const BR_COPY = Object.freeze({
   noticeNewCheckWeakest: (t, now, inc) => `A newer check at ${t}: ${now} is now our weakest. This result still compares with ${inc}.`,
   noticeNewCheck: (t, label) => `A newer check at ${t}. This result is still the ${label} one.`,
   noticeLeftBook: (inc, t) => (t ? `${inc} left the book at ${t}.` : `${inc} left the book after this result.`),
-  noticeLists: (inn, out, t) => `My watchlist changed${t ? ` at ${t}` : ' since this result'} (${inn} in, ${out} out).`,
+  noticeLists: (which, c, t) => `${which === 'bench' ? 'The bench' : which === 'agent_watchlist' ? 'My watchlist' : 'The bench and my watchlist'} changed${t ? ` at ${t}` : ' since this result'} (${[`${c.inn} in`, `${c.out} out`, c.eligibility ? `${c.eligibility} can or can’t come in now` : null].filter(Boolean).join(', ')}).`,
 
   // ── The explanation (BRS-16; §9) ──
   explainOutrank: (k, n, inc, ri, N) => (ri !== null
     ? `${k} of ${plural(n, 'name', 'names')} out-rank ${inc} (rank ${ri} of ${N}).`
     : `${inc} has no technical rank in this result.`),
   explainNoneOutrank: (inc) => `Nothing on the bench or my watchlist out-ranks ${inc} on technical rank.`,
-  explainLeader: (lead, rank, N, elig, t) => `${lead} leads at rank ${rank} of ${N}${elig}${t ? ` (ranks as of ${t} ET)` : ""}.`,
+  explainLeader: (lead, rank, N, elig, t) => `${lead} leads at rank ${rank} of ${N}${elig}${t ? ` (ranks as of ${t})` : ' (rank time not recorded)'}.`,
   explainLeaderMove: (lead, move, t, elig) => `${lead} leads on today’s move, ${move} as of ${t}${elig}.`,
   eligNow: ', and it can come in now',
   eligLocked: (t) => `, but it’s locked until ${t}`,
   eligCant: (why) => `, but it can’t come in: ${why}`,
   explainMoves: (lead, leadDir, leadMove, inc, incDir, incMove, t) => `Today ${lead} is ${leadDir} ${leadMove} and ${inc} is ${incDir} ${incMove} (as of ${t}).`,
   explainNoMove: (sym) => `I don’t have today’s move for ${sym} yet.`,
-  explainUpMore: (k, n, inc) => `${k} of ${plural(n, 'name', 'names')} are up more today than ${inc}.`,
+  explainUpMore: (k, n, inc) => `${k} of ${plural(n, 'name', 'names')} are ahead of ${inc} on today’s move.`,
   explainKeep: (inc) => `None of this says how either would score from here. Keeping ${inc} is a fair answer.`,
   explainGroup: (n, group) => `${plural(n, 'name', 'names')} on ${group}.`,
+  explainWeakestGone: (line) => line,
   explainGroupMoves: (u, d, x, t) => `${u} ${u === 1 ? 'is' : 'are'} up today, ${d} down, ${x} without a reading yet${t ? ` (as of ${t})` : ''}.`,
   explainLeftOut: (removed, notAssessed) => join([
     removed ? `${plural(removed, 'name', 'names')} removed by a condition` : null,
@@ -249,8 +271,8 @@ export const BR_COPY = Object.freeze({
   finding: 'The finding',
   findingMove: (move, t) => `Today’s move ${move} · regular session · as of ${t}`,
   findingNoMove: (words) => `Today’s move · ${words}`,
-  useAcross: 'Use across this result',
-  useAcrossConfirm: (words, replaced, remain, fail, notAssessed) => `Keep names ${words}${replaced ? ` (in place of ${replaced})` : ''} · ${remain} would remain · ${fail} fail · ${notAssessed} not assessed`,
+  acrossLabel: 'Use across this result',
+  acrossConfirm: (words, replaced, remain, fail, notAssessed) => `Keep names ${words}${replaced ? ` (in place of ${replaced})` : ''} · ${remain} would remain · ${fail} fail · ${notAssessed} not assessed`,
   apply: 'Apply',
   cancel: 'Cancel',
   applied: (remain) => `${remain} remain`,
@@ -269,12 +291,14 @@ export const BR_COPY = Object.freeze({
   compareLock: (inc, t, total) => `Swapping ${inc} out at the ${t} check’s price locks ${signedPts(total)} pts`,
   tradeoff: (cand, inc, candWins, incWins) => `${cand} ${candWins.length ? candWins.join(' and ') : 'leads on nothing here'}; ${inc} ${incWins.length ? incWins.join(' and ') : 'leads on nothing here'}.`,
   tradeoffRank: (other) => `out-ranks ${other}`,
-  tradeoffUpMore: 'is up more today',
+  tradeoffMove: (words) => `is ${words}`,
   evidence: (measures, cand, inc, elig) => (measures.length
     ? `On ${measures.join(' and ')}, ${cand} is ahead of ${inc}${elig}. None of this says how it would score from here.`
     : `On these readings, ${cand} isn’t ahead of ${inc}${elig}. None of this says how it would score from here.`),
   evidenceNow: '. It can come in now',
   evidenceCant: (why) => `. It can’t come in now: ${why}`,
+  evidenceLocked: (t) => `. It’s locked until ${t}`,
+  evidenceNone: (cand, inc, elig) => `${cand} and ${inc} share no reading to compare here${elig}. None of this says how it would score from here.`,
   measuresRank: 'technical rank',
   measuresMove: 'today’s move',
   draftFor: (agent) => `Draft it for ${agent}`,
@@ -290,7 +314,7 @@ export const BR_COPY = Object.freeze({
   draftHead: (question, t) => `Research: "${question}" (result ${t} ET)`,
   draftThen: (parts) => `Then: ${parts.join(' · ')}`,
   draftVs: (cand, inc) => (inc ? `${cand} vs ${inc}:` : `${cand}:`),
-  draftRank: (parts, t) => `• Rank: ${parts.join(', ')} (ranks ${t} ET)`,
+  draftRank: (parts, t) => `• Rank: ${parts.join(', ')} (ranks ${t})`,
   draftMove: (parts, from, to) => `• Today: ${parts.join(', ')} (${from === to ? `quote ${from}` : `quotes ${clockRange(from, to)}`} ET)`,
   draftRung: (parts) => `• Rung: ${parts.join(', ')}`,
   draftSector: (parts) => `• Sector: ${parts.join(', ')}`,
@@ -314,6 +338,7 @@ export function eligibilityWhy(reason) {
   if (reason === 'pick_wrong_class') return 'a crypto can’t replace a stock';
   if (reason === 'pick_already_held') return 'already held';
   if (reason === 'pick_is_symbol') return 'it is the holding itself';
+  if (reason === 'pick_locked') return 'locked';
   return 'not on the swap’s lists';
 }
 
