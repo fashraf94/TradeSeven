@@ -16,8 +16,14 @@ import {
   makeIntradayCandles, makeHoldResult, makeToolUseResponse, makeTickDb, deepClone,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 
-const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn(), recorded: [] }));
 const flags = vi.hoisted(() => ({ cuts: false }));
+
+// The calls step's detached-quote record, observed (real function, wrapped): which instant each quote carries.
+vi.mock('../_utils/callRecords/observe.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, recordFetchedQuote: (ctx, symbol, price, fetchedAtMs) => { mocks.recorded.push({ symbol, fetchedAtMs }); return real.recordFetchedQuote(ctx, symbol, price, fetchedAtMs); } };
+});
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicMock { constructor() { this.messages = { create: (...a) => mocks.create(...a) }; } },
@@ -29,6 +35,9 @@ vi.mock('../_utils/marketDataCache.js', async (importOriginal) => ({
   fetchIntradayCandles: vi.fn(async () => []),
   filterToLatestSession: vi.fn((c) => ({ candles: c || [], sessionDate: '2026-09-09' })),
 }));
+// The calls step runs only for an allowlisted owner at CALL_RECORDS_MODE 'on' (its real value): the
+// fixture battle's owner is allowlisted, so every row below runs the calls path too (callsOn suite precedent).
+vi.mock('../_utils/callRecords/allowlist.js', async (importOriginal) => ({ ...(await importOriginal()), readCockpitAllowlist: () => ['owner-uid-1'] }));
 vi.mock('../_utils/tournamentAgentLedger.js', () => ({
   resolveTournamentContext: vi.fn(async () => null), excludeHeldByOthers: vi.fn(), excludeHeldSymbols: vi.fn(),
   reserveSymbol: vi.fn(), confirmSwap: vi.fn(), releaseReservation: vi.fn(),
@@ -160,6 +169,23 @@ describe('flag ON — same effects as a per-battle fetch', () => {
     const on = await check({ cuts: true, priceless: ['QQQ'] });
     expect(on.tickCalls.filter(([s]) => s === 'QQQ').length).toBeGreaterThan(0);
     expect(on.updates).toEqual(off.updates);
+  });
+
+  it('a shared quote is recorded with the RUN fetch\'s instant; the battle\'s own quotes with the check\'s', async () => {
+    flags.cuts = true;
+    installMarketData();
+    resetSessionDailyMemo();
+    mocks.recorded.length = 0;
+    const db = makeTickDb({ battle: makeTickBattle(), rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() });
+    const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 };
+    const shareAt = Date.now();
+    await prepareRunMarketShare(db, summary);
+    vi.setSystemTime(new Date(shareAt + 45_000)); // the battle is checked 45 s into the run
+    await processAgentBattle(db, makeTickBattle(), summary, shareAt, new Map(), { everEnabled: false });
+    const at = (s) => mocks.recorded.filter((r) => r.symbol === s).map((r) => r.fetchedAtMs);
+    expect(at('SPY')).toEqual([shareAt]);
+    expect(at('QQQ')).toEqual([shareAt]);
+    expect(at('NVDA')).toEqual([shareAt + 45_000]);
   });
 
   it('the daily bars came from the session series: with the series warm, a second check fetches no /eod/ for any symbol', async () => {

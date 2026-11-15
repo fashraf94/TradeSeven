@@ -124,7 +124,9 @@ export function resetSessionDailyMemo() { memo.clear(); memoEtDate = null; }
 
 async function readStoredSeries(db, key) {
   try {
-    const snap = await withTimeout(db.collection(SESSION_DAILY_COLLECTION).doc(key.docId).get(), SESSION_DAILY_IO_TIMEOUT_MS, 'session_daily_read');
+    // The collection is a LITERAL at both Firestore calls (= SESSION_DAILY_COLLECTION): the
+    // protected-store write scan (compositionProtectedStores.scan.test.js) resolves literals only.
+    const snap = await withTimeout(db.collection('evalSessionDaily').doc(key.docId).get(), SESSION_DAILY_IO_TIMEOUT_MS, 'session_daily_read');
     const doc = snap?.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
     return readableSessionDoc(doc, key);
   } catch (err) {
@@ -148,7 +150,7 @@ async function writeStoredSeries(db, key, rows) {
     expiresAt: new Date(Date.parse(`${key.etDate}T12:00:00Z`) + 3 * 86_400_000),
   };
   try {
-    await withTimeout(db.collection(SESSION_DAILY_COLLECTION).doc(key.docId).set(doc), SESSION_DAILY_IO_TIMEOUT_MS, 'session_daily_write');
+    await withTimeout(db.collection('evalSessionDaily').doc(key.docId).set(doc), SESSION_DAILY_IO_TIMEOUT_MS, 'session_daily_write');
   } catch (err) {
     console.warn(`[evalMarketData] session series write failed for ${key.docId} (the next check fetches again): ${err?.message || err}`);
   }
