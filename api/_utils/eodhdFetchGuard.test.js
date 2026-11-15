@@ -115,6 +115,11 @@ describe('flag OFF — the bare request, counted', () => {
 });
 
 describe('flag ON — the 10 s timeout', () => {
+  it('the bound is 10 s (the intraday poller\'s precedent), and the cap 32', () => {
+    expect(EODHD_FETCH_TIMEOUT_MS).toBe(10_000);
+    expect(EODHD_FETCH_CONCURRENCY).toBe(32);
+  });
+
   it('a request that never answers is aborted at 10 s, not before; it throws EodhdTimeoutError and is counted', async () => {
     flags.guard = true;
     vi.useFakeTimers();

@@ -269,6 +269,16 @@ describe('K battles in flight — never more', () => {
     expect(db.__runDocs[0].data.pool).toEqual({ k: 1, startCutoffMs: 290_000, maxInFlight: 1, dispatched: 3 });
   });
 
+  it('with the cuts flag off (merged), each battle fetches the macros itself — no run share is prepared', async () => {
+    const gates = makeGates();
+    const { done } = await startHandler([cpuBattle('u1'), cpuBattle('u2')]);
+    await settle(); gates.open('u1'); await settle(); gates.open('u2');
+    await done;
+    const spyCalls = mocks.getStockAnalysisData.mock.calls.filter(([s]) => s === 'SPY');
+    expect(spyCalls).toHaveLength(2); // one per battle, inside each battle's fan-out
+    for (const [, opts] of spyCalls) expect(opts).toEqual({ forceRefresh: true, fields: ['daily', 'price'] });
+  });
+
   it('a malformed setting (K = 9) runs as K = 1', async () => {
     flags.k = 9;
     const gates = makeGates();
