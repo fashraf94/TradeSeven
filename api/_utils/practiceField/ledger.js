@@ -72,6 +72,29 @@
 // same way with `refused` and never replayed, so a row leaving the feed never makes the count read settled (review F2):
 // nothing is ever paid on the unadjusted count. If the basis never settles, nothing guesses.
 //
+// A MOVE THE GAP SCREEN SUSPECTS IS A SHARE BASIS IN DOUBT TOO (fix round 3, Astra T2A-D01). The engine's gap screen
+// (classifyOvernightGaps) flags a close whose price moved by a split's shape — a half, a third, twice… of the last
+// trusted mark — with no feed row to explain it. It held the sale and the mark, but only while the shape lasted, and the
+// close asked it only AFTER paying: a cash delisting paid shares × cash on a count that may be half what it should be,
+// deleted the holding, resolved the idea and returned that cash. Now the close asks the screen first, on the state the
+// cash would be paid on (after this close's share-basis rows, before any cash: withBasisSuspicions), and a symbol it
+// suspects gets a record on the holding — `basisSuspicion: { symbol, suspectedOn, since, ratio, shape, frozenMark,
+// frozenMarkAsOf, resolvedBy: null, resolvedAt: null }` — that makes its share basis UNRESOLVED in the sense above
+// (unresolvedShareBasis, idea-wide through shareBasisHolds). Every count-dependent action waits on it exactly as on a
+// conflict: a cash action dated after `since` (the session of the last trusted mark: the move came after it), and a
+// share-basis action dated after the session it was first suspected. The sale waits, a rename waits, the mark is
+// carried, the endpoint is unmeasurable, and an alert fires at every close. The record is NOT cleared because the price
+// recovers or the screen stops firing. It is released only by
+//   • a share-basis row of the symbol that EXPLAINS the move — dated inside the gap (after `since`, on or before
+//     `suspectedOn`), first listed after the session the suspicion was raised, and whose ratio matches the move within
+//     twice the engine's tolerance (the engine's own test for a feed row that explains a gap). That row then takes the
+//     suspicion's place in the order: what is dated before it is paid on the count before it, what is dated after it
+//     waits for it, and when it applies the record is removed and its receipt says what it explained; or
+//   • the founder (T5): a record carrying both `resolvedBy` and `resolvedAt` no longer holds anything, and the screen's
+//     same signature against that same frozen mark raises no new one (the founder has ruled on that move).
+// Nothing estimates an adjusted count or picks a ratio. A holding waiting on a delisting is not screened (R-32: its fall
+// is the delisting, not a split).
+//
 // THE BOOK'S MARKED EQUITY has one rounding basis, stated below (`markedEquityCents`).
 //
 // Pure: no store, no clock.
@@ -79,10 +102,12 @@
 import { markBook } from '../mandateValuation.js';
 import { snapshotExcluding, caActionsBySymbol } from '../mandateUniverseSnapshot.js';
 import { pendingActionsFor, applyCorporateAction, classifyOvernightGaps, deriveActionId } from '../mandateCorporateActions.js';
+import { MANDATE_CA_RATIO_TOLERANCE } from '../mandateConfig.js';
 import { roundUsd } from '../mandateRounding.js';
 import { MARK_QUALITY } from './constants.js';
 import { closeMarkQuality } from './marks.js';
 import { addUsd, toCents } from './money.js';
+import { etDateOfMs } from './windows.js';
 
 export const LEDGER_KIND = Object.freeze({ IDEA: 'idea', COMPARISON: 'comparison', SPY: 'spy' });
 
@@ -173,6 +198,101 @@ export function heldActionRecords(ledger) {
   return out;
 }
 
+// ── THE GAP SCREEN'S SUSPICION (fix round 3, Astra T2A-D01; see the header) ────────────────────────────────────────
+
+/** The type, and the id prefix, a suspicion's item carries in the hold set and in a held action's `heldBecause`. */
+export const SUSPECTED_SPLIT = 'suspected_split';
+const suspicionIdOf = (symbol, s) => `${SUSPECTED_SPLIT}_${upper(symbol)}_${s.suspectedOn}`;
+/** A record the founder has resolved (T5 writes both fields; nothing here writes them). */
+const founderResolved = (s) => typeof s?.resolvedBy === 'string' && s.resolvedBy.trim().length > 0 && s.resolvedAt != null;
+
+/** The holding's suspicion while it holds anything: present and not resolved by the founder. */
+export function openBasisSuspicion(holding) {
+  const s = holding?.basisSuspicion;
+  if (!s || typeof s !== 'object' || founderResolved(s)) return null;
+  return s;
+}
+
+/** The open suspicions of a ledger: `[{ symbol, actionId, ...record }]` (`actionId` is the item's id). */
+export function basisSuspicionRecords(ledger) {
+  const out = [];
+  for (const [symbol, h] of Object.entries(ledger?.holdings || {})) {
+    const s = openBasisSuspicion(h);
+    if (s) out.push({ ...s, symbol: upper(symbol), actionId: suspicionIdOf(symbol, s) });
+  }
+  return out;
+}
+
+/** The move the founder has already ruled on: a resolved record whose frozen mark is still the holding's mark. Its
+ *  split-shaped signature against that same mark is not a new suspicion (the mark has not been trusted since). */
+const founderRuledMove = (holding) => founderResolved(holding?.basisSuspicion) && Number(holding.basisSuspicion.frozenMark) === Number(holding?.lastMark);
+
+/**
+ * Does a share-basis action EXPLAIN a suspicion's move? Dated inside the gap (after `since`, on or before the session it
+ * was first suspected), and its ratio matches the move within twice the engine's tolerance — the engine's own test for a
+ * feed row that explains a gap (mandateCorporateActions.js feedExplainsGap: shares × r ⇒ price × 1/r).
+ */
+function explainsSuspicion(action, s) {
+  if (!SHARE_BASIS_TYPES.has(action?.type) || !s) return false;
+  const r = Number(action.ratio);
+  const move = Number(s.ratio);
+  if (!(r > 0) || !(move > 0) || !Number.isFinite(r) || !Number.isFinite(move)) return false;
+  if (typeof action.effectiveDate !== 'string' || action.effectiveDate > s.suspectedOn) return false;
+  if (typeof s.since === 'string' && action.effectiveDate <= s.since) return false;
+  const expected = 1 / r;
+  return Math.abs(move - expected) / expected <= MANDATE_CA_RATIO_TOLERANCE * 2;
+}
+
+/** A holding waiting on a delisting (E11): its fall is the delisting, not a split (R-32). */
+const delistingWaitingHolding = (h) => h?.exitPending?.reason === 'delisting' || h?.settlementPending?.replacedExit?.reason === 'delisting';
+
+/** The symbols of a ledger's holdings that wait on a delisting. Only the idea's own holding carries the waiting sale, so
+ *  the close hands this set, read from the idea's ledger, to the screen of every ledger of the idea. */
+export function delistingWaitingSymbols(ledger) {
+  return new Set(Object.entries(ledger?.holdings || {}).filter(([, h]) => delistingWaitingHolding(h)).map(([sym]) => upper(sym)));
+}
+
+/** The session date of a holding's last trusted mark, or null when it cannot be told. */
+function markSessionOf(holding) {
+  const ms = typeof holding?.lastMarkAsOf === 'string' ? Date.parse(holding.lastMarkAsOf) : NaN;
+  return Number.isFinite(ms) ? etDateOfMs(ms) : null;
+}
+
+/**
+ * THE GAP SCREEN, ASKED BEFORE ANY CASH (fix round 3, T2A-D01). On the state a cash action would be paid on — this
+ * close's share-basis actions applied (the dry run shareBasisHolds makes), nothing else — every symbol the engine's
+ * screen SUSPECTS (a split's shape with no feed row: `suspectedCA`, never `pendingCA`, which a listed row explains) gets
+ * a `basisSuspicion` record on this ledger's holding, unless it already has an open one (the first is kept, with the
+ * session it was first suspected), the founder has ruled on this very move, or the holding waits on a delisting (R-32) —
+ * on this ledger, or on the idea's own (`delistingWaiting`, which the close reads from the idea's ledger: only it carries
+ * the waiting sale, and a suspicion on the comparison would hold that sale idea-wide). Pure.
+ * @returns {{ ledger: object, raised: Array<object> }}
+ */
+export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date, delistingWaiting = null }) {
+  if (!ledger || !closeSnapshot) return { ledger, raised: [] };
+  const dry = applyActions(ledger, actionsBySymbol, { date, phase: 'share_basis' }).ledger;
+  const settled = settledIdsOf(dry);
+  const scan = classifyOvernightGaps(dry.holdings, closeSnapshot, actionsBySymbol, { sinceDate: sinceDate ?? null, asOfDate: date, excludeActionIds: settled });
+  let next = ledger;
+  const raised = [];
+  for (const [sym, { ratio }] of scan.suspectedCA) {
+    const h = ledger.holdings?.[sym];
+    const d = dry.holdings?.[sym];
+    if (!h || !d || openBasisSuspicion(h) || founderRuledMove(d) || delistingWaitingHolding(h) || delistingWaiting?.has(sym)) continue;
+    // A delisting with no cash listed for it today makes it a waiting sale at this close (R-32, as above).
+    if ((actionsBySymbol?.[sym] || []).some((a) => a?.type === 'delisting' && delistingCashOf(a) === null && typeof a.effectiveDate === 'string' && a.effectiveDate <= date && !settled.has(deriveActionId(a)))) continue;
+    const record = {
+      symbol: sym, suspectedOn: date, since: markSessionOf(d), ratio,
+      shape: ratio < 1 ? { kind: 'split', n: Math.round(1 / ratio) } : { kind: 'reverse_split', n: Math.round(ratio) },
+      frozenMark: Number(d.lastMark), frozenMarkAsOf: d.lastMarkAsOf ?? null, resolvedBy: null, resolvedAt: null,
+    };
+    if (next === ledger) next = cloneLedger(ledger);
+    next.holdings[sym] = { ...h, basisSuspicion: record };
+    raised.push(record);
+  }
+  return { ledger: next, raised };
+}
+
 /** What makes two feed rows of one id the same action. The id already fixes the type, ticker and effective date. */
 const actionPayloadOf = (row) => JSON.stringify([row.ratio ?? null, row.amount ?? null, row.renamedTo ?? null, row.cashPerShare ?? null]);
 
@@ -207,7 +327,9 @@ const addItem = (map, sym, item) => {
  * `date` — listed now — that it has neither applied nor declined (one it could not apply, or one with no entitlement
  * data); and one it HOLDS — behind an earlier unresolved one, or because it cannot apply it (`refused`). Every one of
  * these survives the feed dropping its row (a conflict by its receipt, the rest by their held record), so a cash action
- * held behind one is never released by a row leaving the feed (the fail-closed side of R-46; review F2).
+ * held behind one is never released by a row leaving the feed (the fail-closed side of R-46; review F2). And (fix round
+ * 3, T2A-D01) every open gap-screen suspicion, as `{ actionId: 'suspected_split_SYM_<suspectedOn>', type:
+ * 'suspected_split', effectiveDate: suspectedOn, since, ledger }` — durable on its holding's record, like the rest.
  * @returns {Map<string, Array<{ actionId: string, type: string, effectiveDate: string|null, ledger: string|null }>>}
  */
 export function unresolvedShareBasis(ledger, actionsBySymbol, { date }) {
@@ -220,6 +342,19 @@ export function unresolvedShareBasis(ledger, actionsBySymbol, { date }) {
   for (const r of heldActionRecords(ledger)) {
     if (settled.has(r.actionId)) continue;
     if (SHARE_BASIS_TYPES.has(r.type)) addItem(out, r.symbol, itemOf(r, kind));
+  }
+  // …and every open gap-screen suspicion (fix round 3, T2A-D01), unless a share-basis row that EXPLAINS it is here to
+  // apply — listed now (not two ways) or held on the holding — at a close after the one that raised it: that row then
+  // stands for the move, in its own place in the order (it is an item above, or is applied in order).
+  const conflicted = conflictingActionIds([...due.pending, ...due.noEntitlementData, ...due.unrecognized]);
+  for (const [sym, h] of Object.entries(ledger?.holdings || {})) {
+    const s = openBasisSuspicion(h);
+    if (!s) continue;
+    const key = upper(sym);
+    const listed = due.pending.filter((a) => upper(a.ticker) === key && !conflicted.has(a.actionId));
+    const recorded = (h.heldActions || []).filter((r) => !r.refused && !settled.has(r.actionId)).map((r) => actionOfRecord(key, r));
+    if (typeof date === 'string' && date > s.suspectedOn && [...listed, ...recorded].some((a) => explainsSuspicion(a, s))) continue;
+    addItem(out, key, { actionId: suspicionIdOf(key, s), type: SUSPECTED_SPLIT, effectiveDate: s.suspectedOn ?? null, since: s.since ?? null, ledger: kind });
   }
   for (const list of out.values()) list.sort(byItem);
   return out;
@@ -390,9 +525,17 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   }
   const causesOf = (action) => {
     const sym = upper(action.ticker);
-    const before = SHARE_BASIS_TYPES.has(action.type)
-      ? (i) => typeof i.effectiveDate !== 'string' || byDatePhaseId(i, action) < 0
-      : (i) => typeof i.effectiveDate !== 'string' || i.effectiveDate <= action.effectiveDate;
+    const shareBasis = SHARE_BASIS_TYPES.has(action.type);
+    // A gap-screen suspicion (fix round 3, T2A-D01) moved some time after `since` and on or before `suspectedOn`: it holds
+    // a cash action dated after `since` (all of them when `since` cannot be told), and a share-basis action dated after
+    // `suspectedOn` — one dated inside the gap is the feed's own account of it, applied (and, if it explains the move,
+    // releasing it).
+    const suspicionHolds = (i) => (shareBasis ? action.effectiveDate > i.effectiveDate : (typeof i.since !== 'string' || action.effectiveDate > i.since));
+    const before = (i) => {
+      if (typeof i.effectiveDate !== 'string') return true;
+      if (i.type === SUSPECTED_SPLIT) return suspicionHolds(i);
+      return shareBasis ? byDatePhaseId(i, action) < 0 : i.effectiveDate <= action.effectiveDate;
+    };
     const nowSettled = settledIdsOf(next);
     const out = new Map();
     for (const i of holds?.get(sym) || []) if (i.actionId !== action.actionId && before(i) && !(i.ledger === kind && nowSettled.has(i.actionId))) addItem(out, sym, { ...i });
@@ -494,13 +637,22 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     }
     next.holdings = out.positions;
     if (heldRecord && next.holdings[sym]) next.holdings = { ...next.holdings, [sym]: withoutHeld(next.holdings[sym], action.actionId) };
+    // A share-basis row that EXPLAINS the holding's open suspicion, at a close after the one that raised it, releases it
+    // (fix round 3, T2A-D01): the record is removed and the receipt says what it explained.
+    let explained = {};
+    const suspicion = SHARE_BASIS_TYPES.has(action.type) ? openBasisSuspicion(next.holdings[sym]) : null;
+    if (suspicion && date > suspicion.suspectedOn && explainsSuspicion(action, suspicion)) {
+      const { basisSuspicion, ...rest } = next.holdings[sym];
+      next.holdings = { ...next.holdings, [sym]: rest };
+      explained = { explainedSuspicion: { suspectedOn: basisSuspicion.suspectedOn, ratio: basisSuspicion.ratio, frozenMark: basisSuspicion.frozenMark } };
+    }
     next.cash = out.cash;
     next.dividendsUsd = addUsd(next.dividendsUsd, out.incomeUsd);
     next.appliedActionIds.push(action.actionId);
     const receipt = {
       actionId: action.actionId, type: action.type, ticker: action.ticker, effectiveDate: action.effectiveDate,
       ratio: action.ratio ?? null, amount: action.amount ?? null, incomeUsd: out.incomeUsd,
-      applied: true, appliedOn: date, source: action.source ?? null, note: out.note, ...heldFields,
+      applied: true, appliedOn: date, source: action.source ?? null, note: out.note, ...heldFields, ...explained,
     };
     next.corporateActionReceipts.push(receipt);
     applied.push({ ...action, receipt });
@@ -695,11 +847,20 @@ export function withCloseMarks(ledger, valuation) {
  * holding carries a held action (it is owed something that waits on its count — a dropped due row it waits on
  * included), or another ledger of the idea (`otherLedgers`: the comparison's, the SPY line's) has the symbol's share
  * basis unresolved — `corporate_action_unsettled`, as the idea's own conflict reads.
+ *
+ * And (fix round 3, T2A-D01) while the holding carries an open gap-screen suspicion (`basisSuspicion`):
+ * `suspected_corporate_action`, as the live screen reads — also after the price has recovered, and also for a holding
+ * that began waiting on a delisting after the suspicion was raised. The live screen still runs as before; a move the
+ * founder has resolved is not suspected again against the same frozen mark.
  */
 export function saleHeldBackBy(ledger, symbol, snapshot, { sinceDate, date, otherLedgers = [] }) {
   const holding = ledger?.holdings?.[symbol];
   if (!holding) return null;
   const actionsBySymbol = caActionsBySymbol(snapshot);
+  // The gap screen's RECORD (fix round 3, T2A-D01): the move it suspected is not settled because the price has since
+  // recovered or the shape has gone. First, before the delisting exception below: a suspicion raised before the holding
+  // began waiting on a delisting still holds it.
+  if (openBasisSuspicion(holding)) return 'suspected_corporate_action';
   if ((holding.heldActions || []).length > 0) return 'corporate_action_unsettled';
   const one = { [symbol]: holding };
   const settled = new Set([...(ledger.appliedActionIds || []), ...(ledger.declinedActionIds || [])]);
@@ -720,6 +881,8 @@ export function saleHeldBackBy(ledger, symbol, snapshot, { sinceDate, date, othe
   const delistedWaiting = holding.exitPending?.reason === 'delisting' || holding.settlementPending?.replacedExit?.reason === 'delisting';
   if (delistedWaiting) return null;
   const gaps = classifyOvernightGaps(one, snapshot, actionsBySymbol, { sinceDate: sinceDate ?? null, asOfDate: date, excludeActionIds: settled });
+  // A move the founder has ruled on (a resolved record, its frozen mark still the holding's) is not suspected again.
+  if (gaps.suspectedCA.has(symbol) && !gaps.pendingCA.has(symbol) && founderRuledMove(holding)) return null;
   return gaps.frozen.has(symbol) ? 'suspected_corporate_action' : null;
 }
 
@@ -734,5 +897,9 @@ export function suspectedActionSymbols(ledger, closeSnapshot, actionsBySymbol, {
   const scan = classifyOvernightGaps(ledger.holdings, closeSnapshot, actionsBySymbol, {
     sinceDate: sinceDate ?? null, asOfDate: date, excludeActionIds: settled,
   });
-  return scan.frozen;
+  // A move the founder has ruled on (fix round 3: a resolved record whose frozen mark is still the holding's) is not held
+  // back again: the close marks it fresh, and the next screen compares against that fresh mark.
+  const frozen = new Set(scan.frozen);
+  for (const sym of scan.suspectedCA.keys()) if (!scan.pendingCA.has(sym) && founderRuledMove(ledger.holdings?.[sym])) frozen.delete(sym);
+  return frozen;
 }

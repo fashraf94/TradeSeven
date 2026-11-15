@@ -41,7 +41,7 @@ import {
 } from './constants.js';
 import { modelledSaleProceeds, isCostTier, costTierOf } from './fills.js';
 import { fundOf, frictionForSymbol } from './symbols.js';
-import { unsettledConflicts, heldActionRecords } from './ledger.js';
+import { unsettledConflicts, heldActionRecords, basisSuspicionRecords } from './ledger.js';
 import { toCents, fromCents } from './money.js';
 
 /** The kinds of endpoint: at the scheduled due session, early (no holdings left — E2), or after a due session passed. */
@@ -191,8 +191,11 @@ export function ledgerEndpoint(ledger, valuation) {
   let grossCents = 0;
   let netCents = 0;
   let rawNet = 0;
-  // …and every action a holding is owed that waits on its share basis (fix round 2): the value is in doubt by it.
-  const unsettledActions = [...unsettledConflicts(ledger).map((r) => r.actionId), ...heldActionRecords(ledger).map((r) => r.actionId)];
+  // …and every action a holding is owed that waits on its share basis (fix round 2), and every open gap-screen suspicion
+  // (fix round 3, T2A-D01): the value is in doubt by it.
+  const unsettledActions = [
+    ...unsettledConflicts(ledger).map((r) => r.actionId), ...heldActionRecords(ledger).map((r) => r.actionId), ...basisSuspicionRecords(ledger).map((r) => r.actionId),
+  ];
   let marksFullQuality = true;
   let costTiersStored = true;
   const holdings = {};

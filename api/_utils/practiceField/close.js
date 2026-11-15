@@ -61,7 +61,7 @@ import { PracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
 import {
   applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, unsettledConflicts, cloneLedger,
-  shareBasisHolds, heldActionRecords,
+  shareBasisHolds, heldActionRecords, withBasisSuspicions, basisSuspicionRecords, delistingWaitingSymbols,
 } from './ledger.js';
 import { closeMarkQuality } from './marks.js';
 import { planRelease } from './admission.js';
@@ -148,12 +148,21 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
   //    this close's share-basis actions (the idea's hold set), nothing that depends on its share count is applied on
   //    ANY ledger of the idea — no cash delisting, no dividend, no later share-basis action (each is recorded on the
   //    holding and applied once the basis settles; fix round 2, T2A-C01) — and its ticker change waits (Astra T2A-01).
-  const holds = observed ? shareBasisHolds([idea.ledger, idea.comparisonLedger, idea.spyLedger], actionsBySymbol, { date }) : null;
+  //    FIRST, THE GAP SCREEN (fix round 3, Astra T2A-D01): asked of each ledger on the state its cash would be paid on
+  //    (this close's share-basis rows applied, no cash), BEFORE any cash moves. A symbol it suspects of an unfed split
+  //    is recorded on the holding (`basisSuspicion`), which makes its share basis unresolved — so the hold set below
+  //    holds every count-dependent action of it, on every ledger of the idea, until a listed row explains the move or the
+  //    founder resolves it.
+  //    A holding the idea is waiting to sell on a delisting is screened on no ledger (R-32).
+  const delistingWaiting = delistingWaitingSymbols(idea.ledger);
+  const screen = (ledger) => (observed ? withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date, delistingWaiting }).ledger : ledger);
+  const ledgers = [screen(idea.ledger), screen(idea.comparisonLedger), screen(idea.spyLedger)];
+  const holds = observed ? shareBasisHolds(ledgers, actionsBySymbol, { date }) : null;
   const deferRenames = holds ? new Set(holds.keys()) : null;
   const opts = { date, holds, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened };
-  const own = observed ? applyLedgerActions(idea.ledger, actionsBySymbol, opts) : noActions(idea.ledger);
-  const cmp = observed ? applyLedgerActions(idea.comparisonLedger, actionsBySymbol, opts) : noActions(idea.comparisonLedger);
-  const spy = observed ? applyLedgerActions(idea.spyLedger, actionsBySymbol, opts) : noActions(idea.spyLedger);
+  const own = observed ? applyLedgerActions(ledgers[0], actionsBySymbol, opts) : noActions(ledgers[0]);
+  const cmp = observed ? applyLedgerActions(ledgers[1], actionsBySymbol, opts) : noActions(ledgers[1]);
+  const spy = observed ? applyLedgerActions(ledgers[2], actionsBySymbol, opts) : noActions(ledgers[2]);
 
   for (const [name, out] of [['idea', own], ['comparison', cmp], ['spy', spy]]) {
     const blocked = new Set([...renameBlocked, ...out.renamesBlocked.map((b) => b.from)]);
@@ -161,6 +170,10 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
       if (!Object.hasOwn(out.ledger.holdings || {}, sym)) continue;
       out.unresolved.add(sym);
       alerts.push(`PRACTICE_FIELD_RENAME_BLOCKED ${idea.ideaId} ${name} ${sym} — a ticker change into a symbol another idea of the book holds is not applied; the holding is valued at its carried mark`);
+    }
+    // Every open gap-screen suspicion, at every close it stands — also once the price has recovered (fix round 3).
+    for (const s of basisSuspicionRecords(out.ledger)) {
+      alerts.push(`PRACTICE_FIELD_BASIS_SUSPECTED ${idea.ideaId} ${name} ${s.symbol} ${s.actionId} — a move with a split's shape (×${s.ratio}) that no feed row explains, first seen ${s.suspectedOn}; the share basis is unresolved: nothing that depends on the count is applied, the mark is carried, the sale waits — until a listed share-basis row explains it or the founder resolves it`);
     }
     // Every action a holding is owed that waits on its share basis, at every close it waits (fix round 2).
     for (const r of heldActionRecords(out.ledger)) {

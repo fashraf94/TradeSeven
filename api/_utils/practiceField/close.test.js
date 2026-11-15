@@ -345,9 +345,18 @@ describe('corporate actions: once per ledger', () => {
     expect(row.marks.AAPL).toMatchObject({ mark: 233.11, quality: 'carried_forward' });
     expect(row.markedValue).toBe(prior.markedValue);
     expect(row.fullQuality).toBe(false);
-    // A news-sized move is trusted.
+    // Fix round 3 (Astra T2A-D01; changed expectation): the suspicion is RECORDED and is not cleared by a later
+    // news-sized price — before this round the mark went fresh here (209.8). Only a listed row that explains the move, or
+    // the founder, releases it.
     await closeOn(db, bookId, DAYS.d3, { AAPL: 209.8, SPY: 599.4 });
-    expect(getRow(db, bookId, r.ideaId, DAYS.d3).marks.AAPL).toMatchObject({ mark: 209.8, quality: 'vendor_time' });
+    expect(getRow(db, bookId, r.ideaId, DAYS.d3).marks.AAPL).toMatchObject({ mark: 233.11, quality: 'carried_forward' });
+    expect(getIdea(db, bookId, r.ideaId).ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: DAYS.d2, frozenMark: 233.11, resolvedBy: null, resolvedAt: null });
+    // A news-sized move with no suspicion before it is trusted.
+    const fresh = await seedBook();
+    const f = await admitAndEnter(fresh.db, fresh.bookId, { contract: contractOf(), quotes: entryQuotes('AAPL', 'SPY') });
+    await closeOn(fresh.db, fresh.bookId, DAYS.d1, { AAPL: 233.11, SPY: 599.02 });
+    await closeOn(fresh.db, fresh.bookId, DAYS.d2, { AAPL: 209.8, SPY: 599.4 });
+    expect(getRow(fresh.db, fresh.bookId, f.ideaId, DAYS.d2).marks.AAPL).toMatchObject({ mark: 209.8, quality: 'vendor_time' });
   });
 });
 
