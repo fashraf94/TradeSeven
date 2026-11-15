@@ -8,7 +8,10 @@
 //               the deferred ids); wall time by model calls; sessions short of 26 run records (a platform-killed
 //               run leaves none); least-squares fits of wallMs on modelCalls (one regressor, and two: model calls
 //               and the other evaluated battles); the zero-battle runs (the pre-loop work alone).
-//   B2 ticks    the evaluation entries (agentBattles.evaluations[]: tickMs, buildMs, callMs), split by whether the
+//   B1b mix     each tick record assigned to its run by time; per run, agent-mode and League model checks, CPU-seat
+//               ticks and human ticks without a model call; a four-regressor fit so each kind gets its own pace; the
+//               agent-mode checks per run, and the runs that held two or more, in full (start time and counts only).
+//   B2 ticks   the evaluation entries (agentBattles.evaluations[]: tickMs, buildMs, callMs), split by whether the
 //               tick dispatched a model call (callMs present) or not; for model-calling ticks the remainder
 //               tickMs − buildMs − callMs and the share of tickMs spent in the call; the permanent tick records
 //               (agentBattles/{id}/ticks: callEnvelope tokens and callMs, exitReason, capture cost); ticks per
@@ -242,6 +245,9 @@ export function mixRead(runs, ticks) {
     soloAgentRuns: dist(soloAgent.map((r) => r.wallMs)),
     leagueOnlyRunsPerCall: dist(soloLeagueDays.map((r) => r.wallMs / r.leagueModel)),
     agentRunsByCalls: [1, 2, 3, 4].map((c) => ({ calls: c, ...dist(ordered.filter((r) => r.agentModel === c && r.leagueModel === 0).map((r) => r.wallMs)) })).filter((d) => d.n),
+    // Every run, League or not: how many agent-mode model checks it held, and the runs that held two or more in full.
+    agentModelHistogram: ordered.reduce((h, r) => { h[r.agentModel] = (h[r.agentModel] || 0) + 1; return h; }, {}),
+    multiAgentRuns: ordered.filter((r) => r.agentModel >= 2).map((r) => ({ startedAt: r.startedAt, wallMs: r.wallMs, agentModel: r.agentModel, leagueModel: r.leagueModel, cpuTicks: r.cpuTicks, humanNoModel: r.humanNoModel })),
     noModelRunsWallPerBattle: dist(noModelWithBattles.map((r) => r.wallMs / r.battlesTotal)),
     noModelRunsHumanOnly: dist(noModelWithBattles.filter((r) => r.cpuTicks === 0 && r.humanNoModel > 0).map((r) => r.wallMs / r.humanNoModel)),
   };
@@ -453,6 +459,10 @@ export function render(read) {
   L.push(`- Runs with League model checks and no agent-mode check, wall ÷ League checks: n = ${M.leagueOnlyRunsPerCall.n}, median ${s1(M.leagueOnlyRunsPerCall.median)}, p90 ${s1(M.leagueOnlyRunsPerCall.p90)} (CPU seats ride along).`);
   L.push(`- Runs with battles but no model call, wall ÷ battles: n = ${M.noModelRunsWallPerBattle.n}, median ${s1(M.noModelRunsWallPerBattle.median)}, p90 ${s1(M.noModelRunsWallPerBattle.p90)}, max ${s1(M.noModelRunsWallPerBattle.max)}; of those, human-only runs, wall ÷ human ticks: n = ${M.noModelRunsHumanOnly.n}, median ${s1(M.noModelRunsHumanOnly.median)}, max ${s1(M.noModelRunsHumanOnly.max)}.`, '');
   L.push(table(['Agent-mode model checks in the run (no League)', 'Runs', 'Wall median', 'Wall p90', 'Wall max'], M.agentRunsByCalls.map((d) => [d.calls, d.n, s1(d.median), s1(d.p90), s1(d.max)])), '');
+  L.push(`Agent-mode model checks per run, all runs: ${Object.entries(M.agentModelHistogram).map(([k, v]) => `${k} → ${v} run(s)`).join(' · ')}.`, '');
+  if (M.multiAgentRuns.length) {
+    L.push(table(['Started (UTC)', 'Wall', 'Agent-mode model checks', 'League model checks', 'CPU ticks', 'Human ticks, no model'], M.multiAgentRuns.map((r) => [r.startedAt, s1(r.wallMs), r.agentModel, r.leagueModel, r.cpuTicks, r.humanNoModel])), '');
+  }
   const T = read.ticks;
   L.push('### B2. Per tick', '');
   L.push('**Evaluation entries** (`agentBattles.evaluations[]`; an entry is written only on the triggered path, so a no-trigger or CPU tick has none). `tickMs` runs from the lock to just before the final battle write.', '');
