@@ -93,6 +93,10 @@ function namesTakenBy(ideas) {
   for (const idea of ideas) {
     for (const sym of idea.contract?.names || []) taken.set(sym, idea.ideaId);
     for (const sym of Object.keys(idea.ledger?.holdings || {})) taken.set(sym, idea.ideaId);
+    // A rename that waits for its holding's share basis (Astra T2A-01; ledger.js) still owns its target: had it
+    // applied, the target would be this idea's holding. Left free, another idea could take the name the rename then
+    // needs, and R-36 would block it.
+    for (const h of Object.values(idea.ledger?.holdings || {})) if (typeof h?.deferredRename?.to === 'string') taken.set(h.deferredRename.to, idea.ideaId);
   }
   return taken;
 }

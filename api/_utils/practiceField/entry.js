@@ -251,8 +251,12 @@ export async function enterIdea(db, { bookRef, ideaId, tick, nowIso }) {
     let bookCashCents = toCents(book.portfolio.cash);
     let frictionCents = toCents(book.portfolio.frictionPaidCum || 0);
     const decisions = [];
+    // A waiting rename's target is another idea's too (Astra T2A-01; admission.js namesTakenBy).
+    const waitingTargets = new Map(others.flatMap((o) => Object.values(o?.ledger?.holdings || {})
+      .filter((h) => typeof h?.deferredRename?.to === 'string').map((h) => [h.deferredRename.to, o.ideaId])));
     for (const r of entry.receipts.idea) {
       if (Object.hasOwn(positions, r.symbol)) throw new PracticeFieldError('ticker_held_by_other_idea', { symbol: r.symbol, ideaId: positions[r.symbol].ideaId ?? null });
+      if (waitingTargets.has(r.symbol)) throw new PracticeFieldError('ticker_held_by_other_idea', { symbol: r.symbol, ideaId: waitingTargets.get(r.symbol) });
       bookCashCents -= toCents(r.executedSizeUsd);
       frictionCents += toCents(r.friction.frictionPaid);
       positions[r.symbol] = {

@@ -12,6 +12,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { applyLedgerActions, newLedger, renameDeferralSymbols } from './ledger.js';
 import { ideaCoveragePlanFromLedgers } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
+import { admitIdea } from './admission.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
@@ -622,33 +623,79 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     expect(Object.keys(applyLedgerActions(clean, due, { date: S[2] }).ledger.holdings)).toEqual(['AAPL']);
   });
 
-  it('R-36 is checked when a deferred rename is finally applied: into a symbol another idea of the book now holds, it stays unapplied, with an alert', async () => {
+  /** A holds AAPL; at S[1] a split conflict and AAPL → AMD: the rename waits. `beforeWait` runs before that close. */
+  async function waitingOnAmd(beforeWait = async () => {}) {
     const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
     const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
     const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
     await closeDay(ctx, S[0]);
+    const extra = await beforeWait(ctx);
     const price = roundUsd(BASE.AAPL / 1.5);
     await closeDay(ctx, S[1], { AAPL: { price, corporateActions: [basisRow('split', 1.5), basisRow('split', 1.6), rename('AAPL', 'AMD')] } });
     expect(ideaOf(ctx).ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'AMD', deferredOn: S[1] });
-    // Another idea of the book enters AMD while the rename waits.
-    const b = await admitAndEnter(db, bookId, {
-      contract: contractOf({ slot: 'medium', names: ['AMD'], capitalUsd: 15000 }), opId: 'idea-2', admitIso: etIsoOf(S[1], 11, 0), quotes: quotes({ AAPL: price }), date: S[2], slot: 'midday',
+    return { ctx, price, extra };
+  }
+
+  it('while a rename waits, its TARGET is the waiting idea\'s at ADMISSION (review finding 1): another idea naming it is refused, as it would be had the rename applied', async () => {
+    const { ctx } = await waitingOnAmd();
+    const late = await admitIdea(ctx.db, { bookId: ctx.bookId, opId: 'idea-late', contract: contractOf({ slot: 'medium', names: ['AMD'], capitalUsd: 15000 }), nowIso: etIsoOf(S[1], 18, 0) });
+    expect(late.ok).toBe(false);
+    expect(late.refusals).toEqual([expect.objectContaining({ code: 'ticker_held_by_other_idea', symbol: 'AMD', ideaId: ctx.ideaId })]);
+  });
+
+  it('…and at ENTRY: an idea naming the target, admitted before the wait began, does not buy it; nothing is written', async () => {
+    const { ctx, price, extra: early } = await waitingOnAmd(async (c) => {
+      // Admitted on S[1] before the close (it starts on S[2]): nothing reserved AMD then.
+      const r = await admitIdea(c.db, { bookId: c.bookId, opId: 'idea-early', contract: contractOf({ slot: 'medium', names: ['AMD'], capitalUsd: 15000 }), nowIso: etIsoOf(S[1], 11, 0) });
+      expect(r).toMatchObject({ ok: true, startSession: S[2] });
+      return r;
     });
-    expect(b.entry.outcome).toBe('entered');
-    recon(ctx);
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-    // The share basis settles, and the feed no longer lists the rename: the record would apply it — into AMD.
-    const out = await closeDay(ctx, S[2], { AAPL: { price, corporateActions: [basisRow('split', 1.5)] } });
+    const before = bookOf(ctx).portfolio;
+    const w = await win(ctx, S[2], 'open30', { AAPL: undefined, AMD: price });
+    expect(w.entries.entered).toBe(0);
+    expect(getIdea(ctx.db, ctx.bookId, early.ideaId).status).toBe('accepted');
+    expect(bookOf(ctx).portfolio).toEqual(before);
+    errors.mockRestore();
+  });
+
+  it('R-36 on the record path: a deferred rename taken from its record into a symbol another idea holds is not applied, keeps its record and is reported blocked (ledger.js)', () => {
+    const record = { from: 'AAPL', to: 'AMD', actionId: `ticker_change_AAPL_${S[1]}`, effectiveDate: S[1], deferredOn: S[1] };
+    const held = { AAPL: { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, lastMarkAsOf: null, lastMarkSource: 'snapshot', sector: 'Technology', openedAt: S[0], deferredRename: record } };
+    const ledger = { ...newLedger('idea', 1000), cash: 0, holdings: held };
+    // The feed no longer lists the rename, and nothing holds the share basis now.
+    const blocked = applyLedgerActions(ledger, {}, { date: S[2], renameTargetsTaken: new Set(['AMD']) });
+    expect(Object.keys(blocked.ledger.holdings)).toEqual(['AAPL']);
+    expect(blocked.ledger.holdings.AAPL.deferredRename).toEqual(record);
+    expect(blocked.renamesBlocked).toEqual([{ from: 'AAPL', to: 'AMD', actionId: record.actionId }]);
+    expect([...blocked.unresolved]).toEqual(['AAPL']);
+    expect(blocked.ledger.appliedActionIds).toEqual([]);
+    // With the target free, the record applies it, receipted as deferred.
+    const free = applyLedgerActions(ledger, {}, { date: S[2], renameTargetsTaken: new Set() });
+    expect(Object.keys(free.ledger.holdings)).toEqual(['AMD']);
+    expect(free.ledger.holdings.AMD).not.toHaveProperty('deferredRename');
+    expect(free.renames).toEqual([{ from: 'AAPL', to: 'AMD', actionId: record.actionId, deferred: true, deferredOn: S[1] }]);
+  });
+
+  it('the choice is the IDEA\'s, through the close (review finding 2): when only the comparison cannot apply a share-basis action, the idea\'s own ledger waits too — the idea, its line and the book are not renamed', async () => {
+    // A frozen-basket comparison that holds the idea's name, with a different quantity: a reverse split so extreme it
+    // rounds the comparison's smaller holding to nothing (not applied, so unresolved there) but not the idea's.
+    const { db, bookId, bookRef } = await seedBook({ archetypeCodeId: 'degen' });
+    const a = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'], comparison: { type: 'frozen_basket', symbols: ['AAPL', 'MSFT'] } }), quotes: quotes(), date: S[0] });
+    const ctx = { db, bookId, bookRef, ideaId: a.ideaId };
+    await closeDay(ctx, S[0]);
+    const r = 1e-8;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await closeDay(ctx, S[1], { AAPL: { price: roundUsd(BASE.AAPL / r), corporateActions: [basisRow('reverse_split', r), rename('AAPL', 'AAPLX')] }, AAPLX: roundUsd(BASE.AAPL / r) });
     const idea = ideaOf(ctx);
-    expect(Object.keys(idea.ledger.holdings)).toEqual(['AAPL']);
-    expect(idea.ledger.appliedActionIds).toEqual([`split_AAPL_${S[1]}`]);
-    expect(idea.ledger.holdings.AAPL.deferredRename).toMatchObject({ to: 'AMD', deferredOn: S[1] });
-    expect(out.alerts.filter((x) => /PRACTICE_FIELD_RENAME_BLOCKED/.test(x))).toEqual([
-      `PRACTICE_FIELD_RENAME_BLOCKED ${ctx.ideaId} idea AAPL — a ticker change into a symbol another idea of the book holds is not applied; the holding is valued at its carried mark`,
-      `PRACTICE_FIELD_RENAME_BLOCKED ${ctx.ideaId} comparison AAPL — a ticker change into a symbol another idea of the book holds is not applied; the holding is valued at its carried mark`,
-    ]);
-    expect(rowOf(ctx, S[2]).marks.AAPL.quality).toBe('carried_forward');
-    expect(Object.keys(getBook(db, bookId).portfolio.positions).sort()).toEqual(['AAPL', 'AMD']);
+    expect(idea.ledger.appliedActionIds).toEqual([`reverse_split_AAPL_${S[1]}`]); // the idea's own ledger applied it…
+    expect(idea.comparisonLedger.appliedActionIds).toEqual([]); // …the comparison's could not
+    for (const ledger of [idea.ledger, idea.comparisonLedger]) {
+      expect(ledger.holdings.AAPL?.deferredRename, ledger.kind).toMatchObject({ from: 'AAPL', to: 'AAPLX' });
+      expect(ledger.holdings).not.toHaveProperty('AAPLX');
+    }
+    expect(idea.lines.map((l) => l.symbol)).toEqual(['AAPL']);
+    expect(Object.keys(bookOf(ctx).portfolio.positions)).toEqual(['AAPL']);
     errors.mockRestore();
   });
 });
