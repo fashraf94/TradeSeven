@@ -1,0 +1,99 @@
+// src/components/Research/BattleResearch/groups.js
+//
+// Battle Research Slice 1 — A RESULT'S MEMBERSHIP (spec
+// docs/specs/BATTLE_RESEARCH_SLICE1_SPEC_V1.md BRS-4, BRS-6, BRS-15). PURE and
+// NODE-CLEAN. The two groups are battleUniverse.researchGroupsOf's (the bench
+// roster's own walk, extended — never re-derived); each name keeps its group
+// tags and its eligibility, which is callRecords/swappable.js canComeIn (the
+// swap's own five facts, restated once for every surface) at the result's
+// `takenAt`: OUT is the incumbent on the weakest question, none on a group
+// question.
+//
+// A result freezes the WHOLE membership — both groups, deduped — so a group
+// switch or a condition re-runs over the same frozen evidence and reads
+// nothing (BRS-14); the step's view picks the group.
+
+import { researchGroupsOf } from '../../../data/battleUniverse.js';
+import { canComeIn } from '../../../../api/_utils/callRecords/swappable.js';
+import { VALID_CRYPTO_SYMBOLS } from '../../../../api/_utils/agentCryptoAssets.js';
+
+const CRYPTO_SUFFIX = /\.CC$/i;
+const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * Is a bench-list name crypto: the crypto slot, a bench row's isCrypto, a .CC suffix, or a bare ticker on
+ * the platform's crypto list (review BR1-5: a hot-bench or equipped-list "BTC" is crypto too — the
+ * agentReflectionUtils precedent). A crypto is never a stock quote (BRS-9).
+ */
+export function isCryptoName(battle, symbol) {
+  const bench = battle?.portfolio?.bench;
+  if (bench?.crypto?.symbol === symbol) return true;
+  const row = (Array.isArray(bench?.stocks) ? bench.stocks : []).find((s) => s?.symbol === symbol);
+  if (row?.isCrypto === true) return true;
+  return CRYPTO_SUFFIX.test(symbol || '') || VALID_CRYPTO_SYMBOLS.includes(symbol);
+}
+
+/** The persisted bench row's cooldown, as epoch ms (a lock names its time). */
+function cooldownMsOf(battle, symbol) {
+  const bench = battle?.portfolio?.bench;
+  const row = (Array.isArray(bench?.stocks) ? bench.stocks : []).find((s) => s?.symbol === symbol)
+    ?? (bench?.crypto?.symbol === symbol ? bench.crypto : null);
+  const ms = row?.cooldownUntil ? Date.parse(row.cooldownUntil) : Number.NaN;
+  return finite(ms) ? ms : null;
+}
+
+/**
+ * BRS-15 — one name's eligibility at `atMs`: canComeIn against OUT (the incumbent, or none).
+ * @returns {{ ok: boolean, reason: string|null, lockedUntil: number|null }}
+ */
+export function eligibilityOf(battle, { out = null, slot = null, symbol, atMs }) {
+  const v = canComeIn({ battle, out, slot, inSymbol: symbol, atMs });
+  if (!v.ok) return { ok: false, reason: v.reason, lockedUntil: v.reason === 'pick_locked' ? cooldownMsOf(battle, symbol) : null };
+  // canComeIn reads a hot-bench or equipped-list name as a stock (agentSwapExecution's own rule); Battle
+  // Research names a bare "BTC" crypto (isCryptoName, review BR1-5), so it never says such a name can come in
+  // for a STOCK holding — the class answer canComeIn gives a known crypto (refuter BR1-5).
+  if (out !== null && isCryptoName(battle, symbol) && !heldIsCrypto(battle, out)) return { ok: false, reason: 'pick_wrong_class', lockedUntil: null };
+  return { ok: true, reason: null, lockedUntil: null };
+}
+
+/** Is the held name `symbol` a crypto (its asset's own flag, else isCryptoName's rules)? */
+function heldIsCrypto(battle, symbol) {
+  for (const tier of ['star', 'core', 'support']) {
+    const a = (Array.isArray(battle?.portfolio?.[tier]) ? battle.portfolio[tier] : []).find((x) => x?.symbol === symbol);
+    if (a) return a.isCrypto === true || isCryptoName(battle, symbol);
+  }
+  return isCryptoName(battle, symbol);
+}
+
+/**
+ * The result's membership: every name on the bench and the agent watchlist (the union, bench
+ * first, in roster order), each with its tags, its class and its eligibility; and the held names
+ * the lists carry, left out as `held`.
+ * `holdings` (the held measured stocks a comparison can pick): each name's eligibility against EACH of
+ * them too (`vs`), at the same instant — so a comparison with a picked holding reads the frozen answer for
+ * THAT holding, never the group question's out-less one (review BR2-1). The incumbent (OUT) is never a
+ * member: it is the reference line, not a candidate (review BR1-1).
+ * @param {object} battle
+ * @param {{ out?: string|null, slot?: string|null, atMs: number, holdings?: Array<{ symbol, tier }> }} p
+ */
+export function membershipOf(battle, { out = null, slot = null, atMs, holdings = [] }) {
+  const g = researchGroupsOf(battle);
+  const order = [...g.bench, ...g.agentWatchlist.filter((s) => !g.bench.includes(s))].filter((s) => s !== out);
+  return {
+    membership: order.map((symbol) => ({
+      symbol,
+      groups: [...g.membership[symbol]],
+      isCrypto: isCryptoName(battle, symbol),
+      eligibility: eligibilityOf(battle, { out, slot, symbol, atMs }),
+      vs: Object.fromEntries(holdings.map((h) => [h.symbol, eligibilityOf(battle, { out: h.symbol, slot: h.tier ?? null, symbol, atMs })])),
+    })),
+    excluded: g.held.map((symbol) => ({ symbol, reason: 'held' })),
+  };
+}
+
+/** Does a member belong to the view's group? 'union' is the weakest and moving questions' whole set. */
+export function inGroup(member, group) {
+  if (group === 'bench') return member.groups.includes('bench');
+  if (group === 'agent_watchlist') return member.groups.includes('agent_watchlist');
+  return true;
+}

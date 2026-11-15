@@ -29,7 +29,8 @@ import ResearchPanel from './ResearchPanel';
 export function AreaBody({ area, sections, actions }) {
   // Huddle S1: the game plan's panel only when the hub hands a Huddle section (flag on); otherwise the reserved line.
   if (area === HUB_AREAS.PARTNERSHIP) return sections.huddlePartnership ? <PartnershipPanel huddle={sections.huddlePartnership} onOpenHuddle={actions.openHuddle} onRetry={actions.retryHuddle} /> : <PartnershipPanel />;
-  if (area === HUB_AREAS.RESEARCH) return <ResearchPanel research={sections.research} onOpenForge={actions.openResearchForge} onRetry={actions.retryResearch} />;
+  // Amendment E V1.1 §3.1: the research door, only when the hub hands one (an admitted player); otherwise the panel as it was.
+  if (area === HUB_AREAS.RESEARCH) return <ResearchPanel research={sections.research} onOpenForge={actions.openResearchForge} onRetry={actions.retryResearch} door={sections.researchDoor ?? null} onWork={actions.openResearch} onContinue={actions.continueResearch} onRetryDoor={actions.retryResearchDoor} />;
   return (
     <LoadoutPanel
       loadout={sections.loadout}

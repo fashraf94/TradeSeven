@@ -551,12 +551,11 @@ export function sortBenchRows(rows, sort = 'rank') {
   return list.sort((a, b) => byRank(a, b) || bySym(a, b));
 }
 
-/** "+1.2%" / "−0.8%" / "0.0%"; null without a number. */
-export function pctText(v) {
-  if (!finite(v)) return null;
-  const sign = v > 0 ? '+' : v < 0 ? '−' : '';
-  return `${sign}${Math.abs(v).toFixed(1)}%`;
-}
+// The day % (Battle Research Slice 1): moved to its own import-free module so the research engine's
+// Node-clean modules can take it; re-exported here unchanged (the agentName.js precedent).
+import { pctText } from './pctText.js';
+
+export { pctText };
 
 /**
  * The agent's own names, live (§4's eyeing names — labelled by their lists): the newest evaluation's

@@ -306,6 +306,18 @@ const DARK_BY_DESIGN = {
   //   each their own one-line founder PR after merge, never a build PR; each
   //   step moves the pin row in researchModalSheetFlag.test.js in the same
   //   commit (BUILD_RULES §2). Rollback: one step back with its pin row.
+  // BATTLE_RESEARCH_MODE intentionally ABSENT, and it must stay absent: Battle
+  // Research Slice 1 (spec docs/specs/BATTLE_RESEARCH_SLICE1_SPEC_V1.md BRS-3)
+  // is a STRING TRI-STATE ('off' | 'allowlist' | 'on') beside the shell's flag
+  // in src/config/researchModalFlags.js, so buildFlagMap never sees it and the
+  // integrity test below would fail the key outright. Noted HERE so a flip is
+  // loud in the place a reader looks for the dark runway;
+  // battleResearchFlag.test.js asserts both halves.
+  //   Runway: 'off' ships with the engine and surface builds (PRs A and B,
+  //   dark); 'allowlist' is PR C; 'on' is its own one-line founder PR after
+  //   the live checklist. Each step moves the pin row in
+  //   battleResearchFlag.test.js in the same commit (BUILD_RULES §2).
+  //   Rollback: one step back with its pin row.
   // SHARED_RESEARCH_MODE intentionally ABSENT, and it must stay absent: Shared
   // Research "Work an idea" (spec docs/specs/
   // 20261109_SHARED_RESEARCH_B1_B2_BUILD_SPEC_V1_2.md §6.1, §6.2) is a STRING
