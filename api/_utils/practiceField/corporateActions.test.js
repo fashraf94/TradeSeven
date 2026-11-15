@@ -1024,21 +1024,53 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
         const day1 = { AAPL: [row, cash] };
         const holds = shareBasisHolds([ledger], day1, { date: S[2] });
         expect([...holds.keys()]).toEqual(['AAPL']);
+        // On its own state alone (no idea-wide set), the ledger holds it too.
+        expect(applyLedgerActions(ledger, day1, { date: S[2] }).ledger.cash).toBe(0);
         const a = applyLedgerActions(ledger, day1, { date: S[2], holds });
         expect(a.ledger.cash).toBe(0);
         expect(a.closedByCash).toEqual([]);
-        expect(a.ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: DELIST_ID, heldBecause: [{ actionId: deriveActionId(row), type: row.type, effectiveDate: S[1], ledger: 'idea' }] })]);
+        const cause = { actionId: deriveActionId(row), type: row.type, effectiveDate: S[1], ledger: 'idea' };
+        expect(a.ledger.holdings.AAPL.heldActions).toEqual([
+          expect.objectContaining({ actionId: cause.actionId, refused: expect.any(String), heldBecause: [] }), // the refused action itself (review F2)
+          expect.objectContaining({ actionId: DELIST_ID, heldBecause: [cause] }),
+        ]);
         expect(a.unresolved.has('AAPL')).toBe(true);
         // The feed drops both rows: nothing settled the cause, so the record still waits.
         const holds2 = shareBasisHolds([a.ledger], {}, { date: S[3] });
         expect([...holds2.keys()]).toEqual(['AAPL']);
         const b = applyLedgerActions(a.ledger, {}, { date: S[3], holds: holds2 });
         expect(b.ledger.cash).toBe(0);
-        expect(b.ledger.holdings.AAPL.heldActions).toHaveLength(1);
+        expect(b.ledger.holdings.AAPL.heldActions).toHaveLength(2);
         expect(b.unresolved.has('AAPL')).toBe(true);
         expect(saleHeldBackBy(b.ledger, 'AAPL', { date: S[4], symbols: { AAPL: { price: 60, complete: true } } }, { date: S[4] })).toBe('corporate_action_unsettled');
       });
+
+      it(`${name}, its row DROPPED BEFORE any cash action is listed (review F2): it is remembered, the sale stays held, and a cash delisting listed later still waits — never paid on the unadjusted count`, () => {
+        const ledger = ledgerOf('idea', over);
+        const s1 = applyLedgerActions(ledger, { AAPL: [row] }, { date: S[1], holds: shareBasisHolds([ledger], { AAPL: [row] }, { date: S[1] }) });
+        expect(s1.ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: deriveActionId(row), refused: expect.any(String) })]);
+        const s2 = applyLedgerActions(s1.ledger, {}, { date: S[2], holds: shareBasisHolds([s1.ledger], {}, { date: S[2] }) });
+        expect(s2.unresolved.has('AAPL')).toBe(true);
+        expect(saleHeldBackBy(s2.ledger, 'AAPL', { date: S[3], symbols: { AAPL: { price: 60, complete: true } } }, { date: S[3] })).toBe('corporate_action_unsettled');
+        const later = { AAPL: [cashDelisting(S[3])] };
+        const s3 = applyLedgerActions(s2.ledger, later, { date: S[3], holds: shareBasisHolds([s2.ledger], later, { date: S[3] }) });
+        expect(s3.ledger.cash).toBe(0);
+        expect(s3.closedByCash).toEqual([]);
+        expect(s3.ledger.holdings.AAPL.shares).toBe(10);
+      });
     }
+
+    it('a split row whose ticker is in LOWER CASE is applied to the holding\'s own key (review F3) — never read as rounding to nothing, so nothing after it waits for ever', () => {
+      const ledger = ledgerOf('idea');
+      const feed = { AAPL: [{ type: 'split', ticker: 'aapl', ratio: 2, effectiveDate: S[1], source: 'founder_action' }] };
+      const out = applyLedgerActions(ledger, feed, { date: S[1], holds: shareBasisHolds([ledger], feed, { date: S[1] }) });
+      expect(out.ledger.holdings.AAPL.shares).toBe(20);
+      expect(out.ledger.appliedActionIds).toEqual([`split_AAPL_${S[1]}`]);
+      expect(out.ledger.holdings.AAPL.heldActions).toBeUndefined();
+      expect(out.shareBasisChanges).toEqual([{ ticker: 'AAPL', ratio: 2, actionId: `split_AAPL_${S[1]}` }]);
+      const div = { AAPL: [{ type: 'cash_dividend', ticker: 'AAPL', effectiveDate: S[2], amount: 1 }] };
+      expect(applyLedgerActions(out.ledger, div, { date: S[2], holds: shareBasisHolds([out.ledger], div, { date: S[2] }) }).ledger.dividendsUsd).toBe(20);
+    });
 
     it('COMPARISON-ONLY: when only the comparison has the basis unresolved, the idea\'s own cash delisting waits too (the idea decides), and the idea\'s sale is held (otherLedgers)', () => {
       const idea = ledgerOf('idea');
@@ -1057,6 +1089,8 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
       const snap = { date: S[2], symbols: { AAPL: { price: 60, complete: true } } };
       expect(saleHeldBackBy(idea, 'AAPL', snap, { date: S[2] })).toBe(null);
       expect(saleHeldBackBy(idea, 'AAPL', snap, { date: S[2], otherLedgers: [comparison] })).toBe('corporate_action_unsettled');
+      // On its own state, a ledger with the conflict (the feed no longer listing it) values the symbol at its carried mark.
+      expect(applyLedgerActions(comparison, {}, { date: S[2] }).unresolved.has('AAPL')).toBe(true);
     });
   });
 
@@ -1083,6 +1117,8 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     await closeDay(ctx, S[1], { AAPL: { price: roundUsd(down / r), corporateActions: [split] } });
     expect(ideaOf(ctx).ledger.appliedActionIds).toEqual([`reverse_split_AAPL_${S[1]}`]); // the idea's own ledger applied it…
     expect(ideaOf(ctx).comparisonLedger.appliedActionIds).toEqual([]); // …its comparison could not
+    // Nothing is held yet, and still the idea's own holding is at its carried mark: the idea's share basis is in doubt.
+    expect(rowOf(ctx, S[1]).marks.AAPL.quality).toBe('carried_forward');
     // The window: the feed still lists the reverse split. The idea's own count is settled; its comparison's is not.
     await daily(ctx, S[2], ['AAPL', 'MSFT', 'SPY']);
     const w = await win(ctx, S[2], 'open30', { AAPL: { price: roundUsd(down / r), corporateActions: [split] } });
@@ -1121,16 +1157,18 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     const refused = basis('split', -2, S[1]);
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     await closeQ(ctx, S[1], { ...Q, AAPL: { price: 100, corporateActions: [refused, cashDelisting(S[1])] } });
-    expect(ideaOf(ctx).ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: `delisting_AAPL_${S[1]}` })]);
+    expect(ideaOf(ctx).ledger.holdings.AAPL.heldActions).toEqual([
+      expect.objectContaining({ actionId: `split_AAPL_${S[1]}`, refused: 'bad_ratio' }), expect.objectContaining({ actionId: `delisting_AAPL_${S[1]}` }),
+    ]);
     for (let i = 2; i <= 10; i += 1) await closeQ(ctx, S[i], Q); // the rows leave the feed; the record stays
     errors.mockRestore();
     const idea = ideaOf(ctx);
     expect(idea.contract.schedule.dueSession).toBe(S[10]);
     expect(idea.status).toBe('settled');
-    expect(idea.ledger.holdings.AAPL.heldActions).toHaveLength(1);
+    expect(idea.ledger.holdings.AAPL.heldActions.map((r) => r.actionId)).toEqual([`split_AAPL_${S[1]}`, `delisting_AAPL_${S[1]}`]);
     expect(idea.result.economicResult).toBe('unmeasurable');
     expect(idea.result.economic.unmeasurableBecause).toEqual(expect.arrayContaining(['idea_unsettled_corporate_action', 'comparison_unsettled_corporate_action']));
-    expect(idea.result.processDetail.blockedBy).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'endpoint_unsettled_corporate_action', actions: [`delisting_AAPL_${S[1]}`] })]));
+    expect(idea.result.processDetail.blockedBy).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'endpoint_unsettled_corporate_action', actions: [`split_AAPL_${S[1]}`, `delisting_AAPL_${S[1]}`] })]));
     expect(bookOf(ctx).slots.short).toBe(ctx.ideaId);
   });
 
@@ -1154,7 +1192,7 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     it('the rename applies, and the waiting sale follows the holding to its new ticker; the sale fills once a price exists under it', async () => {
       const ctx = await oneName();
       const shares = ideaOf(ctx).ledger.holdings.AAPL.shares;
-      const out = await closeQ(ctx, S[1], { ...Q, AAPL: { price: 95, corporateActions: [delisting('AAPL', undefined, S[1]), rename('AAPL', 'AAPLX', S[1])] } });
+      const out = await closeQ(ctx, S[1], { ...Q, AAPL: { price: 95, corporateActions: [delisting('AAPL', undefined, S[1]), rename('AAPL', 'AAPLX', S[1])] }, AAPLX: 95 });
       const idea = ideaOf(ctx);
       expect(Object.keys(idea.ledger.holdings)).toEqual(['AAPLX']);
       expect(idea.ledger.holdings.AAPLX).toMatchObject({ shares, exitPending: { reason: 'delisting', session: S[1], actionId: `delisting_AAPL_${S[1]}` } });

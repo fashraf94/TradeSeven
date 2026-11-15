@@ -394,7 +394,12 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     return (out.get(sym) || []).sort(byItem);
   };
   // Not applied, not settled: the holding keeps a record of what it is owed, refreshed to the payload the feed lists now.
-  const hold = (sym, action, causes) => {
+  // A share-basis action this ledger CANNOT apply (the applier refuses its ratio, it would round the holding to nothing,
+  // or the holding has no entitlement data) is recorded the same way, `refused` naming why (review F2): otherwise it is
+  // forgotten the moment the feed drops its row, the count reads settled, and a later cash action pays on the
+  // unadjusted count. Such a record is never replayed — only a listed row of its id can settle it — so it holds the
+  // holding until the feed corrects it or the founder acts (C-6).
+  const hold = (sym, action, causes, refused = null) => {
     unresolved.add(sym);
     if (SHARE_BASIS_TYPES.has(action.type)) addItem(blocked, sym, itemOf(action, kind));
     const h = next.holdings[sym];
@@ -403,12 +408,16 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     const record = {
       actionId: action.actionId, type: action.type, ticker: sym, effectiveDate: action.effectiveDate,
       ratio: action.ratio ?? null, amount: action.amount ?? null, cashPerShare: action.cashPerShare ?? null, source: action.source ?? null,
-      heldOn: prior?.heldOn ?? date, heldBecause: causes,
+      heldOn: prior?.heldOn ?? date, heldBecause: causes, ...(refused ? { refused } : {}),
     };
     const list = [...(h.heldActions || []).filter((r) => r.actionId !== action.actionId), record].sort(byDatePhaseId);
     next.holdings = { ...next.holdings, [sym]: { ...h, heldActions: list } };
     held.push(record);
   };
+
+  for (const a of noEntitlementData) {
+    if (SHARE_BASIS_TYPES.has(a.type) && !conflicting.has(a.actionId)) hold(upper(a.ticker), a, [], 'no_entitlement_data');
+  }
 
   // The feed's rows, and every held action whose row the feed no longer lists (its record stands in for it). A listed
   // row of a held id supersedes the record.
@@ -416,7 +425,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   const fromRecords = [];
   for (const [sym, h] of Object.entries(next.holdings)) {
     for (const r of h?.heldActions || []) {
-      if (settled.has(r.actionId) || conflicting.has(r.actionId) || listedIds.has(r.actionId)) continue;
+      if (r.refused || settled.has(r.actionId) || conflicting.has(r.actionId) || listedIds.has(r.actionId)) continue;
       fromRecords.push(actionOfRecord(sym, r));
     }
   }
@@ -424,13 +433,13 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
 
   for (const action of candidates) {
     if (!firstOf(action)) continue;
-    if (!APPLICABLE_TYPES.has(action.type)) { unresolved.add(action.ticker); continue; }
+    if (!APPLICABLE_TYPES.has(action.type)) { unresolved.add(upper(action.ticker)); continue; }
     // Ticker changes are taken last, below (T2A-01): after every share-basis action of this call.
     if (action.type === 'ticker_change') { renameRows.push(action); continue; }
     // A delisting with no cash amount is NOT applied (E11): the engine's applier would force a sale at the carried
     // mark. It is settled by nobody, so a later row that does carry the cash still applies, once.
     if (action.type === 'delisting' && delistingCashOf(action) === null) {
-      unresolved.add(action.ticker);
+      unresolved.add(upper(action.ticker));
       delistedWaiting.push({ ticker: upper(action.ticker), actionId: action.actionId, effectiveDate: action.effectiveDate });
       continue;
     }
@@ -447,14 +456,14 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     const heldBefore = next.holdings[sym] || null;
     const out = applyCorporateAction({ positions: next.holdings, cash: next.cash }, action);
     if (!out.ok) {
-      unresolved.add(action.ticker);
-      if (SHARE_BASIS_TYPES.has(action.type)) addItem(blocked, sym, itemOf(action, kind));
+      unresolved.add(sym);
+      if (SHARE_BASIS_TYPES.has(action.type)) hold(sym, action, [], out.reason ?? 'not_applicable');
       continue;
     }
     if (action.type === 'delisting') {
       // The engine credited shares × the deal's cash and dropped the holding. It must have priced at the cash amount
       // itself — never at a mark — or nothing is applied.
-      if (!out.forcedClose || out.forcedClose.mark !== delistingCashOf(action)) { unresolved.add(action.ticker); continue; }
+      if (!out.forcedClose || out.forcedClose.mark !== delistingCashOf(action)) { unresolved.add(sym); continue; }
       next.holdings = out.positions;
       next.cash = out.cash;
       next.realizedPnlUsd = addUsd(next.realizedPnlUsd, out.forcedClose.realizedPnl);
@@ -472,9 +481,9 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     }
     // A share-basis action that would round a holding to nothing is not applied (review L1-1): the symbol is held at
     // its carried mark, not full quality, until T1a-2's policy decides it — never a holding of zero shares with a basis.
-    if (SHARE_BASIS_TYPES.has(action.type) && !(Number(out.positions[action.ticker]?.shares) > 0)) {
-      unresolved.add(action.ticker);
-      addItem(blocked, sym, itemOf(action, kind));
+    // Read under the holding's own key (upper case), whatever case the row carries (review F3).
+    if (SHARE_BASIS_TYPES.has(action.type) && !(Number(out.positions[sym]?.shares) > 0)) {
+      hold(sym, action, [], 'rounds_to_nothing');
       continue;
     }
     next.holdings = out.positions;
@@ -489,7 +498,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     };
     next.corporateActionReceipts.push(receipt);
     applied.push({ ...action, receipt });
-    if (SHARE_BASIS_TYPES.has(action.type)) shareBasisChanges.push({ ticker: action.ticker, ratio: Number(action.ratio), actionId: action.actionId });
+    if (SHARE_BASIS_TYPES.has(action.type)) shareBasisChanges.push({ ticker: sym, ratio: Number(action.ratio), actionId: action.actionId });
   }
 
   // TICKER CHANGES, LAST (Astra T2A-01). The feed's rows, and any rename an earlier close deferred whose row the feed
