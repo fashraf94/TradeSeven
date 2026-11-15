@@ -18,6 +18,9 @@ import { backingPreviewRequested } from './components/League/backing/backingPrev
 // nothing of its own; while the flag is dark and the answer is false, the app
 // renders exactly as today.
 import BackingLitProvider from './components/League/backing/BackingLitProvider';
+// SMOKE ONLY, NEVER MERGE — the hub research door (Command Center Amendment E V1.1 Part 2): every Shared Research request is
+// answered from the body's committed fixtures; ?hubResearchDoor=1 renders the door page (the real-browser rows) instead of the app.
+import { installResearchSmokeRoutes } from './smoke/hubResearchDoorSmoke';
 
 // Initialize Firebase on app startup
 console.log('Loading Firebase...');
@@ -29,6 +32,8 @@ import './utils/debug';
 console.log('Debug utilities loaded');
 
 const root = createRoot(document.getElementById('root'));
+installResearchSmokeRoutes();
+const hubResearchDoor = new URLSearchParams(window.location.search).get('hubResearchDoor');
 
 // Backing Beta PR 4 — the dev-only Backing design preview (?preview=backing):
 // the repo's ?preview= dev-screen gate (App.jsx's ?preview=baggerbomb), taken
@@ -37,7 +42,11 @@ const root = createRoot(document.getElementById('root'));
 // Vite dev server or on a Vercel preview host, never on production
 // (src/components/League/backing/backingPreview.js decides); anywhere else the
 // app renders exactly as before. The page is its own lazily loaded chunk.
-if (backingPreviewRequested(window.location, { DEV: import.meta.env.DEV, VITE_VERCEL_ENV: import.meta.env.VITE_VERCEL_ENV })) {
+if (hubResearchDoor) {
+  import('./smoke/HubResearchDoorSmokeScreen')
+    .then((m) => { root.render(<m.default />); })
+    .catch((err) => console.error('[HubResearchDoorSmoke] the page failed to load:', err));
+} else if (backingPreviewRequested(window.location, { DEV: import.meta.env.DEV, VITE_VERCEL_ENV: import.meta.env.VITE_VERCEL_ENV })) {
   import('./screens/BackingPreviewScreen')
     .then((preview) => {
       const BackingPreviewScreen = preview.default;

@@ -18,6 +18,8 @@
 
 import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { db } from '../firebase/config';
+// SMOKE ONLY, NEVER MERGE: the research reader answers the smoke's records; nothing is read from Firestore.
+import { SMOKE_RESEARCH_RECORDS } from '../smoke/hubResearchDoorSmoke';
 
 /**
  * The origin Shared Research's records carry: api/_utils/researchRecords/model.js SHARED_RESEARCH_ORIGIN, restated here
@@ -37,6 +39,7 @@ export const RESEARCH_WORK_COLLECTION = 'researchWork';
  * @returns {Promise<object[]>}
  */
 export async function fetchSharedResearchRecords({ uid }) {
+  if (uid) return SMOKE_RESEARCH_RECORDS.map((record) => ({ ...record }));
   const snap = await getDocs(query(
     collection(db, RESEARCH_WORK_COLLECTION),
     where('userId', '==', uid),
