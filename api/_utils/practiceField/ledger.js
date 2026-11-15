@@ -370,7 +370,8 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
     next.corporateActionReceipts.push(receipt);
     declined.push(receipt);
   }
-  for (const bad of [...noEntitlementData, ...unrecognized]) unresolved.add(bad.ticker);
+  // The holding's own key (upper case), whatever case a row carries (refuter 2): a lower-case row must hold the mark.
+  for (const bad of [...noEntitlementData, ...unrecognized]) unresolved.add(upper(bad.ticker));
 
   // THE SHARE-BASIS ACTIONS THIS LEDGER CANNOT SETTLE, kept as the call goes (fix round 2): its unsettled conflicts, the
   // rows it has no entitlement data for, the ones it holds and what they wait on — and, below, each one the applier
@@ -529,7 +530,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       const from = upper(action.ticker);
       const to = upper(action.renamedTo);
       const holding = next.holdings[from];
-      if (!holding) { unresolved.add(action.ticker); continue; }
+      if (!holding) { unresolved.add(from); continue; }
       if (wait.has(from)) {
         // Not applied, not settled: the holding keeps its symbol and its first deferral's record — whose target follows
         // the row the feed lists now for the same id (a corrected row; fix-round refuter, F2), so the reservation and
@@ -546,7 +547,7 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
       if (renameTargetsTaken?.has(to)) { unresolved.add(from); renamesBlocked.push({ from, to, actionId: action.actionId }); continue; }
       const { deferredRename: waited = null, ...plain } = holding;
       const out = applyCorporateAction({ positions: { ...next.holdings, [from]: plain }, cash: next.cash }, action);
-      if (!out.ok) { unresolved.add(action.ticker); continue; }
+      if (!out.ok) { unresolved.add(from); continue; }
       next.holdings = out.positions;
       next.appliedActionIds.push(action.actionId);
       const deferral = waited && waited.actionId === action.actionId ? { deferred: true, deferredOn: waited.deferredOn } : {};

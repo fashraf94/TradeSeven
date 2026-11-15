@@ -1181,6 +1181,24 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     expect(ideaOf(ctx).status).toBe('holding');
   });
 
+  it('a row\'s CASE never matters (refuter 2): a lower-case row of a type nobody applies holds the mark like an upper-case one — no fresh price, no line breach — and a refused lower-case rename leaves the holding\'s own key unresolved', async () => {
+    const { db, bookId, bookRef } = await seedBook();
+    const e = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: Q });
+    const ctx = { db, bookId, bookRef, ideaId: e.ideaId };
+    await closeQ(ctx, S[0], Q);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await closeQ(ctx, S[1], { ...Q, AAPL: { price: 80, corporateActions: [{ type: 'spinoff', ticker: 'aapl', effectiveDate: S[1], source: 'founder_action' }] } });
+    errors.mockRestore();
+    const row = rowOf(ctx, S[1]);
+    expect(row.marks.AAPL).toMatchObject({ quality: 'carried_forward', mark: 100 });
+    expect(row.lineObservations.AAPL).toBe('unobserved');
+    expect(ideaOf(ctx).status).toBe('holding');
+    const holding = { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, lastMarkAsOf: null, lastMarkSource: 'snapshot', sector: 'Technology', openedAt: S[0] };
+    const ledger = { ...newLedger('idea', 2000), cash: 0, holdings: { AAPL: { ...holding }, AAPLX: { ...holding } } };
+    const out = applyLedgerActions(ledger, { AAPL: [{ type: 'ticker_change', ticker: 'aapl', renamedTo: 'AAPLX', effectiveDate: S[1] }] }, { date: S[1] });
+    expect([...out.unresolved]).toEqual(['AAPL']);
+  });
+
   describe('C-13 — a delisting with no cash amount and a rename of the same stock in ONE close lose nothing', () => {
     async function oneName() {
       const { db, bookId, bookRef } = await seedBook();
