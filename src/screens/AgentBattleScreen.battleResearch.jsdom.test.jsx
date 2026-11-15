@@ -236,6 +236,9 @@ const key = async (el, k) => {
   await act(async () => { el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); });
   await settle();
 };
+// The real screen mounts in 1–3 s alone; under the 8-worker suite (or a 2-vCPU runner) give every row room.
+const ROW_MS = 20_000;
+const FLOW_MS = 45_000;
 const calledUrls = () => fetchSpy.mock.calls.map(([u]) => String(u));
 const researchReads = () => calledUrls().filter((u) => u.startsWith('/api/agent/battle-research-quotes'));
 const rankingsReads = () => FS.gets.filter((p) => p === 'indexIntelligence/stockRankings');
@@ -261,8 +264,15 @@ const goldenOf = async (name) => {
   await mount();
   await click(q('[data-this-turn-research]'));
   // The sheet's entrance (framer-motion, real frames) runs out before the bytes are read: mid-flight its
-  // opacity and offset are fractions of wall time, never the same twice.
-  await act(async () => { await new Promise((r) => setTimeout(r, 1500)); });
+  // opacity and offset are fractions of wall time, never the same twice. Wait (bounded) until the screen's
+  // markup holds still across two reads 150 ms apart, rather than for a fixed time a loaded runner can miss.
+  let prev = null;
+  for (let i = 0; i < 40; i += 1) {
+    await act(async () => { await new Promise((r) => setTimeout(r, 150)); });
+    const now = container.innerHTML;
+    if (now === prev) break;
+    prev = now;
+  }
   await settle();
   const sheet = q('[data-cockpit-bench-sheet]');
   expect(sheet).toBeTruthy();
@@ -277,7 +287,7 @@ describe('BATTLE_RESEARCH_MODE off — the pill opens the bench sheet, byte for 
     expect(q('[data-br-surface]')).toBeNull();
     expect(researchReads()).toEqual([]);
     expect(rankingsReads()).toEqual([]);
-  });
+  }, ROW_MS);
   it('mode on but a League battle (BRS-1): still the bench sheet, byte for byte as main renders that battle', async () => {
     RF.br = 'on';
     DOC = { ...LIVE_DOC, gameMode: FLAT6_GAME_MODE };
@@ -285,7 +295,7 @@ describe('BATTLE_RESEARCH_MODE off — the pill opens the bench sheet, byte for 
     expect(q('[data-br-surface]')).toBeNull();
     expect(q('[data-cockpit-bench-sheet] h2').textContent).toBe('The bench');
     expect(researchReads()).toEqual([]);
-  });
+  }, ROW_MS);
 });
 
 // ---- the research rows (Battle Research on) ----
@@ -318,7 +328,7 @@ describe('BATTLE_RESEARCH_MODE on — the surface in the screen', () => {
     expect(researchReads()).toEqual([`/api/agent/battle-research-quotes?battleId=${RESEARCH_DOC.id}`]);
     expect(rankingsReads()).toHaveLength(1);
     expect(q('[data-br-proposal="weakest"]').textContent).toContain('EQIX is our weakest holding');
-  });
+  }, ROW_MS);
 
   it('the tap flow: weakest → move order → can come in now → undo → a candidate → Escape → draft (no POST) → the pill reopens the same step', async () => {
     await mount();
@@ -377,7 +387,7 @@ describe('BATTLE_RESEARCH_MODE on — the surface in the screen', () => {
     expect(thenLines()).toEqual(moveThen);
     expect([...container.querySelectorAll('[data-br-surface] [data-br-row]')].map((r) => r.getAttribute('data-br-row'))).toEqual(order);
     expect(researchReads()).toHaveLength(1);
-  }, 30_000); // ~15 taps through the real screen, each settled
+  }, FLOW_MS); // ~15 taps through the real screen, each settled
 
   it('the surface keeps its scroll per step across a close and the pill', async () => {
     await mount();
@@ -390,7 +400,7 @@ describe('BATTLE_RESEARCH_MODE on — the surface in the screen', () => {
     expect(q('[data-br-surface]')).toBeNull();
     await click(q('[data-this-turn-research]'));
     expect(q('[data-br-scroll]').scrollTop).toBe(137);
-  });
+  }, ROW_MS);
 
   it('Ask {Agent} about this result: the composer is prefilled (appended), nothing is sent', async () => {
     await mount();
@@ -400,7 +410,7 @@ describe('BATTLE_RESEARCH_MODE on — the surface in the screen', () => {
     const composer = [...container.querySelectorAll('textarea')].find((t) => t.placeholder === 'Talk to your agent...');
     expect(composer.value).toMatch(/^Research: "Compare alternatives to EQIX" \(result 1:45 PM ET\)/);
     expect(calledUrls().filter((u) => u.startsWith('/api/agent/chat'))).toEqual([]);
-  });
+  }, ROW_MS);
 
   it('only one of the bench sheet and the surface is open: the pill closes a bench sheet, a bench door closes the surface', async () => {
     DOC = LIVE_DOC;
@@ -416,7 +426,7 @@ describe('BATTLE_RESEARCH_MODE on — the surface in the screen', () => {
     await click(q('[data-cockpit-browse]'));
     expect(q('[data-cockpit-bench-sheet]')).toBeTruthy();
     expect(q('[data-br-surface]')).toBeNull();
-  });
+  }, ROW_MS);
 
   it('the battle leaving active closes the surface (BRS-1)', async () => {
     await mount();
@@ -425,5 +435,5 @@ describe('BATTLE_RESEARCH_MODE on — the surface in the screen', () => {
     DOC = { ...RESEARCH_DOC, status: 'completed' };
     await mount();
     expect(q('[data-br-surface]')).toBeNull();
-  });
+  }, ROW_MS);
 });
