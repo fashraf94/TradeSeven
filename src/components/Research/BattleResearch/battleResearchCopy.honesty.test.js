@@ -180,7 +180,7 @@ beforeAll(async () => {
   Object.values(STARTER_TEXT).forEach((t) => add('copy/starter', t));
   Object.values(CONDITION_LABEL).forEach((t) => add('copy/condition', t));
   add('copy/caps', BR_COPY.historyCapped(CAPS.steps));
-});
+}, 120_000); // ~20k outputs: seconds on a quiet machine, more on a 2-vCPU runner
 
 describe('§9 / BRS-16 — the honesty sweep', () => {
   it('swept a real spread of outputs', () => {
