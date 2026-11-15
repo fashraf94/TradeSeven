@@ -33,11 +33,13 @@ export const SHARED_RESEARCH_MODES = Object.freeze(['off', 'allowlist', 'on']);
  *                adoption writes idea records (spec D-4). Anyone else: the same 404.
  *   'on'         every verified uid idea-record admission admits.
  *
- * RUNWAY: 'off' ships with B1 (dark). 'allowlist' (the founder and FT_QA) is its
- * own one-line founder PR after B1 and B2 merge and the rules are deployed; 'on'
- * is another, after one clean allowlist week and the framework's idea-record
- * admission change (spec §11.3). Never a build PR; each step moves the first row
- * of sharedResearchFlags.test.js in the same commit (BUILD_RULES §2).
+ * RUNWAY: 'off' shipped with B1 (dark). 'allowlist' (the founder and FT_QA) is
+ * LIVE as of this PR (claude/shared-research-allowlist), its own one-line founder
+ * PR after B1 (#1048), B2 (#1059) and the hub door (#1064) merged and the rules
+ * and indexes were deployed to production (2026-11-15, from origin/main
+ * 0b720acc); 'on' is another, after one clean allowlist week and the framework's
+ * idea-record admission change (spec §11.3). Never a build PR; each step moves
+ * the first row of sharedResearchFlags.test.js in the same commit (BUILD_RULES §2).
  * ROLLBACK: a kill switch: roll back one step at a time ('on' → 'allowlist' → 'off') by moving the literal and its pin together; every mode-off arm stays in the code until the cleanup PR, after 'on' has run in production.
  *
  * NOTHING THE AGENT SEES OR TRADES changes at any value: the route never writes
@@ -45,4 +47,4 @@ export const SHARED_RESEARCH_MODES = Object.freeze(['off', 'allowlist', 'on']);
  * version, and "Use it in my next game" is the existing ready and equip routes.
  */
 // Pinned by: sharedResearchFlags.test.js (the pin and this value move together — BUILD_RULES §2).
-export const SHARED_RESEARCH_MODE = 'off';
+export const SHARED_RESEARCH_MODE = 'allowlist';
