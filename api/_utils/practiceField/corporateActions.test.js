@@ -1672,6 +1672,19 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
     expect(bookOf(ctx).openIdeaIds).toEqual([ctx.ideaId]);
   });
 
+  it('second refuter N1, the close\'s own mark screen: a dividend paid at an EARLIER close never explains a later drop away — a holding waiting on a delisting (which gets no record) halves the session after a $50 dividend was paid with no drop, and its mark stays held back at 100', async () => {
+    const ctx = await entered();
+    await closeQ(ctx, S[1], { ...Q, AAPL: { price: 100, corporateActions: [
+      { type: 'delisting', ticker: 'AAPL', effectiveDate: S[1], source: 'founder_action' },
+      { type: 'cash_dividend', ticker: 'AAPL', amount: 50, effectiveDate: S[1], source: 'eodhd_dividends' },
+    ] } });
+    expect(paidOn(ideaOf(ctx).ledger, 'cash_dividend').map(cashOf)).toEqual([roundUsd(199.940017 * 50)]);
+    expect(ideaOf(ctx).ledger.holdings.AAPL.exitPending).toMatchObject({ reason: 'delisting' });
+    await closeQ(ctx, S[2], { ...Q, AAPL: 50 }); // the delisting row no longer listed; no record (R-32)
+    expect(ideaOf(ctx).ledger.holdings.AAPL.basisSuspicion).toBeUndefined();
+    expect(rowOf(ctx, S[2]).marks.AAPL).toMatchObject({ mark: 100, quality: 'carried_forward' });
+  });
+
   it('refuter D2: after a special dividend that explains its own drop, the mark is FRESH at the ex-date close (not the pre-ex price beside the dividend\'s cash) — so a later listed 2-for-1 reads against it, raises nothing, and the next dividend is paid on the adjusted count', async () => {
     const ctx = await entered();
     await closeQ(ctx, S[1], { ...Q, AAPL: { price: 50, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', amount: 50, effectiveDate: S[1], source: 'eodhd_dividends' }] } });
