@@ -11,7 +11,7 @@
 
 import { outcomeOf, sectorsPresent } from './result.js';
 import { currentStep, currentResult, trailOf, titleOf, refreshGate, noticeOf } from './investigation.js';
-import { explainOf, bannerOf, rowFactsOf, referenceOf, noteLineOf, availabilityOf, moveLineOf, proposalOf, askDraftOf, groupLabelOf } from './explain.js';
+import { explainOf, bannerOf, rowFactsOf, referenceOf, noteLineOf, availabilityOf, moveLineOf, proposalOf, askDraftOf, groupLabelOf, notAssessedWords } from './explain.js';
 import { BR_COPY, CONDITION_LABEL, STARTER_TEXT, conditionLabel, conditionWords } from './battleResearchCopy.js';
 import { etClockAmPm } from '../BombMode/checkClock.js';
 
@@ -52,7 +52,7 @@ function leftOutNote(result, view, item, kind) {
     const words = item.by.map((id) => conditionWords(id === 'sector' ? view.conditions.find((c) => c.id === 'sector') : { id }));
     return `${BR_COPY.removedBy} · ${words.join(', ')}`;
   }
-  return `${BR_COPY.notAssessed} · ${result.quotes.rows[item.symbol]?.words ?? item.state}`;
+  return `${BR_COPY.notAssessed} · ${notAssessedWords(result, item)}`;
 }
 
 /**
@@ -94,7 +94,7 @@ export function boardOf({ inv, battle, nowMs, desktop = false, showAll = false, 
     { id: 'down_today', label: CONDITION_LABEL.down_today, disabled: !avail.on, line: avail.on ? null : moveLine },
     ...sectorsPresent(result, view.group).map((sector) => ({ id: 'sector', value: sector, label: conditionLabel({ id: 'sector', value: sector }), disabled: false, line: null })),
   ].filter((c) => !view.conditions.some((a) => a.id === c.id && (c.id !== 'sector' || a.value === c.value)));
-  const gate = refreshGate({ inFlight: !!refresh.inFlight, takenAt: result.receivedAt ?? result.takenAt, lastAttemptAt: refresh.lastAttemptAt ?? null, nowMs });
+  const gate = refreshGate({ inFlight: !!refresh.inFlight, since: result.receivedAt ?? result.takenAt, lastAttemptAt: refresh.lastAttemptAt ?? null, nowMs });
   const question = inv.question.id;
   const groupQuestion = question === 'rank_bench' || question === 'rank_agent_watchlist';
   const other = view.group === 'bench' ? 'agent_watchlist' : 'bench';

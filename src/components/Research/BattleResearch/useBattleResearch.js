@@ -206,7 +206,7 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
   const refresh = useCallback(async () => {
     const inv = active;
     if (!inv || refreshing.current) return;
-    const gate = refreshGate({ inFlight: false, takenAt: currentResult(inv).receivedAt, lastAttemptAt: s.refresh.lastAttemptAt, nowMs: clock() });
+    const gate = refreshGate({ inFlight: false, since: currentResult(inv).receivedAt, lastAttemptAt: s.refresh.lastAttemptAt, nowMs: clock() });
     if (!gate.allowed) return;
     refreshing.current = true;
     const startedAt = clock();
