@@ -59,16 +59,20 @@ export function msOf(v) {
  */
 export function incumbentOf(battle) {
   const w = weakestOf(bookOf(battle));
-  if (!w) return null;
+  return w ? entryShape(w) : null;
+}
+
+/** One ranked book entry as a result freezes it: the incumbent's shape, for the incumbent and the compare picker alike. */
+function entryShape(e) {
   return {
-    symbol: w.symbol,
-    positionId: w.positionId,
-    tier: w.tier,
-    slot: w.slot,
-    rungsShown: w.rungsShown,
-    checkAtMs: w.checkAtMs ?? null,
-    scoringPct: finite(w.context?.scoringPct) ? w.context.scoringPct : null,
-    lockNow: lockNowOf(w),
+    symbol: e.symbol,
+    positionId: e.positionId,
+    tier: e.tier,
+    slot: e.slot,
+    rungsShown: e.rungsShown,
+    checkAtMs: e.checkAtMs ?? null,
+    scoringPct: finite(e.context?.scoringPct) ? e.context.scoringPct : null,
+    lockNow: lockNowOf(e),
   };
 }
 
@@ -86,24 +90,20 @@ export function noWeakestReason(battle) {
   return unscoredOf(book).length ? 'awaiting' : 'no_ladder';
 }
 
-/** The held measured stocks a comparison can pick (BRS-18), weakest first (QF-2's rank). */
+/** The held measured stocks a comparison can pick (BRS-18), weakest first (QF-2's rank), frozen in the incumbent's shape. */
 export function holdingsForCompare(battle) {
-  return rankedBook(bookOf(battle)).map((e) => ({ symbol: e.symbol, positionId: e.positionId }));
+  return rankedBook(bookOf(battle)).map(entryShape);
+}
+
+/** A held measured stock frozen in a result (its incumbent, or one of its holdings), or null. */
+export function holdingEntryOfResult(result, symbol) {
+  if (result?.incumbent?.symbol === symbol) return result.incumbent;
+  return (Array.isArray(result?.holdings) ? result.holdings : []).find((h) => h.symbol === symbol) ?? null;
 }
 
 /** The last check the ranked book reads (the result keeps it, so a newer check is a notice). */
 export function bookCheckOf(battle) {
   return bookCheckMs(rankedBook(bookOf(battle)));
-}
-
-/** A held measured stock as a comparison column freezes it (incumbentOf's shape), by symbol. */
-export function holdingEntryOf(battle, symbol) {
-  const e = rankedBook(bookOf(battle)).find((x) => x.symbol === symbol);
-  if (!e) return null;
-  return {
-    symbol: e.symbol, positionId: e.positionId, tier: e.tier, slot: e.slot, rungsShown: e.rungsShown,
-    checkAtMs: e.checkAtMs ?? null, scoringPct: finite(e.context?.scoringPct) ? e.context.scoringPct : null, lockNow: lockNowOf(e),
-  };
 }
 
 // ── Building one result ──
@@ -163,18 +163,23 @@ function copyQuote(q) {
  */
 export function buildResult({ battle, incumbent = null, rankingsDoc, quotesBody, takenAt, index = 1, resultId }) {
   const { membership, excluded } = membershipOf(battle, { out: incumbent?.symbol ?? null, slot: incumbent?.tier ?? null, atMs: takenAt });
+  // The names the result is ABOUT: the membership and the incumbent (the median's population, §4).
   const symbols = [...membership.map((m) => m.symbol), ...(incumbent ? [incumbent.symbol] : [])];
+  // BRS-18: the held measured stocks a comparison can pick, frozen with their readings too (classified
+  // against the same median; they are not part of it — the result is not about them).
+  const holdings = holdingsForCompare(battle);
+  const extra = holdings.map((h) => h.symbol).filter((s) => !symbols.includes(s));
   const snapshot = quotesBody?.snapshot && typeof quotesBody.snapshot === 'object'
     ? { sweepId: typeof quotesBody.snapshot.sweepId === 'string' ? quotesBody.snapshot.sweepId : null, sweepAt: msOf(quotesBody.snapshot.sweepAt), lastSuccessfulSweepAt: msOf(quotesBody.snapshot.lastSuccessfulSweepAt) }
     : null;
   const session = sessionAt(takenAt);
   const cryptoOf = (s) => (incumbent && s === incumbent.symbol ? false : membership.find((m) => m.symbol === s)?.isCrypto === true);
   const copied = {};
-  for (const s of symbols) copied[s] = snapshot ? copyQuote(quotesBody?.quotes?.[s]) : null;
+  for (const s of [...symbols, ...extra]) copied[s] = snapshot ? copyQuote(quotesBody?.quotes?.[s]) : null;
   // §4: the median ONCE, over the whole membership plus the incumbent, before any condition.
   const medianAsOf = medianAsOfOf(symbols.map((s) => ({ quote: copied[s], isCrypto: cryptoOf(s) })), { session, snapshot, takenAt });
   const rows = {};
-  for (const s of symbols) {
+  for (const s of [...symbols, ...extra]) {
     const c = classifyMove({ quote: copied[s], isCrypto: cryptoOf(s), session, medianAsOf, snapshot, takenAt });
     rows[s] = { ...(copied[s] ?? { price: null, previousClose: null, changePercent: null, priceAsOf: null, sessionEtDate: null }), state: c.state, cause: c.cause, words: c.words };
   }
@@ -185,9 +190,10 @@ export function buildResult({ battle, incumbent = null, rankingsDoc, quotesBody,
     takenAt,
     membership,
     excluded,
-    rankings: rankingsSubset(rankingsDoc, symbols),
+    rankings: rankingsSubset(rankingsDoc, [...symbols, ...extra]),
     quotes: { snapshot: snapshot ? { sweepId: snapshot.sweepId, sweepAt: snapshot.sweepAt } : null, medianAsOf, rows },
     incumbent: incumbent ? { ...incumbent, lockNow: incumbent.lockNow ? { ...incumbent.lockNow } : null } : null,
+    holdings,
     // The ranked book's last check at takenAt: a newer one is a notice, never a reorder.
     bookCheckMs: bookCheckOf(battle),
     // BRS-8: the rung — measured battles only (a legacy-scored battle shows none).
@@ -229,9 +235,12 @@ export function rungEstimateOf(result, symbol) {
   return r.pct === null ? null : r;
 }
 
+/** The names a result is about: its membership and its incumbent (a frozen holding is only for the comparison). */
+export const aboutOf = (result) => [...result.membership.map((m) => m.symbol), ...(result.incumbent ? [result.incumbent.symbol] : [])];
+
 /** The result's reading times (BRS-8 note line): ranks at computedAt; moves from–to over the ok quotes used. */
 export function timesOf(result) {
-  const asOf = Object.values(result.quotes.rows).filter((r) => r.state === 'ok' && finite(r.priceAsOf)).map((r) => r.priceAsOf);
+  const asOf = aboutOf(result).map((s) => result.quotes.rows[s]).filter((r) => r && r.state === 'ok' && finite(r.priceAsOf)).map((r) => r.priceAsOf);
   const ranksAtMs = result.rankings.computedAt;
   return {
     ranksAtMs,
@@ -248,7 +257,7 @@ export function timesOf(result) {
 
 /** The frozen states of the result's STOCK quotes (crypto is never a move — BRS-9). */
 export function stockStatesOf(result) {
-  return Object.entries(result.quotes.rows).filter(([s]) => !result.membership.find((m) => m.symbol === s)?.isCrypto).map(([, r]) => r.state);
+  return aboutOf(result).filter((s) => !result.membership.find((m) => m.symbol === s)?.isCrypto).map((s) => result.quotes.rows[s]?.state).filter(Boolean);
 }
 
 /** The sectors present among a group's ranked names, for the one-at-a-time sector condition (BRS-12). */

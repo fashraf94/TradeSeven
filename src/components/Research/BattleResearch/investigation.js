@@ -162,7 +162,7 @@ export function switchGroup(inv, group, at) {
 }
 
 /** BRS-18a — Use across this result: up or down today, from a stock's finding (the replacement is said). */
-export function useAcross(inv, condId, at) {
+export function acrossCondition(inv, condId, at) {
   return addCondition(inv, { id: condId }, at, { kind: 'use_across' });
 }
 

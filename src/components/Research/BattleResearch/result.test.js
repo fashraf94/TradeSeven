@@ -213,9 +213,13 @@ describe('BRS-8 / BRS-14 — the frozen readings and their times', () => {
     delete legacy.scoring.stockThresholdModel;
     expect(rungEstimateOf(buildResult({ battle: legacy, incumbent: null, rankingsDoc: rankingsDoc(), quotesBody: quotesBody(), takenAt: TAKEN_AT, resultId: 'l' }), 'PLTR')).toBeNull();
   });
-  it('the rankings subset keeps the battle\'s names only (and their archetype scores), never the whole universe', () => {
+  it('the rankings subset keeps the battle\'s names only — the membership, the incumbent and the held measured stocks a comparison can pick (and their archetype scores) — never the whole universe', () => {
     const r = weakest();
-    expect(Object.keys(r.rankings.rows).sort()).toEqual(['EQIX', 'MSFT', 'NVDA', 'ORCL', 'PLTR']);
+    expect(Object.keys(r.rankings.rows).sort()).toEqual(['AAPL', 'CAT', 'EQIX', 'JPM', 'KO', 'MSFT', 'NVDA', 'ORCL', 'PLTR', 'XOM']);
+    expect(r.rankings.rows.ZZZ).toBeUndefined();
+    // BRS-18: the held measured stocks, frozen in the incumbent's shape, weakest first.
+    expect(r.holdings.map((h) => h.symbol)).toEqual(['EQIX', 'KO', 'CAT', 'JPM', 'XOM', 'AAPL']);
+    expect(r.quotes.rows.AAPL.state).toBe('ok');
     expect(r.rankings).toMatchObject({ computedAt: RANKS_AT, mode: 'intraday', totalTechStocks: 228 });
     expect(r.rankings.rows.PLTR).toMatchObject({ technicalRank: 5, sectorTechnicalRank: 2, sectorTechnicalTotal: 21, atrPercent: 4.06, sectorName: 'Technology' });
   });

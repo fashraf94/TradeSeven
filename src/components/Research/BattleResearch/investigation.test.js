@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { buildResult, incumbentOf, outcomeOf } from './result.js';
 import {
-  newInvestigation, currentStep, currentResult, trailOf, refinementsOf, titleOf, setOrder, addCondition, removeCondition, switchGroup, useAcross,
+  newInvestigation, currentStep, currentResult, trailOf, refinementsOf, titleOf, setOrder, addCondition, removeCondition, switchGroup, acrossCondition,
   undo, previous, goTo, refreshWith, refreshReport, refreshIncumbent, noticeOf, addInvestigation, refreshGate, CAPS, REFRESH_COOLDOWN_MS,
 } from './investigation.js';
 import { researchBattle, rankingsDoc, quotesBody, TAKEN_AT, KO_WEAKEST_CHECKS } from './__fixtures__/researchFixtures.js';
@@ -79,7 +79,7 @@ describe('BRS-13 — steps, each with its own wording; the trail', () => {
   });
   it('Use across this result is a step of its own kind, and says what it replaced', () => {
     let inv = addCondition(weakestInv(), { id: 'down_today' }, 1);
-    inv = useAcross(inv, 'up_today', 2);
+    inv = acrossCondition(inv, 'up_today', 2);
     expect(currentStep(inv)).toMatchObject({ kind: 'use_across', wording: 'then: up today, in place of down today, from a stock’s finding' });
   });
   it('the group switch on a group question; the union (weakest) never switches', () => {

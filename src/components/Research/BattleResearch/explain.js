@@ -21,7 +21,7 @@ import { rungsText } from '../Sheet/sheetCopy.js';
 import { COMPANY_NAMES } from '../../../config/stockData.js';
 import { pctText } from '../../../screens/battleView/pctText.js';
 import { allStaleOf, moveAvailability } from './readings.js';
-import { incumbentOf, noWeakestReason, sectorOf, moveOf, rankOf, rungEstimateOf, timesOf, stockStatesOf, sessionOfResult, msOf } from './result.js';
+import { incumbentOf, noWeakestReason, sectorOf, moveOf, rankOf, rungEstimateOf, timesOf, stockStatesOf, sessionOfResult, msOf, aboutOf } from './result.js';
 import { BR_COPY, GROUP_LABEL, conditionWords, conditionLabel, orderLabel, eligibilityWhy, ordinal } from './battleResearchCopy.js';
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -235,7 +235,7 @@ function sessionLines(result) {
     else if (avail.reason === 'waiting') lines.push(BR_COPY.waitingLine);
     else lines.push(BR_COPY.closedLine(avail.next?.dayText ?? null, avail.next?.openText ?? null, avail.refDay));
   }
-  const stockRows = Object.entries(result.quotes.rows).filter(([s]) => !result.membership.find((m) => m.symbol === s)?.isCrypto).map(([, r]) => r);
+  const stockRows = aboutOf(result).filter((s) => !result.membership.find((m) => m.symbol === s)?.isCrypto).map((s) => result.quotes.rows[s]).filter(Boolean);
   const stale = allStaleOf(stockRows, result.quotes.snapshot);
   if (stale) lines.push(stale.cause === 'old_sweep' ? BR_COPY.allStaleSweep(stale.atText) : BR_COPY.allStaleQuotes(stale.atText));
   return { avail, lines };
