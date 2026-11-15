@@ -2,12 +2,12 @@
 
 **Build:** Command Center core spec V1.2, Amendment E V1.1, Part 2, with its §12 rulings (R-D1 to R-D4) and, in the fix round (§8), its §13 rulings (R-D5 to R-D10).
 **Branch:** `claude/hub-research-door`, cut from `origin/main` @ `c85f7b41` (#1059) after `git fetch origin`. `origin/main` was refetched before the final checks and had not moved.
-**Code head:** `5373c83e`, after the fix round (§8). The build's own code head was `adb194c3`: its two test files were strengthened after the row-named mutation battery (§4.2). This report was first committed as `7549e11b`, before `adb194c3`. The tree was clean at the start; the preamble STOP report is outside the repo.
+**Code head:** `5373c83e`, after the fix round (§8). `main` (`5a8c3620`, #1063) was merged into the branch at `5ccc4fb6`; that merge brought one test file. The build's own code head was `adb194c3`: its two test files were strengthened after the row-named mutation battery (§4.2). This report was first committed as `7549e11b`, before `adb194c3`. The tree was clean at the start; the preamble STOP report is outside the repo.
 **Mode:** `SHARED_RESEARCH_MODE` is `'off'`, and its pin row in `src/config/sharedResearchFlags.test.js` is unmoved.
 
 ## Verdict
 
-**The fix round (§8) built the founder's rulings on §7 and moved the code head to `5373c83e`; its own verdict and checks are §8.1. The rows below are the build's, at `adb194c3`.**
+**The fix round (§8) built the founder's rulings on §7, moved the code head to `5373c83e`, and merged `main` (#1063). Its own verdict and checks are in §8.1. On the merged head the full suite exits 0. The rows below are the build's, at `adb194c3`.**
 
 | Question | Answer |
 |---|---|
@@ -415,7 +415,7 @@ The check ran on `4e878335` against `c85f7b41` (SHAs recorded in its JSON) and e
 **A timing failure in an earlier run.** The first full run (on `f2c374b9`) also failed `api/_utils/gemmaClient.test.js` "abort DURING BODY READ…" once. That row passed alone three times, and it passed in the final run.
 
 **Found outside this task (for separate tasking, not fixed):**
-- `src/components/draft/CompeteTab.rankLabel.jsdom.test.jsx` "absent (every caller but the shell)…" fails on `main` `c85f7b41` too.
+- `src/components/draft/CompeteTab.rankLabel.jsdom.test.jsx` "absent (every caller but the shell)…" fails on `main` `c85f7b41` too. *(Fixed on `main` by #1063, which pins the clock; it was merged here in the fix round, §8.1.)*
 - Its golden was captured on the real clock, and `CompeteTab.jsx:158`/`:234` age the fixture's Nov 11 data by `Date.now()`.
 
 ## 5. The founder's phone checklist (the smoke preview, iPhone)
@@ -475,13 +475,13 @@ The founder ruled on §7's six questions (the Command Center chat, Nov 14). Q1 a
 
 | Question | Answer |
 |---|---|
-| `main` merged? | **No.** After `git fetch origin`, the branch head was `b2edde56` (equal to `origin`), and `origin/main` was still `c85f7b41`. The prompt says not to merge in that case: a separate update prompt does it after the CompeteTab fix lands. |
-| Full Linux suite | **Exit 1, from the one row that fails on `main` too.** On `5373c83e` (`flock`, `TZ=UTC`, 8 workers): 1,486 files, 33,072 tests; 32,936 passed, 135 skipped, 1 failed, no load errors.<br>The failure is `CompeteTab.rankLabel` "absent…", the same row that fails on `main` `c85f7b41`, so the head's failed set equals `main`'s.<br>This build's 15 test files: 409 rows passed, 0 failed, 4 skipped (the browser rows). The two theme guards: 694 passed.<br>The rules suite was not rerun: this round changed no rule, index or `api/` file. |
-| `lint:gate` | Exit 0 on `5373c83e`. |
-| Bundle (R-D1 rerun against `main`'s build) | **Met.** The check exits 0 with no failures. Compared with `4e878335`'s build, only the hub chunk differs: 207,573 → 208,515 B minified (+942), and 386,326 → 388,236 B unminified. The entry, the CSS, the body chunk and every lazy chunk are identical with hashes masked. That is this round's hub-side lines and nothing else. |
+| `main` merged? | **Yes, during the round.**<br>At the round's start, `git fetch origin` showed the branch head `b2edde56` (equal to `origin`) and `origin/main` still at `c85f7b41`, so nothing was merged then.<br>The refetch before the push found `main` at `5a8c3620`: #1063, which pins the clock in `CompeteTab.rankLabel`, one test file this branch does not touch.<br>It was merged at `5ccc4fb6`, a merge commit with no conflict and no force-push, and the final checks ran again on the merged tree. |
+| Full Linux suite | **Exit 0 on the merged head `5ccc4fb6`** (`flock`, `TZ=UTC`, 8 workers): 1,486 files, 33,072 tests; 32,937 passed, 135 skipped, 0 failed, no load errors. This build's 15 test files: 409 rows passed, 0 failed, 4 skipped (the browser rows). The two theme guards: 694 passed.<br>**Before the merge it exited 1,** from the one row that failed on `main` too. On `5373c83e` (`flock`, `TZ=UTC`, 8 workers): 1,486 files, 33,072 tests; 32,936 passed, 135 skipped, 1 failed, no load errors.<br>The failure is `CompeteTab.rankLabel` "absent…", the same row that fails on `main` `c85f7b41`, so the head's failed set equals `main`'s.<br>This build's 15 test files: 409 rows passed, 0 failed, 4 skipped (the browser rows). The two theme guards: 694 passed.<br>The rules suite was not rerun: this round changed no rule, index or `api/` file. |
+| `lint:gate` | Exit 0 on `5373c83e` and on the merged head `5ccc4fb6`. |
+| Bundle (R-D1 rerun against `main`'s build) | **Met.** The check exits 0 with no failures. Compared with `4e878335`'s build, only the hub chunk differs: 207,573 → 208,515 B minified (+942), and 386,326 → 388,236 B unminified. The entry, the CSS, the body chunk and every lazy chunk are identical with hashes masked. That is this round's hub-side lines and nothing else.<br>The merged head's build is identical to `5373c83e`'s (58 files, source maps excluded): `main`'s new commit is a test file. |
 | Mutation battery | **174 mutants: 172 killed, and every one of the 204 behavioural rows fails under at least one** (§8.5). M36 and M38 survive as equivalents, with their twins killed. Six earlier mutants were re-cut for this round's code. |
 | Review | **One lens and one refuter on this round's diff. 3 findings, all CONFIRMED, none must-fix. All 3 are fixed** (`5373c83e`), each with a row and a mutant (§8.4). |
-| Still short of completion condition 4 | The suite's exit code: `CompeteTab.rankLabel` fails on `main` too. M36 and M38 survive as equivalents; their twins are killed. The signed-in smoke path has still not been driven, and the smoke preview predates this round (§8.6). |
+| Still short of completion condition 4 | **The suite, the rules suite and `lint:gate` exiting 0:** met on the merged head for the suite and `lint:gate`. The rules suite last ran on `4e878335`; nothing it reads has changed since.<br>**"Every mutant is killed":** met except M36 and M38. They survive as equivalents, and each has a stronger twin that is killed.<br>**Outside condition 4:** the signed-in smoke path has still not been driven, and the smoke preview predates this round (§8.6). |
 
 ### 8.2 Commits
 
@@ -492,7 +492,9 @@ The founder ruled on §7's six questions (the Command Center chat, Nov 14). Q1 a
 | `848bc37f` | Q4 (R-D8): the sheet's failed-load line is announced |
 | `40124ad9` | Q5 (R-D9): "Research concluded" and "Idea saved from research" carry the clipped question |
 | `5373c83e` | the review's three fixes (F1–F3) |
-| the docs commit | the amendment's §13 (appended verbatim), its README row, this section |
+| `c07b2bfd` | the amendment's §13 (appended verbatim), its README row, this section |
+| `5ccc4fb6` | the merge of `main` `5a8c3620` (#1063, the CompeteTab.rankLabel clock pin); no conflict |
+| the next docs commit | this section's merge lines, and the README row |
 
 ### 8.3 The changes, by question
 
