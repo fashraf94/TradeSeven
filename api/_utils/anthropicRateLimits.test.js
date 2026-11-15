@@ -69,7 +69,7 @@ describe('the headers read, by name (Anthropic API docs, "Rate limits" → "Resp
   });
 
   it('a malformed value is null, never a guess: "4k", "-1", "1.5", "", "1e3"', () => {
-    for (const v of ['4k', '-1', '1.5', '', '1e3', 'NaN', ' ']) {
+    for (const v of ['4k', '-1', '1.5', '', '1e3', 'NaN', ' ', '9007199254740993']) { // the last: past a safe integer (review TI-14)
       expect(parseRateLimitHeaders({ 'anthropic-ratelimit-requests-limit': v }).requestsLimit).toBeNull();
     }
     expect(parseRateLimitHeaders({ 'anthropic-ratelimit-requests-limit': ' 77 ' }).requestsLimit).toBe(77);
@@ -97,6 +97,8 @@ describe('the run window', () => {
     recordRateLimitObservation({ headers: { ...LIMIT_HEADERS, 'anthropic-ratelimit-requests-remaining': '12', 'anthropic-ratelimit-output-tokens-limit': '350000' }, status: 200 });
     recordRateLimitObservation({ headers: { 'anthropic-ratelimit-input-tokens-remaining': '5000' }, status: 429 });
     recordRateLimitObservation({ headers: null, status: 429 });
+    // review TI-4: remaining values RECOVER and a limit reads higher afterwards — the record keeps the lows
+    recordRateLimitObservation({ headers: { ...LIMIT_HEADERS, 'anthropic-ratelimit-requests-limit': '5000', 'anthropic-ratelimit-output-tokens-limit': '450000' }, status: 200 });
     const out = closeRateLimitWindow(w);
     expect(out).toEqual({
       requestsLimit: 4000, inputTokensLimit: 2000000, outputTokensLimit: 350000,

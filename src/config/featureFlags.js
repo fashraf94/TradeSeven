@@ -2832,7 +2832,9 @@ export const EVAL_DEFERRED_BEAT_ENABLED = false;
  * battles of one League group (the same string `groupId`) never run at once.
  * Ruling R4: K is not raised above 2 until the market-data plan for 25 players
  * lands. FLIP MAP: the flip PR moves the pin in evalCapacityFlags.test.js in
- * the same commit (BUILD_RULES §2).
+ * the same commit (BUILD_RULES §2), and reconciles the rows that pin the K = 1
+ * loop's timing — agent-evaluate.evalRun.test.js TEST 1–4 and its deferred-beat
+ * rows (measured: 11 rows red at K = 2; build review TI-15).
  */
 // Pinned by: evalCapacityFlags.test.js (flagPinGuard's numeric-settings check: this value and the pin move together — BUILD_RULES §2).
 export const EVAL_POOL_K = 1;
@@ -2863,7 +2865,11 @@ export const EVAL_POOL_START_CUTOFF_MS = 200_000;
  * throws, so it reaches the same path a network error reaches today.
  * Registered DARK_BY_DESIGN in flagPinGuard.test.js. FLIP MAP: the flip PR
  * moves the pin in evalCapacityFlags.test.js to true and drops the
- * DARK_BY_DESIGN entry, in the same commit.
+ * DARK_BY_DESIGN entry, in the same commit; turns the run record's
+ * `eodhd.timeouts` expectation from null to 0 (agent-evaluate.evalRun.test.js
+ * TEST 1, agent-evaluate.limitsOnRecord.test.js); and moves the 38 rows in 9
+ * files whose fetch doubles are plain objects onto real Responses (measured by
+ * a full-suite sweep with this flag on: docs/audits/20261115_BUILD_EVAL_CAPACITY_1_REVIEW.md §6).
  */
 // Pinned by: evalCapacityFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const EODHD_FETCH_GUARD_ENABLED = false;

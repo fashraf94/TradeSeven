@@ -260,6 +260,35 @@ describe('runEvalPool — K > 1', () => {
     }
   });
 
+  it('review TI-14: with two runs rejecting, the pool rejects with the FIRST; an undefined reason becomes an Error', async () => {
+    const w = world(['a', 'b']);
+    const outcome = runEvalPool({ items: w.items, k: 2, run: w.run, mayStart: () => true }).then(() => 'resolved', (e) => e);
+    await flush();
+    const first = new Error('first');
+    await w.fail('a', first);
+    await w.fail('b', new Error('second'));
+    expect(await outcome).toBe(first);
+    const w2 = world(['x']);
+    const out2 = runEvalPool({ items: w2.items, k: 1, run: w2.run, mayStart: () => true }).then(() => 'resolved', (e) => e);
+    await flush();
+    await w2.fail('x', undefined);
+    const e2 = await out2;
+    expect(e2).toBeInstanceOf(Error);
+  });
+
+  it('review TI-14: onStop runs AT the refusal, while battles are still in flight — not when they finish', async () => {
+    const w = world(['a', 'b', 'c', 'd']);
+    let open = true;
+    const stops = [];
+    const done = runEvalPool({ items: w.items, k: 2, run: w.run, mayStart: () => open, onStop: (d) => stops.push({ deferred: d.map((i) => i.id), inFlight: [...w.inFlightNow] }) });
+    await flush();
+    open = false;
+    await w.release('a'); // the refusal happens here, with b still running
+    expect(stops).toEqual([{ deferred: ['c', 'd'], inFlight: ['b'] }]);
+    await w.release('b');
+    await done;
+  });
+
   it('an empty list resolves at once without asking the start rule', async () => {
     let asked = 0;
     const out = await runEvalPool({ items: [], k: 3, run: async () => {}, mayStart: () => { asked += 1; return true; } });

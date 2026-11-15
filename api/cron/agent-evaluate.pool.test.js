@@ -27,13 +27,16 @@ import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const world = vi.hoisted(() => ({ db: null, battles: null }));
-const flags = vi.hoisted(() => ({ k: 1, cutoff: 200_000, capture: false }));
+const flags = vi.hoisted(() => ({ k: 1, cutoff: 200_000, capture: false, cuts: false }));
+const events = vi.hoisted(() => []); // review TI-7: market-data fetches and lock reads, in order
 const scopes = vi.hoisted(() => ({ created: [], seen: new Map() }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicMock { constructor() { this.messages = { create: (...a) => mocks.create(...a) }; } },
 }));
-vi.mock('../_utils/marketDataCache.js', () => ({
+// importOriginal: the cut path (EVAL_MARKET_DATA_CUTS_ENABLED rows) needs the module's symbol formatters.
+vi.mock('../_utils/marketDataCache.js', async (importOriginal) => ({
+  ...(await importOriginal()),
   getStockAnalysisData: mocks.getStockAnalysisData,
   fetchIntradayBatch: mocks.fetchIntradayBatch,
   fetchIntradayCandles: vi.fn(async () => []),
@@ -67,6 +70,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   get TICK_CAPTURE_ENABLED() { return flags.capture; },
   get EVAL_POOL_K() { return flags.k; },
   get EVAL_POOL_START_CUTOFF_MS() { return flags.cutoff; },
+  get EVAL_MARKET_DATA_CUTS_ENABLED() { return flags.cuts; },
 }));
 
 const { default: handler } = await import('./agent-evaluate.js');
@@ -164,7 +168,7 @@ function makeRunDb({ battles, costs = {}, missing = [], failFinalWrite = [] }) {
     },
     getAll: async (...refs) => Promise.all(refs.map((r) => r.get())),
     runTransaction: async (cb) => cb({
-      get: (ref) => { locks.push(ref.id); return ref.get(); },
+      get: (ref) => { locks.push(ref.id); events.push(`lock:${ref.id}`); return ref.get(); },
       update: (ref, payload) => { const [col, id] = ref.path.split('/'); if (col !== 'agentBattles') throw new Error(`unexpected tx update ${ref.path}`); writeBattle(id, payload); },
       set: () => {}, create: () => {},
     }),
@@ -187,6 +191,7 @@ function makeGates() {
   const entered = [];
   const prices = makePriceTable();
   mocks.getStockAnalysisData.mockImplementation(async (s) => {
+    events.push(`fetch:${s}`);
     if (!s.startsWith('X_')) return prices[s] ? { price: prices[s], daily: [] } : {};
     const id = s.slice(2);
     entered.push(id);
@@ -229,7 +234,8 @@ const inFlight = (gates, db) => gates.entered.filter((id) => !finishedIds(db).in
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(FROZEN_NOW));
-  flags.k = 1; flags.cutoff = 200_000; flags.capture = false;
+  flags.k = 1; flags.cutoff = 200_000; flags.capture = false; flags.cuts = false;
+  events.length = 0;
   scopes.created.length = 0; scopes.seen.clear();
   mocks.getStockAnalysisData.mockReset();
   mocks.fetchIntradayBatch.mockReset();
@@ -293,6 +299,21 @@ describe('K battles in flight — never more', () => {
     for (const [, opts] of spyCalls) expect(opts).toEqual({ forceRefresh: true, fields: ['daily', 'price'] });
   });
 
+  it('review TI-7: with the cuts ON, the handler prices the macros ONCE, before the first battle\'s lock; no battle fetches them', async () => {
+    flags.cuts = true;
+    const gates = makeGates();
+    const { done } = await startHandler([cpuBattle('v1'), cpuBattle('v2')]);
+    await settle(); gates.open('v1'); await settle(); gates.open('v2');
+    await done;
+    const firstLock = events.findIndex((e) => e.startsWith('lock:'));
+    expect(firstLock).toBeGreaterThan(0);
+    for (const m of ['SPY', 'QQQ']) {
+      const fetches = events.map((e, i) => [e, i]).filter(([e]) => e === `fetch:${m}`);
+      expect(fetches.length, m).toBeGreaterThan(0); // the run's own fetch (bars, then quote)…
+      expect(fetches.every(([, i]) => i < firstLock), m).toBe(true); // …all before any battle started
+    }
+  });
+
   it('review PL-3: a run with no active battle records the settings in force and nothing dispatched', async () => {
     const one = await startHandler([]);
     await one.done;
@@ -311,7 +332,7 @@ describe('K battles in flight — never more', () => {
     expect(inFlight(gates, db)).toEqual(['m1']);
     gates.open('m1'); await settle(); gates.open('m2');
     await done;
-    expect(db.__runDocs[0].data.pool).toMatchObject({ k: 1, maxInFlight: 1 });
+    expect(db.__runDocs[0].data.pool).toEqual({ k: 1, startCutoffMs: 290_000, maxInFlight: 1, dispatched: 2 }); // review TI-11: the whole block
   });
 });
 

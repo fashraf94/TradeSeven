@@ -29,8 +29,17 @@ const mod = await import('./evalMarketData.js');
 const {
   fetchEvalSymbolData, sessionDailySeries, resetSessionDailyMemo, sessionKeyFor, expectedPriorBarDate,
   prepareRunMarketShare, sharedMacroQuote, SESSION_DAILY_COLLECTION, SESSION_DAILY_MIN_ROWS, SESSION_DAILY_IO_TIMEOUT_MS,
-  SESSION_DAILY_WAIT_TIMEOUT_MS, isReusableSessionSeries, resetHorizonLog,
+  SESSION_DAILY_WAIT_TIMEOUT_MS, RUN_SHARE_TIMEOUT_MS, isReusableSessionSeries, resetHorizonLog,
 } = mod;
+
+describe('the bounds and the narrow line, pinned (review TI-10)', () => {
+  it('store I/O 1.5 s; a waiter 15 s; a run\'s macro fetch 10 s; a series narrower than 55 rows is never used', () => {
+    expect(SESSION_DAILY_IO_TIMEOUT_MS).toBe(1_500);
+    expect(SESSION_DAILY_WAIT_TIMEOUT_MS).toBe(15_000);
+    expect(RUN_SHARE_TIMEOUT_MS).toBe(10_000);
+    expect(SESSION_DAILY_MIN_ROWS).toBe(55);
+  });
+});
 const { getStockAnalysisData, DAILY_WINDOW_CALENDAR_DAYS } = await import('./marketDataCache.js');
 const { selectPriorSessionBar } = await import('./baselineValidation.js');
 
@@ -73,7 +82,7 @@ function stubNetwork(net) {
 }
 
 /** The session store: a Map per document id; `reads`/`writes` recorded; `getError`/`getHang` per row. */
-function makeStoreDb({ getError = null, getHang = false } = {}) {
+function makeStoreDb({ getError = null, getHang = false, setHang = false } = {}) {
   const docs = new Map();
   const reads = [];
   const writes = [];
@@ -88,7 +97,7 @@ function makeStoreDb({ getError = null, getHang = false } = {}) {
             if (getError) throw getError;
             return { exists: docs.has(id), data: () => JSON.parse(JSON.stringify(docs.get(id))) };
           },
-          set: async (data) => { writes.push(id); docs.set(id, JSON.parse(JSON.stringify(data))); },
+          set: async (data) => { writes.push(id); if (setHang) return new Promise(() => {}); docs.set(id, JSON.parse(JSON.stringify(data))); },
         }),
       };
     },
@@ -134,7 +143,11 @@ describe('daily bars once per symbol per ET session', () => {
     await fetchEvalSymbolData(db, 'AAPL', MON);
     await Promise.all([fetchEvalSymbolData(db, 'AAPL', MON), fetchEvalSymbolData(db, 'AAPL', MON)]);
     resetSessionDailyMemo(); // a cold instance: the process memo is gone, the document is not
-    await fetchEvalSymbolData(db, 'AAPL', MON);
+    const cold = await fetchEvalSymbolData(db, 'AAPL', MON);
+    // review TI-1: the cold check is SERVED by the stored series — bars and quote both there
+    expect(cold.daily).toHaveLength(62);
+    expect(cold.daily[0]).toMatchObject({ date: '2026-11-13', close: 100 });
+    expect(cold.price.current).toBe(150);
     expect(counts.eod['AAPL.US']).toBe(1);
     expect(counts.rt['AAPL.US']).toBe(4);
     expect(db.__writes).toEqual(['AAPL.US_2026-11-16']);
@@ -236,9 +249,34 @@ describe('a failed session read falls back to the fetch as it was', () => {
     await vi.advanceTimersByTimeAsync(SESSION_DAILY_IO_TIMEOUT_MS - 1);
     expect(out).toBeNull();
     expect(counts.eod['AAPL.US']).toBeUndefined();
-    await vi.advanceTimersByTimeAsync(SESSION_DAILY_IO_TIMEOUT_MS + 10);
+    await vi.advanceTimersByTimeAsync(2); // review TI-10: just past the bound, not twice it
     expect(out?.price?.current).toBe(150);
     expect(counts.eod['AAPL.US']).toBe(1);
+  });
+
+  it('review TI-8: a store WRITE that hangs is bounded too — the check still answers', async () => {
+    vi.useFakeTimers();
+    stubNetwork({ eod: { 'AAPL.US': eodRows('2026-11-13') }, rt: { 'AAPL.US': RT() } });
+    const db = makeStoreDb({ setHang: true });
+    let out = null;
+    fetchEvalSymbolData(db, 'AAPL', MON).then((r) => { out = r; });
+    await vi.advanceTimersByTimeAsync(SESSION_DAILY_IO_TIMEOUT_MS - 1);
+    expect(out).toBeNull();
+    await vi.advanceTimersByTimeAsync(2);
+    expect(out?.daily).toHaveLength(62);
+    expect(out?.price?.current).toBe(150);
+  });
+
+  it('review TI-12: a first fetch that failed is not remembered — the next check fetches and stores', async () => {
+    let status = 503;
+    const counts = stubNetwork({ eod: { 'AAPL.US': () => (status === 503 ? 503 : eodRows('2026-11-13')) }, rt: { 'AAPL.US': RT() } });
+    const db = makeStoreDb();
+    await fetchEvalSymbolData(db, 'AAPL', MON);
+    status = 200;
+    const second = await fetchEvalSymbolData(db, 'AAPL', MON);
+    expect(second.daily).toHaveLength(62);
+    expect(counts.eod['AAPL.US']).toBe(2);
+    expect(db.__writes).toEqual(['AAPL.US_2026-11-16']);
   });
 
   it('a waiter on a first fetch that came back unusable fetches for itself (daily+price), as before', async () => {
@@ -270,6 +308,23 @@ describe('a FAILED quote takes its fallback from FRESH bars, never the stored se
     expect(out.price).toEqual(today.price);
     expect(out.daily).toEqual(today.daily); // Guard 2 reads the same fresh bars on this path
     expect(counts.eod['AAPL.US']).toBe(3);
+  });
+
+  it('review TI-2: on a COLD instance served from the store, a failed quote still takes its fallback from fresh bars', async () => {
+    let closeBase = 100;
+    let rtStatus = 200;
+    const counts = stubNetwork({
+      eod: { 'AAPL.US': () => eodRows('2026-11-13', 62, { closeOf: (i) => closeBase + i }) },
+      rt: { 'AAPL.US': () => (rtStatus === 200 ? RT() : rtStatus) },
+    });
+    const db = makeStoreDb();
+    await fetchEvalSymbolData(db, 'AAPL', MON); // stores the series (newest close 100)
+    resetSessionDailyMemo(); // cold: the next check is served by the STORE, not the memo
+    closeBase = 300;
+    rtStatus = 503;
+    const out = await fetchEvalSymbolData(db, 'AAPL', MON);
+    expect(out.price).toEqual({ current: 300, fallback: true });
+    expect(counts.eod['AAPL.US']).toBe(2); // the store served the series; the fallback fetched fresh
   });
 
   it('the caller that fetched the series in this check uses THOSE bars for its fallback — no second /eod/', async () => {
@@ -320,6 +375,24 @@ describe('review GC-1: a check waiting on another check\'s first fetch is bounde
 });
 
 describe('crypto keys on the UTC day', () => {
+  it('review TI-9: one process across the UTC rollover (same ET date) fetches a NEW crypto series — the memo keys on the cutoff', async () => {
+    const LATE = new Date('2026-11-17T02:00:00.000Z'); // still 2026-11-16 in ET; 2026-11-17 in UTC
+    let end = '2026-11-15';
+    const daily = () => {
+      const rows = [];
+      for (let i = 0; i < 90; i++) rows.push({ date: new Date(Date.parse(`${end}T12:00:00Z`) - i * 86_400_000).toISOString().slice(0, 10), open: 1, high: 2, low: 0.5, close: 1.5, adjusted_close: 1.5, volume: 1 });
+      return rows;
+    };
+    const counts = stubNetwork({ eod: { 'BTC-USD.CC': daily }, rt: { 'BTC-USD.CC': RT(67000) } });
+    const db = makeStoreDb();
+    const early = await fetchEvalSymbolData(db, 'BTC-USD.CC', MON);
+    end = '2026-11-16';
+    const late = await fetchEvalSymbolData(db, 'BTC-USD.CC', LATE);
+    expect(counts.eod['BTC-USD.CC']).toBe(2);
+    expect(early.daily[0].date).toBe('2026-11-15');
+    expect(late.daily[0].date).toBe('2026-11-16');
+  });
+
   it('review GC-5: when the ET date and the UTC date differ, crypto keys on the UTC day and expects the UTC day before', async () => {
     const LATE = new Date('2026-11-17T02:00:00.000Z'); // Mon 21:00 ET (2026-11-16) = Tue in UTC
     const key = sessionKeyFor('BTC-USD.CC', LATE);
@@ -383,6 +456,25 @@ describe('the run\'s shared macro quotes', () => {
     expect(sharedMacroQuote(run, 'AAPL', new Set())).toBeNull();
     expect(sharedMacroQuote({}, 'SPY', new Set())).toBeNull();
     expect(sharedMacroQuote(null, 'SPY', new Set())).toBeNull();
+  });
+
+  it('review TI-8: a macro quote that never answers is bounded at 10 s — the run goes on without it', async () => {
+    vi.useFakeTimers();
+    globalThis.fetch = vi.fn((url) => {
+      const u = String(url);
+      if (u.includes('/real-time/SPY.US')) return new Promise(() => {});
+      if (u.includes('/eod/')) return Promise.resolve(new Response(JSON.stringify(eodRows('2026-11-13')), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify(RT(480)), { status: 200 }));
+    });
+    const run = {};
+    let done = false;
+    prepareRunMarketShare(makeStoreDb(), run, MON).then(() => { done = true; });
+    await vi.advanceTimersByTimeAsync(RUN_SHARE_TIMEOUT_MS - 1);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(done).toBe(true);
+    expect(sharedMacroQuote(run, 'SPY', new Set())).toBeNull();
+    expect(sharedMacroQuote(run, 'QQQ', new Set())).not.toBeNull();
   });
 
   it('review GC-2: a FALLBACK quote (a failed real-time call priced at the daily close) is never shared', async () => {

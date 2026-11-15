@@ -171,6 +171,19 @@ describe('flag ON — same effects as a per-battle fetch', () => {
     expect(on.request).toEqual(off.request);
   });
 
+  it('review TI-6: a battle whose CPU opponent holds SPY, and whose hot bench lists QQQ, fetches both itself; writes identical', async () => {
+    const battle = makeTickBattle();
+    battle.opponent.portfolio.star.push({ symbol: 'SPY', baseATR: 1.2, tier: 'star', direction: null });
+    battle.opponent.portfolio.startingPrices = { ...(battle.opponent.portfolio.startingPrices || {}), SPY: 550 };
+    battle.watchlist = { ...(battle.watchlist || {}), hotBench: [...(battle.watchlist?.hotBench || []), 'QQQ'] };
+    const off = await check({ cuts: false, battle: deepClone(battle) });
+    const on = await check({ cuts: true, battle: deepClone(battle) });
+    expect(on.tickCalls.filter(([s]) => s === 'SPY').length).toBeGreaterThan(0); // the opponent's book is the battle's own
+    expect(on.tickCalls.filter(([s]) => s === 'QQQ').length).toBeGreaterThan(0); // so is its hot bench
+    expect(on.updates).toEqual(off.updates);
+    expect(on.request).toEqual(off.request);
+  });
+
   it('a macro the run could not price is fetched by the battle, as before', async () => {
     // QQQ unpriced everywhere: the share holds no QQQ, so the check asks for it.
     const off = await check({ cuts: false, priceless: ['QQQ'] });

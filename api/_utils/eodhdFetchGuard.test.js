@@ -79,24 +79,33 @@ describe('flag OFF — the bare request, counted', () => {
     expect(await out).toBe(response);
   });
 
-  it('a rejection is the SAME error object, and is not swallowed', async () => {
-    const boom = new TypeError('fetch failed');
-    globalThis.fetch = vi.fn(() => Promise.reject(boom));
-    await expect(eodhdFetch('https://eodhd.com/api/real-time/AAPL.US', 'realTime')).rejects.toBe(boom);
+  it('a rejection is the SAME error object, and is not swallowed — and the counter leaves no unhandled rejection (review TI-13)', async () => {
+    const unhandled = [];
+    const onUnhandled = (r) => unhandled.push(r);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const boom = new TypeError('fetch failed');
+      globalThis.fetch = vi.fn(() => Promise.reject(boom));
+      await expect(eodhdFetch('https://eodhd.com/api/real-time/AAPL.US', 'realTime')).rejects.toBe(boom);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 
   it('counts requests by kind and non-2xx by class (429, 5xx, other); 2xx is not a non-2xx', async () => {
     const before = readEodhdCounters();
-    const statuses = [200, 429, 503, 404, 200];
+    const statuses = [200, 429, 503, 404, 200, 500, 599, 400];
     let i = 0;
     globalThis.fetch = vi.fn(async () => json({}, statuses[i++]));
-    for (const kind of ['eod', 'realTime', 'intraday', 'other', 'nonsense']) await eodhdFetch('https://eodhd.com/api/x', kind);
+    for (const kind of ['eod', 'realTime', 'intraday', 'other', 'nonsense', 'eod', 'eod', 'eod']) await eodhdFetch('https://eodhd.com/api/x', kind).catch(() => {});
     await Promise.resolve();
     const delta = eodhdCounterDelta(before, readEodhdCounters());
     expect(delta).toEqual({
-      requests: { eod: 1, realTime: 1, intraday: 1, other: 2 },
+      requests: { eod: 4, realTime: 1, intraday: 1, other: 2 },
       timeouts: 0,
-      non2xx: { 429: 1, '5xx': 1, other: 1 },
+      non2xx: { 429: 1, '5xx': 3, other: 2 }, // 500 and 599 are 5xx (review TI-13); 404 and 400 are "other"
     });
   });
 
@@ -188,6 +197,46 @@ describe('flag ON — the 10 s timeout', () => {
     expect(readEodhdGuardState()).toEqual({ active: 1, queued: 0 }); // the 33rd is now in flight
     await vi.advanceTimersByTimeAsync(5_000);
     expect(await Promise.all(all)).toEqual(Array(EODHD_FETCH_CONCURRENCY + 1).fill(200));
+  });
+});
+
+describe('flag ON — the counters still count (review TI-3: the flip\'s own measurement)', () => {
+  it('requests by kind and non-2xx by class are counted on the guarded path too', async () => {
+    flags.guard = true;
+    const before = readEodhdCounters();
+    const statuses = [200, 503, 429];
+    let i = 0;
+    globalThis.fetch = vi.fn(async () => json({}, statuses[i++]));
+    await eodhdFetch('https://eodhd.com/api/eod/A.US', 'eod');
+    await eodhdFetch('https://eodhd.com/api/real-time/A.US', 'realTime');
+    await eodhdFetch('https://eodhd.com/api/intraday/A.US', 'intraday');
+    expect(eodhdRunBlock(before)).toEqual({
+      requests: { eod: 1, realTime: 1, intraday: 1, other: 0 },
+      timeouts: 0,
+      non2xx: { 429: 1, '5xx': 1, other: 0 },
+    });
+  });
+
+  it('a 204 (a status that carries no body) comes back as a usable response, not a network error (review TI-13)', async () => {
+    flags.guard = true;
+    globalThis.fetch = vi.fn(async () => new Response(null, { status: 204 }));
+    const r = await eodhdFetch('https://eodhd.com/api/eod/A.US', 'eod');
+    expect(r.status).toBe(204);
+    expect(r.ok).toBe(true);
+  });
+
+  it('the queue is first come, first served (review TI-13)', async () => {
+    flags.guard = true;
+    vi.useFakeTimers();
+    const order = [];
+    globalThis.fetch = vi.fn((url) => {
+      order.push(String(url).split('/').pop());
+      return new Promise((resolve) => setTimeout(() => resolve(json({})), 100));
+    });
+    const calls = Array.from({ length: EODHD_FETCH_CONCURRENCY + 3 }, (_, i) => eodhdFetch(`https://eodhd.com/api/eod/S${i}`, 'eod'));
+    await vi.advanceTimersByTimeAsync(1_000);
+    await Promise.all(calls);
+    expect(order).toEqual(Array.from({ length: EODHD_FETCH_CONCURRENCY + 3 }, (_, i) => `S${i}`));
   });
 });
 

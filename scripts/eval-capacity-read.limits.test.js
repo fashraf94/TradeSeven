@@ -5,7 +5,7 @@
 // Firestore. docs/audits/20261115_BUILD_EVAL_CAPACITY_1.md.
 
 import { describe, it, expect } from 'vitest';
-import { runRow, limitsOfRun, limitsRead, renderLimits } from './eval-capacity-read.mjs';
+import { runRow, limitsOfRun, limitsRead, renderLimits, gather, render } from './eval-capacity-read.mjs';
 
 const block = (over = {}) => ({
   pool: { k: 1, startCutoffMs: 290_000, maxInFlight: 1, dispatched: 3 },
@@ -62,6 +62,47 @@ describe('timeouts not measured (the guard off) stay null — never a measured z
     expect(renderLimits(out).join('\n')).toContain('| 2026-11-16 | 2 | 2 | 1 | 1 | 0 | 0 | — |');
     const measured = limitsRead([...rows, runRow(record('2026-11-16T15:15:00.000Z', 1))], ['2026-11-16']);
     expect(measured.perDay[0].eodhdTimeouts).toBe(0);
+  });
+});
+
+describe('review TI-5: fixtures that tell the arithmetic apart, and the read end to end', () => {
+  const A = { startedAt: '2026-11-16T15:00:00.000Z', battlesTotal: 5, evaluated: 2, modelCalls: 1, wallMs: 1,
+    ...block({
+      anthropic: { requestsLimit: 50, inputTokensLimit: 60_000, outputTokensLimit: 10_000, minRequestsRemaining: 7, minInputTokensRemaining: 30_000, minOutputTokensRemaining: 9_000, responses429: 1 },
+      eodhd: { requests: { eod: 10, realTime: 10, intraday: 2, other: 3 }, timeouts: 0, non2xx: { 429: 1, '5xx': 0, other: 0 } },
+    }) };
+  const B = { startedAt: '2026-11-16T15:15:00.000Z', battlesTotal: 4, evaluated: 1, modelCalls: 1, wallMs: 1,
+    ...block({
+      anthropic: { requestsLimit: 50, inputTokensLimit: 50_000, outputTokensLimit: 10_000, minRequestsRemaining: 9, minInputTokensRemaining: 20_000, minOutputTokensRemaining: 9_500, responses429: 2 },
+      eodhd: { requests: { eod: 5, realTime: 5, intraday: 1, other: 0 }, timeouts: 1, non2xx: { 429: 2, '5xx': 0, other: 0 } },
+    }) };
+
+  it('429s are summed, `other` counted, per battle EVALUATED (not total), the lowest input limit', () => {
+    const d = limitsRead([runRow(A), runRow(B)], ['2026-11-16']).perDay[0];
+    expect(d.responses429).toBe(3);
+    expect(d.eodhdByEndpoint.other).toBe(3);
+    expect(d.eodhdRequests).toBe(36);
+    expect(d.eodhdPerCheck).toBe(36 / 3); // evaluated 2 + 1, not battlesTotal 5 + 4
+    expect(d.inputTokensLimit).toBe(50_000);
+    expect(d.minRequestsRemaining).toBe(7);
+    expect(d.eodhdTimeouts).toBe(1);
+    expect(d.eodhdNon2xx[429]).toBe(3);
+  });
+
+  it('gather() over a read-only handle carries the blocks into the read, and render() prints section L', async () => {
+    const q = (docs) => { const o = { where: () => o, select: () => o, orderBy: () => o, get: async () => ({ docs }) }; return o; };
+    const db = {
+      collection: (name) => ({
+        ...q(name === 'agentEvalRuns' ? [A, B].map((d, i) => ({ id: `run-${i}`, data: () => d })) : []),
+        doc: (id) => ({ id, collection: () => q([]), get: async () => ({ exists: false, data: () => undefined }) }),
+      }),
+      getAll: async (...refs) => refs.map(() => ({ exists: false, data: () => undefined })),
+    };
+    const read = await gather(db, { days: ['2026-11-16'], readAtMs: Date.parse('2026-11-17T12:00:00Z') });
+    expect(read.limits.runsWithBlocks).toBe(2);
+    const text = render(read);
+    expect(text).toContain('### L. The limits on record');
+    expect(text).toContain('| 2026-11-16 | 2 | 1 | 1 | 6 | 50 | 50,000 | 10,000 | 7 | 20,000 | 9,000 | 3 |');
   });
 });
 
