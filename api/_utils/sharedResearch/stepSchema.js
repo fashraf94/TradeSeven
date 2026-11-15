@@ -33,6 +33,11 @@
 //   8. ✗ more than 12 findings, or a step that would take the record past 100.
 // ✗ also: a support, company or summary citing a finding the step did not
 // write and the record does not hold currently (`invalid_source`).
+//
+// KB-1 (Amendment A §A4.6): on a turn whose EFFECTIVE method's source is `kb`
+// — and on no other turn — three more checks, each ✗ like rule 7
+// (kbTurnFailOf): `method_as_source`, `method_example_as_fact`,
+// `service_promise`. The next action cites the turn's method (`ctx.method`).
 
 import { createHash } from 'node:crypto';
 import {
@@ -41,7 +46,7 @@ import {
 } from '../researchRecords/model.js';
 import { RELATIONSHIP_ROLES, ROLE_SEPARATOR, UNRESOLVED_REASONS } from '../../../src/constants/sharedResearch.js';
 import { gameUniverse, resolveSymbol, namesCompany, isSameCompany } from './companies.js';
-import { METHOD_SOURCE } from './method.js';
+import { METHOD_SOURCE, methodMarkersFor } from './method.js';
 
 /**
  * Capital words that are not tickers (the scan's allowance). A COPY of the
@@ -420,10 +425,12 @@ const fail = (rule, detail = null) => ({ ok: false, rule, detail });
  * @param {string} ctx.nowIso        the write time (findings are built at it)
  * @param {() => string} ctx.mintFindingId  a fresh `f_<uuid>`
  * @param {object} [ctx.universe]
+ * @param {object} [ctx.method]     the turn's effective method (KB-1): the next action cites its sourceRef, and a
+ *                                   `kb` method runs the three method checks; the baseline when omitted
  * @returns {{ ok: true, findings: object[], summary: object|null, lines: object, reply: string, notes: string[] } | { ok: false, rule: string, detail: any }}
  */
 export function validateStepTurn(output, ctx) {
-  const { record, items = [], readAt = null, partnerExchangeId, nowIso, mintFindingId, universe = gameUniverse, names = {}, partnerName = null } = ctx;
+  const { record, items = [], readAt = null, partnerExchangeId, nowIso, mintFindingId, universe = gameUniverse, names = {}, partnerName = null, method = null } = ctx;
   const notes = [];
   if (!output || typeof output !== 'object') return fail('unparseable');
   const rawFindings = Array.isArray(output.findings) ? output.findings : [];
@@ -659,11 +666,13 @@ export function validateStepTurn(output, ctx) {
   // (refuter SH-s); the plain marker stands in its place.
   if (nextFact && CLAIMS_ANSWERED.test(nextFact)) { notes.push('next_action_claims_answered'); nextFact = null; }
   if (!nextFact && priorNext && priorNext.statusReason !== 'no_next_step') { nextFact = NO_NEXT_STEP_FACT; nextReason = 'no_next_step'; }
+  let nextActionId = null;
   if (nextFact) {
+    nextActionId = mintFindingId();
     const err = build({
-      kind: 'next_action', symbol: null, fact: nextFact, source: { ...METHOD_SOURCE }, at: partnerAtOf(ctx), asOf: null,
+      kind: 'next_action', symbol: null, fact: nextFact, source: { ...(method?.sourceRef ?? METHOD_SOURCE) }, at: partnerAtOf(ctx), asOf: null,
       status: 'unverified', statusReason: nextReason, supersedes: priorNext ? priorNext.findingId : null,
-    }, mintFindingId());
+    }, nextActionId);
     if (err) return err;
     if (priorNext) afterById.delete(priorNext.findingId);
     afterById.set(built.at(-1).findingId, built.at(-1));
@@ -678,8 +687,10 @@ export function validateStepTurn(output, ctx) {
   // own date excused (review B2). A summary whose number no verified cited finding holds is WITHHELD, not a failed
   // step: the answer keeps its last revision and the step's findings still land. Its other faults still fail the turn.
   let summary = null;
+  let summaryText = '';
   if (output.summary && typeof output.summary === 'object') {
     const text = clean(output.summary.text);
+    summaryText = text;
     if (!text) return fail('invalid_summary');
     if (text.length > SUMMARY_TEXT_MAX_LEN) return fail('summary_too_long', text.length);
     const tf = textFail(text, 'summary');
@@ -711,6 +722,7 @@ export function validateStepTurn(output, ctx) {
   };
 
   let reply = cut(clean(output.reply), REPLY_MAX);
+  const replyText = reply; // as the model wrote it, before any replacement (the KB checks read this)
   if (reply) {
     const rf = textFail(reply, 'reply');
     if (rf) return rf;
@@ -723,7 +735,155 @@ export function validateStepTurn(output, ctx) {
       reply = replacedReplyOf(built.length, summary !== null);
     }
   }
+  // KB-1: the KB method's three checks, after every B1 rule — on a `kb` turn only (Rule 4).
+  const kb = kbTurnFailOf({ method, findings: built, nextActionId, current: [...afterById.values()], summaryText, replyText, partnerName });
+  if (kb) return kb;
   return { ok: true, findings: built, summary, lines, reply, notes };
+}
+
+// ── the KB method's three checks (Amendment A §A4.6; KB-1) ─────────────────────
+//
+// They run ONLY on a turn whose effective method's source is `kb`: a baseline
+// turn is validated by B1's rules exactly as before. Each fails the step, as
+// rule 7 does — nothing is appended, the failure is recorded, a typed refusal
+// (`invalid_<rule>`). In order:
+//   method_as_source        a finding other than the step's one next action
+//                           whose source is `kb` (a structural guard: the
+//                           validator writes no other today)
+//   method_example_as_fact  the method's own register (method.js markers, for
+//                           its exact bytes; a method with none runs no check):
+//                           a bracketed group of its source ids, or one right
+//                           after "per", "see", "under" or "from", in the reply,
+//                           the summary or any fact; and a sentence naming the
+//                           worked example's name with its date in a
+//                           non-retrieval finding's fact, the summary or the
+//                           reply — unless the record (as this step leaves it)
+//                           holds a current retrieval-backed finding naming both
+//   service_promise         the reply, the summary or any fact naming Practice
+//                           Field, Film Room or the idea book, or saying the
+//                           agent, I, we, the partner (by name too) or this/the/
+//                           your idea will (or is going to) test, trial, track,
+//                           monitor or adopt
+// The texts are read as the model wrote them (the summary even when withheld,
+// the reply before any replacement), after Unicode normalization.
+
+/** The text — and the partner's name — as the three checks read it: NFKC, no invisible format characters, curly apostrophes straight. */
+const readable = (v) => straightApostrophes(normalizeText(v));
+
+/** An id of the register as a token: not glued to a letter or a digit on either side. */
+const idAlternation = (ids) => `(?<![A-Za-z0-9])(?:${[...ids].sort((a, b) => b.length - a.length).map(escapeRe).join('|')})(?![A-Za-z0-9])`;
+/** Between two ids of one group: a comma, a semicolon, a slash, an ampersand, a dash or hyphen (a range), "and", "or", "to". */
+const ID_SEPARATOR = String.raw`\s*(?:,\s*(?:and|or)\b|[,;/&–—-]|\b(?:and|or|to)\b)\s*`;
+/**
+ * The citation forms: a bracketed group of one or more ids ("(M1)", "[C1, I4]", "(I1/I2)", "(M1, V1, and T2)",
+ * "(T1–T6)"); an id right after per/see/under/from.
+ */
+function citationResOf(ids) {
+  const id = idAlternation(ids);
+  return [
+    new RegExp(String.raw`[(\[]\s*${id}(?:${ID_SEPARATOR}${id})*\s*[)\]]`),
+    new RegExp(String.raw`\b(?:[Pp]er|[Ss]ee|[Uu]nder|[Ff]rom)\s+${id}`),
+  ];
+}
+/** A period that ends an abbreviation, not a sentence: a single letter ("U.S."), a month, "vs.", "Inc.", "p.m."… */
+const ABBREVIATION_END = /(?:^|[\s(])(?:[A-Za-z]|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec|vs|Inc|Corp|Co|Ltd|Bros|approx|est|etc|Mr|Mrs|Ms|Dr|St|No|Jr|Sr|U\.S|U\.K|a\.m|p\.m|e\.g|i\.e)\.$/i;
+/** Sentences for the worked-example check: a sentence ends at . ! ? before a capital, a digit or a quote — never at an abbreviation. */
+function exampleSentencesOf(text) {
+  const s = String(text ?? '');
+  const out = [];
+  let start = 0;
+  for (const m of s.matchAll(/[.!?]+(?=\s+[A-Z0-9"'“(\[])/g)) {
+    const end = m.index + m[0].length;
+    if (m[0] === '.' && ABBREVIATION_END.test(s.slice(start, end))) continue;
+    out.push(s.slice(start, end));
+    start = end;
+  }
+  out.push(s.slice(start));
+  return out.map((x) => x.trim()).filter(Boolean);
+}
+function exampleResOf(example) {
+  const words = (s) => escapeRe(s).replace(/\s+/g, String.raw`\s+`);
+  return {
+    name: new RegExp(`(?<![A-Za-z0-9])(?:${example.names.map(words).join('|')})(?![A-Za-z0-9])`),
+    // the day not followed by a digit, a percent or a hyphenated word ("October 30%", "an October 30-day window")
+    date: new RegExp(String.raw`(?<![A-Za-z0-9])(?:${example.dates.map(words).join('|')})(?![\d%]|-[A-Za-z])`, 'i'),
+    alias: Array.isArray(example.aliases) && example.aliases.length ? new RegExp(`(?<![\\p{L}\\p{N}])(?:${example.aliases.map(words).join('|')})(?![\\p{L}\\p{N}])`, 'iu') : null,
+    day: dateMentionsOf(example.dates[0])[0] ?? null,
+  };
+}
+const isOnDay = (iso, day) => typeof iso === 'string' && day !== null && Number(iso.slice(5, 7)) === day.m && Number(iso.slice(8, 10)) === day.d;
+/**
+ * A current retrieval-backed finding that names the example: its name (in the fact — the company's own name counts,
+ * "Nvidia" — or its symbol) and its date (in the fact, or its own date — never the read day of an undated item).
+ */
+const namesExample = (f, re, example) => f?.source?.recordKind === 'retrieval'
+  && (re.name.test(f.fact) || (re.alias !== null && re.alias.test(f.fact)) || example.names.includes(f.symbol))
+  && (re.date.test(f.fact) || (!isUndated(f) && isOnDay(f.at, re.day)) || isOnDay(f.asOf, re.day));
+const statesExample = (text, re) => exampleSentencesOf(readable(text)).some((s) => re.name.test(s) && re.date.test(s));
+
+/** The app's services by name, as the letter names them (any case). */
+const SERVICE_NAMES = /\bpractice\s+field\b|\bfilm\s+room\b|\bidea\s+book\b/i;
+/** "I" as a numeral ("Phase I", "Phase-I", "Fund I") is no one. */
+const NOT_A_NUMERAL = String.raw`(?<!\b(?:Phase|Subphase|Series|Class|Tier|Type|Part|Stage|Level|Grade|Title|Chapter|Section|Article|Schedule|Form|Item|Exhibit|Volume|War|Fund|Basel|Train|Mark|Unit|Tranche|Gen|Generation|Block|Lot|Round|Wave|Cohort|Track|Line|Plant|Reactor|Group|Team|Division|Model)[\s-])(?<!-)`;
+/** The subjects: the agent and the partner (B1's words, spec §17 FQ-9), we, I, or this/the/your idea. */
+const PROMISE_SUBJECTS = String.raw`\b(?:${PARTNER_WORDS}|we|(?:this|the|your)\s+idea)|${NOT_A_NUMERAL}\bI`;
+/**
+ * will / 'll / is going to; then units that only fill ("be", "closely", "continue to", "keep on", ", of course,") —
+ * whole units, so "be on track" or "be on trial" is no promise — and an adverb is never a verb in -ply ("supply",
+ * "apply"); then the verb.
+ */
+const PROMISE_FILLER = String.raw`(?:also|then|now|just|first|soon|still|both|all|be|being|been|and|of\s+course|go\s+on\s+to`
+  + String.raw`|continu(?:e|ing)(?:\s+to)?|keep(?:ing)?(?:\s+on)?|start(?:ing)?(?:\s+to)?|begin(?:ning)?(?:\s+to)?`
+  + String.raw`|(?!(?:ap|sup|com|re|im|multi)ply\b|rely\b|July\b)\w+ly)`;
+const PROMISE_REST = String.raw`(?:\s+will|'ll|\s+(?:is|are|am)\s+going\s+to|'(?:s|re|m)\s+going\s+to)`
+  + String.raw`(?:,?\s+${PROMISE_FILLER},?){0,6}`
+  + String.raw`\s+(?:test|trial|track|monitor|adopt)(?:s|ed|ing|led|ling)?\b`;
+const PROMISE = new RegExp(`(?:${PROMISE_SUBJECTS})${PROMISE_REST}`, 'i');
+/**
+ * The promise for a partner with a name: the name, read like the text, is one more subject — matched as a whole word,
+ * in place, never swapped into the sentence (so a partner named "Will", "Test" or "Track" cannot swallow the words the
+ * promise needs — review CHK-1, CHK-2).
+ */
+function promiseReOf(partnerName) {
+  const n = typeof partnerName === 'string' ? readable(partnerName).trim() : '';
+  if (n.length < 2) return PROMISE;
+  return new RegExp(`(?:${PROMISE_SUBJECTS}|(?<![\\p{L}\\p{N}_])${escapeRe(n)}(?![\\p{L}\\p{N}_]))${PROMISE_REST}`, 'iu');
+}
+function promisesService(text, partnerName) {
+  const t = readable(text);
+  if (SERVICE_NAMES.test(t)) return true;
+  const re = promiseReOf(partnerName);
+  return sentencesOf(t).some((s) => re.test(s));
+}
+
+/**
+ * The KB method's three checks on one validated step turn (KB-1): null when the
+ * turn passes them — or when its method is not `kb` — else the failure.
+ * @param {object} p
+ * @param {object|null} p.method        the turn's effective method
+ * @param {object[]} p.findings         the findings the step built
+ * @param {string|null} p.nextActionId  the step's own next action (its one `kb` finding)
+ * @param {object[]} p.current          the record's current findings as the step leaves it
+ * @param {string} p.summaryText        the summary as written (withheld or not)
+ * @param {string} p.replyText          the reply as written (before any replacement)
+ * @param {string|null} [p.partnerName]
+ */
+export function kbTurnFailOf({ method, findings = [], nextActionId = null, current = [], summaryText = '', replyText = '', partnerName = null }) {
+  if (method?.source !== 'kb') return null;
+  for (const f of findings) if (f?.source?.recordKind === 'kb' && f.findingId !== nextActionId) return fail('method_as_source', f.findingId);
+  const texts = [['reply', replyText], ['summary', summaryText], ...findings.map((f) => [`fact:${f.findingId}`, f.fact])];
+  const markers = methodMarkersFor(method);
+  if (markers) {
+    const cites = citationResOf(markers.citations);
+    for (const [where, text] of texts) if (cites.some((re) => re.test(readable(text)))) return fail('method_example_as_fact', `${where}:citation`);
+    const re = exampleResOf(markers.example);
+    if (!current.some((f) => namesExample(f, re, markers.example))) {
+      const unbacked = [['reply', replyText], ['summary', summaryText], ...findings.filter((f) => f.source?.recordKind !== 'retrieval').map((f) => [`fact:${f.findingId}`, f.fact])];
+      for (const [where, text] of unbacked) if (statesExample(text, re)) return fail('method_example_as_fact', `${where}:example`);
+    }
+  }
+  for (const [where, text] of texts) if (promisesService(text, partnerName)) return fail('service_promise', where);
+  return null;
 }
 
 /**

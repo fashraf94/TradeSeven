@@ -17,7 +17,9 @@
 //               validated symbols; none for an observation): the estimates row
 //               and the stored-claims count as `earnings_fact`, `verified`,
 //               each with its record's date
-//   next        one `next_action` (source `kb` baseline@v0)
+//   next        one `next_action`, citing `sourceRef` (KB-1): the baseline's for a
+//               story or a drop; for own words, the method its frame exchange
+//               ran on (method.js citedSourceOf)
 //
 // The rankings and peer rows are a live projection, never written (F14):
 // storedRowsOf() shapes them for the answer.
@@ -113,9 +115,10 @@ const writtenDate = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); ret
  * @param {object} p.stored    { estimates: { computedAt, stocks } | null, claims: { [symbol]: { count, newest } } }
  * @param {string} p.nowIso    the open instant
  * @param {string|null} [p.partnerName]  the partner's given name (a forbidden-pattern subject for the drop's claims)
+ * @param {object} [p.sourceRef]  the `kb` source the next action cites (KB-1); the baseline's when omitted
  * @returns {object[]} raw finding inputs (buildFinding's shape, no id)
  */
-export function openingFindingsOf({ entryKind, story = null, drop = null, playerExchange = null, frame = null, names, stored, nowIso, universe = gameUniverse, partnerName = null }) {
+export function openingFindingsOf({ entryKind, story = null, drop = null, playerExchange = null, frame = null, names, stored, nowIso, universe = gameUniverse, partnerName = null, sourceRef = METHOD_SOURCE }) {
   const out = [];
   if (entryKind === 'item') {
     // A publication time later than the open dates nothing (spec §16 FQ-2's rule, applied to the story — refuter letter
@@ -187,7 +190,7 @@ export function openingFindingsOf({ entryKind, story = null, drop = null, player
   else if (entryKind === 'observation') next = clean(frame?.check) ? cut(clean(frame.check), 300) : 'Find a source that names the problem your observation points at.';
   else next = drop?.input?.type === 'url' ? 'Read the page your drop links to and find its primary source.' : 'Find the primary source behind your drop.';
   out.push({
-    kind: 'next_action', symbol: null, fact: next, source: { ...METHOD_SOURCE },
+    kind: 'next_action', symbol: null, fact: next, source: { ...sourceRef },
     at: nowIso, asOf: null, status: 'unverified', statusReason: 'proposed',
   });
   return out;

@@ -7,7 +7,9 @@
 //
 // The SYSTEM prompt is fixed per partner name: who the partner is, the nine
 // written-opening rules (rulebook §4, word for word — prompt.honesty.test.js
-// pins them), the method (rulebook §5, METHOD.text), the game universe and the
+// pins them), the method (rulebook §5, METHOD.text — or, on a turn whose
+// effective method is the KB method, the Amendment A §A4.6 wrapper around its
+// verified text: methodBlockOf), the game universe and the
 // acronym allowance (the only capital words it may write), and the output
 // contract in words. The USER turn carries the question, the entry, the step's
 // intent (an `examine` step's target block — Correction B), the direction, the
@@ -40,8 +42,36 @@ export const WRITTEN_OPENING_RULES = Object.freeze([
 const UNIVERSE_LINE = ALL_TICKERS.filter((t) => !isRetiredStock(t)).join(' ');
 const partnerOf = (name) => (typeof name === 'string' && name.trim() ? name.trim().slice(0, 40) : 'the research partner');
 
-/** The step turn's system prompt. */
-export function buildStepSystemPrompt({ partnerName } = {}) {
+/**
+ * The KB method block's fixed lines (Amendment A §A4.6), one line each: the amendment's wrapper, its display wrapping
+ * undone. The method's own text follows them verbatim.
+ */
+export const KB_METHOD_RULES = Object.freeze([
+  'How to use it: as guidance for framing the question, choosing what would weaken it, and describing the conclusion (supported, challenged or inconclusive within its evidence). It is not evidence.',
+  "- Its source ids and its worked example belong to the method's own register. Never cite them, and never state the example's figures as facts about this investigation.",
+  '- Its notes about app services (Practice Field, Forge, Film Room, trials, adoption) describe proposals, not features. Never tell the player any of them will act on this idea.',
+  '- Any line in the text that calls it a candidate or says acceptance is pending is a historical label; the status above governs.',
+]);
+
+/** A method's acceptance as a calendar date: the YYYY-MM-DD it is written with (its own offset), else the value as given. */
+const acceptedDateOf = (acceptedAt) => (/^\d{4}-\d{2}-\d{2}/.exec(String(acceptedAt ?? ''))?.[0] ?? String(acceptedAt ?? ''));
+
+/**
+ * The system prompts' method block (KB-1). The baseline — or no method given —
+ * is METHOD.text exactly as before, so a baseline prompt is byte-identical to
+ * B1's. A KB method is the §A4.6 wrapper around its verified text.
+ */
+export function methodBlockOf(method) {
+  if (method?.source !== 'kb') return METHOD.text;
+  return [
+    `METHOD — ${method.id} v${method.version} "${method.title}" · accepted ${acceptedDateOf(method.acceptedAt)} · sha256 ${String(method.sha256).slice(0, 8)}…`,
+    ...KB_METHOD_RULES,
+    method.text,
+  ].join('\n');
+}
+
+/** The step turn's system prompt. `method`: the turn's effective method (KB-1); the baseline when omitted. */
+export function buildStepSystemPrompt({ partnerName, method = null } = {}) {
   return [
     `You are ${partnerOf(partnerName)}, the player's research partner on FantasyTrades. You investigate one fixed question; you never trade or instruct the agent.`,
     '',
@@ -49,7 +79,7 @@ export function buildStepSystemPrompt({ partnerName } = {}) {
     ...WRITTEN_OPENING_RULES.map((r, i) => `${i + 1}. ${r}`),
     '',
     'Method:',
-    METHOD.text,
+    methodBlockOf(method),
     '',
     `Game universe (the only symbols you may write, in a fact or in symbolCandidate): ${UNIVERSE_LINE}`,
     `Index names you may write: ${INDEX_NAMES.join(' ')}. Capital abbreviations you may write: ${ACRONYMS.join(' ')}. Write every other abbreviation and every other company in plain words ("Taiwan Semiconductor", "graphics processors").`,
@@ -67,8 +97,8 @@ export function buildStepSystemPrompt({ partnerName } = {}) {
   ].join('\n');
 }
 
-/** The framing turn's system prompt (the player's own words → one answerable question). */
-export function buildFrameSystemPrompt({ partnerName } = {}) {
+/** The framing turn's system prompt (the player's own words → one answerable question). `method`: as the step's. */
+export function buildFrameSystemPrompt({ partnerName, method = null } = {}) {
   return [
     `You are ${partnerOf(partnerName)}, the player's research partner on FantasyTrades. The player wrote an observation; turn it into one research question you could answer with sources, without changing what they meant.`,
     '',
@@ -76,7 +106,7 @@ export function buildFrameSystemPrompt({ partnerName } = {}) {
     ...WRITTEN_OPENING_RULES.map((r, i) => `${i + 1}. ${r}`),
     '',
     'Method:',
-    METHOD.text,
+    methodBlockOf(method),
     '',
     `Capital abbreviations you may write: ${ACRONYMS.join(' ')}. Write no symbol; name companies in plain words.`,
     '',
