@@ -59,7 +59,8 @@
 // a rename already waited; a cash delisting did not, so it paid shares × cashPerShare on an unadjusted count, resolved
 // the idea and returned that cash to the treasury. Now every COUNT-DEPENDENT action — a cash delisting, a cash dividend,
 // and a later split, reverse split or stock distribution — of a symbol whose share basis is unresolved by an action
-// dated on or before it (strictly before, for a share-basis action) waits, on EVERY ledger of the idea (the close's
+// dated on or before it (for a share-basis action: one that precedes it in the order of application, on an earlier date
+// or the same one — fix round 3, T2A-D02) waits, on EVERY ledger of the idea (the close's
 // hold set, shareBasisHolds, decides for the idea as renameDeferralSymbols did). Not applied, not settled: the holding
 // keeps `heldActions: [{ actionId, type, ticker, effectiveDate, ratio, amount, cashPerShare, source, heldOn,
 // heldBecause }]` (the payload the feed last listed; it survives the feed dropping the row), stays at its carried mark,
@@ -375,8 +376,11 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
 
   // THE SHARE-BASIS ACTIONS THIS LEDGER CANNOT SETTLE, kept as the call goes (fix round 2): its unsettled conflicts, the
   // rows it has no entitlement data for, the ones it holds and what they wait on — and, below, each one the applier
-  // refuses or that waits. A count-dependent action of the symbol dated on or after one of them (strictly after, for a
-  // share-basis action: two of one date never wait on each other) waits, as one dated after one of the idea's `holds`.
+  // refuses or that waits. A cash action of the symbol dated on or after one of them waits, as one dated after one of the
+  // idea's `holds`. A share-basis action waits on one that PRECEDES it in this call's own order of application
+  // (`byDatePhaseId`: date, then phase, then id) — on an earlier date or on the same one — and never on itself or on one
+  // after it (fix round 3, Astra T2A-D02: shares are rounded after each action, so two of one date applied out of order
+  // leave a different count).
   const blocked = new Map();
   for (const [sym, items] of unresolvedShareBasis(next, actionsBySymbol, { date })) {
     for (const i of items) {
@@ -386,8 +390,9 @@ function applyActions(ledger, actionsBySymbol, { date, phase, holds = null, defe
   }
   const causesOf = (action) => {
     const sym = upper(action.ticker);
-    const strict = SHARE_BASIS_TYPES.has(action.type);
-    const before = (i) => typeof i.effectiveDate !== 'string' || (strict ? i.effectiveDate < action.effectiveDate : i.effectiveDate <= action.effectiveDate);
+    const before = SHARE_BASIS_TYPES.has(action.type)
+      ? (i) => typeof i.effectiveDate !== 'string' || byDatePhaseId(i, action) < 0
+      : (i) => typeof i.effectiveDate !== 'string' || i.effectiveDate <= action.effectiveDate;
     const nowSettled = settledIdsOf(next);
     const out = new Map();
     for (const i of holds?.get(sym) || []) if (i.actionId !== action.actionId && before(i) && !(i.ledger === kind && nowSettled.has(i.actionId))) addItem(out, sym, { ...i });

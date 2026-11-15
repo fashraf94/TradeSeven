@@ -1257,3 +1257,110 @@ describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-depen
     });
   });
 });
+
+// ── FIX ROUND 3 (15 Nov 2026) — ASTRA T2A-D02: SHARE-BASIS ACTIONS WAIT IN THEIR FULL ORDER OF APPLICATION ─────────────
+// A share-basis action waited only behind an unresolved one dated STRICTLY earlier. A stock distribution of the SAME
+// date as an unresolved reverse split was therefore applied at once, before it — and the engine rounds shares after each
+// action, so the order changes the count (one millionth of a share and one cent in Astra's case). It now waits behind any
+// unresolved share-basis action that precedes it in the order the applier uses (date, then phase, then id).
+describe('Fix round 3 — Astra T2A-D02: a share-basis action waits behind an unresolved one that precedes it on the same date', () => {
+  const Q = { AAPL: { price: 50.03, marketCap: 3e12 }, MSFT: { price: 200, marketCap: 3e12 }, SPY: 500 };
+  const PX = 4169.166666666667;
+  const basisRow = (type, ratio, effectiveDate = S[1]) => ({ type, ticker: 'AAPL', ratio, effectiveDate, source: 'eodhd_splits' });
+  const closeQ = async (ctx, date, quotesIn) => { const out = await closeOn(ctx.db, ctx.bookId, date, quotesIn); recon(ctx); return out; };
+  const RS = `reverse_split_AAPL_${S[1]}`;
+  const SD = `stock_distribution_AAPL_${S[1]}`;
+
+  // Astra's reproduction (probe/astra-round2.test.js, "same-date basis ordering"), to the letter.
+  async function run(conflict) {
+    const { db, bookId, bookRef } = await seedBook();
+    const e = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: Q });
+    expect(e.entry.outcome).toBe('entered');
+    const ctx = { db, bookId, bookRef, ideaId: e.ideaId };
+    await closeQ(ctx, S[0], Q);
+    const a = basisRow('reverse_split', 0.01);
+    const b = basisRow('stock_distribution', 1.2);
+    await closeQ(ctx, S[1], { ...Q, AAPL: { price: PX, corporateActions: [a, ...(conflict ? [{ ...a, ratio: 0.02 }] : []), b] } });
+    const whileUnresolved = ideaOf(ctx);
+    await closeQ(ctx, S[2], { ...Q, AAPL: { price: PX, corporateActions: [a] } }); // resolved to 0.01; the distribution's row gone
+    const resolved = ideaOf(ctx);
+    const resolvedBook = bookOf(ctx);
+    const treasuryBefore = resolvedBook.treasury.unreservedCash;
+    await closeQ(ctx, S[3], { ...Q, AAPL: { price: PX, corporateActions: [{ type: 'delisting', ticker: 'AAPL', effectiveDate: S[3], cashPerShare: PX, source: 'founder_action' }] } });
+    return { ctx, whileUnresolved, resolved, resolvedBook, treasuryBefore, after: ideaOf(ctx), afterBook: bookOf(ctx) };
+  }
+
+  it('Astra\'s case: a stock distribution of the SAME date as a conflicting reverse split is HELD, then applied after it once it settles — the quantity (4.795684 on the idea, the comparison and the book\'s mirror) and the cash returned ($19,994.01) equal the consistent-basis control exactly', async () => {
+    const actual = await run(true);
+    const control = await run(false);
+    // While the reverse split is unresolved, the distribution of its date is not applied on either ledger: it is held.
+    for (const ledger of [actual.whileUnresolved.ledger, actual.whileUnresolved.comparisonLedger]) {
+      expect(ledger.appliedActionIds, ledger.kind).toEqual([]);
+      expect(ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({
+        actionId: SD, type: 'stock_distribution', ratio: 1.2, heldOn: S[1],
+        heldBecause: expect.arrayContaining([expect.objectContaining({ actionId: RS, type: 'reverse_split' })]),
+      })]);
+    }
+    // Once it settles: the reverse split first, then the distribution from its record — the control's order.
+    for (const key of ['ledger', 'comparisonLedger']) {
+      expect(actual.resolved[key].appliedActionIds, key).toEqual([RS, SD]);
+      expect(control.resolved[key].appliedActionIds, key).toEqual([RS, SD]);
+      expect(actual.resolved[key].holdings.AAPL.shares, key).toBe(4.795684);
+      expect(control.resolved[key].holdings.AAPL.shares, key).toBe(4.795684);
+      expect(actual.resolved[key].holdings.AAPL.heldActions).toBeUndefined();
+    }
+    expect(actual.resolvedBook.portfolio.positions.AAPL.shares).toBe(4.795684);
+    expect(control.resolvedBook.portfolio.positions.AAPL.shares).toBe(4.795684);
+    // The cash delisting pays the same on both, to the cent, and returns it to the treasury.
+    expect(actual.after.status).toBe('resulted');
+    expect(control.after.status).toBe('resulted');
+    expect(actual.after.liquidation.returnedToTreasuryUsd).toBe(19994.01);
+    expect(control.after.liquidation.returnedToTreasuryUsd).toBe(19994.01);
+    expect(cents(actual.afterBook.treasury.unreservedCash) - cents(actual.treasuryBefore)).toBe(1999401);
+    expect(cents(control.afterBook.treasury.unreservedCash) - cents(control.treasuryBefore)).toBe(1999401);
+    for (const key of ['ledger', 'comparisonLedger']) {
+      const delist = (idea) => idea[key].corporateActionReceipts.find((r) => r.type === 'delisting' && r.applied);
+      expect(delist(actual.after).shares, key).toBe(4.795684);
+      expect(delist(actual.after).cashUsd, key).toBe(19994.01);
+      expect(delist(actual.after).cashUsd).toBe(delist(control.after).cashUsd);
+      expect(actual.after[key].corporateActionReceipts.filter((r) => r.applied).map((r) => r.actionId))
+        .toEqual(control.after[key].corporateActionReceipts.filter((r) => r.applied).map((r) => r.actionId));
+    }
+  });
+
+  const ledgerOf = (kind = 'idea', shares = 399.76012) => ({ ...newLedger(kind, 20000), cash: 0, holdings: { AAPL: { shares, costBasisTotal: 20000, avgCost: 20000 / shares, lastMark: 50.03, openedAt: S[0] } } });
+  const r6 = (n) => Math.round(n * 1e6) / 1e6;
+
+  it('two CLEAN share-basis actions of one date apply at once, in the applier\'s order (date, phase, id) — unchanged', () => {
+    const out = applyLedgerActions(ledgerOf(), { AAPL: [basisRow('stock_distribution', 1.2), basisRow('reverse_split', 0.01)] }, { date: S[1] });
+    expect(out.applied.map((a) => a.actionId)).toEqual([RS, SD]);
+    expect(out.held).toEqual([]);
+    expect(out.ledger.holdings.AAPL.shares).toBe(r6(r6(399.76012 * 0.01) * 1.2));
+  });
+
+  it('the mirror case: an unresolved action that FOLLOWS a clean one of its date (a larger id) holds nothing before it — the clean one applies at once; nothing waits on a later action (no cycle)', () => {
+    // The distribution (id "stock_…") conflicts; the reverse split (id "reverse_…") precedes it and is clean.
+    const rows = { AAPL: [basisRow('reverse_split', 0.01), basisRow('stock_distribution', 1.2), basisRow('stock_distribution', 1.3)] };
+    const out = applyLedgerActions(ledgerOf(), rows, { date: S[1] });
+    expect(out.applied.map((a) => a.actionId)).toEqual([RS]);
+    expect(out.held).toEqual([]);
+    expect(out.conflicts.map((c) => c.actionId)).toEqual([SD]);
+    expect(out.ledger.holdings.AAPL.shares).toBe(r6(399.76012 * 0.01));
+    // …and through the idea's hold set: the later conflict holds nothing that precedes it, on any ledger.
+    const ledgers = [ledgerOf('idea'), ledgerOf('comparison')];
+    const holds = shareBasisHolds(ledgers, rows, { date: S[1] });
+    for (const l of ledgers) expect(applyLedgerActions(l, rows, { date: S[1], holds }).applied.map((a) => a.actionId)).toEqual([RS]);
+  });
+
+  it('through the idea\'s hold set: a same-date conflict on the COMPARISON alone holds the idea\'s distribution of its date', () => {
+    // The comparison alone saw the reverse split two ways: it carries the conflict's receipt; the idea never did.
+    const cmp = applyLedgerActions(ledgerOf('comparison'), { AAPL: [basisRow('reverse_split', 0.01), basisRow('reverse_split', 0.02)] }, { date: S[1] }).ledger;
+    const idea = ledgerOf('idea');
+    const rows = { AAPL: [basisRow('stock_distribution', 1.2)] };
+    const holds = shareBasisHolds([idea, cmp], rows, { date: S[1] });
+    const out = applyLedgerActions(idea, rows, { date: S[1], holds });
+    expect(out.applied).toEqual([]);
+    expect(out.held.map((r) => r.actionId)).toEqual([SD]);
+    expect(out.held[0].heldBecause).toEqual([{ actionId: RS, type: 'reverse_split', effectiveDate: S[1], ledger: 'comparison' }]);
+  });
+});
