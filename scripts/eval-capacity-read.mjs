@@ -584,7 +584,7 @@ export function renderLimits(limits) {
     L.push('No run record in the window carries the blocks yet (they are written from the merge of capacity Build 1 on).', '');
     return L;
   }
-  L.push(`${limits.runsWithBlocks} run records carry the blocks. Limits are the lowest any run recorded; "min left" is the session minimum. EODHD counts are the evaluator's marketDataCache.js requests only; "per battle evaluated" divides them by every battle the runs evaluated (CPU seats and no-trigger checks included), so it is not the discovery's 117 units per agent-mode check. "Timeouts —" = not measured (the guard was off).`, '');
+  L.push(`${limits.runsWithBlocks} run records carry the blocks. Limits are the lowest any run recorded; "min left" is the session minimum. EODHD counts are the evaluator's marketDataCache.js REQUESTS only (not billed units: an intraday request bills 5); "per battle evaluated" divides them by every battle the runs evaluated (CPU seats included), so it is not the discovery's 117 units per agent-mode check (a flag-off agent-mode check is ≈ 89 requests). "Timeouts —" = not measured (the guard was off).`, '');
   const days = limits.perDay.filter((d) => d.runs > 0);
   L.push('**Pool and Anthropic**', '');
   L.push(table(['ET day', 'Runs', 'K', 'Max in flight', 'Dispatched', 'Req limit', 'Input tok limit', 'Output tok limit', 'Req min left', 'Input min left', 'Output min left', '429s'],

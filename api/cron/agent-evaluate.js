@@ -754,11 +754,16 @@ function idlePoolBlock() {
  * sharing the process while this one is open (a manual call during a run, or
  * several invocations in one instance under Fluid Compute) is counted in both;
  * (2) a request this run left in flight — the GET that loses the cascade
- * qualification's own race, or a shared macro fetch past its bound — is a
- * request here, but its status (or, guard on, its timeout) lands in whichever
- * run the warm process serves next. It counts `marketDataCache.js` traffic
- * only (the canonical-open sweep's batch quote and the stock-threshold
- * provider call EODHD directly). The `anthropic` window shares limit (1).
+ * qualification's own 5 s race, or a shared macro fetch past its bound — is a
+ * request here, but its status (or, guard on, its timeout) lands after this
+ * record is composed: usually in no record at all (the next run starts 900 s
+ * later and reads its own baseline then), in the next one only if an
+ * invocation is open in the same process when it lands. A failed request with
+ * no response (a network error) is counted as a request only. It counts
+ * `marketDataCache.js` traffic only (the canonical-open sweep's batch quote
+ * and the stock-threshold provider call EODHD directly), in REQUESTS, not
+ * billed units (an intraday request bills 5). The `anthropic` window shares
+ * limit (1).
  */
 async function writeEvalRunRecord(db, evalRun, summary, startTime, { eodhdAtStart = null, rateLimitWindow = null } = {}) {
   try {
