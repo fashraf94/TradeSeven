@@ -371,6 +371,44 @@ describe('S6: the research words, exactly (the spec\'s §8.1 table and the hub\'
   });
 });
 
+describe('Amendment E V1.1 §5, Part 2: the research door\'s words, exactly', () => {
+  const R = HUB_COPY.research;
+  const DOOR_STRINGS = () => [
+    R.workTitle, R.workEyebrow, R.workLabel, R.door.work, R.door.inProgress('T', 3), R.door.inProgress('T', 1), R.door.inProgressCount(3),
+    R.door.inProgressCount(1), R.door.continue, R.door.error, R.door.loadFailed, R.door.tryAgain,
+    HUB_COPY.activity.researchOpened, HUB_COPY.activity.researchConcluded, HUB_COPY.activity.ideaFromResearch,
+  ];
+
+  it('the amendment §5 table, word for word ("finding" for one, as the sheet\'s own line says it)', () => {
+    expect([R.workTitle, R.workEyebrow, R.workLabel]).toEqual(['Work an idea', 'Shared Research', 'Shared Research · work an idea']);
+    expect(R.door.work).toBe('Work an idea');
+    expect(R.door.inProgress('3:15 PM ET', 4)).toBe('Research in progress · last update 3:15 PM ET · 4 findings');
+    expect(R.door.inProgress('3:15 PM ET', 1)).toBe('Research in progress · last update 3:15 PM ET · 1 finding');
+    expect(R.door.inProgressCount(0)).toBe('Research in progress · 0 findings');
+    expect(R.door.inProgressCount(1)).toBe('Research in progress · 1 finding');
+    expect([R.door.continue, R.door.error, R.door.loadFailed, R.door.tryAgain]).toEqual(['Continue', "Couldn't check your research", "Couldn't open Shared Research", 'Try again']);
+    expect([HUB_COPY.activity.researchOpened, HUB_COPY.activity.researchConcluded, HUB_COPY.activity.ideaFromResearch]).toEqual(['Research opened', 'Research concluded', 'Idea saved from research']);
+  });
+
+  it('research.disabled is unchanged (the body pins its own gated line equal to it)', () => {
+    expect(R.disabled).toBe("Research records aren't available on this account");
+  });
+
+  it('every one passes the banned words: "{n} findings" is allowed, "sources · N" stays banned', () => {
+    const BANNED_HERE = [/\blearn/i, /\bimprov/i, /\bsmart(er)?\b/i, /\bsources?\s*·\s*\d/i, /\bremembers?\b/i, /since your last visit/i];
+    for (const s of DOOR_STRINGS()) for (const re of BANNED_HERE) expect(re.test(s), `${re.source}: ${s}`).toBe(false);
+    expect(/\bsources?\s*·\s*\d/i.test('Research in progress · sources · 3')).toBe(true);
+    expect(/\bsources?\s*·\s*\d/i.test(R.door.inProgressCount(3))).toBe(false);
+  });
+
+  it('no door string names Shadow, and none pairs the agent with an idea', () => {
+    for (const s of DOOR_STRINGS()) {
+      expect(/\bShadow\b/.test(s), s).toBe(false);
+      expect(/\b(agent|shadow)\b.*\bidea|\bidea.*\b(agent|shadow)\b/i.test(s), s).toBe(false);
+    }
+  });
+});
+
 describe('no claim the hub cannot back (spec §8.2, §11.3)', () => {
   const BANNED = [
     /\blearn/i, /\bimprov/i, /\bintelligen/i, /\bsmart(er)?\b/i, /\bearned\b/i, /\btier\b/i, /getting better/i,

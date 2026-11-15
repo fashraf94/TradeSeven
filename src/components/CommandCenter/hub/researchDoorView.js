@@ -1,0 +1,134 @@
+// src/components/CommandCenter/hub/researchDoorView.js
+//
+// Command Center core spec V1.2, Amendment E V1.1 §1, §3.1, §3.2 — the research door's pure view. Everything here is a
+// projection of what the hub already holds; nothing reads, waits or listens.
+//
+//   admissionBattleIdOf   the agentBattles id the admission hook hands the cockpit-status verdict at 'allowlist': the owned
+//                         live list first (selectors/readerInputs.js ownedLiveList: App's agentBattles poll, owner-filtered,
+//                         training clones dropped), then the completed window (hub/useHubCompletedBattles.js, an agentBattles
+//                         query by ownerId), and only while that window is this owner's and epoch's. Nothing is read to find one.
+//   researchDoorOf        the Research panel's door block from the research reader's answer: loading (no line, the door
+//                         shows), error (the line and Retry, the door stays) or ready, with the newest open investigation's
+//                         line and its session id for Continue — or no line. Finding nothing open is never "no research":
+//                         the read is bounded (src/services/sharedResearchRecords.js).
+//                         In the error state it also carries its Retry's state (ruling R-D7, Q3): whether a Retry is out, and
+//                         when the next may be pressed after one pressed inside the wait.
+//   doorRetryOf           whether a press of the door's Retry reads (S6's pattern, hub/useHubResearch.js retry): at most one
+//                         per wait per owner and epoch, judged at the press. No timer.
+//   researchRecordsOf     the records Activity's research rows are built from, once the reader holds them.
+//   equippedBookLabelOf   the sheet's equippedListLabel with per-game loadouts on: the BaggerBomb book's name exactly as the
+//                         Loadout card shows it (hub/perGameLoadoutModel.js bookViewOf), or null without a book.
+//   equippedWatchlistLabelOf  the same with per-game loadouts off: the equipped watchlist's name as the watchlist card has
+//                         resolved it, or null.
+//   equippedListLabelOf   the two joined, by whether the shell sits in a per-game loadout scope (no flag read).
+
+import { formatHubDayTime } from './activityDates';
+import { HUB_COPY as COPY } from './hubCopy';
+import { hubMs } from './hubDate';
+import { LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
+import { cardsOf } from './perGameLoadoutContext';
+
+/** The door's three states (amendment §3.1). */
+export const RESEARCH_DOOR_STATUS = Object.freeze({ LOADING: 'loading', READY: 'ready', ERROR: 'error' });
+
+const nonEmpty = (value) => (typeof value === 'string' && value.trim() !== '' ? value : null);
+const idOf = (battle) => (battle && typeof battle === 'object' ? nonEmpty(battle.id) : null);
+
+/**
+ * @param {object}   p
+ * @param {object[]} p.live       the readers' owned live list (useHubReaders' `liveBattles`)
+ * @param {object|null} p.completed  the readers' completed input (selectors/readerInputs.js completedInputOf)
+ * @param {object|null} p.auth    the readers' auth input
+ * @returns {string|null}
+ */
+export function admissionBattleIdOf({ live, completed, auth }) {
+  if (!auth || auth.signedIn !== true || typeof auth.uid !== 'string') return null;
+  for (const battle of Array.isArray(live) ? live : []) {
+    if (battle?.ownerId === auth.uid && idOf(battle)) return idOf(battle);
+  }
+  if (!completed || completed.ownerUid !== auth.uid || completed.ownerEpoch !== auth.authEpoch) return null;
+  for (const battle of Array.isArray(completed.rows) ? completed.rows : []) {
+    if (battle?.ownerId === auth.uid && idOf(battle)) return idOf(battle);
+  }
+  return null;
+}
+
+/** A Shared Research record's investigation id: its host session's id (the record is minted with host { sharedResearchSessions, sessionId }). */
+export function sessionIdOf(record) {
+  return record && typeof record === 'object' && record.host && typeof record.host === 'object' ? nonEmpty(record.host.id) : null;
+}
+
+/** The records the reader holds for this owner (its answer, kept through a failed refresh), else null. */
+export function researchRecordsOf(read) {
+  return read && read.status === 'ready' && Array.isArray(read.records) ? read.records : null;
+}
+
+/**
+ * @param {object} p
+ * @param {object} p.read   the research reader's `read` ({ status, records })
+ * @param {number} p.nowMs  the clock, for the year of a last update from another year, and for whether a wait still stands
+ * @param {number|null} [p.retryNotBefore]  when the next Retry may be pressed, after one pressed inside the wait (R-D7)
+ * @returns {{ status: string, progress: ({ sessionId: string, findings: number, line: string })|null, refreshing?: boolean, retryNotBefore?: number|null }}
+ */
+export function researchDoorOf({ read, nowMs, retryNotBefore = null }) {
+  const records = researchRecordsOf(read);
+  if (!records) {
+    if (read?.status !== 'error') return Object.freeze({ status: RESEARCH_DOOR_STATUS.LOADING, progress: null });
+    // R-D7: while a Retry is out the door shows the loading line in the error line's place; a wait is said only while it stands.
+    const notBefore = typeof retryNotBefore === 'number' && retryNotBefore > nowMs ? retryNotBefore : null;
+    return Object.freeze({ status: RESEARCH_DOOR_STATUS.ERROR, progress: null, refreshing: read.refreshing === true, retryNotBefore: notBefore });
+  }
+  // The query answers newest first: the first open record is the newest open investigation.
+  const open = records.find((record) => record?.state === 'open' && sessionIdOf(record));
+  if (!open) return Object.freeze({ status: RESEARCH_DOOR_STATUS.READY, progress: null });
+  const findings = Array.isArray(open.findings) ? open.findings.length : 0;
+  const lastMs = hubMs(open.telemetry?.lastTurnAt);
+  const time = lastMs === null ? '' : formatHubDayTime(lastMs, nowMs);
+  const line = time ? COPY.research.door.inProgress(COPY.time.et(time), findings) : COPY.research.door.inProgressCount(findings);
+  return Object.freeze({ status: RESEARCH_DOOR_STATUS.READY, progress: Object.freeze({ sessionId: sessionIdOf(open), findings, line }) });
+}
+
+/**
+ * Ruling R-D7 (Q3): does a press of the door's Retry read? S6's pattern (hub/useHubResearch.js retry): a press within
+ * `cooldownMs` of this owner and epoch's last Retry that read reads nothing, and says when the next may be pressed. The hub keeps
+ * `last` per owner and epoch and judges it at the press; nothing runs between presses.
+ *
+ * @param {object} p
+ * @param {number|undefined} p.last   this owner and epoch's last Retry that read (ms), if any
+ * @param {number} p.nowMs            the press
+ * @param {number} p.cooldownMs       the wait (RETRY_COOLDOWN_MS, handed in by the hub)
+ * @returns {{ read: boolean, notBefore: number|null }}
+ */
+export function doorRetryOf({ last, nowMs, cooldownMs }) {
+  if (typeof last === 'number' && nowMs - last < cooldownMs) return Object.freeze({ read: false, notBefore: last + cooldownMs });
+  return Object.freeze({ read: true, notBefore: null });
+}
+
+/**
+ * Whether the open research sheet may stay: a door is held (the player is admitted) and the sheet was opened for this door's owner
+ * and epoch (review B3). An owner change at 'on' keeps the door but not a sheet opened on the former owner's investigation.
+ */
+export function researchSheetHeldBy(door, entry) {
+  return Boolean(door) && (entry?.ownerKey ?? null) === (door.ownerKey ?? null);
+}
+
+/** Per-game loadouts on: the BaggerBomb card's book name (hub/perGameLoadoutContext.js cardsOf), or null with no book. */
+export function equippedBookLabelOf(cards) {
+  const book = cards?.baggerbomb?.book;
+  return book && nonEmpty(book.id) ? nonEmpty(book.name) : null;
+}
+
+/** Per-game loadouts off: the equipped watchlist's name as the card resolved it, or null until the card has found it. */
+export function equippedWatchlistLabelOf(loadout) {
+  if (loadout?.status !== LOADOUT_STATUS.READY || loadout.watchlist?.state !== WATCHLIST_STATE.READY) return null;
+  return nonEmpty(loadout.watchlist.name) || COPY.loadout.watchlistFallback;
+}
+
+/**
+ * The sheet's `equippedListLabel`, as the Loadout shows the equipped list: inside a per-game loadout scope (the shells sit in
+ * PerGameLoadoutScope exactly when per-game loadouts are on) the BaggerBomb card's book, from the scope's own cards with the
+ * shell's committed lists; with no scope, the watchlist card's list. Decided by the scope's presence, so no flag is read here.
+ */
+export function equippedListLabelOf(scope, lists, loadout) {
+  return scope ? equippedBookLabelOf(cardsOf({ ...scope, lists })) : equippedWatchlistLabelOf(loadout);
+}

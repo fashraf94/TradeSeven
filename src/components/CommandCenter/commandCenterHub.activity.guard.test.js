@@ -256,6 +256,68 @@ describe('Huddle S1: the readers and the sheet body hold exactly the activity th
   });
 });
 
+// ── Command Center Amendment E V1.1 §1, §3.2: the research door — the admission hook and the two readers, call by call (they live
+// outside this directory, permitted terminals the mount guard's walk stops at, so their activity is pinned HERE), the readers'
+// one query, and the sheet's wrapper and loader, which hold none. No reader polls, listens or re-reads on focus.
+// The admission hook: one effect, the one verdict ask per owner and epoch (readFilmRoomVerdict, cached per owner). No timer.
+const RESEARCH_ADMISSION = ['useEffect'];
+// The stories reader: one effect, fetchFeed() once per owner and epoch. No listener, no timer.
+const RESEARCH_STORIES = ['useEffect'];
+// The research reader: one effect, the researchWork query once per owner and epoch. No listener, no timer.
+const RESEARCH_RECORDS = ['useEffect'];
+// The research reader's service: the one read.
+const RESEARCH_RECORDS_SERVICE = ['getDocs'];
+
+describe('Amendment E §1, §3.2: the research door\'s hooks hold exactly the activity they were allowed, and the sheet\'s wrapper and loader none', () => {
+  it('useHubResearchAdmission: one effect — the one ask — no timer, no listener, no poll', () => {
+    expect(activityOf(readSrc('hooks/useHubResearchAdmission.js'))).toEqual(RESEARCH_ADMISSION);
+  });
+
+  it('useHubStories: one effect — no listener, no timer, no poll', () => {
+    expect(activityOf(readSrc('hooks/useHubStories.js'))).toEqual(RESEARCH_STORIES);
+  });
+
+  it('useHubSharedResearch: one effect — no listener, no timer, no poll', () => {
+    expect(activityOf(readSrc('hooks/useHubSharedResearch.js'))).toEqual(RESEARCH_RECORDS);
+  });
+
+  it('the research reader\'s service: one read (getDocs), no snapshot listener', () => {
+    expect(activityOf(readSrc('services/sharedResearchRecords.js'))).toEqual(RESEARCH_RECORDS_SERVICE);
+  });
+
+  it('the sheet\'s wrapper, its loader, the door view and the selector hold no activity at all', () => {
+    expect(activityOf(readShell('SharedResearchSheet.jsx'), parseJsx)).toEqual([]);
+    expect(activityOf(read('loadSharedResearch.js'))).toEqual([]);
+    expect(activityOf(read('researchDoorView.js'))).toEqual([]);
+    expect(activityOf(readSrc('selectors/storySelection.js'))).toEqual([]);
+  });
+
+  it('the scan bites: a poll, a second listener or an effect planted in any of them changes what the rows see', () => {
+    const plants = {
+      'a poll': 'setInterval(() => {}, 60000);',
+      'a timer': 'setTimeout(() => {}, 1000);',
+      'a focus listener': "window.addEventListener('focus', () => {});",
+      'a visibility listener': "document.addEventListener('visibilitychange', () => {});",
+      'an effect': 'useEffect(() => {}, []);',
+      'a snapshot listener': 'onSnapshot(q, () => {});',
+    };
+    const files = {
+      'hooks/useHubResearchAdmission.js': RESEARCH_ADMISSION,
+      'hooks/useHubStories.js': RESEARCH_STORIES,
+      'hooks/useHubSharedResearch.js': RESEARCH_RECORDS,
+      'services/sharedResearchRecords.js': RESEARCH_RECORDS_SERVICE,
+      'selectors/storySelection.js': [],
+    };
+    for (const [what, snippet] of Object.entries(plants)) {
+      for (const [file, expected] of Object.entries(files)) {
+        expect(activityOf(`${readSrc(file)}\n${snippet}\n`), `${file}: ${what}`).not.toEqual(expected);
+      }
+      expect(activityOf(`${readShell('SharedResearchSheet.jsx')}\n${snippet}\n`, parseJsx), `SharedResearchSheet.jsx: ${what}`).not.toEqual([]);
+      expect(activityOf(`${read('loadSharedResearch.js')}\n${snippet}\n`), `loadSharedResearch.js: ${what}`).not.toEqual([]);
+    }
+  });
+});
+
 describe('S7: Shadow\'s canvas holds exactly the activity it was allowed (R-S7-1, R-S7-5)', () => {
   it('ShadowCanvas.jsx: four effects, one frame loop (two requests, one cancel), one observer, one visibility listener (removed again) and one timeout (cleared)', () => {
     expect(activityOf(readShell('ShadowCanvas.jsx'), parseJsx)).toEqual(SHADOW_CANVAS);
