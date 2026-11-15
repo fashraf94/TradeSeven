@@ -108,12 +108,12 @@ export function Finding({ research }) {
       <span style={{ ...EYEBROW, color: ST.ink3 }}>{BR_COPY.finding}</span>
       <span style={{ fontFamily: MONO, color: ST.ink, lineHeight: 1.4 }}><span style={{ fontSize: 12 }}>{f.text}</span></span>
       {f.conditionId && !confirm ? (
-        <Link data-research-use-across={f.conditionId} onClick={() => { setApplied(null); setConfirm({ conditionId: f.conditionId, replaces: f.replaces, counts: research.onUseAcross(f.conditionId) }); }}>{BR_COPY.useAcross}</Link>
+        <Link data-research-use-across={f.conditionId} onClick={() => { setApplied(null); setConfirm({ conditionId: f.conditionId, replaces: f.replaces, counts: research.onUseAcross(f.conditionId) }); }}>{BR_COPY.acrossLabel}</Link>
       ) : null}
       {confirm ? (
         <div role="group" data-research-use-across-confirm style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', borderRadius: 10, border: `1px solid ${tint(ST.teal, 45)}` }}>
           <span style={{ fontSize: 12.5, lineHeight: 1.45, color: ST.ink2 }}>
-            {BR_COPY.useAcrossConfirm(wordsOf(confirm.conditionId), confirm.replaces ? wordsOf(confirm.replaces) : null, confirm.counts.remain, confirm.counts.fail, confirm.counts.notAssessed)}
+            {BR_COPY.acrossConfirm(wordsOf(confirm.conditionId), confirm.replaces ? wordsOf(confirm.replaces) : null, confirm.counts.remain, confirm.counts.fail, confirm.counts.notAssessed)}
           </span>
           <span style={{ display: 'flex', gap: 12 }}>
             <Link data-research-apply onClick={() => { research.onApplyUseAcross(confirm.conditionId); setApplied({ remain: confirm.counts.remain }); setConfirm(null); }}>{BR_COPY.apply}</Link>

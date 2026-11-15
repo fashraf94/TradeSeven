@@ -27,7 +27,7 @@ import { readRankings } from '../Sheet/rankingsRead.js';
 import { buildResult, incumbentOf, noWeakestReason } from './result.js';
 import {
   newInvestigation, currentStep, currentResult, addInvestigation, replaceInvestigation, setOrder as setOrderOf, addCondition as addConditionOf,
-  removeCondition as removeConditionOf, switchGroup as switchGroupOf, useAcross as useAcrossOf, undo as undoOf, previous as previousOf,
+  removeCondition as removeConditionOf, switchGroup as switchGroupOf, acrossCondition, undo as undoOf, previous as previousOf,
   goTo as goToOf, refreshWith, refreshReport, refreshIncumbent, refreshGate,
 } from './investigation.js';
 import { BR_COPY } from './battleResearchCopy.js';
@@ -182,7 +182,7 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
   const addCondition = useCallback((cond) => apply((inv) => addConditionOf(inv, cond, clock())), [apply, clock]);
   const removeCondition = useCallback((id) => apply((inv) => removeConditionOf(inv, id, clock())), [apply, clock]);
   const switchGroup = useCallback((group) => apply((inv) => switchGroupOf(inv, group, clock())), [apply, clock]);
-  const applyAcross = useCallback((id) => apply((inv) => useAcrossOf(inv, id, clock())), [apply, clock]);
+  const applyAcross = useCallback((id) => apply((inv) => acrossCondition(inv, id, clock())), [apply, clock]);
   const undo = useCallback(() => apply(undoOf), [apply]);
   const previous = useCallback(() => apply(previousOf), [apply]);
   const goTo = useCallback((stepId) => apply((inv) => goToOf(inv, stepId)), [apply]);
