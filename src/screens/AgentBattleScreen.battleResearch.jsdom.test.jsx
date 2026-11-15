@@ -412,6 +412,22 @@ describe('BATTLE_RESEARCH_MODE on — the surface in the screen', () => {
     expect(calledUrls().filter((u) => u.startsWith('/api/agent/chat'))).toEqual([]);
   }, ROW_MS);
 
+  it('BRS-19: words the player already typed are kept — the draft is added after them with a blank line (live checklist step 5)', async () => {
+    await mount();
+    // The desktop chat stands open beside the battle: type first.
+    const composer = () => [...container.querySelectorAll('textarea')].find((t) => t.placeholder === 'Talk to your agent...');
+    expect(composer()).toBeTruthy();
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    await act(async () => { setValue.call(composer(), 'my own words first'); composer().dispatchEvent(new Event('input', { bubbles: true })); });
+    await settle();
+    expect(composer().value).toBe('my own words first');
+    await click(q('[data-this-turn-research]'));
+    await click(q('[data-br-starter="weakest_alternatives"]'));
+    await click(q('[data-br-ask-about]'));
+    expect(composer().value).toMatch(/^my own words first\n\nResearch: "Compare alternatives to EQIX" \(result 1:45 PM ET\)/);
+    expect(calledUrls().filter((u) => u.startsWith('/api/agent/chat'))).toEqual([]);
+  }, ROW_MS);
+
   it('only one of the bench sheet and the surface is open: the pill closes a bench sheet, a bench door closes the surface', async () => {
     DOC = LIVE_DOC;
     SCREEN = BATTLE;

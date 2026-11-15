@@ -13,8 +13,12 @@ import { createRoot } from 'react-dom/client';
 
 vi.mock('../../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 vi.mock('../../../firebase/authService', () => ({ getIdToken: async () => 'token-1' }));
+// fetchEvidence's two reads (the store rows below inject their own fetcher and never reach these).
+const READS = vi.hoisted(() => ({ rankings: null, rankingsFail: false }));
+vi.mock('../Sheet/rankingsRead.js', () => ({ readRankings: async () => { if (READS.rankingsFail) throw new Error('down'); return READS.rankings; } }));
 
-import useBattleResearch, { subsetDoc, EVIDENCE_REUSE_MS } from './useBattleResearch.js';
+import useBattleResearch, { subsetDoc, EVIDENCE_REUSE_MS, fetchEvidence } from './useBattleResearch.js';
+import { BR_COPY } from './battleResearchCopy.js';
 import { currentResult, currentStep } from './investigation.js';
 import { REFRESH_COOLDOWN_MS } from './investigation.js';
 import { researchBattle, rankingsDoc, quotesBody, TAKEN_AT } from './__fixtures__/researchFixtures.js';
@@ -178,5 +182,35 @@ describe('BRS-21 — memory only', () => {
     expect(old.stocks.some((x) => x.symbol === 'ZZZ')).toBe(false);
     expect(old.stocks.find((x) => x.symbol === 'PLTR')).toMatchObject({ technicalRank: 5, techRaw: { atrPercent: 4.06 } });
     expect(out.store.rankingsFor(inv2, 'r2').stocks).toHaveLength(rankingsDoc().stocks.length);
+  });
+});
+
+describe('fetchEvidence — one bundle: the route and the rankings doc, stamped on the SERVER clock (review BR1-3)', () => {
+  const answer = (status, body) => vi.fn(async () => ({ ok: status >= 200 && status < 300, status, json: async () => body }));
+  beforeEach(() => { READS.rankings = rankingsDoc(); READS.rankingsFail = false; vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(TAKEN_AT + 3000)); });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+  it("takenAt is the route's servedAt; receivedAt the client's instant; one call to the route, by battle id", async () => {
+    const f = answer(200, { ...quotesBody(), servedAt: TAKEN_AT });
+    vi.stubGlobal('fetch', f);
+    const b = await fetchEvidence('stock battle/1');
+    expect(f.mock.calls.map(([u]) => u)).toEqual(['/api/agent/battle-research-quotes?battleId=stock%20battle%2F1']);
+    expect(b.takenAt).toBe(TAKEN_AT);
+    expect(b.receivedAt).toBe(TAKEN_AT + 3000);
+    expect(b.rankingsDoc).toBe(READS.rankings);
+  });
+  it("no servedAt: the client's instant stands in for both", async () => {
+    const { servedAt, ...noServed } = { ...quotesBody() }; // eslint-disable-line no-unused-vars
+    vi.stubGlobal('fetch', answer(200, noServed));
+    const b = await fetchEvidence('b');
+    expect(b.takenAt).toBe(TAKEN_AT + 3000);
+  });
+  it('the three reasons a first fetch says it failed', async () => {
+    vi.stubGlobal('fetch', answer(404, { error: 'battle_research_unavailable' }));
+    await expect(fetchEvidence('b')).rejects.toEqual({ why: BR_COPY.whyOff });
+    vi.stubGlobal('fetch', answer(500, { error: 'internal' }));
+    await expect(fetchEvidence('b')).rejects.toEqual({ why: BR_COPY.whyQuotes });
+    vi.stubGlobal('fetch', answer(200, { ...quotesBody(), servedAt: TAKEN_AT }));
+    READS.rankingsFail = true;
+    await expect(fetchEvidence('b')).rejects.toEqual({ why: BR_COPY.whyRankings });
   });
 });
