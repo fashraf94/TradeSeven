@@ -1,11 +1,13 @@
 # Build report: the hub research door ("Work an idea" opens Shared Research), dark
 
-**Build:** Command Center core spec V1.2, Amendment E V1.1, Part 2, with its §12 rulings (R-D1 to R-D4).
+**Build:** Command Center core spec V1.2, Amendment E V1.1, Part 2, with its §12 rulings (R-D1 to R-D4) and, in the fix round (§8), its §13 rulings (R-D5 to R-D10).
 **Branch:** `claude/hub-research-door`, cut from `origin/main` @ `c85f7b41` (#1059) after `git fetch origin`. `origin/main` was refetched before the final checks and had not moved.
-**Code head:** `adb194c3`. Its two test files were strengthened after the row-named mutation battery (§4.2). This report was first committed as `7549e11b`, before `adb194c3`, and this revision follows `adb194c3`. The tree was clean at the start; the preamble STOP report is outside the repo.
+**Code head:** `5373c83e`, after the fix round (§8). The build's own code head was `adb194c3`: its two test files were strengthened after the row-named mutation battery (§4.2). This report was first committed as `7549e11b`, before `adb194c3`. The tree was clean at the start; the preamble STOP report is outside the repo.
 **Mode:** `SHARED_RESEARCH_MODE` is `'off'`, and its pin row in `src/config/sharedResearchFlags.test.js` is unmoved.
 
 ## Verdict
+
+**The fix round (§8) built the founder's rulings on §7 and moved the code head to `5373c83e`; its own verdict and checks are §8.1. The rows below are the build's, at `adb194c3`.**
 
 | Question | Answer |
 |---|---|
@@ -17,7 +19,7 @@
 | Mutation battery | **136 mutants: 134 killed. Every behavioural row fails under at least one mutant** (§4.2). The 2 survivors are equivalent, and each has a stronger twin that is killed. The first run (77 mutants) recorded no row names. Rerun with names, it showed 59 rows no mutant reached, and two of them could not fail; `adb194c3` fixes those two. |
 | Real browser | **4 of 4 rows pass** at 390×844 and 1280×800 on the local smoke page; on the smoke preview: **4 of 4 pass** too, and the three browser mutants are killed. |
 | Review (BUILD_RULES §2) | **3 lenses, each with a refuter; 29 findings, no must-fix.** The should-fix items that survived are fixed, each with rows and mutants. 6 questions remain for the founder (§7). |
-| Founder action | The phone checklist (§5), the questions (§7), then §6 before the allowlist flip. |
+| Founder action | The phone checklist (§5), then §6 before the allowlist flip. The questions (§7) are ruled (amendment §13) and built (§8). |
 
 ## 1. Base, HEAD, and where the prompt or the amendment was made precise
 
@@ -442,9 +444,11 @@ What the smoke changes:
 3. Part 2 merged.
 4. The flip: a one-line founder PR that moves `SHARED_RESEARCH_MODE` to `'allowlist'` and its pin row (`sharedResearchFlags.test.js`). Then the spec §12 allowlist cases on the founder's and FT_QA's accounts.
 
-**Added by this build:** answer Q2 before step 4. The allowlist accounts are exactly the accounts the case in A1 can reach.
+**Added by this build:** answer Q2 before step 4. The allowlist accounts are exactly the accounts the case in A1 can reach. **Done:** Q2 was ruled (R-D6) and built in the fix round (§8.3).
 
-## 7. Questions for the founder
+## 7. Questions for the founder: all ruled (Nov 14)
+
+**Ruled by the founder on Nov 14, 2026; recorded as R-D5 to R-D10 in the amendment's §13 and built in the fix round (§8).** Q1 → R-D5 (accepted as recommended). Q2 → R-D6. Q3 → R-D7 (S6's pattern). Q4 → R-D8 (alert yes, Reload no). Q5 → R-D9. Q6 → R-D10 (accepted as recommended). The questions as they were asked:
 
 1. **Q1 (R-D1's wording).** Two minified lazy chunks, `AgentBattleScreen` and `BaggerBombTrainingBattleViewV4`, differ in more than re-lettered aliases: the minifier also re-chose some local names (`$`↔`L`, `x`↔`_`).
    - It ranks its name alphabet by character frequency, and the new alias letters shift those counts.
@@ -462,3 +466,162 @@ What the smoke changes:
    - **Recommended: alert yes, Reload no.**
 5. **Q5 (§3.3).** Should "Research concluded" and "Idea saved from research" carry the clipped question as their sub, like "Research opened"? Rows of different investigations now differ only by time. **Recommended: yes.**
 6. **Q6 (§5).** The sheet is titled "Work an idea" also when opened on an existing investigation (Continue, an Activity row). Keep it? **Recommended: keep.** The body shows the investigation's question as its heading.
+
+## 8. Fix round (Nov 14)
+
+The founder ruled on §7's six questions (the Command Center chat, Nov 14). Q1 and Q6 were accepted as recommended and need no code. Q2–Q5 are built here, each with rows and mutants. They are recorded as R-D5 to R-D10 in the amendment's new §13. `SHARED_RESEARCH_MODE` stays `'off'`.
+
+### 8.1 Verdict
+
+| Question | Answer |
+|---|---|
+| `main` merged? | **No.** After `git fetch origin`, the branch head was `b2edde56` (equal to `origin`), and `origin/main` was still `c85f7b41`. The prompt says not to merge in that case: a separate update prompt does it after the CompeteTab fix lands. |
+| Full Linux suite | **Exit 1, from the one row that fails on `main` too.** On `5373c83e` (`flock`, `TZ=UTC`, 8 workers): 1,486 files, 33,072 tests; 32,936 passed, 135 skipped, 1 failed, no load errors.<br>The failure is `CompeteTab.rankLabel` "absent…", the same row that fails on `main` `c85f7b41`, so the head's failed set equals `main`'s.<br>This build's 15 test files: 409 rows passed, 0 failed, 4 skipped (the browser rows). The two theme guards: 694 passed.<br>The rules suite was not rerun: this round changed no rule, index or `api/` file. |
+| `lint:gate` | Exit 0 on `5373c83e`. |
+| Bundle (R-D1 rerun against `main`'s build) | **Met.** The check exits 0 with no failures. Compared with `4e878335`'s build, only the hub chunk differs: 207,573 → 208,515 B minified (+942), and 386,326 → 388,236 B unminified. The entry, the CSS, the body chunk and every lazy chunk are identical with hashes masked. That is this round's hub-side lines and nothing else. |
+| Mutation battery | **174 mutants: 172 killed, and every one of the 204 behavioural rows fails under at least one** (§8.5). M36 and M38 survive as equivalents, with their twins killed. Six earlier mutants were re-cut for this round's code. |
+| Review | **One lens and one refuter on this round's diff. 3 findings, all CONFIRMED, none must-fix. All 3 are fixed** (`5373c83e`), each with a row and a mutant (§8.4). |
+| Still short of completion condition 4 | The suite's exit code: `CompeteTab.rankLabel` fails on `main` too. M36 and M38 survive as equivalents; their twins are killed. The signed-in smoke path has still not been driven, and the smoke preview predates this round (§8.6). |
+
+### 8.2 Commits
+
+| Commit | What |
+|---|---|
+| `8956c5ee` | Q2 (R-D6): admission keeps the owner's held answer when no battle id is held |
+| `781328c9` | Q3 (R-D7): the door's Retry follows S6's pattern |
+| `848bc37f` | Q4 (R-D8): the sheet's failed-load line is announced |
+| `40124ad9` | Q5 (R-D9): "Research concluded" and "Idea saved from research" carry the clipped question |
+| `5373c83e` | the review's three fixes (F1–F3) |
+| the docs commit | the amendment's §13 (appended verbatim), its README row, this section |
+
+### 8.3 The changes, by question
+
+**Q2 / R-D6: admission with a held answer and no battle id.**
+- **The change:** `src/hooks/useHubResearchAdmission.js:62`. At `'allowlist'`, with no owned battle id held, `admitted` is `cachedFilmRoomVerdict(null, { ownerId: uid }) === true`. The cache is keyed by owner (`filmRoomGate.js` `cacheKey`). No request is sent without an id: an ask needs one (`:41-42`).
+- **Review F2's change:** the ask is no longer cancelled when the id leaves (`:46-57`). Its answer lands and re-renders, and render never uses it for another owner or epoch (`:63`).
+- **Rows** (`useHubResearchAdmission.jsdom.test.jsx`):
+  - a held yes with no id: admitted, no request;
+  - no answer held: not admitted, no request;
+  - a held no: not admitted;
+  - another owner's yes admits nobody else;
+  - a verdict still out when the id leaves: admitted when it lands, with one request (F2).
+- **Hub row** (`CommandCenterHub.researchDoor.jsdom.test.jsx:237`): the A1 case end to end. The only live game leaves the poll before the completed window lands; the sheet stays open, and nothing is read again.
+- **Mutants:** M134–M137, M170.
+
+**Q3 / R-D7: the door's Retry, S6's pattern.**
+- **The reader** says while a refresh is out: `read.refreshing` (`src/hooks/useHubSharedResearch.js:37`, `:45`). That is all it says about a Retry.
+- **The press:**
+  - `hub/researchDoorView.js:102-104`, `doorRetryOf({ last, nowMs, cooldownMs })`. A press within the wait of this owner and epoch's last Retry that read reads nothing, and says when the next may be pressed.
+  - `CommandCenterHub.jsx:852-853`, `:889`, `:897-905`: `ConnectedHub` keeps each owner and epoch's last read Retry and the wait to say, and hands in S6's `RETRY_COOLDOWN_MS` (`:137`).
+  - No timer: a wait that has passed stops being said at the next render (`researchDoorView.js:78`).
+- **The door** (`panels/ResearchPanel.jsx:155-171`):
+  - while a Retry is out, the loading line in the error line's place;
+  - after a press inside the wait, "You can try again at {time}", rounded up as S6's is (`data-hub-research-door-wait`, added to the 'off' rows' selectors);
+  - "Work an idea" stays;
+  - focus: a press that reads moves focus to "Work an idea" (review C3); a press inside the wait leaves it on Retry, beside the time.
+- **Rows:**
+  - hub (`CommandCenterHub.researchDoor.jsdom.test.jsx:368-475`): the loading line while out; a press inside the wait reads nothing, says the time, and keeps focus (both sites); a press after the wait reads once; a passed wait is no longer said; the wait is per owner and epoch; a wait said for one epoch is not said for the next (F1);
+  - reader: refreshing while out, ending on success, failure and stale;
+  - view: `doorRetryOf`'s first press, inside, and exactly-at-the-wait boundary; the error state's two fields.
+- **Mutants:** M138–M154, M168, M169, and M163–M167 (the research reader's twins of the stories reader's mutants).
+
+**Q4 / R-D8: the failed-load line is announced.**
+- **The change:** `SharedResearchSheet.jsx:78`. The words get `role="alert"`; Try again is not part of it. No Reload, no new string.
+- **Review F3's change:** the alert is keyed on the count of failed retries (`:75`, `:103`, `:112`, `:117`), so a failed Try again is announced too.
+- **Rows** (`SharedResearchSheet.jsdom.test.jsx`): the alert is there on a failed load, not while loading, and gone once the body renders; a failed Try again inserts a new alert with the same words (F3).
+- **Mutants:** M155 (re-cut for F3's key), M156, M157, M171.
+
+**Q5 / R-D9: the concluded and saved rows carry the question.**
+- **The change:** `hub/activityRows.js:92`, `:95`, `:100`, `:102`. One sub for all three research rows: the record's question, clipped by code point as before. A missing question leaves none.
+- **Rows** (`activityRows.research.test.js`): both ended rows carry the question (the concluded row's `sub: ''` pin moved with the ruling); both clip it as the opened row does; a missing question leaves no sub on either.
+- **Mutants:** M158–M162.
+
+**Q1 / R-D5 and Q6 / R-D10** need no code: §4.4's L1 and the sheet's title stand as built.
+
+### 8.4 The review (BUILD_RULES §2, this round's diff only)
+
+**How it ran:** one read-only lens on an LF archive tree of `40124ad9`, then a refuter on another tree. Both left their trees as they found them. The branch's full review (§4.5) is not repeated; the review threshold is not re-measured for this round.
+
+| # | Finding | Refuter | Disposition |
+|---|---|---|---|
+| F1 | A test gap: removing the owner check on the wait the door says (`CommandCenterHub.jsx:889`) left every row passing. Epoch 3 would then be told "You can try again at …" although its first Retry reads. | CONFIRMED (only the lens's repro row fails under the mutant) | **fixed:** the row; M169 killed |
+| F2 | A verdict still out when the battle id leaves was cancelled. The yes was cached, but nothing re-rendered, so the door stayed away until an unrelated render. | CONFIRMED as a mechanism. Its reach is narrow: the door is late by at most about 120 s (the next poll success re-renders); no sheet can be open (admission had never been true); not a regression. | **fixed:** the ask is not cancelled; a row; M170 killed |
+| F3 | A failed Try again is not announced again: the alert node stays, with the same words. | CONFIRMED, narrowed to a failed retry within one open of the sheet | **fixed:** the alert keyed on the failure count; a row; M171 killed |
+
+**Also checked by the lens, with no finding:**
+- **Scope:** nothing under `api/` or `src/components/SharedResearch/`; `SHARED_RESEARCH_MODE` still `'off'`.
+- **No guard breaks** on the new alert.
+- **R-D6's letter:** the cache is page-life and keyed by uid, as ruled.
+- **R-D7:** no timer, hooks unconditional, no new live region on the hub page.
+- **R-D9:** the row's spoken label includes the sub.
+
+The lens's own `setDoorWait(null)` survivor is redundant code, not a gap: a press reads only once the wait has passed, so the wait it clears is never shown.
+
+### 8.5 The mutation battery on `5373c83e`
+
+**Method:** the same as §4.2.
+- The runs used LF `git archive` trees of `5373c83e`, and each mutant ran only its named rows' files.
+- A kill means vitest exited non-zero **and** reported a failed assertion; a crash is never a kill.
+- Every file was restored byte for byte, proved by SHA-256 (all `restored=true`).
+- Every failed row's name was recorded and mapped to the rows of the nine behaviour files.
+- The 174 mutants are M01–M133 from the build and M134–M171 for this round.
+
+**Result:**
+- 172 mutants were killed. M36 and M38 survive as before: they are equivalent, and their twins are killed.
+- The nine behaviour files hold 204 rows, and every one fails under at least one mutant.
+
+**What changed in the battery:**
+- **Six re-cuts.** This round changed the lines under M15, M63, M86, M87, M114 (re-cut on `40124ad9`) and M155 (re-cut on `5373c83e`). An anchor check before each run found them, and each re-cut aims at the same behaviour as before.
+- **M15 needs saying.** It drops the research reader's effect dependencies. That now loops forever instead of failing a row, because the refresh flag makes each effect run produce a new state. The worker ran out of memory, which the runner counts as a crash, never a kill. The re-cut reads again on each new props object, which is finite.
+- **M163–M167** aim at the five research-reader rows that the old M15 failed wholesale.
+- **An interim run on `40124ad9`** (171 mutants) found the M15 crash and six rows no mutant reached; M163–M168 cover them. The numbers above are the final run's.
+
+| Id | The row it targets | File mutated | Result on `5373c83e` |
+|---|---|---|---|
+| M15 (re-cut) | research reader: once per owner and epoch per load | `hooks/useHubSharedResearch.js` | killed (1/30 red) |
+| M63 (re-cut) | C3: the door Retry keeps focus on "Work an idea" | `CC/panels/ResearchPanel.jsx` | killed (3/53 red) |
+| M86 (re-cut) | view + hub: while the read is out, no line and the door shows (loading) | `CC/hub/researchDoorView.js` | killed (2/79 red) |
+| M87 (re-cut) | view: error is the error state, no line | `CC/hub/researchDoorView.js` | killed (3/26 red) |
+| M114 (re-cut) | activity: a missing question leaves no sub | `CC/hub/activityRows.js` | killed (1/15 red) |
+| M134 | R-D6: no id held, a held yes admits (and the A1 case in the hub) | `hooks/useHubResearchAdmission.js` | killed (3/70 red) |
+| M135 | R-D6: no request is ever sent without a battle id | `hooks/useHubResearchAdmission.js` | killed (2/17 red) |
+| M136 | R-D6: no id held, a held no is not admitted | `hooks/useHubResearchAdmission.js` | killed (1/17 red) |
+| M137 | R-D6: another owner's held yes admits nobody else | `hooks/useHubResearchAdmission.js` | killed (1/17 red) |
+| M138 | R-D7 reader: a Retry that is out is refreshing (the door's loading line) | `hooks/useHubSharedResearch.js` | killed (2/83 red) |
+| M139 | R-D7 reader: a failed Retry ends refreshing (kept answer) | `hooks/useHubSharedResearch.js` | killed (1/30 red) |
+| M140 | R-D7 view: the error state carries a Retry that is out | `CC/hub/researchDoorView.js` | killed (2/79 red) |
+| M141 | R-D7 view: a wait is said only while it stands | `CC/hub/researchDoorView.js` | killed (2/79 red) |
+| M142 | R-D7 doorRetryOf: a press inside the wait reads nothing | `CC/hub/researchDoorView.js` | killed (6/79 red) |
+| M143 | R-D7 doorRetryOf: exactly the wait after the last counts as passed | `CC/hub/researchDoorView.js` | killed (2/79 red) |
+| M144 | R-D7 doorRetryOf: the next press is the wait after the last that read | `CC/hub/researchDoorView.js` | killed (2/79 red) |
+| M145 | R-D7 hub: the wait is per owner and epoch | `CC/CommandCenterHub.jsx` | killed (1/53 red) |
+| M146 | R-D7 hub: a press inside the wait reads nothing | `CC/CommandCenterHub.jsx` | killed (5/53 red) |
+| M147 | R-D7 hub: a press inside the wait says when the next may be pressed | `CC/CommandCenterHub.jsx` | killed (5/53 red) |
+| M148 | R-D7 hub: a press that reads starts the wait | `CC/CommandCenterHub.jsx` | killed (5/53 red) |
+| M149 | R-D7 hub: the wait is S6's 30 s (RETRY_COOLDOWN_MS) | `CC/CommandCenterHub.jsx` | killed (5/53 red) |
+| M150 | R-D7 panel: the loading line in the error line's place while a Retry is out | `CC/panels/ResearchPanel.jsx` | killed (1/53 red) |
+| M151 | R-D7 panel: "You can try again at {time}" after a press inside the wait | `CC/panels/ResearchPanel.jsx` | killed (5/53 red) |
+| M152 | R-D7 panel: a press inside the wait leaves focus on Retry | `CC/panels/ResearchPanel.jsx` | killed (2/53 red) |
+| M153 | R-D7 panel: a press that reads moves focus to "Work an idea" (C3) | `CC/panels/ResearchPanel.jsx` | killed (3/53 red) |
+| M154 | R-D7 panel: the time is rounded up, as S6's | `CC/panels/ResearchPanel.jsx` | killed (2/53 red) |
+| M155 (re-cut) | R-D8: the failed-load line is announced | `CC/SharedResearchSheet.jsx` | killed (2/15 red) |
+| M156 | R-D8: only the words are the alert, not Try again | `CC/SharedResearchSheet.jsx` | killed (2/15 red) |
+| M157 | R-D8: no alert while loading | `CC/SharedResearchSheet.jsx` | killed (1/15 red) |
+| M158 | R-D9: "Research concluded" carries the question | `CC/hub/activityRows.js` | killed (2/15 red) |
+| M159 | R-D9: "Idea saved from research" carries the question | `CC/hub/activityRows.js` | killed (2/15 red) |
+| M160 | R-D9: the concluded row's question is clipped as the opened row's | `CC/hub/activityRows.js` | killed (1/15 red) |
+| M161 | R-D9: the saved row's question is clipped as the opened row's | `CC/hub/activityRows.js` | killed (1/15 red) |
+| M162 | R-D9: a missing question leaves no sub on any research row | `CC/hub/activityRows.js` | killed (2/15 red) |
+| M163 | research reader: admitted, loading then ready | `hooks/useHubSharedResearch.js` | killed (3/30 red) |
+| M164 | research reader: an epoch change of the same uid starts fresh | `hooks/useHubSharedResearch.js` | killed (1/30 red) |
+| M165 | research reader: a former owner's answer that lands after the change is dropped | `hooks/useHubSharedResearch.js` | killed (2/30 red) |
+| M166 | research reader: a failed read is the error state; Retry answers | `hooks/useHubSharedResearch.js` | killed (3/30 red) |
+| M167 | research reader: an older Retry landing after a newer one is dropped | `hooks/useHubSharedResearch.js` | killed (1/30 red) |
+| M168 | R-D7 doorRetryOf: no Retry yet for this owner and epoch, the press reads | `CC/hub/researchDoorView.js` | killed (1/26 red) |
+| M169 | review F1: a wait said for one owner and epoch is not said for the next | `CC/CommandCenterHub.jsx` | killed (1/53 red) |
+| M170 | review F2: a verdict still out when the battle id leaves lands and admits | `hooks/useHubResearchAdmission.js` | killed (1/17 red) |
+| M171 | review F3: a failed Try again announces the line again | `CC/SharedResearchSheet.jsx` | killed (1/15 red) |
+
+### 8.6 The smoke preview
+
+The smoke branch (`2a9b1753`, on `4e878335`) predates this round, so it does not show the door's new loading line and wait, the alert, or the ended rows' subs. The rows above prove these in jsdom. The §5 checklist still holds on the preview as it stands. A smoke rebuilt on `5373c83e` would also show the question under "Research concluded" in step 5. That rebuild is not done here.

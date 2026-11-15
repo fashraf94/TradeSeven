@@ -336,3 +336,12 @@ The build measured that any build reaching the body changes the entry chunk. The
 - **R-D2 (stories).** `fetchFeed()`, as E-6 says: a reader in `src/hooks/`, once per load, for an admitted player only. Not the root FantasyTimes context, which re-reads every 120 s and throws without its provider. To be revisited when O3 widens the read to every player.
 - **R-D3 (lazy).** E-2's lazy edge stays. A static body would put about 80 kB into the hub chunk for every visitor.
 - **R-D4 (the admission hook's mode).** A file in `src/hooks/` may not import into the hub directory. So `ConnectedHub` reads `sharedResearchMode()` through `hub/hubFlags.js` and hands the hook `mode`, the way it hands the Huddle readers `enabled`.
+
+## 13. Rulings on the door build's report (Nov 14, 2026)
+
+- **R-D5 (Q1, R-D1's reading).** In two lazy chunks (`AgentBattleScreen`, `BaggerBombTrainingBattleViewV4`), the minifier also re-chose some local names, because the re-lettered aliases changed its character counts. Their unminified twins differ only in entry aliases, and their token skeletons are identical. This is within R-D1: a lazy chunk may also differ in minifier-chosen local names when its unminified twin differs only in entry aliases.
+- **R-D6 (Q2).** At `'allowlist'`, when no owned battle id is held, admission is this owner's cached verdict (the cache is keyed by owner). No request is sent without a battle id. §1's "with no owned battle, the player is not admitted" now reads: with no owned battle and no answer already held for this owner.
+- **R-D7 (Q3).** The door's Retry follows S6's pattern: the loading line while a Retry is out; at most one Retry per 30 s per owner and epoch, enforced at the press; and "You can try again at {time}" for a press inside the wait. There is no timer.
+- **R-D8 (Q4).** The wrapper's failed-load line is announced (`role="alert"`), as the body's own failures are inside the sheet. The hub's status-line rule governs the hub page, not a dialog's content. No Reload.
+- **R-D9 (Q5).** "Research concluded" and "Idea saved from research" carry the clipped question as their sub, like "Research opened".
+- **R-D10 (Q6).** The sheet keeps the title "Work an idea" for every entry. The body shows the investigation's question as its heading.
