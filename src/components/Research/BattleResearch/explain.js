@@ -185,6 +185,9 @@ export function groupLabelOf(view) {
 }
 
 /** All the names one step's group holds: placed, left out, not ranked (the note line's count). */
+/** A sentence's first letter lowered, the rest as printed — a time keeps its "Thu 10:00 AM" (review BL2-8). */
+const lowerFirst = (text) => (text ? text.charAt(0).toLowerCase() + text.slice(1) : text);
+
 const groupCount = (outcome) => outcome.placed.length + outcome.removed.length + outcome.notAssessed.length + outcome.unranked.length;
 
 /**
@@ -493,7 +496,7 @@ function evidenceElig(result, elig, nowMs) {
   if (elig.ok) return BR_COPY.evidenceNow;
   if (elig.reason === 'pick_locked' && finite(elig.lockedUntil)) {
     const passed = finite(nowMs) && nowMs >= elig.lockedUntil;
-    return passed ? BR_COPY.evidenceCant(BR_COPY.lockedPassed(untilText(elig.lockedUntil, result.takenAt)).toLowerCase()) : BR_COPY.evidenceLocked(untilText(elig.lockedUntil, result.takenAt));
+    return passed ? BR_COPY.evidenceCant(lowerFirst(BR_COPY.lockedPassed(untilText(elig.lockedUntil, result.takenAt)))) : BR_COPY.evidenceLocked(untilText(elig.lockedUntil, result.takenAt));
   }
   return BR_COPY.evidenceCant(eligibilityWhy(elig.reason));
 }
@@ -622,7 +625,7 @@ export function draftOf(inv, result, step, symbol, holding = null, { nowMs = nul
     else if (elig.reason === 'pick_locked' && finite(elig.lockedUntil)) {
       const t = untilText(elig.lockedUntil, result.takenAt);
       const sNow = serverNowOf(result, nowMs);
-      stands.push(finite(sNow) && sNow >= elig.lockedUntil ? `${symbol}: ${BR_COPY.lockedPassed(t).toLowerCase()}.` : BR_COPY.draftCandLocked(symbol, t));
+      stands.push(finite(sNow) && sNow >= elig.lockedUntil ? `${symbol}: ${lowerFirst(BR_COPY.lockedPassed(t))}.` : BR_COPY.draftCandLocked(symbol, t));
     } else stands.push(BR_COPY.draftCandCant(symbol, eligibilityWhy(elig.reason)));
   }
   if (holding && finite(holding.rungsShown) && finite(holding.checkAtMs)) stands.push(BR_COPY.draftHoldingStands(h, rungsText(holding.rungsShown), checkWhen(holding.checkAtMs, result.takenAt)));

@@ -10,7 +10,7 @@ import { buildResult, incumbentOf } from './result.js';
 import {
   newInvestigation, setOrder, addCondition, currentStep, currentResult, refreshIncumbent, noticeOf, refreshGate,
 } from './investigation.js';
-import { explainOf, bannerOf, noteLineOf, researchRowOf, draftOf, askDraftOf, rowFactsOf } from './explain.js';
+import { explainOf, bannerOf, noteLineOf, researchRowOf, draftOf, askDraftOf, rowFactsOf, compareOf } from './explain.js';
 import { moveText } from './readings.js';
 import { aheadWords } from './battleResearchCopy.js';
 import { pctText } from '../../../screens/battleView/pctText.js';
@@ -206,5 +206,18 @@ describe('BR1-3 — the client\'s clock never judges a server-stamped instant', 
     // The client reads TAKEN_AT + 2.5 min; on the server's clock that is TAKEN_AT + 30 s, before the lock lapses.
     expect(rowFactsOf(b, r, 'NVDA', { nowMs: TAKEN_AT + 2.5 * MIN }).eligibility.text).not.toContain('since passed');
     expect(rowFactsOf(b, r, 'NVDA', { nowMs: TAKEN_AT + 3.5 * MIN }).eligibility.text).toContain('since passed');
+  });
+});
+
+describe('review BL2-8 — a passed lock keeps its time as printed (only the first letter is lowered)', () => {
+  it('the evidence sentence and the draft print "Thu 10:00 AM", never "thu 10:00 am"', () => {
+    const inv = invOf(BATTLE, { questionId: 'rank_bench' });
+    const r = currentResult(inv);
+    const eqix = r.holdings.find((h) => h.symbol === 'EQIX');
+    const thu1005 = Date.parse('2026-10-15T14:05:00.000Z');
+    const c = compareOf(r, currentStep(inv).view, 'NVDA', eqix, BATTLE, { nowMs: thu1005 });
+    expect(c.evidence).toContain('locked until Thu 10:00 AM at this result · since passed');
+    const d = draftOf(inv, r, currentStep(inv), 'NVDA', eqix, { nowMs: thu1005 }).text;
+    expect(d).toContain('NVDA: locked until Thu 10:00 AM at this result · since passed.');
   });
 });
