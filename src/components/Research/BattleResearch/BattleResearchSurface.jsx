@@ -57,6 +57,21 @@ export default function BattleResearchSurface({
   onClose, onOpenRow, onAskAbout, suspended = false, onSuspendedEscape = null, restoreFocus = null,
 }) {
   const { panelRef, onKeyDown } = useCockpitModal({ open, onClose, restoreFocus, suspended, onSuspendedEscape });
+  // §7: Escape closes, and focus returns to the Research pill. The shared hook hands focus back to whatever held
+  // it at open — on iOS Safari a tapped button never takes focus, so that is <body>. Declared AFTER the hook, so
+  // this cleanup runs after its own: a focus still on <body> then goes to the pill (measured in Edge, §11).
+  const restoreRef = useRef(restoreFocus);
+  restoreRef.current = restoreFocus;
+  useEffect(() => {
+    if (!open) return undefined;
+    return () => {
+      if (typeof document === 'undefined') return;
+      const active = document.activeElement;
+      if (active && active !== document.body && active.isConnected) return;
+      const pill = typeof restoreRef.current === 'function' ? restoreRef.current() : null;
+      if (pill && typeof pill.focus === 'function' && pill.isConnected && !pill.closest('[hidden], [inert]')) pill.focus();
+    };
+  }, [open]);
   const [sheet, setSheet] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());

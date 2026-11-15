@@ -77,7 +77,7 @@ export function PhoneLeadBar({ lead, voice, onMore }) {
   if (!lead) return null;
   return (
     <div data-br-lead-bar style={{ flexShrink: 0, padding: '10px 12px 12px', borderTop: `1px solid ${ST.hair}`, background: ST.surface, display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <button type="button" data-br-lead onClick={onMore} style={{ ...rowButton, display: 'block', width: '100%', textAlign: 'left' }}>
+      <button type="button" data-br-lead onClick={onMore} style={{ ...rowButton, display: 'block', width: '100%', minHeight: 44, textAlign: 'left' }}>
         <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 13.5, lineHeight: 1.45, color: ST.ink }}>
           <b style={{ color: ST.teal, fontWeight: 700 }}>{voice}: </b>{lead}
         </span>

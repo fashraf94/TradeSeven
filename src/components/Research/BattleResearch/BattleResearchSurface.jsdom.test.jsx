@@ -166,7 +166,17 @@ describe('focus and Escape (§7)', () => {
     expect(q('[data-br-surface]').contains(document.activeElement)).toBe(true);
     await key(document.activeElement, 'Escape');
     expect(calls).toContain('close');
+    expect(document.activeElement).toBe(pill);
     pill.remove();
+  });
+  it('focus returns to the pill even when the tap that opened the surface focused nothing (iOS Safari never focuses a tapped button)', async () => {
+    document.activeElement?.blur?.();
+    expect(document.activeElement).toBe(document.body);
+    await mount({ isDesktop: false });
+    expect(q('[data-br-surface]').contains(document.activeElement)).toBe(true);
+    await key(document.activeElement, 'Escape');
+    expect(calls).toContain('close');
+    expect(document.activeElement).toBe(q('[data-this-turn-research]'));
   });
   it('suspended under the research modal: inert, and Escape closes ONLY the modal (the surface stays)', async () => {
     await mount({ isDesktop: true, suspended: true });
@@ -182,6 +192,8 @@ describe('the phone (BRS-16)', () => {
     await mount({ isDesktop: false });
     await click(q('[data-br-starter="weakest_alternatives"]'));
     expect(q('[data-br-lead-bar]').textContent).toContain('Shadow:');
+    // Measured at 390 and 320 in Edge: the clamped two lines drew 39 px — the button holds 44 (§11).
+    expect(parseInt(q('[data-br-lead]').style.minHeight, 10)).toBeGreaterThanOrEqual(44);
     expect(q('[data-br-agent-column]')).toBeNull();
     await click(q('[data-br-read-more]'));
     expect(q('[data-br-history-sheet] [data-br-agent-column]')).toBeTruthy();
