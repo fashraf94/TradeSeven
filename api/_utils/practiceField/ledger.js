@@ -206,11 +206,11 @@ export function renameDeferralSymbols(ledgers, actionsBySymbol, { date }) {
  *             closedByCash: Array<{ ticker: string, actionId: string, cashUsd: number, realizedPnlUsd: number }>,
  *             delistedWaiting: Array<{ ticker: string, actionId: string, effectiveDate: string }> }}
  */
-export function applyLedgerActions(ledger, actionsBySymbol, { date, deferRenames = null, renameTargetsTaken = null }) {
-  return applyActions(ledger, actionsBySymbol, { date, renames: true, deferRenames, renameTargetsTaken });
+export function applyLedgerActions(ledger, actionsBySymbol, { date, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null }) {
+  return applyActions(ledger, actionsBySymbol, { date, renames: true, deferRenames, renameTargetsTaken, renameIdsScreened });
 }
 
-function applyActions(ledger, actionsBySymbol, { date, renames: withRenames, deferRenames = null, renameTargetsTaken = null }) {
+function applyActions(ledger, actionsBySymbol, { date, renames: withRenames, deferRenames = null, renameTargetsTaken = null, renameIdsScreened = null }) {
   const next = cloneLedger(ledger);
   const settled = new Set([...next.appliedActionIds, ...next.declinedActionIds]);
   const { pending, unrecognized, notEntitled, noEntitlementData } = pendingActionsFor(
@@ -324,6 +324,8 @@ function applyActions(ledger, actionsBySymbol, { date, renames: withRenames, def
     for (const [sym, h] of Object.entries(next.holdings)) {
       const record = h?.deferredRename;
       if (!record || settledNow.has(record.actionId) || conflicting.has(record.actionId) || candidates.some((r) => r.actionId === record.actionId)) continue;
+      // The close screened this id's row out (R-36): the record does not stand in for it (fix-round refuter, F2).
+      if (renameIdsScreened?.has(record.actionId)) continue;
       candidates.push({ type: 'ticker_change', ticker: sym, renamedTo: record.to, effectiveDate: record.effectiveDate, actionId: record.actionId });
     }
     candidates.sort((a, b) => (a.effectiveDate + a.actionId).localeCompare(b.effectiveDate + b.actionId));
@@ -334,8 +336,12 @@ function applyActions(ledger, actionsBySymbol, { date, renames: withRenames, def
       const holding = next.holdings[from];
       if (!holding) { unresolved.add(action.ticker); continue; }
       if (wait.has(from)) {
-        // Not applied, not settled: the holding keeps its symbol and its first deferral's record.
-        const record = holding.deferredRename ?? { from, to, actionId: action.actionId, effectiveDate: action.effectiveDate, deferredOn: date };
+        // Not applied, not settled: the holding keeps its symbol and its first deferral's record — whose target follows
+        // the row the feed lists now for the same id (a corrected row; fix-round refuter, F2), so the reservation and
+        // the rename name what the feed last said.
+        const prior = holding.deferredRename ?? null;
+        const record = prior === null ? { from, to, actionId: action.actionId, effectiveDate: action.effectiveDate, deferredOn: date }
+          : (prior.actionId === action.actionId ? { ...prior, to } : prior);
         next.holdings = { ...next.holdings, [from]: { ...holding, deferredRename: record } };
         unresolved.add(from);
         renamesDeferred.push(record);

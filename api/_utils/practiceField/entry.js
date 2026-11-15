@@ -232,6 +232,14 @@ export async function enterIdea(db, { bookRef, ideaId, tick, nowIso }) {
       tx.update(ideaRef, { lastEntryAttempt: attempt });
       return { outcome: 'waiting', refusals: why };
     };
+    // A rename that waits for another idea's share basis still owns its target (Astra T2A-01; admission.js
+    // namesTakenBy): an idea naming that target does not buy it. It waits like a leg with no eligible mark, and times
+    // out at its last entry slot if the rename still waits — a refusal, not an error (fix-round refuter, F3).
+    const waitingTargets = new Map(others.flatMap((o) => Object.values(o?.ledger?.holdings || {})
+      .filter((h) => typeof h?.deferredRename?.to === 'string').map((h) => [h.deferredRename.to, o.ideaId])));
+    const reserved = (idea.contract.names || []).filter((s) => waitingTargets.has(s))
+      .map((symbol) => ({ symbol, refusal: 'ticker_held_by_other_idea', ideaId: waitingTargets.get(symbol) }));
+    if (reserved.length > 0) return deferOrCancel(reserved);
     if (refusals.length > 0) return deferOrCancel(refusals);
 
     // Every leg has an eligible mark: fill both sides. Nothing has been written yet, so a leg the engine itself
@@ -251,12 +259,8 @@ export async function enterIdea(db, { bookRef, ideaId, tick, nowIso }) {
     let bookCashCents = toCents(book.portfolio.cash);
     let frictionCents = toCents(book.portfolio.frictionPaidCum || 0);
     const decisions = [];
-    // A waiting rename's target is another idea's too (Astra T2A-01; admission.js namesTakenBy).
-    const waitingTargets = new Map(others.flatMap((o) => Object.values(o?.ledger?.holdings || {})
-      .filter((h) => typeof h?.deferredRename?.to === 'string').map((h) => [h.deferredRename.to, o.ideaId])));
     for (const r of entry.receipts.idea) {
       if (Object.hasOwn(positions, r.symbol)) throw new PracticeFieldError('ticker_held_by_other_idea', { symbol: r.symbol, ideaId: positions[r.symbol].ideaId ?? null });
-      if (waitingTargets.has(r.symbol)) throw new PracticeFieldError('ticker_held_by_other_idea', { symbol: r.symbol, ideaId: waitingTargets.get(r.symbol) });
       bookCashCents -= toCents(r.executedSizeUsd);
       frictionCents += toCents(r.friction.frictionPaid);
       positions[r.symbol] = {

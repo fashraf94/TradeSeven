@@ -47,7 +47,7 @@
 //      will be written, before anything is written.
 
 import { buildCorporateAction } from '../mandateSchema.js';
-import { applyCorporateAction } from '../mandateCorporateActions.js';
+import { applyCorporateAction, deriveActionId } from '../mandateCorporateActions.js';
 import { caActionsBySymbol, snapshotExcluding, SNAPSHOT_COLLECTION } from '../mandateUniverseSnapshot.js';
 import { markBook } from '../mandateValuation.js';
 import { roundUsd } from '../mandateRounding.js';
@@ -107,6 +107,7 @@ export { firstUnclosedSessionBefore };
  * document (an unobserved session).
  */
 function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActions, heldByOthers = new Set(), sinceDate, snapshotMeta, nowIso, catchUp }) {
+  // `heldByOthers`: the symbols another idea of the book holds, or would hold had its waiting rename applied (R-36).
   const observed = closeSnapshot !== null;
   const running = RUNNING_IDEA_STATUSES.includes(idea.status);
   const dueSession = idea.contract.schedule.dueSession;
@@ -116,11 +117,15 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
   // two ideas. It is applied to no ledger of this idea — the symbol is held at its carried mark, not full quality,
   // with an alert — instead of aborting the whole book's close on the book's mirror (review, lens 1).
   const renameBlocked = new Set();
+  // The ids of the rows screened out here: a waiting rename's record of the same id must not stand in for its row
+  // (fix-round refuter, F2) — it would rename to the target the record last saw, past the screen.
+  const renameIdsScreened = new Set();
   const actionsBySymbol = {};
   for (const [sym, list] of Object.entries(feedActions || {})) {
     actionsBySymbol[sym] = list.filter((a) => {
       if (a?.type !== 'ticker_change' || !heldByOthers.has(String(a.renamedTo || '').trim().toUpperCase())) return true;
       renameBlocked.add(sym);
+      renameIdsScreened.add(deriveActionId(a));
       return false;
     });
   }
@@ -128,7 +133,7 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
   // 1. Corporate actions, once per ledger. A ticker change waits on EVERY ledger of the idea while the symbol's share
   //    basis is unresolved on ANY of them after this close's other actions (Astra T2A-01; ledger.js).
   const deferRenames = observed ? renameDeferralSymbols([idea.ledger, idea.comparisonLedger, idea.spyLedger], actionsBySymbol, { date }) : null;
-  const opts = { date, deferRenames, renameTargetsTaken: heldByOthers };
+  const opts = { date, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened };
   const own = observed ? applyLedgerActions(idea.ledger, actionsBySymbol, opts) : noActions(idea.ledger);
   const cmp = observed ? applyLedgerActions(idea.comparisonLedger, actionsBySymbol, opts) : noActions(idea.comparisonLedger);
   const spy = observed ? applyLedgerActions(idea.spyLedger, actionsBySymbol, opts) : noActions(idea.spyLedger);
@@ -454,6 +459,14 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
     for (const idea of ideas) {
       if (!FILLED_IDEA_STATUSES.includes(idea.status)) continue;
       const heldByOthers = new Set(Object.entries(positions).filter(([, p]) => p?.ideaId !== idea.ideaId).map(([sym]) => sym));
+      // …and the target of another idea's rename that waits for its share basis (Astra T2A-01): had it applied, the
+      // target would be that idea's position (fix-round refuter, F1). Read from this close's state of each idea.
+      for (const other of ideas) {
+        if (other.ideaId === idea.ideaId) continue;
+        for (const h of Object.values(nextIdeas.get(other.ideaId)?.ledger?.holdings || {})) {
+          if (typeof h?.deferredRename?.to === 'string') heldByOthers.add(h.deferredRename.to);
+        }
+      }
       const out = closeFilledIdea(idea, { date: session, closeSnapshot, actionsBySymbol, heldByOthers, sinceDate, snapshotMeta, nowIso, catchUp });
       nextIdeas.set(idea.ideaId, out.nextIdea);
       ideaRows[idea.ideaId] = out.row;
