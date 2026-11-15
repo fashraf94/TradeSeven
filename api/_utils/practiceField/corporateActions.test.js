@@ -9,7 +9,8 @@
 //                    holding becomes a waiting sale (E9), and nothing is sold at a carried mark.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { applyLedgerActions, newLedger, renameDeferralSymbols } from './ledger.js';
+import { applyLedgerActions, newLedger, renameDeferralSymbols, shareBasisHolds, saleHeldBackBy } from './ledger.js';
+import { deriveActionId } from '../mandateCorporateActions.js';
 import { ideaCoveragePlanFromLedgers } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
 import { admitIdea } from './admission.js';
@@ -795,4 +796,278 @@ describe('Astra T2A-01 — a ticker change waits while the holding\'s share basi
     expect(Object.keys(bookOf(ctx).portfolio.positions)).toEqual(['AAPL']);
     errors.mockRestore();
   });
+});
+
+// ── FIX ROUND 2 (15 Nov 2026) — NOTHING THAT DEPENDS ON A SHARE COUNT RUNS WHILE THE SHARE COUNT IS IN DOUBT ─────────
+// Astra T2A-C01: a cash delisting paid shares × cashPerShare on a holding whose share basis was unresolved, resolved the
+// idea and returned that cash to the treasury. The class: a sale, a rename, a cash payment, a dividend, a later split —
+// each acting on a count that is not settled. Each now WAITS (recorded on the holding as a held action), on every
+// ledger of the idea, and is applied once, on the adjusted count, at the close where the basis settles.
+describe('Fix round 2 — Astra T2A-C01 and the share-basis class: a count-dependent action waits while the share count is in doubt', () => {
+  // Astra's own scenario, to the letter (probe/astra-routes.test.js): a $20,000 AAPL idea at $100, its line breached
+  // on S[0], contradictory share-basis rows (and, unless `withRename` is false, AAPL → AAPLX) on S[1].
+  const Q = { AAPL: { price: 100, marketCap: 3e12 }, MSFT: { price: 200, marketCap: 3e12 }, SPY: 500 };
+  const VARIANTS = [['stock_distribution', 1.2], ['split', 1.5], ['reverse_split', 2 / 3]];
+  // Astra's control: the same cash delisting with the basis settled first ($60 × the adjusted count, six-decimal shares).
+  const CONTROL = { stock_distribution: 14395.68, split: 17994.6, reverse_split: 7997.6 };
+  const DELIST_ID = `delisting_AAPL_${S[2]}`;
+  const cashDelisting = (effectiveDate = S[2]) => ({ type: 'delisting', ticker: 'AAPL', cashPerShare: 60, effectiveDate, source: 'founder_action' });
+  const basis = (type, ratio, effectiveDate = S[1]) => ({ type, ticker: 'AAPL', ratio, effectiveDate, source: 'eodhd_splits' });
+  const closeQ = async (ctx, date, quotesIn) => { const out = await closeOn(ctx.db, ctx.bookId, date, quotesIn); recon(ctx); return out; };
+  const daily = (ctx, date, syms) => ctx.db.collection('mandateUniverseDaily').doc(date).set({ date, symbols: Object.fromEntries(syms.map((s) => [s, { caFetchFailed: false }])) });
+  const delistReceipts = (ledger) => ledger.corporateActionReceipts.filter((r) => r.type === 'delisting' && r.applied === true);
+  async function conflicted(type, ratio, withRename = true) {
+    const { db, bookId, bookRef } = await seedBook();
+    const e = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: Q });
+    expect(e.entry.outcome).toBe('entered');
+    const ctx = { db, bookId, bookRef, ideaId: e.ideaId };
+    await closeQ(ctx, S[0], { ...Q, AAPL: 90 });
+    const a = basis(type, ratio);
+    await closeQ(ctx, S[1], { ...Q, AAPL: { price: 90 / ratio, corporateActions: [a, { ...a, ratio: ratio + 0.1 }, ...(withRename ? [rename('AAPL', 'AAPLX')] : [])] } });
+    return ctx;
+  }
+  const causesOf = (type) => [
+    { actionId: `${type}_AAPL_${S[1]}`, type, effectiveDate: S[1], ledger: 'comparison' },
+    { actionId: `${type}_AAPL_${S[1]}`, type, effectiveDate: S[1], ledger: 'idea' },
+  ];
+
+  for (const [type, ratio] of VARIANTS) {
+    for (const withRename of [true, false]) {
+      const label = `${type}${withRename ? ', a deferred rename' : ', no rename (Astra\'s control on the earlier head)'}`;
+      it(`${label}: an old-ticker cash delisting at $60 is HELD — no cash credited, the idea not resolved, its slot held, nothing returned to the treasury, and the book reconciles`, async () => {
+        const ctx = await conflicted(type, ratio, withRename);
+        const before = ideaOf(ctx);
+        const bookBefore = bookOf(ctx);
+        const out = await closeQ(ctx, S[2], { ...Q, AAPL: { price: 60, corporateActions: [cashDelisting()] }, AAPLX: 90 / ratio });
+        const idea = ideaOf(ctx);
+        const book = bookOf(ctx);
+        expect(idea.status).toBe('line_hit_exit_pending');
+        expect(idea.result ?? null).toBe(null);
+        expect(book.slots.short).toBe(ctx.ideaId);
+        expect(book.openIdeaIds).toEqual([ctx.ideaId]);
+        expect(book.treasury.unreservedCash).toBe(bookBefore.treasury.unreservedCash);
+        expect(book.portfolio.cash).toBe(bookBefore.portfolio.cash);
+        expect(book.portfolio.positions.AAPL.shares).toBe(bookBefore.portfolio.positions.AAPL.shares);
+        expect(countDocs(ctx.db, `mandates/${ctx.bookId}/corporateActions/`)).toBe(0);
+        for (const ledger of [idea.ledger, idea.comparisonLedger]) {
+          const prior = ledger.kind === 'idea' ? before.ledger : before.comparisonLedger;
+          expect(ledger.cash, ledger.kind).toBe(prior.cash);
+          expect(ledger.realizedPnlUsd).toBe(prior.realizedPnlUsd);
+          expect(ledger.holdings.AAPL.shares).toBe(prior.holdings.AAPL.shares);
+          expect(delistReceipts(ledger)).toEqual([]);
+          expect(ledger.appliedActionIds).toEqual([]);
+          expect(ledger.holdings.AAPL.heldActions).toEqual([{
+            actionId: DELIST_ID, type: 'delisting', ticker: 'AAPL', effectiveDate: S[2], ratio: null, amount: null, cashPerShare: 60,
+            source: 'founder_action', heldOn: S[2], heldBecause: causesOf(type),
+          }]);
+          if (withRename) expect(ledger.holdings.AAPL.deferredRename).toMatchObject({ from: 'AAPL', to: 'AAPLX' });
+        }
+        expect(idea.spyLedger.holdings.SPY.heldActions).toBeUndefined();
+        expect(out.alerts.filter((a) => a.startsWith('PRACTICE_FIELD_CORPORATE_ACTION_HELD')).map((a) => a.split(' ').slice(0, 5).join(' '))).toEqual([
+          `PRACTICE_FIELD_CORPORATE_ACTION_HELD ${ctx.ideaId} idea AAPL ${DELIST_ID}`,
+          `PRACTICE_FIELD_CORPORATE_ACTION_HELD ${ctx.ideaId} comparison AAPL ${DELIST_ID}`,
+        ]);
+        const row = rowOf(ctx, S[2]);
+        expect(row).toMatchObject({ fullQuality: false, marks: { AAPL: { quality: 'carried_forward' } }, corporateActionsApplied: { idea: [], comparison: [], spy: [] } });
+        expect(row.quantities.AAPL).toBe(before.ledger.holdings.AAPL.shares);
+      });
+
+      for (const listed of [true, false]) {
+        it(`${label}: when ONE consistent basis row then arrives (${listed ? 'the delisting row still listed' : 'the delisting row dropped — from its record'}), the cash is credited ONCE, on the adjusted count, on every ledger and the book — Astra's control figure`, async () => {
+          const ctx = await conflicted(type, ratio, withRename);
+          const oldShares = ideaOf(ctx).ledger.holdings.AAPL.shares;
+          await closeQ(ctx, S[2], { ...Q, AAPL: { price: 60, corporateActions: [cashDelisting()] }, AAPLX: 90 / ratio });
+          const bookBefore = bookOf(ctx);
+          await closeQ(ctx, S[3], { ...Q, AAPL: { price: 60, corporateActions: [basis(type, ratio), ...(listed ? [cashDelisting()] : [])] }, AAPLX: 60 });
+          const adjusted = Math.round(oldShares * ratio * 1e6) / 1e6;
+          const idea = ideaOf(ctx);
+          const book = bookOf(ctx);
+          for (const ledger of [idea.ledger, idea.comparisonLedger]) {
+            expect(ledger.appliedActionIds, ledger.kind).toEqual([`${type}_AAPL_${S[1]}`, DELIST_ID]); // the basis first, then the cash
+            expect(delistReceipts(ledger)).toEqual([expect.objectContaining({
+              actionId: DELIST_ID, cashPerShare: 60, shares: adjusted, cashUsd: CONTROL[type], applied: true, appliedOn: S[3], held: true, heldOn: S[2],
+            })]);
+            expect(ledger.holdings).toEqual({});
+          }
+          expect(idea.status).toBe('resulted');
+          expect(idea.liquidation.returnedToTreasuryUsd).toBe(CONTROL[type]);
+          expect(book.slots.short).toBe(null);
+          expect(book.openIdeaIds).toEqual([]);
+          expect(cents(book.treasury.unreservedCash)).toBe(cents(bookBefore.treasury.unreservedCash) + cents(CONTROL[type]));
+          expect(book.portfolio.positions).toEqual({});
+          expect(ctx.db._get(`mandates/${ctx.bookId}/corporateActions/${DELIST_ID}`)).toMatchObject({ type: 'delisting', ideaId: ctx.ideaId });
+          // Exactly once: the feed listing the delisting again pays nothing more.
+          await closeQ(ctx, S[4], { ...Q, AAPL: { price: 60, corporateActions: [basis(type, ratio), cashDelisting()] } });
+          expect(cents(bookOf(ctx).treasury.unreservedCash)).toBe(cents(bookBefore.treasury.unreservedCash) + cents(CONTROL[type]));
+        });
+      }
+    }
+
+    it(`${type}: the resolved-basis control (Astra's) — the consistent basis row and the cash delisting in ONE close pay the adjusted count at once`, async () => {
+      const ctx = await conflicted(type, ratio);
+      await closeQ(ctx, S[2], { ...Q, AAPL: { price: 60, corporateActions: [basis(type, ratio), cashDelisting()] }, AAPLX: 60 });
+      const idea = ideaOf(ctx);
+      expect(idea.status).toBe('resulted');
+      expect(idea.liquidation.returnedToTreasuryUsd).toBe(CONTROL[type]);
+      expect(delistReceipts(idea.ledger)[0]).not.toHaveProperty('held');
+    });
+  }
+
+  it('the feed rows DISAPPEAR before resolution: still held at every close, still alerting, the sale still held, the slot still taken — and the later resolution pays once', async () => {
+    const ctx = await conflicted('split', 1.5);
+    await closeQ(ctx, S[2], { ...Q, AAPL: { price: 60, corporateActions: [cashDelisting()] }, AAPLX: 60 });
+    const shares = ideaOf(ctx).ledger.holdings.AAPL.shares;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (let i = 3; i <= 8; i += 1) {
+      await daily(ctx, S[i], ['AAPL', 'AAPLX', 'SPY']);
+      const w = await windowAt(ctx.db, ctx.bookId, { date: S[i], quotes: { ...Q, AAPL: 60, AAPLX: 60 } });
+      expect(w.sales.sold, S[i]).toBe(0);
+      const out = await closeQ(ctx, S[i], { ...Q, AAPL: 60, AAPLX: 60 });
+      expect(out.alerts.filter((a) => a.startsWith(`PRACTICE_FIELD_CORPORATE_ACTION_HELD ${ctx.ideaId} idea AAPL ${DELIST_ID}`)), S[i]).toHaveLength(1);
+      const idea = ideaOf(ctx);
+      expect(idea.ledger.holdings.AAPL).toMatchObject({ shares, heldActions: [expect.objectContaining({ actionId: DELIST_ID, heldOn: S[2] })] });
+      expect(idea.ledger.holdings.AAPL.exitPending.waiting.lastRefusal).toBe('corporate_action_unsettled');
+      expect(rowOf(ctx, S[i]).marks.AAPL.quality).toBe('carried_forward');
+      expect(bookOf(ctx).slots.short).toBe(ctx.ideaId);
+    }
+    errors.mockRestore();
+    await closeQ(ctx, S[9], { ...Q, AAPL: { price: 60, corporateActions: [basis('split', 1.5)] } });
+    expect(ideaOf(ctx).status).toBe('resulted');
+    expect(ideaOf(ctx).liquidation.returnedToTreasuryUsd).toBe(CONTROL.split);
+    expect(delistReceipts(ideaOf(ctx).ledger)).toEqual([expect.objectContaining({ appliedOn: S[9], heldOn: S[2], held: true })]);
+  });
+
+  it('a held action whose OWN id the feed then lists two ways is a conflict, not a hold: the record is dropped, the conflict\'s receipt governs, nothing is paid', async () => {
+    const ctx = await conflicted('split', 1.5, false);
+    await closeQ(ctx, S[2], { ...Q, AAPL: { price: 60, corporateActions: [cashDelisting()] } });
+    await closeQ(ctx, S[3], { ...Q, AAPL: { price: 60, corporateActions: [basis('split', 1.5), cashDelisting(), { ...cashDelisting(), cashPerShare: 61 }] } });
+    const idea = ideaOf(ctx);
+    expect(idea.ledger.holdings.AAPL.heldActions).toBeUndefined();
+    expect(idea.ledger.appliedActionIds).toEqual([`split_AAPL_${S[1]}`]);
+    expect(idea.ledger.corporateActionReceipts.filter((r) => r.actionId === DELIST_ID).map((r) => r.reason)).toEqual(['conflicting_action']);
+    expect(idea.status).toBe('line_hit_exit_pending');
+  });
+
+  it('a CASH DIVIDEND dated after the unresolved action waits and is credited once on the adjusted count; one dated BEFORE it is provably unaffected — paid now, on the count before the action, exactly as with no action at all', async () => {
+    const div = (effectiveDate, amount = 0.26) => ({ type: 'cash_dividend', ticker: 'AAPL', effectiveDate, amount, source: 'eodhd_dividends' });
+    // After: a conflict on S[1], the dividend's ex-date S[2].
+    const ctx = await conflicted('split', 1.5, false);
+    const oldShares = ideaOf(ctx).ledger.holdings.AAPL.shares;
+    const cash0 = ideaOf(ctx).ledger.cash;
+    await closeQ(ctx, S[2], { ...Q, AAPL: { price: 60, corporateActions: [div(S[2])] } });
+    expect(ideaOf(ctx).ledger.dividendsUsd).toBe(0);
+    expect(ideaOf(ctx).ledger.cash).toBe(cash0);
+    expect(ideaOf(ctx).ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: `cash_dividend_AAPL_${S[2]}`, amount: 0.26, heldOn: S[2] })]);
+    expect(ideaOf(ctx).comparisonLedger.holdings.AAPL.heldActions).toHaveLength(1);
+    await closeQ(ctx, S[3], { ...Q, AAPL: { price: 60, corporateActions: [basis('split', 1.5)] } }); // the dividend row dropped
+    const adjusted = Math.round(oldShares * 1.5 * 1e6) / 1e6;
+    for (const ledger of [ideaOf(ctx).ledger, ideaOf(ctx).comparisonLedger]) {
+      expect(ledger.dividendsUsd, ledger.kind).toBe(roundUsd(adjusted * 0.26));
+      expect(ledger.appliedActionIds).toEqual([`split_AAPL_${S[1]}`, `cash_dividend_AAPL_${S[2]}`]);
+      expect(ledger.holdings.AAPL).not.toHaveProperty('heldActions');
+    }
+    expect(cents(ideaOf(ctx).ledger.cash)).toBe(cents(cash0) + cents(roundUsd(adjusted * 0.26)));
+    // Before: a dividend with ex-date S[1] and a split conflict on S[2], both first listed on S[2].
+    const before = async (withConflict) => {
+      const { db, bookId, bookRef } = await seedBook();
+      const e = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: Q });
+      const c = { db, bookId, bookRef, ideaId: e.ideaId };
+      await closeQ(c, S[0], Q);
+      await closeQ(c, S[1], Q);
+      const conflict = withConflict ? [basis('split', 1.5, S[2]), basis('split', 1.6, S[2])] : [];
+      await closeQ(c, S[2], { ...Q, AAPL: { price: 100, corporateActions: [div(S[1]), ...conflict] } });
+      return ideaOf(c).ledger;
+    };
+    const plain = await before(false);
+    const inDoubt = await before(true);
+    expect(inDoubt.dividendsUsd).toBe(plain.dividendsUsd);
+    expect(inDoubt.dividendsUsd).toBe(roundUsd(plain.holdings.AAPL.shares * 0.26));
+    expect(inDoubt.holdings.AAPL.heldActions).toBeUndefined();
+    expect(inDoubt.appliedActionIds).toEqual([`cash_dividend_AAPL_${S[1]}`]);
+  });
+
+  it('a LATER share-basis action waits behind an unresolved earlier one (shares × ratio rounds at each step): held, recorded, and applied after it in date order — the same count as the control', async () => {
+    const ctx = await conflicted('split', 1.5, false);
+    const oldShares = ideaOf(ctx).ledger.holdings.AAPL.shares;
+    await closeQ(ctx, S[2], { ...Q, AAPL: { price: 50, corporateActions: [basis('stock_distribution', 1.2, S[2])] } });
+    expect(ideaOf(ctx).ledger.holdings.AAPL.shares).toBe(oldShares);
+    expect(ideaOf(ctx).ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: `stock_distribution_AAPL_${S[2]}`, ratio: 1.2 })]);
+    await closeQ(ctx, S[3], { ...Q, AAPL: { price: 50, corporateActions: [basis('split', 1.5)] } }); // the distribution's row dropped
+    const step = Math.round(oldShares * 1.5 * 1e6) / 1e6;
+    const want = Math.round(step * 1.2 * 1e6) / 1e6;
+    for (const ledger of [ideaOf(ctx).ledger, ideaOf(ctx).comparisonLedger]) {
+      expect(ledger.holdings.AAPL.shares, ledger.kind).toBe(want);
+      expect(ledger.appliedActionIds).toEqual([`split_AAPL_${S[1]}`, `stock_distribution_AAPL_${S[2]}`]);
+    }
+    expect(bookOf(ctx).portfolio.positions.AAPL.shares).toBe(want);
+  });
+
+  it('on ONE date the share-basis action is applied first, and a cash action of that date is paid on the count it leaves (a reading, R-55)', () => {
+    const held = { AAPL: { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, lastMarkAsOf: null, lastMarkSource: 'snapshot', sector: 'Technology', openedAt: S[0] } };
+    const ledger = { ...newLedger('idea', 1000), cash: 0, holdings: held };
+    const out = applyLedgerActions(ledger, { AAPL: [{ type: 'cash_dividend', ticker: 'AAPL', effectiveDate: S[1], amount: 1 }, basis('split', 2)] }, { date: S[1] });
+    expect(out.ledger.appliedActionIds).toEqual([`split_AAPL_${S[1]}`, `cash_dividend_AAPL_${S[1]}`]);
+    expect(out.ledger.dividendsUsd).toBe(20);
+  });
+
+  describe('the other arms of "unresolved" — not only a conflict', () => {
+    const holding = (over = {}) => ({ shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, lastMarkAsOf: null, lastMarkSource: 'snapshot', sector: 'Technology', openedAt: S[0], ...over });
+    const ledgerOf = (kind, over = {}) => ({ ...newLedger(kind, 1000), cash: 0, holdings: { AAPL: holding(over) } });
+    const cash = cashDelisting(S[2]);
+    for (const [name, row, over] of [
+      ['a ratio the applier refuses', basis('split', -2, S[1]), {}],
+      ['a reverse split that rounds the holding to nothing', basis('reverse_split', 1e-9, S[1]), {}],
+      ['a split the holding has no entitlement data for', basis('split', 2, S[1]), { openedAt: undefined }],
+    ]) {
+      it(`${name}: the cash waits, is recorded, and STAYS held once the feed drops both rows (the fail-closed side of R-46) — and the sale is held`, () => {
+        const ledger = ledgerOf('idea', over);
+        const day1 = { AAPL: [row, cash] };
+        const holds = shareBasisHolds([ledger], day1, { date: S[2] });
+        expect([...holds.keys()]).toEqual(['AAPL']);
+        const a = applyLedgerActions(ledger, day1, { date: S[2], holds });
+        expect(a.ledger.cash).toBe(0);
+        expect(a.closedByCash).toEqual([]);
+        expect(a.ledger.holdings.AAPL.heldActions).toEqual([expect.objectContaining({ actionId: DELIST_ID, heldBecause: [{ actionId: deriveActionId(row), type: row.type, effectiveDate: S[1], ledger: 'idea' }] })]);
+        expect(a.unresolved.has('AAPL')).toBe(true);
+        // The feed drops both rows: nothing settled the cause, so the record still waits.
+        const holds2 = shareBasisHolds([a.ledger], {}, { date: S[3] });
+        expect([...holds2.keys()]).toEqual(['AAPL']);
+        const b = applyLedgerActions(a.ledger, {}, { date: S[3], holds: holds2 });
+        expect(b.ledger.cash).toBe(0);
+        expect(b.ledger.holdings.AAPL.heldActions).toHaveLength(1);
+        expect(b.unresolved.has('AAPL')).toBe(true);
+        expect(saleHeldBackBy(b.ledger, 'AAPL', { date: S[4], symbols: { AAPL: { price: 60, complete: true } } }, { date: S[4] })).toBe('corporate_action_unsettled');
+      });
+    }
+
+    it('COMPARISON-ONLY: when only the comparison has the basis unresolved, the idea\'s own cash delisting waits too (the idea decides), and the idea\'s sale is held (otherLedgers)', () => {
+      const idea = ledgerOf('idea');
+      const comparison = {
+        ...ledgerOf('comparison'),
+        corporateActionReceipts: [{ actionId: `split_AAPL_${S[1]}`, type: 'split', ticker: 'AAPL', effectiveDate: S[1], applied: false, reason: 'conflicting_action', entitled: true, rows: [], seenOn: S[1] }],
+      };
+      const feed = { AAPL: [cash] };
+      expect(applyLedgerActions(idea, feed, { date: S[2] }).ledger.cash).toBe(600); // alone, it would pay
+      const holds = shareBasisHolds([idea, comparison], feed, { date: S[2] });
+      for (const l of [idea, comparison]) {
+        const out = applyLedgerActions(l, feed, { date: S[2], holds });
+        expect(out.ledger.cash, l.kind).toBe(0);
+        expect(out.ledger.holdings.AAPL.heldActions[0].heldBecause).toEqual([{ actionId: `split_AAPL_${S[1]}`, type: 'split', effectiveDate: S[1], ledger: 'comparison' }]);
+      }
+      const snap = { date: S[2], symbols: { AAPL: { price: 60, complete: true } } };
+      expect(saleHeldBackBy(idea, 'AAPL', snap, { date: S[2] })).toBe(null);
+      expect(saleHeldBackBy(idea, 'AAPL', snap, { date: S[2], otherLedgers: [comparison] })).toBe('corporate_action_unsettled');
+    });
+  });
+
+  it('VALUATION: a share-basis conflict the feed has dropped keeps the holding at its CARRIED mark — never a fresh price against the unadjusted count (a 1.5 split moves 33%, under the gap screen\'s 40%)', async () => {
+    const ctx = await conflicted('split', 1.5, false);
+    const before = ideaOf(ctx).ledger.holdings.AAPL;
+    await closeQ(ctx, S[2], { ...Q, AAPL: 60 });
+    const row = rowOf(ctx, S[2]);
+    expect(row.marks.AAPL).toMatchObject({ quality: 'carried_forward', mark: before.lastMark });
+    expect(row.fullQuality).toBe(false);
+    expect(bookOf(ctx).portfolio.positions.AAPL.lastMark).toBe(before.lastMark);
+  });
+
 });

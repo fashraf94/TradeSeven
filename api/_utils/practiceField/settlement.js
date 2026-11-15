@@ -41,7 +41,7 @@ import {
 } from './constants.js';
 import { modelledSaleProceeds, isCostTier, costTierOf } from './fills.js';
 import { fundOf, frictionForSymbol } from './symbols.js';
-import { unsettledConflicts } from './ledger.js';
+import { unsettledConflicts, heldActionRecords } from './ledger.js';
 import { toCents, fromCents } from './money.js';
 
 /** The kinds of endpoint: at the scheduled due session, early (no holdings left — E2), or after a due session passed. */
@@ -55,7 +55,10 @@ export const pendingSaleOf = (holding) => holding?.settlementPending ?? holding?
 
 /** The symbols of a ledger that carry an unsettled conflicting corporate action (their price basis is not certain). */
 function unsettledSymbolsOf(ledger) {
-  return new Set(unsettledConflicts(ledger).map((r) => String(r.ticker || '').trim().toUpperCase()));
+  return new Set([
+    ...unsettledConflicts(ledger).map((r) => String(r.ticker || '').trim().toUpperCase()),
+    ...heldActionRecords(ledger).map((r) => r.symbol), // fix round 2: an action owed that waits on the share basis
+  ]);
 }
 
 /**
@@ -191,7 +194,8 @@ export function ledgerEndpoint(ledger, valuation) {
   let grossCents = 0;
   let netCents = 0;
   let rawNet = 0;
-  const unsettledActions = unsettledConflicts(ledger).map((r) => r.actionId);
+  // …and every action a holding is owed that waits on its share basis (fix round 2): the value is in doubt by it.
+  const unsettledActions = [...unsettledConflicts(ledger).map((r) => r.actionId), ...heldActionRecords(ledger).map((r) => r.actionId)];
   let marksFullQuality = true;
   let costTiersStored = true;
   const holdings = {};

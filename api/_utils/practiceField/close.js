@@ -61,7 +61,7 @@ import { PracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
 import {
   applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, unsettledConflicts, cloneLedger,
-  renameDeferralSymbols,
+  shareBasisHolds, heldActionRecords,
 } from './ledger.js';
 import { closeMarkQuality } from './marks.js';
 import { planRelease } from './admission.js';
@@ -89,7 +89,7 @@ const marksOf = (valuation) => Object.fromEntries(Object.entries(valuation.marks
 /** What applyLedgerActions answers when there is nothing to apply: the session has no stored snapshot, so no feed. */
 const noActions = (ledger) => ({
   ledger, applied: [], declined: [], unresolved: new Set(), conflicts: [], shareBasisChanges: [], renames: [], renamesDeferred: [], renamesBlocked: [],
-  closedByCash: [], delistedWaiting: [],
+  held: [], closedByCash: [], delistedWaiting: [],
 });
 
 /** A valuation of a session nobody observed: every mark is the carried one, and says so (E12). */
@@ -144,10 +144,13 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
     });
   }
 
-  // 1. Corporate actions, once per ledger. A ticker change waits on EVERY ledger of the idea while the symbol's share
-  //    basis is unresolved on ANY of them after this close's other actions (Astra T2A-01; ledger.js).
-  const deferRenames = observed ? renameDeferralSymbols([idea.ledger, idea.comparisonLedger, idea.spyLedger], actionsBySymbol, { date }) : null;
-  const opts = { date, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened };
+  // 1. Corporate actions, once per ledger. While a symbol's share basis is unresolved on ANY ledger of the idea after
+  //    this close's share-basis actions (the idea's hold set), nothing that depends on its share count is applied on
+  //    ANY ledger of the idea — no cash delisting, no dividend, no later share-basis action (each is recorded on the
+  //    holding and applied once the basis settles; fix round 2, T2A-C01) — and its ticker change waits (Astra T2A-01).
+  const holds = observed ? shareBasisHolds([idea.ledger, idea.comparisonLedger, idea.spyLedger], actionsBySymbol, { date }) : null;
+  const deferRenames = holds ? new Set(holds.keys()) : null;
+  const opts = { date, holds, deferRenames, renameTargetsTaken: heldByOthers, renameIdsScreened };
   const own = observed ? applyLedgerActions(idea.ledger, actionsBySymbol, opts) : noActions(idea.ledger);
   const cmp = observed ? applyLedgerActions(idea.comparisonLedger, actionsBySymbol, opts) : noActions(idea.comparisonLedger);
   const spy = observed ? applyLedgerActions(idea.spyLedger, actionsBySymbol, opts) : noActions(idea.spyLedger);
@@ -158,6 +161,11 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
       if (!Object.hasOwn(out.ledger.holdings || {}, sym)) continue;
       out.unresolved.add(sym);
       alerts.push(`PRACTICE_FIELD_RENAME_BLOCKED ${idea.ideaId} ${name} ${sym} — a ticker change into a symbol another idea of the book holds is not applied; the holding is valued at its carried mark`);
+    }
+    // Every action a holding is owed that waits on its share basis, at every close it waits (fix round 2).
+    for (const r of heldActionRecords(out.ledger)) {
+      const on = (r.heldBecause || []).map((c) => `${c.actionId}@${c.ledger}`).join(', ');
+      alerts.push(`PRACTICE_FIELD_CORPORATE_ACTION_HELD ${idea.ideaId} ${name} ${r.symbol} ${r.actionId} — the holding's share basis is unresolved (${on}); not applied, nothing credited or released (held since ${r.heldOn})`);
     }
     for (const d of out.renamesDeferred) {
       alerts.push(`PRACTICE_FIELD_RENAME_DEFERRED ${idea.ideaId} ${name} ${d.from}→${d.to} ${d.actionId} — the holding's share basis is unresolved; the ticker change waits (since ${d.deferredOn}), the holding keeps its symbol and its sale stays held`);
@@ -208,6 +216,8 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
   const spyV = value(spy.ledger, spy.unresolved);
   // Conflicts recorded on a ledger and not settled since (neither applied nor declined), this close's included.
   const openConflicts = [['idea', ownLedger], ['comparison', cmp.ledger], ['spy', spy.ledger]].flatMap(([name, ledger]) => unsettledConflicts(ledger).map((r) => ({ name, actionId: r.actionId })));
+  // …and the actions a holding is owed that wait on its share basis (fix round 2): the row is not clean while one waits.
+  const openHeld = [ownLedger, cmp.ledger, spy.ledger].reduce((n, ledger) => n + heldActionRecords(ledger).length, 0);
 
   // An unobserved session changes no ledger: there is nothing to write a mark from.
   let next = {
@@ -296,7 +306,7 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
     // Not full quality while any ledger of the idea holds an UNSETTLED conflicting action (review FR-A1): after the
     // feed stops presenting a conflict, its symbol is marked fresh again, but the action — a dividend's income, say —
     // was never applied, so the row must not read as clean until a consistent row settles it.
-    fullQuality: observed && ownV.valuation.fullQuality && cmpV.valuation.fullQuality && spyV.valuation.fullQuality && openConflicts.length === 0,
+    fullQuality: observed && ownV.valuation.fullQuality && cmpV.valuation.fullQuality && spyV.valuation.fullQuality && openConflicts.length === 0 && openHeld === 0,
     // Always true since Amendment D's Q-1 (a leg with no resolvable cost tier does not enter); kept on the row because
     // T1a-1's rows carry it.
     entryCostTiersKnown: (idea.entry?.unknownCostTierLegs || []).length === 0,

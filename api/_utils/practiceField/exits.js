@@ -156,7 +156,9 @@ export function planPendingSales({ book, idea, others, snapshot, daily = null, c
     // day one takes effect shows the already-adjusted price beside a holding that is not yet adjusted. So a holding
     // with an action due and unsettled, an unsettled conflict, or a price gap with a split's signature WAITS (E9):
     // the close applies the action, and the sale fills at the next eligible observation.
-    const heldBack = snapshot ? saleHeldBackBy(ledger, symbol, snapshot, { sinceDate: book.execState?.lastCloseKey ?? null, date: tick.date }) : null;
+    const heldBack = snapshot ? saleHeldBackBy(ledger, symbol, snapshot, {
+      sinceDate: book.execState?.lastCloseKey ?? null, date: tick.date, otherLedgers: [idea.comparisonLedger, idea.spyLedger],
+    }) : null;
     if (!snapshot) refusal = 'no_stored_snapshot';
     // The day's corporate-action fetch FAILED for this symbol (the daily layer says so; the slot snapshot does not
     // carry it): "no action listed" then means nothing, and a split below the gap screen's threshold would be sold
