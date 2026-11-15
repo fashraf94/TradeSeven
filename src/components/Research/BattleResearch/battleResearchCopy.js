@@ -269,8 +269,9 @@ export const BR_COPY = Object.freeze({
   explainKeep: (inc) => `None of this says how either would score from here. Keeping ${inc} is a fair answer.`,
   explainGroup: (n, group) => `${plural(n, 'name', 'names')} on ${group}.`,
   explainWeakestGone: (line) => line,
-  // One partition of the group (refuter RF-3): up, down, flat, no reading, crypto — a part shows when it holds a name.
-  explainGroupMoves: (u, d, f, x, c, t) => `${u} ${u === 1 ? 'is' : 'are'} up today, ${d} down${f ? `, ${f} flat` : ''}${x ? `, ${x} without a reading yet` : ''}${c ? `, ${c} crypto not compared` : ''}${t ? ` (as of ${t})` : ''}.`,
+  // §9's line (up, down, without a reading yet — always), and one partition of the group (refuter RF-3): a flat name
+  // (prints 0.0) and a crypto are counted too, each part shown only when it holds a name.
+  explainGroupMoves: (u, d, f, x, c, t) => `${u} ${u === 1 ? 'is' : 'are'} up today, ${d} down${f ? `, ${f} flat` : ''}, ${x} without a reading yet${c ? `, ${c} crypto not compared` : ''}${t ? ` (as of ${t})` : ''}.`,
   sectorNotKnown: 'sector not known',
   explainLeftOut: (removed, notAssessed) => join([
     removed ? `${plural(removed, 'name', 'names')} removed by a condition` : null,

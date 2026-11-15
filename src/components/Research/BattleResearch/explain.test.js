@@ -82,7 +82,7 @@ describe('BRS-16 — the explanation, from the frozen result alone', () => {
     const i = inv(r, 'rank_bench');
     expect(explainOf(i, r, currentStep(i))).toEqual([
       '4 names on my bench. NVDA leads at rank 12 of 228, but it’s locked until Thu 10:00 AM (ranks as of 1:01 PM ET).',
-      '2 are up today, 1 down, 1 crypto not compared (as of 1:44 PM).' // one partition of the 4 (refuter RF-3),
+      '2 are up today, 1 down, 0 without a reading yet, 1 crypto not compared (as of 1:44 PM).' // one partition of the 4 (refuter RF-3),
     ]);
   });
   it('on a weekend: the market-closed line with the next session, and Friday\'s moves for reference', () => {

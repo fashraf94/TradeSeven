@@ -70,7 +70,7 @@ describe('RF-3 — the group explanation\'s counts are one partition of the grou
     const inv = invOf(BATTLE, { questionId: 'rank_bench', quotes });
     const p = explainOf(inv, currentResult(inv), currentStep(inv)).join(' ');
     expect(p).toContain('4 names on my bench.');
-    expect(p).toMatch(/1 is up today, 1 down, 1 flat, 1 crypto not compared/);
+    expect(p).toMatch(/1 is up today, 1 down, 1 flat, 0 without a reading yet, 1 crypto not compared/);
   });
 });
 
