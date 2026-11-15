@@ -239,6 +239,7 @@ export const BR_COPY = Object.freeze({
     out ? `${out} out` : null,
   ]) + '.',
   refreshedWeakest: (inc, was) => `${inc} is now our weakest; this result compares with it (was ${was}).`,
+  refreshedPlaced: (inn, out) => [inn ? `${inn} newly placed` : null, out ? `${out} no longer placed (left out or set aside)` : null].filter(Boolean).join(', ') + '.',
 
   // ── Notices (BRS-14): one quiet line with Refresh ──
   noticeNewCheckWeakest: (t, now, inc) => `A newer check at ${t}: ${now} is now our weakest. This result still compares with ${inc}.`,
@@ -298,7 +299,7 @@ export const BR_COPY = Object.freeze({
   cancel: 'Cancel',
   applied: (remain) => `${remain} remain`,
   viewUpdated: 'View updated ranking',
-  leftResult: (sym, move, words) => `${sym} is ${move} today, so “${words}” leaves it out of this result.`,
+  leftResult: (sym, move, words, t) => `${sym} is ${move} today (as of ${t}), so “${words}” leaves it out of this result.`,
   leftResultNoMove: (sym, words) => `${sym} has no reading for today’s move, so “${words}” leaves it out of this result.`,
   compareWith: (inc) => `Compare with ${inc}`,
   compareWithHolding: 'Compare with a holding',
@@ -325,7 +326,11 @@ export const BR_COPY = Object.freeze({
   draftFor: (agent) => `Draft it for ${agent}`,
   draftDoor: (agent) => `Draft it for ${agent} →`,
   nothingSent: 'Nothing is sent',
-  ranksLine: (t) => `All stocks · technical rank · ${t} ET`,
+  // The Ranks tab's line in state 2: its time when the result has one, flagged past the doc's expiry (BRS-8; review BL2-6).
+  ranksLine: (t, older = false) => `All stocks · technical rank${t ? ` · ${t} ET` : ''}${older ? ' · older than usual' : ''}`,
+  // The research strip's own lines, printed as the row and the note print them (review BL2-6).
+  stripTimes: (ranksAt, older, from, to) => [ranksAt ? `Ranks ${ranksAt} ET${older ? ' · older than usual' : ''}` : null, from ? `moves ${clockRange(from, to)} ET` : null].filter(Boolean).join(' · '),
+  stripGroup: (label, n) => `${label} · ${plural(n, 'name', 'names')}`,
   pickHolding: 'Compare with',
   // The incumbent item's source label in state 2 (Phase 0 point 6): the bench door names "its call in
   // the cockpit"; an incumbent that came from research names the question instead.

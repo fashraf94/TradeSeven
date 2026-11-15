@@ -370,7 +370,7 @@ export default function ArenaHeader({
                     marginBottom: 2,
                   }}
                 >
-                  CPU
+                  {BATTLE_VIEW_COPY.opponentLabel}
                 </span>
                 {!gated && <AnimatedScore value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} />}
                 {gated && available && (
@@ -398,7 +398,7 @@ export default function ArenaHeader({
                   marginBottom: 2,
                 }}
               >
-                CPU
+                {BATTLE_VIEW_COPY.opponentLabel}
               </span>
               {!gated && <AnimatedScore value={oppScore} defaultColor={cssVar('copper')} size={scoreSize} />}
               {gated && available && (

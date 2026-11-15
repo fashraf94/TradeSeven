@@ -21,7 +21,7 @@ import SectorTab from '../../draft/SectorTab';
 import SmartMoneyTab from '../SmartMoneyTab';
 import WhatsMoving from './WhatsMoving.jsx';
 import { SHELL_COPY } from './sheetCopy.js';
-import { ST } from './sheetTheme.js';
+import { ST, MONO } from './sheetTheme.js';
 
 export const SHELL_TABS = Object.freeze(['moving', 'ranks', 'smartMoney', 'sector']);
 const LABEL = { moving: SHELL_COPY.tabMoving, ranks: SHELL_COPY.tabRanks, smartMoney: SHELL_COPY.tabSmartMoney, sector: SHELL_COPY.tabSector };
@@ -36,8 +36,12 @@ const LABEL = { moving: SHELL_COPY.tabMoving, ranks: SHELL_COPY.tabRanks, smartM
  * @param {object}   p.moving              WhatsMoving's props (the popup's own, as the modal passes them)
  * @param {number}   [p.bodyMinHeight]     the view's height less the strip's: a short tab still fills the
  *                                         view, so a strip stuck at the top stays there when the tab changes
+ * @param {string|null} [p.ranksNote]       Battle Research's state 2 (BRS-17): the Ranks tab's one line,
+ *                                         *All stocks · technical rank · {time}*; none in state 1
+ * @param {string|null} [p.stickyTop]       state 2: the strip sticks under the research strip (its measured
+ *                                         height); state 1 passes none and keeps top 0, byte for byte
  */
-export default function ShellTabs({ tab, onTab, symbol, isMobile, onNavigateToStock, moving, bodyMinHeight = 0 }) {
+export default function ShellTabs({ tab, onTab, symbol, isMobile, onNavigateToStock, moving, bodyMinHeight = 0, ranksNote = null, stickyTop = null }) {
   const sectionRef = useRef(null);
   // A tab picked while the strip is stuck under the header: the new tab starts at its top, under the
   // strip, instead of mid-way down at the old tab's scroll (review D3). Measured on the tap — no listener.
@@ -45,7 +49,9 @@ export default function ShellTabs({ tab, onTab, symbol, isMobile, onNavigateToSt
     const section = sectionRef.current;
     const scroller = section?.closest?.('[data-shell-scroll]');
     if (section && scroller) {
-      const delta = section.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      // In state 2 the research strip stands stuck above this one: the new tab starts under BOTH (review BL4-1).
+      const stuck = stickyTop ? (parseFloat(scroller.style.getPropertyValue('--research-strip-h')) || 0) : 0;
+      const delta = section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - stuck;
       if (delta < 0) scroller.scrollTop += delta;
     }
     onTab(t);
@@ -59,7 +65,7 @@ export default function ShellTabs({ tab, onTab, symbol, isMobile, onNavigateToSt
         style={{
           // The strip spans the view (margin -16px); each tab carries its own 6 px side padding, so its
           // whole 44 px box takes the tap (review D4) and the first label sits on the 16 px gutter.
-          position: 'sticky', top: 0, zIndex: 2, background: ST.bg, display: 'flex', gap: 6,
+          position: 'sticky', top: stickyTop ?? 0, zIndex: 2, background: ST.bg, display: 'flex', gap: 6,
           margin: '0 -16px', padding: '0 10px', borderBottom: `1px solid ${ST.hair}`,
           overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none',
         }}
@@ -87,8 +93,9 @@ export default function ShellTabs({ tab, onTab, symbol, isMobile, onNavigateToSt
           );
         })}
       </div>
-      <div data-shell-tab-body={tab} style={{ paddingTop: 16, minHeight: bodyMinHeight > 0 ? bodyMinHeight : undefined }}>
+      <div data-shell-tab-body={tab} style={{ paddingTop: 16, minHeight: bodyMinHeight > 0 ? (stickyTop ? `calc(${bodyMinHeight}px - ${stickyTop})` : bodyMinHeight) : undefined }}>
         {tab === 'moving' && <WhatsMoving key={symbol} {...moving} />}
+        {tab === 'ranks' && ranksNote ? <div data-shell-ranks-note style={{ fontFamily: MONO, color: ST.ink3, paddingBottom: 10 }}><span style={{ fontSize: 11 }}>{ranksNote}</span></div> : null}
         {tab === 'ranks' && <CompeteTab symbol={symbol} isMobile={isMobile} onNavigateToStock={onNavigateToStock} rankLabel />}
         {tab === 'smartMoney' && <SmartMoneyTab symbol={symbol} isMobile={isMobile} />}
         {tab === 'sector' && <SectorTab symbol={symbol} isMobile={isMobile} onNavigateToStock={onNavigateToStock} />}

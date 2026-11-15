@@ -47,6 +47,7 @@ import { latestLineOf } from './latestLine.js';
 import { SHEET_COPY, SHELL_COPY, QUESTION_TEXT, PIN_LINE_WORDS } from './sheetCopy.js';
 import { battleSpecOf, dayMarkersOf, rungLinesOf, weekdayOfDay } from './battleChart.js';
 import { readRankings } from './rankingsRead.js';
+import { BR_COPY } from '../BattleResearch/battleResearchCopy.js';
 
 const TICK_MS = 30_000;
 const NO_CALLS = Object.freeze([]);
@@ -66,6 +67,22 @@ export function chargedOf(status, body) {
 }
 
 // One read of the rankings doc (the Ranks tab's own read) — the shared function Battle Research reads too.
+
+/**
+ * Phase 0 point 6 (Battle Research Slice 1): with the incumbent from a research question, the one item
+ * wording that names the cockpit or a call — the incumbent item's source label, SHEET_COPY.srcCall — reads
+ * the research question instead. Nothing else changes; no Ask vocabulary (the kind and its record stay).
+ */
+function researchLabels(built, research) {
+  if (!research || !built?.packs) return built;
+  const packs = {};
+  for (const [q, pack] of Object.entries(built.packs)) {
+    packs[q] = pack && Array.isArray(pack.items)
+      ? { ...pack, items: pack.items.map((it) => (it.kind === 'incumbent' && it.source?.label === SHEET_COPY.srcCall ? { ...it, source: { ...it.source, label: BR_COPY.srcResearch } } : it)) }
+      : pack;
+  }
+  return { ...built, packs };
+}
 
 const sessionDay = (ms, crypto) => (crypto ? new Date(ms).toISOString().slice(0, 10) : etDate(ms));
 const PIN_TOKEN = Object.freeze({ entry: 'ink-2', call: 'gold', answer: 'purple', check: 'teal', pin: 'amber' });
@@ -88,6 +105,8 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
   const battle = ctx?.battle ?? null;
   const battleId = typeof ctx?.battleId === 'string' ? ctx.battleId : null;
   const incumbent = isOriginal && typeof ctx?.incumbent === 'string' && ctx.incumbent ? ctx.incumbent : null;
+  // Battle Research Slice 1 (BRS-17): state 2's context, for the stock the research row opened only.
+  const research = isOriginal && ctx?.research && typeof ctx.research === 'object' ? ctx.research : null;
   // The row's identity as primitives: the screen builds sheetContext anew on every render.
   const rowPosKey = isOriginal && typeof ctx?.row?.posKey === 'string' ? ctx.row.posKey : null;
   const rowPositionId = isOriginal && typeof ctx?.row?.positionId === 'string' ? ctx.row.positionId : null;
@@ -118,7 +137,8 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
   const dailyBars = dailyRef.current.symbol === symbol ? dailyRef.current.bars : null;
 
   // ── The question, the item the player tapped, and the Ask ──
-  const sheetKey = ctx ? `${battleId}|${symbol}|${incumbent ?? ''}` : null;
+  // A research opening is keyed by the step it was opened from too (§8): another step reopens fresh.
+  const sheetKey = ctx ? `${battleId}|${symbol}|${incumbent ?? ''}${research ? `|${research.openedStepId}` : ''}` : null;
   // `activeItem` holds the open item's KEY (packs.itemKeyOf), never its slot (BS-2).
   const [ui, setUi] = useState({ key: null, question: null, activeItem: null });
   const [asks, setAsks] = useState({}); // sheetKey → { status, questionId, … }
@@ -147,13 +167,13 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
       directive,
       incumbent,
     };
-    const built = buildPacks(args);
+    const built = researchLabels(buildPacks(args), !!research);
     const stance = stanceOf(args);
     const latest = latestLineOf({ battle, symbol, held: stance.holding.held, calls });
     const pins = recordPinsOf({ battle, symbol, nowMs, row, calls });
     return { ...built, stance, latest, pins, args };
     // standing reaches it through standingKey; ctx itself is new every render.
-  }, [!!ctx, battle, symbol, nowMs, rowPosKey, rowPositionId, live, dailyBars, battleId, rankings, screenRankings, sheetKey, incumbent, calls, standingKey, directive]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!ctx, battle, symbol, nowMs, rowPosKey, rowPositionId, live, dailyBars, battleId, rankings, screenRankings, sheetKey, incumbent, calls, standingKey, directive, !!research]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── QF-1: the question set, decided ONCE per opening (sheetKey) from the record at open, then kept —
   // a tick, a check landing or a lead change never switches it while the modal is open (the FQ-9 rule).
@@ -342,6 +362,8 @@ export default function useSheetView({ on, context, symbol, isOriginal, live, ra
     reply,
     filed,
     cockpit: typeof ctx.onOpenCockpit === 'function' ? ctx.onOpenCockpit : null,
+    // Battle Research's state 2 (BRS-17 – BRS-19): the blocks the Analysis view prepends, and the Draft door.
+    research,
     ask,
     pickQuestion,
     backToQuestions,
