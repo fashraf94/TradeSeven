@@ -239,6 +239,7 @@ export const BR_COPY = Object.freeze({
     out ? `${out} out` : null,
   ]) + '.',
   refreshedWeakest: (inc, was) => `${inc} is now our weakest; this result compares with it (was ${was}).`,
+  refreshedPlaced: (inn, out) => [inn ? `${inn} newly placed` : null, out ? `${out} no longer placed (left out or set aside)` : null].filter(Boolean).join(', ') + '.',
 
   // ── Notices (BRS-14): one quiet line with Refresh ──
   noticeNewCheckWeakest: (t, now, inc) => `A newer check at ${t}: ${now} is now our weakest. This result still compares with ${inc}.`,
@@ -298,7 +299,7 @@ export const BR_COPY = Object.freeze({
   cancel: 'Cancel',
   applied: (remain) => `${remain} remain`,
   viewUpdated: 'View updated ranking',
-  leftResult: (sym, move, words) => `${sym} is ${move} today, so “${words}” leaves it out of this result.`,
+  leftResult: (sym, move, words, t) => `${sym} is ${move} today (as of ${t}), so “${words}” leaves it out of this result.`,
   leftResultNoMove: (sym, words) => `${sym} has no reading for today’s move, so “${words}” leaves it out of this result.`,
   compareWith: (inc) => `Compare with ${inc}`,
   compareWithHolding: 'Compare with a holding',

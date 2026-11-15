@@ -109,7 +109,7 @@ export default function BattleResearchSurface({
     refresh: store.refresh,
     openRow: onOpenRow,
     showAll: setShowAll,
-    askAbout: () => { if (inv) onAskAbout(askAboutDraft(inv)); },
+    askAbout: () => { if (inv) onAskAbout(askAboutDraft(inv, Date.now())); },
     goTo: (id) => { setSheet(false); store.goTo(id); },
     reopen: (id) => { setSheet(false); store.reopen(id); },
   };

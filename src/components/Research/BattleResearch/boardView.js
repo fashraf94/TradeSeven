@@ -94,12 +94,12 @@ export function boardOf({ inv, battle, nowMs, desktop = false, showAll = false, 
     { id: 'down_today', label: CONDITION_LABEL.down_today, disabled: !avail.on, line: avail.on ? null : moveLine },
     ...sectorsPresent(result, view.group).map((sector) => ({ id: 'sector', value: sector, label: conditionLabel({ id: 'sector', value: sector }), disabled: false, line: null })),
   ].filter((c) => !view.conditions.some((a) => a.id === c.id && (c.id !== 'sector' || a.value === c.value)));
-  const gate = refreshGate({ inFlight: !!refresh.inFlight, takenAt: result.takenAt, lastAttemptAt: refresh.lastAttemptAt ?? null, nowMs });
+  const gate = refreshGate({ inFlight: !!refresh.inFlight, takenAt: result.receivedAt ?? result.takenAt, lastAttemptAt: refresh.lastAttemptAt ?? null, nowMs });
   const question = inv.question.id;
   const groupQuestion = question === 'rank_bench' || question === 'rank_agent_watchlist';
   const other = view.group === 'bench' ? 'agent_watchlist' : 'bench';
   const banner = refresh.report && refresh.report.stepId === step.stepId
-    ? { kind: 'refresh', title: refresh.report.label, body: BR_COPY.refreshedBody(refresh.report.moved, refresh.report.in.length, refresh.report.out.length) + (refresh.report.incumbentChanged ? ` ${BR_COPY.refreshedWeakest(refresh.report.incumbentChanged.to, refresh.report.incumbentChanged.from)}` : '') }
+    ? { kind: 'refresh', title: refresh.report.label, body: [BR_COPY.refreshedBody(refresh.report.moved, refresh.report.in.length, refresh.report.out.length), (refresh.report.placedIn?.length || refresh.report.placedOut?.length) ? BR_COPY.refreshedPlaced(refresh.report.placedIn?.length ?? 0, refresh.report.placedOut?.length ?? 0) : null, refresh.report.incumbentChanged ? BR_COPY.refreshedWeakest(refresh.report.incumbentChanged.to, refresh.report.incumbentChanged.from) : null].filter(Boolean).join(' ') }
     : (() => { const b = bannerOf(inv, step); return b ? { kind: 'refinement', ...b } : null; })();
   const paragraphs = explainOf(inv, result, step);
   return {
@@ -143,8 +143,8 @@ export function boardOf({ inv, battle, nowMs, desktop = false, showAll = false, 
 }
 
 /** The Ask about this result's draft (BRS-20) for the active step. */
-export function askAboutDraft(inv) {
-  return askDraftOf(inv, currentResult(inv), currentStep(inv));
+export function askAboutDraft(inv, nowMs = null) {
+  return askDraftOf(inv, currentResult(inv), currentStep(inv), { nowMs });
 }
 
 /** An earlier question's line in this session's history. */

@@ -74,6 +74,7 @@ const UI_SAMPLES = {
   refreshedTitle: [['Result 2 · 1:47 PM']],
   refreshedBody: [[2, 1, 0], [0, 0, 0]],
   refreshedWeakest: [['KO', 'EQIX']],
+  refreshedPlaced: [[1, 1], [2, 0], [0, 3]],
   resultOf: [['Result 2 · 1:47 PM']],
   emptyGroup: [['Bench']],
   forLine: [['Higher technical rank than EQIX: 40 against 140 of 228 (ranks as of 1:01 PM ET).']],

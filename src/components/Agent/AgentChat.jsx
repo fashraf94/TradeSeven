@@ -949,7 +949,8 @@ export default function AgentChat({
       const kept = untouched ? '' : inputText;
       const room = 2000 - (kept ? kept.length + 2 : 0);
       const variants = (Array.isArray(composerPrefill.variants) && composerPrefill.variants.length ? composerPrefill.variants : [text]).map((v) => String(v ?? ''));
-      const draft = variants.find((v) => v.length <= room) ?? variants[variants.length - 1].slice(0, Math.max(0, room));
+      // Never cut mid-line (review BR2-8): with no variant that fits, the typed text stays alone.
+      const draft = variants.find((v) => v.length <= room) ?? '';
       const next = kept ? (draft ? kept + '\n\n' + draft : kept) : draft;
       if (next) {
         setInputText(next);

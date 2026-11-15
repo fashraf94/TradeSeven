@@ -3137,7 +3137,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     // The reference line's holding opens as itself (state 1): it is the comparison, not a candidate.
     if (result.incumbent && result.incumbent.symbol === symbol) return {};
     const research = researchContextOf({
-      inv, symbol, openedStepId: brRow.openedStepId, battle: agentBattle, voice: brVoice, agentName: brAgentName,
+      inv, symbol, openedStepId: brRow.openedStepId, battle: agentBattle, voice: brVoice, agentName: brAgentName, nowMs: Date.now(),
       cb: { onBack: closeResearchForCockpit, onApplyUseAcross: battleResearch.applyAcross, onUndo: battleResearch.undo, onDraft: handleBrDraft },
     });
     return { research, rankings: battleResearch.rankingsFor(inv, result.resultId), ...(result.incumbent ? { incumbent: result.incumbent.symbol } : {}) };

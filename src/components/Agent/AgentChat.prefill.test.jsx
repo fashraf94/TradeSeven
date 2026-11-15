@@ -112,3 +112,55 @@ describe('AgentChat — the composer prefill (the Why? door)', () => {
     expect(textarea().disabled).toBe(true);
   });
 });
+
+// Battle Research Slice 1 (spec docs/specs/BATTLE_RESEARCH_SLICE1_SPEC_V1.md BRS-19; Phase 0 point 8): the
+// research draft's own mode, 'append'. It never replaces what the player typed — it goes AFTER it, a blank
+// line between, in the longest of its trimmed variants that fits the composer's 2000; the shipped doors
+// (the rows above) keep their rule.
+describe('AgentChat — the append prefill (Battle Research\'s draft)', () => {
+  const type = (text) => act(() => {
+    const ta = textarea();
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(ta, text);
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  it('an empty composer takes the draft whole', () => {
+    renderChat({ composerPrefill: { text: 'Research: "Rank my bench"\nMSFT:', nonce: 1, mode: 'append', variants: ['Research: "Rank my bench"\nMSFT:'] } });
+    expect(textarea().value).toBe('Research: "Rank my bench"\nMSFT:');
+  });
+  it('unsent text is KEPT: the draft is added after it with a blank line between, and nothing is lost', () => {
+    renderChat({ composerPrefill: null });
+    type('my own words');
+    renderChat({ composerPrefill: { text: 'DRAFT', nonce: 2, mode: 'append', variants: ['DRAFT'] } });
+    expect(textarea().value).toBe('my own words\n\nDRAFT');
+  });
+  it('the longest variant that still fits after the typed text; none fits → the typed text alone, never a draft cut mid-line', () => {
+    renderChat({ composerPrefill: null });
+    type('x'.repeat(1900));
+    renderChat({ composerPrefill: { text: 'L'.repeat(200), nonce: 3, mode: 'append', variants: ['L'.repeat(200), 'M'.repeat(90), 'S'.repeat(20)] } });
+    expect(textarea().value).toBe(`${'x'.repeat(1900)}\n\n${'M'.repeat(90)}`);
+    renderChat({ composerPrefill: null });
+    type('y'.repeat(1999));
+    renderChat({ composerPrefill: { text: 'L'.repeat(200), nonce: 4, mode: 'append', variants: ['L'.repeat(200), 'S'.repeat(20)] } });
+    expect(textarea().value).toBe('y'.repeat(1999));
+  });
+  it('a previous UNTOUCHED draft is replaced, not stacked', () => {
+    renderChat({ composerPrefill: { text: 'FIRST', nonce: 5, mode: 'append', variants: ['FIRST'] } });
+    renderChat({ composerPrefill: { text: 'SECOND', nonce: 6, mode: 'append', variants: ['SECOND'] } });
+    expect(textarea().value).toBe('SECOND');
+  });
+});
+
+describe('AgentChat — the append prefill never cuts a draft', () => {
+  it('a little room left but no variant fits: the typed text alone, never the first characters of a draft', () => {
+    act(() => { root.render(<AgentChat {...BASE} composerPrefill={null} />); });
+    act(() => {
+      const ta = textarea();
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(ta, 'z'.repeat(1990));
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    act(() => { root.render(<AgentChat {...BASE} composerPrefill={{ text: 'Research: "Rank my bench"', nonce: 9, mode: 'append', variants: ['Research: "Rank my bench"'] }} />); });
+    expect(textarea().value).toBe('z'.repeat(1990));
+  });
+});

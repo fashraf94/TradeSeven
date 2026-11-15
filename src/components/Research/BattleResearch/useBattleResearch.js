@@ -63,7 +63,11 @@ export async function fetchEvidence(battleId) {
     throw { why: off ? BR_COPY.whyOff : BR_COPY.whyQuotes };
   }
   if (r.status === 'rejected') throw { why: BR_COPY.whyRankings };
-  return { quotesBody: q.value, rankingsDoc: r.value, takenAt: Date.now() };
+  // takenAt is the SERVER's instant (the route's servedAt) — the clock the quotes, the sweep, the rankings and
+  // the locks are stamped on (review BR1-3); receivedAt, the client's, drives only the refresh gate and reuse.
+  const receivedAt = Date.now();
+  const servedAt = typeof q.value.servedAt === 'number' && Number.isFinite(q.value.servedAt) ? q.value.servedAt : receivedAt;
+  return { quotesBody: q.value, rankingsDoc: r.value, takenAt: servedAt, receivedAt };
 }
 
 /** The subset a result froze, in the rankings doc's own shape (what the sheet's packs read). */
@@ -107,6 +111,7 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
   const fullDocRef = useRef(new Map()); // `${invId}|${resultId}` → the whole rankings doc (current results only)
   const refreshing = useRef(false); // synchronous: a second tap while one is in flight does nothing
   const asking = useRef(false);
+  const lastCreatedRef = useRef(0);
   const idRef = useRef(battleId);
   idRef.current = battleId;
   if (evidenceRef.current && evidenceRef.current.battleId !== battleId) { evidenceRef.current = null; fullDocRef.current = new Map(); }
@@ -116,10 +121,10 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
   const getBundle = useCallback(async ({ fresh = false } = {}) => {
     const now = clock();
     const kept = evidenceRef.current;
-    if (!fresh && kept && kept.battleId === idRef.current && now - kept.takenAt < EVIDENCE_REUSE_MS) return kept;
+    if (!fresh && kept && kept.battleId === idRef.current && now - kept.receivedAt < EVIDENCE_REUSE_MS) return kept;
     const id = idRef.current;
     const b = await fetcher(id);
-    const bundle = { ...b, battleId: id };
+    const bundle = { ...b, receivedAt: typeof b.receivedAt === 'number' ? b.receivedAt : now, battleId: id };
     if (idRef.current === id) evidenceRef.current = bundle;
     return bundle;
   }, [fetcher, clock]);
@@ -131,7 +136,7 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
     try {
       const b = await getBundle();
       if (idRef.current !== b.battleId) return;
-      const result = buildResult({ battle: battleRef.current, incumbent: null, rankingsDoc: b.rankingsDoc, quotesBody: b.quotesBody, takenAt: b.takenAt, resultId: 'opening' });
+      const result = buildResult({ battle: battleRef.current, incumbent: null, rankingsDoc: b.rankingsDoc, quotesBody: b.quotesBody, takenAt: b.takenAt, receivedAt: b.receivedAt, resultId: 'opening' });
       setS((x) => ({ ...x, opening: { status: 'ready', result, why: null } }));
     } catch (e) {
       setS((x) => ({ ...x, opening: { status: 'failed', result: x.opening.result, why: e?.why ?? BR_COPY.whyQuotes } }));
@@ -151,12 +156,15 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
       const battleNow = battleRef.current;
       // BRS-6: the tap fixes the incumbent as weakestOf(bookOf(battle)) at that moment.
       const incumbent = questionId === 'weakest_alternatives' ? incumbentOf(battleNow) : null;
-      const result = buildResult({ battle: battleNow, incumbent, rankingsDoc: b.rankingsDoc, quotesBody: b.quotesBody, takenAt: b.takenAt, index: 1, resultId: 'r1' });
+      const result = buildResult({ battle: battleNow, incumbent, rankingsDoc: b.rankingsDoc, quotesBody: b.quotesBody, takenAt: b.takenAt, receivedAt: b.receivedAt, index: 1, resultId: 'r1' });
       const a = agentRef.current ?? {};
+      // A strictly later creation instant than any before it, so two questions never share an id (review BR1-12).
+      const at = Math.max(clock(), lastCreatedRef.current + 1);
+      lastCreatedRef.current = at;
       const inv = newInvestigation({
         battleId: b.battleId,
         agent: { agentId: a.agentId ?? null, agentName: a.agentName ?? null, archetype: a.archetype ?? null, scoringModel: result.measured ? 'measured' : 'legacy' },
-        questionId, result, at: clock(),
+        questionId, result, at,
       });
       fullDocRef.current.set(`${inv.investigationId}|r1`, b.rankingsDoc);
       setS((x) => ({ ...x, session: addInvestigation(x.session, inv), view: 'board', pending: null, failure: null, refresh: { ...x.refresh, error: null, report: null } }));
@@ -198,7 +206,7 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
   const refresh = useCallback(async () => {
     const inv = active;
     if (!inv || refreshing.current) return;
-    const gate = refreshGate({ inFlight: false, takenAt: currentResult(inv).takenAt, lastAttemptAt: s.refresh.lastAttemptAt, nowMs: clock() });
+    const gate = refreshGate({ inFlight: false, takenAt: currentResult(inv).receivedAt, lastAttemptAt: s.refresh.lastAttemptAt, nowMs: clock() });
     if (!gate.allowed) return;
     refreshing.current = true;
     const startedAt = clock();
@@ -213,7 +221,7 @@ export default function useBattleResearch({ battleId, battle, agent, fetcher = f
         const rid = `r${cur.nextResult}`;
         const prevResult = currentResult(cur);
         const prevOutcome = currentStep(cur).outcome;
-        const result = buildResult({ battle: battleNow, incumbent: refreshIncumbent(cur, battleNow), rankingsDoc: b.rankingsDoc, quotesBody: b.quotesBody, takenAt: b.takenAt, index: cur.nextResult, resultId: rid });
+        const result = buildResult({ battle: battleNow, incumbent: refreshIncumbent(cur, battleNow), rankingsDoc: b.rankingsDoc, quotesBody: b.quotesBody, takenAt: b.takenAt, receivedAt: b.receivedAt, index: cur.nextResult, resultId: rid });
         const next = refreshWith(cur, result, clock());
         // Only the current result keeps the whole doc (§6); the older ones hand the modal their subset.
         for (const k of [...fullDocRef.current.keys()]) if (k.startsWith(`${cur.investigationId}|`)) fullDocRef.current.delete(k);

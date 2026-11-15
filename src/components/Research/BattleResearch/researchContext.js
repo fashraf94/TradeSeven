@@ -8,11 +8,12 @@
 // question, the finding, the comparison, the ATR seed (BRS-10: 💣 prints the
 // row's number and time, and the modal makes no second read for it).
 
-import { outcomeOf, rungEstimateOf, timesOf, conditionCounts, holdingEntryOfResult } from './result.js';
+import { outcomeOf, rungEstimateOf, timesOf, conditionCounts, holdingEntryOfResult, moveOf } from './result.js';
+import { moveText } from './readings.js';
+import { etClockAmPm } from '../BombMode/checkClock.js';
 import { currentStep, currentResult, trailOf, titleOf } from './investigation.js';
 import { researchRowOf, compareOf, draftOf, groupLabelOf } from './explain.js';
 import { BR_COPY, conditionLabel, conditionWords, clockRange, orderLabel } from './battleResearchCopy.js';
-import { pctText } from '../../../screens/battleView/pctText.js';
 
 /**
  * @param {object} p
@@ -24,20 +25,20 @@ import { pctText } from '../../../screens/battleView/pctText.js';
  * @param {string} p.agentName
  * @param {object} p.cb           { onBack, onApplyUseAcross, onUndo, onDraft }
  */
-export function researchContextOf({ inv, symbol, openedStepId, battle, voice, agentName, cb = {} }) {
+export function researchContextOf({ inv, symbol, openedStepId, battle, voice, agentName, cb = {}, nowMs = null }) {
   const step = currentStep(inv);
   const result = currentResult(inv);
   const { view, outcome } = step;
   const t = timesOf(result);
   const n = outcome.placed.length + outcome.removed.length + outcome.notAssessed.length + outcome.unranked.length;
-  const row = researchRowOf(inv, result, step, symbol);
+  const row = researchRowOf(inv, result, step, symbol, { nowMs });
   const incumbent = result.incumbent ? { ...result.incumbent } : null;
   const holdings = Array.isArray(result.holdings) ? result.holdings : [];
   // BRS-18: the incumbent; with none, the held measured stocks (weakest first) for the picker.
   const defaultHolding = incumbent ?? holdings[0] ?? null;
   const compareFor = (holdingSymbol) => {
     const h = incumbent && incumbent.symbol === holdingSymbol ? incumbent : holdingEntryOfResult(result, holdingSymbol);
-    return h && h.symbol !== symbol ? compareOf(result, view, symbol, h, battle) : null;
+    return h && h.symbol !== symbol ? compareOf(result, view, symbol, h, battle, { nowMs }) : null;
   };
   // Left the result after a step taken from inside the modal (BRS-18a): say why, with Undo.
   const opened = inv.steps.find((s) => s.stepId === openedStepId) ?? null;
@@ -49,7 +50,7 @@ export function researchContextOf({ inv, symbol, openedStepId, battle, voice, ag
     const q = result.quotes.rows[symbol];
     const words = c ? conditionWords(c) : BR_COPY.notAssessed;
     left = q?.state === 'ok'
-      ? BR_COPY.leftResult(symbol, `${q.changePercent > 0 ? 'up' : q.changePercent < 0 ? 'down' : 'flat at'} ${pctText(Math.abs(q.changePercent)).replace(/^\+/, '')}`, words)
+      ? BR_COPY.leftResult(symbol, `${moveOf(result, symbol).value > 0 ? 'up' : moveOf(result, symbol).value < 0 ? 'down' : 'flat at'} ${moveText(Math.abs(moveOf(result, symbol).value)).replace(/^\+/, '')}`, words, etClockAmPm(q.priceAsOf))
       : BR_COPY.leftResultNoMove(symbol, words);
   }
   const atr = rungEstimateOf(result, symbol);
@@ -83,7 +84,7 @@ export function researchContextOf({ inv, symbol, openedStepId, battle, voice, ag
     // BRS-19: the draft for this candidate against the comparison holding shown.
     draftFor: (holdingSymbol) => {
       const h = holdingSymbol ? (incumbent && incumbent.symbol === holdingSymbol ? incumbent : holdingEntryOfResult(result, holdingSymbol)) : null;
-      return draftOf(inv, result, step, symbol, h && h.symbol !== symbol ? h : null);
+      return draftOf(inv, result, step, symbol, h && h.symbol !== symbol ? h : null, { nowMs });
     },
     onDraft: (draft) => cb.onDraft?.(draft),
   };
