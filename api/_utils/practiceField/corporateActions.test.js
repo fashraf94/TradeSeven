@@ -1640,6 +1640,38 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
     }
   });
 
+  it('second refuter N2: a RECEIPT-TIME fresh mark (no vendor time, so `lastMarkAsOf` does not move) also spends the founder\'s ruling — a later halving is a new suspicion and the cash delisting waits', async () => {
+    const ctx = await entered();
+    await closeQ(ctx, S[1], { ...Q, AAPL: 50 });
+    const idea = ideaOf(ctx);
+    const resolve = (ledger) => ({ ...ledger, holdings: { ...ledger.holdings, AAPL: { ...ledger.holdings.AAPL, basisSuspicion: { ...ledger.holdings.AAPL.basisSuspicion, resolvedBy: 'founder', resolvedAt: '2026-11-17T23:00:00.000Z' } } } });
+    await ctx.bookRef.collection('ideas').doc(ctx.ideaId).set({ ...idea, ledger: resolve(idea.ledger), comparisonLedger: resolve(idea.comparisonLedger) });
+    await closeQ(ctx, S[2], { ...Q, AAPL: { price: 100, marketCap: 3e12, at: null } });
+    const spent = ideaOf(ctx).ledger.holdings.AAPL;
+    expect(spent.lastMarkAsOf).toBe(idea.ledger.holdings.AAPL.lastMarkAsOf);
+    expect(spent.basisSuspicion).toMatchObject({ resolvedBy: 'founder', spentOn: S[2] });
+    await closeQ(ctx, S[3], { ...Q, AAPL: { price: 50, marketCap: 3e12, corporateActions: [{ type: 'delisting', ticker: 'AAPL', cashPerShare: 30, effectiveDate: S[3], source: 'founder_action' }] } });
+    for (const key of ['ledger', 'comparisonLedger']) {
+      const ledger = ideaOf(ctx)[key];
+      expect(paidOn(ledger, 'delisting'), key).toEqual([]);
+      expect(ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[3], resolvedBy: null });
+    }
+    expect(bookOf(ctx).openIdeaIds).toEqual([ctx.ideaId]);
+  });
+
+  it('second refuter N1: a dividend paid at an EARLIER close is never asked to explain a later move — even when a receipt-time mark left `lastMarkAsOf` behind — so an unfed 2-for-1 the next session is suspected and the cash delisting waits', async () => {
+    const ctx = await entered();
+    await closeQ(ctx, S[1], { ...Q, AAPL: { price: 67, marketCap: 3e12, at: null, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', amount: 33, effectiveDate: S[1], source: 'eodhd_dividends' }] } });
+    expect(paidOn(ideaOf(ctx).ledger, 'cash_dividend').map(cashOf)).toEqual([roundUsd(199.940017 * 33)]);
+    await closeQ(ctx, S[2], { ...Q, AAPL: { price: 33.5, marketCap: 3e12, corporateActions: [{ type: 'delisting', ticker: 'AAPL', cashPerShare: 30, effectiveDate: S[2], source: 'founder_action' }] } });
+    for (const key of ['ledger', 'comparisonLedger']) {
+      const ledger = ideaOf(ctx)[key];
+      expect(paidOn(ledger, 'delisting'), key).toEqual([]);
+      expect(ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[2], ratio: 0.5, frozenMark: 67 });
+    }
+    expect(bookOf(ctx).openIdeaIds).toEqual([ctx.ideaId]);
+  });
+
   it('refuter D2: after a special dividend that explains its own drop, the mark is FRESH at the ex-date close (not the pre-ex price beside the dividend\'s cash) — so a later listed 2-for-1 reads against it, raises nothing, and the next dividend is paid on the adjusted count', async () => {
     const ctx = await entered();
     await closeQ(ctx, S[1], { ...Q, AAPL: { price: 50, corporateActions: [{ type: 'cash_dividend', ticker: 'AAPL', amount: 50, effectiveDate: S[1], source: 'eodhd_dividends' }] } });

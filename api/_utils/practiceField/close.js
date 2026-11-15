@@ -233,9 +233,9 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
   // An unobserved session changes no ledger: there is nothing to write a mark from.
   let next = {
     ...idea,
-    ledger: observed ? withCloseMarks(ownLedger, ownV.valuation) : ownLedger,
-    comparisonLedger: observed ? withCloseMarks(cmp.ledger, cmpV.valuation) : cmp.ledger,
-    spyLedger: observed ? withCloseMarks(spy.ledger, spyV.valuation) : spy.ledger,
+    ledger: observed ? withCloseMarks(ownLedger, ownV.valuation, { date }) : ownLedger,
+    comparisonLedger: observed ? withCloseMarks(cmp.ledger, cmpV.valuation, { date }) : cmp.ledger,
+    spyLedger: observed ? withCloseMarks(spy.ledger, spyV.valuation, { date }) : spy.ledger,
     lines,
     lastValuedOn: observed ? date : (idea.lastValuedOn ?? null),
     lastClosedOn: date,

@@ -226,14 +226,15 @@ export function basisSuspicionRecords(ledger) {
 /** Two price ratios are the same move within twice the engine's tolerance (its own `feedExplainsGap` band). */
 const sameMove = (a, b) => Number(a) > 0 && Number(b) > 0 && Math.abs(Number(a) - Number(b)) / Number(b) <= MANDATE_CA_RATIO_TOLERANCE * 2;
 
-/** The move the founder has already ruled on: a resolved record whose frozen mark — its price AND the time it was
- *  observed — is still the holding's mark, and whose move is the one the screen now sees (`ratio`). That signature
- *  against that same mark is not a new suspicion. Once any fresh mark is written the ruling is spent, even if a later
- *  fresh price equals the old one (review F1); and a further move against the same frozen mark — a second unfed split
- *  on top of the ruled one — is a new suspicion (refuter D1). */
+/** The move the founder has already ruled on: a resolved record not yet SPENT (no fresh mark written since —
+ *  withCloseMarks), whose frozen mark is still the holding's mark, and whose move is the one the screen now sees
+ *  (`ratio`). That signature against that same mark is not a new suspicion. Once any fresh mark is written the ruling is
+ *  spent, even if a later fresh price equals the old one (review F1, and a receipt-time mark: second refuter); and a
+ *  further move against the same frozen mark — a second unfed split on top of the ruled one — is a new suspicion
+ *  (refuter D1). */
 const founderRuledMove = (holding, ratio) => founderResolved(holding?.basisSuspicion)
+  && holding.basisSuspicion.spentOn == null
   && Number(holding.basisSuspicion.frozenMark) === Number(holding?.lastMark)
-  && (holding.basisSuspicion.frozenMarkAsOf ?? null) === (holding?.lastMarkAsOf ?? null)
   && sameMove(ratio, holding.basisSuspicion.ratio);
 
 /**
@@ -267,13 +268,16 @@ function explainsSuspicion(action, s) {
  * those paid dividends as the only actions (review F2; refuter D2). A dividend never adjusts the count: nothing here
  * pays or holds anything, it only stops a mark being frozen, or a record being raised, for a move already explained.
  */
-function paidDividendsExplain(ledger, holding, sym, snapshot, { since, date }) {
+function paidDividendsExplain(ledger, holding, sym, snapshot, { date }) {
+  // Only the dividends paid AT THIS CLOSE (`appliedOn`), whatever their date — one paid at an earlier close already had
+  // its close, whose mark this one is read against (second refuter: a window keyed on the mark's session, which a
+  // receipt-time mark leaves behind, pulled an older dividend in and explained a real unfed split away).
   const paid = (ledger?.corporateActionReceipts || [])
-    .filter((r) => r?.type === 'cash_dividend' && r.applied === true && upper(r.ticker) === sym && typeof r.effectiveDate === 'string'
-      && r.effectiveDate <= date && (since == null || r.effectiveDate > since))
+    .filter((r) => r?.type === 'cash_dividend' && r.applied === true && r.appliedOn === date && upper(r.ticker) === sym
+      && typeof r.effectiveDate === 'string' && r.effectiveDate <= date)
     .map((r) => ({ type: 'cash_dividend', ticker: sym, amount: r.amount, effectiveDate: r.effectiveDate }));
   if (paid.length === 0) return false;
-  return classifyOvernightGaps({ [sym]: holding }, snapshot, { [sym]: paid }, { sinceDate: since ?? null, asOfDate: date }).pendingCA.has(sym);
+  return classifyOvernightGaps({ [sym]: holding }, snapshot, { [sym]: paid }, { sinceDate: null, asOfDate: date }).pendingCA.has(sym);
 }
 
 /** A holding waiting on a delisting (E11): its fall is the delisting, not a split (R-32). */
@@ -327,9 +331,9 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
     if (!h || !d || openBasisSuspicion(h) || founderRuledMove(d, ratio) || delistingWaitingHolding(h) || delistingWaiting?.has(sym)) continue;
     // A delisting with no cash listed for it today makes it a waiting sale at this close (R-32, as above).
     if ((actionsBySymbol?.[sym] || []).some((a) => a?.type === 'delisting' && delistingCashOf(a) === null && typeof a.effectiveDate === 'string' && a.effectiveDate <= date && !settled.has(deriveActionId(a)))) continue;
-    // A cash dividend this ledger has already PAID inside the gap that explains the move (review F2).
+    // (A dividend paid at an earlier close that explains its own ex-date drop leaves that close's mark fresh —
+    // suspectedActionSymbols — so the move is not seen here again: review F2, refuter D2.)
     const since = markSessionOf(d);
-    if (paidDividendsExplain(dry, d, sym, closeSnapshot, { since, date })) continue;
     const record = {
       symbol: sym, suspectedOn: date, since, ratio,
       shape: shapeOf(ratio),
@@ -858,8 +862,13 @@ export function markedEquityCents(treasuryUnreservedCash, ideas) {
 /**
  * Write a valuation's marks back onto the ledger's holdings (tomorrow's gap screen compares against today's
  * mark). Cash, quantities and basis are untouched.
+ *
+ * A fresh mark written over a suspicion the founder has resolved SPENDS that ruling (fix round 3, review F1 and second
+ * refuter): the record gains `spentOn` (the session), and from then on the screen compares against the fresh mark, so
+ * a later split-shaped move is a new suspicion. Keyed on the mark being fresh, not on `lastMarkAsOf`, which a
+ * receipt-time mark (no vendor time) leaves unchanged. Nothing is removed from the record.
  */
-export function withCloseMarks(ledger, valuation) {
+export function withCloseMarks(ledger, valuation, { date = null } = {}) {
   const next = cloneLedger(ledger);
   for (const [sym, h] of Object.entries(next.holdings)) {
     const m = valuation.marks[sym];
@@ -871,6 +880,9 @@ export function withCloseMarks(ledger, valuation) {
       lastMarkAsOf: fresh ? (m.vendorTimeIso ?? h.lastMarkAsOf ?? null) : (h.lastMarkAsOf ?? null),
       lastMarkSource: fresh ? 'snapshot' : m.markSource,
     };
+    if (fresh && founderResolved(h.basisSuspicion) && h.basisSuspicion.spentOn == null) {
+      next.holdings[sym].basisSuspicion = { ...h.basisSuspicion, spentOn: date ?? m.vendorTimeIso ?? 'fresh_mark' };
+    }
   }
   return next;
 }
@@ -950,12 +962,12 @@ export function suspectedActionSymbols(ledger, closeSnapshot, actionsBySymbol, {
   // back again: the close marks it fresh, and the next screen compares against that fresh mark.
   const frozen = new Set(scan.frozen);
   for (const [sym, { ratio }] of scan.suspectedCA) if (!scan.pendingCA.has(sym) && founderRuledMove(ledger.holdings?.[sym], ratio)) frozen.delete(sym);
-  // A dividend this ledger has just PAID (or paid earlier inside the gap) that explains the ex-date drop: once settled the
-  // screen excludes it, and the mark would be frozen at the pre-ex price beside the dividend's cash — a value counted twice
-  // and a mark later moves are read against (refuter D2; pre-existing, R-31's mark hold). Asked again, the engine's way.
+  // A dividend this ledger has just PAID, at this close, that explains the ex-date drop: once settled the screen excludes
+  // it, and the mark would be frozen at the pre-ex price beside the dividend's cash — a value counted twice and a mark
+  // later moves are read against (refuter D2; pre-existing, R-31's mark hold). Asked again, the engine's way.
   for (const sym of scan.suspectedCA.keys()) {
     const h = ledger.holdings?.[sym];
-    if (h && frozen.has(sym) && !scan.pendingCA.has(sym) && paidDividendsExplain(ledger, h, sym, closeSnapshot, { since: markSessionOf(h) ?? sinceDate ?? null, date })) frozen.delete(sym);
+    if (h && frozen.has(sym) && !scan.pendingCA.has(sym) && paidDividendsExplain(ledger, h, sym, closeSnapshot, { date })) frozen.delete(sym);
   }
   return frozen;
 }
