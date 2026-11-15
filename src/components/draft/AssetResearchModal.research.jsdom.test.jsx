@@ -260,7 +260,7 @@ describe('BRS-18 — a group question: Compare with a holding (a picker, weakest
   });
 });
 
-// ── The review round on PR B (lenses 1 and 4): each row failed on cb6fefb1 ──
+// ── The review round on PR B (lenses 1 and 4): each row failed before the round's fix ──
 describe('review BL1-1 — Use across keeps its applied line when the screen rebuilds the context for the step it added', () => {
   beforeEach(() => { flag.sheet = 'on'; });
   it('Apply → the screen re-renders with the new step → "3 remain · Undo" is still there', async () => {

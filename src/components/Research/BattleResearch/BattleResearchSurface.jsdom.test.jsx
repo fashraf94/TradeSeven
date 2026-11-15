@@ -218,7 +218,7 @@ describe('the phone (BRS-16)', () => {
   });
 });
 
-// ── The review round on PR B (lenses 1 and 4): each row failed on cb6fefb1 ──
+// ── The review round on PR B (lenses 1 and 4): each row failed before the round's fix ──
 // The placed rows only (the reference line carries data-br-row too).
 const rowsOnBoard = () => [...container.querySelectorAll('[data-br-board] [data-br-list] [data-br-row]')].filter((r) => !r.closest('[data-br-reference]') && !r.hasAttribute('data-br-reference')).map((r) => r.getAttribute('data-br-row'));
 const scrollBy = async (el, top) => { await act(async () => { el.scrollTop = top; el.dispatchEvent(new Event('scroll')); }); };
@@ -357,17 +357,20 @@ describe('review BL2-3 — one clock: the board says a lock has passed when it p
     soon.portfolio.bench.stocks = soon.portfolio.bench.stocks.map((x) => (x.symbol === 'NVDA' ? { ...x, cooldownUntil: new Date(TAKEN_AT + 62_000).toISOString() } : x));
     await mount({ isDesktop: true, battle: soon, clock: () => Date.now() });
     await click(q('[data-br-starter="rank_bench"]'));
+    // A bounded wait for a condition (real time; only Date is faked) — never a fixed sleep a loaded runner can miss.
+    const waitFor = async (cond, ms) => {
+      const end = performance.now() + ms;
+      while (!cond() && performance.now() < end) await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
+    };
     // Past the Refresh minute: the countdown's tick stops, so only the lock's own timer can turn the clock.
     vi.setSystemTime(new Date(TAKEN_AT + 61_000));
-    await act(async () => { await new Promise((r) => setTimeout(r, 1200)); });
-    await settle();
+    await waitFor(() => !/Refresh in/.test(q('[data-br-refresh]').textContent), 8000);
     expect(q('[data-br-refresh]').textContent).not.toMatch(/Refresh in/);
     expect(q('[data-br-row="NVDA"]').textContent).not.toContain('since passed');
     vi.setSystemTime(new Date(TAKEN_AT + 63_000));
-    await act(async () => { await new Promise((r) => setTimeout(r, 1300)); });
-    await settle();
+    await waitFor(() => q('[data-br-row="NVDA"]').textContent.includes('since passed'), 8000);
     expect(q('[data-br-row="NVDA"]').textContent).toContain('since passed');
-  }, 15_000);
+  }, 25_000);
 });
 
 describe('review BL2-12 — the phone bar speaks in the same voice as the strip', () => {

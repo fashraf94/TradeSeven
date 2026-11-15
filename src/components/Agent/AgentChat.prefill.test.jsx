@@ -166,7 +166,7 @@ describe('AgentChat — the append prefill never cuts a draft', () => {
 });
 
 // Review BL2-1 (lens 2 on PR B): the composer remembered "kept + draft" as an untouched prefill, so the next
-// door treated the player's own words as replaceable. Each row failed on 06520f92.
+// door treated the player's own words as replaceable. Each row failed before the lens 2 round's fix.
 describe('review BL2-1 — typed words survive every later door', () => {
   const type = (text) => act(() => {
     const ta = textarea();

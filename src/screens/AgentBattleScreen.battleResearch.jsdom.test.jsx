@@ -245,8 +245,10 @@ const rankingsReads = () => FS.gets.filter((p) => p === 'indexIntelligence/stock
 // The board's trail of refinements, one line each (null when the question stands as asked).
 const thenLines = () => { const t = q('[data-br-then]'); return t ? [...t.children].map((c) => c.textContent) : null; };
 
-// THE GOLDEN: the bench sheet the pill opens, and the whole screen behind it, as origin/main renders them
-// (captured at 5a8c3620 with BRS_GOLDEN_PRINT=1 on this file's harness above the research rows). React's
+// THE GOLDEN: the bench sheet the pill opens, as origin/main renders it (captured at 5a8c3620 with
+// BRS_GOLDEN_PRINT=1 on this file's harness above the research rows). Pinned: the SHEET. The whole screen behind
+// it hashed identical to main's too, once, at that commit (ceb2584c…, League 9e735439…; the build report records
+// it) — not pinned, so a later change to the battle screen never trips this row with an opaque hash. React's
 // useId values are renumbered in order of appearance so the hash pins the markup, not the id counter.
 const renumberIds = (html) => {
   const seen = new Map();
@@ -257,8 +259,8 @@ const renumberIds = (html) => {
 };
 const sha = (s) => createHash('sha256').update(renumberIds(s)).digest('hex');
 const GOLDEN = {
-  off: { sheet: '37a3d5ffdffd1bc485d311a73073bb0750267c01f52faf8c4fb2cbd707ed9909', screen: 'ceb2584c8da807a7cd62b53a16f7eb726e36f416c8b5cfcbe4286230ead78ed2' },
-  league: { sheet: '37a3d5ffdffd1bc485d311a73073bb0750267c01f52faf8c4fb2cbd707ed9909', screen: '9e735439cbcd09f76b9b655a0170789dbcaf020bb9bc9d3c29ab18df20608781' },
+  off: { sheet: '37a3d5ffdffd1bc485d311a73073bb0750267c01f52faf8c4fb2cbd707ed9909' },
+  league: { sheet: '37a3d5ffdffd1bc485d311a73073bb0750267c01f52faf8c4fb2cbd707ed9909' },
 };
 const goldenOf = async (name) => {
   await mount();
@@ -282,8 +284,8 @@ const goldenOf = async (name) => {
 };
 
 describe('BATTLE_RESEARCH_MODE off — the pill opens the bench sheet, byte for byte as main', () => {
-  it('the bench sheet (and the whole screen behind it) hash to main\'s golden; no research read, no surface', async () => {
-    expect(await goldenOf('off')).toEqual(GOLDEN.off);
+  it('the bench sheet hashes to main\'s golden; no research read, no surface', async () => {
+    expect((await goldenOf('off')).sheet).toBe(GOLDEN.off.sheet);
     expect(q('[data-br-surface]')).toBeNull();
     expect(researchReads()).toEqual([]);
     expect(rankingsReads()).toEqual([]);
@@ -291,7 +293,7 @@ describe('BATTLE_RESEARCH_MODE off — the pill opens the bench sheet, byte for 
   it('mode on but a League battle (BRS-1): still the bench sheet, byte for byte as main renders that battle', async () => {
     RF.br = 'on';
     DOC = { ...LIVE_DOC, gameMode: FLAT6_GAME_MODE };
-    expect(await goldenOf('league')).toEqual(GOLDEN.league);
+    expect((await goldenOf('league')).sheet).toBe(GOLDEN.league.sheet);
     expect(q('[data-br-surface]')).toBeNull();
     expect(q('[data-cockpit-bench-sheet] h2').textContent).toBe('The bench');
     expect(researchReads()).toEqual([]);

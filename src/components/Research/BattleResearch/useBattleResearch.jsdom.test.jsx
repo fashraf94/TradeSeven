@@ -218,7 +218,7 @@ describe('fetchEvidence — one bundle: the route and the rankings doc, stamped 
   });
 });
 
-// ── The review round on PR B (lens 1): each row failed on cb6fefb1 ──
+// ── The review round on PR B (lens 1): each row failed before the round's fix ──
 describe('review BL1-3 — one read of each per open-and-ask, even when the question is tapped while the opening reads', () => {
   it('the question shares the opening\'s read in flight', async () => {
     await render();

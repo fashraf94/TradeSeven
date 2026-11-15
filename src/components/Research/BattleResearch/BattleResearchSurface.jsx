@@ -119,7 +119,10 @@ export default function BattleResearchSurface({
   }, [inv, nowMs]);
   useEffect(() => {
     if (!open || nextLapse === null) return undefined;
-    const id = setTimeout(() => setNowMs(Date.now()), Math.min(2 ** 31 - 1, Math.max(0, nextLapse - Date.now()) + 50));
+    let id = null;
+    // A timer that fires early (or a clock that moved) re-arms itself until the lapse has come.
+    const fire = () => { const now = Date.now(); if (now < nextLapse) { id = setTimeout(fire, Math.min(2 ** 31 - 1, nextLapse - now + 50)); return; } setNowMs(now); };
+    id = setTimeout(fire, Math.min(2 ** 31 - 1, Math.max(0, nextLapse - Date.now()) + 50));
     return () => clearTimeout(id);
   }, [open, nextLapse, nowMs]); // re-armed whenever the clock moves: a device asleep past the lapse wakes to it
 

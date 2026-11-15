@@ -179,8 +179,8 @@ Headless Edge (playwright-core), 390 × 844 and 320 × 640, deviceScaleFactor 2,
 
 | Id | Finding | Verdict | Fixed |
 |---|---|---|---|
-| PH-1 | the phone's explanation button drew 39.1 px tall (under 44) | confirmed | `50358dfd` |
-| PH-2 | closing the surface left focus on `<body>` when the pill's tap took no focus (iOS Safari never focuses a tapped button) | confirmed | `50358dfd` |
+| PH-1 | the phone's explanation button drew 39.1 px tall (under 44) | confirmed | ⟪H:phone⟫ |
+| PH-2 | closing the surface left focus on `<body>` when the pill's tap took no focus (iOS Safari never focuses a tapped button) | confirmed | ⟪H:phone⟫ |
 
 After the fixes (and again after the review round, on its final code), at both widths and in a reduced-motion pass: no sideways scroll; nothing past the right edge; every tap target ≥ 44 px (6 on the opening with its list collapsed, 21 on the board, 24 with the history sheet, 4 in the modal's research blocks); the explanation bar inside the viewport and the topmost element over the list, also with the list scrolled to its end; focus in on open; Escape closes the history sheet, then only the modal (focus back on the row), then the surface (focus back on the pill). Screenshots:
 
