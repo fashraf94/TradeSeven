@@ -121,14 +121,21 @@ describe('baggerBombRecord', () => {
   const ready = (stats) => ({ status: 'ready', agent: { id: 'a', ...(stats === undefined ? {} : { stats }) } });
 
   it('ready with wins, losses and games played as stored', () => {
-    expect(baggerBombRecord(ready({ wins: 4, losses: 6, gamesPlayed: 11 }))).toEqual({ status: RECORD_STATUS.READY, wins: 4, losses: 6, gamesPlayed: 11 });
-    expect(baggerBombRecord(ready({ wins: 0, losses: 0, gamesPlayed: 0 }))).toEqual({ status: RECORD_STATUS.READY, wins: 0, losses: 0, gamesPlayed: 0 });
+    expect(baggerBombRecord(ready({ wins: 4, losses: 6, gamesPlayed: 11 }))).toEqual({ status: RECORD_STATUS.READY, wins: 4, losses: 6, draws: null, gamesPlayed: 11 });
+    expect(baggerBombRecord(ready({ wins: 0, losses: 0, gamesPlayed: 0 }))).toEqual({ status: RECORD_STATUS.READY, wins: 0, losses: 0, draws: null, gamesPlayed: 0 });
   });
 
   it('games played is shown only when it is stored as a count — never derived from wins and losses', () => {
-    expect(baggerBombRecord(ready({ wins: 4, losses: 6 }))).toEqual({ status: RECORD_STATUS.READY, wins: 4, losses: 6, gamesPlayed: null });
+    expect(baggerBombRecord(ready({ wins: 4, losses: 6 }))).toEqual({ status: RECORD_STATUS.READY, wins: 4, losses: 6, draws: null, gamesPlayed: null });
     expect(baggerBombRecord(ready({ wins: 4, losses: 6, gamesPlayed: '10' })).gamesPlayed).toBeNull();
     expect(baggerBombRecord(ready({ wins: 4, losses: 6, gamesPlayed: -1 })).gamesPlayed).toBeNull();
+  });
+
+  it('draws are shown only when stored as a count ABOVE zero (Q-C) — never derived from games played, never "0 draws", never a bad value', () => {
+    expect(baggerBombRecord(ready({ wins: 4, losses: 5, draws: 2, gamesPlayed: 11 })).draws).toBe(2);
+    expect(baggerBombRecord(ready({ wins: 4, losses: 5, draws: 0, gamesPlayed: 9 })).draws).toBeNull();
+    expect(baggerBombRecord(ready({ wins: 4, losses: 5, gamesPlayed: 11 })).draws).toBeNull();
+    for (const draws of ['2', -1, 1.5, NaN, null, {}]) expect(baggerBombRecord(ready({ wins: 4, losses: 5, draws, gamesPlayed: 11 })).draws, String(draws)).toBeNull();
   });
 
   it('is unavailable unless BOTH wins and losses are counts: no half record, no fractions, no negatives, no strings', () => {
@@ -148,6 +155,9 @@ describe('baggerBombRecord', () => {
 describe('careerOf — the History sheet\'s figure, from the same stored stats the record part shows', () => {
   it('"5W-3L" for a ready record, and the sheet\'s own loading / unavailable otherwise', () => {
     expect(careerOf(baggerBombRecord({ status: 'ready', agent: { stats: { wins: 5, losses: 3 } } }))).toEqual({ status: 'ready', record: '5W-3L' });
+    // The sheet's figure agrees with the record part beside it: draws are in it exactly when the record shows them.
+    expect(careerOf(baggerBombRecord({ status: 'ready', agent: { stats: { wins: 5, losses: 3, draws: 1 } } }))).toEqual({ status: 'ready', record: '5W-3L-1D' });
+    expect(careerOf(baggerBombRecord({ status: 'ready', agent: { stats: { wins: 5, losses: 3, draws: 0 } } }))).toEqual({ status: 'ready', record: '5W-3L' });
     expect(careerOf({ status: RECORD_STATUS.LOADING })).toEqual({ status: 'loading' });
     expect(careerOf({ status: RECORD_STATUS.UNAVAILABLE })).toEqual({ status: 'unavailable' });
   });

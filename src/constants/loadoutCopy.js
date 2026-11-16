@@ -59,6 +59,8 @@ export const LOADOUT_COPY = /* @__PURE__ */ Object.freeze({
   openCard: 'Open the BaggerBomb loadout',
   /** The desktop stage's third control and the phone stage's summary: both loadouts. */
   summary: (bb, league) => `BaggerBomb · ${bb} · League · ${league}`,
+  /** League hide (BB-1): with the league hidden the stage's summary names the one loadout there is. */
+  summaryOne: (bb) => `BaggerBomb · ${bb}`,
   /** Board 4, the armory with a loadout context. */
   context: (game) => `Choosing armor for ${game}`,
   contextNext: 'applies to the next deploy',
@@ -82,6 +84,8 @@ export const LOADOUT_COPY = /* @__PURE__ */ Object.freeze({
   footnoteBaggerbomb: 'Applies to the next deploy · a game already running keeps the armor it deployed with.',
   /** The forge line under the cards (FD-10): the strategy stays on the agent. */
   forgeLine: 'Your Forge strategy rides into both games.',
+  /** League hide (BB-1): with the league hidden there is one game, so the line does not count two. */
+  forgeLineOne: 'Your Forge strategy rides into your games.',
   /** Board 3, the League tab's line and the Training tab's. */
   leagueEyebrow: 'Your League loadout',
   leagueLocked: (day) => `Locked until the week is scored, after the close on ${day}`,

@@ -35,8 +35,16 @@ import { DISPLAY_ACTIONS } from './hub/deployDisplay';
 import { HUB_COMPOSITIONS, HUB_SITES } from './hub/composition';
 import { HubOverlayProvider, useHubModalOpen } from './hub/HubOverlays';
 import { HUB_DEPLOY_CONTROLS, useHubDeploy } from './hub/useHubDeploy';
-import { HUB_SHEETS, useHubSheets } from './hub/useHubSheets';
+import { HUB_SHEETS } from './hub/useHubSheets';
 import useHubReaders from './hub/useHubReaders';
+import useHubResearch from './hub/useHubResearch';
+import { useHubRuntime } from './hub/useHubRuntime';
+import { hubFlags } from './hub/hubFlags';
+import { huddleMemberOf, needsReconfirmOf } from './hub/huddleView';
+import { DRB_HUDDLE_ENABLED } from '../../config/huddleFlags';
+import useHuddleToday from '../../hooks/useHuddleToday';
+import useHuddleHistory from '../../hooks/useHuddleHistory';
+import HuddleSheet from './HuddleSheet';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { C, HAIR, HUB_LAYERS, HUB_SCOPED_CSS } from './hub/hubStyle';
 import { EmptyNote, Eyebrow, HubButton, HubLayoutContext, HubLink, LoadingLine, Mono, Section, Card } from './HubParts';
@@ -70,6 +78,7 @@ function RecordSection({ record }) {
             <div style={{ display: 'flex', gap: 12 }}>
               <Stat id="wins" value={record.wins} label={PAGE.record.wins} />
               <Stat id="losses" value={record.losses} label={PAGE.record.losses} />
+              {record.draws !== null && <Stat id="draws" value={record.draws} label={PAGE.record.draws} />}
               {record.gamesPlayed !== null && <Stat id="gamesPlayed" value={record.gamesPlayed} label={PAGE.record.gamesPlayed} />}
             </div>
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${HAIR}`, fontSize: 12.5, color: C.ink3 }}>{PAGE.record.caption}</div>
@@ -137,7 +146,38 @@ function ConnectedPage({ site, hub, onOpenLoadout }) {
   const readers = useHubReaders(hub, deployAttempt, modalOpen);
   const deploy = useHubDeploy({ deployAttempt, readers, hub });
   const rootRef = useRef(null);
-  const sheets = useHubSheets(rootRef);
+  const auth = readers.inputs?.auth ?? null;
+  // The hub's own idea reader and runtime, as ConnectedHub / PhoneHub call them: the runtime derives the Deploy card's
+  // "Deploying with" idea line from the idea read and the Loadout's list, and holds the one open sheet (hub/useHubSheets.js).
+  const research = useHubResearch({ auth, listId: readers.agent?.agent?.equippedWatchlistId ?? null, gateOn: hubFlags().hypothesisRecordsOn });
+  const runtime = useHubRuntime({ hub, agentRead: readers.agent, sections: readers.sections, rootRef, researchRead: research });
+  const sheets = runtime.sheets;
+  const deployingWith = runtime.sections.deployingWith ?? null;
+  // The Huddle's Reconfirm line (Huddle C §C15; Amendment E §E1, §E7), through the hub's own readers and rule: only a player the
+  // readers show inside the cohort has a `huddle`; the line and its door exist only while an archetype in play has no
+  // confirmation, and the door opens the Huddle sheet (this page mounts it below). Nothing blocks or delays a deploy.
+  const huddleToday = useHuddleToday({ auth, enabled: DRB_HUDDLE_ENABLED });
+  const huddleHistory = useHuddleHistory({ auth, enabled: DRB_HUDDLE_ENABLED && huddleToday.read.status === 'ready' });
+  let huddle = null;
+  let reconfirm = null;
+  if (DRB_HUDDLE_ENABLED && huddleMemberOf(huddleToday.read, huddleHistory.read)) {
+    const needsReconfirm = needsReconfirmOf(huddleToday.read, Date.now());
+    huddle = {
+      read: huddleToday.read,
+      refresh: huddleToday.refresh,
+      retry: () => { huddleToday.refresh(); huddleHistory.refresh(); },
+      confirm: async (args) => { const r = await huddleToday.confirm(args); huddleHistory.refresh(); return r; },
+      skip: async () => { const r = await huddleToday.skip(); huddleHistory.refresh(); return r; },
+      needsReconfirm,
+      focusPlan: needsReconfirm,
+    };
+    if (needsReconfirm) {
+      const openSheet = sheets.open(HUB_SHEETS.HUDDLE);
+      reconfirm = { onReconfirm: (event) => { huddleToday.refresh(); openSheet(event); } };
+    }
+  }
+  // Membership lapsing while the Huddle sheet is open frees the slot, so a later answer never reopens it without a tap (HU-4).
+  if (DRB_HUDDLE_ENABLED && !huddle && sheets.sheet === HUB_SHEETS.HUDDLE) runtime.closeSheet();
   const reducedMotion = Boolean(useReducedMotion());
   const phone = site === HUB_SITES.MOBILE;
   const composition = phone ? HUB_COMPOSITIONS.PHONE : HUB_COMPOSITIONS.DESKTOP;
@@ -189,6 +229,8 @@ function ConnectedPage({ site, hub, onOpenLoadout }) {
           <DeploySection
             deploy={deploySection}
             onOpenLoadout={onOpenLoadout}
+            idea={deployingWith}
+            reconfirm={reconfirm}
             onAction={onDeployAction}
             holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.CARD) ?? null}
             holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.CARD ? deploy.holdPhase : null}
@@ -205,6 +247,9 @@ function ConnectedPage({ site, hub, onOpenLoadout }) {
           <RecordSection record={record} />
         </div>
       </section>
+      {DRB_HUDDLE_ENABLED && huddle && sheets.sheet === HUB_SHEETS.HUDDLE ? (
+        <HuddleSheet huddle={huddle} phone={phone} onClose={runtime.closeSheet} opener={sheets.opener} fallbackFocus={sheets.fallback} reducedMotion={reducedMotion} ceremonyActive={deployAttempt?.snapshot?.overlayOpen === true} />
+      ) : null}
       {sheets.sheet === HUB_SHEETS.HISTORY && (
         <HistorySheet
           games={games}

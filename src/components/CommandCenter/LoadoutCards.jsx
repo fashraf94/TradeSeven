@@ -187,7 +187,7 @@ export default function LoadoutCards({ onOpenArchetype, onOpenBook, adjustmentsC
         {adjustmentsCard}
       </div>
       <div data-loadout-forge-line="" style={{ fontSize: 12.5, color: C.ink3, lineHeight: 1.55 }}>
-        <span>{LOADOUT_COPY.forgeLine}</span>
+        <span>{LEAGUE_HIDE_ENABLED ? LOADOUT_COPY.forgeLineOne : LOADOUT_COPY.forgeLine}</span>
         <span>{' '}</span>
         <HubLink onPress={onOpenForge}>{COPY.loadout.changeInForge}</HubLink>
       </div>

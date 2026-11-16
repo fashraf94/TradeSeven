@@ -17,6 +17,7 @@ export const BAGGERBOMB_PAGE_COPY = Object.freeze({
     label: 'Record',
     wins: 'Wins',
     losses: 'Losses',
+    draws: 'Draws',
     gamesPlayed: 'Games played',
     /** Where the numbers come from, said once (the hub's own career line says the same of the same stored stats). */
     caption: 'BaggerBomb vs CPU · as recorded',

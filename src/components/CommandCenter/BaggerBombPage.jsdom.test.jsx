@@ -28,6 +28,15 @@ const h = vi.hoisted(() => ({
   hide: true,
   openLoadout: null,
 }));
+// The founder's additions to the page (16 Nov 2026): the idea reader, the Huddle's readers and the due-idea check are the hub's own;
+// each is a stand-in a row programs. The defaults are the ordinary player: no idea records, outside the Huddle's cohort, no due idea.
+const x = vi.hoisted(() => ({
+  recordsOn: false,
+  lists: [],
+  due: null,
+  huddle: { fetchHuddleToday: null, confirmHuddlePlan: null, skipHuddlePlan: null, issueHuddlePlayback: null, sendHuddleEvent: null, fetchHuddleHistory: null },
+  idea: { listHypothesisVersions: null, createHypothesisVersion: null, transitionHypothesis: null, reaffirmHypothesis: null, getHypothesisReview: null, newOpId: null },
+}));
 
 vi.mock('firebase/auth', () => ({ onAuthStateChanged: (_auth, cb) => { h.authListeners.push(cb); return () => {}; } }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
@@ -54,9 +63,15 @@ vi.mock('./hub/useHubCompletedBattles', async () => {
   };
 });
 vi.mock('../../utils/marketSchedule', () => ({ getMarketState: () => ({ state: 'OPEN', isOpen: true }) }));
-vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists: async () => [] }));
+vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists: async () => x.lists }));
+vi.mock('../../services/huddleService', () => x.huddle);
+vi.mock('../../services/hypothesisVersionService', () => x.idea);
+vi.mock('./hub/hubFlags', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, hubFlags: () => ({ ...actual.hubFlags(), hypothesisRecordsOn: x.recordsOn }) };
+});
 vi.mock('../../services/agentDeploy', () => ({ deployAgent: (...args) => h.deploy(...args) }));
-vi.mock('../../services/dueIdeaCheck', () => ({ checkDueIdea: async () => null }));
+vi.mock('../../services/dueIdeaCheck', () => ({ checkDueIdea: (...a) => x.due(...a), readDueIdea: async () => null }));
 vi.mock('../../services/agentBattleVerify', () => ({ findActiveBattleForAgent: async () => ({ found: false, battle: null }) }));
 vi.mock('../../services/ownedBattleRead', () => ({ readOwnedBattle: async () => null }));
 vi.mock('../../hooks/useDeployTargetProgress', () => ({ default: () => ({ deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false }) }));
@@ -94,9 +109,9 @@ let removeTokens;
 let mounted;
 
 const READY = Object.freeze({ ready: true, target: 'filmRoom', availability: 'ready' });
-const AGENT = (stats = { wins: 7, losses: 3, gamesPlayed: 10 }) => (uid, options) => ({
+const AGENT = (stats = { wins: 7, losses: 3, gamesPlayed: 10 }, extra = {}) => (uid, options) => ({
   status: uid ? 'ready' : 'loading',
-  agent: uid ? { id: `agent-${uid}`, ownerId: uid, name: 'Nova', archetype: 'momentum_chaser', ...(stats === null ? {} : { stats }) } : null,
+  agent: uid ? { id: `agent-${uid}`, ownerId: uid, name: 'Nova', archetype: 'momentum_chaser', ...(stats === null ? {} : { stats }), ...extra } : null,
   ownerUid: uid ?? null,
   ownerEpoch: options?.ownerEpoch ?? null,
   readError: null,
@@ -136,6 +151,15 @@ beforeEach(() => {
   h.lockSubs = [];
   h.hide = true;
   h.openLoadout = vi.fn();
+  x.recordsOn = false;
+  x.lists = [];
+  x.due = vi.fn(async () => null);
+  for (const k of Object.keys(x.huddle)) x.huddle[k] = vi.fn();
+  x.huddle.fetchHuddleToday.mockRejectedValue(Object.assign(new Error('not_found'), { status: 404 }));
+  x.huddle.fetchHuddleHistory.mockResolvedValue([]);
+  x.huddle.sendHuddleEvent.mockResolvedValue({ ok: true });
+  for (const k of Object.keys(x.idea)) x.idea[k] = vi.fn();
+  x.idea.listHypothesisVersions.mockRejectedValue(new Error('idea records are off in this row'));
   h.agent = AGENT();
   h.window = windowOf([]);
   h.deploy = vi.fn((agentId, onCreate, onTarget) => {
@@ -568,5 +592,179 @@ describe('the page as the hub\'s own root (the review\'s layout finding)', () =>
     h.hide = false;
     render('desktop', hubOf([]));
     expect(h.lockSubs).toEqual([UID]);
+  });
+});
+
+// ── The founder's additions on the flip PR (16 Nov 2026): Q-B, Q-C, and the due-idea question ──────────────────────────────────
+
+const LIST = (over = {}) => ({ watchlistId: 'wl-1', name: 'Tech Leaders', status: 'committed', tickers: [{ symbol: 'NVDA' }, { symbol: 'AAPL' }, { symbol: 'MSFT' }], currentHypothesisVersion: 1, thesis: '', ...over });
+const V = (n, over = {}) => ({ version: n, statement: `Idea v${n}: semis lead for ten sessions.`, status: 'draft', horizonEnum: 'swing', createdAt: new Date(T0 - 86400000).toISOString(), stateChangedAt: new Date(T0 - 43200000).toISOString(), ...over });
+const BODY = (over = {}) => ({ watchlistId: 'wl-1', currentVersion: 1, versions: [V(1)], research: [], ...over });
+const EQUIPPED = { equippedWatchlistId: 'wl-1', equippedWatchlistName: 'Tech Leaders' };
+const settle = async (n = 8) => { for (let i = 0; i < n; i += 1) await flush(); };
+const ideaLine = () => deployCard().querySelector('[data-hub-deploying-with]');
+
+describe('Q-B — the Deploy card\'s "Deploying with" idea line, from the hub\'s own idea reader', () => {
+  it.each(['desktop', 'mobile'])('%s: the newest version ready or activated, on the equipped list: "Deploying with: {statement} · N names"', async (site) => {
+    x.recordsOn = true;
+    x.lists = [LIST()];
+    h.agent = AGENT(undefined, EQUIPPED);
+    x.idea.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'ready' })] }));
+    render(site);
+    await settle();
+    expect(ideaLine(), 'the idea line is on the card').not.toBeNull();
+    expect(ideaLine().textContent).toBe('Deploying with: Idea v1: semis lead for ten sessions. · 3 names');
+    expect(x.idea.listHypothesisVersions).toHaveBeenCalled();
+  });
+
+  it('a draft idea is not carried, so the card says nothing; a retired newest version neither (the hub\'s own rule, not a copy of it)', async () => {
+    x.recordsOn = true;
+    x.lists = [LIST()];
+    h.agent = AGENT(undefined, EQUIPPED);
+    x.idea.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'draft' })] }));
+    render('desktop');
+    await settle();
+    expect(ideaLine()).toBeNull();
+    mounted.pop().unmount();
+    x.idea.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 2, versions: [V(2, { status: 'retired' }), V(1, { status: 'ready' })] }));
+    render('desktop');
+    await settle();
+    expect(ideaLine()).toBeNull();
+  });
+
+  it('control — idea records off (the player is outside them): no read of the idea service, no line', async () => {
+    x.recordsOn = false;
+    x.lists = [LIST()];
+    h.agent = AGENT(undefined, EQUIPPED);
+    x.idea.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'ready' })] }));
+    render('desktop');
+    await settle();
+    expect(ideaLine()).toBeNull();
+    expect(x.idea.listHypothesisVersions).not.toHaveBeenCalled();
+  });
+});
+
+const HUDDLE = {
+  etDate: '2026-11-16', status: 'ready', session: { etDate: '2026-11-16', openMs: Date.UTC(2026, 10, 16, 14, 30), closeMs: Date.UTC(2026, 10, 16, 21, 0) },
+  audio: null, script: { beats: [{ id: 'tape', text: 'The tape was firm.', source: 'model' }] }, cards: [], evidence: [], names: [],
+  plan: { status: 'proposed', revision: 'r1', current: { stances: [{ kind: 'HOLD', ticker: 'AAA' }], lines: [] }, confirmations: [], battles: [], eventLabels: {} },
+};
+const confirmedWith = (missing) => ({
+  ...HUDDLE,
+  plan: {
+    ...HUDDLE.plan, status: 'confirmed', confirmed: { revision: 'r1', archetype: 'contrarian', confirmedAt: new Date(T0 - 3600000).toISOString() },
+    confirmations: [{ revision: 'r1', archetype: 'contrarian', confirmedAt: new Date(T0 - 3600000).toISOString() }],
+    reconfirm: { inPlay: ['contrarian', ...missing], missing },
+  },
+});
+const reconfirmLine = () => deployCard().querySelector('[data-hub-huddle-reconfirm]');
+const dialog = () => document.querySelector('[role="dialog"]');
+
+describe('Q-B — the Huddle\'s Reconfirm line on the Deploy card, through the hub\'s own readers and rule', () => {
+  it.each(['desktop', 'mobile'])('%s: an archetype in play with no confirmation puts the line and its door on the card; the door opens the Huddle sheet on the page', async (site) => {
+    x.huddle.fetchHuddleToday.mockResolvedValue({ asOf: new Date(T0).toISOString(), huddle: confirmedWith(['degen']) });
+    render(site);
+    await settle();
+    expect(reconfirmLine(), 'the Reconfirm line is on the card').not.toBeNull();
+    expect(reconfirmLine().textContent).toContain(COPY.huddle.deployReconfirm);
+    expect(dialog()).toBeNull();
+    click(byRole(reconfirmLine(), 'button', COPY.huddle.deployReconfirmDoor)[0] ?? reconfirmLine().querySelector('button'));
+    await settle(2);
+    expect(dialog(), 'the Huddle sheet opened').not.toBeNull();
+    expect(dialog().querySelector('[data-huddle-reconfirm]')).not.toBeNull();
+    // The door asked the status route again before opening (the hub's own rule: the sheet's open refreshes it).
+    expect(x.huddle.fetchHuddleToday.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('nothing missing: no line and no door; outside the cohort (the route\'s 404): no line, and the Huddle sheet never mounts', async () => {
+    x.huddle.fetchHuddleToday.mockResolvedValue({ asOf: new Date(T0).toISOString(), huddle: confirmedWith([]) });
+    render('desktop');
+    await settle();
+    expect(reconfirmLine()).toBeNull();
+    mounted.pop().unmount();
+    x.huddle.fetchHuddleToday.mockRejectedValue(Object.assign(new Error('not_found'), { status: 404 }));
+    render('desktop');
+    await settle();
+    expect(reconfirmLine()).toBeNull();
+    expect(dialog()).toBeNull();
+  });
+
+  it('the line never blocks or delays a deploy: with it on the card the hold still deploys once', async () => {
+    x.huddle.fetchHuddleToday.mockResolvedValue({ asOf: new Date(T0).toISOString(), huddle: confirmedWith(['degen']) });
+    render('desktop');
+    await settle();
+    expect(reconfirmLine()).not.toBeNull();
+    act(() => { pointer(byRole(deployCard(), 'button', COPY.deploy.holdLabel)[0], 'pointerdown'); });
+    frameAt(1300);
+    await advance(450);
+    await settle(2);
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Q-B — the due-idea choice screen still appears when deploying from the page (it belongs to the provider, not to the screen)', () => {
+  const interstitial = () => document.querySelector('[data-testid="due-idea-interstitial"]');
+
+  it.each(['desktop', 'mobile'])('%s: a due idea → its one screen after the hold commits, no deploy call until the choice, then exactly one', async (site) => {
+    x.due = vi.fn(async () => ({ watchlistId: 'wl-1', version: 2, currentVersion: 2, title: null }));
+    render(site);
+    await settle(2);
+    act(() => { pointer(byRole(deployCard(), 'button', COPY.deploy.holdLabel)[0], 'pointerdown'); });
+    frameAt(1300);
+    await advance(450);
+    await settle(2);
+    expect(x.due).toHaveBeenCalledTimes(1);
+    expect(interstitial(), 'the due-idea screen is up').not.toBeNull();
+    expect(h.deploy).not.toHaveBeenCalled();
+    await act(async () => { interstitial().querySelector('[data-action="without"]').click(); });
+    await settle(3);
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+    expect(interstitial()).toBeNull();
+  });
+
+  it('control — no due idea: the hold deploys straight through, no screen', async () => {
+    render('desktop');
+    await settle(2);
+    act(() => { pointer(byRole(deployCard(), 'button', COPY.deploy.holdLabel)[0], 'pointerdown'); });
+    frameAt(1300);
+    await advance(450);
+    await settle(2);
+    expect(x.due).toHaveBeenCalledTimes(1);
+    expect(interstitial()).toBeNull();
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Q-C — draws in the record, when the stored count is above zero', () => {
+  it('shown beside wins and losses, with games played: 7 · 3 · 2 · 12', () => {
+    h.agent = AGENT({ wins: 7, losses: 3, draws: 2, gamesPlayed: 12 });
+    render('desktop');
+    expect([stat('wins'), stat('losses'), stat('draws'), stat('gamesPlayed')]).toEqual(['7', '3', '2', '12']);
+    expect(page().querySelector('[data-bb-record-stat="draws"]').textContent).toContain(PAGE.record.draws);
+  });
+
+  it('absent when the stored count is zero or missing — never "0 draws", never derived from games played', () => {
+    h.agent = AGENT({ wins: 7, losses: 3, draws: 0, gamesPlayed: 10 });
+    render('desktop');
+    expect(stat('draws')).toBeNull();
+    mounted.pop().unmount();
+    h.agent = AGENT({ wins: 7, losses: 3, gamesPlayed: 12 });
+    render('desktop');
+    expect(stat('draws')).toBeNull();
+    expect([stat('wins'), stat('losses'), stat('gamesPlayed')]).toEqual(['7', '3', '12']);
+  });
+
+  it('the History sheet\'s figure agrees with the record beside it: "7W-3L-2D" with draws, "7W-3L" without', () => {
+    h.window = windowOf(Array.from({ length: 5 }, (_, i) => done(i + 1)));
+    h.agent = AGENT({ wins: 7, losses: 3, draws: 2, gamesPlayed: 12 });
+    render('desktop');
+    click(byRole(part('finished'), 'button', PAGE.finished.history)[0]);
+    expect(document.querySelector('[data-hub-sheet-overlay]').textContent).toContain('7W-3L-2D');
+    mounted.pop().unmount();
+    h.agent = AGENT({ wins: 7, losses: 3, gamesPlayed: 10 });
+    render('desktop');
+    click(byRole(part('finished'), 'button', PAGE.finished.history)[0]);
+    expect(document.querySelector('[data-hub-sheet-overlay]').textContent).toContain('7W-3L');
+    expect(document.querySelector('[data-hub-sheet-overlay]').textContent).not.toContain('7W-3L-');
   });
 });
