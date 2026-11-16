@@ -31,7 +31,7 @@ import { normalizeNote } from './cardRequest.js';
 import { CARD_SLOTS } from '../../../src/data/cardSlots.js';
 import { stableStringify } from '../canonicalHash.js';
 import { WRITE_PATTERN } from '../../../scripts/census-film-room-v1-plays.mjs';
-import { stripComments, importSpecifiersOf, resolveImport } from './__fixtures__/jsSource.js';
+import { stripComments, importSpecifiersOf, opaqueImportsOf, callNamesOf, resolveImport } from './__fixtures__/jsSource.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..');
@@ -747,12 +747,36 @@ const closureOf = (root, read = (f) => readFileSync(f, 'utf8')) => {
   const stack = [root];
   while (stack.length) {
     const f = stack.pop();
-    for (const spec of importSpecifiersOf(seen.get(f))) {
+    // the fix round's review, CX2-2: a load no static reading follows fails the gate, never passes as no edge
+    const opaque = opaqueImportsOf(seen.get(f), f);
+    if (opaque.length) throw Object.assign(new Error(`write gate: ${rel(f)} loads by ${opaque.join(', ')}`), { code: 'OPAQUE_IMPORT' });
+    for (const spec of importSpecifiersOf(seen.get(f), f)) {
+      // CX2-1: a query, a fragment or percent-encoding is read through; a local specifier naming no module throws
       const n = resolveImport(f, spec, REPO);
       if (n && !seen.has(n)) { seen.set(n, read(n)); stack.push(n); }
     }
   }
   return seen;
+};
+/**
+ * THE GATE'S SECOND READING (the fix round's review, CX2-4): every call's method or function name the parser finds —
+ * however the call is split across lines or comments, a computed string key included (`ref['set'](…)`) — and every
+ * `FieldValue`. The per-line pattern above misses `ref.\nset(`, `ref['set'](` and `ref./**\/set(`; this reading does not.
+ */
+const WRITE_CALLS = new Set(['set', 'update', 'delete', 'add', 'create', 'batch', 'runTransaction', 'bulkWriter', 'writeBatch', 'recursiveDelete', 'FieldValue']);
+const NON_FIRESTORE_CALLS = Object.freeze([
+  { file: 'api/_utils/filmTape/tapeSources.js', name: 'add', count: 1, why: 'the same Set of evaluation ids as NON_FIRESTORE_HITS' },
+  { file: 'src/utils/filmRoomMoments.js', name: 'set', count: 1, why: 'the same Map grouping tag items as NON_FIRESTORE_HITS' },
+]);
+const callHitsOf = (closure) => [...closure].flatMap(([f, src]) => callNamesOf(src, f).filter((c) => WRITE_CALLS.has(c.name)).map((c) => ({ file: rel(f), name: c.name, line: c.line })));
+const unexplainedCalls = (hits) => {
+  const left = [...hits];
+  for (const a of NON_FIRESTORE_CALLS) {
+    const mine = left.filter((h) => h.file === a.file && h.name === a.name);
+    if (mine.length !== a.count) return [`${a.file}: ${mine.length} calls of ${a.name}, pinned ${a.count}`];
+    for (const h of mine) left.splice(left.indexOf(h), 1);
+  }
+  return left.map((h) => `${h.file}:${h.line}: ${h.name}`);
 };
 /**
  * The write pattern's hits in the excerpt's closure that are NOT Firestore writes, pinned by file, exact line text and
@@ -804,5 +828,37 @@ describe('THE WRITE GATE — no write call in momentExcerpt.js or anything it im
       ['src/constants/filmTape.js', 'export const w = (col) => col.add({});'],
       ['src/utils/filmRoomMoments.js', 'if (!groups.has(key)) groups.set(key, []);'],
     ]) expect(unexplained(writeHitsOf(closureOf(EXCERPT_FILE, plant(target, extra)))).length, `${target}: ${extra}`).toBeGreaterThan(0);
+  });
+  it('THE SECOND READING (CX2-4): the closure\'s write-named calls are exactly the two pinned non-Firestore ones; the excerpt, the day check, the subject module and the text policy hold none', () => {
+    const closure = closureOf(EXCERPT_FILE);
+    expect(unexplainedCalls(callHitsOf(closure))).toEqual([]);
+    for (const f of ['api/_utils/filmRoom/momentExcerpt.js', 'api/_utils/filmRoom/sourceDay.js', 'src/utils/filmRoomSubject.js', 'src/utils/promptBoundText.js']) {
+      expect(callHitsOf(new Map([[path.join(REPO, f), readFileSync(path.join(REPO, f), 'utf8')]])), f).toEqual([]);
+    }
+  });
+  it('THE SECOND READING BITES where the line pattern cannot: a call split across lines, a computed string key, a comment between the dot and the name, a FieldValue — each fails it', () => {
+    const plant = (extra) => (f) => { const src = readFileSync(f, 'utf8'); return path.resolve(f) === path.resolve(EXCERPT_FILE) ? `${src}\n${extra}\n` : src; };
+    for (const extra of [
+      'export const w = (ref) => ref.\n  set({ a: 1 });',
+      "export const w = (ref) => ref['set']({ a: 1 });",
+      'export const w = (ref) => ref./**/set({ a: 1 });',
+      'export const w = (admin) => admin.firestore.FieldValue.delete;',
+    ]) expect(unexplainedCalls(callHitsOf(closureOf(EXCERPT_FILE, plant(extra)))).length, extra).toBeGreaterThan(0);
+    // the line pattern alone misses the first three (why the second reading exists)
+    for (const extra of ['export const w = (ref) => ref.\n  set({ a: 1 });', "export const w = (ref) => ref['set']({ a: 1 });", 'export const w = (ref) => ref./**/set({ a: 1 });']) {
+      expect(unexplained(writeHitsOf(closureOf(EXCERPT_FILE, plant(extra)))), extra).toEqual([]);
+    }
+  });
+  it('THE GATE FAILS CLOSED on an import it cannot follow (CX2-1, CX2-2): `./cardStore.js?v=1` planted in the day check brings the ledger\'s writes in; an unresolvable or computed import throws', () => {
+    const plant = (target, extra) => (f) => { const src = readFileSync(f, 'utf8'); return path.resolve(f) === path.resolve(path.join(REPO, target)) ? `${src}\n${extra}\n` : src; };
+    const queried = closureOf(EXCERPT_FILE, plant('api/_utils/filmRoom/sourceDay.js', "import './cardStore.js?v=1';"));
+    expect([...queried.keys()].map(rel)).toContain('api/_utils/filmRoom/cardStore.js');
+    expect(unexplained(writeHitsOf(queried)).length).toBeGreaterThan(0);
+    expect(unexplainedCalls(callHitsOf(queried)).length).toBeGreaterThan(0);
+    for (const [extra, code] of [["import './noSuchModule.js';", 'UNRESOLVED_IMPORT'], ["const w = './cardStore.js';\nexport const later = () => import(w);", 'OPAQUE_IMPORT']]) {
+      let err = null;
+      try { closureOf(EXCERPT_FILE, plant('api/_utils/filmRoom/sourceDay.js', extra)); } catch (e) { err = e; }
+      expect(err?.code, extra).toBe(code);
+    }
   });
 });

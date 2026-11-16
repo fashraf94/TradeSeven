@@ -50,9 +50,9 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 // C2 (CE-2): imports read by @babel/parser, and the `@/` alias resolved, as vite resolves it
-import { stripComments, importSpecifiersOf, resolveImport } from './__fixtures__/jsSource.js';
+import { stripComments, importSpecifiersOf, opaqueImportsOf, resolveImport } from './__fixtures__/jsSource.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..');
@@ -185,14 +185,23 @@ const readSource = (file) => readFileSync(file, 'utf8');
 const specCache = new Map();
 const strippedCache = new Map();
 function importsOf(file, read = readSource) {
-  if (read !== readSource) return importSpecifiersOf(read(file));
-  if (!specCache.has(file)) specCache.set(file, importSpecifiersOf(readSource(file)));
+  if (read !== readSource) return importSpecifiersOf(read(file), file);
+  if (!specCache.has(file)) specCache.set(file, importSpecifiersOf(readSource(file), file));
   return specCache.get(file);
 }
 const strippedOf = (file, read = readSource) => {
-  if (read !== readSource) return stripComments(read(file));
-  if (!strippedCache.has(file)) strippedCache.set(file, stripComments(readSource(file)));
+  if (read !== readSource) return stripComments(read(file), file);
+  if (!strippedCache.has(file)) strippedCache.set(file, stripComments(readSource(file), file));
   return strippedCache.get(file);
+};
+/**
+ * The fix round's review, CX2-2 — FAIL CLOSED on what no static reading follows: a walked module that loads anything by
+ * a computed `import()` or `require()`, a `createRequire`, or an `import.meta.glob` throws, naming it. No module any
+ * model path reaches holds one today.
+ */
+const assertReadable = (file, read) => {
+  const opaque = opaqueImportsOf(read(file), file);
+  if (opaque.length) throw Object.assign(new Error(`one door: ${file} loads by ${opaque.join(', ')} — an edge the census cannot follow`), { code: 'OPAQUE_IMPORT' });
 };
 /**
  * Every module reachable from `roots` (absolute paths), the roots included, with the parent that first reached each.
@@ -207,7 +216,9 @@ export function closureOf(roots, { skip = [], read = readSource, repo = REPO } =
   const skipped = (from, to) => skip.some((e) => path.resolve(e.from) === path.resolve(from) && path.resolve(e.to) === path.resolve(to));
   while (stack.length) {
     const file = stack.pop();
+    assertReadable(file, read);
     for (const spec of importsOf(file, read)) {
+      // CX2-1: a query, a fragment or percent-encoding is read through, and a local specifier naming no module throws
       const next = resolveImport(file, spec, repo);
       if (!next || seen.has(next) || skipped(file, next)) continue;
       seen.add(next);
@@ -352,16 +363,37 @@ describe('ONE DOOR — no model path reaches the ledger or reads plays', () => {
   });
 });
 
+/** Every non-test module under api/ and src/ (the whole-tree rows' scan). */
+const treeModules = () => {
+  const files = [];
+  const walk = (dir) => { for (const ent of readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, ent.name); if (ent.isDirectory()) { if (ent.name !== 'node_modules') walk(p); } else if (isModule(ent.name)) files.push(p); } };
+  walk(abs('api'));
+  walk(abs('src'));
+  return files;
+};
+/** The fix round's review, CX2-3: the modules each file's imports RESOLVE to — never a match on the specifier's text. */
+const importedBy = (f) => importsOf(f).map((spec) => resolveImport(f, spec, REPO)).filter(Boolean).map((r) => path.resolve(r));
+/**
+ * The one module under api/ and src/ that loads something no static reading follows (CX2-2): the discover screen's
+ * thematic list, by a glob of JSON files. None is on a model path. A new one fails the row below until it is reviewed.
+ */
+const OPAQUE_LOADERS = Object.freeze({ 'src/components/discover/themesDkb.js': ['import.meta.glob'] });
+
 describe('the whole api/ tree — only the two routes import the ledger store (the door is one)', () => {
-  // CE-2: this row parses every module under api/ and src/ once (the parse cache then serves every other row) — it is
+  // CE-2: the whole-tree rows parse every module under api/ and src/ once (the parse cache serves the second of them) —
   // given room beyond vitest's 5 s default, as a parse of the whole tree takes seconds on a loaded host
-  it('every non-test module under api/ that imports cardStore.js, cardCounter.js or cardRequest.js is a film-room route or a filmRoom module', { timeout: 60_000 }, () => {
-    const files = [];
-    const walk = (dir) => { for (const ent of readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, ent.name); if (ent.isDirectory()) { if (ent.name !== 'node_modules') walk(p); } else if (isModule(ent.name)) files.push(p); } };
-    walk(abs('api'));
-    walk(abs('src'));
-    const importers = files.filter((f) => importsOf(f).some((spec) => /(^|\/)(cardStore|cardCounter|cardRequest)\.js$/.test(spec))).map((f) => path.relative(REPO, f).replace(/\\/g, '/')).sort();
+  it('every non-test module under api/ that imports cardStore.js, cardCounter.js or cardRequest.js is a film-room route or a filmRoom module — by the module each import RESOLVES to (CX2-3: an extensionless, queried or index spelling hides nothing)', { timeout: 60_000 }, () => {
+    const ledgerStores = new Set(['api/_utils/filmRoom/cardStore.js', 'api/_utils/filmRoom/cardCounter.js', 'api/_utils/filmRoom/cardRequest.js'].map((m) => path.resolve(abs(m))));
+    const importers = treeModules().filter((f) => importedBy(f).some((r) => ledgerStores.has(r))).map((f) => path.relative(REPO, f).replace(/\\/g, '/')).sort();
     expect(importers).toEqual(['api/_utils/filmRoom/cardCounter.js', 'api/_utils/filmRoom/cardRequest.js', 'api/film-room/card.js', 'api/film-room/counter.js']);
+  });
+  it('every module under api/ and src/ that loads something no static reading follows is pinned — today one, on no model path (CX2-2)', { timeout: 60_000 }, () => {
+    const found = Object.fromEntries(treeModules().map((f) => [path.relative(REPO, f).replace(/\\/g, '/'), opaqueImportsOf(readSource(f), f)]).filter(([, o]) => o.length));
+    expect(found).toEqual(OPAQUE_LOADERS);
+    for (const roots of Object.values(MODEL_PATHS)) {
+      const { seen } = closureOf(roots.map(abs));
+      for (const f of Object.keys(OPAQUE_LOADERS)) expect([...seen].some((s) => path.resolve(s) === path.resolve(abs(f))), f).toBe(false);
+    }
   });
 });
 
@@ -381,13 +413,9 @@ describe('C2 — the moment excerpt\'s one named exception, and the Mandate mana
     expect(Object.keys(MODEL_PATHS)).not.toContain('drafting');
   });
   it('only a named importer may import the excerpt — today no module under api/ or src/ imports it at all', { timeout: 60_000 }, () => {
-    const files = [];
-    const walk = (dir) => { for (const ent of readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, ent.name); if (ent.isDirectory()) { if (ent.name !== 'node_modules') walk(p); } else if (isModule(ent.name)) files.push(p); } };
-    walk(abs('api'));
-    walk(abs('src'));
-    // a specifier naming the excerpt's file, resolved — the name first, so the walk stays a cheap scan
-    const namesExcerpt = (f, spec) => /(^|\/)momentExcerpt(\.js)?$/.test(spec) && path.resolve(resolveImport(f, spec, REPO) ?? '') === path.resolve(abs(EXCERPT_MODULE));
-    const importers = files.filter((f) => importsOf(f).some((spec) => namesExcerpt(f, spec))).map((f) => path.relative(REPO, f).replace(/\\/g, '/'));
+    // every import RESOLVED (CX2-3: no name prefilter a query could slip past)
+    const excerpt = path.resolve(abs(EXCERPT_MODULE));
+    const importers = treeModules().filter((f) => importedBy(f).includes(excerpt)).map((f) => path.relative(REPO, f).replace(/\\/g, '/'));
     for (const f of importers) expect(NAMED_EXCEPTIONS.map((e) => e.importer), f).toContain(f);
     expect(importers).toEqual([]);
   });
@@ -446,6 +474,16 @@ describe('C2 — the rule bites (a planted excerpt import from every root fails;
         expect(routes[0].split(/[\\/]/).pop()).toBe('momentExcerpt.js');
         // the root's own imports are all still read, the planted one last: the suffix hides nothing before it either
         expect(importSpecifiersOf(read(abs(root))).slice(0, -1)).toEqual(importSpecifiersOf(readSource(abs(root))));
+      });
+      it(`${name}: A QUERY, A FRAGMENT OR PERCENT-ENCODING HIDES NOTHING — \`?v=1\`, \`#f\` and \`moment%45xcerpt.js\` on an import of the excerpt from ${root} each fail the rule (the fix round's review, CX2-1)`, () => {
+        let spec = path.relative(path.dirname(abs(root)), abs(EXCERPT_MODULE)).split(path.sep).join('/');
+        if (!spec.startsWith('.')) spec = `./${spec}`;
+        for (const planted of [`${spec}?v=1`, `${spec}#f`, spec.replace('momentExcerpt', 'moment%45xcerpt')]) {
+          const read = (f) => (path.resolve(f) === path.resolve(abs(root)) ? `${readSource(f)}\nimport '${planted}';\n` : readSource(f));
+          const around = excerptRoutesAround(name, roots.map(abs), { read });
+          expect(around, planted).toHaveLength(1);
+          expect(around[0].split(/[\\/]/).pop()).toBe('momentExcerpt.js');
+        }
       });
     }
   }
@@ -564,8 +602,36 @@ describe('C2 — the rule bites (a planted excerpt import from every root fails;
     };
     for (const [name, src] of Object.entries(cases)) expect(routesFrom(src), name).toEqual([]);
   });
-  it('A MODULE THE PARSER CANNOT READ FAILS — never passed as a module with no imports (CE-2)', () => {
-    expect(() => routesFrom("import { read } from './fr/excerpt.js';\nexport const r = read(;\n")).toThrow();
+  it('A MODULE THE PARSER CANNOT READ FAILS — never passed as a module with no imports, and the failure names the module (CE-2; the fix round\'s review, CX2-5)', () => {
+    let err = null;
+    try { routesFrom("import { read } from './fr/excerpt.js';\nexport const r = read(;\n"); } catch (e) { err = e; }
+    expect(err?.code).toBe('BABEL_PARSER_SYNTAX_ERROR');
+    expect(err.message).toMatch(/root\.js does not parse/);
+  });
+  it('EVERY LOCAL FORM RESOLVES OR FAILS (CX2-1): a query, a fragment, percent-encoding, a root-absolute path and a `file:` URL each reach the excerpt; a local specifier naming no module throws; an asset is no edge', () => {
+    for (const spec of ['./fr/excerpt.js?v=1', './fr/excerpt.js#f', './fr/%65xcerpt.js', '/fr/excerpt.js']) expect(routesFrom(`import '${spec}';\n`), spec).toHaveLength(1);
+    withTree({ 'fr/excerpt.js': EXCERPT_SRC, 'root.js': '' }, (t) => {
+      const url = pathToFileURL(t.at('fr/excerpt.js')).href;
+      writeFileSync(t.at('root.js'), `import '${url}';\n`);
+      expect(excerptRoutesAround('evaluator', [t.at('root.js')], { exceptions: t.exceptions, repo: t.root }), 'file:').toHaveLength(1);
+    });
+    let err = null;
+    try { routesFrom("import './fr/missing.js';\n"); } catch (e) { err = e; }
+    expect(err?.code).toBe('UNRESOLVED_IMPORT');
+    expect(routesFrom("import './theme.css';\nimport data from './data.json';\nexport const d = data;\n")).toEqual([]);
+  });
+  it('WHAT NO STATIC READING FOLLOWS FAILS CLOSED (CX2-2): a `require` of a string is an edge; a computed `import()` or `require()`, a `createRequire`, an `import.meta.glob` throw', () => {
+    expect(routesFrom("const m = require('./fr/excerpt.js');\nexport const r = m;\n")).toHaveLength(1);
+    for (const src of [
+      "const w = './fr/excerpt.js';\nexport const later = () => import(w);\n",
+      "const w = './fr/excerpt.js';\nexport const m = require(w);\n",
+      "import { createRequire } from 'node:module';\nconst req = createRequire(import.meta.url);\nexport const m = req('./fr/excerpt.js');\n",
+      "export const all = import.meta.glob('./fr/*.js', { eager: true });\n",
+    ]) {
+      let err = null;
+      try { routesFrom(src); } catch (e) { err = e; }
+      expect(err?.code, src).toBe('OPAQUE_IMPORT');
+    }
   });
 });
 

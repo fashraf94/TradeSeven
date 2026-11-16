@@ -9,8 +9,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { stripComments, importSpecifiersOf, resolveImport, PARSE_OPTIONS } from './__fixtures__/jsSource.js';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { stripComments, importSpecifiersOf, opaqueImportsOf, callNamesOf, resolveImport, PARSE_OPTIONS } from './__fixtures__/jsSource.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..');
@@ -82,12 +82,26 @@ describe('importSpecifiersOf and resolveImport', () => {
     ].join('\n');
     expect(importSpecifiersOf(src)).toEqual([]);
   });
-  it('a computed specifier is not read — the stated limit, as before: only static strings and `${}`-free templates are edges', () => {
+  it('a computed specifier is no edge — it is OPAQUE, named, so the census fails closed on it (the fix round\'s review, CX2-2); a `require` of a string is an edge', () => {
     expect(importSpecifiersOf("const where = './w.js';\nexport const l = () => import(where);\n")).toEqual([]);
+    expect(opaqueImportsOf("const where = './w.js';\nexport const l = () => import(where);\n")).toEqual(['import() of a computed value']);
+    expect(importSpecifiersOf("const m = require('./r.js');\nexport const x = m;\n")).toEqual(['./r.js']);
+    expect(opaqueImportsOf("const w = './r.js';\nexport const m = require(w);\n")).toEqual(['require() of a computed value']);
+    expect(opaqueImportsOf("import { createRequire } from 'node:module';\nexport const r = createRequire(import.meta.url);\n")).toEqual(['createRequire']);
+    expect(opaqueImportsOf("export const g = import.meta.glob('./*.json', { eager: true });\n")).toEqual(['import.meta.glob']);
+    expect(opaqueImportsOf("import a from './a.js';\nexport const u = import.meta.url;\nexport const l = () => import('./b.js');\n")).toEqual([]);
   });
-  it('a module that does not parse throws — a census never passes a file it could not read', () => {
-    expect(() => importSpecifiersOf('export const x = (;\n')).toThrow();
-    expect(() => stripComments('export const x = (;\n')).toThrow();
+  it('a module that does not parse throws, naming the module, with the parser\'s code (CX2-5) — a census never passes a file it could not read', () => {
+    for (const read of [importSpecifiersOf, stripComments, opaqueImportsOf, callNamesOf]) {
+      let err = null;
+      try { read('export const x = (;\n', 'api/x.js'); } catch (e) { err = e; }
+      expect(err?.code).toBe('BABEL_PARSER_SYNTAX_ERROR');
+      expect(err.message).toMatch(/api\/x\.js does not parse/);
+    }
+  });
+  it('callNamesOf: every call\'s name — a member call split across lines, after a comment, by a computed string key — and every FieldValue (CX2-4)', () => {
+    const names = callNamesOf("ref.\n  set({});\nref./**/update({});\nref['delete']();\nfoo();\nexport const f = admin.firestore.FieldValue;\n").map((c) => c.name);
+    expect(names).toEqual(expect.arrayContaining(['set', 'update', 'delete', 'foo', 'FieldValue']));
   });
   it('the parser is the declared devDependency at the locked version, with JSX on (CE-2)', () => {
     const pkg = JSON.parse(readFileSync(path.join(REPO, 'package.json'), 'utf8'));
@@ -97,6 +111,19 @@ describe('importSpecifiersOf and resolveImport', () => {
     expect(createRequire(import.meta.url)('@babel/parser/package.json').version).toBe(pkg.devDependencies['@babel/parser']);
     expect(PARSE_OPTIONS.sourceType).toBe('module');
     expect(PARSE_OPTIONS.plugins).toEqual(['jsx']);
+  });
+  it('a query, a fragment and percent-encoding are read through; a root-absolute path and a `file:` URL resolve; a local specifier naming no module THROWS; an asset or a URL is no edge (CX2-1)', () => {
+    const from = path.join(REPO, 'src/utils/x.js');
+    const target = path.join(REPO, 'src/utils/filmRoomSubject.js');
+    for (const spec of ['./filmRoomSubject.js?v=1', './filmRoomSubject.js#f', './film%52oomSubject.js', './filmRoomSubject?raw', '/src/utils/filmRoomSubject.js', pathToFileURL(target).href]) {
+      expect(resolveImport(from, spec, REPO), spec).toBe(target);
+    }
+    for (const spec of ['./noSuchModule.js', './noSuchModule', '../nowhere/x.js?v=1']) {
+      let err = null;
+      try { resolveImport(from, spec, REPO); } catch (e) { err = e; }
+      expect(err?.code, spec).toBe('UNRESOLVED_IMPORT');
+    }
+    for (const spec of ['./theme.css', './data.json?url', './logo.svg?react', '//cdn.example.com/x.js', 'https://example.com/x.js']) expect(resolveImport(from, spec, REPO), spec).toBeNull();
   });
   it('the `@/` alias resolves under <repo>/src, as vite.config.js maps it; a package resolves to nothing', () => {
     expect(resolveImport(path.join(REPO, 'x.js'), '@/utils/filmRoomSubject.js', REPO)).toBe(path.join(REPO, 'src/utils/filmRoomSubject.js'));
