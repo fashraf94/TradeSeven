@@ -321,6 +321,20 @@ const DARK_BY_DESIGN = {
   //   the live checklist. Each step moves the pin row in
   //   battleResearchFlag.test.js in the same commit (BUILD_RULES §2).
   //   Rollback: one step back with its pin row.
+  // CHART_READ_MODE intentionally ABSENT, and it must stay absent: the chart's
+  // evidence read (spec docs/specs/CHART_EVIDENCE_SPEC_V1.md RR-7) is a STRING
+  // TRI-STATE ('off' | 'allowlist' | 'on') beside the shell's flag in
+  // src/config/researchModalFlags.js, so buildFlagMap never sees it and the
+  // integrity test below would fail the key outright. Noted HERE so a flip is
+  // loud in the place a reader looks for the dark runway;
+  // chartReadFlag.test.js asserts both halves.
+  //   Runway: 'off' ships with the read-route build (PR A, dark): the route
+  //   answers 404 chart_read_unavailable to every caller before any record
+  //   read. 'allowlist' (per player, the cockpit allowlist) and then 'on' are
+  //   each a one-line founder PR, never a build PR, after the daily sweep has
+  //   filled records and the Chart view's read is built. Each step moves the
+  //   pin row in chartReadFlag.test.js in the same commit (BUILD_RULES §2).
+  //   Rollback: one step back with its pin row.
   // SHARED_RESEARCH_MODE intentionally ABSENT, and it must stay absent: Shared
   // Research "Work an idea" (spec docs/specs/
   // 20261109_SHARED_RESEARCH_B1_B2_BUILD_SPEC_V1_2.md §6.1, §6.2) is a STRING

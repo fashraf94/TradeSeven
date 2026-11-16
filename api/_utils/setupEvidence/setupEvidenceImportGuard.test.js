@@ -62,6 +62,13 @@ const ALLOWED_OUTSIDE = new Set([
   // the module holds the one frozen list and nothing else.
   'api/_utils/researchRecords/findingRecordKinds.js', // FINDING_RECORD_KINDS (a finding's source.recordKind / an evidenceItem ref's recordKind)
   'api/_utils/researchRecords/extension.test.js', // pins that closed list by value against the schema version, and the module's data-only shape
+  // The chart's evidence, PR A — the read route (docs/specs/CHART_EVIDENCE_SPEC_V1.md RR-1, RR-9), behind
+  // CHART_READ_MODE: readSnapshot and lastCompletedSessionAt only, never getOrAcquireSnapshot or the claims. Its
+  // projection helper (api/_utils/setupRead/projection.js) names no collection and is not a caller. Each by exact filename.
+  'api/research/setup-read.js', // the route: readSnapshot for the last completed session, then the one before; nothing else of the store
+  'api/research/setup-read.test.js', // the route's rows: the REAL readSnapshot over an in-memory db that fails on any claims touch or write
+  'api/_utils/setupRead/__fixtures__/readRecords.js', // test fixture: real records through acquire.js (acquireOnce + snapshotDocOf)
+  'api/_utils/setupRead/projection.test.js', // pins the projection's schema version to acquire.js SNAPSHOT_SCHEMA_VERSION
 ]);
 const isListed = (file) => ALLOWED_OUTSIDE.has(file);
 
