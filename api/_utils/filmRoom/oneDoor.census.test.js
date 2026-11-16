@@ -178,9 +178,19 @@ const exceptionsFor = (name, exceptions = NAMED_EXCEPTIONS) => exceptions.filter
 // literals told apart — and the app's `@/` alias resolves as vite resolves it; the regex stripper this file used before
 // let a `/*` inside a line comment swallow live imports.
 const readSource = (file) => readFileSync(file, 'utf8');
+/** Each file's specifiers and comment-stripped source, read ONCE for the suite (the tree does not change under it); a planted reader is never cached. */
+const specCache = new Map();
+const strippedCache = new Map();
 function importsOf(file, read = readSource) {
-  return importSpecifiersOf(read(file));
+  if (read !== readSource) return importSpecifiersOf(read(file));
+  if (!specCache.has(file)) specCache.set(file, importSpecifiersOf(readSource(file)));
+  return specCache.get(file);
 }
+const strippedOf = (file, read = readSource) => {
+  if (read !== readSource) return stripComments(read(file));
+  if (!strippedCache.has(file)) strippedCache.set(file, stripComments(readSource(file)));
+  return strippedCache.get(file);
+};
 /**
  * Every module reachable from `roots` (absolute paths), the roots included, with the parent that first reached each.
  * C2: `skip` — import EDGES (`{ from, to }`, absolute paths) the walk does not follow (the named exceptions); `read` —
@@ -251,7 +261,7 @@ export function oneDoorDefectsOf(name, roots, { exceptions = NAMED_EXCEPTIONS, r
   const judged = walkOf(name, roots, { exceptions, repo, read });
   const at = (set, rel) => [...set.seen].find((f) => path.resolve(f) === path.resolve(path.join(repo, rel)));
   for (const m of ledger) { const hit = at(whole, m); if (hit) defects.push(`ledger: ${chainTo(whole.parent, hit, repo)}`); }
-  for (const f of judged.seen) if (PLAYS_READ.test(stripComments(read(f)))) defects.push(`plays: ${chainTo(judged.parent, f, repo)}`);
+  for (const f of judged.seen) if (PLAYS_READ.test(strippedOf(f, read))) defects.push(`plays: ${chainTo(judged.parent, f, repo)}`);
   for (const chain of excerptRoutesAround(name, roots, { exceptions, repo, read })) defects.push(`excerpt: ${chain}`);
   if (!exceptionsFor(name, exceptions).length) for (const e of exceptions) { const hit = at(whole, e.importer); if (hit) defects.push(`importer: ${chainTo(whole.parent, hit, repo)}`); }
   return defects;
@@ -281,7 +291,7 @@ describe('ONE DOOR — no model path reaches the ledger or reads plays', () => {
     });
     it(`${name}: no module reachable from its roots reads plays by name`, () => {
       const { seen, parent } = walkOf(name, roots.map(abs));
-      const readers = [...seen].filter((f) => PLAYS_READ.test(stripComments(readFileSync(f, 'utf8'))));
+      const readers = [...seen].filter((f) => PLAYS_READ.test(strippedOf(f)));
       expect(readers.map((f) => `${path.relative(REPO, f)} (via ${chainTo(parent, f, REPO)})`)).toEqual([]);
     });
     it(`${name}: ONE DOOR, judged — no ledger, no plays, no excerpt but through an importer that admits it, no importer it is not admitted to (C2, CC-1 — exit criterion 16)`, () => {
@@ -380,7 +390,7 @@ describe('C2 — the moment excerpt\'s one named exception, and the Mandate mana
       const hit = [...seen].find((f) => path.resolve(f) === path.resolve(abs(m)));
       expect(hit, `mandate reaches ${m}: ${hit ? chainTo(parent, hit, REPO) : ''}`).toBeUndefined();
     }
-    expect([...seen].filter((f) => PLAYS_READ.test(stripComments(readFileSync(f, 'utf8')))).map((f) => path.relative(REPO, f))).toEqual([]);
+    expect([...seen].filter((f) => PLAYS_READ.test(strippedOf(f))).map((f) => path.relative(REPO, f))).toEqual([]);
     // it is a real walk: the manager's model call, schema and context block, and the Practice Field modules it settles through
     expect(seen.size).toBeGreaterThan(40);
   });

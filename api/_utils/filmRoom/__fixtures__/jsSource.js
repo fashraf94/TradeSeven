@@ -23,17 +23,25 @@ import path from 'node:path';
 const REGEX_AFTER = new Set(['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '<', '>', '~', '^']);
 const REGEX_KEYWORD = /(?:^|[^\w$])(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await)\s*$/;
 
+/** The characters the lexer stops at in code; everything between them is copied in one slice. */
+const SPECIAL = /[/"'`{}]/g;
+const WS = /\s/;
+
 /** `src` with every comment removed (a block comment's newlines kept), strings, templates and regexes untouched. */
 export function stripComments(src) {
   const s = String(src);
   const n = s.length;
-  let out = '';
+  const parts = [];
   let i = 0;
   let depth = 0;           // `{` depth in code
   const resume = [];       // the depths at which a `}` closes a template's `${`
   let last = '';           // the last significant character emitted in code
-  const lastSigOf = (t) => { const tr = t.replace(/\s+$/, ''); return tr ? tr[tr.length - 1] : null; };
-  const emit = (t) => { out += t; const l = lastSigOf(t); if (l !== null) last = l; };
+  const emit = (t) => {
+    parts.push(t);
+    for (let k = t.length - 1; k >= 0; k -= 1) if (!WS.test(t[k])) { last = t[k]; return; }
+  };
+  /** The emitted text so far (only for the rare keyword test before a `/`). */
+  const tail = () => parts.slice(-8).join('');
   /** Read template text from `j` (just after its opening backtick, or after a `}` that resumed it). */
   const template = (j) => {
     let k = j;
@@ -47,13 +55,18 @@ export function stripComments(src) {
     emit(s.slice(i)); i = n;
   };
   while (i < n) {
+    // plain code up to the next character that can open or close anything: one slice
+    SPECIAL.lastIndex = i;
+    const next = SPECIAL.exec(s);
+    const at = next ? next.index : n;
+    if (at > i) { emit(s.slice(i, at)); i = at; if (i >= n) break; }
     const c = s[i];
     const d = s[i + 1];
-    if (c === '/' && d === '/') { while (i < n && s[i] !== '\n') i += 1; continue; }
+    if (c === '/' && d === '/') { const end = s.indexOf('\n', i); i = end < 0 ? n : end; continue; }
     if (c === '/' && d === '*') {
       const end = s.indexOf('*/', i + 2);
       const stop = end < 0 ? n : end + 2;
-      out += `${s.slice(i, stop).replace(/[^\n]/g, '')} `;
+      parts.push(`${s.slice(i, stop).replace(/[^\n]/g, '')} `);
       i = stop;
       continue;
     }
@@ -66,10 +79,10 @@ export function stripComments(src) {
     if (c === '`') { template(i + 1); continue; }
     if (c === '{') { depth += 1; emit(c); i += 1; continue; }
     if (c === '}') {
-      if (resume.length && resume[resume.length - 1] === depth - 1) { resume.pop(); depth -= 1; out += c; i += 1; template(i); continue; }
+      if (resume.length && resume[resume.length - 1] === depth - 1) { resume.pop(); depth -= 1; parts.push(c); i += 1; template(i); continue; }
       depth -= 1; emit(c); i += 1; continue;
     }
-    if (c === '/' && (REGEX_AFTER.has(last) || REGEX_KEYWORD.test(out))) {
+    if (c === '/' && (REGEX_AFTER.has(last) || REGEX_KEYWORD.test(tail()))) {
       let k = i + 1;
       let inClass = false;
       let ok = false;
@@ -90,7 +103,7 @@ export function stripComments(src) {
     }
     emit(c); i += 1;
   }
-  return out;
+  return parts.join('');
 }
 
 /** Every import specifier a module's source names (comments stripped first). */
