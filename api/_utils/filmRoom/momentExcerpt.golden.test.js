@@ -351,9 +351,147 @@ describe('CE-3 — every time a real instant, or nothing is inferred from it (C2
     const got = await momentOver(withTape((t) => { t.directives.push({ ...clone(t.directives[DIR15]), playerText: 'Sell the laggard first.', filedAt: earlier }); }));
     expect(got.excerpt.directive.playerText).toEqual({ text: 'Sell the laggard first.', by: 'player', at: earlier, class: 'quoted' });
   });
-  it('A TIE-BREAK BY TIME never reads an impossible date as an instant: 30 February (Date.parse: 2 March, earlier) does not win the tie', async () => {
-    const got = await momentOver(withTape((t) => { t.directives.push({ ...clone(t.directives[DIR15]), playerText: 'Sell the laggard first.', filedAt: '2026-02-30T15:00:00.000Z' }); }));
-    expect(got.excerpt.directive.playerText.text).toBe(DAY.tape.directives[DIR15].playerText);
+  it('A TIE-BREAK BY TIME, the directive (CE-3 + CE-4): a tied directive filed at a date only, no zone, 30 February, 31 April or 24:00 leaves the tie unsettled — no directive, whichever row holds the loose time; a valid offset or Z settles it by instant', async () => {
+    const filed = DAY.tape.directives[DIR15].filedAt;
+    const twin = (t, filedAt) => t.directives.push({ ...clone(t.directives[DIR15]), playerText: 'Sell the laggard first.', filedAt });
+    for (const [name, make] of Object.entries(LOOSE_TIMES)) {
+      const onTwin = await momentOver(withTape((t) => { twin(t, make(filed)); }));
+      expect(onTwin.excerpt.directive, `${name}, on the twin`).toBeUndefined();
+      const onOriginal = await momentOver(withTape((t) => { twin(t, filed); t.directives[DIR15].filedAt = make(filed); }));
+      expect(onOriginal.excerpt.directive, `${name}, on the original`).toBeUndefined();
+    }
+    const earlier = await momentOver(withTape((t) => { twin(t, VALID_TIMES['a valid offset'](new Date(Date.parse(filed) - 60_000).toISOString())); }));
+    expect(earlier.excerpt.directive.playerText.text).toBe('Sell the laggard first.');
+    const later = await momentOver(withTape((t) => { twin(t, VALID_TIMES['a valid Z'](new Date(Date.parse(filed) + 60_000).toISOString())); }));
+    expect(later.excerpt.directive).toEqual(LIVE.moment.excerpt.directive);
+  });
+  it('A TIE-BREAK BY TIME, the exit (CE-3 + CE-4): a tied sale at a loose or impossible time leaves the tie unsettled — no exit and no afterExit; a valid offset or Z settles it by instant', async () => {
+    const twin = (t, at) => t.actions.push({ ...clone(t.actions.find((a) => a.symbolOut === 'ETN')), exitPrice: 999, at });
+    for (const [name, make] of Object.entries(LOOSE_TIMES)) {
+      const got = await momentOver(withTape((t) => { twin(t, make(SALE_AT)); }));
+      expect(got.excerpt.exit, name).toBeUndefined();
+      expect(got.excerpt.afterExit, name).toBeUndefined();
+    }
+    const earlier = await momentOver(withTape((t) => { twin(t, VALID_TIMES['a valid offset'](new Date(Date.parse(SALE_AT) - 60_000).toISOString())); }));
+    expect(earlier.excerpt.exit.exitPrice.value).toBe(999);
+    const later = await momentOver(withTape((t) => { twin(t, VALID_TIMES['a valid Z'](new Date(Date.parse(SALE_AT) + 60_000).toISOString())); }));
+    expect(later.excerpt.exit).toEqual(LIVE.moment.excerpt.exit);
+    expect(later.excerpt.afterExit).toEqual(LIVE.moment.excerpt.afterExit);
+  });
+});
+
+// ── a tie the rules don't settle (CE-4) ─────────────────────────────────────
+
+const SALE_AT = DAY.tape.actions.find((a) => a.symbolOut === 'ETN').at;
+/** A seeded shuffle (a small LCG): the same order on every run. */
+const shuffled = (list, seed) => {
+  const out = [...list];
+  let x = seed;
+  for (let i = out.length - 1; i > 0; i -= 1) { x = (x * 1103515245 + 12345) % 2147483648; const j = x % (i + 1); [out[i], out[j]] = [out[j], out[i]]; }
+  return out;
+};
+/** The orders every tie is judged under: as stored (the twin last), the tied pair swapped, the whole section reversed, two seeded shuffles. */
+const ORDERS = Object.freeze({
+  'as stored': (l, p) => [...l],
+  'the pair swapped': (l, p) => { const o = [...l]; const q = o.length - 1; [o[p], o[q]] = [o[q], o[p]]; return o; },
+  reversed: (l) => [...l].reverse(),
+  'shuffle 7': (l) => shuffled(l, 7),
+  'shuffle 11': (l) => shuffled(l, 11),
+});
+const ETN_SERIES = DAY.series.find((s) => s.symbol === 'ETN');
+const BARS_AFTER = ETN_SERIES.bars.map((b, k) => ({ b, k })).filter(({ b }) => Date.parse(b.t) > Date.parse(SALE_AT));
+/**
+ * The six selections Astra's C2-F4 names — each with how to plant a twin of the selected row (`twin(t, patch)` mutates
+ * the tape, or for the bars hands back a series), the section the orders permute, and the field(s) it fills.
+ */
+const recordedCountTape = (t) => { t.tags.inputs.holdingBasis = { ...t.tags.inputs.holdingBasis, ETN: 'recorded' }; t.checks.find((c) => c.tickSeq === 19).stagnation = { ETN: { ticks: 6, withinAge: true, dailyPct: -0.001 } }; };
+const TIES = {
+  rationale: { section: (t) => t.rationale, at: () => RAT15, twin: (t, patch) => t.rationale.push({ ...clone(t.rationale[RAT15]), ...patch }), conflict: { rationale: 'second row' }, fields: ['rationale'] },
+  directive: { section: (t) => t.directives, at: () => DIR15, twin: (t, patch) => t.directives.push({ ...clone(t.directives[DIR15]), ...patch }), conflict: { playerText: 'second player row' }, fields: ['directive'] },
+  exit: { section: (t) => t.actions, at: (t) => t.actions.findIndex((a) => a.symbolOut === 'ETN'), twin: (t, patch) => t.actions.push({ ...clone(t.actions.find((a) => a.symbolOut === 'ETN')), ...patch }), conflict: { exitPrice: 999 }, fields: ['exit', 'afterExit'] },
+  'tag item': { section: (t) => t.tags.items, at: (t) => t.tags.items.findIndex((i) => i.symbol === 'ETN' && i.tickSeq === 19), twin: (t, patch) => t.tags.items.push({ ...clone(t.tags.items.find((i) => i.symbol === 'ETN' && i.tickSeq === 19)), ...patch }), conflict: { count: 999 }, fields: ['count'] },
+  check: { prep: recordedCountTape, section: (t) => t.checks, at: (t) => t.checks.findIndex((c) => c.tickSeq === 19), twin: (t, patch) => t.checks.push({ ...clone(t.checks.find((c) => c.tickSeq === 19)), ...patch }), conflict: { stagnation: { ETN: { ticks: 999, withinAge: true, dailyPct: -0.001 } } }, fields: ['count'] },
+};
+/** The excerpt for a tape edit, its section then put in `order` (the selected row at index `p`, the twin last). */
+const tiedOver = async (c, patch, order) => momentOver(withTape((t) => {
+  c.prep?.(t);
+  const p = c.at(t);
+  c.twin(t, patch);
+  const sec = c.section(t);
+  sec.splice(0, sec.length, ...order(sec, p));
+}));
+/** The series bars' excerpt, with a twin of a bar after the exit (`k`: which of them; `patch`), in `order`. */
+const barTwinOver = async (k, patch, order) => {
+  const s = clone(ETN_SERIES);
+  const { b, k: at } = BARS_AFTER[k];
+  s.bars.push({ ...clone(b), ...patch });
+  s.bars = order(s.bars, at);
+  return momentOver(excerptStore(DAY, { over: { [SERIES_ETN]: s } }));
+};
+
+describe('CE-4 — a tie the rules don\'t settle means nothing is said (C2-F4); array order is never a rule', () => {
+  for (const [name, c] of Object.entries(TIES)) {
+    it(`${name}: a CONFLICTING twin at the selecting key — the field and its dependents absent, under every order of the stored rows`, async () => {
+      for (const [o, order] of Object.entries(ORDERS)) {
+        const got = await tiedOver(c, c.conflict, order);
+        expect(got, `${name} · ${o}`).not.toBeNull();
+        for (const f of c.fields) expect(got.excerpt[f], `${name} · ${o} · ${f}`).toBeUndefined();
+      }
+    });
+    it(`${name}: an IDENTICAL twin counts as one — the same answer as with no twin, under every order`, async () => {
+      const base = c.prep ? await momentOver(withTape(c.prep)) : LIVE.moment;
+      for (const [o, order] of Object.entries(ORDERS)) {
+        const got = await tiedOver(c, {}, order);
+        for (const f of c.fields) expect(got.excerpt[f], `${name} · ${o} · ${f}`).toEqual(base.excerpt[f]);
+        expect(got.excerpt[c.fields[0]], `${name} · ${o}`).toBeDefined();
+      }
+    });
+  }
+  it('series bar: a CONFLICTING twin at the latest start — no afterExit (the exit kept), under every order', async () => {
+    for (const [o, order] of Object.entries(ORDERS)) {
+      const got = await barTwinOver(BARS_AFTER.length - 1, { c: 999 }, order);
+      expect(got.excerpt.afterExit, o).toBeUndefined();
+      expect(got.excerpt.exit, o).toEqual(LIVE.moment.excerpt.exit);
+    }
+  });
+  it('series bar: an IDENTICAL twin counts as one — `barsAfter` counts distinct starts, never the duplicate (the mutant: counted twice), under every order', async () => {
+    for (const [o, order] of Object.entries(ORDERS)) {
+      for (const k of [0, BARS_AFTER.length - 1]) {
+        const got = await barTwinOver(k, {}, order);
+        expect(got.excerpt.afterExit, `${o} · bar ${k}`).toEqual(LIVE.moment.excerpt.afterExit);
+      }
+    }
+    expect(LIVE.moment.excerpt.afterExit.barsAfter.value).toBe(BARS_AFTER.length);
+  });
+  it('SETTLED CONTROLS — a tie the rules DO settle answers, under every order: a conflicting rationale earlier than the nearest; a directive heard later, or filed later; a sale at a later check; a tag item at another check; a conflicting bar at an earlier start', async () => {
+    for (const [o, order] of Object.entries(ORDERS)) {
+      const earlierRationale = await tiedOver(TIES.rationale, { rationale: 'an earlier row', tickSeq: 14 }, order);
+      expect(earlierRationale.excerpt.rationale, o).toEqual(LIVE.moment.excerpt.rationale);
+      const heardLater = await tiedOver(TIES.directive, { playerText: 'heard later', heard: { ...DAY.tape.directives[DIR15].heard, tickSeq: 16 } }, order);
+      expect(heardLater.excerpt.directive, o).toEqual(LIVE.moment.excerpt.directive);
+      const filedLater = await tiedOver(TIES.directive, { playerText: 'filed later', filedAt: new Date(Date.parse(DAY.tape.directives[DIR15].filedAt) + 60_000).toISOString() }, order);
+      expect(filedLater.excerpt.directive, o).toEqual(LIVE.moment.excerpt.directive);
+      const filedEarlier = await tiedOver(TIES.directive, { playerText: 'filed earlier', filedAt: new Date(Date.parse(DAY.tape.directives[DIR15].filedAt) - 60_000).toISOString() }, order);
+      expect(filedEarlier.excerpt.directive.playerText.text, o).toBe('filed earlier');
+      const saleLater = await tiedOver(TIES.exit, { exitPrice: 999, tickSeq: 22 }, order);
+      expect(saleLater.excerpt.exit, o).toEqual(LIVE.moment.excerpt.exit);
+      const itemElsewhere = await tiedOver(TIES['tag item'], { count: 999, symbol: 'META' }, order);
+      expect(itemElsewhere.excerpt.count, o).toEqual(LIVE.moment.excerpt.count);
+      const earlierBar = await barTwinOver(0, { c: 999 }, order);
+      expect(earlierBar.excerpt.afterExit, o).toEqual(LIVE.moment.excerpt.afterExit);
+    }
+  });
+  it('A CONFLICT NEVER FALLS BACK TO A NEIGHBOUR: conflicting rationale rows at the first check, with a clean row before it — no rationale; conflicting sales at the last check, with a clean sale at the next — no exit and no afterExit', async () => {
+    expect(DAY.tape.rationale.some((r) => r.tickSeq < 15)).toBe(true);
+    const rationale = await tiedOver(TIES.rationale, { rationale: 'second row' }, ORDERS['as stored']);
+    expect(rationale.excerpt.rationale).toBeUndefined();
+    const sales = await momentOver(withTape((t) => {
+      const sale = t.actions.find((a) => a.symbolOut === 'ETN');
+      expect(sale.tickSeq).toBe(20);
+      t.actions.push({ ...clone(sale), tickSeq: 19, exitPrice: 100 }, { ...clone(sale), tickSeq: 19, exitPrice: 999 });
+    }));
+    expect(sales.excerpt.exit).toBeUndefined();
+    expect(sales.excerpt.afterExit).toBeUndefined();
   });
 });
 

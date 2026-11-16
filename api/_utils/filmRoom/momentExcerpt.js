@@ -121,6 +121,35 @@ const momentArgOk = (m) => isObj(m) && str(m.situationId) && str(m.symbol) && se
 const momentArg = (m) => ({ situationId: m.situationId, symbol: m.symbol, fromTickSeq: m.fromTickSeq ?? null, toTickSeq: m.toTickSeq ?? null });
 
 /**
+ * CE-4 — A TIE THE RULES DON'T SETTLE MEANS NOTHING IS SAID (Astra's C2-F4). Every selection below first finds the
+ * candidates that tie at its selecting key (each `{ row, i }`, its stored row and index); then:
+ *   oneOf       the tied candidates are compared on EVERY field the excerpt would take from them (`pick`: their raw
+ *               stored values). Identical candidates count as one — the first of them in storage order answers, and
+ *               every field it gives is the same for each (a number's class is its path's, whatever the index). Any
+ *               disagreement leaves the tie unsettled: null, and the field — with every field that depends on it — is
+ *               absent. A conflict never falls back to a neighbouring row.
+ *   earliestBy  a tie the rules break by TIME (the filing, the sale) is broken only when EVERY tied candidate holds a
+ *               strict instant (CE-3): the earliest instant's candidates, then oneOf. One without a strict time leaves
+ *               the whole tie to oneOf — a time the parser refuses is never read as "later".
+ * Array order is never a rule: a permutation of the stored rows never changes an answer.
+ */
+const tieKey = (values) => JSON.stringify(values, (_, x) => (x === undefined ? null : x));
+function oneOf(tied, pick) {
+  if (!tied.length) return null;
+  const key = tieKey(pick(tied[0].row));
+  return tied.every((t) => tieKey(pick(t.row)) === key) ? tied[0] : null;
+}
+function earliestBy(tied, timeOf, pick) {
+  if (tied.length < 2) return oneOf(tied, pick);
+  const ms = tied.map((t) => instantMs(timeOf(t.row)));
+  if (ms.some((x) => x === null)) return oneOf(tied, pick);
+  const first = Math.min(...ms);
+  return oneOf(tied.filter((_, j) => ms[j] === first), pick);
+}
+/** A section's rows that `keep` admits, each with its stored index. */
+const candidatesOf = (list, keep) => (Array.isArray(list) ? list : []).map((row, i) => ({ row, i })).filter(({ row }) => keep(row));
+
+/**
  * CC-5 — the day, only when it is the caller's and the battle's attribution agent is the one named: `{ tape }` or null.
  * The attribution is the platform's resolver's rule (casualClone.js resolveRecordTargetId, which this read-only module
  * cannot import — its file writes; momentExcerpt.test.js pins this rule to it): a casual clone's battle attributes to
@@ -171,15 +200,19 @@ async function ideaOf(db, uid, tape) {
   return { idea, watchlistId: ref.watchlistId };
 }
 
-/** The agent's words at the moment's first check, or the nearest earlier one (by the rows' recorded tickSeq; a row with none is no candidate). */
+/**
+ * The agent's words at the moment's first check, or the nearest earlier one (by the rows' recorded tickSeq; a row with
+ * none is no candidate). Rows tied at that tickSeq that disagree on the words or their time: no rationale (CE-4) — never
+ * the next-nearest row.
+ */
 function rationaleOf(tape, m) {
   if (!Number.isInteger(m.fromTickSeq)) return null;
-  let row = null;
-  for (const r of Array.isArray(tape.rationale) ? tape.rationale : []) {
-    if (!isObj(r) || !Number.isInteger(r.tickSeq) || r.tickSeq > m.fromTickSeq) continue;
-    if (!row || r.tickSeq > row.tickSeq) row = r;
-  }
-  if (!row) return null;
+  const rows = candidatesOf(tape.rationale, (r) => isObj(r) && Number.isInteger(r.tickSeq) && r.tickSeq <= m.fromTickSeq);
+  if (!rows.length) return null;
+  const nearest = Math.max(...rows.map((c) => c.row.tickSeq));
+  const hit = oneOf(rows.filter((c) => c.row.tickSeq === nearest), (r) => [r.hypothesis, r.rationale, r.at]);
+  if (!hit) return null;
+  const row = hit.row;
   const at = instantOrNull(row.at);
   const hypothesis = boundedText(row.hypothesis, EXCERPT_BOUNDS.hypothesis);
   const rationale = boundedText(row.rationale, EXCERPT_BOUNDS.rationale);
@@ -187,12 +220,19 @@ function rationaleOf(tape, m) {
   return { ...(hypothesis ? { hypothesis: quote(hypothesis, 'agent', at) } : {}), ...(rationale ? { rationale: quote(rationale, 'agent', at) } : {}) };
 }
 
-/** The directive heard at a check inside the moment (the earliest heard, then the earliest filed): the player's words and the platform's canonical text, each its own quotation at the filing's time. */
+/**
+ * The directive heard at a check inside the moment — the earliest heard (CD-7), then the earliest filed, by strict
+ * instants only (CE-3, CE-4): the player's words and the platform's canonical text, each its own quotation at the
+ * filing's time. A tie still standing, whose candidates disagree: no directive.
+ */
 function directiveOf(tape, m) {
   if (!Number.isInteger(m.fromTickSeq) || !Number.isInteger(m.toTickSeq)) return null;
-  const rows = (Array.isArray(tape.directives) ? tape.directives : []).filter((d) => isObj(d) && isObj(d.heard) && Number.isInteger(d.heard.tickSeq) && d.heard.tickSeq >= m.fromTickSeq && d.heard.tickSeq <= m.toTickSeq);
+  const rows = candidatesOf(tape.directives, (d) => isObj(d) && isObj(d.heard) && Number.isInteger(d.heard.tickSeq) && d.heard.tickSeq >= m.fromTickSeq && d.heard.tickSeq <= m.toTickSeq);
   if (!rows.length) return null;
-  const row = rows.reduce((a, b) => (b.heard.tickSeq < a.heard.tickSeq || (b.heard.tickSeq === a.heard.tickSeq && (instantMs(b.filedAt) ?? Infinity) < (instantMs(a.filedAt) ?? Infinity)) ? b : a));
+  const heard = Math.min(...rows.map((c) => c.row.heard.tickSeq));
+  const hit = earliestBy(rows.filter((c) => c.row.heard.tickSeq === heard), (r) => r.filedAt, (r) => [r.playerText, r.canonicalText, r.filedAt]);
+  if (!hit) return null;
+  const row = hit.row;
   const at = instantOrNull(row.filedAt);
   const playerText = boundedText(row.playerText, EXCERPT_BOUNDS.playerText);
   const canonicalText = boundedText(row.canonicalText, EXCERPT_BOUNDS.canonicalText);
@@ -211,7 +251,9 @@ function directiveOf(tape, m) {
 /**
  * The `actions[]` row that ends the run: a sale of the moment's symbol at the moment's last check, or at the first check
  * the day ran after it (its recorded tickSeq) — the holding left the book there. A sale later than that is not this
- * run's end; a row with no recorded tickSeq is not matched (no guess).
+ * run's end; a row with no recorded tickSeq is not matched (no guess). Of sales at the same check, the earliest by strict
+ * instant (CE-3); a tie still standing whose sales disagree is no exit — and so no afterExit — never the next check's
+ * sale (CE-4).
  */
 function exitRowOf(tape, m) {
   if (!Number.isInteger(m.toTickSeq)) return null;
@@ -219,13 +261,10 @@ function exitRowOf(tape, m) {
   const later = ran.filter((s) => s > m.toTickSeq);
   const next = later.length ? Math.min(...later) : null;
   const ends = [m.toTickSeq, ...(next === null ? [] : [next])];
-  const actions = Array.isArray(tape.actions) ? tape.actions : [];
-  let best = null;
-  actions.forEach((a, i) => {
-    if (!isObj(a) || a.symbolOut !== m.symbol || !ends.includes(a.tickSeq)) return;
-    if (!best || a.tickSeq < best.row.tickSeq || (a.tickSeq === best.row.tickSeq && (instantMs(a.at) ?? Infinity) < (instantMs(best.row.at) ?? Infinity))) best = { row: a, i };
-  });
-  return best;
+  const sales = candidatesOf(tape.actions, (a) => isObj(a) && a.symbolOut === m.symbol && ends.includes(a.tickSeq));
+  if (!sales.length) return null;
+  const at = Math.min(...sales.map((c) => c.row.tickSeq));
+  return earliestBy(sales.filter((c) => c.row.tickSeq === at), (r) => r.at, (r) => [r.mechanism, r.exitReason, r.symbolOut, r.symbolIn, r.exitPrice, r.at]);
 }
 
 function exitOf(tape, hit) {
@@ -248,6 +287,9 @@ function exitOf(tape, hit) {
  * checks, never among the bars) — the last one's close, and that bar's own recorded time, its START (`bars[].t`, the
  * beginning of its 10-minute bucket: named `barStart`, never the close's instant — §2 review L1-5), each with the
  * series document's own class for a bar (its `numberClasses`), and how many there are (derived). Absent when none.
+ * A bar is a row with a strict start after the exit; CE-4: `barsAfter` counts DISTINCT starts (an identical duplicate
+ * counts once), and rows at the latest start that disagree — or whose close is no classed number — give no afterExit,
+ * never an earlier bar's.
  */
 async function afterExitOf(db, uid, battleId, etDate, row) {
   const symbol = typeof row.symbolOut === 'string' && TICKER.test(row.symbolOut) ? row.symbolOut : null;
@@ -255,32 +297,34 @@ async function afterExitOf(db, uid, battleId, etDate, row) {
   if (!symbol || exitMs === null) return null;
   const series = await readDoc(tapeRef(db, battleId, etDate).collection(SERIES_SUBCOLLECTION).doc(symbol));
   if (!isObj(series) || series.ownerId !== uid || series.symbol !== symbol || !Array.isArray(series.bars)) return null;
-  const after = [];
-  series.bars.forEach((b, k) => { if (isObj(b) && instantMs(b.t) !== null && instantMs(b.t) > exitMs && typeof b.c === 'number' && Number.isFinite(b.c)) after.push({ b, k }); });
+  const after = candidatesOf(series.bars, (b) => isObj(b) && instantMs(b.t) !== null && instantMs(b.t) > exitMs);
   if (!after.length) return null;
-  const last = after.reduce((x, y) => (instantMs(y.b.t) > instantMs(x.b.t) ? y : x));
-  const close = classed(last.b.c, series.numberClasses, ['bars', last.k, 'c']);
+  const starts = new Set(after.map((c) => instantMs(c.row.t)));
+  const latest = Math.max(...starts);
+  const last = oneOf(after.filter((c) => instantMs(c.row.t) === latest), (b) => [b.t, b.c]);
+  if (!last) return null;
+  const close = classed(last.row.c, series.numberClasses, ['bars', last.i, 'c']);
   if (!close) return null;
-  return { close, barStart: { value: last.b.t, class: close.class }, barsAfter: { value: after.length, class: 'derived' } };
+  return { close, barStart: { value: last.row.t, class: close.class }, barsAfter: { value: starts.size, class: 'derived' } };
 }
 
 /**
  * The count: `stalled`'s at the moment's last check — on the recorded basis the live rule's own record at that check
  * (`checks[].stagnation[sym].ticks`), on the recomputed basis the tagger's item there (`tags.items[].count`) — each with
  * its path's declared class (recorded, derived). Any other situation: its own item's count. Never a neighbouring check's.
+ * CE-4: checks (or items) at that last check that disagree on the count give no count.
  */
 function countOf(tape, m) {
   if (!Number.isInteger(m.toTickSeq)) return null;
   const basis = isObj(tape.tags?.inputs?.holdingBasis) ? tape.tags.inputs.holdingBasis[m.symbol] : undefined;
   if (m.situationId === 'stalled' && basis === 'recorded') {
-    const checks = Array.isArray(tape.checks) ? tape.checks : [];
-    const k = checks.findIndex((c) => isObj(c) && c.tickSeq === m.toTickSeq);
-    const rec = k >= 0 && isObj(checks[k].stagnation) ? checks[k].stagnation[m.symbol] : null;
-    return isObj(rec) && Number.isInteger(rec.ticks) ? classed(rec.ticks, tape.numberClasses, ['checks', k, 'stagnation', m.symbol, 'ticks']) : null;
+    const recOf = (c) => (isObj(c.stagnation) && isObj(c.stagnation[m.symbol]) ? c.stagnation[m.symbol] : null);
+    const hit = oneOf(candidatesOf(tape.checks, (c) => isObj(c) && c.tickSeq === m.toTickSeq), (c) => [recOf(c)?.ticks]);
+    const rec = hit ? recOf(hit.row) : null;
+    return isObj(rec) && Number.isInteger(rec.ticks) ? classed(rec.ticks, tape.numberClasses, ['checks', hit.i, 'stagnation', m.symbol, 'ticks']) : null;
   }
-  const items = Array.isArray(tape.tags?.items) ? tape.tags.items : [];
-  const i = items.findIndex((it) => isObj(it) && it.situationId === m.situationId && it.symbol === m.symbol && it.tickSeq === m.toTickSeq);
-  return i >= 0 && Number.isInteger(items[i].count) ? classed(items[i].count, tape.numberClasses, ['tags', 'items', i, 'count']) : null;
+  const hit = oneOf(candidatesOf(tape.tags?.items, (it) => isObj(it) && it.situationId === m.situationId && it.symbol === m.symbol && it.tickSeq === m.toTickSeq), (it) => [it.count]);
+  return hit && Number.isInteger(hit.row.count) ? classed(hit.row.count, tape.numberClasses, ['tags', 'items', hit.i, 'count']) : null;
 }
 
 /**
