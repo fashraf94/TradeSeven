@@ -37,7 +37,7 @@ import { fetchDailyPayload } from '../eodhdDailyWindow.js';
 import { mapDailyRows } from '../marketDataCache.js';
 import { ALL_TICKERS } from '../rankingConfig.js';
 import {
-  BRAKE_STREAK_STOP, DEFERRED_REASONS, HEALTH_LINE_PREFIX, RETRYABLE_REASONS, TRANSPORT_FAILURE_REASONS, SWEEP_ADMISSION_RESERVE_MS, SWEEP_ADMISSION_WINDOW_MS, SWEEP_CONCURRENCY, SWEEP_DAILY_PROVIDER_CAP,
+  BRAKE_STREAK_STOP, CONFIRMABLE_REFUSAL_REASONS, DEFERRED_REASONS, HEALTH_LINE_PREFIX, RETRYABLE_REASONS, TRANSPORT_FAILURE_REASONS, SWEEP_ADMISSION_RESERVE_MS, SWEEP_ADMISSION_WINDOW_MS, SWEEP_CONCURRENCY, SWEEP_DAILY_PROVIDER_CAP,
   SWEEP_HOST,
 } from './constants.js';
 import { sweepFlagOn } from './gate.js';
@@ -189,8 +189,8 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
   // THE BRAKE (readings R-3, R-14, R-17): BRAKE_STREAK_STOP outcomes of ONE kind in a row, each from a request this run
   // counted, close admission with that kind as the reason. Any other outcome of this run's own request breaks the streak;
   // a record merely read does not (a final read between late names must not keep a too-early run spending the cap).
-  // Kinds: 'unpublished' (missing_bar, no usable row for the session: not yet published); 'shared_gap' (missing_bar WITH
-  // the session's row, a gap inside the window, observed or now confirmed as a refused record: in a row, one gap shared by
+  // Kinds: 'unpublished' (missing_bar, no usable row for the session: not yet published); 'shared_refusal' (a refusal the
+  // store makes permanent by its confirm rule, observed or now confirmed as a refused record: in a row, one cause shared by
   // every name, whose confirmations are permanent); 'provider_failing' (a transport failure, a missing key included).
   let streakKind = null;
   let streakCount = 0;
@@ -282,8 +282,8 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
       countFinal(out.snapshot);
       if (fetched) {
         counts.acquired += 1;
-        // A gap inside the window, confirmed now as a refused record, is permanent: in a row it is a shared gap.
-        noteOutcome(out.snapshot?.status === 'refused' && out.snapshot?.entry?.reason === 'missing_bar' ? 'shared_gap' : null);
+        // A refusal confirmed now as a refused record is permanent: in a row it is one cause shared by every name.
+        noteOutcome(out.snapshot?.status === 'refused' && CONFIRMABLE_REFUSAL_REASONS.includes(out.snapshot?.entry?.reason) ? 'shared_refusal' : null);
       }
     } else if (status === 'pending') {
       counts.pending += 1;
@@ -293,7 +293,8 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
       bump(counts.retryable, RETRYABLE_REASONS.includes(out.reason) ? out.reason : 'other');
       if (fetched) {
         if (TRANSPORT_FAILURE_REASONS.includes(out.reason)) noteOutcome('provider_failing');
-        else if (out.reason === 'missing_bar') noteOutcome(sessionRowSeen ? 'shared_gap' : 'unpublished');
+        else if (out.reason === 'missing_bar' && !sessionRowSeen) noteOutcome('unpublished');
+        else if (CONFIRMABLE_REFUSAL_REASONS.includes(out.reason)) noteOutcome('shared_refusal');
         else noteOutcome(null);
       }
     } else if (status === 'excluded') {

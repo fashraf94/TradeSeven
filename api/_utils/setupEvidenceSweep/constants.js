@@ -38,15 +38,18 @@ export const SWEEP_ADMISSION_RESERVE_MS = STORE_ACQUIRE_TIMEOUT_MS + 7_000;
  * THE BRAKE (readings R-3, R-14, R-17; review L1-1, L1-2, L2-1): this many outcomes of one kind in a row, each from a request
  * this run counted, close admission, the kind being the deferred reason:
  *   'unpublished'       missing_bar with no usable row for the session: the provider has not published it yet;
- *   'shared_gap'        missing_bar WITH the session's row (a gap inside the window), observed or confirmed as a refused
- *                       record: in a row, one gap shared by every name (a closure the calendar lacks, a provider-wide
- *                       hole), whose confirmations are permanent;
+ *   'shared_refusal'    a refusal the store makes permanent through its confirm rule (CONFIRMABLE_REFUSAL_REASONS: a gap
+ *                       inside the window — missing_bar WITH the session's row —, a short history, a bad date, a missing
+ *                       fact), observed or confirmed as a refused record: in a row, one cause shared by every name (a
+ *                       closure the calendar lacks, a provider-wide hole, a truncated answer), whose confirmations are permanent;
  *   'provider_failing'  a transport failure (TRANSPORT_FAILURE_REASONS), a missing provider key included.
  * Any other outcome of this run's own request breaks the streak; a record merely read does not.
  */
 export const BRAKE_STREAK_STOP = 8;
 /** The store's retryable reasons that mean the request itself failed (a subset of RETRYABLE_REASONS; pinned). */
 export const TRANSPORT_FAILURE_REASONS = Object.freeze(['fetch_failed', 'non_array_payload', 'malformed_payload']);
+/** The adapter's refusals the store turns into a permanent refused record by its confirm rule (or, for an older row's missing fact, at once). */
+export const CONFIRMABLE_REFUSAL_REASONS = Object.freeze(['missing_bar', 'insufficient_history', 'unordered_bars', 'missing_fact']);
 /** The store's lease host for the sweep's calls. */
 export const SWEEP_HOST = 'setup-evidence-sweep';
 
@@ -72,7 +75,7 @@ export const RETRYABLE_REASONS = Object.freeze([
   'fetch_failed', 'non_array_payload', 'malformed_payload', 'other',
 ]);
 /** Why a name was not attempted this run. */
-export const DEFERRED_REASONS = Object.freeze(['deadline', 'cap', 'unpublished', 'shared_gap', 'provider_failing', 'counter_failed', 'state_unreadable', 'programming_error', 'calendar_missing', 'non_session']);
+export const DEFERRED_REASONS = Object.freeze(['deadline', 'cap', 'unpublished', 'shared_refusal', 'provider_failing', 'counter_failed', 'state_unreadable', 'programming_error', 'calendar_missing', 'non_session']);
 /** Where a failure happened (the prefix of a failure count's key). */
 export const FAILURE_STAGES = Object.freeze(['state', 'read', 'reserve', 'acquire', 'record', 'unit']);
 export const HEALTH_LINE_PREFIX = '[setupEvidenceSweep]';

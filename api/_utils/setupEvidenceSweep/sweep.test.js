@@ -396,7 +396,7 @@ describe('review lens 1 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the 
   /** The session's own bar IS published; one bar inside the window (ten sessions back) is missing: confirm class. */
   const interiorGapRows = (session) => { const rows = pullbackRows(session); rows.splice(10, 1); return rows; };
 
-  it('L1-1: a gap INSIDE the window shared by every name is braked as shared_gap, never as unpublished; a second run confirms at most a streak of them', async () => {
+  it('L1-1: a gap INSIDE the window shared by every name is braked as shared_refusal, never as unpublished; a second run confirms at most a streak of them', async () => {
     const db = makeSweepDb();
     const names = [...ALL_TICKERS].sort().slice(0, 40);
     const h = harness({ at: T_RUN1, rowsFor: (s, session) => interiorGapRows(session) });
@@ -404,14 +404,14 @@ describe('review lens 1 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the 
     const first = await h.run(db, { symbols: names });
     const most = C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1;
     expect(h.calls.length).toBeLessThanOrEqual(most);
-    expect(first.deferred).toEqual({ shared_gap: 40 - h.calls.length });
+    expect(first.deferred).toEqual({ shared_refusal: 40 - h.calls.length });
     expect(first.retryable).toEqual({ missing_bar: h.calls.length });
     h.nowMs = T_RUN2;
     const before = h.calls.length;
     const second = await h.run(db, { symbols: names });
     expect(h.calls.length - before).toBeLessThanOrEqual(most);
     expect(second.final.refused).toBeLessThanOrEqual(most); // each confirmation is permanent: the brake bounds them per run
-    expect(second.deferred.shared_gap).toBeGreaterThan(0);
+    expect(second.deferred.shared_refusal).toBeGreaterThan(0);
     expect(second.deferred.unpublished).toBeUndefined();
   });
 
@@ -471,7 +471,20 @@ describe('review lens 1 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the 
     h.nowMs = T_RUN2;
     const second = await h.run(db, { symbols: gapped });
     expect(second.final.refused).toBeLessThanOrEqual(C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
-    expect(second.deferred.shared_gap).toBe(20 - second.storeCalls);
+    expect(second.deferred.shared_refusal).toBe(20 - second.storeCalls);
+  });
+
+  it('a truncated answer for every name (a short history, confirm class) is braked as shared_refusal, never confirmed in bulk', async () => {
+    const db = makeSweepDb();
+    const names = [...ALL_TICKERS].sort().slice(0, 40);
+    const h = harness({ at: T_RUN1, rowsFor: (s, session) => pullbackRows(session, 30) }); // 30 bars: under the 55 the rule needs
+    const first = await h.run(db, { symbols: names });
+    expect(h.calls.length).toBeLessThanOrEqual(C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
+    expect(first.retryable).toEqual({ insufficient_history: h.calls.length });
+    expect(first.deferred).toEqual({ shared_refusal: 40 - h.calls.length });
+    h.nowMs = T_RUN2;
+    const second = await h.run(db, { symbols: names });
+    expect(second.final.refused).toBeLessThanOrEqual(C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
   });
 
   it('a transient counter failure closes admission for the run: no further name takes a claim only to fail the same way', async () => {
