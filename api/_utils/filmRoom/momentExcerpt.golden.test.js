@@ -402,8 +402,8 @@ describe('CC-2 — every quotation one source, one speaker, with its time', () =
 const rel = (f) => path.relative(REPO, f).split(path.sep).join('/');
 /**
  * Every module reachable from `root` by its imports — relative and the `@/` alias, static and dynamic — with each
- * one's source, read by the census's own lexer (__fixtures__/jsSource.js; §2 review L2-1: a regex stripper let a `/*`
- * inside a line comment hide live imports).
+ * one's source, read by the census's own parser (__fixtures__/jsSource.js, @babel/parser — CE-2: a regex stripper let
+ * a `/*` inside a line comment hide live imports, §2 review L2-1; the hand lexer after it, a regex after an `if`, C2-F2).
  */
 const closureOf = (root, read = (f) => readFileSync(f, 'utf8')) => {
   const seen = new Map([[root, read(root)]]);

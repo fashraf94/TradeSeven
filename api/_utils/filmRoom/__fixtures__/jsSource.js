@@ -1,115 +1,103 @@
 // api/_utils/filmRoom/__fixtures__/jsSource.js
 //
-// Film Room C2 (the §2 review's L2-1) — READING A MODULE'S IMPORTS, for the one-door census and the moment excerpt's
-// write gate. The walkers before this stripped comments with two regular expressions, and a `/*` inside a line comment
-// ("every /api/huddle/* route") opened a "block comment" that ate live code up to the next `*/` — real imports vanished
-// from the census (api/_utils/huddle/gate.js's only import, among others). This is a small lexer instead:
-//   comments      `//` to the end of the line, and `/* … */` (its newlines kept, so line numbers hold) — never inside
-//                 a string, a template literal or a regular expression literal;
-//   strings       '…' and "…", kept verbatim (a `plays` read by name stays visible), ending at their quote or the line;
-//   templates     `…`, kept verbatim, with `${ … }` read as code, nested to any depth;
-//   regexes       a `/` where an expression may start (after an operator, a bracket, a comma, a keyword such as
-//                 `return`) begins a regular expression literal, kept verbatim; elsewhere it is division.
-// Its stated limits: JSX text holding a backtick or a `/*` is read as code (no model path's module holds one today);
-// `require()` is not read (the census's modules are ES modules).
+// Film Room C2 — READING A MODULE'S IMPORTS, for the one-door census and the moment excerpt's write gate.
 //
-// importSpecifiersOf: every static import and re-export's specifier, every `import('…')` with a static string or
-// template, and every bare `import '…'`. resolveImport: a relative specifier, or the app's `@/` alias (vite.config.js:
-// `@` → src/), to a file of the tree.
+// THE HISTORY. The walkers first stripped comments with two regular expressions, and a `/*` inside a line comment
+// ("every /api/huddle/* route") opened a "block comment" that ate live code — real imports vanished from the census
+// (the §2 review's L2-1). A hand lexer replaced them, and Astra's C2 review (C2-F2) hid a real import behind a regex
+// literal after an `if (…)`: `if (true) /[/*]/.test('x');` — the lexer read that `/` as division, the `/*` in the
+// character class as a comment, and the import after it vanished, from every one of the twenty roots.
+//
+// NOW A REAL PARSER (Build C Amendment E, CE-2): `@babel/parser`, JSX on, declared as a devDependency at the version
+// the lockfile already holds. It tells a regex literal from division, a comment from a string, a template or JSX text,
+// the way the language does — no context is guessed. A module the parser cannot read FAILS (it throws): a census that
+// cannot read a file never passes it.
+//   importSpecifiersOf  every static import and re-export (`export … from`, `export * from`), every bare `import '…'`
+//                       wherever it stands on its line, and every dynamic `import(…)` whose first argument is a string
+//                       or a template with no `${}` — an options argument after it included. Words in a string, a
+//                       template or a comment that only look like an import are not imports. `require()` is not read
+//                       (the census's modules are ES modules).
+//   stripComments       the source with every comment the parser found removed — a line comment to its end, a block
+//                       comment to its newlines and one space (so line numbers hold) — strings, templates, regex
+//                       literals and JSX untouched. The census's `plays` scan and the write gate read it.
+//   resolveImport       a relative specifier, or the app's `@/` alias (vite.config.js: `@` → src/), to a file.
+// THE PARSE CACHE: each distinct source is parsed once per process (keyed by its SHA-1), so the census's walks and its
+// whole-tree scans read the tree in about one parse of it.
 
+import { parse } from '@babel/parser';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-const REGEX_AFTER = new Set(['', '(', ',', '=', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-', '*', '%', '<', '>', '~', '^']);
-const REGEX_KEYWORD = /(?:^|[^\w$])(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await)\s*$/;
+/** The parser's options: an ES module, JSX on; comments collected but never attached to nodes (only their ranges are read). */
+export const PARSE_OPTIONS = Object.freeze({ sourceType: 'module', plugins: Object.freeze(['jsx']), attachComment: false });
 
-/** The characters the lexer stops at in code; everything between them is copied in one slice. */
-const SPECIAL = /[/"'`{}]/g;
-const WS = /\s/;
+/** Each distinct source's specifiers and comment ranges, by the source's SHA-1. */
+const parses = new Map();
 
-/** `src` with every comment removed (a block comment's newlines kept), strings, templates and regexes untouched. */
-export function stripComments(src) {
-  const s = String(src);
-  const n = s.length;
-  const parts = [];
-  let i = 0;
-  let depth = 0;           // `{` depth in code
-  const resume = [];       // the depths at which a `}` closes a template's `${`
-  let last = '';           // the last significant character emitted in code
-  const emit = (t) => {
-    parts.push(t);
-    for (let k = t.length - 1; k >= 0; k -= 1) if (!WS.test(t[k])) { last = t[k]; return; }
-  };
-  /** The emitted text so far (only for the rare keyword test before a `/`). */
-  const tail = () => parts.slice(-8).join('');
-  /** Read template text from `j` (just after its opening backtick, or after a `}` that resumed it). */
-  const template = (j) => {
-    let k = j;
-    while (k < n) {
-      const ch = s[k];
-      if (ch === '\\') { k += 2; continue; }
-      if (ch === '`') { emit(s.slice(i, k + 1)); i = k + 1; return; }
-      if (ch === '$' && s[k + 1] === '{') { emit(s.slice(i, k + 2)); i = k + 2; resume.push(depth); depth += 1; return; }
-      k += 1;
+/** A specifier written as a static string: a string literal, or a template with no `${}`. */
+const staticText = (node) => {
+  if (!node) return null;
+  if (node.type === 'StringLiteral') return node.value;
+  if (node.type === 'TemplateLiteral' && node.expressions.length === 0) return node.quasis[0]?.value?.cooked ?? null;
+  return null;
+};
+/** Keys of a node that hold no code. */
+const NOT_CODE = new Set(['loc', 'extra', 'comments', 'leadingComments', 'trailingComments', 'innerComments', 'start', 'end', 'range']);
+
+/** Every import specifier in a program, in source order. */
+function specifiersIn(program) {
+  const found = [];
+  const stack = [program];
+  while (stack.length) {
+    const n = stack.pop();
+    if (Array.isArray(n)) { for (const x of n) if (x && typeof x === 'object') stack.push(x); continue; }
+    switch (n.type) {
+      case 'ImportDeclaration':
+      case 'ExportAllDeclaration':
+      case 'ExportNamedDeclaration': { const v = n.source ? staticText(n.source) : null; if (v) found.push([n.start, v]); break; }
+      case 'ImportExpression': { const v = staticText(n.source); if (v) found.push([n.start, v]); break; }
+      case 'CallExpression': if (n.callee?.type === 'Import') { const v = staticText(n.arguments[0]); if (v) found.push([n.start, v]); } break;
+      default: break;
     }
-    emit(s.slice(i)); i = n;
-  };
-  while (i < n) {
-    // plain code up to the next character that can open or close anything: one slice
-    SPECIAL.lastIndex = i;
-    const next = SPECIAL.exec(s);
-    const at = next ? next.index : n;
-    if (at > i) { emit(s.slice(i, at)); i = at; if (i >= n) break; }
-    const c = s[i];
-    const d = s[i + 1];
-    if (c === '/' && d === '/') { const end = s.indexOf('\n', i); i = end < 0 ? n : end; continue; }
-    if (c === '/' && d === '*') {
-      const end = s.indexOf('*/', i + 2);
-      const stop = end < 0 ? n : end + 2;
-      parts.push(`${s.slice(i, stop).replace(/[^\n]/g, '')} `);
-      i = stop;
-      continue;
+    for (const k of Object.keys(n)) {
+      if (NOT_CODE.has(k)) continue;
+      const v = n[k];
+      if (v && typeof v === 'object') stack.push(v);
     }
-    if (c === '"' || c === "'") {
-      let k = i + 1;
-      while (k < n && s[k] !== c && s[k] !== '\n') k += s[k] === '\\' ? 2 : 1;
-      emit(s.slice(i, k + 1)); i = k + 1;
-      continue;
-    }
-    if (c === '`') { template(i + 1); continue; }
-    if (c === '{') { depth += 1; emit(c); i += 1; continue; }
-    if (c === '}') {
-      if (resume.length && resume[resume.length - 1] === depth - 1) { resume.pop(); depth -= 1; parts.push(c); i += 1; template(i); continue; }
-      depth -= 1; emit(c); i += 1; continue;
-    }
-    if (c === '/' && (REGEX_AFTER.has(last) || REGEX_KEYWORD.test(tail()))) {
-      let k = i + 1;
-      let inClass = false;
-      let ok = false;
-      while (k < n && s[k] !== '\n') {
-        const ch = s[k];
-        if (ch === '\\') { k += 2; continue; }
-        if (ch === '[') inClass = true;
-        else if (ch === ']') inClass = false;
-        else if (ch === '/' && !inClass) { ok = true; break; }
-        k += 1;
-      }
-      if (ok) {
-        k += 1;
-        while (k < n && /[a-z]/i.test(s[k])) k += 1;
-        emit(s.slice(i, k)); i = k;
-        continue;
-      }
-    }
-    emit(c); i += 1;
   }
-  return parts.join('');
+  return found.sort((a, b) => a[0] - b[0]).map(([, v]) => v);
 }
 
-/** Every import specifier a module's source names (comments stripped first). */
-const SPEC_RE = /(?:import|export)\s[^'"`]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*(?:'([^']+)'|"([^"]+)"|`([^`$]+)`)\s*\)|^\s*import\s+['"]([^'"]+)['"]/gm;
+/** The source parsed once: `{ specifiers, comments }` (each comment `[start, end, isBlock]`). Throws when it does not parse. */
+function parsedOf(src) {
+  const s = String(src);
+  const key = createHash('sha1').update(s).digest('hex');
+  let hit = parses.get(key);
+  if (!hit) {
+    const ast = parse(s, { ...PARSE_OPTIONS, plugins: [...PARSE_OPTIONS.plugins] });
+    hit = { specifiers: specifiersIn(ast.program), comments: ast.comments.map((c) => [c.start, c.end, c.type === 'CommentBlock']) };
+    parses.set(key, hit);
+  }
+  return hit;
+}
+
+/** Every import specifier a module's source names, in source order (CE-2). */
 export function importSpecifiersOf(src) {
-  return [...stripComments(src).matchAll(SPEC_RE)].map((m) => m[1] || m[2] || m[3] || m[4] || m[5]).filter(Boolean);
+  return [...parsedOf(src).specifiers];
+}
+
+/** `src` with every comment removed (a block comment's newlines kept, and one space), everything else untouched. */
+export function stripComments(src) {
+  const s = String(src);
+  let out = '';
+  let at = 0;
+  for (const [start, end, block] of parsedOf(s).comments) {
+    out += s.slice(at, start);
+    if (block) out += `${s.slice(start, end).replace(/[^\n]/g, '')} `;
+    at = end;
+  }
+  return out + s.slice(at);
 }
 
 const RESOLVE_EXT = ['', '.js', '.jsx', '.mjs', '/index.js', '/index.jsx'];

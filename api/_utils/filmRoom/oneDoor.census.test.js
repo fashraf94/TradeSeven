@@ -40,16 +40,18 @@
 //   existing root fails; the named importer passes for the admitted path and
 //   fails for any other; an import routed around it fails, in either import
 //   order; the ledger reached through the excerpt fails.
-//   THE WALKER READS IMPORTS WITH A LEXER (__fixtures__/jsSource.js; §2
-//   review L2-1): a `/*` inside a line comment once hid live imports from the
-//   regex stripper this file used before.
+//   THE WALKER READS IMPORTS WITH A REAL PARSER (__fixtures__/jsSource.js,
+//   @babel/parser — Build C Amendment E, CE-2): a `/*` inside a line comment
+//   once hid live imports from the regex stripper this file used before (§2
+//   review L2-1), and a regex literal after an `if (…)` hid one from the
+//   hand lexer that replaced it (Astra's C2-F2). Twenty roots on nine paths.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-// C2 (§2 review L2-1): imports read by a lexer, and the `@/` alias resolved, as vite resolves it
+// C2 (CE-2): imports read by @babel/parser, and the `@/` alias resolved, as vite resolves it
 import { stripComments, importSpecifiersOf, resolveImport } from './__fixtures__/jsSource.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -174,11 +176,12 @@ export const NAMED_EXCEPTIONS = Object.freeze([
 const exceptionsFor = (name, exceptions = NAMED_EXCEPTIONS) => exceptions.filter((e) => e.path === name);
 
 // ── the walker (the callRecords/allowlist.test.js precedent) ────────────────
-// C2 (§2 review L2-1): imports are read by a lexer (__fixtures__/jsSource.js) — comments, strings, templates and regex
-// literals told apart — and the app's `@/` alias resolves as vite resolves it; the regex stripper this file used before
-// let a `/*` inside a line comment swallow live imports.
+// C2 (CE-2): imports are read by a real parser (__fixtures__/jsSource.js, @babel/parser with JSX) — comments, strings,
+// templates, regex literals and JSX told apart as the language tells them — and the app's `@/` alias resolves as vite
+// resolves it. The regex stripper this file used before let a `/*` inside a line comment swallow live imports (§2
+// review L2-1); the hand lexer after it let a regex literal after an `if (…)` hide one (Astra's C2-F2).
 const readSource = (file) => readFileSync(file, 'utf8');
-/** Each file's specifiers and comment-stripped source, read ONCE for the suite (the tree does not change under it); a planted reader is never cached. */
+/** Each file's specifiers and comment-stripped source, read ONCE for the suite (the tree does not change under it); a planted reader is never cached here (jsSource.js's parse cache, keyed by the source itself, still parses each distinct source once). */
 const specCache = new Map();
 const strippedCache = new Map();
 function importsOf(file, read = readSource) {
@@ -325,6 +328,10 @@ describe('ONE DOOR — no model path reaches the ledger or reads plays', () => {
     // C2 (CC-1): the Mandate manager's path joins the list — the one key added to this pin
     expect(Object.keys(MODEL_PATHS).sort()).toEqual(['batchReview', 'chat', 'debate', 'deploy', 'evaluator', 'mandate', 'reflection', 'tournament', 'voice']);
     expect(MODEL_PATHS.mandate).toEqual(['api/cron/mandate-evaluate.js', 'api/_utils/mandatePromptAssembly.js']);
+    // CE-6: twenty roots on nine paths, as every record of this census states it
+    expect(Object.keys(MODEL_PATHS)).toHaveLength(9);
+    expect(Object.values(MODEL_PATHS).flat()).toHaveLength(20);
+    expect(new Set(Object.values(MODEL_PATHS).flat()).size).toBe(20);
   });
 
   it('no non-vacuity oracle entry is a root of its own path (review L2-3), and every root either reaches a module no other root reaches, or is covered whole by another root', () => {
@@ -346,7 +353,9 @@ describe('ONE DOOR — no model path reaches the ledger or reads plays', () => {
 });
 
 describe('the whole api/ tree — only the two routes import the ledger store (the door is one)', () => {
-  it('every non-test module under api/ that imports cardStore.js, cardCounter.js or cardRequest.js is a film-room route or a filmRoom module', () => {
+  // CE-2: this row parses every module under api/ and src/ once (the parse cache then serves every other row) — it is
+  // given room beyond vitest's 5 s default, as a parse of the whole tree takes seconds on a loaded host
+  it('every non-test module under api/ that imports cardStore.js, cardCounter.js or cardRequest.js is a film-room route or a filmRoom module', { timeout: 60_000 }, () => {
     const files = [];
     const walk = (dir) => { for (const ent of readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, ent.name); if (ent.isDirectory()) { if (ent.name !== 'node_modules') walk(p); } else if (isModule(ent.name)) files.push(p); } };
     walk(abs('api'));
@@ -371,7 +380,7 @@ describe('C2 — the moment excerpt\'s one named exception, and the Mandate mana
     expect(NAMED_EXCEPTIONS[0].builtBy).toBe('Practice Field T1b + T1d');
     expect(Object.keys(MODEL_PATHS)).not.toContain('drafting');
   });
-  it('only a named importer may import the excerpt — today no module under api/ or src/ imports it at all', () => {
+  it('only a named importer may import the excerpt — today no module under api/ or src/ imports it at all', { timeout: 60_000 }, () => {
     const files = [];
     const walk = (dir) => { for (const ent of readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, ent.name); if (ent.isDirectory()) { if (ent.name !== 'node_modules') walk(p); } else if (isModule(ent.name)) files.push(p); } };
     walk(abs('api'));
@@ -412,6 +421,31 @@ describe('C2 — the rule bites (a planted excerpt import from every root fails;
           expect(around, `${root} dynamic=${dynamic}`).toHaveLength(1);
           expect(around[0].split(/[\\/]/).pop()).toBe('momentExcerpt.js');
         }
+      });
+    }
+  }
+
+  /**
+   * ASTRA'S ATTACK (C2-F2), exactly: valid module code appended to a real root — a regex literal after an `if (…)`
+   * whose character class holds `/*`, then a real static import of the excerpt by its relative path. The hand lexer
+   * read the `/` as division and the `/*` as a comment, and lost the import from every one of the twenty roots.
+   */
+  const astraRead = (rootAbs) => {
+    let spec = path.relative(path.dirname(rootAbs), abs(EXCERPT_MODULE)).split(path.sep).join('/');
+    if (!spec.startsWith('.')) spec = `./${spec}`;
+    const suffix = `if (true) /[/*]/.test('x');\nimport { excerptOf as astraExcerptProbe } from '${spec}';\n`;
+    return (f) => (path.resolve(f) === path.resolve(rootAbs) ? `${readSource(f)}\n${suffix}` : readSource(f));
+  };
+  for (const [name, roots] of Object.entries(MODEL_PATHS)) {
+    for (const root of roots) {
+      it(`${name}: ASTRA'S ATTACK — \`if (true) /[/*]/.test('x');\` then a real import of the excerpt, appended to ${root}, fails the rule (C2-F2, CE-2)`, () => {
+        const read = astraRead(abs(root));
+        const defects = oneDoorDefectsOf(name, roots.map(abs), { read });
+        const routes = defects.filter((d) => d.startsWith('excerpt: '));
+        expect(routes, root).toHaveLength(1);
+        expect(routes[0].split(/[\\/]/).pop()).toBe('momentExcerpt.js');
+        // the root's own imports are all still read, the planted one last: the suffix hides nothing before it either
+        expect(importSpecifiersOf(read(abs(root))).slice(0, -1)).toEqual(importSpecifiersOf(readSource(abs(root))));
       });
     }
   }
@@ -485,6 +519,53 @@ describe('C2 — the rule bites (a planted excerpt import from every root fails;
         expect(excerptRoutesAround('evaluator', [t.at('root.js')], { exceptions: ex, repo: t.root }), name).toHaveLength(1);
       });
     }
+  });
+
+  /** One synthetic root's source judged for the unadmitted `evaluator`: the routes to the excerpt it opens (`alias`: the excerpt named under src/). */
+  const routesFrom = (rootSrc, { alias = false } = {}) => withTree({ 'fr/excerpt.js': EXCERPT_SRC, 'src/fr/excerpt.js': EXCERPT_SRC, 'root.js': rootSrc }, (t) => {
+    const ex = alias ? [{ path: 'drafting', importer: 'pf/drafting.js', imports: 'src/fr/excerpt.js' }] : t.exceptions;
+    return excerptRoutesAround('evaluator', [t.at('root.js')], { exceptions: ex, repo: t.root });
+  });
+  const IMPORT_AFTER = "\nimport { read } from './fr/excerpt.js';\nexport const r = read;\n";
+  it('A REGEX AFTER ANY CONTROL STATEMENT HIDES NOTHING (CE-2): after `if (…)`, `while (…)`, `for (…)`, `else`, `return`, `typeof` and `=>`, a regex whose class holds `/*` — the import after it is reached', () => {
+    const cases = {
+      'if (…)': "if (true) /[/*]/.test('x');",
+      'while (…)': "while (false) /[/*]/.test('x');",
+      'for (…)': "for (let i = 0; i < 0; i += 1) /[/*]/.test('x');",
+      'else': "if (false) {} else /[/*]/.test('x');",
+      'return': "export function f() { return /[/*]/.test('x'); }",
+      'typeof': 'export const t = typeof /[/*]/;',
+      '=>': "export const g = () => /[/*]/.test('x');",
+    };
+    for (const [name, prefix] of Object.entries(cases)) expect(routesFrom(prefix + IMPORT_AFTER), name).toHaveLength(1);
+  });
+  it('EVERY IMPORT FORM IS AN EDGE (CE-2): static, re-export, export-all, bare, a bare import on the same line as a statement, dynamic, a static template, `import()` with an options argument, the `@/` alias', () => {
+    const cases = {
+      static: ["import { read } from './fr/excerpt.js';\nexport const r = read;\n"],
+      'a re-export': ["export { read } from './fr/excerpt.js';\n"],
+      'export-all': ["export * from './fr/excerpt.js';\n"],
+      bare: ["import './fr/excerpt.js';\n"],
+      'same line, after a statement': ["const a = 1; import './fr/excerpt.js';\nexport const b = a;\n"],
+      dynamic: ["export const later = () => import('./fr/excerpt.js');\n"],
+      'a static template': ['export const later = () => import(`./fr/excerpt.js`);\n'],
+      'import() with an options argument': ["export const later = () => import('./fr/excerpt.js', { with: { type: 'javascript' } });\n"],
+      'the @/ alias': ["import { read } from '@/fr/excerpt.js';\nexport const r = read;\n", { alias: true }],
+    };
+    for (const [name, [src, opts]] of Object.entries(cases)) expect(routesFrom(src, opts), name).toHaveLength(1);
+  });
+  it('NO FALSE EDGE (CE-2): words that only look like an import — in a string, a template, JSX text or a comment — open no route', () => {
+    const cases = {
+      'a string': "const s = \"import './fr/excerpt.js'\";\nexport const t = s;\n",
+      'a string holding a from clause': "const s = \"import { read } from './fr/excerpt.js'\";\nexport const t = s;\n",
+      'a template': "const s = `import('./fr/excerpt.js')`;\nexport const t = s;\n",
+      'a template holding an export-all': 'const s = `export * from "./fr/excerpt.js"`;\nexport const t = s;\n',
+      'JSX text': "export const P = () => <p>import './fr/excerpt.js' and import('./fr/excerpt.js')</p>;\n",
+      comments: "// import './fr/excerpt.js'\n/* import { read } from './fr/excerpt.js'; */\nexport const t = 1;\n",
+    };
+    for (const [name, src] of Object.entries(cases)) expect(routesFrom(src), name).toEqual([]);
+  });
+  it('A MODULE THE PARSER CANNOT READ FAILS — never passed as a module with no imports (CE-2)', () => {
+    expect(() => routesFrom("import { read } from './fr/excerpt.js';\nexport const r = read(;\n")).toThrow();
   });
 });
 
