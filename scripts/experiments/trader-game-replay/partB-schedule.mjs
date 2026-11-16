@@ -1,0 +1,213 @@
+#!/usr/bin/env node
+// scripts/experiments/trader-game-replay/partB-schedule.mjs
+//
+// Part B — the 30-minute schedule (ruling BB-23). Offline and deterministic: reads only
+// the local export. Battles with `ticks` rows (one row per check, from 22 Sep 2026).
+//
+// THE SLOT RULE. A check's slot is its capture time floored to the 15-minute cron grid
+// (rows land seconds to minutes after the cron fires). A check is SCHEDULED when its slot
+// is an even number of 15-minute steps after the battle's first check's slot: the battle's
+// first check, then every 30 minutes. Every other check is SKIPPED. Eastern time comes from
+// Intl with an explicit zone (replayLib.etOf); nothing reads the host clock.
+//
+// ELIGIBLE checks are the ones that can reach the model today: a check that ended on the
+// gameplan-meeting path or on degraded quotes never calls the trading brain, on any schedule.
+//
+// EVENT CHECKS. A skipped eligible check still calls the model if, since the last scheduled
+// check (window: after that check's capture, up to this one's):
+//   fill     — a sale committed in the window, or by the code's own exits at this check
+//              (the model's own swap at this check is the action, not its trigger)
+//   move X   — a held stock moved |Δprice| / price ≥ X volatility units since the last
+//              scheduled check (unit: baseATR for legacy, the receipt's scoringPct for measured;
+//              prices: the film tape's price at each check). Crypto has no tape: not measured.
+//   level    — the gate's own stored `threshold_proximity` trigger at this check (agentTriggerGate.js:
+//              within 0.2 units of an unearned bonus or an uncrossed penalty)
+//   command  — a cockpit command (calls[].playerResponse.filedAt) or a chat message or filed
+//              directive (chatExchanges[].timestamp with a user message or messageType directive_filed)
+//
+// DELAY COST of a model swap at a skipped check that no event catches: the same swap at the next
+// scheduled check (or no swap, if none is left). Both legs are scored with the REAL scorer
+// (calculateAssetScoreServer, api/_utils/agentScoring.js — fenced, CALLED only) from tape prices
+// at each check: the outgoing position to its exit, the incoming one from its fill to its own
+// exit (a later sale, else the last check). Touch records are rebuilt from the same check prices.
+//
+// USAGE: node scripts/experiments/trader-game-replay/partB-schedule.mjs --in <export dir>
+
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { calculateAssetScoreServer } from '../../../api/_utils/agentScoring.js';
+import { stockModelRoute, isStock } from '../../../src/utils/stockThresholdModel.js';
+import { parseArgs, bundles, writeResult, etOf, round2, sum, median, mean, tally, mdTable, pct } from './replayLib.mjs';
+
+export const XS = [0.25, 0.5, 0.75];
+const NO_MODEL_EXITS = new Set(['gameplan_created', 'gameplan_pending', 'degraded_quotes']);
+
+const slotIndex = (iso) => { const e = etOf(iso); return e ? Date.parse(`${e.date}T00:00:00Z`) / 900_000 + Math.floor(e.minutes / 15) : null; };
+
+/** Mark each check scheduled/skipped and eligible; link each skipped check to its last scheduled one. */
+export function scheduleChecks(ticks) {
+  const sorted = [...ticks].sort((a, b) => a.tickSeq - b.tickSeq);
+  const first = slotIndex(sorted[0]?.capturedAt);
+  let lastScheduled = null;
+  return sorted.map((t) => {
+    const k = slotIndex(t.capturedAt) - first;
+    const row = { tick: t, seq: t.tickSeq, at: t.capturedAt, scheduled: k % 2 === 0, eligible: !NO_MODEL_EXITS.has(t.exitReason), modelRan: t.model?.dispatched === true, prev: lastScheduled };
+    if (row.scheduled) lastScheduled = row;
+    return row;
+  });
+}
+
+/** Volatility unit per symbol: measured receipts' scoringPct, else the battle's threshold or slot baseATR. */
+function unitsOf(battle) {
+  const units = {};
+  const measured = stockModelRoute(battle).status === 'corrected';
+  const slots = ['star', 'core', 'support'].flatMap((t) => [...(battle.portfolio?.[t] || []), ...(battle.opponent?.portfolio?.[t] || [])]).filter(Boolean);
+  for (const a of slots) units[a.symbol] ??= a.baseATR;
+  for (const t of battle.trades || []) units[t.symbolOut] ??= t.outgoingReceipt?.scoringPct;
+  for (const [s, v] of Object.entries(battle.scoring?.thresholds || {})) if (!measured || units[s] == null) units[s] = v?.threshold ?? units[s];
+  if (measured) {
+    for (const a of slots) if (a.stockThresholdReceipt) units[a.symbol] = a.stockThresholdReceipt.scoringPct;
+    for (const t of battle.trades || []) {
+      if (t.outgoingReceipt) units[t.outgoingReceipt.symbol] = t.outgoingReceipt.scoringPct;
+      if (t.incomingReceipt) units[t.incomingReceipt.symbol] = t.incomingReceipt.scoringPct;
+    }
+  }
+  return units;
+}
+
+/** Price of `symbol` at a check: the tape's price at that tickSeq, else the last 10-minute bar closed by then. */
+function pricer(tape) {
+  const series = new Map();
+  for (const d of tape) for (const s of d.series || []) series.set(s.symbol, s);
+  return (symbol, seq, at) => {
+    const s = series.get(symbol);
+    if (!s) return null;
+    const c = (s.atChecks || []).find((x) => x.tickSeq === seq);
+    if (c?.price > 0) return c.price;
+    const bar = (s.bars || []).filter((b) => Date.parse(b.t) + 600_000 <= Date.parse(at)).at(-1);
+    return bar?.c > 0 ? bar.c : null;
+  };
+}
+
+/** Score one position from entry to exit over the check prices between, with the real scorer. */
+function scoreSpan({ symbol, tier, unit, prices }) {
+  const [entry, ...rest] = prices;
+  if (!(entry > 0) || rest.some((p) => !(p > 0)) || !rest.length) return null;
+  const m = rest.map((p) => ((p - entry) / entry) * 100 / unit);
+  const change = ((rest.at(-1) - entry) / entry) * 100;
+  return calculateAssetScoreServer({ symbol, baseATR: unit, tier }, change, { maxMultiplier: Math.max(0, ...m), minMultiplier: Math.min(0, ...m) }, {}, change).totalPoints;
+}
+
+function commandTimes(bundle) {
+  const out = [];
+  for (const c of bundle.calls || []) if (c.playerResponse?.filedAt) out.push(c.playerResponse.filedAt);
+  for (const x of bundle.battle.chatExchanges || []) if (typeof x.timestamp === 'string' && ((typeof x.userMessage === 'string' && x.userMessage.trim()) || x.messageType === 'directive_filed')) out.push(x.timestamp);
+  return out;
+}
+
+export function analyzeBattle(bundle) {
+  const { battle } = bundle;
+  const checks = scheduleChecks(bundle.ticks);
+  const evals = new Map((battle.evaluations || []).map((e) => [e.evalId, e]));
+  const units = unitsOf(battle);
+  const priceAt = pricer(bundle.tape);
+  const commands = commandTimes(bundle);
+  const bySeq = new Map(checks.map((c) => [c.seq, c]));
+  const held = (c) => Object.keys(c.tick.risk?.verdicts || {}).filter((s) => isStock({ symbol: s }));
+
+  for (const c of checks) {
+    c.eval = c.modelRan ? evals.get(c.tick.evalId) || null : null;
+    c.modelSwap = (c.tick.actions || []).find((a) => a.source === 'haiku' && a.committed) || null;
+    if (c.scheduled || !c.eligible) continue;
+    const p = c.prev;
+    const inWindow = (iso) => !!iso && (!p || iso > p.at) && iso <= c.at;
+    const between = checks.filter((x) => p && x.seq > p.seq && x.seq < c.seq);
+    const fill = between.some((x) => (x.tick.actions || []).some((a) => a.committed)) || (c.tick.actions || []).some((a) => a.committed && a.source !== 'haiku' && a.source !== 'guardrail');
+    const level = (c.eval?.triggers || []).includes('threshold_proximity');
+    const command = commands.some(inWindow);
+    const moves = {};
+    let measuredMoves = 0;
+    for (const X of XS) moves[X] = false;
+    if (p) for (const s of held(c).filter((x) => held(p).includes(x))) {
+      const a = priceAt(s, p.seq, p.at), b = priceAt(s, c.seq, c.at), u = units[s];
+      if (!(a > 0 && b > 0 && u > 0)) continue;
+      measuredMoves++;
+      const units_ = Math.abs(b - a) / a * 100 / u;
+      for (const X of XS) if (units_ >= X) moves[X] = true;
+    }
+    c.events = { fill, level, command, moves, measuredMoves };
+    c.caught = Object.fromEntries(XS.map((X) => [X, fill || level || command || moves[X]]));
+  }
+
+  // ---- delay cost of each model swap at a skipped check.
+  const trades = battle.trades || [];
+  const lastCheck = checks.at(-1);
+  const actions = checks.filter((c) => !c.scheduled && c.modelSwap).map((c) => {
+    const a = c.modelSwap;
+    const trade = trades.find((t) => t.symbolOut === a.symbolOut && t.symbolIn === a.symbolIn && Math.abs(Date.parse(t.swappedOutAt) - Date.parse(c.at)) < 900_000);
+    const tier = trade?.tier || a.tier || 'support';
+    const next = checks.find((x) => x.seq > c.seq && x.scheduled) || null;
+    const outEntrySeq = (() => { const t = [...trades].reverse().find((x) => x.symbolIn === a.symbolOut && x.swappedOutAt < c.at); return t ? checks.find((x) => x.at >= t.swappedOutAt)?.seq ?? checks[0].seq : checks[0].seq; })();
+    const inExit = trades.find((t) => t.symbolOut === a.symbolIn && t.swappedOutAt > c.at);
+    const inExitSeq = inExit ? checks.find((x) => x.at >= inExit.swappedOutAt)?.seq ?? lastCheck.seq : lastCheck.seq;
+    const span = (sym, fromSeq, toSeq) => checks.filter((x) => x.seq >= fromSeq && x.seq <= toSeq).map((x) => priceAt(sym, x.seq, x.at));
+    const outPrices = (to) => span(a.symbolOut, outEntrySeq, to);
+    const entryOf = (sym) => { const p0 = trade?.entryPrice; return sym === a.symbolOut && p0 > 0 ? p0 : null; };
+    const withEntry = (prices) => { const e = entryOf(a.symbolOut); return e ? [e, ...prices.slice(1)] : prices; };
+    const orig = [scoreSpan({ symbol: a.symbolOut, tier, unit: units[a.symbolOut], prices: withEntry(outPrices(c.seq)) }), scoreSpan({ symbol: a.symbolIn, tier, unit: units[a.symbolIn], prices: span(a.symbolIn, c.seq, inExitSeq) })];
+    const delayed = next && next.seq <= inExitSeq
+      ? [scoreSpan({ symbol: a.symbolOut, tier, unit: units[a.symbolOut], prices: withEntry(outPrices(next.seq)) }), scoreSpan({ symbol: a.symbolIn, tier, unit: units[a.symbolIn], prices: span(a.symbolIn, next.seq, inExitSeq) })]
+      : [scoreSpan({ symbol: a.symbolOut, tier, unit: units[a.symbolOut], prices: withEntry(outPrices(inExitSeq)) }), 0];
+    const ok = [...orig, ...delayed].every(Number.isFinite);
+    return { seq: c.seq, at: c.at, et: etOf(c.at), tier, caught: c.caught, events: c.events, nextAfterMin: next ? Math.round((Date.parse(next.at) - Date.parse(c.at)) / 60000) : null, heldToEnd: !inExit, cost: ok ? sum(delayed) - sum(orig) : null, orig, delayed, storedLocked: trade?.lockedPoints ?? null, archetype: battle.agentContext?.archetype, route: stockModelRoute(battle).status, priced: ok };
+  });
+  return { checks, actions, outOfGridStart: etOf(checks[0].at).minutes % 30 !== 0 };
+}
+
+function main() {
+  const flags = parseArgs(process.argv);
+  const battles = [...bundles(flags.in)].filter((b) => b.ticks.length).map((b) => ({ label: b.label, archetype: b.row.archetype, route: b.row.route, ...analyzeBattle(b) }));
+  const all = battles.flatMap((b) => b.checks);
+  const calls = all.filter((c) => c.modelRan);
+  const holds = calls.filter((c) => c.eval?.decision === 'HOLD');
+  console.log(`## Part B — ${battles.length} battle-days with check rows; ${all.length} checks; ${calls.length} model calls; holds ${pct(holds.length, calls.length)}\n`);
+  console.log('### Today, per battle-day\n');
+  const perDay = (f) => median(battles.map((b) => f(b)));
+  console.log(mdTable([
+    ['Checks run', (b) => b.checks.length], ['Eligible (can reach the model)', (b) => b.checks.filter((c) => c.eligible).length], ['Model calls', (b) => b.checks.filter((c) => c.modelRan).length],
+  ].map(([k, f]) => ({ k, total: sum(battles.map(f)), median: perDay(f), mean: mean(battles.map(f)) })), [['', (r) => r.k], ['Total', (r) => r.total], ['Median per battle-day', (r) => r.median], ['Mean per battle-day', (r) => r.mean]]));
+  console.log('\nWhy checks did not call the model:', JSON.stringify(tally(all.filter((c) => !c.modelRan), (c) => c.tick.exitReason)));
+  const trig = {};
+  for (const c of calls) for (const t of new Set(c.eval?.triggers || [])) trig[t] = (trig[t] || 0) + 1;
+  const only = tally(calls, (c) => [...new Set(c.eval?.triggers || [])].sort().join('+'));
+  console.log('\n### Triggers on the model calls (a call can carry several)\n');
+  console.log(mdTable(Object.entries(trig).sort((a, b) => b[1] - a[1]).map(([k, n]) => ({ k, n })), [['Trigger', (r) => r.k], ['Calls carrying it', (r) => pct(r.n, calls.length)]]));
+  console.log('\nTrigger sets, most common:', Object.entries(only).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => `${k}: ${n}`).join('; '));
+
+  const sched = all.filter((c) => c.scheduled);
+  const skippedEligible = all.filter((c) => !c.scheduled && c.eligible);
+  console.log(`\n### The schedule\n\nScheduled checks: ${sched.length} (eligible ${sched.filter((c) => c.eligible).length}); skipped: ${all.length - sched.length} (eligible ${skippedEligible.length}). Battles whose first check is off the half-hour: ${battles.filter((b) => b.outOfGridStart).length} of ${battles.length}.`);
+  console.log(`Today, model calls at checks the schedule keeps: ${calls.filter((c) => c.scheduled).length}; at checks it skips: ${calls.filter((c) => !c.scheduled).length}.`);
+  const rows = XS.map((X) => {
+    const ev = skippedEligible.filter((c) => c.caught[X]).length;
+    const gateKept = sched.filter((c) => c.modelRan).length;
+    const always = sched.filter((c) => c.eligible).length;
+    return { X, ev, gate: (gateKept + ev) / battles.length, always: (always + ev) / battles.length, missed: battles.flatMap((b) => b.actions).filter((a) => !a.caught[X]).length };
+  });
+  console.log('\n### Model calls per battle-day\n');
+  console.log(mdTable([{ X: 'today', gate: calls.length / battles.length, always: null, ev: null, missed: 0 }, ...rows], [['X', (r) => r.X], ['Event checks (all battles)', (r) => r.ev], ['Calls/day — gate still decides at scheduled checks', (r) => r.gate], ['Calls/day — model always runs at scheduled checks', (r) => r.always], ['Model swaps missed', (r) => r.missed]]));
+  console.log('\nEvent reasons at skipped eligible checks:', JSON.stringify({ fill: skippedEligible.filter((c) => c.events.fill).length, level: skippedEligible.filter((c) => c.events.level).length, command: skippedEligible.filter((c) => c.events.command).length, ...Object.fromEntries(XS.map((X) => [`move ${X}`, skippedEligible.filter((c) => c.events.moves[X]).length])) }), `| skipped eligible checks with no held stock priced at both ends: ${skippedEligible.filter((c) => c.events.measuredMoves === 0).length}`);
+
+  const acts = battles.flatMap((b) => b.actions.map((a) => ({ ...a, label: b.label })));
+  const modelSwaps = battles.flatMap((b) => b.checks.filter((c) => c.modelSwap)).length;
+  console.log(`\n### Model swaps\n\nAll model swaps: ${modelSwaps}; at skipped checks: ${acts.length}.\n`);
+  console.log(mdTable(XS.map((X) => { const miss = acts.filter((a) => !a.caught[X]); const priced = miss.filter((a) => a.priced); return { X, miss: miss.length, priced: priced.length, total: sum(priced.map((a) => a.cost)), median: median(priced.map((a) => a.cost)) }; }), [['X', (r) => r.X], ['Missed', (r) => r.miss], ['Priced', (r) => r.priced], ['Total point cost of delay (+ = delay gains)', (r) => r.total], ['Median', (r) => r.median]]));
+  console.log('\nEach model swap at a skipped check:\n');
+  console.log(mdTable(acts, [['Battle', (a) => a.label], ['Archetype', (a) => a.archetype], ['ET', (a) => `${a.et.date} ${String(Math.floor(a.et.minutes / 60)).padStart(2, '0')}:${String(a.et.minutes % 60).padStart(2, '0')}`], ['Tier', (a) => a.tier], ['Caught at 0.25 / 0.5 / 0.75', (a) => XS.map((X) => (a.caught[X] ? 'yes' : 'no')).join(' / ')], ['Events', (a) => ['fill', 'level', 'command'].filter((k) => a.events[k]).join('+') || '—'], ['Next scheduled (min)', (a) => a.nextAfterMin], ['Delay cost (pts)', (a) => a.cost]]));
+  const gaps = acts.filter((a) => Number.isFinite(a.storedLocked) && Number.isFinite(a.orig[0])).map((a) => Math.abs(a.orig[0] - a.storedLocked));
+  console.log(`\nPrice-source check: the outgoing leg scored from tape prices vs the stored locked points of the same sale — median gap ${median(gaps)} pts, largest ${Math.max(...gaps)} (${gaps.length} sales). The stored fill used the battle's own quote; the tape prices the check's minute.`);
+  console.log('\nLegs of each priced case (outgoing, incoming), as done vs delayed:', acts.map((a) => `${a.label} ${a.archetype} ${a.tier}: ${JSON.stringify(a.orig)} → ${JSON.stringify(a.delayed)} = ${a.cost}`).join(' | '));
+  writeResult(flags.in, 'partB.json', { battles: battles.map((b) => ({ label: b.label, checks: b.checks.map((c) => ({ seq: c.seq, at: c.at, scheduled: c.scheduled, eligible: c.eligible, modelRan: c.modelRan, events: c.events || null, caught: c.caught || null })), actions: b.actions })), rows });
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) main();
