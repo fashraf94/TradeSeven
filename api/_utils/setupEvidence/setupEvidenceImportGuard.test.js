@@ -69,6 +69,15 @@ const ALLOWED_OUTSIDE = new Set([
   'api/research/setup-read.test.js', // the route's rows: the REAL readSnapshot over an in-memory db that fails on any claims touch or write
   'api/_utils/setupRead/__fixtures__/readRecords.js', // test fixture: real records through acquire.js (acquireOnce + snapshotDocOf)
   'api/_utils/setupRead/projection.test.js', // pins the projection's schema version to acquire.js SNAPSHOT_SCHEMA_VERSION
+  // The chart's evidence, PR B — the daily sweep (docs/specs/CHART_EVIDENCE_SPEC_V1.md SW-1 – SW-9), behind
+  // SETUP_EVIDENCE_SWEEP_ENABLED. The cron (api/cron/setup-evidence-sweep.js), the gate, the constants and the state
+  // module name neither the library nor its collections and are not callers; the files below do. Each by exact filename.
+  'api/_utils/setupEvidenceSweep/sweep.js', // the sweep: readSnapshot, then getOrAcquireSnapshot with a counting fetchPayload
+  'api/_utils/setupEvidenceSweep/sweep.test.js', // the sweep's rows, the REAL store over an in-memory db
+  'api/_utils/setupEvidenceSweep/constants.test.js', // pins the restated store constants to acquire.js and store.js
+  'scripts/census-setup-evidence-sweep.mjs', // the read-only day-after census: key.js, sessionAt.js, field-masked reads of the records
+  'scripts/census-setup-evidence-sweep.test.js', // the census's import pin and its rows
+  'test/rules/setupEvidenceSweep.rules.mjs', // the sweep against the emulator, with the real store underneath
 ]);
 const isListed = (file) => ALLOWED_OUTSIDE.has(file);
 
