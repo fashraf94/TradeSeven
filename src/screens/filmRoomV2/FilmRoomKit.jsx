@@ -87,8 +87,7 @@ const withSuffix = (text, suffix) => (suffix ? <span style={{ whiteSpace: 'nowra
  * A number from a tape or series document, by path, with the marker of the
  * class that document declares for that path. A missing value renders '—'
  * (no number, so no marker).
- */
-/**
+ *
  * `classes` (Film Room C2 fix round, CE-5): a declaration handed in for a document that holds none of its own — the
  * battle's carried idea version, `recorded` (filmRoomSubject.js CARRIAGE_NUMBER_CLASSES). Absent, the document's own.
  */

@@ -27,6 +27,8 @@ import { useTapeDay, useSeriesDay, useIdeaVersion, firestoreReaders } from './fi
 // Film Room C2 item 5 (Amendment C CC-7): the idea the battle carried (Amendment D CD-8), read for the subject line under
 // cards mode only
 import { carriedIdeaOf } from '../../utils/filmRoomSubject';
+// C2 fix round (the §2 review's CX3-1): a casual clone's battle attributes to the parent only the counter names here
+import { isCasualCloneId } from '../../constants/leagueTournament';
 import { hasSeenFirstOpen, markFirstOpenSeen } from './filmRoomSeen';
 import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented, tabIdOf, panelIdOf, Chip, PrimaryButton, When, StoredNote, EmptyCard, AggNum, TapeNum } from './FilmRoomKit';
 import FilmRoomGlance from './FilmRoomGlance';
@@ -257,7 +259,12 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // nothing asked, nothing shown)
   const idea = useIdeaVersion(cards.on === true && tape && Array.isArray(tape.checks) ? carriedIdeaOf(battle) : null, readers);
   // C2 fix round (CE-1): the ids the agent's excerpt of this day knows — the subject line leaves out a statement holding one
-  const subjectIds = { ownerId: tape?.ownerId ?? null, battleId: tape?.battleId ?? null, battleAgentId: battle?.agentId ?? null, attributionAgentId: cards.counter?.data?.attributionAgentId ?? null };
+  // A casual clone's battle attributes to its parent, which only the counter names on this screen: until it has (the
+  // counter still reading, or its read failed), the ids the excerpt knows are not all held, and the form says no line
+  // for a battle carrying an idea — saying nothing is not saying something else (the review's CX3-1)
+  const cloneBattle = isCasualCloneId(battle?.agentId);
+  const attributionAgentId = cards.counter?.data?.attributionAgentId ?? (cloneBattle ? null : battle?.agentId ?? null);
+  const subjectIds = { ownerId: tape?.ownerId ?? null, battleId: tape?.battleId ?? null, battleAgentId: battle?.agentId ?? null, attributionAgentId, pending: cloneBattle && !attributionAgentId };
   const [picked, setPicked] = useState(null);      // the moment the form is open for
   const [receipt, setReceipt] = useState(null);    // the card the receipt shows
   // B2.1 B2: a moment opened from another battle's recurrence is jumped to once the prepared case lists it (the cards'

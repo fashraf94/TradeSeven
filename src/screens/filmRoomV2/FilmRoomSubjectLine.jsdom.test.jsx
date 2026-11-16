@@ -5,7 +5,8 @@
 // Film Room C2 item 5 — THE SUBJECT LINE on the screen (Build C spec §5; Amendment C CC-7), over the Sep 23 day the
 // moment excerpt's goldens are built from (api/_utils/filmRoom/__fixtures__/excerptFixtures.js, the real passes):
 //   ON THE SCREEN    under cards mode (the shipped 'allowlist', the owner admitted) the form for a moment shows the line
-//                    under the moment's facts, the day's carried idea read ONCE, its version marked as the tape's;
+//                    under the moment's facts, the battle's carried idea read ONCE (CD-8), its version marked as the
+//                    battle's own number, `recorded` (CE-5);
 //   CARDS OFF        no line at all, and the version never read;
 //   THE RECEIPT      the card's own day shows the line, EQUAL to the agent's excerpt's projection of the same card
 //                    (momentExcerpt.js excerptOfCard → subjectOfExcerpt); a card from another day shows none;
@@ -19,7 +20,7 @@ import React from 'react';
 import FilmRoomScreenV2 from './FilmRoomScreenV2';
 import { Receipt, YourCall } from './FilmRoomCardRegions';
 import { mounter, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, boundSubjectStatementOf, SPEC_SUBJECT_STATEMENT } from './__fixtures__/filmRoomHarness';
-import { excerptDay, excerptStore, excerptCardWith, ideaVersionDoc, dbOf, OWNER, AGENT, SEP23, EXCERPT_BATTLE, EXCERPT_ENTRY, EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION, EXCERPT_STATEMENT, ETN_MOMENT } from '../../../api/_utils/filmRoom/__fixtures__/excerptFixtures.js';
+import { excerptDay, excerptStore, excerptCardWith, ideaVersionDoc, dbOf, OWNER, AGENT, SEP23, EXCERPT_BATTLE, EXCERPT_ENTRY, EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION, EXCERPT_STATEMENT, ETN_MOMENT, CLONE_AGENT } from '../../../api/_utils/filmRoom/__fixtures__/excerptFixtures.js';
 import { buildCardDoc } from '../../../api/_utils/filmRoom/cardStore.js';
 import { excerptOf, excerptOfCard } from '../../../api/_utils/filmRoom/momentExcerpt.js';
 import { subjectOfExcerpt, SUBJECT_STATEMENT_CODE_POINTS } from '../../utils/filmRoomSubject';
@@ -35,7 +36,7 @@ afterEach(() => { m.teardown(); vi.restoreAllMocks(); });
 
 const card = (o) => excerptCardWith(buildCardDoc, o);
 /** The battle the screen is handed — carrying the idea on its frozen carriage, as the excerpt's fixture battle does (CD-8). */
-const battle = ({ carriage = true } = {}) => ({ id: EXCERPT_BATTLE, agentBattleId: EXCERPT_BATTLE, ownerId: OWNER, agentId: AGENT, status: 'completed', completedAt: '2026-09-23T20:05:00.000Z', timing: { tradingDays: [SEP23] }, agentContext: { agentName: 'Momentum chaser', archetype: 'momentum_chaser', ...(carriage ? { equippedHypothesis: structuredClone(DAY.fx.battle.agentContext.equippedHypothesis) } : {}) }, gameMode: 'baggerbomb_agent' });
+const battle = ({ carriage = true, agentId = AGENT } = {}) => ({ id: EXCERPT_BATTLE, agentBattleId: EXCERPT_BATTLE, ownerId: OWNER, agentId, status: 'completed', completedAt: '2026-09-23T20:05:00.000Z', timing: { tradingDays: [SEP23] }, agentContext: { agentName: 'Momentum chaser', archetype: 'momentum_chaser', ...(carriage ? { equippedHypothesis: structuredClone(DAY.fx.battle.agentContext.equippedHypothesis) } : {}) }, gameMode: 'baggerbomb_agent' });
 const COUNTER = (cards = []) => ({ agentId: AGENT, attributionAgentId: AGENT, archetypeCodeId: 'momentum_chaser', cards, open: cards.length, cap: 5, recurrences: {}, book: { open: false }, unavailableDays: {}, weekly: [], window: { from: SEP23, to: SEP23 } });
 const cardsApi = (admitted, cards = []) => ({ readVerdict: async () => admitted, readCounter: async () => ({ ok: true, status: 200, body: COUNTER(cards) }), postCard: async () => ({ ok: false, status: 400, body: { error: 'x' } }), newOpId: () => 'op_s1' });
 /** The readers, with the idea's one read counted. */
@@ -50,8 +51,8 @@ const lineText = (el) => { const c = el.cloneNode(true); for (const k of c.query
 const STATEMENT_60 = [...EXCERPT_STATEMENT].slice(0, SUBJECT_STATEMENT_CODE_POINTS).join('');
 const FULL = `ETN · Industrials · under your idea '${STATEMENT_60}' v${EXCERPT_IDEA_VERSION}`;
 
-async function openScreen({ admitted = true, r = readers(), cards = [] } = {}) {
-  m.render(<FilmRoomScreenV2 battle={battle()} onBack={() => {}} viewerId="viewer-s" readers={r} nowMs={NOW} cardsApi={cardsApi(admitted, cards)} />);
+async function openScreen({ admitted = true, r = readers(), cards = [], battleDoc = battle(), api = cardsApi(admitted, cards) } = {}) {
+  m.render(<FilmRoomScreenV2 battle={battleDoc} onBack={() => {}} viewerId="viewer-s" readers={r} nowMs={NOW} cardsApi={api} />);
   await m.flush(10);
   return r;
 }
@@ -107,6 +108,29 @@ describe('CC-7 — on the screen, under cards mode only', () => {
     await m.flush(6);
     const ofCard = await excerptOfCard(dbOf(excerptStore(DAY, { card: card(), idea: doc })).db, { uid: OWNER, attributionAgentId: AGENT, entryId: EXCERPT_ENTRY });
     expect(lineText(m.q(`[data-card-receipt="${EXCERPT_ENTRY}"] [data-subject-line]`))).toBe(subjectOfExcerpt(ofCard.excerpt).text);
+  });
+  it('CX3-1 / CX3-2 — A CASUAL CLONE\'S BATTLE: the form knows the parent agent through the counter, and a statement holding the parent\'s id is off the line, equal to excerptOf; while the counter has not named the parent, NO line for a battle carrying an idea', async () => {
+    const doc = ideaVersionDoc({ statement: `Recorded ${AGENT} here.` });
+    expect(CLONE_AGENT.includes(AGENT)).toBe(false);   // only the parent's own id can catch it
+    await openScreen({ r: readers(doc), battleDoc: battle({ agentId: CLONE_AGENT }) });
+    await takeHome();
+    const cloneDay = await excerptDay({ clone: true });
+    const moment = await excerptOf(dbOf(excerptStore(cloneDay, { clone: true, idea: doc, card: card() })).db, { uid: OWNER, attributionAgentId: AGENT, battleId: EXCERPT_BATTLE, etDate: SEP23, moment: ETN_MOMENT });
+    expect(moment.excerpt.idea).toEqual({ label: 'i1', version: { value: EXCERPT_IDEA_VERSION, class: 'recorded' } });
+    const formLine = m.q('[data-card-form] [data-subject-line]');
+    expect(lineText(formLine)).toBe(subjectOfExcerpt(moment.excerpt).text);
+    expect(formLine.textContent).not.toContain(AGENT);
+    m.teardown(); m.setup();
+    const pending = { ...cardsApi(true), readCounter: () => new Promise(() => {}) };
+    await openScreen({ r: readers(doc), battleDoc: battle({ agentId: CLONE_AGENT }), api: pending });
+    await takeHome();
+    expect(m.q('[data-card-form]')).toBeTruthy();
+    expect(m.q('[data-card-form] [data-subject-line]')).toBeNull();
+    // and a battle that is not a clone's needs no counter: its own agent is the attribution agent
+    m.teardown(); m.setup();
+    await openScreen({ r: readers(doc), api: { ...cardsApi(true), readCounter: () => new Promise(() => {}) } });
+    await takeHome();
+    expect(lineText(m.q('[data-card-form] [data-subject-line]'))).toBe(`ETN · Industrials · under your idea v${EXCERPT_IDEA_VERSION}`);
   });
   it('CARDS OFF (the owner not admitted): no line anywhere, and the idea never read (the mutant: the line shown with cards off)', async () => {
     const r = await openScreen({ admitted: false });

@@ -92,7 +92,7 @@ export const firestoreReaders = Object.freeze({
  * the read: idle, nothing asked.
  *
  * @param {{ watchlistId: string, hypothesisVersion: number }|null} ref
- * @returns {{ status: 'idle'|'loading'|'ready'|'missing'|'error', doc: object|null }}
+ * @returns {{ status: 'idle'|'loading'|'ready'|'missing'|'denied'|'error', doc: object|null }}
  */
 export function useIdeaVersion(ref, readers = firestoreReaders) {
   const cache = useRef(new Map());

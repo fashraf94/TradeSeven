@@ -73,7 +73,7 @@ import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, eyebrow, foot, mono, plain, tint, AggNum, TapeNum, When, Rec, Coverage, Quotation, TextButton, PrimaryButton, Label } from './FilmRoomKit';
 import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf, chainOf, latestOf } from './filmRoomCards';
 // Film Room C2 item 5 (Amendment C CC-7): the subject line — the ONE projection the moment excerpt says too
-import { subjectOfDayRead, IDEA_VERSION_PATH, CARRIAGE_NUMBER_CLASSES, SUBJECT_WORDS, subjectKnownIds } from '../../utils/filmRoomSubject';
+import { subjectOfDayRead, IDEA_VERSION_PATH, CARRIAGE_NUMBER_CLASSES, SUBJECT_WORDS, subjectKnownIds, carriedIdeaOf } from '../../utils/filmRoomSubject';
 
 const T = COPY.cards;
 /**
@@ -147,12 +147,14 @@ function MomentFacts({ moment, size = 11.5 }) {
  * @param {object|null} props.idea    the version read's state (filmRoomData.js useIdeaVersion)
  * @param {string[]}    [props.knownIds] CE-1: the ids the excerpt this line mirrors knows (subjectKnownIds) — a statement
  *                      holding one, or any id shape the platform mints, is not on the line, as the excerpt carries none
+ * @param {boolean}     [props.idsPending] the review's CX3-1: the ids the excerpt knows are not all held yet (a clone's
+ *                      parent, before the counter names it) — no line for a battle carrying an idea
  */
-function SubjectLine({ tape, battle = null, symbol, idea, knownIds = [] }) {
+function SubjectLine({ tape, battle = null, symbol, idea, knownIds = [], idsPending = false }) {
   // §2 review L3-2 / L3-8: while the version reads, or after it failed, no line — never one the excerpt would not say
-  const subject = tape ? subjectOfDayRead(battle, symbol, idea, tape.ownerId, knownIds) : null;
+  const subject = tape && !(idsPending && carriedIdeaOf(battle)) ? subjectOfDayRead(battle, symbol, idea, tape.ownerId, knownIds) : null;
   if (!subject) return null;
-  const { line, idea: held } = subject;
+  const { line } = subject;
   const S = SUBJECT_WORDS.separator;
   return (
     <span data-subject-line="" style={{ display: 'block', ...mono(10.5, C.ink2) }}>
@@ -271,7 +273,7 @@ export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel, id
         <MomentFacts moment={moment} />
       </div>
       {/* C2 item 5 (CC-7): the subject line, under the moment's facts */}
-      <SubjectLine tape={tape} battle={battle} symbol={moment.symbol} idea={idea} knownIds={subjectKnownIds(subjectIds ?? {})} />
+      <SubjectLine tape={tape} battle={battle} symbol={moment.symbol} idea={idea} knownIds={subjectKnownIds(subjectIds ?? {})} idsPending={subjectIds?.pending === true} />
       <fieldset style={{ border: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
         <legend style={{ ...eyebrow, color: C.ink3, padding: 0, marginBottom: 4 }}>{T.question}</legend>
         {questions.map((q) => (
