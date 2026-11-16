@@ -22,8 +22,9 @@
  * `{ skipped: true }` before the Firestore handle is taken: no read, no write, no
  * provider request. Flips in its own PR (PR C), never this build PR, which in ONE
  * commit (BUILD_RULES §2): sets this literal to true and rewrites this paragraph;
- * moves the first row of setupEvidenceSweepFlags.test.js to true and turns its
- * registration row around (`.not.toMatch`); and drops the DARK_BY_DESIGN entry in
+ * moves the first row of setupEvidenceSweepFlags.test.js to true and, in its
+ * registration row, inverts the DARK_BY_DESIGN expect only (`.not.toMatch`; the
+ * module-registration expect stays); and drops the DARK_BY_DESIGN entry in
  * flagPinGuard.test.js. Rollback: revert that commit.
  */
 // Pinned by: setupEvidenceSweepFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).

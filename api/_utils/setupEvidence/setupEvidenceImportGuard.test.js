@@ -1,9 +1,8 @@
 // api/_utils/setupEvidence/setupEvidenceImportGuard.test.js
 //
-// ID-1 Build 1 — NOTHING CALLS THE STORE. A framework library with no cron, no
-// endpoint, no flag and no consumer: slice 2, the ID-1 observer and the Practice
-// Field will call it later, each behind its own gate, and each is meant to arrive
-// here as a deliberate change to this one list.
+// ID-1 Build 1 — WHO CALLS THE STORE. Built as a framework library with no caller; each caller since
+// (the ID-1 observer, Slice 2, the chart evidence read route and sweep) arrived here as a deliberate change
+// to this one list, each behind its own gate.
 //
 // One scan over every source file in the code trees and at the repo root, on real
 // text with the comments left in, because a mention in a comment is cheap to allow
@@ -126,13 +125,13 @@ describe('nothing calls the store', () => {
   it.each(callers.map((file) => [file]))('%s is on the list', (file) => {
     expect(isListed(file)).toBe(true);
   });
-  it('no cron schedule names it, in any spelling, but the chart evidence sweep by its exact path', () => {
+  it('no cron schedule names it — camel, kebab, snake or dotted — but the chart evidence sweep by its exact path', () => {
     // The chart's evidence, PR B (docs/specs/CHART_EVIDENCE_SPEC_V1.md SW-1): one cron reaches the store, through
     // api/_utils/setupEvidenceSweep/sweep.js. Matched in camel and kebab case, so a second entry cannot pass on its spelling
     // (review L3-2).
     const text = readFileSync(join(REPO, 'vercel.json'), 'utf8');
     expect(text).not.toMatch(/setupEvidence/i);
-    const named = JSON.parse(text).crons.filter((c) => /setup-?evidence/i.test(JSON.stringify(c)));
+    const named = JSON.parse(text).crons.filter((c) => /setup[-_.]?evidence/i.test(JSON.stringify(c)));
     expect(named).toEqual([{ path: '/api/cron/setup-evidence-sweep', schedule: '30 12,22,23 * * 1-5' }]);
   });
   it('the library is its six modules, and reaches no flag and no handler: nothing from api/cron, api/agent or the flag module', () => {

@@ -4,9 +4,10 @@
 // precedent): one pin, a Pinned-by pointer the flag-pin guard keeps honest, and a DARK_BY_DESIGN
 // registration a deliberate flip drops in the same commit.
 //
-// SETUP_EVIDENCE_SWEEP_ENABLED is FALSE (PR B, built dark). PR C, the one-line switch, moves the
-// first row to `true`, turns the registration row around (`.not.toMatch`), and drops the
-// DARK_BY_DESIGN entry, in one commit.
+// SETUP_EVIDENCE_SWEEP_ENABLED is FALSE (PR B, built dark). PR C, the switch, moves the first row to
+// `true`, inverts the DARK_BY_DESIGN expect of the registration row (`.not.toMatch`; the module stays
+// registered, so that expect stays), drops the DARK_BY_DESIGN entry and rewrites the flag's DARK
+// paragraph, in one commit.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';

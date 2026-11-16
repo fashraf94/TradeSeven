@@ -459,6 +459,16 @@ describe('review lens 1 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the 
     expect(r.deferred).toEqual({});
   });
 
+  it('any other outcome of a request breaks a streak: late names alternating with confirm-class ones (no adjusted close) never stop the run', async () => {
+    const db = makeSweepDb();
+    const names = [...ALL_TICKERS].sort().slice(0, 40);
+    const h = harness({ at: T_RUN1, rowsFor: (s, session) => (names.indexOf(s) % 2 === 1 ? noAdjustmentRows(session) : unpublishedRows(session)) });
+    const r = await h.run(db, { symbols: names });
+    expect(h.calls).toHaveLength(40);
+    expect(r.retryable).toEqual({ missing_bar: 20, adjusted_close_missing: 20 });
+    expect(r.deferred).toEqual({});
+  });
+
   it('confirmations of a shared gap in a row are braked too: each is a permanent refused record', async () => {
     const db = makeSweepDb();
     const names = [...ALL_TICKERS].sort().slice(0, 40);
