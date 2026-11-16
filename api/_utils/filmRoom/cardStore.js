@@ -110,7 +110,8 @@ export const CARD_ROUTE_COPY = Object.freeze({
   version_conflict: 'The card changed since you loaded it. Reload and try again.',
   // Amendment A CA-23: after CA-1, CA-2 and CA-5 a full set may hold nothing the player can retire — the words say what
   // stops a card counting, never "Retire a card first"
-  cap_reached: 'The open-card cap for this agent is reached. A card stops counting once it is retired, parked, equipped or not taken.',
+  // Film Room C2 (Amendment C CC-8): the stored stage stays `installed`; the player reads it as adopted
+  cap_reached: 'The open-card cap for this agent is reached. A card stops counting once it is retired, parked, adopted or not taken.',
   shelved: 'This card is shelved: it was made under another archetype and cannot move until the agent returns to it.',
   illegal_transition: 'That change is not allowed from the card\'s current stage.',
   invalid_transition: 'That transition or its payload is not one the ledger takes.',

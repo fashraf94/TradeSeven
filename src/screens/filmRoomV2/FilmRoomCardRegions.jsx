@@ -411,7 +411,7 @@ export function ChainLine({ card, line, day = null }) {
  * Amendment A CA-17 — THE ONE LABEL READER for a card's stage word: the receipt's route line and My cards name a stage
  * through it, and so does every chain line that names a stage (a v1 `drill` row, a stage the copy does not know) —
  * on the receipt and in "since last time", which draws the same ChainLine. The chain's state lines keep their own words
- * (Offered, Tested, Equipped …), which name events, not the stage. At `nominated`: "offered to your agent" — except an entry whose STORED
+ * (Offered, Tested, Adopted as your instruction …), which name events, not the stage. At `nominated`: "offered to your agent" — except an entry whose STORED
  * route is `drill` (v1 Practice), which keeps "nominated for the Practice Field" (reading 16). The stored route decides,
  * never the vocabulary version: a v1 Watch or Set card offered after C1 was offered to the agent. CA-22: a `tested`
  * card whose result carries the stored no-fill fact reads "ended before its first trade", never "tested". Any other
@@ -457,6 +457,8 @@ function Chain({ card, ledger, day, onOpenBook }) {
           {line.kind === 'tested' && isObjLike(card.result) ? (
             <Quotation doc={ledger} path={['cards', card.entryId, 'result', 'closingNote']} by="yourAgent" at={['cards', card.entryId, 'result', 'closingNoteAt']} docLabel="ledger" />
           ) : null}
+          {/* Film Room C2 (Amendment C CC-8): under the adopted line, its one sentence — until the framework's P4 */}
+          {line.kind === 'installed' ? <span data-adopted-note="" style={foot}>{W.adoptedNote}</span> : null}
         </div>
       ))}
     </div>
@@ -679,7 +681,7 @@ export function SinceLastTime({ day = null, battleId = null, counter, onOpenMome
         <div data-my-cards="" style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
           <span style={{ ...eyebrow, color: C.ink2 }}>{T.myCards}</span>
           {!cards.length ? <span style={foot}>{T.noCards}</span> : null}
-          {['active', 'shelved', 'notTaken', 'parked', 'equipped', 'retired', 'other'].map((g) => (groups[g].length ? (
+          {['active', 'shelved', 'notTaken', 'parked', 'adopted', 'retired', 'other'].map((g) => (groups[g].length ? (
             <div key={g} data-my-cards-group={g} style={{ display: 'flex', flexDirection: 'column' }}>
               <span style={mono(10, C.ink3, { letterSpacing: '0.12em', textTransform: 'uppercase' })}>{T.groups[g]}</span>
               {groups[g].map((c) => <CardRow key={c.entryId} card={c} onShow={onShowCard} />)}

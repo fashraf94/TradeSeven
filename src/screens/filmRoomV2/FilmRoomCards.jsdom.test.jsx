@@ -451,7 +451,7 @@ describe('receipt — the filed card (spec §6; R7)', () => {
     expect(m.q('[data-open-count] [data-num-aggregate="count(plays[] open)"]').getAttribute('data-agg-value')).toBe('5');
     await fileCard({ note: 'One more.' });
     expect(m.q('[data-card-form]')).toBeTruthy();
-    expect(m.q('[data-card-refusal]').textContent).toBe('The open-card cap is reached. A card stops counting once it is retired, parked, equipped or not taken.');   // Amendment A CA-23
+    expect(m.q('[data-card-refusal]').textContent).toBe('The open-card cap is reached. A card stops counting once it is retired, parked, adopted or not taken.');   // Amendment A CA-23; Film Room C2 (CC-8)
     await sweepAll(fx.tape2, 'cap');
   });
 });
@@ -1507,7 +1507,7 @@ describe('B2.1 B2 (Amendment H RH-2) — a recurrence in another battle opens th
 
 // ── Film Room C1 (Build C spec V1, docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md) ──────────────────────────
 describe('C1 item 1 — My cards under the stage vocabulary v2 (spec §3)', () => {
-  it('testing and an unparked tested card are active and count open; a parked tested card lists under Parked; installed under Equipped, its stage word "equipped"; a v1 entry (no stageVocabVersion) reads and counts as before', async () => {
+  it('testing and an unparked tested card are active and count open; a parked tested card lists under Parked; installed under Adopted, its stage word "adopted as your instruction" (Film Room C2, CC-8); a v1 entry (no stageVocabVersion) reads and counts as before', async () => {
     await open();
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
@@ -1527,9 +1527,9 @@ describe('C1 item 1 — My cards under the stage vocabulary v2 (spec §3)', () =
     const group = (g) => m.qa(`[data-my-cards-group="${g}"] [data-my-card]`).map((b) => b.getAttribute('data-my-card'));
     expect(group('active').sort()).toEqual(['c_tested', 'c_testing', 'c_v1', 'op_1']);
     expect(group('parked')).toEqual(['c_parked']);
-    expect(group('equipped')).toEqual(['c_installed']);
-    expect(m.q('[data-my-cards-group="equipped"]').textContent).toContain('Equipped');
-    expect(m.q('[data-my-card="c_installed"]').textContent).toContain('equipped');
+    expect(group('adopted')).toEqual(['c_installed']);
+    expect(m.q('[data-my-cards-group="adopted"]').textContent).toContain('Adopted');
+    expect(m.q('[data-my-card="c_installed"]').textContent).toContain('adopted as your instruction');
     expect(m.q('[data-my-card="c_testing"]').textContent).toContain('testing');
     expect(m.q('[data-my-cards-group="other"]')).toBeNull();
     // the form's open count: four open (card, testing, tested unparked, the v1 card) — the oracle recounts it by the one export
@@ -1705,8 +1705,12 @@ describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), 
     await move('op_1', 'offered', { ideaId: 'idea-1', offerId: 'offer-1', state: 'offered' }, '20:58');
     await move('op_1', 'installed', { ideaId: 'idea-1', offerId: 'offer-1', state: 'accepted' }, '21:00');
     receipt = await reopen('op_1');
-    expect(lineText(receipt, 0)).toBe('Equipped · 5:00 PM');
-    expect(receipt.textContent).toContain('Stage · equipped');
+    expect(lineText(receipt, 0)).toBe('Adopted as your instruction · 5:00 PM');
+    expect(receipt.textContent).toContain('Stage · adopted as your instruction');
+    // Film Room C2 (CC-8): under the adopted line, its one sentence — on that line alone
+    expect(receipt.querySelectorAll('[data-chain-line]')[0].querySelector('[data-adopted-note]').textContent).toBe("Your agent doesn't act on your ideas yet.");
+    expect(receipt.querySelectorAll('[data-adopted-note]')).toHaveLength(1);
+    expect(receipt.textContent).not.toMatch(/equip/i);
     expect(m.buttons('Retire')).toHaveLength(0);
     await sweepAll(fx.tape2, 'installed');
   });
@@ -1825,7 +1829,7 @@ describe('C1 item 7 — "Park this card", on a tested receipt only (refinement R
     await sweepAll(fx.tape2, 'parked');
   });
 
-  it('no Park on any receipt but a tested one: a card, an equipped card, a retired one', async () => {
+  it('no Park on any receipt but a tested one: a card, an adopted card, a retired one', async () => {
     openBook();
     await open();
     m.click(m.buttons('Take this home')[0]);
@@ -1991,12 +1995,12 @@ describe('C1 review — the chain and the receipt say only what the ledger holds
     expect(latestOf([{ ...v1, route: 'offer' }])[0].line.kind).toBe('offered');
   });
 
-  it('B-2: a parked card the idea later equipped is equipped — no parked note; the note stays on a parked TESTED card', async () => {
+  it('B-2: a parked card the idea later adopted is adopted — no parked note; the note stays on a parked TESTED card', async () => {
     const history = [{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }, { stage: 'tested', event: 'parked', at: at('20:30'), by: 'player', opId: 'p1' }, { stage: 'installed', at: at('20:40'), by: 'server', writer: 'practice_field', opId: 's9' }];
     let r = await receiptOf(base({ stage: 'installed', parkedAt: at('20:30'), stageHistory: history, offer: { offerId: 'o1', state: 'accepted' } }));
     expect(r.querySelector('[data-card-next]')).toBeNull();
-    expect(r.textContent).toContain('Stage · equipped');
-    expect(m.buttons('Park this card')).toHaveLength(0);   // B-12: no Park on an equipped card
+    expect(r.textContent).toContain('Stage · adopted as your instruction');
+    expect(m.buttons('Park this card')).toHaveLength(0);   // B-12: no Park on an adopted card
     r = await receiptOf(base({ stage: 'tested', parkedAt: at('20:30'), stageHistory: history.slice(0, 2) }));
     expect(r.querySelector('[data-card-next]').textContent).toBe('Parked: kept with its result, no longer counted as open.');
   });
@@ -2161,7 +2165,7 @@ describe('Amendment A CA-3 — My cards: a nominated card the agent did not take
       await open();
       expect(group('notTaken')).toEqual(['op_1']);
       expect(m.q('[data-my-cards-group="notTaken"]').textContent).toContain('Not taken');
-      for (const g of ['active', 'parked', 'equipped', 'retired', 'other', 'shelved']) expect(group(g), g).toEqual([]);
+      for (const g of ['active', 'parked', 'adopted', 'retired', 'other', 'shelved']) expect(group(g), g).toEqual([]);
       expect(m.qa('[data-my-card="op_1"]')).toHaveLength(1);
       m.click(m.q('[data-my-card="op_1"]'));
       await m.flush();
@@ -2342,7 +2346,7 @@ describe('Amendment A CA-5 / CA-22 — "An offer waits in the Forge" and "Ended 
   const kinds = (r) => [...r.querySelectorAll('[data-chain-line]')].map((l) => l.getAttribute('data-chain-line'));
   const firstLine = (r) => r.querySelector('[data-chain-line]').querySelector('span').textContent;
 
-  it('tested → offered → parked → installed: one Tested line; the waiting offer dated at its own row, parked or not, never a second "Tested"; no Retire while it waits, Park still there; once installed, "Equipped" and no waiting line (the mutant: offered drawn as a second Tested)', async () => {
+  it('tested → offered → parked → installed: one Tested line; the waiting offer dated at its own row, parked or not, never a second "Tested"; no Retire while it waits, Park still there; once installed, "Adopted as your instruction" and no waiting line (the mutant: offered drawn as a second Tested)', async () => {
     await offerCard();
     await move('testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
     await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' }, '20:55');
@@ -2362,7 +2366,7 @@ describe('Amendment A CA-5 / CA-22 — "An offer waits in the Forge" and "Ended 
     await move('installed', { ideaId: 'idea-1', offerId: 'offer-1', state: 'accepted' }, '21:10');
     r = await reopen();
     expect(kinds(r)).toEqual(['installed', 'parked', 'tested', 'testing', 'nomination', 'offered', 'filed']);
-    expect(firstLine(r)).toBe('Equipped · 5:10 PM');
+    expect(firstLine(r)).toBe('Adopted as your instruction · 5:10 PM');
     expect(r.textContent).not.toContain('An offer waits');
     await sweepAll(fx.tape2, 'installed after offer');
   });

@@ -161,21 +161,22 @@ export function ledgerOf(counter, extra = null) {
 /**
  * The lists of My cards (Build C §3, the one export's stages and open predicate): active (open), shelved, not taken (a
  * nominated card its copy closes — Amendment A CA-3, judged before the parked fallback; shelving keeps its precedence),
- * parked (a tested card the player parked), equipped (`installed`), retired — and 'other' for a stage the vocabulary
- * does not know (never counted as active; review L3-10).
+ * parked (a tested card the player parked), adopted (`installed` — Film Room C2, Amendment C CC-8: the stored stage
+ * stays, the player reads it as adopted), retired — and 'other' for a stage the vocabulary does not know (never counted
+ * as active; review L3-10).
  */
 export function groupCards(cards) {
-  const active = []; const shelved = []; const notTaken = []; const parked = []; const equipped = []; const retired = []; const other = [];
+  const active = []; const shelved = []; const notTaken = []; const parked = []; const adopted = []; const retired = []; const other = [];
   for (const c of cards) {
     if (c.stage === 'retired') retired.push(c);
     else if (!CARD_STAGES.includes(c.stage)) other.push(c);
     else if (c.shelved) shelved.push(c);
     else if (isOpenStage(c)) active.push(c);
-    else if (c.stage === 'installed') equipped.push(c);
+    else if (c.stage === 'installed') adopted.push(c);
     else if (isNotTaken(c)) notTaken.push(c);
     else parked.push(c);   // the one stage left that is neither open, installed nor not taken: `tested`, parked
   }
-  return { active, shelved, notTaken, parked, equipped, retired, other };
+  return { active, shelved, notTaken, parked, adopted, retired, other };
 }
 
 /**

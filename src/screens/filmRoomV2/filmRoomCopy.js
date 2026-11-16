@@ -342,7 +342,8 @@ export const FILM_ROOM_COPY = Object.freeze({
     filing: 'Filing…',
     refusals: {
       // Amendment A CA-23: what stops a card counting — never "Retire a card first", which a full set may not allow
-      cap_reached: 'The open-card cap is reached. A card stops counting once it is retired, parked, equipped or not taken.',
+      // Film Room C2 (Amendment C CC-8): `installed` reads as adopted wherever the player reads it
+      cap_reached: 'The open-card cap is reached. A card stops counting once it is retired, parked, adopted or not taken.',
       moment_not_found: "That moment is not on this day's tape.",
       // B2.1 review SPR-C-2: the day was re-tagged while the card was being filed (nothing was filed)
       source_changed: "This day's tape changed while the card was being filed. Try again.",
@@ -378,10 +379,12 @@ export const FILM_ROOM_COPY = Object.freeze({
     on: 'on',
     route: 'Route',
     stage: 'Stage',
-    // Build C §3: one word per stage of the vocabulary v2 (src/data/cardStages.js) — `installed` reads "equipped"
+    // Build C §3: one word per stage of the vocabulary v2 (src/data/cardStages.js). Film Room C2 (Amendment C CC-8; the
+    // Practice Field's contract V2 Amendment B item 10, a founder ruling): the stored stage stays `installed`, and it
+    // reads "adopted as your instruction" — never "equipped"
     // Amendment A CA-17: `nominated` reads "offered to your agent" — it was; one label reader (stageLabelOf) names a card's
     // stage for the route line, My cards, the chain and "since last time"
-    stageWords: { card: 'card', nominated: 'offered to your agent', testing: 'testing', tested: 'tested', installed: 'equipped', retired: 'retired' },
+    stageWords: { card: 'card', nominated: 'offered to your agent', testing: 'testing', tested: 'tested', installed: 'adopted as your instruction', retired: 'retired' },
     // CA-17: an entry whose STORED route is `drill` (v1 Practice) keeps the old word for its `nominated` stage (reading 16);
     // CA-22: a `tested` card whose idea ended before any fill says so, from the stored flag — never "tested"
     stageWordsOf: { drillNominated: 'nominated for the Practice Field', noFill: 'ended before its first trade' },
@@ -433,7 +436,9 @@ export const FILM_ROOM_COPY = Object.freeze({
       offerWaits: 'An offer waits in the Forge',
       contractCondition: 'contract condition',
       economicResult: 'economic result',
-      installed: 'Equipped',
+      // C2 (CC-8): the adopted line, and under it its one sentence — until the framework's P4 changes that
+      installed: 'Adopted as your instruction',
+      adoptedNote: "Your agent doesn't act on your ideas yet.",
       parked: 'Parked',
       retired: 'Retired',
       // Amendment A CA-2: the player retired a nominated card the agent had not taken, withdrawing its offer
@@ -458,7 +463,7 @@ export const FILM_ROOM_COPY = Object.freeze({
     // the C1 refinement R-C1-1: every card past the card stage, its latest chain line and time, newest first
     latestTitle: 'Your cards, latest first',
     myCards: 'My cards',
-    groups: { active: 'Active', shelved: 'Shelved', notTaken: 'Not taken', parked: 'Parked', equipped: 'Equipped', retired: 'Retired', other: 'Other' },
+    groups: { active: 'Active', shelved: 'Shelved', notTaken: 'Not taken', parked: 'Parked', adopted: 'Adopted', retired: 'Retired', other: 'Other' },
     noCards: 'No cards yet.',
     shelvedExplainer: 'A card made under another archetype is shelved: kept, not counted as open, and back by itself when the agent returns to that archetype.',
     loading: 'Loading the cards…',
