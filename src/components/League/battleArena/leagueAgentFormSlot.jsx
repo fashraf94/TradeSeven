@@ -26,11 +26,12 @@ const LazyLeagueAgentForm = AGENT_FORM_LEAGUE_ENABLED ? lazy(() => import('./Lea
  * What a screen hands its forms.
  * @param {object} [props.battle]        the player's own battle, the one place League holds a live evaluation lock
  * @param {string} [props.groupId]       the group, for the after-bell read of human rivals' armor (finishedRivalRead.js)
+ * @param {Array}  [props.players]       the group's players — the seat order that read's seat-keyed reply joins back through
  * @param {number} [props.youRank]       the player's rank as the screen prints it ("You advanced"), for the final verdict
  * @param {string} [props.youArchetype]  the player's archetype, where the seat has none (the lobby preview reads no battle)
  */
-export function LeagueAgentFormScope({ battle = null, groupId = null, youRank = null, youArchetype = null, children }) {
-  return <LeagueAgentFormContext.Provider value={{ battle, groupId, youRank, youArchetype }}>{children}</LeagueAgentFormContext.Provider>;
+export function LeagueAgentFormScope({ battle = null, groupId = null, players = null, youRank = null, youArchetype = null, children }) {
+  return <LeagueAgentFormContext.Provider value={{ battle, groupId, players, youRank, youArchetype }}>{children}</LeagueAgentFormContext.Provider>;
 }
 
 /** A form whose chunk failed to load shows its still; the arena goes on. */

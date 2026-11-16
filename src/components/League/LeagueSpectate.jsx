@@ -10,6 +10,13 @@
 // WHY-projection enforces the same gate; useSpectatedTournamentBattles omits
 // reasoning for live pods.)
 //
+// PRIVATE SEATS (founder ruling R-F, 15 Nov 2026): the server sends no seat's
+// reasoning to anyone but its owner, at any status — completion opens nothing
+// more. The real adapter marks every seat that is not the viewer's
+// `reasoningPrivate`; such a seat's film room stays locked and says the
+// reasoning is private to its owner (PRIVATE_REASONING_NOTE). It never says
+// the room will open, and never that nothing was recorded.
+//
 // WHERE THE FILM ROOM'S WORDS COME FROM (pre-flip honesty fix A — Backing spec
 // V1.3 §11 gate 3): this file carries NO reasoning text of its own and looks
 // nothing up by id. `seat.reasoning` (ReasoningLine[] | null, the leagueFixtures
@@ -40,6 +47,9 @@ import SpectateBackingResults from './backing/SpectateBackingResults';
 // adapter's null (no completed battle, or none with recorded words). Exported
 // for the honesty test.
 export const NO_REASONING_RECORDED = 'No reasoning recorded for this battle.';
+// The note on a seat whose reasoning the server keeps to its owner (R-F).
+// Exported for the honesty test.
+export const PRIVATE_REASONING_NOTE = 'reasoning stays private to its owner.';
 
 // fake-but-stable head-to-head history vs you
 const RIVALRY = { vela: '2–1', orion: '2–1', cygnus: '1–1', mira: '0–2', lyra: '1–0', draco: '1–1' };
@@ -72,7 +82,9 @@ function LayerPanel({ title, sub, book, accent, kind }) {
 
 // locked / unlocked film room for the focused player
 function FilmRoom({ player, locked }) {
-  if (locked) {
+  // R-F: a private seat never unlocks for this viewer, whatever the pod's state.
+  const isPrivate = player.reasoningPrivate === true;
+  if (locked || isPrivate) {
     return (
       <div style={{ borderRadius: 16, padding: 16, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
@@ -88,9 +100,13 @@ function FilmRoom({ player, locked }) {
           ))}
         </div>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 14, paddingTop: 13, borderTop: `1px solid ${LTOKENS.hair}` }}>
-          <Icon name="clock" size={14} color={LTOKENS.ink2} style={{ marginTop: 1 }} />
+          <Icon name={isPrivate ? 'lock' : 'clock'} size={14} color={LTOKENS.ink2} style={{ marginTop: 1 }} />
           <div style={{ fontSize: 12, color: LTOKENS.ink2, lineHeight: 1.45 }}>
-            You can watch every position and score live — but {player.name}&apos;s <b style={{ color: LTOKENS.ink }}>private reasoning stays sealed until the group completes.</b> Come back for the film room.
+            {isPrivate ? (
+              <>Every position and score is open to all — but {player.name}&apos;s <b style={{ color: LTOKENS.ink }}>{PRIVATE_REASONING_NOTE}</b></>
+            ) : (
+              <>You can watch every position and score live — but {player.name}&apos;s <b style={{ color: LTOKENS.ink }}>private reasoning stays sealed until the group completes.</b> Come back for the film room.</>
+            )}
           </div>
         </div>
       </div>

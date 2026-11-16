@@ -1,11 +1,13 @@
 // api/_utils/tournamentBattleView.test.js
 //
 // P7 — the server-side WHY projection battery (founder ruling, P7 Stage A:
-// conceal live WHY server-side for non-owner active reads). Locks: owner sees
-// full WHY live; ANYONE sees full WHY at completion (the Film Room unlock);
-// a non-owner's ACTIVE read is stripped of every WHY field (incl. the
-// swap-candidate watchlist + agentContext strategy surface) while keeping the
-// public WHAT; input never mutated; and the per-owner "current battle" pick.
+// conceal WHY server-side for non-owner reads). Locks: the owner sees full WHY,
+// live and after completion; a NON-owner's read, at EVERY status (founder
+// ruling R-F, 15 Nov 2026 — completion opens nothing more), is stripped of
+// every WHY field (incl. the swap-candidate watchlist + agentContext strategy
+// surface) and of the account id (`ownerId`) while keeping the public WHAT;
+// input never mutated; the per-owner "current battle" pick; and the seat-keyed
+// league view map (no account id as a key).
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): importing the real
 // tournamentBattleView.js is the runtime guard for its api/ -> src/ import of
@@ -14,12 +16,17 @@
 // Never mock that import.
 
 import { describe, it, expect } from 'vitest';
-import { projectTournamentBattle, pickCurrentBattlesByOwner } from './tournamentBattleView.js';
+import { projectTournamentBattle, pickCurrentBattlesByOwner, projectBattlesBySeat } from './tournamentBattleView.js';
+
+// A synthetic, uid-shaped owner id planted so a VALUE scan can prove no
+// non-owner projection carries it anywhere (no real account id is used).
+const RIVAL_UID = 'PLANTEDrivalUid00000000000AA';
+const VIEWER_UID = 'PLANTEDviewerUid0000000000BB';
 
 function whyBattle(overrides = {}) {
   return {
     id: 'b1',
-    ownerId: 'owner1',
+    ownerId: RIVAL_UID,
     status: 'active',
     gameMode: 'baggerbomb_tournament',
     groupId: 'g1',
@@ -64,6 +71,10 @@ function whyBattle(overrides = {}) {
     ],
     evaluations: [{ evalId: 'e1', rationale: 'hold the line', hypothesis: 'mean reversion' }],
     proposalHistory: [{ id: 'p1' }],
+    // R-F's named private fields, each at its REAL path on the battle record
+    // (discovery F5): chat, the instruction, the pending proposal.
+    pendingProposal: { symbolOut: 'OLD', symbolIn: 'COIN', rationale: 'PLANTED-PROPOSAL' },
+    directive: { text: 'PLANTED-DIRECTIVE: no crypto today', threadId: 'th-1', setAt: '2026-09-02T13:00:00.000Z' },
     chatExchanges: [{ q: 'why?', a: 'because' }],
     battleLedger: [{ kind: 'note' }],
     livePriceBeacon: { prices: { NVDA: 110 } },
@@ -74,15 +85,63 @@ function whyBattle(overrides = {}) {
   };
 }
 
-describe('projectTournamentBattle — owner / completion = full WHY', () => {
-  it('returns the doc UNCHANGED for the owner (live WHY)', () => {
-    const b = whyBattle();
-    expect(projectTournamentBattle(b, { isOwner: true })).toBe(b);
+// The allowlist shape of whyBattle() for a non-owner — written out by hand, so
+// a row comparing to it fails on ANY extra or missing key at any status.
+function allowlistShapeOf(status) {
+  return {
+    id: 'b1',
+    status,
+    gameMode: 'baggerbomb_tournament',
+    groupId: 'g1',
+    opponent: null,
+    portfolio: { star: [{ symbol: 'NVDA', tierMultiplier: 1 }], core: [], support: [], startingPrices: { NVDA: 100 } },
+    scoreState: { currentScore: 42 },
+    thresholdHistory: { NVDA: { maxMultiplier: 1.2 } },
+    scoring: { thresholds: { NVDA: { threshold: 2.5 } } },
+    agentContext: {
+      agentName: 'Atlas',
+      archetype: 'momentum',
+      tournament: { doubleDownSymbols: ['NVDA'], userPicksAtDeploy: ['NVDA'] },
+      initialPortfolio: { star: [{ symbol: 'NVDA' }] },
+    },
+    statusFeed: [
+      { timestamp: '2026-09-02T14:00:00.000Z', message: 'Swapped OLD → NVDA', action: 'swap', symbolOut: 'OLD', symbolIn: 'NVDA' },
+    ],
+    trades: [{ symbolOut: 'OLD', symbolIn: 'NVDA', lockedPoints: 12 }],
+    _whyConcealed: true,
+  };
+}
+
+describe('projectTournamentBattle — the owner sees full WHY; a non-owner the allowlist at EVERY status (R-F)', () => {
+  it('returns the doc UNCHANGED for the owner, live and after completion (the same object)', () => {
+    for (const status of ['active', 'completed']) {
+      const b = whyBattle({ status });
+      expect(projectTournamentBattle(b, { isOwner: true })).toBe(b);
+    }
   });
 
-  it('returns the doc UNCHANGED for a non-owner once COMPLETED (Film Room unlock)', () => {
+  it('a non-owner\'s projection of a COMPLETED battle equals the allowlist shape — completion opens nothing more', () => {
     const b = whyBattle({ status: 'completed' });
-    expect(projectTournamentBattle(b, { isOwner: false })).toBe(b);
+    const out = projectTournamentBattle(b, { isOwner: false });
+    expect(out).not.toBe(b);
+    expect(out).toEqual(allowlistShapeOf('completed'));
+  });
+
+  it('a non-owner\'s projection is the same at every status (only `status` itself differs)', () => {
+    for (const status of ['active', 'completed', 'cancelled', undefined]) {
+      const out = projectTournamentBattle(whyBattle({ status }), { isOwner: false });
+      const want = allowlistShapeOf(status);
+      if (status === undefined) delete want.status;
+      expect(out).toEqual(want);
+    }
+  });
+
+  it('carries no `ownerId` — no account id reaches another player through the projection', () => {
+    for (const status of ['active', 'completed']) {
+      const out = projectTournamentBattle(whyBattle({ status }), { isOwner: false });
+      expect(out).not.toHaveProperty('ownerId');
+      expect(JSON.stringify(out)).not.toContain(RIVAL_UID);
+    }
   });
 });
 
@@ -96,18 +155,15 @@ const SIBLING = {
 };
 
 describe('projectTournamentBattle — P1b: the frozen idea is the OWNER\'s, at completion too', () => {
-  it('a COMPLETED battle shown to a NON-owner carries everything EXCEPT equippedHypothesis (a copy — the input is not mutated)', () => {
+  it('a COMPLETED battle shown to a NON-owner never carries equippedHypothesis (the allowlist — a copy, the input is not mutated)', () => {
     const b = whyBattle({ status: 'completed' });
     b.agentContext.equippedHypothesis = SIBLING;
     const out = projectTournamentBattle(b, { isOwner: false });
     expect(out).not.toBe(b);
     expect('equippedHypothesis' in out.agentContext).toBe(false);
     expect(JSON.stringify(out)).not.toContain('PLANTED-IDEA');
-    const { equippedHypothesis: _dropped, ...rest } = b.agentContext;
-    expect(out.agentContext).toEqual(rest);
-    expect({ ...out, agentContext: b.agentContext }).toEqual(b);
+    expect(out).toEqual(allowlistShapeOf('completed'));
     expect(b.agentContext.equippedHypothesis).toBe(SIBLING);
-    expect(out._whyConcealed).toBeUndefined();
   });
   it('the OWNER sees it in full, live and after completion (the same object)', () => {
     for (const status of ['active', 'completed']) {
@@ -116,12 +172,10 @@ describe('projectTournamentBattle — P1b: the frozen idea is the OWNER\'s, at c
       expect(projectTournamentBattle(b, { isOwner: true })).toBe(b);
     }
   });
-  it('an ACTIVE battle shown to a non-owner never carried it (the allowlist), and a battle with none is returned as the same object', () => {
+  it('an ACTIVE battle shown to a non-owner never carried it either (the allowlist)', () => {
     const b = whyBattle();
     b.agentContext.equippedHypothesis = SIBLING;
     expect('equippedHypothesis' in projectTournamentBattle(b, { isOwner: false }).agentContext).toBe(false);
-    const plain = whyBattle({ status: 'completed' });
-    expect(projectTournamentBattle(plain, { isOwner: false })).toBe(plain);
   });
 });
 
@@ -186,10 +240,11 @@ describe('projectTournamentBattle — non-owner active = WHAT only', () => {
     expect(own.statusFeed[0].triggeredBy).toBe('threshold_breach, momentum_shift');
   });
 
-  it('a COMPLETED battle unlocks attribution for everyone (Film Room)', () => {
+  it('a COMPLETED battle keeps attribution concealed from a non-owner (R-F: completion opens nothing more)', () => {
     const done = projectTournamentBattle(whyBattle({ status: 'completed' }), { isOwner: false });
-    expect(done.statusFeed[0].source).toBe('haiku');
-    expect(done.statusFeed[0].triggeredBy).toBe('threshold_breach, momentum_shift');
+    expect(done.statusFeed[0].source).toBeUndefined();
+    expect(done.statusFeed[0].triggeredBy).toBeUndefined();
+    expect(done.trades[0].rationale).toBeUndefined();
   });
 
   it('keeps trade WHAT (symbols, points) but strips trade WHY', () => {
@@ -268,5 +323,100 @@ describe('enforce readiness — the public statusFeed carries the unconfirmed-ou
       expect(e).not.toHaveProperty('source');
       expect(e).not.toHaveProperty('triggeredBy');
     }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Security pack, founder ruling R-F (15 Nov 2026): "Spectating stays possible.
+// The fix is what a non-owner can see, at any battle status." The eight names
+// below are the ruling's private things (and the account id), as keys on the
+// battle record (discovery F5): every one is planted at its real path in
+// whyBattle(), and a RECURSIVE walk of every non-owner projection — active and
+// completed — must find none of them at any depth.
+const FORBIDDEN_KEYS = ['ownerId', 'chatExchanges', 'directive', 'equippedWatchlist', 'hotBench', 'pendingProposal', 'deployedGuardrails', 'activeRules'];
+
+function keysFoundDeep(node, found = new Set()) {
+  if (Array.isArray(node)) { for (const v of node) keysFoundDeep(v, found); return found; }
+  if (node && typeof node === 'object') {
+    for (const [k, v] of Object.entries(node)) { found.add(k); keysFoundDeep(v, found); }
+  }
+  return found;
+}
+
+describe('R-F — a recursive scan of every non-owner projection finds none of the private keys', () => {
+  it('the fixture plants every one of them (the scan cannot pass on an empty shell)', () => {
+    const planted = keysFoundDeep(whyBattle());
+    for (const k of FORBIDDEN_KEYS) expect(planted.has(k), `fixture is missing ${k}`).toBe(true);
+  });
+
+  it.each(['active', 'completed'])('%s battle: no private key at any depth, and no planted account id anywhere', (status) => {
+    const b = whyBattle({ status });
+    b.agentContext.equippedHypothesis = SIBLING;
+    const out = projectTournamentBattle(b, { isOwner: false });
+    const found = keysFoundDeep(out);
+    for (const k of FORBIDDEN_KEYS) expect(found.has(k), `${status}: ${k} reached a non-owner`).toBe(false);
+    const wire = JSON.stringify(out);
+    expect(wire).not.toContain(RIVAL_UID);
+    for (const planted of ['PLANTED-DIRECTIVE', 'PLANTED-PROPOSAL', 'PLANTED-IDEA', 'ride the breakout', 'cut the laggard', 'because']) {
+      expect(wire, `${status}: "${planted}" reached a non-owner`).not.toContain(planted);
+    }
+  });
+
+  it('the owner\'s projection is unchanged: every private key still reaches the owner, live and after completion', () => {
+    for (const status of ['active', 'completed']) {
+      const b = whyBattle({ status });
+      const out = projectTournamentBattle(b, { isOwner: true });
+      expect(out).toBe(b);
+      const found = keysFoundDeep(out);
+      for (const k of FORBIDDEN_KEYS) expect(found.has(k)).toBe(true);
+    }
+  });
+});
+
+describe('R-F — projectBattlesBySeat: the league view keys battles by SEAT, never by account id', () => {
+  const players = [
+    { odUserId: VIEWER_UID, picks: [] },
+    { odUserId: RIVAL_UID, picks: [] },
+    { odUserId: 'cpu-3', isCpu: true, picks: [] },
+  ];
+  const viewerBattle = (status = 'active') => whyBattle({ id: 'b-viewer', ownerId: VIEWER_UID, status });
+  const rivalBattle = (status = 'completed') => whyBattle({ id: 'b-rival', ownerId: RIVAL_UID, status });
+
+  it('keys are the owners\' indices in `players` (\'0\'..), the viewer\'s own seat full, every other seat the allowlist', () => {
+    const v = viewerBattle();
+    const out = projectBattlesBySeat([v, rivalBattle(), whyBattle({ id: 'b-cpu', ownerId: 'cpu-3', isCpu: true })], players, VIEWER_UID);
+    expect(Object.keys(out).sort()).toEqual(['0', '1', '2']);
+    expect(out['0']).toBe(v);
+    expect(out['1']).toEqual({ ...allowlistShapeOf('completed'), id: 'b-rival' });
+    expect(out['2']._whyConcealed).toBe(true);
+    expect(out['2']).not.toHaveProperty('ownerId');
+  });
+
+  it('no rival account id travels anywhere in the map — as a key or a value; the viewer\'s own id only inside the viewer\'s own seat', () => {
+    const out = projectBattlesBySeat([viewerBattle(), rivalBattle()], players, VIEWER_UID);
+    const wire = JSON.stringify(out);
+    expect(wire).not.toContain(RIVAL_UID);
+    expect(JSON.stringify({ ...out, 0: undefined })).not.toContain(VIEWER_UID);
+  });
+
+  it('a spectator who holds no seat gets every seat as the allowlist, and no account id at all', () => {
+    const out = projectBattlesBySeat([viewerBattle(), rivalBattle('active')], players, 'someone-else');
+    expect(out['0']._whyConcealed).toBe(true);
+    expect(out['1']._whyConcealed).toBe(true);
+    const wire = JSON.stringify(out);
+    expect(wire).not.toContain(RIVAL_UID);
+    expect(wire).not.toContain(VIEWER_UID);
+  });
+
+  it('a battle whose owner holds no seat is left out; a missing `players` seats nobody', () => {
+    const stray = whyBattle({ id: 'b-stray', ownerId: 'left-the-group' });
+    expect(Object.keys(projectBattlesBySeat([stray, rivalBattle()], players, VIEWER_UID))).toEqual(['1']);
+    expect(projectBattlesBySeat([rivalBattle()], undefined, VIEWER_UID)).toEqual({});
+  });
+
+  it('each seat carries its owner\'s CURRENT battle (the shared pick: active over completed)', () => {
+    const done = whyBattle({ id: 'b-rival-mon', ownerId: RIVAL_UID, status: 'completed', createdAt: '2026-09-01T13:30:00.000Z' });
+    const live = whyBattle({ id: 'b-rival-tue', ownerId: RIVAL_UID, status: 'active', createdAt: '2026-09-02T13:30:00.000Z' });
+    expect(projectBattlesBySeat([done, live], players, VIEWER_UID)['1'].id).toBe('b-rival-tue');
   });
 });

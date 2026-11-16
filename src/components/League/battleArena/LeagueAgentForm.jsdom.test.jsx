@@ -145,12 +145,14 @@ describe('human rivals keep their armor after the bell (founder ruling 4 of Oct 
   let reads;
   beforeEach(() => {
     reads = 0;
-    seen.fetchWithAuth = async () => { reads += 1; return answer({ rae: { agentContext: { archetype: 'guardian' } }, sam: { agentContext: { archetype: 'degen' } }, tao: { agentContext: {} } })(); };
+    seen.fetchWithAuth = async () => { reads += 1; return answer({ 0: { agentContext: { archetype: 'guardian' } }, 1: { agentContext: { archetype: 'degen' } }, 2: { agentContext: {} } })(); };
   });
 
-  // The read is memoized per group for the page's life, so each row brings its own group id.
+  // The read is memoized per group for the page's life, so each row brings its own group id. The endpoint keys its
+  // battles by seat (founder ruling R-F, 15 Nov 2026); the scope's players are the seat order it joins back through.
+  const PLAYERS = [{ odUserId: 'rae' }, { odUserId: 'sam' }, { odUserId: 'tao' }];
   let group = 0;
-  const open = (children, props = {}) => <LeagueAgentFormScope groupId={`g${(group += 1)}`} {...props}>{children}</LeagueAgentFormScope>;
+  const open = (children, props = {}) => <LeagueAgentFormScope groupId={`g${(group += 1)}`} players={PLAYERS} {...props}>{children}</LeagueAgentFormScope>;
 
   it('a finished game opened fresh: a human rival wears their armor, in copper', async () => {
     await show(open(<LeagueAgentFormSlot seat={humans()} size={44} standing={FINISHED} />));

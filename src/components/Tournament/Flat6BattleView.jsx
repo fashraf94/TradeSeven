@@ -17,8 +17,9 @@
 //     evaluation rationale); you-highlight teal.
 //   spectator (!isOwner)  — any agent, read-only. WHAT is live (positions,
 //     per-asset, statusFeed narration, score); WHY is concealed SERVER-SIDE
-//     (the battle arrives already projected — `_whyConcealed`) and unlocks for
-//     everyone at completion (the Film Room). V2.1 §9 transparency.
+//     (the battle arrives already projected — `_whyConcealed`) and stays
+//     private to its owner at every status — founder ruling R-F (15 Nov 2026)
+//     ended the completion unlock. V2.1 §9 transparency, as amended.
 //
 // Scoring is the canonical scorer, CALLED via src/utils/flat6BattleEnrichment.js
 // (BUILD_RULES §4 — never copied). Motion is the Snake Draft's vocabulary in
@@ -106,6 +107,11 @@ function HoldingRow({ asset, tokens, reduceMotion }) {
     </div>
   );
 }
+
+// The spectator's note where the agent's read would be (founder ruling R-F,
+// 15 Nov 2026: a non-owner never receives it, live or after completion).
+// Exported for the record-rendering test.
+export const WHY_PRIVATE_NOTE = "The agent's reasoning is private to its owner.";
 
 export default function Flat6BattleView({
   battle,
@@ -200,8 +206,8 @@ export default function Flat6BattleView({
   const feed = (battle.statusFeed || []).filter((e) => !feedBeatUnconfirmed(e)).slice(-FEED_LIMIT).reverse();
 
   // WHY visibility: concealed server-side for non-owner active reads
-  // (_whyConcealed). Otherwise the reasoning is present (owner live, or anyone
-  // at completion = the Film Room unlock).
+  // (_whyConcealed) — every non-owner read, live or completed (R-F).
+  // Otherwise the reasoning is present (the owner's own battle).
   const whyConcealed = battle._whyConcealed === true;
   const monologue = ctx.innerMonologue || null;
   // WHAT A PLAYER READS IS THE RENDERED RECORD, NEVER THE STORED BYTES.
@@ -353,7 +359,7 @@ export default function Flat6BattleView({
           ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: tokens.textMuted }}>
               <Lock size={13} color={tokens.textFaint} />
-              <span>The agent's live reasoning is owner-only. It opens to everyone at completion — the Film Room. Open cards then.</span>
+              <span>{WHY_PRIVATE_NOTE}</span>
             </div>
           )
           : (

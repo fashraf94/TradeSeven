@@ -136,6 +136,7 @@ import LeagueBattleViewRender from '../../screens/leagueBattleViewRender';
 import LeagueTrainingBattleView from '../../screens/LeagueTrainingBattleView';
 import LeagueParticipantView from '../../screens/LeagueParticipantView';
 import TournamentDevScreen from '../../screens/TournamentDevScreen';
+import { WHY_PRIVATE_NOTE } from './Flat6BattleView';
 
 const UID = 'league-owner-1';
 
@@ -432,5 +433,37 @@ describe('the live feed — a beat whose outcome could not be confirmed (table G
     expect(text).toContain('Risk exit of GILD failed: quote unavailable');
     expect(text).not.toContain('Rotating GILD into MOS.');
     expect(text).not.toContain('Forcing exit');
+  });
+});
+
+// Security pack, founder ruling R-F (15 Nov 2026): a spectator never receives a
+// rival's reasoning, live or after completion — the completed battle arrives
+// as the allowlist projection, `_whyConcealed`. The card must say so truthfully:
+// never that the reasoning "opens to everyone at completion".
+describe('R-F — a spectator opening a rival\'s COMPLETED battle reads the private note, never the words', () => {
+  const STRATEGY = 'PLANTED-STRATEGY: ride the breakout';
+  const completedWithWhy = battleWith([{ evalId: 'e9', rationale: AGENT_RATIONALE, hypothesis: AGENT_HYPOTHESIS }], {
+    status: 'completed', ownerId: UID,
+    agentContext: { agentName: 'Aurora', archetype: 'momentum', innerMonologue: { strategy: STRATEGY } },
+  });
+
+  it('a non-owner: the private note, no strategy, no recorded check, no promise of an unlock', () => {
+    globalThis.__FLAT6_TEST_BATTLE__ = projectTournamentBattle(completedWithWhy, { isOwner: false });
+    mount(<SpectatorView group={GROUP} uid="spectator-2" onBack={() => {}} />);
+    clickButton(/Open battle view/);
+    const text = recordCardText();
+    expect(text).toContain(WHY_PRIVATE_NOTE);
+    expect(text).not.toMatch(/opens to everyone|at completion|Film Room/i);
+    expect(text).not.toContain(STRATEGY);
+    expect(text).not.toContain(AGENT_RATIONALE);
+  });
+
+  it('the owner: their own completed battle still shows its words, and no private note', () => {
+    globalThis.__FLAT6_TEST_BATTLE__ = projectTournamentBattle(completedWithWhy, { isOwner: true });
+    mount(<SpectatorView group={GROUP} uid={UID} onBack={() => {}} />);
+    clickButton(/Open battle view/);
+    const text = recordCardText();
+    expect(text).toContain(STRATEGY);
+    expect(text).not.toContain(WHY_PRIVATE_NOTE);
   });
 });

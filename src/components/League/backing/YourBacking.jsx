@@ -264,7 +264,7 @@ function StandingRows({ m, spaced = true }) {
 function WeekCard({ groupId, stakes, pool, group, groupAnswered, labelsById, accent, onOpenTape, injectedBattles = null }) {
   // The live read, unless the host handed this pod's battles in (only the dev
   // preview page does — fixtures, no network): then the hook stays disabled.
-  const spectated = useSpectatedTournamentBattles(groupId, injectedBattles == null);
+  const spectated = useSpectatedTournamentBattles(groupId, injectedBattles == null, group?.players);
   const battles = injectedBattles ?? spectated.battles;
   const m = weekCardModel({ groupId, stakes, pool, group, groupAnswered, labelsById, battles });
 
@@ -308,7 +308,7 @@ function WeekCard({ groupId, stakes, pool, group, groupAnswered, labelsById, acc
 
 /** The desktop card — the same model, wide: the backed teams on top, the reveal beside the standing. */
 function WeekCardDesk({ groupId, stakes, pool, group, groupAnswered, labelsById, accent, onOpenTape, injectedBattles = null }) {
-  const spectated = useSpectatedTournamentBattles(groupId, injectedBattles == null);
+  const spectated = useSpectatedTournamentBattles(groupId, injectedBattles == null, group?.players);
   const battles = injectedBattles ?? spectated.battles;
   const m = weekCardModel({ groupId, stakes, pool, group, groupAnswered, labelsById, battles });
   const label = { fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 6 };

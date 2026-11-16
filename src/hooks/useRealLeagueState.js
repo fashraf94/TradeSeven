@@ -112,7 +112,7 @@ export default function useRealLeagueState(enabled) {
 
   // the WHY-projected battles for the subscribed group (owner/completed → full
   // WHY; non-owner active → WHAT-only + _whyConcealed). The ONLY reasoning source.
-  const { battles } = useSpectatedTournamentBattles(myGroup?.id || null, enabled);
+  const { battles } = useSpectatedTournamentBattles(myGroup?.id || null, enabled, myGroup?.players);
 
   // human display names (CPUs are synthesized in the adapter). Keyed on the
   // STABLE sorted id-set string, not the doc objects — the subscriptions hand

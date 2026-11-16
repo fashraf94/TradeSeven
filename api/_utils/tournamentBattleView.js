@@ -2,39 +2,53 @@
 //
 // P7 — server-side WHY projection for spectator reads of tournament battles.
 //
+// FOUNDER RULING R-F (15 Nov 2026, security pack — supersedes the completion
+// unlock below): "Spectating stays possible. The fix is what a non-owner can
+// see, at any battle status." A NON-owner gets the allowlist projection at
+// EVERY status; completion opens nothing more. Chat, the instruction, the list,
+// the hot bench, reasoning, proposals, guardrail levels and the loadout never
+// leave the server for a non-owner, and no non-owner projection carries an
+// account id (`ownerId` left the allowlist; the route keys its battles by seat,
+// never by owner — src/constants/leagueTournament.js seatIndexByOwner). The
+// owner's own view is unchanged. Report:
+// docs/audits/20261115_FIX_SECURITY_PACK_LEAGUE_VIEW.md.
+//
 // FOUNDER RULING (P7 Stage A): the live WHY must be concealed SERVER-SIDE for
-// non-owners during an ACTIVE battle, not by client non-render — the
-// agentBattles read rule is owner-private (firestore.rules:201-202), and an
-// authenticated client read would otherwise ship every spectator the live
-// reasoning over the wire, breaking the open-cards-AT-COMPLETION symmetry of a
-// competitive game. So spectators NEVER read the doc directly; they read it
-// through /api/tournament/battle-view, which calls this projector. Chosen over
-// relaxing the read rule precisely because only the server path can strip WHY
-// at the read boundary — net result: ZERO firestore-rule change (P7 Stage 0
-// erratum resolved the clean way).
+// non-owners, not by client non-render — the agentBattles read rule is
+// owner-private, and an authenticated client read would otherwise ship every
+// spectator the reasoning over the wire. So spectators NEVER read the doc
+// directly; they read it through /api/tournament/battle-view, which calls this
+// projector. Chosen over relaxing the read rule precisely because only the
+// server path can strip WHY at the read boundary — net result: ZERO
+// firestore-rule change (P7 Stage 0 erratum resolved the clean way).
 //
-// Transparency contract (V2.1 §9): WHAT — positions, per-asset state,
-// statusFeed narration MESSAGES, scoreState, the double-down stance, the frozen
-// initial lineup — is PUBLIC live to all. WHY — the agent's reasoning AND its
-// strategy surface (innerMonologue, strategy brief, Forge rules/citations,
-// guardrails, equipped watchlist, the swap-candidate watchlist, per-evaluation/
-// -trade rationale & hypothesis, proposals, gameplan, chat, the Film Room
-// ledger) — is OWNER-ONLY while ACTIVE and opens to ALL at COMPLETION (the Film
-// Room unlock).
+// Transparency contract (V2.1 §9, as amended by R-F): WHAT — positions,
+// per-asset state, statusFeed narration MESSAGES, scoreState, the double-down
+// stance, the frozen initial lineup — is PUBLIC to all. WHY — the agent's
+// reasoning AND its strategy surface (innerMonologue, strategy brief, Forge
+// rules/citations, guardrails, equipped watchlist, the swap-candidate
+// watchlist, per-evaluation/-trade rationale & hypothesis, proposals, gameplan,
+// chat, the Film Room ledger, the player's frozen idea `equippedHypothesis`) —
+// is OWNER-ONLY, live and after completion. (The pre-R-F contract opened it to
+// all at completion — the Film Room unlock — minus the frozen idea, Pilot P1b.)
 //
-// The non-owner ACTIVE projection is built from ALLOWLISTS, deliberately (P7
-// code review): a denylist leaked the swap-candidate `watchlist` and the
+// The non-owner projection is built from ALLOWLISTS, deliberately (P7 code
+// review): a denylist leaked the swap-candidate `watchlist` and the
 // agentContext strategy fields when the doc shape grew. With an allowlist,
 // anything not explicitly public is concealed BY DEFAULT — a new field added to
 // the battle doc later cannot leak. Pure + node-clean (one zero-import schema
 // import) so the projection is unit-tested directly.
 
-import { pickCurrentTournamentBattle } from '../../src/constants/leagueTournament.js';
+import { pickCurrentTournamentBattle, seatIndexByOwner } from '../../src/constants/leagueTournament.js';
 
-// PUBLIC WHAT — the only top-level keys a non-owner sees on an active battle.
+// PUBLIC WHAT — the only top-level keys a non-owner sees, at every status.
 // statusFeed/trades/agentContext are projected separately (sub-allowlisted).
+// `ownerId` is DELIBERATELY ABSENT (R-F): an account id never reaches another
+// player's browser through this view. No league reader reads it (the
+// security-pack report's reader table); a seat is identified by its key in
+// the route's seat-keyed map.
 const PUBLIC_TOP_LEVEL = [
-  'id', 'agentId', 'ownerId', 'status', 'gameMode', 'groupId', 'isCpu',
+  'id', 'agentId', 'status', 'gameMode', 'groupId', 'isCpu',
   'duration', 'createdAt', 'activatedAt', 'completedAt', 'expiresAt', 'updatedAt',
   'timing', 'portfolio', 'opponent', 'scoring', 'scoreState', 'thresholdHistory',
 ];
@@ -53,8 +67,8 @@ const PUBLIC_AGENT_CONTEXT = ['agentName', 'archetype', 'tournament', 'initialPo
 // the same attribution from the sibling trades[] projection. Letting them
 // through here let a rival read which mechanism moved an opponent's book
 // mid-battle while the trade record said nothing: one posture, two lists,
-// disagreeing. They stay out until completion, when the whole doc is returned
-// unchanged and the Film Room shows everything.
+// disagreeing. They stay out for a non-owner at every status (R-F: completion
+// opens nothing more).
 //
 // `executionOutcome` is WHAT, not WHY (enforce readiness, table G V1.4): the
 // typed marker that the swap's outcome could not be confirmed. A spectator's
@@ -76,36 +90,26 @@ function pick(obj, keys) {
 /**
  * Project a tournament battle doc for a given viewer.
  *
- * - Owner (ownerId === viewerUid) OR completed battle → returned UNCHANGED
- *   (full WHY: the owner sees their own reasoning live; everyone gets it at
- *   completion via the Film Room) — with ONE exception, Pilot P1b (pilot spec
- *   §2.7, Phase 0 row #15): a completed battle shown to a NON-owner never
- *   carries the player's frozen idea (`agentContext.equippedHypothesis` — the
- *   statement, conditions and evidence refs). "Owner sees full, others none."
- *   It is stripped from a shallow copy; a battle that carries none is returned
- *   as the same object, exactly as before.
- * - Non-owner viewing an ACTIVE battle → WHAT-only projection built from the
- *   allowlists above. Stamped `_whyConcealed: true` so the client renders the
- *   honest "reasoning unlocks at completion" note rather than mistaking
- *   concealment for absence.
+ * - Owner (ownerId === viewerUid) → returned UNCHANGED, live and after
+ *   completion (full WHY: the owner sees their own reasoning and their own
+ *   frozen idea, `agentContext.equippedHypothesis`).
+ * - Non-owner, at EVERY status (founder ruling R-F, 15 Nov 2026) → WHAT-only
+ *   projection built from the allowlists above. Completion opens nothing more.
+ *   The frozen idea is not on the allowlist, so Pilot P1b's "owner sees full,
+ *   others none" (pilot spec §2.7) holds by construction. Stamped
+ *   `_whyConcealed: true` so the client renders the honest "reasoning is
+ *   private to its owner" note rather than mistaking concealment for absence.
  *
  * @param {Object} battle    the raw agentBattles doc (with id)
  * @param {{ isOwner: boolean }} opts
- * @returns {Object} a NEW object for the concealed case (input never mutated);
- *   the same reference for the full case.
+ * @returns {Object} a NEW object for the non-owner case (input never mutated);
+ *   the same reference for the owner.
  */
 export function projectTournamentBattle(battle, { isOwner = false } = {}) {
   if (!battle) return battle;
   if (isOwner) return battle; // full transparency: the owner, live and after
-  if (battle.status === 'completed') {
-    // Anyone at completion — minus the player's frozen idea (P1b, spec §2.7).
-    if (!battle.agentContext || typeof battle.agentContext !== 'object' || !('equippedHypothesis' in battle.agentContext)) return battle;
-    const agentContext = { ...battle.agentContext };
-    delete agentContext.equippedHypothesis;
-    return { ...battle, agentContext };
-  }
 
-  // Non-owner, active → WHAT-only (allowlist; nothing leaks by default).
+  // Non-owner, any status → WHAT-only (allowlist; nothing leaks by default).
   const projected = pick(battle, PUBLIC_TOP_LEVEL);
   projected.agentContext = pick(battle.agentContext, PUBLIC_AGENT_CONTEXT);
   projected.statusFeed = Array.isArray(battle.statusFeed)
@@ -137,6 +141,30 @@ export function pickCurrentBattlesByOwner(battles) {
   const out = {};
   for (const [ownerId, docs] of Object.entries(byOwner)) {
     out[ownerId] = pickCurrentTournamentBattle(docs);
+  }
+  return out;
+}
+
+/**
+ * The league view's `battles` map for one viewer (founder ruling R-F, 15 Nov
+ * 2026): each seat's CURRENT battle, projected for the viewer, keyed by SEAT —
+ * the owner's index in the group's `players` ('0'..'3', the shared
+ * seatIndexByOwner) — never by owner, so no account id travels as a key. A
+ * battle whose owner holds no seat in `players` is left out: no reader could
+ * place it. Pure.
+ *
+ * @param {Array} battles    raw tournament agentBattles docs for one group (with id)
+ * @param {Array} players    the group document's `players`
+ * @param {string} viewerUid the signed-in viewer
+ * @returns {Object} seat key -> projected battle
+ */
+export function projectBattlesBySeat(battles, players, viewerUid) {
+  const seats = seatIndexByOwner(players);
+  const out = {};
+  for (const [ownerId, battle] of Object.entries(pickCurrentBattlesByOwner(battles))) {
+    const seat = seats.get(ownerId);
+    if (seat === undefined) continue;
+    out[seat] = projectTournamentBattle(battle, { isOwner: ownerId === viewerUid });
   }
   return out;
 }

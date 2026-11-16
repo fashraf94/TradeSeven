@@ -37,6 +37,16 @@
 //   · battleToReasoning — the adapter's rule, unit-pinned.
 //   · POSITIVE CONTROL — the fixture world (leagueState) still renders its own
 //     sentence in its settled film room, so the absence rows are not vacuous.
+//   · R-F — PRIVATE SEATS (founder ruling R-F, 15 Nov 2026, security pack):
+//     the endpoint sends no seat's reasoning to anyone but its owner, at any
+//     status, so a rival's completed battle arrives `_whyConcealed` like a
+//     live one. Every seat that is not the viewer's is `reasoningPrivate`: its
+//     film room stays locked and says the reasoning is private to its owner —
+//     never "unlocked", never "No reasoning recorded", never "sealed until the
+//     group completes", and never the words even if a reply carried them. The
+//     real-words and empty-state rows above therefore read the VIEWER's own
+//     seat; the ID-collision trap is armed through a viewer whose own id is
+//     the fixture key.
 //
 // react-dom/server: Spectate is pure over its props (state = the focus only);
 // the backing results mount is stood in for (it renders nothing while dark
@@ -52,7 +62,7 @@ import { fileURLToPath } from 'node:url';
 vi.mock('../../firebase/config', () => ({ auth: { currentUser: null }, db: {}, default: {} }));
 vi.mock('./backing/SpectateBackingResults', () => ({ default: () => null }));
 
-import Spectate, { NO_REASONING_RECORDED } from './LeagueSpectate';
+import Spectate, { NO_REASONING_RECORDED, PRIVATE_REASONING_NOTE } from './LeagueSpectate';
 import { FIXTURE_REASONING, leagueState } from './leagueFixtures';
 import { groupToPod, buildSeat, battleToReasoning } from './leagueAdapter';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
@@ -111,6 +121,12 @@ const concealed = (ownerId) => ({
   agentContext: { agentName: 'Kestrel', archetype: 'momentum_chaser', initialPortfolio: portfolio },
   portfolio, statusFeed: [], trades: [], _whyConcealed: true,
 });
+// R-F: a rival's COMPLETED battle as the endpoint now sends it — the allowlist,
+// no ownerId, stamped concealed, exactly like a live one.
+const concealedDone = (ownerId) => {
+  const { ownerId: _id, ...rest } = concealed(ownerId);
+  return { ...rest, id: `b-${ownerId}-done-concealed`, status: 'completed' };
+};
 const ownActive = (ownerId) => ({
   id: `b-${ownerId}-own-live`, ownerId, status: 'active', groupId: 'grp-real-1',
   agentContext: { agentName: 'Tarn', archetype: 'analyst', innerMonologue: { strategy: LIVE_STRATEGY }, initialPortfolio: portfolio },
@@ -140,8 +156,12 @@ const REAL_STATES = [
   ['live — rivals WHAT-only (_whyConcealed) beside the viewer\'s own full-WHY active battle',
     pod(GROUP_STATUS.BATTLE, { [RIVAL]: concealed(RIVAL), [CPU]: concealed(CPU), [COLLIDER]: concealed(COLLIDER), [VIEWER]: ownActive(VIEWER) })],
   ['upcoming — a forming group, no battles yet', pod(GROUP_STATUS.FORMING, {})],
-  ['final — recorded words for the rival and the collider, nothing recorded for the viewer, the CPU silent',
-    pod(GROUP_STATUS.COMPLETE, { [RIVAL]: completedWithWords(RIVAL), [COLLIDER]: completedSilent(COLLIDER), [VIEWER]: completedSilent(VIEWER), [CPU]: completedWithWords(CPU) })],
+  ['final — the viewer\'s own recorded words; every other seat concealed (R-F)',
+    pod(GROUP_STATUS.COMPLETE, { [RIVAL]: concealedDone(RIVAL), [COLLIDER]: concealedDone(COLLIDER), [VIEWER]: completedWithWords(VIEWER), [CPU]: concealedDone(CPU) })],
+  ['final — nothing recorded for the viewer; every other seat concealed (R-F)',
+    pod(GROUP_STATUS.COMPLETE, { [RIVAL]: concealedDone(RIVAL), [COLLIDER]: concealedDone(COLLIDER), [VIEWER]: completedSilent(VIEWER), [CPU]: concealedDone(CPU) })],
+  ['final — a pre-R-F reply that still carried a rival\'s words (the surface must not show them)',
+    pod(GROUP_STATUS.COMPLETE, { [RIVAL]: completedWithWords(RIVAL), [COLLIDER]: completedSilent(COLLIDER), [CPU]: completedWithWords(CPU) })],
   ['final — no battles at all (battle-view unavailable: the tape\'s degrade path)', pod(GROUP_STATUS.COMPLETE, {})],
   ['final — the group settled while a battle doc is still ACTIVE with full WHY (the owner\'s)',
     pod(GROUP_STATUS.COMPLETE, { [VIEWER]: ownActive(VIEWER), [RIVAL]: concealed(RIVAL) })],
@@ -207,47 +227,56 @@ describe('EVERY REAL STATE, EVERY SEAT — zero fixture strings on a real-adapte
   });
 
   it('THE ID-COLLISION TRAP — a real seat whose id is a fixture key never shows the fixture sentence (restore REASONING[player.id] → this reds)', () => {
+    // R-F: only the viewer's OWN seat reaches the unlocked branch, so the trap is
+    // armed through a viewer whose own id is the fixture key.
+    const asCollider = (status, battles) => pod(status, battles, { uid: COLLIDER });
     // settled, the collider's battle silent → the honest empty state, not "atlas"'s demo line
-    const settled = pod(GROUP_STATUS.COMPLETE, { [COLLIDER]: completedSilent(COLLIDER) });
+    const settled = asCollider(GROUP_STATUS.COMPLETE, { [COLLIDER]: completedSilent(COLLIDER) });
     const text = render(settled, COLLIDER);
     expect(text).not.toContain(FIXTURE_REASONING.atlas);
     expect(text).toContain(NO_REASONING_RECORDED);
     // settled, no battle for the collider at all → the same
-    const bare = render(pod(GROUP_STATUS.COMPLETE, {}), COLLIDER);
+    const bare = render(asCollider(GROUP_STATUS.COMPLETE, {}), COLLIDER);
     expect(bare).not.toContain(FIXTURE_REASONING.atlas);
     expect(bare).toContain(NO_REASONING_RECORDED);
     // live → locked; neither the fixture line nor the empty state
-    const live = render(pod(GROUP_STATUS.BATTLE, { [COLLIDER]: concealed(COLLIDER) }), COLLIDER);
+    const live = render(asCollider(GROUP_STATUS.BATTLE, { [COLLIDER]: ownActive(COLLIDER) }), COLLIDER);
     expect(live).not.toContain(FIXTURE_REASONING.atlas);
     expect(live).not.toContain(NO_REASONING_RECORDED);
     expect(live).toContain(SEALED_NOTE);
+    // and as a RIVAL seat (the default viewer): private, never the fixture line
+    const rival = render(pod(GROUP_STATUS.COMPLETE, { [COLLIDER]: concealedDone(COLLIDER) }), COLLIDER);
+    expect(rival).not.toContain(FIXTURE_REASONING.atlas);
+    expect(rival).toContain(PRIVATE_REASONING_NOTE);
   });
 });
 
-describe('THE HONEST EMPTY STATE and THE REAL WORDS', () => {
+describe('THE HONEST EMPTY STATE and THE REAL WORDS — the viewer\'s OWN seat (R-F: only the owner receives a seat\'s words)', () => {
   const settled = pod(GROUP_STATUS.COMPLETE, {
-    [RIVAL]: completedWithWords(RIVAL), [VIEWER]: completedSilent(VIEWER), [COLLIDER]: completedSilent(COLLIDER),
+    [VIEWER]: completedWithWords(VIEWER), [RIVAL]: concealedDone(RIVAL), [COLLIDER]: concealedDone(COLLIDER),
   });
+  const settledSilent = pod(GROUP_STATUS.COMPLETE, { [VIEWER]: completedSilent(VIEWER), [RIVAL]: concealedDone(RIVAL) });
 
   it('a settled seat with recorded words shows them — the strategy read, then each swap in the agent\'s own words, labelled by the swap', () => {
-    const text = render(settled, RIVAL);
+    const text = render(settled, VIEWER);
     expect(text).toContain('Film room · unlocked');
     expect(text).toContain(STRATEGY);
     expect(text).toContain('ANET → SMCI');
     expect(text).toContain(RATIONALE);
     expect(text).not.toContain(NO_REASONING_RECORDED);
     expect(text).not.toContain(SEALED_NOTE);
+    expect(text).not.toContain(PRIVATE_REASONING_NOTE);
   });
 
   it('an engine-authored motive renders without its guardrail CODE (renderMotive — hazard 29), verbatim otherwise', () => {
-    const text = render(settled, RIVAL);
+    const text = render(settled, VIEWER);
     expect(text).toContain('COIN → XLE');
     expect(text).toContain('stop-loss at 8% breached on COIN (-9.24%).');
     expect(text).not.toContain('guardrail_stopLoss');
   });
 
   it('a settled seat with nothing recorded shows "No reasoning recorded for this battle." — and nothing else in the film room', () => {
-    const text = render(settled, VIEWER);
+    const text = render(settledSilent, VIEWER);
     expect(text).toContain('Film room · unlocked');
     expect(text).toContain(NO_REASONING_RECORDED);
     expect(text).not.toContain(STRATEGY);
@@ -255,17 +284,22 @@ describe('THE HONEST EMPTY STATE and THE REAL WORDS', () => {
   });
 
   it('a settled seat with NO battle on the reply (endpoint unavailable) shows the empty state, never a fixture line', () => {
-    const text = render(pod(GROUP_STATUS.COMPLETE, {}), RIVAL);
+    const text = render(pod(GROUP_STATUS.COMPLETE, {}), VIEWER);
     expect(text).toContain(NO_REASONING_RECORDED);
     for (const v of FIXTURE_VALUES) expect(text).not.toContain(v);
   });
 
-  it('a live or upcoming seat is LOCKED: the sealed note, no words, no empty state — the viewer\'s own full-WHY active battle included', () => {
+  it('a live or upcoming seat is LOCKED: the viewer\'s own seat carries the sealed note (no words, no empty state, its full-WHY active battle included); a rival the private note', () => {
     const live = pod(GROUP_STATUS.BATTLE, { [VIEWER]: ownActive(VIEWER), [RIVAL]: concealed(RIVAL) });
-    for (const id of [VIEWER, RIVAL]) {
-      const text = render(live, id);
-      expect(text).toContain('Film room · locked');
-      expect(text).toContain(SEALED_NOTE);
+    const mine = render(live, VIEWER);
+    expect(mine).toContain('Film room · locked');
+    expect(mine).toContain(SEALED_NOTE);
+    expect(mine).not.toContain(PRIVATE_REASONING_NOTE);
+    const rival = render(live, RIVAL);
+    expect(rival).toContain('Film room · locked');
+    expect(rival).toContain(PRIVATE_REASONING_NOTE);
+    expect(rival).not.toContain(SEALED_NOTE);
+    for (const text of [mine, rival]) {
       expect(text).not.toContain(NO_REASONING_RECORDED);
       expect(text).not.toContain(LIVE_STRATEGY);
       expect(text).not.toContain(LIVE_RATIONALE);
@@ -280,6 +314,56 @@ describe('THE HONEST EMPTY STATE and THE REAL WORDS', () => {
     expect(text).toContain(NO_REASONING_RECORDED);
     expect(text).not.toContain(LIVE_STRATEGY);
     expect(text).not.toContain(LIVE_RATIONALE);
+  });
+});
+
+describe('R-F — every other seat\'s film room is PRIVATE, at every status (founder ruling R-F, 15 Nov 2026)', () => {
+  const rivals = [RIVAL, CPU, COLLIDER];
+
+  it('final: a rival\'s concealed completed battle → locked, "private to its owner" — never "unlocked", never the empty state, never "sealed until the group completes"', () => {
+    const settled = pod(GROUP_STATUS.COMPLETE, { [VIEWER]: completedWithWords(VIEWER), [RIVAL]: concealedDone(RIVAL), [CPU]: concealedDone(CPU), [COLLIDER]: concealedDone(COLLIDER) });
+    for (const id of rivals) {
+      const text = render(settled, id);
+      expect(text, id).toContain('Film room · locked');
+      expect(text, id).toContain(PRIVATE_REASONING_NOTE);
+      expect(text, id).not.toContain('Film room · unlocked');
+      expect(text, id).not.toContain(NO_REASONING_RECORDED);
+      expect(text, id).not.toContain(SEALED_NOTE);
+      expect(text, id).not.toContain(STRATEGY);
+    }
+  });
+
+  it('final: even a reply that still carried a rival\'s words (the pre-R-F shape) never renders them', () => {
+    const old = pod(GROUP_STATUS.COMPLETE, { [RIVAL]: completedWithWords(RIVAL), [CPU]: completedWithWords(CPU) });
+    for (const id of [RIVAL, CPU]) {
+      const text = render(old, id);
+      expect(text, id).toContain(PRIVATE_REASONING_NOTE);
+      expect(text, id).not.toContain(STRATEGY);
+      expect(text, id).not.toContain(RATIONALE);
+      expect(text, id).not.toContain('Film room · unlocked');
+    }
+  });
+
+  it('final with no battle on the reply, live, and bracket: a rival is private in every one', () => {
+    const states = [
+      pod(GROUP_STATUS.COMPLETE, {}),
+      pod(GROUP_STATUS.BATTLE, { [RIVAL]: concealed(RIVAL), [VIEWER]: ownActive(VIEWER) }),
+      pod(GROUP_STATUS.COMPLETE, { [RIVAL]: concealedDone(RIVAL) }, { base: false }),
+      pod(GROUP_STATUS.EXPIRED, { [RIVAL]: concealedDone(RIVAL) }),
+    ];
+    for (const st of states) {
+      const text = render(st, RIVAL);
+      expect(text).toContain(PRIVATE_REASONING_NOTE);
+      expect(text).not.toContain(NO_REASONING_RECORDED);
+      expect(text).not.toContain(SEALED_NOTE);
+    }
+  });
+
+  it('buildSeat marks every seat but the viewer\'s own private; with no viewer, every seat is', () => {
+    expect(buildSeat({ odUserId: VIEWER, isCpu: false, score: 1, battle: completedWithWords(VIEWER), names: NAMES, uid: VIEWER }).reasoningPrivate).toBe(false);
+    expect(buildSeat({ odUserId: RIVAL, isCpu: false, score: 1, battle: concealedDone(RIVAL), names: NAMES, uid: VIEWER }).reasoningPrivate).toBe(true);
+    expect(buildSeat({ odUserId: CPU, isCpu: true, score: 1, battle: null, names: NAMES, uid: VIEWER }).reasoningPrivate).toBe(true);
+    expect(buildSeat({ odUserId: VIEWER, isCpu: false, score: 1, battle: null, names: NAMES, uid: null }).reasoningPrivate).toBe(true);
   });
 });
 

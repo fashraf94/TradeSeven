@@ -42,7 +42,7 @@ export default function SpectatorView({ group, uid, onBack }) {
   // Spectator battle source: the group's battles, each PROJECTED server-side
   // for this viewer (WHY concealed for non-owner active reads). Fetched only
   // while the battle view is open.
-  const { battles, loading: spectateLoading } = useSpectatedTournamentBattles(group?.id, showBattle);
+  const { battles, loading: spectateLoading } = useSpectatedTournamentBattles(group?.id, showBattle, group?.players);
 
   // Default the selection to your seat when present, else the leader.
   useEffect(() => {

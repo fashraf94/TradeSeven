@@ -1,111 +1,23 @@
-import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
-import { applySecurityMiddleware } from '../_utils/security.js';
-import { requireAuth } from '../_utils/authMiddleware.js';
-
 export const config = { maxDuration: 10 };
 
 /**
- * POST /api/agent/set-opponent
+ * POST /api/agent/set-opponent — CLOSED (HTTP 410 Gone).
  *
- * Writes the CPU opponent portfolio and its starting prices to an existing
- * agentBattle document.  The CPU portfolio is generated client-side (needs the
- * full stock universe) but Firestore rules only allow Admin SDK writes for
- * non-whitelisted fields, so the client calls this endpoint instead.
+ * Security pack, fix 2 (founder ruling R-F, 15 Nov 2026;
+ * docs/audits/20261115_FIX_SECURITY_PACK_LEAGUE_VIEW.md). This endpoint once
+ * wrote a client-generated CPU opponent, its starting prices and its
+ * thresholds onto an agent battle under five minutes old with no opponent —
+ * which is every new league battle (they are created with `opponent: null`).
+ * It trusted the client's prices and thresholds. Its last caller left the
+ * client on 8 Apr 2026 (f9e7af093: the CPU opponent is generated server-side
+ * in decide.js at deploy), and nothing in the client, the server, the scripts,
+ * the tests or vercel.json calls it.
  *
- * Body: { agentBattleId, opponent: { portfolio, bench }, startingPrices }
+ * Every request is refused with 410 before any read or write: no security
+ * middleware, no token check, no Firestore call. The file stays, so the route
+ * answers "gone" rather than falling through to a platform 404 that could be
+ * mistaken for a transient deploy fault; the old handler is in git history.
  */
-export default async function handler(req, res) {
-  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 5, windowMs: 60000 } })) {
-    return;
-  }
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  // Verify Firebase ID token (same pattern as chat.js / debate.js)
-  const user = await requireAuth(req, res);
-  if (!user) return;
-
-  const { agentBattleId, opponent, startingPrices } = req.body;
-
-  if (!agentBattleId || !opponent?.portfolio) {
-    return res.status(400).json({ error: 'agentBattleId and opponent.portfolio required' });
-  }
-
-  const db = getFirebaseAdmin();
-
-  try {
-    const battleRef = db.collection('agentBattles').doc(agentBattleId);
-    const battleSnap = await battleRef.get();
-
-    if (!battleSnap.exists) {
-      return res.status(404).json({ error: 'Agent battle not found' });
-    }
-
-    const battle = battleSnap.data();
-
-    // Ownership check — verified uid from Firebase token, not client header
-    if (battle.ownerId !== user.uid) {
-      return res.status(403).json({ error: 'Not authorised' });
-    }
-
-    // Only allow writes to active battles
-    if (battle.status !== 'active') {
-      return res.status(409).json({ error: 'Battle is not active' });
-    }
-
-    // Freshness check — reject writes to battles older than 5 minutes
-    const createdAt = new Date(battle.createdAt);
-    const ageMs = Date.now() - createdAt.getTime();
-    if (ageMs > 5 * 60 * 1000) {
-      return res.status(409).json({ error: 'Battle too old for opponent init' });
-    }
-
-    // Idempotency — don't overwrite if opponent already set
-    if (battle.opponent?.portfolio) {
-      return res.status(200).json({ success: true, alreadySet: true });
-    }
-
-    // Merge CPU starting prices into the existing portfolio.startingPrices
-    const mergedStartingPrices = {
-      ...(battle.portfolio?.startingPrices || {}),
-      ...(startingPrices || {}),
-    };
-
-    // Build CPU thresholds from opponent portfolio baseATR values
-    const cpuThresholds = {};
-    ['star', 'core', 'support'].forEach(tier => {
-      (opponent.portfolio[tier] || []).forEach(asset => {
-        if (asset?.symbol) {
-          const baseATR = asset.baseATR || (asset.isCrypto ? 5.0 : 2.5);
-          cpuThresholds[asset.symbol] = {
-            threshold: baseATR,
-            rallyThreshold: baseATR * 1.5,
-            moonshotThreshold: baseATR * 2.0,
-          };
-        }
-      });
-    });
-    const mergedThresholds = {
-      ...(battle.scoring?.thresholds || {}),
-      ...cpuThresholds,
-    };
-
-    await battleRef.update({
-      opponent: {
-        portfolio: opponent.portfolio,
-        bench: opponent.bench || null,
-        username: 'CPU Opponent',
-        odUserId: 'cpu',
-      },
-      'portfolio.startingPrices': mergedStartingPrices,
-      'scoring.thresholds': mergedThresholds,
-      updatedAt: new Date().toISOString(),
-    });
-
-    return res.status(200).json({ success: true });
-  } catch (error) {
-    console.error('[agent/set-opponent] Error:', error);
-    return res.status(500).json({ error: 'Failed to set opponent' });
-  }
+export default function handler(req, res) {
+  return res.status(410).json({ error: 'gone', message: 'This endpoint has been removed.' });
 }
