@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the excerpt (api/) imports this module; this import is the runtime guard
 // that it stays Node-clean — never mocked.
 import {
-  ID_SHAPES, PLATFORM_ID_KINDS, identifiersIn, holdsIdentifier, TICKER_SHAPE, tickerOk, situationIdOk, cardRouteOk, exitReasonOk, exitMechanismOk,
+  ID_SHAPES, PLATFORM_ID_KINDS, identifiersIn, holdsIdentifier, unmaskedText, TICKER_SHAPE, tickerOk, situationIdOk, cardRouteOk, exitReasonOk, exitMechanismOk,
 } from './promptBoundText.js';
 import { TICKER_TO_SECTOR } from '../../api/_utils/rankingConfig.js';
 import { SITUATION_IDS } from '../data/situationRegistry.js';
@@ -40,7 +40,7 @@ describe('CE-1 — the id kinds the platform mints, pinned', () => {
       ['client base-36 fallbacks for card ops and backing requests', 'base36-fallback'],
       ['live-draft group', 'live-draft-group'],
       ['challenge code (BB + 8)', 'challenge-code'],
-      ['hyphen-joined timestamped ids (challenges; signal-drop chat messages)', 'epoch-ms'],
+      ['hyphen-joined timestamped ids (challenges; signal-drop chat messages; market news items)', 'epoch-ms'],
       ['dev agents and wallets built on a uid (dev-agent-<uid>, dev-<uid>)', 'firebase-uid'],
       ['huddle playback token', 'playback-token'],
       ['bug report display id (CB-NNNN)', null],
@@ -139,6 +139,18 @@ describe('CE-1 — recorded words inside their own domains', () => {
   });
 });
 
+describe('the refuter\'s CXV-1 — an id in disguise is still an id', () => {
+  it('a zero-width space, a soft hyphen or a word joiner inside an id, full-width digits, upper-case hex: each is caught; ordinary text with the same characters is not', () => {
+    // Astra's auto-id, Ab3dEf7hIj9kLm1nOp5q (20 characters), split in the middle or written with full-width digits
+    for (const disguised of ['Ab3dEf7hIj\u200B9kLm1nOp5q', 'Ab3dEf7hIj\u00AD9kLm1nOp5q', 'Ab3dEf7hIj\u20609kLm1nOp5q', 'Ab３dEf７hIj９kLm１nOp５q', '0F1E2D3C4B5A69788796A5B4']) {
+      expect(holdsIdentifier(`Recorded ${disguised} here.`), JSON.stringify(disguised)).toBe(true);
+    }
+    expect(holdsIdentifier('Recorded b-sep23\u200B-excerpt here.', ['b-sep23-excerpt'])).toBe(true);   // a known id split by a zero-width space
+    expect(holdsIdentifier('Hold ＥＴＮ at ＄３８５．７０ for a week\u200B.')).toBe(false);
+    expect(unmaskedText('Ａ１\u200B')).toBe('A1');
+  });
+});
+
 describe('the policy\'s stated limits (build report §11.3) — pinned, so a change to them is seen', () => {
   it('CE-1\'s letter for the auto-id catches a 20-character mixed token holding a digit even when it is a coined word; an underscore sequence token is a sequence id — both left out, never let through', () => {
     expect(identifiersIn('RSI14AboveSMA50Cross held')).toEqual(['firestore-auto-id']);
@@ -147,5 +159,10 @@ describe('the policy\'s stated limits (build report §11.3) — pinned, so a cha
   it('a 20-character auto-id with no digit has no shape — it is caught only when it is an id the caller knows exactly', () => {
     expect(identifiersIn('Recorded AbcDefGhiJklMnoPqrSt here.')).toEqual([]);
     expect(identifiersIn('Recorded AbcDefGhiJklMnoPqrSt here.', ['AbcDefGhiJklMnoPqrSt'])).toEqual(['known']);
+  });
+  it('an unknown auto-id glued to a word, or split across a line break, has no token of its own — caught only when known exactly', () => {
+    expect(identifiersIn('battleAb3dEf7hIj9kLm1nOp5q')).toEqual([]);
+    expect(identifiersIn('Ab3dEf7hIj\n9kLm1nOp5q')).toEqual([]);
+    expect(identifiersIn('battleAb3dEf7hIj9kLm1nOp5q', ['Ab3dEf7hIj9kLm1nOp5q'])).toEqual(['known']);
   });
 });

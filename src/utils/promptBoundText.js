@@ -27,7 +27,7 @@ const tokensOf = (text) => String(text).match(/[A-Za-z0-9]+/g) || [];
 /** A digit, an upper-case and a lower-case letter: what an auto-id or a uid holds and an ordinary word never does. */
 const mixed = (t) => /[0-9]/.test(t) && /[A-Z]/.test(t) && /[a-z]/.test(t);
 const tokenOf = (len) => (text) => tokensOf(text).some((t) => t.length === len && mixed(t));
-const hexToken = (text) => tokensOf(text).some((t) => t.length >= 16 && /^[0-9a-f]+$/.test(t) && /[0-9]/.test(t) && /[a-f]/.test(t));
+const hexToken = (text) => tokensOf(text).some((t) => t.length >= 16 && /^[0-9a-f]+$/i.test(t) && /[0-9]/.test(t) && /[a-f]/i.test(t));
 const re = (pattern) => (text) => pattern.test(String(text));
 
 /**
@@ -84,7 +84,7 @@ export const PLATFORM_ID_KINDS = Object.freeze([
   { kind: 'client base-36 fallbacks for card ops and backing requests', shape: 'base36-fallback', example: 'op_m3k9x2_a8b7c6d5', minted: 'src/screens/filmRoomV2/filmRoomCards.js:72; src/services/backingService.js:123' },
   { kind: 'live-draft group', shape: 'live-draft-group', example: 'lds_slot2_2026-09-23', minted: 'api/_utils/liveDraftFormation.js:92' },
   { kind: 'challenge code (BB + 8)', shape: 'challenge-code', example: 'BB4K2Z9QXA', minted: 'src/firebase/firebaseService.js:1065, :1779' },
-  { kind: 'hyphen-joined timestamped ids (challenges; signal-drop chat messages)', shape: 'epoch-ms', example: 'challenge-1758648600000-k3j9x2', minted: 'src/services/challengeService.js:187, :291; src/components/SignalDrop/WatchlistChat.jsx:136' },
+  { kind: 'hyphen-joined timestamped ids (challenges; signal-drop chat messages; market news items)', shape: 'epoch-ms', example: 'challenge-1758648600000-k3j9x2', minted: 'src/services/challengeService.js:187, :291; src/components/SignalDrop/WatchlistChat.jsx:136; api/news/market.js:53' },
   { kind: 'dev agents and wallets built on a uid (dev-agent-<uid>, dev-<uid>)', shape: 'firebase-uid', example: 'dev-agent-aB3dE5gH7jK9mN1pQ3sT5vW7yZ9b', minted: 'api/_utils/tournamentAgentBoards.js:329; api/_utils/backingWallet.js:162' },
   { kind: 'huddle playback token', shape: 'playback-token', example: '2026-09-23.abcdefghijABCDEFGHIJ0123456789_-abcdefghijk', minted: 'api/_utils/huddle/playback.js:36' },
   { kind: 'bug report display id (CB-NNNN)', shape: null, reason: 'it reads like a code or a year in prose ("CB-2026"); it names no record a prompt could reach', minted: 'api/bug-report.js:99' },
@@ -98,11 +98,20 @@ export const PLATFORM_ID_KINDS = Object.freeze([
  * Every identifier `text` holds: `known` for an id the caller knows exactly (a substring of the text), else each
  * ID_SHAPES name that recognises a token in it. [] for prose.
  */
+/**
+ * The text as an id would read once its disguises are taken off (the fix round's refuter, CXV-1): compatibility forms
+ * folded (NFKC — full-width digits and letters become ASCII) and invisible characters removed (zero-width spaces and
+ * joiners, the soft hyphen, the byte-order mark, the word joiner, bidirectional marks). Words a reader sees are unchanged.
+ */
+const INVISIBLE = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g;
+export const unmaskedText = (text) => String(text).normalize('NFKC').replace(INVISIBLE, '');
 export function identifiersIn(text, knownIds = []) {
   if (typeof text !== 'string' || !text) return [];
   const out = [];
-  for (const id of knownIds) if (typeof id === 'string' && id && text.includes(id)) { out.push('known'); break; }
-  for (const [name, test] of Object.entries(ID_SHAPES)) if (test(text)) out.push(name);
+  const plain = unmaskedText(text);
+  // each check reads the text as written AND unmasked, so neither a zero-width split nor a full-width digit hides an id
+  for (const id of knownIds) if (typeof id === 'string' && id && (text.includes(id) || plain.includes(id))) { out.push('known'); break; }
+  for (const [name, test] of Object.entries(ID_SHAPES)) if (test(text) || (plain !== text && test(plain))) out.push(name);
   return out;
 }
 /** Does `text` hold any identifier — one the caller knows, or one of the platform's shapes? */
