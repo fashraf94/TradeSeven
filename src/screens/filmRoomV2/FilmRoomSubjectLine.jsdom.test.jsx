@@ -21,7 +21,7 @@ import { Receipt, YourCall } from './FilmRoomCardRegions';
 import { mounter, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, boundSubjectStatementOf, SPEC_SUBJECT_STATEMENT } from './__fixtures__/filmRoomHarness';
 import { excerptDay, excerptStore, excerptCardWith, ideaVersionDoc, dbOf, OWNER, AGENT, SEP23, EXCERPT_BATTLE, EXCERPT_ENTRY, EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION, EXCERPT_STATEMENT, ETN_MOMENT } from '../../../api/_utils/filmRoom/__fixtures__/excerptFixtures.js';
 import { buildCardDoc } from '../../../api/_utils/filmRoom/cardStore.js';
-import { excerptOfCard } from '../../../api/_utils/filmRoom/momentExcerpt.js';
+import { excerptOf, excerptOfCard } from '../../../api/_utils/filmRoom/momentExcerpt.js';
 import { subjectOfExcerpt, SUBJECT_STATEMENT_CODE_POINTS } from '../../utils/filmRoomSubject';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
@@ -92,6 +92,20 @@ describe('CC-7 — on the screen, under cards mode only', () => {
     expect(lineText(line)).toBe(FULL);
     expect(r.ideaReads).toEqual([[EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION]]);
   });
+  it('CE-1 — THROUGH THE SCREEN, the form and the receipt are handed the ids the excerpt knows (the mutant: the screen handing none): a statement holding the battle\'s id — known exactly, no id shape — is on neither line, as on neither excerpt', async () => {
+    const doc = ideaVersionDoc({ statement: `Recorded ${EXCERPT_BATTLE} here.` });
+    const c = { ...card(), shelved: false };
+    await openScreen({ r: readers(doc), cards: [c] });
+    await takeHome();
+    const moment = await excerptOf(dbOf(excerptStore(DAY, { card: card(), idea: doc })).db, { uid: OWNER, attributionAgentId: AGENT, battleId: EXCERPT_BATTLE, etDate: SEP23, moment: ETN_MOMENT });
+    const formLine = m.q('[data-card-form] [data-subject-line]');
+    expect(lineText(formLine)).toBe(subjectOfExcerpt(moment.excerpt).text);
+    expect(lineText(formLine)).toBe(`ETN · XLI · under your idea v${EXCERPT_IDEA_VERSION}`);
+    m.click(m.q(`[data-my-card="${EXCERPT_ENTRY}"]`));
+    await m.flush(6);
+    const ofCard = await excerptOfCard(dbOf(excerptStore(DAY, { card: card(), idea: doc })).db, { uid: OWNER, attributionAgentId: AGENT, entryId: EXCERPT_ENTRY });
+    expect(lineText(m.q(`[data-card-receipt="${EXCERPT_ENTRY}"] [data-subject-line]`))).toBe(subjectOfExcerpt(ofCard.excerpt).text);
+  });
   it('CARDS OFF (the owner not admitted): no line anywhere, and the idea never read (the mutant: the line shown with cards off)', async () => {
     const r = await openScreen({ admitted: false });
     expect(m.q('[data-cards-region]')).toBeNull();
@@ -113,9 +127,23 @@ describe('CC-7 — on the screen, under cards mode only', () => {
 });
 
 describe('CC-7 — the receipt says what the agent\'s excerpt says', () => {
-  const renderReceipt = ({ tape = DAY.tape, idea = { status: 'ready', doc: ideaVersionDoc() }, c = card() } = {}) => {
-    m.render(<Receipt day={SEP23} counter={{ status: 'ready', data: COUNTER([c]) }} card={c} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} tape={tape} idea={idea} />);
+  const renderReceipt = ({ tape = DAY.tape, idea = { status: 'ready', doc: ideaVersionDoc() }, c = card(), subjectIds = null } = {}) => {
+    m.render(<Receipt day={SEP23} counter={{ status: 'ready', data: COUNTER([c]) }} card={c} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} tape={tape} idea={idea} subjectIds={subjectIds} />);
   };
+  it('CE-1 — A STATEMENT HOLDING AN ID is not on the receipt\'s line, EQUAL to the excerpt, which leaves it out: an id the receipt knows exactly (the battle, the card\'s entry) or a shape the platform mints', async () => {
+    const ids = { ownerId: OWNER, battleId: EXCERPT_BATTLE, battleAgentId: AGENT, attributionAgentId: AGENT };
+    for (const id of [EXCERPT_BATTLE, EXCERPT_ENTRY, 'Ab3dEf7hIj9kLm1nOp5q']) {
+      const doc = ideaVersionDoc({ statement: `Recorded ${id} here.` });
+      const got = await excerptOfCard(dbOf(excerptStore(DAY, { card: card(), idea: doc })).db, { uid: OWNER, attributionAgentId: AGENT, entryId: EXCERPT_ENTRY });
+      expect(got.excerpt.idea.statement, id).toBeUndefined();
+      renderReceipt({ idea: { status: 'ready', doc }, subjectIds: ids });
+      const line = m.q('[data-subject-line]');
+      expect(lineText(line), id).toBe(subjectOfExcerpt(got.excerpt).text);
+      expect(lineText(line), id).toBe(`ETN · XLI · under your idea v${EXCERPT_IDEA_VERSION}`);
+      expect(line.textContent, id).not.toContain(id);
+      m.teardown(); m.setup();
+    }
+  });
   it('the receipt\'s line EQUALS the excerpt\'s projection of the same card (excerptOfCard → subjectOfExcerpt)', async () => {
     const got = await excerptOfCard(dbOf(excerptStore(DAY, { card: card() })).db, { uid: OWNER, attributionAgentId: AGENT, entryId: EXCERPT_ENTRY });
     const said = subjectOfExcerpt(got.excerpt);

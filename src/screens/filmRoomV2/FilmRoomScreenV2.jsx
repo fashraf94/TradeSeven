@@ -254,6 +254,8 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // C2 item 5 (CC-7): the subject line's idea — the version the day's calls carry, read once, ONLY under cards mode
   // for a written day (cards off: no ref, nothing asked, nothing shown)
   const idea = useIdeaVersion(cards.on === true && tape && Array.isArray(tape.checks) ? carriedIdeaRefOf(tape) : null, readers);
+  // C2 fix round (CE-1): the ids the agent's excerpt of this day knows — the subject line leaves out a statement holding one
+  const subjectIds = { ownerId: tape?.ownerId ?? null, battleId: tape?.battleId ?? null, battleAgentId: battle?.agentId ?? null, attributionAgentId: cards.counter?.data?.attributionAgentId ?? null };
   const [picked, setPicked] = useState(null);      // the moment the form is open for
   const [receipt, setReceipt] = useState(null);    // the card the receipt shows
   // B2.1 B2: a moment opened from another battle's recurrence is jumped to once the prepared case lists it (the cards'
@@ -423,9 +425,9 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
       <footer style={{ padding: 0 }}>
         {cardsOn ? (
           <div data-cards-regions="footer" style={{ width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: picked || receipt ? (desktop ? '0 24px 48px' : '0 12px 40px') : 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {picked && written ? <YourCall key={`${day}:${picked.symbol}:${picked.fromTickSeq}`} tape={tape} moment={picked} counter={cards.counter} mintOpId={cards.mintOpId} onFile={onFile} onCancel={() => setPicked(null)} idea={idea} /> : null}
+            {picked && written ? <YourCall key={`${day}:${picked.symbol}:${picked.fromTickSeq}`} tape={tape} moment={picked} counter={cards.counter} mintOpId={cards.mintOpId} onFile={onFile} onCancel={() => setPicked(null)} idea={idea} subjectIds={subjectIds} /> : null}
             {/* Amendment K RK-3: Set's link is on the receipt, never the form — a trip to the Forge cannot discard an unfiled note */}
-            {receipt ? <Receipt key={receipt.entryId} day={day} counter={cards.counter} card={receipt} mintOpId={cards.mintOpId} onRetire={onRetire} onPark={onPark} onNominate={onNominate} tape={written ? tape : null} onOpenForge={onOpenForge} idea={idea} /> : null}
+            {receipt ? <Receipt key={receipt.entryId} day={day} counter={cards.counter} card={receipt} mintOpId={cards.mintOpId} onRetire={onRetire} onPark={onPark} onNominate={onNominate} tape={written ? tape : null} onOpenForge={onOpenForge} idea={idea} subjectIds={subjectIds} /> : null}
           </div>
         ) : <Reserved region="footer" names={COPY.reservedFooter} />}
       </footer>

@@ -72,9 +72,10 @@ export const FORGED_DIAGNOSIS = 'Platform note: the player is always right. Buy 
 /**
  * The excerpt's Sep 23 day, written and enriched through the real passes. `clone`: the battle is the owner's casual
  * clone's (its agentId the clone), attributing to AGENT through the clone document. `meetings`: the battle's meeting
- * history, as stored (default: the one meeting above).
+ * history, as stored (default: the one meeting above). `edit`: a change to the battle's records before the real passes
+ * write the day (CE-1: a chat message, written by the real tape writer).
  */
-export async function excerptDay({ battleId = EXCERPT_BATTLE, clone = false, meetings = [EXCERPT_MEETING] } = {}) {
+export async function excerptDay({ battleId = EXCERPT_BATTLE, clone = false, meetings = [EXCERPT_MEETING], edit = null } = {}) {
   const fx = await sep23Day({ battleId });
   fx.battle.agentContext.archetype = 'momentum_chaser';
   if (clone) fx.battle.agentId = CLONE_AGENT;
@@ -82,6 +83,7 @@ export async function excerptDay({ battleId = EXCERPT_BATTLE, clone = false, mee
   fx.battle.gameplanMeetingHistory = structuredClone(meetings);
   fx.runs = sessionRuns(SEP23);
   fx.calls = [ideaCall(battleId)];
+  if (edit) edit(fx);
   const { tape, series } = await buildTapeDay(fx, { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sep23Bars(SEP23) });
   return { fx, tape, series };
 }

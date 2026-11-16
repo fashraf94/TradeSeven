@@ -53,7 +53,8 @@ import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 import { SITUATION_QUESTIONS } from '../../../src/data/situationQuestions.js';
 import { routeOf } from '../../../src/data/cardStages.js';
 import { isEtDate } from '../../../src/utils/tapeSchedule.js';
-import { sectorOf, boundedText, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom, instantText, instantMs } from '../../../src/utils/filmRoomSubject.js';
+import { sectorOf, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom, instantText, instantMs, promptQuoteText, subjectKnownIds } from '../../../src/utils/filmRoomSubject.js';
+import { tickerOk, situationIdOk, cardRouteOk, exitReasonOk, exitMechanismOk } from '../../../src/utils/promptBoundText.js';
 
 /** CC-6: the excerpt's shape version — today's BaggerBomb tape. */
 export const MOMENT_EXCERPT_VERSION = 1;
@@ -88,7 +89,6 @@ const str = (v) => (typeof v === 'string' && v ? v : null);
 const ID = /^[A-Za-z0-9_-]{1,200}$/;
 /** A path id: the forge-id class, never a reserved `__id__` (the card endpoint's own rule). */
 const idOk = (v) => typeof v === 'string' && ID.test(v) && !/^__.*__$/.test(v);
-const TICKER = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
 /**
  * An instant carried into `excerpt`: a strict ISO 8601 date-time only (the shared rule) — never a looser string (§2 review
  * L1-1). Every time the excerpt COMPARES — the exit against the bars, every tie-break by time — is read
@@ -177,7 +177,7 @@ async function ownedDayOf(db, { uid, attributionAgentId, battleId, etDate }) {
     if (!isObj(parentDoc) || parentDoc.ownerId !== uid) return null;
     target = parent;
   }
-  return target === attributionAgentId ? { tape } : null;
+  return target === attributionAgentId ? { tape, battle } : null;
 }
 
 /**
@@ -187,12 +187,12 @@ async function ownedDayOf(db, { uid, attributionAgentId, battleId, etDate }) {
  * the version's number, the document only when it is the caller's and the ref's (another owner's: no idea at all; one
  * that cannot be read, or a statement over its bound: the idea without its statement).
  */
-async function ideaOf(db, uid, tape) {
+async function ideaOf(db, uid, tape, knownIds) {
   const ref = carriedIdeaRefOf(tape);
   if (!ref || !idOk(ref.watchlistId)) return null;
   const P = EXCERPT_PATHS;
   const doc = await readDoc(db.collection(P.ideaLists).doc(ref.watchlistId).collection(P.ideaVersions).doc(P.ideaVersionDocId(ref.hypothesisVersion)));
-  const found = ideaFrom(tape, doc, uid);
+  const found = ideaFrom(tape, doc, uid, knownIds);
   if (!found) return null;
   const idea = { label: EXCERPT_LABELS.idea };
   if (found.version) idea.version = found.version;
@@ -205,7 +205,7 @@ async function ideaOf(db, uid, tape) {
  * none is no candidate). Rows tied at that tickSeq that disagree on the words or their time: no rationale (CE-4) — never
  * the next-nearest row.
  */
-function rationaleOf(tape, m) {
+function rationaleOf(tape, m, knownIds) {
   if (!Number.isInteger(m.fromTickSeq)) return null;
   const rows = candidatesOf(tape.rationale, (r) => isObj(r) && Number.isInteger(r.tickSeq) && r.tickSeq <= m.fromTickSeq);
   if (!rows.length) return null;
@@ -214,8 +214,8 @@ function rationaleOf(tape, m) {
   if (!hit) return null;
   const row = hit.row;
   const at = instantOrNull(row.at);
-  const hypothesis = boundedText(row.hypothesis, EXCERPT_BOUNDS.hypothesis);
-  const rationale = boundedText(row.rationale, EXCERPT_BOUNDS.rationale);
+  const hypothesis = promptQuoteText(row.hypothesis, EXCERPT_BOUNDS.hypothesis, knownIds);
+  const rationale = promptQuoteText(row.rationale, EXCERPT_BOUNDS.rationale, knownIds);
   if (!hypothesis && !rationale) return null;
   return { ...(hypothesis ? { hypothesis: quote(hypothesis, 'agent', at) } : {}), ...(rationale ? { rationale: quote(rationale, 'agent', at) } : {}) };
 }
@@ -225,7 +225,7 @@ function rationaleOf(tape, m) {
  * instants only (CE-3, CE-4): the player's words and the platform's canonical text, each its own quotation at the
  * filing's time. A tie still standing, whose candidates disagree: no directive.
  */
-function directiveOf(tape, m) {
+function directiveOf(tape, m, knownIds) {
   if (!Number.isInteger(m.fromTickSeq) || !Number.isInteger(m.toTickSeq)) return null;
   const rows = candidatesOf(tape.directives, (d) => isObj(d) && isObj(d.heard) && Number.isInteger(d.heard.tickSeq) && d.heard.tickSeq >= m.fromTickSeq && d.heard.tickSeq <= m.toTickSeq);
   if (!rows.length) return null;
@@ -234,8 +234,8 @@ function directiveOf(tape, m) {
   if (!hit) return null;
   const row = hit.row;
   const at = instantOrNull(row.filedAt);
-  const playerText = boundedText(row.playerText, EXCERPT_BOUNDS.playerText);
-  const canonicalText = boundedText(row.canonicalText, EXCERPT_BOUNDS.canonicalText);
+  const playerText = promptQuoteText(row.playerText, EXCERPT_BOUNDS.playerText, knownIds);
+  const canonicalText = promptQuoteText(row.canonicalText, EXCERPT_BOUNDS.canonicalText, knownIds);
   if (!playerText && !canonicalText) return null;
   return { ...(playerText ? { playerText: quote(playerText, 'player', at) } : {}), ...(canonicalText ? { canonicalText: quote(canonicalText, 'platform', at) } : {}) };
 }
@@ -270,12 +270,12 @@ function exitRowOf(tape, m) {
 function exitOf(tape, hit) {
   const { row, i } = hit;
   const out = {};
-  // the writer's `unrecorded` is its sentinel for a missing exit reason (tapeAssemble.js), not a recorded mechanism:
-  // a missing part is absent (§2 review L1-4)
-  if (str(row.mechanism) && row.mechanism !== 'unrecorded') out.mechanism = recorded(row.mechanism);
-  if (str(row.exitReason)) out.exitReason = recorded(row.exitReason);
-  if (str(row.symbolOut)) out.sold = recorded(row.symbolOut);
-  if (str(row.symbolIn)) out.bought = recorded(row.symbolIn);
+  // CE-1: each recorded word inside its own domain — the writer's table of reasons and mechanisms (its `unrecorded`
+  // sentinel for a missing reason is no mechanism: a missing part is absent, §2 review L1-4) and the ticker shape
+  if (exitMechanismOk(row.mechanism)) out.mechanism = recorded(row.mechanism);
+  if (exitReasonOk(row.exitReason)) out.exitReason = recorded(row.exitReason);
+  if (tickerOk(row.symbolOut)) out.sold = recorded(row.symbolOut);
+  if (tickerOk(row.symbolIn)) out.bought = recorded(row.symbolIn);
   const price = classed(row.exitPrice, tape.numberClasses, ['actions', i, 'exitPrice']);
   if (price) out.exitPrice = price;
   return Object.keys(out).length ? out : null;
@@ -292,7 +292,7 @@ function exitOf(tape, hit) {
  * never an earlier bar's.
  */
 async function afterExitOf(db, uid, battleId, etDate, row) {
-  const symbol = typeof row.symbolOut === 'string' && TICKER.test(row.symbolOut) ? row.symbolOut : null;
+  const symbol = tickerOk(row.symbolOut) ? row.symbolOut : null;
   const exitMs = instantMs(row.at);
   if (!symbol || exitMs === null) return null;
   const series = await readDoc(tapeRef(db, battleId, etDate).collection(SERIES_SUBCOLLECTION).doc(symbol));
@@ -332,25 +332,36 @@ function countOf(tape, m) {
  * instant — and, apart from it, the note as the player's words: CD-14, the note's ONE home is `inputQuote` (W-06's one
  * quotation per input is the shape's, not the assembler's to remember); `card` carries no note.
  */
-function cardOf(entry) {
+function cardOf(entry, knownIds) {
   const card = { label: EXCERPT_LABELS.card };
   const q = SITUATION_QUESTIONS.find((x) => x.id === entry.questionId && x.situationId === entry.situationId && x.version === entry.questionVersion);
   if (q && str(q.text)) card.question = recorded(q.text);
   const route = str(entry.route) ? routeOf(entry.route) : null;
-  if (str(route)) card.route = recorded(route);
+  if (cardRouteOk(route)) card.route = recorded(route);   // CE-1: a route outside CARD_ROUTES is absent
   const filed = instantOrNull(entry.createdAt);
   if (filed) card.filed = recorded(filed);
-  const note = boundedText(entry.note, EXCERPT_BOUNDS.note);
+  const note = promptQuoteText(entry.note, EXCERPT_BOUNDS.note, knownIds);
   return { card, note: note ? { text: note, at: filed } : null };
 }
 
+/**
+ * CE-1 — the ids this excerpt KNOWS: a quotation holding any of them is left out whole (the policy's item 1; the shapes
+ * the platform mints are its item 2, promptBoundText.js) — by the ONE rule the screen's subject line uses too
+ * (filmRoomSubject.js subjectKnownIds): the owner's uid, the battle, the battle's own agent, the attribution agent, and
+ * for a card its entry, its agent, its op id, its nomination's book and id. The idea's list joins in ideaFrom.
+ */
+const knownIdsOf = ({ uid, battleId, battle, attributionAgentId, watchlistId, entry }) => subjectKnownIds({ ownerId: uid, battleId, battleAgentId: isObj(battle) ? battle.agentId : null, attributionAgentId, watchlistId, card: entry });
+
 /** The excerpt itself, from the day the checks passed, its moment, and (for a card) the entry. */
-async function buildExcerpt(db, { uid, battleId, etDate, tape, day, entry = null }) {
+async function buildExcerpt(db, { uid, attributionAgentId, battleId, etDate, tape, battle, day, entry = null }) {
   const m = day.moment;
+  // the idea's list is known to every quotation, not the statement alone (CE-1 item 1)
+  const knownIds = knownIdsOf({ uid, battleId, battle, attributionAgentId, watchlistId: carriedIdeaRefOf(tape)?.watchlistId ?? null, entry });
   const excerpt = { excerptVersion: MOMENT_EXCERPT_VERSION, battle: EXCERPT_LABELS.battle };
   const refs = { [EXCERPT_LABELS.battle]: battleId };
-  excerpt.symbol = recorded(m.symbol);
-  excerpt.situationId = recorded(m.situationId);
+  // CE-1: the moment's own recorded words, each inside its domain — a symbol of the ticker shape, a registered situation
+  if (tickerOk(m.symbol)) excerpt.symbol = recorded(m.symbol);
+  if (situationIdOk(m.situationId)) excerpt.situationId = recorded(m.situationId);
   const items = Array.isArray(tape.tags?.items) ? tape.tags.items : [];
   const first = items.findIndex((it) => isObj(it) && it.situationId === m.situationId && it.symbol === m.symbol && it.tickSeq === m.fromTickSeq && it.version === day.situationVersion);
   const version = first >= 0 ? classed(day.situationVersion, tape.numberClasses, ['tags', 'items', first, 'version']) : null;
@@ -360,11 +371,11 @@ async function buildExcerpt(db, { uid, battleId, etDate, tape, day, entry = null
   excerpt.checks = { value: m.checks, class: 'derived' };
   const sector = sectorOf(m.symbol);
   if (sector) excerpt.sector = recorded(sector);
-  const idea = await ideaOf(db, uid, tape);
+  const idea = await ideaOf(db, uid, tape, knownIds);
   if (idea) { excerpt.idea = idea.idea; refs[EXCERPT_LABELS.idea] = idea.watchlistId; }
-  const rationale = rationaleOf(tape, m);
+  const rationale = rationaleOf(tape, m, knownIds);
   if (rationale) excerpt.rationale = rationale;
-  const directive = directiveOf(tape, m);
+  const directive = directiveOf(tape, m, knownIds);
   if (directive) excerpt.directive = directive;
   const hit = exitRowOf(tape, m);
   const exit = hit ? exitOf(tape, hit) : null;
@@ -374,7 +385,7 @@ async function buildExcerpt(db, { uid, battleId, etDate, tape, day, entry = null
   const count = countOf(tape, m);
   if (count) excerpt.count = count;
   if (entry) {
-    const { card, note } = cardOf(entry);
+    const { card, note } = cardOf(entry, knownIds);
     // CC-2, CD-14: the card's one quoted excerpt, the input's — its only home
     if (note) excerpt.inputQuote = quote(note.text, 'player', note.at);
     excerpt.card = card;
@@ -398,7 +409,7 @@ export async function excerptOf(db, { uid, attributionAgentId, battleId, etDate,
   if (!owned) return null;
   const day = judgeDay(owned.tape, uid, momentArg(moment));
   if (!day.ok) return null;
-  return buildExcerpt(db, { uid, battleId, etDate, tape: owned.tape, day });
+  return buildExcerpt(db, { uid, attributionAgentId, battleId, etDate, tape: owned.tape, battle: owned.battle, day });
 }
 
 /**
@@ -423,5 +434,5 @@ export async function excerptOfCard(db, { uid, attributionAgentId, entryId } = {
   if (!owned) return null;
   const day = judgeFiledDay(owned.tape, uid, { moment, archetypeCodeId: entry.archetypeCodeId, situationVersion: entry.situationVersion });
   if (!day.ok) return null;
-  return buildExcerpt(db, { uid, battleId: src.battleId, etDate: src.etDate, tape: owned.tape, day, entry });
+  return buildExcerpt(db, { uid, attributionAgentId, battleId: src.battleId, etDate: src.etDate, tape: owned.tape, battle: owned.battle, day, entry });
 }

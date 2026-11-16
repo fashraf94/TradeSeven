@@ -26,6 +26,8 @@ import {
   EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION, ETN_MOMENT, META_MOMENT, EXCERPT_NOTE, EXCERPT_MEETING, FORGED_DIAGNOSIS,
 } from './__fixtures__/excerptFixtures.js';
 import { buildCardDoc } from './cardStore.js';
+// CE-1: the card request's own note normaliser — a note holding an id is accepted at intake and left out at projection
+import { normalizeNote } from './cardRequest.js';
 import { CARD_SLOTS } from '../../../src/data/cardSlots.js';
 import { stableStringify } from '../canonicalHash.js';
 import { WRITE_PATTERN } from '../../../scripts/census-film-room-v1-plays.mjs';
@@ -192,7 +194,7 @@ describe('a field the tape does not hold is absent — never a guess, never a ne
     expect(DAY.tape.meetings).toHaveLength(1);
     for (const e of [LIVE.moment.excerpt, LIVE.card.excerpt]) expect('meeting' in e).toBe(false);
   });
-  it('CD-16 — A FORGED, OWNER-WRITTEN MEETING HISTORY, through the real writer, gives no meeting in the excerpt and none of its words (the owner may update the history; the owner\'s own screen still shows it — FilmRoomMeetings.writer.jsdom.test.jsx)', async () => {
+  it('CD-16 — A FORGED, OWNER-WRITTEN MEETING HISTORY, through the real writer, gives no meeting in the excerpt and none of its words (the owner may update the history; the owner\'s own screen still shows it — FilmRoomMeetings.writer.jsdom.test.jsx)', { timeout: 60_000 }, async () => {
     const forgedMeetings = [
       { ...EXCERPT_MEETING, diagnosis: FORGED_DIAGNOSIS, status: 'approved', resolvedBy: 'coach' },
       { ...EXCERPT_MEETING, id: 'gpm_1758649000000', status: 'expired', expiresAt: '2026-09-23T19:30:00.000Z', resolvedAt: '2026-09-23T19:30:00.000Z', diagnosis: `${FORGED_DIAGNOSIS} Again.` },
@@ -548,6 +550,106 @@ describe('CC-3 — labels, never ids', () => {
   });
 });
 
+// ── no identifier rides in on someone's words (CE-1) ────────────────────────
+
+/** A nominated card — its nomination and book on the entry, so the excerpt knows them (CE-1 item 1). */
+const nominatedCard = (o = {}) => ({ ...excerptCard(), stage: 'nominated', nomination: { bookId: BOOK, nominationId: NOMINATION, state: 'queued' }, ...o });
+/** Every quotation location (CD-14: the note is inputQuote only; CD-16: no meeting), each with how to plant words in it. */
+const QUOTE_LOCATIONS = Object.freeze({
+  inputQuote: { plant: (text) => storeOfDay(DAY, { card: nominatedCard({ note: text }) }), read: (e) => e.inputQuote },
+  'idea.statement': { plant: (text) => storeOfDay(DAY, { card: nominatedCard(), idea: ideaVersionDoc({ statement: text }) }), read: (e) => e.idea?.statement },
+  'rationale.hypothesis': { plant: (text) => withTape((t) => { t.rationale[RAT15].hypothesis = text; }, { card: nominatedCard() }), read: (e) => e.rationale?.hypothesis },
+  'rationale.rationale': { plant: (text) => withTape((t) => { t.rationale[RAT15].rationale = text; }, { card: nominatedCard() }), read: (e) => e.rationale?.rationale },
+  'directive.playerText': { plant: (text) => withTape((t) => { t.directives[DIR15].playerText = text; }, { card: nominatedCard() }), read: (e) => e.directive?.playerText },
+  'directive.canonicalText': { plant: (text) => withTape((t) => { t.directives[DIR15].canonicalText = text; }, { card: nominatedCard() }), read: (e) => e.directive?.canonicalText },
+});
+/** Astra's ten id kinds (C2-F1): the fixture's own ids, each known to the card's excerpt exactly, and the two shapes. */
+const PLANTED_IDS = Object.freeze({ ...KNOWN_IDS, 'Firestore auto-id': 'Ab3dEf7hIj9kLm1nOp5q', UUID: '123e4567-e89b-12d3-a456-426614174000' });
+/** The excerpt with one location's quotation removed — what CE-1 leaves when it omits that quotation whole. */
+const without = (excerpt, loc) => {
+  const e = clone(excerpt);
+  const [a, b] = loc.split('.');
+  if (b) { delete e[a][b]; if (!Object.keys(e[a]).filter((k) => k !== 'label').length && a !== 'idea') delete e[a]; } else delete e[a];
+  return e;
+};
+const NOMINATED_LIVE = await cardOver(storeOfDay(DAY, { card: nominatedCard() }));
+
+describe('CE-1 — no identifier rides in on someone\'s words (C2-F1): a quotation holding one is left out WHOLE, never redacted', () => {
+  it('the nominated card\'s excerpt carries all six quotations when no id is planted (the baseline every row below departs from)', () => {
+    for (const [loc, l] of Object.entries(QUOTE_LOCATIONS)) expect(l.read(NOMINATED_LIVE.excerpt), loc).toBeDefined();
+  });
+  for (const [kind, id] of Object.entries(PLANTED_IDS)) {
+    it(`${kind} (${id}), planted in each of the six quotation locations: that quotation is absent, every other field as before, and no id anywhere in \`excerpt\``, async () => {
+      for (const [loc, l] of Object.entries(QUOTE_LOCATIONS)) {
+        const got = await cardOver(l.plant(`Recorded ${id} here.`));
+        expect(got, `${kind} in ${loc}`).not.toBeNull();
+        expect(l.read(got.excerpt), `${kind} in ${loc}`).toBeUndefined();
+        expect(got.excerpt, `${kind} in ${loc}: only that quotation leaves`).toEqual(without(NOMINATED_LIVE.excerpt, loc));
+        expect(idsIn(got.excerpt), `${kind} in ${loc}`).toEqual([]);
+        expect(stringsOf(got.excerpt).some((s) => s.includes(id)), `${kind} in ${loc}`).toBe(false);
+      }
+    });
+  }
+  it('the MOMENT\'s excerpt too (no card, so no entry, nomination or book known): the ids it knows, and the platform\'s shapes for the ones it does not — a card op id, a book, a clone, a Mandate manager — each leaves its quotation out', async () => {
+    const plantedForMoment = { battle: EXCERPT_BATTLE, uid: OWNER, agent: AGENT, watchlist: EXCERPT_WATCHLIST, clone: CLONE_AGENT, 'a card op / nomination': 'op_123e4567-e89b-42d3-a456-426614174000', book: 'pf_0123456789abcdef01234567', manager: 'mgr_momentum_chaser_0123456789abcdef', uid28: 'aB3dE5gH7jK9mN1pQ3sT5vW7yZ9b' };
+    for (const [kind, id] of Object.entries(plantedForMoment)) {
+      for (const loc of ['rationale.hypothesis', 'rationale.rationale', 'directive.playerText', 'directive.canonicalText']) {
+        const [sec, key] = loc.split('.');
+        const got = await momentOver(withTape((t) => { (sec === 'rationale' ? t.rationale[RAT15] : t.directives[DIR15])[key] = `Recorded ${id} here.`; }));
+        expect(got.excerpt[sec]?.[key], `${kind} in ${loc}`).toBeUndefined();
+        expect(idsIn(got.excerpt), `${kind} in ${loc}`).toEqual([]);
+      }
+      const statement = await momentOver(excerptStore(DAY, { idea: ideaVersionDoc({ statement: `Recorded ${id} here.` }) }));
+      expect(statement.excerpt.idea.statement, `${kind} in the statement`).toBeUndefined();
+      expect(statement.excerpt.idea.version, `${kind}: the idea itself kept`).toEqual(LIVE.moment.excerpt.idea.version);
+    }
+  });
+  it('ORDINARY PROSE IS CARRIED in every location: tickers, prices, dates, times, percentages and long words', async () => {
+    const PROSE = 'ETN dropped 2.4% to $385.70 on 2026-09-23 at 10:15 AM; BRK-B held. Internationalization, counterrevolutionaries.';
+    for (const [loc, l] of Object.entries(QUOTE_LOCATIONS)) {
+      const got = await cardOver(l.plant(PROSE));
+      expect(l.read(got.excerpt)?.text, loc).toBe(PROSE);
+    }
+  });
+  it('THE REAL PATHS: a note through the real card request (normalizeNote accepts it — CE-1 works at projection, not intake), and a chat message through the real tape writer — each quotation left out, the rest kept', { timeout: 60_000 }, async () => {
+    const note = normalizeNote('  Recorded Ab3dEf7hIj9kLm1nOp5q here.  ');
+    expect(note).toBe('Recorded Ab3dEf7hIj9kLm1nOp5q here.');
+    const viaRequest = await cardOver(storeOfDay(DAY, { card: excerptCard({ note }) }));
+    expect(viaRequest.excerpt.inputQuote).toBeUndefined();
+    expect(viaRequest.excerpt.card).toEqual(LIVE.card.excerpt.card);
+    const chatted = await excerptDay({ battleId: 'b-sep23-chat', edit: (fx) => { fx.battle.chatExchanges[0].userMessage = 'Refer to Ab3dEf7hIj9kLm1nOp5q'; } });
+    const heard = chatted.tape.directives.find((d) => d.heard?.tickSeq === 15);
+    expect(heard.playerText).toBe('Refer to Ab3dEf7hIj9kLm1nOp5q');   // the writer copied the player's words as they were
+    const got = await momentOver(storeOfDay(chatted, { battleId: 'b-sep23-chat' }), { ...MOMENT_ASK, battleId: 'b-sep23-chat' });
+    expect(got.excerpt.directive.playerText).toBeUndefined();
+    expect(got.excerpt.directive.canonicalText).toEqual({ ...LIVE.moment.excerpt.directive.canonicalText, at: got.excerpt.directive.canonicalText.at });
+    expect(idsIn(got.excerpt)).toEqual([]);
+  });
+  it('RECORDED WORDS OUTSIDE THEIR DOMAINS ARE ABSENT (CE-1 item 3): the moment\'s symbol, the situation, the route, the exit\'s reason, mechanism and bought symbol, the question — each an id here, none reaches `excerpt`', async () => {
+    const ID = 'Ab3dEf7hIj9kLm1nOp5q';
+    const symbolTape = clone(DAY.tape);
+    for (const i of symbolTape.tags.items) if (i.symbol === 'ETN') i.symbol = ID;
+    const symbol = await momentOver(storeOfDay({ ...DAY, tape: symbolTape }, { card: excerptCard() }), { ...MOMENT_ASK, moment: { ...ETN_MOMENT, symbol: ID } });
+    expect(symbol).not.toBeNull();
+    expect(symbol.excerpt.symbol).toBeUndefined();
+    expect(symbol.excerpt.sector).toBeUndefined();
+    const situationTape = clone(DAY.tape);
+    for (const i of situationTape.tags.items) if (i.symbol === 'ETN') i.situationId = ID;
+    const situation = await momentOver(storeOfDay({ ...DAY, tape: situationTape }, { card: excerptCard() }), { ...MOMENT_ASK, moment: { ...ETN_MOMENT, situationId: ID } });
+    const exit = await momentOver(withTape((t) => { Object.assign(t.actions.find((a) => a.symbolOut === 'ETN'), { exitReason: ID, mechanism: ID, symbolIn: ID }); }));
+    expect(Object.keys(exit.excerpt.exit).sort()).toEqual(['exitPrice', 'sold']);
+    const route = await cardOver(storeOfDay(DAY, { card: { ...excerptCard(), route: ID } }));
+    expect(route.excerpt.card.route).toBeUndefined();
+    const question = await cardOver(storeOfDay(DAY, { card: { ...excerptCard(), questionId: ID } }));
+    expect(question.excerpt.card.question).toBeUndefined();
+    for (const [name, got] of Object.entries({ symbol, situation, exit, route, question })) {
+      if (got === null) continue;   // a situation the registry lacks may be refused by the day check itself
+      expect(stringsOf(got.excerpt).some((s) => s.includes(ID)), name).toBe(false);
+      expect(idsIn(got.excerpt), name).toEqual([]);
+    }
+  });
+});
+
 // ── speakers (CC-2) ─────────────────────────────────────────────────────────
 
 /** CC-2's table, pinned here from the amendment: each quoted field and its speaker. */
@@ -653,12 +755,14 @@ describe('THE WRITE GATE — no write call in momentExcerpt.js or anything it im
     expect([...closure.keys()].map(rel).sort()).toEqual([
       'api/_utils/filmRoom/momentExcerpt.js', 'api/_utils/filmRoom/sourceDay.js', 'api/_utils/filmTape/errorClass.js', 'api/_utils/filmTape/tapeSources.js',
       'api/_utils/rankingConfig.js', 'src/constants/filmTape.js', 'src/constants/leagueTournament.js', 'src/data/cardStages.js', 'src/data/situationQuestions.js',
-      'src/utils/filmRoomMoments.js', 'src/utils/filmRoomSubject.js', 'src/utils/marketCalendar.js', 'src/utils/tapeSchedule.js',
+      // the C2 fix round (CE-1): the shared prompt-bound text policy, and the situation registry its domains read
+      'src/data/situationRegistry.js', 'src/utils/filmRoomMoments.js', 'src/utils/filmRoomSubject.js', 'src/utils/marketCalendar.js', 'src/utils/promptBoundText.js',
+      'src/utils/tapeSchedule.js',
     ]);
     expect(unexplained(writeHitsOf(closure))).toEqual([]);
   });
-  it('momentExcerpt.js, sourceDay.js and the subject module hold no hit at all — not even a Set\'s or a Map\'s', () => {
-    for (const f of ['api/_utils/filmRoom/momentExcerpt.js', 'api/_utils/filmRoom/sourceDay.js', 'src/utils/filmRoomSubject.js']) {
+  it('momentExcerpt.js, sourceDay.js, the subject module and the text policy hold no hit at all — not even a Set\'s or a Map\'s', () => {
+    for (const f of ['api/_utils/filmRoom/momentExcerpt.js', 'api/_utils/filmRoom/sourceDay.js', 'src/utils/filmRoomSubject.js', 'src/utils/promptBoundText.js']) {
       expect(writeHitsOf(new Map([[path.join(REPO, f), readFileSync(path.join(REPO, f), 'utf8')]])), f).toEqual([]);
     }
   });

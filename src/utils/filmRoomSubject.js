@@ -25,6 +25,8 @@
 
 import { TICKER_TO_SECTOR } from '../../api/_utils/rankingConfig.js';
 import { classOfNumber } from '../constants/filmTape.js';
+// Film Room C2 fix round (Amendment E, CE-1): the one prompt-bound text policy, shared with the excerpt
+import { holdsIdentifier, tickerOk } from './promptBoundText.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
@@ -67,6 +69,28 @@ export function boundedText(v, max) {
   return typeof v === 'string' && v.length > 0 && codePointsOf(v) <= max ? v : null;
 }
 
+/**
+ * CE-1 — A QUOTATION'S WORDS, as the excerpt and the screen both carry them: within the bound (boundedText) and holding
+ * no identifier — no id in `knownIds`, no shape the platform mints (promptBoundText.js) — whole, or not carried at all.
+ * Never redacted, never cut (BC-1): a text that holds an id is left out entirely.
+ */
+export function promptQuoteText(v, max, knownIds = []) {
+  const text = boundedText(v, max);
+  return text !== null && !holdsIdentifier(text, knownIds) ? text : null;
+}
+
+/**
+ * CE-1 — THE IDS A SUBJECT KNOWS, one rule for both sides (the excerpt's quotations, the screen's statement): the owner,
+ * the battle, the battle's own agent (a clone's battle: the clone), the attribution agent (its parent); and for a card
+ * the entry, the agent it is filed under, its op id, and its nomination's book and id; and the idea's own list when
+ * the caller holds it (ideaFrom adds it for the statement either way). Strings only.
+ */
+export function subjectKnownIds({ ownerId = null, battleId = null, battleAgentId = null, attributionAgentId = null, watchlistId = null, card = null } = {}) {
+  const c = isObj(card) ? card : null;
+  return [ownerId, battleId, battleAgentId, attributionAgentId, watchlistId, ...(c ? [c.entryId, c.agentId, c.opId, c.nomination?.bookId, c.nomination?.nominationId] : [])]
+    .filter((v) => typeof v === 'string' && v.length > 0);
+}
+
 /** The directory's one word for `symbol`'s sector — its sector id — or null when the directory lacks the symbol. */
 export function sectorOf(symbol) {
   if (typeof symbol !== 'string' || !symbol || !Object.prototype.hasOwnProperty.call(TICKER_TO_SECTOR, symbol)) return null;
@@ -106,14 +130,16 @@ export const ideaVersionPathOf = (ref) => ['calls', ref.i, 'hypothesisRef', 'hyp
  *   owner's words);
  *   otherwise `{ ref, version, statement, statementAt }`: `version` the ref's number with the tape's own class for its
  *   path (`{ value, class }`, null when the tape declares none), `statement` the document's statement within
- *   IDEA_STATEMENT_MAX (null when unread, missing or over the bound), `statementAt` the document's `createdAt`.
+ *   IDEA_STATEMENT_MAX (null when unread, missing or over the bound) and holding no identifier — CE-1: none of
+ *   `knownIds`, nor the owner's, nor the idea's own list, nor any id shape (promptQuoteText) — `statementAt` the
+ *   document's `createdAt`.
  */
-export function ideaFrom(tape, doc, ownerId) {
+export function ideaFrom(tape, doc, ownerId, knownIds = []) {
   const ref = carriedIdeaRefOf(tape);
   if (!ref) return null;
   if (isObj(doc) && (doc.userId !== ownerId || doc.watchlistId !== ref.watchlistId || doc.version !== ref.hypothesisVersion)) return null;
   const cls = classOfNumber(tape?.numberClasses, ideaVersionPathOf(ref));
-  const statement = isObj(doc) ? boundedText(doc.statement, IDEA_STATEMENT_MAX) : null;
+  const statement = isObj(doc) ? promptQuoteText(doc.statement, IDEA_STATEMENT_MAX, [...knownIds, ownerId, ref.watchlistId]) : null;
   const at = isObj(doc) ? instantText(doc.createdAt) : null;
   return { ref, version: cls ? { value: ref.hypothesisVersion, class: cls } : null, statement, statementAt: statement ? at : null };
 }
@@ -128,12 +154,13 @@ export const SUBJECT_WORDS = Object.freeze({ separator: ' · ', underIdea: 'unde
 /**
  * CC-7 — THE SUBJECT LINE, the one projection: its parts, each only where held, and its text. `idea` is
  * `{ statement, version }` (either may be null) or null for no carried idea; the statement is cut to its first
- * SUBJECT_STATEMENT_CODE_POINTS code points and quoted in single quotes; the version reads `v{n}`. No symbol: no line.
+ * SUBJECT_STATEMENT_CODE_POINTS code points and quoted in single quotes; the version reads `v{n}`. No symbol — or one
+ * outside the ticker domain (CE-1, as the excerpt carries none) — no line.
  *
  * @returns {{ symbol: string, sector: string|null, idea: { statement: string|null, version: number|null }|null, text: string }|null}
  */
 export function subjectLineOf({ symbol, sector = null, idea = null } = {}) {
-  if (typeof symbol !== 'string' || !symbol) return null;
+  if (!tickerOk(symbol)) return null;
   const sec = str(sector);
   const statement = idea && str(idea.statement) ? firstCodePoints(idea.statement, SUBJECT_STATEMENT_CODE_POINTS) : null;
   const version = idea && Number.isInteger(idea.version) ? idea.version : null;
@@ -158,9 +185,13 @@ export function subjectOfExcerpt(excerpt) {
   });
 }
 
-/** The subject line a day says for `symbol`, from the tape and the version document as read — the screen's side of the same projection. */
-export function subjectOfDay(tape, symbol, doc, ownerId) {
-  const idea = ideaFrom(tape, doc, ownerId);
+/**
+ * The subject line a day says for `symbol`, from the tape and the version document as read — the screen's side of the
+ * same projection. `knownIds`: the ids the screen holds for the excerpt it mirrors (CE-1) — the battle, its agent, the
+ * attribution agent, and on a receipt the card's entry, agent, nomination and book.
+ */
+export function subjectOfDay(tape, symbol, doc, ownerId, knownIds = []) {
+  const idea = ideaFrom(tape, doc, ownerId, knownIds);
   const line = subjectLineOf({ symbol, sector: sectorOf(symbol), idea: idea ? { statement: idea.statement, version: idea.version?.value ?? null } : null });
   return line ? { line, idea } : null;
 }
@@ -173,12 +204,12 @@ export function subjectOfDay(tape, symbol, doc, ownerId) {
  *   missing · idle    the idea without its statement (the excerpt's answer for a version it cannot read);
  *   ready             the document as read.
  */
-export function subjectOfDayRead(tape, symbol, read, ownerId) {
+export function subjectOfDayRead(tape, symbol, read, ownerId, knownIds = []) {
   const status = read?.status ?? 'idle';
-  if (status === 'loading' || status === 'error') return carriedIdeaRefOf(tape) ? null : subjectOfDay(tape, symbol, null, ownerId);
+  if (status === 'loading' || status === 'error') return carriedIdeaRefOf(tape) ? null : subjectOfDay(tape, symbol, null, ownerId, knownIds);
   if (status === 'denied') {
     const line = subjectLineOf({ symbol, sector: sectorOf(symbol), idea: null });
     return line ? { line, idea: null } : null;
   }
-  return subjectOfDay(tape, symbol, status === 'ready' ? read.doc : null, ownerId);
+  return subjectOfDay(tape, symbol, status === 'ready' ? read.doc : null, ownerId, knownIds);
 }
