@@ -29,6 +29,9 @@ import { canonicalContentHash } from '../canonicalHash.js';
 import { PracticeFieldError } from './errors.js';
 import { MARK_QUALITY } from './constants.js';
 import { MARK_PROVENANCE_SOURCE } from './ledger.js';
+import { newTrack, foldCloseIntoTrack, trackStatistics } from './settlement.js';
+import { roundUsd } from '../mandateRounding.js';
+import { toCents, fromCents } from './money.js';
 
 /** The packet's own version (its own family; starts at 1). */
 export const EVIDENCE_PACKET_VERSION = 1;
@@ -251,16 +254,116 @@ const endpointCopy = (side, endpointSnapshotKey) => {
   };
 };
 
+// ── the close observations (Astra T2B-03) ─────────────────────────────────────────────────────────────────────
+// The result's largest decline and invested exposure are folded from EVERY close of the idea, entry to endpoint
+// (settlement.js foldCloseIntoTrack). The packet therefore copies each of those closes from the idea's own row of it
+// — the row is the source — on each ledger: the marked value and the cash, and each holding's quantity and mark with
+// the mark's quality, vendor time, source (`markSource`) and snapshot key: this close's snapshot for a fresh mark, the
+// source's for a carried one (`carriedFrom`, T2B-01). With them the statistics are recomputed from the packet alone
+// (recomputeResultFromPacket), with no snapshot and no row.
+
+/** The three ledgers of a valuation row, by the row's own field names. */
+const ROW_LEDGERS = Object.freeze([
+  ['idea', { value: 'markedValue', cash: 'cash', holdingsValue: 'markedHoldingsValue', quantities: 'quantities', marks: 'marks' }],
+  ['comparison', { value: 'comparisonMarkedValue', cash: 'comparisonCash', holdingsValue: null, quantities: 'comparisonQuantities', marks: 'comparisonMarks' }],
+  ['spy', { value: 'spyMarkedValue', cash: 'spyCash', holdingsValue: null, quantities: 'spyQuantities', marks: 'spyMarks' }],
+]);
+
+/** One close of the idea, copied from its row. */
+function observationOf(row) {
+  const key = row?.closeSnapshotKey ?? null;
+  const ledgers = {};
+  for (const [name, f] of ROW_LEDGERS) {
+    const holdings = {};
+    const marks = row?.[f.marks] || {};
+    for (const sym of Object.keys(marks).sort()) {
+      const m = marks[sym];
+      const carried = (m?.markSource ?? null) !== 'snapshot';
+      const carriedFrom = carried ? provenanceCopy(m?.carriedFrom) : null;
+      holdings[sym] = {
+        shares: row?.[f.quantities]?.[sym] ?? null, mark: m?.mark ?? null, quality: m?.quality ?? null,
+        vendorTimeIso: m?.vendorTimeIso ?? null, markSource: m?.markSource ?? null,
+        snapshotKey: carried ? (carriedFrom?.snapshotKey ?? null) : key,
+        ...(carried ? { carriedFrom } : {}),
+      };
+    }
+    ledgers[name] = {
+      markedValueUsd: row?.[f.value] ?? null, cashUsd: row?.[f.cash] ?? null,
+      ...(f.holdingsValue ? { markedHoldingsValueUsd: row?.[f.holdingsValue] ?? null } : {}),
+      holdings,
+    };
+  }
+  return {
+    date: row?.date ?? null, observed: row?.observed === true, fullQuality: row?.fullQuality === true,
+    closeSnapshotKey: key, closeSnapshotBuiltAt: row?.closeSnapshotBuiltAt ?? null, ledgers,
+  };
+}
+
+/** A ledger's holdings value at its observation's marks: Σ shares × mark, rounded once — the valuation's own basis. */
+function holdingsCentsOf(ledger) {
+  let raw = 0;
+  for (const sym of Object.keys(ledger?.holdings || {}).sort()) {
+    const h = ledger.holdings[sym];
+    raw += (Number(h?.shares) || 0) * (Number(h?.mark) || 0);
+  }
+  return toCents(roundUsd(raw));
+}
+
+/**
+ * THE RESULT'S STATISTICS, RECOMPUTED FROM THE PACKET ALONE (Astra T2B-03) — no snapshot, no row, and not the packet's
+ * own `track`: each observation's values are recomputed from its holdings' quantities and marks and its cash, checked
+ * against the values it states, and folded in order exactly as the close folded its rows (settlement.js
+ * foldCloseIntoTrack), then stated by the one function the result was written with (trackStatistics). Pure.
+ *
+ * @returns {{ largestDecline: object, investedExposure: object, rows: number, rowsNotFullQuality: number,
+ *             observations: number, problems: string[] } | null}  null when the packet carries no observation
+ */
+export function recomputeResultFromPacket(packet) {
+  const obs = Array.isArray(packet?.observations) ? packet.observations : null;
+  if (!obs || obs.length === 0) return null;
+  const problems = [];
+  let track = newTrack();
+  let prior = null;
+  for (const o of obs) {
+    if (typeof o?.date !== 'string' || (prior !== null && o.date <= prior)) problems.push(`order:${o?.date ?? 'none'}`);
+    prior = o?.date ?? prior;
+    const cents = {};
+    for (const [name] of LEDGERS) {
+      const l = o?.ledgers?.[name];
+      const holdingsCents = holdingsCentsOf(l);
+      const valueCents = toCents(l?.cashUsd) + holdingsCents;
+      if (valueCents !== toCents(l?.markedValueUsd)) problems.push(`value:${o?.date}:${name}`);
+      if (name === 'idea' && holdingsCents !== toCents(l?.markedHoldingsValueUsd)) problems.push(`holdings:${o?.date}:${name}`);
+      cents[name] = { valueCents, holdingsCents };
+    }
+    track = foldCloseIntoTrack(track, {
+      date: o?.date, fullQuality: o?.fullQuality === true,
+      markedValue: fromCents(cents.idea.valueCents), markedHoldingsValue: fromCents(cents.idea.holdingsCents),
+      comparisonMarkedValue: fromCents(cents.comparison.valueCents),
+    }, { observed: o?.observed === true });
+  }
+  return { ...trackStatistics(track), observations: obs.length, problems };
+}
+
 /**
  * The result packet of an idea whose endpoint and result this close writes. `idea` is the idea AFTER this close (its
  * result, its lines with their breaches, its three ledgers with their receipts); `endpointRow` the row this close
  * creates; `inception` the idea's inception row (its entry fills, on all three ledgers), read in the same
- * transaction. An idea with an endpoint and no inception row cannot exist (the entry writes both in one transaction):
- * the close refuses it rather than write a packet without its entry prices.
+ * transaction; `closeRows` the idea's row of EVERY close from its entry session to this one, in order — the earlier
+ * ones read in the same transaction, this close's as it is about to be written (T2B-03). An idea with an endpoint and
+ * no inception row, or with a close missing between its entry and its endpoint, cannot exist (the entry writes the
+ * inception row in its transaction; every close writes the row of every filled idea): the close refuses it rather than
+ * write a packet without prices its result rests on.
  */
-export function buildResultPacket({ bookId, idea, endpointRow, inception, nowIso }) {
+export function buildResultPacket({ bookId, idea, endpointRow, inception, closeRows = [], nowIso }) {
   if (!isPlain(inception) || !isPlain(inception.legs)) throw new PracticeFieldError('inception_row_missing', { ideaId: idea?.ideaId ?? null });
   if (!isPlain(endpointRow) || !isPlain(idea?.result)) throw new PracticeFieldError('result_packet_without_result', { ideaId: idea?.ideaId ?? null });
+  const gaps = (closeRows || []).filter((r) => !isPlain(r) || r.rowKind !== 'valuation').map((r) => r?.date ?? null);
+  const first = closeRows?.[0]?.date ?? null;
+  const last = closeRows?.[closeRows.length - 1]?.date ?? null;
+  if (gaps.length > 0 || first !== (idea?.entry?.sessionDate ?? null) || last !== (endpointRow.endpointSession ?? null)) {
+    throw new PracticeFieldError('observation_row_missing', { ideaId: idea?.ideaId ?? null, missing: gaps, first, last });
+  }
   const entryFills = {};
   const corporateActions = {};
   const salesBeforeEndpoint = {};
@@ -304,8 +407,11 @@ export function buildResultPacket({ bookId, idea, endpointRow, inception, nowIso
       ledgers: endpoint,
       gapUsd: endpointRow.gapUsd ?? null, gapToSpyUsd: endpointRow.gapToSpyUsd ?? null,
     },
-    // The running record the result's largest decline and invested exposure were computed from (settlement.js
-    // foldCloseIntoTrack — one fold per recorded close), as it stood at the endpoint (review B13).
+    // EVERY CLOSE the result's largest decline and invested exposure were folded from, entry to endpoint, copied from
+    // the idea's own rows: on each ledger the values and each holding's quantity, mark and its source (Astra T2B-03).
+    observations: closeRows.map(observationOf),
+    // The running record those closes were folded into (settlement.js foldCloseIntoTrack), as it stood at the
+    // endpoint (review B13) — beside the observations it is recomputed from, never in their place.
     track: idea.track ?? null,
     // The result itself, as written on the idea.
     result: idea.result,
@@ -330,7 +436,8 @@ export function resultPacketMissingMarks(packet, endpointRow) {
       const m = packet?.endpoint?.ledgers?.[name]?.marks?.[sym];
       let whole = isPlain(m) && typeof m.mark === 'number' && typeof m.markQuality === 'string';
       if (whole && isCarriedMark(m)) {
-        whole = honestProvenance(m.carriedFrom) && m.snapshotKey === m.carriedFrom.snapshotKey;
+        // …and the packet's own record of that source says the same (T2B-03): a time the source never had is borrowed.
+        whole = honestProvenance(m.carriedFrom) && m.snapshotKey === m.carriedFrom.snapshotKey && sourceRecordAgrees(packet, name, m.carriedFrom);
       } else if (whole) {
         whole = !('carriedFrom' in m) && typeof endpointKey === 'string' && m.snapshotKey === endpointKey
           && timeAgreesWithQuality(m.markQuality, m.markVendorTimeIso ?? null);
@@ -339,4 +446,43 @@ export function resultPacketMissingMarks(packet, endpointRow) {
     }
   }
   return missing;
+}
+
+/**
+ * Does the packet's OWN record of a carried price's source say what the carried mark says of it (T2B-01, T2B-03)? A
+ * close source is the packet's observation of that session: there the symbol was marked fresh from that very snapshot,
+ * with that quality and that vendor time (or none). A fill source is the entry: that slot snapshot, that session, a leg
+ * of that symbol on the same ledger at that quote's time (the eligible-mark rule admits only a vendor-timed quote).
+ */
+function sourceRecordAgrees(packet, name, p) {
+  if (p.source === MARK_PROVENANCE_SOURCE.FILL) {
+    return p.quality === MARK_QUALITY.VENDOR_TIME && packet?.entry?.sessionDate === p.session && packet?.entry?.snapshotKey === p.snapshotKey
+      && (packet?.entry?.fills?.[name] || []).some((f) => f?.symbol === p.symbol && (f?.markVendorTimeIso ?? null) === p.vendorTimeIso);
+  }
+  const o = (packet?.observations || []).find((x) => x?.date === p.session);
+  const h = o?.ledgers?.[name]?.holdings?.[p.symbol];
+  return isPlain(h) && h.markSource === 'snapshot' && o.closeSnapshotKey === p.snapshotKey
+    && h.quality === p.quality && (h.vendorTimeIso ?? null) === p.vendorTimeIso;
+}
+
+/**
+ * Every mark of every close the packet copied (T2B-03), checked as the endpoint's are: a fresh mark names its close's
+ * snapshot and a time that agrees with its quality; a carried mark names a whole, honest source, earlier than the close
+ * it was carried at, that the packet's own record agrees with. Returns `date:ledger:SYMBOL` for each that fails — empty
+ * for a whole packet.
+ */
+export function resultPacketProvenanceProblems(packet) {
+  const problems = [];
+  for (const o of packet?.observations || []) {
+    for (const [name] of LEDGERS) {
+      for (const [sym, h] of Object.entries(o?.ledgers?.[name]?.holdings || {})) {
+        const ok = (h?.markSource ?? null) === 'snapshot'
+          ? !('carriedFrom' in h) && typeof o.closeSnapshotKey === 'string' && h.snapshotKey === o.closeSnapshotKey && timeAgreesWithQuality(h.quality, h.vendorTimeIso ?? null)
+          : honestProvenance(h?.carriedFrom) && h.snapshotKey === h.carriedFrom.snapshotKey && h.carriedFrom.session <= o.date
+            && sourceRecordAgrees(packet, name, h.carriedFrom);
+        if (!ok) problems.push(`${o?.date}:${name}:${sym}`);
+      }
+    }
+  }
+  return problems;
 }

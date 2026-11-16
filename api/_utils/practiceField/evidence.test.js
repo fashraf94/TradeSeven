@@ -12,7 +12,10 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { admitIdea } from './admission.js';
 import { closeIdeaBook, catchUpIdeaBook } from './close.js';
 import { assertReconciled } from './reconcile.js';
-import { verifyPacket, resultPacketMissingMarks, jsonPure, EVIDENCE_HASH_ALGORITHM } from './evidence.js';
+import {
+  verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket, jsonPure, EVIDENCE_HASH_ALGORITHM,
+} from './evidence.js';
+import { nextSessionDate } from './windows.js';
 import { runRetentionCleanup } from '../mandateClosePass.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
@@ -31,6 +34,23 @@ function quotes(over = {}) {
     else out[sym] = CAPS[sym] && !Object.hasOwn(v, 'marketCap') ? { marketCap: CAPS[sym], ...v } : v;
   }
   return out;
+}
+/**
+ * A document's size by Firestore's storage-size rules (firebase.google.com/docs/firestore/storage-size): a string is
+ * its UTF-8 bytes + 1; a number, 8; a boolean or null, 1; a map, the sum of its keys (as strings) and values; an array,
+ * the sum of its values; the document, its name's size (each path segment as a string, + 16) + its fields + 32.
+ */
+function firestoreDocumentBytes(name, data) {
+  const str = (s) => Buffer.byteLength(s, 'utf8') + 1;
+  const val = (v) => {
+    if (v === null || typeof v === 'boolean') return 1;
+    if (typeof v === 'number') return 8;
+    if (typeof v === 'string') return str(v);
+    if (Array.isArray(v)) return v.reduce((n, x) => n + val(x), 0);
+    return Object.entries(v).reduce((n, [k, x]) => n + str(k) + val(x), 0);
+  };
+  const nameBytes = name.split('/').slice(5).reduce((n, seg) => n + str(seg), 16);
+  return nameBytes + val(data) + 32;
 }
 const ideaOf = (ctx) => getIdea(ctx.db, ctx.bookId, ctx.ideaId);
 const packetOf = (ctx, id) => ctx.db._get(`mandates/${ctx.bookId}/ideas/${ctx.ideaId}/evidence/${id}`);
@@ -353,6 +373,117 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
         expect(m[sym], k).toMatchObject({ mark: TIMED[sym], carriedFrom: nov30Source(sym, { quality: 'vendor_time', vendorTimeIso: etIso(S[9], 16, 0) }) });
       }
     });
+  });
+
+  describe('Astra T2B-03 — the packet holds every close its decline and exposure rest on, and they are recomputed from it alone', () => {
+    // Her case: a short AAPL idea against XLK, entered and ended at ordinary quotes, with ONE close — 19 Nov — at
+    // AAPL 123.4567 and XLK 234.5678: the peak both largest declines are measured from.
+    const Q = { AAPL: { price: 100, marketCap: 3e12 }, XLK: 200, SPY: 500 };
+    const PEAK = { AAPL: { price: 123.4567, marketCap: 3e12 }, XLK: 234.5678, SPY: 501.2345 };
+    async function herCase() {
+      const { db, bookId, bookRef } = await seedBook();
+      const r = await admitAndEnter(db, bookId, { contract: contractOf({ comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: Q, date: S[0] });
+      for (let i = 0; i <= 10; i += 1) await closeOn(db, bookId, S[i], i === 3 ? PEAK : Q);
+      const ctx = { db, bookId, bookRef, ideaId: r.ideaId };
+      return { ctx, packet: packetOf(ctx, 'result'), idea: ideaOf(ctx) };
+    }
+
+    it('19 Nov\'s prices are in the packet, on every ledger, as that close\'s row recorded them — with every other close from entry to endpoint', async () => {
+      const { ctx, packet, idea } = await herCase();
+      expect(verifyPacket(packet)).toBe(true);
+      expect(packet.observations.map((o) => o.date)).toEqual(S.slice(0, 11));
+      const nov19 = packet.observations.find((o) => o.date === S[3]);
+      const row = ctx.db._get(`mandates/${ctx.bookId}/ideas/${ctx.ideaId}/rows/${S[3]}`);
+      expect(nov19).toMatchObject({ observed: true, fullQuality: true, closeSnapshotKey: `${S[3]}_close` });
+      expect(nov19.ledgers.idea).toMatchObject({ markedValueUsd: row.markedValue, cashUsd: row.cash, markedHoldingsValueUsd: row.markedHoldingsValue });
+      expect(nov19.ledgers.idea.holdings.AAPL).toEqual({ shares: row.quantities.AAPL, mark: 123.4567, quality: 'vendor_time', vendorTimeIso: row.marks.AAPL.vendorTimeIso, markSource: 'snapshot', snapshotKey: `${S[3]}_close` });
+      expect(nov19.ledgers.comparison.holdings.XLK).toMatchObject({ mark: 234.5678, snapshotKey: `${S[3]}_close` });
+      expect(nov19.ledgers.spy.holdings.SPY).toMatchObject({ mark: 501.2345 });
+      expect(nov19.ledgers.comparison).toMatchObject({ markedValueUsd: row.comparisonMarkedValue, cashUsd: row.comparisonCash });
+      // Her figures: the largest declines measured from that peak.
+      expect(idea.result.largestDecline.idea).toMatchObject({ usd: 4689.93, peakOn: S[3] });
+      expect(idea.result.largestDecline.comparison).toMatchObject({ usd: 3455.74, peakOn: S[3] });
+      expect(resultPacketProvenanceProblems(packet)).toEqual([]);
+    });
+
+    it('the largest decline and the exposure are RECOMPUTED from the packet alone — every snapshot and row deleted, its own `track` removed — and equal the result', async () => {
+      const { ctx, packet, idea } = await herCase();
+      for (const p of [...ctx.db._store.keys()]) if (p.startsWith('mandateUniverseSnapshots/') || /\/rows\//.test(p)) ctx.db._store.delete(p);
+      const alone = JSON.parse(JSON.stringify(packet));
+      delete alone.track;
+      const re = recomputeResultFromPacket(alone);
+      expect(re.problems).toEqual([]);
+      expect(re.observations).toBe(11);
+      expect(re.largestDecline).toEqual(jsonPure(idea.result.largestDecline));
+      expect(re.investedExposure).toEqual(jsonPure(idea.result.investedExposure));
+      expect({ rows: re.rows, rowsNotFullQuality: re.rowsNotFullQuality }).toEqual({ rows: idea.result.dataQuality.rows, rowsNotFullQuality: idea.result.dataQuality.rowsNotFullQuality });
+      // Without its observations the packet cannot say what the result rests on: nothing to recompute from.
+      expect(recomputeResultFromPacket({ ...alone, observations: [] })).toBeNull();
+      // One close fewer — the peak — and the recomputation no longer gives the result.
+      const without = { ...alone, observations: alone.observations.filter((o) => o.date !== S[3]) };
+      expect(recomputeResultFromPacket(without).largestDecline).not.toEqual(jsonPure(idea.result.largestDecline));
+    });
+
+    it('a tampered observation fails verification — the hash, and the recomputation of its own values', async () => {
+      const { packet } = await herCase();
+      const i = packet.observations.findIndex((o) => o.date === S[3]);
+      const tampered = JSON.parse(JSON.stringify(packet));
+      tampered.observations[i].ledgers.idea.holdings.AAPL.mark = 113.4567;
+      expect(verifyPacket(tampered)).toBe(false);
+      expect(recomputeResultFromPacket(tampered).problems).toEqual([`value:${S[3]}:idea`, `holdings:${S[3]}:idea`]);
+      const shifted = JSON.parse(JSON.stringify(packet));
+      shifted.observations[i].ledgers.comparison.markedValueUsd += 0.01;
+      expect(verifyPacket(shifted)).toBe(false);
+      expect(recomputeResultFromPacket(shifted).problems).toEqual([`value:${S[3]}:comparison`]);
+    });
+
+    it('a carried mark\'s source is checked against the packet\'s own observation of it: a time that close never had is refused (T2B-01 with T2B-03)', async () => {
+      const { db, bookId, bookRef } = await seedBook();
+      const r = await admitAndEnter(db, bookId, { contract: contractOf({ comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: Q, date: S[0] });
+      for (let i = 0; i < 10; i += 1) await closeOn(db, bookId, S[i], i === 9 ? { AAPL: { price: 101.234, at: null, marketCap: 3e12 }, XLK: 202.345, SPY: 503.456 } : Q);
+      await closeOn(db, bookId, S[10], { XLK: 200, SPY: 500 }); // AAPL carried at the endpoint, from 30 Nov's untimed quote
+      const ctx = { db, bookId, bookRef, ideaId: r.ideaId };
+      const packet = packetOf(ctx, 'result');
+      const endpointRow = db._get(`mandates/${bookId}/ideas/${r.ideaId}/rows/endpoint`);
+      expect(resultPacketMissingMarks(packet, endpointRow)).toEqual([]);
+      expect(resultPacketProvenanceProblems(packet)).toEqual([]);
+      const aapl = packet.endpoint.ledgers.idea.marks.AAPL;
+      expect(aapl.carriedFrom).toMatchObject({ session: S[9], quality: 'receipt_time_fallback', vendorTimeIso: null });
+      // Claimed as a timed quote of that close (a whole-looking provenance): the packet's own 30 Nov observation says otherwise.
+      const claimed = { ...aapl, carriedFrom: { ...aapl.carriedFrom, quality: 'vendor_time', vendorTimeIso: etIso(S[9], 16, 0) } };
+      const forged = { ...packet, endpoint: { ...packet.endpoint, ledgers: { ...packet.endpoint.ledgers, idea: { ...packet.endpoint.ledgers.idea, marks: { AAPL: claimed } } } } };
+      expect(resultPacketMissingMarks(forged, endpointRow)).toEqual(['idea:AAPL']);
+    });
+
+    it('the largest shape stays well under Firestore\'s 1 MiB document limit: a long slot (60 sessions), four names, an eight-name frozen basket and SPY, every close between entry and endpoint carried', async () => {
+      const NAMES = ['AAPL', 'JPM', 'XOM', 'LLY'];
+      const BASKET = ['MSFT', 'NVDA', 'BAC', 'CVX', 'HON', 'UNH', 'PG', 'KO'];
+      const px = { AAPL: 231.47, JPM: 241.37, XOM: 118.53, LLY: 803.17, MSFT: 418.13, NVDA: 141.29, BAC: 46.27, CVX: 157.19, HON: 226.43, UNH: 512.31, PG: 168.77, KO: 62.41, SPY: 597.31 };
+      const all = (k) => Object.fromEntries(Object.entries(px).map(([s, p]) => [s, s === 'SPY' ? roundUsd(p * (1 + k / 1000)) : { price: roundUsd(p * (1 + k / 1000)), marketCap: 5e11 }]));
+      const { db, bookId, bookRef } = await seedBook();
+      const r = await admitAndEnter(db, bookId, {
+        contract: contractOf({ slot: 'long', names: NAMES, comparison: { type: 'frozen_basket', symbols: BASKET }, capitalUsd: 40000 }), quotes: all(0), date: S[0],
+      });
+      expect(r.entry.outcome).toBe('entered');
+      const idea0 = getIdea(db, bookId, r.ideaId);
+      expect(idea0.contract.schedule.sessions).toBe(60);
+      const sessions = [S[0]];
+      while (sessions[sessions.length - 1] < idea0.contract.schedule.dueSession) sessions.push(nextSessionDate(sessions[sessions.length - 1]));
+      expect(sessions).toHaveLength(61);
+      // Every close between entry and endpoint has no quote at all: every mark carried, each naming its source — the
+      // most a close can carry, so the largest packet this shape can make.
+      for (let i = 0; i < sessions.length; i += 1) await closeOn(db, bookId, sessions[i], i > 0 && i < sessions.length - 1 ? {} : all(i % 7));
+      const packet = db._get(`mandates/${bookId}/ideas/${r.ideaId}/evidence/result`);
+      expect(packet.observations).toHaveLength(61);
+      expect(verifyPacket(packet)).toBe(true);
+      expect(recomputeResultFromPacket(packet).problems).toEqual([]);
+      expect(resultPacketProvenanceProblems(packet)).toEqual([]);
+      const size = firestoreDocumentBytes(`projects/p/databases/(default)/documents/mandates/${bookId}/ideas/${r.ideaId}/evidence/result`, packet);
+      // Measured by Firestore's own storage-size rules; asserted under a quarter of the 1 MiB limit (one document built).
+      const jsonBytes = Buffer.byteLength(JSON.stringify(packet), 'utf8');
+      console.log(`PF_RESULT_PACKET_SIZE firestore=${size} json=${jsonBytes} observations=${packet.observations.length}`);
+      expect(size).toBeLessThan(256 * 1024);
+    }, 60_000);
   });
 
   it('written ONCE: a replayed close writes nothing; a result packet already stored aborts the endpoint close whole', async () => {

@@ -287,6 +287,22 @@ const declineOf = (series) => (series && series.declineCents > 0
   }
   : { usd: 0, pctOfPriorPeak: 0, priorPeakUsd: series?.peakCents != null ? fromCents(series.peakCents) : null, peakOn: series?.peakOn ?? null, troughOn: null });
 
+/**
+ * The statistics a result states from its running record (contract §4.4): each series' largest decline, the mean
+ * invested exposure, and the rows counted. ONE function: buildEndpoint writes the result with it, and the result
+ * packet's recomputation reproduces them with it from the packet's own copied observations, folded by
+ * foldCloseIntoTrack (evidence.js recomputeResultFromPacket; Astra T2B-03). Pure.
+ */
+export function trackStatistics(track) {
+  const t = track || newTrack();
+  return {
+    largestDecline: { idea: declineOf(t.idea), comparison: declineOf(t.comparison), basis: 'recorded_session_close_values' },
+    investedExposure: { mean: t.closes > 0 ? t.exposureSum / t.closes : null, closes: t.closes },
+    rows: t.rows,
+    rowsNotFullQuality: t.rowsNotFullQuality,
+  };
+}
+
 // ── The endpoint row and the result ──────────────────────────────────────────────────────────────────────────
 
 /**
@@ -376,6 +392,8 @@ export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp
   const processQuality = blockedBy.length > 0 ? PROCESS_QUALITY.BLOCKED : PROCESS_QUALITY.FOLLOWED_PLAN;
 
   const track = idea.track || newTrack();
+  // The decline, exposure and row counts, from the running record by the one function (trackStatistics).
+  const stats = trackStatistics(track);
   // The sales before the endpoint, by their origin (Q-G): a line exit, or a sale of a holding a delisting left
   // waiting (it recognised no line), counted apart (review RH-3) — the same two counts T1a-2a wrote.
   const receipts = idea.ledger.saleReceipts || [];
@@ -412,16 +430,16 @@ export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp
     oneObservationLabel: true,
     // Beside them (contract §4.4).
     spy: { valueUsd: spy.valueUsd, gapUsd: fromCents(spyGapCents), gapPctOfReserved: (spyGapCents * 100) / reservedCents, fullQuality: spy.fullQuality },
-    largestDecline: { idea: declineOf(track.idea), comparison: declineOf(track.comparison), basis: 'recorded_session_close_values' },
+    largestDecline: stats.largestDecline,
     trades: {
       entry: { count: idea.entry?.legCount ?? null, costsUsd: idea.entry?.costsPaidUsd ?? null },
       lineExit: { count: lineExits.length, costsUsd: fromCents(lineExitCostCents) },
       // A holding sold because a delisting left it waiting: its own origin, `delisting_exit` (Q-G), counted apart.
       delistingExit: { count: delistingExits.length, costsUsd: fromCents(delistingExitCostCents) },
     },
-    investedExposure: { mean: track.closes > 0 ? track.exposureSum / track.closes : null, closes: track.closes },
+    investedExposure: stats.investedExposure,
     dataQuality: {
-      rows: track.rows, rowsNotFullQuality: track.rowsNotFullQuality,
+      rows: stats.rows, rowsNotFullQuality: stats.rowsNotFullQuality,
       unobservedLineSessions: unobservedCount,
       waitingDays: (idea.waitedSessions || []).length,
       costTiersStored: own.costTiersStored && cmp.costTiersStored && spy.costTiersStored,

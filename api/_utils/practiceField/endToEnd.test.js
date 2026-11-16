@@ -31,7 +31,7 @@ import {
   seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts,
 } from './__testsupport__/fixtures.js';
-import { verifyPacket, resultPacketMissingMarks } from './evidence.js';
+import { verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket } from './evidence.js';
 
 // The pinned evidence. A change here is a change to what the idea book records: re-pin it only with a reviewed
 // change, and carry the new figures into the build report.
@@ -54,7 +54,10 @@ import { verifyPacket, resultPacketMissingMarks } from './evidence.js';
 //     13 Nov's close row of the window ledger (the book's creation day, before its first fill: `valued: false`, its
 //     three windows missed) — and 29 leaves added: `valued` on the 28 existing close rows, and the book's
 //     `execState.windowsAccountedThrough`. Nothing changed or removed.
-const EXPECTED_DUMP = { sha256: 'e6c3969bb56f8ca305724c9050bf641e89c43e1c2014ab698bb4f712edd3d33a', bytes: 334166 };
+//   T2B-03 (the close observations): bd6286bd…, 384,605 bytes, 155 documents. Against T2B-02's pin: no document added
+//     or removed; 1,195 leaves added, all under the three result packets' `observations` (every close from entry to
+//     endpoint, copied from the idea's rows), and those packets' `contentHash` changed with them. Nothing else.
+const EXPECTED_DUMP = { sha256: 'bd6286bdab695368c9c8f521b57df758ce99cc4ff5208f948a446ddcfb0c6cc0', bytes: 384605 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];
@@ -236,6 +239,13 @@ describe('the end-to-end synthetic run', () => {
       expect(verifyPacket(admission) && verifyPacket(result), id).toBe(true);
       expect(result.result).toEqual(idea(id).result);
       expect(resultPacketMissingMarks(result, db._get(`mandates/${bookId}/ideas/${id}/rows/endpoint`)), id).toEqual([]);
+      // Astra T2B-03: every close the result rests on is in the packet, and its statistics recompute from it alone.
+      expect(resultPacketProvenanceProblems(result), id).toEqual([]);
+      const re = recomputeResultFromPacket(result);
+      expect(re.problems, id).toEqual([]);
+      expect(re.observations, id).toBe(result.result.dataQuality.rows);
+      expect(re.largestDecline, id).toEqual(result.result.largestDecline);
+      expect(re.investedExposure, id).toEqual(result.result.investedExposure);
     }
     // …and (Astra T2B-02) the book's creation day, 13 Nov, before its first idea filled: accounted for by the window
     // ledger's own cursor, its windows missed, with no valuation row.

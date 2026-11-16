@@ -87,7 +87,7 @@ import {
   windowsRefOf, expectedIntradayWindows, buildCloseWindowRow, windowOnlySessionsBefore, readWindowOnlySessions, writeWindowOnlySessions,
   WINDOW_ONLY_SESSIONS_PER_TX, WINDOWS_ACCOUNTED_FIELD,
 } from './windowLedger.js';
-import { windowRowId, CLOSE_WINDOW, sessionClosePassEndMs } from './windows.js';
+import { windowRowId, CLOSE_WINDOW, sessionClosePassEndMs, nextSessionDate } from './windows.js';
 
 /** The key of THE close snapshot for a date. */
 export const closeSnapshotKeyFor = (date) => `${date}_close`;
@@ -654,11 +654,24 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
     assertReconciled(nextBook, openIdeas);
 
     // ── The reads of 7–9, every one before the first write ──────────────────────────────────────────────────────
-    // 7. Each idea reaching its endpoint here: its inception row, where every ledger's entry fills are.
+    // 7. Each idea reaching its endpoint here: its inception row, where every ledger's entry fills are — and (Astra
+    //    T2B-03) its own row of EVERY close from its entry session to this one, the closes its largest decline and
+    //    exposure were folded from (every close writes the row of every filled idea, so each is there). This close's
+    //    row is the one about to be written.
     const inceptions = {};
+    const closeRowsOf = {};
     for (const ideaId of Object.keys(endpoints)) {
-      const snap = await tx.get(bookRef.collection('ideas').doc(ideaId).collection('rows').doc('inception'));
+      const rowsRef = bookRef.collection('ideas').doc(ideaId).collection('rows');
+      const snap = await tx.get(rowsRef.doc('inception'));
       inceptions[ideaId] = snap.exists ? snap.data() : null;
+      const rows = [];
+      const entered = nextIdeas.get(ideaId)?.entry?.sessionDate ?? null;
+      for (let s = entered; typeof s === 'string' && s < session; s = nextSessionDate(s)) {
+        const r = await tx.get(rowsRef.doc(s));
+        rows.push(r.exists ? r.data() : { date: s, missing: true });
+      }
+      rows.push(ideaRows[ideaId]);
+      closeRowsOf[ideaId] = rows;
     }
     // 8. The session's intraday window rows (windows.js names the windows the book was due).
     const windowRows = {};
@@ -683,7 +696,8 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
 
     // 7. The result packets: every price each result relied on, copied (evidence.js).
     const resultPackets = Object.keys(endpoints).map((ideaId) => [ideaId, buildResultPacket({
-      bookId: bookRef.id, idea: nextIdeas.get(ideaId), endpointRow: endpoints[ideaId], inception: inceptions[ideaId], nowIso,
+      bookId: bookRef.id, idea: nextIdeas.get(ideaId), endpointRow: endpoints[ideaId], inception: inceptions[ideaId],
+      closeRows: closeRowsOf[ideaId], nowIso,
     })]);
     // 8. The close's own window row and the session's summary: expected against served, one alert per missed window —
     //    after those of the sessions before it that only the window cursor accounts for (T2B-02), in session order.
