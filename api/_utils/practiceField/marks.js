@@ -13,10 +13,11 @@
 //   4. it was observed inside that session's regular hours;
 //   5. it was observed strictly AFTER the decision it fills (`notBeforeIso` — for a basket entry, the idea's
 //      admission time; for a line exit, the close that recognised the line; for a settlement sale, the endpoint);
-//   6. (Amendment D Q-2) it is no older than the engine's own maximum mark age, MANDATE_MARK_MAX_AGE_MS (20 minutes),
-//      at THE WINDOW'S TICK — the instant the slot's stored snapshot was built (`builtAt`). The tick is the stored
-//      document's own, never the caller's clock, so a later fire of the same slot decides exactly as the first did.
-//      A snapshot with no readable build time certifies no age: refused.
+//   6. (Amendment D Q-2; T1a-2b-1 Q-D) it is no older than the idea book's own maximum quote age,
+//      PRACTICE_FIELD_MARK_MAX_AGE_MS (30 minutes — constants.js; the engine's own 20-minute constant in
+//      mandateConfig.js is unchanged and is not read here), at THE WINDOW'S TICK — the instant the slot's stored snapshot was built
+//      (`builtAt`). The tick is the stored document's own, never the caller's clock, so a later fire of the same slot
+//      decides exactly as the first did. A snapshot with no readable build time certifies no age: refused.
 // Anything else is a typed refusal and NO FILL of any kind happens on the symbol: not an entry, a trim, a line
 // exit or a settlement sale. The quarterly engine's exit fallback to a carried mark or to average cost
 // (mandateExecution.js computeExecution's exit lane — the quarterly product's own ruling, untouched) never applies
@@ -28,8 +29,7 @@
 // Pure: reads no clock and no store.
 
 import { getSessionForDate } from '../marketSchedule.js';
-import { MANDATE_MARK_MAX_AGE_MS } from '../mandateConfig.js';
-import { MARK_QUALITY } from './constants.js';
+import { MARK_QUALITY, PRACTICE_FIELD_MARK_MAX_AGE_MS } from './constants.js';
 import { etDateOfMs } from './windows.js';
 import { normSymbol } from './symbols.js';
 
@@ -89,7 +89,7 @@ export function eligibleMark(snapshot, symbol, { notBeforeIso, sessionDate } = {
   if (vendorMs <= notBeforeMs) return refuse(sym, MARK_REFUSAL.BEFORE_DECISION);
   // Q-2: one maximum age for every fill, measured at the window's tick (the stored snapshot's own build time).
   const tickMs = instantMs(snapshot?.builtAt);
-  if (!Number.isFinite(tickMs) || tickMs - vendorMs > MANDATE_MARK_MAX_AGE_MS) return refuse(sym, MARK_REFUSAL.STALE_QUOTE);
+  if (!Number.isFinite(tickMs) || tickMs - vendorMs > PRACTICE_FIELD_MARK_MAX_AGE_MS) return refuse(sym, MARK_REFUSAL.STALE_QUOTE);
 
   return { ok: true, symbol: sym, price, quoteTs: vendorSeconds, vendorTimeIso: new Date(vendorMs).toISOString() };
 }
@@ -107,7 +107,7 @@ export function quotePastMaxAge(snapshot, symbol) {
   if (vendorSeconds === null || !Number.isFinite(tickMs)) return true;
   // The same arithmetic as eligibleMark's own age test, so the two can never disagree at the boundary.
   const vendorMs = vendorSeconds * 1000;
-  return tickMs - vendorMs > MANDATE_MARK_MAX_AGE_MS;
+  return tickMs - vendorMs > PRACTICE_FIELD_MARK_MAX_AGE_MS;
 }
 
 /**

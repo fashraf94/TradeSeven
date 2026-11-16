@@ -12,6 +12,7 @@ import { COCKPIT_ALLOWLIST_ENV } from '../callRecords/allowlist.js';
 import { CANDIDATE_UNIVERSE } from '../mandateCandidateUniverse.js';
 import { MANDATE_UNIVERSE_MAX_SYMBOLS } from '../mandateConfig.js';
 import { assertReconciled } from './reconcile.js';
+import { runFounderAction } from './founderControls.js';
 import {
   seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, etIso, DAYS, ADMIT_ISO, makeMandateFakeDb,
 } from './__testsupport__/fixtures.js';
@@ -207,6 +208,24 @@ describe('admitIdea — reserving capital and coverage', () => {
     await db.collection('mandates').doc('quarterly-1').set({ userId: 'owner-1', status: 'active', portfolio: { cash: 1e7, positions: {} } });
     expect(codes(await admit(db, 'quarterly-1', contractOf()))).toEqual(['book_not_found']);
     expect(db._get('mandates/quarterly-1/ideas')).toBeUndefined();
+  });
+
+  it('check 1, through the REAL founder controls (T1a-2b-1 §6; C-1): a paused book admits nothing, a resumed one does, and a wound-down book is not active', async () => {
+    const { db, bookId } = await seedBook();
+    const prev = process.env.MANDATE_FOUNDER_UIDS;
+    process.env.MANDATE_FOUNDER_UIDS = 'owner-1';
+    try {
+      const control = (action, requestKey) => runFounderAction(db, { uid: 'owner-1', body: { action, requestKey }, nowIso: ADMIT_ISO });
+      expect((await control('pause', 'p-1')).body).toMatchObject({ outcome: 'paused', drafting: 'paused' });
+      expect(codes(await admit(db, bookId, contractOf()))).toEqual(['drafting_paused']);
+      expect((await control('resume', 'r-1')).body).toMatchObject({ outcome: 'resumed', drafting: 'on' });
+      expect((await admit(db, bookId, contractOf(), 'idea-ok')).ok).toBe(true);
+      expect((await control('wind_down', 'w-1')).body).toMatchObject({ outcome: 'draining', status: 'draining' });
+      // Wound down: not active (and its windDown says so too, both refusals named).
+      expect(codes(await admit(db, bookId, contractOf({ slot: 'medium', names: ['MSFT'] }), 'idea-late'))).toEqual(['book_not_active', 'drafting_paused']);
+    } finally {
+      if (prev === undefined) delete process.env.MANDATE_FOUNDER_UIDS; else process.env.MANDATE_FOUNDER_UIDS = prev;
+    }
   });
 
   it('check 2 and B-SAME — an occupied slot, and a ticker another idea holds or has pending, are each refused', async () => {

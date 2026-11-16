@@ -29,8 +29,9 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, closeOn, windowAt, contractOf, getBook, getIdea, getRow, dumpStore, countDocs, etIso, ADMIT_ISO,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, countResults, withoutWindowAlerts,
 } from './__testsupport__/fixtures.js';
+import { verifyPacket, resultPacketMissingMarks } from './evidence.js';
 
 // The pinned evidence. A change here is a change to what the idea book records: re-pin it only with a reviewed
 // change, and carry the new figures into the build report.
@@ -38,7 +39,10 @@ import {
 //   entry and twelve closes, no sale.
 //   T1a-2a: the run itself changed — three ideas through the ONE short slot, each to its result (see above) — so the
 //   bytes are not comparable field by field with T1a-1's; the build report lists what each document kind gained.
-const EXPECTED_DUMP = { sha256: 'ed90ebd5da97658f7488cf098829f577fe952e00c43c7f9d5830967d4fc80666', bytes: 267350 };
+// T1a-2b-1: re-pinned from T1a-2a's ed90ebd5… (267,350 bytes, 120 documents). Leaf-compared base against head: 34
+// documents ADDED — three admission and three result evidence packets, 28 close rows of the window ledger — and no
+// leaf of any existing document added, removed or changed.
+const EXPECTED_DUMP = { sha256: '21c7d608f494b185bf8e6375a8d25c1b5995470fcd813225a29528c754e55c24', bytes: 327187 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];
@@ -212,6 +216,16 @@ describe('the end-to-end synthetic run', () => {
     // Every idea carries its origin, frozen with the contract and copied onto the inception row (direction note ruling 6).
     expect(idea(b.ideaId).contract.origin).toEqual({ kind: 'signaldrop', initiatedBy: 'player' });
     expect(db._get(`mandates/${bookId}/ideas/${c.ideaId}/rows/inception`).origin).toEqual({ kind: 'research', initiatedBy: 'agent' });
+    // T1a-2b-1 §3: every idea keeps its two evidence packets, each whole and hashing to itself, the result's carrying
+    // every endpoint mark of every ledger; §4: one close row per session closed.
+    for (const id of [a.ideaId, b.ideaId, c.ideaId]) {
+      const admission = db._get(`mandates/${bookId}/ideas/${id}/evidence/admission`);
+      const result = db._get(`mandates/${bookId}/ideas/${id}/evidence/result`);
+      expect(verifyPacket(admission) && verifyPacket(result), id).toBe(true);
+      expect(result.result).toEqual(idea(id).result);
+      expect(resultPacketMissingMarks(result, db._get(`mandates/${bookId}/ideas/${id}/rows/endpoint`)), id).toEqual([]);
+    }
+    expect(countDocs(db, `mandates/${bookId}/windows/`)).toBe(28);
 
     // The evidence.
     const dump = dumpStore(db);
@@ -298,7 +312,7 @@ describe('three ideas side by side — the book\'s row is the sum of its ideas\'
       const date = DAYS12[i];
       const out = await closeOn(db, bookId, date, closeQuotesOf(i));
       expect(out.closed, date).toBe(true);
-      expect(out.alerts, date).toEqual([]);
+      expect(withoutWindowAlerts(out.alerts), date).toEqual([]);
       reconcile(db, bookId);
       const book = getBook(db, bookId);
       // B-MARK: a close moves cash only by a dividend; the treasury never moves; no decision is written.

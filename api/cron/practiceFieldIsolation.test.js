@@ -59,7 +59,7 @@ import { nextSessionDate } from '../_utils/practiceField/windows.js';
 import { PRACTICE_FIELD_FUNDS } from '../../src/data/practiceFieldFunds.js';
 import {
   seedBook as seedIdeaBook, admitAndEnter, contractOf, getBook, getIdea, getRow, etIso, etMs, tickOf, DAYS, ADMIT_ISO, countDocs,
-  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults,
+  takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, windDownBook,
 } from '../_utils/practiceField/__testsupport__/fixtures.js';
 
 const PRICES = { AAPL: 231.47, MSFT: 418.13, LLY: 803.17, SPY: 597.31, XLK: 233.59, JPM: 241.37 };
@@ -897,7 +897,7 @@ describe('T1a-2a — the real sweeps: sales at the window, the lines at the clos
     expect(pending).toMatchObject({ ok: true, startSession: DAYS.d2 });
     quoteBook.AAPL = Math.round((lineOf(db, bookId, ideaId, 'AAPL').level - 0.02) * 100) / 100;
     await closeOnce(db, DAYS.d1);
-    await bookRef.update({ status: 'draining' }); // nothing sets the status yet (T1a-2b): a fixture stands in
+    await windDownBook(db, { uid: 'owner-1' }); // the founder's REAL wind_down (T1a-2b-1 §6; T1a-2a C-1 — a fixture status before)
     expect((await db.collection('mandates').where('status', '==', 'active').get()).docs).toHaveLength(0);
 
     // The eval fire: NOT an idle skip — the draining book's symbols are built — and the sale fills. No entry.
@@ -927,8 +927,8 @@ describe('T1a-2a — the real sweeps: sales at the window, the lines at the clos
 
   it("mode 'off' with a draining idea book: no Practice Field query, no build, no pass — both sweeps are exactly the engine's own idle fires", async () => {
     const seeded = makeMandateFakeDb();
-    const { bookId, bookRef } = await populatedIdeaBook(seeded);
-    await bookRef.update({ status: 'draining' });
+    const { bookId } = await populatedIdeaBook(seeded);
+    await windDownBook(seeded, { uid: 'owner-1' });
     setPracticeFieldModeForTests(null);
     const before = snapshotOfStore(seeded, `mandates/${bookId}`);
     const { db, reads } = withReadLog(seeded);
@@ -946,7 +946,7 @@ describe('T1a-2a — the real sweeps: sales at the window, the lines at the clos
   it('the draining-book close is fenced from the engine\'s sweep: its failure is logged and counted, a quarterly book still closes, and the fire does not claim complete', async () => {
     const db = makeMandateFakeDb({ 'mandates/q1': quarterlyBook({ portfolio: { positions: { JPM: { shares: 10, costBasisTotal: 2400, lastMark: 240, openedAt: '2026-09-02' } } } }) });
     const { bookRef } = await populatedIdeaBook(db);
-    await bookRef.update({ status: 'draining' });
+    await windDownBook(db, { uid: 'owner-1' });
     // The Practice Field's own query fails AFTER the snapshot is built (the build's query is the second `kind` query of the fire).
     let kindQueries = 0;
     const failing = { ...db, collection: (c) => {
@@ -978,7 +978,7 @@ describe('T1a-2a — the real sweeps: sales at the window, the lines at the clos
       const db = makeMandateFakeDb();
       const { bookId, bookRef } = await populatedIdeaBook(db);
       await closeOnce(db, DAYS.d1);
-      if (status === 'draining') await bookRef.update({ status });
+      if (status === 'draining') await windDownBook(db, { uid: 'owner-1' });
       const far = sessionsAfter(DAYS.d1, 24); // 23 missed sessions before it: more than one call catches up
       logs.length = 0;
       const first = await closeOnce(db, far);
@@ -1001,7 +1001,7 @@ describe('T1a-2a — the real sweeps: sales at the window, the lines at the clos
     const db = makeMandateFakeDb();
     const { bookId, bookRef, ideaId } = await populatedIdeaBook(db);
     await closeOnce(db, DAYS.d1);
-    await bookRef.update({ status: 'draining' });
+    await windDownBook(db, { uid: 'owner-1' });
     // The first `kind` query of the fire is the build's; the second is the draining close's own, and it works.
     const body = await closeOnce(withFailingKindQueries(db, (n) => n === 1), DAYS.d2);
     expect(errors.some((e) => /PRACTICE_FIELD_DRAINING_QUERY_FAILED — the snapshot build falls back to the coverage document/.test(e))).toBe(true);
@@ -1018,7 +1018,7 @@ describe('T1a-2a — the real sweeps: sales at the window, the lines at the clos
     const db = makeMandateFakeDb({ 'mandates/q1': quarterlyBook({ portfolio: { positions: { JPM: { shares: 10, costBasisTotal: 2400, lastMark: 240, openedAt: '2026-09-02' } } } }) });
     const { bookId, bookRef, ideaId } = await populatedIdeaBook(db);
     await closeOnce(db, DAYS.d1);
-    await bookRef.update({ status: 'draining' });
+    await windDownBook(db, { uid: 'owner-1' });
     // The build's draining query fails; the coverage document can be read ONCE outside a transaction (the fallback).
     const queriesDown = withFailingKindQueries(db, (n) => n === 1);
     let coverageReads = 0;
@@ -1045,7 +1045,8 @@ describe('T1a-2a — the real sweeps: sales at the window, the lines at the clos
     await closeOnce(db, DAYS.d1);
     const equity = getBook(db, bookId).portfolio.totalValue;
     // (a) its close throws (the book does not reconcile): counted, not thrown.
-    await bookRef.update({ status: 'draining', 'portfolio.totalValue': Math.round((equity + 0.01) * 100) / 100 });
+    await windDownBook(db, { uid: 'owner-1' });
+    await bookRef.update({ 'portfolio.totalValue': Math.round((equity + 0.01) * 100) / 100 });
     const failed = await closeOnce(db, DAYS.d2);
     expect(failed).toMatchObject({ ok: true, closed: 0, errors: 1, complete: false, drainingIdeaBooks: { books: 1, closed: 0, skipped: 0, errors: 1 } });
     expect(getBook(db, bookId).execState.lastCloseKey).toBe(DAYS.d1);
@@ -1066,7 +1067,7 @@ describe('T1a-2a — the real sweeps: sales at the window, the lines at the clos
     const db = makeMandateFakeDb({ 'mandates/q1': quarterlyBook({ portfolio: { positions: { JPM: { shares: 10, costBasisTotal: 2400, lastMark: 240, openedAt: '2026-09-02' } } } }) });
     const { bookId, bookRef } = await populatedIdeaBook(db);
     await closeOnce(db, DAYS.d1);
-    await bookRef.update({ status: 'draining' });
+    await windDownBook(db, { uid: 'owner-1' });
     // The fire's clock: its first reading is the start; every later one is past the budget.
     const real = Date.now.bind(Date);
     let started = null;

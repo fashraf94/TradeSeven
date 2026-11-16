@@ -17,6 +17,7 @@ import { SLOT_NAMES } from '../mandateSessionSlots.js';
 import {
   seedBook, admitAndEnter, contractOf, getBook, getIdea, tickOf, tickSnapshot, closeSnapshot, slotOpenIso, etIso, DAYS, ADMIT_ISO, countDocs,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, closeOn, storeCloseSnapshot, enterIdeaWith, entryPassWith, placeSnapshot, moneyStoreBytes,
+  windDownBook,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, AMD: 2.6e11, LLY: 7.5e11, JPM: 6.8e11, XOM: 5.2e11, AVGO: 8.2e11 };
@@ -478,8 +479,19 @@ describe('runIdeaBookEntryPass — one book, one slot', () => {
     const book = getBook(db, bookId);
     expect(Object.keys(book.portfolio.positions)).toEqual(['AAPL']);
     expect(() => assertReconciled(book, openIdeas(db, bookId))).not.toThrow();
-    await bookRef.update({ status: 'draining' });
+    // The founder's REAL wind_down (T1a-2b-1 §6; T1a-2a C-1 — a fixture status before): the pass serves no entry…
+    await windDownBook(db, { uid: 'owner-1' });
+    const waitingIdeas = getBook(db, bookId).openIdeaIds.filter((id) => getIdea(db, bookId, id).status === 'accepted');
+    expect(waitingIdeas).toHaveLength(2);
     expect((await entryPassWith(db, { bookRef, tick: tickOf(DAYS.d1, 'midday'), snapshot, now })).served).toBe(false);
+    // …and an entry CALLED DIRECTLY (as if the pass had read the book before the wind-down landed) is refused by its
+    // own transaction, writing nothing: the in-transaction check, not only the pass's.
+    const before = moneyStoreBytes(db);
+    for (const ideaId of waitingIdeas) {
+      expect(await enterIdeaWith(db, { bookRef, ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', q('JPM', 'XOM', 'LLY', 'SPY')), nowIso: new Date(nowAt(DAYS.d1, 'midday')).toISOString() }))
+        .toEqual({ outcome: 'book_not_open' });
+    }
+    expect(moneyStoreBytes(db)).toBe(before);
   });
 });
 

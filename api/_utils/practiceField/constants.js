@@ -106,16 +106,29 @@ export const MARK_QUALITY = Object.freeze({
 /** The origin every code-made basket entry decision carries. */
 export const DECISION_ORIGIN_BASKET_ENTRY = 'basket_entry';
 
-/** The origins of the two sales code makes (Amendment E1, E4): a line's own holding, and what is left at settlement. */
+/** The origins of the sales code makes (Amendment E1, E4): a line's own holding, and what is left at settlement. */
 export const DECISION_ORIGIN_LINE_EXIT = 'line_exit';
 export const DECISION_ORIGIN_SETTLEMENT = 'settlement';
 /**
- * NOT a third origin (the build prompt names two: every decision record and sale receipt carries one of them). It is
- * the CAUSE of a sale whose origin is `line_exit` but whose holding was left waiting by a delisting with no cash
- * amount (Amendment E11): no line was recognised, so the result counts it apart from the line exits and the process
- * column names it (review RH-3). Read from the receipt's `queuedBy.reason`, never from the origin.
+ * The THIRD origin (T1a-2b-1 §7, Q-G — the founder's answer to T1a-2a's question): a sale before the endpoint whose
+ * holding a delisting with no cash amount left waiting (Amendment E11). No line was recognised, so it is not a line
+ * exit: its decision record and its receipt carry this origin, the result counts it apart from the line exits (the
+ * counts themselves are unchanged from T1a-2a), and the process column names it by the same word.
  */
-export const SALE_CAUSE_DELISTING = 'delisting_exit';
+export const DECISION_ORIGIN_DELISTING_EXIT = 'delisting_exit';
+/** The same word as the CAUSE the process column and the waiting record name (T1a-2a's `SALE_CAUSE_DELISTING`). */
+export const SALE_CAUSE_DELISTING = DECISION_ORIGIN_DELISTING_EXIT;
+/** Every origin a sale receipt may carry: the reconciliation accepts these three and no other. */
+export const SALE_ORIGINS = Object.freeze([DECISION_ORIGIN_LINE_EXIT, DECISION_ORIGIN_DELISTING_EXIT, DECISION_ORIGIN_SETTLEMENT]);
+
+/**
+ * T1a-2b-1 §7, Q-D: the idea book's OWN maximum quote age, for entries and sales — 30 minutes, measured at the window's
+ * tick (the stored slot snapshot's build time; marks.js). The vendor's quotes run 15–16 minutes behind, so the
+ * engine's 20 minutes left a slow snapshot build of more than about four minutes refusing every quote in the window.
+ * The engine's own `MANDATE_MARK_MAX_AGE_MS` (20 minutes, mandateConfig.js) is unchanged and still governs every
+ * quarterly book.
+ */
+export const PRACTICE_FIELD_MARK_MAX_AGE_MS = 30 * 60 * 1000;
 
 /** Why a holding is waiting to be sold before the idea's endpoint (Amendment E1, E11). */
 export const EXIT_REASON = Object.freeze({ LINE: 'line', DELISTING: 'delisting' });

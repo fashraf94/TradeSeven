@@ -157,7 +157,7 @@ export function computeBasketEntry({ idea, snapshot, sessionDate }) {
 /**
  * One idea, one slot, one transaction.
  *
- * @returns {Promise<{ outcome: 'entered'|'waiting'|'cancelled'|'not_yet'|'not_this_session'|'not_pending'|'not_found', refusals?: Array<object> }>}
+ * @returns {Promise<{ outcome: 'entered'|'waiting'|'cancelled'|'not_yet'|'not_this_session'|'not_pending'|'not_found'|'book_not_open', refusals?: Array<object> }>}
  */
 export async function enterIdea(db, { bookRef, ideaId, tick, nowIso }) {
   // 'off': no Practice Field code path runs, whoever calls. Before any read.
@@ -172,6 +172,11 @@ export async function enterIdea(db, { bookRef, ideaId, tick, nowIso }) {
     const bookSnap = await tx.get(bookRef);
     if (!bookSnap.exists || !isIdeaBook(bookSnap.data())) return { outcome: 'not_found' };
     const book = bookSnap.data();
+    // E13, contract §3.2 (T1a-2b-1 §6): a book that is not active — draining after a wind-down, or closed — takes no
+    // entry. Checked HERE, on the book this transaction read: the pass's own check (runIdeaBookEntryPass) reads the
+    // book before the transaction, so a wind-down landing between the two would otherwise let one entry through.
+    // Nothing is written; an accepted idea of a draining book times out at its start session's close.
+    if (book.status !== 'active') return { outcome: 'book_not_open' };
     const ideaSnap = await tx.get(ideaRef);
     if (!ideaSnap.exists) return { outcome: 'not_found' };
     const idea = ideaSnap.data();

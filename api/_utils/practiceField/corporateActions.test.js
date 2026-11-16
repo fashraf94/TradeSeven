@@ -19,6 +19,7 @@ import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, contractOf, getBook, getIdea, getRow, closeNowOf, countDocs,
   takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, etIso as etIsoOf, tickSnapshot, closeSnapshot as closeSnapshotOf,
+  withoutWindowAlerts,
 } from './__testsupport__/fixtures.js';
 import { ledgerEndpoint } from './settlement.js';
 
@@ -100,7 +101,7 @@ describe('a ticker change (E11) — the holding is renamed everywhere it is held
     expect(Object.keys(coverageOf(ctx)).sort()).toEqual(['AAPL', 'MSFX', 'SPY']);
     expect(coverageOf(ctx).MSFX.roles).toEqual(['held', 'comparison']);
     // On the rename day the new symbol has no quote: a carried mark, not full quality, and its line unobserved.
-    expect(out.alerts).toEqual([]);
+    expect(withoutWindowAlerts(out.alerts)).toEqual([]);
     expect(rowOf(ctx, S[1])).toMatchObject({ fullQuality: false, marks: { MSFX: { quality: 'carried_forward', mark: BASE.MSFT } }, lineObservations: { AAPL: 'at_or_above', MSFX: 'unobserved' }, corporateActionsApplied: { idea: [id], comparison: [id], spy: [] } });
     expect(idea.unobservedLineSessions).toEqual({ MSFX: [S[1]] });
     // The same-stock tie still holds (rule 9): no fill was made.
@@ -209,7 +210,7 @@ describe('a delisting (E11) — never applied as a sale', () => {
     const cash = roundUsd(shares * 402.5);
     const id = `delisting_MSFT_${S[1]}`;
     const out = await closeDay(ctx, S[1], { MSFT: { price: 402.4, corporateActions: [delisting('MSFT', 402.5)] } });
-    expect(out.alerts).toEqual([]);
+    expect(withoutWindowAlerts(out.alerts)).toEqual([]);
     const idea = ideaOf(ctx);
     const book = bookOf(ctx);
     for (const ledger of [idea.ledger, idea.comparisonLedger]) {
@@ -327,16 +328,17 @@ describe('a delisting (E11) — never applied as a sale', () => {
     // …and queues nothing: one holding, one pending sale — still the delisting's.
     expect(idea.ledger.holdings.MSFT.exitPending).toMatchObject({ reason: 'delisting', session: S[1], actionId: `delisting_MSFT_${S[1]}` });
     expect(idea.status).toBe('line_hit_exit_pending');
-    // The sale fills at the next eligible price. Its decision record and receipt carry the origin `line_exit`; what queued it says delisting.
+    // The sale fills at the next eligible price. Its decision record and receipt carry the origin `delisting_exit` (Q-G); what queued it says delisting.
     // A delisted name's price falling to HALF its carried mark is the delisting, not a split: the gap screen that holds
     // an ordinary sale back (exits.test.js) does not hold this one, or it could wait for ever.
     const collapsed = roundUsd(ideaOf(ctx).ledger.holdings.MSFT.lastMark / 2);
     expect((await win(ctx, S[3], 'open30', { MSFT: collapsed })).sales).toMatchObject({ sold: 1 });
     expect(ideaOf(ctx).ledger.saleReceipts[0].mark).toBe(collapsed);
     idea = ideaOf(ctx);
-    const decisionId = `${ctx.ideaId}__line_exit__MSFT`;
-    expect(idea.ledger.saleReceipts).toEqual([expect.objectContaining({ decisionId, kind: 'line_exit', symbol: 'MSFT', queuedBy: expect.objectContaining({ reason: 'delisting', session: S[1] }) })]);
-    expect(ctx.db._get(`mandates/${ctx.bookId}/decisions/${decisionId}`)).toMatchObject({ verb: 'SELL', ticker: 'MSFT', origin: 'line_exit', kind: 'idea_book', ideaId: ctx.ideaId });
+    const decisionId = `${ctx.ideaId}__delisting_exit__MSFT`;
+    expect(idea.ledger.saleReceipts).toEqual([expect.objectContaining({ decisionId, kind: 'delisting_exit', symbol: 'MSFT', queuedBy: expect.objectContaining({ reason: 'delisting', session: S[1] }) })]);
+    expect(ctx.db._get(`mandates/${ctx.bookId}/decisions/${decisionId}`)).toMatchObject({ verb: 'SELL', ticker: 'MSFT', origin: 'delisting_exit', kind: 'idea_book', ideaId: ctx.ideaId });
+    expect(ctx.db._get(`mandates/${ctx.bookId}/decisions/${ctx.ideaId}__line_exit__MSFT`)).toBeUndefined(); // not a line exit
     expect(countDocs(ctx.db, `mandates/${ctx.bookId}/decisions/`)).toBe(3); // two entry legs and this one sale
     expect(idea.status).toBe('holding');
     expect(idea.blockedBy.map((b) => b.kind)).toEqual(['delisting_exit_waited']);
@@ -1801,7 +1803,8 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
   });
 
   it('at the ENDPOINT an open suspicion leaves the value in doubt, by name', () => {
-    const ledger = { ...newLedger('idea', 20000), cash: 0, holdings: { AAPL: { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, openedAt: S[0], basisSuspicion: { symbol: 'AAPL', suspectedOn: S[1], since: S[0], ratio: 0.5, frozenMark: 100, resolvedBy: null, resolvedAt: null } } } };
+    // The holding carries the tier it entered with, as every real holding does (C-9: no fallback tier any more).
+    const ledger = { ...newLedger('idea', 20000), cash: 0, holdings: { AAPL: { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, openedAt: S[0], costTier: { capTier: 'mega', slippageBps: 1, spreadProxyBps: 2 }, basisSuspicion: { symbol: 'AAPL', suspectedOn: S[1], since: S[0], ratio: 0.5, frozenMark: 100, resolvedBy: null, resolvedAt: null } } } };
     const valuation = { marks: { AAPL: { mark: 100, quality: 'carried_forward', vendorTimeIso: null } } };
     expect(ledgerEndpoint(ledger, valuation)).toMatchObject({ unsettledActions: [SUSP], fullQuality: false });
   });

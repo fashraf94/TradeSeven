@@ -34,11 +34,12 @@
 // the mean invested exposure. Rather than re-read up to sixty rows inside the endpoint's transaction, each close
 // folds its row into a small running record on the idea; the endpoint reads it.
 
-import { MANDATE_FRICTION_TIERS } from '../mandateConfig.js';
 import {
   IDEA_SCHEMA_VERSION, VALUATION_LABEL, VALUATION_LABEL_UNOBSERVED, MARK_QUALITY, EXIT_REASON, CONTRACT_CONDITION, ECONOMIC_RESULT,
   PROCESS_QUALITY, EVIDENCE_SCOPE_SINGLE, ADOPTION_NO_OFFER, RESULT_VERSION, DECISION_ORIGIN_SETTLEMENT, DECISION_ORIGIN_LINE_EXIT,
+  DECISION_ORIGIN_DELISTING_EXIT,
 } from './constants.js';
+import { PracticeFieldError } from './errors.js';
 import { modelledSaleProceeds, isCostTier, costTierOf } from './fills.js';
 import { fundOf, frictionForSymbol } from './symbols.js';
 import { unsettledConflicts, heldActionRecords, basisSuspicionRecords } from './ledger.js';
@@ -165,13 +166,17 @@ export function readLines({ idea, valuation, date, isDueSession, late, recognise
 
 // ── The endpoint ─────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The cost tier a holding is liquidated under: a fund's explicit tier; the tier a stock entered with (E5). */
+/**
+ * The cost tier a holding is liquidated under: a fund's explicit tier; the tier a stock entered with (E5). A holding
+ * with no stored tier cannot reach here — the reconciliation refuses one on every ledger, as read and as written
+ * (reconcile.js) — so there is no fallback to the model's widest tier (T1a-2a C-9, removed in T1a-2b-1): if one ever
+ * did arrive, the endpoint refuses it rather than cost it at a tier it never entered with. `stored` is always true; it
+ * stays on the answer because the endpoint row and the result carry `costTiersStored`.
+ */
 export function exitTierOf(symbol, holding) {
   if (fundOf(symbol)) return { tier: costTierOf(frictionForSymbol(symbol, null)), stored: true };
   if (isCostTier(holding?.costTier)) return { tier: costTierOf(holding.costTier), stored: true };
-  // A holding with no stored tier (none is written by this build) is costed at the model's widest tier and named.
-  const widest = MANDATE_FRICTION_TIERS.unknown;
-  return { tier: { capTier: 'unknown', slippageBps: widest.slippageBps, spreadProxyBps: widest.spreadProxyBps }, stored: false };
+  throw new PracticeFieldError('cost_tier_unknown', { symbol, at: 'endpoint' });
 }
 
 /**
@@ -367,12 +372,12 @@ export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp
   const processQuality = blockedBy.length > 0 ? PROCESS_QUALITY.BLOCKED : PROCESS_QUALITY.FOLLOWED_PLAN;
 
   const track = idea.track || newTrack();
-  // Sales before the endpoint all carry the origin `line_exit`; one whose holding a delisting left waiting recognised
-  // no line, so it is counted apart (review RH-3), by what queued it.
-  const early = (idea.ledger.saleReceipts || []).filter((r) => r.kind === DECISION_ORIGIN_LINE_EXIT);
-  const lineExits = early.filter((r) => r.queuedBy?.reason !== EXIT_REASON.DELISTING);
+  // The sales before the endpoint, by their origin (Q-G): a line exit, or a sale of a holding a delisting left
+  // waiting (it recognised no line), counted apart (review RH-3) — the same two counts T1a-2a wrote.
+  const receipts = idea.ledger.saleReceipts || [];
+  const lineExits = receipts.filter((r) => r.kind === DECISION_ORIGIN_LINE_EXIT);
   const lineExitCostCents = lineExits.reduce((sum, r) => sum + toCents(r.frictionPaidUsd || 0), 0);
-  const delistingExits = early.filter((r) => r.queuedBy?.reason === EXIT_REASON.DELISTING);
+  const delistingExits = receipts.filter((r) => r.kind === DECISION_ORIGIN_DELISTING_EXIT);
   const delistingExitCostCents = delistingExits.reduce((sum, r) => sum + toCents(r.frictionPaidUsd || 0), 0);
 
   const result = {
@@ -407,7 +412,7 @@ export function buildEndpoint({ idea, valuations, date, kind, observed, caughtUp
     trades: {
       entry: { count: idea.entry?.legCount ?? null, costsUsd: idea.entry?.costsPaidUsd ?? null },
       lineExit: { count: lineExits.length, costsUsd: fromCents(lineExitCostCents) },
-      // A holding sold because a delisting left it waiting: recorded with the origin `line_exit`, counted here, apart.
+      // A holding sold because a delisting left it waiting: its own origin, `delisting_exit` (Q-G), counted apart.
       delistingExit: { count: delistingExits.length, costsUsd: fromCents(delistingExitCostCents) },
     },
     investedExposure: { mean: track.closes > 0 ? track.exposureSum / track.closes : null, closes: track.closes },

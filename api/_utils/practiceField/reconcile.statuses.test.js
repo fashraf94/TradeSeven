@@ -223,11 +223,11 @@ describe('the two lifted bounds (build prompt §1)', () => {
     // …and it must be one of the sales this build makes.
     const mislabelled = clone(idea); mislabelled.ledger.saleReceipts[0].kind = 'trim';
     expect(problems(book, [mislabelled])).toEqual(['sale_receipt_kind_unknown']);
-    for (const kind of ['line_exit', 'settlement']) {
+    for (const kind of ['line_exit', 'delisting_exit', 'settlement']) { // Q-G: the third origin is accepted
       const ok = clone(idea); ok.ledger.saleReceipts[0].kind = kind;
       expect(problems(book, [ok]), kind).toEqual([]);
     }
-    const third = clone(idea); third.ledger.saleReceipts[0].kind = 'delisting_exit'; // a cause, never an origin
+    const third = clone(idea); third.ledger.saleReceipts[0].kind = 'delisting'; // a reason, never an origin
     expect(problems(book, [third])).toEqual(['sale_receipt_kind_unknown']);
     const blank = clone(idea); blank.ledger.saleReceipts[0].realizedPnlUsd = 'n/a';
     expect(problems(book, [blank])).toEqual(expect.arrayContaining(['not_a_number', 'realized_pnl_not_receipted']));

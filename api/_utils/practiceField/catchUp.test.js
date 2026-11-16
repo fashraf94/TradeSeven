@@ -21,6 +21,7 @@ import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, windowAt, storeTickSnapshot, storeCloseSnapshot, contractOf, getBook, getIdea, getRow, tickOf,
   slotNowOf, closeNowOf, etIso, countDocs, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, moneyStoreBytes, makeMandateFakeDb, dumpStore,
+  withoutWindowAlerts, windDownBook,
 } from './__testsupport__/fixtures.js';
 
 const S = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-27', '2026-11-30', '2026-12-01', '2026-12-02', '2026-12-03', '2026-12-04'];
@@ -75,7 +76,8 @@ describe('B-CATCHUP (E12) — missed closes are caught up before the next close,
     await storeCloseSnapshot(ctx.db, S[2], quotes({ AAPL: { price: 233.05, corporateActions: [dividend] }, MSFT: 417.9 }));
     const shares = ideaOf(ctx).ledger.holdings.AAPL.shares;
     const out = await closeDay(ctx, S[3], { AAPL: { price: 234.6, corporateActions: [dividend] }, MSFT: 419.2 });
-    expect(out).toMatchObject({ closed: true, session: S[3], catchUp: false, caughtUp: [{ date: S[1], observed: true }, { date: S[2], observed: true }], alerts: [] });
+    expect(out).toMatchObject({ closed: true, session: S[3], catchUp: false, caughtUp: [{ date: S[1], observed: true }, { date: S[2], observed: true }] });
+    expect(withoutWindowAlerts(out.alerts)).toEqual([]);
     // Each session has its own rows, from its own document, in order.
     expect(countDocs(ctx.db, `mandates/${ctx.bookId}/dailyRows/`)).toBe(4);
     for (const [date, aapl, msft] of [[S[1], 229.7, 421.4], [S[2], 233.05, 417.9], [S[3], 234.6, 419.2]]) {
@@ -105,7 +107,7 @@ describe('B-CATCHUP (E12) — missed closes are caught up before the next close,
     // S[1] has no stored document at all; a crash below every line on S[1] can never be seen.
     const errors = [];
     const out = await closeDay(ctx, S[2], { AAPL: 232.9, MSFT: 416.3 });
-    errors.push(...out.alerts);
+    errors.push(...withoutWindowAlerts(out.alerts));
     expect(out).toMatchObject({ closed: true, caughtUp: [{ date: S[1], observed: false }] });
     expect(errors).toEqual([`PRACTICE_FIELD_SESSION_UNOBSERVED ${ctx.bookId} ${S[1]} — no stored close snapshot; the session is recorded as unobserved`]);
     const row = rowOf(ctx, S[1]);
@@ -366,13 +368,17 @@ describe('B-CATCHUP (E12) — missed closes are caught up before the next close,
 });
 
 describe('B-DRAIN (E13), as far as this build owns it — a draining book gets every code duty and no entries or admissions', () => {
-  /** A book with one idea whose line was hit on S[1] and a second idea admitted for S[2], set to `draining` (nothing sets the status yet: T1a-2b). */
+  /**
+   * A book with one idea whose line was hit on S[1] and a second idea admitted for S[2], then WOUND DOWN by the
+   * founder's real `wind_down` action (T1a-2b-1 §6; T1a-2a C-1 — these rows ran on a fixture status before).
+   */
   async function drainingBook() {
     const ctx = await setup({ names: ['AAPL'] });
     await closeDay(ctx, S[0]);
     const second = await admitIdea(ctx.db, { bookId: ctx.bookId, contract: contractOf({ slot: 'medium', names: ['JPM'], capitalUsd: 25000 }), opId: 'idea-2', nowIso: etIso(S[1], 11, 0) });
     await closeDay(ctx, S[1], { AAPL: roundUsd(lineOf(ctx, 'AAPL').level - 0.02) });
-    await ctx.bookRef.update({ status: 'draining' });
+    expect(await windDownBook(ctx.db, { uid: 'owner-1', nowIso: etIso(S[1], 17, 0) })).toMatchObject({ outcome: 'draining', status: 'draining' });
+    expect(bookOf(ctx)).toMatchObject({ status: 'draining', drafting: 'on', windDown: { requestedAt: etIso(S[1], 17, 0) } });
     return { ...ctx, secondId: second.ideaId };
   }
 
@@ -390,22 +396,28 @@ describe('B-DRAIN (E13), as far as this build owns it — a draining book gets e
     expect(refused.refusals.map((r) => r.code)).toContain('book_not_active');
   });
 
-  it('its closes run by the Practice Field\'s own query — valuation, the entry timeout, early resolution and the freed slot — and an active book is not touched by it', async () => {
+  it('its closes run by the Practice Field\'s own query — valuation, the entry timeout, early resolution and the freed slot — and an active book is not touched by it; with no open idea left, that close completes the wind-down (T1a-2b-1 §6)', async () => {
     const ctx = await drainingBook();
     await win(ctx, S[2], 'open30');
     const other = await seedBook({ db: ctx.db, uid: 'owner-2', opId: 'create-2', archetypeCodeId: 'degen' }); // an ACTIVE idea book in the same store
     await storeCloseSnapshot(ctx.db, S[2], quotes());
     const out = await runDrainingIdeaBookCloses(ctx.db, { date: S[2], now: closeNowOf(S[2]), ownerToken: 'owner-token' });
-    expect(out).toEqual({ books: 1, closed: 1, skipped: 0, unclosed: 0, errors: 0, leaseSkips: 0, alerts: [] });
+    // The windows were run directly (no pass), so the close reports them missed — and nothing else.
+    expect({ ...out, alerts: withoutWindowAlerts(out.alerts) }).toEqual({ books: 1, closed: 1, skipped: 0, unclosed: 0, errors: 0, leaseSkips: 0, alerts: [] });
     recon(ctx);
     const book = bookOf(ctx);
-    expect(book).toMatchObject({ status: 'draining', execState: { lastCloseKey: S[2] }, slots: { short: null, medium: null, long: null }, openIdeaIds: [] });
+    // Every idea resolved or timed out at this close: the book is CLOSED by it, its cash all in the treasury.
+    expect(book).toMatchObject({ status: 'closed', closedOn: S[2], execState: { lastCloseKey: S[2] }, slots: { short: null, medium: null, long: null }, openIdeaIds: [] });
+    expect(book.windDown).toMatchObject({ requestedAt: etIso(S[1], 17, 0), completedSession: S[2], completedAt: closeNowOf(S[2]).toISOString() });
     expect(ideaOf(ctx).status).toBe('resulted'); // its last holding exited: resolved at this close (E2)
     expect(ideaOf(ctx, ctx.secondId)).toMatchObject({ status: 'cancelled', cancelled: { reason: 'entry_timeout' } }); // the pending idea timed out: no entry in a draining book
     expect(book.treasury.unreservedCash).toBe(book.portfolio.cash);
+    // …off the founder-cap registry, and the owner's claim closed, in the same transaction; the other book stays listed.
+    expect(Object.keys(ctx.db._get('practiceFieldBooks/_registry').openBooks)).toEqual([other.bookId]);
+    expect(ctx.db._get('practiceFieldBooks/owner-1')).toMatchObject({ bookId: null, status: 'closed', closedBookId: ctx.bookId });
     expect(getBook(ctx.db, other.bookId).execState.lastCloseKey ?? null).toBeNull(); // the active book is the engine sweep's, not this pass's
-    // A second fire: already closed.
-    expect(await runDrainingIdeaBookCloses(ctx.db, { date: S[2], now: closeNowOf(S[2]), ownerToken: 'owner-token' })).toMatchObject({ books: 1, closed: 0, skipped: 1 });
+    // A second fire: the closed book is no longer a draining one.
+    expect(await runDrainingIdeaBookCloses(ctx.db, { date: S[2], now: closeNowOf(S[2]), ownerToken: 'owner-token' })).toMatchObject({ books: 0, closed: 0, skipped: 0 });
   });
 
   it('a close that answered `closed: false` left the book UNCLOSED for the date in exactly two cases — the catch-up ran out of its bound, or the date has no stored snapshot; every other answer means there was nothing to do', () => {

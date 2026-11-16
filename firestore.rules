@@ -1493,6 +1493,45 @@ service cloud.firestore {
       match /pendingScoringAppends/{date} {
         allow read, write: if false;  // Admin SDK only
       }
+
+      // Practice Field T1a-2b-1 (shared contract V2 §9): the IDEA BOOK's own
+      // stores — owner-READ, ALL client writes DENIED (Admin SDK only). The
+      // owner is the PARENT book's userId, read with get() as above, AND the
+      // parent must be an idea book (kind == 'idea_book'): a quarterly book's
+      // owner gains nothing here, even were a document planted under their
+      // book. The book doc and dailyRows / decisions / corporateActions keep
+      // their rules above. Not listed, so denied to every client: the book's
+      // controlOps (the founder's request records) and every other store.
+      function isIdeaBookOwner(bookId) {
+        let book = get(/databases/$(database)/documents/mandates/$(bookId)).data;
+        return request.auth != null
+               && request.auth.uid == book.userId
+               && book.get('kind', null) == 'idea_book';
+      }
+      // An idea, its valuation / inception / endpoint rows and its two
+      // evidence packets (admission, result).
+      match /ideas/{ideaId} {
+        allow read: if isIdeaBookOwner(mandateId);
+        allow write: if false;  // Admin SDK only
+        match /rows/{rowId} {
+          allow read: if isIdeaBookOwner(mandateId);
+          allow write: if false;  // Admin SDK only
+        }
+        match /evidence/{packetId} {
+          allow read: if isIdeaBookOwner(mandateId);
+          allow write: if false;  // Admin SDK only — create-once, immutable
+        }
+      }
+      // The epoch the book's ideas run under (frozen config).
+      match /epochs/{epochId} {
+        allow read: if isIdeaBookOwner(mandateId);
+        allow write: if false;  // Admin SDK only
+      }
+      // The window ledger: one row per window the book was due, plus the close.
+      match /windows/{rowId} {
+        allow read: if isIdeaBookOwner(mandateId);
+        allow write: if false;  // Admin SDK only
+      }
     }
 
     // userMeta/{uid} — activeMandateId + mandateEscapeHatchUsed (§2.1, §5.2).

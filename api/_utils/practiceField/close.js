@@ -44,7 +44,16 @@
 //      or `resulted` at once, its cash back in the treasury and its slot free, when nothing is left to sell;
 //   5. ROWS: the book's `dailyRows/{date}` and each filled idea's `ideas/{ideaId}/rows/{date}`;
 //   6. RECONCILIATION of the book as read, before step 0 (reject, never repair — Astra T1A-02), and of the book as it
-//      will be written, before anything is written.
+//      will be written, before anything is written;
+//   7. (T1a-2b-1 §3) THE RESULT EVIDENCE of every idea whose endpoint this close writes — a copy of every price its
+//      result relied on (evidence.js), create-once, beside the endpoint row;
+//   8. (T1a-2b-1 §4) THE CLOSE'S WINDOW ROW, create-once: the session's expected windows against the served ones, and
+//      one PRACTICE_FIELD_WINDOW_MISSED alert per missed window (windowLedger.js);
+//   9. (T1a-2b-1 §6) WIND-DOWN COMPLETES HERE: a `draining` book with no open idea left after this close is set
+//      `closed`, taken off the founder-cap registry and its owner's claim closed — all in this transaction. Nothing
+//      else removes a registry entry, and never while a book is active or draining (registryPresence.test.js).
+// Every read of 7–9 (each idea's inception row, the session's window rows, the claim and the registry) is made
+// before any write, as a Firestore transaction requires.
 
 import { buildCorporateAction } from '../mandateSchema.js';
 import { applyCorporateAction, deriveActionId } from '../mandateCorporateActions.js';
@@ -55,7 +64,7 @@ import { MANDATE_SCHEMA_VERSION } from '../mandateConfig.js';
 import { isIdeaBook, IDEA_BOOK_KIND } from '../mandateBookKind.js';
 import {
   IDEA_SCHEMA_VERSION, IDEA_STATUS, CANCEL_REASON, VALUATION_LABEL, VALUATION_LABEL_UNOBSERVED, MARK_QUALITY, FILLED_IDEA_STATUSES,
-  RUNNING_IDEA_STATUSES, EXIT_REASON, CATCH_UP_MAX_SESSIONS_PER_CALL, PROCESS_QUALITY,
+  RUNNING_IDEA_STATUSES, EXIT_REASON, CATCH_UP_MAX_SESSIONS_PER_CALL, PROCESS_QUALITY, PRACTICE_FIELD_BOOK_REGISTRY_ID,
 } from './constants.js';
 import { PracticeFieldError } from './errors.js';
 import { practiceFieldLive } from './mode.js';
@@ -70,6 +79,9 @@ import { assertReconciled } from './reconcile.js';
 import { readLines, buildEndpoint, foldCloseIntoTrack, pendingSaleOf, completedLiquidation, ENDPOINT_KIND } from './settlement.js';
 import { firstUnclosedSessionBefore } from './sessions.js';
 import { toCents, fromCents } from './money.js';
+import { buildResultPacket, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
+import { windowsRefOf, expectedIntradayWindows, buildCloseWindowRow } from './windowLedger.js';
+import { windowRowId, CLOSE_WINDOW } from './windows.js';
 
 /** The key of THE close snapshot for a date. */
 export const closeSnapshotKeyFor = (date) => `${date}_close`;
@@ -582,13 +594,57 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
     const markedEquity = fromCents(equity.equityCents);
     const costsToDateUsd = roundUsd(working.portfolio.frictionPaidCum || 0);
 
+    // 9. WIND-DOWN COMPLETES AT A CLOSE (T1a-2b-1 §6; contract §3.2, §11): a draining book with no open idea left after
+    //    this close — every idea resulted or timed out — is closed by it. Decided here, on the book as this close
+    //    leaves it.
+    const completesWindDown = book.status === 'draining' && (working.openIdeaIds || []).length === 0;
     const nextBook = {
       ...working,
       portfolio: { ...working.portfolio, positions: nextPositions, cash: roundUsd(bookCash), totalValue: markedEquity },
       revision: (working.revision || 0) + 1,
+      ...(completesWindDown ? { status: 'closed' } : {}),
     };
     // 6. Reconcile BEFORE anything is written.
     assertReconciled(nextBook, openIdeas);
+
+    // ── The reads of 7–9, every one before the first write ──────────────────────────────────────────────────────
+    // 7. Each idea reaching its endpoint here: its inception row, where every ledger's entry fills are.
+    const inceptions = {};
+    for (const ideaId of Object.keys(endpoints)) {
+      const snap = await tx.get(bookRef.collection('ideas').doc(ideaId).collection('rows').doc('inception'));
+      inceptions[ideaId] = snap.exists ? snap.data() : null;
+    }
+    // 8. The session's intraday window rows (windows.js names the windows the book was due).
+    const windowRows = {};
+    for (const w of expectedIntradayWindows(book, session)) {
+      const snap = await tx.get(windowsRefOf(bookRef).doc(windowRowId(session, w.window)));
+      windowRows[w.window] = snap.exists ? snap.data() : null;
+    }
+    // 9. The owner's claim and the founder-cap registry — read only by the close that completes a wind-down. The
+    //    collection by its literal name, for the protected-store scan.
+    let claimRef = null;
+    let claim = null;
+    let registryRef = null;
+    let registry = null;
+    if (completesWindDown) {
+      claimRef = db.collection('practiceFieldBooks').doc(book.userId);
+      registryRef = db.collection('practiceFieldBooks').doc(PRACTICE_FIELD_BOOK_REGISTRY_ID);
+      const claimSnap = await tx.get(claimRef);
+      const registrySnap = await tx.get(registryRef);
+      claim = claimSnap.exists ? claimSnap.data() : null;
+      registry = registrySnap.exists ? registrySnap.data() : null;
+    }
+
+    // 7. The result packets: every price each result relied on, copied (evidence.js).
+    const resultPackets = Object.keys(endpoints).map((ideaId) => [ideaId, buildResultPacket({
+      bookId: bookRef.id, idea: nextIdeas.get(ideaId), endpointRow: endpoints[ideaId], inception: inceptions[ideaId], nowIso,
+    })]);
+    // 8. The close's own window row and the session's summary: expected against served, one alert per missed window.
+    const closeWindow = buildCloseWindowRow({
+      bookId: bookRef.id, book, session, windowRows, observed, catchUp, snapshotMeta, nowIso, bookClosed: completesWindDown,
+      code: { ideasValued: Object.keys(ideaRows).length, endpoints: Object.keys(endpoints), resulted, cancelled },
+    });
+    alerts.push(...closeWindow.alerts);
 
     const row = {
       schemaVersion: MANDATE_SCHEMA_VERSION,
@@ -625,7 +681,13 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
     for (const [ideaId, endpointRow] of Object.entries(endpoints)) {
       tx.create(bookRef.collection('ideas').doc(ideaId).collection('rows').doc('endpoint'), endpointRow);
     }
+    // …and one result packet, created beside it (T1a-2b-1 §3): a second one aborts the whole close too.
+    for (const [ideaId, packet] of resultPackets) {
+      tx.create(evidenceRefOf(bookRef.collection('ideas').doc(ideaId), EVIDENCE_PACKET.RESULT), packet);
+    }
     tx.set(bookRef.collection('dailyRows').doc(session), row);
+    // The close's window row (T1a-2b-1 §4): create-once, as the session is closed once.
+    tx.create(windowsRefOf(bookRef).doc(windowRowId(session, CLOSE_WINDOW)), closeWindow.row);
     if (coverageWrite) tx.set(coverageDocRef, coverageData);
     const bookPatch = {
       portfolio: nextBook.portfolio,
@@ -639,8 +701,28 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
     };
     // An unobserved session marked nothing: the last-mark time stays where the last real mark left it.
     if (observed) bookPatch['health.lastCloseMarkAt'] = now;
+    if (completesWindDown) {
+      // 9. The book closes: no clock moves and no cash is reset (contract §11) — the treasury keeps every dollar.
+      bookPatch.status = 'closed';
+      bookPatch.closedAt = nowIso;
+      bookPatch.closedOn = session;
+      bookPatch.windDown = { ...(book.windDown || {}), completedAt: nowIso, completedSession: session };
+      // …it leaves the founder-cap registry (the ONE removal of an entry — registryPresence.test.js)…
+      const openBooks = { ...((registry && typeof registry.openBooks === 'object' && registry.openBooks) || {}) };
+      if (Object.hasOwn(openBooks, bookRef.id)) {
+        delete openBooks[bookRef.id];
+        tx.set(registryRef, { ...registry, openBooks, updatedAt: nowIso });
+      }
+      // …and the owner's claim is closed, so the owner may open another book. Only a claim that names THIS book.
+      if (claim && claim.bookId === bookRef.id) {
+        tx.set(claimRef, { ...claim, bookId: null, status: 'closed', closedBookId: bookRef.id, closedAt: nowIso, updatedAt: nowIso });
+      }
+    }
     tx.update(bookRef, bookPatch);
-    return { closed: true, session, catchUp, observed, row, ideaRows, endpoints, cancelled, resulted, alerts };
+    return {
+      closed: true, session, catchUp, observed, row, ideaRows, endpoints, cancelled, resulted, alerts,
+      missedWindows: closeWindow.missing, ...(completesWindDown ? { bookClosed: true } : {}),
+    };
   });
 }
 
@@ -666,6 +748,9 @@ export async function catchUpIdeaBook(db, bookRef, { before, now = new Date() } 
     if (!res.closed) return { ...out, complete: res.skipped === 'nothing_to_catch_up', skipped: res.skipped };
     out.caughtUp.push({ date: res.session, observed: res.observed });
     if (!res.observed) out.alerts.push(`PRACTICE_FIELD_SESSION_UNOBSERVED ${bookRef.id} ${res.session} — no stored close snapshot; the session is recorded as unobserved`);
+    // A caught-up close completed the book's wind-down (T1a-2b-1 §6): nothing is left to catch up — the book is closed.
+    // Complete, so the window that ran the catch-up is not counted as one that failed.
+    if (res.bookClosed) return { ...out, complete: true, bookClosed: true };
     if (out.caughtUp.length >= CATCH_UP_MAX_SESSIONS_PER_CALL) return { ...out, skipped: 'catch_up_incomplete' };
   }
 }
@@ -700,6 +785,9 @@ export async function closeIdeaBook(db, bookRef, { date, now = new Date() } = {}
     }
     caughtUp.push({ date: res.session, observed: res.observed });
     if (!res.observed) alerts.push(`PRACTICE_FIELD_SESSION_UNOBSERVED ${bookRef.id} ${res.session} — no stored close snapshot; the session is recorded as unobserved`);
+    // A caught-up session's close completed the wind-down (T1a-2b-1 §6): the book is closed, and `date` is not a
+    // session it is owed. Not "left unclosed" (sweep.js ideaCloseLeftUnclosed).
+    if (res.bookClosed) return { closed: false, skipped: 'book_closed', bookClosed: true, cancelled, resulted, caughtUp, alerts };
     // A bound on one call's work, never on the catch-up: the next fire continues from where this one stopped.
     if (caughtUp.length >= CATCH_UP_MAX_SESSIONS_PER_CALL) return { closed: false, skipped: 'catch_up_incomplete', cancelled, resulted, caughtUp, alerts };
   }

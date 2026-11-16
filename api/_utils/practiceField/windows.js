@@ -76,6 +76,43 @@ export function ideaSaleSlots() {
   return ideaEntrySlots();
 }
 
+/** The name of the window ledger's row for a session's close (Amendment C §3; T1a-2b-1 §4). */
+export const CLOSE_WINDOW = 'close';
+
+/**
+ * THE WINDOWS A BOOK IS DUE ON A SESSION (T1a-2b-1 §4; Amendment C §3; Astra W-12, W-14, W-15) — the one place the
+ * window ledger's expected rows come from, so T1b changes the schedule by changing this module alone. Today they are
+ * the engine slots code acts at (`ideaEntrySlots`), as the session's own geometry places them, then the close. The
+ * geometry is read, never assumed: a session whose geometry has no such slot does not expect it. (Read at main
+ * 71bc6bde: an early-close session still has all three engine slots — 10:00, 11:15 and 12:30 Eastern — so today it
+ * expects the same four rows; the founder's two early-close windows arrive with T1b's schedule, here.)
+ *
+ * A window is due only once the book exists: one that opened before `createdAtIso` is not expected (a book created
+ * at 11:00 is not owed that morning's 10:00 window). The close is always due on a session the book is closed for.
+ *
+ * @returns {Array<{ window: string, kind: 'intraday'|'close', atIso: string|null }>}  in session order; [] when the
+ *          date is not a session on the maintained calendar
+ */
+export function ideaBookWindowsOf(sessionDate, { createdAtIso = null } = {}) {
+  const session = getSessionForDate(sessionDate);
+  if (!session?.isTradingDay) return [];
+  const createdMs = typeof createdAtIso === 'string' ? Date.parse(createdAtIso) : NaN;
+  const out = [];
+  for (const slot of ideaEntrySlots()) {
+    const at = slotInstantMs(sessionDate, slot);
+    if (at === null) continue;
+    if (Number.isFinite(createdMs) && at < createdMs) continue;
+    out.push({ window: slot, kind: 'intraday', atIso: new Date(at).toISOString() });
+  }
+  out.push({ window: CLOSE_WINDOW, kind: 'close', atIso: null });
+  return out;
+}
+
+/** The window ledger's row id for a session's window: `{sessionDate}_{window}` (the window being a slot or `close`). */
+export function windowRowId(sessionDate, window) {
+  return `${sessionDate}_${window}`;
+}
+
 /** The instant a slot opens on a session date (epoch ms), or null when the date is not a session or has no such slot. */
 function slotInstantMs(sessionDate, slotName) {
   const session = getSessionForDate(sessionDate);

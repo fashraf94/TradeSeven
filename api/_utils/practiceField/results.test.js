@@ -322,16 +322,19 @@ describe('beside the five columns (contract §4.4)', () => {
     }
   });
 
-  it('a holding with no stored tier (none is written by this build) is costed at the model\'s widest tier, and the result says so; a fund is always its explicit tier', async () => {
+  it('C-9 — a holding with no stored tier is never costed at a tier it did not enter with: the widest-tier fallback is gone and the endpoint refuses it (the reconciliation already refuses such a holding); a fund is always its explicit tier', async () => {
     expect(exitTierOf('AAPL', { costTier: { capTier: 'mega', slippageBps: 1, spreadProxyBps: 2 } })).toEqual({ tier: { capTier: 'mega', slippageBps: 1, spreadProxyBps: 2 }, stored: true });
-    expect(exitTierOf('AAPL', {})).toEqual({ tier: { capTier: 'unknown', slippageBps: 5, spreadProxyBps: 15 }, stored: false });
-    expect(exitTierOf('AAPL', { costTier: { capTier: 'unknown', slippageBps: 5, spreadProxyBps: 15 } }).stored).toBe(false);
+    expect(() => exitTierOf('AAPL', {})).toThrow(/practice_field:cost_tier_unknown/);
+    expect(() => exitTierOf('AAPL', { costTier: { capTier: 'unknown', slippageBps: 5, spreadProxyBps: 15 } })).toThrow(/practice_field:cost_tier_unknown/);
     expect(exitTierOf('XLK', { costTier: { capTier: 'small', slippageBps: 5, spreadProxyBps: 15 } })).toEqual({ tier: { capTier: 'fund:liquid_fund', slippageBps: 1, spreadProxyBps: 2 }, stored: true });
     const { idea } = await onTheEve();
     const stripped = { ...idea.ledger, holdings: { AAPL: { ...idea.ledger.holdings.AAPL, costTier: undefined } } };
     const snapshot = closeSnapshot(DUE, quotes());
-    const side = ledgerEndpoint(stripped, valueLedger(stripped, snapshot, { sessionDate: DUE }));
-    expect(side).toMatchObject({ costTiersStored: false, holdings: { AAPL: { costTier: { capTier: 'unknown' } } } });
+    expect(() => ledgerEndpoint(stripped, valueLedger(stripped, snapshot, { sessionDate: DUE }))).toThrow(/practice_field:cost_tier_unknown/);
+    // Every ledger a real idea reaches its endpoint with stores its tiers.
+    expect(ledgerEndpoint(idea.ledger, valueLedger(idea.ledger, snapshot, { sessionDate: DUE })).costTiersStored).toBe(true);
+    const src = (await import('node:fs')).readFileSync(new URL('./settlement.js', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/MANDATE_FRICTION_TIERS/);
   });
 });
 
