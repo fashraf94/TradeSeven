@@ -113,6 +113,14 @@ describe('CC-5 — the owner only, silently', () => {
     expect(await excerptOf(t.db)).toBeNull();
     expect(t.readLog).toEqual([]);
   });
+  it('CE-6 — A NULL ARGUMENT is the same null as any other malformed one, never a thrown TypeError (Astra\'s backlog: the destructuring threw) — and nothing is read', async () => {
+    const t = dbOf(excerptStore(DAY));
+    for (const bad of [null, undefined, [], ['x'], true, 0, 7, 'uid', () => MOMENT_ASK]) {
+      await expect(excerptOf(t.db, bad), String(bad)).resolves.toBeNull();
+      await expect(excerptOfCard(t.db, bad), String(bad)).resolves.toBeNull();
+    }
+    expect(t.readLog).toEqual([]);
+  });
 });
 
 describe('the attribution — a casual clone\'s battle, by the platform resolver\'s rule (RK-1)', () => {

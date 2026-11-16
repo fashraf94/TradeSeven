@@ -406,7 +406,10 @@ async function buildExcerpt(db, { uid, attributionAgentId, battleId, etDate, tap
  *           moment: { situationId: string, symbol: string, fromTickSeq: number|null, toTickSeq: number|null } }} p
  * @returns {Promise<{ excerpt: object, refs: object }|null>}
  */
-export async function excerptOf(db, { uid, attributionAgentId, battleId, etDate, moment } = {}) {
+export async function excerptOf(db, args) {
+  // CE-6: the argument checked before it is read — null, an array, a string: the same null as any malformed argument
+  if (!isObj(args)) return null;
+  const { uid, attributionAgentId, battleId, etDate, moment } = args;
   if (!idOk(uid) || !idOk(attributionAgentId) || !idOk(battleId) || !isEtDate(etDate) || !momentArgOk(moment)) return null;
   const owned = await ownedDayOf(db, { uid, attributionAgentId, battleId, etDate });
   if (!owned) return null;
@@ -424,7 +427,9 @@ export async function excerptOf(db, { uid, attributionAgentId, battleId, etDate,
  * @param {{ uid: string, attributionAgentId: string, entryId: string }} p
  * @returns {Promise<{ excerpt: object, refs: object }|null>}
  */
-export async function excerptOfCard(db, { uid, attributionAgentId, entryId } = {}) {
+export async function excerptOfCard(db, args) {
+  if (!isObj(args)) return null;   // CE-6, as excerptOf
+  const { uid, attributionAgentId, entryId } = args;
   if (!idOk(uid) || !idOk(attributionAgentId) || !idOk(entryId)) return null;
   const P = EXCERPT_PATHS;
   const entry = await readDoc(db.collection(P.agents).doc(attributionAgentId).collection(P.plays).doc(entryId));

@@ -1701,6 +1701,9 @@ describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), 
     expect(m.buttons('Open the idea')).toHaveLength(0);
     expect(receipt.textContent).not.toMatch(/validated|proven|supported|\bright\b|\bwrong\b/i);
     expect(receipt.textContent).toContain('Stage · tested');
+    // CD-17's control: "Since last time"'s latest line for a card not adopted carries no adopted sentence
+    expect(m.q('[data-latest-line="op_1"]').getAttribute('data-latest-kind')).toBe('tested');
+    expect(m.q('[data-latest-line="op_1"] [data-adopted-note]')).toBeNull();
     await sweepAll(fx.tape2, 'tested');
     await move('op_1', 'offered', { ideaId: 'idea-1', offerId: 'offer-1', state: 'offered' }, '20:58');
     await move('op_1', 'installed', { ideaId: 'idea-1', offerId: 'offer-1', state: 'accepted' }, '21:00');
@@ -1710,6 +1713,13 @@ describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), 
     // Film Room C2 (CC-8): under the adopted line, its one sentence — on that line alone
     expect(receipt.querySelectorAll('[data-chain-line]')[0].querySelector('[data-adopted-note]').textContent).toBe("Your agent doesn't act on your ideas yet.");
     expect(receipt.querySelectorAll('[data-adopted-note]')).toHaveLength(1);
+    // Amendment D CD-17: "adopted" never stands alone — "Since last time"'s one-line digest carries the same sentence as
+    // the chain (the mutant: the digest's sentence dropped)
+    const digest = m.q('[data-latest-line="op_1"]');
+    expect(digest.getAttribute('data-latest-kind')).toBe('installed');
+    expect(digest.textContent).toContain('Adopted as your instruction');
+    expect(digest.querySelector('[data-adopted-note]').textContent).toBe("Your agent doesn't act on your ideas yet.");
+    expect(digest.querySelectorAll('[data-adopted-note]')).toHaveLength(1);
     expect(receipt.textContent).not.toMatch(/equip/i);
     expect(m.buttons('Retire')).toHaveLength(0);
     await sweepAll(fx.tape2, 'installed');

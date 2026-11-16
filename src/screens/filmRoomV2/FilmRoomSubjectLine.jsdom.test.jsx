@@ -174,7 +174,7 @@ describe('CC-7 — the receipt says what the agent\'s excerpt says', () => {
     renderReceipt({ idea: { status: 'ready', doc: ideaVersionDoc({ userId: 'someone-else' }) } });
     expect(lineText(m.q('[data-subject-line]'))).toBe('ETN · Industrials');
   });
-  it('§2 review L3-2 / L3-8: while the version reads, or after the read failed, NO line (the excerpt would quote the statement); a read the rules deny shows no idea, as the excerpt says of another owner\'s', () => {
+  it('§2 review L3-2 / L3-8: while the version reads, or after the read failed, NO line (the excerpt would quote the statement); a read the rules DENY shows the line WITHOUT the idea — Amendment E\'s CD-10 correction: "ETN · Industrials", CD-10\'s "no line" covering loading and failure only', () => {
     for (const status of ['loading', 'error']) {
       renderReceipt({ idea: { status, doc: null } });
       expect(m.q('[data-card-receipt]'), status).toBeTruthy();
@@ -183,6 +183,8 @@ describe('CC-7 — the receipt says what the agent\'s excerpt says', () => {
     }
     renderReceipt({ idea: { status: 'denied', doc: null } });
     expect(lineText(m.q('[data-subject-line]'))).toBe('ETN · Industrials');
+    expect(m.q('[data-subject-line] [data-subject-statement]')).toBeNull();
+    expect(m.q('[data-subject-line] [data-num]')).toBeNull();
   });
   it('a card from another day shows no line (its own day is not on screen)', () => {
     renderReceipt({ tape: { ...DAY.tape, etDate: '2026-09-24' } });

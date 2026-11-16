@@ -679,6 +679,8 @@ export function SinceLastTime({ day = null, battleId = null, counter, onOpenMome
               <span style={mono(11.5, C.ink, { fontWeight: 700 })}><Rec>{c.source?.symbol ?? ''}</Rec></span>
               <When style={mono(10.5, C.ink2)}>{etDateLabel(c.source?.etDate, { short: true }) ?? ''}</When>
               <span style={mono(10.5, C.ink2)}><ChainLine card={c} line={line} day={day} /></span>
+              {/* Amendment D CD-17: "adopted" never stands alone — the digest's adopted line carries the chain's sentence */}
+              {line.kind === 'installed' ? <span data-adopted-note="" style={foot}>{T.chain.adoptedNote}</span> : null}
             </button>
           ))}
         </div>
