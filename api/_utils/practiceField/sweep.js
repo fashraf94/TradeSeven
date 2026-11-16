@@ -284,8 +284,6 @@ export async function runIdeaBookEvalPass(db, { tick, now = new Date(), ownerTok
     try {
       const fresh = await bookRef.get();
       if (!fresh.exists || !isIdeaBook(fresh.data())) continue;
-      // A book that closed since the query listed it (another fire's catch-up completed its wind-down) owes nothing.
-      if (!SERVED_STATUSES.includes(fresh.data().status)) continue;
       if (fresh.data().execState?.lastIdeaTickKey === tick.tickKey) continue;
       const win = await runIdeaBookWindow(db, { bookRef, tick, now });
       if (win.served) out.served += 1;
