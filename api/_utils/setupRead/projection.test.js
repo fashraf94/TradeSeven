@@ -92,6 +92,22 @@ describe('every listed field is copied exactly (a valid pullback)', () => {
     expect(p.pullbackLows).toEqual(e.evidence.pullbackLows.map(({ date, low }) => ({ date, low })));
     expect(p.adjustmentMetadata).toBe('present');
   });
+  it('copied, never written: a planted basis, rule set, verdict or lows come out exactly as stored', () => {
+    const r = structuredClone(set.VALID_PULLBACK.record);
+    r.entry.basis = 'planted-basis';
+    r.key.ruleSet = { setupVersion: 'x-v9', thresholdsHash: 'abcdefabcdef', semanticsId: 'x-v9/sem-4' };
+    r.entry.verdict = 'planted-verdict';
+    r.entry.patterns = { breakout: 'planted-b', pullback_resume: 'planted-p' };
+    r.entry.evidence.pullbackLows = [{ date: '2001-01-02', low: 1.23 }];
+    r.entry.evidence.swingHigh = { value: 9.87, date: '2001-01-03' };
+    r.entry.evidence.adjustment.metadata = 'planted-meta';
+    const p = project(r);
+    expect([p.basis, p.verdict, p.adjustmentMetadata]).toEqual(['planted-basis', 'planted-verdict', 'planted-meta']);
+    expect(p.ruleSet).toEqual({ setupVersion: 'x-v9', thresholdsHash: 'abcdefabcdef', semanticsId: 'x-v9/sem-4' });
+    expect(p.patterns).toEqual({ breakout: 'planted-b', pullback_resume: 'planted-p' });
+    expect(p.pullbackLows).toEqual([{ date: '2001-01-02', low: 1.23 }]);
+    expect(p.swingHigh).toEqual({ value: 9.87, date: '2001-01-03' });
+  });
   it('the projection is a copy: changing it changes nothing in the record', () => {
     const r = set.VALID_PULLBACK.record;
     const before = JSON.stringify(r);
