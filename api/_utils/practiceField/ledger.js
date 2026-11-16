@@ -305,10 +305,15 @@ function markSessionOf(holding) {
  * THE GAP SCREEN, ASKED BEFORE ANY CASH (fix round 3, T2A-D01). On the state a cash action would be paid on — this
  * close's share-basis actions applied (the dry run shareBasisHolds makes), nothing else — every symbol the engine's
  * screen SUSPECTS (a split's shape with no feed row: `suspectedCA`, never `pendingCA`, which a listed row explains) gets
- * a `basisSuspicion` record on this ledger's holding, unless it already has an open one (the first is kept, with the
- * session it was first suspected), the founder has ruled on this very move, or the holding waits on a delisting (R-32) —
- * on this ledger, or on the idea's own (`delistingWaiting`, which the close reads from the idea's ledger: only it carries
- * the waiting sale, and a suspicion on the comparison would hold that sale idea-wide). Pure.
+ * a `basisSuspicion` record on this ledger's holding, unless it still has an open one once those share-basis actions are
+ * applied (the first is kept, with the session it was first suspected), the founder has ruled on this very move, or the
+ * holding waits on a delisting (R-32) — on this ledger, or on the idea's own (`delistingWaiting`, which the close reads
+ * from the idea's ledger: only it carries the waiting sale, and a suspicion on the comparison would hold that sale
+ * idea-wide). Pure.
+ * The open note is read on the DRY-RUN holding, not the stored one (final fix, Astra T2A-E01): a row of this close that
+ * explains the old note releases it in the dry run, and a further move that row does not explain is then recorded in its
+ * place — with that move's session, ratio and adjusted frozen mark — before the idea's hold set is computed, so the cash
+ * waits until a listed row explains the new move too.
  * @returns {{ ledger: object, raised: Array<object> }}
  */
 export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { sinceDate, date, delistingWaiting = null }) {
@@ -321,7 +326,7 @@ export function withBasisSuspicions(ledger, closeSnapshot, actionsBySymbol, { si
   for (const [sym, { ratio }] of scan.suspectedCA) {
     const h = ledger.holdings?.[sym];
     const d = dry.holdings?.[sym];
-    if (!h || !d || openBasisSuspicion(h) || founderRuledMove(d, ratio) || delistingWaitingHolding(h) || delistingWaiting?.has(sym)) continue;
+    if (!h || !d || openBasisSuspicion(d) || founderRuledMove(d, ratio) || delistingWaitingHolding(h) || delistingWaiting?.has(sym)) continue;
     // A delisting with no cash listed for it today makes it a waiting sale at this close (R-32, as above).
     if ((actionsBySymbol?.[sym] || []).some((a) => a?.type === 'delisting' && delistingCashOf(a) === null && typeof a.effectiveDate === 'string' && a.effectiveDate <= date && !settled.has(deriveActionId(a)))) continue;
     // (A dividend paid at an earlier close that explains its own ex-date drop leaves that close's mark fresh —

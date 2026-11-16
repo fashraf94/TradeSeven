@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { applyLedgerActions, newLedger, renameDeferralSymbols, shareBasisHolds, saleHeldBackBy, unsettledShareBasisSymbols, withBasisSuspicions } from './ledger.js';
-import { deriveActionId } from '../mandateCorporateActions.js';
+import { deriveActionId, parseSplitsPayload, parseDividendsPayload } from '../mandateCorporateActions.js';
 import { ideaCoveragePlanFromLedgers } from './coverage.js';
 import { assertReconciled } from './reconcile.js';
 import { admitIdea } from './admission.js';
@@ -1804,6 +1804,122 @@ describe('Fix round 3 — Astra T2A-D01: a gap-screen suspicion is recorded and 
     const ledger = { ...newLedger('idea', 20000), cash: 0, holdings: { AAPL: { shares: 10, costBasisTotal: 1000, avgCost: 100, lastMark: 100, openedAt: S[0], basisSuspicion: { symbol: 'AAPL', suspectedOn: S[1], since: S[0], ratio: 0.5, frozenMark: 100, resolvedBy: null, resolvedAt: null } } } };
     const valuation = { marks: { AAPL: { mark: 100, quality: 'carried_forward', vendorTimeIso: null } } };
     expect(ledgerEndpoint(ledger, valuation)).toMatchObject({ unsettledActions: [SUSP], fullQuality: false });
+  });
+});
+
+// ── FINAL FIX (15 Nov 2026) — ASTRA T2A-E01: A RELEASED OLD NOTE NO LONGER HIDES A SECOND, UNEXPLAINED MOVE ──────────
+// The screen read the open note on the STORED holding while it screened the dry run. A late split that explained the old
+// note let a second unfed move through unrecorded, and a dividend was paid on the uncorrected count ($399.88 where
+// $799.76 is owed, for good). The note is now read on the dry-run holding, and the second move is recorded in its place.
+describe('Final fix — Astra T2A-E01: a late split explains the old note while a second move stays unexplained', () => {
+  const Q = { AAPL: { price: 100, marketCap: 3e12 }, SPY: 500 };
+  const closeQ = async (ctx, date, quotesIn) => { const out = await closeOn(ctx.db, ctx.bookId, date, quotesIn); recon(ctx); return out; };
+  // Production parsers, as the slow layer calls them for the splits and dividends endpoints (Astra's reachability).
+  const splitRows = (...dates) => {
+    const out = parseSplitsPayload('AAPL', dates.map((date) => ({ date, split: '2/1' })));
+    expect(out.rejects).toEqual([]);
+    return out.actions;
+  };
+  const dividendRows = () => {
+    const out = parseDividendsPayload('AAPL', [{ date: S[2], unadjustedValue: 1 }]);
+    expect(out.rejects).toEqual([]);
+    return out.actions;
+  };
+  const DIV = `cash_dividend_AAPL_${S[2]}`;
+  const paidDividends = (ledger) => ledger.corporateActionReceipts.filter((r) => r.type === 'cash_dividend' && r.applied === true);
+
+  // Nov 16 enter at $100 (199.940017 shares); Nov 17 close $50 with no split row (the first note).
+  async function suspectedOnce() {
+    const { db, bookId, bookRef } = await seedBook();
+    const e = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: Q });
+    expect(e.entry.outcome).toBe('entered');
+    const ctx = { db, bookId, bookRef, ideaId: e.ideaId };
+    await closeQ(ctx, S[0], Q);
+    expect(ideaOf(ctx).ledger.holdings.AAPL.shares).toBe(199.940017);
+    await closeQ(ctx, S[1], { ...Q, AAPL: 50 });
+    for (const key of ['ledger', 'comparisonLedger']) expect(ideaOf(ctx)[key].holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[1], ratio: 0.5, frozenMark: 100 });
+    return ctx;
+  }
+
+  for (const listed of [false, true]) {
+    it(`Astra's case: the Nov 17 split releases the old note, the Nov 18 move is RECORDED in its place and holds the dividend — nothing paid; when the Nov 18 split arrives the dividend is paid ONCE on 799.760068 shares, $799.76, on the idea, its comparison and the book; a replay pays nothing (dividend row ${listed ? 'still listed' : 'dropped'} at the release)`, async () => {
+      const ctx = await suspectedOnce();
+      const bookBefore = bookOf(ctx);
+      // Nov 18: close $25; the feed lists the Nov 17 2-for-1 and the Nov 18 $1 dividend, but not the Nov 18 2-for-1.
+      await closeQ(ctx, S[2], { ...Q, AAPL: { price: 25, corporateActions: [...splitRows(S[1]), ...dividendRows()] } });
+      const held = ideaOf(ctx);
+      for (const key of ['ledger', 'comparisonLedger']) {
+        const ledger = held[key];
+        expect(ledger.appliedActionIds, key).toEqual([`split_AAPL_${S[1]}`]);
+        expect(ledger.holdings.AAPL.shares, key).toBe(399.880034);
+        expect(ledger.dividendsUsd, key).toBe(0);
+        expect(paidDividends(ledger), key).toEqual([]);
+        expect(ledger.holdings.AAPL.basisSuspicion, key).toEqual({
+          symbol: 'AAPL', suspectedOn: S[2], since: S[0], ratio: 0.5, shape: { kind: 'split', n: 2 }, frozenMark: 50,
+          frozenMarkAsOf: ledger.holdings.AAPL.lastMarkAsOf, resolvedBy: null, resolvedAt: null,
+        });
+        expect(ledger.holdings.AAPL.heldActions.map((r) => r.actionId), key).toEqual([DIV]);
+      }
+      expect(bookOf(ctx).portfolio.cash).toBe(bookBefore.portfolio.cash);
+      expect(bookOf(ctx).portfolio.positions.AAPL.shares).toBe(399.880034);
+
+      // Nov 19: the missing Nov 18 split arrives.
+      await closeQ(ctx, S[3], { ...Q, AAPL: { price: 25, corporateActions: [...splitRows(S[2]), ...(listed ? dividendRows() : [])] } });
+      const released = ideaOf(ctx);
+      for (const key of ['ledger', 'comparisonLedger']) {
+        const ledger = released[key];
+        expect(ledger.appliedActionIds, key).toEqual([`split_AAPL_${S[1]}`, `split_AAPL_${S[2]}`, DIV]);
+        expect(ledger.holdings.AAPL.shares, key).toBe(799.760068);
+        expect(ledger.holdings.AAPL.basisSuspicion, key).toBeUndefined();
+        expect(ledger.holdings.AAPL.heldActions, key).toBeUndefined();
+        expect(paidDividends(ledger), key).toHaveLength(1);
+        expect(paidDividends(ledger)[0].incomeUsd, key).toBe(799.76);
+        expect(ledger.dividendsUsd, key).toBe(799.76);
+        expect(ledger.corporateActionReceipts.find((r) => r.actionId === `split_AAPL_${S[2]}`).explainedSuspicion, key).toEqual({ suspectedOn: S[2], ratio: 0.5, frozenMark: 50 });
+      }
+      expect(cents(bookOf(ctx).portfolio.cash) - cents(bookBefore.portfolio.cash)).toBe(79976);
+      expect(bookOf(ctx).portfolio.positions.AAPL.shares).toBe(799.760068);
+
+      // A replay of every row pays nothing more.
+      await closeQ(ctx, S[4], { ...Q, AAPL: { price: 25, corporateActions: [...splitRows(S[1], S[2]), ...dividendRows()] } });
+      for (const key of ['ledger', 'comparisonLedger']) {
+        expect(paidDividends(ideaOf(ctx)[key]), key).toHaveLength(1);
+        expect(ideaOf(ctx)[key].dividendsUsd, key).toBe(799.76);
+        expect(ideaOf(ctx)[key].holdings.AAPL.shares, key).toBe(799.760068);
+      }
+      expect(cents(bookOf(ctx).portfolio.cash) - cents(bookBefore.portfolio.cash)).toBe(79976);
+    });
+  }
+
+  it('the same-session CONTROL: both 2-for-1 rows listed on Nov 18 pay $799.76 at once on 799.760068 shares, and no note is left', async () => {
+    const ctx = await suspectedOnce();
+    const bookBefore = bookOf(ctx);
+    await closeQ(ctx, S[2], { ...Q, AAPL: { price: 25, corporateActions: [...splitRows(S[1], S[2]), ...dividendRows()] } });
+    for (const key of ['ledger', 'comparisonLedger']) {
+      const ledger = ideaOf(ctx)[key];
+      expect(ledger.holdings.AAPL.shares, key).toBe(799.760068);
+      expect(ledger.holdings.AAPL.basisSuspicion, key).toBeUndefined();
+      expect(paidDividends(ledger), key).toHaveLength(1);
+      expect(ledger.dividendsUsd, key).toBe(799.76);
+    }
+    expect(cents(bookOf(ctx).portfolio.cash) - cents(bookBefore.portfolio.cash)).toBe(79976);
+  });
+
+  it('the screen, called directly: an old note this close\'s split explains is replaced by the residual move (its session, ratio and the adjusted frozen mark); an old note it does not explain is kept as it is', () => {
+    const holding = {
+      shares: 199.940017, costBasisTotal: 19994, avgCost: 100, lastMark: 100, lastMarkAsOf: etIsoOf(S[0], 16, 0), openedAt: S[0],
+      basisSuspicion: { symbol: 'AAPL', suspectedOn: S[1], since: S[0], ratio: 0.5, shape: { kind: 'split', n: 2 }, frozenMark: 100, frozenMarkAsOf: etIsoOf(S[0], 16, 0), resolvedBy: null, resolvedAt: null },
+    };
+    const ledger = { ...newLedger('idea', 20000), cash: 6, holdings: { AAPL: holding } };
+    const replaced = withBasisSuspicions(ledger, closeSnapshotOf(S[2], { AAPL: 25 }), { AAPL: splitRows(S[1]) }, { sinceDate: S[1], date: S[2] });
+    expect(replaced.raised).toHaveLength(1);
+    expect(replaced.ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: S[2], since: S[0], ratio: 0.5, frozenMark: 50 });
+    // The stored holding is otherwise untouched: the split itself is applied by the close, not by the screen.
+    expect(replaced.ledger.holdings.AAPL.shares).toBe(199.940017);
+    // No row today: the old note is still open after the (empty) dry run, and is kept.
+    const kept = withBasisSuspicions(ledger, closeSnapshotOf(S[2], { AAPL: 25 }), {}, { sinceDate: S[1], date: S[2] });
+    expect(kept.raised).toEqual([]);
+    expect(kept.ledger.holdings.AAPL.basisSuspicion).toBe(holding.basisSuspicion);
   });
 });
 
