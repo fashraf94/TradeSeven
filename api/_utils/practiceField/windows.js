@@ -71,6 +71,57 @@ export function isLastIdeaEntrySlot(slotName) {
   return slots.length > 0 && slots[slots.length - 1] === slotName;
 }
 
+/** The engine slots code sells at: the same windows it enters at (sales first — Amendment E8). */
+export function ideaSaleSlots() {
+  return ideaEntrySlots();
+}
+
+/** The instant a slot opens on a session date (epoch ms), or null when the date is not a session or has no such slot. */
+function slotInstantMs(sessionDate, slotName) {
+  const session = getSessionForDate(sessionDate);
+  const geometry = resolveSessionSlots(sessionDate);
+  const slot = geometry?.trading ? geometry.slots.find((s) => s.name === slotName) : null;
+  if (!session?.isTradingDay || !slot) return null;
+  return session.openMs + (slot.atMin - geometry.openMin) * 60_000;
+}
+
+/**
+ * THE FIRST ELIGIBLE WINDOW of a sale decided at `decidedAtIso` (Amendment E1: "sold by code at the next eligible
+ * observation"; E15: "filled at its first eligible window"): the first sale slot that opens strictly after the
+ * decision. A slot's quotes are observed before it opens, so an earlier slot can hold nothing observed after the
+ * decision. Returns `{ date, slot, tickKey }`, or null when the instant is unreadable or the walk leaves the calendar.
+ */
+export function firstWindowAfter(decidedAtIso) {
+  const decidedMs = typeof decidedAtIso === 'string' ? Date.parse(decidedAtIso) : NaN;
+  if (!Number.isFinite(decidedMs)) return null;
+  let date = etDateOfMs(decidedMs);
+  for (let i = 0; i <= MAX_STEP_DAYS; i += 1) {
+    const session = getSessionForDate(date);
+    if (!session) return null;
+    if (session.isTradingDay) {
+      for (const slot of ideaSaleSlots()) {
+        const at = slotInstantMs(date, slot);
+        if (at !== null && at > decidedMs) return { date, slot, tickKey: `${date}_${slot}` };
+      }
+    }
+    date = nextCalendarDate(date);
+  }
+  return null;
+}
+
+/** The first sale window that opens strictly after window `w` (`{ date, slot }`) opens, or null. */
+export function nextWindowAfter(w) {
+  const at = slotInstantMs(w?.date, w?.slot);
+  return at === null ? null : firstWindowAfter(new Date(at).toISOString());
+}
+
+/** Is window `a` strictly before (−1), the same as (0) or after (1) window `b`? Windows are `{ date, slot }`. */
+export function compareWindows(a, b) {
+  if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+  const slots = ideaSaleSlots();
+  return Math.sign(slots.indexOf(a.slot) - slots.indexOf(b.slot));
+}
+
 /**
  * The first moment an idea admitted at `admittedAtIso` may enter: the first entry slot of the first session whose
  * ET date is strictly after the admission's ET date (the session-before-entry rule — Astra V5 B4: the admission
@@ -95,7 +146,8 @@ export function ideaEntryNotBefore(admittedAtIso) {
 /**
  * The idea's fixed clock (contract §4.1): `startSession` is the session it may enter in; `dueSession` is the
  * start plus the slot's length in trading sessions (the start is session 0 — the idea record's review-clock
- * convention). Null when either is off the maintained calendar.
+ * convention); `liquidationSession` is the session after the due one, where the settlement sale fills (Amendment
+ * E17). Null when any of the three is off the maintained calendar.
  */
 export function ideaSchedule(admittedAtIso, slot) {
   const notBefore = ideaEntryNotBefore(admittedAtIso);
@@ -103,5 +155,8 @@ export function ideaSchedule(admittedAtIso, slot) {
   if (!notBefore || sessions === null) return null;
   const dueSession = sessionAfter(notBefore.sessionDate, sessions);
   if (dueSession === null) return null;
-  return { startSession: notBefore.sessionDate, dueSession, sessions, entryNotBefore: notBefore };
+  // E17: the settlement sale fills in the session AFTER the due session, so that one must be on the calendar too.
+  const liquidationSession = nextSessionDate(dueSession);
+  if (liquidationSession === null) return null;
+  return { startSession: notBefore.sessionDate, dueSession, liquidationSession, sessions, entryNotBefore: notBefore };
 }

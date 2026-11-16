@@ -52,7 +52,11 @@ import { harvestOpenBatches, submitMandateBatch, hasOpenBatch } from '../_utils/
 // (reached only when PRACTICE_FIELD_MODE is not 'off').
 import { isIdeaBook, splitActiveBooks } from '../_utils/mandateBookKind.js';
 import { practiceFieldLive } from '../_utils/practiceField/mode.js';
-import { practiceFieldBuildInputs, runIdeaBookEvalPass } from '../_utils/practiceField/sweep.js';
+import {
+  practiceFieldBuildInputs, runIdeaBookEvalPass, withDrainingIdeaBooks, runDrainingIdeaBookCloses, ideaCloseLeftUnclosed,
+  readIdeaBookPresence,
+  coverageFromStandIn,
+} from '../_utils/practiceField/sweep.js';
 import { closeIdeaBook } from '../_utils/practiceField/close.js';
 
 // §6.2 telemetryPatch moved to modelPriceTable.js in P5 (the batch harvest
@@ -134,6 +138,9 @@ export async function snapshotBuildInputs(db, view) {
   const pf = await practiceFieldBuildInputs(db, {
     ideaHeldTickers: unionHeldTickers(books.filter((b) => isIdeaBook(b))),
     quarterlyActive,
+    // T1a-2a: when the Practice Field's draining query failed, its fallback already read the coverage document
+    // (withDrainingIdeaBooks); it is handed on so this build makes no second read. Undefined on every other fire.
+    coverageData: coverageFromStandIn(view.visibleDocs),
   });
   return { heldTickers: unionHeldTickers(books.filter((b) => !isIdeaBook(b))), daily: pf.daily, tick: pf.tick };
 }
@@ -365,6 +372,10 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
   const summary = { slot: tick.slot, tickKey: tick.tickKey, transport, evaluated: 0, enqueued: 0, executed: 0, gated: 0, rejected: 0, failed: 0, skipped: 0, errors: 0, complete: false };
 
   try {
+    // Practice Field T1a-2a (Astra T2A-02): at mode 'on', ONE read of the founder-cap
+    // registry per fire, handed to the snapshot build and the idea-book pass. With no
+    // idea book listed, neither makes a query. At 'off' nothing is read; it never throws.
+    const ideaBookPresence = await readIdeaBookPresence(db);
     // 4–5. Ensure the tick snapshot (PRECONDITION, §3.1). The platform-wide
     // snapshot is built ONCE per slot; on the first generous fire it is absent, so
     // we scan active books for the held-ticker union (build-set input, §3.0), build
@@ -377,7 +388,10 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     if (!snapshot) {
       const activeSnap = await db.collection(MANDATES_COLLECTION).where('status', '==', 'active').get();
       // Practice Field T1a-1: an idea book counts only while its own passes run.
-      const view = splitActiveBooks(activeSnap.docs, { ideaBooksLive: practiceFieldLive() });
+      // T1a-2a (Amendment E13): a DRAINING idea book still holds shares that need a
+      // price, and this query cannot see it — the Practice Field adds them by its
+      // own query. At 'off' it reads nothing and hands back these same documents.
+      const view = splitActiveBooks(await withDrainingIdeaBooks(db, activeSnap.docs, ideaBookPresence), { ideaBooksLive: practiceFieldLive() });
       const idle = await idleAcquisitionCheck(db, { docs: view.visibleDocs });
       if (idle.skip) {
         logIdleSkip({ window: tick.slot, tickKey: tick.tickKey, date: tick.date, check: idle });
@@ -435,8 +449,10 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
       });
     }
 
-    // Practice Field T1a-1 — THE IDEA-BOOK PASS: basket entry by code at this
-    // slot, from this slot's snapshot. No model call. It runs BEFORE the
+    // Practice Field T1a-1, T1a-2a — THE IDEA-BOOK PASS: code's sales (line exits,
+    // settlement sales) and then basket entry at this slot. Every fill reads this
+    // slot's STORED snapshot itself, by key (review FR-A7), so the pass is handed
+    // the tick only. No model call. It runs BEFORE the
     // last-tick return below (that rule is about batch submissions, and an
     // idea's start session has three entry slots under either transport), and
     // not at all while PRACTICE_FIELD_MODE is 'off'. Its counts join the
@@ -448,8 +464,9 @@ export async function runEvalSweep(req, res, { now, tick, db = getFirebaseAdmin(
     let ideaPassClean = true;
     if (practiceFieldLive()) {
       try {
-        const ideaPass = await runIdeaBookEvalPass(db, { tick, snapshot, now, ownerToken });
-        if (ideaPass.books > 0) summary.ideaBooks = ideaPass;
+        const ideaPass = await runIdeaBookEvalPass(db, { tick, now, ownerToken, presence: ideaBookPresence });
+        // …also when it listed no book but one of its queries failed: the body says so (third refuter pass, IS-8).
+        if (ideaPass.books > 0 || ideaPass.errors > 0) summary.ideaBooks = ideaPass;
         ideaPassClean = ideaPass.errors === 0 && ideaPass.leaseSkips === 0;
       } catch (ideaErr) {
         ideaPassClean = false;
@@ -825,6 +842,10 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
   };
 
   try {
+    // Practice Field T1a-2a (Astra T2A-02): at mode 'on', ONE read of the founder-cap
+    // registry per fire, handed to the snapshot build and the draining-book close. With
+    // no idea book listed, neither makes a query. At 'off' nothing is read; it never throws.
+    const ideaBookPresence = await readIdeaBookPresence(db);
     // 1. The CLOSE SNAPSHOT: built once per date at `${date}_close`, AFTER the
     // session close, so its quotes carry the official close print — never the
     // preClose tick's intraday marks (§3.6 "the session's official close").
@@ -839,7 +860,9 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
     if (!closeSnapshot) {
       const activeSnap = await db.collection(MANDATES_COLLECTION).where('status', '==', 'active').get();
       // Practice Field T1a-1: an idea book counts only while its own passes run.
-      const view = splitActiveBooks(activeSnap.docs, { ideaBooksLive: practiceFieldLive() });
+      // T1a-2a (Amendment E13): draining idea books join by the Practice Field's own
+      // query, as in the eval sweep; nothing is read at 'off'.
+      const view = splitActiveBooks(await withDrainingIdeaBooks(db, activeSnap.docs, ideaBookPresence), { ideaBooksLive: practiceFieldLive() });
       const idle = await idleAcquisitionCheck(db, { docs: view.visibleDocs });
       if (idle.skip) {
         logIdleSkip({ window: 'close', tickKey: closeTick.closeKey, date, check: idle });
@@ -891,6 +914,8 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
     let newlyClosed = 0;
     let leaseSkips = 0;
     let deferred = false;
+    // Practice Field T1a-2a: idea books this fire served and left unclosed for the date. Always 0 with no idea book.
+    let ideaBooksUnclosed = 0;
     for (const docSnap of pageSnap.docs) {
       if (Date.now() - startedAt > TIME_BUDGET_MS) { deferred = true; break; } // defer to the next fire in the window
       const mandateRef = docSnap.ref;
@@ -934,7 +959,13 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
           // transaction (Astra T1A-03), so it is handed the date only.
           const ideaResult = await closeIdeaBook(db, mandateRef, { date, now });
           for (const alert of ideaResult.alerts || []) console.error(`${LOG_PREFIX} ${book._id} ${alert}`);
-          if (!ideaResult.closed) { summary.skipped++; continue; }
+          if (!ideaResult.closed) {
+            summary.skipped++;
+            // Served and still unclosed for this date (the catch-up's bound, or no stored snapshot): the sweep
+            // has not finished, whatever else closed (review lens 3, IS-3).
+            if (ideaCloseLeftUnclosed(ideaResult)) ideaBooksUnclosed++;
+            continue;
+          }
           newlyClosed++;
           summary.closed++;
           summary.ideaBooksClosed = (summary.ideaBooksClosed || 0) + 1;
@@ -983,12 +1014,36 @@ export async function runCloseSweep(req, res, { now, closeTick, db = getFirebase
       }
     }
 
+    // Practice Field T1a-2a (Amendment E13) — DRAINING IDEA BOOKS: the page above
+    // is `status == 'active'`, so a draining idea book never reaches it. Its close
+    // (valuation, lines, settlement, catch-up) runs here, by the Practice Field's
+    // own query, and not at all while PRACTICE_FIELD_MODE is 'off'. Fenced from
+    // the sweep like the eval pass: a failure is logged and counted, never
+    // thrown, and a book left unclosed keeps the fire from claiming `complete`.
+    if (practiceFieldLive() && !deferred) {
+      try {
+        const drain = await runDrainingIdeaBookCloses(db, { date, now, ownerToken, presence: ideaBookPresence });
+        if (drain.books > 0) summary.drainingIdeaBooks = { books: drain.books, closed: drain.closed, skipped: drain.skipped, errors: drain.errors };
+        ideaBooksUnclosed += drain.unclosed;
+        newlyClosed += drain.closed;
+        summary.closed += drain.closed;
+        if (drain.closed > 0) summary.ideaBooksClosed = (summary.ideaBooksClosed || 0) + drain.closed;
+        summary.errors += drain.errors;
+        leaseSkips += drain.leaseSkips;
+      } catch (drainErr) {
+        summary.errors++;
+        summary.drainingIdeaBooks = { failed: true };
+        console.error(`${LOG_PREFIX} PRACTICE_FIELD_DRAINING_CLOSE_FAILED for ${date} — the close sweep continues: ${drainErr.message}`);
+      }
+    }
+
     // 4. Completion + retention (§3.7): cleanup piggybacks the completed sweep
     // (bounded; a no-op once the backlog is clear). Completion must be TRUE:
     // errors, lease-skips, and time-budget breaks all leave books unproven,
     // so such a fire never claims it (INV-1 — the false "complete" hid a
     // permanently-unclosed book and ran retention anyway).
-    if (newlyClosed === 0 && summary.errors === 0 && leaseSkips === 0 && !deferred) {
+    if (ideaBooksUnclosed > 0) summary.ideaBooksUnclosed = ideaBooksUnclosed;
+    if (newlyClosed === 0 && summary.errors === 0 && leaseSkips === 0 && !deferred && ideaBooksUnclosed === 0) {
       summary.complete = true;
       console.log(`${LOG_PREFIX} close sweep complete for ${date} — all active books closed`);
       await runRetentionCleanup(db, { now, documentIdPath: FieldPath.documentId() }).catch((err) => {

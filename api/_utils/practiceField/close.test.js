@@ -8,13 +8,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { closeIdeaBook, closeSnapshotKeyFor } from './close.js';
 import { ensureDailySnapshot, ensureUniverseSnapshot, fetchCorporateActionsEODHD } from '../mandateUniverseSnapshot.js';
 import { admitIdea } from './admission.js';
-import { enterIdea } from './entry.js';
 import { assertReconciled } from './reconcile.js';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
   seedBook, admitAndEnter, closeOn, contractOf, getBook, getIdea, getRow, closeSnapshot, tickSnapshot, tickOf, slotOpenIso, etIso, DAYS, ADMIT_ISO,
-  countDocs, makeMandateFakeDb, takeSeededDbs, saleWordsOnMarkRows, SALE_WORD_KEYS, storeCloseSnapshot,
+  countDocs, makeMandateFakeDb, takeSeededDbs, saleWordsOnMarkRows, bannedWordsOnResults, SALE_WORD_KEYS, storeCloseSnapshot, enterIdeaWith,
 } from './__testsupport__/fixtures.js';
 
 const CAP = { AAPL: 3.4e12, MSFT: 3.1e12, NVDA: 3.5e12, LLY: 7.5e11, AMD: 2.6e11, AVGO: 8.2e11 };
@@ -38,7 +37,11 @@ afterEach(() => {
   restoreMode();
   // B-MARK, on EVERY valuation row EVERY test in this file wrote — splits, dividends, carried marks, timeouts,
   // every comparison type: no row carries a sale's word, and every one says `basis: mark` (review L3-7).
-  for (const db of takeSeededDbs()) expect(saleWordsOnMarkRows(db)).toEqual([]);
+  // …and no result or endpoint row any of them wrote carries one of the three banned words (review RH-11).
+  for (const db of takeSeededDbs()) {
+    expect(saleWordsOnMarkRows(db)).toEqual([]);
+    expect(bannedWordsOnResults(db)).toEqual([]);
+  }
 });
 
 describe('a valuation: every ledger marked from the one close snapshot', () => {
@@ -263,7 +266,7 @@ describe('corporate actions: once per ledger', () => {
     const a = await admitAndEnter(db, bookId, { contract: contractOf({ slot: 'short', names: ['AAPL'] }), opId: 'a', quotes: entryQuotes('AAPL', 'LLY', 'SPY') });
     const bAdmit = await admitIdea(db, { bookId, contract: contractOf({ slot: 'medium', names: ['LLY'], capitalUsd: 25000 }), opId: 'b', nowIso: ADMIT_ISO });
     // (the medium idea enters in the same start session, at the next slot)
-    await enterIdea(db, { bookRef: db.collection('mandates').doc(bookId), ideaId: bAdmit.ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', entryQuotes('LLY', 'SPY')), nowIso: new Date(Date.parse(slotOpenIso(DAYS.d1, 'midday')) + 120000).toISOString() });
+    await enterIdeaWith(db, { bookRef: db.collection('mandates').doc(bookId), ideaId: bAdmit.ideaId, tick: tickOf(DAYS.d1, 'midday'), snapshot: tickSnapshot(DAYS.d1, 'midday', entryQuotes('LLY', 'SPY')), nowIso: new Date(Date.parse(slotOpenIso(DAYS.d1, 'midday')) + 120000).toISOString() });
     await closeOn(db, bookId, DAYS.d1, { AAPL: 233.11, LLY: 805.2, SPY: 599.02 });
     const before = [getIdea(db, bookId, a.ideaId), getIdea(db, bookId, bAdmit.ideaId)];
     await closeOn(db, bookId, DAYS.d2, { AAPL: 232.9, LLY: 806.1, SPY: { price: 597.4, corporateActions: [spyDividend] } });
@@ -342,9 +345,31 @@ describe('corporate actions: once per ledger', () => {
     expect(row.marks.AAPL).toMatchObject({ mark: 233.11, quality: 'carried_forward' });
     expect(row.markedValue).toBe(prior.markedValue);
     expect(row.fullQuality).toBe(false);
-    // A news-sized move is trusted.
+    // Fix round 3 (Astra T2A-D01; changed expectation): the suspicion is RECORDED and is not cleared by a later
+    // news-sized price — before this round the mark went fresh here (209.8). Only a listed row that explains the move, or
+    // the founder, releases it.
     await closeOn(db, bookId, DAYS.d3, { AAPL: 209.8, SPY: 599.4 });
-    expect(getRow(db, bookId, r.ideaId, DAYS.d3).marks.AAPL).toMatchObject({ mark: 209.8, quality: 'vendor_time' });
+    expect(getRow(db, bookId, r.ideaId, DAYS.d3).marks.AAPL).toMatchObject({ mark: 233.11, quality: 'carried_forward' });
+    expect(getIdea(db, bookId, r.ideaId).ledger.holdings.AAPL.basisSuspicion).toMatchObject({ suspectedOn: DAYS.d2, frozenMark: 233.11, resolvedBy: null, resolvedAt: null });
+    // A news-sized move with no suspicion before it is trusted.
+    const fresh = await seedBook();
+    const f = await admitAndEnter(fresh.db, fresh.bookId, { contract: contractOf(), quotes: entryQuotes('AAPL', 'SPY') });
+    await closeOn(fresh.db, fresh.bookId, DAYS.d1, { AAPL: 233.11, SPY: 599.02 });
+    await closeOn(fresh.db, fresh.bookId, DAYS.d2, { AAPL: 209.8, SPY: 599.4 });
+    expect(getRow(fresh.db, fresh.bookId, f.ideaId, DAYS.d2).marks.AAPL).toMatchObject({ mark: 209.8, quality: 'vendor_time' });
+  });
+
+  it('a holding WAITING ON A DELISTING gets no suspicion record (R-32), but a split-shaped fall after the feed drops the delisting row is still held back by the close\'s own screen after the actions (fix round 3: that screen stays)', async () => {
+    const { db, bookId } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: entryQuotes('AAPL', 'SPY') });
+    await closeOn(db, bookId, DAYS.d1, { AAPL: 233.11, SPY: 599.02 });
+    await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 233.11, corporateActions: [{ type: 'delisting', ticker: 'AAPL', effectiveDate: DAYS.d2, source: 'founder_action' }] }, SPY: 599.4 });
+    await closeOn(db, bookId, DAYS.d3, { AAPL: 116.56, SPY: 599.4 }); // ÷2, the delisting row no longer listed
+    const idea = getIdea(db, bookId, r.ideaId);
+    expect(idea.ledger.holdings.AAPL.exitPending).toMatchObject({ reason: 'delisting' });
+    expect(idea.ledger.holdings.AAPL.basisSuspicion).toBeUndefined();
+    expect(idea.comparisonLedger.holdings.AAPL.basisSuspicion).toBeUndefined();
+    expect(getRow(db, bookId, r.ideaId, DAYS.d3).marks.AAPL).toMatchObject({ mark: 233.11, quality: 'carried_forward' });
   });
 });
 
@@ -362,6 +387,7 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
     const before = getIdea(db, bookId, r.ideaId);
     const bookBefore = getBook(db, bookId);
     expect(before.ledger.holdings.AAPL.shares).toBe(199.940017);
+    await closeOn(db, bookId, DAYS.d1, QUOTES); // the entry session's own close: no session is skipped (Amendment E12)
     const out = await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 99, corporateActions: [div, { ...div }] }, SPY: 500 });
     expect(out.closed).toBe(true);
     expect(out.alerts).toEqual([]);
@@ -384,6 +410,7 @@ describe('Astra T1A-01 — an action the feed lists twice is applied once per le
     const { db, bookId } = await seedBook();
     const r = await admitAndEnter(db, bookId, { contract: contractOf(), quotes: QUOTES });
     const before = getIdea(db, bookId, r.ideaId);
+    await closeOn(db, bookId, DAYS.d1, QUOTES); // the entry session's own close: no session is skipped (Amendment E12)
     const out = await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 50.02, corporateActions: [split, { ...split }] }, SPY: 500 });
     expect(out.alerts).toEqual([]);
     const idea = getIdea(db, bookId, r.ideaId);
@@ -739,8 +766,9 @@ describe('B-STAMP — every book is valued from the same snapshot', () => {
     const db = makeMandateFakeDb();
     const one = await seedBook({ db, uid: 'owner-1', opId: 'c1' });
     const two = await seedBook({ db, uid: 'owner-2', opId: 'c2', archetypeCodeId: 'degen' });
-    const a = await admitAndEnter(db, one.bookId, { contract: contractOf({ names: ['AAPL', 'MSFT'] }), quotes: entryQuotes('AAPL', 'MSFT', 'SPY') });
-    const b = await admitAndEnter(db, two.bookId, { contract: contractOf({ slot: 'long', names: ['AAPL', 'LLY'], capitalUsd: 40000 }), quotes: entryQuotes('AAPL', 'LLY', 'SPY') });
+    // One slot, one stored snapshot (review FR-A7): both books' entries read the same document.
+    const a = await admitAndEnter(db, one.bookId, { contract: contractOf({ names: ['AAPL', 'MSFT'] }), quotes: entryQuotes('AAPL', 'MSFT', 'LLY', 'SPY') });
+    const b = await admitAndEnter(db, two.bookId, { contract: contractOf({ slot: 'long', names: ['AAPL', 'LLY'], capitalUsd: 40000 }), quotes: entryQuotes('AAPL', 'MSFT', 'LLY', 'SPY') });
     await storeCloseSnapshot(db, DAYS.d1, { AAPL: 233.11, MSFT: 420.77, LLY: 805.2, SPY: 599.02 });
     await closeIdeaBook(db, one.bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 16, 22)) });
     await closeIdeaBook(db, two.bookRef, { date: DAYS.d1, now: new Date(etIso(DAYS.d1, 17, 40)) }); // a later fire

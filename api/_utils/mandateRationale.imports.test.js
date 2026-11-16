@@ -90,11 +90,13 @@ const T0B_FIELD = /\b(?:rationaleStatus|convictionDiagnostic|rationaleAt\w*|gene
 
 // file → { count, note }. Every mention was READ and classified at T0b.
 const STORE_BASELINE = {
+  'api/_utils/compositionProtectedStoresScan.js': { count: 1, note: 'NOT a reader and NOT a writer (Practice Field T1a-2a, Astra T1A-07): the protected-store scan names the subcollection in its money-store inventory, so that a write to it anywhere in api/ or scripts/ is listed. The module parses source files; it never opens Firestore and names no T0b field.' },
   'api/_utils/mandateClosePass.js': { count: 2, note: 'writer: close-pass expiry claim + corporate-action forced-exit record' },
   'api/_utils/mandateEscape.js': { count: 1, note: 'writer: escape-hatch cancel record' },
   'api/_utils/mandateExecution.js': { count: 2, note: 'writer: disposeSubmission + executeDecision claims (direct and batch)' },
   'api/_utils/mandateRollover.js': { count: 1, note: 'writer: rollover cancel record' },
   'api/_utils/practiceField/entry.js': { count: 1, note: 'writer (Practice Field T1a-1): one basket-entry fill receipt per filled name, built by buildDecision with no reason — code decided, so the record says rationale null / rationaleStatus absent by the defaults of the builder. It reads no decision record and names no T0b field' },
+  'api/_utils/practiceField/exits.js': { count: 1, note: 'writer (Practice Field T1a-2a): one sale receipt per holding that code sells (a line exit or a settlement sale), built by buildDecision with no reason, as the basket entry receipts are: code decided, so the record carries no reason by the defaults of the builder. It reads no decision record and names no T0b field' },
   'api/_utils/shadowLogger.js': { count: 1, note: 'NOT the store: the Cloud Storage training-log stream name (logDecision); reached by battle prompt modules through injectionGuard.js' },
 };
 // Mentions a prompt assembler's closure may hold: the non-store entries only.

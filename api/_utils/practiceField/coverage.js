@@ -64,6 +64,22 @@ export function ideaCoveragePlan(contract, { filled }) {
   return Object.fromEntries([...plan.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([sym, roles]) => [sym, orderRoles(roles)]));
 }
 
+/**
+ * The symbols a FILLED idea needs a price for, read from what its three ledgers hold NOW rather than from its frozen
+ * contract (T1a-2a; Amendment E11): after a ticker change the contract still names the old symbol, and the idea
+ * needs the new one. Its own holdings are `held`; its comparison's are `comparison`; its SPY line's is `benchmark`.
+ *
+ * @returns {Object<string, string[]>} symbol → roles, in ROLE_ORDER
+ */
+export function ideaCoveragePlanFromLedgers(idea) {
+  const plan = new Map();
+  const add = (sym, role) => { if (!plan.has(sym)) plan.set(sym, new Set()); plan.get(sym).add(role); };
+  for (const sym of Object.keys(idea?.ledger?.holdings || {})) add(sym, COVERAGE_ROLE.HELD);
+  for (const sym of Object.keys(idea?.comparisonLedger?.holdings || {})) add(sym, COVERAGE_ROLE.COMPARISON);
+  for (const sym of Object.keys(idea?.spyLedger?.holdings || {})) add(sym, COVERAGE_ROLE.BENCHMARK);
+  return Object.fromEntries([...plan.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([sym, roles]) => [sym, orderRoles(roles)]));
+}
+
 function rebuildSymbol(byRef) {
   const refs = Object.keys(byRef).sort();
   if (refs.length === 0) return null;
