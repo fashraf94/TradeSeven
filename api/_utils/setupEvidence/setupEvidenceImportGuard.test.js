@@ -126,8 +126,14 @@ describe('nothing calls the store', () => {
   it.each(callers.map((file) => [file]))('%s is on the list', (file) => {
     expect(isListed(file)).toBe(true);
   });
-  it('no cron schedule names it', () => {
-    expect(readFileSync(join(REPO, 'vercel.json'), 'utf8')).not.toMatch(/setupEvidence/i);
+  it('no cron schedule names it, in any spelling, but the chart evidence sweep by its exact path', () => {
+    // The chart's evidence, PR B (docs/specs/CHART_EVIDENCE_SPEC_V1.md SW-1): one cron reaches the store, through
+    // api/_utils/setupEvidenceSweep/sweep.js. Matched in camel and kebab case, so a second entry cannot pass on its spelling
+    // (review L3-2).
+    const text = readFileSync(join(REPO, 'vercel.json'), 'utf8');
+    expect(text).not.toMatch(/setupEvidence/i);
+    const named = JSON.parse(text).crons.filter((c) => /setup-?evidence/i.test(JSON.stringify(c)));
+    expect(named).toEqual([{ path: '/api/cron/setup-evidence-sweep', schedule: '30 12,22,23 * * 1-5' }]);
   });
   it('the library is its six modules, and reaches no flag and no handler: nothing from api/cron, api/agent or the flag module', () => {
     const modules = libraryModules(REPO);

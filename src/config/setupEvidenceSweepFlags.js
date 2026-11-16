@@ -20,10 +20,11 @@
  *
  * DARK — default FALSE (built 2026-11-16, PR B). With it false the cron answers
  * `{ skipped: true }` before the Firestore handle is taken: no read, no write, no
- * provider request. Flips in its own one-line PR (PR C), never this build PR, which
- * moves the pin in setupEvidenceSweepFlags.test.js to true and drops the
- * DARK_BY_DESIGN entry in flagPinGuard.test.js in the same commit (BUILD_RULES §2).
- * Rollback: revert that one line, its pin and the entry together.
+ * provider request. Flips in its own PR (PR C), never this build PR, which in ONE
+ * commit (BUILD_RULES §2): sets this literal to true and rewrites this paragraph;
+ * moves the first row of setupEvidenceSweepFlags.test.js to true and turns its
+ * registration row around (`.not.toMatch`); and drops the DARK_BY_DESIGN entry in
+ * flagPinGuard.test.js. Rollback: revert that commit.
  */
 // Pinned by: setupEvidenceSweepFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const SETUP_EVIDENCE_SWEEP_ENABLED = false;

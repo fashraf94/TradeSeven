@@ -353,7 +353,7 @@ describe('isolation, the health line, the callers (rows 4.8, A1.1, A4.1)', () =>
     expect(previousSessionOf('2026-09-08')).toBe('2026-09-04'); // Mon 09-07 is Labor Day
     expect(previousSessionOf('nonsense')).toBeNull();
   });
-  it('A1.1 the callers of getOrAcquireSnapshot (tests aside) are exactly the observer\'s tenant and this one; no script names it', () => {
+  it('A1.1 the callers of getOrAcquireSnapshot (tests aside) are exactly the observer\'s tenant, this one and the chart evidence sweep; no script names it', () => {
     const walk = (rel, out = []) => {
       for (const e of readdirSync(join(REPO, rel), { withFileTypes: true })) {
         const p = `${rel}/${e.name}`;
