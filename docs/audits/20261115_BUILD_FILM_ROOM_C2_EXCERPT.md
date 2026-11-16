@@ -4,6 +4,7 @@
 **Prompt:** "Build prompt — Film Room C2: the moment excerpt" (the Film Room chat, 15 Nov 2026) · **Governs:** Build C spec V1 (`docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md`) with Amendments A, B and C (C governs where they differ), and the Practice Field's shared contract V2 with its Amendments B, C and D.
 **Branch:** `claude/film-room-c2-excerpt`, cut from `origin/main` @ `cb23d73c` after `git fetch origin`. Main held #1049's merge `d9b4e3c1` and #1058.
 **Code head:** `e7804bfb`. **Merged head:** `af2fddd1`, current `origin/main` `71bc6bde` (#1073, the CI unit suite sharded) merged in with no conflicts and no shared file. This report's commit sits on top of it. · **PR:** #1074 (opened as a draft; marked ready for review after the push)
+**Fix round (16 Nov 2026):** Astra's C2 review and Amendments D and E, built in §11. §11.12 replaces §6 as the excerpt's contract.
 
 ## Verdict
 
@@ -122,7 +123,7 @@ export const NAMED_EXCEPTIONS = Object.freeze([
 **Reading imports (L2-1).** The walker used to strip comments with two regular expressions. A `/*` inside a line comment ("every /api/huddle/* route") opened a "block comment" that ate live code, and real imports vanished from the census: 7 files, `api/_utils/huddle/gate.js`'s only import among them. A small lexer now reads them (`api/_utils/filmRoom/__fixtures__/jsSource.js`, 7 rows of its own). It tells comments from strings, templates and regex literals, and it also reads the backtick dynamic import and the app's `@/` alias. Every existing row passes on the fuller walks. The write gate (§4) uses the same lexer.
 
 **Proven on graphs.**
-- **Planted imports:** a planted import of the excerpt, static and dynamic, added to each of the 21 roots on the real graph, fails the rule.
+- **Planted imports:** a planted import of the excerpt, static and dynamic, added to each of the 20 roots (nine paths) on the real graph, fails the rule. (Corrected in the fix round, CE-6: this said 21.)
 - **The named importer passes for `drafting`:** on a synthetic tree, its `plays` read is the exception's. The whole closure does reach the excerpt and its `plays` read, so the exception is what passes it.
 - **The same graph fails** for `evaluator` and for `mandate`.
 - **Routes around fail:** through a middle module; beside the named route, in both import orders (L2-4); from the importer through a helper; and by a dynamic import.
@@ -249,6 +250,8 @@ Each mutant runs in an LF `git archive` of the merged head `af2fddd1`, with `nod
 **History.** The first battery ran at the item-7 head `3a321797` (29 mutants) and killed 28. M10 survived ("an unresolvable clone answered under the clone itself"): no row asked a clone's battle for an excerpt under the clone's own id. Commit `f66faba4` added that row, and M10 died at `f66faba4`. The final battery above re-runs every mutant, the review's included, at the merged head.
 
 ## 6. The excerpt's contract, for the Practice Field (T1b + T1d)
+
+> **Replaced by §11.12** (the fix round, 16 Nov 2026). This section is C2's contract as first built, kept for the record. T1b + T1d reads §11.12.
 
 ### 6.1 The two exports
 
@@ -434,5 +437,559 @@ None of these blocks the merge. Each reading below is built as stated, pinned by
 | # | Criterion | How it is held |
 |---|---|---|
 | 15 | The excerpt carries a field the tape doesn't hold, exceeds a bound, or answers for another owner's data. | **Fields:** each field is pinned against its source on a live excerpt, and each absence by a row that removes its source. **Bounds:** each bound has a row at the limit and one over, astral characters included; over the bound, the text is absent. **Owner:** `null` for another owner's day, another owner's card and another agent, indistinguishable: the same `null`, and nothing logged. Mutants M02, M03, M05, M07a, M07b, M10, M33. |
-| 16 | A model path other than the named exception reaches the ledger or the excerpt. | The census judges each path in one function (`oneDoorDefectsOf`). The exception admits only `drafting`, which does not exist yet. Every other path, the Mandate manager's included, is held to its whole closure. A planted excerpt import from each of the 21 roots fails, both static and dynamic. Mutants M11, M12, M13, M35, M36, M45. |
+| 16 | A model path other than the named exception reaches the ledger or the excerpt. | The census judges each path in one function (`oneDoorDefectsOf`). The exception admits only `drafting`, which does not exist yet. Every other path, the Mandate manager's included, is held to its whole closure. A planted excerpt import from each of the 20 roots (nine paths) fails, both static and dynamic (corrected in the fix round, CE-6: this said 21). Mutants M11, M12, M13, M35, M36, M45. |
 | 17 | An id reaches the `excerpt` half, or two speakers' words share one quotation. | **Ids:** the detector checks `excerpt` for every id kind and every id shape, and it bites on a planted battle id, uid, agent id, entry id, watchlist id and nomination id. A loose owner-written time cannot carry one in: every instant is strict ISO 8601. **Speakers:** each quotation names one speaker, the directive's two texts are two quotations, and `inputQuote` is a copy of its own. Mutants M04, M06, M29, M30. |
+
+## 11. The fix round (16 Nov 2026)
+
+**Prompt:** "Fix prompt — Film Room C2: Astra's findings and Amendments D and E" (the Film Room chat, 16 Nov 2026).
+**Governs:**
+- Astra's C2 review (`docs/audits/20261116_ASTRA_REVIEW_FILM_ROOM_C2_EXCERPT.md`): DO NOT MERGE, on C2-F1 to C2-F4;
+- Build C Amendment D (CD-3, CD-8, CD-14, CD-16, CD-17);
+- Amendment E (CE-1 to CE-6).
+
+All three are committed verbatim in B0.
+
+**Branch:** `claude/film-room-c2-excerpt`, continued from `c8f9adb2` after `git fetch origin` (the head matched). `origin/main` was `71bc6bde` at the start and when re-fetched before the push, already in the branch, so the merged tree is the head tree and every check below ran on it.
+**Code head:** `7ff64780`. **Pushed head:** this report's commit on top of it.
+
+### Verdict
+
+| Question | Answer |
+|---|---|
+| Built? | Yes: B0 and every item in the prompt's table, one commit each with its tests, then the §2 review's fixes (§11.1). |
+| Astra's four findings | **C2-F1** (ids in quoted words): fixed by CE-1. **C2-F2** (a regex hides an import): fixed by CE-2. **C2-F3** (loose times): fixed by CE-3. **C2-F4** (unsettled ties): fixed by CE-4. The review's refuter re-ran all four attacks by its own probes on four heads, the last the final code head `7ff64780`. Each fails there: 0 of 60 id leaks on the card path (and 0 of 60 with platform-minted ids), 0 of 50 on the moment path, 0 of 20 roots evading, no loose time carried, and all six ties absent in both orders (§11.10). |
+| Amendment D | CD-3, CD-8 (within CE-5's bounds), CD-14, CD-16 and CD-17 built. |
+| What changes for a player today? | **Nothing with cards off.** The twelve cards-off goldens are byte-identical to `main`'s and to the committed files (§11.7). **With cards on (the allowlist only):** the subject line names the sector ("ETN · Industrials"), takes the idea from the battle's carriage, and leaves out a statement holding an id; on a casual clone's battle it waits for the counter before showing an idea; "Since last time"'s adopted line carries the chain's sentence. |
+| The flag | `FILM_ROOM_CARDS_MODE` is still `'allowlist'`. No flag was added. |
+| Tests | The full Linux suite at the final code head `7ff64780`: exit 0, **1,510 files passed, 0 failed** (12 skipped); 34,161 tests passed, 135 skipped. The rules suite: 42 files, 784 tests passed. `lint:gate` and `vite build`: exit 0 (§11.11). |
+| Mutants | **59 of 59 killed** at `7ff64780`, none timed out: every mutant the prompt names, one per further guard, and one per review fix (§11.9). |
+| §2 review | Three lenses, an independent refuter (four passes, the last on the final code head) and the mutating lens. **One BLOCKER (CX2-1, pre-existing in the walker's resolver, C2-F2's class) and one MAJOR (CX1-1, C2-F4's class) were found, CONFIRMED and fixed.** The lenses' other 18 findings (9 MINOR, 9 NIT) are fixed, except two recorded as readings: CX3-3 (corrupt data only) and CX3-4 (CD-17's reach). The refuter's own eleven: CXV-1 to CXV-5, CXV-7 and CXV-10 fixed; **CXV-6 (MAJOR) fixed for a static key**; **CXV-9 (MAJOR)** and CXV-8, the deliberately evasive spellings no static reading can close, recorded with CXV-6's run-time keys for a ruling on the guards' threat model (§11.13 Q-11); CXV-11 is Q-2. The refuter refuted no finding. The fourth pass, on `7ff64780`, found the four attacks closed, the last three fixes holding, and no regression or new finding. |
+| Fences | Held (§11.8). `package.json` and `package-lock.json` change only to declare `@babel/parser` at the locked 7.28.5. |
+| CI | BUILD_RULES §2: not watched, polled or fixed. Read once after the push (§11.11). |
+| Needs a ruling | 11 readings, none blocking (§11.13). The weightiest: **the static guards' threat model (Q-11)** — the census and the write gate close every ordinary module syntax, and the refuter's deliberately evasive spellings (CXV-8, CXV-9) are recorded, not coded; a second carriage census updated alongside the one Astra named (Q-1); the shared day judge's identical-twin split (Q-3); CD-17's reach (Q-5). |
+
+### 11.1 The fixes
+
+One commit each, the tests in the same commit. CD-16 and CD-14 went in before CE-4 and CE-1: with the meeting block and `card.note` gone, the ties and the identifier policy had fewer locations to cover. The order changes no outcome.
+
+| # | Item | Commit | Tests (same commit) | Mutants killed |
+|---|---|---|---|---|
+| B0 | Astra's C2 review, Amendment D and Amendment E, verbatim, with three `docs/README.md` rows | `5b4ce702` | — | — |
+| 1 | **CE-2, the parser.** `__fixtures__/jsSource.js` reads imports and strips comments with `@babel/parser` (JSX on), declared as a devDependency at the lockfile's 7.28.5. Each distinct source is parsed once (a hash-keyed cache), and a module that does not parse throws, naming itself. | `7f6b7c80` | `oneDoor.census.test.js`: Astra's exact suffix on each of the twenty roots; a regex after `if`, `while`, `for`, `else`, `return`, `typeof`, `=>`; every import form; no false edge from strings, templates, JSX text or comments; an unparseable module fails; twenty roots on nine paths pinned. `jsSource.test.js`: the same at the unit level, and the declared version. | CXM01–CXM04 |
+| 2 | **CE-3, strict instants.** One calendar-validating parser, `instantMs` (with `instantText` on it), behind every instant the excerpt carries or compares. `afterExit` needs a strict exit instant. | `10cf4225` | `filmRoomSubject.test.js`: the refusals and acceptances. `momentExcerpt.golden.test.js`: each time form on the exit, a quotation's `at` and a tie-break. | CXM05–CXM07 |
+| 5 | **CD-16, no meeting.** | `711b9099` | A forged, owner-written meeting history through the real writer: no meeting, none of its words. `FilmRoomMeetings.writer.jsdom.test.jsx`: the owner's screen still quotes it. | CXM26 |
+| 6 | **CD-14, one home for the note.** | `3d0f4915` | `card` holds no note, and the note appears once, as `inputQuote`; missing, empty, non-string and over-bound notes. | CXM27 |
+| 3 | **CE-4, unsettled ties.** `oneOf` and `earliestBy` at each of the six selections. | `56bed776` | The six cases, each with a conflicting twin (absence) and an identical twin (the untied answer) under five orders; settled controls; no fallback to a neighbour; the time tie-break for all seven forms. | CXM08–CXM15 |
+| 4 | **CE-1, identifiers in words.** `src/utils/promptBoundText.js`, the one policy; `subjectKnownIds`, the one known-id set for the excerpt and the screen. | `6bc7882c` | `promptBoundText.test.js`: the kind list, the shapes, the prose controls, the domains. `momentExcerpt.golden.test.js`: Astra's ten id kinds in each of the six quotation locations; the moment's excerpt by shape; prose carried; the real paths; recorded fields outside their domains. `FilmRoomSubjectLine.jsdom.test.jsx`: the receipt's and the form's lines equal to the excerpt's, through the real screen. | CXM16–CXM25 |
+| 7 | **CD-8 and CE-5, the battle's idea.** | `14a4b7a8` | `filmRoomSubject.test.js`; `momentExcerpt.golden.test.js`; `momentExcerpt.test.js` (a clone's battle); `momentExcerpt.carriage.test.js` (the real `createAgentBattle`: an ordinary deploy, a tournament handed a carriage, no carriage); `FilmRoomSubjectLine.jsdom.test.jsx` (the version bound to the battle's path; cards off reads nothing); `carriage.test.js` (its reader-census row only). | CXM28–CXM32 |
+| 8 | **CD-3, the sector's name.** | `aa6295dd` | "Industrials", two-word names, an unknown symbol, a code with no name; the screen equal to the excerpt. | CXM33 |
+| 9 | **CD-17 and CE-6.** | `9da1414f` | The digest's adopted line holds the sentence, a non-adopted card's none; a null argument (and other non-objects) gives `null` with no read; the denied line without the idea. | CXM34–CXM36 |
+| — | **The two whole-tree censuses** the first full suite caught (§11.11) | `4473a725` | `equippedHypothesisRefs.census.test.js` lists the three new names; `unconfirmedOutcome.census.test.js` no longer sees a word. | — |
+| — | **§2 review, lens 2 (CX2-1 to CX2-7):** fail closed on every edge the walks cannot follow | `c01441ec`, `b59db948` | Census rows on every root (query, fragment, percent-encoding); every local form resolves or throws; opaque loads throw; the whole-tree rows resolve, with a planted-spelling row; the write gate's second reading, and its fail-closed walk. | CXM37–CXM42 |
+| — | **§2 review, lens 1 (CX1-1 to CX1-7)** | `9bbef3eb` | The moment's version and instants under every order of the stored items; conflicts on every compared field; failed auxiliary reads; prose-safe shapes; a refused bar time; the card's other ids. | CXM43–CXM48, CXM51 |
+| — | **§2 review, lens 3 (CX3-1, CX3-2, CX3-5, CX3-6)** | `3ec827cf` | A clone's battle on the screen, with the counter and without it. | CXM49, CXM50 |
+| — | **The refuter's findings (CXV-1, CXV-3 to CXV-5) and the card path of CX1-1** | `08d567b6`, `d6222442` | Ids in disguise; every invisible character; the module loader by an alias, a member or `process`; members named but not called; a card on a day whose moment items disagree on the version, `null` in every order. | CXM52–CXM56 |
+| — | **The refuter's third pass (CXV-6, CXV-7, CXV-10)** | `7ff64780` | The module loader by a string key, on every root; a `data:`, `https:`, `virtual:` or protocol-relative specifier fails closed, on every root; the client SDK's four write functions in the write gate. | CXM57–CXM59 |
+
+### 11.2 CE-2: each path's walk under the parser, against `main`'s
+
+Walked on the same tree (the fix round's head) with three extractors:
+- `main`'s former regex stripper (`71bc6bde` `oneDoor.census.test.js:109-124`);
+- C2's hand lexer (`c8f9adb2` `jsSource.js`);
+- the parser.
+
+| Path | `main`'s extractor | C2's lexer | The parser |
+|---|---:|---:|---:|
+| evaluator | 252 | 253 | 253 |
+| deploy | 118 | 118 | 118 |
+| chat | 138 | 138 | 138 |
+| voice | 120 | 120 | 120 |
+| reflection | 165 | 165 | 165 |
+| batchReview | 120 | 120 | 120 |
+| debate | 17 | 17 | 17 |
+| tournament | 93 | 93 | 93 |
+| mandate | 82 | 82 | 82 |
+
+- **The parser equals the lexer module for module on every path** at the head. The lexer's only flaw was the planted syntax; no current file holds it.
+- **One walk differs from `main`'s:** the evaluator's gains `src/config/huddleFlags.js`. `main`'s stripper lost `api/_utils/huddle/gate.js`'s only import behind a `/*` in a line comment (§2 review L2-1). The same 253 is Astra's independent AST count.
+- **The review's fail-closed rules (CX2-1, CX2-2, CXV-4, CXV-6, CXV-7) move no walk.** Every local import in the tree's 2,107 modules (8,617 specifiers) resolves to a module or names an asset. No file under `api/` or `src/`, tests included (3,615), names a specifier with a scheme other than `node:` or `file:`, a protocol-relative one, or the module loader by a member. The tree's one load no static reading follows is `src/components/discover/themesDkb.js`'s glob of JSON; it is pinned, and it is on no model path.
+- **No verdict changes.** Every path, root, reach pin, the direct-edge rule and the whole-closure ledger check are unchanged: twenty roots on nine paths.
+- **The write gate** reads the same parser:
+  - its closure was 13 modules; CE-1 adds `src/utils/promptBoundText.js` and the registry it reads, `src/data/situationRegistry.js`, for 15;
+  - neither has a write-pattern hit; the two pinned non-Firestore hits are unchanged;
+  - its second reading (CX2-4, CXV-5, CXV-10), every member the closure names and every call's name, the client SDK's write functions included, finds exactly the same two: `add` at `tapeSources.js:95` and `set` at `filmRoomMoments.js:45`.
+- **The parse cache.** The two whole-tree rows parse every module under `api/` and `src/` once (2–10 s on a loaded host) and carry a 60 s row timeout; every other row reads the cache.
+
+### 11.3 CE-1: the identifier policy as built
+
+`src/utils/promptBoundText.js`, imported by the excerpt (`api/`) and by `filmRoomSubject.js` (both sides). A quotation is left out **whole** when its text holds:
+1. **An exact id the excerpt knows** (a substring), from `subjectKnownIds` in `filmRoomSubject.js`:
+   - the owner's uid and the battle;
+   - the battle's own agent (for a clone's battle, the clone) and the attribution agent (its parent);
+   - the idea's list;
+   - for a card: its entry, the agent it is filed under, its op id, its nomination's book and id, and the idea, result and offer ids it holds (CX1-7).
+
+   The screen builds the same set: the tape's owner and battle, the battle's agent, and the counter's `attributionAgentId`, plus the card's on a receipt. On a casual clone's battle the screen shows no line for a battle carrying an idea until the counter has named the parent (CX3-1).
+2. **An id shape the platform mints** (`ID_SHAPES`). A token is a run of letters and digits, bounded by anything else:
+   - `firestore-auto-id`: exactly 20 letters and digits, holding a digit, an upper-case and a lower-case letter (CE-1's letter);
+   - `firebase-uid`: exactly 28, by the same rule;
+   - `uuid` (any version, case-insensitive): also covers `op_`, `f_`, `bk-`, `inv_`, `evo_`, `bev_` and research work ids on a uuid host;
+   - `agent-prefix`: `casual-agent-` and `training-agent-` with a digit in the tail, and `cpu-agent-` with digits, as minted (CX1-4), so "training-agent-based" passes;
+   - `mandate-manager`: `mgr_…` ending in 16 hex;
+   - `prefixed-hex`: `pf_`, `idea_`, `seat_`, `stk_`, `dbt_` with 16 or more hex, and `solo-` with 12;
+   - `bare-hex`: a token of 16 or more hex in either case, holding a digit and a letter;
+   - `epoch-ms`: a 13-digit epoch-millisecond part joined by `_` or `-` (`gpm_…`, `draft_…`, `risk_…_ETN_…`, `challenge-…-…`; CX1-6);
+   - `battle-sequence`: `eval_`, `trade_`, `prop_` with three or more digits;
+   - `base36-fallback`: the client's `op`/`bk` fallbacks;
+   - `live-draft-group`: `lds_…`;
+   - `challenge-code`: `BB` with eight capitals and digits, holding a digit;
+   - `playback-token`: a date, a dot, and 43 base64url characters.
+
+   Composite ids (a call, a tick, a clone, a Practice Field entry, a research work id) are caught by the id inside them.
+3. **The text as written and unmasked** (the refuter's CXV-1 and CXV-3). Every check in items 1 and 2 reads the text twice: as written, and with its disguises taken off (`unmaskedText`: NFKC folds full-width digits and letters to ASCII, and every default-ignorable code point and format character is removed — zero-width spaces and joiners, the soft hyphen, the word joiner, bidirectional marks and isolates, variation selectors, tag characters, fillers). Words a reader sees are unchanged; the quotation is still carried as written or left out whole.
+4. **Domains:** `symbol`, `exit.sold` and `exit.bought` against the ticker shape (`^[A-Z]{1,5}([.-][A-Z]{1,2})?$`, which every directory symbol fits); `situationId` against the registry; the route against `CARD_ROUTES`; the exit's reason and mechanism against the tape writer's `EXIT_MECHANISMS`; the question against the menu at its version (as before).
+
+**The id kinds it pins** (`PLATFORM_ID_KINDS`, 30 kinds, from the fix round's survey of `api/` and `src/`; each with where it is minted and an example its shape must catch):
+- **Firestore auto-ids:** battles; client-created agents; watchlists; mandates; and every other auto-id document (groups, lobbies, claims, chat and dialogue sessions, theses, season entries, bundles, stories, bug reports, forge rules, plan notes, templates, client battles).
+- **The Firebase Auth uid,** and the dev agents and wallets built on it.
+- **UUIDs:** directive threads, chat exchanges, research sessions and messages, threshold positions, leases, signal drops, client request ids; and the uuid-based Film Room card op id (= entry = nomination id), findings, backing requests, mandate leases, evolution events, backing events and research work ids.
+- **Agent prefixes:** the casual clone agent, the training agent, the CPU opponent agent; and the Mandate manager agent.
+- **Hex ids:** the Practice Field book; the Practice Field idea and the ids built on it; the Mandate seat, backing stake and debit, and the solo season; the bare-hex model request, observation, news and narration ids.
+- **Timestamped ids:** the gameplan meeting; the other `_`-joined epoch-ms ids; and the hyphen-joined ones (challenges, signal-drop chat messages, market news items).
+- **Others:** the evaluation, trade and proposal sequences; the client base-36 fallbacks; the live-draft group; the challenge code; the huddle playback token.
+- **Five kinds no shape can tell from prose,** each caught only when it is an id the caller knows exactly, with the reason pinned:
+  - the bug report's display id (`CB-NNNN`), which reads like a code or a year ("CB-2026"; CX1-4);
+  - six-character lobby join and challenge codes, which read like a ticker or a word;
+  - short sequence ids (`cpu-N`, `epoch-0001`, `v<n>`, `r<n>`);
+  - date keys;
+  - base64url composition entry ids.
+
+**Stated limits** (pinned by rows; §11.13 Q-2):
+- A 20-character auto-id with no digit (about 3% of random auto-ids) has no shape here, so it is caught only when known exactly; the 28-character uid is in the same position (about 0.7%).
+- An unknown id glued to a word ("battleAb3d…") or split by a line break has no shape; a known one is caught.
+- A coined 20-character token holding a digit and both cases ("RSI14AboveSMA50Cross") and an underscore sequence ("trade_2026") are left out as ids.
+- A known id is matched as a substring, so a very short id held by the caller would omit any quotation that contains it: over-omission, never a leak.
+
+**Ordinary prose passes:** tickers (`ETN`, `NVDA`, `BRK-B`, `BRK.B`), prices, dates, times, percentages, numbers with separators, and long or mixed-case words, pinned by rows. So do every rationale, directive and statement in the Sep 23 fixture.
+
+### 11.4 CE-3 and CE-4 as built
+
+- **CE-3.** `instantMs` in `src/utils/filmRoomSubject.js` accepts `YYYY-MM-DDTHH:MM[:SS[.f{1,9}]]` with `Z` or `±HH:MM`. It checks the month, the days in the month (leap years by the Gregorian rule), hours 0–23, minutes and seconds 0–59, and offsets to 23:59, then takes `Date.parse`'s instant. The excerpt calls it for:
+  - every carried instant (`from`, `to`, `filed`, a quotation's `at`);
+  - the exit and every bar in `afterExit`: a series holding any bar whose start is not strict gives no `afterExit` (CX1-5), so nothing is inferred from a refused time;
+  - both time tie-breaks.
+  The R6 boundary (`tickSeq`) needs no time.
+- **CE-4.** `oneOf(tied, pick)` compares the raw stored values of the fields each selection takes:
+
+  | Selection | Fields compared |
+  |---|---|
+  | rationale | hypothesis, rationale, at |
+  | directive | playerText, canonicalText, filedAt |
+  | exit | mechanism, exitReason, symbolOut, symbolIn, exitPrice, at |
+  | tag item | count |
+  | check | `stagnation[symbol].ticks` |
+  | bar | t, c |
+
+  `earliestBy` breaks a time tie only when every tied candidate's time is strict. The tie is found on the selecting key before any payload is judged, so a bad twin conflicts rather than silently losing. A bar is a row with a strict start after the exit; `barsAfter` counts distinct starts.
+- **The moment's own fields (CX1-1).** The shared day judge (`momentsOf`, `judgeFiledDay`) takes the moment's version and its two instants from the first stored item it meets. The excerpt now says each only when every stored item it could come from agrees:
+  - `situationVersion`: every tag item of the moment (its situation and symbol, at its checks);
+  - `from` and `to`: every such item at the first and the last check.
+  Otherwise the field is absent. On the card path, a day whose moment items disagree on the version gives `null` in every order: the day cannot be said to hold the version the card was filed under (CC-4). The judge itself is unchanged (§11.13 Q-3).
+
+### 11.5 CD-8 and CE-5 as built
+
+- **The source.** The idea is the battle's frozen carriage, `agentContext.equippedHypothesis`, read by `carriedIdeaOf` in `src/utils/filmRoomSubject.js`, the one new reader. It reads the list, the version number and the content hash only, never the frozen statement, and never the day's calls.
+- **The battle already read (detail 1).** `ownedDayOf` now returns `{ tape, battle }`, and the excerpt reads the carriage from that battle: the reads are the same four gets for a moment and five for a card (pinned). The screen reads the carriage from the `battle` it was handed. Every route into `FilmRoomScreenV2` hands the battle document it shows; the review's lens 3 checked the call sites (§11.10).
+- **Provenance (detail 2).** The version is `recorded`, from `CARRIAGE_NUMBER_CLASSES` (the battle document holds no number declaration of its own), at the path `agentContext.equippedHypothesis.hypothesisVersion`:
+  - the excerpt classes it there;
+  - the screen's `TapeNum` binds `v{n}` to that path on the battle, with the declaration handed in (a new `classes` prop; absent, every existing call site renders as before);
+  - the sweep harness holds its own oracle for that one number (`SPEC_BATTLE_NUMBER_CLASSES`).
+- **The check (detail 3).** The version document must be the owner's, and agree with the carriage's list, version number and content hash (the stored hash; recomputing it would pull a hashing module into the read-only closure). CE-5's correction:
+  - another owner's or a contradicting document: no idea at all;
+  - missing or unread: the idea without its statement.
+  The screen's `subjectOfDayRead` treats each case the same way; a denied read shows the line without the idea.
+- **The pins (detail 4).**
+  - `carriage.test.js`'s reader census gains `src/utils/filmRoomSubject.js`, its only change.
+  - The second carriage census, `equippedHypothesisRefs.census.test.js` (ruling Q10), lists the same reader, the fixture and the harness (`4473a725`); Astra's §5 named only the first (§11.13 Q-1).
+  - The fixture builds its version with the store's `buildVersionDoc` and freezes it with `carriage.js`'s `siblingOf`, and the day mints no call.
+  - The goldens are byte-identical through CD-8: the same version, the same class.
+- **Tournament.** `momentExcerpt.carriage.test.js` creates battles through the real `createAgentBattle` and the real creation transaction:
+  - an ordinary deploy's carriage is read exactly;
+  - a tournament battle handed a carriage in its options stores none, so the excerpt has no idea;
+  - a deploy with no carriage gives no idea.
+
+### 11.6 The excerpt's goldens: new SHA-256 values
+
+| After | The moment | The card | Why it moved |
+|---|---|---|---|
+| C2 (`c8f9adb2`) | `51a50dd4e947daf128e0b847e0445c872788e0f41c2c7c46135f326f960b302b` | `dbd74ab53a684cee25e4883823cf26a5ae7f76d5c048954391f163ea1aa65f6f` | — |
+| CD-16 (`711b9099`) | `5d9fed6d00227641b1cf0e4c2f4efe320ee6559154026030da7a11c85c5990ee` | `5349062d9890be04e6110187a2ecf67dc3355f048261cd5f321eafadf82612ae` | The `meeting` block left both. |
+| CD-14 (`3d0f4915`) | unchanged | `13a700988e09d2e441fadbf31e328f153a9c7b13ac40d24b65bb57835fee03a5` | `card.note` left the card; `inputQuote` stays. |
+| CD-8 (`14a4b7a8`) | unchanged | unchanged | **No byte moved:** the same version (3) and class (`recorded`) and the same statement, now from the battle's carriage. The rows prove the source switch. |
+| CD-3 (`aa6295dd`) — **current** | `cff3ecd44b55090a91a29d0dda19435f9bfef6c34fbf8ba7b9502658ff7e9637` | `397116410d1d178651625e32ed7f3fa04794ddc9b9bec94d8fb278fce13d0c5a` | `sector` reads "Industrials", not "XLI". |
+
+CE-1, CE-3, CE-4, CE-6 and every review fix move no byte: the fixture holds no id in its words, no loose time and no tie, and its moment's items agree.
+
+### 11.7 The twelve cards-off goldens, re-captured
+
+In the private WSL worktree, the capture harness (`src/screens/__golden__/captureFilmRoomV2Golden.jsdom.test.jsx`) ran twice at the final code head `7ff64780` and twice at `main` `71bc6bde` (and, before the last guard fixes, the same at `d6222442`: 60 of 60 equal). Each capture was compared with the other run at its commit, the other commit's captures, and the committed `src/screens/__golden__/filmRoomV2.*.html` at both commits: **60 of 60 comparisons equal; 12 of 12 byte-identical.** The SHA-256 values are exactly §2.2's. The branch does not touch that directory. Criterion 10's declared cards-off changes are still only C1's §8 rulings 1 and 2.
+
+### 11.8 Fences
+
+- **`package.json` and `package-lock.json`** change by one line each: `"@babel/parser": "7.28.5"` among the devDependencies (the lockfile's root entry). The lockfile already held `node_modules/@babel/parser` 7.28.5 (`dev: true`). No package was added, removed or moved: `npm ci` exits 0 and leaves `package-lock.json` byte-identical (§11.11).
+- **Not edited:** any BUILD_RULES §1 file, and `api/cron/agent-evaluate.js`.
+- **Called, never edited:** `createAgentBattle` (fenced), by `momentExcerpt.carriage.test.js` only, as `carriage.test.js` already does.
+- **Not in the diff:**
+  - `casualClone.js`;
+  - `firestore.rules`, `firestore.indexes.json`, `src/config/featureFlags.js`;
+  - the hub (`src/components/CommandCenter/**`);
+  - every `mandate*` file, all of `api/_utils/practiceField/**`, and `src/data/practiceFieldSlots.js`;
+  - the tape's writers, the setup evaluator and `activationEvidence/**`;
+  - the workflow and the CI guard;
+  - `api/_utils/agentBattleService.js` and `api/agent/decide.js`.
+
+  Checked by path against the fix round's 29 changed files (`c8f9adb2..7ff64780`) and the branch's 48 against `main`. The C1 seam (`api/_utils/filmRoom/practiceFieldSeam.js`) is in the branch's diff from C1 and C2, not the fix round's.
+- **`api/_utils/hypothesisRecords/carriage.test.js`** changes only its reader-census row (one line).
+- **`FILM_ROOM_CARDS_MODE`** stays `'allowlist'` (`src/config/featureFlags.js:3536`). No flag was added.
+- **Nothing outside the branch:** no merge, production read or write, backfill, refresh, deploy or flip. The fix prompt reached no external service.
+
+### 11.9 The mutants
+
+**How they ran.** In the private WSL worktree at the final code head `7ff64780`: a clean LF tree with its own `npm ci`, Node 20.20.2, `TZ=UTC`. The runner (`mutate.mjs` and `mutants.mjs`, the session's scratchpad) handles each mutant the same way:
+- every edit's anchor must occur exactly once, or the mutant is BROKEN, never skipped;
+- it runs the mutant's own test files with a **fresh** JSON report;
+- it restores each file byte for byte, and checks the restore.
+
+**KILLED** means a non-zero exit **and** at least one failing row. A load error with no failing row would count as CRASHED; none occurred, and no failing row was a timeout. The unmutated baseline of the nine files the battery runs is green: 467 of 467. Ids CXM01–CXM59 are unused elsewhere in the repo; the build's battery was M01–M49.
+
+**59 of 59 killed. 59 defined, 59 ran, none broken, none timed out, and the tree was clean after.**
+- The first 36 cover the fix round's items. A first battery at `4473a725` killed them, 36 of 36. They were re-run on the final code, with the anchors the review's fixes moved re-cut (CXM01–CXM04, CXM16, CXM21).
+- CXM37–CXM59 are one per review fix. Earlier batteries killed CXM01–CXM52 at `08d567b6` (52 of 52) and CXM01–CXM56 at `d6222442` (56 of 56, none timed out); the battery below is the whole set on the final code.
+
+| Mutant | Item | What it does | Verdict | Rows it fails |
+|---|---|---|---|---|
+| CXM01 | CE-2 | **the regex-after-`if` trap back:** C2's hand lexer extracts the imports again | **KILLED** | 30: Astra's attack on **every one of the twenty roots**, the census's syntax rows, the parser's unit rows |
+| CXM02 | CE-2 | **`import()` with options missed** | **KILLED** | 2 |
+| CXM03 | CE-2 | a module the parser cannot read passed as one with no imports | **KILLED** | 2 |
+| CXM04 | CE-2 | words in a string or template read as an import | **KILLED** | 79 |
+| CXM05 | CE-3 | **`Date.parse` alone in `afterExit`** | **KILLED** | 1 |
+| CXM06 | CE-3 | **30 February accepted** | **KILLED** | 6 |
+| CXM07 | CE-3 | a refused time read as "later" in a tie-break | **KILLED** | 2 |
+| CXM08–CXM13 | CE-4 | **array order decides** the rationale row, the directive, the exit, the tag item, the check, the series bar (one mutant each) | **KILLED** ×6 | 2, 4, 3, 1, 1, 1 |
+| CXM14 | CE-4 | **identical duplicates counted twice in `barsAfter`** | **KILLED** | 2 |
+| CXM15 | CE-4 | a conflict falls back to the neighbouring rationale row | **KILLED** | 2 |
+| CXM16 | CE-1 | **a known id let through** | **KILLED** | 16 |
+| CXM17 | CE-1 | **a 20-character auto-id let through** | **KILLED** | 8 |
+| CXM18 | CE-1 | **a quotation redacted instead of omitted** | **KILLED** | 16 |
+| CXM19 | CE-1 | **a ticker treated as an id** | **KILLED** | 27 |
+| CXM20 | CE-1 | the idea's list not known to every quotation | **KILLED** | 2 |
+| CXM21 | CE-1 | the card's entry, op and nomination ids not known | **KILLED** | 4 |
+| CXM22 | CE-1 | the screen hands the form no ids | **KILLED** | 2 |
+| CXM23–CXM25 | CE-1 | the moment's symbol, an exit mechanism, a route carried outside its domain | **KILLED** ×3 | 1 each |
+| CXM26 | CD-16 | **`meeting` back** | **KILLED** | 5 |
+| CXM27 | CD-14 | **`card.note` back** | **KILLED** | 15 |
+| CXM28 | CD-8 | **the idea read from `calls[]` again** | **KILLED** | 1 |
+| CXM29 | CD-8 | **a hash mismatch carrying the idea** | **KILLED** | 3 |
+| CXM30 | CD-8 | **the version's provenance pointing at a call** (the screen's binding) | **KILLED** | 7 |
+| CXM31 | CD-8 | **the version's provenance pointing at a call** (the excerpt's class) | **KILLED** | 9 |
+| CXM32 | CD-8 | the frozen statement used when the version is missing | **KILLED** | 4 |
+| CXM33 | CD-3 | **the fund code back** | **KILLED** | 16 |
+| CXM34 | CD-17 | **the digest's sentence dropped** | **KILLED** | 1 |
+| CXM35, CXM36 | CE-6 | **a null argument throwing** (`excerptOf`, `excerptOfCard`) | **KILLED** ×2 | 2, 1 |
+| CXM37 | CX2-1 | a query or fragment no longer read through | **KILLED** | 24 |
+| CXM38 | CX2-1 | a local specifier naming no module passed as no edge | **KILLED** | 4 |
+| CXM39 | CX2-2 | the census walks past an opaque load | **KILLED** | 21 |
+| CXM40 | CX2-2 | a computed `import()` no longer opaque | **KILLED** | 2 |
+| CXM41 | CX2-3 | the whole-tree rows match specifier text again | **KILLED** | 1 |
+| CXM42 | CX2-4 | the second reading misses a computed string key | **KILLED** | 3 |
+| CXM43, CXM44 | CX1-1 | the moment's version, its last instant, from the first stored item again | **KILLED** ×2 | 1 each |
+| CXM45 | CX1-3 | the version read without its catch | **KILLED** | 1 |
+| CXM46 | CX1-4 | the agent-prefix shape loose again | **KILLED** | 1 |
+| CXM47 | CX1-5 | a bar with a refused start skipped instead of refusing | **KILLED** | 1 |
+| CXM48 | CX1-7 | the card's idea, result and offer ids not known | **KILLED** | 1 |
+| CXM49 | CX3-1 | the form's line shown before the counter names a clone's parent | **KILLED** | 1 |
+| CXM50 | CX3-2 | the screen hands the subject line no attribution agent | **KILLED** | 1 |
+| CXM51 | CX1-2 | the exit compares its price and time only | **KILLED** | 1 |
+| CXM52 | CXV-1 | an id in disguise read as written only | **KILLED** | 2 |
+| CXM53 | CX1-1, the card path | a card answered on a day whose moment items disagree on the version | **KILLED** | 1 |
+| CXM54 | CXV-4 | an aliased or member `createRequire`, or `getBuiltinModule`, read as no edge | **KILLED** | 1 |
+| CXM55 | CXV-5 | the second reading takes only names called where they are named | **KILLED** | 2 |
+| CXM56 | CXV-3 | the unmasking removes only the first round's invisible characters | **KILLED** | 1 |
+| CXM57 | CXV-6 | the module loader by a static member key no longer opaque | **KILLED** | 23: the string-key row on **every one of the twenty roots**, the census's synthetic row, the parser's unit row, the write gate's fail-closed row |
+| CXM58 | CXV-7 | a `data:`, `https:`, `virtual:` or protocol-relative specifier passed as no edge | **KILLED** | 23: the `data:` row on **every one of the twenty roots**, the census's synthetic row, the parser's unit row, the write gate's fail-closed row |
+| CXM59 | CXV-10 | the client SDK's write names dropped from the second reading | **KILLED** | 1 |
+
+Every mutant the prompt names is in bold. **Not mutated:** the tournament row's guard is the fenced writer's suppression (`agentBattleService.js`). The prompt keeps that file out of the diff, so the row stands on the real writer's output and is not mutated, even in a scratch tree.
+
+### 11.10 The BUILD_RULES §2 review
+
+The fix round's diff is well past the threshold, so the review ran in full. Each pass worked on its own LF `git archive` of the code head, read-only on git and the shared tree. The ids CX1–CX3, CXV and CXM are unused elsewhere in the repo.
+- **Three lenses, static**, at `9da1414f`:
+  - **CX1:** the excerpt's correctness and honesty;
+  - **CX2:** the census, the parser and the write gate;
+  - **CX3:** the screen side and the cards-off path.
+- **An independent refuter (CXV)**, with `node_modules` linked, in four passes:
+  1. at `4473a725`: Astra's four attacks by its own probes, then a run repro against every lens finding, then its own hunt (CXV-1, CXV-2);
+  2. at `08d567b6`, after the lens fixes: the four attacks again, CXV-1 and CXV-2 confirmed fixed, three new findings (CXV-3 to CXV-5) and the card path of CX1-1;
+  3. at `d6222442`: the four attacks again; CXV-3 to CXV-5 and the card path confirmed fixed; then its own hunt, which found three cheap gaps in the guards (CXV-6, CXV-7, CXV-10, fixed in `7ff64780`), two open-ended classes of deliberately evasive code (CXV-8, CXV-9) and a question on CE-1's letter (CXV-11);
+  4. at the final code head `7ff64780`, a narrow pass: the four attacks, the three fixes, and regressions only. The open-ended evasion class was out of its scope, as it is recorded for a ruling (§11.13 Q-11). It found the four attacks closed, CXV-6, CXV-7 and CXV-10 fixed, and no regression or new finding.
+- **The mutating lens:** the battery (§11.9), run whole on the final code.
+
+**Result:** one BLOCKER (CX2-1, pre-existing in the walker's resolver, C2-F2's class) and one MAJOR (CX1-1, C2-F4's class), both CONFIRMED and fixed. The lenses' other 18 findings (9 MINOR, 9 NIT) are fixed, except two recorded as readings: CX3-3 (corrupt data only) and CX3-4 (CD-17's reach, a question). The refuter CONFIRMED every lens finding put to it (18 of 20; CX3-4, a question, and CX3-6, wording, were not put to it) and refuted none. Its own eleven:
+- **fixed:** CXV-1 to CXV-5 (MINOR), CXV-7 (MAJOR) and CXV-10 (MINOR);
+- **CXV-6 (MAJOR): fixed for a static key**; a key built at run time is the evasion class below;
+- **recorded for a ruling, not coded (§11.13 Q-11):** CXV-9 (MAJOR) and CXV-8 (MINOR). The census and the write gate read ordinary module syntax; these spellings are written to evade a static reading (`eval`, `new Function`, `vm`, a worker; a variable key handed to `.call`/`.apply`/`.bind` or `Reflect.apply`, a destructured write method, `Reflect.get`). Each pass closed by a denylist finds the next spelling; whether to keep adding them is the founder's call;
+- **a question:** CXV-11 is Q-2 (CE-1's own letter).
+
+**The fourth pass (`7ff64780`) raised no finding.**
+- **The fixes:** CXV-6, the string-key loader on 20 of 20 roots, throws `OPAQUE_IMPORT`. CXV-7, a `data:` (with a `file:` URL inside), `https:`, `virtual:` or `//host` specifier on every root, throws `UNRESOLVED_IMPORT`, 80 of 80. CXV-10, the four client SDK writes planted in three modules, are caught 12 of 12, and the real closure's raw hits are exactly the two pinned ones.
+- **Regressions:** none.
+  - The census (151 of 151), the parser (17 of 17) and the golden file (89 of 89) pass on the clean tree.
+  - A whole-tree scan of 2,125 modules and 1,493 test files found 0 parse failures over 17,060 specifiers. The URL rule threw 0 times: the tree's only scheme is `node:` (1,197). No non-test module is newly opaque.
+  - Ordinary specifiers and members (`firebase/firestore`, `@/…`, queried and asset paths, `x.create()`, `x.require(…)`, `require.resolve`) neither throw nor read as opaque.
+- **An edge it did not file:** an object key `{ createRequire: 1 }`, or an uncalled `o.getBuiltinModule`, reads as opaque. That is a fail-closed false positive of CXV-4's identifier rule, and the tree holds no instance.
+- **Its runs** passed `--cache=false` and wrote no cache.
+
+#### Astra's four attacks, re-run by the refuter
+
+| Attack | At `4473a725` and `08d567b6` | At `d6222442` and the final head `7ff64780` |
+|---|---|---|
+| **C2-F1** ids in quotations | **Fixed.** Card path: 0 of 84 leaks (Astra's 10 kinds × 6 locations, plus 4 real-shaped ids — `op_<uuid>`, `pf_<hex>`, an auto-id, a uid — × 6). Moment path: 0 of 55. The chat message through the real writer, the evaluation's rationale and hypothesis through the real writer, and a note `normalizeNote` accepts are each left out. 10 of 10 recorded fields clean (route, `drill_` route, exit reason, mechanism, `symbolIn`, symbol, situation, an item's `at`, the card's `createdAt`, the question id). Ordinary prose passes, 6 of 6. | **Fixed.** At `d6222442`: card path 0 of 60 leaks (10 kinds × 6 locations, 0 nulls); moment path 0 of 50 for the ids it knows or that match a minted shape (`op_<uuid>`, `op_<b36>`, `pf_<hex>` included). The real paths: a `normalizeNote`-accepted note leaves `inputQuote` out and keeps `card`; the chat message reaches the tape's `playerText` verbatim and the excerpt leaves it out, keeping `canonicalText`. 0 leaks across the recorded fields, a `numberClasses` class string included. The fixture's three card-side spellings, which match no minted shape and no id a moment excerpt knows, are carried on the moment path (15 of 15), as CE-1 reads. At `7ff64780`: card path 0 of 60 with the fixture's ids and 0 of 60 with platform-minted ones, each quotation left out whole and every other field equal to the baseline. Moment path 0 of 50 with minted ids. The chat message through the real writer is left out; prose controls are carried, 12 of 12. |
+| **C2-F2** the regex trap on twenty roots | **Fixed.** 0 of 20 roots evade: all 20 report an excerpt defect. Controls (a plain import, `import()` with options, a bare import on the same line) are caught on 20 of 20. | **Fixed.** At `d6222442`: all 20 roots report exactly one excerpt route ending in `momentExcerpt.js`; none returns `[]`. At `7ff64780`: 0 of 20 roots give `[]`, and all 20 report the excerpt. The nine closures (253, 118, 138, 120, 165, 120, 17, 93, 82) equal Astra's independent AST counts. |
+| **C2-F3** loose or impossible times | **Fixed.** For an exit `at` of `2026-09-23`, `…T19:00:00` or `9/23/2026 19:00 (id)`: the exit is present, `afterExit` absent, none of the strings carried. `instantText` refuses 30 February, 31 April, 24:00, minute 60, second 60 and `+24:00`, and accepts 29 February 2028. | **Fixed.** At `d6222442`: for the three loose forms, 30 February, `T24:00` and `+24:00` as the exit's `at`: `afterExit` absent 6 of 6, the exit kept on its tick, the loose string carried 0 of 6. An impossible instant as a rationale's, a directive's, the statement's or the note's `at`, `card.filed`, `from` or the last bar's start gives `null` or absence, 7 of 7. At `7ff64780`: `afterExit` absent and no loose string or id carried, 3 of 3. `instantText` refuses 11 of 11 impossible values and accepts 4 of 4 controls, 29 February 2028 among them. A bad time on a quotation's record gives `at: null` with the words kept; on the tag items, no `from` or `to`. |
+| **C2-F4** six ties | **Fixed.** Each of the six cases (rationale, directive, exit with `afterExit`, tag item, check, bar) is absent forward and reversed. An identical twin bar gives the untied answer (`barsAfter` 5, not 6). With every tape array reversed, the excerpt is byte-equal to the original. | **Fixed.** At `d6222442`: each of the six conflicting twins absent in the original order and reversed; identical twins equal the baseline in both orders (`barsAfter` 5, the recorded count 3). At `7ff64780`: 12 of 12 absent (six cases, two orders), with `afterExit` going with the exit; identical twins equal the baseline, 12 of 12. |
+
+#### Findings, verdicts, dispositions
+
+| Id | Severity | Finding | Refuter | Disposition |
+|---|---|---|---|---|
+| CX2-1 | BLOCKER (pre-existing; C2-F2's class) | A relative import with a `?query`, a `#fragment` or percent-encoding resolved to nothing, and the walks read that as no edge. A planted `…/momentExcerpt.js?v=1` escaped all twenty roots, and `./cardStore.js?v=1` escaped the write gate. | CONFIRMED | **Fixed** (`c01441ec`): a query, a fragment and percent-encoding are read through; root-absolute and `file:` specifiers resolve; a local specifier naming no module throws (assets excepted). Rows on every root, and in the write gate. CXM37, CXM38. |
+| CX1-1 | MAJOR (C2-F4's class) | The shared day judge takes the moment's version and its two instants from the first stored item, so a twin tag item's storage order decided `situationVersion`, `from` and `to`. | CONFIRMED | **Fixed in the excerpt** (`9bbef3eb`): each is said only when every stored item it could come from agrees. **The card path** (raised by the refuter's second pass, `d6222442`): a day whose moment items disagree on the version gives `null` in every order. The judge itself, shared with the card route, is unchanged (§11.13 Q-3). CXM43, CXM44, CXM53. |
+| CX2-2 | MINOR | `require()`, `createRequire`, `import.meta.glob` and a computed `import()` were no edge. | CONFIRMED | **Fixed** (`c01441ec`): `require` of a string is an edge; the rest are opaque, and a walked module holding one fails. The tree's one opaque loader is pinned. CXM39, CXM40. |
+| CX2-3 | MINOR | The whole-tree rows matched the specifier's text. | CONFIRMED | **Fixed** (`c01441ec`, `b59db948`): they compare resolved modules; a planted-spelling row bites. CXM41. |
+| CX2-4 | MINOR (pre-existing) | The write gate was a per-line pattern: `ref.\nset(`, `ref['set'](` and `ref./**/set(` slipped it. | CONFIRMED | **Fixed** (`c01441ec`): a second reading of every call's name from the parser, beside the pattern. CXM42. |
+| CX1-2 | MINOR | The conflict rows varied one field, so a mutant cutting a comparison list survived. | CONFIRMED | **Fixed** (`9bbef3eb`): a conflict on every compared field. CXM51. |
+| CX1-3 | MINOR | No row failed only an auxiliary read. | CONFIRMED | **Fixed** (`9bbef3eb`): the version's and the series' reads failed alone; the core reads give `null`. CXM45. |
+| CX1-4 | MINOR | Prose omitted: "training-agent-based", "cpu-agent-style", "CB-2026". | CONFIRMED | **Fixed** (`9bbef3eb`): the agent shapes only as minted; the CB- id has no shape. Kept by CE-1's letter, pinned as stated limits: "RSI14AboveSMA50Cross" (20 characters with a digit) and "trade_2026". CXM46. |
+| CX3-1 | MINOR | On a clone's battle the form could open before the counter named the parent, and show a statement the excerpt leaves out. | CONFIRMED | **Fixed** (`3ec827cf`): no line for a battle carrying an idea until the counter has named the parent. CXM49. |
+| CX3-2 | MINOR | No screen row used a clone's battle or planted an agent id. | CONFIRMED | **Fixed** (`3ec827cf`): rows for a clone's battle, with the counter and without it. CXM50. |
+| CX3-3 | MINOR (corrupt data only) | The excerpt checks the version's `userId`; the screen's read is gated by the parent list's owner. They differ only when the list's owner and the version's differ, or the list is hard-deleted. | CONFIRMED as stated | **Recorded, not changed** (§11.13 Q-4): every writer stamps both. Matching it would add a read the ruling did not ask for. |
+| CX1-5 | NIT | A bar whose start was not strict was skipped, not refused. | CONFIRMED | **Fixed** (`9bbef3eb`): no `afterExit`. CXM47. |
+| CX1-6 | NIT | The epoch-ms shape missed hyphen joins. | CONFIRMED, raised to MINOR (CE-1 asks for a complete list) | **Fixed** (`9bbef3eb`), with the hyphen-joined kinds pinned. |
+| CX1-7 | NIT | The card's idea, result and offer ids were not known. | CONFIRMED | **Fixed** (`9bbef3eb`). CXM48. |
+| CX2-5 | NIT | A parse failure named no module. | CONFIRMED | **Fixed** (`c01441ec`). |
+| CX2-6 | NIT | The parse cache's key collapsed lone surrogates. | CONFIRMED | **Fixed** (`c01441ec`): a hash of the UTF-16 code units. |
+| CX2-7 | NIT | A comment claimed the wrong row primes the cache. | CONFIRMED | **Fixed** (`c01441ec`). |
+| CX3-4 | NIT (a question) | CD-17's reach: the My cards rows read "adopted as your instruction" without the sentence. | — | **Built to the letter** (the digest's line); asked (§11.13 Q-5). |
+| CX3-5 | NIT | An unused binding. | CONFIRMED | **Fixed** (`3ec827cf`). |
+| CX3-6 | NIT | Stale wording in three places. | — | **Fixed** (`3ec827cf`). |
+| CXV-1 | MINOR (the refuter's) | Ids in disguise were carried: an id split by a zero-width space, full-width digits, upper-case hex, a known id split by a zero-width space; also a no-digit auto-id, a glued prefix and a line-break split. | — | **Fixed** (`08d567b6`): every check reads the text as written and unmasked; hex in either case; the hyphen-joined news kind pinned. Confirmed fixed by the second pass. The no-digit auto-id, the glued prefix and the line-break split stay as CE-1's stated limits (§11.3, §11.13 Q-2). CXM52. |
+| CXV-2 | MINOR (the refuter's; CX1-1's root) | A time the strict parser refuses still decided a moment's `from` in the shared judge. | — | **Fixed by CX1-1's fix:** the same answer (no version, no `from`, no `to`) under UTC, New York and Tokyo. Confirmed by the second pass. |
+| CXV-3 | MINOR (the refuter's) | More invisible separators still split an auto-id: bidi isolates, U+034F, U+FE0F, a tag character, U+061C, U+3164, U+180B, U+17B4. | — | **Fixed** (`d6222442`): the unmasked reading removes every default-ignorable code point and every format character. Confirmed fixed by the third pass: 12 separators (the nine named, the zero-width space, the soft hyphen, the byte-order mark), mid-id, between every character and inside a known id, 36 of 36 left out. CXM56. |
+| CXV-4 | MINOR (the refuter's; CX2-2's class) | An aliased or member `createRequire` (`import { createRequire as cr }`, `m.createRequire`, `process.getBuiltinModule('node:module').createRequire`) evaded the census on 20 of 20 roots. | — | **Fixed** (`d6222442`): an import of `module` or `node:module`, and `createRequire` or `getBuiltinModule` by name (aliased, as a member, through `process`), are opaque loads; the census fails. Confirmed fixed by the third pass; a string key was CXV-6. CXM54. |
+| CXV-5 | MINOR (the refuter's; CX2-4's class) | Write calls that never name the method at the call site evaded both write-gate readings: `ref.set.call(…)`, `ref.update.apply(…)`, `(0, ref.set)(…)`, `Reflect.apply(ref.set, …)`, `ref[k](…)`, `ref.set.bind(ref)(…)`. | — | **Fixed** (`d6222442`): the second reading takes every member the closure names, called or not, and every call by a computed key. The real closure still finds exactly the two pinned hits. Confirmed fixed by the third pass for its six spellings, planted in three modules (18 of 18). CXM55. |
+| CX1-1, the card path | (CX1-1's) | Raised by the refuter's second pass: a card on a day whose moment items disagree on the version was answered in one storage order. | — | **Fixed** (`d6222442`): `null`. Confirmed by the third pass: three such days × 26 orders × two filed versions, 156 of 156 `null`; the moment's `situationVersion` absent in every order. CXM53. |
+| CXV-6 | MAJOR (the refuter's; CXV-4's class) | The module loader by a string key, `process['getBuiltinModule']('node:module')['createRequire'](…)`, evaded the census on 20 of 20 roots (also by concatenated keys). | — | **Fixed for a static key** (`7ff64780`): a member whose static name is `createRequire` or `getBuiltinModule` is an opaque load. Rows on all twenty roots, the census, the write gate and the parser's unit rows. A key built at run time (`'getBuiltin' + 'Module'`) is the evasion class: §11.13 Q-11. Confirmed by the fourth pass: 20 of 20 roots throw. CXM57. |
+| CXV-7 | MAJOR (the refuter's; CX2-1's class) | A static `data:` import whose module imports the excerpt by its `file:` URL was neither an edge nor a throw, on 20 of 20 roots; Node loads it. | — | **Fixed** (`7ff64780`): a specifier with any scheme other than `node:` and `file:`, or a protocol-relative one, throws. The tree holds none. Rows on all twenty roots, the census, the write gate and the parser's unit rows. Confirmed by the fourth pass: 80 of 80 throw. CXM58. |
+| CXV-8 | MINOR, a question (the refuter's) | `eval`, `new Function`, `node:vm` and `node:worker_threads` loads pass the census (20 of 20 roots); the first two load the excerpt in plain Node. | — | **Recorded for a ruling** (§11.13 Q-11): the class is open-ended, and the refuter asked where the line is. One non-test module uses any of them (`api/scripts/test-autopilot-cleanup.js`), so a pinned denylist would be cheap if ruled. |
+| CXV-9 | MAJOR (the refuter's; CX2-4's class) | Write calls by a variable key handed to `.call`/`.apply`/`.bind` or `Reflect.apply`, a destructured write method, and `Reflect.get(ref, 'set')` pass both write-gate readings (21 of 21). | — | **Recorded for a ruling** (§11.13 Q-11), severity kept. A rule that flagged every uncalled computed member would flag the excerpt's ordinary reads (`holdingBasis[m.symbol]`, `c.stagnation[m.symbol]`); the narrower rule the refuter sketched is a denylist of evasive positions. |
+| CXV-10 | MINOR (the refuter's; pre-existing) | The client SDK's `setDoc`, `updateDoc`, `addDoc` and `deleteDoc` were no write names, while the closure holds `src/` modules (12 of 12 missed). | — | **Fixed** (`7ff64780`) in the second reading; the line pattern (`scripts/census-film-room-v1-plays.mjs`, C1's script) is unchanged. The real closure still gives exactly the two pinned hits. Confirmed by the fourth pass: 12 of 12 caught. CXM59. |
+| CXV-11 | MINOR, a question (the refuter's) | An auto-id with no digit (about 3%) or a uid with none (about 0.7%) is carried when the excerpt does not know it. | — | **Built to CE-1's letter**; it is Q-2. |
+| NITs (the refuter's third pass) | NIT | Homoglyphs and combining marks are not unmasked (Cyrillic А, Greek Ο, U+0332, U+0301, Arabic-Indic digits); ordinary pieces joined by an invisible joiner into an id's exact shape are left out; `./MomentExcerpt.js` fails the census by the `plays` scan on Windows and throws on Linux; an interior identical twin splits the moment (Q-3). | — | **Recorded:** homoglyphs and combining marks join Q-2's stated limits and Q-11; the rest are absence or over-omission, never a leak. |
+
+**Reviewer isolation.** Every pass worked in its own snapshot and touched no repo file, no git state and no other pass's tree. The refuter's third pass let vitest write its own results cache into the linked install (`node_modules/.vite/vitest/…/results.json`): not a repo file, and nothing reads it but vitest. The fourth pass ran with `--cache=false` and wrote none.
+
+**Checked by the lenses, nothing found:**
+- **CE-6:** the argument is checked before it is read, and nothing is read first.
+- **CD-14, CD-16 and CD-3:** each correct as built.
+- **CD-8 and CE-5:**
+  - the idea comes only from the battle already read, never `calls`, never the frozen statement;
+  - the version document is checked for its owner, list, version and hash;
+  - the provenance is `recorded`.
+- **CE-3:** every compare and every carried instant goes through `instantMs`/`instantText`.
+- **The parser:**
+  - its coverage of every import form;
+  - it parses every module of the tree;
+  - its comment stripping is token-identical;
+  - it fails closed on a parse error;
+  - the cache.
+- **The census:**
+  - Astra's attack rows are non-vacuous on all twenty roots;
+  - every census pin is unchanged;
+  - the dependency is declared at 7.28.5;
+  - `carriage.test.js` changes only its census row.
+- **The screen:**
+  - cards off reads and renders nothing new;
+  - every route into the screen hands it a full battle document;
+  - the receipt reads its own battle's carriage;
+  - the version binding and the harness's independent oracle;
+  - CD-3's names pass the sweeps;
+  - the CD-16 and CD-17 rows can fail.
+
+### 11.11 Checks, and the Tests run
+
+`origin/main` was `71bc6bde` when fetched before the checks and again before the push, and it is already in the branch: the branch merged with `main` is the head tree, so every check below ran on it.
+
+| Check | Where | Result |
+|---|---|---|
+| `npm ci` | the private WSL worktree of `~/pd-ci` (a git clone), Node 20.20.2 | exit 0; `package-lock.json` byte-identical before and after (SHA-256 equal); the tree clean; `@babel/parser` 7.28.5 |
+| Full Linux suite | the same worktree at `7ff64780`, `TZ=UTC`, `--maxWorkers=8`, under `flock` | exit 0 in 308 s: **1,510 files passed, 0 failed**, 12 skipped (1,522); 34,161 tests passed, 135 skipped (34,296). The JSON report agrees: `success: true`, 0 failed tests. |
+| Earlier full suites | the same worktree | at `9da1414f`: two whole-tree censuses failed (`equippedHypothesisRefs.census` on the three new carriage names, `unconfirmedOutcome.census` on a word in a kind's description), fixed in `4473a725`; at `08d567b6`: 1,510 files passed, 0 failed (34,139 tests passed, 135 skipped); at `d6222442`: 1,510 files passed, 0 failed (34,141 tests passed, 135 skipped), with the rules suite (42 files, 784 tests), `lint:gate` and `vite build` all exit 0 |
+| Rules suite (`npm run test:rules`, emulator) | the same worktree at `7ff64780` | exit 0 in 155 s: 42 files, 784 tests passed |
+| `lint:gate` | the same worktree at `7ff64780` | exit 0, no warnings |
+| `vite build` | the same worktree at `7ff64780`, and again at the pushed head | exit 0, 4,208 modules transformed. Its four CSS-syntax warnings come from comments in `league.css` and `battleArena.css`, which the branch does not touch. |
+| The census and acceptance C | `oneDoor.census.test.js` (151 rows), `momentExcerpt.golden.test.js`, `momentExcerpt.test.js`, `momentExcerpt.carriage.test.js`, `jsSource.test.js`, `promptBoundText.test.js`, `filmRoomSubject.test.js`, `FilmRoomSubjectLine.jsdom.test.jsx` and `FilmRoomCards.jsdom.test.jsx`: the battery's baseline (nine files) | green: 467 of 467, and inside the full suite |
+| The twelve cards-off goldens | §11.7 | 12 of 12 byte-identical to `main`'s and to the committed files (60 of 60 comparisons) |
+| The mutants | §11.9 | 59 of 59 killed |
+
+**The Tests run** (read once after the push; BUILD_RULES §2: not watched, polled or fixed): this report's commit is the pushed head, so the run is read after the push and reported in the PR comment that posts the head SHA.
+
+### 11.12 The excerpt's contract for the Practice Field (T1b + T1d) — the one current text
+
+**This section replaces §6.** It restates the contract whole, after Amendment D (CD-3, CD-8, CD-14, CD-16) and Amendment E (CE-1, CE-3, CE-4, CE-6). T1b + T1d reads this text, not §6.
+
+#### The two exports
+
+```js
+import { excerptOf, excerptOfCard, MOMENT_EXCERPT_VERSION } from '../filmRoom/momentExcerpt.js';
+
+excerptOf(db, { uid, attributionAgentId, battleId, etDate, moment })   // one game moment
+excerptOfCard(db, { uid, attributionAgentId, entryId })                // one card, through its filed source
+// each → Promise<{ excerpt, refs } | null>
+```
+
+- `db` is the Admin SDK's Firestore. The excerpt only reads, with plain document gets, never a query or a collection scan:
+  - the tape day and the battle;
+  - for a casual clone's battle, the owner's clone document and its parent agent (the platform resolver's ownership guard);
+  - the one hypothesis version the battle's frozen carriage names (CD-8);
+  - the sold symbol's series document;
+  - for a card, the card.
+- `moment` is `{ situationId, symbol, fromTickSeq, toTickSeq }`: exactly one of the day's stored moments, as `src/utils/filmRoomMoments.js` derives them. A sub-range or a superset is `null`.
+- `attributionAgentId` is the agent the card ledger and the book are keyed by: the ranked agent, which for a casual clone's battle is the clone's parent.
+- `MOMENT_EXCERPT_VERSION` is `1`: today's BaggerBomb tape (CC-6).
+
+#### What `null` means (narrowed by CE-6)
+
+`null` is one answer for all of these, with nothing logged and nothing that tells one from another (CC-5):
+- a failed **core** read: the card, the tape day or the battle;
+- the tape day, the battle or the card is missing or is another owner's;
+- the battle's attribution agent is not the one named, or a clone's battle has no resolvable parent, or a parent that is not the owner's;
+- the moment is not one of the day's stored moments;
+- the day's situations are unavailable, or it records no archetype;
+- for a card, the filed source has changed: another situation version, another archetype, the moment gone or moved (CC-4);
+- for a card, the moment's stored tag items disagree on their version, so the day cannot be said to hold the version the card was filed under (the fix round's review, CX1-1);
+- a malformed argument, `null`, an array or a primitive in place of the argument object included (CE-6).
+
+A failed **auxiliary** read does not give `null`. It gives a partial excerpt, as each field's contract says:
+- a version document that is missing or fails to read: the idea without its statement;
+- a series document that is missing or fails to read: no `afterExit`.
+
+A `null` is never a reason to guess. Treat it as "no excerpt".
+
+#### What the excerpt is not (CE-6)
+
+The excerpt is **not a consistent snapshot**, and **not a commit-time receipt**. Its gets are separate reads and can see different revisions of the tape, the version and the series. The consumer's W-05 rechecks at selection and before commit remain the consumer's.
+
+#### `excerpt` — what may reach a prompt
+
+Each value is `{ value, class }`. `class` is `recorded`, `derived`, or for a series bar `market`: the document's own declaration for that number, or, for the carried idea's version, the carriage's (CE-5). Each quotation is `{ text, by, at, class: 'quoted' }`: `by` is one of `agent`, `player` or `platform`, and `at` is the record's time for the words, or `null`. A field the record doesn't hold is absent.
+
+| Field | Shape | Source |
+|---|---|---|
+| `excerptVersion` | `1` | `MOMENT_EXCERPT_VERSION` |
+| `battle` | `'b1'` | the battle's label |
+| `symbol` | recorded | the moment's symbol, **only inside the ticker domain** (CE-1) |
+| `situationId` | recorded | the moment's situation, **only if the registry holds it** (CE-1) |
+| `situationVersion` | recorded | the moment's tag items (`tags.items[].version`), **only when every stored item of the moment agrees** (CX1-1); otherwise absent |
+| `from`, `to` | recorded instants | the moment's first and last tagged checks, strict instants only, **and only when every stored item at that check agrees** (CX1-1); otherwise absent |
+| `checks` | derived | the moment's number of tagged checks |
+| `sector` | recorded | **the directory's name** (CD-3): `STOCK_UNIVERSE[TICKER_TO_SECTOR[symbol]].name`, e.g. "Industrials", "Consumer Discretionary". Absent for a symbol the directory lacks, or a code with no name. |
+| `idea` | `{ label: 'i1', version?, statement? }` | **the battle's frozen carriage** (CD-8), `agentContext.equippedHypothesis`: its list, version and content hash only, never the day's calls. `version` is the carried number, `recorded` (CE-5). `statement` is the version document's, at most 280 code points, quoted `player` at the document's `createdAt`. No carriage (a tournament battle has none): no idea. A version document that is another owner's, or contradicts the carriage (another list, version number or content hash): no idea at all. One missing or unread: the idea without its statement. |
+| `rationale` | `{ hypothesis?, rationale? }` | the `rationale[]` row at the moment's first check, or the nearest earlier one; each at most 500 code points, quoted `agent` at the row's `at` |
+| `directive` | `{ playerText?, canonicalText? }` | the `directives[]` row heard inside the moment: the earliest heard, then the earliest filed by strict instant. The player's words are quoted `player` and the canonical text `platform`, each at most 400 code points, at `filedAt` |
+| `exit` | `{ mechanism?, exitReason?, sold?, bought?, exitPrice? }` | the `actions[]` row selling the moment's symbol at its last check, or at the first check the day ran after it (R6), the earliest by strict instant. `mechanism` and `exitReason` only inside the tape writer's `EXIT_MECHANISMS` table; `sold` and `bought` only inside the ticker domain (CE-1). A missing part is absent; an exit to cash has no `bought`. |
+| `afterExit` | `{ close, barStart, barsAfter }` | the sold symbol's series document for the day. **It needs a strict exit instant** (CE-3); without one it is absent. A series holding any bar whose start is not strict gives no `afterExit` (CX1-5). Its bars are the rows whose strict start falls after the exit: the latest one's close and start (both `market`), and `barsAfter`, the number of **distinct** bar starts (derived). Rows at the latest start that disagree, or a latest close that is no classed number, give no `afterExit`; no earlier bar stands in. |
+| `count` | `{ value, class }` | `stalled`'s count at the moment's last check: the live rule's record on the recorded basis (`recorded`), else the tag item's count (`derived`). Never a neighbouring check's. |
+| `card` | `{ label: 'c1', question?, route?, filed? }` | `excerptOfCard` only: the menu's question text at the stored version; the route (a stored `drill` reads `offer`), **only inside `CARD_ROUTES`**; the filed instant. **No `note`** (CD-14). |
+| `inputQuote` | quotation | `excerptOfCard` only: **the card's note, its one home** (CD-14), at most 280 code points, quoted `player` at the card's `createdAt` |
+
+**Not carried in version 1:**
+- `meeting` (CD-16): the owner can write the battle's meeting history, so its words could pose as the platform's. It can come back in a later version, once meetings are server-written.
+- `recurrences` (CD-4): if the drafting call wants it, the Practice Field asks the counter and passes the answer in.
+
+**Bounds** are code points, and an astral character counts once: statement 280, hypothesis 500, rationale 500, playerText 400, canonicalText 400, note 280. A quoted text over its bound is **not carried**, never cut.
+
+#### No identifier rides in on someone's words (CE-1)
+
+Every quotation (`inputQuote`, `idea.statement`, `rationale.hypothesis`, `rationale.rationale`, `directive.playerText`, `directive.canonicalText`) is **left out whole**, never redacted or cut, when its text holds an identifier. `src/utils/promptBoundText.js` holds the one policy:
+1. **Exact ids:** any id this excerpt knows, as a substring. Those are:
+   - the owner's uid and the battle;
+   - the battle's own agent (for a clone's battle, the clone) and the attribution agent;
+   - the idea's list;
+   - for a card: its entry, the agent it is filed under, its op id, its nomination's book and id, and the idea, result and offer ids it holds.
+
+   One helper, `subjectKnownIds`, gives the excerpt and the screen the same set.
+2. **Id shapes:** any token of a shape the platform mints, a token being a run of letters and digits bounded by anything else (`_`, `-`, `:` and `.` included). `ID_SHAPES` lists the shapes, and `PLATFORM_ID_KINDS` pins every kind the platform mints (30) with its shape, or with the reason no shape can tell it from prose (five kinds; §11.3).
+3. **As written and unmasked:** items 1 and 2 read the text as written and again with its disguises taken off (NFKC, and every default-ignorable code point and format character removed), so a zero-width split, a bidi mark or a full-width digit hides no id. The quotation is still carried as written, or left out whole.
+4. **Domains:** a recorded word outside its domain is absent (the rows above).
+
+Ordinary prose passes: tickers, prices, dates, percentages and ordinary words of any length. The policy's stated limits (an auto-id with no digit, an unknown id glued to a word or split by a line break; a coined token of an id's shape left out) are in §11.3.
+
+#### Times and ties (CE-3, CE-4)
+
+- **Every instant** the excerpt carries or compares goes through one strict parser (`instantMs` / `instantText` in `src/utils/filmRoomSubject.js`): a full ISO 8601 date-time with `Z` or an offset, on a real calendar date and a real clock time. A quotation whose time is not strict keeps its words with `at: null`; a fact that needs the time is absent.
+- **A tie the rules don't settle means nothing is said.** At each selection (the rationale row, the directive, the exit, the count's tag item or check, the series bar), candidates tied at the selecting key are compared on the raw values of every field the excerpt takes from them:
+  - identical candidates count as one;
+  - candidates that disagree leave the field absent, with every field that depends on it (`afterExit` depends on the exit);
+  - a tie broken by time is broken only when every tied candidate holds a strict instant;
+  - a conflict never falls back to a neighbouring row;
+  - array order never decides: a permutation of the stored rows never changes the answer.
+- **The moment's own fields** (`situationVersion`, `from`, `to`) are said only when every stored item they could come from agrees; on the card path, a version disagreement is `null` (above).
+
+#### `refs` — never for a prompt
+
+`refs` maps each label present to its real id: `{ b1: battleId, i1?: watchlistId, c1?: entryId }`. It is for the server's own resolution (contract V2 §5.1). Nothing in `excerpt` is an id.
+
+#### The subject line
+
+`subjectOfExcerpt(excerpt)` in `src/utils/filmRoomSubject.js` gives the line the receipt shows for the same card:
+
+> "{SYM} · {sector name} · under your idea '{first 60 code points}' v{n}"
+
+For example: "ETN · Industrials · under your idea 'Industrials and chips lead while the wider market drifts; r' v3". The screen applies the same identifier rule to the statement (CE-1), with the same known ids, and a read the rules deny shows the line without the idea (CE-5's CD-10 correction). On a casual clone's battle the form shows no line for a battle carrying an idea until the counter has named the parent, so it never shows a statement the excerpt would leave out (CX3-1).
+
+#### What T1b + T1d adds to the census
+
+In `api/_utils/filmRoom/oneDoor.census.test.js`, which now reads imports with `@babel/parser` (CE-2):
+1. **A `drafting` model path** in `MODEL_PATHS` and `MODEL_PATH_ROOTS`, with its roots, its `KNOWN_REACH` and its `EXCLUSIVE_REACH` entries. The key-list pin gains `drafting`, and the root count moves from twenty roots on nine paths to the new totals: update the CE-6 count row with them.
+2. **No change to `NAMED_EXCEPTIONS`.** The entry admits the path `drafting` and the **direct** edge `api/_utils/practiceField/draftingPrompt.js` → `api/_utils/filmRoom/momentExcerpt.js`. An importer reaching the excerpt through a helper fails the rule.
+3. **The latent pins:**
+   - update the row asserting the importer does not exist yet;
+   - hold `drafting` out of "the exception table admits no existing path", and keep that row for every other path;
+   - in "only a named importer may import the excerpt", keep the first assertion and expect exactly `draftingPrompt.js` in the second.
+4. **What the exception admits:** for `drafting`, `oneDoorDefectsOf` judges `plays` on the walk behind the named edge, so the excerpt's own `plays` read is the exception's. The ledger is still judged on the whole closure.
+5. **Astra's attack rows** cover every root in `MODEL_PATHS`, so the drafting roots join them automatically: each must fail with the planted suffix, and with the query, fragment and percent-encoded spellings of the excerpt's path.
+6. **The walks fail closed.** A module on a walk must parse; a local specifier must resolve to a module or name an asset; a specifier with any scheme but `node:` and `file:` (`data:`, `https:`, `virtual:` …) or a protocol-relative one throws; and a load no static reading can follow (a computed `import()` or `require()`, `createRequire` or `getBuiltinModule` by name or by a static member key, an import of `module` or `node:module`, `import.meta.glob`) fails the path. The drafting assembler's closure must hold none of them. Code written to evade a static reading (a key built at run time, `eval`, `new Function`, `vm`, a worker) is outside the census until ruled (§11.13 Q-11).
+7. **The Mandate honesty registry** entry for the excerpt as an input (contract V2 Amendment B item 6) is the Practice Field's, with the drafting assembler.
+8. **The carriage censuses** (`api/_utils/hypothesisRecords/carriage.test.js`'s reader census, and `equippedHypothesisRefs.census.test.js`) list `src/utils/filmRoomSubject.js` as the excerpt's one reader of the battle's carriage. The drafting assembler reads the idea through the excerpt, never the carriage directly; a new direct reader is a new row in both censuses and needs its own ruling.
+
+Every other path, the Mandate manager's included, stays held to its whole closure: it may reach neither the ledger, `plays`, the excerpt, nor the importer.
+
+### 11.13 Needs a ruling
+
+None of these blocks the merge. Each item below is built as stated, pinned, and changes in one place if ruled otherwise.
+
+| # | Question | Built | Why |
+|---|---|---|---|
+| Q-1 | **A second carriage census.** Astra's §5 named `carriage.test.js`'s reader census. `equippedHypothesisRefs.census.test.js` (ruling Q10) also lists every file naming the carriage, fixtures included. | Three rows added (`4473a725`): `filmRoomSubject.js` (CD-8's reader: list, version and hash only), the excerpt fixture (writes a carriage), and the screen harness (its own declared class for the version's path). Neither census's read rows changed, and none of the three reads `evidenceRefs` or `origin`. | The full suite failed on the missing names. CD-8 authorises the reader. The fixture and harness rows follow the census's precedent (`sheetBattles.js`). Ruled otherwise, the harness can name the path another way and the fixture can build its carriage elsewhere, but the reader stays. |
+| Q-2 | **CE-1's own letter.** These stay as written, and are pinned: (a) caught only when known exactly; (b) caught as ids. | (a) An auto-id with no digit (about 3% of random 20-character auto-ids) or a uid with none (about 0.7%), an unknown id glued to a word, an id split by a line break, and an id disguised by homoglyphs (Cyrillic А, Greek Ο, Arabic-Indic digits) or combining marks (U+0332, U+0301), which NFKC does not fold, have no shape (the refuter's CXV-11 and third-pass NIT). (b) A coined 20-character token holding a digit ("RSI14AboveSMA50Cross") and an underscore sequence token ("trade_2026") are left out as ids. | CE-1 defines the auto-id shape as 20 characters holding a digit and both cases. Looser shapes would omit ordinary prose; stricter ones would let real ids through. Ruled otherwise, the shape is one line in `ID_SHAPES`. |
+| Q-3 | **The shared day judge (the review's CX1-1(d)).** An identical twin tag item at a check inside a moment splits the moment in `momentsOf`, so the excerpt (and the card route) find no such moment. | Unchanged: the excerpt answers `null` in every order, which is order-proof but not "identical count as one". The excerpt's own fields (`situationVersion`, `from`, `to`) now need every stored item to agree (`9bbef3eb`), and on the card path a version disagreement is `null` in every order (`d6222442`). | `momentsOf` and `sourceDay.js` are shared with the card route, which Astra confirmed byte-identical with `main` (CC-4). Changing them changes the route's moments. Ruled to change, `momentsOf` would merge identical items at one check, and the route's moments would move with it. |
+| Q-4 | **The version's owner, on corrupt data (CX3-3).** The excerpt checks the version document's `userId`; the screen's read is gated by the parent list's owner (`firestore.rules`). | Unchanged. They disagree only when the list's owner and the version's differ, or the list is hard-deleted. Every writer stamps both, and the forge deletes softly. | Matching it would add a list read to the excerpt, which the ruling did not ask for. Ruled to match, the excerpt reads the list once and treats a foreign or missing one like another owner's version. |
+| Q-5 | **CD-17's reach (CX3-4).** The "My cards" rows in the same region read "adopted as your instruction" under an "Adopted" heading, without the sentence. | Built to CD-17's letter: the digest's adopted line. | The ruling names "Since last time"'s adopted line. Its reason ("every idea surface until P4") may cover these rows too. Ruled so, the same copy key joins `CardRow` for an installed card. |
+| Q-6 | **The hash check (CX1 Q2).** `ideaFrom` compares the version's stored `contentHash` with the carriage's; the deploy's `carriableVersion` recomputes it. | The stored field, as CE-5 states ("compare … content hash"). | Recomputing would pull the hypothesis store's hashing module into the read-only closure. Versions are server-written, so a stored hash that no longer matches its words means corruption at the store. |
+| Q-7 | **A failed version read on the screen (CX1 Q3).** On a read error the screen shows no line, while the excerpt gives the idea without its statement. | As CD-10 rules: no line on loading or failure. CE-5's correction touched only the denied case. | CE-5 says the two sides "treat each case the same way"; CD-10 keeps "no line" on failure. Saying nothing is not saying something else. |
+| Q-8 | **The instant rule's details (CX1 Q4).** | `instantMs` accepts a time with minutes and no seconds (`2026-09-23T19:00Z`), as the former rule did. The exit's sales at the same check break their tie by the earliest strict instant, like the directive's. | ISO 8601 allows the reduced form, and the records write full seconds. R6 and R7 name a time tie-break for directives only; the exit's mirrors it, and CE-4 makes a tie it cannot break absent. |
+| Q-9 | **What a bar is (CE-4, CX1-5).** | A series row with a strict start counts as a bar, whether or not its close is a number. Any row whose start is not strict makes `afterExit` absent, and so does a latest bar with no classed close; no earlier bar stands in. | The tie must be found on the selecting key before any payload is judged (the review's advice under CE-4), and nothing may be inferred from a refused time (CE-3). The candle writer always writes both. |
+| Q-10 | **The exit's reason domain (CE-1).** | `exitReason` is carried only when the tape writer's `EXIT_MECHANISMS` table holds it. A reason the writer records but does not map (its mechanism `unrecorded`) is now absent. | CE-1: "the exit's mechanism and reason, against the writer's lists". The table is the writer's only list. |
+| Q-11 | **The static guards' threat model (the refuter's CXV-8, CXV-9; CXV-6's run-time keys).** The census and the write gate read a module's source. Must they also defend against code written to evade a static reading? | They close every ordinary module syntax, fail closed on what they cannot follow (a parse failure, an unresolvable or URL specifier, a computed `import()`/`require()`, the module loader by name or static key, `import.meta.glob`), and pin the tree's one opaque loader. **Not closed, recorded:** a key built at run time (`'getBuiltin' + 'Module'`), `eval`, `new Function`, `node:vm`, `node:worker_threads` (CXV-8, MINOR); a variable key handed to `.call`/`.apply`/`.bind` or `Reflect.apply`, a destructured write method, `Reflect.get(ref, 'set')` (CXV-9, MAJOR as the refuter rated it). | Each refuter pass closed by a denylist finds the next spelling, and every one of these is written on purpose: no ordinary edit produces them. A static census cannot close the class; a pinned denylist can narrow it. `eval`/`new Function`/`vm`/`worker_threads` appear in one non-test module (`api/scripts/test-autopilot-cleanup.js`), so that denylist would be cheap. CXV-9's narrower rule (a computed member as the object of `.call`/`.apply`/`.bind`, an argument of `Reflect.apply`, or a sequence callee, with destructuring keys and `Reflect.get` strings recorded) avoids flagging the excerpt's ordinary computed reads. Ruled "ordinary syntax only", nothing changes; ruled "close the listed spellings", both land in `jsSource.js` and the write gate with a row each, and the class stays open beyond them. |
