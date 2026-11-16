@@ -107,6 +107,17 @@ describe('a full run on fixtures (SW-2)', () => {
     for (const c of h.calls) expect(c.opts).toEqual({ from: '2026-07-09', to: MON, order: 'd', timeoutMs: C.STORE_ACQUIRE_TIMEOUT_MS });
   });
 
+  it('past the admission deadline nothing more is read: the names not reached are deferred, unread', async () => {
+    const db = makeSweepDb();
+    const names = [...ALL_TICKERS].sort().slice(0, 40);
+    const h = harness({ at: T_RUN1, stepMs: 50_000 }); // each request takes 50 s of virtual time: the window passes mid-run
+    const r = await h.run(db, { symbols: names });
+    expect(h.nowMs - T_RUN1).toBeGreaterThanOrEqual(C.SWEEP_ADMISSION_WINDOW_MS);
+    expect(r.names).toBeLessThan(40);
+    expect(r.deferred.deadline).toBe(40 - r.names + (r.names - r.storeCalls));
+    expect(db.__log.gets.filter((p) => p.startsWith('setupEvidence/'))).toHaveLength(r.names);
+  });
+
   it('a refused record is final: counted as refused, never retried', async () => {
     const db = makeSweepDb();
     const h = harness({ at: T_RUN1, rowsFor: (s, session) => (s === NAMES[0] ? splitRows(session) : pullbackRows(session)) });
