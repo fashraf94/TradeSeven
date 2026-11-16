@@ -14,6 +14,7 @@ import React, { useState } from 'react';
 import { LOADOUT_KINDS } from '../../constants/perGameLoadout';
 import { PerGameLoadoutContext } from './hub/perGameLoadoutContext';
 import { useLeagueLoadoutLock } from './hub/useLeagueLoadoutLock';
+import { LEAGUE_HIDE_ENABLED } from '../../config/featureFlags';
 
 /**
  * @param {{ status: string, agent: object|null }} props.agentRead  the hub's owner-tagged read (useHubReaders)
@@ -21,7 +22,9 @@ import { useLeagueLoadoutLock } from './hub/useLeagueLoadoutLock';
  */
 export default function PerGameLoadoutScope({ agentRead, activeBattles = null, children }) {
   const agent = agentRead && agentRead.status === 'ready' && agentRead.agent && typeof agentRead.agent === 'object' ? agentRead.agent : null;
-  const lockRead = useLeagueLoadoutLock(agent ? agent.ownerId ?? null : null);
+  // League hide (BB-1; ruling Q3): the League card is not rendered, so its lock read does not run — the hook is still called
+  // (rules of hooks) but is handed no owner, and with none it subscribes to nothing (hub/useLeagueLoadoutLock.js).
+  const lockRead = useLeagueLoadoutLock(LEAGUE_HIDE_ENABLED ? null : agent ? agent.ownerId ?? null : null);
   const [armoryKind, setArmoryKind] = useState(LOADOUT_KINDS.BAGGERBOMB);
   const [bookKind, setBookKind] = useState(LOADOUT_KINDS.BAGGERBOMB);
   const value = {

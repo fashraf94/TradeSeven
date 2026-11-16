@@ -1,15 +1,19 @@
 import React from 'react';
-import { Swords, Newspaper, Trophy, Hammer, Search } from 'lucide-react';
+import { Swords, Newspaper, Trophy, Hammer, Search, Bomb } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { TOURNAMENT_TAB_ENABLED } from '../../config/featureFlags';
+import { TOURNAMENT_TAB_ENABLED, LEAGUE_HIDE_ENABLED } from '../../config/featureFlags';
 
 const NAV_ITEMS = [
   { id: 'compete', label: 'Compete', icon: Swords, screen: 'dashboard', iconSize: 24 },
   { id: 'news', label: 'News', icon: Newspaper, screen: 'fantasytimes', iconSize: 24 },
   // The retired Agent Hub's slot — held by the flagged League tab (Closeout Spec §6).
-  ...(TOURNAMENT_TAB_ENABLED
-    ? [{ id: 'league', label: 'League', icon: Trophy, screen: 'league', iconSize: 24 }]
-    : []),
+  // League hide (BB-1; ruling Q5): while the league is hidden the slot is "BaggerBomb", with a bomb icon, and opens the
+  // BaggerBomb page (the 'league' route renders it). The screen id stays 'league', so every other setter lands there too.
+  ...(LEAGUE_HIDE_ENABLED
+    ? [{ id: 'league', label: 'BaggerBomb', icon: Bomb, screen: 'league', iconSize: 24 }]
+    : TOURNAMENT_TAB_ENABLED
+      ? [{ id: 'league', label: 'League', icon: Trophy, screen: 'league', iconSize: 24 }]
+      : []),
   { id: 'forge', label: 'Forge', icon: Hammer, screen: null, iconSize: 24 },
   { id: 'search', label: 'Search', icon: Search, screen: 'search', iconSize: 24 },
 ];
