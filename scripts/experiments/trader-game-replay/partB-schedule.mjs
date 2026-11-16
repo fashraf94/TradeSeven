@@ -172,8 +172,13 @@ function main() {
   const calls = all.filter((c) => c.modelRan);
   // A failed call (timeout, invalid tool result) falls back to HOLD (holdKind 'default_failure'): it is not a hold the model returned.
   const answered = calls.filter((c) => c.tick.model?.outcome === 'ok');
-  const holds = answered.filter((c) => c.eval?.decision === 'HOLD' && c.eval?.holdKind !== 'default_failure');
-  console.log(`## Part B — ${battles.length} battle-days with check rows; ${all.length} checks; ${calls.length} model calls (${answered.length} answered); holds returned ${pct(holds.length, answered.length)}\n`);
+  // What the model returned (tick decision.original) vs what the check did after the code's own checks (final).
+  const holds = answered.filter((c) => c.tick.decision?.original === 'HOLD');
+  const finalHolds = answered.filter((c) => c.tick.decision?.final === 'HOLD');
+  const blocked = answered.filter((c) => c.tick.decision?.original === 'SWAP' && c.tick.decision?.final !== 'SWAP');
+  const why = (c) => { const v = String(c.eval?.validationErrors?.[0] || ''); return /crypto/i.test(v) ? 'stock-for-crypto' : /hurdle floor/.test(v) ? 'hurdle floor' : /cooldown/.test(v) ? 'cooldown' : /LOCKED/.test(v) ? 'locked' : 'other'; };
+  console.log(`## Part B — ${battles.length} battle-days with check rows; ${all.length} checks; ${calls.length} model calls (${answered.length} answered); the model returned a hold on ${pct(holds.length, answered.length)}; final hold after the code's checks ${pct(finalHolds.length, answered.length)}\n`);
+  console.log(`Model swaps the code blocked: ${blocked.length} — ${JSON.stringify(tally(blocked, why))}`);
   console.log('Failed calls (fallback HOLD):', JSON.stringify(tally(calls.filter((c) => c.tick.model?.outcome !== 'ok'), (c) => `${c.tick.model?.failureClass}${c.tick.model?.timeoutKind ? `/${c.tick.model.timeoutKind}` : ''}`)), '\n');
   console.log('### Today, per battle-day\n');
   const perDay = (f) => median(battles.map((b) => f(b)));

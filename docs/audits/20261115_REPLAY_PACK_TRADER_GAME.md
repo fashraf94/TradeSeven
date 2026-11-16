@@ -1,6 +1,6 @@
 # Trader game replay pack — rescore, schedule, cost census
 
-**Date:** 16 Nov 2026 (prompt of 15 Nov 2026) · **Branch:** `claude/trader-game-replay-pack` from `origin/main` at `71bc6bde` · **Mode:** offline scripts over a read-only production export. No product code changed; no production write; **no model call of any kind**.
+**Date:** 16 Nov 2026 (prompt of 15 Nov 2026) · **Branch:** `claude/trader-game-replay-pack` from `origin/main` at `71bc6bde` · **Mode:** offline scripts over a read-only production export. No product code changed; no production write. Model calls only in Part D, after the founder's approval (16 Nov 2026): **$1.35 spent** of the $5 cap. Part E was added with that approval.
 
 **Basis:** `docs/audits/20261115_PHASE0_BAGGERBOMB_TRADER_GAME.md` (draft PR #1070, read from `origin/claude/phase0-baggerbomb-trader-game`), Part G and sections C2, D1.
 
@@ -10,9 +10,9 @@
 - **Model.** Opus 5.5, as the prompt asks.
 - **Production** (project `tradeseven`), read once on 16 Nov 2026 at about 12:27 PM ET by `exportReplay.mjs`: one `where('gameMode','==','baggerbomb_agent').get()` and `.get()` on each battle's subcollections. The script holds no write call; it was searched for `.set( .update( .add( .create( .delete( batch runTransaction` before it ran (the only hits are JavaScript `Set`/`Map` calls).
 - **Exports** are in `C:/Users/fashr/Documents/FantasyTrades/BaggerBombTraderGame/replay/` (outside the repository), one file per battle, named by ordinal. Every battle id, owner id and agent id is replaced inside the files by an ordinal (`battle-001`, `acct-01`, `agent-01`); a scan of every written file for every original id found 0 hits. This report uses battle ordinals only.
-- **Determinism.** Parts A–C read only the export. Each ran twice and once under `TZ=UTC`; all six outputs were byte-identical.
+- **Determinism.** Parts A–C and E read only the export, and Part D's `analyze` step reads only saved files. Each ran twice and once under `TZ=UTC`; the outputs were byte-identical. Part D's `live`, `submit` and `collect` steps use the network and, for latency, the clock.
 - **Fence (BUILD_RULES §1).** Called, not edited: `calculateAssetScoreServer` and `flattenPortfolioServer` (`api/_utils/agentScoring.js`). Also called (not fenced): `stockRewardContext`, `initialRewardHistory`, `stockModelRoute`, `positions`, `isStock` (`src/utils/stockThresholdModel.js`). No scoring math is copied (§4). No legacy archetype table is imported (§2.3 ratchet untouched).
-- **Part D did not run.** The prompt's paste does not end with `PART D APPROVED, $5`. Spend: **$0**. No Part D code was written.
+- **Part D** did not run in the first pass: the first prompt did not end with `PART D APPROVED, $5`. The founder then sent that line on 16 Nov 2026, with Part E. Part D ran on the existing export, with no new production read: 350 batch requests and 30 live calls, using `CLAUDE_API_KEY` from the local environment (never printed). **Actual spend: $1.35.**
 
 ### Founder rulings (15 Nov 2026), verbatim
 
@@ -30,9 +30,10 @@
 |---|---|---|
 | Export | 50 agent-mode battles from 10 Aug; 49 completed (36 legacy, 13 measured), 1 in progress today and left out. Matches Phase 0's counts exactly. | 50 battles |
 | A — bank on exit | 43 of 49 completed battles reproduce their stored score; under bank on exit **5 change and 1 winner flips** (a measured battle, where the CPU loses 45 points). Mean change −2.9 points for the agent, −3.5 for the CPU. 25% of banked bonus points (275 of 1,100) came from positions whose last price no longer cleared the level. **Every lost bonus was on a position held to the end; no sold position ever carried a bonus.** | 43 battles, 453 positions |
-| B — 30-minute schedule | Today the model is called on 78% of checks (459 of 589). It answered 398 of those calls and returned a hold on 96.2% (383 of 398); the other 61 failed into a fallback hold. The schedule cuts model calls from **14.8 to 9.4 per battle-day** at X = 0.5. Of 15 model swaps, 9 fell on checks the schedule skips; event checks catch 1; **8 are missed at every X**, and waiting 15 minutes would have cost **−10 points in total** (median −2.5, range −11 to +14). | 31 battle-days, 589 checks |
+| B — 30-minute schedule | Today the model is called on 78% of checks (459 of 589). It answered 398 of those calls and **returned a hold on 81.4% (324 of 398)**; the code's own checks blocked 59 of its 74 swaps, so 96.2% (383) ended as holds. The other 61 calls failed into a fallback hold. The schedule cuts model calls from **14.8 to 9.4 per battle-day** at X = 0.5. Of the 15 executed model swaps, 9 fell on checks the schedule skips; event checks catch 1; **8 are missed at every X**, and waiting 15 minutes would have cost **−10 points in total** (median −2.5, range −11 to +14). | 31 battle-days, 589 checks |
 | C — cost | No request carries `cache_control` today. 72% of each request repeats between consecutive checks of a battle and already sits at the front. Four cost rows below; the schedule cuts each by 32–37%. | 459 calls (52 estimated) |
-| D — model comparison | **Not run** (no approval line). $0. | — |
+| D — model comparison | **$1.35 spent.** Every arm returns valid tool calls (99–100%). Haiku 4.5 rerun agrees with its own stored decision 90% of the time (all holds, 80% of swaps). **Haiku 5.5 returns a hold on almost every stored swap**: 1 of 74 swaps again at default effort, 2 at low, and 0 of the 15 swaps the code executed. It agrees on holds (99–100%). It uses no thinking tokens (the forced tool call skips thinking). A call costs $0.0028 at list price against Haiku 4.5's $0.0245, and the median latency is 5.9 s against 18.4 s. | 150 calls × 2 arms + 50 |
+| E — narrower gate | If nr7_contraction and bench_outperformance can no longer wake the model on their own: **8.5 calls per battle-day, 3 of 15 executed model swaps missed**. With the 30-minute schedule as well: **6.2 calls per battle-day, 10 missed**. | 31 battle-days |
 
 **The four cost rows** (per battle-day, list prices of 15 Nov 2026; Haiku 5.5 rows assume 1.3× tokens and exclude thinking — see C5):
 
@@ -198,7 +199,11 @@ Script: `partB-schedule.mjs`. Scope: the 31 completed battles with `ticks` rows.
 | Eligible | 470 | 16 | 15.2 |
 | Model calls | 459 | 16 | 14.8 |
 
-Of the 459 model calls, **398 were answered: 383 holds (96.2%) and 15 swaps.** The other 61 failed and the check fell back to a hold (`holdKind: 'default_failure'`): 52 SDK timeouts with no response, and 9 invalid tool results. Of the 589 checks, 130 made no call: 102 gameplan-meeting checks, 17 degraded quotes, and 11 where the gate found no trigger.
+Of the 459 model calls, **398 were answered.**
+
+- **What the model returned** (the tick's `decision.original`): a hold on **81.4% (324 of 398)** and a swap on 74.
+- **What the check did:** the code's own checks blocked 59 of those 74 swaps (29 stock-for-crypto, 29 below the hurdle floor, 1 on cooldown), so 383 answered calls (96.2%) ended as holds and 15 swaps executed.
+- **Failed calls:** the other 61 failed and the check fell back to a hold (`holdKind: 'default_failure'`): 52 SDK timeouts with no response, and 9 invalid tool results. Of the 589 checks, 130 made no call: 102 gameplan-meeting checks, 17 degraded quotes, and 11 where the gate found no trigger.
 
 **What opened the gate** (a call can carry several triggers):
 
@@ -249,7 +254,7 @@ Today 230 model calls fall on checks the schedule keeps and 229 on checks it ski
 
 ### B4. Model swaps at skipped checks, and the cost of waiting
 
-9 of the 15 model swaps fell on skipped checks. One was caught by an event (a cockpit command filed in the window). **The other 8 are missed at every X**: no fill, no level, no command and no move of even 0.25 units preceded them. The model swapped on its own reading of a quiet check.
+9 of the 15 executed model swaps fell on skipped checks. One was caught by an event (a cockpit command filed in the window). **The other 8 are missed at every X**: no fill, no level, no command and no move of even 0.25 units preceded them. The model swapped on its own reading of a quiet check.
 
 **The delay cost** is the same swap taken at the next scheduled check, 14–15 minutes later in every case, minus the swap as taken. It is scored with the real scorer from tape prices:
 
@@ -374,7 +379,124 @@ ESTIMATED: 52 of 459 calls in the first block and 40 of 292 in the second.
 
 ## Part D — the model comparison (BB-24)
 
-**Not run.** The prompt's paste does not end with the line `PART D APPROVED, $5`. No batch, no live call, no token-counting call, and no Part D script. Spend: **$0**.
+**Run on 16 Nov 2026** after the founder's line `PART D APPROVED, $5`, on the existing export: no production read, Parts A–C not repeated. Script: `partD-models.mjs`. **Actual spend: $1.35** (from the returned usage), against a worst-case estimate of $1.76 made before anything was sent. Nothing was written anywhere but the out-of-tree `replay/partD/` folder.
+
+### D1. Sample and arms
+
+- **Population:** the 398 answered calls with their stored request and the model's own stored tool call.
+- **Sample:** 150 calls, with the model's stored decision split as evenly as the data allows. That is all 74 stored swaps and 76 holds, each spread round-robin across archetypes in a fixed hash order. By archetype: momentum_chaser 57, diversifier 29, degen 20, contrarian 17, analyst 15, guardian 12.
+- **Arms:**
+  - (a) Haiku 4.5 again on 50 of them (25 swaps, 25 holds), the noise floor;
+  - (b) Haiku 5.5 at its default effort, on all 150;
+  - (c) Haiku 5.5 at low effort, on all 150.
+- **How they ran:** all 350 requests went through one Message Batch. Ten rows common to all three arms were also sent live, one call at a time, for latency (30 calls).
+
+### D2. What changed in each request (every byte that differs from the stored request)
+
+All 150 stored request bodies re-serialize byte-identically, so the parsed request is exactly what production sent.
+
+| Arm | Differences from the stored request |
+|---|---|
+| (a) | none |
+| (b) | `"model":"claude-haiku-4-5-20251001"` → `"model":"claude-haiku-5-5"`; `"temperature":0.4` removed |
+| (c) | the same two, plus `"output_config":{"effort":"low"}` added |
+
+`max_tokens` (3,072), the system text, the messages, the tool and the forced `tool_choice` are unchanged.
+
+**Why each change, from Anthropic's documentation (read 16 Nov 2026):**
+
+- **Model id.** `claude-haiku-5-5` is the Claude API id (`platform.claude.com/docs/en/about-claude/models/overview.md`; the Haiku 5.5 migration guide, `platform.claude.com/docs/en/models/haiku-5-5/migration-guide.md`: "a fixed model ID with no date suffix and no separate alias"). `claude-haiku-4-5-20251001` is valid (`platform.claude.com/docs/en/api/messages/create.md`).
+- **Temperature removed.** On Haiku 5.5 "non-default `temperature`, `top_p`, or `top_k` values return a 400 error" (`platform.claude.com/docs/en/build-with-claude/thinking.md`, Sampling parameters). The migration guide: "On Claude Haiku 5.5, omit `temperature`, `top_p`, and `top_k`."
+- **Effort.** "Claude Haiku 5.5 supports all five effort levels, and `medium` is the default", set with `output_config.effort` (`platform.claude.com/docs/en/build-with-claude/effort.md`). Arm (b) omits it; arm (c) sends `low`.
+- **Forced tool choice kept.** Adaptive thinking "supports forced tool use, except on" a list that does not include Haiku 5.5 (thinking.md, "Thinking with tool use"). The migration guide: Haiku 5.5 "accepts a forced `tool_choice` … but the response starts with the tool call and has no `thinking` block."
+- **Thinking tokens** are reported in `usage.output_tokens_details.thinking_tokens`, and `output_tokens` stays the inclusive billed total (`platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost`).
+- **Batch pricing.** "All usage is charged at 50 percent of the standard API prices" (`platform.claude.com/docs/en/build-with-claude/batch-processing.md`). The list prices match the prompt's table (`platform.claude.com/docs/en/about-claude/pricing.md`).
+
+### D3. Results per arm
+
+**Valid** means a `submit_trade_decision` tool call, not stopped at `max_tokens`, that passes the production validator (`validateTradeToolResult`, `api/_utils/agentEvalToolResultValidation.js`). **Agreement** is against the model's own stored decision, not the final decision after the code's checks.
+
+| Arm | Valid tool calls | Agree hold/swap | On stored holds | On stored swaps | Same symbols (stored swaps) | Median input tokens | Median output tokens | Mean thinking tokens | $ per call, batch | $ per call, list |
+|---|---|---|---|---|---|---|---|---|---|---|
+| (a) Haiku 4.5 again, 50 | 100% (50 of 50) | 90% (45 of 50) | 100% (25 of 25) | 80% (20 of 25) | 56% (14 of 25) | 17,021 | 1,536 | 0 | 0.01222 | 0.02445 |
+| (b) Haiku 5.5 default effort, 150 | 99.3% (149 of 150) | 50.7% (76 of 150) | 98.7% (75 of 76) | 1.4% (1 of 74) | 0% (0 of 74) | 22,816 | 1,214 | **0** | 0.00142 | 0.00284 |
+| (b) on the same 50 | 100% (50 of 50) | 52% (26 of 50) | 100% (25 of 25) | 4% (1 of 25) | 0% (0 of 25) | 23,016 | 1,246 | 0 | 0.00143 | 0.00285 |
+| (c) Haiku 5.5 low effort, 150 | 100% (150 of 150) | 52% (78 of 150) | 100% (76 of 76) | 2.7% (2 of 74) | 1.4% (1 of 74) | 22,816 | 1,025 | **0** | 0.00138 | 0.00275 |
+| (c) on the same 50 | 100% (50 of 50) | 52% (26 of 50) | 100% (25 of 25) | 4% (1 of 25) | 0% (0 of 25) | 23,016 | 1,033 | 0 | 0.00138 | 0.00277 |
+
+- **The one invalid call** in arm (b) omitted the required `hypothesis` field.
+- **Thinking tokens are 0 on every Haiku 5.5 call,** in the batch and live, at both efforts. The forced tool call starts the response, as the documentation says. Cost per call therefore includes no thinking.
+- **What Haiku 5.5 returned on the 74 stored swaps:** a hold on 73 at default effort and on 72 at low effort.
+- **Stored swaps split by what the code did with them.** This is descriptive only.
+
+| Arm | Swaps again where the code executed the stored swap | Swaps again where the code blocked it |
+|---|---|---|
+| (a) Haiku 4.5 | 75% (6 of 8) | 82% (14 of 17) |
+| (b) Haiku 5.5 default | 0% (0 of 15) | 1.7% (1 of 59) |
+| (c) Haiku 5.5 low | 0% (0 of 15) | 3.4% (2 of 59) |
+
+**Latency** (10 live calls per arm, the same 10 rows, one at a time):
+
+| Arm | Median | Min | Max |
+|---|---|---|---|
+| (a) Haiku 4.5 | 18.4 s | 14.4 s | 24.5 s |
+| (b) Haiku 5.5 default | 5.9 s | 4.3 s | 9.0 s |
+| (c) Haiku 5.5 low | 5.1 s | 3.1 s | 7.8 s |
+
+**Measured tokens against Part C's assumption.** On the same 50 rows, Haiku 5.5 read 1.35× the input tokens of Haiku 4.5, and wrote 0.81× the output at default effort and 0.67× at low effort. Part C assumed 1.3× for both. At list price, a Haiku 5.5 call measured $0.00284 at default effort, against Part C's $0.00311 estimate.
+
+### D4. Five cases where Haiku 5.5 (b) and the stored decision disagree
+
+Quoted without ids, the first five in the fixed hash order. Each is a stored swap that Haiku 5.5 held. Rationales are cut at 220 characters.
+
+1. **Diversifier.** Stored: SWAP BTC → LLY, conviction 78: "BTC has been a persistent drag on my portfolio for three consecutive evaluations, now at +0.54% (0.11x ATR) with only 5h 45m remaining…" Haiku 5.5: HOLD, conviction 62: "Book is 8.0 pts with 5h 45m left, all positions within a fraction of an ATR of zero… AMZN +0.69x (closest to a bonus, +1.0x needs about +0.3x more)…"
+2. **Diversifier, an earlier check of the same battle.** Stored: SWAP BTC → LLY, conviction 82: "BTC has been a persistent drag for three consecutive evaluations, stalled at +0.77% (0.15x ATR) while the broader market is down 0.36%…" Haiku 5.5: HOLD, conviction 72: "Portfolio is spread across Energy (MPC, VLO), Materials (CTVA), Consumer Discretionary (GME, AMZN), Healthcare (ABBV), and Crypto (BTC), with no sector past the 40% cap…"
+3. **Degen.** Stored: SWAP BTC → XOM, conviction 72: "BTC is bleeding hard — down 3.04% from entry, which is -0.61x its 5.0% ATR baseline. I'm approaching the Bust threshold…" Haiku 5.5: HOLD, conviction 55: "I'm at -293 with 4h 15m left… Every candidate I could bring in is either locked (MOS, NEM, TTWO, DHI, RKLB), crypto…"
+4. **Momentum chaser.** Stored: SWAP CCI → EOG, conviction 78: "CCI has bled for four consecutive evaluations, now at -0.63x its frozen measured 3.95% ATR — approaching the -1.0x Bust threshold…" Haiku 5.5: HOLD, conviction 62: "AMT is at -1.00x its frozen 2.81%… so it has crossed Bust and is sitting on the -10 penalty; it is not yet at Crash (-1.5x)…"
+5. **Degen, an earlier check of the same battle as case 3.** Stored: SWAP BTC → XOM, conviction 72: "I'm down -265 points with 4h 45m remaining — final day, catastrophic deficit. BTC is at -2.94% from entry…" Haiku 5.5: HOLD, conviction 72: "…a swap now runs into several hard blocks. It's 11:30–2:00 mid-session window per S14…"
+
+All five of these stored swaps were blocked by the code's own checks when they happened (the final decision was a hold). Four are crypto-for-stock swaps, a pairing the code refuses: 29 of the 59 blocked swaps were blocked for that reason. The report states agreement and validity only; it does not score either model as better or worse.
+
+## Part E — a narrower trigger gate (no model call)
+
+Added by the founder with the Part D approval (16 Nov 2026). Script: `partE-gate.mjs`, offline over the same export. It reuses Part B's check analysis.
+
+**The rule tested:** `nr7_contraction` and `bench_outperformance` can no longer open the gate on their own. A check whose stored triggers are only those two no longer calls the model. Any other trigger still does, and so does a check with no stored trigger list.
+
+### E1. The triggers at each executed model swap
+
+| Battle | Archetype | ET | Triggers at that check | Only nr7/bench? | 30-min schedule | Event at X = 0.5 |
+|---|---|---|---|---|---|---|
+| 016 | momentum_chaser | 22 Sep 12:16 | bandwidth_squeeze, bench_outperformance, nr7_contraction, price_drop | no | kept | — |
+| 017 | momentum_chaser | 23 Sep 14:01 | bench_outperformance, nr7_contraction | **yes** | skipped | no |
+| 019 | contrarian | 29 Sep 14:46 | bandwidth_squeeze, bench_outperformance, nr7_contraction | no | skipped | no |
+| 019 | contrarian | 29 Sep 15:01 | bandwidth_squeeze, bench_outperformance, nr7_contraction | no | kept | — |
+| 024 | diversifier | 6 Oct 13:16 | bandwidth_squeeze, bench_outperformance, nr7_contraction | no | skipped | no |
+| 040 | analyst | 22 Oct 12:16 | bandwidth_squeeze, bench_outperformance, price_drop | no | skipped | no |
+| 042 | momentum_chaser | 23 Oct 12:01 | bench_outperformance, nr7_contraction | **yes** | kept | — |
+| 044 | momentum_chaser | 30 Oct 12:46 | bench_outperformance, nr7_contraction | **yes** | kept | — |
+| 045 | momentum_chaser | 2 Nov 11:16 | bench_outperformance, nr7_contraction, price_drop | no | skipped | no |
+| 045 | momentum_chaser | 2 Nov 14:31 | bench_outperformance, nr7_contraction, price_drop | no | kept | — |
+| 047 | contrarian | 10 Nov 11:16 | bench_outperformance, nr7_contraction, price_drop | no | skipped | no |
+| 047 | contrarian | 10 Nov 13:46 | nr7_contraction, price_drop | no | skipped | no |
+| 048 | degen | 12 Nov 11:16 | bench_outperformance, nr7_contraction, price_drop | no | skipped | no |
+| 048 | degen | 12 Nov 11:31 | bench_outperformance, nr7_contraction, price_drop | no | kept | — |
+| 048 | degen | 12 Nov 11:46 | bench_outperformance, nr7_contraction, price_drop | no | skipped | yes (command) |
+
+`nr7_contraction` is present at 14 of the 15 swaps and `bench_outperformance` at 14. Only 3 swaps had nothing else; 9 also had `price_drop` and 5 had `bandwidth_squeeze`.
+
+### E2. Model calls per battle-day and executed model swaps missed
+
+| Gate | Model calls | Per battle-day | Executed model swaps missed (of 15) |
+|---|---|---|---|
+| Today | 459 | 14.81 | 0 |
+| Narrower gate, every 15 minutes | 262 | **8.45** | **3** |
+| 30-minute schedule, X = 0.5 (Part B, reading i) | 292 | 9.42 | 8 |
+| Narrower gate + 30-minute schedule, X = 0.5 | 192 | **6.19** | **10** |
+
+- **Which calls go.** 197 of today's 459 calls were woken only by these two triggers: 129 by both, 49 by `nr7_contraction` alone and 19 by `bench_outperformance` alone.
+- **What the model did at them.** It proposed a swap at 32 of those 197 calls, and the code blocked 29 of the 32. Only 3 became executed swaps, which are the 3 missed in the second row.
+- **The combination.** At a scheduled check the narrower gate decides; at a skipped check an event still calls the model. Two of the missed swaps fall on kept checks that had only nr7/bench (battles 042 and 044), and 8 are Part B's skipped-check swaps.
 
 ## Limits of each measurement
 
@@ -393,7 +515,7 @@ ESTIMATED: 52 of 459 calls in the first block and 40 of 292 in the second.
 - **Prices.** The tape is a different price source from the battle's own quote (median gap 2 points per sale).
 - **Crypto.** Crypto moves are not measured.
 - **Event coverage.** The "level" event is known only where the gate ran.
-- **Sample.** 15 model swaps in 31 battle-days is a small sample.
+- **Sample.** 15 executed model swaps in 31 battle-days is a small sample.
 
 **Part C**
 
@@ -401,6 +523,19 @@ ESTIMATED: 52 of 459 calls in the first block and 40 of 292 in the second.
 - **Estimates.** 52 calls have no stored usage, and it is not verified whether they were billed.
 - **Haiku 5.5 rows** scale today's tokens by 1.3× and leave thinking out, so they are a floor for that model.
 - **Scope.** Only the trading brain's calls are counted.
+
+**Part D**
+
+- **The sample is balanced, not weighted to traffic.** Swaps are half the sample and a fifth of answered calls, so read the hold and swap rows separately.
+- **One run per arm.** Only Haiku 4.5 has a noise floor. Haiku 5.5's own run-to-run variation is not measured.
+- **Validation.** The validator checks the tool call's fields, not the domain rules applied in production (lock, cooldown, hurdle floor, stock-for-crypto), which need the battle's state at the check. So a "valid" Haiku 4.5 swap may be one the code would block.
+- **Agreement** is against the model's own stored decision, not the final decision after the code's checks.
+- **Latency** is 10 sequential calls per arm from this machine, at one time of day.
+
+**Part E**
+
+- **Decisions held fixed.** A check that still calls the model is assumed to decide what it decided today.
+- **Trigger sets** are the ones stored on each evaluation. Failed calls count as calls, as in Part B.
 
 ## Founder questions
 
@@ -410,7 +545,9 @@ ESTIMATED: 52 of 459 calls in the first block and 40 of 292 in the second.
 4. **Quiet-check swaps.** 8 of the 9 model swaps on skipped checks had no event before them, at any X. Waiting cost −10 points in total across the 8. Is a 15-minute delay on those acceptable, or should a rule keep them (for example, an event when the bench outperforms by some margin)?
 5. **Crypto in the move event.** Crypto has no tape price. Should the move event (a) ignore crypto, or (b) read the battle's own crypto quote?
 6. **Cross-battle caching.** The system text starts with the agent's name, so no two agents share more than the tool. Moving the name and archetype lines below the shared rules would let battles in one run share most of the system text as well. Should a build propose that? It changes the prompt's text order, which is fenced (`api/_utils/agentEvalPromptAssembly.js`).
-7. **Part D.** To run the model comparison, re-send this prompt ending with `PART D APPROVED, $5`. Before sending, note that Haiku 5.5 rejects today's `temperature: 0.4`, runs thinking by default, and counts about 30% more tokens; arm (c)'s "low effort" is set by `output_config.effort`.
+7. **Haiku 5.5's holds (BB-24).** On the same requests Haiku 5.5 almost never swaps: 1 or 2 of 74 stored swaps, and none of the 15 the code executed. Its rationales cite blocks and locks. Before adopting it on cost and speed, should a follow-up find out why? For example: (a) rerun Haiku 5.5 on the same 150 to measure its own noise; (b) test whether the prompt's block rules read differently to it.
+8. **The narrower gate.** (a) Adopt it alone: 8.5 calls per battle-day, 3 of 15 executed model swaps missed. (b) Combine it with the 30-minute schedule: 6.2 calls per battle-day, 10 missed. (c) Neither.
+9. **The 59 blocked swaps.** The model proposes a swap on 19% of answered calls, but the code blocks 4 in 5 of them, half for pairing a stock with crypto. Should the prompt tell the model which pairings are refused, so fewer calls end in a blocked swap?
 
 ## Files
 
@@ -419,6 +556,8 @@ ESTIMATED: 52 of 459 calls in the first block and 40 of 292 in the second.
 - `scripts/experiments/trader-game-replay/partA-rescore.mjs` — Part A, with its self-test
 - `scripts/experiments/trader-game-replay/partB-schedule.mjs` — Part B
 - `scripts/experiments/trader-game-replay/partC-cost.mjs` — Part C
+- `scripts/experiments/trader-game-replay/partD-models.mjs` — Part D (the only script that calls a model)
+- `scripts/experiments/trader-game-replay/partE-gate.mjs` — Part E
 
 **Run order (from the repo root):**
 
@@ -426,5 +565,7 @@ ESTIMATED: 52 of 459 calls in the first block and 40 of 292 in the second.
 2. `node scripts/experiments/trader-game-replay/partA-rescore.mjs --in <dir>`
 3. `node scripts/experiments/trader-game-replay/partB-schedule.mjs --in <dir>`
 4. `node scripts/experiments/trader-game-replay/partC-cost.mjs --in <dir>` — after Part B; it reads Part B's result file.
+5. `node scripts/experiments/trader-game-replay/partE-gate.mjs --in <dir>`
+6. `node scripts/experiments/trader-game-replay/partD-models.mjs <step> --in <dir> [--env <path to .env.local>]`, with the steps `plan`, `live`, `submit`, `collect` (repeat until the batch ends), then `analyze`. Only `live`, `submit` and `collect` use the network. `live` and `submit` refuse to run twice.
 
-Each part writes its results to `<dir>/results/` and prints Markdown.
+Each of Parts A–C and E writes its results to `<dir>/results/`; Part D writes to `<dir>/partD/`. Every part prints Markdown.
