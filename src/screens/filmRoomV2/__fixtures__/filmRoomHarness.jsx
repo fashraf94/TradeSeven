@@ -636,17 +636,18 @@ export function boundQuotationOf(node, docs = {}) {
 /**
  * Film Room C2 (Build C Amendment C CC-7) — the subject line's statement, PINNED HERE from the amendment (never read
  * from the screen): the idea's statement — carried only within 280 code points (CC-2) — cut to its first 60 code
- * points. An element `[data-subject-statement]` inside a `[data-subject-line]` is BOUND when the document it names
- * (`data-subject-doc`: the version document as read) holds a statement within 280 code points whose first 60 code points
- * are, byte for byte, its text, and no heading sits around it or inside it: the player's own words, which the sweeps
- * leave to the record as they leave a bound quotation's (R7). A forged, longer, other or unbound text stays swept.
+ * points. An element `[data-subject-statement]` inside a `[data-subject-line]` is BOUND when the suite's version
+ * document (`docs.idea`, PINNED here — never a document the screen names; §2 review L3-7) holds a statement within 280
+ * code points whose first 60 code points are, byte for byte, its text, and no heading sits around it or inside it: the
+ * player's own words, which the sweeps leave to the record as they leave a bound quotation's (R7). No attribution sits
+ * beside it: CC-7's own format names the speaker ("under your idea"). A forged, longer, other or unbound text stays swept.
  */
 export const SPEC_SUBJECT_STATEMENT = Object.freeze({ max: 280, cut: 60 });
 export function boundSubjectStatementOf(node, docs = {}) {
   const el = node?.nodeType === 1 ? node : node?.parentElement;
   const s = el?.closest('[data-subject-statement]');
   if (!s || !s.parentElement?.closest('[data-subject-line]')) return null;
-  const doc = docs[s.getAttribute('data-subject-doc') || ''];
+  const doc = docs.idea;
   const stmt = doc && typeof doc.statement === 'string' && doc.statement ? doc.statement : null;
   if (!stmt || [...stmt].length > SPEC_SUBJECT_STATEMENT.max) return null;
   if (s.textContent !== [...stmt].slice(0, SPEC_SUBJECT_STATEMENT.cut).join('')) return null;

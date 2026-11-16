@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): filmRoomSubject.js imports api/_utils/rankingConfig.js; the excerpt
 // (api/) imports this module — this import is the runtime guard that it stays Node-clean, never mocked.
 import {
-  sectorOf, boundedText, codePointsOf, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom, ideaVersionPathOf, subjectLineOf, subjectOfExcerpt, subjectOfDay,
+  sectorOf, boundedText, codePointsOf, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom, ideaVersionPathOf, subjectLineOf, subjectOfExcerpt, subjectOfDay, subjectOfDayRead,
   firstCodePoints, SUBJECT_STATEMENT_CODE_POINTS, SUBJECT_WORDS,
 } from './filmRoomSubject.js';
 import { TICKER_TO_SECTOR, STOCK_UNIVERSE } from '../../api/_utils/rankingConfig.js';
@@ -113,5 +113,26 @@ describe('THE SUBJECT LINE — one projection (CC-7), each part only where held'
     expect(subjectOfDay(tape, 'ETN', version({ userId: 'someone-else' }), OWNER).line.text).toBe('ETN · XLI');
     expect(subjectOfExcerpt({ symbol: { value: 'ETN' } }).text).toBe('ETN');
     expect(subjectOfExcerpt(null)).toBeNull();
+  });
+});
+
+describe('the §2 review\'s lens 3 — the read\'s states, the ref\'s id class, no dangling fragment', () => {
+  it('a ref naming a list id outside the forge-id class, or a reserved `__id__`, carries no idea on either side (L3-8)', () => {
+    for (const watchlistId of ['a/b', '__x__', '', 'x'.repeat(201)]) expect(carriedIdeaRefOf(tapeWith([call({ watchlistId, hypothesisVersion: 4 })])), watchlistId).toBeNull();
+  });
+  it('an idea holding neither its statement nor its version says nothing — no dangling "under your idea" (L3-10)', () => {
+    expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: { statement: null, version: null } })).toEqual({ symbol: 'ETN', sector: 'XLI', idea: null, text: 'ETN · XLI' });
+    expect(subjectOfExcerpt({ symbol: { value: 'ETN' }, sector: { value: 'XLI' }, idea: { label: 'i1' } }).text).toBe('ETN · XLI');
+  });
+  it('the screen\'s read states (L3-2, L3-8): loading and error say no line while the day carries an idea; denied says no idea; missing and idle the idea without its statement; ready the document', () => {
+    const tape = tapeWith([call()]);
+    expect(subjectOfDayRead(tape, 'ETN', { status: 'loading', doc: null }, OWNER)).toBeNull();
+    expect(subjectOfDayRead(tape, 'ETN', { status: 'error', doc: null }, OWNER)).toBeNull();
+    expect(subjectOfDayRead(tape, 'ETN', { status: 'denied', doc: null }, OWNER).line.text).toBe('ETN · XLI');
+    expect(subjectOfDayRead(tape, 'ETN', { status: 'missing', doc: null }, OWNER).line.text).toBe('ETN · XLI · under your idea v4');
+    expect(subjectOfDayRead(tape, 'ETN', { status: 'idle', doc: null }, OWNER).line.text).toBe('ETN · XLI · under your idea v4');
+    expect(subjectOfDayRead(tape, 'ETN', { status: 'ready', doc: version() }, OWNER).line.text).toBe("ETN · XLI · under your idea 'Chips lead while the market drifts.' v4");
+    // a day that carries no idea has a line whatever the read's state
+    expect(subjectOfDayRead(tapeWith([]), 'ETN', { status: 'loading', doc: null }, OWNER).line.text).toBe('ETN · XLI');
   });
 });

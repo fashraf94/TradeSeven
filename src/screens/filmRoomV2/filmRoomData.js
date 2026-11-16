@@ -71,14 +71,16 @@ export const firestoreReaders = Object.freeze({
       return { status: 'error', battle: null };
     }
   },
-  // C2 item 5 (CC-7): the carried idea's version, read once under cards mode — a denied or missing read is no statement
+  // C2 item 5 (CC-7): the carried idea's version, read once under cards mode. A missing version is no statement; a read
+  // the rules DENY is not the owner's version — no idea at all, as the excerpt says of another owner's (§2 review L3-8)
   async readIdeaVersion(watchlistId, version) {
     try {
       const { doc, getDoc, db } = await firestore();
       const snap = await getDoc(doc(db, 'watchlists', watchlistId, 'hypothesisVersions', `v${version}`));
       return snap && snap.exists() ? { status: 'ready', doc: snap.data() } : { status: 'missing', doc: null };
     } catch (err) {
-      return NO_TAPE_CODES.has(err?.code) ? { status: 'missing', doc: null } : { status: 'error', doc: null };
+      if (err?.code === 'permission-denied') return { status: 'denied', doc: null };
+      return err?.code === 'not-found' ? { status: 'missing', doc: null } : { status: 'error', doc: null };
     }
   },
 });

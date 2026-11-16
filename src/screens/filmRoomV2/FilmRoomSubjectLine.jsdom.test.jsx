@@ -36,7 +36,7 @@ afterEach(() => { m.teardown(); vi.restoreAllMocks(); });
 const card = (o) => excerptCardWith(buildCardDoc, o);
 const battle = () => ({ id: EXCERPT_BATTLE, agentBattleId: EXCERPT_BATTLE, ownerId: OWNER, agentId: AGENT, status: 'completed', completedAt: '2026-09-23T20:05:00.000Z', timing: { tradingDays: [SEP23] }, agentContext: { agentName: 'Momentum chaser', archetype: 'momentum_chaser' }, gameMode: 'baggerbomb_agent' });
 const COUNTER = (cards = []) => ({ agentId: AGENT, attributionAgentId: AGENT, archetypeCodeId: 'momentum_chaser', cards, open: cards.length, cap: 5, recurrences: {}, book: { open: false }, unavailableDays: {}, weekly: [], window: { from: SEP23, to: SEP23 } });
-const cardsApi = (admitted) => ({ readVerdict: async () => admitted, readCounter: async () => ({ ok: true, status: 200, body: COUNTER() }), postCard: async () => ({ ok: false, status: 400, body: { error: 'x' } }), newOpId: () => 'op_s1' });
+const cardsApi = (admitted, cards = []) => ({ readVerdict: async () => admitted, readCounter: async () => ({ ok: true, status: 200, body: COUNTER(cards) }), postCard: async () => ({ ok: false, status: 400, body: { error: 'x' } }), newOpId: () => 'op_s1' });
 /** The readers, with the idea's one read counted. */
 const readers = (doc = ideaVersionDoc()) => {
   const r = readersOf({ [SEP23]: DAY.tape });
@@ -49,8 +49,8 @@ const lineText = (el) => { const c = el.cloneNode(true); for (const k of c.query
 const STATEMENT_60 = [...EXCERPT_STATEMENT].slice(0, SUBJECT_STATEMENT_CODE_POINTS).join('');
 const FULL = `ETN · XLI · under your idea '${STATEMENT_60}' v${EXCERPT_IDEA_VERSION}`;
 
-async function openScreen({ admitted = true, r = readers() } = {}) {
-  m.render(<FilmRoomScreenV2 battle={battle()} onBack={() => {}} viewerId="viewer-s" readers={r} nowMs={NOW} cardsApi={cardsApi(admitted)} />);
+async function openScreen({ admitted = true, r = readers(), cards = [] } = {}) {
+  m.render(<FilmRoomScreenV2 battle={battle()} onBack={() => {}} viewerId="viewer-s" readers={r} nowMs={NOW} cardsApi={cardsApi(admitted, cards)} />);
   await m.flush(10);
   return r;
 }
@@ -80,6 +80,17 @@ describe('CC-7 — on the screen, under cards mode only', () => {
     await takeHome('stalled:META:15-19');
     expect(lineText(m.q('[data-card-form] [data-subject-line]'))).toBe(`META · XLC · under your idea '${STATEMENT_60}' v${EXCERPT_IDEA_VERSION}`);
     expect(r.ideaReads).toHaveLength(1);
+  });
+  it('§2 review L3-3 — THROUGH THE SCREEN: a card opened from My cards on its own day shows the receipt\'s line, equal to the excerpt\'s projection of that card (the mutant: the screen not handing the idea to the receipt)', async () => {
+    const c = { ...card(), shelved: false };
+    const r = await openScreen({ cards: [c] });
+    m.click(m.q(`[data-my-card="${EXCERPT_ENTRY}"]`));
+    await m.flush(6);
+    const line = m.q(`[data-card-receipt="${EXCERPT_ENTRY}"] [data-subject-line]`);
+    const got = await excerptOfCard(dbOf(excerptStore(DAY, { card: card() })).db, { uid: OWNER, attributionAgentId: AGENT, entryId: EXCERPT_ENTRY });
+    expect(lineText(line)).toBe(subjectOfExcerpt(got.excerpt).text);
+    expect(lineText(line)).toBe(FULL);
+    expect(r.ideaReads).toEqual([[EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION]]);
   });
   it('CARDS OFF (the owner not admitted): no line anywhere, and the idea never read (the mutant: the line shown with cards off)', async () => {
     const r = await openScreen({ admitted: false });
@@ -130,6 +141,16 @@ describe('CC-7 — the receipt says what the agent\'s excerpt says', () => {
   });
   it('another owner\'s version: the line ends after the sector, as the excerpt carries no idea', () => {
     renderReceipt({ idea: { status: 'ready', doc: ideaVersionDoc({ userId: 'someone-else' }) } });
+    expect(lineText(m.q('[data-subject-line]'))).toBe('ETN · XLI');
+  });
+  it('§2 review L3-2 / L3-8: while the version reads, or after the read failed, NO line (the excerpt would quote the statement); a read the rules deny shows no idea, as the excerpt says of another owner\'s', () => {
+    for (const status of ['loading', 'error']) {
+      renderReceipt({ idea: { status, doc: null } });
+      expect(m.q('[data-card-receipt]'), status).toBeTruthy();
+      expect(m.q('[data-subject-line]'), status).toBeNull();
+      m.teardown(); m.setup();
+    }
+    renderReceipt({ idea: { status: 'denied', doc: null } });
     expect(lineText(m.q('[data-subject-line]'))).toBe('ETN · XLI');
   });
   it('a card from another day shows no line (its own day is not on screen)', () => {

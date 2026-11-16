@@ -61,12 +61,16 @@ export function sectorOf(symbol) {
  *
  * @returns {{ watchlistId: string, hypothesisVersion: number, i: number }|null}
  */
+/** A list id the ref may name: the forge-id class, never a reserved `__id__` (a path segment both sides read by — §2 review L3-8). */
+const LIST_ID = /^[A-Za-z0-9_-]{1,200}$/;
+const listIdOk = (v) => typeof v === 'string' && LIST_ID.test(v) && !/^__.*__$/.test(v);
+
 export function carriedIdeaRefOf(tape) {
   const calls = Array.isArray(tape?.calls) ? tape.calls : [];
   const found = [];
   calls.forEach((c, i) => {
     const r = isObj(c) && isObj(c.hypothesisRef) ? c.hypothesisRef : null;
-    if (!r || !str(r.watchlistId) || !Number.isInteger(r.hypothesisVersion) || r.hypothesisVersion < 1) return;
+    if (!r || !listIdOk(r.watchlistId) || !Number.isInteger(r.hypothesisVersion) || r.hypothesisVersion < 1) return;
     if (!found.some((f) => f.watchlistId === r.watchlistId && f.hypothesisVersion === r.hypothesisVersion)) found.push({ watchlistId: r.watchlistId, hypothesisVersion: r.hypothesisVersion, i });
   });
   return found.length === 1 ? found[0] : null;
@@ -114,11 +118,13 @@ export function subjectLineOf({ symbol, sector = null, idea = null } = {}) {
   const sec = str(sector);
   const statement = idea && str(idea.statement) ? firstCodePoints(idea.statement, SUBJECT_STATEMENT_CODE_POINTS) : null;
   const version = idea && Number.isInteger(idea.version) ? idea.version : null;
-  const ideaText = idea ? [SUBJECT_WORDS.underIdea, ...(statement !== null ? [`'${statement}'`] : []), ...(version !== null ? [`v${version}`] : [])].join(' ') : null;
+  // an idea holding neither its statement nor its version says nothing: no dangling "under your idea" (§2 review L3-10)
+  const held = Boolean(idea) && (statement !== null || version !== null);
+  const ideaText = held ? [SUBJECT_WORDS.underIdea, ...(statement !== null ? [`'${statement}'`] : []), ...(version !== null ? [`v${version}`] : [])].join(' ') : null;
   return {
     symbol,
     sector: sec,
-    idea: idea ? { statement, version } : null,
+    idea: held ? { statement, version } : null,
     text: [symbol, ...(sec ? [sec] : []), ...(ideaText ? [ideaText] : [])].join(SUBJECT_WORDS.separator),
   };
 }
@@ -138,4 +144,22 @@ export function subjectOfDay(tape, symbol, doc, ownerId) {
   const idea = ideaFrom(tape, doc, ownerId);
   const line = subjectLineOf({ symbol, sector: sectorOf(symbol), idea: idea ? { statement: idea.statement, version: idea.version?.value ?? null } : null });
   return line ? { line, idea } : null;
+}
+
+/**
+ * The screen's subject line from the version READ's state (filmRoomData.js useIdeaVersion), so the receipt never says
+ * other than the excerpt does (§2 review L3-2, L3-8):
+ *   loading · error   no line yet — saying nothing is not saying something else (the excerpt would quote the statement);
+ *   denied            the rules refused the version: not the owner's — no idea, as the excerpt says of another owner's;
+ *   missing · idle    the idea without its statement (the excerpt's answer for a version it cannot read);
+ *   ready             the document as read.
+ */
+export function subjectOfDayRead(tape, symbol, read, ownerId) {
+  const status = read?.status ?? 'idle';
+  if (status === 'loading' || status === 'error') return carriedIdeaRefOf(tape) ? null : subjectOfDay(tape, symbol, null, ownerId);
+  if (status === 'denied') {
+    const line = subjectLineOf({ symbol, sector: sectorOf(symbol), idea: null });
+    return line ? { line, idea: null } : null;
+  }
+  return subjectOfDay(tape, symbol, status === 'ready' ? read.doc : null, ownerId);
 }

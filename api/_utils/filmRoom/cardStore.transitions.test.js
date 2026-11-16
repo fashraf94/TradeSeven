@@ -1460,10 +1460,18 @@ describe('Astra BG-1 — a terminal record (declined, expired, withdrawn) must n
       }
     });
   }
-  it('an accepted record keeps its own refusal, whatever it names (409, as before — the check is the terminal states\')', async () => {
-    const t = fresh();
-    const at = await nominated(t);
-    withRecord(t, 'accepted', ANOTHER[0]);
-    expect(await code(retire(t, at))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated', nominationState: 'accepted' } });
+  it('the check comes BEFORE any state dispatch (§2 review L3-4): an accepted record naming another entry is 503 too, never "already moved"; one naming this entry keeps its 409', async () => {
+    for (const over of ANOTHER) {
+      const t = fresh();
+      const at = await nominated(t);
+      withRecord(t, 'accepted', over);
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect(await code(retire(t, at)), JSON.stringify(over)).toEqual({ status: 503, code: 'nomination_unavailable', extra: {} });
+      errors.mockRestore();
+    }
+    const own = fresh();
+    const at = await nominated(own);
+    withRecord(own, 'accepted');
+    expect(await code(retire(own, at))).toEqual({ status: 409, code: 'illegal_transition', extra: { stage: 'nominated', nominationState: 'accepted' } });
   });
 });

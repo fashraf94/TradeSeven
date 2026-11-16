@@ -73,7 +73,7 @@ import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, eyebrow, foot, mono, plain, tint, AggNum, TapeNum, When, Rec, Coverage, Quotation, TextButton, PrimaryButton, Label } from './FilmRoomKit';
 import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf, chainOf, latestOf } from './filmRoomCards';
 // Film Room C2 item 5 (Amendment C CC-7): the subject line — the ONE projection the moment excerpt says too
-import { subjectOfDay, ideaVersionPathOf, SUBJECT_WORDS } from '../../utils/filmRoomSubject';
+import { subjectOfDayRead, ideaVersionPathOf, SUBJECT_WORDS } from '../../utils/filmRoomSubject';
 
 const T = COPY.cards;
 /**
@@ -137,14 +137,16 @@ function MomentFacts({ moment, size = 11.5 }) {
  * only where it is held: the symbol and the directory's sector as the record's (Rec); the idea only when the day's calls
  * carry one, its statement the player's own words cut at 60 code points and bound to the version document as read
  * (`data-subject-statement` — the sweeps' binding), its version the tape's own marked number. With no carried idea the
- * line ends after the sector; while the version reads, or when it cannot be read, the idea shows without its statement.
+ * line ends after the sector; while the version reads, or after the read failed, there is no line; a version the rules
+ * deny shows no idea; a missing one, the idea without its statement — each what the excerpt says (subjectOfDayRead).
  *
  * @param {object}      props.tape    the day the moment is on (the card's own day, for a receipt)
  * @param {string}      props.symbol  the moment's symbol
  * @param {object|null} props.idea    the version read's state (filmRoomData.js useIdeaVersion)
  */
 function SubjectLine({ tape, symbol, idea }) {
-  const subject = tape ? subjectOfDay(tape, symbol, idea?.status === 'ready' ? idea.doc : null, tape.ownerId) : null;
+  // §2 review L3-2 / L3-8: while the version reads, or after it failed, no line — never one the excerpt would not say
+  const subject = tape ? subjectOfDayRead(tape, symbol, idea, tape.ownerId) : null;
   if (!subject) return null;
   const { line, idea: held } = subject;
   const S = SUBJECT_WORDS.separator;
@@ -155,7 +157,7 @@ function SubjectLine({ tape, symbol, idea }) {
       {line.idea ? (
         <>
           {S}{SUBJECT_WORDS.underIdea}
-          {line.idea.statement !== null ? <>{" '"}<span data-subject-statement="" data-subject-doc="idea">{line.idea.statement}</span>{"'"}</> : null}
+          {line.idea.statement !== null ? <>{" '"}<span data-subject-statement="">{line.idea.statement}</span>{"'"}</> : null}
           {line.idea.version !== null ? <>{' v'}<TapeNum doc={tape} path={ideaVersionPathOf(held.ref)} fmt={String} size={10.5} weight={400} color={C.ink2} style={{ display: 'inline-flex' }} /></> : null}
         </>
       ) : null}

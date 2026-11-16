@@ -614,17 +614,18 @@ export async function retireCard(db, { uid, agentId, entryId, opId, expectedVers
       if (recordSnap?.exists) {
         const record = typeof recordSnap.data === 'function' ? recordSnap.data() : recordSnap.data;
         if (!isObj(record) || !NOMINATION_STATES.includes(record.state)) throw unavailableNomination();
+        // Astra BG-1 (Film Room C2, Amendment C CC-9 item 2; the §2 review's L3-4: before ANY state dispatch, as BG-1
+        // suggests): the record decides nothing until it names THIS entry — a terminal one, an accepted one, a
+        // withdrawable one alike; otherwise 503 nomination_unavailable, nothing written, the card not retired
+        if (!recordNamesEntry(record, entryId)) {
+          console.error('[film-room/cards] the nomination record names another card; nothing was written');
+          throw unavailableNomination();
+        }
         if (record.state === 'accepted') throw fail(409, 'illegal_transition', { stage: 'nominated', nominationState: 'accepted' });
         if (WITHDRAWABLE_STATES.includes(record.state)) {
           withdrawal = withdrawalOf(record, entryId, nowIso);
           copyState = 'withdrawn';
         } else {
-          // Astra BG-1 (Film Room C2, Amendment C CC-9 item 2): a terminal record must name THIS entry too, as a
-          // withdrawn one must — otherwise its state is not this card's to copy: 503, nothing written, not retired
-          if (!recordNamesEntry(record, entryId)) {
-            console.error('[film-room/cards] the terminal nomination record names another card; nothing was written');
-            throw unavailableNomination();
-          }
           copyState = record.state;   // declined, expired, withdrawn: the copy takes the record's state
         }
       }
