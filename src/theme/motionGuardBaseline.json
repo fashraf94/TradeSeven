@@ -345,6 +345,14 @@
       "count": 0,
       "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the loadout cards, the Deploy card's line, the book sheet and their scope and model: colours only through the hub's tokens, no motion of their own, no transition literal, from birth. Registered in the commit that introduces them."
     },
+    "src/components/CommandCenter/BaggerBombPage.jsx": {
+      "count": 0,
+      "authority": "League hide (BB-1; Nov 15, 2026) — the BaggerBomb page and its model: colours only through the hub's tokens, no motion of their own, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/baggerBombPageModel.js": {
+      "count": 0,
+      "authority": "League hide (BB-1; Nov 15, 2026) — the BaggerBomb page and its model: colours only through the hub's tokens, no motion of their own, no transition literal, from birth. Registered in the commit that introduces them."
+    },
     "src/components/CommandCenter/hub/perGameLoadoutContext.js": {
       "count": 0,
       "authority": "Build A2 (per-game loadouts; Phase 0 armory report §9 A2) — the loadout cards, the Deploy card's line, the book sheet and their scope and model: colours only through the hub's tokens, no motion of their own, no transition literal, from birth. Registered in the commit that introduces them."

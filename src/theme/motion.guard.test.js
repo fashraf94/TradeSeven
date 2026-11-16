@@ -181,6 +181,9 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/hub/perGameLoadoutContext.js',
   'src/components/CommandCenter/hub/perGameLoadoutModel.js',
   'src/components/CommandCenter/hub/useLeagueLoadoutLock.js',
+  // League hide (BB-1; Nov 15, 2026): the BaggerBomb page and its model, on the vocabulary from birth (hazard 34).
+  'src/components/CommandCenter/BaggerBombPage.jsx',
+  'src/components/CommandCenter/baggerBombPageModel.js',
   'src/components/CommandCenter/ShadowStill.jsx',
   'src/components/CommandCenter/__fixtures__/hubLayoutFixtures.js',
   'src/components/CommandCenter/__fixtures__/hubTestKit.js',
