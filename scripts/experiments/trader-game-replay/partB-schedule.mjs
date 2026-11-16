@@ -51,7 +51,10 @@ export function scheduleChecks(ticks) {
   let lastScheduled = null;
   return sorted.map((t) => {
     const k = slotIndex(t.capturedAt) - first;
-    const row = { tick: t, seq: t.tickSeq, at: t.capturedAt, scheduled: k % 2 === 0, eligible: !NO_MODEL_EXITS.has(t.exitReason), modelRan: t.model?.dispatched === true, prev: lastScheduled };
+    // Eligible = the check reached the trigger gate (or the model). The unavailable-reward-frame exit also
+    // records `no_trigger`, but at stage `gameplan_handled`, before the gate (review B2).
+    const reachedGate = t.model?.dispatched === true || t.stageReached === 'trigger_evaluated';
+    const row = { tick: t, seq: t.tickSeq, at: t.capturedAt, scheduled: k % 2 === 0, eligible: !NO_MODEL_EXITS.has(t.exitReason) && reachedGate, modelRan: t.model?.dispatched === true, prev: lastScheduled };
     if (row.scheduled) lastScheduled = row;
     return row;
   });
@@ -91,9 +94,10 @@ function pricer(tape) {
 
 /** Score one position from entry to exit over the check prices between, with the real scorer. */
 function scoreSpan({ symbol, tier, unit, prices }) {
+  // The entry and the exit must be priced; a check with no tape price in between only drops out of the touch record.
   const [entry, ...rest] = prices;
-  if (!(entry > 0) || rest.some((p) => !(p > 0)) || !rest.length) return null;
-  const m = rest.map((p) => ((p - entry) / entry) * 100 / unit);
+  if (!(entry > 0) || !rest.length || !(rest.at(-1) > 0)) return null;
+  const m = rest.filter((p) => p > 0).map((p) => ((p - entry) / entry) * 100 / unit);
   const change = ((rest.at(-1) - entry) / entry) * 100;
   return calculateAssetScoreServer({ symbol, baseATR: unit, tier }, change, { maxMultiplier: Math.max(0, ...m), minMultiplier: Math.min(0, ...m) }, {}, change).totalPoints;
 }
@@ -139,30 +143,51 @@ export function analyzeBattle(bundle) {
     c.caught = Object.fromEntries(XS.map((X) => [X, fill || level || command || moves[X]]));
   }
 
-  // ---- delay cost of each model swap at a skipped check.
+  // ---- delay cost of each model swap at a skipped check, under two price conventions (review B1):
+  //   lag 0 — a fill at a check is the tape's price at that check's own minute;
+  //   lag 1 — a fill at a check is the tape's price at the PREVIOUS check, which is what the stored fills match
+  //           (the battle's quote is about 16 minutes old; see fillMatch below).
   const trades = battle.trades || [];
   const lastCheck = checks.at(-1);
+  const idx = new Map(checks.map((c, i) => [c.seq, i]));
+  const px = (sym, seq, lag) => { const k = checks[idx.get(seq) - lag]; return k ? priceAt(sym, k.seq, k.at) : null; };
+  const checkOf = (iso) => checks.find((x) => x.at >= iso) || null; // the check whose tick executed a trade
   const actions = checks.filter((c) => !c.scheduled && c.modelSwap).map((c) => {
     const a = c.modelSwap;
     const trade = trades.find((t) => t.symbolOut === a.symbolOut && t.symbolIn === a.symbolIn && Math.abs(Date.parse(t.swappedOutAt) - Date.parse(c.at)) < 900_000);
     const tier = trade?.tier || a.tier || 'support';
     const next = checks.find((x) => x.seq > c.seq && x.scheduled) || null;
-    const outEntrySeq = (() => { const t = [...trades].reverse().find((x) => x.symbolIn === a.symbolOut && x.swappedOutAt < c.at); return t ? checks.find((x) => x.at >= t.swappedOutAt)?.seq ?? checks[0].seq : checks[0].seq; })();
+    const outEntrySeq = (() => { const t = [...trades].reverse().find((x) => x.symbolIn === a.symbolOut && x.swappedOutAt < c.at); return t ? checkOf(t.swappedOutAt)?.seq ?? checks[0].seq : checks[0].seq; })();
     const inExit = trades.find((t) => t.symbolOut === a.symbolIn && t.swappedOutAt > c.at);
-    const inExitSeq = inExit ? checks.find((x) => x.at >= inExit.swappedOutAt)?.seq ?? lastCheck.seq : lastCheck.seq;
-    const span = (sym, fromSeq, toSeq) => checks.filter((x) => x.seq >= fromSeq && x.seq <= toSeq).map((x) => priceAt(sym, x.seq, x.at));
-    const outPrices = (to) => span(a.symbolOut, outEntrySeq, to);
-    const entryOf = (sym) => { const p0 = trade?.entryPrice; return sym === a.symbolOut && p0 > 0 ? p0 : null; };
-    const withEntry = (prices) => { const e = entryOf(a.symbolOut); return e ? [e, ...prices.slice(1)] : prices; };
-    const orig = [scoreSpan({ symbol: a.symbolOut, tier, unit: units[a.symbolOut], prices: withEntry(outPrices(c.seq)) }), scoreSpan({ symbol: a.symbolIn, tier, unit: units[a.symbolIn], prices: span(a.symbolIn, c.seq, inExitSeq) })];
-    const delayed = next && next.seq <= inExitSeq
-      ? [scoreSpan({ symbol: a.symbolOut, tier, unit: units[a.symbolOut], prices: withEntry(outPrices(next.seq)) }), scoreSpan({ symbol: a.symbolIn, tier, unit: units[a.symbolIn], prices: span(a.symbolIn, next.seq, inExitSeq) })]
-      : [scoreSpan({ symbol: a.symbolOut, tier, unit: units[a.symbolOut], prices: withEntry(outPrices(inExitSeq)) }), 0];
-    const ok = [...orig, ...delayed].every(Number.isFinite);
-    return { seq: c.seq, at: c.at, et: etOf(c.at), tier, caught: c.caught, events: c.events, nextAfterMin: next ? Math.round((Date.parse(next.at) - Date.parse(c.at)) / 60000) : null, heldToEnd: !inExit, cost: ok ? sum(delayed) - sum(orig) : null, orig, delayed, storedLocked: trade?.lockedPoints ?? null, archetype: battle.agentContext?.archetype, route: stockModelRoute(battle).status, priced: ok };
+    const inExitSeq = inExit ? checkOf(inExit.swappedOutAt)?.seq ?? lastCheck.seq : lastCheck.seq;
+    const legs = (lag) => {
+      const span = (sym, fromSeq, toSeq) => checks.filter((x) => x.seq >= fromSeq && x.seq <= toSeq).map((x) => px(sym, x.seq, lag));
+      const withEntry = (prices) => (trade?.entryPrice > 0 ? [trade.entryPrice, ...prices.slice(1)] : prices);
+      const out = (to) => scoreSpan({ symbol: a.symbolOut, tier, unit: units[a.symbolOut], prices: withEntry(span(a.symbolOut, outEntrySeq, to)) });
+      const inn = (from) => scoreSpan({ symbol: a.symbolIn, tier, unit: units[a.symbolIn], prices: span(a.symbolIn, from, inExitSeq) });
+      const orig = [out(c.seq), inn(c.seq)];
+      const delayed = next && next.seq <= inExitSeq ? [out(next.seq), inn(next.seq)] : [out(inExitSeq), 0];
+      const ok = [...orig, ...delayed].every(Number.isFinite);
+      return { orig, delayed, cost: ok ? sum(delayed) - sum(orig) : null };
+    };
+    const l0 = legs(0), l1 = legs(1);
+    return { seq: c.seq, at: c.at, et: etOf(c.at), tier, caught: c.caught, events: c.events, nextAfterMin: next ? Math.round((Date.parse(next.at) - Date.parse(c.at)) / 60000) : null, heldToEnd: !inExit, cost: l0.cost, orig: l0.orig, delayed: l0.delayed, costLagged: l1.cost, origLagged: l1.orig, delayedLagged: l1.delayed, storedLocked: trade?.lockedPoints ?? null, archetype: battle.agentContext?.archetype, route: stockModelRoute(battle).status, priced: Number.isFinite(l0.cost) && Number.isFinite(l1.cost) };
   });
+  // Which convention do the stored fills follow? Each sale's exit price, and each incoming fill where stored,
+  // against the tape at the executing check and at the check before it.
+  const fillMatch = [];
+  for (const t of trades) {
+    const c = checkOf(t.swappedOutAt);
+    if (!c || !idx.has(c.seq)) continue;
+    const later = trades.find((x) => x.symbolOut === t.symbolIn && x.swappedOutAt > t.swappedOutAt);
+    const inFill = t.incomingReceipt?.fill ?? later?.entryPrice ?? null;
+    for (const [sym, p] of [[t.symbolOut, t.exitPrice], [t.symbolIn, inFill]]) {
+      const now = px(sym, c.seq, 0), before = px(sym, c.seq, 1);
+      if (p > 0 && now > 0 && before > 0) fillMatch.push({ now: Math.abs(p - now) / p, before: Math.abs(p - before) / p });
+    }
+  }
   // Off the half-hour grid: the first check's 15-minute slot is a :15 or :45 slot (the capture minute itself lands late).
-  return { checks, actions, outOfGridStart: Math.floor(etOf(checks[0].at).minutes / 15) % 2 !== 0 };
+  return { checks, actions, fillMatch, outOfGridStart: Math.floor(etOf(checks[0].at).minutes / 15) % 2 !== 0 };
 }
 
 function main() {
@@ -185,7 +210,7 @@ function main() {
   console.log(mdTable([
     ['Checks run', (b) => b.checks.length], ['Eligible (can reach the model)', (b) => b.checks.filter((c) => c.eligible).length], ['Model calls', (b) => b.checks.filter((c) => c.modelRan).length],
   ].map(([k, f]) => ({ k, total: sum(battles.map(f)), median: perDay(f), mean: mean(battles.map(f)) })), [['', (r) => r.k], ['Total', (r) => r.total], ['Median per battle-day', (r) => r.median], ['Mean per battle-day', (r) => r.mean]]));
-  console.log('\nWhy checks did not call the model:', JSON.stringify(tally(all.filter((c) => !c.modelRan), (c) => c.tick.exitReason)));
+  console.log('\nWhy checks did not call the model:', JSON.stringify(tally(all.filter((c) => !c.modelRan), (c) => (c.tick.exitReason === 'no_trigger' && !c.eligible ? 'no_trigger before the gate (reward frame unavailable)' : c.tick.exitReason))));
   const trig = {};
   for (const c of calls) for (const t of new Set(c.eval?.triggers || [])) trig[t] = (trig[t] || 0) + 1;
   const only = tally(calls, (c) => [...new Set(c.eval?.triggers || [])].sort().join('+'));
@@ -210,12 +235,18 @@ function main() {
   const acts = battles.flatMap((b) => b.actions.map((a) => ({ ...a, label: b.label })));
   const modelSwaps = battles.flatMap((b) => b.checks.filter((c) => c.modelSwap)).length;
   console.log(`\n### Model swaps\n\nAll model swaps: ${modelSwaps}; at skipped checks: ${acts.length}.\n`);
-  console.log(mdTable(XS.map((X) => { const miss = acts.filter((a) => !a.caught[X]); const priced = miss.filter((a) => a.priced); return { X, miss: miss.length, priced: priced.length, total: sum(priced.map((a) => a.cost)), median: median(priced.map((a) => a.cost)) }; }), [['X', (r) => r.X], ['Missed', (r) => r.miss], ['Priced', (r) => r.priced], ['Total point cost of delay (+ = delay gains)', (r) => r.total], ['Median', (r) => r.median]]));
+  const fm = battles.flatMap((b) => b.fillMatch);
+  console.log(`\nWhich price the stored fills match: ${pct(fm.filter((f) => f.before < f.now).length, fm.length)} of stored fill prices sit closer to the tape at the check BEFORE the executing check than at the executing check (median gap ${round2(100 * median(fm.map((f) => f.before)))}% vs ${round2(100 * median(fm.map((f) => f.now)))}%).`);
+  console.log('Delay cost = delayed − done, in points: + means waiting would have gained points. Lag 1 prices each fill at the previous check (as the stored fills do); lag 0 at the check itself.\n');
+  const costRow = (X, key) => { const miss = acts.filter((a) => !a.caught[X] && a.priced); return { X, miss: acts.filter((a) => !a.caught[X]).length, priced: miss.length, total: sum(miss.map((a) => a[key])), median: median(miss.map((a) => a[key])), gains: miss.filter((a) => a[key] > 0).length, losses: miss.filter((a) => a[key] < 0).length }; };
+  console.log(mdTable(XS.flatMap((X) => [{ conv: 'lag 1 (matches stored fills)', ...costRow(X, 'costLagged') }, { conv: 'lag 0 (check minute)', ...costRow(X, 'cost') }]), [['X', (r) => r.X], ['Convention', (r) => r.conv], ['Missed', (r) => r.miss], ['Priced', (r) => r.priced], ['Total (+ = delay gains)', (r) => r.total], ['Median', (r) => r.median], ['Gains / losses', (r) => `${r.gains} / ${r.losses}`]]));
   console.log('\nEach model swap at a skipped check:\n');
-  console.log(mdTable(acts, [['Battle', (a) => a.label], ['Archetype', (a) => a.archetype], ['ET', (a) => `${a.et.date} ${String(Math.floor(a.et.minutes / 60)).padStart(2, '0')}:${String(a.et.minutes % 60).padStart(2, '0')}`], ['Tier', (a) => a.tier], ['Caught at 0.25 / 0.5 / 0.75', (a) => XS.map((X) => (a.caught[X] ? 'yes' : 'no')).join(' / ')], ['Events', (a) => ['fill', 'level', 'command'].filter((k) => a.events[k]).join('+') || '—'], ['Next scheduled (min)', (a) => a.nextAfterMin], ['Delay cost (pts)', (a) => a.cost]]));
-  const gaps = acts.filter((a) => Number.isFinite(a.storedLocked) && Number.isFinite(a.orig[0])).map((a) => Math.abs(a.orig[0] - a.storedLocked));
-  console.log(`\nPrice-source check: the outgoing leg scored from tape prices vs the stored locked points of the same sale — median gap ${median(gaps)} pts, largest ${Math.max(...gaps)} (${gaps.length} sales). The stored fill used the battle's own quote; the tape prices the check's minute.`);
-  console.log('\nLegs of each priced case (outgoing, incoming), as done vs delayed:', acts.map((a) => `${a.label} ${a.archetype} ${a.tier}: ${JSON.stringify(a.orig)} → ${JSON.stringify(a.delayed)} = ${a.cost}`).join(' | '));
+  console.log(mdTable(acts, [['Battle', (a) => a.label], ['Archetype', (a) => a.archetype], ['ET', (a) => `${a.et.date} ${String(Math.floor(a.et.minutes / 60)).padStart(2, '0')}:${String(a.et.minutes % 60).padStart(2, '0')}`], ['Tier', (a) => a.tier], ['Caught at 0.25 / 0.5 / 0.75', (a) => XS.map((X) => (a.caught[X] ? 'yes' : 'no')).join(' / ')], ['Events', (a) => ['fill', 'level', 'command'].filter((k) => a.events[k]).join('+') || '—'], ['Next scheduled (min)', (a) => a.nextAfterMin], ['Delay, lag 1 (pts)', (a) => a.costLagged], ['Delay, lag 0 (pts)', (a) => a.cost]]));
+  for (const [k, o] of [['lag 1', 'origLagged'], ['lag 0', 'orig']]) {
+    const gaps = acts.filter((a) => Number.isFinite(a.storedLocked) && Number.isFinite(a[o][0])).map((a) => Math.abs(a[o][0] - a.storedLocked));
+    console.log(`Price-source check, ${k}: the outgoing leg scored from tape prices vs the stored locked points of the same sale — median gap ${median(gaps)} pts, largest ${Math.max(...gaps)} (${gaps.length} sales).`);
+  }
+  console.log('\nLegs of each priced case (outgoing, incoming), as done → delayed, lag 1:', acts.map((a) => `${a.label} ${a.archetype} ${a.tier}: ${JSON.stringify(a.origLagged)} → ${JSON.stringify(a.delayedLagged)} = ${a.costLagged}`).join(' | '));
   writeResult(flags.in, 'partB.json', { battles: battles.map((b) => ({ label: b.label, checks: b.checks.map((c) => ({ seq: c.seq, at: c.at, scheduled: c.scheduled, eligible: c.eligible, modelRan: c.modelRan, events: c.events || null, caught: c.caught || null })), actions: b.actions })), rows });
 }
 

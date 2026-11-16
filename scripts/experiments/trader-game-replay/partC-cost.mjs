@@ -34,11 +34,11 @@ export const PRICES = {
 };
 const TTL_MS = 60 * 60 * 1000;
 const bytes = (s) => Buffer.byteLength(typeof s === 'string' ? s : JSON.stringify(s ?? null), 'utf8');
-// A section header: a capitalised name, optionally with a note in parentheses that starts in lower
-// case ("BENCH (available for swap):"), or a "=== NAME ===" banner. A per-symbol line names its
-// sector with a capital ("MMM (Industrials):") and is not a section; "HELD:" and "BENCH:" are
-// sub-headings inside FUNDAMENTALS.
-const HEADER = /^(?:(?!(?:HELD|BENCH):)[A-Z][A-Z0-9 &/'’,.+-]{2,}(?: \([a-z].*\))?:\s*|=== (?!END)[^=]+ ===)$/;
+// A section header is either a capitalised name of two or more words ("ACTIVE POSITIONS:"), a single
+// capitalised word with a note in parentheses that starts in lower case ("BENCH (available for swap):"),
+// or a "=== NAME ===" banner. A bare single word ("HELD:", "BENCH:", "AAPL:") and a per-symbol line
+// naming its sector with a capital ("MMM (Industrials):") are not sections (review C8).
+const HEADER = /^(?:[A-Z][A-Z0-9&/'’,.+-]*(?: [A-Z0-9&/'’,.+-]+)+(?: \([a-z].*\))?:\s*|[A-Z][A-Z0-9&/'’,.+-]{2,} \([a-z].*\):\s*|=== (?!END)[^=]+ ===)$/;
 
 /** Split a block of text at its section headers: [{ name, text }]. Text before the first header is "(preamble)". */
 export function sections(text) {
@@ -79,7 +79,8 @@ export function commonPrefix(a, b) {
     let k = 0;
     while (k < x.length && k < y.length && x[k] === y[k]) k++;
     const part = (() => { let n = 0; for (const p of a[i].parts) { n += p.text.length; if (n > k) return p.name; } return a[i].parts.at(-1)?.name; })();
-    return { common: common + bytes(x.slice(0, k)), aligned, firstDiff: `${a[i].block} › ${part}` };
+    const lineNo = x.slice(0, k).split('\n').length;
+    return { common: common + bytes(x.slice(0, k)), aligned, firstDiff: `${a[i].block} › ${part} @ byte ${bytes(x.slice(0, k))} (line ${lineNo})` };
   }
   return { common, aligned, firstDiff: 'none' };
 }
@@ -157,14 +158,15 @@ function main() {
 
   console.log('\n### 4. The repeating prefix (cache order: tools → system → messages)\n');
   const pairs = { consecutive: [], sameRun: [], sameArchetype: [] };
-  for (const b of battles) for (let i = 1; i < b.calls.length; i++) if (b.calls[i].blocks && b.calls[i - 1].blocks) pairs.consecutive.push(commonPrefix(b.calls[i - 1].blocks, b.calls[i].blocks));
+  // Each pair's shares are of the first request's bytes; the table gives the median of those shares (review C1).
+  const pairOf = (a, b) => { const r = commonPrefix(a.blocks, b.blocks); return { ...r, share: r.common / a.reqBytes, alignedShare: r.aligned / a.reqBytes }; };
+  for (const b of battles) for (let i = 1; i < b.calls.length; i++) if (b.calls[i].blocks && b.calls[i - 1].blocks) pairs.consecutive.push(pairOf(b.calls[i - 1], b.calls[i]));
   const firsts = battles.map((b) => ({ b, c: b.calls.find((c) => c.blocks) })).filter((x) => x.c);
   for (let i = 0; i < battles.length; i++) for (let j = i + 1; j < battles.length; j++) {
-    for (const ci of battles[i].calls) { const cj = battles[j].calls.find((x) => x.slot === ci.slot); if (cj && ci.blocks && cj.blocks) pairs.sameRun.push(commonPrefix(ci.blocks, cj.blocks)); }
+    for (const ci of battles[i].calls) { const cj = battles[j].calls.find((x) => x.slot === ci.slot); if (cj && ci.blocks && cj.blocks) pairs.sameRun.push(pairOf(ci, cj)); }
   }
-  for (let i = 0; i < firsts.length; i++) for (let j = i + 1; j < firsts.length; j++) if (firsts[i].b.archetype === firsts[j].b.archetype) pairs.sameArchetype.push(commonPrefix(firsts[i].c.blocks, firsts[j].c.blocks));
-  const total = median(all.filter((c) => c.blocks).map((c) => c.reqBytes));
-  console.log(mdTable(Object.entries(pairs).map(([k, ps]) => ({ k, n: ps.length, common: median(ps.map((p) => p.common)), aligned: median(ps.map((p) => p.aligned)), where: Object.entries(tally(ps, (p) => p.firstDiff)).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([w, n]) => `${w} (${n})`).join('; ') })), [['Between', (r) => r.k], ['Pairs', (r) => r.n], ['Median common prefix', (r) => `${round2((100 * r.common) / total)}%`], ['Block-aligned (cacheable today)', (r) => `${round2((100 * r.aligned) / total)}%`], ['First changing byte, most common', (r) => r.where]]));
+  for (let i = 0; i < firsts.length; i++) for (let j = i + 1; j < firsts.length; j++) if (firsts[i].b.archetype === firsts[j].b.archetype) pairs.sameArchetype.push(pairOf(firsts[i].c, firsts[j].c));
+  console.log(mdTable(Object.entries(pairs).map(([k, ps]) => ({ k, n: ps.length, common: median(ps.map((p) => p.share)), aligned: median(ps.map((p) => p.alignedShare)), where: Object.entries(tally(ps, (p) => p.firstDiff)).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([w, n]) => `${w} (${n})`).join('; ') })), [['Between', (r) => r.k], ['Pairs', (r) => r.n], ['Median common prefix', (r) => `${round2(100 * r.common)}%`], ['Block-aligned (cacheable as sent today)', (r) => `${round2(100 * r.aligned)}%`], ['First changing byte, most common (block › part @ byte)', (r) => r.where]]));
 
   // The prefix moved first: per battle, the parts whose text is identical on every call.
   const ideal = new Map();

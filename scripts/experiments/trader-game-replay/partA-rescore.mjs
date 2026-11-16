@@ -66,7 +66,9 @@ export function legacyLegs({ symbol, baseATR, tier, direction, entry, price, his
   const change = ((price - entry) / entry) * 100;
   const stored = calculateAssetScoreServer(asset, change, { maxMultiplier: history.maxMultiplier, minMultiplier: history.minMultiplier }, {}, change);
   const rescored = calculateAssetScoreServer(asset, change, { maxMultiplier: 0, minMultiplier: history.minMultiplier }, {}, change);
-  return { stored: stored.totalPoints, rescored: rescored.totalPoints, storedBonus: bonusOf(stored.badges), rescoredBonus: bonusOf(rescored.badges), approx: !baselineKnown && bonusOf(stored.badges) !== bonusOf(rescored.badges), baselineUnknown: !baselineKnown };
+  // With the true baseline unknown, any stored bonus is in doubt in either direction (review A1), not only
+  // when the entry-based legs differ: such a position excludes its battle.
+  return { stored: stored.totalPoints, rescored: rescored.totalPoints, storedBonus: bonusOf(stored.badges), rescoredBonus: bonusOf(rescored.badges), approx: !baselineKnown && bonusOf(stored.badges) > 0, baselineUnknown: !baselineKnown };
 }
 
 function legacyHeld(battle, asset, gaps) {
@@ -91,11 +93,13 @@ export function joinReceipt(trade, receipts, used) {
 
 function legacySold(battle, trade, receipt, gaps) {
   const gr = receipt?.guardrailReplay;
-  if (!gr) { gaps.push('a sale has no receipt (its touch record is unknown)'); return null; }
+  if (!gr) { gaps.push('a sale has no receipt (its touch record at the sale is not stored)'); return null; }
   if (!gr.thresholdHistory) { gaps.push('a sale receipt has no touch record'); return null; }
   const entry = gr.outgoingEntryPrice ?? trade.entryPrice;
   const baselineKnown = gr.outgoingSwappedInAt != null || activationDayAt(battle, trade.swappedOutAt);
-  const legs = legacyLegs({ symbol: trade.symbolOut, baseATR: gr.outgoingBaseATR, tier: trade.tier, direction: trade.direction, entry, price: trade.exitPrice, history: { maxMultiplier: gr.thresholdHistory.maxMultiplier || 0, minMultiplier: gr.thresholdHistory.minMultiplier || 0 }, baselineKnown });
+  // The unit, in the executor's own precedence (agentSwapExecution.js:347–348); the receipt's copy stands in for the slot's.
+  const unit = battle.scoring?.thresholds?.[trade.symbolOut]?.threshold || gr.outgoingBaseATR || 2.5;
+  const legs = legacyLegs({ symbol: trade.symbolOut, baseATR: unit, tier: trade.tier, direction: trade.direction, entry, price: trade.exitPrice, history: { maxMultiplier: gr.thresholdHistory.maxMultiplier || 0, minMultiplier: gr.thresholdHistory.minMultiplier || 0 }, baselineKnown });
   return { symbol: trade.symbolOut, kind: 'sold', ...legs, storedLocked: trade.lockedPoints };
 }
 
@@ -130,6 +134,10 @@ function measuredSide(battle, side, gaps, label) {
     if (c?.status !== 'valid') { gaps.push(`${label}: last frame unavailable for a held position`); continue; }
     const legs = measuredLegs(battle, p.asset, side, p.tier, p.slot, quoteOf(c));
     if (legs.error) { gaps.push(`${label}: ${legs.error}`); continue; }
+    // Each position's stored leg must equal the score of its committed frame (review A2): this checks the
+    // CPU's stock legs on their own, where the battle total cannot (the CPU crypto slot has no stored price).
+    const committed = calculateAssetScoreServer({ ...p.asset, tier: p.tier }, null, {}, {}, null, c).totalPoints;
+    if (!near(legs.stored, committed)) { gaps.push(`${label}: a position does not match its committed frame`); continue; }
     out.push({ symbol: p.asset.symbol, kind: 'held', side, ...legs });
   }
   return out;
@@ -184,7 +192,7 @@ export function rescoreBattle(battle, receipts) {
   if (!near(storedBanked, ss.bankedScore)) gaps.push('banked score does not equal the stored sales');
   if (!near(ss.activeScore + ss.bankedScore, ss.currentScore)) gaps.push('active + banked does not equal the stored total');
   if (gaps.length) return { route, gaps, opponentNotes };
-  if (agent.some((p) => p.approx)) return { route, gaps: ['touch baseline was the previous close (not stored) and a banked bonus depends on it'], opponentNotes };
+  if (agent.some((p) => p.approx)) return { route, gaps: ['touch baseline was the previous close (not stored) and a position holds a bonus'], opponentNotes };
 
   // ---- the opponent.
   let opponentRescored = ss.opponentScore;
@@ -194,7 +202,7 @@ export function rescoreBattle(battle, receipts) {
     const residual = ss.opponentScore - sum(cpu.map((p) => p.stored)) - cpuBanked;
     const cpuCrypto = positions(battle).filter((p) => p.side === 'cpu' && !isStock(p.asset)).length;
     if (cpuCrypto === 0 && !near(residual, 0)) return { route, gaps: ['opponent score does not reproduce'], opponentNotes };
-    opponentGate = cpuCrypto ? 'stock positions reproduce; the CPU crypto slot (legacy scorer, no stored price) is the remainder, not verified' : 'reproduces';
+    opponentGate = cpuCrypto ? 'CPU stock positions match their committed frames; the CPU crypto slot (legacy scorer, no stored price) is the remainder, not verified' : 'reproduces';
     opponentRescored = sum(cpu.map((p) => p.rescored)) + cpuBanked + residual;
   }
   const agentRescored = sum(agent.map((p) => p.rescored));
@@ -213,6 +221,12 @@ export function selftest(firstMeasured) {
   if (drop.storedBonus !== 15 || drop.rescoredBonus !== 0 || drop.stored - drop.rescored !== 15) fail(`legacy planted drop ${JSON.stringify(drop)}`);
   const keep = legacyLegs({ ...base, price: 102.2 });
   if (keep.storedBonus !== 15 || keep.rescored !== keep.stored) fail(`legacy control ${JSON.stringify(keep)}`);
+  // An unknown (previous-close) baseline with a stored bonus is flagged even when the legs agree (review A1/A6).
+  if (!legacyLegs({ ...base, price: 102.2, baselineKnown: false }).approx || legacyLegs({ ...base, history: { maxMultiplier: 0.4, minMultiplier: 0 }, price: 100.4, baselineKnown: false }).approx) fail('previous-close guard');
+  // Both stored shapes of the legacy touch record (review A6).
+  const day1 = legacyHistory({ maxMultiplier: 0, minMultiplier: 0, dailyThresholds: { day1: { maxMultiplier: 1.2, minMultiplier: -0.3 } } });
+  const live = legacyHistory({ maxMultiplier: 0.7, minMultiplier: -0.1 });
+  if (day1.maxMultiplier !== 1.2 || day1.minMultiplier !== -0.3 || live.maxMultiplier !== 0.7 || live.shape !== 'live') fail('touch-record shapes');
   // Measured: plant a touch on a real stored position (real receipt, real validators).
   const p = positions(firstMeasured).find((x) => x.side === 'agent' && isStock(x.asset) && firstMeasured.scoring.stockRewardContexts?.agent?.[x.asset.positionId]?.status === 'valid');
   if (!p) fail('no measured position to plant on');
@@ -228,7 +242,7 @@ export function selftest(firstMeasured) {
   if (mDrop.error || mDrop.storedBonus !== 15 || mDrop.rescoredBonus !== 0) fail(`measured planted drop ${JSON.stringify(mDrop)}`);
   const mKeep = plant(1.1);
   if (mKeep.error || mKeep.storedBonus !== 15 || mKeep.rescored !== mKeep.stored) fail(`measured control ${JSON.stringify(mKeep)}`);
-  return 'selftest passed: legacy and measured planted drops lose +15; both controls unchanged';
+  return 'selftest passed: legacy and measured planted drops lose +15; both controls unchanged; previous-close guard and both touch-record shapes hold';
 }
 
 // ---------------------------------------------------------------------- main
@@ -273,7 +287,7 @@ function main() {
   const posLost = kept.flatMap((r) => [...r.agent, ...r.cpu].map((p) => ({ ...p, label: r.label }))).filter((p) => p.storedBonus !== p.rescoredBonus);
   const allPos = kept.flatMap((r) => [...r.agent, ...r.cpu]);
   const unknown = kept.filter((r) => r.agent.some((p) => p.baselineUnknown));
-  console.log(`\nPositions rescored: ${allPos.length} (held ${allPos.filter((p) => p.kind === 'held').length}, sold ${allPos.filter((p) => p.kind === 'sold').length}; sold with a stored bonus ${allPos.filter((p) => p.kind === 'sold' && p.storedBonus > 0).length}). Positions whose touch baseline was the previous close (not stored; entry stood in, and no banked bonus depended on it): ${allPos.filter((p) => p.baselineUnknown).length} in ${unknown.length} battles.`);
+  console.log(`\nPositions rescored: ${allPos.length} (held ${allPos.filter((p) => p.kind === 'held').length}, sold ${allPos.filter((p) => p.kind === 'sold').length}; sold with a stored bonus ${allPos.filter((p) => p.kind === 'sold' && p.storedBonus > 0).length}). Positions whose touch baseline was the previous close (not stored; the entry stood in): ${allPos.filter((p) => p.baselineUnknown).length} in ${unknown.length} battles, holding ${sum(allPos.filter((p) => p.baselineUnknown).map((p) => p.storedBonus))} bonus points (a stored bonus there would have excluded the battle).`);
   console.log(`\nPositions that lose a bonus: ${posLost.length} (held to the end ${posLost.filter((p) => p.kind === 'held').length}, sold ${posLost.filter((p) => p.kind === 'sold').length}; CPU side ${posLost.filter((p) => p.side === 'cpu').length})`);
   writeResult(flags.in, 'partA.json', { rows, byPath, byArch });
 }

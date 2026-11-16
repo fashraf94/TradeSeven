@@ -77,7 +77,9 @@ function population(dir) {
       const tool = toolOf(res.content);
       if (!tool) continue;
       const id = `${b.label.replace('battle-', 'b')}-s${String(t.tickSeq).padStart(2, '0')}`;
-      rows.push({ id, archetype: b.row.archetype, storedFinal: t.decision?.final ?? null, roundTrip: JSON.stringify(req) === body.request.body, req, storedUsage: res.usage, stored: { decision: tool.input.decision, symbolOut: tool.input.symbolOut ?? null, symbolIn: tool.input.symbolIn ?? null, conviction: tool.input.conviction ?? null, rationale: tool.input.rationale ?? null } });
+      // roundTrip: the parsed request re-serializes to the stored text. sentBytes: that text is the bytes production
+      // sent (its stored sha256); false where the export's id replacement shortened the text (review X6).
+      rows.push({ id, archetype: b.row.archetype, storedFinal: t.decision?.final ?? null, roundTrip: JSON.stringify(req) === body.request.body, sentBytes: HASH(body.request.body) === body.request.sha256, req, storedUsage: res.usage, stored: { decision: tool.input.decision, symbolOut: tool.input.symbolOut ?? null, symbolIn: tool.input.symbolIn ?? null, conviction: tool.input.conviction ?? null, rationale: tool.input.rationale ?? null } });
     }
   }
   return rows.sort((x, y) => HASH(x.id).localeCompare(HASH(y.id)));
@@ -127,7 +129,7 @@ function doPlan(dir, outDir) {
   writeFileSync(path.join(outDir, 'plan.json'), JSON.stringify(plan));
   const tallyBy = (f) => rows.reduce((m, r) => ((m[f(r)] = (m[f(r)] || 0) + 1), m), {});
   console.log(`sample: ${rows.length} rows ${JSON.stringify(tallyBy((r) => r.stored.decision))}; by archetype ${JSON.stringify(tallyBy((r) => r.archetype))}; arm (a) ${armA.size} rows; live rows ${live.length}`);
-  console.log(`stored request bytes re-serialize identically: ${rows.filter((r) => r.roundTrip).length} of ${rows.length}`);
+  console.log(`stored request text re-serializes identically: ${rows.filter((r) => r.roundTrip).length} of ${rows.length}; equals the bytes production sent (stored sha256): ${rows.filter((r) => r.sentBytes).length} of ${rows.length} (arm a ${rows.filter((r) => armA.has(r.id) && !r.sentBytes).length} differ, live rows ${rows.filter((r) => live.includes(r.id) && !r.sentBytes).length} differ)`);
   console.log('byte differences from the stored request, per arm (count of requests):');
   for (const [k, n] of Object.entries(diffs)) console.log(`  ${n} × arm ${k}`);
   console.log(`worst-case cost (every reply at max_tokens): batch $${plan.estimate.batchWorst.toFixed(3)} + live $${plan.estimate.liveWorst.toFixed(3)} = $${plan.estimate.totalWorst.toFixed(3)} (cap $${CAP_USD})`);
@@ -227,7 +229,7 @@ function doAnalyze(outDir) {
   console.log('\nAgreement on stored swaps, by what the code did with them:\n');
   console.log(mdTable(split, [['Arm', (r) => r.arm], ['Swap again, where the code executed the stored swap', (r) => r.ex], ['Swap again, where the code blocked it', (r) => r.bl]]));
   console.log('\nInvalid reasons:', JSON.stringify(B.filter((x) => !x.j.valid).reduce((m, x) => ((m[`${x.arm}: ${x.j.why}`] = (m[`${x.arm}: ${x.j.why}`] || 0) + 1), m), {})));
-  console.log('\nDecisions by arm (stored → returned):', JSON.stringify(B.reduce((m, x) => { const k = `${x.arm}: ${x.row.stored.decision}→${x.j.tool?.input?.decision ?? 'invalid'}`; m[k] = (m[k] || 0) + 1; return m; }, {})));
+  console.log('\nDecisions by arm (stored → returned; an invalid call is "invalid"):', JSON.stringify(B.reduce((m, x) => { const k = `${x.arm}: ${x.row.stored.decision}→${x.j.valid ? x.j.tool.input.decision : 'invalid'}`; m[k] = (m[k] || 0) + 1; return m; }, {})));
   const L = results.filter((x) => !x.batch && x.type === 'succeeded');
   console.log('\nLatency, live calls (ms):\n');
   console.log(mdTable(['a', 'b', 'c'].map((arm) => { const ms = L.filter((x) => x.arm === arm).map((x) => x.latencyMs); return { arm, n: ms.length, median: median(ms), min: Math.min(...ms), max: Math.max(...ms) }; }), [['Arm', (r) => r.arm], ['Calls', (r) => r.n], ['Median', (r) => r.median], ['Min', (r) => r.min], ['Max', (r) => r.max]]));

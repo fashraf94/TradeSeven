@@ -4,12 +4,16 @@
 
 **Basis:** `docs/audits/20261115_PHASE0_BAGGERBOMB_TRADER_GAME.md` (draft PR #1070, read from `origin/claude/phase0-baggerbomb-trader-game`), Part G and sections C2, D1.
 
+**Review:** the branch crossed the review threshold when Parts D and E were added. The four-lens adversarial review is recorded in `docs/audits/20261116_REPLAY_PACK_REVIEW.md`. Its corrections are in this report; where a number changed, the finding id is cited (for example "review B1").
+
 ## Preamble
 
 - **Session opening (BUILD_RULES §2, §3).** `git fetch origin` ran first. The worktree branch was renamed to `claude/trader-game-replay-pack`; HEAD `71bc6bde` equals `origin/main`; tree clean.
 - **Model.** Opus 5.5, as the prompt asks.
-- **Production** (project `tradeseven`), read once on 16 Nov 2026 at about 12:27 PM ET by `exportReplay.mjs`: one `where('gameMode','==','baggerbomb_agent').get()` and `.get()` on each battle's subcollections. The script holds no write call; it was searched for `.set( .update( .add( .create( .delete( batch runTransaction` before it ran (the only hits are JavaScript `Set`/`Map` calls).
-- **Exports** are in `C:/Users/fashr/Documents/FantasyTrades/BaggerBombTraderGame/replay/` (outside the repository), one file per battle, named by ordinal. Every battle id, owner id and agent id is replaced inside the files by an ordinal (`battle-001`, `acct-01`, `agent-01`); a scan of every written file for every original id found 0 hits. This report uses battle ordinals only.
+- **Production** (project `tradeseven`), read once on 16 Nov 2026 at about 12:27 PM ET by `exportReplay.mjs`: one `where('gameMode','==','baggerbomb_agent').get()`, then `.get()` on each battle's subcollections (including `tape/{day}/series`) and on the top-level `learningReceipts/{id}/receipts`. The script holds no write call; it was searched for `.set( .update( .add( .create( .delete( batch runTransaction` before it ran (the only hits are JavaScript `Set`/`Map` calls).
+- **Exports** are in a folder outside the repository (`Documents/FantasyTrades/BaggerBombTraderGame/replay/` under the founder's profile), one file per battle, named by ordinal. Every battle id, owner id and agent id is replaced inside the files by an ordinal (`battle-001`, `acct-01`, `agent-01`). The scan of every written file for every mapped id found 0 hits. After review finding X3, a scan for any token shaped like an account id (28 letters and digits) was added to the script; run over the existing files, it also finds 0. This report uses battle ordinals only.
+- **What stays in the out-of-tree export** (review X4): rule, watchlist and story document ids (20 characters, not account ids), the three agent names, chat messages and watchlist names. None of them appears in this report.
+- **What the id replacement changes** (review X2, X6): stored content hashes computed over an id (a measured receipt's `receiptHash`, a manifest's `manifestHash`) no longer match their rewritten content. 8 request texts are 42 bytes shorter than what was sent. No part recomputes a hash, and Part D checks each resent request against the stored SHA-256.
 - **Determinism.** Parts A–C and E read only the export, and Part D's `analyze` step reads only saved files. Each ran twice and once under `TZ=UTC`; the outputs were byte-identical. Part D's `live`, `submit` and `collect` steps use the network and, for latency, the clock.
 - **Fence (BUILD_RULES §1).** Called, not edited: `calculateAssetScoreServer` and `flattenPortfolioServer` (`api/_utils/agentScoring.js`). Also called (not fenced): `stockRewardContext`, `initialRewardHistory`, `stockModelRoute`, `positions`, `isStock` (`src/utils/stockThresholdModel.js`). No scoring math is copied (§4). No legacy archetype table is imported (§2.3 ratchet untouched).
 - **Part D** did not run in the first pass: the first prompt did not end with `PART D APPROVED, $5`. The founder then sent that line on 16 Nov 2026, with Part E. Part D ran on the existing export, with no new production read: 350 batch requests and 30 live calls, using `CLAUDE_API_KEY` from the local environment (never printed). **Actual spend: $1.35.**
@@ -29,11 +33,11 @@
 | Part | Headline | Sample |
 |---|---|---|
 | Export | 50 agent-mode battles from 10 Aug; 49 completed (36 legacy, 13 measured), 1 in progress today and left out. Matches Phase 0's counts exactly. | 50 battles |
-| A — bank on exit | 43 of 49 completed battles reproduce their stored score; under bank on exit **5 change and 1 winner flips** (a measured battle, where the CPU loses 45 points). Mean change −2.9 points for the agent, −3.5 for the CPU. 25% of banked bonus points (275 of 1,100) came from positions whose last price no longer cleared the level. **Every lost bonus was on a position held to the end; no sold position ever carried a bonus.** | 43 battles, 453 positions |
-| B — 30-minute schedule | Today the model is called on 78% of checks (459 of 589). It answered 398 of those calls and **returned a hold on 81.4% (324 of 398)**; the code's own checks blocked 59 of its 74 swaps, so 96.2% (383) ended as holds. The other 61 calls failed into a fallback hold. The schedule cuts model calls from **14.8 to 9.4 per battle-day** at X = 0.5. Of the 15 executed model swaps, 9 fell on checks the schedule skips; event checks catch 1; **8 are missed at every X**, and waiting 15 minutes would have cost **−10 points in total** (median −2.5, range −11 to +14). | 31 battle-days, 589 checks |
-| C — cost | No request carries `cache_control` today. 72% of each request repeats between consecutive checks of a battle and already sits at the front. Four cost rows below; the schedule cuts each by 32–37%. | 459 calls (52 estimated) |
+| A — bank on exit | 43 of 49 completed battles reproduce their stored score; under bank on exit **5 change and 1 winner flips** (a measured battle, where the CPU loses 45 points). Mean change −2.9 points for the agent, −3.5 for the CPU. 25% of the bonus points on record (275 of 1,100) came from positions whose last price no longer cleared the level. Those 1,100 points are the agent side in all 43 battles plus the CPU side in the 13 measured ones. **Every lost bonus was on a position held to the end; no sold position ever carried a bonus.** | 43 battles, 453 positions |
+| B — 30-minute schedule | Today the model is called on 78% of checks (459 of 589). It answered 398 of those calls and **returned a hold on 81.4% (324 of 398)**; the code's own checks blocked 59 of its 74 swaps, so 96.2% (383) ended as holds. The other 61 calls failed into a fallback hold. The schedule cuts model calls from **14.8 to 9.4 per battle-day** at X = 0.5. Of the 15 executed model swaps, 9 fell on checks the schedule skips; event checks catch 1; **8 are missed at every X**. Waiting 15 minutes for them is **small and mixed**: **+11 points in total** priced the way the stored fills were (one check earlier; 4 gains, 3 losses), or −10 priced at each check's own minute. No case exceeds ±14. | 31 battle-days, 589 checks |
+| C — cost | No request carries `cache_control` today. About 71% of each request repeats between consecutive checks of a battle and already sits at the front. Four cost rows below; the schedule cuts each by 32–37%. | 459 calls (52 estimated) |
 | D — model comparison | **$1.35 spent.** Every arm returns valid tool calls (99–100%). Haiku 4.5 rerun agrees with its own stored decision 90% of the time (all holds, 80% of swaps). **Haiku 5.5 returns a hold on almost every stored swap**: 1 of 74 swaps again at default effort, 2 at low, and 0 of the 15 swaps the code executed. It agrees on holds (99–100%). It uses no thinking tokens (the forced tool call skips thinking). A call costs $0.0028 at list price against Haiku 4.5's $0.0245, and the median latency is 5.9 s against 18.4 s. | 150 calls × 2 arms + 50 |
-| E — narrower gate | If nr7_contraction and bench_outperformance can no longer wake the model on their own: **8.5 calls per battle-day, 3 of 15 executed model swaps missed**. With the 30-minute schedule as well: **6.2 calls per battle-day, 10 missed**. | 31 battle-days |
+| E — narrower gate | If nr7_contraction and bench_outperformance can no longer wake the model on their own: **8.5 calls per battle-day, 3 of 15 executed model swaps missed**. With the 30-minute schedule as well: **6.2–6.5 calls per battle-day, 8–10 missed**. The range depends on how long a news story left unseen by a dropped call keeps waking the model. | 31 battle-days |
 
 **The four cost rows** (per battle-day, list prices of 15 Nov 2026; Haiku 5.5 rows assume 1.3× tokens and exclude thinking — see C5):
 
@@ -94,20 +98,23 @@ The gate checks, within 0.01:
 
 | Battle | Path | Reason |
 |---|---|---|
-| 001 | legacy | a sale has no receipt (its touch record is unknown) |
+| 001 | legacy | a sale has no receipt (its touch record at the sale is not stored)* |
 | 018, 022, 031, 039 | legacy | no final score |
 | 034 | legacy | no last price for a held position |
 
+\* The review (finding A4) showed this record is bounded from above: the battle's day-1 touch record allows no bonus, and the sale's locked points equal its base points. Including the battle would give 44 kept with Δ 0; the legacy mean Δ would move from −3.67 to −3.55, and the overall mean from −2.91 to −2.84. It stays excluded under Q21's complete-data rule.
+
 **The opponent's gate:**
 
-- **Measured battles (13):** every CPU stock position reproduces. The CPU's crypto slot is scored by the legacy scorer and no price for it is stored, so it is taken as the remainder (−36 to +15 points, the size of a 1–4% crypto move). **Not verified.**
+- **Measured battles (13):** each CPU stock position's recomputed score equals the score of its committed frame, checked position by position (added after review finding A2; before that, the check was only implied by the total). The CPU's crypto slot is scored by the legacy scorer and no price for it is stored, so it is taken as the remainder (−36 to +15 points, the size of a 1–4% crypto move). **Not verified.**
 - **Legacy battles:** no stored field holds a last price per CPU position, so the CPU score is **not verified**. The CPU's legacy scoring call gets an empty touch record (Phase 0 G2), so bank on exit cannot change it.
 
 **Three rules the gate relies on:**
 
 - **Legacy touch record.** The nightly job moves it to `thresholdHistory[symbol].dailyThresholds.day1` and renames `swapPrice` to `previousSwapPrice`. The script reads both shapes.
 - **Nightly reset.** That job does not change `currentScore`, so a one-day battle's stored score is its last 15-minute frame. A battle scored after its nightly reset would be excluded; none passed the other checks.
-- **Unknown baselines.** In 5 legacy battles, activated the evening before, the touch baseline was the previous close, which is not stored. The entry price stands in. 35 positions are affected, and in none of them does a banked bonus depend on that baseline.
+- **Unknown baselines.** In 5 legacy battles, activated outside a session before their first trading day (one of them on a market holiday), the touch baseline was the previous close, which is not stored. The entry price stands in. 35 positions are affected, and none holds a stored bonus. Since review finding A1, a position like that which does hold a bonus excludes its battle, because its bonus could be wrong in either direction.
+- **Sale units.** A legacy sale's volatility unit follows the executor's precedence (`scoring.thresholds[symbol].threshold`, then the receipt's copy of the slot's unit, then 2.5; `api/_utils/agentSwapExecution.js:347`). Review finding A3; on this data every receipt already matched.
 
 ### A2. Per battle
 
@@ -161,7 +168,7 @@ The gate checks, within 0.01:
 
 ### A3. By path and by archetype
 
-"Bonus lost" is the share of banked bonus points from positions whose exit (or last) price no longer cleared the level. Legacy rows count the agent side only.
+"Bonus lost" is the share of bonus points on record (all of them from positions held to the end) whose exit or last price no longer cleared the level. Legacy rows count the agent side only, so the "all" and archetype rows mix the two scopes.
 
 | Group | Battles | Changed | Mean Δ agent | Mean Δ CPU | Winner flips | Bonus lost, both sides | Agent side only |
 |---|---|---|---|---|---|---|---|
@@ -189,21 +196,25 @@ Script: `partB-schedule.mjs`. Scope: the 31 completed battles with `ticks` rows.
 - A check is **scheduled** when its slot is an even number of 15-minute steps after the battle's first check's slot: the battle's first check, then every 30 minutes. Every other check is **skipped**.
 - The grid follows each battle's own start. 9 of 31 battles start on a :15 or :45 slot; for those, a fixed 9:30-based grid would pick different checks.
 
-**Eligible checks** are the ones that can reach the model today. A check that ended on the gameplan-meeting path (102) or on degraded quotes (17) never calls it, on either schedule.
+**Eligible checks** are the ones that reach the trigger gate today. These never call the model, on either schedule:
+
+- a check that ended on the gameplan-meeting path (102);
+- a check that ended on degraded quotes (17);
+- a check that stopped before the gate because the measured reward frame was unavailable (2; review B2).
 
 ### B1. Today
 
 | Per battle-day | Total | Median | Mean |
 |---|---|---|---|
 | Checks run | 589 | 20 | 19.0 |
-| Eligible | 470 | 16 | 15.2 |
+| Eligible | 468 | 16 | 15.1 |
 | Model calls | 459 | 16 | 14.8 |
 
 Of the 459 model calls, **398 were answered.**
 
 - **What the model returned** (the tick's `decision.original`): a hold on **81.4% (324 of 398)** and a swap on 74.
-- **What the check did:** the code's own checks blocked 59 of those 74 swaps (29 stock-for-crypto, 29 below the hurdle floor, 1 on cooldown), so 383 answered calls (96.2%) ended as holds and 15 swaps executed.
-- **Failed calls:** the other 61 failed and the check fell back to a hold (`holdKind: 'default_failure'`): 52 SDK timeouts with no response, and 9 invalid tool results. Of the 589 checks, 130 made no call: 102 gameplan-meeting checks, 17 degraded quotes, and 11 where the gate found no trigger.
+- **What the check did:** the code's own checks blocked 59 of those 74 swaps (29 stock-for-crypto, 29 by the hurdle floor (28 below the floor, 1 with no positive bench candidate), 1 on cooldown), so 383 answered calls (96.2%) ended as holds and 15 swaps executed.
+- **Failed calls:** the other 61 failed and the check fell back to a hold (`holdKind: 'default_failure'`): 52 SDK timeouts with no response, and 9 invalid tool results. Of the 589 checks, 130 made no call: 102 gameplan-meeting checks, 17 degraded quotes, 9 where the gate found no trigger, and 2 that stopped before the gate (no reward frame).
 
 **What opened the gate** (a call can carry several triggers):
 
@@ -227,7 +238,7 @@ A skipped eligible check still calls the model if any of these happened after th
 - **move X:** a held stock moved at least X volatility units, measured from its price at the last scheduled check.
   - The unit is `baseATR` for legacy battles and the receipt's `scoringPct` for measured ones.
   - Prices are the film tape's price at each check. Crypto has no tape, so its moves are not measured.
-- **level:** the gate's own stored `threshold_proximity` trigger at this check, which is exactly "within 0.2 units of an unearned bonus or an uncrossed penalty". It is stored only where the gate ran, and a check with no trigger had none.
+- **level:** the gate's own stored `threshold_proximity` trigger at this check: within 0.2 units below a bonus not yet earned, or within 0.2 units above a penalty level. On measured battles that is the next uncrossed penalty; on legacy battles it is any penalty level, crossed or not (`api/_utils/agentTriggerGate.js:86`; review B5). It is stored only where the gate ran, and a check with no trigger had none.
 - **command:** a cockpit command (`calls[].playerResponse.filedAt`), or a chat message or filed directive (`chatExchanges[].timestamp`).
 
 **How often each event fired** at the 234 skipped eligible checks:
@@ -246,9 +257,9 @@ Two readings of "scheduled check". **(i)** The gate still decides at scheduled c
 | | Event checks (all battles) | Calls/day, reading (i) | Calls/day, reading (ii) | Model swaps missed |
 |---|---|---|---|---|
 | today | — | 14.81 | — | — |
-| X = 0.25 | 73 | 9.77 | 9.97 | 8 |
-| X = 0.5 | 62 | 9.42 | 9.61 | 8 |
-| X = 0.75 | 58 | 9.29 | 9.48 | 8 |
+| X = 0.25 | 73 | 9.77 | 9.90 | 8 |
+| X = 0.5 | 62 | 9.42 | 9.55 | 8 |
+| X = 0.75 | 58 | 9.29 | 9.42 | 8 |
 
 Today 230 model calls fall on checks the schedule keeps and 229 on checks it skips.
 
@@ -256,26 +267,36 @@ Today 230 model calls fall on checks the schedule keeps and 229 on checks it ski
 
 9 of the 15 executed model swaps fell on skipped checks. One was caught by an event (a cockpit command filed in the window). **The other 8 are missed at every X**: no fill, no level, no command and no move of even 0.25 units preceded them. The model swapped on its own reading of a quiet check.
 
-**The delay cost** is the same swap taken at the next scheduled check, 14–15 minutes later in every case, minus the swap as taken. It is scored with the real scorer from tape prices:
+**The delay cost** is the swap taken at the next scheduled check (14–15 minutes later in every case) minus the swap as taken, in points: **+ means waiting would have gained points**. It is scored with the real scorer from tape prices:
 
 - the outgoing position, from its entry to its exit;
 - the incoming one, from its fill to its own exit (all 9 were held to the end).
 
-| X | Missed | Total cost of delay (pts) | Median |
-|---|---|---|---|
-| 0.25, 0.5, 0.75 | 8 | **−10** | −2.5 |
+**Which price a fill gets.** A swap fills at the battle's own quote, which is about 16 minutes old (Phase 0 C3). Checked against the tape, 89% of stored fill prices (73 of 82) sit closer to the tape price at the check *before* the executing check than at the executing check itself. The median gap is 0.04% against 0.2%. The cost is therefore given two ways (review B1):
 
-Per missed swap: 0, −11, −3, −5, +1, −2, −4, +14. Waiting lost points in 5, gained in 2, and was neutral in 1.
+- **lag 1:** each fill at the tape price one check earlier. This matches the stored fills; scored this way, the outgoing leg lands a median 1 point (largest 4) from the stored locked points.
+- **lag 0:** each fill at the check's own minute. Here the outgoing leg lands a median 2 points (largest 14) from the stored locked points.
 
-**The three worst cases** (points: outgoing leg + incoming leg, as done → delayed):
+| X | Missed | Total, lag 1 (matches the fills) | Median, lag 1 | Total, lag 0 | Median, lag 0 |
+|---|---|---|---|---|---|
+| 0.25, 0.5, 0.75 | 8 | **+11** | +2 | −10 | −2.5 |
 
-1. **−11.** A contrarian's Core swap at 2:46 PM ET on 29 Sep. The outgoing stock kept falling (−5 → −9), and the incoming one rose before the later entry (+4 → −3).
-2. **−5.** An analyst's Support swap at 12:16 PM ET on 22 Oct. The outgoing stock slipped another point (−12 → −13), and the incoming one's gain was already taken (+4 → 0).
-3. **−4.** A contrarian's Star swap at 1:46 PM ET on 10 Nov. Outgoing −48 → −49; incoming +20 → +17.
+**Per missed swap:**
 
-The best case for waiting: a degen's Core swap on 12 Nov, where the outgoing stock recovered 12 points in 15 minutes (+14).
+- **Lag 1:** −2, 0, +6, +4, −7, +7, +6, −3. Waiting gained points in 4 cases, lost in 3, and was neutral in 1.
+- **Lag 0:** 0, −11, −3, −5, +1, −2, −4, +14.
 
-**Price-source check.** Scoring the outgoing leg from tape prices lands a median 2 points (largest 14) from the stored locked points of the same sale. The stored fill used the battle's own quote, about 16 minutes old (Phase 0 C3); the tape prices the check's own minute. The delay costs are of the same size as this gap, so read them as "small, mixed sign", not as exact values.
+Each leg's points are rounded as the game rounds them. Unrounded, the lag-0 total is −8.
+
+The sign depends on the convention, and every case is within ±14 points. **Read this as "small and mixed": waiting 15 minutes neither reliably costs nor reliably gains.**
+
+**The three worst cases for waiting, lag 1** (points: outgoing leg, incoming leg, as done → delayed):
+
+1. **−7.** A momentum chaser's Star swap at 11:16 AM ET on 2 Nov. The outgoing stock recovered (−42 → −37), but the incoming one's early gain was missed (+47 → +35).
+2. **−3.** A degen's Core swap at 11:16 AM ET on 12 Nov. The outgoing stock recovered (−84 → −73), but the incoming one fell further after the later entry (−2 → −16).
+3. **−2.** A momentum chaser's Support swap at 2:01 PM ET on 23 Sep. Outgoing −8 → −10; incoming +4 → +4.
+
+**Best for waiting, lag 1:** a contrarian's Core swap at 11:16 AM ET on 10 Nov, +7 (outgoing −74 → −72, incoming +8 → +13).
 
 **Unchanged by the schedule:** the code's own risk exits (bust avoidance, VWAP failure, stagnation rotation) run on every 15-minute check before the gate (`api/cron/agent-evaluate.js:1872`). Only the model call moves.
 
@@ -299,7 +320,9 @@ Script: `partC-cost.mjs` (reads Part B's result file for the schedule rows).
 | Cache write | 0 | 0 | 0 | 0 |
 
 - **ESTIMATED rows.** Usage is stored for 407 calls: the 398 answered calls and 9 whose tool result was invalid (answered at HTTP 200, so billed). The other 52 were SDK timeouts with no response stored. Their input is estimated as request bytes × 0.320 tokens per byte (the median of the stored calls), and their output as the median 1,507.
-- **Not verified:** whether those 52 timed-out calls were billed. The SDK aborts its request at the timeout, but whether Anthropic bills a request cancelled mid-generation was not checked. They are costed in full, so the totals are an upper bound by up to 11%.
+- **Not verified:** whether those 52 timed-out calls were billed. All 52 aborted at the 20-second SDK timeout then in force. The SDK cancels the request, but whether Anthropic bills a request cancelled mid-generation was not checked.
+  - **If they were not billed,** the totals overstate by up to 11%.
+  - **If they were billed,** the totals understate a little: answered calls that ran 20 seconds or more wrote a median 1,904 output tokens, above the 1,507 used here, adding about 1% to the Haiku 4.5 total (review C6).
 
 ### C2. `cache_control` today
 
@@ -325,22 +348,22 @@ The per-check context includes these named sections:
 - **FUNDAMENTALS** (9.4% of the request); it changes with price and bench membership;
 - **TRIGGER** (1.1%);
 - **YOUR LAST 3 DECISIONS** (1.0%);
-- **INTRADAY MOMENTUM** (1.0%);
+- **INTRADAY MOMENTUM** (0.9%);
 - **REGIME** (0.8%);
 - the opening **LIVE BATTLE STATE** lines (score, time left).
 
 ### C4. The repeating prefix
 
-Measured in cache order (tools → system → messages), over the raw text of each block.
+Measured in cache order (tools → system → messages), over the raw text of each block (the export's text, which for 8 requests is 42 bytes shorter than what was sent; review X6, under 0.1% of those requests). Each share is of the first request in the pair, and the table gives the median share (review C1).
 
 | Between | Pairs | Median repeating prefix | Of which block-aligned (cacheable as sent today) | First changing byte |
 |---|---|---|---|---|
-| Consecutive checks of one battle | 429 | 72.4% | 72.3% | the first line of the per-check context (the live battle-state lines), in all 429 |
-| Different battles in the same cron run | 67 | 26.2% | 26.2% | system text byte 8 (the agent's name) or byte 83 (the archetype) in 57; inside the tool in 10 |
-| Battles on the same archetype | 116 | 26.2% | 26.2% | the tool (46), the system text's name line (43), the identity block (27) |
+| Consecutive checks of one battle | 429 | 71.0% | 70.9% | line 2 of the per-check context, the "Day N of M \| Xh Ym remaining" line, in all 429 (line 1, the battle-state banner, never changes) |
+| Different battles in the same cron run | 67 | 26.5% | 26.5% | system text byte 8, the agent's name (57); inside the tool, where the cockpit declarations text begins (10) |
+| Battles on the same archetype (first call of each) | 116 | 27.2% | 27.1% | inside the tool (46); system text byte 8, the agent's name (29); system text line 14, a template line that changed between versions (14); the identity block (27) |
 
-- **Within a battle**, everything before the per-check context repeats: the tool, the system text, the identity block and the acknowledgement. It already sits first, so one breakpoint at the end of the acknowledgement caches it with no reordering. The parts identical on every call of a battle are a median **71.1%** of a request; the cost rows use that share.
-- **Across battles**, only the tool and the system text's first 8 bytes repeat. The tool comes in 3 versions, which differ near the end (the cockpit declarations text). The system text starts with "You are \<name\>". 13 distinct system texts were seen across the 30 battles that made a model call.
+- **Within a battle**, everything before the per-check context repeats: the tool, the system text, the identity block and the acknowledgement. It already sits first, so one breakpoint at the end of the acknowledgement caches it as sent today: a median 70.9% of a request per pair. The cost rows use a slightly larger share, a median **71.1%**: the parts identical on every call of the battle. That share includes two sections that sit after the changing lines (REGIME CONTEXT in 62 calls, STANDING LEANS in 21), so it assumes those are moved first. Using the as-sent share instead moves the Haiku 4.5 cached row by $0.0002 per battle-day (review C3).
+- **Across battles,** only three agent names appear in the 30 battles that made a model call. Two battles of the same agent repeat the tool and the system text, and differ first in the identity block; 27 of the 116 same-archetype pairs are like that, with a median common prefix around 60% (review C2). Two different agents share only the tool and the first 8 bytes of the system text ("You are \<name\>"). The tool comes in 3 versions, which differ near the end, where the cockpit declarations text begins. 13 distinct system texts were seen across the 30 battles that made a model call.
 
 ### C5. Cost per call and per battle-day
 
@@ -353,15 +376,15 @@ Measured in cache order (tools → system → messages), over the raw text of ea
    - A later call that starts within an hour of the previous read or write reads it at 0.1× and refreshes the timer.
    - The rest of each request is billed at the full input price.
    - 9 gaps between a battle's calls ran over an hour (the longest 150 minutes); each starts a fresh write.
-   - Battles do not share a cache, because their prefixes differ after byte 8 of the system text.
+   - Battles do not share a cache. Every pair of battles in the same cron run is two different agents, whose prefixes part at the tool or at byte 8 of the system text. Battles of the same agent ran on different days, more than an hour apart.
 4. **Haiku 5.5 rows:**
    - Today's tokens are scaled by **1.3×**, input and output, because Haiku 5.5 counts the same text as about 30% more tokens (Claude API skill, `shared/model-migration.md` → Migrating to Claude Haiku 5.5).
    - Thinking tokens are **excluded**. Haiku 5.5 thinks by default, at medium effort, and how much it would think here is unmeasured; that is Part D's job.
    - The largest scaled prompt is 25,000 tokens, inside the ≤ 100,000-token price band.
    - The request as sent today would not run unchanged: Haiku 5.5 rejects a non-default `temperature` (0.4 today).
 5. **Schedule rows** are Part B's schedule at X = 0.5, reading (i): 292 calls.
-   - Of these, 40 use the estimates in C1.
-   - 1 is an event check where no model ran today; it is costed at the battle's mean tokens.
+   - Of these, 39 use the estimates in C1.
+   - 1 more is an event check where no model ran today; it is costed at the battle's mean tokens. Together that makes the 40 estimated calls in the table note below.
 
 | Row | Calls | $ per call | $ per battle-day | $ total |
 |---|---|---|---|---|
@@ -393,7 +416,7 @@ ESTIMATED: 52 of 459 calls in the first block and 40 of 292 in the second.
 
 ### D2. What changed in each request (every byte that differs from the stored request)
 
-All 150 stored request bodies re-serialize byte-identically, so the parsed request is exactly what production sent.
+All 150 stored request texts re-serialize byte-identically. For 146 of them that text is exactly what production sent; their stored SHA-256 matches. The other 4 are holds, 2 of them in arm (a) and 2 among the live rows. In each, the per-check context named a directive thread id that held the account id twice; the export replaced it with `acct-NN`, so the request sent here was 42 bytes shorter than production's. The account id was never sent (review X6).
 
 | Arm | Differences from the stored request |
 |---|---|
@@ -401,7 +424,7 @@ All 150 stored request bodies re-serialize byte-identically, so the parsed reque
 | (b) | `"model":"claude-haiku-4-5-20251001"` → `"model":"claude-haiku-5-5"`; `"temperature":0.4` removed |
 | (c) | the same two, plus `"output_config":{"effort":"low"}` added |
 
-`max_tokens` (3,072), the system text, the messages, the tool and the forced `tool_choice` are unchanged.
+`max_tokens` (3,072 on 145 rows, 2,048 on 5 older ones), the system text, the messages, the tool and the forced `tool_choice` are unchanged.
 
 **Why each change, from Anthropic's documentation (read 16 Nov 2026):**
 
@@ -492,11 +515,18 @@ Added by the founder with the Part D approval (16 Nov 2026). Script: `partE-gate
 | Today | 459 | 14.81 | 0 |
 | Narrower gate, every 15 minutes | 262 | **8.45** | **3** |
 | 30-minute schedule, X = 0.5 (Part B, reading i) | 292 | 9.42 | 8 |
-| Narrower gate + 30-minute schedule, X = 0.5 | 192 | **6.19** | **10** |
+| Narrower gate + schedule, nothing carried forward | 192 | 6.19 | 10 |
+| Narrower gate + schedule, `forced_open` carried (exact) | 194 | 6.26 | 10 |
+| Narrower gate + schedule, `forced_open` and news carried (news: upper bound) | 201 | **6.48** | **8** |
 
 - **Which calls go.** 197 of today's 459 calls were woken only by these two triggers: 129 by both, 49 by `nr7_contraction` alone and 19 by `bench_outperformance` alone.
-- **What the model did at them.** It proposed a swap at 32 of those 197 calls, and the code blocked 29 of the 32. Only 3 became executed swaps, which are the 3 missed in the second row.
-- **The combination.** At a scheduled check the narrower gate decides; at a skipped check an event still calls the model. Two of the missed swaps fall on kept checks that had only nr7/bench (battles 042 and 044), and 8 are Part B's skipped-check swaps.
+- **What the model did at them.** 179 of those calls were answered and 18 failed. The model proposed a swap at 31 of the answered calls, and the code blocked 28 of the 31. Only 3 became executed swaps, which are the 3 missed in the second row.
+- **The combination.** At a scheduled check the narrower gate decides; at a skipped check an event still calls the model.
+- **What a dropped call carries forward** (review E1). When the schedule drops a skipped check's call, two things the gate reads change:
+  - the battle may still have no evaluation, so `forced_open` fires at the next check that reaches the gate (`api/_utils/agentTriggerGate.js:46`). This carry is exact.
+  - a news story is marked seen only after a call resolves, so a story that woke a dropped call can wake the next scheduled check. Because a story's age is not stored, the simulation carries it for up to 120 minutes after the dropped check (the gate's news window). That makes this row an upper bound. An independent check of each carry against the prompts found 198 certain calls, or about 200 with the probable ones (6.39–6.45 per battle-day); the missed count of 8 held.
+- **With both carried,** the two kept checks that had only nr7/bench (battles 042 and 044) open on a carried news story, so 8 swaps are missed, all of them Part B's skipped-check swaps. With nothing carried, those two are missed too (10).
+- **Unaffected:** the narrower gate alone (no check it drops carries news or `forced_open`) and Part B's schedule alone.
 
 ## Limits of each measurement
 
@@ -504,7 +534,8 @@ Added by the founder with the Part D approval (16 Nov 2026). Script: `partE-gate
 
 - **15-minute resolution.** A touch is the highest price seen at a check; the tape's 10-minute bars were not used to find touches between checks. This matches how the battles were actually scored.
 - **The stop half of BB-8 is out of scope (Q21).** No stop was ever stored.
-- **Unknown baselines.** In 5 legacy battles the touch baseline was the previous close, which is not stored. No bonus depended on it here.
+- **Unknown baselines.** In 5 legacy battles the touch baseline was the previous close, which is not stored. None of the 35 affected positions holds a bonus.
+- **Untested paths.** A crypto sale in a measured battle is scored on the legacy path, which needs a receipt; production needs none (`api/_utils/stockThresholdAdmission.js:258`). There is no such sale in this data (review A7). The self-test plants the reset on both paths, the previous-close guard and both touch-record shapes. The receipt join, measured sales and the CPU side are covered only by the real-data gate (review A6).
 - **CPU scores.** The legacy CPU score and the measured CPU crypto slot are not verified (no stored price).
 - **The end of the battle counts as an exit** at the last scored price, as the prompt specifies. Phase 0 founder question 17 is still open.
 
@@ -512,7 +543,12 @@ Added by the founder with the Part D approval (16 Nov 2026). Script: `partE-gate
 
 - **Decisions held fixed.** Each scheduled check is assumed to make the decision it made today.
 - **First-order only.** The delay cost prices each missed swap alone; it does not follow how the book would differ afterwards.
-- **Prices.** The tape is a different price source from the battle's own quote (median gap 2 points per sale).
+- **Prices.** The tape is a different price source from the battle's own quote. The battle's fills match the tape one check earlier, so the delay cost is given under both conventions, and its sign depends on the choice (+11 or −10).
+- **Other data** (review M1–M7; none applies here):
+  - a stock bought at the last scheduled check is not move-checked;
+  - a guardrail fill after a scheduled check's model call is not an event;
+  - the bar fallback can be up to 10 minutes stale;
+  - the case where the incoming stock is sold before the next scheduled check is modelled as no swap.
 - **Crypto.** Crypto moves are not measured.
 - **Event coverage.** The "level" event is known only where the gate ran.
 - **Sample.** 15 executed model swaps in 31 battle-days is a small sample.
@@ -530,7 +566,8 @@ Added by the founder with the Part D approval (16 Nov 2026). Script: `partE-gate
 - **One run per arm.** Only Haiku 4.5 has a noise floor. Haiku 5.5's own run-to-run variation is not measured.
 - **Validation.** The validator checks the tool call's fields, not the domain rules applied in production (lock, cooldown, hurdle floor, stock-for-crypto), which need the battle's state at the check. So a "valid" Haiku 4.5 swap may be one the code would block.
 - **Agreement** is against the model's own stored decision, not the final decision after the code's checks.
-- **Latency** is 10 sequential calls per arm from this machine, at one time of day.
+- **Temperature.** The stored calls and arm (a) ran at 0.4; the Haiku 5.5 arms ran at the API default, because Haiku 5.5 refuses 0.4. Temperature is therefore confounded with the model in the agreement figures (review D3).
+- **Latency** is 10 sequential calls per arm from this machine, at one time of day. The 10 rows are 9 stored holds and 1 stored swap, and all 10 ended as holds, so they are not the balanced sample (review D3).
 
 **Part E**
 
@@ -540,13 +577,13 @@ Added by the founder with the Part D approval (16 Nov 2026). Script: `partE-gate
 ## Founder questions
 
 1. **Bank on exit for the CPU.** In measured battles the CPU is rescored too. That is where the one winner flip comes from (battle 040: the CPU loses 45 points and the agent wins). Should BB-8 apply to the CPU opponent, or to the player's agent only?
-2. **What a scheduled check means.** (a) The gate still decides at scheduled checks (9.42 calls/day at X = 0.5). (b) The model always runs at scheduled checks (9.61). The cost rows use (a).
+2. **What a scheduled check means.** (a) The gate still decides at scheduled checks (9.42 calls/day at X = 0.5). (b) The model always runs at scheduled checks (9.55). The cost rows use (a).
 3. **The grid's anchor.** (a) Every 30 minutes from the battle's first check, as measured here. (b) A fixed 9:30-based grid; 9 of 31 battles start on a :15 or :45 slot, and for them it would change which checks run.
-4. **Quiet-check swaps.** 8 of the 9 model swaps on skipped checks had no event before them, at any X. Waiting cost −10 points in total across the 8. Is a 15-minute delay on those acceptable, or should a rule keep them (for example, an event when the bench outperforms by some margin)?
+4. **Quiet-check swaps.** 8 of the 9 model swaps on skipped checks had no event before them, at any X. Waiting 15 minutes changes their points by a small, mixed amount: +11 in total priced as the fills were, −10 priced at the check's own minute. Is that delay acceptable, or should a rule keep them (for example, an event when the bench outperforms by some margin)?
 5. **Crypto in the move event.** Crypto has no tape price. Should the move event (a) ignore crypto, or (b) read the battle's own crypto quote?
 6. **Cross-battle caching.** The system text starts with the agent's name, so no two agents share more than the tool. Moving the name and archetype lines below the shared rules would let battles in one run share most of the system text as well. Should a build propose that? It changes the prompt's text order, which is fenced (`api/_utils/agentEvalPromptAssembly.js`).
 7. **Haiku 5.5's holds (BB-24).** On the same requests Haiku 5.5 almost never swaps: 1 or 2 of 74 stored swaps, and none of the 15 the code executed. Its rationales cite blocks and locks. Before adopting it on cost and speed, should a follow-up find out why? For example: (a) rerun Haiku 5.5 on the same 150 to measure its own noise; (b) test whether the prompt's block rules read differently to it.
-8. **The narrower gate.** (a) Adopt it alone: 8.5 calls per battle-day, 3 of 15 executed model swaps missed. (b) Combine it with the 30-minute schedule: 6.2 calls per battle-day, 10 missed. (c) Neither.
+8. **The narrower gate.** (a) Adopt it alone: 8.5 calls per battle-day, 3 of 15 executed model swaps missed. (b) Combine it with the 30-minute schedule: 6.2–6.5 calls per battle-day, 8–10 missed. (c) Neither.
 9. **The 59 blocked swaps.** The model proposes a swap on 19% of answered calls, but the code blocks 4 in 5 of them, half for pairing a stock with crypto. Should the prompt tell the model which pairings are refused, so fewer calls end in a blocked swap?
 
 ## Files

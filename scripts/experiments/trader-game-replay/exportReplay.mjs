@@ -23,8 +23,15 @@
 // Text-level, not field-level, so that values that embed an id stay equal to the
 // field they are checked against (a measured receipt's battleId against the
 // battle's id, the stored receiptContent string that embeds it). After writing,
-// every output file is scanned for every original id; any hit fails the run.
+// every output file is scanned for every mapped id AND for any token shaped like an
+// account id (28 letters and digits); any hit deletes the written files and fails the run.
 // Printed output is counts only.
+//
+// WHAT THE REPLACEMENT CHANGES (review X2, X6): a stored content hash computed over an
+// id (a measured receipt's receiptHash, a manifest's manifestHash) no longer matches its
+// rewritten content, and a request body whose text held an account id is shorter than the
+// bytes production sent (its stored sha256 still names the original bytes). No part of the
+// pack recomputes a hash; Part D checks each resent request against the stored sha256.
 //
 // USAGE (from the repo root):
 //   node scripts/experiments/trader-game-replay/exportReplay.mjs --out <dir> [--env <path to .env.local>]
@@ -32,7 +39,7 @@
 // ENV: FIREBASE_ADMIN_CREDENTIALS (the export-agent-battles.js convention), read
 // from --env, else this tree's .env.local, else the environment. Never printed.
 
-import { writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync, realpathSync, statSync, unlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { parseEnvFile, serialize } from '../../calibration/export-agent-battles.js';
@@ -43,10 +50,38 @@ const PROJECT_ROOT = path.resolve(path.dirname(__filename), '..', '..', '..');
 export const SINCE_DAY = '2026-08-10';
 export const GAME_MODE = 'baggerbomb_agent';
 const SUBCOLLECTIONS = ['ticks', 'tickBodies', 'calls', 'intradayViews'];
+/** A token shaped like a Firebase Auth uid: 28 letters and digits, not part of a longer word. */
+export const UID_SHAPE = /(?<![A-Za-z0-9])[A-Za-z0-9]{28}(?![A-Za-z0-9])/g;
 
 function die(msg) {
   console.error(`\nFATAL: ${msg}`);
   process.exit(1);
+}
+
+/** The real path of `p`, or of its nearest existing ancestor with the rest appended (8.3 names, junctions resolved). */
+export function realOf(p) {
+  let cur = path.resolve(p);
+  const rest = [];
+  while (!existsSync(cur)) { rest.unshift(path.basename(cur)); const up = path.dirname(cur); if (up === cur) break; cur = up; }
+  return path.join(realpathSync.native(cur), ...rest);
+}
+
+/** The roots `--out` must stay outside: this checkout and, for a git worktree, the main checkout it belongs to. */
+export function repoRoots(root = PROJECT_ROOT) {
+  const roots = [realOf(root)];
+  const dotGit = path.join(root, '.git');
+  if (existsSync(dotGit) && statSync(dotGit).isFile()) {
+    const m = readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+?)\s*$/m);
+    const common = m && m[1].replace(/[\\/]worktrees[\\/][^\\/]+$/, '');
+    if (common) roots.push(realOf(path.dirname(path.resolve(root, common))));
+  }
+  return roots;
+}
+
+/** Is `out` inside any root? Compared on real paths, case-insensitively, on a path-segment boundary (review X1). */
+export function insideAny(out, roots) {
+  const o = realOf(out).toLowerCase().replace(/^\\\\\?\\/, '');
+  return roots.some((r) => { const rr = r.toLowerCase().replace(/^\\\\\?\\/, ''); return o === rr || o.startsWith(rr.endsWith(path.sep) ? rr : rr + path.sep); });
 }
 
 export function parseArgs(argv) {
@@ -70,7 +105,7 @@ export function firstTradingDay(b) {
 
 const ID_KEY_RE = /(?:^|[a-z])(?:ownerId|userId|uid|odUserId|agentId|createdBy|ownerUid|playerId)$/i;
 
-/** Every string under a key that names an account or agent (walked, keys included). */
+/** Every string under a key that names an account or agent (the walk reads key names; it does not collect keys as ids). */
 export function collectAccountIds(value, out = new Set(), key = '') {
   if (value == null) return out;
   if (typeof value === 'string') {
@@ -84,6 +119,16 @@ export function collectAccountIds(value, out = new Set(), key = '') {
 }
 
 /** Replace every id in `text`, longest first. `pairs` is [[original, ordinal]] sorted by length desc. */
+/** Hits of any mapped id, and of any uid-shaped token, across the written texts. */
+export function leakScan(texts, ids) {
+  let leaks = 0, shaped = 0;
+  for (const text of texts) {
+    for (const id of ids) if (text.includes(id)) leaks++;
+    shaped += (text.match(UID_SHAPE) || []).length;
+  }
+  return { leaks, shaped };
+}
+
 export function pseudonymize(text, pairs) {
   let out = text;
   let hits = 0;
@@ -123,7 +168,7 @@ async function readBundle(db, battle) {
 async function main() {
   const flags = parseArgs(process.argv);
   const outDir = path.resolve(flags.out);
-  if (outDir.toLowerCase().startsWith(PROJECT_ROOT.toLowerCase())) die('--out must be outside the repository');
+  if (insideAny(outDir, repoRoots())) die('--out must be outside the repository (and outside the main checkout of a worktree)');
   const envFile = flags.env || path.join(PROJECT_ROOT, '.env.local');
   const env = parseEnvFile(envFile);
   const creds = env.FIREBASE_ADMIN_CREDENTIALS || process.env.FIREBASE_ADMIN_CREDENTIALS;
@@ -170,6 +215,7 @@ async function main() {
   const sorted = [...pairs.entries()].sort((x, y) => y[0].length - x[0].length || x[0].localeCompare(y[0]));
 
   mkdirSync(outDir, { recursive: true });
+  if (readdirSync(outDir).some((n) => n.endsWith('.json'))) die('--out already holds an export; use an empty directory');
   const manifest = { exportedFor: 'trader-game-replay-pack', sinceDay: SINCE_DAY, gameMode: GAME_MODE, battles: [], idCounts: { battles: battles.length, accounts: a, agents: g } };
   let replaced = 0;
   bundles.forEach((bundle, i) => {
@@ -188,14 +234,14 @@ async function main() {
   });
   writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
-  // ---- the leak scan: no original id in any output file.
-  let leaks = 0;
-  for (const f of readdirSync(outDir).filter((n) => n.endsWith('.json'))) {
-    const text = readFileSync(path.join(outDir, f), 'utf8');
-    for (const [from] of sorted) if (text.includes(from)) leaks++;
+  // ---- the leak scan: no mapped id, and no token shaped like an account id, in any output file.
+  const written = readdirSync(outDir).filter((n) => n.endsWith('.json'));
+  const { leaks, shaped } = leakScan(written.map((f) => readFileSync(path.join(outDir, f), 'utf8')), sorted.map(([from]) => from));
+  console.log(`wrote ${bundles.length} battle files + manifest; ids replaced: ${replaced}; distinct ids mapped: ${sorted.length}; leak-scan hits: ${leaks}; uid-shaped tokens: ${shaped}`);
+  if (leaks > 0 || shaped > 0) {
+    for (const f of written) unlinkSync(path.join(outDir, f));
+    die('an id survived in an output file — the written files were deleted');
   }
-  console.log(`wrote ${bundles.length} battle files + manifest; ids replaced: ${replaced}; distinct ids mapped: ${sorted.length}; leak-scan hits: ${leaks}`);
-  if (leaks > 0) die('an original id survived in an output file — the export is not safe to use');
   const tally = (key) => manifest.battles.reduce((m, r) => { const k = key(r); m[k] = (m[k] || 0) + 1; return m; }, {});
   console.log('by status:', JSON.stringify(tally((r) => r.status)));
   console.log('completed by archetype|route:', JSON.stringify(tally((r) => (r.status === 'completed' ? `${r.archetype}|${r.route}` : 'not completed'))));
@@ -203,5 +249,6 @@ async function main() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  main().then(() => process.exit(0)).catch((err) => die(String(err?.message || err).slice(0, 400)));
+  // An error's own text could name a document path; print its class and code only (review X7).
+  main().then(() => process.exit(0)).catch((err) => die(`${err?.name || 'Error'}${err?.code != null ? ` (code ${err.code})` : ''} — message withheld`));
 }

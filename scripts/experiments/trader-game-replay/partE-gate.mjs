@@ -31,6 +31,37 @@ export function narrowGateOpens(triggers) {
   return [...set].some((t) => !WEAK.has(t));
 }
 
+export const NEWS_WINDOW_MS = 120 * 60 * 1000; // fetchRecentNews' window (agentTriggerGate.js)
+
+/**
+ * The narrower gate + the 30-minute schedule, one battle's checks in order, carrying forward what a dropped
+ * call would leave behind (review E1):
+ *   forced_open — the gate forces a call while the battle has no evaluation (agentTriggerGate.js:46–49), so it
+ *                 carries until the simulated battle has made a call (exact);
+ *   news        — a story is marked seen only after a call resolves (agent-evaluate.js ~2916), so a story that
+ *                 woke a dropped call can wake a later check while it is inside the 120-minute window, counted
+ *                 here from the dropped check (an upper bound: the story's age then is not stored).
+ * Scheduled checks: the narrower gate decides on today's triggers plus anything carried. Skipped checks: an
+ * event at X = 0.5 calls the model. Returns the checks that call the model.
+ */
+export function simulateCombined(checks, { carryForced = true, carryNews = true } = {}) {
+  let calls = 0;
+  let newsSince = null;
+  const called = [];
+  for (const c of checks) {
+    if (!c.eligible) continue;
+    const today = new Set(c.eval?.triggers || []);
+    const carried = new Set();
+    if (carryForced && calls === 0) carried.add('forced_open');
+    if (carryNews && newsSince !== null && Date.parse(c.at) - newsSince <= NEWS_WINDOW_MS) carried.add('news_catalyst');
+    const opens = c.scheduled
+      ? (c.modelRan ? narrowGateOpens([...today, ...carried]) : carried.size > 0)
+      : c.caught?.[0.5] === true;
+    if (opens) { calls++; called.push(c); newsSince = null; } else if (c.modelRan && today.has('news_catalyst') && newsSince === null) newsSince = Date.parse(c.at);
+  }
+  return called;
+}
+
 function main() {
   const flags = parseArgs(process.argv);
   const battles = [...bundles(flags.in)].filter((b) => b.ticks.length).map((b) => ({ label: b.label, archetype: b.row.archetype, ...analyzeBattle(b) }));
@@ -46,21 +77,27 @@ function main() {
   const today = checks.filter((c) => c.modelRan);
   const narrow = today.filter((c) => narrowGateOpens(c.eval?.triggers));
   const missedNarrow = swaps.filter((c) => !narrowGateOpens(c.eval?.triggers));
-  const combined = checks.filter((c) => (c.scheduled ? c.modelRan && narrowGateOpens(c.eval?.triggers) : c.eligible && c.caught?.[0.5]));
-  const missedCombined = swaps.filter((c) => !(c.scheduled ? narrowGateOpens(c.eval?.triggers) : c.caught?.[0.5]));
   const schedOnly = checks.filter((c) => (c.scheduled ? c.modelRan : c.eligible && c.caught?.[0.5]));
   const missedSched = swaps.filter((c) => !(c.scheduled || c.caught?.[0.5]));
+  const sim = (opts) => {
+    const called = new Set(battles.flatMap((b) => simulateCombined(b.checks, opts).map((c) => `${b.label}#${c.seq}`)));
+    return { calls: called.size, missed: swaps.filter((c) => !called.has(`${c.label}#${c.seq}`)).length };
+  };
   const rows = [
     { k: 'Today', calls: today.length, missed: 0 },
     { k: 'Narrower gate, every 15 minutes', calls: narrow.length, missed: missedNarrow.length },
     { k: '30-minute schedule, X = 0.5 (Part B, reading i)', calls: schedOnly.length, missed: missedSched.length },
-    { k: 'Narrower gate + 30-minute schedule, X = 0.5', calls: combined.length, missed: missedCombined.length },
+    { k: 'Narrower gate + schedule, no carry-forward', ...sim({ carryForced: false, carryNews: false }) },
+    { k: 'Narrower gate + schedule, forced_open carried (exact)', ...sim({ carryForced: true, carryNews: false }) },
+    { k: 'Narrower gate + schedule, forced_open and news carried (news: upper bound)', ...sim({ carryForced: true, carryNews: true }) },
   ];
   console.log('\n### Model calls per battle-day and model swaps missed\n');
   console.log(mdTable(rows, [['Gate', (r) => r.k], ['Model calls', (r) => r.calls], ['Per battle-day', (r) => r.calls / days], ['Executed model swaps missed (of 15)', (r) => r.missed]]));
   console.log(`\nToday's model calls whose only triggers are nr7/bench: ${today.length - narrow.length} (${JSON.stringify(tally(today.filter((c) => !narrowGateOpens(c.eval?.triggers)), (c) => triggersOf(c).join('+')))}).`);
-  const blocked = today.filter((c) => !narrowGateOpens(c.eval?.triggers) && c.tick.decision?.original === 'SWAP');
-  console.log(`Of those, the model proposed a swap at ${blocked.length} (the code blocked ${blocked.filter((c) => c.tick.decision?.final !== 'SWAP').length} of them).`);
+  // Answered calls only (review E2): a failed call's stored original decision is not a proposal the model completed.
+  const weakOnly = today.filter((c) => !narrowGateOpens(c.eval?.triggers));
+  const proposed = weakOnly.filter((c) => c.tick.model?.outcome === 'ok' && c.tick.decision?.original === 'SWAP');
+  console.log(`Of those, ${weakOnly.filter((c) => c.tick.model?.outcome === 'ok').length} were answered; the model proposed a swap at ${proposed.length} (the code blocked ${proposed.filter((c) => c.tick.decision?.final !== 'SWAP').length}); ${weakOnly.filter((c) => c.tick.model?.outcome !== 'ok').length} calls failed.`);
   writeResult(flags.in, 'partE.json', { rows, swaps: swaps.map((c) => ({ label: c.label, seq: c.seq, triggers: triggersOf(c), scheduled: c.scheduled, caught: c.caught || null })) });
 }
 
