@@ -130,6 +130,14 @@ export const SALE_ORIGINS = Object.freeze([DECISION_ORIGIN_LINE_EXIT, DECISION_O
  */
 export const PRACTICE_FIELD_MARK_MAX_AGE_MS = 30 * 60 * 1000;
 
+/**
+ * THE SMALLEST CALL T1b WILL MAKE, as the most it can cost (USD) — the spend module's `exhausted` is DERIVED from it
+ * (spend.js; Astra T2B-04, the founder's Q2 ruling): a month whose remaining room under the $3 bound is below this figure
+ * can fit no call, and reads exhausted. A PLACEHOLDER: T1b sets it from its first caller's model and token ceilings
+ * (spend.js maxCallChargeUsd), in the same change that adds the caller.
+ */
+export const PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD = 0.05;
+
 /** Why a holding is waiting to be sold before the idea's endpoint (Amendment E1, E11). */
 export const EXIT_REASON = Object.freeze({ LINE: 'line', DELISTING: 'delisting' });
 
