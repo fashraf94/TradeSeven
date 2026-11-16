@@ -493,6 +493,19 @@ describe('C2 — the rule bites (a planted excerpt import from every root fails;
           expect(around[0].split(/[\\/]/).pop()).toBe('momentExcerpt.js');
         }
       });
+      it(`${name}: A LOAD BY A STRING KEY OR A SCHEME FAILS CLOSED — the module loader by \`process['getBuiltinModule']\`/\`['createRequire']\`, and a \`data:\` module importing the excerpt by its \`file:\` URL, appended to ${root}, each throw (the refuter's CXV-6, CXV-7)`, () => {
+        let spec = path.relative(path.dirname(abs(root)), abs(EXCERPT_MODULE)).split(path.sep).join('/');
+        if (!spec.startsWith('.')) spec = `./${spec}`;
+        for (const [planted, code] of [
+          [`export const zzKey = process['getBuiltinModule']('node:module')['createRequire'](import.meta.url)('${spec}');`, 'OPAQUE_IMPORT'],
+          [`export * as zzData from 'data:text/javascript,export * from "${pathToFileURL(abs(EXCERPT_MODULE)).href}"';`, 'UNRESOLVED_IMPORT'],
+        ]) {
+          const read = (f) => (path.resolve(f) === path.resolve(abs(root)) ? `${readSource(f)}\n${planted}\n` : readSource(f));
+          let err = null;
+          try { oneDoorDefectsOf(name, roots.map(abs), { read }); } catch (e) { err = e; }
+          expect(err?.code, planted).toBe(code);
+        }
+      });
     }
   }
 
@@ -616,7 +629,7 @@ describe('C2 — the rule bites (a planted excerpt import from every root fails;
     expect(err?.code).toBe('BABEL_PARSER_SYNTAX_ERROR');
     expect(err.message).toMatch(/root\.js does not parse/);
   });
-  it('EVERY LOCAL FORM RESOLVES OR FAILS (CX2-1): a query, a fragment, percent-encoding, a root-absolute path and a `file:` URL each reach the excerpt; a local specifier naming no module throws; an asset is no edge', () => {
+  it('EVERY LOCAL FORM RESOLVES OR FAILS (CX2-1; CXV-7): a query, a fragment, percent-encoding, a root-absolute path and a `file:` URL each reach the excerpt; a local specifier naming no module throws, and so does a `data:`, `https:`, `virtual:` or protocol-relative one; an asset or a builtin is no edge', () => {
     for (const spec of ['./fr/excerpt.js?v=1', './fr/excerpt.js#f', './fr/%65xcerpt.js', '/fr/excerpt.js']) expect(routesFrom(`import '${spec}';\n`), spec).toHaveLength(1);
     withTree({ 'fr/excerpt.js': EXCERPT_SRC, 'root.js': '' }, (t) => {
       const url = pathToFileURL(t.at('fr/excerpt.js')).href;
@@ -627,8 +640,19 @@ describe('C2 — the rule bites (a planted excerpt import from every root fails;
     try { routesFrom("import './fr/missing.js';\n"); } catch (e) { err = e; }
     expect(err?.code).toBe('UNRESOLVED_IMPORT');
     expect(routesFrom("import './theme.css';\nimport data from './data.json';\nexport const d = data;\n")).toEqual([]);
+    // the refuter's CXV-7: a specifier with any other scheme, or a protocol-relative one, throws; a builtin is no edge
+    withTree({ 'fr/excerpt.js': EXCERPT_SRC, 'root.js': '' }, (t) => {
+      const url = pathToFileURL(t.at('fr/excerpt.js')).href;
+      for (const spec of [`data:text/javascript,export * from "${url}"`, 'https://example.com/x.js', 'virtual:film-room', '//cdn.example.com/x.js']) {
+        writeFileSync(t.at('root.js'), `export * as zz from '${spec}';\n`);
+        let thrown = null;
+        try { excerptRoutesAround('evaluator', [t.at('root.js')], { exceptions: t.exceptions, repo: t.root }); } catch (e) { thrown = e; }
+        expect(thrown?.code, spec).toBe('UNRESOLVED_IMPORT');
+      }
+    });
+    expect(routesFrom("import { readFileSync } from 'node:fs';\nexport const r = readFileSync;\n")).toEqual([]);
   });
-  it('WHAT NO STATIC READING FOLLOWS FAILS CLOSED (CX2-2; CXV-4): a `require` of a string is an edge; a computed `import()` or `require()`, an `import.meta.glob`, and the module loader however reached — `createRequire` plain, aliased or as a member, `getBuiltinModule`, an import of `module` — throw', () => {
+  it('WHAT NO STATIC READING FOLLOWS FAILS CLOSED (CX2-2; CXV-4, CXV-6): a `require` of a string is an edge; a computed `import()` or `require()`, an `import.meta.glob`, and the module loader by name or by a static key — `createRequire` plain, aliased, as a member or by a string key, `getBuiltinModule`, an import of `module` — throw', () => {
     expect(routesFrom("const m = require('./fr/excerpt.js');\nexport const r = m;\n")).toHaveLength(1);
     for (const src of [
       "const w = './fr/excerpt.js';\nexport const later = () => import(w);\n",
@@ -640,6 +664,10 @@ describe('C2 — the rule bites (a planted excerpt import from every root fails;
       "import mod from 'node:module';\nexport const m = mod.createRequire(import.meta.url)('./fr/excerpt.js');\n",
       "export const m = process.getBuiltinModule('node:module').createRequire(import.meta.url)('./fr/excerpt.js');\n",
       "export const m = async () => (await import('module')).default.createRequire(import.meta.url)('./fr/excerpt.js');\n",
+      "const { getBuiltinModule: g } = process;\nexport const m = g('node:module').createRequire(import.meta.url)('./fr/excerpt.js');\n",
+      // the refuter's CXV-6: the module loader by a string key
+      "export const m = process['getBuiltinModule']('node:module')['createRequire'](import.meta.url)('./fr/excerpt.js');\n",
+      "export const m = (mod) => mod['createRequire'](import.meta.url)('./fr/excerpt.js');\n",
     ]) {
       let err = null;
       try { routesFrom(src); } catch (e) { err = e; }

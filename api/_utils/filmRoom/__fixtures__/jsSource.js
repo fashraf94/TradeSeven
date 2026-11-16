@@ -18,10 +18,12 @@
 //                       a static string (the fix round's review, CX2-2: Node loads ES modules through require too).
 //                       Words in a string, a template or a comment that only look like an import are not imports.
 //   opaqueImportsOf     what a module loads that no static reading can follow — an `import()` or `require()` of a
-//                       computed value, `createRequire` or `getBuiltinModule` however reached (aliased, a member, an
-//                       import of `module`/`node:module` — the refuter's CXV-4), any `import.meta.glob` — each named. The census and
-//                       the write gate FAIL on a walked module that holds one (CX2-2): an edge they cannot see is never
-//                       passed as no edge.
+//                       computed value, `createRequire` or `getBuiltinModule` by name or by a static member key
+//                       (aliased, a member, `x['createRequire']`, an import of `module`/`node:module` — the refuter's
+//                       CXV-4 and CXV-6), any `import.meta.glob` — each named. The census and the write gate FAIL on a
+//                       walked module that holds one (CX2-2): an edge they cannot see is never passed as no edge.
+//                       Deliberately evasive code (a key built at run time, `eval`, `new Function`, `vm`, a worker) is
+//                       outside a static reading: the build report's ruling Q-11.
 //   stripComments       the source with every comment the parser found removed — a line comment to its end, a block
 //                       comment to its newlines and one space (so line numbers hold) — strings, templates, regex
 //                       literals and JSX untouched. The census's `plays` scan and the write gate read it.
@@ -33,6 +35,9 @@
 //                       (CX2-1: Node and Vite load `./x.js?v=1`, `./x.js#f`, `./%78.js`): they are read through. A local
 //                       specifier that names NO module throws — fail closed — unless it names an asset the census does
 //                       not walk (a stylesheet, JSON, an image, a font, a media file). A package resolves to nothing.
+//                       A specifier with any other scheme (`data:`, `http(s):`, `virtual:` …) or a protocol-relative
+//                       `//host/…` throws too (the refuter's CXV-7: Node loads a `data:` module that imports the excerpt
+//                       by a `file:` URL inside it); `node:` names a builtin and resolves to nothing.
 // THE PARSE CACHE: each distinct source is parsed once per process (keyed by a SHA-1 of its UTF-16 code units, so no two
 // strings share an entry), so the census's walks and its whole-tree scans read the tree in about one parse of it.
 
@@ -95,12 +100,16 @@ function readProgram(program) {
         // name `set` without calling it there
         const name = memberName(n);
         if (name) members.push({ name, line: n.loc?.start.line ?? null, col: n.loc?.start.column ?? null });
+        // the refuter's CXV-6: the module loader named by a static member key — `x['createRequire']`,
+        // `process['getBuiltinModule']` — as well as by an identifier (below)
+        if (name === 'createRequire' || name === 'getBuiltinModule') opaque.push(name);
         break;
       }
       case 'Identifier':
         if (n.name === 'FieldValue') calls.push({ name: 'FieldValue', line: n.loc?.start.line ?? null, col: n.loc?.start.column ?? null });
-        // the refuter's CXV-4: the module loader however it is reached — an aliased or member `createRequire`,
-        // `process.getBuiltinModule` — is an edge no static reading follows
+        // the refuter's CXV-4: the module loader reached by its name — an aliased or member `createRequire`,
+        // `process.getBuiltinModule` — is an edge no static reading follows. A name built at run time (a concatenated
+        // key) is no static reading's: the build report's ruling Q-11
         if (n.name === 'createRequire' || n.name === 'getBuiltinModule') opaque.push(n.name);
         break;
       default: break;
@@ -178,12 +187,19 @@ const moduleAt = (base) => {
 };
 /**
  * A local specifier resolved to a module file — relative, the `@/` alias (`@` → `<repo>/src`), root-absolute (under the
- * repo first, as Vite reads it, then the file system), or `file:`; null for a package, for an asset, or for the alias
- * when no repo is given. A query, a fragment and percent-encoding are read through (CX2-1). A local specifier that names
- * no module and no asset THROWS: the census never passes an edge it cannot follow.
+ * repo first, as Vite reads it, then the file system), or `file:`; null for a package, a `node:` builtin, an asset, or
+ * the alias when no repo is given. A query, a fragment and percent-encoding are read through (CX2-1). A local specifier
+ * that names no module and no asset THROWS, and so does any other scheme or a protocol-relative URL (CXV-7): the census
+ * never passes an edge it cannot follow.
  */
 export function resolveImport(fromFile, spec, repo) {
-  if (typeof spec !== 'string' || !isLocal(spec)) return null;
+  if (typeof spec !== 'string') return null;
+  // the refuter's CXV-7: a specifier with a scheme the census cannot follow, or a protocol-relative one, fails closed
+  const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(spec)?.[1]?.toLowerCase() ?? null;
+  if ((scheme !== null && scheme !== 'node' && scheme !== 'file') || spec.startsWith('//')) {
+    throw Object.assign(new Error(`jsSource: ${spec.slice(0, 80)} (from ${fromFile}) loads by a URL the census cannot follow — it never passes an edge it cannot follow`), { code: 'UNRESOLVED_IMPORT' });
+  }
+  if (!isLocal(spec)) return null;
   if (spec.startsWith('@/') && !repo) return null;
   const bare = spec.replace(/[?#].*$/s, '');
   let base;

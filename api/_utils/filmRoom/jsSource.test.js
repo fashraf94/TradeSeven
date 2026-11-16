@@ -94,6 +94,15 @@ describe('importSpecifiersOf and resolveImport', () => {
     expect(opaqueImportsOf("import { createRequire as zz } from 'node:module';\nexport const r = zz;\n").sort()).toEqual(['createRequire', 'the module loader (node:module)']);
     expect(opaqueImportsOf('export const r = process.getBuiltinModule;\n')).toEqual(['getBuiltinModule']);
     expect(opaqueImportsOf("export const l = () => import('module');\n")).toEqual(['the module loader (module)']);
+    // destructured from the module or from process: read by the name alone (no member names it)
+    expect(opaqueImportsOf('export const r = (m) => { const { createRequire } = m; return createRequire; };\n')).toEqual(['createRequire']);
+    expect(opaqueImportsOf('const { getBuiltinModule: g } = process;\nexport const r = g;\n')).toEqual(['getBuiltinModule']);
+    // the refuter's CXV-6: by a string key
+    expect(opaqueImportsOf("export const r = process['getBuiltinModule'];\n")).toEqual(['getBuiltinModule']);
+    expect(opaqueImportsOf("export const r = (m) => m['createRequire'];\n")).toEqual(['createRequire']);
+    expect(opaqueImportsOf('export const r = (m) => m[`createRequire`];\n')).toEqual(['createRequire']);
+    // and no false opaque: other members, and the words in a string
+    expect(opaqueImportsOf("export const r = (m) => [m['require'], m.create, 'createRequire'];\n")).toEqual([]);
   });
   it('a module that does not parse throws, naming the module, with the parser\'s code (CX2-5) — a census never passes a file it could not read', () => {
     for (const read of [importSpecifiersOf, stripComments, opaqueImportsOf, callNamesOf]) {
@@ -119,7 +128,7 @@ describe('importSpecifiersOf and resolveImport', () => {
     expect(PARSE_OPTIONS.sourceType).toBe('module');
     expect(PARSE_OPTIONS.plugins).toEqual(['jsx']);
   });
-  it('a query, a fragment and percent-encoding are read through; a root-absolute path and a `file:` URL resolve; a local specifier naming no module THROWS; an asset or a URL is no edge (CX2-1)', () => {
+  it('a query, a fragment and percent-encoding are read through; a root-absolute path and a `file:` URL resolve; a local specifier naming no module THROWS, and so does any other scheme or a protocol-relative URL (CXV-7); an asset or a builtin is no edge (CX2-1)', () => {
     const from = path.join(REPO, 'src/utils/x.js');
     const target = path.join(REPO, 'src/utils/filmRoomSubject.js');
     for (const spec of ['./filmRoomSubject.js?v=1', './filmRoomSubject.js#f', './film%52oomSubject.js', './filmRoomSubject?raw', '/src/utils/filmRoomSubject.js', pathToFileURL(target).href]) {
@@ -130,7 +139,13 @@ describe('importSpecifiersOf and resolveImport', () => {
       try { resolveImport(from, spec, REPO); } catch (e) { err = e; }
       expect(err?.code, spec).toBe('UNRESOLVED_IMPORT');
     }
-    for (const spec of ['./theme.css', './data.json?url', './logo.svg?react', '//cdn.example.com/x.js', 'https://example.com/x.js']) expect(resolveImport(from, spec, REPO), spec).toBeNull();
+    for (const spec of ['./theme.css', './data.json?url', './logo.svg?react', 'node:fs', 'NODE:path']) expect(resolveImport(from, spec, REPO), spec).toBeNull();
+    // the refuter's CXV-7: any other scheme, or a protocol-relative URL, is an edge the census cannot follow — it throws
+    for (const spec of [`data:text/javascript,export * from "${pathToFileURL(target).href}"`, 'data:text/javascript;base64,ZXhwb3J0IHt9', 'https://example.com/x.js', 'HTTP://example.com/x.js', 'virtual:film-room', 'blob:x', '//cdn.example.com/x.js']) {
+      let err = null;
+      try { resolveImport(from, spec, REPO); } catch (e) { err = e; }
+      expect(err?.code, spec).toBe('UNRESOLVED_IMPORT');
+    }
   });
   it('the `@/` alias resolves under <repo>/src, as vite.config.js maps it; a package resolves to nothing', () => {
     expect(resolveImport(path.join(REPO, 'x.js'), '@/utils/filmRoomSubject.js', REPO)).toBe(path.join(REPO, 'src/utils/filmRoomSubject.js'));

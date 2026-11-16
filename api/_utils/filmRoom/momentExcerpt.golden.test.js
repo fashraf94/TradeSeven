@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): see momentExcerpt.test.js — this import is never mocked either.
 import { excerptOf, excerptOfCard, MOMENT_EXCERPT_VERSION, EXCERPT_LABELS, EXCERPT_BOUNDS, QUOTE_SPEAKERS } from './momentExcerpt.js';
 import {
@@ -849,7 +849,8 @@ const closureOf = (root, read = (f) => readFileSync(f, 'utf8')) => {
  * however the call is split across lines or comments, a computed string key included (`ref['set'](…)`) — and every
  * `FieldValue`. The per-line pattern above misses `ref.\nset(`, `ref['set'](` and `ref./**\/set(`; this reading does not.
  */
-const WRITE_CALLS = new Set(['set', 'update', 'delete', 'add', 'create', 'batch', 'runTransaction', 'bulkWriter', 'writeBatch', 'recursiveDelete', 'FieldValue']);
+// the refuter's CXV-10: the closure holds src/ modules too, so the client SDK's write functions are write names as well
+const WRITE_CALLS = new Set(['set', 'update', 'delete', 'add', 'create', 'batch', 'runTransaction', 'bulkWriter', 'writeBatch', 'recursiveDelete', 'FieldValue', 'setDoc', 'updateDoc', 'addDoc', 'deleteDoc']);
 const NON_FIRESTORE_CALLS = Object.freeze([
   { file: 'api/_utils/filmTape/tapeSources.js', name: 'add', count: 1, why: 'the same Set of evaluation ids as NON_FIRESTORE_HITS' },
   { file: 'src/utils/filmRoomMoments.js', name: 'set', count: 1, why: 'the same Map grouping tag items as NON_FIRESTORE_HITS' },
@@ -931,7 +932,7 @@ describe('THE WRITE GATE — no write call in momentExcerpt.js or anything it im
       expect(callHitsOf(new Map([[path.join(REPO, f), readFileSync(path.join(REPO, f), 'utf8')]])), f).toEqual([]);
     }
   });
-  it('THE SECOND READING BITES where the line pattern cannot: a call split across lines, a computed string key, a comment between the dot and the name, a FieldValue — each fails it', () => {
+  it('THE SECOND READING BITES where the line pattern cannot: a call split across lines, a computed string key, a comment between the dot and the name, a FieldValue, a method named but not called there, a client SDK write (CXV-5, CXV-10) — each fails it', () => {
     const plant = (extra) => (f) => { const src = readFileSync(f, 'utf8'); return path.resolve(f) === path.resolve(EXCERPT_FILE) ? `${src}\n${extra}\n` : src; };
     for (const extra of [
       'export const w = (ref) => ref.\n  set({ a: 1 });',
@@ -945,19 +946,30 @@ describe('THE WRITE GATE — no write call in momentExcerpt.js or anything it im
       'export const w = (ref) => Reflect.apply(ref.set, ref, [{ a: 1 }]);',
       'export const w = (ref) => ref.set.bind(ref)({ a: 1 });',
       'export const w = (ref, k) => ref[k]({ a: 1 });',
+      // the refuter's CXV-10: the client SDK's writes, by the function the SDK exports
+      "import { setDoc } from 'firebase/firestore';\nexport const w = (ref) => setDoc(ref, { a: 1 });",
+      "import { updateDoc } from 'firebase/firestore';\nexport const w = (ref) => updateDoc(ref, { a: 1 });",
+      "import { addDoc } from 'firebase/firestore';\nexport const w = (col) => addDoc(col, { a: 1 });",
+      "import { deleteDoc } from 'firebase/firestore';\nexport const w = (ref) => deleteDoc(ref);",
     ]) expect(unexplainedCalls(callHitsOf(closureOf(EXCERPT_FILE, plant(extra)))).length, extra).toBeGreaterThan(0);
     // the line pattern alone misses the first three (why the second reading exists)
     for (const extra of ['export const w = (ref) => ref.\n  set({ a: 1 });', "export const w = (ref) => ref['set']({ a: 1 });", 'export const w = (ref) => ref./**/set({ a: 1 });']) {
       expect(unexplained(writeHitsOf(closureOf(EXCERPT_FILE, plant(extra)))), extra).toEqual([]);
     }
   });
-  it('THE GATE FAILS CLOSED on an import it cannot follow (CX2-1, CX2-2): `./cardStore.js?v=1` planted in the day check brings the ledger\'s writes in; an unresolvable or computed import throws', () => {
+  it('THE GATE FAILS CLOSED on an import it cannot follow (CX2-1, CX2-2; CXV-6, CXV-7): `./cardStore.js?v=1` planted in the day check brings the ledger\'s writes in; an unresolvable or computed import, the module loader by a string key, and a `data:` module throw', () => {
     const plant = (target, extra) => (f) => { const src = readFileSync(f, 'utf8'); return path.resolve(f) === path.resolve(path.join(REPO, target)) ? `${src}\n${extra}\n` : src; };
     const queried = closureOf(EXCERPT_FILE, plant('api/_utils/filmRoom/sourceDay.js', "import './cardStore.js?v=1';"));
     expect([...queried.keys()].map(rel)).toContain('api/_utils/filmRoom/cardStore.js');
     expect(unexplained(writeHitsOf(queried)).length).toBeGreaterThan(0);
     expect(unexplainedCalls(callHitsOf(queried)).length).toBeGreaterThan(0);
-    for (const [extra, code] of [["import './noSuchModule.js';", 'UNRESOLVED_IMPORT'], ["const w = './cardStore.js';\nexport const later = () => import(w);", 'OPAQUE_IMPORT']]) {
+    for (const [extra, code] of [
+      ["import './noSuchModule.js';", 'UNRESOLVED_IMPORT'],
+      ["const w = './cardStore.js';\nexport const later = () => import(w);", 'OPAQUE_IMPORT'],
+      // the refuter's CXV-6 and CXV-7: the module loader by a string key; a `data:` module importing the ledger's store
+      ["export const m = process['getBuiltinModule']('node:module')['createRequire'](import.meta.url)('./cardStore.js');", 'OPAQUE_IMPORT'],
+      [`export * as zz from 'data:text/javascript,export * from "${pathToFileURL(path.join(HERE, 'cardStore.js')).href}"';`, 'UNRESOLVED_IMPORT'],
+    ]) {
       let err = null;
       try { closureOf(EXCERPT_FILE, plant('api/_utils/filmRoom/sourceDay.js', extra)); } catch (e) { err = e; }
       expect(err?.code, extra).toBe(code);
