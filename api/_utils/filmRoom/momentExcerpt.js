@@ -51,7 +51,7 @@ import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 import { SITUATION_QUESTIONS } from '../../../src/data/situationQuestions.js';
 import { routeOf } from '../../../src/data/cardStages.js';
 import { isEtDate } from '../../../src/utils/tapeSchedule.js';
-import { sectorOf, boundedText, IDEA_STATEMENT_MAX } from '../../../src/utils/filmRoomSubject.js';
+import { sectorOf, boundedText, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom } from '../../../src/utils/filmRoomSubject.js';
 
 /** CC-6: the excerpt's shape version — today's BaggerBomb tape. */
 export const MOMENT_EXCERPT_VERSION = 1;
@@ -142,35 +142,23 @@ async function ownedDayOf(db, { uid, attributionAgentId, battleId, etDate }) {
   return target === attributionAgentId ? { tape } : null;
 }
 
-/** The day's one carried idea: the distinct `calls[].hypothesisRef` the day's calls name — exactly one, or none (two is ambiguous: none is guessed). */
-function carriedIdeaOf(tape) {
-  const calls = Array.isArray(tape.calls) ? tape.calls : [];
-  const found = [];
-  calls.forEach((c, i) => {
-    const r = isObj(c) && isObj(c.hypothesisRef) ? c.hypothesisRef : null;
-    if (!r || !str(r.watchlistId) || !Number.isInteger(r.hypothesisVersion) || r.hypothesisVersion < 1) return;
-    if (!found.some((f) => f.watchlistId === r.watchlistId && f.hypothesisVersion === r.hypothesisVersion)) found.push({ watchlistId: r.watchlistId, hypothesisVersion: r.hypothesisVersion, i });
-  });
-  return found.length === 1 ? found[0] : null;
-}
-
 /**
- * The idea (spec §6): the label, the version (the tape's own class for `calls[].hypothesisRef.hypothesisVersion`), and
- * the version's statement as the player's words at the version's own `createdAt` — read once, only when the version is
- * the caller's (`userId`) and the one the ref names. A version that is another owner's: no idea at all. One that cannot
- * be read, or a statement over its bound: the idea without its statement.
+ * The idea (spec §6): the label, the version and the version's statement as the player's words at the version's own
+ * `createdAt` — the version document read once, then read by the ONE reading the screen's subject line shares
+ * (filmRoomSubject.js ideaFrom, C2 item 5): the day's one carried ref (two distinct refs: none), the tape's own class for
+ * the version's number, the document only when it is the caller's and the ref's (another owner's: no idea at all; one
+ * that cannot be read, or a statement over its bound: the idea without its statement).
  */
 async function ideaOf(db, uid, tape) {
-  const ref = carriedIdeaOf(tape);
+  const ref = carriedIdeaRefOf(tape);
   if (!ref || !idOk(ref.watchlistId)) return null;
   const P = EXCERPT_PATHS;
   const doc = await readDoc(db.collection(P.ideaLists).doc(ref.watchlistId).collection(P.ideaVersions).doc(P.ideaVersionDocId(ref.hypothesisVersion)));
-  if (isObj(doc) && (doc.userId !== uid || doc.watchlistId !== ref.watchlistId || doc.version !== ref.hypothesisVersion)) return null;
+  const found = ideaFrom(tape, doc, uid);
+  if (!found) return null;
   const idea = { label: EXCERPT_LABELS.idea };
-  const version = classed(ref.hypothesisVersion, tape.numberClasses, ['calls', ref.i, 'hypothesisRef', 'hypothesisVersion']);
-  if (version) idea.version = version;
-  const statement = isObj(doc) ? boundedText(doc.statement, EXCERPT_BOUNDS.statement) : null;
-  if (statement) idea.statement = quote(statement, 'player', instantOrNull(doc.createdAt));
+  if (found.version) idea.version = found.version;
+  if (found.statement) idea.statement = quote(found.statement, 'player', found.statementAt);
   return { idea, watchlistId: ref.watchlistId };
 }
 

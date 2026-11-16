@@ -6,8 +6,12 @@
 import { describe, it, expect } from 'vitest';
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): filmRoomSubject.js imports api/_utils/rankingConfig.js; the excerpt
 // (api/) imports this module — this import is the runtime guard that it stays Node-clean, never mocked.
-import { sectorOf, boundedText, codePointsOf, IDEA_STATEMENT_MAX } from './filmRoomSubject.js';
+import {
+  sectorOf, boundedText, codePointsOf, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom, ideaVersionPathOf, subjectLineOf, subjectOfExcerpt, subjectOfDay,
+  firstCodePoints, SUBJECT_STATEMENT_CODE_POINTS, SUBJECT_WORDS,
+} from './filmRoomSubject.js';
 import { TICKER_TO_SECTOR, STOCK_UNIVERSE } from '../../api/_utils/rankingConfig.js';
+import { TAPE_NUMBER_CLASSES } from '../constants/filmTape.js';
 
 describe('sectorOf — the directory\'s one word for a symbol, or none', () => {
   it('a mapped symbol: the directory\'s own value, its sector id (one word)', () => {
@@ -37,5 +41,77 @@ describe('boundedText — whole within its bound, or not carried; code points, a
   });
   it('no text: null', () => {
     for (const v of ['', null, undefined, 3, {}, ['a']]) expect(boundedText(v, 10), JSON.stringify(v)).toBeNull();
+  });
+});
+
+// ── C2 item 5 — the idea's one reading, and the subject line (CC-7) ─────────
+
+const OWNER = 'owner-s';
+const REF = { watchlistId: 'wl-s', hypothesisVersion: 4, equippedConfigHash: 'h' };
+const tapeWith = (calls, numberClasses = TAPE_NUMBER_CLASSES) => ({ ownerId: OWNER, numberClasses, calls });
+const call = (ref = REF) => ({ callId: `c-${Math.random()}`, hypothesisRef: ref });
+const version = (over = {}) => ({ version: 4, watchlistId: 'wl-s', userId: OWNER, createdAt: '2026-09-20T15:00:00.000Z', statement: 'Chips lead while the market drifts.', ...over });
+
+describe('the idea — one reading of the carried ref and its version (ideaFrom)', () => {
+  it('the day\'s one distinct ref, the index of its first call; none, or two distinct, is null (never a guess)', () => {
+    expect(carriedIdeaRefOf(tapeWith([{ callId: 'x', hypothesisRef: null }, call(), call()]))).toEqual({ watchlistId: 'wl-s', hypothesisVersion: 4, i: 1 });
+    expect(carriedIdeaRefOf(tapeWith([]))).toBeNull();
+    expect(carriedIdeaRefOf(tapeWith([call(), call({ watchlistId: 'wl-s', hypothesisVersion: 5 })]))).toBeNull();
+    expect(carriedIdeaRefOf(tapeWith([call({ watchlistId: 'wl-s', hypothesisVersion: 0 })]))).toBeNull();
+    expect(carriedIdeaRefOf(null)).toBeNull();
+    expect(ideaVersionPathOf({ i: 2 })).toEqual(['calls', 2, 'hypothesisRef', 'hypothesisVersion']);
+  });
+  it('the owner\'s version: the version with the tape\'s own class, the statement and its time', () => {
+    expect(ideaFrom(tapeWith([call()]), version(), OWNER)).toEqual({ ref: { watchlistId: 'wl-s', hypothesisVersion: 4, i: 0 }, version: { value: 4, class: 'recorded' }, statement: 'Chips lead while the market drifts.', statementAt: '2026-09-20T15:00:00.000Z' });
+  });
+  it('unread or missing: the idea without its statement; over its bound: the same', () => {
+    expect(ideaFrom(tapeWith([call()]), null, OWNER)).toMatchObject({ version: { value: 4, class: 'recorded' }, statement: null, statementAt: null });
+    expect(ideaFrom(tapeWith([call()]), version({ statement: 'x'.repeat(IDEA_STATEMENT_MAX + 1) }), OWNER).statement).toBeNull();
+  });
+  it('another owner\'s, or another list\'s or version\'s document: no idea at all', () => {
+    for (const doc of [version({ userId: 'someone-else' }), version({ watchlistId: 'wl-other' }), version({ version: 3 })]) expect(ideaFrom(tapeWith([call()]), doc, OWNER), JSON.stringify(doc)).toBeNull();
+  });
+  it('a tape that declares no class for the version\'s number: the idea without its version', () => {
+    expect(ideaFrom(tapeWith([call()], {}), version(), OWNER).version).toBeNull();
+  });
+});
+
+describe('THE SUBJECT LINE — one projection (CC-7), each part only where held', () => {
+  const STATEMENT = 'Industrials and chips lead while the wider market drifts; rotate out of names that stop moving.';
+  it('every part: "{SYM} · {sector} · under your idea \'{first 60 code points}\' v{n}"', () => {
+    const line = subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: { statement: STATEMENT, version: 3 } });
+    expect(line.text).toBe(`ETN · XLI · under your idea '${[...STATEMENT].slice(0, 60).join('')}' v3`);
+    expect(line).toMatchObject({ symbol: 'ETN', sector: 'XLI', idea: { statement: [...STATEMENT].slice(0, 60).join(''), version: 3 } });
+    expect(SUBJECT_WORDS).toEqual({ separator: ' · ', underIdea: 'under your idea' });
+  });
+  it('each part absent in turn: no sector; no carried idea (the line ends after the sector); the idea without its statement; without its version; no symbol, no line', () => {
+    expect(subjectLineOf({ symbol: 'ZZQX', sector: null, idea: { statement: 'Hold.', version: 2 } }).text).toBe("ZZQX · under your idea 'Hold.' v2");
+    expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: null }).text).toBe('ETN · XLI');
+    expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI' }).text).toBe('ETN · XLI');
+    expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: { statement: null, version: 2 } }).text).toBe('ETN · XLI · under your idea v2');
+    expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: { statement: 'Hold.', version: null } }).text).toBe("ETN · XLI · under your idea 'Hold.'");
+    expect(subjectLineOf({ symbol: 'ETN', sector: null, idea: null }).text).toBe('ETN');
+    for (const symbol of [null, undefined, '', 7]) expect(subjectLineOf({ symbol, sector: 'XLI' }), String(symbol)).toBeNull();
+  });
+  it('THE 60-CODE-POINT CUT: 60 kept whole, the 61st gone; an astral character counts once and is never split', () => {
+    expect(SUBJECT_STATEMENT_CODE_POINTS).toBe(60);
+    const ASTRAL = '\u{1F600}';
+    const sixty = `${'a'.repeat(59)}${ASTRAL}`;
+    expect(subjectLineOf({ symbol: 'A', idea: { statement: sixty, version: 1 } }).idea.statement).toBe(sixty);
+    expect(subjectLineOf({ symbol: 'A', idea: { statement: `${sixty}b`, version: 1 } }).idea.statement).toBe(sixty);
+    expect(subjectLineOf({ symbol: 'A', idea: { statement: `${'a'.repeat(60)}${ASTRAL}`, version: 1 } }).idea.statement).toBe('a'.repeat(60));
+    expect(firstCodePoints(`${ASTRAL}${ASTRAL}`, 1)).toBe(ASTRAL);
+    expect(codePointsOf(subjectLineOf({ symbol: 'A', idea: { statement: 'x'.repeat(200), version: 1 } }).idea.statement)).toBe(60);
+  });
+  it('the screen\'s side (subjectOfDay) and the excerpt\'s side (subjectOfExcerpt) say the same line from the same facts; the sector from the directory alone (the mutant: a sector guessed)', () => {
+    const tape = tapeWith([call()]);
+    const day = subjectOfDay(tape, 'ETN', version(), OWNER);
+    const excerpt = { symbol: { value: 'ETN', class: 'recorded' }, sector: { value: 'XLI', class: 'recorded' }, idea: { label: 'i1', version: { value: 4, class: 'recorded' }, statement: { text: 'Chips lead while the market drifts.', by: 'player', at: null, class: 'quoted' } } };
+    expect(day.line).toEqual(subjectOfExcerpt(excerpt));
+    expect(subjectOfDay(tape, 'ZZQX', version(), OWNER).line.sector).toBeNull();
+    expect(subjectOfDay(tapeWith([]), 'ETN', null, OWNER).line.text).toBe('ETN · XLI');
+    expect(subjectOfDay(tape, 'ETN', version({ userId: 'someone-else' }), OWNER).line.text).toBe('ETN · XLI');
+    expect(subjectOfExcerpt({ symbol: { value: 'ETN' } }).text).toBe('ETN');
+    expect(subjectOfExcerpt(null)).toBeNull();
   });
 });

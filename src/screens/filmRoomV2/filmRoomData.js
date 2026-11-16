@@ -12,6 +12,12 @@
 //     getDoc of that battle's document, which the owner may read, to open its
 //     Film Room day; a read that fails says so and opens nothing.
 //
+//   * C2 item 5 (Build C Amendment C CC-7), UNDER CARDS MODE ONLY: ONE getDoc
+//     of the day's carried idea's version (`watchlists/{id}/hypothesisVersions/
+//     v{n}`, the ref the tape's calls name) for the subject line on the form and
+//     the receipt — once per version for the screen's life; the owner reads it
+//     by the parent list's rule. With cards off nothing asks for it.
+//
 // A get of a tape that does not exist is DENIED by the rules (resource is
 // null), exactly like a tape the caller does not own: both read as "no tape".
 // Any other failure is an error the screen says as such — never "no tape".
@@ -65,7 +71,46 @@ export const firestoreReaders = Object.freeze({
       return { status: 'error', battle: null };
     }
   },
+  // C2 item 5 (CC-7): the carried idea's version, read once under cards mode — a denied or missing read is no statement
+  async readIdeaVersion(watchlistId, version) {
+    try {
+      const { doc, getDoc, db } = await firestore();
+      const snap = await getDoc(doc(db, 'watchlists', watchlistId, 'hypothesisVersions', `v${version}`));
+      return snap && snap.exists() ? { status: 'ready', doc: snap.data() } : { status: 'missing', doc: null };
+    } catch (err) {
+      return NO_TAPE_CODES.has(err?.code) ? { status: 'missing', doc: null } : { status: 'error', doc: null };
+    }
+  },
 });
+
+/**
+ * C2 item 5 (CC-7) — the day's carried idea's version document, read ONCE per version for the hook's life, and only
+ * while `ref` names one (the screen hands a ref only under cards mode, for a written day). No ref, or readers without
+ * the read: idle, nothing asked.
+ *
+ * @param {{ watchlistId: string, hypothesisVersion: number }|null} ref
+ * @returns {{ status: 'idle'|'loading'|'ready'|'missing'|'error', doc: object|null }}
+ */
+export function useIdeaVersion(ref, readers = firestoreReaders) {
+  const cache = useRef(new Map());
+  const can = Boolean(ref) && typeof readers?.readIdeaVersion === 'function';
+  const key = can ? `${ref.watchlistId}|${ref.hypothesisVersion}` : null;
+  const [, bump] = useState(0);
+  const alive = useAlive();
+  useEffect(() => {
+    if (!key || (cache.current.has(key) && cache.current.get(key).status !== 'error')) return;
+    cache.current.set(key, { status: 'loading', doc: null });
+    const [watchlistId, version] = [ref.watchlistId, ref.hypothesisVersion];
+    Promise.resolve(readers.readIdeaVersion(watchlistId, version))
+      .catch(() => ({ status: 'error', doc: null }))
+      .then((r) => {
+        cache.current.set(key, r && r.status ? r : { status: 'error', doc: null });
+        if (alive.current) bump((n) => n + 1);
+      });
+  }, [key, readers, alive]);   // eslint-disable-line react-hooks/exhaustive-deps
+  if (!key) return { status: 'idle', doc: null };
+  return cache.current.get(key) || { status: 'loading', doc: null };
+}
 
 /** Is the component still mounted? (A read that lands after unmount sets nothing.) */
 function useAlive() {
