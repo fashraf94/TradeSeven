@@ -84,12 +84,17 @@ export function promptQuoteText(v, max, knownIds = []) {
 /**
  * CE-1 — THE IDS A SUBJECT KNOWS, one rule for both sides (the excerpt's quotations, the screen's statement): the owner,
  * the battle, the battle's own agent (a clone's battle: the clone), the attribution agent (its parent); and for a card
- * the entry, the agent it is filed under, its op id, and its nomination's book and id; and the idea's own list when
+ * the entry, the agent it is filed under, its op id, its nomination's book, id and idea, and the ids of the idea it
+ * became, its result and its Forge offer (CX1-7); and the idea's own list when
  * the caller holds it (ideaFrom adds it for the statement either way). Strings only.
  */
 export function subjectKnownIds({ ownerId = null, battleId = null, battleAgentId = null, attributionAgentId = null, watchlistId = null, card = null } = {}) {
   const c = isObj(card) ? card : null;
-  return [ownerId, battleId, battleAgentId, attributionAgentId, watchlistId, ...(c ? [c.entryId, c.agentId, c.opId, c.nomination?.bookId, c.nomination?.nominationId] : [])]
+  return [ownerId, battleId, battleAgentId, attributionAgentId, watchlistId, ...(c ? [
+    c.entryId, c.agentId, c.opId, c.nomination?.bookId, c.nomination?.nominationId, c.nomination?.ideaId,
+    // the fix round's review, CX1-7: the idea the card became, its result and its Forge offer (cardStore.js's fields)
+    c.idea?.bookId, c.idea?.ideaId, c.result?.ideaId, c.result?.resultRef, c.offer?.ideaId, c.offer?.offerId,
+  ] : [])]
     .filter((v) => typeof v === 'string' && v.length > 0);
 }
 

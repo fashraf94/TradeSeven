@@ -290,7 +290,8 @@ function exitOf(tape, hit) {
  * checks, never among the bars) — the last one's close, and that bar's own recorded time, its START (`bars[].t`, the
  * beginning of its 10-minute bucket: named `barStart`, never the close's instant — §2 review L1-5), each with the
  * series document's own class for a bar (its `numberClasses`), and how many there are (derived). Absent when none.
- * A bar is a row with a strict start after the exit; CE-4: `barsAfter` counts DISTINCT starts (an identical duplicate
+ * A bar row whose start is not a strict instant makes the whole answer absent (CX1-5). A bar is a row with a strict start
+ * after the exit; CE-4: `barsAfter` counts DISTINCT starts (an identical duplicate
  * counts once), and rows at the latest start that disagree — or whose close is no classed number — give no afterExit,
  * never an earlier bar's.
  */
@@ -300,6 +301,9 @@ async function afterExitOf(db, uid, battleId, etDate, row) {
   if (!symbol || exitMs === null) return null;
   const series = await readDoc(tapeRef(db, battleId, etDate).collection(SERIES_SUBCOLLECTION).doc(symbol));
   if (!isObj(series) || series.ownerId !== uid || series.symbol !== symbol || !Array.isArray(series.bars)) return null;
+  // the fix round's review, CX1-5: a bar row whose start is no strict instant might fall after the exit — the latest bar
+  // and the count cannot be established, so nothing is said (CE-3: nothing is inferred from a time the parser refuses)
+  if (series.bars.some((b) => isObj(b) && instantMs(b.t) === null)) return null;
   const after = candidatesOf(series.bars, (b) => isObj(b) && instantMs(b.t) !== null && instantMs(b.t) > exitMs);
   if (!after.length) return null;
   const starts = new Set(after.map((c) => instantMs(c.row.t)));
@@ -368,9 +372,16 @@ async function buildExcerpt(db, { uid, attributionAgentId, battleId, etDate, tap
   const items = Array.isArray(tape.tags?.items) ? tape.tags.items : [];
   const first = items.findIndex((it) => isObj(it) && it.situationId === m.situationId && it.symbol === m.symbol && it.tickSeq === m.fromTickSeq && it.version === day.situationVersion);
   const version = first >= 0 ? classed(day.situationVersion, tape.numberClasses, ['tags', 'items', first, 'version']) : null;
-  if (version) excerpt.situationVersion = version;
-  if (instantOrNull(m.from)) excerpt.from = recorded(m.from);
-  if (instantOrNull(m.to)) excerpt.to = recorded(m.to);
+  // CE-4 (the fix round's review, CX1-1): the shared day judge takes the moment's version and its two instants from the
+  // first stored item it meets; here each is said only when EVERY stored item it could come from agrees — the version
+  // across the moment's items, `from` and `to` across the items at that check — so storage order never decides
+  const ofMoment = items.filter((it) => isObj(it) && it.situationId === m.situationId && it.symbol === m.symbol
+    && (Number.isInteger(m.fromTickSeq) ? Number.isInteger(it.tickSeq) && it.tickSeq >= m.fromTickSeq && it.tickSeq <= m.toTickSeq : !Number.isInteger(it.tickSeq)));
+  const agree = (rows, key) => rows.length > 0 && rows.every((r) => tieKey([r[key]]) === tieKey([rows[0][key]]));
+  const atCheck = (seq) => (Number.isInteger(seq) ? ofMoment.filter((it) => it.tickSeq === seq) : ofMoment);
+  if (version && agree(ofMoment, 'version')) excerpt.situationVersion = version;
+  if (instantOrNull(m.from) && agree(atCheck(m.fromTickSeq), 'at')) excerpt.from = recorded(m.from);
+  if (instantOrNull(m.to) && agree(atCheck(m.toTickSeq), 'at')) excerpt.to = recorded(m.to);
   excerpt.checks = { value: m.checks, class: 'derived' };
   const sector = sectorOf(m.symbol);
   if (sector) excerpt.sector = recorded(sector);

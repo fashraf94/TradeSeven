@@ -26,6 +26,8 @@ import {
   EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION, ETN_MOMENT, META_MOMENT, EXCERPT_NOTE, EXCERPT_MEETING, FORGED_DIAGNOSIS, EXCERPT_STATEMENT, EXCERPT_CONTENT_HASH, ideaCall,
 } from './__fixtures__/excerptFixtures.js';
 import { buildCardDoc } from './cardStore.js';
+// the fix round's review, CX1-3: the in-memory Firestore with a read hook, to fail one read alone
+import { makeTapeDb } from '../filmTape/__fixtures__/tapeFirestore.js';
 // CE-1: the card request's own note normaliser — a note holding an id is accepted at intake and left out at projection
 import { normalizeNote } from './cardRequest.js';
 import { CARD_SLOTS } from '../../../src/data/cardSlots.js';
@@ -437,11 +439,11 @@ const BARS_AFTER = ETN_SERIES.bars.map((b, k) => ({ b, k })).filter(({ b }) => D
  */
 const recordedCountTape = (t) => { t.tags.inputs.holdingBasis = { ...t.tags.inputs.holdingBasis, ETN: 'recorded' }; t.checks.find((c) => c.tickSeq === 19).stagnation = { ETN: { ticks: 6, withinAge: true, dailyPct: -0.001 } }; };
 const TIES = {
-  rationale: { section: (t) => t.rationale, at: () => RAT15, twin: (t, patch) => t.rationale.push({ ...clone(t.rationale[RAT15]), ...patch }), conflict: { rationale: 'second row' }, fields: ['rationale'] },
-  directive: { section: (t) => t.directives, at: () => DIR15, twin: (t, patch) => t.directives.push({ ...clone(t.directives[DIR15]), ...patch }), conflict: { playerText: 'second player row' }, fields: ['directive'] },
-  exit: { section: (t) => t.actions, at: (t) => t.actions.findIndex((a) => a.symbolOut === 'ETN'), twin: (t, patch) => t.actions.push({ ...clone(t.actions.find((a) => a.symbolOut === 'ETN')), ...patch }), conflict: { exitPrice: 999 }, fields: ['exit', 'afterExit'] },
-  'tag item': { section: (t) => t.tags.items, at: (t) => t.tags.items.findIndex((i) => i.symbol === 'ETN' && i.tickSeq === 19), twin: (t, patch) => t.tags.items.push({ ...clone(t.tags.items.find((i) => i.symbol === 'ETN' && i.tickSeq === 19)), ...patch }), conflict: { count: 999 }, fields: ['count'] },
-  check: { prep: recordedCountTape, section: (t) => t.checks, at: (t) => t.checks.findIndex((c) => c.tickSeq === 19), twin: (t, patch) => t.checks.push({ ...clone(t.checks.find((c) => c.tickSeq === 19)), ...patch }), conflict: { stagnation: { ETN: { ticks: 999, withinAge: true, dailyPct: -0.001 } } }, fields: ['count'] },
+  rationale: { section: (t) => t.rationale, at: () => RAT15, twin: (t, patch) => t.rationale.push({ ...clone(t.rationale[RAT15]), ...patch }), conflicts: [{ rationale: 'second row' }, { hypothesis: 'another hypothesis' }, { at: '2026-09-23T17:44:00.000Z' }], fields: ['rationale'] },
+  directive: { section: (t) => t.directives, at: () => DIR15, twin: (t, patch) => t.directives.push({ ...clone(t.directives[DIR15]), ...patch }), conflicts: [{ playerText: 'second player row' }, { canonicalText: 'another canonical text' }], fields: ['directive'] },
+  exit: { section: (t) => t.actions, at: (t) => t.actions.findIndex((a) => a.symbolOut === 'ETN'), twin: (t, patch) => t.actions.push({ ...clone(t.actions.find((a) => a.symbolOut === 'ETN')), ...patch }), conflicts: [{ exitPrice: 999 }, { mechanism: 'guardrail' }, { exitReason: 'guardrail_stopLoss' }, { symbolIn: 'NVDA' }], fields: ['exit', 'afterExit'] },
+  'tag item': { section: (t) => t.tags.items, at: (t) => t.tags.items.findIndex((i) => i.symbol === 'ETN' && i.tickSeq === 19), twin: (t, patch) => t.tags.items.push({ ...clone(t.tags.items.find((i) => i.symbol === 'ETN' && i.tickSeq === 19)), ...patch }), conflicts: [{ count: 999 }], fields: ['count'] },
+  check: { prep: recordedCountTape, section: (t) => t.checks, at: (t) => t.checks.findIndex((c) => c.tickSeq === 19), twin: (t, patch) => t.checks.push({ ...clone(t.checks.find((c) => c.tickSeq === 19)), ...patch }), conflicts: [{ stagnation: { ETN: { ticks: 999, withinAge: true, dailyPct: -0.001 } } }], fields: ['count'] },
 };
 /** The excerpt for a tape edit, its section then put in `order` (the selected row at index `p`, the twin last). */
 const tiedOver = async (c, patch, order) => momentOver(withTape((t) => {
@@ -462,9 +464,9 @@ const barTwinOver = async (k, patch, order) => {
 
 describe('CE-4 — a tie the rules don\'t settle means nothing is said (C2-F4); array order is never a rule', () => {
   for (const [name, c] of Object.entries(TIES)) {
-    it(`${name}: a CONFLICTING twin at the selecting key — the field and its dependents absent, under every order of the stored rows`, async () => {
-      for (const [o, order] of Object.entries(ORDERS)) {
-        const got = await tiedOver(c, c.conflict, order);
+    it(`${name}: a CONFLICTING twin at the selecting key — on EVERY field the selection compares (the fix round's review, CX1-2) — the field and its dependents absent, under every order of the stored rows`, async () => {
+      for (const [o, order] of Object.entries(ORDERS)) for (const conflict of c.conflicts) {
+        const got = await tiedOver(c, conflict, order);
         expect(got, `${name} · ${o}`).not.toBeNull();
         for (const f of c.fields) expect(got.excerpt[f], `${name} · ${o} · ${f}`).toBeUndefined();
       }
@@ -523,6 +525,80 @@ describe('CE-4 — a tie the rules don\'t settle means nothing is said (C2-F4); 
     }));
     expect(sales.excerpt.exit).toBeUndefined();
     expect(sales.excerpt.afterExit).toBeUndefined();
+  });
+});
+
+// ── the fix round's §2 review, lens 1 (CX1) ─────────────────────────────────
+
+/** The excerpt under each order of the stored tag items (the twin appended last, so 'the pair swapped' puts it first). */
+const underItemOrders = async (edit, at = (t) => t.tags.items.findIndex((i) => i.symbol === 'ETN' && i.tickSeq === 15)) => {
+  const out = {};
+  for (const [o, order] of Object.entries(ORDERS)) {
+    out[o] = await momentOver(withTape((t) => { const p = at(t); edit(t); t.tags.items = order(t.tags.items, p); }));
+  }
+  return out;
+};
+
+describe('the fix round\'s §2 review, lens 1 — what the shared day judge takes first, and the auxiliary reads', () => {
+  it('CX1-1 — THE MOMENT\'S VERSION is said only when every stored item of the moment agrees: a twin at its first check tagged under another version leaves `situationVersion` out — the same excerpt under every order of the stored items', async () => {
+    const twin = (t) => t.tags.items.push({ ...clone(t.tags.items.find((i) => i.symbol === 'ETN' && i.tickSeq === 15)), version: 3 });
+    const got = await underItemOrders(twin);
+    for (const [o, x] of Object.entries(got)) {
+      expect(x, o).not.toBeNull();
+      expect(x.excerpt.situationVersion, o).toBeUndefined();
+      expect(x, o).toEqual(got['as stored']);
+    }
+    expect(LIVE.moment.excerpt.situationVersion).toEqual({ value: 2, class: 'recorded' });
+  });
+  it('CX1-1 — THE MOMENT\'S LAST INSTANT is said only when every stored item at that check agrees: a twin at its last check holding another time leaves `to` out — the same excerpt under every order', async () => {
+    for (const other of ['not a time', '2026-09-23T18:46:00.000Z']) {
+      const twin = (t) => t.tags.items.push({ ...clone(t.tags.items.find((i) => i.symbol === 'ETN' && i.tickSeq === 19)), at: other });
+      const got = await underItemOrders(twin, (t) => t.tags.items.findIndex((i) => i.symbol === 'ETN' && i.tickSeq === 19));
+      for (const [o, x] of Object.entries(got)) {
+        expect(x, `${other} · ${o}`).not.toBeNull();
+        expect(x.excerpt.to, `${other} · ${o}`).toBeUndefined();
+        expect(x.excerpt.from, `${other} · ${o}`).toEqual(LIVE.moment.excerpt.from);
+        expect(x, `${other} · ${o}`).toEqual(got['as stored']);
+      }
+    }
+  });
+  it('CX1-1 — and its FIRST instant the same way: a twin at the first check holding another time leaves `from` out, in every order', async () => {
+    const twin = (t) => t.tags.items.push({ ...clone(t.tags.items.find((i) => i.symbol === 'ETN' && i.tickSeq === 15)), at: '2026-09-23T17:44:00.000Z' });
+    const got = await underItemOrders(twin);
+    for (const [o, x] of Object.entries(got)) {
+      expect(x.excerpt.from, o).toBeUndefined();
+      expect(x, o).toEqual(got['as stored']);
+    }
+  });
+  it('CX1-3 — A FAILED AUXILIARY READ GIVES A PARTIAL EXCERPT, never null and never a thrown error (CE-6): the version\'s read failing keeps the idea without its statement; the series\' read failing keeps the exit without afterExit; a failed core read is null', async () => {
+    const failing = (path) => makeTapeDb(excerptStore(DAY), { hooks: { beforeRead: (label) => { if (label === path) throw Object.assign(new Error('unavailable'), { code: 14 }); } } }).db;
+    const noVersion = await excerptOf(failing(IDEA_PATH), MOMENT_ASK);
+    expect(noVersion.excerpt.idea).toEqual({ label: 'i1', version: LIVE.moment.excerpt.idea.version });
+    expect(noVersion.excerpt.afterExit).toEqual(LIVE.moment.excerpt.afterExit);
+    const noSeries = await excerptOf(failing(SERIES_ETN), MOMENT_ASK);
+    expect(noSeries.excerpt.afterExit).toBeUndefined();
+    expect(noSeries.excerpt.exit).toEqual(LIVE.moment.excerpt.exit);
+    expect(noSeries.excerpt.idea).toEqual(LIVE.moment.excerpt.idea);
+    for (const core of [TAPE_PATH, `agentBattles/${EXCERPT_BATTLE}`]) expect(await excerptOf(failing(core), MOMENT_ASK), core).toBeNull();
+  });
+  it('CX1-5 — A BAR WHOSE START IS NO STRICT INSTANT might fall after the exit: no afterExit at all (the exit kept), never the latest of the bars it could read', async () => {
+    for (const t of ['2026-09-23T19:55:00', 'not a time', '2026-02-30T19:55:00.000Z']) {
+      const etn = clone(ETN_SERIES);
+      etn.bars.push({ ...clone(etn.bars.at(-1)), t, c: 999 });
+      const got = await momentOver(excerptStore(DAY, { over: { [SERIES_ETN]: etn } }));
+      expect(got.excerpt.afterExit, t).toBeUndefined();
+      expect(got.excerpt.exit, t).toEqual(LIVE.moment.excerpt.exit);
+    }
+  });
+  it('CX1-7 — THE CARD\'S OTHER IDS are known exactly: the idea it became, its result and its Forge offer, planted in the note, leave the note out', async () => {
+    const ids = { bookId: 'book-cx1-7', ideaId: 'idea-cx1-7', resultRef: 'results-cx1-7', offerId: 'offer-cx1-7' };
+    const adopted = (note) => ({ ...excerptCard({ note }), stage: 'installed', nomination: { bookId: ids.bookId, nominationId: EXCERPT_ENTRY, state: 'accepted', ideaId: ids.ideaId }, idea: { bookId: ids.bookId, ideaId: ids.ideaId }, result: { ideaId: ids.ideaId, resultRef: ids.resultRef }, offer: { ideaId: ids.ideaId, offerId: ids.offerId, state: 'accepted' } });
+    expect((await cardOver(storeOfDay(DAY, { card: adopted(EXCERPT_NOTE) }))).excerpt.inputQuote.text).toBe(EXCERPT_NOTE);
+    for (const [kind, id] of Object.entries(ids)) {
+      const got = await cardOver(storeOfDay(DAY, { card: adopted(`Recorded ${id} here.`) }));
+      expect(got.excerpt.inputQuote, kind).toBeUndefined();
+      expect(got.excerpt.card, kind).toBeDefined();
+    }
   });
 });
 

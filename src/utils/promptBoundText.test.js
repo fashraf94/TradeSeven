@@ -40,8 +40,10 @@ describe('CE-1 — the id kinds the platform mints, pinned', () => {
       ['client base-36 fallbacks for card ops and backing requests', 'base36-fallback'],
       ['live-draft group', 'live-draft-group'],
       ['challenge code (BB + 8)', 'challenge-code'],
-      ['bug report display id', 'bug-report'],
+      ['hyphen-joined timestamped ids (challenges; signal-drop chat messages)', 'epoch-ms'],
+      ['dev agents and wallets built on a uid (dev-agent-<uid>, dev-<uid>)', 'firebase-uid'],
       ['huddle playback token', 'playback-token'],
+      ['bug report display id (CB-NNNN)', null],
       ['six-character lobby join and challenge codes', null],
       ['short sequence ids (cpu-N, epoch-0001, v<n> version documents, r<n>)', null],
       ['date keys (YYYY-MM leaderboards, tick keys, date-and-symbol composites)', null],
@@ -101,6 +103,8 @@ describe('CE-1 — ORDINARY PROSE PASSES: tickers, prices, dates, percentages an
     'AnExtraordinarilyLongCamelCaseWordWithoutDigits is still prose, as is SupercalifragilisticExpialidocious.',
     'Q3 2026 guidance: EPS 1.23 vs 1.10, revenue 45,000,000,000 (+12% y/y), the S&P 500 at 6,900.',
     'v3 of the idea; check 15 to 19; a 10-minute bar; 3 checks; tier-2; the 52-week high; 1,758,648,600.',
+    // the fix round's review, CX1-4: words that share a prefix or a form with a minted id
+    'A training-agent-based approach, a cpu-agent-style rule, and CB-2026 was a rough quarter for chips.',
     'Heard. I will tighten the downside stop for the rest of the session.',
     'Tighten the downside stop.',
   ];
@@ -132,5 +136,16 @@ describe('CE-1 — recorded words inside their own domains', () => {
       expect(exitReasonOk(bad), String(bad)).toBe(false);
       expect(exitMechanismOk(bad), String(bad)).toBe(false);
     }
+  });
+});
+
+describe('the policy\'s stated limits (build report §11.3) — pinned, so a change to them is seen', () => {
+  it('CE-1\'s letter for the auto-id catches a 20-character mixed token holding a digit even when it is a coined word; an underscore sequence token is a sequence id — both left out, never let through', () => {
+    expect(identifiersIn('RSI14AboveSMA50Cross held')).toEqual(['firestore-auto-id']);
+    expect(identifiersIn('the trade_2026 rally')).toEqual(['battle-sequence']);
+  });
+  it('a 20-character auto-id with no digit has no shape — it is caught only when it is an id the caller knows exactly', () => {
+    expect(identifiersIn('Recorded AbcDefGhiJklMnoPqrSt here.')).toEqual([]);
+    expect(identifiersIn('Recorded AbcDefGhiJklMnoPqrSt here.', ['AbcDefGhiJklMnoPqrSt'])).toEqual(['known']);
   });
 });
