@@ -16,6 +16,7 @@
 // Pure: no store, no clock.
 
 import { nextSessionDate } from './windows.js';
+import { WINDOWS_ACCOUNTED_FIELD } from './windowLedger.js';
 
 const lastClosedOf = (book) => (typeof book?.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null);
 
@@ -48,6 +49,12 @@ export const FILL_SESSION_REFUSAL = Object.freeze({
 export function fillSessionRefusal(book, ideas, tickDate) {
   const last = lastClosedOf(book);
   if (last !== null && tickDate <= last) return FILL_SESSION_REFUSAL.ALREADY_CLOSED;
+  // A session the window ledger's own cursor has already written up (Astra T2B-02: its close row exists, `valued:
+  // false`) is closed too: a fill dated in it would leave that session's valuation a second close row to create, and
+  // the close would abort on it for good (review of the T2B fix round, W-3). Today's callers never reach this — the
+  // cursor only covers sessions before the one a fire runs in — so it changes no outcome; it is the guard behind that.
+  const accounted = typeof book?.execState?.[WINDOWS_ACCOUNTED_FIELD] === 'string' ? book.execState[WINDOWS_ACCOUNTED_FIELD] : null;
+  if (accounted !== null && tickDate <= accounted) return FILL_SESSION_REFUSAL.ALREADY_CLOSED;
   if (firstUnclosedSessionBefore(book, ideas, tickDate) !== null) return FILL_SESSION_REFUSAL.EARLIER_UNCLOSED;
   return null;
 }

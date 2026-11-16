@@ -16,6 +16,8 @@ import {
   verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems, recomputeResultFromPacket, jsonPure, EVIDENCE_HASH_ALGORITHM,
 } from './evidence.js';
 import { nextSessionDate } from './windows.js';
+import { valueLedger } from './ledger.js';
+import { canonicalContentHash } from '../canonicalHash.js';
 import { runRetentionCleanup } from '../mandateClosePass.js';
 import { roundUsd } from '../mandateRounding.js';
 import {
@@ -82,7 +84,7 @@ describe('the admission packet — in admission\'s own transaction, create-once'
         bookRevision: bookBefore.revision, equityUsd: bookBefore.portfolio.totalValue, cashUsd: bookBefore.portfolio.cash,
         treasuryUnreservedUsd: bookBefore.treasury.unreservedCash,
         positions: { MSFT: {
-          shares: bookBefore.portfolio.positions.MSFT.shares, lastMark: 420.11, lastMarkAsOf: bookBefore.portfolio.positions.MSFT.lastMarkAsOf, lastMarkSource: 'snapshot', ideaId: first.ideaId,
+          shares: bookBefore.portfolio.positions.MSFT.shares, lastMark: 420.11, lastMarkSource: 'snapshot', ideaId: first.ideaId,
           // The mark's own source: S[0]'s stored close snapshot, at the vendor's time, full quality.
           markSource: { kind: 'close', snapshotKey: `${S[0]}_close`, session: S[0], quality: 'vendor_time', vendorTimeIso: bookBefore.portfolio.positions.MSFT.lastMarkAsOf, recordedMarkAsOf: bookBefore.portfolio.positions.MSFT.lastMarkAsOf },
         } },
@@ -153,6 +155,9 @@ describe('the admission packet — in admission\'s own transaction, create-once'
     expect(pd.measuredAgainst.positions.MSFT.markSource).toEqual({
       kind: 'carried', source: 'close', symbol: 'MSFT', session: S[0], snapshotKey: `${S[0]}_close`, quality: 'receipt_time_fallback', vendorTimeIso: null, recordedMarkAsOf: morning,
     });
+    // Review P-1: the morning time is not sealed beside the untimed price — only inside markSource, labelled.
+    expect(pd.measuredAgainst.positions.MSFT).not.toHaveProperty('lastMarkAsOf');
+    expect(JSON.stringify(pd).split(morning)).toHaveLength(2);
   });
 
   it('review B12 — the hash is of what Firestore stores: a lone surrogate (stored as U+FFFD) is made well-formed first, so the packet still verifies after the round trip', async () => {
@@ -430,11 +435,67 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
       const tampered = JSON.parse(JSON.stringify(packet));
       tampered.observations[i].ledgers.idea.holdings.AAPL.mark = 113.4567;
       expect(verifyPacket(tampered)).toBe(false);
-      expect(recomputeResultFromPacket(tampered).problems).toEqual([`value:${S[3]}:idea`, `holdings:${S[3]}:idea`]);
+      expect(recomputeResultFromPacket(tampered).problems).toEqual([`value:${S[3]}:idea`, `holdings:${S[3]}:idea`, 'result:largestDecline']);
       const shifted = JSON.parse(JSON.stringify(packet));
       shifted.observations[i].ledgers.comparison.markedValueUsd += 0.01;
       expect(verifyPacket(shifted)).toBe(false);
       expect(recomputeResultFromPacket(shifted).problems).toEqual([`value:${S[3]}:comparison`]);
+    });
+
+    it('review O-1, O-1b — even RE-SEALED, a packet missing a close, out of order, missing a ledger, or stating a result its closes do not give is named', async () => {
+      const { packet } = await herCase();
+      const reseal = (body) => { const { contentHash, hashAlgorithm, ...rest } = body; return { ...rest, hashAlgorithm, contentHash: canonicalContentHash(jsonPure(rest)) }; };
+      const base = JSON.parse(JSON.stringify(packet));
+      // The peak close dropped: a gap, and the result no longer follows.
+      const dropped = reseal({ ...base, observations: base.observations.filter((o) => o.date !== S[3]) });
+      expect(verifyPacket(dropped)).toBe(true);
+      expect(recomputeResultFromPacket(dropped).problems).toEqual([`coverage:gap:${S[2]}..${S[4]}`, 'result:largestDecline', 'result:investedExposure', 'result:rows']);
+      // The first or the last close dropped.
+      expect(recomputeResultFromPacket(reseal({ ...base, observations: base.observations.slice(1) })).problems).toEqual(expect.arrayContaining([`coverage:first:${S[1]}`]));
+      expect(recomputeResultFromPacket(reseal({ ...base, observations: base.observations.slice(0, -1) })).problems).toEqual(expect.arrayContaining([`coverage:last:${S[9]}`]));
+      // Two closes swapped: out of order.
+      const swapped = [...base.observations];
+      [swapped[4], swapped[5]] = [swapped[5], swapped[4]];
+      expect(recomputeResultFromPacket(reseal({ ...base, observations: swapped })).problems).toEqual(expect.arrayContaining([`order:${S[4]}`]));
+      // One ledger missing on one close: a problem, never folded as $0 (it moved the comparison's decline before).
+      const noCmp = JSON.parse(JSON.stringify(base));
+      delete noCmp.observations[5].ledgers.comparison;
+      expect(recomputeResultFromPacket(reseal(noCmp)).problems).toEqual(expect.arrayContaining([`ledger:${S[5]}:comparison`]));
+      // A result the closes do not give.
+      const lying = reseal({ ...base, result: { ...base.result, investedExposure: { mean: 0.5, closes: 11 } } });
+      expect(recomputeResultFromPacket(lying).problems).toEqual(['result:investedExposure']);
+    });
+
+    it('review O-3 — a stated value is checked against its prices up to the order they were summed in: an honest valuation in another order agrees; a cent off does not', () => {
+      // valueLedger sums in the holdings' own order (here not sorted, as after a ticker change); the recomputation in
+      // symbol order differs in the last bit, at a half-cent tie.
+      const ledger = { kind: 'idea', cash: 0, holdings: {
+        ZZZ: { shares: 26.303096, costBasisTotal: 7000, lastMark: 273.5776 },
+        AAA: { shares: 12.694592, costBasisTotal: 3500, lastMark: 290.5824 },
+        MMM: { shares: 38.088885, costBasisTotal: 3300, lastMark: 83.9907 },
+      } };
+      const v = valueLedger(ledger, null, { sessionDate: S[1] });
+      const sorted = Object.keys(ledger.holdings).sort().reduce((a, k) => a + ledger.holdings[k].shares * ledger.holdings[k].lastMark, 0);
+      expect(roundUsd(sorted)).not.toBe(v.markedHoldingsValue); // the order alone moves the rounding by a cent
+      const obsOf = (stated) => ({ date: S[0], observed: true, fullQuality: true, ledgers: {
+        idea: { markedValueUsd: stated, cashUsd: 0, markedHoldingsValueUsd: stated, holdings: Object.fromEntries(Object.entries(ledger.holdings).map(([k, h]) => [k, { shares: h.shares, mark: h.lastMark }])) },
+        comparison: { markedValueUsd: 100, cashUsd: 100, holdings: {} },
+        spy: { markedValueUsd: 100, cashUsd: 100, holdings: {} },
+      } });
+      const packetOfObs = (stated) => ({ entry: { sessionDate: S[0] }, endpoint: { session: S[0] }, observations: [obsOf(stated)] });
+      expect(recomputeResultFromPacket(packetOfObs(v.markedValue)).problems).toEqual(['result:missing']);
+      expect(recomputeResultFromPacket(packetOfObs(roundUsd(v.markedValue - 0.01))).problems).toEqual([`value:${S[0]}:idea`, `holdings:${S[0]}:idea`, 'result:missing']);
+    });
+
+    it('review O-2 — a close missing between entry and endpoint: the endpoint close refuses `observation_row_missing` and writes nothing', async () => {
+      const { db, bookId, bookRef } = await seedBook();
+      const r = await admitAndEnter(db, bookId, { contract: contractOf({ comparison: { type: 'sector_fund', symbols: ['XLK'] } }), quotes: Q, date: S[0] });
+      for (let i = 0; i < 10; i += 1) await closeOn(db, bookId, S[i], Q);
+      db._store.delete(`mandates/${bookId}/ideas/${r.ideaId}/rows/${S[4]}`);
+      const before = dumpStore(db);
+      await expect(closeOn(db, bookId, S[10], Q)).rejects.toThrow(/observation_row_missing/);
+      expect(Object.keys(JSON.parse(dumpStore(db))).filter((p) => !(p in JSON.parse(before)))).toEqual([`mandateUniverseSnapshots/${S[10]}_close`]);
+      expect(bookRef).toBeTruthy();
     });
 
     it('a carried mark\'s source is checked against the packet\'s own observation of it: a time that close never had is refused (T2B-01 with T2B-03)', async () => {
@@ -453,6 +514,12 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
       const claimed = { ...aapl, carriedFrom: { ...aapl.carriedFrom, quality: 'vendor_time', vendorTimeIso: etIso(S[9], 16, 0) } };
       const forged = { ...packet, endpoint: { ...packet.endpoint, ledgers: { ...packet.endpoint.ledgers, idea: { ...packet.endpoint.ledgers.idea, marks: { AAPL: claimed } } } } };
       expect(resultPacketMissingMarks(forged, endpointRow)).toEqual(['idea:AAPL']);
+      // …and the same claim on the copied endpoint CLOSE (its observation) is named by the provenance check (review O-2).
+      const copied = JSON.parse(JSON.stringify(packet));
+      const last = copied.observations[copied.observations.length - 1];
+      expect(last.ledgers.idea.holdings.AAPL.markSource).toBe('carry_over');
+      last.ledgers.idea.holdings.AAPL.carriedFrom = { ...last.ledgers.idea.holdings.AAPL.carriedFrom, quality: 'vendor_time', vendorTimeIso: etIso(S[9], 16, 0) };
+      expect(resultPacketProvenanceProblems(copied)).toEqual([`${S[10]}:idea:AAPL`]);
     });
 
     it('the largest shape stays well under Firestore\'s 1 MiB document limit: a long slot (60 sessions), four names, an eight-name frozen basket and SPY, every close between entry and endpoint carried', async () => {

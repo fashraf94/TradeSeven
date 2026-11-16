@@ -5,10 +5,19 @@
 //
 // THE $3 BOUND HOLDS AT THE CHARGE, NOT AT AN ESTIMATE (fix round of 16 Nov 2026, Astra T2B-04; the founder's Q2
 // ruling). A call reserves the MOST IT CAN COST, before it is made: its model's prices (api/_utils/modelPriceTable.js,
-// MODEL_PRICES_PER_MTOK) times its token ceilings — the input tokens it may send, and `max_tokens` for its output. The
-// API cannot bill more output than `max_tokens`, and the caller sends no more input than its ceiling, so a reserved
-// call can never take the month past $3. Each input token is reserved at the table's dearest input rate (a cache write,
-// CACHE_WRITE_INPUT_MULTIPLIER × the base rate), so no way the call reports its input can cost more than was reserved.
+// MODEL_PRICES_PER_MTOK) times its token ceilings — `maxInputTokens`, EVERY input token the call is billed for (its
+// system prompt, messages, tool definitions and the tool-use system prompt the API adds when tools are on), and
+// `max_tokens` for its output. The API cannot bill more output than `max_tokens`, and the caller sends no more input
+// than its ceiling, so a reserved call can never take the month past $3. Each input token is reserved at the table's
+// dearest input rate (a 5-minute cache write, CACHE_WRITE_INPUT_MULTIPLIER × the base rate), so no way the call reports
+// that input can cost more than was reserved.
+//
+// ONLY WHAT THE TABLE CAN PRICE IS RESERVED (review of this fix round, S-1). Anthropic bills a 1-HOUR cache write at 2×
+// the base input rate and a server tool (web search: a fee per search, and its results as input tokens within the
+// same turn) beyond the tokens a caller can count; the table carries neither, and its priceUsage cannot see either. So
+// a call states both — `cacheTtl` ('none' | '5m' | '1h') and `serverTools` (an array) — and a call that would use a
+// 1-hour cache write or any server tool is refused `pricing_unsupported`, as an unpriced model is, until the table can
+// price it. A call reserved under that contract that then reports 1-hour cache tokens has broken it.
 //
 // ON THE BOOK, the month's totals only — `spend: { version, month, boundUsd, reservedUsd, settledUsd, exhausted,
 // exhaustedAt, exhaustedBy, calls, lastMonth }`:
@@ -20,18 +29,21 @@
 //   exhausted    DERIVED, never sticky (Q2): the month's remaining room — the bound less `reservedUsd` — is below the
 //                smallest call T1b will make (constants.js PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD, a placeholder T1b
 //                sets). Re-derived at every write: a settlement that releases room can end it. `exhaustedAt` /
-//                `exhaustedBy` name the write that made the month exhausted, and are cleared when it no longer is. A
-//                REFUSED reservation writes nothing at all, so it never exhausts the month;
+//                `exhaustedBy` name the write that made the month exhausted, and are cleared when it no longer is. An
+//                exhausted month runs no model call (contract §17 B-SPEND): any reservation is refused `spend_exhausted`
+//                — even one small enough to fit (review S-2). A REFUSED reservation writes nothing at all, so it never
+//                exhausts the month (Q2);
 //   calls        how many reservations the month made; `lastMonth` keeps the month before's totals.
 // ONE DOCUMENT PER CALL, `mandates/{bookId}/spendOps/{opId}`, create-once (review B6, B7): the operation's month,
 // purpose, model, ceilings, maximum charge and the price table's version; then its state, charge and released room.
 // Both calls are idempotent on it for good, and the book document never grows with the number of calls.
 //
-//   reserveSpend(tx, book, { modelId, maxInputTokens, maxOutputTokens, purpose, opId, nowIso })
-//       BEFORE any model call. A model the table does not price is refused `model_unpriced`. A call whose maximum
-//       does not fit the month's remaining room — would take `reservedUsd` strictly past $3 — is refused
-//       `spend_would_exceed`; exactly $3 is allowed. Neither refusal writes anything. A replay of the same operation
-//       answers what it answered (a reservation is never made twice), in any later month too.
+//   reserveSpend(tx, book, { modelId, maxInputTokens, maxOutputTokens, cacheTtl, serverTools, purpose, opId, nowIso })
+//       BEFORE any model call. A model the table does not price is refused `model_unpriced`; a 1-hour cache write or a
+//       server tool `pricing_unsupported`. An exhausted month refuses `spend_exhausted`. A call whose maximum does not
+//       fit the month's remaining room — would take `reservedUsd` strictly past $3 — is refused `spend_would_exceed`;
+//       exactly $3 is allowed. No refusal writes anything. A replay of the same operation answers what it answered (a
+//       reservation is never made twice), in any later month too.
 //   settleSpend(tx, book, { opId, actualUsd } | { opId, unpriced: true }, { nowIso })
 //       after the call: the ACTUAL charge is recorded as it is, against the month the call was reserved in, and the
 //       unused part of the reservation is released (`releasedUsd`). A call whose usage cannot be read (a failed or
@@ -83,6 +95,10 @@ const isInstant = (v) => typeof v === 'string' && /T.*(Z|[+-]\d\d:\d\d)$/.test(v
 const OP_ID = /^[A-Za-z0-9][A-Za-z0-9_\-:.#]{0,199}$/;
 const purposeOk = (v) => typeof v === 'string' && v.length > 0 && v.length <= 100;
 const tokensOk = (v) => Number.isSafeInteger(v) && v >= 1;
+/** The cache lifetimes a call may state (review S-1). Only 'none' and '5m' are priced by the table. */
+export const CACHE_TTLS = Object.freeze(['none', '5m', '1h']);
+const PRICED_CACHE_TTLS = Object.freeze(['none', '5m']);
+const isAmount = (v) => typeof v === 'number' && Number.isFinite(v);
 const ET_MONTH = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit' });
 
 /** The Eastern calendar month (`YYYY-MM`) of an instant. */
@@ -93,7 +109,8 @@ export function spendMonthOf(nowIso) {
 
 /**
  * THE MOST A CALL CAN COST, in micro-dollars, or null when the table does not price its model. Every input token at the
- * table's dearest input rate (a cache write; a cache read and the base rate are cheaper), every output token up to
+ * table's dearest input rate (a 5-minute cache write; a cache read and the base rate are cheaper — a 1-hour cache write
+ * is not priced by the table and is refused at reservation, `pricing_unsupported`), every output token up to
  * `max_tokens` at the output rate, no batch discount — so whatever usage the call reports within its ceilings,
  * modelPriceTable.js priceUsage prices it at no more than this. Rounded UP to the micro-dollar.
  */
@@ -152,9 +169,10 @@ export function spendStateFor(stored, month) {
   return next;
 }
 
-/** The answer to a request whose op is already recorded: the same call (model, ceilings, purpose) is a replay. */
-function replayOf(op, { purpose, modelId, maxInputTokens, maxOutputTokens }) {
-  const same = op.purpose === purpose && op.modelId === modelId && op.maxInputTokens === maxInputTokens && op.maxOutputTokens === maxOutputTokens;
+/** The answer to a request whose op is already recorded: the same call (model, ceilings, cache, tools, purpose) is a replay. */
+function replayOf(op, { purpose, modelId, maxInputTokens, maxOutputTokens, cacheTtl, serverTools }) {
+  const same = op.purpose === purpose && op.modelId === modelId && op.maxInputTokens === maxInputTokens && op.maxOutputTokens === maxOutputTokens
+    && op.cacheTtl === cacheTtl && JSON.stringify(op.serverTools ?? null) === JSON.stringify(serverTools);
   if (!same) return { ok: false, code: 'op_id_conflict', opId: op.opId };
   return { ok: true, idempotentReplay: true, opId: op.opId, month: op.month, state: op.state, maxChargeUsd: op.maxChargeUsd };
 }
@@ -163,20 +181,29 @@ function replayOf(op, { purpose, modelId, maxInputTokens, maxOutputTokens }) {
  * Plan a reservation. Pure. `op` is the op's document as read (null when absent).
  * @returns {{ result: object, next: object|null, opDoc: object|null }}  what to write on the book and as the op
  */
-export function planReserve(stored, op, { modelId, maxInputTokens, maxOutputTokens, purpose, opId, nowIso }) {
+export function planReserve(stored, op, { modelId, maxInputTokens, maxOutputTokens, cacheTtl, serverTools, purpose, opId, nowIso }) {
   if (typeof modelId !== 'string' || modelId.length === 0) throw new Error('reserveSpend: modelId is required');
   if (!tokensOk(maxInputTokens) || !tokensOk(maxOutputTokens)) throw new Error('reserveSpend: maxInputTokens and maxOutputTokens must be whole numbers of tokens, at least one');
+  if (!CACHE_TTLS.includes(cacheTtl)) throw new Error("reserveSpend: cacheTtl must be stated: 'none', '5m' or '1h'");
+  if (!Array.isArray(serverTools) || !serverTools.every((t) => typeof t === 'string' && t.length > 0)) throw new Error('reserveSpend: serverTools must be stated: an array of tool names, [] for none');
   if (!purposeOk(purpose)) throw new Error('reserveSpend: purpose is required');
   if (typeof opId !== 'string' || !OP_ID.test(opId)) throw new Error('reserveSpend: opId must be a safe document id');
   if (!isInstant(nowIso)) throw new Error('reserveSpend: nowIso must be an ISO instant with its offset');
-  if (op) return { result: replayOf(op, { purpose, modelId, maxInputTokens, maxOutputTokens }), next: null, opDoc: null };
+  if (op) return { result: replayOf(op, { purpose, modelId, maxInputTokens, maxOutputTokens, cacheTtl, serverTools }), next: null, opDoc: null };
+  const refuse = (result) => ({ result: { ok: false, ...result }, next: null, opDoc: null });
   const maxMicros = maxCallChargeMicros({ modelId, maxInputTokens, maxOutputTokens });
-  if (maxMicros === null) return { result: { ok: false, code: 'model_unpriced', modelId, priceTableVersion: MODEL_PRICE_TABLE_VERSION }, next: null, opDoc: null };
+  if (maxMicros === null) return refuse({ code: 'model_unpriced', modelId, priceTableVersion: MODEL_PRICE_TABLE_VERSION });
+  // What the table cannot price is not reserved (review S-1): a 1-hour cache write, a server tool.
+  const unsupported = [...(PRICED_CACHE_TTLS.includes(cacheTtl) ? [] : ['cache_write_1h']), ...(serverTools.length > 0 ? ['server_tools'] : [])];
+  if (unsupported.length > 0) return refuse({ code: 'pricing_unsupported', unsupported, modelId, priceTableVersion: MODEL_PRICE_TABLE_VERSION });
   const month = spendMonthOf(nowIso);
-  if (stored && typeof stored.month === 'string' && month < stored.month) {
-    return { result: { ok: false, code: 'clock_behind_spend_month', month, storedMonth: stored.month }, next: null, opDoc: null };
-  }
+  if (stored && typeof stored.month === 'string' && month < stored.month) return refuse({ code: 'clock_behind_spend_month', month, storedMonth: stored.month });
   const state = spendStateFor(stored, month);
+  // Fail closed on a month whose figures are not numbers (review S-4): nothing could be bounded against them.
+  if (!isAmount(state.reservedUsd) || !isAmount(state.boundUsd ?? MONTHLY_SPEND_BOUND_USD)) return refuse({ code: 'spend_state_invalid', month });
+  // An exhausted month runs no model call (contract §17 B-SPEND; review S-2) — not even one small enough to fit. The
+  // refusal writes nothing (Q2).
+  if (spendExhausted(state)) return refuse({ code: 'spend_exhausted', month, reservedUsd: state.reservedUsd, roomUsd: usdOf(roomMicros(state)), minCallUsd: PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD });
   // "Would pass $3": the month's committed figure plus this call's MAXIMUM, strictly more than the bound. Exactly the
   // bound is allowed. Refused, nothing is written: the month is not exhausted by a refusal (Q2).
   if (micros(state.reservedUsd) + maxMicros > micros(state.boundUsd ?? MONTHLY_SPEND_BOUND_USD)) {
@@ -187,7 +214,7 @@ export function planReserve(stored, op, { modelId, maxInputTokens, maxOutputToke
   }
   const next = withExhaustion(state, { ...state, version: SPEND_VERSION, reservedUsd: usdOf(micros(state.reservedUsd) + maxMicros), calls: (state.calls || 0) + 1 }, { nowIso, opId, purpose, reason: 'reservation' });
   const opDoc = {
-    opId, month, purpose, modelId, maxInputTokens, maxOutputTokens, maxChargeUsd: usdOf(maxMicros), priceTableVersion: MODEL_PRICE_TABLE_VERSION,
+    opId, month, purpose, modelId, maxInputTokens, maxOutputTokens, cacheTtl, serverTools: [...serverTools], maxChargeUsd: usdOf(maxMicros), priceTableVersion: MODEL_PRICE_TABLE_VERSION,
     state: 'reserved', reservedAt: nowIso, chargedUsd: null, actualUsd: null, unpriced: null, releasedUsd: null, chargeAboveReservation: null, settledAt: null,
   };
   return { result: { ok: true, idempotentReplay: false, opId, month, maxChargeUsd: opDoc.maxChargeUsd, reservedUsd: next.reservedUsd, exhausted: next.exhausted }, next, opDoc };
@@ -205,6 +232,9 @@ export function planSettle(stored, op, { opId, actualUsd, unpriced = false, nowI
     throw new Error('settleSpend: exactly one of actualUsd (a number ≥ 0) or unpriced: true');
   }
   if (!op) return { result: { ok: false, code: 'reservation_not_found', opId }, next: null, opPatch: null };
+  // Fail closed on an op with no numeric maximum (review S-4: a record from before maximum-charge reservations would
+  // turn the month's totals into NaN, and every later reservation would then pass).
+  if (!isAmount(op.maxChargeUsd)) return { result: { ok: false, code: 'reservation_without_maximum', opId }, next: null, opPatch: null };
   const reservedMicros = micros(op.maxChargeUsd);
   // An unpriced call (its usage cannot be read) is charged the most it could have cost: its reserved maximum.
   const chargedMicros = unpriced === true ? reservedMicros : micros(actualUsd);

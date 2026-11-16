@@ -13,10 +13,10 @@ import { runIdeaBookEvalPass, runIdeaBookWindow } from './sweep.js';
 import { closeIdeaBook, catchUpIdeaBook } from './close.js';
 import { readFileSync } from 'node:fs';
 import { ideaBookWindowsOf, windowRowId, CLOSE_WINDOW, IDEA_BOOK_EVAL_FIRE_EVERY_MIN, nextSessionDate } from './windows.js';
-import { recordWindowAttempt, foldWindowAttempt, attemptOf, buildCloseWindowRow, WINDOW_OUTCOME, WINDOW_ONLY_SESSIONS_PER_TX } from './windowLedger.js';
+import { recordWindowAttempt, foldWindowAttempt, attemptOf, buildCloseWindowRow, WINDOW_OUTCOME, WINDOW_ONLY_SESSIONS_PER_TX, firstUnaccountedWindowSession } from './windowLedger.js';
 import {
   seedBook, contractOf, closeOn, storeTickSnapshot, storeCloseSnapshot, tickSnapshot, tickOf, slotNowOf, closeNowOf, etIso, DAYS, ADMIT_ISO,
-  getBook, getIdea, windDownBook, withoutWindowAlerts,
+  getBook, getIdea, windDownBook, withoutWindowAlerts, enterAt,
 } from './__testsupport__/fixtures.js';
 
 const QUOTES = { AAPL: 230.17, SPY: 600.1 };
@@ -289,7 +289,7 @@ describe('Astra T2B-02 — every due session is accounted for from the book\'s c
       expect(missedAlerts(alerts)).toHaveLength(6);
       expect(windowOnlyRow(ctx.db, ctx.bookId, D16)).toMatchObject({
         sessionDate: D16, kind: 'close', valued: false, accountedBy: 'window_cursor', observed: null, closeSnapshotKey: null,
-        code: { caughtUpSession: true, ideasValued: 0, endpoints: [], ideasResulted: [], entriesTimedOut: [], bookClosed: false },
+        code: { caughtUpSession: null, ideasValued: 0, endpoints: [], ideasResulted: [], entriesTimedOut: [], bookClosed: false },
         session: { expected: [...INTRADAY, CLOSE_WINDOW], served: [CLOSE_WINDOW], missing: INTRADAY, notServedButAttempted: [] },
       });
       expect(windowOnlyRow(ctx.db, ctx.bookId, D17)).toMatchObject({ valued: true, observed: true });
@@ -324,6 +324,34 @@ describe('Astra T2B-02 — every due session is accounted for from the book\'s c
     expect(closeRows(ctx.db, ctx.bookId)).toEqual([DAYS.admit, DAYS.d1, DAYS.d2]);
     expect(missedAlerts((await closeIdeaBook(ctx.db, ctx.bookRef, { date: DAYS.d2, now: closeNowOf(DAYS.d2) })).alerts)).toEqual([]);
     expect(dump(ctx.db, ctx.bookId)).toBe(bytes); // the next window and a replayed close write nothing
+  });
+
+  // Review W-2: which session the cursor starts at. The creation date when the book existed before that session's close
+  // pass ended (18:00 Eastern), else the next session; never a day that is not a session.
+  it('the creation session: after the close pass ends (18:30) → the next session; after the close but before the pass ends (17:30) → that day; a Saturday → Monday', async () => {
+    const after = await seedBook({ nowIso: etIso(DAYS.d1, 18, 30) });
+    expect(firstUnaccountedWindowSession(getBook(after.db, after.bookId))).toBe(DAYS.d2);
+    await closeOn(after.db, after.bookId, DAYS.d2, QUOTES);
+    expect(rowOf(after.db, after.bookId, DAYS.d1, CLOSE_WINDOW)).toBeUndefined();
+    const before = await seedBook({ nowIso: etIso(DAYS.d1, 17, 30) });
+    expect(firstUnaccountedWindowSession(getBook(before.db, before.bookId))).toBe(DAYS.d1);
+    expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 17, 30) }).map((w) => w.window)).toEqual([CLOSE_WINDOW]);
+    const saturday = await seedBook({ nowIso: etIso('2026-11-14', 12, 0) });
+    expect(firstUnaccountedWindowSession(getBook(saturday.db, saturday.bookId))).toBe(DAYS.d1);
+    await closeOn(saturday.db, saturday.bookId, DAYS.d2, QUOTES);
+    expect(rowOf(saturday.db, saturday.bookId, '2026-11-14', CLOSE_WINDOW)).toBeUndefined();
+    expect(rowOf(saturday.db, saturday.bookId, DAYS.d1, CLOSE_WINDOW)).toMatchObject({ valued: false, session: { missing: INTRADAY } });
+  });
+
+  it('review W-3 — no fill is dated in a session the cursor has already written up: it is refused as closed, and that session\'s later close never meets a second row', async () => {
+    const ctx = await setup(); // the idea may enter on d1
+    // A catch-up dated AFTER d1 (no fire does this today: a fire's catch-up only reaches sessions before its own).
+    const caught = await quiet(() => catchUpIdeaBook(ctx.db, ctx.bookRef, { before: DAYS.d2, now: slotNowOf(DAYS.d2) }));
+    expect(caught.windowsAccounted.map((w) => w.session)).toEqual([DAYS.admit, DAYS.d1]);
+    expect(await enterAt(ctx.db, ctx.bookId, ctx.ideaId, { date: DAYS.d1, quotes: QUOTES })).toMatchObject({ outcome: 'not_this_session', reason: 'session_already_closed' });
+    expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId).status).toBe('accepted');
+    const out = await closeOn(ctx.db, ctx.bookId, DAYS.d2, QUOTES); // the close goes on: the idea timed out, no collision
+    expect(out).toMatchObject({ closed: true, session: DAYS.d2, cancelled: [ctx.ideaId] });
   });
 
   it('more sessions than one transaction takes: an empty book created 1 Oct is accounted for through 13 Nov in order, twenty sessions a transaction, each once', async () => {

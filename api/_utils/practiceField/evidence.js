@@ -32,6 +32,7 @@ import { MARK_PROVENANCE_SOURCE } from './ledger.js';
 import { newTrack, foldCloseIntoTrack, trackStatistics } from './settlement.js';
 import { roundUsd } from '../mandateRounding.js';
 import { toCents, fromCents } from './money.js';
+import { nextSessionDate } from './windows.js';
 
 /** The packet's own version (its own family; starts at 1). */
 export const EVIDENCE_PACKET_VERSION = 1;
@@ -126,8 +127,11 @@ export function buildAdmissionPacket({ bookId, book, ideas, idea, verdict, nowIs
   const positions = {};
   for (const sym of Object.keys(book?.portfolio?.positions || {}).sort()) {
     const p = book.portfolio.positions[sym];
+    // The price and where it came from. The position's raw `lastMarkAsOf` is NOT sealed beside the price: it can be
+    // another quote's time (ledger.js keeps it as the gap screen's anchor); it is kept only inside `markSource`, as
+    // `recordedMarkAsOf`, labelled (review of the T2B fix round, P-1).
     positions[sym] = {
-      shares: p?.shares ?? null, lastMark: p?.lastMark ?? null, lastMarkAsOf: p?.lastMarkAsOf ?? null,
+      shares: p?.shares ?? null, lastMark: p?.lastMark ?? null,
       lastMarkSource: p?.lastMarkSource ?? null, ideaId: p?.ideaId ?? null,
       markSource: markSourceOf(p, lastCloseKey),
     };
@@ -299,21 +303,52 @@ function observationOf(row) {
   };
 }
 
-/** A ledger's holdings value at its observation's marks: Σ shares × mark, rounded once — the valuation's own basis. */
-function holdingsCentsOf(ledger) {
+/** A number, and only a number. */
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * Is an observed ledger whole enough to recompute (review O-1b)? A plain map with numeric value and cash (and, on the
+ * idea's, the holdings value), and holdings whose shares and marks are numbers. A ledger that is not is a problem,
+ * never a zero.
+ */
+const wholeLedger = (l, name) => isPlain(l) && isNum(l.markedValueUsd) && isNum(l.cashUsd) && isPlain(l.holdings)
+  && (name !== 'idea' || isNum(l.markedHoldingsValueUsd))
+  && Object.values(l.holdings).every((h) => isPlain(h) && isNum(h.shares) && isNum(h.mark));
+
+/**
+ * The holdings value a ledger's prices give, in cents, CHECKED against a stated one (review O-3). The valuation sums
+ * shares × mark in its holdings' own order and rounds once (mandateValuation.js markBook); a ticker change applied
+ * at that close can leave the order unsorted, and floating addition in another order can differ in the last bit — at
+ * an exact half-cent that moves the rounding by a cent. So the stated figure AGREES with the prices when it is the
+ * rounding of their sum in some order: within 1e-9 (relative) of the sum taken here. That admits only an order's
+ * last-bit difference, never a cent of money.
+ */
+function holdingsAgainst(ledger, statedCents) {
   let raw = 0;
-  for (const sym of Object.keys(ledger?.holdings || {}).sort()) {
-    const h = ledger.holdings[sym];
-    raw += (Number(h?.shares) || 0) * (Number(h?.mark) || 0);
-  }
-  return toCents(roundUsd(raw));
+  for (const sym of Object.keys(ledger.holdings).sort()) raw += ledger.holdings[sym].shares * ledger.holdings[sym].mark;
+  const slack = 1e-9 * Math.max(1, Math.abs(raw));
+  const low = toCents(roundUsd(raw - slack));
+  const high = toCents(roundUsd(raw + slack));
+  const agrees = statedCents >= low && statedCents <= high;
+  return { agrees, cents: agrees ? statedCents : toCents(roundUsd(raw)) };
 }
+
+/** The statistics the result states, compared with the recomputed ones whatever the order of their keys. */
+const sameJson = (a, b) => canonicalContentHash(jsonPure(a ?? null)) === canonicalContentHash(jsonPure(b ?? null));
 
 /**
  * THE RESULT'S STATISTICS, RECOMPUTED FROM THE PACKET ALONE (Astra T2B-03) — no snapshot, no row, and not the packet's
  * own `track`: each observation's values are recomputed from its holdings' quantities and marks and its cash, checked
  * against the values it states, and folded in order exactly as the close folded its rows (settlement.js
  * foldCloseIntoTrack), then stated by the one function the result was written with (trackStatistics). Pure.
+ *
+ * And checked (review O-1, O-1b), each failure named in `problems`:
+ *   coverage  the observations run from the entry session to the endpoint, every trading session once, in order;
+ *   ledger    every observation holds all three ledgers, whole — a missing one is a problem, never folded as $0;
+ *   value / holdings   each stated value is what its prices and cash give (O-3: up to the summation order);
+ *   result    the result the packet states is what its observations give: its largest declines, its exposure, its rows.
+ * A packet edited and RE-SEALED (its hash recomputed) can still be consistent with itself: the hash shows a change to
+ * a stored packet, not a forgery by someone who can write the server-only store (review O-1, its threat model).
  *
  * @returns {{ largestDecline: object, investedExposure: object, rows: number, rowsNotFullQuality: number,
  *             observations: number, problems: string[] } | null}  null when the packet carries no observation
@@ -322,27 +357,43 @@ export function recomputeResultFromPacket(packet) {
   const obs = Array.isArray(packet?.observations) ? packet.observations : null;
   if (!obs || obs.length === 0) return null;
   const problems = [];
+  const entered = packet?.entry?.sessionDate ?? null;
+  const ended = packet?.endpoint?.session ?? null;
+  if ((obs[0]?.date ?? null) !== entered) problems.push(`coverage:first:${obs[0]?.date ?? 'none'}`);
+  if ((obs[obs.length - 1]?.date ?? null) !== ended) problems.push(`coverage:last:${obs[obs.length - 1]?.date ?? 'none'}`);
   let track = newTrack();
   let prior = null;
   for (const o of obs) {
-    if (typeof o?.date !== 'string' || (prior !== null && o.date <= prior)) problems.push(`order:${o?.date ?? 'none'}`);
-    prior = o?.date ?? prior;
+    const date = typeof o?.date === 'string' ? o.date : null;
+    if (date === null || (prior !== null && date <= prior)) problems.push(`order:${date ?? 'none'}`);
+    else if (prior !== null && nextSessionDate(prior) !== date) problems.push(`coverage:gap:${prior}..${date}`);
+    if (date !== null) prior = date;
     const cents = {};
     for (const [name] of LEDGERS) {
       const l = o?.ledgers?.[name];
-      const holdingsCents = holdingsCentsOf(l);
-      const valueCents = toCents(l?.cashUsd) + holdingsCents;
-      if (valueCents !== toCents(l?.markedValueUsd)) problems.push(`value:${o?.date}:${name}`);
-      if (name === 'idea' && holdingsCents !== toCents(l?.markedHoldingsValueUsd)) problems.push(`holdings:${o?.date}:${name}`);
-      cents[name] = { valueCents, holdingsCents };
+      if (!wholeLedger(l, name)) { problems.push(`ledger:${date}:${name}`); cents[name] = null; continue; }
+      const statedHoldings = name === 'idea' ? toCents(l.markedHoldingsValueUsd) : toCents(l.markedValueUsd) - toCents(l.cashUsd);
+      const h = holdingsAgainst(l, statedHoldings);
+      const valueCents = toCents(l.cashUsd) + h.cents;
+      if (valueCents !== toCents(l.markedValueUsd) || !h.agrees) problems.push(`value:${date}:${name}`);
+      if (name === 'idea' && !h.agrees) problems.push(`holdings:${date}:${name}`);
+      cents[name] = { valueCents, holdingsCents: h.cents };
     }
     track = foldCloseIntoTrack(track, {
-      date: o?.date, fullQuality: o?.fullQuality === true,
-      markedValue: fromCents(cents.idea.valueCents), markedHoldingsValue: fromCents(cents.idea.holdingsCents),
-      comparisonMarkedValue: fromCents(cents.comparison.valueCents),
+      date, fullQuality: o?.fullQuality === true,
+      markedValue: fromCents(cents.idea?.valueCents ?? 0), markedHoldingsValue: fromCents(cents.idea?.holdingsCents ?? 0),
+      comparisonMarkedValue: fromCents(cents.comparison?.valueCents ?? 0),
     }, { observed: o?.observed === true });
   }
-  return { ...trackStatistics(track), observations: obs.length, problems };
+  const stats = trackStatistics(track);
+  const res = packet?.result;
+  if (!isPlain(res)) problems.push('result:missing');
+  else {
+    if (!sameJson(stats.largestDecline, res.largestDecline)) problems.push('result:largestDecline');
+    if (!sameJson(stats.investedExposure, res.investedExposure)) problems.push('result:investedExposure');
+    if (stats.rows !== res.dataQuality?.rows || stats.rowsNotFullQuality !== res.dataQuality?.rowsNotFullQuality) problems.push('result:rows');
+  }
+  return { ...stats, observations: obs.length, problems };
 }
 
 /**
@@ -358,7 +409,9 @@ export function recomputeResultFromPacket(packet) {
 export function buildResultPacket({ bookId, idea, endpointRow, inception, closeRows = [], nowIso }) {
   if (!isPlain(inception) || !isPlain(inception.legs)) throw new PracticeFieldError('inception_row_missing', { ideaId: idea?.ideaId ?? null });
   if (!isPlain(endpointRow) || !isPlain(idea?.result)) throw new PracticeFieldError('result_packet_without_result', { ideaId: idea?.ideaId ?? null });
-  const gaps = (closeRows || []).filter((r) => !isPlain(r) || r.rowKind !== 'valuation').map((r) => r?.date ?? null);
+  // Every close, once, in session order (review O-4: a walk that stopped early is a gap too).
+  const gaps = (closeRows || []).filter((r, i) => !isPlain(r) || r.rowKind !== 'valuation'
+    || (i > 0 && nextSessionDate(closeRows[i - 1]?.date) !== r.date)).map((r) => r?.date ?? null);
   const first = closeRows?.[0]?.date ?? null;
   const last = closeRows?.[closeRows.length - 1]?.date ?? null;
   if (gaps.length > 0 || first !== (idea?.entry?.sessionDate ?? null) || last !== (endpointRow.endpointSession ?? null)) {

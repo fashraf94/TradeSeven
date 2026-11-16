@@ -33,7 +33,14 @@
 // not close gets its close row here (`valued: false` — no money was valued, and no valuation row is written), with
 // its expected, served and missing windows and one alert per missed window; the one the valuation closes writes its
 // own. The cursor then stands at the last session accounted for. The valuation cursor, fills, corporate actions and
-// the catch-up of money are untouched by it.
+// the catch-up of money are untouched by it (one guard aside: no fill is dated in a session the cursor has already
+// written up — sessions.js fillSessionRefusal, a state today's callers never reach).
+//
+// WHAT A CLOSE ROW'S `served` SAYS. A close row says `served: true` once the session's close row is written: on time,
+// or later, with `caughtUpAt` (a caught-up valued close reads the same way). Its `missing` lists intraday windows only.
+// `valued` says whether a close VALUED the session (`false`: only the window cursor accounted for it — nothing was held,
+// no snapshot read, no valuation row written, and `code.caughtUpSession` is null). A reader asking "did a close value
+// this session?" reads `valued`, not `served` (review of the T2B fix round, W-1).
 
 import { getSessionForDate } from '../marketSchedule.js';
 import { ideaBookWindowsOf, windowRowId, CLOSE_WINDOW, nextSessionDate, etDateOfMs, sessionClosePassEndMs } from './windows.js';
@@ -201,7 +208,7 @@ export function buildCloseWindowRow({ bookId, book, session, windowRows, observe
     ideasResulted: [...code.resulted],
     entriesTimedOut: [...code.cancelled],
     bookClosed: bookClosed === true,
-  } : { caughtUpSession: true, ideasValued: 0, endpoints: [], ideasResulted: [], entriesTimedOut: [], bookClosed: false };
+  } : { caughtUpSession: null, ideasValued: 0, endpoints: [], ideasResulted: [], entriesTimedOut: [], bookClosed: false };
   const acted = closeCode.endpoints.length > 0 || closeCode.ideasResulted.length > 0 || closeCode.entriesTimedOut.length > 0 || closeCode.bookClosed;
   const row = {
     schemaVersion: WINDOW_LEDGER_VERSION,

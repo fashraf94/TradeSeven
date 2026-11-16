@@ -23,12 +23,16 @@ import { seedBook, getBook, countDocs } from './__testsupport__/fixtures.js';
 
 const NOV = '2026-11-17T15:00:00.000Z';
 const HAIKU = 'claude-haiku-4-5';
-/** A call on the priced model with these ceilings. At $1 / $5 per MTok, the most it can cost is in × 1.25 + out × 5 µ$. */
-const call = (maxInputTokens, maxOutputTokens, over = {}) => ({ modelId: HAIKU, maxInputTokens, maxOutputTokens, ...over });
+/**
+ * A call on the priced model with these ceilings, a 5-minute cache at most and no server tool. At $1 / $5 per MTok, the
+ * most it can cost is in × 1.25 + out × 5 µ$.
+ */
+const call = (maxInputTokens, maxOutputTokens, over = {}) => ({ modelId: HAIKU, maxInputTokens, maxOutputTokens, cacheTtl: '5m', serverTools: [], ...over });
 /** The calls the rows use, by the most each can cost. */
 const C015 = call(8_000, 1_000); //          $0.015
 const C010 = call(72_000, 2_000); //         $0.10
 const C050 = call(320_000, 20_000); //       $0.50
+const C150 = call(80_000, 10_000); //        $0.15
 const C290 = call(2_000_000, 80_000); //     $2.90
 const C300 = call(2_000_000, 100_000); //    $3.00
 const C310 = call(2_000_000, 120_000); //    $3.10
@@ -97,12 +101,12 @@ describe('reserveSpend — the maximum is reserved, and must fit', () => {
     const ctx = await seedBook();
     expect(await reserve(ctx, { ...C300, opId: 'all-of-it' })).toMatchObject({ ok: true, maxChargeUsd: 3, reservedUsd: 3, exhausted: true });
     expect(spendOf(ctx)).toMatchObject({ month: '2026-11', reservedUsd: 3, exhausted: true, exhaustedAt: NOV, exhaustedBy: { opId: 'all-of-it', reason: 'reservation', roomUsd: 0 } });
-    expect(await reserve(ctx, { ...call(1, 1), opId: 'one-more' })).toMatchObject({ ok: false, code: 'spend_would_exceed', roomUsd: 0 });
-    // …and two hundred calls of $0.015 make $3 exactly, too.
+    expect(await reserve(ctx, { ...call(1, 1), opId: 'one-more' })).toMatchObject({ ok: false, code: 'spend_exhausted', roomUsd: 0 });
+    // …and twenty calls of $0.15 make $3 exactly, too.
     const many = await seedBook({ uid: 'owner-2', opId: 'c2' });
-    for (let i = 0; i < 200; i += 1) expect((await reserve(many, { ...C015, opId: `call-${i}` })).ok, String(i)).toBe(true);
-    expect(spendOf(many)).toMatchObject({ reservedUsd: 3, calls: 200, exhausted: true });
-    expect(await reserve(many, { ...call(1, 1), opId: 'one-more' })).toMatchObject({ ok: false, code: 'spend_would_exceed' });
+    for (let i = 0; i < 20; i += 1) expect((await reserve(many, { ...C150, opId: `call-${i}` })).ok, String(i)).toBe(true);
+    expect(spendOf(many)).toMatchObject({ reservedUsd: 3, calls: 20, exhausted: true });
+    expect(await reserve(many, { ...call(1, 1), opId: 'one-more' })).toMatchObject({ ok: false, code: 'spend_exhausted' });
   });
 
   it('a model the price table does not price is refused `model_unpriced`, writing nothing', async () => {
@@ -142,7 +146,7 @@ describe('reserveSpend — the maximum is reserved, and must fit', () => {
     expect(sizeBefore).toBeLessThan(after50);
     expect(countDocs(ctx.db, `mandates/${ctx.bookId}/spendOps/`)).toBe(500);
     expect(opOf(ctx, 'c-7')).toEqual({
-      opId: 'c-7', month: '2026-11', purpose: 'manager_window', modelId: HAIKU, maxInputTokens: 400, maxOutputTokens: 100, maxChargeUsd: 0.001,
+      opId: 'c-7', month: '2026-11', purpose: 'manager_window', modelId: HAIKU, maxInputTokens: 400, maxOutputTokens: 100, cacheTtl: '5m', serverTools: [], maxChargeUsd: 0.001,
       priceTableVersion: MODEL_PRICE_TABLE_VERSION, state: 'reserved', reservedAt: NOV, chargedUsd: null, actualUsd: null, unpriced: null,
       releasedUsd: null, chargeAboveReservation: null, settledAt: null,
     });
@@ -164,7 +168,7 @@ describe('reserveSpend — the maximum is reserved, and must fit', () => {
     const bytes = JSON.stringify([spendOf(ctx), opOf(ctx, 'x')]);
     expect(await reserve(ctx, { ...C015, opId: 'x' })).toMatchObject({ ok: true, idempotentReplay: true, month: '2026-11', maxChargeUsd: 0.015 });
     expect(JSON.stringify([spendOf(ctx), opOf(ctx, 'x')])).toBe(bytes);
-    for (const other of [call(8_001, 1_000), call(8_000, 1_001), call(8_000, 1_000, { modelId: 'claude-haiku-4-5-20251001' })]) {
+    for (const other of [call(8_001, 1_000), call(8_000, 1_001), call(8_000, 1_000, { modelId: 'claude-haiku-4-5-20251001' }), call(8_000, 1_000, { cacheTtl: 'none' }), call(8_000, 1_000, { serverTools: ['web_search'] })]) {
       expect(await reserve(ctx, { ...other, opId: 'x' })).toEqual({ ok: false, code: 'op_id_conflict', opId: 'x' });
     }
     expect(await reserve(ctx, { ...C015, opId: 'x', purpose: 'drafting' })).toEqual({ ok: false, code: 'op_id_conflict', opId: 'x' });
@@ -183,10 +187,12 @@ describe('reserveSpend — the maximum is reserved, and must fit', () => {
     expect(spendOf(ctx)).toMatchObject({ reservedUsd: 0.027, settledUsd: 0.027, calls: 2 });
   });
 
-  it('refuses a missing model, ceilings that are not whole tokens, an unsafe operation id, a missing purpose, and a clock without its offset', () => {
+  it('refuses a missing model, ceilings that are not whole tokens, an unstated cache lifetime or tool list, an unsafe operation id, a missing purpose, and a clock without its offset', () => {
     const ok = { ...C015, purpose: 'p', opId: 'o', nowIso: NOV };
     expect(planReserve(null, null, ok).result.ok).toBe(true);
     for (const modelId of ['', null, undefined, 7]) expect(() => planReserve(null, null, { ...ok, modelId }), String(modelId)).toThrow(/modelId/);
+    for (const cacheTtl of [undefined, null, '', '1d', 5]) expect(() => planReserve(null, null, { ...ok, cacheTtl }), String(cacheTtl)).toThrow(/cacheTtl/);
+    for (const serverTools of [undefined, null, 'web_search', [''], [7]]) expect(() => planReserve(null, null, { ...ok, serverTools }), String(serverTools)).toThrow(/serverTools/);
     for (const v of [0, -1, 1.5, NaN, Infinity, '100', null, undefined]) {
       expect(() => planReserve(null, null, { ...ok, maxInputTokens: v }), `in ${v}`).toThrow(/tokens/);
       expect(() => planReserve(null, null, { ...ok, maxOutputTokens: v }), `out ${v}`).toThrow(/tokens/);
@@ -195,6 +201,64 @@ describe('reserveSpend — the maximum is reserved, and must fit', () => {
     expect(() => planReserve(null, null, { ...ok, purpose: '' })).toThrow(/purpose/);
     for (const nowIso of ['2026-11-17', '2026-12-01T03:00:00', 'soon']) expect(() => planReserve(null, null, { ...ok, nowIso }), nowIso).toThrow(/instant/);
     expect(planReserve(null, null, { ...ok, nowIso: '2026-12-01T00:30:00-05:00' }).result).toMatchObject({ ok: true, month: '2026-12' });
+  });
+});
+
+describe('the review of this fix round — what the table cannot price, an exhausted month, a record with no maximum', () => {
+  it("review S-1 — a 1-hour cache write (2× the base input at Anthropic's list) or a server tool (a fee per use) is refused `pricing_unsupported`: the table prices neither; nothing is written", async () => {
+    const ctx = await seedBook();
+    const before = bookBytes(ctx);
+    expect(await reserve(ctx, { ...C015, cacheTtl: '1h', opId: 'hour' })).toEqual({ ok: false, code: 'pricing_unsupported', unsupported: ['cache_write_1h'], modelId: HAIKU, priceTableVersion: MODEL_PRICE_TABLE_VERSION });
+    expect(await reserve(ctx, { ...C015, serverTools: ['web_search'], opId: 'search' })).toMatchObject({ ok: false, code: 'pricing_unsupported', unsupported: ['server_tools'] });
+    expect(await reserve(ctx, { ...C015, cacheTtl: '1h', serverTools: ['web_search'], opId: 'both' })).toMatchObject({ ok: false, code: 'pricing_unsupported', unsupported: ['cache_write_1h', 'server_tools'] });
+    for (const opId of ['hour', 'search', 'both']) expect(opOf(ctx, opId), opId).toBeUndefined();
+    expect(bookBytes(ctx)).toBe(before);
+    // No cache, or a 5-minute one, with no server tool: reserved, at the same maximum.
+    expect(await reserve(ctx, { ...C015, cacheTtl: 'none', opId: 'plain' })).toMatchObject({ ok: true, maxChargeUsd: 0.015 });
+    expect(opOf(ctx, 'plain')).toMatchObject({ cacheTtl: 'none', serverTools: [] });
+  });
+
+  it('review S-2 — an EXHAUSTED month runs no model call (contract §17 B-SPEND): a call small enough to fit is refused `spend_exhausted`, writing nothing', async () => {
+    const ctx = await seedBook();
+    await reserve(ctx, { ...call(2_000_000, 93_000), opId: 'most' }); // 2.5 + 0.465 = $2.965
+    expect(spendOf(ctx)).toMatchObject({ reservedUsd: 2.965, exhausted: true }); // $0.035 of room, below the smallest call
+    const before = bookBytes(ctx);
+    expect(await reserve(ctx, { ...C015, opId: 'small' })).toEqual({ ok: false, code: 'spend_exhausted', month: '2026-11', reservedUsd: 2.965, roomUsd: 0.035, minCallUsd: PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD });
+    expect(opOf(ctx, 'small')).toBeUndefined();
+    expect(bookBytes(ctx)).toBe(before);
+  });
+
+  it('review S-4 — fails closed: an op with no numeric maximum settles nothing; a month whose figures are not numbers reserves nothing', async () => {
+    const ctx = await seedBook();
+    await ctx.db.collection('mandates').doc(ctx.bookId).collection('spendOps').doc('old').set({ opId: 'old', month: '2026-11', purpose: 'p', estimateUsd: 0.02, state: 'reserved' });
+    const before = bookBytes(ctx);
+    expect(await settle(ctx, { opId: 'old', actualUsd: 0.01 })).toEqual({ ok: false, code: 'reservation_without_maximum', opId: 'old' });
+    expect(bookBytes(ctx)).toBe(before);
+    expect(planReserve({ month: '2026-11', boundUsd: 3, reservedUsd: NaN }, null, { ...C015, purpose: 'p', opId: 'o', nowIso: NOV }).result).toEqual({ ok: false, code: 'spend_state_invalid', month: '2026-11' });
+  });
+
+  it('T-1 — a settlement AT the maximum (an unreadable call, or one that cost exactly that) is not flagged above it, and nothing is logged', async () => {
+    const ctx = await seedBook();
+    await reserve(ctx, { ...C050, opId: 'u' });
+    await reserve(ctx, { ...C050, opId: 'x' });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const u = await settle(ctx, { opId: 'u', unpriced: true });
+      const x = await settle(ctx, { opId: 'x', actualUsd: 0.5 });
+      for (const r of [u, x]) { expect(r).toMatchObject({ ok: true, chargedUsd: 0.5, releasedUsd: 0 }); expect(r).not.toHaveProperty('flags'); }
+      expect(errors).not.toHaveBeenCalled();
+    } finally { errors.mockRestore(); }
+    expect(opOf(ctx, 'u').chargeAboveReservation).toBeNull();
+  });
+
+  it('T-2 — while the month stays exhausted a later write keeps the first `exhaustedAt` / `exhaustedBy`', async () => {
+    const ctx = await seedBook();
+    await reserve(ctx, { ...C300, opId: 'all-of-it' });
+    const first = spendOf(ctx);
+    expect(first).toMatchObject({ exhausted: true, exhaustedAt: NOV, exhaustedBy: { opId: 'all-of-it', reason: 'reservation' } });
+    const later = '2026-11-18T15:00:00.000Z';
+    expect(await settle(ctx, { opId: 'all-of-it', actualUsd: 2.98 }, later)).toMatchObject({ ok: true, releasedUsd: 0.02, exhausted: true }); // $0.02 of room
+    expect(spendOf(ctx)).toMatchObject({ reservedUsd: 2.98, exhausted: true, exhaustedAt: NOV, exhaustedBy: first.exhaustedBy });
   });
 });
 
@@ -236,7 +300,7 @@ describe('settleSpend — the charge as it is, the unused part released', () => 
     } finally { errors.mockRestore(); }
     expect(opOf(ctx, 'big')).toMatchObject({ chargedUsd: 3.2, actualUsd: 3.2, chargeAboveReservation: { reservedMaxUsd: 2.9, chargedUsd: 3.2, overUsd: 0.3 } });
     expect(spendOf(ctx)).toMatchObject({ reservedUsd: 3.2, settledUsd: 3.2, exhausted: true, exhaustedBy: { opId: 'big', reason: CHARGE_ABOVE_RESERVATION } });
-    expect(await reserve(ctx, { ...call(1, 1), opId: 'next' })).toMatchObject({ ok: false, code: 'spend_would_exceed' });
+    expect(await reserve(ctx, { ...call(1, 1), opId: 'next' })).toMatchObject({ ok: false, code: 'spend_exhausted' });
   });
 
   it('idempotent: a replayed settlement changes nothing and counts nothing twice; another charge for the same id is a conflict; an unknown id is refused', async () => {
@@ -259,7 +323,7 @@ describe('a new month starts empty', () => {
   it('the first reservation of December finds November\'s exhausted state gone, kept beside it as last month\'s totals', async () => {
     const ctx = await seedBook();
     await reserve(ctx, { ...C300, opId: 'all-of-it' });
-    expect(await reserve(ctx, { ...C015, opId: 'nov-late' })).toMatchObject({ ok: false, code: 'spend_would_exceed' });
+    expect(await reserve(ctx, { ...C015, opId: 'nov-late' })).toMatchObject({ ok: false, code: 'spend_exhausted' });
     expect(spendOf(ctx)).toMatchObject({ month: '2026-11', exhausted: true });
     const dec = '2026-12-01T05:00:00.000Z'; // midnight Eastern
     expect(await reserveAt(ctx, dec, { ...C015, opId: 'dec-1' })).toMatchObject({ ok: true, month: '2026-12', reservedUsd: 0.015, exhausted: false });

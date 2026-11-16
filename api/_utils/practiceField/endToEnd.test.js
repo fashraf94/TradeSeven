@@ -57,7 +57,9 @@ import { verifyPacket, resultPacketMissingMarks, resultPacketProvenanceProblems,
 //   T2B-03 (the close observations): bd6286bd…, 384,605 bytes, 155 documents. Against T2B-02's pin: no document added
 //     or removed; 1,195 leaves added, all under the three result packets' `observations` (every close from entry to
 //     endpoint, copied from the idea's rows), and those packets' `contentHash` changed with them. Nothing else.
-const EXPECTED_DUMP = { sha256: 'bd6286bdab695368c9c8f521b57df758ce99cc4ff5208f948a446ddcfb0c6cc0', bytes: 384605 };
+//   The round's review (W-1): f9c91e33…, 384,605 bytes, 155 documents. One leaf changed: 13 Nov's window-only close
+//     row says `code.caughtUpSession: null` (nothing was caught up for it), not `true`.
+const EXPECTED_DUMP = { sha256: 'f9c91e33f6bafa05b46ec4d7ce5d67d8ad1a8a80a4b92d42b4412fcbf76ad6ed', bytes: 384605 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];
