@@ -1,7 +1,7 @@
 // src/utils/filmRoomSubject.test.js
 //
 // Film Room C2 — the shared subject module (Build C spec §5, §6; Amendment C CC-2, CC-7): the sector is the symbol
-// directory's own one word, never guessed; a quoted text is carried whole within its bound or not at all.
+// directory's NAME for it (Amendment D CD-3), never guessed; a quoted text is carried whole within its bound or not at all.
 
 import { describe, it, expect } from 'vitest';
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): filmRoomSubject.js imports api/_utils/rankingConfig.js; the excerpt
@@ -12,19 +12,26 @@ import {
 } from './filmRoomSubject.js';
 import { TICKER_TO_SECTOR, STOCK_UNIVERSE } from '../../api/_utils/rankingConfig.js';
 
-describe('sectorOf — the directory\'s one word for a symbol, or none', () => {
-  it('a mapped symbol: the directory\'s own value, its sector id (one word)', () => {
-    expect(sectorOf('ETN')).toBe(TICKER_TO_SECTOR.ETN);
-    expect(sectorOf('ETN')).toBe('XLI');
-    expect(sectorOf('NVDA')).toBe('XLK');
-    for (const [sym, id] of Object.entries(TICKER_TO_SECTOR)) expect(sectorOf(sym), sym).toBe(id);
+describe('sectorOf — CD-3: the directory\'s NAME for a symbol\'s sector, or none', () => {
+  it('a mapped symbol: the directory\'s name for its sector — "Industrials", never the fund code XLI (the mutant: the fund code back)', () => {
+    expect(TICKER_TO_SECTOR.ETN).toBe('XLI');
+    expect(sectorOf('ETN')).toBe('Industrials');
+    expect(sectorOf('NVDA')).toBe('Technology');
+    for (const [sym, id] of Object.entries(TICKER_TO_SECTOR)) expect(sectorOf(sym), sym).toBe(STOCK_UNIVERSE[id].name);
   });
-  it('every sector id is one word, where some sector NAMES are two (why the word is the id)', () => {
-    for (const id of new Set(Object.values(TICKER_TO_SECTOR))) expect(/^\S+$/.test(id), id).toBe(true);
-    expect(Object.values(STOCK_UNIVERSE).some((s) => /\s/.test(s.name))).toBe(true);
+  it('a sector name of two words is carried whole — no one-word filter (AMZN: "Consumer Discretionary", META: "Communication Services")', () => {
+    expect(sectorOf('AMZN')).toBe('Consumer Discretionary');
+    expect(sectorOf('META')).toBe('Communication Services');
+    expect(Object.values(STOCK_UNIVERSE).some((x) => /\s/.test(x.name))).toBe(true);
   });
   it('a symbol the directory lacks, or no symbol: none — never guessed (the mutant: a sector for an unmapped symbol)', () => {
     for (const sym of ['ZZQX', 'BTC', '', null, undefined, 7, 'toString', 'constructor', '__proto__']) expect(sectorOf(sym), String(sym)).toBeNull();
+  });
+  it('a code the universe has no name for, or a blank or non-string name: none — the code is never shown in its place', () => {
+    const tickers = { AAA: 'XZZ', BBB: 'XLB', CCC: 'XLC', DDD: '__proto__' };
+    const universe = { XLB: { name: '' }, XLC: { name: 7 } };
+    for (const sym of ['AAA', 'BBB', 'CCC', 'DDD']) expect(sectorOf(sym, { tickers, universe }), sym).toBeNull();
+    expect(sectorOf('AAA', { tickers, universe: { XZZ: { name: 'Widgets and Gears' } } })).toBe('Widgets and Gears');
   });
 });
 
@@ -85,19 +92,19 @@ describe('the idea — the battle\'s frozen carriage and its version (carriedIde
 describe('THE SUBJECT LINE — one projection (CC-7), each part only where held', () => {
   const STATEMENT = 'Industrials and chips lead while the wider market drifts; rotate out of names that stop moving.';
   it('every part: "{SYM} · {sector} · under your idea \'{first 60 code points}\' v{n}"', () => {
-    const line = subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: { statement: STATEMENT, version: 3 } });
-    expect(line.text).toBe(`ETN · XLI · under your idea '${[...STATEMENT].slice(0, 60).join('')}' v3`);
-    expect(line).toMatchObject({ symbol: 'ETN', sector: 'XLI', idea: { statement: [...STATEMENT].slice(0, 60).join(''), version: 3 } });
+    const line = subjectLineOf({ symbol: 'ETN', sector: 'Industrials', idea: { statement: STATEMENT, version: 3 } });
+    expect(line.text).toBe(`ETN · Industrials · under your idea '${[...STATEMENT].slice(0, 60).join('')}' v3`);
+    expect(line).toMatchObject({ symbol: 'ETN', sector: 'Industrials', idea: { statement: [...STATEMENT].slice(0, 60).join(''), version: 3 } });
     expect(SUBJECT_WORDS).toEqual({ separator: ' · ', underIdea: 'under your idea' });
   });
   it('each part absent in turn: no sector; no carried idea (the line ends after the sector); the idea without its statement; without its version; no symbol, no line', () => {
     expect(subjectLineOf({ symbol: 'ZZQX', sector: null, idea: { statement: 'Hold.', version: 2 } }).text).toBe("ZZQX · under your idea 'Hold.' v2");
-    expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: null }).text).toBe('ETN · XLI');
-    expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI' }).text).toBe('ETN · XLI');
-    expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: { statement: null, version: 2 } }).text).toBe('ETN · XLI · under your idea v2');
-    expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: { statement: 'Hold.', version: null } }).text).toBe("ETN · XLI · under your idea 'Hold.'");
+    expect(subjectLineOf({ symbol: 'ETN', sector: 'Industrials', idea: null }).text).toBe('ETN · Industrials');
+    expect(subjectLineOf({ symbol: 'ETN', sector: 'Industrials' }).text).toBe('ETN · Industrials');
+    expect(subjectLineOf({ symbol: 'ETN', sector: 'Industrials', idea: { statement: null, version: 2 } }).text).toBe('ETN · Industrials · under your idea v2');
+    expect(subjectLineOf({ symbol: 'ETN', sector: 'Industrials', idea: { statement: 'Hold.', version: null } }).text).toBe("ETN · Industrials · under your idea 'Hold.'");
     expect(subjectLineOf({ symbol: 'ETN', sector: null, idea: null }).text).toBe('ETN');
-    for (const symbol of [null, undefined, '', 7, 'Ab3dEf7hIj9kLm1nOp5q']) expect(subjectLineOf({ symbol, sector: 'XLI' }), String(symbol)).toBeNull();
+    for (const symbol of [null, undefined, '', 7, 'Ab3dEf7hIj9kLm1nOp5q']) expect(subjectLineOf({ symbol, sector: 'Industrials' }), String(symbol)).toBeNull();
   });
   it('THE 60-CODE-POINT CUT: 60 kept whole, the 61st gone; an astral character counts once and is never split', () => {
     expect(SUBJECT_STATEMENT_CODE_POINTS).toBe(60);
@@ -111,11 +118,11 @@ describe('THE SUBJECT LINE — one projection (CC-7), each part only where held'
   });
   it('the screen\'s side (subjectOfDay) and the excerpt\'s side (subjectOfExcerpt) say the same line from the same facts; the sector from the directory alone (the mutant: a sector guessed)', () => {
     const day = subjectOfDay(battleWith(), 'ETN', version(), OWNER);
-    const excerpt = { symbol: { value: 'ETN', class: 'recorded' }, sector: { value: 'XLI', class: 'recorded' }, idea: { label: 'i1', version: { value: 4, class: 'recorded' }, statement: { text: 'Chips lead while the market drifts.', by: 'player', at: null, class: 'quoted' } } };
+    const excerpt = { symbol: { value: 'ETN', class: 'recorded' }, sector: { value: 'Industrials', class: 'recorded' }, idea: { label: 'i1', version: { value: 4, class: 'recorded' }, statement: { text: 'Chips lead while the market drifts.', by: 'player', at: null, class: 'quoted' } } };
     expect(day.line).toEqual(subjectOfExcerpt(excerpt));
     expect(subjectOfDay(battleWith(), 'ZZQX', version(), OWNER).line.sector).toBeNull();
-    expect(subjectOfDay(battleWith(null), 'ETN', null, OWNER).line.text).toBe('ETN · XLI');
-    expect(subjectOfDay(battleWith(), 'ETN', version({ userId: 'someone-else' }), OWNER).line.text).toBe('ETN · XLI');
+    expect(subjectOfDay(battleWith(null), 'ETN', null, OWNER).line.text).toBe('ETN · Industrials');
+    expect(subjectOfDay(battleWith(), 'ETN', version({ userId: 'someone-else' }), OWNER).line.text).toBe('ETN · Industrials');
     expect(subjectOfExcerpt({ symbol: { value: 'ETN' } }).text).toBe('ETN');
     expect(subjectOfExcerpt(null)).toBeNull();
   });
@@ -126,20 +133,20 @@ describe('the §2 review\'s lens 3 — the read\'s states, the carriage\'s id cl
     for (const watchlistId of ['a/b', '__x__', '', 'x'.repeat(201)]) expect(carriedIdeaOf(battleWith({ watchlistId, hypothesisVersion: 4, contentHash: HASH })), watchlistId).toBeNull();
   });
   it('an idea holding neither its statement nor its version says nothing — no dangling "under your idea" (L3-10)', () => {
-    expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: { statement: null, version: null } })).toEqual({ symbol: 'ETN', sector: 'XLI', idea: null, text: 'ETN · XLI' });
-    expect(subjectOfExcerpt({ symbol: { value: 'ETN' }, sector: { value: 'XLI' }, idea: { label: 'i1' } }).text).toBe('ETN · XLI');
+    expect(subjectLineOf({ symbol: 'ETN', sector: 'Industrials', idea: { statement: null, version: null } })).toEqual({ symbol: 'ETN', sector: 'Industrials', idea: null, text: 'ETN · Industrials' });
+    expect(subjectOfExcerpt({ symbol: { value: 'ETN' }, sector: { value: 'Industrials' }, idea: { label: 'i1' } }).text).toBe('ETN · Industrials');
   });
   it('the screen\'s read states (L3-2, L3-8; CE-5\'s CD-10 correction): loading and error say no line while the battle carries an idea; DENIED shows the line without the idea; missing and idle the idea without its statement; ready the document', () => {
     const b = battleWith();
     expect(subjectOfDayRead(b, 'ETN', { status: 'loading', doc: null }, OWNER)).toBeNull();
     expect(subjectOfDayRead(b, 'ETN', { status: 'error', doc: null }, OWNER)).toBeNull();
-    expect(subjectOfDayRead(b, 'ETN', { status: 'denied', doc: null }, OWNER).line.text).toBe('ETN · XLI');
-    expect(subjectOfDayRead(b, 'ETN', { status: 'missing', doc: null }, OWNER).line.text).toBe('ETN · XLI · under your idea v4');
-    expect(subjectOfDayRead(b, 'ETN', { status: 'idle', doc: null }, OWNER).line.text).toBe('ETN · XLI · under your idea v4');
-    expect(subjectOfDayRead(b, 'ETN', { status: 'ready', doc: version() }, OWNER).line.text).toBe("ETN · XLI · under your idea 'Chips lead while the market drifts.' v4");
-    expect(subjectOfDayRead(b, 'ETN', { status: 'ready', doc: version({ contentHash: 'g'.repeat(64) }) }, OWNER).line.text).toBe('ETN · XLI');
+    expect(subjectOfDayRead(b, 'ETN', { status: 'denied', doc: null }, OWNER).line.text).toBe('ETN · Industrials');
+    expect(subjectOfDayRead(b, 'ETN', { status: 'missing', doc: null }, OWNER).line.text).toBe('ETN · Industrials · under your idea v4');
+    expect(subjectOfDayRead(b, 'ETN', { status: 'idle', doc: null }, OWNER).line.text).toBe('ETN · Industrials · under your idea v4');
+    expect(subjectOfDayRead(b, 'ETN', { status: 'ready', doc: version() }, OWNER).line.text).toBe("ETN · Industrials · under your idea 'Chips lead while the market drifts.' v4");
+    expect(subjectOfDayRead(b, 'ETN', { status: 'ready', doc: version({ contentHash: 'g'.repeat(64) }) }, OWNER).line.text).toBe('ETN · Industrials');
     // a battle that carries no idea has a line whatever the read's state
-    expect(subjectOfDayRead(battleWith(null), 'ETN', { status: 'loading', doc: null }, OWNER).line.text).toBe('ETN · XLI');
+    expect(subjectOfDayRead(battleWith(null), 'ETN', { status: 'loading', doc: null }, OWNER).line.text).toBe('ETN · Industrials');
   });
 });
 

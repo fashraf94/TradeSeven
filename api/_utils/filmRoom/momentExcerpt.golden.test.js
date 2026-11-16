@@ -40,9 +40,9 @@ const GOLDEN = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8'));
 const sha256 = (v) => createHash('sha256').update(stableStringify(v), 'utf8').digest('hex');
 /** The goldens' SHA-256, over their canonical JSON (canonicalHash.js stableStringify) — the build report records both. */
 const GOLDEN_SHA256 = Object.freeze({
-  // the C2 fix round moves each by the rulings that change the shape, one commit each (build report §11): CD-16 (no meeting), CD-14 (no card.note)
-  moment: '5d9fed6d00227641b1cf0e4c2f4efe320ee6559154026030da7a11c85c5990ee',
-  card: '13a700988e09d2e441fadbf31e328f153a9c7b13ac40d24b65bb57835fee03a5',
+  // the C2 fix round moves each by the rulings that change the shape, one commit each (build report §11): CD-16 (no meeting), CD-14 (no card.note), CD-3 (the sector named); CD-8 moved no byte
+  moment: 'cff3ecd44b55090a91a29d0dda19435f9bfef6c34fbf8ba7b9502658ff7e9637',
+  card: '397116410d1d178651625e32ed7f3fa04794ddc9b9bec94d8fb278fce13d0c5a',
 });
 
 /** The card, by the ledger's own builder; the store with it unless a test names another. */
@@ -103,7 +103,7 @@ describe('C-EXCERPT — the goldens, through the real writer', () => {
     expect(MOMENT_EXCERPT_VERSION).toBe(1);
     expect([e.symbol.value, e.situationId.value, e.situationVersion.value, e.checks.value]).toEqual(['ETN', 'stalled', 2, 5]);
     expect([e.from.value, e.to.value]).toEqual([t.checks.find((c) => c.tickSeq === 15).at, t.checks.find((c) => c.tickSeq === 19).at]);
-    expect(e.sector).toEqual({ value: 'XLI', class: 'recorded' });
+    expect(e.sector).toEqual({ value: 'Industrials', class: 'recorded' });   // CD-3: the directory's name, never the fund code
     expect(e.rationale.rationale.text).toBe(t.rationale[RAT15].rationale);
     expect(e.rationale.hypothesis.text).toBe(t.rationale[RAT15].hypothesis);
     expect(e.directive.playerText.text).toBe(t.directives[DIR15].playerText);

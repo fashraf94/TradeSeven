@@ -48,7 +48,7 @@ const readers = (doc = ideaVersionDoc()) => {
 /** A line's visible words: its text with the class markers (KindMark) left out. */
 const lineText = (el) => { const c = el.cloneNode(true); for (const k of c.querySelectorAll('[data-kind-mark]')) k.remove(); return c.textContent; };
 const STATEMENT_60 = [...EXCERPT_STATEMENT].slice(0, SUBJECT_STATEMENT_CODE_POINTS).join('');
-const FULL = `ETN · XLI · under your idea '${STATEMENT_60}' v${EXCERPT_IDEA_VERSION}`;
+const FULL = `ETN · Industrials · under your idea '${STATEMENT_60}' v${EXCERPT_IDEA_VERSION}`;
 
 async function openScreen({ admitted = true, r = readers(), cards = [] } = {}) {
   m.render(<FilmRoomScreenV2 battle={battle()} onBack={() => {}} viewerId="viewer-s" readers={r} nowMs={NOW} cardsApi={cardsApi(admitted, cards)} />);
@@ -80,7 +80,7 @@ describe('CC-7 — on the screen, under cards mode only', () => {
     m.click([...form.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Cancel'));
     await m.flush(2);
     await takeHome('stalled:META:15-19');
-    expect(lineText(m.q('[data-card-form] [data-subject-line]'))).toBe(`META · XLC · under your idea '${STATEMENT_60}' v${EXCERPT_IDEA_VERSION}`);
+    expect(lineText(m.q('[data-card-form] [data-subject-line]'))).toBe(`META · Communication Services · under your idea '${STATEMENT_60}' v${EXCERPT_IDEA_VERSION}`);
     expect(r.ideaReads).toHaveLength(1);
   });
   it('§2 review L3-3 — THROUGH THE SCREEN: a card opened from My cards on its own day shows the receipt\'s line, equal to the excerpt\'s projection of that card (the mutant: the screen not handing the idea to the receipt)', async () => {
@@ -102,7 +102,7 @@ describe('CC-7 — on the screen, under cards mode only', () => {
     const moment = await excerptOf(dbOf(excerptStore(DAY, { card: card(), idea: doc })).db, { uid: OWNER, attributionAgentId: AGENT, battleId: EXCERPT_BATTLE, etDate: SEP23, moment: ETN_MOMENT });
     const formLine = m.q('[data-card-form] [data-subject-line]');
     expect(lineText(formLine)).toBe(subjectOfExcerpt(moment.excerpt).text);
-    expect(lineText(formLine)).toBe(`ETN · XLI · under your idea v${EXCERPT_IDEA_VERSION}`);
+    expect(lineText(formLine)).toBe(`ETN · Industrials · under your idea v${EXCERPT_IDEA_VERSION}`);
     m.click(m.q(`[data-my-card="${EXCERPT_ENTRY}"]`));
     await m.flush(6);
     const ofCard = await excerptOfCard(dbOf(excerptStore(DAY, { card: card(), idea: doc })).db, { uid: OWNER, attributionAgentId: AGENT, entryId: EXCERPT_ENTRY });
@@ -141,7 +141,7 @@ describe('CC-7 — the receipt says what the agent\'s excerpt says', () => {
       renderReceipt({ idea: { status: 'ready', doc }, subjectIds: ids });
       const line = m.q('[data-subject-line]');
       expect(lineText(line), id).toBe(subjectOfExcerpt(got.excerpt).text);
-      expect(lineText(line), id).toBe(`ETN · XLI · under your idea v${EXCERPT_IDEA_VERSION}`);
+      expect(lineText(line), id).toBe(`ETN · Industrials · under your idea v${EXCERPT_IDEA_VERSION}`);
       expect(line.textContent, id).not.toContain(id);
       m.teardown(); m.setup();
     }
@@ -161,18 +161,18 @@ describe('CC-7 — the receipt says what the agent\'s excerpt says', () => {
     const unread = await excerptOfCard(dbOf(store).db, { uid: OWNER, attributionAgentId: AGENT, entryId: EXCERPT_ENTRY });
     renderReceipt({ idea: { status: 'missing', doc: null } });
     expect(lineText(m.q('[data-subject-line]'))).toBe(subjectOfExcerpt(unread.excerpt).text);
-    expect(lineText(m.q('[data-subject-line]'))).toBe(`ETN · XLI · under your idea v${EXCERPT_IDEA_VERSION}`);
+    expect(lineText(m.q('[data-subject-line]'))).toBe(`ETN · Industrials · under your idea v${EXCERPT_IDEA_VERSION}`);
     m.teardown(); m.setup();
     const bare = { ...DAY.fx.battle, agentContext: { ...DAY.fx.battle.agentContext } };
     delete bare.agentContext.equippedHypothesis;
     const none = await excerptOfCard(dbOf(excerptStore(DAY, { card: card(), over: { [`agentBattles/${EXCERPT_BATTLE}`]: bare } })).db, { uid: OWNER, attributionAgentId: AGENT, entryId: EXCERPT_ENTRY });
     renderReceipt({ idea: { status: 'idle', doc: null }, battleDoc: battle({ carriage: false }) });
     expect(lineText(m.q('[data-subject-line]'))).toBe(subjectOfExcerpt(none.excerpt).text);
-    expect(lineText(m.q('[data-subject-line]'))).toBe('ETN · XLI');
+    expect(lineText(m.q('[data-subject-line]'))).toBe('ETN · Industrials');
   });
   it('another owner\'s version: the line ends after the sector, as the excerpt carries no idea', () => {
     renderReceipt({ idea: { status: 'ready', doc: ideaVersionDoc({ userId: 'someone-else' }) } });
-    expect(lineText(m.q('[data-subject-line]'))).toBe('ETN · XLI');
+    expect(lineText(m.q('[data-subject-line]'))).toBe('ETN · Industrials');
   });
   it('§2 review L3-2 / L3-8: while the version reads, or after the read failed, NO line (the excerpt would quote the statement); a read the rules deny shows no idea, as the excerpt says of another owner\'s', () => {
     for (const status of ['loading', 'error']) {
@@ -182,7 +182,7 @@ describe('CC-7 — the receipt says what the agent\'s excerpt says', () => {
       m.teardown(); m.setup();
     }
     renderReceipt({ idea: { status: 'denied', doc: null } });
-    expect(lineText(m.q('[data-subject-line]'))).toBe('ETN · XLI');
+    expect(lineText(m.q('[data-subject-line]'))).toBe('ETN · Industrials');
   });
   it('a card from another day shows no line (its own day is not on screen)', () => {
     renderReceipt({ tape: { ...DAY.tape, etDate: '2026-09-24' } });

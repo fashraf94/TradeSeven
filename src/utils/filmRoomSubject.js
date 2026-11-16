@@ -3,9 +3,10 @@
 // Film Room C2 (Build C spec §5, §6; Amendment C CC-2, CC-7) — WHAT THE EXCERPT AND THE SCREEN SAY OF A MOMENT'S
 // SUBJECT, from ONE pure module both import, so the agent's excerpt and the player's receipt never say different
 // things (BUILD_RULES §9):
-//   the SECTOR    the symbol directory's one word for a symbol (`TICKER_TO_SECTOR`, api/_utils/rankingConfig.js — the
-//                 directory candleInputs.js reads, and screen code already imports): the sector's id, e.g. `XLK`.
-//                 A symbol the directory lacks has no sector — none is guessed.
+//   the SECTOR    the symbol directory's NAME for a symbol's sector (Amendment D CD-3: `STOCK_UNIVERSE[id].name` for the
+//                 id `TICKER_TO_SECTOR` gives, api/_utils/rankingConfig.js — the directory candleInputs.js reads, and
+//                 screen code already imports): e.g. "Industrials", never the fund code `XLI`. A symbol the directory
+//                 lacks, or a code with no name, has no sector — none is guessed.
 //   a QUOTED TEXT bounded in code points (astral characters counted once): a text over its bound is not carried at all
 //                 — never cut, never rewritten — as the tape's writer leaves a meeting's diagnosis over its bound uncopied.
 //                 The idea's statement is bounded at IDEA_STATEMENT_MAX here, so the excerpt and the screen hold the same
@@ -24,7 +25,7 @@
 // Node-clean (BUILD_RULES §4): api/_utils/filmRoom/momentExcerpt.js imports it; its own test's import is the
 // dependency-surface guard.
 
-import { TICKER_TO_SECTOR } from '../../api/_utils/rankingConfig.js';
+import { TICKER_TO_SECTOR, STOCK_UNIVERSE } from '../../api/_utils/rankingConfig.js';
 import { classOfNumber } from '../constants/filmTape.js';
 // Film Room C2 fix round (Amendment E, CE-1): the one prompt-bound text policy, shared with the excerpt
 import { holdsIdentifier, tickerOk } from './promptBoundText.js';
@@ -92,11 +93,18 @@ export function subjectKnownIds({ ownerId = null, battleId = null, battleAgentId
     .filter((v) => typeof v === 'string' && v.length > 0);
 }
 
-/** The directory's one word for `symbol`'s sector — its sector id — or null when the directory lacks the symbol. */
-export function sectorOf(symbol) {
-  if (typeof symbol !== 'string' || !symbol || !Object.prototype.hasOwnProperty.call(TICKER_TO_SECTOR, symbol)) return null;
-  const id = TICKER_TO_SECTOR[symbol];
-  return typeof id === 'string' && /^\S+$/.test(id) ? id : null;
+const own = (o, k) => isObj(o) && typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k);
+/**
+ * Amendment D CD-3 — the sector is NAMED, not coded: the directory's name for `symbol`'s sector (`STOCK_UNIVERSE[id].name`,
+ * e.g. "Industrials", "Consumer Discretionary"), never its fund code (`XLI` reads like another symbol beside the stock).
+ * A symbol the directory lacks, or a code with no name, has no sector — none is guessed. The second argument is the
+ * symbol directory (api/_utils/rankingConfig.js): `tickers` and `universe`, handed in only by a test.
+ */
+export function sectorOf(symbol, { tickers = TICKER_TO_SECTOR, universe = STOCK_UNIVERSE } = {}) {
+  if (typeof symbol !== 'string' || !symbol || !own(tickers, symbol)) return null;
+  const id = tickers[symbol];
+  const name = own(universe, id) && isObj(universe[id]) ? universe[id].name : null;
+  return typeof name === 'string' && name.trim() ? name : null;
 }
 
 /** A list id the carriage may name: the forge-id class, never a reserved `__id__` (a path segment both sides read by — §2 review L3-8). */
