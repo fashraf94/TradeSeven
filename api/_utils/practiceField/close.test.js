@@ -640,7 +640,11 @@ describe('mark quality: missing data stays visible', () => {
     // D2: MSFT is missing; AAPL has no vendor time; XLK's quote is the vendor's from an earlier session.
     await closeOn(db, bookId, DAYS.d2, { AAPL: { price: 234.5, at: null }, SPY: 600.1, XLK: { price: 235.5, at: etIso(DAYS.d1, 16, 0) } });
     const row = getRow(db, bookId, r.ideaId, DAYS.d2);
-    expect(row.marks.MSFT).toEqual({ mark: 420.77, quality: 'carried_forward', markSource: 'carry_over', vendorTimeIso: null });
+    // A carried mark names where its price came from: D1's close, as it was recorded then (Astra T2B-01).
+    expect(row.marks.MSFT).toEqual({
+      mark: 420.77, quality: 'carried_forward', markSource: 'carry_over', vendorTimeIso: null,
+      carriedFrom: { source: 'close', symbol: 'MSFT', session: DAYS.d1, snapshotKey: `${DAYS.d1}_close`, quality: 'vendor_time', vendorTimeIso: etIso(DAYS.d1, 16, 0) },
+    });
     expect(row.marks.AAPL).toEqual({ mark: 234.5, quality: 'receipt_time_fallback', markSource: 'snapshot', vendorTimeIso: null });
     expect(row.comparisonMarks.XLK).toMatchObject({ mark: 235.5, quality: 'carried_forward' });
     expect(row.spyMarks.SPY.quality).toBe('vendor_time');

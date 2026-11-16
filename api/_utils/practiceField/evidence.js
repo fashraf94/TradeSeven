@@ -28,6 +28,7 @@
 import { canonicalContentHash } from '../canonicalHash.js';
 import { PracticeFieldError } from './errors.js';
 import { MARK_QUALITY } from './constants.js';
+import { MARK_PROVENANCE_SOURCE } from './ledger.js';
 
 /** The packet's own version (its own family; starts at 1). */
 export const EVIDENCE_PACKET_VERSION = 1;
@@ -77,49 +78,39 @@ export function evidenceRefOf(ideaRef, packetId) {
 // ── admission ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * What admission needs to name where each mark it measured came from (review B1), read IN admission's transaction,
- * before any write: the book's row of its last closed session (was that close observed, and from which stored
- * snapshot), and, for each open idea that entered on or before that session, its own row of that session (each mark's
- * quality there). An idea that entered AFTER the last close has its marks from its entry's own window snapshot, which
- * the idea itself names. Nothing re-marks a position between those two events: a sale removes its own position only.
+ * What admission needs beside the positions (review B1), read IN admission's transaction, before any write: the book's
+ * row of its last closed session — was that close observed, and from which stored snapshot. Where each position's own
+ * mark came from is recorded on the position itself (`lastMarkProvenance`, Astra T2B-01), so no idea row is read.
  */
-export async function readAdmissionMarkSources(tx, bookRef, book, ideas) {
+export async function readAdmissionMarkSources(tx, bookRef, book) {
   const lastCloseKey = typeof book?.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
-  if (lastCloseKey === null) return { lastCloseKey, lastCloseRow: null, closeRows: {} };
+  if (lastCloseKey === null) return { lastCloseKey, lastCloseRow: null };
   const rowSnap = await tx.get(bookRef.collection('dailyRows').doc(lastCloseKey));
-  const closeRows = {};
-  for (const idea of ideas || []) {
-    const entered = idea?.entry?.sessionDate;
-    if (typeof entered !== 'string' || entered > lastCloseKey) continue;
-    const snap = await tx.get(bookRef.collection('ideas').doc(idea.ideaId).collection('rows').doc(lastCloseKey));
-    closeRows[idea.ideaId] = snap.exists ? snap.data() : null;
-  }
-  return { lastCloseKey, lastCloseRow: rowSnap.exists ? rowSnap.data() : null, closeRows };
+  return { lastCloseKey, lastCloseRow: rowSnap.exists ? rowSnap.data() : null };
 }
 
 /**
- * Where one position's recorded mark came from, with its observation time and quality (contract §6):
- *   entry_fill  the idea entered after the last close: the mark is its fill's quote, from its entry window's snapshot;
- *   close       the last close marked it FROM its stored snapshot: that snapshot, the close row's quality for it
- *               (`vendor_time`, or e.g. `receipt_time_fallback`), and the vendor's time when there was one — null
- *               otherwise, never a time from another quote;
- *   carried     the last close carried an earlier mark (an unobserved session, a held-back symbol): no snapshot.
- * `recordedMarkAsOf` is the position's own `lastMarkAsOf`, as recorded — beside the source, never in place of a
- * vendor time (review R-B1c: a close quote with no vendor time leaves the earlier quote's time on the position).
+ * Where one position's recorded mark came from (contract §6), read from the provenance recorded beside it (ledger.js
+ * `lastMarkProvenance`; Astra T2B-01) — the source's snapshot key, its quality and its vendor time, null when the quote
+ * had none, never a time from another quote:
+ *   entry_fill  a fill since the last close priced it (the fill's slot snapshot);
+ *   close       the last close marked it FROM its stored snapshot;
+ *   carried     the last close (or an unobserved one) carried an earlier price: the fields name THAT price's source —
+ *               an earlier close's snapshot, or the fill's — exactly as it was recorded when it was fresh;
+ *   unknown     no provenance is recorded on the position (none is written without one since T2B-01): every field null.
+ * `recordedMarkAsOf` is the position's own `lastMarkAsOf`, as recorded — beside the source, never in place of a vendor
+ * time (it keeps the last vendor-timed mark's time; ledger.js).
  */
-function markSourceOf(sym, position, idea, sources) {
-  const lastCloseKey = sources?.lastCloseKey ?? null;
+function markSourceOf(position, lastCloseKey) {
   const recordedMarkAsOf = position?.lastMarkAsOf ?? null;
-  const entered = typeof idea?.entry?.sessionDate === 'string' ? idea.entry.sessionDate : null;
-  if (idea && entered !== null && (lastCloseKey === null || entered > lastCloseKey)) {
-    return { kind: 'entry_fill', snapshotKey: idea.entry.snapshotKey ?? null, session: entered, quality: 'fill', vendorTimeIso: recordedMarkAsOf, recordedMarkAsOf };
-  }
-  const row = idea ? (sources?.closeRows?.[idea.ideaId] ?? null) : null;
-  const mark = row?.marks?.[sym] ?? null;
-  if (row && row.observed === true && mark?.markSource === 'snapshot') {
-    return { kind: 'close', snapshotKey: row.closeSnapshotKey ?? null, session: lastCloseKey, quality: mark.quality ?? null, vendorTimeIso: mark.vendorTimeIso ?? null, recordedMarkAsOf };
-  }
-  return { kind: 'carried', snapshotKey: null, session: lastCloseKey, quality: mark?.quality ?? null, vendorTimeIso: null, recordedMarkAsOf };
+  const p = position?.lastMarkProvenance ?? null;
+  if (!isPlain(p)) return { kind: 'unknown', source: null, symbol: null, session: null, snapshotKey: null, quality: null, vendorTimeIso: null, recordedMarkAsOf };
+  const kind = p.source === MARK_PROVENANCE_SOURCE.FILL && (lastCloseKey === null || p.session > lastCloseKey) ? 'entry_fill'
+    : (p.source === MARK_PROVENANCE_SOURCE.CLOSE && p.session === lastCloseKey ? 'close' : 'carried');
+  return {
+    kind, source: p.source ?? null, symbol: p.symbol ?? null, session: p.session ?? null, snapshotKey: p.snapshotKey ?? null,
+    quality: p.quality ?? null, vendorTimeIso: p.vendorTimeIso ?? null, recordedMarkAsOf,
+  };
 }
 
 /**
@@ -128,17 +119,16 @@ function markSourceOf(sym, position, idea, sources) {
  * evaluation (the limits it computed), `markSources` what readAdmissionMarkSources read in the same transaction.
  */
 export function buildAdmissionPacket({ bookId, book, ideas, idea, verdict, nowIso, markSources = null }) {
-  const ideasById = new Map((ideas || []).map((i) => [i?.ideaId, i]));
+  const lastCloseKey = typeof book?.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
   const positions = {};
   for (const sym of Object.keys(book?.portfolio?.positions || {}).sort()) {
     const p = book.portfolio.positions[sym];
     positions[sym] = {
       shares: p?.shares ?? null, lastMark: p?.lastMark ?? null, lastMarkAsOf: p?.lastMarkAsOf ?? null,
       lastMarkSource: p?.lastMarkSource ?? null, ideaId: p?.ideaId ?? null,
-      markSource: markSourceOf(sym, p, ideasById.get(p?.ideaId) ?? null, markSources),
+      markSource: markSourceOf(p, lastCloseKey),
     };
   }
-  const lastCloseKey = typeof book?.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
   const lastCloseRow = markSources?.lastCloseRow ?? null;
   return seal({
     packetVersion: EVIDENCE_PACKET_VERSION,
@@ -190,6 +180,26 @@ export function buildAdmissionPacket({ bookId, book, ideas, idea, verdict, nowIs
 
 const LEDGERS = Object.freeze([['idea', 'ledger'], ['comparison', 'comparisonLedger'], ['spy', 'spyLedger']]);
 
+/** A recorded mark provenance (ledger.js `lastMarkProvenance`), copied field by field; null when there is none. */
+const provenanceCopy = (p) => (isPlain(p) ? {
+  source: p.source ?? null, symbol: p.symbol ?? null, session: p.session ?? null, snapshotKey: p.snapshotKey ?? null,
+  quality: p.quality ?? null, vendorTimeIso: p.vendorTimeIso ?? null,
+} : null);
+
+/**
+ * Does a mark's stated time agree with its stated quality? A quote the vendor gave no time for
+ * (`receipt_time_fallback`) has NONE — an honest unknown — and every other quality names the vendor's own time. So a
+ * time paired with an untimed quality is one borrowed from another quote, and is refused (Astra T2B-01; NF-2).
+ */
+const timeAgreesWithQuality = (quality, vendorTimeIso) => (quality === MARK_QUALITY.RECEIPT_TIME_FALLBACK
+  ? vendorTimeIso === null : typeof vendorTimeIso === 'string');
+
+/** Is a carried mark's `carriedFrom` a whole, honest provenance: a source, a session, a snapshot and an agreeing time? */
+const honestProvenance = (p) => isPlain(p)
+  && (p.source === MARK_PROVENANCE_SOURCE.FILL || p.source === MARK_PROVENANCE_SOURCE.CLOSE)
+  && typeof p.session === 'string' && typeof p.snapshotKey === 'string' && typeof p.quality === 'string'
+  && timeAgreesWithQuality(p.quality, p.vendorTimeIso);
+
 /** A fill receipt's prices: what was bought, at what, from which quote. */
 const fillCopy = (r) => ({
   symbol: r?.symbol ?? null, verb: r?.verb ?? null, shares: r?.shares ?? null,
@@ -207,28 +217,31 @@ const saleCopy = (r) => ({
 });
 
 /**
- * Is an endpoint mark the ledger's OWN last mark rather than a price from this close's snapshot? Exactly the marks the
- * valuation could not take from the snapshot (ledger.js valueLedger: `carried_forward` with no vendor time; an
- * unobserved session's `unobserved`). A snapshot price without a vendor time (`receipt_time_fallback`) is this close's
- * own price — it has no observation time, and none is borrowed for it (fix-round refuter NF-2).
+ * Is an endpoint mark CARRIED — the ledger's own earlier price rather than one from this close's snapshot? The endpoint
+ * row says so (`markSource`, from the valuation: ledger.js valueLedger, settlement.js ledgerEndpoint). A snapshot price
+ * without a vendor time (`receipt_time_fallback`) is this close's own price — it has no observation time, and none is
+ * borrowed for it (fix-round refuter NF-2).
  */
-const isCarriedMark = (m) => (m?.markQuality === MARK_QUALITY.CARRIED_FORWARD || m?.markQuality === MARK_QUALITY.UNOBSERVED)
-  && (m?.markVendorTimeIso ?? null) === null;
+const isCarriedMark = (m) => (m?.markSource ?? null) !== 'snapshot';
 
 /**
- * One ledger's endpoint, as the endpoint row states it: every holding's mark, its vendor time and quality. A CARRIED
- * mark (an unobserved endpoint, a held-back symbol, a symbol missing from the close document) has no vendor time on
- * the row; the packet then names the time the ledger's holding records for that last mark, `carriedFromVendorTimeIso`
- * (review B2).
+ * One ledger's endpoint, as the endpoint row states it: every holding's mark, its vendor time, quality and source
+ * snapshot. A CARRIED mark (an unobserved endpoint, a held-back symbol, a symbol missing from the close document) names
+ * where its price came from — `carriedFrom`, the holding's own provenance, which every carry leaves unchanged (Astra
+ * T2B-01; review B2): that source's session, snapshot key, quality and vendor time — null when the source quote had
+ * none, never another quote's.
  */
-const endpointCopy = (side, ledger) => {
+const endpointCopy = (side, endpointSnapshotKey) => {
   const marks = {};
   for (const sym of Object.keys(side?.holdings || {}).sort()) {
     const h = side.holdings[sym];
+    const carried = isCarriedMark(h);
+    const carriedFrom = carried ? provenanceCopy(h?.carriedFrom) : null;
     marks[sym] = {
       shares: h?.shares ?? null, mark: h?.mark ?? null, markQuality: h?.markQuality ?? null,
-      markVendorTimeIso: h?.markVendorTimeIso ?? null, costTier: h?.costTier ?? null,
-      ...(isCarriedMark(h) ? { carriedFromVendorTimeIso: ledger?.holdings?.[sym]?.lastMarkAsOf ?? null } : {}),
+      markVendorTimeIso: h?.markVendorTimeIso ?? null, markSource: h?.markSource ?? null, costTier: h?.costTier ?? null,
+      snapshotKey: carried ? (carriedFrom?.snapshotKey ?? null) : (endpointSnapshotKey ?? null),
+      ...(carried ? { carriedFrom } : {}),
     };
   }
   return {
@@ -257,7 +270,7 @@ export function buildResultPacket({ bookId, idea, endpointRow, inception, nowIso
     const ledger = idea[field] || {};
     corporateActions[name] = (ledger.corporateActionReceipts || []).filter((r) => r?.applied === true);
     salesBeforeEndpoint[name] = (ledger.saleReceipts || []).map(saleCopy);
-    endpoint[name] = endpointCopy(endpointRow[name], ledger);
+    endpoint[name] = endpointCopy(endpointRow[name], endpointRow.closeSnapshotKey);
   }
   return seal({
     packetVersion: EVIDENCE_PACKET_VERSION,
@@ -300,21 +313,29 @@ export function buildResultPacket({ bookId, idea, endpointRow, inception, nowIso
 }
 
 /**
- * The holdings of the endpoint row whose mark the packet does not carry, as `ledger:SYMBOL` — empty for a whole
- * packet. Every ledger, every holding: a packet that drops one ledger's marks is not the result's evidence.
+ * THE COMPLETENESS CHECK. The holdings of the endpoint row whose mark the packet does not carry WHOLE, as
+ * `ledger:SYMBOL` — empty for a whole packet. Every ledger, every holding: a packet that drops one ledger's marks is
+ * not the result's evidence. A mark is whole when it has its price, its quality and its source:
+ *   fresh    this close's snapshot (`snapshotKey` the endpoint's), no `carriedFrom`, and a time that agrees with its
+ *            quality — the vendor's own, or none for `receipt_time_fallback` (NF-2);
+ *   carried  `carriedFrom` names its source — fill or close, its session and snapshot — with a time that agrees with
+ *            THAT source's quality: an untimed source stays untimed (an honest unknown is accepted) and a time paired
+ *            with it is borrowed, and refused (Astra T2B-01; B2).
  */
 export function resultPacketMissingMarks(packet, endpointRow) {
   const missing = [];
+  const endpointKey = packet?.endpoint?.closeSnapshotKey ?? null;
   for (const [name] of LEDGERS) {
     for (const sym of Object.keys(endpointRow?.[name]?.holdings || {})) {
       const m = packet?.endpoint?.ledgers?.[name]?.marks?.[sym];
-      // A mark with its observation time: a carried mark its last one (B2); a snapshot price the vendor's time, unless
-      // its quality says the vendor gave none (`receipt_time_fallback` — then none is claimed; NF-2).
-      const timed = !m ? false
-        : isCarriedMark(m) ? typeof m.carriedFromVendorTimeIso === 'string'
-          : m.markQuality === MARK_QUALITY.RECEIPT_TIME_FALLBACK ? m.markVendorTimeIso === null && !('carriedFromVendorTimeIso' in m)
-            : typeof m.markVendorTimeIso === 'string';
-      if (!m || typeof m.mark !== 'number' || typeof m.markQuality !== 'string' || !timed) missing.push(`${name}:${sym}`);
+      let whole = isPlain(m) && typeof m.mark === 'number' && typeof m.markQuality === 'string';
+      if (whole && isCarriedMark(m)) {
+        whole = honestProvenance(m.carriedFrom) && m.snapshotKey === m.carriedFrom.snapshotKey;
+      } else if (whole) {
+        whole = !('carriedFrom' in m) && typeof endpointKey === 'string' && m.snapshotKey === endpointKey
+          && timeAgreesWithQuality(m.markQuality, m.markVendorTimeIso ?? null);
+      }
+      if (!whole) missing.push(`${name}:${sym}`);
     }
   }
   return missing;

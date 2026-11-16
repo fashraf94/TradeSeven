@@ -342,8 +342,9 @@ export async function admitIdea(db, { bookId, contract: rawContract, opId, nowIs
     }
     const coverageSnap = await tx.get(coverageDocRef);
     const coverageData = coverageSnap.exists ? coverageSnap.data() : null;
-    // T1a-2b-1 §3 (review B1): where each recorded mark came from, for the admission packet — read now, before any write.
-    const markSources = await readAdmissionMarkSources(tx, bookRef, book, ideas);
+    // T1a-2b-1 §3 (review B1): the last close's own row, for the admission packet — read now, before any write. Each
+    // position's mark names its own source (`lastMarkProvenance`, Astra T2B-01).
+    const markSources = await readAdmissionMarkSources(tx, bookRef, book);
     // Reject, never repair (Astra T1A-02): a book that does not reconcile AS READ — its marks, its equity, any of its
     // ideas' three ledgers — admits nothing. The limits below are shares of that equity.
     assertReconciled(book, ideas);

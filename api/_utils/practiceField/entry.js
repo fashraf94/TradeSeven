@@ -275,6 +275,8 @@ export async function enterIdea(db, { bookRef, ideaId, tick, nowIso }) {
         lastMark: r.mark,
         lastMarkAsOf: r.markVendorTimeIso,
         lastMarkSource: 'snapshot',
+        // The fill's own provenance, exactly as the idea's holding records it (Astra T2B-01; ledger.js).
+        lastMarkProvenance: entry.ledger.holdings[r.symbol]?.lastMarkProvenance ?? null,
         sector: mandateSectorOf(r.symbol),
         openedAt: tick.date,
         ideaId, // every position belongs to an idea (direction note ruling 4)

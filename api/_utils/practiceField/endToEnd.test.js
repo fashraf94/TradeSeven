@@ -45,7 +45,12 @@ import { verifyPacket, resultPacketMissingMarks } from './evidence.js';
 // only the six packets (the admission packet's `marksSnapshot` became per-position `markSource` with `lastClose`, B1;
 // the result packet gained `track`, B13), so bb742bb9…. This run's admissions hold no position, so no `markSource`
 // is exercised here — evidence.test.js covers each kind.
-const EXPECTED_DUMP = { sha256: 'bb742bb9181c76d5f81317d59702307e37e6155c6fd9c19a61f523647ea65a0f', bytes: 328611 };
+// Fix round of 16 Nov 2026 (Astra T2B-01 to T2B-04), re-pinned once per fix, each leaf-compared against bb742bb9…:
+//   T2B-01 (mark provenance): db22f048…, 332,712 bytes, 154 documents. No document added or removed; 108 leaves ADDED
+//     — `lastMarkProvenance` on every holding and position, `markSource` (and `carriedFrom` for a carried mark) on the
+//     endpoint rows' holdings, `carriedFrom` on a row's carried mark, the packets' per-mark `markSource`/`snapshotKey` —
+//     and the three result packets' `contentHash` changed with them. No other leaf changed; no money leaf changed.
+const EXPECTED_DUMP = { sha256: 'db22f0487877ad3eefa37f5db8d2583ac5f4e01737731ef56a417466d86f898f', bytes: 332712 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];

@@ -217,6 +217,10 @@ export function ledgerEndpoint(ledger, valuation) {
     holdings[sym] = {
       shares: h.shares, mark: m.mark, markQuality: m.quality, markVendorTimeIso: m.vendorTimeIso ?? null,
       costTier: tier, atMarkUsd: sale.grossUsd, netOfModelledCostUsd: sale.netUsd, modelledCostUsd: fromCents(toCents(sale.grossUsd) - toCents(sale.netUsd)),
+      // Where the mark came from (Astra T2B-01): this close's snapshot, or — CARRIED — the holding's own provenance,
+      // which a carry leaves unchanged (ledger.js). Provenance only: no figure above reads it.
+      markSource: m.markSource ?? null,
+      ...(m.markSource !== 'snapshot' ? { carriedFrom: h.lastMarkProvenance ?? null } : {}),
     };
   }
   const valueCents = cashCents + netCents;

@@ -71,6 +71,7 @@ import { practiceFieldLive } from './mode.js';
 import {
   applyLedgerActions, valueLedger, withCloseMarks, suspectedActionSymbols, markedEquityCents, unsettledConflicts, cloneLedger,
   shareBasisHolds, heldActionRecords, withBasisSuspicions, basisSuspicionRecords, delistingWaitingSymbols,
+  markProvenance, MARK_PROVENANCE_SOURCE,
 } from './ledger.js';
 import { closeMarkQuality } from './marks.js';
 import { planRelease } from './admission.js';
@@ -94,8 +95,14 @@ const toIso = (v) => {
 };
 
 const quantitiesOf = (ledger) => Object.fromEntries(Object.entries(ledger.holdings).map(([s, h]) => [s, h.shares]));
-const marksOf = (valuation) => Object.fromEntries(Object.entries(valuation.marks).map(([s, m]) => [s, {
+/**
+ * A row's marks. A mark CARRIED at this close (not from its snapshot) names where its price came from — the holding's
+ * own `lastMarkProvenance`, which a carry leaves unchanged (Astra T2B-01) — as `carriedFrom`; a fresh mark is this
+ * close's snapshot's (the row names its key).
+ */
+const marksOf = (valuation, ledger) => Object.fromEntries(Object.entries(valuation.marks).map(([s, m]) => [s, {
   mark: m.mark, quality: m.quality, markSource: m.markSource, vendorTimeIso: m.vendorTimeIso,
+  ...(m.markSource !== 'snapshot' ? { carriedFrom: ledger?.holdings?.[s]?.lastMarkProvenance ?? null } : {}),
 }]));
 
 /** What applyLedgerActions answers when there is nothing to apply: the session has no stored snapshot, so no feed. */
@@ -245,9 +252,9 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
   // An unobserved session changes no ledger: there is nothing to write a mark from.
   let next = {
     ...idea,
-    ledger: observed ? withCloseMarks(ownLedger, ownV.valuation, { date }) : ownLedger,
-    comparisonLedger: observed ? withCloseMarks(cmp.ledger, cmpV.valuation, { date }) : cmp.ledger,
-    spyLedger: observed ? withCloseMarks(spy.ledger, spyV.valuation, { date }) : spy.ledger,
+    ledger: observed ? withCloseMarks(ownLedger, ownV.valuation, { date, snapshotKey: snapshotMeta.key }) : ownLedger,
+    comparisonLedger: observed ? withCloseMarks(cmp.ledger, cmpV.valuation, { date, snapshotKey: snapshotMeta.key }) : cmp.ledger,
+    spyLedger: observed ? withCloseMarks(spy.ledger, spyV.valuation, { date, snapshotKey: snapshotMeta.key }) : spy.ledger,
     lines,
     lastValuedOn: observed ? date : (idea.lastValuedOn ?? null),
     lastClosedOn: date,
@@ -300,19 +307,19 @@ function closeFilledIdea(idea, { date, closeSnapshot, actionsBySymbol: feedActio
     cash: ownV.valuation.cash,
     markedHoldingsValue: ownV.valuation.markedHoldingsValue,
     quantities: quantitiesOf(ownLedger),
-    marks: marksOf(ownV.valuation),
+    marks: marksOf(ownV.valuation, ownLedger),
     cumulativeCostsUsd: ownLedger.costsPaidUsd,
     dividendsToDateUsd: ownLedger.dividendsUsd,
     comparisonType: idea.contract.comparison.type,
     comparisonMarkedValue: cmpV.valuation.markedValue,
     comparisonCash: cmpV.valuation.cash,
     comparisonQuantities: quantitiesOf(cmp.ledger),
-    comparisonMarks: marksOf(cmpV.valuation),
+    comparisonMarks: marksOf(cmpV.valuation, cmp.ledger),
     comparisonCumulativeCostsUsd: cmp.ledger.costsPaidUsd,
     spyMarkedValue: spyV.valuation.markedValue,
     spyCash: spyV.valuation.cash,
     spyQuantities: quantitiesOf(spy.ledger),
-    spyMarks: marksOf(spyV.valuation),
+    spyMarks: marksOf(spyV.valuation, spy.ledger),
     markedGapUsd: fromCents(valueCents - comparisonCents),
     markedGapPct: ((valueCents - comparisonCents) * 100) / reservedCents,
     markedGapToSpyUsd: fromCents(valueCents - spyCents),
@@ -575,6 +582,13 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
         lastMark: m.mark,
         lastMarkAsOf: fresh ? (q.vendorTimeIso ?? pos.lastMarkAsOf ?? null) : (pos.lastMarkAsOf ?? null),
         lastMarkSource: fresh ? 'snapshot' : m.markSource,
+        // The same provenance the idea's holding records (ledger.js withCloseMarks; Astra T2B-01): this close's, or —
+        // carried — the one it had.
+        ...(fresh ? {
+          lastMarkProvenance: markProvenance({
+            source: MARK_PROVENANCE_SOURCE.CLOSE, symbol: sym, session, snapshotKey: snapshotMeta.key, quality: q.quality, vendorTimeIso: q.vendorTimeIso,
+          }),
+        } : {}),
       };
     }
 
