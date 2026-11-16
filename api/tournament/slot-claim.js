@@ -16,7 +16,8 @@ import { isKnownSlotId } from '../../src/config/liveDraftSlots.js';
 export const config = { maxDuration: 10 };
 
 export default function handler(req, res) {
-  return runSlotEndpoint(req, res, { allow: ['POST'] }, async ({ res, user, db, body }) => {
+  // `leagueEntry`: slot-claim is the one slot route that opens a game, so it closes with the league (BB-1, ruling Q1).
+  return runSlotEndpoint(req, res, { allow: ['POST'], leagueEntry: true }, async ({ res, user, db, body }) => {
     if (!isKnownSlotId(body.slotId)) {
       res.status(400).json({ error: 'unknown_slot', message: 'That draft slot isn’t on the schedule.' });
       return;

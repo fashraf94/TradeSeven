@@ -23,6 +23,8 @@ vi.mock('../../src/config/perGameLoadoutFlags.js', () => ({ get PER_GAME_LOADOUT
 vi.mock('../../src/config/featureFlags.js', () => ({
   get LEAGUE_LOBBY_ENABLED() { return h.flag; },
   get LEAGUE_NEXT_ARC_ENABLED() { return h.nextArc; },
+  // League hide (BB-1): runLobbyEndpoint asks leagueHidden.js, which reads it; off, as shipped.
+  LEAGUE_HIDE_ENABLED: false,
   // tournamentLobbyService now reads this flag at round creation (Spec §1.1
   // canonical-open policy); default false = today's behavior (stamp omitted).
   LEAGUE_CANONICAL_OPEN_CAPTURE: false,
