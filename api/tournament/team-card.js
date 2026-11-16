@@ -351,7 +351,9 @@ export function humanLayerFrom({ drafted, player, approvedClaims }) {
 
 /**
  * The agent's six and every recorded swap, from the week's completed battles.
- * FACTS, not sentences; the rationale is the agent's own recorded words.
+ * FACTS, not sentences. The battles arrive projected for a non-owner, so a
+ * swap's `rationale` is null since founder ruling R-F (15 Nov 2026) — the
+ * read below is kept for the day an owner's own card is ruled to carry it.
  */
 export function agentLayerFrom(battles) {
   if (!Array.isArray(battles) || battles.length === 0) return null;

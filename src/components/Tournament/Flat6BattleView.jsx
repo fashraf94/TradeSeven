@@ -354,7 +354,7 @@ export default function Flat6BattleView({
           ))}
       </div>
 
-      {/* ── WHY (owner live / everyone at completion; concealed otherwise) ── */}
+      {/* ── WHY (the owner only, live and after; concealed for everyone else — R-F) ── */}
       <div style={card}>
         <div style={{ ...sectionTitle, display: 'flex', alignItems: 'center', gap: 6 }}>
           <TrendingUp size={12} /> The agent's read

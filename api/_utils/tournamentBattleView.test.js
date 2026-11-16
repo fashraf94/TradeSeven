@@ -34,16 +34,35 @@ function whyBattle(overrides = {}) {
     gameMode: 'baggerbomb_tournament',
     groupId: 'g1',
     opponent: null,
-    portfolio: { star: [{ symbol: 'NVDA', tierMultiplier: 1 }], core: [], support: [], startingPrices: { NVDA: 100 } },
+    // The deploy-time bench createAgentBattle always writes (agentBattleService.js
+    // portfolio.bench) — distinct from the hot bench (watchlist.hotBench).
+    portfolio: { star: [{ symbol: 'NVDA', tierMultiplier: 1 }], core: [], support: [], bench: { stocks: [{ symbol: 'AMD' }], crypto: null }, startingPrices: { NVDA: 100 } },
     scoreState: { currentScore: 42 },
     thresholdHistory: { NVDA: { maxMultiplier: 1.2 } },
     scoring: { thresholds: { NVDA: { threshold: 2.5 } } },
+    // Written on every battle by createAgentBattle (review, test lens A3): the
+    // manifest (the loadout's resolved form), the gameplan, cron bookkeeping.
+    resolvedAgentManifest: { equippedConfigHash: 'h'.repeat(64), activeRules: [{ id: 'r1' }], dials: { tempo: 3 } },
+    gameplanMeeting: { diagnosis: 'PLANTED-GAMEPLAN' },
+    gameplanMeetingHistory: [{ diagnosis: 'PLANTED-GAMEPLAN-OLD' }],
+    cronState: { tickSeq: 4 },
+    executionMode: 'autopilot',
+    // A key no allowlist has heard of — the allowlist's whole point (a new
+    // field added later cannot leak); a denylist passes it (test lens A5).
+    planted_future_field: 'PLANTED-FUTURE',
     agentContext: {
       agentName: 'Atlas',
       archetype: 'momentum',
-      tournament: { doubleDownSymbols: ['NVDA'], userPicksAtDeploy: ['NVDA'] },
+      tournament: { doubleDownSymbols: ['NVDA'], userPicksAtDeploy: ['NVDA'], userPicksStance: [{ symbol: 'NVDA', stance: 'complement' }] },
       initialPortfolio: { star: [{ symbol: 'NVDA' }] },
       innerMonologue: { strategy: 'ride the breakout', starRationale: 'NVDA momentum' },
+      // The rest of the loadout snapshot createAgentBattle writes (test lens A4).
+      equippedBundleIds: ['bundle-1'],
+      standingLeans: [{ adjustmentId: 'CP-01', version: 1 }],
+      dials: { tempo: 3 },
+      settingsRev: 7,
+      evaluationInterval: 15,
+      planted_future_context: 'PLANTED-FUTURE-CTX',
       strategyBrief: 'aggressive momentum',
       consolidatedInsight: 'prior week notes',
       // Strategy surface that a denylist leaked (P7 code review) — must conceal.
@@ -77,7 +96,9 @@ function whyBattle(overrides = {}) {
       { timestamp: '2026-09-02T15:30:00.000Z', message: 'PLANTED-STATUS-LINE: holding per the no-crypto instruction, risk at 8%.', action: 'hold' },
     ],
     trades: [
-      { symbolOut: 'OLD', symbolIn: 'NVDA', lockedPoints: 12, rationale: 'cut the laggard', hypothesis: 'NVDA runs', trade_reasoning: 'rotation', snapshot: { secret: true } },
+      // `trigger` is production's attribution key on a trade (evaluationMetadata
+      // spread by agentSwapExecution.js); `source`/`triggeredBy` ride some writers.
+      { symbolOut: 'OLD', symbolIn: 'NVDA', lockedPoints: 12, rationale: 'cut the laggard', hypothesis: 'NVDA runs', trade_reasoning: 'rotation', snapshot: { secret: true }, trigger: 'guardrail_stopLoss', source: 'guardrail', triggeredBy: 'stop_loss', planted_future_trade: 'PLANTED-FUTURE-TRADE' },
     ],
     evaluations: [{ evalId: 'e1', rationale: 'hold the line', hypothesis: 'mean reversion' }],
     proposalHistory: [{ id: 'p1' }],
@@ -104,14 +125,15 @@ function allowlistShapeOf(status) {
     gameMode: 'baggerbomb_tournament',
     groupId: 'g1',
     opponent: null,
-    portfolio: { star: [{ symbol: 'NVDA', tierMultiplier: 1 }], core: [], support: [], startingPrices: { NVDA: 100 } },
+    portfolio: { star: [{ symbol: 'NVDA', tierMultiplier: 1 }], core: [], support: [], bench: { stocks: [{ symbol: 'AMD' }], crypto: null }, startingPrices: { NVDA: 100 } },
     scoreState: { currentScore: 42 },
     thresholdHistory: { NVDA: { maxMultiplier: 1.2 } },
     scoring: { thresholds: { NVDA: { threshold: 2.5 } } },
     agentContext: {
       agentName: 'Atlas',
       archetype: 'momentum',
-      tournament: { doubleDownSymbols: ['NVDA'], userPicksAtDeploy: ['NVDA'] },
+      // the public double-down stance (V2.1 §9) — model-written; see the report's founder questions
+      tournament: { doubleDownSymbols: ['NVDA'], userPicksAtDeploy: ['NVDA'], userPicksStance: [{ symbol: 'NVDA', stance: 'complement' }] },
       initialPortfolio: { star: [{ symbol: 'NVDA' }] },
     },
     statusFeed: [],
@@ -230,9 +252,25 @@ describe('projectTournamentBattle — non-owner active = WHAT only', () => {
 
   // Phase 0 V2 Hazard 12: `source` / `triggeredBy` name the MECHANISM that
   // fired a swap. The trades[] projection withholds them; the feed is withheld whole.
-  it('withholds swap ATTRIBUTION from the trades a non-owner receives', () => {
-    expect(projected.trades[0].source).toBeUndefined();
-    expect(projected.trades[0].triggeredBy).toBeUndefined();
+  it('withholds swap ATTRIBUTION from the trades a non-owner receives (`trigger`, `source`, `triggeredBy` — all planted)', () => {
+    expect(whyBattle().trades[0]).toMatchObject({ trigger: 'guardrail_stopLoss', source: 'guardrail', triggeredBy: 'stop_loss' });
+    expect(projected.trades[0]).not.toHaveProperty('trigger');
+    expect(projected.trades[0]).not.toHaveProperty('source');
+    expect(projected.trades[0]).not.toHaveProperty('triggeredBy');
+  });
+
+  it('is an ALLOWLIST at every level: a key no list has heard of never reaches a non-owner (top level, agentContext, trades)', () => {
+    const wire = JSON.stringify(projected);
+    expect(wire).not.toContain('PLANTED-FUTURE');
+    for (const k of ['resolvedAgentManifest', 'gameplanMeeting', 'gameplanMeetingHistory', 'cronState', 'executionMode']) expect(projected).not.toHaveProperty(k);
+    for (const k of ['equippedBundleIds', 'standingLeans', 'dials', 'settingsRev', 'evaluationInterval']) expect(projected.agentContext).not.toHaveProperty(k);
+  });
+
+  it('a doc with no ownerId is still projected for a non-owner (never mistaken for the owner\'s own)', () => {
+    const { ownerId: _o, ...ownerless } = whyBattle();
+    const out = projectTournamentBattle(ownerless, { isOwner: false });
+    expect(out._whyConcealed).toBe(true);
+    expect(out.statusFeed).toEqual([]);
   });
 
   it('carries no `agentId` — a training clone\'s id embeds the owner\'s account id (review lens E1)', () => {
@@ -339,7 +377,9 @@ describe('enforce readiness — the unconfirmed-outcome marker stays on the owne
 // battle record (discovery F5): every one is planted at its real path in
 // whyBattle(), and a RECURSIVE walk of every non-owner projection — active and
 // completed — must find none of them at any depth.
-const FORBIDDEN_KEYS = ['ownerId', 'chatExchanges', 'directive', 'equippedWatchlist', 'hotBench', 'pendingProposal', 'deployedGuardrails', 'activeRules'];
+const FORBIDDEN_KEYS = ['ownerId', 'chatExchanges', 'directive', 'equippedWatchlist', 'hotBench', 'pendingProposal', 'deployedGuardrails', 'activeRules',
+  // the rest of R-F's "loadout" (the manifest and its snapshot keys) and the gameplan (proposals)
+  'resolvedAgentManifest', 'equippedBundleIds', 'standingLeans', 'dials', 'gameplanMeeting', 'agentId'];
 
 function keysFoundDeep(node, found = new Set()) {
   if (Array.isArray(node)) { for (const v of node) keysFoundDeep(v, found); return found; }

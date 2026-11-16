@@ -91,7 +91,14 @@ describe('the polling hook joins the seat-keyed reply back to the group\'s playe
     expect(seen).toEqual({});
   });
 
-  it('a new seat order re-joins at once, without a refetch', async () => {
+  // The join reads the CURRENT `players` (its memo depends on them). It is NOT
+  // a guard against a mid-battle reorder: a reply computed under one order and
+  // joined under another would seat battles on the wrong players. That cannot
+  // happen because no writer reorders `players` once battles exist (every
+  // in-battle writer maps or deep-copies; only FORMING-phase writers insert or
+  // remove — the security-pack report, Fix 1). This row pins the memo
+  // dependency only (test lens, finding 4).
+  it('the join follows the group document\'s current `players` without a refetch (memo dependency)', async () => {
     const rerender = await mount(<Probe players={PLAYERS} />);
     await rerender(<Probe players={[PLAYERS[1], PLAYERS[0], PLAYERS[2]]} />);
     expect(symbolsByOwner(seen)).toEqual({ 'p-rival': 'NVDA', 'p-viewer': 'XLE', 'cpu-3': 'GLD' });
