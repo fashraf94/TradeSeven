@@ -41,7 +41,10 @@ import { verifyPacket, resultPacketMissingMarks } from './evidence.js';
 //   bytes are not comparable field by field with T1a-1's; the build report lists what each document kind gained.
 // T1a-2b-1: re-pinned from T1a-2a's ed90ebd5… (267,350 bytes, 120 documents). Leaf-compared base against head: 34
 // documents ADDED — three admission and three result evidence packets, 28 close rows of the window ledger — and no
-// leaf of any existing document added, removed or changed.
+// leaf of any existing document added, removed or changed. The build first pinned 21c7d608…; its review fixes changed
+// only the six packets (the admission packet's `marksSnapshot` became per-position `markSource` with `lastClose`, B1;
+// the result packet gained `track`, B13), so bb742bb9…. This run's admissions hold no position, so no `markSource`
+// is exercised here — evidence.test.js covers each kind.
 const EXPECTED_DUMP = { sha256: 'bb742bb9181c76d5f81317d59702307e37e6155c6fd9c19a61f523647ea65a0f', bytes: 328611 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).

@@ -104,7 +104,7 @@ describe('the registry is a complete list of idea books (T2A-02) — pinned from
     // runs only for a DRAINING book with no open idea left.
     const close = sources.find((f) => f.path === 'api/_utils/practiceField/close.js').text;
     expect(close.match(/delete openBooks/g)).toHaveLength(1);
-    expect(close).toMatch(/const windDownInForce = book\.status === 'draining'\s*&& \(!Number\.isFinite\(windDownAtMs\) \|\| sessionEndMs === null \|\| windDownAtMs < sessionEndMs\);/);
+    expect(close).toMatch(/const windDownInForce = book\.status === 'draining'\s*&& \(!Number\.isFinite\(windDownAtMs\) \|\| closePassEndMs === null \|\| windDownAtMs < closePassEndMs\);/);
     expect(close).toMatch(/const completesWindDown = windDownInForce && \(working\.openIdeaIds \|\| \[\]\)\.length === 0;/);
     const block = close.slice(close.indexOf('if (completesWindDown) {\n      // 9. The book closes'.replace(/\n/g, close.includes('\r\n') ? '\r\n' : '\n')));
     expect(block.length).toBeLessThan(close.length);

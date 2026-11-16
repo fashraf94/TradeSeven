@@ -27,6 +27,7 @@
 
 import { canonicalContentHash } from '../canonicalHash.js';
 import { PracticeFieldError } from './errors.js';
+import { MARK_QUALITY } from './constants.js';
 
 /** The packet's own version (its own family; starts at 1). */
 export const EVIDENCE_PACKET_VERSION = 1;
@@ -206,10 +207,19 @@ const saleCopy = (r) => ({
 });
 
 /**
- * One ledger's endpoint, as the endpoint row states it: every holding's mark, its vendor time and quality. A mark that
- * is not this close's own (carried: an unobserved endpoint, a held-back symbol, a symbol missing from the close
- * document) has no vendor time on the row; the packet then names the mark's last observation time as the ledger's
- * holding records it, `carriedFromVendorTimeIso` (review B2).
+ * Is an endpoint mark the ledger's OWN last mark rather than a price from this close's snapshot? Exactly the marks the
+ * valuation could not take from the snapshot (ledger.js valueLedger: `carried_forward` with no vendor time; an
+ * unobserved session's `unobserved`). A snapshot price without a vendor time (`receipt_time_fallback`) is this close's
+ * own price — it has no observation time, and none is borrowed for it (fix-round refuter NF-2).
+ */
+const isCarriedMark = (m) => (m?.markQuality === MARK_QUALITY.CARRIED_FORWARD || m?.markQuality === MARK_QUALITY.UNOBSERVED)
+  && (m?.markVendorTimeIso ?? null) === null;
+
+/**
+ * One ledger's endpoint, as the endpoint row states it: every holding's mark, its vendor time and quality. A CARRIED
+ * mark (an unobserved endpoint, a held-back symbol, a symbol missing from the close document) has no vendor time on
+ * the row; the packet then names the time the ledger's holding records for that last mark, `carriedFromVendorTimeIso`
+ * (review B2).
  */
 const endpointCopy = (side, ledger) => {
   const marks = {};
@@ -218,7 +228,7 @@ const endpointCopy = (side, ledger) => {
     marks[sym] = {
       shares: h?.shares ?? null, mark: h?.mark ?? null, markQuality: h?.markQuality ?? null,
       markVendorTimeIso: h?.markVendorTimeIso ?? null, costTier: h?.costTier ?? null,
-      ...(h?.markQuality === 'vendor_time' ? {} : { carriedFromVendorTimeIso: ledger?.holdings?.[sym]?.lastMarkAsOf ?? null }),
+      ...(isCarriedMark(h) ? { carriedFromVendorTimeIso: ledger?.holdings?.[sym]?.lastMarkAsOf ?? null } : {}),
     };
   }
   return {
@@ -298,9 +308,13 @@ export function resultPacketMissingMarks(packet, endpointRow) {
   for (const [name] of LEDGERS) {
     for (const sym of Object.keys(endpointRow?.[name]?.holdings || {})) {
       const m = packet?.endpoint?.ledgers?.[name]?.marks?.[sym];
-      // A mark with its observation time: the close's own vendor time, or — for a carried mark — its last one (B2).
-      const observedAt = m?.markQuality === 'vendor_time' ? m?.markVendorTimeIso : m?.carriedFromVendorTimeIso;
-      if (!m || typeof m.mark !== 'number' || typeof m.markQuality !== 'string' || typeof observedAt !== 'string') missing.push(`${name}:${sym}`);
+      // A mark with its observation time: a carried mark its last one (B2); a snapshot price the vendor's time, unless
+      // its quality says the vendor gave none (`receipt_time_fallback` — then none is claimed; NF-2).
+      const timed = !m ? false
+        : isCarriedMark(m) ? typeof m.carriedFromVendorTimeIso === 'string'
+          : m.markQuality === MARK_QUALITY.RECEIPT_TIME_FALLBACK ? m.markVendorTimeIso === null && !('carriedFromVendorTimeIso' in m)
+            : typeof m.markVendorTimeIso === 'string';
+      if (!m || typeof m.mark !== 'number' || typeof m.markQuality !== 'string' || !timed) missing.push(`${name}:${sym}`);
     }
   }
   return missing;

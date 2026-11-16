@@ -237,6 +237,26 @@ describe('the result packet — in the endpoint close\'s transaction, a copy of 
     expect(packet.track).toEqual(jsonPure(ideaOf(ctx).track));
   });
 
+  it('fix-round refuter NF-2 — a FRESH endpoint price the vendor gave no time for (receipt_time_fallback) borrows no earlier quote\'s time, and the packet is whole without one', async () => {
+    const { db, bookId, bookRef } = await seedBook();
+    const r = await admitAndEnter(db, bookId, { contract: contractOf({ names: ['AAPL'] }), quotes: quotes(), date: S[0] });
+    const ctx = { db, bookId, bookRef, ideaId: r.ideaId };
+    for (let i = 0; i < 10; i += 1) await closeDay(ctx, S[i]);
+    const earlier = ideaOf(ctx).ledger.holdings.AAPL.lastMarkAsOf;
+    expect(typeof earlier).toBe('string');
+    await closeDay(ctx, DUE, { AAPL: { price: 240.55, at: null } }); // the due close's AAPL quote has no vendor time
+    const packet = packetOf(ctx, 'result');
+    const endpointRow = ctx.db._get(`mandates/${ctx.bookId}/ideas/${ctx.ideaId}/rows/endpoint`);
+    expect(endpointRow.idea.holdings.AAPL).toMatchObject({ mark: 240.55, markQuality: 'receipt_time_fallback', markVendorTimeIso: null });
+    const aapl = packet.endpoint.ledgers.idea.marks.AAPL;
+    expect(aapl).toMatchObject({ mark: 240.55, markQuality: 'receipt_time_fallback', markVendorTimeIso: null });
+    expect(aapl).not.toHaveProperty('carriedFromVendorTimeIso'); // this close's own price: no earlier time is paired with it
+    expect(resultPacketMissingMarks(packet, endpointRow)).toEqual([]);
+    // A packet that paired this price with the earlier quote's time is named.
+    const borrowed = { ...packet, endpoint: { ...packet.endpoint, ledgers: { ...packet.endpoint.ledgers, idea: { ...packet.endpoint.ledgers.idea, marks: { ...packet.endpoint.ledgers.idea.marks, AAPL: { ...aapl, carriedFromVendorTimeIso: earlier } } } } } };
+    expect(resultPacketMissingMarks(borrowed, endpointRow)).toEqual(['idea:AAPL']);
+  });
+
   it('written ONCE: a replayed close writes nothing; a result packet already stored aborts the endpoint close whole', async () => {
     const { ctx } = await toTheEndpoint();
     const bytes = dumpStore(ctx.db);

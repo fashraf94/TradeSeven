@@ -11,7 +11,8 @@ import { setPracticeFieldModeForTests } from './mode.js';
 import { admitIdea } from './admission.js';
 import { runIdeaBookEvalPass, runIdeaBookWindow } from './sweep.js';
 import { closeIdeaBook } from './close.js';
-import { ideaBookWindowsOf, windowRowId, CLOSE_WINDOW } from './windows.js';
+import { readFileSync } from 'node:fs';
+import { ideaBookWindowsOf, windowRowId, CLOSE_WINDOW, IDEA_BOOK_EVAL_FIRE_EVERY_MIN } from './windows.js';
 import { recordWindowAttempt, foldWindowAttempt, attemptOf, buildCloseWindowRow, WINDOW_OUTCOME } from './windowLedger.js';
 import {
   seedBook, contractOf, closeOn, storeTickSnapshot, storeCloseSnapshot, tickSnapshot, tickOf, slotNowOf, closeNowOf, etIso, DAYS, ADMIT_ISO,
@@ -55,12 +56,32 @@ describe('the expected windows come from windows.js alone', () => {
   it('a window that opened before the book existed is not due; a day that is not a session expects nothing', () => {
     expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 11, 0) }).map((x) => x.window)).toEqual(['midday', 'preClose', CLOSE_WINDOW]);
     expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 10, 0) }).map((x) => x.window)).toEqual(['open30', 'midday', 'preClose', CLOSE_WINDOW]);
-    // A slot still open when the book is created is owed (its later fires serve the book); one already ended is not.
+    // A slot with a fire still to come when the book is created is owed (the 10:15 fire serves a 10:05 book); one with
+    // no fire left is not — a 10:20 book is not owed the 10:00 slot, whose window ends at 10:30 (fix-round refuter NF-4).
     expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 10, 5) }).map((x) => x.window)).toEqual(['open30', 'midday', 'preClose', CLOSE_WINDOW]);
+    expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: new Date(Date.parse(etIso(DAYS.d1, 10, 15)) - 1).toISOString() }).map((x) => x.window)).toEqual(['open30', 'midday', 'preClose', CLOSE_WINDOW]);
+    expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 10, 15) }).map((x) => x.window)).toEqual(['midday', 'preClose', CLOSE_WINDOW]);
+    expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 10, 20) }).map((x) => x.window)).toEqual(['midday', 'preClose', CLOSE_WINDOW]);
     expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 10, 30) }).map((x) => x.window)).toEqual(['midday', 'preClose', CLOSE_WINDOW]);
+    // midday [12:45, 13:15) — its last fire is 13:00; preClose [15:30, 16:00) — its last fire is 15:45.
+    expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 12, 59) }).map((x) => x.window)).toEqual(['midday', 'preClose', CLOSE_WINDOW]);
+    expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 13, 5) }).map((x) => x.window)).toEqual(['preClose', CLOSE_WINDOW]);
+    expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 15, 44) }).map((x) => x.window)).toEqual(['preClose', CLOSE_WINDOW]);
+    expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 15, 50) }).map((x) => x.window)).toEqual([CLOSE_WINDOW]);
+    // An early close's geometry: open30 [10:00, 10:30), midday [11:15, 11:45), preClose [12:30, 13:00).
+    expect(ideaBookWindowsOf('2026-11-27', { createdAtIso: etIso('2026-11-27', 11, 29) }).map((x) => x.window)).toEqual(['midday', 'preClose', CLOSE_WINDOW]);
+    expect(ideaBookWindowsOf('2026-11-27', { createdAtIso: etIso('2026-11-27', 12, 50) }).map((x) => x.window)).toEqual([CLOSE_WINDOW]);
     expect(ideaBookWindowsOf(DAYS.d1, { createdAtIso: etIso(DAYS.d1, 17, 0) }).map((x) => x.window)).toEqual([CLOSE_WINDOW]);
     expect(ideaBookWindowsOf('2026-11-14')).toEqual([]); // a Saturday
     expect(ideaBookWindowsOf('2026-11-26')).toEqual([]); // Thanksgiving
+  });
+
+  it('the fire cadence windows.js counts on is the evaluation cron\'s own — every 15 minutes, on the quarter hour, through every session hour', () => {
+    expect(IDEA_BOOK_EVAL_FIRE_EVERY_MIN).toBe(15);
+    const crons = JSON.parse(readFileSync(new URL('../../../vercel.json', import.meta.url), 'utf8')).crons;
+    const evaluate = crons.filter((c) => c.path === '/api/cron/mandate-evaluate');
+    expect(evaluate).toHaveLength(1);
+    expect(evaluate[0].schedule).toBe('*/15 14,15,16,17,18,19,20,21,22 * * 1-5');
   });
 });
 
@@ -218,6 +239,18 @@ describe('the close: expected against observed, once', () => {
     expect(withoutWindowAlerts(closing.alerts)).toEqual([]);
   });
 
+  it('fix-round refuter NF-4 — a book created at 10:20, after the 10:00 slot\'s last fire, is not told it missed that slot', async () => {
+    const ctx = await seedBook({ nowIso: etIso(DAYS.d1, 10, 20) });
+    for (const slot of ['midday', 'preClose']) {
+      await storeTickSnapshot(ctx.db, DAYS.d1, slot, QUOTES);
+      expect(await pass(ctx.db, DAYS.d1, slot)).toMatchObject({ books: 1, served: 1, errors: 0 });
+    }
+    const out = await closeOn(ctx.db, ctx.bookId, DAYS.d1, QUOTES);
+    expect(out).toMatchObject({ closed: true, missedWindows: [] });
+    expect(missedAlerts(out.alerts)).toEqual([]);
+    expect(rowOf(ctx.db, ctx.bookId, DAYS.d1, CLOSE_WINDOW).session).toMatchObject({ expected: ['midday', 'preClose', 'close'], served: ['midday', 'preClose', 'close'], missing: [] });
+  });
+
   it('buildCloseWindowRow is the whole judgment: missing is every expected intraday window without a SERVED row', () => {
     const book = { createdAt: new Date(etIso(DAYS.admit, 9, 0)) };
     const base = { bookId: 'b', book, session: DAYS.d1, observed: true, catchUp: false, snapshotMeta: { key: `${DAYS.d1}_close` }, bookClosed: false, nowIso: 'N', code: { ideasValued: 0, endpoints: [], resulted: [], cancelled: [] } };
@@ -263,6 +296,21 @@ describe('nothing a committed session or a filled sale did is lost to a later fa
     expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId).ledger.saleReceipts).toHaveLength(1);
     await recordWindowAttempt(ctx.db, { bookRef: ctx.bookRef, tick: tickOf(DAYS.d2), win, now: slotNowOf(DAYS.d2) });
     expect(rowOf(ctx.db, ctx.bookId, DAYS.d2, 'open30')).toMatchObject({ served: false, errors: 1, code: { sales: { filled: 1 } }, outcome: 'code_action' });
+  });
+
+  it('fix-round refuter NF-5 — the SALES pass throwing as a whole: the entry pass still runs, its fill is the window\'s, and the window is one error, not served', async () => {
+    const ctx = await setup();
+    await storeTickSnapshot(ctx.db, DAYS.d1, 'open30', QUOTES);
+    // The second read of the book in the window is the sales pass's own: it fails.
+    let reads = 0;
+    const flaky = { ...ctx.bookRef, get: async () => { reads += 1; if (reads === 2) throw new Error('UNAVAILABLE: injected (sales pass read)'); return ctx.bookRef.get(); } };
+    const original = console.error; console.error = () => {};
+    let win;
+    try { win = await runIdeaBookWindow(ctx.db, { bookRef: flaky, tick: tickOf(DAYS.d1), now: slotNowOf(DAYS.d1) }); } finally { console.error = original; }
+    expect(win).toMatchObject({ served: true, complete: true, errors: 1, sales: { sold: 0, errors: 1 }, entries: { entered: 1, errors: 0 } });
+    expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId).status).toBe('holding'); // the entry filled
+    await recordWindowAttempt(ctx.db, { bookRef: ctx.bookRef, tick: tickOf(DAYS.d1), win, now: slotNowOf(DAYS.d1) });
+    expect(rowOf(ctx.db, ctx.bookId, DAYS.d1, 'open30')).toMatchObject({ served: false, errors: 1, code: { entries: { filled: 1 } }, outcome: 'code_action' });
   });
 });
 

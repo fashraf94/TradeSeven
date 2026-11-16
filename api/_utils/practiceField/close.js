@@ -81,7 +81,7 @@ import { firstUnclosedSessionBefore } from './sessions.js';
 import { toCents, fromCents } from './money.js';
 import { buildResultPacket, evidenceRefOf, EVIDENCE_PACKET } from './evidence.js';
 import { windowsRefOf, expectedIntradayWindows, buildCloseWindowRow } from './windowLedger.js';
-import { windowRowId, CLOSE_WINDOW, sessionCloseMs } from './windows.js';
+import { windowRowId, CLOSE_WINDOW, sessionClosePassEndMs } from './windows.js';
 
 /** The key of THE close snapshot for a date. */
 export const closeSnapshotKeyFor = (date) => `${date}_close`;
@@ -596,13 +596,16 @@ async function closeNextSession(db, bookRef, { date, now, catchUpOnly = false })
 
     // 9. WIND-DOWN COMPLETES AT A CLOSE (T1a-2b-1 §6; contract §3.2, §11): a draining book with no open idea left after
     //    this close — every idea resulted or timed out — is closed by it. Decided here, on the book as this close
-    //    leaves it. A caught-up session is closed exactly as its own close would have been (E12; review C2): if the
-    //    wind-down was requested only AFTER that session ended, the book was still active then, and that session's
-    //    close does not complete it — a later session's does, so no active session goes without its rows.
+    //    leaves it. A caught-up session is closed exactly as its own close would have been (E12; review C2): its
+    //    on-time close runs within the engine's close window, so a wind-down requested before that window ENDS
+    //    (18:00 Eastern on a regular session) is one its close could have completed — a request at 16:05, before
+    //    the 16:25 close, is completed by it (fix-round refuter NF-1). One requested only after the window ended
+    //    came when that session's close had run with the book active; a later session's close completes it, so no
+    //    session the book was active through goes without its rows.
     const windDownAtMs = Date.parse(book.windDown?.requestedAt ?? '');
-    const sessionEndMs = sessionCloseMs(session);
+    const closePassEndMs = sessionClosePassEndMs(session);
     const windDownInForce = book.status === 'draining'
-      && (!Number.isFinite(windDownAtMs) || sessionEndMs === null || windDownAtMs < sessionEndMs);
+      && (!Number.isFinite(windDownAtMs) || closePassEndMs === null || windDownAtMs < closePassEndMs);
     const completesWindDown = windDownInForce && (working.openIdeaIds || []).length === 0;
     const nextBook = {
       ...working,

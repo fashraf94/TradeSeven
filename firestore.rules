@@ -1501,7 +1501,9 @@ service cloud.firestore {
       // owner gains nothing here, even were a document planted under their
       // book. The book doc and dailyRows / decisions / corporateActions keep
       // their rules above. Not listed, so denied to every client: the book's
-      // controlOps (the founder's request records) and every other store.
+      // spendOps (one record per model call's spend) and every other store.
+      // The founder's request records sit under the owner's claim, outside
+      // mandates, which no rule opens either.
       // Signed in first, so an unauthenticated request costs no read of
       // the parent book.
       function isIdeaBookOwner(bookId) {

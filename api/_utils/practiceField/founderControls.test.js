@@ -416,6 +416,32 @@ describe('the lifecycles', () => {
     }
   });
 
+  it('fix-round refuter NF-1 — a wind-down requested after a session ENDED but before its close window ended is completed by that session\'s close; the cutoff is the window\'s end, 18:00', async () => {
+    // Requested at 16:05 on S[1]; S[1]'s close fire runs at 16:25 and completes it.
+    const a = await emptyBookClosedOnS0();
+    await act(a.db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[1], 16, 5) });
+    expect(await close(a.db, a.bookId, S[1])).toMatchObject({ closed: true, bookClosed: true });
+    expect(getBook(a.db, a.bookId)).toMatchObject({ status: 'closed', closedOn: S[1], windDown: { completedSession: S[1] } });
+    expect(a.db._get(`practiceFieldBooks/${UID}`)).toMatchObject({ bookId: null, status: 'closed', closedBookId: a.bookId });
+    expect(a.db._get('practiceFieldBooks/_registry').openBooks).toEqual({});
+    // A Friday (S[4], 20 Nov) at 16:01: Friday's close completes it — the book does not hold a cap slot over the weekend.
+    const f = await emptyBookClosedOnS0();
+    for (const d of [S[1], S[2], S[3]]) await close(f.db, f.bookId, d);
+    await act(f.db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[4], 16, 1) });
+    expect(await close(f.db, f.bookId, S[4])).toMatchObject({ closed: true, bookClosed: true });
+    expect(getBook(f.db, f.bookId)).toMatchObject({ status: 'closed', closedOn: S[4] });
+    // The boundary, through a CAUGHT-UP close: one millisecond before S[1]'s close window ended, the missed S[1] close
+    // completes it (its on-time close, run then, would have); at 18:00 exactly it does not (the C2 row above).
+    const c = await emptyBookClosedOnS0();
+    await storeCloseSnapshot(c.db, S[1], quotes());
+    await act(c.db, 'wind_down', 'w-1', {}, { nowIso: new Date(Date.parse(etIso(S[1], 18, 0)) - 1).toISOString() });
+    const original = console.error; console.error = () => {};
+    let p;
+    try { p = await windowPass(c.db, S[2]); } finally { console.error = original; }
+    expect(p).toMatchObject({ books: 1, served: 0, caughtUp: 1, errors: 0 });
+    expect(getBook(c.db, c.bookId)).toMatchObject({ status: 'closed', closedOn: S[1], execState: { lastCloseKey: S[1] } });
+  });
+
   it('N1 — a fire whose listing still shows a book that has CLOSED since writes nothing to it', async () => {
     const { db, bookId } = await emptyBookClosedOnS0();
     await act(db, 'wind_down', 'w-1', {}, { nowIso: etIso(S[1], 9, 0) });
