@@ -68,8 +68,19 @@
 // last). T1b reserves once per transaction.
 //
 // NO CALLER EXISTS YET: T1b's model calls are the first. Valuation, sales and settlement never consult it — nothing on
-// the money path imports this module (spend.test.js pins that). Amounts are integer micro-dollars while computed: a
-// model call costs a fraction of a cent (and a price in $/MTok is exactly micro-dollars per token).
+// the money path imports this module (spend.test.js pins that).
+//
+// THE MONTH'S FIGURES ARE EXACT INTEGER NANO-DOLLARS WHILE COMPUTED (final fix, 16 Nov 2026, Astra T2B-C01). A price in
+// $/MTok is micro-dollars per token, but a cache read (0.1×) or write (1.25×) of it is not: at Haiku's $1 a cache read is
+// 0.1 µ$ a token, so an honest charge can carry a fraction of a micro-dollar (1,001 cache reads + 1,000 output tokens =
+// $0.0051001). Settling that to the NEAREST micro-dollar recorded $0.005100 and released $0.0000001 too much room, and the
+// rounding added up: thirteen honest calls, each within its own maximum, charged $3.0000001 while the book read $3.00.
+// So the reserved, settled and remaining figures, each reservation's maximum and each charge are held as whole
+// nano-dollars (1e-9 USD) — fine enough that every rate the table holds (a whole number of nano-dollars a token) prices a
+// call exactly. A maximum is the micro-dollar figure rounded UP (maxCallChargeMicros) × 1,000, exactly. An incurred
+// charge is NEVER rounded down: incurredChargeNanos rounds a genuine fraction of a nano-dollar UP, and snaps to the
+// nearest nano-dollar only what is the double's own rounding error (see there). The book and the op keep their USD
+// fields, no new ones: each written figure is a whole number of nano-dollars over 1e9, read back exactly by nanosOf.
 
 import { PRACTICE_FIELD_SLOTS } from '../../../src/data/practiceFieldSlots.js';
 import {
@@ -87,8 +98,34 @@ export const SPEND_OPS_COLLECTION = 'spendOps';
 export const CHARGE_ABOVE_RESERVATION = 'charge_above_reservation';
 
 const MICROS_PER_USD = 1_000_000;
-const micros = (usd) => Math.round(Number(usd) * MICROS_PER_USD);
-const usdOf = (m) => m / MICROS_PER_USD;
+const NANOS_PER_USD = 1_000_000_000;
+const NANOS_PER_MICRO = 1_000;
+/**
+ * A USD figure THIS MODULE WROTE (or the bound, or the smallest call's constant), as whole nano-dollars. Every figure the
+ * module writes is a whole number of nano-dollars over 1e9, so the nearest integer recovers it exactly: a unit
+ * conversion, never a rounding of money. An incurred charge from the caller goes through incurredChargeNanos instead.
+ */
+const nanosOf = (usd) => Math.round(Number(usd) * NANOS_PER_USD);
+const usdOf = (n) => n / NANOS_PER_USD;
+/** How many units in the last place of the double the snap allows (priceUsage's sums measured within 2). */
+const DOUBLE_NOISE_ULPS = 16;
+
+/**
+ * THE CHARGE A CALL INCURRED, as whole nano-dollars — NEVER rounded down (Astra T2B-C01). A charge that is not a whole
+ * number of nano-dollars is rounded UP. The one exception is the double's own error: priceUsage sums products of
+ * floating-point numbers, so a charge that is exactly 249,250,000 nano-dollars arrives as 0.24925000000000003 USD
+ * (249,250,000.00000003 n$). A value within DOUBLE_NOISE_ULPS units in the last place of a whole number of nano-dollars is
+ * that whole number: the double cannot tell a difference that small from its own rounding (for a $3 charge the band is
+ * about 1e-14 USD). Rounding that noise UP would charge an honest call above its exact maximum and flag it. Every rate the
+ * table holds is a whole number of nano-dollars a token, so for it the snap is exact; a future rate that is not could
+ * be understated by at most the band, per call.
+ */
+export function incurredChargeNanos(actualUsd) {
+  const x = actualUsd * NANOS_PER_USD;
+  const whole = Math.round(x);
+  if (Math.abs(x - whole) <= Math.max(1, Math.abs(x)) * Number.EPSILON * DOUBLE_NOISE_ULPS) return whole;
+  return Math.ceil(x);
+}
 /** An instant with its own offset: `…Z` or `…±hh:mm` (review B10 — never read in the host's zone). */
 const isInstant = (v) => typeof v === 'string' && /T.*(Z|[+-]\d\d:\d\d)$/.test(v) && Number.isFinite(Date.parse(v));
 /** An operation id is a document id: a safe, bounded token that cannot be one Firestore reserves (review B11). */
@@ -124,15 +161,15 @@ export function maxCallChargeMicros({ modelId, maxInputTokens, maxOutputTokens }
 /** The same, in USD (null when the model is unpriced). */
 export function maxCallChargeUsd(call) {
   const m = maxCallChargeMicros(call);
-  return m === null ? null : usdOf(m);
+  return m === null ? null : m / MICROS_PER_USD;
 }
 
-/** The month's remaining room under the bound, in micro-dollars (negative after a charge above its reservation). */
-const roomMicros = (month) => micros(month.boundUsd ?? MONTHLY_SPEND_BOUND_USD) - micros(month.reservedUsd);
+/** The month's remaining room under the bound, in nano-dollars (negative after a charge above its reservation). */
+const roomNanos = (month) => nanosOf(month.boundUsd ?? MONTHLY_SPEND_BOUND_USD) - nanosOf(month.reservedUsd);
 
 /** Is the month exhausted? DERIVED (Q2): its remaining room is below the smallest call T1b will make. */
 export function spendExhausted(month) {
-  return roomMicros(month) < micros(PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD);
+  return roomNanos(month) < nanosOf(PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD);
 }
 
 /**
@@ -143,7 +180,7 @@ function withExhaustion(before, after, { nowIso, opId, purpose, reason }) {
   const exhausted = spendExhausted(after);
   if (!exhausted) return { ...after, exhausted: false, exhaustedAt: null, exhaustedBy: null };
   if (before?.exhausted === true && before.exhaustedAt) return { ...after, exhausted: true, exhaustedAt: before.exhaustedAt, exhaustedBy: before.exhaustedBy ?? null };
-  return { ...after, exhausted: true, exhaustedAt: nowIso, exhaustedBy: { opId, purpose, reason, roomUsd: usdOf(roomMicros(after)) } };
+  return { ...after, exhausted: true, exhaustedAt: nowIso, exhaustedBy: { opId, purpose, reason, roomUsd: usdOf(roomNanos(after)) } };
 }
 
 /** An empty month. */
@@ -193,6 +230,7 @@ export function planReserve(stored, op, { modelId, maxInputTokens, maxOutputToke
   const refuse = (result) => ({ result: { ok: false, ...result }, next: null, opDoc: null });
   const maxMicros = maxCallChargeMicros({ modelId, maxInputTokens, maxOutputTokens });
   if (maxMicros === null) return refuse({ code: 'model_unpriced', modelId, priceTableVersion: MODEL_PRICE_TABLE_VERSION });
+  const maxNanos = maxMicros * NANOS_PER_MICRO; // the maximum, already rounded UP to the micro-dollar, in the month's unit
   // What the table cannot price is not reserved (review S-1): a 1-hour cache write, a server tool.
   const unsupported = [...(PRICED_CACHE_TTLS.includes(cacheTtl) ? [] : ['cache_write_1h']), ...(serverTools.length > 0 ? ['server_tools'] : [])];
   if (unsupported.length > 0) return refuse({ code: 'pricing_unsupported', unsupported, modelId, priceTableVersion: MODEL_PRICE_TABLE_VERSION });
@@ -203,18 +241,19 @@ export function planReserve(stored, op, { modelId, maxInputTokens, maxOutputToke
   if (!isAmount(state.reservedUsd) || !isAmount(state.boundUsd ?? MONTHLY_SPEND_BOUND_USD)) return refuse({ code: 'spend_state_invalid', month });
   // An exhausted month runs no model call (contract §17 B-SPEND; review S-2) — not even one small enough to fit. The
   // refusal writes nothing (Q2).
-  if (spendExhausted(state)) return refuse({ code: 'spend_exhausted', month, reservedUsd: state.reservedUsd, roomUsd: usdOf(roomMicros(state)), minCallUsd: PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD });
-  // "Would pass $3": the month's committed figure plus this call's MAXIMUM, strictly more than the bound. Exactly the
-  // bound is allowed. Refused, nothing is written: the month is not exhausted by a refusal (Q2).
-  if (micros(state.reservedUsd) + maxMicros > micros(state.boundUsd ?? MONTHLY_SPEND_BOUND_USD)) {
+  if (spendExhausted(state)) return refuse({ code: 'spend_exhausted', month, reservedUsd: state.reservedUsd, roomUsd: usdOf(roomNanos(state)), minCallUsd: PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD });
+  // "Would pass $3": the month's committed figure plus this call's MAXIMUM, strictly more than the bound — compared in
+  // whole nano-dollars, so a settled charge's fraction of a micro-dollar is counted (T2B-C01). Exactly the bound is
+  // allowed. Refused, nothing is written: the month is not exhausted by a refusal (Q2).
+  if (nanosOf(state.reservedUsd) + maxNanos > nanosOf(state.boundUsd ?? MONTHLY_SPEND_BOUND_USD)) {
     return {
-      result: { ok: false, code: 'spend_would_exceed', month, maxChargeUsd: usdOf(maxMicros), reservedUsd: state.reservedUsd, roomUsd: usdOf(roomMicros(state)), boundUsd: state.boundUsd },
+      result: { ok: false, code: 'spend_would_exceed', month, maxChargeUsd: usdOf(maxNanos), reservedUsd: state.reservedUsd, roomUsd: usdOf(roomNanos(state)), boundUsd: state.boundUsd },
       next: null, opDoc: null,
     };
   }
-  const next = withExhaustion(state, { ...state, version: SPEND_VERSION, reservedUsd: usdOf(micros(state.reservedUsd) + maxMicros), calls: (state.calls || 0) + 1 }, { nowIso, opId, purpose, reason: 'reservation' });
+  const next = withExhaustion(state, { ...state, version: SPEND_VERSION, reservedUsd: usdOf(nanosOf(state.reservedUsd) + maxNanos), calls: (state.calls || 0) + 1 }, { nowIso, opId, purpose, reason: 'reservation' });
   const opDoc = {
-    opId, month, purpose, modelId, maxInputTokens, maxOutputTokens, cacheTtl, serverTools: [...serverTools], maxChargeUsd: usdOf(maxMicros), priceTableVersion: MODEL_PRICE_TABLE_VERSION,
+    opId, month, purpose, modelId, maxInputTokens, maxOutputTokens, cacheTtl, serverTools: [...serverTools], maxChargeUsd: usdOf(maxNanos), priceTableVersion: MODEL_PRICE_TABLE_VERSION,
     state: 'reserved', reservedAt: nowIso, chargedUsd: null, actualUsd: null, unpriced: null, releasedUsd: null, chargeAboveReservation: null, settledAt: null,
   };
   return { result: { ok: true, idempotentReplay: false, opId, month, maxChargeUsd: opDoc.maxChargeUsd, reservedUsd: next.reservedUsd, exhausted: next.exhausted }, next, opDoc };
@@ -235,29 +274,30 @@ export function planSettle(stored, op, { opId, actualUsd, unpriced = false, nowI
   // Fail closed on an op with no numeric maximum (review S-4: a record from before maximum-charge reservations would
   // turn the month's totals into NaN, and every later reservation would then pass).
   if (!isAmount(op.maxChargeUsd)) return { result: { ok: false, code: 'reservation_without_maximum', opId }, next: null, opPatch: null };
-  const reservedMicros = micros(op.maxChargeUsd);
-  // An unpriced call (its usage cannot be read) is charged the most it could have cost: its reserved maximum.
-  const chargedMicros = unpriced === true ? reservedMicros : micros(actualUsd);
+  const reservedNanos = nanosOf(op.maxChargeUsd);
+  // An unpriced call (its usage cannot be read) is charged the most it could have cost: its reserved maximum. A priced
+  // one is charged what it cost, in whole nano-dollars, never rounded down (T2B-C01): the room released below is exact.
+  const chargedNanos = unpriced === true ? reservedNanos : incurredChargeNanos(actualUsd);
   if (op.state === 'settled') {
-    const same = (op.unpriced === true) === (unpriced === true) && micros(op.chargedUsd) === chargedMicros;
+    const same = (op.unpriced === true) === (unpriced === true) && nanosOf(op.chargedUsd) === chargedNanos;
     return { result: same ? { ok: true, idempotentReplay: true, opId, chargedUsd: op.chargedUsd, month: op.month } : { ok: false, code: 'op_id_conflict', opId }, next: null, opPatch: null };
   }
   // Recorded as it is, never clamped: what the call cost. Above its maximum it is flagged (and logged by settleSpend).
-  const above = chargedMicros > reservedMicros;
-  const releasedMicros = above ? 0 : reservedMicros - chargedMicros;
-  const flag = above ? { reservedMaxUsd: usdOf(reservedMicros), chargedUsd: usdOf(chargedMicros), overUsd: usdOf(chargedMicros - reservedMicros) } : null;
+  const above = chargedNanos > reservedNanos;
+  const releasedNanos = above ? 0 : reservedNanos - chargedNanos;
+  const flag = above ? { reservedMaxUsd: usdOf(reservedNanos), chargedUsd: usdOf(chargedNanos), overUsd: usdOf(chargedNanos - reservedNanos) } : null;
   // Roll the book's month forward only with a clock that is not behind it; then charge the op's OWN month.
   const nowMonth = spendMonthOf(nowIso);
   const state = spendStateFor(stored, nowMonth);
   const opPatch = {
-    state: 'settled', chargedUsd: usdOf(chargedMicros), actualUsd: unpriced === true ? null : actualUsd, unpriced: unpriced === true,
-    releasedUsd: usdOf(releasedMicros), chargeAboveReservation: flag, settledAt: nowIso,
+    state: 'settled', chargedUsd: usdOf(chargedNanos), actualUsd: unpriced === true ? null : actualUsd, unpriced: unpriced === true,
+    releasedUsd: usdOf(releasedNanos), chargeAboveReservation: flag, settledAt: nowIso,
   };
   // The month's committed figure moves from the reserved maximum to the charge: the unused part is released.
   const charge = (month) => withExhaustion(month, {
     ...month,
-    reservedUsd: usdOf(micros(month.reservedUsd) - reservedMicros + chargedMicros),
-    settledUsd: usdOf(micros(month.settledUsd) + chargedMicros),
+    reservedUsd: usdOf(nanosOf(month.reservedUsd) - reservedNanos + chargedNanos),
+    settledUsd: usdOf(nanosOf(month.settledUsd) + chargedNanos),
   }, { nowIso, opId, purpose: op.purpose, reason: above ? CHARGE_ABOVE_RESERVATION : 'settlement' });
   let next;
   let where;
@@ -272,7 +312,7 @@ export function planSettle(stored, op, { opId, actualUsd, unpriced = false, nowI
   const monthAfter = where === 'current' ? next : (where === 'last' ? next.lastMonth : null);
   return {
     result: {
-      ok: true, idempotentReplay: false, opId, chargedUsd: usdOf(chargedMicros), releasedUsd: usdOf(releasedMicros), month: op.month,
+      ok: true, idempotentReplay: false, opId, chargedUsd: usdOf(chargedNanos), releasedUsd: usdOf(releasedNanos), month: op.month,
       ...(monthAfter ? { reservedUsd: monthAfter.reservedUsd, exhausted: monthAfter.exhausted === true } : { monthTotalsRetired: true }),
       ...(above ? { flags: [CHARGE_ABOVE_RESERVATION], chargeAboveReservation: flag } : {}),
     },

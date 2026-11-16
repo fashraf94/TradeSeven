@@ -14,7 +14,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { setPracticeFieldModeForTests } from './mode.js';
 import {
   reserveSpend, settleSpend, planReserve, planSettle, spendMonthOf, maxCallChargeUsd, maxCallChargeMicros, spendExhausted,
-  MONTHLY_SPEND_BOUND_USD, CHARGE_ABOVE_RESERVATION,
+  incurredChargeNanos, MONTHLY_SPEND_BOUND_USD, CHARGE_ABOVE_RESERVATION,
 } from './spend.js';
 import { PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD } from './constants.js';
 import { MODEL_PRICES_PER_MTOK, MODEL_PRICE_TABLE_VERSION, priceUsage } from '../modelPriceTable.js';
@@ -316,6 +316,83 @@ describe('settleSpend — the charge as it is, the unused part released', () => 
     expect(await settle(ctx, { opId: 'never', actualUsd: 0.01 })).toEqual({ ok: false, code: 'reservation_not_found', opId: 'never' });
     expect(() => planSettle(null, null, { opId: 'p', actualUsd: 0.01, unpriced: true, nowIso: NOV })).toThrow(/exactly one/);
     expect(() => planSettle(null, null, { opId: 'p', nowIso: NOV })).toThrow(/exactly one/);
+  });
+});
+
+describe('Astra T2B-C01 — a fraction of a micro-dollar is never released (the month is kept in whole nano-dollars)', () => {
+  // The tariff as exact integers, nano-dollars a token at Haiku's $1 / $5 per MTok: plain input 1,000, a 5-minute cache
+  // write 1,250, a cache read 100, output 5,000. The test's own arithmetic — independent of priceUsage's doubles.
+  const nanosOfUsage = (u) => (u.input_tokens ?? 0) * 1_000 + (u.cache_creation_input_tokens ?? 0) * 1_250 + (u.cache_read_input_tokens ?? 0) * 100 + (u.output_tokens ?? 0) * 5_000;
+  /** Astra's thirteen honest calls: each within its declared ceilings, each charge within its own maximum. */
+  const CALLS = [
+    { opId: 'cached', maxIn: 1_001, maxOut: 1_000, usage: { input_tokens: 0, cache_read_input_tokens: 1_001, cache_creation_input_tokens: 0, output_tokens: 1_000 } },
+    ...Array.from({ length: 11 }, (_, i) => ({ opId: `bulk-${i}`, maxIn: 199_000, maxOut: 100, usage: { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 199_000, output_tokens: 100 } })),
+    { opId: 'last', maxIn: 199_000, maxOut: 880, usage: { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 199_000, output_tokens: 880 } },
+  ];
+
+  it('Astra\'s regression — after twelve honest settlements (the first $0.0051001) the thirteenth call\'s $0.25315 maximum is refused `spend_would_exceed`: the room is $0.2531499, and the book records the exact sum of the charges', async () => {
+    const ctx = await seedBook();
+    let chargedNanos = 0;
+    for (const c of CALLS.slice(0, 12)) {
+      const actualUsd = priceUsage(HAIKU, c.usage).estUsd; // what a caller would settle with: the table's double
+      const r = await reserve(ctx, { ...call(c.maxIn, c.maxOut), opId: c.opId });
+      expect(r, c.opId).toMatchObject({ ok: true });
+      expect(nanosOfUsage(c.usage), c.opId).toBeLessThanOrEqual(Math.round(r.maxChargeUsd * 1e9)); // honest: within its maximum
+      const s = await settle(ctx, { opId: c.opId, actualUsd });
+      expect(s, c.opId).toMatchObject({ ok: true, chargedUsd: nanosOfUsage(c.usage) / 1e9 });
+      expect(s, c.opId).not.toHaveProperty('flags');
+      expect(opOf(ctx, c.opId), c.opId).toMatchObject({ actualUsd, chargeAboveReservation: null }); // the raw charge, as given
+      chargedNanos += nanosOfUsage(c.usage);
+    }
+    expect(nanosOfUsage(CALLS[0].usage)).toBe(5_100_100); // $0.0051001 — not a whole micro-dollar
+    expect(opOf(ctx, 'cached')).toMatchObject({ chargedUsd: 0.0051001, releasedUsd: 0.0011519 }); // 6,252,000 − 5,100,100 n$
+    expect(chargedNanos).toBe(2_746_850_100);
+    expect(spendOf(ctx)).toMatchObject({ reservedUsd: chargedNanos / 1e9, settledUsd: chargedNanos / 1e9, calls: 12, exhausted: false });
+    // The last call's maximum is $0.25315 = 253,150,000 n$; the room is 3,000,000,000 − 2,746,850,100 = 253,149,900 n$.
+    const last = CALLS[12];
+    expect(maxCallChargeMicros(call(last.maxIn, last.maxOut)) * 1_000).toBe(253_150_000);
+    const before = bookBytes(ctx);
+    expect(await reserve(ctx, { ...call(last.maxIn, last.maxOut), opId: last.opId })).toEqual({
+      ok: false, code: 'spend_would_exceed', month: '2026-11', maxChargeUsd: 0.25315, reservedUsd: 2.7468501, roomUsd: 0.2531499, boundUsd: 3,
+    });
+    expect(opOf(ctx, last.opId)).toBeUndefined();
+    expect(bookBytes(ctx)).toBe(before);
+  });
+
+  it('control — one cache read fewer in the first call (a whole $0.0051): the room is then exactly the thirteenth call\'s maximum, and it fits — the month reaches $3 exactly, never past it', async () => {
+    const ctx = await seedBook();
+    const first = { ...CALLS[0], usage: { ...CALLS[0].usage, cache_read_input_tokens: 1_000 } }; // 100,000 + 5,000,000 n$
+    for (const c of [first, ...CALLS.slice(1, 12)]) {
+      await reserve(ctx, { ...call(c.maxIn, c.maxOut), opId: c.opId });
+      expect(await settle(ctx, { opId: c.opId, actualUsd: priceUsage(HAIKU, c.usage).estUsd }), c.opId).not.toHaveProperty('flags');
+    }
+    expect(spendOf(ctx).reservedUsd).toBe(2.74685); // 5,100,000 + 11 × 249,250,000 n$
+    const last = CALLS[12];
+    expect(await reserve(ctx, { ...call(last.maxIn, last.maxOut), opId: last.opId })).toMatchObject({ ok: true, maxChargeUsd: 0.25315, reservedUsd: 3 });
+  });
+
+  it('an incurred charge is never rounded down: a genuine fraction of a nano-dollar rounds UP; only the double\'s own error snaps to the whole nano-dollar', () => {
+    expect(incurredChargeNanos(0)).toBe(0);
+    expect(incurredChargeNanos(0.0051001)).toBe(5_100_100);
+    expect(incurredChargeNanos(0.24925000000000003)).toBe(249_250_000); // priceUsage's double for 249,250,000 n$
+    expect(incurredChargeNanos(priceUsage(HAIKU, CALLS[12].usage).estUsd)).toBe(253_150_000);
+    expect(incurredChargeNanos(3.0000001)).toBe(3_000_000_100);
+    // A real fraction, either side of the half: up, never to the nearest.
+    expect(incurredChargeNanos(5_100_100.01 / 1e9)).toBe(5_100_101);
+    expect(incurredChargeNanos(5_100_100.6 / 1e9)).toBe(5_100_101);
+    expect(incurredChargeNanos(0.4e-9)).toBe(1);
+    // Noise of a few units in the last place, either side of a whole number: that whole number.
+    // (Stepped through the double's bits, so each step is exactly one unit in the last place.)
+    const stepUlps = (v, n) => { const f = new Float64Array([v]); const b = new BigInt64Array(f.buffer); b[0] += BigInt(n); return f[0]; };
+    for (const ulps of [-4, -1, 1, 4]) {
+      const v = stepUlps(2_746_850_100 / 1e9, ulps);
+      expect(v, String(ulps)).not.toBe(2_746_850_100 / 1e9);
+      expect(incurredChargeNanos(v), String(ulps)).toBe(2_746_850_100);
+    }
+    // Every usage mix within a call's ceilings settles to the test's own integer arithmetic, exactly.
+    for (const u of [{ input_tokens: 12_345, cache_read_input_tokens: 777, cache_creation_input_tokens: 3_333, output_tokens: 4_321 }, { input_tokens: 1, cache_read_input_tokens: 1, cache_creation_input_tokens: 1, output_tokens: 1 }, { input_tokens: 1_999_999, cache_read_input_tokens: 1_999_999, cache_creation_input_tokens: 1_999_999, output_tokens: 199_999 }]) {
+      expect(incurredChargeNanos(priceUsage(HAIKU, u).estUsd), JSON.stringify(u)).toBe(nanosOfUsage(u));
+    }
   });
 });
 
