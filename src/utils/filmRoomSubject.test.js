@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 // (api/) imports this module — this import is the runtime guard that it stays Node-clean, never mocked.
 import {
   sectorOf, boundedText, codePointsOf, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom, ideaVersionPathOf, subjectLineOf, subjectOfExcerpt, subjectOfDay, subjectOfDayRead,
-  firstCodePoints, SUBJECT_STATEMENT_CODE_POINTS, SUBJECT_WORDS,
+  firstCodePoints, SUBJECT_STATEMENT_CODE_POINTS, SUBJECT_WORDS, instantMs, instantText,
 } from './filmRoomSubject.js';
 import { TICKER_TO_SECTOR, STOCK_UNIVERSE } from '../../api/_utils/rankingConfig.js';
 import { TAPE_NUMBER_CLASSES } from '../constants/filmTape.js';
@@ -134,5 +134,42 @@ describe('the §2 review\'s lens 3 — the read\'s states, the ref\'s id class, 
     expect(subjectOfDayRead(tape, 'ETN', { status: 'ready', doc: version() }, OWNER).line.text).toBe("ETN · XLI · under your idea 'Chips lead while the market drifts.' v4");
     // a day that carries no idea has a line whatever the read's state
     expect(subjectOfDayRead(tapeWith([]), 'ETN', { status: 'loading', doc: null }, OWNER).line.text).toBe('ETN · XLI');
+  });
+});
+
+describe('CE-3 — the one strict instant parser: a full ISO 8601 date-time with its zone, on a real calendar and a real clock', () => {
+  it('refuses a date alone, a time with no zone, a loose string, and every impossible value Date.parse would normalise (C2-F3)', () => {
+    const refused = [
+      '2026-09-23',                          // a date only
+      '2026-09-23T19:00:00',                 // a time with no zone
+      '2026-02-30T15:00:00Z',                // 30 February
+      '2026-04-31T15:00:00Z',                // 31 April
+      '2026-02-29T15:00:00Z',                // 29 February, not a leap year
+      '1900-02-29T15:00:00Z',                // a century that is not a leap year
+      '2026-13-01T15:00:00Z', '2026-00-10T15:00:00Z', '2026-09-00T15:00:00Z',
+      '2026-09-23T24:00:00Z',                // 24:00
+      '2026-09-23T19:60:00Z', '2026-09-23T19:00:60Z',
+      '2026-09-23T19:00:00+24:00', '2026-09-23T19:00:00+05:60',
+      '9/23/2026 19:00 (Ab3dEf7hIj9kLm1nOp5q)',
+      '2026-09-23T19:00:00.000Z (id)', ' 2026-09-23T19:00:00Z', 1758654000000, null, undefined, {},
+    ];
+    for (const v of refused) {
+      expect(instantMs(v), String(v)).toBeNull();
+      expect(instantText(v), String(v)).toBeNull();
+    }
+    // what Date.parse alone would have read — the inference CE-3 refuses
+    expect(Number.isFinite(Date.parse('2026-02-30T15:00:00Z'))).toBe(true);
+    expect(Number.isFinite(Date.parse('2026-09-23'))).toBe(true);
+  });
+  it('accepts a valid `Z`, a valid offset (the same instant), fractional seconds, minutes only, and a real leap day', () => {
+    expect(instantMs('2026-09-23T19:00:00Z')).toBe(Date.UTC(2026, 8, 23, 19, 0, 0));
+    expect(instantMs('2026-09-23T19:00:00.000Z')).toBe(Date.UTC(2026, 8, 23, 19, 0, 0));
+    expect(instantMs('2026-09-23T15:00:00-04:00')).toBe(Date.UTC(2026, 8, 23, 19, 0, 0));
+    expect(instantMs('2026-09-24T00:30:00+05:30')).toBe(Date.UTC(2026, 8, 23, 19, 0, 0));
+    expect(instantMs('2026-09-23T19:00Z')).toBe(Date.UTC(2026, 8, 23, 19, 0, 0));
+    expect(instantMs('2028-02-29T12:00:00Z')).toBe(Date.UTC(2028, 1, 29, 12));
+    expect(instantMs('2000-02-29T12:00:00Z')).toBe(Date.UTC(2000, 1, 29, 12));
+    expect(instantMs('2026-09-23T23:59:59.999Z')).toBe(Date.UTC(2026, 8, 23, 23, 59, 59, 999));
+    expect(instantText('2026-09-23T15:00:00-04:00')).toBe('2026-09-23T15:00:00-04:00');
   });
 });

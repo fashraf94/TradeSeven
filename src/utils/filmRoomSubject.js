@@ -36,12 +36,31 @@ export const IDEA_STATEMENT_MAX = 280;
 export const codePointsOf = (s) => [...String(s)].length;
 
 /**
- * An INSTANT as the records write one — a full ISO 8601 date-time with its offset (`2026-09-23T17:45:20.000Z`) that
- * Date.parse reads — or null. Anything looser (`9/23/2026 13:30 …`, a string holding words or an id) is no instant:
- * an owner-writable time can never carry text into an excerpt (§2 review L1-1).
+ * THE ONE STRICT INSTANT PARSER (Build C Amendment E, CE-3): an instant as the records write one — a full ISO 8601
+ * date-time with its offset or `Z` (`2026-09-23T17:45:20.000Z`, `2026-09-23T13:45:20-04:00`), on a REAL calendar date
+ * and a REAL clock time — as epoch milliseconds, or null. Refused: a date alone, a time with no zone, anything looser
+ * (`9/23/2026 13:30 …`, a string holding words or an id — §2 review L1-1), and every impossible value Date.parse would
+ * quietly normalise (30 February, 31 April, 24:00, minute 60, second 60, an offset past 23:59 — Astra's C2-F3). Every
+ * instant the excerpt carries or compares, and every tie-break by time, goes through it; nothing is inferred from a
+ * time it refuses.
  */
-const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
-export const instantText = (v) => (typeof v === 'string' && ISO_INSTANT.test(v) && Number.isFinite(Date.parse(v)) ? v : null);
+const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:Z|[+-](\d{2}):(\d{2}))$/;
+const leap = (y) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+const DAYS_IN = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+export function instantMs(v) {
+  if (typeof v !== 'string') return null;
+  const m = ISO_INSTANT.exec(v);
+  if (!m) return null;
+  const [y, mo, d, h, mi] = [m[1], m[2], m[3], m[4], m[5]].map(Number);
+  const s = m[6] === undefined ? 0 : Number(m[6]);
+  if (mo < 1 || mo > 12 || d < 1 || d > (mo === 2 && leap(y) ? 29 : DAYS_IN[mo - 1])) return null;
+  if (h > 23 || mi > 59 || s > 59) return null;
+  if (m[7] !== undefined && (Number(m[7]) > 23 || Number(m[8]) > 59)) return null;
+  const ms = Date.parse(v);
+  return Number.isFinite(ms) ? ms : null;
+}
+/** The instant's own text when it is a strict instant (instantMs), else null — what a quotation's `at` carries. */
+export const instantText = (v) => (instantMs(v) === null ? null : v);
 
 /** `v` when it is a non-empty string of at most `max` code points; null otherwise (over the bound: not carried, never cut). */
 export function boundedText(v, max) {

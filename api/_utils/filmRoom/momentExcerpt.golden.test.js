@@ -284,6 +284,63 @@ describe('a field the tape does not hold is absent — never a guess, never a ne
   });
 });
 
+// ── every time a real instant (CE-3) ────────────────────────────────────────
+
+/** The same instant as `iso`, written with offset `sign hh:mm` — a valid instant whose clock reads differently. */
+const withOffset = (iso, sign, hh, mm = 0) => {
+  const shift = (sign === '+' ? 1 : -1) * (hh * 60 + mm) * 60_000;
+  const local = new Date(Date.parse(iso) + shift).toISOString().slice(0, 23);
+  return `${local}${sign}${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+};
+/** The times CE-3 names: refused ones (each a string Date.parse alone would read, or nearly) and the two valid forms. */
+const LOOSE_TIMES = Object.freeze({
+  'a date only': (iso) => iso.slice(0, 10),
+  'a time with no zone': (iso) => iso.slice(0, 19),
+  '30 February': () => '2026-02-30T15:00:00.000Z',
+  '31 April': () => '2026-04-31T15:00:00.000Z',
+  '24:00': (iso) => `${iso.slice(0, 10)}T24:00:00.000Z`,
+});
+const VALID_TIMES = Object.freeze({ 'a valid offset': (iso) => withOffset(iso, '+', 5, 30), 'a valid Z': (iso) => iso });
+
+describe('CE-3 — every time a real instant, or nothing is inferred from it (C2-F3)', () => {
+  const SALE = DAY.tape.actions.find((a) => a.symbolOut === 'ETN');
+  it('THE EXIT: a loose or impossible exit time gives no afterExit — the exit itself stays, placed by its tickSeq (R6); a valid offset or Z gives the same afterExit', async () => {
+    expect(LIVE.moment.excerpt.afterExit).toBeDefined();
+    for (const [name, make] of Object.entries(LOOSE_TIMES)) {
+      const got = await momentOver(withTape((t) => { t.actions.find((a) => a.symbolOut === 'ETN').at = make(SALE.at); }));
+      expect(got.excerpt.exit, name).toEqual(LIVE.moment.excerpt.exit);
+      expect(got.excerpt.afterExit, name).toBeUndefined();
+    }
+    for (const [name, make] of Object.entries(VALID_TIMES)) {
+      const got = await momentOver(withTape((t) => { t.actions.find((a) => a.symbolOut === 'ETN').at = make(SALE.at); }));
+      expect(got.excerpt.afterExit, name).toEqual(LIVE.moment.excerpt.afterExit);
+    }
+  });
+  it('A QUOTATION\'S TIME: a loose or impossible time keeps the words with `at: null`; a valid offset or Z is carried as written', async () => {
+    const at = DAY.tape.rationale[RAT15].at;
+    for (const [name, make] of Object.entries(LOOSE_TIMES)) {
+      const got = await momentOver(withTape((t) => { t.rationale[RAT15].at = make(at); }));
+      expect(got.excerpt.rationale.rationale, name).toEqual({ ...LIVE.moment.excerpt.rationale.rationale, at: null });
+      expect(got.excerpt.rationale.hypothesis.at, name).toBeNull();
+    }
+    for (const [name, make] of Object.entries(VALID_TIMES)) {
+      const got = await momentOver(withTape((t) => { t.rationale[RAT15].at = make(at); }));
+      expect(got.excerpt.rationale.rationale.at, name).toBe(make(at));
+    }
+  });
+  it('A TIE-BREAK BY TIME reads instants, never strings: of two directives heard at the same check, the one filed a minute earlier wins though its offset clock reads later', async () => {
+    const filed = DAY.tape.directives[DIR15].filedAt;
+    const earlier = withOffset(new Date(Date.parse(filed) - 60_000).toISOString(), '+', 5, 0);
+    expect(earlier > filed).toBe(true);   // as a string it sorts later
+    const got = await momentOver(withTape((t) => { t.directives.push({ ...clone(t.directives[DIR15]), playerText: 'Sell the laggard first.', filedAt: earlier }); }));
+    expect(got.excerpt.directive.playerText).toEqual({ text: 'Sell the laggard first.', by: 'player', at: earlier, class: 'quoted' });
+  });
+  it('A TIE-BREAK BY TIME never reads an impossible date as an instant: 30 February (Date.parse: 2 March, earlier) does not win the tie', async () => {
+    const got = await momentOver(withTape((t) => { t.directives.push({ ...clone(t.directives[DIR15]), playerText: 'Sell the laggard first.', filedAt: '2026-02-30T15:00:00.000Z' }); }));
+    expect(got.excerpt.directive.playerText.text).toBe(DAY.tape.directives[DIR15].playerText);
+  });
+});
+
 // ── labels, never ids (CC-3) ────────────────────────────────────────────────
 
 /** Every string a value holds, its keys included. */

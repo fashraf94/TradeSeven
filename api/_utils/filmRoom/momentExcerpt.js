@@ -40,7 +40,8 @@
 // BOUNDED READS ONLY, plain document gets (never a transaction, a query or a collection scan): the tape day; the battle;
 // when the battle is a casual clone's, the owner's clone document and the parent agent it names (the platform
 // resolver's ownership guard); the idea's one hypothesis version; the sold symbol's one series document; and for a
-// card, its one `plays` entry. Every instant carried is a strict ISO 8601 date-time (filmRoomSubject.js instantText). READ-ONLY BY CONSTRUCTION: no write call of any kind in
+// card, its one `plays` entry. Every instant carried or compared is a strict ISO 8601 date-time on a real calendar
+// (filmRoomSubject.js instantMs / instantText — CE-3). READ-ONLY BY CONSTRUCTION: no write call of any kind in
 // this module or anything it imports (momentExcerpt.test.js's write gate, the C1 census script's pattern).
 //
 // MOMENT_EXCERPT_VERSION = 1 describes today's BaggerBomb tape (CC-6); the trader game's launch set moves it to 2.
@@ -52,7 +53,7 @@ import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 import { SITUATION_QUESTIONS } from '../../../src/data/situationQuestions.js';
 import { routeOf } from '../../../src/data/cardStages.js';
 import { isEtDate } from '../../../src/utils/tapeSchedule.js';
-import { sectorOf, boundedText, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom, instantText } from '../../../src/utils/filmRoomSubject.js';
+import { sectorOf, boundedText, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom, instantText, instantMs } from '../../../src/utils/filmRoomSubject.js';
 
 /** CC-6: the excerpt's shape version — today's BaggerBomb tape. */
 export const MOMENT_EXCERPT_VERSION = 1;
@@ -89,8 +90,11 @@ const ID = /^[A-Za-z0-9_-]{1,200}$/;
 /** A path id: the forge-id class, never a reserved `__id__` (the card endpoint's own rule). */
 const idOk = (v) => typeof v === 'string' && ID.test(v) && !/^__.*__$/.test(v);
 const TICKER = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
-const msOf = (v) => { if (typeof v !== 'string') return null; const ms = Date.parse(v); return Number.isFinite(ms) ? ms : null; };
-/** An instant carried into `excerpt`: a full ISO 8601 date-time only (the shared rule) — never a looser string (§2 review L1-1). */
+/**
+ * An instant carried into `excerpt`: a strict ISO 8601 date-time only (the shared rule) — never a looser string (§2 review
+ * L1-1). Every time the excerpt COMPARES — the exit against the bars, every tie-break by time, a meeting's life — is read
+ * by the same strict parser, instantMs (CE-3): a time it refuses is no time, and nothing is inferred from it.
+ */
 const instantOrNull = instantText;
 const seqOk = (v) => v === null || (Number.isInteger(v) && v >= 0);
 
@@ -189,7 +193,7 @@ function directiveOf(tape, m) {
   if (!Number.isInteger(m.fromTickSeq) || !Number.isInteger(m.toTickSeq)) return null;
   const rows = (Array.isArray(tape.directives) ? tape.directives : []).filter((d) => isObj(d) && isObj(d.heard) && Number.isInteger(d.heard.tickSeq) && d.heard.tickSeq >= m.fromTickSeq && d.heard.tickSeq <= m.toTickSeq);
   if (!rows.length) return null;
-  const row = rows.reduce((a, b) => (b.heard.tickSeq < a.heard.tickSeq || (b.heard.tickSeq === a.heard.tickSeq && (msOf(b.filedAt) ?? Infinity) < (msOf(a.filedAt) ?? Infinity)) ? b : a));
+  const row = rows.reduce((a, b) => (b.heard.tickSeq < a.heard.tickSeq || (b.heard.tickSeq === a.heard.tickSeq && (instantMs(b.filedAt) ?? Infinity) < (instantMs(a.filedAt) ?? Infinity)) ? b : a));
   const at = instantOrNull(row.filedAt);
   const playerText = boundedText(row.playerText, EXCERPT_BOUNDS.playerText);
   const canonicalText = boundedText(row.canonicalText, EXCERPT_BOUNDS.canonicalText);
@@ -202,26 +206,26 @@ function directiveOf(tape, m) {
  * than the check that filed it (`resolvedAt` is then the filing's instant; §2 review L1-3). Null when neither is held.
  */
 const meetingEndOf = (r) => {
-  const resolved = msOf(instantText(r.resolvedAt));
-  const expires = msOf(instantText(r.expiresAt));
+  const resolved = instantMs(r.resolvedAt);
+  const expires = instantMs(r.expiresAt);
   if (r.status === 'expired') { const ends = [resolved, expires].filter((v) => v !== null); return ends.length ? Math.min(...ends) : null; }
   return resolved ?? expires;
 };
 
 /** The gameplan meeting whose life holds the moment — created at or before its first check, ended at or after its last; the earliest. */
 function meetingOf(tape, m) {
-  const fromMs = msOf(m.from);
-  const toMs = msOf(m.to);
+  const fromMs = instantMs(m.from);
+  const toMs = instantMs(m.to);
   if (fromMs === null || toMs === null) return null;
   const rows = (Array.isArray(tape.meetings) ? tape.meetings : []).filter((r) => {
     if (!isObj(r)) return false;
     // the meeting history is owner-writable: its times count only as strict instants (§2 review L1-1)
-    const start = msOf(instantText(r.createdAt));
+    const start = instantMs(r.createdAt);
     const end = meetingEndOf(r);
     return start !== null && end !== null && start <= fromMs && end >= toMs;
   });
   if (!rows.length) return null;
-  const row = rows.reduce((a, b) => (msOf(b.createdAt) < msOf(a.createdAt) ? b : a));
+  const row = rows.reduce((a, b) => (instantMs(b.createdAt) < instantMs(a.createdAt) ? b : a));
   const out = {};
   if (str(row.status)) out.outcome = recorded(row.status);
   const legs = (Array.isArray(row.legs) ? row.legs : [])
@@ -248,7 +252,7 @@ function exitRowOf(tape, m) {
   let best = null;
   actions.forEach((a, i) => {
     if (!isObj(a) || a.symbolOut !== m.symbol || !ends.includes(a.tickSeq)) return;
-    if (!best || a.tickSeq < best.row.tickSeq || (a.tickSeq === best.row.tickSeq && (msOf(a.at) ?? Infinity) < (msOf(best.row.at) ?? Infinity))) best = { row: a, i };
+    if (!best || a.tickSeq < best.row.tickSeq || (a.tickSeq === best.row.tickSeq && (instantMs(a.at) ?? Infinity) < (instantMs(best.row.at) ?? Infinity))) best = { row: a, i };
   });
   return best;
 }
@@ -269,20 +273,21 @@ function exitOf(tape, hit) {
 
 /**
  * After the exit: the sold symbol's own series document for the day (read once, only the caller's), its bars that START
- * after the exit's instant — the last one's close, and that bar's own recorded time, its START (`bars[].t`, the
+ * after the exit's STRICT instant (CE-3: an exit with no strict instant has no afterExit — its tickSeq places it among the
+ * checks, never among the bars) — the last one's close, and that bar's own recorded time, its START (`bars[].t`, the
  * beginning of its 10-minute bucket: named `barStart`, never the close's instant — §2 review L1-5), each with the
  * series document's own class for a bar (its `numberClasses`), and how many there are (derived). Absent when none.
  */
 async function afterExitOf(db, uid, battleId, etDate, row) {
   const symbol = typeof row.symbolOut === 'string' && TICKER.test(row.symbolOut) ? row.symbolOut : null;
-  const exitMs = msOf(row.at);
+  const exitMs = instantMs(row.at);
   if (!symbol || exitMs === null) return null;
   const series = await readDoc(tapeRef(db, battleId, etDate).collection(SERIES_SUBCOLLECTION).doc(symbol));
   if (!isObj(series) || series.ownerId !== uid || series.symbol !== symbol || !Array.isArray(series.bars)) return null;
   const after = [];
-  series.bars.forEach((b, k) => { if (isObj(b) && instantText(b.t) !== null && msOf(b.t) > exitMs && typeof b.c === 'number' && Number.isFinite(b.c)) after.push({ b, k }); });
+  series.bars.forEach((b, k) => { if (isObj(b) && instantMs(b.t) !== null && instantMs(b.t) > exitMs && typeof b.c === 'number' && Number.isFinite(b.c)) after.push({ b, k }); });
   if (!after.length) return null;
-  const last = after.reduce((x, y) => (msOf(y.b.t) > msOf(x.b.t) ? y : x));
+  const last = after.reduce((x, y) => (instantMs(y.b.t) > instantMs(x.b.t) ? y : x));
   const close = classed(last.b.c, series.numberClasses, ['bars', last.k, 'c']);
   if (!close) return null;
   return { close, barStart: { value: last.b.t, class: close.class }, barsAfter: { value: after.length, class: 'derived' } };
