@@ -35,18 +35,16 @@ export const SWEEP_ADMISSION_WINDOW_MS = 240_000;
 /** A store call starts only with at least this much left before the admission deadline: the claim, the reservation, the 5 s fetch, the final transaction. */
 export const SWEEP_ADMISSION_RESERVE_MS = STORE_ACQUIRE_TIMEOUT_MS + 7_000;
 /**
- * The unpublished-session brake (a reading, spec §5.4): this many `missing_bar` retryables in a row,
- * each from a request this run made, and the run stops admitting — the provider has not yet published
- * the session's bar, and the next run tries again. Any other outcome resets the streak.
+ * THE BRAKE (readings R-3, R-14, R-17; review L1-1, L1-2, L2-1): this many outcomes of one kind in a row, each from a request
+ * this run counted, close admission, the kind being the deferred reason:
+ *   'unpublished'       missing_bar with no usable row for the session: the provider has not published it yet;
+ *   'shared_gap'        missing_bar WITH the session's row (a gap inside the window), observed or confirmed as a refused
+ *                       record: in a row, one gap shared by every name (a closure the calendar lacks, a provider-wide
+ *                       hole), whose confirmations are permanent;
+ *   'provider_failing'  a transport failure (TRANSPORT_FAILURE_REASONS), a missing provider key included.
+ * Any other outcome of this run's own request breaks the streak; a record merely read does not.
  */
-export const UNPUBLISHED_STREAK_STOP = 8;
-/**
- * The provider-failure brake (review L2-1, a reading beside R-3): this many transport failures in a row (a failed or
- * timed-out request, a non-array or unreadable body — and a missing key, which fails before the network), each from a
- * request this run counted, and the run stops admitting. Without it an outage would spend the session's whole cap on
- * failures and leave the morning's catch-up nothing. A request that reached the provider and came back usable resets it.
- */
-export const PROVIDER_FAILURE_STREAK_STOP = 8;
+export const BRAKE_STREAK_STOP = 8;
 /** The store's retryable reasons that mean the request itself failed (a subset of RETRYABLE_REASONS; pinned). */
 export const TRANSPORT_FAILURE_REASONS = Object.freeze(['fetch_failed', 'non_array_payload', 'malformed_payload']);
 /** The store's lease host for the sweep's calls. */
@@ -74,7 +72,7 @@ export const RETRYABLE_REASONS = Object.freeze([
   'fetch_failed', 'non_array_payload', 'malformed_payload', 'other',
 ]);
 /** Why a name was not attempted this run. */
-export const DEFERRED_REASONS = Object.freeze(['deadline', 'cap', 'unpublished', 'provider_failing', 'state_unreadable', 'programming_error', 'calendar_missing', 'non_session']);
+export const DEFERRED_REASONS = Object.freeze(['deadline', 'cap', 'unpublished', 'shared_gap', 'provider_failing', 'counter_failed', 'state_unreadable', 'programming_error', 'calendar_missing', 'non_session']);
 /** Where a failure happened (the prefix of a failure count's key). */
 export const FAILURE_STAGES = Object.freeze(['state', 'read', 'reserve', 'acquire', 'record', 'unit']);
 export const HEALTH_LINE_PREFIX = '[setupEvidenceSweep]';

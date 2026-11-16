@@ -297,8 +297,8 @@ describe('the unpublished-session brake (a reading, spec §5.4)', () => {
     const names = [...ALL_TICKERS].sort().slice(0, 40);
     const h = harness({ at: T_RUN1, rowsFor: (s, session) => unpublishedRows(session) });
     const r = await h.run(db, { symbols: names });
-    expect(h.calls.length).toBeGreaterThanOrEqual(C.UNPUBLISHED_STREAK_STOP);
-    expect(h.calls.length).toBeLessThanOrEqual(C.UNPUBLISHED_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
+    expect(h.calls.length).toBeGreaterThanOrEqual(C.BRAKE_STREAK_STOP);
+    expect(h.calls.length).toBeLessThanOrEqual(C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
     expect(r.deferred.unpublished).toBe(40 - h.calls.length);
     expect(r.retryable).toEqual({ missing_bar: h.calls.length });
   });
@@ -384,7 +384,9 @@ describe('the one provider path (SW-2, SW-4): the store\'s own fetchDailyPayload
   });
   it('the module imports no model client, and its only provider import is the store\'s fetchDailyPayload', () => {
     const specifiers = [...SRC.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
-    for (const s of specifiers) expect(s).not.toMatch(/anthropic|gemma|gemini|openai|claude|llm|voice|model|marketDataCache|eodhdAPI/i);
+    for (const s of specifiers) expect(s).not.toMatch(/anthropic|gemma|gemini|openai|claude|llm|voice|model|eodhdAPI/i);
+    // The one marketDataCache import is the store's own pure mapper, used to read the session's row as the store would.
+    expect([...SRC.matchAll(/import \{([^}]*)\} from '\.\.\/marketDataCache\.js';/g)].map((m) => m[1].trim())).toEqual(['mapDailyRows']);
     expect(SRC).toMatch(/import \{ fetchDailyPayload \} from '\.\.\/eodhdDailyWindow\.js';/);
     expect(SRC.replace(/\/\/.*$/gm, '')).not.toMatch(/\bfetch\s*\(/);
   });
@@ -394,35 +396,79 @@ describe('review lens 1 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the 
   /** The session's own bar IS published; one bar inside the window (ten sessions back) is missing: confirm class. */
   const interiorGapRows = (session) => { const rows = pullbackRows(session); rows.splice(10, 1); return rows; };
 
-  it('L1-1: a gap INSIDE the window (the session\'s bar present) never trips the unpublished brake; the second run confirms every name', async () => {
+  it('L1-1: a gap INSIDE the window shared by every name is braked as shared_gap, never as unpublished; a second run confirms at most a streak of them', async () => {
     const db = makeSweepDb();
     const names = [...ALL_TICKERS].sort().slice(0, 40);
     const h = harness({ at: T_RUN1, rowsFor: (s, session) => interiorGapRows(session) });
     expect(interiorGapRows(MON)[0].date).toBe(MON);
     const first = await h.run(db, { symbols: names });
-    expect(h.calls).toHaveLength(40);
-    expect(first.deferred).toEqual({});
-    expect(first.retryable).toEqual({ missing_bar: 40 });
+    const most = C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1;
+    expect(h.calls.length).toBeLessThanOrEqual(most);
+    expect(first.deferred).toEqual({ shared_gap: 40 - h.calls.length });
+    expect(first.retryable).toEqual({ missing_bar: h.calls.length });
     h.nowMs = T_RUN2;
+    const before = h.calls.length;
     const second = await h.run(db, { symbols: names });
-    expect(second.final).toEqual({ measured: 0, refused: 40 });
-    expect(second.deferred).toEqual({});
+    expect(h.calls.length - before).toBeLessThanOrEqual(most);
+    expect(second.final.refused).toBeLessThanOrEqual(most); // each confirmation is permanent: the brake bounds them per run
+    expect(second.deferred.shared_gap).toBeGreaterThan(0);
+    expect(second.deferred.unpublished).toBeUndefined();
   });
 
-  it('L1-2: a final found by reading resets the streak, as an acquired one does', async () => {
+  it('L1-1: one stock\'s own gap among usable names is no streak: it is observed, then confirmed by the second run', async () => {
+    const db = makeSweepDb();
+    const h = harness({ at: T_RUN1, rowsFor: (s, session) => (s === NAMES[3] ? interiorGapRows(session) : pullbackRows(session)) });
+    const first = await h.run(db);
+    expect(first).toMatchObject({ final: { measured: 9, refused: 0 }, retryable: { missing_bar: 1 }, deferred: {} });
+    h.nowMs = T_RUN2;
+    const second = await h.run(db);
+    expect(second.final).toEqual({ measured: 9, refused: 1 });
+  });
+
+  it('L1-1: a session row the store\'s mapper drops (a null high) is unpublished, not a gap: the brake reads the row as the store does', async () => {
+    const db = makeSweepDb();
+    const names = [...ALL_TICKERS].sort().slice(0, 40);
+    const brokenNewest = (session) => { const rows = pullbackRows(session); rows[0] = { ...rows[0], high: null }; return rows; };
+    const h = harness({ at: T_RUN1, rowsFor: (s, session) => brokenNewest(session) });
+    const r = await h.run(db, { symbols: names });
+    expect(h.calls.length).toBeLessThanOrEqual(C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
+    expect(r.deferred).toEqual({ unpublished: 40 - h.calls.length });
+  });
+
+  it('L1-2 (as ruled after its refuter): a record merely read does not break a streak, so late names between finals still stop a too-early run', async () => {
     const db = makeSweepDb();
     const names = [...ALL_TICKERS].sort().slice(0, 30);
-    // Every odd name is final already; the even ones' bars are not yet published.
     for (const symbol of names.filter((_, i) => i % 2 === 1)) {
       const { record } = await recordFor({ session: MON, symbol, fetchedAt: '2026-11-16T22:00:00.000Z', rows: pullbackRows(MON) });
       db.write(finalPath(MON, symbol), record);
     }
     const h = harness({ at: T_RUN1, rowsFor: (s, session) => unpublishedRows(session) });
     const r = await h.run(db, { symbols: names });
-    expect(h.calls).toHaveLength(15); // every late name is asked once: the finals between them break every streak
-    expect(r.deferred).toEqual({});
+    expect(h.calls.length).toBeLessThanOrEqual(C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
+    expect(r.deferred.unpublished).toBe(15 - h.calls.length);
   });
 
+  it('a transient counter failure closes admission for the run: no further name takes a claim only to fail the same way', async () => {
+    const db = makeSweepDb();
+    db.failTransactions(({ writes }) => writes.includes(statePath(MON)) && !db.read(statePath(MON))?.runs);
+    const h = harness({ at: T_RUN1 });
+    const r = await h.run(db);
+    expect(h.calls).toEqual([]);
+    expect(r.storeCalls).toBeLessThanOrEqual(C.SWEEP_CONCURRENCY);
+    expect(r.deferred.counter_failed).toBe(10 - r.storeCalls);
+    expect(r.failures['reserve:14']).toBe(r.storeCalls);
+  });
+
+  it('a bug in the plain state read is thrown, never read as an unreadable document', async () => {
+    const db = makeSweepDb();
+    const real = db.collection;
+    db.collection = (col) => (col === C.STATE_COLLECTION ? { doc: () => ({ get: async () => { throw new TypeError('a bug in the read'); } }) } : real(col));
+    const h = harness({ at: T_RUN1 });
+    let caught = null;
+    try { await h.run(db); } catch (err) { caught = err; }
+    expect(caught?.message).toBe('a bug in the read');
+    expect(h.calls).toEqual([]);
+  });
   it('L1-3a: an error with no gRPC code from the store (a plain Error after the request) is a programming error: surfaced and thrown, the run stops', async () => {
     const db = makeSweepDb();
     db.failTransactions(({ writes }) => writes.some((p) => p.startsWith('setupEvidence/')), () => new Error('a bug in the final transaction'));
@@ -475,15 +521,15 @@ describe('review lens 2 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the 
     const healthy = h.fetchPayload;
     h.fetchPayload = async (symbol, opts) => { if (down) { h.calls.push({ symbol, opts, failed: true }); throw new Error('EODHD daily responded with 503'); } return healthy(symbol, opts); };
     const first = await h.run(db, { symbols: names });
-    expect(h.calls.length).toBeGreaterThanOrEqual(C.PROVIDER_FAILURE_STREAK_STOP);
-    expect(h.calls.length).toBeLessThanOrEqual(C.PROVIDER_FAILURE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
+    expect(h.calls.length).toBeGreaterThanOrEqual(C.BRAKE_STREAK_STOP);
+    expect(h.calls.length).toBeLessThanOrEqual(C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
     expect(first.deferred.provider_failing).toBe(40 - h.calls.length);
     expect(first.retryable).toEqual({ fetch_failed: h.calls.length });
     down = false;
     h.nowMs = T_RUN2;
     const second = await h.run(db, { symbols: names });
     expect(second.final.measured).toBe(40);
-    expect(db.read(statePath(MON)).providerRequests).toBeLessThanOrEqual(40 + C.PROVIDER_FAILURE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
+    expect(db.read(statePath(MON)).providerRequests).toBeLessThanOrEqual(40 + C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
   });
   it('L2-1: a missing provider key (it fails before the network) stops the run the same way', async () => {
     vi.stubEnv('EODHD_API_KEY', '');
@@ -492,7 +538,7 @@ describe('review lens 2 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the 
     const h = harness({ at: T_RUN1 });
     const r = await runSetupEvidenceSweep({ db, handlerStartMs: T_RUN1, now: h.now, symbols: names, log: h.log });
     expect(globalThis.fetch).not.toHaveBeenCalled();
-    expect(r.providerRequests).toBeLessThanOrEqual(C.PROVIDER_FAILURE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
+    expect(r.providerRequests).toBeLessThanOrEqual(C.BRAKE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
     expect(r.deferred.provider_failing).toBe(40 - r.providerRequests);
   });
   it('L2-1: failures broken up by usable answers never trip it', async () => {

@@ -104,7 +104,7 @@ export function normalizeState(raw, session) {
 const docOf = (state, nowMs) => ({ ...state, updatedAt: new Date(nowMs).toISOString() });
 
 /**
- * The plain read (the run's preparation). Never rejects.
+ * The plain read (the run's preparation). A Firestore failure reads as unreadable; a bug in this code is thrown.
  * @returns {Promise<{ status: 'read' | 'absent' | 'unreadable', state: object }>}
  */
 export async function readSweepState(db, session) {
@@ -114,8 +114,10 @@ export async function readSweepState(db, session) {
     const raw = snap.data();
     if (!stateReadable(raw, session)) return { status: 'unreadable', state: emptyState(session) };
     return { status: 'read', state: normalizeState(raw, session) };
-  } catch {
-    return { status: 'unreadable', state: emptyState(session) };
+  } catch (err) {
+    // A Firestore failure (a numeric gRPC code) reads as unreadable: no request this run. Anything else is a bug: thrown.
+    if (typeof err?.code === 'number') return { status: 'unreadable', state: emptyState(session) };
+    throw err;
   }
 }
 

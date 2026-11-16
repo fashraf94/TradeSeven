@@ -34,10 +34,11 @@
 import { getOrAcquireSnapshot, lastCompletedSessionAt, readSnapshot, ruleKeyOf, SetupEvidenceProgrammingError } from '../setupEvidence/index.js';
 import { describeRuleSet } from '../setupEvaluator/thresholds.js';
 import { fetchDailyPayload } from '../eodhdDailyWindow.js';
+import { mapDailyRows } from '../marketDataCache.js';
 import { ALL_TICKERS } from '../rankingConfig.js';
 import {
-  DEFERRED_REASONS, HEALTH_LINE_PREFIX, PROVIDER_FAILURE_STREAK_STOP, RETRYABLE_REASONS, TRANSPORT_FAILURE_REASONS, SWEEP_ADMISSION_RESERVE_MS, SWEEP_ADMISSION_WINDOW_MS, SWEEP_CONCURRENCY, SWEEP_DAILY_PROVIDER_CAP,
-  SWEEP_HOST, UNPUBLISHED_STREAK_STOP,
+  BRAKE_STREAK_STOP, DEFERRED_REASONS, HEALTH_LINE_PREFIX, RETRYABLE_REASONS, TRANSPORT_FAILURE_REASONS, SWEEP_ADMISSION_RESERVE_MS, SWEEP_ADMISSION_WINDOW_MS, SWEEP_CONCURRENCY, SWEEP_DAILY_PROVIDER_CAP,
+  SWEEP_HOST,
 } from './constants.js';
 import { sweepFlagOn } from './gate.js';
 import { closedTally, failureTally, readSweepState, recordRun, reserveProviderRequest } from './state.js';
@@ -53,6 +54,16 @@ const errorCodeOf = (err) => String(err?.code ?? err?.name ?? 'unknown').slice(0
  */
 export function isProgrammingError(err) {
   return err instanceof SetupEvidenceProgrammingError || err?.name === 'SetupEvidenceProgrammingError' || typeof err?.code !== 'number';
+}
+
+/** Does the payload hold a usable row for the session, as the store's own mapper reads it? Never throws. */
+function sessionRowUsable(payload, session) {
+  if (!Array.isArray(payload)) return false;
+  try {
+    return mapDailyRows(payload).rows.some((row) => row?.date === session);
+  } catch {
+    return false;
+  }
 }
 
 /** One state transaction at a time in this run: the counter is contended only across instances. */
@@ -172,10 +183,22 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
   const provider = typeof fetchPayload === 'function' ? fetchPayload : fetchDailyPayload;
   let capClosed = st.state.providerRequests >= cap;
   let stateClosed = false;
-  let unpublished = false;
-  let streak = 0;
-  let providerFailing = false;
-  let failStreak = 0;
+  let counterFailed = false;
+  // THE BRAKE (readings R-3, R-14, R-17): BRAKE_STREAK_STOP outcomes of ONE kind in a row, each from a request this run
+  // counted, close admission with that kind as the reason. Any other outcome of this run's own request breaks the streak;
+  // a record merely read does not (a final read between late names must not keep a too-early run spending the cap).
+  // Kinds: 'unpublished' (missing_bar, no usable row for the session: not yet published); 'shared_gap' (missing_bar WITH
+  // the session's row, a gap inside the window, observed or now confirmed as a refused record: in a row, one gap shared by
+  // every name, whose confirmations are permanent); 'provider_failing' (a transport failure, a missing key included).
+  let streakKind = null;
+  let streakCount = 0;
+  let braked = null;
+  const noteOutcome = (kind) => {
+    if (kind === null) { streakKind = null; streakCount = 0; return; }
+    streakCount = kind === streakKind ? streakCount + 1 : 1;
+    streakKind = kind;
+    if (streakCount >= BRAKE_STREAK_STOP && !braked) braked = kind;
+  };
   let stopped = null; // 'deadline' | 'programming_error': nothing more is read
   let programmingError = null;
 
@@ -183,8 +206,8 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
     if (programmingError) return 'programming_error';
     if (stateClosed) return 'state_unreadable';
     if (capClosed) return 'cap';
-    if (unpublished) return 'unpublished';
-    if (providerFailing) return 'provider_failing';
+    if (counterFailed) return 'counter_failed';
+    if (braked) return braked;
     if (deadline - clock() < SWEEP_ADMISSION_RESERVE_MS) return 'deadline';
     return null;
   };
@@ -208,14 +231,14 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
       bump(counts.failures, `read:${errorCodeOf(err)}`);
       return;
     }
-    if (record) { countFinal(record); streak = 0; return; } // a final, read or acquired, breaks a streak (review L1-2)
+    if (record) { countFinal(record); return; }
 
     const closed = admissionClosedBy();
     if (closed) { bump(counts.deferred, closed); return; }
 
     let fetched = false;
     let refused = null; // why the counter refused this unit's request: no request was made
-    let sessionRowSeen = false; // the payload held a row dated on the session itself (review L1-1)
+    let sessionRowSeen = false; // the payload held a usable row for the session itself (review L1-1)
     const countingFetch = async (...args) => {
       let r;
       try {
@@ -224,7 +247,8 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
         refused = 'reserve_failed';
         // A bug in the counter is surfaced (review L1-3); a transient Firestore failure is counted. Either way the store is
         // told the request failed, so it releases its lease, and no request is made.
-        if (isProgrammingError(err)) surface(err); else bump(counts.failures, `reserve:${errorCodeOf(err)}`);
+        // A transient failure closes admission for the run: the next name would only take a claim and fail the same way.
+        if (isProgrammingError(err)) surface(err); else { bump(counts.failures, `reserve:${errorCodeOf(err)}`); counterFailed = true; }
         throw new Error('setupEvidenceSweep: the request was not counted, so it was not made');
       }
       if (!r.ok) {
@@ -238,7 +262,7 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
       if (r.count >= cap) capClosed = true; // this request took the cap's last place: admit no one else (review L2-6)
       fetched = true;
       const payload = await provider(...args);
-      sessionRowSeen = Array.isArray(payload) && payload.some((row) => row?.date === session);
+      sessionRowSeen = sessionRowUsable(payload, session);
       return payload;
     };
 
@@ -254,27 +278,21 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
     const status = out?.status;
     if (status === 'final') {
       countFinal(out.snapshot);
-      if (fetched) { counts.acquired += 1; failStreak = 0; }
-      streak = 0;
+      if (fetched) {
+        counts.acquired += 1;
+        // A gap inside the window, confirmed now as a refused record, is permanent: in a row it is a shared gap.
+        noteOutcome(out.snapshot?.status === 'refused' && out.snapshot?.entry?.reason === 'missing_bar' ? 'shared_gap' : null);
+      }
     } else if (status === 'pending') {
       counts.pending += 1;
     } else if (status === 'retryable') {
       if (refused === 'cap' || refused === 'state_unreadable') { bump(counts.deferred, refused === 'cap' ? 'cap' : 'state_unreadable'); return; }
       if (refused === 'reserve_failed') return; // counted as a failure; no request was made
       bump(counts.retryable, RETRYABLE_REASONS.includes(out.reason) ? out.reason : 'other');
-      if (fetched && TRANSPORT_FAILURE_REASONS.includes(out.reason)) {
-        failStreak += 1;
-        if (failStreak >= PROVIDER_FAILURE_STREAK_STOP) providerFailing = true;
-      } else if (fetched) {
-        failStreak = 0;
-      }
-      // Only a session whose own bar is not in the payload is unpublished: a gap INSIDE the window is also
-      // `missing_bar` (confirm class), and must not stop the run (review L1-1).
-      if (out.reason === 'missing_bar' && fetched && !sessionRowSeen) {
-        streak += 1;
-        if (streak >= UNPUBLISHED_STREAK_STOP) unpublished = true;
-      } else {
-        streak = 0;
+      if (fetched) {
+        if (TRANSPORT_FAILURE_REASONS.includes(out.reason)) noteOutcome('provider_failing');
+        else if (out.reason === 'missing_bar') noteOutcome(sessionRowSeen ? 'shared_gap' : 'unpublished');
+        else noteOutcome(null);
       }
     } else if (status === 'excluded') {
       counts.excluded += 1;
