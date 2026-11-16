@@ -50,7 +50,11 @@ import { verifyPacket, resultPacketMissingMarks } from './evidence.js';
 //     — `lastMarkProvenance` on every holding and position, `markSource` (and `carriedFrom` for a carried mark) on the
 //     endpoint rows' holdings, `carriedFrom` on a row's carried mark, the packets' per-mark `markSource`/`snapshotKey` —
 //     and the three result packets' `contentHash` changed with them. No other leaf changed; no money leaf changed.
-const EXPECTED_DUMP = { sha256: 'db22f0487877ad3eefa37f5db8d2583ac5f4e01737731ef56a417466d86f898f', bytes: 332712 };
+//   T2B-02 (the window cursor): e6c3969b…, 334,166 bytes, 155 documents. Against T2B-01's pin: ONE document added —
+//     13 Nov's close row of the window ledger (the book's creation day, before its first fill: `valued: false`, its
+//     three windows missed) — and 29 leaves added: `valued` on the 28 existing close rows, and the book's
+//     `execState.windowsAccountedThrough`. Nothing changed or removed.
+const EXPECTED_DUMP = { sha256: 'e6c3969bb56f8ca305724c9050bf641e89c43e1c2014ab698bb4f712edd3d33a', bytes: 334166 };
 
 // Twenty-nine sessions from Monday 16 November 2026 (Thanksgiving and Christmas are not sessions).
 const SESSIONS = ['2026-11-16'];
@@ -233,7 +237,11 @@ describe('the end-to-end synthetic run', () => {
       expect(result.result).toEqual(idea(id).result);
       expect(resultPacketMissingMarks(result, db._get(`mandates/${bookId}/ideas/${id}/rows/endpoint`)), id).toEqual([]);
     }
-    expect(countDocs(db, `mandates/${bookId}/windows/`)).toBe(28);
+    // …and (Astra T2B-02) the book's creation day, 13 Nov, before its first idea filled: accounted for by the window
+    // ledger's own cursor, its windows missed, with no valuation row.
+    expect(countDocs(db, `mandates/${bookId}/windows/`)).toBe(29);
+    expect(db._get(`mandates/${bookId}/windows/2026-11-13_close`)).toMatchObject({ valued: false, session: { missing: ['open30', 'midday', 'preClose'] } });
+    expect(db._get(`mandates/${bookId}/dailyRows/2026-11-13`)).toBeUndefined();
 
     // The evidence.
     const dump = dumpStore(db);

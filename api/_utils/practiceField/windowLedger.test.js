@@ -10,10 +10,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { setPracticeFieldModeForTests } from './mode.js';
 import { admitIdea } from './admission.js';
 import { runIdeaBookEvalPass, runIdeaBookWindow } from './sweep.js';
-import { closeIdeaBook } from './close.js';
+import { closeIdeaBook, catchUpIdeaBook } from './close.js';
 import { readFileSync } from 'node:fs';
-import { ideaBookWindowsOf, windowRowId, CLOSE_WINDOW, IDEA_BOOK_EVAL_FIRE_EVERY_MIN } from './windows.js';
-import { recordWindowAttempt, foldWindowAttempt, attemptOf, buildCloseWindowRow, WINDOW_OUTCOME } from './windowLedger.js';
+import { ideaBookWindowsOf, windowRowId, CLOSE_WINDOW, IDEA_BOOK_EVAL_FIRE_EVERY_MIN, nextSessionDate } from './windows.js';
+import { recordWindowAttempt, foldWindowAttempt, attemptOf, buildCloseWindowRow, WINDOW_OUTCOME, WINDOW_ONLY_SESSIONS_PER_TX } from './windowLedger.js';
 import {
   seedBook, contractOf, closeOn, storeTickSnapshot, storeCloseSnapshot, tickSnapshot, tickOf, slotNowOf, closeNowOf, etIso, DAYS, ADMIT_ISO,
   getBook, getIdea, windDownBook, withoutWindowAlerts,
@@ -173,7 +173,7 @@ describe('the close: expected against observed, once', () => {
     expect(out.missedWindows).toEqual(['preClose']);
     expect(rowOf(ctx.db, ctx.bookId, DAYS.d1, CLOSE_WINDOW)).toEqual({
       schemaVersion: 1, bookId: ctx.bookId, sessionDate: DAYS.d1, window: 'close', kind: 'close', tickKey: `${DAYS.d1}_close`,
-      served: true, servedAt: closeNowOf(DAYS.d1).toISOString(), observed: true, closeSnapshotKey: `${DAYS.d1}_close`,
+      served: true, servedAt: closeNowOf(DAYS.d1).toISOString(), valued: true, observed: true, closeSnapshotKey: `${DAYS.d1}_close`,
       code: { caughtUpSession: false, ideasValued: 1, endpoints: [], ideasResulted: [], entriesTimedOut: [], bookClosed: false },
       modelCalled: false, triggers: [], outcome: 'no_model_action',
       session: { expected: ['open30', 'midday', 'preClose', 'close'], served: ['open30', 'midday', 'close'], missing: ['preClose'], notServedButAttempted: [] },
@@ -257,6 +257,114 @@ describe('the close: expected against observed, once', () => {
     expect(buildCloseWindowRow({ ...base, windowRows: {} }).missing).toEqual(['open30', 'midday', 'preClose']);
     expect(buildCloseWindowRow({ ...base, windowRows: { open30: { served: true }, midday: { served: false }, preClose: { served: true } } }).missing).toEqual(['midday']);
     expect(buildCloseWindowRow({ ...base, windowRows: { open30: { served: true }, midday: { served: true }, preClose: { served: true } } }).alerts).toEqual([]);
+  });
+});
+
+describe('Astra T2B-02 — every due session is accounted for from the book\'s creation, by the window ledger\'s own cursor', () => {
+  const dump = (db, bookId) => JSON.stringify([...db._store.entries()].filter(([p]) => p.startsWith(`mandates/${bookId}`)));
+  const closeRows = (db, bookId) => [...db._store.keys()].filter((p) => p.startsWith(`mandates/${bookId}/windows/`) && p.endsWith('_close')).map((p) => p.split('/').pop().replace('_close', '')).sort();
+  const missedOn = (alerts, date) => missedAlerts(alerts).filter((a) => a.includes(` ${date}_`));
+  const quiet = async (fn) => { const e = console.error; console.error = () => {}; try { return await fn(); } finally { console.error = e; } };
+  const INTRADAY = ['open30', 'midday', 'preClose'];
+  const windowOnlyRow = (db, bookId, date) => rowOf(db, bookId, date, CLOSE_WINDOW);
+
+  for (const order of ['the 17 Nov close alone', 'a catch-up before 17 Nov\'s first window, then its close']) {
+    it(`her case — an EMPTY book created 16 Nov 09:00, no window run, then ${order}: 16 Nov's three windows are reported missing, once, with no valuation row`, async () => {
+      const D16 = '2026-11-16';
+      const D17 = '2026-11-17';
+      const ctx = await seedBook({ nowIso: etIso(D16, 9, 0) });
+      expect(ideaBookWindowsOf(D16, { createdAtIso: etIso(D16, 9, 0) }).map((w) => w.window)).toEqual([...INTRADAY, CLOSE_WINDOW]);
+      const alerts = [];
+      if (order.startsWith('a catch-up')) {
+        const caught = await catchUpIdeaBook(ctx.db, ctx.bookRef, { before: D17, now: slotNowOf(D17) });
+        expect(caught).toMatchObject({ complete: true, caughtUp: [], windowsAccounted: [{ session: D16, missing: INTRADAY }] });
+        alerts.push(...caught.alerts);
+      }
+      const out = await closeOn(ctx.db, ctx.bookId, D17, QUOTES);
+      expect(out).toMatchObject({ closed: true, session: D17, caughtUp: [] });
+      alerts.push(...out.alerts);
+      // Once each: 16 Nov's three, then 17 Nov's own three.
+      expect(missedOn(alerts, D16)).toEqual(INTRADAY.map((w) => `PRACTICE_FIELD_WINDOW_MISSED ${ctx.bookId} ${D16}_${w} — the book was due at this window and no pass served it`));
+      expect(missedOn(alerts, D17)).toHaveLength(3);
+      expect(missedAlerts(alerts)).toHaveLength(6);
+      expect(windowOnlyRow(ctx.db, ctx.bookId, D16)).toMatchObject({
+        sessionDate: D16, kind: 'close', valued: false, accountedBy: 'window_cursor', observed: null, closeSnapshotKey: null,
+        code: { caughtUpSession: true, ideasValued: 0, endpoints: [], ideasResulted: [], entriesTimedOut: [], bookClosed: false },
+        session: { expected: [...INTRADAY, CLOSE_WINDOW], served: [CLOSE_WINDOW], missing: INTRADAY, notServedButAttempted: [] },
+      });
+      expect(windowOnlyRow(ctx.db, ctx.bookId, D17)).toMatchObject({ valued: true, observed: true });
+      // No money was valued for 16 Nov: no valuation row. The valuation cursor is the valuation's.
+      expect(ctx.db._get(`mandates/${ctx.bookId}/dailyRows/${D16}`)).toBeUndefined();
+      expect(getBook(ctx.db, ctx.bookId).execState).toMatchObject({ lastCloseKey: D17, windowsAccountedThrough: D17 });
+      // A replay — the close again, a later catch-up — writes nothing and says nothing.
+      const bytes = dump(ctx.db, ctx.bookId);
+      expect(await closeIdeaBook(ctx.db, ctx.bookRef, { date: D17, now: closeNowOf(D17) })).toMatchObject({ skipped: 'already_closed', alerts: [] });
+      expect(await catchUpIdeaBook(ctx.db, ctx.bookRef, { before: DAYS.d3, now: slotNowOf(DAYS.d3) })).toMatchObject({ complete: true, windowsAccounted: [], alerts: [] });
+      expect(dump(ctx.db, ctx.bookId)).toBe(bytes);
+      expect(closeRows(ctx.db, ctx.bookId)).toEqual([D16, D17]);
+    });
+  }
+
+  it('an accepted idea that never filled, its first close missed: its creation day and its start session are accounted for (window cursor only), then the close that times it out', async () => {
+    const ctx = await setup(); // created Friday 13 Nov 09:00; the idea is admitted at 11:00 and may enter on Monday d1
+    const out = await closeOn(ctx.db, ctx.bookId, DAYS.d2, QUOTES); // nothing ran on 13 or 16 Nov; d2's close
+    expect(out).toMatchObject({ closed: true, session: DAYS.d2, cancelled: [ctx.ideaId] }); // the timeout is the valuation's own, unchanged
+    expect(out.windowsAccounted).toEqual([{ session: DAYS.admit, missing: INTRADAY }, { session: DAYS.d1, missing: INTRADAY }]);
+    for (const d of [DAYS.admit, DAYS.d1]) {
+      expect(windowOnlyRow(ctx.db, ctx.bookId, d), d).toMatchObject({ valued: false, session: { missing: INTRADAY } });
+      expect(ctx.db._get(`mandates/${ctx.bookId}/dailyRows/${d}`), d).toBeUndefined();
+      expect(missedOn(out.alerts, d), d).toHaveLength(3);
+    }
+    expect(missedOn(out.alerts, DAYS.d2)).toHaveLength(3);
+    // In session order: 13 Nov's, then 16 Nov's, then d2's own.
+    expect(missedAlerts(out.alerts).map((a) => a.split(' ')[2].slice(0, 10))).toEqual([...Array(3).fill(DAYS.admit), ...Array(3).fill(DAYS.d1), ...Array(3).fill(DAYS.d2)]);
+    expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId).status).toBe('cancelled');
+    const bytes = dump(ctx.db, ctx.bookId);
+    expect((await quiet(() => runIdeaBookWindow(ctx.db, { bookRef: ctx.bookRef, tick: tickOf(DAYS.d3), now: slotNowOf(DAYS.d3) }))).caughtUp).toEqual([]);
+    expect(closeRows(ctx.db, ctx.bookId)).toEqual([DAYS.admit, DAYS.d1, DAYS.d2]);
+    expect(missedAlerts((await closeIdeaBook(ctx.db, ctx.bookRef, { date: DAYS.d2, now: closeNowOf(DAYS.d2) })).alerts)).toEqual([]);
+    expect(dump(ctx.db, ctx.bookId)).toBe(bytes); // the next window and a replayed close write nothing
+  });
+
+  it('more sessions than one transaction takes: an empty book created 1 Oct is accounted for through 13 Nov in order, twenty sessions a transaction, each once', async () => {
+    const ctx = await seedBook({ nowIso: etIso('2026-10-01', 9, 0) });
+    let txs = 0;
+    const run = ctx.db.runTransaction.bind(ctx.db);
+    ctx.db.runTransaction = (fn) => { txs += 1; return run(fn); };
+    const caught = await catchUpIdeaBook(ctx.db, ctx.bookRef, { before: DAYS.d1, now: slotNowOf(DAYS.d1) });
+    const expected = ['2026-10-01'];
+    while (nextSessionDate(expected[expected.length - 1]) < DAYS.d1) expected.push(nextSessionDate(expected[expected.length - 1]));
+    expect(expected.length).toBeGreaterThan(WINDOW_ONLY_SESSIONS_PER_TX);
+    expect(caught).toMatchObject({ complete: true, caughtUp: [] });
+    expect(caught.windowsAccounted.map((w) => w.session)).toEqual(expected);
+    expect(txs).toBe(Math.ceil(expected.length / WINDOW_ONLY_SESSIONS_PER_TX));
+    expect(closeRows(ctx.db, ctx.bookId)).toEqual(expected);
+    expect(getBook(ctx.db, ctx.bookId).execState.windowsAccountedThrough).toBe(expected[expected.length - 1]);
+    expect(getBook(ctx.db, ctx.bookId).execState.lastCloseKey ?? null).toBeNull(); // nothing valued
+    expect(missedAlerts(caught.alerts)).toHaveLength(expected.length * 3);
+  });
+
+  it('a valuation catch-up bounded at twenty sessions accounts the windows in order with it: no session skipped or twice, and the next call goes on from there', async () => {
+    const ctx = await setup();
+    await storeTickSnapshot(ctx.db, DAYS.d1, 'open30', QUOTES);
+    await quiet(() => pass(ctx.db, DAYS.d1, 'open30')); // enters at d1 (and accounts for 13 Nov, before d1)
+    expect(getIdea(ctx.db, ctx.bookId, ctx.ideaId).status).toBe('holding');
+    const S = [DAYS.d1];
+    while (S.length < 26) S.push(nextSessionDate(S[S.length - 1]));
+    await storeCloseSnapshot(ctx.db, S[25], QUOTES);
+    const first = await quiet(() => closeIdeaBook(ctx.db, ctx.bookRef, { date: S[25], now: closeNowOf(S[25]) }));
+    expect(first).toMatchObject({ closed: false, skipped: 'catch_up_incomplete' });
+    expect(first.caughtUp.map((c) => c.date)).toEqual(S.slice(0, 20));
+    expect(closeRows(ctx.db, ctx.bookId)).toEqual([DAYS.admit, ...S.slice(0, 20)]);
+    expect(getBook(ctx.db, ctx.bookId).execState).toMatchObject({ lastCloseKey: S[19], windowsAccountedThrough: S[19] });
+    const second = await quiet(() => closeIdeaBook(ctx.db, ctx.bookRef, { date: S[25], now: closeNowOf(S[25]) }));
+    expect(second).toMatchObject({ closed: true, session: S[25] });
+    expect(closeRows(ctx.db, ctx.bookId)).toEqual([DAYS.admit, ...S]);
+    expect(getBook(ctx.db, ctx.bookId).execState).toMatchObject({ lastCloseKey: S[25], windowsAccountedThrough: S[25] });
+    // Every session's missed windows once, across both calls: d1's open30 was served, so d1 misses two.
+    const all = [...first.alerts, ...second.alerts];
+    for (const d of S.slice(1)) expect(missedOn(all, d), d).toHaveLength(3);
+    expect(missedOn(all, DAYS.d1)).toHaveLength(2);
   });
 });
 

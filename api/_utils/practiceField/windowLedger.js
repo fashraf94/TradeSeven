@@ -23,8 +23,20 @@
 // served row is missing. The close's row names them, and the close returns one `PRACTICE_FIELD_WINDOW_MISSED` alert
 // per missed window — once, because a session is closed once (`execState.lastCloseKey`; the close row is
 // create-once). The caller logs the close's alerts, as it logs every other.
+//
+// THE WINDOW LEDGER'S OWN CURSOR (Astra T2B-02). The valuation closes sessions from the first one it has money to value
+// in (sessions.js firstUnclosedSessionBefore: after its last close, else from the first idea's entry) — so a book's
+// sessions BEFORE its first close, while nothing had filled or no close had run, were never closed, and their windows
+// never accounted for. The window ledger therefore keeps its own cursor, `execState.windowsAccountedThrough`, which
+// starts at the book's CREATION (firstUnaccountedWindowSession). At each close and each catch-up, every due session
+// from the cursor up to the one the valuation closes is accounted for first, in order: a session the valuation does
+// not close gets its close row here (`valued: false` — no money was valued, and no valuation row is written), with
+// its expected, served and missing windows and one alert per missed window; the one the valuation closes writes its
+// own. The cursor then stands at the last session accounted for. The valuation cursor, fills, corporate actions and
+// the catch-up of money are untouched by it.
 
-import { ideaBookWindowsOf, windowRowId, CLOSE_WINDOW } from './windows.js';
+import { getSessionForDate } from '../marketSchedule.js';
+import { ideaBookWindowsOf, windowRowId, CLOSE_WINDOW, nextSessionDate, etDateOfMs, sessionClosePassEndMs } from './windows.js';
 
 /** The window ledger's own version (its own family; starts at 1). */
 export const WINDOW_LEDGER_VERSION = 1;
@@ -132,25 +144,64 @@ export function expectedIntradayWindows(book, sessionDate) {
   return ideaBookWindowsOf(sessionDate, { createdAtIso: toIso(book?.createdAt) }).filter((w) => w.kind === 'intraday');
 }
 
+/** The most sessions one transaction accounts for by the window cursor alone (T2B-02); more go on in the next one. */
+export const WINDOW_ONLY_SESSIONS_PER_TX = 20;
+
+/** The cursor's own field on the book (T2B-02): the last session whose windows are accounted for. */
+export const WINDOWS_ACCOUNTED_FIELD = 'windowsAccountedThrough';
+
+/**
+ * The first session the book's window cursor has NOT accounted for (T2B-02), or null when it cannot be told.
+ *   • the session after the cursor: the later of `execState.windowsAccountedThrough` and `execState.lastCloseKey`
+ *     (every session the valuation closed wrote its own close row; a book whose cursor field is absent — none is,
+ *     since every close writes it — therefore starts after its last close, never over a row already written);
+ *   • with neither, the book's CREATION session: its creation date when that is a session and the book existed
+ *     before that session's close pass ended (windows.js sessionClosePassEndMs — the latest its close can run), else
+ *     the next session. A book with no readable creation time accounts nothing by this cursor.
+ */
+export function firstUnaccountedWindowSession(book) {
+  const accounted = typeof book?.execState?.[WINDOWS_ACCOUNTED_FIELD] === 'string' ? book.execState[WINDOWS_ACCOUNTED_FIELD] : null;
+  const lastClose = typeof book?.execState?.lastCloseKey === 'string' ? book.execState.lastCloseKey : null;
+  const cursor = accounted !== null && (lastClose === null || accounted >= lastClose) ? accounted : lastClose;
+  if (cursor !== null) return nextSessionDate(cursor);
+  const createdMs = Date.parse(toIso(book?.createdAt) ?? '');
+  if (!Number.isFinite(createdMs)) return null;
+  const createdOn = etDateOfMs(createdMs);
+  const passEnd = getSessionForDate(createdOn)?.isTradingDay ? sessionClosePassEndMs(createdOn) : null;
+  return passEnd !== null && createdMs < passEnd ? createdOn : nextSessionDate(createdOn);
+}
+
+/**
+ * The sessions the window cursor has not accounted for that lie strictly BEFORE `before`, in order — at most `limit`
+ * of them (the caller asks for one more than it will take, to know whether more remain). Pure.
+ */
+export function windowOnlySessionsBefore(book, before, limit) {
+  const out = [];
+  for (let s = firstUnaccountedWindowSession(book); s !== null && s < before && out.length < limit; s = nextSessionDate(s)) out.push(s);
+  return out;
+}
+
 /**
  * The close's row and its missed windows. Pure: `windowRows` is every expected intraday window's row as the close's
- * transaction read it (`null` when absent).
+ * transaction read it (`null` when absent). `valued: false` is a session the window cursor accounts for that the
+ * valuation does not close (T2B-02): no money was valued and nothing was read for it but its window rows, so it names
+ * no snapshot and no observation, and it is written after its session — as a caught-up one.
  *
  * @returns {{ row: object, missing: string[], alerts: string[] }}
  */
-export function buildCloseWindowRow({ bookId, book, session, windowRows, observed, catchUp, snapshotMeta, code, bookClosed, nowIso }) {
+export function buildCloseWindowRow({ bookId, book, session, windowRows, observed, catchUp, snapshotMeta, code, bookClosed, nowIso, valued = true }) {
   const expected = ideaBookWindowsOf(session, { createdAtIso: toIso(book?.createdAt) }).map((w) => w.window);
   const intraday = expected.filter((w) => w !== CLOSE_WINDOW);
   const servedIntraday = intraday.filter((w) => windowRows?.[w]?.served === true);
   const missing = intraday.filter((w) => windowRows?.[w]?.served !== true);
-  const closeCode = {
+  const closeCode = valued ? {
     caughtUpSession: catchUp === true,
     ideasValued: code.ideasValued,
     endpoints: [...code.endpoints],
     ideasResulted: [...code.resulted],
     entriesTimedOut: [...code.cancelled],
     bookClosed: bookClosed === true,
-  };
+  } : { caughtUpSession: true, ideasValued: 0, endpoints: [], ideasResulted: [], entriesTimedOut: [], bookClosed: false };
   const acted = closeCode.endpoints.length > 0 || closeCode.ideasResulted.length > 0 || closeCode.entriesTimedOut.length > 0 || closeCode.bookClosed;
   const row = {
     schemaVersion: WINDOW_LEDGER_VERSION,
@@ -161,8 +212,10 @@ export function buildCloseWindowRow({ bookId, book, session, windowRows, observe
     tickKey: windowRowId(session, CLOSE_WINDOW),
     served: true,
     servedAt: nowIso,
-    observed: observed === true,
-    closeSnapshotKey: snapshotMeta?.key ?? null,
+    // T2B-02: was this session valued by a close (true), or only accounted for by the window cursor (false)?
+    valued: valued === true,
+    observed: valued ? observed === true : null,
+    closeSnapshotKey: valued ? (snapshotMeta?.key ?? null) : null,
     code: closeCode,
     modelCalled: false,
     triggers: [],
@@ -175,7 +228,34 @@ export function buildCloseWindowRow({ bookId, book, session, windowRows, observe
       notServedButAttempted: missing.filter((w) => windowRows?.[w] != null),
     },
   };
-  if (catchUp) row.caughtUpAt = nowIso;
+  if (catchUp || !valued) row.caughtUpAt = nowIso;
+  if (!valued) row.accountedBy = 'window_cursor';
   const alerts = missing.map((w) => `PRACTICE_FIELD_WINDOW_MISSED ${bookId} ${windowRowId(session, w)} — the book was due at this window and no pass served it`);
   return { row, missing, alerts };
+}
+
+/**
+ * Account, in the caller's transaction, for sessions the valuation does not close (T2B-02): read each one's intraday
+ * window rows, and build its close row (`valued: false`) and its alerts. READS ONLY — the caller writes, after every
+ * read of its transaction, with writeWindowOnlySessions.
+ *
+ * @returns {Promise<Array<{ session: string, row: object, missing: string[], alerts: string[] }>>}
+ */
+export async function readWindowOnlySessions(tx, bookRef, book, sessions, { nowIso }) {
+  const out = [];
+  for (const session of sessions) {
+    const windowRows = {};
+    for (const w of expectedIntradayWindows(book, session)) {
+      const snap = await tx.get(windowsRefOf(bookRef).doc(windowRowId(session, w.window)));
+      windowRows[w.window] = snap.exists ? snap.data() : null;
+    }
+    const built = buildCloseWindowRow({ bookId: bookRef.id, book, session, windowRows, nowIso, valued: false });
+    out.push({ session, ...built });
+  }
+  return out;
+}
+
+/** Write what readWindowOnlySessions built: each session's close row, CREATE-ONCE (a session is accounted for once). */
+export function writeWindowOnlySessions(tx, bookRef, accounted) {
+  for (const a of accounted) tx.create(windowsRefOf(bookRef).doc(windowRowId(a.session, CLOSE_WINDOW)), a.row);
 }
