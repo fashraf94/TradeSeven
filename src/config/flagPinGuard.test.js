@@ -70,9 +70,8 @@ const DARK_BY_DESIGN = {
   // true for the v2 allowlist pilot (founder Ruling 6, 2026-10-15) — the server
   // control document is now the only on-switch. The deliberate flip drops it
   // here in the same change; its stockThresholdModel.test.js pin asserts true.
-  // League hide (BB-1, Nov 15, 2026): the runway note a deliberate flip reads. Its PR drops this entry in the same commit.
-  LEAGUE_HIDE_ENABLED:
-    'League hide — hides the league layer and hands its nav slot, route and launcher to the BaggerBomb page (founder rulings Q1–Q6); flips in its own PR, merged only after the preview smoke AND only while no league group is in flight (the pre-merge read-only count must be 0), never a build PR',
+  // LEAGUE_HIDE_ENABLED intentionally ABSENT: it flipped true in its own PR (League hide, BB-1, Nov 15, 2026) — the deliberate flip
+  // drops it here in the same change. Re-adding it while it ships true fails the DARK_BY_DESIGN integrity test below.
   COMPILER_ENABLED:
     'double-gated behind the activationGate; flips ONLY via a deliberate founder PR with a green gate, never a build PR — REGISTERED CARRIAGE (Ask 2 rescoped, founder decision 3, 2026-09-02): its flip PR also lights the compiler\'s declaredConflicts declaration (profit target × mb-08, R8/F10), which is doubly dark behind EQUIPPED_RULE_PRECEDENCE_ENABLED until then',
   EQUIPPED_RULE_PRECEDENCE_ENABLED:

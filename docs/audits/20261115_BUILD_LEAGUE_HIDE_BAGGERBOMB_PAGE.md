@@ -226,6 +226,8 @@ The first battery (68 mutants) was killed in full. The review then fixed and add
 
 ## 10. Founder questions
 
+*Answered by the founder on 16 Nov 2026; what was built for each answer, and where, is §14 (in PR #1076 only).*
+
 - **Q-A. The hub still says "League" in two places with the flag on.** The stage summary ("BaggerBomb · X · League · Y", `constants/loadoutCopy.js:61`) and the Loadout tab's line "Your Forge strategy rides into both games." (`:84`). Ruling Q3 hides the card and its lock read; these two strings are outside its letter. Proposed: with the flag on, the summary names the BaggerBomb loadout only and the line says "…rides into your games" — two copy edits behind the flag, in the flip PR. Two reviewers would treat it as blocking the flip.
 - **Q-B. Should the page's Deploy card carry the hub's extras?** The "Deploying with" idea line, the Huddle reconfirm line, the Scouting Board link, and the "· N names" beside the book. They need the hub's runtime; adding them means running more of it on this page. Today a player can deploy from the page without being told an idea or a reconfirm is in play.
 - **Q-C. Show draws in the record?** `stats.gamesPlayed` counts draws and a 0–0 game is a recorded draw, so Wins + Losses may not equal Games played, while that game's finished row reads "No result". The page shows the three stored numbers as asked; the hub's career line is W–L only.
@@ -256,3 +258,32 @@ What surprised: the active poll runs on the dashboard only; closed `featureFlags
 ## 13. Not in this build
 
 The security fixes to the league view (a separate task on `claude/security-pack-league-view`); trader v1, match cash, Agent vs Agent, rewards; removing Season mode or the old human-battle jobs.
+
+## 14. The flip PR's additions (founder rulings of 16 Nov 2026) — PR #1076 only
+
+PR #1075 stays as built (§1–§13). The founder's answers to §10 were built on the flip PR, because they change what a player sees with the flag on.
+
+| Ruling | Built | Where |
+|---|---|---|
+| **Q-A** the two hub "League" strings | With the flag on, the stage's loadout summary reads "BaggerBomb · {archetype}" — the BaggerBomb loadout's archetype, never the League's — and the Loadout tab's Forge line reads "Your Forge strategy rides into your games." Flag off: both strings as they were. | `constants/loadoutCopy.js` (`summaryOne`, `forgeLineOne`), `hub/perGameLoadoutModel.js` `loadoutSummaryOf(cards, { leagueHidden })`, `hub/perGameLoadoutContext.js` `scopeSummary`, `LoadoutCards.jsx` |
+| **Q-B** "Deploying with" and the Huddle reconfirm line | Both are on the page's Deploy card, from the hub's own readers and rules (§14.1). **Not added, left to the design round:** the Scouting Board link and the book's "· N names" in the loadout line. | `BaggerBombPage.jsx` |
+| **Q-C** draws | The record shows **Draws** beside Wins and Losses when the stored `stats.draws` is a count above zero; never "0 draws", never derived from games played. The History sheet's career figure agrees ("7W-3L-2D" with draws, "7W-3L" without). | `baggerBombPageModel.js`, `BaggerBombPage.jsx` |
+| **Q-D** announcements, **Q-F** where Back goes | No change; both go to the design round. | — |
+| **Q-E** operator levers, **Q-G** the flip PR's shape | Accepted as built (the League-card rows held at the flag-off state, not deleted). | — |
+
+### 14.1 Q-B in detail
+
+- **"Deploying with"** is the hub's own line (`DeploySection` `idea`, built by `deployingWithOf` in `hub/researchView.js`): the newest version's statement and the Loadout card's own count, shown only when the player is admitted to idea records, the equipped list is read, the newest version is ready or activated, and the deploy would keep at least one name. The page runs the hub's idea reader (`useHubResearch`) and the hub's runtime (`useHubRuntime`, which also holds the page's one open sheet) exactly as the hub's shells do.
+- **The reconfirm line** is the hub's own `ReconfirmLine`: it shows only for a player the Huddle readers place inside the cohort, only while an archetype in play has no confirmation, and its door opens the Huddle sheet, which the page now mounts (and refreshes the status route first, as the hub's door does). It never blocks or delays a deploy; a row proves the hold still deploys once with the line on the card.
+- **Reads the page now makes that it did not** (all existing hub readers, no new query shape): the idea service's `listHypothesisVersions` (only while `hubFlags().hypothesisRecordsOn`; none for a player outside idea records), the player's committed watchlists (`listWatchlists`, once the agent is read), the Huddle status route (one read; a player outside the cohort gets the route's 404, a settled "outside" answer), and, for members only, the Huddle history.
+- **Does the due-idea choice screen still appear when deploying from the page? Yes.** It is not a screen of the hub or of any page: the deploy provider that App mounts around every screen runs `checkDueIdea(agent)` before any deploy call (`contexts/DeployAttemptContext.jsx:457-462`) and draws `DueIdeaInterstitial` itself (`:970`, portaled to `<body>`). The page's hold commits through that provider, so the screen appears exactly as on the hub: its three choices (reaffirm and deploy, retire and deploy, deploy without it), no deploy call until a choice is made, then exactly one. Rows prove it on both widths with a due idea (the real provider and the real screen), and prove the control (no due idea: straight through, no screen). A Retry skips it, as on the hub (the choice was made).
+
+### 14.2 Checks on the flip PR's head
+
+On the code head `d769b9ec` (flag `true`), Linux, `TZ=UTC`, 8 workers:
+
+- **Full suite:** 1,509 files passed / 12 skipped / 0 failed; **33,974 tests passed**, 0 failed, exit 0. (An earlier run on `03d495ee` had one red row, in the mount guard: it allowed the Huddle readers one caller, `ConnectedHub`. The page is now a second caller, so that row was edited deliberately to name it and to pin one call each in the page; the row still allows no other. I ran only targeted files before that run and should have run the whole `CommandCenter` directory; the full suite caught it.)
+- **Emulator rules suite:** 42 files, 784 tests passed. **`lint:gate`:** exit 0. **`vite build`:** exit 0.
+- **Mutation battery on the additions:** 20 new mutants for Q-A, Q-B and Q-C (idea line not handed on / never derived / reader running for a player outside idea records; reconfirm line not handed on / always owed / never owed / cohort gate inverted / door not refreshing / door opening nothing / Huddle sheet not mounted; draws never shown / a zero shown / derived from games played / dropped from the sheet's figure; each League string left or applied on the wrong side of the flag; the one-loadout summary naming the League archetype; a new reader of the flag outside the census), run together with the page, model, Loadout and census mutants of §9: **64 of 67 killed on the first run; two more (`P8`, whose anchor had drifted, and `Q20`, which planted a read where one is legitimately allowed) were re-anchored and killed; the one survivor is `G24`, stated in §9.**
+- **New rows on the flip PR:** idea line (both widths; draft, retired and records-off controls), Reconfirm line (both widths; nothing-missing and outside-the-cohort controls; the hold still deploys once), the due-idea screen from the page (both widths; and the no-due-idea control), draws (shown, absent at zero or missing, the sheet's figure), the two League strings (on, off, and read at call time), the model's draws rules and the page's import list.
+- **Dist, flag on:** the page's chunk is 7.9 kB, loaded only by the route; the hub's chunk splits into two (83.8 kB and a shared chunk) because the page imports the hub's parts; the main entry is 5,041,131 B (`main`: 5,042,359 B). Flag-off dist is PR #1075's (§6) and is unchanged by this PR.

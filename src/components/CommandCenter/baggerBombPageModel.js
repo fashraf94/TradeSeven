@@ -73,12 +73,15 @@ export function baggerBombRecord(agentRead) {
     status: RECORD_STATUS.READY,
     wins: stats.wins,
     losses: stats.losses,
+    // Draws only when stored as a count above zero (Q-C): a record with none says nothing about them.
+    draws: isCount(stats.draws) && stats.draws > 0 ? stats.draws : null,
     gamesPlayed: isCount(stats.gamesPlayed) ? stats.gamesPlayed : null,
   });
 }
 
 /** The history sheet's career figure ({ status, record }), from the same stored stats the record part shows. */
 export function careerOf(record) {
-  if (record.status === RECORD_STATUS.READY) return Object.freeze({ status: 'ready', record: `${record.wins}W-${record.losses}L` });
+  // The sheet's figure agrees with the record part beside it (BUILD_RULES §9): draws are in it when the record shows them.
+  if (record.status === RECORD_STATUS.READY) return Object.freeze({ status: 'ready', record: `${record.wins}W-${record.losses}L${record.draws !== null ? `-${record.draws}D` : ''}` });
   return Object.freeze({ status: record.status === RECORD_STATUS.LOADING ? 'loading' : 'unavailable' });
 }

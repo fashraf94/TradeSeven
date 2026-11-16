@@ -128,7 +128,9 @@ export function deployLineOf(cards) {
 }
 
 /** The desktop stage's third control and the phone stage's summary: both loadouts. */
-export function loadoutSummaryOf(cards) {
+export function loadoutSummaryOf(cards, { leagueHidden = false } = {}) {
+  // League hide (BB-1): the League loadout is not shown, so the summary does not name it.
+  if (leagueHidden === true) return LOADOUT_COPY.summaryOne(cards.baggerbomb.name);
   return LOADOUT_COPY.summary(cards.baggerbomb.name, cards.league.name);
 }
 

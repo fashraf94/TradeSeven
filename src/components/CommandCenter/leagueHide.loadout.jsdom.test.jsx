@@ -29,6 +29,8 @@ vi.mock('../AgentForm/LoadoutStill', () => ({
 
 import LoadoutCards from './LoadoutCards';
 import PerGameLoadoutScope from './PerGameLoadoutScope';
+import { scopeSummary } from './hub/perGameLoadoutContext';
+import { LOADOUT_COPY } from '../../constants/loadoutCopy';
 import { mount } from './__fixtures__/hubTestKit';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -89,6 +91,40 @@ describe('league hide, hub Loadout tab — the flag ON', () => {
     render({ status: 'loading', agent: null });
     expect(cards()).toEqual([]);
     expect(h.lockSubs).toEqual([]);
+  });
+});
+
+describe('league hide, the two League strings the hub still carried (founder question Q-A, answered 16 Nov 2026)', () => {
+  const scope = { agent: AGENT, lock: null, lockFailed: false, activeBattles: null, lists: null };
+
+  it('ON: the Forge line says "your games", and the stage summary names the one loadout there is — no "League", no archetype of the League loadout', () => {
+    h.hide = true;
+    render();
+    const line = document.querySelector('[data-loadout-forge-line]');
+    expect(line.textContent).toContain(LOADOUT_COPY.forgeLineOne);
+    expect(line.textContent).not.toContain('both games');
+    const summary = scopeSummary(scope);
+    expect(summary).toMatch(/^BaggerBomb · \S/);
+    expect(summary).not.toMatch(/league/i);
+    // It is the BaggerBomb loadout's archetype (the slot), not the League's (the ranked record's own field).
+    expect(summary).toBe(LOADOUT_COPY.summaryOne(summary.slice('BaggerBomb · '.length)));
+    expect(summary).not.toContain('Contrarian');
+  });
+
+  it('OFF (the control): the Forge line counts both games and the summary names both loadouts', () => {
+    h.hide = false;
+    render();
+    expect(document.querySelector('[data-loadout-forge-line]').textContent).toContain(LOADOUT_COPY.forgeLine);
+    expect(scopeSummary(scope)).toMatch(/^BaggerBomb · .+ · League · .+/);
+  });
+
+  it('the hide flag decides at call time: the same scope reads one way, then the other', () => {
+    h.hide = true;
+    const one = scopeSummary(scope);
+    h.hide = false;
+    const two = scopeSummary(scope);
+    expect(one).not.toBe(two);
+    expect(two.startsWith(one)).toBe(true);
   });
 });
 

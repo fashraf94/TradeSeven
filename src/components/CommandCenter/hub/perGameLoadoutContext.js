@@ -8,6 +8,7 @@
 // elements carry: the strip's and the Deploy card's line, and the stage's loadout summary.
 
 import { createContext } from 'react';
+import { LEAGUE_HIDE_ENABLED } from '../../../config/featureFlags';
 import { deployLineOf, deriveLoadoutCards, loadoutSummaryOf } from './perGameLoadoutModel';
 
 export const PerGameLoadoutContext = /* @__PURE__ */ createContext(null);
@@ -33,5 +34,5 @@ export function scopeDeployLine(scope) {
 /** Both loadouts, as the stage's loadout summary; null until the agent is read. */
 export function scopeSummary(scope) {
   const cards = cardsOf(scope);
-  return cards ? loadoutSummaryOf(cards) : null;
+  return cards ? loadoutSummaryOf(cards, { leagueHidden: LEAGUE_HIDE_ENABLED }) : null;
 }

@@ -44,6 +44,8 @@ describe('league hide — SCOPE: who reads the flag', () => {
       'src/App.jsx',
       'src/components/CommandCenter/LoadoutCards.jsx',
       'src/components/CommandCenter/PerGameLoadoutScope.jsx',
+      // League hide, the flip PR: the stage's loadout summary names one loadout while the league is hidden.
+      'src/components/CommandCenter/hub/perGameLoadoutContext.js',
       'src/components/Navigation/BottomNav.jsx',
       'src/components/Navigation/DesktopSidebar.jsx',
       'src/config/featureFlags.js',
@@ -130,10 +132,11 @@ describe('league hide — the page is a second root: its imports are listed (the
 
   it('imports exactly these modules: the hub\'s own parts, the deploy provider, the page\'s copy and model — no service, no firebase, no new package', () => {
     expect(importsOf(PAGE)).toEqual([
-      '../../constants/baggerBombPageCopy', '../../contexts/DeployAttemptContext', './HistorySheet', './HubParts', './PerGameLoadoutScope',
-      './baggerBombPageModel', './hub/HubOverlays', './hub/composition', './hub/deployDisplay', './hub/hubCopy', './hub/hubStyle',
-      './hub/useHubDeploy', './hub/useHubReaders', './hub/useHubSheets', './sections/DeploySection', './sections/GamesSection',
-      'framer-motion', 'react',
+      '../../config/huddleFlags', '../../constants/baggerBombPageCopy', '../../contexts/DeployAttemptContext',
+      '../../hooks/useHuddleHistory', '../../hooks/useHuddleToday', './HistorySheet', './HubParts', './HuddleSheet', './PerGameLoadoutScope',
+      './baggerBombPageModel', './hub/HubOverlays', './hub/composition', './hub/deployDisplay', './hub/hubCopy', './hub/hubFlags', './hub/hubStyle',
+      './hub/huddleView', './hub/useHubDeploy', './hub/useHubReaders', './hub/useHubResearch', './hub/useHubRuntime', './hub/useHubSheets',
+      './sections/DeploySection', './sections/GamesSection', 'framer-motion', 'react',
     ].sort());
     expect(code(PAGE)).not.toMatch(/\bimport\s*\(|\brequire\s*\(/);
     expect(importsOf('src/components/CommandCenter/baggerBombPageModel.js')).toEqual(['../../utils/commandCenterLiveBattles', './hub/hubModel']);

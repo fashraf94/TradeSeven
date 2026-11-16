@@ -113,7 +113,10 @@ vi.mock('../../services/agentBattleVerify', () => ({ findActiveBattleForAgent: a
 vi.mock('../../services/ownedBattleRead', () => ({ readOwnedBattle: async () => null }));
 vi.mock('../../hooks/useDeployTargetProgress', () => ({ default: () => ({ deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false }) }));
 vi.mock('../Dashboard/deployCeremony/DeployCeremony', () => ({ default: (props) => <div data-ceremony={props.attemptId} /> }));
-vi.mock('../../config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), isDeployCeremonyOn: () => false }));
+// League hide (BB-1, Nov 15, 2026): the rows below are about the League card and its lock, which the hide hides. They keep proving the
+// card's own behaviour — the card is hidden, not deleted — so this file holds the hide OFF. The hide's own rows are
+// leagueHide.loadout.jsdom.test.jsx (the hub's Loadout tab) and BaggerBombPage.jsdom.test.jsx.
+vi.mock('../../config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), LEAGUE_HIDE_ENABLED: false, isDeployCeremonyOn: () => false }));
 vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists: (...a) => h.listWatchlists(...a) }));
 vi.mock('../../services/agentService', () => ({ equipWatchlist: vi.fn(), unequipWatchlist: vi.fn(), changeArchetype: vi.fn() }));
 vi.mock('../../services/loadoutService', async (importOriginal) => {
