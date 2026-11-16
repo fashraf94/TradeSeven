@@ -6,8 +6,9 @@
 //     drop there); the battle view is only the doorway. In this preview the CTA is
 //     inert (the real nav lands with the live-wiring phase).
 //   • OpponentSnapshot — tap a rival on the climb: a WHAT-only, SEALED snapshot.
-//     Their book + reasoning stay sealed until the battle completes (the Film
-//     Room). The full ticker book renders with the Film Room phase.
+//     Their book stays sealed until the battle completes; their agent's
+//     reasoning is never shared with another player (founder ruling R-F,
+//     15 Nov 2026). The full ticker book renders with the Film Room phase.
 //   • FilmRoomOverlay — the complete-state "break the seal" entry. A faithful
 //     placeholder here; the dossier room is a later phase.
 //
@@ -169,7 +170,7 @@ export function OpponentSnapshot({ seat, composite, onClose, maxWidth, fixed = f
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '13px 14px', borderRadius: 12, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
         <Icon name="lock" size={15} color={LTOKENS.ink3} style={{ marginTop: 1 }} />
         <div style={{ fontSize: 11.5, color: LTOKENS.ink2, lineHeight: 1.5 }}>
-          A sealed snapshot — <b style={{ color: LTOKENS.ink }}>what</b> {seat.name} is climbing, not why. Their six-stock book, their three picks, their points and their agent&rsquo;s reasoning stay <b style={{ color: LTOKENS.ink }}>sealed until the battle completes</b> — then the Film Room opens.
+          A sealed snapshot — <b style={{ color: LTOKENS.ink }}>what</b> {seat.name} is climbing, not why. Their six-stock book, their three picks and their points stay <b style={{ color: LTOKENS.ink }}>sealed until the battle completes</b>. Their agent&rsquo;s reasoning is not shared with other players.
         </div>
       </div>
     </AFocus>

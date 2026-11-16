@@ -42,13 +42,15 @@
 import { pickCurrentTournamentBattle, seatIndexByOwner } from '../../src/constants/leagueTournament.js';
 
 // PUBLIC WHAT — the only top-level keys a non-owner sees, at every status.
-// statusFeed/trades/agentContext are projected separately (sub-allowlisted).
-// `ownerId` is DELIBERATELY ABSENT (R-F): an account id never reaches another
-// player's browser through this view. No league reader reads it (the
-// security-pack report's reader table); a seat is identified by its key in
-// the route's seat-keyed map.
+// trades/agentContext are projected separately (sub-allowlisted).
+// `ownerId` and `agentId` are DELIBERATELY ABSENT (R-F): an account id never
+// reaches another player's browser through this view, and a training pod's
+// agent id embeds one (`training-agent-{groupId}-{uid}`, trainingCloneDocId in
+// src/constants/leagueTournament.js). No league reader reads either from a
+// rival's battle (the security-pack report's reader table); a seat is
+// identified by its key in the route's seat-keyed map.
 const PUBLIC_TOP_LEVEL = [
-  'id', 'agentId', 'status', 'gameMode', 'groupId', 'isCpu',
+  'id', 'status', 'gameMode', 'groupId', 'isCpu',
   'duration', 'createdAt', 'activatedAt', 'completedAt', 'expiresAt', 'updatedAt',
   'timing', 'portfolio', 'opponent', 'scoring', 'scoreState', 'thresholdHistory',
 ];
@@ -57,25 +59,18 @@ const PUBLIC_TOP_LEVEL = [
 // activeRules / deployedGuardrails / equippedWatchlist / equippedBundleIds /
 // riskTolerance (all strategy WHY).
 const PUBLIC_AGENT_CONTEXT = ['agentName', 'archetype', 'tournament', 'initialPortfolio'];
-// PUBLIC statusFeed entry — the narration MESSAGE + the trade WHAT; NOT
-// trade_reasoning / citedRules / citedForgeRules / directiveThreadId, etc.
-//
-// `source` and `triggeredBy` are DELIBERATELY ABSENT (Phase 0 V2 Hazard 12).
-// They name the MECHANISM that fired a swap — 'risk_manager' / 'guardrail' /
-// 'haiku' / 'gameplan_meeting' (agent-evaluate.js stamps both on the swap
-// entry) — which is WHY, not WHAT, and PUBLIC_TRADE below already withholds
-// the same attribution from the sibling trades[] projection. Letting them
-// through here let a rival read which mechanism moved an opponent's book
-// mid-battle while the trade record said nothing: one posture, two lists,
-// disagreeing. They stay out for a non-owner at every status (R-F: completion
-// opens nothing more).
-//
-// `executionOutcome` is WHAT, not WHY (enforce readiness, table G V1.4): the
-// typed marker that the swap's outcome could not be confirmed. A spectator's
-// pane drops a marked beat exactly as the owner's does — without the marker it
-// rendered the beat's pre-execution words (or its raw action) as if the record
-// vouched for them. It names no mechanism and no reasoning.
-const PUBLIC_STATUSFEED = ['timestamp', 'message', 'action', 'regime', 'score', 'symbolOut', 'symbolIn', 'executionOutcome'];
+// NO statusFeed for a non-owner (R-F, 15 Nov 2026; security-pack review,
+// exposure lens E2–E5). The feed's free-text `message` is written by many
+// hands and carries what the ruling keeps on the server: guardrail levels
+// ("Guardrail override: stop-loss at 8% breached …", agentGuardrails.js),
+// the Film Room self-review's grade and lesson (agent-batch-review.js), the
+// model's own status line (agent-evaluate.js `status_feed_update`), risk
+// details and hot-bench names; its `action` names the mechanism that moved
+// the book. An allowlist of entry KEYS cannot strip what a free-text VALUE
+// says, so the whole feed stays with the owner. The swap facts a spectator is
+// owed are in `trades[]` (PUBLIC_TRADE). (Before R-F the feed went out with
+// `message`, `action`, `regime`, `score`, the symbols and `executionOutcome`;
+// `source`/`triggeredBy` were already withheld — Phase 0 V2 Hazard 12.)
 // PUBLIC trade entry — execution facts (drives the banked-score WHAT); NOT
 // rationale / hypothesis / trade_reasoning / snapshot / Forge citations.
 const PUBLIC_TRADE = ['symbolOut', 'symbolIn', 'name', 'slotIndex', 'entryPrice', 'exitPrice', 'lockedPoints', 'lockedGainPct', 'swappedOutAt', 'swapDay', 'action', 'tier', 'isCrypto'];
@@ -96,9 +91,10 @@ function pick(obj, keys) {
  * - Non-owner, at EVERY status (founder ruling R-F, 15 Nov 2026) → WHAT-only
  *   projection built from the allowlists above. Completion opens nothing more.
  *   The frozen idea is not on the allowlist, so Pilot P1b's "owner sees full,
- *   others none" (pilot spec §2.7) holds by construction. Stamped
- *   `_whyConcealed: true` so the client renders the honest "reasoning is
- *   private to its owner" note rather than mistaking concealment for absence.
+ *   others none" (pilot spec §2.7) holds by construction. The narration
+ *   feed is withheld whole (`statusFeed: []`). Stamped `_whyConcealed: true`
+ *   so the client renders the honest "reasoning is not shared" note rather
+ *   than mistaking concealment for absence.
  *
  * @param {Object} battle    the raw agentBattles doc (with id)
  * @param {{ isOwner: boolean }} opts
@@ -112,9 +108,7 @@ export function projectTournamentBattle(battle, { isOwner = false } = {}) {
   // Non-owner, any status → WHAT-only (allowlist; nothing leaks by default).
   const projected = pick(battle, PUBLIC_TOP_LEVEL);
   projected.agentContext = pick(battle.agentContext, PUBLIC_AGENT_CONTEXT);
-  projected.statusFeed = Array.isArray(battle.statusFeed)
-    ? battle.statusFeed.map((e) => pick(e, PUBLIC_STATUSFEED))
-    : [];
+  projected.statusFeed = []; // the owner's narration: never a non-owner's (see above)
   projected.trades = Array.isArray(battle.trades)
     ? battle.trades.map((t) => pick(t, PUBLIC_TRADE))
     : [];

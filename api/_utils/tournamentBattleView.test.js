@@ -27,6 +27,9 @@ function whyBattle(overrides = {}) {
   return {
     id: 'b1',
     ownerId: RIVAL_UID,
+    // A training pod's human seat deploys its training clone, whose doc id
+    // embeds the owner's account id (trainingCloneDocId) — review lens E1.
+    agentId: `training-agent-g1-${RIVAL_UID}`,
     status: 'active',
     gameMode: 'baggerbomb_tournament',
     groupId: 'g1',
@@ -65,6 +68,13 @@ function whyBattle(overrides = {}) {
         trade_reasoning: 'OLD stalled, NVDA breaking out',
         citedForgeRules: ['r1'],
       },
+      // The free-text messages the real writers put in the feed (review lens
+      // E2–E4): a guardrail LEVEL (agentGuardrails.js), the Film Room
+      // self-review's grade and lesson (agent-batch-review.js), the model's own
+      // status line (agent-evaluate.js `status_feed_update`).
+      { timestamp: '2026-09-02T15:00:00.000Z', message: 'Guardrail override: stop-loss at 8% breached on GILD (-9.24%). Forcing exit → MOS.', action: 'guardrail_forced_swap', symbolOut: 'GILD', symbolIn: 'MOS' },
+      { timestamp: '2026-09-02T21:00:00.000Z', message: 'Game Tape: Day 1 review complete. Grade: B. PLANTED-LESSON: I sold strength too early.', action: 'film_room' },
+      { timestamp: '2026-09-02T15:30:00.000Z', message: 'PLANTED-STATUS-LINE: holding per the no-crypto instruction, risk at 8%.', action: 'hold' },
     ],
     trades: [
       { symbolOut: 'OLD', symbolIn: 'NVDA', lockedPoints: 12, rationale: 'cut the laggard', hypothesis: 'NVDA runs', trade_reasoning: 'rotation', snapshot: { secret: true } },
@@ -104,9 +114,7 @@ function allowlistShapeOf(status) {
       tournament: { doubleDownSymbols: ['NVDA'], userPicksAtDeploy: ['NVDA'] },
       initialPortfolio: { star: [{ symbol: 'NVDA' }] },
     },
-    statusFeed: [
-      { timestamp: '2026-09-02T14:00:00.000Z', message: 'Swapped OLD → NVDA', action: 'swap', symbolOut: 'OLD', symbolIn: 'NVDA' },
-    ],
+    statusFeed: [],
     trades: [{ symbolOut: 'OLD', symbolIn: 'NVDA', lockedPoints: 12 }],
     _whyConcealed: true,
   };
@@ -208,29 +216,28 @@ describe('projectTournamentBattle — non-owner active = WHAT only', () => {
     expect(projected.agentContext.initialPortfolio).toBeDefined();
   });
 
-  it('keeps statusFeed MESSAGES but strips the structured WHY (trade_reasoning, Forge citations)', () => {
-    expect(projected.statusFeed[0].message).toBe('Swapped OLD → NVDA');
-    expect(projected.statusFeed[0].action).toBe('swap');
-    expect(projected.statusFeed[0].trade_reasoning).toBeUndefined();
-    expect(projected.statusFeed[0].citedForgeRules).toBeUndefined();
+  // R-F (security-pack review, exposure lens E2–E5): the feed's free-text
+  // `message` carries guardrail LEVELS, the self-review's grade and lesson and
+  // the model's own status line, and its `action` names the mechanism. A key
+  // allowlist cannot strip a value, so a non-owner receives no feed at all.
+  it('a non-owner receives NO statusFeed — not the guardrail level, not the review lesson, not the model\'s status line', () => {
+    expect(projected.statusFeed).toEqual([]);
+    const wire = JSON.stringify(projected);
+    for (const leak of ['stop-loss at 8%', 'PLANTED-LESSON', 'Grade: B', 'PLANTED-STATUS-LINE', 'guardrail_forced_swap', 'film_room']) {
+      expect(wire, leak).not.toContain(leak);
+    }
   });
 
-  // Phase 0 V2 Hazard 12. `source` / `triggeredBy` name the MECHANISM that
-  // fired a swap (risk_manager / guardrail / haiku / gameplan_meeting). That is
-  // WHY, and the sibling trades[] projection has always withheld it — so a
-  // rival could read from the feed what the trade record refused to tell them.
-  // These two rows are the whole fix; if either regresses, the leak is back.
-  it('strips swap ATTRIBUTION from the statusFeed for a non-owner (same posture as PUBLIC_TRADE)', () => {
-    const e = projected.statusFeed[0];
-    expect(e.source).toBeUndefined();
-    expect(e.triggeredBy).toBeUndefined();
-    // ...while the WHAT the rival is entitled to still lands.
-    expect(e.symbolOut).toBe('OLD');
-    expect(e.symbolIn).toBe('NVDA');
-    expect(e.timestamp).toBe('2026-09-02T14:00:00.000Z');
-    // The sibling projection this now agrees with — one posture, both lists.
+  // Phase 0 V2 Hazard 12: `source` / `triggeredBy` name the MECHANISM that
+  // fired a swap. The trades[] projection withholds them; the feed is withheld whole.
+  it('withholds swap ATTRIBUTION from the trades a non-owner receives', () => {
     expect(projected.trades[0].source).toBeUndefined();
     expect(projected.trades[0].triggeredBy).toBeUndefined();
+  });
+
+  it('carries no `agentId` — a training clone\'s id embeds the owner\'s account id (review lens E1)', () => {
+    expect(projected).not.toHaveProperty('agentId');
+    expect(JSON.stringify(projected)).not.toContain(RIVAL_UID);
   });
 
   it('the OWNER still sees swap attribution (concealment is per-viewer, not deletion)', () => {
@@ -240,10 +247,9 @@ describe('projectTournamentBattle — non-owner active = WHAT only', () => {
     expect(own.statusFeed[0].triggeredBy).toBe('threshold_breach, momentum_shift');
   });
 
-  it('a COMPLETED battle keeps attribution concealed from a non-owner (R-F: completion opens nothing more)', () => {
+  it('a COMPLETED battle keeps the feed and the attribution from a non-owner (R-F: completion opens nothing more)', () => {
     const done = projectTournamentBattle(whyBattle({ status: 'completed' }), { isOwner: false });
-    expect(done.statusFeed[0].source).toBeUndefined();
-    expect(done.statusFeed[0].triggeredBy).toBeUndefined();
+    expect(done.statusFeed).toEqual([]);
     expect(done.trades[0].rationale).toBeUndefined();
   });
 
@@ -307,8 +313,11 @@ describe('pickCurrentBattlesByOwner', () => {
 // Enforce readiness (table G, V1.4; review ER4-3): the typed marker that a swap's
 // outcome could not be confirmed is WHAT, not WHY — a spectator's pane drops a
 // marked beat exactly as the owner's does, so the projection must carry it.
-describe('enforce readiness — the public statusFeed carries the unconfirmed-outcome marker', () => {
-  it('kept when present, absent when not; still no attribution', () => {
+// Enforce readiness (table G V1.4) pinned the unconfirmed-outcome marker on the
+// PUBLIC feed. Since R-F a non-owner receives no feed, so the marker is the
+// OWNER's: their own copy keeps every entry and its marker, unchanged.
+describe('enforce readiness — the unconfirmed-outcome marker stays on the owner\'s feed; a non-owner receives none', () => {
+  it('the owner\'s feed is the stored feed, marker and all; a non-owner\'s is empty', () => {
     const battle = {
       id: 'b', ownerId: 'owner', status: 'active',
       statusFeed: [
@@ -316,13 +325,10 @@ describe('enforce readiness — the public statusFeed carries the unconfirmed-ou
         { timestamp: 't2', message: 'Swapped OLD → NVDA', action: 'swap', source: 'haiku', symbolOut: 'OLD', symbolIn: 'NVDA' },
       ],
     };
-    const projected = projectTournamentBattle(battle, { isOwner: false });
-    expect(projected.statusFeed[0]).toEqual({ timestamp: 't1', message: null, action: 'risk_swap_failed', symbolOut: 'KO', symbolIn: 'AMD', executionOutcome: 'unknown' });
-    expect(projected.statusFeed[1]).not.toHaveProperty('executionOutcome');
-    for (const e of projected.statusFeed) {
-      expect(e).not.toHaveProperty('source');
-      expect(e).not.toHaveProperty('triggeredBy');
-    }
+    const own = projectTournamentBattle(battle, { isOwner: true });
+    expect(own.statusFeed[0].executionOutcome).toBe('unknown');
+    expect(own.statusFeed[1]).not.toHaveProperty('executionOutcome');
+    expect(projectTournamentBattle(battle, { isOwner: false }).statusFeed).toEqual([]);
   });
 });
 
@@ -357,7 +363,7 @@ describe('R-F — a recursive scan of every non-owner projection finds none of t
     for (const k of FORBIDDEN_KEYS) expect(found.has(k), `${status}: ${k} reached a non-owner`).toBe(false);
     const wire = JSON.stringify(out);
     expect(wire).not.toContain(RIVAL_UID);
-    for (const planted of ['PLANTED-DIRECTIVE', 'PLANTED-PROPOSAL', 'PLANTED-IDEA', 'ride the breakout', 'cut the laggard', 'because']) {
+    for (const planted of ['PLANTED-DIRECTIVE', 'PLANTED-PROPOSAL', 'PLANTED-IDEA', 'ride the breakout', 'cut the laggard', 'because', 'stop-loss at 8%', 'PLANTED-LESSON', 'PLANTED-STATUS-LINE', 'training-agent-']) {
       expect(wire, `${status}: "${planted}" reached a non-owner`).not.toContain(planted);
     }
   });
@@ -379,12 +385,12 @@ describe('R-F — projectBattlesBySeat: the league view keys battles by SEAT, ne
     { odUserId: RIVAL_UID, picks: [] },
     { odUserId: 'cpu-3', isCpu: true, picks: [] },
   ];
-  const viewerBattle = (status = 'active') => whyBattle({ id: 'b-viewer', ownerId: VIEWER_UID, status });
+  const viewerBattle = (status = 'active') => whyBattle({ id: 'b-viewer', ownerId: VIEWER_UID, agentId: `training-agent-g1-${VIEWER_UID}`, status });
   const rivalBattle = (status = 'completed') => whyBattle({ id: 'b-rival', ownerId: RIVAL_UID, status });
 
   it('keys are the owners\' indices in `players` (\'0\'..), the viewer\'s own seat full, every other seat the allowlist', () => {
     const v = viewerBattle();
-    const out = projectBattlesBySeat([v, rivalBattle(), whyBattle({ id: 'b-cpu', ownerId: 'cpu-3', isCpu: true })], players, VIEWER_UID);
+    const out = projectBattlesBySeat([v, rivalBattle(), whyBattle({ id: 'b-cpu', ownerId: 'cpu-3', agentId: 'cpu-agent-3', isCpu: true })], players, VIEWER_UID);
     expect(Object.keys(out).sort()).toEqual(['0', '1', '2']);
     expect(out['0']).toBe(v);
     expect(out['1']).toEqual({ ...allowlistShapeOf('completed'), id: 'b-rival' });

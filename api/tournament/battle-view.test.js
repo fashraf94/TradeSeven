@@ -72,6 +72,8 @@ function tournamentBattle(ownerId, overrides = {}) {
     portfolio: { star: [{ symbol: 'NVDA', tierMultiplier: 1 }], core: [], support: [] },
     scoreState: { currentScore: 5 },
     statusFeed: [{ message: 'live', trade_reasoning: 'secret' }],
+    // A training pod's seat deploys its clone, whose id embeds the owner's account id (review lens E1).
+    agentId: `training-agent-g1-${ownerId}`,
     agentContext: { agentName: 'A', innerMonologue: { strategy: 'secret plan' }, activeRules: [{ id: 'r1' }], deployedGuardrails: [{ type: 'stop' }], equippedWatchlist: { tickers: ['COIN'] } },
     evaluations: [{ rationale: 'secret' }],
     chatExchanges: [{ q: 'q', a: 'secret' }],
@@ -142,8 +144,9 @@ describe('scoping + projection', () => {
     const rival = res.body.battles['1'];
     expect(rival.agentContext.innerMonologue).toBeUndefined(); // concealed
     expect(rival.evaluations).toBeUndefined();
-    expect(rival.statusFeed[0].message).toBe('live');         // WHAT kept
-    expect(rival.statusFeed[0].trade_reasoning).toBeUndefined();
+    expect(rival.portfolio.star[0].symbol).toBe('NVDA');      // WHAT kept
+    expect(rival.statusFeed).toEqual([]);                      // R-F: the narration feed stays with its owner
+    expect(mine.statusFeed[0].trade_reasoning).toBe('secret'); // ...who keeps all of it
     expect(rival._whyConcealed).toBe(true);
   });
 

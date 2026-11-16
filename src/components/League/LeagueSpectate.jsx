@@ -48,8 +48,9 @@ import SpectateBackingResults from './backing/SpectateBackingResults';
 // for the honesty test.
 export const NO_REASONING_RECORDED = 'No reasoning recorded for this battle.';
 // The note on a seat whose reasoning the server keeps to its owner (R-F).
-// Exported for the honesty test.
-export const PRIVATE_REASONING_NOTE = 'reasoning stays private to its owner.';
+// True for a CPU seat too, and it claims nothing about what else the screen
+// shows (security-pack review, honesty lens H5/H7). Exported for the honesty test.
+export const PRIVATE_REASONING_NOTE = 'reasoning is not shared with other players.';
 
 // fake-but-stable head-to-head history vs you
 const RIVALRY = { vela: '2–1', orion: '2–1', cygnus: '1–1', mira: '0–2', lyra: '1–0', draco: '1–1' };
@@ -103,7 +104,7 @@ function FilmRoom({ player, locked }) {
           <Icon name={isPrivate ? 'lock' : 'clock'} size={14} color={LTOKENS.ink2} style={{ marginTop: 1 }} />
           <div style={{ fontSize: 12, color: LTOKENS.ink2, lineHeight: 1.45 }}>
             {isPrivate ? (
-              <>Every position and score is open to all — but {player.name}&apos;s <b style={{ color: LTOKENS.ink }}>{PRIVATE_REASONING_NOTE}</b></>
+              <>{player.name}&apos;s <b style={{ color: LTOKENS.ink }}>{PRIVATE_REASONING_NOTE}</b></>
             ) : (
               <>You can watch every position and score live — but {player.name}&apos;s <b style={{ color: LTOKENS.ink }}>private reasoning stays sealed until the group completes.</b> Come back for the film room.</>
             )}
@@ -257,7 +258,7 @@ export default function Spectate({ pod, focusId, accent, onBack, onEnter }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 12, padding: '11px 13px', borderRadius: 12, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
             <LIcon name="users" size={14} color={accent} />
             <div style={{ fontSize: 12, color: LTOKENS.ink2, lineHeight: 1.4 }}>
-              <b style={{ color: LTOKENS.ink }}>3 players beat your agent this week.</b> See how they traded in the film room.
+              <b style={{ color: LTOKENS.ink }}>3 players beat your agent this week.</b>
             </div>
           </div>
         )}

@@ -136,7 +136,7 @@ import LeagueBattleViewRender from '../../screens/leagueBattleViewRender';
 import LeagueTrainingBattleView from '../../screens/LeagueTrainingBattleView';
 import LeagueParticipantView from '../../screens/LeagueParticipantView';
 import TournamentDevScreen from '../../screens/TournamentDevScreen';
-import { WHY_PRIVATE_NOTE } from './Flat6BattleView';
+import { WHY_PRIVATE_NOTE, FEED_PRIVATE_NOTE } from './Flat6BattleView';
 
 const UID = 'league-owner-1';
 
@@ -411,15 +411,19 @@ describe('the live feed — a beat whose outcome could not be confirmed (table G
     for (let i = 0; i < 8; i += 1) expect(text).toContain(`Move ${i} on the book.`);
   });
 
-  it('a spectator’s copy (the real public projection, which carries the marker) reads the same — words and all', () => {
+  // Founder ruling R-F (15 Nov 2026): a spectator's copy carries NO feed — its free-text lines hold guardrail
+  // levels and the agent's own words. The card must say the feed is not shared, never "No moves yet today."
+  it('a spectator’s copy (the real public projection) carries no feed since R-F: the card says so, and no line of the owner’s renders', () => {
     const MARKED_HOLD = { timestamp: '2026-09-09T15:31:00.000Z', message: 'Rotating GILD into MOS.', action: 'hold', source: 'haiku', executionOutcome: 'unknown' };
     const projected = projectTournamentBattle({ ...battleWith([]), ownerId: 'someone-else', statusFeed: [beat(1), UNKNOWN, MARKED_HOLD] }, { isOwner: false });
-    expect(projected.statusFeed.map((e) => e.executionOutcome ?? null)).toEqual([null, 'unknown', 'unknown']);
-    mountWith(projected.statusFeed);
+    expect(projected.statusFeed).toEqual([]);
+    globalThis.__FLAT6_TEST_BATTLE__ = projected;
+    mount(<LeagueBattleViewRender group={GROUP} battle={projected} mode="ranked" uid={UID} compositeContext={null} isDesktop={false} />);
     const text = feedText();
-    expect(text).not.toContain('risk_swap_failed');
+    expect(text).toContain(FEED_PRIVATE_NOTE);
+    expect(text).not.toContain('No moves yet today.');
+    expect(text).not.toContain('Move 1 on the book.');
     expect(text).not.toContain('Rotating GILD into MOS.');
-    expect(text).toContain('Move 1 on the book.');
   });
 
   it('a real failure keeps its line; a marked beat with words is dropped too (review ER4-3 — its words were written before the swap ran)', () => {

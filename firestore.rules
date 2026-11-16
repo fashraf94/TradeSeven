@@ -607,23 +607,25 @@ service cloud.firestore {
     // 20261115_FIX_SECURITY_PACK_LEAGUE_VIEW.md). A participant is named by
     // `creator.uid`, `creator.odUserId`, `opponent.uid` or `opponent.odUserId`
     // — the four fields the client's own battle queries match a user on
-    // (firebaseService.subscribeToBattles). Each is read with a default, so a
-    // record missing a side or a field denies instead of erroring. Before this,
-    // any signed-in user could update any record. Joining a waiting battle (an
+    // (firebaseService.subscribeToBattles). A side that is absent, null or not
+    // a map names nobody (battleSideIds), so such a record never errors the
+    // rule into denying the other side's participant. Before this, any
+    // signed-in user could update any record. Joining a waiting battle (an
     // update by a non-participant) is closed with it: no join door is reachable
     // at today's flag values. The Admin SDK jobs (lobbies/cleanup-expired,
     // compute-daily-baggerbomb-levels, baggerbomb-v4-daily-scores) bypass rules.
     // READ is unchanged in this task.
     match /battles/{battleId} {
+      // The account ids one side of a record names: its `uid` and `odUserId`,
+      // or none when the side is not a map.
+      function battleSideIds(side) {
+        return side is map ? [side.get('uid', null), side.get('odUserId', null)] : [];
+      }
       allow read: if request.auth != null;
       allow create: if request.auth != null;
       allow update: if request.auth != null
-                    && request.auth.uid in [
-                         resource.data.get('creator', {}).get('uid', null),
-                         resource.data.get('creator', {}).get('odUserId', null),
-                         resource.data.get('opponent', {}).get('uid', null),
-                         resource.data.get('opponent', {}).get('odUserId', null)
-                       ];
+                    && request.auth.uid in battleSideIds(resource.data.get('creator', null))
+                                             .concat(battleSideIds(resource.data.get('opponent', null)));
       allow delete: if false;
     }
 

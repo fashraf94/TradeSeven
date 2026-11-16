@@ -19,6 +19,10 @@ const spy = vi.hoisted(() => ({
 }));
 
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: spy.getFirebaseAdmin }));
+// A regression that reached Firestore through firebase-admin directly (the old
+// cron files' pattern) would call these instead (security-pack review, rules lens).
+vi.mock('firebase-admin/app', () => ({ initializeApp: spy.getFirebaseAdmin, getApps: spy.getFirebaseAdmin, cert: spy.getFirebaseAdmin }));
+vi.mock('firebase-admin/firestore', () => ({ getFirestore: spy.getFirebaseAdmin }));
 vi.mock('../_utils/authMiddleware.js', () => ({ requireAuth: spy.requireAuth }));
 vi.mock('../_utils/security.js', () => ({ applySecurityMiddleware: spy.applySecurityMiddleware }));
 

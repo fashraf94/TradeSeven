@@ -13,22 +13,31 @@
 //   · the creator (by `creator.uid`) and the opponent (by `opponent.uid`) can
 //     update — the positive controls that keep the denial rows from passing on
 //     a ruleset that denies everything;
-//   · a participant named only by `odUserId` (the field V3/V4 records also
-//     carry) can update;
+//   · FIELD ISOLATION — each of the four fields is the only match in one row:
+//     a classic `_v: 1` record names each side by `uid` alone; a creator and
+//     an opponent named only by `odUserId`; an opponent whose `odUserId` holds
+//     a username (the V3/V4 writers' fallback) named only by `uid`;
 //   · a signed-in STRANGER is DENIED — the hole this fix closes;
 //   · an ANONYMOUS caller is DENIED;
-//   · a record with no `opponent` map (or no `creator` map) does not error the
-//     rule into an allow: the creator still updates, a stranger is denied, and
-//     a record naming nobody is closed to every client;
+//   · a record with no `opponent` map, or a side stored as null or as a
+//     string, names nobody on that side and never errors the rule: the other
+//     side's participant still updates, a stranger is denied, and a record
+//     naming nobody is closed to every client;
 //   · a stranger cannot JOIN a waiting record by writing themselves into the
 //     empty opponent seat (the join is an update by a non-participant; no join
 //     door is reachable at today's flag values — report, fix 3);
 //   · READ and CREATE are unchanged by this task (a stranger still reads, an
 //     anonymous caller still cannot), and DELETE stays denied to everyone.
 //
-// MUTATION CHECK: revert the update rule to `allow update: if request.auth != null;`
-// → the stranger and join rows red; drop the `!= null` guard → the anonymous
-// row reds.
+// MUTATION CHECK (run against this suite, report §Mutation checks): the rule
+// back to `request.auth != null` → the stranger, join, missing-side, null-side
+// and nobody rows red; the guard inverted (`request.auth == null || …`) → the
+// anonymous row reds; `uid` dropped from battleSideIds → the classic and
+// opponent-uid rows red; `odUserId` dropped → the two odUserId-only rows red;
+// the creator side or the opponent side dropped → that side's rows red; the
+// `is map` check dropped → the null/string-side row reds. (Dropping the
+// `!= null` guard alone is an EQUIVALENT mutant: `request.auth.uid` on a null
+// `request.auth` errors, and an error denies.)
 //
 // DEPLOY NOTE: rules deploy manually and are inert until deployed (the
 // founder publishes after the merge). Point COMPOSITION_RULES_TEXT_PATH at
@@ -70,6 +79,11 @@ const OD_ONLY_BATTLE = 'battles/odonly-1';
 const WAITING = 'battles/waiting-1';
 const NO_OPPONENT = 'battles/no-opponent-1';
 const NOBODY = 'battles/nobody-1';
+const CLASSIC = 'battles/classic-1';
+const CREATOR_OD_ONLY = 'battles/creator-odonly-1';
+const OPPONENT_UID_ONLY = 'battles/opponent-uidonly-1';
+const NULL_OPPONENT = 'battles/null-opponent-1';
+const STRING_OPPONENT = 'battles/string-opponent-1';
 
 // The shape the client writers produce (firebaseService.createBaggerBombBattleV4 /
 // joinBaggerBombBattleV4): two side maps, each naming its player by uid and odUserId.
@@ -119,6 +133,14 @@ beforeEach(async () => {
   await seed(NO_OPPONENT, noOpp);
   const { creator: _c, opponent: _p, ...nobody } = battle();
   await seed(NOBODY, nobody);
+  // classic `_v: 1`: each side named by `uid` only (no odUserId field at all)
+  await seed(CLASSIC, battle({ _v: 1, creator: { uid: CREATOR, username: 'Player' }, opponent: { uid: OPPONENT, username: 'Player' } }));
+  // the creator named only by odUserId (its uid field holds a handle)
+  await seed(CREATOR_OD_ONLY, battle({ creator: side('legacy-handle', { odUserId: OD_ONLY }) }));
+  // the opponent named only by uid (its odUserId holds a username — the V3/V4 fallback)
+  await seed(OPPONENT_UID_ONLY, battle({ opponent: side(OPPONENT, { odUserId: 'some-username' }) }));
+  await seed(NULL_OPPONENT, battle({ opponent: null }));
+  await seed(STRING_OPPONENT, battle({ opponent: 'nobody' }));
 });
 
 describe('battles/{battleId} UPDATE — the two participants only (R-F fix 3)', () => {
@@ -132,6 +154,35 @@ describe('battles/{battleId} UPDATE — the two participants only (R-F fix 3)', 
 
   it('a participant named only by odUserId can update', async () => {
     await assertSucceeds(updateDoc(doc(as(OD_ONLY), OD_ONLY_BATTLE), { 'opponent.totalScore': 3 }));
+  });
+
+  // FIELD ISOLATION (BUILD_RULES §2 review, rules lens R1): each of the four
+  // fields is the ONLY match in one row, so dropping any one of them from the
+  // rule reds a row. The shapes are the writers' own: classic `_v: 1` records
+  // name each side by `uid` alone (firebaseService.createBattle / joinBattle),
+  // and the V3/V4 writers' `odUserId: user.odUserId || user.username` fallback
+  // can leave a username in `odUserId` beside the account in `uid`.
+  it('creator.uid alone: a classic record (uid only, no odUserId) — its creator and its opponent update', async () => {
+    await assertSucceeds(updateDoc(doc(as(CREATOR), CLASSIC), { 'creator.totalScore': 2 }));
+    await assertSucceeds(updateDoc(doc(as(OPPONENT), CLASSIC), { 'opponent.totalScore': 2 }));
+    await assertFails(updateDoc(doc(as(STRANGER), CLASSIC), { 'creator.totalScore': 2 }));
+  });
+
+  it('creator.odUserId alone: a creator whose uid field holds a handle updates', async () => {
+    await assertSucceeds(updateDoc(doc(as(OD_ONLY), CREATOR_OD_ONLY), bump));
+  });
+
+  it('opponent.uid alone: an opponent whose odUserId holds a username updates', async () => {
+    await assertSucceeds(updateDoc(doc(as(OPPONENT), OPPONENT_UID_ONLY), { 'opponent.totalScore': 3 }));
+  });
+
+  // A side stored as null, or as a non-map, names nobody — and must not error
+  // the rule into denying the OTHER side's participant (rules lens R2).
+  it('a side stored as null or as a string names nobody, and the other side\'s participant still updates', async () => {
+    await assertSucceeds(updateDoc(doc(as(CREATOR), NULL_OPPONENT), bump));
+    await assertSucceeds(updateDoc(doc(as(CREATOR), STRING_OPPONENT), bump));
+    await assertFails(updateDoc(doc(as(STRANGER), NULL_OPPONENT), bump));
+    await assertFails(updateDoc(doc(as(STRANGER), STRING_OPPONENT), bump));
   });
 
   it('a signed-in STRANGER is DENIED (the hole: any signed-in user could update any record)', async () => {

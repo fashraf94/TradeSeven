@@ -422,3 +422,22 @@ describe('POSITIVE CONTROL — the fixture world still renders its own sentence,
     expect(visibleText(renderToString(<i>{"should've — \"cut\" <it> & go"}</i>))).toContain("should've — \"cut\" <it> & go");
   });
 });
+
+// Security-pack review, honesty lens H1/H2 + the Flat6 note: after R-F no
+// screen may promise that ANOTHER player's reasoning opens — at completion, at
+// the bell, in the film room. These were the three live promises; each is
+// pinned absent from every production source file (comments ignored).
+describe('R-F — no production source promises another player\'s reasoning opens', () => {
+  const PROMISES = [
+    'then the Film Room opens',               // ArenaOverlays OpponentSnapshot (a rival's snapshot)
+    'It opens to everyone at completion',     // Flat6BattleView's spectator note
+    'See how they traded in the film room',   // LeagueSpectate's learn-from-loss line
+  ];
+  const sources = walk(SRC).filter((f) => !/\.(test|spec)\.[jt]sx?$|\.rules\.mjs$/.test(f));
+  it.each(PROMISES)('"%s" appears in no production source', (promise) => {
+    const offenders = sources
+      .filter((f) => stripComments(readFileSync(f, 'utf8')).includes(promise))
+      .map((f) => path.relative(SRC, f));
+    expect(offenders).toEqual([]);
+  });
+});

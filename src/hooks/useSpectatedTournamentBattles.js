@@ -12,6 +12,12 @@
 // seat back to its player through the `players` the caller already holds from
 // its own group subscription (battlesByOwnerFromSeats — the same seat rule the
 // server keys with), and returns the owner-keyed map the league surfaces read.
+// A reply is joined ONLY to the group it was fetched for: seat '1' of one
+// group is a different player from seat '1' of the next, so when `groupId`
+// changes the hook answers {} until the new group's reply lands (and keeps
+// answering {} if that fetch fails or the hook is disabled there) — never the
+// old group's battles under the new group's players (security-pack review,
+// wiring lens W1).
 //
 // Polled, not onSnapshot, by design: the projection lives behind an endpoint,
 // and the cron writes the doc on minute-scale ticks anyway — the lively part
@@ -33,7 +39,7 @@ const POLL_MS = 60000;
  * @param {Array} players  the group document's `players` (the seat order)
  */
 export default function useSpectatedTournamentBattles(groupId, enabled = true, players = null) {
-  const [bySeat, setBySeat] = useState({});
+  const [reply, setReply] = useState({ groupId: null, bySeat: {} });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -54,7 +60,7 @@ export default function useSpectatedTournamentBattles(groupId, enabled = true, p
         }
         const data = await res.json();
         if (active) {
-          setBySeat(data.battles || {});
+          setReply({ groupId, bySeat: data.battles || {} });
           setError(null);
         }
       } catch (err) {
@@ -76,8 +82,12 @@ export default function useSpectatedTournamentBattles(groupId, enabled = true, p
   }, [enabled, groupId]);
 
   // Re-joined when a poll lands or the group document ticks; every caller's
-  // own model already rebuilds on that tick, so this adds no render.
-  const battles = useMemo(() => battlesByOwnerFromSeats(bySeat, players), [bySeat, players]);
+  // own model already rebuilds on that tick, so this adds no render. A reply
+  // for another group joins to nothing (see the header).
+  const battles = useMemo(
+    () => (reply.groupId === groupId ? battlesByOwnerFromSeats(reply.bySeat, players) : {}),
+    [reply, groupId, players],
+  );
 
   return { battles, loading, error };
 }

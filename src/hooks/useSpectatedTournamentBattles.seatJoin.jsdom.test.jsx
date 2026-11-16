@@ -22,12 +22,15 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const net = vi.hoisted(() => ({ reply: { battles: {} }, urls: [] }));
+const net = vi.hoisted(() => ({ reply: { battles: {} }, urls: [], byGroup: {} }));
 const groups = vi.hoisted(() => ({ doc: null }));
 vi.mock('../utils/fetchWithAuth', () => ({
   fetchWithAuth: vi.fn(async (url) => {
     net.urls.push(url);
-    return { ok: true, status: 200, json: async () => net.reply };
+    const per = net.byGroup[decodeURIComponent(url.split('groupId=')[1] || '')];
+    if (per === 'hang') return new Promise(() => {});
+    if (per === 'fail') return { ok: false, status: 500, json: async () => ({ error: 'server_error' }) };
+    return { ok: true, status: 200, json: async () => per ?? net.reply };
   }),
 }));
 vi.mock('../firebase/config', () => ({ db: {}, auth: { currentUser: null }, default: {} }));
@@ -45,8 +48,8 @@ const SEAT_REPLY = { groupId: 'g1', battles: { 0: book('NVDA'), 1: book('XLE'), 
 
 let roots = [];
 let seen = null;
-function Probe({ groupId = 'g1', players }) {
-  seen = useSpectatedTournamentBattles(groupId, true, players).battles;
+function Probe({ groupId = 'g1', players, enabled = true }) {
+  seen = useSpectatedTournamentBattles(groupId, enabled, players).battles;
   return null;
 }
 async function mount(el) {
@@ -62,7 +65,7 @@ async function mount(el) {
   };
 }
 
-beforeEach(() => { net.reply = SEAT_REPLY; net.urls = []; seen = null; groups.doc = null; });
+beforeEach(() => { net.reply = SEAT_REPLY; net.urls = []; net.byGroup = {}; seen = null; groups.doc = null; });
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
@@ -93,6 +96,51 @@ describe('the polling hook joins the seat-keyed reply back to the group\'s playe
     await rerender(<Probe players={[PLAYERS[1], PLAYERS[0], PLAYERS[2]]} />);
     expect(symbolsByOwner(seen)).toEqual({ 'p-rival': 'NVDA', 'p-viewer': 'XLE', 'cpu-3': 'GLD' });
     expect(net.urls).toHaveLength(1);
+  });
+});
+
+// Security-pack review, wiring lens W1: seat '1' of one group is a different
+// player from seat '1' of the next. When the hook moves to another group it
+// must never join the OLD group's reply to the NEW group's players — not while
+// the new fetch is in flight, not after it fails, not when the hook is disabled
+// there.
+describe('W1 — a reply joins only to the group it was fetched for', () => {
+  const B_PLAYERS = [{ odUserId: 'p-stranger' }, { odUserId: 'p-viewer' }, { odUserId: 'p-other' }];
+  const B_REPLY = { battles: { 0: book('TSLA'), 1: book('AMD'), 2: book('KO') } };
+
+  it('the new fetch in flight: nothing placed', async () => {
+    net.byGroup = { g2: 'hang' };
+    const rerender = await mount(<Probe groupId="g1" players={PLAYERS} />);
+    expect(symbolsByOwner(seen)).toEqual({ 'p-viewer': 'NVDA', 'p-rival': 'XLE', 'cpu-3': 'GLD' });
+    await rerender(<Probe groupId="g2" players={B_PLAYERS} />);
+    expect(seen).toEqual({});
+  });
+
+  it('the new group\'s own reply lands: its own seats, under its own players', async () => {
+    net.byGroup = { g2: B_REPLY };
+    const rerender = await mount(<Probe groupId="g1" players={PLAYERS} />);
+    await rerender(<Probe groupId="g2" players={B_PLAYERS} />);
+    expect(symbolsByOwner(seen)).toEqual({ 'p-stranger': 'TSLA', 'p-viewer': 'AMD', 'p-other': 'KO' });
+  });
+
+  it('the new fetch FAILS: nothing placed — never the old group\'s battles under the new players', async () => {
+    net.byGroup = { g2: 'fail' };
+    const rerender = await mount(<Probe groupId="g1" players={PLAYERS} />);
+    await rerender(<Probe groupId="g2" players={B_PLAYERS} />);
+    expect(seen).toEqual({});
+  });
+
+  it('the hook disabled on the new group: nothing placed', async () => {
+    const rerender = await mount(<Probe groupId="g1" players={PLAYERS} />);
+    await rerender(<Probe groupId="g2" players={B_PLAYERS} enabled={false} />);
+    expect(seen).toEqual({});
+    expect(net.urls).toEqual(['/api/tournament/battle-view?groupId=g1']);
+  });
+
+  it('disabled on the SAME group (the arena stops polling at the bell): the last reply still joins', async () => {
+    const rerender = await mount(<Probe groupId="g1" players={PLAYERS} />);
+    await rerender(<Probe groupId="g1" players={PLAYERS} enabled={false} />);
+    expect(symbolsByOwner(seen)).toEqual({ 'p-viewer': 'NVDA', 'p-rival': 'XLE', 'cpu-3': 'GLD' });
   });
 });
 

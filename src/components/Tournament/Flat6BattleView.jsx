@@ -108,10 +108,12 @@ function HoldingRow({ asset, tokens, reduceMotion }) {
   );
 }
 
-// The spectator's note where the agent's read would be (founder ruling R-F,
-// 15 Nov 2026: a non-owner never receives it, live or after completion).
+// The spectator's notes where the agent's read and its narration feed would
+// be (founder ruling R-F, 15 Nov 2026: a non-owner never receives either,
+// live or after completion — the projection sends `statusFeed: []`).
 // Exported for the record-rendering test.
-export const WHY_PRIVATE_NOTE = "The agent's reasoning is private to its owner.";
+export const WHY_PRIVATE_NOTE = "This agent's reasoning is not shared with other players.";
+export const FEED_PRIVATE_NOTE = "This agent's live feed is not shared with other players.";
 
 export default function Flat6BattleView({
   battle,
@@ -341,7 +343,9 @@ export default function Flat6BattleView({
         <div style={{ ...sectionTitle, display: 'flex', alignItems: 'center', gap: 6 }}>
           <Activity size={12} /> Live feed
         </div>
-        {feed.length === 0
+        {whyConcealed
+          ? <span style={{ fontSize: 11, color: tokens.textFaint }}>{FEED_PRIVATE_NOTE}</span>
+          : feed.length === 0
           ? <span style={{ fontSize: 11, color: tokens.textFaint }}>No moves yet today.</span>
           : feed.map((e, i) => (
             <div key={e.evalId || e.timestamp || i} style={{ display: 'flex', gap: 8, fontSize: 11, color: tokens.textSecondary, borderLeft: `2px solid ${tokens.borderDivider}`, paddingLeft: 8 }}>
