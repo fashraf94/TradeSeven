@@ -144,12 +144,12 @@ export const TOURNAMENT_TAB_ENABLED = true;
  * LEAGUE_NEXT_ARC_ENABLED (both also gate work a group in flight needs), and it must not be mistaken for
  * LEAGUE_BATTLEVIEW_ROUTING_ENABLED (the cockpit wall, which stays on).
  *
- * Ships false (dark). Its flip is its own PR (the flag, its pin, and the League-card rows of
- * CommandCenterHub.loadouts.jsdom.test.jsx, which hold the card's own behaviour at the flag-off state), merged only while no
- * league group is in flight.
+ * Ships TRUE (its own flip PR: the flag, its pin, its DARK_BY_DESIGN entry, and the League-card rows of
+ * CommandCenterHub.loadouts.jsdom.test.jsx, which hold the card's own behaviour at the flag-off state), merged only after the
+ * preview smoke and while no league group is in flight. To roll back, set it false: the held rows need no change.
  * Pinned by: leagueHideFlag.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
  */
-export const LEAGUE_HIDE_ENABLED = false;
+export const LEAGUE_HIDE_ENABLED = true;
 
 /**
  * League — the self-serve lobby (P10): registration · join/create · FIFO
