@@ -98,6 +98,10 @@ const BASELINE = {
     count: 1,
     note: 'display: Math.round on the gate AGE (minutes) in the MANDATE_GATE_EXPIRED log line (P5 review C21-P5-2 fix) — latency formatting, not money',
   },
+  'api/_utils/practiceField/windows.js': {
+    count: 1,
+    note: 'calendar: Practice Field T1a-2b-1 lastFireInSlotMs — Math.floor of an epoch-ms instant to the evaluation cron\'s 15-minute grid (the last fire inside a slot\'s window, for the window ledger\'s expected windows) — time arithmetic on integers, not money',
+  },
   'api/_utils/practiceField/money.js': {
     count: 11,
     note: 'Practice Field T1a-1 — the ONE home of the raw rounding the idea book does, every site read and classified. UNIT CONVERSION (3): toCents and toMicroShares apply Math.round to a value the engine rounder (roundUsd / roundShares) has just produced, recovering the integer that 2-dp / 6-dp double stands for — never a second rounding regime, it cannot move a cent; weightPpm reads a weight constant as whole millionths (not money). DIRECTIONAL FLOORS (6, the floorShares precedent): shareLimitCents (Math.round of the share constant to millionths + Math.floor), ratioLimitCents, equalSplitCents, weightedCents and floorMulDiv round a LIMIT or an ALLOCATION down to a whole cent so a permitted amount can never exceed its limit and a leg can never outspend its ledger. DIRECTIONAL CEILING (2): shareCeilCents (Math.round of the share constant + Math.ceil) rounds the cash FLOOR up, so what the treasury must keep is never understated. All comparisons made with them are exact integer comparisons, no tolerance',
