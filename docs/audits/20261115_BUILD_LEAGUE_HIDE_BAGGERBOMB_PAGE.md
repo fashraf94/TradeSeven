@@ -159,6 +159,8 @@ console.log('active league battles', (await db.collection('agentBattles')
 
 Read in this build (15 Nov 2026): 0, 0, 0, 0 and 0. If any is non-zero, do not merge: a group in flight would lose its entry points but keep its jobs, and a player could be stranded mid-week. Merge after 6 PM ET (PR 1's rule) and only after the preview smoke (§12).
 
+**Checked on PR 2's head (`91d39aa0`):** the full suite on Linux with the flag `true`: 1,509 files passed / 12 skipped, 33,956 tests passed, 0 failed, exit 0; the emulator rules suite (`npm run test:rules`): 42 files, 784 tests passed; `eslint --config eslint.gate.config.js --max-warnings 0` on the four changed files: exit 0.
+
 ## 8. Review record (BUILD_RULES §2)
 
 The diff is 33 files (≥10), so the review is mandatory. It was run as the rule states: **four independent lenses** (A the dark / flag-off guarantee; B doors, wiring and lifecycle with the flag on; C the page's data, display agreement and states; D test integrity), each on its own `git archive` snapshot, read-only on git and on the working tree; then **four refuters**, each instructed to refute every finding with evidence from the fixed code and to check that each claimed fix really closes it; an explicit `vite build` (§6); the mutation battery (§9). The lens reports and the refuter reports are in this session's record; the findings, the verdicts and the dispositions are below.
@@ -245,9 +247,9 @@ What surprised: the active poll runs on the dashboard only; closed `featureFlags
 
 ## 12. Branches, PRs and how to see it
 
-- **PR 1 (dark):** `feat(league): hide flag and the BaggerBomb page (dark)` — `claude/league-hide-baggerbomb-page`. First line of its description: *Dark — merge after 6 PM ET on green. With the flag off nothing changes.* <<PR1>>
-- **Preview branch (never merged):** `claude/league-hide-smoke` — PR 1's head plus the flag on, nothing else. <<PREVIEW>>
-- **PR 2 (the flip), draft:** `claude/league-hide-flip` — stacked on PR 1; its description carries the pre-merge check (§7). <<PR2>>
+- **PR 1 (dark):** `feat(league): hide flag and the BaggerBomb page (dark)` — `claude/league-hide-baggerbomb-page`, draft PR [#1075](https://github.com/fashraf94/TradeSeven/pull/1075). First line of its description: *Dark — merge after 6 PM ET on green. With the flag off nothing changes.*
+- **Preview branch (never merged):** `claude/league-hide-smoke` — PR 1's code head plus the flag on, nothing else (`9856e0f0`). **Preview address:** `https://trade-seven-8xw085k8g-fais-projects-bc179554.vercel.app` (Vercel deployment success). Checked with no credentials: the served main bundle references the page's chunk (the flag-on build); `POST /api/tournament/lobby-create` and `POST /api/tournament/slot-claim` answer `404 {"error":"league_hidden"}`; `GET /api/tournament/slot-schedule` still answers (401, it needs a sign-in). The page itself needs a signed-in player and was not opened in a browser by this build.
+- **PR 2 (the flip), draft:** `claude/league-hide-flip` — stacked on PR 1; draft PR [#1076](https://github.com/fashraf94/TradeSeven/pull/1076); its description carries the pre-merge check (§7).
 - Seeing it: on the preview, sign in on a phone and a desktop width. The nav slot reads "BaggerBomb" and opens the page; deploy by pressing and holding; "Open game" opens the live game; History opens the hub's sheet; the Compete tab's Loadout shows one card; `?tournamentDev=1`, `?trainingDraft=x` and `?trainingBattle=x` open nothing. A signed-in curl to `/api/tournament/lobby-create` and `/api/tournament/slot-claim` returns `404 league_hidden`; `/api/tournament/slot-schedule` still answers.
 - Out-of-tree copy of this report: `C:/Users/fashr/Documents/FantasyTrades/LeagueHide/20261115_BUILD_LEAGUE_HIDE_BAGGERBOMB_PAGE.md`.
 
