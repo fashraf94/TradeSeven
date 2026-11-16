@@ -379,26 +379,30 @@ describe('the wrapper\'s verdict on the guard\'s report', () => {
 describe('the Tests workflow wiring (.github/workflows/tests.yml)', () => {
   const text = readFileSync(path.join(ROOT, '.github', 'workflows', 'tests.yml'), 'utf8');
   const wf = yaml.load(text);
-  const job = wf.jobs.unit;
-  const names = job.steps.map((s) => s.name);
-  const guard = job.steps.find((s) => s.name === 'Golden baseline guard (tf-setup, cross-revision)');
+  const guards = wf.jobs['unit-guards'];
+  const shard = wf.jobs['unit-shard'];
+  const agg = wf.jobs.unit;
+  const guard = guards.steps.find((s) => s.name === 'Golden baseline guard (tf-setup, cross-revision)');
+  const testStep = shard.steps.find((s) => s.name === 'Run unit tests');
+  const aggStep = agg.steps.find((s) => s.name === 'Require every unit job to have succeeded');
 
-  it('keeps the triggers, the job identity, Node 20 and concurrency; adds a required base_ref to workflow_dispatch', () => {
+  it('keeps the triggers, Node 20 and concurrency; adds a required base_ref to workflow_dispatch; names the four jobs', () => {
     expect(Object.keys(wf.on).sort()).toEqual(['pull_request', 'workflow_dispatch']);
     expect(wf.on.pull_request).toEqual({ branches: ['main'] }); // no paths filter that could skip the guard
     expect(wf.on.workflow_dispatch.inputs.base_ref).toMatchObject({ required: true, type: 'string' });
     expect(text).not.toMatch(/pull_request_target/);
     expect(wf.permissions).toBeUndefined();
-    expect(job.permissions).toBeUndefined();
-    expect(Object.keys(wf.jobs)).toEqual(['unit', 'rules']);
-    expect(job.name).toBe('vitest (unit)');
+    for (const [id, job] of Object.entries(wf.jobs)) expect(job.permissions, `${id} permissions`).toBeUndefined();
+    expect(Object.keys(wf.jobs)).toEqual(['unit-guards', 'unit-shard', 'unit', 'rules']);
     expect(wf.concurrency).toEqual({ group: 'tests-${{ github.ref }}', 'cancel-in-progress': true });
-    expect(job.steps.find((s) => s.name === 'Set up Node').with['node-version']).toBe('20');
+    for (const id of ['unit-guards', 'unit-shard', 'rules']) expect(wf.jobs[id].steps.find((s) => s.name === 'Set up Node')?.with['node-version'], `${id} Node`).toBe('20'); // the aggregator runs no Node
   });
 
-  it('checks out full history and places the guard after Node setup, before the dependencies, the lint gate and the unit suite', () => {
-    expect(job.steps[0]).toMatchObject({ name: 'Checkout', uses: 'actions/checkout@v4', with: { 'fetch-depth': 0 } });
-    expect(names).toEqual(['Checkout', 'Set up Node', 'Golden baseline guard (tf-setup, cross-revision)', 'Install dependencies', 'Lint gate (crash-class rules only)', 'Run unit tests']);
+  it('unit-guards checks out full history and places the guard after Node setup, before the dependencies and the lint gate', () => {
+    expect(guards.needs).toBeUndefined();
+    expect(guards.steps[0]).toMatchObject({ name: 'Checkout', uses: 'actions/checkout@v4', with: { 'fetch-depth': 0 } });
+    expect(guards.steps.map((s) => s.name)).toEqual(['Checkout', 'Set up Node', 'Golden baseline guard (tf-setup, cross-revision)', 'Install dependencies', 'Lint gate (crash-class rules only)']);
+    expect(guards.steps.find((s) => s.name === 'Lint gate (crash-class rules only)').run).toBe('npm run lint:gate');
   });
 
   it('the guard step blocks: no continue-on-error, no condition, the plain command, and event values only through env', () => {
@@ -412,14 +416,72 @@ describe('the Tests workflow wiring (.github/workflows/tests.yml)', () => {
       TF_GUARD_PR_HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
       TF_GUARD_BASE_REF: '${{ inputs.base_ref }}',
     });
-    for (const step of job.steps) expect(step['continue-on-error'], step.name).toBeUndefined();
+    for (const [id, job] of Object.entries(wf.jobs)) {
+      expect(job['continue-on-error'], `${id} (job)`).toBeUndefined();
+      for (const step of job.steps) expect(step['continue-on-error'], `${id}: ${step.name}`).toBeUndefined();
+    }
     expect(text).not.toMatch(/secrets\./);
+  });
+
+  it('unit-shard is a matrix of shards 1..N, the test command passes --shard=${{ matrix.shard }}/N with the same N, and fail-fast is off', () => {
+    const list = shard.strategy.matrix.shard;
+    const n = list.length;
+    expect(n).toBeGreaterThan(1);
+    expect(list).toEqual(Array.from({ length: n }, (_, i) => i + 1)); // 1..N: no leg missing, none duplicated
+    expect(Object.keys(shard.strategy.matrix)).toEqual(['shard']); // no include / exclude that could drop or add a leg
+    expect(shard.strategy['fail-fast']).toBe(false);
+    expect(shard.needs).toBeUndefined();
+    expect(shard['timeout-minutes']).toBe(20);
+    expect(shard.steps.map((s) => s.name)).toEqual(['Checkout', 'Set up Node', 'Install dependencies', 'Run unit tests']);
+    expect(testStep.if).toBeUndefined();
+    expect(testStep.env).toMatchObject({ CI: 'true' });
+    const m = /^npm run test:run -- --shard=\$\{\{ matrix\.shard \}\}\/(\d+)( --maxWorkers=\d+)?$/.exec(testStep.run);
+    expect(m, `the shard test command: ${testStep.run}`).not.toBeNull();
+    expect(Number(m[1])).toBe(n); // the /N in the command is the matrix length
+  });
+
+  it('the aggregator is exactly "vitest (unit)", needs both unit jobs, always runs, and reads their results only through env', () => {
+    expect(agg.name).toBe('vitest (unit)');
+    expect(Array.isArray(agg.needs)).toBe(true);
+    expect([...agg.needs].sort()).toEqual(['unit-guards', 'unit-shard']);
+    expect(agg.if).toBe('always()');
+    expect(agg.steps).toHaveLength(1);
+    expect(aggStep.if).toBeUndefined();
+    expect(aggStep.run).not.toMatch(/\$\{\{/);
+    expect(aggStep.env).toEqual({
+      UNIT_GUARDS_RESULT: '${{ needs.unit-guards.result }}',
+      UNIT_SHARD_RESULT: '${{ needs.unit-shard.result }}',
+    });
+  });
+
+  describe('the aggregator script, executed with every pair of job results', () => {
+    const RESULTS = ['success', 'failure', 'cancelled', 'skipped'];
+    const runAggregator = (guardsResult, shardResult) => {
+      const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('UNIT_') && !k.startsWith('GITHUB_')));
+      if (guardsResult !== undefined) env.UNIT_GUARDS_RESULT = guardsResult;
+      if (shardResult !== undefined) env.UNIT_SHARD_RESULT = shardResult;
+      const r = spawnSync('bash', ['-e', '-c', aggStep.run], { env, encoding: 'utf8' }); // the Actions default shell: bash -e
+      expect(r.error, 'bash ran').toBeUndefined();
+      return r.status;
+    };
+    const pairs = RESULTS.flatMap((g) => RESULTS.map((s) => [g, s]));
+
+    it.each(pairs)('unit-guards %s + unit-shard %s -> passes only when both are "success"', (g, s) => {
+      expect(runAggregator(g, s)).toBe(g === 'success' && s === 'success' ? 0 : 1);
+    });
+
+    it('a missing or empty result fails it, so removing a job from `needs` cannot pass silently', () => {
+      expect(runAggregator('success', undefined)).toBe(1);
+      expect(runAggregator(undefined, 'success')).toBe(1);
+      expect(runAggregator('success', '')).toBe(1);
+      expect(runAggregator('', 'success')).toBe(1);
+    });
   });
 
   it('pins the rules job: no needs, Java 21 before the test step, the plain npm run test:rules step, and no continue-on-error', () => {
     const rules = wf.jobs.rules;
     expect(rules.name).toBe('firestore rules + emulator suites');
-    expect(rules.needs).toBeUndefined(); // independent of unit: it runs in parallel and cannot be skipped by a unit failure
+    expect(rules.needs).toBeUndefined(); // independent of the unit jobs: it runs in parallel and cannot be skipped by a unit failure
     expect(rules.permissions).toBeUndefined();
     const java = rules.steps.find((s) => typeof s.uses === 'string' && s.uses.startsWith('actions/setup-java@'));
     expect(java, 'the rules job sets up Java').toBeDefined();
