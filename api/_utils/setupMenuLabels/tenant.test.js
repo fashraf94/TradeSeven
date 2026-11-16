@@ -366,7 +366,8 @@ describe('isolation, the health line, the callers (rows 4.8, A1.1, A4.1)', () =>
     const files = ['api', 'src', 'scripts', 'test'].flatMap((r) => walk(r));
     const named = files.filter((f) => /\bgetOrAcquireSnapshot\b/.test(code(f)));
     const callers = named.filter((f) => !/\.test\.|(^|\/)test\/|__fixtures__/.test(f) && !f.startsWith('api/_utils/setupEvidence/'));
-    expect(callers.sort()).toEqual(['api/_utils/activationEvidence/tenant.js', 'api/_utils/setupMenuLabels/tenant.js']);
+    // The chart's evidence, PR B (docs/specs/CHART_EVIDENCE_SPEC_V1.md SW-2): the daily sweep is the third caller, by design.
+    expect(callers.sort()).toEqual(['api/_utils/activationEvidence/tenant.js', 'api/_utils/setupEvidenceSweep/sweep.js', 'api/_utils/setupMenuLabels/tenant.js']);
     expect(named.filter((f) => f.startsWith('scripts/') && !/\.test\./.test(f))).toEqual([]); // a census test's import pin names it; no script does
     expect(code('api/_utils/setupMenuLabels/reads.js')).not.toMatch(/getOrAcquireSnapshot/);
     // The row bites: a planted call in prose-free code is found.
