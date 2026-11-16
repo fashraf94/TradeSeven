@@ -225,9 +225,12 @@ describe('the allocation (SW-4): the hard stop, counted inside a transaction', (
     expect(db.read(statePath(MON)).providerRequests).toBe(5);
     h.nowMs = T_RUN2;
     h.calls.length = 0;
+    const claimsBefore = db.paths('setupEvidenceClaims/').map((p) => JSON.stringify(db.read(p)));
     const again = await h.run(db, { cap: 5 });
     expect(h.calls).toEqual([]);
     expect(again.deferred.cap).toBe(5);
+    expect(again.storeCalls).toBe(0); // at the cap the run makes no store call at all: no claim, no attempt counted
+    expect(db.paths('setupEvidenceClaims/').map((p) => JSON.stringify(db.read(p)))).toEqual(claimsBefore);
   });
 
   it('the production cap: with 398 counted, exactly two more requests are made — the 400th is the last', async () => {
