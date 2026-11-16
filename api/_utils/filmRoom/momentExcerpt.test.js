@@ -6,7 +6,7 @@
 //                        are indistinguishable (the same null, nothing logged); a malformed argument is the same null
 //                        before any read;
 //   THE ATTRIBUTION      a casual clone's battle answers for its parent through the owner's clone document — the
-//                        platform resolver's rule, pinned to resolveRecordTargetId over every clone-document shape;
+//                        platform resolver's rule and its ownership guard (the parent read), pinned to resolveAttributionAgentId;
 //   THE SOURCE (CC-4)    a card whose source changed gives null; the moment must be exactly a stored one; the day check
 //                        is the shared one (sourceDay.js), with no judgment of the excerpt's own;
 //   LABELS (CC-3, CC-2)  `excerpt` names the battle, the idea and the card by their labels, `refs` maps them; a card's
@@ -29,7 +29,7 @@ import {
 } from './__fixtures__/excerptFixtures.js';
 import { PLAYS_SUBCOLLECTION, agentRefOf, buildCardDoc } from './cardStore.js';
 import { WATCHLISTS_COLLECTION, VERSIONS_SUBCOLLECTION, versionDocId } from '../hypothesisRecords/model.js';
-import { resolveRecordTargetId } from '../casualClone.js';
+import { resolveRecordTargetId, resolveAttributionAgentId } from '../casualClone.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** The card, by the ledger's own builder; the store with it unless a test names another. */
@@ -136,14 +136,25 @@ describe('the attribution — a casual clone\'s battle, by the platform resolver
       if (!(doc && doc.ownerId === OWNER && doc.rankedAgentId === AGENT)) expect(resolveRecordTargetId(CLONE_AGENT, doc && doc.ownerId === OWNER ? doc : null), JSON.stringify(doc)).toBe(CLONE_AGENT);
     }
   });
-  it('THE RULE IS THE RESOLVER\'S: over every clone-document shape the excerpt answers exactly when resolveRecordTargetId gives a non-clone parent for the owner\'s own clone document', async () => {
-    const shapes = [undefined, null, {}, { ownerId: OWNER }, { ownerId: OWNER, rankedAgentId: AGENT }, { ownerId: OWNER, rankedAgentId: '' }, { ownerId: OWNER, rankedAgentId: 7 }, { ownerId: 'someone-else', rankedAgentId: AGENT }];
-    for (const doc of shapes) {
-      const resolved = resolveRecordTargetId(CLONE_AGENT, doc && doc.ownerId === OWNER ? doc : null);
-      const expected = resolved === AGENT;
-      const got = await momentOver(cloneStore({ [`agents/${CLONE_AGENT}`]: doc === undefined ? undefined : doc }));
-      expect(got !== null, JSON.stringify(doc)).toBe(expected);
+  it('THE RULE IS THE PLATFORM\'S: over every clone-document × parent-document shape, the excerpt answers exactly when the platform\'s async resolver (resolveAttributionAgentId, its CONFIRMED-1 guard included) names the owner\'s parent for the owner\'s own clone — the pure resolver agreeing (§2 review L1-7)', async () => {
+    const clones = [undefined, null, {}, { ownerId: OWNER }, { ownerId: OWNER, rankedAgentId: AGENT }, { ownerId: OWNER, rankedAgentId: '' }, { ownerId: OWNER, rankedAgentId: 7 }, { ownerId: 'someone-else', rankedAgentId: AGENT }];
+    const parents = [{ ownerId: OWNER, archetype: 'momentum_chaser' }, { ownerId: 'someone-else' }, undefined];
+    vi.spyOn(console, 'warn').mockImplementation(() => {});   // the platform resolver warns on each degraded shape
+    for (const doc of clones) {
+      for (const parentDoc of parents) {
+        const where = `${JSON.stringify(doc)} × ${JSON.stringify(parentDoc)}`;
+        const store = cloneStore({ [`agents/${CLONE_AGENT}`]: doc, [`agents/${AGENT}`]: parentDoc });
+        const platform = await resolveAttributionAgentId(dbOf(store).db, { agentId: CLONE_AGENT });
+        const expected = platform === AGENT && doc?.ownerId === OWNER;
+        if (expected) expect(resolveRecordTargetId(CLONE_AGENT, doc), where).toBe(AGENT);
+        expect((await momentOver(store)) !== null, where).toBe(expected);
+      }
     }
+  });
+  it('a valid clone document naming an agent ANOTHER owner holds: null — the parent read refuses it (the mutant: the pure resolver alone)', async () => {
+    expect(await momentOver(cloneStore({ [`agents/${AGENT}`]: { ownerId: 'someone-else' } }))).toBeNull();
+    expect(await cardOver(cloneStore({ [`agents/${AGENT}`]: { ownerId: 'someone-else' } }))).toBeNull();
+    expect(await momentOver(cloneStore({ [`agents/${AGENT}`]: undefined }))).toBeNull();
   });
 });
 
@@ -188,7 +199,7 @@ describe('bounded reads only — exactly the documents named, by get, never a qu
     expect(t.readLog).toEqual([CARD_PATH, TAPE_PATH, `agentBattles/${EXCERPT_BATTLE}`, IDEA_PATH, SERIES_ETN]);
     const c = dbOf(excerptStore(CLONE_DAY, { clone: true }));
     await excerptOf(c.db, MOMENT_ASK);
-    expect(c.readLog).toEqual([TAPE_PATH, `agentBattles/${EXCERPT_BATTLE}`, `agents/${CLONE_AGENT}`, IDEA_PATH, SERIES_ETN]);
+    expect(c.readLog).toEqual([TAPE_PATH, `agentBattles/${EXCERPT_BATTLE}`, `agents/${CLONE_AGENT}`, `agents/${AGENT}`, IDEA_PATH, SERIES_ETN]);
   });
   it('the paths it reads are its owners\' own (the ledger\'s plays, the agents collection, the hypothesis store\'s versions)', () => {
     expect(EXCERPT_PATHS.plays).toBe(PLAYS_SUBCOLLECTION);

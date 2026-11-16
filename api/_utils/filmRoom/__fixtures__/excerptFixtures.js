@@ -39,15 +39,18 @@ export const META_MOMENT = Object.freeze({ situationId: 'stalled', symbol: 'META
 const iso = (ms) => new Date(ms).toISOString();
 const at = (hhmmss) => Date.parse(`${SEP23}T${hhmmss}.000Z`);
 
-/** The one call record the day mints, carrying the equipped idea (a `called_shot`, as the platform writes one). */
+/**
+ * The one call record the day mints, carrying the equipped idea: a `called_shot` with origin `equipped` and a ref naming
+ * the list and its version, as callRecords/candidate.js writes one (§2 review L1-8).
+ */
 function ideaCall(battleId) {
   return {
     callId: `${battleId}:${battleId}:e12:call:0`, kind: 'called_shot', battleId, evalId: `${battleId}:e12`, evalSeq: 12,
     mintedAt: at('17:00:25'), symbol: 'MU', direction: 'entry', slot: 'support', counterpart: 'ETN',
     condition: { side: 'above', level: 127 }, horizon: { phrase: 'this_session', expiresAt: at('20:00:00'), basis: 'session_close' },
     defaultAction: 'act', said: 'SAID-TEXT-NEVER-COPIED', evidence: { tickId: `${battleId}:12`, availability: 'unresolved', priceAsOf: iso(at('17:00:12')) },
-    hypothesisRef: { watchlistId: EXCERPT_WATCHLIST, hypothesisVersion: EXCERPT_IDEA_VERSION, equippedConfigHash: 'cfg-hash-sep23' },
-    origin: 'agent_initiative', state: 'open', stateChangedAt: at('17:00:25'), stateSource: 'mint',
+    hypothesisRef: { watchlistId: EXCERPT_WATCHLIST, hypothesisVersion: EXCERPT_IDEA_VERSION },
+    origin: 'equipped', state: 'open', stateChangedAt: at('17:00:25'), stateSource: 'mint',
     playerResponse: null, directiveThreadId: null, outcome: null, refused: null,
   };
 }

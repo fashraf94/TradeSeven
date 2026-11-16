@@ -35,6 +35,14 @@ export const IDEA_STATEMENT_MAX = 280;
 /** A text's length in code points — an astral character counts once. */
 export const codePointsOf = (s) => [...String(s)].length;
 
+/**
+ * An INSTANT as the records write one — a full ISO 8601 date-time with its offset (`2026-09-23T17:45:20.000Z`) that
+ * Date.parse reads — or null. Anything looser (`9/23/2026 13:30 …`, a string holding words or an id) is no instant:
+ * an owner-writable time can never carry text into an excerpt (§2 review L1-1).
+ */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+export const instantText = (v) => (typeof v === 'string' && ISO_INSTANT.test(v) && Number.isFinite(Date.parse(v)) ? v : null);
+
 /** `v` when it is a non-empty string of at most `max` code points; null otherwise (over the bound: not carried, never cut). */
 export function boundedText(v, max) {
   return typeof v === 'string' && v.length > 0 && codePointsOf(v) <= max ? v : null;
@@ -83,7 +91,7 @@ export function ideaFrom(tape, doc, ownerId) {
   if (isObj(doc) && (doc.userId !== ownerId || doc.watchlistId !== ref.watchlistId || doc.version !== ref.hypothesisVersion)) return null;
   const cls = classOfNumber(tape?.numberClasses, ideaVersionPathOf(ref));
   const statement = isObj(doc) ? boundedText(doc.statement, IDEA_STATEMENT_MAX) : null;
-  const at = isObj(doc) && typeof doc.createdAt === 'string' && Number.isFinite(Date.parse(doc.createdAt)) ? doc.createdAt : null;
+  const at = isObj(doc) ? instantText(doc.createdAt) : null;
   return { ref, version: cls ? { value: ref.hypothesisVersion, class: cls } : null, statement, statementAt: statement ? at : null };
 }
 

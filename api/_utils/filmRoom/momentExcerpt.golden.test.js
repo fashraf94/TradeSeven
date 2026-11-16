@@ -26,6 +26,7 @@ import {
   EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION, ETN_MOMENT, META_MOMENT, EXCERPT_NOTE,
 } from './__fixtures__/excerptFixtures.js';
 import { buildCardDoc } from './cardStore.js';
+import { CARD_SLOTS } from '../../../src/data/cardSlots.js';
 import { stableStringify } from '../canonicalHash.js';
 import { WRITE_PATTERN } from '../../../scripts/census-film-room-v1-plays.mjs';
 import { stripComments, importSpecifiersOf, resolveImport } from './__fixtures__/jsSource.js';
@@ -37,8 +38,9 @@ const GOLDEN = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8'));
 const sha256 = (v) => createHash('sha256').update(stableStringify(v), 'utf8').digest('hex');
 /** The goldens' SHA-256, over their canonical JSON (canonicalHash.js stableStringify) — the build report records both. */
 const GOLDEN_SHA256 = Object.freeze({
-  moment: '55a8ced5f794847cf40bbc8595cf5420790be03d63ff9080b2726bf8e23a84d6',
-  card: '7965ded9eed35c13bf229c957a37aefb76d4452171ba6382ad45a3b7bd6712a8',
+  // §2 review L1-5: `afterExit.closeAt` renamed `barStart` (the bar's own time is its bucket's start) — the one change
+  moment: '51a50dd4e947daf128e0b847e0445c872788e0f41c2c7c46135f326f960b302b',
+  card: 'dbd74ab53a684cee25e4883823cf26a5ae7f76d5c048954391f163ea1aa65f6f',
 });
 
 /** The card, by the ledger's own builder; the store with it unless a test names another. */
@@ -59,6 +61,10 @@ const cardOver = async (store, ask = CARD_ASK) => excerptOfCard(dbOf(store).db, 
 const idxBy = (list, pred) => list.findIndex(pred);
 const RAT15 = idxBy(DAY.tape.rationale, (r) => r.tickSeq === 15);
 const DIR15 = idxBy(DAY.tape.directives, (d) => d.heard?.tickSeq === 15);
+/** The LIVE excerpts — the rows that judge the excerpt's shape run on what the code answers now, not only on the committed JSON (§2 review L1-6). */
+const LIVE = { moment: await momentOver(excerptStore(DAY)), card: await cardOver(excerptStore(DAY)) };
+/** A strict instant, as the excerpt carries one (§2 review L1-1). */
+const STRICT_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 // ── the goldens ─────────────────────────────────────────────────────────────
 
@@ -98,7 +104,7 @@ describe('C-EXCERPT — the goldens, through the real writer', () => {
     expect(e.exit).toEqual({ mechanism: { value: sale.mechanism, class: 'recorded' }, exitReason: { value: sale.exitReason, class: 'recorded' }, sold: { value: 'ETN', class: 'recorded' }, bought: { value: sale.symbolIn, class: 'recorded' }, exitPrice: { value: sale.exitPrice, class: 'recorded' } });
     const etn = DAY.series.find((s) => s.symbol === 'ETN');
     const after = etn.bars.filter((b) => Date.parse(b.t) > Date.parse(sale.at));
-    expect(e.afterExit).toEqual({ close: { value: after.at(-1).c, class: 'market' }, closeAt: { value: after.at(-1).t, class: 'market' }, barsAfter: { value: after.length, class: 'derived' } });
+    expect(e.afterExit).toEqual({ close: { value: after.at(-1).c, class: 'market' }, barStart: { value: after.at(-1).t, class: 'market' }, barsAfter: { value: after.length, class: 'derived' } });
     expect(e.count).toEqual({ value: t.tags.items.find((i) => i.symbol === 'ETN' && i.tickSeq === 19).count, class: 'derived' });
     expect(e.idea.version).toEqual({ value: EXCERPT_IDEA_VERSION, class: 'recorded' });
     expect(e.recurrences).toBeUndefined();
@@ -230,6 +236,42 @@ describe('a field the tape does not hold is absent — never a guess, never a ne
     expect(got.excerpt.exit.exitPrice).toBeUndefined();
     expect(got.excerpt.exit.sold).toBeDefined();
   });
+  it('EVERY CLASS IS THE DOCUMENT\'S OWN (§2 review L1-6): no declaration for the idea\'s version, the items\' version, or a series bar\'s close — that number is not carried', async () => {
+    const noVersion = await momentOver(withTape((t) => { delete t.numberClasses['calls[].hypothesisRef.hypothesisVersion']; }));
+    expect(noVersion.excerpt.idea).toEqual({ label: 'i1', statement: LIVE.moment.excerpt.idea.statement });
+    const noItemVersion = await momentOver(withTape((t) => { delete t.numberClasses['tags.items[].version']; }));
+    expect(noItemVersion.excerpt.situationVersion).toBeUndefined();
+    const etn = clone(DAY.series.find((s) => s.symbol === 'ETN'));
+    delete etn.numberClasses['bars[].c'];
+    const noBarClass = await momentOver(excerptStore(DAY, { over: { [SERIES_ETN]: etn } }));
+    expect(noBarClass.excerpt.afterExit).toBeUndefined();
+  });
+  it('the directive heard just BEFORE the moment\'s first check is not taken (the lower bound — §2 review L1-6)', async () => {
+    await absentWith((t) => { t.directives[DIR15].heard = { ...t.directives[DIR15].heard, tickSeq: 14 }; }, 'directive');
+  });
+  it('AN OWNER-WRITABLE TIME CARRIES NO TEXT (§2 review L1-1): a meeting created at a loose date string holding an id is no meeting here; a rationale\'s loose time is null — no id reaches `excerpt`', async () => {
+    const PLANTED = '9/23/2026 13:30 (Ab3dEf7hIj9kLm1nOp5q)';
+    expect(Number.isFinite(Date.parse(PLANTED))).toBe(true);   // Date.parse alone would have read it
+    const meeting = await momentOver(withTape((t) => { t.meetings[0].createdAt = PLANTED; }));
+    expect(meeting.excerpt.meeting).toBeUndefined();
+    expect(idsIn(meeting.excerpt)).toEqual([]);
+    const rationale = await momentOver(withTape((t) => { t.rationale[RAT15].at = PLANTED; }));
+    expect(rationale.excerpt.rationale.rationale.at).toBeNull();
+    expect(idsIn(rationale.excerpt)).toEqual([]);
+  });
+  it('AN EXPIRED MEETING ENDED AT ITS DEADLINE, not when the check filed it (§2 review L1-3): a deadline before the moment\'s last check is no meeting; one after it is', async () => {
+    const expiredEarly = await momentOver(withTape((t) => { Object.assign(t.meetings[0], { status: 'expired', expiresAt: '2026-09-23T18:00:00.000Z', resolvedAt: '2026-09-23T19:00:00.000Z' }); }));
+    expect(expiredEarly.excerpt.meeting).toBeUndefined();
+    const expiredLate = await momentOver(withTape((t) => { Object.assign(t.meetings[0], { status: 'expired', expiresAt: '2026-09-23T18:50:00.000Z', resolvedAt: '2026-09-23T19:00:00.000Z' }); }));
+    expect(expiredLate.excerpt.meeting.outcome).toEqual({ value: 'expired', class: 'recorded' });
+  });
+  it('the writer\'s `unrecorded` mechanism is its sentinel for a missing exit reason — absent here, as the reason is (§2 review L1-4)', async () => {
+    const got = await momentOver(withTape((t) => { const a = t.actions.find((x) => x.symbolOut === 'ETN'); a.exitReason = null; a.mechanism = 'unrecorded'; }));
+    expect(Object.keys(got.excerpt.exit).sort()).toEqual(['bought', 'exitPrice', 'sold']);
+  });
+  it('the card note\'s bound IS S10 (the card\'s own note limit), pinned (§2 review L1-9)', () => {
+    expect(EXCERPT_BOUNDS.note).toBe(CARD_SLOTS.S10.noteMaxChars);
+  });
   it('a symbol the directory lacks has no sector (the mutant: a sector guessed)', async () => {
     const tape = clone(DAY.tape);
     for (const i of tape.tags.items) if (i.symbol === 'META') i.symbol = 'ZZQX';
@@ -266,9 +308,8 @@ const idsIn = (excerpt) => {
 };
 
 describe('CC-3 — labels, never ids', () => {
-  it('neither golden\'s `excerpt` holds an id-shaped value; `refs` maps each label present to its real id', () => {
-    expect(idsIn(GOLDEN.moment.excerpt)).toEqual([]);
-    expect(idsIn(GOLDEN.card.excerpt)).toEqual([]);
+  it('no excerpt — the goldens and the live answers — holds an id-shaped value; `refs` maps each label present to its real id', () => {
+    for (const e of [GOLDEN.moment.excerpt, GOLDEN.card.excerpt, LIVE.moment.excerpt, LIVE.card.excerpt]) expect(idsIn(e)).toEqual([]);
     expect(GOLDEN.moment.excerpt.battle).toBe(EXCERPT_LABELS.battle);
     expect(GOLDEN.card.excerpt.idea.label).toBe(EXCERPT_LABELS.idea);
     expect(GOLDEN.card.excerpt.card.label).toBe(EXCERPT_LABELS.card);
@@ -318,13 +359,14 @@ const quotesIn = (v, p = '', out = {}) => {
 };
 
 describe('CC-2 — every quotation one source, one speaker, with its time', () => {
-  it('the card golden\'s quotations are exactly the table\'s, each by its speaker, each shaped { text, by, at, class }', () => {
-    const q = quotesIn(GOLDEN.card.excerpt);
+  it('the card excerpt\'s quotations (live, and the golden alike) are exactly the table\'s, each by its speaker, shaped { text, by, at, class }, its time a strict instant or null', () => {
+    expect(quotesIn(LIVE.card.excerpt)).toEqual(quotesIn(GOLDEN.card.excerpt));
+    const q = quotesIn(LIVE.card.excerpt);
     expect(Object.fromEntries(Object.entries(q).map(([k, v]) => [k, v.by]))).toEqual(SPEAKER_TABLE);
     for (const [k, v] of Object.entries(q)) {
       expect(Object.keys(v).sort(), k).toEqual(['at', 'by', 'class', 'text']);
       expect(QUOTE_SPEAKERS, k).toContain(v.by);
-      expect(v.at === null || Number.isFinite(Date.parse(v.at)), k).toBe(true);
+      expect(v.at === null || STRICT_INSTANT.test(v.at), k).toBe(true);
     }
     expect(QUOTE_SPEAKERS).toEqual(['agent', 'player', 'platform']);
   });
@@ -340,13 +382,13 @@ describe('CC-2 — every quotation one source, one speaker, with its time', () =
       'card.note': EXCERPT_NOTE,
       inputQuote: EXCERPT_NOTE,
     };
-    const q = quotesIn(GOLDEN.card.excerpt);
+    const q = quotesIn(LIVE.card.excerpt);
     for (const [k, text] of Object.entries(sources)) expect(q[k].text, k).toBe(text);
     const all = Object.values(sources);
     for (const [k, v] of Object.entries(q)) for (const other of all) if (other !== v.text) expect(v.text.includes(other), `${k} holds another field's words`).toBe(false);
   });
   it('each quotation\'s time is the record\'s own for the words', () => {
-    const q = quotesIn(GOLDEN.card.excerpt);
+    const q = quotesIn(LIVE.card.excerpt);
     expect(q['rationale.rationale'].at).toBe(DAY.tape.rationale[RAT15].at);
     expect(q['directive.playerText'].at).toBe(DAY.tape.directives[DIR15].filedAt);
     expect(q['meeting.diagnosis'].at).toBe(DAY.tape.meetings[0].createdAt);

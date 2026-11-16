@@ -38,8 +38,9 @@
 // tape days, a read this module may not make (build report, rulings).
 //
 // BOUNDED READS ONLY, plain document gets (never a transaction, a query or a collection scan): the tape day; the battle;
-// the owner's clone document when the battle is a casual clone's; the idea's one hypothesis version; the sold symbol's
-// one series document; and for a card, its one `plays` entry. READ-ONLY BY CONSTRUCTION: no write call of any kind in
+// when the battle is a casual clone's, the owner's clone document and the parent agent it names (the platform
+// resolver's ownership guard); the idea's one hypothesis version; the sold symbol's one series document; and for a
+// card, its one `plays` entry. Every instant carried is a strict ISO 8601 date-time (filmRoomSubject.js instantText). READ-ONLY BY CONSTRUCTION: no write call of any kind in
 // this module or anything it imports (momentExcerpt.test.js's write gate, the C1 census script's pattern).
 //
 // MOMENT_EXCERPT_VERSION = 1 describes today's BaggerBomb tape (CC-6); the trader game's launch set moves it to 2.
@@ -51,7 +52,7 @@ import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 import { SITUATION_QUESTIONS } from '../../../src/data/situationQuestions.js';
 import { routeOf } from '../../../src/data/cardStages.js';
 import { isEtDate } from '../../../src/utils/tapeSchedule.js';
-import { sectorOf, boundedText, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom } from '../../../src/utils/filmRoomSubject.js';
+import { sectorOf, boundedText, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom, instantText } from '../../../src/utils/filmRoomSubject.js';
 
 /** CC-6: the excerpt's shape version — today's BaggerBomb tape. */
 export const MOMENT_EXCERPT_VERSION = 1;
@@ -89,7 +90,8 @@ const ID = /^[A-Za-z0-9_-]{1,200}$/;
 const idOk = (v) => typeof v === 'string' && ID.test(v) && !/^__.*__$/.test(v);
 const TICKER = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
 const msOf = (v) => { if (typeof v !== 'string') return null; const ms = Date.parse(v); return Number.isFinite(ms) ? ms : null; };
-const instantOrNull = (v) => (msOf(v) !== null ? v : null);
+/** An instant carried into `excerpt`: a full ISO 8601 date-time only (the shared rule) — never a looser string (§2 review L1-1). */
+const instantOrNull = instantText;
 const seqOk = (v) => v === null || (Number.isInteger(v) && v >= 0);
 
 /** A plain document get — the only read this module makes (never a transaction). */
@@ -136,7 +138,11 @@ async function ownedDayOf(db, { uid, attributionAgentId, battleId, etDate }) {
   if (isCasualCloneId(target)) {
     const clone = await readDoc(db.collection(EXCERPT_PATHS.agents).doc(target));
     const parent = isObj(clone) && clone.ownerId === uid ? str(clone.rankedAgentId) : null;
-    if (!parent || isCasualCloneId(parent)) return null;
+    if (!parent || isCasualCloneId(parent) || !idOk(parent)) return null;
+    // the platform's async resolver's guard (casualClone.js resolveAttributionAgentId, review CONFIRMED-1): the parent
+    // must be the clone owner's own agent — a clone naming another owner's agent attributes to no one here (§2 review L1-7)
+    const parentDoc = await readDoc(db.collection(EXCERPT_PATHS.agents).doc(parent));
+    if (!isObj(parentDoc) || parentDoc.ownerId !== uid) return null;
     target = parent;
   }
   return target === attributionAgentId ? { tape } : null;
@@ -191,15 +197,27 @@ function directiveOf(tape, m) {
   return { ...(playerText ? { playerText: quote(playerText, 'player', at) } : {}), ...(canonicalText ? { canonicalText: quote(canonicalText, 'platform', at) } : {}) };
 }
 
-/** The gameplan meeting whose life holds the moment — created at or before its first check, resolved (or expired) at or after its last; the earliest. */
+/**
+ * When a meeting's life ended: its `resolvedAt` — but an EXPIRED meeting ended at its deadline, which may be earlier
+ * than the check that filed it (`resolvedAt` is then the filing's instant; §2 review L1-3). Null when neither is held.
+ */
+const meetingEndOf = (r) => {
+  const resolved = msOf(instantText(r.resolvedAt));
+  const expires = msOf(instantText(r.expiresAt));
+  if (r.status === 'expired') { const ends = [resolved, expires].filter((v) => v !== null); return ends.length ? Math.min(...ends) : null; }
+  return resolved ?? expires;
+};
+
+/** The gameplan meeting whose life holds the moment — created at or before its first check, ended at or after its last; the earliest. */
 function meetingOf(tape, m) {
   const fromMs = msOf(m.from);
   const toMs = msOf(m.to);
   if (fromMs === null || toMs === null) return null;
   const rows = (Array.isArray(tape.meetings) ? tape.meetings : []).filter((r) => {
     if (!isObj(r)) return false;
-    const start = msOf(r.createdAt);
-    const end = msOf(r.resolvedAt) ?? msOf(r.expiresAt);
+    // the meeting history is owner-writable: its times count only as strict instants (§2 review L1-1)
+    const start = msOf(instantText(r.createdAt));
+    const end = meetingEndOf(r);
     return start !== null && end !== null && start <= fromMs && end >= toMs;
   });
   if (!rows.length) return null;
@@ -238,7 +256,9 @@ function exitRowOf(tape, m) {
 function exitOf(tape, hit) {
   const { row, i } = hit;
   const out = {};
-  if (str(row.mechanism)) out.mechanism = recorded(row.mechanism);
+  // the writer's `unrecorded` is its sentinel for a missing exit reason (tapeAssemble.js), not a recorded mechanism:
+  // a missing part is absent (§2 review L1-4)
+  if (str(row.mechanism) && row.mechanism !== 'unrecorded') out.mechanism = recorded(row.mechanism);
   if (str(row.exitReason)) out.exitReason = recorded(row.exitReason);
   if (str(row.symbolOut)) out.sold = recorded(row.symbolOut);
   if (str(row.symbolIn)) out.bought = recorded(row.symbolIn);
@@ -249,8 +269,9 @@ function exitOf(tape, hit) {
 
 /**
  * After the exit: the sold symbol's own series document for the day (read once, only the caller's), its bars that START
- * after the exit's instant — the last one's close and time, with the series document's own class for a bar (its
- * `numberClasses`), and how many there are (derived). Absent when the series holds none.
+ * after the exit's instant — the last one's close, and that bar's own recorded time, its START (`bars[].t`, the
+ * beginning of its 10-minute bucket: named `barStart`, never the close's instant — §2 review L1-5), each with the
+ * series document's own class for a bar (its `numberClasses`), and how many there are (derived). Absent when none.
  */
 async function afterExitOf(db, uid, battleId, etDate, row) {
   const symbol = typeof row.symbolOut === 'string' && TICKER.test(row.symbolOut) ? row.symbolOut : null;
@@ -259,12 +280,12 @@ async function afterExitOf(db, uid, battleId, etDate, row) {
   const series = await readDoc(tapeRef(db, battleId, etDate).collection(SERIES_SUBCOLLECTION).doc(symbol));
   if (!isObj(series) || series.ownerId !== uid || series.symbol !== symbol || !Array.isArray(series.bars)) return null;
   const after = [];
-  series.bars.forEach((b, k) => { if (isObj(b) && msOf(b.t) !== null && msOf(b.t) > exitMs && typeof b.c === 'number' && Number.isFinite(b.c)) after.push({ b, k }); });
+  series.bars.forEach((b, k) => { if (isObj(b) && instantText(b.t) !== null && msOf(b.t) > exitMs && typeof b.c === 'number' && Number.isFinite(b.c)) after.push({ b, k }); });
   if (!after.length) return null;
   const last = after.reduce((x, y) => (msOf(y.b.t) > msOf(x.b.t) ? y : x));
   const close = classed(last.b.c, series.numberClasses, ['bars', last.k, 'c']);
   if (!close) return null;
-  return { close, closeAt: { value: last.b.t, class: close.class }, barsAfter: { value: after.length, class: 'derived' } };
+  return { close, barStart: { value: last.b.t, class: close.class }, barsAfter: { value: after.length, class: 'derived' } };
 }
 
 /**
