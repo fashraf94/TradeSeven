@@ -75,6 +75,11 @@ describe('SW-2 / SW-4 — one run', () => {
     expect(C.SWEEP_CONCURRENCY).toBe(4);
     expect(C.SWEEP_DAILY_PROVIDER_CAP).toBe(400);
     expect(C.UNPUBLISHED_STREAK_STOP).toBe(8);
+    expect(C.PROVIDER_FAILURE_STREAK_STOP).toBe(8);
+    expect(C.TRANSPORT_FAILURE_REASONS).toEqual(['fetch_failed', 'non_array_payload', 'malformed_payload']);
+    for (const r of C.TRANSPORT_FAILURE_REASONS) expect(C.RETRYABLE_REASONS).toContain(r);
+    expect(C.SWEEP_ADMISSION_RESERVE_MS).toBe(12_000);
+    expect(C.DEFERRED_REASONS).toEqual(['deadline', 'cap', 'unpublished', 'provider_failing', 'state_unreadable', 'programming_error', 'calendar_missing', 'non_session']);
     expect(C.SWEEP_ADMISSION_RESERVE_MS).toBeGreaterThan(C.STORE_ACQUIRE_TIMEOUT_MS);
     expect(C.SWEEP_HOST).toBe('setup-evidence-sweep');
   });

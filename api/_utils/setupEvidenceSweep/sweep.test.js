@@ -152,7 +152,7 @@ describe('a full run on fixtures (SW-2)', () => {
     expect(third).toMatchObject({ session: MON, names: 228, storeCalls: 0, providerRequests: 0, final: { measured: 228, refused: 0 } });
     expect(db.read(statePath(MON))).toMatchObject({ providerRequests: 228, runs: 3 });
     expect(db.paths('setupEvidence/')).toHaveLength(228);
-  });
+  }, 30_000); // three runs over 228 names: ~2.6 s here, ~5 s on a loaded host (review lens 2)
 });
 
 describe('dispositions', () => {
@@ -463,5 +463,66 @@ describe('review lens 1 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the 
     try { await h.run(db); } catch (err) { caught = err; }
     expect(caught?.message).toBe('a bug in the record');
     expect(h.calls).toHaveLength(10);
+  });
+});
+
+describe('review lens 2 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the provider-failure brake, the last place under the cap, the reserve', () => {
+  it('L2-1: a provider outage stops the run after eight failed requests in a row; the session keeps its allowance, and the next run measures every name', async () => {
+    const db = makeSweepDb();
+    const names = [...ALL_TICKERS].sort().slice(0, 40);
+    let down = true;
+    const h = harness({ at: T_RUN1 });
+    const healthy = h.fetchPayload;
+    h.fetchPayload = async (symbol, opts) => { if (down) { h.calls.push({ symbol, opts, failed: true }); throw new Error('EODHD daily responded with 503'); } return healthy(symbol, opts); };
+    const first = await h.run(db, { symbols: names });
+    expect(h.calls.length).toBeGreaterThanOrEqual(C.PROVIDER_FAILURE_STREAK_STOP);
+    expect(h.calls.length).toBeLessThanOrEqual(C.PROVIDER_FAILURE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
+    expect(first.deferred.provider_failing).toBe(40 - h.calls.length);
+    expect(first.retryable).toEqual({ fetch_failed: h.calls.length });
+    down = false;
+    h.nowMs = T_RUN2;
+    const second = await h.run(db, { symbols: names });
+    expect(second.final.measured).toBe(40);
+    expect(db.read(statePath(MON)).providerRequests).toBeLessThanOrEqual(40 + C.PROVIDER_FAILURE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
+  });
+  it('L2-1: a missing provider key (it fails before the network) stops the run the same way', async () => {
+    vi.stubEnv('EODHD_API_KEY', '');
+    const db = makeSweepDb();
+    const names = [...ALL_TICKERS].sort().slice(0, 40);
+    const h = harness({ at: T_RUN1 });
+    const r = await runSetupEvidenceSweep({ db, handlerStartMs: T_RUN1, now: h.now, symbols: names, log: h.log });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(r.providerRequests).toBeLessThanOrEqual(C.PROVIDER_FAILURE_STREAK_STOP + C.SWEEP_CONCURRENCY - 1);
+    expect(r.deferred.provider_failing).toBe(40 - r.providerRequests);
+  });
+  it('L2-1: failures broken up by usable answers never trip it', async () => {
+    const db = makeSweepDb();
+    const names = [...ALL_TICKERS].sort().slice(0, 40);
+    const h = harness({ at: T_RUN1 });
+    const healthy = h.fetchPayload;
+    h.fetchPayload = async (symbol, opts) => { if (names.indexOf(symbol) % 4 !== 3) { h.calls.push({ symbol, opts }); await new Promise((r) => setTimeout(r, 0)); throw new Error('EODHD daily request failed'); } return healthy(symbol, opts); }; // a failed request takes as long as a good one
+    const r = await h.run(db, { symbols: names });
+    expect(h.calls).toHaveLength(40);
+    expect(r.deferred).toEqual({});
+  });
+  it('L2-6: the request that takes the last place under the cap closes admission at once: no store call is refused at the counter', async () => {
+    const db = makeSweepDb();
+    db.write(statePath(MON), { schemaVersion: 1, session: MON, providerRequests: 396, runs: 1, firstRunAt: null, lastRunAt: null, completedAt: null, runMs: 0, latest: null, updatedAt: null });
+    const h = harness({ at: T_RUN1 });
+    const r = await h.run(db, { symbols: [...ALL_TICKERS].sort().slice(0, 12) });
+    expect(h.calls).toHaveLength(4);
+    expect(r.storeCalls).toBe(4); // no fifth claim taken only to be refused
+    expect(r.deferred.cap).toBe(8);
+    expect(db.read(statePath(MON)).providerRequests).toBe(400);
+  });
+  it('L2-8: with less than the reserve of one acquisition before the deadline, a run reads but starts no store call', async () => {
+    const db = makeSweepDb();
+    const h = harness({ at: T_RUN1 });
+    const startedLongAgo = T_RUN1 - (C.SWEEP_ADMISSION_WINDOW_MS - C.SWEEP_ADMISSION_RESERVE_MS + 1_000); // 11 s before the deadline
+    const r = await runSetupEvidenceSweep({ db, handlerStartMs: startedLongAgo, now: h.now, fetchPayload: h.fetchPayload, symbols: NAMES, log: h.log });
+    expect(r.names).toBe(10);
+    expect(r.storeCalls).toBe(0);
+    expect(r.deferred.deadline).toBe(10);
+    expect(h.calls).toEqual([]);
   });
 });

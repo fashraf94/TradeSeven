@@ -18,7 +18,9 @@
 //   6  Admission closes on: the deadline (less than one acquisition's reserve left before
 //      handlerStart + 240 s), the cap, the unpublished-session brake (eight `missing_bar`
 //      retryables in a row, each from a request this run made whose payload lacked the session's own
-//      row; any final, read or acquired, breaks the streak), or a programming error.
+//      row; any final, read or acquired, breaks the streak), the provider-failure brake (eight transport
+//      failures in a row from this run's own requests), or a programming error. A request that takes the
+//      cap's last place closes admission at once.
 //   7  End of run: one transaction records the run's tallies on the state.
 //   8  Counts only, in one health line per run past the gate. A PROGRAMMING ERROR (the store's
 //      SetupEvidenceProgrammingError, or any error without a gRPC status code — a TypeError, a plain
@@ -34,7 +36,7 @@ import { describeRuleSet } from '../setupEvaluator/thresholds.js';
 import { fetchDailyPayload } from '../eodhdDailyWindow.js';
 import { ALL_TICKERS } from '../rankingConfig.js';
 import {
-  DEFERRED_REASONS, HEALTH_LINE_PREFIX, RETRYABLE_REASONS, SWEEP_ADMISSION_RESERVE_MS, SWEEP_ADMISSION_WINDOW_MS, SWEEP_CONCURRENCY, SWEEP_DAILY_PROVIDER_CAP,
+  DEFERRED_REASONS, HEALTH_LINE_PREFIX, PROVIDER_FAILURE_STREAK_STOP, RETRYABLE_REASONS, TRANSPORT_FAILURE_REASONS, SWEEP_ADMISSION_RESERVE_MS, SWEEP_ADMISSION_WINDOW_MS, SWEEP_CONCURRENCY, SWEEP_DAILY_PROVIDER_CAP,
   SWEEP_HOST, UNPUBLISHED_STREAK_STOP,
 } from './constants.js';
 import { sweepFlagOn } from './gate.js';
@@ -172,6 +174,8 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
   let stateClosed = false;
   let unpublished = false;
   let streak = 0;
+  let providerFailing = false;
+  let failStreak = 0;
   let stopped = null; // 'deadline' | 'programming_error': nothing more is read
   let programmingError = null;
 
@@ -180,6 +184,7 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
     if (stateClosed) return 'state_unreadable';
     if (capClosed) return 'cap';
     if (unpublished) return 'unpublished';
+    if (providerFailing) return 'provider_failing';
     if (deadline - clock() < SWEEP_ADMISSION_RESERVE_MS) return 'deadline';
     return null;
   };
@@ -230,6 +235,7 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
       }
       counts.providerRequestsTotal = r.count;
       counts.providerRequests += 1;
+      if (r.count >= cap) capClosed = true; // this request took the cap's last place: admit no one else (review L2-6)
       fetched = true;
       const payload = await provider(...args);
       sessionRowSeen = Array.isArray(payload) && payload.some((row) => row?.date === session);
@@ -248,7 +254,7 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
     const status = out?.status;
     if (status === 'final') {
       countFinal(out.snapshot);
-      if (fetched) counts.acquired += 1;
+      if (fetched) { counts.acquired += 1; failStreak = 0; }
       streak = 0;
     } else if (status === 'pending') {
       counts.pending += 1;
@@ -256,6 +262,12 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
       if (refused === 'cap' || refused === 'state_unreadable') { bump(counts.deferred, refused === 'cap' ? 'cap' : 'state_unreadable'); return; }
       if (refused === 'reserve_failed') return; // counted as a failure; no request was made
       bump(counts.retryable, RETRYABLE_REASONS.includes(out.reason) ? out.reason : 'other');
+      if (fetched && TRANSPORT_FAILURE_REASONS.includes(out.reason)) {
+        failStreak += 1;
+        if (failStreak >= PROVIDER_FAILURE_STREAK_STOP) providerFailing = true;
+      } else if (fetched) {
+        failStreak = 0;
+      }
       // Only a session whose own bar is not in the payload is unpublished: a gap INSIDE the window is also
       // `missing_bar` (confirm class), and must not stop the run (review L1-1).
       if (out.reason === 'missing_bar' && fetched && !sessionRowSeen) {
