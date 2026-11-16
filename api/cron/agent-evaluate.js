@@ -1319,6 +1319,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // copy, recorded with the shared fetch's own instant. Flag off: the line
     // below is today's fetch, exactly.
     const ownMarketSymbols = EVAL_MARKET_DATA_CUTS_ENABLED ? new Set([...portfolioSymbols, ...benchSymbols, ...hotBenchSymbols, ...cpuSymbols]) : null;
+    // The symbols the fan-out gave the run's shared copy. A symbol that becomes
+    // a candidate later in this check (the hot-bench rebuild, then a news
+    // catalyst) is the battle's own from then on: those two sites fetch it, as
+    // they fetch any candidate the fan-out did not price, so a swap into it is
+    // never priced from the run-start quote. (A symbol the rebuild lists is no
+    // longer a catalyst candidate, so neither site fetches it twice.) Flag off:
+    // null, and both sites read `!prices[t]` exactly as today.
+    const sharedQuoteSymbols = EVAL_MARKET_DATA_CUTS_ENABLED ? new Set() : null;
     await Promise.all(
       allSymbols.map(async (symbol) => {
         try {
@@ -1326,6 +1334,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           const data = shared ? shared.data : EVAL_MARKET_DATA_CUTS_ENABLED ? await fetchEvalSymbolData(db, symbol) : await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
           if (data?.price) {
             prices[symbol] = data.price;
+            if (shared) sharedQuoteSymbols.add(symbol);
             // Calls (§3.3): the DETACHED fetched quote, before any replacement.
             callsStep(callsCtx, () => recordFetchedQuote(callsCtx, symbol, data.price, shared ? shared.fetchedAtMs : Date.now()));
           }
@@ -1803,7 +1812,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         scoreUpdate['cronState.lastHotBenchComputedAt'] = rankingsComputedMs;
 
         // Fetch prices for any new hotBench tickers not already fetched
-        const newTickersNeedingPrices = newHotBench.filter(t => !prices[t]);
+        const newTickersNeedingPrices = newHotBench.filter(t => !prices[t] || sharedQuoteSymbols?.has(t));
         if (newTickersNeedingPrices.length > 0) {
           await Promise.allSettled(newTickersNeedingPrices.map(async (symbol) => {
             try {
@@ -2992,7 +3001,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // Add to bench for this eval cycle
           battle.portfolio.bench.stocks.push(hotBenchAssetMap[ticker]);
           // Fetch price if not already fetched
-          if (!prices[ticker]) {
+          if (!prices[ticker] || sharedQuoteSymbols?.has(ticker)) {
             try {
               const data = await getStockAnalysisData(ticker, { forceRefresh: true, fields: ['daily', 'price'] });
               if (data?.price) {

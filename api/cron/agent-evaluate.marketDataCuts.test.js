@@ -88,17 +88,17 @@ function installMarketData({ priceless = [] } = {}) {
   });
 }
 
-async function check({ cuts, battle = makeTickBattle(), priceless = [] }) {
+async function check({ cuts, battle = makeTickBattle(), priceless = [], rankingsDoc = makeRankingsDoc(), stories = null }) {
   flags.cuts = cuts;
   resetSessionDailyMemo();
   installMarketData({ priceless });
   mocks.getStockAnalysisData.mockClear();
   mocks.create.mockClear();
-  const db = makeTickDb({ battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() });
+  const db = makeTickDb({ battle, rankingsDoc, techDocs: makeTechDocs() });
   // Every collection the check opens, so a row can say what it never touched (review DK-2).
   const collections = [];
   const baseCollection = db.collection.bind(db);
-  db.collection = (name) => { collections.push(name); return baseCollection(name); };
+  db.collection = (name) => { collections.push(name); return name === 'fantasyTimesStories' && stories ? storyQuery(stories) : baseCollection(name); };
   const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 };
   if (cuts) await prepareRunMarketShare(db, summary);
   const shareCalls = mocks.getStockAnalysisData.mock.calls.map((c) => c[0]);
@@ -112,6 +112,18 @@ async function check({ cuts, battle = makeTickBattle(), priceless = [] }) {
     collections,
     tickCalls: mocks.getStockAnalysisData.mock.calls.map(([s, o]) => [s, o]),
   };
+}
+
+/** fantasyTimesStories answered with `stories` (published ten minutes ago) for every ticker query. */
+function storyQuery(stories) {
+  const q = {
+    where: () => q, orderBy: () => q, limit: () => q,
+    async get() {
+      const docs = stories.map(({ id, ...data }) => ({ id, data: () => ({ type: 'news', publishedAt: new Date(Date.now() - 600_000), ...deepClone(data) }) }));
+      return { docs, empty: docs.length === 0, size: docs.length };
+    },
+  };
+  return { where: () => q, orderBy: () => q, limit: () => q, doc: () => { throw new Error('storyQuery: doc() not modelled'); }, get: q.get };
 }
 
 beforeEach(() => {
@@ -224,5 +236,41 @@ describe('flag ON — same effects as a per-battle fetch', () => {
     const dailyCalls = mocks.getStockAnalysisData.mock.calls.filter(([, o]) => (o?.fields || []).includes('daily'));
     expect(dailyCalls).toEqual([]);
     expect(mocks.getStockAnalysisData.mock.calls.length).toBeGreaterThan(5); // the quotes, every check
+  });
+});
+
+// Review follow-up (the 3b trace): a macro the battle did not own at the fan-out can become a
+// candidate later in the same check — the hot-bench rebuild or a news catalyst puts it on the
+// bench. Its `prices` entry is then the run's copy, and both sites fetch only symbols without a
+// price; with the cuts on they also fetch a symbol holding the run's copy, so a swap into it is
+// priced from the battle's own quote, as today. Flag off, the sites read `!prices[t]` as before.
+describe('flag ON — a macro that becomes a candidate later in the check is the battle\'s own', () => {
+  const SPY_RANK = { symbol: 'SPY', name: 'SPY', baseATR: 1.2, atrPercentile: 0.2, baggerBombFit: 50, sectorName: 'ETF', bBandwidthPercentile: 40, nr7Flag: false, dailyRange: 1 };
+  const rankingsWithSpy = () => { const doc = makeRankingsDoc(); doc.stocks.push({ ...SPY_RANK }); return doc; };
+
+  it('a news catalyst puts SPY on the bench: the check fetches SPY itself, once; writes and request identical', async () => {
+    const stories = [{ id: 'story-1', tickers: ['NVDA', 'SPY'], headline: 'Index move' }];
+    const off = await check({ cuts: false, rankingsDoc: rankingsWithSpy(), stories });
+    const on = await check({ cuts: true, rankingsDoc: rankingsWithSpy(), stories });
+    expect(on.collections).toContain('fantasyTimesStories');
+    expect(off.tickCalls.filter(([s]) => s === 'SPY')).toEqual([['SPY', BOTH]]); // today: the fan-out's one fetch
+    expect(on.tickCalls.filter(([s]) => s === 'SPY')).toEqual([['SPY', BOTH]]); // cuts on: the catalyst site's one fetch
+    expect(on.tickCalls.filter(([s]) => s === 'QQQ')).toEqual([]); // QQQ stays the run's copy
+    expect(on.updates).toEqual(off.updates);
+    expect(on.request).toEqual(off.request);
+  });
+
+  it('the hot-bench rebuild puts SPY on the hot bench: the check fetches SPY itself, once; writes and request identical', async () => {
+    const battle = makeTickBattle();
+    battle.watchlist = { hotBench: [], monitoring: [] };
+    const off = await check({ cuts: false, battle: deepClone(battle), rankingsDoc: rankingsWithSpy() });
+    const on = await check({ cuts: true, battle: deepClone(battle), rankingsDoc: rankingsWithSpy() });
+    const rebuilt = on.updates.find((u) => Array.isArray(u?.watchlist?.hotBench));
+    expect(rebuilt?.watchlist.hotBench).toContain('SPY'); // the rebuild really ran and listed SPY
+    expect(off.tickCalls.filter(([s]) => s === 'SPY')).toEqual([['SPY', BOTH]]);
+    expect(on.tickCalls.filter(([s]) => s === 'SPY')).toEqual([['SPY', BOTH]]); // the rebuild site's one fetch
+    expect(on.tickCalls.filter(([s]) => s === 'QQQ')).toEqual([]);
+    expect(on.updates).toEqual(off.updates);
+    expect(on.request).toEqual(off.request);
   });
 });
