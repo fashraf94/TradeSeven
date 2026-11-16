@@ -30,7 +30,7 @@
 | Fetch | `git fetch origin` was the first step. `origin/main` = `ea5e0c5b406cf9060c42d32ee8e754998e4fb280` (merge of #1068); still that commit at the final checks. |
 | Branch | `claude/eval-capacity-build1`, cut from `origin/main` at `ea5e0c5b`; **clean tree** at the start. |
 | Discovery branch | `scripts/eval-capacity-read.mjs` exists only on `origin/claude/phase0-eval-fanout` (PR #1069, a draft). It was **merged** into this branch (`187ef495`) rather than copied, so #1069 landing first leaves no add/add conflict. Merge #1069 first; this PR's own diff is then `187ef495..HEAD`. |
-| Commits | `fddbc826` the build · `4406c6e4`, `2e125db8` rows · `c9fe26b2` report draft (the reviewed commit) · `0de5b894`, `29e42a78` the review's fix round · `97dff8d8` the test-integrity lens's rows · `cf19a89c`, `cf8c7c2f` the report and review record (docs only) · `adb26651` the 3b follow-up found at the pre-push check (§5.4) · then this report's corrections (docs only) |
+| Commits | `fddbc826` the build · `4406c6e4`, `2e125db8` rows · `c9fe26b2` report draft (the reviewed commit) · `0de5b894`, `29e42a78` the review's fix round · `97dff8d8` the test-integrity lens's rows · `cf19a89c`, `cf8c7c2f` the report and review record (docs only) · `adb26651` the 3b follow-up found at the pre-push check (§5.4) · `c7dc2606` the corrected reports (docs only; the final checks ran here) · then the check lines (docs only) |
 | Files changed (own diff) | 21 code and test files (`git diff --stat 187ef495 HEAD`, docs excluded: 3,973 lines added, 78 removed) plus these two reports — over the BUILD_RULES §2 review threshold; the review is §11 and its record. |
 | Production | **None touched.** No Firestore read or write, no EODHD or Anthropic call, no deploy, no flag flip, no environment variable, no Vercel or Firebase setting. The one external page read was Anthropic's public rate-limits documentation (§6). |
 | Ids | None in code, tests, fixtures, output or this report. |
@@ -273,14 +273,14 @@ Five lenses on per-reviewer snapshot trees — pool lifecycle, the dark guarante
 
 ## 12. Checks on the final head, merged with current `main`
 
-On Linux (WSL worktree of `~/pd-ci` with its own `npm ci`, lockfile `40382e64edb6` = `main`'s; Node 20.20.2; `TZ=UTC`), at `cf19a89c` — the build with `origin/main` (`ea5e0c5b`, unchanged since the start, re-fetched before the checks) already merged in:
+On Linux (WSL worktree of `~/pd-ci` with its own `npm ci`, lockfile `40382e64edb6` = `main`'s; Node 20.20.2; `TZ=UTC`), at `c7dc2606` — the final code `adb26651` plus the corrected reports, with `origin/main` (`ea5e0c5b`, unchanged since the start, re-fetched before the checks) already merged in:
 
 | Check | Result |
 |---|---|
-| Full suite, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock` | **exit 0 — 1,515 files, 33,791 rows: 33,656 passed, 0 failed, 135 skipped** (328 s). A first run the same hour had one row red: `src/components/League/leagueRawIds.guard.test.jsx` ("every League seat surface…"), timed out at 5.18 s against its 5 s limit under load — a file this build does not touch; alone it passed 3 of 3 (≈ 1.9 s of tests each), and the quiet rerun above is the record. |
+| Full suite, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock` | **exit 0 — 1,515 files, 33,793 rows: 33,658 passed, 0 failed, 135 skipped** (292 s). The run before PP-1, at `cf19a89c`, was also exit 0 (33,791 rows) on a quiet rerun, after one load timeout in `src/components/League/leagueRawIds.guard.test.jsx` (5.18 s against 5 s; a file this build does not touch; 3 of 3 alone). |
 | `npm run lint:gate` | **exit 0** |
 | `npm run build` (`vite build`) | **exit 0** (the usual chunk-size warning) |
-| `lint:gate` and `vite build` again on the pushed head (this report's check lines only) | **exit 0, exit 0** |
+| `lint:gate` and `vite build` again on the pushed head (docs only after `c7dc2606`: these check lines) | **exit 0, exit 0** |
 
 The Windows checkout (CRLF, `core.autocrlf=true`) has three known platform-only reds in the evaluator suites (`tickCoherence`, `tickStamps.pins` resolveControls, the `firestore.rules` tripwire), green on Linux. The emulator rules suite was not run: this build touches no rules file and no rules-read flag.
 
