@@ -161,21 +161,22 @@ export function ledgerOf(counter, extra = null) {
 /**
  * The lists of My cards (Build C §3, the one export's stages and open predicate): active (open), shelved, not taken (a
  * nominated card its copy closes — Amendment A CA-3, judged before the parked fallback; shelving keeps its precedence),
- * parked (a tested card the player parked), equipped (`installed`), retired — and 'other' for a stage the vocabulary
- * does not know (never counted as active; review L3-10).
+ * parked (a tested card the player parked), adopted (`installed` — Film Room C2, Amendment C CC-8: the stored stage
+ * stays, the player reads it as adopted), retired — and 'other' for a stage the vocabulary does not know (never counted
+ * as active; review L3-10).
  */
 export function groupCards(cards) {
-  const active = []; const shelved = []; const notTaken = []; const parked = []; const equipped = []; const retired = []; const other = [];
+  const active = []; const shelved = []; const notTaken = []; const parked = []; const adopted = []; const retired = []; const other = [];
   for (const c of cards) {
     if (c.stage === 'retired') retired.push(c);
     else if (!CARD_STAGES.includes(c.stage)) other.push(c);
     else if (c.shelved) shelved.push(c);
     else if (isOpenStage(c)) active.push(c);
-    else if (c.stage === 'installed') equipped.push(c);
+    else if (c.stage === 'installed') adopted.push(c);
     else if (isNotTaken(c)) notTaken.push(c);
     else parked.push(c);   // the one stage left that is neither open, installed nor not taken: `tested`, parked
   }
-  return { active, shelved, notTaken, parked, equipped, retired, other };
+  return { active, shelved, notTaken, parked, adopted, retired, other };
 }
 
 /**
@@ -264,6 +265,14 @@ export function watchCardsOf(counter, cards) {
  *
  * @param {{ battle: object, agentId: string|null, api?: object }} p
  */
+/**
+ * The agent a receipt's action names: the card's OWN `agentId` — the agent it is filed under, the attribution agent (a
+ * casual clone's parent) — never the battle's clone; `fallback` (the screen's agent) only for a card that names none.
+ * §2 review A2 (the offer) and Film Room C2 (Amendment B CB-3; Amendment C CC-9 item 1: retire and park): every receipt
+ * action names the card's own agent. The server's ownership checks are unchanged — the parent resolves to itself.
+ */
+export const agentOfCard = (card, fallback) => (typeof card?.agentId === 'string' && card.agentId ? card.agentId : fallback);
+
 export function useFilmRoomCards({ battle, agentId, api = defaultCardsApi }) {
   const [on, setOn] = useState(false);
   const [counter, setCounter] = useState({ status: 'idle', data: null });
@@ -322,7 +331,7 @@ export function useFilmRoomCards({ battle, agentId, api = defaultCardsApi }) {
   }, [api, agentId, refresh, keepResult]);
 
   const retire = useCallback(async (card, opId = null) => {
-    const r = await api.postCard({ op: 'retire', opId: opId || api.newOpId(), agentId, entryId: card.entryId, expectedVersion: card.version });
+    const r = await api.postCard({ op: 'retire', opId: opId || api.newOpId(), agentId: agentOfCard(card, agentId), entryId: card.entryId, expectedVersion: card.version });
     if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); keepResult(r.body.card); return { ok: true, card: r.body.card }; }
     const code = r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'retireDefault');
     // the card moved elsewhere (another tab): re-read, so the receipt shows the ledger's row (review L4-10)
@@ -332,7 +341,7 @@ export function useFilmRoomCards({ battle, agentId, api = defaultCardsApi }) {
 
   /** Build C (refinement R-C1-2): park a tested card, from its receipt — the retire's pattern, one op id per receipt. */
   const park = useCallback(async (card, opId = null) => {
-    const r = await api.postCard({ op: 'park', opId: opId || api.newOpId(), agentId, entryId: card.entryId, expectedVersion: card.version });
+    const r = await api.postCard({ op: 'park', opId: opId || api.newOpId(), agentId: agentOfCard(card, agentId), entryId: card.entryId, expectedVersion: card.version });
     if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); keepResult(r.body.card); return { ok: true, card: r.body.card }; }
     const code = r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'parkDefault');
     if (code === 'version_conflict' || code === 'illegal_transition') await refresh();
@@ -349,8 +358,7 @@ export function useFilmRoomCards({ battle, agentId, api = defaultCardsApi }) {
     // casual clone's parent), never the battle's clone, so a lost answer re-tapped after the clone's document changed
     // is still its own replay. The server resolves attribution as before (the parent resolves to itself) and judges
     // the battle's attribution again in the transaction (F1)
-    const named = typeof card?.agentId === 'string' && card.agentId ? card.agentId : agentId;
-    const r = await api.postCard({ op: 'nominate', opId: opId || api.newOpId(), agentId: named, entryId: card.entryId, expectedVersion: card.version });
+    const r = await api.postCard({ op: 'nominate', opId: opId || api.newOpId(), agentId: agentOfCard(card, agentId), entryId: card.entryId, expectedVersion: card.version });
     if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); keepResult(r.body.card); return { ok: true, card: r.body.card }; }
     const code = r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'nominateDefault');
     await refresh();

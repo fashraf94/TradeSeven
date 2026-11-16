@@ -110,3 +110,16 @@ describe('C1 review — the mutating lens\'s survivor D-M11', () => {
     expect(new Date(closeOfSessionsAfter(Date.parse('2026-11-11T20:59:59.999Z'), 1)).toISOString()).toBe('2026-11-12T21:00:00.000Z');
   });
 });
+
+describe('Film Room C2 item 7 (Amendment C CC-9 item 4) — the defaults\' JSDoc says what the header says: at most two reads', () => {
+  it('the PRACTICE_FIELD_SEAM_DEFAULTS JSDoc names at most two reads, never "one read" — as the module\'s header does since T1a-1', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const src = readFileSync(fileURLToPath(new URL('./practiceFieldSeam.js', import.meta.url)), 'utf8');
+    const at = src.indexOf('export const PRACTICE_FIELD_SEAM_DEFAULTS');
+    const doc = src.slice(src.lastIndexOf('/**', at), at);
+    expect(doc).toMatch(/at most two reads/);
+    expect(doc).not.toMatch(/\bone read\b/);
+    expect(src.slice(0, src.indexOf('import '))).toMatch(/AT MOST TWO reads/);
+  });
+});

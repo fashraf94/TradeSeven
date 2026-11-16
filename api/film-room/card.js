@@ -66,7 +66,10 @@
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { gateFilmRoomCardsRoute, sendCardError } from '../_utils/filmRoom/cardsGate.js';
-import { parseCreateBody, parseRetireBody, parseNominateBody, parseParkBody, questionFor, momentOfDay } from '../_utils/filmRoom/cardRequest.js';
+import { parseCreateBody, parseRetireBody, parseNominateBody, parseParkBody, questionFor } from '../_utils/filmRoom/cardRequest.js';
+// Film Room C2 item 1 (Amendment C CC-4): the day check is ONE implementation, shared with the moment excerpt — this
+// route maps its verdicts to its own typed refusals and words, and reads the tape through its transaction
+import { judgeDay, judgeFiledDay, readDayWith, DAY_REFUSAL_STATUS } from '../_utils/filmRoom/sourceDay.js';
 import { createCard, replayCreate, retireCard, nominateCard, parkCard, attributionAgentOf, agentRefOf, CardRouteError, CARD_ROUTE_COPY, NOMINATING_ROUTE } from '../_utils/filmRoom/cardStore.js';
 // Build C §4 (refinement R-C1-3): the owner's book, read once through the Practice Field's seam (no book until T1a)
 import { bookForOwner } from '../_utils/filmRoom/practiceFieldSeam.js';
@@ -121,16 +124,13 @@ const requestOf = (req) => ({ battleId: req.battleId, etDate: req.etDate, agentI
  * its re-read (Amendment I RI-3): the tape is the caller's; its situations are not unavailable and it stores items
  * (B2.1 B3, Amendment H RH-6: an unavailable day offers no moment — 409 tags_unavailable); the moment is EXACTLY one
  * the moments helper derives from its stored items (409 moment_not_found); the day records its archetype (409
- * archetype_unknown). Returns the moment, its situation version and the archetype.
+ * archetype_unknown). Returns the moment, its situation version and the archetype. C2 item 1: the judgments are the
+ * shared day check's (sourceDay.js judgeDay); this maps its verdict to the route's refusal.
  */
 export function sourceOfDay(tape, uid, moment) {
-  if (!tape || tape.ownerId !== uid) throw refuse(404, 'tape_not_found');
-  if (tape.coverage?.tags?.status === 'unavailable' || !Array.isArray(tape.tags?.items)) throw refuse(409, 'tags_unavailable');
-  const found = momentOfDay(tape, moment);
-  if (!found) throw refuse(409, 'moment_not_found');
-  const archetypeCodeId = typeof tape.tags?.inputs?.archetypeCodeId === 'string' && tape.tags.inputs.archetypeCodeId ? tape.tags.inputs.archetypeCodeId : null;
-  if (!archetypeCodeId) throw refuse(409, 'archetype_unknown');
-  return { moment: found.moment, situationVersion: found.situationVersion, archetypeCodeId };
+  const day = judgeDay(tape, uid, moment);
+  if (!day.ok) throw refuse(DAY_REFUSAL_STATUS[day.code], day.code);
+  return { moment: day.moment, situationVersion: day.situationVersion, archetypeCodeId: day.archetypeCodeId };
 }
 
 /** gRPC ABORTED: a transaction's contention, which the Admin SDK retries. */
@@ -150,20 +150,22 @@ export function verifySourceIn(db, uid, req, payload) {
   return (tx) => checkDayIn(tx, db, uid, { battleId: req.battleId, etDate: req.etDate, moment: req.moment, archetypeCodeId: payload.archetypeCodeId, situationVersion: payload.situationVersion });
 }
 
-/** The day's checks inside a transaction — the one rule both verifiers apply (RI-3; C1 fix round F1). */
+/**
+ * The day's checks inside a transaction — the one rule both verifiers apply (RI-3; C1 fix round F1). C2 item 1
+ * (Amendment C CC-4): the read and the judgments are the shared day check's (sourceDay.js readDayWith, judgeFiledDay),
+ * the ones the moment excerpt applies; the route keeps its own handling of a failed read and its refusals' words.
+ */
 async function checkDayIn(tx, db, uid, { battleId, etDate, moment, archetypeCodeId, situationVersion }) {
   let tape;
   try {
-    const snap = await tx.get(tapeRef(db, battleId, etDate));
-    tape = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
+    tape = await readDayWith(tx, db, battleId, etDate);
   } catch (err) {
     if (err?.cardRoute || err?.code === GRPC_ABORTED) throw err;
     console.error('[film-room/card] tape re-read failed:', err?.message ?? err);
     throw refuse(503, 'tape_unreadable');
   }
-  const again = sourceOfDay(tape, uid, moment);
-  if (again.archetypeCodeId !== archetypeCodeId) throw refuse(409, 'archetype_changed', { archetypeCodeId: again.archetypeCodeId });
-  if (again.situationVersion !== situationVersion) throw refuse(409, 'source_changed');
+  const day = judgeFiledDay(tape, uid, { moment, archetypeCodeId, situationVersion });
+  if (!day.ok) throw refuse(DAY_REFUSAL_STATUS[day.code], day.code, day.extra);
 }
 
 const dataOf = (snap) => (snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null);

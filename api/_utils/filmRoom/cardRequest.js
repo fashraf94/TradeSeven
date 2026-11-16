@@ -18,7 +18,6 @@
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../idValidation.js';
 import { SITUATION_QUESTIONS } from '../../../src/data/situationQuestions.js';
 import { CARD_SLOTS } from '../../../src/data/cardSlots.js';
-import { momentsOf, sameMoment } from '../../../src/utils/filmRoomMoments.js';
 import { isEtDate } from '../../../src/utils/tapeSchedule.js';
 import { CARD_ROUTES } from './cardStore.js';
 
@@ -139,20 +138,8 @@ export function questionFor(situationId, questionId, questionVersion = null) {
 }
 
 /**
- * The moment `wanted` among the day's moments, as the moments helper derives
- * them from the tape's STORED tags.items — matched exactly — with the
- * situation version the stored items were tagged under. Null when the day
- * holds no such moment (a sub-range, a superset, another symbol or situation,
- * a day with no items).
- *
- * @returns {{ moment: object, situationVersion: number|null }|null}
+ * The moment `wanted` among the day's stored moments — moved, unchanged, to the shared day check (Film Room C2 item 1,
+ * Amendment C CC-4: sourceDay.js, which the card route and the moment excerpt both import), and re-exported here for
+ * its existing importers.
  */
-export function momentOfDay(tape, wanted) {
-  const items = Array.isArray(tape?.tags?.items) ? tape.tags.items : null;
-  if (!items) return null;
-  const moment = momentsOf(items).find((m) => sameMoment(m, wanted)) ?? null;
-  if (!moment) return null;
-  const first = items.find((i) => isObj(i) && i.situationId === moment.situationId && i.symbol === moment.symbol && (moment.fromTickSeq === null ? true : i.tickSeq === moment.fromTickSeq));
-  const situationVersion = Number.isInteger(first?.version) ? first.version : null;
-  return { moment, situationVersion };
-}
+export { momentOfDay } from './sourceDay.js';

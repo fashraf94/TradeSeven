@@ -28,6 +28,7 @@ import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
 import { SITUATIONS, LIVE_SITUATION_IDS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { KindMark } from './FilmRoomKit';
+import { SUBJECT_WORDS } from '../../utils/filmRoomSubject';
 import { sweepWords, sep23Tape, clone, SPEC_FIXED_DIGIT_COPY } from './__fixtures__/filmRoomHarness';
 
 /** Every leaf key of a copy table: `a.b`, `list[0]`, `fn()`. */
@@ -91,10 +92,10 @@ const COPY_KEYS = [
   'cards.route', 'cards.stage', 'cards.stageWords.card', 'cards.stageWords.nominated', 'cards.stageWords.testing', 'cards.stageWords.tested', 'cards.stageWords.installed', 'cards.stageWords.retired', 'cards.stageWordsOf.drillNominated', 'cards.stageWordsOf.noFill', 'cards.stateNotes.retired', 'cards.stateNotes.shelved', 'cards.stateNotes.parked', 'cards.stateNotes.notTaken', 'cards.park', 'cards.parking', 'cards.offerToAgent', 'cards.offering', 'cards.offerRefusals.source', 'cards.offerRefusals.tape_unreadable', 'cards.offerRefusals.attribution_unavailable', 'cards.offerRefusals.book_not_open', 'cards.offerRefusals.calendar_unavailable', 'cards.offerRefusals.default',
   // Film Room C1 item 6 — the chain (Build C spec §5)
   'cards.chain.title', 'cards.chain.filed', 'cards.chain.offered', 'cards.chain.answers.accepted', 'cards.chain.answers.deferred', 'cards.chain.answers.declined', 'cards.chain.answer', 'cards.chain.considered',
-  'cards.chain.expired.before', 'cards.chain.expired.after', 'cards.chain.testing', 'cards.chain.tested', 'cards.chain.endedBeforeFirstTrade', 'cards.chain.offerWaits', 'cards.chain.contractCondition', 'cards.chain.economicResult', 'cards.chain.installed',
+  'cards.chain.expired.before', 'cards.chain.expired.after', 'cards.chain.testing', 'cards.chain.tested', 'cards.chain.endedBeforeFirstTrade', 'cards.chain.offerWaits', 'cards.chain.contractCondition', 'cards.chain.economicResult', 'cards.chain.installed', 'cards.chain.adoptedNote',
   'cards.chain.parked', 'cards.chain.retired', 'cards.chain.withdrawnRetired', 'cards.chain.forgeOffer', 'cards.chain.openIdea', 'cards.chain.openResult', 'cards.chain.timeNotRecorded',
   'cards.retire', 'cards.retiring', 'cards.recurrences',
-  'cards.noRecurrence', 'cards.recurrencesWord', 'cards.unavailableDays()', 'cards.otherBattle', 'cards.otherBattleUnreadable', 'cards.noWatchCards', 'cards.latestTitle', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.notTaken', 'cards.groups.parked', 'cards.groups.equipped', 'cards.groups.retired', 'cards.groups.other', 'cards.noCards', 'cards.shelvedExplainer',
+  'cards.noRecurrence', 'cards.recurrencesWord', 'cards.unavailableDays()', 'cards.otherBattle', 'cards.otherBattleUnreadable', 'cards.noWatchCards', 'cards.latestTitle', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.notTaken', 'cards.groups.parked', 'cards.groups.adopted', 'cards.groups.retired', 'cards.groups.other', 'cards.noCards', 'cards.shelvedExplainer',
   'cards.loading', 'cards.readError', 'cards.openCard',
 ];
 
@@ -188,8 +189,12 @@ function inventory() {
   for (const id of LIVE_SITUATION_IDS) out.push([`SITUATIONS.${id}.title`, SITUATIONS[id].title]);
   for (const q of SITUATION_QUESTIONS) out.push([`SITUATION_QUESTIONS.${q.id}`, q.text]);
   out.push(['KindMark(undeclared)', new DOMParser().parseFromString(renderToStaticMarkup(<KindMark cls={null} />), 'text/html').body.firstChild.getAttribute('title')]);
+  // Film Room C2 item 5 (Amendment C CC-7): the subject line's own words, from the module the excerpt shares
+  for (const k of SUBJECT_WORD_KEYS) out.push([`SUBJECT_WORDS.${k}`, SUBJECT_WORDS[k]]);
   return out;
 }
+/** C2: the subject line's word table, pinned whole. */
+const SUBJECT_WORD_KEYS = ['separator', 'underIdea'];
 
 /** The screen's own-voice sweep over one entry, as rendered text. */
 const swept = (text) => { const p = document.createElement('p'); p.textContent = text; return sweepWords(p); };
@@ -205,6 +210,13 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     for (const k of fns) expect(SAMPLE_CALLS[k].length, k).toBeGreaterThan(0);
   });
 
+  it('Film Room C2 (Amendment C CC-8): `installed` reads as adopted — no entry of the inventory says "equip", and the adopted words are the amendment\'s', () => {
+    expect(inventory().filter(([, text]) => /equip/i.test(text)).map(([key]) => key)).toEqual([]);
+    const W = FILM_ROOM_COPY.cards;
+    expect([W.stageWords.installed, W.chain.installed, W.chain.adoptedNote, W.groups.adopted]).toEqual(['adopted as your instruction', 'Adopted as your instruction', "Your agent doesn't act on your ideas yet.", 'Adopted']);
+    expect(W.refusals.cap_reached).toBe('The open-card cap is reached. A card stops counting once it is retired, parked, adopted or not taken.');
+    expect(W.groups.equipped).toBeUndefined();
+  });
   it('the other copy tables hold exactly the listed keys: filmRoomCopy\'s exports, the exit makers\' words, the plan directions', () => {
     expect(Object.keys(copyModule).sort()).toEqual(COPY_EXPORTS);
     expect(keysOf(EXIT_MAKER_WORDS)).toEqual(EXIT_MAKER_KEYS);
@@ -214,6 +226,7 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     expect(keysOf(HOLDINGS_NOTES)).toEqual(HOLDINGS_NOTE_KEYS);
     expect(keysOf(RISK_WORDS)).toEqual(RISK_WORD_KEYS);
     expect(keysOf(DIRECTIVE_CARD_WORDS)).toEqual(DIRECTIVE_CARD_KEYS);
+    expect(keysOf(SUBJECT_WORDS)).toEqual(SUBJECT_WORD_KEYS);   // C2 item 5 (CC-7)
     // every state a check row can be read as has its words: each tone's state, and each word's state is read
     for (const s of Object.keys(CHECK_STATE_TONES)) expect(CHECK_STATE_WORDS[s], s).toBe(checkStateOf({ state: s }).label);
     expect(CHECK_ROWS.map((r) => checkStateOf(r).key).filter((k, i, a) => a.indexOf(k) === i).sort()).toEqual([...CHECK_STATE_KEYS].sort());
@@ -227,9 +240,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 413 copy keys, 560 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(413);   // C1 fix round CA-18: cards.setNoTempo retired (414 before); CA-7: offerToAgent, offering, the six offerRefusals (406 before); CA-17 / CA-9: stageWordsOf.drillNominated, stageWordsOf.noFill, chain.considered (403 before); CA-22 / CA-5: chain.endedBeforeFirstTrade, chain.offerWaits (401 before); CA-2: chain.withdrawnRetired, refusals.nomination_unavailable (399 before); CA-3: groups.notTaken, stateNotes.notTaken (397 before); C1 item 8: cards.latestTitle (396 before); C1 item 7: stateNotes.parked, park, parking, refusals.parkDefault (392 before); C1 item 6: quoteBy.yourAgent and the chain's 20 keys (371 before); C1 item 5: routes/routeNotes drill → offer, refusals book_not_open and calendar_unavailable (369 before); Film Room C1 item 1: stageWords testing/tested/installed, groups parked/equipped (364 before); Amendment L RL-5: cards.setNextBattle (363 before); review KRV1-1: cards.refusals.attribution_unavailable (362 before); Amendment K RK-11: chartRecordedFor (361 before); RK-2: cards.setNoTempo (360 before); Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(560);   // C1 fix round CA-18: one entry retired (561 before); CA-7: eight entries (553 before); CA-17 / CA-9: three entries (550 before); CA-22 / CA-5: two entries (548 before); CA-2: two entries (546 before); CA-3: two entries (544 before); C1 item 8: one entry (543 before); C1 item 7: four entries (539 before); C1 item 6: 21 entries (518 before); C1 item 5: two entries (516 before); C1 item 1: five entries (511 before); RL-5: one entry (510 before); KRV1-1: one entry (509 before); RK-11: one entry (508 before); RK-2: one entry (507 before); B2: 76 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 414 copy keys, 563 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(414);   // Film Room C2 item 6 (CC-8): cards.chain.adoptedNote; groups.equipped renamed groups.adopted (413 before); C1 fix round CA-18: cards.setNoTempo retired (414 before); CA-7: offerToAgent, offering, the six offerRefusals (406 before); CA-17 / CA-9: stageWordsOf.drillNominated, stageWordsOf.noFill, chain.considered (403 before); CA-22 / CA-5: chain.endedBeforeFirstTrade, chain.offerWaits (401 before); CA-2: chain.withdrawnRetired, refusals.nomination_unavailable (399 before); CA-3: groups.notTaken, stateNotes.notTaken (397 before); C1 item 8: cards.latestTitle (396 before); C1 item 7: stateNotes.parked, park, parking, refusals.parkDefault (392 before); C1 item 6: quoteBy.yourAgent and the chain's 20 keys (371 before); C1 item 5: routes/routeNotes drill → offer, refusals book_not_open and calendar_unavailable (369 before); Film Room C1 item 1: stageWords testing/tested/installed, groups parked/equipped (364 before); Amendment L RL-5: cards.setNextBattle (363 before); review KRV1-1: cards.refusals.attribution_unavailable (362 before); Amendment K RK-11: chartRecordedFor (361 before); RK-2: cards.setNoTempo (360 before); Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(563);   // Film Room C2 item 6 (CC-8): chain.adoptedNote (562 before); Film Room C2 item 5 (CC-7): SUBJECT_WORDS separator and underIdea (560 before); C1 fix round CA-18: one entry retired (561 before); CA-7: eight entries (553 before); CA-17 / CA-9: three entries (550 before); CA-22 / CA-5: two entries (548 before); CA-2: two entries (546 before); CA-3: two entries (544 before); C1 item 8: one entry (543 before); C1 item 7: four entries (539 before); C1 item 6: 21 entries (518 before); C1 item 5: two entries (516 before); C1 item 1: five entries (511 before); RL-5: one entry (510 before); KRV1-1: one entry (509 before); RK-11: one entry (508 before); RK-2: one entry (507 before); B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('B2.1 A8 (A2F1-7): every fixed-digit exemption is bound to its copy key — the harness\x27s pinned text is production\x27s at that key, and every entry of the inventory that spells a digit is pinned', () => {

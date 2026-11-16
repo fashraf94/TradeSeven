@@ -26,6 +26,8 @@ import FilmRoomScreenV2 from './FilmRoomScreenV2';
 import { meetingOfRun, checkRuns, meetingAnchor } from './filmRoomModel';
 import { sep23Day, sep23Bars, buildTapeDay, SEP23, SEP23_NIGHT, SEP23_MORNING } from '../../../api/_utils/filmTape/__fixtures__/screenFixtures.js';
 import { sessionRows } from '../../../api/_utils/filmTape/__fixtures__/tapeBars.js';
+// Film Room C2 fix round (CD-16): the owner-written diagnosis the excerpt leaves out — the same words, on the owner's screen
+import { FORGED_DIAGNOSIS } from '../../../api/_utils/filmRoom/__fixtures__/excerptFixtures.js';
 import {
   mounter, battleOf, readersOf, NOW, sep23Tape, clone, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects,
 } from './__fixtures__/filmRoomHarness';
@@ -199,6 +201,15 @@ describe('acceptance H — a meeting renders with its legs, outcome and instants
     expect(sec.querySelector('[data-coverage]').getAttribute('data-coverage')).toBe('partial');
     expect(sec.querySelector('[data-stored-note="coverage.meetings.note"]').textContent).toBe("1 leg symbol outside the battle's portfolio and bench not copied");
     expect(m.q('[data-meeting-legs="0"]').textContent).toBe('INTC → not copied');
+  });
+
+  it('CD-16 — THE OWNER\'S SCREEN IS UNCHANGED: a meeting history the owner edited (FORGED_DIAGNOSIS, through the real writer) is still quoted on the owner\'s own screen as the tape holds it; only the excerpt leaves it out (momentExcerpt.golden.test.js)', async () => {
+    const forged = await writtenDay([{ ...MEETING_2, diagnosis: FORGED_DIAGNOSIS }], 'b-meet-forged');
+    expect(forged.tape.meetings[0].diagnosis).toBe(FORGED_DIAGNOSIS);
+    await open(forged.tape, forged.series, 'Study');
+    const q = m.qa('[data-meeting-card]')[0].querySelector('[data-quotation="platform"]');
+    expect(q.querySelector('[data-quote-path]').getAttribute('data-quote-path')).toBe('meetings[0].diagnosis');
+    expect(q.querySelector('[data-quote-path]').textContent).toBe(FORGED_DIAGNOSIS);
   });
 });
 

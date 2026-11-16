@@ -1254,7 +1254,7 @@ describe('Amendment A CA-23 — at the cap with NOTHING the player can retire, t
     const res = await post(create({ opId: 'w_6', note: 'One more.' }));
     expect(res.statusCode).toBe(409);
     expect(res.body).toMatchObject({ error: 'cap_reached', cap: 5, open: 5 });
-    expect(res.body.message).toBe('The open-card cap for this agent is reached. A card stops counting once it is retired, parked, equipped or not taken.');
+    expect(res.body.message).toBe('The open-card cap for this agent is reached. A card stops counting once it is retired, parked, adopted or not taken.');   // Film Room C2 (CC-8)
     expect(res.body.message).not.toContain('Retire a card first');
   });
 });

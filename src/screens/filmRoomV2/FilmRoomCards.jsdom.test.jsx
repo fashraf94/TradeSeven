@@ -76,7 +76,7 @@ import cardHandler from '../../../api/film-room/card.js';
 import { setPracticeFieldSeam, resetPracticeFieldSeam } from '../../../api/_utils/filmRoom/practiceFieldSeam.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
-import { ledgerOf, latestOf, chainOf, groupCards } from './filmRoomCards';
+import { ledgerOf, latestOf, chainOf, groupCards, agentOfCard } from './filmRoomCards';
 import { setRuleOf, setStateOf, YourCall, Receipt } from './FilmRoomCardRegions';
 import { FILM_ROOM_COPY } from './filmRoomCopy';
 const COPY_CARDS = FILM_ROOM_COPY.cards;
@@ -451,7 +451,7 @@ describe('receipt — the filed card (spec §6; R7)', () => {
     expect(m.q('[data-open-count] [data-num-aggregate="count(plays[] open)"]').getAttribute('data-agg-value')).toBe('5');
     await fileCard({ note: 'One more.' });
     expect(m.q('[data-card-form]')).toBeTruthy();
-    expect(m.q('[data-card-refusal]').textContent).toBe('The open-card cap is reached. A card stops counting once it is retired, parked, equipped or not taken.');   // Amendment A CA-23
+    expect(m.q('[data-card-refusal]').textContent).toBe('The open-card cap is reached. A card stops counting once it is retired, parked, adopted or not taken.');   // Amendment A CA-23; Film Room C2 (CC-8)
     await sweepAll(fx.tape2, 'cap');
   });
 });
@@ -1507,7 +1507,7 @@ describe('B2.1 B2 (Amendment H RH-2) — a recurrence in another battle opens th
 
 // ── Film Room C1 (Build C spec V1, docs/specs/FILM_ROOM_BUILD_C_LOOP_SPEC_V1_20261112.md) ──────────────────────────
 describe('C1 item 1 — My cards under the stage vocabulary v2 (spec §3)', () => {
-  it('testing and an unparked tested card are active and count open; a parked tested card lists under Parked; installed under Equipped, its stage word "equipped"; a v1 entry (no stageVocabVersion) reads and counts as before', async () => {
+  it('testing and an unparked tested card are active and count open; a parked tested card lists under Parked; installed under Adopted, its stage word "adopted as your instruction" (Film Room C2, CC-8); a v1 entry (no stageVocabVersion) reads and counts as before', async () => {
     await open();
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
@@ -1527,9 +1527,9 @@ describe('C1 item 1 — My cards under the stage vocabulary v2 (spec §3)', () =
     const group = (g) => m.qa(`[data-my-cards-group="${g}"] [data-my-card]`).map((b) => b.getAttribute('data-my-card'));
     expect(group('active').sort()).toEqual(['c_tested', 'c_testing', 'c_v1', 'op_1']);
     expect(group('parked')).toEqual(['c_parked']);
-    expect(group('equipped')).toEqual(['c_installed']);
-    expect(m.q('[data-my-cards-group="equipped"]').textContent).toContain('Equipped');
-    expect(m.q('[data-my-card="c_installed"]').textContent).toContain('equipped');
+    expect(group('adopted')).toEqual(['c_installed']);
+    expect(m.q('[data-my-cards-group="adopted"]').textContent).toContain('Adopted');
+    expect(m.q('[data-my-card="c_installed"]').textContent).toContain('adopted as your instruction');
     expect(m.q('[data-my-card="c_testing"]').textContent).toContain('testing');
     expect(m.q('[data-my-cards-group="other"]')).toBeNull();
     // the form's open count: four open (card, testing, tested unparked, the v1 card) — the oracle recounts it by the one export
@@ -1701,12 +1701,26 @@ describe('C1 item 6 — the receipt is the chain (spec §5; acceptance C-COPY), 
     expect(m.buttons('Open the idea')).toHaveLength(0);
     expect(receipt.textContent).not.toMatch(/validated|proven|supported|\bright\b|\bwrong\b/i);
     expect(receipt.textContent).toContain('Stage · tested');
+    // CD-17's control: "Since last time"'s latest line for a card not adopted carries no adopted sentence
+    expect(m.q('[data-latest-line="op_1"]').getAttribute('data-latest-kind')).toBe('tested');
+    expect(m.q('[data-latest-line="op_1"] [data-adopted-note]')).toBeNull();
     await sweepAll(fx.tape2, 'tested');
     await move('op_1', 'offered', { ideaId: 'idea-1', offerId: 'offer-1', state: 'offered' }, '20:58');
     await move('op_1', 'installed', { ideaId: 'idea-1', offerId: 'offer-1', state: 'accepted' }, '21:00');
     receipt = await reopen('op_1');
-    expect(lineText(receipt, 0)).toBe('Equipped · 5:00 PM');
-    expect(receipt.textContent).toContain('Stage · equipped');
+    expect(lineText(receipt, 0)).toBe('Adopted as your instruction · 5:00 PM');
+    expect(receipt.textContent).toContain('Stage · adopted as your instruction');
+    // Film Room C2 (CC-8): under the adopted line, its one sentence — on that line alone
+    expect(receipt.querySelectorAll('[data-chain-line]')[0].querySelector('[data-adopted-note]').textContent).toBe("Your agent doesn't act on your ideas yet.");
+    expect(receipt.querySelectorAll('[data-adopted-note]')).toHaveLength(1);
+    // Amendment D CD-17: "adopted" never stands alone — "Since last time"'s one-line digest carries the same sentence as
+    // the chain (the mutant: the digest's sentence dropped)
+    const digest = m.q('[data-latest-line="op_1"]');
+    expect(digest.getAttribute('data-latest-kind')).toBe('installed');
+    expect(digest.textContent).toContain('Adopted as your instruction');
+    expect(digest.querySelector('[data-adopted-note]').textContent).toBe("Your agent doesn't act on your ideas yet.");
+    expect(digest.querySelectorAll('[data-adopted-note]')).toHaveLength(1);
+    expect(receipt.textContent).not.toMatch(/equip/i);
     expect(m.buttons('Retire')).toHaveLength(0);
     await sweepAll(fx.tape2, 'installed');
   });
@@ -1825,7 +1839,7 @@ describe('C1 item 7 — "Park this card", on a tested receipt only (refinement R
     await sweepAll(fx.tape2, 'parked');
   });
 
-  it('no Park on any receipt but a tested one: a card, an equipped card, a retired one', async () => {
+  it('no Park on any receipt but a tested one: a card, an adopted card, a retired one', async () => {
     openBook();
     await open();
     m.click(m.buttons('Take this home')[0]);
@@ -1991,12 +2005,12 @@ describe('C1 review — the chain and the receipt say only what the ledger holds
     expect(latestOf([{ ...v1, route: 'offer' }])[0].line.kind).toBe('offered');
   });
 
-  it('B-2: a parked card the idea later equipped is equipped — no parked note; the note stays on a parked TESTED card', async () => {
+  it('B-2: a parked card the idea later adopted is adopted — no parked note; the note stays on a parked TESTED card', async () => {
     const history = [{ stage: 'card', at: at('20:00'), by: 'player', opId: 'e1' }, { stage: 'tested', event: 'parked', at: at('20:30'), by: 'player', opId: 'p1' }, { stage: 'installed', at: at('20:40'), by: 'server', writer: 'practice_field', opId: 's9' }];
     let r = await receiptOf(base({ stage: 'installed', parkedAt: at('20:30'), stageHistory: history, offer: { offerId: 'o1', state: 'accepted' } }));
     expect(r.querySelector('[data-card-next]')).toBeNull();
-    expect(r.textContent).toContain('Stage · equipped');
-    expect(m.buttons('Park this card')).toHaveLength(0);   // B-12: no Park on an equipped card
+    expect(r.textContent).toContain('Stage · adopted as your instruction');
+    expect(m.buttons('Park this card')).toHaveLength(0);   // B-12: no Park on an adopted card
     r = await receiptOf(base({ stage: 'tested', parkedAt: at('20:30'), stageHistory: history.slice(0, 2) }));
     expect(r.querySelector('[data-card-next]').textContent).toBe('Parked: kept with its result, no longer counted as open.');
   });
@@ -2161,7 +2175,7 @@ describe('Amendment A CA-3 — My cards: a nominated card the agent did not take
       await open();
       expect(group('notTaken')).toEqual(['op_1']);
       expect(m.q('[data-my-cards-group="notTaken"]').textContent).toContain('Not taken');
-      for (const g of ['active', 'parked', 'equipped', 'retired', 'other', 'shelved']) expect(group(g), g).toEqual([]);
+      for (const g of ['active', 'parked', 'adopted', 'retired', 'other', 'shelved']) expect(group(g), g).toEqual([]);
       expect(m.qa('[data-my-card="op_1"]')).toHaveLength(1);
       m.click(m.q('[data-my-card="op_1"]'));
       await m.flush();
@@ -2342,7 +2356,7 @@ describe('Amendment A CA-5 / CA-22 — "An offer waits in the Forge" and "Ended 
   const kinds = (r) => [...r.querySelectorAll('[data-chain-line]')].map((l) => l.getAttribute('data-chain-line'));
   const firstLine = (r) => r.querySelector('[data-chain-line]').querySelector('span').textContent;
 
-  it('tested → offered → parked → installed: one Tested line; the waiting offer dated at its own row, parked or not, never a second "Tested"; no Retire while it waits, Park still there; once installed, "Equipped" and no waiting line (the mutant: offered drawn as a second Tested)', async () => {
+  it('tested → offered → parked → installed: one Tested line; the waiting offer dated at its own row, parked or not, never a second "Tested"; no Retire while it waits, Park still there; once installed, "Adopted as your instruction" and no waiting line (the mutant: offered drawn as a second Tested)', async () => {
     await offerCard();
     await move('testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
     await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' }, '20:55');
@@ -2362,7 +2376,7 @@ describe('Amendment A CA-5 / CA-22 — "An offer waits in the Forge" and "Ended 
     await move('installed', { ideaId: 'idea-1', offerId: 'offer-1', state: 'accepted' }, '21:10');
     r = await reopen();
     expect(kinds(r)).toEqual(['installed', 'parked', 'tested', 'testing', 'nomination', 'offered', 'filed']);
-    expect(firstLine(r)).toBe('Equipped · 5:10 PM');
+    expect(firstLine(r)).toBe('Adopted as your instruction · 5:10 PM');
     expect(r.textContent).not.toContain('An offer waits');
     await sweepAll(fx.tape2, 'installed after offer');
   });
@@ -2737,5 +2751,61 @@ describe('C1 fix round §2 review (the mutating lens, LD-3) — Offer and Retire
     settle({ ok: false, code: 'version_conflict' });
     await m.flush(2);
     expect(m.buttons('Offer to your agent')[0].disabled).toBe(false);
+  });
+});
+
+// ── Film Room C2 item 7 (Build C Amendment B CB-3; Amendment C CC-9 item 1) ─────────────────────────────────────────
+describe('C2 — every receipt action names the card\'s own agent: retire and park, as the offer', () => {
+  const CLONE = `casual-agent-${OWNER}`;
+  const onClone = async () => {
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    t.store.set(`agentBattles/${B}`, { ...fx.battle, agentId: CLONE });
+    t.store.set(`agentBattles/${B}/tape/${D2}`, { ...fx.tape2, agentId: CLONE });
+    await open({ battle: battleOf({ agentId: CLONE }), tapes: { [D1]: { ...fx.tape1, agentId: CLONE }, [D2]: { ...fx.tape2, agentId: CLONE } } });
+  };
+  it('on a clone\'s battle the receipt\'s Retire sends the card\'s own agent (the ranked parent), never the battle\'s clone — the create still names the battle\'s own (the mutant: retire naming the battle\'s agent again)', async () => {
+    await onClone();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ agentId: AGENT, stage: 'card' });
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(10);
+    const sent = cardBodies().filter((b) => b.op === 'retire');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ op: 'retire', agentId: AGENT, entryId: 'op_1' });
+    expect(cardBodies().find((b) => b.op === 'create').agentId).toBe(CLONE);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('retired');
+    // the clone's document gone: the same request (a lost answer re-tapped) is still its own replay — a clone-named one is not
+    t.store.delete(`agents/${CLONE}`);
+    expect(await api.postCard(sent[0])).toMatchObject({ ok: true, status: 200, body: { idempotent: true } });
+    expect(await api.postCard({ ...sent[0], agentId: CLONE })).toMatchObject({ ok: false, status: 503, body: { error: 'attribution_unavailable' } });
+  });
+  it('… and Park sends the card\'s own agent too (the mutant: park naming the battle\'s agent)', async () => {
+    openBook();
+    await onClone();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Practice the exit.', route: 'offer', question: 'stalled.ready' });
+    const move = (to, payload, clock) => applyServerTransition(state.db, { entryId: 'op_1', ownerId: OWNER, agentId: AGENT, to, by: 'practice_field', payload, opId: `s_${to}`, nowIso: `${D2}T${clock}:00.000Z` });
+    await move('nomination', { bookId: BOOK_ID, nominationId: 'op_1', state: 'accepted', ideaId: 'idea-1', reason: 'I will test it.', consideredAt: `${D2}T20:40:00.000Z` }, '20:45');
+    await move('testing', { bookId: BOOK_ID, ideaId: 'idea-1' }, '20:50');
+    await move('tested', { ideaId: 'idea-1', resultRef: 'r1', contractCondition: 'met', economicResult: 'ahead' }, '20:55');
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await onClone();
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+    m.click(m.buttons('Park this card')[0]);
+    await m.flush(10);
+    const sent = cardBodies().filter((b) => b.op === 'park');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ op: 'park', agentId: AGENT, entryId: 'op_1' });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).parkedAt).toEqual(expect.any(String));
+  });
+  it('a card that names no agent falls back to the screen\'s (the one export, agentOfCard)', () => {
+    expect(agentOfCard({ agentId: AGENT }, CLONE)).toBe(AGENT);
+    expect(agentOfCard({}, CLONE)).toBe(CLONE);
+    expect(agentOfCard({ agentId: '' }, CLONE)).toBe(CLONE);
+    expect(agentOfCard(null, CLONE)).toBe(CLONE);
   });
 });
