@@ -1160,3 +1160,61 @@ Each mutant ran in a `git archive` copy (LF) of the commit, in 4 shards, with a 
 | C-16 | A late dividend row listed after the split was applied | Unchanged (§9.8) |
 | C-6 | A doubt that never settles holds the holding until the founder acts | Unchanged; the suspicion record is one more such doubt |
 | C-10…C-12, C-14, C-15 | As in §8.9 | Unchanged |
+
+## 11. Final fix, 15 Nov 2026 — T2A-E01
+
+Astra's confirmation of round 3 (`audits/20261115_ASTRA_CONFIRMATION_T1A2A_ROUND3.md`, SHA-256 `91749b45…`, committed byte-identical) closed D01 and D02 and left one finding, **T2A-E01**: the gap screen screened the holding after this close's share-basis rows (the dry run, `d`) but asked for an open suspicion on the stored holding (`h`). A late split that explained the old note let a second, unexplained move through unrecorded, and a dividend was paid on the uncorrected count — $399.88 where $799.76 is owed, for good. This is the last change in this PR; anything else found here goes to T1a-2b.
+
+Branch head before: `f74a1e844af9b0dc97da3a79f312359f6c8ff178`. `origin/main`: `ea5e0c5b406cf9060c42d32ee8e754998e4fb280`, already merged into the branch (nothing to merge).
+
+### 11.1 The change (at `f06f1fc1`)
+
+| Where | What |
+|---|---|
+| `api/_utils/practiceField/ledger.js:329` | The guard reads `openBasisSuspicion(d)` — the dry-run holding — instead of `openBasisSuspicion(h)`. An old note still open after this close's share-basis rows is kept as it is. An old note those rows explain is released in the dry run, and a residual move the screen still suspects is recorded in its place on the stored holding, with that move's session (`since`), ratio and adjusted frozen mark, before the idea's hold set is computed (`close.js:158`, then `close.js:160`). The new note was raised at this close, so this close's explaining split does not release it (`date > suspectedOn`, `ledger.js:695`); the hold set holds the dividend on every ledger of the idea; the later split that explains the new note releases it, and the held dividend is paid once on the corrected count. |
+| `api/_utils/practiceField/ledger.js:308–317` | The screen's doc comment, restated to match. |
+
+Nothing else in product code changed. No flag, pin, rules, index or fenced file.
+
+**A reading stated.** When the old note is replaced at the close that explains it, the explaining split's receipt carries no `explainedSuspicion` (the stored note it would name is already the new one when the split is applied). The old note stays on record in the `PRACTICE_FIELD_BASIS_SUSPECTED` alerts of the closes it stood at; no money figure depends on the field.
+
+### 11.2 The regression (`corporateActions.test.js:1814`)
+
+Astra's E01 case end to end, through the production parsers (`parseSplitsPayload`, `parseDividendsPayload`) as the slow layer calls them:
+
+- Nov 16: enter AAPL at $100 (199.940017 shares). Nov 17: close $50, no split row — the first note.
+- Nov 18: close $25; the feed lists the Nov 17 2-for-1 and a Nov 18 $1 dividend, but not the Nov 18 2-for-1. **Nothing is paid**: on the idea and its same-stock comparison, the Nov 17 split is applied (399.880034 shares), `dividendsUsd` 0, no dividend receipt, the dividend held, and the note replaced by `{ suspectedOn: Nov 18, since: Nov 16, ratio: 0.5, frozenMark: 50 }`; the book's cash unchanged.
+- Nov 19: the Nov 18 split arrives. **$799.76 is paid once**, on 799.760068 shares, on the idea, the comparison and the book (cash +$799.76, position 799.760068); the note and the held record are gone; the split's receipt names the note it explained. Run twice: the dividend row still listed, and dropped (paid from its held record).
+- Nov 20: every row listed again — **nothing more is paid**.
+
+Beside it: the **same-session control** (both 2-for-1 rows listed on Nov 18 pays $799.76 at once, no note left), and a direct row on the screen (a replaced note takes the residual move's session, ratio and adjusted frozen mark; with no row today the old note is kept unchanged). The original controls are the committed round-3 rows, unchanged and passing: the D01 release pays **$23,992.80** and **$399.88**, each once (`corporateActions.test.js:1454`); D02 gives **4.795684** shares and **$19,994.01** (`corporateActions.test.js:1294`).
+
+Astra's own safety test (`astra-second-move-safety.test.js`, unmodified, SHA-256 `203de4e7…`), run against this commit in her layout: **1/1** (0/1 on `f74a1e84`, by her report).
+
+### 11.3 The mutation check
+
+Reverting the guard to `openBasisSuspicion(h)` on the committed code fails **3 rows** of `corporateActions.test.js` (116 pass, 3 fail): both runs of Astra's case and the direct screen row. The same-session control passes under the mutant, as it should (no old note). The file was restored from `git show HEAD:` and re-checked clean.
+
+### 11.4 The checks
+
+Linux runs: WSL Ubuntu, a private worktree of `~/pd-ci`, Node 20.20.2, `TZ=UTC`, the suite alone under `flock`.
+
+| Check | Result |
+|---|---|
+| `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8`, at `50eab073` | **exit code 0** · `Test Files  1501 passed | 12 skipped (1513)` · `Tests  33811 passed | 135 skipped (33946)` · `Duration  367.09s` · log SHA-256 `0b76f46550478d0f8fc2f24e8da63c25969e32ab4723ceb723d8f5e2861c27ae` (33,807 last round + the 4 new rows) |
+| `npm run lint:gate` | exit 0 at `50eab073` (log `9f001ed2…`) |
+| `npx vite build` | exit 0 at `50eab073`, `✓ built in 20.87s` (log `157b87d8…`); re-run on the pushed head, which adds only this report section |
+| Practice Field files, `practiceFieldIsolation`, `practiceFieldNoBook.trace`, `compositionProtectedStores.scan`, `mandateMoneyRounding.scan`, `mandateRationale.imports`, at `f06f1fc1` | exit code 0 · `Test Files  18 passed (18)` · `Tests  537 passed (537)` (533 + the 4 new rows) |
+| Astra's `probe/astra-routes.test.js`, unmodified (SHA-256 `da70ab2b…`), her layout rebuilt in this session's scratchpad (head = `f06f1fc1`, reviewed = `c4eceba8`) | **16/16** |
+| Quarterly differential, 17 scenarios, `origin/main` `ea5e0c5b` against `f06f1fc1` | **byte-identical**: `92a1be2080b4e0d6ccb32e26a2ec95ec5fac0bd4c262e0f2de73f1f1e2f27f43`, 1,118,594 bytes, both sides (the same hash as every earlier round). Its control differs in scenario 18 only (`749a9414…`, 1,148,363 B → `2553861a…`, 1,156,115 B, as last round) |
+
+### 11.5 What goes to T1a-2b
+
+| # | Item |
+|---|---|
+| Q-M | Name SPY's doubt on the result (an idea resolves while a paper ledger is in doubt) |
+| Q-O | Narrow comparison-only holds (a doubt on the comparison alone holds the idea) |
+| Q-U | The founder's resolution of a suspicion, covering exactly one recorded move — its session and marks; a later identical gap makes a new note |
+| — | A final review of the whole corporate-action path before `PRACTICE_FIELD_MODE` leaves `'off'` |
+
+The other open items stay where §10.9 left them.
