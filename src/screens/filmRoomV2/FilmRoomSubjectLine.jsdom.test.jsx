@@ -34,7 +34,8 @@ beforeEach(() => { m.setup(); globalThis.localStorage.clear(); });
 afterEach(() => { m.teardown(); vi.restoreAllMocks(); });
 
 const card = (o) => excerptCardWith(buildCardDoc, o);
-const battle = () => ({ id: EXCERPT_BATTLE, agentBattleId: EXCERPT_BATTLE, ownerId: OWNER, agentId: AGENT, status: 'completed', completedAt: '2026-09-23T20:05:00.000Z', timing: { tradingDays: [SEP23] }, agentContext: { agentName: 'Momentum chaser', archetype: 'momentum_chaser' }, gameMode: 'baggerbomb_agent' });
+/** The battle the screen is handed — carrying the idea on its frozen carriage, as the excerpt's fixture battle does (CD-8). */
+const battle = ({ carriage = true } = {}) => ({ id: EXCERPT_BATTLE, agentBattleId: EXCERPT_BATTLE, ownerId: OWNER, agentId: AGENT, status: 'completed', completedAt: '2026-09-23T20:05:00.000Z', timing: { tradingDays: [SEP23] }, agentContext: { agentName: 'Momentum chaser', archetype: 'momentum_chaser', ...(carriage ? { equippedHypothesis: structuredClone(DAY.fx.battle.agentContext.equippedHypothesis) } : {}) }, gameMode: 'baggerbomb_agent' });
 const COUNTER = (cards = []) => ({ agentId: AGENT, attributionAgentId: AGENT, archetypeCodeId: 'momentum_chaser', cards, open: cards.length, cap: 5, recurrences: {}, book: { open: false }, unavailableDays: {}, weekly: [], window: { from: SEP23, to: SEP23 } });
 const cardsApi = (admitted, cards = []) => ({ readVerdict: async () => admitted, readCounter: async () => ({ ok: true, status: 200, body: COUNTER(cards) }), postCard: async () => ({ ok: false, status: 400, body: { error: 'x' } }), newOpId: () => 'op_s1' });
 /** The readers, with the idea's one read counted. */
@@ -69,9 +70,10 @@ describe('CC-7 — on the screen, under cards mode only', () => {
     expect(lineText(line)).toBe(FULL);
     // under the facts: after the moment's facts in the form's order
     expect(form.querySelector('[data-moment-facts]').compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // the version is the tape's own number, marked with its class
+    // CD-8 / CE-5: the version is the BATTLE's own number — its frozen carriage's — marked recorded, never a call's
     const v = line.querySelector('[data-num]');
-    expect(v.getAttribute('data-num')).toMatch(/^calls\[\d+\]\.hypothesisRef\.hypothesisVersion$/);
+    expect(v.getAttribute('data-num')).toBe('agentContext.equippedHypothesis.hypothesisVersion');
+    expect(v.getAttribute('data-num-doc')).toBe('battle');
     expect(v.getAttribute('data-num-class')).toBe('recorded');
     expect(r.ideaReads).toEqual([[EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION]]);
     // a second form on the same day reads nothing more
@@ -127,8 +129,8 @@ describe('CC-7 — on the screen, under cards mode only', () => {
 });
 
 describe('CC-7 — the receipt says what the agent\'s excerpt says', () => {
-  const renderReceipt = ({ tape = DAY.tape, idea = { status: 'ready', doc: ideaVersionDoc() }, c = card(), subjectIds = null } = {}) => {
-    m.render(<Receipt day={SEP23} counter={{ status: 'ready', data: COUNTER([c]) }} card={c} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} tape={tape} idea={idea} subjectIds={subjectIds} />);
+  const renderReceipt = ({ tape = DAY.tape, idea = { status: 'ready', doc: ideaVersionDoc() }, c = card(), subjectIds = null, battleDoc = battle() } = {}) => {
+    m.render(<Receipt day={SEP23} counter={{ status: 'ready', data: COUNTER([c]) }} card={c} mintOpId={() => 'op_r'} onRetire={async () => ({ ok: true })} tape={tape} idea={idea} subjectIds={subjectIds} battle={battleDoc} />);
   };
   it('CE-1 — A STATEMENT HOLDING AN ID is not on the receipt\'s line, EQUAL to the excerpt, which leaves it out: an id the receipt knows exactly (the battle, the card\'s entry) or a shape the platform mints', async () => {
     const ids = { ownerId: OWNER, battleId: EXCERPT_BATTLE, battleAgentId: AGENT, attributionAgentId: AGENT };
@@ -154,16 +156,17 @@ describe('CC-7 — the receipt says what the agent\'s excerpt says', () => {
     // under the card's facts, before the note
     expect(m.q('[data-card-receipt] [data-quotation]').compareDocumentPosition(line) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
-  it('the same, part for part, when the version is unread (the idea without its statement) and when the day carries no idea', async () => {
+  it('the same, part for part, when the version is unread (the idea without its statement) and when the battle carries no idea (CD-8)', async () => {
     const store = excerptStore(DAY, { card: card(), over: { [`watchlists/${EXCERPT_WATCHLIST}/hypothesisVersions/v${EXCERPT_IDEA_VERSION}`]: undefined } });
     const unread = await excerptOfCard(dbOf(store).db, { uid: OWNER, attributionAgentId: AGENT, entryId: EXCERPT_ENTRY });
     renderReceipt({ idea: { status: 'missing', doc: null } });
     expect(lineText(m.q('[data-subject-line]'))).toBe(subjectOfExcerpt(unread.excerpt).text);
     expect(lineText(m.q('[data-subject-line]'))).toBe(`ETN · XLI · under your idea v${EXCERPT_IDEA_VERSION}`);
     m.teardown(); m.setup();
-    const noIdea = { ...structuredClone(DAY.tape), calls: [] };
-    const none = await excerptOfCard(dbOf(excerptStore({ ...DAY, tape: noIdea }, { card: card() })).db, { uid: OWNER, attributionAgentId: AGENT, entryId: EXCERPT_ENTRY });
-    renderReceipt({ tape: noIdea, idea: { status: 'idle', doc: null } });
+    const bare = { ...DAY.fx.battle, agentContext: { ...DAY.fx.battle.agentContext } };
+    delete bare.agentContext.equippedHypothesis;
+    const none = await excerptOfCard(dbOf(excerptStore(DAY, { card: card(), over: { [`agentBattles/${EXCERPT_BATTLE}`]: bare } })).db, { uid: OWNER, attributionAgentId: AGENT, entryId: EXCERPT_ENTRY });
+    renderReceipt({ idea: { status: 'idle', doc: null }, battleDoc: battle({ carriage: false }) });
     expect(lineText(m.q('[data-subject-line]'))).toBe(subjectOfExcerpt(none.excerpt).text);
     expect(lineText(m.q('[data-subject-line]'))).toBe('ETN · XLI');
   });
@@ -200,8 +203,8 @@ describe('CC-7 — the receipt says what the agent\'s excerpt says', () => {
 describe('the sweeps\' CC-7 binding — the statement is the player\'s own words only when bound to the version as read', () => {
   const DIGITS = 'Hold chips for 3 days; best if 2 of them run twice.';
   const formWith = (doc) => {
-    m.render(<YourCall tape={DAY.tape} moment={{ ...ETN_MOMENT, from: '2026-09-23T17:45:20.000Z', to: '2026-09-23T18:45:20.000Z', checks: 5 }} counter={{ status: 'ready', data: COUNTER() }} mintOpId={() => 'op_f'} onFile={async () => ({ ok: true })} onCancel={() => {}} idea={{ status: 'ready', doc }} />);
-    return { doc, docs: { tape: DAY.tape, idea: doc, ledger: { etDate: SEP23, cards: {} }, agentArchetype: 'momentum_chaser' } };
+    m.render(<YourCall tape={DAY.tape} moment={{ ...ETN_MOMENT, from: '2026-09-23T17:45:20.000Z', to: '2026-09-23T18:45:20.000Z', checks: 5 }} counter={{ status: 'ready', data: COUNTER() }} mintOpId={() => 'op_f'} onFile={async () => ({ ok: true })} onCancel={() => {}} idea={{ status: 'ready', doc }} battle={battle()} />);
+    return { doc, docs: { tape: DAY.tape, idea: doc, battle: battle(), ledger: { etDate: SEP23, cards: {} }, agentArchetype: 'momentum_chaser' } };
   };
   it('a statement with digits, a forbidden word and a number word, bound: the sweeps pass it as the player\'s words — and a longer one, cut at 60, binds as its cut', () => {
     const long = `${DIGITS} Then rotate into industrials.`;

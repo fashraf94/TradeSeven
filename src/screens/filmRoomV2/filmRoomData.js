@@ -13,8 +13,9 @@
 //     Film Room day; a read that fails says so and opens nothing.
 //
 //   * C2 item 5 (Build C Amendment C CC-7), UNDER CARDS MODE ONLY: ONE getDoc
-//     of the day's carried idea's version (`watchlists/{id}/hypothesisVersions/
-//     v{n}`, the ref the tape's calls name) for the subject line on the form and
+//     of the battle's carried idea's version (`watchlists/{id}/hypothesisVersions/
+//     v{n}`, the version the battle's frozen carriage names — Amendment D CD-8)
+//     for the subject line on the form and
 //     the receipt — once per version for the screen's life; the owner reads it
 //     by the parent list's rule. With cards off nothing asks for it.
 //

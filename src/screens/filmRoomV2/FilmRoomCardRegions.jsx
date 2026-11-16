@@ -73,7 +73,7 @@ import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, eyebrow, foot, mono, plain, tint, AggNum, TapeNum, When, Rec, Coverage, Quotation, TextButton, PrimaryButton, Label } from './FilmRoomKit';
 import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf, chainOf, latestOf } from './filmRoomCards';
 // Film Room C2 item 5 (Amendment C CC-7): the subject line — the ONE projection the moment excerpt says too
-import { subjectOfDayRead, ideaVersionPathOf, SUBJECT_WORDS, subjectKnownIds } from '../../utils/filmRoomSubject';
+import { subjectOfDayRead, IDEA_VERSION_PATH, CARRIAGE_NUMBER_CLASSES, SUBJECT_WORDS, subjectKnownIds } from '../../utils/filmRoomSubject';
 
 const T = COPY.cards;
 /**
@@ -134,21 +134,23 @@ function MomentFacts({ moment, size = 11.5 }) {
  * Film Room C2 item 5 — THE SUBJECT LINE under a card's facts (Build C spec §5; Amendment C CC-7), on the form and the
  * receipt, which render under cards mode only: "{SYM} · {sector} · under your idea '{statement, first 60 code points}'
  * v{n}" — the one projection the agent's excerpt says (filmRoomSubject.js subjectOfDay / subjectOfExcerpt), each part
- * only where it is held: the symbol and the directory's sector as the record's (Rec); the idea only when the day's calls
- * carry one, its statement the player's own words cut at 60 code points and bound to the version document as read
- * (`data-subject-statement` — the sweeps' binding), its version the tape's own marked number. With no carried idea the
+ * only where it is held: the symbol and the directory's sector as the record's (Rec); the idea only when the battle
+ * carried one (Amendment D CD-8: its frozen carriage), its statement the player's own words cut at 60 code points and
+ * bound to the version document as read (`data-subject-statement` — the sweeps' binding), its version the battle
+ * document's own number, marked `recorded` at the carriage's path (CE-5: CARRIAGE_NUMBER_CLASSES). With no carried idea the
  * line ends after the sector; while the version reads, or after the read failed, there is no line; a version the rules
  * deny shows no idea; a missing one, the idea without its statement — each what the excerpt says (subjectOfDayRead).
  *
  * @param {object}      props.tape    the day the moment is on (the card's own day, for a receipt)
+ * @param {object|null} props.battle  the battle the screen shows — its frozen carriage names the idea (CD-8)
  * @param {string}      props.symbol  the moment's symbol
  * @param {object|null} props.idea    the version read's state (filmRoomData.js useIdeaVersion)
  * @param {string[]}    [props.knownIds] CE-1: the ids the excerpt this line mirrors knows (subjectKnownIds) — a statement
  *                      holding one, or any id shape the platform mints, is not on the line, as the excerpt carries none
  */
-function SubjectLine({ tape, symbol, idea, knownIds = [] }) {
+function SubjectLine({ tape, battle = null, symbol, idea, knownIds = [] }) {
   // §2 review L3-2 / L3-8: while the version reads, or after it failed, no line — never one the excerpt would not say
-  const subject = tape ? subjectOfDayRead(tape, symbol, idea, tape.ownerId, knownIds) : null;
+  const subject = tape ? subjectOfDayRead(battle, symbol, idea, tape.ownerId, knownIds) : null;
   if (!subject) return null;
   const { line, idea: held } = subject;
   const S = SUBJECT_WORDS.separator;
@@ -160,7 +162,7 @@ function SubjectLine({ tape, symbol, idea, knownIds = [] }) {
         <>
           {S}{SUBJECT_WORDS.underIdea}
           {line.idea.statement !== null ? <>{" '"}<span data-subject-statement="">{line.idea.statement}</span>{"'"}</> : null}
-          {line.idea.version !== null ? <>{' v'}<TapeNum doc={tape} path={ideaVersionPathOf(held.ref)} fmt={String} size={10.5} weight={400} color={C.ink2} style={{ display: 'inline-flex' }} /></> : null}
+          {line.idea.version !== null ? <>{' v'}<TapeNum doc={battle} path={IDEA_VERSION_PATH} classes={CARRIAGE_NUMBER_CLASSES} docLabel="battle" fmt={String} size={10.5} weight={400} color={C.ink2} style={{ display: 'inline-flex' }} /></> : null}
         </>
       ) : null}
     </span>
@@ -225,7 +227,7 @@ export function CheckTags({ tape, index, onTakeHome }) {
  *                                   the line is words
  * @param {Function} props.mintOpId  a fresh op id, minted ONCE per form (review L4-9)
  */
-export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel, idea = null, subjectIds = null }) {
+export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel, idea = null, subjectIds = null, battle = null }) {
   const id = useId().replace(/[^A-Za-z0-9_-]/g, '');
   // RH-1 / RJ-8 / Amendment K RK-2: what Set says for the day, read from the tape (what the tagger used) — the rule
   // off is said after RG-5's sentence. The form never holds the link (RK-3)
@@ -269,7 +271,7 @@ export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel, id
         <MomentFacts moment={moment} />
       </div>
       {/* C2 item 5 (CC-7): the subject line, under the moment's facts */}
-      <SubjectLine tape={tape} symbol={moment.symbol} idea={idea} knownIds={subjectKnownIds(subjectIds ?? {})} />
+      <SubjectLine tape={tape} battle={battle} symbol={moment.symbol} idea={idea} knownIds={subjectKnownIds(subjectIds ?? {})} />
       <fieldset style={{ border: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
         <legend style={{ ...eyebrow, color: C.ink3, padding: 0, marginBottom: 4 }}>{T.question}</legend>
         {questions.map((q) => (
@@ -485,7 +487,7 @@ function Chain({ card, ledger, day, onOpenBook }) {
  * @param {Function}    [props.onNominate] Amendment A CA-7: offer a card at `card` to the agent — "Offer to your agent",
  *                                     shown only while the counter reports the owner's book open (strictly `=== true`)
  */
-export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark = null, onNominate = null, tape = null, onOpenForge = null, onOpenBook = null, idea = null, subjectIds = null }) {
+export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark = null, onNominate = null, tape = null, onOpenForge = null, onOpenBook = null, idea = null, subjectIds = null, battle = null }) {
   const data = counter?.status === 'ready' || counter?.data ? counter.data : null;
   const cards = ledgerOf(data, card);
   const live = cards.find((c) => c.entryId === card.entryId) ?? card;
@@ -548,7 +550,7 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, onPark 
       <CardFacts card={live} />
       {/* C2 item 5 (CC-7): the subject line, under the card's facts — from its own day only (as Set's words), so it is
           what the agent's excerpt of this card says; a card from another day shows none */}
-      {ownDay ? <SubjectLine tape={ownDay} symbol={live.source?.symbol} idea={idea} knownIds={subjectKnownIds({ ...(subjectIds ?? {}), card: live })} /> : null}
+      {ownDay ? <SubjectLine tape={ownDay} battle={battle} symbol={live.source?.symbol} idea={idea} knownIds={subjectKnownIds({ ...(subjectIds ?? {}), card: live })} /> : null}
       <Quotation doc={ledger} path={['cards', live.entryId, 'note']} by="you" at={['cards', live.entryId, 'createdAt']} docLabel="ledger" />
       <span style={mono(11, C.ink2)}>{T.route} · {wordOf(T.routes, routeOf(live.route))} · {T.stage} · {stageLabelOf(live)}{live.shelved ? ` · ${T.groups.shelved}` : ''}</span>
       <Chain card={live} ledger={ledger} day={day} onOpenBook={onOpenBook} />

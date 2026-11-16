@@ -39,7 +39,8 @@
 //
 // BOUNDED READS ONLY, plain document gets (never a transaction, a query or a collection scan): the tape day; the battle;
 // when the battle is a casual clone's, the owner's clone document and the parent agent it names (the platform
-// resolver's ownership guard); the idea's one hypothesis version; the sold symbol's one series document; and for a
+// resolver's ownership guard); the one hypothesis version the battle carried (CD-8: named by the battle's own frozen
+// carriage, from the battle document already read — no other lookup); the sold symbol's one series document; and for a
 // card, its one `plays` entry. Every instant carried or compared is a strict ISO 8601 date-time on a real calendar
 // (filmRoomSubject.js instantMs / instantText — CE-3). READ-ONLY BY CONSTRUCTION: no write call of any kind in
 // this module or anything it imports (momentExcerpt.test.js's write gate, the C1 census script's pattern).
@@ -53,7 +54,7 @@ import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 import { SITUATION_QUESTIONS } from '../../../src/data/situationQuestions.js';
 import { routeOf } from '../../../src/data/cardStages.js';
 import { isEtDate } from '../../../src/utils/tapeSchedule.js';
-import { sectorOf, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom, instantText, instantMs, promptQuoteText, subjectKnownIds } from '../../../src/utils/filmRoomSubject.js';
+import { sectorOf, IDEA_STATEMENT_MAX, carriedIdeaOf, ideaFrom, instantText, instantMs, promptQuoteText, subjectKnownIds } from '../../../src/utils/filmRoomSubject.js';
 import { tickerOk, situationIdOk, cardRouteOk, exitReasonOk, exitMechanismOk } from '../../../src/utils/promptBoundText.js';
 
 /** CC-6: the excerpt's shape version — today's BaggerBomb tape. */
@@ -181,18 +182,20 @@ async function ownedDayOf(db, { uid, attributionAgentId, battleId, etDate }) {
 }
 
 /**
- * The idea (spec §6): the label, the version and the version's statement as the player's words at the version's own
- * `createdAt` — the version document read once, then read by the ONE reading the screen's subject line shares
- * (filmRoomSubject.js ideaFrom, C2 item 5): the day's one carried ref (two distinct refs: none), the tape's own class for
- * the version's number, the document only when it is the caller's and the ref's (another owner's: no idea at all; one
- * that cannot be read, or a statement over its bound: the idea without its statement).
+ * The idea (spec §6; Amendment D CD-8, Amendment E CE-5): the label, the version and the version's statement as the
+ * player's words at the version's own `createdAt` — the idea the BATTLE carried (its frozen carriage, on the battle
+ * document ownedDayOf already read: no other lookup, and never the day's calls), its version document read once, then
+ * read by the ONE reading the screen's subject line shares (filmRoomSubject.js ideaFrom): the carried number
+ * `recorded`; the document only when it is the caller's and agrees with the carriage's list, version and content hash
+ * (another owner's or a contradicting one: no idea at all; one missing or that cannot be read, or a statement over its
+ * bound or holding an id: the idea without its statement). No carriage (a tournament battle has none): no idea.
  */
-async function ideaOf(db, uid, tape, knownIds) {
-  const ref = carriedIdeaRefOf(tape);
+async function ideaOf(db, uid, battle, knownIds) {
+  const ref = carriedIdeaOf(battle);
   if (!ref || !idOk(ref.watchlistId)) return null;
   const P = EXCERPT_PATHS;
   const doc = await readDoc(db.collection(P.ideaLists).doc(ref.watchlistId).collection(P.ideaVersions).doc(P.ideaVersionDocId(ref.hypothesisVersion)));
-  const found = ideaFrom(tape, doc, uid, knownIds);
+  const found = ideaFrom(battle, doc, uid, knownIds);
   if (!found) return null;
   const idea = { label: EXCERPT_LABELS.idea };
   if (found.version) idea.version = found.version;
@@ -356,7 +359,7 @@ const knownIdsOf = ({ uid, battleId, battle, attributionAgentId, watchlistId, en
 async function buildExcerpt(db, { uid, attributionAgentId, battleId, etDate, tape, battle, day, entry = null }) {
   const m = day.moment;
   // the idea's list is known to every quotation, not the statement alone (CE-1 item 1)
-  const knownIds = knownIdsOf({ uid, battleId, battle, attributionAgentId, watchlistId: carriedIdeaRefOf(tape)?.watchlistId ?? null, entry });
+  const knownIds = knownIdsOf({ uid, battleId, battle, attributionAgentId, watchlistId: carriedIdeaOf(battle)?.watchlistId ?? null, entry });
   const excerpt = { excerptVersion: MOMENT_EXCERPT_VERSION, battle: EXCERPT_LABELS.battle };
   const refs = { [EXCERPT_LABELS.battle]: battleId };
   // CE-1: the moment's own recorded words, each inside its domain — a symbol of the ticker shape, a registered situation
@@ -371,7 +374,7 @@ async function buildExcerpt(db, { uid, attributionAgentId, battleId, etDate, tap
   excerpt.checks = { value: m.checks, class: 'derived' };
   const sector = sectorOf(m.symbol);
   if (sector) excerpt.sector = recorded(sector);
-  const idea = await ideaOf(db, uid, tape, knownIds);
+  const idea = await ideaOf(db, uid, battle, knownIds);
   if (idea) { excerpt.idea = idea.idea; refs[EXCERPT_LABELS.idea] = idea.watchlistId; }
   const rationale = rationaleOf(tape, m, knownIds);
   if (rationale) excerpt.rationale = rationale;

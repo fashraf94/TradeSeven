@@ -473,14 +473,21 @@ export function axisDefects(container, docs) {
  */
 const isTypedText = (node) => node?.parentElement?.tagName === 'TEXTAREA' && node.parentElement.hasAttribute('data-note');
 
+/**
+ * Film Room C2 fix round (Build C Amendment E, CE-5): the BATTLE document's one number the screen marks — the version its
+ * frozen carriage names — and its class as the ruling gives it: recorded (the server wrote it at deploy). The battle
+ * holds no number declaration of its own; this oracle is the harness's, not the screen's.
+ */
+export const SPEC_BATTLE_NUMBER_CLASSES = Object.freeze({ 'agentContext.equippedHypothesis.hypothesisVersion': 'recorded' });
 export function sweepNumbers(container, docs) {
   const bad = [];
   for (const el of container.querySelectorAll('[data-num]')) {
-    const doc = docs[el.getAttribute('data-num-doc')];
+    const label = el.getAttribute('data-num-doc');
+    const doc = docs[label];
     const where = el.getAttribute('data-num');
     if (!doc) { bad.push(`unknown document for ${where}`); continue; }
     const path = parsePath(where);
-    const want = classOfNumber(doc.numberClasses, path);
+    const want = classOfNumber(doc.numberClasses ?? (label === 'battle' ? SPEC_BATTLE_NUMBER_CLASSES : undefined), path);
     const got = el.getAttribute('data-num-class');
     const mark = el.querySelector('[data-kind-mark]')?.getAttribute('data-kind-mark');
     if (!want) bad.push(`${where}: no declared class`);

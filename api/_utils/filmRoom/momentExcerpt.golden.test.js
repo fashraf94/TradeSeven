@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { excerptOf, excerptOfCard, MOMENT_EXCERPT_VERSION, EXCERPT_LABELS, EXCERPT_BOUNDS, QUOTE_SPEAKERS } from './momentExcerpt.js';
 import {
   excerptDay, excerptStore as storeOfDay, excerptCardWith, ideaVersionDoc, dbOf, OWNER, AGENT, CLONE_AGENT, SEP23, EXCERPT_BATTLE, EXCERPT_ENTRY,
-  EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION, ETN_MOMENT, META_MOMENT, EXCERPT_NOTE, EXCERPT_MEETING, FORGED_DIAGNOSIS,
+  EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION, ETN_MOMENT, META_MOMENT, EXCERPT_NOTE, EXCERPT_MEETING, FORGED_DIAGNOSIS, EXCERPT_STATEMENT, EXCERPT_CONTENT_HASH, ideaCall,
 } from './__fixtures__/excerptFixtures.js';
 import { buildCardDoc } from './cardStore.js';
 // CE-1: the card request's own note normaliser — a note holding an id is accepted at intake and left out at projection
@@ -231,19 +231,47 @@ describe('a field the tape does not hold is absent — never a guess, never a ne
     const early = await momentOver(excerptStore(DAY, { over: { [SERIES_ETN]: { ...etn, bars: etn.bars.filter((b) => Date.parse(b.t) < Date.parse('2026-09-23T19:00:00.000Z')) } } }));
     expect(early.excerpt.afterExit).toBeUndefined();
   });
-  it('no carried idea (no calls, or calls naming two ideas): no idea and no i1', async () => {
-    const none = await absentWith((t) => { t.calls = []; }, 'idea');
-    expect(none.refs.i1).toBeUndefined();
-    const two = await absentWith((t) => { t.calls.push({ ...clone(t.calls[0]), key: 'other', callId: 'other', hypothesisRef: { watchlistId: 'wl-other', hypothesisVersion: 1 } }); }, 'idea');
-    expect(two.refs.i1).toBeUndefined();
+  it('CD-8 — THE IDEA THE BATTLE CARRIED: the fixture day mints no call, and the idea is there — from the battle\'s frozen carriage', async () => {
+    expect(DAY.tape.calls).toEqual([]);
+    expect(DAY.fx.battle.agentContext.equippedHypothesis).toMatchObject({ watchlistId: EXCERPT_WATCHLIST, hypothesisVersion: EXCERPT_IDEA_VERSION, contentHash: EXCERPT_CONTENT_HASH });
+    expect(LIVE.moment.excerpt.idea).toEqual({ label: 'i1', version: { value: EXCERPT_IDEA_VERSION, class: 'recorded' }, statement: { text: EXCERPT_STATEMENT, by: 'player', at: ideaVersionDoc().createdAt, class: 'quoted' } });
+    expect(LIVE.moment.refs.i1).toBe(EXCERPT_WATCHLIST);
   });
-  it('the idea\'s version unreadable or missing: the idea without its statement; another owner\'s version: no idea at all', async () => {
+  it('CD-8 — NO CARRIAGE, NO IDEA, whatever the day\'s calls name (the mutant: the idea read from calls[] again)', async () => {
+    const noCarriage = { ...DAY.fx.battle, agentContext: { ...DAY.fx.battle.agentContext } };
+    delete noCarriage.agentContext.equippedHypothesis;
+    for (const calls of [[], [ideaCall(EXCERPT_BATTLE)], [ideaCall(EXCERPT_BATTLE), ideaCall(EXCERPT_BATTLE, { watchlistId: 'wl-other', hypothesisVersion: 1 })]]) {
+      const tape = { ...clone(DAY.tape), calls };
+      const got = await momentOver(excerptStore({ ...DAY, tape }, { over: { [`agentBattles/${EXCERPT_BATTLE}`]: noCarriage } }));
+      expect(got.excerpt.idea, `${calls.length} calls`).toBeUndefined();
+      expect(got.refs.i1).toBeUndefined();
+    }
+  });
+  it('CD-8 — CONTRADICTORY CALLS ARE IGNORED: calls naming another list, another version, or two ideas leave the carried idea exactly as it is', async () => {
+    for (const calls of [[ideaCall(EXCERPT_BATTLE, { watchlistId: 'wl-other', hypothesisVersion: 1 })], [ideaCall(EXCERPT_BATTLE, { watchlistId: EXCERPT_WATCHLIST, hypothesisVersion: 9 })], [ideaCall(EXCERPT_BATTLE), ideaCall(EXCERPT_BATTLE, { watchlistId: 'wl-other', hypothesisVersion: 1 })]]) {
+      const got = await momentOver(withTape((t) => { t.calls = calls; }));
+      expect(got.excerpt.idea).toEqual(LIVE.moment.excerpt.idea);
+      expect(got.refs.i1).toBe(EXCERPT_WATCHLIST);
+    }
+  });
+  it('CD-8 / CE-5 — THE VERSION DOCUMENT: missing or unread, the idea without its statement (never the frozen one); another owner\'s, or one contradicting the carriage — another list, version number or content hash — no idea at all', async () => {
     const missing = await momentOver(excerptStore(DAY, { idea: undefined, over: { [IDEA_PATH]: undefined } }));
     expect(missing.excerpt.idea).toEqual({ label: 'i1', version: { value: EXCERPT_IDEA_VERSION, class: 'recorded' } });
-    for (const foreign of [ideaVersionDoc({ userId: 'someone-else' }), ideaVersionDoc({ watchlistId: 'wl-other' }), ideaVersionDoc({ version: 2 })]) {
+    expect(missing.refs.i1).toBe(EXCERPT_WATCHLIST);
+    for (const foreign of [ideaVersionDoc({ userId: 'someone-else' }), ideaVersionDoc({ watchlistId: 'wl-other' }), ideaVersionDoc({ version: 2 }), ideaVersionDoc({ contentHash: 'f'.repeat(64) })]) {
       const got = await momentOver(excerptStore(DAY, { idea: foreign }));
-      expect(got.excerpt.idea, JSON.stringify(foreign)).toBeUndefined();
+      expect(got.excerpt.idea, JSON.stringify(foreign).slice(0, 120)).toBeUndefined();
       expect(got.refs.i1).toBeUndefined();
+    }
+  });
+  it('CD-8 — THE CARRIAGE IS READ FOR ITS IDENTITY ONLY: a carriage whose frozen statement says otherwise changes nothing; a malformed carriage (no hash, a version of 0, a reserved list id) is no idea', async () => {
+    const carriage = DAY.fx.battle.agentContext.equippedHypothesis;
+    const withCarriage = (c) => ({ ...DAY.fx.battle, agentContext: { ...DAY.fx.battle.agentContext, equippedHypothesis: c } });
+    const frozen = await momentOver(excerptStore(DAY, { over: { [`agentBattles/${EXCERPT_BATTLE}`]: withCarriage({ ...carriage, statement: 'FROZEN WORDS NEVER READ' }) } }));
+    expect(frozen.excerpt.idea).toEqual(LIVE.moment.excerpt.idea);
+    for (const bad of [{ ...carriage, contentHash: undefined }, { ...carriage, hypothesisVersion: 0 }, { ...carriage, watchlistId: '__x__' }]) {
+      const got = await momentOver(excerptStore(DAY, { over: { [`agentBattles/${EXCERPT_BATTLE}`]: withCarriage(bad) } }));
+      expect(got.excerpt.idea).toBeUndefined();
     }
   });
   it('the count: the item at the LAST check; with it missing, no count (the mutant: a neighbouring check\'s count)', async () => {
@@ -263,9 +291,10 @@ describe('a field the tape does not hold is absent — never a guess, never a ne
     expect(got.excerpt.exit.exitPrice).toBeUndefined();
     expect(got.excerpt.exit.sold).toBeDefined();
   });
-  it('EVERY CLASS IS THE DOCUMENT\'S OWN (§2 review L1-6): no declaration for the idea\'s version, the items\' version, or a series bar\'s close — that number is not carried', async () => {
-    const noVersion = await momentOver(withTape((t) => { delete t.numberClasses['calls[].hypothesisRef.hypothesisVersion']; }));
-    expect(noVersion.excerpt.idea).toEqual({ label: 'i1', statement: LIVE.moment.excerpt.idea.statement });
+  it('EVERY CLASS IS THE DOCUMENT\'S OWN (§2 review L1-6): no declaration for the items\' version, or a series bar\'s close — that number is not carried; the carried idea\'s version is the battle\'s own, `recorded` (CE-5), whatever the tape declares', async () => {
+    const noTapeCallClass = await momentOver(withTape((t) => { delete t.numberClasses['calls[].hypothesisRef.hypothesisVersion']; }));
+    expect(noTapeCallClass.excerpt.idea).toEqual(LIVE.moment.excerpt.idea);
+    expect(LIVE.moment.excerpt.idea.version).toEqual({ value: EXCERPT_IDEA_VERSION, class: 'recorded' });
     const noItemVersion = await momentOver(withTape((t) => { delete t.numberClasses['tags.items[].version']; }));
     expect(noItemVersion.excerpt.situationVersion).toBeUndefined();
     const etn = clone(DAY.series.find((s) => s.symbol === 'ETN'));

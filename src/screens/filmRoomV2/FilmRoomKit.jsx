@@ -88,8 +88,12 @@ const withSuffix = (text, suffix) => (suffix ? <span style={{ whiteSpace: 'nowra
  * class that document declares for that path. A missing value renders '—'
  * (no number, so no marker).
  */
-export function TapeNum({ doc, path, fmt = fmtPoints, size = 13, weight = 700, color, docLabel = 'tape', style, suffix = null }) {
-  const n = numberAt(doc, path);
+/**
+ * `classes` (Film Room C2 fix round, CE-5): a declaration handed in for a document that holds none of its own — the
+ * battle's carried idea version, `recorded` (filmRoomSubject.js CARRIAGE_NUMBER_CLASSES). Absent, the document's own.
+ */
+export function TapeNum({ doc, path, fmt = fmtPoints, size = 13, weight = 700, color, docLabel = 'tape', style, suffix = null, classes = null }) {
+  const n = numberAt(classes ? { ...doc, numberClasses: classes } : doc, path);
   const where = formatNumberPath(path);
   if (!n) {
     return <span data-num-missing={where} style={{ fontFamily: MONO, fontSize: size, color: C.ink3, ...style }}>—</span>;

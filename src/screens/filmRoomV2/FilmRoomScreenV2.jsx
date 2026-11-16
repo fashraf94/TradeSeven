@@ -24,8 +24,9 @@ import { isSessionDate, isBattleDay, closePassStartMs, closePassEndMs, closePass
 import { etClock, etDateLabel, tradingTimeline, meetingAnchor } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { useTapeDay, useSeriesDay, useIdeaVersion, firestoreReaders } from './filmRoomData';
-// Film Room C2 item 5 (Amendment C CC-7): the day's carried idea, read for the subject line under cards mode only
-import { carriedIdeaRefOf } from '../../utils/filmRoomSubject';
+// Film Room C2 item 5 (Amendment C CC-7): the idea the battle carried (Amendment D CD-8), read for the subject line under
+// cards mode only
+import { carriedIdeaOf } from '../../utils/filmRoomSubject';
 import { hasSeenFirstOpen, markFirstOpenSeen } from './filmRoomSeen';
 import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented, tabIdOf, panelIdOf, Chip, PrimaryButton, When, StoredNote, EmptyCard, AggNum, TapeNum } from './FilmRoomKit';
 import FilmRoomGlance from './FilmRoomGlance';
@@ -251,9 +252,10 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   // ATTRIBUTION agent (Amendment K RK-1: a casual clone's parent); the screen sends the battle's own.
   const agentId = (typeof battle?.agentId === 'string' && battle.agentId) || (typeof tape?.agentId === 'string' && tape.agentId) || null;
   const cards = useFilmRoomCards({ battle, agentId, api: cardsApi });
-  // C2 item 5 (CC-7): the subject line's idea — the version the day's calls carry, read once, ONLY under cards mode
-  // for a written day (cards off: no ref, nothing asked, nothing shown)
-  const idea = useIdeaVersion(cards.on === true && tape && Array.isArray(tape.checks) ? carriedIdeaRefOf(tape) : null, readers);
+  // C2 item 5 (CC-7): the subject line's idea — the version the BATTLE carried (CD-8: its frozen carriage, on the battle
+  // this screen was handed — no other lookup), read once, ONLY under cards mode for a written day (cards off: no ref,
+  // nothing asked, nothing shown)
+  const idea = useIdeaVersion(cards.on === true && tape && Array.isArray(tape.checks) ? carriedIdeaOf(battle) : null, readers);
   // C2 fix round (CE-1): the ids the agent's excerpt of this day knows — the subject line leaves out a statement holding one
   const subjectIds = { ownerId: tape?.ownerId ?? null, battleId: tape?.battleId ?? null, battleAgentId: battle?.agentId ?? null, attributionAgentId: cards.counter?.data?.attributionAgentId ?? null };
   const [picked, setPicked] = useState(null);      // the moment the form is open for
@@ -425,9 +427,9 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
       <footer style={{ padding: 0 }}>
         {cardsOn ? (
           <div data-cards-regions="footer" style={{ width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: picked || receipt ? (desktop ? '0 24px 48px' : '0 12px 40px') : 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {picked && written ? <YourCall key={`${day}:${picked.symbol}:${picked.fromTickSeq}`} tape={tape} moment={picked} counter={cards.counter} mintOpId={cards.mintOpId} onFile={onFile} onCancel={() => setPicked(null)} idea={idea} subjectIds={subjectIds} /> : null}
+            {picked && written ? <YourCall key={`${day}:${picked.symbol}:${picked.fromTickSeq}`} tape={tape} moment={picked} counter={cards.counter} mintOpId={cards.mintOpId} onFile={onFile} onCancel={() => setPicked(null)} idea={idea} subjectIds={subjectIds} battle={battle} /> : null}
             {/* Amendment K RK-3: Set's link is on the receipt, never the form — a trip to the Forge cannot discard an unfiled note */}
-            {receipt ? <Receipt key={receipt.entryId} day={day} counter={cards.counter} card={receipt} mintOpId={cards.mintOpId} onRetire={onRetire} onPark={onPark} onNominate={onNominate} tape={written ? tape : null} onOpenForge={onOpenForge} idea={idea} subjectIds={subjectIds} /> : null}
+            {receipt ? <Receipt key={receipt.entryId} day={day} counter={cards.counter} card={receipt} mintOpId={cards.mintOpId} onRetire={onRetire} onPark={onPark} onNominate={onNominate} tape={written ? tape : null} onOpenForge={onOpenForge} idea={idea} subjectIds={subjectIds} battle={battle} /> : null}
           </div>
         ) : <Reserved region="footer" names={COPY.reservedFooter} />}
       </footer>

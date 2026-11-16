@@ -6,7 +6,9 @@
 //   · the archetype `momentum_chaser` (a registry code-id) in place of `momentum`, which the registry does not know — so
 //     the tagger runs (sep23Day tags nothing: "stalled unavailable: unknown archetype");
 //   · the session's run records (tapeFixtures sessionRuns), so the checks section is complete and the tags with it;
-//   · one call record carrying the equipped idea's `hypothesisRef` (sep23Day mints no call), so the day carries an idea;
+//   · the BATTLE's frozen carriage of the idea (Amendment D CD-8, CD-12): its version built by the hypothesis store's own
+//     builder (buildVersionDoc, so its content hash is the store's), and the carriage the deploy freezes from it (the
+//     carriage module's own siblingOf) on the battle's agentContext — no call record carries it (the day mints none);
 //   · one gameplan meeting whose life holds the ETN moment, with its roster (ETN in the book, MU on the bench) so its
 //     leg is copied — on the TAPE only: the excerpt carries no meeting (Build C Amendment D, CD-16).
 // The committed screen fixtures and the cards-off goldens read sep23Day untouched; nothing here edits it.
@@ -19,6 +21,9 @@ import { sep23Day, buildTapeDay, sep23Bars, SEP23, SEP23_NIGHT, SEP23_MORNING } 
 import { sessionRuns, OWNER, AGENT } from '../../filmTape/__fixtures__/tapeFixtures.js';
 import { makeTapeDb } from '../../filmTape/__fixtures__/tapeFirestore.js';
 import { casualCloneDocId } from '../../../../src/constants/leagueTournament.js';
+// CD-8: the version document and the battle's carriage, as the hypothesis store and the deploy write them
+import { buildVersionDoc } from '../../hypothesisRecords/model.js';
+import { siblingOf } from '../../hypothesisRecords/carriage.js';
 // The card is built by the ledger's own builder (cardStore.js buildCardDoc), which the TEST hands in — a fixture module
 // importing the store would be one more importer of the ledger in the one-door census's whole-tree scan.
 
@@ -40,16 +45,16 @@ const iso = (ms) => new Date(ms).toISOString();
 const at = (hhmmss) => Date.parse(`${SEP23}T${hhmmss}.000Z`);
 
 /**
- * The one call record the day mints, carrying the equipped idea: a `called_shot` with origin `equipped` and a ref naming
- * the list and its version, as callRecords/candidate.js writes one (§2 review L1-8).
+ * A call record carrying an idea's `hypothesisRef`, as callRecords/candidate.js writes one (§2 review L1-8). CD-8: the
+ * excerpt never reads calls — the fixture day mints none; a test adds one (another list's, say) to prove it is ignored.
  */
-function ideaCall(battleId) {
+export function ideaCall(battleId, ref = { watchlistId: EXCERPT_WATCHLIST, hypothesisVersion: EXCERPT_IDEA_VERSION }) {
   return {
     callId: `${battleId}:${battleId}:e12:call:0`, kind: 'called_shot', battleId, evalId: `${battleId}:e12`, evalSeq: 12,
     mintedAt: at('17:00:25'), symbol: 'MU', direction: 'entry', slot: 'support', counterpart: 'ETN',
     condition: { side: 'above', level: 127 }, horizon: { phrase: 'this_session', expiresAt: at('20:00:00'), basis: 'session_close' },
     defaultAction: 'act', said: 'SAID-TEXT-NEVER-COPIED', evidence: { tickId: `${battleId}:12`, availability: 'unresolved', priceAsOf: iso(at('17:00:12')) },
-    hypothesisRef: { watchlistId: EXCERPT_WATCHLIST, hypothesisVersion: EXCERPT_IDEA_VERSION },
+    hypothesisRef: ref,
     origin: 'equipped', state: 'open', stateChangedAt: at('17:00:25'), stateSource: 'mint',
     playerResponse: null, directiveThreadId: null, outcome: null, refused: null,
   };
@@ -82,7 +87,9 @@ export async function excerptDay({ battleId = EXCERPT_BATTLE, clone = false, mee
   fx.battle.portfolio = { ...fx.battle.portfolio, support: [{ symbol: 'ETN' }], bench: { stocks: [{ symbol: 'MU' }] } };
   fx.battle.gameplanMeetingHistory = structuredClone(meetings);
   fx.runs = sessionRuns(SEP23);
-  fx.calls = [ideaCall(battleId)];
+  fx.calls = [];
+  // CD-8: the idea rides on the battle — its frozen carriage, as the deploy writes it from the version it resolved
+  fx.battle.agentContext.equippedHypothesis = siblingOf(ideaVersionDoc());
   if (edit) edit(fx);
   const { tape, series } = await buildTapeDay(fx, { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sep23Bars(SEP23) });
   return { fx, tape, series };
@@ -100,9 +107,22 @@ export function excerptCardWith(buildCardDoc, { battleId = EXCERPT_BATTLE, agent
   });
 }
 
-/** The idea's version document, as the hypothesis store writes one (only the fields the excerpt reads, and its identity). */
+/**
+ * The idea's version document, as the hypothesis store writes one — its own builder (buildVersionDoc), so its
+ * `contentHash` is the store's hash of its content — then activated by the deploy. `over` changes stored fields only (the
+ * hash stays the stored one, as a document whose words were changed under it would hold).
+ */
+const STORED_IDEA_VERSION = Object.freeze({
+  ...buildVersionDoc({
+    version: EXCERPT_IDEA_VERSION, watchlistId: EXCERPT_WATCHLIST, userId: OWNER, opId: 'op-excerpt-idea', opFingerprint: 'f'.repeat(64), createdAt: EXCERPT_STATEMENT_AT,
+    content: { statement: EXCERPT_STATEMENT, horizonEnum: 'swing', horizonSource: 'player', activation: [], invalidation: [], evidenceRefs: [], publishedAt: null, origin: 'manual' },
+    status: 'ready', stateSource: 'player', stateReason: 'player_ready',
+  }),
+  status: 'activated', stateSource: 'deploy', stateReason: 'deployed',
+});
+export const EXCERPT_CONTENT_HASH = STORED_IDEA_VERSION.contentHash;
 export function ideaVersionDoc(over = {}) {
-  return { version: EXCERPT_IDEA_VERSION, watchlistId: EXCERPT_WATCHLIST, userId: OWNER, createdAt: EXCERPT_STATEMENT_AT, statement: EXCERPT_STATEMENT, status: 'deployed', ...over };
+  return { ...structuredClone(STORED_IDEA_VERSION), ...over };
 }
 
 /**

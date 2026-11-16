@@ -11,11 +11,12 @@
 //                 The idea's statement is bounded at IDEA_STATEMENT_MAX here, so the excerpt and the screen hold the same
 //                 statement or none.
 //
-//   the IDEA      the day's one carried idea (the distinct `calls[].hypothesisRef` its calls name — two is ambiguous:
-//                 none), its version number with the tape's own class for it, and the version document's statement —
-//                 kept only when the document is the owner's and the ref's (another owner's: no idea at all; unread or
-//                 missing: the idea without its statement). ideaFrom is the ONE reading of it: the excerpt (server)
-//                 and the screen (client) hand it the version document each read, and build from what it answers.
+//   the IDEA      the idea the BATTLE carried (Amendment D CD-8): its frozen carriage's list, version and content
+//                 hash, the version number `recorded` (CE-5), and the version document's statement — kept only when
+//                 the document is the owner's and agrees with the carriage (another owner's, or a contradicting one:
+//                 no idea at all; unread or missing: the idea without its statement). The day's calls are not read.
+//                 ideaFrom is the ONE reading of it: the excerpt (server) and the screen (client) hand it the battle
+//                 and the version document each read, and build from what it answers.
 //   the SUBJECT LINE (CC-7)  "{SYM} · {sector} · under your idea '{statement, first 60 code points}' v{n}", each part
 //                 only where it is held — with no carried idea the line ends after the sector. subjectLineOf is the
 //                 one projection; subjectOfExcerpt reads it off an excerpt, the screen off the same inputs.
@@ -98,47 +99,55 @@ export function sectorOf(symbol) {
   return typeof id === 'string' && /^\S+$/.test(id) ? id : null;
 }
 
-/**
- * The day's one carried idea: the distinct `calls[].hypothesisRef` (`watchlistId`, a positive `hypothesisVersion`) the
- * tape's calls name, with the index of the first call naming it (its number's path) — exactly one, or null.
- *
- * @returns {{ watchlistId: string, hypothesisVersion: number, i: number }|null}
- */
-/** A list id the ref may name: the forge-id class, never a reserved `__id__` (a path segment both sides read by — §2 review L3-8). */
+/** A list id the carriage may name: the forge-id class, never a reserved `__id__` (a path segment both sides read by — §2 review L3-8). */
 const LIST_ID = /^[A-Za-z0-9_-]{1,200}$/;
 const listIdOk = (v) => typeof v === 'string' && LIST_ID.test(v) && !/^__.*__$/.test(v);
 
-export function carriedIdeaRefOf(tape) {
-  const calls = Array.isArray(tape?.calls) ? tape.calls : [];
-  const found = [];
-  calls.forEach((c, i) => {
-    const r = isObj(c) && isObj(c.hypothesisRef) ? c.hypothesisRef : null;
-    if (!r || !listIdOk(r.watchlistId) || !Number.isInteger(r.hypothesisVersion) || r.hypothesisVersion < 1) return;
-    if (!found.some((f) => f.watchlistId === r.watchlistId && f.hypothesisVersion === r.hypothesisVersion)) found.push({ watchlistId: r.watchlistId, hypothesisVersion: r.hypothesisVersion, i });
-  });
-  return found.length === 1 ? found[0] : null;
-}
-
-/** The path of the carried idea's version number on the tape (`calls[i].hypothesisRef.hypothesisVersion`). */
-export const ideaVersionPathOf = (ref) => ['calls', ref.i, 'hypothesisRef', 'hypothesisVersion'];
+/**
+ * CD-8 — WHERE THE IDEA IS: the battle's own frozen carriage, `agentContext.equippedHypothesis`, which the server wrote
+ * at deploy (agentBattleService.js createAgentBattle, from the version the deploy resolved — never on a tournament
+ * battle) and no client may write. Only its identity is read: the list, the version number and the content hash; never
+ * its frozen statement (the statement is the version document's, read and checked below). The day's calls are not read.
+ */
+export const CARRIAGE_PATH = Object.freeze(['agentContext', 'equippedHypothesis']);
+/** The carried version number's path on the battle document — the provenance both the excerpt and the screen bind to. */
+export const IDEA_VERSION_PATH = Object.freeze([...CARRIAGE_PATH, 'hypothesisVersion']);
+/**
+ * CE-5 — the carried version number's TRUTHFUL provenance: `recorded`, the battle document's own value as the server
+ * wrote it at deploy (the battle holds no number declaration of its own; this is that one number's, and no call path is
+ * invented for it).
+ */
+export const CARRIAGE_NUMBER_CLASSES = Object.freeze({ 'agentContext.equippedHypothesis.hypothesisVersion': 'recorded' });
 
 /**
- * THE IDEA, the one reading of it (spec §6; CC-7): from the tape's carried ref and the version document as read
- * (`doc`: the document, or null when it is missing or could not be read), for `ownerId`:
- *   no carried idea → null;
- *   a document that is not the owner's, or not the ref's list or version → null (no idea at all — never another
- *   owner's words);
- *   otherwise `{ ref, version, statement, statementAt }`: `version` the ref's number with the tape's own class for its
- *   path (`{ value, class }`, null when the tape declares none), `statement` the document's statement within
- *   IDEA_STATEMENT_MAX (null when unread, missing or over the bound) and holding no identifier — CE-1: none of
- *   `knownIds`, nor the owner's, nor the idea's own list, nor any id shape (promptQuoteText) — `statementAt` the
- *   document's `createdAt`.
+ * The battle's carried idea — `{ watchlistId, hypothesisVersion, contentHash }` from its frozen carriage — or null: a
+ * battle with no carriage (a tournament battle never has one), or one whose list id, version or hash is malformed.
  */
-export function ideaFrom(tape, doc, ownerId, knownIds = []) {
-  const ref = carriedIdeaRefOf(tape);
+export function carriedIdeaOf(battle) {
+  const ctx = isObj(battle) && isObj(battle.agentContext) ? battle.agentContext : null;
+  const c = ctx && isObj(ctx.equippedHypothesis) ? ctx.equippedHypothesis : null;
+  if (!c || !listIdOk(c.watchlistId) || !Number.isInteger(c.hypothesisVersion) || c.hypothesisVersion < 1 || typeof c.contentHash !== 'string' || !c.contentHash) return null;
+  return { watchlistId: c.watchlistId, hypothesisVersion: c.hypothesisVersion, contentHash: c.contentHash };
+}
+
+/**
+ * THE IDEA, the one reading of it (spec §6; CC-7; Amendment D CD-8 with Amendment E CE-5): from the battle's frozen
+ * carriage and the version document as read (`doc`: the document, or null when it is missing or could not be read), for
+ * `ownerId`:
+ *   no carriage → null;
+ *   a document that is another owner's, or CONTRADICTS the carriage — another list, another version number, another
+ *   content hash → null: no idea at all (the carriage is server-written, so a mismatch is corruption, and nothing is said);
+ *   a document missing or unread → the idea without its statement;
+ *   otherwise `{ ref, version, statement, statementAt }`: `version` the carried number, `recorded` (CE-5: the battle's
+ *   own value, CARRIAGE_NUMBER_CLASSES), `statement` the document's statement within IDEA_STATEMENT_MAX and holding no
+ *   identifier — CE-1: none of `knownIds`, nor the owner's, nor the idea's own list, nor any id shape (promptQuoteText)
+ *   — `statementAt` the document's `createdAt`.
+ */
+export function ideaFrom(battle, doc, ownerId, knownIds = []) {
+  const ref = carriedIdeaOf(battle);
   if (!ref) return null;
-  if (isObj(doc) && (doc.userId !== ownerId || doc.watchlistId !== ref.watchlistId || doc.version !== ref.hypothesisVersion)) return null;
-  const cls = classOfNumber(tape?.numberClasses, ideaVersionPathOf(ref));
+  if (isObj(doc) && (doc.userId !== ownerId || doc.watchlistId !== ref.watchlistId || doc.version !== ref.hypothesisVersion || doc.contentHash !== ref.contentHash)) return null;
+  const cls = classOfNumber(CARRIAGE_NUMBER_CLASSES, IDEA_VERSION_PATH);
   const statement = isObj(doc) ? promptQuoteText(doc.statement, IDEA_STATEMENT_MAX, [...knownIds, ownerId, ref.watchlistId]) : null;
   const at = isObj(doc) ? instantText(doc.createdAt) : null;
   return { ref, version: cls ? { value: ref.hypothesisVersion, class: cls } : null, statement, statementAt: statement ? at : null };
@@ -186,12 +195,12 @@ export function subjectOfExcerpt(excerpt) {
 }
 
 /**
- * The subject line a day says for `symbol`, from the tape and the version document as read — the screen's side of the
- * same projection. `knownIds`: the ids the screen holds for the excerpt it mirrors (CE-1) — the battle, its agent, the
- * attribution agent, and on a receipt the card's entry, agent, nomination and book.
+ * The subject line a day says for `symbol`, from the battle's carriage (CD-8) and the version document as read — the
+ * screen's side of the same projection. `knownIds`: the ids the screen holds for the excerpt it mirrors (CE-1) — the
+ * battle, its agent, the attribution agent, and on a receipt the card's entry, agent, nomination and book.
  */
-export function subjectOfDay(tape, symbol, doc, ownerId, knownIds = []) {
-  const idea = ideaFrom(tape, doc, ownerId, knownIds);
+export function subjectOfDay(battle, symbol, doc, ownerId, knownIds = []) {
+  const idea = ideaFrom(battle, doc, ownerId, knownIds);
   const line = subjectLineOf({ symbol, sector: sectorOf(symbol), idea: idea ? { statement: idea.statement, version: idea.version?.value ?? null } : null });
   return line ? { line, idea } : null;
 }
@@ -200,16 +209,17 @@ export function subjectOfDay(tape, symbol, doc, ownerId, knownIds = []) {
  * The screen's subject line from the version READ's state (filmRoomData.js useIdeaVersion), so the receipt never says
  * other than the excerpt does (§2 review L3-2, L3-8):
  *   loading · error   no line yet — saying nothing is not saying something else (the excerpt would quote the statement);
- *   denied            the rules refused the version: not the owner's — no idea, as the excerpt says of another owner's;
- *   missing · idle    the idea without its statement (the excerpt's answer for a version it cannot read);
- *   ready             the document as read.
+ *   denied            the rules refused the version: the line shows without the idea ("ETN · Industrials") — Amendment
+ *                     E's CD-10 correction: CD-10's "no line" covered loading and failure only;
+ *   missing · idle    the idea without its statement (the excerpt's answer for a version missing or unread);
+ *   ready             the document as read — one that contradicts the carriage gives no idea, as the excerpt's does.
  */
-export function subjectOfDayRead(tape, symbol, read, ownerId, knownIds = []) {
+export function subjectOfDayRead(battle, symbol, read, ownerId, knownIds = []) {
   const status = read?.status ?? 'idle';
-  if (status === 'loading' || status === 'error') return carriedIdeaRefOf(tape) ? null : subjectOfDay(tape, symbol, null, ownerId, knownIds);
+  if (status === 'loading' || status === 'error') return carriedIdeaOf(battle) ? null : subjectOfDay(battle, symbol, null, ownerId, knownIds);
   if (status === 'denied') {
     const line = subjectLineOf({ symbol, sector: sectorOf(symbol), idea: null });
     return line ? { line, idea: null } : null;
   }
-  return subjectOfDay(tape, symbol, status === 'ready' ? read.doc : null, ownerId, knownIds);
+  return subjectOfDay(battle, symbol, status === 'ready' ? read.doc : null, ownerId, knownIds);
 }

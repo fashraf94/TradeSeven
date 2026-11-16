@@ -122,6 +122,14 @@ describe('the attribution — a casual clone\'s battle, by the platform resolver
     expect((await cardOver(cloneStore()))?.refs.c1).toBe(EXCERPT_ENTRY);
     expect(await momentOver(cloneStore(), { ...MOMENT_ASK, attributionAgentId: CLONE_AGENT })).toBeNull();
   });
+  it('CD-8 — a clone\'s battle carries its idea on its OWN frozen carriage: the excerpt under the parent has it, from the battle already read (no other lookup)', async () => {
+    const t = dbOf(cloneStore());
+    const got = await excerptOf(t.db, MOMENT_ASK);
+    expect(got.excerpt.idea).toMatchObject({ label: 'i1', version: { value: EXCERPT_IDEA_VERSION, class: 'recorded' } });
+    expect(got.excerpt.idea.statement.by).toBe('player');
+    expect(got.refs.i1).toBe(EXCERPT_WATCHLIST);
+    expect(t.readLog.filter((p) => p === `agentBattles/${EXCERPT_BATTLE}`)).toHaveLength(1);
+  });
   it('the clone document missing, another owner\'s, naming no parent, or naming a clone: null — nothing answered under a clone', async () => {
     for (const doc of [undefined, { ownerId: 'someone-else', rankedAgentId: AGENT }, { ownerId: OWNER }, { ownerId: OWNER, rankedAgentId: '' }, { ownerId: OWNER, rankedAgentId: CLONE_AGENT }]) {
       expect(await momentOver(cloneStore({ [`agents/${CLONE_AGENT}`]: doc })), JSON.stringify(doc)).toBeNull();

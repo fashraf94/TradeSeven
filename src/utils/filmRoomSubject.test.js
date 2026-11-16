@@ -7,11 +7,10 @@ import { describe, it, expect } from 'vitest';
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): filmRoomSubject.js imports api/_utils/rankingConfig.js; the excerpt
 // (api/) imports this module — this import is the runtime guard that it stays Node-clean, never mocked.
 import {
-  sectorOf, boundedText, codePointsOf, IDEA_STATEMENT_MAX, carriedIdeaRefOf, ideaFrom, ideaVersionPathOf, subjectLineOf, subjectOfExcerpt, subjectOfDay, subjectOfDayRead,
+  sectorOf, boundedText, codePointsOf, IDEA_STATEMENT_MAX, carriedIdeaOf, ideaFrom, IDEA_VERSION_PATH, CARRIAGE_NUMBER_CLASSES, subjectLineOf, subjectOfExcerpt, subjectOfDay, subjectOfDayRead,
   firstCodePoints, SUBJECT_STATEMENT_CODE_POINTS, SUBJECT_WORDS, instantMs, instantText,
 } from './filmRoomSubject.js';
 import { TICKER_TO_SECTOR, STOCK_UNIVERSE } from '../../api/_utils/rankingConfig.js';
-import { TAPE_NUMBER_CLASSES } from '../constants/filmTape.js';
 
 describe('sectorOf — the directory\'s one word for a symbol, or none', () => {
   it('a mapped symbol: the directory\'s own value, its sector id (one word)', () => {
@@ -44,35 +43,42 @@ describe('boundedText — whole within its bound, or not carried; code points, a
   });
 });
 
-// ── C2 item 5 — the idea's one reading, and the subject line (CC-7) ─────────
+// ── C2 item 5 — the idea's one reading, and the subject line (CC-7); CD-8 — the idea the battle carried ─────────
 
 const OWNER = 'owner-s';
-const REF = { watchlistId: 'wl-s', hypothesisVersion: 4, equippedConfigHash: 'h' };
-const tapeWith = (calls, numberClasses = TAPE_NUMBER_CLASSES) => ({ ownerId: OWNER, numberClasses, calls });
-const call = (ref = REF) => ({ callId: `c-${Math.random()}`, hypothesisRef: ref });
-const version = (over = {}) => ({ version: 4, watchlistId: 'wl-s', userId: OWNER, createdAt: '2026-09-20T15:00:00.000Z', statement: 'Chips lead while the market drifts.', ...over });
+const HASH = 'h'.repeat(64);
+/** A battle carrying an idea — its frozen carriage as the deploy writes it (Amendment D CD-8). */
+const battleWith = (carriage = { watchlistId: 'wl-s', hypothesisVersion: 4, contentHash: HASH, statement: 'FROZEN-STATEMENT-NEVER-READ' }) => ({ ownerId: OWNER, agentContext: { archetype: 'momentum_chaser', ...(carriage ? { equippedHypothesis: carriage } : {}) } });
+const version = (over = {}) => ({ version: 4, watchlistId: 'wl-s', userId: OWNER, contentHash: HASH, createdAt: '2026-09-20T15:00:00.000Z', statement: 'Chips lead while the market drifts.', ...over });
 
-describe('the idea — one reading of the carried ref and its version (ideaFrom)', () => {
-  it('the day\'s one distinct ref, the index of its first call; none, or two distinct, is null (never a guess)', () => {
-    expect(carriedIdeaRefOf(tapeWith([{ callId: 'x', hypothesisRef: null }, call(), call()]))).toEqual({ watchlistId: 'wl-s', hypothesisVersion: 4, i: 1 });
-    expect(carriedIdeaRefOf(tapeWith([]))).toBeNull();
-    expect(carriedIdeaRefOf(tapeWith([call(), call({ watchlistId: 'wl-s', hypothesisVersion: 5 })]))).toBeNull();
-    expect(carriedIdeaRefOf(tapeWith([call({ watchlistId: 'wl-s', hypothesisVersion: 0 })]))).toBeNull();
-    expect(carriedIdeaRefOf(null)).toBeNull();
-    expect(ideaVersionPathOf({ i: 2 })).toEqual(['calls', 2, 'hypothesisRef', 'hypothesisVersion']);
+describe('the idea — the battle\'s frozen carriage and its version (carriedIdeaOf, ideaFrom; CD-8, CE-5)', () => {
+  it('the carriage\'s identity — list, version, hash — and nothing else; no carriage, or a malformed one, is null (never a guess)', () => {
+    expect(carriedIdeaOf(battleWith())).toEqual({ watchlistId: 'wl-s', hypothesisVersion: 4, contentHash: HASH });
+    expect(carriedIdeaOf(battleWith(null))).toBeNull();
+    for (const bad of [{ watchlistId: 'wl-s', hypothesisVersion: 0, contentHash: HASH }, { watchlistId: 'wl-s', hypothesisVersion: 4 }, { watchlistId: 'wl-s', hypothesisVersion: 4, contentHash: '' }, { watchlistId: 'wl-s', hypothesisVersion: '4', contentHash: HASH }, 'x', null]) {
+      expect(carriedIdeaOf({ agentContext: { equippedHypothesis: bad } }), JSON.stringify(bad)).toBeNull();
+    }
+    expect(carriedIdeaOf(null)).toBeNull();
+    expect(carriedIdeaOf({})).toBeNull();
+    expect(IDEA_VERSION_PATH).toEqual(['agentContext', 'equippedHypothesis', 'hypothesisVersion']);
   });
-  it('the owner\'s version: the version with the tape\'s own class, the statement and its time', () => {
-    expect(ideaFrom(tapeWith([call()]), version(), OWNER)).toEqual({ ref: { watchlistId: 'wl-s', hypothesisVersion: 4, i: 0 }, version: { value: 4, class: 'recorded' }, statement: 'Chips lead while the market drifts.', statementAt: '2026-09-20T15:00:00.000Z' });
+  it('THE DAY\'S CALLS ARE NOT READ: a battle with no carriage has no idea whatever its tape\'s calls name (the mutant: the idea read from calls[] again)', () => {
+    const tapeOnly = { ownerId: OWNER, calls: [{ callId: 'c', hypothesisRef: { watchlistId: 'wl-s', hypothesisVersion: 4 } }] };
+    expect(ideaFrom(tapeOnly, version(), OWNER)).toBeNull();
+    expect(ideaFrom(battleWith(null), version(), OWNER)).toBeNull();
   });
-  it('unread or missing: the idea without its statement; over its bound: the same', () => {
-    expect(ideaFrom(tapeWith([call()]), null, OWNER)).toMatchObject({ version: { value: 4, class: 'recorded' }, statement: null, statementAt: null });
-    expect(ideaFrom(tapeWith([call()]), version({ statement: 'x'.repeat(IDEA_STATEMENT_MAX + 1) }), OWNER).statement).toBeNull();
+  it('the owner\'s version agreeing with the carriage: the version RECORDED (CE-5 — the battle\'s own value), the statement and its time; the frozen statement never', () => {
+    expect(ideaFrom(battleWith(), version(), OWNER)).toEqual({ ref: { watchlistId: 'wl-s', hypothesisVersion: 4, contentHash: HASH }, version: { value: 4, class: 'recorded' }, statement: 'Chips lead while the market drifts.', statementAt: '2026-09-20T15:00:00.000Z' });
+    expect(CARRIAGE_NUMBER_CLASSES).toEqual({ 'agentContext.equippedHypothesis.hypothesisVersion': 'recorded' });
   });
-  it('another owner\'s, or another list\'s or version\'s document: no idea at all', () => {
-    for (const doc of [version({ userId: 'someone-else' }), version({ watchlistId: 'wl-other' }), version({ version: 3 })]) expect(ideaFrom(tapeWith([call()]), doc, OWNER), JSON.stringify(doc)).toBeNull();
+  it('MISSING OR UNREAD: the idea without its statement — never the frozen statement in its place; over its bound: the same', () => {
+    expect(ideaFrom(battleWith(), null, OWNER)).toEqual({ ref: { watchlistId: 'wl-s', hypothesisVersion: 4, contentHash: HASH }, version: { value: 4, class: 'recorded' }, statement: null, statementAt: null });
+    expect(ideaFrom(battleWith(), version({ statement: 'x'.repeat(IDEA_STATEMENT_MAX + 1) }), OWNER).statement).toBeNull();
   });
-  it('a tape that declares no class for the version\'s number: the idea without its version', () => {
-    expect(ideaFrom(tapeWith([call()], {}), version(), OWNER).version).toBeNull();
+  it('ANOTHER OWNER\'S, OR ONE THAT CONTRADICTS THE CARRIAGE — another list, version number or content hash: no idea at all (CE-5\'s CD-8 correction; the mutant: a hash mismatch carrying the idea)', () => {
+    for (const doc of [version({ userId: 'someone-else' }), version({ watchlistId: 'wl-other' }), version({ version: 3 }), version({ contentHash: 'g'.repeat(64) }), version({ contentHash: undefined })]) {
+      expect(ideaFrom(battleWith(), doc, OWNER), JSON.stringify(doc)).toBeNull();
+    }
   });
 });
 
@@ -91,7 +97,7 @@ describe('THE SUBJECT LINE — one projection (CC-7), each part only where held'
     expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: { statement: null, version: 2 } }).text).toBe('ETN · XLI · under your idea v2');
     expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: { statement: 'Hold.', version: null } }).text).toBe("ETN · XLI · under your idea 'Hold.'");
     expect(subjectLineOf({ symbol: 'ETN', sector: null, idea: null }).text).toBe('ETN');
-    for (const symbol of [null, undefined, '', 7]) expect(subjectLineOf({ symbol, sector: 'XLI' }), String(symbol)).toBeNull();
+    for (const symbol of [null, undefined, '', 7, 'Ab3dEf7hIj9kLm1nOp5q']) expect(subjectLineOf({ symbol, sector: 'XLI' }), String(symbol)).toBeNull();
   });
   it('THE 60-CODE-POINT CUT: 60 kept whole, the 61st gone; an astral character counts once and is never split', () => {
     expect(SUBJECT_STATEMENT_CODE_POINTS).toBe(60);
@@ -104,36 +110,36 @@ describe('THE SUBJECT LINE — one projection (CC-7), each part only where held'
     expect(codePointsOf(subjectLineOf({ symbol: 'A', idea: { statement: 'x'.repeat(200), version: 1 } }).idea.statement)).toBe(60);
   });
   it('the screen\'s side (subjectOfDay) and the excerpt\'s side (subjectOfExcerpt) say the same line from the same facts; the sector from the directory alone (the mutant: a sector guessed)', () => {
-    const tape = tapeWith([call()]);
-    const day = subjectOfDay(tape, 'ETN', version(), OWNER);
+    const day = subjectOfDay(battleWith(), 'ETN', version(), OWNER);
     const excerpt = { symbol: { value: 'ETN', class: 'recorded' }, sector: { value: 'XLI', class: 'recorded' }, idea: { label: 'i1', version: { value: 4, class: 'recorded' }, statement: { text: 'Chips lead while the market drifts.', by: 'player', at: null, class: 'quoted' } } };
     expect(day.line).toEqual(subjectOfExcerpt(excerpt));
-    expect(subjectOfDay(tape, 'ZZQX', version(), OWNER).line.sector).toBeNull();
-    expect(subjectOfDay(tapeWith([]), 'ETN', null, OWNER).line.text).toBe('ETN · XLI');
-    expect(subjectOfDay(tape, 'ETN', version({ userId: 'someone-else' }), OWNER).line.text).toBe('ETN · XLI');
+    expect(subjectOfDay(battleWith(), 'ZZQX', version(), OWNER).line.sector).toBeNull();
+    expect(subjectOfDay(battleWith(null), 'ETN', null, OWNER).line.text).toBe('ETN · XLI');
+    expect(subjectOfDay(battleWith(), 'ETN', version({ userId: 'someone-else' }), OWNER).line.text).toBe('ETN · XLI');
     expect(subjectOfExcerpt({ symbol: { value: 'ETN' } }).text).toBe('ETN');
     expect(subjectOfExcerpt(null)).toBeNull();
   });
 });
 
-describe('the §2 review\'s lens 3 — the read\'s states, the ref\'s id class, no dangling fragment', () => {
-  it('a ref naming a list id outside the forge-id class, or a reserved `__id__`, carries no idea on either side (L3-8)', () => {
-    for (const watchlistId of ['a/b', '__x__', '', 'x'.repeat(201)]) expect(carriedIdeaRefOf(tapeWith([call({ watchlistId, hypothesisVersion: 4 })])), watchlistId).toBeNull();
+describe('the §2 review\'s lens 3 — the read\'s states, the carriage\'s id class, no dangling fragment', () => {
+  it('a carriage naming a list id outside the forge-id class, or a reserved `__id__`, carries no idea on either side (L3-8)', () => {
+    for (const watchlistId of ['a/b', '__x__', '', 'x'.repeat(201)]) expect(carriedIdeaOf(battleWith({ watchlistId, hypothesisVersion: 4, contentHash: HASH })), watchlistId).toBeNull();
   });
   it('an idea holding neither its statement nor its version says nothing — no dangling "under your idea" (L3-10)', () => {
     expect(subjectLineOf({ symbol: 'ETN', sector: 'XLI', idea: { statement: null, version: null } })).toEqual({ symbol: 'ETN', sector: 'XLI', idea: null, text: 'ETN · XLI' });
     expect(subjectOfExcerpt({ symbol: { value: 'ETN' }, sector: { value: 'XLI' }, idea: { label: 'i1' } }).text).toBe('ETN · XLI');
   });
-  it('the screen\'s read states (L3-2, L3-8): loading and error say no line while the day carries an idea; denied says no idea; missing and idle the idea without its statement; ready the document', () => {
-    const tape = tapeWith([call()]);
-    expect(subjectOfDayRead(tape, 'ETN', { status: 'loading', doc: null }, OWNER)).toBeNull();
-    expect(subjectOfDayRead(tape, 'ETN', { status: 'error', doc: null }, OWNER)).toBeNull();
-    expect(subjectOfDayRead(tape, 'ETN', { status: 'denied', doc: null }, OWNER).line.text).toBe('ETN · XLI');
-    expect(subjectOfDayRead(tape, 'ETN', { status: 'missing', doc: null }, OWNER).line.text).toBe('ETN · XLI · under your idea v4');
-    expect(subjectOfDayRead(tape, 'ETN', { status: 'idle', doc: null }, OWNER).line.text).toBe('ETN · XLI · under your idea v4');
-    expect(subjectOfDayRead(tape, 'ETN', { status: 'ready', doc: version() }, OWNER).line.text).toBe("ETN · XLI · under your idea 'Chips lead while the market drifts.' v4");
-    // a day that carries no idea has a line whatever the read's state
-    expect(subjectOfDayRead(tapeWith([]), 'ETN', { status: 'loading', doc: null }, OWNER).line.text).toBe('ETN · XLI');
+  it('the screen\'s read states (L3-2, L3-8; CE-5\'s CD-10 correction): loading and error say no line while the battle carries an idea; DENIED shows the line without the idea; missing and idle the idea without its statement; ready the document', () => {
+    const b = battleWith();
+    expect(subjectOfDayRead(b, 'ETN', { status: 'loading', doc: null }, OWNER)).toBeNull();
+    expect(subjectOfDayRead(b, 'ETN', { status: 'error', doc: null }, OWNER)).toBeNull();
+    expect(subjectOfDayRead(b, 'ETN', { status: 'denied', doc: null }, OWNER).line.text).toBe('ETN · XLI');
+    expect(subjectOfDayRead(b, 'ETN', { status: 'missing', doc: null }, OWNER).line.text).toBe('ETN · XLI · under your idea v4');
+    expect(subjectOfDayRead(b, 'ETN', { status: 'idle', doc: null }, OWNER).line.text).toBe('ETN · XLI · under your idea v4');
+    expect(subjectOfDayRead(b, 'ETN', { status: 'ready', doc: version() }, OWNER).line.text).toBe("ETN · XLI · under your idea 'Chips lead while the market drifts.' v4");
+    expect(subjectOfDayRead(b, 'ETN', { status: 'ready', doc: version({ contentHash: 'g'.repeat(64) }) }, OWNER).line.text).toBe('ETN · XLI');
+    // a battle that carries no idea has a line whatever the read's state
+    expect(subjectOfDayRead(battleWith(null), 'ETN', { status: 'loading', doc: null }, OWNER).line.text).toBe('ETN · XLI');
   });
 });
 
