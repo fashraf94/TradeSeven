@@ -10205,14 +10205,16 @@ export default function PortfolioDuel() {
 
   // BAGGERBOMB PAGE (League hide, BB-1; founder rulings Q1–Q6, Nov 15, 2026) — while LEAGUE_HIDE_ENABLED is on, the 'league'
   // screen id is the BaggerBomb page: the nav item (labelled "BaggerBomb"), the back target after a training battle and every
-  // other setter of 'league' land here, and LeagueScreen below is not rendered. It takes this render's `hubProps` (the hub's
-  // own object) and the same width fork the dashboard uses. Flag off this block is a literal `false` and folds away.
+  // other setter of 'league' reaching it lands here, and LeagueScreen below is not rendered. It takes this render's `hubProps`
+  // (the hub's own object) and the same width fork the dashboard uses. Flag off this block is a literal `false` and folds away.
+  // (The battle view's "back" and the Film Room's return go to the dashboard, as they do from any screen; 'league' is set only
+  // by the nav slot and, with the flag on, by nothing else a player can reach.)
   if (LEAGUE_HIDE_ENABLED && screen === 'league') {
     return (
       <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
       <ErrorBoundary name="BaggerBomb" onNavigateDashboard={() => setScreen('dashboard')}>
         <Suspense fallback={<LoadingFallback />}>
-          <BaggerBombPage site={isMobile ? 'mobile' : 'desktop'} hub={hubProps} />
+          <BaggerBombPage site={isMobile ? 'mobile' : 'desktop'} hub={hubProps} onOpenLoadout={() => openCommandCenterOnLoadout(setScreen)} />
         </Suspense>
       </ErrorBoundary>
       </div>

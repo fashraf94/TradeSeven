@@ -122,8 +122,8 @@ export const TRAIT_SLOT_ENABLED = false;
  * nav slot (Closeout Spec V1.1 §6).
  *
  * When false, the slot is hidden entirely (4-item bottom nav, 6-item desktop
- * sidebar) and the 'league' route is gated away — the screen id is unreachable
- * since the nav items are its only setters. When true, a provisional "League"
+ * sidebar) and the 'league' route is gated away. (This used to claim the screen id was then unreachable "since the nav items
+ * are its only setters"; the "back" button after a training battle, App.jsx, is a third.) When true, a provisional "League"
  * tab (Trophy icon) renders the placeholder LeagueScreen. Flip when the League
  * Tournament surface is real.
  */
@@ -144,7 +144,9 @@ export const TOURNAMENT_TAB_ENABLED = true;
  * LEAGUE_NEXT_ARC_ENABLED (both also gate work a group in flight needs), and it must not be mistaken for
  * LEAGUE_BATTLEVIEW_ROUTING_ENABLED (the cockpit wall, which stays on).
  *
- * Ships false (dark): its flip is its own one-line PR, merged only while no league group is in flight.
+ * Ships false (dark). Its flip is its own PR (the flag, its pin, and the League-card rows of
+ * CommandCenterHub.loadouts.jsdom.test.jsx, which hold the card's own behaviour at the flag-off state), merged only while no
+ * league group is in flight.
  * Pinned by: leagueHideFlag.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
  */
 export const LEAGUE_HIDE_ENABLED = false;

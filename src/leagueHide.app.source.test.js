@@ -90,7 +90,10 @@ describe('league hide — FLAG-OFF: each door\'s off arm is today\'s text', () =
 
   it('the active poll\'s gate is a literal ternary whose else arm is today\'s line verbatim', () => {
     expect(app).toContain("if (LEAGUE_HIDE_ENABLED ? (screen !== 'dashboard' && screen !== 'league') || !isPageVisible : screen !== 'dashboard' || !isPageVisible) return;");
-    expect(app).toContain('}, [screen, isPageVisible]);');
+    // The effect's deps come right after the poll body, not from the unrelated effect elsewhere in App.jsx with the same deps.
+    const gate = app.indexOf("if (LEAGUE_HIDE_ENABLED ? (screen !== 'dashboard'");
+    expect(app.slice(gate, app.indexOf('}, [screen, isPageVisible]);', gate) + 40)).toContain('fetchAgentBattles();');
+    expect(app.indexOf('}, [screen, isPageVisible]);', gate) - gate).toBeLessThan(12000);
   });
 
   it('the Season banner sits inside a literal ternary on the flag, its own condition untouched (the mount guard pins it)', () => {
@@ -121,7 +124,7 @@ describe('league hide — DOORS: the route, the back target and the stale commen
     const old = app.indexOf("if (TOURNAMENT_TAB_ENABLED && screen === 'league') {");
     expect(page).toBeGreaterThan(-1);
     expect(old).toBeGreaterThan(page);
-    expect(app.slice(page, old)).toContain("<BaggerBombPage site={isMobile ? 'mobile' : 'desktop'} hub={hubProps} />");
+    expect(app.slice(page, old)).toContain("<BaggerBombPage site={isMobile ? 'mobile' : 'desktop'} hub={hubProps} onOpenLoadout={() => openCommandCenterOnLoadout(setScreen)} />");
     expect(app.slice(page, old)).toContain('<Suspense fallback={<LoadingFallback />}>');
     expect(app).toContain("const BaggerBombPage = lazy(() => import('./components/CommandCenter/BaggerBombPage'));");
   });

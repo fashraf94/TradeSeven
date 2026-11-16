@@ -35,10 +35,11 @@ import { HUB_SHEETS, useHubSheets } from './hub/useHubSheets';
 import useHubReaders from './hub/useHubReaders';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { C, HAIR, HUB_LAYERS, HUB_SCOPED_CSS } from './hub/hubStyle';
-import { EmptyNote, Eyebrow, HubButton, HubLayoutContext, HubLink, Mono, Section, Card } from './HubParts';
+import { EmptyNote, Eyebrow, HubButton, HubLayoutContext, HubLink, LoadingLine, Mono, Section, Card } from './HubParts';
 import DeploySection from './sections/DeploySection';
 import { GameRow, GamesLiveNote, GamesLoadingLine, GamesReadNote, gamesNoteDue } from './sections/GamesSection';
 import HistorySheet from './HistorySheet';
+import PerGameLoadoutScope from './PerGameLoadoutScope';
 import { BAGGERBOMB_PAGE_COPY as PAGE } from '../../constants/baggerBombPageCopy';
 import { RECORD_STATUS, baggerBombGames, baggerBombRecord, careerOf, liveBaggerBombRows, pageFinished } from './baggerBombPageModel';
 
@@ -84,9 +85,11 @@ function LiveSection({ games, onOpenGame }) {
   const rows = liveBaggerBombRows(games);
   return (
     <Section label={PAGE.live.label} data-bb-part="live">
-      {games?.status === 'loading' && rows.length === 0 && games.liveResolved !== true && <GamesLoadingLine games={games} />}
+      {/* The hub's own rule (GamesSection, T0R-2): an unanswered live poll is "checking", never "none" — whatever the
+          finished window has read. `liveResolved` is the readers' word that the poll answered for this owner. */}
+      {rows.length === 0 && games?.liveResolved !== true && <LoadingLine>{COPY.games.loading}</LoadingLine>}
       {rows.length > 0 && <GamesLiveNote games={games} />}
-      {rows.length === 0 && (games?.liveResolved === true || games?.status === 'ready' || games?.status === 'error') && (
+      {rows.length === 0 && games?.liveResolved === true && (
         <EmptyNote icon="sword" title={PAGE.live.none} sub={PAGE.live.noneSub} />
       )}
       {rows.map((game) => (
@@ -100,9 +103,9 @@ function LiveSection({ games, onOpenGame }) {
 }
 
 /** Part 3: the finished BaggerBomb games, the hub's window; History is the hub's sheet. */
-function FinishedSection({ games, onOpenGame, onOpenTape, onRetry, onOpenHistory }) {
+function FinishedSection({ games, allGames, onOpenGame, onOpenTape, onRetry, onOpenHistory }) {
   const ready = games?.status === 'ready';
-  const { shown, more } = pageFinished(games);
+  const { shown, more, otherKind } = pageFinished(games, allGames);
   return (
     <Section
       label={PAGE.finished.label}
@@ -116,14 +119,14 @@ function FinishedSection({ games, onOpenGame, onOpenTape, onRetry, onOpenHistory
           {shown.map((game) => <GameRow key={game.id} game={game} onOpen={onOpenGame} onOpenTape={onOpenTape} />)}
         </div>
       )}
-      {ready && games.stale !== true && shown.length === 0 && (
-        <EmptyNote icon="sword" title={PAGE.finished.empty} sub={PAGE.finished.emptySub} />
-      )}
+      {ready && games.stale !== true && shown.length === 0 && (otherKind > 0
+        ? <EmptyNote icon="sword" title={PAGE.finished.emptyRecent} sub={PAGE.finished.emptyRecentSub} />
+        : <EmptyNote icon="sword" title={PAGE.finished.empty} sub={PAGE.finished.emptySub} />)}
     </Section>
   );
 }
 
-function ConnectedPage({ site, hub }) {
+function ConnectedPage({ site, hub, onOpenLoadout }) {
   const deployAttempt = useDeployAttempt();
   const modalOpen = useHubModalOpen();
   const readers = useHubReaders(hub, deployAttempt, modalOpen);
@@ -136,7 +139,8 @@ function ConnectedPage({ site, hub }) {
 
   // The league's rows come out before anything reads the section: the live part, the finished part and the history sheet
   // all see the same league-free section (BUILD_RULES §9).
-  const games = baggerBombGames(readers.sections.games);
+  const allGames = readers.sections.games;
+  const games = baggerBombGames(allGames);
   const record = baggerBombRecord(readers.agent);
 
   // The deploy card, as the hub's ConnectedHub wires it (CommandCenterHub.jsx): the provider's recovered read joins the
@@ -151,11 +155,18 @@ function ConnectedPage({ site, hub }) {
 
   const { openGame, openTape, retryGames, refreshHistory } = readers.actions;
   return (
+    // The loadout scope is here for ONE reason: the Deploy card's "Next deploy carries …" line reads it (the hub's own card
+    // shows it). With the league hidden the scope hands the League lock read no owner (PerGameLoadoutScope.jsx), so it asks
+    // the lock for nothing; and the League card is never rendered on this page.
+    <PerGameLoadoutScope agentRead={readers.agent} activeBattles={hub?.activeBattles ?? null}>
     <HubLayoutContext.Provider value={composition}>
       <style data-hub-css="">{HUB_SCOPED_CSS}</style>
       <section
         ref={rootRef}
         aria-label={PAGE.region}
+        // The hub's own root marker: the scoped box model and focus ring (hub/hubStyle.js), the overlay stack's focus
+        // fallback and the deploy ceremony's return focus all find the hub by it. Without it this page is content-box.
+        data-hub="shell"
         data-bb-page=""
         data-bb-site={site}
         tabIndex={-1}
@@ -172,6 +183,7 @@ function ConnectedPage({ site, hub }) {
           </header>
           <DeploySection
             deploy={deploySection}
+            onOpenLoadout={onOpenLoadout}
             onAction={onDeployAction}
             holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.CARD) ?? null}
             holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.CARD ? deploy.holdPhase : null}
@@ -179,6 +191,7 @@ function ConnectedPage({ site, hub }) {
           <LiveSection games={games} onOpenGame={openGame} />
           <FinishedSection
             games={games}
+            allGames={allGames}
             onOpenGame={openGame}
             onOpenTape={openTape}
             onRetry={retryGames}
@@ -203,6 +216,7 @@ function ConnectedPage({ site, hub }) {
         />
       )}
     </HubLayoutContext.Provider>
+    </PerGameLoadoutScope>
   );
 }
 
@@ -210,14 +224,17 @@ function ConnectedPage({ site, hub }) {
  * @param {'mobile'|'desktop'} props.site  App's own isDesktop branch, as the hub's gate takes it
  * @param {object}             props.hub   App's one hub object (`hubProps`: the active poll's list and metadata, its
  *                                         refresh, openGame, openFilmRoom, …), handed to the hub's readers unread
+ * @param {Function}           [props.onOpenLoadout] the Deploy card's "Next deploy carries …" door: App takes the player to
+ *                                         the Command Center's Loadout tab (utils/hubEntryIntent.js, which App alone marks)
  */
-export default function BaggerBombPage({ site, hub }) {
+export default function BaggerBombPage({ site, hub, onOpenLoadout }) {
   const deployAttempt = useDeployAttempt();
   // An overlay opening cancels an uncommitted hold in the same task, as on the hub (spec §10; R2 FR2-4).
   const cancelCharging = deployAttempt ? deployAttempt.api.cancelCharging : null;
   return (
     <HubOverlayProvider onOpen={cancelCharging}>
-      <ConnectedPage site={site} hub={hub} />
+      {/* Keyed by site, as the hub's shells are: a width flip across 768 px starts from that site's defaults. */}
+      <ConnectedPage key={site} site={site} hub={hub} onOpenLoadout={onOpenLoadout} />
     </HubOverlayProvider>
   );
 }

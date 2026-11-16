@@ -25,6 +25,8 @@ const h = vi.hoisted(() => ({
   agent: null,
   window: null,
   lockSubs: [],
+  hide: true,
+  openLoadout: null,
 }));
 
 vi.mock('firebase/auth', () => ({ onAuthStateChanged: (_auth, cb) => { h.authListeners.push(cb); return () => {}; } }));
@@ -63,8 +65,11 @@ vi.mock('../Dashboard/deployCeremony/DeployCeremony', () => ({ default: (props) 
 vi.mock('../../services/leagueLockService', () => ({
   subscribeLeagueLock: (uid) => { h.lockSubs.push(uid); return () => {}; },
 }));
+// The page is rendered only while the league is hidden, so the flag is ON here (read at render time through a getter): the loadout
+// scope the Deploy card's line needs then hands the League lock read no owner. A control row turns it off to prove the spy sees.
 vi.mock('../../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
+  get LEAGUE_HIDE_ENABLED() { return h.hide; },
   isDeploySkyCouplingOn: () => true,
   isDeployCeremonyOn: () => false,
 }));
@@ -129,6 +134,8 @@ beforeEach(() => {
   h.authListeners = [];
   h.posts = [];
   h.lockSubs = [];
+  h.hide = true;
+  h.openLoadout = vi.fn();
   h.agent = AGENT();
   h.window = windowOf([]);
   h.deploy = vi.fn((agentId, onCreate, onTarget) => {
@@ -159,7 +166,7 @@ afterEach(() => {
 const signIn = (uid) => act(() => { for (const cb of [...h.authListeners]) cb(uid ? { uid } : null); });
 const tree = (site, hub) => (
   <DeployAttemptProvider hubEnabled userName="flash" onCreateAgentBattle={vi.fn()} onEnterBattle={vi.fn()} onOpenBattle={vi.fn()} refreshActiveBattles={hub.refreshActiveBattles} clearCeremonyStash={vi.fn()}>
-    <BaggerBombPage site={site} hub={hub} />
+    <BaggerBombPage site={site} hub={hub} onOpenLoadout={h.openLoadout} />
   </DeployAttemptProvider>
 );
 function render(site = 'desktop', hub = hubOf()) {
@@ -198,7 +205,10 @@ describe('the page, an agent with no battles — all four parts, nothing else', 
     expect(textOf(part('record'))).toContain(PAGE.record.caption);
     // Nothing else: exactly these five regions, no hub shell, no loadout cards, no League.
     expect([...page().querySelectorAll('section[data-bb-part], header[data-bb-part]')].map((el) => el.getAttribute('data-bb-part'))).toEqual(['title', 'live', 'finished', 'record']);
-    expect(page().querySelector('[data-hub="shell"]')).toBeNull();
+    // The hub's ROOT MARKER is on the page (its scoped box model and focus ring, the overlay stack's and the ceremony's focus
+    // fallbacks all find the hub by it), but none of the hub's own shell: no body grid, no stage, no cards.
+    expect(page().getAttribute('data-hub')).toBe('shell');
+    expect(page().querySelector('[data-hub-body], [data-hub-slot], [data-hub-strip]')).toBeNull();
     expect(page().querySelector('[data-loadout-card]')).toBeNull();
     expect(textOf(page())).not.toMatch(/league|ranked/i);
   });
@@ -288,7 +298,7 @@ describe('the page, finished games — the hub\'s window and History, league row
     expect(sheet.textContent).toContain(COPY.history.careerCaption);
   });
 
-  it('with three or fewer finished BaggerBomb games there is no History link; League rows alone read as no finished games', () => {
+  it('with three or fewer finished BaggerBomb games there is no History link; a window of League games alone says so, never "no finished games"', () => {
     h.window = windowOf([...LEAGUE_DONE, done(1), done(2)]);
     render();
     expect(rowLabels(part('finished'))).toHaveLength(2);
@@ -297,7 +307,14 @@ describe('the page, finished games — the hub\'s window and History, league row
     h.window = windowOf(LEAGUE_DONE);
     render();
     expect(rowLabels(part('finished'))).toHaveLength(0);
+    // The hub reads the latest ten games before any filter: a window of the other kind is not an empty history (LH-C5).
+    expect(textOf(part('finished'))).toContain(PAGE.finished.emptyRecent);
+    expect(textOf(part('finished'))).not.toContain(PAGE.finished.empty);
+    mounted.pop().unmount();
+    h.window = windowOf([]);
+    render();
     expect(textOf(part('finished'))).toContain(PAGE.finished.empty);
+    expect(textOf(part('finished'))).not.toContain(PAGE.finished.emptyRecent);
   });
 
   it('a failed window read is never an empty history: the hub\'s own note and its Retry', () => {
@@ -349,5 +366,155 @@ describe('the page never touches the League', () => {
     render('desktop', hubOf([LIVE_BB, LIVE_LEAGUE]));
     render('mobile', hubOf([]));
     expect(h.lockSubs).toEqual([]);
+  });
+});
+
+// ── Review round (LH-B2/C4/D4, D5, C6/B9, B1/C2): the states and wiring the first rows did not drive ──────────────────────────
+
+const POLL_UNANSWERED = { epoch: 1, status: 'loading', ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null, error: null, refreshing: false };
+const POLL_FAILED = { epoch: 1, status: 'error', ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null, error: new Error('unavailable'), refreshing: false };
+const buttonsOf = (scope, text) => [...scope.querySelectorAll('button')].filter((b) => b.textContent.trim() === text);
+
+describe('the Live part never says "no game" for a live list it has not read (the hub\'s T0R-2 rule)', () => {
+  it.each([['the poll has not answered yet', POLL_UNANSWERED], ['the first poll failed', POLL_FAILED]])('%s, with the finished window already read: "checking", not "No game live"', (_, poll) => {
+    h.window = windowOf([done(1)]);
+    render('desktop', { ...hubOf([]), activePoll: poll, activeBattles: null });
+    expect(textOf(part('live'))).toContain(COPY.games.loading);
+    expect(textOf(part('live'))).not.toContain(PAGE.live.none);
+    expect(part('live').querySelector('[data-hub-game-row]')).toBeNull();
+  });
+
+  it('and with the window failed to read too, still "checking" — never the empty note beside a Deploy card that says it cannot tell', () => {
+    h.window = { battles: null, reviews: {}, status: 'error', refresh: vi.fn() };
+    render('desktop', { ...hubOf([]), activePoll: POLL_FAILED, activeBattles: null });
+    expect(textOf(part('live'))).not.toContain(PAGE.live.none);
+    expect(textOf(part('live'))).toContain(COPY.games.loading);
+  });
+
+  it('once the poll has answered with no game, the note is "No game live" (the control: the same page, a resolved poll)', () => {
+    render('desktop', hubOf([]));
+    expect(textOf(part('live'))).toContain(PAGE.live.none);
+    expect(textOf(part('live'))).not.toContain(COPY.games.loading);
+  });
+});
+
+describe('the Finished part, every state of the hub\'s window', () => {
+  it('while the first read is out it says it is checking, and shows no empty note', () => {
+    h.window = { battles: null, reviews: {}, status: 'loading' };
+    render();
+    expect(textOf(part('finished'))).toContain(COPY.games.loading);
+    expect(textOf(part('finished'))).not.toContain(PAGE.finished.empty);
+    expect(textOf(part('finished'))).not.toContain(PAGE.finished.emptyRecent);
+  });
+
+  it('a retained window whose refresh failed (stale) shows its rows and the hub\'s as-of note with Retry, and never an empty note', () => {
+    h.window = { ...windowOf([done(1), done(2)]), status: 'error', refresh: vi.fn() };
+    render();
+    expect(part('finished').querySelector('[data-hub-games-note="stale"]')).not.toBeNull();
+    expect(rowLabels(part('finished'))).toHaveLength(2);
+    click(byRole(part('finished'), 'button', COPY.games.retry)[0]);
+    expect(h.window.refresh).toHaveBeenCalledTimes(1);
+    mounted.pop().unmount();
+    h.window = { battles: [], reviews: {}, status: 'error', refresh: vi.fn() };
+    render();
+    expect(part('finished').querySelector('[data-hub-games-note="stale"]')).not.toBeNull();
+    expect(textOf(part('finished'))).not.toContain(PAGE.finished.empty);
+    expect(textOf(part('finished'))).not.toContain(PAGE.finished.emptyRecent);
+  });
+
+  it('a finished row opens that game, and its "Open battle tape" link opens the Film Room — both handed the raw record', () => {
+    const records = [done(1), done(2)];
+    h.window = windowOf(records);
+    const hub = hubOf();
+    render('desktop', hub);
+    click(part('finished').querySelector('[data-hub-game-row="completed"]').closest('button'));
+    expect(hub.openGame).toHaveBeenCalledTimes(1);
+    expect(hub.openGame.mock.calls[0][0]).toBe(records[0]);
+    const tape = part('finished').querySelectorAll('[data-hub-review="ready"] button');
+    expect(tape).toHaveLength(2);
+    click(tape[1]);
+    expect(hub.openFilmRoom).toHaveBeenCalledTimes(1);
+    expect(hub.openFilmRoom.mock.calls[0][0]).toBe(records[1]);
+  });
+
+  it('History on the PHONE: the hub\'s sheet, phone-docked, its rows open games, its Refresh asks the window', () => {
+    const records = Array.from({ length: 5 }, (_, i) => done(i + 1));
+    h.window = { ...windowOf(records), refresh: vi.fn() };
+    const hub = hubOf();
+    render('mobile', hub);
+    click(byRole(part('finished'), 'button', PAGE.finished.history)[0]);
+    const sheet = document.querySelector('[data-hub-sheet-overlay]') ?? document.querySelector('[role="dialog"]');
+    expect(sheet, 'the history sheet opened').not.toBeNull();
+    expect(rowLabels(sheet)).toHaveLength(5);
+    click(sheet.querySelector('[data-hub-game-row="completed"]').closest('button'));
+    expect(hub.openGame).toHaveBeenCalledTimes(1);
+    expect(hub.openGame.mock.calls[0][0]).toBe(records[0]);
+    click(buttonsOf(sheet, COPY.history.refresh)[0]);
+    expect(h.window.refresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the Deploy card on the page — the rest of what the hub\'s card does', () => {
+  it('opening History cancels a hold that has not committed (the overlay\'s onOpen is the provider\'s cancel)', async () => {
+    h.window = windowOf(Array.from({ length: 5 }, (_, i) => done(i + 1)));
+    render('desktop');
+    const hold = byRole(deployCard(), 'button', COPY.deploy.holdLabel)[0];
+    act(() => { pointer(hold, 'pointerdown'); });
+    frameAt(400);
+    expect(currentHold()).toMatchObject({ controlId: 'hub-deploy-card', phase: 'charging' });
+    click(byRole(part('finished'), 'button', PAGE.finished.history)[0]);
+    expect(currentHold()).toBeNull();
+    frameAt(1300);
+    await advance(1000);
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+
+  it('a read\'s Retry on the card runs the readers\' own refresh (the poll\'s), not the attempt\'s', () => {
+    const hub = { ...hubOf([]), activePoll: POLL_FAILED, activeBattles: null };
+    render('desktop', hub);
+    expect(deployCard().querySelector('[data-hub-deploy]').getAttribute('data-hub-deploy')).not.toBe('ready');
+    const retry = buttonsOf(deployCard(), COPY.deploy.retry);
+    expect(retry.length).toBeGreaterThan(0);
+    click(retry[0]);
+    expect(hub.refreshActiveBattles).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows "Next deploy carries …" (the hub card\'s own line, from the same scope) and its door takes the player to the Loadout tab', () => {
+    const hub = hubOf();
+    render('desktop', hub);
+    const line = deployCard().querySelector('[data-loadout-deploy-line]');
+    expect(line, 'the loadout line is on the card').not.toBeNull();
+    expect(line.getAttribute('data-loadout-deploy-next') || line.querySelector('[data-loadout-deploy-next]')?.getAttribute('data-loadout-deploy-next')).toBe('momentum_chaser');
+    click(line.querySelector('button'));
+    expect(h.openLoadout).toHaveBeenCalledTimes(1);
+  });
+
+  it('without the deploy provider (the hub kill switch) the page still renders its four parts and the hold is inert — nothing throws', () => {
+    const m = mount(<BaggerBombPage site="desktop" hub={hubOf()} onOpenLoadout={h.openLoadout} />);
+    mounted.push(m);
+    signIn(UID);
+    expect(page()).not.toBeNull();
+    for (const name of ['live', 'finished', 'record']) expect(part(name)).not.toBeNull();
+    const hold = byRole(deployCard(), 'button', COPY.deploy.holdLabel)[0];
+    act(() => { pointer(hold, 'pointerdown'); });
+    expect(currentHold()).toBeNull();
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+});
+
+describe('the page as the hub\'s own root (the review\'s layout finding)', () => {
+  it('carries the hub\'s box-model and focus rules for its own root, and the one <style> that holds them', () => {
+    render('desktop');
+    const css = document.querySelector('style[data-hub-css]').textContent;
+    expect(css).toContain('[data-hub="shell"] *');
+    expect(css).toContain('box-sizing: border-box');
+    expect(css).toContain('[data-hub="shell"] :focus-visible');
+    expect(page().matches('[data-hub="shell"]')).toBe(true);
+  });
+
+  it('the League lock IS asked for under the same scope when the hide is off — the control that shows the "asks the lock for nothing" row can see', () => {
+    h.hide = false;
+    render('desktop', hubOf([]));
+    expect(h.lockSubs).toEqual([UID]);
   });
 });

@@ -16,7 +16,7 @@
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): this file's REAL import of the endpoint modules is the runtime guard for the
 // api/ -> src/ edge that api/_utils/leagueHidden.js adds (src/config/featureFlags.js). It must never mock leagueHidden.js.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   hide: false,
@@ -101,7 +101,11 @@ const call = async (handler, method) => {
   return res;
 };
 
+afterEach(() => vi.restoreAllMocks());
+
 beforeEach(() => {
+  // A signed-in caller reaches a route's own logic, whose database here is `{}`: that logs its unhandled error, as expected.
+  vi.spyOn(console, 'error').mockImplementation(() => {});
   h.hide = false;
   h.authCalls = 0;
   h.adminCalls = 0;
@@ -130,6 +134,9 @@ describe('league hide, server — the flag ON closes the seven entry doors with 
     }
     expect(new Set(answers).size).toBe(1);
     expect(LEAGUE_HIDDEN_ERROR).toBe('league_hidden');
+    // The words are pinned as a literal too: the refusal is user-facing in a stale tab, and an empty message would pass a test
+    // that compared the constant with itself.
+    expect(LEAGUE_HIDDEN_MESSAGE).toBe('The league is not available right now.');
     // It is not the lobby's own "disabled" key and not the live draft's: a caller can tell the three apart.
     expect(LEAGUE_HIDDEN_ERROR).not.toBe('lobby_disabled');
     expect(LEAGUE_HIDDEN_ERROR).not.toBe('live_draft_disabled');
@@ -165,6 +172,17 @@ describe('league hide, server — everything else keeps answering with the flag 
       expect(h.authCalls, 'it must reach requireAuth').toBe(1);
     });
   }
+
+  it('with a SIGNED-IN caller the in-week and read-only routes still go past auth into their own logic (a refusal added after auth would show here)', async () => {
+    h.hide = true;
+    h.user = { uid: 'caller-1', name: 'Caller' };
+    for (const [name, handler, method] of IN_WEEK) {
+      const res = await call(handler, method);
+      expect(res.body?.error, name).not.toBe(LEAGUE_HIDDEN_ERROR);
+      expect(h.authCalls, name).toBeGreaterThan(0);
+      h.authCalls = 0;
+    }
+  });
 
   for (const [name, handler, method] of INTERNAL) {
     it(`${name} (in-week, internal): still reaches the cron-secret gate, never the refusal`, async () => {

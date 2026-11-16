@@ -86,10 +86,34 @@ describe('the live and finished rows', () => {
     expect(out.shown.map((r) => r.id)).toEqual(['d2', 'd3', 'd5']);
     expect(out.total).toBe(4);
     expect(out.more).toBe(true);
-    const few = pageFinished(baggerBombGames(section({ rows: [row('d1', 'ranked'), row('d2', 'baggerbomb')] })));
-    expect(few).toEqual({ shown: [row('d2', 'baggerbomb')], total: 1, more: false });
+    const few = pageFinished(baggerBombGames(section({ rows: [row('d1', 'ranked'), row('d2', 'baggerbomb')] })), section({ rows: [row('d1', 'ranked'), row('d2', 'baggerbomb')] }));
+    expect(few).toEqual({ shown: [row('d2', 'baggerbomb')], total: 1, more: false, otherKind: 1 });
     const exactly = pageFinished(baggerBombGames(section({ rows: ['a', 'b', 'c'].map((id) => row(id, 'baggerbomb')) })));
     expect(exactly.more).toBe(false);
+  });
+});
+
+describe('pageFinished — how many finished games the filter took out of the window (the page says so instead of "none")', () => {
+  it('otherKind counts the window\'s finished games of the other kind: 0 with no section to compare against, and when nothing was taken out', () => {
+    const s = section();
+    expect(pageFinished(baggerBombGames(s), s).otherKind).toBe(2);
+    expect(pageFinished(baggerBombGames(s)).otherKind).toBe(0);
+    const onlyBb = section({ rows: [row('d2', 'baggerbomb'), row('d3', 'baggerbomb')] });
+    expect(pageFinished(baggerBombGames(onlyBb), onlyBb).otherKind).toBe(0);
+  });
+
+  it('a window of the other kind alone: nothing shown, otherKind says why; an empty window: nothing shown and nothing taken out', () => {
+    const allLeague = section({ live: [], rows: [row('d1', 'ranked'), row('d4', 'ranked')] });
+    expect(pageFinished(baggerBombGames(allLeague), allLeague)).toEqual({ shown: [], total: 0, more: false, otherKind: 2 });
+    const empty = section({ live: [], rows: [] });
+    expect(pageFinished(baggerBombGames(empty), empty)).toEqual({ shown: [], total: 0, more: false, otherKind: 0 });
+  });
+
+  it('live rows of either kind are never counted (they are not finished games)', () => {
+    const s = section();
+    const liveOnly = section({ rows: [row('l-bb', 'baggerbomb', true), row('l-rk', 'ranked', true)] });
+    expect(pageFinished(baggerBombGames(liveOnly), liveOnly).otherKind).toBe(0);
+    expect(pageFinished(baggerBombGames(s), s).total).toBe(4);
   });
 });
 

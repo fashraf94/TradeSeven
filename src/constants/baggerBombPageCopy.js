@@ -33,6 +33,9 @@ export const BAGGERBOMB_PAGE_COPY = Object.freeze({
     label: 'Finished games',
     empty: 'No finished games yet',
     emptySub: 'Your finished BaggerBomb games are listed here.',
+    /** The window holds finished games, but none of them are BaggerBomb games (the page reads the hub's latest ten). */
+    emptyRecent: 'No BaggerBomb games among your latest games',
+    emptyRecentSub: 'Your latest finished games were another kind of game.',
     history: 'History',
   }),
 });

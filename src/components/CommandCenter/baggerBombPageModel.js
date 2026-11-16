@@ -42,10 +42,16 @@ export const liveBaggerBombRows = (games) => liveGamesOf(games).filter(isBaggerB
 /** The finished BaggerBomb rows: the window's own order (newest first). */
 export const finishedBaggerBombRows = (games) => splitGames(games).completed.filter(isBaggerBombRow);
 
-/** The page's few finished rows, and whether there are more behind "History". */
-export function pageFinished(games) {
+/**
+ * The page's few finished rows, and whether there are more behind "History". `allGames` is the hub's section BEFORE the league
+ * rows came out: `otherKind` is how many of its finished games the filter took out, so a window that holds only games of the
+ * other kind can say so instead of "no finished games" (the hub reads ten games, newest first, before any filter: a player's
+ * latest ten may all be league games while older BaggerBomb games exist).
+ */
+export function pageFinished(games, allGames = games) {
   const all = finishedBaggerBombRows(games);
-  return { shown: all.slice(0, PAGE_COMPLETED_LIMIT), total: all.length, more: all.length > PAGE_COMPLETED_LIMIT };
+  const everything = splitGames(allGames).completed.length;
+  return { shown: all.slice(0, PAGE_COMPLETED_LIMIT), total: all.length, more: all.length > PAGE_COMPLETED_LIMIT, otherKind: Math.max(0, everything - all.length) };
 }
 
 const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
