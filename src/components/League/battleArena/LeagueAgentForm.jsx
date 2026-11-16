@@ -35,7 +35,7 @@ export default function LeagueAgentForm({ seat, you = false, size, standing, fac
   const seatStanding = standing ?? standingOf(board, seat?.id);
   const mood = deriveLeagueMood({ you, standing: seatStanding, battle: screen?.battle ?? null, nowMs, finalRank: screen?.youRank ?? null });
   const afterBell = !seat?.archId && seat?.kind === 'human' && seatStanding?.complete === true && Boolean(screen?.groupId) && Boolean(rivalRead);
-  const finished = afterBell ? use(rivalRead.finishedRivalArchetypes(screen.groupId)) : null;
+  const finished = afterBell ? use(rivalRead.finishedRivalArchetypes(screen.groupId, screen.players)) : null;
   const { coreStage, armorStage } = getAgentGrowth(null);
   return (
     <AgentForm

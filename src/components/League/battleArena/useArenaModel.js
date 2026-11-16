@@ -62,6 +62,7 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   const { battles: spectatedBattles } = useSpectatedTournamentBattles(
     group?.id,
     FUSE_HERO_ON && group?.status === GROUP_STATUS.BATTLE && hasHumanRival,
+    group?.players, // R-F: the seat order the seat-keyed reply joins back through
   );
 
   // ── claims subcollection (live) ──

@@ -19,6 +19,10 @@
 //  • WHY — seat.reasoning ← battleToReasoning: the COMPLETED battle's recorded
 //    words only (strategy read + swap rationale), null otherwise; the surface's
 //    empty state is honest, and no fixture sentence can reach a real seat.
+//    Founder ruling R-F (15 Nov 2026): the server sends no seat's WHY to
+//    anyone but its owner, at any status, so every seat that is not the
+//    viewer's carries `reasoningPrivate: true` and its film room says the
+//    reasoning is private — never that it unlocks, never that none was recorded.
 //  • C — live tape (price/change) is OUT of this adapter: book items carry tk +
 //        dir. `c:0` keeps the UNCHANGED LeagueSpectate bookChange finite (no NaN);
 //        `p` is omitted so PortfolioMini suppresses the price/change cells.
@@ -181,7 +185,8 @@ export function battleToAgentBook(battle) {
 /**
  * The film room's WHY for one seat ← the COMPLETED battle the WHY-projecting
  * endpoint returns (pre-flip honesty fix A — Backing spec V1.3 §11 gate 3;
- * GET /api/tournament/battle-view: full WHY unlocks at completion). Lines, in
+ * GET /api/tournament/battle-view: full WHY for the viewer's OWN seat only —
+ * founder ruling R-F, 15 Nov 2026, ended the unlock-at-completion). Lines, in
  * order: the agent's strategy read (agentContext.innerMonologue.strategy — the
  * paragraph Flat6BattleView opens its Film Room with), then one line per
  * recorded swap in the agent's own words (trades[].rationale, else the
@@ -251,6 +256,9 @@ export function buildSeat({ odUserId, isCpu, score, picks = null, battle = null,
     agentBook: battleToAgentBook(battle),
     // the film room's WHY: ONLY from a completed battle's recorded words (never fixture text)
     reasoning: battleToReasoning(battle),
+    // R-F: the server never sends another seat's WHY to this viewer, live or
+    // after completion — the same predicate it projects on (owner === viewer).
+    reasoningPrivate: !you,
   };
 }
 

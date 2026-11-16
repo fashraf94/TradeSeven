@@ -42,7 +42,7 @@ export default function SpectatorView({ group, uid, onBack }) {
   // Spectator battle source: the group's battles, each PROJECTED server-side
   // for this viewer (WHY concealed for non-owner active reads). Fetched only
   // while the battle view is open.
-  const { battles, loading: spectateLoading } = useSpectatedTournamentBattles(group?.id, showBattle);
+  const { battles, loading: spectateLoading } = useSpectatedTournamentBattles(group?.id, showBattle, group?.players);
 
   // Default the selection to your seat when present, else the leader.
   useEffect(() => {
@@ -114,8 +114,9 @@ export default function SpectatorView({ group, uid, onBack }) {
       {showTheater && <DraftPlaybackTheater groupId={group.id} group={group} uid={uid} />}
 
       {/* Tier 3: the real flat6 battle view (replaces the P6b honest degrade).
-          Read-only spectator mode — WHAT live to all, WHY concealed server-side
-          for non-owner active battles, full WHY at completion (V2.1 §9). */}
+          Read-only spectator mode — WHAT to all, WHY and the narration feed
+          concealed server-side for every non-owner at every status (V2.1 §9 as
+          amended by founder ruling R-F, 15 Nov 2026). */}
       <button style={cta(showBattle)} onClick={() => setShowBattle(s => !s)}>
         <Swords size={16} /> {showBattle ? 'Hide battle view' : 'Open battle view'}
       </button>

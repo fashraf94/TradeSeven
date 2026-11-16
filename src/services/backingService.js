@@ -31,6 +31,7 @@ import { db } from '../firebase/config';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { getGroup, fetchDisplayNames } from './tournamentGroupService';
 import { groupToPod } from '../components/League/leagueAdapter';
+import { battlesByOwnerFromSeats } from '../constants/leagueTournament';
 
 export const BACKING_POOLS_URL = '/api/tournament/backing-pools';
 export const BACKING_STAKE_URL = '/api/tournament/backing-stake';
@@ -184,8 +185,10 @@ export function subscribePitch(uid, callback) {
 /**
  * The completed week's pod, adapted for the existing spectator battle view:
  * the group doc (authed-read), the seat names, and the group's battles through
- * the WHY-projecting endpoint (a completed battle projects to itself). Returns
- * the Pod shape LeagueSpectate consumes, or null when the group is gone.
+ * the WHY-projecting endpoint (the viewer's own seat in full, every other seat
+ * WHAT-only at every status — founder ruling R-F, 15 Nov 2026). The endpoint
+ * keys battles by seat; they are joined back to the group's players here.
+ * Returns the Pod shape LeagueSpectate consumes, or null when the group is gone.
  */
 export async function fetchTapePod(groupId, uid) {
   const group = await getGroup(groupId);
@@ -195,7 +198,7 @@ export async function fetchTapePod(groupId, uid) {
   let battlesByOwner = {};
   try {
     const data = await call(`${BATTLE_VIEW_URL}?groupId=${encodeURIComponent(groupId)}`);
-    battlesByOwner = data?.battles && typeof data.battles === 'object' ? data.battles : {};
+    battlesByOwner = battlesByOwnerFromSeats(data?.battles, group.players);
   } catch (err) {
     console.warn('[backingService] battle view unavailable for the tape:', err?.message);
   }

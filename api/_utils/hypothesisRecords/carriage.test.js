@@ -623,7 +623,7 @@ describe('the census — who names agentContext.equippedHypothesis', () => {
       'api/_utils/compositionGenerationFence.js', // a comment; the creation transaction calls carriage.js
       'api/_utils/hypothesisRecords/carriage.js', // the resolver, the fresh read, the frozen-list read
       'api/_utils/hypothesisRecords/review.js', // Pilot P1c: the review card's check that a battle carried THIS version (watchlistId, hypothesisVersion only)
-      'api/_utils/tournamentBattleView.js', // the privacy strip
+      'api/_utils/tournamentBattleView.js', // a comment: the non-owner allowlist never carries it (R-F)
       'api/agent/decide.js', // the fenced call site (passes the resolver's sibling through)
       'api/tournament/battle-view.js', // a comment
       'src/components/Research/Sheet/packs.js', // Research Modal Build C (BC-9): the sheet's idea stance and Idea pill — statement, activation, invalidation, watchlistId, hypothesisVersion only; a client reader of the screen's subscribed document, no prompt module, no cron, no capture

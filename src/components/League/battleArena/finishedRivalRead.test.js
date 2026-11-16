@@ -19,11 +19,21 @@ beforeEach(async () => {
 
 const ok = (battles) => ({ ok: true, json: async () => ({ battles }) });
 
+// The group's seat order (the group document's `players`): the endpoint keys battles by seat (founder ruling R-F).
+const PLAYERS = [{ odUserId: 'rae' }, { odUserId: 'sam' }, { odUserId: 'cpu-3', isCpu: true }];
+
 describe('the after-bell read', () => {
-  it('asks the spectator endpoint once for the group, and maps each seat to its archetype', async () => {
-    http.fetchWithAuth.mockResolvedValue(ok({ rae: { agentContext: { archetype: 'guardian' } }, sam: { agentContext: {} } }));
-    await expect(finishedRivalArchetypes('g/1')).resolves.toEqual({ rae: 'guardian', sam: null });
+  it('asks the spectator endpoint once for the group, and maps each seat back to its player and its archetype', async () => {
+    http.fetchWithAuth.mockResolvedValue(ok({ 0: { agentContext: { archetype: 'guardian' } }, 1: { agentContext: {} } }));
+    await expect(finishedRivalArchetypes('g/1', PLAYERS)).resolves.toEqual({ rae: 'guardian', sam: null });
     expect(http.fetchWithAuth.mock.calls).toEqual([['/api/tournament/battle-view?groupId=g%2F1']]);
+  });
+
+  it('R-F: the reply is seat-keyed — an owner-keyed reply (the old shape) places no armor, and with no players nothing is placed', async () => {
+    http.fetchWithAuth.mockResolvedValue(ok({ rae: { agentContext: { archetype: 'guardian' } } }));
+    await expect(finishedRivalArchetypes('g1', PLAYERS)).resolves.toEqual({});
+    http.fetchWithAuth.mockResolvedValue(ok({ 0: { agentContext: { archetype: 'guardian' } } }));
+    await expect(finishedRivalArchetypes('g2')).resolves.toEqual({});
   });
 
   it('every form that asks shares the one read and the one promise', async () => {

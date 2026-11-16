@@ -110,9 +110,11 @@ export default function useRealLeagueState(enabled) {
     return () => unsub();
   }, [enabled, currentWeek, lit]);
 
-  // the WHY-projected battles for the subscribed group (owner/completed → full
-  // WHY; non-owner active → WHAT-only + _whyConcealed). The ONLY reasoning source.
-  const { battles } = useSpectatedTournamentBattles(myGroup?.id || null, enabled);
+  // the WHY-projected battles for the subscribed group (the viewer's own seat →
+  // full WHY; every other seat, at every status → WHAT-only + _whyConcealed —
+  // founder ruling R-F). The ONLY reasoning source. The reply is seat-keyed;
+  // the hook joins it back through this group's players.
+  const { battles } = useSpectatedTournamentBattles(myGroup?.id || null, enabled, myGroup?.players);
 
   // human display names (CPUs are synthesized in the adapter). Keyed on the
   // STABLE sorted id-set string, not the doc objects — the subscriptions hand
