@@ -4,7 +4,7 @@
 **Branch:** `claude/practice-field-t1a2b1-access-records` (the session opened in a fresh worktree of `origin/main` on an app-named branch; renamed to the prompt's name before the first commit).
 **Base:** `origin/main` @ `71bc6bde7c0553cdb16e5c5f3752d248968967c3` (the merge of PR #1073), read after `git fetch origin` at the start; it is after `cb23d73c` (PR #1061, T1a-2a), as the prompt requires. Clean tree at the start.
 **Code head:** `82693acb0192817029bdfc2f625bd8f95b3458ff` · 7 commits on the base · 40 files, +3,498 / −145. Of those, 18 are product or config (+1,419 / −62); the rest are tests. This report and its `docs/README.md` row follow in one more commit, which changes no code.
-**Flag:** `PRACTICE_FIELD_MODE = 'off'` (`src/config/practiceFieldFlags.js:33`), unchanged. No fenced file (BUILD_RULES §1), flag value or pin changed. Rules and index changes are written and tested here and **deployed by the founder after merge** (§7).
+**Flag:** `PRACTICE_FIELD_MODE = 'off'` (`src/config/practiceFieldFlags.js:33`), unchanged. No fenced file (BUILD_RULES §1), flag value or pin changed, and the new code calls no fenced function. Rules and index changes are written and tested here and **deployed by the founder after merge** (§7).
 **This session made no model call, no Firestore write and no EODHD call.** Unit tests ran on the engine's in-memory store; the rules tests on the local Firestore emulator.
 
 | Question | Answer |
@@ -17,9 +17,9 @@
 | Q-D, Q-G, C-9 | Done: a 30-minute quote age for the idea book; a `delisting_exit` origin; the widest-tier fallback removed |
 | Is the quarterly product unchanged? | Yes. The seventeen scenarios are **byte-identical** to `main` (`92a1be20…`), and the 40-case traced differential is **40/40 raw-identical**. The client bundle (`dist/`, 113 files) is byte-identical to the base build |
 | Tests | Full Linux suite exit 0, `Test Files  1507 passed \| 12 skipped (1519)`, `Tests  33915 passed \| 135 skipped (34050)`; lint gate exit 0; `vite build` exit 0 |
-| Review | Three lenses, a refuter on every finding, then a refuter on the fix round. Two must-fix were raised (B1, C1); the refuters held B1 at must-fix and moved C1 to should-fix. Both are fixed, as is every confirmed should-fix, including the two the fix-round refuter raised (NF-1, NF-2) (§5) |
+| Review | Three lenses, a refuter on every finding, then a refuter on the fix round. Two must-fix were raised (B1, C1); the refuters held B1 at must-fix and moved C1 to should-fix. Both are fixed, as is every confirmed should-fix, including the two the fix-round refuter raised (NF-1, NF-2) (§5). That second round of fixes (`b9cab98d`) was checked by its own new rows and seven mutants cut by the author, not by a further independent refuter |
 | Mutation battery | **71 defined, 71 ran, 71 killed, 0 survived, 0 broken (baseline 365 rows green); rules mutants 11 of 11 killed** |
-| For the founder | Deploy the rules and the index (§7); seven questions (§3.2) |
+| For the founder | Deploy the rules and the index (§7); eight questions (§3.2) |
 
 ---
 
@@ -44,7 +44,7 @@ It also holds the verdict itself. These are copies, not pointers, because the sh
 
 **The founder can create a book, admit a test idea, pause it and wind it down.** All of it goes through one endpoint. It only works when the Practice Field is not switched off and the caller is on the founder list (`MANDATE_FOUNDER_UIDS`, the same list the Mandate's founder endpoint uses).
 - A **paused** book still has its prices recorded and its stops and review dates honoured. Only the (future) model's drafting stops.
-- A **wound-down** book takes no new idea and keeps running the ones it has. The first close that finds nothing left open closes it, counting the close of the session during which the request arrived (up to 18:00 Eastern). The book then leaves the founder's four-book cap, and the owner may start a new one. No cash is lost or reset.
+- A **wound-down** book takes no new idea and keeps running the ones it has. The first close that finds nothing left open closes it, counting the close of the session during which the request arrived (up to 18:00 Eastern; 15:00 on an early close). The book then leaves the founder's four-book cap, and the owner may start a new one. No cash is lost or reset.
 
 Every request gets the same answer if it is sent again, whenever, and a request key can never act on a different book later.
 
@@ -168,6 +168,7 @@ Line numbers are at the code head. Everything is under `api/`, `firestore.rules`
 | Q5 (R-17) | A founder request refused for a reason that can change (a book already open, the cockpit list) answers the same refusal if the same key is sent again; a new key is a new request. A refusal made before anything is recorded (no open book, no ranked agent, a control refused) stores nothing, so the same key may act later. Keep both? | As described |
 | Q6 (R-16) | The book is filed under your ranked agent's archetype, not a per-game loadout's; with two ranked agents the request must name one. Keep? | As described |
 | Q7 | The draining close sweep counts a catch-up that closed a book as `skipped`, not `closed`. It is only a count; change it? | As described |
+| Q8 (R-20, NF-1) | A wind-down requested after the market closed is completed by that day's close only if it came before the end of the engine's close window (18:00 Eastern; 15:00 on an early close). The alternative is the session's own end (16:00), under which a 16:05 request waits for the next session's close: over a weekend on a Friday, holding a cap slot. Which instant? | The close window's end: a caught-up session then closes exactly as its on-time close would have (E12) |
 
 ## 4. Tests
 
@@ -201,14 +202,14 @@ The run's windows are driven directly (not through the eval pass), so its close 
 
 ### 4.3 The differentials (Amendment E §4)
 
-| Check | Base `71bc6bde` | Head `82693acb` (code as at `b9cab98d`) | Result |
+| Check | Base `71bc6bde` | Head `82693acb` | Result |
 |---|---|---|---|
-| 17 quarterly scenarios (the T1a-1 scratch test, SHA-256 `204a2f32…`, LF worktrees on Linux) | `92a1be2080b4e0d6ccb32e26a2ec95ec5fac0bd4c262e0f2de73f1f1e2f27f43`, 1,118,594 bytes | the same hash and bytes | **BYTE-IDENTICAL**, also at `5b3609d8` and `71d0b1bb` |
+| 17 quarterly scenarios (the T1a-1 scratch test, SHA-256 `204a2f32…`, LF worktrees on Linux) | `92a1be2080b4e0d6ccb32e26a2ec95ec5fac0bd4c262e0f2de73f1f1e2f27f43`, 1,118,594 bytes | the same hash and bytes | **BYTE-IDENTICAL**, also at `5b3609d8`, `71d0b1bb` and `b9cab98d` |
 | Its control (scenario 18: an idea book in play, mode on) | `2553861a…`, 1,156,115 bytes | `e73dcda4…`, 1,163,013 bytes | Differs in scenario 18 only, so the harness sees a change when there is one |
 | Astra's 40-case traced differential (her `astra-cron-trace.test.js`, unmodified, SHA-256 `9297cead…`, in her layout rebuilt in this session's scratchpad) | | | **40/40 raw-identical**: 20 at `'off'`, 20 at `'on'`, with one registry read per `'on'` fire on both sides. The evidence file's hash (`6c169f26…`) is unchanged from `5b3609d8` |
 | Astra's 17-scenario differential at both modes (`astra-differential.test.js`, unmodified, `17e724ad…`) | | | **34/34 identical** (17 per mode); its 4,000-case `buildSetDefaultOptions` row and prompt byte-equality rows pass; 76/76 rows |
 
-The base already has T1a-2a's registry fast path, so the traced cases are compared raw (every database operation in order), not through her classifier. Astra's harness ran at `b9cab98d`; `82693acb` adds only a test baseline entry.
+The base already has T1a-2a's registry fast path, so the traced cases are compared raw (every database operation in order), not through her classifier. Astra's harness ran at `5b3609d8`, `71d0b1bb`, `b9cab98d` and `82693acb`, with the same evidence bytes each time. The control ran at `b9cab98d` (`82693acb` adds only a test baseline entry).
 
 ### 4.4 Full suite, lint gate, build, rules suite (Linux, the code head)
 
@@ -218,7 +219,7 @@ All on WSL Ubuntu, in a private worktree of `~/pd-ci`, on Node 20.20.2, with the
 |---|---|---|
 | Full suite | `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | **exit 0** · `Test Files  1507 passed \| 12 skipped (1519)` · `Tests  33915 passed \| 135 skipped (34050)` · 298.70 s · log SHA-256 `806c1354…` |
 | Lint gate | `npm run lint:gate` | exit 0 (`--max-warnings 0`) |
-| Production build | `npx vite build` | exit 0. The `dist/` of 113 files is **byte-identical** to the base's build (`dist` hash list `a0a5c84d…` on both). The four CSS warnings come from comments in existing `src` CSS and appear on the base too |
+| Production build | `npx vite build` | exit 0. The `dist/` of 113 files is **byte-identical** to the base's build (`dist` hash list `a0a5c84d…` on both). The four CSS warnings come from comments in existing `src` CSS; the base's build gives the same four |
 | Rules suite | `npm run test:rules` (JDK 21, the emulator) | **exit 0** · `Test Files  43 passed (43)` · `Tests  813 passed (813)` · log SHA-256 `d5a20764…`. The new file's 29 rows are among them |
 | The money-path and import scans (Linux only: they fail on Windows on `main` too) | `npx vitest run api/_utils/mandateMoneyRounding.scan.test.js api/_utils/mandateRationale.imports.test.js api/_utils/practiceField/windowLedger.test.js api/_utils/compositionProtectedStores.scan.test.js` | exit 0, 4 files, 62 tests |
 
@@ -302,7 +303,7 @@ Its new findings:
 
 | # | New finding | Severity | Disposition |
 |---|---|---|---|
-| NF-1 | The C2 cutoff (the session's end) also stopped a LIVE close. A wind-down requested at 16:05 was not completed by that day's 16:25 close, and a Friday 16:01 request held a cap slot over the weekend. The `<` boundary was pinned only by source text | should-fix (the refuter: needs a ruling) | Fixed by reading E12 to the letter (R-20). The cutoff is the end of the session's close window (18:00 Eastern; 15:00 on an early close), the latest moment its on-time close can run. So a caught-up session still closes as its on-time close would have (C2's rows unchanged), and a live close after a 16:05 request completes the wind-down. Rows: 16:05, a Friday at 16:01, and 17:59:59.999 caught up; C2's 18:00 row pins `<` in behaviour. Stated as a reading, not asked |
+| NF-1 | The C2 cutoff (the session's end) also stopped a LIVE close. A wind-down requested at 16:05 was not completed by that day's 16:25 close, and a Friday 16:01 request held a cap slot over the weekend. The `<` boundary was pinned only by source text | should-fix (the refuter: needs a ruling) | Fixed by reading E12 to the letter (R-20). The cutoff is the end of the session's close window (18:00 Eastern; 15:00 on an early close), the latest moment its on-time close can run. So a caught-up session still closes as its on-time close would have (C2's rows unchanged), and a live close after a 16:05 request completes the wind-down. Rows: 16:05, a Friday at 16:01, and 17:59:59.999 caught up; C2's 18:00 row pins `<` in behaviour. The choice of instant is asked as Q8 |
 | NF-2 | A fresh endpoint price with no vendor time (`receipt_time_fallback`) was given the previous quote's time as `carriedFromVendorTimeIso`. The packet is create-once, so the wrong pairing could never be corrected | should-fix | Fixed. Only the ledger's own last mark (`carried_forward` or `unobserved`, no vendor time) names a carried time. The completeness check accepts a fresh price with no time, and refuses one paired with a borrowed time |
 | NF-3 | A create whose engine call committed but whose done-record write failed, replayed after the book closed, stores `409 op_id_conflict` | note (low) | Not fixed: it needs a failed write followed by a full wind-down before the replay. The stored answer is the engine's own. Stated |
 | NF-4 | A book created after a slot's last fire (10:16–10:29, 13:01–13:14, 15:46–15:59) was told it missed that slot | note | Fixed: a slot is due only if an evaluation fire is left in it (R-10). The cadence is pinned against `vercel.json` |
@@ -317,6 +318,11 @@ Its new findings:
 - **N1:** a stale fire still takes and releases the engine's lease on a closed book. The stamp is fixed.
 - **A5:** the agent owner filter and the agent query are each equivalent alone (killed together). The claim check in `applyControl` is a tautology, because the book id comes from the claim.
 - **B1:** a carried mark names no snapshot key (R-5), and the `observed === true` check is redundant (an equivalent mutant).
+
+**How the second round of fixes was checked.** The fixes for NF-1, NF-2, NF-4, NF-5 and NF-9 (`b9cab98d`, with the rounding-scan baseline in `82693acb`) did not go to a further independent refuter. They were checked by:
+- their own new rows (§4.1);
+- seven mutants cut by the author (R22, R22b, R23, R23b, R24, R24b, R25), each killed (§5.5);
+- the full suite, both differentials and the dist comparison, all at the code head.
 
 ### 5.5 The mutation battery
 
