@@ -8,10 +8,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { answerOf, projectSetupRecord, RECORD_SCHEMA_VERSION, SetupRecordUnreadable } from './projection.js';
+import { answerOf, CHECK_COUNT, projectSetupRecord, RECORD_SCHEMA_VERSION, SetupRecordUnreadable, VERDICTS } from './projection.js';
 import { readRecordSet } from './__fixtures__/readRecords.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../setupEvidence/acquire.js';
-import { FACT_NAMES, PATTERN_ORDER } from '../setupEvaluator/tfSetupV1.js';
+import { FACT_NAMES, PATTERN_ORDER, entryChecks } from '../setupEvaluator/tfSetupV1.js';
+import { SETUP_VERDICTS } from '../setupMenuLabels/constants.js';
 import {
   SETUP_READ_ANSWERS, SETUP_READ_CHECK_FIELDS, SETUP_READ_FACTS, SETUP_READ_FIELDS, SETUP_READ_PATTERNS, SETUP_READ_RULE_SET_FIELDS,
 } from '../../../src/components/Research/Sheet/setupReadContract.js';
@@ -42,6 +43,9 @@ describe('the contract', () => {
     expect(SETUP_READ_PATTERNS).toEqual([...PATTERN_ORDER]);
     expect(RECORD_SCHEMA_VERSION).toBe(SNAPSHOT_SCHEMA_VERSION);
     expect(SETUP_READ_ANSWERS).toEqual(['measured', 'refused', 'absent']);
+    expect(VERDICTS).toEqual([...SETUP_VERDICTS]);
+    expect(CHECK_COUNT).toBe(entryChecks({}, []).length);
+    expect(set.VALID_PULLBACK.record.entry.checks).toHaveLength(CHECK_COUNT);
   });
   it('the projection is pure: it imports only the contract and names no collection, no provider and no clock', () => {
     const imports = [...SRC.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
@@ -96,13 +100,13 @@ describe('every listed field is copied exactly (a valid pullback)', () => {
     const r = structuredClone(set.VALID_PULLBACK.record);
     r.entry.basis = 'planted-basis';
     r.key.ruleSet = { setupVersion: 'x-v9', thresholdsHash: 'abcdefabcdef', semanticsId: 'x-v9/sem-4' };
-    r.entry.verdict = 'planted-verdict';
+    r.entry.verdict = 'invalid'; // the record says valid; the projection says what is stored
     r.entry.patterns = { breakout: 'planted-b', pullback_resume: 'planted-p' };
     r.entry.evidence.pullbackLows = [{ date: '2001-01-02', low: 1.23 }];
     r.entry.evidence.swingHigh = { value: 9.87, date: '2001-01-03' };
     r.entry.evidence.adjustment.metadata = 'planted-meta';
     const p = project(r);
-    expect([p.basis, p.verdict, p.adjustmentMetadata]).toEqual(['planted-basis', 'planted-verdict', 'planted-meta']);
+    expect([p.basis, p.verdict, p.adjustmentMetadata]).toEqual(['planted-basis', 'invalid', 'planted-meta']);
     expect(p.ruleSet).toEqual({ setupVersion: 'x-v9', thresholdsHash: 'abcdefabcdef', semanticsId: 'x-v9/sem-4' });
     expect(p.patterns).toEqual({ breakout: 'planted-b', pullback_resume: 'planted-p' });
     expect(p.pullbackLows).toEqual([{ date: '2001-01-02', low: 1.23 }]);
@@ -200,12 +204,35 @@ describe('a record the projection cannot read is never read in part', () => {
     ['an unknown status', (r) => ({ ...r, status: 'pending' }), 'status'],
     ['no entry', (r) => ({ ...r, entry: null }), 'entry'],
     ['entry checks not a list', (r) => ({ ...r, entry: { ...r.entry, checks: {} } }), 'entry'],
+    // Review L2-4: a hollow entry is never served as a measured record with every field null.
+    ['a hollow entry (no checks, no verdict)', (r) => ({ ...r, entry: { checks: [] } }), 'entry'],
+    ['a verdict off its list', (r) => ({ ...r, entry: { ...r.entry, verdict: 'maybe' } }), 'entry'],
+    ['a null verdict', (r) => ({ ...r, entry: { ...r.entry, verdict: null } }), 'entry'],
+    ['eight checks, not nine', (r) => ({ ...r, entry: { ...r.entry, checks: r.entry.checks.slice(1) } }), 'entry'],
+    ['a check with no id', (r) => ({ ...r, entry: { ...r.entry, checks: r.entry.checks.map((c, i) => (i === 3 ? { ...c, id: null } : c)) } }), 'entry'],
   ])('%s', (_label, mutate, why) => {
     const r = mutate(structuredClone(set.VALID_PULLBACK.record));
     let caught = null;
     try { project(r); } catch (err) { caught = err; }
     expect(caught).toBeInstanceOf(SetupRecordUnreadable);
     expect(caught.why).toBe(why);
+  });
+  it('review L2-8: an object or array in a scalar slot is never passed through: it reads null', () => {
+    const r = structuredClone(set.VALID_PULLBACK.record);
+    r.entry.factsUsed.C.value = { leak: 'x' };
+    r.entry.checks[0].lhs = [{ leak: 'x' }, 195.62];
+    r.entry.checks[1].rhs = ['nested'];
+    r.entry.evidence.swingHigh.date = { leak: 'x' };
+    r.entry.evidence.pullbackLows[0].low = [1, 2];
+    r.capturedAt = { leak: 'x' };
+    const p = project(r);
+    expect(p.facts.C).toBeNull();
+    expect(p.checks[0].lhs).toEqual([null, 195.62]);
+    expect(p.checks[1].rhs).toEqual(['nested']); // an array side is copied element by element; a string element is a scalar
+    expect(p.swingHigh.date).toBeNull();
+    expect(p.pullbackLows[0].low).toBeNull();
+    expect(p.capturedAt).toBeNull();
+    expect(JSON.stringify(p)).not.toContain('leak');
   });
   it('answerOf: ok → measured, refused → refused, anything else throws', () => {
     expect(answerOf({ status: 'ok' })).toBe('measured');

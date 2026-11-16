@@ -24,6 +24,9 @@ import {
 /** The one record schema this projection knows (setupEvidence/acquire.js SNAPSHOT_SCHEMA_VERSION; pinned). */
 export const RECORD_SCHEMA_VERSION = 1;
 const ANSWER_OF_STATUS = Object.freeze({ ok: 'measured', refused: 'refused' });
+/** The evaluator's verdicts and its number of entry checks (tfSetupV1.js; pinned in projection.test.js). */
+export const VERDICTS = Object.freeze(['valid', 'invalid', 'unknown']);
+export const CHECK_COUNT = 9;
 
 /** A stored record the projection cannot read. */
 export class SetupRecordUnreadable extends Error {
@@ -60,6 +63,10 @@ export function projectSetupRecord(record, { session, symbol, behind }) {
   answerOf(record);
   const entry = record.entry;
   if (!isObject(entry) || !Array.isArray(entry.checks)) throw new SetupRecordUnreadable('entry');
+  // A hollow entry is never served (review L2-4): the verdict on its list, and every one of the nine checks with its id.
+  if (!VERDICTS.includes(entry.verdict) || entry.checks.length !== CHECK_COUNT || !entry.checks.every((c) => isObject(c) && typeof c.id === 'string')) {
+    throw new SetupRecordUnreadable('entry');
+  }
   const ruleSet = isObject(record.key.ruleSet) ? record.key.ruleSet : {};
   const evidence = isObject(entry.evidence) ? entry.evidence : {};
   const factsUsed = isObject(entry.factsUsed) ? entry.factsUsed : {};

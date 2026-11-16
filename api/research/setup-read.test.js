@@ -43,7 +43,7 @@ vi.mock('../_utils/firebaseAdmin.js', () => {
     const ref = {
       get: async () => {
         state.reads.push(path);
-        if (state.throwOnRead) throw Object.assign(new Error('firestore down'), { code: 14 });
+        if (state.throwOnRead) throw state.readError ?? Object.assign(new Error('firestore down'), { code: 14 });
         const data = state.docs[path];
         return { exists: data !== undefined, data: () => (data === undefined ? undefined : structuredClone(data)) };
       },
@@ -102,7 +102,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(AFTER_CLOSE));
   resetSetupReadState();
-  Object.assign(state, { uid: 'player-uid-1', authFails: false, mode: 'on', allow: ['player-uid-1'], middlewareHandles: false, docs: {}, reads: [], touches: [], throwOnRead: false });
+  Object.assign(state, { uid: 'player-uid-1', authFails: false, mode: 'on', allow: ['player-uid-1'], middlewareHandles: false, docs: {}, reads: [], touches: [], throwOnRead: false, readError: null });
   // ZERO PROVIDER CALLS: any network call fails the row that makes it.
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('a provider call — the read route never makes one'); }));
 });
@@ -291,6 +291,43 @@ describe('failures are never an answer', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     const r = await call();
     expect(r.statusCode).toBe(500);
+    errors.mockRestore();
+  });
+});
+
+describe('review lens 2 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): rows that bite', () => {
+  it('L2-2: with the window full, a call for an UNCACHED symbol answers 429 and reads nothing', async () => {
+    put(latest.VALID_PULLBACK);
+    put(other.VALID_PULLBACK);
+    for (let i = 0; i < SETUP_READ_USER_RATE_LIMIT.limit; i += 1) expect((await call()).statusCode).toBe(200);
+    const readsBefore = state.reads.length;
+    const r = await call({ query: { symbol: 'AAPL' } }); // never read before: a read here would be a real read
+    expect([r.statusCode, r.body]).toEqual([429, { error: 'rate_limited' }]);
+    expect(state.reads.length).toBe(readsBefore);
+  });
+  it('L2-3: with the window full, a bad symbol still answers 400 — the symbol is checked before the limiter', async () => {
+    put(latest.VALID_PULLBACK);
+    for (let i = 0; i < SETUP_READ_USER_RATE_LIMIT.limit; i += 1) await call();
+    const r = await call({ query: { symbol: 'ZZZZ' } });
+    expect([r.statusCode, r.body]).toEqual([400, { error: 'invalid_symbol' }]);
+  });
+  it('L2-3: across the close, thirty seconds apart, the cache never serves the session before', async () => {
+    put(prior.VALID_PULLBACK);
+    put(latest.VALID_PULLBACK);
+    vi.setSystemTime(new Date('2026-11-16T20:59:50.000Z')); // Mon 3:59:50 PM ET: Friday is the last completed session
+    expect((await call()).body.read.session).toBe(PRIOR);
+    vi.setSystemTime(new Date('2026-11-16T21:00:20.000Z')); // 4:00:20 PM ET: Monday has closed
+    const after = await call();
+    expect(after.body.read.session).toBe(LATEST);
+    expect(after.body.read.behind).toBe(false);
+  });
+  it('L2-8: a failed read whose message names the symbol never puts it in the log or the body', async () => {
+    state.throwOnRead = true;
+    state.readError = Object.assign(new Error(`read failed for ${SYMBOL} at 200.37`), { code: 14 });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await call();
+    expect([r.statusCode, r.body]).toEqual([500, { error: 'Could not read the record.' }]);
+    expect(errors.mock.calls.flat().map(String).join(' ')).not.toMatch(/BRK-B|200.37/);
     errors.mockRestore();
   });
 });
