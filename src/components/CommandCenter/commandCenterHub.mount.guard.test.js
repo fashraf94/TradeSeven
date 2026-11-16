@@ -1017,10 +1017,14 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
       expect(lazyImportsOfCode(stripComments(read(rel))), rel).toEqual([]);
     }
     expect(hubDirFiles().filter((rel) => /huddleService/.test(stripComments(read(rel))))).toEqual([]);
-    // the readers are called once each, in ConnectedHub, and nowhere else in the directory
+    // the readers are called once each in ConnectedHub and, since league hide's flip PR (founder ruling Q-B, 16 Nov 2026; a
+    // deliberate change), once each in the BaggerBomb page, for the Deploy card's Reconfirm line — and nowhere else in the directory
     const callers = (name) => hubDirFiles().filter((rel) => new RegExp(`\\b${name}\\(`).test(stripComments(read(rel))));
-    expect(callers('useHuddleToday')).toEqual([HUB_FILE('CommandCenterHub.jsx')]);
-    expect(callers('useHuddleHistory')).toEqual([HUB_FILE('CommandCenterHub.jsx')]);
+    expect(callers('useHuddleToday')).toEqual([HUB_FILE('BaggerBombPage.jsx'), HUB_FILE('CommandCenterHub.jsx')]);
+    expect(callers('useHuddleHistory')).toEqual([HUB_FILE('BaggerBombPage.jsx'), HUB_FILE('CommandCenterHub.jsx')]);
+    const pageCode = stripComments(read(HUB_FILE('BaggerBombPage.jsx')));
+    expect(pageCode.match(/\buseHuddleToday\(/g)).toHaveLength(1);
+    expect(pageCode.match(/\buseHuddleHistory\(/g)).toHaveLength(1);
     const hubCode = stripComments(read(HUB_FILE('CommandCenterHub.jsx')));
     expect(hubCode.match(/\buseHuddleToday\(/g)).toHaveLength(1);
     expect(hubCode.match(/\buseHuddleHistory\(/g)).toHaveLength(1);
