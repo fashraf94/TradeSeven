@@ -20,6 +20,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   hide: false,
+  lobbyOn: true,
+  liveDraftOn: true,
   authCalls: 0,
   adminCalls: 0,
   dbCalls: 0,
@@ -31,7 +33,9 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   return {
     ...actual,
     get LEAGUE_HIDE_ENABLED() { return h.hide; },
-    // Every other league flag keeps the value it ships with (a hide must not depend on them).
+    // The two flags whose own refusals sit beside this one are read through getters, so a row can turn them off.
+    get LEAGUE_LOBBY_ENABLED() { return h.lobbyOn; },
+    get LEAGUE_LIVE_DRAFT() { return h.liveDraftOn; },
   };
 });
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => { h.dbCalls += 1; return {}; } }));
@@ -107,6 +111,8 @@ beforeEach(() => {
   // A signed-in caller reaches a route's own logic, whose database here is `{}`: that logs its unhandled error, as expected.
   vi.spyOn(console, 'error').mockImplementation(() => {});
   h.hide = false;
+  h.lobbyOn = true;
+  h.liveDraftOn = true;
   h.authCalls = 0;
   h.adminCalls = 0;
   h.dbCalls = 0;
@@ -149,6 +155,20 @@ describe('league hide, server — the flag ON closes the seven entry doors with 
       expect(res.code, name).toBe(405);
       expect(res.body?.error, name).toBe('method_not_allowed');
     }
+  });
+
+  it('the hide answers FIRST: with the lobby and the live draft flags off too, every entry door still says league_hidden (not lobby_disabled / live_draft_disabled)', async () => {
+    h.hide = true;
+    h.lobbyOn = false;
+    h.liveDraftOn = false;
+    for (const [name, handler, method] of ENTRY) {
+      const res = await call(handler, method);
+      expect(res.body?.error, name).toBe(LEAGUE_HIDDEN_ERROR);
+    }
+    // The control: hide off, those flags off — the doors answer their own refusals, as before.
+    h.hide = false;
+    expect((await call(lobbyCreate, 'POST')).body?.error).toBe('lobby_disabled');
+    expect((await call(slotClaim, 'POST')).body?.error).toBe('live_draft_disabled');
   });
 
   it('with a signed-in caller the refusal is the same (it never needs the caller)', async () => {

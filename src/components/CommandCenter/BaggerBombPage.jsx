@@ -2,11 +2,14 @@
 //
 // League hide (direction note BB-1; founder rulings Q1–Q6, Nov 15, 2026) — the BaggerBomb page, version 1. With
 // LEAGUE_HIDE_ENABLED on, App's 'league' route renders this in place of LeagueScreen, so the nav slot, the "back" target
-// after a training battle and every other way into that screen land here. Four parts and nothing else:
+// after a training battle (unreachable with the flag on) and every other setter of that screen id land here. Four parts and
+// nothing else:
 //
 //   1. Deploy        the hub's own press-and-hold card (DeploySection), wired through the deploy provider App already
 //                    mounts around every screen (hub/useHubDeploy.js): the same control, the same admission table, the
-//                    same ceremony, the same lines.
+//                    same ceremony, and the card's own lines, with its "Next deploy carries …" line and its door to the Loadout
+//                    tab. NOT on this card: the hub's connected-only extras — "Deploying with" (the idea line), the Huddle's
+//                    reconfirm line and the Scouting Board link — which need the hub's runtime (a founder question).
 //   2. Live game     the live BaggerBomb rows, each with "Open game" (App's handleOpenAgentBattle, through the hub's reader).
 //   3. Finished      the hub's completed window and its History sheet, league rows excluded.
 //   4. Record        wins, losses and games played from the agent's stored stats (the hub's own agent read).
@@ -14,9 +17,10 @@
 // WHY IT LIVES HERE. commandCenterHub.mount.guard.test.js keeps the hub's modules out of the main chunk: App may reach this
 // directory only through a short permitted list. This page needs the hub's readers, sections and sheet, so it is housed in
 // the directory and App loads it lazily (one more permitted entry, a deliberate change recorded in the build report) rather
-// than the hub's modules being pulled out into shared code. The League-only pieces the hub carries (the loadout scope and
-// its League lock read, the ranked rows) are not mounted here: there is no PerGameLoadoutScope, so `useLeagueLoadoutLock`
-// never runs on this page, and the games section is filtered before anything reads it (baggerBombPageModel.js).
+// than the hub's modules being pulled out into shared code. The League-only pieces the hub carries are not shown here: the
+// loadout scope IS mounted (the Deploy card's loadout line reads it) but, with the league hidden, it hands the League lock
+// read no owner, so that read subscribes to nothing; the League card is never rendered; and the games section is filtered
+// before anything reads it (baggerBombPageModel.js).
 //
 // What it deliberately is NOT: no mode picker, no length picker, no dollars (those arrive with trader v1); no new
 // endpoint and no new query shape (every read is the hub's); no new colour (hub/hubStyle.js maps the --ft-* tokens). The

@@ -288,9 +288,11 @@ describe('the page, finished games — the hub\'s window and History, league row
     render('desktop');
     const history = byRole(part('finished'), 'button', PAGE.finished.history);
     expect(history).toHaveLength(1);
+    expect(history[0].style.minHeight).toBe('');
     click(history[0]);
     const sheet = document.querySelector('[data-hub-sheet-overlay]') ?? document.querySelector('[role="dialog"]');
     expect(sheet, 'the history sheet opened').not.toBeNull();
+    expect(sheet.querySelector('[data-hub-sheet]').getAttribute('data-hub-sheet')).toBe('dialog');
     expect(sheet.textContent).toContain(COPY.history.title);
     expect(rowLabels(sheet)).toHaveLength(BB_DONE.length);
     expect(sheet.textContent).not.toMatch(/ranked/i);
@@ -442,9 +444,13 @@ describe('the Finished part, every state of the hub\'s window', () => {
     h.window = { ...windowOf(records), refresh: vi.fn() };
     const hub = hubOf();
     render('mobile', hub);
-    click(byRole(part('finished'), 'button', PAGE.finished.history)[0]);
+    const historyLink = byRole(part('finished'), 'button', PAGE.finished.history)[0];
+    // The phone composition reaches the hub's parts: 44 px targets (hub/HubParts.jsx PHONE_TARGET), not the desktop's in-line link.
+    expect(historyLink.style.minHeight).toBe('44px');
+    click(historyLink);
     const sheet = document.querySelector('[data-hub-sheet-overlay]') ?? document.querySelector('[role="dialog"]');
     expect(sheet, 'the history sheet opened').not.toBeNull();
+    expect(sheet.querySelector('[data-hub-sheet]').getAttribute('data-hub-sheet')).toBe('bottom');
     expect(rowLabels(sheet)).toHaveLength(5);
     click(sheet.querySelector('[data-hub-game-row="completed"]').closest('button'));
     expect(hub.openGame).toHaveBeenCalledTimes(1);
@@ -499,6 +505,42 @@ describe('the Deploy card on the page — the rest of what the hub\'s card does'
     act(() => { pointer(hold, 'pointerdown'); });
     expect(currentHold()).toBeNull();
     expect(h.deploy).not.toHaveBeenCalled();
+  });
+});
+
+describe('the Deploy card on the page — an open overlay and a width flip', () => {
+  it('while the History sheet is open the card\'s hold is disabled (the hub\'s overlay stack tells the deploy state: modalOpen), and live again when it closes', () => {
+    h.window = windowOf(Array.from({ length: 5 }, (_, i) => done(i + 1)));
+    render('desktop');
+    const hold = () => byRole(deployCard(), 'button', COPY.deploy.holdLabel)[0];
+    expect(hold().disabled).toBe(false);
+    click(byRole(part('finished'), 'button', PAGE.finished.history)[0]);
+    expect(hold().disabled).toBe(true);
+    click(byRole(document.querySelector('[data-hub-sheet-overlay]'), 'button', COPY.sheet?.close ?? 'Close')[0] ?? document.querySelector('[data-hub-sheet-overlay] button'));
+    expect(hold().disabled).toBe(false);
+  });
+
+  it('a width flip across 768 px while submitting keeps the ONE attempt: the card shows it, and no second request starts', async () => {
+    const hub = hubOf();
+    const { m } = render('mobile', hub);
+    act(() => { pointer(byRole(deployCard(), 'button', COPY.deploy.holdLabel)[0], 'pointerdown'); });
+    frameAt(1300);
+    await advance(450);
+    await flush();
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+    m.rerender(tree('desktop', hub));
+    expect(page().getAttribute('data-bb-site')).toBe('desktop');
+    expect(deployCard().querySelector('[data-hub-deploy]').getAttribute('data-hub-deploy')).toBe('submitting');
+    // A press on whatever hold control the card shows now must start nothing: still the one request.
+    for (const b of deployCard().querySelectorAll('button')) act(() => { pointer(b, 'pointerdown'); });
+    frameAt(2600);
+    await advance(1000);
+    await flush();
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+    h.posts[0].answer({ outcome: 'refused', success: false, postIssued: true, httpStatus: 429, error: 'Deploy already in progress', reason: 'in_progress' });
+    await flush();
+    expect(deployCard().querySelector('[data-hub-deploy]').getAttribute('data-hub-deploy')).toBe('failed');
+    expect(h.deploy).toHaveBeenCalledTimes(1);
   });
 });
 

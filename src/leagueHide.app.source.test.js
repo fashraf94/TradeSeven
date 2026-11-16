@@ -79,6 +79,10 @@ describe('league hide — SCOPE: who reads the flag', () => {
 describe('league hide — FLAG-OFF: each door\'s off arm is today\'s text', () => {
   const app = code('src/App.jsx');
 
+  it('App.jsx reads the flag in exactly seven places (the import, three address effects, the poll gate, the route, the banner): a new one — a filter on the live list, say — must be named here', () => {
+    expect((app.match(/\bLEAGUE_HIDE_ENABLED\b/g) || []).length).toBe(7);
+  });
+
   it('the three address-parameter effects start with the early return, before they read the address', () => {
     for (const param of ['tournamentDev', 'trainingDraft', 'trainingBattle']) {
       const at = app.indexOf(`get('${param}')`);
@@ -112,6 +116,30 @@ describe('league hide — FLAG-OFF: each door\'s off arm is today\'s text', () =
     expect(code('src/components/Navigation/DesktopSidebar.jsx')).toContain("...(LEAGUE_HIDE_ENABLED ? [{ id: 'league', label: 'BaggerBomb', Icon: Bomb, screen: 'league' }] : TOURNAMENT_TAB_ENABLED ? [{ id: 'league', label: 'League', Icon: Trophy, screen: 'league' }] : []),");
     expect(code('src/components/CommandCenter/LoadoutCards.jsx')).toContain('{(LEAGUE_HIDE_ENABLED ? [cards.baggerbomb] : [cards.baggerbomb, cards.league]).map((card) => (');
     expect(code('src/components/CommandCenter/PerGameLoadoutScope.jsx')).toContain('useLeagueLoadoutLock(LEAGUE_HIDE_ENABLED ? null : agent ? agent.ownerId ?? null : null);');
+  });
+});
+
+describe('league hide — the page is a second root: its imports are listed (the mount guard walks from CommandCenterHub.jsx only)', () => {
+  const importsOf = (rel) => [...code(rel).matchAll(/\b(?:import|export)\b[^;'"`]*?\bfrom\s*(['"])([^'"]+)\1|\bimport\s*(['"])([^'"]+)\3/g)].map((m) => m[2] ?? m[4]).sort();
+  const PAGE = 'src/components/CommandCenter/BaggerBombPage.jsx';
+
+  it('imports exactly these modules: the hub\'s own parts, the deploy provider, the page\'s copy and model — no service, no firebase, no new package', () => {
+    expect(importsOf(PAGE)).toEqual([
+      '../../constants/baggerBombPageCopy', '../../contexts/DeployAttemptContext', './HistorySheet', './HubParts', './PerGameLoadoutScope',
+      './baggerBombPageModel', './hub/HubOverlays', './hub/composition', './hub/deployDisplay', './hub/hubCopy', './hub/hubStyle',
+      './hub/useHubDeploy', './hub/useHubReaders', './hub/useHubSheets', './sections/DeploySection', './sections/GamesSection',
+      'framer-motion', 'react',
+    ].sort());
+    expect(code(PAGE)).not.toMatch(/\bimport\s*\(|\brequire\s*\(/);
+    expect(importsOf('src/components/CommandCenter/baggerBombPageModel.js')).toEqual(['../../utils/commandCenterLiveBattles', './hub/hubModel']);
+    expect(importsOf('src/constants/baggerBombPageCopy.js')).toEqual([]);
+  });
+
+  it('the import scan sees what it must (a planted service import is listed)', () => {
+    const planted = importsOf.toString();
+    expect(planted).toContain('import');
+    const found = [...squash("import x from '../../services/x'; import { y } from './y';").matchAll(/\b(?:import|export)\b[^;'"`]*?\bfrom\s*(['"])([^'"]+)\1/g)].map((m) => m[2]);
+    expect(found).toEqual(['../../services/x', './y']);
   });
 });
 
