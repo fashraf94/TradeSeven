@@ -96,4 +96,13 @@ The last lens ran on its own tree at `29e42a78` (after the fix round), mutating 
 
 ## 7. Checks
 
-CHECKS
+On Linux (WSL worktree of `~/pd-ci` with its own `npm ci`, lockfile `40382e64edb6` = `main`'s; Node 20.20.2; `TZ=UTC`), at `cf19a89c` — the build with `origin/main` (`ea5e0c5b`, unchanged since the start, re-fetched before the checks) already merged in:
+
+| Check | Result |
+|---|---|
+| Full suite, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock` | **exit 0 — 1,515 files, 33,791 rows: 33,656 passed, 0 failed, 135 skipped** (328 s). A first run the same hour had one row red: `src/components/League/leagueRawIds.guard.test.jsx` ("every League seat surface…"), timed out at 5.18 s against its 5 s limit under load — a file this build does not touch; alone it passed 3 of 3 (≈ 1.9 s of tests each), and the quiet rerun above is the record. |
+| `npm run lint:gate` | **exit 0** |
+| `npm run build` (`vite build`) | **exit 0** (the usual chunk-size warning) |
+| `lint:gate` and `vite build` again on the pushed head (this report's check lines only) | **exit 0, exit 0** |
+
+The Windows checkout (CRLF, `core.autocrlf=true`) has three known platform-only reds in the evaluator suites (`tickCoherence`, `tickStamps.pins` resolveControls, the `firestore.rules` tripwire), green on Linux. The emulator rules suite was not run: this build touches no rules file and no rules-read flag.
