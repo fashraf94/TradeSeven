@@ -38,9 +38,9 @@ const GOLDEN = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8'));
 const sha256 = (v) => createHash('sha256').update(stableStringify(v), 'utf8').digest('hex');
 /** The goldens' SHA-256, over their canonical JSON (canonicalHash.js stableStringify) — the build report records both. */
 const GOLDEN_SHA256 = Object.freeze({
-  // the C2 fix round moves each by the rulings that change the shape, one commit each (build report §11): CD-16 (no meeting)
+  // the C2 fix round moves each by the rulings that change the shape, one commit each (build report §11): CD-16 (no meeting), CD-14 (no card.note)
   moment: '5d9fed6d00227641b1cf0e4c2f4efe320ee6559154026030da7a11c85c5990ee',
-  card: '5349062d9890be04e6110187a2ecf67dc3355f048261cd5f321eafadf82612ae',
+  card: '13a700988e09d2e441fadbf31e328f153a9c7b13ac40d24b65bb57835fee03a5',
 });
 
 /** The card, by the ledger's own builder; the store with it unless a test names another. */
@@ -83,8 +83,16 @@ describe('C-EXCERPT — the goldens, through the real writer', () => {
     const { card, inputQuote, ...rest } = GOLDEN.card.excerpt;
     expect(rest).toEqual(GOLDEN.moment.excerpt);
     expect(GOLDEN.card.refs).toEqual({ ...GOLDEN.moment.refs, c1: EXCERPT_ENTRY });
-    expect(inputQuote).toEqual(card.note);
-    expect(inputQuote).not.toBe(card.note);
+    expect(inputQuote).toEqual({ text: EXCERPT_NOTE, by: 'player', at: excerptCard().createdAt, class: 'quoted' });
+    expect(card.label).toBe(EXCERPT_LABELS.card);
+  });
+  it('CD-14 — THE NOTE HAS ONE HOME: `card` holds no note, and the note\'s words appear exactly once in the excerpt, as `inputQuote` (live and golden)', () => {
+    for (const e of [GOLDEN.card.excerpt, LIVE.card.excerpt]) {
+      expect('note' in e.card).toBe(false);
+      expect(Object.keys(e.card).sort()).toEqual(['filed', 'label', 'question', 'route']);
+      expect(stringsOf(e).filter((x) => x === EXCERPT_NOTE)).toHaveLength(1);
+      expect(e.inputQuote.text).toBe(EXCERPT_NOTE);
+    }
   });
   it('every field is the named source\'s value (the golden is checked against the tape, not only against itself)', () => {
     const e = GOLDEN.moment.excerpt;
@@ -133,7 +141,7 @@ describe('the bounds — at the limit carried exactly, one over not carried (nev
     { name: 'directive player text', bound: 400, plant: (s, text) => withTape((t) => { t.directives[DIR15].playerText = text; }), read: (x) => x.directive?.playerText?.text, card: false },
     { name: 'directive canonical text', bound: 400, plant: (s, text) => withTape((t) => { t.directives[DIR15].canonicalText = text; }), read: (x) => x.directive?.canonicalText?.text, card: false },
     { name: 'idea statement', bound: 280, plant: (s, text) => excerptStore(DAY, { idea: ideaVersionDoc({ statement: text }) }), read: (x) => x.idea?.statement?.text, card: false },
-    { name: 'card note', bound: 280, plant: (s, text) => excerptStore(DAY, { card: excerptCard({ note: text }) }), read: (x) => x.card?.note?.text, card: true },
+    { name: 'card note', bound: 280, plant: (s, text) => excerptStore(DAY, { card: excerptCard({ note: text }) }), read: (x) => x.inputQuote?.text, card: true },
   ];
   for (const r of rows) {
     it(`${r.name}: ${r.bound} code points carried exactly; ${r.bound + 1} not carried`, async () => {
@@ -145,10 +153,13 @@ describe('the bounds — at the limit carried exactly, one over not carried (nev
       expect(r.read(over.excerpt)).toBeUndefined();
     });
   }
-  it('the card note over its bound takes inputQuote with it (one quotation, one answer)', async () => {
-    const over = await cardOver(excerptStore(DAY, { card: excerptCard({ note: textOf(281) }) }));
-    expect(over.excerpt.inputQuote).toBeUndefined();
-    expect(over.excerpt.card.question).toBeDefined();
+  it('a card note over its bound, missing, empty or not a string: no inputQuote, and no note anywhere — the card itself kept (CD-14)', async () => {
+    for (const note of [textOf(281), null, '', 7]) {
+      const got = await cardOver(excerptStore(DAY, { card: { ...excerptCard(), note } }));
+      expect(got.excerpt.inputQuote, String(note).slice(0, 20)).toBeUndefined();
+      expect('note' in got.excerpt.card).toBe(false);
+      expect(got.excerpt.card.question).toBeDefined();
+    }
   });
 });
 
@@ -408,7 +419,6 @@ const SPEAKER_TABLE = Object.freeze({
   'rationale.rationale': 'agent',
   'directive.playerText': 'player',
   'directive.canonicalText': 'platform',
-  'card.note': 'player',
   inputQuote: 'player',
 });
 const quotesIn = (v, p = '', out = {}) => {
@@ -439,7 +449,6 @@ describe('CC-2 — every quotation one source, one speaker, with its time', () =
       'rationale.rationale': t.rationale[RAT15].rationale,
       'directive.playerText': t.directives[DIR15].playerText,
       'directive.canonicalText': t.directives[DIR15].canonicalText,
-      'card.note': EXCERPT_NOTE,
       inputQuote: EXCERPT_NOTE,
     };
     const q = quotesIn(LIVE.card.excerpt);
@@ -452,7 +461,7 @@ describe('CC-2 — every quotation one source, one speaker, with its time', () =
     expect(q['rationale.rationale'].at).toBe(DAY.tape.rationale[RAT15].at);
     expect(q['directive.playerText'].at).toBe(DAY.tape.directives[DIR15].filedAt);
     expect(q['idea.statement'].at).toBe(ideaVersionDoc().createdAt);
-    expect(q['card.note'].at).toBe(excerptCard().createdAt);
+    expect(q.inputQuote.at).toBe(excerptCard().createdAt);
   });
 });
 

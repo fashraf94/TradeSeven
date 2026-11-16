@@ -61,13 +61,12 @@ describe('CC-3 / CC-2 — labels for the battle, the idea and the card; the card
     expect(got.excerpt.inputQuote).toBeUndefined();
     expect(got.refs).toEqual({ b1: EXCERPT_BATTLE, i1: EXCERPT_WATCHLIST });
   });
-  it('a card adds c1, and its note — the player\'s words at the card\'s filing — is named again as `inputQuote`', async () => {
+  it('a card adds c1, and its note — the player\'s words at the card\'s filing — is its `inputQuote`, and nowhere else (CD-14)', async () => {
     const got = await cardOver(excerptStore(DAY));
     expect(got.excerpt.card.label).toBe(EXCERPT_LABELS.card);
     expect(got.refs).toEqual({ b1: EXCERPT_BATTLE, i1: EXCERPT_WATCHLIST, c1: EXCERPT_ENTRY });
     expect(got.excerpt.inputQuote).toEqual({ text: EXCERPT_NOTE, by: 'player', at: excerptCard().createdAt, class: 'quoted' });
-    expect(got.excerpt.card.note).toEqual(got.excerpt.inputQuote);
-    expect(got.excerpt.inputQuote).not.toBe(got.excerpt.card.note);
+    expect('note' in got.excerpt.card).toBe(false);   // CD-14: the note's one home is inputQuote
   });
   it('a stored `drill` route reads `offer` (the one export\'s routeOf), as every reader reads it', async () => {
     const got = await cardOver(excerptStore(DAY, { card: { ...excerptCard(), route: 'drill' } }));

@@ -250,12 +250,6 @@
         "filed": {
           "value": "2026-09-24T14:00:00.000Z",
           "class": "recorded"
-        },
-        "note": {
-          "text": "ETN sat flat for an hour before the rule moved it. I want the agent to rotate sooner.",
-          "by": "player",
-          "at": "2026-09-24T14:00:00.000Z",
-          "class": "quoted"
         }
       }
     },

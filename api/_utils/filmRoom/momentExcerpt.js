@@ -283,7 +283,11 @@ function countOf(tape, m) {
   return i >= 0 && Number.isInteger(items[i].count) ? classed(items[i].count, tape.numberClasses, ['tags', 'items', i, 'count']) : null;
 }
 
-/** The card (spec §6, CC-2): its label, the question's text on the menu at its stored version, the route, the filed instant, and the note as the player's words. */
+/**
+ * The card (spec §6, CC-2): its label, the question's text on the menu at its stored version, the route and the filed
+ * instant — and, apart from it, the note as the player's words: CD-14, the note's ONE home is `inputQuote` (W-06's one
+ * quotation per input is the shape's, not the assembler's to remember); `card` carries no note.
+ */
 function cardOf(entry) {
   const card = { label: EXCERPT_LABELS.card };
   const q = SITUATION_QUESTIONS.find((x) => x.id === entry.questionId && x.situationId === entry.situationId && x.version === entry.questionVersion);
@@ -327,11 +331,8 @@ async function buildExcerpt(db, { uid, battleId, etDate, tape, day, entry = null
   if (count) excerpt.count = count;
   if (entry) {
     const { card, note } = cardOf(entry);
-    if (note) {
-      card.note = quote(note.text, 'player', note.at);
-      // CC-2: the card's one quoted excerpt, named as the input's — the same words, in a field of its own
-      excerpt.inputQuote = quote(note.text, 'player', note.at);
-    }
+    // CC-2, CD-14: the card's one quoted excerpt, the input's — its only home
+    if (note) excerpt.inputQuote = quote(note.text, 'player', note.at);
     excerpt.card = card;
     refs[EXCERPT_LABELS.card] = entry.entryId;
   }
