@@ -80,6 +80,10 @@ describe('judgeFiledDay — THE DAY CHECK against what was filed (CC-4: coverage
     const v3 = tapeOf({ tags: { inputs: { archetypeCodeId: 'momentum_chaser' }, items: [item('ACN', 4, { version: 3 }), item('ACN', 5, { version: 3 })] } });
     expect(judgeFiledDay(v3, UID, FILED)).toEqual({ ok: false, code: 'source_changed' });
   });
+  it('both changed — another archetype AND another situation version: archetype_changed, naming the day\'s, as the route ordered them (§2 review L2-6)', () => {
+    const both = tapeOf({ tags: { inputs: { archetypeCodeId: 'trend_follower' }, items: [item('ACN', 4, { version: 3 }), item('ACN', 5, { version: 3 })] } });
+    expect(judgeFiledDay(both, UID, FILED)).toEqual({ ok: false, code: 'archetype_changed', extra: { archetypeCodeId: 'trend_follower' } });
+  });
   it('the day\'s own refusals come first, as the route ordered them', () => {
     expect(judgeFiledDay(tapeOf({ ownerId: 'x' }), UID, { ...FILED, archetypeCodeId: 'other' })).toEqual({ ok: false, code: 'tape_not_found' });
     expect(judgeFiledDay(tapeOf(), UID, { ...FILED, moment: { ...ACN, toTickSeq: 4 }, situationVersion: 1 })).toEqual({ ok: false, code: 'moment_not_found' });

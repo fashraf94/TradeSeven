@@ -15,7 +15,7 @@
 // The owner, attribution, source and read rules are item 2's (momentExcerpt.test.js).
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +28,7 @@ import {
 import { buildCardDoc } from './cardStore.js';
 import { stableStringify } from '../canonicalHash.js';
 import { WRITE_PATTERN } from '../../../scripts/census-film-room-v1-plays.mjs';
+import { stripComments, importSpecifiersOf, resolveImport } from './__fixtures__/jsSource.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..');
@@ -356,24 +357,19 @@ describe('CC-2 — every quotation one source, one speaker, with its time', () =
 
 // ── the write gate ──────────────────────────────────────────────────────────
 
-const RESOLVE_EXT = ['', '.js', '.jsx', '.mjs', '/index.js', '/index.jsx'];
-const resolveImport = (from, spec) => {
-  if (!spec.startsWith('.')) return null;
-  const base = path.resolve(path.dirname(from), spec);
-  for (const ext of RESOLVE_EXT) { const c = base + ext; if (existsSync(c) && /\.(m?js|jsx)$/.test(c)) return c; }
-  return null;
-};
-const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-const SPEC_RE = /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|^import\s+['"]([^'"]+)['"]/gm;
 const rel = (f) => path.relative(REPO, f).split(path.sep).join('/');
-/** Every module reachable from `root` by its relative imports, static and dynamic, with each one's source. */
+/**
+ * Every module reachable from `root` by its imports — relative and the `@/` alias, static and dynamic — with each
+ * one's source, read by the census's own lexer (__fixtures__/jsSource.js; §2 review L2-1: a regex stripper let a `/*`
+ * inside a line comment hide live imports).
+ */
 const closureOf = (root, read = (f) => readFileSync(f, 'utf8')) => {
   const seen = new Map([[root, read(root)]]);
   const stack = [root];
   while (stack.length) {
     const f = stack.pop();
-    for (const m of stripComments(seen.get(f)).matchAll(SPEC_RE)) {
-      const n = resolveImport(f, m[1] || m[2] || m[3]);
+    for (const spec of importSpecifiersOf(seen.get(f))) {
+      const n = resolveImport(f, spec, REPO);
       if (n && !seen.has(n)) { seen.set(n, read(n)); stack.push(n); }
     }
   }

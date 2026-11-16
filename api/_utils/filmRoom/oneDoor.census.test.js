@@ -24,24 +24,33 @@
 //   moment excerpt (api/_utils/filmRoom/momentExcerpt.js), with the contract
 //   sections it rests on. THE IMPORTER DOES NOT EXIST YET: the Practice
 //   Field's T1b + T1d writes it, and adds its `drafting` model path here.
-//   THE RULE: every model path is walked again WITHOUT the named edge
-//   (importer → excerpt); a path whose walk still reaches the excerpt reaches
-//   it some other way and fails. The ledger and `plays` checks read that same
-//   walk, so what is reached only through the named edge — the excerpt and
-//   its one `plays` read — is the exception's; anything else stays forbidden.
-//   THE MANDATE MANAGER'S PATH joins the census (CC-1): its roots, its known
-//   reach, and — stricter than the rule — it reaches neither the ledger, nor
-//   the excerpt, nor the named importer at all (contract V2 §9: only the
-//   drafting call reads Film Room cards; the manager never does).
+//   The entry ADMITS ONE MODEL PATH, `drafting` (contract V2 §9: only the
+//   drafting call reads Film Room cards; exit criterion 16: "a model path
+//   other than the named exception"), which T1b + T1d adds.
+//   THE RULE: the admitted path is walked again WITHOUT the named edge
+//   (importer → excerpt); if that walk still reaches the excerpt, it reaches
+//   it some other way and fails. Its `plays` check reads that walk — the
+//   excerpt and its one `plays` read are the exception's — while its LEDGER
+//   check reads the whole closure, as every path's does: nothing reaches the
+//   ledger, the excerpt included. Every other model path — the eight existing
+//   ones and THE MANDATE MANAGER'S (CC-1: its roots, its known reach) — is
+//   held to its whole closure: it reaches neither the ledger, nor `plays`,
+//   nor the excerpt, nor the named importer, by any route.
 //   Proven on synthetic graphs: a planted import of the excerpt from each
-//   existing root fails; the named importer passes; an import routed around
-//   it fails.
+//   existing root fails; the named importer passes for the admitted path and
+//   fails for any other; an import routed around it fails, in either import
+//   order; the ledger reached through the excerpt fails.
+//   THE WALKER READS IMPORTS WITH A LEXER (__fixtures__/jsSource.js; §2
+//   review L2-1): a `/*` inside a line comment once hid live imports from the
+//   regex stripper this file used before.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// C2 (§2 review L2-1): imports read by a lexer, and the `@/` alias resolved, as vite resolves it
+import { stripComments, importSpecifiersOf, resolveImport } from './__fixtures__/jsSource.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..');
@@ -140,13 +149,14 @@ const EXCLUSIVE_REACH = Object.freeze({
 export const EXCERPT_MODULE = 'api/_utils/filmRoom/momentExcerpt.js';
 
 /**
- * THE NAMED EXCEPTION TABLE (CC-1) — each entry one import edge a model path may take into the excerpt, and the
- * sections it rests on. One entry. Its importer is the Practice Field's drafting assembler, which DOES NOT EXIST YET:
- * the Practice Field's T1b + T1d writes it (contract V2 Amendment B item 6) and adds a `drafting` model path above
- * with its roots; until then the exception is latent — no path's walk meets it.
+ * THE NAMED EXCEPTION TABLE (CC-1) — each entry one import edge into the excerpt, the ONE model path it admits, and
+ * the sections it rests on. One entry. Its importer is the Practice Field's drafting assembler, which DOES NOT EXIST
+ * YET: the Practice Field's T1b + T1d writes it (contract V2 Amendment B item 6) and adds the `drafting` model path
+ * above with its roots; until then the exception is latent — no path is admitted, and no path's walk meets it.
  */
 export const NAMED_EXCEPTIONS = Object.freeze([
   Object.freeze({
+    path: 'drafting',
     importer: 'api/_utils/practiceField/draftingPrompt.js',
     imports: EXCERPT_MODULE,
     restsOn: Object.freeze([
@@ -160,32 +170,24 @@ export const NAMED_EXCEPTIONS = Object.freeze([
   }),
 ]);
 
-/** The excerpt modules the exception table names (the rule's targets). */
-const EXCERPT_TARGETS = [...new Set(NAMED_EXCEPTIONS.map((e) => e.imports))];
+/** The exceptions that admit model path `name` — [] for every path the table does not name. */
+const exceptionsFor = (name, exceptions = NAMED_EXCEPTIONS) => exceptions.filter((e) => e.path === name);
 
 // ── the walker (the callRecords/allowlist.test.js precedent) ────────────────
-const RESOLVE_EXT = ['', '.js', '.jsx', '.mjs', '/index.js', '/index.jsx'];
-function resolveImport(fromFile, spec) {
-  if (!spec.startsWith('.')) return null;
-  const base = path.resolve(path.dirname(fromFile), spec);
-  for (const ext of RESOLVE_EXT) {
-    const candidate = base + ext;
-    if (existsSync(candidate) && !candidate.endsWith(path.sep) && /\.(m?js|jsx)$/.test(candidate)) return candidate;
-  }
-  return null;
-}
-const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-const SPEC_RE = /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|^import\s+['"]([^'"]+)['"]/gm;
+// C2 (§2 review L2-1): imports are read by a lexer (__fixtures__/jsSource.js) — comments, strings, templates and regex
+// literals told apart — and the app's `@/` alias resolves as vite resolves it; the regex stripper this file used before
+// let a `/*` inside a line comment swallow live imports.
 const readSource = (file) => readFileSync(file, 'utf8');
 function importsOf(file, read = readSource) {
-  return [...stripComments(read(file)).matchAll(SPEC_RE)].map((m) => m[1] || m[2] || m[3]).filter(Boolean);
+  return importSpecifiersOf(read(file));
 }
 /**
  * Every module reachable from `roots` (absolute paths), the roots included, with the parent that first reached each.
  * C2: `skip` — import EDGES (`{ from, to }`, absolute paths) the walk does not follow (the named exceptions); `read` —
- * a module's source (the planted-root proofs hand in one that adds an import to a real root).
+ * a module's source (the planted-root proofs hand in one that adds an import to a real root); `repo` — the tree the
+ * `@/` alias resolves in (a synthetic proof hands in its own).
  */
-export function closureOf(roots, { skip = [], read = readSource } = {}) {
+export function closureOf(roots, { skip = [], read = readSource, repo = REPO } = {}) {
   const seen = new Set(roots);
   const parent = new Map();
   const stack = [...roots];
@@ -193,7 +195,7 @@ export function closureOf(roots, { skip = [], read = readSource } = {}) {
   while (stack.length) {
     const file = stack.pop();
     for (const spec of importsOf(file, read)) {
-      const next = resolveImport(file, spec);
+      const next = resolveImport(file, spec, repo);
       if (!next || seen.has(next) || skipped(file, next)) continue;
       seen.add(next);
       parent.set(next, file);
@@ -212,21 +214,47 @@ const isModule = (name) => /\.(m?js|jsx)$/.test(name) && !/\.test\.(m?js|jsx)$/.
 
 /** C2 — the named exceptions' import edges, absolute under `repo` (the synthetic proofs hand in their own table and root). */
 const exceptionEdgesOf = (exceptions, repo) => exceptions.map((e) => ({ from: path.join(repo, e.importer), to: path.join(repo, e.imports) }));
-/** C2 — THE WALK THE CENSUS JUDGES: every import edge but the named exceptions' (CC-1). */
-export const walkOf = (roots, { exceptions = NAMED_EXCEPTIONS, repo = REPO, read } = {}) => closureOf(roots, { skip: exceptionEdgesOf(exceptions, repo), ...(read ? { read } : {}) });
 /**
- * C2 — THE RULE (CC-1): every route by which `roots` reach an excerpt module other than through its named importer —
- * the excerpt modules the walk still reaches with the named edges removed, each with its chain. [] when every route to
- * the excerpt is the named one, or none exists.
+ * C2 — THE WALK THE CENSUS JUDGES for model path `name` (CC-1): its whole closure, but without the edges of the
+ * exceptions that ADMIT `name`. For every path the table does not name, it is the whole closure.
  */
-export function excerptRoutesAround(roots, { exceptions = NAMED_EXCEPTIONS, repo = REPO, read } = {}) {
-  const { seen, parent } = walkOf(roots, { exceptions, repo, read });
+export const walkOf = (name, roots, { exceptions = NAMED_EXCEPTIONS, repo = REPO, read } = {}) => closureOf(roots, { skip: exceptionEdgesOf(exceptionsFor(name, exceptions), repo), repo, ...(read ? { read } : {}) });
+/**
+ * C2 — THE RULE (CC-1; exit criterion 16): every route by which path `name` reaches an excerpt module other than
+ * through a named importer that admits it — the excerpt modules its judged walk still reaches, each with its chain. A
+ * path the table does not name fails on ANY route to the excerpt. [] when none.
+ */
+export function excerptRoutesAround(name, roots, { exceptions = NAMED_EXCEPTIONS, repo = REPO, read } = {}) {
+  const { seen, parent } = walkOf(name, roots, { exceptions, repo, read });
   const out = [];
   for (const target of new Set(exceptions.map((e) => path.join(repo, e.imports)))) {
     const hit = [...seen].find((f) => path.resolve(f) === path.resolve(target));
     if (hit) out.push(chainTo(parent, hit, repo));
   }
   return out;
+}
+
+/**
+ * C2 — ONE DOOR, JUDGED for model path `name` (one function: the per-path rows and the synthetic proofs both call it):
+ *   ledger     no module of the path's WHOLE closure is a ledger module — through the excerpt neither (§2 review L2-2:
+ *              the exception admits the excerpt and its `plays` read, never the ledger);
+ *   plays      no module of its judged walk reads `plays` by name (the excerpt's own read, behind the named edge, is the
+ *              exception's);
+ *   excerpt    no route to the excerpt but through a named importer that admits the path (excerptRoutesAround);
+ *   importer   a path no exception admits never meets a named importer at all (§2 review L2-3, L2-5: contract V2 §9, only
+ *              the drafting call reads cards — the Mandate manager among the others).
+ * Returns every defect, each with its chain; [] when the path passes.
+ */
+export function oneDoorDefectsOf(name, roots, { exceptions = NAMED_EXCEPTIONS, repo = REPO, read = readSource, ledger = LEDGER_MODULES } = {}) {
+  const defects = [];
+  const whole = closureOf(roots, { read, repo });
+  const judged = walkOf(name, roots, { exceptions, repo, read });
+  const at = (set, rel) => [...set.seen].find((f) => path.resolve(f) === path.resolve(path.join(repo, rel)));
+  for (const m of ledger) { const hit = at(whole, m); if (hit) defects.push(`ledger: ${chainTo(whole.parent, hit, repo)}`); }
+  for (const f of judged.seen) if (PLAYS_READ.test(stripComments(read(f)))) defects.push(`plays: ${chainTo(judged.parent, f, repo)}`);
+  for (const chain of excerptRoutesAround(name, roots, { exceptions, repo, read })) defects.push(`excerpt: ${chain}`);
+  if (!exceptionsFor(name, exceptions).length) for (const e of exceptions) { const hit = at(whole, e.importer); if (hit) defects.push(`importer: ${chainTo(whole.parent, hit, repo)}`); }
+  return defects;
 }
 
 describe('the roots exist and the ledger modules exist (the census walks real files)', () => {
@@ -242,26 +270,27 @@ describe('the roots exist and the ledger modules exist (the census walks real fi
 
 describe('ONE DOOR — no model path reaches the ledger or reads plays', () => {
   for (const [name, roots] of Object.entries(MODEL_PATHS)) {
-    // C2 (CC-1): the ledger and plays checks read the walk WITHOUT the named exceptions' edges — what is reached only
-    // through the named importer is the exception's; today no path meets it, so this walk is the whole closure (pinned below)
+    // C2 (CC-1): the ledger check reads the WHOLE closure (as on main); `plays` the path's judged walk — the whole
+    // closure for every path the exception table does not admit, which is every path today
     it(`${name}: no module reachable from its roots imports the ledger`, () => {
-      const { seen, parent } = walkOf(roots.map(abs));
+      const { seen, parent } = closureOf(roots.map(abs));
       for (const m of LEDGER_MODULES) {
         const hit = [...seen].find((f) => path.resolve(f) === path.resolve(abs(m)));
         expect(hit, `${name} reaches ${m}: ${hit ? chainTo(parent, hit, REPO) : ''}`).toBeUndefined();
       }
     });
     it(`${name}: no module reachable from its roots reads plays by name`, () => {
-      const { seen, parent } = walkOf(roots.map(abs));
+      const { seen, parent } = walkOf(name, roots.map(abs));
       const readers = [...seen].filter((f) => PLAYS_READ.test(stripComments(readFileSync(f, 'utf8'))));
       expect(readers.map((f) => `${path.relative(REPO, f)} (via ${chainTo(parent, f, REPO)})`)).toEqual([]);
     });
-    it(`${name}: reaches the moment excerpt only through the named importer (C2, CC-1 — exit criterion 16)`, () => {
-      expect(excerptRoutesAround(roots.map(abs))).toEqual([]);
+    it(`${name}: ONE DOOR, judged — no ledger, no plays, no excerpt but through an importer that admits it, no importer it is not admitted to (C2, CC-1 — exit criterion 16)`, () => {
+      expect(oneDoorDefectsOf(name, roots.map(abs))).toEqual([]);
     });
-    it(`${name}: the exception is latent — its walk never meets a named importer, so the judged walk is the whole closure`, () => {
+    it(`${name}: the exception table admits no existing path — its judged walk is its whole closure, and it never meets a named importer`, () => {
+      expect(exceptionsFor(name)).toEqual([]);
       const whole = closureOf(roots.map(abs)).seen;
-      const judged = walkOf(roots.map(abs)).seen;
+      const judged = walkOf(name, roots.map(abs)).seen;
       expect([...judged].sort()).toEqual([...whole].sort());
       for (const e of NAMED_EXCEPTIONS) expect([...whole].some((f) => path.resolve(f) === path.resolve(abs(e.importer))), e.importer).toBe(false);
     });
@@ -320,6 +349,7 @@ describe('the whole api/ tree — only the two routes import the ledger store (t
 describe('C2 — the moment excerpt\'s one named exception, and the Mandate manager\'s path (Amendment C CC-1, acceptance C-DOOR)', () => {
   it('the exception table holds ONE entry: the drafting assembler may import the excerpt, with the sections it rests on', () => {
     expect(NAMED_EXCEPTIONS).toHaveLength(1);
+    expect(NAMED_EXCEPTIONS[0].path).toBe('drafting');   // the one model path it admits (§2 review L2-3)
     expect(NAMED_EXCEPTIONS[0].importer).toBe('api/_utils/practiceField/draftingPrompt.js');
     expect(NAMED_EXCEPTIONS[0].imports).toBe('api/_utils/filmRoom/momentExcerpt.js');
     expect(NAMED_EXCEPTIONS[0].restsOn.join(' | ')).toMatch(/shared contract V2 §9/);
@@ -337,12 +367,14 @@ describe('C2 — the moment excerpt\'s one named exception, and the Mandate mana
     walk(abs('api'));
     walk(abs('src'));
     // a specifier naming the excerpt's file, resolved — the name first, so the walk stays a cheap scan
-    const namesExcerpt = (f, spec) => /(^|\/)momentExcerpt(\.js)?$/.test(spec) && path.resolve(resolveImport(f, spec) ?? '') === path.resolve(abs(EXCERPT_MODULE));
+    const namesExcerpt = (f, spec) => /(^|\/)momentExcerpt(\.js)?$/.test(spec) && path.resolve(resolveImport(f, spec, REPO) ?? '') === path.resolve(abs(EXCERPT_MODULE));
     const importers = files.filter((f) => importsOf(f).some((spec) => namesExcerpt(f, spec))).map((f) => path.relative(REPO, f).replace(/\\/g, '/'));
     for (const f of importers) expect(NAMED_EXCEPTIONS.map((e) => e.importer), f).toContain(f);
     expect(importers).toEqual([]);
   });
   it('the Mandate manager reaches neither the ledger, nor the excerpt, nor the named importer — not even through the exception (contract V2 §9: the manager never reads Film Room cards)', () => {
+    expect(exceptionsFor('mandate')).toEqual([]);
+    expect(oneDoorDefectsOf('mandate', MODEL_PATHS.mandate.map(abs))).toEqual([]);
     const { seen, parent } = closureOf(MODEL_PATHS.mandate.map(abs));
     for (const m of [...LEDGER_MODULES, EXCERPT_MODULE, ...NAMED_EXCEPTIONS.map((e) => e.importer)]) {
       const hit = [...seen].find((f) => path.resolve(f) === path.resolve(abs(m)));
@@ -366,7 +398,7 @@ describe('C2 — the rule bites (a planted excerpt import from every root fails;
     for (const root of roots) {
       it(`${name}: a planted import of the excerpt from ${root} fails the rule (static and dynamic)`, () => {
         for (const dynamic of [false, true]) {
-          const around = excerptRoutesAround(roots.map(abs), { read: plantedRead(abs(root), { dynamic }) });
+          const around = excerptRoutesAround(name, roots.map(abs), { read: plantedRead(abs(root), { dynamic }) });
           expect(around, `${root} dynamic=${dynamic}`).toHaveLength(1);
           expect(around[0].split(/[\\/]/).pop()).toBe('momentExcerpt.js');
         }
@@ -374,59 +406,74 @@ describe('C2 — the rule bites (a planted excerpt import from every root fails;
     }
   }
 
-  /** A synthetic tree: the files given (path → source) under a fresh directory, with a one-entry exception table for it. */
+  /** A synthetic tree: the files given (path → source) under a fresh directory, with a one-entry exception table admitting `drafting`. */
   const tree = (files) => {
     const root = mkdtempSync(path.join(tmpdir(), 'one-door-c2-'));
     for (const [rel, src] of Object.entries(files)) {
       mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
       writeFileSync(path.join(root, rel), src);
     }
-    return { root, at: (rel) => path.join(root, rel), exceptions: [{ importer: 'pf/drafting.js', imports: 'fr/excerpt.js' }] };
+    return { root, at: (rel) => path.join(root, rel), exceptions: [{ path: 'drafting', importer: 'pf/drafting.js', imports: 'fr/excerpt.js' }] };
   };
-  const EXCERPT_SRC = "import { playsColOf } from '../ledger/store.js';\nexport const read = (db, a, id) => db.collection('agents').doc(a).collection('plays').doc(id).get();\nexport const x = playsColOf;\n";
+  /** The synthetic tree judged as the census judges a path (oneDoorDefectsOf), its ledger the tree's own store. */
+  const judge = (t, name, extra = {}) => oneDoorDefectsOf(name, [t.at('root.js')], { exceptions: t.exceptions, repo: t.root, ledger: ['ledger/store.js'], ...extra });
+  const kinds = (defects) => [...new Set(defects.map((d) => d.slice(0, d.indexOf(':'))))].sort();
+  const withTree = (files, fn) => { const t = tree(files); try { return fn(t); } finally { rmSync(t.root, { recursive: true, force: true }); } };
+  /** The excerpt as the exception admits it: it reads `plays` itself, and imports no ledger module. */
+  const EXCERPT_SRC = "export const read = (db, a, id) => db.collection('agents').doc(a).collection('plays').doc(id).get();\n";
+  /** An excerpt that imports the ledger's store — never admitted, through the exception or not (§2 review L2-2). */
+  const EXCERPT_WITH_LEDGER = "import { playsColOf } from '../ledger/store.js';\nexport const x = playsColOf;\n";
   const STORE_SRC = "export const playsColOf = (db, id) => db.collection('agents').doc(id).collection('plays');\n";
+  const NAMED = { 'root.js': "import { draft } from './pf/drafting.js';\nexport const run = draft;\n", 'pf/drafting.js': "import { read } from '../fr/excerpt.js';\nexport const draft = read;\n", 'fr/excerpt.js': EXCERPT_SRC, 'ledger/store.js': STORE_SRC };
 
-  it('THE NAMED IMPORTER PASSES: root → drafting → excerpt is the exception, and what it reaches through the excerpt (plays, the ledger) is the exception\'s', () => {
-    const t = tree({ 'root.js': "import { draft } from './pf/drafting.js';\nexport const run = draft;\n", 'pf/drafting.js': "import { read } from '../fr/excerpt.js';\nexport const draft = read;\n", 'fr/excerpt.js': EXCERPT_SRC, 'ledger/store.js': STORE_SRC });
-    try {
-      const roots = [t.at('root.js')];
-      expect(excerptRoutesAround(roots, { exceptions: t.exceptions, repo: t.root })).toEqual([]);
-      const judged = walkOf(roots, { exceptions: t.exceptions, repo: t.root }).seen;
-      expect([...judged].map((f) => path.relative(t.root, f).replace(/\\/g, '/')).sort()).toEqual(['pf/drafting.js', 'root.js']);
-      expect([...judged].filter((f) => PLAYS_READ.test(stripComments(readFileSync(f, 'utf8'))))).toEqual([]);
-      // the whole closure does reach them — the exception, not a blind walker, is what passes it
-      const whole = closureOf(roots).seen;
-      expect([...whole].map((f) => path.relative(t.root, f).replace(/\\/g, '/')).sort()).toEqual(['fr/excerpt.js', 'ledger/store.js', 'pf/drafting.js', 'root.js']);
-    } finally {
-      rmSync(t.root, { recursive: true, force: true });
-    }
-  });
-  it('AN IMPORT ROUTED AROUND THE NAMED IMPORTER FAILS — through a middle module, beside the named route, from the importer through another module, or by a dynamic import', () => {
+  it('THE NAMED IMPORTER PASSES for the path it admits: root → drafting → excerpt, the excerpt\'s own `plays` read the exception\'s', () => withTree(NAMED, (t) => {
+    expect(judge(t, 'drafting')).toEqual([]);
+    const judged = walkOf('drafting', [t.at('root.js')], { exceptions: t.exceptions, repo: t.root }).seen;
+    expect([...judged].map((f) => path.relative(t.root, f).replace(/\\/g, '/')).sort()).toEqual(['pf/drafting.js', 'root.js']);
+    // the whole closure does reach the excerpt and its plays read — the exception, not a blind walker, is what passes it
+    expect([...closureOf([t.at('root.js')], { repo: t.root }).seen].map((f) => path.relative(t.root, f).replace(/\\/g, '/')).sort()).toEqual(['fr/excerpt.js', 'pf/drafting.js', 'root.js']);
+  }));
+  it('THE SAME GRAPH FAILS FOR ANY PATH THE EXCEPTION DOES NOT ADMIT — the evaluator, the Mandate manager: the excerpt, its plays read and the importer each a defect (§2 review L2-3, L2-5: contract V2 §9)', () => withTree(NAMED, (t) => {
+    for (const name of ['evaluator', 'mandate']) expect(kinds(judge(t, name)), name).toEqual(['excerpt', 'importer', 'plays']);
+  }));
+  it('THE LEDGER IS NEVER THE EXCEPTION\'S: an excerpt importing the ledger\'s store fails the admitted path too, while its plays read stays the exception\'s (§2 review L2-2)', () => withTree({ ...NAMED, 'fr/excerpt.js': EXCERPT_WITH_LEDGER }, (t) => {
+    expect(kinds(judge(t, 'drafting'))).toEqual(['ledger']);
+  }));
+  it('AN IMPORT ROUTED AROUND THE NAMED IMPORTER FAILS — through a middle module, beside the named route IN EITHER IMPORT ORDER, from the importer through a helper, by a dynamic import (§2 review L2-4)', () => {
     const cases = {
       'root → mid → excerpt': { 'root.js': "import './mid.js';\n", 'mid.js': "import './fr/excerpt.js';\n" },
-      'the named route AND a route around it': { 'root.js': "import './pf/drafting.js';\nimport './mid.js';\n", 'pf/drafting.js': "import '../fr/excerpt.js';\n", 'mid.js': "import './fr/excerpt.js';\n" },
-      'the importer through another module': { 'root.js': "import './pf/drafting.js';\n", 'pf/drafting.js': "import './helper.js';\n", 'pf/helper.js': "import '../fr/excerpt.js';\n" },
+      'the named route, then a route around it': { 'root.js': "import './pf/drafting.js';\nimport './mid.js';\n", 'pf/drafting.js': "import '../fr/excerpt.js';\n", 'mid.js': "import './fr/excerpt.js';\n" },
+      'a route around it, then the named route': { 'root.js': "import './mid.js';\nimport './pf/drafting.js';\n", 'pf/drafting.js': "import '../fr/excerpt.js';\n", 'mid.js': "import './fr/excerpt.js';\n" },
+      'the importer through a helper': { 'root.js': "import './pf/drafting.js';\n", 'pf/drafting.js': "import './helper.js';\n", 'pf/helper.js': "import '../fr/excerpt.js';\n" },
       'a dynamic import from the root': { 'root.js': "export const later = () => import('./fr/excerpt.js');\n" },
     };
     for (const [name, files] of Object.entries(cases)) {
-      const t = tree({ ...files, 'fr/excerpt.js': EXCERPT_SRC, 'ledger/store.js': STORE_SRC });
-      try {
-        const around = excerptRoutesAround([t.at('root.js')], { exceptions: t.exceptions, repo: t.root });
+      withTree({ ...files, 'fr/excerpt.js': EXCERPT_SRC, 'ledger/store.js': STORE_SRC }, (t) => {
+        const around = excerptRoutesAround('drafting', [t.at('root.js')], { exceptions: t.exceptions, repo: t.root });
         expect(around, name).toHaveLength(1);
         expect(around[0].replace(/\\/g, '/').endsWith('fr/excerpt.js'), name).toBe(true);
         // and the plays read beside it is no longer the exception's
-        expect([...walkOf([t.at('root.js')], { exceptions: t.exceptions, repo: t.root }).seen].some((f) => PLAYS_READ.test(stripComments(readFileSync(f, 'utf8')))), name).toBe(true);
-      } finally {
-        rmSync(t.root, { recursive: true, force: true });
-      }
+        expect(kinds(judge(t, 'drafting')), name).toEqual(['excerpt', 'plays']);
+      });
     }
   });
-  it('with no exception at all, even the named route fails (the table is what admits it)', () => {
-    const t = tree({ 'root.js': "import './pf/drafting.js';\n", 'pf/drafting.js': "import '../fr/excerpt.js';\n", 'fr/excerpt.js': EXCERPT_SRC, 'ledger/store.js': STORE_SRC });
-    try {
-      expect(excerptRoutesAround([t.at('root.js')], { exceptions: [{ importer: 'pf/other.js', imports: 'fr/excerpt.js' }], repo: t.root })).toHaveLength(1);
-    } finally {
-      rmSync(t.root, { recursive: true, force: true });
+  it('with no exception for the path at all, even the named route fails (the table is what admits it)', () => withTree(NAMED, (t) => {
+    expect(excerptRoutesAround('drafting', [t.at('root.js')], { exceptions: [{ path: 'drafting', importer: 'pf/other.js', imports: 'fr/excerpt.js' }], repo: t.root })).toHaveLength(1);
+    expect(excerptRoutesAround('drafting', [t.at('root.js')], { exceptions: [{ ...t.exceptions[0], path: 'other' }], repo: t.root })).toHaveLength(1);
+  }));
+  it('THE WALKER READS WHAT A REGEX STRIPPER MISSED (§2 review L2-1): an import after a line comment holding `/*`, a backtick dynamic import, an `@/` alias — each reached, and each fails an unadmitted path', () => {
+    const cases = {
+      'a `/*` inside a line comment': { 'root.js': "// every /api/film-room/* route reads this\nimport { read } from './fr/excerpt.js';\n/** and a doc comment after it */\nexport const r = read;\n" },
+      'a backtick dynamic import': { 'root.js': 'export const later = () => import(`./fr/excerpt.js`);\n' },
+      'the @/ alias': { 'root.js': "import { read } from '@/fr/excerpt.js';\nexport const r = read;\n", 'src/fr/excerpt.js': EXCERPT_SRC },
+      'a string holding `//` before it': { 'root.js': "const url = 'https://example.com/a';\nimport { read } from './fr/excerpt.js';\nexport const r = [url, read];\n" },
+      'a regex holding `/*` before it': { 'root.js': "const re = /a\\/*b/g;\nimport { read } from './fr/excerpt.js';\nexport const r = [re, read];\n/* a closing note */\n" },
+    };
+    for (const [name, files] of Object.entries(cases)) {
+      withTree({ 'fr/excerpt.js': EXCERPT_SRC, ...files }, (t) => {
+        const ex = name === 'the @/ alias' ? [{ path: 'drafting', importer: 'pf/drafting.js', imports: 'src/fr/excerpt.js' }] : t.exceptions;
+        expect(excerptRoutesAround('evaluator', [t.at('root.js')], { exceptions: ex, repo: t.root }), name).toHaveLength(1);
+      });
     }
   });
 });
