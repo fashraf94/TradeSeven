@@ -79,8 +79,8 @@ describe('league hide — SCOPE: who reads the flag', () => {
 describe('league hide — FLAG-OFF: each door\'s off arm is today\'s text', () => {
   const app = code('src/App.jsx');
 
-  it('App.jsx reads the flag in exactly seven places (the import, three address effects, the poll gate, the route, the banner): a new one — a filter on the live list, say — must be named here', () => {
-    expect((app.match(/\bLEAGUE_HIDE_ENABLED\b/g) || []).length).toBe(7);
+  it('App.jsx reads the flag in exactly eight places (the import, the lazy page, three address effects, the poll gate, the route, the banner): a new one — a filter on the live list, say — must be named here', () => {
+    expect((app.match(/\bLEAGUE_HIDE_ENABLED\b/g) || []).length).toBe(8);
   });
 
   it('the three address-parameter effects start with the early return, before they read the address', () => {
@@ -100,15 +100,20 @@ describe('league hide — FLAG-OFF: each door\'s off arm is today\'s text', () =
     expect(app.indexOf('}, [screen, isPageVisible]);', gate) - gate).toBeLessThan(12000);
   });
 
-  it('the Season banner sits inside a literal ternary on the flag, its own condition untouched (the mount guard pins it)', () => {
-    const open = app.indexOf('{LEAGUE_HIDE_ENABLED ? null : (<>');
+  it('the Season banner\'s own condition is untouched (the mount guard pins it) and the flag\'s literal ternary sits right after its `&& (`, so flag-off the expression is today\'s', () => {
+    const cond = "{user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && activeSeason && activeSeasonEntry && !hubOwnsScreen && (";
+    const open = app.indexOf(cond);
     const banner = app.indexOf('<ActiveSeasonBanner');
-    const close = app.indexOf('</>)}', banner);
     expect(open).toBeGreaterThan(-1);
+    expect(app.slice(open + cond.length, open + cond.length + 40)).toMatch(/^LEAGUE_HIDE_ENABLED \? null : \(/);
     expect(banner).toBeGreaterThan(open);
-    expect(close).toBeGreaterThan(banner);
-    expect(app.slice(open, banner)).toContain("{user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && activeSeason && activeSeasonEntry && !hubOwnsScreen && (");
+    expect(banner - open).toBeLessThan(400);
     expect((app.match(/<ActiveSeasonBanner\b/g) || []).length).toBe(1);
+  });
+
+  it('the page\'s lazy is the house ternary: flag-off it is a literal null with no import(), so no page chunk is emitted', () => {
+    expect(app).toMatch(/const BaggerBombPage = LEAGUE_HIDE_ENABLED \? lazy\(\(\) => import\('\.\/components\/CommandCenter\/BaggerBombPage'\)\) : null;/);
+    expect((app.match(/import\('\.\/components\/CommandCenter\/BaggerBombPage'\)/g) || []).length).toBe(1);
   });
 
   it('the nav items and the loadout card are literal ternaries on the flag (flag-off arms: League with the trophy; both cards)', () => {
@@ -154,7 +159,7 @@ describe('league hide — DOORS: the route, the back target and the stale commen
     expect(old).toBeGreaterThan(page);
     expect(app.slice(page, old)).toContain("<BaggerBombPage site={isMobile ? 'mobile' : 'desktop'} hub={hubProps} onOpenLoadout={() => openCommandCenterOnLoadout(setScreen)} />");
     expect(app.slice(page, old)).toContain('<Suspense fallback={<LoadingFallback />}>');
-    expect(app).toContain("const BaggerBombPage = lazy(() => import('./components/CommandCenter/BaggerBombPage'));");
+    expect(app).toContain("const BaggerBombPage = LEAGUE_HIDE_ENABLED ? lazy(() => import('./components/CommandCenter/BaggerBombPage')) : null;");
   });
 
   it('"back" after a training battle still sets the league screen id — the one other setter of it besides the nav — so it lands on the page', () => {

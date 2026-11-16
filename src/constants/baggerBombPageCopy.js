@@ -24,8 +24,9 @@ export const BAGGERBOMB_PAGE_COPY = Object.freeze({
     unavailable: 'Record unavailable',
   }),
   live: Object.freeze({
-    label: 'Live game',
-    none: 'No game live',
+    /** Not "Live game": a game deployed and waiting for the open is listed here too, and the hub never calls that live. */
+    label: 'Current game',
+    none: 'No game running',
     noneSub: 'A game you deploy shows here while it runs.',
     openGame: 'Open game',
   }),

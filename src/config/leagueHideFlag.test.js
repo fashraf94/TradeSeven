@@ -1,8 +1,9 @@
 // src/config/leagueHideFlag.test.js
 //
 // League hide (direction note BB-1; founder rulings Q1–Q6, Nov 15, 2026) — the flag's pin (BUILD_RULES §2). LEAGUE_HIDE_ENABLED
-// ships FALSE: the merge of the build changes nothing for any player. Its flip is its own one-line PR (docs/audits/
-// 20261115_BUILD_LEAGUE_HIDE_BAGGERBOMB_PAGE.md §7), which moves this pin in the same commit; src/config/flagPinGuard.test.js
+// ships FALSE: the merge of the build changes nothing for any player. Its flip is its own PR (docs/audits/
+// 20261115_BUILD_LEAGUE_HIDE_BAGGERBOMB_PAGE.md §7), which moves this pin, drops the flag's DARK_BY_DESIGN entry and holds the
+// League-card rows of CommandCenterHub.loadouts.jsdom.test.jsx at the flag-off state, all in the same commit; src/config/flagPinGuard.test.js
 // walks this assertion against the live value, so a flip that forgets it fails there with the file and line.
 //
 // The flag-ON rows live in their own files, which put the flag on through a module mock and never assert the constant:

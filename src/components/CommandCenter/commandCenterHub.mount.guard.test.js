@@ -1099,7 +1099,8 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     // load: no src/ file outside the directory may import one, statically or at
     // load time (`import()`, `require()`, `import.meta.glob()`), relative or
     // through the @/ alias, nor name a path into it in a string literal — App
-    // included, whose only such literals are its two static imports and, since league hide (BB-1), the BaggerBomb page's one lazy one.
+    // included, whose only such literals are its static imports (the gate, the picker, the chrome predicates) and, since league
+    // hide (BB-1), the BaggerBomb page's one lazy one.
     const outside = sourceFiles().filter((rel) => !rel.startsWith(`${HUB_DIR}/`));
     expect(outside.length, 'the src walk found nothing, so this row would be vacuous').toBeGreaterThan(100);
     // Each file is read and stripped once and both scans share it: 2.7 s alone with the

@@ -393,6 +393,16 @@ describe('the Live part never says "no game" for a live list it has not read (th
     expect(textOf(part('live'))).toContain(COPY.games.loading);
   });
 
+  it('a poll that answered once and then failed keeps its answer, with its age said — beside the Deploy card, which says it too (BUILD_RULES §9)', () => {
+    const stale = { epoch: 1, status: 'error', ownerUid: UID, ownerEpoch: 1, lastSuccessfulAt: T0 - 30000, error: new Error('unavailable'), refreshing: false };
+    render('desktop', { ...hubOf([]), activePoll: stale });
+    expect(textOf(part('live'))).toContain(PAGE.live.none);
+    expect(part('live').querySelector('[data-hub-games-live-note="stale"]'), 'the as-of note').not.toBeNull();
+    mounted.pop().unmount();
+    render('desktop', hubOf([]));
+    expect(part('live').querySelector('[data-hub-games-live-note]')).toBeNull();
+  });
+
   it('once the poll has answered with no game, the note is "No game live" (the control: the same page, a resolved poll)', () => {
     render('desktop', hubOf([]));
     expect(textOf(part('live'))).toContain(PAGE.live.none);

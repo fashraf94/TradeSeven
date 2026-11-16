@@ -92,7 +92,8 @@ function LiveSection({ games, onOpenGame }) {
       {/* The hub's own rule (GamesSection, T0R-2): an unanswered live poll is "checking", never "none" — whatever the
           finished window has read. `liveResolved` is the readers' word that the poll answered for this owner. */}
       {rows.length === 0 && games?.liveResolved !== true && <LoadingLine>{COPY.games.loading}</LoadingLine>}
-      {rows.length > 0 && <GamesLiveNote games={games} />}
+      {/* The poll's age after a failed run, with or without a live row: the Deploy card says it too (BUILD_RULES §9). */}
+      {games?.liveResolved === true && <GamesLiveNote games={games} />}
       {rows.length === 0 && games?.liveResolved === true && (
         <EmptyNote icon="sword" title={PAGE.live.none} sub={PAGE.live.noneSub} />
       )}

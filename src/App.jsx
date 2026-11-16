@@ -54,7 +54,9 @@ const AgentBattleScreen = lazy(() => import('./screens/AgentBattleScreen'));
 const LeagueBattleViewConnected = lazy(() => import('./screens/LeagueBattleViewConnected'));
 // League hide (BB-1): the BaggerBomb page, in the hub's directory (it reads the hub's readers and sections) and loaded lazily,
 // so the hub's modules stay out of the main chunk. Rendered only while LEAGUE_HIDE_ENABLED is on (the 'league' route below).
-const BaggerBombPage = lazy(() => import('./components/CommandCenter/BaggerBombPage'));
+// A literal ternary on the flag, the house pattern for a flagged lazy (AGENT_FORM_LAB_ENABLED above): flag-off the import() is
+// folded away with the statement, so no page chunk is emitted and the hub's chunks are as they were.
+const BaggerBombPage = LEAGUE_HIDE_ENABLED ? lazy(() => import('./components/CommandCenter/BaggerBombPage')) : null;
 const BaggerBombLobby = lazy(() => import('./screens/BaggerBombLobby'));
 const BaggerBombSetupScreen = lazy(() => import('./screens/BaggerBombSetupScreen'));
 const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOptionsArenaV2'));
@@ -10204,11 +10206,10 @@ export default function PortfolioDuel() {
   }
 
   // BAGGERBOMB PAGE (League hide, BB-1; founder rulings Q1–Q6, Nov 15, 2026) — while LEAGUE_HIDE_ENABLED is on, the 'league'
-  // screen id is the BaggerBomb page: the nav item (labelled "BaggerBomb"), the back target after a training battle and every
-  // other setter of 'league' reaching it lands here, and LeagueScreen below is not rendered. It takes this render's `hubProps`
-  // (the hub's own object) and the same width fork the dashboard uses. Flag off this block is a literal `false` and folds away.
-  // (The battle view's "back" and the Film Room's return go to the dashboard, as they do from any screen; 'league' is set only
-  // by the nav slot and, with the flag on, by nothing else a player can reach.)
+  // screen id is the BaggerBomb page: the nav item (labelled "BaggerBomb") sets it, and LeagueScreen below is not rendered. It
+  // takes this render's `hubProps` (the hub's own object) and the same width fork the dashboard uses. Flag off this block is a
+  // literal `false` and folds away. (The other setter, the "back" button after a training battle, is unreachable with the flag
+  // on: its doors are closed. The battle view's "back" and the Film Room's return go to the dashboard, as from any screen.)
   if (LEAGUE_HIDE_ENABLED && screen === 'league') {
     return (
       <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
@@ -12708,9 +12709,9 @@ export default function PortfolioDuel() {
           Hub S5 (ruling R-S5-7): withheld while the hub is the dashboard (hubOwnsScreen):
           at bottom 64 and z 49 it would cover the hub's phone strip (z 40). */}
       {/* League hide (BB-1; ruling Q6): the Season banner is not rendered while the league is hidden. Season mode is scrapped and
-          this is its one live door; the banner's own condition below is untouched (the mount guard pins it). */}
-      {LEAGUE_HIDE_ENABLED ? null : (<>
-      {user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && activeSeason && activeSeasonEntry && !hubOwnsScreen && (
+          this is its one live door; the banner's own condition is untouched (the mount guard pins it) and the flag's ternary
+          sits after its `&& (`, so flag-off the expression is today's. */}
+      {user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && activeSeason && activeSeasonEntry && !hubOwnsScreen && (LEAGUE_HIDE_ENABLED ? null : (
         <div style={{ position: 'fixed', left: 0, right: 0, bottom: 64, zIndex: 49 }}>
           <ActiveSeasonBanner
             season={activeSeason}
@@ -12719,8 +12720,7 @@ export default function PortfolioDuel() {
             isPitStopOpen={activeSeasonEntry.isPitStopOpen || activeSeason.isPitStopWeekend}
           />
         </div>
-      )}
-      </>)}
+      ))}
 
       {/* ========== MOBILE BOTTOM NAV ========== */}
       {user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && (
