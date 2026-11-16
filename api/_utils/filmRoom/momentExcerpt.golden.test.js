@@ -33,7 +33,7 @@ import { normalizeNote } from './cardRequest.js';
 import { CARD_SLOTS } from '../../../src/data/cardSlots.js';
 import { stableStringify } from '../canonicalHash.js';
 import { WRITE_PATTERN } from '../../../scripts/census-film-room-v1-plays.mjs';
-import { stripComments, importSpecifiersOf, opaqueImportsOf, callNamesOf, resolveImport } from './__fixtures__/jsSource.js';
+import { stripComments, importSpecifiersOf, opaqueImportsOf, callNamesOf, memberNamesOf, resolveImport } from './__fixtures__/jsSource.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..');
@@ -570,6 +570,16 @@ describe('the fix round\'s §2 review, lens 1 — what the shared day judge take
       expect(x, o).toEqual(got['as stored']);
     }
   });
+  it('CX1-1, THE CARD PATH (the refuter\'s confirmation) — a card filed under the moment\'s version, on a day whose items at the moment disagree on their version, is null in EVERY order of the stored items (the shared judge compares only the first it meets)', async () => {
+    expect((await cardOver(excerptStore(DAY))).excerpt.situationVersion).toEqual({ value: 2, class: 'recorded' });
+    for (const [o, order] of Object.entries(ORDERS)) {
+      const tape = clone(DAY.tape);
+      const p = tape.tags.items.findIndex((i) => i.symbol === 'ETN' && i.tickSeq === 15);
+      tape.tags.items.push({ ...clone(tape.tags.items[p]), version: 3 });
+      tape.tags.items = order(tape.tags.items, p);
+      expect(await cardOver(excerptStore({ ...DAY, tape })), o).toBeNull();
+    }
+  });
   it('CX1-3 — A FAILED AUXILIARY READ GIVES A PARTIAL EXCERPT, never null and never a thrown error (CE-6): the version\'s read failing keeps the idea without its statement; the series\' read failing keeps the exit without afterExit; a failed core read is null', async () => {
     const failing = (path) => makeTapeDb(excerptStore(DAY), { hooks: { beforeRead: (label) => { if (label === path) throw Object.assign(new Error('unavailable'), { code: 14 }); } } }).db;
     const noVersion = await excerptOf(failing(IDEA_PATH), MOMENT_ASK);
@@ -844,7 +854,16 @@ const NON_FIRESTORE_CALLS = Object.freeze([
   { file: 'api/_utils/filmTape/tapeSources.js', name: 'add', count: 1, why: 'the same Set of evaluation ids as NON_FIRESTORE_HITS' },
   { file: 'src/utils/filmRoomMoments.js', name: 'set', count: 1, why: 'the same Map grouping tag items as NON_FIRESTORE_HITS' },
 ]);
-const callHitsOf = (closure) => [...closure].flatMap(([f, src]) => callNamesOf(src, f).filter((c) => WRITE_CALLS.has(c.name)).map((c) => ({ file: rel(f), name: c.name, line: c.line })));
+/**
+ * The refuter's CXV-5: a write need not name its method where it calls it — `ref.set.call(…)`, `(0, ref.set)(…)`,
+ * `Reflect.apply(ref.set, …)`, `ref.set.bind(ref)(…)`. So the second reading takes every MEMBER the module names, called or
+ * not, and every call by a key no static reading names (`[computed]`); a member call counted by both is counted once.
+ */
+const callHitsOf = (closure) => [...closure].flatMap(([f, src]) => {
+  const seen = new Map();
+  for (const c of [...callNamesOf(src, f), ...memberNamesOf(src, f)]) if (WRITE_CALLS.has(c.name) || c.name === '[computed]') seen.set(`${c.line}:${c.col}:${c.name}`, { file: rel(f), name: c.name, line: c.line });
+  return [...seen.values()];
+});
 const unexplainedCalls = (hits) => {
   const left = [...hits];
   for (const a of NON_FIRESTORE_CALLS) {
@@ -919,6 +938,13 @@ describe('THE WRITE GATE — no write call in momentExcerpt.js or anything it im
       "export const w = (ref) => ref['set']({ a: 1 });",
       'export const w = (ref) => ref./**/set({ a: 1 });',
       'export const w = (admin) => admin.firestore.FieldValue.delete;',
+      // the refuter's CXV-5: the method named but not called where it is named, and a key no static reading names
+      'export const w = (ref) => ref.set.call(ref, { a: 1 });',
+      'export const w = (ref) => ref.update.apply(ref, [{ a: 1 }]);',
+      'export const w = (ref) => (0, ref.set)({ a: 1 });',
+      'export const w = (ref) => Reflect.apply(ref.set, ref, [{ a: 1 }]);',
+      'export const w = (ref) => ref.set.bind(ref)({ a: 1 });',
+      'export const w = (ref, k) => ref[k]({ a: 1 });',
     ]) expect(unexplainedCalls(callHitsOf(closureOf(EXCERPT_FILE, plant(extra)))).length, extra).toBeGreaterThan(0);
     // the line pattern alone misses the first three (why the second reading exists)
     for (const extra of ['export const w = (ref) => ref.\n  set({ a: 1 });', "export const w = (ref) => ref['set']({ a: 1 });", 'export const w = (ref) => ref./**/set({ a: 1 });']) {

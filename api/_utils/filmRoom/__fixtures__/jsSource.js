@@ -18,7 +18,8 @@
 //                       a static string (the fix round's review, CX2-2: Node loads ES modules through require too).
 //                       Words in a string, a template or a comment that only look like an import are not imports.
 //   opaqueImportsOf     what a module loads that no static reading can follow — an `import()` or `require()` of a
-//                       computed value, any `createRequire` call, any `import.meta.glob` — each named. The census and
+//                       computed value, `createRequire` or `getBuiltinModule` however reached (aliased, a member, an
+//                       import of `module`/`node:module` — the refuter's CXV-4), any `import.meta.glob` — each named. The census and
 //                       the write gate FAIL on a walked module that holds one (CX2-2): an edge they cannot see is never
 //                       passed as no edge.
 //   stripComments       the source with every comment the parser found removed — a line comment to its end, a block
@@ -47,6 +48,8 @@ export const PARSE_OPTIONS = Object.freeze({ sourceType: 'module', plugins: Obje
 /** Each distinct source's reading, by a hash of the source. */
 const parses = new Map();
 
+/** The specifiers that hand a module the platform's module loader (createRequire, getBuiltinModule): opaque wherever imported (CXV-4). */
+const MODULE_LOADERS = new Set(['module', 'node:module']);
 /** A specifier written as a static string: a string literal, or a template with no `${}`. */
 const staticText = (node) => {
   if (!node) return null;
@@ -64,6 +67,7 @@ function readProgram(program) {
   const found = [];
   const opaque = [];
   const calls = [];
+  const members = [];
   const stack = [program];
   while (stack.length) {
     const n = stack.pop();
@@ -71,24 +75,33 @@ function readProgram(program) {
     switch (n.type) {
       case 'ImportDeclaration':
       case 'ExportAllDeclaration':
-      case 'ExportNamedDeclaration': { const v = n.source ? staticText(n.source) : null; if (v) found.push([n.start, v]); break; }
-      case 'ImportExpression': { const v = staticText(n.source); if (v) found.push([n.start, v]); else opaque.push('import() of a computed value'); break; }
+      case 'ExportNamedDeclaration': { const v = n.source ? staticText(n.source) : null; if (v) { found.push([n.start, v]); if (MODULE_LOADERS.has(v)) opaque.push(`the module loader (${v})`); } break; }
+      case 'ImportExpression': { const v = staticText(n.source); if (v) { found.push([n.start, v]); if (MODULE_LOADERS.has(v)) opaque.push(`the module loader (${v})`); } else opaque.push('import() of a computed value'); break; }
       case 'CallExpression':
       case 'OptionalCallExpression': {
         const c = n.callee;
-        if (c?.type === 'Import') { const v = staticText(n.arguments[0]); if (v) found.push([n.start, v]); else opaque.push('import() of a computed value'); }
-        else if (c?.type === 'Identifier' && c.name === 'require') { const v = staticText(n.arguments[0]); if (v) found.push([n.start, v]); else opaque.push('require() of a computed value'); }
-        else if (c?.type === 'Identifier' && c.name === 'createRequire') opaque.push('createRequire');
-        if (c?.type === 'Identifier') calls.push({ name: c.name, line: n.loc?.start.line ?? null });
-        else if (c && (c.type === 'MemberExpression' || c.type === 'OptionalMemberExpression')) { const name = memberName(c); if (name) calls.push({ name, line: n.loc?.start.line ?? null }); }
+        if (c?.type === 'Import') { const v = staticText(n.arguments[0]); if (v) { found.push([n.start, v]); if (MODULE_LOADERS.has(v)) opaque.push(`the module loader (${v})`); } else opaque.push('import() of a computed value'); }
+        else if (c?.type === 'Identifier' && c.name === 'require') { const v = staticText(n.arguments[0]); if (v) { found.push([n.start, v]); if (MODULE_LOADERS.has(v)) opaque.push(`the module loader (${v})`); } else opaque.push('require() of a computed value'); }
+        // the refuter's CXV-5: a member call by a key no static reading names (`ref[k](…)`)
+        if (c && (c.type === 'MemberExpression' || c.type === 'OptionalMemberExpression') && c.computed && memberName(c) === null) calls.push({ name: '[computed]', line: n.loc?.start.line ?? null, col: n.loc?.start.column ?? null });
+        if (c?.type === 'Identifier') calls.push({ name: c.name, line: n.loc?.start.line ?? null, col: n.loc?.start.column ?? null });
+        else if (c && (c.type === 'MemberExpression' || c.type === 'OptionalMemberExpression')) { const name = memberName(c); if (name) calls.push({ name, line: n.loc?.start.line ?? null, col: c.loc?.start.column ?? null }); }
         break;
       }
       case 'MemberExpression':
-      case 'OptionalMemberExpression':
+      case 'OptionalMemberExpression': {
         if (n.object?.type === 'MetaProperty' && n.object.meta?.name === 'import' && memberName(n) === 'glob') opaque.push('import.meta.glob');
+        // the refuter's CXV-5: every member a module NAMES — `ref.set.call(…)`, `(0, ref.set)(…)`, `Reflect.apply(ref.set, …)`
+        // name `set` without calling it there
+        const name = memberName(n);
+        if (name) members.push({ name, line: n.loc?.start.line ?? null, col: n.loc?.start.column ?? null });
         break;
+      }
       case 'Identifier':
-        if (n.name === 'FieldValue') calls.push({ name: 'FieldValue', line: n.loc?.start.line ?? null });
+        if (n.name === 'FieldValue') calls.push({ name: 'FieldValue', line: n.loc?.start.line ?? null, col: n.loc?.start.column ?? null });
+        // the refuter's CXV-4: the module loader however it is reached — an aliased or member `createRequire`,
+        // `process.getBuiltinModule` — is an edge no static reading follows
+        if (n.name === 'createRequire' || n.name === 'getBuiltinModule') opaque.push(n.name);
         break;
       default: break;
     }
@@ -98,7 +111,7 @@ function readProgram(program) {
       if (v && typeof v === 'object') stack.push(v);
     }
   }
-  return { specifiers: found.sort((a, b) => a[0] - b[0]).map(([, v]) => v), opaque, calls };
+  return { specifiers: found.sort((a, b) => a[0] - b[0]).map(([, v]) => v), opaque: [...new Set(opaque)], calls, members };
 }
 
 /** The source read once: `{ specifiers, opaque, calls, comments }`. Throws — naming `where` — when it does not parse. */
@@ -129,9 +142,14 @@ export function opaqueImportsOf(src, where) {
   return [...parsedOf(src, where).opaque];
 }
 
-/** Every call's name with its line, and every `FieldValue` reference (CX2-4). */
+/** Every call's name with its line, every `FieldValue` reference (CX2-4), and `[computed]` for a call by a key no static reading names (CXV-5). */
 export function callNamesOf(src, where) {
   return parsedOf(src, where).calls.map((c) => ({ ...c }));
+}
+
+/** Every member a module names (`a.b`, `a['b']`), called or not, with its line (CXV-5). */
+export function memberNamesOf(src, where) {
+  return parsedOf(src, where).members.map((c) => ({ ...c }));
 }
 
 /** `src` with every comment removed (a block comment's newlines kept, and one space), everything else untouched. */

@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { stripComments, importSpecifiersOf, opaqueImportsOf, callNamesOf, resolveImport, PARSE_OPTIONS } from './__fixtures__/jsSource.js';
+import { stripComments, importSpecifiersOf, opaqueImportsOf, callNamesOf, memberNamesOf, resolveImport, PARSE_OPTIONS } from './__fixtures__/jsSource.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..');
@@ -87,9 +87,13 @@ describe('importSpecifiersOf and resolveImport', () => {
     expect(opaqueImportsOf("const where = './w.js';\nexport const l = () => import(where);\n")).toEqual(['import() of a computed value']);
     expect(importSpecifiersOf("const m = require('./r.js');\nexport const x = m;\n")).toEqual(['./r.js']);
     expect(opaqueImportsOf("const w = './r.js';\nexport const m = require(w);\n")).toEqual(['require() of a computed value']);
-    expect(opaqueImportsOf("import { createRequire } from 'node:module';\nexport const r = createRequire(import.meta.url);\n")).toEqual(['createRequire']);
+    expect(opaqueImportsOf("import { createRequire } from 'node:module';\nexport const r = createRequire(import.meta.url);\n").sort()).toEqual(['createRequire', 'the module loader (node:module)']);
     expect(opaqueImportsOf("export const g = import.meta.glob('./*.json', { eager: true });\n")).toEqual(['import.meta.glob']);
     expect(opaqueImportsOf("import a from './a.js';\nexport const u = import.meta.url;\nexport const l = () => import('./b.js');\n")).toEqual([]);
+    // the refuter's CXV-4: the module loader however reached
+    expect(opaqueImportsOf("import { createRequire as zz } from 'node:module';\nexport const r = zz;\n").sort()).toEqual(['createRequire', 'the module loader (node:module)']);
+    expect(opaqueImportsOf('export const r = process.getBuiltinModule;\n')).toEqual(['getBuiltinModule']);
+    expect(opaqueImportsOf("export const l = () => import('module');\n")).toEqual(['the module loader (module)']);
   });
   it('a module that does not parse throws, naming the module, with the parser\'s code (CX2-5) — a census never passes a file it could not read', () => {
     for (const read of [importSpecifiersOf, stripComments, opaqueImportsOf, callNamesOf]) {
@@ -102,6 +106,9 @@ describe('importSpecifiersOf and resolveImport', () => {
   it('callNamesOf: every call\'s name — a member call split across lines, after a comment, by a computed string key — and every FieldValue (CX2-4)', () => {
     const names = callNamesOf("ref.\n  set({});\nref./**/update({});\nref['delete']();\nfoo();\nexport const f = admin.firestore.FieldValue;\n").map((c) => c.name);
     expect(names).toEqual(expect.arrayContaining(['set', 'update', 'delete', 'foo', 'FieldValue']));
+    // the refuter's CXV-5: a call by a key no static reading names; every member named, called or not
+    expect(callNamesOf('export const w = (ref, k) => ref[k]({});\n').map((c) => c.name)).toContain('[computed]');
+    expect(memberNamesOf('export const w = (ref) => Reflect.apply(ref.set, ref, []);\n').map((c) => c.name)).toEqual(expect.arrayContaining(['apply', 'set']));
   });
   it('the parser is the declared devDependency at the locked version, with JSX on (CE-2)', () => {
     const pkg = JSON.parse(readFileSync(path.join(REPO, 'package.json'), 'utf8'));

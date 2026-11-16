@@ -149,6 +149,12 @@ describe('the refuter\'s CXV-1 — an id in disguise is still an id', () => {
     expect(holdsIdentifier('Hold ＥＴＮ at ＄３８５．７０ for a week\u200B.')).toBe(false);
     expect(unmaskedText('Ａ１\u200B')).toBe('A1');
   });
+  it('the refuter\'s CXV-3 — every invisible separator: bidi isolates, the combining grapheme joiner, variation selectors, a tag character, the Arabic letter mark, fillers, Mongolian and Khmer invisibles — each split still caught; an emoji\'s variation selector in prose is still prose', () => {
+    for (const cp of [0x2066, 0x2069, 0x034F, 0xFE0F, 0xE0020, 0x061C, 0x3164, 0x180B, 0x17B4, 0x115F, 0xFFA0]) {
+      expect(holdsIdentifier(`Recorded Ab3dEf7hIj${String.fromCodePoint(cp)}9kLm1nOp5q here.`), cp.toString(16)).toBe(true);
+    }
+    expect(holdsIdentifier(`Love this setup ${String.fromCodePoint(0x2764, 0xFE0F)} — hold ETN.`)).toBe(false);
+  });
 });
 
 describe('the policy\'s stated limits (build report §11.3) — pinned, so a change to them is seen', () => {

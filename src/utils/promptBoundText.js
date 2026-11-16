@@ -103,7 +103,9 @@ export const PLATFORM_ID_KINDS = Object.freeze([
  * folded (NFKC — full-width digits and letters become ASCII) and invisible characters removed (zero-width spaces and
  * joiners, the soft hyphen, the byte-order mark, the word joiner, bidirectional marks). Words a reader sees are unchanged.
  */
-const INVISIBLE = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g;
+// the refuter's CXV-3: every default-ignorable code point (variation selectors, tag characters, fillers, joiners, the
+// combining grapheme joiner …) and every format character (bidirectional marks and isolates, the Arabic letter mark …)
+const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu;
 export const unmaskedText = (text) => String(text).normalize('NFKC').replace(INVISIBLE, '');
 export function identifiersIn(text, knownIds = []) {
   if (typeof text !== 'string' || !text) return [];

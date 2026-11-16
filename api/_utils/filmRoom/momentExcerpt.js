@@ -359,6 +359,15 @@ function cardOf(entry, knownIds) {
  */
 const knownIdsOf = ({ uid, battleId, battle, attributionAgentId, watchlistId, entry }) => subjectKnownIds({ ownerId: uid, battleId, battleAgentId: isObj(battle) ? battle.agentId : null, attributionAgentId, watchlistId, card: entry });
 
+/** The stored tag items a moment could be read from: its situation and symbol, at its checks (or, for a moment with no check, every such item with none). */
+function momentItemsOf(tape, m) {
+  const items = Array.isArray(tape.tags?.items) ? tape.tags.items : [];
+  return items.filter((it) => isObj(it) && it.situationId === m.situationId && it.symbol === m.symbol
+    && (Number.isInteger(m.fromTickSeq) ? Number.isInteger(it.tickSeq) && it.tickSeq >= m.fromTickSeq && it.tickSeq <= m.toTickSeq : !Number.isInteger(it.tickSeq)));
+}
+/** Do these rows hold one value at `key` (compared as the ties compare)? */
+const agree = (rows, key) => rows.length > 0 && rows.every((r) => tieKey([r[key]]) === tieKey([rows[0][key]]));
+
 /** The excerpt itself, from the day the checks passed, its moment, and (for a card) the entry. */
 async function buildExcerpt(db, { uid, attributionAgentId, battleId, etDate, tape, battle, day, entry = null }) {
   const m = day.moment;
@@ -375,9 +384,7 @@ async function buildExcerpt(db, { uid, attributionAgentId, battleId, etDate, tap
   // CE-4 (the fix round's review, CX1-1): the shared day judge takes the moment's version and its two instants from the
   // first stored item it meets; here each is said only when EVERY stored item it could come from agrees — the version
   // across the moment's items, `from` and `to` across the items at that check — so storage order never decides
-  const ofMoment = items.filter((it) => isObj(it) && it.situationId === m.situationId && it.symbol === m.symbol
-    && (Number.isInteger(m.fromTickSeq) ? Number.isInteger(it.tickSeq) && it.tickSeq >= m.fromTickSeq && it.tickSeq <= m.toTickSeq : !Number.isInteger(it.tickSeq)));
-  const agree = (rows, key) => rows.length > 0 && rows.every((r) => tieKey([r[key]]) === tieKey([rows[0][key]]));
+  const ofMoment = momentItemsOf(tape, m);
   const atCheck = (seq) => (Number.isInteger(seq) ? ofMoment.filter((it) => it.tickSeq === seq) : ofMoment);
   if (version && agree(ofMoment, 'version')) excerpt.situationVersion = version;
   if (instantOrNull(m.from) && agree(atCheck(m.fromTickSeq), 'at')) excerpt.from = recorded(m.from);
@@ -453,5 +460,9 @@ export async function excerptOfCard(db, args) {
   if (!owned) return null;
   const day = judgeFiledDay(owned.tape, uid, { moment, archetypeCodeId: entry.archetypeCodeId, situationVersion: entry.situationVersion });
   if (!day.ok) return null;
+  // the fix round's refuter (CX1-1, the card path): the shared judge compares the filed version with the FIRST stored
+  // item it meets, so a moment whose items disagree on their version passed in one storage order and not another. Such a
+  // day cannot be said to hold the version the card was filed under: null in every order (CC-4: never a guess)
+  if (!agree(momentItemsOf(owned.tape, day.moment), 'version')) return null;
   return buildExcerpt(db, { uid, attributionAgentId, battleId: src.battleId, etDate: src.etDate, tape: owned.tape, battle: owned.battle, day, entry });
 }

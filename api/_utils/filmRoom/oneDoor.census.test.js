@@ -628,13 +628,18 @@ describe('C2 — the rule bites (a planted excerpt import from every root fails;
     expect(err?.code).toBe('UNRESOLVED_IMPORT');
     expect(routesFrom("import './theme.css';\nimport data from './data.json';\nexport const d = data;\n")).toEqual([]);
   });
-  it('WHAT NO STATIC READING FOLLOWS FAILS CLOSED (CX2-2): a `require` of a string is an edge; a computed `import()` or `require()`, a `createRequire`, an `import.meta.glob` throw', () => {
+  it('WHAT NO STATIC READING FOLLOWS FAILS CLOSED (CX2-2; CXV-4): a `require` of a string is an edge; a computed `import()` or `require()`, an `import.meta.glob`, and the module loader however reached — `createRequire` plain, aliased or as a member, `getBuiltinModule`, an import of `module` — throw', () => {
     expect(routesFrom("const m = require('./fr/excerpt.js');\nexport const r = m;\n")).toHaveLength(1);
     for (const src of [
       "const w = './fr/excerpt.js';\nexport const later = () => import(w);\n",
       "const w = './fr/excerpt.js';\nexport const m = require(w);\n",
       "import { createRequire } from 'node:module';\nconst req = createRequire(import.meta.url);\nexport const m = req('./fr/excerpt.js');\n",
       "export const all = import.meta.glob('./fr/*.js', { eager: true });\n",
+      // the refuter's CXV-4: the module loader reached by an alias, as a member, or through process
+      "import { createRequire as zz } from 'node:module';\nexport const m = zz(import.meta.url)('./fr/excerpt.js');\n",
+      "import mod from 'node:module';\nexport const m = mod.createRequire(import.meta.url)('./fr/excerpt.js');\n",
+      "export const m = process.getBuiltinModule('node:module').createRequire(import.meta.url)('./fr/excerpt.js');\n",
+      "export const m = async () => (await import('module')).default.createRequire(import.meta.url)('./fr/excerpt.js');\n",
     ]) {
       let err = null;
       try { routesFrom(src); } catch (e) { err = e; }
