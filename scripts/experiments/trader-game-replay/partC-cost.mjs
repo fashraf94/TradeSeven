@@ -92,7 +92,7 @@ function callsOf(bundle) {
     try { req = JSON.parse(body.request.body); } catch { /* request not stored */ }
     try { usage = JSON.parse(body.response.body).usage || null; } catch { /* response not stored */ }
     const blocks = req ? blocksOf(req) : null;
-    return { seq: t.tickSeq, at: t.callEnvelope?.promptBuiltAt || t.capturedAt, slot: slotKey(t.capturedAt), outcome: t.model?.outcome, req, usage, blocks, reqBytes: blocks ? sum(blocks.map((b) => bytes(b.text))) : null, cacheControl: body?.request?.body?.includes('"cache_control"') ?? null };
+    return { seq: t.tickSeq, at: t.callEnvelope?.promptBuiltAt || t.capturedAt, slot: slotKey(t.capturedAt), outcome: `${t.model?.outcome}${t.model?.failureClass ? `:${t.model.failureClass}` : ''}${t.model?.timeoutKind ? `/${t.model.timeoutKind}` : ''}`, req, usage, blocks, reqBytes: blocks ? sum(blocks.map((b) => bytes(b.text))) : null, cacheControl: body?.request?.body?.includes('"cache_control"') ?? null };
   });
 }
 

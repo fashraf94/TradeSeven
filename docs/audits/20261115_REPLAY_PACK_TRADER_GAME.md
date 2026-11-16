@@ -30,7 +30,7 @@
 |---|---|---|
 | Export | 50 agent-mode battles from 10 Aug; 49 completed (36 legacy, 13 measured), 1 in progress today and left out. Matches Phase 0's counts exactly. | 50 battles |
 | A — bank on exit | 43 of 49 completed battles reproduce their stored score; under bank on exit **5 change and 1 winner flips** (a measured battle, where the CPU loses 45 points). Mean change −2.9 points for the agent, −3.5 for the CPU. 25% of banked bonus points (275 of 1,100) came from positions whose last price no longer cleared the level. **Every lost bonus was on a position held to the end; no sold position ever carried a bonus.** | 43 battles, 453 positions |
-| B — 30-minute schedule | Today the model runs on 78% of checks (459 of 589) and holds 96.7% of the time. The schedule cuts model calls from **14.8 to 9.4 per battle-day** at X = 0.5. Of 15 model swaps, 9 fell on checks the schedule skips; event checks catch 1; **8 are missed at every X**, and waiting 15 minutes would have cost **−10 points in total** (median −2.5, range −11 to +14). | 31 battle-days, 589 checks |
+| B — 30-minute schedule | Today the model is called on 78% of checks (459 of 589). It answered 398 of those calls and returned a hold on 96.2% (383 of 398); the other 61 failed into a fallback hold. The schedule cuts model calls from **14.8 to 9.4 per battle-day** at X = 0.5. Of 15 model swaps, 9 fell on checks the schedule skips; event checks catch 1; **8 are missed at every X**, and waiting 15 minutes would have cost **−10 points in total** (median −2.5, range −11 to +14). | 31 battle-days, 589 checks |
 | C — cost | No request carries `cache_control` today. 72% of each request repeats between consecutive checks of a battle and already sits at the front. Four cost rows below; the schedule cuts each by 32–37%. | 459 calls (52 estimated) |
 | D — model comparison | **Not run** (no approval line). $0. | — |
 
@@ -186,7 +186,7 @@ Script: `partB-schedule.mjs`. Scope: the 31 completed battles with `ticks` rows.
 
 - A check's slot is its capture time floored to the 15-minute cron grid.
 - A check is **scheduled** when its slot is an even number of 15-minute steps after the battle's first check's slot: the battle's first check, then every 30 minutes. Every other check is **skipped**.
-- The grid follows each battle's own start. 26 of 31 battles start off the half-hour, so for most battles a fixed 9:30-based grid would give different checks.
+- The grid follows each battle's own start. 9 of 31 battles start on a :15 or :45 slot; for those, a fixed 9:30-based grid would pick different checks.
 
 **Eligible checks** are the ones that can reach the model today. A check that ended on the gameplan-meeting path (102) or on degraded quotes (17) never calls it, on either schedule.
 
@@ -198,7 +198,7 @@ Script: `partB-schedule.mjs`. Scope: the 31 completed battles with `ticks` rows.
 | Eligible | 470 | 16 | 15.2 |
 | Model calls | 459 | 16 | 14.8 |
 
-The model returns a hold on **96.7% of calls (444 of 459)**; it swaps on 15. Of the 589 checks, 130 made no call: 102 gameplan-meeting checks, 17 degraded quotes, and 11 where the gate found no trigger.
+Of the 459 model calls, **398 were answered: 383 holds (96.2%) and 15 swaps.** The other 61 failed and the check fell back to a hold (`holdKind: 'default_failure'`): 52 SDK timeouts with no response, and 9 invalid tool results. Of the 589 checks, 130 made no call: 102 gameplan-meeting checks, 17 degraded quotes, and 11 where the gate found no trigger.
 
 **What opened the gate** (a call can carry several triggers):
 
@@ -293,8 +293,8 @@ Script: `partC-cost.mjs` (reads Part B's result file for the schedule rows).
 | Cache read | 0 | 0 | 0 | 0 |
 | Cache write | 0 | 0 | 0 | 0 |
 
-- **ESTIMATED rows.** Usage is stored for 407 calls. For the other 52 the model call failed and no response was stored. Their input is estimated as request bytes × 0.320 tokens per byte (the median of the stored calls), and their output as the median 1,507.
-- **Not verified:** whether those 52 failed calls were billed. They are costed in full, so the totals are an upper bound by up to 11%.
+- **ESTIMATED rows.** Usage is stored for 407 calls: the 398 answered calls and 9 whose tool result was invalid (answered at HTTP 200, so billed). The other 52 were SDK timeouts with no response stored. Their input is estimated as request bytes × 0.320 tokens per byte (the median of the stored calls), and their output as the median 1,507.
+- **Not verified:** whether those 52 timed-out calls were billed. The SDK aborts its request at the timeout, but whether Anthropic bills a request cancelled mid-generation was not checked. They are costed in full, so the totals are an upper bound by up to 11%.
 
 ### C2. `cache_control` today
 
@@ -406,7 +406,7 @@ ESTIMATED: 52 of 459 calls in the first block and 40 of 292 in the second.
 
 1. **Bank on exit for the CPU.** In measured battles the CPU is rescored too. That is where the one winner flip comes from (battle 040: the CPU loses 45 points and the agent wins). Should BB-8 apply to the CPU opponent, or to the player's agent only?
 2. **What a scheduled check means.** (a) The gate still decides at scheduled checks (9.42 calls/day at X = 0.5). (b) The model always runs at scheduled checks (9.61). The cost rows use (a).
-3. **The grid's anchor.** (a) Every 30 minutes from the battle's first check, as measured here. (b) A fixed 9:30-based grid; 26 of 31 battles start off the half-hour, so it would change which checks run.
+3. **The grid's anchor.** (a) Every 30 minutes from the battle's first check, as measured here. (b) A fixed 9:30-based grid; 9 of 31 battles start on a :15 or :45 slot, and for them it would change which checks run.
 4. **Quiet-check swaps.** 8 of the 9 model swaps on skipped checks had no event before them, at any X. Waiting cost −10 points in total across the 8. Is a 15-minute delay on those acceptable, or should a rule keep them (for example, an event when the bench outperforms by some margin)?
 5. **Crypto in the move event.** Crypto has no tape price. Should the move event (a) ignore crypto, or (b) read the battle's own crypto quote?
 6. **Cross-battle caching.** The system text starts with the agent's name, so no two agents share more than the tool. Moving the name and archetype lines below the shared rules would let battles in one run share most of the system text as well. Should a build propose that? It changes the prompt's text order, which is fenced (`api/_utils/agentEvalPromptAssembly.js`).

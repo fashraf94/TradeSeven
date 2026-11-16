@@ -161,7 +161,8 @@ export function analyzeBattle(bundle) {
     const ok = [...orig, ...delayed].every(Number.isFinite);
     return { seq: c.seq, at: c.at, et: etOf(c.at), tier, caught: c.caught, events: c.events, nextAfterMin: next ? Math.round((Date.parse(next.at) - Date.parse(c.at)) / 60000) : null, heldToEnd: !inExit, cost: ok ? sum(delayed) - sum(orig) : null, orig, delayed, storedLocked: trade?.lockedPoints ?? null, archetype: battle.agentContext?.archetype, route: stockModelRoute(battle).status, priced: ok };
   });
-  return { checks, actions, outOfGridStart: etOf(checks[0].at).minutes % 30 !== 0 };
+  // Off the half-hour grid: the first check's 15-minute slot is a :15 or :45 slot (the capture minute itself lands late).
+  return { checks, actions, outOfGridStart: Math.floor(etOf(checks[0].at).minutes / 15) % 2 !== 0 };
 }
 
 function main() {
@@ -169,8 +170,11 @@ function main() {
   const battles = [...bundles(flags.in)].filter((b) => b.ticks.length).map((b) => ({ label: b.label, archetype: b.row.archetype, route: b.row.route, ...analyzeBattle(b) }));
   const all = battles.flatMap((b) => b.checks);
   const calls = all.filter((c) => c.modelRan);
-  const holds = calls.filter((c) => c.eval?.decision === 'HOLD');
-  console.log(`## Part B — ${battles.length} battle-days with check rows; ${all.length} checks; ${calls.length} model calls; holds ${pct(holds.length, calls.length)}\n`);
+  // A failed call (timeout, invalid tool result) falls back to HOLD (holdKind 'default_failure'): it is not a hold the model returned.
+  const answered = calls.filter((c) => c.tick.model?.outcome === 'ok');
+  const holds = answered.filter((c) => c.eval?.decision === 'HOLD' && c.eval?.holdKind !== 'default_failure');
+  console.log(`## Part B — ${battles.length} battle-days with check rows; ${all.length} checks; ${calls.length} model calls (${answered.length} answered); holds returned ${pct(holds.length, answered.length)}\n`);
+  console.log('Failed calls (fallback HOLD):', JSON.stringify(tally(calls.filter((c) => c.tick.model?.outcome !== 'ok'), (c) => `${c.tick.model?.failureClass}${c.tick.model?.timeoutKind ? `/${c.tick.model.timeoutKind}` : ''}`)), '\n');
   console.log('### Today, per battle-day\n');
   const perDay = (f) => median(battles.map((b) => f(b)));
   console.log(mdTable([
