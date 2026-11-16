@@ -372,7 +372,7 @@ const treeModules = () => {
   return files;
 };
 /** The fix round's review, CX2-3: the modules each file's imports RESOLVE to — never a match on the specifier's text. */
-const importedBy = (f) => importsOf(f).map((spec) => resolveImport(f, spec, REPO)).filter(Boolean).map((r) => path.resolve(r));
+const importedBy = (f, read = readSource) => importsOf(f, read).map((spec) => resolveImport(f, spec, REPO)).filter(Boolean).map((r) => path.resolve(r));
 /**
  * The one module under api/ and src/ that loads something no static reading follows (CX2-2): the discover screen's
  * thematic list, by a glob of JSON files. None is on a model path. A new one fails the row below until it is reviewed.
@@ -386,6 +386,14 @@ describe('the whole api/ tree — only the two routes import the ledger store (t
     const ledgerStores = new Set(['api/_utils/filmRoom/cardStore.js', 'api/_utils/filmRoom/cardCounter.js', 'api/_utils/filmRoom/cardRequest.js'].map((m) => path.resolve(abs(m))));
     const importers = treeModules().filter((f) => importedBy(f).some((r) => ledgerStores.has(r))).map((f) => path.relative(REPO, f).replace(/\\/g, '/')).sort();
     expect(importers).toEqual(['api/_utils/filmRoom/cardCounter.js', 'api/_utils/filmRoom/cardRequest.js', 'api/film-room/card.js', 'api/film-room/counter.js']);
+  });
+  it('THE WHOLE-TREE ROWS READ WHAT A SPELLING HIDES (CX2-3): an extensionless, a queried, a fragment, a percent-encoded and a parent-relative spelling of the ledger store each resolve to it; a directory with no index names no module and throws', () => {
+    const at = abs('api/_utils/filmRoom/zz_planted.js');   // never written: its source is handed in
+    const store = path.resolve(abs('api/_utils/filmRoom/cardStore.js'));
+    for (const spec of ['./cardStore', './cardStore.js?v=1', './cardStore.js#f', './card%53tore.js', '../filmRoom/cardStore']) {
+      expect(importedBy(at, () => `import '${spec}';\n`), spec).toEqual([store]);
+    }
+    expect(() => importedBy(abs('api/film-room/zz_planted.js'), () => "import '../_utils/filmRoom';\n")).toThrow(/names no module/);   // a directory with no index
   });
   it('every module under api/ and src/ that loads something no static reading follows is pinned — today one, on no model path (CX2-2)', { timeout: 60_000 }, () => {
     const found = Object.fromEntries(treeModules().map((f) => [path.relative(REPO, f).replace(/\\/g, '/'), opaqueImportsOf(readSource(f), f)]).filter(([, o]) => o.length));
