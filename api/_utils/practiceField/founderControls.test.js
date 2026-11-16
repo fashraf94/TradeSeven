@@ -132,6 +132,19 @@ describe('create_book — for the caller and their RANKED agent', () => {
     expect(await act(makeMandateFakeDb({ 'agents/casual-agent-x': { ownerId: UID, isCasualClone: true } }), 'create_book', 'c-1')).toEqual({ status: 404, body: { error: 'ranked_agent_not_found' } });
   });
 
+  it('at \'allowlist\', a founder off the cockpit list still pauses, resumes and winds down their book (the mode gates creation and admission only — mode.js; review A6)', async () => {
+    const db = makeMandateFakeDb(agents());
+    const { body: { bookId } } = await act(db, 'create_book', 'create-1');
+    setPracticeFieldModeForTests('allowlist');
+    process.env[COCKPIT_ALLOWLIST_ENV] = 'someone-else';
+    const { origin: _o, ...contract } = contractOf();
+    expect((await act(db, 'admit_fixture', 'a-1', { contract })).body.refusals.map((r) => r.code)).toContain('mode_not_admitted');
+    for (const [action, outcome] of [['pause', 'paused'], ['resume', 'resumed'], ['wind_down', 'draining']]) {
+      expect((await act(db, action, `${action}-1`)).body, action).toMatchObject({ ok: true, outcome });
+    }
+    expect(getBook(db, bookId)).toMatchObject({ status: 'draining', drafting: 'on', openIdeaIds: [] });
+  });
+
   it('at \'allowlist\' the owner must ALSO be on the cockpit\'s server-side allowlist (createIdeaBook\'s own gate — a second list)', async () => {
     const db = makeMandateFakeDb(agents());
     setPracticeFieldModeForTests('allowlist');

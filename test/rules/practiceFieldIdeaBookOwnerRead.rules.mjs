@@ -99,6 +99,9 @@ beforeEach(async () => {
   await seed(CLOSED, { ...ideaBook, bookId: 'pf_book_closed', status: 'closed' });
   for (const [, path] of STORES) await seed(path.replace(BOOK, CLOSED), { bookId: 'pf_book_closed', seeded: true });
   await seed(QBOOK, quarterlyBook);
+  // The quarterly player carries full state too: their active-book pointer (refuter A, A1).
+  await seed(`userMeta/${QUARTERLY_OWNER}`, { activeMandateId: 'q_book_1' });
+  await seed(`userMeta/${OWNER2}`, { activeMandateId: null });
   for (const path of PLANTED) await seed(path, { planted: true });
   await seed(`${QBOOK}/dailyRows/2026-11-16`, { date: '2026-11-16' });
   await seed(`${QBOOK}/decisions/d1`, { verb: 'BUY' });
@@ -116,8 +119,8 @@ describe('the idea book\'s own stores — owner read', () => {
       const listed = await assertSucceeds(getDocs(collection(asOwner(), col)));
       expect(listed.docs.map((d) => d.ref.path)).toContain(path);
     });
-    it(`${name}: another user, ANOTHER IDEA-BOOK OWNER, a privileged-claims context and an unauthenticated client are denied the document and the list`, async () => {
-      for (const ctx of [asOther, asOwner2, asPrivileged, asAnon]) {
+    it(`${name}: another user, ANOTHER IDEA-BOOK OWNER, a QUARTERLY player, a privileged-claims context and an unauthenticated client are denied the document and the list`, async () => {
+      for (const ctx of [asOther, asOwner2, asQuarterlyOwner, asPrivileged, asAnon]) {
         await assertFails(getDoc(doc(ctx(), path)));
         await assertFails(getDocs(collection(ctx(), col)));
       }
