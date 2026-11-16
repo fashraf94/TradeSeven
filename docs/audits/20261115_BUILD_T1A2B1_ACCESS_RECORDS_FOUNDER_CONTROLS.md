@@ -801,3 +801,106 @@ The refuter also noted Haiku 5.5's prompt-length pricing (5× base above 100K to
 - **Q7:** the draining close sweep counts a catch-up that closed a book as `skipped`, not `closed`.
 
 **For T1b** (not this round's): check the price table (F.7), set `PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD` from the first caller's smallest call, and keep model calls to the 5-minute cache with no server tool until the table prices more.
+
+---
+
+## Final fix, 16 Nov 2026 — T2B-C01
+
+**Claude Code (Opus 5.5), 16 Nov 2026.** Astra confirmed the fix round (`docs/audits/20261116_ASTRA_CONFIRMATION_T1A2B1_FIX_ROUND.md`, committed byte-identical, SHA-256 `5fdd870f…`). T2B-01, T2B-02 and T2B-03 are closed, and the original $3.10-against-$2.90 case is fixed. One finding remained, **T2B-C01**. Settlement rounded each actual charge to the nearest micro-dollar. A charge with a fraction of a micro-dollar (cache reads are 0.1 µ$ a token at Haiku's price) was recorded short, and too much room was released. In her thirteen-call case, every call was honest and within its ceilings, yet the charges reached $3.0000001 while the book read $3.00. This is the last change in this PR. It touches `spend.js`'s arithmetic and its tests only.
+
+**Heads.**
+- `git fetch origin` ran first. The branch head was `5dbde8a43ffcbb11d02962e98f36d2fd1e80769f`, as expected.
+- `origin/main` was `71bc6bde7c0553cdb16e5c5f3752d248968967c3`, already in the branch, so nothing was merged.
+- Code head: `62061c4563099b7590f01fb29202e53db46ef3c3`. Then Astra's confirmation (`1cb20904`), then this report.
+
+`PRACTICE_FIELD_MODE` is still `'off'`. No fenced file, flag, pin, rule, index or `vercel.json` changed. No model call, Firestore write or EODHD call was made.
+
+### The change (`api/_utils/practiceField/spend.js`, at `62061c45`)
+
+- **One unit: whole nano-dollars (1e-9 USD).** The month's reserved, settled and remaining figures, each reservation's maximum and each charge are computed in it.
+  - Every rate the table holds is a whole number of nano-dollars a token: input 1,000, cache write 1,250, cache read 100, output 5,000.
+  - The header at `:73` explains the unit. The constants and `nanosOf` / `usdOf` are at `:104–111`.
+- **An incurred charge is never rounded down.** `incurredChargeNanos` (`:113–128`) rounds a genuine fraction of a nano-dollar up (`:127`).
+  - There is one exception: the double's own error. priceUsage sums floating-point products, so an exact 249,250,000 n$ arrives as `0.24925000000000003` USD.
+  - A value within 16 units in the last place of a whole nano-dollar is that whole nano-dollar. For a $3 charge, that is about 1e-14 USD. The measured error of priceUsage's sums is within 2 units.
+  - Rounding that noise up would charge eleven of Astra's honest calls above their exact maximum, flag them, and miss the exact sum (mutant M2 below).
+  - For the table's rates, the snap is exact. For a future rate that is not a whole number of nano-dollars a token, a charge could be understated by at most that band, per call. Checking the rates is T1b's job.
+- **The maximum** is still `maxCallChargeMicros` (rounded up to the micro-dollar, unchanged), times 1,000, exactly (`:233`).
+- **Room and exhaustion** in nano-dollars: `roomNanos` (`:168`) and `spendExhausted` (`:172`).
+- **The reservation check and its new total** in nano-dollars: `:248` and `:254`.
+- **Settlement** in nano-dollars:
+  - the reserved maximum (`:277`);
+  - the charge, through `incurredChargeNanos` (`:280`);
+  - the replay comparison (`:282`);
+  - the flag test and the released room (`:286–287`);
+  - the month's new reserved and settled totals (`:299–300`).
+
+**What did not change.**
+- The public fields: `reservedUsd`, `settledUsd`, `maxChargeUsd`, `chargedUsd`, `releasedUsd` and `roomUsd` stay USD numbers.
+- The operation keeps the caller's raw `actualUsd`.
+- `charge_above_reservation` and every refusal code are unchanged.
+- `SPEND_VERSION` is still 3. The book's and the op's write sites (`tx.create` / `tx.update`) are as they were.
+- **No stored field was added.** Each USD figure the module writes is a whole number of nano-dollars over 1e9, so `nanosOf` reads it back exactly.
+
+### The tests (`api/_utils/practiceField/spend.test.js`)
+
+The 26 existing rows pass unchanged. The only edit to them is the import line, which now also imports `incurredChargeNanos`. Three rows are new:
+
+- **Astra's regression (`:333`).** It runs on `claude-haiku-4-5`, with a 5-minute cache and no server tool. Each `actualUsd` is the table's own `priceUsage` double, as a caller would pass it.
+  - The calls: one call with 1,001 cache reads and 1,000 output tokens; eleven with 199,000 cache writes and 100 output tokens.
+  - Each of the twelve is reserved and settled `ok` with no flag. Each op keeps its raw `actualUsd`.
+  - The book then reads `reservedUsd` = `settledUsd` = 2,746,850,100 n$. That is the test's own integer sum.
+  - The thirteenth call (199,000 cache writes, 880 output; maximum $0.25315) is refused `spend_would_exceed`, with `roomUsd` 0.2531499, and writes nothing.
+- **Its control (`:362`).** The same calls with one cache read fewer, so the first charge is a whole $0.0051. The room is then exactly the thirteenth call's maximum. It fits, and the month reads $3 exactly.
+- **The conversion (`:374`).**
+  - Genuine fractions round up: 5,100,100.01 and 5,100,100.6 n$ both become 5,100,101, and 0.4 n$ becomes 1.
+  - Noise 1 and 4 units in the last place either side of 2,746,850,100 n$ snaps to it.
+  - Three usage mixes settle to the test's integer arithmetic exactly.
+- **Controls already in the file**, still passing: exactly $3 fits; $3.10 against $2.90 is refused; release, replay, rollover, exhaustion, an unpriced model, one-hour caching and server tools.
+
+**The mutation check.** Each mutant was applied to `spend.js` in the Linux worktree and judged by its exit code. The anchors were checked: every mutant printed `APPLIED`, none `BROKEN`. The file was restored, and the clean run passed again.
+
+| Mutant | Result |
+|---|---|
+| **M1 (the brief's): settlement back to round-to-nearest micro-dollars** (`Math.round(actualUsd × 1e6) × 1000`) | **killed**: Astra's regression fails |
+| M2: no noise snap (plain round-up) | killed: the regression, its control and the conversion row fail |
+| M3: the reservation check reads the month's total to the nearest micro-dollar | killed: the regression fails |
+| M4: the settled total rounded to the nearest micro-dollar | killed: the regression fails |
+| M5: a genuine fraction rounded to the nearest, not up | killed: the conversion row fails |
+
+### Results (Linux, the record)
+
+These ran on WSL Ubuntu, in a private worktree of `~/pd-ci` at `62061c45`, with Node 20.20.2, the install matching the lockfile (`40382e64edb6`) and `TZ=UTC`.
+
+| Check | Result |
+|---|---|
+| Spend, Practice Field, endpoint, scans, isolation and trace files (the F.3 command) | exit 0 · `Test Files  26 passed (26)` · `Tests  674 passed (674)` (671 before, +3) |
+| Full suite, `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8` | **exit 0** · `Test Files  1507 passed \| 12 skipped (1519)` · `Tests  33948 passed \| 135 skipped (34083)` · 304.12 s (read from the log). 3 rows more than the fix round's 33,945: the three new spend rows |
+| Lint gate, `npm run lint:gate` | exit 0 |
+| The seventeen-scenario differential, both modes, against `origin/main` (Astra's `astra-differential.test.js`, unmodified, SHA-256 `17e724ad…`; LF archives of `71bc6bde` and `62061c45`) | **34/34 identical**: 17 at `'off'`, 17 at `'on'`; 36/36 rows with the build-set and prompt rows |
+| Astra's own demonstration (`astra-fractional-spend.test.js`, unmodified) | It now **fails where it should**. Its thirteenth reservation is refused, so `expect(reserve.ok).toBe(true)` fails at its line 22. After twelve calls, its evidence shows the book at $2.7468501, equal to its billed 2,746,850,100 n$ |
+| Production build, `npx vite build` | Run on the pushed head, this report included, as the last check before the push. The PR description gives the result |
+
+The rules suite was not rerun: no rule or rules test changed.
+
+### What is carried (from Astra's confirmation)
+
+**To T1a-2b-2:**
+- T2B-05 and T2B-06 (F.9).
+- Q7: a catch-up close counts as closed.
+- **The gap screen's read of `lastMarkAsOf`.** Astra confirmed it can give a wrong gap-start date today. After 30 Nov's untimed price, a later half-price observation records the gap from 27 Nov. That date feeds the explanation and cash-hold checks.
+- **The result packet's size with corporate-action receipts.** Astra's case with 767 dividend receipts reached about 431 KiB (440,984 storage-estimated bytes), still one document. The 233 KiB figure is not a maximum once receipts are included. Extend the size test and its documentation.
+
+**To T1b, the caller's conditions** (Astra, her T2B-04 section):
+- bind each reservation to the actual model and request;
+- bound all billed input, including cached input and any input the provider adds for tools or system text;
+- set the real output cap no higher than declared;
+- enforce no one-hour caching, server tools or other unpriced billable options;
+- reserve every real retry separately;
+- never send a second call on an idempotent replay.
+
+**Also to T1b:**
+- verify the price table (F.7);
+- add T1b's model;
+- set `PRACTICE_FIELD_MIN_CALL_MAX_CHARGE_USD`, now a $0.05 placeholder;
+- keep every new rate a whole number of nano-dollars a token, or revisit `incurredChargeNanos`' band.
