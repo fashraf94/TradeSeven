@@ -17,11 +17,13 @@
 //      fetchDailyPayload. The cap refused → no request, and the run stops admitting.
 //   6  Admission closes on: the deadline (less than one acquisition's reserve left before
 //      handlerStart + 240 s), the cap, the unpublished-session brake (eight `missing_bar`
-//      retryables in a row, each from a request this run made), or a programming error.
+//      retryables in a row, each from a request this run made whose payload lacked the session's own
+//      row; any final, read or acquired, breaks the streak), or a programming error.
 //   7  End of run: one transaction records the run's tallies on the state.
 //   8  Counts only, in one health line per run past the gate. A PROGRAMMING ERROR (the store's
-//      SetupEvidenceProgrammingError, or a TypeError) stops the run, is counted and logged, and is
-//      THROWN after the record is written: never swallowed.
+//      SetupEvidenceProgrammingError, or any error without a gRPC status code — a TypeError, a plain
+//      Error from code — wherever it is thrown, the counter and the run record included) stops the run,
+//      is counted and logged, and is THROWN after the record is written: never swallowed.
 //
 // No model call. The only provider path is the store's own fetchDailyPayload, through the counter.
 // `now` is a function returning a Date (production: () => new Date()); `fetchPayload` is a test seam
@@ -41,9 +43,14 @@ import { closedTally, failureTally, readSweepState, recordRun, reserveProviderRe
 const bump = (obj, key, n = 1) => { obj[key] = (obj[key] || 0) + n; };
 const errorCodeOf = (err) => String(err?.code ?? err?.name ?? 'unknown').slice(0, 40);
 
-/** A programming error: never swallowed. */
+/**
+ * A programming error: never swallowed (review L1-3). The store's own SetupEvidenceProgrammingError, and any error that
+ * carries no numeric gRPC status code: every Firestore (Admin SDK) failure carries one, and the provider's failures never
+ * reach here (the store's acquireOnce reads them as fetch_failed). So a TypeError, a ReferenceError, a RangeError or a
+ * plain Error thrown by code is a programming error; a transient Firestore failure (UNAVAILABLE 14, ABORTED 10, …) is not.
+ */
 export function isProgrammingError(err) {
-  return err instanceof SetupEvidenceProgrammingError || err?.name === 'SetupEvidenceProgrammingError' || err instanceof TypeError;
+  return err instanceof SetupEvidenceProgrammingError || err?.name === 'SetupEvidenceProgrammingError' || typeof err?.code !== 'number';
 }
 
 /** One state transaction at a time in this run: the counter is contended only across instances. */
@@ -196,20 +203,23 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
       bump(counts.failures, `read:${errorCodeOf(err)}`);
       return;
     }
-    if (record) { countFinal(record); return; }
+    if (record) { countFinal(record); streak = 0; return; } // a final, read or acquired, breaks a streak (review L1-2)
 
     const closed = admissionClosedBy();
     if (closed) { bump(counts.deferred, closed); return; }
 
     let fetched = false;
     let refused = null; // why the counter refused this unit's request: no request was made
+    let sessionRowSeen = false; // the payload held a row dated on the session itself (review L1-1)
     const countingFetch = async (...args) => {
       let r;
       try {
         r = await serial(() => reserveProviderRequest({ db, session, nowMs: clock(), cap }));
       } catch (err) {
         refused = 'reserve_failed';
-        bump(counts.failures, `reserve:${errorCodeOf(err)}`);
+        // A bug in the counter is surfaced (review L1-3); a transient Firestore failure is counted. Either way the store is
+        // told the request failed, so it releases its lease, and no request is made.
+        if (isProgrammingError(err)) surface(err); else bump(counts.failures, `reserve:${errorCodeOf(err)}`);
         throw new Error('setupEvidenceSweep: the request was not counted, so it was not made');
       }
       if (!r.ok) {
@@ -221,7 +231,9 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
       counts.providerRequestsTotal = r.count;
       counts.providerRequests += 1;
       fetched = true;
-      return provider(...args);
+      const payload = await provider(...args);
+      sessionRowSeen = Array.isArray(payload) && payload.some((row) => row?.date === session);
+      return payload;
     };
 
     counts.storeCalls += 1;
@@ -244,7 +256,9 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
       if (refused === 'cap' || refused === 'state_unreadable') { bump(counts.deferred, refused === 'cap' ? 'cap' : 'state_unreadable'); return; }
       if (refused === 'reserve_failed') return; // counted as a failure; no request was made
       bump(counts.retryable, RETRYABLE_REASONS.includes(out.reason) ? out.reason : 'other');
-      if (out.reason === 'missing_bar' && fetched) {
+      // Only a session whose own bar is not in the payload is unpublished: a gap INSIDE the window is also
+      // `missing_bar` (confirm class), and must not stop the run (review L1-1).
+      if (out.reason === 'missing_bar' && fetched && !sessionRowSeen) {
         streak += 1;
         if (streak >= UNPUBLISHED_STREAK_STOP) unpublished = true;
       } else {
@@ -288,7 +302,7 @@ async function sweep({ db, handlerStartMs, now = () => new Date(), fetchPayload,
     if (rec.written === true) counts.providerRequestsTotal = rec.providerRequests;
     else bump(counts.deferred, 'state_unreadable');
   } catch (err) {
-    bump(counts.failures, `record:${errorCodeOf(err)}`);
+    if (isProgrammingError(err)) surface(err); else bump(counts.failures, `record:${errorCodeOf(err)}`);
   }
   return done(programmingError);
 }

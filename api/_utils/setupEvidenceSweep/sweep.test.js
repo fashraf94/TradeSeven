@@ -389,3 +389,79 @@ describe('the one provider path (SW-2, SW-4): the store\'s own fetchDailyPayload
     expect(SRC.replace(/\/\/.*$/gm, '')).not.toMatch(/\bfetch\s*\(/);
   });
 });
+
+describe('review lens 1 (docs/audits/20261116_BUILD_CHART_EVIDENCE.md §4): the brake and the programming errors', () => {
+  /** The session's own bar IS published; one bar inside the window (ten sessions back) is missing: confirm class. */
+  const interiorGapRows = (session) => { const rows = pullbackRows(session); rows.splice(10, 1); return rows; };
+
+  it('L1-1: a gap INSIDE the window (the session\'s bar present) never trips the unpublished brake; the second run confirms every name', async () => {
+    const db = makeSweepDb();
+    const names = [...ALL_TICKERS].sort().slice(0, 40);
+    const h = harness({ at: T_RUN1, rowsFor: (s, session) => interiorGapRows(session) });
+    expect(interiorGapRows(MON)[0].date).toBe(MON);
+    const first = await h.run(db, { symbols: names });
+    expect(h.calls).toHaveLength(40);
+    expect(first.deferred).toEqual({});
+    expect(first.retryable).toEqual({ missing_bar: 40 });
+    h.nowMs = T_RUN2;
+    const second = await h.run(db, { symbols: names });
+    expect(second.final).toEqual({ measured: 0, refused: 40 });
+    expect(second.deferred).toEqual({});
+  });
+
+  it('L1-2: a final found by reading resets the streak, as an acquired one does', async () => {
+    const db = makeSweepDb();
+    const names = [...ALL_TICKERS].sort().slice(0, 30);
+    // Every odd name is final already; the even ones' bars are not yet published.
+    for (const symbol of names.filter((_, i) => i % 2 === 1)) {
+      const { record } = await recordFor({ session: MON, symbol, fetchedAt: '2026-11-16T22:00:00.000Z', rows: pullbackRows(MON) });
+      db.write(finalPath(MON, symbol), record);
+    }
+    const h = harness({ at: T_RUN1, rowsFor: (s, session) => unpublishedRows(session) });
+    const r = await h.run(db, { symbols: names });
+    expect(h.calls).toHaveLength(15); // every late name is asked once: the finals between them break every streak
+    expect(r.deferred).toEqual({});
+  });
+
+  it('L1-3a: an error with no gRPC code from the store (a plain Error after the request) is a programming error: surfaced and thrown, the run stops', async () => {
+    const db = makeSweepDb();
+    db.failTransactions(({ writes }) => writes.some((p) => p.startsWith('setupEvidence/')), () => new Error('a bug in the final transaction'));
+    const h = harness({ at: T_RUN1 });
+    let caught = null;
+    try { await h.run(db); } catch (err) { caught = err; }
+    expect(caught?.message).toBe('a bug in the final transaction');
+    expect(h.calls.length).toBeLessThanOrEqual(C.SWEEP_CONCURRENCY);
+    expect(JSON.parse(h.lines[0].slice(C.HEALTH_LINE_PREFIX.length + 1)).programmingErrors).toBeGreaterThan(0);
+  });
+
+  it('L1-3a: a transient Firestore error (a numeric gRPC code) is counted and the run goes on', async () => {
+    const db = makeSweepDb();
+    db.failTransactions(({ writes }) => writes.includes(finalPath(MON, NAMES[0])), () => Object.assign(new Error('unavailable'), { code: 14 }));
+    const h = harness({ at: T_RUN1 });
+    const r = await h.run(db);
+    expect(r.failures).toEqual({ 'acquire:14': 1 });
+    expect(r.final.measured).toBe(9);
+    expect(r.programmingErrors).toBe(0);
+  });
+
+  it('L1-3b: a TypeError in the sweep\'s own counter transaction is surfaced and thrown, not read as a failed fetch', async () => {
+    const db = makeSweepDb();
+    db.failTransactions(({ writes }) => writes.includes(statePath(MON)), () => new TypeError('a bug in the counter'));
+    const h = harness({ at: T_RUN1 });
+    let caught = null;
+    try { await h.run(db); } catch (err) { caught = err; }
+    expect(caught).toBeInstanceOf(TypeError);
+    expect(caught.message).toBe('a bug in the counter');
+    expect(h.calls).toEqual([]); // the request was never made
+  });
+
+  it('L1-3b: a TypeError in the end-of-run record is surfaced and thrown', async () => {
+    const db = makeSweepDb();
+    db.failTransactions(({ writes }) => writes.includes(statePath(MON)) && db.read(statePath(MON))?.providerRequests >= 10, () => new TypeError('a bug in the record'));
+    const h = harness({ at: T_RUN1 });
+    let caught = null;
+    try { await h.run(db); } catch (err) { caught = err; }
+    expect(caught?.message).toBe('a bug in the record');
+    expect(h.calls).toHaveLength(10);
+  });
+});
