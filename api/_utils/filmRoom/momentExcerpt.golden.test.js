@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { excerptOf, excerptOfCard, MOMENT_EXCERPT_VERSION, EXCERPT_LABELS, EXCERPT_BOUNDS, QUOTE_SPEAKERS } from './momentExcerpt.js';
 import {
   excerptDay, excerptStore as storeOfDay, excerptCardWith, ideaVersionDoc, dbOf, OWNER, AGENT, CLONE_AGENT, SEP23, EXCERPT_BATTLE, EXCERPT_ENTRY,
-  EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION, ETN_MOMENT, META_MOMENT, EXCERPT_NOTE,
+  EXCERPT_WATCHLIST, EXCERPT_IDEA_VERSION, ETN_MOMENT, META_MOMENT, EXCERPT_NOTE, EXCERPT_MEETING, FORGED_DIAGNOSIS,
 } from './__fixtures__/excerptFixtures.js';
 import { buildCardDoc } from './cardStore.js';
 import { CARD_SLOTS } from '../../../src/data/cardSlots.js';
@@ -38,9 +38,9 @@ const GOLDEN = JSON.parse(readFileSync(GOLDEN_PATH, 'utf8'));
 const sha256 = (v) => createHash('sha256').update(stableStringify(v), 'utf8').digest('hex');
 /** The goldens' SHA-256, over their canonical JSON (canonicalHash.js stableStringify) — the build report records both. */
 const GOLDEN_SHA256 = Object.freeze({
-  // §2 review L1-5: `afterExit.closeAt` renamed `barStart` (the bar's own time is its bucket's start) — the one change
-  moment: '51a50dd4e947daf128e0b847e0445c872788e0f41c2c7c46135f326f960b302b',
-  card: 'dbd74ab53a684cee25e4883823cf26a5ae7f76d5c048954391f163ea1aa65f6f',
+  // the C2 fix round moves each by the rulings that change the shape, one commit each (build report §11): CD-16 (no meeting)
+  moment: '5d9fed6d00227641b1cf0e4c2f4efe320ee6559154026030da7a11c85c5990ee',
+  card: '5349062d9890be04e6110187a2ecf67dc3355f048261cd5f321eafadf82612ae',
 });
 
 /** The card, by the ledger's own builder; the store with it unless a test names another. */
@@ -98,7 +98,8 @@ describe('C-EXCERPT — the goldens, through the real writer', () => {
     expect(e.rationale.hypothesis.text).toBe(t.rationale[RAT15].hypothesis);
     expect(e.directive.playerText.text).toBe(t.directives[DIR15].playerText);
     expect(e.directive.canonicalText.text).toBe(t.directives[DIR15].canonicalText);
-    expect(e.meeting.diagnosis.text).toBe(t.meetings[0].diagnosis);
+    expect(t.meetings[0].diagnosis).toBe(EXCERPT_MEETING.diagnosis);   // the tape holds the meeting …
+    expect(e.meeting).toBeUndefined();                                 // … the excerpt never carries it (CD-16)
     const sale = t.actions.find((a) => a.symbolOut === 'ETN');
     expect(sale.tickSeq).toBe(20);
     expect(e.exit).toEqual({ mechanism: { value: sale.mechanism, class: 'recorded' }, exitReason: { value: sale.exitReason, class: 'recorded' }, sold: { value: 'ETN', class: 'recorded' }, bought: { value: sale.symbolIn, class: 'recorded' }, exitPrice: { value: sale.exitPrice, class: 'recorded' } });
@@ -123,7 +124,7 @@ const textOf = (n) => `${'a'.repeat(n - 1)}${ASTRAL}`;
 
 describe('the bounds — at the limit carried exactly, one over not carried (never cut), astral characters counted once', () => {
   it('every bound is at most 500 code points (W-06), and each is the amendment\'s', () => {
-    expect(EXCERPT_BOUNDS).toEqual({ statement: 280, hypothesis: 500, rationale: 500, playerText: 400, canonicalText: 400, diagnosis: 400, note: 280 });
+    expect(EXCERPT_BOUNDS).toEqual({ statement: 280, hypothesis: 500, rationale: 500, playerText: 400, canonicalText: 400, note: 280 });
     for (const b of Object.values(EXCERPT_BOUNDS)) expect(b).toBeLessThanOrEqual(500);
   });
   const rows = [
@@ -131,7 +132,6 @@ describe('the bounds — at the limit carried exactly, one over not carried (nev
     { name: 'hypothesis', bound: 500, plant: (s, text) => withTape((t) => { t.rationale[RAT15].hypothesis = text; }), read: (x) => x.rationale?.hypothesis?.text, card: false },
     { name: 'directive player text', bound: 400, plant: (s, text) => withTape((t) => { t.directives[DIR15].playerText = text; }), read: (x) => x.directive?.playerText?.text, card: false },
     { name: 'directive canonical text', bound: 400, plant: (s, text) => withTape((t) => { t.directives[DIR15].canonicalText = text; }), read: (x) => x.directive?.canonicalText?.text, card: false },
-    { name: 'meeting diagnosis', bound: 400, plant: (s, text) => withTape((t) => { t.meetings[0].diagnosis = text; }), read: (x) => x.meeting?.diagnosis?.text, card: false },
     { name: 'idea statement', bound: 280, plant: (s, text) => excerptStore(DAY, { idea: ideaVersionDoc({ statement: text }) }), read: (x) => x.idea?.statement?.text, card: false },
     { name: 'card note', bound: 280, plant: (s, text) => excerptStore(DAY, { card: excerptCard({ note: text }) }), read: (x) => x.card?.note?.text, card: true },
   ];
@@ -177,11 +177,25 @@ describe('a field the tape does not hold is absent — never a guess, never a ne
     await absentWith((t) => { t.directives[DIR15].heard = { ...t.directives[DIR15].heard, tickSeq: 20 }; }, 'directive');
     await absentWith((t) => { t.directives[DIR15].heard = null; }, 'directive');
   });
-  it('no meetings, or none whose life holds the moment: no meeting', async () => {
-    await absentWith((t) => { delete t.meetings; }, 'meeting');
-    await absentWith((t) => { t.meetings[0].createdAt = '2026-09-23T17:50:00.000Z'; }, 'meeting');
-    await absentWith((t) => { t.meetings[0].resolvedAt = '2026-09-23T18:30:00.000Z'; }, 'meeting');
-    await absentWith((t) => { t.meetings[0].resolvedAt = null; t.meetings[0].expiresAt = null; }, 'meeting');
+  it('CD-16 — NO MEETING, whatever the history holds: the fixture\'s meeting, whose life holds the moment, is on the tape and not in the excerpt — moment or card', async () => {
+    expect(DAY.tape.meetings).toHaveLength(1);
+    for (const e of [LIVE.moment.excerpt, LIVE.card.excerpt]) expect('meeting' in e).toBe(false);
+  });
+  it('CD-16 — A FORGED, OWNER-WRITTEN MEETING HISTORY, through the real writer, gives no meeting in the excerpt and none of its words (the owner may update the history; the owner\'s own screen still shows it — FilmRoomMeetings.writer.jsdom.test.jsx)', async () => {
+    const forgedMeetings = [
+      { ...EXCERPT_MEETING, diagnosis: FORGED_DIAGNOSIS, status: 'approved', resolvedBy: 'coach' },
+      { ...EXCERPT_MEETING, id: 'gpm_1758649000000', status: 'expired', expiresAt: '2026-09-23T19:30:00.000Z', resolvedAt: '2026-09-23T19:30:00.000Z', diagnosis: `${FORGED_DIAGNOSIS} Again.` },
+    ];
+    const forged = await excerptDay({ battleId: 'b-sep23-forged', meetings: forgedMeetings });
+    expect(forged.tape.meetings.map((x) => x.diagnosis)).toEqual([FORGED_DIAGNOSIS, `${FORGED_DIAGNOSIS} Again.`]);
+    const ask = { ...MOMENT_ASK, battleId: 'b-sep23-forged' };
+    const moment = await momentOver(storeOfDay(forged, { battleId: 'b-sep23-forged', card: excerptCard({ battleId: 'b-sep23-forged' }) }), ask);
+    const card = await cardOver(storeOfDay(forged, { battleId: 'b-sep23-forged', card: excerptCard({ battleId: 'b-sep23-forged' }) }));
+    for (const got of [moment, card]) {
+      expect(got).not.toBeNull();
+      expect('meeting' in got.excerpt).toBe(false);
+      expect(stringsOf(got.excerpt).some((x) => x.includes('player is always right'))).toBe(false);
+    }
   });
   it('no actions, or the sale not at the moment\'s last check or the next: no exit and nothing after it', async () => {
     const none = await absentWith((t) => { delete t.actions; }, 'exit');
@@ -249,21 +263,12 @@ describe('a field the tape does not hold is absent — never a guess, never a ne
   it('the directive heard just BEFORE the moment\'s first check is not taken (the lower bound — §2 review L1-6)', async () => {
     await absentWith((t) => { t.directives[DIR15].heard = { ...t.directives[DIR15].heard, tickSeq: 14 }; }, 'directive');
   });
-  it('AN OWNER-WRITABLE TIME CARRIES NO TEXT (§2 review L1-1): a meeting created at a loose date string holding an id is no meeting here; a rationale\'s loose time is null — no id reaches `excerpt`', async () => {
+  it('A LOOSE TIME CARRIES NO TEXT (§2 review L1-1): a rationale\'s loose time holding an id is null — no id reaches `excerpt`', async () => {
     const PLANTED = '9/23/2026 13:30 (Ab3dEf7hIj9kLm1nOp5q)';
     expect(Number.isFinite(Date.parse(PLANTED))).toBe(true);   // Date.parse alone would have read it
-    const meeting = await momentOver(withTape((t) => { t.meetings[0].createdAt = PLANTED; }));
-    expect(meeting.excerpt.meeting).toBeUndefined();
-    expect(idsIn(meeting.excerpt)).toEqual([]);
     const rationale = await momentOver(withTape((t) => { t.rationale[RAT15].at = PLANTED; }));
     expect(rationale.excerpt.rationale.rationale.at).toBeNull();
     expect(idsIn(rationale.excerpt)).toEqual([]);
-  });
-  it('AN EXPIRED MEETING ENDED AT ITS DEADLINE, not when the check filed it (§2 review L1-3): a deadline before the moment\'s last check is no meeting; one after it is', async () => {
-    const expiredEarly = await momentOver(withTape((t) => { Object.assign(t.meetings[0], { status: 'expired', expiresAt: '2026-09-23T18:00:00.000Z', resolvedAt: '2026-09-23T19:00:00.000Z' }); }));
-    expect(expiredEarly.excerpt.meeting).toBeUndefined();
-    const expiredLate = await momentOver(withTape((t) => { Object.assign(t.meetings[0], { status: 'expired', expiresAt: '2026-09-23T18:50:00.000Z', resolvedAt: '2026-09-23T19:00:00.000Z' }); }));
-    expect(expiredLate.excerpt.meeting.outcome).toEqual({ value: 'expired', class: 'recorded' });
   });
   it('the writer\'s `unrecorded` mechanism is its sentinel for a missing exit reason — absent here, as the reason is (§2 review L1-4)', async () => {
     const got = await momentOver(withTape((t) => { const a = t.actions.find((x) => x.symbolOut === 'ETN'); a.exitReason = null; a.mechanism = 'unrecorded'; }));
@@ -403,7 +408,6 @@ const SPEAKER_TABLE = Object.freeze({
   'rationale.rationale': 'agent',
   'directive.playerText': 'player',
   'directive.canonicalText': 'platform',
-  'meeting.diagnosis': 'platform',
   'card.note': 'player',
   inputQuote: 'player',
 });
@@ -435,7 +439,6 @@ describe('CC-2 — every quotation one source, one speaker, with its time', () =
       'rationale.rationale': t.rationale[RAT15].rationale,
       'directive.playerText': t.directives[DIR15].playerText,
       'directive.canonicalText': t.directives[DIR15].canonicalText,
-      'meeting.diagnosis': t.meetings[0].diagnosis,
       'card.note': EXCERPT_NOTE,
       inputQuote: EXCERPT_NOTE,
     };
@@ -448,7 +451,6 @@ describe('CC-2 — every quotation one source, one speaker, with its time', () =
     const q = quotesIn(LIVE.card.excerpt);
     expect(q['rationale.rationale'].at).toBe(DAY.tape.rationale[RAT15].at);
     expect(q['directive.playerText'].at).toBe(DAY.tape.directives[DIR15].filedAt);
-    expect(q['meeting.diagnosis'].at).toBe(DAY.tape.meetings[0].createdAt);
     expect(q['idea.statement'].at).toBe(ideaVersionDoc().createdAt);
     expect(q['card.note'].at).toBe(excerptCard().createdAt);
   });

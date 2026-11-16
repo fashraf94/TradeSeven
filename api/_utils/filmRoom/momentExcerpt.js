@@ -71,7 +71,6 @@ export const EXCERPT_BOUNDS = Object.freeze({
   rationale: 500,
   playerText: 400,
   canonicalText: 400,
-  diagnosis: 400,
   note: 280,
 });
 
@@ -92,7 +91,7 @@ const idOk = (v) => typeof v === 'string' && ID.test(v) && !/^__.*__$/.test(v);
 const TICKER = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
 /**
  * An instant carried into `excerpt`: a strict ISO 8601 date-time only (the shared rule) — never a looser string (§2 review
- * L1-1). Every time the excerpt COMPARES — the exit against the bars, every tie-break by time, a meeting's life — is read
+ * L1-1). Every time the excerpt COMPARES — the exit against the bars, every tie-break by time — is read
  * by the same strict parser, instantMs (CE-3): a time it refuses is no time, and nothing is inferred from it.
  */
 const instantOrNull = instantText;
@@ -201,41 +200,13 @@ function directiveOf(tape, m) {
   return { ...(playerText ? { playerText: quote(playerText, 'player', at) } : {}), ...(canonicalText ? { canonicalText: quote(canonicalText, 'platform', at) } : {}) };
 }
 
-/**
- * When a meeting's life ended: its `resolvedAt` — but an EXPIRED meeting ended at its deadline, which may be earlier
- * than the check that filed it (`resolvedAt` is then the filing's instant; §2 review L1-3). Null when neither is held.
+/*
+ * NO MEETING (Build C Amendment D, CD-16): the excerpt carries no `meeting` field. The tape copies its meetings from the
+ * battle's gameplan meeting history, which the battle's OWNER may update (firestore.rules, the agentBattles update
+ * allowlist) — so an outcome, legs or a "platform" diagnosis could be words the owner wrote, carried into a model call
+ * as recorded facts and as the platform's speech. Every other field comes from a server-written record. The block can
+ * return in a later excerpt version, once meetings are server-written. The tape's meetings are not read here at all.
  */
-const meetingEndOf = (r) => {
-  const resolved = instantMs(r.resolvedAt);
-  const expires = instantMs(r.expiresAt);
-  if (r.status === 'expired') { const ends = [resolved, expires].filter((v) => v !== null); return ends.length ? Math.min(...ends) : null; }
-  return resolved ?? expires;
-};
-
-/** The gameplan meeting whose life holds the moment — created at or before its first check, ended at or after its last; the earliest. */
-function meetingOf(tape, m) {
-  const fromMs = instantMs(m.from);
-  const toMs = instantMs(m.to);
-  if (fromMs === null || toMs === null) return null;
-  const rows = (Array.isArray(tape.meetings) ? tape.meetings : []).filter((r) => {
-    if (!isObj(r)) return false;
-    // the meeting history is owner-writable: its times count only as strict instants (§2 review L1-1)
-    const start = instantMs(r.createdAt);
-    const end = meetingEndOf(r);
-    return start !== null && end !== null && start <= fromMs && end >= toMs;
-  });
-  if (!rows.length) return null;
-  const row = rows.reduce((a, b) => (instantMs(b.createdAt) < instantMs(a.createdAt) ? b : a));
-  const out = {};
-  if (str(row.status)) out.outcome = recorded(row.status);
-  const legs = (Array.isArray(row.legs) ? row.legs : [])
-    .map((l) => (isObj(l) ? { ...(str(l.symbolOut) ? { symbolOut: l.symbolOut } : {}), ...(str(l.symbolIn) ? { symbolIn: l.symbolIn } : {}) } : {}))
-    .filter((l) => Object.keys(l).length > 0);
-  if (legs.length) out.legs = recorded(legs);
-  const diagnosis = boundedText(row.diagnosis, EXCERPT_BOUNDS.diagnosis);
-  if (diagnosis) out.diagnosis = quote(diagnosis, 'platform', instantOrNull(row.createdAt));
-  return Object.keys(out).length ? out : null;
-}
 
 /**
  * The `actions[]` row that ends the run: a sale of the moment's symbol at the moment's last check, or at the first check
@@ -347,8 +318,6 @@ async function buildExcerpt(db, { uid, battleId, etDate, tape, day, entry = null
   if (rationale) excerpt.rationale = rationale;
   const directive = directiveOf(tape, m);
   if (directive) excerpt.directive = directive;
-  const meeting = meetingOf(tape, m);
-  if (meeting) excerpt.meeting = meeting;
   const hit = exitRowOf(tape, m);
   const exit = hit ? exitOf(tape, hit) : null;
   if (exit) excerpt.exit = exit;

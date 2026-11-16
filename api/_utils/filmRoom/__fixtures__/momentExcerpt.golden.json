@@ -72,27 +72,6 @@
           "class": "quoted"
         }
       },
-      "meeting": {
-        "outcome": {
-          "value": "rejected",
-          "class": "recorded"
-        },
-        "legs": {
-          "value": [
-            {
-              "symbolOut": "ETN",
-              "symbolIn": "MU"
-            }
-          ],
-          "class": "recorded"
-        },
-        "diagnosis": {
-          "text": "ETN has held within a narrow band for several checks while the book trails; the plan proposes MU in its place.",
-          "by": "platform",
-          "at": "2026-09-23T17:30:00.000Z",
-          "class": "quoted"
-        }
-      },
       "exit": {
         "mechanism": {
           "value": "archetype_rotation",
@@ -209,27 +188,6 @@
           "text": "Tighten the downside stop.",
           "by": "platform",
           "at": "2026-09-23T17:40:00.000Z",
-          "class": "quoted"
-        }
-      },
-      "meeting": {
-        "outcome": {
-          "value": "rejected",
-          "class": "recorded"
-        },
-        "legs": {
-          "value": [
-            {
-              "symbolOut": "ETN",
-              "symbolIn": "MU"
-            }
-          ],
-          "class": "recorded"
-        },
-        "diagnosis": {
-          "text": "ETN has held within a narrow band for several checks while the book trails; the plan proposes MU in its place.",
-          "by": "platform",
-          "at": "2026-09-23T17:30:00.000Z",
           "class": "quoted"
         }
       },
