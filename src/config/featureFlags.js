@@ -149,7 +149,7 @@ export const TOURNAMENT_TAB_ENABLED = true;
  * league group is in flight.
  * Pinned by: leagueHideFlag.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
  */
-export const LEAGUE_HIDE_ENABLED = false;
+export const LEAGUE_HIDE_ENABLED = true;
 
 /**
  * League — the self-serve lobby (P10): registration · join/create · FIFO
